@@ -143,32 +143,60 @@ echo        Copying .venv, .uv-python, .playwright-browsers, yakulingo, prompts,
 :: Copy folders using robocopy
 :: Exit codes: 0=no change, 1=copied, 2-7=warnings, 8+=errors
 set "ROBOCOPY_WARNINGS="
+set "ROBOCOPY_LOG=%~dp0..\dist_temp\robocopy.log"
+echo. > "%ROBOCOPY_LOG%"
 for %%f in (.venv .uv-python .playwright-browsers) do (
     if exist "%%f" (
-        robocopy "%%f" "%DIST_DIR%\%%f" /E /MT:16 /NFL /NDL /NJH /NJS /NP /R:1 /W:1 >nul
-        if errorlevel 8 (
-            echo        [ERROR] Failed to copy %%f ^(exit code: !errorlevel!^)
+        echo        Copying %%f...
+        echo ============================================================ >> "%ROBOCOPY_LOG%"
+        echo Copying: %%f >> "%ROBOCOPY_LOG%"
+        echo ============================================================ >> "%ROBOCOPY_LOG%"
+        robocopy "%%f" "%DIST_DIR%\%%f" /E /MT:16 /NP /R:1 /W:1 >> "%ROBOCOPY_LOG%" 2>&1
+        set "RC=!errorlevel!"
+        echo Exit code: !RC! >> "%ROBOCOPY_LOG%"
+        echo. >> "%ROBOCOPY_LOG%"
+        if !RC! GEQ 8 (
+            echo        [ERROR] Failed to copy %%f ^(exit code: !RC!^)
+            echo        See log: %ROBOCOPY_LOG%
+            type "%ROBOCOPY_LOG%"
             pause
             exit /b 1
-        ) else if errorlevel 1 (
-            if errorlevel 2 set "ROBOCOPY_WARNINGS=!ROBOCOPY_WARNINGS! %%f"
+        ) else if !RC! GEQ 2 (
+            set "ROBOCOPY_WARNINGS=!ROBOCOPY_WARNINGS! %%f"
+            echo        [WARNING] Some files skipped in %%f ^(exit code: !RC!^)
         )
     )
 )
 for %%f in (yakulingo prompts config) do (
     if exist "%%f" (
-        robocopy "%%f" "%DIST_DIR%\%%f" /E /MT:8 /NFL /NDL /NJH /NJS /NP /R:1 /W:1 >nul
-        if errorlevel 8 (
-            echo        [ERROR] Failed to copy %%f ^(exit code: !errorlevel!^)
+        echo        Copying %%f...
+        echo ============================================================ >> "%ROBOCOPY_LOG%"
+        echo Copying: %%f >> "%ROBOCOPY_LOG%"
+        echo ============================================================ >> "%ROBOCOPY_LOG%"
+        robocopy "%%f" "%DIST_DIR%\%%f" /E /MT:8 /NP /R:1 /W:1 >> "%ROBOCOPY_LOG%" 2>&1
+        set "RC=!errorlevel!"
+        echo Exit code: !RC! >> "%ROBOCOPY_LOG%"
+        echo. >> "%ROBOCOPY_LOG%"
+        if !RC! GEQ 8 (
+            echo        [ERROR] Failed to copy %%f ^(exit code: !RC!^)
+            echo        See log: %ROBOCOPY_LOG%
+            type "%ROBOCOPY_LOG%"
             pause
             exit /b 1
-        ) else if errorlevel 1 (
-            if errorlevel 2 set "ROBOCOPY_WARNINGS=!ROBOCOPY_WARNINGS! %%f"
+        ) else if !RC! GEQ 2 (
+            set "ROBOCOPY_WARNINGS=!ROBOCOPY_WARNINGS! %%f"
+            echo        [WARNING] Some files skipped in %%f ^(exit code: !RC!^)
         )
     )
 )
 if defined ROBOCOPY_WARNINGS (
-    echo        [WARNING] Some files skipped in:%ROBOCOPY_WARNINGS%
+    echo.
+    echo        [WARNING] Some files were skipped. Check log for details:
+    echo        %ROBOCOPY_LOG%
+    echo.
+    echo        --- Skipped/Failed files ---
+    findstr /C:"FAILED" /C:"Skipped" "%ROBOCOPY_LOG%"
+    echo        ----------------------------
 )
 
 :: ============================================================

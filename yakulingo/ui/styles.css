@@ -145,6 +145,7 @@ html {
     /* Base font size scaled by window width (set dynamically in app.py) */
     /* Reference: 1900px window → 16px, scaled with sqrt for gentle effect */
     font-size: var(--base-font-size, 16px);
+    width: 100%;
     height: 100%;
     overflow-x: hidden; /* Prevent horizontal scroll at document level */
 }
@@ -169,6 +170,7 @@ body {
     line-height: 1.6;
     margin: 0;
     padding: 0;
+    width: 100%;
     height: var(--viewport-height);
     max-height: var(--viewport-height);
     min-width: 1000px;  /* Minimum width to prevent layout breaking */
@@ -213,13 +215,14 @@ body {
 /* === 3-Column Main Layout === */
 .main-area {
     margin-left: var(--sidebar-width);
-    width: calc(100% - var(--sidebar-width));  /* Use 100% instead of 100vw to avoid scrollbar width issues */
+    /* Let flex: 1 determine width instead of explicit calc */
     flex: 1;
     height: var(--viewport-height);  /* Fixed height to match viewport */
     max-height: var(--viewport-height);
     display: flex;
     flex-direction: row;
     overflow: hidden;  /* Prevent children from overflowing */
+    box-sizing: border-box;
 }
 
 /* Input Panel (Middle Column - Sticky) */
@@ -1364,7 +1367,7 @@ textarea:focus-visible {
 /* Default 2-column mode (no results) - input centered across full width */
 .main-area:not(.has-results) .input-panel {
     flex: 1;
-    width: auto;
+    width: 100%;
     min-width: 0;
     max-width: none;
     height: 100%;  /* Use 100% to respect parent's height constraint */
@@ -1375,6 +1378,7 @@ textarea:focus-visible {
     align-items: center;  /* Center children horizontally */
     padding: 1rem 1.5rem;  /* Reduced top/bottom padding */
     padding-top: 1.5rem;
+    box-sizing: border-box;  /* Include padding in width */
 }
 
 /* Ensure the column container fills the input panel vertically */

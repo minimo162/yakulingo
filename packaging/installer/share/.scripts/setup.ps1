@@ -797,16 +797,20 @@ function Invoke-Setup {
             if (-not (Test-Path $SetupPath)) {
                 New-Item -ItemType Directory -Path $SetupPath -Force | Out-Null
             }
-            # Run 7-Zip asynchronously to keep GUI responsive
+            # Run 7-Zip with output redirected to log file (avoids buffer deadlock)
             # -aoa: Overwrite all existing files without prompt
             # -bb1: Show names of processed files (verbose logging)
+            # Output redirected to file to avoid stdout buffer deadlock with many files
+            $sevenZipArgs = "x `"$TempZipFile`" `"-o$SetupPath`" -y -mmt=on -aoa -bb1"
+            $cmdLine = "& `"$($script:SevenZip)`" $sevenZipArgs >> `"$extractLogPath`" 2>&1"
+
             $psi = New-Object System.Diagnostics.ProcessStartInfo
-            $psi.FileName = $script:SevenZip
-            $psi.Arguments = "x `"$TempZipFile`" `"-o$SetupPath`" -y -mmt=on -aoa -bb1"
+            $psi.FileName = "powershell.exe"
+            $psi.Arguments = "-NoProfile -Command `"$cmdLine; exit `$LASTEXITCODE`""
             $psi.UseShellExecute = $false
             $psi.CreateNoWindow = $true
-            $psi.RedirectStandardOutput = $true
-            $psi.RedirectStandardError = $true
+            $psi.RedirectStandardOutput = $false
+            $psi.RedirectStandardError = $false
 
             $proc = [System.Diagnostics.Process]::Start($psi)
 
@@ -828,33 +832,31 @@ function Invoke-Setup {
             }
 
             $proc.WaitForExit()
+            $exitCode = $proc.ExitCode
+            $proc.Dispose()
 
-            # Capture and log output
-            $stdOut = $proc.StandardOutput.ReadToEnd()
-            $stdErr = $proc.StandardError.ReadToEnd()
+            # Log completion
             try {
-                "=== 7-Zip Output ===" | Out-File -FilePath $extractLogPath -Append -Encoding UTF8
-                $stdOut | Out-File -FilePath $extractLogPath -Append -Encoding UTF8
-                if ($stdErr) {
-                    "=== 7-Zip Errors ===" | Out-File -FilePath $extractLogPath -Append -Encoding UTF8
-                    $stdErr | Out-File -FilePath $extractLogPath -Append -Encoding UTF8
-                }
-                "Exit code: $($proc.ExitCode)" | Out-File -FilePath $extractLogPath -Append -Encoding UTF8
+                "Exit code: $exitCode" | Out-File -FilePath $extractLogPath -Append -Encoding UTF8
                 "=== Extraction completed: $(Get-Date) ===" | Out-File -FilePath $extractLogPath -Append -Encoding UTF8
             } catch { }
 
-            if ($proc.ExitCode -ne 0) {
+            if ($exitCode -ne 0) {
                 if (-not $GuiMode) {
                     Write-Host "      [ERROR] 7-Zip failed. See log: $extractLogPath" -ForegroundColor Red
                 }
-                throw "Failed to extract ZIP file.`n`nFile: $ZipFileName`nExit code: $($proc.ExitCode)`n$stdErr`n`nSee log: $extractLogPath"
+                throw "Failed to extract ZIP file.`n`nFile: $ZipFileName`nExit code: $exitCode`n`nSee log: $extractLogPath"
             }
-            $proc.Dispose()
 
             if (-not $GuiMode) {
-                # Count extracted files
-                $extractedCount = ($stdOut -split "`n" | Where-Object { $_ -match "^- " }).Count
-                Write-Host "      Extracted $extractedCount files" -ForegroundColor Gray
+                # Count extracted files from log
+                try {
+                    $logContent = Get-Content -Path $extractLogPath -Raw -ErrorAction SilentlyContinue
+                    $extractedCount = ([regex]::Matches($logContent, "^- ", "Multiline")).Count
+                    Write-Host "      Extracted $extractedCount files" -ForegroundColor Gray
+                } catch {
+                    Write-Host "      Extraction completed" -ForegroundColor Gray
+                }
             }
         } else {
             if (-not $GuiMode) {

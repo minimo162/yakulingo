@@ -215,6 +215,13 @@ echo        Copying installer files...
 copy /y "packaging\installer\share\setup.vbs" "%SHARE_DIR%\" >nul
 copy /y "packaging\installer\share\README.txt" "%SHARE_DIR%\" >nul
 xcopy /E /I /Q /Y "packaging\installer\share\.scripts" "%SHARE_DIR%\.scripts" >nul
+
+:: Move log to share_package before cleanup
+if exist "%ROBOCOPY_LOG%" (
+    move /y "%ROBOCOPY_LOG%" "%SHARE_DIR%\robocopy.log" >nul
+    echo        Log saved to: %SHARE_DIR%\robocopy.log
+)
+
 rd /s /q "dist_temp" 2>nul
 
 :: Calculate elapsed time using PowerShell ticks

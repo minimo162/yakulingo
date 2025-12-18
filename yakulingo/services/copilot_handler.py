@@ -990,11 +990,8 @@ class CopilotHandler:
         try:
             local_cwd = os.environ.get("SYSTEMROOT", r"C:\Windows")
 
-            # Load settings to determine browser display mode
-            from yakulingo.config.settings import AppSettings
-            settings_path = Path.home() / ".yakulingo" / "settings.json"
-            settings = AppSettings.load(settings_path)
-            display_mode = settings.browser_display_mode
+            # Get browser display mode from cached settings
+            display_mode = self._get_browser_display_mode()
 
             startupinfo = None
             creationflags = 0
@@ -2781,20 +2778,47 @@ class CopilotHandler:
         Args:
             page_title: The current page title for exact matching
         """
-        from yakulingo.config.settings import AppSettings
-        from pathlib import Path
-
-        # Load settings
-        settings_path = Path.home() / ".yakulingo" / "settings.json"
-        settings = AppSettings.load(settings_path)
-        mode = settings.browser_display_mode
+        # Use cached settings if available
+        mode = self._get_browser_display_mode()
 
         if mode == "side_panel":
-            self._position_edge_as_side_panel(page_title)
+            # For side_panel mode, wait for YakuLingo window to be available
+            # This is critical at startup when Edge may start before the app window
+            MAX_WAIT_SECONDS = 3.0
+            POLL_INTERVAL = 0.1
+            waited = 0.0
+
+            while waited < MAX_WAIT_SECONDS:
+                if self._position_edge_as_side_panel(page_title):
+                    return  # Success
+                # Window not found yet, wait and retry
+                time.sleep(POLL_INTERVAL)
+                waited += POLL_INTERVAL
+
+            # Failed after retries - log warning and minimize as fallback
+            logger.warning("Side panel positioning failed after %.1fs, minimizing Edge", MAX_WAIT_SECONDS)
+            self._minimize_edge_window(page_title)
         elif mode == "foreground":
             self._bring_edge_to_foreground_impl(page_title, reason="foreground display mode")
         else:  # "minimized" (default)
             self._minimize_edge_window(page_title)
+
+    def _get_browser_display_mode(self) -> str:
+        """Get browser display mode from cached settings.
+
+        Returns:
+            Browser display mode string ("side_panel", "foreground", or "minimized")
+        """
+        # Cache settings to avoid repeated disk I/O during startup
+        if not hasattr(self, '_cached_browser_display_mode'):
+            from yakulingo.config.settings import AppSettings
+            from pathlib import Path
+
+            settings_path = Path.home() / ".yakulingo" / "settings.json"
+            settings = AppSettings.load(settings_path)
+            self._cached_browser_display_mode = settings.browser_display_mode
+
+        return self._cached_browser_display_mode
 
     def _close_edge_gracefully(self, timeout: float = 0.5) -> bool:
         """Close Edge browser gracefully by sending WM_CLOSE message.

@@ -306,8 +306,9 @@ echo [INFO] This may take 3-5 minutes...
 
 :: Compile all site-packages in parallel (-j 0 = use all CPUs)
 :: This is critical for fast first launch - compiles all transitive dependencies
+:: -x excludes Python 2 legacy files that cause SyntaxError
 echo [INFO] Pre-compiling all site-packages (parallel)...
-.venv\Scripts\python.exe -m compileall -q -j 0 .venv\Lib\site-packages 2>nul
+.venv\Scripts\python.exe -m compileall -q -j 0 -x "olefile2|test_" .venv\Lib\site-packages 2>nul
 if errorlevel 1 (
     echo [WARNING] Some bytecode compilation failed, but this is not critical.
 )

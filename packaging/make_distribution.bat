@@ -109,7 +109,8 @@ del /q ".venv\pyvenv.cfg.tmp" 2>nul
 echo        Pre-compiling Python bytecode (parallel)...
 :: Compile all site-packages in parallel (-j 0 = use all CPUs)
 :: This is critical for fast first launch - compiles all transitive dependencies
-.venv\Scripts\python.exe -m compileall -q -j 0 .venv\Lib\site-packages 2>nul
+:: -x excludes Python 2 legacy files that cause SyntaxError
+.venv\Scripts\python.exe -m compileall -q -j 0 -x "olefile2|test_" .venv\Lib\site-packages 2>nul
 .venv\Scripts\python.exe -m compileall -q -j 0 yakulingo 2>nul
 :: Warm up module cache to initialize Python's internal caches
 echo        Warming up module cache...

@@ -215,8 +215,8 @@ body {
 /* === 3-Column Main Layout === */
 .main-area {
     margin-left: var(--sidebar-width);
-    width: calc(100vw - var(--sidebar-width));
-    max-width: calc(100% - var(--sidebar-width));
+    /* Use 100% for accurate width calculation (100vw includes scrollbar width) */
+    width: calc(100% - var(--sidebar-width));
     flex: 1;
     height: var(--viewport-height);  /* Fixed height to match viewport */
     max-height: var(--viewport-height);
@@ -1377,7 +1377,8 @@ textarea:focus-visible {
     flex-direction: column;  /* Stack children vertically */
     justify-content: flex-start;
     align-items: center;  /* Center children horizontally */
-    padding: 1rem 1.5rem;  /* Reduced top/bottom padding */
+    /* Adjust left padding to compensate for 100% vs 100vw difference */
+    padding: 1rem 1.5rem 1rem 2.5rem;
     padding-top: 1.5rem;
     box-sizing: border-box;  /* Include padding in width */
 }

@@ -694,6 +694,18 @@ class CopilotHandler:
     )
     RESPONSE_SELECTOR_COMBINED = ", ".join(RESPONSE_SELECTORS)
 
+    # GPT Mode switcher selectors
+    # Used to ensure GPT-5.2 Think Deeper mode is selected for better translation quality
+    GPT_MODE_BUTTON_SELECTOR = '#gptModeSwitcher'
+    GPT_MODE_TEXT_SELECTOR = '#gptModeSwitcher div'
+    GPT_MODE_MENU_ITEM_SELECTOR = '[role="menuitem"], [role="option"], [role="menuitemradio"]'
+    # Target mode name (partial match) - must include "GPT-5.2" to distinguish from plain "Think Deeper"
+    GPT_MODE_TARGET = 'GPT-5.2 Think Deeper'
+    # Mode switching timeout and wait times
+    GPT_MODE_SWITCH_TIMEOUT_MS = 3000
+    GPT_MODE_MENU_WAIT = 0.2  # Wait for menu to open/close
+    GPT_MODE_SWITCH_WAIT = 0.2  # Wait for mode to switch
+
     # Dynamic polling intervals for faster response detection
     # OPTIMIZED: Reduced intervals for quicker response detection (0.15s -> 0.1s)
     RESPONSE_POLL_INITIAL = 0.1  # Initial interval while waiting for response to start
@@ -1662,6 +1674,116 @@ class CopilotHandler:
         except Exception as e:
             logger.warning("Failed to check Copilot page: %s", e)
             return False
+
+    def _ensure_gpt_mode(self) -> bool:
+        """Ensure GPT-5.2 Think Deeper mode is selected for better translation quality.
+
+        This method checks the current GPT mode and switches to "GPT-5.2 Think Deeper"
+        if a different mode (e.g., "自動") is selected.
+
+        Returns:
+            True if mode is correct or successfully switched, False if switch failed.
+            On failure, logs a warning but does not block translation (user can manually switch).
+        """
+        if not self._page:
+            logger.debug("No page available for GPT mode check")
+            return True  # Don't block on missing page
+
+        try:
+            # Check current mode by reading button text
+            mode_text_elem = self._page.query_selector(self.GPT_MODE_TEXT_SELECTOR)
+            if not mode_text_elem:
+                logger.debug("GPT mode button not found (selector may have changed)")
+                return True  # Don't block if button not found
+
+            current_mode = mode_text_elem.text_content()
+            if not current_mode:
+                logger.debug("GPT mode text is empty")
+                return True
+
+            current_mode = current_mode.strip()
+            logger.debug("Current GPT mode: %s", current_mode)
+
+            # Check if already in target mode
+            if self.GPT_MODE_TARGET in current_mode:
+                logger.debug("GPT mode is already '%s'", current_mode)
+                return True
+
+            # Need to switch mode
+            logger.info("Switching GPT mode from '%s' to '%s'...", current_mode, self.GPT_MODE_TARGET)
+
+            # Click the mode switcher button to open menu
+            mode_button = self._page.query_selector(self.GPT_MODE_BUTTON_SELECTOR)
+            if not mode_button:
+                logger.warning("GPT mode button not found for clicking")
+                return False
+
+            # Use JS click to avoid bringing window to foreground
+            self._page.evaluate('el => el.click()', mode_button)
+
+            # Wait for menu to open
+            time.sleep(self.GPT_MODE_MENU_WAIT)
+
+            # Find menu items and look for target mode
+            menu_items = self._page.query_selector_all(self.GPT_MODE_MENU_ITEM_SELECTOR)
+            if not menu_items:
+                logger.warning("No menu items found (menu may not have opened)")
+                # Try to close menu by pressing Escape
+                try:
+                    self._page.keyboard.press('Escape')
+                except Exception as esc_err:
+                    logger.debug("Failed to press Escape: %s", esc_err)
+                return False
+
+            # Search for target mode in menu items
+            target_item = None
+            available_items = []
+            for item in menu_items:
+                try:
+                    item_text = item.text_content()
+                    if item_text:
+                        item_text_stripped = item_text.strip()
+                        available_items.append(item_text_stripped)
+                        if self.GPT_MODE_TARGET in item_text:
+                            target_item = item
+                            logger.debug("Found target menu item: %s", item_text_stripped)
+                            break
+                except Exception:
+                    continue
+
+            if not target_item:
+                logger.warning("Target mode '%s' not found in menu. Available items: %s",
+                              self.GPT_MODE_TARGET, available_items)
+                # Close menu
+                try:
+                    self._page.keyboard.press('Escape')
+                except Exception as esc_err:
+                    logger.debug("Failed to press Escape: %s", esc_err)
+                return False
+
+            # Click target item
+            self._page.evaluate('el => el.click()', target_item)
+
+            # Wait for mode to switch
+            time.sleep(self.GPT_MODE_SWITCH_WAIT)
+
+            # Verify mode was switched
+            mode_text_elem = self._page.query_selector(self.GPT_MODE_TEXT_SELECTOR)
+            if mode_text_elem:
+                new_mode = mode_text_elem.text_content()
+                if new_mode and self.GPT_MODE_TARGET in new_mode:
+                    logger.info("Successfully switched GPT mode to '%s'", new_mode.strip())
+                    return True
+                else:
+                    logger.warning("GPT mode switch may have failed. Current mode: %s", new_mode)
+                    return False
+
+            return True
+
+        except Exception as e:
+            logger.warning("Failed to check/switch GPT mode: %s", e)
+            # Don't block translation on GPT mode errors - user can manually switch
+            return True
 
     def _wait_for_chat_ready(self, page, wait_for_login: bool = True) -> bool:
         """Wait for Copilot chat UI to be ready.
@@ -4042,6 +4164,12 @@ class CopilotHandler:
                 raise RuntimeError("Copilotへのログインが必要です。Edgeブラウザでログインしてください。")
             raise RuntimeError("Copilotページにアクセスできませんでした。")
 
+        # Ensure GPT-5.2 Think Deeper mode is selected (best translation quality)
+        # On failure, logs warning but continues - user can manually switch if needed
+        if not self._ensure_gpt_mode():
+            logger.warning("GPT mode switch failed - translation may use different model. "
+                          "Please manually select 'GPT-5.2 Think Deeper' in Copilot.")
+
         # Check for cancellation before starting translation
         if self._is_cancelled():
             logger.info("Translation cancelled before starting")
@@ -4256,6 +4384,12 @@ class CopilotHandler:
             if self.last_connection_error == self.ERROR_LOGIN_REQUIRED:
                 raise RuntimeError("Copilotへのログインが必要です。Edgeブラウザでログインしてください。")
             raise RuntimeError("Copilotページにアクセスできませんでした。")
+
+        # Ensure GPT-5.2 Think Deeper mode is selected (best translation quality)
+        # On failure, logs warning but continues - user can manually switch if needed
+        if not self._ensure_gpt_mode():
+            logger.warning("GPT mode switch failed - translation may use different model. "
+                          "Please manually select 'GPT-5.2 Think Deeper' in Copilot.")
 
         # Check for cancellation before starting translation
         if self._is_cancelled():

@@ -308,7 +308,10 @@ class PlaywrightThreadExecutor:
             if self._shutdown_flag:
                 raise RuntimeError("Executor has been shutdown and cannot be restarted")
             if self._thread is not None and self._thread.is_alive():
+                logger.debug("[THREAD] Executor thread already alive: %s", self._thread.ident)
                 return
+            logger.debug("[THREAD] Creating new executor thread (old thread: %s)",
+                        self._thread.ident if self._thread else None)
             self._running = True
             self._thread = threading.Thread(target=self._worker, daemon=True)
             self._thread.start()
@@ -375,6 +378,7 @@ class PlaywrightThreadExecutor:
             The _shutdown_flag is checked after getting an item from the queue
             to handle the case where shutdown() is called while waiting.
         """
+        logger.debug("[THREAD] Executor worker thread started: %s", threading.current_thread().ident)
         while self._running and not self._shutdown_flag:
             try:
                 item = self._request_queue.get(timeout=1)
@@ -389,6 +393,8 @@ class PlaywrightThreadExecutor:
                     break
 
                 func, args, result_event = item
+                func_name = func.__name__ if hasattr(func, '__name__') else str(func)
+                logger.debug("[THREAD] Worker executing %s in thread %s", func_name, threading.current_thread().ident)
                 try:
                     result = func(*args)
                     result_event['result'] = result
@@ -423,6 +429,9 @@ class PlaywrightThreadExecutor:
             raise RuntimeError("Executor is shutting down")
 
         self.start()  # Ensure thread is running
+        logger.debug("[THREAD] execute() called from thread %s for func %s, worker thread: %s",
+                    threading.current_thread().ident, func.__name__ if hasattr(func, '__name__') else func,
+                    self._thread.ident if self._thread else None)
 
         result_event = {
             'done': threading.Event(),
@@ -454,20 +463,25 @@ _pre_initialized_playwright = None
 _pre_init_lock = threading.Lock()
 _pre_init_event = threading.Event()
 _pre_init_error = None
+_pre_init_thread_id = None  # Track which thread initialized Playwright
 
 
 def _pre_init_playwright_impl():
     """Implementation that runs in the executor thread."""
-    global _pre_initialized_playwright, _pre_init_error
+    global _pre_initialized_playwright, _pre_init_error, _pre_init_thread_id
     try:
         import time as _time
         _t_start = _time.perf_counter()
+        current_thread_id = threading.current_thread().ident
+        logger.debug("[THREAD] pre_init_playwright_impl running in thread %s", current_thread_id)
         _, sync_playwright = _get_playwright()
         logger.debug("[TIMING] pre_init _get_playwright(): %.2fs", _time.perf_counter() - _t_start)
         _t_init = _time.perf_counter()
         _pre_initialized_playwright = sync_playwright().start()
+        _pre_init_thread_id = current_thread_id  # Record thread ID for validation
         logger.debug("[TIMING] pre_init sync_playwright().start(): %.2fs", _time.perf_counter() - _t_init)
-        logger.info("[TIMING] Playwright pre-initialization completed: %.2fs", _time.perf_counter() - _t_start)
+        logger.info("[TIMING] Playwright pre-initialization completed in thread %s: %.2fs",
+                    current_thread_id, _time.perf_counter() - _t_start)
         return True
     except Exception as e:
         logger.warning("Playwright pre-initialization failed: %s", e)
@@ -529,11 +543,34 @@ def get_pre_initialized_playwright(timeout: float = 30.0):
         timeout: Maximum time to wait for initialization to complete
 
     Returns:
-        Pre-initialized Playwright instance, or None if not available
+        Pre-initialized Playwright instance, or None if not available.
+        Returns None if the executor thread has changed since initialization
+        (to avoid greenlet thread mismatch errors).
     """
     if _pre_init_event.wait(timeout=timeout):
         if _pre_init_error is not None:
             return None
+
+        # Check if the executor thread is the same as when Playwright was initialized
+        # If the thread has changed, the Playwright instance is no longer usable
+        # because its greenlet context is bound to the original thread
+        current_executor_thread = _playwright_executor._thread
+        if current_executor_thread is None:
+            logger.debug("[THREAD] get_pre_initialized_playwright: executor thread not started yet")
+            return _pre_initialized_playwright
+
+        current_thread_id = current_executor_thread.ident
+        if _pre_init_thread_id is not None and current_thread_id != _pre_init_thread_id:
+            logger.warning(
+                "[THREAD] Executor thread changed! Playwright initialized in thread %s, "
+                "current executor thread %s. Discarding pre-initialized instance.",
+                _pre_init_thread_id, current_thread_id
+            )
+            # Clear the stale instance
+            clear_pre_initialized_playwright()
+            return None
+
+        logger.debug("[THREAD] get_pre_initialized_playwright: thread match OK (%s)", current_thread_id)
         return _pre_initialized_playwright
     return None
 
@@ -547,12 +584,13 @@ def clear_pre_initialized_playwright():
     Also resets _pre_init_event to allow re-initialization (e.g., after disconnect
     during PP-DocLayout-L initialization).
     """
-    global _pre_initialized_playwright, _pre_init_error
+    global _pre_initialized_playwright, _pre_init_error, _pre_init_thread_id
     with _pre_init_lock:
         _pre_initialized_playwright = None
         _pre_init_error = None
+        _pre_init_thread_id = None  # Also clear thread ID
         _pre_init_event.clear()  # Allow re-initialization
-        logger.debug("Pre-initialized Playwright cleared")
+        logger.debug("Pre-initialized Playwright cleared (including thread ID)")
 
 
 class CopilotHandler:
@@ -1199,6 +1237,8 @@ class CopilotHandler:
             bring_to_foreground_on_login: If True, bring browser to foreground when
                 manual login is required. Set to False for background reconnection.
         """
+        logger.debug("[THREAD] _connect_impl running in thread %s", threading.current_thread().ident)
+
         # Check if existing connection is still valid
         if self._connected and self._is_page_valid():
             return True
@@ -1696,6 +1736,8 @@ class CopilotHandler:
 
     def _ensure_gpt_mode_impl(self) -> None:
         """Implementation of ensure_gpt_mode() that runs in Playwright thread."""
+        logger.debug("[THREAD] _ensure_gpt_mode_impl running in thread %s", threading.current_thread().ident)
+
         if not self._page:
             logger.debug("No page available for GPT mode check")
             return

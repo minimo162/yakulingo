@@ -806,9 +806,15 @@ class CopilotHandler:
         self._expected_app_position: tuple[int, int, int, int] | None = None
         # Window synchronization for side panel mode
         # When YakuLingo becomes foreground, Edge window is also brought forward
+        # When Edge becomes foreground, YakuLingo window is also brought forward
         self._window_sync_hook = None  # SetWinEventHook handle
         self._window_sync_running = False  # Thread stop flag
         self._window_sync_thread = None  # Dedicated thread for message loop
+        # Loop prevention: track last sync time and hwnd to prevent rapid oscillation
+        self._last_sync_time: float = 0.0
+        self._last_sync_hwnd: int = 0
+        # Minimum interval between sync operations (seconds)
+        self._SYNC_DEBOUNCE_INTERVAL = 0.3
 
     @property
     def is_connected(self) -> bool:
@@ -6504,7 +6510,9 @@ class CopilotHandler:
         """Callback for SetWinEventHook.
 
         Called when a window becomes the foreground window.
-        If it's the YakuLingo window, brings Edge to the front as well.
+        Synchronizes YakuLingo and Edge windows bidirectionally:
+        - If YakuLingo becomes foreground, brings Edge to front as well.
+        - If Edge becomes foreground, brings YakuLingo to front as well.
 
         Note: This callback runs in the WindowSyncThread.
         Keep processing minimal to avoid blocking message pumping.
@@ -6512,12 +6520,17 @@ class CopilotHandler:
         if not self._window_sync_running:
             return
 
-        # Check if the foreground window is YakuLingo
         try:
             import ctypes
             from ctypes import wintypes
 
             user32 = ctypes.WinDLL('user32', use_last_error=True)
+
+            # Debounce: prevent rapid oscillation between windows
+            current_time = time.time()
+            if (hwnd == self._last_sync_hwnd and
+                    current_time - self._last_sync_time < self._SYNC_DEBOUNCE_INTERVAL):
+                return
 
             # Get window title
             title_length = user32.GetWindowTextLengthW(hwnd) + 1
@@ -6529,17 +6542,61 @@ class CopilotHandler:
             window_title = title.value
 
             # Check if this is the YakuLingo window
-            if window_title != "YakuLingo" and not window_title.startswith("YakuLingo"):
-                return
+            is_yakulingo = (window_title == "YakuLingo" or
+                           window_title.startswith("YakuLingo"))
 
-            logger.debug("YakuLingo became foreground, syncing Edge window")
+            # Check if this is the Edge window (our browser process)
+            is_edge = False
+            if not is_yakulingo and self.edge_process:
+                # Check if foreground window belongs to our Edge process tree
+                fg_pid = wintypes.DWORD()
+                user32.GetWindowThreadProcessId(hwnd, ctypes.byref(fg_pid))
+                is_edge = self._is_edge_process_pid(fg_pid.value)
 
-            # Bring Edge to front (non-blocking, minimal processing)
-            self._sync_edge_to_foreground(hwnd)
+            if is_yakulingo:
+                logger.debug("YakuLingo became foreground, syncing Edge window")
+                self._last_sync_hwnd = hwnd
+                self._last_sync_time = current_time
+                # Bring Edge to front (non-blocking, minimal processing)
+                self._sync_edge_to_foreground(hwnd)
+
+            elif is_edge:
+                logger.debug("Edge became foreground, syncing YakuLingo window")
+                self._last_sync_hwnd = hwnd
+                self._last_sync_time = current_time
+                # Bring YakuLingo to front (non-blocking, minimal processing)
+                self._sync_yakulingo_to_foreground(hwnd)
 
         except Exception as e:
             # Don't log errors in callback to avoid flooding
             pass
+
+    def _is_edge_process_pid(self, pid: int) -> bool:
+        """Check if a PID belongs to our Edge process tree.
+
+        Args:
+            pid: Process ID to check
+
+        Returns:
+            True if the PID is our Edge process or one of its children
+        """
+        if not self.edge_process:
+            return False
+
+        target_pid = self.edge_process.pid
+        if pid == target_pid:
+            return True
+
+        # Check child processes (Edge uses multi-process architecture)
+        try:
+            import psutil
+            parent = psutil.Process(target_pid)
+            children = parent.children(recursive=True)
+            return any(child.pid == pid for child in children)
+        except Exception:
+            # psutil not available or process not found
+            # Fall back to just checking direct PID match
+            return False
 
     def _sync_edge_to_foreground(self, yakulingo_hwnd) -> None:
         """Bring Edge window to foreground when YakuLingo is activated.
@@ -6590,3 +6647,53 @@ class CopilotHandler:
 
         except Exception as e:
             logger.debug("Failed to sync Edge window: %s", e)
+
+    def _sync_yakulingo_to_foreground(self, edge_hwnd) -> None:
+        """Bring YakuLingo window to foreground when Edge is activated.
+
+        Places YakuLingo window right after Edge in Z-order so both windows
+        are visible together. Does not change window positions.
+
+        Args:
+            edge_hwnd: Handle to the Edge window (for Z-order reference)
+        """
+        if sys.platform != "win32":
+            return
+
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.WinDLL('user32', use_last_error=True)
+
+            # Find YakuLingo window
+            yakulingo_hwnd = self._find_yakulingo_window_handle()
+            if not yakulingo_hwnd:
+                return
+
+            # Check if YakuLingo is minimized
+            is_minimized = user32.IsIconic(yakulingo_hwnd)
+            if is_minimized:
+                # Restore without activating
+                SW_SHOWNOACTIVATE = 4
+                user32.ShowWindow(yakulingo_hwnd, SW_SHOWNOACTIVATE)
+
+            # SetWindowPos flags
+            SWP_NOACTIVATE = 0x0010  # Don't activate window
+            SWP_NOMOVE = 0x0002      # Don't change position
+            SWP_NOSIZE = 0x0001      # Don't change size
+            SWP_SHOWWINDOW = 0x0040  # Show window
+
+            # Place YakuLingo right after Edge in Z-order
+            # This ensures YakuLingo is visible but Edge stays focused
+            user32.SetWindowPos(
+                yakulingo_hwnd,
+                edge_hwnd,  # hWndInsertAfter: place after Edge
+                0, 0, 0, 0,      # x, y, cx, cy (ignored due to flags)
+                SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
+            )
+
+            logger.debug("YakuLingo window synced to foreground (after Edge)")
+
+        except Exception as e:
+            logger.debug("Failed to sync YakuLingo window: %s", e)

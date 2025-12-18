@@ -2101,6 +2101,14 @@ Based on recent commits:
     - Ctrl+Alt+Jホットキー時: `_bring_window_to_front`でサイドパネルモード時にEdgeも配置
     - PDF翻訳再接続時: `_reconnect_copilot_with_retry`で`browser_display_mode`をチェック
     - 自動ログイン完了時: `should_minimize`条件を追加して不要な最小化を防止
+  - **Bidirectional window synchronization (2024-12)**:
+    - YakuLingoがフォアグラウンド → Edgeを連動表示（既存）
+    - **Edgeがフォアグラウンド → YakuLingoを連動表示（新規追加）**
+    - `SetWinEventHook`で`EVENT_SYSTEM_FOREGROUND`イベントを監視
+    - `_is_edge_process_pid()`: Edgeプロセスツリーの判定（psutil使用）
+    - `_sync_yakulingo_to_foreground()`: YakuLingoをEdgeの後ろに配置
+    - **ループ防止**: デバウンス処理（0.3秒）+ `SWP_NOACTIVATE`フラグ
+    - タスクバーからEdgeを選択しても、両方のウィンドウが表示される
   - **PDF Translation Reconnection Fix (2024-12)**:
     - **Problem**: PP-DocLayout-L初期化後の再接続でセッション喪失→ログイン要求
     - **Root cause**: `_get_or_create_context()`の待機時間が0.2秒と短く、CDP接続確立前にコンテキスト取得失敗
@@ -2110,7 +2118,7 @@ Based on recent commits:
       - `_reconnect_copilot_with_retry()`: ログイン要求時にブラウザを前面表示＋UI通知を追加
     - **Constants**: `CONTEXT_RETRY_COUNT=10`, `CONTEXT_RETRY_INTERVAL=0.3`
   - **Benefits**: ブラウザスロットリング問題を回避、翻訳経過をリアルタイムで確認可能
-  - **Implementation**: `_calculate_app_position_for_side_panel()`, `_calculate_side_panel_geometry_from_screen()`, `_expected_app_position`, `_position_window_early_sync()`, `_find_yakulingo_window_handle()`, `_position_edge_as_side_panel()`, `_reposition_windows_for_side_panel()`
+  - **Implementation**: `_calculate_app_position_for_side_panel()`, `_calculate_side_panel_geometry_from_screen()`, `_expected_app_position`, `_position_window_early_sync()`, `_find_yakulingo_window_handle()`, `_position_edge_as_side_panel()`, `_reposition_windows_for_side_panel()`, `_sync_edge_to_foreground()`, `_sync_yakulingo_to_foreground()`, `_is_edge_process_pid()`, `start_window_sync()`, `stop_window_sync()`
 - **Window Minimization Fix at Startup (2024-12)**:
   - **Problem**: アプリ起動時にウィンドウが最小化されて画面に表示されないことがある
   - **Root causes**:

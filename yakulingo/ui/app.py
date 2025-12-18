@@ -546,9 +546,11 @@ class YakuLingoApp:
                 from yakulingo.models.types import TextTranslationResult, TranslationOption
                 result = TextTranslationResult(
                     source_text=text,
+                    source_char_count=len(text),
                     options=[TranslationOption(
                         text=translated_text,
                         explanation=f"Excelセル翻訳完了（{len(cells_to_translate)}セル）\nクリップボードにコピーしました。Excelに戻って Ctrl+V で貼り付けてください。",
+                        char_count=len(translated_text),
                     )],
                     output_language="en" if detected_language == "日本語" else "jp",
                 )

@@ -967,6 +967,35 @@ function Invoke-Setup {
         # Ignore verification errors
     }
 
+    # Clean up __pycache__ and updates folder to prevent stale bytecode/files from affecting the app
+    Write-Status -Message "Cleaning up cache..." -Progress -Step "Step 3/4: Extracting" -Percent 82
+    try {
+        "=== Cache Cleanup ===" | Out-File -FilePath $extractLogPath -Append -Encoding UTF8
+
+        # Remove __pycache__ directories
+        $pycacheDirs = Get-ChildItem -Path $SetupPath -Recurse -Directory -Filter "__pycache__" -ErrorAction SilentlyContinue
+        $pycacheCount = @($pycacheDirs).Count
+        if ($pycacheCount -gt 0) {
+            $pycacheDirs | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+            "Removed $pycacheCount __pycache__ directories" | Out-File -FilePath $extractLogPath -Append -Encoding UTF8
+            if (-not $GuiMode) {
+                Write-Host "      Removed $pycacheCount __pycache__ directories" -ForegroundColor Gray
+            }
+        }
+
+        # Remove updates folder (auto-update cache)
+        $updatesDir = Join-Path $SetupPath "updates"
+        if (Test-Path $updatesDir) {
+            Remove-Item -Path $updatesDir -Recurse -Force -ErrorAction SilentlyContinue
+            "Removed updates directory" | Out-File -FilePath $extractLogPath -Append -Encoding UTF8
+            if (-not $GuiMode) {
+                Write-Host "      Removed updates directory" -ForegroundColor Gray
+            }
+        }
+    } catch {
+        # Ignore cleanup errors
+    }
+
     # Fix pyvenv.cfg placeholder (__PYTHON_HOME__) to the actual bundled runtime path
     Write-Status -Message "Configuring Python runtime..." -Progress -Step "Step 3/4: Extracting" -Percent 85
     Update-PyVenvConfig -SetupPath $SetupPath

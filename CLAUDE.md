@@ -2622,7 +2622,7 @@ Based on recent commits:
   - **Examples**:
     - 1920px screen → 955px app + 10px gap + 955px browser
     - 1600px screen → 795px app + 10px gap + 795px browser
-  - **Sidebar ratio**: `SIDEBAR_RATIO = 350 / 1800` (19.4%), `MIN_SIDEBAR_WIDTH = 220px`
+  - **Sidebar ratio**: `SIDEBAR_RATIO = 360 / 1800` (20%), `MIN_SIDEBAR_WIDTH = 360px`
   - **Content width**: 横幅制限撤廃（`--content-width`による制限を削除、メインエリアいっぱいに表示）
 - **Global Hotkey (Ctrl+Alt+J)**:
   - **Quick translation**: Select text in any app, press Ctrl+Alt+J to translate

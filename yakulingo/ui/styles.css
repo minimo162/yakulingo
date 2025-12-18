@@ -115,7 +115,7 @@
 
     /* Panel widths are calculated dynamically by JavaScript based on window.innerWidth.
        These defaults are only visible until JS executes (typically < 100ms). */
-    --sidebar-width: 280px;
+    --sidebar-width: 360px;
     --input-panel-width: 400px;
     /* Unified content width for both input and result panels (600-900px range) */
     --content-width: 800px;
@@ -251,7 +251,7 @@ body {
 
 /* Apply padding to result panel's direct child to prevent flickering */
 .result-panel > .nicegui-column {
-    padding: 1.5rem 2rem;
+    padding: 1.5rem;
     flex: none;  /* Don't participate in flex sizing - use natural content height */
 }
 

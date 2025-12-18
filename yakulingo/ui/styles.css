@@ -434,7 +434,7 @@ body {
     /* M3 tabs have no rounded corners */
     border-radius: 0;
     /* Larger typography for better visibility */
-    font-size: var(--md-sys-typescale-size-md);
+    font-size: var(--md-sys-typescale-size-lg);
     font-weight: 600;
     letter-spacing: 0.1px;
     line-height: 1.5rem;
@@ -1887,7 +1887,7 @@ textarea:focus-visible {
 /* === Nani-style Explanation === */
 /* Nani-style: bg-primary-bg-lighter - softer primary background */
 .nani-explanation {
-    background: rgba(237, 234, 255, 0.5);  /* primary-container at 50% - clean, muted purple */
+    background: #EDEAFF;  /* primary-container - solid color for readability */
     padding: 0.875rem;  /* 14px - matches Nani's p-3.5 */
     margin-top: 0.25rem;
     color: rgba(30, 37, 40, 0.8);  /* on-surface at 80% opacity */

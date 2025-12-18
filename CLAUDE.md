@@ -734,6 +734,27 @@ The `connect()` method performs these steps:
 **Important**: Do NOT call `window.stop()` after connection. This interrupts M365's
 background authentication/session establishment, causing auth dialogs to appear.
 
+### GPT Mode Setting (GPTモード設定)
+
+接続完了時に「GPT-5.2 Think Deeper」モードを自動設定します。
+
+**設定タイミング（UIレイヤーから呼び出し）:**
+
+| シナリオ | 呼び出し元 | GPTモード設定 |
+|----------|-----------|--------------|
+| 早期接続成功 | `_apply_early_connection_or_connect()` | ✓ |
+| 通常接続成功 | `start_edge_and_connect()` | ✓ |
+| 手動ログイン完了 | `_wait_for_login_completion()` | ✓ |
+| バックグラウンド接続完了 | `_on_early_connection_complete()` | ✓ |
+| 再接続成功 | `_reconnect()` | ✗（ユーザーの手動変更を保持） |
+| 再接続→再ログイン | `_wait_for_login_completion()` | ✓（セッションリセット） |
+
+**設計方針:**
+- GPTモードはUIレイヤー（app.py）から`copilot._ensure_gpt_mode()`を呼び出し
+- copilot_handler.pyにフラグを持たず、UIが接続ライフサイクルを管理
+- 再接続時は呼び出さない（ユーザーが手動でモード変更した場合を考慮）
+- 再ログイン時は呼び出す（セッションリセットでモード設定も消えるため）
+
 ### Login Detection Process (ログイン判定プロセス)
 
 Edge起動時に手動ログインが必要かどうかを判定するプロセス：

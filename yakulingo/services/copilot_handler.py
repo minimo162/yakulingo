@@ -1424,9 +1424,7 @@ class CopilotHandler:
         # Apply browser display mode based on settings
         self._apply_browser_display_mode(None)
 
-        # Set GPT mode to "GPT-5.2 Think Deeper" at startup for best translation quality
-        if not self._ensure_gpt_mode():
-            logger.warning("GPT mode switch failed at startup - user can manually switch if needed")
+        # Note: GPT mode is now set from UI layer (app.py) after initial connection
 
     def _cleanup_on_error(self) -> None:
         """Clean up resources when connection fails."""
@@ -1678,25 +1676,15 @@ class CopilotHandler:
             logger.warning("Failed to check Copilot page: %s", e)
             return False
 
-    def _ensure_gpt_mode(self) -> bool:
-        """Ensure GPT-5.2 Think Deeper mode is selected for better translation quality.
+    def _ensure_gpt_mode(self) -> None:
+        """Set GPT-5.2 Think Deeper mode.
 
-        Flow:
-        1. Click #gptModeSwitcher to open menu
-        2. Click "More" button (role=button with aria-haspopup=menu) to open submenu
-        3. Click "GPT-5.2 Think Deeper" menu item (role=menuitem)
-
-        The menu has a 2-level structure:
-        - Level 1: 「自動」「クイック応答」「Think Deeper」
-        - Level 2 (under Think Deeper): 「GPT-5.2 クイック応答」「GPT-5.2 Think Deeper」
-
-        Returns:
-            True if mode is correct or successfully switched, False if switch failed.
-            On failure, logs a warning but does not block translation (user can manually switch).
+        Called from UI layer (app.py) after initial connection.
+        Should only be called once per session to respect user's manual changes.
         """
         if not self._page:
             logger.debug("No page available for GPT mode check")
-            return True  # Don't block on missing page
+            return
 
         try:
             # Wait for GPT mode button to appear (it may load asynchronously)
@@ -1709,18 +1697,18 @@ class CopilotHandler:
             except Exception as wait_err:
                 logger.debug("GPT mode button did not appear within %dms: %s",
                             self.GPT_MODE_BUTTON_WAIT_MS, wait_err)
-                return True  # Don't block if button doesn't appear
+                return
 
             # Check current mode by reading button text
             mode_text_elem = self._page.query_selector(self.GPT_MODE_TEXT_SELECTOR)
             if not mode_text_elem:
                 logger.debug("GPT mode button not found (selector may have changed)")
-                return True  # Don't block if button not found
+                return
 
             current_mode = mode_text_elem.text_content()
             if not current_mode:
                 logger.debug("GPT mode text is empty")
-                return True
+                return
 
             current_mode = current_mode.strip()
             logger.debug("Current GPT mode: %s", current_mode)
@@ -1728,7 +1716,7 @@ class CopilotHandler:
             # Check if already in target mode
             if self.GPT_MODE_TARGET in current_mode:
                 logger.debug("GPT mode is already '%s'", current_mode)
-                return True
+                return
 
             # Need to switch mode
             logger.info("Switching GPT mode from '%s' to '%s'...", current_mode, self.GPT_MODE_TARGET)
@@ -1737,7 +1725,7 @@ class CopilotHandler:
             mode_button = self._page.query_selector(self.GPT_MODE_BUTTON_SELECTOR)
             if not mode_button:
                 logger.warning("GPT mode button not found for clicking")
-                return False
+                return
 
             self._page.evaluate('el => el.click()', mode_button)
             time.sleep(self.GPT_MODE_MENU_WAIT)
@@ -1757,7 +1745,7 @@ class CopilotHandler:
             if not more_button:
                 logger.warning("'More' button not found in menu")
                 self._close_menu_safely()
-                return False
+                return
 
             self._page.evaluate('el => el.click()', more_button)
             time.sleep(self.GPT_MODE_MENU_WAIT)
@@ -1782,7 +1770,7 @@ class CopilotHandler:
                 logger.warning("Target mode '%s' not found in submenu. Available items: %s",
                               self.GPT_MODE_TARGET, available_items)
                 self._close_menu_safely()
-                return False
+                return
 
             self._page.evaluate('el => el.click()', target_item)
             time.sleep(self.GPT_MODE_MENU_WAIT)
@@ -1793,17 +1781,12 @@ class CopilotHandler:
                 new_mode = mode_text_elem.text_content()
                 if new_mode and self.GPT_MODE_TARGET in new_mode:
                     logger.info("Successfully switched GPT mode to '%s'", new_mode.strip())
-                    return True
                 else:
                     logger.warning("GPT mode switch may have failed. Current mode: %s", new_mode)
-                    return False
-
-            return True
 
         except Exception as e:
             logger.warning("Failed to check/switch GPT mode: %s", e)
             # Don't block translation on GPT mode errors - user can manually switch
-            return True
 
     def _close_menu_safely(self) -> None:
         """Close any open menu by pressing Escape."""

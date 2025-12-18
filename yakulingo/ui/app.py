@@ -1154,6 +1154,10 @@ class YakuLingoApp:
                                 # Connection succeeded - update UI state
                                 self.state.copilot_ready = True
                                 self.state.connection_state = ConnectionState.CONNECTED
+                                # Set GPT mode in background (only on initial connection)
+                                asyncio.create_task(
+                                    asyncio.to_thread(self.copilot._ensure_gpt_mode)
+                                )
                                 # Schedule UI refresh on main thread
                                 if self._client is not None:
                                     try:
@@ -1182,6 +1186,8 @@ class YakuLingoApp:
                        _time_module.perf_counter() - _t_start)
             self.state.copilot_ready = True
             self._refresh_status()
+            # Set GPT mode (only on initial connection)
+            await asyncio.to_thread(self.copilot._ensure_gpt_mode)
             await self._on_browser_ready(bring_to_front=False)
         elif self._early_connection_result is False:
             # Early connection failed - update UI and check if login needed
@@ -1225,6 +1231,8 @@ class YakuLingoApp:
             if success:
                 self.state.copilot_ready = True
                 self._refresh_status()
+                # Set GPT mode (only on initial connection)
+                await asyncio.to_thread(self.copilot._ensure_gpt_mode)
                 # Notify user without changing window z-order to avoid flicker
                 await self._on_browser_ready(bring_to_front=False)
             else:
@@ -1331,6 +1339,9 @@ class YakuLingoApp:
 
                     # ページの読み込み完了を待機（3秒）
                     await asyncio.to_thread(self.copilot.wait_for_page_load)
+
+                    # Set GPT mode (only on initial connection after login)
+                    await asyncio.to_thread(self.copilot._ensure_gpt_mode)
 
                     # ページ読み込み待機完了 → 接続状態を更新
                     logger.info("Login completed, updating connection state")

@@ -5,6 +5,61 @@
 
 ---
 
+## ★★★ 記号変換ルール（英訳時）- 最優先 ★★★
+
+**【絶対禁止】** 以下の記号は英訳に**一切使用してはいけません**。
+この規則は他のすべての規則より優先されます。簡潔さのために記号を使うことは禁止です。
+
+### 禁止記号と必須の代替表現
+
+| 禁止記号 | 必ずこう書く |
+|----------|--------------|
+| > | more than, exceeding, over |
+| < | less than, under, below |
+| → | leads to, results in, which enhances |
+| ↑ | increased, up, higher |
+| ↓ | decreased, down, lower |
+| ~ | approximately, about |
+| ≧ ≥ | or more, at least |
+| ≦ ≤ | or less, at most |
+
+### 禁止パターンの具体例
+
+**以下の表現は絶対に使用禁止です：**
+
+| ✗ 禁止（使ってはいけない） | ✓ 正解（必ずこう書く） |
+|---------------------------|----------------------|
+| >3 months | more than 3 months, exceeding 3 months |
+| >4 yrs | more than 4 years |
+| deposits >3 months | deposits exceeding 3 months |
+| term >4 yrs | term of more than 4 years |
+| avg remaining >4 yrs | average remaining term exceeding 4 years |
+| +3k vs prior | 3k higher than prior outlook |
+| staggered repayment → stronger stability | staggered repayment, which enhances stability |
+
+### 比較表現の正しい書き方
+
+| 日本語 | ✓ 正解 | ✗ 禁止 |
+|--------|--------|--------|
+| 3か月超 | more than 3 months / exceeding 3 months | >3 months |
+| 4年超 | more than 4 years / exceeding 4 years | >4 yrs |
+| 3か月以上 | 3 months or more | ≥3 months, >3 months |
+| 100万円未満 | less than 1 million yen | <1 million |
+| 前回見通し比+3千台 | 3k units higher than prior outlook | +3k vs prior |
+
+### 許可される記号
+- % (パーセント)
+- & (and)
+- / (per, または)
+- # (番号)
+- @ (アットマーク)
+
+**注意**: 「+」は「追加」の意味では使えますが、「比較・増減」の意味では使用禁止です。
+- ✓ OK: "added +2 features" （機能追加）
+- ✗ NG: "+3k vs prior" （比較）→ "3k higher than prior"
+
+---
+
 ### 数値表記ルール（日本語 → 英語）
 
 **最重要**: 兆・億は全て「oku」に統一する。1兆 = 10,000億として計算する。
@@ -45,60 +100,6 @@
 | oku | 億 | 4,500 oku → 4,500億、22,385 oku → 2兆2,385億 |
 | k | 千または000 | 12k → 12,000 |
 | () | ▲ | (50) → ▲50 |
-
----
-
-### 記号変換ルール（英訳時）【最優先】
-
-**絶対禁止**: 以下の記号は英訳に一切使用してはいけません。
-簡潔さより記号禁止が優先です。記号を使わず、必ず英単語で表現してください。
-
-#### 禁止記号一覧
-
-| 禁止記号 | 代替表現 |
-|----------|----------|
-| > | more than, exceeding, over, longer than |
-| < | less than, under, below, shorter than |
-| → | leads to, results in, which provides, enabling |
-| ↑ | increased, up, higher, grew |
-| ↓ | decreased, down, lower, declined |
-| ~ | approximately, about, around |
-| = | equals, is, amounts to |
-| ※ | Note: |
-| × | times, multiplied by |
-| ○ | yes, applicable, available |
-| ☓ | no, not applicable, unavailable |
-
-#### 変換例（正解と禁止パターン）
-
-**期間・数量の比較表現**:
-| 日本語 | ✓ 正解 | ✗ 禁止 |
-|--------|--------|--------|
-| 3か月超の預金 | deposits with terms exceeding 3 months | >3-month deposits |
-| 4年超の残存期間 | remaining term of more than 4 years | remaining >4 yrs |
-| 3か月以上 | 3 months or more | >3 months, ≥3 months |
-| 100万円未満 | less than 1 million yen | <1 million yen |
-
-**矢印の変換**:
-| 日本語 | ✓ 正解 | ✗ 禁止 |
-|--------|--------|--------|
-| 分散返済→安定性向上 | staggered repayment, which enhances stability | staggered repayment → stronger stability |
-| A→B | A leads to B, A results in B | A → B |
-| 売上↑ | Sales increased | Sales ↑ |
-| コスト↓ | Costs decreased | Costs ↓ |
-
-**形容詞として使う場合も禁止**:
-- ✗ `>3-month deposit` → ✓ `deposits exceeding 3 months` または `deposits with terms over 3 months`
-- ✗ `>4 yrs remaining` → ✓ `more than 4 years remaining`
-- ✗ `~100 oku` → ✓ `approximately 100 oku`
-
-#### 許可される記号
-- & (and の代わり)
-- % (パーセント)
-- / (または、per)
-- + (プラス、追加)
-- # (番号)
-- @ (アットマーク)
 
 ---
 

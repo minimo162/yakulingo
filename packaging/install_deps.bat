@@ -302,36 +302,24 @@ if !PADDLE_ERROR! neq 0 (
 :: ============================================================
 echo.
 echo [6/6] Pre-compiling Python bytecode...
-echo [INFO] This may take a few minutes on first run...
+echo [INFO] This may take 3-5 minutes...
 
-:: Compile yakulingo package
-.venv\Scripts\python.exe -m compileall -q yakulingo
+:: Compile all site-packages in parallel (-j 0 = use all CPUs)
+:: This is critical for fast first launch - compiles all transitive dependencies
+echo [INFO] Pre-compiling all site-packages (parallel)...
+.venv\Scripts\python.exe -m compileall -q -j 0 .venv\Lib\site-packages 2>nul
 if errorlevel 1 (
-    echo [WARNING] Some yakulingo bytecode compilation failed, but this is not critical.
+    echo [WARNING] Some bytecode compilation failed, but this is not critical.
 )
 
-:: Compile NiceGUI and its dependencies (critical for fast startup)
-echo [INFO] Pre-compiling NiceGUI and dependencies...
-.venv\Scripts\python.exe -m compileall -q .venv\Lib\site-packages\nicegui 2>nul
-.venv\Scripts\python.exe -m compileall -q .venv\Lib\site-packages\fastapi 2>nul
-.venv\Scripts\python.exe -m compileall -q .venv\Lib\site-packages\uvicorn 2>nul
-.venv\Scripts\python.exe -m compileall -q .venv\Lib\site-packages\starlette 2>nul
-.venv\Scripts\python.exe -m compileall -q .venv\Lib\site-packages\pydantic 2>nul
+:: Compile yakulingo package
+echo [INFO] Pre-compiling yakulingo package...
+.venv\Scripts\python.exe -m compileall -q -j 0 yakulingo 2>nul
 
-:: Compile Playwright
-echo [INFO] Pre-compiling Playwright...
-.venv\Scripts\python.exe -m compileall -q .venv\Lib\site-packages\playwright 2>nul
-
-:: Compile pywebview
-echo [INFO] Pre-compiling pywebview...
-.venv\Scripts\python.exe -m compileall -q .venv\Lib\site-packages\webview 2>nul
-
-echo [INFO] Pre-importing modules for faster startup...
-:: Use PowerShell to run module imports (avoids batch quoting issues)
-powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-    "$script = 'import nicegui; import pywebview; from yakulingo.ui import app; from yakulingo.services import translation_service; print(''[OK] Core modules imported.'')';" ^
-    "& '.venv\Scripts\python.exe' -c $script 2>$null;" ^
-    "exit $LASTEXITCODE"
+:: Warm up module cache by actually importing modules
+:: This initializes Python's internal caches beyond just .pyc files
+echo [INFO] Warming up module cache (takes ~30-60 seconds)...
+.venv\Scripts\python.exe -c "import nicegui; from nicegui import ui, app, Client, events; import nicegui.elements; import fastapi; import uvicorn; import starlette; import pydantic; import httptools; import anyio; import h11; import watchfiles; import webview; from yakulingo.ui import app; from yakulingo.services import translation_service; print('[OK] Module cache warmed up.')" 2>nul
 set IMPORT_ERROR=!errorlevel!
 if !IMPORT_ERROR! neq 0 (
     echo [WARNING] Some module imports failed. This is usually not critical.

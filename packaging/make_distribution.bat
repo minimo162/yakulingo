@@ -106,15 +106,14 @@ del /q ".venv\pyvenv.cfg.tmp" 2>nul
 :: Pre-compile Python bytecode for faster first launch
 :: This ensures .pyc files are included in the distribution
 :: ============================================================
-echo        Pre-compiling Python bytecode...
-.venv\Scripts\python.exe -m compileall -q yakulingo 2>nul
-.venv\Scripts\python.exe -m compileall -q .venv\Lib\site-packages\nicegui 2>nul
-.venv\Scripts\python.exe -m compileall -q .venv\Lib\site-packages\fastapi 2>nul
-.venv\Scripts\python.exe -m compileall -q .venv\Lib\site-packages\uvicorn 2>nul
-.venv\Scripts\python.exe -m compileall -q .venv\Lib\site-packages\starlette 2>nul
-.venv\Scripts\python.exe -m compileall -q .venv\Lib\site-packages\pydantic 2>nul
-.venv\Scripts\python.exe -m compileall -q .venv\Lib\site-packages\playwright 2>nul
-.venv\Scripts\python.exe -m compileall -q .venv\Lib\site-packages\webview 2>nul
+echo        Pre-compiling Python bytecode (parallel)...
+:: Compile all site-packages in parallel (-j 0 = use all CPUs)
+:: This is critical for fast first launch - compiles all transitive dependencies
+.venv\Scripts\python.exe -m compileall -q -j 0 .venv\Lib\site-packages 2>nul
+.venv\Scripts\python.exe -m compileall -q -j 0 yakulingo 2>nul
+:: Warm up module cache to initialize Python's internal caches
+echo        Warming up module cache...
+.venv\Scripts\python.exe -c "import nicegui; from nicegui import ui, app, Client, events; import nicegui.elements; import fastapi; import uvicorn; import starlette; import pydantic; import httptools; import anyio; import h11; import watchfiles; import webview; from yakulingo.ui import app; from yakulingo.services import translation_service" 2>nul
 
 :: Fix pyvenv.cfg - extract version and rewrite
 set "PYTHON_VERSION="

@@ -1378,7 +1378,7 @@ textarea:focus-visible {
     justify-content: flex-start;
     align-items: center;  /* Center children horizontally */
     /* Adjust left padding to compensate for 100% vs 100vw difference */
-    padding: 1rem 1.5rem 1rem 2.5rem;
+    padding: 1rem 1.5rem 1rem 2rem;
     padding-top: 1.5rem;
     box-sizing: border-box;  /* Include padding in width */
 }

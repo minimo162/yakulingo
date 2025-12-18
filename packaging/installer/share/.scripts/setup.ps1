@@ -947,6 +947,7 @@ function Invoke-Setup {
                             "bilingual_output",
                             "export_glossary",
                             "use_bundled_glossary",
+                            "embed_glossary_in_prompt",
                             # UI状態（自動保存）
                             "last_tab",
                             "onboarding_completed",

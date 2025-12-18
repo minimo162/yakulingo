@@ -6282,12 +6282,18 @@ class CopilotHandler:
 
         # Thread will exit on next message loop iteration
         # Don't wait too long as we may be in shutdown
-        if hasattr(self, '_window_sync_thread') and self._window_sync_thread:
+        thread = getattr(self, '_window_sync_thread', None)
+        if thread is not None:
             try:
-                self._window_sync_thread.join(timeout=1.0)
+                thread.join(timeout=1.0)
+                if thread.is_alive():
+                    logger.debug("Window sync thread did not stop within timeout")
             except Exception:
                 pass
             self._window_sync_thread = None
+
+        # Clear callback reference
+        self._winevent_callback = None
 
     def _window_sync_thread_func(self) -> None:
         """Thread function for window synchronization.
@@ -6316,8 +6322,9 @@ class CopilotHandler:
             wintypes.DWORD,   # dwmsEventTime
         )
 
-        # Store callback reference to prevent garbage collection
-        callback = WINEVENTPROC(self._window_event_callback)
+        # Store callback reference in self to prevent garbage collection
+        # (must be kept alive while the hook is active)
+        self._winevent_callback = WINEVENTPROC(self._window_event_callback)
 
         # EVENT_SYSTEM_FOREGROUND: Sent when a window becomes foreground
         EVENT_SYSTEM_FOREGROUND = 0x0003
@@ -6329,7 +6336,7 @@ class CopilotHandler:
             EVENT_SYSTEM_FOREGROUND,  # eventMin
             EVENT_SYSTEM_FOREGROUND,  # eventMax
             None,                      # hmodWinEventProc (NULL for out-of-context)
-            callback,                  # pfnWinEventProc
+            self._winevent_callback,   # pfnWinEventProc
             0,                         # idProcess (0 = all processes)
             0,                         # idThread (0 = all threads)
             WINEVENT_OUTOFCONTEXT,     # dwFlags

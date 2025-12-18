@@ -3701,7 +3701,7 @@ def _detect_display_settings(
     SIDE_PANEL_GAP = 10
 
     # Panel ratios based on 1800px window width
-    SIDEBAR_RATIO = 250 / 1800  # 0.139
+    SIDEBAR_RATIO = 350 / 1800  # 0.194
     INPUT_PANEL_RATIO = 400 / 1800  # 0.222
 
     # Minimum sizes to prevent layout breaking on smaller screens
@@ -4398,7 +4398,7 @@ def run_app(
 (function() {
     // Constants matching Python calculation (from _detect_display_settings)
     const BASE_FONT_SIZE = 16;  // Fixed font size (no dynamic scaling)
-    const SIDEBAR_RATIO = 250 / 1800;
+    const SIDEBAR_RATIO = 350 / 1800;
     const INPUT_PANEL_RATIO = 400 / 1800;
     const MIN_SIDEBAR_WIDTH = 220;  // Lowered for smaller screens
     const MIN_INPUT_PANEL_WIDTH = 320;  // Lowered for smaller screens

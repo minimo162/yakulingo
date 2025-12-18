@@ -115,7 +115,7 @@
 
     /* Panel widths are calculated dynamically by JavaScript based on window.innerWidth.
        These defaults are only visible until JS executes (typically < 100ms). */
-    --sidebar-width: 260px;
+    --sidebar-width: 280px;
     --input-panel-width: 400px;
     /* Unified content width for both input and result panels (600-900px range) */
     --content-width: 800px;
@@ -255,10 +255,9 @@ body {
     flex: none;  /* Don't participate in flex sizing - use natural content height */
 }
 
-/* Result panel inner content - dynamic width based on monitor resolution, centered */
+/* Result panel inner content - full width */
 .result-panel > * {
-    width: var(--content-width);
-    max-width: 100%;
+    width: 100%;
 }
 
 /* Ensure the nicegui-column in result panel stretches children to fill width */
@@ -1392,9 +1391,8 @@ textarea:focus-visible {
     justify-content: flex-start;  /* Align card to top */
 }
 
-/* Card fits content, centered horizontally */
+/* Card fits content, full width */
 .main-area:not(.has-results) .input-panel .main-card {
-    max-width: var(--content-width);
     width: 100%;
     display: flex;
     flex-direction: column;

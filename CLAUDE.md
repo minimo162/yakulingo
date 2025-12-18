@@ -2622,7 +2622,8 @@ Based on recent commits:
   - **Examples**:
     - 1920px screen → 955px app + 10px gap + 955px browser
     - 1600px screen → 795px app + 10px gap + 795px browser
-  - **Panel layout**: Translation result panel elements aligned to 2/3 width with center alignment
+  - **Sidebar ratio**: `SIDEBAR_RATIO = 350 / 1800` (19.4%), `MIN_SIDEBAR_WIDTH = 220px`
+  - **Content width**: 横幅制限撤廃（`--content-width`による制限を削除、メインエリアいっぱいに表示）
 - **Global Hotkey (Ctrl+Alt+J)**:
   - **Quick translation**: Select text in any app, press Ctrl+Alt+J to translate
   - **Character limit**: 5,000 chars max for text translation

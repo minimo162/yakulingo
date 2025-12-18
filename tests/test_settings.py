@@ -1,10 +1,11 @@
 # tests/test_settings.py
 """Tests for yakulingo.config.settings"""
 
+import json
 import tempfile
 from pathlib import Path
 
-from yakulingo.config.settings import AppSettings
+from yakulingo.config.settings import AppSettings, USER_SETTINGS_KEYS
 
 
 class TestAppSettings:
@@ -24,27 +25,40 @@ class TestAppSettings:
         assert settings.github_repo_name == "yakulingo"
 
     def test_save_and_load(self):
+        """Test save/load with the separation model (template + user_settings)"""
         with tempfile.TemporaryDirectory() as tmpdir:
-            settings_path = Path(tmpdir) / "settings.json"
+            config_dir = Path(tmpdir)
+            settings_path = config_dir / "settings.json"  # Used as base path
 
-            # Create custom settings
+            # Create template with default values
+            template_path = config_dir / "settings.template.json"
+            template_path.write_text(json.dumps({
+                "reference_files": ["glossary.csv"],
+                "max_chars_per_batch": 4000,
+                "last_tab": "text",
+            }))
+
+            # Create custom settings (only USER_SETTINGS_KEYS are saved)
             settings = AppSettings(
-                reference_files=["custom.csv", "terms.xlsx"],
                 last_tab="file",
-                max_chars_per_batch=5000,
-                auto_update_enabled=False,
+                translation_style="minimal",
+                bilingual_output=True,
             )
 
-            # Save
+            # Save - writes to user_settings.json
             settings.save(settings_path)
-            assert settings_path.exists()
 
-            # Load
+            user_settings_path = config_dir / "user_settings.json"
+            assert user_settings_path.exists()
+
+            # Load - reads from template + user_settings
             loaded = AppSettings.load(settings_path)
-            assert loaded.reference_files == ["custom.csv", "terms.xlsx"]
+            # USER_SETTINGS_KEYS are loaded from user_settings.json
             assert loaded.last_tab == "file"
-            assert loaded.max_chars_per_batch == 5000
-            assert loaded.auto_update_enabled is False
+            assert loaded.translation_style == "minimal"
+            assert loaded.bilingual_output is True
+            # Non-USER_SETTINGS are loaded from template
+            assert loaded.max_chars_per_batch == 4000
 
     def test_load_nonexistent_file(self):
         settings = AppSettings.load(Path("/nonexistent/path/settings.json"))
@@ -119,13 +133,16 @@ class TestAppSettings:
         assert output_dir == Path("/custom/output")
 
     def test_save_creates_parent_directories(self):
+        """Test that save creates parent directories for user_settings.json"""
         with tempfile.TemporaryDirectory() as tmpdir:
             settings_path = Path(tmpdir) / "subdir" / "deep" / "settings.json"
 
             settings = AppSettings()
             settings.save(settings_path)
 
-            assert settings_path.exists()
+            # user_settings.json should be created in the parent directory
+            user_settings_path = settings_path.parent / "user_settings.json"
+            assert user_settings_path.exists()
 
     def test_auto_update_settings(self):
         """Test auto-update related settings"""
@@ -148,42 +165,56 @@ class TestAppSettings:
     # NOTE: window_width/window_height tests removed - these settings are deprecated
     # Window size is now calculated dynamically in _detect_display_settings()
 
-    def test_save_and_load_preserves_all_fields(self):
-        """Test that all fields are preserved through save/load cycle"""
+    def test_save_and_load_preserves_user_settings(self):
+        """Test that USER_SETTINGS_KEYS are preserved through save/load cycle"""
         with tempfile.TemporaryDirectory() as tmpdir:
-            settings_path = Path(tmpdir) / "settings.json"
+            config_dir = Path(tmpdir)
+            settings_path = config_dir / "settings.json"
 
+            # Create template with non-USER_SETTINGS defaults
+            template_path = config_dir / "settings.template.json"
+            template_path.write_text(json.dumps({
+                "reference_files": ["glossary.csv"],
+                "max_chars_per_batch": 4000,
+                "request_timeout": 600,
+            }))
+
+            # Create settings with USER_SETTINGS_KEYS values
             original = AppSettings(
-                reference_files=["a.csv", "b.xlsx"],
-                output_directory="/out",
                 last_tab="file",
-                # NOTE: window_width/window_height removed - now dynamically calculated
-                max_chars_per_batch=5000,
-                request_timeout=60,
-                max_retries=5,
-                auto_update_enabled=False,
-                auto_update_check_interval=7200,
-                github_repo_owner="owner",
-                github_repo_name="repo",
-                last_update_check="2025-01-01",
-                skipped_version="1.0.0",
+                translation_style="minimal",
+                text_translation_style="standard",
+                font_jp_to_en="Times New Roman",
+                font_en_to_jp="Meiryo",
+                font_size_adjustment_jp_to_en=-1.5,
+                bilingual_output=True,
+                export_glossary=True,
+                use_bundled_glossary=False,
+                embed_glossary_in_prompt=False,
+                browser_display_mode="minimized",
+                skipped_version="2.0.0",
             )
 
             original.save(settings_path)
             loaded = AppSettings.load(settings_path)
 
-            assert loaded.reference_files == original.reference_files
-            assert loaded.output_directory == original.output_directory
+            # USER_SETTINGS_KEYS should be preserved
             assert loaded.last_tab == original.last_tab
-            assert loaded.max_chars_per_batch == original.max_chars_per_batch
-            assert loaded.request_timeout == original.request_timeout
-            assert loaded.max_retries == original.max_retries
-            assert loaded.auto_update_enabled == original.auto_update_enabled
-            assert loaded.auto_update_check_interval == original.auto_update_check_interval
-            assert loaded.github_repo_owner == original.github_repo_owner
-            assert loaded.github_repo_name == original.github_repo_name
-            assert loaded.last_update_check == original.last_update_check
+            assert loaded.translation_style == original.translation_style
+            assert loaded.text_translation_style == original.text_translation_style
+            assert loaded.font_jp_to_en == original.font_jp_to_en
+            assert loaded.font_en_to_jp == original.font_en_to_jp
+            assert loaded.font_size_adjustment_jp_to_en == original.font_size_adjustment_jp_to_en
+            assert loaded.bilingual_output == original.bilingual_output
+            assert loaded.export_glossary == original.export_glossary
+            assert loaded.use_bundled_glossary == original.use_bundled_glossary
+            assert loaded.embed_glossary_in_prompt == original.embed_glossary_in_prompt
+            assert loaded.browser_display_mode == original.browser_display_mode
             assert loaded.skipped_version == original.skipped_version
+
+            # Non-USER_SETTINGS should come from template
+            assert loaded.max_chars_per_batch == 4000
+            assert loaded.request_timeout == 600
 
 
 # --- Edge Cases in Settings ---
@@ -204,17 +235,27 @@ class TestSettingsEdgeCases:
             assert settings.reference_files == []  # Empty by default
 
     def test_load_partial_json(self):
-        """Load settings with only some fields specified"""
+        """Load settings with only some fields in template and user_settings"""
         with tempfile.TemporaryDirectory() as tmpdir:
-            settings_path = Path(tmpdir) / "settings.json"
-            settings_path.write_text('{"last_tab": "file", "max_chars_per_batch": 5000}')
+            config_dir = Path(tmpdir)
+            settings_path = config_dir / "settings.json"
+
+            # Create template with some fields
+            template_path = config_dir / "settings.template.json"
+            template_path.write_text('{"max_chars_per_batch": 5000}')
+
+            # Create user_settings with USER_SETTINGS_KEYS
+            user_settings_path = config_dir / "user_settings.json"
+            user_settings_path.write_text('{"last_tab": "file"}')
 
             settings = AppSettings.load(settings_path)
 
+            # USER_SETTINGS from user_settings.json
             assert settings.last_tab == "file"
+            # Non-USER_SETTINGS from template
             assert settings.max_chars_per_batch == 5000
-            # Other fields use defaults
-            assert settings.request_timeout == 600  # 10 minutes for large translations
+            # Other fields use dataclass defaults
+            assert settings.request_timeout == 600
 
     def test_load_with_extra_fields(self):
         """Load settings with unknown extra fields"""
@@ -254,12 +295,17 @@ class TestSettingsEdgeCases:
             assert settings.output_directory is None
 
     def test_load_with_unicode_paths(self):
-        """Load settings with Unicode paths"""
+        """Load settings with Unicode paths from template"""
         with tempfile.TemporaryDirectory() as tmpdir:
-            settings_path = Path(tmpdir) / "settings.json"
-            settings_path.write_text(
+            config_dir = Path(tmpdir)
+            settings_path = config_dir / "settings.json"
+
+            # Create template with Unicode paths
+            template_path = config_dir / "settings.template.json"
+            template_path.write_text(
                 '{"output_directory": "/Users/日本語/出力フォルダ", '
-                '"reference_files": ["用語集.csv", "참조.xlsx"]}'
+                '"reference_files": ["用語集.csv", "참조.xlsx"]}',
+                encoding='utf-8'
             )
 
             settings = AppSettings.load(settings_path)
@@ -268,19 +314,27 @@ class TestSettingsEdgeCases:
             assert "用語集.csv" in settings.reference_files
 
     def test_save_with_unicode_paths(self):
-        """Save settings with Unicode paths"""
+        """Save settings with Unicode values in USER_SETTINGS_KEYS"""
         with tempfile.TemporaryDirectory() as tmpdir:
-            settings_path = Path(tmpdir) / "settings.json"
+            config_dir = Path(tmpdir)
+            settings_path = config_dir / "settings.json"
 
+            # Create template
+            template_path = config_dir / "settings.template.json"
+            template_path.write_text('{}')
+
+            # Save settings with Unicode in USER_SETTINGS_KEYS
+            # Note: font names can contain Unicode characters
             settings = AppSettings(
-                output_directory="/Users/日本語/出力",
-                reference_files=["用語集.csv"],
+                font_jp_to_en="游ゴシック",  # Japanese font name
+                font_en_to_jp="ヒラギノ角ゴ",  # Japanese font name
             )
             settings.save(settings_path)
 
             # Read back and verify
             loaded = AppSettings.load(settings_path)
-            assert loaded.output_directory == "/Users/日本語/出力"
+            assert loaded.font_jp_to_en == "游ゴシック"
+            assert loaded.font_en_to_jp == "ヒラギノ角ゴ"
 
     def test_load_corrupted_json_partial(self):
         """Load settings from partially corrupted JSON"""
@@ -319,7 +373,9 @@ class TestSettingsEdgeCases:
 
             # This should work since directory exists
             settings.save(settings_path)
-            assert settings_path.exists()
+            # save() writes to user_settings.json
+            user_settings_path = subdir / "user_settings.json"
+            assert user_settings_path.exists()
 
     def test_get_reference_file_paths_with_empty_list(self):
         """Get reference file paths with empty list"""
@@ -437,21 +493,123 @@ class TestSettingsPathNormalization:
         assert output_dir is not None
 
 
+class TestSettingsSeparation:
+    """Test settings separation model (template + user_settings)"""
+
+    def test_template_only_load(self):
+        """Load settings with only template file (no user_settings)"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_dir = Path(tmpdir)
+            settings_path = config_dir / "settings.json"
+
+            # Create template only
+            template_path = config_dir / "settings.template.json"
+            template_path.write_text(json.dumps({
+                "reference_files": ["glossary.csv"],
+                "max_chars_per_batch": 6000,
+                "last_tab": "file",
+            }))
+
+            settings = AppSettings.load(settings_path)
+
+            # Should load from template
+            assert settings.reference_files == ["glossary.csv"]
+            assert settings.max_chars_per_batch == 6000
+            assert settings.last_tab == "file"
+
+    def test_user_settings_override_template(self):
+        """User settings should override template values for USER_SETTINGS_KEYS"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_dir = Path(tmpdir)
+            settings_path = config_dir / "settings.json"
+
+            # Template with default values
+            template_path = config_dir / "settings.template.json"
+            template_path.write_text(json.dumps({
+                "last_tab": "text",
+                "translation_style": "standard",
+            }))
+
+            # User settings override
+            user_settings_path = config_dir / "user_settings.json"
+            user_settings_path.write_text(json.dumps({
+                "last_tab": "file",
+                "translation_style": "minimal",
+            }))
+
+            settings = AppSettings.load(settings_path)
+
+            # User settings should override template
+            assert settings.last_tab == "file"
+            assert settings.translation_style == "minimal"
+
+    def test_save_only_saves_user_settings_keys(self):
+        """Save should only write USER_SETTINGS_KEYS to user_settings.json"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_dir = Path(tmpdir)
+            settings_path = config_dir / "settings.json"
+
+            settings = AppSettings(
+                reference_files=["custom.csv"],  # NOT in USER_SETTINGS_KEYS
+                max_chars_per_batch=7000,        # NOT in USER_SETTINGS_KEYS
+                last_tab="file",                 # IN USER_SETTINGS_KEYS
+                translation_style="minimal",     # IN USER_SETTINGS_KEYS
+            )
+
+            settings.save(settings_path)
+
+            # Read the saved user_settings.json directly
+            user_settings_path = config_dir / "user_settings.json"
+            with open(user_settings_path) as f:
+                saved = json.load(f)
+
+            # Only USER_SETTINGS_KEYS should be saved
+            assert "last_tab" in saved
+            assert "translation_style" in saved
+            assert saved["last_tab"] == "file"
+            assert saved["translation_style"] == "minimal"
+
+            # Non-USER_SETTINGS should NOT be saved
+            assert "reference_files" not in saved
+            assert "max_chars_per_batch" not in saved
+
+    def test_user_settings_keys_constant(self):
+        """Verify USER_SETTINGS_KEYS contains expected keys"""
+        expected_keys = {
+            "translation_style",
+            "text_translation_style",
+            "font_jp_to_en",
+            "font_en_to_jp",
+            "font_size_adjustment_jp_to_en",
+            "bilingual_output",
+            "export_glossary",
+            "use_bundled_glossary",
+            "embed_glossary_in_prompt",
+            "browser_display_mode",
+            "last_tab",
+            "skipped_version",
+        }
+        assert USER_SETTINGS_KEYS == expected_keys
+
+
 class TestSettingsMigration:
     """Test settings migration from old formats"""
 
     def test_migrate_from_v1_settings(self):
-        """Migrate from v1 settings format (with last_direction)"""
+        """Migrate from legacy settings.json format (v1 with last_direction)"""
         with tempfile.TemporaryDirectory() as tmpdir:
-            settings_path = Path(tmpdir) / "settings.json"
-            # Old v1 format with deprecated fields
+            config_dir = Path(tmpdir)
+            settings_path = config_dir / "settings.json"
+
+            # Legacy settings.json (old v1 format with deprecated fields)
+            # No template or user_settings.json exists - should fall back to legacy
             settings_path.write_text('''
             {
                 "last_direction": "jp_to_en",
                 "last_tab": "text",
                 "window_width": 900,
                 "window_height": 700,
-                "max_chars_per_batch": 5000
+                "translation_style": "minimal"
             }
             ''')
 
@@ -460,21 +618,28 @@ class TestSettingsMigration:
             # Should load successfully, ignoring deprecated fields
             # last_direction, window_width, window_height are all deprecated
             assert settings.last_tab == "text"
-            assert settings.max_chars_per_batch == 5000
+            # USER_SETTINGS_KEYS should be loaded from legacy
+            assert settings.translation_style == "minimal"
 
     def test_handle_future_version_settings(self):
         """Handle settings from a future version with new fields"""
         with tempfile.TemporaryDirectory() as tmpdir:
-            settings_path = Path(tmpdir) / "settings.json"
-            # Simulated future version with new fields
-            settings_path.write_text('''
+            config_dir = Path(tmpdir)
+            settings_path = config_dir / "settings.json"
+
+            # Simulated future version template with new unknown fields
+            template_path = config_dir / "settings.template.json"
+            template_path.write_text('''
             {
-                "last_tab": "file",
                 "future_feature_enabled": true,
                 "advanced_mode": {"nested": "value"},
                 "new_list_field": [1, 2, 3]
             }
             ''')
+
+            # User settings with known USER_SETTINGS_KEYS
+            user_settings_path = config_dir / "user_settings.json"
+            user_settings_path.write_text('{"last_tab": "file"}')
 
             settings = AppSettings.load(settings_path)
 

@@ -651,8 +651,9 @@ function Invoke-Setup {
 
     # Backup user data files before removing the directory
     # Note: glossary.csv is handled separately (compare & backup to Desktop if changed)
+    # Note: settings.json は廃止、user_settings.json にユーザー設定のみ保存
     $BackupFiles = @()
-    $UserDataFiles = @("config\settings.json")
+    $UserDataFiles = @("config\user_settings.json")
     $script:GlossaryBackupPath = $null  # Will be set if glossary was backed up
     $BackupDir = Join-Path $env:TEMP "YakuLingo_Backup_$(Get-Date -Format 'yyyyMMddHHmmss')"
 
@@ -1026,44 +1027,10 @@ function Invoke-Setup {
                     New-Item -ItemType Directory -Path $restoreParent -Force | Out-Null
                 }
 
-                if ($file -eq "config\settings.json") {
-                    # 設定ファイルは完全上書き（旧設定はバックアップとして保存）
-                    # 削除された機能の設定が残る問題を防ぐため、マージではなく上書きを使用
-                    $newSettingsPath = $restorePath
-                    $templateSettingsPath = Join-Path $SetupPath "config\\settings.template.json"
-                    if (-not (Test-Path $newSettingsPath) -and (Test-Path $templateSettingsPath)) {
-                        # settings.json が無い場合はテンプレートを使用
-                        $newSettingsPath = $templateSettingsPath
-                    }
-
-                    if (Test-Path $newSettingsPath) {
-                        # 旧設定をバックアップとして保存（参照用）
-                        $settingsBackupPath = Join-Path $SetupPath "config\settings.backup.json"
-                        try {
-                            Copy-Item -Path $backupPath -Destination $settingsBackupPath -Force
-                            if (-not $GuiMode) {
-                                Write-Host "      Backup: Old settings saved to config\settings.backup.json" -ForegroundColor Gray
-                            }
-                        } catch {
-                            # バックアップ保存に失敗しても続行
-                        }
-                        # 新しい設定をそのまま使用（上書き）
-                        if (-not $GuiMode) {
-                            Write-Host "      Using new settings: $file" -ForegroundColor Gray
-                        }
-                    } else {
-                        # 新しい設定がなければバックアップを復元
-                        Copy-Item -Path $backupPath -Destination $restorePath -Force
-                        if (-not $GuiMode) {
-                            Write-Host "      Restored: $file" -ForegroundColor Gray
-                        }
-                    }
-                } else {
-                    # その他のファイルはそのまま復元
-                    Copy-Item -Path $backupPath -Destination $restorePath -Force
-                    if (-not $GuiMode) {
-                        Write-Host "      Restored: $file" -ForegroundColor Gray
-                    }
+                # user_settings.json はそのまま復元（ユーザー設定を保持）
+                Copy-Item -Path $backupPath -Destination $restorePath -Force
+                if (-not $GuiMode) {
+                    Write-Host "      Restored: $file" -ForegroundColor Gray
                 }
             }
         }

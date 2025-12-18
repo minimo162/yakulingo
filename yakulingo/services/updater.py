@@ -631,7 +631,8 @@ class AutoUpdater:
         "YakuLingo.exe",    # 起動ランチャー
         "README.md",        # ドキュメント
         # Note: glossary.csv はマージ処理で対応（merge_glossary()）
-        # Note: config/settings.json はマージ処理で対応（merge_settings()）
+        # Note: config/settings.template.json はアップデートで上書き（merge_settings()）
+        # Note: config/user_settings.json はユーザー設定（ソースに含まれないため保持）
     ]
 
     def install_update(self, zip_path: Path) -> bool:
@@ -1460,52 +1461,72 @@ def check_for_updates(
 
 def merge_settings(app_dir: Path, source_dir: Path) -> int:
     """
-    設定ファイルを完全上書き（旧設定はバックアップとして保存）
+    設定ファイルの分離方式への移行とテンプレート更新
 
-    削除された機能の設定が残る問題を防ぐため、マージではなく完全上書きを使用。
-    旧設定は config/settings.backup.json として保存され、ユーザーが参照可能。
+    分離方式:
+    - settings.template.json: デフォルト値（開発者が管理、アップデートで更新）
+    - user_settings.json: ユーザーが変更した設定のみ保存（アップデートで保持）
+
+    この関数は:
+    1. settings.template.json を更新（新バージョンのデフォルト値）
+    2. 旧 settings.json から user_settings.json への移行（初回のみ）
 
     Args:
-        app_dir: アプリケーションディレクトリ（ユーザーのsettings.jsonがある場所）
-        source_dir: ソースディレクトリ（新しいsettings.jsonまたはテンプレートがある場所）
+        app_dir: アプリケーションディレクトリ
+        source_dir: ソースディレクトリ（新しい設定テンプレートがある場所）
 
     Returns:
-        int: 変更された設定項目数（正: 追加/変更, 負: 新規作成, 0: 変更なし）
+        int: 1=テンプレート更新, -1=新規作成, 0=変更なし
     """
-    user_settings = app_dir / "config" / "settings.json"
-    backup_settings = app_dir / "config" / "settings.backup.json"
-    # 新しい設定ファイルまたはテンプレートを探す
-    new_settings = source_dir / "config" / "settings.json"
-    if not new_settings.exists():
-        new_settings = source_dir / "config" / "settings.template.json"
+    # ユーザー設定保護対象のキー（settings.pyのUSER_SETTINGS_KEYSと同じ）
+    USER_SETTINGS_KEYS = {
+        "translation_style", "text_translation_style",
+        "font_jp_to_en", "font_en_to_jp", "font_size_adjustment_jp_to_en",
+        "bilingual_output", "export_glossary", "use_bundled_glossary",
+        "embed_glossary_in_prompt", "browser_display_mode",
+        "last_tab", "skipped_version",
+    }
 
-    if not new_settings.exists():
-        logger.info("新しい設定ファイルが見つかりません: %s", new_settings)
+    config_dir = app_dir / "config"
+    template_path = config_dir / "settings.template.json"
+    user_settings_path = config_dir / "user_settings.json"
+    legacy_settings_path = config_dir / "settings.json"
+
+    # 新しいテンプレートを探す
+    new_template = source_dir / "config" / "settings.template.json"
+    if not new_template.exists():
+        new_template = source_dir / "config" / "settings.json"
+
+    if not new_template.exists():
+        logger.info("新しい設定テンプレートが見つかりません: %s", new_template)
         return 0
 
-    # ユーザーの設定が存在しない場合はコピー
-    if not user_settings.exists():
-        user_settings.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(new_settings, user_settings)
-        logger.info("設定ファイルをコピーしました: %s", user_settings)
-        return -1  # 新規作成を示す
+    config_dir.mkdir(parents=True, exist_ok=True)
 
-    # 旧設定をバックアップとして保存（参照用）
-    try:
-        shutil.copy2(user_settings, backup_settings)
-        logger.info("旧設定をバックアップしました: %s", backup_settings)
-    except OSError as e:
-        logger.warning("設定ファイルのバックアップに失敗: %s", e)
+    # 1. 旧 settings.json から user_settings.json への移行（初回のみ）
+    if legacy_settings_path.exists() and not user_settings_path.exists():
+        try:
+            with open(legacy_settings_path, 'r', encoding='utf-8-sig') as f:
+                legacy_data = json.load(f)
+            # ユーザー設定のみ抽出
+            user_data = {k: v for k, v in legacy_data.items() if k in USER_SETTINGS_KEYS}
+            if user_data:
+                with open(user_settings_path, 'w', encoding='utf-8') as f:
+                    json.dump(user_data, f, indent=2, ensure_ascii=False)
+                logger.info("旧設定からユーザー設定を移行しました: %s", user_settings_path)
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning("旧設定の移行に失敗: %s", e)
 
-    # 新しい設定で完全上書き
+    # 2. テンプレートを更新
+    is_new = not template_path.exists()
     try:
-        shutil.copy2(new_settings, user_settings)
-        logger.info("設定ファイルを上書きしました: %s", user_settings)
+        shutil.copy2(new_template, template_path)
+        logger.info("設定テンプレートを更新しました: %s", template_path)
     except OSError as e:
-        logger.warning("設定ファイルの上書きに失敗: %s", e)
+        logger.warning("設定テンプレートの更新に失敗: %s", e)
         return 0
 
-    return 1  # 上書き完了
+    return -1 if is_new else 1
 
 
 def backup_and_update_glossary(app_dir: Path, source_dir: Path) -> Optional[str]:

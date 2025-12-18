@@ -504,7 +504,11 @@ async def _translate_text(self):
 
 ## Configuration
 
-### settings.json structure
+### 設定ファイル構成（分離方式）
+
+設定は2つのファイルに分離されています：
+
+**config/settings.template.json** (デフォルト値、開発者管理):
 ```json
 {
   "reference_files": ["glossary.csv"],
@@ -517,8 +521,10 @@ async def _translate_text(self):
   "export_glossary": false,
   "translation_style": "concise",
   "text_translation_style": "concise",
+  "use_bundled_glossary": true,
+  "embed_glossary_in_prompt": true,
   "font_size_adjustment_jp_to_en": 0.0,
-  "font_size_min": 6.0,
+  "font_size_min": 8.0,
   "font_jp_to_en": "Arial",
   "font_en_to_jp": "MS Pゴシック",
   "ocr_batch_size": 5,
@@ -526,13 +532,24 @@ async def _translate_text(self):
   "ocr_device": "auto",
   "browser_display_mode": "side_panel",
   "auto_update_enabled": true,
-  "auto_update_check_interval": 86400,
+  "auto_update_check_interval": 0,
   "github_repo_owner": "minimo162",
   "github_repo_name": "yakulingo",
   "last_update_check": null,
-  "skipped_version": null,
-  "use_bundled_glossary": false,
-  "embed_glossary_in_prompt": true
+  "skipped_version": null
+}
+```
+
+**config/user_settings.json** (ユーザー設定のみ、自動生成):
+```json
+{
+  "translation_style": "concise",
+  "text_translation_style": "concise",
+  "font_jp_to_en": "Arial",
+  "font_en_to_jp": "MS Pゴシック",
+  "bilingual_output": false,
+  "browser_display_mode": "side_panel",
+  "last_tab": "text"
 }
 ```
 
@@ -964,11 +981,30 @@ The `AutoUpdater` class provides GitHub Releases-based updates:
 - カスタマイズされている場合のみデスクトップに`glossary_backup_YYYYMMDD.csv`としてバックアップ
 - `backup_and_update_glossary()` 関数で実装（`merge_glossary()`は後方互換性のため維持）
 
-**設定ファイル (settings.json):**
-- 完全上書き方式で処理（マージではなく新しい設定で置き換え）
-- 旧設定は `config/settings.backup.json` として保存（ユーザーが参照可能）
-- `merge_settings()` 関数で実装（後方互換性のため関数名は維持）
-- 削除された機能の設定が残る問題を防ぐために完全上書きを採用
+**設定ファイル（分離方式）:**
+
+設定は2つのファイルに分離されます：
+- `settings.template.json`: デフォルト値（開発者が管理、アップデートで上書き）
+- `user_settings.json`: ユーザーが変更した設定のみ保存（アップデートで保持）
+
+起動時の動作：
+1. `settings.template.json` からデフォルト値を読み込み
+2. `user_settings.json` でユーザー設定を上書き
+3. 旧 `settings.json` が存在する場合は自動で `user_settings.json` に移行
+
+**ユーザー設定として保存されるキー (USER_SETTINGS_KEYS):**
+
+| カテゴリ | 設定 | 変更方法 |
+|---------|------|---------|
+| 翻訳スタイル | `translation_style`, `text_translation_style` | 設定ダイアログ |
+| フォント | `font_jp_to_en`, `font_en_to_jp`, `font_size_adjustment_jp_to_en` | 設定ダイアログ |
+| 出力オプション | `bilingual_output`, `export_glossary`, `use_bundled_glossary`, `embed_glossary_in_prompt` | ファイル翻訳パネル |
+| ブラウザ表示 | `browser_display_mode` | 設定ダイアログ |
+| UI状態 | `last_tab` | 自動保存 |
+| 更新設定 | `skipped_version` | 更新ダイアログ |
+
+その他の設定（`max_chars_per_batch`, `request_timeout`, `ocr_dpi`等）はテンプレートで管理され、
+アップデート時に開発者が自由に変更可能
 
 ## Common Tasks for AI Assistants
 

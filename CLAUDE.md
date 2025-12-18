@@ -2093,6 +2093,15 @@ Based on recent commits:
     - `_verify_workbook_path()` で全操作前にパス検証
     - 既存インスタンス検出時は`app.quit()`を呼ばない（ユーザーのExcelを閉じない）
   - **Implementation**: `_try_create_new_excel_instance()` 関数を改善
+  - **xw.App() fallback removed**: xlwingsへの登録を最大0.5秒待機（5回×0.1秒）し、見つからない場合はリトライ
+- **File Open Window Foreground Improvement (2024-12)**:
+  - **Problem**: `FindWindowW(class_name, None)`による不正確なウィンドウ検索
+  - **Risk**: ユーザーが他のExcelファイルを開いていると、そちらのウィンドウが前面に来る
+  - **Solution**: ファイル名ベースの検索に変更
+  - **Implementation**: `_bring_app_window_to_foreground_by_filename(file_path)`
+    - ウィンドウクラス名でフィルタリング（XLMAIN, OpusApp等）
+    - ウィンドウタイトルにファイル名（stem）が含まれるかで判定（大文字小文字無視）
+    - 翻訳結果ファイルを開いたウィンドウを正確に特定
 - **Copilot Response Text Extraction Fix (2024-12)**:
   - **Problem**: Copilotが`<placeholder>`のような`<>`括弧を含むテキストを返すと、ブラウザがHTMLタグとして解釈してしまい、DOM経由では取得できなかった
   - **Previous approach (removed)**: コピーボタンをクリックしてクリップボード経由でテキスト取得。`navigator.clipboard.readText()`がブロックする問題があった

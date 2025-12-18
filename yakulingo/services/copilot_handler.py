@@ -702,8 +702,9 @@ class CopilotHandler:
     GPT_MODE_MENU_ITEM_SELECTOR = '[role="menuitem"], [role="option"], [role="menuitemradio"]'
     # Target mode name (partial match) - the full name in the submenu
     GPT_MODE_TARGET = 'GPT-5.2 Think Deeper'
-    # Parent menu item to open submenu (first level menu)
-    GPT_MODE_PARENT = 'Think Deeper'
+    # Parent menu item patterns to open submenu (first level menu)
+    # Supports both English "More" and Japanese variations
+    GPT_MODE_PARENT_PATTERNS = ('More', 'その他', '詳細', 'もっと見る')
     # Mode switching timeout and wait times
     GPT_MODE_SWITCH_TIMEOUT_MS = 3000
     GPT_MODE_MENU_WAIT = 0.3  # Wait for menu to open/close
@@ -1752,16 +1753,19 @@ class CopilotHandler:
                             target_item = item
                             logger.debug("Found target menu item in level 1: %s", item_text_stripped)
                             break
-                        # Check for parent item that opens submenu
-                        if item_text_stripped.startswith(self.GPT_MODE_PARENT):
-                            parent_item = item
-                            logger.debug("Found parent menu item: %s", item_text_stripped)
+                        # Check for parent item that opens submenu (More, その他, etc.)
+                        if not parent_item:
+                            for pattern in self.GPT_MODE_PARENT_PATTERNS:
+                                if pattern in item_text_stripped:
+                                    parent_item = item
+                                    logger.debug("Found parent menu item '%s': %s", pattern, item_text_stripped)
+                                    break
                 except Exception:
                     continue
 
-            # If target not found directly, try to open submenu via parent
+            # If target not found directly, try to open submenu via parent (More menu)
             if not target_item and parent_item:
-                logger.debug("Target not in level 1, opening submenu via '%s'...", self.GPT_MODE_PARENT)
+                logger.debug("Target not in level 1, opening submenu via parent item...")
 
                 # Hover over parent item to open submenu (some menus use hover)
                 try:

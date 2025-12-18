@@ -590,12 +590,12 @@ body {
 
 .history-item .history-title {
     color: var(--md-sys-color-on-surface);
-    font-size: var(--md-sys-typescale-size-md);  /* 18px */
+    font-size: var(--md-sys-typescale-size-sm);  /* 16px */
 }
 
 .history-item .history-preview {
     color: var(--md-sys-color-on-surface-variant);
-    font-size: var(--md-sys-typescale-size-sm);  /* 16px */
+    font-size: var(--md-sys-typescale-size-xs);  /* 14px */
 }
 
 /* Staggered history item animations */

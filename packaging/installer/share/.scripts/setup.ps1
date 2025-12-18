@@ -797,16 +797,13 @@ function Invoke-Setup {
             if (-not (Test-Path $SetupPath)) {
                 New-Item -ItemType Directory -Path $SetupPath -Force | Out-Null
             }
-            # Run 7-Zip with output redirected to log file (avoids buffer deadlock)
+            # Run 7-Zip via cmd.exe with output redirected to log file
             # -aoa: Overwrite all existing files without prompt
             # -bb1: Show names of processed files (verbose logging)
-            # Output redirected to file to avoid stdout buffer deadlock with many files
-            $sevenZipArgs = "x `"$TempZipFile`" `"-o$SetupPath`" -y -mmt=on -aoa -bb1"
-            $cmdLine = "& `"$($script:SevenZip)`" $sevenZipArgs >> `"$extractLogPath`" 2>&1"
-
+            # Using cmd.exe for reliable output redirection
             $psi = New-Object System.Diagnostics.ProcessStartInfo
-            $psi.FileName = "powershell.exe"
-            $psi.Arguments = "-NoProfile -Command `"$cmdLine; exit `$LASTEXITCODE`""
+            $psi.FileName = "cmd.exe"
+            $psi.Arguments = "/c `"`"$($script:SevenZip)`" x `"$TempZipFile`" `"-o$SetupPath`" -y -mmt=on -aoa -bb1 >> `"$extractLogPath`" 2>&1`""
             $psi.UseShellExecute = $false
             $psi.CreateNoWindow = $true
             $psi.RedirectStandardOutput = $false

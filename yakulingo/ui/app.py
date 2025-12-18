@@ -2045,7 +2045,7 @@ class YakuLingoApp:
         # History section
         with ui.column().classes('sidebar-history flex-1'):
             with ui.row().classes('items-center px-2 mb-2'):
-                ui.label('履歴').classes('text-sm font-semibold text-muted')
+                ui.label('履歴').classes('font-semibold text-muted')
 
             @ui.refreshable
             def history_list():

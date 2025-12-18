@@ -1278,7 +1278,6 @@ class AppSettings:
     github_repo_owner: str = "minimo162"
     github_repo_name: str = "yakulingo"
     last_update_check: Optional[str] = None
-    skipped_version: Optional[str] = None
 ```
 
 **設定ファイル:** `config/settings.json`

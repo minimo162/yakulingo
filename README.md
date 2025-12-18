@@ -251,8 +251,7 @@ YakuLingoを初めて使う際は、以下の手順でM365 Copilotにログイ�
   "auto_update_check_interval": 86400,
   "github_repo_owner": "minimo162",
   "github_repo_name": "yakulingo",
-  "last_update_check": null,
-  "skipped_version": null
+  "last_update_check": null
 }
 ```
 

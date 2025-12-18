@@ -155,7 +155,6 @@ class TestAppSettings:
             github_repo_owner="testowner",
             github_repo_name="testrepo",
             last_update_check="2025-01-01T00:00:00",
-            skipped_version="2.0.0",
         )
 
         assert settings.auto_update_enabled is False
@@ -163,7 +162,6 @@ class TestAppSettings:
         assert settings.github_repo_owner == "testowner"
         assert settings.github_repo_name == "testrepo"
         assert settings.last_update_check == "2025-01-01T00:00:00"
-        assert settings.skipped_version == "2.0.0"
 
     # NOTE: window_width/window_height tests removed - these settings are deprecated
     # Window size is now calculated dynamically in _detect_display_settings()
@@ -195,7 +193,6 @@ class TestAppSettings:
                 use_bundled_glossary=False,
                 embed_glossary_in_prompt=False,
                 browser_display_mode="minimized",
-                skipped_version="2.0.0",
             )
 
             original.save(settings_path)
@@ -213,7 +210,6 @@ class TestAppSettings:
             assert loaded.use_bundled_glossary == original.use_bundled_glossary
             assert loaded.embed_glossary_in_prompt == original.embed_glossary_in_prompt
             assert loaded.browser_display_mode == original.browser_display_mode
-            assert loaded.skipped_version == original.skipped_version
 
             # Non-USER_SETTINGS should come from template
             assert loaded.max_chars_per_batch == 4000
@@ -590,7 +586,6 @@ class TestSettingsSeparation:
             "embed_glossary_in_prompt",
             "browser_display_mode",
             "last_tab",
-            "skipped_version",
         }
         assert USER_SETTINGS_KEYS == expected_keys
 

@@ -588,13 +588,10 @@ class CopilotHandler:
     PAGE_NETWORK_IDLE_TIMEOUT_MS = 5000 # 5 seconds for network idle checks
 
     # Selector wait timeouts (milliseconds) - for Playwright wait_for_selector()
-    SELECTOR_CHAT_INPUT_TIMEOUT_MS = 15000   # 15 seconds for chat input to appear
     SELECTOR_CHAT_INPUT_FIRST_STEP_TIMEOUT_MS = 1000  # 1 second for first step (fast path for logged-in users)
     SELECTOR_CHAT_INPUT_STEP_TIMEOUT_MS = 2000  # 2 seconds per subsequent step for early login detection
     SELECTOR_CHAT_INPUT_MAX_STEPS = 7        # Max steps (1s + 2s*6 = 13s total)
-    # SELECTOR_SEND_BUTTON_TIMEOUT_MS removed - no longer wait for send button before Enter
     SELECTOR_RESPONSE_TIMEOUT_MS = 10000     # 10 seconds for response element to appear
-    SELECTOR_NEW_CHAT_READY_TIMEOUT_MS = 5000  # 5 seconds for new chat to be ready
     SELECTOR_LOGIN_CHECK_TIMEOUT_MS = 2000   # 2 seconds for login state checks
     SELECTOR_QUICK_CHECK_TIMEOUT_MS = 500    # 0.5 seconds for instant checks
 
@@ -1410,8 +1407,8 @@ class CopilotHandler:
         # Note: Do NOT call window.stop() here as it interrupts M365 background
         # authentication/session establishment, causing auth dialogs to appear.
 
-        # Chat input readiness is checked lazily at translation time via
-        # _ensure_chat_input_ready(), so no need to verify here.
+        # Copilot page is verified lazily at translation time via
+        # _ensure_copilot_page(), so no need to verify here.
 
         # Apply browser display mode based on settings
         self._apply_browser_display_mode(None)
@@ -1616,58 +1613,54 @@ class CopilotHandler:
             logger.debug("Quick login check failed: %s", e)
             return True  # Don't block on check failures
 
-    def _ensure_chat_input_ready(self) -> bool:
-        """Ensure chat input is visible before translation.
+    def _ensure_copilot_page(self) -> bool:
+        """Ensure we are on a Copilot page before translation.
 
-        This is called at the start of translation to verify the chat UI is ready.
-        It's deferred from startup to reduce launch time (~3-5 seconds saved).
+        This is a lightweight check that verifies the page URL is on Copilot.
+        If the user navigated away (e.g., manually operated the browser),
+        we navigate back to Copilot. Input field detection is deferred to
+        start_new_chat() which handles it more robustly.
 
         Returns:
-            True if chat input is ready, False if login required or timeout.
+            True if on Copilot page (or successfully navigated), False if login required.
         """
-        error_types = _get_playwright_errors()
-        PlaywrightTimeoutError = error_types['TimeoutError']
-
         if not self._page:
-            logger.warning("No page available for chat input check")
+            logger.warning("No page available for Copilot check")
             return False
 
-        # Quick check: is chat input already visible?
         try:
-            input_elem = self._page.query_selector(self.CHAT_INPUT_SELECTOR)
-            if input_elem and input_elem.is_visible():
-                logger.debug("Chat input already visible")
-                return True
-        except Exception:
-            pass
-
-        # Not visible yet - wait for it (this is the first translation after startup)
-        logger.info("Waiting for chat input (first translation)...")
-        _t_start = time.time()
-
-        try:
-            self._page.wait_for_selector(
-                self.CHAT_INPUT_SELECTOR,
-                timeout=self.SELECTOR_CHAT_INPUT_TIMEOUT_MS,
-                state='visible'
-            )
-            logger.info("[TIMING] Chat input ready: %.2fs", time.time() - _t_start)
-            return True
-
-        except PlaywrightTimeoutError:
-            # Check if we need login
             url = self._page.url
+
+            # Check if login is required
             if _is_login_page(url) or self._has_auth_dialog():
-                logger.warning("Login required - chat input not available")
+                logger.warning("Login required - not on Copilot page")
                 self.last_connection_error = self.ERROR_LOGIN_REQUIRED
-                self._bring_to_foreground_impl(self._page, reason="ensure_chat_input_ready: login required")
+                self._bring_to_foreground_impl(self._page, reason="ensure_copilot_page: login required")
                 return False
 
-            logger.warning("Chat input not found after timeout")
-            return False
+            # If already on Copilot, we're good
+            if _is_copilot_url(url):
+                logger.debug("Already on Copilot page")
+                return True
+
+            # User navigated away - try to go back to Copilot
+            logger.info("Not on Copilot page (%s), navigating back...", url[:50])
+            try:
+                self._page.goto(self.COPILOT_URL, wait_until='domcontentloaded', timeout=self.PAGE_GOTO_TIMEOUT_MS)
+                # Check again after navigation
+                url = self._page.url
+                if _is_login_page(url):
+                    logger.warning("Redirected to login page after navigation")
+                    self.last_connection_error = self.ERROR_LOGIN_REQUIRED
+                    self._bring_to_foreground_impl(self._page, reason="ensure_copilot_page: login after nav")
+                    return False
+                return True
+            except Exception as e:
+                logger.warning("Failed to navigate to Copilot: %s", e)
+                return False
 
         except Exception as e:
-            logger.warning("Failed to wait for chat input: %s", e)
+            logger.warning("Failed to check Copilot page: %s", e)
             return False
 
     def _wait_for_chat_ready(self, page, wait_for_login: bool = True) -> bool:
@@ -4043,11 +4036,11 @@ class CopilotHandler:
                 raise RuntimeError("Copilotへのログインが必要です。Edgeブラウザでログインしてください。")
             raise RuntimeError("ブラウザに接続できませんでした。Edgeが起動しているか確認してください。")
 
-        # Ensure chat input is ready (deferred from startup for faster launch)
-        if not self._ensure_chat_input_ready():
+        # Ensure we are on Copilot page (lightweight URL check, no input field wait)
+        if not self._ensure_copilot_page():
             if self.last_connection_error == self.ERROR_LOGIN_REQUIRED:
                 raise RuntimeError("Copilotへのログインが必要です。Edgeブラウザでログインしてください。")
-            raise RuntimeError("Copilotのチャット画面が表示されませんでした。ページを再読み込みしてください。")
+            raise RuntimeError("Copilotページにアクセスできませんでした。")
 
         # Check for cancellation before starting translation
         if self._is_cancelled():
@@ -4258,11 +4251,11 @@ class CopilotHandler:
                 raise RuntimeError("Copilotへのログインが必要です。Edgeブラウザでログインしてください。")
             raise RuntimeError("ブラウザに接続できませんでした。Edgeが起動しているか確認してください。")
 
-        # Ensure chat input is ready (deferred from startup for faster launch)
-        if not self._ensure_chat_input_ready():
+        # Ensure we are on Copilot page (lightweight URL check, no input field wait)
+        if not self._ensure_copilot_page():
             if self.last_connection_error == self.ERROR_LOGIN_REQUIRED:
                 raise RuntimeError("Copilotへのログインが必要です。Edgeブラウザでログインしてください。")
-            raise RuntimeError("Copilotのチャット画面が表示されませんでした。ページを再読み込みしてください。")
+            raise RuntimeError("Copilotページにアクセスできませんでした。")
 
         # Check for cancellation before starting translation
         if self._is_cancelled():
@@ -4456,10 +4449,7 @@ class CopilotHandler:
             # Find input area
             # 実際のCopilot HTML: <span role="combobox" contenteditable="true" id="m365-chat-editor-target-element" ...>
             input_selector = self.CHAT_INPUT_SELECTOR_EXTENDED
-            logger.debug("Waiting for input element...")
-            input_wait_start = time.time()
-            input_elem = self._page.wait_for_selector(input_selector, timeout=self.SELECTOR_CHAT_INPUT_TIMEOUT_MS)
-            logger.info("[TIMING] wait_for_input_element: %.2fs", time.time() - input_wait_start)
+            input_elem = self._page.query_selector(input_selector)
 
             if input_elem:
                 logger.debug("Input element found, setting text via JS...")
@@ -6128,16 +6118,6 @@ class CopilotHandler:
                     logger.info("[TIMING] new_chat: click: %.2fs", click_time)
             else:
                 logger.warning("New chat button not found - chat context may not be cleared")
-
-            # Wait for new chat to be ready (input field becomes available)
-            input_selector = self.CHAT_INPUT_SELECTOR_EXTENDED
-            input_ready_start = time.time()
-            try:
-                self._page.wait_for_selector(input_selector, timeout=self.SELECTOR_NEW_CHAT_READY_TIMEOUT_MS, state='visible')
-            except PlaywrightTimeoutError:
-                # Fallback: wait a bit if selector doesn't appear
-                time.sleep(0.3)
-            logger.info("[TIMING] new_chat: wait_for_input_ready: %.2fs", time.time() - input_ready_start)
 
             # Verify that previous responses are cleared (can be skipped for 2nd+ batches)
             # OPTIMIZED: Reduced timeout from 1.0s to 0.5s for faster new chat start

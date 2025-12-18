@@ -2137,6 +2137,12 @@ Based on recent commits:
     - `SetWindowPos()`に`SWP_SHOWWINDOW`フラグを追加して確実にウィンドウを表示
     - `_find_yakulingo_window_handle(include_hidden=True)`: 非表示/最小化ウィンドウも検索可能に
     - `_restore_app_window_win32()`: 最小化と非表示の両方を処理、`ShowWindow(SW_SHOW)`で非表示ウィンドウを表示
+- **Taskbar Icon Fix (2024-12)**:
+  - **Problem**: タスクバーにPythonアイコンが表示され、YakuLingoアイコンが表示されない
+  - **Root cause**: pywebviewの`window_args['icon']`設定だけではWindowsタスクバーのアイコンは変わらない
+  - **Solution**: `SetCurrentProcessExplicitAppUserModelID('YakuLingo.App')`でAppUserModelIDを設定
+  - **Implementation**: `run_app()`の早い段階でctypes経由でShell32 APIを呼び出し
+  - **Effect**: タスクバーにYakuLingoアイコンが正しく表示される
 - **Excel COM Isolation Improvements (2024-12)**:
   - **Problem**: xlwingsの`xw.App()`がCOM ROT経由で既存Excelインスタンスに接続する可能性
   - **Risk**: ユーザーが手動で開いているExcelファイルに誤って翻訳処理が実行される危険性

@@ -4101,6 +4101,15 @@ def run_app(
     # Validate NiceGUI version after import
     _ensure_nicegui_version()
 
+    # Set Windows AppUserModelID for correct taskbar icon
+    # Without this, Windows uses the default Python icon instead of YakuLingo icon
+    if sys.platform == 'win32':
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('YakuLingo.App')
+        except Exception as e:
+            logger.debug("Failed to set AppUserModelID: %s", e)
+
     _t0 = time.perf_counter()  # Start timing for total run_app duration
     _t1 = time.perf_counter()
     yakulingo_app = create_app()

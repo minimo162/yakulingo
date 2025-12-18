@@ -1399,32 +1399,14 @@ class CopilotHandler:
 
     def _finalize_connected_state(self) -> None:
         """Mark the connection as established and persist session state."""
-        error_types = _get_playwright_errors()
-        PlaywrightError = error_types['Error']
-        PlaywrightTimeoutError = error_types['TimeoutError']
-
         self._connected = True
         self.last_connection_error = self.ERROR_NONE
 
         # Note: Do NOT call window.stop() here as it interrupts M365 background
         # authentication/session establishment, causing auth dialogs to appear.
 
-        # Wait for M365 background initialization to complete
-        # This prevents auth dialogs that appear when operations start too early
-        time.sleep(1.0)
-
-        # Re-verify page is still valid after waiting
-        if not self._is_page_valid():
-            logger.warning("Page became invalid during finalization, attempting to recover...")
-            try:
-                # Try to get a fresh page reference
-                self._page = self._get_active_copilot_page()
-                if self._page:
-                    logger.info("Recovered page reference successfully")
-                else:
-                    logger.warning("Could not recover page reference")
-            except Exception as e:
-                logger.warning("Error recovering page: %s", e)
+        # Chat input readiness is checked lazily at translation time via
+        # _ensure_chat_input_ready(), so no need to verify here.
 
         # Apply browser display mode based on settings
         self._apply_browser_display_mode(None)

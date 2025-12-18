@@ -66,10 +66,15 @@
 - ○ → yes, applicable, available（使用禁止）
 - ☓ → no, not applicable, unavailable（使用禁止）
 
+**重要**: 数式記号を英訳に残してはいけません。必ず英単語で表現してください。
+
 例:
-- 「3か月以上」→ "3 months or more"（×  > 3 months）
+- 「3か月以上」→ "3 months or more"（× > 3 months）
+- 「3か月超」→ "more than 3 months" または "exceeding 3 months"（× >3 months, × >3-month）
+- 「100万円未満」→ "less than 1 million yen"（× < 1 million yen）
 - 「売上↑」→ "Sales increased"（× Sales ↑）
 - 「約100万円」→ "approximately 1 million yen"（× ~1 million yen）
+- 「A → B」→ "A leads to B" または "A results in B"（× A → B）
 
 許可される記号:
 - & (and の代わり)

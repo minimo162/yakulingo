@@ -102,8 +102,19 @@ if exist ".wheels" rd /s /q ".wheels" 2>nul
 del /q "*.tmp" 2>nul
 del /q ".venv\pyvenv.cfg.tmp" 2>nul
 
-:: Note: Python bytecode is pre-compiled by install_deps.bat
-:: __pycache__ directories are preserved for faster first launch
+:: ============================================================
+:: Pre-compile Python bytecode for faster first launch
+:: This ensures .pyc files are included in the distribution
+:: ============================================================
+echo        Pre-compiling Python bytecode...
+.venv\Scripts\python.exe -m compileall -q yakulingo 2>nul
+.venv\Scripts\python.exe -m compileall -q .venv\Lib\site-packages\nicegui 2>nul
+.venv\Scripts\python.exe -m compileall -q .venv\Lib\site-packages\fastapi 2>nul
+.venv\Scripts\python.exe -m compileall -q .venv\Lib\site-packages\uvicorn 2>nul
+.venv\Scripts\python.exe -m compileall -q .venv\Lib\site-packages\starlette 2>nul
+.venv\Scripts\python.exe -m compileall -q .venv\Lib\site-packages\pydantic 2>nul
+.venv\Scripts\python.exe -m compileall -q .venv\Lib\site-packages\playwright 2>nul
+.venv\Scripts\python.exe -m compileall -q .venv\Lib\site-packages\webview 2>nul
 
 :: Fix pyvenv.cfg - extract version and rewrite
 set "PYTHON_VERSION="

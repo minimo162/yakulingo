@@ -463,21 +463,25 @@ _pre_initialized_playwright = None
 _pre_init_lock = threading.Lock()
 _pre_init_event = threading.Event()
 _pre_init_error = None
+_pre_init_thread_id = None  # Track which thread initialized Playwright
 
 
 def _pre_init_playwright_impl():
     """Implementation that runs in the executor thread."""
-    global _pre_initialized_playwright, _pre_init_error
+    global _pre_initialized_playwright, _pre_init_error, _pre_init_thread_id
     try:
         import time as _time
         _t_start = _time.perf_counter()
-        logger.debug("[THREAD] pre_init_playwright_impl running in thread %s", threading.current_thread().ident)
+        current_thread_id = threading.current_thread().ident
+        logger.debug("[THREAD] pre_init_playwright_impl running in thread %s", current_thread_id)
         _, sync_playwright = _get_playwright()
         logger.debug("[TIMING] pre_init _get_playwright(): %.2fs", _time.perf_counter() - _t_start)
         _t_init = _time.perf_counter()
         _pre_initialized_playwright = sync_playwright().start()
+        _pre_init_thread_id = current_thread_id  # Record thread ID for validation
         logger.debug("[TIMING] pre_init sync_playwright().start(): %.2fs", _time.perf_counter() - _t_init)
-        logger.info("[TIMING] Playwright pre-initialization completed: %.2fs", _time.perf_counter() - _t_start)
+        logger.info("[TIMING] Playwright pre-initialization completed in thread %s: %.2fs",
+                    current_thread_id, _time.perf_counter() - _t_start)
         return True
     except Exception as e:
         logger.warning("Playwright pre-initialization failed: %s", e)
@@ -539,11 +543,34 @@ def get_pre_initialized_playwright(timeout: float = 30.0):
         timeout: Maximum time to wait for initialization to complete
 
     Returns:
-        Pre-initialized Playwright instance, or None if not available
+        Pre-initialized Playwright instance, or None if not available.
+        Returns None if the executor thread has changed since initialization
+        (to avoid greenlet thread mismatch errors).
     """
     if _pre_init_event.wait(timeout=timeout):
         if _pre_init_error is not None:
             return None
+
+        # Check if the executor thread is the same as when Playwright was initialized
+        # If the thread has changed, the Playwright instance is no longer usable
+        # because its greenlet context is bound to the original thread
+        current_executor_thread = _playwright_executor._thread
+        if current_executor_thread is None:
+            logger.debug("[THREAD] get_pre_initialized_playwright: executor thread not started yet")
+            return _pre_initialized_playwright
+
+        current_thread_id = current_executor_thread.ident
+        if _pre_init_thread_id is not None and current_thread_id != _pre_init_thread_id:
+            logger.warning(
+                "[THREAD] Executor thread changed! Playwright initialized in thread %s, "
+                "current executor thread %s. Discarding pre-initialized instance.",
+                _pre_init_thread_id, current_thread_id
+            )
+            # Clear the stale instance
+            clear_pre_initialized_playwright()
+            return None
+
+        logger.debug("[THREAD] get_pre_initialized_playwright: thread match OK (%s)", current_thread_id)
         return _pre_initialized_playwright
     return None
 
@@ -557,12 +584,13 @@ def clear_pre_initialized_playwright():
     Also resets _pre_init_event to allow re-initialization (e.g., after disconnect
     during PP-DocLayout-L initialization).
     """
-    global _pre_initialized_playwright, _pre_init_error
+    global _pre_initialized_playwright, _pre_init_error, _pre_init_thread_id
     with _pre_init_lock:
         _pre_initialized_playwright = None
         _pre_init_error = None
+        _pre_init_thread_id = None  # Also clear thread ID
         _pre_init_event.clear()  # Allow re-initialization
-        logger.debug("Pre-initialized Playwright cleared")
+        logger.debug("Pre-initialized Playwright cleared (including thread ID)")
 
 
 class CopilotHandler:

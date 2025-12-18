@@ -1451,20 +1451,22 @@ class TestGptModeSwitch:
         assert hasattr(handler, 'GPT_MODE_BUTTON_WAIT_MS')
         assert handler.GPT_MODE_BUTTON_WAIT_MS == 5000
 
-    def test_ensure_gpt_mode_returns_true_when_no_page(self, handler):
-        """_ensure_gpt_mode returns True when no page (doesn't block)"""
+    def test_ensure_gpt_mode_completes_when_no_page(self, handler):
+        """_ensure_gpt_mode completes without error when no page"""
         handler._page = None
-        assert handler._ensure_gpt_mode() is True
+        handler._ensure_gpt_mode()  # Should not raise
 
-    def test_ensure_gpt_mode_returns_true_when_already_correct(self, handler):
-        """_ensure_gpt_mode returns True when already in GPT-5.2 Think Deeper mode"""
+    def test_ensure_gpt_mode_completes_when_already_correct(self, handler):
+        """_ensure_gpt_mode completes without switching when already in GPT-5.2 Think Deeper mode"""
         mock_page = MagicMock()
         mock_text_elem = MagicMock()
         mock_text_elem.text_content.return_value = "GPT-5.2 Think Deeper"
         mock_page.query_selector.return_value = mock_text_elem
         handler._page = mock_page
 
-        assert handler._ensure_gpt_mode() is True
+        handler._ensure_gpt_mode()
+        # Should not click anything (already in correct mode)
+        assert mock_page.evaluate.call_count == 0
 
     def test_ensure_gpt_mode_switches_from_plain_think_deeper(self, handler):
         """_ensure_gpt_mode attempts switch when mode is plain 'Think Deeper' (not GPT-5.2)"""
@@ -1554,8 +1556,8 @@ class TestGptModeSwitch:
         # The result depends on verification query_selector call count
         # If verification succeeds (returns Think Deeper), result is True
 
-    def test_ensure_gpt_mode_returns_true_when_button_not_found(self, handler):
-        """_ensure_gpt_mode returns True when button not found (doesn't block translation)"""
+    def test_ensure_gpt_mode_completes_when_button_not_found(self, handler):
+        """_ensure_gpt_mode completes without error when button not found"""
         mock_page = MagicMock()
 
         # All selectors return None (button not found)
@@ -1563,42 +1565,36 @@ class TestGptModeSwitch:
         mock_page.query_selector_all.return_value = []
         handler._page = mock_page
 
-        result = handler._ensure_gpt_mode()
+        handler._ensure_gpt_mode()  # Should not raise (graceful degradation)
 
-        # Should return True to not block translation when UI changes
-        assert result is True
-
-    def test_ensure_gpt_mode_returns_true_on_exception(self, handler):
-        """_ensure_gpt_mode returns True on exception (doesn't block translation)"""
+    def test_ensure_gpt_mode_completes_on_exception(self, handler):
+        """_ensure_gpt_mode completes without raising when internal exception occurs"""
         mock_page = MagicMock()
         mock_page.query_selector.side_effect = Exception("Test error")
         handler._page = mock_page
 
-        # Should return True despite exception (graceful degradation)
-        result = handler._ensure_gpt_mode()
-        assert result is True
+        # Should not raise despite internal exception (graceful degradation)
+        handler._ensure_gpt_mode()
 
-    def test_ensure_gpt_mode_returns_true_when_button_not_visible(self, handler):
-        """_ensure_gpt_mode returns True when GPT mode button not visible"""
+    def test_ensure_gpt_mode_completes_when_button_not_visible(self, handler):
+        """_ensure_gpt_mode completes without error when GPT mode button not visible"""
         mock_page = MagicMock()
         # Return None for the text selector (button not present)
         mock_page.query_selector.return_value = None
         handler._page = mock_page
 
-        # Should return True (don't block if UI element not found)
-        result = handler._ensure_gpt_mode()
-        assert result is True
+        # Should complete without raising (don't block if UI element not found)
+        handler._ensure_gpt_mode()
 
-    def test_ensure_gpt_mode_returns_true_when_wait_for_selector_times_out(self, handler):
-        """_ensure_gpt_mode returns True when wait_for_selector times out (async loading)"""
+    def test_ensure_gpt_mode_completes_when_wait_for_selector_times_out(self, handler):
+        """_ensure_gpt_mode completes without error when wait_for_selector times out"""
         mock_page = MagicMock()
         # Simulate wait_for_selector timeout
         mock_page.wait_for_selector.side_effect = Exception("Timeout 5000ms exceeded")
         handler._page = mock_page
 
-        # Should return True to not block translation when button doesn't appear
-        result = handler._ensure_gpt_mode()
-        assert result is True
+        # Should complete without raising when button doesn't appear
+        handler._ensure_gpt_mode()
         # Verify wait_for_selector was called
         mock_page.wait_for_selector.assert_called_once()
 
@@ -1628,8 +1624,7 @@ class TestGptModeSwitch:
 
         handler._page = mock_page
 
-        result = handler._ensure_gpt_mode()
+        handler._ensure_gpt_mode()
 
         # Should have pressed Escape to close menu
         mock_keyboard.press.assert_called_with('Escape')
-        assert result is False

@@ -419,7 +419,8 @@ class YakuLingoApp:
         import time
         from yakulingo.ui.state import Tab, TextViewState
 
-        if not self._require_connection():
+        # Use async version that will attempt auto-reconnection if needed
+        if not await self._ensure_connection_async():
             return
 
         # Parse the tabular data into 2D array
@@ -1350,42 +1351,127 @@ class YakuLingoApp:
             self._login_polling_active = False
             self._login_polling_task = None
 
-    async def _reconnect(self):
-        """再接続を試みる（UIボタン用）。"""
-        if self._client:
-            with self._client:
-                ui.notify('再接続中...', type='info', position='bottom-right', timeout=2000)
+    async def _reconnect(self, max_retries: int = 3, show_progress: bool = True):
+        """再接続を試みる（UIボタン用、リトライ付き）。
 
-        # Reset connection indicators for the retry attempt
+        Args:
+            max_retries: 最大リトライ回数（デフォルト3回）
+            show_progress: 進捗通知を表示するか（デフォルトTrue）
+
+        Returns:
+            True if reconnection succeeded, False otherwise
+        """
         from yakulingo.services.copilot_handler import CopilotHandler
 
+        # Reset connection indicators for the retry attempt
         self.copilot.last_connection_error = CopilotHandler.ERROR_NONE
         self.state.connection_state = ConnectionState.CONNECTING
-        self._refresh_status()
+        if self._client:
+            with self._client:
+                self._refresh_status()
 
-        try:
-            connected = await asyncio.to_thread(self.copilot.connect)
-
-            if connected:
-                self.state.copilot_ready = True
-                if self._client:
-                    with self._client:
-                        self._refresh_status()
-                await self._on_browser_ready(bring_to_front=False)
-            else:
-                if self._client:
-                    with self._client:
-                        self._refresh_status()
-                        # ログイン必要な場合はポーリングを開始
-                        from yakulingo.services.copilot_handler import CopilotHandler
-                        if self.copilot.last_connection_error == CopilotHandler.ERROR_LOGIN_REQUIRED:
-                            if not self._login_polling_active and not self._shutdown_requested:
-                                self._login_polling_task = asyncio.create_task(self._wait_for_login_completion())
-        except Exception as e:
-            logger.debug("Reconnect failed: %s", e)
-            if self._client:
+        for attempt in range(max_retries):
+            # Show progress notification
+            if show_progress and self._client:
                 with self._client:
-                    ui.notify('再接続に失敗しました', type='negative', position='bottom-right', timeout=3000)
+                    ui.notify(
+                        f'再接続中... ({attempt + 1}/{max_retries})',
+                        type='info',
+                        position='bottom-right',
+                        timeout=2000
+                    )
+
+            try:
+                connected = await asyncio.to_thread(self.copilot.connect)
+
+                if connected:
+                    logger.info("Copilot reconnected successfully (attempt %d/%d)", attempt + 1, max_retries)
+                    self.state.copilot_ready = True
+                    self.state.connection_state = ConnectionState.CONNECTED
+
+                    # Handle Edge window based on browser_display_mode
+                    if self._settings and self._settings.browser_display_mode == "side_panel":
+                        await asyncio.to_thread(self.copilot._position_edge_as_side_panel, None)
+                        logger.debug("Edge positioned as side panel after reconnection")
+                    elif self._settings and self._settings.browser_display_mode == "minimized":
+                        await asyncio.to_thread(self.copilot._minimize_edge_window, None)
+                        logger.debug("Edge minimized after reconnection")
+                    # In foreground mode, do nothing (leave Edge as is)
+
+                    if self._client:
+                        with self._client:
+                            self._refresh_status()
+                            if show_progress:
+                                ui.notify(
+                                    '再接続しました',
+                                    type='positive',
+                                    position='bottom-right',
+                                    timeout=2000
+                                )
+                    await self._on_browser_ready(bring_to_front=False)
+                    return True
+                else:
+                    # Check if login is required
+                    if self.copilot.last_connection_error == CopilotHandler.ERROR_LOGIN_REQUIRED:
+                        logger.info("Reconnect: login required, starting login polling...")
+                        self.state.connection_state = ConnectionState.LOGIN_REQUIRED
+                        self.state.copilot_ready = False
+
+                        # Bring browser to foreground so user can login
+                        # This is critical for PDF translation reconnection
+                        try:
+                            await asyncio.to_thread(
+                                self.copilot._bring_to_foreground_impl,
+                                self.copilot._page,
+                                "reconnect: login required"
+                            )
+                            logger.info("Browser brought to foreground for login")
+                        except Exception as e:
+                            logger.warning("Failed to bring browser to foreground: %s", e)
+
+                        if self._client:
+                            with self._client:
+                                self._refresh_status()
+                                ui.notify(
+                                    'Copilotへのログインが必要です。ブラウザでログインしてください。',
+                                    type='warning',
+                                    position='top',
+                                    timeout=10000
+                                )
+                        # Start login completion polling in background
+                        if not self._login_polling_active and not self._shutdown_requested:
+                            self._login_polling_task = asyncio.create_task(
+                                self._wait_for_login_completion()
+                            )
+                        # Return False but don't retry - user needs to login
+                        return False
+
+                    logger.warning("Reconnect returned False (attempt %d/%d)", attempt + 1, max_retries)
+
+            except Exception as e:
+                logger.warning("Reconnect attempt %d/%d failed: %s", attempt + 1, max_retries, e)
+
+            # Exponential backoff before retry (except for last attempt)
+            if attempt < max_retries - 1:
+                wait_time = 2 ** attempt  # 1s, 2s, 4s
+                logger.debug("Waiting %ds before retry...", wait_time)
+                await asyncio.sleep(wait_time)
+
+        # All retries exhausted
+        logger.error("Reconnection failed after %d attempts", max_retries)
+        self.state.connection_state = ConnectionState.CONNECTION_FAILED
+        self.state.copilot_ready = False
+        if self._client:
+            with self._client:
+                self._refresh_status()
+                if show_progress:
+                    ui.notify(
+                        '再接続に失敗しました。しばらく待ってから再試行してください。',
+                        type='negative',
+                        position='bottom-right',
+                        timeout=5000
+                    )
+        return False
 
     async def check_for_updates(self):
         """Check for updates in background."""
@@ -2138,7 +2224,7 @@ class YakuLingoApp:
     # =========================================================================
 
     def _require_connection(self) -> bool:
-        """Check if translation service is connected.
+        """Check if translation service is connected (sync version).
 
         Returns:
             True if connected, False otherwise (also shows warning notification)
@@ -2146,6 +2232,37 @@ class YakuLingoApp:
         if not self._ensure_translation_service():
             return False
         return True
+
+    async def _ensure_connection_async(self) -> bool:
+        """Check connection and attempt reconnection if not connected.
+
+        This is the async version that will try to reconnect automatically
+        if the initial connection failed or was lost.
+
+        Returns:
+            True if connected (or reconnected successfully), False otherwise
+        """
+        # First ensure translation service is initialized
+        if not self._ensure_translation_service():
+            return False
+
+        # Check if already connected
+        if self.state.copilot_ready and self.copilot.is_connected:
+            return True
+
+        # Check if login is in progress (don't interfere)
+        if self._login_polling_active:
+            ui.notify(
+                'ログイン完了を待っています...',
+                type='info',
+                position='bottom-right',
+                timeout=2000
+            )
+            return False
+
+        # Not connected - try to reconnect automatically
+        logger.info("Connection not ready, attempting auto-reconnection...")
+        return await self._reconnect(max_retries=3, show_progress=True)
 
     def _notify_error(self, message: str):
         """Show error notification with standard prefix.
@@ -2323,7 +2440,8 @@ class YakuLingoApp:
         # Log when button was clicked (before any processing)
         button_click_time = time.time()
 
-        if not self._require_connection():
+        # Use async version that will attempt auto-reconnection if needed
+        if not await self._ensure_connection_async():
             return
 
         source_text = self.state.source_text
@@ -2479,7 +2597,8 @@ class YakuLingoApp:
             text: The translation text to adjust
             adjust_type: 'shorter', 'detailed', 'alternatives', or custom instruction
         """
-        if not self._require_connection():
+        # Use async version that will attempt auto-reconnection if needed
+        if not await self._ensure_connection_async():
             return
 
         # Use saved client reference (context.client not available in async tasks)
@@ -2548,7 +2667,8 @@ class YakuLingoApp:
 
     async def _back_translate(self, text: str):
         """Back-translate text to verify translation quality"""
-        if not self._require_connection():
+        # Use async version that will attempt auto-reconnection if needed
+        if not await self._ensure_connection_async():
             return
 
         # Use saved client reference (protected by _client_lock)
@@ -2836,7 +2956,8 @@ class YakuLingoApp:
 
     async def _follow_up_action(self, action_type: str, content: str):
         """Handle follow-up actions for →Japanese translations"""
-        if not self._require_connection():
+        # Use async version that will attempt auto-reconnection if needed
+        if not await self._ensure_connection_async():
             return
 
         # Use saved client reference (protected by _client_lock)
@@ -3044,7 +3165,7 @@ class YakuLingoApp:
             # Step 3: Reconnect Copilot (uses pre-initialized Playwright if available)
             if was_connected:
                 logger.info("Reconnecting Copilot after PP-DocLayout-L initialization...")
-                await self._reconnect_copilot_with_retry(max_retries=3)
+                await self._reconnect(max_retries=3, show_progress=False)
 
             return True
 
@@ -3052,97 +3173,6 @@ class YakuLingoApp:
             logger.error("Error during PP-DocLayout-L initialization: %s", e)
             self._layout_init_state = LayoutInitializationState.FAILED
             return True  # Proceed anyway, PDF will work with degraded quality
-
-    async def _reconnect_copilot_with_retry(self, max_retries: int = 3) -> bool:
-        """
-        Reconnect to Copilot with exponential backoff.
-
-        If login is required after reconnection, starts background polling
-        for login completion.
-
-        Args:
-            max_retries: Maximum number of retry attempts
-
-        Returns:
-            True if reconnection succeeded, False otherwise
-        """
-        from yakulingo.services.copilot_handler import CopilotHandler
-
-        for attempt in range(max_retries):
-            try:
-                # Use bring_to_foreground_on_login=False to avoid bringing Edge to foreground
-                # during background reconnection (e.g., after PP-DocLayout-L initialization)
-                success = await asyncio.to_thread(
-                    self.copilot.connect, bring_to_foreground_on_login=False
-                )
-                if success:
-                    logger.info("Copilot reconnected successfully (attempt %d)", attempt + 1)
-                    # Handle Edge window based on browser_display_mode
-                    # Playwright operations during reconnect may change Edge window state
-                    if self._settings and self._settings.browser_display_mode == "side_panel":
-                        # In side_panel mode, position Edge as side panel instead of minimizing
-                        await asyncio.to_thread(self.copilot._position_edge_as_side_panel, None)
-                        logger.debug("Edge positioned as side panel after reconnection")
-                    elif self._settings and self._settings.browser_display_mode == "minimized":
-                        # In minimized mode, ensure Edge is minimized
-                        await asyncio.to_thread(self.copilot._minimize_edge_window, None)
-                        logger.debug("Edge minimized after reconnection")
-                    # In foreground mode, do nothing (leave Edge as is)
-                    # Update connection state
-                    self.state.connection_state = ConnectionState.CONNECTED
-                    self.state.copilot_ready = True
-                    return True
-                else:
-                    # Check if login is required
-                    if self.copilot.last_connection_error == CopilotHandler.ERROR_LOGIN_REQUIRED:
-                        logger.info("Copilot reconnect: login required, starting login polling...")
-                        self.state.connection_state = ConnectionState.LOGIN_REQUIRED
-                        self.state.copilot_ready = False
-
-                        # Bring browser to foreground so user can login
-                        # This is critical for PDF translation reconnection - without this,
-                        # the browser stays hidden and user cannot complete login
-                        try:
-                            await asyncio.to_thread(
-                                self.copilot._bring_to_foreground_impl,
-                                self.copilot._page,
-                                "reconnect: login required"
-                            )
-                            logger.info("Browser brought to foreground for login")
-                        except Exception as e:
-                            logger.warning("Failed to bring browser to foreground: %s", e)
-
-                        # Notify user that login is required
-                        with self._client_lock:
-                            client = self._client
-                        if client:
-                            with client:
-                                ui.notify(
-                                    'Copilotへのログインが必要です。ブラウザでログインしてください。',
-                                    type='warning',
-                                    position='top',
-                                    timeout=10000
-                                )
-
-                        # Start login completion polling in background
-                        if not self._login_polling_active:
-                            self._login_polling_task = asyncio.create_task(
-                                self._wait_for_login_completion()
-                            )
-                        # Return False but don't retry - user needs to login
-                        return False
-                    logger.warning("Copilot reconnect returned False (attempt %d)", attempt + 1)
-            except Exception as e:
-                logger.warning("Copilot reconnect attempt %d failed: %s", attempt + 1, e)
-
-            if attempt < max_retries - 1:
-                wait_time = 2 ** attempt  # 1s, 2s, 4s
-                logger.debug("Waiting %ds before retry...", wait_time)
-                await asyncio.sleep(wait_time)
-
-        logger.error("Copilot reconnection failed after %d attempts", max_retries)
-        self.state.connection_state = ConnectionState.CONNECTION_FAILED
-        return False
 
     def _create_layout_init_dialog(self) -> "ui.dialog":
         """Create a dialog showing PP-DocLayout-L initialization progress."""
@@ -3155,7 +3185,8 @@ class YakuLingoApp:
 
     async def _select_file(self, file_path: Path):
         """Select file for translation with auto language detection (async)"""
-        if not self._require_connection():
+        # Use async version that will attempt auto-reconnection if needed
+        if not await self._ensure_connection_async():
             return
 
         # Use saved client reference (protected by _client_lock)
@@ -3309,7 +3340,11 @@ class YakuLingoApp:
         """Translate file with progress dialog"""
         import time
 
-        if not self.translation_service or not self.state.selected_file:
+        if not self.state.selected_file:
+            return
+
+        # Use async version that will attempt auto-reconnection if needed
+        if not await self._ensure_connection_async():
             return
 
         # Use saved client reference (protected by _client_lock)

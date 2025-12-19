@@ -741,6 +741,23 @@ import nicegui                        # ~2.6秒（この間にCopilotページ�
 - NiceGUI import (~2.6秒) + display_settings (~1.2秒) の間にCopilotページがロード
 - GPTモード設定の待ち時間を大幅に削減（約4秒→約1秒）
 - ウィンドウ検出ポーリング間隔を0.1秒→0.05秒に短縮
+- `defer_window_positioning=True`でウィンドウ位置設定を延期（約3.5秒短縮）
+
+**ウィンドウ位置設定の延期**:
+早期Edge接続時はYakuLingoウィンドウがまだ存在しないため、`defer_window_positioning=True`で
+ウィンドウ位置設定をスキップします。ウィンドウ作成後に`position_as_side_panel()`を呼び出して
+位置設定を適用します。
+
+```python
+# 早期接続（ウィンドウ作成前）
+result = copilot.connect(
+    bring_to_foreground_on_login=False,
+    defer_window_positioning=True  # ウィンドウ位置設定をスキップ
+)
+
+# ウィンドウ作成後に位置設定を適用
+copilot.position_as_side_panel()
+```
 
 **重要**: `disconnect()`や`_cleanup_on_error()`で`self._playwright.stop()`を呼び出した後は、
 必ず`clear_pre_initialized_playwright()`を呼び出すこと。停止済みのPlaywrightインスタンスを

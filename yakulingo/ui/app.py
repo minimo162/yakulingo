@@ -1187,6 +1187,8 @@ class YakuLingoApp:
                        _time_module.perf_counter() - _t_start)
             self.state.copilot_ready = True
             self._refresh_status()
+            # Apply deferred window positioning now that app window exists
+            await asyncio.to_thread(self.copilot.position_as_side_panel)
             # Set GPT mode in background (non-blocking, don't delay "Ready" notification)
             asyncio.create_task(asyncio.to_thread(self.copilot.ensure_gpt_mode))
             await self._on_browser_ready(bring_to_front=False)
@@ -4117,9 +4119,12 @@ def run_app(
             """Connect to Copilot in background (runs during NiceGUI import)."""
             try:
                 _t_early = time.perf_counter()
-                # Use connect with bring_to_foreground=False to avoid window flashing
-                # Window positioning will be done later after YakuLingo window is created
-                result = _early_copilot.connect(bring_to_foreground_on_login=False)
+                # Use defer_window_positioning=True to skip waiting for YakuLingo window
+                # Window positioning will be done after YakuLingo window is created
+                result = _early_copilot.connect(
+                    bring_to_foreground_on_login=False,
+                    defer_window_positioning=True
+                )
                 logger.info("[TIMING] Early Edge+Copilot connect (background): %.2fs, success=%s",
                            time.perf_counter() - _t_early, result)
             except Exception as e:
@@ -4382,8 +4387,13 @@ def run_app(
                 return
 
             # Fallback: start connection now
+            # Use defer_window_positioning since window might not be ready yet
             logger.info("[TIMING] Starting Copilot connection (fallback)")
-            result = await asyncio.to_thread(yakulingo_app.copilot.connect)
+            result = await asyncio.to_thread(
+                yakulingo_app.copilot.connect,
+                bring_to_foreground_on_login=True,
+                defer_window_positioning=True
+            )
             yakulingo_app._early_connection_result = result
             logger.info("[TIMING] Copilot connection completed: %s", result)
         except Exception as e:

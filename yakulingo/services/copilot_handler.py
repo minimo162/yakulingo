@@ -984,6 +984,7 @@ class CopilotHandler:
         self._window_not_found_warning_shown = False
         self._edge_not_found_warning_shown = False
         self._edge_window_log_shown = False
+        self._window_positioning_deferred = False  # True if positioning was deferred during connect
 
     @property
     def is_connected(self) -> bool:
@@ -1378,7 +1379,8 @@ class CopilotHandler:
             logger.debug("Page validity check failed (other): %s", e)
             return False
 
-    def connect(self, bring_to_foreground_on_login: bool = True) -> bool:
+    def connect(self, bring_to_foreground_on_login: bool = True,
+                defer_window_positioning: bool = False) -> bool:
         """
         Connect to Copilot browser via Playwright.
         Does NOT check login state - that is done lazily on first translation.
@@ -1390,15 +1392,22 @@ class CopilotHandler:
             bring_to_foreground_on_login: If True, bring browser to foreground when
                 manual login is required. Set to False for background reconnection
                 (e.g., after PP-DocLayout-L initialization).
+            defer_window_positioning: If True, skip window positioning during connect.
+                Used for early connection before app window exists. Call
+                position_as_side_panel() later when window is ready.
 
         Returns:
             True if browser connection established
         """
-        logger.info("connect() called - delegating to Playwright thread (bring_to_foreground_on_login=%s)",
-                    bring_to_foreground_on_login)
-        return _playwright_executor.execute(self._connect_impl, bring_to_foreground_on_login)
+        logger.info("connect() called - delegating to Playwright thread "
+                    "(bring_to_foreground_on_login=%s, defer_window_positioning=%s)",
+                    bring_to_foreground_on_login, defer_window_positioning)
+        return _playwright_executor.execute(
+            self._connect_impl, bring_to_foreground_on_login, defer_window_positioning
+        )
 
-    def _connect_impl(self, bring_to_foreground_on_login: bool = True) -> bool:
+    def _connect_impl(self, bring_to_foreground_on_login: bool = True,
+                      defer_window_positioning: bool = False) -> bool:
         """Implementation of connect() that runs in Playwright thread.
 
         Connection flow:
@@ -1412,6 +1421,7 @@ class CopilotHandler:
         Args:
             bring_to_foreground_on_login: If True, bring browser to foreground when
                 manual login is required. Set to False for background reconnection.
+            defer_window_positioning: If True, skip window positioning during connect.
         """
         logger.debug("[THREAD] _connect_impl running in thread %s", threading.current_thread().ident)
 
@@ -1609,7 +1619,7 @@ class CopilotHandler:
                         # 60 seconds allows time for MFA approval on mobile devices.
                         if self._wait_for_auto_login_impl(max_wait=60.0, poll_interval=1.0):
                             logger.info("Auto-login completed successfully")
-                            self._finalize_connected_state()
+                            self._finalize_connected_state(defer_window_positioning)
                             return True
 
                         # Auto-login did not complete - check if manual login is needed
@@ -1633,7 +1643,7 @@ class CopilotHandler:
                 self._cleanup_on_error()
                 return False
 
-            self._finalize_connected_state()
+            self._finalize_connected_state(defer_window_positioning)
             current_url = self._page.url if self._page else "unknown"
             logger.info("Copilot connection established (URL: %s)", current_url[:80] if current_url else "empty")
             return True
@@ -1654,10 +1664,16 @@ class CopilotHandler:
             self._cleanup_on_error()
             return False
 
-    def _finalize_connected_state(self) -> None:
-        """Mark the connection as established and persist session state."""
+    def _finalize_connected_state(self, defer_window_positioning: bool = False) -> None:
+        """Mark the connection as established and persist session state.
+
+        Args:
+            defer_window_positioning: If True, skip window positioning.
+                Call position_as_side_panel() later when app window is ready.
+        """
         self._connected = True
         self.last_connection_error = self.ERROR_NONE
+        self._window_positioning_deferred = defer_window_positioning
 
         # Note: Do NOT call window.stop() here as it interrupts M365 background
         # authentication/session establishment, causing auth dialogs to appear.
@@ -1665,8 +1681,11 @@ class CopilotHandler:
         # Copilot page is verified lazily at translation time via
         # _ensure_copilot_page(), so no need to verify here.
 
-        # Apply browser display mode based on settings
-        self._apply_browser_display_mode(None)
+        # Apply browser display mode based on settings (unless deferred)
+        if not defer_window_positioning:
+            self._apply_browser_display_mode(None)
+        else:
+            logger.debug("Window positioning deferred (app window not ready yet)")
 
         # Note: GPT mode is now set from UI layer (app.py) after initial connection
 
@@ -3197,9 +3216,8 @@ class CopilotHandler:
 
         if mode == "side_panel":
             # For side_panel mode, wait for YakuLingo window to be available
-            # This is critical at startup when Edge may start before the app window
-            # NiceGUI import can take 4-5 seconds, so we need to wait longer
-            MAX_WAIT_SECONDS = 8.0
+            # With defer_window_positioning, window should already exist when this is called
+            MAX_WAIT_SECONDS = 3.0
             POLL_INTERVAL = 0.05  # Reduced from 0.1s for faster window detection
             waited = 0.0
 
@@ -3217,6 +3235,24 @@ class CopilotHandler:
             self._bring_edge_to_foreground_impl(page_title, reason="foreground display mode")
         else:  # "minimized" (default)
             self._minimize_edge_window(page_title)
+
+    def position_as_side_panel(self) -> bool:
+        """Apply deferred window positioning after app window is ready.
+
+        This method should be called from the UI layer after the app window is created,
+        if connect() was called with defer_window_positioning=True.
+
+        Returns:
+            True if positioning was applied successfully or was not deferred.
+        """
+        if not self._window_positioning_deferred:
+            logger.debug("Window positioning was not deferred, skipping")
+            return True
+
+        logger.debug("Applying deferred window positioning")
+        self._window_positioning_deferred = False
+        self._apply_browser_display_mode(None)
+        return True
 
     def _get_browser_display_mode(self) -> str:
         """Get browser display mode from cached settings.

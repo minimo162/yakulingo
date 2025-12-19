@@ -1791,26 +1791,36 @@ class CopilotHandler:
         try:
             start_time = time.time()
 
-            # OPTIMIZED: Use wait_for_selector instead of polling
-            # Playwright's native wait is more efficient than manual polling
-            try:
-                self._page.wait_for_selector(
-                    self.GPT_MODE_BUTTON_SELECTOR,
-                    state='visible',
-                    timeout=self.GPT_MODE_BUTTON_WAIT_MS
-                )
-                elapsed = time.time() - start_time
-                logger.debug("[TIMING] GPT mode button found (%.3fs)", elapsed)
-            except PlaywrightTimeoutError:
-                elapsed = time.time() - start_time
-                logger.debug("GPT mode button did not appear after %.2fs", elapsed)
-                return
-
-            # OPTIMIZED: Get current mode text via JavaScript (single call)
+            # OPTIMIZED: Quick check first, then wait_for_selector if not found
+            # This avoids unnecessary waiting when button is already visible
             current_mode = self._page.evaluate('''() => {
                 const el = document.querySelector('#gptModeSwitcher div');
                 return el ? el.textContent?.trim() : null;
             }''')
+
+            if current_mode:
+                elapsed = time.time() - start_time
+                logger.debug("[TIMING] GPT mode button found immediately (%.3fs)", elapsed)
+            else:
+                # Button not found yet - wait for it
+                try:
+                    self._page.wait_for_selector(
+                        self.GPT_MODE_BUTTON_SELECTOR,
+                        state='visible',
+                        timeout=self.GPT_MODE_BUTTON_WAIT_MS
+                    )
+                    elapsed = time.time() - start_time
+                    logger.debug("[TIMING] GPT mode button found after wait (%.3fs)", elapsed)
+
+                    # Get mode text after button appears
+                    current_mode = self._page.evaluate('''() => {
+                        const el = document.querySelector('#gptModeSwitcher div');
+                        return el ? el.textContent?.trim() : null;
+                    }''')
+                except PlaywrightTimeoutError:
+                    elapsed = time.time() - start_time
+                    logger.debug("GPT mode button did not appear after %.2fs", elapsed)
+                    return
 
             if not current_mode:
                 logger.debug("GPT mode text is empty or selector changed")

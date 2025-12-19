@@ -222,5 +222,8 @@ share_package/
 dist_temp/
 YakuLingo.exe
 
+# User settings (auto-generated, contains user preferences)
+config/user_settings.json
+
 # Temporary files (development/testing)
 .tmp/

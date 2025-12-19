@@ -4234,7 +4234,6 @@ def run_app(
     # Suppress WeakSet errors during Python shutdown
     # These occur when garbage collection runs during interpreter shutdown
     # and are harmless but produce confusing error messages (shown as "Exception ignored")
-    # Note: sys is already imported at module level, no need to import here
 
     # Handle "Exception ignored" messages (unraisable exceptions)
     _original_unraisablehook = getattr(sys, 'unraisablehook', None)

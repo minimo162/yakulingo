@@ -2214,6 +2214,7 @@ Based on recent commits:
     - `--window-position`: Edge起動時に正しい位置を指定
     - **早期ウィンドウ配置**: NiceGUIのmultiprocessingによりwindow_argsが子プロセスに渡されないため、ウィンドウ作成を5msポーリングで監視しSetWindowPos()で移動
     - `_reposition_windows_for_side_panel()`: `_calculate_app_position_for_side_panel()`と同じ位置計算を使用し、既に正しい位置なら移動をスキップ
+    - **ウィンドウ配置タイミング最適化**: `_apply_browser_display_mode()`をEdge起動直後ではなく`_finalize_connected_state()`（Copilot準備完了後）に移動。NiceGUI import中もCopilot準備が並列で進行し、YakuLingoウィンドウ待機タイムアウトによる一時最小化を回避
   - **Simplified browser handling**:
     - サイドパネル/foregroundモードではログイン時の前面表示処理をスキップ
     - サイドパネル/foregroundモードではEdge起動時に画面外配置オプションを使用しない

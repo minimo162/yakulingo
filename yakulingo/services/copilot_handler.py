@@ -1317,8 +1317,9 @@ class CopilotHandler:
                     self._browser_started_by_us = True
                     # Store PID separately so we can kill it even if edge_process becomes None
                     self._edge_pid = self.edge_process.pid
-                    # Apply browser display mode (minimize, side panel, or foreground)
-                    self._apply_browser_display_mode(None)
+                    # Note: Browser display mode is applied in _finalize_connected_state()
+                    # after Copilot page is ready, so that YakuLingo window wait and
+                    # Copilot preparation can proceed in parallel
                     return True
 
             logger.warning("Edge startup timeout")
@@ -3197,7 +3198,8 @@ class CopilotHandler:
         if mode == "side_panel":
             # For side_panel mode, wait for YakuLingo window to be available
             # This is critical at startup when Edge may start before the app window
-            MAX_WAIT_SECONDS = 3.0
+            # NiceGUI import can take 4-5 seconds, so we need to wait longer
+            MAX_WAIT_SECONDS = 8.0
             POLL_INTERVAL = 0.05  # Reduced from 0.1s for faster window detection
             waited = 0.0
 

@@ -522,7 +522,7 @@ async def _translate_text(self):
   "translation_style": "concise",
   "text_translation_style": "concise",
   "use_bundled_glossary": true,
-  "embed_glossary_in_prompt": true,
+  "embed_glossary_in_prompt": false,
   "font_size_adjustment_jp_to_en": 0.0,
   "font_size_min": 8.0,
   "font_jp_to_en": "Arial",
@@ -596,9 +596,9 @@ async def _translate_text(self):
 
 **用語集の処理モード**:
 - `use_bundled_glossary`: 同梱の glossary.csv を使用するか（デフォルト: true）
-- `embed_glossary_in_prompt`: 用語集をプロンプトに埋め込むか（デフォルト: true）
-  - `true`: 用語集をプロンプトに直接埋め込み（高速、約16〜19秒短縮）
-  - `false`: 用語集をファイルとして添付（従来方式）
+- `embed_glossary_in_prompt`: 用語集をプロンプトに埋め込むか（デフォルト: false）
+  - `false`: 用語集をファイルとして添付（デフォルト、用語集が増えても対応可能）
+  - `true`: 用語集をプロンプトに直接埋め込み（高速だが、用語集サイズに制限あり）
   - **適用範囲**: 全翻訳パス（テキスト翻訳、ファイル翻訳、戻し訳、フォローアップ翻訳）
 
 **プロンプト文字数計算（Copilot無料版8,000文字制限）**:
@@ -2187,9 +2187,9 @@ Based on recent commits:
   - **PP-DocLayout-L cache clear moved**: Edge終了後に移動
   - **Expected improvement**: cleanup時間 2.04秒 → 約1.0-1.5秒
 - **Glossary Processing Optimization (2024-12)**:
-  - **Prompt embedding**: 用語集をプロンプトに直接埋め込み（ファイル添付より高速）
-  - **Performance improvement**: 翻訳時間が約22秒から約7〜10秒に短縮（約16〜19秒改善）
-  - **Configuration**: `embed_glossary_in_prompt` 設定で埋め込み/添付モードを切替可能
+  - **File attachment mode (default)**: 用語集をファイルとして添付（デフォルト、用語集が増えても対応可能）
+  - **Prompt embedding mode (optional)**: `embed_glossary_in_prompt=true`で高速モード（約16〜19秒短縮）
+  - **Configuration**: `embed_glossary_in_prompt` 設定で埋め込み/添付モードを切替可能（デフォルト: false）
   - **Scope**: 全翻訳パスに適用（テキスト翻訳、ファイル翻訳、戻し訳、フォローアップ翻訳）
 - **Copilot Send Process Optimization (2024-12)**:
   - **Complete key cycle**: keydown + keypress + keyup の完全なキーサイクルをJSでディスパッチ（keydownのみでは送信されない）

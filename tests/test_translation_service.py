@@ -1474,9 +1474,54 @@ The 18.3 trillion yen supplementary budget proposal is under review. Opposition 
         options = service._parse_single_translation_result(raw)
 
         assert len(options) == 1
-        assert "English translation" in options[0].text
+        # "English translation" label should be removed, only the actual translation remains
+        assert "English translation" not in options[0].text
         assert "concerns about worsening fiscal health" in options[0].text
         assert "システムが回答冒頭" in options[0].explanation
+
+    def test_parse_removes_translation_label_prefix(self, service):
+        """Ensure translation labels like '英語翻訳' are removed from the result.
+
+        Regression test for bug where Copilot outputs '訳文: 英語翻訳' followed by
+        the actual translation, causing '英語翻訳' to appear in the output.
+        """
+        raw = """訳文: 英語翻訳
+
+*   Submitted the Financial Services Division DX interim report to ECM on Nov. 18.
+*   DX for the Cost Accounting Group requires close collaboration with business operations.
+
+解説:
+
+*   「財務本部」は「Financial Services Division」と訳しました。"""
+
+        options = service._parse_single_translation_result(raw)
+
+        assert len(options) == 1
+        # "英語翻訳" label should be removed
+        assert "英語翻訳" not in options[0].text
+        # Actual translation content should remain
+        assert "Financial Services Division" in options[0].text
+        assert "Cost Accounting Group" in options[0].text
+        # The translation should start with the actual content
+        assert options[0].text.strip().startswith("*")
+
+    def test_parse_removes_japanese_translation_label_prefix(self, service):
+        """Ensure Japanese translation label '日本語翻訳' is removed from the result."""
+        raw = """訳文: 日本語翻訳
+
+決算短信の財務データをレビューしました。
+
+解説:
+
+財務用語を適切に翻訳しました。"""
+
+        options = service._parse_single_translation_result(raw)
+
+        assert len(options) == 1
+        # "日本語翻訳" label should be removed
+        assert "日本語翻訳" not in options[0].text
+        # Actual translation content should remain
+        assert "決算短信" in options[0].text
 
     def test_parse_avoids_english_translation_metadata_leak(self, service):
         """Ensure 英訳/和訳 in preamble doesn't cause metadata to leak into translation.

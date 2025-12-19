@@ -2037,6 +2037,14 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Recent Development Focus
 
 Based on recent commits:
+- **Translation Label Removal Fix (2024-12)**:
+  - **Problem**: Copilotがプロンプトテンプレートの「訳文: 英語翻訳」形式に忠実に従った場合、「英語翻訳」というラベル部分が翻訳結果に含まれてしまう
+  - **Solution**: 翻訳結果のパース処理でラベルを自動除去
+    - `_RE_TRANSLATION_LABEL` 正規表現パターンを追加
+    - 対象ラベル: `英語翻訳`, `日本語翻訳`, `English Translation`, `Japanese Translation`
+  - **Affected functions**:
+    - `_parse_single_translation_result()`: テキスト翻訳結果のパース
+    - `_parse_single_option_result()`: 調整結果のパース
 - **GPT Mode Optimization (2024-12)**:
   - **wait_for_selector方式**: ポーリングからPlaywrightネイティブ待機に変更
     - `GPT_MODE_BUTTON_WAIT_MS = 5000` - 5秒のタイムアウト（wait_for_selector）

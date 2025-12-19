@@ -5267,7 +5267,7 @@ class CopilotHandler:
                             except Exception as scroll_err:
                                 logger.debug("[SEND] Button scroll failed: %s", scroll_err)
 
-                            time.sleep(0.03)  # Wait for UI to settle after scroll (optimized from 0.1)
+                            time.sleep(0.1)  # Wait for UI to settle after scroll (restored: Enter key needs React UI to be ready)
 
                             # Detailed debug: Check UI readiness before sending
                             pre_send_state = self._page.evaluate('''() => {
@@ -5386,8 +5386,8 @@ class CopilotHandler:
                             }''', input_selector)
                             logger.info("[SEND_DETAILED] JS key events result: %s", enter_result)
 
-                            # Small wait to see if events triggered anything (optimized from 0.05)
-                            time.sleep(0.02)
+                            # Wait for React to process events (restored from 0.02)
+                            time.sleep(0.05)
 
                             # Check immediate state after JS events
                             post_js_state = self._page.evaluate('''() => {
@@ -5420,8 +5420,8 @@ class CopilotHandler:
                                 input_elem.press("Enter")
                                 pw_time = time.monotonic() - send_start
 
-                                # Check state after Playwright press (optimized from 0.05)
-                                time.sleep(0.02)
+                                # Check state after Playwright press (restored from 0.02)
+                                time.sleep(0.05)
                                 post_pw_state = self._page.evaluate('''() => {
                                     const input = document.querySelector('#m365-chat-editor-target-element');
                                     const stopBtn = document.querySelector('.fai-SendButton__stopBackground');

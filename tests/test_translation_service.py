@@ -1609,6 +1609,51 @@ If GPT-5 is grad student level, is Rakuten's AI just high school level?
         assert not options[0].explanation.startswith("付き")
         assert "この表現を選んだ理由" in options[0].explanation
 
+    def test_parse_removes_trailing_filename_from_explanation(self, service):
+        """Ensure trailing attached filename is removed from explanation.
+
+        Regression test for bug where Copilot appends the reference file name
+        (e.g., "glossary", "glossary.csv") to the end of the explanation.
+        """
+        raw = """訳文: Hello.
+
+解説: 「こんにちは」はビジネス文書で汎用的な挨拶のため、最も無難で簡潔な「Hello.」にしました。glossary"""
+
+        options = service._parse_single_translation_result(raw)
+
+        assert len(options) == 1
+        assert options[0].text == "Hello."
+        # Explanation should NOT contain trailing "glossary"
+        assert not options[0].explanation.endswith("glossary")
+        assert "無難で簡潔な" in options[0].explanation
+
+    def test_parse_removes_trailing_filename_with_extension(self, service):
+        """Ensure trailing filename with extension is removed from explanation."""
+        raw = """訳文: Good morning.
+
+解説: 朝の挨拶として「おはようございます」を「Good morning.」に翻訳しました。glossary.csv"""
+
+        options = service._parse_single_translation_result(raw)
+
+        assert len(options) == 1
+        assert options[0].text == "Good morning."
+        # Explanation should NOT contain trailing "glossary.csv"
+        assert "glossary" not in options[0].explanation
+        assert "朝の挨拶" in options[0].explanation
+
+    def test_parse_removes_trailing_filename_with_period_separator(self, service):
+        """Ensure trailing filename after period is removed from explanation."""
+        raw = """訳文: Thank you.
+
+解説: 感謝の意を表す基本的な表現です。glossary"""
+
+        options = service._parse_single_translation_result(raw)
+
+        assert len(options) == 1
+        # Explanation should NOT contain trailing "glossary"
+        assert not options[0].explanation.endswith("glossary")
+        assert "感謝の意" in options[0].explanation
+
 
 class TestParseSingleOptionResult:
     """Tests for TranslationService._parse_single_option_result()"""
@@ -1646,6 +1691,20 @@ class TestParseSingleOptionResult:
         """Parse whitespace only returns None"""
         option = service._parse_single_option_result("   \n\t  ")
         assert option is None
+
+    def test_parse_removes_trailing_filename_from_explanation(self, service):
+        """Ensure trailing attached filename is removed from adjustment explanation."""
+        raw = """訳文: A shorter version of the text.
+
+解説: 元の文を短くしました。glossary"""
+
+        option = service._parse_single_option_result(raw)
+
+        assert option is not None
+        assert option.text == "A shorter version of the text."
+        # Explanation should NOT contain trailing "glossary"
+        assert not option.explanation.endswith("glossary")
+        assert "短くしました" in option.explanation
 
 
 # =============================================================================

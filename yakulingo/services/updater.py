@@ -1050,8 +1050,43 @@ function Invoke-Update {{
 
     # Step 1: Wait for application to exit
     Show-Progress -Title "YakuLingo Update" -Status "Waiting for application to exit..." -Step "Step 1/5: Preparing" -Percent 5
-    Write-DebugLog "Waiting for application to exit..."
-    Start-Sleep -Seconds 3
+    Write-DebugLog "Waiting for Python processes to exit..."
+
+    # Wait for Python processes in app directory to exit (max 30 seconds)
+    $pythonExe = Join-Path $script:AppDir ".venv\\Scripts\\python.exe"
+    $maxWait = 30
+    $waited = 0
+    $interval = 1
+
+    while ($waited -lt $maxWait) {{
+        # Find Python processes running from app directory
+        $pythonProcesses = Get-Process -Name "python*" -ErrorAction SilentlyContinue | Where-Object {{
+            try {{
+                $_.Path -and $_.Path.StartsWith($script:AppDir)
+            }} catch {{
+                $false
+            }}
+        }}
+
+        if ($pythonProcesses.Count -eq 0) {{
+            Write-DebugLog "No Python processes found in app directory"
+            break
+        }}
+
+        Write-DebugLog "Waiting for $($pythonProcesses.Count) Python process(es) to exit... ($waited/$maxWait sec)"
+        Start-Sleep -Seconds $interval
+        $waited += $interval
+    }}
+
+    if ($waited -ge $maxWait) {{
+        Write-DebugLog "[WARNING] Timeout waiting for Python processes. Proceeding anyway..."
+        $debugInfo += "[WARNING] Python process timeout"
+    }} else {{
+        Write-DebugLog "All Python processes exited (waited $waited seconds)"
+    }}
+
+    # Additional safety wait for file handles to be released
+    Start-Sleep -Seconds 1
 
     # Change to app directory
     Write-DebugLog "AppDir: $($script:AppDir)"
@@ -1100,7 +1135,13 @@ function Invoke-Update {{
         # Remove existing directory
         if (Test-Path $dir) {{
             Write-DebugLog "Removing: $dir"
-            Remove-Item -Path $dir -Recurse -Force -ErrorAction SilentlyContinue
+            try {{
+                Remove-Item -Path $dir -Recurse -Force -ErrorAction Stop
+                Write-DebugLog "[OK] $dir removed"
+            }} catch {{
+                Write-DebugLog "[WARNING] Failed to remove $dir : $($_.Exception.Message)"
+                Write-DebugLog "[INFO] Will try to overwrite with -Force"
+            }}
         }}
 
         # Copy from source
@@ -1108,7 +1149,7 @@ function Invoke-Update {{
         if (Test-Path $sourcePath) {{
             Write-DebugLog "Copying: $sourcePath -> $dir"
             try {{
-                Copy-Item -Path $sourcePath -Destination $dir -Recurse -Force
+                Copy-Item -Path $sourcePath -Destination $dir -Recurse -Force -ErrorAction Stop
                 if (Test-Path $dir) {{
                     $copySuccess = $true
                     Write-DebugLog "[OK] $dir copied successfully"
@@ -1138,12 +1179,34 @@ function Invoke-Update {{
 
     # Copy source files
     Show-Progress -Title "YakuLingo Update" -Status "Copying files..." -Step "Step 3/5: Updating" -Percent 55
+    $criticalFiles = @("app.py", "pyproject.toml")
+    $fileCopyFailures = @()
     foreach ($file in $script:FilesToUpdate) {{
         $sourceFile = Join-Path $script:SourceDir $file
         if (Test-Path $sourceFile) {{
             Write-DebugLog "Copying file: $file"
-            Copy-Item -Path $sourceFile -Destination $file -Force -ErrorAction SilentlyContinue
+            try {{
+                Copy-Item -Path $sourceFile -Destination $file -Force -ErrorAction Stop
+                if (Test-Path $file) {{
+                    Write-DebugLog "[OK] $file copied successfully"
+                }} else {{
+                    Write-DebugLog "[ERROR] $file not created after copy"
+                    $fileCopyFailures += $file
+                }}
+            }} catch {{
+                Write-DebugLog "[ERROR] Failed to copy $file : $($_.Exception.Message)"
+                $fileCopyFailures += $file
+            }}
+        }} else {{
+            Write-DebugLog "[WARNING] Source file not found: $file"
         }}
+    }}
+
+    # Check if critical files failed to copy
+    $criticalFailures = $fileCopyFailures | Where-Object {{ $criticalFiles -contains $_ }}
+    if ($criticalFailures.Count -gt 0) {{
+        Write-DebugLog "[CRITICAL] Critical files failed to copy: $($criticalFailures -join ', ')"
+        $debugInfo += "[CRITICAL] Failed: $($criticalFailures -join ', ')"
     }}
 
     # Step 4: Restore user settings
@@ -1290,7 +1353,32 @@ echo "YakuLingo アップデート中..."
 echo "============================================================"
 echo ""
 
-sleep 3
+# Wait for Python processes in app directory to exit (max 30 seconds)
+echo "Pythonプロセスの終了を待機しています..."
+MAX_WAIT=30
+WAITED=0
+INTERVAL=1
+
+while [ $WAITED -lt $MAX_WAIT ]; do
+    # Find Python processes running from app directory
+    PYTHON_PIDS=$(pgrep -f "{app_dir}/.venv" 2>/dev/null)
+    if [ -z "$PYTHON_PIDS" ]; then
+        echo "  Pythonプロセスは終了しています"
+        break
+    fi
+    echo "  Pythonプロセス終了待機中... ($WAITED/$MAX_WAIT 秒)"
+    sleep $INTERVAL
+    WAITED=$((WAITED + INTERVAL))
+done
+
+if [ $WAITED -ge $MAX_WAIT ]; then
+    echo "  [WARNING] タイムアウト - 続行します..."
+else
+    echo "  完了 ($WAITED 秒)"
+fi
+
+# Additional safety wait for file handles to be released
+sleep 1
 
 # Change to app directory with verification
 cd "{app_dir}" || {{
@@ -1326,15 +1414,32 @@ done
 
 # ソースコードディレクトリをコピー
 COPY_SUCCESS=0
+DIR_COPY_FAILURES=""
 for dir in {dirs_to_update}; do
     if [ -d "{source_dir}/$dir" ]; then
         echo "  コピー: $dir"
-        cp -r "{source_dir}/$dir" "{app_dir}/$dir"
-        COPY_SUCCESS=1
+        if cp -r "{source_dir}/$dir" "{app_dir}/$dir" 2>/dev/null; then
+            if [ -d "{app_dir}/$dir" ]; then
+                echo "    [OK] $dir"
+                COPY_SUCCESS=1
+            else
+                echo "    [ERROR] $dir not created after copy"
+                DIR_COPY_FAILURES="$DIR_COPY_FAILURES $dir"
+            fi
+        else
+            echo "    [ERROR] Failed to copy $dir"
+            DIR_COPY_FAILURES="$DIR_COPY_FAILURES $dir"
+        fi
     else
         echo "  [警告] ソースが見つかりません: {source_dir}/$dir"
     fi
 done
+
+# Report directory copy failures
+if [ -n "$DIR_COPY_FAILURES" ]; then
+    echo ""
+    echo "[WARNING] Some directories failed to copy:$DIR_COPY_FAILURES"
+fi
 
 # コピー成功確認
 if [ "$COPY_SUCCESS" -eq 0 ]; then
@@ -1353,10 +1458,32 @@ if [ "$COPY_SUCCESS" -eq 0 ]; then
 fi
 
 # ソースコードファイルをコピー
+CRITICAL_FILES="app.py pyproject.toml"
+FILE_COPY_FAILURES=""
 for file in {files_to_update}; do
     if [ -f "{source_dir}/$file" ]; then
         echo "  コピー: $file"
-        cp "{source_dir}/$file" "{app_dir}/$file"
+        if cp "{source_dir}/$file" "{app_dir}/$file" 2>/dev/null; then
+            if [ -f "{app_dir}/$file" ]; then
+                echo "    [OK] $file"
+            else
+                echo "    [ERROR] $file not created after copy"
+                FILE_COPY_FAILURES="$FILE_COPY_FAILURES $file"
+            fi
+        else
+            echo "    [ERROR] Failed to copy $file"
+            FILE_COPY_FAILURES="$FILE_COPY_FAILURES $file"
+        fi
+    else
+        echo "    [WARNING] Source file not found: $file"
+    fi
+done
+
+# Check if critical files failed
+for critical in $CRITICAL_FILES; do
+    if echo "$FILE_COPY_FAILURES" | grep -q "$critical"; then
+        echo ""
+        echo "[CRITICAL] Critical file failed to copy: $critical"
     fi
 done
 

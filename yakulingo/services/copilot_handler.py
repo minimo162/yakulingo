@@ -5512,9 +5512,15 @@ class CopilotHandler:
                                         result.stopBtnAfterSynthetic = !!document.querySelector('.fai-SendButton__stopBackground');
                                         result.textLengthAfterSynthetic = input ? input.innerText.trim().length : -1;
 
-                                        // Also try DOM click as backup
-                                        el.click();
-                                        result.events.push({ type: 'el.click()', success: true });
+                                        // Only try DOM click as backup if synthetic events didn't trigger send
+                                        // If stop button appeared or input was cleared, send already succeeded
+                                        // Clicking again would trigger "stop generation" instead
+                                        if (!result.stopBtnAfterSynthetic && result.textLengthAfterSynthetic > 0) {
+                                            el.click();
+                                            result.events.push({ type: 'el.click()', success: true });
+                                        } else {
+                                            result.events.push({ type: 'el.click()', skipped: true, reason: 'send already succeeded' });
+                                        }
 
                                         result.clicked = true;
                                     } catch (e) {

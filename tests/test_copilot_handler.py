@@ -1448,9 +1448,9 @@ class TestGptModeSwitch:
         # OPTIMIZED: Reduced to 50ms (just enough for React to update)
         assert handler.GPT_MODE_MENU_WAIT == 0.05
         # OPTIMIZED: Use wait_for_selector instead of polling for faster detection
-        # Reduced from 8s to 5s for faster fallback
+        # Reduced from 5s to 3s - page should be fully loaded when called from UI
         assert hasattr(handler, 'GPT_MODE_BUTTON_WAIT_MS')
-        assert handler.GPT_MODE_BUTTON_WAIT_MS == 5000  # 5s total timeout
+        assert handler.GPT_MODE_BUTTON_WAIT_MS == 3000  # 3s total timeout
 
     def test_ensure_gpt_mode_completes_when_no_page(self, handler):
         """_ensure_gpt_mode completes without error when no page"""

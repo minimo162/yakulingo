@@ -831,7 +831,7 @@ def _early_connect():
 
 | 定数名 | 値 | 説明 |
 |--------|------|------|
-| `GPT_MODE_BUTTON_WAIT_MS` | 5000ms | ボタン表示待機タイムアウト（8秒から短縮） |
+| `GPT_MODE_BUTTON_WAIT_MS` | 3000ms | ボタン表示待機タイムアウト（UIから呼ばれる時点でページはロード済み） |
 | `GPT_MODE_MENU_WAIT` | 0.05s | メニュー開閉待機時間 |
 
 ### Login Detection Process (ログイン判定プロセス)
@@ -1036,7 +1036,7 @@ wait_time = backoff_time + jitter
 | セレクタ | `SELECTOR_RESPONSE_TIMEOUT_MS` | 10000ms | レスポンス要素の表示待機 |
 | セレクタ | `SELECTOR_NEW_CHAT_READY_TIMEOUT_MS` | 5000ms | 新規チャット準備完了待機 |
 | セレクタ | `SELECTOR_LOGIN_CHECK_TIMEOUT_MS` | 2000ms | ログイン状態チェック |
-| GPTモード | `GPT_MODE_BUTTON_WAIT_MS` | 8000ms | GPTモードボタンの表示待機（wait_for_selector） |
+| GPTモード | `GPT_MODE_BUTTON_WAIT_MS` | 3000ms | GPTモードボタンの表示待機（wait_for_selector） |
 | GPTモード | `GPT_MODE_MENU_WAIT` | 0.05s | メニュー開閉の待機時間（フォールバック用） |
 | ログイン | `LOGIN_WAIT_TIMEOUT_SECONDS` | 300s | ユーザーログイン待機 |
 | エグゼキュータ | `EXECUTOR_TIMEOUT_BUFFER_SECONDS` | 60s | レスポンスタイムアウトのマージン |
@@ -2189,14 +2189,14 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Recent Development Focus
 
 Based on recent commits:
-- **GPT Mode Early Initialization (2024-12)**:
-  - **Optimization**: GPTモード切替を早期接続スレッド内で開始（NiceGUI importと並列）
-  - **Implementation**:
-    - `_early_connect()`関数でCopilot接続成功後に即座に`ensure_gpt_mode()`を呼び出し
-    - `_gpt_mode_set`フラグで重複呼び出しを防止
-    - 再ログイン時はフラグをリセットして再設定
-    - `GPT_MODE_BUTTON_WAIT_MS`を8秒から5秒に短縮
-  - **Expected improvement**: UI表示後の待機時間を約3秒削減
+- **GPT Mode Startup Optimization (2024-12)**:
+  - **Optimization**: 早期接続スレッドからGPTモード設定を削除し、UI準備完了後に実行
+  - **Problem**: 早期接続完了時点ではCopilotページのReactコンポーネントがまだ完全にロードされておらず、GPTモードボタンが見つからずタイムアウト（約10秒）していた
+  - **Solution**:
+    - `_early_connect()`から`ensure_gpt_mode()`呼び出しを削除
+    - GPTモード設定は`_apply_early_connection_or_connect()`で実行（ページが完全にロードされた後）
+    - `GPT_MODE_BUTTON_WAIT_MS`を5秒から3秒に短縮（ページロード済みなので短いタイムアウトで十分）
+  - **Expected improvement**: 起動時間を約10秒短縮（早期GPTモード設定のタイムアウト待ちを削除）
   - **Affected files**: `yakulingo/ui/app.py`, `yakulingo/services/copilot_handler.py`
 - **Update Script Path Escaping Fix (2024-12)**:
   - **Problem**: パスにシングルクォートが含まれる場合、アップデートスクリプト内のPythonコマンドが構文エラーになる
@@ -2221,7 +2221,7 @@ Based on recent commits:
     - `_parse_single_option_result()`: 調整結果のパース
 - **GPT Mode Optimization (2024-12)**:
   - **wait_for_selector方式**: ポーリングからPlaywrightネイティブ待機に変更
-    - `GPT_MODE_BUTTON_WAIT_MS = 8000` - 8秒のタイムアウト（ネットワーク遅延考慮）
+    - `GPT_MODE_BUTTON_WAIT_MS = 3000` - 3秒のタイムアウト（UIから呼ばれる時点でページはロード済み）
     - Playwrightの効率的な待機機構を使用（ポーリングより高速）
   - **JavaScript一括実行**: メニュー操作を単一のevaluate呼び出しに統合
     - 3回のDOM操作 → 1回のPromise返却JS（30ms×3のsetTimeout）

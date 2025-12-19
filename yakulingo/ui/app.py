@@ -4122,8 +4122,9 @@ def run_app(
         def _early_connect():
             """Connect to Copilot in background (runs during NiceGUI import).
 
-            Also starts GPT mode switch immediately after connection to overlap
-            with NiceGUI import time (~4.7s). This saves ~3s of startup time.
+            Note: GPT mode switch is NOT done here because the page needs time
+            to fully render React components. It's handled by
+            _apply_early_connection_or_connect() after UI is ready.
             """
             try:
                 _t_early = time.perf_counter()
@@ -4133,19 +4134,10 @@ def run_app(
                     bring_to_foreground_on_login=False,
                     defer_window_positioning=True
                 )
-                _t_connect = time.perf_counter()
                 logger.info("[TIMING] Early Edge+Copilot connect (background): %.2fs, success=%s",
-                           _t_connect - _t_early, result)
-
-                # Start GPT mode switch immediately after connection
-                # This overlaps with remaining NiceGUI import + webview init time
-                if result:
-                    try:
-                        _early_copilot.ensure_gpt_mode()
-                        logger.info("[TIMING] Early GPT mode switch (background): %.2fs",
-                                   time.perf_counter() - _t_connect)
-                    except Exception as e:
-                        logger.debug("Early GPT mode switch failed (will retry later): %s", e)
+                           time.perf_counter() - _t_early, result)
+                # GPT mode is set later in _apply_early_connection_or_connect()
+                # by which time the page is fully loaded and button is visible
             except Exception as e:
                 logger.debug("Early Copilot connection failed: %s", e)
 

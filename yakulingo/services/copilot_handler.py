@@ -474,25 +474,20 @@ def _pre_init_playwright_impl():
         _t_start = _time.perf_counter()
         current_thread_id = threading.current_thread().ident
         logger.debug("[THREAD] pre_init_playwright_impl running in thread %s", current_thread_id)
-        print(f"[DEBUG] pre_init_playwright_impl: about to call _get_playwright()", flush=True)
         _, sync_playwright = _get_playwright()
         logger.debug("[TIMING] pre_init _get_playwright(): %.2fs", _time.perf_counter() - _t_start)
-        print(f"[DEBUG] pre_init_playwright_impl: _get_playwright() done, about to call sync_playwright().start()", flush=True)
         _t_init = _time.perf_counter()
         _pre_initialized_playwright = sync_playwright().start()
-        print(f"[DEBUG] pre_init_playwright_impl: sync_playwright().start() completed", flush=True)
         _pre_init_thread_id = current_thread_id  # Record thread ID for validation
         logger.debug("[TIMING] pre_init sync_playwright().start(): %.2fs", _time.perf_counter() - _t_init)
         logger.info("[TIMING] Playwright pre-initialization completed in thread %s: %.2fs",
                     current_thread_id, _time.perf_counter() - _t_start)
         return True
     except Exception as e:
-        print(f"[DEBUG] pre_init_playwright_impl: EXCEPTION: {e}", flush=True)
         logger.warning("Playwright pre-initialization failed: %s", e)
         _pre_init_error = e
         return False
     finally:
-        print(f"[DEBUG] pre_init_playwright_impl: finally block, setting event", flush=True)
         _pre_init_event.set()
 
 

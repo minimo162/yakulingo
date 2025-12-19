@@ -4148,6 +4148,15 @@ def run_app(
             """
             try:
                 _t_early = time.perf_counter()
+
+                # Wait for early Edge startup to complete before connecting
+                # This ensures Edge is running when connect() checks _is_port_in_use()
+                # Prevents race condition if Edge startup is slower than Playwright init
+                if _early_edge_thread is not None and _early_edge_thread.is_alive():
+                    logger.debug("Waiting for early Edge startup to complete...")
+                    _early_edge_thread.join(timeout=20.0)  # Max Edge startup time
+                    logger.debug("Early Edge startup thread completed")
+
                 # Use defer_window_positioning=True to skip waiting for YakuLingo window
                 # Window positioning will be done after YakuLingo window is created
                 result = _early_copilot.connect(

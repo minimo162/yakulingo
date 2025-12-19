@@ -782,18 +782,21 @@ background authentication/session establishment, causing auth dialogs to appear.
 
 接続完了時に「GPT-5.2 Think Deeper」モードを自動設定します。
 
-**GPTモード設定タイミング:**
+**早期GPTモード設定（起動最適化）:**
 
-GPTモード設定はUIスレッドから1回のみ呼び出されます。早期接続スレッドでは
-呼び出しません（Copilot React UIの完全ロードに~9秒かかるため、早期接続
-完了時（~6.7秒）では必ずタイムアウトする）。
+GPTモード切替は早期接続スレッド内で開始されます（NiceGUI import + UI初期化と並列）。
+Copilot React UIの完全ロードに~7-8秒かかるため、10秒のタイムアウトで待機します。
 
 ```python
-# _apply_early_connection_or_connect() 内
-if self._early_connection_result is True:
-    # 早期接続成功後、GPTモードを非同期で設定
-    asyncio.create_task(asyncio.to_thread(self.copilot.ensure_gpt_mode))
+# run_app() の _early_connect 関数内
+def _early_connect():
+    result = _early_copilot.connect(...)  # ~7秒
+    if result:
+        _early_copilot.ensure_gpt_mode()  # ~7-8秒待機（10秒タイムアウト）
 ```
+
+UIスレッドからも`ensure_gpt_mode()`を呼び出しますが、早期接続で成功した場合は
+`_gpt_mode_set`フラグによりスキップされます。
 
 **重複呼び出し防止フラグ:**
 
@@ -811,14 +814,16 @@ if self._early_connection_result is True:
 
 | シナリオ | 呼び出し元 | GPTモード設定 | フラグ操作 |
 |----------|-----------|--------------|-----------|
-| 早期接続成功 | `_apply_early_connection_or_connect()` | ✓ | 設定 |
+| 早期接続成功 | `_early_connect()` | ✓（10秒待機） | 設定 |
+| UI表示後 | `_apply_early_connection_or_connect()` | スキップ（設定済み）| - |
 | 通常接続成功 | `start_edge_and_connect()` | ✓ | 設定 |
 | 手動ログイン完了 | `_wait_for_login_completion()` | ✓ | リセット→設定 |
 | 再接続成功 | `_reconnect()` | ✗（手動変更を保持） | - |
 | 再接続→再ログイン | `_wait_for_login_completion()` | ✓ | リセット→設定 |
 
 **設計方針:**
-- UIスレッドからのみ`ensure_gpt_mode()`を呼び出す（早期接続スレッドでは呼び出さない）
+- 早期接続スレッドでGPTモード切替を開始（NiceGUI import + UI初期化と並列）
+- 10秒のタイムアウトでCopilot React UIの完全ロードを待機
 - `_gpt_mode_set`フラグで重複呼び出しを防止
 - 再接続時は呼び出さない（ユーザーが手動でモード変更した場合を考慮）
 - 再ログイン時はフラグをリセットして呼び出す（セッションリセットでモード設定が消えるため）
@@ -827,7 +832,7 @@ if self._early_connection_result is True:
 
 | 定数名 | 値 | 説明 |
 |--------|------|------|
-| `GPT_MODE_BUTTON_WAIT_MS` | 5000ms | ボタン表示待機タイムアウト |
+| `GPT_MODE_BUTTON_WAIT_MS` | 10000ms | ボタン表示待機タイムアウト（10秒） |
 | `GPT_MODE_MENU_WAIT` | 0.05s | メニュー開閉待機時間 |
 
 ### Login Detection Process (ログイン判定プロセス)
@@ -2186,12 +2191,11 @@ When interacting with users in this repository, prefer Japanese for comments and
 
 Based on recent commits:
 - **GPT Mode Startup Optimization (2024-12)**:
-  - **Fix**: 早期接続スレッドからGPTモード呼び出しを削除（常にタイムアウトしていた）
-  - **Root cause**: Copilot React UIの完全ロードに~9秒かかるが、早期接続は~6.7秒で完了。
-    5秒のタイムアウトでは間に合わず、常にタイムアウト→UIスレッドで再試行という無駄が発生
-  - **Solution**: GPTモード設定はUIスレッドからのみ呼び出す（ページ準備完了後）
-  - **Expected improvement**: 起動時間を約5秒削減（タイムアウト待機を排除）
-  - **Affected files**: `yakulingo/ui/app.py`, `CLAUDE.md`
+  - **Optimization**: GPTモード待機タイムアウトを5秒→10秒に延長
+  - **Root cause**: Copilot React UIの完全ロードに~7-8秒かかるが、5秒のタイムアウトでは間に合わない
+  - **Solution**: 早期接続スレッドで10秒タイムアウトで待機（NiceGUI import + UI初期化と並列）
+  - **Timeline**: 早期接続(~7秒) + GPTモード待機(~7-8秒) = ~14-15秒（UI表示と並列のため体感は短い）
+  - **Affected files**: `yakulingo/ui/app.py`, `yakulingo/services/copilot_handler.py`, `CLAUDE.md`
 - **Update Script Path Escaping Fix (2024-12)**:
   - **Problem**: パスにシングルクォートが含まれる場合、アップデートスクリプト内のPythonコマンドが構文エラーになる
   - **Solution**: 環境変数経由でパスを渡す方式に変更

@@ -903,8 +903,9 @@ class CopilotHandler:
     # OPTIMIZED: Reduced menu wait to minimum (just enough for React to update)
     GPT_MODE_MENU_WAIT = 0.05  # Wait for menu to open/close (50ms)
     # OPTIMIZED: Use wait_for_selector instead of polling for faster detection
-    # Reduced from 8s to 5s - if button isn't visible by then, page likely has issues
-    GPT_MODE_BUTTON_WAIT_MS = 5000  # Total timeout for button appearance (5s)
+    # Extended to 10s to allow for slow Copilot React UI loading
+    # Button typically appears ~7-8s after Copilot connection
+    GPT_MODE_BUTTON_WAIT_MS = 10000  # Total timeout for button appearance (10s)
 
     # Dynamic polling intervals for faster response detection
     # OPTIMIZED: Reduced intervals for quicker response detection (0.15s -> 0.1s)

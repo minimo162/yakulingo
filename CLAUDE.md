@@ -832,7 +832,7 @@ UIスレッドからも`ensure_gpt_mode()`を呼び出しますが、早期接�
 
 | 定数名 | 値 | 説明 |
 |--------|------|------|
-| `GPT_MODE_BUTTON_WAIT_MS` | 12000ms | ボタン表示待機タイムアウト（Copilot React UIのロードに約11秒かかるため） |
+| `GPT_MODE_BUTTON_WAIT_MS` | 15000ms | ボタン表示待機タイムアウト（余裕を持って設定、Copilot React UIのロードに約11秒かかるため） |
 | `GPT_MODE_MENU_WAIT` | 0.05s | メニュー開閉待機時間 |
 
 ### Login Detection Process (ログイン判定プロセス)
@@ -1037,7 +1037,7 @@ wait_time = backoff_time + jitter
 | セレクタ | `SELECTOR_RESPONSE_TIMEOUT_MS` | 10000ms | レスポンス要素の表示待機 |
 | セレクタ | `SELECTOR_NEW_CHAT_READY_TIMEOUT_MS` | 5000ms | 新規チャット準備完了待機 |
 | セレクタ | `SELECTOR_LOGIN_CHECK_TIMEOUT_MS` | 2000ms | ログイン状態チェック |
-| GPTモード | `GPT_MODE_BUTTON_WAIT_MS` | 3000ms | GPTモードボタンの表示待機（wait_for_selector） |
+| GPTモード | `GPT_MODE_BUTTON_WAIT_MS` | 15000ms | GPTモードボタンの表示待機（wait_for_selector） |
 | GPTモード | `GPT_MODE_MENU_WAIT` | 0.05s | メニュー開閉の待機時間（フォールバック用） |
 | ログイン | `LOGIN_WAIT_TIMEOUT_SECONDS` | 300s | ユーザーログイン待機 |
 | エグゼキュータ | `EXECUTOR_TIMEOUT_BUFFER_SECONDS` | 60s | レスポンスタイムアウトのマージン |
@@ -2195,13 +2195,13 @@ Based on recent commits:
   - **Approach**: 早期接続完了後すぐに`ensure_gpt_mode()`を呼び出し、NiceGUI起動中にGPTモード設定を完了
   - **Implementation**:
     - `_early_connect()`内で接続成功後に`ensure_gpt_mode()`を呼び出す
-    - `GPT_MODE_BUTTON_WAIT_MS = 12000`（12秒タイムアウト、Copilot React UIのロードに約11秒かかるため）
+    - `GPT_MODE_BUTTON_WAIT_MS = 15000`（15秒タイムアウト、余裕を持って設定）
     - `_gpt_mode_set`フラグで重複防止
   - **Expected improvement**: UI表示時点でGPTモード設定が完了、ユーザー待機時間を約5秒短縮
   - **Affected files**: `yakulingo/ui/app.py`, `yakulingo/services/copilot_handler.py`
 - **Window Positioning Timeout Extension (2024-12)**:
   - **Problem**: ウィンドウ配置タイムアウト（6秒）がNiceGUI+pywebview起動時間（約8秒）より短い
-  - **Solution**: `MAX_WAIT_MS`を6秒から10秒に延長
+  - **Solution**: `MAX_WAIT_MS`を6秒から15秒に延長（余裕を持って設定）
   - **Effect**: ウィンドウが最初から正しい位置に配置され、再配置のちらつきを防止
 - **Update Script Path Escaping Fix (2024-12)**:
   - **Problem**: パスにシングルクォートが含まれる場合、アップデートスクリプト内のPythonコマンドが構文エラーになる
@@ -2226,7 +2226,7 @@ Based on recent commits:
     - `_parse_single_option_result()`: 調整結果のパース
 - **GPT Mode Optimization (2024-12)**:
   - **wait_for_selector方式**: ポーリングからPlaywrightネイティブ待機に変更
-    - `GPT_MODE_BUTTON_WAIT_MS = 3000` - 3秒のタイムアウト（UIから呼ばれる時点でページはロード済み）
+    - `GPT_MODE_BUTTON_WAIT_MS = 15000` - 15秒のタイムアウト（余裕を持って設定）
     - Playwrightの効率的な待機機構を使用（ポーリングより高速）
   - **JavaScript一括実行**: メニュー操作を単一のevaluate呼び出しに統合
     - 3回のDOM操作 → 1回のPromise返却JS（30ms×3のsetTimeout）

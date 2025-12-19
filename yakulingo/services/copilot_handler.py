@@ -905,8 +905,8 @@ class CopilotHandler:
     # GPT mode button wait timeout
     # Early connection thread calls ensure_gpt_mode() during NiceGUI startup (~8s)
     # Copilot React UI takes ~11s from connection to fully render GPT mode button
-    # 12s timeout allows early connection to complete GPT mode setup before UI is ready
-    GPT_MODE_BUTTON_WAIT_MS = 12000  # Total timeout for button appearance (12s)
+    # 15s timeout allows early connection to complete GPT mode setup with margin
+    GPT_MODE_BUTTON_WAIT_MS = 15000  # Total timeout for button appearance (15s)
 
     # Dynamic polling intervals for faster response detection
     # OPTIMIZED: Reduced intervals for quicker response detection (0.15s -> 0.1s)

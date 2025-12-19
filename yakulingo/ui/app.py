@@ -4450,12 +4450,12 @@ def run_app(
             # - Phase 1: 50ms for first 1000ms (20 polls)
             # - Phase 2: 100ms for next 2000ms (20 polls)
             # - Phase 3: 200ms for remaining time
-            # Total max wait: 10s (NiceGUI+pywebview startup can take ~8s)
-            MAX_WAIT_MS = 10000
+            # Total max wait: 15s (余裕を持って設定、NiceGUI+pywebview起動は約8秒)
+            MAX_WAIT_MS = 15000
             POLL_INTERVALS = [
                 (1000, 50),    # First 1s: 50ms interval (quick detection)
                 (3000, 100),   # 1-3s: 100ms interval
-                (10000, 200),  # 3-10s: 200ms interval (CPU-friendly)
+                (15000, 200),  # 3-15s: 200ms interval (CPU-friendly)
             ]
             waited_ms = 0
 

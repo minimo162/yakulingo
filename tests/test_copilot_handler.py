@@ -1447,10 +1447,10 @@ class TestGptModeSwitch:
         assert hasattr(handler, 'GPT_MODE_MENU_WAIT')
         # OPTIMIZED: Reduced to 50ms (just enough for React to update)
         assert handler.GPT_MODE_MENU_WAIT == 0.05
-        # GPT mode button wait: 12s to allow early connection to complete
+        # GPT mode button wait: 15s to allow early connection to complete with margin
         # Copilot React UI takes ~11s from connection to fully render GPT mode button
         assert hasattr(handler, 'GPT_MODE_BUTTON_WAIT_MS')
-        assert handler.GPT_MODE_BUTTON_WAIT_MS == 12000  # 12s total timeout
+        assert handler.GPT_MODE_BUTTON_WAIT_MS == 15000  # 15s total timeout
 
     def test_ensure_gpt_mode_completes_when_no_page(self, handler):
         """_ensure_gpt_mode completes without error when no page"""

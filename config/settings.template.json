@@ -10,7 +10,7 @@
   "translation_style": "concise",
   "text_translation_style": "concise",
   "use_bundled_glossary": true,
-  "embed_glossary_in_prompt": true,
+  "embed_glossary_in_prompt": false,
   "font_size_adjustment_jp_to_en": 0.0,
   "font_size_min": 8.0,
   "font_jp_to_en": "Arial",

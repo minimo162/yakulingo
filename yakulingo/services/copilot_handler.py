@@ -5398,17 +5398,20 @@ class CopilotHandler:
                             }''')
                             logger.debug("[SEND_DETAILED] After JS events: %s", post_js_state)
 
-                            # Check if JS events already triggered send (stop button visible or input cleared)
-                            js_send_succeeded = (
-                                post_js_state.get('stopBtnVisible', False) or
-                                post_js_state.get('textLength', -1) == 0
-                            )
+                            # Check if JS events already triggered send
+                            # Priority: input cleared is the most reliable indicator
+                            # Stop button visibility is secondary (selectors may be stale)
+                            input_cleared = post_js_state.get('textLength', -1) == 0
+                            stop_btn_visible = post_js_state.get('stopBtnVisible', False)
+                            js_send_succeeded = input_cleared or stop_btn_visible
 
                             if js_send_succeeded:
                                 # JS events worked - skip Playwright Enter to avoid sending empty message
-                                logger.debug("[SEND] JS events succeeded (stopBtn=%s, textLen=%d), skipping Playwright Enter",
-                                           post_js_state.get('stopBtnVisible'), post_js_state.get('textLength', -1))
+                                logger.debug("[SEND] JS events succeeded (inputCleared=%s, stopBtn=%s), skipping Playwright Enter",
+                                           input_cleared, stop_btn_visible)
                                 send_method = "Enter key (JS events only)"
+                                if stop_btn_visible:
+                                    stop_button_seen_during_send = True
                             else:
                                 # JS events didn't trigger send - use Playwright as backup
                                 input_elem.press("Enter")
@@ -5427,10 +5430,34 @@ class CopilotHandler:
                                 }''')
                                 logger.debug("[SEND_DETAILED] After Playwright Enter (%.3fs): %s", pw_time, post_pw_state)
                                 send_method = "Enter key (JS events + Playwright)"
+                                # Track stop button for later use
+                                if post_pw_state.get('stopBtnVisible', False):
+                                    stop_button_seen_during_send = True
 
                         elif send_attempt == 1:
                             # Second attempt: JS click with multiple event dispatch
                             # Most reliable for minimized windows - dispatch mousedown/mouseup/click
+
+                            # CRITICAL: Check if Copilot is already generating before clicking button
+                            # If stop button is visible or input is cleared, first attempt succeeded
+                            # Clicking the button now would trigger "stop generation" instead of "send"
+                            pre_click_state = self._page.evaluate('''() => {
+                                const input = document.querySelector('#m365-chat-editor-target-element');
+                                const stopBtn = document.querySelector('.fai-SendButton__stopBackground');
+                                return {
+                                    inputCleared: input ? input.innerText.trim().length === 0 : false,
+                                    stopBtnVisible: !!stopBtn
+                                };
+                            }''')
+
+                            if pre_click_state.get('stopBtnVisible', False) or pre_click_state.get('inputCleared', False):
+                                # First attempt already succeeded - skip button click to avoid stopping generation
+                                logger.info("[SEND] Skipping attempt 2: generation already started (stopBtn=%s, inputCleared=%s)",
+                                           pre_click_state.get('stopBtnVisible'), pre_click_state.get('inputCleared'))
+                                stop_button_seen_during_send = pre_click_state.get('stopBtnVisible', False)
+                                send_method = "Enter key (verified by pre-click check)"
+                                send_success = True
+                                break  # Exit retry loop
 
                             # Log elapsed time since send ready
                             elapsed_since_ready = time.monotonic() - send_ready_time
@@ -5512,6 +5539,26 @@ class CopilotHandler:
 
                         else:
                             # Third attempt: Playwright click with force (scrolls element into view)
+
+                            # CRITICAL: Check if Copilot is already generating before clicking button
+                            pre_click_state = self._page.evaluate('''() => {
+                                const input = document.querySelector('#m365-chat-editor-target-element');
+                                const stopBtn = document.querySelector('.fai-SendButton__stopBackground');
+                                return {
+                                    inputCleared: input ? input.innerText.trim().length === 0 : false,
+                                    stopBtnVisible: !!stopBtn
+                                };
+                            }''')
+
+                            if pre_click_state.get('stopBtnVisible', False) or pre_click_state.get('inputCleared', False):
+                                # Previous attempt already succeeded - skip button click
+                                logger.info("[SEND] Skipping attempt 3: generation already started (stopBtn=%s, inputCleared=%s)",
+                                           pre_click_state.get('stopBtnVisible'), pre_click_state.get('inputCleared'))
+                                stop_button_seen_during_send = pre_click_state.get('stopBtnVisible', False)
+                                send_method = "Enter key (verified by pre-click check)"
+                                send_success = True
+                                break  # Exit retry loop
+
                             send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
                             if send_btn:
                                 try:

@@ -4,12 +4,11 @@ UI components for YakuLingo.
 
 Heavy component imports are lazy-loaded for faster startup.
 Use explicit imports like:
-    from yakulingo.ui.components.text_panel import create_text_panel
+    from yakulingo.ui.components.text_panel import create_text_input_panel
 """
 
 # Lazy-loaded components via __getattr__
 _LAZY_IMPORTS = {
-    'create_text_panel': 'text_panel',
     'create_file_panel': 'file_panel',
     'UpdateNotification': 'update_notification',
     'check_updates_on_startup': 'update_notification',
@@ -27,7 +26,6 @@ def __getattr__(name: str):
 
 
 __all__ = [
-    'create_text_panel',
     'create_file_panel',
     'UpdateNotification',
     'check_updates_on_startup',

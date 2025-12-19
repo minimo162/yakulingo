@@ -908,8 +908,12 @@ class TestCopilotHandlerConnectFlow:
         """connect() returns boolean result"""
         handler = CopilotHandler()
 
-        # Will likely return False without Edge running
-        result = handler.connect()
+        # Mock _wait_for_auto_login_impl to avoid 60s timeout and
+        # get_pre_initialized_playwright to avoid 30s wait in tests
+        with patch.object(handler, '_wait_for_auto_login_impl', return_value=False):
+            with patch('yakulingo.services.copilot_handler.get_pre_initialized_playwright', return_value=None):
+                # Will likely return False without Edge running
+                result = handler.connect()
 
         assert isinstance(result, bool)
 
@@ -922,8 +926,12 @@ class TestCopilotHandlerConnectFlow:
         mock_page.url = "https://www.google.com"
         handler._page = mock_page
 
-        # This should try to reconnect (and fail since Edge isn't running)
-        result = handler.connect()
+        # Mock _wait_for_auto_login_impl to avoid 60s timeout and
+        # get_pre_initialized_playwright to avoid 30s wait in tests
+        with patch.object(handler, '_wait_for_auto_login_impl', return_value=False):
+            with patch('yakulingo.services.copilot_handler.get_pre_initialized_playwright', return_value=None):
+                # This should try to reconnect (and fail since Edge isn't running)
+                result = handler.connect()
 
         # Should have reset connection state
         assert handler._connected is False
@@ -934,8 +942,12 @@ class TestCopilotHandlerConnectFlow:
         handler._connected = True
         handler._page = None
 
-        # This should try to reconnect (and fail since Edge isn't running)
-        result = handler.connect()
+        # Mock _wait_for_auto_login_impl to avoid 60s timeout and
+        # get_pre_initialized_playwright to avoid 30s wait in tests
+        with patch.object(handler, '_wait_for_auto_login_impl', return_value=False):
+            with patch('yakulingo.services.copilot_handler.get_pre_initialized_playwright', return_value=None):
+                # This should try to reconnect (and fail since Edge isn't running)
+                result = handler.connect()
 
         # Should have reset connection state
         assert handler._connected is False
@@ -1248,9 +1260,11 @@ class TestCopilotHandlerLoginDetection:
         # Mock to simulate successful connection
         with patch('yakulingo.services.copilot_handler._get_playwright_errors') as mock_errors:
             mock_errors.return_value = {'Error': PlaywrightError, 'TimeoutError': PlaywrightError}
-            with patch.object(handler, '_is_port_in_use', return_value=False):
-                with patch.object(handler, '_start_translator_edge', return_value=False):
-                    result = handler.connect()
+            # Mock get_pre_initialized_playwright to avoid 30s timeout wait
+            with patch('yakulingo.services.copilot_handler.get_pre_initialized_playwright', return_value=None):
+                with patch.object(handler, '_is_port_in_use', return_value=False):
+                    with patch.object(handler, '_start_translator_edge', return_value=False):
+                        result = handler.connect()
 
         # Edge start failed, so connection failed
         assert result is False

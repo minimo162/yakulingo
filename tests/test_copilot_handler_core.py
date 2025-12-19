@@ -103,8 +103,11 @@ class TestCopilotHandlerConnectFlow:
         """connect() logs connection progress"""
         handler = CopilotHandler()
 
-        # Just verify connect() doesn't crash when Edge isn't running
-        result = handler.connect()
+        # Mock _wait_for_auto_login_impl and get_pre_initialized_playwright to avoid long waits
+        with patch.object(handler, '_wait_for_auto_login_impl', return_value=False):
+            with patch('yakulingo.services.copilot_handler.get_pre_initialized_playwright', return_value=None):
+                # Just verify connect() doesn't crash when Edge isn't running
+                result = handler.connect()
 
         # On Linux without Edge, this will return False
         assert isinstance(result, bool)
@@ -113,10 +116,12 @@ class TestCopilotHandlerConnectFlow:
         """connect() handles when Playwright is not available"""
         handler = CopilotHandler()
 
-        with patch('yakulingo.services.copilot_handler._get_playwright') as mock_pw:
-            mock_pw.side_effect = ImportError("No module named 'playwright'")
+        # Mock get_pre_initialized_playwright to avoid 30s wait
+        with patch('yakulingo.services.copilot_handler.get_pre_initialized_playwright', return_value=None):
+            with patch('yakulingo.services.copilot_handler._get_playwright') as mock_pw:
+                mock_pw.side_effect = ImportError("No module named 'playwright'")
 
-            result = handler.connect()
+                result = handler.connect()
 
         assert result is False
         assert handler.is_connected is False
@@ -125,18 +130,20 @@ class TestCopilotHandlerConnectFlow:
         """connect() handles browser connection failure"""
         handler = CopilotHandler()
 
-        with patch.object(handler, '_is_port_in_use', return_value=True):
-            with patch('yakulingo.services.copilot_handler._get_playwright') as mock_pw:
-                mock_sync_playwright = Mock()
-                mock_playwright_instance = Mock()
-                # Use ConnectionError which is caught by the implementation
-                mock_playwright_instance.chromium.connect_over_cdp.side_effect = ConnectionError(
-                    "Connection refused"
-                )
-                mock_sync_playwright.return_value.start.return_value = mock_playwright_instance
-                mock_pw.return_value = ({}, mock_sync_playwright)
+        # Mock get_pre_initialized_playwright to avoid 30s wait
+        with patch('yakulingo.services.copilot_handler.get_pre_initialized_playwright', return_value=None):
+            with patch.object(handler, '_is_port_in_use', return_value=True):
+                with patch('yakulingo.services.copilot_handler._get_playwright') as mock_pw:
+                    mock_sync_playwright = Mock()
+                    mock_playwright_instance = Mock()
+                    # Use ConnectionError which is caught by the implementation
+                    mock_playwright_instance.chromium.connect_over_cdp.side_effect = ConnectionError(
+                        "Connection refused"
+                    )
+                    mock_sync_playwright.return_value.start.return_value = mock_playwright_instance
+                    mock_pw.return_value = ({}, mock_sync_playwright)
 
-                result = handler.connect()
+                    result = handler.connect()
 
         assert result is False
 
@@ -556,7 +563,8 @@ class TestCopilotHandlerTranslateSync:
         """translate_sync tries to auto-connect and raises if it fails"""
         handler = CopilotHandler()
         handler._connected = False
-        handler.connect = Mock(return_value=False)  # Mock failed connection
+        # Mock _connect_impl since _translate_sync_impl calls it directly
+        handler._connect_impl = Mock(return_value=False)
 
         with pytest.raises(RuntimeError) as exc:
             handler.translate_sync(["test"], "prompt")

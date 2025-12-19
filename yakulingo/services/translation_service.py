@@ -60,6 +60,14 @@ _RE_TRANSLATION_LABEL = re.compile(
     re.IGNORECASE,
 )
 
+# Pattern to remove trailing attached filename from explanation
+# Copilot sometimes appends the attached file name (e.g., "glossary", "glossary.csv") to the response
+# This pattern matches common reference file names at the end of the explanation
+_RE_TRAILING_FILENAME = re.compile(
+    r'[\s。．.、,]*(glossary(?:_old)?|translation_rules|abbreviations|用語集|略語集)(?:\.[a-z]{2,4})?\s*$',
+    re.IGNORECASE,
+)
+
 def _sanitize_output_stem(name: str) -> str:
     """Sanitize a filename stem for cross-platform safety.
 
@@ -1699,6 +1707,11 @@ class TranslationService:
         if text:
             text = _RE_TRANSLATION_LABEL.sub('', text).strip()
 
+        # Remove trailing attached filename from explanation
+        # Copilot sometimes appends the reference file name (e.g., "glossary") to the response
+        if explanation:
+            explanation = _RE_TRAILING_FILENAME.sub('', explanation).strip()
+
         # Set default explanation if still empty
         if not explanation:
             explanation = "翻訳結果です"
@@ -1742,6 +1755,10 @@ class TranslationService:
         # Remove translation label prefixes (e.g., "英語翻訳", "日本語翻訳")
         if text:
             text = _RE_TRANSLATION_LABEL.sub('', text).strip()
+
+        # Remove trailing attached filename from explanation
+        if explanation:
+            explanation = _RE_TRAILING_FILENAME.sub('', explanation).strip()
 
         if not explanation:
             explanation = "調整後の翻訳です"

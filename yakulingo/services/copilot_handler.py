@@ -3120,11 +3120,6 @@ class CopilotHandler:
             edge_x = new_app_x + app_width + self.SIDE_PANEL_GAP
             edge_y = new_app_y
 
-            logger.debug("Side panel positioning: screen=%dx%d, app=%dx%d, edge=%dx%d",
-                        screen_width, screen_height, app_width, app_height, edge_width, app_height)
-            logger.debug("New positions: app=(%d,%d), edge=(%d,%d)",
-                        new_app_x, new_app_y, edge_x, edge_y)
-
             # Check if app needs to be moved (compare with current position)
             app_needs_move = (app_rect.left != new_app_x or app_rect.top != new_app_y)
 
@@ -3155,17 +3150,26 @@ class CopilotHandler:
             is_off_screen = current_rect.left < -10000 or current_rect.top < -10000
             is_minimized = user32.IsIconic(edge_hwnd)
 
-            logger.debug("Edge window state: off_screen=%s, minimized=%s, pos=(%d,%d)",
-                        is_off_screen, is_minimized, current_rect.left, current_rect.top)
+            # Check if Edge needs to be moved (position or size change)
+            current_edge_width = current_rect.right - current_rect.left
+            current_edge_height = current_rect.bottom - current_rect.top
+            edge_needs_move = (
+                current_rect.left != edge_x or
+                current_rect.top != edge_y or
+                current_edge_width != edge_width or
+                current_edge_height != app_height
+            )
+
+            # Early return if neither window needs adjustment and not bringing to front
+            if not app_needs_move and not edge_needs_move and not is_off_screen and not is_minimized and not bring_to_front:
+                return True  # Already in correct position
 
             # If window is off-screen or minimized, restore it first
             SW_RESTORE = 9
             if is_off_screen or is_minimized:
                 user32.ShowWindow(edge_hwnd, SW_RESTORE)
 
-            # Position and resize Edge window
-            # If bring_to_front is True, use HWND_TOPMOST to ensure Edge is visible
-            # This is important for hotkey activation where Edge may be behind other windows
+            # Position and resize Edge window only if needed
             HWND_TOPMOST = -1
             HWND_NOTOPMOST = -2
 
@@ -3190,7 +3194,6 @@ class CopilotHandler:
                 )
                 # After NOTOPMOST, Edge may be behind the foreground window (YakuLingo app)
                 # Insert Edge right after YakuLingo in Z-order so both windows are visible
-                # Using yakulingo_hwnd as hWndInsertAfter places Edge directly behind it
                 user32.SetWindowPos(
                     edge_hwnd,
                     yakulingo_hwnd,
@@ -3198,7 +3201,7 @@ class CopilotHandler:
                     SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
                 )
                 logger.debug("Edge brought to front (placed after YakuLingo in Z-order)")
-            else:
+            elif edge_needs_move:
                 flags = SWP_NOACTIVATE | SWP_SHOWWINDOW
                 user32.SetWindowPos(
                     edge_hwnd,
@@ -3214,7 +3217,7 @@ class CopilotHandler:
             SW_SHOWNOACTIVATE = 4
             user32.ShowWindow(edge_hwnd, SW_SHOWNOACTIVATE)
 
-            logger.info("Windows positioned as set: app=(%d,%d), edge=(%d,%d) %dx%d",
+            logger.debug("Windows positioned: app=(%d,%d), edge=(%d,%d) %dx%d",
                         new_app_x, new_app_y, edge_x, edge_y, edge_width, app_height)
             return True
 
@@ -5264,7 +5267,7 @@ class CopilotHandler:
                             except Exception as scroll_err:
                                 logger.debug("[SEND] Button scroll failed: %s", scroll_err)
 
-                            time.sleep(0.03)  # Wait for UI to settle after scroll (optimized from 0.1)
+                            time.sleep(0.1)  # Wait for UI to settle after scroll (restored: Enter key needs React UI to be ready)
 
                             # Detailed debug: Check UI readiness before sending
                             pre_send_state = self._page.evaluate('''() => {
@@ -5383,7 +5386,7 @@ class CopilotHandler:
                             }''', input_selector)
                             logger.info("[SEND_DETAILED] JS key events result: %s", enter_result)
 
-                            # Small wait to see if events triggered anything (optimized from 0.05)
+                            # Brief wait before checking state
                             time.sleep(0.02)
 
                             # Check immediate state after JS events
@@ -5417,7 +5420,7 @@ class CopilotHandler:
                                 input_elem.press("Enter")
                                 pw_time = time.monotonic() - send_start
 
-                                # Check state after Playwright press (optimized from 0.05)
+                                # Brief wait before checking state
                                 time.sleep(0.02)
                                 post_pw_state = self._page.evaluate('''() => {
                                     const input = document.querySelector('#m365-chat-editor-target-element');
@@ -5651,11 +5654,10 @@ class CopilotHandler:
                     except Exception as state_err:
                         logger.debug("[SEND_DEBUG] Could not get post-attempt state: %s", state_err)
 
-                    # Optimized send verification: parallel polling of both conditions
-                    # This is faster than sequential wait_for_selector + input check
-                    SEND_VERIFY_SHORT_WAIT_MS = 500  # Increased from 200ms
-                    SEND_VERIFY_POLL_INTERVAL = 0.05  # Increased from 0.03s for stability
-                    SEND_VERIFY_POLL_MAX = 1.5  # Increased from 0.5s for reliability
+                    # Optimized send verification: focus on input cleared (fastest signal)
+                    # Stop button rendering is delayed, but input clears immediately on successful send
+                    SEND_VERIFY_POLL_INTERVAL = 0.03  # Fast polling for input clear check
+                    SEND_VERIFY_POLL_MAX = 0.8  # Reduced: input clears quickly if send succeeded
 
                     verify_start = time.monotonic()
                     send_verified = False
@@ -5697,44 +5699,18 @@ class CopilotHandler:
                     except Exception as early_err:
                         logger.debug("[SEND_VERIFY] Early verification check failed: %s", early_err)
 
-                    # Method 1: Short wait_for_selector (efficient browser-level waiting)
-                    # Skip if already verified by Method 0
-                    if not send_verified:
-                        try:
-                            self._page.wait_for_selector(
-                                self.STOP_BUTTON_SELECTOR_COMBINED,
-                                timeout=SEND_VERIFY_SHORT_WAIT_MS,
-                                state='visible'
-                            )
-                            send_verified = True
-                            verify_reason = "stop button visible"
-                            stop_button_seen_during_send = True
-                            logger.debug("[SEND_VERIFY] Stop button appeared")
-                        except Exception as stop_err:
-                            # Stop button didn't appear quickly - continue with polling
-                            logger.debug("[SEND_VERIFY] Stop button not visible after %dms: %s",
-                                        SEND_VERIFY_SHORT_WAIT_MS, type(stop_err).__name__)
+                    # Method 1: Skip slow wait_for_selector for stop button
+                    # Stop button rendering is delayed, but input clears immediately on successful send
+                    # Proceed directly to polling which checks input cleared (faster verification)
 
-                    # Method 2: Poll both conditions (stop button AND input cleared)
-                    # This catches cases where input clears quickly but stop button is slow
+                    # Method 2: Poll input cleared (primary) and stop button (secondary)
+                    # Input clears immediately on successful send; stop button rendering is delayed
                     poll_iteration = 0
                     poll_start = time.monotonic()
                     while not send_verified and (time.monotonic() - poll_start) < SEND_VERIFY_POLL_MAX:
                         poll_iteration += 1
-                        # Check stop button
-                        try:
-                            stop_btn = self._page.query_selector(self.STOP_BUTTON_SELECTOR_COMBINED)
-                            if stop_btn and stop_btn.is_visible():
-                                send_verified = True
-                                verify_reason = "stop button visible"
-                                stop_button_seen_during_send = True
-                                logger.debug("[SEND_VERIFY] Stop button found at poll iteration %d", poll_iteration)
-                                break
-                        except Exception as e:
-                            if poll_iteration == 1:
-                                logger.debug("[SEND_VERIFY] Stop button check error: %s", e)
 
-                        # Check if input is cleared
+                        # Primary check: input cleared (fastest signal of successful send)
                         try:
                             current_input = self._page.query_selector(input_selector)
                             remaining_text = current_input.inner_text().strip() if current_input else ""
@@ -5744,7 +5720,6 @@ class CopilotHandler:
                                 logger.debug("[SEND_VERIFY] Input cleared at poll iteration %d", poll_iteration)
                                 break
                             # Check if Copilot is processing (shows "応答を処理中です" or similar)
-                            # This message appears in the input field during response generation
                             elif any(phrase in remaining_text for phrase in (
                                 "応答を処理中", "Processing", "処理中", "お待ち"
                             )):
@@ -5753,23 +5728,22 @@ class CopilotHandler:
                                 logger.debug("[SEND_VERIFY] Processing message detected: %s", remaining_text[:50])
                                 break
                             elif poll_iteration == 1:
-                                # Log remaining text on first iteration for debugging
                                 logger.debug("[SEND_VERIFY] Input still has text (len=%d): %s...",
                                             len(remaining_text), remaining_text[:50] if len(remaining_text) > 50 else remaining_text)
                         except Exception as e:
-                            # If we can't check, assume it might have been sent
                             send_verified = True
                             verify_reason = "input check failed (assuming sent)"
                             logger.debug("[SEND_VERIFY] Input check failed: %s", e)
                             break
 
-                        # Check for response elements as alternative verification
+                        # Secondary check: stop button visible (backup, can be slow to render)
                         try:
-                            response_elem = self._page.query_selector(self.RESPONSE_SELECTOR_COMBINED)
-                            if response_elem:
+                            stop_btn = self._page.query_selector(self.STOP_BUTTON_SELECTOR_COMBINED)
+                            if stop_btn and stop_btn.is_visible():
                                 send_verified = True
-                                verify_reason = "response element appeared"
-                                logger.debug("[SEND_VERIFY] Response element found at poll iteration %d", poll_iteration)
+                                verify_reason = "stop button visible"
+                                stop_button_seen_during_send = True
+                                logger.debug("[SEND_VERIFY] Stop button found at poll iteration %d", poll_iteration)
                                 break
                         except Exception:
                             pass

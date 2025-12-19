@@ -430,6 +430,10 @@ class TestMsgProcessorOutlookIntegration:
         assert mock_mail.Subject == "Translated Subject"
         assert mock_mail.Body == "Translated body."
 
+        # Verify COM cleanup: Close(1) should be called (olDiscard=1)
+        # This prevents the "reply" issue mentioned in CLAUDE.md
+        mock_mail.Close.assert_called_once_with(1)
+
     def test_bilingual_reads_msg_file(self, processor, tmp_path, mock_extract_msg):
         """Test bilingual document can read from translated .msg file."""
         original_path = tmp_path / "original.msg"

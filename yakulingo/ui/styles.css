@@ -2751,6 +2751,45 @@ textarea:focus-visible {
     font-size: 1rem !important;
 }
 
+/* === Translation Style Toggle (Compact segment buttons) === */
+.style-toggle {
+    border-radius: var(--md-sys-shape-corner-full) !important;
+    background: var(--md-sys-color-surface-container) !important;
+    padding: 2px !important;
+}
+
+.style-toggle .q-btn-group {
+    border-radius: var(--md-sys-shape-corner-full) !important;
+}
+
+.style-toggle .q-btn {
+    border-radius: var(--md-sys-shape-corner-full) !important;
+    min-height: 28px !important;
+    padding: 0 0.625rem !important;
+    font-size: 0.75rem !important;
+    text-transform: none !important;
+    color: var(--md-sys-color-on-surface-variant) !important;
+    background: transparent !important;
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard) !important;
+}
+
+.style-toggle .q-btn:hover:not(.q-btn--active) {
+    background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent) !important;
+}
+
+.style-toggle .q-btn--active {
+    background: var(--md-sys-color-primary) !important;
+    color: var(--md-sys-color-on-primary) !important;
+    box-shadow: var(--md-sys-elevation-1) !important;
+}
+
+/* Larger style toggle in input panel (before translation) */
+.main-area:not(.has-results) .input-panel .style-toggle .q-btn {
+    min-height: 32px !important;
+    padding: 0 0.75rem !important;
+    font-size: 0.8125rem !important;
+}
+
 /* === Settings Dialog === */
 .settings-dialog {
     border-radius: var(--md-sys-shape-corner-large) !important;

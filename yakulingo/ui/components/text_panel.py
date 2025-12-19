@@ -134,13 +134,14 @@ def create_text_input_panel(
     on_clear: Callable[[], None],
     on_attach_reference_file: Optional[Callable[[], None]] = None,
     on_remove_reference_file: Optional[Callable[[int], None]] = None,
-    on_settings: Optional[Callable[[], None]] = None,
     on_translate_button_created: Optional[Callable[[ui.button], None]] = None,
     use_bundled_glossary: bool = False,
     on_glossary_toggle: Optional[Callable[[bool], None]] = None,
     on_edit_glossary: Optional[Callable[[], None]] = None,
     on_edit_translation_rules: Optional[Callable[[], None]] = None,
     on_textarea_created: Optional[Callable[[ui.textarea], None]] = None,
+    text_translation_style: str = 'concise',
+    on_text_style_change: Optional[Callable[[str], None]] = None,
 ):
     """
     Text input panel for 2-column layout.
@@ -149,9 +150,10 @@ def create_text_input_panel(
     _create_large_input_panel(
         state, on_translate, on_source_change, on_clear,
         on_attach_reference_file, on_remove_reference_file,
-        on_settings, on_translate_button_created,
+        on_translate_button_created,
         use_bundled_glossary, on_glossary_toggle, on_edit_glossary,
         on_edit_translation_rules, on_textarea_created,
+        text_translation_style, on_text_style_change,
     )
 
 
@@ -162,13 +164,14 @@ def _create_large_input_panel(
     on_clear: Callable[[], None],
     on_attach_reference_file: Optional[Callable[[], None]] = None,
     on_remove_reference_file: Optional[Callable[[int], None]] = None,
-    on_settings: Optional[Callable[[], None]] = None,
     on_translate_button_created: Optional[Callable[[ui.button], None]] = None,
     use_bundled_glossary: bool = False,
     on_glossary_toggle: Optional[Callable[[bool], None]] = None,
     on_edit_glossary: Optional[Callable[[], None]] = None,
     on_edit_translation_rules: Optional[Callable[[], None]] = None,
     on_textarea_created: Optional[Callable[[ui.textarea], None]] = None,
+    text_translation_style: str = 'concise',
+    on_text_style_change: Optional[Callable[[str], None]] = None,
 ):
     """Large input panel for INPUT state - spans 2 columns"""
     with ui.column().classes('flex-1 w-full gap-4'):
@@ -231,13 +234,24 @@ def _create_large_input_panel(
                             ).props('flat dense round size=sm').classes('settings-btn')
                             rules_btn.tooltip('翻訳ルールを編集')
 
-                        # Settings button
-                        if on_settings:
-                            settings_btn = ui.button(
-                                icon='tune',
-                                on_click=on_settings
-                            ).props('flat dense round size=sm').classes('settings-btn')
-                            settings_btn.tooltip('翻訳の設定')
+                        # Translation style toggle (replaces settings dialog)
+                        if on_text_style_change:
+                            style_options = {
+                                'standard': '標準',
+                                'concise': '簡潔',
+                                'minimal': '最簡潔',
+                            }
+
+                            def handle_style_change(e):
+                                style_reverse = {v: k for k, v in style_options.items()}
+                                new_style = style_reverse.get(e.value, 'concise')
+                                on_text_style_change(new_style)
+
+                            ui.toggle(
+                                list(style_options.values()),
+                                value=style_options.get(text_translation_style, '簡潔'),
+                                on_change=handle_style_change,
+                            ).classes('style-toggle').props('dense no-caps size=sm')
 
                         # Reference file attachment button
                         if on_attach_reference_file:

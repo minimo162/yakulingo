@@ -2139,8 +2139,13 @@ Based on recent commits:
 - **Taskbar Icon Fix (2024-12)**:
   - **Problem**: タスクバーにPythonアイコンが表示され、YakuLingoアイコンが表示されない
   - **Root cause**: pywebviewの`window_args['icon']`設定だけではWindowsタスクバーのアイコンは変わらない
-  - **Solution**: `SetCurrentProcessExplicitAppUserModelID('YakuLingo.App')`でAppUserModelIDを設定
-  - **Implementation**: `run_app()`の早い段階でctypes経由でShell32 APIを呼び出し
+  - **Solution**: 2段階のアプローチで確実にアイコンを設定
+    1. `SetCurrentProcessExplicitAppUserModelID('YakuLingo.App')`: AppUserModelIDを設定（タスクバーグループ化）
+    2. `WM_SETICON`メッセージ: Win32 APIでウィンドウアイコンを直接設定
+  - **Implementation**:
+    - `run_app()`の早い段階でShell32 APIでAppUserModelIDを設定
+    - `_position_window_early_sync()`でウィンドウ検出後に`LoadImageW`/`SendMessageW`でアイコン設定
+    - 小アイコン（16x16）と大アイコン（32x32）の両方を設定
   - **Effect**: タスクバーにYakuLingoアイコンが正しく表示される
 - **Excel COM Isolation Improvements (2024-12)**:
   - **Problem**: xlwingsの`xw.App()`がCOM ROT経由で既存Excelインスタンスに接続する可能性

@@ -13,6 +13,7 @@ from typing import Optional, Callable
 import json
 import os
 import platform
+import shlex
 import shutil
 import subprocess
 import sys
@@ -217,32 +218,37 @@ class NTLMProxyHandler(urllib.request.BaseHandler):
             if proxy_dict:
                 proxy_handler = urllib.request.ProxyHandler(proxy_dict)
                 opener = urllib.request.build_opener(proxy_handler)
-                response = opener.open(new_req)
 
-                # Type 2 メッセージ（CHALLENGE）を受信した場合
-                if response.status == 407:
-                    challenge = response.headers.get("Proxy-Authenticate", "")
-                    if scheme in challenge:
-                        # チャレンジを抽出
-                        token_start = challenge.find(scheme) + len(scheme) + 1
-                        challenge_token = challenge[token_start:].strip()
+                try:
+                    # Type 1 リクエストを送信
+                    response = opener.open(new_req)
+                    # 認証成功（407以外）の場合はそのまま返す
+                    return response
+                except urllib.error.HTTPError as e:
+                    # Type 2 メッセージ（CHALLENGE）を受信した場合
+                    if e.code == 407:
+                        challenge = e.headers.get("Proxy-Authenticate", "")
+                        if scheme in challenge:
+                            # チャレンジを抽出
+                            token_start = challenge.find(scheme) + len(scheme) + 1
+                            challenge_token = challenge[token_start:].strip()
 
-                        # Type 3 メッセージ（AUTHENTICATE）を生成
-                        challenge_bytes = base64.b64decode(challenge_token)
-                        _, out_buf = ctx.authorize(challenge_bytes)
-                        auth_token = base64.b64encode(out_buf[0].Buffer).decode('ascii')
+                            # Type 3 メッセージ（AUTHENTICATE）を生成
+                            challenge_bytes = base64.b64decode(challenge_token)
+                            _, out_buf = ctx.authorize(challenge_bytes)
+                            auth_token = base64.b64encode(out_buf[0].Buffer).decode('ascii')
 
-                        # 最終認証リクエスト
-                        final_req = urllib.request.Request(
-                            req.full_url,
-                            data=req.data,
-                            headers=dict(req.headers),
-                            method=req.get_method()
-                        )
-                        final_req.add_header("Proxy-Authorization", f"{scheme} {auth_token}")
-                        return opener.open(final_req)
-
-                return response
+                            # 最終認証リクエスト
+                            final_req = urllib.request.Request(
+                                req.full_url,
+                                data=req.data,
+                                headers=dict(req.headers),
+                                method=req.get_method()
+                            )
+                            final_req.add_header("Proxy-Authorization", f"{scheme} {auth_token}")
+                            return opener.open(final_req)
+                    # 407以外のHTTPエラーは再スロー
+                    raise
 
         except (ValueError, RuntimeError, OSError) as e:
             logger.error("NTLM認証に失敗: %s", e)
@@ -413,7 +419,9 @@ class AutoUpdater:
                 self._save_release_cache(response_data, etag)
             except urllib.error.HTTPError as e:
                 if e.code == 304 and cached_release and "body" in cached_release:
-                    response_data = cached_release["body"].encode("utf-8")
+                    # キャッシュボディは通常文字列だが、型安全性のため確認
+                    body = cached_release["body"]
+                    response_data = body.encode("utf-8") if isinstance(body, str) else body
                 else:
                     raise
 
@@ -545,24 +553,34 @@ class AutoUpdater:
                 self._download_exe_if_needed(version_info)
                 return download_path
 
-        # ダウンロード実行
+        # 一時ファイルにダウンロード（中断時の部分ファイル残留を防止）
+        temp_path = download_path.with_suffix(".zip.tmp")
+
         req = urllib.request.Request(version_info.download_url)
         req.add_header("User-Agent", f"YakuLingo/{self.current_version}")
 
-        with self.opener.open(req, timeout=300) as response:
-            total_size = int(response.headers.get("Content-Length", 0) or version_info.file_size or 0)
-            downloaded = 0
+        try:
+            with self.opener.open(req, timeout=300) as response:
+                total_size = int(response.headers.get("Content-Length", 0) or version_info.file_size or 0)
+                downloaded = 0
 
-            with open(download_path, "wb") as f:
-                while True:
-                    chunk = response.read(8192)
-                    if not chunk:
-                        break
-                    f.write(chunk)
-                    downloaded += len(chunk)
+                with open(temp_path, "wb") as f:
+                    while True:
+                        chunk = response.read(8192)
+                        if not chunk:
+                            break
+                        f.write(chunk)
+                        downloaded += len(chunk)
 
-                    if progress_callback and total_size > 0:
-                        progress_callback(downloaded, total_size)
+                        if progress_callback and total_size > 0:
+                            progress_callback(downloaded, total_size)
+
+            # ダウンロード完了後、正式なファイル名にリネーム
+            temp_path.replace(download_path)
+        except Exception:
+            # エラー時は一時ファイルを削除
+            temp_path.unlink(missing_ok=True)
+            raise
 
         # YakuLingo.exe もダウンロード（存在する場合）
         self._download_exe_if_needed(version_info, progress_callback)
@@ -598,23 +616,34 @@ class AutoUpdater:
 
         logger.info("YakuLingo.exe をダウンロード中...")
 
+        # 一時ファイルにダウンロード（中断時の部分ファイル残留を防止）
+        temp_path = exe_path.with_suffix(".exe.tmp")
+
         req = urllib.request.Request(version_info.exe_download_url)
         req.add_header("User-Agent", f"YakuLingo/{self.current_version}")
 
-        with self.opener.open(req, timeout=300) as response:
-            total_size = int(response.headers.get("Content-Length", 0) or version_info.exe_file_size or 0)
-            downloaded = 0
+        try:
+            with self.opener.open(req, timeout=300) as response:
+                total_size = int(response.headers.get("Content-Length", 0) or version_info.exe_file_size or 0)
+                downloaded = 0
 
-            with open(exe_path, "wb") as f:
-                while True:
-                    chunk = response.read(8192)
-                    if not chunk:
-                        break
-                    f.write(chunk)
-                    downloaded += len(chunk)
+                with open(temp_path, "wb") as f:
+                    while True:
+                        chunk = response.read(8192)
+                        if not chunk:
+                            break
+                        f.write(chunk)
+                        downloaded += len(chunk)
 
-                    if progress_callback and total_size > 0:
-                        progress_callback(downloaded, total_size)
+                        if progress_callback and total_size > 0:
+                            progress_callback(downloaded, total_size)
+
+            # ダウンロード完了後、正式なファイル名にリネーム
+            temp_path.replace(exe_path)
+        except Exception:
+            # エラー時は一時ファイルを削除
+            temp_path.unlink(missing_ok=True)
+            raise
 
         logger.info("YakuLingo.exe のダウンロード完了")
         return exe_path
@@ -700,6 +729,16 @@ class AutoUpdater:
             logger.error("インストールに失敗: %s", e)
             return False
 
+    @staticmethod
+    def _escape_ps_path(path: Path) -> str:
+        """PowerShell用にパスをエスケープ（シングルクォート内のシングルクォートを''でエスケープ）"""
+        return str(path).replace("'", "''")
+
+    @staticmethod
+    def _escape_bash_path(path: Path) -> str:
+        """bash用にパスをエスケープ"""
+        return shlex.quote(str(path))
+
     def _install_windows(self, source_dir: Path, app_dir: Path) -> bool:
         """Windowsでのインストール処理（ソースコードのみ更新、GUI表示）"""
         # VBS + PowerShell スクリプトを作成
@@ -708,6 +747,10 @@ class AutoUpdater:
 
         vbs_path = self.cache_dir / "update.vbs"
         ps1_path = scripts_dir / "update.ps1"
+
+        # パスをエスケープ（特殊文字対応）
+        app_dir_escaped = self._escape_ps_path(app_dir)
+        source_dir_escaped = self._escape_ps_path(source_dir)
 
         # 更新対象のディレクトリとファイルをリスト化
         dirs_to_update_ps = ", ".join([f'"{d}"' for d in self.SOURCE_DIRS])
@@ -852,8 +895,8 @@ trap {{
 $ErrorActionPreference = "Stop"
 
 # Configuration
-$script:AppDir = "{app_dir}"
-$script:SourceDir = "{source_dir}"
+$script:AppDir = '{app_dir_escaped}'
+$script:SourceDir = '{source_dir_escaped}'
 $script:DirsToUpdate = @({dirs_to_update_ps})
 $script:FilesToUpdate = @({files_to_update_ps})
 
@@ -1227,9 +1270,13 @@ function Invoke-Update {{
     if (Test-Path "yakulingo\\__init__.py") {{
         $pythonExe = Join-Path $script:AppDir ".venv\\Scripts\\python.exe"
         if (Test-Path $pythonExe) {{
+            # 環境変数経由でパスを渡す（シングルクォート等の特殊文字対応）
+            $env:YAKULINGO_APP_DIR = $script:AppDir
+            $env:YAKULINGO_SOURCE_DIR = $script:SourceDir
+
             # Merge settings
             try {{
-                $mergeSettingsCmd = "from pathlib import Path; import sys; sys.path.insert(0, str(Path(r'$($script:AppDir)'))); from yakulingo.services.updater import merge_settings; added = merge_settings(Path(r'$($script:AppDir)'), Path(r'$($script:SourceDir)')); print('OK:', added)"
+                $mergeSettingsCmd = "import os; from pathlib import Path; import sys; app_dir = Path(os.environ['YAKULINGO_APP_DIR']); sys.path.insert(0, str(app_dir)); from yakulingo.services.updater import merge_settings; added = merge_settings(app_dir, Path(os.environ['YAKULINGO_SOURCE_DIR'])); print('OK:', added)"
                 $result = & $pythonExe -c $mergeSettingsCmd 2>&1
                 $resultStr = ($result | Out-String).Trim()
                 if ($LASTEXITCODE -eq 0) {{
@@ -1247,7 +1294,7 @@ function Invoke-Update {{
             $sourceGlossary = Join-Path $script:SourceDir "glossary.csv"
             if (Test-Path $sourceGlossary) {{
                 try {{
-                    $updateGlossaryCmd = "from pathlib import Path; import sys; sys.path.insert(0, str(Path(r'$($script:AppDir)'))); from yakulingo.services.updater import backup_and_update_glossary; result = backup_and_update_glossary(Path(r'$($script:AppDir)'), Path(r'$($script:SourceDir)')); print('OK:', result if result else 'none')"
+                    $updateGlossaryCmd = "import os; from pathlib import Path; import sys; app_dir = Path(os.environ['YAKULINGO_APP_DIR']); sys.path.insert(0, str(app_dir)); from yakulingo.services.updater import backup_and_update_glossary; result = backup_and_update_glossary(app_dir, Path(os.environ['YAKULINGO_SOURCE_DIR'])); print('OK:', result if result else 'none')"
                     $result = & $pythonExe -c $updateGlossaryCmd 2>&1
                     $resultStr = ($result | Out-String).Trim()
                     if ($LASTEXITCODE -eq 0) {{
@@ -1264,6 +1311,10 @@ function Invoke-Update {{
                     Write-DebugLog "Glossary update exception: $($_.Exception.Message)"
                 }}
             }}
+
+            # 環境変数をクリア
+            Remove-Item Env:YAKULINGO_APP_DIR -ErrorAction SilentlyContinue
+            Remove-Item Env:YAKULINGO_SOURCE_DIR -ErrorAction SilentlyContinue
         }} else {{
             Write-DebugLog "[SKIP] Python not found: $pythonExe"
             $debugInfo += "[SKIP] Python not found"
@@ -1326,6 +1377,8 @@ try {{
             f.write(ps1_content)
 
         # VBSスクリプトを実行（GUIモード、コンソール非表示）
+        # Note: Popenの戻り値は意図的に破棄。スクリプトはデタッチされた状態で
+        # 独立して実行され、親プロセス（このアプリ）の終了を待ってからアップデートを実行する。
         try:
             subprocess.Popen(
                 ["wscript.exe", str(vbs_path)],
@@ -1342,11 +1395,18 @@ try {{
         # シェルスクリプトを作成
         script_path = self.cache_dir / "update.sh"
 
+        # パスをエスケープ（特殊文字対応）
+        app_dir_escaped = self._escape_bash_path(app_dir)
+        source_dir_escaped = self._escape_bash_path(source_dir)
+
         # 更新対象のディレクトリとファイルをリスト化
         dirs_to_update = " ".join(self.SOURCE_DIRS)
         files_to_update = " ".join(self.SOURCE_FILES)
 
         script_content = f'''#!/bin/bash
+# Escaped paths for safety
+APP_DIR={app_dir_escaped}
+SOURCE_DIR={source_dir_escaped}
 echo ""
 echo "============================================================"
 echo "YakuLingo アップデート中..."
@@ -1361,7 +1421,7 @@ INTERVAL=1
 
 while [ $WAITED -lt $MAX_WAIT ]; do
     # Find Python processes running from app directory
-    PYTHON_PIDS=$(pgrep -f "{app_dir}/.venv" 2>/dev/null)
+    PYTHON_PIDS=$(pgrep -f "$APP_DIR/.venv" 2>/dev/null)
     if [ -z "$PYTHON_PIDS" ]; then
         echo "  Pythonプロセスは終了しています"
         break
@@ -1381,9 +1441,9 @@ fi
 sleep 1
 
 # Change to app directory with verification
-cd "{app_dir}" || {{
+cd "$APP_DIR" || {{
     echo "ERROR: Failed to change to app directory"
-    echo "Directory: {app_dir}"
+    echo "Directory: $APP_DIR"
     read -p "Press Enter to exit..."
     exit 1
 }}
@@ -1416,10 +1476,10 @@ done
 COPY_SUCCESS=0
 DIR_COPY_FAILURES=""
 for dir in {dirs_to_update}; do
-    if [ -d "{source_dir}/$dir" ]; then
+    if [ -d "$SOURCE_DIR/$dir" ]; then
         echo "  コピー: $dir"
-        if cp -r "{source_dir}/$dir" "{app_dir}/$dir" 2>/dev/null; then
-            if [ -d "{app_dir}/$dir" ]; then
+        if cp -r "$SOURCE_DIR/$dir" "$APP_DIR/$dir" 2>/dev/null; then
+            if [ -d "$APP_DIR/$dir" ]; then
                 echo "    [OK] $dir"
                 COPY_SUCCESS=1
             else
@@ -1431,7 +1491,7 @@ for dir in {dirs_to_update}; do
             DIR_COPY_FAILURES="$DIR_COPY_FAILURES $dir"
         fi
     else
-        echo "  [警告] ソースが見つかりません: {source_dir}/$dir"
+        echo "  [警告] ソースが見つかりません: $SOURCE_DIR/$dir"
     fi
 done
 
@@ -1445,7 +1505,7 @@ fi
 if [ "$COPY_SUCCESS" -eq 0 ]; then
     echo ""
     echo "エラー: ソースディレクトリがコピーされませんでした！"
-    echo "ソースディレクトリ: {source_dir}"
+    echo "ソースディレクトリ: $SOURCE_DIR"
     echo ""
     echo "アップデートパッケージが正しいか確認してください。"
     echo "バックアップから復元を試みます..."
@@ -1461,10 +1521,10 @@ fi
 CRITICAL_FILES="app.py pyproject.toml"
 FILE_COPY_FAILURES=""
 for file in {files_to_update}; do
-    if [ -f "{source_dir}/$file" ]; then
+    if [ -f "$SOURCE_DIR/$file" ]; then
         echo "  コピー: $file"
-        if cp "{source_dir}/$file" "{app_dir}/$file" 2>/dev/null; then
-            if [ -f "{app_dir}/$file" ]; then
+        if cp "$SOURCE_DIR/$file" "$APP_DIR/$file" 2>/dev/null; then
+            if [ -f "$APP_DIR/$file" ]; then
                 echo "    [OK] $file"
             else
                 echo "    [ERROR] $file not created after copy"
@@ -1506,26 +1566,28 @@ if [ ! -f "yakulingo/__init__.py" ]; then
     else
         echo "  Debug: ディレクトリが存在しません"
     fi
-    if [ -f "{source_dir}/yakulingo/__init__.py" ]; then
-        echo "  Debug: ソースモジュールは存在します: {source_dir}/yakulingo/__init__.py"
+    if [ -f "$SOURCE_DIR/yakulingo/__init__.py" ]; then
+        echo "  Debug: ソースモジュールは存在します: $SOURCE_DIR/yakulingo/__init__.py"
     else
         echo "  Debug: ソースモジュールが見つかりません"
         echo "  Debug: ソースディレクトリの内容:"
-        ls -la "{source_dir}" 2>/dev/null
+        ls -la "$SOURCE_DIR" 2>/dev/null
     fi
-elif [ -f "{app_dir}/.venv/bin/python" ]; then
-    "{app_dir}/.venv/bin/python" -c "from pathlib import Path; import sys; sys.path.insert(0, str(Path(r'{app_dir}'))); from yakulingo.services.updater import merge_settings; added = merge_settings(Path(r'{app_dir}'), Path(r'{source_dir}')); print(f'  追加: {{added}} 件の新規設定' if added > 0 else '  新規設定はありません' if added == 0 else '  設定ファイルを新規作成しました')"
+elif [ -f "$APP_DIR/.venv/bin/python" ]; then
+    # 環境変数経由でパスを渡す（シングルクォート等の特殊文字対応）
+    YAKULINGO_APP_DIR="$APP_DIR" YAKULINGO_SOURCE_DIR="$SOURCE_DIR" "$APP_DIR/.venv/bin/python" -c "import os; from pathlib import Path; import sys; app_dir = Path(os.environ['YAKULINGO_APP_DIR']); sys.path.insert(0, str(app_dir)); from yakulingo.services.updater import merge_settings; added = merge_settings(app_dir, Path(os.environ['YAKULINGO_SOURCE_DIR'])); print(f'  追加: {{added}} 件の新規設定' if added > 0 else '  新規設定はありません' if added == 0 else '  設定ファイルを新規作成しました')"
 fi
 
-# 用語集のマージ（新規用語のみ追加）
+# 用語集の更新（比較、変更があればバックアップして上書き）
 # yakulingoモジュールが存在する場合のみ実行
 echo ""
 echo "用語集を更新しています..."
 if [ ! -f "yakulingo/__init__.py" ]; then
     echo "  [SKIP] yakulingoモジュールが見つかりません"
-elif [ -f "{source_dir}/glossary.csv" ]; then
-    if [ -f "{app_dir}/.venv/bin/python" ]; then
-        "{app_dir}/.venv/bin/python" -c "from pathlib import Path; import sys; sys.path.insert(0, str(Path(r'{app_dir}'))); from yakulingo.services.updater import merge_glossary; added = merge_glossary(Path(r'{app_dir}'), Path(r'{source_dir}')); print(f'  追加: {{added}} 件の新規用語' if added > 0 else '  新規用語はありません' if added == 0 else '  用語集を新規作成しました')"
+elif [ -f "$SOURCE_DIR/glossary.csv" ]; then
+    if [ -f "$APP_DIR/.venv/bin/python" ]; then
+        # 環境変数経由でパスを渡す（シングルクォート等の特殊文字対応）
+        YAKULINGO_APP_DIR="$APP_DIR" YAKULINGO_SOURCE_DIR="$SOURCE_DIR" "$APP_DIR/.venv/bin/python" -c "import os; from pathlib import Path; import sys; app_dir = Path(os.environ['YAKULINGO_APP_DIR']); sys.path.insert(0, str(app_dir)); from yakulingo.services.updater import backup_and_update_glossary; result = backup_and_update_glossary(app_dir, Path(os.environ['YAKULINGO_SOURCE_DIR'])); print(f'  用語集を更新しました（バックアップ: {{result}}）' if result else '  用語集は変更されていません')"
     else
         echo "  [SKIP] Python環境が見つかりません"
     fi
@@ -1539,8 +1601,8 @@ echo ""
 echo "アプリケーションを再起動してください。"
 
 # Cleanup: Delete update source directory
-if [ -d "{source_dir}" ]; then
-    rm -rf "{source_dir}"
+if [ -d "$SOURCE_DIR" ]; then
+    rm -rf "$SOURCE_DIR"
 fi
 
 # 自身を削除
@@ -1553,6 +1615,8 @@ rm "$0"
         os.chmod(script_path, 0o755)
 
         # スクリプトを実行
+        # Note: Popenの戻り値は意図的に破棄。スクリプトはデタッチされた状態で
+        # 独立して実行され、親プロセス（このアプリ）の終了を待ってからアップデートを実行する。
         try:
             subprocess.Popen([str(script_path)])
         except OSError as e:
@@ -1662,10 +1726,13 @@ def backup_and_update_glossary(app_dir: Path, source_dir: Path) -> Optional[str]
         logger.info("用語集をコピーしました: %s", user_glossary)
         return None  # 新規インストールなのでバックアップ不要
 
-    # ファイルハッシュで比較
+    # ファイルハッシュで比較（チャンク単位で読み込みメモリ効率を改善）
     def file_hash(path: Path) -> str:
+        h = hashlib.md5()
         with open(path, "rb") as f:
-            return hashlib.md5(f.read()).hexdigest()
+            for chunk in iter(lambda: f.read(8192), b""):
+                h.update(chunk)
+        return h.hexdigest()
 
     user_hash = file_hash(user_glossary)
     new_hash = file_hash(new_glossary)

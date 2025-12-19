@@ -5044,49 +5044,74 @@ class CopilotHandler:
                 send_btn = None
                 btn_ready = False
 
-                for wait_iter in range(10):  # Max 1 second (10 * 0.1s) - optimized from 20
-                    iter_start = time.monotonic()
+                try:
+                    self._page.wait_for_function(
+                        '''(selector) => {
+                            const btn = document.querySelector(selector);
+                            if (!btn) return false;
+                            const rect = btn.getBoundingClientRect();
+                            const style = window.getComputedStyle(btn);
+                            const visible = style.display !== 'none' && style.visibility !== 'hidden' &&
+                                rect.width > 0 && rect.height > 0;
+                            const enabled = !btn.disabled && btn.getAttribute('aria-disabled') !== 'true' &&
+                                style.pointerEvents !== 'none';
+                            const inViewport = rect.y >= 0 && rect.y < window.innerHeight;
+                            return visible && enabled && inViewport;
+                        }''',
+                        self.SEND_BUTTON_SELECTOR,
+                        timeout=2000
+                    )
+                    btn_ready = True
                     send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
-                    query_time = time.monotonic() - iter_start
-                    if send_btn:
-                        try:
-                            eval_start = time.monotonic()
-                            btn_state = send_btn.evaluate('''el => {
-                                const rect = el.getBoundingClientRect();
-                                const style = window.getComputedStyle(el);
-                                return {
-                                    rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
-                                    disabled: el.disabled,
-                                    ariaDisabled: el.getAttribute('aria-disabled'),
-                                    display: style.display,
-                                    visibility: style.visibility,
-                                    inViewport: rect.y >= 0 && rect.y < window.innerHeight
-                                };
-                            }''')
-                            eval_time = time.monotonic() - eval_start
+                    logger.debug("[SEND_PREP] Button ready via wait_for_function (%.2fs)",
+                                time.monotonic() - send_button_start)
+                except Exception as e:
+                    logger.debug("[SEND_PREP] wait_for_function did not confirm button readiness: %s", e)
 
-                            if wait_iter == 0:
-                                logger.debug("[SEND_PREP] Initial button state: %s (query=%.3fs, eval=%.3fs)",
-                                            btn_state, query_time, eval_time)
+                if not btn_ready:
+                    for wait_iter in range(10):  # Max 1 second (10 * 0.1s) - optimized from 20
+                        iter_start = time.monotonic()
+                        send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
+                        query_time = time.monotonic() - iter_start
+                        if send_btn:
+                            try:
+                                eval_start = time.monotonic()
+                                btn_state = send_btn.evaluate('''el => {
+                                    const rect = el.getBoundingClientRect();
+                                    const style = window.getComputedStyle(el);
+                                    return {
+                                        rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+                                        disabled: el.disabled,
+                                        ariaDisabled: el.getAttribute('aria-disabled'),
+                                        display: style.display,
+                                        visibility: style.visibility,
+                                        inViewport: rect.y >= 0 && rect.y < window.innerHeight
+                                    };
+                                }''')
+                                eval_time = time.monotonic() - eval_start
 
-                            # Check if button is ready (visible and in viewport)
-                            if (btn_state['rect']['y'] >= 0 and
-                                not btn_state['disabled'] and
-                                btn_state['ariaDisabled'] != 'true' and
-                                btn_state['display'] != 'none' and
-                                btn_state['visibility'] != 'hidden'):
-                                btn_ready = True
-                                if wait_iter > 0:
-                                    logger.debug("[SEND_PREP] Button ready after %d iterations (%.2fs): %s",
-                                                wait_iter, time.monotonic() - send_button_start, btn_state)
-                                break
-                            elif wait_iter == 0:
-                                logger.debug("[SEND_PREP] Button not ready yet (y=%.1f, disabled=%s), waiting...",
-                                            btn_state['rect']['y'], btn_state['disabled'])
-                        except Exception as e:
-                            logger.debug("[SEND_PREP] Could not get button state: %s", e)
+                                if wait_iter == 0:
+                                    logger.debug("[SEND_PREP] Initial button state: %s (query=%.3fs, eval=%.3fs)",
+                                                btn_state, query_time, eval_time)
 
-                    time.sleep(0.1)
+                                # Check if button is ready (visible and in viewport)
+                                if (btn_state['rect']['y'] >= 0 and
+                                    not btn_state['disabled'] and
+                                    btn_state['ariaDisabled'] != 'true' and
+                                    btn_state['display'] != 'none' and
+                                    btn_state['visibility'] != 'hidden'):
+                                    btn_ready = True
+                                    if wait_iter > 0:
+                                        logger.debug("[SEND_PREP] Button ready after %d iterations (%.2fs): %s",
+                                                    wait_iter, time.monotonic() - send_button_start, btn_state)
+                                    break
+                                elif wait_iter == 0:
+                                    logger.debug("[SEND_PREP] Button not ready yet (y=%.1f, disabled=%s), waiting...",
+                                                btn_state['rect']['y'], btn_state['disabled'])
+                            except Exception as e:
+                                logger.debug("[SEND_PREP] Could not get button state: %s", e)
+
+                        time.sleep(0.1)
 
                 send_button_wait = time.monotonic() - send_button_start
                 if not btn_ready:
@@ -5780,6 +5805,52 @@ class CopilotHandler:
                                 input_elem = current_input
                         except Exception:
                             pass
+
+                        if send_attempt == 0 and send_attempt < MAX_SEND_RETRIES - 1:
+                            # Give Enter a chance to register before retrying to avoid double-send.
+                            late_verify_start = time.monotonic()
+                            late_verified = False
+                            late_reason = ""
+                            LATE_VERIFY_MAX = 1.5
+                            LATE_VERIFY_INTERVAL = 0.05
+
+                            while not late_verified and (time.monotonic() - late_verify_start) < LATE_VERIFY_MAX:
+                                try:
+                                    current_input = self._page.query_selector(input_selector)
+                                    remaining_text = current_input.inner_text().strip() if current_input else ""
+                                    if not remaining_text:
+                                        late_verified = True
+                                        late_reason = "late verify (input cleared)"
+                                        break
+                                    if any(phrase in remaining_text for phrase in PROCESSING_PHRASES):
+                                        late_verified = True
+                                        late_reason = "late verify (processing message in input)"
+                                        break
+                                except Exception as e:
+                                    late_verified = True
+                                    late_reason = "late verify (input check failed)"
+                                    logger.debug("[SEND_VERIFY] Late input check failed: %s", e)
+                                    break
+
+                                try:
+                                    stop_btn = self._page.query_selector(self.STOP_BUTTON_SELECTOR_COMBINED)
+                                    if stop_btn and stop_btn.is_visible():
+                                        late_verified = True
+                                        late_reason = "late verify (stop button visible)"
+                                        stop_button_seen_during_send = True
+                                        break
+                                except Exception:
+                                    pass
+
+                                time.sleep(LATE_VERIFY_INTERVAL)
+
+                            if late_verified:
+                                elapsed = time.monotonic() - late_verify_start
+                                logger.info("[SEND] Message sent (attempt %d, %s, verified in %.2fs)",
+                                            send_attempt + 1, late_reason, elapsed)
+                                send_success = True
+                                time.sleep(0.3)
+                                break
 
                         if send_attempt < MAX_SEND_RETRIES - 1:
                             elapsed = time.monotonic() - verify_start

@@ -4122,9 +4122,9 @@ def run_app(
         def _early_connect():
             """Connect to Copilot in background (runs during NiceGUI import).
 
-            Note: GPT mode switch is NOT done here because the page needs time
-            to fully render React components. It's handled by
-            _apply_early_connection_or_connect() after UI is ready.
+            GPT mode switch is started here to overlap with NiceGUI startup (~8s).
+            This allows the Copilot page to fully load and GPT mode button to appear
+            while NiceGUI is starting, reducing perceived startup time.
             """
             try:
                 _t_early = time.perf_counter()
@@ -4136,8 +4136,18 @@ def run_app(
                 )
                 logger.info("[TIMING] Early Edge+Copilot connect (background): %.2fs, success=%s",
                            time.perf_counter() - _t_early, result)
-                # GPT mode is set later in _apply_early_connection_or_connect()
-                # by which time the page is fully loaded and button is visible
+                # Start GPT mode switch immediately after connection
+                # This runs during NiceGUI startup (~8s), so by the time UI is ready,
+                # GPT mode should be set (or at least the page is more fully loaded)
+                if result:
+                    try:
+                        _t_gpt = time.perf_counter()
+                        _early_copilot.ensure_gpt_mode()
+                        logger.info("[TIMING] Early GPT mode set (background): %.2fs",
+                                   time.perf_counter() - _t_gpt)
+                    except Exception as gpt_err:
+                        # GPT mode failure is not critical - will be retried in UI thread
+                        logger.debug("Early GPT mode set failed (will retry): %s", gpt_err)
             except Exception as e:
                 logger.debug("Early Copilot connection failed: %s", e)
 
@@ -4440,12 +4450,12 @@ def run_app(
             # - Phase 1: 50ms for first 1000ms (20 polls)
             # - Phase 2: 100ms for next 2000ms (20 polls)
             # - Phase 3: 200ms for remaining time
-            # Total max wait: 6s (typical detection ~3.5s)
-            MAX_WAIT_MS = 6000
+            # Total max wait: 10s (NiceGUI+pywebview startup can take ~8s)
+            MAX_WAIT_MS = 10000
             POLL_INTERVALS = [
-                (1000, 50),   # First 1s: 50ms interval (quick detection)
-                (3000, 100),  # 1-3s: 100ms interval
-                (6000, 200),  # 3-6s: 200ms interval (CPU-friendly)
+                (1000, 50),    # First 1s: 50ms interval (quick detection)
+                (3000, 100),   # 1-3s: 100ms interval
+                (10000, 200),  # 3-10s: 200ms interval (CPU-friendly)
             ]
             waited_ms = 0
 

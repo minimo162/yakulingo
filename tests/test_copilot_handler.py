@@ -1449,7 +1449,7 @@ class TestGptModeSwitch:
         assert handler.GPT_MODE_MENU_WAIT == 0.05
         # OPTIMIZED: Use wait_for_selector instead of polling for faster detection
         assert hasattr(handler, 'GPT_MODE_BUTTON_WAIT_MS')
-        assert handler.GPT_MODE_BUTTON_WAIT_MS == 5000  # 5s total timeout
+        assert handler.GPT_MODE_BUTTON_WAIT_MS == 8000  # 8s total timeout (handles slow network)
 
     def test_ensure_gpt_mode_completes_when_no_page(self, handler):
         """_ensure_gpt_mode completes without error when no page"""

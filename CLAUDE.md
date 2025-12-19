@@ -959,7 +959,7 @@ wait_time = backoff_time + jitter
 | セレクタ | `SELECTOR_RESPONSE_TIMEOUT_MS` | 10000ms | レスポンス要素の表示待機 |
 | セレクタ | `SELECTOR_NEW_CHAT_READY_TIMEOUT_MS` | 5000ms | 新規チャット準備完了待機 |
 | セレクタ | `SELECTOR_LOGIN_CHECK_TIMEOUT_MS` | 2000ms | ログイン状態チェック |
-| GPTモード | `GPT_MODE_BUTTON_WAIT_MS` | 5000ms | GPTモードボタンの表示待機（wait_for_selector） |
+| GPTモード | `GPT_MODE_BUTTON_WAIT_MS` | 8000ms | GPTモードボタンの表示待機（wait_for_selector） |
 | GPTモード | `GPT_MODE_MENU_WAIT` | 0.05s | メニュー開閉の待機時間（フォールバック用） |
 | ログイン | `LOGIN_WAIT_TIMEOUT_SECONDS` | 300s | ユーザーログイン待機 |
 | エグゼキュータ | `EXECUTOR_TIMEOUT_BUFFER_SECONDS` | 60s | レスポンスタイムアウトのマージン |
@@ -2039,12 +2039,12 @@ When interacting with users in this repository, prefer Japanese for comments and
 Based on recent commits:
 - **GPT Mode Optimization (2024-12)**:
   - **wait_for_selector方式**: ポーリングからPlaywrightネイティブ待機に変更
-    - `GPT_MODE_BUTTON_WAIT_MS = 5000` - 5秒のタイムアウト（wait_for_selector）
+    - `GPT_MODE_BUTTON_WAIT_MS = 8000` - 8秒のタイムアウト（ネットワーク遅延考慮）
     - Playwrightの効率的な待機機構を使用（ポーリングより高速）
   - **JavaScript一括実行**: メニュー操作を単一のevaluate呼び出しに統合
     - 3回のDOM操作 → 1回のPromise返却JS（30ms×3のsetTimeout）
     - `GPT_MODE_MENU_WAIT = 0.05s` - フォールバック用のみ
-  - **Expected improvement**: ボタン検出 ~4秒→<1秒、モード切替 ~6秒→<0.5秒、合計 ~10秒→~1-2秒
+  - **Expected improvement**: モード切替 ~6秒→<0.5秒（JS一括実行による高速化）
 - **Copilot Connection Startup Optimization (2024-12)**:
   - **Deferred chat input detection**: 起動時のチャット入力欄待機を削除、初回翻訳時に遅延実行
     - `_quick_login_check()`: 起動時はログインページ判定のみ（~0.1秒）

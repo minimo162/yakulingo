@@ -7,6 +7,7 @@ On Windows with Outlook installed, creates new .msg file with translated content
 Falls back to .txt output on other platforms.
 """
 
+import gc
 import logging
 import sys
 from pathlib import Path
@@ -374,7 +375,14 @@ class MsgProcessor(FileProcessor):
 
         Returns:
             True if successful, False otherwise
+
+        Note:
+            メールオブジェクトはSaveAs後に必ずClose()を呼び出す。
+            Close()を呼び出さないと、Outlookセッション内に未処理オブジェクトが残り、
+            保存されたMSGファイルが「返信」扱いになる問題が発生する可能性がある。
         """
+        mail = None
+        outlook = None
         try:
             import win32com.client
 
@@ -398,6 +406,22 @@ class MsgProcessor(FileProcessor):
         except Exception as e:
             logger.warning("Failed to create MSG via Outlook: %s", e)
             return False
+
+        finally:
+            # COMオブジェクトを確実にリリースする
+            # Close()を呼び出さないとメールが「返信」扱いになる問題が発生する
+            if mail is not None:
+                try:
+                    # olDiscard = 1: 変更を破棄して閉じる
+                    mail.Close(1)
+                except Exception:
+                    pass
+                # Excelプロセッサと同様にdelで明示的に削除
+                del mail
+            if outlook is not None:
+                del outlook
+            # COMオブジェクトのガベージコレクション
+            gc.collect()
 
     def apply_translations(
         self,

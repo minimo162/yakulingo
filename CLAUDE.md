@@ -267,7 +267,7 @@ No manual direction selection is required for text translation. File translation
 
 ### Common Features
 - **Elapsed time badge**: Shows translation duration
-- **Settings dialog**: Translation style selector (標準/簡潔/最簡潔)
+- **Style toggle**: Translation style selector in input panel (標準/簡潔/最簡潔) - 1クリックで切り替え
 - **Back-translate button**: Verify translations by translating back to original language
 - **Reference file attachment**: Attach glossary, style guide, or reference materials
 - **Loading screen**: Shows spinner immediately on startup for faster perceived load time
@@ -1097,10 +1097,10 @@ The `AutoUpdater` class provides GitHub Releases-based updates:
 
 | カテゴリ | 設定 | 変更方法 |
 |---------|------|---------|
-| 翻訳スタイル | `translation_style`, `text_translation_style` | 設定ダイアログ |
-| フォント | `font_jp_to_en`, `font_en_to_jp`, `font_size_adjustment_jp_to_en` | 設定ダイアログ |
+| 翻訳スタイル | `translation_style`, `text_translation_style` | スタイルトグル（入力パネル）/ ファイル翻訳パネル |
+| フォント | `font_jp_to_en`, `font_en_to_jp`, `font_size_adjustment_jp_to_en` | ファイル翻訳パネル |
 | 出力オプション | `bilingual_output`, `export_glossary`, `use_bundled_glossary`, `embed_glossary_in_prompt` | ファイル翻訳パネル |
-| ブラウザ表示 | `browser_display_mode` | 設定ダイアログ |
+| ブラウザ表示 | `browser_display_mode` | 設定ファイル直接編集 |
 | UI状態 | `last_tab` | 自動保存 |
 
 その他の設定（`max_chars_per_batch`, `request_timeout`, `ocr_dpi`等）はテンプレートで管理され、
@@ -2805,13 +2805,13 @@ Based on recent commits:
   - **Proxy bypass**: `NO_PROXY=localhost,127.0.0.1` set in `app.py` before any imports (critical for corporate proxies intercepting CDP connections)
 - **Text Translation UI Unification**:
   - **Single output**: Changed from 3 translation options to 1 option with style setting
-  - **Style settings**: 標準/簡潔/最簡潔 configurable via settings dialog
+  - **Style toggle**: 標準/簡潔/最簡潔 configurable via style toggle in input panel (1-click change)
   - **Unified structure**: 英訳 and 和訳 now share same UI pattern (hint row + action buttons + expandable inputs)
   - **Suggestion hint row**: [再翻訳] ボタン for both directions
   - **和訳 buttons**: [英文をチェック] [要点を教えて] [返信文を作成] as single option style
   - **英訳 buttons**: [もう少し短く↔より詳しく] [他の言い方は？] [アレンジした英文をチェック]
-  - **Removed**: カスタムリクエスト入力欄、[これはどう？] quick chip、connector line design
-- **Settings Dialog**: Simplified to translation style only (removed batch size, timeout, retry settings from UI)
+  - **Removed**: カスタムリクエスト入力欄、[これはどう？] quick chip、connector line design、settings dialog
+- **Settings Dialog**: Removed - replaced with style toggle in input panel
 - **Installation**: Desktop shortcut only (removed Start Menu entry)
 - **Bilingual Output**: All file processors generate bilingual output with original + translated content
 - **Glossary CSV Export**: Automatic extraction of source/translation pairs

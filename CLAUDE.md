@@ -323,15 +323,56 @@ The application uses M3 (Material Design 3) component-based styling:
 --md-sys-color-surface-container: #F2EFF4;
 
 /* Shape system */
---md-sys-shape-corner-full: 9999px;   /* Pills/FABs */
+--md-sys-shape-corner-full: 9999px;   /* Pills/FABs/Buttons */
 --md-sys-shape-corner-large: 20px;    /* Cards/Dialogs */
 --md-sys-shape-corner-medium: 16px;   /* Inputs/Chips */
 --md-sys-shape-corner-small: 12px;    /* Small elements */
+
+/* M3 State layer opacity tokens */
+--md-sys-state-hover-opacity: 0.08;      /* Hover: 8% */
+--md-sys-state-focus-opacity: 0.10;      /* Focus: 10% */
+--md-sys-state-pressed-opacity: 0.10;    /* Pressed: 10% */
+--md-sys-state-dragged-opacity: 0.16;    /* Dragged: 16% */
+
+/* M3 Button sizing tokens */
+--md-comp-button-height: 2.5rem;         /* 40dp */
+--md-comp-button-padding-x: 1.5rem;      /* 24dp */
+--md-comp-icon-button-size: 2.5rem;      /* 40dp */
+--md-comp-icon-button-icon-size: 1.5rem; /* 24dp */
 ```
 
-### Key CSS Classes
-- `.btn-primary` - M3 filled button
-- `.btn-outline` - M3 outlined button
+### M3 Button Classes
+
+| クラス | 用途 | 特徴 |
+|--------|------|------|
+| `.btn-primary` | 主要アクション（保存、確認等） | Filled button、elevation 1 on hover |
+| `.btn-outline` | 中優先度アクション | 1px border、transparent background |
+| `.btn-tonal` | 低〜中優先度アクション | secondary-container fill |
+| `.btn-elevated` | パターン背景からの分離が必要な場合 | surface-container fill、elevation 1 |
+| `.btn-text` | 最低優先度アクション | transparent、padding 12dp |
+| `.translate-btn` | 翻訳ボタン（btn-primaryのalias） | 後方互換性のため維持 |
+
+### M3 Icon Button Classes
+
+| クラス | 用途 |
+|--------|------|
+| `.icon-btn` | 標準アイコンボタン（transparent） |
+| `.icon-btn-filled` | Filledアイコンボタン（primary color） |
+| `.icon-btn-tonal` | Tonalアイコンボタン（secondary-container） |
+| `.icon-btn-outlined` | Outlinedアイコンボタン（1px border） |
+| `.attach-btn` | 添付ボタン（icon-btnを継承） |
+
+### 特化ボタンクラス
+
+| クラス | 用途 |
+|--------|------|
+| `.back-translate-btn` | 戻し訳ボタン |
+| `.explain-more-btn` | 詳細説明ボタン |
+| `.settings-btn` | 設定ボタン |
+| `.glossary-toggle-btn` | 用語集トグル（Chip-style） |
+| `.follow-up-btn` | フォローアップボタン |
+
+### その他のKey CSS Classes
 - `.text-box` - M3 text field container
 - `.drop-zone` - File drop area with dashed border
 - `.file-card` - M3 card for file items

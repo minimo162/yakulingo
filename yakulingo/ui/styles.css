@@ -475,7 +475,8 @@ body {
 .nav-item:focus-visible {
     outline: 2px solid var(--md-sys-color-primary);
     outline-offset: -2px;
-    background: color-mix(in srgb, var(--md-sys-color-on-surface) 12%, transparent);
+    /* M3: State layer with on-surface at focus opacity */
+    background: color-mix(in srgb, var(--md-sys-color-on-surface) calc(var(--md-sys-state-focus-opacity) * 100%), transparent);
 }
 
 /* M3 active tab with indicator */
@@ -489,7 +490,8 @@ body {
 }
 
 .nav-item.active:hover {
-    background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent);
+    /* M3: State layer with primary color at hover opacity */
+    background: color-mix(in srgb, var(--md-sys-color-primary) calc(var(--md-sys-state-hover-opacity) * 100%), transparent);
 }
 
 /* M3 icon styling in tabs (larger for better visibility) */
@@ -2030,11 +2032,13 @@ textarea:focus-visible {
 }
 
 .follow-up-btn:hover {
-    background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent) !important;
+    /* M3: State layer with primary color at hover opacity */
+    background: color-mix(in srgb, var(--md-sys-color-primary) calc(var(--md-sys-state-hover-opacity) * 100%), transparent) !important;
 }
 
 .follow-up-btn:active {
-    background: color-mix(in srgb, var(--md-sys-color-primary) 12%, transparent) !important;
+    /* M3: State layer with primary color at pressed opacity */
+    background: color-mix(in srgb, var(--md-sys-color-primary) calc(var(--md-sys-state-pressed-opacity) * 100%), transparent) !important;
 }
 
 /* === Additional Result Cards (for follow-up responses) === */
@@ -2769,11 +2773,13 @@ textarea:focus-visible {
 }
 
 .back-translate-btn:hover {
-    background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent) !important;
+    /* M3: State layer with primary color at hover opacity */
+    background: color-mix(in srgb, var(--md-sys-color-primary) calc(var(--md-sys-state-hover-opacity) * 100%), transparent) !important;
 }
 
 .back-translate-btn:active {
-    background: color-mix(in srgb, var(--md-sys-color-primary) 12%, transparent) !important;
+    /* M3: State layer with primary color at pressed opacity */
+    background: color-mix(in srgb, var(--md-sys-color-primary) calc(var(--md-sys-state-pressed-opacity) * 100%), transparent) !important;
 }
 
 .back-translate-btn .q-icon {
@@ -2813,11 +2819,13 @@ textarea:focus-visible {
 }
 
 .explain-more-btn:hover {
-    background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent) !important;
+    /* M3: State layer with primary color at hover opacity */
+    background: color-mix(in srgb, var(--md-sys-color-primary) calc(var(--md-sys-state-hover-opacity) * 100%), transparent) !important;
 }
 
 .explain-more-btn:active {
-    background: color-mix(in srgb, var(--md-sys-color-primary) 12%, transparent) !important;
+    /* M3: State layer with primary color at pressed opacity */
+    background: color-mix(in srgb, var(--md-sys-color-primary) calc(var(--md-sys-state-pressed-opacity) * 100%), transparent) !important;
 }
 
 .explain-more-btn .q-icon {
@@ -2834,12 +2842,14 @@ textarea:focus-visible {
 }
 
 .settings-btn:hover {
-    background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent) !important;
+    /* M3: State layer with primary color at hover opacity */
+    background: color-mix(in srgb, var(--md-sys-color-primary) calc(var(--md-sys-state-hover-opacity) * 100%), transparent) !important;
     color: var(--md-sys-color-primary) !important;
 }
 
 .settings-btn:active {
-    background: color-mix(in srgb, var(--md-sys-color-primary) 12%, transparent) !important;
+    /* M3: State layer with primary color at pressed opacity */
+    background: color-mix(in srgb, var(--md-sys-color-primary) calc(var(--md-sys-state-pressed-opacity) * 100%), transparent) !important;
 }
 
 /* === Glossary Toggle Button (Chip-style) === */
@@ -2854,7 +2864,8 @@ textarea:focus-visible {
 }
 
 .glossary-toggle-btn:hover {
-    background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent) !important;
+    /* M3: State layer with primary color at hover opacity */
+    background: color-mix(in srgb, var(--md-sys-color-primary) calc(var(--md-sys-state-hover-opacity) * 100%), transparent) !important;
     border-color: var(--md-sys-color-primary) !important;
     color: var(--md-sys-color-primary) !important;
 }
@@ -2897,7 +2908,8 @@ textarea:focus-visible {
 }
 
 .style-toggle .q-btn:hover:not(.q-btn--active) {
-    background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent) !important;
+    /* M3: State layer with primary color at hover opacity */
+    background: color-mix(in srgb, var(--md-sys-color-primary) calc(var(--md-sys-state-hover-opacity) * 100%), transparent) !important;
 }
 
 .style-toggle .q-btn--active {

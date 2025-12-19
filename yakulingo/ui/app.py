@@ -214,6 +214,7 @@ class YakuLingoApp:
         # Early Copilot connection (started before UI, result applied after)
         self._early_connection_task: "asyncio.Task | None" = None
         self._early_connection_result: Optional[bool] = None
+        self._early_connect_thread: "threading.Thread | None" = None  # Background Edge startup
 
         # Early window positioning flag (prevents duplicate repositioning)
         self._early_position_completed = False
@@ -4091,8 +4092,15 @@ def run_app(
     # Previously parallel execution caused I/O contention with NiceGUI import on Windows,
     # resulting in slower total startup time (16s vs 11s sequential).
     # Now we complete Playwright init before importing NiceGUI.
+    # Early Edge startup: Start Edge browser BEFORE NiceGUI import
+    # This allows Copilot page to load during NiceGUI import (~2.6s) and display_settings (~1.2s)
+    # Result: GPT mode button should be ready when we need it (saving ~3-4s)
+    _early_copilot = None
+    _early_connect_thread = None
+
     try:
         from yakulingo.services.copilot_handler import (
+            CopilotHandler,
             pre_initialize_playwright,
             wait_for_playwright_init,
         )
@@ -4100,10 +4108,31 @@ def run_app(
         # Wait for Playwright init to complete before NiceGUI import
         # This avoids I/O contention with antivirus real-time scanning on Windows
         wait_for_playwright_init(timeout=30.0)
+
+        # Start Edge and connect to Copilot in background thread
+        # This runs in parallel with NiceGUI import + display_settings (~3.8s)
+        _early_copilot = CopilotHandler()
+
+        def _early_connect():
+            """Connect to Copilot in background (runs during NiceGUI import)."""
+            try:
+                _t_early = time.perf_counter()
+                # Use connect with bring_to_foreground=False to avoid window flashing
+                # Window positioning will be done later after YakuLingo window is created
+                result = _early_copilot.connect(bring_to_foreground_on_login=False)
+                logger.info("[TIMING] Early Edge+Copilot connect (background): %.2fs, success=%s",
+                           time.perf_counter() - _t_early, result)
+            except Exception as e:
+                logger.debug("Early Copilot connection failed: %s", e)
+
+        _early_connect_thread = threading.Thread(target=_early_connect, daemon=True, name="early_connect")
+        _early_connect_thread.start()
+        logger.info("[TIMING] Started early Edge connection (background thread)")
     except Exception as e:
-        logger.debug("Failed to start Playwright pre-initialization: %s", e)
+        logger.debug("Failed to start Playwright/Edge pre-initialization: %s", e)
 
     # Import NiceGUI (deferred from module level for ~6s faster startup)
+    # During this import, Edge is starting and Copilot page is loading in background
     global nicegui, ui, nicegui_app, nicegui_Client
     _t_nicegui_import = time.perf_counter()
     import nicegui as _nicegui
@@ -4137,10 +4166,18 @@ def run_app(
     yakulingo_app = create_app()
     logger.info("[TIMING] create_app: %.2fs", time.perf_counter() - _t1)
 
+    # Pass early-created CopilotHandler to avoid creating a new one
+    if _early_copilot is not None:
+        yakulingo_app._copilot = _early_copilot
+        yakulingo_app._early_connect_thread = _early_connect_thread
+        logger.debug("Using early-created CopilotHandler instance")
+
     # Detect optimal window size BEFORE ui.run() to avoid resize flicker
     # Fallback to browser mode when pywebview cannot create a native window (e.g., headless Linux)
     _t2 = time.perf_counter()
     native, webview_module = _check_native_mode_and_get_webview(native)
+    _t2_webview = time.perf_counter()
+    logger.info("[TIMING] webview.initialize: %.2fs", _t2_webview - _t2)
     logger.info("Native mode enabled: %s", native)
     if native:
         # Pass pre-initialized webview module to avoid second initialization
@@ -4153,7 +4190,7 @@ def run_app(
         yakulingo_app._panel_sizes = (250, 400, 850)  # Default panel sizes (sidebar, input, content)
         yakulingo_app._window_size = window_size
         run_window_size = None  # Passing a size would re-enable native mode inside NiceGUI
-    logger.info("[TIMING] _detect_display_settings: %.2fs", time.perf_counter() - _t2)
+    logger.info("[TIMING] display_settings (total): %.2fs", time.perf_counter() - _t2)
 
     # NOTE: PP-DocLayout-L pre-initialization moved to @ui.page('/') handler
     # to show loading screen while initializing (better UX than blank screen)
@@ -4321,19 +4358,36 @@ def run_app(
         if icon_path.exists():
             nicegui_app.native.window_args['icon'] = str(icon_path)
 
-    # Early Copilot connection: Start Edge browser BEFORE UI is displayed
-    # This saves ~2-3 seconds as Edge startup runs in parallel with UI rendering
+    # Early Copilot connection: Wait for background thread or start new connection
+    # Edge+Copilot connection was started before NiceGUI import (see run_app above)
     async def _early_connect_copilot():
-        """Start Copilot connection early (before UI is displayed)."""
+        """Wait for early connection or start new one if needed."""
         try:
-            # Initialize CopilotHandler and start connection
-            # Note: This runs in background, UI updates happen in main_page()
-            logger.info("[TIMING] Starting early Copilot connection")
+            # Check if early connect thread was started before NiceGUI import
+            early_thread = getattr(yakulingo_app, '_early_connect_thread', None)
+            if early_thread is not None and early_thread.is_alive():
+                # Wait for background thread to complete
+                logger.info("[TIMING] Waiting for early Edge connection thread")
+                await asyncio.to_thread(early_thread.join, timeout=30.0)
+                # Check if already connected
+                if yakulingo_app.copilot.is_connected:
+                    yakulingo_app._early_connection_result = True
+                    logger.info("[TIMING] Early Edge connection already completed (thread)")
+                    return
+
+            # Check if already connected (thread completed before we checked)
+            if yakulingo_app.copilot.is_connected:
+                yakulingo_app._early_connection_result = True
+                logger.info("[TIMING] Early Edge connection already completed")
+                return
+
+            # Fallback: start connection now
+            logger.info("[TIMING] Starting Copilot connection (fallback)")
             result = await asyncio.to_thread(yakulingo_app.copilot.connect)
             yakulingo_app._early_connection_result = result
-            logger.info("[TIMING] Early Copilot connection completed: %s", result)
+            logger.info("[TIMING] Copilot connection completed: %s", result)
         except Exception as e:
-            logger.debug("Early Copilot connection failed: %s", e)
+            logger.debug("Copilot connection failed: %s", e)
             yakulingo_app._early_connection_result = False
 
     # Early window positioning: Move app window IMMEDIATELY when pywebview creates it

@@ -719,17 +719,28 @@ def clear_pre_initialized_playwright() -> None:
     """Clear the pre-initialized Playwright instance after it has been stopped."""
 ```
 
-**起動シーケンス（直列実行）:**
+**起動シーケンス（早期Edge起動）:**
 ```python
 # app.py の run_app()
 pre_initialize_playwright()           # バックグラウンドで開始
 wait_for_playwright_init(timeout=30)  # 完了を待機
-import nicegui                        # その後NiceGUIをインポート
+
+# Edge起動をNiceGUI import前に開始（GPTモード待ち時間を削減）
+_early_copilot = CopilotHandler()
+_early_connect_thread = Thread(target=_early_copilot.connect)
+_early_connect_thread.start()         # バックグラウンドでEdge+Copilot接続
+
+import nicegui                        # ~2.6秒（この間にCopilotページがロード）
 ```
 
 **I/O競合回避**: WindowsではPlaywright初期化とNiceGUIインポートを並列実行すると、
 アンチウイルスのリアルタイムスキャンによりI/O競合が発生し起動が遅くなる（16秒 vs 11秒）。
 直列実行によりこの問題を回避。
+
+**早期Edge起動の効果**:
+- NiceGUI import (~2.6秒) + display_settings (~1.2秒) の間にCopilotページがロード
+- GPTモード設定の待ち時間を大幅に削減（約4秒→約1秒）
+- ウィンドウ検出ポーリング間隔を0.1秒→0.05秒に短縮
 
 **重要**: `disconnect()`や`_cleanup_on_error()`で`self._playwright.stop()`を呼び出した後は、
 必ず`clear_pre_initialized_playwright()`を呼び出すこと。停止済みのPlaywrightインスタンスを
@@ -2717,7 +2728,8 @@ Based on recent commits:
   - **Non-blocking translation**: All translation methods use `asyncio.to_thread()` to avoid blocking NiceGUI event loop
   - **pywebview engine**: `PYWEBVIEW_GUI=edgechromium` environment variable to avoid runtime installation dialogs
   - **Multiprocessing support**: `multiprocessing.freeze_support()` for Windows/PyInstaller compatibility
-  - **Early Copilot connection**: `app.on_startup()` でEdge起動を開始し、UI表示と並列化（~2-3秒短縮）
+  - **Early Copilot connection**: NiceGUI import前にEdge起動をバックグラウンドで開始し、NiceGUI import中にCopilotページがロード（GPTモード待ち時間 約4秒→約1秒）
+  - **Window detection optimization**: ウィンドウ検出ポーリング間隔を0.1秒→0.05秒に短縮、ログ重複排除フラグ追加
   - **uvicorn logging level**: `uvicorn_logging_level='warning'` でログ出力を削減
   - **Static CSS files**: `app.add_static_files('/static', ui_dir)` でブラウザキャッシュを活用
 - **Threading & Context Fixes**:

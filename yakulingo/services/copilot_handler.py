@@ -983,6 +983,7 @@ class CopilotHandler:
         # before YakuLingo window is created. Show WARNING first time, DEBUG after.
         self._window_not_found_warning_shown = False
         self._edge_not_found_warning_shown = False
+        self._edge_window_log_shown = False
 
     @property
     def is_connected(self) -> bool:
@@ -2753,8 +2754,11 @@ class CopilotHandler:
                     window_pid = wintypes.DWORD()
                     user32.GetWindowThreadProcessId(hwnd, ctypes.byref(window_pid))
                     if window_pid.value in target_pids and fallback_hwnd is None:
-                        logger.debug("Found Edge window by process tree: %s (pid=%d)",
-                                     window_title[:60], window_pid.value)
+                        # Log only once per session to avoid repeated log spam during polling
+                        if not getattr(self, '_edge_window_log_shown', False):
+                            logger.debug("Found Edge window by process tree: %s (pid=%d)",
+                                         window_title[:60], window_pid.value)
+                            self._edge_window_log_shown = True
                         fallback_hwnd = hwnd
 
                 return True
@@ -3194,7 +3198,7 @@ class CopilotHandler:
             # For side_panel mode, wait for YakuLingo window to be available
             # This is critical at startup when Edge may start before the app window
             MAX_WAIT_SECONDS = 3.0
-            POLL_INTERVAL = 0.1
+            POLL_INTERVAL = 0.05  # Reduced from 0.1s for faster window detection
             waited = 0.0
 
             while waited < MAX_WAIT_SECONDS:

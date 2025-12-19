@@ -1521,7 +1521,10 @@ class CopilotHandler:
                 logger.debug("[TIMING] Parallel Edge+Playwright init: %.2fs",
                              _time.perf_counter() - _t_parallel_start)
             else:
-                # Edge already running, just initialize Playwright if needed
+                # Edge already running (possibly started early in parallel thread)
+                # Skip Edge startup, just initialize Playwright if needed
+                logger.info("[TIMING] Edge already running (early startup succeeded), skipping Edge startup")
+
                 # Ensure profile_dir is set even when connecting to existing Edge
                 if not self.profile_dir:
                     local_app_data = os.environ.get("LOCALAPPDATA", "")

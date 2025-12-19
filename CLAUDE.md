@@ -2190,6 +2190,17 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Recent Development Focus
 
 Based on recent commits:
+- **Edge Startup Parallelization (2024-12)**:
+  - **Problem**: Edge起動（`subprocess.Popen`）がPlaywright初期化完了まで待機していた
+  - **Solution**: Edge起動をPlaywright初期化と並列で実行
+  - **Implementation**:
+    - `run_app()`で`pre_initialize_playwright()`直後に`start_edge()`を別スレッドで呼び出し
+    - `_connect_impl`でEdge起動済みの場合はスキップ（`_is_port_in_use()`チェック）
+    - `_early_edge_thread`で並列Edge起動を管理
+  - **Timeline before**: `[Playwright init 9.66s] → [Edge起動 1.57s]`
+  - **Timeline after**: `[Playwright init] と [Edge起動] を並列実行 → [CDP接続]`
+  - **Expected improvement**: 約1.5秒の起動時間短縮
+  - **Affected files**: `yakulingo/ui/app.py`, `yakulingo/services/copilot_handler.py`
 - **GPT Mode Startup Optimization (2024-12)**:
   - **Optimization**: 早期接続スレッド内でGPTモード設定を実行（NiceGUI起動と並列）
   - **Approach**: 早期接続完了後すぐに`ensure_gpt_mode()`を呼び出し、NiceGUI起動中にGPTモード設定を完了

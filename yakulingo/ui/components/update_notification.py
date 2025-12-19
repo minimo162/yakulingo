@@ -191,6 +191,9 @@ class UpdateNotification:
                 with ui.scroll_area().classes('w-full max-h-40 border rounded p-2'):
                     # リリースノートから [REQUIRES_REINSTALL] マーカーを除去して表示
                     display_notes = info.release_notes.replace('[REQUIRES_REINSTALL]', '').strip()
+                    # Markdownのソフト改行をハード改行に変換（行末に2スペース追加）
+                    # これによりGitHubリリースノートの改行が正しく表示される
+                    display_notes = display_notes.replace('\n', '  \n')
                     ui.markdown(display_notes).classes('release-notes-content')
 
             # アクションボタン

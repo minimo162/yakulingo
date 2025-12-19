@@ -509,6 +509,59 @@ async def _translate_text(self):
 - Save client reference during page initialization
 - Use `with client:` block after `asyncio.to_thread()` to restore context
 
+### NiceGUI Native Mode Monkey Patch
+
+NiceGUI の native モードでは `multiprocessing.Process` を使用して pywebview ウィンドウを作成しますが、
+`window_args`（`hidden`, `x`, `y` を含む）が子プロセスに渡されない問題があります。
+
+**問題の詳細:**
+```python
+# NiceGUI の native_mode.py (オリジナル)
+def activate(...):
+    args = host, port, title, width, height, fullscreen, frameless, ...
+    process = mp.Process(target=_open_window, args=args)  # window_args は渡されない！
+
+def _open_window(...):
+    window_kwargs = {
+        ...
+        **core.app.native.window_args,  # 子プロセスでは空の辞書
+    }
+```
+
+**解決策:**
+`_patch_nicegui_native_mode()` 関数で `activate()` と `_open_window()` をモンキーパッチ：
+
+```python
+# パッチ版
+def activate_patched(...):
+    window_args = dict(core.app.native.window_args)  # 親プロセスでシリアライズ
+    settings_dict = dict(core.app.native.settings)
+    start_args = dict(core.app.native.start_args)
+    args = (..., window_args, settings_dict, start_args)  # 引数として渡す
+    process = mp.Process(target=_open_window_patched, args=args)
+
+def _open_window_patched(..., window_args, settings_dict, start_args):
+    # 子プロセス内で必要なモジュールをインポート（Windows spawn モード対応）
+    import time, warnings
+    from threading import Event
+    from nicegui import helpers
+    from nicegui.native import native_mode as _native_mode
+    import webview
+
+    window_kwargs = {
+        ...
+        **window_args,  # 引数から取得
+    }
+```
+
+**パッチ適用タイミング:**
+- NiceGUI インポート直後、`ui.run()` 呼び出し前
+- native モード時のみ適用
+
+**注意点:**
+- 子プロセスは Windows では `spawn` モードで起動されるため、必要なモジュールは関数内でインポートする必要がある
+- パッチが失敗した場合は `_position_window_early_sync()` がフォールバックとして動作
+
 ### Translation Logic
 - **CellTranslator**: For Excel cells - skips numbers, dates, URLs, emails, codes
 - **ParagraphTranslator**: For Word/PPT paragraphs - less restrictive filtering
@@ -2223,6 +2276,21 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Recent Development Focus
 
 Based on recent commits:
+- **NiceGUI Native Mode Window Args Fix (2024-12)**:
+  - **Problem**: NiceGUI の native モードでは `window_args`（`hidden`, `x`, `y` を含む）が子プロセスに渡されず、ウィンドウが一瞬デフォルト位置に表示されてから正しい位置に移動する（ちらつき）
+  - **Root cause**: `native_mode.activate()` が `mp.Process` で `_open_window` を呼び出す際、`window_args` を引数として渡していない。子プロセス内で `core.app.native.window_args` を参照しても空の辞書になる
+  - **Solution**: `_patch_nicegui_native_mode()` 関数でモンキーパッチを適用
+    - `activate()` と `_open_window()` を修正版で置き換え
+    - `window_args`, `settings`, `start_args` を明示的に引数として渡す
+    - 子プロセス内で必要なモジュールをすべてインポート（Windows spawn モード対応）
+  - **Expected behavior after patch**:
+    - ウィンドウは `hidden=True` で非表示で作成される
+    - ウィンドウは正しい位置で作成される（`x`, `y` が渡される）
+    - `_position_window_early_sync()` が検出し、表示するのみ（移動不要）
+  - **Diagnostic logs**:
+    - パッチ成功時: `Window already at correct position` または `was hidden - patch worked`
+    - パッチ失敗時: `visible - patch may not have worked` または警告ログ
+  - **Affected files**: `yakulingo/ui/app.py`
 - **Edge Startup Parallelization (2024-12)**:
   - **Problem**: Edge起動（`subprocess.Popen`）がPlaywright初期化完了まで待機していた
   - **Solution**: Edge起動をPlaywright初期化と並列で実行

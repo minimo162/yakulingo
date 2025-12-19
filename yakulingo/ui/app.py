@@ -60,6 +60,108 @@ def _ensure_nicegui_version() -> None:
 
 # Note: Version check moved to run_app() after import
 
+
+def _patch_nicegui_native_mode() -> None:
+    """Patch NiceGUI's native_mode to pass window_args to child process.
+
+    NiceGUI's native mode uses multiprocessing to create the pywebview window.
+    However, window_args (including hidden, x, y) are set in the parent process
+    but not passed to the child process, causing them to be ignored.
+
+    This patch modifies native_mode.activate() and native_mode._open_window()
+    to explicitly pass window_args as a process argument.
+    """
+    try:
+        import _thread
+        import multiprocessing as mp
+        import time
+        import warnings
+        from threading import Event, Thread
+
+        from nicegui import core, helpers, optional_features
+        from nicegui.native import native, native_mode
+        from nicegui.server import Server
+
+        # Import webview with warning suppression (same as NiceGUI does)
+        with warnings.catch_warnings():
+            warnings.filterwarnings('ignore', category=DeprecationWarning)
+            import webview
+
+        def _open_window_patched(
+            host: str, port: int, title: str, width: int, height: int,
+            fullscreen: bool, frameless: bool,
+            method_queue: mp.Queue, response_queue: mp.Queue,
+            window_args: dict,  # Added: window_args passed from parent
+            settings_dict: dict,  # Added: webview.settings
+            start_args: dict,  # Added: webview.start() args
+        ) -> None:
+            """Modified _open_window that receives window_args as argument."""
+            while not helpers.is_port_open(host, port):
+                time.sleep(0.1)
+
+            window_kwargs = {
+                'url': f'http://{host}:{port}',
+                'title': title,
+                'width': width,
+                'height': height,
+                'fullscreen': fullscreen,
+                'frameless': frameless,
+                **window_args,  # Use passed window_args instead of core.app.native.window_args
+            }
+            webview.settings.update(**settings_dict)
+            window = webview.create_window(**window_kwargs)
+            assert window is not None
+            closed = Event()
+            window.events.closed += closed.set
+            native_mode._start_window_method_executor(window, method_queue, response_queue, closed)
+            webview.start(**start_args)
+
+        def activate_patched(
+            host: str, port: int, title: str, width: int, height: int,
+            fullscreen: bool, frameless: bool
+        ) -> None:
+            """Modified activate that passes window_args to child process."""
+            def check_shutdown() -> None:
+                while process.is_alive():
+                    time.sleep(0.1)
+                Server.instance.should_exit = True
+                while not core.app.is_stopped:
+                    time.sleep(0.1)
+                _thread.interrupt_main()
+                native.remove_queues()
+
+            if not optional_features.has('webview'):
+                logger.error('Native mode is not supported in this configuration.\n'
+                             'Please run "pip install pywebview" to use it.')
+                import sys
+                sys.exit(1)
+
+            mp.freeze_support()
+            native.create_queues()
+
+            # Serialize window_args, settings, and start_args to pass to child process
+            window_args = dict(core.app.native.window_args)
+            settings_dict = dict(core.app.native.settings)
+            start_args = dict(core.app.native.start_args)
+
+            args = (
+                host, port, title, width, height, fullscreen, frameless,
+                native.method_queue, native.response_queue,
+                window_args, settings_dict, start_args,  # Added
+            )
+            process = mp.Process(target=_open_window_patched, args=args, daemon=True)
+            process.start()
+
+            Thread(target=check_shutdown, daemon=True).start()
+
+        # Apply the patch
+        native_mode.activate = activate_patched
+        logger.debug("NiceGUI native_mode patched to pass window_args to child process")
+
+    except Exception as e:
+        logger.warning("Failed to patch NiceGUI native_mode: %s", e)
+
+
 # Fast imports - required at startup (lightweight modules only)
 from yakulingo.ui.state import AppState, Tab, FileState, ConnectionState, LayoutInitializationState
 from yakulingo.models.types import TranslationProgress, TranslationStatus, TextTranslationResult, TranslationOption, HistoryEntry
@@ -4166,6 +4268,11 @@ def run_app(
     # Validate NiceGUI version after import
     _ensure_nicegui_version()
 
+    # Patch NiceGUI native_mode to pass window_args to child process
+    # This must be done before ui.run() is called
+    if native:
+        _patch_nicegui_native_mode()
+
     # Set Windows AppUserModelID for correct taskbar icon
     # Without this, Windows uses the default Python icon instead of YakuLingo icon
     if sys.platform == 'win32':
@@ -4539,15 +4646,21 @@ def run_app(
                                         SWP_NOZORDER | SWP_NOACTIVATE
                                     )
                                     if result:
-                                        logger.debug("[EARLY_POSITION] Window moved from (%d, %d) to (%d, %d) after %dms",
-                                                   current_x, current_y, target_x, target_y, waited_ms)
+                                        # Log whether window was visible during move (indicates patch failure)
+                                        visibility_note = " (visible - patch may not have worked)" if is_visible else " (hidden - OK)"
+                                        logger.debug("[EARLY_POSITION] Window moved from (%d, %d) to (%d, %d) after %dms%s",
+                                                   current_x, current_y, target_x, target_y, waited_ms, visibility_note)
                                     else:
                                         logger.debug("[EARLY_POSITION] SetWindowPos failed after %dms", waited_ms)
+                                else:
+                                    # Window already at correct position (patch worked for x, y)
+                                    logger.debug("[EARLY_POSITION] Window already at correct position (%d, %d) after %dms",
+                                               current_x, current_y, waited_ms)
 
                                 # Now show the window at correct position
                                 if not is_visible:
                                     user32.ShowWindow(hwnd, SW_SHOW)
-                                    logger.debug("[EARLY_POSITION] Window shown after positioning (was hidden)")
+                                    logger.debug("[EARLY_POSITION] Window shown after positioning (was hidden - patch worked)")
                                 else:
                                     # Window was already visible, just ensure it's in correct state
                                     user32.SetWindowPos(
@@ -4555,7 +4668,7 @@ def run_app(
                                         SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_NOSIZE | SWP_NOMOVE
                                     )
                                     if needs_move:
-                                        logger.debug("[EARLY_POSITION] Window was visible during move (hidden=True may not have worked)")
+                                        logger.warning("[EARLY_POSITION] Window was visible during move - hidden=True did not work (NiceGUI patch may have failed)")
 
                                 yakulingo_app._early_position_completed = True
                     else:

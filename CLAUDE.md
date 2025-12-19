@@ -782,20 +782,21 @@ background authentication/session establishment, causing auth dialogs to appear.
 
 接続完了時に「GPT-5.2 Think Deeper」モードを自動設定します。
 
-**早期GPTモード切替（起動最適化）:**
+**早期GPTモード設定（起動最適化）:**
 
-GPTモード切替は早期接続スレッド内で開始され、NiceGUI import（~4.7秒）と並列で実行されます：
+GPTモード切替は早期接続スレッド内で開始されます（NiceGUI import + UI初期化と並列）。
+Copilot React UIの完全ロードに~7-8秒かかるため、10秒のタイムアウトで待機します。
 
 ```python
 # run_app() の _early_connect 関数内
 def _early_connect():
     result = _early_copilot.connect(...)  # ~7秒
     if result:
-        _early_copilot.ensure_gpt_mode()  # ~3秒（並列実行）
+        _early_copilot.ensure_gpt_mode()  # ~7-8秒待機（10秒タイムアウト）
 ```
 
-これにより、UI表示時点でGPTモード設定が完了している可能性が高くなり、
-体感的な待機時間が約3秒削減されます。
+UIスレッドからも`ensure_gpt_mode()`を呼び出しますが、早期接続で成功した場合は
+`_gpt_mode_set`フラグによりスキップされます。
 
 **重複呼び出し防止フラグ:**
 
@@ -813,16 +814,16 @@ def _early_connect():
 
 | シナリオ | 呼び出し元 | GPTモード設定 | フラグ操作 |
 |----------|-----------|--------------|-----------|
-| 早期接続成功 | `_early_connect()` | ✓（並列実行） | 設定 |
-| UI表示後 | `_apply_early_connection_or_connect()` | スキップ | - |
+| 早期接続成功 | `_early_connect()` | ✓（10秒待機） | 設定 |
+| UI表示後 | `_apply_early_connection_or_connect()` | スキップ（設定済み）| - |
 | 通常接続成功 | `start_edge_and_connect()` | ✓ | 設定 |
 | 手動ログイン完了 | `_wait_for_login_completion()` | ✓ | リセット→設定 |
-| バックグラウンド接続完了 | `_on_early_connection_complete()` | スキップ | - |
 | 再接続成功 | `_reconnect()` | ✗（手動変更を保持） | - |
 | 再接続→再ログイン | `_wait_for_login_completion()` | ✓ | リセット→設定 |
 
 **設計方針:**
-- 早期接続スレッドでGPTモード切替を開始（NiceGUI importと並列）
+- 早期接続スレッドでGPTモード切替を開始（NiceGUI import + UI初期化と並列）
+- 10秒のタイムアウトでCopilot React UIの完全ロードを待機
 - `_gpt_mode_set`フラグで重複呼び出しを防止
 - 再接続時は呼び出さない（ユーザーが手動でモード変更した場合を考慮）
 - 再ログイン時はフラグをリセットして呼び出す（セッションリセットでモード設定が消えるため）

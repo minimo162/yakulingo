@@ -1828,7 +1828,8 @@ class CopilotHandler:
 
             # OPTIMIZED: Execute menu navigation via JavaScript for speed
             # This combines multiple clicks into a single evaluate with minimal delays
-            switch_result = self._page.evaluate('''(targetMode, moreText) => {
+            # Note: Playwright evaluate() takes a single arg, so we pass an array
+            switch_result = self._page.evaluate('''([targetMode, moreText]) => {
                 return new Promise((resolve) => {
                     // Step 1: Click main button
                     const mainBtn = document.querySelector('#gptModeSwitcher');
@@ -1886,7 +1887,7 @@ class CopilotHandler:
                         }, 30);
                     }, 30);
                 });
-            }''', self.GPT_MODE_TARGET, self.GPT_MODE_MORE_TEXT)
+            }''', [self.GPT_MODE_TARGET, self.GPT_MODE_MORE_TEXT])
 
             elapsed = time.time() - start_time
             if switch_result.get('success'):

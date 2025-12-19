@@ -5386,8 +5386,8 @@ class CopilotHandler:
                             }''', input_selector)
                             logger.info("[SEND_DETAILED] JS key events result: %s", enter_result)
 
-                            # Wait for React to process events (restored from 0.02)
-                            time.sleep(0.05)
+                            # Brief wait before checking state
+                            time.sleep(0.02)
 
                             # Check immediate state after JS events
                             post_js_state = self._page.evaluate('''() => {
@@ -5420,8 +5420,8 @@ class CopilotHandler:
                                 input_elem.press("Enter")
                                 pw_time = time.monotonic() - send_start
 
-                                # Check state after Playwright press (restored from 0.02)
-                                time.sleep(0.05)
+                                # Brief wait before checking state
+                                time.sleep(0.02)
                                 post_pw_state = self._page.evaluate('''() => {
                                     const input = document.querySelector('#m365-chat-editor-target-element');
                                     const stopBtn = document.querySelector('.fai-SendButton__stopBackground');

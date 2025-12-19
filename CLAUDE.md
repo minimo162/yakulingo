@@ -3067,7 +3067,7 @@ Based on recent commits:
   - **Playwright fill() maintained**: React contenteditable要素との互換性のためfill()メソッドを維持（JS直接設定は改行が消える問題あり）
   - **Elapsed time measurement fix**: `start_time`を`await asyncio.sleep(0)`の後に移動（ユーザーがローディングUIを見た時点から計測開始）
   - **Detailed timing logs**: `[TIMING]`プレフィックスで翻訳処理の各ステップの時間を出力（デバッグ用）
-  - **_send_message sleep optimization**: Button scroll後 0.1→0.03秒、JS key events後 0.05→0.02秒、Playwright Enter後 0.05→0.02秒（合計約0.13秒短縮）
+  - **_send_message sleep optimization**: ~~Button scroll後 0.1→0.03秒~~（**復元済み**: Enterキーが効かなくなる問題のため0.1秒に戻した）、JS key events後 0.05→0.02秒、Playwright Enter後 0.05→0.02秒（維持）
 - **Time Measurement Standardization (2024-12)**:
   - **time.monotonic() unification**: 経過時間計測を`time.time()`から`time.monotonic()`に統一
   - **Rationale**: `time.time()`はNTP同期やシステム時刻変更の影響を受けるため、経過時間計測には単調増加時計が適切

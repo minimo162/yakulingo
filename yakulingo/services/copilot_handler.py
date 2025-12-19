@@ -1369,10 +1369,38 @@ class CopilotHandler:
             self._log_profile_directory_status()
 
             # Step 2: Connect to browser via Playwright CDP
+            # Retry logic for transient 401 errors when Edge DevTools server isn't fully ready
             _t_cdp = _time.perf_counter()
-            self._browser = self._playwright.chromium.connect_over_cdp(
-                f"http://127.0.0.1:{self.cdp_port}"
-            )
+            max_cdp_retries = 5
+            cdp_retry_interval = 0.5  # seconds
+            last_cdp_error = None
+
+            for cdp_attempt in range(max_cdp_retries):
+                try:
+                    self._browser = self._playwright.chromium.connect_over_cdp(
+                        f"http://127.0.0.1:{self.cdp_port}"
+                    )
+                    last_cdp_error = None
+                    break  # Success
+                except PlaywrightError as e:
+                    last_cdp_error = e
+                    error_msg = str(e)
+                    # Retry on 401 errors (Edge DevTools not ready) or connection refused
+                    if "401" in error_msg or "connection refused" in error_msg.lower():
+                        if cdp_attempt < max_cdp_retries - 1:
+                            logger.debug(
+                                "CDP connection attempt %d/%d failed (retrying in %.1fs): %s",
+                                cdp_attempt + 1, max_cdp_retries, cdp_retry_interval, error_msg[:100]
+                            )
+                            _time.sleep(cdp_retry_interval)
+                            cdp_retry_interval *= 1.5  # Exponential backoff
+                            continue
+                    # Non-retryable error or max retries reached
+                    raise
+
+            if last_cdp_error is not None:
+                raise last_cdp_error
+
             logger.debug("[TIMING] connect_over_cdp(): %.2fs", _time.perf_counter() - _t_cdp)
 
             # Step 3: Get or create context

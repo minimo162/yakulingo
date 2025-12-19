@@ -1171,6 +1171,12 @@ UIの📏アイコン（用語集編集ボタンの隣）からデフォルト�
 - 「450 billion」や「4.5 trillion」には絶対に変換しない
 - 数字の桁は絶対に変えない（4,500は4,500のまま）
 
+### 月の略語ルール（日本語 → 英語）
+
+月名は略語を使用する。
+- ✓ OK: Jan., Feb., Mar., Apr., May, Jun., Jul., Aug., Sep., Oct., Nov., Dec.
+- ✗ NG: January, February, March, April, June, July, August, September, October, November, December
+
 ### 記号変換ルール（英訳時）
 
 以下の記号は英語圏でビジネス文書に不適切です。

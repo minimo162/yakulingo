@@ -98,6 +98,27 @@
 
 ---
 
+### 月の略語ルール（日本語 → 英語）
+
+月名は略語を使用する。
+
+| 日本語 | ✓ OK | ✗ NG |
+|--------|------|------|
+| 1月 | Jan. | January |
+| 2月 | Feb. | February |
+| 3月 | Mar. | March |
+| 4月 | Apr. | April |
+| 5月 | May | May（変更なし） |
+| 6月 | Jun. | June |
+| 7月 | Jul. | July |
+| 8月 | Aug. | August |
+| 9月 | Sep. | September |
+| 10月 | Oct. | October |
+| 11月 | Nov. | November |
+| 12月 | Dec. | December |
+
+---
+
 ### 数値表記ルール（英語 → 日本語）
 
 | 英語 | 日本語 | 変換例 |

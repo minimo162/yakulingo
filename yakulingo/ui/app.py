@@ -4104,15 +4104,16 @@ def run_app(
         from yakulingo.services.copilot_handler import (
             CopilotHandler,
             pre_initialize_playwright,
-            wait_for_playwright_init,
         )
         pre_initialize_playwright()
-        # Wait for Playwright init to complete before NiceGUI import
-        # This avoids I/O contention with antivirus real-time scanning on Windows
-        wait_for_playwright_init(timeout=30.0)
+        # Playwright init runs in background - DO NOT wait here
+        # Edge connection will wait for Playwright init to complete when needed
+        # This allows NiceGUI import to start immediately (~15s faster startup)
+        # Note: I/O contention with antivirus is handled by Edge connection waiting
 
         # Start Edge and connect to Copilot in background thread
         # This runs in parallel with NiceGUI import + display_settings (~3.8s)
+        # Playwright init completion is waited inside CopilotHandler.connect()
         _early_copilot = CopilotHandler()
 
         def _early_connect():
@@ -4424,11 +4425,18 @@ def run_app(
 
             user32 = ctypes.WinDLL('user32', use_last_error=True)
 
-            # Poll for YakuLingo window with short fixed interval
-            # Use aggressive polling (5ms) to minimize time window is at wrong position
-            # Total max wait: 6s is sufficient (typical detection < 3s)
+            # Poll for YakuLingo window with progressive interval
+            # Progressive polling: start fast, then slow down to reduce CPU usage
+            # - Phase 1: 50ms for first 1000ms (20 polls)
+            # - Phase 2: 100ms for next 2000ms (20 polls)
+            # - Phase 3: 200ms for remaining time
+            # Total max wait: 6s (typical detection ~3.5s)
             MAX_WAIT_MS = 6000
-            POLL_INTERVAL_MS = 5  # Fixed 5ms interval for fastest detection
+            POLL_INTERVALS = [
+                (1000, 50),   # First 1s: 50ms interval (quick detection)
+                (3000, 100),  # 1-3s: 100ms interval
+                (6000, 200),  # 3-6s: 200ms interval (CPU-friendly)
+            ]
             waited_ms = 0
 
             class RECT(ctypes.Structure):
@@ -4557,8 +4565,15 @@ def run_app(
                                        settings.browser_display_mode, waited_ms)
                     return
 
-                time.sleep(POLL_INTERVAL_MS / 1000)
-                waited_ms += POLL_INTERVAL_MS
+                # Determine current poll interval based on elapsed time
+                current_interval = POLL_INTERVALS[-1][1]  # Default to last (slowest) interval
+                for threshold_ms, interval_ms in POLL_INTERVALS:
+                    if waited_ms < threshold_ms:
+                        current_interval = interval_ms
+                        break
+
+                time.sleep(current_interval / 1000)
+                waited_ms += current_interval
 
             logger.debug("[EARLY_POSITION] Window not found within %dms", MAX_WAIT_MS)
 

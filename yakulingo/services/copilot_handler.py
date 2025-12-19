@@ -1459,12 +1459,14 @@ class CopilotHandler:
             # (greenlet limitation), so only Edge startup can be parallelized
             need_start_edge = not self._is_port_in_use()
 
-            # Try to use pre-initialized Playwright (started during NiceGUI import)
+            # Try to use pre-initialized Playwright (started before NiceGUI import)
+            # Wait up to 30s for initialization to complete (may be running in parallel)
             _t_pw_start = _time.perf_counter()
-            pre_init_pw = get_pre_initialized_playwright(timeout=0.1)  # Quick check
+            pre_init_pw = get_pre_initialized_playwright(timeout=30.0)
             if pre_init_pw is not None:
                 self._playwright = pre_init_pw
-                logger.info("[TIMING] Using pre-initialized Playwright (saved ~2.8s)")
+                pw_wait_time = _time.perf_counter() - _t_pw_start
+                logger.info("[TIMING] Using pre-initialized Playwright (waited %.2fs)", pw_wait_time)
             else:
                 pre_init_pw = None  # Will initialize below
 
@@ -1483,8 +1485,8 @@ class CopilotHandler:
 
                     # Initialize Playwright if not pre-initialized
                     if self._playwright is None:
-                        # Wait for pre-initialization if in progress
-                        pre_init_pw = get_pre_initialized_playwright(timeout=5.0)
+                        # Wait for pre-initialization if in progress (may take 15-20s on slow systems)
+                        pre_init_pw = get_pre_initialized_playwright(timeout=30.0)
                         if pre_init_pw is not None:
                             self._playwright = pre_init_pw
                             logger.info("[TIMING] Using pre-initialized Playwright (waited): %.2fs",
@@ -1526,8 +1528,8 @@ class CopilotHandler:
                     logger.debug("Set profile_dir for existing Edge: %s", self.profile_dir)
 
                 if self._playwright is None:
-                    # Wait for pre-initialization if in progress
-                    pre_init_pw = get_pre_initialized_playwright(timeout=5.0)
+                    # Wait for pre-initialization if in progress (may take 15-20s on slow systems)
+                    pre_init_pw = get_pre_initialized_playwright(timeout=30.0)
                     if pre_init_pw is not None:
                         self._playwright = pre_init_pw
                         logger.info("[TIMING] Using pre-initialized Playwright (waited): %.2fs",

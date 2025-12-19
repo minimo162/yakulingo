@@ -476,37 +476,42 @@ def _log_playwright_init_details(phase: str, include_paths: bool = False) -> flo
 
     Returns:
         Time spent in this function (seconds)
+
+    Performance notes:
+        - Process enumeration is only done for "after_start" phase to verify Node.js started
+        - Other phases only log memory info for minimal overhead (~1ms vs ~1.5s)
     """
     import time as _time
     t_start = _time.perf_counter()
 
     try:
         import psutil
-        # CPU and memory (interval=None for non-blocking call)
-        cpu_percent = psutil.cpu_percent(interval=None)
+        # Memory info only (fast, ~1ms)
         memory = psutil.virtual_memory()
         logger.debug(
-            "[PLAYWRIGHT_INIT] %s: CPU=%.1f%%, Memory=%.1f%% (available=%.1fGB)",
-            phase, cpu_percent, memory.percent, memory.available / (1024**3)
+            "[PLAYWRIGHT_INIT] %s: Memory=%.1f%% (available=%.1fGB)",
+            phase, memory.percent, memory.available / (1024**3)
         )
 
         # Log Playwright paths only when requested (first call)
         if include_paths:
             _log_playwright_paths()
 
-        # Check for existing Node.js processes (skip full scan for speed)
-        node_procs = []
-        for proc in psutil.process_iter(['pid', 'name']):
-            try:
-                name = proc.info['name'].lower() if proc.info['name'] else ''
-                if 'node' in name:
-                    node_procs.append(f"{proc.info['name']}(pid={proc.info['pid']})")
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                pass
+        # Process enumeration only for after_start phase (to verify Node.js started)
+        # This is the only phase where we need to confirm the process is running
+        if phase == "after_start":
+            node_procs = []
+            for proc in psutil.process_iter(['pid', 'name']):
+                try:
+                    name = proc.info['name'].lower() if proc.info['name'] else ''
+                    if 'node' in name:
+                        node_procs.append(f"{proc.info['name']}(pid={proc.info['pid']})")
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
 
-        if node_procs:
-            logger.debug("[PLAYWRIGHT_INIT] %s: Existing Node.js processes: %s",
-                        phase, ', '.join(node_procs[:5]))
+            if node_procs:
+                logger.debug("[PLAYWRIGHT_INIT] %s: Existing Node.js processes: %s",
+                            phase, ', '.join(node_procs[:5]))
     except ImportError:
         logger.debug("[PLAYWRIGHT_INIT] %s: psutil not available for detailed logging", phase)
     except Exception as e:
@@ -574,9 +579,6 @@ def _pre_init_playwright_impl():
         cumulative = _time.perf_counter() - _t_start
         logger.debug("[TIMING] pre_init _get_playwright(): %.2fs (cumulative: %.2fs)", step_time, cumulative)
 
-        # Log before sync_playwright() call
-        log_time = _log_playwright_init_details("before_sync")
-
         # Step 2: Create Playwright context manager
         _t_step = _time.perf_counter()
         pw_context = sync_playwright()
@@ -584,8 +586,8 @@ def _pre_init_playwright_impl():
         cumulative = _time.perf_counter() - _t_start
         logger.debug("[TIMING] pre_init sync_playwright(): %.2fs (cumulative: %.2fs)", step_time, cumulative)
 
-        # Log before start() call
-        log_time = _log_playwright_init_details("before_start")
+        # Log memory state before Node.js server startup
+        _log_playwright_init_details("before_start")
 
         # Step 3: Start Playwright server (Node.js process - slowest step)
         logger.debug("[PLAYWRIGHT_INIT] Starting Node.js server...")
@@ -595,8 +597,8 @@ def _pre_init_playwright_impl():
         cumulative = _time.perf_counter() - _t_start
         logger.debug("[TIMING] pre_init .start(): %.2fs (cumulative: %.2fs)", step_time, cumulative)
 
-        # Log after start() completes
-        log_time = _log_playwright_init_details("after_start")
+        # Log after start() completes (includes Node.js process verification)
+        _log_playwright_init_details("after_start")
 
         _pre_init_thread_id = current_thread_id  # Record thread ID for validation
         total_time = _time.perf_counter() - _t_start

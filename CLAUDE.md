@@ -2573,6 +2573,13 @@ Based on recent commits:
     - `del mail` / `del outlook`で明示的にオブジェクトを削除（Excelプロセッサと同様のパターン）
     - `gc.collect()`でガベージコレクションを実行
     - Close()未呼び出しによる「返信」扱い問題を修正
+  - **`_is_outlook_available()` COM leak fix**: Outlook利用可能チェック時のCOMオブジェクトリークを修正
+    - `finally`句で`del outlook`と`gc.collect()`を追加
+  - **Thread safety**: キャッシュアクセスをスレッドセーフに改善
+    - `threading.Lock()`を追加（`_cache_lock`）
+    - `_get_cached_content()`と`clear_cache()`を保護
+  - **Regex pre-compilation**: 文分割用正規表現をモジュールレベルで事前コンパイル
+    - `_SENTENCE_SPLIT_PATTERN = re.compile(r'(?<=[。！？.!?\n])')`
 - **Excel Translation Optimization (2024-12)**:
   - **Cell reading optimization**: セル読み取り効率化
   - **Write optimization**: 書き込み効率化

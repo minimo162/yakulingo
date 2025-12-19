@@ -1186,12 +1186,12 @@ wait_time = backoff_time + jitter
 
 | タイミング | 値 | 目的 | 備考 |
 |-----------|-----|------|------|
-| Button scroll後 | **0.15s** | React UIの準備待ち | ⚠️ 必須。ファイル添付後はReact UIの準備に時間がかかる |
+| Button scroll後 | **0.20s** | React UIの準備待ち | ⚠️ 必須。ファイル添付後はReact UIの準備に時間がかかる |
 | JS key events後 | 0.02s | 状態ポーリング | ポーリング用なので短くてOK |
 | Playwright Enter後 | 0.02s | 状態ポーリング | 同上 |
 | SEND_WARMUP後 | 0.02s | 初期スクロール後 | 送信直前ではないので短くてOK |
 
-**重要**: Button scroll後の0.15秒待機は、Enterキー送信が機能するために必須です。
+**重要**: Button scroll後の0.20秒待機は、Enterキー送信が機能するために必須です。
 scrollIntoView後にReact UIが準備完了するまでの時間が必要であり、
 特にファイル添付後はUIの状態更新に時間がかかるため、この待機を削減すると
 Enterキーが無視され、常にJSクリック（Attempt 2）へフォールバックします。
@@ -2333,6 +2333,12 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Recent Development Focus
 
 Based on recent commits:
+- **Submit Button Timing Fix v2 (2024-12)**:
+  - **Problem**: ファイル添付後にEnterキー送信（Attempt 1）が失敗し、JS click（Attempt 2）へフォールバックして約1秒の遅延が発生
+  - **Root cause**: Button scroll後の待機時間（0.15秒）でもReact UIの準備が完了しない場合がある
+  - **Solution**: Button scroll後の待機時間を0.15秒→0.20秒に増加
+  - **Affected files**: `copilot_handler.py`, `CLAUDE.md`
+  - **Expected improvement**: Attempt 1の成功率向上により、約1秒のフォールバック遅延を削減
 - **Submit Button Timing Fix (2024-12)**:
   - **Problem**: ファイル添付後にEnterキー送信（Attempt 1）が失敗し、JS click（Attempt 2）へフォールバックして約2秒の遅延が発生
   - **Root cause**: Button scroll後の待機時間（0.1秒）ではReact UIの準備が完了しない。ファイル添付後はUIの状態更新に時間がかかる
@@ -3089,7 +3095,7 @@ Based on recent commits:
   - **Playwright fill() maintained**: React contenteditable要素との互換性のためfill()メソッドを維持（JS直接設定は改行が消える問題あり）
   - **Elapsed time measurement fix**: `start_time`を`await asyncio.sleep(0)`の後に移動（ユーザーがローディングUIを見た時点から計測開始）
   - **Detailed timing logs**: `[TIMING]`プレフィックスで翻訳処理の各ステップの時間を出力（デバッグ用）
-  - **_send_message sleep optimization**: Button scroll後は0.15秒を維持（Enterキー送信に必須、詳細は「Send Message Timing」セクション参照）、その他のポーリング用sleepは0.02秒に短縮
+  - **_send_message sleep optimization**: Button scroll後は0.20秒を維持（Enterキー送信に必須、詳細は「Send Message Timing」セクション参照）、その他のポーリング用sleepは0.02秒に短縮
 - **Time Measurement Standardization (2024-12)**:
   - **time.monotonic() unification**: 経過時間計測を`time.time()`から`time.monotonic()`に統一
   - **Rationale**: `time.time()`はNTP同期やシステム時刻変更の影響を受けるため、経過時間計測には単調増加時計が適切

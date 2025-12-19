@@ -1990,7 +1990,7 @@ class CopilotHandler:
         PlaywrightTimeoutError = error_types['TimeoutError']
 
         try:
-            start_time = time.time()
+            start_time = time.monotonic()
 
             # OPTIMIZED: Quick check first, then wait_for_selector if not found
             # This avoids unnecessary waiting when button is already visible
@@ -2000,7 +2000,7 @@ class CopilotHandler:
             }''')
 
             if current_mode:
-                elapsed = time.time() - start_time
+                elapsed = time.monotonic() - start_time
                 logger.debug("[TIMING] GPT mode button found immediately (%.3fs)", elapsed)
             else:
                 # Button not found yet - wait for it
@@ -2010,7 +2010,7 @@ class CopilotHandler:
                         state='visible',
                         timeout=self.GPT_MODE_BUTTON_WAIT_MS
                     )
-                    elapsed = time.time() - start_time
+                    elapsed = time.monotonic() - start_time
                     logger.debug("[TIMING] GPT mode button found after wait (%.3fs)", elapsed)
 
                     # Get mode text after button appears
@@ -2019,7 +2019,7 @@ class CopilotHandler:
                         return el ? el.textContent?.trim() : null;
                     }''')
                 except PlaywrightTimeoutError:
-                    elapsed = time.time() - start_time
+                    elapsed = time.monotonic() - start_time
                     logger.debug("GPT mode button did not appear after %.2fs", elapsed)
                     return
 
@@ -2114,7 +2114,7 @@ class CopilotHandler:
                 })();
             }''', [self.GPT_MODE_TARGET, self.GPT_MODE_MORE_TEXT])
 
-            elapsed = time.time() - start_time
+            elapsed = time.monotonic() - start_time
             if switch_result.get('success'):
                 logger.info("Successfully switched GPT mode to '%s' (%.2fs)",
                            switch_result.get('newMode', self.GPT_MODE_TARGET), elapsed)
@@ -4210,7 +4210,7 @@ class CopilotHandler:
         from contextlib import suppress
 
         logger.info("Force disconnecting Copilot...")
-        shutdown_start = time.time()
+        shutdown_start = time.monotonic()
 
         # Mark as disconnected first
         self._connected = False
@@ -4223,9 +4223,9 @@ class CopilotHandler:
         # If dialog appears frequently, this can be re-enabled
 
         # First, shutdown the executor to release any pending operations
-        executor_start = time.time()
+        executor_start = time.monotonic()
         _playwright_executor.shutdown()
-        logger.debug("[TIMING] executor.shutdown: %.2fs", time.time() - executor_start)
+        logger.debug("[TIMING] executor.shutdown: %.2fs", time.monotonic() - executor_start)
 
         # Note: We don't call self._playwright.stop() here because:
         # 1. Playwright operations must run in the same greenlet where it was initialized
@@ -4245,7 +4245,7 @@ class CopilotHandler:
             # Directly kill process tree (fastest method)
             # Use _kill_process_tree to kill all child processes (renderer, GPU, etc.)
             # that may be holding file handles to the profile directory
-            taskkill_start = time.time()
+            taskkill_start = time.monotonic()
 
             # Get PID from edge_process or fall back to saved _edge_pid
             pid_to_kill = None
@@ -4271,7 +4271,7 @@ class CopilotHandler:
                             browser_terminated = True  # Assume success after kill
                         if browser_terminated:
                             logger.info("Edge browser terminated (force via terminate)")
-            logger.debug("[TIMING] kill_process_tree: %.2fs", time.time() - taskkill_start)
+            logger.debug("[TIMING] kill_process_tree: %.2fs", time.monotonic() - taskkill_start)
 
             # If still not terminated, try killing by port as last resort
             if not browser_terminated and self._is_port_in_use():
@@ -4288,7 +4288,7 @@ class CopilotHandler:
         self._edge_pid = None
         self._browser_started_by_us = False
 
-        logger.info("[TIMING] force_disconnect total: %.2fs", time.time() - shutdown_start)
+        logger.info("[TIMING] force_disconnect total: %.2fs", time.monotonic() - shutdown_start)
 
     def _disconnect_impl(self, keep_browser: bool = False) -> None:
         """Implementation of disconnect that runs in the Playwright thread.
@@ -4733,10 +4733,10 @@ class CopilotHandler:
             bool(on_chunk),
             len(reference_files) if reference_files else 0,
         )
-        total_start = time.time()
+        total_start = time.monotonic()
 
         # Call _connect_impl directly since we're already in the Playwright thread
-        connect_start = time.time()
+        connect_start = time.monotonic()
         if not self._connect_impl():
             # Provide specific error message based on connection error type
             if self.last_connection_error == self.ERROR_LOGIN_REQUIRED:
@@ -4764,9 +4764,9 @@ class CopilotHandler:
             # OPTIMIZED: Use click_only=True for parallelization with prompt input
             # The new chat button click doesn't reset the input field, so we can
             # safely proceed to send_message immediately while click executes async
-            new_chat_start = time.time()
+            new_chat_start = time.monotonic()
             self.start_new_chat(click_only=True)
-            logger.info("[TIMING] start_new_chat (click_only): %.2fs", time.time() - new_chat_start)
+            logger.info("[TIMING] start_new_chat (click_only): %.2fs", time.monotonic() - new_chat_start)
 
             # Minimize browser after start_new_chat to prevent window flash
             self._send_to_background_impl(self._page)
@@ -4778,7 +4778,7 @@ class CopilotHandler:
 
             # Attach reference files first (before sending prompt)
             if reference_files:
-                attach_start = time.time()
+                attach_start = time.monotonic()
                 for file_path in reference_files:
                     if file_path.exists():
                         self._attach_file(file_path)
@@ -4786,12 +4786,12 @@ class CopilotHandler:
                         if self._is_cancelled():
                             logger.info("Translation cancelled during file attachment (single)")
                             raise TranslationCancelledError("Translation cancelled by user")
-                logger.info("[TIMING] attach_files (%d files): %.2fs", len(reference_files), time.time() - attach_start)
+                logger.info("[TIMING] attach_files (%d files): %.2fs", len(reference_files), time.monotonic() - attach_start)
 
             # Send the prompt
-            send_start = time.time()
+            send_start = time.monotonic()
             stop_button_seen = self._send_message(prompt)
-            logger.info("[TIMING] _send_message: %.2fs", time.time() - send_start)
+            logger.info("[TIMING] _send_message: %.2fs", time.monotonic() - send_start)
 
             # Minimize browser after _send_message to prevent window flash
             self._send_to_background_impl(self._page)
@@ -4802,12 +4802,12 @@ class CopilotHandler:
                 raise TranslationCancelledError("Translation cancelled by user")
 
             # Get response and return raw (no parsing - preserves 訳文/解説 format)
-            response_start = time.time()
+            response_start = time.monotonic()
             result = self._get_response(
                 on_chunk=on_chunk,
                 stop_button_seen_during_send=stop_button_seen
             )
-            logger.info("[TIMING] _get_response: %.2fs", time.time() - response_start)
+            logger.info("[TIMING] _get_response: %.2fs", time.monotonic() - response_start)
 
             logger.debug(
                 "translate_single received response (length=%d)", len(result) if result else 0
@@ -4912,7 +4912,7 @@ class CopilotHandler:
         PlaywrightTimeoutError = error_types['TimeoutError']
 
         logger.info("Sending message to Copilot (length: %d chars)", len(message))
-        send_msg_start = time.time()
+        send_msg_start = time.monotonic()
 
         # Ensure we have a valid page reference
         if not self._page or not self._is_page_valid():
@@ -4945,7 +4945,7 @@ class CopilotHandler:
 
             if input_elem:
                 logger.debug("Input element found, setting text via JS...")
-                fill_start = time.time()
+                fill_start = time.monotonic()
                 fill_success = False
                 fill_method = None  # Track which method succeeded
 
@@ -4953,13 +4953,13 @@ class CopilotHandler:
                 # fill() handles contenteditable properly and triggers React state updates
                 method1_error = None
                 try:
-                    t0 = time.time()
+                    t0 = time.monotonic()
                     input_elem.fill(message)
-                    t1 = time.time()
+                    t1 = time.monotonic()
                     # Dispatch input event to ensure React detects the change
                     # Note: change event removed for optimization - input event is sufficient for React
                     input_elem.evaluate('el => el.dispatchEvent(new Event("input", { bubbles: true }))')
-                    t2 = time.time()
+                    t2 = time.monotonic()
                     # OPTIMIZED: Removed inner_text() verification (~0.11s savings)
                     # Post-send verification catches empty input cases
                     logger.debug("[FILL_DETAIL] fill=%.3fs, dispatchEvent=%.3fs",
@@ -5027,7 +5027,7 @@ class CopilotHandler:
                     3: "type line by line",
                 }
                 method_name = method_names.get(fill_method, "unknown")
-                logger.info("[TIMING] js_set_text (Method %s: %s): %.2fs", fill_method, method_name, time.time() - fill_start)
+                logger.info("[TIMING] js_set_text (Method %s: %s): %.2fs", fill_method, method_name, time.monotonic() - fill_start)
 
                 # Verify input was successful
                 if not fill_success:
@@ -5037,17 +5037,17 @@ class CopilotHandler:
                 # Note: No sleep needed here - button loop below handles React state stabilization
 
                 # Wait for send button to become visible AND in viewport
-                send_button_start = time.time()
+                send_button_start = time.monotonic()
                 send_btn = None
                 btn_ready = False
 
                 for wait_iter in range(10):  # Max 1 second (10 * 0.1s) - optimized from 20
-                    iter_start = time.time()
+                    iter_start = time.monotonic()
                     send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
-                    query_time = time.time() - iter_start
+                    query_time = time.monotonic() - iter_start
                     if send_btn:
                         try:
-                            eval_start = time.time()
+                            eval_start = time.monotonic()
                             btn_state = send_btn.evaluate('''el => {
                                 const rect = el.getBoundingClientRect();
                                 const style = window.getComputedStyle(el);
@@ -5060,7 +5060,7 @@ class CopilotHandler:
                                     inViewport: rect.y >= 0 && rect.y < window.innerHeight
                                 };
                             }''')
-                            eval_time = time.time() - eval_start
+                            eval_time = time.monotonic() - eval_start
 
                             if wait_iter == 0:
                                 logger.debug("[SEND_PREP] Initial button state: %s (query=%.3fs, eval=%.3fs)",
@@ -5075,7 +5075,7 @@ class CopilotHandler:
                                 btn_ready = True
                                 if wait_iter > 0:
                                     logger.debug("[SEND_PREP] Button ready after %d iterations (%.2fs): %s",
-                                                wait_iter, time.time() - send_button_start, btn_state)
+                                                wait_iter, time.monotonic() - send_button_start, btn_state)
                                 break
                             elif wait_iter == 0:
                                 logger.debug("[SEND_PREP] Button not ready yet (y=%.1f, disabled=%s), waiting...",
@@ -5085,18 +5085,18 @@ class CopilotHandler:
 
                     time.sleep(0.1)
 
-                send_button_wait = time.time() - send_button_start
+                send_button_wait = time.monotonic() - send_button_start
                 if not btn_ready:
                     logger.warning("[SEND_PREP] Button may not be ready after %.2fs, proceeding anyway", send_button_wait)
                 else:
                     logger.debug("[SEND_PREP] Button ready after %.2fs", send_button_wait)
 
                 # Track when we're ready to send (for timing analysis)
-                send_ready_time = time.time()
+                send_ready_time = time.monotonic()
 
                 # Pre-warm: Stabilize UI before sending
                 # First attempt often fails because UI needs time to settle after text input
-                warmup_start = time.time()
+                warmup_start = time.monotonic()
                 try:
                     warmup_result = self._page.evaluate('''() => {
                         const input = document.querySelector('#m365-chat-editor-target-element');
@@ -5125,14 +5125,14 @@ class CopilotHandler:
 
                         return result;
                     }''')
-                    warmup_eval_time = time.time() - warmup_start
+                    warmup_eval_time = time.monotonic() - warmup_start
                     logger.debug("[SEND_WARMUP] Result: %s (eval=%.3fs)", warmup_result, warmup_eval_time)
 
                     # Wait for UI to stabilize after scroll
                     # Reduced from 0.05s - scrollIntoView with 'instant' needs minimal wait
                     time.sleep(0.02)
                     logger.debug("[SEND_WARMUP] Total: %.3fs (eval=%.3fs, sleep=0.020s)",
-                                time.time() - warmup_start, warmup_eval_time)
+                                time.monotonic() - warmup_start, warmup_eval_time)
 
                 except Exception as warmup_err:
                     logger.debug("[SEND_WARMUP] Failed: %s", warmup_err)
@@ -5200,7 +5200,7 @@ class CopilotHandler:
                         if send_attempt == 0:
                             # First attempt: Enter key with robust focus management
                             # This works reliably even when window is minimized
-                            elapsed_since_ready = time.time() - send_ready_time
+                            elapsed_since_ready = time.monotonic() - send_ready_time
                             logger.info("[SEND_DETAILED] Attempt 1 starting (%.2fs since send_ready)", elapsed_since_ready)
 
                             focus_result = self._page.evaluate('''(inputSelector) => {
@@ -5311,7 +5311,7 @@ class CopilotHandler:
                             logger.info("[SEND_DETAILED] Pre-send state: %s", pre_send_state)
 
                             # Try multiple send methods in sequence with timing
-                            send_start = time.time()
+                            send_start = time.monotonic()
 
                             # Method 1: JS keydown + keypress + keyup (complete key cycle)
                             enter_result = self._page.evaluate('''(inputSelector) => {
@@ -5412,7 +5412,7 @@ class CopilotHandler:
                             else:
                                 # JS events didn't trigger send - use Playwright as backup
                                 input_elem.press("Enter")
-                                pw_time = time.time() - send_start
+                                pw_time = time.monotonic() - send_start
 
                                 # Check state after Playwright press (optimized from 0.05)
                                 time.sleep(0.02)
@@ -5433,7 +5433,7 @@ class CopilotHandler:
                             # Most reliable for minimized windows - dispatch mousedown/mouseup/click
 
                             # Log elapsed time since send ready
-                            elapsed_since_ready = time.time() - send_ready_time
+                            elapsed_since_ready = time.monotonic() - send_ready_time
                             logger.info("[SEND_DETAILED] Attempt 2 starting (%.2fs since send_ready)", elapsed_since_ready)
 
                             send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
@@ -5604,7 +5604,7 @@ class CopilotHandler:
                     SEND_VERIFY_POLL_INTERVAL = 0.05  # Increased from 0.03s for stability
                     SEND_VERIFY_POLL_MAX = 1.5  # Increased from 0.5s for reliability
 
-                    verify_start = time.time()
+                    verify_start = time.monotonic()
                     send_verified = False
                     verify_reason = ""
 
@@ -5665,8 +5665,8 @@ class CopilotHandler:
                     # Method 2: Poll both conditions (stop button AND input cleared)
                     # This catches cases where input clears quickly but stop button is slow
                     poll_iteration = 0
-                    poll_start = time.time()
-                    while not send_verified and (time.time() - poll_start) < SEND_VERIFY_POLL_MAX:
+                    poll_start = time.monotonic()
+                    while not send_verified and (time.monotonic() - poll_start) < SEND_VERIFY_POLL_MAX:
                         poll_iteration += 1
                         # Check stop button
                         try:
@@ -5724,7 +5724,7 @@ class CopilotHandler:
                         time.sleep(SEND_VERIFY_POLL_INTERVAL)
 
                     if send_verified:
-                        elapsed = time.time() - verify_start
+                        elapsed = time.monotonic() - verify_start
                         logger.info("[SEND] Message sent (attempt %d, %s, verified in %.2fs)",
                                     send_attempt + 1, verify_reason, elapsed)
                         send_success = True
@@ -5755,7 +5755,7 @@ class CopilotHandler:
                             pass
 
                         if send_attempt < MAX_SEND_RETRIES - 1:
-                            elapsed = time.time() - verify_start
+                            elapsed = time.monotonic() - verify_start
                             logger.warning(
                                 "[SEND] Not verified after %.1fs (attempt %d/%d), retrying...",
                                 elapsed, send_attempt + 1, MAX_SEND_RETRIES
@@ -6010,27 +6010,27 @@ class CopilotHandler:
         PlaywrightTimeoutError = error_types['TimeoutError']
 
         streaming_logged = False  # Avoid spamming logs for every tiny delta
-        response_start_time = time.time()
+        response_start_time = time.monotonic()
         first_content_time = None
 
         try:
             # Wait for response completion with dynamic polling
             # Note: We no longer use wait_for_selector here to ensure stop button detection
             # during the initial waiting period (stop button appears before response element)
-            polling_start_time = time.time()
+            polling_start_time = time.monotonic()
             timeout_float = float(timeout)
             last_text = ""
             stable_count = 0
             has_content = False  # Track if we've seen any content
             poll_iteration = 0
-            last_log_time = time.time()
+            last_log_time = time.monotonic()
             # Track if stop button was ever visible (including during send verification)
             stop_button_ever_seen = stop_button_seen_during_send
             stop_button_warning_logged = False  # Avoid repeated warnings
             response_element_seen = False  # Track if response element has appeared
             response_element_first_seen_time = None  # Track when response element first appeared
             # Initialize to past time so first iteration always checks page validity
-            last_page_validity_check = time.time() - self.PAGE_VALIDITY_CHECK_INTERVAL
+            last_page_validity_check = time.monotonic() - self.PAGE_VALIDITY_CHECK_INTERVAL
             # Cache the working stop button selector for faster subsequent checks
             cached_stop_selector = None
 
@@ -6039,7 +6039,7 @@ class CopilotHandler:
             url_str = str(current_url) if current_url else "empty"
             logger.info("[POLLING] Starting response polling (timeout=%.0fs, URL: %s)", timeout_float, url_str[:80])
 
-            while (time.time() - polling_start_time) < timeout_float:
+            while (time.monotonic() - polling_start_time) < timeout_float:
                 poll_iteration += 1
                 # Check for cancellation at the start of each polling iteration
                 if self._is_cancelled():
@@ -6048,7 +6048,7 @@ class CopilotHandler:
 
                 # Periodically check if page is still valid (detect login expiration)
                 # This prevents 120-second freeze when login session expires
-                current_time = time.time()
+                current_time = time.monotonic()
                 if current_time - last_page_validity_check >= self.PAGE_VALIDITY_CHECK_INTERVAL:
                     last_page_validity_check = current_time
                     if not self._is_page_valid():
@@ -6102,11 +6102,11 @@ class CopilotHandler:
                     stable_count = 0
                     poll_interval = self.RESPONSE_POLL_INITIAL
                     # Log every 1 second
-                    if time.time() - last_log_time >= 1.0:
-                        remaining = timeout_float - (time.time() - polling_start_time)
+                    if time.monotonic() - last_log_time >= 1.0:
+                        remaining = timeout_float - (time.monotonic() - polling_start_time)
                         logger.info("[POLLING] iter=%d stop_button visible (%s), waiting... (remaining=%.1fs)",
                                    poll_iteration, stop_button_selector, remaining)
-                        last_log_time = time.time()
+                        last_log_time = time.monotonic()
                     time.sleep(poll_interval)
                     continue
 
@@ -6118,7 +6118,7 @@ class CopilotHandler:
                     if quick_found and quick_text and quick_text == last_text:
                         # Text is stable - return immediately (stop button confirms completion)
                         logger.info("[TIMING] response_stabilized: %.2fs (early termination: stop button disappeared, text stable)",
-                                   time.time() - response_start_time)
+                                   time.monotonic() - response_start_time)
                         return quick_text
 
                 # Warn if stop button was never found (possible selector change)
@@ -6145,7 +6145,7 @@ class CopilotHandler:
                     # Track when response element first appears
                     if not response_element_seen:
                         response_element_seen = True
-                        response_element_first_seen_time = time.time()
+                        response_element_first_seen_time = time.monotonic()
                         logger.info("[TIMING] response_element_detected: %.2fs",
                                    response_element_first_seen_time - response_start_time)
 
@@ -6153,36 +6153,36 @@ class CopilotHandler:
                     # Don't consider empty or whitespace-only text as stable
                     if current_text and current_text.strip():
                         if not has_content:
-                            first_content_time = time.time()
+                            first_content_time = time.monotonic()
                             logger.info("[TIMING] first_content_received: %.2fs", first_content_time - response_start_time)
                         has_content = True
                         if current_text == last_text:
                             stable_count += 1
                             if stable_count >= required_stable_count:
                                 logger.info("[TIMING] response_stabilized: %.2fs (content generation: %.2fs, stable_threshold=%d)",
-                                           time.time() - response_start_time,
-                                           time.time() - first_content_time if first_content_time else 0,
+                                           time.monotonic() - response_start_time,
+                                           time.monotonic() - first_content_time if first_content_time else 0,
                                            required_stable_count)
                                 return current_text
                             # Use fastest interval during stability checking
                             poll_interval = self.RESPONSE_POLL_STABLE
                             # Log stability check progress
-                            if time.time() - last_log_time >= 1.0:
-                                remaining = timeout_float - (time.time() - polling_start_time)
+                            if time.monotonic() - last_log_time >= 1.0:
+                                remaining = timeout_float - (time.monotonic() - polling_start_time)
                                 logger.info("[POLLING] iter=%d stable_count=%d/%d, text_len=%d (remaining=%.1fs)",
                                            poll_iteration, stable_count, required_stable_count, text_len, remaining)
-                                last_log_time = time.time()
+                                last_log_time = time.monotonic()
                         else:
                             stable_count = 0
                             last_text = current_text
                             # Content is still growing, use active interval
                             poll_interval = self.RESPONSE_POLL_ACTIVE
                             # Log content growth every 1 second
-                            if time.time() - last_log_time >= 1.0:
-                                remaining = timeout_float - (time.time() - polling_start_time)
+                            if time.monotonic() - last_log_time >= 1.0:
+                                remaining = timeout_float - (time.monotonic() - polling_start_time)
                                 logger.info("[POLLING] iter=%d content growing, text_len=%d, preview='%s' (remaining=%.1fs)",
                                            poll_iteration, text_len, text_preview, remaining)
-                                last_log_time = time.time()
+                                last_log_time = time.monotonic()
                             # Notify streaming callback with partial text
                             if on_chunk:
                                 try:
@@ -6200,21 +6200,21 @@ class CopilotHandler:
                         stable_count = 0
                         poll_interval = self.RESPONSE_POLL_INITIAL
                         # Log empty response state
-                        if time.time() - last_log_time >= 1.0:
-                            remaining = timeout_float - (time.time() - polling_start_time)
+                        if time.monotonic() - last_log_time >= 1.0:
+                            remaining = timeout_float - (time.monotonic() - polling_start_time)
                             logger.info("[POLLING] iter=%d found_response=True but text empty (remaining=%.1fs)",
                                        poll_iteration, remaining)
-                            last_log_time = time.time()
+                            last_log_time = time.monotonic()
                 else:
                     # No response element yet, use initial interval
                     poll_interval = self.RESPONSE_POLL_INITIAL
                     # Log no response state with URL check
-                    if time.time() - last_log_time >= 1.0:
+                    if time.monotonic() - last_log_time >= 1.0:
                         current_url = self._page.url if self._page else "unknown"
-                        remaining = timeout_float - (time.time() - polling_start_time)
+                        remaining = timeout_float - (time.monotonic() - polling_start_time)
                         logger.info("[POLLING] iter=%d no response element found (remaining=%.1fs, URL: %s)",
                                    poll_iteration, remaining, current_url[:80] if current_url else "empty")
-                        last_log_time = time.time()
+                        last_log_time = time.monotonic()
                         # Warn about potential selector issues after significant wait
                         if poll_iteration > 20 and not has_content:
                             logger.warning("[POLLING] Response selectors may need update: %s",
@@ -6372,8 +6372,8 @@ class CopilotHandler:
                 '[class*="file-chip"]',
             ]
 
-            start_time = time.time()
-            while time.time() - start_time < timeout:
+            start_time = time.monotonic()
+            while time.monotonic() - start_time < timeout:
                 for selector in file_indicators:
                     try:
                         elem = self._page.query_selector(selector)
@@ -6575,11 +6575,11 @@ class CopilotHandler:
                 return
 
         try:
-            new_chat_total_start = time.time()
+            new_chat_total_start = time.monotonic()
             # 実際のCopilot HTML: <button id="new-chat-button" data-testid="newChatButton" aria-label="新しいチャット">
-            query_start = time.time()
+            query_start = time.monotonic()
             new_chat_btn = self._page.query_selector(self.NEW_CHAT_BUTTON_SELECTOR)
-            logger.info("[TIMING] new_chat: query_selector: %.2fs", time.time() - query_start)
+            logger.info("[TIMING] new_chat: query_selector: %.2fs", time.monotonic() - query_start)
             if new_chat_btn:
                 # Pre-warm: scroll button into view and brief settle time
                 # This helps browser prepare the element for click, reducing click latency
@@ -6589,20 +6589,20 @@ class CopilotHandler:
                 except Exception:
                     pass  # Non-critical - proceed with click
 
-                click_start = time.time()
+                click_start = time.monotonic()
                 if click_only:
                     # OPTIMIZED: Use async click via setTimeout for parallelization
                     # This returns immediately while click executes in background
                     # Safe because: input field is not reset by new chat button click
                     new_chat_btn.evaluate('el => setTimeout(() => el.click(), 0)')
-                    logger.info("[TIMING] new_chat: async click dispatched: %.2fs", time.time() - click_start)
-                    logger.info("[TIMING] start_new_chat total (click_only): %.2fs", time.time() - new_chat_total_start)
+                    logger.info("[TIMING] new_chat: async click dispatched: %.2fs", time.monotonic() - click_start)
+                    logger.info("[TIMING] start_new_chat total (click_only): %.2fs", time.monotonic() - new_chat_total_start)
                     return  # Return immediately, skip all wait operations
                 else:
                     # Use JavaScript click to avoid Playwright's actionability checks
                     # which can block for 30s on slow page loads
                     new_chat_btn.evaluate('el => el.click()')
-                    click_time = time.time() - click_start
+                    click_time = time.monotonic() - click_start
                     # Log warning if click takes unexpectedly long (should be <100ms)
                     if click_time > 0.1:
                         logger.warning("[TIMING] new_chat: click took %.3fs (expected <0.1s) - browser may be slow",
@@ -6614,11 +6614,11 @@ class CopilotHandler:
             # Verify that previous responses are cleared (can be skipped for 2nd+ batches)
             # OPTIMIZED: Reduced timeout from 1.0s to 0.5s for faster new chat start
             if not skip_clear_wait:
-                clear_start = time.time()
+                clear_start = time.monotonic()
                 self._wait_for_responses_cleared(timeout=0.5)
-                logger.info("[TIMING] new_chat: _wait_for_responses_cleared: %.2fs", time.time() - clear_start)
+                logger.info("[TIMING] new_chat: _wait_for_responses_cleared: %.2fs", time.monotonic() - clear_start)
 
-            logger.info("[TIMING] start_new_chat total: %.2fs", time.time() - new_chat_total_start)
+            logger.info("[TIMING] start_new_chat total: %.2fs", time.monotonic() - new_chat_total_start)
         except (PlaywrightError, AttributeError):
             pass
 
@@ -6847,7 +6847,7 @@ class CopilotHandler:
             user32 = ctypes.WinDLL('user32', use_last_error=True)
 
             # Debounce: prevent rapid oscillation between windows
-            current_time = time.time()
+            current_time = time.monotonic()
             if (hwnd == self._last_sync_hwnd and
                     current_time - self._last_sync_time < self._SYNC_DEBOUNCE_INTERVAL):
                 return

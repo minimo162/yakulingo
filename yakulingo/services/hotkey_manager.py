@@ -299,9 +299,9 @@ else:
         def _wait_for_ctrl_release(self):
             """Wait for user to release Ctrl key to avoid key state conflicts."""
             max_wait = 1.0  # Maximum wait time in seconds
-            start_time = time.time()
+            start_time = time.monotonic()
 
-            while time.time() - start_time < max_wait:
+            while time.monotonic() - start_time < max_wait:
                 # GetAsyncKeyState returns negative if key is pressed
                 ctrl_state = _user32.GetAsyncKeyState(VK_CONTROL)
                 if not (ctrl_state & 0x8000):  # High bit indicates key is down

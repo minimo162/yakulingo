@@ -2911,9 +2911,22 @@ Based on recent commits:
 - **Prompt Sending Optimization (2024-12)**:
   - **SEND_WARMUP sleep reduction**: 0.05秒→0.02秒に短縮（約0.03秒短縮）
   - **Playwright fill() maintained**: React contenteditable要素との互換性のためfill()メソッドを維持（JS直接設定は改行が消える問題あり）
-  - **Elapsed time measurement fix**: `start_time`をUI表示開始時点に移動（用語集読み込み等の準備時間を除外）
+  - **Elapsed time measurement fix**: `start_time`を`await asyncio.sleep(0)`の後に移動（ユーザーがローディングUIを見た時点から計測開始）
   - **Detailed timing logs**: `[TIMING]`プレフィックスで翻訳処理の各ステップの時間を出力（デバッグ用）
   - **_send_message sleep optimization**: Button scroll後 0.1→0.03秒、JS key events後 0.05→0.02秒、Playwright Enter後 0.05→0.02秒（合計約0.13秒短縮）
+- **Time Measurement Standardization (2024-12)**:
+  - **time.monotonic() unification**: 経過時間計測を`time.time()`から`time.monotonic()`に統一
+  - **Rationale**: `time.time()`はNTP同期やシステム時刻変更の影響を受けるため、経過時間計測には単調増加時計が適切
+  - **Affected files**:
+    - `app.py`: UI経過時間表示（11箇所）
+    - `translation_service.py`: `duration_seconds`計算（17箇所）
+    - `copilot_handler.py`: タイムアウト待機、GPTモード設定（86箇所）
+    - `hotkey_manager.py`: クリップボード待機（2箇所）
+  - **Exclusion**: `updater.py`のキャッシュタイムスタンプは絶対時刻が必要なため`time.time()`を維持
+  - **Time function guidelines**:
+    - `time.monotonic()`: 経過時間計測（推奨）
+    - `time.perf_counter()`: 短時間の高精度計測（ログ用）
+    - `time.time()`: 絶対時刻（タイムスタンプ）
 
 ## Git Workflow
 

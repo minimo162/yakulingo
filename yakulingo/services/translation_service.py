@@ -1076,7 +1076,7 @@ class TranslationService:
         Returns:
             TranslationResult with output_text
         """
-        start_time = time.time()
+        start_time = time.monotonic()
 
         try:
             # Build prompt (unified bidirectional)
@@ -1091,7 +1091,7 @@ class TranslationService:
                 output_text=result,
                 blocks_translated=1,
                 blocks_total=1,
-                duration_seconds=time.time() - start_time,
+                duration_seconds=time.monotonic() - start_time,
             )
 
         except TranslationCancelledError:
@@ -1099,14 +1099,14 @@ class TranslationService:
             return TranslationResult(
                 status=TranslationStatus.CANCELLED,
                 error_message="翻訳がキャンセルされました",
-                duration_seconds=time.time() - start_time,
+                duration_seconds=time.monotonic() - start_time,
             )
         except OSError as e:
             logger.warning("File I/O error during translation: %s", e)
             return TranslationResult(
                 status=TranslationStatus.FAILED,
                 error_message=str(e),
-                duration_seconds=time.time() - start_time,
+                duration_seconds=time.monotonic() - start_time,
             )
         except (RuntimeError, ValueError, ConnectionError, TimeoutError) as e:
             # Catch specific exceptions from Copilot API calls
@@ -1114,7 +1114,7 @@ class TranslationService:
             return TranslationResult(
                 status=TranslationStatus.FAILED,
                 error_message=str(e),
-                duration_seconds=time.time() - start_time,
+                duration_seconds=time.monotonic() - start_time,
             )
 
     def detect_language(self, text: str) -> str:
@@ -1836,7 +1836,7 @@ class TranslationService:
         Returns:
             TranslationResult with output_path
         """
-        start_time = time.time()
+        start_time = time.monotonic()
         self._cancel_event.clear()  # Reset cancellation at start
 
         # Reset PDF processor cancellation flag if applicable
@@ -1889,7 +1889,7 @@ class TranslationService:
                     "PDFファイルの場合はDPIを下げるか、ページ数を減らしてください。"
                     "大きなファイルは分割して処理することをお勧めします。"
                 ),
-                duration_seconds=time.time() - start_time,
+                duration_seconds=time.monotonic() - start_time,
             )
 
         except (
@@ -1906,7 +1906,7 @@ class TranslationService:
             return TranslationResult(
                 status=TranslationStatus.FAILED,
                 error_message=str(e),
-                duration_seconds=time.time() - start_time,
+                duration_seconds=time.monotonic() - start_time,
             )
 
     def _translate_file_standard(
@@ -1948,7 +1948,7 @@ class TranslationService:
                 output_path=input_path,
                 blocks_translated=0,
                 blocks_total=0,
-                duration_seconds=time.time() - start_time,
+                duration_seconds=time.monotonic() - start_time,
                 warnings=warnings,
             )
 
@@ -1956,7 +1956,7 @@ class TranslationService:
         if self._cancel_event.is_set():
             return TranslationResult(
                 status=TranslationStatus.CANCELLED,
-                duration_seconds=time.time() - start_time,
+                duration_seconds=time.monotonic() - start_time,
             )
 
         # Report progress
@@ -1987,7 +1987,7 @@ class TranslationService:
         if self._cancel_event.is_set():
             return TranslationResult(
                 status=TranslationStatus.CANCELLED,
-                duration_seconds=time.time() - start_time,
+                duration_seconds=time.monotonic() - start_time,
             )
 
         # Report progress
@@ -2063,7 +2063,7 @@ class TranslationService:
             glossary_path=glossary_path,
             blocks_translated=len(translations),
             blocks_total=total_blocks,
-            duration_seconds=time.time() - start_time,
+            duration_seconds=time.monotonic() - start_time,
             warnings=warnings if warnings else [],
         )
 
@@ -2128,7 +2128,7 @@ class TranslationService:
             if self._cancel_event.is_set():
                 return TranslationResult(
                     status=TranslationStatus.CANCELLED,
-                    duration_seconds=time.time() - start_time,
+                    duration_seconds=time.monotonic() - start_time,
                 )
 
         # Filter blocks by selected sections if specified
@@ -2147,7 +2147,7 @@ class TranslationService:
                 output_path=input_path,
                 blocks_translated=0,
                 blocks_total=0,
-                duration_seconds=time.time() - start_time,
+                duration_seconds=time.monotonic() - start_time,
                 warnings=warnings,
             )
 
@@ -2180,7 +2180,7 @@ class TranslationService:
         if self._cancel_event.is_set():
             return TranslationResult(
                 status=TranslationStatus.CANCELLED,
-                duration_seconds=time.time() - start_time,
+                duration_seconds=time.monotonic() - start_time,
             )
 
         # Phase 3: Apply translations (90-100%)
@@ -2258,7 +2258,7 @@ class TranslationService:
             glossary_path=glossary_path,
             blocks_translated=len(translations),
             blocks_total=total_blocks,
-            duration_seconds=time.time() - start_time,
+            duration_seconds=time.monotonic() - start_time,
             warnings=warnings if warnings else [],
         )
 
@@ -2504,7 +2504,7 @@ class TranslationService:
 
         # Fallback: use timestamp if too many files exist
         import time
-        timestamp = int(time.time())
+        timestamp = int(time.monotonic())
         output_path = output_dir / f"{stem}{suffix}_{timestamp}{ext}"
         logger.warning(
             "Could not find available filename after %d attempts, using timestamp: %s",

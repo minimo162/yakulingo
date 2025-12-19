@@ -467,9 +467,6 @@ class YakuLingoApp:
                 self._active_translation_trace_id = None
                 return
 
-        # Track translation time
-        start_time = time.time()
-
         # Update UI to show loading state
         self.state.text_translating = True
         self.state.text_detected_language = None
@@ -483,8 +480,12 @@ class YakuLingoApp:
         translated_text = None
 
         try:
-            # Yield control to event loop
+            # Yield control to event loop before starting blocking operation
+            # This ensures the loading UI is sent to the client before we start measuring
             await asyncio.sleep(0)
+
+            # Track translation time from user's perspective (after UI update is sent)
+            start_time = time.monotonic()
 
             # Detect language from the first non-empty cell
             sample_text = cells_to_translate[0][2]
@@ -535,7 +536,7 @@ class YakuLingoApp:
                     logger.warning("Translation [%s] clipboard error: %s", trace_id, e)
 
                 # Calculate elapsed time
-                elapsed_time = time.time() - start_time
+                elapsed_time = time.monotonic() - start_time
                 self.state.text_translation_elapsed_time = elapsed_time
 
                 logger.info(
@@ -2567,7 +2568,7 @@ class YakuLingoApp:
         import time
 
         # Log when button was clicked (before any processing)
-        button_click_time = time.time()
+        button_click_time = time.monotonic()
 
         # Use async version that will attempt auto-reconnection if needed
         if not await self._ensure_connection_async():
@@ -2608,11 +2609,6 @@ class YakuLingoApp:
                 self._active_translation_trace_id = None
                 return
 
-        # Track translation time from user's perspective (when loading UI appears)
-        start_time = time.time()
-        prep_time = start_time - button_click_time
-        logger.info("[TIMING] Translation [%s] start_time set: %.3f (prep_time: %.3fs since button click)", trace_id, start_time, prep_time)
-
         # Update UI to show loading state (before language detection)
         self.state.text_translating = True
         self.state.text_detected_language = None
@@ -2628,7 +2624,14 @@ class YakuLingoApp:
         detected_language = None
         try:
             # Yield control to event loop before starting blocking operation
+            # This ensures the loading UI is sent to the client before we start measuring
             await asyncio.sleep(0)
+
+            # Track translation time from user's perspective (after UI update is sent)
+            # This should match when the user sees the loading spinner
+            start_time = time.monotonic()
+            prep_time = start_time - button_click_time
+            logger.info("[TIMING] Translation [%s] start_time set: %.3f (prep_time: %.3fs since button click)", trace_id, start_time, prep_time)
 
             # Step 1: Detect language using Copilot
             detected_language = await asyncio.to_thread(
@@ -2636,7 +2639,7 @@ class YakuLingoApp:
                 source_text,
             )
 
-            lang_detect_elapsed = time.time() - start_time
+            lang_detect_elapsed = time.monotonic() - start_time
             logger.info("[TIMING] Translation [%s] language detected in %.3fs: %s", trace_id, lang_detect_elapsed, detected_language)
 
             # Update UI with detected language
@@ -2659,7 +2662,7 @@ class YakuLingoApp:
             )
 
             # Calculate elapsed time
-            end_time = time.time()
+            end_time = time.monotonic()
             elapsed_time = end_time - start_time
             logger.info("[TIMING] Translation [%s] end_time: %.3f, elapsed_time: %.3fs", trace_id, end_time, elapsed_time)
             self.state.text_translation_elapsed_time = elapsed_time
@@ -2693,7 +2696,7 @@ class YakuLingoApp:
         self.state.text_detected_language = None
 
         # Restore client context for UI operations after asyncio.to_thread
-        ui_refresh_start = time.time()
+        ui_refresh_start = time.monotonic()
         logger.debug("[LAYOUT] Translation [%s] starting UI refresh (text_result=%s, text_translating=%s)",
                      trace_id, bool(self.state.text_result), self.state.text_translating)
         with client:
@@ -2708,8 +2711,8 @@ class YakuLingoApp:
             self._refresh_status()
             # Re-enable tabs (translation finished)
             self._refresh_tabs()
-        ui_refresh_elapsed = time.time() - ui_refresh_start
-        total_from_button_click = time.time() - button_click_time
+        ui_refresh_elapsed = time.monotonic() - ui_refresh_start
+        total_from_button_click = time.monotonic() - button_click_time
         logger.info("[TIMING] Translation [%s] UI refresh completed in %.3fs", trace_id, ui_refresh_elapsed)
         logger.info("[TIMING] Translation [%s] SUMMARY: displayed=%.1fs, total_from_button=%.3fs, diff=%.3fs",
                     trace_id,
@@ -3483,9 +3486,6 @@ class YakuLingoApp:
                 logger.warning("File translation aborted: no client connected")
                 return
 
-        # Track translation time from user's perspective
-        start_time = time.time()
-
         self.state.file_state = FileState.TRANSLATING
         self.state.translation_progress = 0.0
         self.state.translation_status = 'Starting...'
@@ -3513,8 +3513,11 @@ class YakuLingoApp:
 
             progress_dialog.open()
 
-        # Yield control to allow UI to render the dialog
+        # Yield control to allow UI to render the dialog before starting
         await asyncio.sleep(0)
+
+        # Track translation time from user's perspective (after dialog is shown)
+        start_time = time.monotonic()
 
         # Thread-safe progress state (updated from background thread, read by UI timer)
         progress_lock = threading.Lock()
@@ -3619,7 +3622,7 @@ class YakuLingoApp:
                 logger.debug("Failed to close progress dialog: %s", e)
 
             # Calculate elapsed time from user's perspective
-            elapsed_time = time.time() - start_time
+            elapsed_time = time.monotonic() - start_time
 
             if error_message:
                 self._notify_error(error_message)

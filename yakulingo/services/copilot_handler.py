@@ -6,6 +6,7 @@ Refactored from translate.py with method name changes:
 - close() -> disconnect()
 """
 
+import json
 import logging
 import os
 import random
@@ -5045,9 +5046,10 @@ class CopilotHandler:
                 btn_ready = False
 
                 try:
+                    selector_literal = json.dumps(self.SEND_BUTTON_SELECTOR)
                     self._page.wait_for_function(
-                        '''(selector) => {
-                            const btn = document.querySelector(selector);
+                        f'''() => {{
+                            const btn = document.querySelector({selector_literal});
                             if (!btn) return false;
                             const rect = btn.getBoundingClientRect();
                             const style = window.getComputedStyle(btn);
@@ -5057,8 +5059,7 @@ class CopilotHandler:
                                 style.pointerEvents !== 'none';
                             const inViewport = rect.y >= 0 && rect.y < window.innerHeight;
                             return visible && enabled && inViewport;
-                        }''',
-                        self.SEND_BUTTON_SELECTOR,
+                        }}''',
                         timeout=2000
                     )
                     btn_ready = True

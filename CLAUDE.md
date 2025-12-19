@@ -2537,6 +2537,11 @@ Based on recent commits:
   - **New priority**: 1. JS key events（complete cycle）+ Playwright Enter → 2. JS click（multi-event）→ 3. Playwright click（force=True）
   - **Debug logging**: 各イベントのdefaultPrevented状態、stopButton出現タイミング、経過時間を詳細ログ出力
   - **Effect**: 最小化ウィンドウでも1回目の試行で確実に送信成功
+- **Copilot Stop Generation Bug Fix (2024-12)**:
+  - **Issue**: 「応答の生成を停止しました」が意図せず発生する問題
+  - **Root cause**: JS click（Attempt 2）で合成イベント（mousedown/mouseup/click）成功後に、バックアップとして`el.click()`を無条件実行。送信成功時にCopilotがボタンを停止ボタンに変更するため、`el.click()`が停止ボタンをクリックしてしまう
+  - **Fix**: 合成イベント成功（`stopBtnAfterSynthetic=true` または `textLengthAfterSynthetic=0`）の場合は`el.click()`をスキップ
+  - **Consistency**: Attempt 2/3の事前チェック（`pre_click_state`）と同じパターンを適用
 - **PDF Line Break Fix (2024-12)**:
   - **TOC pattern is_strong_boundary removal**: TOCパターン（Y変化 + X大リセット）で`is_strong_boundary = True`を設定しないように修正
   - **Issue**: 通常の段落内の行折り返しがTOCパターンとして誤検出され、`is_japanese_continuation_line()`による継続行判定がスキップされていた

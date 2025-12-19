@@ -1791,26 +1791,36 @@ class CopilotHandler:
         try:
             start_time = time.time()
 
-            # OPTIMIZED: Use wait_for_selector instead of polling
-            # Playwright's native wait is more efficient than manual polling
-            try:
-                self._page.wait_for_selector(
-                    self.GPT_MODE_BUTTON_SELECTOR,
-                    state='visible',
-                    timeout=self.GPT_MODE_BUTTON_WAIT_MS
-                )
-                elapsed = time.time() - start_time
-                logger.debug("[TIMING] GPT mode button found (%.3fs)", elapsed)
-            except PlaywrightTimeoutError:
-                elapsed = time.time() - start_time
-                logger.debug("GPT mode button did not appear after %.2fs", elapsed)
-                return
-
-            # OPTIMIZED: Get current mode text via JavaScript (single call)
+            # OPTIMIZED: Quick check first, then wait_for_selector if not found
+            # This avoids unnecessary waiting when button is already visible
             current_mode = self._page.evaluate('''() => {
                 const el = document.querySelector('#gptModeSwitcher div');
                 return el ? el.textContent?.trim() : null;
             }''')
+
+            if current_mode:
+                elapsed = time.time() - start_time
+                logger.debug("[TIMING] GPT mode button found immediately (%.3fs)", elapsed)
+            else:
+                # Button not found yet - wait for it
+                try:
+                    self._page.wait_for_selector(
+                        self.GPT_MODE_BUTTON_SELECTOR,
+                        state='visible',
+                        timeout=self.GPT_MODE_BUTTON_WAIT_MS
+                    )
+                    elapsed = time.time() - start_time
+                    logger.debug("[TIMING] GPT mode button found after wait (%.3fs)", elapsed)
+
+                    # Get mode text after button appears
+                    current_mode = self._page.evaluate('''() => {
+                        const el = document.querySelector('#gptModeSwitcher div');
+                        return el ? el.textContent?.trim() : null;
+                    }''')
+                except PlaywrightTimeoutError:
+                    elapsed = time.time() - start_time
+                    logger.debug("GPT mode button did not appear after %.2fs", elapsed)
+                    return
 
             if not current_mode:
                 logger.debug("GPT mode text is empty or selector changed")
@@ -1826,67 +1836,80 @@ class CopilotHandler:
             # Need to switch mode
             logger.info("Switching GPT mode from '%s' to '%s'...", current_mode, self.GPT_MODE_TARGET)
 
-            # OPTIMIZED: Execute menu navigation via JavaScript for speed
-            # This combines multiple clicks into a single evaluate with minimal delays
-            # Note: Playwright evaluate() takes a single arg, so we pass an array
+            # Execute menu navigation via JavaScript with polling for each step
+            # Each step polls until element is found (max 500ms per step, 20ms interval)
+            # This handles React re-rendering delays more robustly than fixed waits
             switch_result = self._page.evaluate('''([targetMode, moreText]) => {
-                return new Promise((resolve) => {
-                    // Step 1: Click main button
+                // Helper: poll until element is found or timeout
+                const waitFor = (finder, maxWait = 500, interval = 20) => {
+                    return new Promise((resolve) => {
+                        const start = Date.now();
+                        const check = () => {
+                            const result = finder();
+                            if (result) return resolve(result);
+                            if (Date.now() - start < maxWait) {
+                                setTimeout(check, interval);
+                            } else {
+                                resolve(null);
+                            }
+                        };
+                        check();
+                    });
+                };
+
+                return (async () => {
+                    // Step 1: Click main button (should exist immediately)
                     const mainBtn = document.querySelector('#gptModeSwitcher');
-                    if (!mainBtn) return resolve({success: false, error: 'main_button_not_found'});
+                    if (!mainBtn) return {success: false, error: 'main_button_not_found'};
                     mainBtn.click();
 
-                    // Wait for menu to appear, then click More
-                    setTimeout(() => {
-                        // Step 2: Find and click "More" button
-                        const moreBtns = document.querySelectorAll('[role="button"][aria-haspopup="menu"]');
-                        let moreBtn = null;
-                        for (const btn of moreBtns) {
-                            if (btn.textContent?.includes(moreText)) {
-                                moreBtn = btn;
-                                break;
-                            }
+                    // Step 2: Wait for and click "More" button
+                    const moreBtn = await waitFor(() => {
+                        const btns = document.querySelectorAll('[role="button"][aria-haspopup="menu"]');
+                        for (const btn of btns) {
+                            if (btn.textContent?.includes(moreText)) return btn;
                         }
-                        if (!moreBtn) return resolve({success: false, error: 'more_button_not_found'});
-                        moreBtn.click();
+                        return null;
+                    });
+                    if (!moreBtn) return {success: false, error: 'more_button_not_found'};
+                    moreBtn.click();
 
-                        // Wait for submenu, then click target
-                        setTimeout(() => {
-                            // Step 3: Find and click target menu item
-                            const items = document.querySelectorAll('[role="menuitem"]');
-                            let targetItem = null;
-                            const available = [];
-                            for (const item of items) {
-                                const text = item.textContent;
-                                if (text) {
-                                    available.push(text.trim());
-                                    if (text.includes(targetMode)) {
-                                        targetItem = item;
-                                        break;
-                                    }
+                    // Step 3: Wait for and click target menu item
+                    const targetResult = await waitFor(() => {
+                        const items = document.querySelectorAll('[role="menuitem"]');
+                        const available = [];
+                        for (const item of items) {
+                            const text = item.textContent;
+                            if (text) {
+                                available.push(text.trim());
+                                if (text.includes(targetMode)) {
+                                    return {item, available};
                                 }
                             }
-                            if (!targetItem) {
-                                return resolve({
-                                    success: false,
-                                    error: 'target_not_found',
-                                    available: available
-                                });
-                            }
-                            targetItem.click();
+                        }
+                        return items.length > 0 ? {item: null, available} : null;
+                    });
+                    if (!targetResult?.item) {
+                        return {
+                            success: false,
+                            error: 'target_not_found',
+                            available: targetResult?.available || []
+                        };
+                    }
+                    targetResult.item.click();
 
-                            // Wait for mode to update, then verify
-                            setTimeout(() => {
-                                const modeEl = document.querySelector('#gptModeSwitcher div');
-                                const newMode = modeEl?.textContent?.trim() || '';
-                                resolve({
-                                    success: newMode.includes(targetMode),
-                                    newMode: newMode
-                                });
-                            }, 30);
-                        }, 30);
-                    }, 30);
-                });
+                    // Step 4: Wait for mode to update
+                    const newMode = await waitFor(() => {
+                        const el = document.querySelector('#gptModeSwitcher div');
+                        const text = el?.textContent?.trim();
+                        return text?.includes(targetMode) ? text : null;
+                    }, 300);
+
+                    return {
+                        success: !!newMode,
+                        newMode: newMode || document.querySelector('#gptModeSwitcher div')?.textContent?.trim() || ''
+                    };
+                })();
             }''', [self.GPT_MODE_TARGET, self.GPT_MODE_MORE_TEXT])
 
             elapsed = time.time() - start_time

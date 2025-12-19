@@ -52,6 +52,14 @@ _RE_EXPLANATION = re.compile(
 _RE_MARKDOWN_SEPARATOR = re.compile(r'\n?\s*[\*\-]{3,}\s*$')
 _RE_FILENAME_FORBIDDEN = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
 
+# Pattern to remove translation label prefixes from parsed result
+# These labels come from prompt template output format examples (e.g., "訳文: 英語翻訳")
+# When Copilot follows the format literally, these labels appear at the start of the translation
+_RE_TRANSLATION_LABEL = re.compile(
+    r'^(?:英語翻訳|日本語翻訳|English\s*Translation|Japanese\s*Translation)\s*',
+    re.IGNORECASE,
+)
+
 def _sanitize_output_stem(name: str) -> str:
     """Sanitize a filename stem for cross-platform safety.
 
@@ -1621,6 +1629,9 @@ class TranslationService:
             text = text_match.group(1).strip()
             # Remove markdown separators (*** or ---) from text
             text = _RE_MARKDOWN_SEPARATOR.sub('', text).strip()
+            # Remove translation label prefixes (e.g., "英語翻訳", "日本語翻訳")
+            # These appear when Copilot follows the prompt template format literally
+            text = _RE_TRANSLATION_LABEL.sub('', text).strip()
 
         if explanation_match:
             explanation = explanation_match.group(1).strip()
@@ -1684,6 +1695,10 @@ class TranslationService:
                 text = lines[0].strip()
                 explanation = '\n'.join(lines[1:]).strip() if len(lines) > 1 else ""
 
+        # Remove translation label prefixes for all paths (regex, fallback, final fallback)
+        if text:
+            text = _RE_TRANSLATION_LABEL.sub('', text).strip()
+
         # Set default explanation if still empty
         if not explanation:
             explanation = "翻訳結果です"
@@ -1723,6 +1738,10 @@ class TranslationService:
         # Fallback: use the whole result as text if no pattern matched
         if not text:
             text = raw_result.strip()
+
+        # Remove translation label prefixes (e.g., "英語翻訳", "日本語翻訳")
+        if text:
+            text = _RE_TRANSLATION_LABEL.sub('', text).strip()
 
         if not explanation:
             explanation = "調整後の翻訳です"

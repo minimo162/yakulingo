@@ -726,9 +726,11 @@ The `connect()` method performs these steps:
 2. Connects to running Edge browser via CDP
 3. Looks for existing Copilot page or creates new one
 4. Navigates to Copilot URL with `wait_until='commit'` (fastest)
-5. Waits for chat input element to appear
-6. Waits for M365 background initialization to complete (1 second)
-7. Sets `_connected = True` if successful
+5. Quick login check via `_quick_login_check()` (URL-based, no chat input wait)
+6. Sets `_connected = True` if successful
+
+**Note**: Chat input element detection was removed from startup for faster connection (~3-5s saved).
+Copilot page readiness is verified lazily at translation time via `_ensure_copilot_page()`.
 
 **Important**: Do NOT call `window.stop()` after connection. This interrupts M365's
 background authentication/session establishment, causing auth dialogs to appear.
@@ -763,19 +765,18 @@ connect()
   │
   ├─ Step 1: Copilotページを取得/作成
   │
-  ├─ Step 2: _wait_for_chat_ready(wait_for_login=False)
+  ├─ Step 2: _quick_login_check() (URLベースの高速チェック)
   │     ├─ ログインページURLかチェック (LOGIN_PAGE_PATTERNS)
-  │     ├─ ランディングページ処理 (/landing → /chat へリダイレクト)
-  │     └─ チャット入力欄を【15秒】待機
-  │         ├─ 見つかった → 接続成功（バックグラウンドで継続）
-  │         └─ 見つからない → Step 3へ
+  │     ├─ 認証ダイアログの有無をチェック
+  │     └─ Copilotドメインにいれば成功
+  │         ※ チャット入力欄の待機は行わない（高速化のため削除）
   │
-  └─ Step 3: _wait_for_auto_login_impl(max_wait=15秒)
-        │  ※ Windows統合認証/SSO の完了を待機
+  └─ Step 3: _wait_for_auto_login_impl(max_wait=60秒)
+        │  ※ Windows統合認証/SSO/MFA の完了を待機
         │
-        ├─ ループ（1秒間隔で最大15秒）
-        │     ├─ チャット入力欄の存在確認（500ms）
-        │     │     └─ 見つかれば「自動ログイン完了」
+        ├─ ループ（1秒間隔で最大60秒）
+        │     ├─ Copilotドメインへの到達確認
+        │     │     └─ 到達すれば「自動ログイン完了」
         │     │
         │     └─ URL変化の監視
         │           ├─ URL変化中 → 自動ログイン進行中（継続）
@@ -787,13 +788,15 @@ connect()
               └─ 手動ログイン必要 → ブラウザを前面に表示
 ```
 
-**判定に使用する3つの指標:**
+**判定に使用する2つの指標（URLベース）:**
 
 | 指標 | 判定方法 | 説明 |
 |------|----------|------|
 | ログインページURL | `_is_login_page(url)` | `login.microsoftonline.com` 等のパターンマッチ |
 | 認証ダイアログ | `_has_auth_dialog()` | 「認証」「ログイン」「サインイン」を含むダイアログ |
-| チャット入力欄 | セレクタ `#m365-chat-editor-target-element` | ログイン完了の証拠 |
+
+**Note**: チャット入力欄のセレクタ検出は不安定なため、起動時の判定から削除されました。
+代わりにURLベースの判定のみを使用し、起動時間を約3-5秒短縮しています。
 
 **ログインページURLパターン (`LOGIN_PAGE_PATTERNS`):**
 ```python
@@ -812,8 +815,8 @@ connect()
 
 | 状態 | 判定条件 | 動作 |
 |------|----------|------|
-| ログイン済み | チャット入力欄が存在 | バックグラウンドで接続完了 |
-| 自動ログイン中 | URLがリダイレクト中 | 最大15秒待機 |
+| ログイン済み | CopilotドメインのURL | バックグラウンドで接続完了 |
+| 自動ログイン中 | URLがリダイレクト中 | 最大60秒待機（MFA対応） |
 | 手動ログイン必要 | ログインページURL or 認証ダイアログ | ブラウザを前面に表示 |
 | 接続失敗 | 上記以外（タイムアウト等） | エラー状態 |
 
@@ -952,10 +955,6 @@ wait_time = backoff_time + jitter
 |----------|--------|------|------|
 | ページ読み込み | `PAGE_GOTO_TIMEOUT_MS` | 30000ms | page.goto()のタイムアウト |
 | ネットワーク | `PAGE_NETWORK_IDLE_TIMEOUT_MS` | 5000ms | ネットワークアイドル待機 |
-| セレクタ | `SELECTOR_CHAT_INPUT_TIMEOUT_MS` | 15000ms | チャット入力欄の表示待機（総タイムアウト） |
-| セレクタ | `SELECTOR_CHAT_INPUT_FIRST_STEP_TIMEOUT_MS` | 1000ms | チャット入力欄の最初のステップ（高速パス） |
-| セレクタ | `SELECTOR_CHAT_INPUT_STEP_TIMEOUT_MS` | 2000ms | チャット入力欄の後続ステップ |
-| セレクタ | `SELECTOR_CHAT_INPUT_MAX_STEPS` | 7 | 最大ステップ数（1s + 2s×6 = 13s） |
 | セレクタ | `SELECTOR_RESPONSE_TIMEOUT_MS` | 10000ms | レスポンス要素の表示待機 |
 | セレクタ | `SELECTOR_NEW_CHAT_READY_TIMEOUT_MS` | 5000ms | 新規チャット準備完了待機 |
 | セレクタ | `SELECTOR_LOGIN_CHECK_TIMEOUT_MS` | 2000ms | ログイン状態チェック |
@@ -2054,22 +2053,17 @@ Based on recent commits:
     - `GPT_MODE_MENU_WAIT = 0.05s` - フォールバック用のみ
   - **Expected improvement**: モード切替 ~6秒→<0.5秒（JS一括実行による高速化）
 - **Copilot Connection Startup Optimization (2024-12)**:
-  - **Deferred chat input detection**: 起動時のチャット入力欄待機を削除、初回翻訳時に遅延実行
-    - `_quick_login_check()`: 起動時はログインページ判定のみ（~0.1秒）
-    - `_ensure_chat_input_ready()`: 翻訳時にチャット入力欄を確認
+  - **Chat input detection completely removed**: 起動時と翻訳時の両方からチャット入力欄待機を削除
+    - `_quick_login_check()`: 起動時はURLベースのログインページ判定のみ（~0.1秒）
+    - `_ensure_copilot_page()`: 翻訳時はURLベースの確認のみ（チャット入力欄を待機しない）
     - **起動時間短縮**: 約3-5秒削減
-  - **Fast path for logged-in users**: 最初のセレクタ待機を1秒に短縮（3秒→1秒）
-    - `SELECTOR_CHAT_INPUT_FIRST_STEP_TIMEOUT_MS = 1000` 新規追加
-    - ログイン済みユーザーは1秒以内にチャット入力欄を検出
-  - **Stepped timeout reduction**: 後続ステップを2秒に短縮（3秒→2秒）
-    - `SELECTOR_CHAT_INPUT_STEP_TIMEOUT_MS = 2000`
-    - `SELECTOR_CHAT_INPUT_MAX_STEPS = 7`（1s + 2s×6 = 13s総タイムアウト）
+  - **URL-based login detection**: セレクタ検出の不安定さを回避するためURLパターンのみで判定
   - **Network idle wait reduction**: ランディングページ/認証フローの待機を短縮
     - networkidle: 5秒→3秒、10秒→5秒
     - domcontentloaded: 10秒→5秒
     - goto: 30秒→15秒
   - **Session init wait reduction**: セッション初期化待機を0.1秒に短縮（0.2秒→0.1秒）
-  - **Expected improvement**: 起動時間 約3-5秒短縮（チャット入力欄待機の遅延実行により）
+  - **Expected improvement**: 起動時間 約3-5秒短縮（チャット入力欄待機の完全削除により）
 - **PDF Translation Table/Page Number Fix (2024-12)**:
   - **Page number preservation**: ヘッダー/フッターのページ番号が翻訳時に移動する問題を修正
     - `LAYOUT_PAGE_NUMBER = -1` 定数を追加（ページ番号領域用の特別なマーカー）
@@ -2489,7 +2483,7 @@ Based on recent commits:
   - **PlaywrightThreadExecutor**: `_shutdown_flag` check to prevent restart after shutdown
 - **Centralized Timeout Constants**:
   - **Page navigation**: `PAGE_GOTO_TIMEOUT_MS=30000` (30s for page load)
-  - **Selector waits**: `SELECTOR_CHAT_INPUT_TIMEOUT_MS=15000`, `SELECTOR_RESPONSE_TIMEOUT_MS=10000`, `SELECTOR_NEW_CHAT_READY_TIMEOUT_MS=5000`, `SELECTOR_LOGIN_CHECK_TIMEOUT_MS=2000`
+  - **Selector waits**: `SELECTOR_RESPONSE_TIMEOUT_MS=10000`, `SELECTOR_NEW_CHAT_READY_TIMEOUT_MS=5000`, `SELECTOR_LOGIN_CHECK_TIMEOUT_MS=2000`
   - **Login timeouts**: `LOGIN_WAIT_TIMEOUT_SECONDS=300`, `AUTO_LOGIN_TIMEOUT_SECONDS=15`
   - **Executor buffer**: `EXECUTOR_TIMEOUT_BUFFER_SECONDS=60` for response timeout margin
   - **Send retry**: `MAX_SEND_RETRIES=3`, `SEND_RETRY_WAIT=0.3s` (post-send verification)

@@ -427,6 +427,39 @@ def sample_xlsx_path(temp_dir): ...
 def history_db(tmp_path): ...
 ```
 
+### CopilotHandler テストのモックパターン
+
+`connect()`や`translate_sync()`をテストする際は、長時間のタイムアウト待機を避けるため以下のモックが必要：
+
+```python
+from unittest.mock import Mock, patch
+from yakulingo.services.copilot_handler import CopilotHandler
+
+# connect()テスト時のモックパターン
+def test_connect_example():
+    handler = CopilotHandler()
+
+    # 必須: 60秒の自動ログイン待機を回避
+    with patch.object(handler, '_wait_for_auto_login_impl', return_value=False):
+        # 必須: 30秒のPlaywright事前初期化待機を回避
+        with patch('yakulingo.services.copilot_handler.get_pre_initialized_playwright', return_value=None):
+            result = handler.connect()
+
+    assert isinstance(result, bool)
+
+# translate_sync()テスト時のモックパターン
+def test_translate_sync_example():
+    handler = CopilotHandler()
+
+    # _translate_sync_implは_connect_implを直接呼び出す（ネストされたexecutor回避のため）
+    handler._connect_impl = Mock(return_value=False)
+
+    with pytest.raises(RuntimeError):
+        handler.translate_sync(["test"], "prompt")
+```
+
+**重要**: `translate_sync()`内部では`connect()`ではなく`_connect_impl()`が直接呼び出されるため、`_connect_impl`をモックする必要があります。
+
 ### Test Coverage
 ```bash
 # Run with coverage report

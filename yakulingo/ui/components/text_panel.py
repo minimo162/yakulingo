@@ -669,10 +669,8 @@ def _render_results_to_jp(
         with ui.element('div').classes('result-section w-full'):
             with ui.card().classes('option-card w-full'):
                 with ui.column().classes('w-full gap-2'):
-                    # Translation text with character count (same as English)
-                    with ui.row().classes('w-full items-start gap-2'):
-                        ui.label(option.text).classes('option-text py-1 flex-1')
-                        ui.label(f'{len(option.text)} 文字').classes('text-xs text-muted whitespace-nowrap')
+                    # Translation text
+                    ui.label(option.text).classes('option-text py-1 w-full')
 
                     # Actions row (same as English)
                     with ui.row().classes('w-full justify-end items-center gap-1'):
@@ -771,10 +769,8 @@ def _render_option_en(
 
     with ui.card().classes('option-card w-full'):
         with ui.column().classes('w-full gap-2'):
-            # Translation text with character count
-            with ui.row().classes('w-full items-start gap-2'):
-                ui.label(option.text).classes('option-text py-1 flex-1')
-                ui.label(f'{option.char_count} 文字').classes('text-xs text-muted whitespace-nowrap')
+            # Translation text
+            ui.label(option.text).classes('option-text py-1 w-full')
 
             # Actions row
             with ui.row().classes('w-full justify-end items-center gap-1'):

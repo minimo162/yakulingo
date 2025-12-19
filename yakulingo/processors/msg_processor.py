@@ -9,7 +9,9 @@ Falls back to .txt output on other platforms.
 
 import gc
 import logging
+import re
 import sys
+import threading
 from pathlib import Path
 from typing import Any, Iterator, Optional
 
@@ -17,6 +19,9 @@ from yakulingo.models.types import TextBlock, FileInfo, FileType, SectionDetail
 from yakulingo.processors.base import FileProcessor
 
 logger = logging.getLogger(__name__)
+
+# Pre-compiled regex for sentence splitting (CLAUDE.md: Pre-compile regex patterns)
+_SENTENCE_SPLIT_PATTERN = re.compile(r'(?<=[。！？.!?\n])')
 
 # Maximum characters per block for translation batching
 MAX_CHARS_PER_BLOCK = 3000
@@ -30,14 +35,20 @@ def _lazy_import_extract_msg():
     except ImportError:
         raise ImportError(
             "extract-msg is required for MSG file support. "
-            "Install with: pip install extract-msg"
+            "Install with: uv pip install extract-msg"
         )
 
 
 def _is_outlook_available() -> bool:
-    """Check if Outlook COM is available (Windows with Outlook installed)."""
+    """Check if Outlook COM is available (Windows with Outlook installed).
+
+    Note:
+        COMオブジェクトは確実にリリースする必要がある。
+        リリースしないとOutlookプロセスが残り続ける可能性がある。
+    """
     if sys.platform != 'win32':
         return False
+    outlook = None
     try:
         import win32com.client
         # Try to create Outlook application object
@@ -45,6 +56,11 @@ def _is_outlook_available() -> bool:
         return outlook is not None
     except Exception:
         return False
+    finally:
+        # COMオブジェクトを確実にリリース（_create_msg_via_outlookと同様のパターン）
+        if outlook is not None:
+            del outlook
+        gc.collect()
 
 
 class MsgProcessor(FileProcessor):
@@ -54,40 +70,52 @@ class MsgProcessor(FileProcessor):
     Extracts subject and body text for translation.
     On Windows with Outlook, creates new .msg file with translated content.
     Falls back to .txt output on other platforms.
+
+    Note:
+        キャッシュアクセスはスレッドセーフ。複数スレッドからの同時アクセスを考慮。
     """
 
     def __init__(self):
         self._outlook_available: Optional[bool] = None
         self._cached_content: Optional[dict] = None
         self._cached_file_path: Optional[str] = None
+        self._cache_lock = threading.Lock()
 
     def _get_cached_content(self, file_path: Path) -> dict:
-        """Get MSG content with caching to avoid multiple file reads."""
+        """Get MSG content with caching to avoid multiple file reads.
+
+        Thread-safe: Uses lock to protect cache access.
+        """
         file_path_str = str(file_path)
-        if self._cached_file_path != file_path_str or self._cached_content is None:
-            extract_msg = _lazy_import_extract_msg()
-            msg = extract_msg.Message(file_path_str)
-            try:
-                subject = msg.subject or ""
-                body = msg.body or ""
-                body = body.replace('\r\n', '\n').replace('\r', '\n')
-                self._cached_content = {
-                    'subject': subject,
-                    'body': body,
-                    'sender': msg.sender or "",
-                    'to': msg.to or "",
-                    'cc': msg.cc or "",
-                    'date': str(msg.date) if msg.date else "",
-                }
-                self._cached_file_path = file_path_str
-            finally:
-                msg.close()
-        return self._cached_content
+        with self._cache_lock:
+            if self._cached_file_path != file_path_str or self._cached_content is None:
+                extract_msg = _lazy_import_extract_msg()
+                msg = extract_msg.Message(file_path_str)
+                try:
+                    subject = msg.subject or ""
+                    body = msg.body or ""
+                    body = body.replace('\r\n', '\n').replace('\r', '\n')
+                    self._cached_content = {
+                        'subject': subject,
+                        'body': body,
+                        'sender': msg.sender or "",
+                        'to': msg.to or "",
+                        'cc': msg.cc or "",
+                        'date': str(msg.date) if msg.date else "",
+                    }
+                    self._cached_file_path = file_path_str
+                finally:
+                    msg.close()
+            return self._cached_content
 
     def clear_cache(self):
-        """Clear cached MSG content."""
-        self._cached_content = None
-        self._cached_file_path = None
+        """Clear cached MSG content.
+
+        Thread-safe: Uses lock to protect cache access.
+        """
+        with self._cache_lock:
+            self._cached_content = None
+            self._cached_file_path = None
 
     @property
     def outlook_available(self) -> bool:
@@ -264,10 +292,9 @@ class MsgProcessor(FileProcessor):
 
     def _split_into_chunks(self, text: str, max_chars: int) -> list[str]:
         """Split long text into chunks, preferring sentence boundaries."""
-        import re
-
         # Split by sentence-ending punctuation (keep delimiter with preceding text)
-        sentences = re.split(r'(?<=[。！？.!?\n])', text)
+        # Uses pre-compiled regex at module level for performance
+        sentences = _SENTENCE_SPLIT_PATTERN.split(text)
         sentences = [s for s in sentences if s]
 
         chunks = []

@@ -814,7 +814,7 @@ UIスレッドからも`ensure_gpt_mode()`を呼び出しますが、早期接�
 
 | シナリオ | 呼び出し元 | GPTモード設定 | フラグ操作 |
 |----------|-----------|--------------|-----------|
-| 早期接続成功 | `_early_connect()` | ✓（3秒待機） | 設定 |
+| 早期接続成功 | `_early_connect()` | ✓（12秒待機） | 設定 |
 | UI表示後 | `_apply_early_connection_or_connect()` | スキップ（設定済み）| - |
 | 通常接続成功 | `start_edge_and_connect()` | ✓ | 設定 |
 | 手動ログイン完了 | `_wait_for_login_completion()` | ✓ | リセット→設定 |
@@ -823,7 +823,7 @@ UIスレッドからも`ensure_gpt_mode()`を呼び出しますが、早期接�
 
 **設計方針:**
 - 早期接続スレッドでGPTモード切替を開始（NiceGUI起動と並列）
-- 3秒のタイムアウトでボタン表示を待機（失敗してもUI表示後に再試行）
+- 12秒のタイムアウトでボタン表示を待機（Copilot React UIのロードに約11秒かかるため）
 - `_gpt_mode_set`フラグで重複呼び出しを防止
 - 再接続時は呼び出さない（ユーザーが手動でモード変更した場合を考慮）
 - 再ログイン時はフラグをリセットして呼び出す（セッションリセットでモード設定が消えるため）
@@ -832,7 +832,7 @@ UIスレッドからも`ensure_gpt_mode()`を呼び出しますが、早期接�
 
 | 定数名 | 値 | 説明 |
 |--------|------|------|
-| `GPT_MODE_BUTTON_WAIT_MS` | 3000ms | ボタン表示待機タイムアウト（3秒で十分、失敗してもUI表示後に再試行可能） |
+| `GPT_MODE_BUTTON_WAIT_MS` | 12000ms | ボタン表示待機タイムアウト（Copilot React UIのロードに約11秒かかるため） |
 | `GPT_MODE_MENU_WAIT` | 0.05s | メニュー開閉待機時間 |
 
 ### Login Detection Process (ログイン判定プロセス)
@@ -2192,12 +2192,12 @@ When interacting with users in this repository, prefer Japanese for comments and
 Based on recent commits:
 - **GPT Mode Startup Optimization (2024-12)**:
   - **Optimization**: 早期接続スレッド内でGPTモード設定を実行（NiceGUI起動と並列）
-  - **Approach**: 早期接続完了後すぐに`ensure_gpt_mode()`を呼び出し、NiceGUI起動（約8秒）中にGPTモード設定を完了
+  - **Approach**: 早期接続完了後すぐに`ensure_gpt_mode()`を呼び出し、NiceGUI起動中にGPTモード設定を完了
   - **Implementation**:
     - `_early_connect()`内で接続成功後に`ensure_gpt_mode()`を呼び出す
-    - 失敗しても問題なし（`_gpt_mode_set`フラグで重複防止、UI表示後に再試行可能）
-    - `GPT_MODE_BUTTON_WAIT_MS = 3000`（3秒タイムアウト）
-  - **Expected improvement**: UI表示時点でGPTモード設定が完了（または進行中）、ユーザー待機時間を約5秒短縮
+    - `GPT_MODE_BUTTON_WAIT_MS = 12000`（12秒タイムアウト、Copilot React UIのロードに約11秒かかるため）
+    - `_gpt_mode_set`フラグで重複防止
+  - **Expected improvement**: UI表示時点でGPTモード設定が完了、ユーザー待機時間を約5秒短縮
   - **Affected files**: `yakulingo/ui/app.py`, `yakulingo/services/copilot_handler.py`
 - **Window Positioning Timeout Extension (2024-12)**:
   - **Problem**: ウィンドウ配置タイムアウト（6秒）がNiceGUI+pywebview起動時間（約8秒）より短い

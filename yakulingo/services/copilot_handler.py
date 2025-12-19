@@ -902,9 +902,11 @@ class CopilotHandler:
     GPT_MODE_MORE_TEXT = 'More'
     # OPTIMIZED: Reduced menu wait to minimum (just enough for React to update)
     GPT_MODE_MENU_WAIT = 0.05  # Wait for menu to open/close (50ms)
-    # OPTIMIZED: Use wait_for_selector instead of polling for faster detection
-    # Reduced from 5s to 3s - page should be fully loaded when called from UI
-    GPT_MODE_BUTTON_WAIT_MS = 3000  # Total timeout for button appearance (3s)
+    # GPT mode button wait timeout
+    # Early connection thread calls ensure_gpt_mode() during NiceGUI startup (~8s)
+    # Copilot React UI takes ~11s from connection to fully render GPT mode button
+    # 12s timeout allows early connection to complete GPT mode setup before UI is ready
+    GPT_MODE_BUTTON_WAIT_MS = 12000  # Total timeout for button appearance (12s)
 
     # Dynamic polling intervals for faster response detection
     # OPTIMIZED: Reduced intervals for quicker response detection (0.15s -> 0.1s)

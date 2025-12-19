@@ -7,7 +7,7 @@ This document provides essential context for AI assistants working with the Yaku
 **YakuLingo** (訳リンゴ) is a bidirectional Japanese/English translation application that leverages M365 Copilot as its translation engine. It supports both text and file translation (Excel, Word, PowerPoint, PDF, TXT) while preserving document formatting and layout.
 
 - **Package Name**: `yakulingo`
-- **Version**: 0.0.1
+- **Version**: `pyproject.toml`で管理（`yakulingo/__init__.py`が動的に読み取り）
 - **Python Version**: 3.11+
 - **License**: MIT
 
@@ -1026,6 +1026,56 @@ The `AutoUpdater` class provides GitHub Releases-based updates:
 
 その他の設定（`max_chars_per_batch`, `request_timeout`, `ocr_dpi`等）はテンプレートで管理され、
 アップデート時に開発者が自由に変更可能
+
+### バージョン管理
+
+バージョンは`pyproject.toml`で一元管理されます：
+
+```python
+# yakulingo/__init__.py
+def _get_version() -> str:
+    """pyproject.tomlからバージョンを動的に取得する。"""
+    try:
+        import tomllib  # Python 3.11+ standard library
+        pyproject_path = Path(__file__).parent.parent / "pyproject.toml"
+        if pyproject_path.exists():
+            with open(pyproject_path, "rb") as f:
+                data = tomllib.load(f)
+            return data.get("project", {}).get("version", "0.0.0")
+    except Exception:
+        pass
+    return "0.0.2"  # フォールバック
+
+__version__ = _get_version()
+```
+
+**設計理由:**
+- `pyproject.toml`は`SOURCE_FILES`に含まれているため、アップデート時に確実にコピーされる
+- `yakulingo/`ディレクトリはファイルロックにより更新に失敗する可能性がある
+- 動的読み取りにより、`pyproject.toml`が更新されれば正しいバージョンが表示される
+
+### アップデートスクリプトの信頼性
+
+アップデートスクリプト（PowerShell/bash）では以下の対策を実装：
+
+| 対策 | 説明 |
+|------|------|
+| プロセス終了待機 | アプリ終了後、最大30秒間Pythonプロセスの終了を待機 |
+| エラーハンドリング | `-ErrorAction Stop`でコピー失敗を確実に検出 |
+| クリティカルファイル検出 | `app.py`, `pyproject.toml`のコピー失敗を特別にレポート |
+| フォールバック | ディレクトリ削除失敗時は`-Force`で上書きを試行 |
+
+**プロセス待機ロジック（Windows）:**
+```powershell
+$pythonProcesses = Get-Process -Name "python*" | Where-Object {
+    $_.Path -and $_.Path.StartsWith($script:AppDir)
+}
+```
+
+**プロセス待機ロジック（Unix）:**
+```bash
+PYTHON_PIDS=$(pgrep -f "{app_dir}/.venv" 2>/dev/null)
+```
 
 ## Common Tasks for AI Assistants
 

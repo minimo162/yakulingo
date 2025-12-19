@@ -134,13 +134,14 @@ def create_text_input_panel(
     on_clear: Callable[[], None],
     on_attach_reference_file: Optional[Callable[[], None]] = None,
     on_remove_reference_file: Optional[Callable[[int], None]] = None,
-    on_settings: Optional[Callable[[], None]] = None,
     on_translate_button_created: Optional[Callable[[ui.button], None]] = None,
     use_bundled_glossary: bool = False,
     on_glossary_toggle: Optional[Callable[[bool], None]] = None,
     on_edit_glossary: Optional[Callable[[], None]] = None,
     on_edit_translation_rules: Optional[Callable[[], None]] = None,
     on_textarea_created: Optional[Callable[[ui.textarea], None]] = None,
+    text_translation_style: str = 'concise',
+    on_text_style_change: Optional[Callable[[str], None]] = None,
 ):
     """
     Text input panel for 2-column layout.
@@ -149,9 +150,10 @@ def create_text_input_panel(
     _create_large_input_panel(
         state, on_translate, on_source_change, on_clear,
         on_attach_reference_file, on_remove_reference_file,
-        on_settings, on_translate_button_created,
+        on_translate_button_created,
         use_bundled_glossary, on_glossary_toggle, on_edit_glossary,
         on_edit_translation_rules, on_textarea_created,
+        text_translation_style, on_text_style_change,
     )
 
 
@@ -162,13 +164,14 @@ def _create_large_input_panel(
     on_clear: Callable[[], None],
     on_attach_reference_file: Optional[Callable[[], None]] = None,
     on_remove_reference_file: Optional[Callable[[int], None]] = None,
-    on_settings: Optional[Callable[[], None]] = None,
     on_translate_button_created: Optional[Callable[[ui.button], None]] = None,
     use_bundled_glossary: bool = False,
     on_glossary_toggle: Optional[Callable[[bool], None]] = None,
     on_edit_glossary: Optional[Callable[[], None]] = None,
     on_edit_translation_rules: Optional[Callable[[], None]] = None,
     on_textarea_created: Optional[Callable[[ui.textarea], None]] = None,
+    text_translation_style: str = 'concise',
+    on_text_style_change: Optional[Callable[[str], None]] = None,
 ):
     """Large input panel for INPUT state - spans 2 columns"""
     with ui.column().classes('flex-1 w-full gap-4'):
@@ -231,13 +234,24 @@ def _create_large_input_panel(
                             ).props('flat dense round size=sm').classes('settings-btn')
                             rules_btn.tooltip('翻訳ルールを編集')
 
-                        # Settings button
-                        if on_settings:
-                            settings_btn = ui.button(
-                                icon='tune',
-                                on_click=on_settings
-                            ).props('flat dense round size=sm').classes('settings-btn')
-                            settings_btn.tooltip('翻訳の設定')
+                        # Translation style toggle (replaces settings dialog)
+                        if on_text_style_change:
+                            style_options = {
+                                'standard': '標準',
+                                'concise': '簡潔',
+                                'minimal': '最簡潔',
+                            }
+
+                            def handle_style_change(e):
+                                style_reverse = {v: k for k, v in style_options.items()}
+                                new_style = style_reverse.get(e.value, 'concise')
+                                on_text_style_change(new_style)
+
+                            ui.toggle(
+                                list(style_options.values()),
+                                value=style_options.get(text_translation_style, '簡潔'),
+                                on_change=handle_style_change,
+                            ).classes('style-toggle').props('dense no-caps size=sm')
 
                         # Reference file attachment button
                         if on_attach_reference_file:
@@ -435,155 +449,6 @@ def _render_empty_result_state():
     with ui.element('div').classes('empty-result-state'):
         ui.icon('translate').classes('text-4xl text-muted opacity-30')
         ui.label('翻訳結果がここに表示されます').classes('text-sm text-muted opacity-50')
-
-
-def create_text_panel(
-    state: AppState,
-    on_translate: Callable[[], None],
-    on_source_change: Callable[[str], None],
-    on_copy: Callable[[str], None],
-    on_clear: Callable[[], None],
-    on_adjust: Optional[Callable[[str, str], None]] = None,
-    on_follow_up: Optional[Callable[[str, str], None]] = None,
-    on_attach_reference_file: Optional[Callable[[], None]] = None,
-    on_remove_reference_file: Optional[Callable[[int], None]] = None,
-    on_back_translate: Optional[Callable[[str], None]] = None,
-    on_settings: Optional[Callable[[], None]] = None,
-    on_retry: Optional[Callable[[], None]] = None,
-    on_translate_button_created: Optional[Callable[[ui.button], None]] = None,
-):
-    """
-    Text translation panel with language-specific UI (legacy single-column layout).
-    - Japanese input → English: Multiple options with inline adjustment
-    - Other input → Japanese: Single translation + follow-up actions
-    - Reference file attachment button (glossary, style guide, etc.)
-    - Back-translate feature to verify translations
-
-    Note: For 3-column layout, use create_text_input_panel and create_text_result_panel separately.
-    """
-    elapsed_time = state.text_translation_elapsed_time
-
-    with ui.column().classes('flex-1 w-full gap-5 animate-in'):
-        # Main card container
-        with ui.element('div').classes('main-card w-full'):
-            # Input container
-            with ui.element('div').classes('main-card-inner'):
-                # Textarea with improved placeholder and accessibility
-                _create_textarea_with_keyhandler(
-                    state=state,
-                    on_source_change=on_source_change,
-                    on_translate=on_translate,
-                    autogrow=True,
-                    style='min-height: 160px',
-                )
-
-                # Bottom controls
-                with ui.row().classes('p-3 justify-between items-center flex-wrap gap-y-2'):
-                    # Left side: character count and attached files
-                    with ui.row().classes('items-center gap-2 flex-1 min-w-0 flex-wrap'):
-                        # Character count
-                        if state.source_text:
-                            ui.label(f'{len(state.source_text)} 文字').classes('text-xs text-muted')
-
-                        # Attached reference files indicator
-                        if state.reference_files:
-                            for i, ref_file in enumerate(state.reference_files):
-                                with ui.element('div').classes('attach-file-indicator'):
-                                    ui.label(ref_file.name).classes('file-name')
-                                    if on_remove_reference_file:
-                                        ui.button(
-                                            icon='close',
-                                            on_click=lambda idx=i: on_remove_reference_file(idx)
-                                        ).props('flat dense round size=xs').classes('remove-btn')
-
-                    with ui.row().classes('items-center gap-2'):
-                        # Settings button
-                        if on_settings:
-                            settings_btn = ui.button(
-                                icon='tune',
-                                on_click=on_settings
-                            ).props('flat dense round size=sm').classes('settings-btn')
-                            settings_btn.tooltip('翻訳の設定')
-
-                        # Reference file attachment button
-                        if on_attach_reference_file:
-                            has_files = bool(state.reference_files)
-                            attach_btn = ui.button(
-                                on_click=on_attach_reference_file
-                            ).classes(f'attach-btn {"has-file" if has_files else ""}').props('flat')
-                            with attach_btn:
-                                ui.html(ATTACH_SVG, sanitize=False)
-                            attach_btn.tooltip('参照ファイルを添付' if not has_files else '参照ファイルを追加')
-
-                        # Clear button
-                        if state.source_text:
-                            ui.button(icon='close', on_click=on_clear).props(
-                                'flat dense round size=sm aria-label="クリア"'
-                            ).classes('text-muted')
-
-                        # Translate button with keycap-style shortcut
-                        def handle_translate_click():
-                            logger.info("Translate button clicked")
-                            asyncio.create_task(on_translate())
-
-                        with ui.button(on_click=handle_translate_click).classes('translate-btn').props('no-caps') as btn:
-                            ui.label('翻訳する')
-                            with ui.row().classes('shortcut-keys ml-2'):
-                                with ui.element('span').classes('keycap'):
-                                    ui.label('Ctrl / ⌘')
-                                with ui.element('span').classes('keycap-plus'):
-                                    ui.label('+')
-                                with ui.element('span').classes('keycap'):
-                                    ui.label('Enter')
-                        if state.text_translating:
-                            btn.props('loading disable')
-                        elif not state.can_translate():
-                            btn.props('disable')
-
-                        # Provide button reference for dynamic state updates
-                        if on_translate_button_created:
-                            on_translate_button_created(btn)
-
-        # Hint text - Nani-style single line, centered
-        with ui.element('div').classes('hint-section'):
-            with ui.element('div').classes('hint-primary'):
-                with ui.element('span').classes('keycap keycap-hint'):
-                    ui.label('Ctrl')
-                ui.label('+').classes('text-muted text-xs mx-0.5')
-                with ui.element('span').classes('keycap keycap-hint'):
-                    ui.label('Alt')
-                ui.label('+').classes('text-muted text-xs mx-0.5')
-                with ui.element('span').classes('keycap keycap-hint'):
-                    ui.label('J')
-                ui.label(': 他のアプリで選択中の文章を取り込んで翻訳').classes('text-muted ml-1')
-
-        # Results section - language-specific UI
-        if state.text_result and state.text_result.options:
-            if state.text_result.is_to_japanese:
-                # →Japanese: Single result with detailed explanation + follow-up actions
-                _render_results_to_jp(
-                    state.text_result,
-                    state.source_text,
-                    on_copy,
-                    on_follow_up,
-                    on_adjust,
-                    on_back_translate,
-                    elapsed_time,
-                    on_retry,
-                )
-            else:
-                # →English: Multiple options with inline adjustment
-                _render_results_to_en(
-                    state.text_result,
-                    on_copy,
-                    on_adjust,
-                    on_back_translate,
-                    elapsed_time,
-                    on_retry,
-                    on_follow_up,
-                )
-        elif state.text_translating:
-            _render_loading(state.text_detected_language)
 
 
 def _render_loading(detected_language: Optional[str] = None):

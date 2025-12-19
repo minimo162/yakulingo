@@ -2194,13 +2194,14 @@ class YakuLingoApp:
                         on_clear=self._clear,
                         on_attach_reference_file=self._attach_reference_file,
                         on_remove_reference_file=self._remove_reference_file,
-                        on_settings=self._show_settings_dialog,
                         on_translate_button_created=self._on_translate_button_created,
                         use_bundled_glossary=self.settings.use_bundled_glossary,
                         on_glossary_toggle=self._on_glossary_toggle,
                         on_edit_glossary=self._edit_glossary,
                         on_edit_translation_rules=self._edit_translation_rules,
                         on_textarea_created=self._on_textarea_created,
+                        text_translation_style=self.settings.text_translation_style,
+                        on_text_style_change=self._on_text_style_change,
                     )
 
                 # Result panel (right column - shown when has results)
@@ -2262,6 +2263,12 @@ class YakuLingoApp:
         self.settings.use_bundled_glossary = enabled
         self.settings.save(self.settings_path)
         self._refresh_content()
+
+    def _on_text_style_change(self, style: str):
+        """Change text translation style (standard/concise/minimal)"""
+        self.settings.text_translation_style = style
+        self.settings.save(self.settings_path)
+        # No refresh needed - toggle already shows the new value
 
     async def _edit_glossary(self):
         """Open glossary.csv in Excel/default editor with cooldown to prevent double-open"""
@@ -3712,57 +3719,6 @@ class YakuLingoApp:
         )
         self.state.add_to_history(entry)
         self._refresh_history()
-
-    def _show_settings_dialog(self):
-        """Show translation settings dialog (Nani-inspired quick settings)"""
-        with ui.dialog() as dialog, ui.card().classes('w-80 settings-dialog'):
-            # Restore focus to text input when dialog closes
-            dialog.on('close', lambda: self._focus_text_input())
-
-            with ui.column().classes('w-full gap-4 p-4'):
-                # Header
-                with ui.row().classes('w-full justify-between items-center'):
-                    with ui.row().classes('items-center gap-2'):
-                        ui.icon('tune').classes('text-lg text-primary')
-                        ui.label('翻訳の設定').classes('text-base font-semibold')
-                    ui.button(icon='close', on_click=dialog.close).props('flat dense round')
-
-                ui.separator()
-
-                # Translation style setting
-                with ui.column().classes('w-full gap-1'):
-                    ui.label('翻訳スタイル').classes('text-sm font-medium')
-                    ui.label('翻訳文の詳細さを選択').classes('text-xs text-muted')
-
-                    style_options = {
-                        'standard': '標準',
-                        'concise': '簡潔',
-                        'minimal': '最簡潔',
-                    }
-                    current_style = self.settings.text_translation_style
-
-                    style_toggle = ui.toggle(
-                        list(style_options.values()),
-                        value=style_options.get(current_style, '簡潔'),
-                    ).classes('w-full')
-
-                ui.separator()
-
-                # Action buttons
-                with ui.row().classes('w-full justify-end gap-2'):
-                    ui.button('キャンセル', on_click=dialog.close).props('flat').classes('text-muted')
-
-                    def save_settings():
-                        # Save translation style
-                        style_reverse = {v: k for k, v in style_options.items()}
-                        self.settings.text_translation_style = style_reverse.get(style_toggle.value, 'concise')
-                        self.settings.save(get_default_settings_path())
-                        dialog.close()
-                        ui.notify('設定を保存しました', type='positive')
-
-                    ui.button('保存', on_click=save_settings).classes('btn-primary')
-
-        dialog.open()
 
 
 def create_app() -> YakuLingoApp:

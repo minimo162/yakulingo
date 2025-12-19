@@ -4566,18 +4566,36 @@ class CopilotHandler:
                 logger.info("Translation cancelled after starting new chat")
                 raise TranslationCancelledError("Translation cancelled by user")
 
-            # Attach reference files first (before sending prompt)
+            # Attach reference files, then prefill while uploads proceed
             if reference_files:
                 for file_path in reference_files:
                     if file_path.exists():
-                        self._attach_file(file_path)
+                        self._attach_file(file_path, wait_for_ready=False)
                         # Check for cancellation after each file attachment
                         if self._is_cancelled():
                             logger.info("Translation cancelled during file attachment")
                             raise TranslationCancelledError("Translation cancelled by user")
 
+            prefill_ok = False
+            prefill_start = time.monotonic()
+            try:
+                prefill_ok = self._prefill_message(prompt)
+            finally:
+                logger.info("[TIMING] prefill_message: %.2fs", time.monotonic() - prefill_start)
+
+            if reference_files:
+                wait_start = time.monotonic()
+                attach_ready = self._wait_for_attachment_ready()
+                logger.info("[TIMING] wait_for_attachment_ready: %.2fs", time.monotonic() - wait_start)
+                if not attach_ready:
+                    raise RuntimeError("添付処理が完了しませんでした。アップロード完了を待ってから再試行してください。")
+
             # Send the prompt
-            stop_button_seen = self._send_message(prompt)
+            stop_button_seen = self._send_message(
+                prompt,
+                prefilled=prefill_ok,
+                prefer_click=bool(reference_files),
+            )
 
             # Minimize browser after _send_message to prevent window flash
             self._send_to_background_impl(self._page)
@@ -4780,21 +4798,39 @@ class CopilotHandler:
                 logger.info("Translation cancelled after starting new chat (single)")
                 raise TranslationCancelledError("Translation cancelled by user")
 
-            # Attach reference files first (before sending prompt)
+            # Attach reference files, then prefill while uploads proceed
             if reference_files:
                 attach_start = time.monotonic()
                 for file_path in reference_files:
                     if file_path.exists():
-                        self._attach_file(file_path)
+                        self._attach_file(file_path, wait_for_ready=False)
                         # Check for cancellation after each file attachment
                         if self._is_cancelled():
                             logger.info("Translation cancelled during file attachment (single)")
                             raise TranslationCancelledError("Translation cancelled by user")
                 logger.info("[TIMING] attach_files (%d files): %.2fs", len(reference_files), time.monotonic() - attach_start)
 
+            prefill_ok = False
+            prefill_start = time.monotonic()
+            try:
+                prefill_ok = self._prefill_message(prompt)
+            finally:
+                logger.info("[TIMING] prefill_message: %.2fs", time.monotonic() - prefill_start)
+
+            if reference_files:
+                wait_start = time.monotonic()
+                attach_ready = self._wait_for_attachment_ready()
+                logger.info("[TIMING] wait_for_attachment_ready: %.2fs", time.monotonic() - wait_start)
+                if not attach_ready:
+                    raise RuntimeError("添付処理が完了しませんでした。アップロード完了を待ってから再試行してください。")
+
             # Send the prompt
             send_start = time.monotonic()
-            stop_button_seen = self._send_message(prompt)
+            stop_button_seen = self._send_message(
+                prompt,
+                prefilled=prefill_ok,
+                prefer_click=bool(reference_files),
+            )
             logger.info("[TIMING] _send_message: %.2fs", time.monotonic() - send_start)
 
             # Minimize browser after _send_message to prevent window flash
@@ -4904,7 +4940,103 @@ class CopilotHandler:
 
         return ""
 
-    def _send_message(self, message: str) -> bool:
+    def _prefill_message(self, message: str, input_elem=None) -> bool:
+        """Fill Copilot input without sending."""
+        if not self._page:
+            return False
+
+        input_elem = input_elem or self._page.query_selector(self.CHAT_INPUT_SELECTOR_EXTENDED)
+        if not input_elem:
+            return False
+
+        logger.debug("Input element found, setting text via JS...")
+        fill_start = time.monotonic()
+        fill_success = False
+        fill_method = None  # Track which method succeeded
+
+        # Method 1: Use Playwright's fill() - reliable for React apps
+        # fill() handles contenteditable properly and triggers React state updates
+        method1_error = None
+        try:
+            t0 = time.monotonic()
+            input_elem.fill(message)
+            t1 = time.monotonic()
+            # Dispatch input event to ensure React detects the change
+            # Note: change event removed for optimization - input event is sufficient for React
+            input_elem.evaluate('el => el.dispatchEvent(new Event("input", { bubbles: true }))')
+            t2 = time.monotonic()
+            # OPTIMIZED: Removed inner_text() verification (~0.11s savings)
+            # Post-send verification catches empty input cases
+            logger.debug("[FILL_DETAIL] fill=%.3fs, dispatchEvent=%.3fs",
+                         t1 - t0, t2 - t1)
+            fill_success = True
+            fill_method = 1
+        except Exception as e:
+            method1_error = str(e)
+            fill_success = False
+
+        # Method 2: Use execCommand('insertText') - backup for older browsers
+        if not fill_success:
+            # Log Method 1 failure with details for debugging selector issues
+            elem_info = ""
+            try:
+                elem_info = input_elem.evaluate('el => ({ tag: el.tagName, id: el.id, class: el.className, editable: el.contentEditable })')
+            except Exception:
+                elem_info = "(could not get element info)"
+            logger.warning("Method 1 (fill) failed: %s | Element: %s | URL: %s",
+                           method1_error, elem_info, self._page.url[:80] if self._page else "no page")
+            logger.info("Falling back to Method 2 (execCommand insertText)...")
+            try:
+                input_elem.evaluate('el => { el.focus(); el.click(); }')
+                time.sleep(0.05)
+                input_elem.press("Control+a")
+                time.sleep(0.05)
+                fill_success = self._page.evaluate('''(text) => {
+                    return document.execCommand('insertText', false, text);
+                }''', message)
+                if fill_success:
+                    content = input_elem.inner_text()
+                    fill_success = len(content.strip()) > 0
+                    if fill_success:
+                        fill_method = 2
+            except Exception as e:
+                logger.warning("Method 2 (execCommand insertText) failed: %s", e)
+                fill_success = False
+
+        # Method 3: Click and type line by line (slowest, last resort)
+        # Note: type() interprets \n as Enter key, so we use Shift+Enter for line breaks
+        if not fill_success:
+            logger.warning("Method 2 failed, falling back to Method 3 (type line by line) - this may be slow for long text")
+            try:
+                input_elem.evaluate('el => { el.focus(); el.click(); }')
+                input_elem.press("Control+a")
+                time.sleep(0.05)
+                lines = message.split('\n')
+                for i, line in enumerate(lines):
+                    if line:
+                        input_elem.type(line, delay=0)
+                    if i < len(lines) - 1:
+                        input_elem.press("Shift+Enter")
+                content = input_elem.inner_text()
+                fill_success = len(content.strip()) > 0
+                if fill_success:
+                    fill_method = 3
+            except Exception as e:
+                logger.debug("Method 3 (type) failed: %s", e)
+                fill_success = False
+
+        # Log timing and method used
+        method_names = {
+            1: "js_set_text",
+            2: "execCommand insertText",
+            3: "type line by line",
+        }
+        method_name = method_names.get(fill_method, "unknown")
+        logger.info("[TIMING] js_set_text (Method %s: %s): %.2fs", fill_method, method_name, time.monotonic() - fill_start)
+
+        return fill_success
+
+    def _send_message(self, message: str, prefilled: bool = False, prefer_click: bool = False) -> bool:
         """Send message to Copilot (sync)
 
         Returns:
@@ -4948,95 +5080,20 @@ class CopilotHandler:
             input_elem = self._page.query_selector(input_selector)
 
             if input_elem:
-                logger.debug("Input element found, setting text via JS...")
-                fill_start = time.monotonic()
-                fill_success = False
-                fill_method = None  # Track which method succeeded
-
-                # Method 1: Use Playwright's fill() - reliable for React apps
-                # fill() handles contenteditable properly and triggers React state updates
-                method1_error = None
-                try:
-                    t0 = time.monotonic()
-                    input_elem.fill(message)
-                    t1 = time.monotonic()
-                    # Dispatch input event to ensure React detects the change
-                    # Note: change event removed for optimization - input event is sufficient for React
-                    input_elem.evaluate('el => el.dispatchEvent(new Event("input", { bubbles: true }))')
-                    t2 = time.monotonic()
-                    # OPTIMIZED: Removed inner_text() verification (~0.11s savings)
-                    # Post-send verification catches empty input cases
-                    logger.debug("[FILL_DETAIL] fill=%.3fs, dispatchEvent=%.3fs",
-                                 t1 - t0, t2 - t1)
-                    fill_success = True
-                    fill_method = 1
-                except Exception as e:
-                    method1_error = str(e)
-                    fill_success = False
-
-                # Method 2: Use execCommand('insertText') - backup for older browsers
-                if not fill_success:
-                    # Log Method 1 failure with details for debugging selector issues
-                    elem_info = ""
+                if prefilled:
                     try:
-                        elem_info = input_elem.evaluate('el => ({ tag: el.tagName, id: el.id, class: el.className, editable: el.contentEditable })')
+                        current_text = input_elem.inner_text().strip()
                     except Exception:
-                        elem_info = "(could not get element info)"
-                    logger.warning("Method 1 (fill) failed: %s | Element: %s | URL: %s",
-                                   method1_error, elem_info, self._page.url[:80] if self._page else "no page")
-                    logger.info("Falling back to Method 2 (execCommand insertText)...")
-                    try:
-                        input_elem.evaluate('el => { el.focus(); el.click(); }')
-                        time.sleep(0.05)
-                        input_elem.press("Control+a")
-                        time.sleep(0.05)
-                        fill_success = self._page.evaluate('''(text) => {
-                            return document.execCommand('insertText', false, text);
-                        }''', message)
-                        if fill_success:
-                            content = input_elem.inner_text()
-                            fill_success = len(content.strip()) > 0
-                            if fill_success:
-                                fill_method = 2
-                    except Exception as e:
-                        logger.warning("Method 2 (execCommand insertText) failed: %s", e)
-                        fill_success = False
+                        current_text = ""
+                    if not current_text:
+                        logger.warning("Prefilled message missing; refilling input")
+                        prefilled = False
 
-                # Method 3: Click and type line by line (slowest, last resort)
-                # Note: type() interprets \n as Enter key, so we use Shift+Enter for line breaks
-                if not fill_success:
-                    logger.warning("Method 2 failed, falling back to Method 3 (type line by line) - this may be slow for long text")
-                    try:
-                        input_elem.evaluate('el => { el.focus(); el.click(); }')
-                        input_elem.press("Control+a")
-                        time.sleep(0.05)
-                        lines = message.split('\n')
-                        for i, line in enumerate(lines):
-                            if line:
-                                input_elem.type(line, delay=0)
-                            if i < len(lines) - 1:
-                                input_elem.press("Shift+Enter")
-                        content = input_elem.inner_text()
-                        fill_success = len(content.strip()) > 0
-                        if fill_success:
-                            fill_method = 3
-                    except Exception as e:
-                        logger.debug("Method 3 (type) failed: %s", e)
-                        fill_success = False
-
-                # Log timing and method used
-                method_names = {
-                    1: "js_set_text",
-                    2: "execCommand insertText",
-                    3: "type line by line",
-                }
-                method_name = method_names.get(fill_method, "unknown")
-                logger.info("[TIMING] js_set_text (Method %s: %s): %.2fs", fill_method, method_name, time.monotonic() - fill_start)
-
-                # Verify input was successful
-                if not fill_success:
-                    logger.warning("Input field is empty after fill - Copilot may need attention")
-                    raise RuntimeError("Copilotに入力できませんでした。Edgeブラウザを確認してください。")
+                if not prefilled:
+                    fill_success = self._prefill_message(message, input_elem=input_elem)
+                    if not fill_success:
+                        logger.warning("Input field is empty after fill - Copilot may need attention")
+                        raise RuntimeError("Copilotに入力できませんでした。Edgeブラウザを確認してください。")
 
                 # Note: No sleep needed here - button loop below handles React state stabilization
 
@@ -5171,7 +5228,12 @@ class CopilotHandler:
                 send_success = False
                 stop_button_seen_during_send = False  # Track if stop button was detected
 
-                for send_attempt in range(MAX_SEND_RETRIES):
+                # Prefer click when attachments are present; otherwise Enter first.
+                attempt_modes = ["enter", "click", "force"]
+                if prefer_click:
+                    attempt_modes = ["click", "enter", "force"]
+
+                for send_attempt, attempt_mode in enumerate(attempt_modes):
                     send_method = ""
 
                     # Debug: Log environment state before each attempt
@@ -5226,11 +5288,12 @@ class CopilotHandler:
                         logger.debug("[SEND_DEBUG] Could not get pre-attempt state: %s", state_err)
 
                     try:
-                        if send_attempt == 0:
+                        if attempt_mode == "enter":
                             # First attempt: Enter key with robust focus management
                             # This works reliably even when window is minimized
                             elapsed_since_ready = time.monotonic() - send_ready_time
-                            logger.info("[SEND_DETAILED] Attempt 1 starting (%.2fs since send_ready)", elapsed_since_ready)
+                            logger.info("[SEND_DETAILED] Attempt %d starting (mode=enter, %.2fs since send_ready)",
+                                        send_attempt + 1, elapsed_since_ready)
 
                             focus_result = self._page.evaluate('''(inputSelector) => {
                                 const input = document.querySelector(inputSelector);
@@ -5465,9 +5528,87 @@ class CopilotHandler:
                                 # Track stop button for later use
                                 if post_pw_state.get('stopBtnVisible', False):
                                     stop_button_seen_during_send = True
+                                # If Enter didn't trigger send, try click fallback immediately to avoid retry delay
+                                if (post_pw_state.get('textLength', -1) > 0 and
+                                        not post_pw_state.get('stopBtnVisible', False)):
+                                    pre_click_state = self._page.evaluate('''() => {
+                                        const input = document.querySelector('#m365-chat-editor-target-element');
+                                        const stopBtn = document.querySelector('.fai-SendButton__stopBackground');
+                                        return {
+                                            inputCleared: input ? input.innerText.trim().length === 0 : false,
+                                            stopBtnVisible: !!stopBtn
+                                        };
+                                    }''')
+                                    if not pre_click_state.get('stopBtnVisible', False) and not pre_click_state.get('inputCleared', False):
+                                        send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
+                                        if send_btn:
+                                            click_result = send_btn.evaluate('''el => {
+                                                const result = {
+                                                    events: [],
+                                                    textLengthBefore: null,
+                                                    textLengthAfter: null,
+                                                    stopBtnBefore: false,
+                                                    stopBtnAfter: false,
+                                                    btnRect: null
+                                                };
 
-                        elif send_attempt == 1:
-                            # Second attempt: JS click with multiple event dispatch
+                                                const input = document.querySelector('#m365-chat-editor-target-element');
+                                                result.textLengthBefore = input ? input.innerText.trim().length : -1;
+                                                result.stopBtnBefore = !!document.querySelector('.fai-SendButton__stopBackground');
+                                                result.btnRect = el.getBoundingClientRect();
+
+                                                try {
+                                                    el.scrollIntoView({ block: 'center', behavior: 'instant' });
+                                                    result.events.push({ type: 'scrollIntoView', success: true });
+
+                                                    const rectAfterScroll = el.getBoundingClientRect();
+                                                    result.rectAfterScroll = {
+                                                        x: Math.round(rectAfterScroll.x),
+                                                        y: Math.round(rectAfterScroll.y)
+                                                    };
+
+                                                    const mousedownResult = el.dispatchEvent(new MouseEvent('mousedown', {
+                                                        bubbles: true, cancelable: true, view: window
+                                                    }));
+                                                    result.events.push({ type: 'mousedown', dispatched: mousedownResult });
+
+                                                    const mouseupResult = el.dispatchEvent(new MouseEvent('mouseup', {
+                                                        bubbles: true, cancelable: true, view: window
+                                                    }));
+                                                    result.events.push({ type: 'mouseup', dispatched: mouseupResult });
+
+                                                    const clickResult = el.dispatchEvent(new MouseEvent('click', {
+                                                        bubbles: true, cancelable: true, view: window
+                                                    }));
+                                                    result.events.push({ type: 'click', dispatched: clickResult });
+
+                                                    result.stopBtnAfterSynthetic = !!document.querySelector('.fai-SendButton__stopBackground');
+                                                    result.textLengthAfterSynthetic = input ? input.innerText.trim().length : -1;
+
+                                                    if (!result.stopBtnAfterSynthetic && result.textLengthAfterSynthetic > 0) {
+                                                        el.click();
+                                                        result.events.push({ type: 'el.click()', success: true });
+                                                    } else {
+                                                        result.events.push({ type: 'el.click()', skipped: true, reason: 'send already succeeded' });
+                                                    }
+
+                                                    result.clicked = true;
+                                                } catch (e) {
+                                                    result.error = e.message;
+                                                }
+
+                                                result.textLengthAfter = input ? input.innerText.trim().length : -1;
+                                                result.stopBtnAfter = !!document.querySelector('.fai-SendButton__stopBackground');
+
+                                                return result;
+                                            }''')
+                                            logger.info("[SEND_DETAILED] JS click result (enter fallback): %s", click_result)
+                                            send_method = "Enter key + JS click fallback"
+                                            if click_result.get('stopBtnAfterSynthetic') or click_result.get('stopBtnAfter'):
+                                                stop_button_seen_during_send = True
+
+                        elif attempt_mode == "click":
+                            # Click attempt: JS click with multiple event dispatch
                             # Most reliable for minimized windows - dispatch mousedown/mouseup/click
 
                             # CRITICAL: Check if Copilot is already generating before clicking button
@@ -5493,7 +5634,8 @@ class CopilotHandler:
 
                             # Log elapsed time since send ready
                             elapsed_since_ready = time.monotonic() - send_ready_time
-                            logger.info("[SEND_DETAILED] Attempt 2 starting (%.2fs since send_ready)", elapsed_since_ready)
+                            logger.info("[SEND_DETAILED] Attempt %d starting (mode=click, %.2fs since send_ready)",
+                                        send_attempt + 1, elapsed_since_ready)
 
                             send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
                             if send_btn:
@@ -5579,7 +5721,7 @@ class CopilotHandler:
                                 send_method = "Enter key (button not found)"
 
                         else:
-                            # Third attempt: Playwright click with force (scrolls element into view)
+                            # Force click attempt: Playwright click with force (scrolls element into view)
 
                             # CRITICAL: Check if Copilot is already generating before clicking button
                             pre_click_state = self._page.evaluate('''() => {
@@ -5819,7 +5961,7 @@ class CopilotHandler:
                         except Exception:
                             pass
 
-                        if send_attempt == 0 and send_attempt < MAX_SEND_RETRIES - 1:
+                        if attempt_mode == "enter" and send_attempt < MAX_SEND_RETRIES - 1:
                             # Give Enter a chance to register before retrying to avoid double-send.
                             late_verify_start = time.monotonic()
                             late_verified = False
@@ -6369,7 +6511,7 @@ class CopilotHandler:
             )
         )
 
-    def _attach_file(self, file_path: Path) -> bool:
+    def _attach_file(self, file_path: Path, wait_for_ready: bool = True) -> bool:
         """
         Attach file to Copilot chat input (sync).
 
@@ -6407,8 +6549,9 @@ class CopilotHandler:
             file_input = self._page.query_selector('input[type="file"]')
             if file_input:
                 file_input.set_input_files(str(file_path))
-                # Wait for file to be attached (check for file preview/chip)
-                self._wait_for_file_attached(file_path)
+                if wait_for_ready:
+                    # Wait for file to be attached (check for file preview/chip)
+                    self._wait_for_file_attached(file_path)
                 return True
 
             # Priority 2: Two-step menu process (selectors may change)
@@ -6446,8 +6589,9 @@ class CopilotHandler:
 
                 file_chooser = fc_info.value
                 file_chooser.set_files(str(file_path))
-                # Wait for file to be attached
-                self._wait_for_file_attached(file_path)
+                if wait_for_ready:
+                    # Wait for file to be attached
+                    self._wait_for_file_attached(file_path)
                 return True
 
             logger.warning("Could not find attachment mechanism for file: %s", file_path)
@@ -6500,7 +6644,35 @@ class CopilotHandler:
         except (PlaywrightError, AttributeError):
             return True  # Don't fail the operation if we can't verify
 
-    async def _attach_file_async(self, file_path: Path) -> bool:
+    def _wait_for_attachment_ready(self, timeout: int = 30) -> bool:
+        """
+        Wait until attachment processing completes and send is likely enabled.
+
+        This mitigates cases where Enter/click is blocked while files are still
+        uploading or being indexed by Copilot.
+        """
+        error_types = _get_playwright_errors()
+        PlaywrightError = error_types['Error']
+        PlaywrightTimeoutError = error_types['TimeoutError']
+
+        try:
+            self._page.wait_for_function('''() => {
+                const sendBtn = document.querySelector('.fai-SendButton, button[type="submit"], [data-testid="sendButton"]');
+                const btnStyle = sendBtn ? window.getComputedStyle(sendBtn) : null;
+                const sendReady = sendBtn &&
+                    !sendBtn.disabled &&
+                    sendBtn.getAttribute('aria-disabled') !== 'true' &&
+                    (!btnStyle || (btnStyle.pointerEvents !== 'none' && btnStyle.visibility !== 'hidden')) &&
+                    sendBtn.offsetParent !== null;
+                return sendReady;
+            }''', timeout=timeout * 1000, polling=100)
+            return True
+        except PlaywrightTimeoutError:
+            return False
+        except (PlaywrightError, AttributeError):
+            return False
+
+    async def _attach_file_async(self, file_path: Path, wait_for_ready: bool = True) -> bool:
         """
         Attach file to Copilot chat (async wrapper).
 
@@ -6511,7 +6683,7 @@ class CopilotHandler:
             True if file was attached successfully
         """
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self._attach_file, file_path)
+        return await loop.run_in_executor(None, self._attach_file, file_path, wait_for_ready)
 
     def _parse_batch_result(self, result: str, expected_count: int) -> list[str]:
         """Parse batch translation result back to list.

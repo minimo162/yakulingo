@@ -2555,6 +2555,11 @@ Based on recent commits:
   - **Bug fix**: setup.ps1でバックアップディレクトリ削除前にglossary.csv比較処理を実行するよう修正
 - **Outlook MSG Support (2024-12)**:
   - **MSG file translation**: Windows + Outlook環境でMSGファイル翻訳サポートを追加
+  - **COM object cleanup fix**: `_create_msg_via_outlook()`でCOMオブジェクトを確実にリリース
+    - `mail.Close(1)`を`finally`句で呼び出し（olDiscard=1で変更を破棄）
+    - `del mail` / `del outlook`で明示的にオブジェクトを削除（Excelプロセッサと同様のパターン）
+    - `gc.collect()`でガベージコレクションを実行
+    - Close()未呼び出しによる「返信」扱い問題を修正
 - **Excel Translation Optimization (2024-12)**:
   - **Cell reading optimization**: セル読み取り効率化
   - **Write optimization**: 書き込み効率化

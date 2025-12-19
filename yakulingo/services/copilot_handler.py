@@ -5443,7 +5443,10 @@ class CopilotHandler:
                                     stop_button_seen_during_send = True
                             else:
                                 # JS events didn't trigger send - use Playwright as backup
-                                input_elem.press("Enter")
+                                if self._page:
+                                    self._page.keyboard.press("Enter")
+                                else:
+                                    input_elem.press("Enter")
                                 pw_time = time.monotonic() - send_start
 
                                 # Brief wait before checking state
@@ -5569,7 +5572,10 @@ class CopilotHandler:
                                 logger.debug("[SEND] Button not found, using Enter key")
                                 input_elem.focus()
                                 time.sleep(0.05)
-                                input_elem.press("Enter")
+                                if self._page:
+                                    self._page.keyboard.press("Enter")
+                                else:
+                                    input_elem.press("Enter")
                                 send_method = "Enter key (button not found)"
 
                         else:
@@ -5613,7 +5619,10 @@ class CopilotHandler:
                                 # Final fallback: Enter key
                                 input_elem.focus()
                                 time.sleep(0.05)
-                                input_elem.press("Enter")
+                                if self._page:
+                                    self._page.keyboard.press("Enter")
+                                else:
+                                    input_elem.press("Enter")
                                 send_method = "Enter key (final fallback)"
 
                         logger.debug("[SEND] Sent via %s (attempt %d)", send_method, send_attempt + 1)
@@ -5623,7 +5632,10 @@ class CopilotHandler:
                         try:
                             input_elem.focus()
                             time.sleep(0.05)
-                            input_elem.press("Enter")
+                            if self._page:
+                                self._page.keyboard.press("Enter")
+                            else:
+                                input_elem.press("Enter")
                             send_method = "Enter key (exception fallback)"
                         except Exception as enter_err:
                             logger.warning("[SEND] Enter key also failed: %s", enter_err)

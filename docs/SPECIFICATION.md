@@ -729,7 +729,7 @@ class CopilotHandler:
 - 送信ボタン: `:not([disabled])`条件で有効化を待機
 - メニュー表示: `div[role="menu"]`の表示を確認
 - ファイル添付: 添付インジケータをポーリングで確認
-- GPTモード: 接続完了後に`ensure_gpt_mode()`で設定（ポーリング方式、100msごと）
+- GPTモード: 接続完了後に`ensure_gpt_mode()`で設定（wait_for_selector + JS一括実行）
 
 **Copilot文字数制限:**
 - Free ライセンス: 8,000文字

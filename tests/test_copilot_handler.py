@@ -1445,13 +1445,11 @@ class TestGptModeSwitch:
     def test_gpt_mode_wait_constants_defined(self, handler):
         """GPT mode wait time constants are defined"""
         assert hasattr(handler, 'GPT_MODE_MENU_WAIT')
-        # OPTIMIZED: Reduced from 0.3s to 0.1s (3 calls = 0.6s saved)
-        assert handler.GPT_MODE_MENU_WAIT == 0.1
-        # OPTIMIZED: Polling-based detection for quick response to delayed rendering
-        assert hasattr(handler, 'GPT_MODE_BUTTON_POLL_INTERVAL_MS')
-        assert handler.GPT_MODE_BUTTON_POLL_INTERVAL_MS == 100  # Detect within 100ms
-        assert hasattr(handler, 'GPT_MODE_BUTTON_MAX_WAIT_MS')
-        assert handler.GPT_MODE_BUTTON_MAX_WAIT_MS == 8000  # 8s total timeout
+        # OPTIMIZED: Reduced to 50ms (just enough for React to update)
+        assert handler.GPT_MODE_MENU_WAIT == 0.05
+        # OPTIMIZED: Use wait_for_selector instead of polling for faster detection
+        assert hasattr(handler, 'GPT_MODE_BUTTON_WAIT_MS')
+        assert handler.GPT_MODE_BUTTON_WAIT_MS == 5000  # 5s total timeout
 
     def test_ensure_gpt_mode_completes_when_no_page(self, handler):
         """_ensure_gpt_mode completes without error when no page"""
@@ -1461,113 +1459,76 @@ class TestGptModeSwitch:
     def test_ensure_gpt_mode_completes_when_already_correct(self, handler):
         """_ensure_gpt_mode completes without switching when already in GPT-5.2 Think Deeper mode"""
         mock_page = MagicMock()
-        mock_text_elem = MagicMock()
-        mock_text_elem.text_content.return_value = "GPT-5.2 Think Deeper"
-        mock_page.query_selector.return_value = mock_text_elem
+        # First evaluate call returns current mode text
+        mock_page.evaluate.return_value = "GPT-5.2 Think Deeper"
         handler._page = mock_page
 
         handler._ensure_gpt_mode_impl()
-        # Should not click anything (already in correct mode)
-        assert mock_page.evaluate.call_count == 0
+        # Should call wait_for_selector and one evaluate for mode check
+        mock_page.wait_for_selector.assert_called_once()
+        # Should only call evaluate once (for mode check), not for switching
+        assert mock_page.evaluate.call_count == 1
 
     def test_ensure_gpt_mode_switches_from_plain_think_deeper(self, handler):
         """_ensure_gpt_mode attempts switch when mode is plain 'Think Deeper' (not GPT-5.2)"""
         mock_page = MagicMock()
 
-        # Track query_selector calls
-        query_count = [0]
-        mock_button = MagicMock()
-        mock_more_button = MagicMock()
-        mock_more_button.text_content.return_value = "More"
-        mock_menu_item = MagicMock()
-        mock_menu_item.text_content.return_value = "GPT-5.2 Think Deeper"
+        evaluate_calls = [0]
 
-        def query_selector_side_effect(selector):
-            query_count[0] += 1
-            if 'div' in selector:
-                mock_text = MagicMock()
-                # Plain "Think Deeper" should NOT match target "GPT-5.2 Think Deeper"
-                if query_count[0] <= 3:
-                    mock_text.text_content.return_value = "Think Deeper"
-                else:
-                    mock_text.text_content.return_value = "GPT-5.2 Think Deeper"
-                return mock_text
-            return mock_button
+        def evaluate_side_effect(*args, **kwargs):
+            evaluate_calls[0] += 1
+            if evaluate_calls[0] == 1:
+                # First call: return current mode (plain Think Deeper, not GPT-5.2)
+                return "Think Deeper"
+            else:
+                # Second call: return switch success result
+                return {"success": True, "newMode": "GPT-5.2 Think Deeper"}
 
-        # Mock query_selector_all to return More button first, then menu items
-        query_all_count = [0]
-        def query_selector_all_side_effect(selector):
-            query_all_count[0] += 1
-            if 'aria-haspopup' in selector:  # GPT_MODE_MORE_SELECTOR
-                return [mock_more_button]
-            return [mock_menu_item]  # GPT_MODE_MENU_ITEM_SELECTOR
-
-        mock_page.query_selector.side_effect = query_selector_side_effect
-        mock_page.query_selector_all.side_effect = query_selector_all_side_effect
-
+        mock_page.evaluate.side_effect = evaluate_side_effect
         handler._page = mock_page
 
-        result = handler._ensure_gpt_mode_impl()
+        handler._ensure_gpt_mode_impl()
 
-        # Should have attempted to click button, More, and menu item (3 clicks)
-        assert mock_page.evaluate.call_count >= 3
+        # Should call wait_for_selector once, then evaluate twice (mode check + switch)
+        mock_page.wait_for_selector.assert_called_once()
+        assert mock_page.evaluate.call_count == 2
 
     def test_ensure_gpt_mode_attempts_switch_when_different(self, handler):
         """_ensure_gpt_mode attempts to switch when mode is different"""
         mock_page = MagicMock()
 
-        # Track query_selector calls to simulate mode change
-        query_count = [0]
+        evaluate_calls = [0]
 
-        # Mock elements
-        mock_button = MagicMock()
-        mock_more_button = MagicMock()
-        mock_more_button.text_content.return_value = "More"
-        mock_menu_item = MagicMock()
-        mock_menu_item.text_content.return_value = "GPT-5.2 Think Deeper"
+        def evaluate_side_effect(*args, **kwargs):
+            evaluate_calls[0] += 1
+            if evaluate_calls[0] == 1:
+                # First call: return current mode (different from target)
+                return "自動"
+            else:
+                # Second call: return switch success result
+                return {"success": True, "newMode": "GPT-5.2 Think Deeper"}
 
-        def query_selector_side_effect(selector):
-            query_count[0] += 1
-            if 'div' in selector:
-                mock_text = MagicMock()
-                # Calls 1, 2, 3: return old mode (initial check, log, button lookup)
-                # Call 4+: return new mode (verification after switch)
-                if query_count[0] <= 3:
-                    mock_text.text_content.return_value = "自動"
-                else:
-                    mock_text.text_content.return_value = "GPT-5.2 Think Deeper"
-                return mock_text
-            return mock_button
-
-        # Mock query_selector_all to return More button first, then menu items
-        def query_selector_all_side_effect(selector):
-            if 'aria-haspopup' in selector:  # GPT_MODE_MORE_SELECTOR
-                return [mock_more_button]
-            return [mock_menu_item]  # GPT_MODE_MENU_ITEM_SELECTOR
-
-        mock_page.query_selector.side_effect = query_selector_side_effect
-        mock_page.query_selector_all.side_effect = query_selector_all_side_effect
-
+        mock_page.evaluate.side_effect = evaluate_side_effect
         handler._page = mock_page
 
-        result = handler._ensure_gpt_mode_impl()
+        handler._ensure_gpt_mode_impl()
 
-        # Verify that click actions were performed (evaluate called for JS click)
-        # 3-step flow: Button click + More click + menu item click
-        assert mock_page.evaluate.call_count >= 3
-        # The result depends on verification query_selector call count
-        # If verification succeeds (returns Think Deeper), result is True
+        # Verify that wait_for_selector and evaluate were called
+        mock_page.wait_for_selector.assert_called_once()
+        # Two evaluate calls: 1. mode check, 2. menu navigation + switch
+        assert mock_page.evaluate.call_count == 2
 
     def test_ensure_gpt_mode_completes_when_button_not_found(self, handler):
-        """_ensure_gpt_mode completes without error when button not found"""
+        """_ensure_gpt_mode completes without error when button not found (timeout)"""
         mock_page = MagicMock()
 
-        # All selectors return None (button not found)
-        mock_page.query_selector.return_value = None
-        mock_page.query_selector_all.return_value = []
+        # Simulate wait_for_selector timeout (button not found)
+        from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+        mock_page.wait_for_selector.side_effect = PlaywrightTimeoutError("Timeout")
         handler._page = mock_page
 
         handler._ensure_gpt_mode_impl()  # Should not raise (graceful degradation)
+        mock_page.wait_for_selector.assert_called_once()
 
     def test_ensure_gpt_mode_completes_on_exception(self, handler):
         """_ensure_gpt_mode completes without raising when internal exception occurs"""
@@ -1588,45 +1549,38 @@ class TestGptModeSwitch:
         # Should complete without raising (don't block if UI element not found)
         handler._ensure_gpt_mode_impl()
 
-    def test_ensure_gpt_mode_completes_when_polling_times_out(self, handler):
-        """_ensure_gpt_mode completes without error when polling times out"""
+    def test_ensure_gpt_mode_completes_when_selector_times_out(self, handler):
+        """_ensure_gpt_mode completes without error when wait_for_selector times out"""
         mock_page = MagicMock()
-        # query_selector always returns None (button never appears)
-        mock_page.query_selector.return_value = None
+
+        # Simulate wait_for_selector timeout (button never appears)
+        from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+        mock_page.wait_for_selector.side_effect = PlaywrightTimeoutError("Timeout")
         handler._page = mock_page
-        # Set a very short timeout for testing
-        handler.GPT_MODE_BUTTON_MAX_WAIT_MS = 50  # 50ms timeout
-        handler.GPT_MODE_BUTTON_POLL_INTERVAL_MS = 10  # 10ms poll interval
 
         # Should complete without raising when button doesn't appear
         handler._ensure_gpt_mode_impl()
-        # Verify query_selector was called multiple times (polling)
-        assert mock_page.query_selector.call_count >= 1
+        # Verify wait_for_selector was called
+        mock_page.wait_for_selector.assert_called_once()
 
     def test_ensure_gpt_mode_closes_menu_on_target_not_found(self, handler):
         """_ensure_gpt_mode closes menu when target mode not in menu"""
         mock_page = MagicMock()
 
-        mock_text_elem = MagicMock()
-        mock_text_elem.text_content.return_value = "自動"
+        evaluate_calls = [0]
 
-        mock_button = MagicMock()
+        def evaluate_side_effect(*args, **kwargs):
+            evaluate_calls[0] += 1
+            if evaluate_calls[0] == 1:
+                # First call: return current mode
+                return "自動"
+            else:
+                # Second call: return target not found result
+                return {"success": False, "error": "target_not_found", "available": ["Some Other Mode"]}
 
-        def query_selector_side_effect(selector):
-            if 'div' in selector:
-                return mock_text_elem
-            return mock_button
-
-        mock_page.query_selector.side_effect = query_selector_side_effect
-
-        # Menu items don't include target mode
-        mock_menu_item = MagicMock()
-        mock_menu_item.text_content.return_value = "Some Other Mode"
-        mock_page.query_selector_all.return_value = [mock_menu_item]
-
+        mock_page.evaluate.side_effect = evaluate_side_effect
         mock_keyboard = MagicMock()
         mock_page.keyboard = mock_keyboard
-
         handler._page = mock_page
 
         handler._ensure_gpt_mode_impl()

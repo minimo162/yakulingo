@@ -740,12 +740,10 @@ class CopilotHandler:
     GPT_MODE_MENU_ITEM_SELECTOR = '[role="menuitem"]'
     GPT_MODE_TARGET = 'GPT-5.2 Think Deeper'
     GPT_MODE_MORE_TEXT = 'More'
-    # OPTIMIZED: Reduced menu wait from 0.3s to 0.1s (3 calls = 0.6s saved)
-    GPT_MODE_MENU_WAIT = 0.1  # Wait for menu to open/close
-    # OPTIMIZED: Polling-based detection for quick response to delayed rendering
-    # Polls every 100ms, detects button within 100ms of it appearing
-    GPT_MODE_BUTTON_POLL_INTERVAL_MS = 100  # Poll interval (detect within 100ms of appearing)
-    GPT_MODE_BUTTON_MAX_WAIT_MS = 8000  # Total timeout (8s for delayed rendering)
+    # OPTIMIZED: Reduced menu wait to minimum (just enough for React to update)
+    GPT_MODE_MENU_WAIT = 0.05  # Wait for menu to open/close (50ms)
+    # OPTIMIZED: Use wait_for_selector instead of polling for faster detection
+    GPT_MODE_BUTTON_WAIT_MS = 5000  # Total timeout for button appearance (5s)
 
     # Dynamic polling intervals for faster response detection
     # OPTIMIZED: Reduced intervals for quicker response detection (0.15s -> 0.1s)
@@ -1773,50 +1771,50 @@ class CopilotHandler:
             logger.debug("Failed to set GPT mode: %s", e)
 
     def _ensure_gpt_mode_impl(self) -> None:
-        """Implementation of ensure_gpt_mode() that runs in Playwright thread."""
+        """Implementation of ensure_gpt_mode() that runs in Playwright thread.
+
+        OPTIMIZED: Uses wait_for_selector and JavaScript batch operations for speed.
+        - wait_for_selector: More efficient than polling (Playwright native wait)
+        - JS batch ops: Single evaluate call to find and click menu items
+        - Reduced sleeps: Minimum waits just for React to update
+        """
         logger.debug("[THREAD] _ensure_gpt_mode_impl running in thread %s", threading.current_thread().ident)
 
         if not self._page:
             logger.debug("No page available for GPT mode check")
             return
 
+        error_types = _get_playwright_errors()
+        PlaywrightTimeoutError = error_types['TimeoutError']
+
         try:
-            # OPTIMIZED: Polling-based detection for quick response to delayed rendering
-            # Detects button within 100ms of it appearing (vs up to 1.5s with stepped timeout)
             start_time = time.time()
-            button_found = False
-            poll_interval = self.GPT_MODE_BUTTON_POLL_INTERVAL_MS / 1000.0
-            max_wait = self.GPT_MODE_BUTTON_MAX_WAIT_MS / 1000.0
 
-            while (time.time() - start_time) < max_wait:
-                try:
-                    button = self._page.query_selector(self.GPT_MODE_BUTTON_SELECTOR)
-                    if button and button.is_visible():
-                        button_found = True
-                        elapsed = time.time() - start_time
-                        logger.debug("[TIMING] GPT mode button found (%.3fs)", elapsed)
-                        break
-                except Exception:
-                    pass
-                time.sleep(poll_interval)
-
-            if not button_found:
+            # OPTIMIZED: Use wait_for_selector instead of polling
+            # Playwright's native wait is more efficient than manual polling
+            try:
+                self._page.wait_for_selector(
+                    self.GPT_MODE_BUTTON_SELECTOR,
+                    state='visible',
+                    timeout=self.GPT_MODE_BUTTON_WAIT_MS
+                )
+                elapsed = time.time() - start_time
+                logger.debug("[TIMING] GPT mode button found (%.3fs)", elapsed)
+            except PlaywrightTimeoutError:
                 elapsed = time.time() - start_time
                 logger.debug("GPT mode button did not appear after %.2fs", elapsed)
                 return
 
-            # Check current mode by reading button text
-            mode_text_elem = self._page.query_selector(self.GPT_MODE_TEXT_SELECTOR)
-            if not mode_text_elem:
-                logger.debug("GPT mode button not found (selector may have changed)")
-                return
+            # OPTIMIZED: Get current mode text via JavaScript (single call)
+            current_mode = self._page.evaluate('''() => {
+                const el = document.querySelector('#gptModeSwitcher div');
+                return el ? el.textContent?.trim() : null;
+            }''')
 
-            current_mode = mode_text_elem.text_content()
             if not current_mode:
-                logger.debug("GPT mode text is empty")
+                logger.debug("GPT mode text is empty or selector changed")
                 return
 
-            current_mode = current_mode.strip()
             logger.debug("Current GPT mode: %s", current_mode)
 
             # Check if already in target mode
@@ -1827,68 +1825,80 @@ class CopilotHandler:
             # Need to switch mode
             logger.info("Switching GPT mode from '%s' to '%s'...", current_mode, self.GPT_MODE_TARGET)
 
-            # Step 1: Click #gptModeSwitcher to open menu
-            mode_button = self._page.query_selector(self.GPT_MODE_BUTTON_SELECTOR)
-            if not mode_button:
-                logger.warning("GPT mode button not found for clicking")
-                return
+            # OPTIMIZED: Execute menu navigation via JavaScript for speed
+            # This combines multiple clicks into a single evaluate with minimal delays
+            switch_result = self._page.evaluate('''(targetMode, moreText) => {
+                return new Promise((resolve) => {
+                    // Step 1: Click main button
+                    const mainBtn = document.querySelector('#gptModeSwitcher');
+                    if (!mainBtn) return resolve({success: false, error: 'main_button_not_found'});
+                    mainBtn.click();
 
-            self._page.evaluate('el => el.click()', mode_button)
-            time.sleep(self.GPT_MODE_MENU_WAIT)
+                    // Wait for menu to appear, then click More
+                    setTimeout(() => {
+                        // Step 2: Find and click "More" button
+                        const moreBtns = document.querySelectorAll('[role="button"][aria-haspopup="menu"]');
+                        let moreBtn = null;
+                        for (const btn of moreBtns) {
+                            if (btn.textContent?.includes(moreText)) {
+                                moreBtn = btn;
+                                break;
+                            }
+                        }
+                        if (!moreBtn) return resolve({success: false, error: 'more_button_not_found'});
+                        moreBtn.click();
 
-            # Step 2: Click "More" button to open submenu
-            more_buttons = self._page.query_selector_all(self.GPT_MODE_MORE_SELECTOR)
-            more_button = None
-            for btn in more_buttons:
-                try:
-                    btn_text = btn.text_content()
-                    if btn_text and self.GPT_MODE_MORE_TEXT in btn_text:
-                        more_button = btn
-                        break
-                except Exception:
-                    continue
+                        // Wait for submenu, then click target
+                        setTimeout(() => {
+                            // Step 3: Find and click target menu item
+                            const items = document.querySelectorAll('[role="menuitem"]');
+                            let targetItem = null;
+                            const available = [];
+                            for (const item of items) {
+                                const text = item.textContent;
+                                if (text) {
+                                    available.push(text.trim());
+                                    if (text.includes(targetMode)) {
+                                        targetItem = item;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (!targetItem) {
+                                return resolve({
+                                    success: false,
+                                    error: 'target_not_found',
+                                    available: available
+                                });
+                            }
+                            targetItem.click();
 
-            if not more_button:
-                logger.warning("'More' button not found in menu")
+                            // Wait for mode to update, then verify
+                            setTimeout(() => {
+                                const modeEl = document.querySelector('#gptModeSwitcher div');
+                                const newMode = modeEl?.textContent?.trim() || '';
+                                resolve({
+                                    success: newMode.includes(targetMode),
+                                    newMode: newMode
+                                });
+                            }, 30);
+                        }, 30);
+                    }, 30);
+                });
+            }''', self.GPT_MODE_TARGET, self.GPT_MODE_MORE_TEXT)
+
+            elapsed = time.time() - start_time
+            if switch_result.get('success'):
+                logger.info("Successfully switched GPT mode to '%s' (%.2fs)",
+                           switch_result.get('newMode', self.GPT_MODE_TARGET), elapsed)
+            elif switch_result.get('error') == 'target_not_found':
+                logger.warning("Target mode '%s' not found. Available: %s",
+                              self.GPT_MODE_TARGET, switch_result.get('available', []))
                 self._close_menu_safely()
-                return
-
-            self._page.evaluate('el => el.click()', more_button)
-            time.sleep(self.GPT_MODE_MENU_WAIT)
-
-            # Step 3: Click "GPT-5.2 Think Deeper" menu item
-            menu_items = self._page.query_selector_all(self.GPT_MODE_MENU_ITEM_SELECTOR)
-            target_item = None
-            available_items = []
-            for item in menu_items:
-                try:
-                    item_text = item.text_content()
-                    if item_text:
-                        item_text_stripped = item_text.strip()
-                        available_items.append(item_text_stripped)
-                        if self.GPT_MODE_TARGET in item_text:
-                            target_item = item
-                            break
-                except Exception:
-                    continue
-
-            if not target_item:
-                logger.warning("Target mode '%s' not found in submenu. Available items: %s",
-                              self.GPT_MODE_TARGET, available_items)
+            else:
+                logger.warning("GPT mode switch failed: %s (%.2fs)",
+                              switch_result.get('error', 'unknown'), elapsed)
                 self._close_menu_safely()
-                return
-
-            self._page.evaluate('el => el.click()', target_item)
-            time.sleep(self.GPT_MODE_MENU_WAIT)
-
-            # Verify mode was switched
-            mode_text_elem = self._page.query_selector(self.GPT_MODE_TEXT_SELECTOR)
-            if mode_text_elem:
-                new_mode = mode_text_elem.text_content()
-                if new_mode and self.GPT_MODE_TARGET in new_mode:
-                    logger.info("Successfully switched GPT mode to '%s'", new_mode.strip())
-                else:
-                    logger.warning("GPT mode switch may have failed. Current mode: %s", new_mode)
 
         except Exception as e:
             logger.warning("Failed to check/switch GPT mode: %s", e)

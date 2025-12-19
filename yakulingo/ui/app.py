@@ -95,7 +95,25 @@ def _patch_nicegui_native_mode() -> None:
             settings_dict: dict,  # Added: webview.settings
             start_args: dict,  # Added: webview.start() args
         ) -> None:
-            """Modified _open_window that receives window_args as argument."""
+            """Modified _open_window that receives window_args as argument.
+
+            Note: This function runs in a child process (via multiprocessing).
+            All required modules must be imported inside the function because
+            the child process is a fresh Python interpreter (especially on Windows
+            which uses 'spawn' mode).
+            """
+            # Import all required modules inside the function for child process
+            import time
+            import warnings
+            from threading import Event
+
+            from nicegui import helpers
+            from nicegui.native import native_mode as _native_mode
+
+            with warnings.catch_warnings():
+                warnings.filterwarnings('ignore', category=DeprecationWarning)
+                import webview
+
             while not helpers.is_port_open(host, port):
                 time.sleep(0.1)
 
@@ -113,7 +131,7 @@ def _patch_nicegui_native_mode() -> None:
             assert window is not None
             closed = Event()
             window.events.closed += closed.set
-            native_mode._start_window_method_executor(window, method_queue, response_queue, closed)
+            _native_mode._start_window_method_executor(window, method_queue, response_queue, closed)
             webview.start(**start_args)
 
         def activate_patched(

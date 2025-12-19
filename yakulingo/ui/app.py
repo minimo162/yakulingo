@@ -4264,6 +4264,9 @@ def run_app(
     ui_dir = Path(__file__).parent
     nicegui_app.add_static_files('/static', ui_dir)
 
+    # Icon path for window and favicon (used by native mode and _position_window_early_sync)
+    icon_path = ui_dir / 'yakulingo.ico'
+
     # Optimize pywebview startup (native mode only)
     # - hidden: Start window hidden and show after positioning (prevents flicker)
     # - x, y: Pre-calculate window position for side_panel mode
@@ -4293,7 +4296,7 @@ def run_app(
         except Exception as e:
             logger.debug("Failed to pre-set window position: %s", e)
 
-        icon_path = Path(__file__).parent / 'yakulingo.ico'
+        # Set pywebview window icon (may not affect taskbar, but helps title bar)
         if icon_path.exists():
             nicegui_app.native.window_args['icon'] = str(icon_path)
 
@@ -4360,6 +4363,17 @@ def run_app(
             SWP_NOSIZE = 0x0001
             SWP_NOMOVE = 0x0002
 
+            # Icon setting constants
+            WM_SETICON = 0x0080
+            ICON_SMALL = 0
+            ICON_BIG = 1
+            IMAGE_ICON = 1
+            LR_LOADFROMFILE = 0x0010
+            LR_DEFAULTSIZE = 0x0040
+
+            # Use icon_path from outer scope (defined in run_app)
+            icon_path_str = str(icon_path) if icon_path.exists() else None
+
             while waited_ms < MAX_WAIT_MS:
                 # Find YakuLingo window by title
                 hwnd = user32.FindWindowW(None, "YakuLingo")
@@ -4372,6 +4386,28 @@ def run_app(
                         user32.ShowWindow(hwnd, SW_RESTORE)
                         logger.debug("[EARLY_POSITION] Window was minimized, restored after %dms", waited_ms)
                         time.sleep(0.1)  # Brief wait for restore animation
+
+                    # Set window icon using Win32 API (WM_SETICON)
+                    # This ensures taskbar shows YakuLingo icon instead of Python icon
+                    if icon_path_str:
+                        try:
+                            # Load icon for both small (16x16) and big (32x32) sizes
+                            hicon_small = user32.LoadImageW(
+                                None, icon_path_str, IMAGE_ICON,
+                                16, 16, LR_LOADFROMFILE
+                            )
+                            hicon_big = user32.LoadImageW(
+                                None, icon_path_str, IMAGE_ICON,
+                                32, 32, LR_LOADFROMFILE
+                            )
+                            if hicon_small:
+                                user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL, hicon_small)
+                            if hicon_big:
+                                user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG, hicon_big)
+                            if hicon_small or hicon_big:
+                                logger.debug("[EARLY_POSITION] Window icon set successfully")
+                        except Exception as e:
+                            logger.debug("[EARLY_POSITION] Failed to set window icon: %s", e)
 
                     # For side_panel mode, position window at calculated position
                     if settings.browser_display_mode == "side_panel":
@@ -4689,13 +4725,11 @@ document.fonts.ready.then(function() {
     # This approach ensures the window appears at the correct position from the start.
 
     # Use the same icon for favicon (browser tab icon)
-    favicon_path = Path(__file__).parent / 'yakulingo.ico'
-
     ui.run(
         host=host,
         port=port,
         title='YakuLingo',
-        favicon=favicon_path,
+        favicon=icon_path,
         dark=False,
         reload=False,
         native=native,

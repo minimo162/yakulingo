@@ -467,46 +467,90 @@ _pre_init_error = None
 _pre_init_thread_id = None  # Track which thread initialized Playwright
 
 
-def _log_playwright_init_details(phase: str) -> None:
+def _log_playwright_init_details(phase: str, include_paths: bool = False) -> float:
     """Log detailed system information during Playwright initialization.
 
     Args:
         phase: Current phase name (e.g., "before_sync", "after_sync", "after_start")
+        include_paths: If True, log Playwright installation paths (only needed once)
+
+    Returns:
+        Time spent in this function (seconds)
     """
+    import time as _time
+    t_start = _time.perf_counter()
+
     try:
         import psutil
-        # CPU and memory
-        cpu_percent = psutil.cpu_percent(interval=0.1)
+        # CPU and memory (interval=None for non-blocking call)
+        cpu_percent = psutil.cpu_percent(interval=None)
         memory = psutil.virtual_memory()
         logger.debug(
             "[PLAYWRIGHT_INIT] %s: CPU=%.1f%%, Memory=%.1f%% (available=%.1fGB)",
             phase, cpu_percent, memory.percent, memory.available / (1024**3)
         )
 
-        # Check for existing Playwright/Node.js processes
-        playwright_procs = []
+        # Log Playwright paths only when requested (first call)
+        if include_paths:
+            _log_playwright_paths()
+
+        # Check for existing Node.js processes (skip full scan for speed)
         node_procs = []
-        for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+        for proc in psutil.process_iter(['pid', 'name']):
             try:
                 name = proc.info['name'].lower() if proc.info['name'] else ''
-                cmdline = ' '.join(proc.info['cmdline'] or []).lower()
-                if 'playwright' in name or 'playwright' in cmdline:
-                    playwright_procs.append(f"{proc.info['name']}(pid={proc.info['pid']})")
-                elif 'node' in name:
+                if 'node' in name:
                     node_procs.append(f"{proc.info['name']}(pid={proc.info['pid']})")
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
 
-        if playwright_procs:
-            logger.debug("[PLAYWRIGHT_INIT] %s: Existing Playwright processes: %s",
-                        phase, ', '.join(playwright_procs[:5]))
         if node_procs:
-            logger.debug("[PLAYWRIGHT_INIT] %s: Existing Node.js processes: %d found",
-                        phase, len(node_procs))
+            logger.debug("[PLAYWRIGHT_INIT] %s: Existing Node.js processes: %s",
+                        phase, ', '.join(node_procs[:5]))
     except ImportError:
         logger.debug("[PLAYWRIGHT_INIT] %s: psutil not available for detailed logging", phase)
     except Exception as e:
         logger.debug("[PLAYWRIGHT_INIT] %s: Failed to get system info: %s", phase, e)
+
+    return _time.perf_counter() - t_start
+
+
+def _log_playwright_paths() -> None:
+    """Log Playwright installation paths for debugging slow initialization."""
+    try:
+        # Check PLAYWRIGHT_BROWSERS_PATH environment variable
+        browsers_path_env = os.environ.get('PLAYWRIGHT_BROWSERS_PATH', '')
+        if browsers_path_env:
+            logger.debug("[PLAYWRIGHT_INIT] PLAYWRIGHT_BROWSERS_PATH=%s", browsers_path_env)
+
+        # Default Playwright browser location
+        if sys.platform == 'win32':
+            local_app_data = os.environ.get('LOCALAPPDATA', '')
+            default_path = Path(local_app_data) / 'ms-playwright' if local_app_data else None
+        else:
+            default_path = Path.home() / '.cache' / 'ms-playwright'
+
+        if default_path and default_path.exists():
+            # List browser directories
+            browser_dirs = [d.name for d in default_path.iterdir() if d.is_dir()]
+            total_size_mb = sum(
+                sum(f.stat().st_size for f in d.rglob('*') if f.is_file())
+                for d in default_path.iterdir() if d.is_dir()
+            ) / (1024 * 1024)
+            logger.debug(
+                "[PLAYWRIGHT_INIT] Browser path: %s (%.1f MB, browsers: %s)",
+                default_path, total_size_mb, ', '.join(browser_dirs[:5])
+            )
+        elif default_path:
+            logger.debug("[PLAYWRIGHT_INIT] Browser path not found: %s", default_path)
+
+        # Check for Node.js in Playwright
+        if default_path:
+            node_paths = list(default_path.rglob('node.exe' if sys.platform == 'win32' else 'node'))
+            if node_paths:
+                logger.debug("[PLAYWRIGHT_INIT] Node.js found: %s", node_paths[0])
+    except Exception as e:
+        logger.debug("[PLAYWRIGHT_INIT] Failed to get Playwright paths: %s", e)
 
 
 def _pre_init_playwright_impl():
@@ -518,41 +562,52 @@ def _pre_init_playwright_impl():
         current_thread_id = threading.current_thread().ident
         logger.debug("[THREAD] pre_init_playwright_impl running in thread %s", current_thread_id)
 
-        # Log system state before initialization
-        _log_playwright_init_details("before_init")
+        # Log system state before initialization (include paths for debugging)
+        log_time = _log_playwright_init_details("before_init", include_paths=True)
+        logger.debug("[TIMING] pre_init system_info: %.2fs (cumulative: %.2fs)",
+                    log_time, _time.perf_counter() - _t_start)
 
+        # Step 1: Import Playwright (may trigger antivirus scan)
+        _t_step = _time.perf_counter()
         _, sync_playwright = _get_playwright()
-        logger.debug("[TIMING] pre_init _get_playwright(): %.2fs", _time.perf_counter() - _t_start)
+        step_time = _time.perf_counter() - _t_step
+        cumulative = _time.perf_counter() - _t_start
+        logger.debug("[TIMING] pre_init _get_playwright(): %.2fs (cumulative: %.2fs)", step_time, cumulative)
 
         # Log before sync_playwright() call
-        _log_playwright_init_details("before_sync")
-        _t_sync = _time.perf_counter()
+        log_time = _log_playwright_init_details("before_sync")
 
-        # sync_playwright() creates the Playwright context manager
+        # Step 2: Create Playwright context manager
+        _t_step = _time.perf_counter()
         pw_context = sync_playwright()
-        logger.debug("[TIMING] pre_init sync_playwright(): %.2fs", _time.perf_counter() - _t_sync)
+        step_time = _time.perf_counter() - _t_step
+        cumulative = _time.perf_counter() - _t_start
+        logger.debug("[TIMING] pre_init sync_playwright(): %.2fs (cumulative: %.2fs)", step_time, cumulative)
 
         # Log before start() call
-        _log_playwright_init_details("before_start")
-        _t_start_call = _time.perf_counter()
+        log_time = _log_playwright_init_details("before_start")
 
-        # start() actually launches the Playwright server (Node.js process)
+        # Step 3: Start Playwright server (Node.js process - slowest step)
+        logger.debug("[PLAYWRIGHT_INIT] Starting Node.js server...")
+        _t_step = _time.perf_counter()
         _pre_initialized_playwright = pw_context.start()
-        logger.debug("[TIMING] pre_init .start(): %.2fs", _time.perf_counter() - _t_start_call)
+        step_time = _time.perf_counter() - _t_step
+        cumulative = _time.perf_counter() - _t_start
+        logger.debug("[TIMING] pre_init .start(): %.2fs (cumulative: %.2fs)", step_time, cumulative)
 
         # Log after start() completes
-        _log_playwright_init_details("after_start")
+        log_time = _log_playwright_init_details("after_start")
 
         _pre_init_thread_id = current_thread_id  # Record thread ID for validation
         total_time = _time.perf_counter() - _t_start
         logger.info("[TIMING] Playwright pre-initialization completed in thread %s: %.2fs",
                     current_thread_id, total_time)
 
-        # Warn if initialization took too long
+        # Warn if initialization took too long (with detailed breakdown)
         if total_time > 5.0:
             logger.warning(
                 "[PLAYWRIGHT_INIT] Slow initialization detected (%.2fs). "
-                "Consider checking antivirus exclusions for Playwright directories.",
+                "Check antivirus exclusions for: %%LOCALAPPDATA%%\\ms-playwright",
                 total_time
             )
 
@@ -2921,21 +2976,28 @@ class CopilotHandler:
             edge_hwnd = self._find_edge_window_handle(page_title)
 
             if not yakulingo_hwnd:
-                # Only log WARNING for first occurrence, DEBUG for subsequent calls
-                # This prevents log spam during startup when window isn't created yet
+                # Only log once when waiting starts, suppress repeated logs
                 if not self._window_not_found_warning_shown:
-                    logger.warning("YakuLingo window not found for side panel positioning")
+                    logger.debug("Waiting for YakuLingo window to be created...")
                     self._window_not_found_warning_shown = True
-                else:
-                    logger.debug("YakuLingo window not found for side panel positioning (waiting)")
+                    self._window_wait_count = 0
+                self._window_wait_count = getattr(self, '_window_wait_count', 0) + 1
                 return False
             if not edge_hwnd:
                 if not self._edge_not_found_warning_shown:
-                    logger.warning("Edge window not found for side panel positioning")
+                    logger.debug("Waiting for Edge window to be created...")
                     self._edge_not_found_warning_shown = True
-                else:
-                    logger.debug("Edge window not found for side panel positioning (waiting)")
+                    self._edge_wait_count = 0
+                self._edge_wait_count = getattr(self, '_edge_wait_count', 0) + 1
                 return False
+
+            # Log if we were waiting and finally found the windows
+            if getattr(self, '_window_wait_count', 0) > 0:
+                logger.debug("YakuLingo window found after %d attempts", self._window_wait_count)
+                self._window_wait_count = 0
+            if getattr(self, '_edge_wait_count', 0) > 0:
+                logger.debug("Edge window found after %d attempts", self._edge_wait_count)
+                self._edge_wait_count = 0
 
             # Get YakuLingo window rect
             class RECT(ctypes.Structure):

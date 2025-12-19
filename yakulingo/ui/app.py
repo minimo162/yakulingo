@@ -3946,9 +3946,12 @@ def _check_native_mode_and_get_webview(native_requested: bool) -> tuple[bool, "M
         )
         return (False, None)
 
+    print("[DEBUG] _check_native_mode_and_get_webview: about to import webview", flush=True)
     try:
         import webview  # type: ignore
+        print("[DEBUG] _check_native_mode_and_get_webview: webview imported", flush=True)
     except Exception as e:  # pragma: no cover - defensive import guard
+        print(f"[DEBUG] _check_native_mode_and_get_webview: webview import failed: {e}", flush=True)
         logger.warning(
             "Native mode requested but pywebview is unavailable: %s; starting in browser mode.", e
         )
@@ -3957,9 +3960,12 @@ def _check_native_mode_and_get_webview(native_requested: bool) -> tuple[bool, "M
     # pywebview resolves the available GUI backend lazily when `initialize()` is called.
     # Triggering the initialization here prevents false negatives where `webview.guilib`
     # remains ``None`` prior to the first window creation (notably on Windows).
+    print("[DEBUG] _check_native_mode_and_get_webview: about to call webview.initialize()", flush=True)
     try:
         backend = getattr(webview, 'guilib', None) or webview.initialize()
+        print(f"[DEBUG] _check_native_mode_and_get_webview: initialize done, backend={backend}", flush=True)
     except Exception as e:  # pragma: no cover - defensive import guard
+        print(f"[DEBUG] _check_native_mode_and_get_webview: initialize failed: {e}", flush=True)
         logger.warning(
             "Native mode requested but pywebview could not initialize a GUI backend: %s; "
             "starting in browser mode instead.",
@@ -4099,26 +4105,35 @@ def run_app(
     logger.info("[TIMING] NiceGUI import total: %.2fs", time.perf_counter() - _t_nicegui_import)
 
     # Validate NiceGUI version after import
+    print("[DEBUG] About to call _ensure_nicegui_version()", flush=True)
     _ensure_nicegui_version()
+    print("[DEBUG] _ensure_nicegui_version() completed", flush=True)
 
     # Set Windows AppUserModelID for correct taskbar icon
     # Without this, Windows uses the default Python icon instead of YakuLingo icon
     if sys.platform == 'win32':
+        print("[DEBUG] About to set AppUserModelID", flush=True)
         try:
             import ctypes
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('YakuLingo.App')
+            print("[DEBUG] AppUserModelID set successfully", flush=True)
         except Exception as e:
+            print(f"[DEBUG] Failed to set AppUserModelID: {e}", flush=True)
             logger.debug("Failed to set AppUserModelID: %s", e)
 
+    print("[DEBUG] About to call create_app()", flush=True)
     _t0 = time.perf_counter()  # Start timing for total run_app duration
     _t1 = time.perf_counter()
     yakulingo_app = create_app()
+    print("[DEBUG] create_app() completed", flush=True)
     logger.info("[TIMING] create_app: %.2fs", time.perf_counter() - _t1)
 
     # Detect optimal window size BEFORE ui.run() to avoid resize flicker
     # Fallback to browser mode when pywebview cannot create a native window (e.g., headless Linux)
+    print("[DEBUG] About to call _check_native_mode_and_get_webview()", flush=True)
     _t2 = time.perf_counter()
     native, webview_module = _check_native_mode_and_get_webview(native)
+    print(f"[DEBUG] _check_native_mode_and_get_webview() completed, native={native}", flush=True)
     logger.info("Native mode enabled: %s", native)
     if native:
         # Pass pre-initialized webview module to avoid second initialization

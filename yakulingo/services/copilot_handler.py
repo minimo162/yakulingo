@@ -458,7 +458,8 @@ class PlaywrightThreadExecutor:
 _playwright_executor = PlaywrightThreadExecutor()
 
 # Early Playwright initialization cache
-# This allows Playwright to be initialized in parallel with NiceGUI import
+# Playwright is initialized before NiceGUI import to avoid I/O contention on Windows.
+# Previously parallel execution caused ~16s startup; sequential execution is ~11s.
 _pre_initialized_playwright = None
 _pre_init_lock = threading.Lock()
 _pre_init_event = threading.Event()
@@ -578,13 +579,15 @@ def _pre_init_thread_wrapper():
 def pre_initialize_playwright():
     """Start Playwright initialization early, before NiceGUI import.
 
-    This function starts Playwright initialization in a background thread
-    so it can run in parallel with NiceGUI import (~2s savings).
+    This function starts Playwright initialization in a background thread.
+    Use wait_for_playwright_init() to block until initialization completes.
+
+    IMPORTANT: On Windows, running Playwright init in parallel with NiceGUI import
+    causes I/O contention (antivirus real-time scanning), resulting in slower startup.
+    Use sequential execution: call this, then wait_for_playwright_init(), then import NiceGUI.
 
     The initialization runs in the PlaywrightThreadExecutor's worker thread
     to satisfy Playwright's greenlet constraint (must use same thread for all ops).
-
-    Call this BEFORE importing NiceGUI for best effect.
     """
     global _pre_init_error
     with _pre_init_lock:
@@ -664,6 +667,33 @@ def clear_pre_initialized_playwright():
         _pre_init_thread_id = None  # Also clear thread ID
         _pre_init_event.clear()  # Allow re-initialization
         logger.debug("Pre-initialized Playwright cleared (including thread ID)")
+
+
+def wait_for_playwright_init(timeout: float = 30.0) -> bool:
+    """Wait for Playwright pre-initialization to complete.
+
+    This function blocks until Playwright initialization is complete or timeout.
+    Use this to ensure Playwright init finishes before other I/O-heavy operations
+    (e.g., NiceGUI import) to avoid I/O contention.
+
+    Args:
+        timeout: Maximum time to wait in seconds
+
+    Returns:
+        True if initialization completed (success or failure), False if timeout
+    """
+    import time as _time
+    _t_start = _time.perf_counter()
+    result = _pre_init_event.wait(timeout=timeout)
+    elapsed = _time.perf_counter() - _t_start
+    if result:
+        if _pre_init_error is not None:
+            logger.debug("[TIMING] Playwright init wait completed (with error): %.2fs", elapsed)
+        else:
+            logger.debug("[TIMING] Playwright init wait completed (success): %.2fs", elapsed)
+    else:
+        logger.warning("[TIMING] Playwright init wait timed out after %.2fs", elapsed)
+    return result
 
 
 class CopilotHandler:
@@ -891,6 +921,11 @@ class CopilotHandler:
         self._last_sync_hwnd: int = 0
         # Minimum interval between sync operations (seconds)
         self._SYNC_DEBOUNCE_INTERVAL = 0.3
+        # Warning frequency control: only show "window not found" warning once
+        # During startup, _position_edge_as_side_panel() may be called many times
+        # before YakuLingo window is created. Show WARNING first time, DEBUG after.
+        self._window_not_found_warning_shown = False
+        self._edge_not_found_warning_shown = False
 
     @property
     def is_connected(self) -> bool:
@@ -2886,10 +2921,20 @@ class CopilotHandler:
             edge_hwnd = self._find_edge_window_handle(page_title)
 
             if not yakulingo_hwnd:
-                logger.warning("YakuLingo window not found for side panel positioning")
+                # Only log WARNING for first occurrence, DEBUG for subsequent calls
+                # This prevents log spam during startup when window isn't created yet
+                if not self._window_not_found_warning_shown:
+                    logger.warning("YakuLingo window not found for side panel positioning")
+                    self._window_not_found_warning_shown = True
+                else:
+                    logger.debug("YakuLingo window not found for side panel positioning (waiting)")
                 return False
             if not edge_hwnd:
-                logger.warning("Edge window not found for side panel positioning")
+                if not self._edge_not_found_warning_shown:
+                    logger.warning("Edge window not found for side panel positioning")
+                    self._edge_not_found_warning_shown = True
+                else:
+                    logger.debug("Edge window not found for side panel positioning (waiting)")
                 return False
 
             # Get YakuLingo window rect

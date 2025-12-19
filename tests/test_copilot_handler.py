@@ -1459,13 +1459,14 @@ class TestGptModeSwitch:
     def test_ensure_gpt_mode_completes_when_already_correct(self, handler):
         """_ensure_gpt_mode completes without switching when already in GPT-5.2 Think Deeper mode"""
         mock_page = MagicMock()
-        # First evaluate call returns current mode text
+        # First evaluate call returns current mode text (quick check succeeds)
         mock_page.evaluate.return_value = "GPT-5.2 Think Deeper"
         handler._page = mock_page
 
         handler._ensure_gpt_mode_impl()
-        # Should call wait_for_selector and one evaluate for mode check
-        mock_page.wait_for_selector.assert_called_once()
+        # OPTIMIZED: When quick check succeeds (evaluate returns value),
+        # wait_for_selector is skipped for speed
+        mock_page.wait_for_selector.assert_not_called()
         # Should only call evaluate once (for mode check), not for switching
         assert mock_page.evaluate.call_count == 1
 
@@ -1489,8 +1490,9 @@ class TestGptModeSwitch:
 
         handler._ensure_gpt_mode_impl()
 
-        # Should call wait_for_selector once, then evaluate twice (mode check + switch)
-        mock_page.wait_for_selector.assert_called_once()
+        # OPTIMIZED: When quick check succeeds (evaluate returns value),
+        # wait_for_selector is skipped. Then evaluate is called again to switch.
+        mock_page.wait_for_selector.assert_not_called()
         assert mock_page.evaluate.call_count == 2
 
     def test_ensure_gpt_mode_attempts_switch_when_different(self, handler):
@@ -1513,8 +1515,9 @@ class TestGptModeSwitch:
 
         handler._ensure_gpt_mode_impl()
 
-        # Verify that wait_for_selector and evaluate were called
-        mock_page.wait_for_selector.assert_called_once()
+        # OPTIMIZED: When quick check succeeds (evaluate returns value),
+        # wait_for_selector is skipped. Then evaluate is called again to switch.
+        mock_page.wait_for_selector.assert_not_called()
         # Two evaluate calls: 1. mode check, 2. menu navigation + switch
         assert mock_page.evaluate.call_count == 2
 
@@ -1522,6 +1525,8 @@ class TestGptModeSwitch:
         """_ensure_gpt_mode completes without error when button not found (timeout)"""
         mock_page = MagicMock()
 
+        # Quick check returns None (button not visible), triggering wait_for_selector
+        mock_page.evaluate.return_value = None
         # Simulate wait_for_selector timeout (button not found)
         from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
         mock_page.wait_for_selector.side_effect = PlaywrightTimeoutError("Timeout")
@@ -1553,6 +1558,8 @@ class TestGptModeSwitch:
         """_ensure_gpt_mode completes without error when wait_for_selector times out"""
         mock_page = MagicMock()
 
+        # Quick check returns None (button not visible), triggering wait_for_selector
+        mock_page.evaluate.return_value = None
         # Simulate wait_for_selector timeout (button never appears)
         from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
         mock_page.wait_for_selector.side_effect = PlaywrightTimeoutError("Timeout")

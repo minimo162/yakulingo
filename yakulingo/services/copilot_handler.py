@@ -903,8 +903,8 @@ class CopilotHandler:
     # OPTIMIZED: Reduced menu wait to minimum (just enough for React to update)
     GPT_MODE_MENU_WAIT = 0.05  # Wait for menu to open/close (50ms)
     # OPTIMIZED: Use wait_for_selector instead of polling for faster detection
-    # Keep 8s timeout to handle slow network/rendering conditions
-    GPT_MODE_BUTTON_WAIT_MS = 8000  # Total timeout for button appearance (8s)
+    # Reduced from 8s to 5s - if button isn't visible by then, page likely has issues
+    GPT_MODE_BUTTON_WAIT_MS = 5000  # Total timeout for button appearance (5s)
 
     # Dynamic polling intervals for faster response detection
     # OPTIMIZED: Reduced intervals for quicker response detection (0.15s -> 0.1s)
@@ -985,6 +985,9 @@ class CopilotHandler:
         self._edge_not_found_warning_shown = False
         self._edge_window_log_shown = False
         self._window_positioning_deferred = False  # True if positioning was deferred during connect
+        # GPT mode flag: only set mode once per session to respect user's manual changes
+        # Set to True after successful mode switch in _ensure_gpt_mode_impl
+        self._gpt_mode_set = False
 
     @property
     def is_connected(self) -> bool:
@@ -1950,6 +1953,11 @@ class CopilotHandler:
         This method delegates to the Playwright thread executor to ensure
         all Playwright operations run in the correct thread.
         """
+        # Skip if already set (early connection already did this)
+        if self._gpt_mode_set:
+            logger.debug("Skipping ensure_gpt_mode: already set in this session")
+            return
+
         if not self._page:
             logger.debug("Skipping ensure_gpt_mode: no page available")
             return
@@ -2019,6 +2027,7 @@ class CopilotHandler:
             # Check if already in target mode
             if self.GPT_MODE_TARGET in current_mode:
                 logger.debug("GPT mode is already '%s'", current_mode)
+                self._gpt_mode_set = True
                 return
 
             # Need to switch mode
@@ -2104,6 +2113,7 @@ class CopilotHandler:
             if switch_result.get('success'):
                 logger.info("Successfully switched GPT mode to '%s' (%.2fs)",
                            switch_result.get('newMode', self.GPT_MODE_TARGET), elapsed)
+                self._gpt_mode_set = True
             elif switch_result.get('error') == 'target_not_found':
                 logger.warning("Target mode '%s' not found. Available: %s",
                               self.GPT_MODE_TARGET, switch_result.get('available', []))

@@ -5267,7 +5267,7 @@ class CopilotHandler:
                             except Exception as scroll_err:
                                 logger.debug("[SEND] Button scroll failed: %s", scroll_err)
 
-                            time.sleep(0.1)  # Wait for UI to settle after scroll (restored: Enter key needs React UI to be ready)
+                            time.sleep(0.15)  # Wait for UI to settle after scroll (increased: Enter key needs React UI to be ready after file attachment)
 
                             # Detailed debug: Check UI readiness before sending
                             pre_send_state = self._page.evaluate('''() => {

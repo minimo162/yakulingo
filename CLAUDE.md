@@ -1186,15 +1186,15 @@ wait_time = backoff_time + jitter
 
 | タイミング | 値 | 目的 | 備考 |
 |-----------|-----|------|------|
-| Button scroll後 | **0.1s** | React UIの準備待ち | ⚠️ 必須。0.03sに削減するとEnterキーが効かなくなる |
+| Button scroll後 | **0.15s** | React UIの準備待ち | ⚠️ 必須。ファイル添付後はReact UIの準備に時間がかかる |
 | JS key events後 | 0.02s | 状態ポーリング | ポーリング用なので短くてOK |
 | Playwright Enter後 | 0.02s | 状態ポーリング | 同上 |
 | SEND_WARMUP後 | 0.02s | 初期スクロール後 | 送信直前ではないので短くてOK |
 
-**重要**: Button scroll後の0.1秒待機は、Enterキー送信が機能するために必須です。
+**重要**: Button scroll後の0.15秒待機は、Enterキー送信が機能するために必須です。
 scrollIntoView後にReact UIが準備完了するまでの時間が必要であり、
-この待機を削減するとEnterキーが無視され、常にJSクリック（Attempt 2）へ
-フォールバックします。
+特にファイル添付後はUIの状態更新に時間がかかるため、この待機を削減すると
+Enterキーが無視され、常にJSクリック（Attempt 2）へフォールバックします。
 
 ### Auth Dialog Detection
 
@@ -2333,6 +2333,12 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Recent Development Focus
 
 Based on recent commits:
+- **Submit Button Timing Fix (2024-12)**:
+  - **Problem**: ファイル添付後にEnterキー送信（Attempt 1）が失敗し、JS click（Attempt 2）へフォールバックして約2秒の遅延が発生
+  - **Root cause**: Button scroll後の待機時間（0.1秒）ではReact UIの準備が完了しない。ファイル添付後はUIの状態更新に時間がかかる
+  - **Solution**: Button scroll後の待機時間を0.1秒→0.15秒に増加
+  - **Affected files**: `copilot_handler.py`, `CLAUDE.md`
+  - **Log evidence**: `keydown`イベントが`dispatched: False`、`defaultPrevented: True`となり、送信処理が実行されなかった
 - **NiceGUI Native Mode Window Args Fix (2024-12)**:
   - **Problem**: NiceGUI の native モードでは `window_args`（`hidden`, `x`, `y` を含む）が子プロセスに渡されず、ウィンドウが一瞬デフォルト位置に表示されてから正しい位置に移動する（ちらつき）
   - **Root cause**: `native_mode.activate()` が `mp.Process` で `_open_window` を呼び出す際、`window_args` を引数として渡していない。子プロセス内で `core.app.native.window_args` を参照しても空の辞書になる
@@ -3083,7 +3089,7 @@ Based on recent commits:
   - **Playwright fill() maintained**: React contenteditable要素との互換性のためfill()メソッドを維持（JS直接設定は改行が消える問題あり）
   - **Elapsed time measurement fix**: `start_time`を`await asyncio.sleep(0)`の後に移動（ユーザーがローディングUIを見た時点から計測開始）
   - **Detailed timing logs**: `[TIMING]`プレフィックスで翻訳処理の各ステップの時間を出力（デバッグ用）
-  - **_send_message sleep optimization**: Button scroll後は0.1秒を維持（Enterキー送信に必須、詳細は「Send Message Timing」セクション参照）、その他のポーリング用sleepは0.02秒に短縮
+  - **_send_message sleep optimization**: Button scroll後は0.15秒を維持（Enterキー送信に必須、詳細は「Send Message Timing」セクション参照）、その他のポーリング用sleepは0.02秒に短縮
 - **Time Measurement Standardization (2024-12)**:
   - **time.monotonic() unification**: 経過時間計測を`time.time()`から`time.monotonic()`に統一
   - **Rationale**: `time.time()`はNTP同期やシステム時刻変更の影響を受けるため、経過時間計測には単調増加時計が適切

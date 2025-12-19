@@ -458,12 +458,55 @@ class PlaywrightThreadExecutor:
 _playwright_executor = PlaywrightThreadExecutor()
 
 # Early Playwright initialization cache
-# This allows Playwright to be initialized in parallel with NiceGUI import
+# Playwright is initialized before NiceGUI import to avoid I/O contention on Windows.
+# Previously parallel execution caused ~16s startup; sequential execution is ~11s.
 _pre_initialized_playwright = None
 _pre_init_lock = threading.Lock()
 _pre_init_event = threading.Event()
 _pre_init_error = None
 _pre_init_thread_id = None  # Track which thread initialized Playwright
+
+
+def _log_playwright_init_details(phase: str) -> None:
+    """Log detailed system information during Playwright initialization.
+
+    Args:
+        phase: Current phase name (e.g., "before_sync", "after_sync", "after_start")
+    """
+    try:
+        import psutil
+        # CPU and memory
+        cpu_percent = psutil.cpu_percent(interval=0.1)
+        memory = psutil.virtual_memory()
+        logger.debug(
+            "[PLAYWRIGHT_INIT] %s: CPU=%.1f%%, Memory=%.1f%% (available=%.1fGB)",
+            phase, cpu_percent, memory.percent, memory.available / (1024**3)
+        )
+
+        # Check for existing Playwright/Node.js processes
+        playwright_procs = []
+        node_procs = []
+        for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+            try:
+                name = proc.info['name'].lower() if proc.info['name'] else ''
+                cmdline = ' '.join(proc.info['cmdline'] or []).lower()
+                if 'playwright' in name or 'playwright' in cmdline:
+                    playwright_procs.append(f"{proc.info['name']}(pid={proc.info['pid']})")
+                elif 'node' in name:
+                    node_procs.append(f"{proc.info['name']}(pid={proc.info['pid']})")
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+
+        if playwright_procs:
+            logger.debug("[PLAYWRIGHT_INIT] %s: Existing Playwright processes: %s",
+                        phase, ', '.join(playwright_procs[:5]))
+        if node_procs:
+            logger.debug("[PLAYWRIGHT_INIT] %s: Existing Node.js processes: %d found",
+                        phase, len(node_procs))
+    except ImportError:
+        logger.debug("[PLAYWRIGHT_INIT] %s: psutil not available for detailed logging", phase)
+    except Exception as e:
+        logger.debug("[PLAYWRIGHT_INIT] %s: Failed to get system info: %s", phase, e)
 
 
 def _pre_init_playwright_impl():
@@ -474,14 +517,45 @@ def _pre_init_playwright_impl():
         _t_start = _time.perf_counter()
         current_thread_id = threading.current_thread().ident
         logger.debug("[THREAD] pre_init_playwright_impl running in thread %s", current_thread_id)
+
+        # Log system state before initialization
+        _log_playwright_init_details("before_init")
+
         _, sync_playwright = _get_playwright()
         logger.debug("[TIMING] pre_init _get_playwright(): %.2fs", _time.perf_counter() - _t_start)
-        _t_init = _time.perf_counter()
-        _pre_initialized_playwright = sync_playwright().start()
+
+        # Log before sync_playwright() call
+        _log_playwright_init_details("before_sync")
+        _t_sync = _time.perf_counter()
+
+        # sync_playwright() creates the Playwright context manager
+        pw_context = sync_playwright()
+        logger.debug("[TIMING] pre_init sync_playwright(): %.2fs", _time.perf_counter() - _t_sync)
+
+        # Log before start() call
+        _log_playwright_init_details("before_start")
+        _t_start_call = _time.perf_counter()
+
+        # start() actually launches the Playwright server (Node.js process)
+        _pre_initialized_playwright = pw_context.start()
+        logger.debug("[TIMING] pre_init .start(): %.2fs", _time.perf_counter() - _t_start_call)
+
+        # Log after start() completes
+        _log_playwright_init_details("after_start")
+
         _pre_init_thread_id = current_thread_id  # Record thread ID for validation
-        logger.debug("[TIMING] pre_init sync_playwright().start(): %.2fs", _time.perf_counter() - _t_init)
+        total_time = _time.perf_counter() - _t_start
         logger.info("[TIMING] Playwright pre-initialization completed in thread %s: %.2fs",
-                    current_thread_id, _time.perf_counter() - _t_start)
+                    current_thread_id, total_time)
+
+        # Warn if initialization took too long
+        if total_time > 5.0:
+            logger.warning(
+                "[PLAYWRIGHT_INIT] Slow initialization detected (%.2fs). "
+                "Consider checking antivirus exclusions for Playwright directories.",
+                total_time
+            )
+
         return True
     except Exception as e:
         logger.warning("Playwright pre-initialization failed: %s", e)
@@ -505,13 +579,15 @@ def _pre_init_thread_wrapper():
 def pre_initialize_playwright():
     """Start Playwright initialization early, before NiceGUI import.
 
-    This function starts Playwright initialization in a background thread
-    so it can run in parallel with NiceGUI import (~2s savings).
+    This function starts Playwright initialization in a background thread.
+    Use wait_for_playwright_init() to block until initialization completes.
+
+    IMPORTANT: On Windows, running Playwright init in parallel with NiceGUI import
+    causes I/O contention (antivirus real-time scanning), resulting in slower startup.
+    Use sequential execution: call this, then wait_for_playwright_init(), then import NiceGUI.
 
     The initialization runs in the PlaywrightThreadExecutor's worker thread
     to satisfy Playwright's greenlet constraint (must use same thread for all ops).
-
-    Call this BEFORE importing NiceGUI for best effect.
     """
     global _pre_init_error
     with _pre_init_lock:
@@ -591,6 +667,33 @@ def clear_pre_initialized_playwright():
         _pre_init_thread_id = None  # Also clear thread ID
         _pre_init_event.clear()  # Allow re-initialization
         logger.debug("Pre-initialized Playwright cleared (including thread ID)")
+
+
+def wait_for_playwright_init(timeout: float = 30.0) -> bool:
+    """Wait for Playwright pre-initialization to complete.
+
+    This function blocks until Playwright initialization is complete or timeout.
+    Use this to ensure Playwright init finishes before other I/O-heavy operations
+    (e.g., NiceGUI import) to avoid I/O contention.
+
+    Args:
+        timeout: Maximum time to wait in seconds
+
+    Returns:
+        True if initialization completed (success or failure), False if timeout
+    """
+    import time as _time
+    _t_start = _time.perf_counter()
+    result = _pre_init_event.wait(timeout=timeout)
+    elapsed = _time.perf_counter() - _t_start
+    if result:
+        if _pre_init_error is not None:
+            logger.debug("[TIMING] Playwright init wait completed (with error): %.2fs", elapsed)
+        else:
+            logger.debug("[TIMING] Playwright init wait completed (success): %.2fs", elapsed)
+    else:
+        logger.warning("[TIMING] Playwright init wait timed out after %.2fs", elapsed)
+    return result
 
 
 class CopilotHandler:
@@ -818,6 +921,11 @@ class CopilotHandler:
         self._last_sync_hwnd: int = 0
         # Minimum interval between sync operations (seconds)
         self._SYNC_DEBOUNCE_INTERVAL = 0.3
+        # Warning frequency control: only show "window not found" warning once
+        # During startup, _position_edge_as_side_panel() may be called many times
+        # before YakuLingo window is created. Show WARNING first time, DEBUG after.
+        self._window_not_found_warning_shown = False
+        self._edge_not_found_warning_shown = False
 
     @property
     def is_connected(self) -> bool:
@@ -2813,10 +2921,20 @@ class CopilotHandler:
             edge_hwnd = self._find_edge_window_handle(page_title)
 
             if not yakulingo_hwnd:
-                logger.warning("YakuLingo window not found for side panel positioning")
+                # Only log WARNING for first occurrence, DEBUG for subsequent calls
+                # This prevents log spam during startup when window isn't created yet
+                if not self._window_not_found_warning_shown:
+                    logger.warning("YakuLingo window not found for side panel positioning")
+                    self._window_not_found_warning_shown = True
+                else:
+                    logger.debug("YakuLingo window not found for side panel positioning (waiting)")
                 return False
             if not edge_hwnd:
-                logger.warning("Edge window not found for side panel positioning")
+                if not self._edge_not_found_warning_shown:
+                    logger.warning("Edge window not found for side panel positioning")
+                    self._edge_not_found_warning_shown = True
+                else:
+                    logger.debug("Edge window not found for side panel positioning (waiting)")
                 return False
 
             # Get YakuLingo window rect

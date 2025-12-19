@@ -6,9 +6,16 @@ Application settings management for YakuLingo.
 - settings.template.json: デフォルト値（開発者が管理、アップデートで上書き）
 - user_settings.json: ユーザーが変更した設定のみ保存
 - 起動時にtemplateを読み込み、user_settingsで上書き
+
+キャッシュ機構:
+- _settings_cache: パスをキーとしてAppSettingsインスタンスをキャッシュ
+- load()はキャッシュを優先し、ファイルI/Oを削減
+- save()時にキャッシュを更新
+- invalidate_cache()で明示的にキャッシュをクリア可能
 """
 
 import logging
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -16,6 +23,11 @@ import json
 
 # Module logger
 logger = logging.getLogger(__name__)
+
+# Settings cache: path -> (mtime_template, mtime_user, AppSettings)
+# mtime is used to detect file changes and invalidate cache
+_settings_cache: dict[str, tuple[float, float, "AppSettings"]] = {}
+_settings_cache_lock = threading.Lock()
 
 # ユーザーが変更可能な設定項目（user_settings.jsonに保存される）
 USER_SETTINGS_KEYS = {
@@ -102,21 +114,42 @@ class AppSettings:
     last_update_check: Optional[str] = None     # 最後のチェック日時（ISO形式）
 
     @classmethod
-    def load(cls, path: Path) -> "AppSettings":
+    def load(cls, path: Path, use_cache: bool = True) -> "AppSettings":
         """Load settings from template and user settings files.
 
         分離方式:
         1. settings.template.json からデフォルト値を読み込み
         2. user_settings.json でユーザー設定を上書き
 
+        キャッシュ機構:
+        - use_cache=True（デフォルト）の場合、キャッシュを優先
+        - ファイルの更新時刻が変わった場合は自動的にリロード
+        - use_cache=Falseで強制リロード
+
         Args:
             path: 設定ファイルのパス（config/settings.json または config/settings.template.json）
                   実際にはtemplateとuser_settingsを探すためのベースパスとして使用
+            use_cache: キャッシュを使用するかどうか（デフォルト: True）
         """
         # Determine base config directory
         config_dir = path.parent
         template_path = config_dir / "settings.template.json"
         user_settings_path = config_dir / "user_settings.json"
+
+        cache_key = str(path.resolve())
+
+        # Get current file modification times
+        template_mtime = template_path.stat().st_mtime if template_path.exists() else 0.0
+        user_mtime = user_settings_path.stat().st_mtime if user_settings_path.exists() else 0.0
+
+        # Check cache
+        if use_cache:
+            with _settings_cache_lock:
+                if cache_key in _settings_cache:
+                    cached_template_mtime, cached_user_mtime, cached_settings = _settings_cache[cache_key]
+                    if cached_template_mtime == template_mtime and cached_user_mtime == user_mtime:
+                        logger.debug("Using cached settings for: %s", path)
+                        return cached_settings
 
         # Start with defaults
         data = {}
@@ -165,6 +198,11 @@ class AppSettings:
 
         settings = cls(**filtered_data)
         settings._validate()
+
+        # Update cache
+        with _settings_cache_lock:
+            _settings_cache[cache_key] = (template_mtime, user_mtime, settings)
+
         return settings
 
     def _validate(self) -> None:
@@ -206,6 +244,7 @@ class AppSettings:
 
         ユーザーが変更した設定のみをuser_settings.jsonに保存。
         settings.template.jsonは変更しない。
+        保存後、キャッシュを更新する。
 
         Args:
             path: 設定ファイルのパス（config/settings.json）
@@ -213,6 +252,7 @@ class AppSettings:
         """
         config_dir = path.parent
         user_settings_path = config_dir / "user_settings.json"
+        template_path = config_dir / "settings.template.json"
 
         config_dir.mkdir(parents=True, exist_ok=True)
 
@@ -226,6 +266,13 @@ class AppSettings:
             json.dump(data, f, indent=2, ensure_ascii=False)
 
         logger.debug("Saved user settings to: %s", user_settings_path)
+
+        # Update cache with new modification times
+        cache_key = str(path.resolve())
+        template_mtime = template_path.stat().st_mtime if template_path.exists() else 0.0
+        user_mtime = user_settings_path.stat().st_mtime if user_settings_path.exists() else 0.0
+        with _settings_cache_lock:
+            _settings_cache[cache_key] = (template_mtime, user_mtime, self)
 
     def get_reference_file_paths(self, base_dir: Path) -> list[Path]:
         """
@@ -295,3 +342,21 @@ def get_default_settings_path() -> Path:
 def get_default_prompts_dir() -> Path:
     """Get default prompts directory"""
     return Path(__file__).parent.parent.parent / "prompts"
+
+
+def invalidate_settings_cache(path: Optional[Path] = None) -> None:
+    """Invalidate settings cache.
+
+    Args:
+        path: 特定のパスのキャッシュのみクリアする場合に指定。
+              Noneの場合は全キャッシュをクリア。
+    """
+    with _settings_cache_lock:
+        if path is None:
+            _settings_cache.clear()
+            logger.debug("Cleared all settings cache")
+        else:
+            cache_key = str(path.resolve())
+            if cache_key in _settings_cache:
+                del _settings_cache[cache_key]
+                logger.debug("Cleared settings cache for: %s", path)

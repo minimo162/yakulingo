@@ -706,15 +706,30 @@ as the worker thread differs from the Playwright initialization thread.
 # yakulingo/services/copilot_handler.py
 _pre_initialized_playwright: Playwright | None = None
 
+def pre_initialize_playwright() -> None:
+    """Start Playwright initialization in background thread."""
+
+def wait_for_playwright_init(timeout: float = 30.0) -> bool:
+    """Wait for Playwright initialization to complete. Returns True if completed."""
+
 def get_pre_initialized_playwright() -> Playwright | None:
     """Return pre-initialized Playwright instance if available."""
-    return _pre_initialized_playwright
 
 def clear_pre_initialized_playwright() -> None:
     """Clear the pre-initialized Playwright instance after it has been stopped."""
-    global _pre_initialized_playwright
-    _pre_initialized_playwright = None
 ```
+
+**起動シーケンス（直列実行）:**
+```python
+# app.py の run_app()
+pre_initialize_playwright()           # バックグラウンドで開始
+wait_for_playwright_init(timeout=30)  # 完了を待機
+import nicegui                        # その後NiceGUIをインポート
+```
+
+**I/O競合回避**: WindowsではPlaywright初期化とNiceGUIインポートを並列実行すると、
+アンチウイルスのリアルタイムスキャンによりI/O競合が発生し起動が遅くなる（16秒 vs 11秒）。
+直列実行によりこの問題を回避。
 
 **重要**: `disconnect()`や`_cleanup_on_error()`で`self._playwright.stop()`を呼び出した後は、
 必ず`clear_pre_initialized_playwright()`を呼び出すこと。停止済みのPlaywrightインスタンスを
@@ -2662,6 +2677,9 @@ Based on recent commits:
 - **Startup Performance**:
   - **Loading screen**: Shows spinner immediately via `await client.connected()` for faster perceived startup
   - **Import optimization**: NiceGUI import moved inside `main()` to prevent double initialization in native mode (cuts startup time in half)
+  - **Sequential Playwright init**: Playwright初期化完了を待ってからNiceGUIをインポート（I/O競合回避、~5秒高速化）
+  - **Settings cache**: `AppSettings.load()`はファイル更新時刻でキャッシュを管理し、重複読み込みを削減
+  - **Warning frequency reduction**: サイドパネル配置の警告は最初の1回のみWARNINGレベルで出力
   - **Lazy imports**: Heavy modules (openpyxl, python-docx, Playwright) deferred until first use via `__getattr__`
   - **WebSocket optimization**: `reconnect_timeout=30.0` in `ui.run()` (up from default 3s) for stable connections
   - **Non-blocking translation**: All translation methods use `asyncio.to_thread()` to avoid blocking NiceGUI event loop

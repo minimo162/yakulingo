@@ -659,7 +659,7 @@ class AutoUpdater:
         "uv.toml",          # UV設定
         "YakuLingo.exe",    # 起動ランチャー
         "README.md",        # ドキュメント
-        # Note: glossary.csv はマージ処理で対応（merge_glossary()）
+        # Note: glossary.csv, glossary_old.csv は backup_and_update_glossary() で対応
         # Note: config/settings.template.json はアップデートで上書き（merge_settings()）
         # Note: config/user_settings.json はユーザー設定（ソースに含まれないため保持）
     ]

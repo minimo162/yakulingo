@@ -1359,6 +1359,9 @@ class YakuLingoApp:
                         with self._client:
                             self._refresh_status()
 
+                    # Reset GPT mode flag on re-login (session was reset, mode setting is lost)
+                    # This ensures ensure_gpt_mode() will actually run
+                    self.copilot._gpt_mode_set = False
                     # Set GPT mode in background (non-blocking, don't delay "Ready" notification)
                     asyncio.create_task(asyncio.to_thread(self.copilot.ensure_gpt_mode))
 

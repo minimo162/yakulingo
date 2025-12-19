@@ -6,6 +6,12 @@ YakuLingo - Text + File Translation Application
 Entry point for the NiceGUI-based translation application.
 """
 
+# IMPORTANT: Set proxy bypass BEFORE any imports that might cache proxy settings
+# This is critical for corporate environments where proxies intercept localhost connections
+import os
+os.environ.setdefault('NO_PROXY', 'localhost,127.0.0.1')
+os.environ.setdefault('no_proxy', 'localhost,127.0.0.1')
+
 import logging
 import sys
 from pathlib import Path

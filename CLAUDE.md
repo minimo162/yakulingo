@@ -2615,7 +2615,7 @@ Based on recent commits:
 - **Threading & Context Fixes**:
   - **Client reference**: `self._client` saved from `@ui.page` handler for async button handlers (NiceGUI's `context.client` not available in async tasks)
   - **PlaywrightThreadExecutor**: All Playwright operations wrapped in dedicated thread executor to avoid greenlet thread-switching errors
-  - **Proxy bypass**: `NO_PROXY=localhost,127.0.0.1` and `--proxy-bypass-list` for corporate environments
+  - **Proxy bypass**: `NO_PROXY=localhost,127.0.0.1` set in `app.py` before any imports (critical for corporate proxies intercepting CDP connections)
 - **Text Translation UI Unification**:
   - **Single output**: Changed from 3 translation options to 1 option with style setting
   - **Style settings**: 標準/簡潔/最簡潔 configurable via settings dialog

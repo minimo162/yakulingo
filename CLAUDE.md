@@ -2190,6 +2190,19 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Recent Development Focus
 
 Based on recent commits:
+- **Edge Startup Parallelization (2024-12)**:
+  - **Problem**: Edge起動（`subprocess.Popen`）がPlaywright初期化完了まで待機していた
+  - **Solution**: Edge起動をPlaywright初期化と並列で実行
+  - **Implementation**:
+    - `run_app()`で`pre_initialize_playwright()`直後に`start_edge()`を別スレッドで呼び出し
+    - `_connect_impl`でEdge起動済みの場合はスキップ（`_is_port_in_use()`チェック）
+    - `_early_edge_thread`で並列Edge起動を管理
+    - `_early_connect()`で`_early_edge_thread.join(timeout=20.0)`によりレースコンディション防止
+  - **Race condition prevention**: Edge起動（最大20秒）がPlaywright初期化（約10秒）より遅い場合、`connect()`もEdgeを起動しようとする可能性があるため、`connect()`呼び出し前にEdge起動スレッドの完了を待機
+  - **Timeline before**: `[Playwright init 9.66s] → [Edge起動 1.57s]`
+  - **Timeline after**: `[Playwright init] と [Edge起動] を並列実行 → [CDP接続]`
+  - **Expected improvement**: 約1.5秒の起動時間短縮
+  - **Affected files**: `yakulingo/ui/app.py`, `yakulingo/services/copilot_handler.py`
 - **GPT Mode Startup Optimization (2024-12)**:
   - **Optimization**: 早期接続スレッド内でGPTモード設定を実行（NiceGUI起動と並列）
   - **Approach**: 早期接続完了後すぐに`ensure_gpt_mode()`を呼び出し、NiceGUI起動中にGPTモード設定を完了
@@ -2801,6 +2814,7 @@ Based on recent commits:
   - **pywebview engine**: `PYWEBVIEW_GUI=edgechromium` environment variable to avoid runtime installation dialogs
   - **Multiprocessing support**: `multiprocessing.freeze_support()` for Windows/PyInstaller compatibility
   - **Early Copilot connection**: NiceGUI import前にEdge起動をバックグラウンドで開始し、NiceGUI import中にCopilotページがロード（GPTモード待ち時間 約4秒→約1秒）
+  - **Early Edge startup (parallel)**: Edge起動をPlaywright初期化と並列で実行（`_early_edge_thread`）。Edge起動（~1.5秒）はPlaywrightに依存しないため、`pre_initialize_playwright()`直後に別スレッドで開始。レースコンディション防止のため`connect()`呼び出し前に`join()`で待機
   - **Window detection optimization**: ウィンドウ検出ポーリング間隔を0.1秒→0.05秒に短縮、ログ重複排除フラグ追加
   - **uvicorn logging level**: `uvicorn_logging_level='warning'` でログ出力を削減
   - **Static CSS files**: `app.add_static_files('/static', ui_dir)` でブラウザキャッシュを活用

@@ -4102,6 +4102,7 @@ def run_app(
     # Result: GPT mode button should be ready when we need it (saving ~3-4s)
     _early_copilot = None
     _early_connect_thread = None
+    _early_edge_thread = None
 
     try:
         from yakulingo.services.copilot_handler import (
@@ -4114,11 +4115,30 @@ def run_app(
         # This allows NiceGUI import to start immediately (~15s faster startup)
         # Note: I/O contention with antivirus is handled by Edge connection waiting
 
-        # Start Edge and connect to Copilot in background thread
-        # This runs in parallel with NiceGUI import + display_settings (~3.8s)
-        # Playwright init completion is waited inside CopilotHandler.connect()
         _early_copilot = CopilotHandler()
 
+        # Start Edge in parallel with Playwright initialization (~1.5s savings)
+        # Edge startup uses subprocess.Popen, which doesn't require Playwright
+        # connect() will skip Edge startup if it's already running on the CDP port
+        def _start_edge_early():
+            try:
+                _t_edge = time.perf_counter()
+                result = _early_copilot.start_edge()
+                logger.info("[TIMING] Early Edge startup (parallel): %.2fs, success=%s",
+                           time.perf_counter() - _t_edge, result)
+            except Exception as e:
+                logger.debug("Early Edge startup failed: %s", e)
+
+        _early_edge_thread = threading.Thread(
+            target=_start_edge_early, daemon=True, name="early_edge"
+        )
+        _early_edge_thread.start()
+        logger.info("[TIMING] Started early Edge startup (parallel with Playwright init)")
+
+        # Start Copilot connection in background thread
+        # This runs in parallel with NiceGUI import + display_settings (~3.8s)
+        # Playwright init completion is waited inside CopilotHandler.connect()
+        # Edge startup is already in progress (or completed) in parallel thread
         def _early_connect():
             """Connect to Copilot in background (runs during NiceGUI import).
 
@@ -4128,13 +4148,22 @@ def run_app(
             """
             try:
                 _t_early = time.perf_counter()
+
+                # Wait for early Edge startup to complete before connecting
+                # This ensures Edge is running when connect() checks _is_port_in_use()
+                # Prevents race condition if Edge startup is slower than Playwright init
+                if _early_edge_thread is not None and _early_edge_thread.is_alive():
+                    logger.debug("Waiting for early Edge startup to complete...")
+                    _early_edge_thread.join(timeout=20.0)  # Max Edge startup time
+                    logger.debug("Early Edge startup thread completed")
+
                 # Use defer_window_positioning=True to skip waiting for YakuLingo window
                 # Window positioning will be done after YakuLingo window is created
                 result = _early_copilot.connect(
                     bring_to_foreground_on_login=False,
                     defer_window_positioning=True
                 )
-                logger.info("[TIMING] Early Edge+Copilot connect (background): %.2fs, success=%s",
+                logger.info("[TIMING] Early Copilot connect (background): %.2fs, success=%s",
                            time.perf_counter() - _t_early, result)
                 # Start GPT mode switch immediately after connection
                 # This runs during NiceGUI startup (~8s), so by the time UI is ready,
@@ -4153,7 +4182,7 @@ def run_app(
 
         _early_connect_thread = threading.Thread(target=_early_connect, daemon=True, name="early_connect")
         _early_connect_thread.start()
-        logger.info("[TIMING] Started early Edge connection (background thread)")
+        logger.info("[TIMING] Started early Copilot connection (background thread)")
     except Exception as e:
         logger.debug("Failed to start Playwright/Edge pre-initialization: %s", e)
 

@@ -1448,8 +1448,9 @@ class TestGptModeSwitch:
         # OPTIMIZED: Reduced to 50ms (just enough for React to update)
         assert handler.GPT_MODE_MENU_WAIT == 0.05
         # OPTIMIZED: Use wait_for_selector instead of polling for faster detection
+        # Reduced from 8s to 5s for faster fallback
         assert hasattr(handler, 'GPT_MODE_BUTTON_WAIT_MS')
-        assert handler.GPT_MODE_BUTTON_WAIT_MS == 8000  # 8s total timeout (handles slow network)
+        assert handler.GPT_MODE_BUTTON_WAIT_MS == 5000  # 5s total timeout
 
     def test_ensure_gpt_mode_completes_when_no_page(self, handler):
         """_ensure_gpt_mode completes without error when no page"""
@@ -1614,3 +1615,47 @@ class TestGptModeSwitch:
             handler.ensure_gpt_mode()
 
         mock_executor.execute.assert_not_called()
+
+    def test_ensure_gpt_mode_skips_when_already_set(self, handler):
+        """ensure_gpt_mode skips execution when _gpt_mode_set is True"""
+        mock_page = MagicMock()
+        handler._page = mock_page
+        handler._gpt_mode_set = True  # Already set by early connection
+
+        with patch('yakulingo.services.copilot_handler._playwright_executor') as mock_executor:
+            handler.ensure_gpt_mode()
+
+        # Should not call executor because mode was already set
+        mock_executor.execute.assert_not_called()
+
+    def test_ensure_gpt_mode_sets_flag_on_success(self, handler):
+        """_ensure_gpt_mode_impl sets _gpt_mode_set flag when mode switch succeeds"""
+        mock_page = MagicMock()
+
+        evaluate_calls = [0]
+
+        def evaluate_side_effect(*args, **kwargs):
+            evaluate_calls[0] += 1
+            if evaluate_calls[0] == 1:
+                # First call: return current mode (different from target)
+                return "自動"
+            else:
+                # Second call: return switch success result
+                return {"success": True, "newMode": "GPT-5.2 Think Deeper"}
+
+        mock_page.evaluate.side_effect = evaluate_side_effect
+        handler._page = mock_page
+
+        assert handler._gpt_mode_set is False
+        handler._ensure_gpt_mode_impl()
+        assert handler._gpt_mode_set is True
+
+    def test_ensure_gpt_mode_sets_flag_when_already_correct(self, handler):
+        """_ensure_gpt_mode_impl sets _gpt_mode_set flag when already in correct mode"""
+        mock_page = MagicMock()
+        mock_page.evaluate.return_value = "GPT-5.2 Think Deeper"
+        handler._page = mock_page
+
+        assert handler._gpt_mode_set is False
+        handler._ensure_gpt_mode_impl()
+        assert handler._gpt_mode_set is True

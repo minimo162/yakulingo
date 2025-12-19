@@ -1064,6 +1064,25 @@ __version__ = _get_version()
 | エラーハンドリング | `-ErrorAction Stop`でコピー失敗を確実に検出 |
 | クリティカルファイル検出 | `app.py`, `pyproject.toml`のコピー失敗を特別にレポート |
 | フォールバック | ディレクトリ削除失敗時は`-Force`で上書きを試行 |
+| 特殊文字対応 | 環境変数経由でパスを渡し、シングルクォート等を含むパスでも正常動作 |
+
+**環境変数によるパス受け渡し:**
+
+アップデートスクリプト内のPythonコマンドでは、パスを環境変数経由で渡します。
+これにより、パスにシングルクォートやその他の特殊文字が含まれていても正常に動作します。
+
+```powershell
+# PowerShell
+$env:YAKULINGO_APP_DIR = $script:AppDir
+$env:YAKULINGO_SOURCE_DIR = $script:SourceDir
+& $pythonExe -c "import os; app_dir = Path(os.environ['YAKULINGO_APP_DIR']); ..."
+```
+
+```bash
+# bash
+YAKULINGO_APP_DIR="$APP_DIR" YAKULINGO_SOURCE_DIR="$SOURCE_DIR" \
+    "$APP_DIR/.venv/bin/python" -c "import os; app_dir = Path(os.environ['YAKULINGO_APP_DIR']); ..."
+```
 
 **プロセス待機ロジック（Windows）:**
 ```powershell
@@ -2092,6 +2111,19 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Recent Development Focus
 
 Based on recent commits:
+- **Update Script Path Escaping Fix (2024-12)**:
+  - **Problem**: パスにシングルクォートが含まれる場合、アップデートスクリプト内のPythonコマンドが構文エラーになる
+  - **Solution**: 環境変数経由でパスを渡す方式に変更
+    - PowerShell: `$env:YAKULINGO_APP_DIR` でパスを設定し、Python内で `os.environ['YAKULINGO_APP_DIR']` で取得
+    - bash: `YAKULINGO_APP_DIR="$APP_DIR"` で環境変数を設定してPythonを実行
+  - **Additional fix**: Unixスクリプトで `merge_glossary` を `backup_and_update_glossary` に変更（Windowsと統一）
+  - **Affected methods**: `_install_windows()`, `_install_unix()` in `updater.py`
+- **Updater Bug Fixes (2024-12)**:
+  - **NTLM 407 handling**: `HTTPError` 例外をキャッチして407レスポンスを正しく処理
+  - **Atomic downloads**: 一時ファイル（`.tmp`拡張子）を使用し、完了後にリネーム（部分ダウンロード残留を防止）
+  - **Path escaping**: `_escape_ps_path()` と `_escape_bash_path()` ヘルパーメソッドを追加
+  - **Cache body type safety**: キャッシュボディの型チェック（str/bytes）を追加
+  - **Memory-efficient file_hash**: チャンク単位（8192バイト）で読み込むように変更
 - **Translation Label Removal Fix (2024-12)**:
   - **Problem**: Copilotがプロンプトテンプレートの「訳文: 英語翻訳」形式に忠実に従った場合、「英語翻訳」というラベル部分が翻訳結果に含まれてしまう
   - **Solution**: 翻訳結果のパース処理でラベルを自動除去

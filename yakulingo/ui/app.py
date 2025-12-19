@@ -3863,6 +3863,9 @@ def _detect_display_settings(
 
         return ((window_width, window_height), (sidebar_width, input_panel_width, content_width))
 
+    import time as _time
+    _t_func_start = _time.perf_counter()
+
     # Default based on 1920x1080 screen
     default_window, default_panels = calculate_sizes(1920, 1080)
 
@@ -3870,14 +3873,22 @@ def _detect_display_settings(
     webview = webview_module
     if webview is None:
         try:
+            _t_import = _time.perf_counter()
             import webview as webview_import
             webview = webview_import
+            logger.debug("[DISPLAY_DETECT] import webview: %.3fs", _time.perf_counter() - _t_import)
         except ImportError:
             logger.debug("pywebview not available, using default")
             return (default_window, default_panels)
+    else:
+        logger.debug("[DISPLAY_DETECT] Using pre-initialized webview module")
 
     try:
+        # Access screens property - this may trigger pywebview initialization
+        _t_screens = _time.perf_counter()
         screens = webview.screens
+        logger.debug("[DISPLAY_DETECT] webview.screens access: %.3fs", _time.perf_counter() - _t_screens)
+
         if not screens:
             logger.debug("No screens detected via pywebview, using default")
             return (default_window, default_panels)
@@ -3904,7 +3915,9 @@ def _detect_display_settings(
         )
 
         # Calculate window and panel sizes based on logical screen resolution
+        _t_calc = _time.perf_counter()
         window_size, panel_sizes = calculate_sizes(logical_width, logical_height)
+        logger.debug("[DISPLAY_DETECT] calculate_sizes: %.3fs", _time.perf_counter() - _t_calc)
 
         logger.info(
             "Window %dx%d, sidebar %dpx, input panel %dpx, content %dpx",
@@ -3912,10 +3925,12 @@ def _detect_display_settings(
             panel_sizes[0], panel_sizes[1], panel_sizes[2]
         )
 
+        logger.debug("[DISPLAY_DETECT] Total: %.3fs", _time.perf_counter() - _t_func_start)
         return (window_size, panel_sizes)
 
     except Exception as e:
         logger.warning("Failed to detect display: %s, using default", e)
+        logger.debug("[DISPLAY_DETECT] Total (with error): %.3fs", _time.perf_counter() - _t_func_start)
         return (default_window, default_panels)
 
 

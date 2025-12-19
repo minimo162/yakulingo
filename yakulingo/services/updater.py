@@ -1151,10 +1151,10 @@ function Invoke-Update {{
     Show-Progress -Title "YakuLingo Update" -Status "Backing up user settings..." -Step "Step 2/5: Backup" -Percent 15
     Write-DebugLog "Backing up user settings..."
 
-    $settingsBackup = Join-Path $env:TEMP "yakulingo_settings_backup.json"
-    if (Test-Path "config\\settings.json") {{
-        Copy-Item -Path "config\\settings.json" -Destination $settingsBackup -Force
-        Write-DebugLog "Settings backed up to: $settingsBackup"
+    $settingsBackup = Join-Path $env:TEMP "yakulingo_user_settings_backup.json"
+    if (Test-Path "config\\user_settings.json") {{
+        Copy-Item -Path "config\\user_settings.json" -Destination $settingsBackup -Force
+        Write-DebugLog "User settings backed up to: $settingsBackup"
     }}
 
     # Step 3: Delete and copy source code directories
@@ -1215,7 +1215,7 @@ function Invoke-Update {{
         # Restore backup if copy failed
         if (Test-Path $settingsBackup) {{
             if (-not (Test-Path "config")) {{ New-Item -ItemType Directory -Path "config" -Force | Out-Null }}
-            Copy-Item -Path $settingsBackup -Destination "config\\settings.json" -Force
+            Copy-Item -Path $settingsBackup -Destination "config\\user_settings.json" -Force
         }}
         throw "No source directories were copied!`n`nPlease check if the update package is valid."
     }}
@@ -1258,7 +1258,7 @@ function Invoke-Update {{
 
     if (Test-Path $settingsBackup) {{
         if (-not (Test-Path "config")) {{ New-Item -ItemType Directory -Path "config" -Force | Out-Null }}
-        Copy-Item -Path $settingsBackup -Destination "config\\settings.json" -Force
+        Copy-Item -Path $settingsBackup -Destination "config\\user_settings.json" -Force
         Remove-Item -Path $settingsBackup -Force -ErrorAction SilentlyContinue
     }}
 
@@ -1457,10 +1457,10 @@ if [ ! -f "app.py" ] && [ ! -f "YakuLingo.exe" ]; then
 fi
 
 # ユーザーデータをバックアップ（設定ファイル）
-SETTINGS_BACKUP="/tmp/yakulingo_settings_backup.json"
-if [ -f "config/settings.json" ]; then
+SETTINGS_BACKUP="/tmp/yakulingo_user_settings_backup.json"
+if [ -f "config/user_settings.json" ]; then
     echo "ユーザー設定をバックアップしています..."
-    cp "config/settings.json" "$SETTINGS_BACKUP"
+    cp "config/user_settings.json" "$SETTINGS_BACKUP"
 fi
 
 # ソースコードディレクトリを削除（環境ファイルは残す）
@@ -1511,7 +1511,7 @@ if [ "$COPY_SUCCESS" -eq 0 ]; then
     echo "バックアップから復元を試みます..."
     if [ -f "$SETTINGS_BACKUP" ]; then
         mkdir -p "config"
-        cp "$SETTINGS_BACKUP" "config/settings.json"
+        cp "$SETTINGS_BACKUP" "config/user_settings.json"
     fi
     read -p "Press Enter to exit..."
     exit 1
@@ -1551,7 +1551,7 @@ done
 if [ -f "$SETTINGS_BACKUP" ]; then
     echo "ユーザー設定を復元しています..."
     mkdir -p "config"
-    cp "$SETTINGS_BACKUP" "config/settings.json"
+    cp "$SETTINGS_BACKUP" "config/user_settings.json"
     rm -f "$SETTINGS_BACKUP"
 fi
 

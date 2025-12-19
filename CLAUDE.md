@@ -1180,6 +1180,22 @@ wait_time = backoff_time + jitter
 | `RESPONSE_POLL_ACTIVE` | 0.15s | テキスト検出後のポーリング間隔 |
 | `RESPONSE_POLL_STABLE` | 0.05s | 安定性チェック中のポーリング間隔 |
 
+### Send Message Timing
+
+プロンプト送信時のタイミング設定。React UIの準備状態に依存するため、過度な最適化は禁物。
+
+| タイミング | 値 | 目的 | 備考 |
+|-----------|-----|------|------|
+| Button scroll後 | **0.1s** | React UIの準備待ち | ⚠️ 必須。0.03sに削減するとEnterキーが効かなくなる |
+| JS key events後 | 0.02s | 状態ポーリング | ポーリング用なので短くてOK |
+| Playwright Enter後 | 0.02s | 状態ポーリング | 同上 |
+| SEND_WARMUP後 | 0.02s | 初期スクロール後 | 送信直前ではないので短くてOK |
+
+**重要**: Button scroll後の0.1秒待機は、Enterキー送信が機能するために必須です。
+scrollIntoView後にReact UIが準備完了するまでの時間が必要であり、
+この待機を削減するとEnterキーが無視され、常にJSクリック（Attempt 2）へ
+フォールバックします。
+
 ### Auth Dialog Detection
 
 認証ダイアログの検出キーワード（`AUTH_DIALOG_KEYWORDS`）：
@@ -3067,7 +3083,7 @@ Based on recent commits:
   - **Playwright fill() maintained**: React contenteditable要素との互換性のためfill()メソッドを維持（JS直接設定は改行が消える問題あり）
   - **Elapsed time measurement fix**: `start_time`を`await asyncio.sleep(0)`の後に移動（ユーザーがローディングUIを見た時点から計測開始）
   - **Detailed timing logs**: `[TIMING]`プレフィックスで翻訳処理の各ステップの時間を出力（デバッグ用）
-  - **_send_message sleep optimization**: ~~Button scroll後 0.1→0.03秒~~（**復元済み**: Enterキーが効かなくなる問題のため0.1秒に戻した）、JS key events後 0.05→0.02秒、Playwright Enter後 0.05→0.02秒（維持）
+  - **_send_message sleep optimization**: Button scroll後は0.1秒を維持（Enterキー送信に必須、詳細は「Send Message Timing」セクション参照）、その他のポーリング用sleepは0.02秒に短縮
 - **Time Measurement Standardization (2024-12)**:
   - **time.monotonic() unification**: 経過時間計測を`time.time()`から`time.monotonic()`に統一
   - **Rationale**: `time.time()`はNTP同期やシステム時刻変更の影響を受けるため、経過時間計測には単調増加時計が適切

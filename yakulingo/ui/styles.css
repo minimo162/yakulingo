@@ -72,6 +72,12 @@
     --md-comp-icon-button-icon-size: 1.5rem; /* 24dp - icon size inside button */
     --md-comp-touch-target-size: 3rem;       /* 48dp - minimum touch target */
 
+    /* M3 State layer opacity tokens (m3.material.io/foundations/interaction/states) */
+    --md-sys-state-hover-opacity: 0.08;      /* Hover state: 8% */
+    --md-sys-state-focus-opacity: 0.10;      /* Focus state: 10% */
+    --md-sys-state-pressed-opacity: 0.10;    /* Pressed state: 10% */
+    --md-sys-state-dragged-opacity: 0.16;    /* Dragged state: 16% */
+
     /* Typography - font size hierarchy (M3 standard with clear visual distinction) */
     --md-sys-typescale-size-xs: 0.875rem;     /* 14px - captions, badges */
     --md-sys-typescale-size-sm: 1rem;         /* 16px - labels, buttons */
@@ -791,6 +797,7 @@ body {
 }
 
 /* === M3 Outlined Button === */
+/* M3 spec: height 40dp, corner-full (20dp), 1px outline, no elevation */
 .btn-outline {
     display: inline-flex;
     align-items: center;
@@ -807,33 +814,31 @@ body {
     font-weight: 500;
     letter-spacing: 0.01em;
     cursor: pointer;
-    /* ヌメヌメとした滑らかな遷移 */
-    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-fluid);
-    transform: translateY(0) scale(1);
+    /* M3 standard transition */
+    transition: background-color var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard),
+                border-color var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
 }
 
 .btn-outline:hover {
-    background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent);
-    border-color: var(--md-sys-color-primary);
-    /* スムーズな浮遊感 */
-    transform: translateY(-2px) scale(1.02);
-    box-shadow: var(--md-sys-elevation-1);
+    /* M3: State layer with on-primary color at hover opacity */
+    background: color-mix(in srgb, var(--md-sys-color-primary) calc(var(--md-sys-state-hover-opacity) * 100%), transparent);
+    border-color: var(--md-sys-color-outline);
 }
 
 .btn-outline:active {
-    background: color-mix(in srgb, var(--md-sys-color-primary) 12%, transparent);
-    /* クリック時の押し込み感 */
-    transform: translateY(0) scale(0.98);
-    transition-duration: var(--md-sys-motion-duration-instant);
+    /* M3: State layer with on-primary color at pressed opacity */
+    background: color-mix(in srgb, var(--md-sys-color-primary) calc(var(--md-sys-state-pressed-opacity) * 100%), transparent);
 }
 
 .btn-outline:disabled {
     border-color: color-mix(in srgb, var(--md-sys-color-on-surface) 12%, transparent);
     color: color-mix(in srgb, var(--md-sys-color-on-surface) 38%, transparent);
     cursor: default;
+    background: transparent;
 }
 
 /* === M3 Filled Button (Primary) === */
+/* M3 spec: height 40dp, corner-full (20dp), filled container, elevation 0 (1 on hover) */
 /* .translate-btn is an alias for backward compatibility */
 .btn-primary,
 .translate-btn {
@@ -852,47 +857,49 @@ body {
     letter-spacing: 0.01em;
     border: none;
     cursor: pointer;
-    /* ヌメヌメとした滑らかな遷移 */
-    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-fluid);
-    transform: translateY(0) scale(1);
-    /* M3 elevation level 0 for filled buttons */
+    /* M3 standard transition */
+    transition: background-color var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard),
+                box-shadow var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+    /* M3: elevation level 0 for filled buttons */
     box-shadow: none;
 }
 
 .btn-primary:hover:not(:disabled),
 .translate-btn:hover:not(:disabled) {
-    /* M3: State layer overlay on hover (8% opacity) */
-    background: linear-gradient(rgba(255,255,255,0.08), rgba(255,255,255,0.08)), var(--md-sys-color-primary);
+    /* M3: State layer overlay on hover (on-primary at hover opacity) */
+    background: linear-gradient(
+        rgba(255, 255, 255, var(--md-sys-state-hover-opacity)),
+        rgba(255, 255, 255, var(--md-sys-state-hover-opacity))
+    ), var(--md-sys-color-primary);
     /* M3: Elevation level 1 on hover */
     box-shadow: var(--md-sys-elevation-1);
-    /* スムーズな浮遊感 */
-    transform: translateY(-2px) scale(1.02);
 }
 
 .btn-primary:active:not(:disabled),
 .translate-btn:active:not(:disabled) {
-    /* M3: State layer overlay on press (12% opacity) */
-    background: linear-gradient(rgba(255,255,255,0.12), rgba(255,255,255,0.12)), var(--md-sys-color-primary);
+    /* M3: State layer overlay on press (on-primary at pressed opacity) */
+    background: linear-gradient(
+        rgba(255, 255, 255, var(--md-sys-state-pressed-opacity)),
+        rgba(255, 255, 255, var(--md-sys-state-pressed-opacity))
+    ), var(--md-sys-color-primary);
     box-shadow: none;
-    /* クリック時の押し込み感 */
-    transform: translateY(0) scale(0.98);
-    transition-duration: var(--md-sys-motion-duration-instant);
 }
 
 .btn-primary:disabled,
 .translate-btn:disabled {
+    /* M3: disabled container at 12%, content at 38% */
     background: color-mix(in srgb, var(--md-sys-color-on-surface) 12%, transparent);
     color: color-mix(in srgb, var(--md-sys-color-on-surface) 38%, transparent);
     cursor: not-allowed;
     box-shadow: none;
-    opacity: 0.6;
 }
 
-/* M3 Focus state for all interactive elements */
+/* M3 Focus state for all button types */
 .btn-primary:focus-visible,
 .translate-btn:focus-visible,
 .btn-outline:focus-visible,
 .btn-tonal:focus-visible,
+.btn-elevated:focus-visible,
 .btn-text:focus-visible {
     outline: 2px solid var(--md-sys-color-primary);
     outline-offset: 2px;
@@ -936,6 +943,7 @@ textarea:focus-visible {
 }
 
 /* === M3 Tonal Button (Filled Tonal) === */
+/* M3 spec: height 40dp, corner-full (20dp), secondary-container fill, elevation 0 (1 on hover) */
 .btn-tonal {
     display: inline-flex;
     align-items: center;
@@ -952,26 +960,95 @@ textarea:focus-visible {
     letter-spacing: 0.01em;
     border: none;
     cursor: pointer;
-    /* ヌメヌメとした滑らかな遷移 */
-    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-fluid);
-    transform: translateY(0) scale(1);
+    /* M3 standard transition */
+    transition: background-color var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard),
+                box-shadow var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+    box-shadow: none;
 }
 
 .btn-tonal:hover {
-    background: linear-gradient(rgba(0,0,0,0.05), rgba(0,0,0,0.05)), var(--md-sys-color-secondary-container);
+    /* M3: State layer overlay on hover (on-secondary-container at hover opacity) */
+    background: linear-gradient(
+        rgba(0, 0, 0, var(--md-sys-state-hover-opacity)),
+        rgba(0, 0, 0, var(--md-sys-state-hover-opacity))
+    ), var(--md-sys-color-secondary-container);
+    /* M3: Elevation level 1 on hover */
     box-shadow: var(--md-sys-elevation-1);
-    /* スムーズな浮遊感 */
-    transform: translateY(-2px) scale(1.02);
 }
 
 .btn-tonal:active {
-    background: linear-gradient(rgba(0,0,0,0.12), rgba(0,0,0,0.12)), var(--md-sys-color-secondary-container);
-    /* クリック時の押し込み感 */
-    transform: translateY(0) scale(0.98);
-    transition-duration: var(--md-sys-motion-duration-instant);
+    /* M3: State layer overlay on press (on-secondary-container at pressed opacity) */
+    background: linear-gradient(
+        rgba(0, 0, 0, var(--md-sys-state-pressed-opacity)),
+        rgba(0, 0, 0, var(--md-sys-state-pressed-opacity))
+    ), var(--md-sys-color-secondary-container);
+    box-shadow: none;
+}
+
+.btn-tonal:disabled {
+    /* M3: disabled container at 12%, content at 38% */
+    background: color-mix(in srgb, var(--md-sys-color-on-surface) 12%, transparent);
+    color: color-mix(in srgb, var(--md-sys-color-on-surface) 38%, transparent);
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+/* === M3 Elevated Button === */
+/* M3 spec: Essentially a tonal button with shadow. Use when visual separation from patterned background is needed. */
+/* Height 40dp, corner-full (20dp), surface-container-low fill, elevation 1 (2 on hover) */
+.btn-elevated {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    height: var(--md-comp-button-height);
+    min-height: var(--md-comp-button-height);
+    padding: 0 var(--md-comp-button-padding-x);
+    background: var(--md-sys-color-surface-container);
+    color: var(--md-sys-color-primary);
+    border-radius: var(--md-sys-shape-corner-full);
+    font-size: var(--md-sys-typescale-size-xs);
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    border: none;
+    cursor: pointer;
+    /* M3 standard transition */
+    transition: background-color var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard),
+                box-shadow var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+    /* M3: Elevation level 1 for elevated buttons */
+    box-shadow: var(--md-sys-elevation-1);
+}
+
+.btn-elevated:hover {
+    /* M3: State layer overlay on hover (primary at hover opacity) */
+    background: linear-gradient(
+        color-mix(in srgb, var(--md-sys-color-primary) calc(var(--md-sys-state-hover-opacity) * 100%), transparent),
+        color-mix(in srgb, var(--md-sys-color-primary) calc(var(--md-sys-state-hover-opacity) * 100%), transparent)
+    ), var(--md-sys-color-surface-container);
+    /* M3: Elevation level 2 on hover */
+    box-shadow: var(--md-sys-elevation-2);
+}
+
+.btn-elevated:active {
+    /* M3: State layer overlay on press (primary at pressed opacity) */
+    background: linear-gradient(
+        color-mix(in srgb, var(--md-sys-color-primary) calc(var(--md-sys-state-pressed-opacity) * 100%), transparent),
+        color-mix(in srgb, var(--md-sys-color-primary) calc(var(--md-sys-state-pressed-opacity) * 100%), transparent)
+    ), var(--md-sys-color-surface-container);
+    /* M3: Elevation returns to level 1 on press */
+    box-shadow: var(--md-sys-elevation-1);
+}
+
+.btn-elevated:disabled {
+    /* M3: disabled container at 12%, content at 38%, no shadow */
+    background: color-mix(in srgb, var(--md-sys-color-on-surface) 12%, transparent);
+    color: color-mix(in srgb, var(--md-sys-color-on-surface) 38%, transparent);
+    cursor: not-allowed;
+    box-shadow: none;
 }
 
 /* === M3 Text Button === */
+/* M3 spec: height 40dp, corner-full (20dp), no container, padding 12dp */
 .btn-text {
     display: inline-flex;
     align-items: center;
@@ -979,7 +1056,7 @@ textarea:focus-visible {
     gap: 0.5rem;
     height: var(--md-comp-button-height);
     min-height: var(--md-comp-button-height);
-    padding: 0 0.75rem;
+    padding: 0 0.75rem;  /* 12dp */
     background: transparent;
     color: var(--md-sys-color-primary);
     border-radius: var(--md-sys-shape-corner-full);
@@ -988,19 +1065,24 @@ textarea:focus-visible {
     letter-spacing: 0.01em;
     border: none;
     cursor: pointer;
-    /* ヌメヌメとした滑らかな遷移 */
-    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-fluid);
-    transform: translateY(0) scale(1);
+    /* M3 standard transition */
+    transition: background-color var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
 }
 
 .btn-text:hover {
-    background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent);
-    /* 微細な浮遊感 */
-    transform: translateY(-1px) scale(1.01);
+    /* M3: State layer with primary color at hover opacity */
+    background: color-mix(in srgb, var(--md-sys-color-primary) calc(var(--md-sys-state-hover-opacity) * 100%), transparent);
 }
 
 .btn-text:active {
-    background: color-mix(in srgb, var(--md-sys-color-primary) 12%, transparent);
+    /* M3: State layer with primary color at pressed opacity */
+    background: color-mix(in srgb, var(--md-sys-color-primary) calc(var(--md-sys-state-pressed-opacity) * 100%), transparent);
+}
+
+.btn-text:disabled {
+    color: color-mix(in srgb, var(--md-sys-color-on-surface) 38%, transparent);
+    cursor: not-allowed;
+    background: transparent;
 }
 
 /* === Drop Zone (Nani-style: white bg + thin border + soft shadow) === */
@@ -2237,7 +2319,7 @@ textarea:focus-visible {
 }
 
 /* === M3 Icon Button (Standard) === */
-/* Container: 40dp, Icon: 24dp, Touch target: 48dp */
+/* M3 spec: Container 40dp, Icon 24dp, Touch target 48dp, corner-full */
 .icon-btn {
     display: grid;
     place-items: center;
@@ -2250,16 +2332,25 @@ textarea:focus-visible {
     background: transparent;
     color: var(--md-sys-color-on-surface-variant);
     cursor: pointer;
-    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+    /* M3 standard transition */
+    transition: background-color var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
     flex-shrink: 0;
 }
 
 .icon-btn:hover {
-    background: rgba(70, 70, 79, 0.08);
+    /* M3: State layer with on-surface-variant at hover opacity */
+    background: color-mix(in srgb, var(--md-sys-color-on-surface-variant) calc(var(--md-sys-state-hover-opacity) * 100%), transparent);
 }
 
 .icon-btn:active {
-    background: rgba(70, 70, 79, 0.12);
+    /* M3: State layer with on-surface-variant at pressed opacity */
+    background: color-mix(in srgb, var(--md-sys-color-on-surface-variant) calc(var(--md-sys-state-pressed-opacity) * 100%), transparent);
+}
+
+.icon-btn:disabled {
+    color: color-mix(in srgb, var(--md-sys-color-on-surface) 38%, transparent);
+    cursor: not-allowed;
+    background: transparent;
 }
 
 .icon-btn .q-icon,
@@ -2276,7 +2367,18 @@ textarea:focus-visible {
 }
 
 .icon-btn-filled:hover {
-    background: linear-gradient(rgba(255,255,255,0.08), rgba(255,255,255,0.08)), var(--md-sys-color-primary);
+    /* M3: State layer with on-primary at hover opacity */
+    background: linear-gradient(
+        rgba(255, 255, 255, var(--md-sys-state-hover-opacity)),
+        rgba(255, 255, 255, var(--md-sys-state-hover-opacity))
+    ), var(--md-sys-color-primary);
+}
+
+.icon-btn-filled:active {
+    background: linear-gradient(
+        rgba(255, 255, 255, var(--md-sys-state-pressed-opacity)),
+        rgba(255, 255, 255, var(--md-sys-state-pressed-opacity))
+    ), var(--md-sys-color-primary);
 }
 
 /* M3 Icon Button - Tonal */
@@ -2286,7 +2388,18 @@ textarea:focus-visible {
 }
 
 .icon-btn-tonal:hover {
-    background: linear-gradient(rgba(0,0,0,0.08), rgba(0,0,0,0.08)), var(--md-sys-color-secondary-container);
+    /* M3: State layer with on-secondary-container at hover opacity */
+    background: linear-gradient(
+        rgba(0, 0, 0, var(--md-sys-state-hover-opacity)),
+        rgba(0, 0, 0, var(--md-sys-state-hover-opacity))
+    ), var(--md-sys-color-secondary-container);
+}
+
+.icon-btn-tonal:active {
+    background: linear-gradient(
+        rgba(0, 0, 0, var(--md-sys-state-pressed-opacity)),
+        rgba(0, 0, 0, var(--md-sys-state-pressed-opacity))
+    ), var(--md-sys-color-secondary-container);
 }
 
 /* M3 Icon Button - Outlined */
@@ -2296,10 +2409,16 @@ textarea:focus-visible {
 }
 
 .icon-btn-outlined:hover {
-    background: rgba(70, 70, 79, 0.08);
+    /* M3: State layer with on-surface-variant at hover opacity */
+    background: color-mix(in srgb, var(--md-sys-color-on-surface-variant) calc(var(--md-sys-state-hover-opacity) * 100%), transparent);
+}
+
+.icon-btn-outlined:active {
+    background: color-mix(in srgb, var(--md-sys-color-on-surface-variant) calc(var(--md-sys-state-pressed-opacity) * 100%), transparent);
 }
 
 /* === Attach Button (extends icon-btn) === */
+/* M3 spec: Standard icon button styling */
 .attach-btn {
     display: grid;
     place-items: center;
@@ -2313,7 +2432,9 @@ textarea:focus-visible {
     background: transparent;
     color: var(--md-sys-color-on-surface-variant);
     cursor: pointer;
-    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+    /* M3 standard transition */
+    transition: background-color var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard),
+                color var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
     flex-shrink: 0;
 }
 
@@ -2327,12 +2448,14 @@ textarea:focus-visible {
 }
 
 .attach-btn:hover {
-    background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent);
+    /* M3: State layer with primary color at hover opacity */
+    background: color-mix(in srgb, var(--md-sys-color-primary) calc(var(--md-sys-state-hover-opacity) * 100%), transparent);
     color: var(--md-sys-color-primary);
 }
 
 .attach-btn:active {
-    background: color-mix(in srgb, var(--md-sys-color-primary) 12%, transparent);
+    /* M3: State layer with primary color at pressed opacity */
+    background: color-mix(in srgb, var(--md-sys-color-primary) calc(var(--md-sys-state-pressed-opacity) * 100%), transparent);
 }
 
 .attach-btn.has-file {
@@ -3349,12 +3472,13 @@ a:not(.q-btn):not(.q-item),
 .btn-primary,
 .btn-outline,
 .btn-tonal,
+.btn-elevated,
 .btn-text,
 .translate-btn,
 .attach-btn,
 .nav-item,
 .history-item {
-    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-fluid);
+    /* Note: Individual button classes define their own specific transitions */
 }
 
 /* アイコンのホバーアニメーション */
@@ -3368,6 +3492,7 @@ a:not(.q-btn):not(.q-item),
 .btn-primary:hover .q-icon:not(.q-spinner),
 .btn-outline:hover .q-icon:not(.q-spinner),
 .btn-tonal:hover .q-icon:not(.q-spinner),
+.btn-elevated:hover .q-icon:not(.q-spinner),
 .btn-text:hover .q-icon:not(.q-spinner),
 .translate-btn:hover .q-icon:not(.q-spinner) {
     transform: scale(1.1);

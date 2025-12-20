@@ -20,8 +20,8 @@ from yakulingo.processors.base import FileProcessor
 
 logger = logging.getLogger(__name__)
 
-# Pre-compiled regex for sentence splitting (CLAUDE.md: Pre-compile regex patterns)
-_SENTENCE_SPLIT_PATTERN = re.compile(r'(?<=[。！？.!?\n])')
+# Pre-compiled regex for sentence splitting (AGENTS.md: Pre-compile regex patterns)
+_SENTENCE_SPLIT_PATTERN = re.compile(r'(?<=[。！E��E!?\n])')
 
 # Maximum characters per block for translation batching
 MAX_CHARS_PER_BLOCK = 3000
@@ -43,9 +43,7 @@ def _is_outlook_available() -> bool:
     """Check if Outlook COM is available (Windows with Outlook installed).
 
     Note:
-        COMオブジェクトは確実にリリースする必要がある。
-        リリースしないとOutlookプロセスが残り続ける可能性がある。
-    """
+        COMオブジェクト�E確実にリリースする忁E��がある、E        リリースしなぁE��Outlookプロセスが残り続ける可能性がある、E    """
     if sys.platform != 'win32':
         return False
     outlook = None
@@ -57,8 +55,7 @@ def _is_outlook_available() -> bool:
     except Exception:
         return False
     finally:
-        # COMオブジェクトを確実にリリース（_create_msg_via_outlookと同様のパターン）
-        if outlook is not None:
+        # COMオブジェクトを確実にリリース�E�Ecreate_msg_via_outlookと同様�Eパターン�E�E        if outlook is not None:
             del outlook
         gc.collect()
 
@@ -72,8 +69,7 @@ class MsgProcessor(FileProcessor):
     Falls back to .txt output on other platforms.
 
     Note:
-        キャッシュアクセスはスレッドセーフ。複数スレッドからの同時アクセスを考慮。
-    """
+        キャチE��ュアクセスはスレチE��セーフ。褁E��スレチE��からの同時アクセスを老E�E、E    """
 
     def __init__(self):
         self._outlook_available: Optional[bool] = None
@@ -169,7 +165,7 @@ class MsgProcessor(FileProcessor):
         content = self._get_cached_content(file_path)
 
         # Get basic info
-        subject = content.get('subject') or "(件名なし)"
+        subject = content.get('subject') or "(件名なぁE"
 
         # Count body paragraphs for section details
         body = content.get('body', '')
@@ -178,13 +174,13 @@ class MsgProcessor(FileProcessor):
 
         # Create section details
         section_details = [
-            SectionDetail(index=0, name="件名", selected=True),
+            SectionDetail(index=0, name="件吁E, selected=True),
         ]
         if paragraph_count > 0:
             for i in range(paragraph_count):
                 section_details.append(SectionDetail(
                     index=i + 1,
-                    name=f"本文 段落{i + 1}",
+                    name=f"本斁E段落{i + 1}",
                     selected=True,
                 ))
 
@@ -241,7 +237,7 @@ class MsgProcessor(FileProcessor):
             yield TextBlock(
                 id="msg_subject",
                 text=subject,
-                location="件名",
+                location="件吁E,
                 metadata={'field': 'subject'}
             )
 
@@ -267,7 +263,7 @@ class MsgProcessor(FileProcessor):
                         yield TextBlock(
                             id=f"msg_body_{para_index}_chunk_{chunk_index}",
                             text=chunk,
-                            location=f"本文 段落{non_empty_index + 1} (部分{chunk_index + 1})",
+                            location=f"本斁E段落{non_empty_index + 1} (部刁Echunk_index + 1})",
                             metadata={
                                 'field': 'body',
                                 'paragraph_index': para_index,  # Original index including empty paragraphs
@@ -280,7 +276,7 @@ class MsgProcessor(FileProcessor):
                     yield TextBlock(
                         id=f"msg_body_{para_index}",
                         text=paragraph,
-                        location=f"本文 段落{non_empty_index + 1}",
+                        location=f"本斁E段落{non_empty_index + 1}",
                         metadata={
                             'field': 'body',
                             'paragraph_index': para_index,  # Original index including empty paragraphs
@@ -404,10 +400,7 @@ class MsgProcessor(FileProcessor):
             True if successful, False otherwise
 
         Note:
-            メールオブジェクトはSaveAs後に必ずClose()を呼び出す。
-            Close()を呼び出さないと、Outlookセッション内に未処理オブジェクトが残り、
-            保存されたMSGファイルが「返信」扱いになる問題が発生する可能性がある。
-        """
+            メールオブジェクト�ESaveAs後に忁E��Close()を呼び出す、E            Close()を呼び出さなぁE��、OutlookセチE��ョン冁E��未処琁E��ブジェクトが残り、E            保存されたMSGファイルが「返信」扱ぁE��なる問題が発生する可能性がある、E        """
         mail = None
         outlook = None
         try:
@@ -436,18 +429,16 @@ class MsgProcessor(FileProcessor):
 
         finally:
             # COMオブジェクトを確実にリリースする
-            # Close()を呼び出さないとメールが「返信」扱いになる問題が発生する
-            if mail is not None:
+            # Close()を呼び出さなぁE��メールが「返信」扱ぁE��なる問題が発生すめE            if mail is not None:
                 try:
-                    # olDiscard = 1: 変更を破棄して閉じる
-                    mail.Close(1)
+                    # olDiscard = 1: 変更を破棁E��て閉じめE                    mail.Close(1)
                 except Exception:
                     pass
-                # Excelプロセッサと同様にdelで明示的に削除
+                # ExcelプロセチE��と同様にdelで明示皁E��削除
                 del mail
             if outlook is not None:
                 del outlook
-            # COMオブジェクトのガベージコレクション
+            # COMオブジェクト�Eガベ�Eジコレクション
             gc.collect()
 
     def apply_translations(
@@ -520,12 +511,12 @@ class MsgProcessor(FileProcessor):
         """
         # Read original MSG (use cached content)
         content = self._get_cached_content(original_path)
-        original_subject = content.get('subject') or "(件名なし)"
+        original_subject = content.get('subject') or "(件名なぁE"
         original_body = content.get('body', '')
-        sender = content.get('sender') or "(送信者不明)"
+        sender = content.get('sender') or "(送信老E���E)"
         to = content.get('to', '')
         cc = content.get('cc', '')
-        date = content.get('date') or "(日付不明)"
+        date = content.get('date') or "(日付不�E)"
 
         extract_msg = _lazy_import_extract_msg()
 
@@ -577,22 +568,22 @@ class MsgProcessor(FileProcessor):
         output_parts.append("")
 
         # Subject section
-        output_parts.append("【件名 - 原文】")
+        output_parts.append("【件吁E- 原文、E)
         output_parts.append(original_subject)
         output_parts.append("")
-        output_parts.append("【件名 - 訳文】")
+        output_parts.append("【件吁E- 訳斁E��E)
         output_parts.append(translated_subject)
         output_parts.append("")
         output_parts.append(separator)
         output_parts.append("")
 
         # Body section
-        output_parts.append("【本文 - 原文】")
+        output_parts.append("【本斁E- 原文、E)
         output_parts.append(original_body)
         output_parts.append("")
         output_parts.append(separator)
         output_parts.append("")
-        output_parts.append("【本文 - 訳文】")
+        output_parts.append("【本斁E- 訳斁E��E)
         output_parts.append(translated_body)
 
         # Bilingual output is always .txt
@@ -611,7 +602,7 @@ class MsgProcessor(FileProcessor):
 
         with output_path.open('w', encoding='utf-8-sig', newline='') as f:
             writer = csv.writer(f)
-            writer.writerow(['原文', '訳文'])
+            writer.writerow(['原文', '訳斁E])
             for block_id, translated in translations.items():
                 if block_id in original_texts:
                     writer.writerow([original_texts[block_id], translated])

@@ -160,17 +160,18 @@ manual verification. Run through these tests before each release:
 - [ ] Enter Japanese text in textarea
 - [ ] Click translate button
 - [ ] Translation result appears
+- [ ] 3 style results appear (標準/簡潔/最簡潔)
 - [ ] Elapsed time badge displays
 - [ ] "英訳しました" status shows
 - [ ] Copy button works
 - [ ] Re-translate button works
-- [ ] Inline adjustment buttons work (短く/詳しく)
+- [ ] Check-my-English input works
 
 ## 3. Text Translation (EN→JP)
 - [ ] Enter English text
 - [ ] Translation with explanation appears
 - [ ] Action buttons work (英文をチェック, 要点を教えて)
-- [ ] Inline input for custom requests works
+- [ ] Reply composer input works
 
 ## 4. File Translation
 - [ ] Switch to File tab

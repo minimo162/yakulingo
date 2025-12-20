@@ -122,7 +122,7 @@ YakuLingo/
 │   ├── file_translate_to_jp.txt   # File translation (EN→JP)
 │   ├── text_translate_to_en_{standard|concise|minimal}.txt  # Text translation (JP→EN)
 │   ├── text_translate_to_jp.txt   # Text translation (EN→JP, with explanation)
-│   ├── adjust_custom.txt          # (Reserved) Custom adjustment template
+│   ├── adjust_custom.txt          # (Reserved) Custom request template
 │   ├── text_alternatives.txt      # Follow-up: alternative expressions
 │   ├── text_review_en.txt         # Follow-up: review English (英文をチェック)
 │   ├── text_check_my_english.txt  # Follow-up: check user's edited English
@@ -240,7 +240,7 @@ The application uses **local-only language detection** via `detect_language()`:
 - **Simple UI**: 「英訳中...」「和訳中...」 display without complex language names
 
 Translation direction based on detection:
-- **Japanese input ("日本語")** → English output (single translation with inline adjustments)
+- **Japanese input ("日本語")** → English output (standard/concise/minimal shown together)
 - **Non-Japanese input** → Japanese output (single translation + explanation + action buttons + inline input)
 
 No manual direction selection is required for text translation. File translation also uses auto-detection with optional manual override via language toggle buttons.
@@ -251,13 +251,10 @@ No manual direction selection is required for text translation. File translation
 - **Source text section** (原文セクション): 翻訳結果パネル上部に原文を表示 + コピーボタン
 - **Translation status** (翻訳状態表示): 「英訳中...」「和訳中...」→「? 英訳しました」「? 和訳しました」+ 経過時間バッジ
 - **Suggestion hint row**: [再翻訳] ボタン
-- **Action/adjustment options**: 単独オプションスタイルのボタン
+- **Action options**: 単独オプションスタイルのボタン
 
 ### Japanese → English (英訳)
-- **Single translation output** with configurable style (標準/簡潔/最簡潔)
-- **Inline adjustment options**:
-  - Paired: もう少し短く?より詳しく
-  - Single: 他の言い方は？
+- **3つのスタイル出力**（標準/簡潔/最簡潔）を縦並びで表示
 - **Check my English**: [アレンジした英文をチェック] 展開型入力欄
 
 ### English → Japanese (和訳)
@@ -267,7 +264,7 @@ No manual direction selection is required for text translation. File translation
 
 ### Common Features
 - **Elapsed time badge**: Shows translation duration
-- **Style toggle**: Translation style selector in input panel (標準/簡潔/最簡潔) - 1クリックで切り替え
+- **Style比較**: 標準/簡潔/最簡潔を常に同時表示（切り替えなし）
 - **Back-translate button**: Verify translations by translating back to original language
 - **Reference file attachment**: Attach glossary, style guide, or reference materials
 - **Loading screen**: Shows spinner immediately on startup for faster perceived load time
@@ -647,7 +644,6 @@ def _open_window_patched(..., window_args, settings_dict, start_args):
   "bilingual_output": false,
   "export_glossary": false,
   "translation_style": "concise",
-  "text_translation_style": "concise",
   "use_bundled_glossary": true,
   "embed_glossary_in_prompt": false,
   "font_size_adjustment_jp_to_en": 0.0,
@@ -670,7 +666,6 @@ def _open_window_patched(..., window_args, settings_dict, start_args):
 ```json
 {
   "translation_style": "concise",
-  "text_translation_style": "concise",
   "font_jp_to_en": "Arial",
   "font_en_to_jp": "MS Pゴシック",
   "bilingual_output": false,
@@ -679,7 +674,7 @@ def _open_window_patched(..., window_args, settings_dict, start_args):
 }
 ```
 
-**translation_style / text_translation_style values**: `"standard"`, `"concise"` (default), `"minimal"`
+**translation_style values**: `"standard"`, `"concise"` (default), `"minimal"`
 
 **browser_display_mode (ブラウザ表示モード)**:
 
@@ -1238,7 +1233,7 @@ The `AutoUpdater` class provides GitHub Releases-based updates:
 
 | カテゴリ | 設定 | 変更方法 |
 |---------|------|---------|
-| 翻訳スタイル | `translation_style`, `text_translation_style` | スタイルトグル（入力パネル）/ ファイル翻訳パネル |
+| 翻訳スタイル | `translation_style` | スタイルトグル（入力パネル）/ ファイル翻訳パネル |
 | フォント | `font_jp_to_en`, `font_en_to_jp`, `font_size_adjustment_jp_to_en` | ファイル翻訳パネル |
 | 出力オプション | `bilingual_output`, `export_glossary`, `use_bundled_glossary`, `embed_glossary_in_prompt` | ファイル翻訳パネル |
 | ブラウザ表示 | `browser_display_mode` | 設定ファイル直接編集 |
@@ -1451,12 +1446,6 @@ UIの??アイコン（用語集編集ボタンの隣）からデフォルトエディタで編集可能。
 1. Use `HistoryDB` class in `yakulingo/storage/history_db.py`
 2. Store `HistoryEntry` objects with `TextTranslationResult`
 3. Query history with `get_recent()`, search with `search()`
-
-### Adding Inline Adjustments
-1. Add adjustment option to `ADJUST_OPTIONS_PAIRS` or `ADJUST_OPTIONS_SINGLE` in `text_panel.py`
-2. Handle adjustment via `adjust_translation()` in `yakulingo/ui/app.py`
-   - Style-based adjustments (shorter/detailed) use translation style change
-   - Alternative expressions use `text_alternatives.txt` prompt template
 
 ## Dependencies Overview
 
@@ -3006,14 +2995,14 @@ Based on recent commits:
   - **PlaywrightThreadExecutor**: All Playwright operations wrapped in dedicated thread executor to avoid greenlet thread-switching errors
   - **Proxy bypass**: `NO_PROXY=localhost,127.0.0.1` set in `app.py` before any imports (critical for corporate proxies intercepting CDP connections)
 - **Text Translation UI Unification**:
-  - **Single output**: Changed from 3 translation options to 1 option with style setting
-  - **Style toggle**: 標準/簡潔/最簡潔 configurable via style toggle in input panel (1-click change)
+  - **3-style output**: 標準/簡潔/最簡潔を同時表示
+  - **Style toggle removed**: スタイル切り替えUIを廃止
   - **Unified structure**: 英訳 and 和訳 now share same UI pattern (hint row + action buttons + expandable inputs)
   - **Suggestion hint row**: [再翻訳] ボタン for both directions
   - **和訳 buttons**: [英文をチェック] [要点を教えて] [返信文を作成] as single option style
-  - **英訳 buttons**: [もう少し短く?より詳しく] [他の言い方は？] [アレンジした英文をチェック]
+  - **英訳 buttons**: [アレンジした英文をチェック]
   - **Removed**: カスタムリクエスト入力欄、[これはどう？] quick chip、connector line design、settings dialog
-- **Settings Dialog**: Removed - replaced with style toggle in input panel
+- **Settings Dialog**: Removed
 - **Installation**: Desktop shortcut only (removed Start Menu entry)
 - **Bilingual Output**: All file processors generate bilingual output with original + translated content
 - **Glossary CSV Export**: Automatic extraction of source/translation pairs

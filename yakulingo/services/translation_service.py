@@ -21,6 +21,9 @@ import re
 # Module logger
 logger = logging.getLogger(__name__)
 
+DEFAULT_TEXT_STYLE = "concise"
+TEXT_STYLE_ORDER: tuple[str, str, str] = ('standard', 'concise', 'minimal')
+
 # Pre-compiled regex patterns for performance
 # Support both half-width (:) and full-width (：) colons, and markdown bold (**訳文:**)
 _RE_MULTI_OPTION = re.compile(r'\[(\d+)\]\s*\**訳文\**[:：]\s*(.+?)\s*\**解説\**[:：]\s*(.+?)(?=\[\d+\]|$)', re.DOTALL)
@@ -1231,7 +1234,7 @@ class TranslationService:
             text: Source text to translate
             reference_files: Optional list of reference files to attach (ignored if glossary_content is provided)
             style: Translation style for English output ("standard", "concise", "minimal")
-                   If None, uses settings.text_translation_style (default: "concise")
+                   If None, uses DEFAULT_TEXT_STYLE (default: "concise")
             pre_detected_language: Pre-detected language from detect_language() to skip detection
             on_chunk: Optional callback called with partial text during streaming
             glossary_content: Optional glossary content to embed in prompt (faster than file attachment)
@@ -1254,9 +1257,9 @@ class TranslationService:
             is_japanese = detected_language == "日本語"
             output_language = "en" if is_japanese else "jp"
 
-            # Determine style (default from settings or "concise")
+            # Determine style (default to DEFAULT_TEXT_STYLE)
             if style is None:
-                style = self.config.text_translation_style if self.config else "concise"
+                style = DEFAULT_TEXT_STYLE
 
             # Get cached text translation template (fast path)
             template = self.prompt_builder.get_text_template(output_language, style)
@@ -1322,7 +1325,7 @@ class TranslationService:
             # Parse the result - always single option now
             options = self._parse_single_translation_result(raw_result)
 
-            # Set style on each option (for relative adjustment)
+            # Set style on each option (for labeling and ordering)
             for opt in options:
                 opt.style = style
 
@@ -1386,6 +1389,77 @@ class TranslationService:
                 detected_language=detected_language,
                 error_message=str(e),
             )
+
+    def translate_text_with_style_comparison(
+        self,
+        text: str,
+        reference_files: Optional[list[Path]] = None,
+        styles: Optional[list[str]] = None,
+        pre_detected_language: Optional[str] = None,
+        on_chunk: "Callable[[str], None] | None" = None,
+        glossary_content: Optional[str] = None,
+    ) -> TextTranslationResult:
+        """
+        Translate text with multiple English styles for comparison.
+        Falls back to single translation when output is Japanese.
+        """
+        detected_language = pre_detected_language
+        if not detected_language:
+            detected_language = self.detect_language(text)
+
+        is_japanese = detected_language == "日本語"
+        output_language = "en" if is_japanese else "jp"
+
+        if output_language != "en":
+            return self.translate_text_with_options(
+                text,
+                reference_files,
+                None,
+                detected_language,
+                on_chunk,
+                glossary_content,
+            )
+
+        style_list = list(styles) if styles else list(TEXT_STYLE_ORDER)
+        seen = set()
+        style_list = [s for s in style_list if not (s in seen or seen.add(s))]
+
+        options: list[TranslationOption] = []
+        last_error: Optional[str] = None
+
+        for style in style_list:
+            result = self.translate_text_with_options(
+                text,
+                reference_files,
+                style,
+                detected_language,
+                on_chunk,
+                glossary_content,
+            )
+            if result.options:
+                for option in result.options:
+                    if option.style is None:
+                        option.style = style
+                options.extend(result.options)
+            else:
+                last_error = result.error_message or last_error
+
+        if options:
+            return TextTranslationResult(
+                source_text=text,
+                source_char_count=len(text),
+                options=options,
+                output_language=output_language,
+                detected_language=detected_language,
+            )
+
+        return TextTranslationResult(
+            source_text=text,
+            source_char_count=len(text),
+            output_language=output_language,
+            detected_language=detected_language,
+            error_message=last_error or "Unknown error",
+        )
 
     def extract_detection_sample(self, file_path: Path, max_blocks: int = 5) -> Optional[str]:
         """Extract a lightweight text sample for language detection.
@@ -1451,7 +1525,7 @@ class TranslationService:
                 - 'alternatives': Get alternative in same style
             source_text: Original source text (required for style changes and alternatives)
             current_style: Current translation style (for relative adjustment)
-                           If None, uses settings default
+                           If None, uses DEFAULT_TEXT_STYLE
             reference_files: Optional list of reference file paths (glossary, style guide, etc.)
 
         Returns:
@@ -1462,9 +1536,9 @@ class TranslationService:
         self._cancel_event.clear()
 
         try:
-            # Determine current style (fallback to settings default)
+            # Determine current style (fallback to DEFAULT_TEXT_STYLE)
             if current_style is None:
-                current_style = self.config.text_translation_style if self.config else "concise"
+                current_style = DEFAULT_TEXT_STYLE
 
             # Handle style-based adjustments (relative change)
             if adjust_type == 'shorter' and source_text:
@@ -1569,16 +1643,16 @@ class TranslationService:
         Args:
             current_translation: The current translation to get alternative for
             source_text: Original source text
-            current_style: Current translation style (if None, uses settings default)
+            current_style: Current translation style (if None, uses DEFAULT_TEXT_STYLE)
             reference_files: Optional list of reference file paths (glossary, style guide, etc.)
 
         Returns:
             TranslationOption with alternative translation, or None on failure
         """
         try:
-            # Use provided style or fallback to settings
+            # Use provided style or fallback to DEFAULT_TEXT_STYLE
             style = current_style if current_style else (
-                self.config.text_translation_style if self.config else "concise"
+                DEFAULT_TEXT_STYLE
             )
 
             # Load alternatives prompt

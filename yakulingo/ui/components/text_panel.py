@@ -1,7 +1,7 @@
 # yakulingo/ui/components/text_panel.py
 """
 Text translation panel with language-specific UI.
-- Japanese → English: Multiple options with inline adjustment buttons
+- Japanese → English: Multiple style options shown together
 - Other → Japanese: Single translation with detailed explanation + follow-up actions
 Designed for Japanese users.
 """
@@ -101,15 +101,13 @@ ACTION_ICONS: dict[str, str] = {
     'reply': 'reply',
 }
 
-# Inline adjustment options (pairs)
-ADJUST_OPTIONS_PAIRS: list[tuple[str, str, str, str]] = [
-    ('shorter', 'もう少し短く', 'detailed', 'より詳しく'),
-]
+TEXT_STYLE_LABELS: dict[str, str] = {
+    'standard': '標準',
+    'concise': '簡潔',
+    'minimal': '最簡潔',
+}
 
-# Single adjustment options
-ADJUST_OPTIONS_SINGLE: list[tuple[str, str]] = [
-    ('alternatives', '他の言い方は？'),
-]
+TEXT_STYLE_ORDER: tuple[str, str, str] = ('standard', 'concise', 'minimal')
 
 # Paperclip/Attachment SVG icon with aria-label for accessibility (Material Design style, centered)
 ATTACH_SVG: str = '''
@@ -140,8 +138,6 @@ def create_text_input_panel(
     on_edit_glossary: Optional[Callable[[], None]] = None,
     on_edit_translation_rules: Optional[Callable[[], None]] = None,
     on_textarea_created: Optional[Callable[[ui.textarea], None]] = None,
-    text_translation_style: str = 'concise',
-    on_text_style_change: Optional[Callable[[str], None]] = None,
 ):
     """
     Text input panel for 2-column layout.
@@ -153,7 +149,6 @@ def create_text_input_panel(
         on_translate_button_created,
         use_bundled_glossary, on_glossary_toggle, on_edit_glossary,
         on_edit_translation_rules, on_textarea_created,
-        text_translation_style, on_text_style_change,
     )
 
 
@@ -170,8 +165,6 @@ def _create_large_input_panel(
     on_edit_glossary: Optional[Callable[[], None]] = None,
     on_edit_translation_rules: Optional[Callable[[], None]] = None,
     on_textarea_created: Optional[Callable[[ui.textarea], None]] = None,
-    text_translation_style: str = 'concise',
-    on_text_style_change: Optional[Callable[[str], None]] = None,
 ):
     """Large input panel for INPUT state - spans 2 columns"""
     with ui.column().classes('flex-1 w-full gap-4'):
@@ -234,25 +227,6 @@ def _create_large_input_panel(
                             ).props('flat dense round size=sm').classes('settings-btn')
                             rules_btn.tooltip('翻訳ルールを編集')
 
-                        # Translation style toggle (replaces settings dialog)
-                        if on_text_style_change:
-                            style_options = {
-                                'standard': '標準',
-                                'concise': '簡潔',
-                                'minimal': '最簡潔',
-                            }
-
-                            def handle_style_change(e):
-                                style_reverse = {v: k for k, v in style_options.items()}
-                                new_style = style_reverse.get(e.value, 'concise')
-                                on_text_style_change(new_style)
-
-                            ui.toggle(
-                                list(style_options.values()),
-                                value=style_options.get(text_translation_style, '簡潔'),
-                                on_change=handle_style_change,
-                            ).classes('style-toggle').props('dense no-caps size=sm')
-
                         # Reference file attachment button
                         if on_attach_reference_file:
                             has_files = bool(state.reference_files)
@@ -309,10 +283,10 @@ def _create_large_input_panel(
 def create_text_result_panel(
     state: AppState,
     on_copy: Callable[[str], None],
-    on_adjust: Optional[Callable[[str, str], None]] = None,
     on_follow_up: Optional[Callable[[str, str], None]] = None,
     on_back_translate: Optional[Callable[[str], None]] = None,
     on_retry: Optional[Callable[[], None]] = None,
+    compare_mode: bool = False,
 ):
     """
     Text result panel for 2-column layout.
@@ -369,21 +343,20 @@ def create_text_result_panel(
                     state.text_result.source_text,  # Use stored source text
                     on_copy,
                     on_follow_up,
-                    on_adjust,
                     on_back_translate,
                     elapsed_time,
                     on_retry,
                 )
             else:
-                # →English: Multiple options with inline adjustment
+                # →English: Multiple style options
                 _render_results_to_en(
                     state.text_result,
                     on_copy,
-                    on_adjust,
                     on_back_translate,
                     elapsed_time,
                     on_retry,
                     on_follow_up,
+                    compare_mode,
                 )
         elif not state.text_translating:
             # Empty state - show placeholder (spinner already shown in translation status section)
@@ -476,35 +449,64 @@ def _render_loading(detected_language: Optional[str] = None):
                     ui.label('和訳中...').classes('message')
 
 
+def _build_display_options(
+    options: list[TranslationOption],
+    compare_mode: bool,
+) -> list[TranslationOption]:
+    if not compare_mode:
+        return options
+
+    base_options: dict[str, TranslationOption] = {}
+    for option in options:
+        if option.style in TEXT_STYLE_ORDER and option.style not in base_options:
+            base_options[option.style] = option
+
+    ordered = [base_options[s] for s in TEXT_STYLE_ORDER if s in base_options]
+    ordered_ids = {id(option) for option in ordered}
+
+    for option in options:
+        if id(option) not in ordered_ids:
+            ordered.append(option)
+
+    return ordered
+
+
 def _render_results_to_en(
     result: TextTranslationResult,
     on_copy: Callable[[str], None],
-    on_adjust: Optional[Callable[[str, str], None]],
     on_back_translate: Optional[Callable[[str], None]] = None,
     elapsed_time: Optional[float] = None,
     on_retry: Optional[Callable[[], None]] = None,
     on_follow_up: Optional[Callable[[str, str], None]] = None,
+    compare_mode: bool = False,
 ):
-    """Render →English results: multiple options with inline adjustment"""
+    """Render →English results: multiple style options"""
 
     # Translation results container
     with ui.element('div').classes('result-container'):
         with ui.element('div').classes('result-section w-full'):
             # Options list
+            display_options = _build_display_options(result.options, compare_mode)
             with ui.column().classes('w-full gap-3'):
-                for i, option in enumerate(result.options):
+                for i, option in enumerate(display_options):
                     _render_option_en(
                         option,
                         on_copy,
                         on_back_translate,
-                        is_last=(i == len(result.options) - 1),
+                        is_last=(i == len(display_options) - 1),
                         index=i,
+                        show_style_badge=compare_mode,
                     )
 
-        # Inline adjustment section
-        if on_adjust and result.options:
-            latest_option = result.options[-1]  # Use latest option for both text and style
-            _render_inline_adjust_section(latest_option.text, on_adjust, on_retry, latest_option.style)
+        # Retry button (optional)
+        if on_retry and result.options:
+            with ui.element('div').classes('suggestion-hint-row'):
+                retry_btn = ui.button(
+                    '再翻訳',
+                    icon='refresh',
+                    on_click=on_retry
+                ).props('flat no-caps size=sm').classes('retry-btn')
+                retry_btn.tooltip('もう一度翻訳する')
 
         # Check my English section
         if on_follow_up and result.options:
@@ -517,7 +519,6 @@ def _render_results_to_jp(
     source_text: str,
     on_copy: Callable[[str], None],
     on_follow_up: Optional[Callable[[str, str], None]],
-    on_adjust: Optional[Callable[[str, str], None]] = None,
     on_back_translate: Optional[Callable[[str], None]] = None,
     elapsed_time: Optional[float] = None,
     on_retry: Optional[Callable[[], None]] = None,
@@ -527,7 +528,7 @@ def _render_results_to_jp(
     if not result.options:
         return
 
-    option = result.options[-1]  # Use latest option (may have adjustments)
+    option = result.options[-1]  # Use latest option
 
     # Translation results container (same structure as English)
     with ui.element('div').classes('result-container'):
@@ -558,7 +559,7 @@ def _render_results_to_jp(
                         with ui.element('div').classes('nani-explanation'):
                             _render_explanation(option.explanation)
 
-        # Inline adjustment section (same structure as English translation)
+        # Follow-up actions section (same structure as English translation)
         with ui.element('div').classes('inline-adjust-section'):
             # Suggestion hint with retry button (吹き出し風)
             with ui.element('div').classes('suggestion-hint-row'):
@@ -629,11 +630,16 @@ def _render_option_en(
     on_back_translate: Optional[Callable[[str], None]] = None,
     is_last: bool = False,
     index: int = 0,
+    show_style_badge: bool = False,
 ):
     """Render a single English translation option as a card"""
 
     with ui.card().classes('option-card w-full'):
         with ui.column().classes('w-full gap-2'):
+            if show_style_badge and option.style:
+                style_label = TEXT_STYLE_LABELS.get(option.style, option.style)
+                ui.label(style_label).classes('chip')
+
             # Translation text
             ui.label(option.text).classes('option-text py-1 w-full')
 
@@ -657,118 +663,6 @@ def _render_option_en(
             if option.explanation:
                 with ui.element('div').classes('nani-explanation'):
                     _render_explanation(option.explanation)
-
-
-def _show_adjust_dialog(text: str, on_adjust: Callable[[str, str], None]):
-    """Show adjustment dialog"""
-
-    with ui.dialog() as dialog, ui.card().classes('w-96'):
-        with ui.column().classes('w-full gap-4 p-4'):
-            # Header
-            with ui.row().classes('w-full justify-between items-center'):
-                ui.label('調整').classes('text-base font-medium')
-                ui.button(icon='close', on_click=dialog.close).props('flat dense round')
-
-            # Current text
-            ui.label(f'"{text}"').classes('text-sm text-muted italic')
-
-            # Quick actions
-            with ui.row().classes('gap-2'):
-                ui.button(
-                    '短く',
-                    on_click=lambda: _do_adjust(dialog, text, 'shorter', on_adjust)
-                ).props('outline').classes('flex-1')
-
-                ui.button(
-                    '詳しく',
-                    on_click=lambda: _do_adjust(dialog, text, 'detailed', on_adjust)
-                ).props('outline').classes('flex-1')
-
-            # Custom input
-            custom_input = ui.input(
-                placeholder='その他のリクエスト...'
-            ).classes('w-full')
-
-            ui.button(
-                '送信',
-                on_click=lambda: _do_adjust(dialog, text, custom_input.value, on_adjust)
-            ).classes('btn-primary self-end')
-
-    dialog.open()
-
-
-def _do_adjust(dialog, text: str, adjust_type: str, on_adjust: Callable[[str, str], None]):
-    """Execute adjustment and close dialog"""
-    if adjust_type and adjust_type.strip():
-        dialog.close()
-        on_adjust(text, adjust_type.strip())
-
-
-def _render_inline_adjust_section(
-    text: str,
-    on_adjust: Callable[[str, str], None],
-    on_retry: Optional[Callable[[], None]] = None,
-    current_style: Optional[str] = None,
-):
-    """Render inline adjustment options section
-
-    Args:
-        text: The translation text to adjust
-        on_adjust: Callback for adjustment (text, adjust_type)
-        on_retry: Callback for retry translation
-        current_style: Current translation style for disabling limit buttons
-                       If None (legacy history), defaults to 'concise'
-    """
-    # Style order: minimal < concise < standard
-    # Disable "shorter" if at minimal, disable "detailed" if at standard
-    # Default to 'concise' if style is None (legacy history data)
-    effective_style = current_style if current_style else 'concise'
-    is_at_min = effective_style == 'minimal'
-    is_at_max = effective_style == 'standard'
-
-    with ui.element('div').classes('inline-adjust-section'):
-        # Suggestion hint with retry button (吹き出し風)
-        with ui.element('div').classes('suggestion-hint-row'):
-            if on_retry:
-                retry_btn = ui.button(
-                    '再翻訳',
-                    icon='refresh',
-                    on_click=on_retry
-                ).props('flat no-caps size=sm').classes('retry-btn')
-                retry_btn.tooltip('もう一度翻訳する')
-
-        # Adjustment options panel
-        with ui.element('div').classes('inline-adjust-panel'):
-            with ui.column().classes('gap-2 w-full'):
-                # Paired options (side by side) with style limit check
-                for left_key, left_label, right_key, right_label in ADJUST_OPTIONS_PAIRS:
-                    with ui.element('div').classes('adjust-option-row'):
-                        # Left button (shorter) - disable if at minimal
-                        left_disabled = is_at_min if left_key == 'shorter' else False
-                        left_btn = ui.button(
-                            left_label,
-                            on_click=lambda k=left_key: on_adjust(text, k)
-                        ).props(f'flat no-caps {"disable" if left_disabled else ""}').classes('adjust-option-btn')
-                        if left_disabled:
-                            left_btn.tooltip('最短です')
-
-                        ui.element('div').classes('adjust-option-divider')
-
-                        # Right button (detailed) - disable if at standard
-                        right_disabled = is_at_max if right_key == 'detailed' else False
-                        right_btn = ui.button(
-                            right_label,
-                            on_click=lambda k=right_key: on_adjust(text, k)
-                        ).props(f'flat no-caps {"disable" if right_disabled else ""}').classes('adjust-option-btn')
-                        if right_disabled:
-                            right_btn.tooltip('最長です')
-
-                # Single options (full width)
-                for key, label in ADJUST_OPTIONS_SINGLE:
-                    ui.button(
-                        label,
-                        on_click=lambda k=key: on_adjust(text, k)
-                    ).props('flat no-caps').classes('adjust-option-btn-full')
 
 
 def _render_check_my_english(

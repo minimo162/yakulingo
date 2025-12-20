@@ -257,6 +257,7 @@ COPILOT_LOGIN_TIMEOUT = 300  # 5 minutes for login
 MAX_HISTORY_DISPLAY = 20  # Maximum history items to display in sidebar
 MIN_AVAILABLE_MEMORY_GB_FOR_EARLY_CONNECT = 0.5  # Skip early Copilot init only on very low memory
 TEXT_TRANSLATION_CHAR_LIMIT = 5000  # Max chars for text translation (Ctrl+Alt+J, Ctrl+Enter)
+DEFAULT_TEXT_STYLE = "concise"
 
 
 @dataclass
@@ -322,7 +323,7 @@ class YakuLingoApp:
     3. UI Refresh Methods - Methods that update UI state
     4. UI Creation Methods - Methods that build UI components
     5. Error Handling Helpers - Unified error handling methods
-    6. Text Translation - Text input, translation, adjustment methods
+    6. Text Translation - Text input, translation, follow-up actions
     7. File Translation - File selection, translation, progress methods
     8. Settings & History - Settings dialog, history management
     """
@@ -791,7 +792,7 @@ class YakuLingoApp:
             output_language = "jp"
 
         # Get translation style
-        style = self.settings.text_translation_style
+        style = DEFAULT_TEXT_STYLE
 
         # Build prompt for batch translation
         # Use numbered format to preserve cell order
@@ -2435,10 +2436,10 @@ class YakuLingoApp:
             create_text_result_panel(
                 state=self.state,
                 on_copy=self._copy_text,
-                on_adjust=self._adjust_text,
                 on_follow_up=self._follow_up_action,
                 on_back_translate=self._back_translate,
                 on_retry=self._retry_translation,
+                compare_mode=True,
             )
 
         self._result_panel = result_panel_content
@@ -2462,8 +2463,6 @@ class YakuLingoApp:
                         on_edit_glossary=self._edit_glossary,
                         on_edit_translation_rules=self._edit_translation_rules,
                         on_textarea_created=self._on_textarea_created,
-                        text_translation_style=self.settings.text_translation_style,
-                        on_text_style_change=self._on_text_style_change,
                     )
 
                 # Result panel (right column - shown when has results)
@@ -2525,12 +2524,6 @@ class YakuLingoApp:
         self.settings.use_bundled_glossary = enabled
         self.settings.save(self.settings_path)
         self._refresh_content()
-
-    def _on_text_style_change(self, style: str):
-        """Change text translation style (standard/concise/minimal)"""
-        self.settings.text_translation_style = style
-        self.settings.save(self.settings_path)
-        # No refresh needed - toggle already shows the new value
 
     async def _edit_glossary(self):
         """Open glossary.csv in Excel/default editor with cooldown to prevent double-open"""
@@ -2920,12 +2913,17 @@ class YakuLingoApp:
             await asyncio.sleep(0)
 
             # Step 2: Translate with pre-detected language (skip detection in translate_text_with_options)
+            style_order = ['standard', 'concise', 'minimal']
+            current_style = DEFAULT_TEXT_STYLE
+            if current_style in style_order:
+                style_order = [s for s in style_order if s != current_style] + [current_style]
+
             result = await asyncio.to_thread(
-                self.translation_service.translate_text_with_options,
+                self.translation_service.translate_text_with_style_comparison,
                 source_text,
                 reference_files,
-                None,  # style (use default)
-                detected_language,  # pre_detected_language
+                style_order,
+                detected_language,
                 None,  # on_chunk (not using streaming)
                 glossary_content,  # Embed glossary in prompt for faster translation
             )
@@ -2990,81 +2988,6 @@ class YakuLingoApp:
                     total_from_button_click - (self.state.text_translation_elapsed_time or 0))
 
         self._active_translation_trace_id = None
-
-    async def _adjust_text(self, text: str, adjust_type: str):
-        """Adjust translation based on user request
-
-        Args:
-            text: The translation text to adjust
-            adjust_type: 'shorter', 'detailed', 'alternatives', or custom instruction
-        """
-        # Use async version that will attempt auto-reconnection if needed
-        if not await self._ensure_connection_async():
-            return
-
-        # Use saved client reference (context.client not available in async tasks)
-        # Protected by _client_lock for thread-safe access
-        with self._client_lock:
-            client = self._client
-            if not client:
-                logger.warning("Adjust text aborted: no client connected")
-                return
-
-        self.state.text_translating = True
-        # Only refresh result panel and button (input panel is already in compact state)
-        self._refresh_result_panel()
-        self._update_translate_button_state()
-        self._refresh_tabs()  # Disable tabs during translation
-
-        error_message = None
-        try:
-            # Yield control to event loop before starting blocking operation
-            await asyncio.sleep(0)
-
-            # Pass source_text and current_style for style-based adjustments
-            # Use stored source_text from translation result (input field may be cleared or changed)
-            source_text = self.state.text_result.source_text if self.state.text_result else self.state.source_text
-
-            # Get current style from the latest translation option
-            current_style = None
-            if self.state.text_result and self.state.text_result.options:
-                current_style = self.state.text_result.options[-1].style
-
-            # Get reference files for consistent translations
-            reference_files = self._get_effective_reference_files()
-
-            result = await asyncio.to_thread(
-                lambda: self.translation_service.adjust_translation(
-                    text,
-                    adjust_type,
-                    source_text=source_text,
-                    current_style=current_style,
-                    reference_files=reference_files,
-                )
-            )
-
-            if result:
-                if self.state.text_result:
-                    self.state.text_result.options.append(result)
-                else:
-                    self.state.text_result = TextTranslationResult(
-                        source_text=source_text,
-                        source_char_count=len(source_text),
-                        options=[result]
-                    )
-            else:
-                # None means at style limit or failed
-                if adjust_type == 'shorter':
-                    error_message = 'これ以上短くできません'
-                elif adjust_type == 'detailed':
-                    error_message = 'これ以上詳しくできません'
-                else:
-                    error_message = '調整に失敗しました'
-
-        except Exception as e:
-            error_message = str(e)
-
-        self._on_text_translation_complete(client, error_message)
 
     async def _back_translate(self, text: str):
         """Back-translate text to verify translation quality"""

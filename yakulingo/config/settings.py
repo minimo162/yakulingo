@@ -33,7 +33,6 @@ _settings_cache_lock = threading.Lock()
 USER_SETTINGS_KEYS = {
     # 翻訳スタイル設定（設定ダイアログで変更）
     "translation_style",
-    "text_translation_style",
     # フォント設定（設定ダイアログで変更）
     "font_jp_to_en",
     "font_en_to_jp",
@@ -82,7 +81,6 @@ class AppSettings:
     translation_style: str = "concise"  # ファイル翻訳の英訳スタイル: "standard", "concise", "minimal"
 
     # Text Translation Options
-    text_translation_style: str = "concise"  # テキスト翻訳の英訳スタイル: "standard", "concise", "minimal"
     use_bundled_glossary: bool = True        # 同梱の glossary.csv を使用するか（デフォルトでオン）
     embed_glossary_in_prompt: bool = False   # 用語集をプロンプトに埋め込む（True=高速、False=ファイル添付）
 

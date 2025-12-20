@@ -50,7 +50,7 @@ M365 Copilotを翻訳エンジンとして使用し、テキストとドキュ�
 
 | 入力言語 | 出力 |
 |---------|------|
-| 日本語 | 英語（スタイル設定可、インライン調整可） |
+| 日本語 | 英語（3スタイル比較表示） |
 | その他 | 日本語（解説付き、アクションボタン付き） |
 
 **検出メカニズム:**
@@ -127,7 +127,7 @@ M365 Copilotを翻訳エンジンとして使用し、テキストとドキュ�
 | Layer | Responsibility |
 |-------|----------------|
 | **Presentation** | NiceGUI + pywebviewによるUI、状態表示 |
-| **Service** | 翻訳処理の調整、バッチ処理、自動更新 |
+| **Service** | 翻訳処理の制御、バッチ処理、自動更新 |
 | **CopilotHandler** | Edge起動、Playwright接続、メッセージ送受信 |
 | **File Processors** | ファイル解析、テキスト抽出、翻訳適用 |
 | **Storage** | 翻訳履歴の永続化（SQLite） |
@@ -196,7 +196,7 @@ YakuLingo/
 │   ├── file_translate_to_jp.txt    # ファイル翻訳用（英→日）
 │   ├── text_translate_to_en_{standard|concise|minimal}.txt  # テキスト翻訳（日→英）
 │   ├── text_translate_to_jp.txt    # テキスト翻訳用（英→日、解説付き）
-│   ├── adjust_custom.txt           # インライン調整: カスタムリクエスト
+│   ├── adjust_custom.txt           # カスタムリクエスト
 │   ├── text_alternatives.txt       # フォローアップ: 他の言い方
 │   ├── text_review_en.txt          # フォローアップ: 英文をチェック
 │   ├── text_check_my_english.txt   # フォローアップ: ユーザー編集英文チェック
@@ -509,16 +509,15 @@ NiceGUIの`await client.connected()`パターンを使用して、クライア�
 - 言語判定中: 「🔍 言語を判定しています...」
 
 **日本語入力時（英訳）:**
-- 結果カード: 翻訳テキスト + 説明
-- 💡 [再翻訳]: 吹き出し風ヒント行
-- 調整オプション: [もう少し短く│より詳しく], [他の言い方は？]
-- インライン入力: "例: もっとカジュアルに"（縦幅いっぱい）
+- 結果カード: 3スタイルの訳文（標準/簡潔/最簡潔）を縦並び表示
+- ?? [再翻訳]: 吹き出し風ヒント行
+- 追加入力: 「アレンジした英文をチェック」入力欄
 
 **その他入力時（和訳）:**
 - 結果カード: 訳文 + 解説
 - 💡 [再翻訳]: 吹き出し風ヒント行
 - アクションボタン: [英文をチェック], [要点を教えて]
-- インライン入力: "例: 返信の下書きを書いて"（縦幅いっぱい）
+- 追加入力: 「返信文を作成」入力欄
 
 **テキストエリア仕様:**
 
@@ -528,12 +527,6 @@ NiceGUIの`await client.connected()`パターンを使用して、クライア�
 | Font | System default |
 | Auto-grow | Yes |
 | Padding | 16px |
-
-**インライン調整オプション（英訳）:**
-| タイプ | オプション |
-|--------|----------|
-| ペア | [もう少し短く] ↔ [より詳しく] |
-| 単独 | [他の言い方は？] |
 
 **アクションボタン（和訳）:**
 | ボタン | 機能 |
@@ -1256,7 +1249,6 @@ class AppSettings:
     translation_style: str = "concise"   # ファイル翻訳の英訳スタイル
 
     # Text Translation Options
-    text_translation_style: str = "concise"  # "standard", "concise", "minimal"
     use_bundled_glossary: bool = False        # 同梱glossary.csvを常に利用
 
     # Font Settings (全ファイル形式共通)
@@ -1451,7 +1443,6 @@ async def _translate_text(self):
 
 **対象メソッド:**
 - `_translate_text()` - テキスト翻訳
-- `_adjust_text()` - 翻訳調整
 - `_back_translate()` - 戻し訳
 - `_follow_up_action()` - フォローアップアクション
 - `_translate_file()` - ファイル翻訳
@@ -1721,7 +1712,7 @@ python -c "import time; t=time.time(); from yakulingo.ui import run_app; print(f
 - 言語検出プロンプト追加（互換性のため保持、未使用）
 
 ### 2.6 (2025-12)
-- ローディング画面追加、テキスト翻訳UI簡素化（1訳文+インライン調整）
+- ローディング画面追加、テキスト翻訳UI簡素化（3スタイル比較表示）
 - 翻訳スタイル設定追加、Rust製ネイティブランチャー対応
 
 ### 2.5 (2025-12)

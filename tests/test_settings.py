@@ -184,7 +184,6 @@ class TestAppSettings:
             original = AppSettings(
                 last_tab="file",
                 translation_style="minimal",
-                text_translation_style="standard",
                 font_jp_to_en="Times New Roman",
                 font_en_to_jp="Meiryo",
                 font_size_adjustment_jp_to_en=-1.5,
@@ -201,7 +200,6 @@ class TestAppSettings:
             # USER_SETTINGS_KEYS should be preserved
             assert loaded.last_tab == original.last_tab
             assert loaded.translation_style == original.translation_style
-            assert loaded.text_translation_style == original.text_translation_style
             assert loaded.font_jp_to_en == original.font_jp_to_en
             assert loaded.font_en_to_jp == original.font_en_to_jp
             assert loaded.font_size_adjustment_jp_to_en == original.font_size_adjustment_jp_to_en
@@ -576,7 +574,6 @@ class TestSettingsSeparation:
         """Verify USER_SETTINGS_KEYS contains expected keys"""
         expected_keys = {
             "translation_style",
-            "text_translation_style",
             "font_jp_to_en",
             "font_en_to_jp",
             "font_size_adjustment_jp_to_en",

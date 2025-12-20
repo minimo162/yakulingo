@@ -8,7 +8,6 @@
   "bilingual_output": false,
   "export_glossary": false,
   "translation_style": "concise",
-  "text_translation_style": "concise",
   "use_bundled_glossary": true,
   "embed_glossary_in_prompt": false,
   "font_size_adjustment_jp_to_en": 0.0,

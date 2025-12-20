@@ -213,6 +213,11 @@ class ClipboardDebugSummary:
     preview: str
 
 
+@dataclass
+class _EarlyConnectionResult:
+    value: Optional[bool] = None
+
+
 def summarize_clipboard_text(text: str, max_preview: int = 200) -> ClipboardDebugSummary:
     """Create a concise summary of clipboard text for debugging.
 
@@ -335,6 +340,8 @@ class YakuLingoApp:
         self._early_connection_task: "asyncio.Task | None" = None
         self._early_connection_result: Optional[bool] = None
         self._early_connect_thread: "threading.Thread | None" = None  # Background Edge startup
+        self._early_connection_event: "threading.Event | None" = None
+        self._early_connection_result_ref: "_EarlyConnectionResult | None" = None
 
         # Early window positioning flag (prevents duplicate repositioning)
         self._early_position_completed = False
@@ -1300,6 +1307,21 @@ class YakuLingoApp:
             except Exception as e:
                 logger.debug("Early connection task failed: %s", e)
                 self._early_connection_result = None
+
+        # If early connection thread finished, capture its result; if still running, wait here.
+        if self._early_connection_result is None:
+            if self._early_connection_event is not None and self._early_connection_event.is_set():
+                if self._early_connection_result_ref is not None:
+                    self._early_connection_result = self._early_connection_result_ref.value
+            elif (self._early_connect_thread is not None
+                  and self._early_connect_thread.is_alive()
+                  and self._early_connection_event is not None):
+                logger.info("Early connection still in progress (thread alive), waiting for completion")
+                self.state.connection_state = ConnectionState.CONNECTING
+                self._refresh_status()
+                await asyncio.to_thread(self._early_connection_event.wait)
+                if self._early_connection_result_ref is not None:
+                    self._early_connection_result = self._early_connection_result_ref.value
 
         # Check early connection result
         if self._early_connection_result is True:
@@ -4182,6 +4204,8 @@ def run_app(
     _early_copilot = None
     _early_connect_thread = None
     _early_edge_thread = None
+    _early_connection_event = None
+    _early_connection_result_ref = None
 
     try:
         from yakulingo.services.copilot_handler import (
@@ -4195,6 +4219,8 @@ def run_app(
         # Note: I/O contention with antivirus is handled by Edge connection waiting
 
         _early_copilot = CopilotHandler()
+        _early_connection_event = threading.Event()
+        _early_connection_result_ref = _EarlyConnectionResult()
 
         # Start Edge in parallel with Playwright initialization (~1.5s savings)
         # Edge startup uses subprocess.Popen, which doesn't require Playwright
@@ -4221,9 +4247,8 @@ def run_app(
         def _early_connect():
             """Connect to Copilot in background (runs during NiceGUI import).
 
-            GPT mode switch is started here to overlap with NiceGUI startup (~8s).
-            This allows the Copilot page to fully load and GPT mode button to appear
-            while NiceGUI is starting, reducing perceived startup time.
+            Connection is started early to overlap with startup work.
+            GPT mode switching is deferred until after the UI is visible.
             """
             try:
                 _t_early = time.perf_counter()
@@ -4242,22 +4267,17 @@ def run_app(
                     bring_to_foreground_on_login=False,
                     defer_window_positioning=True
                 )
+                if _early_connection_result_ref is not None:
+                    _early_connection_result_ref.value = result
                 logger.info("[TIMING] Early Copilot connect (background): %.2fs, success=%s",
                            time.perf_counter() - _t_early, result)
-                # Start GPT mode switch immediately after connection
-                # This runs during NiceGUI startup (~8s), so by the time UI is ready,
-                # GPT mode should be set (or at least the page is more fully loaded)
-                if result:
-                    try:
-                        _t_gpt = time.perf_counter()
-                        _early_copilot.ensure_gpt_mode()
-                        logger.info("[TIMING] Early GPT mode set (background): %.2fs",
-                                   time.perf_counter() - _t_gpt)
-                    except Exception as gpt_err:
-                        # GPT mode failure is not critical - will be retried in UI thread
-                        logger.debug("Early GPT mode set failed (will retry): %s", gpt_err)
             except Exception as e:
                 logger.debug("Early Copilot connection failed: %s", e)
+                if _early_connection_result_ref is not None:
+                    _early_connection_result_ref.value = False
+            finally:
+                if _early_connection_event is not None:
+                    _early_connection_event.set()
 
         _early_connect_thread = threading.Thread(target=_early_connect, daemon=True, name="early_connect")
         _early_connect_thread.start()
@@ -4309,6 +4329,8 @@ def run_app(
     if _early_copilot is not None:
         yakulingo_app._copilot = _early_copilot
         yakulingo_app._early_connect_thread = _early_connect_thread
+        yakulingo_app._early_connection_event = _early_connection_event
+        yakulingo_app._early_connection_result_ref = _early_connection_result_ref
         logger.debug("Using early-created CopilotHandler instance")
 
     # Detect optimal window size BEFORE ui.run() to avoid resize flicker
@@ -4504,15 +4526,17 @@ def run_app(
         try:
             # Check if early connect thread was started before NiceGUI import
             early_thread = getattr(yakulingo_app, '_early_connect_thread', None)
+            early_event = getattr(yakulingo_app, '_early_connection_event', None)
+            early_result_ref = getattr(yakulingo_app, '_early_connection_result_ref', None)
+            if early_event is not None and early_event.is_set():
+                yakulingo_app._early_connection_result = (
+                    early_result_ref.value if early_result_ref is not None else None
+                )
+                logger.info("[TIMING] Early Edge connection already completed (thread)")
+                return
             if early_thread is not None and early_thread.is_alive():
-                # Wait for background thread to complete
-                logger.info("[TIMING] Waiting for early Edge connection thread")
-                await asyncio.to_thread(early_thread.join, timeout=30.0)
-                # Check if already connected
-                if yakulingo_app.copilot.is_connected:
-                    yakulingo_app._early_connection_result = True
-                    logger.info("[TIMING] Early Edge connection already completed (thread)")
-                    return
+                logger.info("[TIMING] Early Edge connection still in progress")
+                return
 
             # Check if already connected (thread completed before we checked)
             if yakulingo_app.copilot.is_connected:

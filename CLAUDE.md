@@ -1,4 +1,4 @@
-# CLAUDE.md - AI Assistant Guide for YakuLingo
+﻿# CLAUDE.md - AI Assistant Guide for YakuLingo
 
 This document provides essential context for AI assistants working with the YakuLingo codebase.
 
@@ -848,16 +848,20 @@ def clear_pre_initialized_playwright() -> None:
 
 **起動シーケンス（早期Edge起動）:**
 ```python
-# app.py の run_app()
-pre_initialize_playwright()           # バックグラウンドで開始
-wait_for_playwright_init(timeout=30)  # 完了を待機
-
-# Edge起動をNiceGUI import前に開始（GPTモード待ち時間を削減）
+# app.py run_app()
+pre_initialize_playwright()           # start Playwright in background
 _early_copilot = CopilotHandler()
-_early_connect_thread = Thread(target=_early_copilot.connect)
-_early_connect_thread.start()         # バックグラウンドでEdge+Copilot接続
+_early_connection_event = threading.Event()
+_early_connection_result_ref = _EarlyConnectionResult()
 
-import nicegui                        # ~2.6秒（この間にCopilotページがロード）
+def _early_connect():
+    result = _early_copilot.connect(...)
+    _early_connection_result_ref.value = result
+    _early_connection_event.set()
+
+_early_connect_thread = Thread(target=_early_connect)
+_early_connect_thread.start()         # background Edge+Copilot connect
+import nicegui                        # Copilot page loads during import
 ```
 
 **I/O競合回避**: WindowsではPlaywright初期化とNiceGUIインポートを並列実行すると、
@@ -866,7 +870,7 @@ import nicegui                        # ~2.6秒（この間にCopilotページ�
 
 **早期Edge起動の効果**:
 - NiceGUI import (~2.6秒) + display_settings (~1.2秒) の間にCopilotページがロード
-- GPTモード設定の待ち時間を大幅に削減（約4秒→約1秒）
+- GPTモード切替はUI表示後に非同期で実行（UI優先）
 - ウィンドウ検出ポーリング間隔を0.1秒→0.05秒に短縮
 - `defer_window_positioning=True`でウィンドウ位置設定を延期（約3.5秒短縮）
 
@@ -907,60 +911,52 @@ background authentication/session establishment, causing auth dialogs to appear.
 
 ### GPT Mode Setting (GPTモード設定)
 
-接続完了時に「GPT-5.2 Think Deeper」モードを自動設定します。
+接続完了後に「GPT-5.2 Think Deeper」モードを自動設定します。
 
-**早期GPTモード設定（起動最適化）:**
-
-GPTモード切替は早期接続スレッド内で開始されます（NiceGUI起動と並列）。
-NiceGUI+pywebview起動に約8秒かかるため、その間にGPTモード設定を完了できます。
+**UI優先の非同期設定**
+GPTモード切替はUI表示後にバックグラウンドで実行し、起動時のUIブロックを避けます。
+早期接続スレッドは接続のみ行い、完了をEventで通知します。
 
 ```python
-# run_app() の _early_connect 関数内
-def _early_connect():
-    result = _early_copilot.connect(...)  # ~7秒（NiceGUI import中に完了）
-    if result:
-        _early_copilot.ensure_gpt_mode()  # 3秒タイムアウト、失敗しても再試行可能
+# _early_connect(): connect only, then signal
+result = _early_copilot.connect(...)
+_early_connection_result_ref.value = result
+_early_connection_event.set()
+
+# UI表示後 (_apply_early_connection_or_connect)
+asyncio.create_task(asyncio.to_thread(self.copilot.ensure_gpt_mode))
 ```
 
-UIスレッドからも`ensure_gpt_mode()`を呼び出しますが、早期接続で成功した場合は
-`_gpt_mode_set`フラグによりスキップされます。
-
+UIスレッドから `ensure_gpt_mode()` を呼び出しますが、`_gpt_mode_set` フラグで重複実行を防ぎます。
 **重複呼び出し防止フラグ:**
 
-`CopilotHandler._gpt_mode_set`フラグで重複呼び出しを防止：
-
+`CopilotHandler._gpt_mode_set` フラグで重複呼び出しを防止。
 | フラグ値 | 状態 | ensure_gpt_mode()の動作 |
 |---------|------|------------------------|
 | `False` | 未設定 | 実行する |
 | `True` | 設定済み | スキップする |
 
-フラグは以下のタイミングでリセット：
-- 再ログイン完了時（`_wait_for_login_completion`内）：セッションリセットでモード設定が消えるため
+フラグは以下のタイミングでリセット:
+- 再ログイン完了時 `_wait_for_login_completion()` : セッションリセットでモード設定が消えるため
 
 **設定タイミング:**
 
 | シナリオ | 呼び出し元 | GPTモード設定 | フラグ操作 |
 |----------|-----------|--------------|-----------|
-| 早期接続成功 | `_early_connect()` | ✓（12秒待機） | 設定 |
-| UI表示後 | `_apply_early_connection_or_connect()` | スキップ（設定済み）| - |
-| 通常接続成功 | `start_edge_and_connect()` | ✓ | 設定 |
-| 手動ログイン完了 | `_wait_for_login_completion()` | ✓ | リセット→設定 |
-| 再接続成功 | `_reconnect()` | ✗（手動変更を保持） | - |
-| 再接続→再ログイン | `_wait_for_login_completion()` | ✓ | リセット→設定 |
+| 早期接続成功 | `_early_connect()` | No (connect only) | - |
+| UI表示後 | `_apply_early_connection_or_connect()` | Yes (async) | 設定 |
+| 通常接続成功 | `start_edge_and_connect()` | Yes (async) | 設定 |
+| 手動ログイン完了 | `_wait_for_login_completion()` | Yes (async) | リセット→設定 |
+| 再接続成功 | `_reconnect()` | No (keep manual) | - |
+| 再接続→再ログイン | `_wait_for_login_completion()` | Yes (async) | リセット→設定 |
 
-**設計方針:**
-- 早期接続スレッドでGPTモード切替を開始（NiceGUI起動と並列）
-- 12秒のタイムアウトでボタン表示を待機（Copilot React UIのロードに約11秒かかるため）
-- `_gpt_mode_set`フラグで重複呼び出しを防止
-- 再接続時は呼び出さない（ユーザーが手動でモード変更した場合を考慮）
-- 再ログイン時はフラグをリセットして呼び出す（セッションリセットでモード設定が消えるため）
-
-**定数:**
-
-| 定数名 | 値 | 説明 |
-|--------|------|------|
-| `GPT_MODE_BUTTON_WAIT_MS` | 15000ms | ボタン表示待機タイムアウト（余裕を持って設定、Copilot React UIのロードに約11秒かかるため） |
-| `GPT_MODE_MENU_WAIT` | 0.05s | メニュー開閉待機時間 |
+**設計方針**
+- UI表示を最優先。GPTモード切替はUI表示後に非同期実行
+- 早期接続スレッドは接続のみ。完了はEventで通知し、スレッド生存中はフォールバック接続を開始しない
+- GPTモードボタン待ち: `GPT_MODE_BUTTON_WAIT_MS`（15000ms）
+- `_gpt_mode_set` フラグで重複防止
+- 再接続時は呼び出さない（ユーザー手動変更を尊重）
+- 再ログイン時にフラグをリセットして再実行
 
 ### Login Detection Process (ログイン判定プロセス)
 
@@ -2995,7 +2991,7 @@ Based on recent commits:
   - **Non-blocking translation**: All translation methods use `asyncio.to_thread()` to avoid blocking NiceGUI event loop
   - **pywebview engine**: `PYWEBVIEW_GUI=edgechromium` environment variable to avoid runtime installation dialogs
   - **Multiprocessing support**: `multiprocessing.freeze_support()` for Windows/PyInstaller compatibility
-  - **Early Copilot connection**: NiceGUI import前にEdge起動をバックグラウンドで開始し、NiceGUI import中にCopilotページがロード（GPTモード待ち時間 約4秒→約1秒）
+  - **Early Copilot connection**: NiceGUI import前にEdge起動をバックグラウンドで開始し、Copilotページのロードを並列化。GPTモード切替はUI表示後に非同期で実行（UI優先）。早期接続結果はEventで通知し、スレッド生存中はフォールバック接続を開始しない
   - **Early Edge startup (parallel)**: Edge起動をPlaywright初期化と並列で実行（`_early_edge_thread`）。Edge起動（~1.5秒）はPlaywrightに依存しないため、`pre_initialize_playwright()`直後に別スレッドで開始。レースコンディション防止のため`connect()`呼び出し前に`join()`で待機
   - **Window detection optimization**: ウィンドウ検出ポーリング間隔を0.1秒→0.05秒に短縮、ログ重複排除フラグ追加
   - **uvicorn logging level**: `uvicorn_logging_level='warning'` でログ出力を削減
@@ -3117,3 +3113,5 @@ Based on recent commits:
 - Feature branches: `claude/claude-md-*`
 - Commit messages: descriptive, focus on "why" not "what"
 - Lock file (`uv.lock`) included for reproducible dependency resolution
+
+

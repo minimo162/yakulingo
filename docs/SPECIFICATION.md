@@ -713,8 +713,8 @@ class CopilotHandler:
     def ensure_gpt_mode() -> None:
         """
         GPT-5.2 Think Deeperモードを設定
-        - 接続完了後にUIレイヤーから呼び出し
-        - ポーリング方式（100msごとにチェック、最大8秒）
+        - 接続完了後、UI表示後に非同期で呼び出し（UIブロック回避）
+        - ポーリング方式（100msごとにチェック、最大15秒）
         - ボタンが見つからない場合は静かにスキップ
         """
 ```
@@ -729,7 +729,7 @@ class CopilotHandler:
 - 送信ボタン: `:not([disabled])`条件で有効化を待機
 - メニュー表示: `div[role="menu"]`の表示を確認
 - ファイル添付: 添付インジケータをポーリングで確認
-- GPTモード: 接続完了後に`ensure_gpt_mode()`で設定（wait_for_selector + JS一括実行）
+- GPTモード: UI表示後に`ensure_gpt_mode()`で非同期設定（wait_for_selector + JS一括実行）
 
 **Copilot文字数制限:**
 - Free ライセンス: 8,000文字

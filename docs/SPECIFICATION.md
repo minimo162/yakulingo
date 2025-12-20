@@ -1001,6 +1001,8 @@ class PdfProcessor(FileProcessor):
     - 既存フォント再利用: PDFに埋め込まれたCID/Simpleフォントを検出・再利用
     - フォント種別判定: pdfminer.sixでCID vs Simpleフォントを判定
     - フォントサブセッティング: 未使用グリフを削除してファイルサイズを削減
+    - Form XObjectテキスト除去: 全ページ翻訳時のみ文書全体フィルタを実行
+      - 部分ページ翻訳は未選択ページ保護を優先し、XObjectフィルタをスキップ
 
     フォント種別に応じたエンコーディング:
     - EMBEDDED (新規埋め込み): has_glyph()でグリフID取得 → 4桁hex

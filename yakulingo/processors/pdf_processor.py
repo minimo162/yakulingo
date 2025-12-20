@@ -2158,6 +2158,13 @@ class PdfProcessor(FileProcessor):
         """
         pymupdf = _get_pymupdf()
         doc = pymupdf.open(input_path)
+        total_pages = len(doc)
+        selected_pages = None
+        if pages is not None:
+            # Normalize to a set for faster lookups and full-document detection.
+            selected_pages = {p for p in pages if isinstance(p, int)}
+        all_pages = set(range(1, total_pages + 1))
+        is_full_document = selected_pages is None or selected_pages == all_pages
 
         result = {
             'total': len(translations),
@@ -2224,16 +2231,26 @@ class PdfProcessor(FileProcessor):
             # Create operator generator
             op_gen = PdfOperatorGenerator(font_registry)
 
-            # yomitoku-style: Filter ALL Form XObjects in the entire document first
+            # yomitoku-style: Filter ALL Form XObjects in the entire document first.
             # This is more thorough than per-page filtering and catches
-            # XObjects that may be shared across pages or nested deeply
-            # (e.g., complex financial reports like 決算短信)
-            doc_replacer = ContentStreamReplacer(doc, font_registry, preserve_graphics=True)
-            doc_filtered_count = doc_replacer.filter_all_document_xobjects()
-            logger.info(
-                "Document-wide XObject filtering: filtered %d Form XObjects",
-                doc_filtered_count
-            )
+            # XObjects that may be shared across pages or nested deeply.
+            #
+            # IMPORTANT:
+            # When translating only a subset of pages, skip XObject filtering
+            # entirely to keep unselected pages intact. Filtering shared
+            # XObjects would remove text from pages we are not rewriting.
+            if is_full_document:
+                doc_replacer = ContentStreamReplacer(doc, font_registry, preserve_graphics=True)
+                doc_filtered_count = doc_replacer.filter_all_document_xobjects()
+                logger.info(
+                    "Document-wide XObject filtering: filtered %d Form XObjects",
+                    doc_filtered_count
+                )
+            else:
+                logger.info(
+                    "Partial page translation detected; skipping document-wide XObject filtering "
+                    "to preserve unselected pages."
+                )
 
             # PDFMathTranslate compliant: Build TextBlock lookup map
             # TextBlock contains PDF coordinates (origin at bottom-left)
@@ -2259,7 +2276,7 @@ class PdfProcessor(FileProcessor):
                 page_num = page_idx + 1
 
                 # Skip pages not in selection (PDFMathTranslate compliant)
-                if pages is not None and page_num not in pages:
+                if selected_pages is not None and page_num not in selected_pages:
                     logger.debug("Skipping page %d (not in selection)", page_num)
                     continue
 
@@ -2396,7 +2413,8 @@ class PdfProcessor(FileProcessor):
                     replacer.set_base_stream(
                         page,
                         target_bboxes=None,  # Remove all text (PDFMathTranslate compliant)
-                        skip_xobject_filtering=True,  # Already done by filter_all_document_xobjects()
+                        # Skip per-page XObject filtering to avoid mutating shared resources.
+                        skip_xobject_filtering=True,
                     )
                     logger.info(
                         "Page %d: removing all text for translation (blocks=%d)",

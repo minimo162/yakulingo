@@ -169,7 +169,7 @@ def main():
         run_app(
             host='127.0.0.1',
             port=8765,
-            native=True,  # Native window mode (no browser needed)
+            native=False,  # Browser mode (use external browser)
         )
     except KeyboardInterrupt:
         # Normal shutdown via window close or Ctrl+C

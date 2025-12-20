@@ -466,6 +466,7 @@ _pre_init_lock = threading.Lock()
 _pre_init_event = threading.Event()
 _pre_init_error = None
 _pre_init_thread_id = None  # Track which thread initialized Playwright
+_pre_init_started = False  # Track whether pre-initialization was requested
 
 
 def _log_playwright_init_details(phase: str, include_paths: bool = False) -> float:
@@ -647,12 +648,13 @@ def pre_initialize_playwright():
     The initialization runs in the PlaywrightThreadExecutor's worker thread
     to satisfy Playwright's greenlet constraint (must use same thread for all ops).
     """
-    global _pre_init_error
+    global _pre_init_error, _pre_init_started
     with _pre_init_lock:
-        if _pre_initialized_playwright is not None or _pre_init_event.is_set():
+        if _pre_init_started or _pre_initialized_playwright is not None or _pre_init_event.is_set():
             return  # Already initialized or in progress
 
         _pre_init_error = None
+        _pre_init_started = True
 
         # Start initialization in a separate thread that uses the executor
         # This allows pre_initialize_playwright() to return immediately
@@ -667,6 +669,7 @@ def pre_initialize_playwright():
         except Exception as e:
             logger.warning("Failed to start Playwright pre-initialization: %s", e)
             _pre_init_error = e
+            _pre_init_started = False
             _pre_init_event.set()
 
 
@@ -681,6 +684,8 @@ def get_pre_initialized_playwright(timeout: float = 30.0):
         Returns None if the executor thread has changed since initialization
         (to avoid greenlet thread mismatch errors).
     """
+    if not _pre_init_started:
+        return None
     if _pre_init_event.wait(timeout=timeout):
         if _pre_init_error is not None:
             return None
@@ -718,11 +723,12 @@ def clear_pre_initialized_playwright():
     Also resets _pre_init_event to allow re-initialization (e.g., after disconnect
     during PP-DocLayout-L initialization).
     """
-    global _pre_initialized_playwright, _pre_init_error, _pre_init_thread_id
+    global _pre_initialized_playwright, _pre_init_error, _pre_init_thread_id, _pre_init_started
     with _pre_init_lock:
         _pre_initialized_playwright = None
         _pre_init_error = None
         _pre_init_thread_id = None  # Also clear thread ID
+        _pre_init_started = False
         _pre_init_event.clear()  # Allow re-initialization
         logger.debug("Pre-initialized Playwright cleared (including thread ID)")
 
@@ -741,6 +747,8 @@ def wait_for_playwright_init(timeout: float = 30.0) -> bool:
         True if initialization completed (success or failure), False if timeout
     """
     import time as _time
+    if not _pre_init_started:
+        return False
     _t_start = _time.perf_counter()
     result = _pre_init_event.wait(timeout=timeout)
     elapsed = _time.perf_counter() - _t_start
@@ -908,6 +916,10 @@ class CopilotHandler:
     # Copilot React UI takes ~11s from connection to fully render GPT mode button
     # 15s timeout allows early connection to complete GPT mode setup with margin
     GPT_MODE_BUTTON_WAIT_MS = 15000  # Total timeout for button appearance (15s)
+    # Short per-attempt wait to keep the Playwright thread responsive.
+    GPT_MODE_BUTTON_WAIT_FAST_MS = 2000  # Per-attempt timeout (2s)
+    # Retry delays between short attempts (seconds).
+    GPT_MODE_RETRY_DELAYS = (0.5, 1.0, 2.0)
 
     # Dynamic polling intervals for faster response detection
     # OPTIMIZED: Reduced intervals for quicker response detection (0.15s -> 0.1s)
@@ -991,6 +1003,10 @@ class CopilotHandler:
         # GPT mode flag: only set mode once per session to respect user's manual changes
         # Set to True after successful mode switch in _ensure_gpt_mode_impl
         self._gpt_mode_set = False
+        self._gpt_mode_attempt_in_progress = False
+        self._gpt_mode_retry_index = 0
+        self._gpt_mode_retry_timer = None
+        self._gpt_mode_retry_lock = threading.Lock()
 
     @property
     def is_connected(self) -> bool:
@@ -1979,6 +1995,72 @@ class CopilotHandler:
             logger.warning("Failed to check Copilot page: %s", e)
             return False
 
+    def reset_gpt_mode_state(self) -> None:
+        """Reset GPT mode tracking (e.g., after re-login)."""
+        self._gpt_mode_set = False
+        self._clear_gpt_mode_retry_state()
+
+    def _clear_gpt_mode_retry_state(self) -> None:
+        timer = None
+        with self._gpt_mode_retry_lock:
+            self._gpt_mode_attempt_in_progress = False
+            self._gpt_mode_retry_index = 0
+            timer = self._gpt_mode_retry_timer
+            self._gpt_mode_retry_timer = None
+        if timer:
+            timer.cancel()
+
+    def _schedule_gpt_mode_retry(self, delay_seconds: float) -> None:
+        if delay_seconds <= 0:
+            self._run_gpt_mode_retry()
+            return
+        timer = threading.Timer(delay_seconds, self._run_gpt_mode_retry)
+        timer.daemon = True
+        with self._gpt_mode_retry_lock:
+            self._gpt_mode_retry_timer = timer
+        timer.start()
+
+    def _run_gpt_mode_retry(self) -> None:
+        if self._gpt_mode_set:
+            self._clear_gpt_mode_retry_state()
+            return
+        if not self._page:
+            self._clear_gpt_mode_retry_state()
+            return
+
+        try:
+            result = _playwright_executor.execute(
+                self._ensure_gpt_mode_impl,
+                self.GPT_MODE_BUTTON_WAIT_FAST_MS
+            )
+        except RuntimeError as e:
+            logger.debug("GPT mode retry aborted: %s", e)
+            self._clear_gpt_mode_retry_state()
+            return
+        except Exception as e:
+            logger.debug("GPT mode retry failed: %s", e)
+            result = "error"
+
+        if result in ("set", "already"):
+            self._clear_gpt_mode_retry_state()
+            return
+        if result == "target_not_found":
+            self._clear_gpt_mode_retry_state()
+            return
+
+        with self._gpt_mode_retry_lock:
+            if self._gpt_mode_retry_index >= len(self.GPT_MODE_RETRY_DELAYS):
+                logger.debug("GPT mode not ready after retries (last=%s)", result)
+                self._gpt_mode_attempt_in_progress = False
+                self._gpt_mode_retry_timer = None
+                self._gpt_mode_retry_index = 0
+                return
+            delay = self.GPT_MODE_RETRY_DELAYS[self._gpt_mode_retry_index]
+            self._gpt_mode_retry_index += 1
+
+        logger.debug("GPT mode not ready (result=%s); retrying in %.1fs", result, delay)
+        self._schedule_gpt_mode_retry(delay)
+
     def ensure_gpt_mode(self) -> None:
         """Thread-safe wrapper to set GPT-5.2 Think Deeper mode.
 
@@ -1997,37 +2079,80 @@ class CopilotHandler:
             logger.debug("Skipping ensure_gpt_mode: no page available")
             return
 
+        with self._gpt_mode_retry_lock:
+            if self._gpt_mode_attempt_in_progress:
+                logger.debug("Skipping ensure_gpt_mode: attempt already in progress")
+                return
+            self._gpt_mode_attempt_in_progress = True
+            self._gpt_mode_retry_index = 0
+            timer = self._gpt_mode_retry_timer
+            self._gpt_mode_retry_timer = None
+
+        if timer:
+            timer.cancel()
+
         try:
-            _playwright_executor.execute(self._ensure_gpt_mode_impl)
+            result = _playwright_executor.execute(
+                self._ensure_gpt_mode_impl,
+                self.GPT_MODE_BUTTON_WAIT_FAST_MS
+            )
         except Exception as e:
             logger.debug("Failed to set GPT mode: %s", e)
+            self._clear_gpt_mode_retry_state()
+            return
 
-    def _ensure_gpt_mode_impl(self) -> None:
+        if result in ("set", "already"):
+            self._clear_gpt_mode_retry_state()
+            return
+        if result == "target_not_found":
+            self._clear_gpt_mode_retry_state()
+            return
+
+        if not self.GPT_MODE_RETRY_DELAYS:
+            self._clear_gpt_mode_retry_state()
+            return
+
+        with self._gpt_mode_retry_lock:
+            delay = self.GPT_MODE_RETRY_DELAYS[0]
+            self._gpt_mode_retry_index = 1
+
+        logger.debug("GPT mode not ready (result=%s); retrying in %.1fs", result, delay)
+        self._schedule_gpt_mode_retry(delay)
+
+    def _ensure_gpt_mode_impl(self, wait_timeout_ms: int | None = None) -> str:
         """Implementation of ensure_gpt_mode() that runs in Playwright thread.
 
         OPTIMIZED: Uses wait_for_selector and JavaScript batch operations for speed.
         - wait_for_selector: More efficient than polling (Playwright native wait)
         - JS batch ops: Single evaluate call to find and click menu items
         - Reduced sleeps: Minimum waits just for React to update
+
+        Returns:
+            Status string: "set", "already", "not_ready", "target_not_found", "failed", or "error".
         """
         logger.debug("[THREAD] _ensure_gpt_mode_impl running in thread %s", threading.current_thread().ident)
 
         if not self._page:
             logger.debug("No page available for GPT mode check")
-            return
+            return "not_ready"
 
         error_types = _get_playwright_errors()
         PlaywrightTimeoutError = error_types['TimeoutError']
 
         try:
             start_time = time.monotonic()
+            wait_timeout_ms = (
+                self.GPT_MODE_BUTTON_WAIT_MS
+                if wait_timeout_ms is None
+                else wait_timeout_ms
+            )
 
             # OPTIMIZED: Quick check first, then wait_for_selector if not found
             # This avoids unnecessary waiting when button is already visible
-            current_mode = self._page.evaluate('''() => {
-                const el = document.querySelector('#gptModeSwitcher div');
+            current_mode = self._page.evaluate('''(selector) => {
+                const el = document.querySelector(selector);
                 return el ? el.textContent?.trim() : null;
-            }''')
+            }''', self.GPT_MODE_TEXT_SELECTOR)
 
             if current_mode:
                 elapsed = time.monotonic() - start_time
@@ -2038,24 +2163,24 @@ class CopilotHandler:
                     self._page.wait_for_selector(
                         self.GPT_MODE_BUTTON_SELECTOR,
                         state='visible',
-                        timeout=self.GPT_MODE_BUTTON_WAIT_MS
+                        timeout=wait_timeout_ms
                     )
                     elapsed = time.monotonic() - start_time
                     logger.debug("[TIMING] GPT mode button found after wait (%.3fs)", elapsed)
 
                     # Get mode text after button appears
-                    current_mode = self._page.evaluate('''() => {
-                        const el = document.querySelector('#gptModeSwitcher div');
+                    current_mode = self._page.evaluate('''(selector) => {
+                        const el = document.querySelector(selector);
                         return el ? el.textContent?.trim() : null;
-                    }''')
+                    }''', self.GPT_MODE_TEXT_SELECTOR)
                 except PlaywrightTimeoutError:
                     elapsed = time.monotonic() - start_time
                     logger.debug("GPT mode button did not appear after %.2fs", elapsed)
-                    return
+                    return "not_ready"
 
             if not current_mode:
                 logger.debug("GPT mode text is empty or selector changed")
-                return
+                return "not_ready"
 
             logger.debug("Current GPT mode: %s", current_mode)
 
@@ -2063,7 +2188,7 @@ class CopilotHandler:
             if self.GPT_MODE_TARGET in current_mode:
                 logger.debug("GPT mode is already '%s'", current_mode)
                 self._gpt_mode_set = True
-                return
+                return "already"
 
             # Need to switch mode
             logger.info("Switching GPT mode from '%s' to '%s'...", current_mode, self.GPT_MODE_TARGET)
@@ -2149,18 +2274,22 @@ class CopilotHandler:
                 logger.info("Successfully switched GPT mode to '%s' (%.2fs)",
                            switch_result.get('newMode', self.GPT_MODE_TARGET), elapsed)
                 self._gpt_mode_set = True
+                return "set"
             elif switch_result.get('error') == 'target_not_found':
                 logger.warning("Target mode '%s' not found. Available: %s",
                               self.GPT_MODE_TARGET, switch_result.get('available', []))
                 self._close_menu_safely()
+                return "target_not_found"
             else:
                 logger.warning("GPT mode switch failed: %s (%.2fs)",
                               switch_result.get('error', 'unknown'), elapsed)
                 self._close_menu_safely()
+                return "failed"
 
         except Exception as e:
             logger.warning("Failed to check/switch GPT mode: %s", e)
             # Don't block translation on GPT mode errors - user can manually switch
+            return "error"
 
     def _close_menu_safely(self) -> None:
         """Close any open menu by pressing Escape."""
@@ -2900,36 +3029,6 @@ class CopilotHandler:
             logger.debug("Failed to locate YakuLingo window handle: %s", e)
             return None
 
-    def _load_window_size_from_cache(self) -> tuple[int, int] | None:
-        """Load window size from app.py's display cache.
-
-        This ensures the side panel calculation uses the same window size
-        as the actual pywebview window.
-
-        Returns:
-            Tuple of (width, height) or None if cache is unavailable.
-        """
-        import json
-
-        cache_path = Path.home() / ".yakulingo" / "display_cache.json"
-        if not cache_path.exists():
-            return None
-
-        try:
-            with open(cache_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-
-            window = data.get('window')
-            if isinstance(window, list) and len(window) == 2:
-                width, height = window[0], window[1]
-                if width >= 800 and height >= 500:
-                    return (width, height)
-
-            return None
-        except (json.JSONDecodeError, OSError, KeyError, TypeError) as e:
-            logger.debug("Failed to load window size from cache: %s", e)
-            return None
-
     def _calculate_side_panel_geometry_from_screen(self) -> tuple[int, int, int, int] | None:
         """Calculate side panel position and size from screen resolution.
 
@@ -2977,17 +3076,10 @@ class CopilotHandler:
             # For 1:1 ratio, app width equals edge width (both get half)
             app_width = edge_width
 
-            # Try to load cached window size for height
-            cached_window_size = self._load_window_size_from_cache()
-            if cached_window_size:
-                _, app_height = cached_window_size
-                app_height = min(app_height, max_window_height)
-                logger.debug("Using cached window height: %d (width fixed to %d for 1:1)", app_height, app_width)
-            else:
-                # Fallback: Calculate app window height (must match app.py _detect_display_settings)
-                MIN_WINDOW_HEIGHT = 650
-                app_height = min(max(int(screen_height * self.APP_HEIGHT_RATIO), MIN_WINDOW_HEIGHT), max_window_height)
-                logger.debug("Using calculated window size: %dx%d (no cache)", app_width, app_height)
+            # Calculate app window height (must match app.py _detect_display_settings)
+            MIN_WINDOW_HEIGHT = 650
+            app_height = min(max(int(screen_height * self.APP_HEIGHT_RATIO), MIN_WINDOW_HEIGHT), max_window_height)
+            logger.debug("Using calculated window size: %dx%d", app_width, app_height)
 
             # Calculate total width of app + gap + side panel
             total_width = app_width + self.SIDE_PANEL_GAP + edge_width

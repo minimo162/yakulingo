@@ -1406,6 +1406,10 @@ class TestGptModeSwitch:
         # Copilot React UI takes ~11s from connection to fully render GPT mode button
         assert hasattr(handler, 'GPT_MODE_BUTTON_WAIT_MS')
         assert handler.GPT_MODE_BUTTON_WAIT_MS == 15000  # 15s total timeout
+        assert hasattr(handler, 'GPT_MODE_BUTTON_WAIT_FAST_MS')
+        assert handler.GPT_MODE_BUTTON_WAIT_FAST_MS == 2000  # 2s per attempt
+        assert hasattr(handler, 'GPT_MODE_RETRY_DELAYS')
+        assert handler.GPT_MODE_RETRY_DELAYS == (0.5, 1.0, 2.0)
 
     def test_ensure_gpt_mode_completes_when_no_page(self, handler):
         """_ensure_gpt_mode completes without error when no page"""
@@ -1557,9 +1561,13 @@ class TestGptModeSwitch:
         handler._page = mock_page
 
         with patch('yakulingo.services.copilot_handler._playwright_executor') as mock_executor:
+            mock_executor.execute.return_value = "already"
             handler.ensure_gpt_mode()
 
-        mock_executor.execute.assert_called_once_with(handler._ensure_gpt_mode_impl)
+        mock_executor.execute.assert_called_once_with(
+            handler._ensure_gpt_mode_impl,
+            handler.GPT_MODE_BUTTON_WAIT_FAST_MS
+        )
 
     def test_ensure_gpt_mode_wrapper_no_page(self, handler):
         """ensure_gpt_mode handles no page gracefully without calling executor"""

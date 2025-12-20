@@ -32,6 +32,61 @@ nicegui_app = None
 nicegui_Client = None
 
 
+def _get_largest_monitor_size() -> tuple[int, int] | None:
+    if sys.platform != 'win32':
+        return None
+
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        user32 = ctypes.WinDLL('user32', use_last_error=True)
+
+        class RECT(ctypes.Structure):
+            _fields_ = [
+                ("left", ctypes.c_long),
+                ("top", ctypes.c_long),
+                ("right", ctypes.c_long),
+                ("bottom", ctypes.c_long),
+            ]
+
+        class MONITORINFO(ctypes.Structure):
+            _fields_ = [
+                ("cbSize", wintypes.DWORD),
+                ("rcMonitor", RECT),
+                ("rcWork", RECT),
+                ("dwFlags", wintypes.DWORD),
+            ]
+
+        monitors: list[tuple[int, int]] = []
+
+        def enum_proc(hmonitor, _hdc, _lprect, _lparam):
+            info = MONITORINFO()
+            info.cbSize = ctypes.sizeof(MONITORINFO)
+            if user32.GetMonitorInfoW(hmonitor, ctypes.byref(info)):
+                # Use work area (excludes taskbar) to match side panel sizing logic.
+                width = info.rcWork.right - info.rcWork.left
+                height = info.rcWork.bottom - info.rcWork.top
+                if width > 0 and height > 0:
+                    monitors.append((width, height))
+            return True
+
+        monitor_enum_proc = ctypes.WINFUNCTYPE(
+            wintypes.BOOL,
+            wintypes.HMONITOR,
+            wintypes.HDC,
+            ctypes.POINTER(RECT),
+            wintypes.LPARAM,
+        )
+        user32.EnumDisplayMonitors(None, None, monitor_enum_proc(enum_proc), 0)
+        if monitors:
+            return max(monitors, key=lambda size: size[0] * size[1])
+    except Exception:
+        return None
+
+    return None
+
+
 def _ensure_nicegui_version() -> None:
     """Validate that the installed NiceGUI version meets the minimum requirement.
 
@@ -58,6 +113,105 @@ def _ensure_nicegui_version() -> None:
         )
 
 
+def _nicegui_open_window_patched(
+    host: str,
+    port: int,
+    title: str,
+    width: int,
+    height: int,
+    fullscreen: bool,
+    frameless: bool,
+    method_queue,
+    response_queue,
+    window_args: dict,
+    settings_dict: dict,
+    start_args: dict,
+) -> None:
+    """Open pywebview window with parent-provided window_args in child process."""
+    import time
+    import warnings
+    from threading import Event
+
+    from nicegui import helpers
+    from nicegui.native import native_mode as _native_mode
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings('ignore', category=DeprecationWarning)
+        import webview
+
+    while not helpers.is_port_open(host, port):
+        time.sleep(0.1)
+
+    window_kwargs = {
+        'url': f'http://{host}:{port}',
+        'title': title,
+        'width': width,
+        'height': height,
+        'fullscreen': fullscreen,
+        'frameless': frameless,
+        **window_args,
+    }
+    webview.settings.update(**settings_dict)
+    window = webview.create_window(**window_kwargs)
+    assert window is not None
+    closed = Event()
+    window.events.closed += closed.set
+    _native_mode._start_window_method_executor(window, method_queue, response_queue, closed)
+    webview.start(**start_args)
+
+
+def _nicegui_activate_patched(
+    host: str,
+    port: int,
+    title: str,
+    width: int,
+    height: int,
+    fullscreen: bool,
+    frameless: bool,
+) -> None:
+    """Activate NiceGUI native mode with window_args passed to child process."""
+    import _thread
+    import multiprocessing as mp
+    import sys
+    import time
+    from threading import Thread
+
+    from nicegui import core, optional_features
+    from nicegui.native import native
+    from nicegui.server import Server
+
+    def check_shutdown() -> None:
+        while process.is_alive():
+            time.sleep(0.1)
+        Server.instance.should_exit = True
+        while not core.app.is_stopped:
+            time.sleep(0.1)
+        _thread.interrupt_main()
+        native.remove_queues()
+
+    if not optional_features.has('webview'):
+        logger.error('Native mode is not supported in this configuration.\n'
+                     'Please run "pip install pywebview" to use it.')
+        sys.exit(1)
+
+    mp.freeze_support()
+    native.create_queues()
+
+    window_args = dict(core.app.native.window_args)
+    settings_dict = dict(core.app.native.settings)
+    start_args = dict(core.app.native.start_args)
+
+    args = (
+        host, port, title, width, height, fullscreen, frameless,
+        native.method_queue, native.response_queue,
+        window_args, settings_dict, start_args,
+    )
+    process = mp.Process(target=_nicegui_open_window_patched, args=args, daemon=True)
+    process.start()
+
+    Thread(target=check_shutdown, daemon=True).start()
+
+
 # Note: Version check moved to run_app() after import
 
 
@@ -72,108 +226,11 @@ def _patch_nicegui_native_mode() -> None:
     to explicitly pass window_args as a process argument.
     """
     try:
-        import _thread
-        import multiprocessing as mp
-        import time
-        import warnings
-        from threading import Event, Thread
-
-        from nicegui import core, helpers, optional_features
         from nicegui.native import native, native_mode
-        from nicegui.server import Server
 
-        # Import webview with warning suppression (same as NiceGUI does)
-        with warnings.catch_warnings():
-            warnings.filterwarnings('ignore', category=DeprecationWarning)
-            import webview
-
-        def _open_window_patched(
-            host: str, port: int, title: str, width: int, height: int,
-            fullscreen: bool, frameless: bool,
-            method_queue: mp.Queue, response_queue: mp.Queue,
-            window_args: dict,  # Added: window_args passed from parent
-            settings_dict: dict,  # Added: webview.settings
-            start_args: dict,  # Added: webview.start() args
-        ) -> None:
-            """Modified _open_window that receives window_args as argument.
-
-            Note: This function runs in a child process (via multiprocessing).
-            All required modules must be imported inside the function because
-            the child process is a fresh Python interpreter (especially on Windows
-            which uses 'spawn' mode).
-            """
-            # Import all required modules inside the function for child process
-            import time
-            import warnings
-            from threading import Event
-
-            from nicegui import helpers
-            from nicegui.native import native_mode as _native_mode
-
-            with warnings.catch_warnings():
-                warnings.filterwarnings('ignore', category=DeprecationWarning)
-                import webview
-
-            while not helpers.is_port_open(host, port):
-                time.sleep(0.1)
-
-            window_kwargs = {
-                'url': f'http://{host}:{port}',
-                'title': title,
-                'width': width,
-                'height': height,
-                'fullscreen': fullscreen,
-                'frameless': frameless,
-                **window_args,  # Use passed window_args instead of core.app.native.window_args
-            }
-            webview.settings.update(**settings_dict)
-            window = webview.create_window(**window_kwargs)
-            assert window is not None
-            closed = Event()
-            window.events.closed += closed.set
-            _native_mode._start_window_method_executor(window, method_queue, response_queue, closed)
-            webview.start(**start_args)
-
-        def activate_patched(
-            host: str, port: int, title: str, width: int, height: int,
-            fullscreen: bool, frameless: bool
-        ) -> None:
-            """Modified activate that passes window_args to child process."""
-            def check_shutdown() -> None:
-                while process.is_alive():
-                    time.sleep(0.1)
-                Server.instance.should_exit = True
-                while not core.app.is_stopped:
-                    time.sleep(0.1)
-                _thread.interrupt_main()
-                native.remove_queues()
-
-            if not optional_features.has('webview'):
-                logger.error('Native mode is not supported in this configuration.\n'
-                             'Please run "pip install pywebview" to use it.')
-                import sys
-                sys.exit(1)
-
-            mp.freeze_support()
-            native.create_queues()
-
-            # Serialize window_args, settings, and start_args to pass to child process
-            window_args = dict(core.app.native.window_args)
-            settings_dict = dict(core.app.native.settings)
-            start_args = dict(core.app.native.start_args)
-
-            args = (
-                host, port, title, width, height, fullscreen, frameless,
-                native.method_queue, native.response_queue,
-                window_args, settings_dict, start_args,  # Added
-            )
-            process = mp.Process(target=_open_window_patched, args=args, daemon=True)
-            process.start()
-
-            Thread(target=check_shutdown, daemon=True).start()
-
-        # Apply the patch
-        native_mode.activate = activate_patched
+        # Apply the patch to both entry points used by NiceGUI
+        native_mode.activate = _nicegui_activate_patched
+        native.activate = _nicegui_activate_patched
         logger.debug("NiceGUI native_mode patched to pass window_args to child process")
 
     except Exception as e:
@@ -198,6 +255,7 @@ if TYPE_CHECKING:
 # App constants
 COPILOT_LOGIN_TIMEOUT = 300  # 5 minutes for login
 MAX_HISTORY_DISPLAY = 20  # Maximum history items to display in sidebar
+MIN_AVAILABLE_MEMORY_GB_FOR_EARLY_CONNECT = 0.5  # Skip early Copilot init only on very low memory
 TEXT_TRANSLATION_CHAR_LIMIT = 5000  # Max chars for text translation (Ctrl+Alt+J, Ctrl+Enter)
 
 
@@ -1541,7 +1599,7 @@ class YakuLingoApp:
 
                     # Reset GPT mode flag on re-login (session was reset, mode setting is lost)
                     # This ensures ensure_gpt_mode() will actually run
-                    self.copilot._gpt_mode_set = False
+                    self.copilot.reset_gpt_mode_state()
                     # Set GPT mode in background (non-blocking, don't delay "Ready" notification)
                     asyncio.create_task(asyncio.to_thread(self.copilot.ensure_gpt_mode))
 
@@ -3906,7 +3964,8 @@ def create_app() -> YakuLingoApp:
 
 
 def _detect_display_settings(
-    webview_module: "ModuleType | None" = None
+    webview_module: "ModuleType | None" = None,
+    screen_size: tuple[int, int] | None = None,
 ) -> tuple[tuple[int, int], tuple[int, int, int]]:
     """Detect connected monitors and determine window size and panel widths.
 
@@ -4013,6 +4072,21 @@ def _detect_display_settings(
     # Default based on 1920x1080 screen
     default_window, default_panels = calculate_sizes(1920, 1080)
 
+    if screen_size is not None:
+        screen_width, screen_height = screen_size
+        window_size, panel_sizes = calculate_sizes(screen_width, screen_height)
+        logger.info(
+            "Display detection (fast): largest work area=%dx%d",
+            screen_width,
+            screen_height,
+        )
+        logger.info(
+            "Window %dx%d, sidebar %dpx, input panel %dpx, content %dpx",
+            window_size[0], window_size[1],
+            panel_sizes[0], panel_sizes[1], panel_sizes[2]
+        )
+        return (window_size, panel_sizes)
+
     # Use pre-initialized webview module if provided, otherwise import
     webview = webview_module
     if webview is None:
@@ -4078,7 +4152,10 @@ def _detect_display_settings(
         return (default_window, default_panels)
 
 
-def _check_native_mode_and_get_webview(native_requested: bool) -> tuple[bool, "ModuleType | None"]:
+def _check_native_mode_and_get_webview(
+    native_requested: bool,
+    fast_path: bool = False,
+) -> tuple[bool, "ModuleType | None"]:
     """Check if native mode can be used and return initialized webview module.
 
     This function combines native mode check and webview initialization to avoid
@@ -4112,6 +4189,9 @@ def _check_native_mode_and_get_webview(native_requested: bool) -> tuple[bool, "M
             "Native mode requested but pywebview is unavailable: %s; starting in browser mode.", e
         )
         return (False, None)
+
+    if fast_path:
+        return (True, webview)
 
     # pywebview resolves the available GUI backend lazily when `initialize()` is called.
     # Triggering the initialization here prevents false negatives where `webview.guilib`
@@ -4207,6 +4287,40 @@ def _calculate_app_position_for_side_panel(
         return None
 
 
+def _get_available_memory_gb() -> float | None:
+    """Return available physical memory in GB, or None if not available."""
+    if sys.platform == "win32":
+        try:
+            import ctypes
+
+            class MEMORYSTATUSEX(ctypes.Structure):
+                _fields_ = [
+                    ("dwLength", ctypes.c_ulong),
+                    ("dwMemoryLoad", ctypes.c_ulong),
+                    ("ullTotalPhys", ctypes.c_ulonglong),
+                    ("ullAvailPhys", ctypes.c_ulonglong),
+                    ("ullTotalPageFile", ctypes.c_ulonglong),
+                    ("ullAvailPageFile", ctypes.c_ulonglong),
+                    ("ullTotalVirtual", ctypes.c_ulonglong),
+                    ("ullAvailVirtual", ctypes.c_ulonglong),
+                    ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+                ]
+
+            status = MEMORYSTATUSEX()
+            status.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
+            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+                return status.ullAvailPhys / (1024 ** 3)
+        except Exception:
+            return None
+
+    try:
+        import psutil  # type: ignore
+    except Exception:
+        return None
+
+    return psutil.virtual_memory().available / (1024 ** 3)
+
+
 def run_app(
     host: str = '127.0.0.1',
     port: int = 8765,
@@ -4231,10 +4345,17 @@ def run_app(
     if multiprocessing.current_process().name != 'MainProcess':
         return
 
-    # Playwright pre-initialization (SEQUENTIAL execution)
-    # Previously parallel execution caused I/O contention with NiceGUI import on Windows,
-    # resulting in slower total startup time (16s vs 11s sequential).
-    # Now we complete Playwright init before importing NiceGUI.
+    available_memory_gb = _get_available_memory_gb()
+    allow_early_connect = True
+    if available_memory_gb is not None and available_memory_gb < MIN_AVAILABLE_MEMORY_GB_FOR_EARLY_CONNECT:
+        allow_early_connect = False
+        logger.info(
+            "Skipping early Copilot pre-initialization due to low available memory: %.1fGB < %.1fGB",
+            available_memory_gb,
+            MIN_AVAILABLE_MEMORY_GB_FOR_EARLY_CONNECT,
+        )
+
+    # Playwright pre-initialization (parallel)
     # Early Edge startup: Start Edge browser BEFORE NiceGUI import
     # This allows Copilot page to load during NiceGUI import (~2.6s) and display_settings (~1.2s)
     # Result: GPT mode button should be ready when we need it (saving ~3-4s)
@@ -4244,83 +4365,84 @@ def run_app(
     _early_connection_event = None
     _early_connection_result_ref = None
 
-    try:
-        from yakulingo.services.copilot_handler import (
-            CopilotHandler,
-            pre_initialize_playwright,
-        )
-        pre_initialize_playwright()
-        # Playwright init runs in background - DO NOT wait here
-        # Edge connection will wait for Playwright init to complete when needed
-        # This allows NiceGUI import to start immediately (~15s faster startup)
-        # Note: I/O contention with antivirus is handled by Edge connection waiting
+    if allow_early_connect:
+        try:
+            from yakulingo.services.copilot_handler import (
+                CopilotHandler,
+                pre_initialize_playwright,
+            )
+            pre_initialize_playwright()
+            # Playwright init runs in background - DO NOT wait here
+            # Edge connection will wait for Playwright init to complete when needed
+            # This allows NiceGUI import to start immediately (~15s faster startup)
+            # Note: I/O contention with antivirus is handled by Edge connection waiting
 
-        _early_copilot = CopilotHandler()
-        _early_connection_event = threading.Event()
-        _early_connection_result_ref = _EarlyConnectionResult()
+            _early_copilot = CopilotHandler()
+            _early_connection_event = threading.Event()
+            _early_connection_result_ref = _EarlyConnectionResult()
 
-        # Start Edge in parallel with Playwright initialization (~1.5s savings)
-        # Edge startup uses subprocess.Popen, which doesn't require Playwright
-        # connect() will skip Edge startup if it's already running on the CDP port
-        def _start_edge_early():
-            try:
-                _t_edge = time.perf_counter()
-                result = _early_copilot.start_edge()
-                logger.info("[TIMING] Early Edge startup (parallel): %.2fs, success=%s",
-                           time.perf_counter() - _t_edge, result)
-            except Exception as e:
-                logger.debug("Early Edge startup failed: %s", e)
+            # Start Edge in parallel with Playwright initialization (~1.5s savings)
+            # Edge startup uses subprocess.Popen, which doesn't require Playwright
+            # connect() will skip Edge startup if it's already running on the CDP port
+            def _start_edge_early():
+                try:
+                    _t_edge = time.perf_counter()
+                    result = _early_copilot.start_edge()
+                    logger.info("[TIMING] Early Edge startup (parallel): %.2fs, success=%s",
+                               time.perf_counter() - _t_edge, result)
+                except Exception as e:
+                    logger.debug("Early Edge startup failed: %s", e)
 
-        _early_edge_thread = threading.Thread(
-            target=_start_edge_early, daemon=True, name="early_edge"
-        )
-        _early_edge_thread.start()
-        logger.info("[TIMING] Started early Edge startup (parallel with Playwright init)")
+            _early_edge_thread = threading.Thread(
+                target=_start_edge_early, daemon=True, name="early_edge"
+            )
+            _early_edge_thread.start()
+            logger.info("[TIMING] Started early Edge startup (parallel with Playwright init)")
 
-        # Start Copilot connection in background thread
-        # This runs in parallel with NiceGUI import + display_settings (~3.8s)
-        # Playwright init completion is waited inside CopilotHandler.connect()
-        # Edge startup is already in progress (or completed) in parallel thread
-        def _early_connect():
-            """Connect to Copilot in background (runs during NiceGUI import).
+            # Start Copilot connection in background thread
+            # This runs in parallel with NiceGUI import + display_settings (~3.8s)
+            # Playwright init completion is waited inside CopilotHandler.connect()
+            # Edge startup is already in progress (or completed) in parallel thread
+            def _early_connect():
+                """Connect to Copilot in background (runs during NiceGUI import).
 
-            Connection is started early to overlap with startup work.
-            GPT mode switching is deferred until after the UI is visible.
-            """
-            try:
-                _t_early = time.perf_counter()
+                Connection is started early to overlap with startup work.
+                GPT mode switching is deferred until after the UI is visible.
+                """
+                try:
+                    _t_early = time.perf_counter()
 
-                # Wait for early Edge startup to complete before connecting
-                # This ensures Edge is running when connect() checks _is_port_in_use()
-                # Prevents race condition if Edge startup is slower than Playwright init
-                if _early_edge_thread is not None and _early_edge_thread.is_alive():
-                    logger.debug("Waiting for early Edge startup to complete...")
-                    _early_edge_thread.join(timeout=20.0)  # Max Edge startup time
-                    logger.debug("Early Edge startup thread completed")
+                    # Wait for early Edge startup to complete before connecting
+                    # This ensures Edge is running when connect() checks _is_port_in_use()
+                    # Prevents race condition if Edge startup is slower than Playwright init
+                    if _early_edge_thread is not None and _early_edge_thread.is_alive():
+                        logger.debug("Waiting for early Edge startup to complete...")
+                        _early_edge_thread.join(timeout=20.0)  # Max Edge startup time
+                        logger.debug("Early Edge startup thread completed")
 
-                # Use defer_window_positioning=True to skip waiting for YakuLingo window
-                # Window positioning will be done after YakuLingo window is created
-                result = _early_copilot.connect(
-                    bring_to_foreground_on_login=False,
-                    defer_window_positioning=True
-                )
-                if _early_connection_result_ref is not None:
-                    _early_connection_result_ref.value = result
-                logger.info("[TIMING] Early Copilot connect (background): %.2fs, success=%s",
-                           time.perf_counter() - _t_early, result)
-            except Exception as e:
-                logger.debug("Early Copilot connection failed: %s", e)
-                if _early_connection_result_ref is not None:
-                    _early_connection_result_ref.value = False
-            finally:
-                if _early_connection_event is not None:
-                    _early_connection_event.set()
+                    # Use defer_window_positioning=True to skip waiting for YakuLingo window
+                    # Window positioning will be done after YakuLingo window is created
+                    result = _early_copilot.connect(
+                        bring_to_foreground_on_login=False,
+                        defer_window_positioning=True
+                    )
+                    if _early_connection_result_ref is not None:
+                        _early_connection_result_ref.value = result
+                    logger.info("[TIMING] Early Copilot connect (background): %.2fs, success=%s",
+                               time.perf_counter() - _t_early, result)
+                except Exception as e:
+                    logger.debug("Early Copilot connection failed: %s", e)
+                    if _early_connection_result_ref is not None:
+                        _early_connection_result_ref.value = False
+                finally:
+                    if _early_connection_event is not None:
+                        _early_connection_event.set()
 
-        _early_connect_thread = threading.Thread(target=_early_connect, daemon=True, name="early_connect")
-        _early_connect_thread.start()
-        logger.info("[TIMING] Started early Copilot connection (background thread)")
-    except Exception as e:
-        logger.debug("Failed to start Playwright/Edge pre-initialization: %s", e)
+            _early_connect_thread = threading.Thread(target=_early_connect, daemon=True, name="early_connect")
+            _early_connect_thread.start()
+            logger.info("[TIMING] Started early Copilot connection (background thread)")
+        except Exception as e:
+            logger.debug("Failed to start Playwright/Edge pre-initialization: %s", e)
 
     # Import NiceGUI (deferred from module level for ~6s faster startup)
     # During this import, Edge is starting and Copilot page is loading in background
@@ -4373,25 +4495,95 @@ def run_app(
     # Detect optimal window size BEFORE ui.run() to avoid resize flicker
     # Fallback to browser mode when pywebview cannot create a native window (e.g., headless Linux)
     _t2 = time.perf_counter()
-    native, webview_module = _check_native_mode_and_get_webview(native)
+    screen_size = _get_largest_monitor_size()
+    native, webview_module = _check_native_mode_and_get_webview(
+        native,
+        fast_path=screen_size is not None,
+    )
     _t2_webview = time.perf_counter()
     logger.info("[TIMING] webview.initialize: %.2fs", _t2_webview - _t2)
     logger.info("Native mode enabled: %s", native)
     if native:
         # Pass pre-initialized webview module to avoid second initialization
-        window_size, panel_sizes = _detect_display_settings(webview_module=webview_module)
+        window_size, panel_sizes = _detect_display_settings(
+            webview_module=webview_module,
+            screen_size=screen_size,
+        )
         yakulingo_app._panel_sizes = panel_sizes  # (sidebar_width, input_panel_width, content_width)
         yakulingo_app._window_size = window_size
         run_window_size = window_size
     else:
-        window_size = (1800, 1100)  # Default size for browser mode (reduced for side panel)
-        yakulingo_app._panel_sizes = (250, 400, 850)  # Default panel sizes (sidebar, input, content)
+        if screen_size is not None:
+            window_size, panel_sizes = _detect_display_settings(
+                webview_module=None,
+                screen_size=screen_size,
+            )
+            yakulingo_app._panel_sizes = panel_sizes
+        else:
+            window_size = (1800, 1100)  # Default size for browser mode (reduced for side panel)
+            yakulingo_app._panel_sizes = (250, 400, 850)  # Default panel sizes (sidebar, input, content)
         yakulingo_app._window_size = window_size
         run_window_size = None  # Passing a size would re-enable native mode inside NiceGUI
     logger.info("[TIMING] display_settings (total): %.2fs", time.perf_counter() - _t2)
 
     # NOTE: PP-DocLayout-L pre-initialization moved to @ui.page('/') handler
     # to show loading screen while initializing (better UX than blank screen)
+
+    browser_opened = False
+
+    def _find_edge_exe_for_browser_open() -> str | None:
+        if sys.platform != "win32":
+            return None
+        candidates = [
+            r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+            r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+        ]
+        for path in candidates:
+            if Path(path).exists():
+                return path
+        return None
+
+    def _open_browser_window() -> None:
+        nonlocal browser_opened
+        if browser_opened:
+            return
+        browser_opened = True
+
+        url = f"http://{host}:{port}/"
+        width, height = yakulingo_app._window_size
+        display_mode = "side_panel"
+        try:
+            display_mode = yakulingo_app.settings.browser_display_mode
+        except Exception:
+            pass
+
+        if sys.platform == "win32":
+            edge_exe = _find_edge_exe_for_browser_open()
+            if edge_exe:
+                args = [
+                    edge_exe,
+                    "--new-window",
+                    f"--window-size={width},{height}",
+                ]
+                if display_mode == "side_panel":
+                    position = _calculate_app_position_for_side_panel(width, height)
+                    if position:
+                        args.append(f"--window-position={position[0]},{position[1]}")
+                args.append(url)
+                try:
+                    import subprocess
+                    subprocess.Popen(args)
+                    logger.info("Opened browser window: %s", url)
+                    return
+                except Exception as e:
+                    logger.debug("Failed to open Edge with window size: %s", e)
+
+        try:
+            import webbrowser
+            webbrowser.open(url)
+            logger.info("Opened browser via default handler: %s", url)
+        except Exception as e:
+            logger.debug("Failed to open browser: %s", e)
 
     def _close_browser_window_on_shutdown() -> None:
         """Close the app's browser window (browser mode only, Windows)."""
@@ -4549,6 +4741,29 @@ def run_app(
     nicegui_app.on_shutdown(cleanup)
     atexit.register(cleanup)
 
+    # Auto-shutdown when the last browser client disconnects (browser mode).
+    # Without this, closing the window leaves the server running.
+    shutdown_check_task: "asyncio.Task | None" = None
+
+    async def _shutdown_if_no_clients() -> None:
+        await asyncio.sleep(1.0)
+        if cleanup_done or yakulingo_app._shutdown_requested:
+            return
+        if any(client.has_socket_connection for client in nicegui_Client.instances.values()):
+            return
+        logger.info("No active clients detected; shutting down NiceGUI")
+        nicegui_app.shutdown()
+
+    def _on_disconnect(_: "nicegui_Client | None" = None) -> None:
+        nonlocal shutdown_check_task
+        if cleanup_done or yakulingo_app._shutdown_requested:
+            return
+        if shutdown_check_task is not None and not shutdown_check_task.done():
+            return
+        shutdown_check_task = asyncio.create_task(_shutdown_if_no_clients())
+
+    nicegui_app.on_disconnect(_on_disconnect)
+
     # Serve styles.css as static file for browser caching (faster subsequent loads)
     ui_dir = Path(__file__).parent
     nicegui_app.add_static_files('/static', ui_dir)
@@ -4630,6 +4845,8 @@ def run_app(
 
     # Early window positioning: Move app window IMMEDIATELY when pywebview creates it
     # This runs in parallel with Edge startup and positions the window before UI is rendered
+    early_position_started = False
+
     def _position_window_early_sync():
         """Position YakuLingo window immediately when it's created (sync, runs in thread).
 
@@ -4675,6 +4892,7 @@ def run_app(
                 ]
 
             # Window flag constants
+            SW_HIDE = 0
             SW_SHOW = 5
             SW_RESTORE = 9
             SWP_NOZORDER = 0x0004
@@ -4706,6 +4924,12 @@ def run_app(
                         user32.ShowWindow(hwnd, SW_RESTORE)
                         logger.debug("[EARLY_POSITION] Window was minimized, restored after %dms", waited_ms)
                         time.sleep(0.1)  # Brief wait for restore animation
+
+                    # If the window is visible despite hidden=True, hide it before moving
+                    if is_visible:
+                        user32.ShowWindow(hwnd, SW_HIDE)
+                        logger.debug("[EARLY_POSITION] Window was visible at create, hiding before reposition")
+                        is_visible = False
 
                     # Set window icon using Win32 API (WM_SETICON)
                     # This ensures taskbar shows YakuLingo icon instead of Python icon
@@ -4817,6 +5041,17 @@ def run_app(
         """Async wrapper for early window positioning."""
         await asyncio.to_thread(_position_window_early_sync)
 
+    def _start_early_positioning_thread():
+        nonlocal early_position_started
+        if early_position_started:
+            return
+        early_position_started = True
+        threading.Thread(
+            target=_position_window_early_sync,
+            daemon=True,
+            name="early_position"
+        ).start()
+
     @nicegui_app.on_startup
     async def on_startup():
         """Called when NiceGUI server starts (before clients connect)."""
@@ -4825,7 +5060,10 @@ def run_app(
 
         # Start early window positioning - moves window before UI is rendered
         if native and sys.platform == 'win32':
-            asyncio.create_task(_position_window_early())
+            _start_early_positioning_thread()
+
+        if not native:
+            asyncio.create_task(asyncio.to_thread(_open_browser_window))
 
     @ui.page('/')
     async def main_page(client: nicegui_Client):
@@ -5053,6 +5291,9 @@ document.fonts.ready.then(function() {
     # window_size is already determined at the start of run_app()
     logger.info("[TIMING] Before ui.run(): %.2fs", time.perf_counter() - _t0)
 
+    if native and sys.platform == 'win32':
+        _start_early_positioning_thread()
+
     # NOTE: Window positioning strategy to eliminate visual flicker:
     # 1. window_args['hidden'] = True: Window is created hidden (not visible)
     # 2. window_args['x'] and window_args['y']: Pre-calculated position (may or may not work
@@ -5071,7 +5312,7 @@ document.fonts.ready.then(function() {
         native=native,
         window_size=run_window_size,
         frameless=False,
-        show=False,  # Don't open browser (native mode uses pywebview window)
+        show=False,  # Browser window is opened explicitly in on_startup
         reconnect_timeout=30.0,  # Increase from default 3s for stable WebSocket connection
         uvicorn_logging_level='warning',  # Reduce log output for faster startup
     )

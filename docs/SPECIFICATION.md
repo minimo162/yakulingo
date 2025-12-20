@@ -1301,6 +1301,7 @@ YakuLingo.exe    # Rust製ネイティブランチャー
 - NiceGUI importを`main()`内に配置し、pywebviewのmultiprocessingによる二重初期化を回避
 - `show=False`でブラウザ自動起動を抑制（ネイティブモードはpywebviewウィンドウを使用）
 - ローディング画面を先行表示し、体感起動速度を向上
+- ブラウザモード時はEdgeを`--app=`で起動し、タスクバーで`YakuLingo (UI)`として識別しやすくする
 
 ### 12.4 システム要件
 

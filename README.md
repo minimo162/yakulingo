@@ -167,6 +167,7 @@ YakuLingoを初めて使う際は、以下の手順でM365 Copilotにログイ�
 
 > **Note**: 初回起動時はEdgeが前面に表示されることがあります。ログイン完了後、YakuLingoが自動的に接続します。
 > **Note**: 終了時は、YakuLingoまたはCopilot(Edge)のどちらかのウィンドウを閉じればOKです。
+> **Note**: ブラウザモードではUIウィンドウは `YakuLingo (UI)` として表示され、Copilotは通常のEdgeウィンドウとして表示されます。
 
 ## 使用方法
 

@@ -4508,20 +4508,20 @@ def run_app(
         if sys.platform == "win32":
             edge_exe = _find_edge_exe_for_browser_open()
             if edge_exe:
+                # App mode makes the taskbar entry use the site's icon/title (clearer than Edge).
                 args = [
                     edge_exe,
-                    "--new-window",
+                    f"--app={url}",
                     f"--window-size={width},{height}",
                 ]
                 if display_mode == "side_panel":
                     position = _calculate_app_position_for_side_panel(width, height)
                     if position:
                         args.append(f"--window-position={position[0]},{position[1]}")
-                args.append(url)
                 try:
                     import subprocess
                     subprocess.Popen(args)
-                    logger.info("Opened browser window: %s", url)
+                    logger.info("Opened browser app window: %s", url)
                     return
                 except Exception as e:
                     logger.debug("Failed to open Edge with window size: %s", e)
@@ -5249,11 +5249,12 @@ document.fonts.ready.then(function() {
     # 3. _position_window_early_sync() polls for window, positions it while hidden, then shows it
     # This approach ensures the window appears at the correct position from the start.
 
+    window_title = "YakuLingo" if native else "YakuLingo (UI)"
     # Use the same icon for favicon (browser tab icon)
     ui.run(
         host=host,
         port=port,
-        title='YakuLingo',
+        title=window_title,
         favicon=icon_path,
         dark=False,
         reload=False,

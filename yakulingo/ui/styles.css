@@ -180,7 +180,7 @@ body {
     width: 100%;
     height: var(--viewport-height);
     max-height: var(--viewport-height);
-    min-width: 1000px;  /* Minimum width to prevent layout breaking */
+    min-width: min(1000px, 100vw);  /* Allow smaller windows while preserving layout on large screens */
     overflow: hidden;   /* Prevent body scrolling - use inner containers for scroll */
     overflow-x: hidden; /* Prevent horizontal scroll - min-width handles narrow windows */
     -webkit-font-smoothing: antialiased;
@@ -1362,6 +1362,26 @@ textarea:focus-visible {
     -webkit-user-select: text !important;
     user-select: text !important;
     cursor: text;
+}
+
+/* Tabular translation output (e.g., Excel cell translation) */
+.translation-table {
+    width: 100%;
+    overflow-x: auto;
+}
+
+.translation-table table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--md-sys-typescale-size-md);
+}
+
+.translation-table td {
+    border: 1px solid var(--md-sys-color-outline-variant);
+    padding: 0.4rem 0.6rem;
+    vertical-align: top;
+    white-space: pre-wrap;
+    word-break: break-word;
 }
 
 /* === Result Section === */

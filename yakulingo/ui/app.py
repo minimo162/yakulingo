@@ -638,12 +638,8 @@ class YakuLingoApp:
             max(len(row) for row in cells_2d) if cells_2d else 0,
         )
 
-        # Prepare source text display (show first few cells)
-        preview_cells = [c[2][:30] for c in cells_to_translate[:5]]
-        preview_text = " | ".join(preview_cells)
-        if len(cells_to_translate) > 5:
-            preview_text += f" ... ({len(cells_to_translate)} cells)"
-        self.state.source_text = preview_text
+        # Prepare source text display (show full text while translating)
+        self.state.source_text = normalized
 
         # Switch to text tab and show loading state
         self.state.current_tab = Tab.TEXT
@@ -694,7 +690,7 @@ class YakuLingoApp:
 
             # Translate all cells in batches using the existing batch translation
             cell_texts = [c[2] for c in cells_to_translate]
-            translations = await asyncio.to_thread(
+            batch_result = await asyncio.to_thread(
                 self._translate_cell_batch,
                 cell_texts,
                 detected_language,
@@ -702,9 +698,10 @@ class YakuLingoApp:
                 glossary_content,
             )
 
-            if translations is None:
+            if batch_result is None:
                 error_message = "Translation failed"
             else:
+                translations, explanations = batch_result
                 # Build translated 2D array
                 translated_2d = [row[:] for row in cells_2d]  # Deep copy
                 for (row_idx, col_idx, _), translated in zip(cells_to_translate, translations):
@@ -733,6 +730,13 @@ class YakuLingoApp:
                     trace_id, len(cells_to_translate), elapsed_time,
                 )
 
+                explanation_blocks = []
+                for explanation in explanations:
+                    explanation = explanation.strip()
+                    if explanation:
+                        explanation_blocks.append(explanation)
+                explanation_text = "\n\n".join(explanation_blocks)
+
                 # Create result to display
                 from yakulingo.models.types import TextTranslationResult, TranslationOption
                 result = TextTranslationResult(
@@ -740,7 +744,7 @@ class YakuLingoApp:
                     source_char_count=len(text),
                     options=[TranslationOption(
                         text=translated_text,
-                        explanation=f"Excelセル翻訳完了（{len(cells_to_translate)}セル）\nクリップボードにコピーしました。Excelに戻って Ctrl+V で貼り付けてください。",
+                        explanation=explanation_text,
                         char_count=len(translated_text),
                     )],
                     output_language="en" if detected_language == "日本語" else "jp",
@@ -769,7 +773,7 @@ class YakuLingoApp:
         detected_language: str,
         reference_files: list[str],
         glossary_content: str | None,
-    ) -> list[str] | None:
+    ) -> tuple[list[str], list[str]] | None:
         """Translate a batch of cells.
 
         Args:
@@ -779,7 +783,7 @@ class YakuLingoApp:
             glossary_content: Glossary content to embed in prompt
 
         Returns:
-            List of translated texts, or None if failed
+            Tuple of (translations, explanations), or None if failed
         """
         from yakulingo.services.prompt_builder import PromptBuilder, GLOSSARY_EMBEDDED_INSTRUCTION, REFERENCE_INSTRUCTION
 
@@ -826,9 +830,9 @@ class YakuLingoApp:
         if output_language == "en":
             prompt = prompt.replace("{style}", style)
 
-        # Add instruction to preserve numbered format
-        prompt += "\n\n【重要】各項目の番号を維持して、番号ごとに翻訳結果のみを返してください。"
-        prompt += "\n例: [1] 翻訳結果1\n[2] 翻訳結果2"
+        # Add instruction to preserve numbered format with explanation per item
+        prompt += "\n\n【重要】各項目の番号を維持し、項目ごとに以下の形式で出力してください。"
+        prompt += "\n[1]\n訳文: 翻訳結果1\n解説: ...\n[2]\n訳文: 翻訳結果2\n解説: ..."
 
         try:
             response = self.copilot.translate_single(
@@ -841,15 +845,17 @@ class YakuLingoApp:
                 return None
 
             # Parse numbered responses
-            translations = self._parse_numbered_translations(response, len(cells))
-            return translations
+            translations, explanations = self._parse_numbered_translations_with_explanations(
+                response, len(cells)
+            )
+            return translations, explanations
 
         except Exception as e:
             logger.error("Batch translation error: %s", e)
             return None
 
     def _parse_numbered_translations(self, response: str, expected_count: int) -> list[str]:
-        """Parse numbered translation response.
+        """Parse numbered translation response (translations only).
 
         Args:
             response: Response text with numbered translations
@@ -889,6 +895,37 @@ class YakuLingoApp:
             cleaned_lines.append("")
 
         return cleaned_lines[:expected_count]
+
+    def _parse_numbered_translations_with_explanations(
+        self,
+        response: str,
+        expected_count: int,
+    ) -> tuple[list[str], list[str]]:
+        """Parse numbered translation response with explanations per item."""
+        import re
+
+        translations = [""] * expected_count
+        explanations = [""] * expected_count
+
+        pattern = r'\[(\d+)\]\s*(.+?)(?=\n?\[\d+\]|$)'
+        matches = re.findall(pattern, response, re.DOTALL)
+
+        if matches:
+            sorted_matches = sorted(matches, key=lambda x: int(x[0]))
+            for num, block in sorted_matches:
+                index = int(num) - 1
+                if index < 0 or index >= expected_count:
+                    continue
+                parsed = self.translation_service._parse_single_translation_result(block)
+                if parsed:
+                    translations[index] = parsed[0].text.strip()
+                    explanations[index] = parsed[0].explanation.strip()
+                else:
+                    translations[index] = block.strip()
+            return translations, explanations
+
+        translations = self._parse_numbered_translations(response, expected_count)
+        return translations, explanations
 
     async def _bring_window_to_front(self):
         """Bring the app window to front.
@@ -4008,9 +4045,13 @@ def _detect_display_settings(
         # Main area = window - sidebar
         main_area_width = window_width - sidebar_width
 
-        # Content width: mainAreaWidth * 0.55, clamped to 600-900px
+        # Content width: mainAreaWidth * 0.55, clamped to 600-900px and never exceeds main area
         # This ensures consistent proportions across all resolutions
-        content_width = min(max(int(main_area_width * CONTENT_RATIO), MIN_CONTENT_WIDTH), MAX_CONTENT_WIDTH)
+        content_width = min(
+            max(int(main_area_width * CONTENT_RATIO), MIN_CONTENT_WIDTH),
+            MAX_CONTENT_WIDTH,
+            main_area_width,
+        )
 
         return ((window_width, window_height), (sidebar_width, input_panel_width, content_width))
 
@@ -5064,6 +5105,7 @@ def run_app(
     const BASE_FONT_SIZE = 16;  // Fixed font size (no dynamic scaling)
     const SIDEBAR_RATIO = 280 / 1800;
     const INPUT_PANEL_RATIO = 400 / 1800;
+    const MIN_WINDOW_WIDTH = 1100;  // Match Python logic for small screens
     const MIN_SIDEBAR_WIDTH = 280;  // Narrower sidebar
     const MIN_INPUT_PANEL_WIDTH = 320;  // Lowered for smaller screens
     // Unified content width for both input and result panels
@@ -5083,17 +5125,25 @@ def run_app(
         const baseFontSize = BASE_FONT_SIZE;
 
         // Calculate panel widths
-        const sidebarWidth = Math.max(Math.round(windowWidth * SIDEBAR_RATIO), MIN_SIDEBAR_WIDTH);
-        const inputPanelWidth = Math.max(Math.round(windowWidth * INPUT_PANEL_RATIO), MIN_INPUT_PANEL_WIDTH);
+        let sidebarWidth;
+        let inputPanelWidth;
+        if (windowWidth < MIN_WINDOW_WIDTH) {
+            sidebarWidth = Math.round(windowWidth * SIDEBAR_RATIO);
+            inputPanelWidth = Math.round(windowWidth * INPUT_PANEL_RATIO);
+        } else {
+            sidebarWidth = Math.max(Math.round(windowWidth * SIDEBAR_RATIO), MIN_SIDEBAR_WIDTH);
+            inputPanelWidth = Math.max(Math.round(windowWidth * INPUT_PANEL_RATIO), MIN_INPUT_PANEL_WIDTH);
+        }
 
         // Calculate unified content width for both input and result panels
         const mainAreaWidth = windowWidth - sidebarWidth;
 
-        // Content width: mainAreaWidth * 0.55, clamped to 600-900px
+        // Content width: mainAreaWidth * 0.55, clamped to 600-900px and never exceeds main area
         // This ensures consistent proportions across all resolutions
         const contentWidth = Math.min(
             Math.max(Math.round(mainAreaWidth * CONTENT_RATIO), MIN_CONTENT_WIDTH),
-            MAX_CONTENT_WIDTH
+            MAX_CONTENT_WIDTH,
+            mainAreaWidth
         );
 
         // Calculate input min/max height

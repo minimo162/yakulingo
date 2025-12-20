@@ -1,0 +1,56 @@
+## Text Translation Request (Style Comparison)
+Translate the following Japanese text into English in three styles: standard, concise, minimal.
+
+### Common rules
+- Preserve line breaks, tabs, and paragraph structure.
+- If the input is already English, keep it as is.
+- Follow the translation rules below.
+- Translate ONLY the text between the input markers.
+- Do NOT translate or paraphrase any other part of this prompt.
+- Do NOT output the marker lines `===INPUT_TEXT===` or `===END_INPUT_TEXT===`.
+
+### Style rules
+[standard]
+- Natural, business-ready English.
+- Use articles (a/an/the) appropriately.
+- Use common business abbreviations when suitable (YoY, QoQ, CAGR).
+
+[concise]
+- Make it concise; avoid wordiness.
+- Prefer common abbreviations (info, FYI, ASAP, etc.).
+- Simplify phrases (e.g., "in order to" -> "to", "due to the fact that" -> "because").
+
+[minimal]
+- Minimum words; suitable for headings/subject lines/tables.
+- Articles can be omitted.
+- Maximize abbreviations.
+- Allowed symbols: & / vs. % # w/ w/o @ +
+
+### Output format (exact)
+[standard]
+Translation:
+Explanation:
+
+[concise]
+Translation:
+Explanation:
+
+[minimal]
+Translation:
+Explanation:
+
+- Do not output anything else.
+- Explain in Japanese with the same level of detail as an individual translation. Do not be overly brief.
+- In each Explanation, describe how the source expressions were rendered and any key term mappings.
+- Do not include headings or labels such as "翻訳のポイント:" in the output.
+
+{translation_rules}
+
+{reference_section}
+
+---
+
+### INPUT (translate only this block)
+===INPUT_TEXT===
+{input_text}
+===END_INPUT_TEXT===

@@ -7,6 +7,7 @@ Prompt file structure:
 - file_translate_to_en_{style}.txt: File translation → English (standard/concise/minimal)
 - file_translate_to_jp.txt: File translation → Japanese
 - text_translate_to_en_{style}.txt: Text translation → English (standard/concise/minimal)
+- text_translate_to_en_compare.txt: Text translation -> English (standard/concise/minimal in one response)
 - text_translate_to_jp.txt: Text translation → Japanese (with explanation)
 - adjust_*.txt: Adjustment prompts (shorter, longer, custom)
 
@@ -161,6 +162,64 @@ DEFAULT_TEXT_TO_EN_TEMPLATE = """## テキスト翻訳リクエスト
 {input_text}
 """
 
+DEFAULT_TEXT_TO_EN_COMPARE_TEMPLATE = """## Text Translation Request (Style Comparison)
+Translate the following Japanese text into English in three styles: standard, concise, minimal.
+
+### Common rules
+- Preserve line breaks, tabs, and paragraph structure.
+- If the input is already English, keep it as is.
+- Follow the translation rules below.
+- Translate ONLY the text between the input markers.
+- Do NOT translate or paraphrase any other part of this prompt.
+- Do NOT output the marker lines `===INPUT_TEXT===` or `===END_INPUT_TEXT===`.
+
+### Style rules
+[standard]
+- Natural, business-ready English.
+- Use articles (a/an/the) appropriately.
+- Use common business abbreviations when suitable (YoY, QoQ, CAGR).
+
+[concise]
+- Make it concise; avoid wordiness.
+- Prefer common abbreviations (info, FYI, ASAP, etc.).
+- Simplify phrases (e.g., "in order to" -> "to", "due to the fact that" -> "because").
+
+[minimal]
+- Minimum words; suitable for headings/subject lines/tables.
+- Articles can be omitted.
+- Maximize abbreviations.
+- Allowed symbols: & / vs. % # w/ w/o @ +
+
+### Output format (exact)
+[standard]
+Translation:
+Explanation:
+
+[concise]
+Translation:
+Explanation:
+
+[minimal]
+Translation:
+Explanation:
+
+- Do not output anything else.
+- Explain in Japanese with the same level of detail as an individual translation. Do not be overly brief.
+- In each Explanation, describe how the source expressions were rendered and any key term mappings.
+- Do not include headings or labels such as "翻訳のポイント:" in the output.
+
+{translation_rules}
+
+{reference_section}
+
+---
+
+### INPUT (translate only this block)
+===INPUT_TEXT===
+{input_text}
+===END_INPUT_TEXT===
+"""
+
 DEFAULT_TEXT_TO_JP_TEMPLATE = """## テキスト翻訳リクエスト（日本語への翻訳）
 
 テキストを自然な日本語に翻訳してください。
@@ -208,6 +267,8 @@ class PromptBuilder:
         self._templates: dict[tuple[str, str], str] = {}
         # Text translation templates cache: {(lang, style): template_str}
         self._text_templates: dict[tuple[str, str], str] = {}
+        # Text translation comparison template
+        self._text_compare_template: Optional[str] = None
         # Common translation rules cache
         self._translation_rules: str = ""
         self._load_templates()
@@ -226,6 +287,7 @@ class PromptBuilder:
 
         # Load common translation rules
         self._translation_rules = self._load_translation_rules()
+        self._text_compare_template = DEFAULT_TEXT_TO_EN_COMPARE_TEMPLATE
 
         if self.prompts_dir:
             # Load style-specific English templates
@@ -275,6 +337,10 @@ class PromptBuilder:
             for style in styles:
                 self._text_templates.setdefault(("jp", style), jp_text_template)
                 self._text_templates.setdefault(("en", style), DEFAULT_TEXT_TO_EN_TEMPLATE)
+
+            text_compare = self.prompts_dir / "text_translate_to_en_compare.txt"
+            if text_compare.exists():
+                self._text_compare_template = text_compare.read_text(encoding='utf-8')
         else:
             # Use defaults
             for style in styles:
@@ -282,6 +348,7 @@ class PromptBuilder:
                 self._templates[("jp", style)] = DEFAULT_TO_JP_TEMPLATE
                 self._text_templates[("en", style)] = DEFAULT_TEXT_TO_EN_TEMPLATE
                 self._text_templates[("jp", style)] = DEFAULT_TEXT_TO_JP_TEMPLATE
+            self._text_compare_template = DEFAULT_TEXT_TO_EN_COMPARE_TEMPLATE
 
     def get_translation_rules(self) -> str:
         """Get the common translation rules.
@@ -342,6 +409,10 @@ class PromptBuilder:
             return self._text_templates[fallback_key]
 
         return None
+
+    def get_text_compare_template(self) -> Optional[str]:
+        """Get cached text translation comparison template."""
+        return self._text_compare_template
 
     def _apply_placeholders(self, template: str, reference_section: str, input_text: str, translation_style: str = "concise") -> str:
         """Apply all placeholder replacements to a template.

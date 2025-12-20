@@ -27,6 +27,7 @@ TEXT_STYLE_ORDER: tuple[str, str, str] = ('standard', 'concise', 'minimal')
 # Pre-compiled regex patterns for performance
 # Support both half-width (:) and full-width (：) colons, and markdown bold (**訳文:**)
 _RE_MULTI_OPTION = re.compile(r'\[(\d+)\]\s*\**訳文\**[:：]\s*(.+?)\s*\**解説\**[:：]\s*(.+?)(?=\[\d+\]|$)', re.DOTALL)
+_RE_STYLE_SECTION = re.compile(r'^\s*\[\s*(standard|concise|minimal)\s*\]\s*$', re.IGNORECASE | re.MULTILINE)
 
 # Translation text pattern - supports multiple formats:
 # - Japanese: 訳文 (colon optional), 翻訳 (colon REQUIRED to avoid "翻訳してください" match)
@@ -55,6 +56,10 @@ _RE_EXPLANATION = re.compile(
 )
 _RE_MARKDOWN_SEPARATOR = re.compile(r'\n?\s*[\*\-]{3,}\s*$')
 _RE_FILENAME_FORBIDDEN = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
+_RE_INPUT_MARKER_LINE = re.compile(
+    r'^\s*(?:###\s*INPUT\b.*|<<<INPUT_TEXT>>>|<<<END_INPUT_TEXT>>>|===INPUT_TEXT===|===END_INPUT_TEXT===)\s*$',
+    re.IGNORECASE,
+)
 
 # Pattern to remove translation label prefixes from parsed result
 # These labels come from prompt template output format examples (e.g., "訳文: 英語翻訳")
@@ -83,6 +88,14 @@ def _sanitize_output_stem(name: str) -> str:
     sanitized = _RE_FILENAME_FORBIDDEN.sub('_', unicodedata.normalize('NFC', name))
     sanitized = sanitized.strip()
     return sanitized or 'translated_file'
+
+
+def _strip_input_markers(text: str) -> str:
+    """Remove input marker lines accidentally echoed by Copilot."""
+    if not text:
+        return text
+    lines = [line for line in text.splitlines() if not _RE_INPUT_MARKER_LINE.match(line)]
+    return "\n".join(lines).strip()
 
 
 def load_glossary_content(glossary_path: Path) -> Optional[str]:
@@ -1424,8 +1437,97 @@ class TranslationService:
         seen = set()
         style_list = [s for s in style_list if not (s in seen or seen.add(s))]
 
+        combined_error: Optional[str] = None
+        wants_combined = set(style_list) == set(TEXT_STYLE_ORDER) and len(style_list) > 1
+
+        if wants_combined:
+            template = self.prompt_builder.get_text_compare_template()
+            if template:
+                try:
+                    self._cancel_event.clear()
+
+                    from yakulingo.services.prompt_builder import GLOSSARY_EMBEDDED_INSTRUCTION
+                    if glossary_content:
+                        reference_section = GLOSSARY_EMBEDDED_INSTRUCTION.format(glossary_content=glossary_content)
+                        files_to_attach = None
+                        logger.debug("Embedding glossary in comparison prompt (%d chars)", len(glossary_content))
+                    elif reference_files:
+                        reference_section = REFERENCE_INSTRUCTION
+                        files_to_attach = reference_files
+                    else:
+                        reference_section = ""
+                        files_to_attach = None
+
+                    self.prompt_builder.reload_translation_rules()
+                    translation_rules = self.prompt_builder.get_translation_rules()
+
+                    prompt = template.replace("{translation_rules}", translation_rules)
+                    prompt = prompt.replace("{reference_section}", reference_section)
+                    prompt = prompt.replace("{input_text}", text)
+
+                    logger.debug(
+                        "Sending text to Copilot for style comparison (refs=%d, glossary_embedded=%s)",
+                        len(files_to_attach) if files_to_attach else 0,
+                        bool(glossary_content),
+                    )
+                    raw_result = self._translate_single_with_cancel(text, prompt, files_to_attach, on_chunk)
+                    parsed_options = self._parse_style_comparison_result(raw_result)
+
+                    base_options: dict[str, TranslationOption] = {}
+                    for option in parsed_options:
+                        if option.style and option.style not in base_options:
+                            base_options[option.style] = option
+
+                    missing_styles = [s for s in style_list if s not in base_options]
+                    if missing_styles:
+                        logger.warning("Style comparison missing styles: %s", ", ".join(missing_styles))
+                        for style in missing_styles:
+                            result = self.translate_text_with_options(
+                                text,
+                                reference_files,
+                                style,
+                                detected_language,
+                                on_chunk,
+                                glossary_content,
+                            )
+                            if result.options:
+                                option = result.options[0]
+                                option.style = style
+                                base_options.setdefault(style, option)
+                            else:
+                                combined_error = result.error_message or combined_error
+
+                    ordered_options = [base_options[s] for s in style_list if s in base_options]
+                    if ordered_options:
+                        return TextTranslationResult(
+                            source_text=text,
+                            source_char_count=len(text),
+                            options=ordered_options,
+                            output_language=output_language,
+                            detected_language=detected_language,
+                        )
+
+                    combined_error = combined_error or "Failed to parse style comparison result"
+                except TranslationCancelledError:
+                    logger.info("Style comparison translation cancelled")
+                    return TextTranslationResult(
+                        source_text=text,
+                        source_char_count=len(text),
+                        output_language=output_language,
+                        detected_language=detected_language,
+                        error_message="翻訳がキャンセルされました",
+                    )
+                except OSError as e:
+                    logger.warning("File I/O error during style comparison: %s", e)
+                    combined_error = str(e)
+                except (RuntimeError, ValueError, ConnectionError, TimeoutError) as e:
+                    logger.exception("Error during style comparison translation: %s", e)
+                    combined_error = str(e)
+            else:
+                combined_error = "Missing style comparison template"
+
         options: list[TranslationOption] = []
-        last_error: Optional[str] = None
+        last_error: Optional[str] = combined_error
 
         for style in style_list:
             result = self.translate_text_with_options(
@@ -1708,6 +1810,7 @@ class TranslationService:
     def _parse_multi_option_result(self, raw_result: str) -> list[TranslationOption]:
         """Parse multi-option result from Copilot (for →en translation)."""
         options = []
+        raw_result = _strip_input_markers(raw_result)
 
         # Use pre-compiled pattern for [1], [2], [3] sections
         matches = _RE_MULTI_OPTION.findall(raw_result)
@@ -1715,6 +1818,8 @@ class TranslationService:
         for num, text, explanation in matches:
             text = text.strip()
             explanation = explanation.strip()
+            text = _strip_input_markers(text)
+            explanation = _strip_input_markers(explanation)
             if text:
                 options.append(TranslationOption(
                     text=text,
@@ -1723,8 +1828,34 @@ class TranslationService:
 
         return options
 
+    def _parse_style_comparison_result(self, raw_result: str) -> list[TranslationOption]:
+        """Parse style comparison result with [standard]/[concise]/[minimal] sections."""
+        options: list[TranslationOption] = []
+        matches = list(_RE_STYLE_SECTION.finditer(raw_result))
+        if not matches:
+            return options
+
+        for index, match in enumerate(matches):
+            style = match.group(1).lower()
+            start = match.end()
+            end = matches[index + 1].start() if index + 1 < len(matches) else len(raw_result)
+            section = raw_result[start:end].strip()
+            if not section:
+                continue
+
+            parsed = self._parse_single_translation_result(section)
+            if not parsed:
+                continue
+
+            option = parsed[0]
+            option.style = style
+            options.append(option)
+
+        return options
+
     def _parse_single_translation_result(self, raw_result: str) -> list[TranslationOption]:
         """Parse single translation result from Copilot (for →jp translation)."""
+        raw_result = _strip_input_markers(raw_result)
         # Show full raw result for debugging (truncate at 1000 chars)
         logger.debug("Parsing translation result (full, max 1000 chars): %s", raw_result[:1000] if raw_result else "(empty)")
         logger.debug("Raw result length: %d chars", len(raw_result) if raw_result else 0)
@@ -1812,6 +1943,9 @@ class TranslationService:
         if text:
             text = _RE_TRANSLATION_LABEL.sub('', text).strip()
 
+        text = _strip_input_markers(text)
+        explanation = _strip_input_markers(explanation)
+
         # Remove trailing attached filename from explanation
         # Copilot sometimes appends the reference file name (e.g., "glossary") to the response
         if explanation:
@@ -1833,6 +1967,7 @@ class TranslationService:
         """Parse single option result from adjustment."""
         text = ""
         explanation = ""
+        raw_result = _strip_input_markers(raw_result)
 
         # Use pre-compiled patterns to extract 訳文 and 解説
         text_match = _RE_TRANSLATION_TEXT.search(raw_result)
@@ -1860,6 +1995,9 @@ class TranslationService:
         # Remove translation label prefixes (e.g., "英語翻訳", "日本語翻訳")
         if text:
             text = _RE_TRANSLATION_LABEL.sub('', text).strip()
+
+        text = _strip_input_markers(text)
+        explanation = _strip_input_markers(explanation)
 
         # Remove trailing attached filename from explanation
         if explanation:

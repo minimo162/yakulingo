@@ -7,6 +7,7 @@ Designed for Japanese users.
 """
 
 import asyncio
+import html
 import logging
 from typing import Callable, Optional
 
@@ -536,7 +537,7 @@ def _render_results_to_jp(
             with ui.card().classes('option-card w-full'):
                 with ui.column().classes('w-full gap-2'):
                     # Translation text
-                    ui.label(option.text).classes('option-text py-1 w-full')
+                    _render_translation_text(option.text)
 
                     # Actions row (same as English)
                     with ui.row().classes('w-full justify-end items-center gap-1'):
@@ -624,6 +625,29 @@ def _render_explanation(explanation: str):
         ui.label(line)
 
 
+def _render_translation_text(text: str):
+    """Render translation text, showing tabular output as a table."""
+    if '\t' in text:
+        rows = text.splitlines()
+        table_rows = []
+        for row in rows:
+            cols = row.split('\t')
+            cells = ''.join(f'<td>{html.escape(col)}</td>' for col in cols)
+            table_rows.append(f'<tr>{cells}</tr>')
+        html_content = (
+            '<div class="translation-table">'
+            '<table><tbody>'
+            f'{"".join(table_rows)}'
+            '</tbody></table></div>'
+        )
+        ui.html(html_content, sanitize=False).classes('option-text w-full')
+        return
+
+    label = ui.label(text).classes('option-text py-1 w-full')
+    if '\n' in text:
+        label.style('white-space: pre-wrap;')
+
+
 def _render_option_en(
     option: TranslationOption,
     on_copy: Callable[[str], None],
@@ -641,7 +665,7 @@ def _render_option_en(
                 ui.label(style_label).classes('chip')
 
             # Translation text
-            ui.label(option.text).classes('option-text py-1 w-full')
+            _render_translation_text(option.text)
 
             # Actions row
             with ui.row().classes('w-full justify-end items-center gap-1'):

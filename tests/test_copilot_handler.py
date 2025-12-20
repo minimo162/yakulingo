@@ -2,7 +2,7 @@
 """Tests for yakulingo.services.copilot_handler"""
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 from pathlib import Path
 
 from yakulingo.services.copilot_handler import CopilotHandler
@@ -951,65 +951,6 @@ class TestCopilotHandlerConnectFlow:
 
         # Should have reset connection state
         assert handler._connected is False
-
-
-class TestCopilotHandlerAsync:
-    """Test async methods"""
-
-    @pytest.mark.asyncio
-    async def test_translate_async_not_connected(self):
-        """translate() raises when not connected"""
-        handler = CopilotHandler()
-
-        with pytest.raises(RuntimeError) as exc:
-            await handler.translate(["test"], "prompt")
-
-        assert "Not connected" in str(exc.value)
-
-    @pytest.mark.asyncio
-    async def test_translate_async_with_mock(self):
-        """translate() works with mocked internals"""
-        handler = CopilotHandler()
-        handler._connected = True
-        handler._page = MagicMock()
-
-        # Mock internal methods
-        async def mock_send(msg):
-            return False  # Returns bool (stop button seen)
-
-        async def mock_get(stop_button_seen_during_send=False):
-            return "1. Result"
-
-        handler._send_message_async = mock_send
-        handler._get_response_async = mock_get
-
-        results = await handler.translate(["Test"], "prompt")
-
-        assert len(results) == 1
-        assert results[0] == "Result"
-
-    @pytest.mark.asyncio
-    async def test_translate_async_attaches_files_before_prompt(self, tmp_path):
-        """Reference files should be attached before sending the prompt."""
-        handler = CopilotHandler()
-        handler._connected = True
-        handler._page = MagicMock()
-
-        reference = tmp_path / "ref.txt"
-        reference.write_text("reference content", encoding="utf-8")
-
-        call_order = []
-
-        handler._attach_file_async = AsyncMock(side_effect=lambda *_: call_order.append("attach"))
-        # _send_message_async returns bool (stop button seen)
-        handler._send_message_async = AsyncMock(side_effect=lambda *_: (call_order.append("send"), False)[1])
-        handler._get_response_async = AsyncMock(return_value="1. Result")
-
-        await handler.translate(["Text"], "prompt", [reference])
-
-        handler._attach_file_async.assert_awaited_once_with(reference)
-        handler._send_message_async.assert_awaited_once_with("prompt")
-        assert call_order == ["attach", "send"]
 
 
 class TestCopilotHandlerEdgeCases:

@@ -4434,43 +4434,6 @@ class CopilotHandler:
         except (OSError, PermissionError) as e:
             logger.warning("Error checking profile directory: %s", e)
 
-    async def translate(
-        self,
-        texts: list[str],
-        prompt: str,
-        reference_files: Optional[list[Path]] = None,
-    ) -> list[str]:
-        """
-        Translate a batch of texts.
-
-        Args:
-            texts: List of texts to translate
-            prompt: Built prompt string
-            reference_files: Optional list of reference files to attach
-
-        Returns:
-            List of translated texts (same order as input)
-        """
-        if not self._connected or not self._page:
-            raise RuntimeError("Not connected to Copilot")
-
-        # Attach reference files first so Copilot receives them with the request
-        if reference_files:
-            for file_path in reference_files:
-                if file_path.exists():
-                    await self._attach_file_async(file_path)
-
-        # Send the prompt
-        stop_button_seen = await self._send_message_async(prompt)
-
-        # Get response
-        result = await self._get_response_async(
-            stop_button_seen_during_send=stop_button_seen
-        )
-
-        # Parse batch result
-        return self._parse_batch_result(result, len(texts))
-
     def translate_sync(
         self,
         texts: list[str],
@@ -6034,15 +5997,6 @@ class CopilotHandler:
         # This is used by _get_response to avoid false "selector may need update" warnings
         return stop_button_seen_during_send
 
-    async def _send_message_async(self, message: str) -> bool:
-        """Send message to Copilot (async wrapper)
-
-        Returns:
-            True if stop button was detected during send verification
-        """
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self._send_message, message)
-
     # JavaScript to extract text with list numbers preserved and <> brackets intact
     # Uses innerHTML + HTML entity decoding to preserve <> brackets (Copilot escapes as &lt; &gt;)
     # Handles ordered lists by adding numbers in a cloned DOM before extracting
@@ -6491,26 +6445,6 @@ class CopilotHandler:
             logger.error("Page state error: %s", e)
             return ""
 
-    async def _get_response_async(
-        self,
-        timeout: int = 120,
-        stop_button_seen_during_send: bool = False,
-    ) -> str:
-        """Get response from Copilot (async wrapper)
-
-        Args:
-            timeout: Maximum time to wait for response in seconds
-            stop_button_seen_during_send: Whether stop button was detected during send verification
-        """
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(
-            None,
-            lambda: self._get_response(
-                timeout=timeout,
-                stop_button_seen_during_send=stop_button_seen_during_send
-            )
-        )
-
     def _attach_file(self, file_path: Path, wait_for_ready: bool = True) -> bool:
         """
         Attach file to Copilot chat input (sync).
@@ -6671,19 +6605,6 @@ class CopilotHandler:
             return False
         except (PlaywrightError, AttributeError):
             return False
-
-    async def _attach_file_async(self, file_path: Path, wait_for_ready: bool = True) -> bool:
-        """
-        Attach file to Copilot chat (async wrapper).
-
-        Args:
-            file_path: Path to the file to attach
-
-        Returns:
-            True if file was attached successfully
-        """
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self._attach_file, file_path, wait_for_ready)
 
     def _parse_batch_result(self, result: str, expected_count: int) -> list[str]:
         """Parse batch translation result back to list.

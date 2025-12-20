@@ -9,6 +9,7 @@ import csv
 import logging
 import threading
 import time
+from contextlib import contextmanager
 from itertools import islice
 from pathlib import Path
 from typing import Callable, Optional
@@ -756,6 +757,7 @@ class BatchTranslator:
         batches = self._create_batches(uncached_blocks)
         # has_refs is used for reference file attachment indicator (ignored when glossary_content is provided)
         has_refs = bool(reference_files) and not glossary_content
+        files_to_attach = reference_files if has_refs else None
 
         # Pre-build unique text data for each batch to avoid re-translating duplicates
         # within the same batch (e.g., repeated headers, footers, common phrases)
@@ -827,7 +829,7 @@ class BatchTranslator:
             skip_clear_wait = (i > 0)
             try:
                 unique_translations = self.copilot.translate_sync(
-                    unique_texts, prompt, reference_files, skip_clear_wait,
+                    unique_texts, prompt, files_to_attach, skip_clear_wait,
                     timeout=self.request_timeout
                 )
             except TranslationCancelledError:
@@ -934,8 +936,8 @@ class BatchTranslator:
         Split blocks into batches based on configured character limits.
 
         Handles oversized blocks (exceeding max_chars_per_batch) by placing them
-        in their own batch with a warning. These will be processed via file
-        attachment mode by CopilotHandler.
+        in their own batch with a warning. These will be processed as
+        single-item batches.
         """
         batches = []
         current_batch = []
@@ -955,7 +957,7 @@ class BatchTranslator:
                 # Add oversized block as its own batch with warning
                 logger.warning(
                     "Block '%s' exceeds max_chars_per_batch (%d > %d). "
-                    "Will be processed via file attachment mode.",
+                    "Will be processed as a single-item batch.",
                     block.id, block_size, self.max_chars_per_batch
                 )
                 batches.append([block])
@@ -1000,6 +1002,8 @@ class TranslationService:
         )
         # Thread-safe cancellation using Event instead of bool flag
         self._cancel_event = threading.Event()
+        self._cancel_callback_depth = 0
+        self._cancel_callback_lock = threading.Lock()
 
         # Lazy-loaded file processors for faster startup
         self._processors: Optional[dict[str, FileProcessor]] = None
@@ -1056,6 +1060,30 @@ class TranslationService:
         """
         return self.batch_translator.get_cache_stats()
 
+    @contextmanager
+    def _cancel_callback_scope(self):
+        with self._cancel_callback_lock:
+            self._cancel_callback_depth += 1
+            if self._cancel_callback_depth == 1:
+                self.copilot.set_cancel_callback(lambda: self._cancel_event.is_set())
+        try:
+            yield
+        finally:
+            with self._cancel_callback_lock:
+                self._cancel_callback_depth = max(0, self._cancel_callback_depth - 1)
+                if self._cancel_callback_depth == 0:
+                    self.copilot.set_cancel_callback(None)
+
+    def _translate_single_with_cancel(
+        self,
+        text: str,
+        prompt: str,
+        reference_files: Optional[list[Path]] = None,
+        on_chunk: "Callable[[str], None] | None" = None,
+    ) -> str:
+        with self._cancel_callback_scope():
+            return self.copilot.translate_single(text, prompt, reference_files, on_chunk)
+
     def translate_text(
         self,
         text: str,
@@ -1077,6 +1105,7 @@ class TranslationService:
             TranslationResult with output_text
         """
         start_time = time.monotonic()
+        self._cancel_event.clear()
 
         try:
             # Build prompt (unified bidirectional)
@@ -1084,7 +1113,7 @@ class TranslationService:
             prompt = self.prompt_builder.build(text, has_refs)
 
             # Translate
-            result = self.copilot.translate_single(text, prompt, reference_files, on_chunk)
+            result = self._translate_single_with_cancel(text, prompt, reference_files, on_chunk)
 
             return TranslationResult(
                 status=TranslationStatus.COMPLETED,
@@ -1159,7 +1188,7 @@ class TranslationService:
             prompt = f"この文は何語で書かれていますか？言語名のみで答えてください。\n\n入力: {text}"
 
         # Get language detection from Copilot (no reference files, no char limit)
-        result = self.copilot.translate_single(text, prompt, None, None)
+        result = self._translate_single_with_cancel(text, prompt, None, None)
 
         # Clean up the result (remove extra whitespace, punctuation)
         detected = result.strip().rstrip('。.、,')
@@ -1211,6 +1240,7 @@ class TranslationService:
             TextTranslationResult with options and output_language
         """
         detected_language: Optional[str] = None
+        self._cancel_event.clear()
         try:
             # Use pre-detected language or detect using Copilot
             if pre_detected_language:
@@ -1287,7 +1317,7 @@ class TranslationService:
                 len(files_to_attach) if files_to_attach else 0,
                 bool(glossary_content),
             )
-            raw_result = self.copilot.translate_single(text, prompt, files_to_attach, on_chunk)
+            raw_result = self._translate_single_with_cancel(text, prompt, files_to_attach, on_chunk)
 
             # Parse the result - always single option now
             options = self._parse_single_translation_result(raw_result)
@@ -1429,6 +1459,7 @@ class TranslationService:
         """
         # Style order: minimal < concise < standard
         STYLE_ORDER = ['minimal', 'concise', 'standard']
+        self._cancel_event.clear()
 
         try:
             # Determine current style (fallback to settings default)
@@ -1507,7 +1538,7 @@ class TranslationService:
             prompt = prompt.replace("{input_text}", text)
 
             # Get adjusted translation
-            raw_result = self.copilot.translate_single(text, prompt, reference_files)
+            raw_result = self._translate_single_with_cancel(text, prompt, reference_files)
 
             # Parse the result
             option = self._parse_single_option_result(raw_result)
@@ -1582,7 +1613,7 @@ class TranslationService:
             prompt = prompt.replace("{style}", style)
 
             # Get alternative translation
-            raw_result = self.copilot.translate_single(source_text, prompt, reference_files)
+            raw_result = self._translate_single_with_cancel(source_text, prompt, reference_files)
 
             # Parse the result and set style
             option = self._parse_single_option_result(raw_result)

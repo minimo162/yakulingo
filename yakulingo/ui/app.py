@@ -3983,7 +3983,7 @@ def _detect_display_settings(
     # This ensures browser has enough space for GPT mode UI elements
     # Example: 1920px - 10px gap = 1910px available → 955px each
     WIDTH_RATIO = 0.5  # App and browser each get 50% (1:1 ratio)
-    HEIGHT_RATIO = 1100 / 1440  # 0.764
+    HEIGHT_RATIO = 1.0  # Full work-area height (taskbar excluded)
 
     # Side panel dimensions (must match copilot_handler.py constants)
     SIDE_PANEL_GAP = 10
@@ -4028,7 +4028,7 @@ def _detect_display_settings(
         # 1:1 ratio: app and browser each get half the available width
         available_width = screen_width - SIDE_PANEL_GAP
         window_width = available_width // 2
-        max_window_height = int(screen_height * 0.95)
+        max_window_height = screen_height  # Use full work area height
         window_height = min(max(int(screen_height * HEIGHT_RATIO), MIN_WINDOW_HEIGHT), max_window_height)
 
         # For smaller windows, use ratio-based panel sizes instead of fixed minimums

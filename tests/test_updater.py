@@ -84,6 +84,16 @@ class TestProxyConfig:
         assert "https" in proxy_dict
         assert "proxy.example.com:8080" in proxy_dict["http"]
 
+    def test_get_proxy_dict_per_protocol(self):
+        """Test proxy dict parsing with protocol-specific entries"""
+        config = ProxyConfig()
+        config.use_proxy = True
+        config.proxy_server = "http=proxy.example.com:8080;https=secure.example.com:8443"
+
+        proxy_dict = config.get_proxy_dict()
+        assert proxy_dict["http"] == "http://proxy.example.com:8080"
+        assert proxy_dict["https"] == "http://secure.example.com:8443"
+
     def test_should_bypass_local(self):
         """Test bypass for local addresses"""
         config = ProxyConfig()
@@ -611,6 +621,7 @@ class TestMakeRequestWithProxy:
     @pytest.fixture
     def updater(self, tmp_path):
         updater = AutoUpdater(current_version="1.0.0")
+        updater._proxy_dict = {}
         return updater
 
     def test_make_request_uses_opener(self, updater):
@@ -957,5 +968,4 @@ class TestMergeGlossaryBackwardCompat:
         result = merge_glossary(app_dir, source_dir)
 
         assert result == 0
-
 

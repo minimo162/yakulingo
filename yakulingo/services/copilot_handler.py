@@ -827,7 +827,7 @@ class CopilotHandler:
 
     # App window size calculation ratios (must match app.py _detect_display_settings)
     APP_WIDTH_RATIO = 0.5            # App and browser each get 50% of available width (1:1 ratio)
-    APP_HEIGHT_RATIO = 1100 / 1440   # 0.764
+    APP_HEIGHT_RATIO = 1.0           # Full work-area height (taskbar excluded)
 
     # =========================================================================
     # UI Selectors - Centralized for easier maintenance when Copilot UI changes
@@ -3075,7 +3075,7 @@ class CopilotHandler:
             # Calculate 1:1 ratio: app and browser each get half the available width
             available_width = screen_width - self.SIDE_PANEL_GAP
             edge_width = available_width // 2
-            max_window_height = int(screen_height * 0.95)
+            max_window_height = screen_height  # Use full work area height
 
             # For 1:1 ratio, app width equals edge width (both get half)
             app_width = edge_width

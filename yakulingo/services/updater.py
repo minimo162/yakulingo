@@ -126,20 +126,58 @@ class ProxyConfig:
         except (OSError, ValueError, TypeError) as e:
             logger.warning("プロキシ設定の検出に失敗: %s", e)
 
+    @staticmethod
+    def _normalize_proxy_url(proxy: str) -> str:
+        proxy = proxy.strip()
+        if not proxy:
+            return ""
+        if proxy.startswith(("http://", "https://")):
+            return proxy
+        return f"http://{proxy}"
+
     def get_proxy_dict(self) -> dict[str, str]:
         """urllib用のプロキシ辞書を返す"""
         if not self.use_proxy or not self.proxy_server:
             return {}
 
-        # http://proxy:port または proxy:port 形式をサポート
-        proxy = self.proxy_server
-        if not proxy.startswith(("http://", "https://")):
-            proxy = f"http://{proxy}"
+        raw = self.proxy_server.strip()
+        if not raw:
+            return {}
 
-        return {
-            "http": proxy,
-            "https": proxy,
-        }
+        proxy_entries: dict[str, str] = {}
+        default_proxy = ""
+
+        if ";" in raw or "=" in raw:
+            for part in raw.split(";"):
+                part = part.strip()
+                if not part:
+                    continue
+                if "=" in part:
+                    scheme, value = part.split("=", 1)
+                    scheme = scheme.strip().lower()
+                    value = value.strip()
+                else:
+                    scheme = ""
+                    value = part
+
+                proxy_url = self._normalize_proxy_url(value)
+                if not proxy_url:
+                    continue
+
+                if scheme in ("http", "https"):
+                    proxy_entries[scheme] = proxy_url
+                elif not scheme and not default_proxy:
+                    default_proxy = proxy_url
+
+            if default_proxy:
+                proxy_entries.setdefault("http", default_proxy)
+                proxy_entries.setdefault("https", default_proxy)
+        else:
+            proxy_url = self._normalize_proxy_url(raw)
+            if proxy_url:
+                proxy_entries = {"http": proxy_url, "https": proxy_url}
+
+        return proxy_entries
 
     def should_bypass(self, url: str) -> bool:
         """指定URLがプロキシバイパス対象かチェック"""
@@ -324,19 +362,24 @@ class AutoUpdater:
         handlers = []
 
         # プロキシハンドラを追加
+        self._proxy_dict = {}
         if self.proxy_config.use_proxy:
-            proxy_dict = self.proxy_config.get_proxy_dict()
-            handlers.append(urllib.request.ProxyHandler(proxy_dict))
+            self._proxy_dict = self.proxy_config.get_proxy_dict()
+            if self._proxy_dict:
+                handlers.append(urllib.request.ProxyHandler(self._proxy_dict))
 
-            # NTLM認証ハンドラを追加
-            if HAS_PYWIN32:
-                handlers.append(NTLMProxyHandler(self.proxy_config))
+                # NTLM認証ハンドラを追加
+                if HAS_PYWIN32:
+                    handlers.append(NTLMProxyHandler(self.proxy_config))
 
         # HTTPSハンドラ（証明書検証）
         ssl_context = ssl.create_default_context()
         handlers.append(urllib.request.HTTPSHandler(context=ssl_context))
 
         self.opener = urllib.request.build_opener(*handlers)
+        self.direct_opener = urllib.request.build_opener(
+            urllib.request.HTTPSHandler(context=ssl_context)
+        )
 
     def _make_request(
         self, url: str, headers: Optional[dict] = None, return_headers: bool = False
@@ -351,7 +394,11 @@ class AutoUpdater:
                 req.add_header(key, value)
 
         try:
-            with self.opener.open(req, timeout=30) as response:
+            opener = self.opener
+            if self._proxy_dict and self.proxy_config.should_bypass(url):
+                opener = self.direct_opener
+
+            with opener.open(req, timeout=30) as response:
                 data = response.read()
                 if return_headers:
                     return data, response.headers
@@ -542,7 +589,8 @@ class AutoUpdater:
         """
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
-        download_path = self.cache_dir / f"yakulingo-{version_info.version}.zip"
+        safe_version = self._sanitize_version_for_filename(version_info.version)
+        download_path = self.cache_dir / f"yakulingo-{safe_version}.zip"
 
         # 既にダウンロード済みの場合はスキップ（サイズ一致時のみ）
         if download_path.exists():
@@ -605,7 +653,7 @@ class AutoUpdater:
         if not version_info.exe_download_url:
             return None
 
-        exe_path = self.cache_dir / "YakuLingo.exe"
+        exe_path = self._get_exe_cache_path(version_info.version)
 
         # 既にダウンロード済みの場合はスキップ（サイズ一致時のみ）
         if exe_path.exists():
@@ -714,8 +762,8 @@ class AutoUpdater:
 
             # YakuLingo.exe がキャッシュにあれば、ソースディレクトリにもコピー
             # （別アセットとしてダウンロードした場合）
-            exe_in_cache = self.cache_dir / "YakuLingo.exe"
-            if exe_in_cache.exists():
+            exe_in_cache = self._get_cached_exe_for_zip(zip_path)
+            if exe_in_cache and exe_in_cache.exists():
                 shutil.copy2(exe_in_cache, persistent_source_dir / "YakuLingo.exe")
                 logger.info("YakuLingo.exe をソースディレクトリにコピーしました")
 
@@ -738,6 +786,43 @@ class AutoUpdater:
     def _escape_bash_path(path: Path) -> str:
         """bash用にパスをエスケープ"""
         return shlex.quote(str(path))
+
+    @staticmethod
+    def _sanitize_version_for_filename(version: str) -> str:
+        sanitized = []
+        for ch in version.strip():
+            if ch.isascii() and (ch.isalnum() or ch in "._-"):
+                sanitized.append(ch)
+            else:
+                sanitized.append("_")
+        safe_version = "".join(sanitized).strip("_")
+        return safe_version or "unknown"
+
+    @staticmethod
+    def _extract_version_from_zip_path(zip_path: Path) -> Optional[str]:
+        stem = zip_path.stem
+        lower = stem.lower()
+        if lower.startswith("yakulingo-"):
+            return stem[len("yakulingo-"):]
+        if lower.startswith("yakulingo_"):
+            return stem[len("yakulingo_"):]
+        return None
+
+    def _get_exe_cache_path(self, version: str) -> Path:
+        safe_version = self._sanitize_version_for_filename(version)
+        return self.cache_dir / f"YakuLingo-{safe_version}.exe"
+
+    def _get_cached_exe_for_zip(self, zip_path: Path) -> Optional[Path]:
+        version = self._extract_version_from_zip_path(zip_path)
+        if version:
+            exe_path = self._get_exe_cache_path(version)
+            if exe_path.exists():
+                return exe_path
+
+        legacy_exe = self.cache_dir / "YakuLingo.exe"
+        if legacy_exe.exists():
+            return legacy_exe
+        return None
 
     def _install_windows(self, source_dir: Path, app_dir: Path) -> bool:
         """Windowsでのインストール処理（ソースコードのみ更新、GUI表示）"""
@@ -1192,7 +1277,12 @@ function Invoke-Update {{
         if (Test-Path $sourcePath) {{
             Write-DebugLog "Copying: $sourcePath -> $dir"
             try {{
-                Copy-Item -Path $sourcePath -Destination $dir -Recurse -Force -ErrorAction Stop
+                if (Test-Path $dir) {{
+                    $sourceItems = Join-Path $sourcePath "*"
+                    Copy-Item -Path $sourceItems -Destination $dir -Recurse -Force -ErrorAction Stop
+                }} else {{
+                    Copy-Item -Path $sourcePath -Destination $dir -Recurse -Force -ErrorAction Stop
+                }}
                 if (Test-Path $dir) {{
                     $copySuccess = $true
                     Write-DebugLog "[OK] $dir copied successfully"
@@ -1478,7 +1568,8 @@ DIR_COPY_FAILURES=""
 for dir in {dirs_to_update}; do
     if [ -d "$SOURCE_DIR/$dir" ]; then
         echo "  コピー: $dir"
-        if cp -r "$SOURCE_DIR/$dir" "$APP_DIR/$dir" 2>/dev/null; then
+        mkdir -p "$APP_DIR/$dir"
+        if cp -r "$SOURCE_DIR/$dir/." "$APP_DIR/$dir" 2>/dev/null; then
             if [ -d "$APP_DIR/$dir" ]; then
                 echo "    [OK] $dir"
                 COPY_SUCCESS=1

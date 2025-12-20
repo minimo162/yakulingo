@@ -699,7 +699,7 @@ class CopilotHandler:
 
     def translate_sync(texts: list[str], prompt: str, reference_files: list[Path]) -> list[str]:
         """
-        1. プロンプトをCopilotに送信（送信ボタン有効化を待機）
+        1. プロンプトをCopilotに送信（送信可能状態の安定化を待機）
         2. 応答を待機（安定するまで）
         3. 結果をパース
         """
@@ -726,7 +726,7 @@ class CopilotHandler:
 
 **ブラウザ操作の信頼性:**
 - 固定sleep()の代わりにPlaywrightの`wait_for_selector`を使用
-- 送信ボタン: `:not([disabled])`条件で有効化を待機
+- 送信ボタン: 有効化と入力可能状態が一定時間安定するまで待機（添付中は継続）
 - メニュー表示: `div[role="menu"]`の表示を確認
 - ファイル添付: 添付インジケータをポーリングで確認
 - GPTモード: UI表示後に`ensure_gpt_mode()`で非同期設定（wait_for_selector + JS一括実行）
@@ -1581,9 +1581,9 @@ python -c "import time; t=time.time(); from yakulingo.ui import run_app; print(f
   - Copilotページ上の認証ダイアログを検出
   - 認証フロー中の強制ナビゲーションを防止
 - Copilot送信プロセス最適化
-  - JS click()を最初の送信方法として使用（ボタンが画面外でも動作）
-  - 送信優先度: 1. JS click() → 2. Enter key → 3. Playwright click（force=True）
-  - 送信ボタンが画面外（y: -5）にある場合でもDOM click()で確実に動作
+  - Enterを最初の送信方法として使用（最小限のUI操作で送信）
+  - 送信優先度: 1. Enter key → 2. JS click() → 3. Playwright click（force=True）
+  - 送信ボタンが画面外（y: -5）にある場合はDOM click()でフォールバック
 - UI改善
   - 「略語」表記を「用語集」に修正
   - main-cardのborder-radiusを無効化
@@ -1637,11 +1637,11 @@ python -c "import time; t=time.time(); from yakulingo.ui import run_app; print(f
 - 英文チェック機能の解説を日本語で出力するよう修正
 - ログインページの早期検出を実装（ユーザーにログインを促す）
 - 翻訳結果パース時のCopilot出力混入を修正
-- 送信ボタン待機を短い固定遅延に置き換え（安定性向上）
+- 送信可能状態の安定化待ちを追加（一定時間連続で有効化を確認）
 - 翻訳結果画面でテキスト選択を有効にする
 
 ### 2.16 (2025-12)
-- Copilot入力の信頼性向上（fill()メソッド、Enterキー送信に統一）
+- Copilot入力の信頼性向上（fill()メソッド、Enter優先+クリックフォールバック）
 - Edge起動タイムアウトを6秒→20秒に延長
 - 自動ログイン検出を改善し、不要なブラウザ前面表示を防止
 - PP-DocLayout-L起動時の事前初期化でPlaywright競合を回避
@@ -1699,7 +1699,7 @@ python -c "import time; t=time.time(); from yakulingo.ui import run_app; print(f
 - 履歴削除機能改善（1クリック削除、ボタン動作修正）
 - 言語検出改善（英字+漢字混合テキストを日本語として正しく検出）
 - PDF翻訳準備ダイアログの即時表示
-- Copilotプロンプト送信の信頼性向上（送信ボタン待機、セレクタ変更検知）
+- Copilotプロンプト送信の信頼性向上（送信可能状態の安定待ち、セレクタ変更検知）
 - PP-DocLayout-Lオンデマンド初期化（起動時間約10秒短縮）
 - 読み順推定アルゴリズム追加（グラフベース、トポロジカルソート）
 - 縦書き文書の自動検出（yomitokuスタイル、アスペクト比ベース）

@@ -5058,6 +5058,16 @@ class CopilotHandler:
                         logger.warning("Input field is empty after fill - Copilot may need attention")
                         raise RuntimeError("Copilotに入力できませんでした。Edgeブラウザを確認してください。")
 
+                if prefer_click:
+                    enter_wait_start = time.monotonic()
+                    enter_ready = self._wait_for_attachment_ready()
+                    logger.info(
+                        "[TIMING] wait_for_enter_ready (send): %.2fs",
+                        time.monotonic() - enter_wait_start,
+                    )
+                    if not enter_ready:
+                        logger.warning("[SEND_PREP] Enter not ready after wait; proceeding anyway")
+
                 # Note: No sleep needed here - button loop below handles React state stabilization
 
                 # Wait for send button to become visible AND in viewport
@@ -5191,10 +5201,8 @@ class CopilotHandler:
                 send_success = False
                 stop_button_seen_during_send = False  # Track if stop button was detected
 
-                # Prefer click when attachments are present; otherwise Enter first.
+                # Always try Enter first; click is fallback if Enter doesn't send.
                 attempt_modes = ["enter", "click", "force"]
-                if prefer_click:
-                    attempt_modes = ["click", "enter", "force"]
 
                 for send_attempt, attempt_mode in enumerate(attempt_modes):
                     send_method = ""
@@ -6590,7 +6598,18 @@ class CopilotHandler:
         PlaywrightTimeoutError = error_types['TimeoutError']
 
         try:
+            try:
+                self._page.evaluate('''() => {
+                    try { delete window.__yakulingoAttachReadyState; } catch (e) {}
+                }''')
+            except (PlaywrightError, AttributeError):
+                pass
+
             self._page.wait_for_function('''() => {
+                const stableRequiredMs = 400;
+                const stateKey = '__yakulingoAttachReadyState';
+                const now = performance.now();
+
                 const sendBtn = document.querySelector('.fai-SendButton, button[type="submit"], [data-testid="sendButton"]');
                 const btnStyle = sendBtn ? window.getComputedStyle(sendBtn) : null;
                 const sendReady = sendBtn &&
@@ -6598,7 +6617,51 @@ class CopilotHandler:
                     sendBtn.getAttribute('aria-disabled') !== 'true' &&
                     (!btnStyle || (btnStyle.pointerEvents !== 'none' && btnStyle.visibility !== 'hidden')) &&
                     sendBtn.offsetParent !== null;
-                return sendReady;
+
+                const input = document.querySelector('#m365-chat-editor-target-element');
+                const inputReady = !!input && input.isContentEditable;
+
+                const attachmentSelectors = [
+                    '[data-testid*="attachment"]',
+                    '.fai-AttachmentChip',
+                    '[class*="attachment"]',
+                    '[class*="file-chip"]'
+                ];
+                const attachmentElems = attachmentSelectors.flatMap(
+                    sel => Array.from(document.querySelectorAll(sel))
+                );
+                const hasAttachments = attachmentElems.length > 0;
+
+                const busySelector = [
+                    '[aria-busy="true"]',
+                    '[data-status*="upload"]',
+                    '[data-status*="loading"]',
+                    '[class*="spinner"]',
+                    '[class*="loading"]'
+                ].join(',');
+
+                const attachmentBusy = hasAttachments && attachmentElems.some(el => {
+                    if (busySelector && el.matches(busySelector)) return true;
+                    return !!(busySelector && el.querySelector(busySelector));
+                });
+
+                const readyNow = sendReady && inputReady && (!hasAttachments || !attachmentBusy);
+
+                const state = window[stateKey] || { readySince: null, lastAttachmentCount: null };
+                const attachmentCount = attachmentElems.length;
+                const attachmentChanged =
+                    state.lastAttachmentCount !== null && state.lastAttachmentCount !== attachmentCount;
+
+                if (!readyNow || attachmentChanged) {
+                    state.readySince = null;
+                } else if (state.readySince === null) {
+                    state.readySince = now;
+                }
+
+                state.lastAttachmentCount = attachmentCount;
+                window[stateKey] = state;
+
+                return readyNow && state.readySince !== null && (now - state.readySince) >= stableRequiredMs;
             }''', timeout=timeout * 1000, polling=100)
             return True
         except PlaywrightTimeoutError:

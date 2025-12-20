@@ -197,7 +197,7 @@ YakuLingo/
 │   ├── file_translate_to_jp.txt    # ファイル翻訳用（英→日）
 │   ├── text_translate_to_en_{standard|concise|minimal}.txt  # テキスト翻訳（日→英）
 │   ├── text_translate_to_en_compare.txt  # テキスト翻訳（日→英、3スタイル比較）
-│   ├── text_translate_to_jp.txt    # テキスト翻訳用（英→日、解説付き）
+│   ├── text_translate_to_jp.txt    # テキスト翻訳用（英→日、解説付き/共通ルール挿入）
 │   ├── adjust_custom.txt           # カスタムリクエスト
 │   ├── text_alternatives.txt       # フォローアップ: 他の言い方
 │   ├── text_review_en.txt          # フォローアップ: 英文をチェック
@@ -1123,6 +1123,14 @@ Reference Files
 添付の参考ファイル（用語集、参考資料等）を参照し、翻訳に活用してください。
 用語集がある場合は、記載されている用語は必ずその訳語を使用してください。
 ```
+
+### 9.4 テキスト翻訳プロンプト（英訳/和訳）
+
+- 英訳/和訳とも「ビジネス文書向け」を明記
+- 既にターゲット言語の場合はそのまま出力
+- `{translation_rules}` を両方向に挿入し、数値・記号ルールを統一
+- 出力は「訳文」「解説」のみ。解説は日本語で簡潔に、見出し・ラベルなし
+- 禁止事項は英訳/和訳で共通（質問・提案・指示の繰り返し・訳文と解説以外）
 
 ---
 

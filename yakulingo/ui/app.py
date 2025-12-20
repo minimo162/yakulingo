@@ -328,6 +328,8 @@ class YakuLingoApp:
         self._login_polling_active = False
         self._login_polling_task: "asyncio.Task | None" = None
         self._shutdown_requested = False
+        self._copilot_window_monitor_task: "asyncio.Task | None" = None
+        self._copilot_window_seen = False
 
         # Hotkey manager for quick translation (Ctrl+Alt+J)
         self._hotkey_manager = None
@@ -1399,6 +1401,41 @@ class YakuLingoApp:
         if self.copilot.last_connection_error == CopilotHandler.ERROR_LOGIN_REQUIRED:
             if not self._login_polling_active:
                 self._login_polling_task = asyncio.create_task(self._wait_for_login_completion())
+
+    def _ensure_copilot_window_monitor(self) -> None:
+        """Start background monitor to exit when the Copilot window is closed."""
+        if self._copilot_window_monitor_task is not None:
+            if not self._copilot_window_monitor_task.done():
+                return
+        self._copilot_window_monitor_task = asyncio.create_task(self._monitor_copilot_window())
+
+    async def _monitor_copilot_window(self) -> None:
+        """Watch for the Edge Copilot window closing and shut down the app."""
+        missing_checks = 0
+        while not self._shutdown_requested:
+            await asyncio.sleep(1.0)
+            if self._shutdown_requested:
+                return
+            if self._copilot is None:
+                continue
+            try:
+                window_open = self._copilot.is_edge_window_open()
+            except Exception as e:
+                logger.debug("Copilot window monitor failed to check window: %s", e)
+                continue
+            if window_open:
+                self._copilot_window_seen = True
+                missing_checks = 0
+                continue
+            if not self._copilot_window_seen:
+                continue
+            missing_checks += 1
+            if missing_checks < 3:
+                continue
+            logger.info("Copilot window closed; shutting down app")
+            if nicegui_app is not None:
+                nicegui_app.shutdown()
+            return
 
     async def _on_browser_ready(self, bring_to_front: bool = False):
         """Called when browser connection is ready. Optionally brings app to front."""
@@ -4356,6 +4393,36 @@ def run_app(
     # NOTE: PP-DocLayout-L pre-initialization moved to @ui.page('/') handler
     # to show loading screen while initializing (better UX than blank screen)
 
+    def _close_browser_window_on_shutdown() -> None:
+        """Close the app's browser window (browser mode only, Windows)."""
+        if native or sys.platform != "win32":
+            return
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.WinDLL('user32', use_last_error=True)
+            WM_CLOSE = 0x0010
+
+            EnumWindowsProc = ctypes.WINFUNCTYPE(
+                wintypes.BOOL, wintypes.HWND, wintypes.LPARAM
+            )
+
+            def enum_windows_callback(hwnd, _lparam):
+                title_length = user32.GetWindowTextLengthW(hwnd)
+                if title_length <= 0:
+                    return True
+                title = ctypes.create_unicode_buffer(title_length + 1)
+                user32.GetWindowTextW(hwnd, title, title_length + 1)
+                window_title = title.value
+                if window_title.startswith("YakuLingo"):
+                    user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
+                return True
+
+            user32.EnumWindows(EnumWindowsProc(enum_windows_callback), 0)
+        except Exception as e:
+            logger.debug("Failed to close browser window: %s", e)
+
     # Track if cleanup has been executed (prevent double execution)
     cleanup_done = False
 
@@ -4370,6 +4437,9 @@ def run_app(
 
         cleanup_start = time_module.time()
         logger.info("Shutting down YakuLingo...")
+
+        # Close the app browser window early (browser mode).
+        _close_browser_window_on_shutdown()
 
         # Set shutdown flag FIRST to prevent new tasks from starting
         yakulingo_app._shutdown_requested = True
@@ -4960,6 +5030,9 @@ document.fonts.ready.then(function() {
 
         # Start hotkey manager immediately after UI is displayed (doesn't need connection)
         yakulingo_app.start_hotkey_manager()
+
+        # Monitor Copilot window close to exit the app
+        yakulingo_app._ensure_copilot_window_monitor()
 
         # Apply early connection result or start new connection
         asyncio.create_task(yakulingo_app._apply_early_connection_or_connect())

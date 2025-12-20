@@ -1004,6 +1004,35 @@ class CopilotHandler:
         """
         return self._connected
 
+    def is_edge_process_alive(self) -> bool:
+        """Return True if the dedicated Edge process appears to be running."""
+        if self.edge_process is not None:
+            try:
+                return self.edge_process.poll() is None
+            except Exception:
+                pass
+
+        if self._edge_pid:
+            try:
+                import psutil
+                return psutil.pid_exists(self._edge_pid)
+            except Exception:
+                pass
+
+        if self._connected or self._browser_started_by_us:
+            return self._is_port_in_use()
+
+        return False
+
+    def is_edge_window_open(self) -> bool:
+        """Return True if the Edge window for Copilot is currently open."""
+        if sys.platform != "win32":
+            return self.is_edge_process_alive()
+        try:
+            return self._find_edge_window_handle() is not None
+        except Exception:
+            return self.is_edge_process_alive()
+
     def _apply_retry_backoff(self, attempt: int, max_retries: int) -> None:
         """Apply exponential backoff before retry.
 
@@ -2763,6 +2792,15 @@ class CopilotHandler:
                         target_pids.add(child.pid)
                 except Exception:
                     # psutil may fail if process already terminated
+                    pass
+            elif self._edge_pid:
+                target_pids.add(self._edge_pid)
+                try:
+                    import psutil
+                    parent = psutil.Process(self._edge_pid)
+                    for child in parent.children(recursive=True):
+                        target_pids.add(child.pid)
+                except Exception:
                     pass
 
             exact_match_hwnd = None

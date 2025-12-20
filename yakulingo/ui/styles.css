@@ -107,6 +107,7 @@
     /* Elevation - very subtle shadows (Nani-style: white cards floating on gray bg) */
     --md-sys-elevation-1: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.02);
     --md-sys-elevation-2: 0 2px 6px rgba(0,0,0,0.05), 0 1px 3px rgba(0,0,0,0.03);
+    --md-sys-elevation-3: 0 6px 16px rgba(0,0,0,0.08), 0 3px 6px rgba(0,0,0,0.05);
 
     /* Card borders - very thin, subtle (Nani-style: white bg + thin border + soft shadow) */
     --md-card-border: 1px solid rgba(0, 0, 0, 0.06);
@@ -210,15 +211,15 @@ body {
     position: fixed;
     left: 0;
     top: 0;
-    background: var(--md-sys-color-surface-container-high);
-    border-right: var(--md-expressive-outline);
+    background: var(--md-sys-color-surface-container-low);
+    border-right: 1px solid var(--md-sys-color-outline-variant);
     display: flex;
     flex-direction: column;
-    padding: 1rem;
-    gap: 0.75rem;
+    padding: 0.75rem;
+    gap: 0.5rem;
     z-index: 100;
-    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.03);
-    backdrop-filter: blur(4px);
+    box-shadow: none;
+    backdrop-filter: none;
 }
 
 .sidebar-header {
@@ -426,8 +427,8 @@ body {
 .sidebar-nav {
     display: flex;
     flex-direction: column;
-    gap: 0;
-    margin-top: 0.5rem;
+    gap: 0.25rem;
+    margin-top: 0.25rem;
     /* M3 tabs container has no shape */
     background: transparent;
 }
@@ -436,26 +437,26 @@ body {
     display: flex;
     align-items: center;
     gap: 0.875rem;
-    padding: 1rem 1.25rem;
-    /* M3 tabs have no rounded corners */
-    border-radius: 0;
+    padding: 0.5rem 0.75rem;
+    min-height: 3rem;
+    /* M3 navigation drawer destinations */
+    border-radius: var(--md-sys-shape-corner-full);
     /* Larger typography for better visibility */
-    font-size: var(--md-sys-typescale-size-lg);
-    font-weight: 600;
+    font-size: var(--md-sys-typescale-size-sm);
+    font-weight: var(--md-sys-typescale-weight-medium);
     letter-spacing: 0.1px;
-    line-height: 1.5rem;
+    line-height: 1.25rem;
     color: var(--md-sys-color-on-surface-variant);
     width: 100%;
     /* M3 tab container color */
     background: transparent;
-    /* Vertical indicator line on left (thicker) */
-    border-left: 4px solid transparent;
+    border-left: none;
     /* ヌメヌメとした滑らかな遷移 */
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-fluid);
     animation: slideInFromLeft var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-fluid) backwards;
     position: relative;
     cursor: pointer;
-    transform: translateX(0);
+    transform: none;
 }
 
 /* Staggered nav item animations */
@@ -467,37 +468,37 @@ body {
 .nav-item:hover {
     background: color-mix(in srgb, var(--md-sys-color-on-surface) 5%, transparent);
     color: var(--md-sys-color-on-surface);
-    /* 微細な浮遊感 */
-    transform: translateX(4px);
+    transform: none;
 }
 
 /* M3 focus state */
 .nav-item:focus-visible {
     outline: 2px solid var(--md-sys-color-primary);
-    outline-offset: -2px;
+    outline-offset: 2px;
     /* M3: State layer with on-surface at focus opacity */
     background: color-mix(in srgb, var(--md-sys-color-on-surface) calc(var(--md-sys-state-focus-opacity) * 100%), transparent);
 }
 
 /* M3 active tab with indicator */
 .nav-item.active {
-    /* M3 primary indicator color */
-    border-left-color: var(--md-sys-color-primary);
-    /* Active text color */
-    color: var(--md-sys-color-primary);
-    /* No background color to avoid double-color effect */
-    background: transparent;
+    background: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
+    font-weight: var(--md-sys-typescale-weight-semibold);
 }
 
 .nav-item.active:hover {
-    /* M3: State layer with primary color at hover opacity */
-    background: color-mix(in srgb, var(--md-sys-color-primary) calc(var(--md-sys-state-hover-opacity) * 100%), transparent);
+    /* M3: State layer with on-secondary-container at hover opacity */
+    background: color-mix(in srgb, var(--md-sys-color-on-secondary-container) calc(var(--md-sys-state-hover-opacity) * 100%), var(--md-sys-color-secondary-container));
 }
 
 /* M3 icon styling in tabs (larger for better visibility) */
 .nav-item .q-icon {
-    font-size: var(--md-sys-typescale-size-xl);
+    font-size: var(--md-sys-typescale-size-lg);
     color: inherit;
+}
+
+.nav-item .q-focus-helper {
+    display: none;
 }
 
 .nav-item.disabled {
@@ -514,6 +515,13 @@ body {
     min-height: 0;
     overflow: hidden;
     width: 100%;
+}
+
+.sidebar-section-title {
+    font-size: var(--md-sys-typescale-size-xs);
+    font-weight: var(--md-sys-typescale-weight-semibold);
+    color: var(--md-sys-color-on-surface-variant);
+    padding: 0 0.5rem;
 }
 
 .history-scroll {
@@ -547,10 +555,10 @@ body {
 .history-item {
     display: flex;
     align-items: flex-start;
-    gap: 0.5rem;
-    padding: 0.5rem;
+    gap: 0.75rem;
+    padding: 0.625rem 0.75rem;
     padding-right: 1.75rem;  /* Space for menu button */
-    border-radius: var(--md-sys-shape-corner-medium);
+    border-radius: var(--md-sys-shape-corner-large);
     cursor: pointer;
     /* ヌメヌメとした滑らかな遷移 */
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-fluid);
@@ -559,7 +567,7 @@ body {
     width: 100%;
     max-width: 100%;
     box-sizing: border-box;
-    transform: translateX(0);
+    transform: none;
 }
 
 @keyframes slideInFromLeft {
@@ -614,9 +622,13 @@ body {
 .history-item:nth-child(5) { animation-delay: 160ms; }
 
 .history-item:hover {
-    background: var(--md-sys-color-surface-container);
-    /* 微細な浮遊感 */
-    transform: translateX(4px);
+    background: color-mix(in srgb, var(--md-sys-color-on-surface) 6%, transparent);
+    transform: none;
+}
+
+.history-item:focus-visible {
+    outline: 2px solid var(--md-sys-color-primary);
+    outline-offset: 2px;
 }
 
 /* Note: .history-delete-btn is defined below in the Nani-inspired enhancements section */
@@ -626,14 +638,15 @@ body {
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;
-    padding: 0.375rem 0.875rem;
+    padding: 0.25rem 0.75rem;
     border-radius: var(--md-sys-shape-corner-full);
-    font-size: var(--md-sys-typescale-size-sm);  /* 16px */
+    font-size: var(--md-sys-typescale-size-xs);
     font-weight: 500;
-    background: var(--md-sys-color-surface-container);
+    background: var(--md-sys-color-surface-container-low);
+    border: 1px solid var(--md-sys-color-outline-variant);
     color: var(--md-sys-color-on-surface-variant);
     margin-left: 0.5rem;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03);
+    box-shadow: none;
 }
 
 .status-indicator.connected {
@@ -688,22 +701,22 @@ body {
 
 /* === Main Card Container (Nani-style: white bg + thin border + soft shadow) === */
 .main-card {
-    background: var(--md-sys-color-surface);
+    background: var(--md-sys-color-surface-container-low);
     border-radius: var(--md-sys-shape-corner-3xl);
-    box-shadow: var(--md-sys-elevation-2);
-    border: var(--md-card-border);
+    box-shadow: var(--md-sys-elevation-1);
+    border: 1px solid var(--md-sys-color-outline-variant);
     overflow: hidden;
     animation: cardFloatIn var(--md-sys-motion-duration-long) var(--md-sys-motion-easing-fluid);
     position: relative;
     /* ヌメヌメとした滑らかな遷移 */
     transition: all var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-fluid);
-    transform: translateY(0);
+    transform: none;
 }
 
 /* カードホバー時の浮遊感 */
 .main-card:hover {
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08), 0 4px 8px rgba(0, 0, 0, 0.04);
-    transform: translateY(-2px);
+    box-shadow: var(--md-sys-elevation-2);
+    transform: none;
 }
 
 .main-card-inner {
@@ -715,7 +728,7 @@ body {
 
 /* Focus state for main card (when textarea is focused) - Nani-style: subtle */
 .main-card-inner:focus-within {
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--md-sys-color-primary) 15%, transparent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--md-sys-color-primary) 20%, transparent);
     transform: none;
 }
 
@@ -737,22 +750,35 @@ body {
 
 /* === M3 Text Field Container === */
 .text-box {
-    background: var(--md-sys-color-surface);
+    background: var(--md-sys-color-surface-container-low);
     border: 1px solid var(--md-sys-color-outline-variant);
     border-radius: var(--md-sys-shape-corner-3xl);
     overflow: hidden;
     /* ヌメヌメとした滑らかな遷移 */
     transition: all var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-fluid);
-    transform: scale(1);
+    transform: none;
 }
 
 .text-box:focus-within {
     border-color: var(--md-sys-color-primary);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--md-sys-color-primary) 12%, transparent),
-                0 8px 24px rgba(99, 102, 241, 0.08);
-    /* フォーカス時の微細な拡大 */
-    transform: scale(1.005);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--md-sys-color-primary) 18%, transparent);
+    transform: none;
 }
+
+/* === Input Toolbar (M3 bottom app bar feel) === */
+.input-toolbar {
+    border-top: 1px solid var(--md-sys-color-outline-variant);
+    background: var(--md-sys-color-surface-container);
+    border-bottom-left-radius: var(--md-sys-shape-corner-3xl);
+    border-bottom-right-radius: var(--md-sys-shape-corner-3xl);
+    padding: 0.75rem 1rem;
+}
+
+.input-toolbar-left,
+.input-toolbar-right {
+    gap: 0.5rem;
+}
+
 
 /* === Translate Button (alias for btn-primary) === */
 /* Note: .translate-btn is an alias for .btn-primary for backward compatibility */
@@ -762,6 +788,21 @@ body {
     display: inline-flex;
     align-items: center;
     gap: 2px;
+}
+
+.translate-btn .shortcut-keys {
+    gap: 4px;
+}
+
+.translate-btn .keycap {
+    min-width: 1.375rem;
+    height: 1.25rem;
+    padding: 0 0.375rem;
+    font-size: 0.75rem;
+}
+
+.translate-btn .keycap-plus {
+    font-size: 0.75rem;
 }
 
 .keycap {
@@ -792,7 +833,7 @@ body {
     min-width: 1.5rem;
     height: 1.375rem;
     padding: 0 0.5rem;
-    background: var(--md-sys-color-surface-container);
+    background: var(--md-sys-color-surface);
     border: 1px solid var(--md-sys-color-outline-variant);
     color: var(--md-sys-color-on-surface-variant);
     font-size: 0.8125rem;  /* 13px */
@@ -1089,7 +1130,7 @@ textarea:focus-visible {
 
 /* === Drop Zone (Nani-style: white bg + thin border + soft shadow) === */
 .drop-zone {
-    border: var(--md-card-border);
+    border: 1px dashed var(--md-sys-color-outline);
     border-radius: var(--md-sys-shape-corner-xl);
     /* Height matches text input panel for consistency */
     min-height: var(--input-min-height);
@@ -1103,9 +1144,9 @@ textarea:focus-visible {
     /* ヌメヌメとした滑らかな遷移 */
     transition: all var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-fluid);
     background: var(--md-sys-color-surface);
-    box-shadow: var(--md-sys-elevation-1);
+    box-shadow: none;
     position: relative;
-    transform: translateY(0) scale(1);
+    transform: none;
 }
 
 /* Visual content layer - positioned for display, clicks pass through */
@@ -1177,29 +1218,27 @@ textarea:focus-visible {
 
 /* Nani-style: subtle hover - bg changes from main-100 to main-200 equivalent */
 .drop-zone:hover {
-    border: var(--md-card-border-hover);
+    border-color: var(--md-sys-color-outline);
     background: var(--md-sys-color-surface-container-low);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06), 0 4px 8px rgba(0, 0, 0, 0.03);
-    /* スムーズな浮遊感 */
-    transform: translateY(-3px) scale(1.01);
+    box-shadow: var(--md-sys-elevation-1);
+    transform: translateY(-1px);
 }
 
 /* Active drag-over state (slightly more prominent than hover) */
 .drop-zone.drag-over {
     border-color: var(--md-sys-color-primary);
     background: var(--md-sys-color-primary-container);
-    box-shadow: 0 12px 32px rgba(99, 102, 241, 0.15), 0 4px 12px rgba(0, 0, 0, 0.06);
-    /* ドラッグ時の浮遊アニメーション */
-    transform: translateY(-6px) scale(1.02);
+    box-shadow: var(--md-sys-elevation-2);
+    transform: translateY(-2px);
     animation: dropZonePulse 1.5s var(--md-sys-motion-easing-smooth) infinite;
 }
 
 @keyframes dropZonePulse {
     0%, 100% {
-        box-shadow: 0 12px 32px rgba(99, 102, 241, 0.15), 0 4px 12px rgba(0, 0, 0, 0.06);
+        box-shadow: var(--md-sys-elevation-2);
     }
     50% {
-        box-shadow: 0 16px 40px rgba(99, 102, 241, 0.2), 0 6px 16px rgba(0, 0, 0, 0.08);
+        box-shadow: var(--md-sys-elevation-3);
     }
 }
 
@@ -1547,7 +1586,7 @@ textarea:focus-visible {
 /* Hint section should not grow, stay just below card */
 .main-area:not(.has-results) .input-panel .hint-section {
     flex-shrink: 0;  /* Don't shrink */
-    margin-top: 1rem;  /* Fixed margin below card */
+    margin-top: 0.75rem;  /* Fixed margin below card */
 }
 
 /* Hide result panel completely in 2-column mode */
@@ -2245,10 +2284,11 @@ textarea:focus-visible {
     display: flex;
     flex-direction: row;  /* Nani uses single row */
     align-items: center;
-    justify-content: center;  /* Center horizontally */
+    justify-content: flex-start;
     gap: 0.375rem;
-    margin-top: 1.125rem;  /* Nani: mt-4.5 = 18px */
-    padding: 0;
+    margin-top: 0.75rem;
+    padding: 0 1rem;
+    width: 100%;
 }
 
 .hint-primary {
@@ -2258,6 +2298,10 @@ textarea:focus-visible {
     color: var(--md-sys-color-on-surface-variant);
     font-size: 0.875rem;  /* 14px - more visible */
     line-height: 1.5;
+    background: var(--md-sys-color-surface-container);
+    border: 1px solid var(--md-sys-color-outline-variant);
+    padding: 0.25rem 0.5rem;
+    border-radius: var(--md-sys-shape-corner-full);
 }
 
 .hint-primary .q-icon,
@@ -2888,12 +2932,15 @@ textarea:focus-visible {
 /* === Translation Style Toggle (Compact segment buttons) === */
 .style-toggle {
     border-radius: var(--md-sys-shape-corner-full) !important;
-    background: var(--md-sys-color-surface-container) !important;
-    padding: 2px !important;
+    background: var(--md-sys-color-surface) !important;
+    border: 1px solid var(--md-sys-color-outline-variant) !important;
+    padding: 1px !important;
+    box-shadow: none !important;
 }
 
 .style-toggle .q-btn-group {
     border-radius: var(--md-sys-shape-corner-full) !important;
+    box-shadow: none !important;
 }
 
 .style-toggle .q-btn {
@@ -2905,6 +2952,7 @@ textarea:focus-visible {
     color: var(--md-sys-color-on-surface-variant) !important;
     background: transparent !important;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard) !important;
+    box-shadow: none !important;
 }
 
 .style-toggle .q-btn:hover:not(.q-btn--active) {
@@ -2913,9 +2961,9 @@ textarea:focus-visible {
 }
 
 .style-toggle .q-btn--active {
-    background: var(--md-sys-color-primary) !important;
-    color: var(--md-sys-color-on-primary) !important;
-    box-shadow: var(--md-sys-elevation-1) !important;
+    background: var(--md-sys-color-secondary-container) !important;
+    color: var(--md-sys-color-on-secondary-container) !important;
+    box-shadow: none !important;
 }
 
 /* Larger style toggle in input panel (before translation) */
@@ -3348,41 +3396,53 @@ a:hover {
 /* === INPUT State Button Size Enhancement === */
 /* Larger buttons for 2-column mode (INPUT state) */
 .main-area:not(.has-results) .input-panel .translate-btn {
-    height: 2.75rem;  /* 44px instead of 40px */
-    min-height: 2.75rem;
-    padding: 0 1.75rem;  /* Slightly more padding */
-    font-size: 0.9375rem;  /* 15px */
+    height: 3rem;
+    min-height: 3rem;
+    padding: 0 1.5rem;
+    font-size: 0.9375rem;
+    border-radius: var(--md-sys-shape-corner-large);
+    box-shadow: var(--md-sys-elevation-2);
+}
+
+.main-area:not(.has-results) .input-panel .translate-btn:hover:not(:disabled) {
+    box-shadow: var(--md-sys-elevation-3);
+    transform: translateY(-1px);
+}
+
+.main-area:not(.has-results) .input-panel .translate-btn:active:not(:disabled) {
+    box-shadow: var(--md-sys-elevation-1);
+    transform: translateY(0);
 }
 
 .main-area:not(.has-results) .input-panel .settings-btn {
-    width: 2.75rem !important;  /* 44px instead of 40px */
-    height: 2.75rem !important;
+    width: 2.5rem !important;
+    height: 2.5rem !important;
 }
 
 .main-area:not(.has-results) .input-panel .settings-btn .q-icon {
-    font-size: 1.375rem !important;  /* 22px icon */
+    font-size: 1.25rem !important;
 }
 
 .main-area:not(.has-results) .input-panel .attach-btn {
-    width: 2.75rem;  /* 44px instead of 40px */
-    height: 2.75rem;
-    min-width: 2.75rem !important;
-    min-height: 2.75rem !important;
+    width: 2.5rem;
+    height: 2.5rem;
+    min-width: 2.5rem !important;
+    min-height: 2.5rem !important;
 }
 
 .main-area:not(.has-results) .input-panel .attach-btn svg {
-    width: 1.375rem;  /* 22px icon */
-    height: 1.375rem;
+    width: 1.25rem;
+    height: 1.25rem;
 }
 
 .main-area:not(.has-results) .input-panel .glossary-toggle-btn {
-    min-height: 2.375rem !important;  /* 38px instead of 32px */
-    padding: 0.375rem 1rem !important;  /* More padding */
-    font-size: 0.875rem !important;  /* 14px */
+    min-height: 2rem !important;
+    padding: 0.25rem 0.75rem !important;
+    font-size: 0.8125rem !important;
 }
 
 .main-area:not(.has-results) .input-panel .glossary-toggle-btn .q-icon {
-    font-size: 1.25rem !important;  /* 20px icon */
+    font-size: 1rem !important;
 }
 
 /* === File Panel Translation Settings Card === */

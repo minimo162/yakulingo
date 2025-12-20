@@ -349,6 +349,7 @@ class YakuLingoApp:
         self._main_content = None
         self._result_panel = None  # Separate refreshable for result panel only
         self._tabs_container = None
+        self._nav_buttons: dict[Tab, ui.button] = {}
         self._history_list = None
         self._main_area_element = None
 
@@ -1825,8 +1826,7 @@ class YakuLingoApp:
                 self._history_list.refresh()
 
         if 'tabs' in refresh_types:
-            if self._tabs_container:
-                self._tabs_container.refresh()
+            self._refresh_tabs()
 
     def _update_layout_classes(self):
         """Update main area layout classes based on current state"""
@@ -2138,9 +2138,27 @@ class YakuLingoApp:
             logger.warning("[LAYOUT] Failed to log layout dimensions: %s", e)
 
     def _refresh_tabs(self):
-        """Refresh tab buttons"""
-        if self._tabs_container:
-            self._tabs_container.refresh()
+        """Update tab buttons in place to avoid sidebar redraw flicker."""
+        if not self._nav_buttons:
+            if self._tabs_container:
+                self._tabs_container.refresh()
+            return
+
+        for tab, btn in self._nav_buttons.items():
+            is_active = self.state.current_tab == tab
+            disabled = self.state.is_translating()
+
+            btn.classes(remove='active disabled')
+            if is_active:
+                btn.classes(add='active')
+            if disabled:
+                btn.classes(add='disabled')
+
+            btn.props(f'aria-selected="{str(is_active).lower()}"')
+            if disabled:
+                btn.props('aria-disabled="true" disable')
+            else:
+                btn.props('aria-disabled="false" :disable=false')
 
     def _refresh_history(self):
         """Refresh history list"""
@@ -2289,7 +2307,7 @@ class YakuLingoApp:
         # History section
         with ui.column().classes('sidebar-history flex-1'):
             with ui.row().classes('items-center px-2 mb-2'):
-                ui.label('履歴').classes('font-semibold text-muted')
+                ui.label('履歴').classes('font-semibold text-muted sidebar-section-title')
 
             @ui.refreshable
             def history_list():
@@ -2323,7 +2341,7 @@ class YakuLingoApp:
             classes += ' disabled'
 
         def on_click():
-            if disabled:
+            if self.state.is_translating():
                 return
 
             if self.state.current_tab == tab:
@@ -2347,9 +2365,10 @@ class YakuLingoApp:
         if disabled:
             aria_props += ' aria-disabled="true"'
 
-        with ui.button(on_click=on_click).props(f'flat no-caps align=left {aria_props}').classes(classes):
+        with ui.button(on_click=on_click).props(f'flat no-caps align=left {aria_props}').classes(classes) as btn:
             ui.icon(icon).classes('text-lg')
             ui.label(label).classes('flex-1')
+        self._nav_buttons[tab] = btn
 
     def _create_history_item(self, entry: HistoryEntry):
         """Create a history item with hover menu"""
@@ -2377,8 +2396,14 @@ class YakuLingoApp:
                 self.state.delete_history_entry(entry)
                 # Delete only the specific item element instead of refreshing entire list
                 item_element.delete()
-                # Only refresh entire list if history becomes empty (to show "履歴がありません")
-                if not self.state.history:
+                remaining = len(self.state.history)
+                # If history list is empty, clear DB to avoid hidden entries resurfacing on restart
+                if remaining == 0:
+                    self.state.clear_history()
+                    self._refresh_history()
+                    return
+                # If more entries remain than displayed, refresh to fill the list
+                if remaining >= MAX_HISTORY_DISPLAY:
                     self._refresh_history()
 
             ui.button(icon='close', on_click=delete_entry).props(

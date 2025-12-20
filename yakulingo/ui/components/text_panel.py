@@ -188,9 +188,9 @@ def _create_large_input_panel(
                 )
 
                 # Bottom controls
-                with ui.row().classes('p-3 justify-between items-center flex-wrap gap-y-2'):
+                with ui.row().classes('input-toolbar justify-between items-center flex-wrap gap-y-2'):
                     # Left side: character count and attached files
-                    with ui.row().classes('items-center gap-2 flex-1 min-w-0 flex-wrap'):
+                    with ui.row().classes('input-toolbar-left items-center gap-2 flex-1 min-w-0 flex-wrap'):
                         # Character count
                         if state.source_text:
                             ui.label(f'{len(state.source_text)} 文字').classes('text-xs text-muted')
@@ -206,7 +206,7 @@ def _create_large_input_panel(
                                             on_click=lambda idx=i: on_remove_reference_file(idx)
                                         ).props('flat dense round size=xs').classes('remove-btn')
 
-                    with ui.row().classes('items-center gap-2'):
+                    with ui.row().classes('input-toolbar-right items-center gap-2'):
                         # Bundled glossary toggle chip
                         if on_glossary_toggle:
                             glossary_btn = ui.button(

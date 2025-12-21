@@ -21,7 +21,7 @@ from yakulingo.processors.base import FileProcessor
 logger = logging.getLogger(__name__)
 
 # Pre-compiled regex for sentence splitting (AGENTS.md: Pre-compile regex patterns)
-_SENTENCE_SPLIT_PATTERN = re.compile(r'(?<=[。！E��E!?\n])')
+_SENTENCE_SPLIT_PATTERN = re.compile(r'(?<=[\u3002\uFF01\uFF1F!?\n])')
 
 # Maximum characters per block for translation batching
 MAX_CHARS_PER_BLOCK = 3000
@@ -43,7 +43,7 @@ def _is_outlook_available() -> bool:
     """Check if Outlook COM is available (Windows with Outlook installed).
 
     Note:
-        COMオブジェクト�E確実にリリースする忁E��がある、E        リリースしなぁE��Outlookプロセスが残り続ける可能性がある、E    """
+        Release COM objects explicitly to avoid leaving Outlook running.    """
     if sys.platform != 'win32':
         return False
     outlook = None
@@ -55,10 +55,10 @@ def _is_outlook_available() -> bool:
     except Exception:
         return False
     finally:
-        # COMオブジェクトを確実にリリース�E�Ecreate_msg_via_outlookと同様�Eパターン�E�E        if outlook is not None:
+        # Ensure COM objects are released (same pattern as create_msg_via_outlook).
+        if outlook is not None:
             del outlook
         gc.collect()
-
 
 class MsgProcessor(FileProcessor):
     """
@@ -69,8 +69,8 @@ class MsgProcessor(FileProcessor):
     Falls back to .txt output on other platforms.
 
     Note:
-        キャチE��ュアクセスはスレチE��セーフ。褁E��スレチE��からの同時アクセスを老E�E、E    """
-
+        Cache access is thread-safe; uses a lock to avoid concurrent access.
+    """
     def __init__(self):
         self._outlook_available: Optional[bool] = None
         self._cached_content: Optional[dict] = None
@@ -165,7 +165,7 @@ class MsgProcessor(FileProcessor):
         content = self._get_cached_content(file_path)
 
         # Get basic info
-        subject = content.get('subject') or "(件名なぁE"
+        subject = content.get('subject') or "(\u4ef6\u540d\u306a\u3057)"
 
         # Count body paragraphs for section details
         body = content.get('body', '')
@@ -174,13 +174,13 @@ class MsgProcessor(FileProcessor):
 
         # Create section details
         section_details = [
-            SectionDetail(index=0, name="件吁E, selected=True),
+            SectionDetail(index=0, name="\u4ef6\u540d", selected=True),
         ]
         if paragraph_count > 0:
             for i in range(paragraph_count):
                 section_details.append(SectionDetail(
                     index=i + 1,
-                    name=f"本斁E段落{i + 1}",
+                    name=f"\u672c\u6587\u6bb5\u843d{i + 1}",
                     selected=True,
                 ))
 
@@ -237,7 +237,7 @@ class MsgProcessor(FileProcessor):
             yield TextBlock(
                 id="msg_subject",
                 text=subject,
-                location="件吁E,
+                location="\u4ef6\u540d",
                 metadata={'field': 'subject'}
             )
 
@@ -263,7 +263,7 @@ class MsgProcessor(FileProcessor):
                         yield TextBlock(
                             id=f"msg_body_{para_index}_chunk_{chunk_index}",
                             text=chunk,
-                            location=f"本斁E段落{non_empty_index + 1} (部刁Echunk_index + 1})",
+                            location=f"\u672c\u6587\u6bb5\u843d{non_empty_index + 1} (\u5206\u5272{chunk_index + 1})",
                             metadata={
                                 'field': 'body',
                                 'paragraph_index': para_index,  # Original index including empty paragraphs
@@ -276,7 +276,7 @@ class MsgProcessor(FileProcessor):
                     yield TextBlock(
                         id=f"msg_body_{para_index}",
                         text=paragraph,
-                        location=f"本斁E段落{non_empty_index + 1}",
+                        location=f"\u672c\u6587\u6bb5\u843d{non_empty_index + 1}",
                         metadata={
                             'field': 'body',
                             'paragraph_index': para_index,  # Original index including empty paragraphs
@@ -400,7 +400,7 @@ class MsgProcessor(FileProcessor):
             True if successful, False otherwise
 
         Note:
-            メールオブジェクト�ESaveAs後に忁E��Close()を呼び出す、E            Close()を呼び出さなぁE��、OutlookセチE��ョン冁E��未処琁E��ブジェクトが残り、E            保存されたMSGファイルが「返信」扱ぁE��なる問題が発生する可能性がある、E        """
+            Call Close() after SaveAs to avoid leaving Outlook in reply state.        """
         mail = None
         outlook = None
         try:
@@ -428,17 +428,17 @@ class MsgProcessor(FileProcessor):
             return False
 
         finally:
-            # COMオブジェクトを確実にリリースする
-            # Close()を呼び出さなぁE��メールが「返信」扱ぁE��なる問題が発生すめE            if mail is not None:
+            # Ensure COM objects are released.
+            if mail is not None:
                 try:
-                    # olDiscard = 1: 変更を破棁E��て閉じめE                    mail.Close(1)
+                    # olDiscard = 1: close without saving changes.
+                    mail.Close(1)
                 except Exception:
                     pass
-                # ExcelプロセチE��と同様にdelで明示皁E��削除
+                # Explicitly delete COM objects to avoid leaks.
                 del mail
             if outlook is not None:
                 del outlook
-            # COMオブジェクト�Eガベ�Eジコレクション
             gc.collect()
 
     def apply_translations(
@@ -511,12 +511,12 @@ class MsgProcessor(FileProcessor):
         """
         # Read original MSG (use cached content)
         content = self._get_cached_content(original_path)
-        original_subject = content.get('subject') or "(件名なぁE"
+        original_subject = content.get('subject') or "(\u4ef6\u540d\u306a\u3057)"
         original_body = content.get('body', '')
-        sender = content.get('sender') or "(送信老E���E)"
+        sender = content.get('sender') or "(\u9001\u4fe1\u8005\u4e0d\u660e)"
         to = content.get('to', '')
         cc = content.get('cc', '')
-        date = content.get('date') or "(日付不�E)"
+        date = content.get('date') or "(\u65e5\u4ed8\u4e0d\u660e)"
 
         extract_msg = _lazy_import_extract_msg()
 
@@ -554,7 +554,7 @@ class MsgProcessor(FileProcessor):
                 translated_body = '\n'.join(translated_lines[body_start_idx:])
 
         # Build bilingual output
-        separator = '─' * 50
+        separator = "\u2500" * 50
         output_parts = []
 
         # Header info
@@ -568,22 +568,22 @@ class MsgProcessor(FileProcessor):
         output_parts.append("")
 
         # Subject section
-        output_parts.append("【件吁E- 原文、E)
+        output_parts.append("\u3010\u4ef6\u540d - \u539f\u6587\u3011")
         output_parts.append(original_subject)
         output_parts.append("")
-        output_parts.append("【件吁E- 訳斁E��E)
+        output_parts.append("\u3010\u4ef6\u540d - \u8a33\u6587\u3011")
         output_parts.append(translated_subject)
         output_parts.append("")
         output_parts.append(separator)
         output_parts.append("")
 
         # Body section
-        output_parts.append("【本斁E- 原文、E)
+        output_parts.append("\u3010\u672c\u6587 - \u539f\u6587\u3011")
         output_parts.append(original_body)
         output_parts.append("")
         output_parts.append(separator)
         output_parts.append("")
-        output_parts.append("【本斁E- 訳斁E��E)
+        output_parts.append("\u3010\u672c\u6587 - \u8a33\u6587\u3011")
         output_parts.append(translated_body)
 
         # Bilingual output is always .txt
@@ -602,7 +602,7 @@ class MsgProcessor(FileProcessor):
 
         with output_path.open('w', encoding='utf-8-sig', newline='') as f:
             writer = csv.writer(f)
-            writer.writerow(['原文', '訳斁E])
+            writer.writerow(["\u539f\u6587", "\u8a33\u6587"])
             for block_id, translated in translations.items():
                 if block_id in original_texts:
                     writer.writerow([original_texts[block_id], translated])

@@ -70,7 +70,7 @@ from .pdf_converter import (
     detect_paragraph_boundary, classify_char_type,
     create_paragraph_from_char, create_formula_var_from_chars,
     # Line joining functions (yomitoku reference)
-    get_line_join_separator, is_line_end_hyphenated, _is_cjk_char,
+    get_line_join_separator, is_line_end_hyphenated, _is_cjk_char, _is_latin_char,
     is_japanese_continuation_line,  # For intelligent paragraph boundary detection
     is_toc_line_ending,  # For TOC pattern detection (leader + page number)
     # Sentence end characters for paragraph boundary detection
@@ -4236,6 +4236,7 @@ class PdfProcessor(FileProcessor):
         prev_x1 = 0.0
         prev_y0 = 0.0
         prev_char_text = ""  # For closing bracket detection
+        prev_char_size = DEFAULT_FONT_SIZE
         has_prev = False
 
         # Coordinate conversion setup
@@ -4266,6 +4267,7 @@ class PdfProcessor(FileProcessor):
             char_y1 = char.y1
             char_text = char.get_text()
             fontname = getattr(char, 'fontname', "")
+            char_size = char.size if hasattr(char, 'size') else DEFAULT_FONT_SIZE
 
             # Get layout class for this character
             char_cls = self._get_char_layout_class(
@@ -4350,23 +4352,33 @@ class PdfProcessor(FileProcessor):
                     new_paragraph = True
                     is_strong_boundary = True
 
-                # Check for digit following CJK text with X gap
-                # Examples: "日本 155" in tables where label and value are in adjacent cells
-                # This handles table patterns where item names are followed by numeric values
-                # In table regions: be more aggressive (no gap required, just not overlapping)
-                # Outside tables: require minimum 1pt gap to avoid splitting "日本1位"
+                # Check for digit following CJK or Latin label with X gap
+                # Examples: "Japan 155" in tables where label and value are in adjacent cells
+                # This handles table patterns where item names are followed by numeric values.
+                # Table regions: allow smaller gaps (CJK uses 0pt, Latin uses font-based gap).
+                # Outside tables: only split CJK with a minimum gap to avoid in-word splits.
                 TABLE_LABEL_VALUE_GAP_THRESHOLD = 1.0
                 is_table_region_for_split = (
                     use_layout and char_cls is not None and char_cls >= LAYOUT_TABLE_BASE
                 )
-                if (prev_char_text and _is_cjk_char(prev_char_text) and
-                    char_text.isdigit() and prev_x1 is not None):
+                prev_is_cjk = bool(prev_char_text and _is_cjk_char(prev_char_text))
+                prev_is_latin_letter = bool(
+                    prev_char_text and _is_latin_char(prev_char_text) and not prev_char_text.isdigit()
+                )
+                if (prev_char_text and char_text.isdigit() and prev_x1 is not None and
+                    (prev_is_cjk or prev_is_latin_letter)):
                     if is_table_region_for_split:
-                        # In table regions: split if X is not going backward (>= 0pt gap)
-                        if char_x0 >= prev_x1:
+                        if prev_is_cjk:
+                            min_gap = 0.0
+                        else:
+                            min_gap = max(
+                                TABLE_LABEL_VALUE_GAP_THRESHOLD,
+                                (prev_char_size or DEFAULT_FONT_SIZE) * 0.4,
+                            )
+                        if char_x0 >= prev_x1 + min_gap:
                             new_paragraph = True
                             is_strong_boundary = True
-                    elif char_x0 > prev_x1 + TABLE_LABEL_VALUE_GAP_THRESHOLD:
+                    elif prev_is_cjk and char_x0 > prev_x1 + TABLE_LABEL_VALUE_GAP_THRESHOLD:
                         # Outside tables: require 1pt gap
                         new_paragraph = True
                         is_strong_boundary = True
@@ -4638,7 +4650,6 @@ class PdfProcessor(FileProcessor):
                     # When a larger character appears, adjust the paragraph's y-origin
                     # to align the top edges of different-sized characters.
                     # This is critical for accurate baseline positioning.
-                    char_size = char.size if hasattr(char, 'size') else DEFAULT_FONT_SIZE
                     if char_size > last_para.size and char_text != " ":
                         # Shift y down by the size difference
                         last_para.y -= char_size - last_para.size
@@ -4649,6 +4660,7 @@ class PdfProcessor(FileProcessor):
             prev_x1 = char_x1
             prev_y0 = char_y0
             prev_char_text = char_text
+            prev_char_size = char_size
             has_prev = True
 
         if logger.isEnabledFor(logging.DEBUG):

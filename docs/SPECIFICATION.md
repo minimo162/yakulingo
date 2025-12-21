@@ -966,6 +966,7 @@ class PdfProcessor(FileProcessor):
     - pdfminer: テキスト抽出（正確な文字データ、フォント情報、CID値）
     - PP-DocLayout-L: 段落検出、読み順、図表/数式の識別（LayoutArray生成）
     - _group_chars_into_blocks: LayoutArrayを参照して文字を段落にグループ化
+    - テーブル内のラベル+数値はセル境界として分割（例: "Japan 155", "日本 155"）
     - TextBlock: 抽出結果を一元管理（PDF座標、フォント情報、段落情報）
     - OCRなし: スキャンPDFはサポート対象外
 

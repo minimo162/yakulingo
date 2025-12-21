@@ -381,6 +381,22 @@ class AutoUpdater:
             urllib.request.HTTPSHandler(context=ssl_context)
         )
 
+    def _open_request(self, req: urllib.request.Request, timeout: int):
+        """プロキシバイパスを考慮してリクエストを開く"""
+        opener = self.opener
+        if self._proxy_dict and self.proxy_config.should_bypass(req.full_url):
+            opener = self.direct_opener
+
+        try:
+            return opener.open(req, timeout=timeout)
+        except urllib.error.HTTPError as e:
+            if e.code == 407:
+                raise RuntimeError(
+                    "プロキシ認証に失敗しました。\n"
+                    "Windows認証プロキシを使用する場合は、pywin32をインストールしてください。"
+                ) from e
+            raise
+
     def _make_request(
         self, url: str, headers: Optional[dict] = None, return_headers: bool = False
     ):
@@ -393,23 +409,11 @@ class AutoUpdater:
             for key, value in headers.items():
                 req.add_header(key, value)
 
-        try:
-            opener = self.opener
-            if self._proxy_dict and self.proxy_config.should_bypass(url):
-                opener = self.direct_opener
-
-            with opener.open(req, timeout=30) as response:
-                data = response.read()
-                if return_headers:
-                    return data, response.headers
-                return data
-        except urllib.error.HTTPError as e:
-            if e.code == 407:
-                raise RuntimeError(
-                    "プロキシ認証に失敗しました。\n"
-                    "Windows認証プロキシを使用する場合は、pywin32をインストールしてください。"
-                )
-            raise
+        with self._open_request(req, timeout=30) as response:
+            data = response.read()
+            if return_headers:
+                return data, response.headers
+            return data
 
     def _load_release_cache(self) -> Optional[dict]:
         """最新リリース情報のキャッシュを読み込む"""
@@ -473,11 +477,17 @@ class AutoUpdater:
                     raise
 
             release_info = json.loads(response_data.decode("utf-8"))
+            if not isinstance(release_info, dict):
+                raise ValueError("Invalid release response")
+            if "message" in release_info and "tag_name" not in release_info:
+                raise ValueError(f"GitHub API error: {release_info.get('message')}")
 
             # バージョン情報を抽出
             latest_version = release_info.get("tag_name", "").lstrip("v")
             release_date = release_info.get("published_at", "")[:10]
             release_notes = release_info.get("body", "")
+            if not latest_version:
+                raise ValueError("Latest version not found in release response")
 
             # ダウンロードURLを探す（zipball または特定のアセット）
             download_url = ""
@@ -499,6 +509,8 @@ class AutoUpdater:
             # ZIPアセットがなければ zipball_url を使用（ソースコードのみ）
             if not download_url:
                 download_url = release_info.get("zipball_url", "")
+            if not download_url:
+                raise ValueError("Download URL not found in release response")
 
             # 依存関係変更の検出（リリースノートに [REQUIRES_REINSTALL] が含まれているか）
             requires_reinstall = "[REQUIRES_REINSTALL]" in release_notes
@@ -548,27 +560,67 @@ class AutoUpdater:
 
     def _is_newer_version(self, latest: str, current: str) -> bool:
         """バージョン比較（セマンティックバージョニングまたは日付形式に対応）"""
-        def parse_version(v: str) -> tuple:
-            # "v" プレフィックスを削除
-            v = v.lstrip("v")
-
-            # 日付形式（YYYYMMDD）かチェック
-            if len(v) == 8 and v.isdigit():
-                return (int(v),)
-
-            # セマンティックバージョニング形式（x.y.z）
-            parts = []
-            for part in v.split("."):
-                try:
-                    parts.append(int(part))
-                except ValueError:
-                    # プレリリースタグなど
-                    parts.append(part)
+        def split_parts(value: str) -> tuple[tuple[int, object], ...]:
+            parts: list[tuple[int, object]] = []
+            for part in value.split("."):
+                if not part:
+                    continue
+                if part.isdigit():
+                    parts.append((0, int(part)))
+                else:
+                    parts.append((1, part))
             return tuple(parts)
 
+        def parse_version(v: str) -> tuple[str, tuple]:
+            # "v" プレフィックスを削除
+            v = v.lstrip("v").strip()
+            if len(v) == 8 and v.isdigit():
+                return ("date", (int(v),))
+
+            if not v:
+                return ("other", (v,))
+
+            base = v.split("+", 1)[0]
+            main, _, pre = base.partition("-")
+            main_parts = split_parts(main)
+            if not main_parts:
+                return ("other", (v,))
+
+            pre_parts = split_parts(pre) if pre else ()
+            # pre が無い方が新しい
+            pre_flag = 0 if pre else 1
+            return ("semver", (main_parts, pre_flag, pre_parts))
+
+        def compare_semver(latest_parts: tuple, current_parts: tuple) -> bool:
+            latest_main, latest_pre_flag, latest_pre_parts = latest_parts
+            current_main, current_pre_flag, current_pre_parts = current_parts
+
+            max_len = max(len(latest_main), len(current_main))
+            latest_main_padded = latest_main + ((0, 0),) * (max_len - len(latest_main))
+            current_main_padded = current_main + ((0, 0),) * (max_len - len(current_main))
+            if latest_main_padded != current_main_padded:
+                return latest_main_padded > current_main_padded
+
+            if latest_pre_flag != current_pre_flag:
+                return latest_pre_flag > current_pre_flag
+
+            if latest_pre_parts == current_pre_parts:
+                return False
+
+            pre_len = max(len(latest_pre_parts), len(current_pre_parts))
+            latest_pre_padded = latest_pre_parts + ((0, 0),) * (pre_len - len(latest_pre_parts))
+            current_pre_padded = current_pre_parts + ((0, 0),) * (pre_len - len(current_pre_parts))
+            return latest_pre_padded > current_pre_padded
+
         try:
-            return parse_version(latest) > parse_version(current)
-        except (TypeError, ValueError):
+            latest_kind, latest_parsed = parse_version(latest)
+            current_kind, current_parsed = parse_version(current)
+            if latest_kind == "date" and current_kind == "date":
+                return latest_parsed > current_parsed
+            if latest_kind == "semver" and current_kind == "semver":
+                return compare_semver(latest_parsed, current_parsed)
+            return latest > current
+        except (TypeError, ValueError, IndexError):
             # 比較できない場合は文字列比較
             return latest > current
 
@@ -608,7 +660,7 @@ class AutoUpdater:
         req.add_header("User-Agent", f"YakuLingo/{self.current_version}")
 
         try:
-            with self.opener.open(req, timeout=300) as response:
+            with self._open_request(req, timeout=300) as response:
                 total_size = int(response.headers.get("Content-Length", 0) or version_info.file_size or 0)
                 downloaded = 0
 
@@ -671,7 +723,7 @@ class AutoUpdater:
         req.add_header("User-Agent", f"YakuLingo/{self.current_version}")
 
         try:
-            with self.opener.open(req, timeout=300) as response:
+            with self._open_request(req, timeout=300) as response:
                 total_size = int(response.headers.get("Content-Length", 0) or version_info.exe_file_size or 0)
                 downloaded = 0
 
@@ -984,6 +1036,7 @@ $script:AppDir = '{app_dir_escaped}'
 $script:SourceDir = '{source_dir_escaped}'
 $script:DirsToUpdate = @({dirs_to_update_ps})
 $script:FilesToUpdate = @({files_to_update_ps})
+$script:CriticalDirs = @("yakulingo")
 
 "Config loaded - AppDir: $($script:AppDir)" | Out-File -FilePath $debugLog -Append -Encoding UTF8
 
@@ -1188,13 +1241,13 @@ function Invoke-Update {{
 
     while ($waited -lt $maxWait) {{
         # Find Python processes running from app directory
-        $pythonProcesses = Get-Process -Name "python*" -ErrorAction SilentlyContinue | Where-Object {{
+        $pythonProcesses = @(Get-Process -Name "python*" -ErrorAction SilentlyContinue | Where-Object {{
             try {{
                 $_.Path -and $_.Path.StartsWith($script:AppDir)
             }} catch {{
                 $false
             }}
-        }}
+        }})
 
         if ($pythonProcesses.Count -eq 0) {{
             Write-DebugLog "No Python processes found in app directory"
@@ -1252,6 +1305,7 @@ function Invoke-Update {{
     Write-DebugLog "Source contents: $($sourceContents -join ', ')"
 
     $copySuccess = $false
+    $copiedDirs = @()
     $totalDirs = $script:DirsToUpdate.Count
     $currentDir = 0
 
@@ -1285,6 +1339,7 @@ function Invoke-Update {{
                 }}
                 if (Test-Path $dir) {{
                     $copySuccess = $true
+                    $copiedDirs += $dir
                     Write-DebugLog "[OK] $dir copied successfully"
                     $debugInfo += "[OK] $dir copied"
                 }} else {{
@@ -1310,10 +1365,23 @@ function Invoke-Update {{
         throw "No source directories were copied!`n`nPlease check if the update package is valid."
     }}
 
+    $missingCritical = @($script:CriticalDirs | Where-Object {{ -not ($copiedDirs -contains $_) }})
+    if ($missingCritical.Count -gt 0) {{
+        $missingList = $missingCritical -join ", "
+        Write-DebugLog "[CRITICAL] Critical directories missing: $missingList"
+        $debugInfo += "[CRITICAL] Missing dirs: $missingList"
+        if (Test-Path $settingsBackup) {{
+            if (-not (Test-Path "config")) {{ New-Item -ItemType Directory -Path "config" -Force | Out-Null }}
+            Copy-Item -Path $settingsBackup -Destination "config\\user_settings.json" -Force
+        }}
+        throw "Critical directories missing after copy: $missingList"
+    }}
+
     # Copy source files
     Show-Progress -Title "YakuLingo Update" -Status "Copying files..." -Step "Step 3/5: Updating" -Percent 55
     $criticalFiles = @("app.py", "pyproject.toml")
     $fileCopyFailures = @()
+    $criticalFailureMessage = $null
     foreach ($file in $script:FilesToUpdate) {{
         $sourceFile = Join-Path $script:SourceDir $file
         if (Test-Path $sourceFile) {{
@@ -1338,7 +1406,8 @@ function Invoke-Update {{
     # Check if critical files failed to copy
     $criticalFailures = $fileCopyFailures | Where-Object {{ $criticalFiles -contains $_ }}
     if ($criticalFailures.Count -gt 0) {{
-        Write-DebugLog "[CRITICAL] Critical files failed to copy: $($criticalFailures -join ', ')"
+        $criticalFailureMessage = "Critical files failed to copy: $($criticalFailures -join ', ')"
+        Write-DebugLog "[CRITICAL] $criticalFailureMessage"
         $debugInfo += "[CRITICAL] Failed: $($criticalFailures -join ', ')"
     }}
 
@@ -1350,6 +1419,10 @@ function Invoke-Update {{
         if (-not (Test-Path "config")) {{ New-Item -ItemType Directory -Path "config" -Force | Out-Null }}
         Copy-Item -Path $settingsBackup -Destination "config\\user_settings.json" -Force
         Remove-Item -Path $settingsBackup -Force -ErrorAction SilentlyContinue
+    }}
+
+    if ($criticalFailureMessage) {{
+        throw $criticalFailureMessage
     }}
 
     # Step 5: Merge settings and glossary
@@ -1564,6 +1637,8 @@ done
 
 # ソースコードディレクトリをコピー
 COPY_SUCCESS=0
+CRITICAL_DIRS="yakulingo"
+COPIED_DIRS=""
 DIR_COPY_FAILURES=""
 for dir in {dirs_to_update}; do
     if [ -d "$SOURCE_DIR/$dir" ]; then
@@ -1573,6 +1648,7 @@ for dir in {dirs_to_update}; do
             if [ -d "$APP_DIR/$dir" ]; then
                 echo "    [OK] $dir"
                 COPY_SUCCESS=1
+                COPIED_DIRS="$COPIED_DIRS $dir"
             else
                 echo "    [ERROR] $dir not created after copy"
                 DIR_COPY_FAILURES="$DIR_COPY_FAILURES $dir"
@@ -1608,6 +1684,25 @@ if [ "$COPY_SUCCESS" -eq 0 ]; then
     exit 1
 fi
 
+# Check if critical directories are missing
+MISSING_CRITICAL=""
+for critical in $CRITICAL_DIRS; do
+    if ! echo " $COPIED_DIRS " | grep -q " $critical "; then
+        MISSING_CRITICAL="$MISSING_CRITICAL $critical"
+    fi
+done
+
+if [ -n "$MISSING_CRITICAL" ]; then
+    echo ""
+    echo "[CRITICAL] Critical directories missing:$MISSING_CRITICAL"
+    if [ -f "$SETTINGS_BACKUP" ]; then
+        mkdir -p "config"
+        cp "$SETTINGS_BACKUP" "config/user_settings.json"
+    fi
+    read -p "Press Enter to exit..."
+    exit 1
+fi
+
 # ソースコードファイルをコピー
 CRITICAL_FILES="app.py pyproject.toml"
 FILE_COPY_FAILURES=""
@@ -1631,12 +1726,23 @@ for file in {files_to_update}; do
 done
 
 # Check if critical files failed
+CRITICAL_FILE_FAILURES=""
 for critical in $CRITICAL_FILES; do
     if echo "$FILE_COPY_FAILURES" | grep -q "$critical"; then
-        echo ""
-        echo "[CRITICAL] Critical file failed to copy: $critical"
+        CRITICAL_FILE_FAILURES="$CRITICAL_FILE_FAILURES $critical"
     fi
 done
+
+if [ -n "$CRITICAL_FILE_FAILURES" ]; then
+    echo ""
+    echo "[CRITICAL] Critical file failed to copy:$CRITICAL_FILE_FAILURES"
+    if [ -f "$SETTINGS_BACKUP" ]; then
+        mkdir -p "config"
+        cp "$SETTINGS_BACKUP" "config/user_settings.json"
+    fi
+    read -p "Press Enter to exit..."
+    exit 1
+fi
 
 # ユーザー設定を復元してマージ（configディレクトリがなければ作成）
 if [ -f "$SETTINGS_BACKUP" ]; then

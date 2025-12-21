@@ -32,7 +32,7 @@ nicegui_app = None
 nicegui_Client = None
 
 
-def _get_largest_monitor_size() -> tuple[int, int] | None:
+def _get_primary_monitor_size() -> tuple[int, int] | None:
     if sys.platform != 'win32':
         return None
 
@@ -58,9 +58,12 @@ def _get_largest_monitor_size() -> tuple[int, int] | None:
                 ("dwFlags", wintypes.DWORD),
             ]
 
-        monitors: list[tuple[int, int]] = []
+        MONITORINFOF_PRIMARY = 0x00000001
+        primary_size: tuple[int, int] | None = None
+        largest_size: tuple[int, int] | None = None
 
         def enum_proc(hmonitor, _hdc, _lprect, _lparam):
+            nonlocal primary_size, largest_size
             info = MONITORINFO()
             info.cbSize = ctypes.sizeof(MONITORINFO)
             if user32.GetMonitorInfoW(hmonitor, ctypes.byref(info)):
@@ -68,7 +71,11 @@ def _get_largest_monitor_size() -> tuple[int, int] | None:
                 width = info.rcWork.right - info.rcWork.left
                 height = info.rcWork.bottom - info.rcWork.top
                 if width > 0 and height > 0:
-                    monitors.append((width, height))
+                    size = (width, height)
+                    if info.dwFlags & MONITORINFOF_PRIMARY:
+                        primary_size = size
+                    if largest_size is None or (width * height) > (largest_size[0] * largest_size[1]):
+                        largest_size = size
             return True
 
         monitor_enum_proc = ctypes.WINFUNCTYPE(
@@ -79,8 +86,10 @@ def _get_largest_monitor_size() -> tuple[int, int] | None:
             wintypes.LPARAM,
         )
         user32.EnumDisplayMonitors(None, None, monitor_enum_proc(enum_proc), 0)
-        if monitors:
-            return max(monitors, key=lambda size: size[0] * size[1])
+        if primary_size:
+            return primary_size
+        if largest_size:
+            return largest_size
     except Exception:
         return None
 
@@ -4065,7 +4074,7 @@ def _detect_display_settings(
         screen_width, screen_height = screen_size
         window_size, panel_sizes = calculate_sizes(screen_width, screen_height)
         logger.info(
-            "Display detection (fast): largest work area=%dx%d",
+            "Display detection (fast): work area=%dx%d",
             screen_width,
             screen_height,
         )
@@ -4484,7 +4493,7 @@ def run_app(
     # Detect optimal window size BEFORE ui.run() to avoid resize flicker
     # Fallback to browser mode when pywebview cannot create a native window (e.g., headless Linux)
     _t2 = time.perf_counter()
-    screen_size = _get_largest_monitor_size()
+    screen_size = _get_primary_monitor_size()
     native, webview_module = _check_native_mode_and_get_webview(
         native,
         fast_path=screen_size is not None,

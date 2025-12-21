@@ -4592,8 +4592,16 @@ class PdfProcessor(FileProcessor):
                                 is_toc_line_ending(prev_text)
                             )
 
-                            # If it's a continuation line OR not a sentence end, join the lines
-                            if is_continuation or not is_sentence_end:
+                            # For Latin-only lines, allow joining when there's no sentence end.
+                            # For CJK/mixed lines, only join when explicit continuation markers exist.
+                            has_cjk = any(_is_cjk_char(c) for c in prev_text)
+                            has_latin_alpha = any(
+                                ('A' <= c <= 'Z') or ('a' <= c <= 'z') for c in prev_text
+                            )
+                            latin_dominant = has_latin_alpha and not has_cjk
+
+                            should_join = is_continuation or (latin_dominant and not is_sentence_end)
+                            if should_join:
                                 # Previous paragraph doesn't end with sentence-ending punctuation
                                 # or ends with a continuation indicator
                                 # Treat this as a line break instead of a new paragraph

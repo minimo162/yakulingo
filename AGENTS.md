@@ -2055,6 +2055,11 @@ PDF翻訳では視覚的な行末での改行を文字種別に基づいて処�
 | Latin → CJK | スペースなしで連結 | `ABC` + `日本語` → `ABC日本語` |
 | ハイフン終了 | ハイフン削除して連結 | `hyph-` + `en` → `hyphen` |
 
+**文末結合ルール（段落境界の弱いケース）:**
+
+- CJK/混在行: `is_japanese_continuation_line()` が True のときのみ結合
+- Latinのみ: 文末記号がなければ結合（文末記号ありなら段落を維持）
+
 **行結合関数:**
 
 ```python
@@ -2081,8 +2086,14 @@ def is_japanese_continuation_line(text: str) -> bool:
     """日本語継続行判定"""
     # 以下の場合は継続しない（Falseを返す）:
     # 1. 文末記号で終わる（。！？など）
-    # 2. 数量単位で終わる（円万億千台個件名社年月日回本枚％%）
-    # 3. 目次パターン（リーダー＋ページ番号）
+    # 2. 閉じ括弧で終わる（) ） ] ］）
+    #
+    # 以下の場合は継続する（Trueを返す）:
+    # - 助詞/接続助詞/読点の末尾
+    # - 既知の継続サフィックス（〜ため、〜ので等）
+
+    # 数量単位やTOCパターンはここでは判定せず、
+    # 文末判定（pdf_processor側）で扱う。
 ```
 
 **定数:**
@@ -2094,7 +2105,7 @@ def is_japanese_continuation_line(text: str) -> bool:
 | `HYPHEN_CHARS` | ハイフン文字: `-‐?????` |
 | `TOC_LEADER_CHARS` | 目次リーダー文字: `…‥・．.・` |
 | `OPENING_BRACKETS` | 開き括弧: `(（「『【〔〈《｛［` |
-| `QUANTITY_UNITS_JA` | 数量単位（継続行判定除外）: `円万億千台個件名社年月日回本枚％%` |
+| `QUANTITY_UNITS_JA` | 数量単位（文末判定で使用）: `円万億千台個件名社年月日回本枚％%` |
 
 **Coordinate System Utilities (PDFMathTranslate compliant):**
 

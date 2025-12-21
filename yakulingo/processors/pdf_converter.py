@@ -64,7 +64,7 @@ LINE_HEIGHT_COMPRESSION_STEP = 0.05
 # - line_height < 1.0 causes text overlap (font height > line spacing)
 # - Instead, reduce font size more aggressively (see TABLE_FONT_MIN_RATIO)
 # - This ensures readable text even in constrained cells
-TABLE_MIN_LINE_HEIGHT = 0.9
+TABLE_MIN_LINE_HEIGHT = 1.0
 
 # Single-line block expansion limit (legacy - no longer used for font size reduction)
 # PDFMathTranslate approach: font size is FIXED, only line height is adjusted
@@ -150,7 +150,7 @@ JAPANESE_CONTINUATION_CHARS = frozenset(
     # Binding particles (係助詞) - は、も indicate topic, often continue
     'はも'
     # Conjunctive particles (接続助詞) - indicate clause continuation
-    'てばり'
+    'てば'
     # Commas indicate continuation
     '、,'
 )
@@ -1281,31 +1281,6 @@ def is_japanese_continuation_line(text: str) -> bool:
     # Check if text ends with any of the known continuation suffixes
     for suffix in JAPANESE_CONTINUATION_SUFFIXES:
         if stripped.endswith(suffix):
-            return True
-
-    # Fifth check: if the text contains Japanese characters and doesn't end with
-    # sentence-ending punctuation, it's likely a continuation (conservative approach)
-    # This handles cases where the ending is not explicitly in our patterns but
-    # the line is clearly incomplete in Japanese context.
-    #
-    # Only apply this if the text appears to be Japanese (contains hiragana/katakana)
-    has_japanese = any(_is_cjk_char(c) for c in stripped[-10:] if c)
-    if has_japanese:
-        # Additional check: common non-continuation endings to avoid false positives
-        # Sentence-final particles that DO end sentences
-        sentence_final_particles = frozenset('ねよなかわぞ')
-        if last_char in sentence_final_particles:
-            return False
-
-        # Quantity units that typically END a phrase (not continuation)
-        # Common in financial documents: △971億円, 5,000万円, 100台, etc.
-        # These should NOT be treated as continuation lines in table contexts.
-        quantity_units = frozenset('円万億千台個件名社年月日回本枚％%')
-        if last_char in quantity_units:
-            return False
-
-        # If it's a CJK character that's not a known ending, assume continuation
-        if _is_cjk_char(last_char):
             return True
 
     return False

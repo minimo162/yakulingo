@@ -3078,13 +3078,12 @@ class CopilotHandler:
                     self._cached_side_panel_geometry is not None):
                 return self._cached_side_panel_geometry
 
-            # Calculate 1:1 ratio: app and browser each get half the available width
-            available_width = screen_width - self.SIDE_PANEL_GAP
-            edge_width = available_width // 2
+            # Calculate 1:1 ratio: app and browser each get half the available width.
+            # Use full available width (handle odd pixels without leaving gaps).
+            available_width = max(screen_width - self.SIDE_PANEL_GAP, 0)
+            app_width = available_width // 2
+            edge_width = available_width - app_width
             max_window_height = screen_height  # Use full work area height
-
-            # For 1:1 ratio, app width equals edge width (both get half)
-            app_width = edge_width
 
             # Calculate app window height (must match app.py _detect_display_settings)
             MIN_WINDOW_HEIGHT = 650
@@ -3226,8 +3225,16 @@ class CopilotHandler:
             app_width = app_rect.right - app_rect.left
             app_height = app_rect.bottom - app_rect.top
 
-            # 1:1 ratio: browser width equals app width
-            edge_width = app_width
+            # Target widths based on monitor work area (use full available width)
+            available_width = max(screen_width - self.SIDE_PANEL_GAP, 0)
+            target_app_width = available_width // 2
+            target_edge_width = available_width - target_app_width
+            if target_app_width <= 0 or target_edge_width <= 0:
+                target_app_width = app_width
+                target_edge_width = app_width
+
+            # 1:1 ratio: browser width equals app width (use target widths)
+            edge_width = target_edge_width
 
             # If expected app position is saved (from early connection), use its height
             # This prevents Edge height from shrinking during app startup when window
@@ -3246,7 +3253,7 @@ class CopilotHandler:
                 app_height = self.SIDE_PANEL_MIN_HEIGHT
 
             # Calculate total width of app + gap + side panel
-            total_width = app_width + self.SIDE_PANEL_GAP + edge_width
+            total_width = target_app_width + self.SIDE_PANEL_GAP + edge_width
 
             # Position the "set" (app + side panel) centered on screen
             # This ensures both windows fit within the screen
@@ -3260,17 +3267,18 @@ class CopilotHandler:
             # Calculate new positions
             new_app_x = set_start_x
             new_app_y = set_start_y
-            edge_x = new_app_x + app_width + self.SIDE_PANEL_GAP
+            edge_x = new_app_x + target_app_width + self.SIDE_PANEL_GAP
             edge_y = new_app_y
 
             POSITION_TOLERANCE = 2
             SIZE_TOLERANCE = 2
 
-            # Check if app needs to be moved (compare with current position)
+            # Check if app needs to be moved or resized (compare with target)
             app_needs_move = (
                 abs(app_rect.left - new_app_x) > POSITION_TOLERANCE or
                 abs(app_rect.top - new_app_y) > POSITION_TOLERANCE
             )
+            app_needs_resize = abs(app_width - target_app_width) > SIZE_TOLERANCE
 
             # SetWindowPos flags
             SWP_NOACTIVATE = 0x0010  # Don't activate window
@@ -3279,18 +3287,35 @@ class CopilotHandler:
             SWP_NOMOVE = 0x0002      # Don't change position
             SWP_SHOWWINDOW = 0x0040  # Show window
 
-            # Move YakuLingo app if needed (only position, keep size)
-            if app_needs_move:
-                logger.debug("Moving YakuLingo app from (%d,%d) to (%d,%d)",
-                            app_rect.left, app_rect.top, new_app_x, new_app_y)
+            # Move/resize YakuLingo app if needed
+            if app_needs_move or app_needs_resize:
+                if app_needs_resize and app_needs_move:
+                    logger.debug(
+                        "Moving/resizing YakuLingo app from (%d,%d) %dx%d to (%d,%d) %dx%d",
+                        app_rect.left, app_rect.top, app_width, app_height,
+                        new_app_x, new_app_y, target_app_width, app_height
+                    )
+                elif app_needs_resize:
+                    logger.debug(
+                        "Resizing YakuLingo app from %dx%d to %dx%d",
+                        app_width, app_height, target_app_width, app_height
+                    )
+                else:
+                    logger.debug("Moving YakuLingo app from (%d,%d) to (%d,%d)",
+                                app_rect.left, app_rect.top, new_app_x, new_app_y)
+                flags = SWP_NOACTIVATE | SWP_NOZORDER
+                if not app_needs_resize:
+                    flags |= SWP_NOSIZE
+                if not app_needs_move:
+                    flags |= SWP_NOMOVE
                 user32.SetWindowPos(
                     yakulingo_hwnd,
                     None,  # hWndInsertAfter
                     new_app_x,
                     new_app_y,
-                    0,  # width (ignored due to SWP_NOSIZE)
-                    0,  # height (ignored due to SWP_NOSIZE)
-                    SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOSIZE
+                    target_app_width,
+                    app_height,
+                    flags
                 )
 
             # Check if Edge window is off-screen or minimized

@@ -26,7 +26,7 @@ def setup_logging():
 
     Log file location: ~/.yakulingo/logs/startup.log
     - Cleared on first startup, then append mode (for multiprocess compatibility)
-    - Encoding: UTF-8
+    - Encoding: UTF-8 with BOM for Windows editors
 
     Returns:
         tuple: (console_handler, file_handler) to keep references alive
@@ -60,9 +60,9 @@ def setup_logging():
             # Use environment variable to track if we've already cleared
             if not os.environ.get('YAKULINGO_LOG_INITIALIZED'):
                 os.environ['YAKULINGO_LOG_INITIALIZED'] = '1'
-                # Truncate file on startup
-                with open(log_file_path, 'w', encoding='utf-8'):
-                    pass
+                # Truncate file on startup and write UTF-8 BOM for editors.
+                with open(log_file_path, 'wb') as log_file:
+                    log_file.write(b'\xef\xbb\xbf')
 
             # Use append mode for multiprocess compatibility
             file_handler = logging.FileHandler(

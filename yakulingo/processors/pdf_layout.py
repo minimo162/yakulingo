@@ -930,6 +930,19 @@ def create_layout_array_from_pp_doclayout(
         if not coord or len(coord) < 4:
             continue
 
+        # yomitoku-style noise filtering: skip tiny elements in text regions
+        if (label not in table_labels and
+            label not in LAYOUT_PRESERVE_LABELS and
+            label not in LAYOUT_SKIP_LABELS):
+            if is_noise_element(tuple(coord[:4]), NOISE_MIN_SIZE_PX):
+                logger.debug(
+                    "Skipping noise element (label=%s, box=%s)",
+                    label, coord[:4]
+                )
+                continue
+
+        role = map_pp_doclayout_label_to_role(label)
+
         # Clip coordinates with ±1 margin
         x0 = max(0, min(int(coord[0]) - 1, max_x))
         y0 = max(0, min(int(coord[1]) - 1, max_y))
@@ -962,6 +975,7 @@ def create_layout_array_from_pp_doclayout(
                 'box': coord[:4],
                 'label': label,
                 'score': score,
+                'role': role,
             })
             continue
 
@@ -974,6 +988,7 @@ def create_layout_array_from_pp_doclayout(
                 'box': coord[:4],
                 'label': label,
                 'score': score,
+                'role': role,
             }
             table_idx += 1
         elif label in LAYOUT_TRANSLATE_LABELS:
@@ -984,6 +999,7 @@ def create_layout_array_from_pp_doclayout(
                 'box': coord[:4],
                 'label': label,
                 'score': score,
+                'role': role,
             }
             para_idx += 1
         else:
@@ -995,6 +1011,7 @@ def create_layout_array_from_pp_doclayout(
                 'box': coord[:4],
                 'label': label,
                 'score': score,
+                'role': role,
             }
             para_idx += 1
 
@@ -1114,6 +1131,11 @@ def map_pp_doclayout_label_to_role(label: str) -> str:
         "table": "table_cell",
         "table_caption": "caption",
         "section_header": "section_header",
+        "page_header": "header",
+        "page_footer": "footer",
+        "header": "header",
+        "footer": "footer",
+        "page_number": "page_number",
     }
     return role_map.get(label, "paragraph")
 
@@ -3110,7 +3132,7 @@ def estimate_reading_order_auto(
     """
     Estimate reading order with automatic direction detection (yomitoku-style).
 
-    Combines direction detection and reading order estimation.
+    Combines area-based direction detection and reading order estimation.
     Use this when you don't know the document's text orientation.
 
     Args:
@@ -3124,7 +3146,7 @@ def estimate_reading_order_auto(
     Example:
         order = estimate_reading_order_auto(layout, page_height, page_width)
     """
-    direction = detect_reading_direction(layout, page_height, page_width)
+    direction = detect_reading_direction_by_area(layout, page_height, page_width)
     return estimate_reading_order(layout, page_height, direction)
 
 
@@ -3136,7 +3158,7 @@ def apply_reading_order_to_layout_auto(
     """
     Apply reading order with automatic direction detection (yomitoku-style).
 
-    Combines direction detection and layout update.
+    Combines area-based direction detection and layout update.
 
     Args:
         layout: LayoutArray to update
@@ -3146,7 +3168,7 @@ def apply_reading_order_to_layout_auto(
     Returns:
         Updated LayoutArray (modified in place)
     """
-    direction = detect_reading_direction(layout, page_height, page_width)
+    direction = detect_reading_direction_by_area(layout, page_height, page_width)
     return apply_reading_order_to_layout(layout, page_height, direction)
 
 

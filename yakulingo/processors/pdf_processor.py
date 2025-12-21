@@ -3460,9 +3460,11 @@ class PdfProcessor(FileProcessor):
                                                     span_count, page_num
                                                 )
 
-                                # Step 2.6: Apply reading order estimation
-                                # Uses graph-based algorithm for top-to-bottom, left-to-right order
-                                apply_reading_order_to_layout(layout_array, p_height)
+                                # Step 2.6: Mark header/footer by position (yomitoku-style fallback)
+                                mark_header_footer_in_layout(layout_array, img_height)
+
+                                # Step 2.7: Apply reading order with auto direction detection
+                                apply_reading_order_to_layout_auto(layout_array, p_height, p_width)
 
                                 # Step 3: Extract characters from pdfminer
                                 chars = []
@@ -4011,11 +4013,21 @@ class PdfProcessor(FileProcessor):
                 skipped_formula += 1
                 continue
 
+            layout_role = None
+            if layout is not None:
+                if para.layout_class in layout.paragraphs:
+                    layout_role = layout.paragraphs[para.layout_class].get('role')
+                elif para.layout_class in layout.tables:
+                    layout_role = layout.tables[para.layout_class].get('role')
+
             # Check if this block should be translated or preserved as-is
             # Non-translatable blocks (numbers, dates, etc.) are included but marked
             # so apply_translations can preserve original text
             # Page numbers (LAYOUT_PAGE_NUMBER) are always preserved without translation
             if para.layout_class == LAYOUT_PAGE_NUMBER:
+                skip_translation = True
+                layout_role = layout_role or "page_number"
+            elif layout_role in {"header", "footer", "page_header", "page_footer"}:
                 skip_translation = True
             else:
                 skip_translation = not self.should_translate(text_without_placeholders)
@@ -4125,6 +4137,7 @@ class PdfProcessor(FileProcessor):
                     'formula_vars': block_vars,
                     'has_formulas': bool(block_vars),
                     'layout_class': para.layout_class,  # For table detection
+                    'role': layout_role,
                     'skip_translation': skip_translation,  # Preserve original text if True
                     'expandable_width': expandable_width,  # Max width block can expand to (legacy)
                     'expandable_left': expandable_left,  # How much can expand to the left

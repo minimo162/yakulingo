@@ -454,6 +454,7 @@ def find_adjacent_textblock_boundaries(
     page_width: float,
     page_height: float,
     page_margin: float = 20.0,
+    page_margins: Optional[dict[str, float]] = None,
 ) -> tuple[float, float, float, float]:
     """
     Find adjacent block boundaries using TextBlock coordinates.
@@ -469,6 +470,7 @@ def find_adjacent_textblock_boundaries(
         page_width: Page width in points
         page_height: Page height in points
         page_margin: Minimum margin from page edge
+        page_margins: Optional dict with explicit left/right/top/bottom margins
 
     Returns:
         Tuple of (max_left, max_right, max_bottom, max_top) boundaries in PDF coordinates
@@ -477,11 +479,17 @@ def find_adjacent_textblock_boundaries(
     block_height = y1 - y0
     block_width = x1 - x0
 
-    # Initialize with page boundaries
-    max_left = page_margin
-    max_right = page_width - page_margin
-    max_bottom = page_margin
-    max_top = page_height - page_margin
+    # Initialize with page boundaries (prefer explicit margins if provided)
+    if page_margins:
+        max_left = page_margins.get('left', page_margin)
+        max_right = page_width - page_margins.get('right', page_margin)
+        max_bottom = page_margins.get('bottom', page_margin)
+        max_top = page_height - page_margins.get('top', page_margin)
+    else:
+        max_left = page_margin
+        max_right = page_width - page_margin
+        max_bottom = page_margin
+        max_top = page_height - page_margin
 
     for block in page_blocks:
         # Skip current block
@@ -2428,11 +2436,15 @@ class PdfProcessor(FileProcessor):
                 page_margins = calculate_page_margins(
                     page_blocks_for_margin, page_width, page_height
                 )
-                # Right margin defines the expansion limit
-                detected_right_margin = page_margins['right']
+                page_left_margin = page_margins.get('left', 0.0)
+                page_right_margin = page_margins.get('right', 0.0)
+                page_top_margin = page_margins.get('top', 0.0)
+                page_bottom_margin = page_margins.get('bottom', 0.0)
                 logger.debug(
-                    "Page %d: detected right margin=%.1f (will not expand beyond)",
-                    page_num, detected_right_margin
+                    "Page %d: detected margins left=%.1f right=%.1f top=%.1f bottom=%.1f "
+                    "(will not expand beyond)",
+                    page_num, page_left_margin, page_right_margin,
+                    page_top_margin, page_bottom_margin
                 )
 
                 # Create content stream replacer for this page
@@ -2629,23 +2641,23 @@ class PdfProcessor(FileProcessor):
                             expandable_width = text_block.metadata.get('expandable_width', box_width) if text_blocks else box_width
                             expandable_right = max(0, expandable_width - original_box_width)
                             # Estimate left expansion from page margin
-                            expandable_left = max(0, pdf_x1 - detected_right_margin) if detected_right_margin > 0 else 0
+                            expandable_left = max(0, pdf_x1 - page_left_margin) if page_left_margin > 0 else 0
 
                         # Cap horizontal expandable margins at page margins
-                        max_x = page_width - detected_right_margin
+                        max_x = page_width - page_right_margin
                         if pdf_x2 + expandable_right > max_x:
                             expandable_right = max(0, max_x - pdf_x2)
 
-                        min_x = detected_right_margin  # Use same margin for left side
+                        min_x = page_left_margin
                         if pdf_x1 - expandable_left < min_x:
                             expandable_left = max(0, pdf_x1 - min_x)
 
                         # Cap vertical expandable margins at page margins
-                        max_y = page_height - detected_right_margin  # Use same margin for top
+                        max_y = page_height - page_top_margin
                         if pdf_y1 + expandable_top > max_y:
                             expandable_top = max(0, max_y - pdf_y1)
 
-                        min_y = detected_right_margin  # Use same margin for bottom
+                        min_y = page_bottom_margin
                         if pdf_y0 - expandable_bottom < min_y:
                             expandable_bottom = max(0, pdf_y0 - min_y)
 
@@ -2655,7 +2667,8 @@ class PdfProcessor(FileProcessor):
                             current_bbox = (pdf_x1, pdf_y0, pdf_x2, pdf_y1)
                             adj_left, adj_right, adj_bottom, adj_top = find_adjacent_textblock_boundaries(
                                 block_id, current_bbox, page_textblocks,
-                                page_width, page_height, detected_right_margin
+                                page_width, page_height, page_left_margin,
+                                page_margins=page_margins
                             )
 
                             # Further limit expansion based on adjacent TextBlocks

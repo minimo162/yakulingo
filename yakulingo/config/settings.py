@@ -47,6 +47,23 @@ USER_SETTINGS_KEYS = {
     "last_tab",
 }
 
+# Minimum screen width (logical px) to keep side_panel layout.
+# If the app window would be too narrow, fall back to minimized mode.
+MIN_SIDE_PANEL_APP_WIDTH = 650
+SIDE_PANEL_GAP = 10
+MIN_SIDE_PANEL_SCREEN_WIDTH = MIN_SIDE_PANEL_APP_WIDTH * 2 + SIDE_PANEL_GAP
+
+
+def resolve_browser_display_mode(requested_mode: str, screen_width: Optional[int]) -> str:
+    """Resolve browser display mode based on available screen width."""
+    if requested_mode != "side_panel":
+        return requested_mode
+    if screen_width is None:
+        return requested_mode
+    if screen_width < MIN_SIDE_PANEL_SCREEN_WIDTH:
+        return "minimized"
+    return requested_mode
+
 
 @dataclass
 class AppSettings:

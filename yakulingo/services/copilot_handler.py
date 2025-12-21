@@ -1761,9 +1761,7 @@ class CopilotHandler:
         # This handles cases where timeout errors or other failures leave the window visible
         # Note: Skip minimization in side_panel/foreground mode since browser is intentionally visible
         with suppress(Exception):
-            from yakulingo.config.settings import AppSettings, get_default_settings_path
-            settings = AppSettings.load(get_default_settings_path())
-            mode = settings.browser_display_mode
+            mode = self._get_browser_display_mode()
             if mode not in ("side_panel", "foreground"):
                 self._minimize_edge_window(None)
 
@@ -1853,9 +1851,7 @@ class CopilotHandler:
         PlaywrightTimeoutError = error_types['TimeoutError']
 
         # Check browser display mode - skip minimize for side_panel/foreground modes
-        from yakulingo.config.settings import AppSettings, get_default_settings_path
-        settings = AppSettings.load(get_default_settings_path())
-        should_minimize = settings.browser_display_mode not in ("side_panel", "foreground")
+        should_minimize = self._get_browser_display_mode() not in ("side_panel", "foreground")
 
         logger.info("Checking for existing Copilot page...")
         pages = self._context.pages
@@ -2652,9 +2648,7 @@ class CopilotHandler:
 
         # Check browser display mode - only minimize in "minimized" mode
         # In side_panel/foreground mode, browser should remain visible
-        from yakulingo.config.settings import AppSettings, get_default_settings_path
-        settings = AppSettings.load(get_default_settings_path())
-        should_minimize = settings.browser_display_mode == "minimized"
+        should_minimize = self._get_browser_display_mode() == "minimized"
 
         elapsed = 0.0
         last_url = None
@@ -2853,9 +2847,7 @@ class CopilotHandler:
         """
         # Check browser display mode - skip for side_panel/foreground modes
         # (browser is already visible, no need to bring to front)
-        from yakulingo.config.settings import AppSettings, get_default_settings_path
-        settings = AppSettings.load(get_default_settings_path())
-        mode = settings.browser_display_mode
+        mode = self._get_browser_display_mode()
 
         if mode in ("side_panel", "foreground"):
             logger.debug("Skipping bring_to_foreground in %s mode (already visible): %s", mode, reason)
@@ -3448,6 +3440,35 @@ class CopilotHandler:
         self._apply_browser_display_mode(None)
         return True
 
+    def _get_primary_work_area_size(self) -> tuple[int, int] | None:
+        """Return primary monitor work area size (logical pixels)."""
+        if sys.platform != "win32":
+            return None
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.WinDLL('user32', use_last_error=True)
+
+            class RECT(ctypes.Structure):
+                _fields_ = [
+                    ("left", wintypes.LONG),
+                    ("top", wintypes.LONG),
+                    ("right", wintypes.LONG),
+                    ("bottom", wintypes.LONG),
+                ]
+
+            work_area = RECT()
+            # SPI_GETWORKAREA = 0x0030
+            user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(work_area), 0)
+            width = work_area.right - work_area.left
+            height = work_area.bottom - work_area.top
+            if width <= 0 or height <= 0:
+                return None
+            return (width, height)
+        except Exception:
+            return None
+
     def _get_browser_display_mode(self) -> str:
         """Get browser display mode from cached settings.
 
@@ -3456,10 +3477,25 @@ class CopilotHandler:
         """
         # Cache settings to avoid repeated disk I/O during startup
         if not hasattr(self, '_cached_browser_display_mode'):
-            from yakulingo.config.settings import AppSettings, get_default_settings_path
+            from yakulingo.config.settings import (
+                AppSettings,
+                get_default_settings_path,
+                resolve_browser_display_mode,
+            )
 
             settings = AppSettings.load(get_default_settings_path())
-            self._cached_browser_display_mode = settings.browser_display_mode
+            work_area = self._get_primary_work_area_size()
+            screen_width = work_area[0] if work_area else None
+            effective_mode = resolve_browser_display_mode(settings.browser_display_mode, screen_width)
+            if effective_mode != settings.browser_display_mode and work_area:
+                logger.debug(
+                    "Small screen detected (work area=%dx%d). Disabling side_panel (%s -> %s)",
+                    work_area[0],
+                    work_area[1],
+                    settings.browser_display_mode,
+                    effective_mode,
+                )
+            self._cached_browser_display_mode = effective_mode
 
         return self._cached_browser_display_mode
 
@@ -3776,10 +3812,7 @@ class CopilotHandler:
         - "foreground": Keep Edge in foreground (no action needed)
         """
         if sys.platform == "win32":
-            from yakulingo.config.settings import AppSettings, get_default_settings_path
-
-            settings = AppSettings.load(get_default_settings_path())
-            mode = settings.browser_display_mode
+            mode = self._get_browser_display_mode()
 
             if mode == "minimized":
                 # Only minimize in minimized mode
@@ -3841,9 +3874,7 @@ class CopilotHandler:
                 redirects and will be logged at a lower level.
         """
         # Check browser display mode - skip for side_panel/foreground modes
-        from yakulingo.config.settings import AppSettings, get_default_settings_path
-        settings = AppSettings.load(get_default_settings_path())
-        mode = settings.browser_display_mode
+        mode = self._get_browser_display_mode()
 
         if mode in ("side_panel", "foreground"):
             # Browser is intentionally visible, no need to minimize

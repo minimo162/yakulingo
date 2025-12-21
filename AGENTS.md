@@ -685,6 +685,10 @@ def _open_window_patched(..., window_args, settings_dict, start_args):
 | `"minimized"` | 最小化して非表示（従来動作） |
 | `"foreground"` | 前面に表示 |
 
+**小解像度時の自動フォールバック**:
+- 画面の作業領域幅が 1310px 未満の場合、`side_panel` は自動的に `minimized` に切り替え
+- アプリは1パネル（フル幅）で起動し、レイアウト崩れを回避
+
 サイドパネルモード (`side_panel`) の動作:
 - アプリとサイドパネルを「セット」として画面中央に配置
 - EdgeウィンドウをYakuLingoアプリの右側に配置

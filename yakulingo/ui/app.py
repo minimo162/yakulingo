@@ -249,7 +249,12 @@ def _patch_nicegui_native_mode() -> None:
 # Fast imports - required at startup (lightweight modules only)
 from yakulingo.ui.state import AppState, Tab, FileState, ConnectionState, LayoutInitializationState
 from yakulingo.models.types import TranslationProgress, TranslationStatus, TextTranslationResult, TranslationOption, HistoryEntry
-from yakulingo.config.settings import AppSettings, get_default_settings_path, get_default_prompts_dir
+from yakulingo.config.settings import (
+    AppSettings,
+    get_default_settings_path,
+    get_default_prompts_dir,
+    resolve_browser_display_mode,
+)
 
 # Deferred imports - loaded when needed (heavy modules)
 # from yakulingo.ui.styles import COMPLETE_CSS  # 2837 lines - loaded in create_ui()
@@ -392,6 +397,8 @@ class YakuLingoApp:
         # Set by run_app() based on monitor detection
         # Window width is reduced to accommodate side panel mode (500px + 10px gap)
         self._window_size: tuple[int, int] = (1800, 1100)
+        # Screen size (work area) in logical pixels for display mode decisions
+        self._screen_size: tuple[int, int] | None = None
         # Native mode flag (pywebview vs browser app window)
         self._native_mode_enabled: bool | None = None
 
@@ -476,6 +483,11 @@ class YakuLingoApp:
         """Allow tests or callers to inject an AppSettings instance."""
 
         self._settings = value
+
+    def _get_effective_browser_display_mode(self) -> str:
+        """Resolve browser display mode for current screen size."""
+        screen_width = self._screen_size[0] if self._screen_size else None
+        return resolve_browser_display_mode(self.settings.browser_display_mode, screen_width)
 
     def start_hotkey_manager(self):
         """Start the global hotkey manager for quick translation (Ctrl+Alt+J)."""
@@ -998,7 +1010,7 @@ class YakuLingoApp:
         # This ensures Edge is visible alongside the app when activated via hotkey
         # Note: Don't check _connected - Edge may be running even before Copilot connects
         if sys.platform == 'win32' and self._settings and self._copilot:
-            if self._settings.browser_display_mode == "side_panel":
+            if self._get_effective_browser_display_mode() == "side_panel":
                 try:
                     # bring_to_front=True ensures Edge is visible when activated via hotkey
                     await asyncio.to_thread(
@@ -1155,7 +1167,7 @@ class YakuLingoApp:
             # Start window synchronization for side_panel mode
             # This makes app and Edge window act as a "set" - when user clicks on
             # YakuLingo in taskbar, Edge window also comes to front automatically
-            if self._settings and self._settings.browser_display_mode == "side_panel":
+            if self._settings and self._get_effective_browser_display_mode() == "side_panel":
                 try:
                     if self._copilot:
                         self._copilot.start_window_sync()
@@ -1169,7 +1181,7 @@ class YakuLingoApp:
         if self._native_mode_enabled is False:
             return
         settings = self._settings
-        if not settings or settings.browser_display_mode != "side_panel":
+        if not settings or self._get_effective_browser_display_mode() != "side_panel":
             return
         copilot = self._copilot
         if not copilot:
@@ -1211,7 +1223,7 @@ class YakuLingoApp:
         try:
             # Check if side_panel mode is enabled
             settings = self._settings
-            if not settings or settings.browser_display_mode != "side_panel":
+            if not settings or self._get_effective_browser_display_mode() != "side_panel":
                 return False
 
             # Calculate target position using the same function as _position_window_early_sync()
@@ -1764,11 +1776,11 @@ class YakuLingoApp:
                     self.state.copilot_ready = True
                     self.state.connection_state = ConnectionState.CONNECTED
 
-                    # Handle Edge window based on browser_display_mode
-                    if self._settings and self._settings.browser_display_mode == "side_panel":
+                    # Handle Edge window based on effective browser_display_mode
+                    if self._settings and self._get_effective_browser_display_mode() == "side_panel":
                         await asyncio.to_thread(self.copilot._position_edge_as_side_panel, None)
                         logger.debug("Edge positioned as side panel after reconnection")
-                    elif self._settings and self._settings.browser_display_mode == "minimized":
+                    elif self._settings and self._get_effective_browser_display_mode() == "minimized":
                         await asyncio.to_thread(self.copilot._minimize_edge_window, None)
                         logger.debug("Edge minimized after reconnection")
                     # In foreground mode, do nothing (leave Edge as is)
@@ -3969,6 +3981,7 @@ def create_app() -> YakuLingoApp:
 def _detect_display_settings(
     webview_module: "ModuleType | None" = None,
     screen_size: tuple[int, int] | None = None,
+    display_mode: str = "side_panel",
 ) -> tuple[tuple[int, int], tuple[int, int, int]]:
     """Detect connected monitors and determine window size and panel widths.
 
@@ -3991,13 +4004,15 @@ def _detect_display_settings(
 
     Args:
         webview_module: Pre-initialized webview module (avoids redundant initialization).
+        screen_size: Optional pre-detected work area size (logical pixels).
+        display_mode: Requested browser display mode (side_panel/foreground/minimized).
 
     Returns:
         Tuple of ((window_width, window_height), (sidebar_width, input_panel_width, content_width))
         - content_width: Unified width for both input and result panel content (600-900px)
     """
     # Reference ratios based on 2560x1440 → 1800x1100
-    # App and browser use 1:1 ratio (each gets half the screen)
+    # App and browser use 1:1 ratio (each gets half the screen) in side_panel mode
     # This ensures browser has enough space for GPT mode UI elements
     # Example: 1920px - 10px gap = 1910px available → 955px each
     WIDTH_RATIO = 0.5  # App and browser each get 50% (1:1 ratio)
@@ -4026,6 +4041,8 @@ def _detect_display_settings(
     MIN_CONTENT_WIDTH = 500  # Lowered from 600 for smaller screens
     MAX_CONTENT_WIDTH = 900
 
+    use_side_panel = display_mode == "side_panel"
+
     def calculate_side_panel_width(screen_width: int) -> int:
         """Calculate side panel width for 1:1 ratio with app window.
 
@@ -4034,18 +4051,27 @@ def _detect_display_settings(
         available_width = screen_width - SIDE_PANEL_GAP
         return available_width // 2
 
-    def calculate_sizes(screen_width: int, screen_height: int) -> tuple[tuple[int, int], tuple[int, int, int]]:
+    def calculate_sizes(
+        screen_width: int,
+        screen_height: int,
+        use_side_panel: bool,
+    ) -> tuple[tuple[int, int], tuple[int, int, int]]:
         """Calculate window size and panel widths from screen resolution.
 
-        Uses 1:1 ratio for app and browser windows (each gets half the screen).
+        Uses 1:1 ratio for app and browser windows (each gets half the screen)
+        when side_panel mode is enabled.
 
         Returns:
             Tuple of ((window_width, window_height),
                       (sidebar_width, input_panel_width, content_width))
         """
-        # 1:1 ratio: app and browser each get half the available width
-        available_width = screen_width - SIDE_PANEL_GAP
-        window_width = available_width // 2
+        if use_side_panel:
+            # 1:1 ratio: app and browser each get half the available width
+            available_width = screen_width - SIDE_PANEL_GAP
+            window_width = available_width // 2
+        else:
+            # Single panel: use full work area width
+            window_width = screen_width
         max_window_height = screen_height  # Use full work area height
         window_height = min(max(int(screen_height * HEIGHT_RATIO), MIN_WINDOW_HEIGHT), max_window_height)
 
@@ -4077,11 +4103,11 @@ def _detect_display_settings(
     _t_func_start = _time.perf_counter()
 
     # Default based on 1920x1080 screen
-    default_window, default_panels = calculate_sizes(1920, 1080)
+    default_window, default_panels = calculate_sizes(1920, 1080, use_side_panel)
 
     if screen_size is not None:
         screen_width, screen_height = screen_size
-        window_size, panel_sizes = calculate_sizes(screen_width, screen_height)
+        window_size, panel_sizes = calculate_sizes(screen_width, screen_height, use_side_panel)
         logger.info(
             "Display detection (fast): work area=%dx%d",
             screen_width,
@@ -4141,7 +4167,7 @@ def _detect_display_settings(
 
         # Calculate window and panel sizes based on logical screen resolution
         _t_calc = _time.perf_counter()
-        window_size, panel_sizes = calculate_sizes(logical_width, logical_height)
+        window_size, panel_sizes = calculate_sizes(logical_width, logical_height, use_side_panel)
         logger.debug("[DISPLAY_DETECT] calculate_sizes: %.3fs", _time.perf_counter() - _t_calc)
 
         logger.info(
@@ -4503,6 +4529,20 @@ def run_app(
     # Fallback to browser mode when pywebview cannot create a native window (e.g., headless Linux)
     _t2 = time.perf_counter()
     screen_size = _get_primary_monitor_size()
+    yakulingo_app._screen_size = screen_size
+    requested_display_mode = AppSettings.load(get_default_settings_path()).browser_display_mode
+    effective_display_mode = resolve_browser_display_mode(
+        requested_display_mode,
+        screen_size[0] if screen_size else None,
+    )
+    if screen_size is not None and effective_display_mode != requested_display_mode:
+        logger.info(
+            "Small screen detected (work area=%dx%d). Disabling side_panel (%s -> %s)",
+            screen_size[0],
+            screen_size[1],
+            requested_display_mode,
+            effective_display_mode,
+        )
     native, webview_module = _check_native_mode_and_get_webview(
         native,
         fast_path=screen_size is not None,
@@ -4516,6 +4556,7 @@ def run_app(
         window_size, panel_sizes = _detect_display_settings(
             webview_module=webview_module,
             screen_size=screen_size,
+            display_mode=effective_display_mode,
         )
         yakulingo_app._panel_sizes = panel_sizes  # (sidebar_width, input_panel_width, content_width)
         yakulingo_app._window_size = window_size
@@ -4525,6 +4566,7 @@ def run_app(
             window_size, panel_sizes = _detect_display_settings(
                 webview_module=None,
                 screen_size=screen_size,
+                display_mode=effective_display_mode,
             )
             yakulingo_app._panel_sizes = panel_sizes
         else:
@@ -4559,11 +4601,10 @@ def run_app(
 
         url = f"http://{host}:{port}/"
         width, height = yakulingo_app._window_size
-        display_mode = "side_panel"
         try:
-            display_mode = yakulingo_app.settings.browser_display_mode
+            display_mode = yakulingo_app._get_effective_browser_display_mode()
         except Exception:
-            pass
+            display_mode = "side_panel"
 
         if sys.platform == "win32":
             edge_exe = _find_edge_exe_for_browser_open()
@@ -4797,7 +4838,9 @@ def run_app(
         # This allows pywebview to create window at correct position (if it gets passed to child process)
         try:
             settings = AppSettings.load(get_default_settings_path())
-            if settings.browser_display_mode == "side_panel":
+            screen_width = yakulingo_app._screen_size[0] if yakulingo_app._screen_size else None
+            effective_mode = resolve_browser_display_mode(settings.browser_display_mode, screen_width)
+            if effective_mode == "side_panel":
                 app_position = _calculate_app_position_for_side_panel(
                     yakulingo_app._window_size[0], yakulingo_app._window_size[1]
                 )
@@ -4872,8 +4915,8 @@ def run_app(
         try:
             import ctypes
 
-            # Load settings to check browser_display_mode
-            settings = AppSettings.load(get_default_settings_path())
+            # Resolve effective browser display mode for window positioning
+            effective_mode = yakulingo_app._get_effective_browser_display_mode()
 
             user32 = ctypes.WinDLL('user32', use_last_error=True)
 
@@ -4962,7 +5005,7 @@ def run_app(
                             logger.debug("[EARLY_POSITION] Failed to set window icon: %s", e)
 
                     # For side_panel mode, position window at calculated position
-                    if settings.browser_display_mode == "side_panel":
+                    if effective_mode == "side_panel":
                         # Calculate target position
                         app_position = _calculate_app_position_for_side_panel(
                             yakulingo_app._window_size[0], yakulingo_app._window_size[1]
@@ -5020,14 +5063,14 @@ def run_app(
                         if not is_visible:
                             user32.ShowWindow(hwnd, SW_SHOW)
                             logger.debug("[EARLY_POSITION] Window shown (%s mode, was hidden) after %dms",
-                                       settings.browser_display_mode, waited_ms)
+                                       effective_mode, waited_ms)
                         else:
                             user32.SetWindowPos(
                                 hwnd, None, 0, 0, 0, 0,
                                 SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_NOSIZE | SWP_NOMOVE
                             )
                             logger.debug("[EARLY_POSITION] Window visibility ensured (%s mode) after %dms",
-                                       settings.browser_display_mode, waited_ms)
+                                       effective_mode, waited_ms)
                     return
 
                 # Determine current poll interval based on elapsed time

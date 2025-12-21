@@ -1544,7 +1544,7 @@ textarea:focus-visible {
     display: flex;
     flex-direction: column;
     align-items: center;  /* Center card horizontally */
-    justify-content: flex-start;  /* Align card to top */
+    justify-content: center;  /* Balance content vertically when results are hidden */
 }
 
 /* Card fits content, full width */

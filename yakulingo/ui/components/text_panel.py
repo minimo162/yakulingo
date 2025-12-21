@@ -253,7 +253,7 @@ def _create_large_input_panel(
                             ui.label('翻訳する')
                             with ui.row().classes('shortcut-keys ml-2'):
                                 with ui.element('span').classes('keycap'):
-                                    ui.label('Ctrl / ⌘')
+                                    ui.label('Ctrl')
                                 with ui.element('span').classes('keycap-plus'):
                                     ui.label('+')
                                 with ui.element('span').classes('keycap'):

@@ -227,3 +227,6 @@ config/user_settings.json
 
 # Temporary files (development/testing)
 .tmp/
+
+# Screenshots (local UI checks)
+yakulingo_ui*.png

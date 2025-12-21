@@ -383,6 +383,10 @@ uv run --extra test pytest
 uv run --extra test pytest --cov=yakulingo --cov-report=term-missing
 ```
 
+### 開発メモ
+
+- UIチェック用のスクリーンショットは `yakulingo_ui*.png` として保存し、gitignore 対象にしています
+
 ### 配布パッケージの作成
 
 ```bash

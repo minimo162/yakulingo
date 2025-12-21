@@ -1337,8 +1337,13 @@ class CopilotHandler:
                 edge_args.extend([
                     "--start-minimized",
                     "--window-position=-32000,-32000",
+                    f"--window-size={self.MIN_EDGE_WINDOW_WIDTH},{self.MIN_EDGE_WINDOW_HEIGHT}",
                 ])
-                logger.debug("Starting Edge in minimized mode (off-screen)")
+                logger.debug(
+                    "Starting Edge in minimized mode (off-screen) at %dx%d",
+                    self.MIN_EDGE_WINDOW_WIDTH,
+                    self.MIN_EDGE_WINDOW_HEIGHT,
+                )
             elif display_mode == "side_panel":
                 # Calculate side panel position from screen resolution
                 # This allows Edge to start in the correct position without moving

@@ -704,6 +704,16 @@ def download_to_folder_and_open(file_path: Path) -> tuple[bool, Optional[Path]]:
         downloads = get_downloads_folder()
         downloads.mkdir(parents=True, exist_ok=True)
 
+        # If the file already lives in Downloads, avoid creating "(n)" copies.
+        try:
+            src_parent = os.path.normcase(str(file_path.resolve().parent))
+            downloads_parent = os.path.normcase(str(downloads.resolve()))
+            if src_parent == downloads_parent:
+                open_file(file_path)
+                return True, file_path
+        except OSError:
+            pass
+
         # Handle duplicate filenames
         dest = downloads / file_path.name
         counter = 1

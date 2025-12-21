@@ -2749,6 +2749,64 @@ class PdfProcessor(FileProcessor):
                         # - Non-table blocks wrap only if the original paragraph wrapped (brk=True)
                         #   or we know the original had multiple lines.
                         allow_wrap = bool(is_table_cell or paragraph_brk or (original_line_count > 1))
+                        forced_wrap_lines = None
+                        if not allow_wrap and translated:
+                            explicit_line_count = len(translated.split('\n'))
+                            candidate_lines = split_text_into_lines_with_font(
+                                translated, box_width, initial_font_size, font_id, font_registry
+                            )
+                            if len(candidate_lines) > explicit_line_count:
+                                allow_wrap = True
+                                forced_wrap_lines = candidate_lines
+
+                        if forced_wrap_lines and not is_table_cell:
+                            lang_key = target_lang.lower() if isinstance(target_lang, str) else ""
+                            default_line_height = LANG_LINEHEIGHT_MAP.get(lang_key, DEFAULT_LINE_HEIGHT)
+                            required_height = len(forced_wrap_lines) * initial_font_size * default_line_height
+                            if (
+                                required_height > box_height
+                                and (expandable_top > 0 or expandable_bottom > 0)
+                            ):
+                                max_extra = max(0.0, original_box_height * (MAX_EXPANSION_RATIO - 1.0))
+                                available_extra = min(expandable_top + expandable_bottom, max_extra)
+                                extra_needed = min(required_height - box_height, available_extra)
+                                if extra_needed > 0:
+                                    vertical_alignment = estimate_vertical_alignment(
+                                        text_y0, text_y1, pdf_y0, pdf_y1
+                                    )
+                                    expand_top = 0.0
+                                    expand_bottom = 0.0
+                                    if vertical_alignment == VerticalAlignment.BOTTOM:
+                                        expand_top = min(extra_needed, expandable_top)
+                                        remaining = extra_needed - expand_top
+                                        if remaining > 0:
+                                            expand_bottom = min(remaining, expandable_bottom)
+                                    elif vertical_alignment == VerticalAlignment.CENTER:
+                                        half = extra_needed / 2
+                                        expand_top = min(half, expandable_top)
+                                        expand_bottom = min(half, expandable_bottom)
+                                        remaining = extra_needed - (expand_top + expand_bottom)
+                                        if remaining > 0:
+                                            extra_bottom = min(
+                                                remaining, max(0.0, expandable_bottom - expand_bottom)
+                                            )
+                                            expand_bottom += extra_bottom
+                                            remaining -= extra_bottom
+                                        if remaining > 0:
+                                            expand_top += min(
+                                                remaining, max(0.0, expandable_top - expand_top)
+                                            )
+                                    else:
+                                        expand_bottom = min(extra_needed, expandable_bottom)
+                                        remaining = extra_needed - expand_bottom
+                                        if remaining > 0:
+                                            expand_top = min(remaining, expandable_top)
+
+                                    if expand_top or expand_bottom:
+                                        pdf_y0 -= expand_bottom
+                                        pdf_y1 += expand_top
+                                        box_height = pdf_y1 - pdf_y0
+                                        box_pdf = [pdf_x1, pdf_y0, pdf_x2, pdf_y1]
 
                         # PDFMathTranslate compliant: Font size is FIXED
                         # Do NOT shrink font size to fit text horizontally.

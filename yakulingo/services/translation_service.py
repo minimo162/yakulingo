@@ -389,7 +389,11 @@ from yakulingo.models.types import (
 )
 from yakulingo.config.settings import AppSettings
 from yakulingo.services.copilot_handler import CopilotHandler, TranslationCancelledError
-from yakulingo.services.prompt_builder import PromptBuilder, REFERENCE_INSTRUCTION
+from yakulingo.services.prompt_builder import (
+    PromptBuilder,
+    REFERENCE_INSTRUCTION,
+    DEFAULT_TEXT_TO_JP_TEMPLATE,
+)
 from yakulingo.processors.base import FileProcessor
 
 # Lazy-loaded processors for faster startup
@@ -1077,10 +1081,11 @@ class TranslationService:
         on_chunk: "Callable[[str], None] | None" = None,
     ) -> TranslationResult:
         """
-        Translate plain text (bidirectional: JP→EN or Other→JP).
+        Legacy English-only text translation helper.
 
-        NOTE: Reference files (glossary, etc.) are attached to Copilot
-        for both text and file translations.
+        Uses the file-translation prompt to produce English output or keep
+        English input as-is. The main text UI uses translate_text_with_options
+        or translate_text_with_style_comparison instead.
 
         Args:
             text: Source text to translate
@@ -1094,9 +1099,9 @@ class TranslationService:
         self._cancel_event.clear()
 
         try:
-            # Build prompt (unified bidirectional)
+            # Build prompt (English-only legacy path)
             has_refs = bool(reference_files)
-            prompt = self.prompt_builder.build(text, has_refs)
+            prompt = self.prompt_builder.build(text, has_refs, output_language="en")
 
             # Translate
             result = self._translate_single_with_cancel(text, prompt, reference_files, on_chunk)
@@ -1327,26 +1332,12 @@ class TranslationService:
             template = self.prompt_builder.get_text_template(output_language, style)
 
             if template is None:
-                # Fallback to basic translation
-                result = self.translate_text(text, reference_files, on_chunk)
-                if result.output_text:
-                    return TextTranslationResult(
-                        source_text=text,
-                        source_char_count=len(text),
-                        options=[TranslationOption(
-                            text=result.output_text,
-                            explanation="標準的な翻訳です",
-                        )],
-                        output_language=output_language,
-                        detected_language=detected_language,
-                    )
-                return TextTranslationResult(
-                    source_text=text,
-                    source_char_count=len(text),
-                    output_language=output_language,
-                    detected_language=detected_language,
-                    error_message=result.error_message,
+                logger.warning(
+                    "Missing JP text template (output_language=%s, style=%s); using default",
+                    output_language,
+                    style,
                 )
+                template = DEFAULT_TEXT_TO_JP_TEMPLATE
 
             # Build prompt with reference section
             if reference_files:

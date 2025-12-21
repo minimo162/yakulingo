@@ -697,10 +697,7 @@ class YakuLingoApp:
             with client:
                 self._refresh_result_panel()
 
-            from yakulingo.services.translation_service import language_detector
-
-            is_japanese = language_detector.is_japanese(sample_text)
-            output_language = "en" if is_japanese else "jp"
+            output_language = "en" if detected_language == "日本語" else "jp"
 
             reference_files = self._get_effective_reference_files()
 

@@ -529,41 +529,41 @@ def _render_results_to_jp(
     elapsed_time: Optional[float] = None,
     on_retry: Optional[Callable[[], None]] = None,
 ):
-    """Render →Japanese results: single translation with detailed explanation + follow-up actions"""
+    """Render →Japanese results: translations with detailed explanations + follow-up actions"""
 
     if not result.options:
         return
 
-    option = result.options[-1]  # Use latest option
-
     # Translation results container (same structure as English)
     with ui.element('div').classes('result-container'):
         with ui.element('div').classes('result-section w-full'):
-            with ui.card().classes('option-card w-full'):
-                with ui.column().classes('w-full gap-2'):
-                    # Translation text
-                    _render_translation_text(option.text)
+            with ui.column().classes('w-full gap-3'):
+                for option in result.options:
+                    with ui.card().classes('option-card w-full'):
+                        with ui.column().classes('w-full gap-2'):
+                            # Translation text
+                            _render_translation_text(option.text)
 
-                    # Actions row (same as English)
-                    with ui.row().classes('w-full justify-end items-center gap-1'):
-                        # Copy button
-                        ui.button(
-                            icon='content_copy',
-                            on_click=lambda: on_copy(option.text)
-                        ).props('flat dense round size=sm aria-label="コピー"').classes('option-action').tooltip('コピー')
+                            # Actions row (same as English)
+                            with ui.row().classes('w-full justify-end items-center gap-1'):
+                                # Copy button
+                                ui.button(
+                                    icon='content_copy',
+                                    on_click=lambda o=option: on_copy(o.text)
+                                ).props('flat dense round size=sm aria-label="コピー"').classes('option-action').tooltip('コピー')
 
-                        # Back-translate button
-                        if on_back_translate:
-                            ui.button(
-                                '戻し訳',
-                                icon='g_translate',
-                                on_click=lambda o=option: on_back_translate(o.text)
-                            ).props('flat no-caps size=sm').classes('back-translate-btn').tooltip('精度チェック')
+                                # Back-translate button
+                                if on_back_translate:
+                                    ui.button(
+                                        '戻し訳',
+                                        icon='g_translate',
+                                        on_click=lambda o=option: on_back_translate(o.text)
+                                    ).props('flat no-caps size=sm').classes('back-translate-btn').tooltip('精度チェック')
 
-                    # Detailed explanation section (same as English)
-                    if option.explanation:
-                        with ui.element('div').classes('nani-explanation'):
-                            _render_explanation(option.explanation)
+                            # Detailed explanation section (same as English)
+                            if option.explanation:
+                                with ui.element('div').classes('nani-explanation'):
+                                    _render_explanation(option.explanation)
 
         # Retry button (optional) - align position with →English
         if on_retry:

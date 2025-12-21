@@ -87,7 +87,7 @@ class AppSettings:
     # _detect_display_settings() で論理解像度から動的に計算される。
 
     # Advanced
-    max_chars_per_batch: int = 4000     # Max characters per batch (reduced for reliability)
+    max_chars_per_batch: int = 1000     # Max characters per batch (Copilot input safety)
     request_timeout: int = 600          # Seconds (10 minutes - allows for large translations)
     max_retries: int = 3
 
@@ -234,8 +234,8 @@ class AppSettings:
 
         # Batch size constraints
         if self.max_chars_per_batch < 100:
-            logger.warning("max_chars_per_batch too small (%d), resetting to 4000", self.max_chars_per_batch)
-            self.max_chars_per_batch = 4000
+            logger.warning("max_chars_per_batch too small (%d), resetting to 1000", self.max_chars_per_batch)
+            self.max_chars_per_batch = 1000
 
         # Timeout constraints
         if self.request_timeout < 10:

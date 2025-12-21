@@ -558,8 +558,19 @@ class BatchTranslator:
     """
 
     # Default values (used when settings not provided)
-    DEFAULT_MAX_CHARS_PER_BATCH = 4000   # Characters per batch (reduced for reliability)
+    DEFAULT_MAX_CHARS_PER_BATCH = 1000   # Characters per batch (Copilot input safety)
     DEFAULT_REQUEST_TIMEOUT = 600  # Default timeout for Copilot response (10 minutes)
+    _SPLIT_REQUEST_MARKERS = (
+        "入力テキスト量が非常に多いため",
+        "メッセージ上限",
+        "複数回に分割",
+        "分割して送信",
+        "ご希望は",
+        "どちらですか",
+    )
+    _SPLIT_REQUEST_MIN_MATCHES = 2
+    _SPLIT_RETRY_LIMIT = 2
+    _MIN_SPLIT_BATCH_CHARS = 300
 
     def __init__(
         self,
@@ -646,6 +657,8 @@ class BatchTranslator:
         on_progress: Optional[ProgressCallback] = None,
         output_language: str = "en",
         translation_style: str = "concise",
+        _max_chars_per_batch: Optional[int] = None,
+        _split_retry_depth: int = 0,
     ) -> 'BatchTranslationResult':
         """
         Translate blocks in batches with detailed result information.
@@ -678,11 +691,15 @@ class BatchTranslator:
         untranslated_block_ids = []
         mismatched_batch_count = 0
 
-        self._cancel_event.clear()  # Reset at start of new translation
+        if _split_retry_depth == 0:
+            self._cancel_event.clear()  # Reset at start of new translation
         cancelled = False
 
         # Set cancel callback on CopilotHandler for responsive cancellation
-        self.copilot.set_cancel_callback(lambda: self._cancel_event.is_set())
+        if _split_retry_depth == 0:
+            self.copilot.set_cancel_callback(lambda: self._cancel_event.is_set())
+
+        batch_char_limit = _max_chars_per_batch or self.max_chars_per_batch
 
         # Phase 0: Skip formula blocks and non-translatable blocks (preserve original text)
         formula_skipped = 0
@@ -745,7 +762,7 @@ class BatchTranslator:
             )
 
         # Phase 2: Batch translate uncached blocks
-        batches = self._create_batches(uncached_blocks)
+        batches = self._create_batches(uncached_blocks, batch_char_limit)
         # has_refs is used for reference file attachment indicator
         has_refs = bool(reference_files)
         files_to_attach = reference_files if has_refs else None
@@ -827,6 +844,36 @@ class BatchTranslator:
                 cancelled = True
                 break
 
+            if self._looks_like_split_request(unique_translations):
+                if _split_retry_depth < self._SPLIT_RETRY_LIMIT and batch_char_limit > self._MIN_SPLIT_BATCH_CHARS:
+                    reduced_limit = max(self._MIN_SPLIT_BATCH_CHARS, batch_char_limit // 2)
+                    logger.warning(
+                        "Copilot requested split for batch %d; retrying with max_chars_per_batch=%d",
+                        i + 1, reduced_limit
+                    )
+                    retry_result = self.translate_blocks_with_result(
+                        batch,
+                        reference_files=reference_files,
+                        on_progress=None,
+                        output_language=output_language,
+                        translation_style=translation_style,
+                        _max_chars_per_batch=reduced_limit,
+                        _split_retry_depth=_split_retry_depth + 1,
+                    )
+                    translations.update(retry_result.translations)
+                    untranslated_block_ids.extend(retry_result.untranslated_block_ids)
+                    mismatched_batch_count += retry_result.mismatched_batch_count
+                    if retry_result.cancelled:
+                        cancelled = True
+                        break
+                    continue
+
+                logger.warning(
+                    "Copilot split request persisted; using original text for batch %d",
+                    i + 1
+                )
+                unique_translations = [""] * len(unique_texts)
+
             # Validate translation count matches unique text count
             if len(unique_translations) != len(unique_texts):
                 mismatched_batch_count += 1
@@ -905,10 +952,11 @@ class BatchTranslator:
             logger.warning("Translation completed with issues: %s", result.get_summary())
 
         # Clear cancel callback to avoid holding reference
-        self.copilot.set_cancel_callback(None)
+        if _split_retry_depth == 0:
+            self.copilot.set_cancel_callback(None)
 
         # Memory management: warn if cache is large and clear if exceeds threshold
-        if self._cache:
+        if self._cache and _split_retry_depth == 0:
             stats = self._cache.stats
             memory_kb = float(stats.get("memory_kb", "0"))
             # Warn if cache exceeds 10MB (10240 KB)
@@ -921,7 +969,20 @@ class BatchTranslator:
 
         return result
 
-    def _create_batches(self, blocks: list[TextBlock]) -> list[list[TextBlock]]:
+    def _looks_like_split_request(self, translations: list[str]) -> bool:
+        if not translations:
+            return False
+        sample = "\n".join(t for t in translations[:5] if t).strip()
+        if not sample:
+            return False
+        hits = sum(marker in sample for marker in self._SPLIT_REQUEST_MARKERS)
+        return hits >= self._SPLIT_REQUEST_MIN_MATCHES
+
+    def _create_batches(
+        self,
+        blocks: list[TextBlock],
+        max_chars_per_batch: Optional[int] = None,
+    ) -> list[list[TextBlock]]:
         """
         Split blocks into batches based on configured character limits.
 
@@ -932,12 +993,13 @@ class BatchTranslator:
         batches = []
         current_batch = []
         current_chars = 0
+        char_limit = max_chars_per_batch or self.max_chars_per_batch
 
         for block in blocks:
             block_size = len(block.text)
 
             # Check if this single block exceeds the character limit
-            if block_size > self.max_chars_per_batch:
+            if block_size > char_limit:
                 # Finalize current batch first
                 if current_batch:
                     batches.append(current_batch)
@@ -948,13 +1010,13 @@ class BatchTranslator:
                 logger.warning(
                     "Block '%s' exceeds max_chars_per_batch (%d > %d). "
                     "Will be processed as a single-item batch.",
-                    block.id, block_size, self.max_chars_per_batch
+                    block.id, block_size, char_limit
                 )
                 batches.append([block])
                 continue
 
             # Check character limit only (item merging is prevented by end markers)
-            if current_chars + block_size > self.max_chars_per_batch:
+            if current_chars + block_size > char_limit:
                 if current_batch:
                     batches.append(current_batch)
                 current_batch = []

@@ -64,7 +64,7 @@ LINE_HEIGHT_COMPRESSION_STEP = 0.05
 # - line_height < 1.0 causes text overlap (font height > line spacing)
 # - Instead, reduce font size more aggressively (see TABLE_FONT_MIN_RATIO)
 # - This ensures readable text even in constrained cells
-TABLE_MIN_LINE_HEIGHT = 1.0
+TABLE_MIN_LINE_HEIGHT = 0.9
 
 # Single-line block expansion limit (legacy - no longer used for font size reduction)
 # PDFMathTranslate approach: font size is FIXED, only line height is adjusted

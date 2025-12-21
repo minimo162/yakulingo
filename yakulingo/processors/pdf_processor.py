@@ -161,6 +161,21 @@ DEFAULT_OCR_DPI = 300        # Default DPI for precision
 # Pre-compiled regex patterns for performance (local patterns)
 _RE_PARAGRAPH_ADDRESS = re.compile(r"P(\d+)_")
 _RE_TABLE_ADDRESS = re.compile(r"T(\d+)_")
+_NEGATIVE_MARKERS = "\u25B2\u25B3\u25BC\u25BD"
+_RE_NEGATIVE_NUMBER = re.compile(
+    rf"([{re.escape(_NEGATIVE_MARKERS)}])\s*([0-9][0-9,\.]*)([%\uFF05]?)"
+)
+_RE_NEGATIVE_MARKER_ONLY = re.compile(rf"[{re.escape(_NEGATIVE_MARKERS)}]")
+_HYPHEN_TRANSLATION = str.maketrans({
+    "\u2010": "-",  # hyphen
+    "\u2011": "-",  # non-breaking hyphen
+    "\u2012": "-",  # figure dash
+    "\u2013": "-",  # en dash
+    "\u2014": "-",  # em dash
+    "\u2212": "-",  # minus sign
+    "\uFE63": "-",  # small hyphen-minus
+    "\uFF0D": "-",  # fullwidth hyphen-minus
+})
 
 # Text alignment detection constants
 ALIGNMENT_TOLERANCE = 5.0  # Tolerance in points for alignment detection
@@ -257,6 +272,22 @@ def estimate_text_alignment(
 
     # Default to left alignment
     return TextAlignment.LEFT
+
+
+def _normalize_negative_markers(text: str, target_lang: str) -> str:
+    if not text or not target_lang:
+        return text
+    if str(target_lang).lower() != "en":
+        return text
+
+    def _replace(match: re.Match) -> str:
+        number = match.group(2)
+        suffix = match.group(3) or ""
+        return f"({number}{suffix})"
+
+    text = _RE_NEGATIVE_NUMBER.sub(_replace, text)
+    text = _RE_NEGATIVE_MARKER_ONLY.sub("-", text)
+    return text.translate(_HYPHEN_TRANSLATION)
 
 
 def estimate_vertical_alignment(
@@ -2443,6 +2474,7 @@ class PdfProcessor(FileProcessor):
                 # Process all blocks for this page
                 for block_id, text_to_render, is_preserved_original in blocks_to_process:
                     translated = text_to_render  # Use consistent variable name for existing code
+                    translated = _normalize_negative_markers(translated, target_lang)
 
                     # PDFMathTranslate compliant: Get coordinates from TextBlock
                     if text_blocks:
@@ -2592,7 +2624,8 @@ class PdfProcessor(FileProcessor):
                         expandable_bottom = text_block.metadata.get('expandable_bottom', 0.0) if text_blocks else 0.0
 
                         # Legacy support: If only expandable_width is available, use it for right expansion
-                        if expandable_left == 0.0 and expandable_right == 0.0:
+                        # Skip this for table cells to avoid expanding across columns.
+                        if expandable_left == 0.0 and expandable_right == 0.0 and not is_table_cell:
                             expandable_width = text_block.metadata.get('expandable_width', box_width) if text_blocks else box_width
                             expandable_right = max(0, expandable_width - original_box_width)
                             # Estimate left expansion from page margin
@@ -2862,8 +2895,8 @@ class PdfProcessor(FileProcessor):
                         # - TABLE_MIN_LINE_HEIGHT is 1.0 to prevent line overlap
                         # - Prefer readability over fitting - limit reduction to 70%
                         # - If text still doesn't fit, allow overflow (better than unreadable)
-                        TABLE_FONT_MIN_READABLE = 8.0  # Increased for better readability
-                        TABLE_FONT_MIN_RATIO = 0.7     # Allow reduction to 70% for tables (max 30% reduction)
+                        TABLE_FONT_MIN_READABLE = MIN_FONT_SIZE  # Allow shrink in tight table headers
+                        TABLE_FONT_MIN_RATIO = 0.5     # Allow reduction to 50% for tables (max 50% reduction)
 
                         if is_table_cell:
                             text_height = len(lines) * font_size * line_height
@@ -2876,7 +2909,7 @@ class PdfProcessor(FileProcessor):
                                     # Calculate minimum font size to fit exactly
                                     min_required_font = box_height / (len(lines) * line_height)
 
-                                    # Respect user-configured minimum
+                                    # Respect user-configured minimum unless overflow is severe.
                                     min_setting = MIN_FONT_SIZE
                                     if settings:
                                         try:
@@ -2885,6 +2918,14 @@ class PdfProcessor(FileProcessor):
                                             min_setting = MIN_FONT_SIZE
                                     min_setting = max(MIN_FONT_SIZE, min_setting)
                                     min_setting_capped = min(font_size, min_setting)
+                                    if min_required_font < min_setting_capped:
+                                        overflow_ratio = text_height / box_height if box_height > 0 else 0.0
+                                        if overflow_ratio > 1.2:
+                                            min_setting_capped = MIN_FONT_SIZE
+                                            logger.debug(
+                                                "[Table] Block %s: overriding font_size_min to %.1f (overflow=%.2f)",
+                                                block_id, min_setting_capped, overflow_ratio
+                                            )
 
                                     # Calculate absolute minimum (never increase above original)
                                     readable_floor = min(initial_font_size, TABLE_FONT_MIN_READABLE)
@@ -2979,6 +3020,27 @@ class PdfProcessor(FileProcessor):
                                     initial_y if initial_y is not None else 0,
                                     left_margin_x if left_margin_x is not None else 0
                                 )
+
+                        # If a single-line block expands to multiple lines, shift the baseline upward
+                        # within available top space to reduce overlap with content below.
+                        if (
+                            not is_table_cell
+                            and not block_is_vertical
+                            and original_line_count == 1
+                            and len(lines) > 1
+                            and expandable_top > 0
+                        ):
+                            baseline_y = initial_y if initial_y is not None else box_pdf[1]
+                            text_height = len(lines) * font_size * line_height
+                            extra_height = max(0.0, text_height - box_height)
+                            if extra_height > 0:
+                                shift_up = min(extra_height, expandable_top)
+                                if shift_up > 0:
+                                    initial_y = baseline_y + shift_up
+                                    logger.debug(
+                                        "[Layout] Baseline shift for block %s: +%.1f (lines=%d, extra=%.1f)",
+                                        block_id, shift_up, len(lines), extra_height
+                                    )
 
                         # PDFMathTranslate compliant: NO white background
                         # PDFMathTranslate does not draw white rectangles.

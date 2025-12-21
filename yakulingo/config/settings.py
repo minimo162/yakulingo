@@ -41,7 +41,6 @@ USER_SETTINGS_KEYS = {
     "bilingual_output",
     "export_glossary",
     "use_bundled_glossary",
-    "embed_glossary_in_prompt",
     # ブラウザ表示モード
     "browser_display_mode",
     # UI状態（自動保存）
@@ -82,7 +81,6 @@ class AppSettings:
 
     # Text Translation Options
     use_bundled_glossary: bool = True        # 同梱の glossary.csv を使用するか（デフォルトでオン）
-    embed_glossary_in_prompt: bool = False   # 用語集をプロンプトに埋め込む（True=高速、False=ファイル添付）
 
     # Font Settings (ファイル翻訳用 - 全形式共通)
     # フォントサイズ調整（JP→EN時）: 0で調整なし、負値で縮小

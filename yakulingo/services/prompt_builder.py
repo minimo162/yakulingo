@@ -28,13 +28,6 @@ REFERENCE_INSTRUCTION = """
 """
 
 # 用語集埋め込み時の指示文（プロンプト内に用語集を含める場合）
-GLOSSARY_EMBEDDED_INSTRUCTION = """
-用語集 (Glossary)
-以下の用語集に記載されている用語は、必ずその訳語を使用してください。
-
-{glossary_content}
-"""
-
 # 共通翻訳ルール（translation_rules.txt が存在しない場合のデフォルト）
 DEFAULT_TRANSLATION_RULES = """### 数値表記ルール（日本語 → 英語）
 
@@ -457,7 +450,6 @@ class PromptBuilder:
         has_reference_files: bool = False,
         output_language: str = "en",
         translation_style: str = "concise",
-        glossary_content: Optional[str] = None,
     ) -> str:
         """
         Build complete prompt with input text.
@@ -468,17 +460,13 @@ class PromptBuilder:
             output_language: "en" or "jp" (default: "en")
             translation_style: "standard", "concise", or "minimal" (default: "concise")
                               Only affects English output
-            glossary_content: Optional glossary content to embed in prompt (faster than file attachment)
 
         Returns:
             Complete prompt string
         """
         # Build reference section
         reference_section = ""
-        if glossary_content:
-            # Embed glossary directly in prompt (faster than file attachment)
-            reference_section = GLOSSARY_EMBEDDED_INSTRUCTION.format(glossary_content=glossary_content)
-        elif has_reference_files:
+        if has_reference_files:
             # Reference files attached to Copilot
             reference_section = REFERENCE_INSTRUCTION
 
@@ -493,7 +481,6 @@ class PromptBuilder:
         has_reference_files: bool = False,
         output_language: str = "en",
         translation_style: str = "concise",
-        glossary_content: Optional[str] = None,
     ) -> str:
         """
         Build prompt for batch translation.
@@ -504,7 +491,6 @@ class PromptBuilder:
             output_language: "en" or "jp" (default: "en")
             translation_style: "standard", "concise", or "minimal" (default: "concise")
                               Only affects English output
-            glossary_content: Optional glossary content to embed in prompt (faster than file attachment)
 
         Returns:
             Complete prompt with numbered input
@@ -514,25 +500,21 @@ class PromptBuilder:
             f"{i+1}. {text}" for i, text in enumerate(texts)
         )
 
-        return self.build(numbered_input, has_reference_files, output_language, translation_style, glossary_content)
+        return self.build(numbered_input, has_reference_files, output_language, translation_style)
 
     def build_reference_section(
         self,
         reference_files: Optional[Sequence[Path]],
-        glossary_content: Optional[str] = None,
     ) -> str:
-        """Return reference section text when reference files or glossary are provided.
+        """Return reference section text when reference files are provided.
 
         Args:
             reference_files: Optional reference files being attached
-            glossary_content: Optional glossary content to embed in prompt
 
         Returns:
             Reference section text for prompt
         """
-        if glossary_content:
-            return GLOSSARY_EMBEDDED_INSTRUCTION.format(glossary_content=glossary_content)
-        elif reference_files:
+        if reference_files:
             return REFERENCE_INSTRUCTION
         return ""
 

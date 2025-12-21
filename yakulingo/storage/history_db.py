@@ -306,6 +306,7 @@ class HistoryDB:
             'source_text': result.source_text,
             'source_char_count': result.source_char_count,
             'output_language': result.output_language,
+            'detected_language': result.detected_language,
             'options': [
                 {
                     'text': opt.text,
@@ -331,11 +332,22 @@ class HistoryDB:
             )
             for opt in data.get('options', [])
         ]
+        detected_language = data.get('detected_language')
+        output_language = data.get('output_language')
+        if not output_language:
+            if detected_language == "日本語":
+                output_language = "en"
+            elif detected_language:
+                output_language = "jp"
+            else:
+                output_language = "en"
+
         return TextTranslationResult(
             source_text=data['source_text'],
             source_char_count=data.get('source_char_count', 0),
-            output_language=data.get('output_language', 'en'),
+            output_language=output_language,
             options=options,
+            detected_language=detected_language,
             error_message=data.get('error_message'),
         )
 

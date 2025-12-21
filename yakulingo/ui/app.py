@@ -693,24 +693,33 @@ class YakuLingoApp:
             with client:
                 self._refresh_result_panel()
 
-            # Get glossary content for embedding
-            glossary_content = self._get_glossary_content_for_embedding()
-            reference_files = self._get_effective_reference_files(exclude_glossary=bool(glossary_content))
+            from yakulingo.services.translation_service import language_detector
+
+            is_japanese = language_detector.is_japanese(sample_text)
+            output_language = "en" if is_japanese else "jp"
+
+            reference_files = self._get_effective_reference_files()
 
             # Translate all cells in batches using the existing batch translation
             cell_texts = [c[2] for c in cells_to_translate]
-            batch_result = await asyncio.to_thread(
-                self._translate_cell_batch,
-                cell_texts,
-                detected_language,
-                reference_files,
-                glossary_content,
-            )
+            batches = self._split_cell_batches(cell_texts, self.settings.max_chars_per_batch)
+            translations: list[str] = []
+            explanations: list[str] = []
+            for batch in batches:
+                batch_result = await asyncio.to_thread(
+                    self._translate_cell_batch,
+                    batch,
+                    output_language,
+                    reference_files,
+                )
+                if batch_result is None:
+                    error_message = "Translation failed"
+                    break
+                batch_translations, batch_explanations = batch_result
+                translations.extend(batch_translations)
+                explanations.extend(batch_explanations)
 
-            if batch_result is None:
-                error_message = "Translation failed"
-            else:
-                translations, explanations = batch_result
+            if not error_message:
                 # Build translated 2D array
                 translated_2d = [row[:] for row in cells_2d]  # Deep copy
                 for (row_idx, col_idx, _), translated in zip(cells_to_translate, translations):
@@ -756,7 +765,8 @@ class YakuLingoApp:
                         explanation=explanation_text,
                         char_count=len(translated_text),
                     )],
-                    output_language="en" if detected_language == "日本語" else "jp",
+                    output_language=output_language,
+                    detected_language=detected_language,
                 )
                 self.state.text_result = result
                 self.state.text_view_state = TextViewState.RESULT
@@ -776,33 +786,59 @@ class YakuLingoApp:
 
         self._active_translation_trace_id = None
 
+    def _split_cell_batches(self, cells: list[str], max_chars: int) -> list[list[str]]:
+        """Split cell texts into batches that stay within the char limit."""
+        batches: list[list[str]] = []
+        current_batch: list[str] = []
+        current_chars = 0
+
+        for cell in cells:
+            cell_len = len(cell)
+            if cell_len > max_chars:
+                if current_batch:
+                    batches.append(current_batch)
+                    current_batch = []
+                    current_chars = 0
+                logger.warning(
+                    "Cell length %d exceeds max_chars_per_batch=%d; sending alone",
+                    cell_len,
+                    max_chars,
+                )
+                batches.append([cell])
+                continue
+
+            if current_chars + cell_len > max_chars and current_batch:
+                batches.append(current_batch)
+                current_batch = []
+                current_chars = 0
+
+            current_batch.append(cell)
+            current_chars += cell_len
+
+        if current_batch:
+            batches.append(current_batch)
+
+        return batches
+
     def _translate_cell_batch(
         self,
         cells: list[str],
-        detected_language: str,
-        reference_files: list[str],
-        glossary_content: str | None,
+        output_language: str,
+        reference_files: Optional[list[Path]],
     ) -> tuple[list[str], list[str]] | None:
         """Translate a batch of cells.
 
         Args:
             cells: List of cell texts to translate
-            detected_language: Pre-detected source language
+            output_language: Output language ("en" or "jp")
             reference_files: Reference files for translation
-            glossary_content: Glossary content to embed in prompt
 
         Returns:
             Tuple of (translations, explanations), or None if failed
         """
-        from yakulingo.services.prompt_builder import PromptBuilder, GLOSSARY_EMBEDDED_INSTRUCTION, REFERENCE_INSTRUCTION
+        from yakulingo.services.prompt_builder import PromptBuilder
 
         prompt_builder = PromptBuilder(prompts_dir=get_default_prompts_dir())
-
-        # Determine output language
-        if detected_language == "日本語":
-            output_language = "en"
-        else:
-            output_language = "jp"
 
         # Get translation style
         style = DEFAULT_TEXT_STYLE
@@ -819,15 +855,8 @@ class YakuLingoApp:
             return None
 
         # Build reference section
-        if glossary_content:
-            reference_section = GLOSSARY_EMBEDDED_INSTRUCTION.format(glossary_content=glossary_content)
-            files_to_attach = None
-        elif reference_files:
-            reference_section = REFERENCE_INSTRUCTION
-            files_to_attach = reference_files
-        else:
-            reference_section = ""
-            files_to_attach = None
+        reference_section = prompt_builder.build_reference_section(reference_files)
+        files_to_attach = reference_files if reference_files else None
 
         # Apply placeholders
         prompt_builder.reload_translation_rules()
@@ -2614,42 +2643,19 @@ class YakuLingoApp:
         # Cooldown: prevent rapid re-clicking
         await asyncio.sleep(3)
 
-    def _get_effective_reference_files(self, exclude_glossary: bool = False) -> list[Path] | None:
+    def _get_effective_reference_files(self) -> list[Path] | None:
         """Get reference files including bundled glossary if enabled.
 
         Uses cached glossary path to avoid repeated path calculations.
-
-        Args:
-            exclude_glossary: If True, don't include bundled glossary (for when it's embedded in prompt)
         """
         files = list(self.state.reference_files) if self.state.reference_files else []
 
         # Add bundled glossary if enabled (uses cached path)
-        # Skip if exclude_glossary is True (glossary will be embedded in prompt instead)
-        if self.settings.use_bundled_glossary and not exclude_glossary:
+        if self.settings.use_bundled_glossary:
             if self._glossary_path.exists() and self._glossary_path not in files:
                 files.insert(0, self._glossary_path)
 
         return files if files else None
-
-    def _get_glossary_content_for_embedding(self) -> Optional[str]:
-        """Get glossary content for embedding in prompt.
-
-        Returns:
-            Glossary content as string if both use_bundled_glossary and
-            embed_glossary_in_prompt are enabled, else None
-        """
-        # Both settings must be enabled for embedding
-        if not self.settings.use_bundled_glossary:
-            return None
-        if not self.settings.embed_glossary_in_prompt:
-            return None
-
-        if not self._glossary_path.exists():
-            return None
-
-        from yakulingo.services.translation_service import load_glossary_content
-        return load_glossary_content(self._glossary_path)
 
     def _copy_text(self, text: str):
         """Copy specified text to clipboard"""
@@ -2902,11 +2908,8 @@ class YakuLingoApp:
                 self._active_translation_trace_id = None
             return
 
-        # Get glossary content for embedding (faster than file attachment)
-        glossary_content = self._get_glossary_content_for_embedding()
-
-        # Get reference files (exclude glossary if it will be embedded)
-        reference_files = self._get_effective_reference_files(exclude_glossary=bool(glossary_content))
+        # Get reference files (always attach glossary if enabled)
+        reference_files = self._get_effective_reference_files()
 
         # Use saved client reference (context.client not available in async tasks)
         # Protected by _client_lock for thread-safe access
@@ -2971,7 +2974,6 @@ class YakuLingoApp:
                 style_order,
                 detected_language,
                 None,  # on_chunk (not using streaming)
-                glossary_content,  # Embed glossary in prompt for faster translation
             )
 
             # Calculate elapsed time
@@ -3059,15 +3061,11 @@ class YakuLingoApp:
             # Yield control to event loop before starting blocking operation
             await asyncio.sleep(0)
 
-            # Get glossary content for embedding (if enabled)
-            glossary_content = self._get_glossary_content_for_embedding()
-
-            # Build reference section (embed glossary or instruct to use attached files)
+            reference_files = self._get_effective_reference_files()
             reference_section = ""
-            if glossary_content:
-                from yakulingo.services.prompt_builder import GLOSSARY_EMBEDDED_INSTRUCTION
-                reference_section = GLOSSARY_EMBEDDED_INSTRUCTION.format(glossary_content=glossary_content)
-            elif self.settings.use_bundled_glossary:
+            if reference_files and self.translation_service:
+                reference_section = self.translation_service.prompt_builder.build_reference_section(reference_files)
+            elif reference_files:
                 from yakulingo.services.prompt_builder import REFERENCE_INSTRUCTION
                 reference_section = REFERENCE_INSTRUCTION
 
@@ -3092,9 +3090,7 @@ class YakuLingoApp:
 {reference_section}
 """
 
-            # Send to Copilot (exclude glossary from files if embedded in prompt)
-            exclude_glossary = glossary_content is not None
-            reference_files = self._get_effective_reference_files(exclude_glossary=exclude_glossary)
+            # Send to Copilot with reference files attached
             result = await asyncio.to_thread(
                 lambda: self.copilot.translate_single(text, prompt, reference_files)
             )
@@ -3133,7 +3129,6 @@ class YakuLingoApp:
         translation: str,
         content: str = "",
         reference_files: Optional[list[Path]] = None,
-        glossary_content: Optional[str] = None,
     ) -> Optional[str]:
         """
         Build prompt for follow-up actions.
@@ -3144,19 +3139,13 @@ class YakuLingoApp:
             translation: Current translation
             content: Additional content (question text, reply intent, etc.)
             reference_files: Attached reference files for prompt context
-            glossary_content: Optional glossary content to embed in prompt (faster than file attachment)
-
         Returns:
             Built prompt string, or None if action_type is unknown
         """
         prompts_dir = get_default_prompts_dir()
 
         reference_section = ""
-        if glossary_content:
-            # Embed glossary directly in prompt (faster than file attachment)
-            from yakulingo.services.prompt_builder import GLOSSARY_EMBEDDED_INSTRUCTION
-            reference_section = GLOSSARY_EMBEDDED_INSTRUCTION.format(glossary_content=glossary_content)
-        elif reference_files and self.translation_service:
+        if reference_files and self.translation_service:
             reference_section = self.translation_service.prompt_builder.build_reference_section(reference_files)
         elif reference_files:
             # Fallback in unlikely case translation_service is not ready
@@ -3350,16 +3339,11 @@ class YakuLingoApp:
             source_text = self.state.text_result.source_text if self.state.text_result else self.state.source_text
             translation = self.state.text_result.options[-1].text if self.state.text_result and self.state.text_result.options else ""
 
-            # Get glossary content for embedding (if enabled)
-            glossary_content = self._get_glossary_content_for_embedding()
-
-            # Exclude glossary from reference files if embedded in prompt
-            exclude_glossary = glossary_content is not None
-            reference_files = self._get_effective_reference_files(exclude_glossary=exclude_glossary)
+            reference_files = self._get_effective_reference_files()
 
             # Build prompt
             prompt = self._build_follow_up_prompt(
-                action_type, source_text, translation, content, reference_files, glossary_content
+                action_type, source_text, translation, content, reference_files
             )
             if prompt is None:
                 error_message = '不明なアクションタイプです'
@@ -3811,12 +3795,7 @@ class YakuLingoApp:
                 if len(selected_sections) == len(self.state.file_info.section_details):
                     selected_sections = None
 
-            # Get glossary content for embedding (if enabled)
-            glossary_content = self._get_glossary_content_for_embedding()
-
-            # Exclude glossary from reference files if embedded in prompt
-            exclude_glossary = glossary_content is not None
-            reference_files = self._get_effective_reference_files(exclude_glossary=exclude_glossary)
+            reference_files = self._get_effective_reference_files()
 
             result = await asyncio.to_thread(
                 lambda: self.translation_service.translate_file(
@@ -3826,7 +3805,6 @@ class YakuLingoApp:
                     output_language=self.state.file_output_language,
                     translation_style=self.settings.translation_style,
                     selected_sections=selected_sections,
-                    glossary_content=glossary_content,
                 )
             )
 

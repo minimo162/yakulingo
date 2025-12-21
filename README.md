@@ -240,7 +240,6 @@ YakuLingoを初めて使う際は、以下の手順でM365 Copilotにログイ�
   "export_glossary": false,
   "translation_style": "concise",
   "use_bundled_glossary": false,
-  "embed_glossary_in_prompt": false,
   "font_size_adjustment_jp_to_en": 0.0,
   "font_size_min": 6.0,
   "font_jp_to_en": "Arial",
@@ -267,7 +266,6 @@ YakuLingoを初めて使う際は、以下の手順でM365 Copilotにログイ�
 | `font_jp_to_en` | 英訳時の出力フォント | Arial |
 | `font_en_to_jp` | 和訳時の出力フォント | MS Pゴシック |
 | `browser_display_mode` | ブラウザ表示モード | "side_panel" |
-| `embed_glossary_in_prompt` | 用語集をプロンプトに埋め込む | false |
 | `auto_update_enabled` | 起動時の自動更新チェック | true |
 
 **翻訳スタイル**: `"standard"`（標準）, `"concise"`（簡潔）, `"minimal"`（最簡潔）
@@ -280,7 +278,7 @@ YakuLingoを初めて使う際は、以下の手順でM365 Copilotにログイ�
 | `"foreground"` | 前面に表示 |
 > **Note**: Windowsではウィンドウサイズはプライマリモニターの作業領域（タスクバー除外）を基準に自動計算されます。取得できない場合は最も大きいモニターを使用します。
 
-**用語集処理**: デフォルトでは用語集をファイルとして添付します（用語集が増えても対応可能）。`embed_glossary_in_prompt`をtrueにすると、プロンプトに直接埋め込み高速化されます（約16〜19秒短縮、用語集サイズに制限あり）。
+**用語集処理**: 用語集は常にファイルとして添付されます（用語集が増えても対応可能）。
 
 #### 詳細設定（通常は変更不要）
 

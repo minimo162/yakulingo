@@ -1042,6 +1042,17 @@ class TestTranslateTextWithOptions:
         assert result.detected_language == "英語"
         assert result.source_text == "Hello"
 
+    def test_reference_files_passed_to_copilot(self, mock_copilot, service, tmp_path):
+        """Reference files are attached to Copilot translation"""
+        ref_path = tmp_path / "ref.txt"
+        ref_path.write_text("ref")
+        mock_copilot.translate_single.return_value = "訳文: Hello\n解説: Greeting"
+
+        service.translate_text_with_options("こんにちは", reference_files=[ref_path])
+
+        assert mock_copilot.translate_single.call_args_list
+        assert mock_copilot.translate_single.call_args_list[-1].args[2] == [ref_path]
+
     def test_error_returns_error_message(self):
         """Error during translation returns error in result"""
         mock_copilot = Mock()

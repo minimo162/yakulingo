@@ -4,10 +4,10 @@ This document provides essential context for AI assistants working with the Yaku
 
 ## Project Overview
 
-**YakuLingo** (–óƒŠƒ“ƒS) is a bidirectional Japanese/English translation application that leverages M365 Copilot as its translation engine. It supports both text and file translation (Excel, Word, PowerPoint, PDF, TXT) while preserving document formatting and layout.
+**YakuLingo** (è¨³ãƒªãƒ³ã‚´) is a bidirectional Japanese/English translation application that leverages M365 Copilot as its translation engine. It supports both text and file translation (Excel, Word, PowerPoint, PDF, TXT) while preserving document formatting and layout.
 
 - **Package Name**: `yakulingo`
-- **Version**: `pyproject.toml`‚ÅŠÇ—i`yakulingo/__init__.py`‚ª“®“I‚É“Ç‚İæ‚èj
+- **Version**: `pyproject.toml`ã§ç®¡ç†ï¼ˆ`yakulingo/__init__.py`ãŒå‹•çš„ã«èª­ã¿å–ã‚Šï¼‰
 - **Python Version**: 3.11+
 - **License**: MIT
 
@@ -75,78 +75,78 @@ uv run --extra test pytest tests/test_translation_service.py -v
 
 ```
 YakuLingo/
-„¥„Ÿ„Ÿ app.py                         # Entry point - launches NiceGUI app
-„¥„Ÿ„Ÿ yakulingo/                     # Main Python package
-„    „¥„Ÿ„Ÿ ui/                        # Presentation layer (NiceGUI)
-„    „    „¥„Ÿ„Ÿ app.py                 # YakuLingoApp main orchestrator
-„    „    „¥„Ÿ„Ÿ state.py               # AppState management
-„    „    „¥„Ÿ„Ÿ styles.py              # CSS loader (loads styles.css)
-„    „    „¥„Ÿ„Ÿ styles.css             # M3 design tokens & CSS definitions
-„    „    „¥„Ÿ„Ÿ utils.py               # UI utilities (temp files, dialogs, formatting)
-„    „    „¤„Ÿ„Ÿ components/            # Reusable UI components
-„    „        „¥„Ÿ„Ÿ file_panel.py      # File translation panel (drag-drop, progress)
-„    „        „¥„Ÿ„Ÿ text_panel.py      # Text translation panel (Nani-inspired UI)
-„    „        „¤„Ÿ„Ÿ update_notification.py  # Auto-update notifications
-„    „¥„Ÿ„Ÿ services/                  # Business logic layer
-„    „    „¥„Ÿ„Ÿ translation_service.py # Main translation orchestrator
-„    „    „¥„Ÿ„Ÿ copilot_handler.py     # M365 Copilot browser automation
-„    „    „¥„Ÿ„Ÿ prompt_builder.py      # Translation prompt construction
-„    „    „¤„Ÿ„Ÿ updater.py             # GitHub Releases auto-updater
-„    „¥„Ÿ„Ÿ processors/                # File processing layer
-„    „    „¥„Ÿ„Ÿ base.py                # Abstract FileProcessor class
-„    „    „¥„Ÿ„Ÿ excel_processor.py     # .xlsx/.xls handling
-„    „    „¥„Ÿ„Ÿ word_processor.py      # .docx/.doc handling
-„    „    „¥„Ÿ„Ÿ pptx_processor.py      # .pptx/.ppt handling
-„    „    „¥„Ÿ„Ÿ pdf_processor.py       # .pdf handling
-„    „    „¥„Ÿ„Ÿ pdf_converter.py       # PDFMathTranslate compliant: Paragraph, FormulaVar, vflag
-„    „    „¥„Ÿ„Ÿ pdf_layout.py          # PP-DocLayout-L integration: LayoutArray, layout analysis
-„    „    „¥„Ÿ„Ÿ pdf_font_manager.py    # PDF font management (PDFMathTranslate compliant)
-„    „    „¥„Ÿ„Ÿ pdf_operators.py       # PDF low-level operator generation
-„    „    „¥„Ÿ„Ÿ txt_processor.py       # .txt handling (plain text)
-„    „    „¥„Ÿ„Ÿ font_manager.py        # Font detection & mapping
-„    „    „¤„Ÿ„Ÿ translators.py         # Translation decision logic
-„    „¥„Ÿ„Ÿ models/                    # Data structures
-„    „    „¤„Ÿ„Ÿ types.py               # Enums, dataclasses, type aliases
-„    „¥„Ÿ„Ÿ storage/                   # Persistence layer
-„    „    „¤„Ÿ„Ÿ history_db.py          # SQLite-based translation history
-„    „¤„Ÿ„Ÿ config/                    # Configuration
-„        „¤„Ÿ„Ÿ settings.py            # AppSettings with JSON persistence
-„¥„Ÿ„Ÿ tests/                         # Test suite (33 test files)
-„    „¥„Ÿ„Ÿ conftest.py                # Shared fixtures and mocks
-„    „¤„Ÿ„Ÿ test_*.py                  # Unit tests for each module
-„¥„Ÿ„Ÿ prompts/                       # Translation prompt templates (18 files, all in Japanese)
-„    „¥„Ÿ„Ÿ translation_rules.txt      # ‹¤’Ê–|–óƒ‹[ƒ‹i”’l•\‹LE‹L†•ÏŠ·ƒ‹[ƒ‹j- UI•ÒW‰ÂA–|–ó©“®Ä“Ç
-„    „¥„Ÿ„Ÿ detect_language.txt        # Language detection (currently unused, local detection preferred)
-„    „¥„Ÿ„Ÿ copilot_injection_review.md # Prompt injection risk review
-„    „¥„Ÿ„Ÿ file_translate_to_en_{standard|concise|minimal}.txt  # File translation (JP¨EN)
-„    „¥„Ÿ„Ÿ file_translate_to_jp.txt   # File translation (EN¨JP)
-„    „¥„Ÿ„Ÿ text_translate_to_en_{standard|concise|minimal}.txt  # Text translation (JP¨EN)
-„    „¥„Ÿ„Ÿ text_translate_to_jp.txt   # Text translation (EN¨JP, with explanation)
-„    „¥„Ÿ„Ÿ adjust_custom.txt          # (Reserved) Custom request template
-„    „¥„Ÿ„Ÿ text_alternatives.txt      # Follow-up: alternative expressions
-„    „¥„Ÿ„Ÿ text_review_en.txt         # Follow-up: review English (‰p•¶‚ğƒ`ƒFƒbƒN)
-„    „¥„Ÿ„Ÿ text_check_my_english.txt  # Follow-up: check user's edited English
-„    „¥„Ÿ„Ÿ text_summarize.txt         # Follow-up: extract key points (—v“_‚ğ‹³‚¦‚Ä)
-„    „¥„Ÿ„Ÿ text_question.txt          # Follow-up: answer user questions
-„    „¤„Ÿ„Ÿ text_reply_email.txt       # Follow-up: compose reply email
-„¥„Ÿ„Ÿ config/
-„    „¤„Ÿ„Ÿ settings.template.json     # Configuration template
-„¥„Ÿ„Ÿ docs/
-„    „¥„Ÿ„Ÿ DISTRIBUTION.md            # Deployment and distribution guide
-„    „¤„Ÿ„Ÿ SPECIFICATION.md           # Detailed technical specification
-„¥„Ÿ„Ÿ packaging/                     # Distribution and build files
-„    „¥„Ÿ„Ÿ installer/                 # Network share installer scripts
-„    „¥„Ÿ„Ÿ launcher/                  # Native Windows launcher (Rust-based YakuLingo.exe)
-„    „    „¥„Ÿ„Ÿ Cargo.toml             # Rust project configuration
-„    „    „¤„Ÿ„Ÿ src/main.rs            # Launcher source code
-„    „¥„Ÿ„Ÿ install_deps.bat           # Install dependencies for distribution
-„    „¤„Ÿ„Ÿ make_distribution.bat      # Create distribution package
-„¥„Ÿ„Ÿ glossary.csv                   # Default reference file (glossary, style guide, etc.)
-„¥„Ÿ„Ÿ glossary_old.csv               # Previous version glossary (for customization detection)
-„¥„Ÿ„Ÿ pyproject.toml                 # Project metadata & dependencies
-„¥„Ÿ„Ÿ uv.lock                        # Lock file for reproducible builds
-„¥„Ÿ„Ÿ requirements.txt               # Core pip dependencies
-„¤„Ÿ„Ÿ requirements_pdf.txt           # PDF translation dependencies (PP-DocLayout-L)
+â”œâ”€â”€ app.py                         # Entry point - launches NiceGUI app
+â”œâ”€â”€ yakulingo/                     # Main Python package
+â”‚   â”œâ”€â”€ ui/                        # Presentation layer (NiceGUI)
+â”‚   â”‚   â”œâ”€â”€ app.py                 # YakuLingoApp main orchestrator
+â”‚   â”‚   â”œâ”€â”€ state.py               # AppState management
+â”‚   â”‚   â”œâ”€â”€ styles.py              # CSS loader (loads styles.css)
+â”‚   â”‚   â”œâ”€â”€ styles.css             # M3 design tokens & CSS definitions
+â”‚   â”‚   â”œâ”€â”€ utils.py               # UI utilities (temp files, dialogs, formatting)
+â”‚   â”‚   â””â”€â”€ components/            # Reusable UI components
+â”‚   â”‚       â”œâ”€â”€ file_panel.py      # File translation panel (drag-drop, progress)
+â”‚   â”‚       â”œâ”€â”€ text_panel.py      # Text translation panel (Nani-inspired UI)
+â”‚   â”‚       â””â”€â”€ update_notification.py  # Auto-update notifications
+â”‚   â”œâ”€â”€ services/                  # Business logic layer
+â”‚   â”‚   â”œâ”€â”€ translation_service.py # Main translation orchestrator
+â”‚   â”‚   â”œâ”€â”€ copilot_handler.py     # M365 Copilot browser automation
+â”‚   â”‚   â”œâ”€â”€ prompt_builder.py      # Translation prompt construction
+â”‚   â”‚   â””â”€â”€ updater.py             # GitHub Releases auto-updater
+â”‚   â”œâ”€â”€ processors/                # File processing layer
+â”‚   â”‚   â”œâ”€â”€ base.py                # Abstract FileProcessor class
+â”‚   â”‚   â”œâ”€â”€ excel_processor.py     # .xlsx/.xls handling
+â”‚   â”‚   â”œâ”€â”€ word_processor.py      # .docx/.doc handling
+â”‚   â”‚   â”œâ”€â”€ pptx_processor.py      # .pptx/.ppt handling
+â”‚   â”‚   â”œâ”€â”€ pdf_processor.py       # .pdf handling
+â”‚   â”‚   â”œâ”€â”€ pdf_converter.py       # PDFMathTranslate compliant: Paragraph, FormulaVar, vflag
+â”‚   â”‚   â”œâ”€â”€ pdf_layout.py          # PP-DocLayout-L integration: LayoutArray, layout analysis
+â”‚   â”‚   â”œâ”€â”€ pdf_font_manager.py    # PDF font management (PDFMathTranslate compliant)
+â”‚   â”‚   â”œâ”€â”€ pdf_operators.py       # PDF low-level operator generation
+â”‚   â”‚   â”œâ”€â”€ txt_processor.py       # .txt handling (plain text)
+â”‚   â”‚   â”œâ”€â”€ font_manager.py        # Font detection & mapping
+â”‚   â”‚   â””â”€â”€ translators.py         # Translation decision logic
+â”‚   â”œâ”€â”€ models/                    # Data structures
+â”‚   â”‚   â””â”€â”€ types.py               # Enums, dataclasses, type aliases
+â”‚   â”œâ”€â”€ storage/                   # Persistence layer
+â”‚   â”‚   â””â”€â”€ history_db.py          # SQLite-based translation history
+â”‚   â””â”€â”€ config/                    # Configuration
+â”‚       â””â”€â”€ settings.py            # AppSettings with JSON persistence
+â”œâ”€â”€ tests/                         # Test suite (33 test files)
+â”‚   â”œâ”€â”€ conftest.py                # Shared fixtures and mocks
+â”‚   â””â”€â”€ test_*.py                  # Unit tests for each module
+â”œâ”€â”€ prompts/                       # Translation prompt templates (18 files, all in Japanese)
+â”‚   â”œâ”€â”€ translation_rules.txt      # å…±é€šç¿»è¨³ãƒ«ãƒ¼ãƒ«ï¼ˆæ•°å€¤è¡¨è¨˜ãƒ»è¨˜å·å¤‰æ›ãƒ«ãƒ¼ãƒ«ï¼‰- UIç·¨é›†å¯ã€ç¿»è¨³æ™‚è‡ªå‹•å†èª­è¾¼
+â”‚   â”œâ”€â”€ detect_language.txt        # Language detection (currently unused, local detection preferred)
+â”‚   â”œâ”€â”€ copilot_injection_review.md # Prompt injection risk review
+â”‚   â”œâ”€â”€ file_translate_to_en_{standard|concise|minimal}.txt  # File translation (JPâ†’EN)
+â”‚   â”œâ”€â”€ file_translate_to_jp.txt   # File translation (ENâ†’JP)
+â”‚   â”œâ”€â”€ text_translate_to_en_{standard|concise|minimal}.txt  # Text translation (JPâ†’EN)
+â”‚   â”œâ”€â”€ text_translate_to_jp.txt   # Text translation (ENâ†’JP, with explanation)
+â”‚   â”œâ”€â”€ adjust_custom.txt          # (Reserved) Custom request template
+â”‚   â”œâ”€â”€ text_alternatives.txt      # Follow-up: alternative expressions
+â”‚   â”œâ”€â”€ text_review_en.txt         # Follow-up: review English (è‹±æ–‡ã‚’ãƒã‚§ãƒƒã‚¯)
+â”‚   â”œâ”€â”€ text_check_my_english.txt  # Follow-up: check user's edited English
+â”‚   â”œâ”€â”€ text_summarize.txt         # Follow-up: extract key points (è¦ç‚¹ã‚’æ•™ãˆã¦)
+â”‚   â”œâ”€â”€ text_question.txt          # Follow-up: answer user questions
+â”‚   â””â”€â”€ text_reply_email.txt       # Follow-up: compose reply email
+â”œâ”€â”€ config/
+â”‚   â””â”€â”€ settings.template.json     # Configuration template
+â”œâ”€â”€ docs/
+â”‚   â”œâ”€â”€ DISTRIBUTION.md            # Deployment and distribution guide
+â”‚   â””â”€â”€ SPECIFICATION.md           # Detailed technical specification
+â”œâ”€â”€ packaging/                     # Distribution and build files
+â”‚   â”œâ”€â”€ installer/                 # Network share installer scripts
+â”‚   â”œâ”€â”€ launcher/                  # Native Windows launcher (Rust-based YakuLingo.exe)
+â”‚   â”‚   â”œâ”€â”€ Cargo.toml             # Rust project configuration
+â”‚   â”‚   â””â”€â”€ src/main.rs            # Launcher source code
+â”‚   â”œâ”€â”€ install_deps.bat           # Install dependencies for distribution
+â”‚   â””â”€â”€ make_distribution.bat      # Create distribution package
+â”œâ”€â”€ glossary.csv                   # Default reference file (glossary, style guide, etc.)
+â”œâ”€â”€ glossary_old.csv               # Previous version glossary (for customization detection)
+â”œâ”€â”€ pyproject.toml                 # Project metadata & dependencies
+â”œâ”€â”€ uv.lock                        # Lock file for reproducible builds
+â”œâ”€â”€ requirements.txt               # Core pip dependencies
+â””â”€â”€ requirements_pdf.txt           # PDF translation dependencies (PP-DocLayout-L)
 ```
 
 ## Layer Responsibilities
@@ -179,8 +179,8 @@ YakuLingo/
 | `yakulingo/storage/history_db.py` | SQLite database for translation history | ~320 |
 | `yakulingo/processors/base.py` | Abstract base class for all file processors | ~105 |
 | `yakulingo/processors/pdf_processor.py` | PDF processing with PyMuPDF, pdfminer.six, and PP-DocLayout-L | ~2819 |
-| `yakulingo/processors/pdf_converter.py` | PDFMathTranslate€‹’: Paragraph, FormulaVar, vflag, À•W•ÏŠ·, sŒ‹‡ƒƒWƒbƒN | ~1400 |
-| `yakulingo/processors/pdf_layout.py` | PP-DocLayout-L“‡: LayoutArray, TableCellsDetection, “Ç‚İ‡„’è(yomitokuƒXƒ^ƒCƒ‹), rowspan/colspanŒŸo | ~2438 |
+| `yakulingo/processors/pdf_converter.py` | PDFMathTranslateæº–æ‹ : Paragraph, FormulaVar, vflag, åº§æ¨™å¤‰æ›, è¡Œçµåˆãƒ­ã‚¸ãƒƒã‚¯ | ~1400 |
+| `yakulingo/processors/pdf_layout.py` | PP-DocLayout-Lçµ±åˆ: LayoutArray, TableCellsDetection, èª­ã¿é †æ¨å®š(yomitokuã‚¹ã‚¿ã‚¤ãƒ«), rowspan/colspanæ¤œå‡º | ~2438 |
 | `yakulingo/processors/pdf_font_manager.py` | PDF font management: font registry, type detection, glyph encoding | ~1140 |
 | `yakulingo/processors/pdf_operators.py` | PDF low-level operator generation for text rendering | ~731 |
 
@@ -198,7 +198,7 @@ FileState: EMPTY, SELECTED, TRANSLATING, COMPLETE, ERROR  # File panel states
 TextViewState: INPUT, RESULT                   # Text panel layout (INPUT=large textarea, RESULT=compact+results)
 
 # AppState attributes for file translation
-file_detected_language: Optional[str]          # Auto-detected source language (e.g., "“ú–{Œê", "‰pŒê")
+file_detected_language: Optional[str]          # Auto-detected source language (e.g., "æ—¥æœ¬èª", "è‹±èª")
 file_output_language: str                      # Output language ("en" or "jp"), auto-set based on detection
 
 # Key dataclasses
@@ -228,43 +228,43 @@ VersionInfo(version, release_date, download_url, release_notes, requires_reinsta
 The application uses **local-only language detection** via `detect_language()`:
 
 **Detection priority** (all local, no Copilot calls):
-1. Hiragana/Katakana present ¨ "“ú–{Œê" (definite Japanese)
-2. Hangul present ¨ "ŠØ‘Œê" (definite Korean)
-3. Latin alphabet dominant ¨ "‰pŒê" (assume English for speed)
-4. CJK only (no kana) ¨ "“ú–{Œê" (assume Japanese for target users)
-5. Other/mixed ¨ "“ú–{Œê" (default fallback)
+1. Hiragana/Katakana present â†’ "æ—¥æœ¬èª" (definite Japanese)
+2. Hangul present â†’ "éŸ“å›½èª" (definite Korean)
+3. Latin alphabet dominant â†’ "è‹±èª" (assume English for speed)
+4. CJK only (no kana) â†’ "æ—¥æœ¬èª" (assume Japanese for target users)
+5. Other/mixed â†’ "æ—¥æœ¬èª" (default fallback)
 
 **Design rationale:**
 - **Speed**: All detection is local, no Copilot roundtrip required
 - **Target users**: Japanese users, so Japanese is the safe default
-- **Simple UI**: u‰p–ó’†...vu˜a–ó’†...v display without complex language names
+- **Simple UI**: ã€Œè‹±è¨³ä¸­...ã€ã€Œå’Œè¨³ä¸­...ã€ display without complex language names
 
 Translation direction based on detection:
-- **Japanese input ("“ú–{Œê")** ¨ English output (standard/concise/minimal shown together)
-- **Non-Japanese input** ¨ Japanese output (single translation + explanation + action buttons + inline input)
+- **Japanese input ("æ—¥æœ¬èª")** â†’ English output (standard/concise/minimal shown together)
+- **Non-Japanese input** â†’ Japanese output (single translation + explanation + action buttons + inline input)
 
 No manual direction selection is required for text translation. File translation also uses auto-detection with optional manual override via language toggle buttons.
 
 ## Text Translation UI Features
 
-### Unified UI Structure (‰p–óE˜a–ó‹¤’Ê)
-- **Source text section** (Œ´•¶ƒZƒNƒVƒ‡ƒ“): –|–óŒ‹‰Êƒpƒlƒ‹ã•”‚ÉŒ´•¶‚ğ•\¦ + ƒRƒs[ƒ{ƒ^ƒ“
-- **Translation status** (–|–óó‘Ô•\¦): u‰p–ó’†...vu˜a–ó’†...v¨u? ‰p–ó‚µ‚Ü‚µ‚½vu? ˜a–ó‚µ‚Ü‚µ‚½v+ Œo‰ßŠÔƒoƒbƒW
-- **Suggestion hint row**: [Ä–|–ó] ƒ{ƒ^ƒ“
-- **Action options**: ’P“ÆƒIƒvƒVƒ‡ƒ“ƒXƒ^ƒCƒ‹‚Ìƒ{ƒ^ƒ“
+### Unified UI Structure (è‹±è¨³ãƒ»å’Œè¨³å…±é€š)
+- **Source text section** (åŸæ–‡ã‚»ã‚¯ã‚·ãƒ§ãƒ³): ç¿»è¨³çµæœãƒ‘ãƒãƒ«ä¸Šéƒ¨ã«åŸæ–‡ã‚’è¡¨ç¤º + ã‚³ãƒ”ãƒ¼ãƒœã‚¿ãƒ³
+- **Translation status** (ç¿»è¨³çŠ¶æ…‹è¡¨ç¤º): ã€Œè‹±è¨³ä¸­...ã€ã€Œå’Œè¨³ä¸­...ã€â†’ã€Œ? è‹±è¨³ã—ã¾ã—ãŸã€ã€Œ? å’Œè¨³ã—ã¾ã—ãŸã€+ çµŒéæ™‚é–“ãƒãƒƒã‚¸
+- **Suggestion hint row**: [å†ç¿»è¨³] ãƒœã‚¿ãƒ³
+- **Action options**: å˜ç‹¬ã‚ªãƒ—ã‚·ãƒ§ãƒ³ã‚¹ã‚¿ã‚¤ãƒ«ã®ãƒœã‚¿ãƒ³
 
-### Japanese ¨ English (‰p–ó)
-- **3‚Â‚ÌƒXƒ^ƒCƒ‹o—Í**i•W€/ŠÈŒ‰/ÅŠÈŒ‰j‚ğc•À‚Ñ‚Å•\¦
-- **Check my English**: [ƒAƒŒƒ“ƒW‚µ‚½‰p•¶‚ğƒ`ƒFƒbƒN] “WŠJŒ^“ü—Í—“
+### Japanese â†’ English (è‹±è¨³)
+- **3ã¤ã®ã‚¹ã‚¿ã‚¤ãƒ«å‡ºåŠ›**ï¼ˆæ¨™æº–/ç°¡æ½”/æœ€ç°¡æ½”ï¼‰ã‚’ç¸¦ä¸¦ã³ã§è¡¨ç¤º
+- **Check my English**: [ã‚¢ãƒ¬ãƒ³ã‚¸ã—ãŸè‹±æ–‡ã‚’ãƒã‚§ãƒƒã‚¯] å±•é–‹å‹å…¥åŠ›æ¬„
 
-### English ¨ Japanese (˜a–ó)
+### English â†’ Japanese (å’Œè¨³)
 - **Single translation output** with detailed explanation
-- **Action buttons**: [‰p•¶‚ğƒ`ƒFƒbƒN] [—v“_‚ğ‹³‚¦‚Ä]
-- **Reply composer**: [•ÔM•¶‚ğì¬] “WŠJŒ^“ü—Í—“
+- **Action buttons**: [è‹±æ–‡ã‚’ãƒã‚§ãƒƒã‚¯] [è¦ç‚¹ã‚’æ•™ãˆã¦]
+- **Reply composer**: [è¿”ä¿¡æ–‡ã‚’ä½œæˆ] å±•é–‹å‹å…¥åŠ›æ¬„
 
 ### Common Features
 - **Elapsed time badge**: Shows translation duration
-- **Style”äŠr**: •W€/ŠÈŒ‰/ÅŠÈŒ‰‚ğí‚É“¯•\¦iØ‚è‘Ö‚¦‚È‚µj
+- **Styleæ¯”è¼ƒ**: æ¨™æº–/ç°¡æ½”/æœ€ç°¡æ½”ã‚’å¸¸ã«åŒæ™‚è¡¨ç¤ºï¼ˆåˆ‡ã‚Šæ›¿ãˆãªã—ï¼‰
 - **Back-translate button**: Verify translations by translating back to original language
 - **Reference file attachment**: Attach glossary, style guide, or reference materials
 - **Loading screen**: Shows spinner immediately on startup for faster perceived load time
@@ -340,36 +340,36 @@ The application uses M3 (Material Design 3) component-based styling:
 
 ### M3 Button Classes
 
-| ƒNƒ‰ƒX | —p“r | “Á’¥ |
+| ã‚¯ãƒ©ã‚¹ | ç”¨é€” | ç‰¹å¾´ |
 |--------|------|------|
-| `.btn-primary` | å—vƒAƒNƒVƒ‡ƒ“i•Û‘¶AŠm”F“™j | Filled buttonAelevation 1 on hover |
-| `.btn-outline` | ’†—Dæ“xƒAƒNƒVƒ‡ƒ“ | 1px borderAtransparent background |
-| `.btn-tonal` | ’á?’†—Dæ“xƒAƒNƒVƒ‡ƒ“ | secondary-container fill |
-| `.btn-elevated` | ƒpƒ^[ƒ“”wŒi‚©‚ç‚Ì•ª—£‚ª•K—v‚Èê‡ | surface-container fillAelevation 1 |
-| `.btn-text` | Å’á—Dæ“xƒAƒNƒVƒ‡ƒ“ | transparentApadding 12dp |
-| `.translate-btn` | –|–óƒ{ƒ^ƒ“ibtn-primary‚Ìaliasj | Œã•ûŒİŠ·«‚Ì‚½‚ßˆÛ |
+| `.btn-primary` | ä¸»è¦ã‚¢ã‚¯ã‚·ãƒ§ãƒ³ï¼ˆä¿å­˜ã€ç¢ºèªç­‰ï¼‰ | Filled buttonã€elevation 1 on hover |
+| `.btn-outline` | ä¸­å„ªå…ˆåº¦ã‚¢ã‚¯ã‚·ãƒ§ãƒ³ | 1px borderã€transparent background |
+| `.btn-tonal` | ä½?ä¸­å„ªå…ˆåº¦ã‚¢ã‚¯ã‚·ãƒ§ãƒ³ | secondary-container fill |
+| `.btn-elevated` | ãƒ‘ã‚¿ãƒ¼ãƒ³èƒŒæ™¯ã‹ã‚‰ã®åˆ†é›¢ãŒå¿…è¦ãªå ´åˆ | surface-container fillã€elevation 1 |
+| `.btn-text` | æœ€ä½å„ªå…ˆåº¦ã‚¢ã‚¯ã‚·ãƒ§ãƒ³ | transparentã€padding 12dp |
+| `.translate-btn` | ç¿»è¨³ãƒœã‚¿ãƒ³ï¼ˆbtn-primaryã®aliasï¼‰ | å¾Œæ–¹äº’æ›æ€§ã®ãŸã‚ç¶­æŒ |
 
 ### M3 Icon Button Classes
 
-| ƒNƒ‰ƒX | —p“r |
+| ã‚¯ãƒ©ã‚¹ | ç”¨é€” |
 |--------|------|
-| `.icon-btn` | •W€ƒAƒCƒRƒ“ƒ{ƒ^ƒ“itransparentj |
-| `.icon-btn-filled` | FilledƒAƒCƒRƒ“ƒ{ƒ^ƒ“iprimary colorj |
-| `.icon-btn-tonal` | TonalƒAƒCƒRƒ“ƒ{ƒ^ƒ“isecondary-containerj |
-| `.icon-btn-outlined` | OutlinedƒAƒCƒRƒ“ƒ{ƒ^ƒ“i1px borderj |
-| `.attach-btn` | “Y•tƒ{ƒ^ƒ“iicon-btn‚ğŒp³j |
+| `.icon-btn` | æ¨™æº–ã‚¢ã‚¤ã‚³ãƒ³ãƒœã‚¿ãƒ³ï¼ˆtransparentï¼‰ |
+| `.icon-btn-filled` | Filledã‚¢ã‚¤ã‚³ãƒ³ãƒœã‚¿ãƒ³ï¼ˆprimary colorï¼‰ |
+| `.icon-btn-tonal` | Tonalã‚¢ã‚¤ã‚³ãƒ³ãƒœã‚¿ãƒ³ï¼ˆsecondary-containerï¼‰ |
+| `.icon-btn-outlined` | Outlinedã‚¢ã‚¤ã‚³ãƒ³ãƒœã‚¿ãƒ³ï¼ˆ1px borderï¼‰ |
+| `.attach-btn` | æ·»ä»˜ãƒœã‚¿ãƒ³ï¼ˆicon-btnã‚’ç¶™æ‰¿ï¼‰ |
 
-### “Á‰»ƒ{ƒ^ƒ“ƒNƒ‰ƒX
+### ç‰¹åŒ–ãƒœã‚¿ãƒ³ã‚¯ãƒ©ã‚¹
 
-| ƒNƒ‰ƒX | —p“r |
+| ã‚¯ãƒ©ã‚¹ | ç”¨é€” |
 |--------|------|
-| `.back-translate-btn` | –ß‚µ–óƒ{ƒ^ƒ“ |
-| `.explain-more-btn` | Ú×à–¾ƒ{ƒ^ƒ“ |
-| `.settings-btn` | İ’èƒ{ƒ^ƒ“ |
-| `.glossary-toggle-btn` | —pŒêWƒgƒOƒ‹iChip-stylej |
-| `.follow-up-btn` | ƒtƒHƒ[ƒAƒbƒvƒ{ƒ^ƒ“ |
+| `.back-translate-btn` | æˆ»ã—è¨³ãƒœã‚¿ãƒ³ |
+| `.explain-more-btn` | è©³ç´°èª¬æ˜ãƒœã‚¿ãƒ³ |
+| `.settings-btn` | è¨­å®šãƒœã‚¿ãƒ³ |
+| `.glossary-toggle-btn` | ç”¨èªé›†ãƒˆã‚°ãƒ«ï¼ˆChip-styleï¼‰ |
+| `.follow-up-btn` | ãƒ•ã‚©ãƒ­ãƒ¼ã‚¢ãƒƒãƒ—ãƒœã‚¿ãƒ³ |
 
-### ‚»‚Ì‘¼‚ÌKey CSS Classes
+### ãã®ä»–ã®Key CSS Classes
 - `.text-box` - M3 text field container
 - `.drop-zone` - File drop area with dashed border
 - `.file-card` - M3 card for file items
@@ -407,10 +407,10 @@ dialog.open()
 ```python
 from yakulingo.ui.utils import format_markdown_text, parse_translation_result
 
-# **text** ¨ <strong>text</strong>
+# **text** â†’ <strong>text</strong>
 html = format_markdown_text("This is **bold**")
 
-# Parse "–ó•¶: ... ‰ğà: ..." format
+# Parse "è¨³æ–‡: ... è§£èª¬: ..." format
 text, explanation = parse_translation_result(result)
 ```
 
@@ -465,38 +465,38 @@ def sample_xlsx_path(temp_dir): ...
 def history_db(tmp_path): ...
 ```
 
-### CopilotHandler ƒeƒXƒg‚Ìƒ‚ƒbƒNƒpƒ^[ƒ“
+### CopilotHandler ãƒ†ã‚¹ãƒˆã®ãƒ¢ãƒƒã‚¯ãƒ‘ã‚¿ãƒ¼ãƒ³
 
-`connect()`‚â`translate_sync()`‚ğƒeƒXƒg‚·‚éÛ‚ÍA’·ŠÔ‚Ìƒ^ƒCƒ€ƒAƒEƒg‘Ò‹@‚ğ”ğ‚¯‚é‚½‚ßˆÈ‰º‚Ìƒ‚ƒbƒN‚ª•K—vF
+`connect()`ã‚„`translate_sync()`ã‚’ãƒ†ã‚¹ãƒˆã™ã‚‹éš›ã¯ã€é•·æ™‚é–“ã®ã‚¿ã‚¤ãƒ ã‚¢ã‚¦ãƒˆå¾…æ©Ÿã‚’é¿ã‘ã‚‹ãŸã‚ä»¥ä¸‹ã®ãƒ¢ãƒƒã‚¯ãŒå¿…è¦ï¼š
 
 ```python
 from unittest.mock import Mock, patch
 from yakulingo.services.copilot_handler import CopilotHandler
 
-# connect()ƒeƒXƒg‚Ìƒ‚ƒbƒNƒpƒ^[ƒ“
+# connect()ãƒ†ã‚¹ãƒˆæ™‚ã®ãƒ¢ãƒƒã‚¯ãƒ‘ã‚¿ãƒ¼ãƒ³
 def test_connect_example():
     handler = CopilotHandler()
 
-    # •K{: 60•b‚Ì©“®ƒƒOƒCƒ“‘Ò‹@‚ğ‰ñ”ğ
+    # å¿…é ˆ: 60ç§’ã®è‡ªå‹•ãƒ­ã‚°ã‚¤ãƒ³å¾…æ©Ÿã‚’å›é¿
     with patch.object(handler, '_wait_for_auto_login_impl', return_value=False):
-        # •K{: 30•b‚ÌPlaywright–‘O‰Šú‰»‘Ò‹@‚ğ‰ñ”ğ
+        # å¿…é ˆ: 30ç§’ã®Playwrightäº‹å‰åˆæœŸåŒ–å¾…æ©Ÿã‚’å›é¿
         with patch('yakulingo.services.copilot_handler.get_pre_initialized_playwright', return_value=None):
             result = handler.connect()
 
     assert isinstance(result, bool)
 
-# translate_sync()ƒeƒXƒg‚Ìƒ‚ƒbƒNƒpƒ^[ƒ“
+# translate_sync()ãƒ†ã‚¹ãƒˆæ™‚ã®ãƒ¢ãƒƒã‚¯ãƒ‘ã‚¿ãƒ¼ãƒ³
 def test_translate_sync_example():
     handler = CopilotHandler()
 
-    # _translate_sync_impl‚Í_connect_impl‚ğ’¼ÚŒÄ‚Ño‚·iƒlƒXƒg‚³‚ê‚½executor‰ñ”ğ‚Ì‚½‚ßj
+    # _translate_sync_implã¯_connect_implã‚’ç›´æ¥å‘¼ã³å‡ºã™ï¼ˆãƒã‚¹ãƒˆã•ã‚ŒãŸexecutorå›é¿ã®ãŸã‚ï¼‰
     handler._connect_impl = Mock(return_value=False)
 
     with pytest.raises(RuntimeError):
         handler.translate_sync(["test"], "prompt")
 ```
 
-**d—v**: `translate_sync()`“à•”‚Å‚Í`connect()`‚Å‚Í‚È‚­`_connect_impl()`‚ª’¼ÚŒÄ‚Ño‚³‚ê‚é‚½‚ßA`_connect_impl`‚ğƒ‚ƒbƒN‚·‚é•K—v‚ª‚ ‚è‚Ü‚·B
+**é‡è¦**: `translate_sync()`å†…éƒ¨ã§ã¯`connect()`ã§ã¯ãªã`_connect_impl()`ãŒç›´æ¥å‘¼ã³å‡ºã•ã‚Œã‚‹ãŸã‚ã€`_connect_impl`ã‚’ãƒ¢ãƒƒã‚¯ã™ã‚‹å¿…è¦ãŒã‚ã‚Šã¾ã™ã€‚
 
 ### Test Coverage
 ```bash
@@ -549,37 +549,37 @@ async def _translate_text(self):
 
 ### NiceGUI Native Mode Monkey Patch
 
-NiceGUI ‚Ì native ƒ‚[ƒh‚Å‚Í `multiprocessing.Process` ‚ğg—p‚µ‚Ä pywebview ƒEƒBƒ“ƒhƒE‚ğì¬‚µ‚Ü‚·‚ªA
-`window_args`i`hidden`, `x`, `y` ‚ğŠÜ‚Şj‚ªqƒvƒƒZƒX‚É“n‚³‚ê‚È‚¢–â‘è‚ª‚ ‚è‚Ü‚·B
+NiceGUI ã® native ãƒ¢ãƒ¼ãƒ‰ã§ã¯ `multiprocessing.Process` ã‚’ä½¿ç”¨ã—ã¦ pywebview ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã‚’ä½œæˆã—ã¾ã™ãŒã€
+`window_args`ï¼ˆ`hidden`, `x`, `y` ã‚’å«ã‚€ï¼‰ãŒå­ãƒ—ãƒ­ã‚»ã‚¹ã«æ¸¡ã•ã‚Œãªã„å•é¡ŒãŒã‚ã‚Šã¾ã™ã€‚
 
-**–â‘è‚ÌÚ×:**
+**å•é¡Œã®è©³ç´°:**
 ```python
-# NiceGUI ‚Ì native_mode.py (ƒIƒŠƒWƒiƒ‹)
+# NiceGUI ã® native_mode.py (ã‚ªãƒªã‚¸ãƒŠãƒ«)
 def activate(...):
     args = host, port, title, width, height, fullscreen, frameless, ...
-    process = mp.Process(target=_open_window, args=args)  # window_args ‚Í“n‚³‚ê‚È‚¢I
+    process = mp.Process(target=_open_window, args=args)  # window_args ã¯æ¸¡ã•ã‚Œãªã„ï¼
 
 def _open_window(...):
     window_kwargs = {
         ...
-        **core.app.native.window_args,  # qƒvƒƒZƒX‚Å‚Í‹ó‚Ì«‘
+        **core.app.native.window_args,  # å­ãƒ—ãƒ­ã‚»ã‚¹ã§ã¯ç©ºã®è¾æ›¸
     }
 ```
 
-**‰ğŒˆô:**
-`_patch_nicegui_native_mode()` ŠÖ”‚Å `activate()` ‚Æ `_open_window()` ‚ğƒ‚ƒ“ƒL[ƒpƒbƒ`F
+**è§£æ±ºç­–:**
+`_patch_nicegui_native_mode()` é–¢æ•°ã§ `activate()` ã¨ `_open_window()` ã‚’ãƒ¢ãƒ³ã‚­ãƒ¼ãƒ‘ãƒƒãƒï¼š
 
 ```python
-# ƒpƒbƒ`”Å
+# ãƒ‘ãƒƒãƒç‰ˆ
 def activate_patched(...):
-    window_args = dict(core.app.native.window_args)  # eƒvƒƒZƒX‚ÅƒVƒŠƒAƒ‰ƒCƒY
+    window_args = dict(core.app.native.window_args)  # è¦ªãƒ—ãƒ­ã‚»ã‚¹ã§ã‚·ãƒªã‚¢ãƒ©ã‚¤ã‚º
     settings_dict = dict(core.app.native.settings)
     start_args = dict(core.app.native.start_args)
-    args = (..., window_args, settings_dict, start_args)  # ˆø”‚Æ‚µ‚Ä“n‚·
+    args = (..., window_args, settings_dict, start_args)  # å¼•æ•°ã¨ã—ã¦æ¸¡ã™
     process = mp.Process(target=_open_window_patched, args=args)
 
 def _open_window_patched(..., window_args, settings_dict, start_args):
-    # qƒvƒƒZƒX“à‚Å•K—v‚Èƒ‚ƒWƒ…[ƒ‹‚ğƒCƒ“ƒ|[ƒgiWindows spawn ƒ‚[ƒh‘Î‰j
+    # å­ãƒ—ãƒ­ã‚»ã‚¹å†…ã§å¿…è¦ãªãƒ¢ã‚¸ãƒ¥ãƒ¼ãƒ«ã‚’ã‚¤ãƒ³ãƒãƒ¼ãƒˆï¼ˆWindows spawn ãƒ¢ãƒ¼ãƒ‰å¯¾å¿œï¼‰
     import time, warnings
     from threading import Event
     from nicegui import helpers
@@ -588,17 +588,17 @@ def _open_window_patched(..., window_args, settings_dict, start_args):
 
     window_kwargs = {
         ...
-        **window_args,  # ˆø”‚©‚çæ“¾
+        **window_args,  # å¼•æ•°ã‹ã‚‰å–å¾—
     }
 ```
 
-**ƒpƒbƒ`“K—pƒ^ƒCƒ~ƒ“ƒO:**
-- NiceGUI ƒCƒ“ƒ|[ƒg’¼ŒãA`ui.run()` ŒÄ‚Ño‚µ‘O
-- native ƒ‚[ƒh‚Ì‚İ“K—p
+**ãƒ‘ãƒƒãƒé©ç”¨ã‚¿ã‚¤ãƒŸãƒ³ã‚°:**
+- NiceGUI ã‚¤ãƒ³ãƒãƒ¼ãƒˆç›´å¾Œã€`ui.run()` å‘¼ã³å‡ºã—å‰
+- native ãƒ¢ãƒ¼ãƒ‰æ™‚ã®ã¿é©ç”¨
 
-**’ˆÓ“_:**
-- qƒvƒƒZƒX‚Í Windows ‚Å‚Í `spawn` ƒ‚[ƒh‚Å‹N“®‚³‚ê‚é‚½‚ßA•K—v‚Èƒ‚ƒWƒ…[ƒ‹‚ÍŠÖ”“à‚ÅƒCƒ“ƒ|[ƒg‚·‚é•K—v‚ª‚ ‚é
-- ƒpƒbƒ`‚ª¸”s‚µ‚½ê‡‚Í `_position_window_early_sync()` ‚ªƒtƒH[ƒ‹ƒoƒbƒN‚Æ‚µ‚Ä“®ì
+**æ³¨æ„ç‚¹:**
+- å­ãƒ—ãƒ­ã‚»ã‚¹ã¯ Windows ã§ã¯ `spawn` ãƒ¢ãƒ¼ãƒ‰ã§èµ·å‹•ã•ã‚Œã‚‹ãŸã‚ã€å¿…è¦ãªãƒ¢ã‚¸ãƒ¥ãƒ¼ãƒ«ã¯é–¢æ•°å†…ã§ã‚¤ãƒ³ãƒãƒ¼ãƒˆã™ã‚‹å¿…è¦ãŒã‚ã‚‹
+- ãƒ‘ãƒƒãƒãŒå¤±æ•—ã—ãŸå ´åˆã¯ `_position_window_early_sync()` ãŒãƒ•ã‚©ãƒ¼ãƒ«ãƒãƒƒã‚¯ã¨ã—ã¦å‹•ä½œ
 
 ### Translation Logic
 - **CellTranslator**: For Excel cells - skips numbers, dates, URLs, emails, codes
@@ -610,29 +610,29 @@ def _open_window_patched(..., window_args, settings_dict, start_args):
 # Unified font selection (all file types: Excel, Word, PowerPoint, PDF)
 # Font is determined by translation direction only (original font type is ignored)
 
-# JP to EN translation (‰p–ó)
-¨ Arial
+# JP to EN translation (è‹±è¨³)
+â†’ Arial
 
-# EN to JP translation (˜a–ó)
-¨ MS PƒSƒVƒbƒN
+# EN to JP translation (å’Œè¨³)
+â†’ MS Pã‚´ã‚·ãƒƒã‚¯
 
-# Font size: No adjustment (0pt) when translating JP¨EN
+# Font size: No adjustment (0pt) when translating JPâ†’EN
 ```
 
 ### Number Notation Conversion
 ```
-‰­ ¨ oku (e.g., 4,500‰­‰~ ¨ 4,500 oku yen)
-ç ¨ k (e.g., 12,000 ¨ 12k)
-£ (negative) ¨ () (e.g., £50 ¨ (50))
+å„„ â†’ oku (e.g., 4,500å„„å†† â†’ 4,500 oku yen)
+åƒ â†’ k (e.g., 12,000 â†’ 12k)
+â–² (negative) â†’ () (e.g., â–²50 â†’ (50))
 ```
 
 ## Configuration
 
-### İ’èƒtƒ@ƒCƒ‹\¬i•ª—£•û®j
+### è¨­å®šãƒ•ã‚¡ã‚¤ãƒ«æ§‹æˆï¼ˆåˆ†é›¢æ–¹å¼ï¼‰
 
-İ’è‚Í2‚Â‚Ìƒtƒ@ƒCƒ‹‚É•ª—£‚³‚ê‚Ä‚¢‚Ü‚·F
+è¨­å®šã¯2ã¤ã®ãƒ•ã‚¡ã‚¤ãƒ«ã«åˆ†é›¢ã•ã‚Œã¦ã„ã¾ã™ï¼š
 
-**config/settings.template.json** (ƒfƒtƒHƒ‹ƒg’lAŠJ”­ÒŠÇ—):
+**config/settings.template.json** (ãƒ‡ãƒ•ã‚©ãƒ«ãƒˆå€¤ã€é–‹ç™ºè€…ç®¡ç†):
 ```json
 {
   "reference_files": ["glossary.csv"],
@@ -645,11 +645,10 @@ def _open_window_patched(..., window_args, settings_dict, start_args):
   "export_glossary": false,
   "translation_style": "concise",
   "use_bundled_glossary": true,
-  "embed_glossary_in_prompt": false,
   "font_size_adjustment_jp_to_en": 0.0,
   "font_size_min": 8.0,
   "font_jp_to_en": "Arial",
-  "font_en_to_jp": "MS PƒSƒVƒbƒN",
+  "font_en_to_jp": "MS Pã‚´ã‚·ãƒƒã‚¯",
   "ocr_batch_size": 5,
   "ocr_dpi": 300,
   "ocr_device": "auto",
@@ -662,12 +661,12 @@ def _open_window_patched(..., window_args, settings_dict, start_args):
 }
 ```
 
-**config/user_settings.json** (ƒ†[ƒU[İ’è‚Ì‚İA©“®¶¬):
+**config/user_settings.json** (ãƒ¦ãƒ¼ã‚¶ãƒ¼è¨­å®šã®ã¿ã€è‡ªå‹•ç”Ÿæˆ):
 ```json
 {
   "translation_style": "concise",
   "font_jp_to_en": "Arial",
-  "font_en_to_jp": "MS PƒSƒVƒbƒN",
+  "font_en_to_jp": "MS Pã‚´ã‚·ãƒƒã‚¯",
   "bilingual_output": false,
   "browser_display_mode": "side_panel",
   "last_tab": "text"
@@ -676,69 +675,67 @@ def _open_window_patched(..., window_args, settings_dict, start_args):
 
 **translation_style values**: `"standard"`, `"concise"` (default), `"minimal"`
 
-**browser_display_mode (ƒuƒ‰ƒEƒU•\¦ƒ‚[ƒh)**:
+**browser_display_mode (ãƒ–ãƒ©ã‚¦ã‚¶è¡¨ç¤ºãƒ¢ãƒ¼ãƒ‰)**:
 
-| ’l | à–¾ |
+| å€¤ | èª¬æ˜ |
 |-----|------|
-| `"side_panel"` | ƒAƒvƒŠ‚Ì‰¡‚Éƒpƒlƒ‹‚Æ‚µ‚Ä•\¦iƒfƒtƒHƒ‹ƒgA–|–óŒo‰ß‚ªŒ©‚¦‚éj |
-| `"minimized"` | Å¬‰»‚µ‚Ä”ñ•\¦i]—ˆ“®ìj |
-| `"foreground"` | ‘O–Ê‚É•\¦ |
+| `"side_panel"` | ã‚¢ãƒ—ãƒªã®æ¨ªã«ãƒ‘ãƒãƒ«ã¨ã—ã¦è¡¨ç¤ºï¼ˆãƒ‡ãƒ•ã‚©ãƒ«ãƒˆã€ç¿»è¨³çµŒéãŒè¦‹ãˆã‚‹ï¼‰ |
+| `"minimized"` | æœ€å°åŒ–ã—ã¦éè¡¨ç¤ºï¼ˆå¾“æ¥å‹•ä½œï¼‰ |
+| `"foreground"` | å‰é¢ã«è¡¨ç¤º |
 
-ƒTƒCƒhƒpƒlƒ‹ƒ‚[ƒh (`side_panel`) ‚Ì“®ì:
-- ƒAƒvƒŠ‚ÆƒTƒCƒhƒpƒlƒ‹‚ğuƒZƒbƒgv‚Æ‚µ‚Ä‰æ–Ê’†‰›‚É”z’u
-- EdgeƒEƒBƒ“ƒhƒE‚ğYakuLingoƒAƒvƒŠ‚Ì‰E‘¤‚É”z’u
-- ƒAƒvƒŠ‚Æ‚‚³‚ğ‘µ‚¦‚Ä•\¦iÅ¬‚‚³500pxj
-- ƒ}ƒ‹ƒ`ƒ‚ƒjƒ^[‘Î‰iƒAƒvƒŠ‚Æ“¯‚¶ƒ‚ƒjƒ^[‚É•\¦j
-- ƒuƒ‰ƒEƒUƒXƒƒbƒgƒŠƒ“ƒO–â‘è‚ğ‰ñ”ğ‰Â”\
-- ƒƒOƒCƒ“‚Ì‘O–Ê•\¦ˆ—‚ªƒXƒLƒbƒv‚³‚ê‚éiŠù‚ÉŒ©‚¦‚Ä‚¢‚é‚½‚ßj
-- **ƒAƒvƒŠ‚ÆEdge‚ğÅ‰‚©‚ç³‚µ‚¢ˆÊ’u‚É”z’u**i‚¿‚ç‚Â‚«‚È‚µj
-- **Ctrl+Alt+JƒzƒbƒgƒL[‚àƒAƒvƒŠ‚ÆEdge‚ğƒZƒbƒg‚Å‘O–Ê‚É”z’u**
-- **PDF–|–óÄÚ‘±‚àEdge‚ğƒTƒCƒhƒpƒlƒ‹ˆÊ’u‚ÉˆÛ**iÅ¬‰»‚µ‚È‚¢j
+ã‚µã‚¤ãƒ‰ãƒ‘ãƒãƒ«ãƒ¢ãƒ¼ãƒ‰ (`side_panel`) ã®å‹•ä½œ:
+- ã‚¢ãƒ—ãƒªã¨ã‚µã‚¤ãƒ‰ãƒ‘ãƒãƒ«ã‚’ã€Œã‚»ãƒƒãƒˆã€ã¨ã—ã¦ç”»é¢ä¸­å¤®ã«é…ç½®
+- Edgeã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã‚’YakuLingoã‚¢ãƒ—ãƒªã®å³å´ã«é…ç½®
+- ã‚¢ãƒ—ãƒªã¨é«˜ã•ã‚’æƒãˆã¦è¡¨ç¤ºï¼ˆæœ€å°é«˜ã•500pxï¼‰
+- ãƒãƒ«ãƒãƒ¢ãƒ‹ã‚¿ãƒ¼å¯¾å¿œï¼ˆã‚¢ãƒ—ãƒªã¨åŒã˜ãƒ¢ãƒ‹ã‚¿ãƒ¼ã«è¡¨ç¤ºï¼‰
+- ãƒ–ãƒ©ã‚¦ã‚¶ã‚¹ãƒ­ãƒƒãƒˆãƒªãƒ³ã‚°å•é¡Œã‚’å›é¿å¯èƒ½
+- ãƒ­ã‚°ã‚¤ãƒ³æ™‚ã®å‰é¢è¡¨ç¤ºå‡¦ç†ãŒã‚¹ã‚­ãƒƒãƒ—ã•ã‚Œã‚‹ï¼ˆæ—¢ã«è¦‹ãˆã¦ã„ã‚‹ãŸã‚ï¼‰
+- **ã‚¢ãƒ—ãƒªã¨Edgeã‚’æœ€åˆã‹ã‚‰æ­£ã—ã„ä½ç½®ã«é…ç½®**ï¼ˆã¡ã‚‰ã¤ããªã—ï¼‰
+- **Ctrl+Alt+Jãƒ›ãƒƒãƒˆã‚­ãƒ¼æ™‚ã‚‚ã‚¢ãƒ—ãƒªã¨Edgeã‚’ã‚»ãƒƒãƒˆã§å‰é¢ã«é…ç½®**
+- **PDFç¿»è¨³å†æ¥ç¶šæ™‚ã‚‚Edgeã‚’ã‚µã‚¤ãƒ‰ãƒ‘ãƒãƒ«ä½ç½®ã«ç¶­æŒ**ï¼ˆæœ€å°åŒ–ã—ãªã„ï¼‰
 
-**ƒTƒCƒhƒpƒlƒ‹‚ÌƒŒƒCƒAƒEƒg:**
+**ã‚µã‚¤ãƒ‰ãƒ‘ãƒãƒ«ã®ãƒ¬ã‚¤ã‚¢ã‚¦ãƒˆ:**
 ```
-|---—]”’---|---ƒAƒvƒŠ---|---Œ„ŠÔ---|---ƒTƒCƒhƒpƒlƒ‹---|---—]”’---|
+|---ä½™ç™½---|---ã‚¢ãƒ—ãƒª---|---éš™é–“---|---ã‚µã‚¤ãƒ‰ãƒ‘ãƒãƒ«---|---ä½™ç™½---|
 ```
-- ƒAƒvƒŠ‚ÆƒTƒCƒhƒpƒlƒ‹‚Ì‘S‘Ì•i`app_width + gap + side_panel_width`j‚ğ‰æ–Ê’†‰›‚É”z’u
-- `_position_window_early_sync()` ‚Å5msƒ|[ƒŠƒ“ƒO‚É‚æ‚èƒEƒBƒ“ƒhƒEì¬’¼Œã‚É³‚µ‚¢ˆÊ’u‚ÖˆÚ“®
-- `--window-position` ‚ÅEdge‹N“®‚ÉˆÊ’u‚ğw’è
+- ã‚¢ãƒ—ãƒªã¨ã‚µã‚¤ãƒ‰ãƒ‘ãƒãƒ«ã®å…¨ä½“å¹…ï¼ˆ`app_width + gap + side_panel_width`ï¼‰ã‚’ç”»é¢ä¸­å¤®ã«é…ç½®
+- `_position_window_early_sync()` ã§5msãƒãƒ¼ãƒªãƒ³ã‚°ã«ã‚ˆã‚Šã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ä½œæˆç›´å¾Œã«æ­£ã—ã„ä½ç½®ã¸ç§»å‹•
+- `--window-position` ã§Edgeèµ·å‹•æ™‚ã«ä½ç½®ã‚’æŒ‡å®š
 
-**ƒTƒCƒhƒpƒlƒ‹‚ÌƒTƒCƒYŒvZi1:1”ä—¦j:**
+**ã‚µã‚¤ãƒ‰ãƒ‘ãƒãƒ«ã®ã‚µã‚¤ã‚ºè¨ˆç®—ï¼ˆ1:1æ¯”ç‡ï¼‰:**
 
-ƒAƒvƒŠ‚Æƒuƒ‰ƒEƒU‚Í1:1‚Ì”ä—¦‚Å‰æ–Ê‚ğ•ªŠ„‚µ‚Ü‚·iGPTƒ‚[ƒhUI‚ÌƒXƒy[ƒXŠm•Û‚Ì‚½‚ßjB
+ã‚¢ãƒ—ãƒªã¨ãƒ–ãƒ©ã‚¦ã‚¶ã¯1:1ã®æ¯”ç‡ã§ç”»é¢ã‚’åˆ†å‰²ã—ã¾ã™ï¼ˆGPTãƒ¢ãƒ¼ãƒ‰UIã®ã‚¹ãƒšãƒ¼ã‚¹ç¢ºä¿ã®ãŸã‚ï¼‰ã€‚
 
-| ‰æ–Ê• | ƒAƒvƒŠ• | ƒTƒCƒhƒpƒlƒ‹• | ƒMƒƒƒbƒv | ‡Œv |
+| ç”»é¢å¹… | ã‚¢ãƒ—ãƒªå¹… | ã‚µã‚¤ãƒ‰ãƒ‘ãƒãƒ«å¹… | ã‚®ãƒ£ãƒƒãƒ— | åˆè¨ˆ |
 |--------|---------|---------------|---------|------|
 | 1920px | 955px | 955px | 10px | 1920px |
 | 1600px | 795px | 795px | 10px | 1600px |
 | 1366px | 678px | 678px | 10px | 1366px |
 
-- ŒvZ®: `available_width = screen_width - SIDE_PANEL_GAP (10px)` ¨ 2•ªŠ„
-- ’è”: `APP_WIDTH_RATIO=0.5`, `SIDE_PANEL_GAP=10`, `SIDE_PANEL_MIN_HEIGHT=500`
+- è¨ˆç®—å¼: `available_width = screen_width - SIDE_PANEL_GAP (10px)` â†’ 2åˆ†å‰²
+- å®šæ•°: `APP_WIDTH_RATIO=0.5`, `SIDE_PANEL_GAP=10`, `SIDE_PANEL_MIN_HEIGHT=500`
 
-**—pŒêW‚Ìˆ—ƒ‚[ƒh**:
-- `use_bundled_glossary`: “¯«‚Ì glossary.csv ‚ğg—p‚·‚é‚©iƒfƒtƒHƒ‹ƒg: truej
-- `embed_glossary_in_prompt`: —pŒêW‚ğƒvƒƒ“ƒvƒg‚É–„‚ß‚Ş‚©iƒfƒtƒHƒ‹ƒg: falsej
-  - `false`: —pŒêW‚ğƒtƒ@ƒCƒ‹‚Æ‚µ‚Ä“Y•tiƒfƒtƒHƒ‹ƒgA—pŒêW‚ª‘‚¦‚Ä‚à‘Î‰‰Â”\j
-  - `true`: —pŒêW‚ğƒvƒƒ“ƒvƒg‚É’¼Ú–„‚ß‚İi‚‘¬‚¾‚ªA—pŒêWƒTƒCƒY‚É§ŒÀ‚ ‚èj
-  - **“K—p”ÍˆÍ**: ‘S–|–óƒpƒXiƒeƒLƒXƒg–|–óAƒtƒ@ƒCƒ‹–|–óA–ß‚µ–óAƒtƒHƒ[ƒAƒbƒv–|–ój
+**ç”¨èªé›†ã®å‡¦ç†ãƒ¢ãƒ¼ãƒ‰**:
+- `use_bundled_glossary`: åŒæ¢±ã® glossary.csv ã‚’ä½¿ç”¨ã™ã‚‹ã‹ï¼ˆãƒ‡ãƒ•ã‚©ãƒ«ãƒˆ: trueï¼‰
+  - `false`: åŒæ¢±ç”¨èªé›†ã¯æ·»ä»˜ã—ãªã„
+  - `true`: åŒæ¢±ç”¨èªé›†ã‚’ãƒ•ã‚¡ã‚¤ãƒ«ã¨ã—ã¦æ·»ä»˜ï¼ˆãƒ‡ãƒ•ã‚©ãƒ«ãƒˆã€ç”¨èªé›†ãŒå¢—ãˆã¦ã‚‚å¯¾å¿œå¯èƒ½ï¼‰
+  - **é©ç”¨ç¯„å›²**: å…¨ç¿»è¨³ãƒ‘ã‚¹ï¼ˆãƒ†ã‚­ã‚¹ãƒˆç¿»è¨³ã€ãƒ•ã‚¡ã‚¤ãƒ«ç¿»è¨³ã€æˆ»ã—è¨³ã€ãƒ•ã‚©ãƒ­ãƒ¼ã‚¢ãƒƒãƒ—ç¿»è¨³ï¼‰
 
-**ƒvƒƒ“ƒvƒg•¶š”ŒvZiCopilot–³—¿”Å8,000•¶š§ŒÀj**:
+**ãƒ—ãƒ­ãƒ³ãƒ—ãƒˆæ–‡å­—æ•°è¨ˆç®—ï¼ˆCopilotç„¡æ–™ç‰ˆ8,000æ–‡å­—åˆ¶é™ï¼‰**:
 
-| €–Ú | •¶š” | à–¾ |
+| é …ç›® | æ–‡å­—æ•° | èª¬æ˜ |
 |------|--------|------|
-| ƒvƒƒ“ƒvƒgƒeƒ“ƒvƒŒ[ƒg | ~553 | file_translate_to_en_concise.txt |
-| —pŒêW–„‚ß‚İw¦•¶ | ~52 | GLOSSARY_EMBEDDED_INSTRUCTION |
-| —pŒêWiglossary.csvj | ~1,160 | 126sAUTF-8i2,015ƒoƒCƒgj |
-| ƒoƒbƒ`–|–óƒeƒLƒXƒg | Å‘å4,000 | max_chars_per_batchİ’è |
-| **‡Œv** | **~5,765** | 8,000•¶š§ŒÀ‚É‘Î‚µ–ñ2,235•¶š‚Ì—]—T |
+| ãƒ—ãƒ­ãƒ³ãƒ—ãƒˆãƒ†ãƒ³ãƒ—ãƒ¬ãƒ¼ãƒˆ | ~553 | file_translate_to_en_concise.txt |
+| ç”¨èªé›†ï¼ˆglossary.csvï¼‰ | ~1,160 | 126è¡Œã€UTF-8ï¼ˆ2,015ãƒã‚¤ãƒˆï¼‰ |
+| ãƒãƒƒãƒç¿»è¨³ãƒ†ã‚­ã‚¹ãƒˆ | æœ€å¤§4,000 | max_chars_per_batchè¨­å®š |
+| **åˆè¨ˆ** | **~5,765** | 8,000æ–‡å­—åˆ¶é™ã«å¯¾ã—ç´„2,235æ–‡å­—ã®ä½™è£• |
 
-- —pŒêW‚ª–ñ2”{‚É‘‚¦‚Ä‚à8,000•¶š§ŒÀ“à‚Éû‚Ü‚é
-- UTF-8‚Å‚Í“ú–{Œê1•¶š=3ƒoƒCƒgiƒoƒCƒg”€–ñ1.74=•¶š”‚Ì–ÚˆÀj
+- ç”¨èªé›†ãŒç´„2å€ã«å¢—ãˆã¦ã‚‚8,000æ–‡å­—åˆ¶é™å†…ã«åã¾ã‚‹
+- UTF-8ã§ã¯æ—¥æœ¬èª1æ–‡å­—=3ãƒã‚¤ãƒˆï¼ˆãƒã‚¤ãƒˆæ•°Ã·ç´„1.74=æ–‡å­—æ•°ã®ç›®å®‰ï¼‰
 
-**ƒtƒHƒ“ƒgİ’è**:
-- `font_jp_to_en`: ‰p–ó‚Ìo—ÍƒtƒHƒ“ƒgi‘Sƒtƒ@ƒCƒ‹Œ`®‹¤’Êj
-- `font_en_to_jp`: ˜a–ó‚Ìo—ÍƒtƒHƒ“ƒgi‘Sƒtƒ@ƒCƒ‹Œ`®‹¤’Êj
+**ãƒ•ã‚©ãƒ³ãƒˆè¨­å®š**:
+- `font_jp_to_en`: è‹±è¨³æ™‚ã®å‡ºåŠ›ãƒ•ã‚©ãƒ³ãƒˆï¼ˆå…¨ãƒ•ã‚¡ã‚¤ãƒ«å½¢å¼å…±é€šï¼‰
+- `font_en_to_jp`: å’Œè¨³æ™‚ã®å‡ºåŠ›ãƒ•ã‚©ãƒ³ãƒˆï¼ˆå…¨ãƒ•ã‚¡ã‚¤ãƒ«å½¢å¼å…±é€šï¼‰
 
 ### Reference Files
 Reference files provide context for consistent translations:
@@ -758,25 +755,25 @@ Application logs are stored in:
 ~/.yakulingo/logs/startup.log
 ```
 
-**ƒƒOƒtƒ@ƒCƒ‹İ’è:**
-| €–Ú | ’l |
+**ãƒ­ã‚°ãƒ•ã‚¡ã‚¤ãƒ«è¨­å®š:**
+| é …ç›® | å€¤ |
 |------|------|
-| êŠ | `~/.yakulingo/logs/startup.log` |
-| Å‘åƒTƒCƒY | 1MB |
-| ƒoƒbƒNƒAƒbƒv” | 3 (`startup.log.1`, `.2`, `.3`) |
-| ƒGƒ“ƒR[ƒfƒBƒ“ƒO | UTF-8 |
-| ƒRƒ“ƒ\[ƒ‹ƒŒƒxƒ‹ | INFO |
-| ƒtƒ@ƒCƒ‹ƒŒƒxƒ‹ | DEBUG |
+| å ´æ‰€ | `~/.yakulingo/logs/startup.log` |
+| æœ€å¤§ã‚µã‚¤ã‚º | 1MB |
+| ãƒãƒƒã‚¯ã‚¢ãƒƒãƒ—æ•° | 3 (`startup.log.1`, `.2`, `.3`) |
+| ã‚¨ãƒ³ã‚³ãƒ¼ãƒ‡ã‚£ãƒ³ã‚° | UTF-8 |
+| ã‚³ãƒ³ã‚½ãƒ¼ãƒ«ãƒ¬ãƒ™ãƒ« | INFO |
+| ãƒ•ã‚¡ã‚¤ãƒ«ãƒ¬ãƒ™ãƒ« | DEBUG |
 
-**‚»‚Ì‘¼‚ÌƒƒOƒtƒ@ƒCƒ‹:**
-| ƒtƒ@ƒCƒ‹ | êŠ | —p“r |
+**ãã®ä»–ã®ãƒ­ã‚°ãƒ•ã‚¡ã‚¤ãƒ«:**
+| ãƒ•ã‚¡ã‚¤ãƒ« | å ´æ‰€ | ç”¨é€” |
 |----------|------|------|
-| ƒAƒbƒvƒf[ƒgƒƒO | `%TEMP%\YakuLingo_update_debug.log` | ƒAƒbƒvƒf[ƒg‚ÌƒfƒoƒbƒOî•ñ |
+| ã‚¢ãƒƒãƒ—ãƒ‡ãƒ¼ãƒˆãƒ­ã‚° | `%TEMP%\YakuLingo_update_debug.log` | ã‚¢ãƒƒãƒ—ãƒ‡ãƒ¼ãƒˆæ™‚ã®ãƒ‡ãƒãƒƒã‚°æƒ…å ± |
 
-**ƒƒOƒtƒ@ƒCƒ‹‚ª¶¬‚³‚ê‚È‚¢ê‡‚ÌŠm”F:**
-1. `~/.yakulingo/logs/` ƒfƒBƒŒƒNƒgƒŠ‚Ìì¬Œ ŒÀ
-2. ƒƒOƒtƒ@ƒCƒ‹‚ª•ÊƒvƒƒZƒX‚ÅƒƒbƒN‚³‚ê‚Ä‚¢‚È‚¢‚©
-3. ƒRƒ“ƒ\[ƒ‹o—Í‚É `[WARNING] Failed to create log directory/file` ‚ªo‚Ä‚¢‚È‚¢‚©
+**ãƒ­ã‚°ãƒ•ã‚¡ã‚¤ãƒ«ãŒç”Ÿæˆã•ã‚Œãªã„å ´åˆã®ç¢ºèª:**
+1. `~/.yakulingo/logs/` ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªã®ä½œæˆæ¨©é™
+2. ãƒ­ã‚°ãƒ•ã‚¡ã‚¤ãƒ«ãŒåˆ¥ãƒ—ãƒ­ã‚»ã‚¹ã§ãƒ­ãƒƒã‚¯ã•ã‚Œã¦ã„ãªã„ã‹
+3. ã‚³ãƒ³ã‚½ãƒ¼ãƒ«å‡ºåŠ›ã« `[WARNING] Failed to create log directory/file` ãŒå‡ºã¦ã„ãªã„ã‹
 
 ## M365 Copilot Integration
 
@@ -820,9 +817,9 @@ def disconnect(self) -> None:
 This is critical when called from `asyncio.to_thread()` in NiceGUI async handlers,
 as the worker thread differs from the Playwright initialization thread.
 
-### Pre-initialized Playwright Singleton (‘Šú‹N“®Å“K‰»)
+### Pre-initialized Playwright Singleton (æ—©æœŸèµ·å‹•æœ€é©åŒ–)
 
-ƒAƒvƒŠ‹N“®‚ÌPlaywright‰Šú‰»‚ğ‚‘¬‰»‚·‚é‚½‚ßAƒOƒ[ƒoƒ‹ƒVƒ“ƒOƒ‹ƒgƒ“‚ğg—pF
+ã‚¢ãƒ—ãƒªèµ·å‹•æ™‚ã®PlaywrightåˆæœŸåŒ–ã‚’é«˜é€ŸåŒ–ã™ã‚‹ãŸã‚ã€ã‚°ãƒ­ãƒ¼ãƒãƒ«ã‚·ãƒ³ã‚°ãƒ«ãƒˆãƒ³ã‚’ä½¿ç”¨ï¼š
 
 ```python
 # yakulingo/services/copilot_handler.py
@@ -841,7 +838,7 @@ def clear_pre_initialized_playwright() -> None:
     """Clear the pre-initialized Playwright instance after it has been stopped."""
 ```
 
-**‹N“®ƒV[ƒPƒ“ƒXi‘ŠúEdge‹N“®j:**
+**èµ·å‹•ã‚·ãƒ¼ã‚±ãƒ³ã‚¹ï¼ˆæ—©æœŸEdgeèµ·å‹•ï¼‰:**
 ```python
 # app.py run_app()
 pre_initialize_playwright()           # start Playwright in background
@@ -859,35 +856,35 @@ _early_connect_thread.start()         # background Edge+Copilot connect
 import nicegui                        # Copilot page loads during import
 ```
 
-**I/O‹£‡‰ñ”ğ**: Windows‚Å‚ÍPlaywright‰Šú‰»‚ÆNiceGUIƒCƒ“ƒ|[ƒg‚ğ•À—ñÀs‚·‚é‚ÆA
-ƒAƒ“ƒ`ƒEƒCƒ‹ƒX‚ÌƒŠƒAƒ‹ƒ^ƒCƒ€ƒXƒLƒƒƒ“‚É‚æ‚èI/O‹£‡‚ª”­¶‚µ‹N“®‚ª’x‚­‚È‚éi16•b vs 11•bjB
-’¼—ñÀs‚É‚æ‚è‚±‚Ì–â‘è‚ğ‰ñ”ğB
+**I/Oç«¶åˆå›é¿**: Windowsã§ã¯PlaywrightåˆæœŸåŒ–ã¨NiceGUIã‚¤ãƒ³ãƒãƒ¼ãƒˆã‚’ä¸¦åˆ—å®Ÿè¡Œã™ã‚‹ã¨ã€
+ã‚¢ãƒ³ãƒã‚¦ã‚¤ãƒ«ã‚¹ã®ãƒªã‚¢ãƒ«ã‚¿ã‚¤ãƒ ã‚¹ã‚­ãƒ£ãƒ³ã«ã‚ˆã‚ŠI/Oç«¶åˆãŒç™ºç”Ÿã—èµ·å‹•ãŒé…ããªã‚‹ï¼ˆ16ç§’ vs 11ç§’ï¼‰ã€‚
+ç›´åˆ—å®Ÿè¡Œã«ã‚ˆã‚Šã“ã®å•é¡Œã‚’å›é¿ã€‚
 
-**‘ŠúEdge‹N“®‚ÌŒø‰Ê**:
-- NiceGUI import (~2.6•b) + display_settings (~1.2•b) ‚ÌŠÔ‚ÉCopilotƒy[ƒW‚ªƒ[ƒh
-- GPTƒ‚[ƒhØ‘Ö‚ÍUI•\¦Œã‚É”ñ“¯Šú‚ÅÀsiUI—Dæj
-- ƒEƒBƒ“ƒhƒEŒŸoƒ|[ƒŠƒ“ƒOŠÔŠu‚ğ0.1•b¨0.05•b‚É’Zk
-- `defer_window_positioning=True`‚ÅƒEƒBƒ“ƒhƒEˆÊ’uİ’è‚ğ‰„Šúi–ñ3.5•b’Zkj
+**æ—©æœŸEdgeèµ·å‹•ã®åŠ¹æœ**:
+- NiceGUI import (~2.6ç§’) + display_settings (~1.2ç§’) ã®é–“ã«Copilotãƒšãƒ¼ã‚¸ãŒãƒ­ãƒ¼ãƒ‰
+- GPTãƒ¢ãƒ¼ãƒ‰åˆ‡æ›¿ã¯UIè¡¨ç¤ºå¾Œã«éåŒæœŸã§å®Ÿè¡Œï¼ˆUIå„ªå…ˆï¼‰
+- ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦æ¤œå‡ºãƒãƒ¼ãƒªãƒ³ã‚°é–“éš”ã‚’0.1ç§’â†’0.05ç§’ã«çŸ­ç¸®
+- `defer_window_positioning=True`ã§ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ä½ç½®è¨­å®šã‚’å»¶æœŸï¼ˆç´„3.5ç§’çŸ­ç¸®ï¼‰
 
-**ƒEƒBƒ“ƒhƒEˆÊ’uİ’è‚Ì‰„Šú**:
-‘ŠúEdgeÚ‘±‚ÍYakuLingoƒEƒBƒ“ƒhƒE‚ª‚Ü‚¾‘¶İ‚µ‚È‚¢‚½‚ßA`defer_window_positioning=True`‚Å
-ƒEƒBƒ“ƒhƒEˆÊ’uİ’è‚ğƒXƒLƒbƒv‚µ‚Ü‚·BƒEƒBƒ“ƒhƒEì¬Œã‚É`position_as_side_panel()`‚ğŒÄ‚Ño‚µ‚Ä
-ˆÊ’uİ’è‚ğ“K—p‚µ‚Ü‚·B
+**ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ä½ç½®è¨­å®šã®å»¶æœŸ**:
+æ—©æœŸEdgeæ¥ç¶šæ™‚ã¯YakuLingoã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ãŒã¾ã å­˜åœ¨ã—ãªã„ãŸã‚ã€`defer_window_positioning=True`ã§
+ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ä½ç½®è¨­å®šã‚’ã‚¹ã‚­ãƒƒãƒ—ã—ã¾ã™ã€‚ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ä½œæˆå¾Œã«`position_as_side_panel()`ã‚’å‘¼ã³å‡ºã—ã¦
+ä½ç½®è¨­å®šã‚’é©ç”¨ã—ã¾ã™ã€‚
 
 ```python
-# ‘ŠúÚ‘±iƒEƒBƒ“ƒhƒEì¬‘Oj
+# æ—©æœŸæ¥ç¶šï¼ˆã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ä½œæˆå‰ï¼‰
 result = copilot.connect(
     bring_to_foreground_on_login=False,
-    defer_window_positioning=True  # ƒEƒBƒ“ƒhƒEˆÊ’uİ’è‚ğƒXƒLƒbƒv
+    defer_window_positioning=True  # ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ä½ç½®è¨­å®šã‚’ã‚¹ã‚­ãƒƒãƒ—
 )
 
-# ƒEƒBƒ“ƒhƒEì¬Œã‚ÉˆÊ’uİ’è‚ğ“K—p
+# ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ä½œæˆå¾Œã«ä½ç½®è¨­å®šã‚’é©ç”¨
 copilot.position_as_side_panel()
 ```
 
-**d—v**: `disconnect()`‚â`_cleanup_on_error()`‚Å`self._playwright.stop()`‚ğŒÄ‚Ño‚µ‚½Œã‚ÍA
-•K‚¸`clear_pre_initialized_playwright()`‚ğŒÄ‚Ño‚·‚±‚ÆB’â~Ï‚İ‚ÌPlaywrightƒCƒ“ƒXƒ^ƒ“ƒX‚ğ
-Ä—˜—p‚·‚é‚ÆÚ‘±ƒGƒ‰[‚ª”­¶‚·‚éB
+**é‡è¦**: `disconnect()`ã‚„`_cleanup_on_error()`ã§`self._playwright.stop()`ã‚’å‘¼ã³å‡ºã—ãŸå¾Œã¯ã€
+å¿…ãš`clear_pre_initialized_playwright()`ã‚’å‘¼ã³å‡ºã™ã“ã¨ã€‚åœæ­¢æ¸ˆã¿ã®Playwrightã‚¤ãƒ³ã‚¹ã‚¿ãƒ³ã‚¹ã‚’
+å†åˆ©ç”¨ã™ã‚‹ã¨æ¥ç¶šã‚¨ãƒ©ãƒ¼ãŒç™ºç”Ÿã™ã‚‹ã€‚
 
 ### Connection Flow
 The `connect()` method performs these steps:
@@ -904,13 +901,13 @@ Copilot page readiness is verified lazily at translation time via `_ensure_copil
 **Important**: Do NOT call `window.stop()` after connection. This interrupts M365's
 background authentication/session establishment, causing auth dialogs to appear.
 
-### GPT Mode Setting (GPTƒ‚[ƒhİ’è)
+### GPT Mode Setting (GPTãƒ¢ãƒ¼ãƒ‰è¨­å®š)
 
-Ú‘±Š®—¹Œã‚ÉuGPT-5.2 Think Deepervƒ‚[ƒh‚ğ©“®İ’è‚µ‚Ü‚·B
+æ¥ç¶šå®Œäº†å¾Œã«ã€ŒGPT-5.2 Think Deeperã€ãƒ¢ãƒ¼ãƒ‰ã‚’è‡ªå‹•è¨­å®šã—ã¾ã™ã€‚
 
-**UI—Dæ‚Ì”ñ“¯Šúİ’è**
-GPTƒ‚[ƒhØ‘Ö‚ÍUI•\¦Œã‚ÉƒoƒbƒNƒOƒ‰ƒEƒ“ƒh‚ÅÀs‚µA‹N“®‚ÌUIƒuƒƒbƒN‚ğ”ğ‚¯‚Ü‚·B
-‘ŠúÚ‘±ƒXƒŒƒbƒh‚ÍÚ‘±‚Ì‚İs‚¢AŠ®—¹‚ğEvent‚Å’Ê’m‚µ‚Ü‚·B
+**UIå„ªå…ˆã®éåŒæœŸè¨­å®š**
+GPTãƒ¢ãƒ¼ãƒ‰åˆ‡æ›¿ã¯UIè¡¨ç¤ºå¾Œã«ãƒãƒƒã‚¯ã‚°ãƒ©ã‚¦ãƒ³ãƒ‰ã§å®Ÿè¡Œã—ã€èµ·å‹•æ™‚ã®UIãƒ–ãƒ­ãƒƒã‚¯ã‚’é¿ã‘ã¾ã™ã€‚
+æ—©æœŸæ¥ç¶šã‚¹ãƒ¬ãƒƒãƒ‰ã¯æ¥ç¶šã®ã¿è¡Œã„ã€å®Œäº†ã‚’Eventã§é€šçŸ¥ã—ã¾ã™ã€‚
 
 ```python
 # _early_connect(): connect only, then signal
@@ -918,84 +915,84 @@ result = _early_copilot.connect(...)
 _early_connection_result_ref.value = result
 _early_connection_event.set()
 
-# UI•\¦Œã (_apply_early_connection_or_connect)
+# UIè¡¨ç¤ºå¾Œ (_apply_early_connection_or_connect)
 asyncio.create_task(asyncio.to_thread(self.copilot.ensure_gpt_mode))
 ```
 
-UIƒXƒŒƒbƒh‚©‚ç `ensure_gpt_mode()` ‚ğŒÄ‚Ño‚µ‚Ü‚·‚ªA`_gpt_mode_set` ƒtƒ‰ƒO‚Åd•¡Às‚ğ–h‚¬‚Ü‚·B
-**d•¡ŒÄ‚Ño‚µ–h~ƒtƒ‰ƒO:**
+UIã‚¹ãƒ¬ãƒƒãƒ‰ã‹ã‚‰ `ensure_gpt_mode()` ã‚’å‘¼ã³å‡ºã—ã¾ã™ãŒã€`_gpt_mode_set` ãƒ•ãƒ©ã‚°ã§é‡è¤‡å®Ÿè¡Œã‚’é˜²ãã¾ã™ã€‚
+**é‡è¤‡å‘¼ã³å‡ºã—é˜²æ­¢ãƒ•ãƒ©ã‚°:**
 
-`CopilotHandler._gpt_mode_set` ƒtƒ‰ƒO‚Åd•¡ŒÄ‚Ño‚µ‚ğ–h~B
-| ƒtƒ‰ƒO’l | ó‘Ô | ensure_gpt_mode()‚Ì“®ì |
+`CopilotHandler._gpt_mode_set` ãƒ•ãƒ©ã‚°ã§é‡è¤‡å‘¼ã³å‡ºã—ã‚’é˜²æ­¢ã€‚
+| ãƒ•ãƒ©ã‚°å€¤ | çŠ¶æ…‹ | ensure_gpt_mode()ã®å‹•ä½œ |
 |---------|------|------------------------|
-| `False` | –¢İ’è | Às‚·‚é |
-| `True` | İ’èÏ‚İ | ƒXƒLƒbƒv‚·‚é |
+| `False` | æœªè¨­å®š | å®Ÿè¡Œã™ã‚‹ |
+| `True` | è¨­å®šæ¸ˆã¿ | ã‚¹ã‚­ãƒƒãƒ—ã™ã‚‹ |
 
-ƒtƒ‰ƒO‚ÍˆÈ‰º‚Ìƒ^ƒCƒ~ƒ“ƒO‚ÅƒŠƒZƒbƒg:
-- ÄƒƒOƒCƒ“Š®—¹ `_wait_for_login_completion()` : ƒZƒbƒVƒ‡ƒ“ƒŠƒZƒbƒg‚Åƒ‚[ƒhİ’è‚ªÁ‚¦‚é‚½‚ß
+ãƒ•ãƒ©ã‚°ã¯ä»¥ä¸‹ã®ã‚¿ã‚¤ãƒŸãƒ³ã‚°ã§ãƒªã‚»ãƒƒãƒˆ:
+- å†ãƒ­ã‚°ã‚¤ãƒ³å®Œäº†æ™‚ `_wait_for_login_completion()` : ã‚»ãƒƒã‚·ãƒ§ãƒ³ãƒªã‚»ãƒƒãƒˆã§ãƒ¢ãƒ¼ãƒ‰è¨­å®šãŒæ¶ˆãˆã‚‹ãŸã‚
 
-**İ’èƒ^ƒCƒ~ƒ“ƒO:**
+**è¨­å®šã‚¿ã‚¤ãƒŸãƒ³ã‚°:**
 
-| ƒVƒiƒŠƒI | ŒÄ‚Ño‚µŒ³ | GPTƒ‚[ƒhİ’è | ƒtƒ‰ƒO‘€ì |
+| ã‚·ãƒŠãƒªã‚ª | å‘¼ã³å‡ºã—å…ƒ | GPTãƒ¢ãƒ¼ãƒ‰è¨­å®š | ãƒ•ãƒ©ã‚°æ“ä½œ |
 |----------|-----------|--------------|-----------|
-| ‘ŠúÚ‘±¬Œ÷ | `_early_connect()` | No (connect only) | - |
-| UI•\¦Œã | `_apply_early_connection_or_connect()` | Yes (async) | İ’è |
-| ’ÊíÚ‘±¬Œ÷ | `start_edge_and_connect()` | Yes (async) | İ’è |
-| è“®ƒƒOƒCƒ“Š®—¹ | `_wait_for_login_completion()` | Yes (async) | ƒŠƒZƒbƒg¨İ’è |
-| ÄÚ‘±¬Œ÷ | `_reconnect()` | No (keep manual) | - |
-| ÄÚ‘±¨ÄƒƒOƒCƒ“ | `_wait_for_login_completion()` | Yes (async) | ƒŠƒZƒbƒg¨İ’è |
+| æ—©æœŸæ¥ç¶šæˆåŠŸ | `_early_connect()` | No (connect only) | - |
+| UIè¡¨ç¤ºå¾Œ | `_apply_early_connection_or_connect()` | Yes (async) | è¨­å®š |
+| é€šå¸¸æ¥ç¶šæˆåŠŸ | `start_edge_and_connect()` | Yes (async) | è¨­å®š |
+| æ‰‹å‹•ãƒ­ã‚°ã‚¤ãƒ³å®Œäº† | `_wait_for_login_completion()` | Yes (async) | ãƒªã‚»ãƒƒãƒˆâ†’è¨­å®š |
+| å†æ¥ç¶šæˆåŠŸ | `_reconnect()` | No (keep manual) | - |
+| å†æ¥ç¶šâ†’å†ãƒ­ã‚°ã‚¤ãƒ³ | `_wait_for_login_completion()` | Yes (async) | ãƒªã‚»ãƒƒãƒˆâ†’è¨­å®š |
 
-**İŒv•ûj**
-- UI•\¦‚ğÅ—DæBGPTƒ‚[ƒhØ‘Ö‚ÍUI•\¦Œã‚É”ñ“¯ŠúÀs
-- ‘ŠúÚ‘±ƒXƒŒƒbƒh‚ÍÚ‘±‚Ì‚İBŠ®—¹‚ÍEvent‚Å’Ê’m‚µAƒXƒŒƒbƒh¶‘¶’†‚ÍƒtƒH[ƒ‹ƒoƒbƒNÚ‘±‚ğŠJn‚µ‚È‚¢
-- GPTƒ‚[ƒhƒ{ƒ^ƒ“‘Ò‚¿: `GPT_MODE_BUTTON_WAIT_MS`i15000msj
-- `_gpt_mode_set` ƒtƒ‰ƒO‚Åd•¡–h~
-- ÄÚ‘±‚ÍŒÄ‚Ño‚³‚È‚¢iƒ†[ƒU[è“®•ÏX‚ğ‘¸dj
-- ÄƒƒOƒCƒ“‚Éƒtƒ‰ƒO‚ğƒŠƒZƒbƒg‚µ‚ÄÄÀs
+**è¨­è¨ˆæ–¹é‡**
+- UIè¡¨ç¤ºã‚’æœ€å„ªå…ˆã€‚GPTãƒ¢ãƒ¼ãƒ‰åˆ‡æ›¿ã¯UIè¡¨ç¤ºå¾Œã«éåŒæœŸå®Ÿè¡Œ
+- æ—©æœŸæ¥ç¶šã‚¹ãƒ¬ãƒƒãƒ‰ã¯æ¥ç¶šã®ã¿ã€‚å®Œäº†ã¯Eventã§é€šçŸ¥ã—ã€ã‚¹ãƒ¬ãƒƒãƒ‰ç”Ÿå­˜ä¸­ã¯ãƒ•ã‚©ãƒ¼ãƒ«ãƒãƒƒã‚¯æ¥ç¶šã‚’é–‹å§‹ã—ãªã„
+- GPTãƒ¢ãƒ¼ãƒ‰ãƒœã‚¿ãƒ³å¾…ã¡: `GPT_MODE_BUTTON_WAIT_MS`ï¼ˆ15000msï¼‰
+- `_gpt_mode_set` ãƒ•ãƒ©ã‚°ã§é‡è¤‡é˜²æ­¢
+- å†æ¥ç¶šæ™‚ã¯å‘¼ã³å‡ºã•ãªã„ï¼ˆãƒ¦ãƒ¼ã‚¶ãƒ¼æ‰‹å‹•å¤‰æ›´ã‚’å°Šé‡ï¼‰
+- å†ãƒ­ã‚°ã‚¤ãƒ³æ™‚ã«ãƒ•ãƒ©ã‚°ã‚’ãƒªã‚»ãƒƒãƒˆã—ã¦å†å®Ÿè¡Œ
 
-### Login Detection Process (ƒƒOƒCƒ“”»’èƒvƒƒZƒX)
+### Login Detection Process (ãƒ­ã‚°ã‚¤ãƒ³åˆ¤å®šãƒ—ãƒ­ã‚»ã‚¹)
 
-Edge‹N“®‚Éè“®ƒƒOƒCƒ“‚ª•K—v‚©‚Ç‚¤‚©‚ğ”»’è‚·‚éƒvƒƒZƒXF
+Edgeèµ·å‹•æ™‚ã«æ‰‹å‹•ãƒ­ã‚°ã‚¤ãƒ³ãŒå¿…è¦ã‹ã©ã†ã‹ã‚’åˆ¤å®šã™ã‚‹ãƒ—ãƒ­ã‚»ã‚¹ï¼š
 
 ```
 connect()
-  „ 
-  „¥„Ÿ Step 1: Copilotƒy[ƒW‚ğæ“¾/ì¬
-  „ 
-  „¥„Ÿ Step 2: _quick_login_check() (URLƒx[ƒX‚Ì‚‘¬ƒ`ƒFƒbƒN)
-  „      „¥„Ÿ ƒƒOƒCƒ“ƒy[ƒWURL‚©ƒ`ƒFƒbƒN (LOGIN_PAGE_PATTERNS)
-  „      „¥„Ÿ ”FØƒ_ƒCƒAƒƒO‚Ì—L–³‚ğƒ`ƒFƒbƒN
-  „      „¤„Ÿ CopilotƒhƒƒCƒ“‚É‚¢‚ê‚Î¬Œ÷
-  „          ¦ ƒ`ƒƒƒbƒg“ü—Í—“‚Ì‘Ò‹@‚Ís‚í‚È‚¢i‚‘¬‰»‚Ì‚½‚ßíœj
-  „ 
-  „¤„Ÿ Step 3: _wait_for_auto_login_impl(max_wait=60•b)
-        „   ¦ Windows“‡”FØ/SSO/MFA ‚ÌŠ®—¹‚ğ‘Ò‹@
-        „ 
-        „¥„Ÿ ƒ‹[ƒvi1•bŠÔŠu‚ÅÅ‘å60•bj
-        „      „¥„Ÿ CopilotƒhƒƒCƒ“‚Ö‚Ì“’BŠm”F
-        „      „      „¤„Ÿ “’B‚·‚ê‚Îu©“®ƒƒOƒCƒ“Š®—¹v
-        „      „ 
-        „      „¤„Ÿ URL•Ï‰»‚ÌŠÄ‹
-        „            „¥„Ÿ URL•Ï‰»’† ¨ ©“®ƒƒOƒCƒ“is’†iŒp‘±j
-        „            „¤„Ÿ URLˆÀ’èi2‰ñ˜A‘±“¯‚¶j‚©‚ÂƒƒOƒCƒ“ƒy[ƒW
-        „                  ¨ uè“®ƒƒOƒCƒ“•K—vv‚Æ”»’è
-        „ 
-        „¤„Ÿ ÅI”»’è
-              „¥„Ÿ ©“®ƒƒOƒCƒ“¬Œ÷ ¨ ƒoƒbƒNƒOƒ‰ƒEƒ“ƒh‚ÅÚ‘±Š®—¹
-              „¤„Ÿ è“®ƒƒOƒCƒ“•K—v ¨ ƒuƒ‰ƒEƒU‚ğ‘O–Ê‚É•\¦
+  â”‚
+  â”œâ”€ Step 1: Copilotãƒšãƒ¼ã‚¸ã‚’å–å¾—/ä½œæˆ
+  â”‚
+  â”œâ”€ Step 2: _quick_login_check() (URLãƒ™ãƒ¼ã‚¹ã®é«˜é€Ÿãƒã‚§ãƒƒã‚¯)
+  â”‚     â”œâ”€ ãƒ­ã‚°ã‚¤ãƒ³ãƒšãƒ¼ã‚¸URLã‹ãƒã‚§ãƒƒã‚¯ (LOGIN_PAGE_PATTERNS)
+  â”‚     â”œâ”€ èªè¨¼ãƒ€ã‚¤ã‚¢ãƒ­ã‚°ã®æœ‰ç„¡ã‚’ãƒã‚§ãƒƒã‚¯
+  â”‚     â””â”€ Copilotãƒ‰ãƒ¡ã‚¤ãƒ³ã«ã„ã‚Œã°æˆåŠŸ
+  â”‚         â€» ãƒãƒ£ãƒƒãƒˆå…¥åŠ›æ¬„ã®å¾…æ©Ÿã¯è¡Œã‚ãªã„ï¼ˆé«˜é€ŸåŒ–ã®ãŸã‚å‰Šé™¤ï¼‰
+  â”‚
+  â””â”€ Step 3: _wait_for_auto_login_impl(max_wait=60ç§’)
+        â”‚  â€» Windowsçµ±åˆèªè¨¼/SSO/MFA ã®å®Œäº†ã‚’å¾…æ©Ÿ
+        â”‚
+        â”œâ”€ ãƒ«ãƒ¼ãƒ—ï¼ˆ1ç§’é–“éš”ã§æœ€å¤§60ç§’ï¼‰
+        â”‚     â”œâ”€ Copilotãƒ‰ãƒ¡ã‚¤ãƒ³ã¸ã®åˆ°é”ç¢ºèª
+        â”‚     â”‚     â””â”€ åˆ°é”ã™ã‚Œã°ã€Œè‡ªå‹•ãƒ­ã‚°ã‚¤ãƒ³å®Œäº†ã€
+        â”‚     â”‚
+        â”‚     â””â”€ URLå¤‰åŒ–ã®ç›£è¦–
+        â”‚           â”œâ”€ URLå¤‰åŒ–ä¸­ â†’ è‡ªå‹•ãƒ­ã‚°ã‚¤ãƒ³é€²è¡Œä¸­ï¼ˆç¶™ç¶šï¼‰
+        â”‚           â””â”€ URLå®‰å®šï¼ˆ2å›é€£ç¶šåŒã˜ï¼‰ã‹ã¤ãƒ­ã‚°ã‚¤ãƒ³ãƒšãƒ¼ã‚¸
+        â”‚                 â†’ ã€Œæ‰‹å‹•ãƒ­ã‚°ã‚¤ãƒ³å¿…è¦ã€ã¨åˆ¤å®š
+        â”‚
+        â””â”€ æœ€çµ‚åˆ¤å®š
+              â”œâ”€ è‡ªå‹•ãƒ­ã‚°ã‚¤ãƒ³æˆåŠŸ â†’ ãƒãƒƒã‚¯ã‚°ãƒ©ã‚¦ãƒ³ãƒ‰ã§æ¥ç¶šå®Œäº†
+              â””â”€ æ‰‹å‹•ãƒ­ã‚°ã‚¤ãƒ³å¿…è¦ â†’ ãƒ–ãƒ©ã‚¦ã‚¶ã‚’å‰é¢ã«è¡¨ç¤º
 ```
 
-**”»’è‚Ég—p‚·‚é2‚Â‚Ìw•WiURLƒx[ƒXj:**
+**åˆ¤å®šã«ä½¿ç”¨ã™ã‚‹2ã¤ã®æŒ‡æ¨™ï¼ˆURLãƒ™ãƒ¼ã‚¹ï¼‰:**
 
-| w•W | ”»’è•û–@ | à–¾ |
+| æŒ‡æ¨™ | åˆ¤å®šæ–¹æ³• | èª¬æ˜ |
 |------|----------|------|
-| ƒƒOƒCƒ“ƒy[ƒWURL | `_is_login_page(url)` | `login.microsoftonline.com` “™‚Ìƒpƒ^[ƒ“ƒ}ƒbƒ` |
-| ”FØƒ_ƒCƒAƒƒO | `_has_auth_dialog()` | u”FØvuƒƒOƒCƒ“vuƒTƒCƒ“ƒCƒ“v‚ğŠÜ‚Şƒ_ƒCƒAƒƒO |
+| ãƒ­ã‚°ã‚¤ãƒ³ãƒšãƒ¼ã‚¸URL | `_is_login_page(url)` | `login.microsoftonline.com` ç­‰ã®ãƒ‘ã‚¿ãƒ¼ãƒ³ãƒãƒƒãƒ |
+| èªè¨¼ãƒ€ã‚¤ã‚¢ãƒ­ã‚° | `_has_auth_dialog()` | ã€Œèªè¨¼ã€ã€Œãƒ­ã‚°ã‚¤ãƒ³ã€ã€Œã‚µã‚¤ãƒ³ã‚¤ãƒ³ã€ã‚’å«ã‚€ãƒ€ã‚¤ã‚¢ãƒ­ã‚° |
 
-**Note**: ƒ`ƒƒƒbƒg“ü—Í—“‚ÌƒZƒŒƒNƒ^ŒŸo‚Í•sˆÀ’è‚È‚½‚ßA‹N“®‚Ì”»’è‚©‚çíœ‚³‚ê‚Ü‚µ‚½B
-‘ã‚í‚è‚ÉURLƒx[ƒX‚Ì”»’è‚Ì‚İ‚ğg—p‚µA‹N“®ŠÔ‚ğ–ñ3-5•b’Zk‚µ‚Ä‚¢‚Ü‚·B
+**Note**: ãƒãƒ£ãƒƒãƒˆå…¥åŠ›æ¬„ã®ã‚»ãƒ¬ã‚¯ã‚¿æ¤œå‡ºã¯ä¸å®‰å®šãªãŸã‚ã€èµ·å‹•æ™‚ã®åˆ¤å®šã‹ã‚‰å‰Šé™¤ã•ã‚Œã¾ã—ãŸã€‚
+ä»£ã‚ã‚Šã«URLãƒ™ãƒ¼ã‚¹ã®åˆ¤å®šã®ã¿ã‚’ä½¿ç”¨ã—ã€èµ·å‹•æ™‚é–“ã‚’ç´„3-5ç§’çŸ­ç¸®ã—ã¦ã„ã¾ã™ã€‚
 
-**ƒƒOƒCƒ“ƒy[ƒWURLƒpƒ^[ƒ“ (`LOGIN_PAGE_PATTERNS`):**
+**ãƒ­ã‚°ã‚¤ãƒ³ãƒšãƒ¼ã‚¸URLãƒ‘ã‚¿ãƒ¼ãƒ³ (`LOGIN_PAGE_PATTERNS`):**
 ```python
 [
     "login.microsoftonline.com",
@@ -1008,60 +1005,60 @@ connect()
 ]
 ```
 
-**”»’èŒ‹‰Ê‚Æ“®ì:**
+**åˆ¤å®šçµæœã¨å‹•ä½œ:**
 
-| ó‘Ô | ”»’èğŒ | “®ì |
+| çŠ¶æ…‹ | åˆ¤å®šæ¡ä»¶ | å‹•ä½œ |
 |------|----------|------|
-| ƒƒOƒCƒ“Ï‚İ | CopilotƒhƒƒCƒ“‚ÌURL | ƒoƒbƒNƒOƒ‰ƒEƒ“ƒh‚ÅÚ‘±Š®—¹ |
-| ©“®ƒƒOƒCƒ“’† | URL‚ªƒŠƒ_ƒCƒŒƒNƒg’† | Å‘å60•b‘Ò‹@iMFA‘Î‰j |
-| è“®ƒƒOƒCƒ“•K—v | ƒƒOƒCƒ“ƒy[ƒWURL or ”FØƒ_ƒCƒAƒƒO | ƒuƒ‰ƒEƒU‚ğ‘O–Ê‚É•\¦ |
-| Ú‘±¸”s | ã‹LˆÈŠOiƒ^ƒCƒ€ƒAƒEƒg“™j | ƒGƒ‰[ó‘Ô |
+| ãƒ­ã‚°ã‚¤ãƒ³æ¸ˆã¿ | Copilotãƒ‰ãƒ¡ã‚¤ãƒ³ã®URL | ãƒãƒƒã‚¯ã‚°ãƒ©ã‚¦ãƒ³ãƒ‰ã§æ¥ç¶šå®Œäº† |
+| è‡ªå‹•ãƒ­ã‚°ã‚¤ãƒ³ä¸­ | URLãŒãƒªãƒ€ã‚¤ãƒ¬ã‚¯ãƒˆä¸­ | æœ€å¤§60ç§’å¾…æ©Ÿï¼ˆMFAå¯¾å¿œï¼‰ |
+| æ‰‹å‹•ãƒ­ã‚°ã‚¤ãƒ³å¿…è¦ | ãƒ­ã‚°ã‚¤ãƒ³ãƒšãƒ¼ã‚¸URL or èªè¨¼ãƒ€ã‚¤ã‚¢ãƒ­ã‚° | ãƒ–ãƒ©ã‚¦ã‚¶ã‚’å‰é¢ã«è¡¨ç¤º |
+| æ¥ç¶šå¤±æ•— | ä¸Šè¨˜ä»¥å¤–ï¼ˆã‚¿ã‚¤ãƒ ã‚¢ã‚¦ãƒˆç­‰ï¼‰ | ã‚¨ãƒ©ãƒ¼çŠ¶æ…‹ |
 
-### Login Completion Polling (ƒƒOƒCƒ“Š®—¹ƒ|[ƒŠƒ“ƒO)
+### Login Completion Polling (ãƒ­ã‚°ã‚¤ãƒ³å®Œäº†ãƒãƒ¼ãƒªãƒ³ã‚°)
 
-è“®ƒƒOƒCƒ“ŒãAUI‚ªƒoƒbƒNƒOƒ‰ƒEƒ“ƒh‚ÅƒƒOƒCƒ“Š®—¹‚ğŒŸ’m‚·‚éƒvƒƒZƒXF
+æ‰‹å‹•ãƒ­ã‚°ã‚¤ãƒ³å¾Œã€UIãŒãƒãƒƒã‚¯ã‚°ãƒ©ã‚¦ãƒ³ãƒ‰ã§ãƒ­ã‚°ã‚¤ãƒ³å®Œäº†ã‚’æ¤œçŸ¥ã™ã‚‹ãƒ—ãƒ­ã‚»ã‚¹ï¼š
 
 ```
-connect() ‚ª False ‚ğ•Ô‚µ‚½Œã
-  „ 
-  „¤„Ÿ _wait_for_login_completion() ‚Åƒ|[ƒŠƒ“ƒOŠJn
-        „   ¦ 2•bŠÔŠu‚ÅÅ‘å300•bi5•ªj
-        „ 
-        „¥„Ÿ check_copilot_state() ‚ğŒÄ‚Ño‚µ
-        „      „¥„Ÿ READY ¨ ƒƒOƒCƒ“Š®—¹AƒAƒvƒŠ‚ğ‘O–Ê‚É•\¦
-        „      „¥„Ÿ LOGIN_REQUIRED ¨ Œp‘±‘Ò‹@
-        „      „¤„Ÿ ERROR ¨ ˜A‘±3‰ñ‚Åƒ|[ƒŠƒ“ƒO’â~
-        „ 
-        „¤„Ÿ ó‘Ô‚É‰‚¶‚½ˆ—
-              „¥„Ÿ READY: _connected=True, EdgeÅ¬‰»
-              „¤„Ÿ ƒ^ƒCƒ€ƒAƒEƒg: –|–óƒ{ƒ^ƒ“‰Ÿ‰º‚ÉÄs
+connect() ãŒ False ã‚’è¿”ã—ãŸå¾Œ
+  â”‚
+  â””â”€ _wait_for_login_completion() ã§ãƒãƒ¼ãƒªãƒ³ã‚°é–‹å§‹
+        â”‚  â€» 2ç§’é–“éš”ã§æœ€å¤§300ç§’ï¼ˆ5åˆ†ï¼‰
+        â”‚
+        â”œâ”€ check_copilot_state() ã‚’å‘¼ã³å‡ºã—
+        â”‚     â”œâ”€ READY â†’ ãƒ­ã‚°ã‚¤ãƒ³å®Œäº†ã€ã‚¢ãƒ—ãƒªã‚’å‰é¢ã«è¡¨ç¤º
+        â”‚     â”œâ”€ LOGIN_REQUIRED â†’ ç¶™ç¶šå¾…æ©Ÿ
+        â”‚     â””â”€ ERROR â†’ é€£ç¶š3å›ã§ãƒãƒ¼ãƒªãƒ³ã‚°åœæ­¢
+        â”‚
+        â””â”€ çŠ¶æ…‹ã«å¿œã˜ãŸå‡¦ç†
+              â”œâ”€ READY: _connected=True, Edgeæœ€å°åŒ–
+              â””â”€ ã‚¿ã‚¤ãƒ ã‚¢ã‚¦ãƒˆ: ç¿»è¨³ãƒœã‚¿ãƒ³æŠ¼ä¸‹æ™‚ã«å†è©¦è¡Œ
 ```
 
-**`_check_copilot_state` ‚Ì”»’èƒƒWƒbƒNiURLƒx[ƒXj:**
+**`_check_copilot_state` ã®åˆ¤å®šãƒ­ã‚¸ãƒƒã‚¯ï¼ˆURLãƒ™ãƒ¼ã‚¹ï¼‰:**
 
-ƒ`ƒƒƒbƒg“ü—Í—“‚ÌƒZƒŒƒNƒ^ŒŸo‚Í•sˆÀ’è‚È‚½‚ßA**URLƒpƒX‚Ì‚İ‚Å”»’è**‚·‚éF
+ãƒãƒ£ãƒƒãƒˆå…¥åŠ›æ¬„ã®ã‚»ãƒ¬ã‚¯ã‚¿æ¤œå‡ºã¯ä¸å®‰å®šãªãŸã‚ã€**URLãƒ‘ã‚¹ã®ã¿ã§åˆ¤å®š**ã™ã‚‹ï¼š
 
-| ğŒ | Œ‹‰Ê |
+| æ¡ä»¶ | çµæœ |
 |------|------|
-| ƒƒOƒCƒ“ƒy[ƒWURL | `LOGIN_REQUIRED` |
-| CopilotƒhƒƒCƒ“ŠO | `LOGIN_REQUIRED` |
-| CopilotƒhƒƒCƒ“ + `/chat` ƒpƒX | `READY` |
-| CopilotƒhƒƒCƒ“ + `/chat` ˆÈŠO | `LOGIN_REQUIRED` |
-| PlaywrightError”­¶ | `ERROR`iƒy[ƒWÄæ“¾‚ğsj |
+| ãƒ­ã‚°ã‚¤ãƒ³ãƒšãƒ¼ã‚¸URL | `LOGIN_REQUIRED` |
+| Copilotãƒ‰ãƒ¡ã‚¤ãƒ³å¤– | `LOGIN_REQUIRED` |
+| Copilotãƒ‰ãƒ¡ã‚¤ãƒ³ + `/chat` ãƒ‘ã‚¹ | `READY` |
+| Copilotãƒ‰ãƒ¡ã‚¤ãƒ³ + `/chat` ä»¥å¤– | `LOGIN_REQUIRED` |
+| PlaywrightErrorç™ºç”Ÿ | `ERROR`ï¼ˆãƒšãƒ¼ã‚¸å†å–å¾—ã‚’è©¦è¡Œï¼‰ |
 
-**ƒy[ƒW‚Ì—LŒø«Šm”F‚ÆÄæ“¾:**
+**ãƒšãƒ¼ã‚¸ã®æœ‰åŠ¹æ€§ç¢ºèªã¨å†å–å¾—:**
 
-ƒƒOƒCƒ“Œã‚Éƒy[ƒW‚ªƒŠƒ[ƒh‚³‚ê‚½ê‡A`self._page` ‚ª–³Œø‚É‚È‚é‚±‚Æ‚ª‚ ‚éB
-`_check_copilot_state` ‚Å‚ÍˆÈ‰º‚Ì‘Îô‚ğÀ‘•F
+ãƒ­ã‚°ã‚¤ãƒ³å¾Œã«ãƒšãƒ¼ã‚¸ãŒãƒªãƒ­ãƒ¼ãƒ‰ã•ã‚ŒãŸå ´åˆã€`self._page` ãŒç„¡åŠ¹ã«ãªã‚‹ã“ã¨ãŒã‚ã‚‹ã€‚
+`_check_copilot_state` ã§ã¯ä»¥ä¸‹ã®å¯¾ç­–ã‚’å®Ÿè£…ï¼š
 
-1. `page.is_closed()` ‚Åƒy[ƒW‚Ì—LŒø«‚ğŠm”F
-2. –³Œø‚Èê‡‚Í `_get_active_copilot_page()` ‚ÅƒRƒ“ƒeƒLƒXƒg‚©‚çÄæ“¾
-3. PlaywrightError”­¶‚àÄæ“¾‚ğs
+1. `page.is_closed()` ã§ãƒšãƒ¼ã‚¸ã®æœ‰åŠ¹æ€§ã‚’ç¢ºèª
+2. ç„¡åŠ¹ãªå ´åˆã¯ `_get_active_copilot_page()` ã§ã‚³ãƒ³ãƒ†ã‚­ã‚¹ãƒˆã‹ã‚‰å†å–å¾—
+3. PlaywrightErrorç™ºç”Ÿæ™‚ã‚‚å†å–å¾—ã‚’è©¦è¡Œ
 
 ```python
-# _get_active_copilot_page() ‚Ì—Dæ‡ˆÊ
-1. CopilotƒhƒƒCƒ“‚Ü‚½‚ÍƒƒOƒCƒ“ƒy[ƒW‚ÌURL ¨ ‚»‚Ìƒy[ƒW‚ğ•Ô‚·
-2. ã‹L‚ªŒ©‚Â‚©‚ç‚È‚¢ê‡ ¨ Å‰‚Ì—LŒø‚Èƒy[ƒW‚ğ•Ô‚·
+# _get_active_copilot_page() ã®å„ªå…ˆé †ä½
+1. Copilotãƒ‰ãƒ¡ã‚¤ãƒ³ã¾ãŸã¯ãƒ­ã‚°ã‚¤ãƒ³ãƒšãƒ¼ã‚¸ã®URL â†’ ãã®ãƒšãƒ¼ã‚¸ã‚’è¿”ã™
+2. ä¸Šè¨˜ãŒè¦‹ã¤ã‹ã‚‰ãªã„å ´åˆ â†’ æœ€åˆã®æœ‰åŠ¹ãªãƒšãƒ¼ã‚¸ã‚’è¿”ã™
 ```
 
 ### Copilot Character Limits
@@ -1077,126 +1074,126 @@ The application handles long text via file translation:
 
 ### Browser Automation Reliability
 The handler uses explicit waits instead of fixed delays:
-- **Send readiness**: `wait_for_function`‚Å‘—Mƒ{ƒ^ƒ“—LŒø + “ü—Í—“•ÒW‰Â‚ğŠm”F‚µA“Y•t‚Í‘—M‰Â”\ó‘Ô‚ÌˆÀ’è‰»‚ğ‘Ò‹@
+- **Send readiness**: `wait_for_function`ã§é€ä¿¡ãƒœã‚¿ãƒ³æœ‰åŠ¹ + å…¥åŠ›æ¬„ç·¨é›†å¯ã‚’ç¢ºèªã—ã€æ·»ä»˜æ™‚ã¯é€ä¿¡å¯èƒ½çŠ¶æ…‹ã®å®‰å®šåŒ–ã‚’å¾…æ©Ÿ
 - **Menu display**: `wait_for_selector` for menu elements after clicking plus button
 - **File attachment**: Polls for attachment indicators (file chips, previews)
 - **New chat ready**: Waits for input field to become visible
 - **GPT-5 toggle**: Checked and enabled before each message send (handles delayed rendering)
 
-### User's Edge Browser Isolation (d—v)
+### User's Edge Browser Isolation (é‡è¦)
 
-**İŒvŒ´‘¥: ƒ†[ƒU[‚ª’Êíg—p‚·‚éEdgeƒuƒ‰ƒEƒU‚É‚ÍˆêØŠ±Â‚µ‚È‚¢**
+**è¨­è¨ˆåŸå‰‡: ãƒ¦ãƒ¼ã‚¶ãƒ¼ãŒé€šå¸¸ä½¿ç”¨ã™ã‚‹Edgeãƒ–ãƒ©ã‚¦ã‚¶ã«ã¯ä¸€åˆ‡å¹²æ¸‰ã—ãªã„**
 
-ƒAƒvƒŠ‚ª‘€ì‚·‚éEdgeƒEƒBƒ“ƒhƒE‚Ì“Á’è•û–@F
+ã‚¢ãƒ—ãƒªãŒæ“ä½œã™ã‚‹Edgeã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã®ç‰¹å®šæ–¹æ³•ï¼š
 
-| •û–@ | à–¾ | ˆÀ‘S« |
+| æ–¹æ³• | èª¬æ˜ | å®‰å…¨æ€§ |
 |------|------|--------|
-| ƒy[ƒWƒ^ƒCƒgƒ‹Š®‘Sˆê’v | Playwright‚©‚çæ“¾‚µ‚½ƒ^ƒCƒgƒ‹‚ÅŒŸõ | ? ˆÀ‘S |
-| ƒvƒƒZƒXID | `self.edge_process.pid` ‚Å‹N“®‚µ‚½Edge‚Ì‚İ‘ÎÛ | ? ˆÀ‘S |
+| ãƒšãƒ¼ã‚¸ã‚¿ã‚¤ãƒˆãƒ«å®Œå…¨ä¸€è‡´ | Playwrightã‹ã‚‰å–å¾—ã—ãŸã‚¿ã‚¤ãƒˆãƒ«ã§æ¤œç´¢ | ? å®‰å…¨ |
+| ãƒ—ãƒ­ã‚»ã‚¹ID | `self.edge_process.pid` ã§èµ·å‹•ã—ãŸEdgeã®ã¿å¯¾è±¡ | ? å®‰å…¨ |
 
-**‹Ö~–€iâ‘Î‚ÉÀ‘•‚µ‚È‚¢‚±‚Æj:**
-- ? ƒ^ƒCƒgƒ‹ƒpƒ^[ƒ“ƒ}ƒbƒ`‚É‚æ‚éƒEƒBƒ“ƒhƒEŒŸõi—á: "microsoft 365", "copilot", "sign in", "ƒƒOƒCƒ“" “™‚ğŠÜ‚Şƒ^ƒCƒgƒ‹j
-- ? ƒNƒ‰ƒX–¼‚Ì‚İ‚É‚æ‚éEdgeƒEƒBƒ“ƒhƒEŒŸõi"Chrome_WidgetWin_1"j
-- ? ƒvƒƒZƒXID‚È‚µ‚Å‚ÌƒEƒBƒ“ƒhƒE‘€ì
+**ç¦æ­¢äº‹é …ï¼ˆçµ¶å¯¾ã«å®Ÿè£…ã—ãªã„ã“ã¨ï¼‰:**
+- ? ã‚¿ã‚¤ãƒˆãƒ«ãƒ‘ã‚¿ãƒ¼ãƒ³ãƒãƒƒãƒã«ã‚ˆã‚‹ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦æ¤œç´¢ï¼ˆä¾‹: "microsoft 365", "copilot", "sign in", "ãƒ­ã‚°ã‚¤ãƒ³" ç­‰ã‚’å«ã‚€ã‚¿ã‚¤ãƒˆãƒ«ï¼‰
+- ? ã‚¯ãƒ©ã‚¹åã®ã¿ã«ã‚ˆã‚‹Edgeã‚¦ã‚£ãƒ³ãƒ‰ã‚¦æ¤œç´¢ï¼ˆ"Chrome_WidgetWin_1"ï¼‰
+- ? ãƒ—ãƒ­ã‚»ã‚¹IDãªã—ã§ã®ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦æ“ä½œ
 
-**——R:**
-ƒ†[ƒU[‚ª’Êí‚ÌEdge‚ÅMicrosoft 365iOutlook, Teams, OneDrive“™j‚âƒƒOƒCƒ“ƒy[ƒW‚ğŠJ‚¢‚Ä‚¢‚éê‡A
-ƒ^ƒCƒgƒ‹ƒpƒ^[ƒ“ƒ}ƒbƒ`‚ğg‚¤‚Æ‚»‚ê‚ç‚ÌƒEƒBƒ“ƒhƒE‚ªŒë‚Á‚ÄÅ¬‰»E‘O–Ê‰»‚³‚ê‚é‰Â”\«‚ª‚ ‚éB
+**ç†ç”±:**
+ãƒ¦ãƒ¼ã‚¶ãƒ¼ãŒé€šå¸¸ã®Edgeã§Microsoft 365ï¼ˆOutlook, Teams, OneDriveç­‰ï¼‰ã‚„ãƒ­ã‚°ã‚¤ãƒ³ãƒšãƒ¼ã‚¸ã‚’é–‹ã„ã¦ã„ã‚‹å ´åˆã€
+ã‚¿ã‚¤ãƒˆãƒ«ãƒ‘ã‚¿ãƒ¼ãƒ³ãƒãƒƒãƒã‚’ä½¿ã†ã¨ãã‚Œã‚‰ã®ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ãŒèª¤ã£ã¦æœ€å°åŒ–ãƒ»å‰é¢åŒ–ã•ã‚Œã‚‹å¯èƒ½æ€§ãŒã‚ã‚‹ã€‚
 
-**`_find_edge_window_handle` ‚ÌÀ‘•ƒ‹[ƒ‹:**
-1. `page_title` ‚É‚æ‚éŠ®‘Sˆê’v‚ğ—Dæ
-2. `self.edge_process.pid` ‚É‚æ‚éƒvƒƒZƒXIDƒ}ƒbƒ`‚Ì‚İ‚ğƒtƒH[ƒ‹ƒoƒbƒN‚Æ‚µ‚Äg—p
-3. ƒ^ƒCƒgƒ‹‚Ì•”•ªˆê’vŒŸõ‚Íg—p‹Ö~
+**`_find_edge_window_handle` ã®å®Ÿè£…ãƒ«ãƒ¼ãƒ«:**
+1. `page_title` ã«ã‚ˆã‚‹å®Œå…¨ä¸€è‡´ã‚’å„ªå…ˆ
+2. `self.edge_process.pid` ã«ã‚ˆã‚‹ãƒ—ãƒ­ã‚»ã‚¹IDãƒãƒƒãƒã®ã¿ã‚’ãƒ•ã‚©ãƒ¼ãƒ«ãƒãƒƒã‚¯ã¨ã—ã¦ä½¿ç”¨
+3. ã‚¿ã‚¤ãƒˆãƒ«ã®éƒ¨åˆ†ä¸€è‡´æ¤œç´¢ã¯ä½¿ç”¨ç¦æ­¢
 
 ```python
-# ? ³‚µ‚¢À‘•
+# ? æ­£ã—ã„å®Ÿè£…
 if target_pid:
     window_pid = wintypes.DWORD()
     user32.GetWindowThreadProcessId(hwnd, ctypes.byref(window_pid))
     if window_pid.value == target_pid:
-        return hwnd  # ƒAƒvƒŠ‚ª‹N“®‚µ‚½Edge‚Ì‚İ
+        return hwnd  # ã‚¢ãƒ—ãƒªãŒèµ·å‹•ã—ãŸEdgeã®ã¿
 
-# ? ‹Ö~: ƒ^ƒCƒgƒ‹ƒpƒ^[ƒ“ƒ}ƒbƒ`
-if "microsoft 365" in window_title.lower():  # â‘Î‚Ég‚í‚È‚¢
+# ? ç¦æ­¢: ã‚¿ã‚¤ãƒˆãƒ«ãƒ‘ã‚¿ãƒ¼ãƒ³ãƒãƒƒãƒ
+if "microsoft 365" in window_title.lower():  # çµ¶å¯¾ã«ä½¿ã‚ãªã„
     return hwnd
 ```
 
 ### Retry Logic with Exponential Backoff
 
-CopilotƒGƒ‰[‚ÌƒŠƒgƒ‰ƒC‚ÍƒGƒNƒXƒ|ƒlƒ“ƒVƒƒƒ‹ƒoƒbƒNƒIƒt‚ğg—pF
+Copilotã‚¨ãƒ©ãƒ¼æ™‚ã®ãƒªãƒˆãƒ©ã‚¤ã¯ã‚¨ã‚¯ã‚¹ãƒãƒãƒ³ã‚·ãƒ£ãƒ«ãƒãƒƒã‚¯ã‚ªãƒ•ã‚’ä½¿ç”¨ï¼š
 
 ```python
-# ƒŠƒgƒ‰ƒCİ’è’è”
-RETRY_BACKOFF_BASE = 2.0   # ƒoƒbƒNƒIƒt‚Ì’êi2^attempt•bj
-RETRY_BACKOFF_MAX = 16.0   # Å‘åƒoƒbƒNƒIƒtŠÔi•bj
-RETRY_JITTER_MAX = 1.0     # ƒWƒbƒ^[Å‘å’liThundering herd‰ñ”ğj
+# ãƒªãƒˆãƒ©ã‚¤è¨­å®šå®šæ•°
+RETRY_BACKOFF_BASE = 2.0   # ãƒãƒƒã‚¯ã‚ªãƒ•ã®åº•ï¼ˆ2^attemptç§’ï¼‰
+RETRY_BACKOFF_MAX = 16.0   # æœ€å¤§ãƒãƒƒã‚¯ã‚ªãƒ•æ™‚é–“ï¼ˆç§’ï¼‰
+RETRY_JITTER_MAX = 1.0     # ã‚¸ãƒƒã‚¿ãƒ¼æœ€å¤§å€¤ï¼ˆThundering herdå›é¿ï¼‰
 
-# ƒoƒbƒNƒIƒtŒvZ
+# ãƒãƒƒã‚¯ã‚ªãƒ•è¨ˆç®—
 backoff_time = min(RETRY_BACKOFF_BASE ** attempt, RETRY_BACKOFF_MAX)
 jitter = random.uniform(0, RETRY_JITTER_MAX)
 wait_time = backoff_time + jitter
 ```
 
-**ƒŠƒgƒ‰ƒCƒtƒ[:**
-1. CopilotƒGƒ‰[ŒŸo (`_is_copilot_error_response`)
-2. ƒy[ƒW—LŒø«ƒ`ƒFƒbƒN (`_is_page_valid`)
-3. ƒƒOƒCƒ“‚ª•K—v‚Èê‡‚Íƒuƒ‰ƒEƒU‚ğ‘O–Ê‚É•\¦
-4. ƒoƒbƒNƒIƒtŠÔ‘Ò‹@ (`_apply_retry_backoff`)
-5. V‚µ‚¢ƒ`ƒƒƒbƒg‚ğŠJn‚µ‚ÄƒŠƒgƒ‰ƒC
+**ãƒªãƒˆãƒ©ã‚¤ãƒ•ãƒ­ãƒ¼:**
+1. Copilotã‚¨ãƒ©ãƒ¼æ¤œå‡º (`_is_copilot_error_response`)
+2. ãƒšãƒ¼ã‚¸æœ‰åŠ¹æ€§ãƒã‚§ãƒƒã‚¯ (`_is_page_valid`)
+3. ãƒ­ã‚°ã‚¤ãƒ³ãŒå¿…è¦ãªå ´åˆã¯ãƒ–ãƒ©ã‚¦ã‚¶ã‚’å‰é¢ã«è¡¨ç¤º
+4. ãƒãƒƒã‚¯ã‚ªãƒ•æ™‚é–“å¾…æ©Ÿ (`_apply_retry_backoff`)
+5. æ–°ã—ã„ãƒãƒ£ãƒƒãƒˆã‚’é–‹å§‹ã—ã¦ãƒªãƒˆãƒ©ã‚¤
 
 ### Centralized Timeout Constants
 
-ƒ^ƒCƒ€ƒAƒEƒg’l‚ÍƒNƒ‰ƒX’è”‚Æ‚µ‚ÄW’†ŠÇ—F
+ã‚¿ã‚¤ãƒ ã‚¢ã‚¦ãƒˆå€¤ã¯ã‚¯ãƒ©ã‚¹å®šæ•°ã¨ã—ã¦é›†ä¸­ç®¡ç†ï¼š
 
-| ƒJƒeƒSƒŠ | ’è”–¼ | ’l | à–¾ |
+| ã‚«ãƒ†ã‚´ãƒª | å®šæ•°å | å€¤ | èª¬æ˜ |
 |----------|--------|------|------|
-| ƒy[ƒW“Ç‚İ‚İ | `PAGE_GOTO_TIMEOUT_MS` | 30000ms | page.goto()‚Ìƒ^ƒCƒ€ƒAƒEƒg |
-| ƒlƒbƒgƒ[ƒN | `PAGE_NETWORK_IDLE_TIMEOUT_MS` | 5000ms | ƒlƒbƒgƒ[ƒNƒAƒCƒhƒ‹‘Ò‹@ |
-| ƒZƒŒƒNƒ^ | `SELECTOR_RESPONSE_TIMEOUT_MS` | 10000ms | ƒŒƒXƒ|ƒ“ƒX—v‘f‚Ì•\¦‘Ò‹@ |
-| ƒZƒŒƒNƒ^ | `SELECTOR_NEW_CHAT_READY_TIMEOUT_MS` | 5000ms | V‹Kƒ`ƒƒƒbƒg€”õŠ®—¹‘Ò‹@ |
-| ƒZƒŒƒNƒ^ | `SELECTOR_LOGIN_CHECK_TIMEOUT_MS` | 2000ms | ƒƒOƒCƒ“ó‘Ôƒ`ƒFƒbƒN |
-| GPTƒ‚[ƒh | `GPT_MODE_BUTTON_WAIT_MS` | 15000ms | GPTƒ‚[ƒhƒ{ƒ^ƒ“‚Ì•\¦‘Ò‹@iwait_for_selectorj |
-| GPTƒ‚[ƒh | `GPT_MODE_MENU_WAIT` | 0.05s | ƒƒjƒ…[ŠJ•Â‚Ì‘Ò‹@ŠÔiƒtƒH[ƒ‹ƒoƒbƒN—pj |
-| ƒƒOƒCƒ“ | `LOGIN_WAIT_TIMEOUT_SECONDS` | 300s | ƒ†[ƒU[ƒƒOƒCƒ“‘Ò‹@ |
-| ƒGƒOƒ[ƒLƒ…[ƒ^ | `EXECUTOR_TIMEOUT_BUFFER_SECONDS` | 60s | ƒŒƒXƒ|ƒ“ƒXƒ^ƒCƒ€ƒAƒEƒg‚Ìƒ}[ƒWƒ“ |
+| ãƒšãƒ¼ã‚¸èª­ã¿è¾¼ã¿ | `PAGE_GOTO_TIMEOUT_MS` | 30000ms | page.goto()ã®ã‚¿ã‚¤ãƒ ã‚¢ã‚¦ãƒˆ |
+| ãƒãƒƒãƒˆãƒ¯ãƒ¼ã‚¯ | `PAGE_NETWORK_IDLE_TIMEOUT_MS` | 5000ms | ãƒãƒƒãƒˆãƒ¯ãƒ¼ã‚¯ã‚¢ã‚¤ãƒ‰ãƒ«å¾…æ©Ÿ |
+| ã‚»ãƒ¬ã‚¯ã‚¿ | `SELECTOR_RESPONSE_TIMEOUT_MS` | 10000ms | ãƒ¬ã‚¹ãƒãƒ³ã‚¹è¦ç´ ã®è¡¨ç¤ºå¾…æ©Ÿ |
+| ã‚»ãƒ¬ã‚¯ã‚¿ | `SELECTOR_NEW_CHAT_READY_TIMEOUT_MS` | 5000ms | æ–°è¦ãƒãƒ£ãƒƒãƒˆæº–å‚™å®Œäº†å¾…æ©Ÿ |
+| ã‚»ãƒ¬ã‚¯ã‚¿ | `SELECTOR_LOGIN_CHECK_TIMEOUT_MS` | 2000ms | ãƒ­ã‚°ã‚¤ãƒ³çŠ¶æ…‹ãƒã‚§ãƒƒã‚¯ |
+| GPTãƒ¢ãƒ¼ãƒ‰ | `GPT_MODE_BUTTON_WAIT_MS` | 15000ms | GPTãƒ¢ãƒ¼ãƒ‰ãƒœã‚¿ãƒ³ã®è¡¨ç¤ºå¾…æ©Ÿï¼ˆwait_for_selectorï¼‰ |
+| GPTãƒ¢ãƒ¼ãƒ‰ | `GPT_MODE_MENU_WAIT` | 0.05s | ãƒ¡ãƒ‹ãƒ¥ãƒ¼é–‹é–‰ã®å¾…æ©Ÿæ™‚é–“ï¼ˆãƒ•ã‚©ãƒ¼ãƒ«ãƒãƒƒã‚¯ç”¨ï¼‰ |
+| ãƒ­ã‚°ã‚¤ãƒ³ | `LOGIN_WAIT_TIMEOUT_SECONDS` | 300s | ãƒ¦ãƒ¼ã‚¶ãƒ¼ãƒ­ã‚°ã‚¤ãƒ³å¾…æ©Ÿ |
+| ã‚¨ã‚°ã‚¼ã‚­ãƒ¥ãƒ¼ã‚¿ | `EXECUTOR_TIMEOUT_BUFFER_SECONDS` | 60s | ãƒ¬ã‚¹ãƒãƒ³ã‚¹ã‚¿ã‚¤ãƒ ã‚¢ã‚¦ãƒˆã®ãƒãƒ¼ã‚¸ãƒ³ |
 
 ### Response Detection Settings
 
-ƒŒƒXƒ|ƒ“ƒXŠ®—¹”»’è‚Ìİ’èF
+ãƒ¬ã‚¹ãƒãƒ³ã‚¹å®Œäº†åˆ¤å®šã®è¨­å®šï¼š
 
-| ’è”–¼ | ’l | à–¾ |
+| å®šæ•°å | å€¤ | èª¬æ˜ |
 |--------|------|------|
-| `RESPONSE_STABLE_COUNT` | 2 | ˜A‘±‚Å“¯‚¶ƒeƒLƒXƒg‚ğŒŸo‚µ‚½‰ñ”‚ÅŠ®—¹”»’è |
-| `RESPONSE_POLL_INITIAL` | 0.15s | ƒŒƒXƒ|ƒ“ƒXŠJn‘Ò‹@‚Ìƒ|[ƒŠƒ“ƒOŠÔŠu |
-| `RESPONSE_POLL_ACTIVE` | 0.15s | ƒeƒLƒXƒgŒŸoŒã‚Ìƒ|[ƒŠƒ“ƒOŠÔŠu |
-| `RESPONSE_POLL_STABLE` | 0.05s | ˆÀ’è«ƒ`ƒFƒbƒN’†‚Ìƒ|[ƒŠƒ“ƒOŠÔŠu |
+| `RESPONSE_STABLE_COUNT` | 2 | é€£ç¶šã§åŒã˜ãƒ†ã‚­ã‚¹ãƒˆã‚’æ¤œå‡ºã—ãŸå›æ•°ã§å®Œäº†åˆ¤å®š |
+| `RESPONSE_POLL_INITIAL` | 0.15s | ãƒ¬ã‚¹ãƒãƒ³ã‚¹é–‹å§‹å¾…æ©Ÿæ™‚ã®ãƒãƒ¼ãƒªãƒ³ã‚°é–“éš” |
+| `RESPONSE_POLL_ACTIVE` | 0.15s | ãƒ†ã‚­ã‚¹ãƒˆæ¤œå‡ºå¾Œã®ãƒãƒ¼ãƒªãƒ³ã‚°é–“éš” |
+| `RESPONSE_POLL_STABLE` | 0.05s | å®‰å®šæ€§ãƒã‚§ãƒƒã‚¯ä¸­ã®ãƒãƒ¼ãƒªãƒ³ã‚°é–“éš” |
 
 ### Send Message Timing
 
-ƒvƒƒ“ƒvƒg‘—M‚Ìƒ^ƒCƒ~ƒ“ƒOİ’èBReact UI‚Ì€”õó‘Ô‚ÉˆË‘¶‚·‚é‚½‚ßA‰ß“x‚ÈÅ“K‰»‚Í‹Ö•¨B
+ãƒ—ãƒ­ãƒ³ãƒ—ãƒˆé€ä¿¡æ™‚ã®ã‚¿ã‚¤ãƒŸãƒ³ã‚°è¨­å®šã€‚React UIã®æº–å‚™çŠ¶æ…‹ã«ä¾å­˜ã™ã‚‹ãŸã‚ã€éåº¦ãªæœ€é©åŒ–ã¯ç¦ç‰©ã€‚
 
-| ƒ^ƒCƒ~ƒ“ƒO | ’l | –Ú“I | ”õl |
+| ã‚¿ã‚¤ãƒŸãƒ³ã‚° | å€¤ | ç›®çš„ | å‚™è€ƒ |
 |-----------|-----|------|------|
-| Button scrollŒã | **0.20s** | React UI‚Ì€”õ‘Ò‚¿ | ?? •K{Bƒtƒ@ƒCƒ‹“Y•tŒã‚ÍReact UI‚Ì€”õ‚ÉŠÔ‚ª‚©‚©‚é |
-| JS key eventsŒã | 0.02s | ó‘Ôƒ|[ƒŠƒ“ƒO | ƒ|[ƒŠƒ“ƒO—p‚È‚Ì‚Å’Z‚­‚ÄOK |
-| Playwright EnterŒã | 0.02s | ó‘Ôƒ|[ƒŠƒ“ƒO | “¯ã |
-| SEND_WARMUPŒã | 0.02s | ‰ŠúƒXƒNƒ[ƒ‹Œã | ‘—M’¼‘O‚Å‚Í‚È‚¢‚Ì‚Å’Z‚­‚ÄOK |
+| Button scrollå¾Œ | **0.20s** | React UIã®æº–å‚™å¾…ã¡ | ?? å¿…é ˆã€‚ãƒ•ã‚¡ã‚¤ãƒ«æ·»ä»˜å¾Œã¯React UIã®æº–å‚™ã«æ™‚é–“ãŒã‹ã‹ã‚‹ |
+| JS key eventså¾Œ | 0.02s | çŠ¶æ…‹ãƒãƒ¼ãƒªãƒ³ã‚° | ãƒãƒ¼ãƒªãƒ³ã‚°ç”¨ãªã®ã§çŸ­ãã¦OK |
+| Playwright Enterå¾Œ | 0.02s | çŠ¶æ…‹ãƒãƒ¼ãƒªãƒ³ã‚° | åŒä¸Š |
+| SEND_WARMUPå¾Œ | 0.02s | åˆæœŸã‚¹ã‚¯ãƒ­ãƒ¼ãƒ«å¾Œ | é€ä¿¡ç›´å‰ã§ã¯ãªã„ã®ã§çŸ­ãã¦OK |
 
-**d—v**: Button scrollŒã‚Ì0.20•b‘Ò‹@‚ÍAEnterƒL[‘—M‚ª‹@”\‚·‚é‚½‚ß‚É•K{‚Å‚·B
-scrollIntoViewŒã‚ÉReact UI‚ª€”õŠ®—¹‚·‚é‚Ü‚Å‚ÌŠÔ‚ª•K—v‚Å‚ ‚èA
-“Á‚Éƒtƒ@ƒCƒ‹“Y•tŒã‚ÍUI‚Ìó‘ÔXV‚ÉŠÔ‚ª‚©‚©‚é‚½‚ßA‚±‚Ì‘Ò‹@‚ğíŒ¸‚·‚é‚Æ
-EnterƒL[‚ª–³‹‚³‚êAí‚ÉJSƒNƒŠƒbƒNiAttempt 2j‚ÖƒtƒH[ƒ‹ƒoƒbƒN‚µ‚Ü‚·B
+**é‡è¦**: Button scrollå¾Œã®0.20ç§’å¾…æ©Ÿã¯ã€Enterã‚­ãƒ¼é€ä¿¡ãŒæ©Ÿèƒ½ã™ã‚‹ãŸã‚ã«å¿…é ˆã§ã™ã€‚
+scrollIntoViewå¾Œã«React UIãŒæº–å‚™å®Œäº†ã™ã‚‹ã¾ã§ã®æ™‚é–“ãŒå¿…è¦ã§ã‚ã‚Šã€
+ç‰¹ã«ãƒ•ã‚¡ã‚¤ãƒ«æ·»ä»˜å¾Œã¯UIã®çŠ¶æ…‹æ›´æ–°ã«æ™‚é–“ãŒã‹ã‹ã‚‹ãŸã‚ã€ã“ã®å¾…æ©Ÿã‚’å‰Šæ¸›ã™ã‚‹ã¨
+Enterã‚­ãƒ¼ãŒç„¡è¦–ã•ã‚Œã€å¸¸ã«JSã‚¯ãƒªãƒƒã‚¯ï¼ˆAttempt 2ï¼‰ã¸ãƒ•ã‚©ãƒ¼ãƒ«ãƒãƒƒã‚¯ã—ã¾ã™ã€‚
 
-“Y•tƒtƒ@ƒCƒ‹‚ª‚ ‚éê‡‚Í `_wait_for_attachment_ready()` ‚Å‘—M‰Â”\ó‘Ôi‘—Mƒ{ƒ^ƒ“—LŒø + “ü—Í—“•ÒW‰Â + “Y•t‚Ìbusy‰ğÁj‚ª˜A‘±400msˆÈã‘±‚¢‚½‚±‚Æ‚ğŠm”F‚µ‚Ä‚©‚ç‘—M‚·‚éB
+æ·»ä»˜ãƒ•ã‚¡ã‚¤ãƒ«ãŒã‚ã‚‹å ´åˆã¯ `_wait_for_attachment_ready()` ã§é€ä¿¡å¯èƒ½çŠ¶æ…‹ï¼ˆé€ä¿¡ãƒœã‚¿ãƒ³æœ‰åŠ¹ + å…¥åŠ›æ¬„ç·¨é›†å¯ + æ·»ä»˜ã®busyè§£æ¶ˆï¼‰ãŒé€£ç¶š400msä»¥ä¸Šç¶šã„ãŸã“ã¨ã‚’ç¢ºèªã—ã¦ã‹ã‚‰é€ä¿¡ã™ã‚‹ã€‚
 
 ### Auth Dialog Detection
 
-”FØƒ_ƒCƒAƒƒO‚ÌŒŸoƒL[ƒ[ƒhi`AUTH_DIALOG_KEYWORDS`jF
+èªè¨¼ãƒ€ã‚¤ã‚¢ãƒ­ã‚°ã®æ¤œå‡ºã‚­ãƒ¼ãƒ¯ãƒ¼ãƒ‰ï¼ˆ`AUTH_DIALOG_KEYWORDS`ï¼‰ï¼š
 
-| Œ¾Œê | ƒL[ƒ[ƒh |
+| è¨€èª | ã‚­ãƒ¼ãƒ¯ãƒ¼ãƒ‰ |
 |------|-----------|
-| “ú–{Œê | ”FØ, ƒƒOƒCƒ“, ƒTƒCƒ“ƒCƒ“, ƒpƒXƒ[ƒh |
-| ‰pŒê | authentication, login, sign in, sign-in, password, verify, credential |
+| æ—¥æœ¬èª | èªè¨¼, ãƒ­ã‚°ã‚¤ãƒ³, ã‚µã‚¤ãƒ³ã‚¤ãƒ³, ãƒ‘ã‚¹ãƒ¯ãƒ¼ãƒ‰ |
+| è‹±èª | authentication, login, sign in, sign-in, password, verify, credential |
 
 ## Auto-Update System
 
@@ -1208,48 +1205,47 @@ The `AutoUpdater` class provides GitHub Releases-based updates:
 
 ### User Data Protection During Updates
 
-ƒAƒbƒvƒf[ƒg‚¨‚æ‚ÑÄƒCƒ“ƒXƒg[ƒ‹Aƒ†[ƒU[ƒf[ƒ^‚ÍˆÈ‰º‚Ìƒ‹[ƒ‹‚Å•ÛŒì‚³‚ê‚Ü‚·F
+ã‚¢ãƒƒãƒ—ãƒ‡ãƒ¼ãƒˆãŠã‚ˆã³å†ã‚¤ãƒ³ã‚¹ãƒˆãƒ¼ãƒ«æ™‚ã€ãƒ¦ãƒ¼ã‚¶ãƒ¼ãƒ‡ãƒ¼ã‚¿ã¯ä»¥ä¸‹ã®ãƒ«ãƒ¼ãƒ«ã§ä¿è­·ã•ã‚Œã¾ã™ï¼š
 
-**—pŒêW (glossary.csv):**
-- ƒoƒbƒNƒAƒbƒv•ã‘‚«•û®‚Åˆ—
-- ƒ†[ƒU[‚Ì—pŒêW‚ªˆÈ‰º‚Ì‚¢‚¸‚ê‚©‚Æˆê’v‚·‚éê‡‚ÍƒoƒbƒNƒAƒbƒv‚ğƒXƒLƒbƒvF
-  - ÅV‚Ì`glossary.csv`‚Æˆê’vi•ÏX‚È‚µj
-  - `glossary_old.csv`‚Æˆê’vi‘Oƒo[ƒWƒ‡ƒ“‚Ì‚Ü‚ÜƒJƒXƒ^ƒ}ƒCƒY‚È‚µj
-- ƒJƒXƒ^ƒ}ƒCƒY‚³‚ê‚Ä‚¢‚éê‡‚Ì‚İƒfƒXƒNƒgƒbƒv‚É`glossary_backup_YYYYMMDD.csv`‚Æ‚µ‚ÄƒoƒbƒNƒAƒbƒv
-- `backup_and_update_glossary()` ŠÖ”‚ÅÀ‘•i`merge_glossary()`‚ÍŒã•ûŒİŠ·«‚Ì‚½‚ßˆÛj
+**ç”¨èªé›† (glossary.csv):**
+- ãƒãƒƒã‚¯ã‚¢ãƒƒãƒ—ï¼†ä¸Šæ›¸ãæ–¹å¼ã§å‡¦ç†
+- ãƒ¦ãƒ¼ã‚¶ãƒ¼ã®ç”¨èªé›†ãŒä»¥ä¸‹ã®ã„ãšã‚Œã‹ã¨ä¸€è‡´ã™ã‚‹å ´åˆã¯ãƒãƒƒã‚¯ã‚¢ãƒƒãƒ—ã‚’ã‚¹ã‚­ãƒƒãƒ—ï¼š
+  - æœ€æ–°ã®`glossary.csv`ã¨ä¸€è‡´ï¼ˆå¤‰æ›´ãªã—ï¼‰
+  - `glossary_old.csv`ã¨ä¸€è‡´ï¼ˆå‰ãƒãƒ¼ã‚¸ãƒ§ãƒ³ã®ã¾ã¾ï¼ã‚«ã‚¹ã‚¿ãƒã‚¤ã‚ºãªã—ï¼‰
+- ã‚«ã‚¹ã‚¿ãƒã‚¤ã‚ºã•ã‚Œã¦ã„ã‚‹å ´åˆã®ã¿ãƒ‡ã‚¹ã‚¯ãƒˆãƒƒãƒ—ã«`glossary_backup_YYYYMMDD.csv`ã¨ã—ã¦ãƒãƒƒã‚¯ã‚¢ãƒƒãƒ—
+- `backup_and_update_glossary()` é–¢æ•°ã§å®Ÿè£…ï¼ˆ`merge_glossary()`ã¯å¾Œæ–¹äº’æ›æ€§ã®ãŸã‚ç¶­æŒï¼‰
 
-**İ’èƒtƒ@ƒCƒ‹i•ª—£•û®j:**
+**è¨­å®šãƒ•ã‚¡ã‚¤ãƒ«ï¼ˆåˆ†é›¢æ–¹å¼ï¼‰:**
 
-İ’è‚Í2‚Â‚Ìƒtƒ@ƒCƒ‹‚É•ª—£‚³‚ê‚Ü‚·F
-- `settings.template.json`: ƒfƒtƒHƒ‹ƒg’liŠJ”­Ò‚ªŠÇ—AƒAƒbƒvƒf[ƒg‚Åã‘‚«j
-- `user_settings.json`: ƒ†[ƒU[‚ª•ÏX‚µ‚½İ’è‚Ì‚İ•Û‘¶iƒAƒbƒvƒf[ƒg‚Å•Ûj
+è¨­å®šã¯2ã¤ã®ãƒ•ã‚¡ã‚¤ãƒ«ã«åˆ†é›¢ã•ã‚Œã¾ã™ï¼š
+- `settings.template.json`: ãƒ‡ãƒ•ã‚©ãƒ«ãƒˆå€¤ï¼ˆé–‹ç™ºè€…ãŒç®¡ç†ã€ã‚¢ãƒƒãƒ—ãƒ‡ãƒ¼ãƒˆã§ä¸Šæ›¸ãï¼‰
+- `user_settings.json`: ãƒ¦ãƒ¼ã‚¶ãƒ¼ãŒå¤‰æ›´ã—ãŸè¨­å®šã®ã¿ä¿å­˜ï¼ˆã‚¢ãƒƒãƒ—ãƒ‡ãƒ¼ãƒˆã§ä¿æŒï¼‰
 
-‹N“®‚Ì“®ìF
-1. `settings.template.json` ‚©‚çƒfƒtƒHƒ‹ƒg’l‚ğ“Ç‚İ‚İ
-2. `user_settings.json` ‚Åƒ†[ƒU[İ’è‚ğã‘‚«
-3. ‹Œ `settings.json` ‚ª‘¶İ‚·‚éê‡‚Í©“®‚Å `user_settings.json` ‚ÉˆÚs
+èµ·å‹•æ™‚ã®å‹•ä½œï¼š
+1. `settings.template.json` ã‹ã‚‰ãƒ‡ãƒ•ã‚©ãƒ«ãƒˆå€¤ã‚’èª­ã¿è¾¼ã¿
+2. `user_settings.json` ã§ãƒ¦ãƒ¼ã‚¶ãƒ¼è¨­å®šã‚’ä¸Šæ›¸ã
+3. æ—§ `settings.json` ãŒå­˜åœ¨ã™ã‚‹å ´åˆã¯è‡ªå‹•ã§ `user_settings.json` ã«ç§»è¡Œ
 
-**ƒ†[ƒU[İ’è‚Æ‚µ‚Ä•Û‘¶‚³‚ê‚éƒL[ (USER_SETTINGS_KEYS):**
+**ãƒ¦ãƒ¼ã‚¶ãƒ¼è¨­å®šã¨ã—ã¦ä¿å­˜ã•ã‚Œã‚‹ã‚­ãƒ¼ (USER_SETTINGS_KEYS):**
 
-| ƒJƒeƒSƒŠ | İ’è | •ÏX•û–@ |
+| ã‚«ãƒ†ã‚´ãƒª | è¨­å®š | å¤‰æ›´æ–¹æ³• |
 |---------|------|---------|
-| –|–óƒXƒ^ƒCƒ‹ | `translation_style` | ƒXƒ^ƒCƒ‹ƒgƒOƒ‹i“ü—Íƒpƒlƒ‹j/ ƒtƒ@ƒCƒ‹–|–óƒpƒlƒ‹ |
-| ƒtƒHƒ“ƒg | `font_jp_to_en`, `font_en_to_jp`, `font_size_adjustment_jp_to_en` | ƒtƒ@ƒCƒ‹–|–óƒpƒlƒ‹ |
-| o—ÍƒIƒvƒVƒ‡ƒ“ | `bilingual_output`, `export_glossary`, `use_bundled_glossary`, `embed_glossary_in_prompt` | ƒtƒ@ƒCƒ‹–|–óƒpƒlƒ‹ |
-| ƒuƒ‰ƒEƒU•\¦ | `browser_display_mode` | İ’èƒtƒ@ƒCƒ‹’¼Ú•ÒW |
-| UIó‘Ô | `last_tab` | ©“®•Û‘¶ |
+| ç¿»è¨³ã‚¹ã‚¿ã‚¤ãƒ« | `translation_style` | ã‚¹ã‚¿ã‚¤ãƒ«ãƒˆã‚°ãƒ«ï¼ˆå…¥åŠ›ãƒ‘ãƒãƒ«ï¼‰/ ãƒ•ã‚¡ã‚¤ãƒ«ç¿»è¨³ãƒ‘ãƒãƒ« |
+| ãƒ•ã‚©ãƒ³ãƒˆ | `font_jp_to_en`, `font_en_to_jp`, `font_size_adjustment_jp_to_en` | ãƒ•ã‚¡ã‚¤ãƒ«ç¿»è¨³ãƒ‘ãƒãƒ« |
+| ãƒ–ãƒ©ã‚¦ã‚¶è¡¨ç¤º | `browser_display_mode` | è¨­å®šãƒ•ã‚¡ã‚¤ãƒ«ç›´æ¥ç·¨é›† |
+| UIçŠ¶æ…‹ | `last_tab` | è‡ªå‹•ä¿å­˜ |
 
-‚»‚Ì‘¼‚Ìİ’èi`max_chars_per_batch`, `request_timeout`, `ocr_dpi`“™j‚Íƒeƒ“ƒvƒŒ[ƒg‚ÅŠÇ—‚³‚êA
-ƒAƒbƒvƒf[ƒg‚ÉŠJ”­Ò‚ª©—R‚É•ÏX‰Â”\
+ãã®ä»–ã®è¨­å®šï¼ˆ`max_chars_per_batch`, `request_timeout`, `ocr_dpi`ç­‰ï¼‰ã¯ãƒ†ãƒ³ãƒ—ãƒ¬ãƒ¼ãƒˆã§ç®¡ç†ã•ã‚Œã€
+ã‚¢ãƒƒãƒ—ãƒ‡ãƒ¼ãƒˆæ™‚ã«é–‹ç™ºè€…ãŒè‡ªç”±ã«å¤‰æ›´å¯èƒ½
 
-### ƒo[ƒWƒ‡ƒ“ŠÇ—
+### ãƒãƒ¼ã‚¸ãƒ§ãƒ³ç®¡ç†
 
-ƒo[ƒWƒ‡ƒ“‚Í`pyproject.toml`‚ÅˆêŒ³ŠÇ—‚³‚ê‚Ü‚·F
+ãƒãƒ¼ã‚¸ãƒ§ãƒ³ã¯`pyproject.toml`ã§ä¸€å…ƒç®¡ç†ã•ã‚Œã¾ã™ï¼š
 
 ```python
 # yakulingo/__init__.py
 def _get_version() -> str:
-    """pyproject.toml‚©‚çƒo[ƒWƒ‡ƒ“‚ğ“®“I‚Éæ“¾‚·‚éB"""
+    """pyproject.tomlã‹ã‚‰ãƒãƒ¼ã‚¸ãƒ§ãƒ³ã‚’å‹•çš„ã«å–å¾—ã™ã‚‹ã€‚"""
     try:
         import tomllib  # Python 3.11+ standard library
         pyproject_path = Path(__file__).parent.parent / "pyproject.toml"
@@ -1259,32 +1255,32 @@ def _get_version() -> str:
             return data.get("project", {}).get("version", "0.0.0")
     except Exception:
         pass
-    return "0.0.2"  # ƒtƒH[ƒ‹ƒoƒbƒN
+    return "0.0.2"  # ãƒ•ã‚©ãƒ¼ãƒ«ãƒãƒƒã‚¯
 
 __version__ = _get_version()
 ```
 
-**İŒv——R:**
-- `pyproject.toml`‚Í`SOURCE_FILES`‚ÉŠÜ‚Ü‚ê‚Ä‚¢‚é‚½‚ßAƒAƒbƒvƒf[ƒg‚ÉŠmÀ‚ÉƒRƒs[‚³‚ê‚é
-- `yakulingo/`ƒfƒBƒŒƒNƒgƒŠ‚Íƒtƒ@ƒCƒ‹ƒƒbƒN‚É‚æ‚èXV‚É¸”s‚·‚é‰Â”\«‚ª‚ ‚é
-- “®“I“Ç‚İæ‚è‚É‚æ‚èA`pyproject.toml`‚ªXV‚³‚ê‚ê‚Î³‚µ‚¢ƒo[ƒWƒ‡ƒ“‚ª•\¦‚³‚ê‚é
+**è¨­è¨ˆç†ç”±:**
+- `pyproject.toml`ã¯`SOURCE_FILES`ã«å«ã¾ã‚Œã¦ã„ã‚‹ãŸã‚ã€ã‚¢ãƒƒãƒ—ãƒ‡ãƒ¼ãƒˆæ™‚ã«ç¢ºå®Ÿã«ã‚³ãƒ”ãƒ¼ã•ã‚Œã‚‹
+- `yakulingo/`ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªã¯ãƒ•ã‚¡ã‚¤ãƒ«ãƒ­ãƒƒã‚¯ã«ã‚ˆã‚Šæ›´æ–°ã«å¤±æ•—ã™ã‚‹å¯èƒ½æ€§ãŒã‚ã‚‹
+- å‹•çš„èª­ã¿å–ã‚Šã«ã‚ˆã‚Šã€`pyproject.toml`ãŒæ›´æ–°ã•ã‚Œã‚Œã°æ­£ã—ã„ãƒãƒ¼ã‚¸ãƒ§ãƒ³ãŒè¡¨ç¤ºã•ã‚Œã‚‹
 
-### ƒAƒbƒvƒf[ƒgƒXƒNƒŠƒvƒg‚ÌM—Š«
+### ã‚¢ãƒƒãƒ—ãƒ‡ãƒ¼ãƒˆã‚¹ã‚¯ãƒªãƒ—ãƒˆã®ä¿¡é ¼æ€§
 
-ƒAƒbƒvƒf[ƒgƒXƒNƒŠƒvƒgiPowerShell/bashj‚Å‚ÍˆÈ‰º‚Ì‘Îô‚ğÀ‘•F
+ã‚¢ãƒƒãƒ—ãƒ‡ãƒ¼ãƒˆã‚¹ã‚¯ãƒªãƒ—ãƒˆï¼ˆPowerShell/bashï¼‰ã§ã¯ä»¥ä¸‹ã®å¯¾ç­–ã‚’å®Ÿè£…ï¼š
 
-| ‘Îô | à–¾ |
+| å¯¾ç­– | èª¬æ˜ |
 |------|------|
-| ƒvƒƒZƒXI—¹‘Ò‹@ | ƒAƒvƒŠI—¹ŒãAÅ‘å30•bŠÔPythonƒvƒƒZƒX‚ÌI—¹‚ğ‘Ò‹@ |
-| ƒGƒ‰[ƒnƒ“ƒhƒŠƒ“ƒO | `-ErrorAction Stop`‚ÅƒRƒs[¸”s‚ğŠmÀ‚ÉŒŸo |
-| ƒNƒŠƒeƒBƒJƒ‹ƒtƒ@ƒCƒ‹ŒŸo | `app.py`, `pyproject.toml`‚ÌƒRƒs[¸”s‚ğ“Á•Ê‚ÉƒŒƒ|[ƒg |
-| ƒtƒH[ƒ‹ƒoƒbƒN | ƒfƒBƒŒƒNƒgƒŠíœ¸”s‚Í`-Force`‚Åã‘‚«‚ğs |
-| “Áê•¶š‘Î‰ | ŠÂ‹«•Ï”Œo—R‚ÅƒpƒX‚ğ“n‚µAƒVƒ“ƒOƒ‹ƒNƒH[ƒg“™‚ğŠÜ‚ŞƒpƒX‚Å‚à³í“®ì |
+| ãƒ—ãƒ­ã‚»ã‚¹çµ‚äº†å¾…æ©Ÿ | ã‚¢ãƒ—ãƒªçµ‚äº†å¾Œã€æœ€å¤§30ç§’é–“Pythonãƒ—ãƒ­ã‚»ã‚¹ã®çµ‚äº†ã‚’å¾…æ©Ÿ |
+| ã‚¨ãƒ©ãƒ¼ãƒãƒ³ãƒ‰ãƒªãƒ³ã‚° | `-ErrorAction Stop`ã§ã‚³ãƒ”ãƒ¼å¤±æ•—ã‚’ç¢ºå®Ÿã«æ¤œå‡º |
+| ã‚¯ãƒªãƒ†ã‚£ã‚«ãƒ«ãƒ•ã‚¡ã‚¤ãƒ«æ¤œå‡º | `app.py`, `pyproject.toml`ã®ã‚³ãƒ”ãƒ¼å¤±æ•—ã‚’ç‰¹åˆ¥ã«ãƒ¬ãƒãƒ¼ãƒˆ |
+| ãƒ•ã‚©ãƒ¼ãƒ«ãƒãƒƒã‚¯ | ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªå‰Šé™¤å¤±æ•—æ™‚ã¯`-Force`ã§ä¸Šæ›¸ãã‚’è©¦è¡Œ |
+| ç‰¹æ®Šæ–‡å­—å¯¾å¿œ | ç’°å¢ƒå¤‰æ•°çµŒç”±ã§ãƒ‘ã‚¹ã‚’æ¸¡ã—ã€ã‚·ãƒ³ã‚°ãƒ«ã‚¯ã‚©ãƒ¼ãƒˆç­‰ã‚’å«ã‚€ãƒ‘ã‚¹ã§ã‚‚æ­£å¸¸å‹•ä½œ |
 
-**ŠÂ‹«•Ï”‚É‚æ‚éƒpƒXó‚¯“n‚µ:**
+**ç’°å¢ƒå¤‰æ•°ã«ã‚ˆã‚‹ãƒ‘ã‚¹å—ã‘æ¸¡ã—:**
 
-ƒAƒbƒvƒf[ƒgƒXƒNƒŠƒvƒg“à‚ÌPythonƒRƒ}ƒ“ƒh‚Å‚ÍAƒpƒX‚ğŠÂ‹«•Ï”Œo—R‚Å“n‚µ‚Ü‚·B
-‚±‚ê‚É‚æ‚èAƒpƒX‚ÉƒVƒ“ƒOƒ‹ƒNƒH[ƒg‚â‚»‚Ì‘¼‚Ì“Áê•¶š‚ªŠÜ‚Ü‚ê‚Ä‚¢‚Ä‚à³í‚É“®ì‚µ‚Ü‚·B
+ã‚¢ãƒƒãƒ—ãƒ‡ãƒ¼ãƒˆã‚¹ã‚¯ãƒªãƒ—ãƒˆå†…ã®Pythonã‚³ãƒãƒ³ãƒ‰ã§ã¯ã€ãƒ‘ã‚¹ã‚’ç’°å¢ƒå¤‰æ•°çµŒç”±ã§æ¸¡ã—ã¾ã™ã€‚
+ã“ã‚Œã«ã‚ˆã‚Šã€ãƒ‘ã‚¹ã«ã‚·ãƒ³ã‚°ãƒ«ã‚¯ã‚©ãƒ¼ãƒˆã‚„ãã®ä»–ã®ç‰¹æ®Šæ–‡å­—ãŒå«ã¾ã‚Œã¦ã„ã¦ã‚‚æ­£å¸¸ã«å‹•ä½œã—ã¾ã™ã€‚
 
 ```powershell
 # PowerShell
@@ -1299,14 +1295,14 @@ YAKULINGO_APP_DIR="$APP_DIR" YAKULINGO_SOURCE_DIR="$SOURCE_DIR" \
     "$APP_DIR/.venv/bin/python" -c "import os; app_dir = Path(os.environ['YAKULINGO_APP_DIR']); ..."
 ```
 
-**ƒvƒƒZƒX‘Ò‹@ƒƒWƒbƒNiWindowsj:**
+**ãƒ—ãƒ­ã‚»ã‚¹å¾…æ©Ÿãƒ­ã‚¸ãƒƒã‚¯ï¼ˆWindowsï¼‰:**
 ```powershell
 $pythonProcesses = Get-Process -Name "python*" | Where-Object {
     $_.Path -and $_.Path.StartsWith($script:AppDir)
 }
 ```
 
-**ƒvƒƒZƒX‘Ò‹@ƒƒWƒbƒNiUnixj:**
+**ãƒ—ãƒ­ã‚»ã‚¹å¾…æ©Ÿãƒ­ã‚¸ãƒƒã‚¯ï¼ˆUnixï¼‰:**
 ```bash
 PYTHON_PIDS=$(pgrep -f "{app_dir}/.venv" 2>/dev/null)
 ```
@@ -1329,104 +1325,104 @@ PYTHON_PIDS=$(pgrep -f "{app_dir}/.venv" 2>/dev/null)
 
 ### Prompt Template Architecture
 
-ƒvƒƒ“ƒvƒgƒeƒ“ƒvƒŒ[ƒg‚Í‘S‚Ä“ú–{Œê‚Å‹Lq‚³‚ê‚Ä‚¢‚Ü‚·iƒ†[ƒU[‚ª“ú–{Œê˜bÒ‚Ì‚½‚ßjB
+ãƒ—ãƒ­ãƒ³ãƒ—ãƒˆãƒ†ãƒ³ãƒ—ãƒ¬ãƒ¼ãƒˆã¯å…¨ã¦æ—¥æœ¬èªã§è¨˜è¿°ã•ã‚Œã¦ã„ã¾ã™ï¼ˆãƒ¦ãƒ¼ã‚¶ãƒ¼ãŒæ—¥æœ¬èªè©±è€…ã®ãŸã‚ï¼‰ã€‚
 
-**ƒtƒ@ƒCƒ‹\¬:**
+**ãƒ•ã‚¡ã‚¤ãƒ«æ§‹æˆ:**
 
-| ƒtƒ@ƒCƒ‹ | —p“r |
+| ãƒ•ã‚¡ã‚¤ãƒ« | ç”¨é€” |
 |----------|------|
-| `translation_rules.txt` | ‹¤’Ê–|–óƒ‹[ƒ‹i‘Sƒvƒƒ“ƒvƒg‚É’“ü‚³‚ê‚éj |
-| `file_translate_to_en_{style}.txt` | ƒtƒ@ƒCƒ‹–|–óiJP¨ENAstyle: standard/concise/minimalj |
-| `file_translate_to_jp.txt` | ƒtƒ@ƒCƒ‹–|–óiEN¨JPj |
-| `text_translate_to_en_{style}.txt` | ƒeƒLƒXƒg–|–óiJP¨ENj |
-| `text_translate_to_jp.txt` | ƒeƒLƒXƒg–|–óiEN¨JPA‰ğà•t‚«j |
-| `text_*.txt` | ƒtƒHƒ[ƒAƒbƒv–|–óialternatives, review, summarize“™j |
+| `translation_rules.txt` | å…±é€šç¿»è¨³ãƒ«ãƒ¼ãƒ«ï¼ˆå…¨ãƒ—ãƒ­ãƒ³ãƒ—ãƒˆã«æ³¨å…¥ã•ã‚Œã‚‹ï¼‰ |
+| `file_translate_to_en_{style}.txt` | ãƒ•ã‚¡ã‚¤ãƒ«ç¿»è¨³ï¼ˆJPâ†’ENã€style: standard/concise/minimalï¼‰ |
+| `file_translate_to_jp.txt` | ãƒ•ã‚¡ã‚¤ãƒ«ç¿»è¨³ï¼ˆENâ†’JPï¼‰ |
+| `text_translate_to_en_{style}.txt` | ãƒ†ã‚­ã‚¹ãƒˆç¿»è¨³ï¼ˆJPâ†’ENï¼‰ |
+| `text_translate_to_jp.txt` | ãƒ†ã‚­ã‚¹ãƒˆç¿»è¨³ï¼ˆENâ†’JPã€è§£èª¬ä»˜ãï¼‰ |
+| `text_*.txt` | ãƒ•ã‚©ãƒ­ãƒ¼ã‚¢ãƒƒãƒ—ç¿»è¨³ï¼ˆalternatives, review, summarizeç­‰ï¼‰ |
 
-**ƒvƒŒ[ƒXƒzƒ‹ƒ_[:**
+**ãƒ—ãƒ¬ãƒ¼ã‚¹ãƒ›ãƒ«ãƒ€ãƒ¼:**
 
-| ƒvƒŒ[ƒXƒzƒ‹ƒ_[ | à–¾ |
+| ãƒ—ãƒ¬ãƒ¼ã‚¹ãƒ›ãƒ«ãƒ€ãƒ¼ | èª¬æ˜ |
 |------------------|------|
-| `{translation_rules}` | `translation_rules.txt`‚Ì“à—e‚ª’“ü‚³‚ê‚é |
-| `{input_text}` | –|–ó‘ÎÛƒeƒLƒXƒg |
-| `{reference_section}` | —pŒêWEQÆƒtƒ@ƒCƒ‹‚Ì“à—e |
-| `{translation_style}` / `{style}` | –|–óƒXƒ^ƒCƒ‹istandard/concise/minimalj |
+| `{translation_rules}` | `translation_rules.txt`ã®å†…å®¹ãŒæ³¨å…¥ã•ã‚Œã‚‹ |
+| `{input_text}` | ç¿»è¨³å¯¾è±¡ãƒ†ã‚­ã‚¹ãƒˆ |
+| `{reference_section}` | ç”¨èªé›†ãƒ»å‚ç…§ãƒ•ã‚¡ã‚¤ãƒ«ã®å†…å®¹ |
+| `{translation_style}` / `{style}` | ç¿»è¨³ã‚¹ã‚¿ã‚¤ãƒ«ï¼ˆstandard/concise/minimalï¼‰ |
 
-**PromptBuilder‚Ìg—p:**
+**PromptBuilderã®ä½¿ç”¨:**
 
 ```python
 from yakulingo.services.prompt_builder import PromptBuilder
 
 builder = PromptBuilder(prompts_dir=Path("prompts"))
 
-# ƒtƒ@ƒCƒ‹–|–óƒvƒƒ“ƒvƒg
+# ãƒ•ã‚¡ã‚¤ãƒ«ç¿»è¨³ãƒ—ãƒ­ãƒ³ãƒ—ãƒˆ
 prompt = builder.build(
-    input_text="–|–ó‘ÎÛƒeƒLƒXƒg",
+    input_text="ç¿»è¨³å¯¾è±¡ãƒ†ã‚­ã‚¹ãƒˆ",
     output_language="en",
-    reference_text="—pŒêW“à—e",
+    reference_text="ç”¨èªé›†å†…å®¹",
     translation_style="concise"
 )
 
-# ƒeƒLƒXƒg–|–óƒvƒƒ“ƒvƒg
+# ãƒ†ã‚­ã‚¹ãƒˆç¿»è¨³ãƒ—ãƒ­ãƒ³ãƒ—ãƒˆ
 prompt = builder.build_text_translation_prompt(
-    input_text="–|–ó‘ÎÛƒeƒLƒXƒg",
+    input_text="ç¿»è¨³å¯¾è±¡ãƒ†ã‚­ã‚¹ãƒˆ",
     output_language="en",
-    reference_text="—pŒêW“à—e",
+    reference_text="ç”¨èªé›†å†…å®¹",
     translation_style="concise"
 )
 
-# ‹¤’Êƒ‹[ƒ‹‚Ìæ“¾i–|–ó‚Í©“®‚ÅÄ“Ç‚İ‚İ‚³‚ê‚éj
+# å…±é€šãƒ«ãƒ¼ãƒ«ã®å–å¾—ï¼ˆç¿»è¨³æ™‚ã¯è‡ªå‹•ã§å†èª­ã¿è¾¼ã¿ã•ã‚Œã‚‹ï¼‰
 rules = builder.get_translation_rules()
 ```
 
-**translation_rules.txt ‚Ì\‘¢:**
+**translation_rules.txt ã®æ§‹é€ :**
 
-UI‚Ì??ƒAƒCƒRƒ“i—pŒêW•ÒWƒ{ƒ^ƒ“‚Ì—×j‚©‚çƒfƒtƒHƒ‹ƒgƒGƒfƒBƒ^‚Å•ÒW‰Â”\B
-•ÒWŒã‚Í•Û‘¶‚·‚é‚¾‚¯‚ÅAŸ‚Ì–|–ó‚É©“®‚Å”½‰f‚³‚ê‚éB
+UIã®??ã‚¢ã‚¤ã‚³ãƒ³ï¼ˆç”¨èªé›†ç·¨é›†ãƒœã‚¿ãƒ³ã®éš£ï¼‰ã‹ã‚‰ãƒ‡ãƒ•ã‚©ãƒ«ãƒˆã‚¨ãƒ‡ã‚£ã‚¿ã§ç·¨é›†å¯èƒ½ã€‚
+ç·¨é›†å¾Œã¯ä¿å­˜ã™ã‚‹ã ã‘ã§ã€æ¬¡ã®ç¿»è¨³æ™‚ã«è‡ªå‹•ã§åæ˜ ã•ã‚Œã‚‹ã€‚
 
 ```
-## –|–óƒ‹[ƒ‹iTranslation Rulesj
+## ç¿»è¨³ãƒ«ãƒ¼ãƒ«ï¼ˆTranslation Rulesï¼‰
 
-‚±‚Ìƒtƒ@ƒCƒ‹‚ÍA–|–ó‚É“K—p‚³‚ê‚é‹¤’Êƒ‹[ƒ‹‚Å‚·B
+ã“ã®ãƒ•ã‚¡ã‚¤ãƒ«ã¯ã€ç¿»è¨³æ™‚ã«é©ç”¨ã•ã‚Œã‚‹å…±é€šãƒ«ãƒ¼ãƒ«ã§ã™ã€‚
 
 ---
 
-### ”’l•\‹Lƒ‹[ƒ‹i“ú–{Œê ¨ ‰pŒêj
+### æ•°å€¤è¡¨è¨˜ãƒ«ãƒ¼ãƒ«ï¼ˆæ—¥æœ¬èª â†’ è‹±èªï¼‰
 
-d—v: ”š‚Íâ‘Î‚É•ÏŠ·‚µ‚È‚¢B’PˆÊ‚Ì‚İ‚ğ’u‚«Š·‚¦‚éB
+é‡è¦: æ•°å­—ã¯çµ¶å¯¾ã«å¤‰æ›ã—ãªã„ã€‚å˜ä½ã®ã¿ã‚’ç½®ãæ›ãˆã‚‹ã€‚
 
-| “ú–{Œê | ‰pŒê | •ÏŠ·—á |
+| æ—¥æœ¬èª | è‹±èª | å¤‰æ›ä¾‹ |
 |--------|------|--------|
-| ‰­ | oku | 4,500‰­‰~ ¨ 4,500 oku yen |
-| ç | k | 12,000 ¨ 12k |
-| £iƒ}ƒCƒiƒXj| () | £50 ¨ (50) |
+| å„„ | oku | 4,500å„„å†† â†’ 4,500 oku yen |
+| åƒ | k | 12,000 â†’ 12k |
+| â–²ï¼ˆãƒã‚¤ãƒŠã‚¹ï¼‰| () | â–²50 â†’ (50) |
 
-’ˆÓ:
-- u4,500‰­‰~v‚Í•K‚¸u4,500 oku yenv‚É–|–ó‚·‚é
-- u450 billionv‚âu4.5 trillionv‚É‚Íâ‘Î‚É•ÏŠ·‚µ‚È‚¢
-- ”š‚ÌŒ…‚Íâ‘Î‚É•Ï‚¦‚È‚¢i4,500‚Í4,500‚Ì‚Ü‚Üj
+æ³¨æ„:
+- ã€Œ4,500å„„å††ã€ã¯å¿…ãšã€Œ4,500 oku yenã€ã«ç¿»è¨³ã™ã‚‹
+- ã€Œ450 billionã€ã‚„ã€Œ4.5 trillionã€ã«ã¯çµ¶å¯¾ã«å¤‰æ›ã—ãªã„
+- æ•°å­—ã®æ¡ã¯çµ¶å¯¾ã«å¤‰ãˆãªã„ï¼ˆ4,500ã¯4,500ã®ã¾ã¾ï¼‰
 
-### Œ‚Ì—ªŒêƒ‹[ƒ‹i“ú–{Œê ¨ ‰pŒêj
+### æœˆã®ç•¥èªãƒ«ãƒ¼ãƒ«ï¼ˆæ—¥æœ¬èª â†’ è‹±èªï¼‰
 
-Œ–¼‚Í—ªŒê‚ğg—p‚·‚éB
+æœˆåã¯ç•¥èªã‚’ä½¿ç”¨ã™ã‚‹ã€‚
 - ? OK: Jan., Feb., Mar., Apr., May, Jun., Jul., Aug., Sep., Oct., Nov., Dec.
 - ? NG: January, February, March, April, June, July, August, September, October, November, December
 
-### ‹L†•ÏŠ·ƒ‹[ƒ‹i‰p–ój
+### è¨˜å·å¤‰æ›ãƒ«ãƒ¼ãƒ«ï¼ˆè‹±è¨³æ™‚ï¼‰
 
-ˆÈ‰º‚Ì‹L†‚Í‰pŒêŒ—‚ÅƒrƒWƒlƒX•¶‘‚É•s“KØ‚Å‚·B
-•K‚¸‰pŒê‚Å•\Œ»‚µ‚Ä‚­‚¾‚³‚¢B
+ä»¥ä¸‹ã®è¨˜å·ã¯è‹±èªåœã§ãƒ“ã‚¸ãƒã‚¹æ–‡æ›¸ã«ä¸é©åˆ‡ã§ã™ã€‚
+å¿…ãšè‹±èªã§è¡¨ç¾ã—ã¦ãã ã•ã„ã€‚
 
-‹Ö~‹L†‚Æ’u‚«Š·‚¦:
-- ª ¨ increased, up, higherig—p‹Ö~j
-- « ¨ decreased, down, lowerig—p‹Ö~j
-- ~ ¨ approximately, aboutig—p‹Ö~j
-- ¨ ¨ leads to, results inig—p‹Ö~j
-- „ƒ ¨ greater than, less thanig—p‹Ö~j
-- †… ¨ or more, or lessig—p‹Ö~j
+ç¦æ­¢è¨˜å·ã¨ç½®ãæ›ãˆ:
+- â†‘ â†’ increased, up, higherï¼ˆä½¿ç”¨ç¦æ­¢ï¼‰
+- â†“ â†’ decreased, down, lowerï¼ˆä½¿ç”¨ç¦æ­¢ï¼‰
+- ~ â†’ approximately, aboutï¼ˆä½¿ç”¨ç¦æ­¢ï¼‰
+- â†’ â†’ leads to, results inï¼ˆä½¿ç”¨ç¦æ­¢ï¼‰
+- ï¼ï¼œ â†’ greater than, less thanï¼ˆä½¿ç”¨ç¦æ­¢ï¼‰
+- â‰§â‰¦ â†’ or more, or lessï¼ˆä½¿ç”¨ç¦æ­¢ï¼‰
 
-—á:
-- u3‚©ŒˆÈãv¨ "3 months or more"i~ > 3 monthsj
-- u”„ãªv¨ "Sales increased"i~ Sales ªj
+ä¾‹:
+- ã€Œ3ã‹æœˆä»¥ä¸Šã€â†’ "3 months or more"ï¼ˆÃ— > 3 monthsï¼‰
+- ã€Œå£²ä¸Šâ†‘ã€â†’ "Sales increased"ï¼ˆÃ— Sales â†‘ï¼‰
 ```
 
 ### Adding UI Components
@@ -1470,125 +1466,125 @@ Install separately for PDF translation support:
 ```bash
 pip install -r requirements_pdf.txt
 ```
-- `paddleocr>=3.0.0`: PP-DocLayout-L (ƒŒƒCƒAƒEƒg‰ğÍ) + TableCellsDetection (ƒZƒ‹‹«ŠEŒŸo)
+- `paddleocr>=3.0.0`: PP-DocLayout-L (ãƒ¬ã‚¤ã‚¢ã‚¦ãƒˆè§£æ) + TableCellsDetection (ã‚»ãƒ«å¢ƒç•Œæ¤œå‡º)
 - `paddlepaddle>=3.0.0`: PaddlePaddle framework
 - GPU recommended but CPU is also supported (~760ms/page on CPU)
 - TableCellsDetection requires paddleocr>=3.0.0 for RT-DETR-L models
 
 ### PDF Processing Details
 
-**’PˆêƒpƒX’Šo (PDFMathTranslate€‹’):**
+**å˜ä¸€ãƒ‘ã‚¹æŠ½å‡º (PDFMathTranslateæº–æ‹ ):**
 
-PDF–|–ó‚Å‚ÍPDFMathTranslate€‹’‚Ì’PˆêƒpƒXˆ—‚ğg—p‚µ‚Ü‚·F
-- **pdfminer**: ƒeƒLƒXƒg’Šoi³Šm‚È•¶šƒf[ƒ^AƒtƒHƒ“ƒgî•ñACID’lj
-- **PP-DocLayout-L**: ƒŒƒCƒAƒEƒg‰ğÍ‚Ì‚İi’i—ŒŸoA“Ç‚İ‡A}•\/”®‚Ì¯•Êj
-- **TextBlock**: ’ŠoŒ‹‰Ê‚ğˆêŒ³ŠÇ—iPDFÀ•WAƒtƒHƒ“ƒgî•ñA’i—î•ñ‚ğŠÜ‚Şj
-- **OCR‚È‚µ**: ƒXƒLƒƒƒ“PDF‚ÍƒTƒ|[ƒg‘ÎÛŠO
+PDFç¿»è¨³ã§ã¯PDFMathTranslateæº–æ‹ ã®å˜ä¸€ãƒ‘ã‚¹å‡¦ç†ã‚’ä½¿ç”¨ã—ã¾ã™ï¼š
+- **pdfminer**: ãƒ†ã‚­ã‚¹ãƒˆæŠ½å‡ºï¼ˆæ­£ç¢ºãªæ–‡å­—ãƒ‡ãƒ¼ã‚¿ã€ãƒ•ã‚©ãƒ³ãƒˆæƒ…å ±ã€CIDå€¤ï¼‰
+- **PP-DocLayout-L**: ãƒ¬ã‚¤ã‚¢ã‚¦ãƒˆè§£æã®ã¿ï¼ˆæ®µè½æ¤œå‡ºã€èª­ã¿é †ã€å›³è¡¨/æ•°å¼ã®è­˜åˆ¥ï¼‰
+- **TextBlock**: æŠ½å‡ºçµæœã‚’ä¸€å…ƒç®¡ç†ï¼ˆPDFåº§æ¨™ã€ãƒ•ã‚©ãƒ³ãƒˆæƒ…å ±ã€æ®µè½æƒ…å ±ã‚’å«ã‚€ï¼‰
+- **OCRãªã—**: ã‚¹ã‚­ãƒ£ãƒ³PDFã¯ã‚µãƒãƒ¼ãƒˆå¯¾è±¡å¤–
 
 ```
-„¡„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„¢
-„  ’PˆêƒpƒX’Šo (PDFMathTranslate€‹’)                           „ 
-„  „¡„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„¢ „ 
-„  „  1. PP-DocLayout-L: ƒy[ƒW‰æ‘œ‚©‚çƒŒƒCƒAƒEƒg‰ğÍ           „  „ 
-„  „     - LayoutArray ‚ğ¶¬i’i—‹«ŠEA“Ç‚İ‡j               „  „ 
-„  „                                                          „  „ 
-„  „  2. pdfminer: –„‚ß‚İƒeƒLƒXƒg’Šo                        „  „ 
-„  „     - ³Šm‚ÈƒeƒLƒXƒgAƒtƒHƒ“ƒgî•ñACID’l                  „  „ 
-„  „                                                          „  „ 
-„  „  3. _group_chars_into_blocks: •¶š¨TextBlock             „  „ 
-„  „     - LayoutArray‚ğQÆ‚µ‚Ä•¶š‚ğ’i—‚ÉƒOƒ‹[ƒv‰»          „  „ 
-„  „     - PDFÀ•W‚ğ•ÛiDPI•ÏŠ·•s—vj                        „  „ 
-„  „¤„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„£ „ 
-„                                                              „ 
-„  4. apply_translations: TextBlock‚©‚ç’¼ÚÀ•Wæ“¾            „ 
-„     - text_blocksƒpƒ‰ƒ[ƒ^‚Åó‚¯æ‚è                        „ 
-„     - TranslationCell‚Í”p~—\’èiDeprecationWarning”­¶j     „ 
-„¤„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„£
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚ å˜ä¸€ãƒ‘ã‚¹æŠ½å‡º (PDFMathTranslateæº–æ‹ )                           â”‚
+â”‚ â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â” â”‚
+â”‚ â”‚ 1. PP-DocLayout-L: ãƒšãƒ¼ã‚¸ç”»åƒã‹ã‚‰ãƒ¬ã‚¤ã‚¢ã‚¦ãƒˆè§£æ           â”‚ â”‚
+â”‚ â”‚    - LayoutArray ã‚’ç”Ÿæˆï¼ˆæ®µè½å¢ƒç•Œã€èª­ã¿é †ï¼‰               â”‚ â”‚
+â”‚ â”‚                                                         â”‚ â”‚
+â”‚ â”‚ 2. pdfminer: åŸ‹ã‚è¾¼ã¿ãƒ†ã‚­ã‚¹ãƒˆæŠ½å‡º                        â”‚ â”‚
+â”‚ â”‚    - æ­£ç¢ºãªãƒ†ã‚­ã‚¹ãƒˆã€ãƒ•ã‚©ãƒ³ãƒˆæƒ…å ±ã€CIDå€¤                  â”‚ â”‚
+â”‚ â”‚                                                         â”‚ â”‚
+â”‚ â”‚ 3. _group_chars_into_blocks: æ–‡å­—â†’TextBlock             â”‚ â”‚
+â”‚ â”‚    - LayoutArrayã‚’å‚ç…§ã—ã¦æ–‡å­—ã‚’æ®µè½ã«ã‚°ãƒ«ãƒ¼ãƒ—åŒ–          â”‚ â”‚
+â”‚ â”‚    - PDFåº§æ¨™ã‚’ä¿æŒï¼ˆDPIå¤‰æ›ä¸è¦ï¼‰                        â”‚ â”‚
+â”‚ â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜ â”‚
+â”‚                                                             â”‚
+â”‚ 4. apply_translations: TextBlockã‹ã‚‰ç›´æ¥åº§æ¨™å–å¾—            â”‚
+â”‚    - text_blocksãƒ‘ãƒ©ãƒ¡ãƒ¼ã‚¿ã§å—ã‘å–ã‚Š                        â”‚
+â”‚    - TranslationCellã¯å»ƒæ­¢äºˆå®šï¼ˆDeprecationWarningç™ºç”Ÿï¼‰     â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 ```
 
-**—˜“_:**
-- –„‚ß‚İƒeƒLƒXƒgPDF: OCR”F¯Œë‚è‚È‚µipdfminer‚Ì³Šm‚ÈƒeƒLƒXƒgj
-- ‚¸“xƒŒƒCƒAƒEƒgŒŸo: PP-DocLayout-L‚É‚æ‚é’i—E}•\‚Ì¯•Êi23ƒJƒeƒSƒŠA90.4% mAP@0.5j
-- ‚‘¬ˆ—: OCR‚ğÀs‚µ‚È‚¢‚½‚ßˆ—ŠÔ‚ª’Zk
-- ¤—p—˜—p‰Â: Apache-2.0ƒ‰ƒCƒZƒ“ƒX
-- ’PˆêƒpƒXˆ—: “ñd•ÏŠ·‚ğ”rœ‚µƒR[ƒhŠÈ‘f‰»
+**åˆ©ç‚¹:**
+- åŸ‹ã‚è¾¼ã¿ãƒ†ã‚­ã‚¹ãƒˆPDF: OCRèªè­˜èª¤ã‚Šãªã—ï¼ˆpdfminerã®æ­£ç¢ºãªãƒ†ã‚­ã‚¹ãƒˆï¼‰
+- é«˜ç²¾åº¦ãƒ¬ã‚¤ã‚¢ã‚¦ãƒˆæ¤œå‡º: PP-DocLayout-Lã«ã‚ˆã‚‹æ®µè½ãƒ»å›³è¡¨ã®è­˜åˆ¥ï¼ˆ23ã‚«ãƒ†ã‚´ãƒªã€90.4% mAP@0.5ï¼‰
+- é«˜é€Ÿå‡¦ç†: OCRã‚’å®Ÿè¡Œã—ãªã„ãŸã‚å‡¦ç†æ™‚é–“ãŒçŸ­ç¸®
+- å•†ç”¨åˆ©ç”¨å¯: Apache-2.0ãƒ©ã‚¤ã‚»ãƒ³ã‚¹
+- å˜ä¸€ãƒ‘ã‚¹å‡¦ç†: äºŒé‡å¤‰æ›ã‚’æ’é™¤ã—ã‚³ãƒ¼ãƒ‰ç°¡ç´ åŒ–
 
-**§ŒÀ:**
-- ƒXƒLƒƒƒ“PDFi‰æ‘œ‚Ì‚İj‚Í–|–ó•s‰ÂiƒeƒLƒXƒg‚ª–„‚ß‚Ü‚ê‚Ä‚¢‚È‚¢‚½‚ßj
+**åˆ¶é™:**
+- ã‚¹ã‚­ãƒ£ãƒ³PDFï¼ˆç”»åƒã®ã¿ï¼‰ã¯ç¿»è¨³ä¸å¯ï¼ˆãƒ†ã‚­ã‚¹ãƒˆãŒåŸ‹ã‚è¾¼ã¾ã‚Œã¦ã„ãªã„ãŸã‚ï¼‰
 
-**PDFMathTranslate‚Æ‚Ì”äŠr:**
+**PDFMathTranslateã¨ã®æ¯”è¼ƒ:**
 
-| ‹@”\ | PDFMathTranslate | YakuLingo |
+| æ©Ÿèƒ½ | PDFMathTranslate | YakuLingo |
 |------|------------------|-----------|
-| ƒŒƒCƒAƒEƒgŒŸo | DocLayout-YOLO (ONNXƒ‚ƒfƒ‹) | PP-DocLayout-L (Apache-2.0) |
-| ƒeƒLƒXƒg’Šo | pdfminer.six | pdfminer.six |
-| ”®ŒŸo | vflagŠÖ” | vflagŠÖ” (“¯“™À‘•) |
-| raw_string | ƒtƒHƒ“ƒgƒ^ƒCƒv•ÊƒGƒ“ƒR[ƒfƒBƒ“ƒO | “¯“™À‘• |
-| À•W•ÏŠ· | PDF/‰æ‘œÀ•W•ÏŠ· | PdfCoord/ImageCoordŒ^ˆÀ‘S•ÏŠ· |
-| –|–óAPI | •¡”ƒT[ƒrƒX‘Î‰ | M365 Copilot |
-| ƒ‰ƒCƒZƒ“ƒX | AGPL-3.0 | MIT |
+| ãƒ¬ã‚¤ã‚¢ã‚¦ãƒˆæ¤œå‡º | DocLayout-YOLO (ONNXãƒ¢ãƒ‡ãƒ«) | PP-DocLayout-L (Apache-2.0) |
+| ãƒ†ã‚­ã‚¹ãƒˆæŠ½å‡º | pdfminer.six | pdfminer.six |
+| æ•°å¼æ¤œå‡º | vflagé–¢æ•° | vflagé–¢æ•° (åŒç­‰å®Ÿè£…) |
+| raw_string | ãƒ•ã‚©ãƒ³ãƒˆã‚¿ã‚¤ãƒ—åˆ¥ã‚¨ãƒ³ã‚³ãƒ¼ãƒ‡ã‚£ãƒ³ã‚° | åŒç­‰å®Ÿè£… |
+| åº§æ¨™å¤‰æ› | PDF/ç”»åƒåº§æ¨™å¤‰æ› | PdfCoord/ImageCoordå‹å®‰å…¨å¤‰æ› |
+| ç¿»è¨³API | è¤‡æ•°ã‚µãƒ¼ãƒ“ã‚¹å¯¾å¿œ | M365 Copilot |
+| ãƒ©ã‚¤ã‚»ãƒ³ã‚¹ | AGPL-3.0 | MIT |
 
-**”®ŒŸo vflagŠÖ” (PDFMathTranslate converter.py€‹’):**
+**æ•°å¼æ¤œå‡º vflagé–¢æ•° (PDFMathTranslate converter.pyæº–æ‹ ):**
 
 ```python
 def vflag(font: str, char: str) -> bool:
-    """”®E“Áê•¶š‚Ì”»’è"""
-    # 1. ƒtƒHƒ“ƒg–¼‚Ì‘Oˆ—i"Prefix+Font" ¨ "Font"j
+    """æ•°å¼ãƒ»ç‰¹æ®Šæ–‡å­—ã®åˆ¤å®š"""
+    # 1. ãƒ•ã‚©ãƒ³ãƒˆåã®å‰å‡¦ç†ï¼ˆ"Prefix+Font" â†’ "Font"ï¼‰
     font = font.split("+")[-1]
 
-    # 2. CID‹L–@‚ÌŒŸo
+    # 2. CIDè¨˜æ³•ã®æ¤œå‡º
     if re.match(r"\(cid:", char):
         return True
 
-    # 3. ‰‰ZqE‹L†‚ÌœŠOiŒ©o‚µ‚È‚Ç‚Åg—p‚³‚ê‚éˆê”Ê“I‚È‹L†j
-    #    ”¼Šp: + - * / < = >
-    #    ‘SŠp: { | – ^ ƒ  „ `i”gƒ_ƒbƒVƒ…j
+    # 3. æ¼”ç®—å­ãƒ»è¨˜å·ã®é™¤å¤–ï¼ˆè¦‹å‡ºã—ãªã©ã§ä½¿ç”¨ã•ã‚Œã‚‹ä¸€èˆ¬çš„ãªè¨˜å·ï¼‰
+    #    åŠè§’: + - * / < = >
+    #    å…¨è§’: ï¼‹ ï¼ ï¼Š ï¼ ï¼œ ï¼ ï¼ ï½ï¼ˆæ³¢ãƒ€ãƒƒã‚·ãƒ¥ï¼‰
     if char_code in (
-        0x002B, 0x002D, 0x002A, 0x002F, 0x003C, 0x003D, 0x003E,  # ”¼Šp
-        0xFF0B, 0xFF0D, 0xFF0A, 0xFF0F, 0xFF1C, 0xFF1D, 0xFF1E,  # ‘SŠp
-        0xFF5E,  # ` FULLWIDTH TILDE (”gƒ_ƒbƒVƒ…)
+        0x002B, 0x002D, 0x002A, 0x002F, 0x003C, 0x003D, 0x003E,  # åŠè§’
+        0xFF0B, 0xFF0D, 0xFF0A, 0xFF0F, 0xFF1C, 0xFF1D, 0xFF1E,  # å…¨è§’
+        0xFF5E,  # ï½ FULLWIDTH TILDE (æ³¢ãƒ€ãƒƒã‚·ãƒ¥)
     ):
         return False
 
-    # 4. ”®ƒtƒHƒ“ƒg–¼ƒpƒ^[ƒ“
+    # 4. æ•°å¼ãƒ•ã‚©ãƒ³ãƒˆåãƒ‘ã‚¿ãƒ¼ãƒ³
     #    CM*, MS.M, XY, MT, BL, RM, EU, LA, RS, LINE,
     #    TeX-, rsfs, txsy, wasy, stmary, *Mono, *Code, *Ital, *Sym, *Math
     if re.match(DEFAULT_VFONT_PATTERN, font):
         return True
 
-    # 5. Unicode•¶šƒJƒeƒSƒŠ
-    #    Lm(Cü•¶š), Mn(Œ‹‡‹L†), Sk(Cü‹L†),
-    #    Sm(”Šw‹L†), Zl/Zp/Zs(•ª—£q)
+    # 5. Unicodeæ–‡å­—ã‚«ãƒ†ã‚´ãƒª
+    #    Lm(ä¿®é£¾æ–‡å­—), Mn(çµåˆè¨˜å·), Sk(ä¿®é£¾è¨˜å·),
+    #    Sm(æ•°å­¦è¨˜å·), Zl/Zp/Zs(åˆ†é›¢å­)
     if unicodedata.category(char[0]) in FORMULA_UNICODE_CATEGORIES:
         return True
 
-    # 6. ƒMƒŠƒVƒƒ•¶š (U+0370`U+03FF)
+    # 6. ã‚®ãƒªã‚·ãƒ£æ–‡å­— (U+0370ï½U+03FF)
     if 0x370 <= ord(char[0]) < 0x400:
         return True
 
     return False
 ```
 
-**’i—‹«ŠEŒŸo (PDFMathTranslate compliant):**
+**æ®µè½å¢ƒç•Œæ¤œå‡º (PDFMathTranslate compliant):**
 
 ```python
-# pdf_converter.py ‚Ì’è”
-SAME_LINE_Y_THRESHOLD = 3.0       # 3ptˆÈ“à‚Í“¯‚¶s
-SAME_PARA_Y_THRESHOLD = 20.0      # 20ptˆÈ“à‚Í“¯‚¶’i—
-WORD_SPACE_X_THRESHOLD = 1.0      # 1ptˆÈã‚ÌŠÔŠu‚ÅƒXƒy[ƒX‘}“üiPDFMathTranslate€‹’: x0 > x1 + 1j
-LINE_BREAK_X_THRESHOLD = 1.0      # XÀ•W‚ª–ß‚Á‚½‚ç‰üs
-COLUMN_JUMP_X_THRESHOLD = 100.0   # 100ptˆÈã‚ÌXˆÚ“®‚Í’i‘g‚İ•ÏX
+# pdf_converter.py ã®å®šæ•°
+SAME_LINE_Y_THRESHOLD = 3.0       # 3ptä»¥å†…ã¯åŒã˜è¡Œ
+SAME_PARA_Y_THRESHOLD = 20.0      # 20ptä»¥å†…ã¯åŒã˜æ®µè½
+WORD_SPACE_X_THRESHOLD = 1.0      # 1ptä»¥ä¸Šã®é–“éš”ã§ã‚¹ãƒšãƒ¼ã‚¹æŒ¿å…¥ï¼ˆPDFMathTranslateæº–æ‹ : x0 > x1 + 1ï¼‰
+LINE_BREAK_X_THRESHOLD = 1.0      # Xåº§æ¨™ãŒæˆ»ã£ãŸã‚‰æ”¹è¡Œ
+COLUMN_JUMP_X_THRESHOLD = 100.0   # 100ptä»¥ä¸Šã®Xç§»å‹•ã¯æ®µçµ„ã¿å¤‰æ›´
 
-# _group_chars_into_blocks ‚Å‚ÌƒXƒ^ƒbƒNŠÇ—
-sstk: list[str] = []           # •¶š—ñƒXƒ^ƒbƒNi’i—ƒeƒLƒXƒgj
-vstk: list = []                # ”®ƒXƒ^ƒbƒNi”®•¶šƒoƒbƒtƒ@j
-var: list[FormulaVar] = []     # ”®Ši”[”z—ñ
-pstk: list[Paragraph] = []     # ’i—ƒƒ^ƒf[ƒ^ƒXƒ^ƒbƒN
+# _group_chars_into_blocks ã§ã®ã‚¹ã‚¿ãƒƒã‚¯ç®¡ç†
+sstk: list[str] = []           # æ–‡å­—åˆ—ã‚¹ã‚¿ãƒƒã‚¯ï¼ˆæ®µè½ãƒ†ã‚­ã‚¹ãƒˆï¼‰
+vstk: list = []                # æ•°å¼ã‚¹ã‚¿ãƒƒã‚¯ï¼ˆæ•°å¼æ–‡å­—ãƒãƒƒãƒ•ã‚¡ï¼‰
+var: list[FormulaVar] = []     # æ•°å¼æ ¼ç´é…åˆ—
+pstk: list[Paragraph] = []     # æ®µè½ãƒ¡ã‚¿ãƒ‡ãƒ¼ã‚¿ã‚¹ã‚¿ãƒƒã‚¯
 ```
 
-**`detect_paragraph_boundary`ŠÖ”‚Æ‹­‚¢‹«ŠEƒtƒ‰ƒO:**
+**`detect_paragraph_boundary`é–¢æ•°ã¨å¼·ã„å¢ƒç•Œãƒ•ãƒ©ã‚°:**
 
-`detect_paragraph_boundary()`‚Í’i—‹«ŠEŒŸo‚Ì’†ŠjŠÖ”‚ÅA3‚Â‚Ì’l‚ğ•Ô‚µ‚Ü‚·F
+`detect_paragraph_boundary()`ã¯æ®µè½å¢ƒç•Œæ¤œå‡ºã®ä¸­æ ¸é–¢æ•°ã§ã€3ã¤ã®å€¤ã‚’è¿”ã—ã¾ã™ï¼š
 
 ```python
 new_paragraph, line_break, is_strong_boundary = detect_paragraph_boundary(
@@ -1598,44 +1594,44 @@ new_paragraph, line_break, is_strong_boundary = detect_paragraph_boundary(
 )
 ```
 
-**–ß‚è’l:**
-- `new_paragraph`: V‚µ‚¢’i—‚ğŠJn‚·‚×‚«‚©
-- `line_break`: ’i—“à‚Ì‰üs‚©
-- `is_strong_boundary`: ‹­‚¢‹«ŠEƒtƒ‰ƒOi•¶––‹L†ƒ`ƒFƒbƒN‚ğã‘‚«j
+**æˆ»ã‚Šå€¤:**
+- `new_paragraph`: æ–°ã—ã„æ®µè½ã‚’é–‹å§‹ã™ã¹ãã‹
+- `line_break`: æ®µè½å†…ã®æ”¹è¡Œã‹
+- `is_strong_boundary`: å¼·ã„å¢ƒç•Œãƒ•ãƒ©ã‚°ï¼ˆæ–‡æœ«è¨˜å·ãƒã‚§ãƒƒã‚¯ã‚’ä¸Šæ›¸ãï¼‰
 
-**‹­‚¢‹«ŠE (`is_strong_boundary=True`) ‚ÌğŒ:**
+**å¼·ã„å¢ƒç•Œ (`is_strong_boundary=True`) ã®æ¡ä»¶:**
 
-| ğŒ | à–¾ |
+| æ¡ä»¶ | èª¬æ˜ |
 |------|------|
-| —Ìˆæƒ^ƒCƒv•Ï‰» | ’i—Ìƒe[ƒuƒ‹‚Ì‹«ŠE‚ğŒ×‚®•Ï‰»i“¯‚¶—Ìˆæƒ^ƒCƒv“à‚Ì•Ï‰»‚Íã‚¢‹«ŠEj |
-| XÀ•W‘åƒMƒƒƒbƒv | `x_gap > TABLE_CELL_X_THRESHOLD` (15pt) - ƒtƒH[ƒ€—“‚â•\‚ÌƒZƒ‹ŠÔ |
-| ƒe[ƒuƒ‹s•ÏX | ƒe[ƒuƒ‹“à‚Å `y_diff > TABLE_ROW_Y_THRESHOLD` (5pt) |
-| ’i‘g‚İ•ÏX | X‘åƒWƒƒƒ“ƒv (>100pt) + Yã¸i‘½’i‘g‚İƒŒƒCƒAƒEƒgj|
+| é ˜åŸŸã‚¿ã‚¤ãƒ—å¤‰åŒ– | æ®µè½â‡”ãƒ†ãƒ¼ãƒ–ãƒ«ã®å¢ƒç•Œã‚’è·¨ãå¤‰åŒ–ï¼ˆåŒã˜é ˜åŸŸã‚¿ã‚¤ãƒ—å†…ã®å¤‰åŒ–ã¯å¼±ã„å¢ƒç•Œï¼‰ |
+| Xåº§æ¨™å¤§ã‚®ãƒ£ãƒƒãƒ— | `x_gap > TABLE_CELL_X_THRESHOLD` (15pt) - ãƒ•ã‚©ãƒ¼ãƒ æ¬„ã‚„è¡¨ã®ã‚»ãƒ«é–“ |
+| ãƒ†ãƒ¼ãƒ–ãƒ«è¡Œå¤‰æ›´ | ãƒ†ãƒ¼ãƒ–ãƒ«å†…ã§ `y_diff > TABLE_ROW_Y_THRESHOLD` (5pt) |
+| æ®µçµ„ã¿å¤‰æ›´ | Xå¤§ã‚¸ãƒ£ãƒ³ãƒ— (>100pt) + Yä¸Šæ˜‡ï¼ˆå¤šæ®µçµ„ã¿ãƒ¬ã‚¤ã‚¢ã‚¦ãƒˆï¼‰|
 
-**ã‚¢‹«ŠEi•¶––‹L†ƒ`ƒFƒbƒN“K—pj‚ÌğŒ:**
+**å¼±ã„å¢ƒç•Œï¼ˆæ–‡æœ«è¨˜å·ãƒã‚§ãƒƒã‚¯é©ç”¨ï¼‰ã®æ¡ä»¶:**
 
-| ğŒ | à–¾ |
+| æ¡ä»¶ | èª¬æ˜ |
 |------|------|
-| YÀ•W‘å•Ï‰» | `y_diff > SAME_PARA_Y_THRESHOLD` (20pt) - sŠÔ‚ªL‚¢ê‡‚àŒp‘±”»’è |
-| TOCƒpƒ^[ƒ“ | Y•Ï‰» + X‘åƒŠƒZƒbƒg (>80pt) - ’Êí‚ÌsÜ‚è•Ô‚µ‚Æ“¯—l‚Éˆµ‚¤ |
+| Yåº§æ¨™å¤§å¤‰åŒ– | `y_diff > SAME_PARA_Y_THRESHOLD` (20pt) - è¡Œé–“ãŒåºƒã„å ´åˆã‚‚ç¶™ç¶šåˆ¤å®š |
+| TOCãƒ‘ã‚¿ãƒ¼ãƒ³ | Yå¤‰åŒ– + Xå¤§ãƒªã‚»ãƒƒãƒˆ (>80pt) - é€šå¸¸ã®è¡ŒæŠ˜ã‚Šè¿”ã—ã¨åŒæ§˜ã«æ‰±ã† |
 
-**—Ìˆæƒ^ƒCƒv‚Ì•ª—Ş:**
-- ’i——Ìˆæ: ƒNƒ‰ƒXID 2?999iPP-DocLayout-L‚ª“¯ˆê•¶‘“à‚ÅˆÙ‚È‚éIDŠ„“–‰Âj
-- ƒe[ƒuƒ‹—Ìˆæ: ƒNƒ‰ƒXID >= 1000
-- “¯‚¶—Ìˆæƒ^ƒCƒv“à‚ÌƒNƒ‰ƒX•Ï‰»i’i—2¨’i—3“™j‚Íã‚¢‹«ŠE‚Æ‚µ‚Äˆµ‚¢A`is_japanese_continuation_line()`‚ÅŒp‘±”»’è
+**é ˜åŸŸã‚¿ã‚¤ãƒ—ã®åˆ†é¡:**
+- æ®µè½é ˜åŸŸ: ã‚¯ãƒ©ã‚¹ID 2?999ï¼ˆPP-DocLayout-LãŒåŒä¸€æ–‡æ›¸å†…ã§ç•°ãªã‚‹IDå‰²å½“å¯ï¼‰
+- ãƒ†ãƒ¼ãƒ–ãƒ«é ˜åŸŸ: ã‚¯ãƒ©ã‚¹ID >= 1000
+- åŒã˜é ˜åŸŸã‚¿ã‚¤ãƒ—å†…ã®ã‚¯ãƒ©ã‚¹å¤‰åŒ–ï¼ˆæ®µè½2â†’æ®µè½3ç­‰ï¼‰ã¯å¼±ã„å¢ƒç•Œã¨ã—ã¦æ‰±ã„ã€`is_japanese_continuation_line()`ã§ç¶™ç¶šåˆ¤å®š
 
-**ã‚¢‹«ŠE‚Ì•¶––‹L†ƒ`ƒFƒbƒN:**
+**å¼±ã„å¢ƒç•Œã®æ–‡æœ«è¨˜å·ãƒã‚§ãƒƒã‚¯:**
 
-‹­‚¢‹«ŠE‚Å‚È‚¢ê‡i`is_strong_boundary=False`j‚Ì‚İA•¶––‹L†ƒ`ƒFƒbƒN‚ğ“K—p‚µ‚Ü‚·B
-‚±‚ê‚É‚æ‚èA”Ô†•t‚«ƒpƒ‰ƒOƒ‰ƒt‚Ì“r’†‰üsi—á: "167. ŒÅ’è‘Y‚ÉŒW‚é...‚Í‚ " + "‚è‚Ü‚¹‚ñB"j‚ğ
-³‚µ‚­Œ‹‡‚µ‚Â‚ÂAŒˆZ’ZM‚Ì‚æ‚¤‚È\‘¢‰»ƒhƒLƒ…ƒƒ“ƒg‚Å‚ÌŠe€–Ú‚Í
-“KØ‚É•ªŠ„‚³‚ê‚Ü‚·B
+å¼·ã„å¢ƒç•Œã§ãªã„å ´åˆï¼ˆ`is_strong_boundary=False`ï¼‰ã®ã¿ã€æ–‡æœ«è¨˜å·ãƒã‚§ãƒƒã‚¯ã‚’é©ç”¨ã—ã¾ã™ã€‚
+ã“ã‚Œã«ã‚ˆã‚Šã€ç•ªå·ä»˜ããƒ‘ãƒ©ã‚°ãƒ©ãƒ•ã®é€”ä¸­æ”¹è¡Œï¼ˆä¾‹: "167. å›ºå®šè³‡ç”£ã«ä¿‚ã‚‹...ã¯ã‚" + "ã‚Šã¾ã›ã‚“ã€‚"ï¼‰ã‚’
+æ­£ã—ãçµåˆã—ã¤ã¤ã€æ±ºç®—çŸ­ä¿¡ã®ã‚ˆã†ãªæ§‹é€ åŒ–ãƒ‰ã‚­ãƒ¥ãƒ¡ãƒ³ãƒˆã§ã®å„é …ç›®ã¯
+é©åˆ‡ã«åˆ†å‰²ã•ã‚Œã¾ã™ã€‚
 
 ```python
-# pdf_processor.py ‚Å‚Ìˆ—
+# pdf_processor.py ã§ã®å‡¦ç†
 if new_paragraph:
     should_start_new = True
-    # ‹­‚¢‹«ŠE‚Ìê‡‚Í•¶––‹L†ƒ`ƒFƒbƒN‚ğƒXƒLƒbƒv
+    # å¼·ã„å¢ƒç•Œã®å ´åˆã¯æ–‡æœ«è¨˜å·ãƒã‚§ãƒƒã‚¯ã‚’ã‚¹ã‚­ãƒƒãƒ—
     if not is_strong_boundary and sstk and pstk:
         prev_text = sstk[-1].rstrip()
         if prev_text:
@@ -1643,20 +1639,20 @@ if new_paragraph:
             is_sentence_end = (
                 last_char in SENTENCE_END_CHARS_JA or
                 last_char in SENTENCE_END_CHARS_EN or
-                is_toc_line_ending(prev_text)  # –ÚŸƒpƒ^[ƒ“iƒŠ[ƒ_[{ƒy[ƒW”Ô†j
+                is_toc_line_ending(prev_text)  # ç›®æ¬¡ãƒ‘ã‚¿ãƒ¼ãƒ³ï¼ˆãƒªãƒ¼ãƒ€ãƒ¼ï¼‹ãƒšãƒ¼ã‚¸ç•ªå·ï¼‰
             )
             if not is_sentence_end:
-                # ã‚¢‹«ŠE‚Å•¶––‹L†‚È‚µ ¨ Œp‘±s‚Æ‚µ‚Äˆµ‚¤
+                # å¼±ã„å¢ƒç•Œã§æ–‡æœ«è¨˜å·ãªã— â†’ ç¶™ç¶šè¡Œã¨ã—ã¦æ‰±ã†
                 should_start_new = False
                 line_break = True
 
-    # ‹­‚¢‹«ŠE‚Å‚àŠJ‚«Š‡ŒÊ‚ÅI‚í‚éê‡‚Í•ªŠ„‚µ‚È‚¢
+    # å¼·ã„å¢ƒç•Œã§ã‚‚é–‹ãæ‹¬å¼§ã§çµ‚ã‚ã‚‹å ´åˆã¯åˆ†å‰²ã—ãªã„
     if should_start_new and sstk and sstk[-1]:
         if sstk[-1].rstrip()[-1] in OPENING_BRACKETS:
             should_start_new = False
             line_break = True
 
-    # ‹­‚¢‹«ŠE‚Å‚à1-2•¶š‚ÌCJKƒeƒLƒXƒg‚Í•ªŠ„‚µ‚È‚¢iƒXƒy[ƒX“ü‚èƒeƒLƒXƒg‘Îôj
+    # å¼·ã„å¢ƒç•Œã§ã‚‚1-2æ–‡å­—ã®CJKãƒ†ã‚­ã‚¹ãƒˆã¯åˆ†å‰²ã—ãªã„ï¼ˆã‚¹ãƒšãƒ¼ã‚¹å…¥ã‚Šãƒ†ã‚­ã‚¹ãƒˆå¯¾ç­–ï¼‰
     if should_start_new and sstk and sstk[-1]:
         prev_text = sstk[-1].rstrip()
         if len(prev_text) <= 2 and all(_is_cjk_char(c) for c in prev_text):
@@ -1664,31 +1660,31 @@ if new_paragraph:
             line_break = True
 ```
 
-**–ÚŸƒpƒ^[ƒ“ŒŸo `is_toc_line_ending()`:**
+**ç›®æ¬¡ãƒ‘ã‚¿ãƒ¼ãƒ³æ¤œå‡º `is_toc_line_ending()`:**
 
-–ÚŸ€–ÚiƒŠ[ƒ_[{ƒy[ƒW”Ô†j‚ğ•¶––‚Æ‚µ‚Ä”F¯F
+ç›®æ¬¡é …ç›®ï¼ˆãƒªãƒ¼ãƒ€ãƒ¼ï¼‹ãƒšãƒ¼ã‚¸ç•ªå·ï¼‰ã‚’æ–‡æœ«ã¨ã—ã¦èªè­˜ï¼š
 
 ```python
-TOC_LEADER_CHARS = frozenset('cdED.E')  # ƒŠ[ƒ_[•¶š
+TOC_LEADER_CHARS = frozenset('â€¦â€¥ãƒ»ï¼.ãƒ»')  # ãƒªãƒ¼ãƒ€ãƒ¼æ–‡å­—
 
 def is_toc_line_ending(text: str) -> bool:
-    """–ÚŸƒpƒ^[ƒ“iƒŠ[ƒ_[{ƒy[ƒW”Ô†j‚ğŒŸo"""
-    # —á: "Œo‰c¬Ñ“™‚ÌŠT‹µccccc 2" ¨ True
-    # —á: "1. ˜AŒ‹à–±”•\..... 15" ¨ True
+    """ç›®æ¬¡ãƒ‘ã‚¿ãƒ¼ãƒ³ï¼ˆãƒªãƒ¼ãƒ€ãƒ¼ï¼‹ãƒšãƒ¼ã‚¸ç•ªå·ï¼‰ã‚’æ¤œå‡º"""
+    # ä¾‹: "çµŒå–¶æˆç¸¾ç­‰ã®æ¦‚æ³â€¦â€¦â€¦â€¦â€¦ 2" â†’ True
+    # ä¾‹: "1. é€£çµè²¡å‹™è«¸è¡¨..... 15" â†’ True
 ```
 
-**ŠJ‚«Š‡ŒÊ’è” `OPENING_BRACKETS`:**
+**é–‹ãæ‹¬å¼§å®šæ•° `OPENING_BRACKETS`:**
 
 ```python
-OPENING_BRACKETS = frozenset('(iuwykqsom')
+OPENING_BRACKETS = frozenset('(ï¼ˆã€Œã€ã€ã€”ã€ˆã€Šï½›ï¼»')
 ```
 
-**PP-DocLayout-LƒtƒH[ƒ‹ƒoƒbƒNˆ—:**
+**PP-DocLayout-Lãƒ•ã‚©ãƒ¼ãƒ«ãƒãƒƒã‚¯å‡¦ç†:**
 
-PP-DocLayout-L‚ªŒ‹‰Ê‚ğ•Ô‚³‚È‚¢ê‡‚ÌƒtƒH[ƒ‹ƒoƒbƒNˆ—F
-- `LayoutArray.fallback_used`: ƒtƒH[ƒ‹ƒoƒbƒNƒ‚[ƒhg—p‚ÉTrue‚Éİ’è
-- YÀ•Wƒx[ƒX‚Ì’i—ŒŸo + XÀ•W‚É‚æ‚é‘½’i‘g‚İŒŸo
-- ‘å‚«‚ÈXˆÚ“®i>100ptj‚©‚ÂYÀ•W‚ªã¸¨V‚µ‚¢’i—‚Æ”»’è
+PP-DocLayout-LãŒçµæœã‚’è¿”ã•ãªã„å ´åˆã®ãƒ•ã‚©ãƒ¼ãƒ«ãƒãƒƒã‚¯å‡¦ç†ï¼š
+- `LayoutArray.fallback_used`: ãƒ•ã‚©ãƒ¼ãƒ«ãƒãƒƒã‚¯ãƒ¢ãƒ¼ãƒ‰ä½¿ç”¨æ™‚ã«Trueã«è¨­å®š
+- Yåº§æ¨™ãƒ™ãƒ¼ã‚¹ã®æ®µè½æ¤œå‡º + Xåº§æ¨™ã«ã‚ˆã‚‹å¤šæ®µçµ„ã¿æ¤œå‡º
+- å¤§ããªXç§»å‹•ï¼ˆ>100ptï¼‰ã‹ã¤Yåº§æ¨™ãŒä¸Šæ˜‡â†’æ–°ã—ã„æ®µè½ã¨åˆ¤å®š
 
 **PP-DocLayout-L Settings:**
 ```python
@@ -1699,50 +1695,50 @@ model = LayoutDetection(
 )
 ```
 
-**TableCellsDetection (ƒe[ƒuƒ‹ƒZƒ‹‹«ŠEŒŸo):**
+**TableCellsDetection (ãƒ†ãƒ¼ãƒ–ãƒ«ã‚»ãƒ«å¢ƒç•Œæ¤œå‡º):**
 
-PP-DocLayout-L‚Íƒe[ƒuƒ‹—Ìˆæ‘S‘Ì‚ğŒŸo‚µ‚Ü‚·‚ªAŒÂX‚ÌƒZƒ‹‹«ŠE‚ÍŒŸo‚Å‚«‚Ü‚¹‚ñB
-ƒe[ƒuƒ‹“à‚ÌƒeƒLƒXƒg‚ªd‚È‚é–â‘è‚ğ‰ğŒˆ‚·‚é‚½‚ßAPaddleOCR‚Ì`TableCellsDetection`‚ğ’Ç‰Á“‡‚µ‚Ü‚µ‚½B
+PP-DocLayout-Lã¯ãƒ†ãƒ¼ãƒ–ãƒ«é ˜åŸŸå…¨ä½“ã‚’æ¤œå‡ºã—ã¾ã™ãŒã€å€‹ã€…ã®ã‚»ãƒ«å¢ƒç•Œã¯æ¤œå‡ºã§ãã¾ã›ã‚“ã€‚
+ãƒ†ãƒ¼ãƒ–ãƒ«å†…ã®ãƒ†ã‚­ã‚¹ãƒˆãŒé‡ãªã‚‹å•é¡Œã‚’è§£æ±ºã™ã‚‹ãŸã‚ã€PaddleOCRã®`TableCellsDetection`ã‚’è¿½åŠ çµ±åˆã—ã¾ã—ãŸã€‚
 
 ```python
 from paddleocr import TableCellsDetection
 model = TableCellsDetection(
-    model_name="RT-DETR-L_wired_table_cell_det",  # Œrü‚ ‚è•\—p (82.7% mAP)
+    model_name="RT-DETR-L_wired_table_cell_det",  # ç½«ç·šã‚ã‚Šè¡¨ç”¨ (82.7% mAP)
     device=device,
 )
 ```
 
-| ƒ‚ƒfƒ‹ | —p“r | ¸“x | ƒTƒCƒY |
+| ãƒ¢ãƒ‡ãƒ« | ç”¨é€” | ç²¾åº¦ | ã‚µã‚¤ã‚º |
 |--------|------|------|--------|
-| RT-DETR-L_wired_table_cell_det | Œrü‚ ‚è•\ | 82.7% mAP | 124MB |
-| RT-DETR-L_wireless_table_cell_det | Œrü‚È‚µ•\ | - | 124MB |
+| RT-DETR-L_wired_table_cell_det | ç½«ç·šã‚ã‚Šè¡¨ | 82.7% mAP | 124MB |
+| RT-DETR-L_wireless_table_cell_det | ç½«ç·šãªã—è¡¨ | - | 124MB |
 
-**“®ìƒtƒ[:**
+**å‹•ä½œãƒ•ãƒ­ãƒ¼:**
 ```
-1. PP-DocLayout-L: ƒy[ƒW‘S‘Ì‚ÌƒŒƒCƒAƒEƒg‰ğÍ ¨ ƒe[ƒuƒ‹—ÌˆæŒŸo
-2. TableCellsDetection: ƒe[ƒuƒ‹—Ìˆæ‚²‚Æ‚ÉƒZƒ‹‹«ŠE‚ğŒŸo
-3. analyze_all_table_structures(): ƒZƒ‹\‘¢‰ğÍirowspan/colspanŒŸoj
-4. apply_reading_order_to_layout(): ƒOƒ‰ƒtƒx[ƒX‚Ì“Ç‚İ‡„’è
-5. LayoutArray.table_cells: ƒe[ƒuƒ‹ID ¨ ƒZƒ‹ƒ{ƒbƒNƒXƒŠƒXƒg‚ğŠi”[
-6. calculate_expandable_width(): ƒZƒ‹‹«ŠE‚Ü‚ÅŠg’£‚ğ‹–‰Â
+1. PP-DocLayout-L: ãƒšãƒ¼ã‚¸å…¨ä½“ã®ãƒ¬ã‚¤ã‚¢ã‚¦ãƒˆè§£æ â†’ ãƒ†ãƒ¼ãƒ–ãƒ«é ˜åŸŸæ¤œå‡º
+2. TableCellsDetection: ãƒ†ãƒ¼ãƒ–ãƒ«é ˜åŸŸã”ã¨ã«ã‚»ãƒ«å¢ƒç•Œã‚’æ¤œå‡º
+3. analyze_all_table_structures(): ã‚»ãƒ«æ§‹é€ è§£æï¼ˆrowspan/colspanæ¤œå‡ºï¼‰
+4. apply_reading_order_to_layout(): ã‚°ãƒ©ãƒ•ãƒ™ãƒ¼ã‚¹ã®èª­ã¿é †æ¨å®š
+5. LayoutArray.table_cells: ãƒ†ãƒ¼ãƒ–ãƒ«ID â†’ ã‚»ãƒ«ãƒœãƒƒã‚¯ã‚¹ãƒªã‚¹ãƒˆã‚’æ ¼ç´
+6. calculate_expandable_width(): ã‚»ãƒ«å¢ƒç•Œã¾ã§æ‹¡å¼µã‚’è¨±å¯
 ```
 
-**“Ç‚İ‡„’è (Reading Order Estimation) - yomitokuƒXƒ^ƒCƒ‹:**
+**èª­ã¿é †æ¨å®š (Reading Order Estimation) - yomitokuã‚¹ã‚¿ã‚¤ãƒ«:**
 
-yomitoku (https://github.com/kotaro-kinoshita/yomitoku) ‚ğQl‚É‚µ‚½
-ƒOƒ‰ƒtƒx[ƒX‚Ì“Ç‚İ‡„’èƒAƒ‹ƒSƒŠƒYƒ€‚ğÀ‘•‚µ‚Ä‚¢‚Ü‚·F
+yomitoku (https://github.com/kotaro-kinoshita/yomitoku) ã‚’å‚è€ƒã«ã—ãŸ
+ã‚°ãƒ©ãƒ•ãƒ™ãƒ¼ã‚¹ã®èª­ã¿é †æ¨å®šã‚¢ãƒ«ã‚´ãƒªã‚ºãƒ ã‚’å®Ÿè£…ã—ã¦ã„ã¾ã™ï¼š
 
 ```python
 from yakulingo.processors.pdf_layout import (
-    ReadingDirection,               # “Ç‚İ•ûŒüenum
-    estimate_reading_order,         # “Ç‚İ‡„’è
-    apply_reading_order_to_layout,  # LayoutArray‚É“K—p
+    ReadingDirection,               # èª­ã¿æ–¹å‘enum
+    estimate_reading_order,         # èª­ã¿é †æ¨å®š
+    apply_reading_order_to_layout,  # LayoutArrayã«é©ç”¨
 )
 
-# g—p—áiƒfƒtƒHƒ‹ƒg: ‰¡‘‚«j
+# ä½¿ç”¨ä¾‹ï¼ˆãƒ‡ãƒ•ã‚©ãƒ«ãƒˆ: æ¨ªæ›¸ãï¼‰
 order = estimate_reading_order(layout, page_height)
 
-# c‘‚«“ú–{Œê‚Ìê‡
+# ç¸¦æ›¸ãæ—¥æœ¬èªã®å ´åˆ
 order = estimate_reading_order(
     layout, page_height,
     direction=ReadingDirection.RIGHT_TO_LEFT
@@ -1751,370 +1747,370 @@ order = estimate_reading_order(
 
 **ReadingDirection enum:**
 
-| ’l | à–¾ | —p“r |
+| å€¤ | èª¬æ˜ | ç”¨é€” |
 |-----|------|------|
-| `TOP_TO_BOTTOM` | ã¨‰ºA¶¨‰E | ‰¡‘‚«•¶‘iƒfƒtƒHƒ‹ƒgj |
-| `RIGHT_TO_LEFT` | ‰E¨¶Aã¨‰º | c‘‚«“ú–{Œê•¶‘ |
-| `LEFT_TO_RIGHT` | ¶¨‰EAã¨‰º | ‘½’i‘g‚İƒŒƒCƒAƒEƒg |
+| `TOP_TO_BOTTOM` | ä¸Šâ†’ä¸‹ã€å·¦â†’å³ | æ¨ªæ›¸ãæ–‡æ›¸ï¼ˆãƒ‡ãƒ•ã‚©ãƒ«ãƒˆï¼‰ |
+| `RIGHT_TO_LEFT` | å³â†’å·¦ã€ä¸Šâ†’ä¸‹ | ç¸¦æ›¸ãæ—¥æœ¬èªæ–‡æ›¸ |
+| `LEFT_TO_RIGHT` | å·¦â†’å³ã€ä¸Šâ†’ä¸‹ | å¤šæ®µçµ„ã¿ãƒ¬ã‚¤ã‚¢ã‚¦ãƒˆ |
 
-**ƒAƒ‹ƒSƒŠƒYƒ€ (yomitoku€‹’):**
-1. •ûŒü‚É‰‚¶‚½ƒOƒ‰ƒt\’zi’†ŠÔ—v‘f‚ª‚ ‚éê‡‚ÍƒGƒbƒW‚ğì¬‚µ‚È‚¢j
-2. ‹——£“x—Ê‚É‚æ‚éŠJnƒm[ƒh‘I’èi•ûŒü•Ê‚Ì—Dæ“xŒvZj
-3. ƒgƒ|ƒƒWƒJƒ‹ƒ\[ƒg‚Å“Ç‚İ‡‚ğŒˆ’è
+**ã‚¢ãƒ«ã‚´ãƒªã‚ºãƒ  (yomitokuæº–æ‹ ):**
+1. æ–¹å‘ã«å¿œã˜ãŸã‚°ãƒ©ãƒ•æ§‹ç¯‰ï¼ˆä¸­é–“è¦ç´ ãŒã‚ã‚‹å ´åˆã¯ã‚¨ãƒƒã‚¸ã‚’ä½œæˆã—ãªã„ï¼‰
+2. è·é›¢åº¦é‡ã«ã‚ˆã‚‹é–‹å§‹ãƒãƒ¼ãƒ‰é¸å®šï¼ˆæ–¹å‘åˆ¥ã®å„ªå…ˆåº¦è¨ˆç®—ï¼‰
+3. ãƒˆãƒãƒ­ã‚¸ã‚«ãƒ«ã‚½ãƒ¼ãƒˆã§èª­ã¿é †ã‚’æ±ºå®š
 
-**‹——£“x—ÊŒvZ:**
-- `top2bottom`: `X + (max_Y - Y)` ¨ ¶ã—Dæ
-- `right2left`: `(max_X - X) + (max_Y - Y)` ¨ ‰Eã—Dæ
-- `left2right`: `X * 1 + (max_Y - Y) * 5` ¨ Y—Dæiã’i—Dæj
+**è·é›¢åº¦é‡è¨ˆç®—:**
+- `top2bottom`: `X + (max_Y - Y)` â†’ å·¦ä¸Šå„ªå…ˆ
+- `right2left`: `(max_X - X) + (max_Y - Y)` â†’ å³ä¸Šå„ªå…ˆ
+- `left2right`: `X * 1 + (max_Y - Y) * 5` â†’ Yå„ªå…ˆï¼ˆä¸Šæ®µå„ªå…ˆï¼‰
 
-’ˆÓ: yomitoku‚ÍCC BY-NC-SA 4.0ƒ‰ƒCƒZƒ“ƒX‚Ì‚½‚ßA
-ƒAƒ‹ƒSƒŠƒYƒ€‚ğQl‚É‚µ‚½“Æ©MITŒİŠ·À‘•‚Å‚·B
+æ³¨æ„: yomitokuã¯CC BY-NC-SA 4.0ãƒ©ã‚¤ã‚»ãƒ³ã‚¹ã®ãŸã‚ã€
+ã‚¢ãƒ«ã‚´ãƒªã‚ºãƒ ã‚’å‚è€ƒã«ã—ãŸç‹¬è‡ªMITäº’æ›å®Ÿè£…ã§ã™ã€‚
 
-**c‘‚«•¶‘‚Ì©“®ŒŸo (Auto Direction Detection):**
+**ç¸¦æ›¸ãæ–‡æ›¸ã®è‡ªå‹•æ¤œå‡º (Auto Direction Detection):**
 
-c‘‚«“ú–{Œê•¶‘‚ğ©“®ŒŸo‚µ‚Ä“KØ‚È“Ç‚İ‡„’è‚ğs‚¤‹@”\F
+ç¸¦æ›¸ãæ—¥æœ¬èªæ–‡æ›¸ã‚’è‡ªå‹•æ¤œå‡ºã—ã¦é©åˆ‡ãªèª­ã¿é †æ¨å®šã‚’è¡Œã†æ©Ÿèƒ½ï¼š
 
 ```python
 from yakulingo.processors.pdf_layout import (
-    detect_reading_direction,           # c‘‚«/‰¡‘‚«©“®ŒŸo
-    estimate_reading_order_auto,        # ©“®ŒŸo + “Ç‚İ‡„’è
-    apply_reading_order_to_layout_auto, # ©“®ŒŸo + LayoutArray“K—p
+    detect_reading_direction,           # ç¸¦æ›¸ã/æ¨ªæ›¸ãè‡ªå‹•æ¤œå‡º
+    estimate_reading_order_auto,        # è‡ªå‹•æ¤œå‡º + èª­ã¿é †æ¨å®š
+    apply_reading_order_to_layout_auto, # è‡ªå‹•æ¤œå‡º + LayoutArrayé©ç”¨
 )
 
-# g—p—ái•ûŒü‚ğ©“®ŒŸoj
+# ä½¿ç”¨ä¾‹ï¼ˆæ–¹å‘ã‚’è‡ªå‹•æ¤œå‡ºï¼‰
 direction = detect_reading_direction(layout, page_height)
 order = estimate_reading_order_auto(layout, page_height)
 
-# LayoutArray‚É©“®“K—p
+# LayoutArrayã«è‡ªå‹•é©ç”¨
 apply_reading_order_to_layout_auto(layout, page_height)
 ```
 
-**c‘‚«ŒŸo‚Ìè‡’l:**
+**ç¸¦æ›¸ãæ¤œå‡ºã®é–¾å€¤:**
 
-| ’è” | ’l | à–¾ |
+| å®šæ•° | å€¤ | èª¬æ˜ |
 |------|------|------|
-| `VERTICAL_TEXT_ASPECT_RATIO_THRESHOLD` | 2.0 | height/width > 2.0 ‚Åc‘‚«—v‘f‚Æ”»’è |
-| `VERTICAL_TEXT_MIN_ELEMENTS` | 3 | Å’á3—v‘fˆÈã‚Å”»’è |
-| `VERTICAL_TEXT_COLUMN_THRESHOLD` | 0.7 | 70%ˆÈã‚ªc‘‚«‚È‚çc‘‚«•¶‘ |
+| `VERTICAL_TEXT_ASPECT_RATIO_THRESHOLD` | 2.0 | height/width > 2.0 ã§ç¸¦æ›¸ãè¦ç´ ã¨åˆ¤å®š |
+| `VERTICAL_TEXT_MIN_ELEMENTS` | 3 | æœ€ä½3è¦ç´ ä»¥ä¸Šã§åˆ¤å®š |
+| `VERTICAL_TEXT_COLUMN_THRESHOLD` | 0.7 | 70%ä»¥ä¸ŠãŒç¸¦æ›¸ããªã‚‰ç¸¦æ›¸ãæ–‡æ›¸ |
 
-**ŒŸoƒAƒ‹ƒSƒŠƒYƒ€:**
-1. ’i——v‘f‚ÌƒAƒXƒyƒNƒg”äi‚‚³/•j‚ğŒvZ
-2. è‡’li2.0j‚ğ’´‚¦‚é—v‘f‚ğc‘‚«—v‘f‚Æ‚µ‚ÄƒJƒEƒ“ƒg
-3. c‘‚«—v‘f‚ª70%ˆÈã ¨ `RIGHT_TO_LEFT`ic‘‚«j
-4. ‚»‚êˆÈŠO ¨ `TOP_TO_BOTTOM`i‰¡‘‚«j
+**æ¤œå‡ºã‚¢ãƒ«ã‚´ãƒªã‚ºãƒ :**
+1. æ®µè½è¦ç´ ã®ã‚¢ã‚¹ãƒšã‚¯ãƒˆæ¯”ï¼ˆé«˜ã•/å¹…ï¼‰ã‚’è¨ˆç®—
+2. é–¾å€¤ï¼ˆ2.0ï¼‰ã‚’è¶…ãˆã‚‹è¦ç´ ã‚’ç¸¦æ›¸ãè¦ç´ ã¨ã—ã¦ã‚«ã‚¦ãƒ³ãƒˆ
+3. ç¸¦æ›¸ãè¦ç´ ãŒ70%ä»¥ä¸Š â†’ `RIGHT_TO_LEFT`ï¼ˆç¸¦æ›¸ãï¼‰
+4. ãã‚Œä»¥å¤– â†’ `TOP_TO_BOTTOM`ï¼ˆæ¨ªæ›¸ãï¼‰
 
-**—Dæ“x•t‚«DFS (Priority DFS - yomitoku-style):**
+**å„ªå…ˆåº¦ä»˜ãDFS (Priority DFS - yomitoku-style):**
 
-yomitoku‚Ì`_priority_dfs`‚ğQl‚É‚µ‚½[‚³—Dæ’TõƒAƒ‹ƒSƒŠƒYƒ€F
+yomitokuã®`_priority_dfs`ã‚’å‚è€ƒã«ã—ãŸæ·±ã•å„ªå…ˆæ¢ç´¢ã‚¢ãƒ«ã‚´ãƒªã‚ºãƒ ï¼š
 
 ```python
-# “à•”ŠÖ”: _priority_dfs(graph, elements, direction)
-# - graph: —×ÚƒŠƒXƒgŒ`®‚ÌƒOƒ‰ƒt dict[int, list[int]]
-# - elements: —v‘fID‚Æbbox‚Ìƒ^ƒvƒ‹ƒŠƒXƒg list[(id, (x0, y0, x1, y1))]
-# - direction: ReadingDirectioni‹——£“x—Ê‚ÌŒvZ‚Ég—pj
+# å†…éƒ¨é–¢æ•°: _priority_dfs(graph, elements, direction)
+# - graph: éš£æ¥ãƒªã‚¹ãƒˆå½¢å¼ã®ã‚°ãƒ©ãƒ• dict[int, list[int]]
+# - elements: è¦ç´ IDã¨bboxã®ã‚¿ãƒ—ãƒ«ãƒªã‚¹ãƒˆ list[(id, (x0, y0, x1, y1))]
+# - direction: ReadingDirectionï¼ˆè·é›¢åº¦é‡ã®è¨ˆç®—ã«ä½¿ç”¨ï¼‰
 ```
 
-**ƒAƒ‹ƒSƒŠƒYƒ€“Á’¥:**
-- eƒm[ƒh‚ª‚·‚×‚Ä–K–âÏ‚İ‚Ìê‡‚Ì‚İqƒm[ƒh‚ğ–K–â
-- ‹——£“x—Ê‚É‚æ‚é—Dæ“x‚ÅŠJnƒm[ƒh‚ğ‘I‘ğ
-- –¢–K–âƒm[ƒh‚ª‚ ‚éê‡‚ÍŸ‚ÌŠJnƒm[ƒh‚©‚çÄŠJ
-- ƒTƒCƒNƒ‹ŒŸo‚Í–¢–K–â‚Ìe‚ªÅ­‚Ìƒm[ƒh‚©‚çˆ—
+**ã‚¢ãƒ«ã‚´ãƒªã‚ºãƒ ç‰¹å¾´:**
+- è¦ªãƒãƒ¼ãƒ‰ãŒã™ã¹ã¦è¨ªå•æ¸ˆã¿ã®å ´åˆã®ã¿å­ãƒãƒ¼ãƒ‰ã‚’è¨ªå•
+- è·é›¢åº¦é‡ã«ã‚ˆã‚‹å„ªå…ˆåº¦ã§é–‹å§‹ãƒãƒ¼ãƒ‰ã‚’é¸æŠ
+- æœªè¨ªå•ãƒãƒ¼ãƒ‰ãŒã‚ã‚‹å ´åˆã¯æ¬¡ã®é–‹å§‹ãƒãƒ¼ãƒ‰ã‹ã‚‰å†é–‹
+- ã‚µã‚¤ã‚¯ãƒ«æ¤œå‡ºæ™‚ã¯æœªè¨ªå•ã®è¦ªãŒæœ€å°‘ã®ãƒãƒ¼ãƒ‰ã‹ã‚‰å‡¦ç†
 
-**rowspan/colspanŒŸo (Table Cell Structure Analysis):**
+**rowspan/colspanæ¤œå‡º (Table Cell Structure Analysis):**
 
-À•WƒNƒ‰ƒXƒ^ƒŠƒ“ƒO‚É‚æ‚éƒZƒ‹\‘¢‰ğÍ‚ÅAŒ‹‡ƒZƒ‹‚ğŒŸo‚µ‚Ü‚·F
+åº§æ¨™ã‚¯ãƒ©ã‚¹ã‚¿ãƒªãƒ³ã‚°ã«ã‚ˆã‚‹ã‚»ãƒ«æ§‹é€ è§£æã§ã€çµåˆã‚»ãƒ«ã‚’æ¤œå‡ºã—ã¾ã™ï¼š
 
 ```python
 from yakulingo.processors.pdf_layout import (
-    analyze_table_structure,        # ’Pˆêƒe[ƒuƒ‹‚ÌƒZƒ‹\‘¢‰ğÍ
-    analyze_all_table_structures,   # •¡”ƒe[ƒuƒ‹‚ğˆêŠ‡‰ğÍ
-    get_cell_at_position,           # “Á’èˆÊ’u‚ÌƒZƒ‹æ“¾
-    get_table_dimensions,           # ƒe[ƒuƒ‹‚ÌsE—ñ”æ“¾
+    analyze_table_structure,        # å˜ä¸€ãƒ†ãƒ¼ãƒ–ãƒ«ã®ã‚»ãƒ«æ§‹é€ è§£æ
+    analyze_all_table_structures,   # è¤‡æ•°ãƒ†ãƒ¼ãƒ–ãƒ«ã‚’ä¸€æ‹¬è§£æ
+    get_cell_at_position,           # ç‰¹å®šä½ç½®ã®ã‚»ãƒ«å–å¾—
+    get_table_dimensions,           # ãƒ†ãƒ¼ãƒ–ãƒ«ã®è¡Œãƒ»åˆ—æ•°å–å¾—
 )
 
-# g—p—á
+# ä½¿ç”¨ä¾‹
 analyzed_cells = analyze_table_structure(cells, table_box)
 # cells: list of dict with 'box' key [(x0, y0, x1, y1)]
-# –ß‚è’l: list of dict with 'row', 'col', 'row_span', 'col_span' keys
+# æˆ»ã‚Šå€¤: list of dict with 'row', 'col', 'row_span', 'col_span' keys
 ```
 
-**ƒAƒ‹ƒSƒŠƒYƒ€:**
-1. ƒZƒ‹‚ÌX/YÀ•W‚ğƒNƒ‰ƒXƒ^ƒŠƒ“ƒO‚µ‚ÄƒOƒŠƒbƒhü‚ğŒŸo
-2. ŠeƒZƒ‹‚ª‚Ç‚ÌƒOƒŠƒbƒhü‚É‚Ü‚½‚ª‚é‚©‚ğŒvZ
-3. •¡”ƒOƒŠƒbƒh‚É‚Ü‚½‚ª‚éƒZƒ‹‚ğrowspan/colspan‚Æ‚µ‚ÄŒŸo
+**ã‚¢ãƒ«ã‚´ãƒªã‚ºãƒ :**
+1. ã‚»ãƒ«ã®X/Yåº§æ¨™ã‚’ã‚¯ãƒ©ã‚¹ã‚¿ãƒªãƒ³ã‚°ã—ã¦ã‚°ãƒªãƒƒãƒ‰ç·šã‚’æ¤œå‡º
+2. å„ã‚»ãƒ«ãŒã©ã®ã‚°ãƒªãƒƒãƒ‰ç·šã«ã¾ãŸãŒã‚‹ã‹ã‚’è¨ˆç®—
+3. è¤‡æ•°ã‚°ãƒªãƒƒãƒ‰ã«ã¾ãŸãŒã‚‹ã‚»ãƒ«ã‚’rowspan/colspanã¨ã—ã¦æ¤œå‡º
 
-| ŠÖ” | à–¾ |
+| é–¢æ•° | èª¬æ˜ |
 |------|------|
-| `_cluster_coordinates()` | À•W‚ğƒNƒ‰ƒXƒ^ƒŠƒ“ƒO‚µ‚ÄƒOƒŠƒbƒhü‚ğŒŸo |
-| `analyze_table_structure()` | ƒZƒ‹‚Ìrow/col/span‚ğŒvZ |
-| `get_cell_at_position()` | w’èsE—ñ‚ÌƒZƒ‹‚ğæ“¾ |
-| `get_table_dimensions()` | ƒe[ƒuƒ‹‚Ìs”E—ñ”‚ğæ“¾ |
+| `_cluster_coordinates()` | åº§æ¨™ã‚’ã‚¯ãƒ©ã‚¹ã‚¿ãƒªãƒ³ã‚°ã—ã¦ã‚°ãƒªãƒƒãƒ‰ç·šã‚’æ¤œå‡º |
+| `analyze_table_structure()` | ã‚»ãƒ«ã®row/col/spanã‚’è¨ˆç®— |
+| `get_cell_at_position()` | æŒ‡å®šè¡Œãƒ»åˆ—ã®ã‚»ãƒ«ã‚’å–å¾— |
+| `get_table_dimensions()` | ãƒ†ãƒ¼ãƒ–ãƒ«ã®è¡Œæ•°ãƒ»åˆ—æ•°ã‚’å–å¾— |
 
-**Šg’£ƒƒWƒbƒN:**
-- ƒZƒ‹‹«ŠEŒŸo¬Œ÷: ƒZƒ‹‹«ŠE‚Ü‚ÅŠg’£‰Â”\iƒeƒLƒXƒg‚Ì“Ç‚İ‚â‚·‚³—Dæj
-- ƒZƒ‹‹«ŠEŒŸo¸”s: ƒtƒHƒ“ƒgƒTƒCƒYk¬‚ÉƒtƒH[ƒ‹ƒoƒbƒNid‚È‚è–h~j
+**æ‹¡å¼µãƒ­ã‚¸ãƒƒã‚¯:**
+- ã‚»ãƒ«å¢ƒç•Œæ¤œå‡ºæˆåŠŸæ™‚: ã‚»ãƒ«å¢ƒç•Œã¾ã§æ‹¡å¼µå¯èƒ½ï¼ˆãƒ†ã‚­ã‚¹ãƒˆã®èª­ã¿ã‚„ã™ã•å„ªå…ˆï¼‰
+- ã‚»ãƒ«å¢ƒç•Œæ¤œå‡ºå¤±æ•—æ™‚: ãƒ•ã‚©ãƒ³ãƒˆã‚µã‚¤ã‚ºç¸®å°ã«ãƒ•ã‚©ãƒ¼ãƒ«ãƒãƒƒã‚¯ï¼ˆé‡ãªã‚Šé˜²æ­¢ï¼‰
 
-**yomitoku-style ƒmƒCƒYƒtƒBƒ‹ƒ^ƒŠƒ“ƒO:**
+**yomitoku-style ãƒã‚¤ã‚ºãƒ•ã‚£ãƒ«ã‚¿ãƒªãƒ³ã‚°:**
 
-yomitoku‚Ì`is_noise`ŠÖ”‚ğQl‚É‚µ‚½¬—v‘fƒtƒBƒ‹ƒ^ƒŠƒ“ƒOF
+yomitokuã®`is_noise`é–¢æ•°ã‚’å‚è€ƒã«ã—ãŸå°è¦ç´ ãƒ•ã‚£ãƒ«ã‚¿ãƒªãƒ³ã‚°ï¼š
 
 ```python
 from yakulingo.processors.pdf_layout import (
-    is_noise_element,         # —v‘f‚ªƒmƒCƒY‚©‚Ç‚¤‚©”»’è
-    filter_noise_elements,    # ƒŠƒXƒg‚©‚çƒmƒCƒY—v‘f‚ğœ‹
-    NOISE_MIN_SIZE_PX,        # Å¬ƒTƒCƒYè‡’li32px, yomitoku€‹’j
-    IMAGE_WARNING_SIZE_PX,    # ‰æ‘œŒxƒTƒCƒYè‡’li720pxj
+    is_noise_element,         # è¦ç´ ãŒãƒã‚¤ã‚ºã‹ã©ã†ã‹åˆ¤å®š
+    filter_noise_elements,    # ãƒªã‚¹ãƒˆã‹ã‚‰ãƒã‚¤ã‚ºè¦ç´ ã‚’é™¤å»
+    NOISE_MIN_SIZE_PX,        # æœ€å°ã‚µã‚¤ã‚ºé–¾å€¤ï¼ˆ32px, yomitokuæº–æ‹ ï¼‰
+    IMAGE_WARNING_SIZE_PX,    # ç”»åƒè­¦å‘Šã‚µã‚¤ã‚ºé–¾å€¤ï¼ˆ720pxï¼‰
 )
 
-# g—p—á
-if is_noise_element((10, 20, 15, 25)):  # •=5, ‚‚³=5
-    # ‚±‚Ì—v‘f‚ÍƒmƒCƒY - ƒXƒLƒbƒv
+# ä½¿ç”¨ä¾‹
+if is_noise_element((10, 20, 15, 25)):  # å¹…=5, é«˜ã•=5
+    # ã“ã®è¦ç´ ã¯ãƒã‚¤ã‚º - ã‚¹ã‚­ãƒƒãƒ—
     continue
 
-# ƒŠƒXƒg‚©‚çƒmƒCƒY‚ğœ‹
+# ãƒªã‚¹ãƒˆã‹ã‚‰ãƒã‚¤ã‚ºã‚’é™¤å»
 filtered = filter_noise_elements(detected_elements)
 ```
 
-| ’è”/ŠÖ” | ’l/à–¾ |
+| å®šæ•°/é–¢æ•° | å€¤/èª¬æ˜ |
 |----------|--------|
-| `NOISE_MIN_SIZE_PX` | 32px - •‚Ü‚½‚Í‚‚³‚ª‚±‚ê–¢–‚Ì—v‘f‚ÍƒmƒCƒYiyomitoku€‹’j |
-| `IMAGE_WARNING_SIZE_PX` | 720px - ‚±‚ÌˆÈ‰º‚Ì‰æ‘œ‚Í’á•i¿Œxiyomitoku€‹’j |
-| `is_noise_element()` | ’Pˆê—v‘f‚ÌƒmƒCƒY”»’è |
-| `filter_noise_elements()` | ƒŠƒXƒg‚©‚çƒmƒCƒY—v‘f‚ğœ‹ |
+| `NOISE_MIN_SIZE_PX` | 32px - å¹…ã¾ãŸã¯é«˜ã•ãŒã“ã‚Œæœªæº€ã®è¦ç´ ã¯ãƒã‚¤ã‚ºï¼ˆyomitokuæº–æ‹ ï¼‰ |
+| `IMAGE_WARNING_SIZE_PX` | 720px - ã“ã®ä»¥ä¸‹ã®ç”»åƒã¯ä½å“è³ªè­¦å‘Šï¼ˆyomitokuæº–æ‹ ï¼‰ |
+| `is_noise_element()` | å˜ä¸€è¦ç´ ã®ãƒã‚¤ã‚ºåˆ¤å®š |
+| `filter_noise_elements()` | ãƒªã‚¹ãƒˆã‹ã‚‰ãƒã‚¤ã‚ºè¦ç´ ã‚’é™¤å» |
 
-**yomitoku-style ƒwƒbƒ_[Eƒtƒbƒ^[ŒŸo:**
+**yomitoku-style ãƒ˜ãƒƒãƒ€ãƒ¼ãƒ»ãƒ•ãƒƒã‚¿ãƒ¼æ¤œå‡º:**
 
-PP-DocLayout-L‚ªheader/footer‚ğŒŸo‚µ‚È‚¢ê‡‚ÌƒtƒH[ƒ‹ƒoƒbƒN‹@”\F
+PP-DocLayout-LãŒheader/footerã‚’æ¤œå‡ºã—ãªã„å ´åˆã®ãƒ•ã‚©ãƒ¼ãƒ«ãƒãƒƒã‚¯æ©Ÿèƒ½ï¼š
 
 ```python
 from yakulingo.processors.pdf_layout import (
-    detect_header_footer_by_position,  # ˆÊ’uƒx[ƒX‚ÌŒŸo
-    mark_header_footer_in_layout,      # LayoutArray‚Éƒ}[ƒN
-    HEADER_FOOTER_RATIO,               # ƒwƒbƒ_[/ƒtƒbƒ^[—Ìˆæ”ä—¦i5%j
+    detect_header_footer_by_position,  # ä½ç½®ãƒ™ãƒ¼ã‚¹ã®æ¤œå‡º
+    mark_header_footer_in_layout,      # LayoutArrayã«ãƒãƒ¼ã‚¯
+    HEADER_FOOTER_RATIO,               # ãƒ˜ãƒƒãƒ€ãƒ¼/ãƒ•ãƒƒã‚¿ãƒ¼é ˜åŸŸæ¯”ç‡ï¼ˆ5%ï¼‰
 )
 
-# —v‘fƒŠƒXƒg‚ğ•ª—Ş
+# è¦ç´ ãƒªã‚¹ãƒˆã‚’åˆ†é¡
 headers, body, footers = detect_header_footer_by_position(
     elements, page_height=3508
 )
 
-# LayoutArray‚Érole‚ğƒ}[ƒN
+# LayoutArrayã«roleã‚’ãƒãƒ¼ã‚¯
 layout = mark_header_footer_in_layout(layout, page_height=3508)
 # layout.paragraphs[id]['role'] == 'header' or 'footer'
 ```
 
-| ’è”/ŠÖ” | ’l/à–¾ |
+| å®šæ•°/é–¢æ•° | å€¤/èª¬æ˜ |
 |----------|--------|
-| `HEADER_FOOTER_RATIO` | 0.05 - ƒy[ƒW‚Ìã‰º5%‚ğƒwƒbƒ_[/ƒtƒbƒ^[—Ìˆæ‚Æ‚·‚é |
-| `detect_header_footer_by_position()` | (headers, body, footers) ‚Ìƒ^ƒvƒ‹‚ğ•Ô‚· |
-| `mark_header_footer_in_layout()` | LayoutArray“à‚Ì—v‘f‚Érole‚ğƒ}[ƒN |
+| `HEADER_FOOTER_RATIO` | 0.05 - ãƒšãƒ¼ã‚¸ã®ä¸Šä¸‹5%ã‚’ãƒ˜ãƒƒãƒ€ãƒ¼/ãƒ•ãƒƒã‚¿ãƒ¼é ˜åŸŸã¨ã™ã‚‹ |
+| `detect_header_footer_by_position()` | (headers, body, footers) ã®ã‚¿ãƒ—ãƒ«ã‚’è¿”ã™ |
+| `mark_header_footer_in_layout()` | LayoutArrayå†…ã®è¦ç´ ã«roleã‚’ãƒãƒ¼ã‚¯ |
 
-**yomitoku-style –ÊÏƒx[ƒX‚Ìƒy[ƒW•ûŒü”»’è:**
+**yomitoku-style é¢ç©ãƒ™ãƒ¼ã‚¹ã®ãƒšãƒ¼ã‚¸æ–¹å‘åˆ¤å®š:**
 
-—v‘f”‚Å‚Í‚È‚­–ÊÏ‚Åƒy[ƒW•ûŒü‚ğ”»’è‚·‚éA‚æ‚èŒ˜˜S‚ÈƒAƒ‹ƒSƒŠƒYƒ€F
+è¦ç´ æ•°ã§ã¯ãªãé¢ç©ã§ãƒšãƒ¼ã‚¸æ–¹å‘ã‚’åˆ¤å®šã™ã‚‹ã€ã‚ˆã‚Šå …ç‰¢ãªã‚¢ãƒ«ã‚´ãƒªã‚ºãƒ ï¼š
 
 ```python
 from yakulingo.processors.pdf_layout import (
-    detect_reading_direction_by_area,   # –ÊÏƒx[ƒX‚Ì•ûŒüŒŸo
-    estimate_reading_order_by_area,     # –ÊÏƒx[ƒX‚Å“Ç‚İ‡„’è
+    detect_reading_direction_by_area,   # é¢ç©ãƒ™ãƒ¼ã‚¹ã®æ–¹å‘æ¤œå‡º
+    estimate_reading_order_by_area,     # é¢ç©ãƒ™ãƒ¼ã‚¹ã§èª­ã¿é †æ¨å®š
 )
 
-# –ÊÏƒx[ƒX‚Ì•ûŒüŒŸoi¬İƒTƒCƒY‚Ì•¶‘‚ÅŒ˜˜Sj
+# é¢ç©ãƒ™ãƒ¼ã‚¹ã®æ–¹å‘æ¤œå‡ºï¼ˆæ··åœ¨ã‚µã‚¤ã‚ºã®æ–‡æ›¸ã§å …ç‰¢ï¼‰
 direction = detect_reading_direction_by_area(layout, page_height)
 
-# –ÊÏƒx[ƒX‚Ì“Ç‚İ‡„’è
+# é¢ç©ãƒ™ãƒ¼ã‚¹ã®èª­ã¿é †æ¨å®š
 order = estimate_reading_order_by_area(layout, page_height)
 ```
 
-**ƒAƒ‹ƒSƒŠƒYƒ€:**
-1. ŠeƒeƒLƒXƒg—v‘f‚Ì–ÊÏ‚ğŒvZ
-2. c’·iheight/width > 2.0j‚È—v‘f‚Ì–ÊÏ‚ğ‡Œv
-3. c’·—v‘f‚Ì–ÊÏ‚ª‘S‘Ì‚Ì70%ˆÈã ¨ c‘‚«iRIGHT_TO_LEFTj
-4. ‚»‚êˆÈŠO ¨ ‰¡‘‚«iTOP_TO_BOTTOMj
+**ã‚¢ãƒ«ã‚´ãƒªã‚ºãƒ :**
+1. å„ãƒ†ã‚­ã‚¹ãƒˆè¦ç´ ã®é¢ç©ã‚’è¨ˆç®—
+2. ç¸¦é•·ï¼ˆheight/width > 2.0ï¼‰ãªè¦ç´ ã®é¢ç©ã‚’åˆè¨ˆ
+3. ç¸¦é•·è¦ç´ ã®é¢ç©ãŒå…¨ä½“ã®70%ä»¥ä¸Š â†’ ç¸¦æ›¸ãï¼ˆRIGHT_TO_LEFTï¼‰
+4. ãã‚Œä»¥å¤– â†’ æ¨ªæ›¸ãï¼ˆTOP_TO_BOTTOMï¼‰
 
-**yomitoku-style —v‘fd•¡”»’è:**
+**yomitoku-style è¦ç´ é‡è¤‡åˆ¤å®š:**
 
-yomitoku‚Ì`calc_overlap_ratio`A`is_contained`A`is_intersected`‚ğQl‚É‚µ‚½d•¡ŒvZF
+yomitokuã®`calc_overlap_ratio`ã€`is_contained`ã€`is_intersected`ã‚’å‚è€ƒã«ã—ãŸé‡è¤‡è¨ˆç®—ï¼š
 
 ```python
 from yakulingo.processors.pdf_layout import (
-    calc_overlap_ratio,               # d•¡”ä—¦‚ğŒvZ
-    is_element_contained,             # —v‘f‚ªŠÜ‚Ü‚ê‚Ä‚¢‚é‚©”»’èiè‡’l0.8j
-    is_intersected_horizontal,        # …•½•ûŒü‚ÌŒğ·”»’èiè‡’l0.5j
-    is_intersected_vertical,          # ‚’¼•ûŒü‚ÌŒğ·”»’èiè‡’l0.5j
-    ELEMENT_CONTAINMENT_THRESHOLD,    # ŠÜ—L”»’èè‡’li0.8, yomitoku€‹’j
-    ELEMENT_INTERSECTION_THRESHOLD,   # Œğ·”»’èè‡’li0.5, yomitoku€‹’j
-    ELEMENT_OVERLAP_THRESHOLD,        # Œã•ûŒİŠ·«—pi0.5j
+    calc_overlap_ratio,               # é‡è¤‡æ¯”ç‡ã‚’è¨ˆç®—
+    is_element_contained,             # è¦ç´ ãŒå«ã¾ã‚Œã¦ã„ã‚‹ã‹åˆ¤å®šï¼ˆé–¾å€¤0.8ï¼‰
+    is_intersected_horizontal,        # æ°´å¹³æ–¹å‘ã®äº¤å·®åˆ¤å®šï¼ˆé–¾å€¤0.5ï¼‰
+    is_intersected_vertical,          # å‚ç›´æ–¹å‘ã®äº¤å·®åˆ¤å®šï¼ˆé–¾å€¤0.5ï¼‰
+    ELEMENT_CONTAINMENT_THRESHOLD,    # å«æœ‰åˆ¤å®šé–¾å€¤ï¼ˆ0.8, yomitokuæº–æ‹ ï¼‰
+    ELEMENT_INTERSECTION_THRESHOLD,   # äº¤å·®åˆ¤å®šé–¾å€¤ï¼ˆ0.5, yomitokuæº–æ‹ ï¼‰
+    ELEMENT_OVERLAP_THRESHOLD,        # å¾Œæ–¹äº’æ›æ€§ç”¨ï¼ˆ0.5ï¼‰
 )
 
-# d•¡”ä—¦i0.0?1.0j
+# é‡è¤‡æ¯”ç‡ï¼ˆ0.0?1.0ï¼‰
 ratio = calc_overlap_ratio(word_box, paragraph_box)
 
-# ŠÜ—L”»’èiè‡’l0.8ˆÈã‚ÅŠÜ‚Ü‚ê‚Ä‚¢‚é‚Æ”»’è - yomitoku€‹’j
+# å«æœ‰åˆ¤å®šï¼ˆé–¾å€¤0.8ä»¥ä¸Šã§å«ã¾ã‚Œã¦ã„ã‚‹ã¨åˆ¤å®š - yomitokuæº–æ‹ ï¼‰
 if is_element_contained(word_box, paragraph_box):
     paragraph.add_word(word)
 
-# …•½•ûŒü‚ÌŒğ·iè‡’l0.5ˆÈã‚ÅŒğ·‚Æ”»’èj
+# æ°´å¹³æ–¹å‘ã®äº¤å·®ï¼ˆé–¾å€¤0.5ä»¥ä¸Šã§äº¤å·®ã¨åˆ¤å®šï¼‰
 if is_intersected_horizontal(box1, box2):
-    # box1‚Æbox2‚Í…•½•ûŒü‚Éd‚È‚Á‚Ä‚¢‚é
+    # box1ã¨box2ã¯æ°´å¹³æ–¹å‘ã«é‡ãªã£ã¦ã„ã‚‹
 
-# ‚’¼•ûŒü‚ÌŒğ·iè‡’l0.5ˆÈã‚ÅŒğ·‚Æ”»’èj
+# å‚ç›´æ–¹å‘ã®äº¤å·®ï¼ˆé–¾å€¤0.5ä»¥ä¸Šã§äº¤å·®ã¨åˆ¤å®šï¼‰
 if is_intersected_vertical(box1, box2):
-    # box1‚Æbox2‚Í‚’¼•ûŒü‚Éd‚È‚Á‚Ä‚¢‚é
+    # box1ã¨box2ã¯å‚ç›´æ–¹å‘ã«é‡ãªã£ã¦ã„ã‚‹
 ```
 
-| ’è”/ŠÖ” | ’l/à–¾ |
+| å®šæ•°/é–¢æ•° | å€¤/èª¬æ˜ |
 |----------|--------|
-| `ELEMENT_CONTAINMENT_THRESHOLD` | 0.8 - 80%ˆÈãd•¡‚ÅŠÜ—L‚Æ”»’èiyomitoku€‹’j |
-| `ELEMENT_INTERSECTION_THRESHOLD` | 0.5 - 50%ˆÈãd•¡‚ÅŒğ·‚Æ”»’èiyomitoku€‹’j |
-| `ELEMENT_OVERLAP_THRESHOLD` | 0.5 - Œã•ûŒİŠ·«—p |
-| `calc_overlap_ratio()` | (Œğ·–ÊÏ) / (box1–ÊÏ) ‚ğ•Ô‚· |
-| `is_element_contained()` | ŠÜ—L”»’èiƒfƒtƒHƒ‹ƒgè‡’l0.8j |
-| `is_intersected_horizontal()` | …•½•ûŒü‚ÌŒğ·”»’èimin_width”äj |
-| `is_intersected_vertical()` | ‚’¼•ûŒü‚ÌŒğ·”»’èimin_height”äj |
+| `ELEMENT_CONTAINMENT_THRESHOLD` | 0.8 - 80%ä»¥ä¸Šé‡è¤‡ã§å«æœ‰ã¨åˆ¤å®šï¼ˆyomitokuæº–æ‹ ï¼‰ |
+| `ELEMENT_INTERSECTION_THRESHOLD` | 0.5 - 50%ä»¥ä¸Šé‡è¤‡ã§äº¤å·®ã¨åˆ¤å®šï¼ˆyomitokuæº–æ‹ ï¼‰ |
+| `ELEMENT_OVERLAP_THRESHOLD` | 0.5 - å¾Œæ–¹äº’æ›æ€§ç”¨ |
+| `calc_overlap_ratio()` | (äº¤å·®é¢ç©) / (box1é¢ç©) ã‚’è¿”ã™ |
+| `is_element_contained()` | å«æœ‰åˆ¤å®šï¼ˆãƒ‡ãƒ•ã‚©ãƒ«ãƒˆé–¾å€¤0.8ï¼‰ |
+| `is_intersected_horizontal()` | æ°´å¹³æ–¹å‘ã®äº¤å·®åˆ¤å®šï¼ˆmin_widthæ¯”ï¼‰ |
+| `is_intersected_vertical()` | å‚ç›´æ–¹å‘ã®äº¤å·®åˆ¤å®šï¼ˆmin_heightæ¯”ï¼‰ |
 
-**ƒAƒ‰ƒCƒƒ“ƒgƒx[ƒXŠg’£•ûŒü (pdf_processor.py):**
+**ã‚¢ãƒ©ã‚¤ãƒ¡ãƒ³ãƒˆãƒ™ãƒ¼ã‚¹æ‹¡å¼µæ–¹å‘ (pdf_processor.py):**
 
-| ŠÖ” | à–¾ |
+| é–¢æ•° | èª¬æ˜ |
 |------|------|
-| `TextAlignment` | ‰¡‘‚«ƒeƒLƒXƒg‚Ì”z’uƒ^ƒCƒviLEFT/RIGHT/CENTERj |
-| `VerticalAlignment` | c‘‚«ƒeƒLƒXƒg‚Ì”z’uƒ^ƒCƒviTOP/BOTTOM/CENTERj |
-| `is_vertical_text()` | ƒAƒXƒyƒNƒg”äiheight/width > 1.5j‚Åc‘‚«”»’è |
-| `estimate_text_alignment()` | ‰¡•ûŒü‚Ì”z’u„’èiƒ}[ƒWƒ“”äŠrj |
-| `estimate_vertical_alignment()` | c•ûŒü‚Ì”z’u„’èiƒ}[ƒWƒ“”äŠrj |
-| `calculate_expanded_box()` | ‰¡•ûŒü‚ÌƒAƒ‰ƒCƒƒ“ƒgƒx[ƒXŠg’£ |
-| `calculate_expanded_box_vertical()` | c•ûŒü‚ÌƒAƒ‰ƒCƒƒ“ƒgƒx[ƒXŠg’£ |
+| `TextAlignment` | æ¨ªæ›¸ããƒ†ã‚­ã‚¹ãƒˆã®é…ç½®ã‚¿ã‚¤ãƒ—ï¼ˆLEFT/RIGHT/CENTERï¼‰ |
+| `VerticalAlignment` | ç¸¦æ›¸ããƒ†ã‚­ã‚¹ãƒˆã®é…ç½®ã‚¿ã‚¤ãƒ—ï¼ˆTOP/BOTTOM/CENTERï¼‰ |
+| `is_vertical_text()` | ã‚¢ã‚¹ãƒšã‚¯ãƒˆæ¯”ï¼ˆheight/width > 1.5ï¼‰ã§ç¸¦æ›¸ãåˆ¤å®š |
+| `estimate_text_alignment()` | æ¨ªæ–¹å‘ã®é…ç½®æ¨å®šï¼ˆãƒãƒ¼ã‚¸ãƒ³æ¯”è¼ƒï¼‰ |
+| `estimate_vertical_alignment()` | ç¸¦æ–¹å‘ã®é…ç½®æ¨å®šï¼ˆãƒãƒ¼ã‚¸ãƒ³æ¯”è¼ƒï¼‰ |
+| `calculate_expanded_box()` | æ¨ªæ–¹å‘ã®ã‚¢ãƒ©ã‚¤ãƒ¡ãƒ³ãƒˆãƒ™ãƒ¼ã‚¹æ‹¡å¼µ |
+| `calculate_expanded_box_vertical()` | ç¸¦æ–¹å‘ã®ã‚¢ãƒ©ã‚¤ãƒ¡ãƒ³ãƒˆãƒ™ãƒ¼ã‚¹æ‹¡å¼µ |
 
-**c•ûŒü‹«ŠEŒŸo (pdf_layout.py):**
+**ç¸¦æ–¹å‘å¢ƒç•Œæ¤œå‡º (pdf_layout.py):**
 
-| ŠÖ” | à–¾ |
+| é–¢æ•° | èª¬æ˜ |
 |------|------|
-| `_find_top_boundary()` | ã‘¤‚Ì—×ÚƒuƒƒbƒN‚ğŒŸõ‚µ‚Äã‹«ŠE‚ğŒˆ’è |
-| `_find_bottom_boundary()` | ‰º‘¤‚Ì—×ÚƒuƒƒbƒN‚ğŒŸõ‚µ‚Ä‰º‹«ŠE‚ğŒˆ’è |
-| `_find_containing_cell_vertical_boundaries()` | ƒe[ƒuƒ‹ƒZƒ‹‚Ìã‰º‹«ŠE‚ğæ“¾ |
-| `calculate_expandable_vertical_margins()` | ã‰º‚ÌŠg’£‰Â”\ƒ}[ƒWƒ“‚ğŒvZ |
+| `_find_top_boundary()` | ä¸Šå´ã®éš£æ¥ãƒ–ãƒ­ãƒƒã‚¯ã‚’æ¤œç´¢ã—ã¦ä¸Šå¢ƒç•Œã‚’æ±ºå®š |
+| `_find_bottom_boundary()` | ä¸‹å´ã®éš£æ¥ãƒ–ãƒ­ãƒƒã‚¯ã‚’æ¤œç´¢ã—ã¦ä¸‹å¢ƒç•Œã‚’æ±ºå®š |
+| `_find_containing_cell_vertical_boundaries()` | ãƒ†ãƒ¼ãƒ–ãƒ«ã‚»ãƒ«ã®ä¸Šä¸‹å¢ƒç•Œã‚’å–å¾— |
+| `calculate_expandable_vertical_margins()` | ä¸Šä¸‹ã®æ‹¡å¼µå¯èƒ½ãƒãƒ¼ã‚¸ãƒ³ã‚’è¨ˆç®— |
 
-**’è”:**
+**å®šæ•°:**
 
-| ’è” | ’l | à–¾ |
+| å®šæ•° | å€¤ | èª¬æ˜ |
 |------|------|------|
-| `ALIGNMENT_TOLERANCE` | 5.0pt | ƒAƒ‰ƒCƒƒ“ƒg”»’è‚Ì‹–—eŒë· |
-| `VERTICAL_TEXT_ASPECT_RATIO` | 2.0 | c‘‚«”»’è‚Ìè‡’liyomitoku: thresh_aspect=2j |
-| `MAX_EXPANSION_RATIO` | 2.0 | Å‘åŠg’£”ä—¦i200%j |
+| `ALIGNMENT_TOLERANCE` | 5.0pt | ã‚¢ãƒ©ã‚¤ãƒ¡ãƒ³ãƒˆåˆ¤å®šã®è¨±å®¹èª¤å·® |
+| `VERTICAL_TEXT_ASPECT_RATIO` | 2.0 | ç¸¦æ›¸ãåˆ¤å®šã®é–¾å€¤ï¼ˆyomitoku: thresh_aspect=2ï¼‰ |
+| `MAX_EXPANSION_RATIO` | 2.0 | æœ€å¤§æ‹¡å¼µæ¯”ç‡ï¼ˆ200%ï¼‰ |
 
-**DPIİ’è (`ocr_dpi`):**
+**DPIè¨­å®š (`ocr_dpi`):**
 
-| İ’è’l | ‰ğ‘œ“x | ƒƒ‚ƒŠg—p—Ê | ¸“x | ˆ—ŠÔ |
+| è¨­å®šå€¤ | è§£åƒåº¦ | ãƒ¡ãƒ¢ãƒªä½¿ç”¨é‡ | ç²¾åº¦ | å‡¦ç†æ™‚é–“ |
 |--------|--------|-------------|------|----------|
-| 150 | ’á | ~15MB/page | ’á | ‘¬‚¢ |
-| **300** | **ƒfƒtƒHƒ‹ƒg** | **~60MB/page** | **‚** | **•W€** |
-| 600 | ‚ | ~240MB/page | Å‚ | ’x‚¢ |
+| 150 | ä½ | ~15MB/page | ä½ | é€Ÿã„ |
+| **300** | **ãƒ‡ãƒ•ã‚©ãƒ«ãƒˆ** | **~60MB/page** | **é«˜** | **æ¨™æº–** |
+| 600 | é«˜ | ~240MB/page | æœ€é«˜ | é…ã„ |
 
-- ƒfƒtƒHƒ‹ƒg: **300 DPI**i¸“x‚Æˆ—ŠÔ‚Ìƒoƒ‰ƒ“ƒXj
-- —LŒø”ÍˆÍ: 72?600 DPI
-- A4 @ 300 DPI ? 2480~3508 px ~ 3 channels ? 26MB/pagei‰æ‘œƒf[ƒ^j
-- scaleŒvZ: `layout_height / page_height = (page_height_pt ~ dpi / 72) / page_height_pt = dpi / 72`
+- ãƒ‡ãƒ•ã‚©ãƒ«ãƒˆ: **300 DPI**ï¼ˆç²¾åº¦ã¨å‡¦ç†æ™‚é–“ã®ãƒãƒ©ãƒ³ã‚¹ï¼‰
+- æœ‰åŠ¹ç¯„å›²: 72?600 DPI
+- A4 @ 300 DPI ? 2480Ã—3508 px Ã— 3 channels ? 26MB/pageï¼ˆç”»åƒãƒ‡ãƒ¼ã‚¿ï¼‰
+- scaleè¨ˆç®—: `layout_height / page_height = (page_height_pt Ã— dpi / 72) / page_height_pt = dpi / 72`
 
-**ƒƒ‚ƒŠƒ`ƒFƒbƒN‹@”\:**
+**ãƒ¡ãƒ¢ãƒªãƒã‚§ãƒƒã‚¯æ©Ÿèƒ½:**
 
-‘å‹K–ÍPDFˆ—‚Ìƒƒ‚ƒŠ•s‘«‚ğ–h‚®‚½‚ß‚Ì–‘Oƒ`ƒFƒbƒN‹@”\F
+å¤§è¦æ¨¡PDFå‡¦ç†æ™‚ã®ãƒ¡ãƒ¢ãƒªä¸è¶³ã‚’é˜²ããŸã‚ã®äº‹å‰ãƒã‚§ãƒƒã‚¯æ©Ÿèƒ½ï¼š
 
 ```python
 from yakulingo.processors.pdf_processor import (
-    estimate_memory_usage_mb,       # ƒƒ‚ƒŠg—p—Ê„’è
-    check_memory_for_pdf_processing,  # ˆ—‘Oƒ`ƒFƒbƒN
+    estimate_memory_usage_mb,       # ãƒ¡ãƒ¢ãƒªä½¿ç”¨é‡æ¨å®š
+    check_memory_for_pdf_processing,  # å‡¦ç†å‰ãƒã‚§ãƒƒã‚¯
 )
 
-# g—p—á
+# ä½¿ç”¨ä¾‹
 is_safe, estimated_mb, available_mb = check_memory_for_pdf_processing(
     page_count=100,
     dpi=300,
-    warn_only=True,  # False‚É‚·‚é‚Æƒƒ‚ƒŠ•s‘«‚ÉMemoryError”­¶
+    warn_only=True,  # Falseã«ã™ã‚‹ã¨ãƒ¡ãƒ¢ãƒªä¸è¶³æ™‚ã«MemoryErrorç™ºç”Ÿ
 )
 ```
 
-| ’è” | ’l | à–¾ |
+| å®šæ•° | å€¤ | èª¬æ˜ |
 |------|------|------|
-| `MEMORY_BASE_MB_PER_PAGE_300DPI` | 26.0 | A4 300DPI‚Ì1ƒy[ƒW‚ ‚½‚èƒƒ‚ƒŠ |
-| `MEMORY_AVAILABLE_RATIO` | 0.5 | —˜—p‰Â”\ƒƒ‚ƒŠ‚ÌÅ‘åg—p—¦ |
-| `MEMORY_WARNING_THRESHOLD_MB` | 1024 | Œxo—Í‚Ìè‡’l |
+| `MEMORY_BASE_MB_PER_PAGE_300DPI` | 26.0 | A4 300DPIæ™‚ã®1ãƒšãƒ¼ã‚¸ã‚ãŸã‚Šãƒ¡ãƒ¢ãƒª |
+| `MEMORY_AVAILABLE_RATIO` | 0.5 | åˆ©ç”¨å¯èƒ½ãƒ¡ãƒ¢ãƒªã®æœ€å¤§ä½¿ç”¨ç‡ |
+| `MEMORY_WARNING_THRESHOLD_MB` | 1024 | è­¦å‘Šå‡ºåŠ›ã®é–¾å€¤ |
 
 **Line Break Handling (yomitoku reference):**
 
-PDF–|–ó‚Å‚Í‹Šo“I‚Ès––‚Å‚Ì‰üs‚ğ•¶ší•Ê‚ÉŠî‚Ã‚¢‚Äˆ—‚µ‚Ü‚·F
+PDFç¿»è¨³ã§ã¯è¦–è¦šçš„ãªè¡Œæœ«ã§ã®æ”¹è¡Œã‚’æ–‡å­—ç¨®åˆ¥ã«åŸºã¥ã„ã¦å‡¦ç†ã—ã¾ã™ï¼š
 
-| •¶ší•Ê | sŒ‹‡‚Ìˆ— | —á |
+| æ–‡å­—ç¨®åˆ¥ | è¡Œçµåˆæ™‚ã®å‡¦ç† | ä¾‹ |
 |----------|---------------|-----|
-| CJK ¨ CJK | ƒXƒy[ƒX‚È‚µ‚Å˜AŒ‹ | `“ú–{Œê` + `ƒeƒLƒXƒg` ¨ `“ú–{ŒêƒeƒLƒXƒg` |
-| Latin ¨ Latin | ƒXƒy[ƒX‚ğ‘}“ü | `Hello` + `World` ¨ `Hello World` |
-| CJK ¨ Latin | ƒXƒy[ƒX‚È‚µ‚Å˜AŒ‹ | `“ú–{Œê` + `ABC` ¨ `“ú–{ŒêABC` |
-| Latin ¨ CJK | ƒXƒy[ƒX‚È‚µ‚Å˜AŒ‹ | `ABC` + `“ú–{Œê` ¨ `ABC“ú–{Œê` |
-| ƒnƒCƒtƒ“I—¹ | ƒnƒCƒtƒ“íœ‚µ‚Ä˜AŒ‹ | `hyph-` + `en` ¨ `hyphen` |
+| CJK â†’ CJK | ã‚¹ãƒšãƒ¼ã‚¹ãªã—ã§é€£çµ | `æ—¥æœ¬èª` + `ãƒ†ã‚­ã‚¹ãƒˆ` â†’ `æ—¥æœ¬èªãƒ†ã‚­ã‚¹ãƒˆ` |
+| Latin â†’ Latin | ã‚¹ãƒšãƒ¼ã‚¹ã‚’æŒ¿å…¥ | `Hello` + `World` â†’ `Hello World` |
+| CJK â†’ Latin | ã‚¹ãƒšãƒ¼ã‚¹ãªã—ã§é€£çµ | `æ—¥æœ¬èª` + `ABC` â†’ `æ—¥æœ¬èªABC` |
+| Latin â†’ CJK | ã‚¹ãƒšãƒ¼ã‚¹ãªã—ã§é€£çµ | `ABC` + `æ—¥æœ¬èª` â†’ `ABCæ—¥æœ¬èª` |
+| ãƒã‚¤ãƒ•ãƒ³çµ‚äº† | ãƒã‚¤ãƒ•ãƒ³å‰Šé™¤ã—ã¦é€£çµ | `hyph-` + `en` â†’ `hyphen` |
 
-**sŒ‹‡ŠÖ”:**
+**è¡Œçµåˆé–¢æ•°:**
 
 ```python
 from yakulingo.processors.pdf_converter import (
-    get_line_join_separator,    # sŒ‹‡‚ÌƒZƒpƒŒ[ƒ^‚ğŒˆ’è
-    is_line_end_hyphenated,     # ƒnƒCƒtƒ“I—¹s‚ÌŒŸo
-    is_toc_line_ending,         # –ÚŸƒpƒ^[ƒ“ŒŸo
-    is_japanese_continuation_line,  # “ú–{ŒêŒp‘±s”»’è
-    _is_cjk_char,               # CJK•¶š”»’è
-    _is_latin_char,             # ƒ‰ƒeƒ“•¶š”»’è
+    get_line_join_separator,    # è¡Œçµåˆæ™‚ã®ã‚»ãƒ‘ãƒ¬ãƒ¼ã‚¿ã‚’æ±ºå®š
+    is_line_end_hyphenated,     # ãƒã‚¤ãƒ•ãƒ³çµ‚äº†è¡Œã®æ¤œå‡º
+    is_toc_line_ending,         # ç›®æ¬¡ãƒ‘ã‚¿ãƒ¼ãƒ³æ¤œå‡º
+    is_japanese_continuation_line,  # æ—¥æœ¬èªç¶™ç¶šè¡Œåˆ¤å®š
+    _is_cjk_char,               # CJKæ–‡å­—åˆ¤å®š
+    _is_latin_char,             # ãƒ©ãƒ†ãƒ³æ–‡å­—åˆ¤å®š
 )
 
-# g—p—á
-separator = get_line_join_separator("“ú–{Œê", "ƒe")  # returns ""
+# ä½¿ç”¨ä¾‹
+separator = get_line_join_separator("æ—¥æœ¬èª", "ãƒ†")  # returns ""
 separator = get_line_join_separator("Hello", "W")    # returns " "
 ```
 
-**Œp‘±s”»’è `is_japanese_continuation_line()`:**
+**ç¶™ç¶šè¡Œåˆ¤å®š `is_japanese_continuation_line()`:**
 
-“ú–{ŒêƒeƒLƒXƒg‚ªŸ‚Ìs‚ÉŒp‘±‚·‚é‚©‚ğ”»’èF
+æ—¥æœ¬èªãƒ†ã‚­ã‚¹ãƒˆãŒæ¬¡ã®è¡Œã«ç¶™ç¶šã™ã‚‹ã‹ã‚’åˆ¤å®šï¼š
 
 ```python
 def is_japanese_continuation_line(text: str) -> bool:
-    """“ú–{ŒêŒp‘±s”»’è"""
-    # ˆÈ‰º‚Ìê‡‚ÍŒp‘±‚µ‚È‚¢iFalse‚ğ•Ô‚·j:
-    # 1. •¶––‹L†‚ÅI‚í‚éiBIH‚È‚Çj
-    # 2. ”—Ê’PˆÊ‚ÅI‚í‚éi‰~–œ‰­ç‘äŒÂŒ–¼Ğ”NŒ“ú‰ñ–{–‡“%j
-    # 3. –ÚŸƒpƒ^[ƒ“iƒŠ[ƒ_[{ƒy[ƒW”Ô†j
+    """æ—¥æœ¬èªç¶™ç¶šè¡Œåˆ¤å®š"""
+    # ä»¥ä¸‹ã®å ´åˆã¯ç¶™ç¶šã—ãªã„ï¼ˆFalseã‚’è¿”ã™ï¼‰:
+    # 1. æ–‡æœ«è¨˜å·ã§çµ‚ã‚ã‚‹ï¼ˆã€‚ï¼ï¼Ÿãªã©ï¼‰
+    # 2. æ•°é‡å˜ä½ã§çµ‚ã‚ã‚‹ï¼ˆå††ä¸‡å„„åƒå°å€‹ä»¶åç¤¾å¹´æœˆæ—¥å›æœ¬æšï¼…%ï¼‰
+    # 3. ç›®æ¬¡ãƒ‘ã‚¿ãƒ¼ãƒ³ï¼ˆãƒªãƒ¼ãƒ€ãƒ¼ï¼‹ãƒšãƒ¼ã‚¸ç•ªå·ï¼‰
 ```
 
-**’è”:**
+**å®šæ•°:**
 
-| ’è”–¼ | à–¾ |
+| å®šæ•°å | èª¬æ˜ |
 |--------|------|
-| `SENTENCE_END_CHARS_JA` | “ú–{Œê•¶––‹L†: `BIHcdjvxzplrtj„]„` |
-| `SENTENCE_END_CHARS_EN` | ‰pŒê•¶––‹L†: `.!?;:` |
-| `HYPHEN_CHARS` | ƒnƒCƒtƒ“•¶š: `-]?????` |
-| `TOC_LEADER_CHARS` | –ÚŸƒŠ[ƒ_[•¶š: `cdED.E` |
-| `OPENING_BRACKETS` | ŠJ‚«Š‡ŒÊ: `(iuwykqsom` |
-| `QUANTITY_UNITS_JA` | ”—Ê’PˆÊiŒp‘±s”»’èœŠOj: `‰~–œ‰­ç‘äŒÂŒ–¼Ğ”NŒ“ú‰ñ–{–‡“%` |
+| `SENTENCE_END_CHARS_JA` | æ—¥æœ¬èªæ–‡æœ«è¨˜å·: `ã€‚ï¼ï¼Ÿâ€¦â€¥ï¼‰ã€ã€ã€‘ï½ã€•ã€‰ã€‹ï¼‰ï¼]ï¼` |
+| `SENTENCE_END_CHARS_EN` | è‹±èªæ–‡æœ«è¨˜å·: `.!?;:` |
+| `HYPHEN_CHARS` | ãƒã‚¤ãƒ•ãƒ³æ–‡å­—: `-â€?????` |
+| `TOC_LEADER_CHARS` | ç›®æ¬¡ãƒªãƒ¼ãƒ€ãƒ¼æ–‡å­—: `â€¦â€¥ãƒ»ï¼.ãƒ»` |
+| `OPENING_BRACKETS` | é–‹ãæ‹¬å¼§: `(ï¼ˆã€Œã€ã€ã€”ã€ˆã€Šï½›ï¼»` |
+| `QUANTITY_UNITS_JA` | æ•°é‡å˜ä½ï¼ˆç¶™ç¶šè¡Œåˆ¤å®šé™¤å¤–ï¼‰: `å††ä¸‡å„„åƒå°å€‹ä»¶åç¤¾å¹´æœˆæ—¥å›æœ¬æšï¼…%` |
 
 **Coordinate System Utilities (PDFMathTranslate compliant):**
 
-PDFˆ—‚Å‚Í2‚Â‚ÌÀ•WŒn‚ğˆµ‚¢‚Ü‚·BÀ•W•ÏŠ·ƒ†[ƒeƒBƒŠƒeƒBi`pdf_converter.py`j‚ÅŒ^ˆÀ‘S‚È•ÏŠ·‚ğ’ñ‹Ÿ‚µ‚Ü‚·F
+PDFå‡¦ç†ã§ã¯2ã¤ã®åº§æ¨™ç³»ã‚’æ‰±ã„ã¾ã™ã€‚åº§æ¨™å¤‰æ›ãƒ¦ãƒ¼ãƒ†ã‚£ãƒªãƒ†ã‚£ï¼ˆ`pdf_converter.py`ï¼‰ã§å‹å®‰å…¨ãªå¤‰æ›ã‚’æä¾›ã—ã¾ã™ï¼š
 
-| À•WŒn | Œ´“_ | Y²•ûŒü | g—pê–Ê |
+| åº§æ¨™ç³» | åŸç‚¹ | Yè»¸æ–¹å‘ | ä½¿ç”¨å ´é¢ |
 |--------|------|---------|----------|
-| **PDFÀ•W (`PdfCoord`)** | ¶‰º | ãŒü‚« | pdfminerATextBlockA–|–ó“K—p |
-| **‰æ‘œÀ•W (`ImageCoord`)** | ¶ã | ‰ºŒü‚« | PP-DocLayout-LALayoutArray |
+| **PDFåº§æ¨™ (`PdfCoord`)** | å·¦ä¸‹ | ä¸Šå‘ã | pdfminerã€TextBlockã€ç¿»è¨³é©ç”¨ |
+| **ç”»åƒåº§æ¨™ (`ImageCoord`)** | å·¦ä¸Š | ä¸‹å‘ã | PP-DocLayout-Lã€LayoutArray |
 
 ```python
-# Œ^ˆÀ‘S‚ÈÀ•WƒNƒ‰ƒX
+# å‹å®‰å…¨ãªåº§æ¨™ã‚¯ãƒ©ã‚¹
 from yakulingo.processors.pdf_converter import PdfCoord, ImageCoord
 
-# À•W•ÏŠ·ŠÖ”
+# åº§æ¨™å¤‰æ›é–¢æ•°
 from yakulingo.processors.pdf_converter import (
-    pdf_to_image_coord,      # PDF¨‰æ‘œÀ•W•ÏŠ·
-    image_to_pdf_coord,      # ‰æ‘œ¨PDFÀ•W•ÏŠ·
-    pdf_bbox_to_image_bbox,  # PDF bbox¨‰æ‘œbbox•ÏŠ·
-    image_bbox_to_pdf_bbox,  # ‰æ‘œbbox¨PDF bbox•ÏŠ·
-    get_layout_class_at_pdf_coord,  # PDFÀ•W‚©‚çLayoutArrayƒNƒ‰ƒXæ“¾
+    pdf_to_image_coord,      # PDFâ†’ç”»åƒåº§æ¨™å¤‰æ›
+    image_to_pdf_coord,      # ç”»åƒâ†’PDFåº§æ¨™å¤‰æ›
+    pdf_bbox_to_image_bbox,  # PDF bboxâ†’ç”»åƒbboxå¤‰æ›
+    image_bbox_to_pdf_bbox,  # ç”»åƒbboxâ†’PDF bboxå¤‰æ›
+    get_layout_class_at_pdf_coord,  # PDFåº§æ¨™ã‹ã‚‰LayoutArrayã‚¯ãƒ©ã‚¹å–å¾—
 )
 
-# g—p—á: PDFÀ•W‚©‚çLayoutArray‚ÌƒNƒ‰ƒX‚ğæ“¾
+# ä½¿ç”¨ä¾‹: PDFåº§æ¨™ã‹ã‚‰LayoutArrayã®ã‚¯ãƒ©ã‚¹ã‚’å–å¾—
 char_cls = get_layout_class_at_pdf_coord(
     layout_array,      # NumPy array from LayoutArray
     pdf_x=char.x0,     # PDF X coordinate
@@ -2126,133 +2122,133 @@ char_cls = get_layout_class_at_pdf_coord(
 )
 ```
 
-**•ÏŠ·Œö®:**
+**å¤‰æ›å…¬å¼:**
 ```
-# PDF¨‰æ‘œÀ•W
+# PDFâ†’ç”»åƒåº§æ¨™
 img_x = pdf_x * scale
 img_y = (page_height - pdf_y) * scale
 
-# ‰æ‘œ¨PDFÀ•W
+# ç”»åƒâ†’PDFåº§æ¨™
 pdf_x = img_x / scale
 pdf_y = page_height - (img_y / scale)
 ```
 
-**“ü—ÍƒoƒŠƒf[ƒVƒ‡ƒ“ (PDFMathTranslate€‹’):**
-- `page_height > 0`: •K{B0ˆÈ‰º‚Ìê‡‚Í`ValueError`‚ğ”­¶
-- `scale > 0`: •K{B0ˆÈ‰º‚Ìê‡‚Í`ValueError`‚ğ”­¶
-- `get_layout_class_at_pdf_coord()`: –³Œø‚Èƒpƒ‰ƒ[ƒ^‚Ìê‡A—áŠO‚Å‚Í‚È‚­`LAYOUT_BACKGROUND`‚ğ•Ô‚·iƒOƒŒ[ƒXƒtƒ‹ƒtƒH[ƒ‹ƒoƒbƒNj
+**å…¥åŠ›ãƒãƒªãƒ‡ãƒ¼ã‚·ãƒ§ãƒ³ (PDFMathTranslateæº–æ‹ ):**
+- `page_height > 0`: å¿…é ˆã€‚0ä»¥ä¸‹ã®å ´åˆã¯`ValueError`ã‚’ç™ºç”Ÿ
+- `scale > 0`: å¿…é ˆã€‚0ä»¥ä¸‹ã®å ´åˆã¯`ValueError`ã‚’ç™ºç”Ÿ
+- `get_layout_class_at_pdf_coord()`: ç„¡åŠ¹ãªãƒ‘ãƒ©ãƒ¡ãƒ¼ã‚¿ã®å ´åˆã€ä¾‹å¤–ã§ã¯ãªã`LAYOUT_BACKGROUND`ã‚’è¿”ã™ï¼ˆã‚°ãƒ¬ãƒ¼ã‚¹ãƒ•ãƒ«ãƒ•ã‚©ãƒ¼ãƒ«ãƒãƒƒã‚¯ï¼‰
 
 **PDF Text Rendering (Low-level API):**
 
-PDF–|–ó‚Å‚Í**’áƒŒƒxƒ‹APIiPDFMathTranslate€‹’j‚Ì‚İ**‚ğg—p‚µ‚Ü‚·B
-’áƒŒƒxƒ‹API‚ÍPDFƒIƒyƒŒ[ƒ^‚ğ’¼Ú¶¬‚µA‚æ‚è¸–§‚ÈƒŒƒCƒAƒEƒg§Œä‚ª‰Â”\‚Å‚·B
+PDFç¿»è¨³ã§ã¯**ä½ãƒ¬ãƒ™ãƒ«APIï¼ˆPDFMathTranslateæº–æ‹ ï¼‰ã®ã¿**ã‚’ä½¿ç”¨ã—ã¾ã™ã€‚
+ä½ãƒ¬ãƒ™ãƒ«APIã¯PDFã‚ªãƒšãƒ¬ãƒ¼ã‚¿ã‚’ç›´æ¥ç”Ÿæˆã—ã€ã‚ˆã‚Šç²¾å¯†ãªãƒ¬ã‚¤ã‚¢ã‚¦ãƒˆåˆ¶å¾¡ãŒå¯èƒ½ã§ã™ã€‚
 
-**”’”wŒi•`‰æ‚Ì‹Ö~iPDFMathTranslate€‹’j:**
+**ç™½èƒŒæ™¯æç”»ã®ç¦æ­¢ï¼ˆPDFMathTranslateæº–æ‹ ï¼‰:**
 
-?? **d—v: ”’”wŒi‹éŒ`‚Ì•`‰æ‚Í‹Ö~‚Å‚·**
+?? **é‡è¦: ç™½èƒŒæ™¯çŸ©å½¢ã®æç”»ã¯ç¦æ­¢ã§ã™**
 
-PDFMathTranslate‚ÍŒ³ƒeƒLƒXƒg‚ğ‰B‚·‚½‚ß‚É”’‚¢‹éŒ`‚ğ•`‰æ‚µ‚Ü‚¹‚ñB
-‘ã‚í‚è‚É`ContentStreamReplacer.set_base_stream()`‚ğg—p‚µ‚ÄA
-Œ³‚ÌƒeƒLƒXƒgƒIƒyƒŒ[ƒ^‚ğíœ‚µ‚Â‚ÂƒOƒ‰ƒtƒBƒbƒNƒXi•\‚Ì”wŒiFAŒrü“™j‚ğ•Û‚µ‚Ü‚·B
+PDFMathTranslateã¯å…ƒãƒ†ã‚­ã‚¹ãƒˆã‚’éš ã™ãŸã‚ã«ç™½ã„çŸ©å½¢ã‚’æç”»ã—ã¾ã›ã‚“ã€‚
+ä»£ã‚ã‚Šã«`ContentStreamReplacer.set_base_stream()`ã‚’ä½¿ç”¨ã—ã¦ã€
+å…ƒã®ãƒ†ã‚­ã‚¹ãƒˆã‚ªãƒšãƒ¬ãƒ¼ã‚¿ã‚’å‰Šé™¤ã—ã¤ã¤ã‚°ãƒ©ãƒ•ã‚£ãƒƒã‚¯ã‚¹ï¼ˆè¡¨ã®èƒŒæ™¯è‰²ã€ç½«ç·šç­‰ï¼‰ã‚’ä¿æŒã—ã¾ã™ã€‚
 
-**‹Ö~——R:**
-- ”’”wŒi‚ğ•`‰æ‚·‚é‚Æ•\‚ÌƒZƒ‹F•ª‚¯‚ªÁ‚¦‚é
-- Œrü‚â}Œ`‚È‚Ç‚Ì‹Šo—v‘f‚ª‰B‚ê‚é
-- PDFMathTranslate‚ÌİŒvv‘z‚É”½‚·‚é
+**ç¦æ­¢ç†ç”±:**
+- ç™½èƒŒæ™¯ã‚’æç”»ã™ã‚‹ã¨è¡¨ã®ã‚»ãƒ«è‰²åˆ†ã‘ãŒæ¶ˆãˆã‚‹
+- ç½«ç·šã‚„å›³å½¢ãªã©ã®è¦–è¦šè¦ç´ ãŒéš ã‚Œã‚‹
+- PDFMathTranslateã®è¨­è¨ˆæ€æƒ³ã«åã™ã‚‹
 
 ```python
-# ? ‹Ö~: ”’”wŒi‚Ì•`‰æ
+# ? ç¦æ­¢: ç™½èƒŒæ™¯ã®æç”»
 page.draw_rect(rect, color=WHITE, fill=WHITE)
 
-# ? ³‚µ‚¢•û–@: ContentStreamReplacer‚ÅƒeƒLƒXƒg‚Ì‚İ’uŠ·
+# ? æ­£ã—ã„æ–¹æ³•: ContentStreamReplacerã§ãƒ†ã‚­ã‚¹ãƒˆã®ã¿ç½®æ›
 replacer = ContentStreamReplacer()
-replacer.set_base_stream(xref, original_stream)  # ƒOƒ‰ƒtƒBƒbƒNƒX‚ğ•Û
+replacer.set_base_stream(xref, original_stream)  # ã‚°ãƒ©ãƒ•ã‚£ãƒƒã‚¯ã‚¹ã‚’ä¿æŒ
 replacer.apply_to_page(page)
 ```
 
-**ƒhƒLƒ…ƒƒ“ƒg‘S‘Ì‚ÌForm XObjectƒtƒBƒ‹ƒ^ƒŠƒ“ƒOiyomitoku-stylej:**
+**ãƒ‰ã‚­ãƒ¥ãƒ¡ãƒ³ãƒˆå…¨ä½“ã®Form XObjectãƒ•ã‚£ãƒ«ã‚¿ãƒªãƒ³ã‚°ï¼ˆyomitoku-styleï¼‰:**
 
-ŒˆZ’ZM‚È‚Ç‚Ì•¡G‚ÈPDF‚Å‚ÍAƒeƒLƒXƒg‚ªƒlƒXƒg‚µ‚½Form XObject“à‚É
-–„‚ß‚Ü‚ê‚Ä‚¢‚é‚±‚Æ‚ª‚ ‚è‚Ü‚·Bƒy[ƒW‚²‚Æ‚Ìˆ—‚Å‚Í•s\•ª‚È‚½‚ßA
-ƒhƒLƒ…ƒƒ“ƒg‘S‘Ì‚ğƒXƒLƒƒƒ“‚µ‚Äˆ—‚µ‚Ü‚·B
+æ±ºç®—çŸ­ä¿¡ãªã©ã®è¤‡é›‘ãªPDFã§ã¯ã€ãƒ†ã‚­ã‚¹ãƒˆãŒãƒã‚¹ãƒˆã—ãŸForm XObjectå†…ã«
+åŸ‹ã‚è¾¼ã¾ã‚Œã¦ã„ã‚‹ã“ã¨ãŒã‚ã‚Šã¾ã™ã€‚ãƒšãƒ¼ã‚¸ã”ã¨ã®å‡¦ç†ã§ã¯ä¸ååˆ†ãªãŸã‚ã€
+ãƒ‰ã‚­ãƒ¥ãƒ¡ãƒ³ãƒˆå…¨ä½“ã‚’ã‚¹ã‚­ãƒ£ãƒ³ã—ã¦å‡¦ç†ã—ã¾ã™ã€‚
 
 ```python
-# ContentStreamReplacer‚Ìƒƒ\ƒbƒh
-replacer.filter_all_document_xobjects()  # ƒhƒLƒ…ƒƒ“ƒg‘S‘Ì‚ÌForm XObject‚ğˆ—
+# ContentStreamReplacerã®ãƒ¡ã‚½ãƒƒãƒ‰
+replacer.filter_all_document_xobjects()  # ãƒ‰ã‚­ãƒ¥ãƒ¡ãƒ³ãƒˆå…¨ä½“ã®Form XObjectã‚’å‡¦ç†
 
-# ˆ—ƒtƒ[:
-# 1. doc.xref_length()‚Å‘Sxref‚ğæ“¾
-# 2. Šexref‚Ì/Subtype /Form‚ğƒ`ƒFƒbƒN
-# 3. Form XObject‚ÌƒXƒgƒŠ[ƒ€‚©‚çƒeƒLƒXƒgƒIƒyƒŒ[ƒ^‚ğíœ
-# 4. ƒlƒXƒg‚µ‚½XObjecti/Resources N 0 RŒ`®‚ÌŠÔÚQÆ‚àŠÜ‚Şj‚ğÄ‹A“I‚Éˆ—
+# å‡¦ç†ãƒ•ãƒ­ãƒ¼:
+# 1. doc.xref_length()ã§å…¨xrefã‚’å–å¾—
+# 2. å„xrefã®/Subtype /Formã‚’ãƒã‚§ãƒƒã‚¯
+# 3. Form XObjectã®ã‚¹ãƒˆãƒªãƒ¼ãƒ ã‹ã‚‰ãƒ†ã‚­ã‚¹ãƒˆã‚ªãƒšãƒ¬ãƒ¼ã‚¿ã‚’å‰Šé™¤
+# 4. ãƒã‚¹ãƒˆã—ãŸXObjectï¼ˆ/Resources N 0 Rå½¢å¼ã®é–“æ¥å‚ç…§ã‚‚å«ã‚€ï¼‰ã‚’å†å¸°çš„ã«å‡¦ç†
 ```
 
-| ƒƒ\ƒbƒh | à–¾ |
+| ãƒ¡ã‚½ãƒƒãƒ‰ | èª¬æ˜ |
 |----------|------|
-| `filter_all_document_xobjects()` | ƒhƒLƒ…ƒƒ“ƒg‘S‘Ì‚ÌForm XObject‚ğƒXƒLƒƒƒ“‚µ‚ÄƒeƒLƒXƒgíœ |
-| `_filter_form_xobjects(page)` | ƒy[ƒW’PˆÊ‚ÌForm XObjectˆ—i]—ˆ•û®j |
-| `_find_nested_xobjects()` | ƒlƒXƒg‚µ‚½XObject‚ÌÄ‹A“IŒŸoiŠÔÚQÆ‘Î‰j |
+| `filter_all_document_xobjects()` | ãƒ‰ã‚­ãƒ¥ãƒ¡ãƒ³ãƒˆå…¨ä½“ã®Form XObjectã‚’ã‚¹ã‚­ãƒ£ãƒ³ã—ã¦ãƒ†ã‚­ã‚¹ãƒˆå‰Šé™¤ |
+| `_filter_form_xobjects(page)` | ãƒšãƒ¼ã‚¸å˜ä½ã®Form XObjectå‡¦ç†ï¼ˆå¾“æ¥æ–¹å¼ï¼‰ |
+| `_find_nested_xobjects()` | ãƒã‚¹ãƒˆã—ãŸXObjectã®å†å¸°çš„æ¤œå‡ºï¼ˆé–“æ¥å‚ç…§å¯¾å¿œï¼‰ |
 
-**ƒtƒHƒ“ƒgí•Ê‚É‰‚¶‚½ƒeƒLƒXƒgƒGƒ“ƒR[ƒfƒBƒ“ƒOiPDFMathTranslate converter.py€‹’j:**
+**ãƒ•ã‚©ãƒ³ãƒˆç¨®åˆ¥ã«å¿œã˜ãŸãƒ†ã‚­ã‚¹ãƒˆã‚¨ãƒ³ã‚³ãƒ¼ãƒ‡ã‚£ãƒ³ã‚°ï¼ˆPDFMathTranslate converter.pyæº–æ‹ ï¼‰:**
 
 ```python
-# FontType—ñ‹“Œ^
+# FontTypeåˆ—æŒ™å‹
 class FontType(Enum):
-    EMBEDDED = "embedded"  # V‚µ‚­–„‚ß‚ñ‚¾ƒtƒHƒ“ƒg
-    CID = "cid"            # Šù‘¶CIDƒtƒHƒ“ƒgi•¡‡ƒtƒHƒ“ƒgj
-    SIMPLE = "simple"      # Šù‘¶SimpleƒtƒHƒ“ƒgiType1, TrueTypej
+    EMBEDDED = "embedded"  # æ–°ã—ãåŸ‹ã‚è¾¼ã‚“ã ãƒ•ã‚©ãƒ³ãƒˆ
+    CID = "cid"            # æ—¢å­˜CIDãƒ•ã‚©ãƒ³ãƒˆï¼ˆè¤‡åˆãƒ•ã‚©ãƒ³ãƒˆï¼‰
+    SIMPLE = "simple"      # æ—¢å­˜Simpleãƒ•ã‚©ãƒ³ãƒˆï¼ˆType1, TrueTypeï¼‰
 
-# raw_string()‚Å‚ÌƒGƒ“ƒR[ƒfƒBƒ“ƒO•ªŠò
+# raw_string()ã§ã®ã‚¨ãƒ³ã‚³ãƒ¼ãƒ‡ã‚£ãƒ³ã‚°åˆ†å²
 def raw_string(font_id: str, text: str) -> str:
     font_type = font_registry.get_font_type(font_id)
 
     if font_type == FontType.EMBEDDED:
-        # –„‚ß‚ñ‚¾ƒtƒHƒ“ƒg ¨ has_glyph()‚ÅƒOƒŠƒtIDæ“¾
+        # åŸ‹ã‚è¾¼ã‚“ã ãƒ•ã‚©ãƒ³ãƒˆ â†’ has_glyph()ã§ã‚°ãƒªãƒ•IDå–å¾—
         return "".join([f'{font.has_glyph(ord(c)):04X}' for c in text])
     elif font_type == FontType.CID:
-        # Šù‘¶CIDƒtƒHƒ“ƒg ¨ ord(c)‚Å4Œ…hex
+        # æ—¢å­˜CIDãƒ•ã‚©ãƒ³ãƒˆ â†’ ord(c)ã§4æ¡hex
         return "".join([f'{ord(c):04X}' for c in text])
     else:  # SIMPLE
-        # Šù‘¶SimpleƒtƒHƒ“ƒg ¨ ord(c)‚Å2Œ…hex
+        # æ—¢å­˜Simpleãƒ•ã‚©ãƒ³ãƒˆ â†’ ord(c)ã§2æ¡hex
         return "".join([f'{ord(c):02X}' for c in text])
 ```
 
-**——R:**
-- PyMuPDF‚Ì`insert_font`‚ÍIdentity-HƒGƒ“ƒR[ƒfƒBƒ“ƒO‚ğg—p
-- CIDToGIDMap‚Íİ’è‚³‚ê‚È‚¢iIdentity = CID’l‚ª‚»‚Ì‚Ü‚ÜƒOƒŠƒtID‚Æ‚µ‚Ä‰ğßj
-- TJƒIƒyƒŒ[ƒ^‚Ìˆø”‚ÍCID’l‚Å‚ ‚èA–„‚ß‚İƒtƒHƒ“ƒg‚Å‚ÍCID = ƒOƒŠƒtID‚Æ‚È‚é
-- Šù‘¶CIDƒtƒHƒ“ƒg‚Å‚ÍUnicodeƒR[ƒhƒ|ƒCƒ“ƒg‚ğ‚»‚Ì‚Ü‚Üg—p
-- Šù‘¶SimpleƒtƒHƒ“ƒg‚Å‚ÍASCII”ÍˆÍ‚Ì2Œ…hex‚ğg—p
+**ç†ç”±:**
+- PyMuPDFã®`insert_font`ã¯Identity-Hã‚¨ãƒ³ã‚³ãƒ¼ãƒ‡ã‚£ãƒ³ã‚°ã‚’ä½¿ç”¨
+- CIDToGIDMapã¯è¨­å®šã•ã‚Œãªã„ï¼ˆIdentity = CIDå€¤ãŒãã®ã¾ã¾ã‚°ãƒªãƒ•IDã¨ã—ã¦è§£é‡ˆï¼‰
+- TJã‚ªãƒšãƒ¬ãƒ¼ã‚¿ã®å¼•æ•°ã¯CIDå€¤ã§ã‚ã‚Šã€åŸ‹ã‚è¾¼ã¿ãƒ•ã‚©ãƒ³ãƒˆã§ã¯CID = ã‚°ãƒªãƒ•IDã¨ãªã‚‹
+- æ—¢å­˜CIDãƒ•ã‚©ãƒ³ãƒˆã§ã¯Unicodeã‚³ãƒ¼ãƒ‰ãƒã‚¤ãƒ³ãƒˆã‚’ãã®ã¾ã¾ä½¿ç”¨
+- æ—¢å­˜Simpleãƒ•ã‚©ãƒ³ãƒˆã§ã¯ASCIIç¯„å›²ã®2æ¡hexã‚’ä½¿ç”¨
 
-**pdfminer.six‚É‚æ‚éƒtƒHƒ“ƒgí•Ê”»’è:**
-- `FontRegistry.load_fontmap_from_pdf()`: PDF‚©‚çƒtƒHƒ“ƒgî•ñ‚ğ“Ç‚İ‚İ
-- `isinstance(font, PDFCIDFont)`: CIDƒtƒHƒ“ƒg”»’è
-- `FontRegistry.register_existing_font()`: Šù‘¶ƒtƒHƒ“ƒg‚ğ“o˜^
+**pdfminer.sixã«ã‚ˆã‚‹ãƒ•ã‚©ãƒ³ãƒˆç¨®åˆ¥åˆ¤å®š:**
+- `FontRegistry.load_fontmap_from_pdf()`: PDFã‹ã‚‰ãƒ•ã‚©ãƒ³ãƒˆæƒ…å ±ã‚’èª­ã¿è¾¼ã¿
+- `isinstance(font, PDFCIDFont)`: CIDãƒ•ã‚©ãƒ³ãƒˆåˆ¤å®š
+- `FontRegistry.register_existing_font()`: æ—¢å­˜ãƒ•ã‚©ãƒ³ãƒˆã‚’ç™»éŒ²
 
-**À‘•ã‚Ì’ˆÓ:**
-- `FontRegistry.embed_fonts()`‚ÅFont object‚ğŠmÀ‚Éì¬‚·‚é‚±‚Æ
-- Font object‚ª‚È‚¢‚Æ`get_glyph_id()`‚Å0i.notdef = •s‰Â‹j‚ª•Ô‚³‚ê‚é
+**å®Ÿè£…ä¸Šã®æ³¨æ„:**
+- `FontRegistry.embed_fonts()`ã§Font objectã‚’ç¢ºå®Ÿã«ä½œæˆã™ã‚‹ã“ã¨
+- Font objectãŒãªã„ã¨`get_glyph_id()`ã§0ï¼ˆ.notdef = ä¸å¯è¦–ï¼‰ãŒè¿”ã•ã‚Œã‚‹
 
-**PDFMathTranslate€‹’‚Ì’Ç‰Á‹@”\:**
+**PDFMathTranslateæº–æ‹ ã®è¿½åŠ æ©Ÿèƒ½:**
 
-| ‹@”\ | à–¾ |
+| æ©Ÿèƒ½ | èª¬æ˜ |
 |------|------|
-| ƒtƒHƒ“ƒgƒTƒuƒZƒbƒeƒBƒ“ƒO | `doc.subset_fonts(fallback=True)` ‚Å–¢g—pƒOƒŠƒt‚ğíœ‚µƒtƒ@ƒCƒ‹ƒTƒCƒY‚ğíŒ¸ |
-| PDFˆ³k | `garbage=3, deflate=True, use_objstms=1` ‚ÅÅ‘åŒÀ‚Ìˆ³k |
-| ã•t‚«/‰º•t‚«ŒŸo | `SUBSCRIPT_SUPERSCRIPT_THRESHOLD = 0.79` ‚Åƒx[ƒXƒTƒCƒY‚Ì79%ˆÈ‰º‚ğŒŸo |
-| ƒy[ƒW‘I‘ğ | `pages` ƒpƒ‰ƒ[ƒ^i1-indexedj‚Å–|–ó‘ÎÛƒy[ƒW‚ğw’è‰Â”\ |
-| ƒtƒHƒ“ƒg–„‚ß‚İ¸”sŒŸo | `get_glyph_id()`‚ÅFont object•sİ‚ÉŒxƒƒO‚ğo—ÍiƒeƒLƒXƒg”ñ•\¦–â‘è‚Ìf’fj |
-| ƒoƒbƒ`ƒTƒCƒY“®“I’²® | `psutil`‚Å—˜—p‰Â”\ƒƒ‚ƒŠ‚ğŠm”F‚µAbatch_size‚ğ©“®’²®iOOM–h~j |
-| ƒy[ƒWƒŒƒxƒ‹ƒGƒ‰[ƒnƒ“ƒhƒŠƒ“ƒO | `failed_pages`, `failed_page_reasons` ƒvƒƒpƒeƒB‚Å¸”sƒy[ƒW‚ğ’ÇÕAŒ‹‰Ê«‘‚É`failed_pages`‚ğŠÜ‚Ş |
+| ãƒ•ã‚©ãƒ³ãƒˆã‚µãƒ–ã‚»ãƒƒãƒ†ã‚£ãƒ³ã‚° | `doc.subset_fonts(fallback=True)` ã§æœªä½¿ç”¨ã‚°ãƒªãƒ•ã‚’å‰Šé™¤ã—ãƒ•ã‚¡ã‚¤ãƒ«ã‚µã‚¤ã‚ºã‚’å‰Šæ¸› |
+| PDFåœ§ç¸® | `garbage=3, deflate=True, use_objstms=1` ã§æœ€å¤§é™ã®åœ§ç¸® |
+| ä¸Šä»˜ã/ä¸‹ä»˜ãæ¤œå‡º | `SUBSCRIPT_SUPERSCRIPT_THRESHOLD = 0.79` ã§ãƒ™ãƒ¼ã‚¹ã‚µã‚¤ã‚ºã®79%ä»¥ä¸‹ã‚’æ¤œå‡º |
+| ãƒšãƒ¼ã‚¸é¸æŠ | `pages` ãƒ‘ãƒ©ãƒ¡ãƒ¼ã‚¿ï¼ˆ1-indexedï¼‰ã§ç¿»è¨³å¯¾è±¡ãƒšãƒ¼ã‚¸ã‚’æŒ‡å®šå¯èƒ½ |
+| ãƒ•ã‚©ãƒ³ãƒˆåŸ‹ã‚è¾¼ã¿å¤±æ•—æ¤œå‡º | `get_glyph_id()`ã§Font objectä¸åœ¨æ™‚ã«è­¦å‘Šãƒ­ã‚°ã‚’å‡ºåŠ›ï¼ˆãƒ†ã‚­ã‚¹ãƒˆéè¡¨ç¤ºå•é¡Œã®è¨ºæ–­ï¼‰ |
+| ãƒãƒƒãƒã‚µã‚¤ã‚ºå‹•çš„èª¿æ•´ | `psutil`ã§åˆ©ç”¨å¯èƒ½ãƒ¡ãƒ¢ãƒªã‚’ç¢ºèªã—ã€batch_sizeã‚’è‡ªå‹•èª¿æ•´ï¼ˆOOMé˜²æ­¢ï¼‰ |
+| ãƒšãƒ¼ã‚¸ãƒ¬ãƒ™ãƒ«ã‚¨ãƒ©ãƒ¼ãƒãƒ³ãƒ‰ãƒªãƒ³ã‚° | `failed_pages`, `failed_page_reasons` ãƒ—ãƒ­ãƒ‘ãƒ†ã‚£ã§å¤±æ•—ãƒšãƒ¼ã‚¸ã‚’è¿½è·¡ã€çµæœè¾æ›¸ã«`failed_pages`ã‚’å«ã‚€ |
 
 ```python
-# ƒy[ƒW‘I‘ğ‚Ìg—p—á
+# ãƒšãƒ¼ã‚¸é¸æŠã®ä½¿ç”¨ä¾‹
 processor.apply_translations(
     input_path, output_path, translations,
-    pages=[1, 3, 5]  # 1, 3, 5ƒy[ƒW‚Ì‚İ–|–ói1-indexedj
+    pages=[1, 3, 5]  # 1, 3, 5ãƒšãƒ¼ã‚¸ã®ã¿ç¿»è¨³ï¼ˆ1-indexedï¼‰
 )
 
-# ƒy[ƒWƒŒƒxƒ‹ƒGƒ‰[Šm”F‚Ìg—p—á
+# ãƒšãƒ¼ã‚¸ãƒ¬ãƒ™ãƒ«ã‚¨ãƒ©ãƒ¼ç¢ºèªã®ä½¿ç”¨ä¾‹
 result = processor.apply_translations(input_path, output_path, translations)
 if result['failed_pages']:
     print(f"Failed pages: {result['failed_pages']}")
@@ -2261,10 +2257,10 @@ if result['failed_pages']:
         print(f"  Page {page_num}: {reason}")
 ```
 
-**ƒƒ‚ƒŠŠÇ—:**
-- DPI‚É‰‚¶‚½ƒƒ‚ƒŠg—p—Ê„’è: `estimated_mb = 26 * (dpi / 300)2`
-- —˜—p‰Â”\ƒƒ‚ƒŠ‚Ì50%‚ğãŒÀ‚Æ‚µ‚Äbatch_size‚ğ©“®’²®
-- psutil–¢ƒCƒ“ƒXƒg[ƒ‹‚ÍƒfƒtƒHƒ‹ƒgbatch_size‚ğg—p
+**ãƒ¡ãƒ¢ãƒªç®¡ç†:**
+- DPIã«å¿œã˜ãŸãƒ¡ãƒ¢ãƒªä½¿ç”¨é‡æ¨å®š: `estimated_mb = 26 * (dpi / 300)2`
+- åˆ©ç”¨å¯èƒ½ãƒ¡ãƒ¢ãƒªã®50%ã‚’ä¸Šé™ã¨ã—ã¦batch_sizeã‚’è‡ªå‹•èª¿æ•´
+- psutilæœªã‚¤ãƒ³ã‚¹ãƒˆãƒ¼ãƒ«æ™‚ã¯ãƒ‡ãƒ•ã‚©ãƒ«ãƒˆbatch_sizeã‚’ä½¿ç”¨
 
 ### Optional Dependencies
 - `[ocr]`: paddleocr for layout analysis support (PP-DocLayout-L, OCR is not used)
@@ -2293,22 +2289,22 @@ The application includes a Rust-based native launcher (`YakuLingo.exe`):
 - Replaces previous VBS scripts for cleaner, faster startup
 
 ### Build Artifacts (.gitignore)
-ˆÈ‰º‚Ìƒrƒ‹ƒh¬‰Ê•¨‚Í `.gitignore` ‚ÅœŠO‚³‚ê‚Ä‚¢‚Ü‚·F
+ä»¥ä¸‹ã®ãƒ“ãƒ«ãƒ‰æˆæœç‰©ã¯ `.gitignore` ã§é™¤å¤–ã•ã‚Œã¦ã„ã¾ã™ï¼š
 
-| ƒtƒ@ƒCƒ‹/ƒfƒBƒŒƒNƒgƒŠ | ¶¬Œ³ | à–¾ |
+| ãƒ•ã‚¡ã‚¤ãƒ«/ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒª | ç”Ÿæˆå…ƒ | èª¬æ˜ |
 |----------------------|--------|------|
-| `YakuLingo.exe` | Rust launcher build | ƒ‹[ƒg‚É”z’u‚³‚ê‚éƒ‰ƒ“ƒ`ƒƒ[Àsƒtƒ@ƒCƒ‹ |
-| `share_package/` | `make_distribution.bat` | ”z•zƒpƒbƒP[ƒWo—ÍƒfƒBƒŒƒNƒgƒŠ |
-| `dist_temp/` | `make_distribution.bat` | ƒrƒ‹ƒh’†‚ÌˆêƒfƒBƒŒƒNƒgƒŠ |
-| `.venv/` | `install_deps.bat` | Python‰¼‘zŠÂ‹« |
-| `.uv-cache/` | `install_deps.bat` | uvƒpƒbƒP[ƒWƒLƒƒƒbƒVƒ… |
-| `.uv-python/` | `install_deps.bat` | uv‚ÅƒCƒ“ƒXƒg[ƒ‹‚µ‚½Python |
-| `.playwright-browsers/` | `install_deps.bat` | Playwrightƒuƒ‰ƒEƒU |
-| `uv.exe`, `uvx.exe` | `install_deps.bat` | uvƒpƒbƒP[ƒWƒ}ƒl[ƒWƒƒ[ |
+| `YakuLingo.exe` | Rust launcher build | ãƒ«ãƒ¼ãƒˆã«é…ç½®ã•ã‚Œã‚‹ãƒ©ãƒ³ãƒãƒ£ãƒ¼å®Ÿè¡Œãƒ•ã‚¡ã‚¤ãƒ« |
+| `share_package/` | `make_distribution.bat` | é…å¸ƒãƒ‘ãƒƒã‚±ãƒ¼ã‚¸å‡ºåŠ›ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒª |
+| `dist_temp/` | `make_distribution.bat` | ãƒ“ãƒ«ãƒ‰ä¸­ã®ä¸€æ™‚ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒª |
+| `.venv/` | `install_deps.bat` | Pythonä»®æƒ³ç’°å¢ƒ |
+| `.uv-cache/` | `install_deps.bat` | uvãƒ‘ãƒƒã‚±ãƒ¼ã‚¸ã‚­ãƒ£ãƒƒã‚·ãƒ¥ |
+| `.uv-python/` | `install_deps.bat` | uvã§ã‚¤ãƒ³ã‚¹ãƒˆãƒ¼ãƒ«ã—ãŸPython |
+| `.playwright-browsers/` | `install_deps.bat` | Playwrightãƒ–ãƒ©ã‚¦ã‚¶ |
+| `uv.exe`, `uvx.exe` | `install_deps.bat` | uvãƒ‘ãƒƒã‚±ãƒ¼ã‚¸ãƒãƒãƒ¼ã‚¸ãƒ£ãƒ¼ |
 
 ## Language Note
 
-‚·‚×‚Ä‚Ì‰ñ“š‚ÆƒRƒƒ“ƒg‚Í“ú–{Œê‚Ås‚Á‚Ä‚­‚¾‚³‚¢B
+ã™ã¹ã¦ã®å›ç­”ã¨ã‚³ãƒ¡ãƒ³ãƒˆã¯æ—¥æœ¬èªã§è¡Œã£ã¦ãã ã•ã„ã€‚
 When interacting with users in this repository, prefer Japanese for comments and explanations unless otherwise specified.
 
 ## Documentation References
@@ -2321,518 +2317,516 @@ When interacting with users in this repository, prefer Japanese for comments and
 
 Based on recent commits:
 - **Attachment Send Readiness Stabilization (2025-12)**:
-  - **Problem**: QÆƒtƒ@ƒCƒ‹“Y•t’†‚É‘—M‚ªƒuƒƒbƒN‚³‚êAEnter/ƒNƒŠƒbƒN‚ª¸”s‚·‚éƒP[ƒX‚ª‚ ‚Á‚½
-  - **Solution**: “Y•t’†‚Í `_prefill_message()` ‚Åæ‚É“ü—Í‚µA`_wait_for_attachment_ready()` ‚Å‘—M‰Â”\ó‘Ô‚ÌˆÀ’è‰»‚ğ‘Ò‹@‚µ‚Ä‚©‚ç‘—M
-  - **Stability guard**: ‘—Mƒ{ƒ^ƒ“—LŒø + “ü—Í—“•ÒW‰Â + “Y•t‚Ìbusy‰ğÁ‚ª˜A‘±400ms‘±‚¢‚½ê‡‚Ì‚İ‘—M‰Â
+  - **Problem**: å‚ç…§ãƒ•ã‚¡ã‚¤ãƒ«æ·»ä»˜ä¸­ã«é€ä¿¡ãŒãƒ–ãƒ­ãƒƒã‚¯ã•ã‚Œã€Enter/ã‚¯ãƒªãƒƒã‚¯ãŒå¤±æ•—ã™ã‚‹ã‚±ãƒ¼ã‚¹ãŒã‚ã£ãŸ
+  - **Solution**: æ·»ä»˜ä¸­ã¯ `_prefill_message()` ã§å…ˆã«å…¥åŠ›ã—ã€`_wait_for_attachment_ready()` ã§é€ä¿¡å¯èƒ½çŠ¶æ…‹ã®å®‰å®šåŒ–ã‚’å¾…æ©Ÿã—ã¦ã‹ã‚‰é€ä¿¡
+  - **Stability guard**: é€ä¿¡ãƒœã‚¿ãƒ³æœ‰åŠ¹ + å…¥åŠ›æ¬„ç·¨é›†å¯ + æ·»ä»˜ã®busyè§£æ¶ˆãŒé€£ç¶š400msç¶šã„ãŸå ´åˆã®ã¿é€ä¿¡å¯
   - **Affected files**: `yakulingo/services/copilot_handler.py`, `README.md`, `docs/SPECIFICATION.md`
 - **Submit Button Timing Fix v2 (2025-12)**:
-  - **Problem**: ƒtƒ@ƒCƒ‹“Y•tŒã‚ÉEnterƒL[‘—MiAttempt 1j‚ª¸”s‚µAJS clickiAttempt 2j‚ÖƒtƒH[ƒ‹ƒoƒbƒN‚µ‚Ä–ñ1•b‚Ì’x‰„‚ª”­¶
-  - **Root cause**: Button scrollŒã‚Ì‘Ò‹@ŠÔi0.15•bj‚Å‚àReact UI‚Ì€”õ‚ªŠ®—¹‚µ‚È‚¢ê‡‚ª‚ ‚é
-  - **Solution**: Button scrollŒã‚Ì‘Ò‹@ŠÔ‚ğ0.15•b¨0.20•b‚É‘‰Á
+  - **Problem**: ãƒ•ã‚¡ã‚¤ãƒ«æ·»ä»˜å¾Œã«Enterã‚­ãƒ¼é€ä¿¡ï¼ˆAttempt 1ï¼‰ãŒå¤±æ•—ã—ã€JS clickï¼ˆAttempt 2ï¼‰ã¸ãƒ•ã‚©ãƒ¼ãƒ«ãƒãƒƒã‚¯ã—ã¦ç´„1ç§’ã®é…å»¶ãŒç™ºç”Ÿ
+  - **Root cause**: Button scrollå¾Œã®å¾…æ©Ÿæ™‚é–“ï¼ˆ0.15ç§’ï¼‰ã§ã‚‚React UIã®æº–å‚™ãŒå®Œäº†ã—ãªã„å ´åˆãŒã‚ã‚‹
+  - **Solution**: Button scrollå¾Œã®å¾…æ©Ÿæ™‚é–“ã‚’0.15ç§’â†’0.20ç§’ã«å¢—åŠ 
   - **Affected files**: `copilot_handler.py`, `AGENTS.md`
-  - **Expected improvement**: Attempt 1‚Ì¬Œ÷—¦Œüã‚É‚æ‚èA–ñ1•b‚ÌƒtƒH[ƒ‹ƒoƒbƒN’x‰„‚ğíŒ¸
+  - **Expected improvement**: Attempt 1ã®æˆåŠŸç‡å‘ä¸Šã«ã‚ˆã‚Šã€ç´„1ç§’ã®ãƒ•ã‚©ãƒ¼ãƒ«ãƒãƒƒã‚¯é…å»¶ã‚’å‰Šæ¸›
 - **Submit Button Timing Fix (2025-12)**:
-  - **Problem**: ƒtƒ@ƒCƒ‹“Y•tŒã‚ÉEnterƒL[‘—MiAttempt 1j‚ª¸”s‚µAJS clickiAttempt 2j‚ÖƒtƒH[ƒ‹ƒoƒbƒN‚µ‚Ä–ñ2•b‚Ì’x‰„‚ª”­¶
-  - **Root cause**: Button scrollŒã‚Ì‘Ò‹@ŠÔi0.1•bj‚Å‚ÍReact UI‚Ì€”õ‚ªŠ®—¹‚µ‚È‚¢Bƒtƒ@ƒCƒ‹“Y•tŒã‚ÍUI‚Ìó‘ÔXV‚ÉŠÔ‚ª‚©‚©‚é
-  - **Solution**: Button scrollŒã‚Ì‘Ò‹@ŠÔ‚ğ0.1•b¨0.15•b‚É‘‰Á
+  - **Problem**: ãƒ•ã‚¡ã‚¤ãƒ«æ·»ä»˜å¾Œã«Enterã‚­ãƒ¼é€ä¿¡ï¼ˆAttempt 1ï¼‰ãŒå¤±æ•—ã—ã€JS clickï¼ˆAttempt 2ï¼‰ã¸ãƒ•ã‚©ãƒ¼ãƒ«ãƒãƒƒã‚¯ã—ã¦ç´„2ç§’ã®é…å»¶ãŒç™ºç”Ÿ
+  - **Root cause**: Button scrollå¾Œã®å¾…æ©Ÿæ™‚é–“ï¼ˆ0.1ç§’ï¼‰ã§ã¯React UIã®æº–å‚™ãŒå®Œäº†ã—ãªã„ã€‚ãƒ•ã‚¡ã‚¤ãƒ«æ·»ä»˜å¾Œã¯UIã®çŠ¶æ…‹æ›´æ–°ã«æ™‚é–“ãŒã‹ã‹ã‚‹
+  - **Solution**: Button scrollå¾Œã®å¾…æ©Ÿæ™‚é–“ã‚’0.1ç§’â†’0.15ç§’ã«å¢—åŠ 
   - **Affected files**: `copilot_handler.py`, `AGENTS.md`
-  - **Log evidence**: `keydown`ƒCƒxƒ“ƒg‚ª`dispatched: False`A`defaultPrevented: True`‚Æ‚È‚èA‘—Mˆ—‚ªÀs‚³‚ê‚È‚©‚Á‚½
+  - **Log evidence**: `keydown`ã‚¤ãƒ™ãƒ³ãƒˆãŒ`dispatched: False`ã€`defaultPrevented: True`ã¨ãªã‚Šã€é€ä¿¡å‡¦ç†ãŒå®Ÿè¡Œã•ã‚Œãªã‹ã£ãŸ
 - **NiceGUI Native Mode Window Args Fix (2024-12)**:
-  - **Problem**: NiceGUI ‚Ì native ƒ‚[ƒh‚Å‚Í `window_args`i`hidden`, `x`, `y` ‚ğŠÜ‚Şj‚ªqƒvƒƒZƒX‚É“n‚³‚ê‚¸AƒEƒBƒ“ƒhƒE‚ªˆêuƒfƒtƒHƒ‹ƒgˆÊ’u‚É•\¦‚³‚ê‚Ä‚©‚ç³‚µ‚¢ˆÊ’u‚ÉˆÚ“®‚·‚éi‚¿‚ç‚Â‚«j
-  - **Root cause**: `native_mode.activate()` ‚ª `mp.Process` ‚Å `_open_window` ‚ğŒÄ‚Ño‚·ÛA`window_args` ‚ğˆø”‚Æ‚µ‚Ä“n‚µ‚Ä‚¢‚È‚¢BqƒvƒƒZƒX“à‚Å `core.app.native.window_args` ‚ğQÆ‚µ‚Ä‚à‹ó‚Ì«‘‚É‚È‚é
-  - **Solution**: `_patch_nicegui_native_mode()` ŠÖ”‚Åƒ‚ƒ“ƒL[ƒpƒbƒ`‚ğ“K—p
-    - `activate()` ‚Æ `_open_window()` ‚ğC³”Å‚Å’u‚«Š·‚¦
-    - `window_args`, `settings`, `start_args` ‚ğ–¾¦“I‚Éˆø”‚Æ‚µ‚Ä“n‚·
-    - qƒvƒƒZƒX“à‚Å•K—v‚Èƒ‚ƒWƒ…[ƒ‹‚ğ‚·‚×‚ÄƒCƒ“ƒ|[ƒgiWindows spawn ƒ‚[ƒh‘Î‰j
+  - **Problem**: NiceGUI ã® native ãƒ¢ãƒ¼ãƒ‰ã§ã¯ `window_args`ï¼ˆ`hidden`, `x`, `y` ã‚’å«ã‚€ï¼‰ãŒå­ãƒ—ãƒ­ã‚»ã‚¹ã«æ¸¡ã•ã‚Œãšã€ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ãŒä¸€ç¬ãƒ‡ãƒ•ã‚©ãƒ«ãƒˆä½ç½®ã«è¡¨ç¤ºã•ã‚Œã¦ã‹ã‚‰æ­£ã—ã„ä½ç½®ã«ç§»å‹•ã™ã‚‹ï¼ˆã¡ã‚‰ã¤ãï¼‰
+  - **Root cause**: `native_mode.activate()` ãŒ `mp.Process` ã§ `_open_window` ã‚’å‘¼ã³å‡ºã™éš›ã€`window_args` ã‚’å¼•æ•°ã¨ã—ã¦æ¸¡ã—ã¦ã„ãªã„ã€‚å­ãƒ—ãƒ­ã‚»ã‚¹å†…ã§ `core.app.native.window_args` ã‚’å‚ç…§ã—ã¦ã‚‚ç©ºã®è¾æ›¸ã«ãªã‚‹
+  - **Solution**: `_patch_nicegui_native_mode()` é–¢æ•°ã§ãƒ¢ãƒ³ã‚­ãƒ¼ãƒ‘ãƒƒãƒã‚’é©ç”¨
+    - `activate()` ã¨ `_open_window()` ã‚’ä¿®æ­£ç‰ˆã§ç½®ãæ›ãˆ
+    - `window_args`, `settings`, `start_args` ã‚’æ˜ç¤ºçš„ã«å¼•æ•°ã¨ã—ã¦æ¸¡ã™
+    - å­ãƒ—ãƒ­ã‚»ã‚¹å†…ã§å¿…è¦ãªãƒ¢ã‚¸ãƒ¥ãƒ¼ãƒ«ã‚’ã™ã¹ã¦ã‚¤ãƒ³ãƒãƒ¼ãƒˆï¼ˆWindows spawn ãƒ¢ãƒ¼ãƒ‰å¯¾å¿œï¼‰
   - **Expected behavior after patch**:
-    - ƒEƒBƒ“ƒhƒE‚Í `hidden=True` ‚Å”ñ•\¦‚Åì¬‚³‚ê‚é
-    - ƒEƒBƒ“ƒhƒE‚Í³‚µ‚¢ˆÊ’u‚Åì¬‚³‚ê‚éi`x`, `y` ‚ª“n‚³‚ê‚éj
-    - `_position_window_early_sync()` ‚ªŒŸo‚µA•\¦‚·‚é‚Ì‚İiˆÚ“®•s—vj
+    - ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã¯ `hidden=True` ã§éè¡¨ç¤ºã§ä½œæˆã•ã‚Œã‚‹
+    - ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã¯æ­£ã—ã„ä½ç½®ã§ä½œæˆã•ã‚Œã‚‹ï¼ˆ`x`, `y` ãŒæ¸¡ã•ã‚Œã‚‹ï¼‰
+    - `_position_window_early_sync()` ãŒæ¤œå‡ºã—ã€è¡¨ç¤ºã™ã‚‹ã®ã¿ï¼ˆç§»å‹•ä¸è¦ï¼‰
   - **Diagnostic logs**:
-    - ƒpƒbƒ`¬Œ÷: `Window already at correct position` ‚Ü‚½‚Í `was hidden - patch worked`
-    - ƒpƒbƒ`¸”s: `visible - patch may not have worked` ‚Ü‚½‚ÍŒxƒƒO
+    - ãƒ‘ãƒƒãƒæˆåŠŸæ™‚: `Window already at correct position` ã¾ãŸã¯ `was hidden - patch worked`
+    - ãƒ‘ãƒƒãƒå¤±æ•—æ™‚: `visible - patch may not have worked` ã¾ãŸã¯è­¦å‘Šãƒ­ã‚°
   - **Affected files**: `yakulingo/ui/app.py`
 - **Edge Startup Parallelization (2024-12)**:
-  - **Problem**: Edge‹N“®i`subprocess.Popen`j‚ªPlaywright‰Šú‰»Š®—¹‚Ü‚Å‘Ò‹@‚µ‚Ä‚¢‚½
-  - **Solution**: Edge‹N“®‚ğPlaywright‰Šú‰»‚Æ•À—ñ‚ÅÀs
+  - **Problem**: Edgeèµ·å‹•ï¼ˆ`subprocess.Popen`ï¼‰ãŒPlaywrightåˆæœŸåŒ–å®Œäº†ã¾ã§å¾…æ©Ÿã—ã¦ã„ãŸ
+  - **Solution**: Edgeèµ·å‹•ã‚’PlaywrightåˆæœŸåŒ–ã¨ä¸¦åˆ—ã§å®Ÿè¡Œ
   - **Implementation**:
-    - `run_app()`‚Å`pre_initialize_playwright()`’¼Œã‚É`start_edge()`‚ğ•ÊƒXƒŒƒbƒh‚ÅŒÄ‚Ño‚µ
-    - `_connect_impl`‚ÅEdge‹N“®Ï‚İ‚Ìê‡‚ÍƒXƒLƒbƒvi`_is_port_in_use()`ƒ`ƒFƒbƒNj
-    - `_early_edge_thread`‚Å•À—ñEdge‹N“®‚ğŠÇ—
-    - `_early_connect()`‚Å`_early_edge_thread.join(timeout=20.0)`‚É‚æ‚èƒŒ[ƒXƒRƒ“ƒfƒBƒVƒ‡ƒ“–h~
-  - **Race condition prevention**: Edge‹N“®iÅ‘å20•bj‚ªPlaywright‰Šú‰»i–ñ10•bj‚æ‚è’x‚¢ê‡A`connect()`‚àEdge‚ğ‹N“®‚µ‚æ‚¤‚Æ‚·‚é‰Â”\«‚ª‚ ‚é‚½‚ßA`connect()`ŒÄ‚Ño‚µ‘O‚ÉEdge‹N“®ƒXƒŒƒbƒh‚ÌŠ®—¹‚ğ‘Ò‹@
-  - **Timeline before**: `[Playwright init 9.66s] ¨ [Edge‹N“® 1.57s]`
-  - **Timeline after**: `[Playwright init] ‚Æ [Edge‹N“®] ‚ğ•À—ñÀs ¨ [CDPÚ‘±]`
-  - **Expected improvement**: –ñ1.5•b‚Ì‹N“®ŠÔ’Zk
+    - `run_app()`ã§`pre_initialize_playwright()`ç›´å¾Œã«`start_edge()`ã‚’åˆ¥ã‚¹ãƒ¬ãƒƒãƒ‰ã§å‘¼ã³å‡ºã—
+    - `_connect_impl`ã§Edgeèµ·å‹•æ¸ˆã¿ã®å ´åˆã¯ã‚¹ã‚­ãƒƒãƒ—ï¼ˆ`_is_port_in_use()`ãƒã‚§ãƒƒã‚¯ï¼‰
+    - `_early_edge_thread`ã§ä¸¦åˆ—Edgeèµ·å‹•ã‚’ç®¡ç†
+    - `_early_connect()`ã§`_early_edge_thread.join(timeout=20.0)`ã«ã‚ˆã‚Šãƒ¬ãƒ¼ã‚¹ã‚³ãƒ³ãƒ‡ã‚£ã‚·ãƒ§ãƒ³é˜²æ­¢
+  - **Race condition prevention**: Edgeèµ·å‹•ï¼ˆæœ€å¤§20ç§’ï¼‰ãŒPlaywrightåˆæœŸåŒ–ï¼ˆç´„10ç§’ï¼‰ã‚ˆã‚Šé…ã„å ´åˆã€`connect()`ã‚‚Edgeã‚’èµ·å‹•ã—ã‚ˆã†ã¨ã™ã‚‹å¯èƒ½æ€§ãŒã‚ã‚‹ãŸã‚ã€`connect()`å‘¼ã³å‡ºã—å‰ã«Edgeèµ·å‹•ã‚¹ãƒ¬ãƒƒãƒ‰ã®å®Œäº†ã‚’å¾…æ©Ÿ
+  - **Timeline before**: `[Playwright init 9.66s] â†’ [Edgeèµ·å‹• 1.57s]`
+  - **Timeline after**: `[Playwright init] ã¨ [Edgeèµ·å‹•] ã‚’ä¸¦åˆ—å®Ÿè¡Œ â†’ [CDPæ¥ç¶š]`
+  - **Expected improvement**: ç´„1.5ç§’ã®èµ·å‹•æ™‚é–“çŸ­ç¸®
   - **Affected files**: `yakulingo/ui/app.py`, `yakulingo/services/copilot_handler.py`
 - **GPT Mode UI-Ready Deferral (2025-12)**:
-  - **Change**: ‘ŠúÚ‘±ƒXƒŒƒbƒh‚Å‚Ì`ensure_gpt_mode()`‚ğ”p~‚µAUI•\¦Œã‚É”ñ“¯Šú‚ÅÀs
+  - **Change**: æ—©æœŸæ¥ç¶šã‚¹ãƒ¬ãƒƒãƒ‰ã§ã®`ensure_gpt_mode()`ã‚’å»ƒæ­¢ã—ã€UIè¡¨ç¤ºå¾Œã«éåŒæœŸã§å®Ÿè¡Œ
   - **Implementation**:
-    - ‘ŠúÚ‘±Œ‹‰Ê‚ğ`threading.Event`‚Å’Ê’m‚µAUI‘¤‚Å‘Ò‹@/”½‰f
-    - `GPT_MODE_BUTTON_WAIT_MS = 15000`iUI•\¦Œã‚Ì—]—T‚ğ‚Á‚½‘Ò‹@j
-  - **Rationale**: UIƒuƒƒbƒN‰ñ”ğ‚ÆÚ‘±Œ‹‰Ê‚Ìæ‚è‚±‚Ú‚µ–h~
+    - æ—©æœŸæ¥ç¶šçµæœã‚’`threading.Event`ã§é€šçŸ¥ã—ã€UIå´ã§å¾…æ©Ÿ/åæ˜ 
+    - `GPT_MODE_BUTTON_WAIT_MS = 15000`ï¼ˆUIè¡¨ç¤ºå¾Œã®ä½™è£•ã‚’æŒã£ãŸå¾…æ©Ÿï¼‰
+  - **Rationale**: UIãƒ–ãƒ­ãƒƒã‚¯å›é¿ã¨æ¥ç¶šçµæœã®å–ã‚Šã“ã¼ã—é˜²æ­¢
   - **Affected files**: `yakulingo/ui/app.py`, `docs/SPECIFICATION.md`
 - **Window Positioning Timeout Extension (2024-12)**:
-  - **Problem**: ƒEƒBƒ“ƒhƒE”z’uƒ^ƒCƒ€ƒAƒEƒgi6•bj‚ªNiceGUI+pywebview‹N“®ŠÔi–ñ8•bj‚æ‚è’Z‚¢
-  - **Solution**: `MAX_WAIT_MS`‚ğ6•b‚©‚ç15•b‚É‰„’·i—]—T‚ğ‚Á‚Äİ’èj
-  - **Effect**: ƒEƒBƒ“ƒhƒE‚ªÅ‰‚©‚ç³‚µ‚¢ˆÊ’u‚É”z’u‚³‚êAÄ”z’u‚Ì‚¿‚ç‚Â‚«‚ğ–h~
+  - **Problem**: ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦é…ç½®ã‚¿ã‚¤ãƒ ã‚¢ã‚¦ãƒˆï¼ˆ6ç§’ï¼‰ãŒNiceGUI+pywebviewèµ·å‹•æ™‚é–“ï¼ˆç´„8ç§’ï¼‰ã‚ˆã‚ŠçŸ­ã„
+  - **Solution**: `MAX_WAIT_MS`ã‚’6ç§’ã‹ã‚‰15ç§’ã«å»¶é•·ï¼ˆä½™è£•ã‚’æŒã£ã¦è¨­å®šï¼‰
+  - **Effect**: ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ãŒæœ€åˆã‹ã‚‰æ­£ã—ã„ä½ç½®ã«é…ç½®ã•ã‚Œã€å†é…ç½®ã®ã¡ã‚‰ã¤ãã‚’é˜²æ­¢
 - **Update Script Path Escaping Fix (2024-12)**:
-  - **Problem**: ƒpƒX‚ÉƒVƒ“ƒOƒ‹ƒNƒH[ƒg‚ªŠÜ‚Ü‚ê‚éê‡AƒAƒbƒvƒf[ƒgƒXƒNƒŠƒvƒg“à‚ÌPythonƒRƒ}ƒ“ƒh‚ª\•¶ƒGƒ‰[‚É‚È‚é
-  - **Solution**: ŠÂ‹«•Ï”Œo—R‚ÅƒpƒX‚ğ“n‚·•û®‚É•ÏX
-    - PowerShell: `$env:YAKULINGO_APP_DIR` ‚ÅƒpƒX‚ğİ’è‚µAPython“à‚Å `os.environ['YAKULINGO_APP_DIR']` ‚Åæ“¾
-    - bash: `YAKULINGO_APP_DIR="$APP_DIR"` ‚ÅŠÂ‹«•Ï”‚ğİ’è‚µ‚ÄPython‚ğÀs
-  - **Additional fix**: UnixƒXƒNƒŠƒvƒg‚Å `merge_glossary` ‚ğ `backup_and_update_glossary` ‚É•ÏXiWindows‚Æ“ˆêj
+  - **Problem**: ãƒ‘ã‚¹ã«ã‚·ãƒ³ã‚°ãƒ«ã‚¯ã‚©ãƒ¼ãƒˆãŒå«ã¾ã‚Œã‚‹å ´åˆã€ã‚¢ãƒƒãƒ—ãƒ‡ãƒ¼ãƒˆã‚¹ã‚¯ãƒªãƒ—ãƒˆå†…ã®Pythonã‚³ãƒãƒ³ãƒ‰ãŒæ§‹æ–‡ã‚¨ãƒ©ãƒ¼ã«ãªã‚‹
+  - **Solution**: ç’°å¢ƒå¤‰æ•°çµŒç”±ã§ãƒ‘ã‚¹ã‚’æ¸¡ã™æ–¹å¼ã«å¤‰æ›´
+    - PowerShell: `$env:YAKULINGO_APP_DIR` ã§ãƒ‘ã‚¹ã‚’è¨­å®šã—ã€Pythonå†…ã§ `os.environ['YAKULINGO_APP_DIR']` ã§å–å¾—
+    - bash: `YAKULINGO_APP_DIR="$APP_DIR"` ã§ç’°å¢ƒå¤‰æ•°ã‚’è¨­å®šã—ã¦Pythonã‚’å®Ÿè¡Œ
+  - **Additional fix**: Unixã‚¹ã‚¯ãƒªãƒ—ãƒˆã§ `merge_glossary` ã‚’ `backup_and_update_glossary` ã«å¤‰æ›´ï¼ˆWindowsã¨çµ±ä¸€ï¼‰
   - **Affected methods**: `_install_windows()`, `_install_unix()` in `updater.py`
 - **Updater Bug Fixes (2024-12)**:
-  - **NTLM 407 handling**: `HTTPError` —áŠO‚ğƒLƒƒƒbƒ`‚µ‚Ä407ƒŒƒXƒ|ƒ“ƒX‚ğ³‚µ‚­ˆ—
-  - **Atomic downloads**: ˆêƒtƒ@ƒCƒ‹i`.tmp`Šg’£qj‚ğg—p‚µAŠ®—¹Œã‚ÉƒŠƒl[ƒ€i•”•ªƒ_ƒEƒ“ƒ[ƒhc—¯‚ğ–h~j
-  - **Path escaping**: `_escape_ps_path()` ‚Æ `_escape_bash_path()` ƒwƒ‹ƒp[ƒƒ\ƒbƒh‚ğ’Ç‰Á
-  - **Cache body type safety**: ƒLƒƒƒbƒVƒ…ƒ{ƒfƒB‚ÌŒ^ƒ`ƒFƒbƒNistr/bytesj‚ğ’Ç‰Á
-  - **Memory-efficient file_hash**: ƒ`ƒƒƒ“ƒN’PˆÊi8192ƒoƒCƒgj‚Å“Ç‚İ‚Ş‚æ‚¤‚É•ÏX
+  - **NTLM 407 handling**: `HTTPError` ä¾‹å¤–ã‚’ã‚­ãƒ£ãƒƒãƒã—ã¦407ãƒ¬ã‚¹ãƒãƒ³ã‚¹ã‚’æ­£ã—ãå‡¦ç†
+  - **Atomic downloads**: ä¸€æ™‚ãƒ•ã‚¡ã‚¤ãƒ«ï¼ˆ`.tmp`æ‹¡å¼µå­ï¼‰ã‚’ä½¿ç”¨ã—ã€å®Œäº†å¾Œã«ãƒªãƒãƒ¼ãƒ ï¼ˆéƒ¨åˆ†ãƒ€ã‚¦ãƒ³ãƒ­ãƒ¼ãƒ‰æ®‹ç•™ã‚’é˜²æ­¢ï¼‰
+  - **Path escaping**: `_escape_ps_path()` ã¨ `_escape_bash_path()` ãƒ˜ãƒ«ãƒ‘ãƒ¼ãƒ¡ã‚½ãƒƒãƒ‰ã‚’è¿½åŠ 
+  - **Cache body type safety**: ã‚­ãƒ£ãƒƒã‚·ãƒ¥ãƒœãƒ‡ã‚£ã®å‹ãƒã‚§ãƒƒã‚¯ï¼ˆstr/bytesï¼‰ã‚’è¿½åŠ 
+  - **Memory-efficient file_hash**: ãƒãƒ£ãƒ³ã‚¯å˜ä½ï¼ˆ8192ãƒã‚¤ãƒˆï¼‰ã§èª­ã¿è¾¼ã‚€ã‚ˆã†ã«å¤‰æ›´
 - **Translation Label Removal Fix (2024-12)**:
-  - **Problem**: Copilot‚ªƒvƒƒ“ƒvƒgƒeƒ“ƒvƒŒ[ƒg‚Ìu–ó•¶: ‰pŒê–|–óvŒ`®‚É’‰À‚É]‚Á‚½ê‡Au‰pŒê–|–óv‚Æ‚¢‚¤ƒ‰ƒxƒ‹•”•ª‚ª–|–óŒ‹‰Ê‚ÉŠÜ‚Ü‚ê‚Ä‚µ‚Ü‚¤
-  - **Solution**: –|–óŒ‹‰Ê‚Ìƒp[ƒXˆ—‚Åƒ‰ƒxƒ‹‚ğ©“®œ‹
-    - `_RE_TRANSLATION_LABEL` ³‹K•\Œ»ƒpƒ^[ƒ“‚ğ’Ç‰Á
-    - ‘ÎÛƒ‰ƒxƒ‹: `‰pŒê–|–ó`, `“ú–{Œê–|–ó`, `English Translation`, `Japanese Translation`
+  - **Problem**: CopilotãŒãƒ—ãƒ­ãƒ³ãƒ—ãƒˆãƒ†ãƒ³ãƒ—ãƒ¬ãƒ¼ãƒˆã®ã€Œè¨³æ–‡: è‹±èªç¿»è¨³ã€å½¢å¼ã«å¿ å®Ÿã«å¾“ã£ãŸå ´åˆã€ã€Œè‹±èªç¿»è¨³ã€ã¨ã„ã†ãƒ©ãƒ™ãƒ«éƒ¨åˆ†ãŒç¿»è¨³çµæœã«å«ã¾ã‚Œã¦ã—ã¾ã†
+  - **Solution**: ç¿»è¨³çµæœã®ãƒ‘ãƒ¼ã‚¹å‡¦ç†ã§ãƒ©ãƒ™ãƒ«ã‚’è‡ªå‹•é™¤å»
+    - `_RE_TRANSLATION_LABEL` æ­£è¦è¡¨ç¾ãƒ‘ã‚¿ãƒ¼ãƒ³ã‚’è¿½åŠ 
+    - å¯¾è±¡ãƒ©ãƒ™ãƒ«: `è‹±èªç¿»è¨³`, `æ—¥æœ¬èªç¿»è¨³`, `English Translation`, `Japanese Translation`
   - **Affected functions**:
-    - `_parse_single_translation_result()`: ƒeƒLƒXƒg–|–óŒ‹‰Ê‚Ìƒp[ƒX
-    - `_parse_single_option_result()`: ’²®Œ‹‰Ê‚Ìƒp[ƒX
+    - `_parse_single_translation_result()`: ãƒ†ã‚­ã‚¹ãƒˆç¿»è¨³çµæœã®ãƒ‘ãƒ¼ã‚¹
+    - `_parse_single_option_result()`: èª¿æ•´çµæœã®ãƒ‘ãƒ¼ã‚¹
 - **GPT Mode Optimization (2024-12)**:
-  - **wait_for_selector•û®**: ƒ|[ƒŠƒ“ƒO‚©‚çPlaywrightƒlƒCƒeƒBƒu‘Ò‹@‚É•ÏX
-    - `GPT_MODE_BUTTON_WAIT_MS = 15000` - 15•b‚Ìƒ^ƒCƒ€ƒAƒEƒgi—]—T‚ğ‚Á‚Äİ’èj
-    - Playwright‚ÌŒø—¦“I‚È‘Ò‹@‹@\‚ğg—piƒ|[ƒŠƒ“ƒO‚æ‚è‚‘¬j
-  - **JavaScriptˆêŠ‡Às**: ƒƒjƒ…[‘€ì‚ğ’Pˆê‚ÌevaluateŒÄ‚Ño‚µ‚É“‡
-    - 3‰ñ‚ÌDOM‘€ì ¨ 1‰ñ‚ÌPromise•Ô‹pJSi30ms~3‚ÌsetTimeoutj
-    - `GPT_MODE_MENU_WAIT = 0.05s` - ƒtƒH[ƒ‹ƒoƒbƒN—p‚Ì‚İ
-  - **Expected improvement**: ƒ‚[ƒhØ‘Ö ~6•b¨<0.5•biJSˆêŠ‡Às‚É‚æ‚é‚‘¬‰»j
+  - **wait_for_selectoræ–¹å¼**: ãƒãƒ¼ãƒªãƒ³ã‚°ã‹ã‚‰Playwrightãƒã‚¤ãƒ†ã‚£ãƒ–å¾…æ©Ÿã«å¤‰æ›´
+    - `GPT_MODE_BUTTON_WAIT_MS = 15000` - 15ç§’ã®ã‚¿ã‚¤ãƒ ã‚¢ã‚¦ãƒˆï¼ˆä½™è£•ã‚’æŒã£ã¦è¨­å®šï¼‰
+    - Playwrightã®åŠ¹ç‡çš„ãªå¾…æ©Ÿæ©Ÿæ§‹ã‚’ä½¿ç”¨ï¼ˆãƒãƒ¼ãƒªãƒ³ã‚°ã‚ˆã‚Šé«˜é€Ÿï¼‰
+  - **JavaScriptä¸€æ‹¬å®Ÿè¡Œ**: ãƒ¡ãƒ‹ãƒ¥ãƒ¼æ“ä½œã‚’å˜ä¸€ã®evaluateå‘¼ã³å‡ºã—ã«çµ±åˆ
+    - 3å›ã®DOMæ“ä½œ â†’ 1å›ã®Promiseè¿”å´JSï¼ˆ30msÃ—3ã®setTimeoutï¼‰
+    - `GPT_MODE_MENU_WAIT = 0.05s` - ãƒ•ã‚©ãƒ¼ãƒ«ãƒãƒƒã‚¯ç”¨ã®ã¿
+  - **Expected improvement**: ãƒ¢ãƒ¼ãƒ‰åˆ‡æ›¿ ~6ç§’â†’<0.5ç§’ï¼ˆJSä¸€æ‹¬å®Ÿè¡Œã«ã‚ˆã‚‹é«˜é€ŸåŒ–ï¼‰
 - **Copilot Connection Startup Optimization (2024-12)**:
-  - **Chat input detection completely removed**: ‹N“®‚Æ–|–ó‚Ì—¼•û‚©‚çƒ`ƒƒƒbƒg“ü—Í—“‘Ò‹@‚ğíœ
-    - `_quick_login_check()`: ‹N“®‚ÍURLƒx[ƒX‚ÌƒƒOƒCƒ“ƒy[ƒW”»’è‚Ì‚İi~0.1•bj
-    - `_ensure_copilot_page()`: –|–ó‚ÍURLƒx[ƒX‚ÌŠm”F‚Ì‚İiƒ`ƒƒƒbƒg“ü—Í—“‚ğ‘Ò‹@‚µ‚È‚¢j
-    - **‹N“®ŠÔ’Zk**: –ñ3-5•bíŒ¸
-  - **URL-based login detection**: ƒZƒŒƒNƒ^ŒŸo‚Ì•sˆÀ’è‚³‚ğ‰ñ”ğ‚·‚é‚½‚ßURLƒpƒ^[ƒ“‚Ì‚İ‚Å”»’è
-  - **Network idle wait reduction**: ƒ‰ƒ“ƒfƒBƒ“ƒOƒy[ƒW/”FØƒtƒ[‚Ì‘Ò‹@‚ğ’Zk
-    - networkidle: 5•b¨3•bA10•b¨5•b
-    - domcontentloaded: 10•b¨5•b
-    - goto: 30•b¨15•b
-  - **Session init wait reduction**: ƒZƒbƒVƒ‡ƒ“‰Šú‰»‘Ò‹@‚ğ0.1•b‚É’Zki0.2•b¨0.1•bj
-  - **Expected improvement**: ‹N“®ŠÔ –ñ3-5•b’Zkiƒ`ƒƒƒbƒg“ü—Í—“‘Ò‹@‚ÌŠ®‘Síœ‚É‚æ‚èj
+  - **Chat input detection completely removed**: èµ·å‹•æ™‚ã¨ç¿»è¨³æ™‚ã®ä¸¡æ–¹ã‹ã‚‰ãƒãƒ£ãƒƒãƒˆå…¥åŠ›æ¬„å¾…æ©Ÿã‚’å‰Šé™¤
+    - `_quick_login_check()`: èµ·å‹•æ™‚ã¯URLãƒ™ãƒ¼ã‚¹ã®ãƒ­ã‚°ã‚¤ãƒ³ãƒšãƒ¼ã‚¸åˆ¤å®šã®ã¿ï¼ˆ~0.1ç§’ï¼‰
+    - `_ensure_copilot_page()`: ç¿»è¨³æ™‚ã¯URLãƒ™ãƒ¼ã‚¹ã®ç¢ºèªã®ã¿ï¼ˆãƒãƒ£ãƒƒãƒˆå…¥åŠ›æ¬„ã‚’å¾…æ©Ÿã—ãªã„ï¼‰
+    - **èµ·å‹•æ™‚é–“çŸ­ç¸®**: ç´„3-5ç§’å‰Šæ¸›
+  - **URL-based login detection**: ã‚»ãƒ¬ã‚¯ã‚¿æ¤œå‡ºã®ä¸å®‰å®šã•ã‚’å›é¿ã™ã‚‹ãŸã‚URLãƒ‘ã‚¿ãƒ¼ãƒ³ã®ã¿ã§åˆ¤å®š
+  - **Network idle wait reduction**: ãƒ©ãƒ³ãƒ‡ã‚£ãƒ³ã‚°ãƒšãƒ¼ã‚¸/èªè¨¼ãƒ•ãƒ­ãƒ¼ã®å¾…æ©Ÿã‚’çŸ­ç¸®
+    - networkidle: 5ç§’â†’3ç§’ã€10ç§’â†’5ç§’
+    - domcontentloaded: 10ç§’â†’5ç§’
+    - goto: 30ç§’â†’15ç§’
+  - **Session init wait reduction**: ã‚»ãƒƒã‚·ãƒ§ãƒ³åˆæœŸåŒ–å¾…æ©Ÿã‚’0.1ç§’ã«çŸ­ç¸®ï¼ˆ0.2ç§’â†’0.1ç§’ï¼‰
+  - **Expected improvement**: èµ·å‹•æ™‚é–“ ç´„3-5ç§’çŸ­ç¸®ï¼ˆãƒãƒ£ãƒƒãƒˆå…¥åŠ›æ¬„å¾…æ©Ÿã®å®Œå…¨å‰Šé™¤ã«ã‚ˆã‚Šï¼‰
 - **PDF Translation Table/Page Number Fix (2024-12)**:
-  - **Page number preservation**: ƒwƒbƒ_[/ƒtƒbƒ^[‚Ìƒy[ƒW”Ô†‚ª–|–ó‚ÉˆÚ“®‚·‚é–â‘è‚ğC³
-    - `LAYOUT_PAGE_NUMBER = -1` ’è”‚ğ’Ç‰Áiƒy[ƒW”Ô†—Ìˆæ—p‚Ì“Á•Ê‚Èƒ}[ƒJ[j
-    - `LAYOUT_PRESERVE_LABELS` ƒZƒbƒg‚ğ’Ç‰Ái`"page_number"` ‚ğŠÜ‚Şj
-    - ƒy[ƒW”Ô†—Ìˆæ‚Í `skip_translation=True` ‚Å–|–ó‚ğƒXƒLƒbƒv‚µAŒ³‚ÌˆÊ’uEƒeƒLƒXƒg‚ğ•Û
-  - **Table cell value separation**: ƒe[ƒuƒ‹‚Ì€–Ú–¼‚Æ’l‚ªŒ‹‡‚³‚ê‚é–â‘è‚ğC³
-    - `QUANTITY_UNITS_JA` ‚ğ `is_sentence_end` ƒ`ƒFƒbƒN‚É’Ç‰Ái‰~–œ‰­ç‘äŒÂŒ–¼Ğ”NŒ“ú‰ñ–{–‡“%j
-    - ”—Ê’PˆÊ‚ÅI‚í‚éƒeƒLƒXƒgi—áF¢971‰­‰~j‚Í•¶––‚Æ‚µ‚Äˆµ‚¢AŸ‚Ìs‚ÆŒ‹‡‚µ‚È‚¢
-  - **CJK-digit boundary detection**: “ú–{Œê€–Ú–¼‚Æ”’l‚ªŒ‹‡‚³‚ê‚é–â‘è‚ğC³
-    - CJKƒeƒLƒXƒg‚Ì’¼Œã‚É”š‚ª‘±‚­ê‡‚É‹­‚¢‹«ŠE‚Æ‚µ‚Ä•ªŠ„
-    - ƒe[ƒuƒ‹—Ìˆæ“à: XÀ•W‚ª–ß‚ç‚È‚¯‚ê‚Î•ª—£i0ptˆÈã‚ÌƒMƒƒƒbƒv‚Å•ª—£j
-    - ƒe[ƒuƒ‹ŠO: 1ptˆÈã‚ÌƒMƒƒƒbƒv‚ª•K—viŒë•ª—£–h~j
-    - —áFu“ú–{64v¨u“ú–{v‚Æu64v‚ğ•ÊƒuƒƒbƒN‚É•ª—£
-  - **Negative sign boundary detection**: •‰†‹L†i¢£¥j‚ğ•ÊƒZƒ‹‚Æ‚µ‚Ä”F¯
-    - ŒˆZ’ZM‚È‚Ç‚Åu¢43,633v‚Ì‚æ‚¤‚È•‰†•t‚«”’l‚ğ³‚µ‚­•ª—£
-    - ƒe[ƒuƒ‹—Ìˆæ“à: 0ptˆÈã‚ÌƒMƒƒƒbƒv‚Å•ª—£
-    - ƒe[ƒuƒ‹ŠO: 1ptˆÈã‚ÌƒMƒƒƒbƒv‚ª•K—v
+  - **Page number preservation**: ãƒ˜ãƒƒãƒ€ãƒ¼/ãƒ•ãƒƒã‚¿ãƒ¼ã®ãƒšãƒ¼ã‚¸ç•ªå·ãŒç¿»è¨³æ™‚ã«ç§»å‹•ã™ã‚‹å•é¡Œã‚’ä¿®æ­£
+    - `LAYOUT_PAGE_NUMBER = -1` å®šæ•°ã‚’è¿½åŠ ï¼ˆãƒšãƒ¼ã‚¸ç•ªå·é ˜åŸŸç”¨ã®ç‰¹åˆ¥ãªãƒãƒ¼ã‚«ãƒ¼ï¼‰
+    - `LAYOUT_PRESERVE_LABELS` ã‚»ãƒƒãƒˆã‚’è¿½åŠ ï¼ˆ`"page_number"` ã‚’å«ã‚€ï¼‰
+    - ãƒšãƒ¼ã‚¸ç•ªå·é ˜åŸŸã¯ `skip_translation=True` ã§ç¿»è¨³ã‚’ã‚¹ã‚­ãƒƒãƒ—ã—ã€å…ƒã®ä½ç½®ãƒ»ãƒ†ã‚­ã‚¹ãƒˆã‚’ä¿æŒ
+  - **Table cell value separation**: ãƒ†ãƒ¼ãƒ–ãƒ«ã®é …ç›®åã¨å€¤ãŒçµåˆã•ã‚Œã‚‹å•é¡Œã‚’ä¿®æ­£
+    - `QUANTITY_UNITS_JA` ã‚’ `is_sentence_end` ãƒã‚§ãƒƒã‚¯ã«è¿½åŠ ï¼ˆå††ä¸‡å„„åƒå°å€‹ä»¶åç¤¾å¹´æœˆæ—¥å›æœ¬æšï¼…%ï¼‰
+    - æ•°é‡å˜ä½ã§çµ‚ã‚ã‚‹ãƒ†ã‚­ã‚¹ãƒˆï¼ˆä¾‹ï¼šâ–³971å„„å††ï¼‰ã¯æ–‡æœ«ã¨ã—ã¦æ‰±ã„ã€æ¬¡ã®è¡Œã¨çµåˆã—ãªã„
+  - **CJK-digit boundary detection**: æ—¥æœ¬èªé …ç›®åã¨æ•°å€¤ãŒçµåˆã•ã‚Œã‚‹å•é¡Œã‚’ä¿®æ­£
+    - CJKãƒ†ã‚­ã‚¹ãƒˆã®ç›´å¾Œã«æ•°å­—ãŒç¶šãå ´åˆã«å¼·ã„å¢ƒç•Œã¨ã—ã¦åˆ†å‰²
+    - ãƒ†ãƒ¼ãƒ–ãƒ«é ˜åŸŸå†…: Xåº§æ¨™ãŒæˆ»ã‚‰ãªã‘ã‚Œã°åˆ†é›¢ï¼ˆ0ptä»¥ä¸Šã®ã‚®ãƒ£ãƒƒãƒ—ã§åˆ†é›¢ï¼‰
+    - ãƒ†ãƒ¼ãƒ–ãƒ«å¤–: 1ptä»¥ä¸Šã®ã‚®ãƒ£ãƒƒãƒ—ãŒå¿…è¦ï¼ˆèª¤åˆ†é›¢é˜²æ­¢ï¼‰
+    - ä¾‹ï¼šã€Œæ—¥æœ¬64ã€â†’ã€Œæ—¥æœ¬ã€ã¨ã€Œ64ã€ã‚’åˆ¥ãƒ–ãƒ­ãƒƒã‚¯ã«åˆ†é›¢
+  - **Negative sign boundary detection**: è² å·è¨˜å·ï¼ˆâ–³â–²â–¼ï¼‰ã‚’åˆ¥ã‚»ãƒ«ã¨ã—ã¦èªè­˜
+    - æ±ºç®—çŸ­ä¿¡ãªã©ã§ã€Œâ–³43,633ã€ã®ã‚ˆã†ãªè² å·ä»˜ãæ•°å€¤ã‚’æ­£ã—ãåˆ†é›¢
+    - ãƒ†ãƒ¼ãƒ–ãƒ«é ˜åŸŸå†…: 0ptä»¥ä¸Šã®ã‚®ãƒ£ãƒƒãƒ—ã§åˆ†é›¢
+    - ãƒ†ãƒ¼ãƒ–ãƒ«å¤–: 1ptä»¥ä¸Šã®ã‚®ãƒ£ãƒƒãƒ—ãŒå¿…è¦
 - **Browser Side Panel Display Mode (2024-12)**:
-  - **Default changed**: `browser_display_mode` ‚ÌƒfƒtƒHƒ‹ƒg‚ğ `"side_panel"` ‚É•ÏX
-  - **Modes**: `"side_panel"`iƒfƒtƒHƒ‹ƒgjA`"minimized"`i]—ˆjA`"foreground"`i‘O–Êj
-  - **1:1 ratio sizing**: ƒAƒvƒŠ‚Æƒuƒ‰ƒEƒU‚Í1:1‚Ì”ä—¦‚Å‰æ–Ê‚ğ•ªŠ„iGPTƒ‚[ƒhUI‚ÌƒXƒy[ƒXŠm•Ûj
-    - ŒvZ®: `available_width = screen_width - gap` ¨ 2•ªŠ„
-    - ’è”: `APP_WIDTH_RATIO=0.5`, `SIDE_PANEL_GAP=10`, `SIDE_PANEL_MIN_HEIGHT=500`
+  - **Default changed**: `browser_display_mode` ã®ãƒ‡ãƒ•ã‚©ãƒ«ãƒˆã‚’ `"side_panel"` ã«å¤‰æ›´
+  - **Modes**: `"side_panel"`ï¼ˆãƒ‡ãƒ•ã‚©ãƒ«ãƒˆï¼‰ã€`"minimized"`ï¼ˆå¾“æ¥ï¼‰ã€`"foreground"`ï¼ˆå‰é¢ï¼‰
+  - **1:1 ratio sizing**: ã‚¢ãƒ—ãƒªã¨ãƒ–ãƒ©ã‚¦ã‚¶ã¯1:1ã®æ¯”ç‡ã§ç”»é¢ã‚’åˆ†å‰²ï¼ˆGPTãƒ¢ãƒ¼ãƒ‰UIã®ã‚¹ãƒšãƒ¼ã‚¹ç¢ºä¿ï¼‰
+    - è¨ˆç®—å¼: `available_width = screen_width - gap` â†’ 2åˆ†å‰²
+    - å®šæ•°: `APP_WIDTH_RATIO=0.5`, `SIDE_PANEL_GAP=10`, `SIDE_PANEL_MIN_HEIGHT=500`
   - **Side panel features**:
-    - ƒAƒvƒŠ‚ÆƒTƒCƒhƒpƒlƒ‹‚ğuƒZƒbƒgv‚Æ‚µ‚Ä‰æ–Ê’†‰›‚É”z’uid‚È‚è‚ğ–h~j
-    - YakuLingoƒAƒvƒŠ‚Ì‰E‘¤‚ÉEdge‚ğ”z’u
-    - ƒAƒvƒŠ‚Æ‚‚³‚ğ‘µ‚¦‚Ä•\¦iÅ¬‚‚³500pxj
-    - ƒ}ƒ‹ƒ`ƒ‚ƒjƒ^[‘Î‰i`MonitorFromWindow` APIg—pj
-    - **ƒAƒvƒŠ‚ÆEdge‚ğÅ‰‚©‚ç³‚µ‚¢ˆÊ’u‚É”z’u**i‚¿‚ç‚Â‚«‚È‚µj
+    - ã‚¢ãƒ—ãƒªã¨ã‚µã‚¤ãƒ‰ãƒ‘ãƒãƒ«ã‚’ã€Œã‚»ãƒƒãƒˆã€ã¨ã—ã¦ç”»é¢ä¸­å¤®ã«é…ç½®ï¼ˆé‡ãªã‚Šã‚’é˜²æ­¢ï¼‰
+    - YakuLingoã‚¢ãƒ—ãƒªã®å³å´ã«Edgeã‚’é…ç½®
+    - ã‚¢ãƒ—ãƒªã¨é«˜ã•ã‚’æƒãˆã¦è¡¨ç¤ºï¼ˆæœ€å°é«˜ã•500pxï¼‰
+    - ãƒãƒ«ãƒãƒ¢ãƒ‹ã‚¿ãƒ¼å¯¾å¿œï¼ˆ`MonitorFromWindow` APIä½¿ç”¨ï¼‰
+    - **ã‚¢ãƒ—ãƒªã¨Edgeã‚’æœ€åˆã‹ã‚‰æ­£ã—ã„ä½ç½®ã«é…ç½®**ï¼ˆã¡ã‚‰ã¤ããªã—ï¼‰
   - **Window positioning optimization (2024-12)**:
-    - `_calculate_app_position_for_side_panel()`: ƒTƒCƒhƒpƒlƒ‹ƒ‚[ƒh‚ÌƒAƒvƒŠˆÊ’u‚ğ–‘OŒvZ
-    - `_position_window_early_sync()`: on_startup‚ÅƒEƒBƒ“ƒhƒEŠÄ‹ƒ^ƒXƒN‚ğŠJn‚µApywebviewƒEƒBƒ“ƒhƒE‚ªì¬‚³‚ê‚½‚ç‘¦À‚Éi5msƒ|[ƒŠƒ“ƒOj³‚µ‚¢ˆÊ’u‚ÉˆÚ“®
-    - `_calculate_side_panel_geometry_from_screen()`: EdgeˆÊ’uŒvZ + ƒAƒvƒŠˆÊ’u‚ğ`_expected_app_position`‚É•Û‘¶
-    - `--window-position`: Edge‹N“®‚É³‚µ‚¢ˆÊ’u‚ğw’è
-    - **‘ŠúƒEƒBƒ“ƒhƒE”z’u**: NiceGUI‚Ìmultiprocessing‚É‚æ‚èwindow_args‚ªqƒvƒƒZƒX‚É“n‚³‚ê‚È‚¢‚½‚ßAƒEƒBƒ“ƒhƒEì¬‚ğ5msƒ|[ƒŠƒ“ƒO‚ÅŠÄ‹‚µSetWindowPos()‚ÅˆÚ“®
-    - `_reposition_windows_for_side_panel()`: `_calculate_app_position_for_side_panel()`‚Æ“¯‚¶ˆÊ’uŒvZ‚ğg—p‚µAŠù‚É³‚µ‚¢ˆÊ’u‚È‚çˆÚ“®‚ğƒXƒLƒbƒv
-    - **ƒEƒBƒ“ƒhƒE”z’uƒ^ƒCƒ~ƒ“ƒOÅ“K‰»**: `_apply_browser_display_mode()`‚ğEdge‹N“®’¼Œã‚Å‚Í‚È‚­`_finalize_connected_state()`iCopilot€”õŠ®—¹Œãj‚ÉˆÚ“®BNiceGUI import’†‚àCopilot€”õ‚ª•À—ñ‚Åis‚µAYakuLingoƒEƒBƒ“ƒhƒE‘Ò‹@ƒ^ƒCƒ€ƒAƒEƒg‚É‚æ‚éˆêÅ¬‰»‚ğ‰ñ”ğ
+    - `_calculate_app_position_for_side_panel()`: ã‚µã‚¤ãƒ‰ãƒ‘ãƒãƒ«ãƒ¢ãƒ¼ãƒ‰ã®ã‚¢ãƒ—ãƒªä½ç½®ã‚’äº‹å‰è¨ˆç®—
+    - `_position_window_early_sync()`: on_startupã§ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ç›£è¦–ã‚¿ã‚¹ã‚¯ã‚’é–‹å§‹ã—ã€pywebviewã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ãŒä½œæˆã•ã‚ŒãŸã‚‰å³åº§ã«ï¼ˆ5msãƒãƒ¼ãƒªãƒ³ã‚°ï¼‰æ­£ã—ã„ä½ç½®ã«ç§»å‹•
+    - `_calculate_side_panel_geometry_from_screen()`: Edgeä½ç½®è¨ˆç®— + ã‚¢ãƒ—ãƒªä½ç½®ã‚’`_expected_app_position`ã«ä¿å­˜
+    - `--window-position`: Edgeèµ·å‹•æ™‚ã«æ­£ã—ã„ä½ç½®ã‚’æŒ‡å®š
+    - **æ—©æœŸã‚¦ã‚£ãƒ³ãƒ‰ã‚¦é…ç½®**: NiceGUIã®multiprocessingã«ã‚ˆã‚Šwindow_argsãŒå­ãƒ—ãƒ­ã‚»ã‚¹ã«æ¸¡ã•ã‚Œãªã„ãŸã‚ã€ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ä½œæˆã‚’5msãƒãƒ¼ãƒªãƒ³ã‚°ã§ç›£è¦–ã—SetWindowPos()ã§ç§»å‹•
+    - `_reposition_windows_for_side_panel()`: `_calculate_app_position_for_side_panel()`ã¨åŒã˜ä½ç½®è¨ˆç®—ã‚’ä½¿ç”¨ã—ã€æ—¢ã«æ­£ã—ã„ä½ç½®ãªã‚‰ç§»å‹•ã‚’ã‚¹ã‚­ãƒƒãƒ—
+    - **ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦é…ç½®ã‚¿ã‚¤ãƒŸãƒ³ã‚°æœ€é©åŒ–**: `_apply_browser_display_mode()`ã‚’Edgeèµ·å‹•ç›´å¾Œã§ã¯ãªã`_finalize_connected_state()`ï¼ˆCopilotæº–å‚™å®Œäº†å¾Œï¼‰ã«ç§»å‹•ã€‚NiceGUI importä¸­ã‚‚Copilotæº–å‚™ãŒä¸¦åˆ—ã§é€²è¡Œã—ã€YakuLingoã‚¦ã‚£ãƒ³ãƒ‰ã‚¦å¾…æ©Ÿã‚¿ã‚¤ãƒ ã‚¢ã‚¦ãƒˆã«ã‚ˆã‚‹ä¸€æ™‚æœ€å°åŒ–ã‚’å›é¿
   - **Simplified browser handling**:
-    - ƒTƒCƒhƒpƒlƒ‹/foregroundƒ‚[ƒh‚Å‚ÍƒƒOƒCƒ“‚Ì‘O–Ê•\¦ˆ—‚ğƒXƒLƒbƒv
-    - ƒTƒCƒhƒpƒlƒ‹/foregroundƒ‚[ƒh‚Å‚ÍEdge‹N“®‚É‰æ–ÊŠO”z’uƒIƒvƒVƒ‡ƒ“‚ğg—p‚µ‚È‚¢
-    - ƒTƒCƒhƒpƒlƒ‹/foregroundƒ‚[ƒh‚Å‚Í©“®ƒƒOƒCƒ“’†‚àEdge‚ğÅ¬‰»‚µ‚È‚¢ií‚É•\¦j
-    - `_bring_to_foreground_impl`A`_ensure_edge_minimized`A`_wait_for_auto_login_impl`‚ªƒ‚[ƒh‚ğl—¶
+    - ã‚µã‚¤ãƒ‰ãƒ‘ãƒãƒ«/foregroundãƒ¢ãƒ¼ãƒ‰ã§ã¯ãƒ­ã‚°ã‚¤ãƒ³æ™‚ã®å‰é¢è¡¨ç¤ºå‡¦ç†ã‚’ã‚¹ã‚­ãƒƒãƒ—
+    - ã‚µã‚¤ãƒ‰ãƒ‘ãƒãƒ«/foregroundãƒ¢ãƒ¼ãƒ‰ã§ã¯Edgeèµ·å‹•æ™‚ã«ç”»é¢å¤–é…ç½®ã‚ªãƒ—ã‚·ãƒ§ãƒ³ã‚’ä½¿ç”¨ã—ãªã„
+    - ã‚µã‚¤ãƒ‰ãƒ‘ãƒãƒ«/foregroundãƒ¢ãƒ¼ãƒ‰ã§ã¯è‡ªå‹•ãƒ­ã‚°ã‚¤ãƒ³ä¸­ã‚‚Edgeã‚’æœ€å°åŒ–ã—ãªã„ï¼ˆå¸¸ã«è¡¨ç¤ºï¼‰
+    - `_bring_to_foreground_impl`ã€`_ensure_edge_minimized`ã€`_wait_for_auto_login_impl`ãŒãƒ¢ãƒ¼ãƒ‰ã‚’è€ƒæ…®
   - **Hotkey & reconnect handling (2024-12)**:
-    - Ctrl+Alt+JƒzƒbƒgƒL[: `_bring_window_to_front`‚ÅƒTƒCƒhƒpƒlƒ‹ƒ‚[ƒh‚ÉEdge‚à”z’u
-    - PDF–|–óÄÚ‘±: `_reconnect_copilot_with_retry`‚Å`browser_display_mode`‚ğƒ`ƒFƒbƒN
-    - ©“®ƒƒOƒCƒ“Š®—¹: `should_minimize`ğŒ‚ğ’Ç‰Á‚µ‚Ä•s—v‚ÈÅ¬‰»‚ğ–h~
+    - Ctrl+Alt+Jãƒ›ãƒƒãƒˆã‚­ãƒ¼æ™‚: `_bring_window_to_front`ã§ã‚µã‚¤ãƒ‰ãƒ‘ãƒãƒ«ãƒ¢ãƒ¼ãƒ‰æ™‚ã«Edgeã‚‚é…ç½®
+    - PDFç¿»è¨³å†æ¥ç¶šæ™‚: `_reconnect_copilot_with_retry`ã§`browser_display_mode`ã‚’ãƒã‚§ãƒƒã‚¯
+    - è‡ªå‹•ãƒ­ã‚°ã‚¤ãƒ³å®Œäº†æ™‚: `should_minimize`æ¡ä»¶ã‚’è¿½åŠ ã—ã¦ä¸è¦ãªæœ€å°åŒ–ã‚’é˜²æ­¢
   - **Bidirectional window synchronization (2024-12)**:
-    - YakuLingo‚ªƒtƒHƒAƒOƒ‰ƒEƒ“ƒh ¨ Edge‚ğ˜A“®•\¦iŠù‘¶j
-    - **Edge‚ªƒtƒHƒAƒOƒ‰ƒEƒ“ƒh ¨ YakuLingo‚ğ˜A“®•\¦iV‹K’Ç‰Áj**
-    - `SetWinEventHook`‚Å`EVENT_SYSTEM_FOREGROUND`ƒCƒxƒ“ƒg‚ğŠÄ‹
-    - `_is_edge_process_pid()`: EdgeƒvƒƒZƒXƒcƒŠ[‚Ì”»’èipsutilg—pj
-    - `_sync_yakulingo_to_foreground()`: YakuLingo‚ğEdge‚ÌŒã‚ë‚É”z’u
-    - **ƒ‹[ƒv–h~**: ƒfƒoƒEƒ“ƒXˆ—i0.3•bj+ `SWP_NOACTIVATE`ƒtƒ‰ƒO
-    - ƒ^ƒXƒNƒo[‚©‚çEdge‚ğ‘I‘ğ‚µ‚Ä‚àA—¼•û‚ÌƒEƒBƒ“ƒhƒE‚ª•\¦‚³‚ê‚é
+    - YakuLingoãŒãƒ•ã‚©ã‚¢ã‚°ãƒ©ã‚¦ãƒ³ãƒ‰ â†’ Edgeã‚’é€£å‹•è¡¨ç¤ºï¼ˆæ—¢å­˜ï¼‰
+    - **EdgeãŒãƒ•ã‚©ã‚¢ã‚°ãƒ©ã‚¦ãƒ³ãƒ‰ â†’ YakuLingoã‚’é€£å‹•è¡¨ç¤ºï¼ˆæ–°è¦è¿½åŠ ï¼‰**
+    - `SetWinEventHook`ã§`EVENT_SYSTEM_FOREGROUND`ã‚¤ãƒ™ãƒ³ãƒˆã‚’ç›£è¦–
+    - `_is_edge_process_pid()`: Edgeãƒ—ãƒ­ã‚»ã‚¹ãƒ„ãƒªãƒ¼ã®åˆ¤å®šï¼ˆpsutilä½¿ç”¨ï¼‰
+    - `_sync_yakulingo_to_foreground()`: YakuLingoã‚’Edgeã®å¾Œã‚ã«é…ç½®
+    - **ãƒ«ãƒ¼ãƒ—é˜²æ­¢**: ãƒ‡ãƒã‚¦ãƒ³ã‚¹å‡¦ç†ï¼ˆ0.3ç§’ï¼‰+ `SWP_NOACTIVATE`ãƒ•ãƒ©ã‚°
+    - ã‚¿ã‚¹ã‚¯ãƒãƒ¼ã‹ã‚‰Edgeã‚’é¸æŠã—ã¦ã‚‚ã€ä¸¡æ–¹ã®ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ãŒè¡¨ç¤ºã•ã‚Œã‚‹
   - **PDF Translation Reconnection Fix (2024-12)**:
-    - **Problem**: PP-DocLayout-L‰Šú‰»Œã‚ÌÄÚ‘±‚ÅƒZƒbƒVƒ‡ƒ“‘r¸¨ƒƒOƒCƒ“—v‹
-    - **Root cause**: `_get_or_create_context()`‚Ì‘Ò‹@ŠÔ‚ª0.2•b‚Æ’Z‚­ACDPÚ‘±Šm—§‘O‚ÉƒRƒ“ƒeƒLƒXƒgæ“¾¸”s
+    - **Problem**: PP-DocLayout-LåˆæœŸåŒ–å¾Œã®å†æ¥ç¶šã§ã‚»ãƒƒã‚·ãƒ§ãƒ³å–ªå¤±â†’ãƒ­ã‚°ã‚¤ãƒ³è¦æ±‚
+    - **Root cause**: `_get_or_create_context()`ã®å¾…æ©Ÿæ™‚é–“ãŒ0.2ç§’ã¨çŸ­ãã€CDPæ¥ç¶šç¢ºç«‹å‰ã«ã‚³ãƒ³ãƒ†ã‚­ã‚¹ãƒˆå–å¾—å¤±æ•—
     - **Fixes**:
-      - `_get_or_create_context()`: ‘Ò‹@ŠÔ‚ğÅ‘å3•bi0.3•b~10‰ñƒŠƒgƒ‰ƒCj‚É‰„’·
-      - `_cleanup_on_error()`: `browser_display_mode`‚ğƒ`ƒFƒbƒN‚µside_panel/foregroundƒ‚[ƒh‚ÅÅ¬‰»‚ğƒXƒLƒbƒv
-      - `_reconnect_copilot_with_retry()`: ƒƒOƒCƒ“—v‹‚Éƒuƒ‰ƒEƒU‚ğ‘O–Ê•\¦{UI’Ê’m‚ğ’Ç‰Á
+      - `_get_or_create_context()`: å¾…æ©Ÿæ™‚é–“ã‚’æœ€å¤§3ç§’ï¼ˆ0.3ç§’Ã—10å›ãƒªãƒˆãƒ©ã‚¤ï¼‰ã«å»¶é•·
+      - `_cleanup_on_error()`: `browser_display_mode`ã‚’ãƒã‚§ãƒƒã‚¯ã—side_panel/foregroundãƒ¢ãƒ¼ãƒ‰ã§æœ€å°åŒ–ã‚’ã‚¹ã‚­ãƒƒãƒ—
+      - `_reconnect_copilot_with_retry()`: ãƒ­ã‚°ã‚¤ãƒ³è¦æ±‚æ™‚ã«ãƒ–ãƒ©ã‚¦ã‚¶ã‚’å‰é¢è¡¨ç¤ºï¼‹UIé€šçŸ¥ã‚’è¿½åŠ 
     - **Constants**: `CONTEXT_RETRY_COUNT=10`, `CONTEXT_RETRY_INTERVAL=0.3`
-  - **Benefits**: ƒuƒ‰ƒEƒUƒXƒƒbƒgƒŠƒ“ƒO–â‘è‚ğ‰ñ”ğA–|–óŒo‰ß‚ğƒŠƒAƒ‹ƒ^ƒCƒ€‚ÅŠm”F‰Â”\
+  - **Benefits**: ãƒ–ãƒ©ã‚¦ã‚¶ã‚¹ãƒ­ãƒƒãƒˆãƒªãƒ³ã‚°å•é¡Œã‚’å›é¿ã€ç¿»è¨³çµŒéã‚’ãƒªã‚¢ãƒ«ã‚¿ã‚¤ãƒ ã§ç¢ºèªå¯èƒ½
   - **Implementation**: `_calculate_app_position_for_side_panel()`, `_calculate_side_panel_geometry_from_screen()`, `_expected_app_position`, `_position_window_early_sync()`, `_find_yakulingo_window_handle()`, `_position_edge_as_side_panel()`, `_reposition_windows_for_side_panel()`, `_sync_edge_to_foreground()`, `_sync_yakulingo_to_foreground()`, `_is_edge_process_pid()`, `start_window_sync()`, `stop_window_sync()`
 - **Window Minimization Fix at Startup (2024-12)**:
-  - **Problem**: ƒAƒvƒŠ‹N“®‚ÉƒEƒBƒ“ƒhƒE‚ªÅ¬‰»‚³‚ê‚Ä‰æ–Ê‚É•\¦‚³‚ê‚È‚¢‚±‚Æ‚ª‚ ‚é
+  - **Problem**: ã‚¢ãƒ—ãƒªèµ·å‹•æ™‚ã«ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ãŒæœ€å°åŒ–ã•ã‚Œã¦ç”»é¢ã«è¡¨ç¤ºã•ã‚Œãªã„ã“ã¨ãŒã‚ã‚‹
   - **Root causes**:
-    - `_position_window_early_sync()`‚ªƒTƒCƒhƒpƒlƒ‹ƒ‚[ƒhˆÈŠO‚Å‘Šúreturn‚µ‚Ä‚¢‚½
-    - `SetWindowPos()`‚É`SWP_SHOWWINDOW`ƒtƒ‰ƒO‚ª‚È‚­AÅ¬‰»ƒEƒBƒ“ƒhƒE‚ª•\¦‚³‚ê‚È‚©‚Á‚½
-    - `_find_yakulingo_window_handle()`‚ª”ñ•\¦ƒEƒBƒ“ƒhƒE‚ğŒŸõ‚Å‚«‚È‚©‚Á‚½
+    - `_position_window_early_sync()`ãŒã‚µã‚¤ãƒ‰ãƒ‘ãƒãƒ«ãƒ¢ãƒ¼ãƒ‰ä»¥å¤–ã§æ—©æœŸreturnã—ã¦ã„ãŸ
+    - `SetWindowPos()`ã«`SWP_SHOWWINDOW`ãƒ•ãƒ©ã‚°ãŒãªãã€æœ€å°åŒ–ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ãŒè¡¨ç¤ºã•ã‚Œãªã‹ã£ãŸ
+    - `_find_yakulingo_window_handle()`ãŒéè¡¨ç¤ºã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã‚’æ¤œç´¢ã§ããªã‹ã£ãŸ
   - **Fixes**:
-    - `_position_window_early_sync()`: ‘Sƒ‚[ƒh‚ÅÀsA`IsIconic()`‚ÅÅ¬‰»‚ğŒŸo‚µ`SW_RESTORE`‚Å•œŒ³
-    - `SetWindowPos()`‚É`SWP_SHOWWINDOW`ƒtƒ‰ƒO‚ğ’Ç‰Á‚µ‚ÄŠmÀ‚ÉƒEƒBƒ“ƒhƒE‚ğ•\¦
-    - `_find_yakulingo_window_handle(include_hidden=True)`: ”ñ•\¦/Å¬‰»ƒEƒBƒ“ƒhƒE‚àŒŸõ‰Â”\‚É
-    - `_restore_app_window_win32()`: Å¬‰»‚Æ”ñ•\¦‚Ì—¼•û‚ğˆ—A`ShowWindow(SW_SHOW)`‚Å”ñ•\¦ƒEƒBƒ“ƒhƒE‚ğ•\¦
+    - `_position_window_early_sync()`: å…¨ãƒ¢ãƒ¼ãƒ‰ã§å®Ÿè¡Œã€`IsIconic()`ã§æœ€å°åŒ–ã‚’æ¤œå‡ºã—`SW_RESTORE`ã§å¾©å…ƒ
+    - `SetWindowPos()`ã«`SWP_SHOWWINDOW`ãƒ•ãƒ©ã‚°ã‚’è¿½åŠ ã—ã¦ç¢ºå®Ÿã«ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã‚’è¡¨ç¤º
+    - `_find_yakulingo_window_handle(include_hidden=True)`: éè¡¨ç¤º/æœ€å°åŒ–ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã‚‚æ¤œç´¢å¯èƒ½ã«
+    - `_restore_app_window_win32()`: æœ€å°åŒ–ã¨éè¡¨ç¤ºã®ä¸¡æ–¹ã‚’å‡¦ç†ã€`ShowWindow(SW_SHOW)`ã§éè¡¨ç¤ºã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã‚’è¡¨ç¤º
 - **Taskbar Icon Fix (2024-12)**:
-  - **Problem**: ƒ^ƒXƒNƒo[‚ÉPythonƒAƒCƒRƒ“‚ª•\¦‚³‚êAYakuLingoƒAƒCƒRƒ“‚ª•\¦‚³‚ê‚È‚¢
-  - **Root cause**: pywebview‚Ì`window_args['icon']`İ’è‚¾‚¯‚Å‚ÍWindowsƒ^ƒXƒNƒo[‚ÌƒAƒCƒRƒ“‚Í•Ï‚í‚ç‚È‚¢
-  - **Solution**: 2’iŠK‚ÌƒAƒvƒ[ƒ`‚ÅŠmÀ‚ÉƒAƒCƒRƒ“‚ğİ’è
-    1. `SetCurrentProcessExplicitAppUserModelID('YakuLingo.App')`: AppUserModelID‚ğİ’èiƒ^ƒXƒNƒo[ƒOƒ‹[ƒv‰»j
-    2. `WM_SETICON`ƒƒbƒZ[ƒW: Win32 API‚ÅƒEƒBƒ“ƒhƒEƒAƒCƒRƒ“‚ğ’¼Úİ’è
+  - **Problem**: ã‚¿ã‚¹ã‚¯ãƒãƒ¼ã«Pythonã‚¢ã‚¤ã‚³ãƒ³ãŒè¡¨ç¤ºã•ã‚Œã€YakuLingoã‚¢ã‚¤ã‚³ãƒ³ãŒè¡¨ç¤ºã•ã‚Œãªã„
+  - **Root cause**: pywebviewã®`window_args['icon']`è¨­å®šã ã‘ã§ã¯Windowsã‚¿ã‚¹ã‚¯ãƒãƒ¼ã®ã‚¢ã‚¤ã‚³ãƒ³ã¯å¤‰ã‚ã‚‰ãªã„
+  - **Solution**: 2æ®µéšã®ã‚¢ãƒ—ãƒ­ãƒ¼ãƒã§ç¢ºå®Ÿã«ã‚¢ã‚¤ã‚³ãƒ³ã‚’è¨­å®š
+    1. `SetCurrentProcessExplicitAppUserModelID('YakuLingo.App')`: AppUserModelIDã‚’è¨­å®šï¼ˆã‚¿ã‚¹ã‚¯ãƒãƒ¼ã‚°ãƒ«ãƒ¼ãƒ—åŒ–ï¼‰
+    2. `WM_SETICON`ãƒ¡ãƒƒã‚»ãƒ¼ã‚¸: Win32 APIã§ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã‚¢ã‚¤ã‚³ãƒ³ã‚’ç›´æ¥è¨­å®š
   - **Implementation**:
-    - `run_app()`‚Ì‘‚¢’iŠK‚ÅShell32 API‚ÅAppUserModelID‚ğİ’è
-    - `_position_window_early_sync()`‚ÅƒEƒBƒ“ƒhƒEŒŸoŒã‚É`LoadImageW`/`SendMessageW`‚ÅƒAƒCƒRƒ“İ’è
-    - ¬ƒAƒCƒRƒ“i16x16j‚Æ‘åƒAƒCƒRƒ“i32x32j‚Ì—¼•û‚ğİ’è
-  - **Effect**: ƒ^ƒXƒNƒo[‚ÉYakuLingoƒAƒCƒRƒ“‚ª³‚µ‚­•\¦‚³‚ê‚é
+    - `run_app()`ã®æ—©ã„æ®µéšã§Shell32 APIã§AppUserModelIDã‚’è¨­å®š
+    - `_position_window_early_sync()`ã§ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦æ¤œå‡ºå¾Œã«`LoadImageW`/`SendMessageW`ã§ã‚¢ã‚¤ã‚³ãƒ³è¨­å®š
+    - å°ã‚¢ã‚¤ã‚³ãƒ³ï¼ˆ16x16ï¼‰ã¨å¤§ã‚¢ã‚¤ã‚³ãƒ³ï¼ˆ32x32ï¼‰ã®ä¸¡æ–¹ã‚’è¨­å®š
+  - **Effect**: ã‚¿ã‚¹ã‚¯ãƒãƒ¼ã«YakuLingoã‚¢ã‚¤ã‚³ãƒ³ãŒæ­£ã—ãè¡¨ç¤ºã•ã‚Œã‚‹
 - **Excel COM Isolation Improvements (2024-12)**:
-  - **Problem**: xlwings‚Ì`xw.App()`‚ªCOM ROTŒo—R‚ÅŠù‘¶ExcelƒCƒ“ƒXƒ^ƒ“ƒX‚ÉÚ‘±‚·‚é‰Â”\«
-  - **Risk**: ƒ†[ƒU[‚ªè“®‚ÅŠJ‚¢‚Ä‚¢‚éExcelƒtƒ@ƒCƒ‹‚ÉŒë‚Á‚Ä–|–óˆ—‚ªÀs‚³‚ê‚éŠëŒ¯«
-  - **Solution**: `win32com.client.DispatchEx`‚ğg—p‚µ‚ÄŠmÀ‚ÉV‚µ‚¢ExcelƒvƒƒZƒX‚ğì¬
-  - **Hwnd matching**: DispatchEx‚Åì¬‚µ‚½ƒCƒ“ƒXƒ^ƒ“ƒX‚ÌHwnd‚ğg—p‚µ‚Äxlwings‚Å³Šm‚É¯•Ê
+  - **Problem**: xlwingsã®`xw.App()`ãŒCOM ROTçµŒç”±ã§æ—¢å­˜Excelã‚¤ãƒ³ã‚¹ã‚¿ãƒ³ã‚¹ã«æ¥ç¶šã™ã‚‹å¯èƒ½æ€§
+  - **Risk**: ãƒ¦ãƒ¼ã‚¶ãƒ¼ãŒæ‰‹å‹•ã§é–‹ã„ã¦ã„ã‚‹Excelãƒ•ã‚¡ã‚¤ãƒ«ã«èª¤ã£ã¦ç¿»è¨³å‡¦ç†ãŒå®Ÿè¡Œã•ã‚Œã‚‹å±é™ºæ€§
+  - **Solution**: `win32com.client.DispatchEx`ã‚’ä½¿ç”¨ã—ã¦ç¢ºå®Ÿã«æ–°ã—ã„Excelãƒ—ãƒ­ã‚»ã‚¹ã‚’ä½œæˆ
+  - **Hwnd matching**: DispatchExã§ä½œæˆã—ãŸã‚¤ãƒ³ã‚¹ã‚¿ãƒ³ã‚¹ã®Hwndã‚’ä½¿ç”¨ã—ã¦xlwingsã§æ­£ç¢ºã«è­˜åˆ¥
   - **Safety measures**:
-    - `len(app.books) > 0` ‚ÅŠù‘¶ƒCƒ“ƒXƒ^ƒ“ƒX‚Ö‚ÌÚ‘±‚ğŒŸo
-    - `_verify_workbook_path()` ‚Å‘S‘€ì‘O‚ÉƒpƒXŒŸØ
-    - Šù‘¶ƒCƒ“ƒXƒ^ƒ“ƒXŒŸo‚Í`app.quit()`‚ğŒÄ‚Î‚È‚¢iƒ†[ƒU[‚ÌExcel‚ğ•Â‚¶‚È‚¢j
-  - **Implementation**: `_try_create_new_excel_instance()` ŠÖ”‚ğ‰ü‘P
-  - **xw.App() fallback removed**: xlwings‚Ö‚Ì“o˜^‚ğÅ‘å0.5•b‘Ò‹@i5‰ñ~0.1•bj‚µAŒ©‚Â‚©‚ç‚È‚¢ê‡‚ÍƒŠƒgƒ‰ƒC
+    - `len(app.books) > 0` ã§æ—¢å­˜ã‚¤ãƒ³ã‚¹ã‚¿ãƒ³ã‚¹ã¸ã®æ¥ç¶šã‚’æ¤œå‡º
+    - `_verify_workbook_path()` ã§å…¨æ“ä½œå‰ã«ãƒ‘ã‚¹æ¤œè¨¼
+    - æ—¢å­˜ã‚¤ãƒ³ã‚¹ã‚¿ãƒ³ã‚¹æ¤œå‡ºæ™‚ã¯`app.quit()`ã‚’å‘¼ã°ãªã„ï¼ˆãƒ¦ãƒ¼ã‚¶ãƒ¼ã®Excelã‚’é–‰ã˜ãªã„ï¼‰
+  - **Implementation**: `_try_create_new_excel_instance()` é–¢æ•°ã‚’æ”¹å–„
+  - **xw.App() fallback removed**: xlwingsã¸ã®ç™»éŒ²ã‚’æœ€å¤§0.5ç§’å¾…æ©Ÿï¼ˆ5å›Ã—0.1ç§’ï¼‰ã—ã€è¦‹ã¤ã‹ã‚‰ãªã„å ´åˆã¯ãƒªãƒˆãƒ©ã‚¤
 - **File Open Window Foreground Improvement (2024-12)**:
-  - **Problem**: `FindWindowW(class_name, None)`‚É‚æ‚é•s³Šm‚ÈƒEƒBƒ“ƒhƒEŒŸõ
-  - **Risk**: ƒ†[ƒU[‚ª‘¼‚ÌExcelƒtƒ@ƒCƒ‹‚ğŠJ‚¢‚Ä‚¢‚é‚ÆA‚»‚¿‚ç‚ÌƒEƒBƒ“ƒhƒE‚ª‘O–Ê‚É—ˆ‚é
-  - **Solution**: ƒtƒ@ƒCƒ‹–¼ƒx[ƒX‚ÌŒŸõ‚É•ÏX
+  - **Problem**: `FindWindowW(class_name, None)`ã«ã‚ˆã‚‹ä¸æ­£ç¢ºãªã‚¦ã‚£ãƒ³ãƒ‰ã‚¦æ¤œç´¢
+  - **Risk**: ãƒ¦ãƒ¼ã‚¶ãƒ¼ãŒä»–ã®Excelãƒ•ã‚¡ã‚¤ãƒ«ã‚’é–‹ã„ã¦ã„ã‚‹ã¨ã€ãã¡ã‚‰ã®ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ãŒå‰é¢ã«æ¥ã‚‹
+  - **Solution**: ãƒ•ã‚¡ã‚¤ãƒ«åãƒ™ãƒ¼ã‚¹ã®æ¤œç´¢ã«å¤‰æ›´
   - **Implementation**: `_bring_app_window_to_foreground_by_filename(file_path)`
-    - ƒEƒBƒ“ƒhƒEƒNƒ‰ƒX–¼‚ÅƒtƒBƒ‹ƒ^ƒŠƒ“ƒOiXLMAIN, OpusApp“™j
-    - ƒEƒBƒ“ƒhƒEƒ^ƒCƒgƒ‹‚Éƒtƒ@ƒCƒ‹–¼istemj‚ªŠÜ‚Ü‚ê‚é‚©‚Å”»’èi‘å•¶š¬•¶š–³‹j
-    - –|–óŒ‹‰Êƒtƒ@ƒCƒ‹‚ğŠJ‚¢‚½ƒEƒBƒ“ƒhƒE‚ğ³Šm‚É“Á’è
+    - ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã‚¯ãƒ©ã‚¹åã§ãƒ•ã‚£ãƒ«ã‚¿ãƒªãƒ³ã‚°ï¼ˆXLMAIN, OpusAppç­‰ï¼‰
+    - ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã‚¿ã‚¤ãƒˆãƒ«ã«ãƒ•ã‚¡ã‚¤ãƒ«åï¼ˆstemï¼‰ãŒå«ã¾ã‚Œã‚‹ã‹ã§åˆ¤å®šï¼ˆå¤§æ–‡å­—å°æ–‡å­—ç„¡è¦–ï¼‰
+    - ç¿»è¨³çµæœãƒ•ã‚¡ã‚¤ãƒ«ã‚’é–‹ã„ãŸã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã‚’æ­£ç¢ºã«ç‰¹å®š
 - **Copilot Response Text Extraction Fix (2024-12)**:
-  - **Problem**: Copilot‚ª`<placeholder>`‚Ì‚æ‚¤‚È`<>`Š‡ŒÊ‚ğŠÜ‚ŞƒeƒLƒXƒg‚ğ•Ô‚·‚ÆAƒuƒ‰ƒEƒU‚ªHTMLƒ^ƒO‚Æ‚µ‚Ä‰ğß‚µ‚Ä‚µ‚Ü‚¢ADOMŒo—R‚Å‚Íæ“¾‚Å‚«‚È‚©‚Á‚½
-  - **Previous approach (removed)**: ƒRƒs[ƒ{ƒ^ƒ“‚ğƒNƒŠƒbƒN‚µ‚ÄƒNƒŠƒbƒvƒ{[ƒhŒo—R‚ÅƒeƒLƒXƒgæ“¾B`navigator.clipboard.readText()`‚ªƒuƒƒbƒN‚·‚é–â‘è‚ª‚ ‚Á‚½
-  - **New approach**: innerHTML + HTMLƒGƒ“ƒeƒBƒeƒBƒfƒR[ƒh•û®
-    1. `element.cloneNode(true)`‚Å—v‘f‚ğƒNƒ[ƒ“iŒ³DOM‚ğ•ÏX‚µ‚È‚¢j
-    2. ƒNƒ[ƒ““à‚Ì`<ol>`‚É”Ô†‚ğ’Ç‰ÁiCSS¶¬”Ô†‚ÍinnerHTML‚ÉŠÜ‚Ü‚ê‚È‚¢‚½‚ßj
-    3. `innerHTML`‚ğæ“¾‚µ‚ÄHTMLƒ^ƒO‚ğœ‹
-    4. `textarea.innerHTML`‚ğg‚Á‚Ä`&lt;`¨`<`A`&gt;`¨`>`‚ÉƒfƒR[ƒh
-  - **Benefits**: ƒNƒŠƒbƒvƒ{[ƒhƒAƒNƒZƒX•s—v‚ÅƒuƒƒbƒN‚µ‚È‚¢A`<>`Š‡ŒÊ‚Æ”Ô†•t‚«ƒŠƒXƒg‚Ì—¼•û‚ğ•Û
-  - **Implementation**: `_JS_GET_TEXT_WITH_LIST_NUMBERS`‚ğXVA`_get_latest_response_text()`‚Ìdocstring‚ğXV
+  - **Problem**: CopilotãŒ`<placeholder>`ã®ã‚ˆã†ãª`<>`æ‹¬å¼§ã‚’å«ã‚€ãƒ†ã‚­ã‚¹ãƒˆã‚’è¿”ã™ã¨ã€ãƒ–ãƒ©ã‚¦ã‚¶ãŒHTMLã‚¿ã‚°ã¨ã—ã¦è§£é‡ˆã—ã¦ã—ã¾ã„ã€DOMçµŒç”±ã§ã¯å–å¾—ã§ããªã‹ã£ãŸ
+  - **Previous approach (removed)**: ã‚³ãƒ”ãƒ¼ãƒœã‚¿ãƒ³ã‚’ã‚¯ãƒªãƒƒã‚¯ã—ã¦ã‚¯ãƒªãƒƒãƒ—ãƒœãƒ¼ãƒ‰çµŒç”±ã§ãƒ†ã‚­ã‚¹ãƒˆå–å¾—ã€‚`navigator.clipboard.readText()`ãŒãƒ–ãƒ­ãƒƒã‚¯ã™ã‚‹å•é¡ŒãŒã‚ã£ãŸ
+  - **New approach**: innerHTML + HTMLã‚¨ãƒ³ãƒ†ã‚£ãƒ†ã‚£ãƒ‡ã‚³ãƒ¼ãƒ‰æ–¹å¼
+    1. `element.cloneNode(true)`ã§è¦ç´ ã‚’ã‚¯ãƒ­ãƒ¼ãƒ³ï¼ˆå…ƒDOMã‚’å¤‰æ›´ã—ãªã„ï¼‰
+    2. ã‚¯ãƒ­ãƒ¼ãƒ³å†…ã®`<ol>`ã«ç•ªå·ã‚’è¿½åŠ ï¼ˆCSSç”Ÿæˆç•ªå·ã¯innerHTMLã«å«ã¾ã‚Œãªã„ãŸã‚ï¼‰
+    3. `innerHTML`ã‚’å–å¾—ã—ã¦HTMLã‚¿ã‚°ã‚’é™¤å»
+    4. `textarea.innerHTML`ã‚’ä½¿ã£ã¦`&lt;`â†’`<`ã€`&gt;`â†’`>`ã«ãƒ‡ã‚³ãƒ¼ãƒ‰
+  - **Benefits**: ã‚¯ãƒªãƒƒãƒ—ãƒœãƒ¼ãƒ‰ã‚¢ã‚¯ã‚»ã‚¹ä¸è¦ã§ãƒ–ãƒ­ãƒƒã‚¯ã—ãªã„ã€`<>`æ‹¬å¼§ã¨ç•ªå·ä»˜ããƒªã‚¹ãƒˆã®ä¸¡æ–¹ã‚’ä¿æŒ
+  - **Implementation**: `_JS_GET_TEXT_WITH_LIST_NUMBERS`ã‚’æ›´æ–°ã€`_get_latest_response_text()`ã®docstringã‚’æ›´æ–°
 - **Early Connection Timeout Fix (2024-12)**:
-  - **Timeout extended**: ‘ŠúÚ‘±ƒ^ƒCƒ€ƒAƒEƒg‚ğ15•b‚©‚ç30•b‚É‰„’·iPlaywright‰Šú‰»15•b + CDPÚ‘±4•b + UI‘Ò‹@5•b = –ñ25-30•bj
-  - **asyncio.shield protection**: ƒ^ƒCƒ€ƒAƒEƒg‚Ìƒ^ƒXƒNƒLƒƒƒ“ƒZƒ‹‚ğ–h~
-  - **Background completion handler**: ƒ^ƒCƒ€ƒAƒEƒgŒã‚àƒoƒbƒNƒOƒ‰ƒEƒ“ƒh‚ÅÚ‘±‚ğ‘±s‚µAŠ®—¹‚ÉUI‚ğXV
-  - **Issue fixed**: UI‚ªuÚ‘±’†v‚Ì‚Ü‚ÜXV‚³‚ê‚È‚¢–â‘è‚ğC³
+  - **Timeout extended**: æ—©æœŸæ¥ç¶šã‚¿ã‚¤ãƒ ã‚¢ã‚¦ãƒˆã‚’15ç§’ã‹ã‚‰30ç§’ã«å»¶é•·ï¼ˆPlaywrightåˆæœŸåŒ–15ç§’ + CDPæ¥ç¶š4ç§’ + UIå¾…æ©Ÿ5ç§’ = ç´„25-30ç§’ï¼‰
+  - **asyncio.shield protection**: ã‚¿ã‚¤ãƒ ã‚¢ã‚¦ãƒˆæ™‚ã®ã‚¿ã‚¹ã‚¯ã‚­ãƒ£ãƒ³ã‚»ãƒ«ã‚’é˜²æ­¢
+  - **Background completion handler**: ã‚¿ã‚¤ãƒ ã‚¢ã‚¦ãƒˆå¾Œã‚‚ãƒãƒƒã‚¯ã‚°ãƒ©ã‚¦ãƒ³ãƒ‰ã§æ¥ç¶šã‚’ç¶šè¡Œã—ã€å®Œäº†æ™‚ã«UIã‚’æ›´æ–°
+  - **Issue fixed**: UIãŒã€Œæ¥ç¶šä¸­ã€ã®ã¾ã¾æ›´æ–°ã•ã‚Œãªã„å•é¡Œã‚’ä¿®æ­£
 - **Cleanup Optimization (2024-12)**:
-  - **gc.collect() removed**: –ñ0.15•bíŒ¸
-  - **Streamlined cancellation**: ƒLƒƒƒ“ƒZƒ‹ˆ—‚ğÅ“K‰»
-  - **PP-DocLayout-L cache clear moved**: EdgeI—¹Œã‚ÉˆÚ“®
-  - **Expected improvement**: cleanupŠÔ 2.04•b ¨ –ñ1.0-1.5•b
+  - **gc.collect() removed**: ç´„0.15ç§’å‰Šæ¸›
+  - **Streamlined cancellation**: ã‚­ãƒ£ãƒ³ã‚»ãƒ«å‡¦ç†ã‚’æœ€é©åŒ–
+  - **PP-DocLayout-L cache clear moved**: Edgeçµ‚äº†å¾Œã«ç§»å‹•
+  - **Expected improvement**: cleanupæ™‚é–“ 2.04ç§’ â†’ ç´„1.0-1.5ç§’
 - **Glossary Processing Optimization (2024-12)**:
-  - **File attachment mode (default)**: —pŒêW‚ğƒtƒ@ƒCƒ‹‚Æ‚µ‚Ä“Y•tiƒfƒtƒHƒ‹ƒgA—pŒêW‚ª‘‚¦‚Ä‚à‘Î‰‰Â”\j
-  - **Prompt embedding mode (optional)**: `embed_glossary_in_prompt=true`‚Å‚‘¬ƒ‚[ƒhi–ñ16?19•b’Zkj
-  - **Configuration**: `embed_glossary_in_prompt` İ’è‚Å–„‚ß‚İ/“Y•tƒ‚[ƒh‚ğØ‘Ö‰Â”\iƒfƒtƒHƒ‹ƒg: falsej
-  - **Scope**: ‘S–|–óƒpƒX‚É“K—piƒeƒLƒXƒg–|–óAƒtƒ@ƒCƒ‹–|–óA–ß‚µ–óAƒtƒHƒ[ƒAƒbƒv–|–ój
+  - **File attachment mode (default)**: ç”¨èªé›†ã‚’ãƒ•ã‚¡ã‚¤ãƒ«ã¨ã—ã¦æ·»ä»˜ï¼ˆãƒ‡ãƒ•ã‚©ãƒ«ãƒˆã€ç”¨èªé›†ãŒå¢—ãˆã¦ã‚‚å¯¾å¿œå¯èƒ½ï¼‰
+  - **Scope**: å…¨ç¿»è¨³ãƒ‘ã‚¹ã«é©ç”¨ï¼ˆãƒ†ã‚­ã‚¹ãƒˆç¿»è¨³ã€ãƒ•ã‚¡ã‚¤ãƒ«ç¿»è¨³ã€æˆ»ã—è¨³ã€ãƒ•ã‚©ãƒ­ãƒ¼ã‚¢ãƒƒãƒ—ç¿»è¨³ï¼‰
 - **Copilot Send Process Optimization (2024-12)**:
-  - **Complete key cycle**: keydown + keypress + keyup ‚ÌŠ®‘S‚ÈƒL[ƒTƒCƒNƒ‹‚ğJS‚ÅƒfƒBƒXƒpƒbƒ`ikeydown‚Ì‚İ‚Å‚Í‘—M‚³‚ê‚È‚¢j
-  - **Root cause**: Copilot‚ÌReact UI‚Íkeydown‚ÅpreventDefault()‚ğŒÄ‚Ô‚ªA‘—Mˆ—‚ÍŠ®‘S‚ÈƒL[ƒTƒCƒNƒ‹‚ª•K—v
-  - **Pre-warm UI**: ‘—M‘O‚ÉscrollIntoView + 0.20•b‘Ò‹@‚ÅUIˆÀ’è‰»iuSend Message TimingvQÆj
-  - **Send button scroll**: EnterƒL[‘—M‘O‚É‘—Mƒ{ƒ^ƒ“‚àscrollIntoView‚Å•\¦ˆÊ’u‚ÉˆÚ“®
-  - **Send method priority**: 1. Enter keyiJS key events + Playwright keyboard.pressj¨ 2. JS clickimulti-eventj¨ 3. Playwright clickiforce=Truej
-  - **Debug logging**: ŠeƒCƒxƒ“ƒg‚ÌdefaultPreventedó‘ÔAstopButtonoŒ»ƒ^ƒCƒ~ƒ“ƒOAŒo‰ßŠÔ‚ğÚ×ƒƒOo—Í
-  - **Effect**: Å¬‰»ƒEƒBƒ“ƒhƒE‚Å‚à1‰ñ–Ú‚Ìs‚ÅŠmÀ‚É‘—M¬Œ÷
+  - **Complete key cycle**: keydown + keypress + keyup ã®å®Œå…¨ãªã‚­ãƒ¼ã‚µã‚¤ã‚¯ãƒ«ã‚’JSã§ãƒ‡ã‚£ã‚¹ãƒ‘ãƒƒãƒï¼ˆkeydownã®ã¿ã§ã¯é€ä¿¡ã•ã‚Œãªã„ï¼‰
+  - **Root cause**: Copilotã®React UIã¯keydownã§preventDefault()ã‚’å‘¼ã¶ãŒã€é€ä¿¡å‡¦ç†ã¯å®Œå…¨ãªã‚­ãƒ¼ã‚µã‚¤ã‚¯ãƒ«ãŒå¿…è¦
+  - **Pre-warm UI**: é€ä¿¡å‰ã«scrollIntoView + 0.20ç§’å¾…æ©Ÿã§UIå®‰å®šåŒ–ï¼ˆã€ŒSend Message Timingã€å‚ç…§ï¼‰
+  - **Send button scroll**: Enterã‚­ãƒ¼é€ä¿¡å‰ã«é€ä¿¡ãƒœã‚¿ãƒ³ã‚‚scrollIntoViewã§è¡¨ç¤ºä½ç½®ã«ç§»å‹•
+  - **Send method priority**: 1. Enter keyï¼ˆJS key events + Playwright keyboard.pressï¼‰â†’ 2. JS clickï¼ˆmulti-eventï¼‰â†’ 3. Playwright clickï¼ˆforce=Trueï¼‰
+  - **Debug logging**: å„ã‚¤ãƒ™ãƒ³ãƒˆã®defaultPreventedçŠ¶æ…‹ã€stopButtonå‡ºç¾ã‚¿ã‚¤ãƒŸãƒ³ã‚°ã€çµŒéæ™‚é–“ã‚’è©³ç´°ãƒ­ã‚°å‡ºåŠ›
+  - **Effect**: æœ€å°åŒ–ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã§ã‚‚1å›ç›®ã®è©¦è¡Œã§ç¢ºå®Ÿã«é€ä¿¡æˆåŠŸ
 - **Copilot Stop Generation Bug Fix (2024-12)**:
-  - **Issue**: u‰“š‚Ì¶¬‚ğ’â~‚µ‚Ü‚µ‚½v‚ªˆÓ}‚¹‚¸”­¶‚·‚é–â‘è
-  - **Root cause**: JS clickiAttempt 2j‚Å‡¬ƒCƒxƒ“ƒgimousedown/mouseup/clickj¬Œ÷Œã‚ÉAƒoƒbƒNƒAƒbƒv‚Æ‚µ‚Ä`el.click()`‚ğ–³ğŒÀsB‘—M¬Œ÷‚ÉCopilot‚ªƒ{ƒ^ƒ“‚ğ’â~ƒ{ƒ^ƒ“‚É•ÏX‚·‚é‚½‚ßA`el.click()`‚ª’â~ƒ{ƒ^ƒ“‚ğƒNƒŠƒbƒN‚µ‚Ä‚µ‚Ü‚¤
-  - **Fix**: ‡¬ƒCƒxƒ“ƒg¬Œ÷i`stopBtnAfterSynthetic=true` ‚Ü‚½‚Í `textLengthAfterSynthetic=0`j‚Ìê‡‚Í`el.click()`‚ğƒXƒLƒbƒv
-  - **Consistency**: Attempt 2/3‚Ì–‘Oƒ`ƒFƒbƒNi`pre_click_state`j‚Æ“¯‚¶ƒpƒ^[ƒ“‚ğ“K—p
+  - **Issue**: ã€Œå¿œç­”ã®ç”Ÿæˆã‚’åœæ­¢ã—ã¾ã—ãŸã€ãŒæ„å›³ã›ãšç™ºç”Ÿã™ã‚‹å•é¡Œ
+  - **Root cause**: JS clickï¼ˆAttempt 2ï¼‰ã§åˆæˆã‚¤ãƒ™ãƒ³ãƒˆï¼ˆmousedown/mouseup/clickï¼‰æˆåŠŸå¾Œã«ã€ãƒãƒƒã‚¯ã‚¢ãƒƒãƒ—ã¨ã—ã¦`el.click()`ã‚’ç„¡æ¡ä»¶å®Ÿè¡Œã€‚é€ä¿¡æˆåŠŸæ™‚ã«CopilotãŒãƒœã‚¿ãƒ³ã‚’åœæ­¢ãƒœã‚¿ãƒ³ã«å¤‰æ›´ã™ã‚‹ãŸã‚ã€`el.click()`ãŒåœæ­¢ãƒœã‚¿ãƒ³ã‚’ã‚¯ãƒªãƒƒã‚¯ã—ã¦ã—ã¾ã†
+  - **Fix**: åˆæˆã‚¤ãƒ™ãƒ³ãƒˆæˆåŠŸï¼ˆ`stopBtnAfterSynthetic=true` ã¾ãŸã¯ `textLengthAfterSynthetic=0`ï¼‰ã®å ´åˆã¯`el.click()`ã‚’ã‚¹ã‚­ãƒƒãƒ—
+  - **Consistency**: Attempt 2/3ã®äº‹å‰ãƒã‚§ãƒƒã‚¯ï¼ˆ`pre_click_state`ï¼‰ã¨åŒã˜ãƒ‘ã‚¿ãƒ¼ãƒ³ã‚’é©ç”¨
 - **PDF Line Break Fix (2024-12)**:
-  - **TOC pattern is_strong_boundary removal**: TOCƒpƒ^[ƒ“iY•Ï‰» + X‘åƒŠƒZƒbƒgj‚Å`is_strong_boundary = True`‚ğİ’è‚µ‚È‚¢‚æ‚¤‚ÉC³
-  - **Issue**: ’Êí‚Ì’i—“à‚ÌsÜ‚è•Ô‚µ‚ªTOCƒpƒ^[ƒ“‚Æ‚µ‚ÄŒëŒŸo‚³‚êA`is_japanese_continuation_line()`‚É‚æ‚éŒp‘±s”»’è‚ªƒXƒLƒbƒv‚³‚ê‚Ä‚¢‚½
-  - **Fix**: TOCƒpƒ^[ƒ“ŒŸo‚Å‚àã‚¢‹«ŠE‚Æ‚µ‚Äˆµ‚¢A`is_japanese_continuation_line()`ƒ`ƒFƒbƒN‚ğ“K—p
-  - **Result**: u”»’f‚·‚év¨uˆê’è‚Ì‘O’ñ‚É...v‚Ì‚æ‚¤‚ÈsÜ‚è•Ô‚µ‚ª³‚µ‚­Œ‹‡‚³‚ê‚é‚æ‚¤‚É‚È‚Á‚½
-  - **TOC line ending detection**: `is_toc_line_ending()`ŠÖ”‚ğ’Ç‰ÁBƒŠ[ƒ_[icdED.Ej{ƒy[ƒW”Ô†ƒpƒ^[ƒ“‚ğŒŸo‚µ‚Ä–ÚŸ€–Ú‚ğ³‚µ‚­•ª—£
-  - **Fullwidth operator exclusion**: `vflag()`‚É‘SŠp‰‰Zqiƒ„{|–^j‚Æ”gƒ_ƒbƒVƒ…i`j‚ğœŠOƒŠƒXƒg‚É’Ç‰ÁBŒ©o‚µ‚È‚Ç‚Åg—p‚³‚ê‚é‹L†‚ª”®”»’è‚³‚ê‚È‚­‚È‚Á‚½
-  - **Quantity units exclusion**: `is_japanese_continuation_line()`‚É”—Ê’PˆÊi‰~–œ‰­ç‘äŒÂŒ–¼Ğ”NŒ“ú‰ñ–{–‡“%j‚ğ”ñŒp‘±s‚Æ‚µ‚Ä’Ç‰ÁBƒe[ƒuƒ‹ƒZƒ‹‚ÌŒ‹‡‚ğ–h~
-  - **Opening bracket protection**: ‹­‚¢‹«ŠE‚Å‚àŠJ‚«Š‡ŒÊi(iuwykqsomj‚ÅI‚í‚éê‡‚Í•ªŠ„‚µ‚È‚¢Bu•S–œ‰~(v‚Ì‚æ‚¤‚È•ªŠ„‚ğ–h~
-  - **Short CJK text protection**: ‹­‚¢‹«ŠE‚Å‚à1-2•¶š‚ÌCJKƒeƒLƒXƒg‚Í•ªŠ„‚µ‚È‚¢BƒXƒy[ƒX“ü‚èƒeƒLƒXƒgiu‘ã •\ Òv“™j‚Ì•ªŠ„‚ğ–h~
+  - **TOC pattern is_strong_boundary removal**: TOCãƒ‘ã‚¿ãƒ¼ãƒ³ï¼ˆYå¤‰åŒ– + Xå¤§ãƒªã‚»ãƒƒãƒˆï¼‰ã§`is_strong_boundary = True`ã‚’è¨­å®šã—ãªã„ã‚ˆã†ã«ä¿®æ­£
+  - **Issue**: é€šå¸¸ã®æ®µè½å†…ã®è¡ŒæŠ˜ã‚Šè¿”ã—ãŒTOCãƒ‘ã‚¿ãƒ¼ãƒ³ã¨ã—ã¦èª¤æ¤œå‡ºã•ã‚Œã€`is_japanese_continuation_line()`ã«ã‚ˆã‚‹ç¶™ç¶šè¡Œåˆ¤å®šãŒã‚¹ã‚­ãƒƒãƒ—ã•ã‚Œã¦ã„ãŸ
+  - **Fix**: TOCãƒ‘ã‚¿ãƒ¼ãƒ³æ¤œå‡ºã§ã‚‚å¼±ã„å¢ƒç•Œã¨ã—ã¦æ‰±ã„ã€`is_japanese_continuation_line()`ãƒã‚§ãƒƒã‚¯ã‚’é©ç”¨
+  - **Result**: ã€Œåˆ¤æ–­ã™ã‚‹ã€â†’ã€Œä¸€å®šã®å‰æã«...ã€ã®ã‚ˆã†ãªè¡ŒæŠ˜ã‚Šè¿”ã—ãŒæ­£ã—ãçµåˆã•ã‚Œã‚‹ã‚ˆã†ã«ãªã£ãŸ
+  - **TOC line ending detection**: `is_toc_line_ending()`é–¢æ•°ã‚’è¿½åŠ ã€‚ãƒªãƒ¼ãƒ€ãƒ¼ï¼ˆâ€¦â€¥ãƒ»ï¼.ãƒ»ï¼‰ï¼‹ãƒšãƒ¼ã‚¸ç•ªå·ãƒ‘ã‚¿ãƒ¼ãƒ³ã‚’æ¤œå‡ºã—ã¦ç›®æ¬¡é …ç›®ã‚’æ­£ã—ãåˆ†é›¢
+  - **Fullwidth operator exclusion**: `vflag()`ã«å…¨è§’æ¼”ç®—å­ï¼ˆï¼œï¼ï¼‹ï¼ï¼Šï¼ï¼ï¼‰ã¨æ³¢ãƒ€ãƒƒã‚·ãƒ¥ï¼ˆï½ï¼‰ã‚’é™¤å¤–ãƒªã‚¹ãƒˆã«è¿½åŠ ã€‚è¦‹å‡ºã—ãªã©ã§ä½¿ç”¨ã•ã‚Œã‚‹è¨˜å·ãŒæ•°å¼åˆ¤å®šã•ã‚Œãªããªã£ãŸ
+  - **Quantity units exclusion**: `is_japanese_continuation_line()`ã«æ•°é‡å˜ä½ï¼ˆå††ä¸‡å„„åƒå°å€‹ä»¶åç¤¾å¹´æœˆæ—¥å›æœ¬æšï¼…%ï¼‰ã‚’éç¶™ç¶šè¡Œã¨ã—ã¦è¿½åŠ ã€‚ãƒ†ãƒ¼ãƒ–ãƒ«ã‚»ãƒ«ã®çµåˆã‚’é˜²æ­¢
+  - **Opening bracket protection**: å¼·ã„å¢ƒç•Œã§ã‚‚é–‹ãæ‹¬å¼§ï¼ˆ(ï¼ˆã€Œã€ã€ã€”ã€ˆã€Šï½›ï¼»ï¼‰ã§çµ‚ã‚ã‚‹å ´åˆã¯åˆ†å‰²ã—ãªã„ã€‚ã€Œç™¾ä¸‡å††(ã€ã®ã‚ˆã†ãªåˆ†å‰²ã‚’é˜²æ­¢
+  - **Short CJK text protection**: å¼·ã„å¢ƒç•Œã§ã‚‚1-2æ–‡å­—ã®CJKãƒ†ã‚­ã‚¹ãƒˆã¯åˆ†å‰²ã—ãªã„ã€‚ã‚¹ãƒšãƒ¼ã‚¹å…¥ã‚Šãƒ†ã‚­ã‚¹ãƒˆï¼ˆã€Œä»£ è¡¨ è€…ã€ç­‰ï¼‰ã®åˆ†å‰²ã‚’é˜²æ­¢
 - **Global Hotkey Change to Ctrl+Alt+J (2024-12)**:
-  - **Excel/Word conflict resolution**: Ctrl+J‚ÍExcel‚ÌJustifyƒVƒ‡[ƒgƒJƒbƒgACtrl+Shift+J‚ÍWord‚ÌJustifyƒVƒ‡[ƒgƒJƒbƒg‚Æ‹£‡‚·‚é‚½‚ßACtrl+Alt+J‚É•ÏX
-  - **Low-level keyboard hook**: WH_KEYBOARD_LL‚ğg—p‚µ‚ÄŠmÀ‚ÉƒzƒbƒgƒL[‚ğˆ—
-  - **Exception handling fix**: ’áƒŒƒxƒ‹ƒL[ƒ{[ƒhƒtƒbƒN‚Ì—áŠOˆ—‚ğC³‚µ‚ÄƒL[ƒ{[ƒhƒuƒƒbƒN‚ğ–h~
+  - **Excel/Word conflict resolution**: Ctrl+Jã¯Excelã®Justifyã‚·ãƒ§ãƒ¼ãƒˆã‚«ãƒƒãƒˆã€Ctrl+Shift+Jã¯Wordã®Justifyã‚·ãƒ§ãƒ¼ãƒˆã‚«ãƒƒãƒˆã¨ç«¶åˆã™ã‚‹ãŸã‚ã€Ctrl+Alt+Jã«å¤‰æ›´
+  - **Low-level keyboard hook**: WH_KEYBOARD_LLã‚’ä½¿ç”¨ã—ã¦ç¢ºå®Ÿã«ãƒ›ãƒƒãƒˆã‚­ãƒ¼ã‚’å‡¦ç†
+  - **Exception handling fix**: ä½ãƒ¬ãƒ™ãƒ«ã‚­ãƒ¼ãƒœãƒ¼ãƒ‰ãƒ•ãƒƒã‚¯ã®ä¾‹å¤–å‡¦ç†ã‚’ä¿®æ­£ã—ã¦ã‚­ãƒ¼ãƒœãƒ¼ãƒ‰ãƒ–ãƒ­ãƒƒã‚¯ã‚’é˜²æ­¢
 - **Session Persistence Improvements (2024-12)**:
-  - **auth=2 parameter removal**: COPILOT_URL‚©‚ç?auth=2ƒpƒ‰ƒ[ƒ^‚ğíœBM365‚Í?authƒpƒ‰ƒ[ƒ^‚ª‚È‚­‚Ä‚àŠù‘¶ƒZƒbƒVƒ‡ƒ“‚Ì”FØƒ^ƒCƒv‚ğ©“®ŒŸo
-  - **storage_state.json removed**: EdgeProfile‚ÌCookies‚ªƒZƒbƒVƒ‡ƒ“•Û‚ğ’S‚¤‚½‚ßAstorage_state.jsonŠÖ˜A‚ÌƒR[ƒh‚ğíœi-93sj
-  - **Auto-login Edge visibility fix**: ©“®ƒƒOƒCƒ“‚ÌEdge•\¦‚ğ–h~
+  - **auth=2 parameter removal**: COPILOT_URLã‹ã‚‰?auth=2ãƒ‘ãƒ©ãƒ¡ãƒ¼ã‚¿ã‚’å‰Šé™¤ã€‚M365ã¯?authãƒ‘ãƒ©ãƒ¡ãƒ¼ã‚¿ãŒãªãã¦ã‚‚æ—¢å­˜ã‚»ãƒƒã‚·ãƒ§ãƒ³ã®èªè¨¼ã‚¿ã‚¤ãƒ—ã‚’è‡ªå‹•æ¤œå‡º
+  - **storage_state.json removed**: EdgeProfileã®CookiesãŒã‚»ãƒƒã‚·ãƒ§ãƒ³ä¿æŒã‚’æ‹…ã†ãŸã‚ã€storage_state.jsoné–¢é€£ã®ã‚³ãƒ¼ãƒ‰ã‚’å‰Šé™¤ï¼ˆ-93è¡Œï¼‰
+  - **Auto-login Edge visibility fix**: è‡ªå‹•ãƒ­ã‚°ã‚¤ãƒ³æ™‚ã®Edgeè¡¨ç¤ºã‚’é˜²æ­¢
 - **Edge Browser Process Management (2024-12)**:
-  - **Process tree termination**: ƒAƒvƒŠI—¹‚ÉEdge‚ÌqƒvƒƒZƒX‚àŠmÀ‚ÉI—¹itaskkill /T /Fg—pj
-  - **Profile directory cleanup**: qƒvƒƒZƒXI—¹‚É‚æ‚èƒvƒƒtƒ@ƒCƒ‹ƒfƒBƒŒƒNƒgƒŠ‚Ìƒtƒ@ƒCƒ‹ƒnƒ“ƒhƒ‹ƒƒbƒN‰ğœ
-  - **Playwright greenlet fix**: ƒVƒƒƒbƒgƒ_ƒEƒ“‚ÉPlaywright.stop()‚ğíœ‚µ‚ÄgreenletƒGƒ‰[‚ğ‰ñ”ğ
-  - **Timeout optimization**: EdgeI—¹‚Ìƒ^ƒCƒ€ƒAƒEƒg‚ğ’Zk
-  - **Edge PID preservation**: `_edge_pid`•Ï”‚ÅEdge‹N“®‚ÌPID‚ğ•Ê“r•Û‘¶‚µA`edge_process`‚ªNone‚É‚È‚Á‚Ä‚àI—¹ˆ—‚ğÀs‰Â”\‚É
-  - **Conditional about:blank navigation**: `about:blank`‚Ö‚ÌƒiƒrƒQ[ƒg‚ğ`_browser_started_by_us`‚ªTrue‚Ìê‡‚Ì‚İ‚ÉŒÀ’èiƒuƒ‰ƒEƒU‚ªc‚é–â‘è‚ğC³j
+  - **Process tree termination**: ã‚¢ãƒ—ãƒªçµ‚äº†æ™‚ã«Edgeã®å­ãƒ—ãƒ­ã‚»ã‚¹ã‚‚ç¢ºå®Ÿã«çµ‚äº†ï¼ˆtaskkill /T /Fä½¿ç”¨ï¼‰
+  - **Profile directory cleanup**: å­ãƒ—ãƒ­ã‚»ã‚¹çµ‚äº†ã«ã‚ˆã‚Šãƒ—ãƒ­ãƒ•ã‚¡ã‚¤ãƒ«ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªã®ãƒ•ã‚¡ã‚¤ãƒ«ãƒãƒ³ãƒ‰ãƒ«ãƒ­ãƒƒã‚¯è§£é™¤
+  - **Playwright greenlet fix**: ã‚·ãƒ£ãƒƒãƒˆãƒ€ã‚¦ãƒ³æ™‚ã«Playwright.stop()ã‚’å‰Šé™¤ã—ã¦greenletã‚¨ãƒ©ãƒ¼ã‚’å›é¿
+  - **Timeout optimization**: Edgeçµ‚äº†æ™‚ã®ã‚¿ã‚¤ãƒ ã‚¢ã‚¦ãƒˆã‚’çŸ­ç¸®
+  - **Edge PID preservation**: `_edge_pid`å¤‰æ•°ã§Edgeèµ·å‹•æ™‚ã®PIDã‚’åˆ¥é€”ä¿å­˜ã—ã€`edge_process`ãŒNoneã«ãªã£ã¦ã‚‚çµ‚äº†å‡¦ç†ã‚’å®Ÿè¡Œå¯èƒ½ã«
+  - **Conditional about:blank navigation**: `about:blank`ã¸ã®ãƒŠãƒ“ã‚²ãƒ¼ãƒˆã‚’`_browser_started_by_us`ãŒTrueã®å ´åˆã®ã¿ã«é™å®šï¼ˆãƒ–ãƒ©ã‚¦ã‚¶ãŒæ®‹ã‚‹å•é¡Œã‚’ä¿®æ­£ï¼‰
 - **File Panel Scrolling Fix (2024-12)**:
-  - **ui.scroll_area usage**: ƒtƒ@ƒCƒ‹ƒpƒlƒ‹‚Éui.scroll_area()‚ğg—p‚µ‚ÄƒXƒNƒ[ƒ‹‚ğŠmÀ‚É—LŒø‰»
+  - **ui.scroll_area usage**: ãƒ•ã‚¡ã‚¤ãƒ«ãƒ‘ãƒãƒ«ã«ui.scroll_area()ã‚’ä½¿ç”¨ã—ã¦ã‚¹ã‚¯ãƒ­ãƒ¼ãƒ«ã‚’ç¢ºå®Ÿã«æœ‰åŠ¹åŒ–
 - **Main Panel Horizontal Scroll Fix (2024-12)**:
-  - **Root cause**: `100vw` ‚ÍƒXƒNƒ[ƒ‹ƒo[•‚ğŠÜ‚Ş‚½‚ßAcƒXƒNƒ[ƒ‹ƒo[‚ª•\¦‚³‚ê‚é‚Æ `.main-area` ‚ªÀÛ‚Ì•\¦—Ìˆæ‚æ‚èL‚­‚È‚è‰¡ƒXƒNƒ[ƒ‹‚ª”­¶
-  - **Solution**: `width: calc(100vw - sidebar)` ‚ğ `width: calc(100% - sidebar)` ‚É•ÏXB`100%` ‚Íe—v‘f‚Ì•‚ğŠî€‚É‚·‚é‚½‚ßƒXƒNƒ[ƒ‹ƒo[•‚Ì–â‘è‚ğ‰ñ”ğ
+  - **Root cause**: `100vw` ã¯ã‚¹ã‚¯ãƒ­ãƒ¼ãƒ«ãƒãƒ¼å¹…ã‚’å«ã‚€ãŸã‚ã€ç¸¦ã‚¹ã‚¯ãƒ­ãƒ¼ãƒ«ãƒãƒ¼ãŒè¡¨ç¤ºã•ã‚Œã‚‹ã¨ `.main-area` ãŒå®Ÿéš›ã®è¡¨ç¤ºé ˜åŸŸã‚ˆã‚Šåºƒããªã‚Šæ¨ªã‚¹ã‚¯ãƒ­ãƒ¼ãƒ«ãŒç™ºç”Ÿ
+  - **Solution**: `width: calc(100vw - sidebar)` ã‚’ `width: calc(100% - sidebar)` ã«å¤‰æ›´ã€‚`100%` ã¯è¦ªè¦ç´ ã®å¹…ã‚’åŸºæº–ã«ã™ã‚‹ãŸã‚ã‚¹ã‚¯ãƒ­ãƒ¼ãƒ«ãƒãƒ¼å¹…ã®å•é¡Œã‚’å›é¿
 - **Result Panel Scroll Fix (2024-12)**:
-  - **Root cause**: Flexbox‚Å `overflow-y: auto` ‚Æ `flex: 1` ‚ğ‘g‚İ‡‚í‚¹‚½ê‡Aq—v‘f‚ÌƒfƒtƒHƒ‹ƒg `min-height: auto` ‚ªƒRƒ“ƒeƒ“ƒc‚‚³‚Éİ’è‚³‚êAÅã•”‚Ü‚ÅƒXƒNƒ[ƒ‹‚Å‚«‚È‚¢–â‘è‚ª”­¶
-  - **Solution**: `.result-panel` ‚Æ `.result-panel > .nicegui-column` ‚É `min-height: 0` ‚ğ’Ç‰ÁB‚±‚ê‚É‚æ‚èq—v‘f‚ªƒRƒ“ƒeƒ“ƒcƒTƒCƒYˆÈ‰º‚Ék¬‰Â”\‚É‚È‚èAƒXƒNƒ[ƒ‹‚ª³‚µ‚­“®ì
+  - **Root cause**: Flexboxã§ `overflow-y: auto` ã¨ `flex: 1` ã‚’çµ„ã¿åˆã‚ã›ãŸå ´åˆã€å­è¦ç´ ã®ãƒ‡ãƒ•ã‚©ãƒ«ãƒˆ `min-height: auto` ãŒã‚³ãƒ³ãƒ†ãƒ³ãƒ„é«˜ã•ã«è¨­å®šã•ã‚Œã€æœ€ä¸Šéƒ¨ã¾ã§ã‚¹ã‚¯ãƒ­ãƒ¼ãƒ«ã§ããªã„å•é¡ŒãŒç™ºç”Ÿ
+  - **Solution**: `.result-panel` ã¨ `.result-panel > .nicegui-column` ã« `min-height: 0` ã‚’è¿½åŠ ã€‚ã“ã‚Œã«ã‚ˆã‚Šå­è¦ç´ ãŒã‚³ãƒ³ãƒ†ãƒ³ãƒ„ã‚µã‚¤ã‚ºä»¥ä¸‹ã«ç¸®å°å¯èƒ½ã«ãªã‚Šã€ã‚¹ã‚¯ãƒ­ãƒ¼ãƒ«ãŒæ­£ã—ãå‹•ä½œ
 - **File Attachment Button Improvement (2024-12)**:
-  - **Direct file selection**: ƒtƒ@ƒCƒ‹“Y•tƒ{ƒ^ƒ“‚Åƒ_ƒCƒAƒƒO‚ğŒo—R‚¹‚¸’¼Úƒtƒ@ƒCƒ‹‘I‘ğ‚ğŠJ‚­‚æ‚¤‚É‰ü‘P
+  - **Direct file selection**: ãƒ•ã‚¡ã‚¤ãƒ«æ·»ä»˜ãƒœã‚¿ãƒ³ã§ãƒ€ã‚¤ã‚¢ãƒ­ã‚°ã‚’çµŒç”±ã›ãšç›´æ¥ãƒ•ã‚¡ã‚¤ãƒ«é¸æŠã‚’é–‹ãã‚ˆã†ã«æ”¹å–„
 - **Glossary Processing Improvements (2024-12)**:
-  - **glossary_old.csv comparison**: glossary_old.csv‚Æ‚Ì”äŠr‚ÅƒJƒXƒ^ƒ}ƒCƒY”»’è‚ğ’Ç‰Ái‘Oƒo[ƒWƒ‡ƒ“‚Æˆê’v‚·‚ê‚ÎƒoƒbƒNƒAƒbƒv‚ğƒXƒLƒbƒvj
-  - **Backup timing fix**: glossary.csv”äŠrˆ—‚ğƒoƒbƒNƒAƒbƒvƒfƒBƒŒƒNƒgƒŠíœ‘O‚ÉˆÚ“®
+  - **glossary_old.csv comparison**: glossary_old.csvã¨ã®æ¯”è¼ƒã§ã‚«ã‚¹ã‚¿ãƒã‚¤ã‚ºåˆ¤å®šã‚’è¿½åŠ ï¼ˆå‰ãƒãƒ¼ã‚¸ãƒ§ãƒ³ã¨ä¸€è‡´ã™ã‚Œã°ãƒãƒƒã‚¯ã‚¢ãƒƒãƒ—ã‚’ã‚¹ã‚­ãƒƒãƒ—ï¼‰
+  - **Backup timing fix**: glossary.csvæ¯”è¼ƒå‡¦ç†ã‚’ãƒãƒƒã‚¯ã‚¢ãƒƒãƒ—ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªå‰Šé™¤å‰ã«ç§»å‹•
 - **PDF Text Positioning Fix (PDFMathTranslate compliant) (2024-12)**:
-  - **Paragraph.y = char.y0**: PDFMathTranslate€‹’‚Å`Paragraph.y`‚ğ`char.y0`i•¶š‚Ì‰º’[j‚Éİ’èB]—ˆ‚Ì`char.y1 - char_size`‚©‚ç•ÏX
-  - **calculate_text_position fallback**: ƒtƒH[ƒ‹ƒoƒbƒNŒvZ‚Å`y1`iƒ{ƒbƒNƒX‰º’[j‚ğg—pB]—ˆ‚Ì`y2 - font_size`‚©‚ç•ÏX
-  - **Text flows downward**: PDFÀ•WŒn‚Å`y = initial_y - (line_index * font_size * line_height)`‚É‚æ‚è‰º•ûŒü‚ÉƒeƒLƒXƒg‚ğ”z’u
-  - **Reference**: PDFMathTranslate converter.py‚Ì`vals["dy"] + y - vals["lidx"] * size * line_height`‚É€‹’
-  - **Issue fixed**: –|–óŒã‚ÌƒeƒLƒXƒg‚ª•\‚ÌƒZƒ‹“à‚É“ü‚è‚Ş–â‘è‚ğC³iNote: The above earnings...‚È‚Ç‚ª•\‚ÌŠO‘¤‚É³‚µ‚­”z’u‚³‚ê‚éj
+  - **Paragraph.y = char.y0**: PDFMathTranslateæº–æ‹ ã§`Paragraph.y`ã‚’`char.y0`ï¼ˆæ–‡å­—ã®ä¸‹ç«¯ï¼‰ã«è¨­å®šã€‚å¾“æ¥ã®`char.y1 - char_size`ã‹ã‚‰å¤‰æ›´
+  - **calculate_text_position fallback**: ãƒ•ã‚©ãƒ¼ãƒ«ãƒãƒƒã‚¯è¨ˆç®—ã§`y1`ï¼ˆãƒœãƒƒã‚¯ã‚¹ä¸‹ç«¯ï¼‰ã‚’ä½¿ç”¨ã€‚å¾“æ¥ã®`y2 - font_size`ã‹ã‚‰å¤‰æ›´
+  - **Text flows downward**: PDFåº§æ¨™ç³»ã§`y = initial_y - (line_index * font_size * line_height)`ã«ã‚ˆã‚Šä¸‹æ–¹å‘ã«ãƒ†ã‚­ã‚¹ãƒˆã‚’é…ç½®
+  - **Reference**: PDFMathTranslate converter.pyã®`vals["dy"] + y - vals["lidx"] * size * line_height`ã«æº–æ‹ 
+  - **Issue fixed**: ç¿»è¨³å¾Œã®ãƒ†ã‚­ã‚¹ãƒˆãŒè¡¨ã®ã‚»ãƒ«å†…ã«å…¥ã‚Šè¾¼ã‚€å•é¡Œã‚’ä¿®æ­£ï¼ˆNote: The above earnings...ãªã©ãŒè¡¨ã®å¤–å´ã«æ­£ã—ãé…ç½®ã•ã‚Œã‚‹ï¼‰
 - **PDF Paragraph Splitting Improvements (2024-12)**:
-  - **Strong boundary detection**: `detect_paragraph_boundary()`‚É`is_strong_boundary`ƒtƒ‰ƒO‚ğ’Ç‰ÁB‹­‚¢‹«ŠEiYÀ•W‘å•Ï‰»AX‘åƒMƒƒƒbƒvA—Ìˆæƒ^ƒCƒv•Ï‰»“™j‚Å‚Í•¶––‹L†ƒ`ƒFƒbƒN‚ğƒXƒLƒbƒv‚µAŒˆZ’ZM‚Ì‚æ‚¤‚È\‘¢‰»ƒhƒLƒ…ƒƒ“ƒg‚Å‚ÌŠe€–Ú‚ğ“KØ‚É•ªŠ„
-  - **Weak boundary sentence-end check**: ã‚¢‹«ŠEisÜ‚è•Ô‚µj‚Ìê‡‚Ì‚İ•¶––‹L†ƒ`ƒFƒbƒN‚ğ“K—pB”Ô†•t‚«ƒpƒ‰ƒOƒ‰ƒt‚Ì“r’†‰üs‚ğ³‚µ‚­Œ‹‡
-  - **Boundary types**: ‹­‚¢‹«ŠE=—Ìˆæƒ^ƒCƒv•Ï‰»i’i—Ìƒe[ƒuƒ‹j/Y>20pt/X>30pt/ƒe[ƒuƒ‹s•ÏX/’i‘g‚İ•ÏX/TOCƒpƒ^[ƒ“Aã‚¢‹«ŠE=‚»‚Ì‘¼‚ÌsÜ‚è•Ô‚µ
-  - **Region type check (yomitoku reference)**: PP-DocLayout-L‚ª“¯ˆê•¶‘“à‚ÅˆÙ‚È‚é’i—ƒNƒ‰ƒXIDi2, 3, 4“™j‚ğŠ„‚è“–‚Ä‚Ä‚àA“¯‚¶—Ìˆæƒ^ƒCƒv“à‚Ì•Ï‰»‚Íã‚¢‹«ŠE‚Æ‚µ‚Äˆµ‚¢`is_japanese_continuation_line()`‚ÅŒp‘±”»’èBu‚»‚Ì’B¬‚ğv¨u“–Ğ‚Æ‚µ‚Ä–ñ‘©‚·‚év‚Ì‚æ‚¤‚ÈsÜ‚è•Ô‚µ‚ª³‚µ‚­Œ‹‡‚³‚ê‚é
+  - **Strong boundary detection**: `detect_paragraph_boundary()`ã«`is_strong_boundary`ãƒ•ãƒ©ã‚°ã‚’è¿½åŠ ã€‚å¼·ã„å¢ƒç•Œï¼ˆYåº§æ¨™å¤§å¤‰åŒ–ã€Xå¤§ã‚®ãƒ£ãƒƒãƒ—ã€é ˜åŸŸã‚¿ã‚¤ãƒ—å¤‰åŒ–ç­‰ï¼‰ã§ã¯æ–‡æœ«è¨˜å·ãƒã‚§ãƒƒã‚¯ã‚’ã‚¹ã‚­ãƒƒãƒ—ã—ã€æ±ºç®—çŸ­ä¿¡ã®ã‚ˆã†ãªæ§‹é€ åŒ–ãƒ‰ã‚­ãƒ¥ãƒ¡ãƒ³ãƒˆã§ã®å„é …ç›®ã‚’é©åˆ‡ã«åˆ†å‰²
+  - **Weak boundary sentence-end check**: å¼±ã„å¢ƒç•Œï¼ˆè¡ŒæŠ˜ã‚Šè¿”ã—ï¼‰ã®å ´åˆã®ã¿æ–‡æœ«è¨˜å·ãƒã‚§ãƒƒã‚¯ã‚’é©ç”¨ã€‚ç•ªå·ä»˜ããƒ‘ãƒ©ã‚°ãƒ©ãƒ•ã®é€”ä¸­æ”¹è¡Œã‚’æ­£ã—ãçµåˆ
+  - **Boundary types**: å¼·ã„å¢ƒç•Œ=é ˜åŸŸã‚¿ã‚¤ãƒ—å¤‰åŒ–ï¼ˆæ®µè½â‡”ãƒ†ãƒ¼ãƒ–ãƒ«ï¼‰/Y>20pt/X>30pt/ãƒ†ãƒ¼ãƒ–ãƒ«è¡Œå¤‰æ›´/æ®µçµ„ã¿å¤‰æ›´/TOCãƒ‘ã‚¿ãƒ¼ãƒ³ã€å¼±ã„å¢ƒç•Œ=ãã®ä»–ã®è¡ŒæŠ˜ã‚Šè¿”ã—
+  - **Region type check (yomitoku reference)**: PP-DocLayout-LãŒåŒä¸€æ–‡æ›¸å†…ã§ç•°ãªã‚‹æ®µè½ã‚¯ãƒ©ã‚¹IDï¼ˆ2, 3, 4ç­‰ï¼‰ã‚’å‰²ã‚Šå½“ã¦ã¦ã‚‚ã€åŒã˜é ˜åŸŸã‚¿ã‚¤ãƒ—å†…ã®å¤‰åŒ–ã¯å¼±ã„å¢ƒç•Œã¨ã—ã¦æ‰±ã„`is_japanese_continuation_line()`ã§ç¶™ç¶šåˆ¤å®šã€‚ã€Œãã®é”æˆã‚’ã€â†’ã€Œå½“ç¤¾ã¨ã—ã¦ç´„æŸã™ã‚‹ã€ã®ã‚ˆã†ãªè¡ŒæŠ˜ã‚Šè¿”ã—ãŒæ­£ã—ãçµåˆã•ã‚Œã‚‹
 - **PDF Translation & Extraction Fixes (2024-12)**:
-  - **pdfminer FontBBox warning suppression**: `pdfminer.pdffont`‚ÌƒƒOƒŒƒxƒ‹‚ğERROR‚Éİ’è‚µAFontBBoxŒx‚ğ—}§
+  - **pdfminer FontBBox warning suppression**: `pdfminer.pdffont`ã®ãƒ­ã‚°ãƒ¬ãƒ™ãƒ«ã‚’ERRORã«è¨­å®šã—ã€FontBBoxè­¦å‘Šã‚’æŠ‘åˆ¶
 - **PDF Line Joining Logic Improvements (2024-12)** (yomitoku reference):
-  - **Intelligent line joining**: yomitoku‚ğQl‚É‚µ‚½•¶ší•Ê‚ÉŠî‚Ã‚­sŒ‹‡ƒƒWƒbƒN‚ğÀ‘•
-  - **CJK text handling**: “ú–{ŒêƒeƒLƒXƒg‚Ìs––‚Å‚ÍƒXƒy[ƒX‚ğ‘}“ü‚µ‚È‚¢i©‘R‚È˜AŒ‹j
-  - **Latin text handling**: ‰pŒêƒeƒLƒXƒg‚Ìs––‚Å‚Í’PŒêŠÔƒXƒy[ƒX‚ğ‘}“ü
-  - **Hyphenation support**: ƒnƒCƒtƒ“‚ÅI‚í‚és‚Í’PŒê‚Ì“r’†‚Å•ªŠ„‚³‚ê‚½‚Æ”»’f‚µAƒXƒy[ƒX‚È‚µ‚Å˜AŒ‹
-  - **Sentence-end detection**: •¶––‹L†iBIH.!?“™j‚ÅI‚í‚és‚Í“KØ‚Éˆ—
-  - **New functions**: `get_line_join_separator()`, `is_line_end_hyphenated()`, `_is_cjk_char()`, `_is_latin_char()` ‚ğ’Ç‰Á
-  - **Constants**: `SENTENCE_END_CHARS_JA`, `SENTENCE_END_CHARS_EN`, `HYPHEN_CHARS` ‚ğ’Ç‰Á
+  - **Intelligent line joining**: yomitokuã‚’å‚è€ƒã«ã—ãŸæ–‡å­—ç¨®åˆ¥ã«åŸºã¥ãè¡Œçµåˆãƒ­ã‚¸ãƒƒã‚¯ã‚’å®Ÿè£…
+  - **CJK text handling**: æ—¥æœ¬èªãƒ†ã‚­ã‚¹ãƒˆã®è¡Œæœ«ã§ã¯ã‚¹ãƒšãƒ¼ã‚¹ã‚’æŒ¿å…¥ã—ãªã„ï¼ˆè‡ªç„¶ãªé€£çµï¼‰
+  - **Latin text handling**: è‹±èªãƒ†ã‚­ã‚¹ãƒˆã®è¡Œæœ«ã§ã¯å˜èªé–“ã‚¹ãƒšãƒ¼ã‚¹ã‚’æŒ¿å…¥
+  - **Hyphenation support**: ãƒã‚¤ãƒ•ãƒ³ã§çµ‚ã‚ã‚‹è¡Œã¯å˜èªã®é€”ä¸­ã§åˆ†å‰²ã•ã‚ŒãŸã¨åˆ¤æ–­ã—ã€ã‚¹ãƒšãƒ¼ã‚¹ãªã—ã§é€£çµ
+  - **Sentence-end detection**: æ–‡æœ«è¨˜å·ï¼ˆã€‚ï¼ï¼Ÿ.!?ç­‰ï¼‰ã§çµ‚ã‚ã‚‹è¡Œã¯é©åˆ‡ã«å‡¦ç†
+  - **New functions**: `get_line_join_separator()`, `is_line_end_hyphenated()`, `_is_cjk_char()`, `_is_latin_char()` ã‚’è¿½åŠ 
+  - **Constants**: `SENTENCE_END_CHARS_JA`, `SENTENCE_END_CHARS_EN`, `HYPHEN_CHARS` ã‚’è¿½åŠ 
 - **PDF Translation Reliability Improvements (2024-12)**:
-  - **Box expansion ratio**: `MAX_EXPANSION_RATIO=2.0`‚ğˆÛi–|–óƒeƒLƒXƒg‚Ìû—e‰ü‘Pj
-  - **Table cell expansion fallback**: ƒZƒ‹‹«ŠEî•ñ‚ª‚È‚¢ê‡‚Å‚àlayout-awareŠg’£‚ğ‹–‰Â
-  - **TextBlock-based adjacent block detection**: PP-DocLayout-L‚ÉˆË‘¶‚¹‚¸AÀÛ‚ÌTextBlockÀ•W‚ğg—p‚µ‚½—×ÚƒuƒƒbƒNŒŸo‚ğ’Ç‰Áid‚È‚è–h~j
-  - **find_adjacent_textblock_boundaries()**: “¯‚¶ƒy[ƒW‚ÌTextBlockÀ•W‚©‚ç—×ÚƒuƒƒbƒN‚Ì‹«ŠE‚ğŒvZ‚µAƒ{ƒbƒNƒXŠg’£‚Ìd‚È‚è‚ğ–h~
+  - **Box expansion ratio**: `MAX_EXPANSION_RATIO=2.0`ã‚’ç¶­æŒï¼ˆç¿»è¨³ãƒ†ã‚­ã‚¹ãƒˆã®åå®¹æ”¹å–„ï¼‰
+  - **Table cell expansion fallback**: ã‚»ãƒ«å¢ƒç•Œæƒ…å ±ãŒãªã„å ´åˆã§ã‚‚layout-awareæ‹¡å¼µã‚’è¨±å¯
+  - **TextBlock-based adjacent block detection**: PP-DocLayout-Lã«ä¾å­˜ã›ãšã€å®Ÿéš›ã®TextBlockåº§æ¨™ã‚’ä½¿ç”¨ã—ãŸéš£æ¥ãƒ–ãƒ­ãƒƒã‚¯æ¤œå‡ºã‚’è¿½åŠ ï¼ˆé‡ãªã‚Šé˜²æ­¢ï¼‰
+  - **find_adjacent_textblock_boundaries()**: åŒã˜ãƒšãƒ¼ã‚¸ã®TextBlockåº§æ¨™ã‹ã‚‰éš£æ¥ãƒ–ãƒ­ãƒƒã‚¯ã®å¢ƒç•Œã‚’è¨ˆç®—ã—ã€ãƒœãƒƒã‚¯ã‚¹æ‹¡å¼µã®é‡ãªã‚Šã‚’é˜²æ­¢
   - **Constants**: `ADJACENT_BLOCK_MIN_GAP=5.0`, `ADJACENT_BLOCK_Y_OVERLAP_THRESHOLD=0.3`
 - **PDF Form XObject Text Removal Improvements (2024-12)**:
-  - **Document-wide XObject scanning**: ƒhƒLƒ…ƒƒ“ƒg‘S‘Ì‚ÌForm XObject‚ğƒXƒLƒƒƒ“‚µ‚ÄƒeƒLƒXƒgíœi`filter_all_document_xobjects()`ƒƒ\ƒbƒh’Ç‰Áj
-  - **Indirect Resources reference support**: `/Resources N 0 R`Œ`®‚ÌŠÔÚQÆ‚ğÄ‹A“I‚Éˆ—
-  - **Infinite recursion prevention**: `processed_xrefs`‚É’Ç‰Á‚µ‚Ä–³ŒÀƒ‹[ƒv‚ğ–h~
-  - **Pre-compiled regex patterns**: ³‹K•\Œ»‚ğƒNƒ‰ƒXƒŒƒxƒ‹‚Å–‘OƒRƒ“ƒpƒCƒ‹iƒpƒtƒH[ƒ}ƒ“ƒXŒüãj
-  - **Complex PDF support**: ŒˆZ’ZM“™‚Ì•¡G‚ÈPDF‚ÅŒ³ƒeƒLƒXƒg‚ªc‚é–â‘è‚ğC³
+  - **Document-wide XObject scanning**: ãƒ‰ã‚­ãƒ¥ãƒ¡ãƒ³ãƒˆå…¨ä½“ã®Form XObjectã‚’ã‚¹ã‚­ãƒ£ãƒ³ã—ã¦ãƒ†ã‚­ã‚¹ãƒˆå‰Šé™¤ï¼ˆ`filter_all_document_xobjects()`ãƒ¡ã‚½ãƒƒãƒ‰è¿½åŠ ï¼‰
+  - **Indirect Resources reference support**: `/Resources N 0 R`å½¢å¼ã®é–“æ¥å‚ç…§ã‚’å†å¸°çš„ã«å‡¦ç†
+  - **Infinite recursion prevention**: `processed_xrefs`ã«è¿½åŠ ã—ã¦ç„¡é™ãƒ«ãƒ¼ãƒ—ã‚’é˜²æ­¢
+  - **Pre-compiled regex patterns**: æ­£è¦è¡¨ç¾ã‚’ã‚¯ãƒ©ã‚¹ãƒ¬ãƒ™ãƒ«ã§äº‹å‰ã‚³ãƒ³ãƒ‘ã‚¤ãƒ«ï¼ˆãƒ‘ãƒ•ã‚©ãƒ¼ãƒãƒ³ã‚¹å‘ä¸Šï¼‰
+  - **Complex PDF support**: æ±ºç®—çŸ­ä¿¡ç­‰ã®è¤‡é›‘ãªPDFã§å…ƒãƒ†ã‚­ã‚¹ãƒˆãŒæ®‹ã‚‹å•é¡Œã‚’ä¿®æ­£
 - **UI Flickering & Display Fixes (2024-12)**:
-  - **Translation result flickering**: –|–óŒ‹‰Ê•\¦‚Ì‚¿‚ç‚Â‚«‚ğC³i•¡”‰ñ‚Ì‰ü‘Pj
-  - **Edge window flash fix**: EdgeƒEƒBƒ“ƒhƒE‚ª‰æ–Ê¶ã‚Éˆêu•\¦‚³‚ê‚é–â‘è‚ğC³
-  - **Browser window visibility**: ƒuƒ‰ƒEƒUƒEƒBƒ“ƒhƒE‚ªˆêu•\¦‚³‚ê‚é–â‘è‚ğC³
-  - **SetWindowPlacement fix**: showCmd‚ğSW_MINIMIZE‚ÉˆÛ‚µ‚ÄƒEƒBƒ“ƒhƒE•\¦‚ğ–h~
-  - **Streaming preview removal**: ƒXƒgƒŠ[ƒ~ƒ“ƒOƒvƒŒƒrƒ…[‹@”\‚ğíœiˆÀ’è«Œüãj
+  - **Translation result flickering**: ç¿»è¨³çµæœè¡¨ç¤ºæ™‚ã®ã¡ã‚‰ã¤ãã‚’ä¿®æ­£ï¼ˆè¤‡æ•°å›ã®æ”¹å–„ï¼‰
+  - **Edge window flash fix**: Edgeã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ãŒç”»é¢å·¦ä¸Šã«ä¸€ç¬è¡¨ç¤ºã•ã‚Œã‚‹å•é¡Œã‚’ä¿®æ­£
+  - **Browser window visibility**: ãƒ–ãƒ©ã‚¦ã‚¶ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ãŒä¸€ç¬è¡¨ç¤ºã•ã‚Œã‚‹å•é¡Œã‚’ä¿®æ­£
+  - **SetWindowPlacement fix**: showCmdã‚’SW_MINIMIZEã«ç¶­æŒã—ã¦ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦è¡¨ç¤ºã‚’é˜²æ­¢
+  - **Streaming preview removal**: ã‚¹ãƒˆãƒªãƒ¼ãƒŸãƒ³ã‚°ãƒ—ãƒ¬ãƒ“ãƒ¥ãƒ¼æ©Ÿèƒ½ã‚’å‰Šé™¤ï¼ˆå®‰å®šæ€§å‘ä¸Šï¼‰
 - **History UI Improvements (2024-12)**:
-  - **One-click deletion**: —š—ğíœ‚ğ1ƒNƒŠƒbƒN‚ÅÀs‰Â”\‚É‰ü‘P
-  - **Delete button fix**: —š—ğíœƒ{ƒ^ƒ“‚ª“®ì‚µ‚È‚¢–â‘è‚ğC³
-  - **Panel height fix**: ƒƒCƒ“ƒpƒlƒ‹‚Ì‚‚³‚ªƒEƒBƒ“ƒhƒE‚É‡‚í‚¸ƒXƒNƒ[ƒ‹‚·‚é–â‘è‚ğC³
+  - **One-click deletion**: å±¥æ­´å‰Šé™¤ã‚’1ã‚¯ãƒªãƒƒã‚¯ã§å®Ÿè¡Œå¯èƒ½ã«æ”¹å–„
+  - **Delete button fix**: å±¥æ­´å‰Šé™¤ãƒœã‚¿ãƒ³ãŒå‹•ä½œã—ãªã„å•é¡Œã‚’ä¿®æ­£
+  - **Panel height fix**: ãƒ¡ã‚¤ãƒ³ãƒ‘ãƒãƒ«ã®é«˜ã•ãŒã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã«åˆã‚ãšã‚¹ã‚¯ãƒ­ãƒ¼ãƒ«ã™ã‚‹å•é¡Œã‚’ä¿®æ­£
 - **Language Detection Improvements (2024-12)**:
-  - **Mixed text detection**: ‰pš+Š¿š‚Ì¬‡ƒeƒLƒXƒg‚ğ“ú–{Œê‚Æ‚µ‚Ä³‚µ‚­ŒŸo
+  - **Mixed text detection**: è‹±å­—+æ¼¢å­—ã®æ··åˆãƒ†ã‚­ã‚¹ãƒˆã‚’æ—¥æœ¬èªã¨ã—ã¦æ­£ã—ãæ¤œå‡º
 - **PDF Translation Preparation Dialog (2024-12)**:
-  - **Immediate dialog display**: PDF–|–ó€”õ’†ƒ_ƒCƒAƒƒO‚ğ‘¦À‚É•\¦‚·‚é‚æ‚¤‚É‰ü‘P
-  - **Dialog visibility fix**: PDF–|–ó€”õ’†ƒ_ƒCƒAƒƒO‚ª•\¦‚³‚ê‚È‚¢–â‘è‚ğC³
+  - **Immediate dialog display**: PDFç¿»è¨³æº–å‚™ä¸­ãƒ€ã‚¤ã‚¢ãƒ­ã‚°ã‚’å³åº§ã«è¡¨ç¤ºã™ã‚‹ã‚ˆã†ã«æ”¹å–„
+  - **Dialog visibility fix**: PDFç¿»è¨³æº–å‚™ä¸­ãƒ€ã‚¤ã‚¢ãƒ­ã‚°ãŒè¡¨ç¤ºã•ã‚Œãªã„å•é¡Œã‚’ä¿®æ­£
 - **Copilot Prompt Submission Improvements (2024-12)**:
-  - **Send-ready wait**: ‘—M‰Â”\ó‘Ô‚ÌˆÀ’è‰»‚ğ‘Ò‹@‚µ‚Äƒvƒƒ“ƒvƒg‘—M‚ÌM—Š«‚ğŒüã
-  - **Selector change detection**: ƒZƒŒƒNƒ^•ÏXŒŸ’m‚ğWARNINGƒƒO‚Å’Ê’m
-  - **Fallback wait time**: ƒZƒŒƒNƒ^•ÏX‚ÌƒtƒH[ƒ‹ƒoƒbƒN‘Ò‹@ŠÔ‚ğ1.0•b‚É‘‰Á
+  - **Send-ready wait**: é€ä¿¡å¯èƒ½çŠ¶æ…‹ã®å®‰å®šåŒ–ã‚’å¾…æ©Ÿã—ã¦ãƒ—ãƒ­ãƒ³ãƒ—ãƒˆé€ä¿¡ã®ä¿¡é ¼æ€§ã‚’å‘ä¸Š
+  - **Selector change detection**: ã‚»ãƒ¬ã‚¯ã‚¿å¤‰æ›´æ¤œçŸ¥ã‚’WARNINGãƒ­ã‚°ã§é€šçŸ¥
+  - **Fallback wait time**: ã‚»ãƒ¬ã‚¯ã‚¿å¤‰æ›´æ™‚ã®ãƒ•ã‚©ãƒ¼ãƒ«ãƒãƒƒã‚¯å¾…æ©Ÿæ™‚é–“ã‚’1.0ç§’ã«å¢—åŠ 
 - **Reading Order & Table Structure Analysis (2024-12)**:
-  - **yomitoku-style reading order**: yomitoku‚ğQl‚É‚µ‚½“Ç‚İ‡„’èƒAƒ‹ƒSƒŠƒYƒ€‚ğÀ‘•
-  - **ReadingDirection enum**: `TOP_TO_BOTTOM`, `RIGHT_TO_LEFT`, `LEFT_TO_RIGHT` ‚Ì3•ûŒü‘Î‰
-  - **Direction-specific graph building**: •ûŒü‚²‚Æ‚ÌƒOƒ‰ƒt\’zƒƒWƒbƒNic‘‚«“ú–{Œê‘Î‰j
-  - **Distance metric for start node**: yomitokuƒXƒ^ƒCƒ‹‚Ì‹——£“x—Ê‚É‚æ‚éŠJnƒm[ƒh‘I’è
-  - **Intermediate element detection**: ’†ŠÔ—v‘f‚ª‚ ‚éê‡‚ÍƒGƒbƒW‚ğì¬‚µ‚È‚¢i³Šm‚È“Ç‚İ‡j
-  - **Topological sort with priority**: ‹——£“x—Ê—Dæ‚Ìƒgƒ|ƒƒWƒJƒ‹ƒ\[ƒg‚Å‘½’i‘g‚İ‚É‚à‘Î‰
-  - **rowspan/colspan detection**: À•WƒNƒ‰ƒXƒ^ƒŠƒ“ƒO‚É‚æ‚éƒZƒ‹\‘¢‰ğÍ‚ğ’Ç‰Á
-  - **Grid line detection**: ƒZƒ‹‚ÌX/YÀ•W‚ğƒNƒ‰ƒXƒ^ƒŠƒ“ƒO‚µ‚ÄƒOƒŠƒbƒhü‚ğ©“®ŒŸo
-  - **Merged cell detection**: •¡”ƒOƒŠƒbƒh‚É‚Ü‚½‚ª‚éƒZƒ‹‚ğrowspan/colspan‚Æ‚µ‚ÄŒŸo
-  - **yomitoku reference**: yomitoku (CC BY-NC-SA 4.0) ‚ÌƒAƒ‹ƒSƒŠƒYƒ€‚ğQl‚É“Æ©À‘•iMITŒİŠ·j
+  - **yomitoku-style reading order**: yomitokuã‚’å‚è€ƒã«ã—ãŸèª­ã¿é †æ¨å®šã‚¢ãƒ«ã‚´ãƒªã‚ºãƒ ã‚’å®Ÿè£…
+  - **ReadingDirection enum**: `TOP_TO_BOTTOM`, `RIGHT_TO_LEFT`, `LEFT_TO_RIGHT` ã®3æ–¹å‘å¯¾å¿œ
+  - **Direction-specific graph building**: æ–¹å‘ã”ã¨ã®ã‚°ãƒ©ãƒ•æ§‹ç¯‰ãƒ­ã‚¸ãƒƒã‚¯ï¼ˆç¸¦æ›¸ãæ—¥æœ¬èªå¯¾å¿œï¼‰
+  - **Distance metric for start node**: yomitokuã‚¹ã‚¿ã‚¤ãƒ«ã®è·é›¢åº¦é‡ã«ã‚ˆã‚‹é–‹å§‹ãƒãƒ¼ãƒ‰é¸å®š
+  - **Intermediate element detection**: ä¸­é–“è¦ç´ ãŒã‚ã‚‹å ´åˆã¯ã‚¨ãƒƒã‚¸ã‚’ä½œæˆã—ãªã„ï¼ˆæ­£ç¢ºãªèª­ã¿é †ï¼‰
+  - **Topological sort with priority**: è·é›¢åº¦é‡å„ªå…ˆã®ãƒˆãƒãƒ­ã‚¸ã‚«ãƒ«ã‚½ãƒ¼ãƒˆã§å¤šæ®µçµ„ã¿ã«ã‚‚å¯¾å¿œ
+  - **rowspan/colspan detection**: åº§æ¨™ã‚¯ãƒ©ã‚¹ã‚¿ãƒªãƒ³ã‚°ã«ã‚ˆã‚‹ã‚»ãƒ«æ§‹é€ è§£æã‚’è¿½åŠ 
+  - **Grid line detection**: ã‚»ãƒ«ã®X/Yåº§æ¨™ã‚’ã‚¯ãƒ©ã‚¹ã‚¿ãƒªãƒ³ã‚°ã—ã¦ã‚°ãƒªãƒƒãƒ‰ç·šã‚’è‡ªå‹•æ¤œå‡º
+  - **Merged cell detection**: è¤‡æ•°ã‚°ãƒªãƒƒãƒ‰ã«ã¾ãŸãŒã‚‹ã‚»ãƒ«ã‚’rowspan/colspanã¨ã—ã¦æ¤œå‡º
+  - **yomitoku reference**: yomitoku (CC BY-NC-SA 4.0) ã®ã‚¢ãƒ«ã‚´ãƒªã‚ºãƒ ã‚’å‚è€ƒã«ç‹¬è‡ªå®Ÿè£…ï¼ˆMITäº’æ›ï¼‰
 - **TOC Line Separation Fix (2024-12)**:
-  - **TOC_LINE_X_RESET_THRESHOLD**: –ÚŸs‚ªƒuƒƒbƒN‚Æ‚µ‚Ä–|–ó‚³‚ê‚é–â‘è‚ğC³
-  - **X-reset detection**: XÀ•W‚ª80ptˆÈãƒŠƒZƒbƒg‚³‚ê‚½ê‡‚ÉV‚µ‚¢’i—‚Æ‚µ‚Ä”F¯
-  - **Paragraph boundary improvement**: Y•Ï‰» + X‘å•ƒŠƒZƒbƒg‚Å–ÚŸ€–Ú‚ğ³‚µ‚­•ª—£
+  - **TOC_LINE_X_RESET_THRESHOLD**: ç›®æ¬¡è¡ŒãŒãƒ–ãƒ­ãƒƒã‚¯ã¨ã—ã¦ç¿»è¨³ã•ã‚Œã‚‹å•é¡Œã‚’ä¿®æ­£
+  - **X-reset detection**: Xåº§æ¨™ãŒ80ptä»¥ä¸Šãƒªã‚»ãƒƒãƒˆã•ã‚ŒãŸå ´åˆã«æ–°ã—ã„æ®µè½ã¨ã—ã¦èªè­˜
+  - **Paragraph boundary improvement**: Yå¤‰åŒ– + Xå¤§å¹…ãƒªã‚»ãƒƒãƒˆã§ç›®æ¬¡é …ç›®ã‚’æ­£ã—ãåˆ†é›¢
 - **TableCellsDetection Integration (2024-12)**:
-  - **RT-DETR-L model**: PaddleOCR‚ÌTableCellsDetection‚ğ“‡iƒe[ƒuƒ‹ƒZƒ‹‹«ŠEŒŸoj
-  - **LayoutArray.table_cells**: ƒe[ƒuƒ‹ID¨ƒZƒ‹ƒ{ƒbƒNƒXƒŠƒXƒg‚ğŠi”[
-  - **Cell boundary expansion**: ƒZƒ‹‹«ŠE‚ªŒŸo‚Å‚«‚½ê‡‚Ì‚İƒ{ƒbƒNƒXŠg’£‚ğ‹–‰Â
-  - **Coordinate conversion**: ‰æ‘œÀ•WÌPDFÀ•W‚Ì³Šm‚È•ÏŠ·‚ÅƒZƒ‹‹«ŠE‚ğ“Á’è
-  - **Graceful fallback**: TableCellsDetection–¢‘Î‰‚ÍƒtƒHƒ“ƒgƒTƒCƒYk¬‚ÉƒtƒH[ƒ‹ƒoƒbƒN
+  - **RT-DETR-L model**: PaddleOCRã®TableCellsDetectionã‚’çµ±åˆï¼ˆãƒ†ãƒ¼ãƒ–ãƒ«ã‚»ãƒ«å¢ƒç•Œæ¤œå‡ºï¼‰
+  - **LayoutArray.table_cells**: ãƒ†ãƒ¼ãƒ–ãƒ«IDâ†’ã‚»ãƒ«ãƒœãƒƒã‚¯ã‚¹ãƒªã‚¹ãƒˆã‚’æ ¼ç´
+  - **Cell boundary expansion**: ã‚»ãƒ«å¢ƒç•ŒãŒæ¤œå‡ºã§ããŸå ´åˆã®ã¿ãƒœãƒƒã‚¯ã‚¹æ‹¡å¼µã‚’è¨±å¯
+  - **Coordinate conversion**: ç”»åƒåº§æ¨™â‡”PDFåº§æ¨™ã®æ­£ç¢ºãªå¤‰æ›ã§ã‚»ãƒ«å¢ƒç•Œã‚’ç‰¹å®š
+  - **Graceful fallback**: TableCellsDetectionæœªå¯¾å¿œæ™‚ã¯ãƒ•ã‚©ãƒ³ãƒˆã‚µã‚¤ã‚ºç¸®å°ã«ãƒ•ã‚©ãƒ¼ãƒ«ãƒãƒƒã‚¯
 - **PDF Layout Improvement (2024-12)**:
-  - **Table text overlap fix**: TABLE_MIN_LINE_HEIGHT ‚ğ 1.0 ‚Éİ’èisŠÔ < 1.0 ‚Å‚ÍƒeƒLƒXƒg‚ªd‚È‚é‚½‚ßj
-  - **Table cell expansion**: ƒe[ƒuƒ‹ƒZƒ‹‚Å‚à‰E‘¤‚É20ptˆÈã‚Ì—]—T‚ª‚ ‚ê‚Îƒ{ƒbƒNƒX‚ğŠg’£i“Ç‚İ‚â‚·‚³—Dæj
-  - **Moderate font reduction**: TABLE_FONT_MIN_RATIO ‚ğ 0.7 ‚Éİ’èiŠg’£‚Å‚«‚È‚¢ê‡‚Ì‚İ70%‚Ü‚Åk¬j
-  - **TABLE_FONT_MIN_READABLE**: ƒe[ƒuƒ‹ƒZƒ‹—p‚ÌÅ¬‰Â“ÇƒtƒHƒ“ƒgƒTƒCƒY‚ğ 8.0pt ‚Éİ’èi‰Â“Ç«Œüã‚Ì‚½‚ß6.0pt‚©‚ç‘‰Áj
-  - **is_table_cell parameter**: calculate_line_height_with_font ‚É is_table_cell ƒpƒ‰ƒ[ƒ^‚ğ’Ç‰Á
-  - **PDFMathTranslate reference**: https://github.com/PDFMathTranslate/PDFMathTranslate ‚ğQl‚É‰ü‘P
+  - **Table text overlap fix**: TABLE_MIN_LINE_HEIGHT ã‚’ 1.0 ã«è¨­å®šï¼ˆè¡Œé–“ < 1.0 ã§ã¯ãƒ†ã‚­ã‚¹ãƒˆãŒé‡ãªã‚‹ãŸã‚ï¼‰
+  - **Table cell expansion**: ãƒ†ãƒ¼ãƒ–ãƒ«ã‚»ãƒ«ã§ã‚‚å³å´ã«20ptä»¥ä¸Šã®ä½™è£•ãŒã‚ã‚Œã°ãƒœãƒƒã‚¯ã‚¹ã‚’æ‹¡å¼µï¼ˆèª­ã¿ã‚„ã™ã•å„ªå…ˆï¼‰
+  - **Moderate font reduction**: TABLE_FONT_MIN_RATIO ã‚’ 0.7 ã«è¨­å®šï¼ˆæ‹¡å¼µã§ããªã„å ´åˆã®ã¿70%ã¾ã§ç¸®å°ï¼‰
+  - **TABLE_FONT_MIN_READABLE**: ãƒ†ãƒ¼ãƒ–ãƒ«ã‚»ãƒ«ç”¨ã®æœ€å°å¯èª­ãƒ•ã‚©ãƒ³ãƒˆã‚µã‚¤ã‚ºã‚’ 8.0pt ã«è¨­å®šï¼ˆå¯èª­æ€§å‘ä¸Šã®ãŸã‚6.0ptã‹ã‚‰å¢—åŠ ï¼‰
+  - **is_table_cell parameter**: calculate_line_height_with_font ã« is_table_cell ãƒ‘ãƒ©ãƒ¡ãƒ¼ã‚¿ã‚’è¿½åŠ 
+  - **PDFMathTranslate reference**: https://github.com/PDFMathTranslate/PDFMathTranslate ã‚’å‚è€ƒã«æ”¹å–„
 - **PDF Layout-Aware Box Expansion (2024-12)**:
-  - **Horizontal expansion**: ƒeƒLƒXƒg‚ªû‚Ü‚ç‚È‚¢ê‡A—×ÚƒuƒƒbƒN‚ª‚È‚¯‚ê‚Î‰E•ûŒü‚ÉŠg’£
-  - **Layout-aware**: PP-DocLayout-L‚ÌŒŸoŒ‹‰Ê‚ğg—p‚µ‚Ä—×ÚƒuƒƒbƒN‚ğ‰ñ”ğ
-  - **Table cell conditional expansion**: •\ƒZƒ‹“à‚Å‚à‰E‘¤‚É20ptˆÈã‚Ì—]—T‚ª‚ ‚ê‚ÎŠg’£iƒtƒHƒ“ƒgk¬‚æ‚è—Dæj
-  - **Page margin respect**: ƒy[ƒW‰E—]”’iƒfƒtƒHƒ‹ƒg20ptj‚ğl—¶
-  - **expandable_width metadata**: TextBlock’Šo‚ÉŠg’£‰Â”\•‚ğ–‘OŒvZ
-  - **Fallback support**: PP-DocLayout-L–¢g—p‚Íƒy[ƒW—]”’‚Ü‚ÅŠg’£
-  - **Dynamic margin detection**: `calculate_page_margins()`‚ÅŒ³PDF‚Ì—]”’‚ğ“®“I‚ÉŒvZ‚µA—]”’‚É‚Í‚İo‚³‚È‚¢‚æ‚¤§ŒÀ
-  - **Unified expansion logic**: ƒe[ƒuƒ‹E”ñƒe[ƒuƒ‹‚ÉŠÖ‚í‚ç‚¸‚·‚×‚Ä‚ÌƒuƒƒbƒN‚Åƒ{ƒbƒNƒXŠg’£‚ğ—DæiƒtƒHƒ“ƒgk¬‚ÍÅŒã‚Ìè’ij
-  - **Alignment-based expansion direction**: ƒeƒLƒXƒg‚Ì”z’u‚É‰‚¶‚½Šg’£•ûŒü
-    - ¶‘µ‚¦: ‰E•ûŒü‚ÉŠg’£
-    - ‰E‘µ‚¦: ¶•ûŒü‚ÉŠg’£
-    - ’†‰›‘µ‚¦: —¼•ûŒü‚É‹Ï“™Šg’£
-  - **Vertical text support**: c‘‚«ƒeƒLƒXƒg‘Î‰‚Ìƒ{ƒbƒNƒXŠg’£
-    - `is_vertical_text()`: ƒAƒXƒyƒNƒg”äiheight/width > 1.5j‚Åc‘‚«ŒŸo
-    - `VerticalAlignment`: TOP/BOTTOM/CENTER ‚Ìc•ûŒü”z’uƒ^ƒCƒv
-    - `estimate_vertical_alignment()`: c•ûŒü‚Ì”z’u„’è
-    - `calculate_expanded_box_vertical()`: c•ûŒü‚ÌŠg’£ŒvZ
-    - ã‘µ‚¦: ‰º•ûŒü‚ÉŠg’£iy0‚ğŒ¸­j
-    - ‰º‘µ‚¦: ã•ûŒü‚ÉŠg’£iy1‚ğ‘‰Áj
-    - ’†‰›‘µ‚¦: —¼•ûŒü‚É‹Ï“™Šg’£
-  - **Bidirectional margin calculation**: ¶‰EEã‰º—¼•ûŒü‚ÌŠg’£‰Â”\•‚ğŒvZ
-    - `calculate_expandable_margins()`: ¶‰Eƒ}[ƒWƒ“ŒvZ
-    - `calculate_expandable_vertical_margins()`: ã‰ºƒ}[ƒWƒ“ŒvZ
-    - `_find_left_boundary()`, `_find_right_boundary()`: …•½‹«ŠEŒŸo
-    - `_find_top_boundary()`, `_find_bottom_boundary()`: ‚’¼‹«ŠEŒŸo
-  - **TextBlock metadataŠg’£**: `expandable_left`, `expandable_right`, `expandable_top`, `expandable_bottom`, `is_vertical`‚ğ•Û‘¶
+  - **Horizontal expansion**: ãƒ†ã‚­ã‚¹ãƒˆãŒåã¾ã‚‰ãªã„å ´åˆã€éš£æ¥ãƒ–ãƒ­ãƒƒã‚¯ãŒãªã‘ã‚Œã°å³æ–¹å‘ã«æ‹¡å¼µ
+  - **Layout-aware**: PP-DocLayout-Lã®æ¤œå‡ºçµæœã‚’ä½¿ç”¨ã—ã¦éš£æ¥ãƒ–ãƒ­ãƒƒã‚¯ã‚’å›é¿
+  - **Table cell conditional expansion**: è¡¨ã‚»ãƒ«å†…ã§ã‚‚å³å´ã«20ptä»¥ä¸Šã®ä½™è£•ãŒã‚ã‚Œã°æ‹¡å¼µï¼ˆãƒ•ã‚©ãƒ³ãƒˆç¸®å°ã‚ˆã‚Šå„ªå…ˆï¼‰
+  - **Page margin respect**: ãƒšãƒ¼ã‚¸å³ä½™ç™½ï¼ˆãƒ‡ãƒ•ã‚©ãƒ«ãƒˆ20ptï¼‰ã‚’è€ƒæ…®
+  - **expandable_width metadata**: TextBlockæŠ½å‡ºæ™‚ã«æ‹¡å¼µå¯èƒ½å¹…ã‚’äº‹å‰è¨ˆç®—
+  - **Fallback support**: PP-DocLayout-Læœªä½¿ç”¨æ™‚ã¯ãƒšãƒ¼ã‚¸ä½™ç™½ã¾ã§æ‹¡å¼µ
+  - **Dynamic margin detection**: `calculate_page_margins()`ã§å…ƒPDFã®ä½™ç™½ã‚’å‹•çš„ã«è¨ˆç®—ã—ã€ä½™ç™½ã«ã¯ã¿å‡ºã•ãªã„ã‚ˆã†åˆ¶é™
+  - **Unified expansion logic**: ãƒ†ãƒ¼ãƒ–ãƒ«ãƒ»éãƒ†ãƒ¼ãƒ–ãƒ«ã«é–¢ã‚ã‚‰ãšã™ã¹ã¦ã®ãƒ–ãƒ­ãƒƒã‚¯ã§ãƒœãƒƒã‚¯ã‚¹æ‹¡å¼µã‚’å„ªå…ˆï¼ˆãƒ•ã‚©ãƒ³ãƒˆç¸®å°ã¯æœ€å¾Œã®æ‰‹æ®µï¼‰
+  - **Alignment-based expansion direction**: ãƒ†ã‚­ã‚¹ãƒˆã®é…ç½®ã«å¿œã˜ãŸæ‹¡å¼µæ–¹å‘
+    - å·¦æƒãˆ: å³æ–¹å‘ã«æ‹¡å¼µ
+    - å³æƒãˆ: å·¦æ–¹å‘ã«æ‹¡å¼µ
+    - ä¸­å¤®æƒãˆ: ä¸¡æ–¹å‘ã«å‡ç­‰æ‹¡å¼µ
+  - **Vertical text support**: ç¸¦æ›¸ããƒ†ã‚­ã‚¹ãƒˆå¯¾å¿œã®ãƒœãƒƒã‚¯ã‚¹æ‹¡å¼µ
+    - `is_vertical_text()`: ã‚¢ã‚¹ãƒšã‚¯ãƒˆæ¯”ï¼ˆheight/width > 1.5ï¼‰ã§ç¸¦æ›¸ãæ¤œå‡º
+    - `VerticalAlignment`: TOP/BOTTOM/CENTER ã®ç¸¦æ–¹å‘é…ç½®ã‚¿ã‚¤ãƒ—
+    - `estimate_vertical_alignment()`: ç¸¦æ–¹å‘ã®é…ç½®æ¨å®š
+    - `calculate_expanded_box_vertical()`: ç¸¦æ–¹å‘ã®æ‹¡å¼µè¨ˆç®—
+    - ä¸Šæƒãˆ: ä¸‹æ–¹å‘ã«æ‹¡å¼µï¼ˆy0ã‚’æ¸›å°‘ï¼‰
+    - ä¸‹æƒãˆ: ä¸Šæ–¹å‘ã«æ‹¡å¼µï¼ˆy1ã‚’å¢—åŠ ï¼‰
+    - ä¸­å¤®æƒãˆ: ä¸¡æ–¹å‘ã«å‡ç­‰æ‹¡å¼µ
+  - **Bidirectional margin calculation**: å·¦å³ãƒ»ä¸Šä¸‹ä¸¡æ–¹å‘ã®æ‹¡å¼µå¯èƒ½å¹…ã‚’è¨ˆç®—
+    - `calculate_expandable_margins()`: å·¦å³ãƒãƒ¼ã‚¸ãƒ³è¨ˆç®—
+    - `calculate_expandable_vertical_margins()`: ä¸Šä¸‹ãƒãƒ¼ã‚¸ãƒ³è¨ˆç®—
+    - `_find_left_boundary()`, `_find_right_boundary()`: æ°´å¹³å¢ƒç•Œæ¤œå‡º
+    - `_find_top_boundary()`, `_find_bottom_boundary()`: å‚ç›´å¢ƒç•Œæ¤œå‡º
+  - **TextBlock metadataæ‹¡å¼µ**: `expandable_left`, `expandable_right`, `expandable_top`, `expandable_bottom`, `is_vertical`ã‚’ä¿å­˜
 - **PDF Translation Bug Fixes (2024-12)**:
-  - **Non-translatable text disappearance fix**: PDF–|–ó‚Ì”ñ–|–ó‘ÎÛƒeƒLƒXƒgÁ¸‚ğC³
-  - **Number parsing fix**: PDF–|–ó‚Ì”Ô†ƒp[ƒX¸”s‚ğC³
-  - **CID notation recognition**: CID‹L–@‚ğŠÜ‚ŞƒeƒLƒXƒg‚ğ“ú–{ŒêƒRƒ“ƒeƒ“ƒc‚Æ‚µ‚Ä”F¯
-  - **Japanese datetime pattern fix**: “ú–{Œê“úƒpƒ^[ƒ“‚Ì³‹K•\Œ»‚ğC³‚µPDF–|–ó‚ÌŒëƒXƒLƒbƒv‚ğ‰ğÁ
-  - **Table cell boundary detection**: PDFƒe[ƒuƒ‹—Ìˆæ“à‚ÌƒZƒ‹‹«ŠEŒŸo‚ğ‰ü‘P
-  - **Nested Form XObject text removal**: Form XObject“à‚ÌƒlƒXƒg‚µ‚½ƒeƒLƒXƒg‚ğÄ‹A“I‚ÉíœiŒˆZ’ZM“™‚Ì•¡G‚ÈPDF‚Å‚ÌƒeƒLƒXƒgd‚È‚è‚ğ–h~j
+  - **Non-translatable text disappearance fix**: PDFç¿»è¨³æ™‚ã®éç¿»è¨³å¯¾è±¡ãƒ†ã‚­ã‚¹ãƒˆæ¶ˆå¤±ã‚’ä¿®æ­£
+  - **Number parsing fix**: PDFç¿»è¨³æ™‚ã®ç•ªå·ãƒ‘ãƒ¼ã‚¹å¤±æ•—ã‚’ä¿®æ­£
+  - **CID notation recognition**: CIDè¨˜æ³•ã‚’å«ã‚€ãƒ†ã‚­ã‚¹ãƒˆã‚’æ—¥æœ¬èªã‚³ãƒ³ãƒ†ãƒ³ãƒ„ã¨ã—ã¦èªè­˜
+  - **Japanese datetime pattern fix**: æ—¥æœ¬èªæ—¥æ™‚ãƒ‘ã‚¿ãƒ¼ãƒ³ã®æ­£è¦è¡¨ç¾ã‚’ä¿®æ­£ã—PDFç¿»è¨³ã®èª¤ã‚¹ã‚­ãƒƒãƒ—ã‚’è§£æ¶ˆ
+  - **Table cell boundary detection**: PDFãƒ†ãƒ¼ãƒ–ãƒ«é ˜åŸŸå†…ã®ã‚»ãƒ«å¢ƒç•Œæ¤œå‡ºã‚’æ”¹å–„
+  - **Nested Form XObject text removal**: Form XObjectå†…ã®ãƒã‚¹ãƒˆã—ãŸãƒ†ã‚­ã‚¹ãƒˆã‚’å†å¸°çš„ã«å‰Šé™¤ï¼ˆæ±ºç®—çŸ­ä¿¡ç­‰ã®è¤‡é›‘ãªPDFã§ã®ãƒ†ã‚­ã‚¹ãƒˆé‡ãªã‚Šã‚’é˜²æ­¢ï¼‰
 - **Auth Flow Improvements (2024-12)**:
-  - **Auth dialog detection**: Copilotƒy[ƒWã‚Ì”FØƒ_ƒCƒAƒƒO‚ğŒŸo‚·‚é‚æ‚¤‚ÉC³
-  - **Navigation prevention**: ”FØƒtƒ[’†‚Ì‹­§ƒiƒrƒQ[ƒVƒ‡ƒ“‚ğ–h~
-  - **window.stop() removal**: Ú‘±Š®—¹‚Ìwindow.stop()‚ğíœiM365”FØ’ÊM’†’f‚ğ–h~j
-  - **Popup blocking disabled**: `--disable-popup-blocking`ƒIƒvƒVƒ‡ƒ“‚ğ’Ç‰Ái”FØƒ|ƒbƒvƒAƒbƒv‚ğ‹–‰Âj
-  - **Auth popup monitoring**: ƒƒOƒCƒ“‘Ò‹@’†‚É”FØƒ|ƒbƒvƒAƒbƒvƒEƒBƒ“ƒhƒE‚ğŒŸoE‘O–Ê•\¦
+  - **Auth dialog detection**: Copilotãƒšãƒ¼ã‚¸ä¸Šã®èªè¨¼ãƒ€ã‚¤ã‚¢ãƒ­ã‚°ã‚’æ¤œå‡ºã™ã‚‹ã‚ˆã†ã«ä¿®æ­£
+  - **Navigation prevention**: èªè¨¼ãƒ•ãƒ­ãƒ¼ä¸­ã®å¼·åˆ¶ãƒŠãƒ“ã‚²ãƒ¼ã‚·ãƒ§ãƒ³ã‚’é˜²æ­¢
+  - **window.stop() removal**: æ¥ç¶šå®Œäº†æ™‚ã®window.stop()ã‚’å‰Šé™¤ï¼ˆM365èªè¨¼é€šä¿¡ä¸­æ–­ã‚’é˜²æ­¢ï¼‰
+  - **Popup blocking disabled**: `--disable-popup-blocking`ã‚ªãƒ—ã‚·ãƒ§ãƒ³ã‚’è¿½åŠ ï¼ˆèªè¨¼ãƒãƒƒãƒ—ã‚¢ãƒƒãƒ—ã‚’è¨±å¯ï¼‰
+  - **Auth popup monitoring**: ãƒ­ã‚°ã‚¤ãƒ³å¾…æ©Ÿä¸­ã«èªè¨¼ãƒãƒƒãƒ—ã‚¢ãƒƒãƒ—ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã‚’æ¤œå‡ºãƒ»å‰é¢è¡¨ç¤º
 - **UI Improvements (2024-12)**:
-  - **Terminology fix**: UI‚Ìu—ªŒêv•\‹L‚ğu—pŒêWv‚ÉC³
-  - **Card styling**: main-card‚Ìborder-radius‚ğ–³Œø‰»‚µ‚ÄƒKƒ‰ƒXŒø‰Ê‚ğíœ
-  - **File panel hover effect**: ƒtƒ@ƒCƒ‹–|–óƒpƒlƒ‹‚Ìmain-cardŠO˜gƒGƒtƒFƒNƒg‚ğíœ
+  - **Terminology fix**: UIã®ã€Œç•¥èªã€è¡¨è¨˜ã‚’ã€Œç”¨èªé›†ã€ã«ä¿®æ­£
+  - **Card styling**: main-cardã®border-radiusã‚’ç„¡åŠ¹åŒ–ã—ã¦ã‚¬ãƒ©ã‚¹åŠ¹æœã‚’å‰Šé™¤
+  - **File panel hover effect**: ãƒ•ã‚¡ã‚¤ãƒ«ç¿»è¨³ãƒ‘ãƒãƒ«ã®main-cardå¤–æ ã‚¨ãƒ•ã‚§ã‚¯ãƒˆã‚’å‰Šé™¤
 - **Log Output Improvements (2024-12)**:
-  - **Multiprocess support**: ƒ}ƒ‹ƒ`ƒvƒƒZƒX‘Î‰‚ÅƒƒOo—Í‚ğC³
-  - **Rotation removal**: ƒƒOƒtƒ@ƒCƒ‹‚Ìƒ[ƒe[ƒVƒ‡ƒ“‚ğ”p~
-  - **Clear on startup**: ƒƒOƒtƒ@ƒCƒ‹‚ğ‹N“®‚²‚Æ‚ÉƒNƒŠƒA‚·‚é‚æ‚¤C³
+  - **Multiprocess support**: ãƒãƒ«ãƒãƒ—ãƒ­ã‚»ã‚¹å¯¾å¿œã§ãƒ­ã‚°å‡ºåŠ›ã‚’ä¿®æ­£
+  - **Rotation removal**: ãƒ­ã‚°ãƒ•ã‚¡ã‚¤ãƒ«ã®ãƒ­ãƒ¼ãƒ†ãƒ¼ã‚·ãƒ§ãƒ³ã‚’å»ƒæ­¢
+  - **Clear on startup**: ãƒ­ã‚°ãƒ•ã‚¡ã‚¤ãƒ«ã‚’èµ·å‹•ã”ã¨ã«ã‚¯ãƒªã‚¢ã™ã‚‹ã‚ˆã†ä¿®æ­£
 - **Glossary Processing Changes (2024-12)**:
-  - **File consolidation**: abbreviations.csv‚ğglossary.csv‚É“‡
-  - **Processing method change**: —pŒêW‚Ìˆ—‚ğƒ}[ƒW•û®‚©‚çƒoƒbƒNƒAƒbƒv•ã‘‚«•û®‚É•ÏX
-  - **Customization detection**: `glossary_old.csv`‚Æ‚Ì”äŠr‚ÅƒJƒXƒ^ƒ}ƒCƒY”»’è‚ğ’Ç‰Ái‘Oƒo[ƒWƒ‡ƒ“‚Æˆê’v‚·‚ê‚ÎƒoƒbƒNƒAƒbƒv‚ğƒXƒLƒbƒvj
-  - **Bug fix**: setup.ps1‚ÅƒoƒbƒNƒAƒbƒvƒfƒBƒŒƒNƒgƒŠíœ‘O‚Églossary.csv”äŠrˆ—‚ğÀs‚·‚é‚æ‚¤C³
+  - **File consolidation**: abbreviations.csvã‚’glossary.csvã«çµ±åˆ
+  - **Processing method change**: ç”¨èªé›†ã®å‡¦ç†ã‚’ãƒãƒ¼ã‚¸æ–¹å¼ã‹ã‚‰ãƒãƒƒã‚¯ã‚¢ãƒƒãƒ—ï¼†ä¸Šæ›¸ãæ–¹å¼ã«å¤‰æ›´
+  - **Customization detection**: `glossary_old.csv`ã¨ã®æ¯”è¼ƒã§ã‚«ã‚¹ã‚¿ãƒã‚¤ã‚ºåˆ¤å®šã‚’è¿½åŠ ï¼ˆå‰ãƒãƒ¼ã‚¸ãƒ§ãƒ³ã¨ä¸€è‡´ã™ã‚Œã°ãƒãƒƒã‚¯ã‚¢ãƒƒãƒ—ã‚’ã‚¹ã‚­ãƒƒãƒ—ï¼‰
+  - **Bug fix**: setup.ps1ã§ãƒãƒƒã‚¯ã‚¢ãƒƒãƒ—ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªå‰Šé™¤å‰ã«glossary.csvæ¯”è¼ƒå‡¦ç†ã‚’å®Ÿè¡Œã™ã‚‹ã‚ˆã†ä¿®æ­£
 - **Outlook MSG Support (2024-12)**:
-  - **MSG file translation**: Windows + OutlookŠÂ‹«‚ÅMSGƒtƒ@ƒCƒ‹–|–óƒTƒ|[ƒg‚ğ’Ç‰Á
-  - **COM object cleanup fix**: `_create_msg_via_outlook()`‚ÅCOMƒIƒuƒWƒFƒNƒg‚ğŠmÀ‚ÉƒŠƒŠ[ƒX
-    - `mail.Close(1)`‚ğ`finally`‹å‚ÅŒÄ‚Ño‚µiolDiscard=1‚Å•ÏX‚ğ”jŠüj
-    - `del mail` / `del outlook`‚Å–¾¦“I‚ÉƒIƒuƒWƒFƒNƒg‚ğíœiExcelƒvƒƒZƒbƒT‚Æ“¯—l‚Ìƒpƒ^[ƒ“j
-    - `gc.collect()`‚ÅƒKƒx[ƒWƒRƒŒƒNƒVƒ‡ƒ“‚ğÀs
-    - Close()–¢ŒÄ‚Ño‚µ‚É‚æ‚éu•ÔMvˆµ‚¢–â‘è‚ğC³
-  - **`_is_outlook_available()` COM leak fix**: Outlook—˜—p‰Â”\ƒ`ƒFƒbƒN‚ÌCOMƒIƒuƒWƒFƒNƒgƒŠ[ƒN‚ğC³
-    - `finally`‹å‚Å`del outlook`‚Æ`gc.collect()`‚ğ’Ç‰Á
-  - **Thread safety**: ƒLƒƒƒbƒVƒ…ƒAƒNƒZƒX‚ğƒXƒŒƒbƒhƒZ[ƒt‚É‰ü‘P
-    - `threading.Lock()`‚ğ’Ç‰Ái`_cache_lock`j
-    - `_get_cached_content()`‚Æ`clear_cache()`‚ğ•ÛŒì
-  - **Regex pre-compilation**: •¶•ªŠ„—p³‹K•\Œ»‚ğƒ‚ƒWƒ…[ƒ‹ƒŒƒxƒ‹‚Å–‘OƒRƒ“ƒpƒCƒ‹
-    - `_SENTENCE_SPLIT_PATTERN = re.compile(r'(?<=[BIH.!?\n])')`
+  - **MSG file translation**: Windows + Outlookç’°å¢ƒã§MSGãƒ•ã‚¡ã‚¤ãƒ«ç¿»è¨³ã‚µãƒãƒ¼ãƒˆã‚’è¿½åŠ 
+  - **COM object cleanup fix**: `_create_msg_via_outlook()`ã§COMã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆã‚’ç¢ºå®Ÿã«ãƒªãƒªãƒ¼ã‚¹
+    - `mail.Close(1)`ã‚’`finally`å¥ã§å‘¼ã³å‡ºã—ï¼ˆolDiscard=1ã§å¤‰æ›´ã‚’ç ´æ£„ï¼‰
+    - `del mail` / `del outlook`ã§æ˜ç¤ºçš„ã«ã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆã‚’å‰Šé™¤ï¼ˆExcelãƒ—ãƒ­ã‚»ãƒƒã‚µã¨åŒæ§˜ã®ãƒ‘ã‚¿ãƒ¼ãƒ³ï¼‰
+    - `gc.collect()`ã§ã‚¬ãƒ™ãƒ¼ã‚¸ã‚³ãƒ¬ã‚¯ã‚·ãƒ§ãƒ³ã‚’å®Ÿè¡Œ
+    - Close()æœªå‘¼ã³å‡ºã—ã«ã‚ˆã‚‹ã€Œè¿”ä¿¡ã€æ‰±ã„å•é¡Œã‚’ä¿®æ­£
+  - **`_is_outlook_available()` COM leak fix**: Outlookåˆ©ç”¨å¯èƒ½ãƒã‚§ãƒƒã‚¯æ™‚ã®COMã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆãƒªãƒ¼ã‚¯ã‚’ä¿®æ­£
+    - `finally`å¥ã§`del outlook`ã¨`gc.collect()`ã‚’è¿½åŠ 
+  - **Thread safety**: ã‚­ãƒ£ãƒƒã‚·ãƒ¥ã‚¢ã‚¯ã‚»ã‚¹ã‚’ã‚¹ãƒ¬ãƒƒãƒ‰ã‚»ãƒ¼ãƒ•ã«æ”¹å–„
+    - `threading.Lock()`ã‚’è¿½åŠ ï¼ˆ`_cache_lock`ï¼‰
+    - `_get_cached_content()`ã¨`clear_cache()`ã‚’ä¿è­·
+  - **Regex pre-compilation**: æ–‡åˆ†å‰²ç”¨æ­£è¦è¡¨ç¾ã‚’ãƒ¢ã‚¸ãƒ¥ãƒ¼ãƒ«ãƒ¬ãƒ™ãƒ«ã§äº‹å‰ã‚³ãƒ³ãƒ‘ã‚¤ãƒ«
+    - `_SENTENCE_SPLIT_PATTERN = re.compile(r'(?<=[ã€‚ï¼ï¼Ÿ.!?\n])')`
 - **Excel Translation Optimization (2024-12)**:
-  - **Cell reading optimization**: ƒZƒ‹“Ç‚İæ‚èŒø—¦‰»
-  - **Write optimization**: ‘‚«‚İŒø—¦‰»
-  - **apply_translations optimization**: –|–ó“K—pˆ—‚Ì‘å•Å“K‰»
-  - **Read-only recommended fix**: Excel•Û‘¶‚Éread_only_recommended‚ğƒNƒŠƒA‚µ‚Äƒ_ƒCƒAƒƒO‚ğ–h~
+  - **Cell reading optimization**: ã‚»ãƒ«èª­ã¿å–ã‚ŠåŠ¹ç‡åŒ–
+  - **Write optimization**: æ›¸ãè¾¼ã¿åŠ¹ç‡åŒ–
+  - **apply_translations optimization**: ç¿»è¨³é©ç”¨å‡¦ç†ã®å¤§å¹…æœ€é©åŒ–
+  - **Read-only recommended fix**: Excelä¿å­˜æ™‚ã«read_only_recommendedã‚’ã‚¯ãƒªã‚¢ã—ã¦ãƒ€ã‚¤ã‚¢ãƒ­ã‚°ã‚’é˜²æ­¢
 - **Language Detection Speedup (2024-12)**:
-  - **Local detection only**: CopilotŒÄ‚Ño‚µ‚ğ”p~‚µ‚Äƒ[ƒJƒ‹ŒŸo‚Ì‚İ‚É
-  - **File detection speedup**: ƒtƒ@ƒCƒ‹Œ¾ŒêŒŸo‚Ì‚‘¬‰»
-  - **Excel/Word XML streaming**: `ET.iterparse()`‚É‚æ‚éƒXƒgƒŠ[ƒ~ƒ“ƒO‰ğÍ‚Å‘å‚«‚Èƒtƒ@ƒCƒ‹‚ÌŒ¾ŒêŒŸo‚ğ‚‘¬‰»
-  - **Fallback path optimization**: `islice`‚ÅÅ‰‚Ì5ƒuƒƒbƒN‚Ì‚İ’Šoi‘SƒuƒƒbƒN“Ç‚İ‚İ‚ğ‰ñ”ğj
+  - **Local detection only**: Copilotå‘¼ã³å‡ºã—ã‚’å»ƒæ­¢ã—ã¦ãƒ­ãƒ¼ã‚«ãƒ«æ¤œå‡ºã®ã¿ã«
+  - **File detection speedup**: ãƒ•ã‚¡ã‚¤ãƒ«è¨€èªæ¤œå‡ºã®é«˜é€ŸåŒ–
+  - **Excel/Word XML streaming**: `ET.iterparse()`ã«ã‚ˆã‚‹ã‚¹ãƒˆãƒªãƒ¼ãƒŸãƒ³ã‚°è§£æã§å¤§ããªãƒ•ã‚¡ã‚¤ãƒ«ã®è¨€èªæ¤œå‡ºã‚’é«˜é€ŸåŒ–
+  - **Fallback path optimization**: `islice`ã§æœ€åˆã®5ãƒ–ãƒ­ãƒƒã‚¯ã®ã¿æŠ½å‡ºï¼ˆå…¨ãƒ–ãƒ­ãƒƒã‚¯èª­ã¿è¾¼ã¿ã‚’å›é¿ï¼‰
 - **Code Review Fixes (2024-12)**:
-  - **PlaywrightThreadExecutor shutdown race fix**: `_thread_lock`‚Åƒtƒ‰ƒOİ’è‚ğ•ÛŒìAworkerƒXƒŒƒbƒh‚Åshutdownƒtƒ‰ƒO‚ğ’Ç‰Áƒ`ƒFƒbƒN
-  - **translate_single timeout fix**: `DEFAULT_RESPONSE_TIMEOUT + EXECUTOR_TIMEOUT_BUFFER`‚ğg—p
-  - **Auto-login detection retry**: ˆê—áŠO‚É3‰ñ˜A‘±ƒGƒ‰[‚Ü‚ÅƒŠƒgƒ‰ƒC‚·‚é‚æ‚¤•ÏX
-  - **Interruptible login wait**: `interruptible_sleep`ŠÖ”‚Å100ms‚²‚Æ‚ÉƒLƒƒƒ“ƒZƒ‹ƒ`ƒFƒbƒNAƒLƒƒƒ“ƒZƒ‹‰Â”\‚Å‚ ‚é‚±‚Æ‚ğƒ†[ƒU[‚É’Ê’m
-  - **PDF MemoryError handling**: `translate_file`‚Å–¾Šm‚È“ú–{ŒêƒGƒ‰[ƒƒbƒZ[ƒW‚ğ•Ô‹p
-  - **Excel sheet name underscore fix**: ˆÀ’è‚µ‚½ƒ\[ƒgi’·‚³~‡+ƒAƒ‹ƒtƒ@ƒxƒbƒg‡jAsuffix‚ª—LŒø‚Èƒpƒ^[ƒ“‚©ŒŸØ
-  - **openpyxl resource leak fix**: FontManager‰Šú‰»‚ğwbƒI[ƒvƒ“‘O‚ÉˆÚ“®
+  - **PlaywrightThreadExecutor shutdown race fix**: `_thread_lock`ã§ãƒ•ãƒ©ã‚°è¨­å®šã‚’ä¿è­·ã€workerã‚¹ãƒ¬ãƒƒãƒ‰ã§shutdownãƒ•ãƒ©ã‚°ã‚’è¿½åŠ ãƒã‚§ãƒƒã‚¯
+  - **translate_single timeout fix**: `DEFAULT_RESPONSE_TIMEOUT + EXECUTOR_TIMEOUT_BUFFER`ã‚’ä½¿ç”¨
+  - **Auto-login detection retry**: ä¸€æ™‚ä¾‹å¤–æ™‚ã«3å›é€£ç¶šã‚¨ãƒ©ãƒ¼ã¾ã§ãƒªãƒˆãƒ©ã‚¤ã™ã‚‹ã‚ˆã†å¤‰æ›´
+  - **Interruptible login wait**: `interruptible_sleep`é–¢æ•°ã§100msã”ã¨ã«ã‚­ãƒ£ãƒ³ã‚»ãƒ«ãƒã‚§ãƒƒã‚¯ã€ã‚­ãƒ£ãƒ³ã‚»ãƒ«å¯èƒ½ã§ã‚ã‚‹ã“ã¨ã‚’ãƒ¦ãƒ¼ã‚¶ãƒ¼ã«é€šçŸ¥
+  - **PDF MemoryError handling**: `translate_file`ã§æ˜ç¢ºãªæ—¥æœ¬èªã‚¨ãƒ©ãƒ¼ãƒ¡ãƒƒã‚»ãƒ¼ã‚¸ã‚’è¿”å´
+  - **Excel sheet name underscore fix**: å®‰å®šã—ãŸã‚½ãƒ¼ãƒˆï¼ˆé•·ã•é™é †+ã‚¢ãƒ«ãƒ•ã‚¡ãƒ™ãƒƒãƒˆé †ï¼‰ã€suffixãŒæœ‰åŠ¹ãªãƒ‘ã‚¿ãƒ¼ãƒ³ã‹æ¤œè¨¼
+  - **openpyxl resource leak fix**: FontManageråˆæœŸåŒ–ã‚’wbã‚ªãƒ¼ãƒ—ãƒ³å‰ã«ç§»å‹•
 - **Dependency Management (2024-12)**:
-  - **clr-loader SSL fix**: pythonnet‚ğpywebviewˆË‘¶‚©‚çœŠO‚·‚édependency-metadata‚ğuv.toml‚É’Ç‰Á
-  - **Enterprise network support**: Šé‹Æƒlƒbƒgƒ[ƒNŠÂ‹«‚Å‚Ìclr-loaderƒ_ƒEƒ“ƒ[ƒh‚ÌSSLØ–¾‘ƒGƒ‰[iUnknownIssuerj‚ğ‰ñ”ğ
+  - **clr-loader SSL fix**: pythonnetã‚’pywebviewä¾å­˜ã‹ã‚‰é™¤å¤–ã™ã‚‹dependency-metadataã‚’uv.tomlã«è¿½åŠ 
+  - **Enterprise network support**: ä¼æ¥­ãƒãƒƒãƒˆãƒ¯ãƒ¼ã‚¯ç’°å¢ƒã§ã®clr-loaderãƒ€ã‚¦ãƒ³ãƒ­ãƒ¼ãƒ‰æ™‚ã®SSLè¨¼æ˜æ›¸ã‚¨ãƒ©ãƒ¼ï¼ˆUnknownIssuerï¼‰ã‚’å›é¿
 - **install_deps.bat Improvements (2024-12)**:
-  - **Optional proxy**: ƒvƒƒLƒV‚È‚µ‚ÌŠÂ‹«‚Å‚àg‚¦‚é‚æ‚¤‚ÉA‹N“®‚ÉƒvƒƒLƒVg—p‚Ì—L–³‚ğ‘I‘ğ‰Â”\‚É
-  - **goto-based flow**: if-else\•¶‚ğgoto‚É•ÏX‚µ‚Ä\•¶ƒGƒ‰[‚ğ‰ñ”ğ
-  - **Debug output**: ƒfƒoƒbƒOo—Í‚ğ’Ç‰Á
+  - **Optional proxy**: ãƒ—ãƒ­ã‚­ã‚·ãªã—ã®ç’°å¢ƒã§ã‚‚ä½¿ãˆã‚‹ã‚ˆã†ã«ã€èµ·å‹•æ™‚ã«ãƒ—ãƒ­ã‚­ã‚·ä½¿ç”¨ã®æœ‰ç„¡ã‚’é¸æŠå¯èƒ½ã«
+  - **goto-based flow**: if-elseæ§‹æ–‡ã‚’gotoã«å¤‰æ›´ã—ã¦æ§‹æ–‡ã‚¨ãƒ©ãƒ¼ã‚’å›é¿
+  - **Debug output**: ãƒ‡ãƒãƒƒã‚°å‡ºåŠ›ã‚’è¿½åŠ 
 - **Translation Result UI Simplification (2024-12)**:
-  - **2-column layout**: 3ƒJƒ‰ƒ€iƒTƒCƒhƒo[+“ü—Íƒpƒlƒ‹+Œ‹‰Êƒpƒlƒ‹j‚©‚ç2ƒJƒ‰ƒ€iƒTƒCƒhƒo[+Œ‹‰Êƒpƒlƒ‹j‚ÉŠÈ‘f‰»
-  - **CSS visibility toggle**: –|–óŒ‹‰Ê•\¦‚Í“ü—Íƒpƒlƒ‹‚ğCSS‚Å”ñ•\¦‚É‚µAŒ‹‰Êƒpƒlƒ‹‚ğ’†‰›”z’u
-  - **Tab-based navigation**: V‚µ‚¢–|–ó‚ÍuƒeƒLƒXƒg–|–óvƒ^ƒu‚ğƒNƒŠƒbƒN‚µ‚ÄINPUTó‘Ô‚É–ß‚·
+  - **2-column layout**: 3ã‚«ãƒ©ãƒ ï¼ˆã‚µã‚¤ãƒ‰ãƒãƒ¼+å…¥åŠ›ãƒ‘ãƒãƒ«+çµæœãƒ‘ãƒãƒ«ï¼‰ã‹ã‚‰2ã‚«ãƒ©ãƒ ï¼ˆã‚µã‚¤ãƒ‰ãƒãƒ¼+çµæœãƒ‘ãƒãƒ«ï¼‰ã«ç°¡ç´ åŒ–
+  - **CSS visibility toggle**: ç¿»è¨³çµæœè¡¨ç¤ºæ™‚ã¯å…¥åŠ›ãƒ‘ãƒãƒ«ã‚’CSSã§éè¡¨ç¤ºã«ã—ã€çµæœãƒ‘ãƒãƒ«ã‚’ä¸­å¤®é…ç½®
+  - **Tab-based navigation**: æ–°ã—ã„ç¿»è¨³ã¯ã€Œãƒ†ã‚­ã‚¹ãƒˆç¿»è¨³ã€ã‚¿ãƒ–ã‚’ã‚¯ãƒªãƒƒã‚¯ã—ã¦INPUTçŠ¶æ…‹ã«æˆ»ã™
 - **Ctrl+Alt+J Hint Styling (2024-12)**:
-  - **Larger font size**: Ctrl+Alt+Jƒqƒ“ƒg‚ÌƒtƒHƒ“ƒgƒTƒCƒY‚ğŠg‘å‚µ‚Ä‹”F«Œüã
+  - **Larger font size**: Ctrl+Alt+Jãƒ’ãƒ³ãƒˆã®ãƒ•ã‚©ãƒ³ãƒˆã‚µã‚¤ã‚ºã‚’æ‹¡å¤§ã—ã¦è¦–èªæ€§å‘ä¸Š
 - **File Panel UI (2024-12)**:
-  - **Simplified completion**: ƒtƒ@ƒCƒ‹–|–óŠ®—¹‰æ–Ê‚©‚çuV‚µ‚¢ƒtƒ@ƒCƒ‹‚ğ–|–óvƒ{ƒ^ƒ“‚ğíœ
+  - **Simplified completion**: ãƒ•ã‚¡ã‚¤ãƒ«ç¿»è¨³å®Œäº†ç”»é¢ã‹ã‚‰ã€Œæ–°ã—ã„ãƒ•ã‚¡ã‚¤ãƒ«ã‚’ç¿»è¨³ã€ãƒœã‚¿ãƒ³ã‚’å‰Šé™¤
 - **Copilot Submission Reliability (2024-12)**:
-  - **Focus before Enter**: Enter‘—M‘O‚ÉƒtƒH[ƒJƒX‚ğÄİ’è‚µ‚ÄŠmÀ‚É‘—M
-  - **Post-send verification retry**: ‘—MŒã‚É“ü—Í—“‚ªƒNƒŠƒA‚³‚ê‚½‚©‚ğŠm”F‚µAc‚Á‚Ä‚¢‚ê‚ÎƒŠƒgƒ‰ƒC
+  - **Focus before Enter**: Enteré€ä¿¡å‰ã«ãƒ•ã‚©ãƒ¼ã‚«ã‚¹ã‚’å†è¨­å®šã—ã¦ç¢ºå®Ÿã«é€ä¿¡
+  - **Post-send verification retry**: é€ä¿¡å¾Œã«å…¥åŠ›æ¬„ãŒã‚¯ãƒªã‚¢ã•ã‚ŒãŸã‹ã‚’ç¢ºèªã—ã€æ®‹ã£ã¦ã„ã‚Œã°ãƒªãƒˆãƒ©ã‚¤
 - **File Translation Button States (2024-12)**:
-  - **Disabled until detection**: Œ¾ŒêŒŸoŠ®—¹‚Ü‚Åƒ{ƒ^ƒ“‚ğ”ñƒAƒNƒeƒBƒu‚É‚µ‚ÄŒë‘€ì‚ğ–h~
+  - **Disabled until detection**: è¨€èªæ¤œå‡ºå®Œäº†ã¾ã§ãƒœã‚¿ãƒ³ã‚’éã‚¢ã‚¯ãƒ†ã‚£ãƒ–ã«ã—ã¦èª¤æ“ä½œã‚’é˜²æ­¢
 - **Follow-up Translation Fix (2024-12)**:
-  - **Source text preservation**: Ä–|–óŒã‚ÉƒtƒHƒ[ƒAƒbƒv‚ÅŒ´•¶‚ª“n‚³‚ê‚È‚¢–â‘è‚ğC³
+  - **Source text preservation**: å†ç¿»è¨³å¾Œã«ãƒ•ã‚©ãƒ­ãƒ¼ã‚¢ãƒƒãƒ—ã§åŸæ–‡ãŒæ¸¡ã•ã‚Œãªã„å•é¡Œã‚’ä¿®æ­£
 - **English Check Feature Improvement (2024-12)**:
-  - **Japanese explanation output**: ‰p•¶ƒ`ƒFƒbƒN‹@”\‚Ì‰ğà‚ğ“ú–{Œê‚Åo—Í‚·‚é‚æ‚¤C³i`text_check_my_english.txt`ƒvƒƒ“ƒvƒgXVj
+  - **Japanese explanation output**: è‹±æ–‡ãƒã‚§ãƒƒã‚¯æ©Ÿèƒ½ã®è§£èª¬ã‚’æ—¥æœ¬èªã§å‡ºåŠ›ã™ã‚‹ã‚ˆã†ä¿®æ­£ï¼ˆ`text_check_my_english.txt`ãƒ—ãƒ­ãƒ³ãƒ—ãƒˆæ›´æ–°ï¼‰
 - **Copilot Login Detection Improvements (2024-12)**:
-  - **Early login page detection**: ƒƒOƒCƒ“ƒy[ƒWURL‚ğ‘ŠúŒŸo‚µ‚Äƒ†[ƒU[‚ÉƒƒOƒCƒ“‚ğ‘£‚·
-  - **Send readiness wait update**: ‘—M‰Â”\ó‘Ô‚ÌˆÀ’è‰»‘Ò‚¿‚ÉˆÚsiŒÅ’è’x‰„‚¾‚¯‚ÉˆË‘¶‚µ‚È‚¢j
-  - **Translation result parsing fix**: –|–óŒ‹‰Êƒp[ƒX‚ÌCopiloto—Í¬“ü‚ğC³
+  - **Early login page detection**: ãƒ­ã‚°ã‚¤ãƒ³ãƒšãƒ¼ã‚¸URLã‚’æ—©æœŸæ¤œå‡ºã—ã¦ãƒ¦ãƒ¼ã‚¶ãƒ¼ã«ãƒ­ã‚°ã‚¤ãƒ³ã‚’ä¿ƒã™
+  - **Send readiness wait update**: é€ä¿¡å¯èƒ½çŠ¶æ…‹ã®å®‰å®šåŒ–å¾…ã¡ã«ç§»è¡Œï¼ˆå›ºå®šé…å»¶ã ã‘ã«ä¾å­˜ã—ãªã„ï¼‰
+  - **Translation result parsing fix**: ç¿»è¨³çµæœãƒ‘ãƒ¼ã‚¹æ™‚ã®Copilotå‡ºåŠ›æ··å…¥ã‚’ä¿®æ­£
 - **Text Translation UI Improvements (2024-12)**:
-  - **Text selection enabled**: –|–óŒ‹‰Ê‰æ–Ê‚ÅƒeƒLƒXƒg‘I‘ğ‚ğ—LŒø‚É‚·‚éiƒRƒsƒy‰Â”\‚Éj
+  - **Text selection enabled**: ç¿»è¨³çµæœç”»é¢ã§ãƒ†ã‚­ã‚¹ãƒˆé¸æŠã‚’æœ‰åŠ¹ã«ã™ã‚‹ï¼ˆã‚³ãƒ”ãƒšå¯èƒ½ã«ï¼‰
 - **NiceGUI 3.3 Compatibility (2024-12)**:
-  - **LargeFileUpload support**: NiceGUI 3.3‚Ìƒtƒ@ƒCƒ‹ƒAƒbƒvƒ[ƒh‘®«•ÏX‚É‘Î‰i`content`ƒvƒƒpƒeƒBg—pj
-  - **File drop handling**: ƒhƒƒbƒvƒyƒCƒ[ƒh‚ÌŒ^ƒ`ƒFƒbƒN‚ğ’Ç‰Áistring/LargeFileUpload—¼‘Î‰j
+  - **LargeFileUpload support**: NiceGUI 3.3ã®ãƒ•ã‚¡ã‚¤ãƒ«ã‚¢ãƒƒãƒ—ãƒ­ãƒ¼ãƒ‰å±æ€§å¤‰æ›´ã«å¯¾å¿œï¼ˆ`content`ãƒ—ãƒ­ãƒ‘ãƒ†ã‚£ä½¿ç”¨ï¼‰
+  - **File drop handling**: ãƒ‰ãƒ­ãƒƒãƒ—ãƒšã‚¤ãƒ­ãƒ¼ãƒ‰ã®å‹ãƒã‚§ãƒƒã‚¯ã‚’è¿½åŠ ï¼ˆstring/LargeFileUploadä¸¡å¯¾å¿œï¼‰
 - **Copilot Browser Control Improvements (2024-12)**:
-  - **Browser minimize fix**: CopilotÚ‘±Œã‚Éƒuƒ‰ƒEƒU‚ªÅ¬‰»‚³‚ê‚È‚¢–â‘è‚ğC³
-  - **Login expiration detection**: ƒŒƒXƒ|ƒ“ƒXƒ|[ƒŠƒ“ƒO’†‚ÌƒƒOƒCƒ“ŠúŒÀØ‚ê‚ğŒŸo‚µ‚ÄƒtƒŠ[ƒY‚ğ–h~
-  - **GPT-5 button removal**: GPT-5ƒ{ƒ^ƒ“ƒgƒOƒ‹ƒƒWƒbƒN‚ğíœi•s—v‚É‚È‚Á‚½‚½‚ßj
+  - **Browser minimize fix**: Copilotæ¥ç¶šå¾Œã«ãƒ–ãƒ©ã‚¦ã‚¶ãŒæœ€å°åŒ–ã•ã‚Œãªã„å•é¡Œã‚’ä¿®æ­£
+  - **Login expiration detection**: ãƒ¬ã‚¹ãƒãƒ³ã‚¹ãƒãƒ¼ãƒªãƒ³ã‚°ä¸­ã®ãƒ­ã‚°ã‚¤ãƒ³æœŸé™åˆ‡ã‚Œã‚’æ¤œå‡ºã—ã¦ãƒ•ãƒªãƒ¼ã‚ºã‚’é˜²æ­¢
+  - **GPT-5 button removal**: GPT-5ãƒœã‚¿ãƒ³ãƒˆã‚°ãƒ«ãƒ­ã‚¸ãƒƒã‚¯ã‚’å‰Šé™¤ï¼ˆä¸è¦ã«ãªã£ãŸãŸã‚ï¼‰
 - **Setup Script Performance & Reliability (2024-12)**:
-  - **Japanese path fix**: UTF-16 LE‚ÅShareDirƒtƒ@ƒCƒ‹‚ğ‘‚«‚İE“Ç‚İ‚İi“ú–{ŒêƒpƒX‘Î‰j
-  - **Async extraction**: 7-Zip/robocopy‚ğ”ñ“¯ŠúÀs‚µ‚ÄGUI‰“š«‚ğˆÛ
-  - **Flat ZIP structure**: ZIP‚ğƒtƒ‰ƒbƒg\‘¢‚É•ÏX‚µ‚Ä’¼Ú“WŠJ‚ğ‰Â”\‚ÉiTEMPŒo—R•s—vj
-  - **Freeze fix**: Šù‘¶ƒfƒBƒŒƒNƒgƒŠíœ‚ÌƒtƒŠ[ƒY‚ğC³i`cmd /c rd`g—pj
-  - **Out-Null optimization**: ƒpƒCƒvƒ‰ƒCƒ“ƒI[ƒo[ƒwƒbƒh‚ğíŒ¸
+  - **Japanese path fix**: UTF-16 LEã§ShareDirãƒ•ã‚¡ã‚¤ãƒ«ã‚’æ›¸ãè¾¼ã¿ãƒ»èª­ã¿è¾¼ã¿ï¼ˆæ—¥æœ¬èªãƒ‘ã‚¹å¯¾å¿œï¼‰
+  - **Async extraction**: 7-Zip/robocopyã‚’éåŒæœŸå®Ÿè¡Œã—ã¦GUIå¿œç­”æ€§ã‚’ç¶­æŒ
+  - **Flat ZIP structure**: ZIPã‚’ãƒ•ãƒ©ãƒƒãƒˆæ§‹é€ ã«å¤‰æ›´ã—ã¦ç›´æ¥å±•é–‹ã‚’å¯èƒ½ã«ï¼ˆTEMPçµŒç”±ä¸è¦ï¼‰
+  - **Freeze fix**: æ—¢å­˜ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªå‰Šé™¤æ™‚ã®ãƒ•ãƒªãƒ¼ã‚ºã‚’ä¿®æ­£ï¼ˆ`cmd /c rd`ä½¿ç”¨ï¼‰
+  - **Out-Null optimization**: ãƒ‘ã‚¤ãƒ—ãƒ©ã‚¤ãƒ³ã‚ªãƒ¼ãƒãƒ¼ãƒ˜ãƒƒãƒ‰ã‚’å‰Šæ¸›
 - **install_deps.bat Improvements (2024-12)**:
-  - **Optional proxy**: ƒvƒƒLƒVİ’è‚ğƒIƒvƒVƒ‡ƒ“‰»i‹N“®‚É‘I‘ğ‰Â”\j
-  - **SSL skip option**: SSLŒŸØƒXƒLƒbƒvƒIƒvƒVƒ‡ƒ“‚ğ’Ç‰ÁiVPS“™‚Å‚ÌØ–¾‘ƒGƒ‰[‘Î‰j
-  - **Three connection modes**: [1] ƒvƒƒLƒVg—pA[2] ’¼ÚÚ‘±A[3] ’¼ÚÚ‘±iSSLŒŸØƒXƒLƒbƒvj
-  - **uv download fix**: uvƒ_ƒEƒ“ƒ[ƒh‚ÆƒpƒXƒ[ƒh“ü—Í‚ğC³
-  - **PaddlePaddle validation**: PythonŒŸØƒRƒ}ƒ“ƒh‚ÌƒGƒ‰[—}§‚ğ‰ü‘P
-  - **PowerShell isolation**: PowerShell‚ÅPythonÀs‚ğŠ®‘S‚É•ª—£iƒNƒH[ƒg–â‘è‰ñ”ğj
-  - **Pre-import modules**: ƒ‚ƒWƒ…[ƒ‹–‘OƒCƒ“ƒ|[ƒg‚àPowerShell‚ÅÀs
+  - **Optional proxy**: ãƒ—ãƒ­ã‚­ã‚·è¨­å®šã‚’ã‚ªãƒ—ã‚·ãƒ§ãƒ³åŒ–ï¼ˆèµ·å‹•æ™‚ã«é¸æŠå¯èƒ½ï¼‰
+  - **SSL skip option**: SSLæ¤œè¨¼ã‚¹ã‚­ãƒƒãƒ—ã‚ªãƒ—ã‚·ãƒ§ãƒ³ã‚’è¿½åŠ ï¼ˆVPSç­‰ã§ã®è¨¼æ˜æ›¸ã‚¨ãƒ©ãƒ¼å¯¾å¿œï¼‰
+  - **Three connection modes**: [1] ãƒ—ãƒ­ã‚­ã‚·ä½¿ç”¨ã€[2] ç›´æ¥æ¥ç¶šã€[3] ç›´æ¥æ¥ç¶šï¼ˆSSLæ¤œè¨¼ã‚¹ã‚­ãƒƒãƒ—ï¼‰
+  - **uv download fix**: uvãƒ€ã‚¦ãƒ³ãƒ­ãƒ¼ãƒ‰ã¨ãƒ‘ã‚¹ãƒ¯ãƒ¼ãƒ‰å…¥åŠ›ã‚’ä¿®æ­£
+  - **PaddlePaddle validation**: Pythonæ¤œè¨¼ã‚³ãƒãƒ³ãƒ‰ã®ã‚¨ãƒ©ãƒ¼æŠ‘åˆ¶ã‚’æ”¹å–„
+  - **PowerShell isolation**: PowerShellã§Pythonå®Ÿè¡Œã‚’å®Œå…¨ã«åˆ†é›¢ï¼ˆã‚¯ã‚©ãƒ¼ãƒˆå•é¡Œå›é¿ï¼‰
+  - **Pre-import modules**: ãƒ¢ã‚¸ãƒ¥ãƒ¼ãƒ«äº‹å‰ã‚¤ãƒ³ãƒãƒ¼ãƒˆã‚‚PowerShellã§å®Ÿè¡Œ
 - **PDF Translation Improvements (2024-12)**:
-  - **Blank output fix**: PDF–|–óo—Í‚ª”’†‚É‚È‚é–â‘è‚ğC³iPyMuPDFƒrƒ‹ƒgƒCƒ“ƒtƒHƒ“ƒgHelvetica‚ğÅIƒtƒH[ƒ‹ƒoƒbƒN‚Æ‚µ‚Ä’Ç‰Áj
-  - **Font path fix**: WindowsƒtƒHƒ“ƒgƒtƒ@ƒCƒ‹–¼‚ğC³imsgothic.ttcAmsmincho.ttc“™j
-  - **Fallback language detection**: ƒtƒHƒ“ƒg–„‚ß‚İƒtƒH[ƒ‹ƒoƒbƒNŒ¾Œê”»’è‚ğC³ifont_info.family‚Å‚Í‚È‚­langƒL[‚ğg—pj
-  - **Word splitting fix**: ‰p’PŒê‚ª“r’†‚Å•ªŠ„‚³‚ê‚é–â‘è‚ğC³
-  - **Language detection speedup**: PP-DocLayout-L‚ğƒXƒLƒbƒv‚µ‚ÄŒ¾ŒêŒŸo‚ğ‚‘¬‰»
+  - **Blank output fix**: PDFç¿»è¨³å‡ºåŠ›ãŒç™½ç´™ã«ãªã‚‹å•é¡Œã‚’ä¿®æ­£ï¼ˆPyMuPDFãƒ“ãƒ«ãƒˆã‚¤ãƒ³ãƒ•ã‚©ãƒ³ãƒˆHelveticaã‚’æœ€çµ‚ãƒ•ã‚©ãƒ¼ãƒ«ãƒãƒƒã‚¯ã¨ã—ã¦è¿½åŠ ï¼‰
+  - **Font path fix**: Windowsãƒ•ã‚©ãƒ³ãƒˆãƒ•ã‚¡ã‚¤ãƒ«åã‚’ä¿®æ­£ï¼ˆmsgothic.ttcã€msmincho.ttcç­‰ï¼‰
+  - **Fallback language detection**: ãƒ•ã‚©ãƒ³ãƒˆåŸ‹ã‚è¾¼ã¿ãƒ•ã‚©ãƒ¼ãƒ«ãƒãƒƒã‚¯è¨€èªåˆ¤å®šã‚’ä¿®æ­£ï¼ˆfont_info.familyã§ã¯ãªãlangã‚­ãƒ¼ã‚’ä½¿ç”¨ï¼‰
+  - **Word splitting fix**: è‹±å˜èªãŒé€”ä¸­ã§åˆ†å‰²ã•ã‚Œã‚‹å•é¡Œã‚’ä¿®æ­£
+  - **Language detection speedup**: PP-DocLayout-Lã‚’ã‚¹ã‚­ãƒƒãƒ—ã—ã¦è¨€èªæ¤œå‡ºã‚’é«˜é€ŸåŒ–
 - **File Processor Improvements (2024-12)**:
-  - **File handle leak fix**: PPTX‚ÆWordƒvƒƒZƒbƒT‚Ìƒtƒ@ƒCƒ‹ƒnƒ“ƒhƒ‹ƒŠ[ƒN‚ğC³iwith•¶g—pj
-  - **Excel RPC retry**: RPCƒT[ƒo[ƒGƒ‰[‚ÌƒŠƒgƒ‰ƒCƒƒWƒbƒN‚ğ’Ç‰Á
+  - **File handle leak fix**: PPTXã¨Wordãƒ—ãƒ­ã‚»ãƒƒã‚µã®ãƒ•ã‚¡ã‚¤ãƒ«ãƒãƒ³ãƒ‰ãƒ«ãƒªãƒ¼ã‚¯ã‚’ä¿®æ­£ï¼ˆwithæ–‡ä½¿ç”¨ï¼‰
+  - **Excel RPC retry**: RPCã‚µãƒ¼ãƒãƒ¼ã‚¨ãƒ©ãƒ¼æ™‚ã®ãƒªãƒˆãƒ©ã‚¤ãƒ­ã‚¸ãƒƒã‚¯ã‚’è¿½åŠ 
 - **WebSocket Connection Stability (2024-12)**:
-  - **Connection loss prevention**: ƒtƒ@ƒCƒ‹–|–ó‚ÌWebSocketÚ‘±ƒƒX‚ğ–h~
-  - **Timer management**: ƒtƒ@ƒCƒ‹–|–ó‚Ìƒ^ƒCƒ}[ŠÇ—‚ğ‰ü‘P‚µƒRƒlƒNƒVƒ‡ƒ“ˆÀ’è«‚ğŒüã
+  - **Connection loss prevention**: ãƒ•ã‚¡ã‚¤ãƒ«ç¿»è¨³æ™‚ã®WebSocketæ¥ç¶šãƒ­ã‚¹ã‚’é˜²æ­¢
+  - **Timer management**: ãƒ•ã‚¡ã‚¤ãƒ«ç¿»è¨³æ™‚ã®ã‚¿ã‚¤ãƒãƒ¼ç®¡ç†ã‚’æ”¹å–„ã—ã‚³ãƒã‚¯ã‚·ãƒ§ãƒ³å®‰å®šæ€§ã‚’å‘ä¸Š
 - **Translation Result Parsing (2024-12)**:
-  - **Metadata leak fix**: –|–óŒ‹‰Êƒp[ƒX‚Ìƒƒ^ƒf[ƒ^¬“ü‚ğC³
+  - **Metadata leak fix**: ç¿»è¨³çµæœãƒ‘ãƒ¼ã‚¹æ™‚ã®ãƒ¡ã‚¿ãƒ‡ãƒ¼ã‚¿æ··å…¥ã‚’ä¿®æ­£
 - **Browser Close Behavior (2024-12)**:
-  - **Graceful Edge termination**: WM_CLOSEƒƒbƒZ[ƒW‚ÅEdge‚ğ³íI—¹iu—\Šú‚¹‚¸•Â‚¶‚ç‚ê‚Ü‚µ‚½vƒƒbƒZ[ƒW‚ğ–h~j
-  - **`_close_edge_gracefully()`**: Win32 PostMessageW‚ÅWM_CLOSE‚ğ‘—MA3•bƒ^ƒCƒ€ƒAƒEƒg‚Å‘Ò‹@
-  - **Fallback to terminate/kill**: ƒOƒŒ[ƒXƒtƒ‹I—¹¸”s‚Ì‚İ`terminate()`/`kill()`‚ğg—p
-  - **App exit cleanup**: ƒAƒvƒŠI—¹‚Ìƒuƒ‰ƒEƒUI—¹‚ğŠmÀ‚É‚·‚é
+  - **Graceful Edge termination**: WM_CLOSEãƒ¡ãƒƒã‚»ãƒ¼ã‚¸ã§Edgeã‚’æ­£å¸¸çµ‚äº†ï¼ˆã€ŒäºˆæœŸã›ãšé–‰ã˜ã‚‰ã‚Œã¾ã—ãŸã€ãƒ¡ãƒƒã‚»ãƒ¼ã‚¸ã‚’é˜²æ­¢ï¼‰
+  - **`_close_edge_gracefully()`**: Win32 PostMessageWã§WM_CLOSEã‚’é€ä¿¡ã€3ç§’ã‚¿ã‚¤ãƒ ã‚¢ã‚¦ãƒˆã§å¾…æ©Ÿ
+  - **Fallback to terminate/kill**: ã‚°ãƒ¬ãƒ¼ã‚¹ãƒ•ãƒ«çµ‚äº†å¤±æ•—æ™‚ã®ã¿`terminate()`/`kill()`ã‚’ä½¿ç”¨
+  - **App exit cleanup**: ã‚¢ãƒ—ãƒªçµ‚äº†æ™‚ã®ãƒ–ãƒ©ã‚¦ã‚¶çµ‚äº†ã‚’ç¢ºå®Ÿã«ã™ã‚‹
 - **Copilot Prompt Submission Reliability (2024-12)**:
   - **Response stability**: `RESPONSE_STABLE_COUNT` was 3 (later optimized to 2 for faster detection)
   - **Auth dialog multi-language**: `AUTH_DIALOG_KEYWORDS` constant added with Japanese and English keywords
@@ -2842,9 +2836,9 @@ Based on recent commits:
   - **Timeout constant unification**: Hardcoded timeout values replaced with centralized constants
 - **Streaming UI Thread Safety & Robustness**:
   - **Thread-safe streaming_text access**: `_streaming_text_lock` added to protect `streaming_text` reads/writes across threads
-  - **Multiple marker patterns**: Support for ‰ğà/à–¾/Explanation/Notes markers to handle Copilot format changes
-  - **Length-based fallback**: Show partial result if text exceeds 200 chars with '–ó•¶' marker (no explanation marker needed)
-  - **Reduced UI timer interval**: 0.2s ¨ 0.1s for more responsive streaming display
+  - **Multiple marker patterns**: Support for è§£èª¬/èª¬æ˜/Explanation/Notes markers to handle Copilot format changes
+  - **Length-based fallback**: Show partial result if text exceeds 200 chars with 'è¨³æ–‡' marker (no explanation marker needed)
+  - **Reduced UI timer interval**: 0.2s â†’ 0.1s for more responsive streaming display
   - **Lock coverage**: on_chunk callback (write), update_streaming_label (read), and cleanup (clear) all protected
 - **Copilot Error Handling & Retry Improvements**:
   - **Exponential backoff**: `_apply_retry_backoff()` method with jitter to avoid thundering herd
@@ -2875,133 +2869,133 @@ Based on recent commits:
   - **Thread-safe**: `_font_info_cache_lock` for concurrent access
   - **Automatic eviction**: Oldest entries removed when cache is full
 - **Copilot Input Reliability Improvements**:
-  - **fill() method**: Playwright fill()‚ğg—p‚µ‚Ä‰üs‚ğ³‚µ‚­ˆ—i‰üs‚ªEnterƒL[‚Æ‚µ‚Ä‰ğß‚³‚ê‚é–â‘è‚ğC³j
-  - **Complete key cycle**: keydown + keypress + keyup ‚ÌŠ®‘S‚ÈƒL[ƒTƒCƒNƒ‹‚ğJS‚ÅƒfƒBƒXƒpƒbƒ`ikeydown‚Ì‚İ‚Å‚Í‘—M‚³‚ê‚È‚¢j
-  - **Root cause discovered**: Copilot‚ÌReact UI‚Íkeydown‚ÅpreventDefault()‚ğŒÄ‚Ô‚ªA‘—Mˆ—©‘Ì‚ÍŠ®‘S‚ÈƒL[ƒTƒCƒNƒ‹‚ª•K—v
-  - **Pre-warm UI**: scrollIntoView + 0.20•b‘Ò‹@‚ÅUIˆÀ’è‰»A‘—Mƒ{ƒ^ƒ“‚àscrollIntoView‚Å•\¦ˆÊ’u‚ÉˆÚ“®
-  - **Robust focus management**: ‘—M‘O‚ÉJS‚Å•¡”‚ÌƒtƒH[ƒJƒXİ’è•û–@‚ğsifocus, click+focus, mousedown+mouseup+focusj
-  - **Send method priority**: 1. Enter keyiJS key events + Playwright keyboard.pressj¨ 2. JS clickimulti-eventj¨ 3. Playwright clickiforce=Truej
-  - **Post-send verification**: ‘—MŒã‚É“ü—Í—“‚ªƒNƒŠƒA‚³‚ê‚½‚©‚ğŠm”F‚µAc‚Á‚Ä‚¢‚ê‚ÎƒŠƒgƒ‰ƒCiÅ‘å3‰ñj
-  - **DOM re-fetch after send**: ‘—MŒã‚Í`query_selector`‚Å“ü—Í—“‚ğÄæ“¾iCopilot‚ªDOM—v‘f‚ğÄ¶¬‚·‚é‰Â”\«‚ª‚ ‚é‚½‚ßstale element‰ñ”ğj
-  - **Send-ready wait**: `wait_for_function`‚Å‘—Mƒ{ƒ^ƒ“—LŒø + “ü—Í—“•ÒW‰Â‚ğŠm”F‚µA“Y•t’†‚ÍˆÀ’è‰»‘Ò‚¿iƒ^ƒCƒ€ƒAƒEƒg•t‚«‚Å–³ŒÀ‘Ò‹@‚ğ‰ñ”ğj
+  - **fill() method**: Playwright fill()ã‚’ä½¿ç”¨ã—ã¦æ”¹è¡Œã‚’æ­£ã—ãå‡¦ç†ï¼ˆæ”¹è¡ŒãŒEnterã‚­ãƒ¼ã¨ã—ã¦è§£é‡ˆã•ã‚Œã‚‹å•é¡Œã‚’ä¿®æ­£ï¼‰
+  - **Complete key cycle**: keydown + keypress + keyup ã®å®Œå…¨ãªã‚­ãƒ¼ã‚µã‚¤ã‚¯ãƒ«ã‚’JSã§ãƒ‡ã‚£ã‚¹ãƒ‘ãƒƒãƒï¼ˆkeydownã®ã¿ã§ã¯é€ä¿¡ã•ã‚Œãªã„ï¼‰
+  - **Root cause discovered**: Copilotã®React UIã¯keydownã§preventDefault()ã‚’å‘¼ã¶ãŒã€é€ä¿¡å‡¦ç†è‡ªä½“ã¯å®Œå…¨ãªã‚­ãƒ¼ã‚µã‚¤ã‚¯ãƒ«ãŒå¿…è¦
+  - **Pre-warm UI**: scrollIntoView + 0.20ç§’å¾…æ©Ÿã§UIå®‰å®šåŒ–ã€é€ä¿¡ãƒœã‚¿ãƒ³ã‚‚scrollIntoViewã§è¡¨ç¤ºä½ç½®ã«ç§»å‹•
+  - **Robust focus management**: é€ä¿¡å‰ã«JSã§è¤‡æ•°ã®ãƒ•ã‚©ãƒ¼ã‚«ã‚¹è¨­å®šæ–¹æ³•ã‚’è©¦è¡Œï¼ˆfocus, click+focus, mousedown+mouseup+focusï¼‰
+  - **Send method priority**: 1. Enter keyï¼ˆJS key events + Playwright keyboard.pressï¼‰â†’ 2. JS clickï¼ˆmulti-eventï¼‰â†’ 3. Playwright clickï¼ˆforce=Trueï¼‰
+  - **Post-send verification**: é€ä¿¡å¾Œã«å…¥åŠ›æ¬„ãŒã‚¯ãƒªã‚¢ã•ã‚ŒãŸã‹ã‚’ç¢ºèªã—ã€æ®‹ã£ã¦ã„ã‚Œã°ãƒªãƒˆãƒ©ã‚¤ï¼ˆæœ€å¤§3å›ï¼‰
+  - **DOM re-fetch after send**: é€ä¿¡å¾Œã¯`query_selector`ã§å…¥åŠ›æ¬„ã‚’å†å–å¾—ï¼ˆCopilotãŒDOMè¦ç´ ã‚’å†ç”Ÿæˆã™ã‚‹å¯èƒ½æ€§ãŒã‚ã‚‹ãŸã‚stale elementå›é¿ï¼‰
+  - **Send-ready wait**: `wait_for_function`ã§é€ä¿¡ãƒœã‚¿ãƒ³æœ‰åŠ¹ + å…¥åŠ›æ¬„ç·¨é›†å¯ã‚’ç¢ºèªã—ã€æ·»ä»˜ä¸­ã¯å®‰å®šåŒ–å¾…ã¡ï¼ˆã‚¿ã‚¤ãƒ ã‚¢ã‚¦ãƒˆä»˜ãã§ç„¡é™å¾…æ©Ÿã‚’å›é¿ï¼‰
 - **Edge Browser & Login Improvements**:
-  - **Auto-login detection**: ©“®ƒƒOƒCƒ“ŒŸo‚ğ‰ü‘P‚µA•s—v‚Èƒuƒ‰ƒEƒU‘O–Ê•\¦‚ğ–h~
-  - **Startup timeout**: Edge‹N“®ƒ^ƒCƒ€ƒAƒEƒg‚ğ6•b‚©‚ç20•b‚É‰„’·
-  - **JS click operations**: Playwright‚ÌƒNƒŠƒbƒN‘€ì‚ğJSƒNƒŠƒbƒN‚É•ÏX‚µ‚Äƒuƒ‰ƒEƒU‚ª‘O–Ê‚É—ˆ‚é‚Ì‚ğ–h~
+  - **Auto-login detection**: è‡ªå‹•ãƒ­ã‚°ã‚¤ãƒ³æ¤œå‡ºã‚’æ”¹å–„ã—ã€ä¸è¦ãªãƒ–ãƒ©ã‚¦ã‚¶å‰é¢è¡¨ç¤ºã‚’é˜²æ­¢
+  - **Startup timeout**: Edgeèµ·å‹•ã‚¿ã‚¤ãƒ ã‚¢ã‚¦ãƒˆã‚’6ç§’ã‹ã‚‰20ç§’ã«å»¶é•·
+  - **JS click operations**: Playwrightã®ã‚¯ãƒªãƒƒã‚¯æ“ä½œã‚’JSã‚¯ãƒªãƒƒã‚¯ã«å¤‰æ›´ã—ã¦ãƒ–ãƒ©ã‚¦ã‚¶ãŒå‰é¢ã«æ¥ã‚‹ã®ã‚’é˜²æ­¢
 - **PP-DocLayout-L Optimization**:
-  - **On-demand initialization**: PDF‘I‘ğ‚ÉƒIƒ“ƒfƒ}ƒ“ƒh‰Šú‰»i‹N“®ŠÔ‚ğ–ñ10•b’Zkj
-  - **Copilot disconnect/reconnect**: ‰Šú‰»‘O‚ÉCopilotØ’f¨‰Šú‰»¨ÄÚ‘±iPlaywright‹£‡‰ñ”ğj
-  - **LayoutInitializationState**: ‰Šú‰»ó‘ÔŠÇ—iNOT_INITIALIZED, INITIALIZING, INITIALIZED, FAILEDj
-  - **Windows message suppression**: WindowsƒƒbƒZ[ƒW‚ğ—}§
-  - **Installation check**: PDF‘I‘ğ‚É`is_layout_available()`‚Åƒ`ƒFƒbƒNA–¢ƒCƒ“ƒXƒg[ƒ‹‚ÉUIŒx‚ğ•\¦
-  - **is_layout_available() cache**: paddleocr import‚ğ1‰ñ‚Ì‚İ‚É§ŒÀi`_layout_available_cache`ƒOƒ[ƒoƒ‹•Ï”j
-  - **Dialog skip optimization**: ‰Šú‰»Ï‚İ‚Í€”õƒ_ƒCƒAƒƒO‚ğƒXƒLƒbƒvi2‰ñ–ÚˆÈ~‚ÌPDF‘I‘ğ‚ª‘¦À‚ÉŠ®—¹j
-  - **Fallback detection**: `_layout_fallback_used`ƒtƒ‰ƒO‚Åó‘Ô‚ğ’ÇÕ
-  - **Memory estimation**: ‘å‹K–ÍPDFˆ—‚Ìƒƒ‚ƒŠg—p—ÊŒ©Ï‚à‚è‚ğƒƒO‚Éo—Í
-  - **Network check disabled**: PaddleOCR import‚Ìƒlƒbƒgƒ[ƒNƒ`ƒFƒbƒNiHuggingFace, ModelScope, AIStudio“™j‚ğŠÂ‹«•Ï”‚Å–³Œø‰»i–ñ4-6•b’Zkj
-  - **Parallel initialization**: PP-DocLayout-L‰Šú‰»‚ÆPlaywright–‘O‰Šú‰»‚ğ`asyncio.gather`‚Å•À—ñÀsi–ñ1.5•b’Zkj
-  - **Playwright re-initialization**: `clear_pre_initialized_playwright()`‚Å`_pre_init_event`‚àƒŠƒZƒbƒg‚µ‚ÄÄ‰Šú‰»‚ğ‰Â”\‚É
+  - **On-demand initialization**: PDFé¸æŠæ™‚ã«ã‚ªãƒ³ãƒ‡ãƒãƒ³ãƒ‰åˆæœŸåŒ–ï¼ˆèµ·å‹•æ™‚é–“ã‚’ç´„10ç§’çŸ­ç¸®ï¼‰
+  - **Copilot disconnect/reconnect**: åˆæœŸåŒ–å‰ã«Copilotåˆ‡æ–­â†’åˆæœŸåŒ–â†’å†æ¥ç¶šï¼ˆPlaywrightç«¶åˆå›é¿ï¼‰
+  - **LayoutInitializationState**: åˆæœŸåŒ–çŠ¶æ…‹ç®¡ç†ï¼ˆNOT_INITIALIZED, INITIALIZING, INITIALIZED, FAILEDï¼‰
+  - **Windows message suppression**: Windowsãƒ¡ãƒƒã‚»ãƒ¼ã‚¸ã‚’æŠ‘åˆ¶
+  - **Installation check**: PDFé¸æŠæ™‚ã«`is_layout_available()`ã§ãƒã‚§ãƒƒã‚¯ã€æœªã‚¤ãƒ³ã‚¹ãƒˆãƒ¼ãƒ«æ™‚ã«UIè­¦å‘Šã‚’è¡¨ç¤º
+  - **is_layout_available() cache**: paddleocr importã‚’1å›ã®ã¿ã«åˆ¶é™ï¼ˆ`_layout_available_cache`ã‚°ãƒ­ãƒ¼ãƒãƒ«å¤‰æ•°ï¼‰
+  - **Dialog skip optimization**: åˆæœŸåŒ–æ¸ˆã¿æ™‚ã¯æº–å‚™ãƒ€ã‚¤ã‚¢ãƒ­ã‚°ã‚’ã‚¹ã‚­ãƒƒãƒ—ï¼ˆ2å›ç›®ä»¥é™ã®PDFé¸æŠãŒå³åº§ã«å®Œäº†ï¼‰
+  - **Fallback detection**: `_layout_fallback_used`ãƒ•ãƒ©ã‚°ã§çŠ¶æ…‹ã‚’è¿½è·¡
+  - **Memory estimation**: å¤§è¦æ¨¡PDFå‡¦ç†æ™‚ã®ãƒ¡ãƒ¢ãƒªä½¿ç”¨é‡è¦‹ç©ã‚‚ã‚Šã‚’ãƒ­ã‚°ã«å‡ºåŠ›
+  - **Network check disabled**: PaddleOCR importæ™‚ã®ãƒãƒƒãƒˆãƒ¯ãƒ¼ã‚¯ãƒã‚§ãƒƒã‚¯ï¼ˆHuggingFace, ModelScope, AIStudioç­‰ï¼‰ã‚’ç’°å¢ƒå¤‰æ•°ã§ç„¡åŠ¹åŒ–ï¼ˆç´„4-6ç§’çŸ­ç¸®ï¼‰
+  - **Parallel initialization**: PP-DocLayout-LåˆæœŸåŒ–ã¨Playwrightäº‹å‰åˆæœŸåŒ–ã‚’`asyncio.gather`ã§ä¸¦åˆ—å®Ÿè¡Œï¼ˆç´„1.5ç§’çŸ­ç¸®ï¼‰
+  - **Playwright re-initialization**: `clear_pre_initialized_playwright()`ã§`_pre_init_event`ã‚‚ãƒªã‚»ãƒƒãƒˆã—ã¦å†åˆæœŸåŒ–ã‚’å¯èƒ½ã«
 - **Translation Card UI Unification**:
-  - **Unified structure**: ˜a–ó‚Ì–|–óŒ‹‰ÊƒJ[ƒh\‘¢‚ğ‰p–ó‚Æ“ˆê
-  - **Card width alignment**: –|–óŒ‹‰ÊƒJ[ƒh‚Ì‰¡•‚ğŒ´•¶ƒJ[ƒh‚Æ“ˆê
-  - **Hover effect removal**: –|–óŒ‹‰ÊƒJ[ƒh‘S‘Ì‚Ìƒzƒo[Œø‰Ê‚ğíœ
+  - **Unified structure**: å’Œè¨³ã®ç¿»è¨³çµæœã‚«ãƒ¼ãƒ‰æ§‹é€ ã‚’è‹±è¨³ã¨çµ±ä¸€
+  - **Card width alignment**: ç¿»è¨³çµæœã‚«ãƒ¼ãƒ‰ã®æ¨ªå¹…ã‚’åŸæ–‡ã‚«ãƒ¼ãƒ‰ã¨çµ±ä¸€
+  - **Hover effect removal**: ç¿»è¨³çµæœã‚«ãƒ¼ãƒ‰å…¨ä½“ã®ãƒ›ãƒãƒ¼åŠ¹æœã‚’å‰Šé™¤
 - **Batch Translation Settings**:
-  - **max_chars_per_batch**: 7000 ¨ 4000 ‚Ék¬iM—Š«Œüãj
-  - **request_timeout**: 120•b ¨ 600•bi10•ªj‚É‰„’·i‘å‹K–Í–|–ó‘Î‰j
+  - **max_chars_per_batch**: 7000 â†’ 4000 ã«ç¸®å°ï¼ˆä¿¡é ¼æ€§å‘ä¸Šï¼‰
+  - **request_timeout**: 120ç§’ â†’ 600ç§’ï¼ˆ10åˆ†ï¼‰ã«å»¶é•·ï¼ˆå¤§è¦æ¨¡ç¿»è¨³å¯¾å¿œï¼‰
 - **Excel COM Improvements**:
-  - **Pre-cleanup**: Excel COMÚ‘±‚Ì–‘OƒNƒŠ[ƒ“ƒAƒbƒv‚ğ’Ç‰Á
-  - **Retry logic**: COMƒGƒ‰[‚ÌƒŠƒgƒ‰ƒC‘O‚ÉCOMƒŠƒ\[ƒX‚ÌƒNƒŠ[ƒ“ƒAƒbƒv‚ğ’Ç‰Á
-  - **openpyxl fallback warning**: Excel–¢ƒCƒ“ƒXƒg[ƒ‹E}Œ`ŠÜ‚Şƒtƒ@ƒCƒ‹‚Å‚ÌŒxƒvƒƒpƒeƒB‚ğ’Ç‰Á
-  - **Font cache optimization**: `_font_cache`‚É‚æ‚èapply_translations‚ÌCOMƒR[ƒ‹íŒ¸
-  - **Thread constraint docs**: COM‰Šú‰»‚ÌƒXƒŒƒbƒh§–ñ‚ğdocstring‚ÉÚ×à–¾
-  - **Sheet name handling**: Excel‹Ö~•¶š‚ÆƒAƒ“ƒ_[ƒXƒRƒAˆ—‚ÌƒhƒLƒ…ƒƒ“ƒg’Ç‰Á
-  - **Large file warning**: 10,000+ƒuƒƒbƒN‚Éƒƒ‚ƒŠl—¶‚ÌŒxƒƒO‚ğo—Í
-  - **Formula cell preservation**: ”®ƒZƒ‹‚ğ’Šo‘ÎÛ‚©‚çœŠOixlwings: `cell.formula`ƒ`ƒFƒbƒNAopenpyxl: 2ƒpƒXˆ—‚Å”®ˆÊ’u‚ğ“Á’èj
-  - **Bilingual output with xlwings**: xlwings—˜—p‚ÍCOM `sheet.api.Copy()`‚ÅƒVƒFƒCƒv/ƒ`ƒƒ[ƒg/‰æ‘œ‚ğ•Û
-  - **Section selection optimization**: `apply_translations()`‚É`selected_sections`ƒpƒ‰ƒ[ƒ^‚ğ’Ç‰ÁA‘I‘ğƒV[ƒg‚Ì‚İˆ—
+  - **Pre-cleanup**: Excel COMæ¥ç¶šã®äº‹å‰ã‚¯ãƒªãƒ¼ãƒ³ã‚¢ãƒƒãƒ—ã‚’è¿½åŠ 
+  - **Retry logic**: COMã‚¨ãƒ©ãƒ¼æ™‚ã®ãƒªãƒˆãƒ©ã‚¤å‰ã«COMãƒªã‚½ãƒ¼ã‚¹ã®ã‚¯ãƒªãƒ¼ãƒ³ã‚¢ãƒƒãƒ—ã‚’è¿½åŠ 
+  - **openpyxl fallback warning**: Excelæœªã‚¤ãƒ³ã‚¹ãƒˆãƒ¼ãƒ«æ™‚ãƒ»å›³å½¢å«ã‚€ãƒ•ã‚¡ã‚¤ãƒ«ã§ã®è­¦å‘Šãƒ—ãƒ­ãƒ‘ãƒ†ã‚£ã‚’è¿½åŠ 
+  - **Font cache optimization**: `_font_cache`ã«ã‚ˆã‚Šapply_translationsæ™‚ã®COMã‚³ãƒ¼ãƒ«å‰Šæ¸›
+  - **Thread constraint docs**: COMåˆæœŸåŒ–ã®ã‚¹ãƒ¬ãƒƒãƒ‰åˆ¶ç´„ã‚’docstringã«è©³ç´°èª¬æ˜
+  - **Sheet name handling**: Excelç¦æ­¢æ–‡å­—ã¨ã‚¢ãƒ³ãƒ€ãƒ¼ã‚¹ã‚³ã‚¢å‡¦ç†ã®ãƒ‰ã‚­ãƒ¥ãƒ¡ãƒ³ãƒˆè¿½åŠ 
+  - **Large file warning**: 10,000+ãƒ–ãƒ­ãƒƒã‚¯æ™‚ã«ãƒ¡ãƒ¢ãƒªè€ƒæ…®ã®è­¦å‘Šãƒ­ã‚°ã‚’å‡ºåŠ›
+  - **Formula cell preservation**: æ•°å¼ã‚»ãƒ«ã‚’æŠ½å‡ºå¯¾è±¡ã‹ã‚‰é™¤å¤–ï¼ˆxlwings: `cell.formula`ãƒã‚§ãƒƒã‚¯ã€openpyxl: 2ãƒ‘ã‚¹å‡¦ç†ã§æ•°å¼ä½ç½®ã‚’ç‰¹å®šï¼‰
+  - **Bilingual output with xlwings**: xlwingsåˆ©ç”¨æ™‚ã¯COM `sheet.api.Copy()`ã§ã‚·ã‚§ã‚¤ãƒ—/ãƒãƒ£ãƒ¼ãƒˆ/ç”»åƒã‚’ä¿æŒ
+  - **Section selection optimization**: `apply_translations()`ã«`selected_sections`ãƒ‘ãƒ©ãƒ¡ãƒ¼ã‚¿ã‚’è¿½åŠ ã€é¸æŠã‚·ãƒ¼ãƒˆã®ã¿å‡¦ç†
 - **Excel Translation Robustness Improvements (2024-12)**:
-  - **used_range normalization fix**: xlwings‚Ì’Pˆê—ñused_range.valuei1DƒŠƒXƒgj‚ğ³‚µ‚­2DƒŠƒXƒg‚É³‹K‰»B`rows.count`/`columns.count`‚Å’Pˆês‚Æ’Pˆê—ñ‚ğ”»•Ê
-  - **COM resource leak fix**: xlwings bilingual workbookì¬‚Ìƒ[ƒNƒuƒbƒN‚ğ–¾¦“I‚Éƒgƒ‰ƒbƒLƒ“ƒO‚µA—áŠO”­¶‚àŠmÀ‚Éclose()‚ğÀs
-  - **Memory-efficient formula detection**: openpyxl‚Ì2ƒpƒXˆ—‚ğ”p~Azipfile+XML‰ğÍ‚É‚æ‚éŒy—Ê‚È”®ŒŸo`_detect_formula_cells_via_zipfile()`‚ğ“±“ü
-  - **Cell character limit**: ExcelƒZƒ‹ãŒÀ32,767•¶š‚Ìƒ`ƒFƒbƒN‚Æ©“®truncate‚ğ’Ç‰Ái`EXCEL_CELL_CHAR_LIMIT`’è”jAxlwings/openpyxl—¼•û‚Ìapply_translations‚Å“K—p
-  - **Half-width katakana support**: ”¼ŠpƒJƒ^ƒJƒiiU+FF65-U+FF9Fj‚ğ“ú–{ŒêŒŸoƒpƒ^[ƒ“‚É’Ç‰ÁA`±²³´µ`‚â`ºİËß­°À°`‚ğ³‚µ‚­”»’è
-  - **Column letter cache limit**: `_COLUMN_LETTER_CACHE_SIZE=1000`‚Å‹É’[‚ÉL‚¢ƒV[ƒg‚Å‚Ìƒƒ‚ƒŠg—p—Ê‚ğ§ŒÀ
-  - **Bilingual style copy improvements**: conditional_formattingAdata_validationAhyperlinksAcomments‚ÌƒRƒs[‚ğopenpyxl bilingualo—Í‚É’Ç‰Á
-  - **Default sheet deletion improvement**: xlwings bilingualì¬‚ÌƒfƒtƒHƒ‹ƒgƒV[ƒgíœ‚É‘½Œ¾Œê‘Î‰ƒvƒŒƒtƒBƒbƒNƒX‚Æ–³ŒÀƒ‹[ƒv–h~‚ğ’Ç‰Á
+  - **used_range normalization fix**: xlwingsã®å˜ä¸€åˆ—used_range.valueï¼ˆ1Dãƒªã‚¹ãƒˆï¼‰ã‚’æ­£ã—ã2Dãƒªã‚¹ãƒˆã«æ­£è¦åŒ–ã€‚`rows.count`/`columns.count`ã§å˜ä¸€è¡Œã¨å˜ä¸€åˆ—ã‚’åˆ¤åˆ¥
+  - **COM resource leak fix**: xlwings bilingual workbookä½œæˆæ™‚ã®ãƒ¯ãƒ¼ã‚¯ãƒ–ãƒƒã‚¯ã‚’æ˜ç¤ºçš„ã«ãƒˆãƒ©ãƒƒã‚­ãƒ³ã‚°ã—ã€ä¾‹å¤–ç™ºç”Ÿæ™‚ã‚‚ç¢ºå®Ÿã«close()ã‚’å®Ÿè¡Œ
+  - **Memory-efficient formula detection**: openpyxlã®2ãƒ‘ã‚¹å‡¦ç†ã‚’å»ƒæ­¢ã€zipfile+XMLè§£æã«ã‚ˆã‚‹è»½é‡ãªæ•°å¼æ¤œå‡º`_detect_formula_cells_via_zipfile()`ã‚’å°å…¥
+  - **Cell character limit**: Excelã‚»ãƒ«ä¸Šé™32,767æ–‡å­—ã®ãƒã‚§ãƒƒã‚¯ã¨è‡ªå‹•truncateã‚’è¿½åŠ ï¼ˆ`EXCEL_CELL_CHAR_LIMIT`å®šæ•°ï¼‰ã€xlwings/openpyxlä¸¡æ–¹ã®apply_translationsã§é©ç”¨
+  - **Half-width katakana support**: åŠè§’ã‚«ã‚¿ã‚«ãƒŠï¼ˆU+FF65-U+FF9Fï¼‰ã‚’æ—¥æœ¬èªæ¤œå‡ºãƒ‘ã‚¿ãƒ¼ãƒ³ã«è¿½åŠ ã€`ï½±ï½²ï½³ï½´ï½µ`ã‚„`ï½ºï¾ï¾‹ï¾Ÿï½­ï½°ï¾€ï½°`ã‚’æ­£ã—ãåˆ¤å®š
+  - **Column letter cache limit**: `_COLUMN_LETTER_CACHE_SIZE=1000`ã§æ¥µç«¯ã«åºƒã„ã‚·ãƒ¼ãƒˆã§ã®ãƒ¡ãƒ¢ãƒªä½¿ç”¨é‡ã‚’åˆ¶é™
+  - **Bilingual style copy improvements**: conditional_formattingã€data_validationã€hyperlinksã€commentsã®ã‚³ãƒ”ãƒ¼ã‚’openpyxl bilingualå‡ºåŠ›ã«è¿½åŠ 
+  - **Default sheet deletion improvement**: xlwings bilingualä½œæˆæ™‚ã®ãƒ‡ãƒ•ã‚©ãƒ«ãƒˆã‚·ãƒ¼ãƒˆå‰Šé™¤ã«å¤šè¨€èªå¯¾å¿œãƒ—ãƒ¬ãƒ•ã‚£ãƒƒã‚¯ã‚¹ã¨ç„¡é™ãƒ«ãƒ¼ãƒ—é˜²æ­¢ã‚’è¿½åŠ 
 - **PDF Translation Improvements (PDFMathTranslate compliant)**:
-  - **PP-DocLayout-L**: ƒŒƒCƒAƒEƒg‰ğÍ‚ÉPP-DocLayout-L‚ğg—piApache-2.0A¤—p—˜—p‰Âj
-  - **’PˆêƒpƒX’Šo**: pdfminer + PP-DocLayout-L ¨ TextBlocki“ñd•ÏŠ·‚ğ”rœj
-  - **TranslationCell”p~—\’è**: TextBlockƒx[ƒX‚ÉˆÚsAapply_translations‚Étext_blocksƒpƒ‰ƒ[ƒ^’Ç‰ÁBTranslationCellg—p‚ÍDeprecationWarning”­¶
+  - **PP-DocLayout-L**: ãƒ¬ã‚¤ã‚¢ã‚¦ãƒˆè§£æã«PP-DocLayout-Lã‚’ä½¿ç”¨ï¼ˆApache-2.0ã€å•†ç”¨åˆ©ç”¨å¯ï¼‰
+  - **å˜ä¸€ãƒ‘ã‚¹æŠ½å‡º**: pdfminer + PP-DocLayout-L â†’ TextBlockï¼ˆäºŒé‡å¤‰æ›ã‚’æ’é™¤ï¼‰
+  - **TranslationCellå»ƒæ­¢äºˆå®š**: TextBlockãƒ™ãƒ¼ã‚¹ã«ç§»è¡Œã€apply_translationsã«text_blocksãƒ‘ãƒ©ãƒ¡ãƒ¼ã‚¿è¿½åŠ ã€‚TranslationCellä½¿ç”¨æ™‚ã¯DeprecationWarningç™ºç”Ÿ
   - **Existing font reuse**: Detect and reuse CID/Simple fonts already embedded in PDF
   - **pdfminer.six integration**: Font type detection for correct text encoding
   - **Low-level API only**: Removed high-level API fallback for consistent rendering
-  - **Font type encoding**: EMBEDDED¨glyph ID, CID¨4-digit hex, SIMPLE¨2-digit hex
-  - **Coordinate system utilities**: Œ^ˆÀ‘S‚ÈÀ•W•ÏŠ·ƒ†[ƒeƒBƒŠƒeƒB‚ğ’Ç‰Ái`PdfCoord`, `ImageCoord`, `pdf_to_image_coord`, `get_layout_class_at_pdf_coord`jBpage_height/scale‚Ìƒ[ƒœZƒ`ƒFƒbƒN’Ç‰Á
-  - **Input validation**: À•W•ÏŠ·ŠÖ”‚Épage_height > 0Ascale > 0‚ÌƒoƒŠƒf[ƒVƒ‡ƒ“’Ç‰ÁB–³Œø‚Èê‡‚ÍValueError”­¶iget_layout_class_at_pdf_coord‚Í—áŠO“I‚ÉLAYOUT_BACKGROUND‚ğ•Ô‚·j
-  - **Font availability check**: FontInfo‚É`is_available`ƒvƒƒpƒeƒB‚ğ’Ç‰ÁBƒtƒHƒ“ƒg–„‚ß‚İ¸”s‚ÌŒxƒƒO‚ğ‹­‰»
-  - **Empty LayoutArray fallback**: PP-DocLayout-L‚ªŒŸoŒ‹‰Ê‚ğ•Ô‚³‚È‚¢ê‡‚ÌYÀ•WƒtƒH[ƒ‹ƒoƒbƒN‚ğ‰ü‘PEƒƒO’Ç‰Á
-  - **Text merging**: LayoutArray‚ğQÆ‚µ‚Ä•¶š‚ğ’i—‚ÉƒOƒ‹[ƒv‰»i_group_chars_into_blocksj
-  - **Font object missing detection**: `get_glyph_id()`‚ÅFont object•sİ‚ÉŒxƒƒO‚ğo—ÍAƒeƒLƒXƒg”ñ•\¦–â‘è‚Ìf’f‚ğ—eˆÕ‰»
-  - **Dynamic batch_size adjustment**: psutil‚Å—˜—p‰Â”\ƒƒ‚ƒŠ‚ğŠm”F‚µAbatch_size‚ğ©“®’²®iOOM–h~jBDPI‚É‰‚¶‚Äƒƒ‚ƒŠg—p—Ê‚ğ„’èi`26 * (dpi/300)2` MB/pagej
+  - **Font type encoding**: EMBEDDEDâ†’glyph ID, CIDâ†’4-digit hex, SIMPLEâ†’2-digit hex
+  - **Coordinate system utilities**: å‹å®‰å…¨ãªåº§æ¨™å¤‰æ›ãƒ¦ãƒ¼ãƒ†ã‚£ãƒªãƒ†ã‚£ã‚’è¿½åŠ ï¼ˆ`PdfCoord`, `ImageCoord`, `pdf_to_image_coord`, `get_layout_class_at_pdf_coord`ï¼‰ã€‚page_height/scaleã®ã‚¼ãƒ­é™¤ç®—ãƒã‚§ãƒƒã‚¯è¿½åŠ 
+  - **Input validation**: åº§æ¨™å¤‰æ›é–¢æ•°ã«page_height > 0ã€scale > 0ã®ãƒãƒªãƒ‡ãƒ¼ã‚·ãƒ§ãƒ³è¿½åŠ ã€‚ç„¡åŠ¹ãªå ´åˆã¯ValueErrorç™ºç”Ÿï¼ˆget_layout_class_at_pdf_coordã¯ä¾‹å¤–çš„ã«LAYOUT_BACKGROUNDã‚’è¿”ã™ï¼‰
+  - **Font availability check**: FontInfoã«`is_available`ãƒ—ãƒ­ãƒ‘ãƒ†ã‚£ã‚’è¿½åŠ ã€‚ãƒ•ã‚©ãƒ³ãƒˆåŸ‹ã‚è¾¼ã¿å¤±æ•—æ™‚ã®è­¦å‘Šãƒ­ã‚°ã‚’å¼·åŒ–
+  - **Empty LayoutArray fallback**: PP-DocLayout-LãŒæ¤œå‡ºçµæœã‚’è¿”ã•ãªã„å ´åˆã®Yåº§æ¨™ãƒ•ã‚©ãƒ¼ãƒ«ãƒãƒƒã‚¯ã‚’æ”¹å–„ãƒ»ãƒ­ã‚°è¿½åŠ 
+  - **Text merging**: LayoutArrayã‚’å‚ç…§ã—ã¦æ–‡å­—ã‚’æ®µè½ã«ã‚°ãƒ«ãƒ¼ãƒ—åŒ–ï¼ˆ_group_chars_into_blocksï¼‰
+  - **Font object missing detection**: `get_glyph_id()`ã§Font objectä¸åœ¨æ™‚ã«è­¦å‘Šãƒ­ã‚°ã‚’å‡ºåŠ›ã€ãƒ†ã‚­ã‚¹ãƒˆéè¡¨ç¤ºå•é¡Œã®è¨ºæ–­ã‚’å®¹æ˜“åŒ–
+  - **Dynamic batch_size adjustment**: psutilã§åˆ©ç”¨å¯èƒ½ãƒ¡ãƒ¢ãƒªã‚’ç¢ºèªã—ã€batch_sizeã‚’è‡ªå‹•èª¿æ•´ï¼ˆOOMé˜²æ­¢ï¼‰ã€‚DPIã«å¿œã˜ã¦ãƒ¡ãƒ¢ãƒªä½¿ç”¨é‡ã‚’æ¨å®šï¼ˆ`26 * (dpi/300)2` MB/pageï¼‰
 - **PDF Translation Reliability & Error Handling (2024-12)**:
-  - **Glyph ID 0 fix**: `if idx:` ¨ `if idx is not None and idx != 0:` ‚Å–¾Šm‰»BƒOƒŠƒtID 0‚ªFalsy‚Æ•]‰¿‚³‚ê‚éƒoƒO‚ğC³
-  - **Multi-column fallback**: PP-DocLayout-LŒ‹‰Ê‚È‚µ‚É`COLUMN_JUMP_X_THRESHOLD=100pt`‚ÅXÀ•W‚àl—¶‚µ‚½‘½’i‘g‚İŒŸo
-  - **LayoutArray.fallback_used**: ƒtƒH[ƒ‹ƒoƒbƒNƒ‚[ƒhg—p‚Éƒtƒ‰ƒO‚ğİ’èA‰º—¬ˆ—‚ÅQÆ‰Â”\‚É
-  - **Detailed exception logging**: 7í—Ş‚Ì—áŠO‚ğŒÂ•Ê‚ÉƒƒOo—ÍiRuntimeError, ValueError, TypeError, KeyError, IndexError, AttributeError, OSErrorj
-  - **Font embedding fallback**: ƒtƒHƒ“ƒg–„‚ß‚İ¸”s‚ÉŒ¾Œê•ÊƒtƒH[ƒ‹ƒoƒbƒN¨‰pŒêƒtƒH[ƒ‹ƒoƒbƒN‚ğ©“®s
-  - **Cache memory release**: `clear_analyzer_cache()`‚ÅGPUƒƒ‚ƒŠ‰ğ•úi`paddle.device.cuda.empty_cache()`j‚ÆGCƒgƒŠƒK[
-  - **Page height validation**: `page_height <= 0`ƒ`ƒFƒbƒN‚Å–³Œøƒy[ƒW‚ğƒXƒLƒbƒv
-  - **Memory pre-check**: `check_memory_for_pdf_processing()`‚Åˆ—‘O‚ÉŒxo—Í
-  - **CID encoding docs**: CIDƒtƒHƒ“ƒgƒGƒ“ƒR[ƒfƒBƒ“ƒO‚Ì§ŒÀ–€‚ğƒhƒLƒ…ƒƒ“ƒg‰»A`get_width(cid)`ˆø”C³
+  - **Glyph ID 0 fix**: `if idx:` â†’ `if idx is not None and idx != 0:` ã§æ˜ç¢ºåŒ–ã€‚ã‚°ãƒªãƒ•ID 0ãŒFalsyã¨è©•ä¾¡ã•ã‚Œã‚‹ãƒã‚°ã‚’ä¿®æ­£
+  - **Multi-column fallback**: PP-DocLayout-Lçµæœãªã—æ™‚ã«`COLUMN_JUMP_X_THRESHOLD=100pt`ã§Xåº§æ¨™ã‚‚è€ƒæ…®ã—ãŸå¤šæ®µçµ„ã¿æ¤œå‡º
+  - **LayoutArray.fallback_used**: ãƒ•ã‚©ãƒ¼ãƒ«ãƒãƒƒã‚¯ãƒ¢ãƒ¼ãƒ‰ä½¿ç”¨æ™‚ã«ãƒ•ãƒ©ã‚°ã‚’è¨­å®šã€ä¸‹æµå‡¦ç†ã§å‚ç…§å¯èƒ½ã«
+  - **Detailed exception logging**: 7ç¨®é¡ã®ä¾‹å¤–ã‚’å€‹åˆ¥ã«ãƒ­ã‚°å‡ºåŠ›ï¼ˆRuntimeError, ValueError, TypeError, KeyError, IndexError, AttributeError, OSErrorï¼‰
+  - **Font embedding fallback**: ãƒ•ã‚©ãƒ³ãƒˆåŸ‹ã‚è¾¼ã¿å¤±æ•—æ™‚ã«è¨€èªåˆ¥ãƒ•ã‚©ãƒ¼ãƒ«ãƒãƒƒã‚¯â†’è‹±èªãƒ•ã‚©ãƒ¼ãƒ«ãƒãƒƒã‚¯ã‚’è‡ªå‹•è©¦è¡Œ
+  - **Cache memory release**: `clear_analyzer_cache()`ã§GPUãƒ¡ãƒ¢ãƒªè§£æ”¾ï¼ˆ`paddle.device.cuda.empty_cache()`ï¼‰ã¨GCãƒˆãƒªã‚¬ãƒ¼
+  - **Page height validation**: `page_height <= 0`ãƒã‚§ãƒƒã‚¯ã§ç„¡åŠ¹ãƒšãƒ¼ã‚¸ã‚’ã‚¹ã‚­ãƒƒãƒ—
+  - **Memory pre-check**: `check_memory_for_pdf_processing()`ã§å‡¦ç†å‰ã«è­¦å‘Šå‡ºåŠ›
+  - **CID encoding docs**: CIDãƒ•ã‚©ãƒ³ãƒˆã‚¨ãƒ³ã‚³ãƒ¼ãƒ‡ã‚£ãƒ³ã‚°ã®åˆ¶é™äº‹é …ã‚’ãƒ‰ã‚­ãƒ¥ãƒ¡ãƒ³ãƒˆåŒ–ã€`get_width(cid)`å¼•æ•°ä¿®æ­£
 - **PDF Translation Robustness Improvements (2024-12)**:
-  - **MemoryError handling**: MemoryError‚ğ•ª—£‚µ‚ÄcriticalƒƒOo—Í{‘ŠúI—¹iOOM‚Ì˜A½ƒGƒ‰[‚ğ–h~j
-  - **PP-DocLayout-L memory leak fix**: try-finally‚Å`clear_analyzer_cache()`‚ğŠmÀ‚ÉŒÄ‚Ño‚µ
-  - **Font embedding critical warning**: ƒtƒHƒ“ƒg–„‚ß‚İ¸”s‚ÉƒGƒ‰[ƒŒƒxƒ‹ƒƒO{UI•\¦—pƒƒbƒZ[ƒW‚ğ’Ç‰Á
-  - **PP-DocLayout-L initialization timing**: docstring‚É‰Šú‰»‡˜‚ğ–¾‹LiPP-DocLayout-L ¨ Playwrightj
-  - **Coordinate system validation**: TextBlockÀ•W‚ªPDFÀ•WŒn‚©ŒŸØAimageÀ•W‚Ìê‡‚Í©“®•ÏŠ·
-  - **Dynamic paragraph thresholds**: `calculate_dynamic_thresholds()`‚Åƒy[ƒWƒTƒCƒYEƒtƒHƒ“ƒgƒTƒCƒY‚É‰‚¶‚½è‡’lŒvZ
-  - **Glyph ID 0 documentation**: OpenTyped—l‚ÉŠî‚Ã‚­.notdef‚Ìà–¾‚ğ’Ç‰ÁA•s‰Â‹•¶š‚ÌŒxƒƒO
-  - **Safe coordinate functions**: `safe_page_height()`, `safe_scale()`‚Åƒ[ƒœZ‚ÌƒtƒH[ƒ‹ƒoƒbƒN
-  - **Dynamic batch size**: `calculate_optimal_batch_size()`‚Åƒƒ‚ƒŠ‚É‰‚¶‚½ƒoƒbƒ`ƒTƒCƒY©“®ŒvZ
-  - **CID font CMap validation**: `_validate_cid_font_encoding()`‚ÅIdentity-HŒİŠ·«‚ğƒ`ƒFƒbƒN
-  - **pdfminer detailed logging**: ƒtƒHƒ“ƒg“Ç‚İ‚İ¸”s‚ÌÚ×ƒƒOi—áŠOƒ^ƒCƒv•Ê‚ÌƒƒbƒZ[ƒWj
+  - **MemoryError handling**: MemoryErrorã‚’åˆ†é›¢ã—ã¦criticalãƒ­ã‚°å‡ºåŠ›ï¼‹æ—©æœŸçµ‚äº†ï¼ˆOOMæ™‚ã®é€£é–ã‚¨ãƒ©ãƒ¼ã‚’é˜²æ­¢ï¼‰
+  - **PP-DocLayout-L memory leak fix**: try-finallyã§`clear_analyzer_cache()`ã‚’ç¢ºå®Ÿã«å‘¼ã³å‡ºã—
+  - **Font embedding critical warning**: ãƒ•ã‚©ãƒ³ãƒˆåŸ‹ã‚è¾¼ã¿å¤±æ•—æ™‚ã«ã‚¨ãƒ©ãƒ¼ãƒ¬ãƒ™ãƒ«ãƒ­ã‚°ï¼‹UIè¡¨ç¤ºç”¨ãƒ¡ãƒƒã‚»ãƒ¼ã‚¸ã‚’è¿½åŠ 
+  - **PP-DocLayout-L initialization timing**: docstringã«åˆæœŸåŒ–é †åºã‚’æ˜è¨˜ï¼ˆPP-DocLayout-L â†’ Playwrightï¼‰
+  - **Coordinate system validation**: TextBlockåº§æ¨™ãŒPDFåº§æ¨™ç³»ã‹æ¤œè¨¼ã€imageåº§æ¨™ã®å ´åˆã¯è‡ªå‹•å¤‰æ›
+  - **Dynamic paragraph thresholds**: `calculate_dynamic_thresholds()`ã§ãƒšãƒ¼ã‚¸ã‚µã‚¤ã‚ºãƒ»ãƒ•ã‚©ãƒ³ãƒˆã‚µã‚¤ã‚ºã«å¿œã˜ãŸé–¾å€¤è¨ˆç®—
+  - **Glyph ID 0 documentation**: OpenTypeä»•æ§˜ã«åŸºã¥ã.notdefã®èª¬æ˜ã‚’è¿½åŠ ã€ä¸å¯è¦–æ–‡å­—ã®è­¦å‘Šãƒ­ã‚°
+  - **Safe coordinate functions**: `safe_page_height()`, `safe_scale()`ã§ã‚¼ãƒ­é™¤ç®—æ™‚ã®ãƒ•ã‚©ãƒ¼ãƒ«ãƒãƒƒã‚¯
+  - **Dynamic batch size**: `calculate_optimal_batch_size()`ã§ãƒ¡ãƒ¢ãƒªã«å¿œã˜ãŸãƒãƒƒãƒã‚µã‚¤ã‚ºè‡ªå‹•è¨ˆç®—
+  - **CID font CMap validation**: `_validate_cid_font_encoding()`ã§Identity-Häº’æ›æ€§ã‚’ãƒã‚§ãƒƒã‚¯
+  - **pdfminer detailed logging**: ãƒ•ã‚©ãƒ³ãƒˆèª­ã¿è¾¼ã¿å¤±æ•—æ™‚ã®è©³ç´°ãƒ­ã‚°ï¼ˆä¾‹å¤–ã‚¿ã‚¤ãƒ—åˆ¥ã®ãƒ¡ãƒƒã‚»ãƒ¼ã‚¸ï¼‰
 - **Font Settings Simplification**:
-  - **Unified settings**: 4 font settings ¨ 2 settings (`font_jp_to_en`, `font_en_to_jp`)
+  - **Unified settings**: 4 font settings â†’ 2 settings (`font_jp_to_en`, `font_en_to_jp`)
   - **PDF settings removed**: `pdf_font_ja`, `pdf_font_en` removed, now uses common settings
   - **Translation direction only**: Original font type is ignored, font determined by translation direction
 - **Translation Speed Optimization**:
-  - **Text translation**: Reduced polling interval (0.5s ¨ 0.3s), reduced chat response clear wait (5s ¨ 3s)
-  - **File translation**: Reduced polling interval (1s ¨ 0.5s), reduced stability confirmation (3 ¨ 2 checks)
+  - **Text translation**: Reduced polling interval (0.5s â†’ 0.3s), reduced chat response clear wait (5s â†’ 3s)
+  - **File translation**: Reduced polling interval (1s â†’ 0.5s), reduced stability confirmation (3 â†’ 2 checks)
   - **Prompt caching**: `PromptBuilder.get_text_template()` caches loaded templates to avoid per-request file I/O
   - **Parallel prompt building**: ThreadPoolExecutor for 3+ batches for concurrent prompt construction
 - **Startup Performance**:
   - **Loading screen**: Shows spinner immediately via `await client.connected()` for faster perceived startup
   - **Import optimization**: NiceGUI import moved inside `main()` to prevent double initialization in native mode (cuts startup time in half)
-  - **Sequential Playwright init**: Playwright‰Šú‰»Š®—¹‚ğ‘Ò‚Á‚Ä‚©‚çNiceGUI‚ğƒCƒ“ƒ|[ƒgiI/O‹£‡‰ñ”ğA~5•b‚‘¬‰»j
-  - **Settings cache**: `AppSettings.load()`‚Íƒtƒ@ƒCƒ‹XV‚ÅƒLƒƒƒbƒVƒ…‚ğŠÇ—‚µAd•¡“Ç‚İ‚İ‚ğíŒ¸
-  - **Warning frequency reduction**: ƒTƒCƒhƒpƒlƒ‹”z’u‚ÌŒx‚ÍÅ‰‚Ì1‰ñ‚Ì‚İWARNINGƒŒƒxƒ‹‚Åo—Í
+  - **Sequential Playwright init**: PlaywrightåˆæœŸåŒ–å®Œäº†ã‚’å¾…ã£ã¦ã‹ã‚‰NiceGUIã‚’ã‚¤ãƒ³ãƒãƒ¼ãƒˆï¼ˆI/Oç«¶åˆå›é¿ã€~5ç§’é«˜é€ŸåŒ–ï¼‰
+  - **Settings cache**: `AppSettings.load()`ã¯ãƒ•ã‚¡ã‚¤ãƒ«æ›´æ–°æ™‚åˆ»ã§ã‚­ãƒ£ãƒƒã‚·ãƒ¥ã‚’ç®¡ç†ã—ã€é‡è¤‡èª­ã¿è¾¼ã¿ã‚’å‰Šæ¸›
+  - **Warning frequency reduction**: ã‚µã‚¤ãƒ‰ãƒ‘ãƒãƒ«é…ç½®ã®è­¦å‘Šã¯æœ€åˆã®1å›ã®ã¿WARNINGãƒ¬ãƒ™ãƒ«ã§å‡ºåŠ›
   - **Lazy imports**: Heavy modules (openpyxl, python-docx, Playwright) deferred until first use via `__getattr__`
   - **WebSocket optimization**: `reconnect_timeout=30.0` in `ui.run()` (up from default 3s) for stable connections
   - **Non-blocking translation**: All translation methods use `asyncio.to_thread()` to avoid blocking NiceGUI event loop
   - **pywebview engine**: `PYWEBVIEW_GUI=edgechromium` environment variable to avoid runtime installation dialogs
   - **Multiprocessing support**: `multiprocessing.freeze_support()` for Windows/PyInstaller compatibility
-  - **Early Copilot connection**: NiceGUI import‘O‚ÉEdge‹N“®‚ğƒoƒbƒNƒOƒ‰ƒEƒ“ƒh‚ÅŠJn‚µACopilotƒy[ƒW‚Ìƒ[ƒh‚ğ•À—ñ‰»BGPTƒ‚[ƒhØ‘Ö‚ÍUI•\¦Œã‚É”ñ“¯Šú‚ÅÀsiUI—DæjB‘ŠúÚ‘±Œ‹‰Ê‚ÍEvent‚Å’Ê’m‚µAƒXƒŒƒbƒh¶‘¶’†‚ÍƒtƒH[ƒ‹ƒoƒbƒNÚ‘±‚ğŠJn‚µ‚È‚¢
-  - **Early Edge startup (parallel)**: Edge‹N“®‚ğPlaywright‰Šú‰»‚Æ•À—ñ‚ÅÀsi`_early_edge_thread`jBEdge‹N“®i~1.5•bj‚ÍPlaywright‚ÉˆË‘¶‚µ‚È‚¢‚½‚ßA`pre_initialize_playwright()`’¼Œã‚É•ÊƒXƒŒƒbƒh‚ÅŠJnBƒŒ[ƒXƒRƒ“ƒfƒBƒVƒ‡ƒ“–h~‚Ì‚½‚ß`connect()`ŒÄ‚Ño‚µ‘O‚É`join()`‚Å‘Ò‹@
-  - **Window detection optimization**: ƒEƒBƒ“ƒhƒEŒŸoƒ|[ƒŠƒ“ƒOŠÔŠu‚ğ0.1•b¨0.05•b‚É’ZkAƒƒOd•¡”rœƒtƒ‰ƒO’Ç‰Á
-  - **uvicorn logging level**: `uvicorn_logging_level='warning'` ‚ÅƒƒOo—Í‚ğíŒ¸
-  - **Static CSS files**: `app.add_static_files('/static', ui_dir)` ‚Åƒuƒ‰ƒEƒUƒLƒƒƒbƒVƒ…‚ğŠˆ—p
+  - **Early Copilot connection**: NiceGUI importå‰ã«Edgeèµ·å‹•ã‚’ãƒãƒƒã‚¯ã‚°ãƒ©ã‚¦ãƒ³ãƒ‰ã§é–‹å§‹ã—ã€Copilotãƒšãƒ¼ã‚¸ã®ãƒ­ãƒ¼ãƒ‰ã‚’ä¸¦åˆ—åŒ–ã€‚GPTãƒ¢ãƒ¼ãƒ‰åˆ‡æ›¿ã¯UIè¡¨ç¤ºå¾Œã«éåŒæœŸã§å®Ÿè¡Œï¼ˆUIå„ªå…ˆï¼‰ã€‚æ—©æœŸæ¥ç¶šçµæœã¯Eventã§é€šçŸ¥ã—ã€ã‚¹ãƒ¬ãƒƒãƒ‰ç”Ÿå­˜ä¸­ã¯ãƒ•ã‚©ãƒ¼ãƒ«ãƒãƒƒã‚¯æ¥ç¶šã‚’é–‹å§‹ã—ãªã„
+  - **Early Edge startup (parallel)**: Edgeèµ·å‹•ã‚’PlaywrightåˆæœŸåŒ–ã¨ä¸¦åˆ—ã§å®Ÿè¡Œï¼ˆ`_early_edge_thread`ï¼‰ã€‚Edgeèµ·å‹•ï¼ˆ~1.5ç§’ï¼‰ã¯Playwrightã«ä¾å­˜ã—ãªã„ãŸã‚ã€`pre_initialize_playwright()`ç›´å¾Œã«åˆ¥ã‚¹ãƒ¬ãƒƒãƒ‰ã§é–‹å§‹ã€‚ãƒ¬ãƒ¼ã‚¹ã‚³ãƒ³ãƒ‡ã‚£ã‚·ãƒ§ãƒ³é˜²æ­¢ã®ãŸã‚`connect()`å‘¼ã³å‡ºã—å‰ã«`join()`ã§å¾…æ©Ÿ
+  - **Window detection optimization**: ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦æ¤œå‡ºãƒãƒ¼ãƒªãƒ³ã‚°é–“éš”ã‚’0.1ç§’â†’0.05ç§’ã«çŸ­ç¸®ã€ãƒ­ã‚°é‡è¤‡æ’é™¤ãƒ•ãƒ©ã‚°è¿½åŠ 
+  - **uvicorn logging level**: `uvicorn_logging_level='warning'` ã§ãƒ­ã‚°å‡ºåŠ›ã‚’å‰Šæ¸›
+  - **Static CSS files**: `app.add_static_files('/static', ui_dir)` ã§ãƒ–ãƒ©ã‚¦ã‚¶ã‚­ãƒ£ãƒƒã‚·ãƒ¥ã‚’æ´»ç”¨
 - **Threading & Context Fixes**:
   - **Client reference**: `self._client` saved from `@ui.page` handler for async button handlers (NiceGUI's `context.client` not available in async tasks)
   - **PlaywrightThreadExecutor**: All Playwright operations wrapped in dedicated thread executor to avoid greenlet thread-switching errors
   - **Proxy bypass**: `NO_PROXY=localhost,127.0.0.1` set in `app.py` before any imports (critical for corporate proxies intercepting CDP connections)
 - **Text Translation UI Unification**:
-  - **3-style output**: •W€/ŠÈŒ‰/ÅŠÈŒ‰‚ğ“¯•\¦
-  - **Style toggle removed**: ƒXƒ^ƒCƒ‹Ø‚è‘Ö‚¦UI‚ğ”p~
-  - **Unified structure**: ‰p–ó and ˜a–ó now share same UI pattern (hint row + action buttons + expandable inputs)
-  - **Suggestion hint row**: [Ä–|–ó] ƒ{ƒ^ƒ“ for both directions
-  - **˜a–ó buttons**: [‰p•¶‚ğƒ`ƒFƒbƒN] [—v“_‚ğ‹³‚¦‚Ä] [•ÔM•¶‚ğì¬] as single option style
-  - **‰p–ó buttons**: [ƒAƒŒƒ“ƒW‚µ‚½‰p•¶‚ğƒ`ƒFƒbƒN]
-  - **Removed**: ƒJƒXƒ^ƒ€ƒŠƒNƒGƒXƒg“ü—Í—“A[‚±‚ê‚Í‚Ç‚¤H] quick chipAconnector line designAsettings dialog
+  - **3-style output**: æ¨™æº–/ç°¡æ½”/æœ€ç°¡æ½”ã‚’åŒæ™‚è¡¨ç¤º
+  - **Style toggle removed**: ã‚¹ã‚¿ã‚¤ãƒ«åˆ‡ã‚Šæ›¿ãˆUIã‚’å»ƒæ­¢
+  - **Unified structure**: è‹±è¨³ and å’Œè¨³ now share same UI pattern (hint row + action buttons + expandable inputs)
+  - **Suggestion hint row**: [å†ç¿»è¨³] ãƒœã‚¿ãƒ³ for both directions
+  - **å’Œè¨³ buttons**: [è‹±æ–‡ã‚’ãƒã‚§ãƒƒã‚¯] [è¦ç‚¹ã‚’æ•™ãˆã¦] [è¿”ä¿¡æ–‡ã‚’ä½œæˆ] as single option style
+  - **è‹±è¨³ buttons**: [ã‚¢ãƒ¬ãƒ³ã‚¸ã—ãŸè‹±æ–‡ã‚’ãƒã‚§ãƒƒã‚¯]
+  - **Removed**: ã‚«ã‚¹ã‚¿ãƒ ãƒªã‚¯ã‚¨ã‚¹ãƒˆå…¥åŠ›æ¬„ã€[ã“ã‚Œã¯ã©ã†ï¼Ÿ] quick chipã€connector line designã€settings dialog
 - **Settings Dialog**: Removed
 - **Installation**: Desktop shortcut only (removed Start Menu entry)
 - **Bilingual Output**: All file processors generate bilingual output with original + translated content
@@ -3013,20 +3007,20 @@ Based on recent commits:
 - **Test Coverage**: 33 test files
 - **Language Detection**: Local-only detection for fast response - kana/Latin/Hangul detection with Japanese as default fallback for CJK-only text
 - **Translation Result UI Enhancements**:
-  - **Source text section**: –|–óŒ‹‰Êƒpƒlƒ‹ã•”‚ÉŒ´•¶‚ğ•\¦iƒRƒs[ƒ{ƒ^ƒ“•t‚«j
-  - **Translation status display**: u‰p–ó’†...vu˜a–ó’†...v¨u? ‰p–ó‚µ‚Ü‚µ‚½vu? ˜a–ó‚µ‚Ü‚µ‚½v+ Œo‰ßŠÔ
-  - **Full-height input area**: –|–ó’†E–|–óŒã‚Ì“ü—Í—“‚ğc•‚¢‚Á‚Ï‚¢‚ÉŠg’£
+  - **Source text section**: ç¿»è¨³çµæœãƒ‘ãƒãƒ«ä¸Šéƒ¨ã«åŸæ–‡ã‚’è¡¨ç¤ºï¼ˆã‚³ãƒ”ãƒ¼ãƒœã‚¿ãƒ³ä»˜ãï¼‰
+  - **Translation status display**: ã€Œè‹±è¨³ä¸­...ã€ã€Œå’Œè¨³ä¸­...ã€â†’ã€Œ? è‹±è¨³ã—ã¾ã—ãŸã€ã€Œ? å’Œè¨³ã—ã¾ã—ãŸã€+ çµŒéæ™‚é–“
+  - **Full-height input area**: ç¿»è¨³ä¸­ãƒ»ç¿»è¨³å¾Œã®å…¥åŠ›æ¬„ã‚’ç¸¦å¹…ã„ã£ã±ã„ã«æ‹¡å¼µ
 - **Window Sizing (1:1 Ratio)**:
-  - **1:1 ratio**: ƒAƒvƒŠ‚Æƒuƒ‰ƒEƒU‚Í1:1‚Å‰æ–Ê‚ğ•ªŠ„iGPTƒ‚[ƒhUI‚ÌƒXƒy[ƒXŠm•Ûj
+  - **1:1 ratio**: ã‚¢ãƒ—ãƒªã¨ãƒ–ãƒ©ã‚¦ã‚¶ã¯1:1ã§ç”»é¢ã‚’åˆ†å‰²ï¼ˆGPTãƒ¢ãƒ¼ãƒ‰UIã®ã‚¹ãƒšãƒ¼ã‚¹ç¢ºä¿ï¼‰
   - **Dynamic calculation**: `_detect_display_settings()` calculates window size from logical screen resolution
   - **DPI-aware**: pywebview returns logical pixels (after DPI scaling)
-  - **Calculation**: `available_width = screen_width - SIDE_PANEL_GAP (10px)` ¨ 2•ªŠ„
+  - **Calculation**: `available_width = screen_width - SIDE_PANEL_GAP (10px)` â†’ 2åˆ†å‰²
   - **Minimum sizes**: 1100x650 pixels
   - **Examples**:
-    - 1920px screen ¨ 955px app + 10px gap + 955px browser
-    - 1600px screen ¨ 795px app + 10px gap + 795px browser
+    - 1920px screen â†’ 955px app + 10px gap + 955px browser
+    - 1600px screen â†’ 795px app + 10px gap + 795px browser
   - **Sidebar ratio**: `SIDEBAR_RATIO = 280 / 1800` (~16%), `MIN_SIDEBAR_WIDTH = 280px`
-  - **Content width**: ‰¡•§ŒÀ“P”pi`--content-width`‚É‚æ‚é§ŒÀ‚ğíœAƒƒCƒ“ƒGƒŠƒA‚¢‚Á‚Ï‚¢‚É•\¦j
+  - **Content width**: æ¨ªå¹…åˆ¶é™æ’¤å»ƒï¼ˆ`--content-width`ã«ã‚ˆã‚‹åˆ¶é™ã‚’å‰Šé™¤ã€ãƒ¡ã‚¤ãƒ³ã‚¨ãƒªã‚¢ã„ã£ã±ã„ã«è¡¨ç¤ºï¼‰
 - **Global Hotkey (Ctrl+Alt+J)**:
   - **Quick translation**: Select text in any app, press Ctrl+Alt+J to translate
   - **Character limit**: 5,000 chars max for text translation
@@ -3042,63 +3036,63 @@ Based on recent commits:
   - **Auto-detection on file select**: Extracts sample text from first 5 blocks and detects language
   - **Race condition handling**: Discards detection result if user selects different file during detection
   - **Manual override**: Language toggle buttons allow manual selection after auto-detection
-  - **UI feedback**: Shows detected language (e.g., "“ú–{Œê‚ğŒŸo ¨ ‰p–ó‚µ‚Ü‚·")
+  - **UI feedback**: Shows detected language (e.g., "æ—¥æœ¬èªã‚’æ¤œå‡º â†’ è‹±è¨³ã—ã¾ã™")
 - **Unified Ctrl+Alt+J Hint**:
   - **Both panels**: Text and file translation panels show same Ctrl+Alt+J hint with keycap styling
-  - **Consistent messaging**: "[Ctrl] + [Alt] + [J] : ‘¼ƒAƒvƒŠ‚Å‘I‘ğ‚µ‚½ƒeƒLƒXƒg‚ğ–|–ó"
+  - **Consistent messaging**: "[Ctrl] + [Alt] + [J] : ä»–ã‚¢ãƒ—ãƒªã§é¸æŠã—ãŸãƒ†ã‚­ã‚¹ãƒˆã‚’ç¿»è¨³"
 - **setup.ps1 Robustness & Reliability**:
-  - **Running process detection**: YakuLingoÀs’†‚ÌÄƒCƒ“ƒXƒg[ƒ‹s‚ğŒŸo‚µ‚ÄƒGƒ‰[•\¦
-  - **Python process detection**: YakuLingoƒCƒ“ƒXƒg[ƒ‹ƒfƒBƒŒƒNƒgƒŠ‚ÅÀs’†‚ÌPythonƒvƒƒZƒX‚àŒŸo
-  - **7-Zip optional**: 7-Zip‚ª–¢ƒCƒ“ƒXƒg[ƒ‹‚Ìê‡AExpand-Archive‚ÉƒtƒH[ƒ‹ƒoƒbƒNi‘¬“x‚Í’x‚¢‚ª“®ìj
-  - **robocopy skip warnings**: ƒtƒ@ƒCƒ‹ƒXƒLƒbƒv‚ÉŒx‚ğ•\¦iexit code 1-7j
-  - **robocopy verbose logging**: ƒXƒLƒbƒv/¸”s‚µ‚½ƒtƒ@ƒCƒ‹ˆê——‚ğÅ‘å10Œ‚Ü‚Å•\¦
-  - **Network copy retry**: ƒlƒbƒgƒ[ƒNƒRƒs[¸”s‚Éw”ƒoƒbƒNƒIƒt‚ÅÅ‘å4‰ñƒŠƒgƒ‰ƒCi2s, 4s, 8s, 16sj
-  - **JSON merge failure backup**: settings.jsonƒ}[ƒW¸”s‚É`config\settings.backup.json`‚Æ‚µ‚Ä‹Œİ’è‚ğ•Û‘¶
-  - **Improved error messages**: pyvenv.cfg/python.exeŒŸo¸”s‚ÉÚ×‚ÈêŠî•ñ‚ğ•\¦
-  - **glossary.csv merge improved**: ––”ö‰üsŠm”FA³‹K‰»‚µ‚½’l‚ğ’Ç‰Á
-  - **settings.json deep copy**: ó‚¢ƒRƒs[‚©‚ç[‚¢ƒRƒs[‚É•ÏXiƒlƒXƒg‚µ‚½ƒIƒuƒWƒFƒNƒg‘Î‰j
-  - **Progress update**: GUIƒ‚[ƒh‚Ìƒ†[ƒU[ƒf[ƒ^•œŒ³’†ƒvƒƒOƒŒƒXXVi87%¨89%j
+  - **Running process detection**: YakuLingoå®Ÿè¡Œä¸­ã®å†ã‚¤ãƒ³ã‚¹ãƒˆãƒ¼ãƒ«è©¦è¡Œã‚’æ¤œå‡ºã—ã¦ã‚¨ãƒ©ãƒ¼è¡¨ç¤º
+  - **Python process detection**: YakuLingoã‚¤ãƒ³ã‚¹ãƒˆãƒ¼ãƒ«ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªã§å®Ÿè¡Œä¸­ã®Pythonãƒ—ãƒ­ã‚»ã‚¹ã‚‚æ¤œå‡º
+  - **7-Zip optional**: 7-ZipãŒæœªã‚¤ãƒ³ã‚¹ãƒˆãƒ¼ãƒ«ã®å ´åˆã€Expand-Archiveã«ãƒ•ã‚©ãƒ¼ãƒ«ãƒãƒƒã‚¯ï¼ˆé€Ÿåº¦ã¯é…ã„ãŒå‹•ä½œï¼‰
+  - **robocopy skip warnings**: ãƒ•ã‚¡ã‚¤ãƒ«ã‚¹ã‚­ãƒƒãƒ—æ™‚ã«è­¦å‘Šã‚’è¡¨ç¤ºï¼ˆexit code 1-7ï¼‰
+  - **robocopy verbose logging**: ã‚¹ã‚­ãƒƒãƒ—/å¤±æ•—ã—ãŸãƒ•ã‚¡ã‚¤ãƒ«ä¸€è¦§ã‚’æœ€å¤§10ä»¶ã¾ã§è¡¨ç¤º
+  - **Network copy retry**: ãƒãƒƒãƒˆãƒ¯ãƒ¼ã‚¯ã‚³ãƒ”ãƒ¼å¤±æ•—æ™‚ã«æŒ‡æ•°ãƒãƒƒã‚¯ã‚ªãƒ•ã§æœ€å¤§4å›ãƒªãƒˆãƒ©ã‚¤ï¼ˆ2s, 4s, 8s, 16sï¼‰
+  - **JSON merge failure backup**: settings.jsonãƒãƒ¼ã‚¸å¤±æ•—æ™‚ã«`config\settings.backup.json`ã¨ã—ã¦æ—§è¨­å®šã‚’ä¿å­˜
+  - **Improved error messages**: pyvenv.cfg/python.exeæ¤œå‡ºå¤±æ•—æ™‚ã«è©³ç´°ãªå ´æ‰€æƒ…å ±ã‚’è¡¨ç¤º
+  - **glossary.csv merge improved**: æœ«å°¾æ”¹è¡Œç¢ºèªã€æ­£è¦åŒ–ã—ãŸå€¤ã‚’è¿½åŠ 
+  - **settings.json deep copy**: æµ…ã„ã‚³ãƒ”ãƒ¼ã‹ã‚‰æ·±ã„ã‚³ãƒ”ãƒ¼ã«å¤‰æ›´ï¼ˆãƒã‚¹ãƒˆã—ãŸã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆå¯¾å¿œï¼‰
+  - **Progress update**: GUIãƒ¢ãƒ¼ãƒ‰æ™‚ã®ãƒ¦ãƒ¼ã‚¶ãƒ¼ãƒ‡ãƒ¼ã‚¿å¾©å…ƒä¸­ãƒ—ãƒ­ã‚°ãƒ¬ã‚¹æ›´æ–°ï¼ˆ87%â†’89%ï¼‰
 - **Performance Optimization (2024-12)**:
-  - **Polling interval reduction**: `RESPONSE_POLL_INITIAL`/`ACTIVE` 0.15¨0.1•bA`RESPONSE_POLL_STABLE` 0.05¨0.03•b
-  - **Stability check optimization**: `RESPONSE_STABLE_COUNT` 3¨2‰ñA`STALE_SELECTOR_STABLE_COUNT` 4¨3‰ñ
-  - **Send verification speedup**: `SEND_VERIFY_MAX_WAIT` 1.5•b¨0.8•b‚É’ZkiƒŠƒgƒ‰ƒC‚Ü‚Å‚Ì‘Ò‹@ŠÔ‚ğíŒ¸j
-  - **Expected improvement**: –|–óŠ®—¹ŒŸo –ñ0.1?0.15•b‚‘¬‰»A‘—MƒŠƒgƒ‰ƒC –ñ0.7•b‚‘¬‰»
+  - **Polling interval reduction**: `RESPONSE_POLL_INITIAL`/`ACTIVE` 0.15â†’0.1ç§’ã€`RESPONSE_POLL_STABLE` 0.05â†’0.03ç§’
+  - **Stability check optimization**: `RESPONSE_STABLE_COUNT` 3â†’2å›ã€`STALE_SELECTOR_STABLE_COUNT` 4â†’3å›
+  - **Send verification speedup**: `SEND_VERIFY_MAX_WAIT` 1.5ç§’â†’0.8ç§’ã«çŸ­ç¸®ï¼ˆãƒªãƒˆãƒ©ã‚¤ã¾ã§ã®å¾…æ©Ÿæ™‚é–“ã‚’å‰Šæ¸›ï¼‰
+  - **Expected improvement**: ç¿»è¨³å®Œäº†æ¤œå‡º ç´„0.1?0.15ç§’é«˜é€ŸåŒ–ã€é€ä¿¡ãƒªãƒˆãƒ©ã‚¤ ç´„0.7ç§’é«˜é€ŸåŒ–
 - **App Shutdown Optimization (2024-12)**:
-  - **Shutdown timing logs**: cleanup()ŠÖ”‚ÉŠeƒXƒeƒbƒv‚Ìƒ^ƒCƒ~ƒ“ƒOƒƒO‚ğ’Ç‰Á
-  - **taskkill timeout**: ƒvƒƒZƒXƒcƒŠ[I—¹ƒ^ƒCƒ€ƒAƒEƒg 2•b¨1•b‚É’Zk
+  - **Shutdown timing logs**: cleanup()é–¢æ•°ã«å„ã‚¹ãƒ†ãƒƒãƒ—ã®ã‚¿ã‚¤ãƒŸãƒ³ã‚°ãƒ­ã‚°ã‚’è¿½åŠ 
+  - **taskkill timeout**: ãƒ—ãƒ­ã‚»ã‚¹ãƒ„ãƒªãƒ¼çµ‚äº†ã‚¿ã‚¤ãƒ ã‚¢ã‚¦ãƒˆ 2ç§’â†’1ç§’ã«çŸ­ç¸®
   - **Timing log output**: `[TIMING] cleanup total`, `[TIMING] Copilot disconnected`, `[TIMING] force_disconnect total`
-  - **Expected improvement**: ƒAƒvƒŠI—¹ˆ— –ñ1•b‚‘¬‰»iÅˆ«ƒP[ƒXj
+  - **Expected improvement**: ã‚¢ãƒ—ãƒªçµ‚äº†å‡¦ç† ç´„1ç§’é«˜é€ŸåŒ–ï¼ˆæœ€æ‚ªã‚±ãƒ¼ã‚¹ï¼‰
 - **Translation Speed Optimization (2024-12)**:
-  - **Send retry improvement**: `SEND_VERIFY_MAX_WAIT` 2.5•b¨1.5•b‚É’ZkiƒŠƒgƒ‰ƒC‚Ü‚Å‚Ì‘Ò‹@ŠÔ‚ğíŒ¸j
-  - **New chat optimization**: `_wait_for_responses_cleared` ƒ^ƒCƒ€ƒAƒEƒg 1.0•b¨0.5•bAƒ|[ƒŠƒ“ƒOŠÔŠu 0.15•b¨0.05•b
-  - **Early termination check**: stop_buttonÁ¸’¼Œã‚ÉƒeƒLƒXƒgˆÀ’è«‚ğ‘¦À‚Éƒ`ƒFƒbƒNistable_count=1‚©‚çŠJn‰Â”\j
-  - **Edge startup optimization**: `--disable-extensions`, `--disable-features=TranslateUI`, `--disable-gpu-sandbox` ‚ğ’Ç‰Á
-  - **Expected improvement**: ‘—Mˆ— –ñ1•b‚‘¬‰»AV‹Kƒ`ƒƒƒbƒgŠJn –ñ0.5•b‚‘¬‰»Aƒ|[ƒŠƒ“ƒOŠ®—¹ –ñ0.05?0.1•b‚‘¬‰»
+  - **Send retry improvement**: `SEND_VERIFY_MAX_WAIT` 2.5ç§’â†’1.5ç§’ã«çŸ­ç¸®ï¼ˆãƒªãƒˆãƒ©ã‚¤ã¾ã§ã®å¾…æ©Ÿæ™‚é–“ã‚’å‰Šæ¸›ï¼‰
+  - **New chat optimization**: `_wait_for_responses_cleared` ã‚¿ã‚¤ãƒ ã‚¢ã‚¦ãƒˆ 1.0ç§’â†’0.5ç§’ã€ãƒãƒ¼ãƒªãƒ³ã‚°é–“éš” 0.15ç§’â†’0.05ç§’
+  - **Early termination check**: stop_buttonæ¶ˆå¤±ç›´å¾Œã«ãƒ†ã‚­ã‚¹ãƒˆå®‰å®šæ€§ã‚’å³åº§ã«ãƒã‚§ãƒƒã‚¯ï¼ˆstable_count=1ã‹ã‚‰é–‹å§‹å¯èƒ½ï¼‰
+  - **Edge startup optimization**: `--disable-extensions`, `--disable-features=TranslateUI`, `--disable-gpu-sandbox` ã‚’è¿½åŠ 
+  - **Expected improvement**: é€ä¿¡å‡¦ç† ç´„1ç§’é«˜é€ŸåŒ–ã€æ–°è¦ãƒãƒ£ãƒƒãƒˆé–‹å§‹ ç´„0.5ç§’é«˜é€ŸåŒ–ã€ãƒãƒ¼ãƒªãƒ³ã‚°å®Œäº† ç´„0.05?0.1ç§’é«˜é€ŸåŒ–
 - **New Chat Button Optimization (2024-12)**:
-  - **Async click parallelization**: `start_new_chat(click_only=True)`‚Å”ñ“¯ŠúƒNƒŠƒbƒN‚ğ”­‰Î‚µAƒvƒƒ“ƒvƒg“ü—Í‚Æ•À—ñ‰»
-  - **setTimeout dispatch**: `el => setTimeout(() => el.click(), 0)`‚Å‘¦À‚ÉreturnAƒNƒŠƒbƒN‚ÍƒoƒbƒNƒOƒ‰ƒEƒ“ƒh‚ÅÀs
-  - **Safe parallelization**: “ü—Í—“‚ÍV‹Kƒ`ƒƒƒbƒgƒ{ƒ^ƒ“‚ÌƒNƒŠƒbƒN‚ÅƒŠƒZƒbƒg‚³‚ê‚È‚¢‚½‚ßˆÀ‘S‚É•À—ñ‰»‰Â”\
-  - **Affected methods**: `translate_single`, `translate_sync`‚Ì—¼•û‚Å`click_only=True`‚ğg—p
-  - **Expected improvement**: `start_new_chat` 0.55•b¨–ñ0.02•bi–ñ0.5•b’Zkj
+  - **Async click parallelization**: `start_new_chat(click_only=True)`ã§éåŒæœŸã‚¯ãƒªãƒƒã‚¯ã‚’ç™ºç«ã—ã€ãƒ—ãƒ­ãƒ³ãƒ—ãƒˆå…¥åŠ›ã¨ä¸¦åˆ—åŒ–
+  - **setTimeout dispatch**: `el => setTimeout(() => el.click(), 0)`ã§å³åº§ã«returnã€ã‚¯ãƒªãƒƒã‚¯ã¯ãƒãƒƒã‚¯ã‚°ãƒ©ã‚¦ãƒ³ãƒ‰ã§å®Ÿè¡Œ
+  - **Safe parallelization**: å…¥åŠ›æ¬„ã¯æ–°è¦ãƒãƒ£ãƒƒãƒˆãƒœã‚¿ãƒ³ã®ã‚¯ãƒªãƒƒã‚¯ã§ãƒªã‚»ãƒƒãƒˆã•ã‚Œãªã„ãŸã‚å®‰å…¨ã«ä¸¦åˆ—åŒ–å¯èƒ½
+  - **Affected methods**: `translate_single`, `translate_sync`ã®ä¸¡æ–¹ã§`click_only=True`ã‚’ä½¿ç”¨
+  - **Expected improvement**: `start_new_chat` 0.55ç§’â†’ç´„0.02ç§’ï¼ˆç´„0.5ç§’çŸ­ç¸®ï¼‰
 - **Prompt Sending Optimization (2024-12)**:
-  - **SEND_WARMUP sleep reduction**: 0.05•b¨0.02•b‚É’Zki–ñ0.03•b’Zkj
-  - **Playwright fill() maintained**: React contenteditable—v‘f‚Æ‚ÌŒİŠ·«‚Ì‚½‚ßfill()ƒƒ\ƒbƒh‚ğˆÛiJS’¼Úİ’è‚Í‰üs‚ªÁ‚¦‚é–â‘è‚ ‚èj
-  - **Elapsed time measurement fix**: `start_time`‚ğ`await asyncio.sleep(0)`‚ÌŒã‚ÉˆÚ“®iƒ†[ƒU[‚ªƒ[ƒfƒBƒ“ƒOUI‚ğŒ©‚½“_‚©‚çŒv‘ªŠJnj
-  - **Detailed timing logs**: `[TIMING]`ƒvƒŒƒtƒBƒbƒNƒX‚Å–|–óˆ—‚ÌŠeƒXƒeƒbƒv‚ÌŠÔ‚ğo—ÍiƒfƒoƒbƒO—pj
-  - **_send_message sleep optimization**: Button scrollŒã‚Í0.20•b‚ğˆÛiEnterƒL[‘—M‚É•K{AÚ×‚ÍuSend Message TimingvƒZƒNƒVƒ‡ƒ“QÆjA‚»‚Ì‘¼‚Ìƒ|[ƒŠƒ“ƒO—psleep‚Í0.02•b‚É’Zk
+  - **SEND_WARMUP sleep reduction**: 0.05ç§’â†’0.02ç§’ã«çŸ­ç¸®ï¼ˆç´„0.03ç§’çŸ­ç¸®ï¼‰
+  - **Playwright fill() maintained**: React contenteditableè¦ç´ ã¨ã®äº’æ›æ€§ã®ãŸã‚fill()ãƒ¡ã‚½ãƒƒãƒ‰ã‚’ç¶­æŒï¼ˆJSç›´æ¥è¨­å®šã¯æ”¹è¡ŒãŒæ¶ˆãˆã‚‹å•é¡Œã‚ã‚Šï¼‰
+  - **Elapsed time measurement fix**: `start_time`ã‚’`await asyncio.sleep(0)`ã®å¾Œã«ç§»å‹•ï¼ˆãƒ¦ãƒ¼ã‚¶ãƒ¼ãŒãƒ­ãƒ¼ãƒ‡ã‚£ãƒ³ã‚°UIã‚’è¦‹ãŸæ™‚ç‚¹ã‹ã‚‰è¨ˆæ¸¬é–‹å§‹ï¼‰
+  - **Detailed timing logs**: `[TIMING]`ãƒ—ãƒ¬ãƒ•ã‚£ãƒƒã‚¯ã‚¹ã§ç¿»è¨³å‡¦ç†ã®å„ã‚¹ãƒ†ãƒƒãƒ—ã®æ™‚é–“ã‚’å‡ºåŠ›ï¼ˆãƒ‡ãƒãƒƒã‚°ç”¨ï¼‰
+  - **_send_message sleep optimization**: Button scrollå¾Œã¯0.20ç§’ã‚’ç¶­æŒï¼ˆEnterã‚­ãƒ¼é€ä¿¡ã«å¿…é ˆã€è©³ç´°ã¯ã€ŒSend Message Timingã€ã‚»ã‚¯ã‚·ãƒ§ãƒ³å‚ç…§ï¼‰ã€ãã®ä»–ã®ãƒãƒ¼ãƒªãƒ³ã‚°ç”¨sleepã¯0.02ç§’ã«çŸ­ç¸®
 - **Time Measurement Standardization (2024-12)**:
-  - **time.monotonic() unification**: Œo‰ßŠÔŒv‘ª‚ğ`time.time()`‚©‚ç`time.monotonic()`‚É“ˆê
-  - **Rationale**: `time.time()`‚ÍNTP“¯Šú‚âƒVƒXƒeƒ€•ÏX‚Ì‰e‹¿‚ğó‚¯‚é‚½‚ßAŒo‰ßŠÔŒv‘ª‚É‚Í’P’²‘‰ÁŒv‚ª“KØ
+  - **time.monotonic() unification**: çµŒéæ™‚é–“è¨ˆæ¸¬ã‚’`time.time()`ã‹ã‚‰`time.monotonic()`ã«çµ±ä¸€
+  - **Rationale**: `time.time()`ã¯NTPåŒæœŸã‚„ã‚·ã‚¹ãƒ†ãƒ æ™‚åˆ»å¤‰æ›´ã®å½±éŸ¿ã‚’å—ã‘ã‚‹ãŸã‚ã€çµŒéæ™‚é–“è¨ˆæ¸¬ã«ã¯å˜èª¿å¢—åŠ æ™‚è¨ˆãŒé©åˆ‡
   - **Affected files**:
-    - `app.py`: UIŒo‰ßŠÔ•\¦i11‰ÓŠj
-    - `translation_service.py`: `duration_seconds`ŒvZi17‰ÓŠj
-    - `copilot_handler.py`: ƒ^ƒCƒ€ƒAƒEƒg‘Ò‹@AGPTƒ‚[ƒhİ’èi86‰ÓŠj
-    - `hotkey_manager.py`: ƒNƒŠƒbƒvƒ{[ƒh‘Ò‹@i2‰ÓŠj
-  - **Exclusion**: `updater.py`‚ÌƒLƒƒƒbƒVƒ…ƒ^ƒCƒ€ƒXƒ^ƒ“ƒv‚Íâ‘Î‚ª•K—v‚È‚½‚ß`time.time()`‚ğˆÛ
+    - `app.py`: UIçµŒéæ™‚é–“è¡¨ç¤ºï¼ˆ11ç®‡æ‰€ï¼‰
+    - `translation_service.py`: `duration_seconds`è¨ˆç®—ï¼ˆ17ç®‡æ‰€ï¼‰
+    - `copilot_handler.py`: ã‚¿ã‚¤ãƒ ã‚¢ã‚¦ãƒˆå¾…æ©Ÿã€GPTãƒ¢ãƒ¼ãƒ‰è¨­å®šï¼ˆ86ç®‡æ‰€ï¼‰
+    - `hotkey_manager.py`: ã‚¯ãƒªãƒƒãƒ—ãƒœãƒ¼ãƒ‰å¾…æ©Ÿï¼ˆ2ç®‡æ‰€ï¼‰
+  - **Exclusion**: `updater.py`ã®ã‚­ãƒ£ãƒƒã‚·ãƒ¥ã‚¿ã‚¤ãƒ ã‚¹ã‚¿ãƒ³ãƒ—ã¯çµ¶å¯¾æ™‚åˆ»ãŒå¿…è¦ãªãŸã‚`time.time()`ã‚’ç¶­æŒ
   - **Time function guidelines**:
-    - `time.monotonic()`: Œo‰ßŠÔŒv‘ªi„§j
-    - `time.perf_counter()`: ’ZŠÔ‚Ì‚¸“xŒv‘ªiƒƒO—pj
-    - `time.time()`: â‘Îiƒ^ƒCƒ€ƒXƒ^ƒ“ƒvj
+    - `time.monotonic()`: çµŒéæ™‚é–“è¨ˆæ¸¬ï¼ˆæ¨å¥¨ï¼‰
+    - `time.perf_counter()`: çŸ­æ™‚é–“ã®é«˜ç²¾åº¦è¨ˆæ¸¬ï¼ˆãƒ­ã‚°ç”¨ï¼‰
+    - `time.time()`: çµ¶å¯¾æ™‚åˆ»ï¼ˆã‚¿ã‚¤ãƒ ã‚¹ã‚¿ãƒ³ãƒ—ï¼‰
 
 ## Git Workflow
 

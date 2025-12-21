@@ -333,6 +333,7 @@ def create_text_result_panel(
                 state.text_result.detected_language,
                 translating=False,
                 elapsed_time=elapsed_time,
+                output_language=state.text_result.output_language,
             )
 
         # Results section - language-specific UI
@@ -382,6 +383,7 @@ def _render_translation_status(
     detected_language: Optional[str],
     translating: bool = False,
     elapsed_time: Optional[float] = None,
+    output_language: Optional[str] = None,
 ):
     """
     Render translation status section.
@@ -391,7 +393,10 @@ def _render_translation_status(
     - After translation: "✓ 英訳しました" or "✓ 和訳しました" with elapsed time
     """
     # Determine translation direction
-    is_to_english = detected_language == "日本語"
+    if output_language:
+        is_to_english = output_language == "en"
+    else:
+        is_to_english = detected_language == "日本語"
 
     with ui.element('div').classes('translation-status-section'):
         with ui.row().classes('items-center gap-2'):

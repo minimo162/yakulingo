@@ -190,7 +190,6 @@ class TestAppSettings:
                 bilingual_output=True,
                 export_glossary=True,
                 use_bundled_glossary=False,
-                embed_glossary_in_prompt=False,
                 browser_display_mode="minimized",
             )
 
@@ -206,7 +205,6 @@ class TestAppSettings:
             assert loaded.bilingual_output == original.bilingual_output
             assert loaded.export_glossary == original.export_glossary
             assert loaded.use_bundled_glossary == original.use_bundled_glossary
-            assert loaded.embed_glossary_in_prompt == original.embed_glossary_in_prompt
             assert loaded.browser_display_mode == original.browser_display_mode
 
             # Non-USER_SETTINGS should come from template
@@ -580,7 +578,6 @@ class TestSettingsSeparation:
             "bilingual_output",
             "export_glossary",
             "use_bundled_glossary",
-            "embed_glossary_in_prompt",
             "browser_display_mode",
             "last_tab",
         }

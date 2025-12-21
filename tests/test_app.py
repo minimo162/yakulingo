@@ -562,10 +562,10 @@ class TestYakuLingoAppFileTranslation:
         # Should return None when no reference files
         assert reference_files is None
 
-    def test_get_effective_reference_files_excludes_glossary_when_embedded(
+    def test_get_effective_reference_files_keeps_reference_files(
         self, app_with_service, tmp_path
     ):
-        """_get_effective_reference_files should exclude glossary when exclude_glossary=True"""
+        """_get_effective_reference_files should keep user reference files with glossary"""
         app = app_with_service
         app.settings.use_bundled_glossary = True
 
@@ -574,10 +574,16 @@ class TestYakuLingoAppFileTranslation:
         glossary_file.write_text("term,translation\n")
         app._glossary_path = glossary_file
 
-        reference_files = app._get_effective_reference_files(exclude_glossary=True)
+        # Add a user-provided reference file
+        style_guide = tmp_path / "style.md"
+        style_guide.write_text("# style\n")
+        app.state.reference_files = [style_guide]
 
-        # Should return None when glossary is excluded and no other files
-        assert reference_files is None
+        reference_files = app._get_effective_reference_files()
+
+        assert reference_files is not None
+        assert reference_files[0] == glossary_file
+        assert style_guide in reference_files
 
 
 # =============================================================================

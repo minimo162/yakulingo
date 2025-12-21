@@ -40,7 +40,9 @@ def sample_entry():
                 text='やあ、世界！',
                 explanation='Casual translation'
             ),
-        ]
+        ],
+        output_language='jp',
+        detected_language='English',
     )
     return HistoryEntry(
         source_text='Hello, world!',
@@ -120,6 +122,7 @@ class TestHistoryDB:
         entry = temp_db.get_by_id(entry_id)
         assert entry is not None
         assert entry.source_text == sample_entry.source_text
+        assert entry.result.detected_language == 'English'
 
     def test_get_by_id_not_found(self, temp_db):
         """Test retrieving non-existent entry"""

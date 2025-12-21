@@ -1242,7 +1242,88 @@ class TranslationService:
             if style is None:
                 style = DEFAULT_TEXT_STYLE
 
-            # Get cached text translation template (fast path)
+            if output_language == "en":
+                template = self.prompt_builder.get_text_compare_template()
+                if not template:
+                    return TextTranslationResult(
+                        source_text=text,
+                        source_char_count=len(text),
+                        output_language=output_language,
+                        detected_language=detected_language,
+                        error_message="Missing text comparison template",
+                    )
+
+                if reference_files:
+                    reference_section = REFERENCE_INSTRUCTION
+                    files_to_attach = reference_files
+                else:
+                    reference_section = ""
+                    files_to_attach = None
+
+                self.prompt_builder.reload_translation_rules()
+                translation_rules = self.prompt_builder.get_translation_rules()
+
+                prompt = template.replace("{translation_rules}", translation_rules)
+                prompt = prompt.replace("{reference_section}", reference_section)
+                prompt = prompt.replace("{input_text}", text)
+
+                logger.debug(
+                    "Sending text to Copilot (compare fallback, streaming=%s, refs=%d)",
+                    bool(on_chunk),
+                    len(files_to_attach) if files_to_attach else 0,
+                )
+                raw_result = self._translate_single_with_cancel(text, prompt, files_to_attach, on_chunk)
+                parsed_options = self._parse_style_comparison_result(raw_result)
+
+                if parsed_options:
+                    options_by_style = {}
+                    for option in parsed_options:
+                        if option.style and option.style not in options_by_style:
+                            options_by_style[option.style] = option
+                    selected = options_by_style.get(style) or parsed_options[0]
+                    return TextTranslationResult(
+                        source_text=text,
+                        source_char_count=len(text),
+                        options=[selected],
+                        output_language=output_language,
+                        detected_language=detected_language,
+                    )
+
+                parsed_single = self._parse_single_translation_result(raw_result)
+                if parsed_single:
+                    option = parsed_single[0]
+                    option.style = style
+                    return TextTranslationResult(
+                        source_text=text,
+                        source_char_count=len(text),
+                        options=[option],
+                        output_language=output_language,
+                        detected_language=detected_language,
+                    )
+
+                if raw_result.strip():
+                    return TextTranslationResult(
+                        source_text=text,
+                        source_char_count=len(text),
+                        options=[TranslationOption(
+                            text=raw_result.strip(),
+                            explanation="翻訳結果です",
+                            style=style,
+                        )],
+                        output_language=output_language,
+                        detected_language=detected_language,
+                    )
+
+                logger.warning("Empty response received from Copilot")
+                return TextTranslationResult(
+                    source_text=text,
+                    source_char_count=len(text),
+                    output_language=output_language,
+                    detected_language=detected_language,
+                    error_message="Copilotから応答がありませんでした。Edgeブラウザを確認してください。",
+                )
+
+            # Get cached text translation template (JP output)
             template = self.prompt_builder.get_text_template(output_language, style)
 
             if template is None:
@@ -1425,40 +1506,40 @@ class TranslationService:
                     raw_result = self._translate_single_with_cancel(text, prompt, files_to_attach, on_chunk)
                     parsed_options = self._parse_style_comparison_result(raw_result)
 
-                    base_options: dict[str, TranslationOption] = {}
-                    for option in parsed_options:
-                        if option.style and option.style not in base_options:
-                            base_options[option.style] = option
-
-                    missing_styles = [s for s in style_list if s not in base_options]
-                    if missing_styles:
-                        logger.warning("Style comparison missing styles: %s", ", ".join(missing_styles))
-                        for style in missing_styles:
-                            result = self.translate_text_with_options(
-                                text,
-                                reference_files,
-                                style,
-                                detected_language,
-                                on_chunk,
+                    if not parsed_options:
+                        parsed_single = self._parse_single_translation_result(raw_result)
+                        if parsed_single:
+                            option = parsed_single[0]
+                            option.style = DEFAULT_TEXT_STYLE
+                            return TextTranslationResult(
+                                source_text=text,
+                                source_char_count=len(text),
+                                options=[option],
+                                output_language=output_language,
+                                detected_language=detected_language,
                             )
-                            if result.options:
-                                option = result.options[0]
-                                option.style = style
-                                base_options.setdefault(style, option)
-                            else:
-                                combined_error = result.error_message or combined_error
+                        combined_error = combined_error or "Failed to parse style comparison result"
+                    else:
+                        base_options: dict[str, TranslationOption] = {}
+                        for option in parsed_options:
+                            if option.style and option.style not in base_options:
+                                base_options[option.style] = option
 
-                    ordered_options = [base_options[s] for s in style_list if s in base_options]
-                    if ordered_options:
-                        return TextTranslationResult(
-                            source_text=text,
-                            source_char_count=len(text),
-                            options=ordered_options,
-                            output_language=output_language,
-                            detected_language=detected_language,
-                        )
+                        missing_styles = [s for s in style_list if s not in base_options]
+                        if missing_styles:
+                            logger.warning("Style comparison missing styles: %s", ", ".join(missing_styles))
 
-                    combined_error = combined_error or "Failed to parse style comparison result"
+                        ordered_options = [base_options[s] for s in style_list if s in base_options]
+                        if ordered_options:
+                            return TextTranslationResult(
+                                source_text=text,
+                                source_char_count=len(text),
+                                options=ordered_options,
+                                output_language=output_language,
+                                detected_language=detected_language,
+                            )
+
+                        combined_error = combined_error or "Failed to parse style comparison result"
                 except TranslationCancelledError:
                     logger.info("Style comparison translation cancelled")
                     return TextTranslationResult(

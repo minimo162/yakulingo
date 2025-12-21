@@ -16,10 +16,10 @@ This document captures a manual review of the translation and writing prompts to
 | `text_reply_email.txt` | Draft a reply email matching intent and tone guidelines. | Standard composition prompt without meta-instructions. |
 | `text_review_en.txt` | Review English text for correctness and business fit. | Review rubric only; no content that would trigger injection heuristics. |
 | `text_summarize.txt` | Summarize key points in Japanese with ordered highlights. | Summarization-only; does not include harmful control phrases. |
-| `text_translate_to_en_concise.txt` | Concise English translation of Japanese text. | Translation focus; contains no policy-override wording. |
-| `text_translate_to_en_minimal.txt` | Minimal English translation with Japanese explanation. | Pure translation and explanation; no meta-requests. |
-| `text_translate_to_en_standard.txt` | Standard English translation with explanatory notes. | Task-specific; lacks injection-style or jailbreak language. |
+| `text_translate_to_en_compare.txt` | English translation with standard/concise/minimal variants and explanations. | Structured translation output; no policy-override phrasing. |
+| `text_translate_to_en_clipboard.txt` | Clipboard translation to English (concise) with explanations. | Translation-only instructions; no injection language. |
 | `text_translate_to_jp.txt` | Natural Japanese translation with brief explanation. | Straightforward translation instructions; no injection content. |
+| `text_translate_to_jp_clipboard.txt` | Clipboard translation to Japanese with explanations. | Task-scoped translation guidance; no policy-override directives. |
 
 ## Overall conclusion
 All reviewed prompts are narrowly scoped to translation, summarization, or editing tasks. They do not contain phrases such as "ignore previous instructions" or requests to bypass safety systems, so they should not be rejected as prompt-injection attempts by Copilot. If Copilot flags any of these prompts, the likely cause would be false positives rather than embedded injection content.

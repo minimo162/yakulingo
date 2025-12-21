@@ -1000,8 +1000,8 @@ class TestTranslateTextWithOptions:
         prompts_dir.mkdir()
 
         # Create text translation templates
-        to_en = prompts_dir / "text_translate_to_en.txt"
-        to_en.write_text("Translate to EN: {input_text}")
+        to_en_compare = prompts_dir / "text_translate_to_en_compare.txt"
+        to_en_compare.write_text("[standard]\nTranslation:\nExplanation:\n{input_text}")
 
         to_jp = prompts_dir / "text_translate_to_jp.txt"
         to_jp.write_text("Translate to JP: {input_text}")
@@ -1066,15 +1066,16 @@ class TestTranslateTextWithOptions:
         assert "API Error" in result.error_message
 
     def test_fallback_when_no_prompt_file(self, mock_copilot):
-        """Falls back to basic translation when prompt file missing"""
+        """Falls back to basic translation when JP prompt file missing"""
         mock_copilot.translate_single.return_value = "Translated text"
 
         service = TranslationService(mock_copilot, AppSettings())
+        service.prompt_builder.get_text_template = Mock(return_value=None)
 
-        result = service.translate_text_with_options("テスト")
+        result = service.translate_text_with_options("Hello")
 
         # Should still return a result
-        assert result.source_text == "テスト"
+        assert result.source_text == "Hello"
         # May have options or error depending on parsing
 
     def test_streaming_callback_passed_to_translation(self, mock_copilot, service):
@@ -1098,16 +1099,13 @@ class TestTranslateTextWithOptions:
         """Fallback path also forwards streaming callback to translation"""
         # Force fallback by returning None from get_text_template
         service.prompt_builder.get_text_template = Mock(return_value=None)
-        mock_copilot.translate_single.side_effect = [
-            "日本語",  # detect_language result
-            "訳文: Hello\n解説: Greeting",  # translation result
-        ]
+        mock_copilot.translate_single.return_value = "訳文: こんにちは\n解説: Greeting"
 
         chunks: list[str] = []
         def on_chunk(text: str):
             chunks.append(text)
 
-        service.translate_text_with_options("こんにちは", on_chunk=on_chunk)
+        service.translate_text_with_options("Hello", on_chunk=on_chunk)
 
         assert mock_copilot.translate_single.call_args_list
         assert mock_copilot.translate_single.call_args_list[-1].args[3] is on_chunk

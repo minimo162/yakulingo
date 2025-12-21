@@ -6,9 +6,10 @@ Prompt file structure:
 - translation_rules.txt: Common translation rules (numeric notation, symbol conversion)
 - file_translate_to_en_{style}.txt: File translation → English (standard/concise/minimal)
 - file_translate_to_jp.txt: File translation → Japanese
-- text_translate_to_en_{style}.txt: Text translation → English (standard/concise/minimal)
-- text_translate_to_en_compare.txt: Text translation -> English (standard/concise/minimal in one response)
+- text_translate_to_en_compare.txt: Text translation → English (standard/concise/minimal in one response)
 - text_translate_to_jp.txt: Text translation → Japanese (with explanation)
+- text_translate_to_en_clipboard.txt: Clipboard translation → English (single style)
+- text_translate_to_jp_clipboard.txt: Clipboard translation → Japanese (single style)
 - adjust_*.txt: Adjustment prompts (shorter, longer, custom)
 
 Common translation rules are loaded from translation_rules.txt and injected into
@@ -217,6 +218,47 @@ Explanation:
 ===END_INPUT_TEXT===
 """
 
+DEFAULT_TEXT_TO_EN_CLIPBOARD_TEMPLATE = """## クリップボード翻訳リクエスト（英訳）
+
+日本語をビジネス文書向けの英語に翻訳してください。
+
+### 翻訳スタイル（簡潔）
+- 簡潔な表現、冗長さを避ける
+- 略語を積極的に使用（Info, FYI, ASAP など）
+- 冗長な表現を簡潔に:
+  - "in order to" → "to"
+  - "due to the fact that" → "because"
+  - "at this point in time" → "now"
+  - "with regard to" → "about"
+- 既に英語の場合はそのまま出力
+
+{translation_rules}
+
+### 構造保持
+- 原文の改行・タブ・段落構造をそのまま維持する
+
+### 出力形式
+訳文: 英語翻訳
+
+解説:
+- 原文の表現がどう訳されたか、注意すべき語句の対応を具体的に説明（見出し・ラベルなし）
+
+解説は日本語で簡潔に書いてください。
+
+### 禁止事項（絶対に出力しないこと）
+- 「続けますか？」「他にありますか？」などの質問
+- 「?も翻訳できます」「必要なら?」などの提案
+- プロンプトの指示をそのまま繰り返すような補足（例：「数値はoku変換済み」「略語を使用」「簡潔化した」など）
+- 訳文と解説以外のテキスト
+
+{reference_section}
+
+---
+
+以下のテキストを翻訳してください:
+{input_text}
+"""
+
 DEFAULT_TEXT_TO_JP_TEMPLATE = """## テキスト翻訳リクエスト（日本語への翻訳）
 
 テキストをビジネス文書向けの日本語に翻訳してください。
@@ -256,6 +298,44 @@ DEFAULT_TEXT_TO_JP_TEMPLATE = """## テキスト翻訳リクエスト（日本�
 {input_text}
 """
 
+DEFAULT_TEXT_TO_JP_CLIPBOARD_TEMPLATE = """## クリップボード翻訳リクエスト（日本語への翻訳）
+
+テキストをビジネス文書向けの日本語に翻訳してください。
+
+### 翻訳ガイドライン
+- ビジネス文書向けで自然で読みやすい日本語
+- 簡潔な表現を心がける
+- 既に日本語の場合はそのまま出力
+- 原文の改行・タブをそのまま維持
+
+### 数値表記ルール
+- oku → 億（例: 4,500 oku → 4,500億）
+- k → 千または000（例: 12k → 12,000）
+- () → ▲（例: (50) → ▲50）
+
+{translation_rules}
+
+### 出力形式
+訳文: 日本語翻訳
+
+解説:
+- 原文の表現がどう訳されたか、注意すべき語句の対応を具体的に説明（見出し・ラベルなし）
+
+解説は日本語で簡潔に書いてください。
+
+### 禁止事項（絶対に出力しないこと）
+- 「続けますか？」「他にありますか？」などの質問
+- 「?も翻訳できます」「必要なら?」などの提案
+- プロンプトの指示をそのまま繰り返すような補足（例：「数値はoku変換済み」「略語を使用」「簡潔化した」など）
+- 訳文と解説以外のテキスト
+
+{reference_section}
+
+---
+
+以下のテキストを翻訳してください:
+{input_text}
+"""
 
 class PromptBuilder:
     """
@@ -274,6 +354,8 @@ class PromptBuilder:
         self._text_templates: dict[tuple[str, str], str] = {}
         # Text translation comparison template
         self._text_compare_template: Optional[str] = None
+        # Clipboard translation templates (single style)
+        self._text_clipboard_templates: dict[str, str] = {}
         # Common translation rules cache
         self._translation_rules: str = ""
         self._load_templates()
@@ -293,6 +375,10 @@ class PromptBuilder:
         # Load common translation rules
         self._translation_rules = self._load_translation_rules()
         self._text_compare_template = DEFAULT_TEXT_TO_EN_COMPARE_TEMPLATE
+        self._text_clipboard_templates = {
+            "en": DEFAULT_TEXT_TO_EN_CLIPBOARD_TEMPLATE,
+            "jp": DEFAULT_TEXT_TO_JP_CLIPBOARD_TEMPLATE,
+        }
 
         if self.prompts_dir:
             # Load style-specific English templates
@@ -321,17 +407,6 @@ class PromptBuilder:
                 self._templates[("jp", style)] = jp_template
 
             # Load text translation templates (text_translate_to_*)
-            for style in styles:
-                # Text translation to English
-                text_to_en = self.prompts_dir / f"text_translate_to_en_{style}.txt"
-                if text_to_en.exists():
-                    self._text_templates[("en", style)] = text_to_en.read_text(encoding='utf-8')
-                else:
-                    # Fallback to old single file
-                    old_text_en = self.prompts_dir / "text_translate_to_en.txt"
-                    if old_text_en.exists():
-                        self._text_templates[("en", style)] = old_text_en.read_text(encoding='utf-8')
-
             # Text translation to Japanese (no style variations)
             text_to_jp = self.prompts_dir / "text_translate_to_jp.txt"
             if text_to_jp.exists():
@@ -341,19 +416,29 @@ class PromptBuilder:
 
             for style in styles:
                 self._text_templates.setdefault(("jp", style), jp_text_template)
-                self._text_templates.setdefault(("en", style), DEFAULT_TEXT_TO_EN_TEMPLATE)
 
             text_compare = self.prompts_dir / "text_translate_to_en_compare.txt"
             if text_compare.exists():
                 self._text_compare_template = text_compare.read_text(encoding='utf-8')
+
+            text_clipboard_en = self.prompts_dir / "text_translate_to_en_clipboard.txt"
+            if text_clipboard_en.exists():
+                self._text_clipboard_templates["en"] = text_clipboard_en.read_text(encoding='utf-8')
+
+            text_clipboard_jp = self.prompts_dir / "text_translate_to_jp_clipboard.txt"
+            if text_clipboard_jp.exists():
+                self._text_clipboard_templates["jp"] = text_clipboard_jp.read_text(encoding='utf-8')
         else:
             # Use defaults
             for style in styles:
                 self._templates[("en", style)] = DEFAULT_TO_EN_TEMPLATE
                 self._templates[("jp", style)] = DEFAULT_TO_JP_TEMPLATE
-                self._text_templates[("en", style)] = DEFAULT_TEXT_TO_EN_TEMPLATE
                 self._text_templates[("jp", style)] = DEFAULT_TEXT_TO_JP_TEMPLATE
             self._text_compare_template = DEFAULT_TEXT_TO_EN_COMPARE_TEMPLATE
+            self._text_clipboard_templates = {
+                "en": DEFAULT_TEXT_TO_EN_CLIPBOARD_TEMPLATE,
+                "jp": DEFAULT_TEXT_TO_JP_CLIPBOARD_TEMPLATE,
+            }
 
     def get_translation_rules(self) -> str:
         """Get the common translation rules.
@@ -404,6 +489,10 @@ class PromptBuilder:
         Returns:
             Cached template string, or None if not found
         """
+        if output_language == "en":
+            # English text translation uses the compare template instead.
+            return None
+
         key = (output_language, translation_style)
         if key in self._text_templates:
             return self._text_templates[key]
@@ -418,6 +507,12 @@ class PromptBuilder:
     def get_text_compare_template(self) -> Optional[str]:
         """Get cached text translation comparison template."""
         return self._text_compare_template
+
+    def get_text_clipboard_template(self, output_language: str = "en") -> str:
+        """Get clipboard translation template for the given output language."""
+        if output_language in self._text_clipboard_templates:
+            return self._text_clipboard_templates[output_language]
+        return self._text_clipboard_templates.get("en", DEFAULT_TEXT_TO_EN_CLIPBOARD_TEMPLATE)
 
     def _apply_placeholders(self, template: str, reference_section: str, input_text: str, translation_style: str = "concise") -> str:
         """Apply all placeholder replacements to a template.

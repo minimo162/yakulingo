@@ -189,15 +189,16 @@ YakuLingo/
 │   ├── conftest.py
 │   └── test_*.py
 │
-├── prompts/                        # 翻訳プロンプト（19ファイル）
+├── prompts/                        # 翻訳プロンプト（18ファイル）
 │   ├── translation_rules.txt       # 共通翻訳ルール
 │   ├── detect_language.txt         # 言語検出用（現在未使用、ローカル検出を優先）
 │   ├── copilot_injection_review.md # プロンプトのインジェクションリスクレビュー
 │   ├── file_translate_to_en_{standard|concise|minimal}.txt  # ファイル翻訳（日→英）
 │   ├── file_translate_to_jp.txt    # ファイル翻訳用（英→日）
-│   ├── text_translate_to_en_{standard|concise|minimal}.txt  # テキスト翻訳（日→英）
 │   ├── text_translate_to_en_compare.txt  # テキスト翻訳（日→英、3スタイル比較）
 │   ├── text_translate_to_jp.txt    # テキスト翻訳用（英→日、解説付き/共通ルール挿入）
+│   ├── text_translate_to_en_clipboard.txt # クリップボード翻訳（日→英）
+│   ├── text_translate_to_jp_clipboard.txt # クリップボード翻訳（英→日）
 │   ├── adjust_custom.txt           # カスタムリクエスト
 │   ├── text_alternatives.txt       # フォローアップ: 他の言い方
 │   ├── text_review_en.txt          # フォローアップ: 英文をチェック
@@ -1074,10 +1075,12 @@ class PromptBuilder:
     def build_batch(texts, has_reference_files) -> str:
         """番号付きリストとして入力"""
 
-    def get_text_template(style: str) -> str:
+    def get_text_template(output_language: str, style: str) -> str:
         """
         テンプレートをキャッシュから取得（初回はファイルから読み込み）
-        - prompts/text_translate_to_en_{style}.txt
+        - JP向け: prompts/text_translate_to_jp.txt
+        - EN向け: prompts/text_translate_to_en_compare.txt
+        - クリップボード: prompts/text_translate_to_*_clipboard.txt
         - キャッシュにより毎回のファイルI/Oを回避
         """
 ```

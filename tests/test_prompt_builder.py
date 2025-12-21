@@ -9,8 +9,9 @@ from yakulingo.services.prompt_builder import (
     REFERENCE_INSTRUCTION,
     DEFAULT_TO_EN_TEMPLATE,
     DEFAULT_TO_JP_TEMPLATE,
-    DEFAULT_TEXT_TO_EN_TEMPLATE,
     DEFAULT_TEXT_TO_JP_TEMPLATE,
+    DEFAULT_TEXT_TO_EN_CLIPBOARD_TEMPLATE,
+    DEFAULT_TEXT_TO_JP_CLIPBOARD_TEMPLATE,
 )
 
 
@@ -32,8 +33,10 @@ class TestPromptBuilder:
         """Default text templates are loaded when prompts_dir is None"""
         builder = PromptBuilder(prompts_dir=None)
 
-        assert builder._text_templates[("en", "concise")] == DEFAULT_TEXT_TO_EN_TEMPLATE
         assert builder._text_templates[("jp", "concise")] == DEFAULT_TEXT_TO_JP_TEMPLATE
+        assert builder.get_text_template("en", "concise") is None
+        assert builder.get_text_clipboard_template("en") == DEFAULT_TEXT_TO_EN_CLIPBOARD_TEMPLATE
+        assert builder.get_text_clipboard_template("jp") == DEFAULT_TEXT_TO_JP_CLIPBOARD_TEMPLATE
 
     def test_build_includes_input_text(self):
         """Build includes input text in prompt"""
@@ -108,18 +111,23 @@ class TestPromptBuilder:
         assert "日本語" in prompt
 
     def test_missing_text_prompts_fall_back_to_defaults(self, tmp_path):
-        """Text templates fall back to defaults when files are missing"""
+        """Text/clipboard templates fall back to defaults when files are missing"""
         prompts_dir = tmp_path / "prompts"
         prompts_dir.mkdir()
 
-        custom_en = prompts_dir / "text_translate_to_en_standard.txt"
-        custom_en.write_text("custom en standard", encoding="utf-8")
+        custom_jp = prompts_dir / "text_translate_to_jp.txt"
+        custom_jp.write_text("custom jp", encoding="utf-8")
+
+        custom_clipboard_en = prompts_dir / "text_translate_to_en_clipboard.txt"
+        custom_clipboard_en.write_text("custom clipboard en", encoding="utf-8")
 
         builder = PromptBuilder(prompts_dir=prompts_dir)
 
-        assert builder._text_templates[("en", "standard")] == "custom en standard"
-        assert builder._text_templates[("en", "minimal")] == DEFAULT_TEXT_TO_EN_TEMPLATE
-        assert builder._text_templates[("jp", "concise")] == DEFAULT_TEXT_TO_JP_TEMPLATE
+        assert builder._text_templates[("jp", "standard")] == "custom jp"
+        assert builder._text_templates[("jp", "minimal")] == "custom jp"
+        assert builder.get_text_template("en", "concise") is None
+        assert builder.get_text_clipboard_template("en") == "custom clipboard en"
+        assert builder.get_text_clipboard_template("jp") == DEFAULT_TEXT_TO_JP_CLIPBOARD_TEMPLATE
 
 
 class TestPromptBuilderParseBatchResult:

@@ -848,10 +848,10 @@ class YakuLingoApp:
         numbered_cells = [f"[{i+1}] {cell}" for i, cell in enumerate(cells)]
         combined_text = "\n".join(numbered_cells)
 
-        # Get text translation template
-        template = prompt_builder.get_text_template(output_language, style)
+        # Get clipboard translation template
+        template = prompt_builder.get_text_clipboard_template(output_language)
         if template is None:
-            logger.error("Failed to get text template for language=%s, style=%s", output_language, style)
+            logger.error("Failed to get clipboard template for language=%s", output_language)
             return None
 
         # Build reference section

@@ -120,8 +120,10 @@ YakuLingo/
 │   ├── copilot_injection_review.md # Prompt injection risk review
 │   ├── file_translate_to_en_{standard|concise|minimal}.txt  # File translation (JP→EN)
 │   ├── file_translate_to_jp.txt   # File translation (EN→JP)
-│   ├── text_translate_to_en_{standard|concise|minimal}.txt  # Text translation (JP→EN)
+│   ├── text_translate_to_en_compare.txt  # Text translation (JP→EN, 3-style comparison)
+│   ├── text_translate_to_en_clipboard.txt # Clipboard translation (JP→EN)
 │   ├── text_translate_to_jp.txt   # Text translation (EN→JP, with explanation)
+│   ├── text_translate_to_jp_clipboard.txt # Clipboard translation (EN→JP)
 │   ├── adjust_custom.txt          # (Reserved) Custom request template
 │   ├── text_alternatives.txt      # Follow-up: alternative expressions
 │   ├── text_review_en.txt         # Follow-up: review English (英文をチェック)
@@ -1334,8 +1336,10 @@ PYTHON_PIDS=$(pgrep -f "{app_dir}/.venv" 2>/dev/null)
 | `translation_rules.txt` | 共通翻訳ルール（全プロンプトに注入される） |
 | `file_translate_to_en_{style}.txt` | ファイル翻訳（JP→EN、style: standard/concise/minimal） |
 | `file_translate_to_jp.txt` | ファイル翻訳（EN→JP） |
-| `text_translate_to_en_{style}.txt` | テキスト翻訳（JP→EN） |
+| `text_translate_to_en_compare.txt` | テキスト翻訳（JP→EN、3スタイル比較） |
+| `text_translate_to_en_clipboard.txt` | クリップボード翻訳（JP→EN） |
 | `text_translate_to_jp.txt` | テキスト翻訳（EN→JP、解説付き） |
+| `text_translate_to_jp_clipboard.txt` | クリップボード翻訳（EN→JP） |
 | `text_*.txt` | フォローアップ翻訳（alternatives, review, summarize等） |
 
 **プレースホルダー:**

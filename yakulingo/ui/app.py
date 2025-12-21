@@ -392,6 +392,8 @@ class YakuLingoApp:
         # Set by run_app() based on monitor detection
         # Window width is reduced to accommodate side panel mode (500px + 10px gap)
         self._window_size: tuple[int, int] = (1800, 1100)
+        # Native mode flag (pywebview vs browser app window)
+        self._native_mode_enabled: bool | None = None
 
         # Login polling state (prevents duplicate polling)
         self._login_polling_active = False
@@ -416,6 +418,8 @@ class YakuLingoApp:
 
         # Early window positioning flag (prevents duplicate repositioning)
         self._early_position_completed = False
+        # Side panel sync flag (avoid repeated size adjustments)
+        self._side_panel_sync_done = False
 
         # Text input textarea reference for auto-focus
         self._text_input_textarea: Optional[ui.textarea] = None
@@ -1135,10 +1139,13 @@ class YakuLingoApp:
         # Skip if early positioning already completed (prevents duplicate repositioning)
         if sys.platform == 'win32':
             if not self._early_position_completed:
-                try:
-                    await asyncio.to_thread(self._reposition_windows_for_side_panel)
-                except Exception as e:
-                    logger.debug("Window repositioning failed: %s", e)
+                if self._native_mode_enabled is False:
+                    logger.debug("Skipping app window repositioning (browser mode)")
+                else:
+                    try:
+                        await asyncio.to_thread(self._reposition_windows_for_side_panel)
+                    except Exception as e:
+                        logger.debug("Window repositioning failed: %s", e)
             else:
                 logger.debug("Skipping window repositioning (early positioning already completed)")
 
@@ -1157,6 +1164,31 @@ class YakuLingoApp:
                         self._copilot.start_window_sync()
                 except Exception as e:
                     logger.debug("Failed to start window sync: %s", e)
+
+    async def _sync_side_panel_windows(self) -> None:
+        """Ensure side panel windows are aligned after UI is ready."""
+        if self._side_panel_sync_done or sys.platform != 'win32':
+            return
+        if self._native_mode_enabled is False:
+            return
+        settings = self._settings
+        if not settings or settings.browser_display_mode != "side_panel":
+            return
+        copilot = self._copilot
+        if not copilot:
+            return
+        try:
+            if not copilot.is_edge_window_open():
+                return
+        except Exception:
+            return
+        try:
+            synced = await asyncio.to_thread(copilot._position_edge_as_side_panel, None, False)
+        except Exception as e:
+            logger.debug("Side panel sync failed: %s", e)
+            return
+        if synced:
+            self._side_panel_sync_done = True
 
     def _reposition_windows_for_side_panel(self) -> bool:
         """Reposition app window for side_panel mode using consistent position calculation.
@@ -1590,6 +1622,8 @@ class YakuLingoApp:
                     window.on_top = False  # Reset so it doesn't stay always on top
             except (AttributeError, RuntimeError) as e:
                 logger.debug("Failed to bring window to front: %s", e)
+
+        await self._sync_side_panel_windows()
 
         # Show ready notification (need client context for UI operations in async task)
         # Use English to avoid encoding issues on Windows
@@ -4479,6 +4513,7 @@ def run_app(
     _t2_webview = time.perf_counter()
     logger.info("[TIMING] webview.initialize: %.2fs", _t2_webview - _t2)
     logger.info("Native mode enabled: %s", native)
+    yakulingo_app._native_mode_enabled = native
     if native:
         # Pass pre-initialized webview module to avoid second initialization
         window_size, panel_sizes = _detect_display_settings(

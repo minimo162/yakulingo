@@ -982,6 +982,8 @@ class CopilotHandler:
         # This allows the app window to move directly to the correct position
         # without waiting for Edge window to be found
         self._expected_app_position: tuple[int, int, int, int] | None = None
+        self._cached_side_panel_geometry: tuple[int, int, int, int] | None = None
+        self._cached_side_panel_work_area: tuple[int, int, int, int] | None = None
         # Window synchronization for side panel mode
         # When YakuLingo becomes foreground, Edge window is also brought forward
         # When Edge becomes foreground, YakuLingo window is also brought forward
@@ -3071,6 +3073,10 @@ class CopilotHandler:
 
             screen_width = work_area.right - work_area.left
             screen_height = work_area.bottom - work_area.top
+            work_area_key = (work_area.left, work_area.top, screen_width, screen_height)
+            if (self._cached_side_panel_work_area == work_area_key and
+                    self._cached_side_panel_geometry is not None):
+                return self._cached_side_panel_geometry
 
             # Calculate 1:1 ratio: app and browser each get half the available width
             available_width = screen_width - self.SIDE_PANEL_GAP
@@ -3115,6 +3121,8 @@ class CopilotHandler:
 
             # Save expected app position for later use (avoids recalculation and flickering)
             self._expected_app_position = (app_x, app_y, app_width, app_height)
+            self._cached_side_panel_work_area = work_area_key
+            self._cached_side_panel_geometry = (edge_x, edge_y, edge_width, edge_height)
 
             return (edge_x, edge_y, edge_width, edge_height)
 
@@ -3255,8 +3263,14 @@ class CopilotHandler:
             edge_x = new_app_x + app_width + self.SIDE_PANEL_GAP
             edge_y = new_app_y
 
+            POSITION_TOLERANCE = 2
+            SIZE_TOLERANCE = 2
+
             # Check if app needs to be moved (compare with current position)
-            app_needs_move = (app_rect.left != new_app_x or app_rect.top != new_app_y)
+            app_needs_move = (
+                abs(app_rect.left - new_app_x) > POSITION_TOLERANCE or
+                abs(app_rect.top - new_app_y) > POSITION_TOLERANCE
+            )
 
             # SetWindowPos flags
             SWP_NOACTIVATE = 0x0010  # Don't activate window
@@ -3289,10 +3303,10 @@ class CopilotHandler:
             current_edge_width = current_rect.right - current_rect.left
             current_edge_height = current_rect.bottom - current_rect.top
             edge_needs_move = (
-                current_rect.left != edge_x or
-                current_rect.top != edge_y or
-                current_edge_width != edge_width or
-                current_edge_height != app_height
+                abs(current_rect.left - edge_x) > POSITION_TOLERANCE or
+                abs(current_rect.top - edge_y) > POSITION_TOLERANCE or
+                abs(current_edge_width - edge_width) > SIZE_TOLERANCE or
+                abs(current_edge_height - app_height) > SIZE_TOLERANCE
             )
 
             # Early return if neither window needs adjustment and not bringing to front

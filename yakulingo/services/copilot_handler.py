@@ -7255,6 +7255,8 @@ class CopilotHandler:
         EVENT_SYSTEM_FOREGROUND = 0x0003
         # EVENT_SYSTEM_MINIMIZESTART: Sent when a window begins minimizing
         EVENT_SYSTEM_MINIMIZESTART = 0x0016
+        # EVENT_SYSTEM_MINIMIZEEND: Sent when a window finishes minimizing/restoring
+        EVENT_SYSTEM_MINIMIZEEND = 0x0017
         # WINEVENT_OUTOFCONTEXT: Callback runs in our process (no DLL injection)
         WINEVENT_OUTOFCONTEXT = 0x0000
 
@@ -7277,7 +7279,7 @@ class CopilotHandler:
 
         hook_minimize = user32.SetWinEventHook(
             EVENT_SYSTEM_MINIMIZESTART,  # eventMin
-            EVENT_SYSTEM_MINIMIZESTART,  # eventMax
+            EVENT_SYSTEM_MINIMIZEEND,    # eventMax
             None,                         # hmodWinEventProc (NULL for out-of-context)
             self._winevent_callback,      # pfnWinEventProc
             0,                            # idProcess (0 = all processes)
@@ -7350,6 +7352,7 @@ class CopilotHandler:
 
             EVENT_SYSTEM_FOREGROUND = 0x0003
             EVENT_SYSTEM_MINIMIZESTART = 0x0016
+            EVENT_SYSTEM_MINIMIZEEND = 0x0017
 
             current_time = time.monotonic()
 
@@ -7384,6 +7387,17 @@ class CopilotHandler:
                 elif is_edge:
                     yakulingo_hwnd = self._find_yakulingo_window_handle(include_hidden=True)
                     self._minimize_window_hwnd(yakulingo_hwnd, "YakuLingo")
+                return
+
+            if event == EVENT_SYSTEM_MINIMIZEEND:
+                if is_yakulingo:
+                    edge_hwnd = self._find_edge_window_handle()
+                    if edge_hwnd and user32.IsIconic(edge_hwnd):
+                        self._sync_edge_to_foreground(hwnd)
+                elif is_edge:
+                    yakulingo_hwnd = self._find_yakulingo_window_handle(include_hidden=True)
+                    if yakulingo_hwnd and user32.IsIconic(yakulingo_hwnd):
+                        self._sync_yakulingo_to_foreground(hwnd, activate=False)
                 return
 
             if event != EVENT_SYSTEM_FOREGROUND:

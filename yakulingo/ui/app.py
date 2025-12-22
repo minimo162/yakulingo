@@ -657,11 +657,23 @@ class YakuLingoApp:
             logger.info("Translation [%s] no cells to translate", trace_id)
             return
 
+        unique_texts: list[str] = []
+        seen_texts: set[str] = set()
+        for _, _, cell_text in cells_to_translate:
+            if cell_text not in seen_texts:
+                seen_texts.add(cell_text)
+                unique_texts.append(cell_text)
+
         logger.info(
             "Translation [%s] translating %d cells from %d rows x %d cols",
             trace_id, len(cells_to_translate), len(cells_2d),
             max(len(row) for row in cells_2d) if cells_2d else 0,
         )
+        if len(unique_texts) < len(cells_to_translate):
+            logger.info(
+                "Translation [%s] deduplicated %d cells to %d unique texts",
+                trace_id, len(cells_to_translate), len(unique_texts),
+            )
 
         # Prepare source text display (show full text while translating)
         self.state.source_text = normalized
@@ -714,7 +726,7 @@ class YakuLingoApp:
             reference_files = self._get_effective_reference_files()
 
             # Translate all cells in batches using the existing batch translation
-            cell_texts = [c[2] for c in cells_to_translate]
+            cell_texts = unique_texts
             batches = self._split_cell_batches(cell_texts, self.settings.max_chars_per_batch)
             translations: list[str] = []
             explanations: list[str] = []
@@ -733,10 +745,28 @@ class YakuLingoApp:
                 explanations.extend(batch_explanations)
 
             if not error_message:
+                translation_by_text: dict[str, str] = {}
+                explanation_by_text: dict[str, str] = {}
+                for idx, text in enumerate(cell_texts):
+                    translation_by_text[text] = translations[idx] if idx < len(translations) else ""
+                    explanation_by_text[text] = explanations[idx] if idx < len(explanations) else ""
+
+                missing_translations = [
+                    text for text in cell_texts if not translation_by_text.get(text)
+                ]
+                if missing_translations:
+                    logger.warning(
+                        "Translation [%s] missing %d translations; keeping originals",
+                        trace_id, len(missing_translations),
+                    )
+
                 # Build translated 2D array
                 translated_2d = [row[:] for row in cells_2d]  # Deep copy
-                for (row_idx, col_idx, _), translated in zip(cells_to_translate, translations):
-                    translated_2d[row_idx][col_idx] = translated
+                for row_idx, col_idx, cell_text in cells_to_translate:
+                    translated_value = translation_by_text.get(cell_text)
+                    if not translated_value:
+                        translated_value = cells_2d[row_idx][col_idx]
+                    translated_2d[row_idx][col_idx] = translated_value
 
                 # Reconstruct tab-separated text
                 translated_rows = ["\t".join(row) for row in translated_2d]
@@ -762,8 +792,8 @@ class YakuLingoApp:
                 )
 
                 explanation_blocks = []
-                for explanation in explanations:
-                    explanation = explanation.strip()
+                for text in cell_texts:
+                    explanation = explanation_by_text.get(text, "").strip()
                     if explanation:
                         explanation_blocks.append(explanation)
                 explanation_text = "\n\n".join(explanation_blocks)

@@ -31,7 +31,12 @@ logger = logging.getLogger(__name__)
 # Uses \Z (end of string) instead of $ (end of line in MULTILINE mode)
 # Note: lookahead does NOT require space after period (handles "1.text" format from Copilot)
 # The indentation group is used by _parse_batch_result to filter out nested numbered lists
-_RE_BATCH_ITEM = re.compile(r'^(\s*)(\d+)\.\s*(.*?)(?=\n\s*\d+\.|\Z)', re.MULTILINE | re.DOTALL)
+# Important: do not allow newlines right after the period, otherwise blank
+# items like "3." would consume the next item (e.g., "4. text").
+_RE_BATCH_ITEM = re.compile(
+    r'^([ \t\u3000]*)(\d+)\.[ \t\u3000]*(.*?)(?=\r?\n[ \t\u3000]*\d+\.|\Z)',
+    re.MULTILINE | re.DOTALL,
+)
 
 # Known Copilot error response patterns that indicate we should retry with a new chat
 # These are system messages that don't represent actual translation results
@@ -6977,6 +6982,12 @@ class CopilotHandler:
         matches = _RE_BATCH_ITEM.findall(result_text)
 
         if matches:
+            all_numbered_items = [
+                (int(num), content.strip()) for indent, num, content in matches
+                if int(num) >= 1
+            ]
+            all_numbered_items.sort(key=lambda x: x[0])
+
             # Calculate effective indentation (only spaces/tabs, not newlines)
             # This handles cases where empty lines before a numbered item
             # cause the regex to capture newlines as part of the "indent" group
@@ -7019,6 +7030,31 @@ class CopilotHandler:
 
         # Re-check matches after potential invalidation
         if matches and numbered_items:
+            # Heuristic: Copilot may output numbered lines inside a single item
+            # (e.g., email bodies with blank lines). If so, regroup by blank
+            # numbered lines to recover paragraph structure.
+            if expected_count > 1 and all_numbered_items and len(all_numbered_items) > expected_count:
+                has_empty_items = any(not content.strip() for _, content in all_numbered_items)
+                if has_empty_items:
+                    grouped_items: list[str] = []
+                    current_lines: list[str] = []
+                    for _, content in all_numbered_items:
+                        if not content.strip():
+                            if current_lines:
+                                grouped_items.append("\n".join(current_lines).strip())
+                                current_lines = []
+                            continue
+                        current_lines.append(content.strip())
+                    if current_lines:
+                        grouped_items.append("\n".join(current_lines).strip())
+
+                    if len(grouped_items) == expected_count:
+                        logger.warning(
+                            "Regrouped numbered lines by blanks to match expected_count=%d",
+                            expected_count,
+                        )
+                        return grouped_items
+
             # Validate number completeness and build result with correct indices
             # Expected numbers: 1, 2, 3, ..., expected_count
             found_numbers = {num for num, _ in numbered_items}

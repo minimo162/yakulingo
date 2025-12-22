@@ -100,8 +100,8 @@ Regards,"""
         assert parsed[0] == "One"
         assert parsed[1] == "Two\nThree\nFour"
 
-    def test_parse_extra_numbered_lines_appends_to_last(self, handler):
-        """Extra numbered lines are merged into the last expected item"""
+    def test_parse_numbered_lines_grouped_by_blank_items_simple(self, handler):
+        """Blank numbered items regroup content into expected items"""
         result = """1. Subject
 2. Dear All,
 3.
@@ -110,10 +110,35 @@ Regards,"""
         parsed = handler._parse_batch_result(result, 2)
 
         assert len(parsed) == 2
-        assert parsed[0] == "Subject"
-        assert parsed[1].startswith("Dear All,")
+        assert parsed[0] == "Subject\nDear All,"
+        assert parsed[1].startswith("Thank you for your support.")
         assert "Thank you for your support." in parsed[1]
         assert "Best regards," in parsed[1]
+
+    def test_parse_numbered_lines_grouped_by_blank_items(self, handler):
+        """Blank numbered items are used to regroup content into paragraphs"""
+        result = """1. Subject line
+2. Dear All,
+3.
+4. Thank you for your support.
+5. We uploaded the blank format.
+6. Please download the data.
+7.
+8. Due date: Jan. 14th (Wed.) 12:00 (JPN time)
+9.
+10. If you have any questions, please email us.
+11. We appreciate your support.
+12.
+13. Best regards,"""
+        parsed = handler._parse_batch_result(result, 5)
+
+        assert len(parsed) == 5
+        assert parsed[0] == "Subject line\nDear All,"
+        assert "Thank you for your support." in parsed[1]
+        assert "Please download the data." in parsed[1]
+        assert parsed[2].startswith("Due date:")
+        assert "If you have any questions" in parsed[3]
+        assert parsed[4] == "Best regards,"
 
     def test_parse_skips_empty_lines(self, handler):
         """Skips empty lines"""

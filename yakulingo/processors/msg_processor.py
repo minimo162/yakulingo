@@ -12,6 +12,7 @@ import logging
 import re
 import sys
 import threading
+from email.utils import getaddresses
 from pathlib import Path
 from typing import Any, Iterator, Optional
 
@@ -22,6 +23,8 @@ logger = logging.getLogger(__name__)
 
 # Pre-compiled regex for sentence splitting (AGENTS.md: Pre-compile regex patterns)
 _SENTENCE_SPLIT_PATTERN = re.compile(r'(?<=[\u3002\uFF01\uFF1F!?\n])')
+# Basic email validation for recipient normalization (ASCII-only)
+_EMAIL_PATTERN = re.compile(r'^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$')
 
 # Maximum characters per block for translation batching
 MAX_CHARS_PER_BLOCK = 3000
@@ -412,9 +415,9 @@ class MsgProcessor(FileProcessor):
             mail.Subject = subject
             mail.Body = body
             if to:
-                mail.To = to
+                mail.To = self._normalize_recipients(to)
             if cc:
-                mail.CC = cc
+                mail.CC = self._normalize_recipients(cc)
 
             # Save as .msg file
             # 3 = olMSG format
@@ -440,6 +443,46 @@ class MsgProcessor(FileProcessor):
             if outlook is not None:
                 del outlook
             gc.collect()
+
+    def _normalize_recipients(self, raw: str) -> str:
+        """Normalize recipients to avoid Outlook name-check failures.
+
+        Outlook fails to resolve entries like "email <email>" when the
+        display name contains an '@'. Strip such display names and
+        standardize separators to ensure valid recipient entries.
+        """
+        if not raw:
+            return ""
+
+        normalized = raw.replace('\r\n', '\n').replace('\r', '\n')
+        normalized = normalized.replace(';', ',').replace('\n', ',')
+        addresses = getaddresses([normalized])
+
+        cleaned: list[str] = []
+        for name, address in addresses:
+            name = name.strip().strip('"')
+            address = address.strip()
+
+            if not address and name and _EMAIL_PATTERN.match(name):
+                address = name
+                name = ""
+
+            if address:
+                if name and ("@" in name or name.lower() == address.lower()):
+                    name = ""
+                if name:
+                    cleaned.append(f'{name} <{address}>')
+                else:
+                    cleaned.append(address)
+            elif name:
+                cleaned.append(name)
+
+        if not cleaned:
+            return raw.strip()
+
+        # Remove duplicates while preserving order.
+        unique = list(dict.fromkeys(cleaned))
+        return '; '.join(unique)
 
     def apply_translations(
         self,

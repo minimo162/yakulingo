@@ -4076,7 +4076,7 @@ def _detect_display_settings(
     # These are absolute minimums - below this, UI elements may overlap
     # Note: These values are in logical pixels, not physical pixels
     # Example: 1366x768 at 125% = 1092x614 logical → window ~810x469 (74% ratio)
-    MIN_WINDOW_WIDTH = 1100   # Lowered from 1400 to maintain ~74% ratio on smaller screens
+    MIN_WINDOW_WIDTH = 900    # Lowered from 1400 to avoid over-shrinking at ~1k width
     MIN_WINDOW_HEIGHT = 650   # Lowered from 850 to maintain ~76% ratio on smaller screens
     MIN_SIDEBAR_WIDTH = 280   # Narrower sidebar
     MIN_INPUT_PANEL_WIDTH = 320  # Lowered from 380 for smaller screens
@@ -5225,7 +5225,7 @@ def run_app(
     const BASE_FONT_SIZE = 16;  // Fixed font size (no dynamic scaling)
     const SIDEBAR_RATIO = 280 / 1800;
     const INPUT_PANEL_RATIO = 400 / 1800;
-    const MIN_WINDOW_WIDTH = 1100;  // Match Python logic for small screens
+    const MIN_WINDOW_WIDTH = 900;  // Match Python logic for small screens
     const MIN_SIDEBAR_WIDTH = 280;  // Narrower sidebar
     const MIN_INPUT_PANEL_WIDTH = 320;  // Lowered for smaller screens
     // Unified content width for both input and result panels

@@ -189,10 +189,8 @@ YakuLingo/
 │   ├── conftest.py
 │   └── test_*.py
 │
-├── prompts/                        # 翻訳プロンプト（18ファイル）
+├── prompts/                        # 翻訳プロンプト（16ファイル）
 │   ├── translation_rules.txt       # 共通翻訳ルール
-│   ├── detect_language.txt         # 言語検出用（現在未使用、ローカル検出を優先）
-│   ├── copilot_injection_review.md # プロンプトのインジェクションリスクレビュー
 │   ├── file_translate_to_en_{standard|concise|minimal}.txt  # ファイル翻訳（日→英）
 │   ├── file_translate_to_jp.txt    # ファイル翻訳用（英→日）
 │   ├── text_translate_to_en_compare.txt  # テキスト翻訳（日→英、3スタイル比較）

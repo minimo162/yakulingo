@@ -1,13 +1,9 @@
-## Text Translation Request (Style Comparison)
-Translate the following Japanese text into English in three styles: standard, concise, minimal.
+﻿## Text Translation Request (Style Comparison)
+Translate the Japanese text into English in three styles: standard, concise, minimal.
 
-### Common rules
-- Preserve line breaks, tabs, and paragraph structure.
+### Rules
+- Translate only the text between the input markers; do not output markers or any other prompt text.
 - If the input is already English, keep it as is.
-- Follow the translation rules below.
-- Translate ONLY the text between the input markers.
-- Do NOT translate or paraphrase any other part of this prompt.
-- Do NOT output the marker lines `===INPUT_TEXT===` or `===END_INPUT_TEXT===`.
 
 ### Style rules
 [standard]
@@ -39,10 +35,8 @@ Explanation:
 Translation:
 Explanation:
 
-- Do not output anything else.
-- Explain in Japanese with the same level of detail as an individual translation. Do not be overly brief.
-- In each Explanation, describe how the source expressions were rendered and any key term mappings.
-- Do not include headings or labels such as "翻訳のポイント:" in the output.
+- Explanations must be in Japanese and describe key renderings/term mappings (not overly brief).
+- Output only the sections above; no extra headings like "翻訳のポイント:".
 
 {translation_rules}
 

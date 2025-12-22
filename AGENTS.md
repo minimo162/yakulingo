@@ -114,10 +114,8 @@ YakuLingo/
 ├── tests/                         # Test suite (33 test files)
 │   ├── conftest.py                # Shared fixtures and mocks
 │   └── test_*.py                  # Unit tests for each module
-├── prompts/                       # Translation prompt templates (18 files, all in Japanese)
+├── prompts/                       # Translation prompt templates (16 files, all in Japanese)
 │   ├── translation_rules.txt      # 共通翻訳ルール（数値表記・記号変換ルール）- UI編集可、翻訳時自動再読込
-│   ├── detect_language.txt        # Language detection (currently unused, local detection preferred)
-│   ├── copilot_injection_review.md # Prompt injection risk review
 │   ├── file_translate_to_en_{standard|concise|minimal}.txt  # File translation (JP→EN)
 │   ├── file_translate_to_jp.txt   # File translation (EN→JP)
 │   ├── text_translate_to_en_compare.txt  # Text translation (JP→EN, 3-style comparison)
@@ -3120,5 +3118,4 @@ Based on recent commits:
 - Feature branches: `claude/claude-md-*`
 - Commit messages: descriptive, focus on "why" not "what"
 - Lock file (`uv.lock`) included for reproducible dependency resolution
-
 

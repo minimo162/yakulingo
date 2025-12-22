@@ -7049,15 +7049,60 @@ class CopilotHandler:
                 else:
                     # Insert empty string for missing number
                     translations.append("")
+
+            # If extra numbered items exist beyond expected_count, append them to
+            # the last expected item to avoid dropping content (e.g., multi-line emails).
+            extra_items = [content for num, content in numbered_items if num > expected_count]
+            if extra_items and expected_count > 0:
+                extra_numbers = [num for num, _ in numbered_items if num > expected_count]
+                logger.warning(
+                    "Extra translation numbers detected: %s (expected 1-%d). "
+                    "Appending extras to item %d.",
+                    extra_numbers,
+                    expected_count,
+                    expected_count,
+                )
+                extra_text = "\n".join(extra_items)
+                if translations[-1]:
+                    translations[-1] = f"{translations[-1]}\n{extra_text}"
+                else:
+                    translations[-1] = extra_text
         else:
-            # Fallback: if no numbered pattern found, split by newlines
+            # Fallback: no numbered items detected - preserve as much content as possible.
             logger.debug(
-                "No numbered pattern found in batch result, using line-split fallback"
+                "No numbered pattern found in batch result, using content-preserving fallback"
             )
-            for line in result_text.split('\n'):
-                line = line.strip()
-                if line:
-                    translations.append(line)
+            stripped_result = result_text.strip()
+            if not stripped_result:
+                translations = [""] * expected_count
+            elif expected_count == 1:
+                translations = [stripped_result]
+            else:
+                lines = stripped_result.splitlines()
+                # Trim leading/trailing empty lines but keep internal blank lines.
+                while lines and not lines[0].strip():
+                    lines.pop(0)
+                while lines and not lines[-1].strip():
+                    lines.pop()
+
+                if not lines:
+                    translations = [""] * expected_count
+                else:
+                    non_empty_indices = [i for i, line in enumerate(lines) if line.strip()]
+                    translations = []
+                    last_index = -1
+
+                    for i in range(expected_count - 1):
+                        if i < len(non_empty_indices):
+                            line_index = non_empty_indices[i]
+                            translations.append(lines[line_index].strip())
+                            last_index = line_index
+                        else:
+                            translations.append("")
+
+                    remainder_lines = lines[last_index + 1:] if last_index + 1 < len(lines) else []
+                    remainder = "\n".join(remainder_lines).strip()
+                    translations.append(remainder)
 
             # Pad with empty strings if needed
             while len(translations) < expected_count:

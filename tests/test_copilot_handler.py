@@ -63,6 +63,21 @@ Test"""
         assert parsed[1] == "World"
         assert parsed[2] == "Test"
 
+    def test_parse_unnumbered_multiline_preserves_remainder(self, handler):
+        """Unnumbered multiline responses preserve body text in the last item"""
+        result = """Subject line
+Dear all,
+
+Thanks for your support.
+Regards,"""
+        parsed = handler._parse_batch_result(result, 2)
+
+        assert len(parsed) == 2
+        assert parsed[0] == "Subject line"
+        assert "Dear all," in parsed[1]
+        assert "Thanks for your support." in parsed[1]
+        assert "\n\n" in parsed[1]
+
     def test_parse_fewer_results_pads(self, handler):
         """Pads with empty strings when fewer results"""
         result = "1. Hello"
@@ -74,7 +89,7 @@ Test"""
         assert parsed[2] == ""
 
     def test_parse_more_results_truncates(self, handler):
-        """Truncates when more results than expected"""
+        """Extra numbered items are appended to the last expected item"""
         result = """1. One
 2. Two
 3. Three
@@ -83,7 +98,22 @@ Test"""
 
         assert len(parsed) == 2
         assert parsed[0] == "One"
-        assert parsed[1] == "Two"
+        assert parsed[1] == "Two\nThree\nFour"
+
+    def test_parse_extra_numbered_lines_appends_to_last(self, handler):
+        """Extra numbered lines are merged into the last expected item"""
+        result = """1. Subject
+2. Dear All,
+3.
+4. Thank you for your support.
+5. Best regards,"""
+        parsed = handler._parse_batch_result(result, 2)
+
+        assert len(parsed) == 2
+        assert parsed[0] == "Subject"
+        assert parsed[1].startswith("Dear All,")
+        assert "Thank you for your support." in parsed[1]
+        assert "Best regards," in parsed[1]
 
     def test_parse_skips_empty_lines(self, handler):
         """Skips empty lines"""

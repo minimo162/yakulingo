@@ -3157,6 +3157,30 @@ class CopilotHandler:
 
             user32 = ctypes.WinDLL('user32', use_last_error=True)
 
+            class RECT(ctypes.Structure):
+                _fields_ = [
+                    ("left", wintypes.LONG),
+                    ("top", wintypes.LONG),
+                    ("right", wintypes.LONG),
+                    ("bottom", wintypes.LONG),
+                ]
+
+            def _get_frame_rect(hwnd):
+                try:
+                    dwmapi = ctypes.WinDLL('dwmapi', use_last_error=True)
+                    DWMWA_EXTENDED_FRAME_BOUNDS = 9
+                    rect = RECT()
+                    if dwmapi.DwmGetWindowAttribute(
+                        hwnd,
+                        DWMWA_EXTENDED_FRAME_BOUNDS,
+                        ctypes.byref(rect),
+                        ctypes.sizeof(rect),
+                    ) == 0:
+                        return rect
+                except Exception:
+                    return None
+                return None
+
             # Find both windows (include hidden for robustness during startup)
             yakulingo_hwnd = self._find_yakulingo_window_handle(include_hidden=True)
             edge_hwnd = self._find_edge_window_handle(page_title)
@@ -3186,14 +3210,6 @@ class CopilotHandler:
                 self._edge_wait_count = 0
 
             # Get YakuLingo window rect
-            class RECT(ctypes.Structure):
-                _fields_ = [
-                    ("left", wintypes.LONG),
-                    ("top", wintypes.LONG),
-                    ("right", wintypes.LONG),
-                    ("bottom", wintypes.LONG),
-                ]
-
             app_rect = RECT()
             if not user32.GetWindowRect(yakulingo_hwnd, ctypes.byref(app_rect)):
                 logger.warning("Failed to get YakuLingo window rect")
@@ -3225,6 +3241,15 @@ class CopilotHandler:
             # Get app window dimensions
             app_width = app_rect.right - app_rect.left
             app_height = app_rect.bottom - app_rect.top
+            app_frame_rect = _get_frame_rect(yakulingo_hwnd)
+            if app_frame_rect:
+                app_top_inset = app_frame_rect.top - app_rect.top
+                app_bottom_inset = app_rect.bottom - app_frame_rect.bottom
+                app_frame_top_offset = app_top_inset
+            else:
+                app_top_inset = 0
+                app_bottom_inset = 0
+                app_frame_top_offset = 0
 
             # Target widths based on monitor work area (use full available width)
             available_width = max(screen_width - self.SIDE_PANEL_GAP, 0)
@@ -3252,6 +3277,7 @@ class CopilotHandler:
             # Ensure minimum height for usability
             if app_height < self.SIDE_PANEL_MIN_HEIGHT:
                 app_height = self.SIDE_PANEL_MIN_HEIGHT
+            app_frame_height = max(app_height - app_top_inset - app_bottom_inset, 0)
 
             # Calculate total width of app + gap + side panel
             total_width = target_app_width + self.SIDE_PANEL_GAP + edge_width
@@ -3325,6 +3351,19 @@ class CopilotHandler:
             is_off_screen = current_rect.left < -10000 or current_rect.top < -10000
             is_minimized = user32.IsIconic(edge_hwnd)
 
+            edge_frame_rect = _get_frame_rect(edge_hwnd)
+            if edge_frame_rect:
+                edge_top_inset = edge_frame_rect.top - current_rect.top
+                edge_bottom_inset = current_rect.bottom - edge_frame_rect.bottom
+            else:
+                edge_top_inset = 0
+                edge_bottom_inset = 0
+
+            # Align Edge visible frame to app frame bounds (avoids slight height mismatch).
+            target_edge_height = app_frame_height + edge_top_inset + edge_bottom_inset
+            target_edge_y = (new_app_y + app_frame_top_offset) - edge_top_inset
+            edge_y = target_edge_y
+
             # Check if Edge needs to be moved (position or size change)
             current_edge_width = current_rect.right - current_rect.left
             current_edge_height = current_rect.bottom - current_rect.top
@@ -3332,7 +3371,7 @@ class CopilotHandler:
                 abs(current_rect.left - edge_x) > POSITION_TOLERANCE or
                 abs(current_rect.top - edge_y) > POSITION_TOLERANCE or
                 abs(current_edge_width - edge_width) > SIZE_TOLERANCE or
-                abs(current_edge_height - app_height) > SIZE_TOLERANCE
+                abs(current_edge_height - target_edge_height) > SIZE_TOLERANCE
             )
 
             # Early return if neither window needs adjustment and not bringing to front
@@ -3357,7 +3396,7 @@ class CopilotHandler:
                     edge_x,
                     edge_y,
                     edge_width,
-                    app_height,
+                    target_edge_height,
                     flags
                 )
                 # Then reset to NOTOPMOST so other windows can go on top later
@@ -3384,7 +3423,7 @@ class CopilotHandler:
                     edge_x,
                     edge_y,
                     edge_width,
-                    app_height,
+                    target_edge_height,
                     flags
                 )
 
@@ -3393,7 +3432,7 @@ class CopilotHandler:
             user32.ShowWindow(edge_hwnd, SW_SHOWNOACTIVATE)
 
             logger.debug("Windows positioned: app=(%d,%d), edge=(%d,%d) %dx%d",
-                        new_app_x, new_app_y, edge_x, edge_y, edge_width, app_height)
+                        new_app_x, new_app_y, edge_x, edge_y, edge_width, target_edge_height)
             return True
 
         except Exception as e:

@@ -3720,7 +3720,7 @@ class YakuLingoApp:
             self.state.file_state = FileState.SELECTED
             self.state.file_detected_language = None  # Clear previous detection
             self.state.file_info = None  # Will be loaded async
-            self._refresh_content()
+            delay_refresh = False
 
             # On-demand PP-DocLayout-L initialization for PDF files
             if file_path.suffix.lower() == '.pdf':
@@ -3733,6 +3733,7 @@ class YakuLingoApp:
                 )
 
                 if needs_init:
+                    delay_refresh = True
                     # Show initialization dialog only if initialization is actually needed
                     with client:
                         init_dialog = self._create_layout_init_dialog()
@@ -3741,6 +3742,7 @@ class YakuLingoApp:
                     await asyncio.sleep(0)
                     await self._ensure_layout_initialized()
                 elif self._layout_init_state == LayoutInitializationState.INITIALIZING:
+                    delay_refresh = True
                     # Initialization in progress (from preload) - wait for it
                     with client:
                         init_dialog = self._create_layout_init_dialog()
@@ -3758,6 +3760,11 @@ class YakuLingoApp:
                             timeout=8000,
                         )
                 # else: already INITIALIZED or FAILED - proceed immediately
+            if delay_refresh:
+                with client:
+                    self._refresh_content()
+            else:
+                self._refresh_content()
 
             # Load file info in background thread to avoid UI blocking
             file_info = await asyncio.to_thread(

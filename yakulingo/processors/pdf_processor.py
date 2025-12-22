@@ -1836,7 +1836,11 @@ class PdfProcessor(FileProcessor):
         if reason:
             self._failed_page_reasons[page_num] = reason
 
-    def _check_scanned_pdf(self, file_path: Path) -> None:
+    def _check_scanned_pdf(
+        self,
+        file_path: Path,
+        selected_pages: Optional[set[int]] = None,
+    ) -> None:
         """
         Check if PDF is a scanned document (no embedded text).
 
@@ -1846,10 +1850,13 @@ class PdfProcessor(FileProcessor):
 
         Args:
             file_path: Path to PDF file
+            selected_pages: Optional set of 0-based page indices to check
 
         Raises:
             ScannedPdfError: If PDF appears to be scanned (no embedded text)
         """
+        if selected_pages is not None and not selected_pages:
+            return
         pdfminer = _get_pdfminer()
         PDFPage = pdfminer['PDFPage']
         PDFParser = pdfminer['PDFParser']
@@ -1883,9 +1890,15 @@ class PdfProcessor(FileProcessor):
 
                 pages_without_text = 0
                 pages_checked = 0
+                max_selected = max(selected_pages) if selected_pages else None
 
                 for page_idx, page in enumerate(PDFPage.create_pages(document)):
-                    if page_idx >= SCAN_CHECK_PAGES:
+                    if selected_pages is not None and page_idx not in selected_pages:
+                        if max_selected is not None and page_idx > max_selected:
+                            break
+                        continue
+
+                    if pages_checked >= SCAN_CHECK_PAGES:
                         break
 
                     pages_checked += 1
@@ -3222,6 +3235,7 @@ class PdfProcessor(FileProcessor):
         batch_size: int = DEFAULT_OCR_BATCH_SIZE,
         dpi: int = DEFAULT_OCR_DPI,
         output_language: str = "en",
+        pages: Optional[list[int]] = None,
     ) -> Iterator[tuple[list[TextBlock], Optional[list[TranslationCell]]]]:
         """
         Extract text blocks from PDF with streaming support and progress reporting.
@@ -3240,6 +3254,7 @@ class PdfProcessor(FileProcessor):
             batch_size: Pages per batch for processing
             dpi: Resolution for layout analysis (higher = better quality, slower)
             output_language: "en" for JP→EN, "jp" for EN→JP translation
+            pages: Optional list of 0-based page indices to extract (None = all pages)
 
         Yields:
             Tuple of (list[TextBlock], Optional[list[TranslationCell]]):
@@ -3263,15 +3278,29 @@ class PdfProcessor(FileProcessor):
         """
         self._output_language = output_language
 
-        # Early detection of scanned PDFs (check first few pages)
-        self._check_scanned_pdf(file_path)
-
         with _open_pymupdf_document(file_path) as doc:
             total_pages = len(doc)
+        selected_pages = None
+        if pages is not None:
+            selected_pages = {p for p in pages if isinstance(p, int)}
+            if selected_pages:
+                selected_pages = {p for p in selected_pages if 0 <= p < total_pages}
+            if not selected_pages:
+                logger.info("No selected pages to process in PDF extraction")
+                return
+
+        # Early detection of scanned PDFs (check first few pages)
+        self._check_scanned_pdf(file_path, selected_pages)
 
         # Use hybrid mode: pdfminer text + PP-DocLayout-L layout (no OCR)
         yield from self._extract_hybrid_streaming(
-            file_path, total_pages, on_progress, device, batch_size, dpi
+            file_path,
+            total_pages,
+            on_progress,
+            device,
+            batch_size,
+            dpi,
+            selected_pages=selected_pages,
         )
 
     def _extract_hybrid_streaming(
@@ -3282,6 +3311,7 @@ class PdfProcessor(FileProcessor):
         device: str,
         batch_size: int = DEFAULT_OCR_BATCH_SIZE,
         dpi: int = DEFAULT_OCR_DPI,
+        selected_pages: Optional[set[int]] = None,
     ) -> Iterator[tuple[list[TextBlock], list[TranslationCell]]]:
         """
         Extract text blocks using hybrid approach: pdfminer text + PP-DocLayout-L layout.
@@ -3304,16 +3334,22 @@ class PdfProcessor(FileProcessor):
         start_time = time_module.time()
         self._failed_pages = []
         self._layout_fallback_used = False  # Reset for each extraction
+        pages_to_process = len(selected_pages) if selected_pages is not None else total_pages
+        if pages_to_process == 0:
+            return
+        last_page_idx = total_pages - 1
+        if selected_pages:
+            last_page_idx = max(selected_pages)
 
         # Pre-processing memory check for entire PDF
         is_safe, estimated_mb, available_mb = check_memory_for_pdf_processing(
-            total_pages, dpi, warn_only=True
+            pages_to_process, dpi, warn_only=True
         )
         if not is_safe:
             logger.warning(
                 "High memory usage expected for %d pages at %d DPI. "
                 "Processing will continue but may be slow.",
-                total_pages, dpi
+                pages_to_process, dpi
             )
 
         # Check if PP-DocLayout-L is available
@@ -3355,11 +3391,11 @@ class PdfProcessor(FileProcessor):
             # Memory check failed - use default batch size
             logger.debug("Could not check available memory: %s", e)
 
-        if total_pages > 10:
+        if pages_to_process > 10:
             logger.info(
                 "Processing %d pages (DPI=%d, batch_size=%d). "
                 "Estimated memory per batch: ~%dMB",
-                total_pages, dpi, batch_size, estimated_batch_mb
+                pages_to_process, dpi, batch_size, estimated_batch_mb
             )
 
         # Get pdfminer classes
@@ -3386,7 +3422,13 @@ class PdfProcessor(FileProcessor):
                 batch_data: list[tuple[int, Any, Any, float, float]] = []
 
                 for page_idx, img, ltpage, page_height, page_width in self._iterate_pages_unified(
-                    file_path, document, PDFPage, interpreter, converter, dpi
+                    file_path,
+                    document,
+                    PDFPage,
+                    interpreter,
+                    converter,
+                    dpi,
+                    selected_pages=selected_pages,
                 ):
                     # Check for cancellation
                     if self._cancel_requested:
@@ -3397,7 +3439,7 @@ class PdfProcessor(FileProcessor):
                     batch_data.append((page_idx, img, ltpage, page_height, page_width))
 
                     # Process batch when full or at end
-                    if len(batch_data) >= batch_size or page_idx == total_pages - 1:
+                    if len(batch_data) >= batch_size or page_idx == last_page_idx:
                         # Step 1: Batch analyze layout with PP-DocLayout-L
                         batch_images = [data[1] for data in batch_data]
                         batch_layout_results = analyze_layout_batch(batch_images, actual_device)
@@ -3411,19 +3453,31 @@ class PdfProcessor(FileProcessor):
                             elapsed = time_module.time() - start_time
                             if pages_processed > 1:
                                 actual_time_per_page = elapsed / (pages_processed - 1)
-                                remaining_pages = total_pages - pages_processed + 1
+                                remaining_pages = pages_to_process - pages_processed + 1
                                 estimated_remaining = int(actual_time_per_page * remaining_pages)
                             else:
-                                estimated_remaining = int(10 * total_pages)
+                                estimated_remaining = int(10 * pages_to_process)
 
                             # Report progress
                             if on_progress:
+                                if selected_pages is not None:
+                                    status = (
+                                        f"Analyzing layout page {page_num} "
+                                        f"({pages_processed}/{pages_to_process})..."
+                                    )
+                                    phase_detail = (
+                                        f"Page {page_num} "
+                                        f"({pages_processed}/{pages_to_process})"
+                                    )
+                                else:
+                                    status = f"Analyzing layout page {page_num}/{total_pages}..."
+                                    phase_detail = f"Page {page_num}/{total_pages}"
                                 on_progress(TranslationProgress(
                                     current=pages_processed,
-                                    total=total_pages,
-                                    status=f"Analyzing layout page {page_num}/{total_pages}...",
+                                    total=pages_to_process,
+                                    status=status,
                                     phase=TranslationPhase.EXTRACTING,
-                                    phase_detail=f"Page {page_num}/{total_pages}",
+                                    phase_detail=phase_detail,
                                     estimated_remaining=estimated_remaining if estimated_remaining > 0 else None,
                                 ))
 
@@ -3604,6 +3658,7 @@ class PdfProcessor(FileProcessor):
         interpreter,
         converter,
         dpi: int,
+        selected_pages: Optional[set[int]] = None,
     ) -> Iterator[tuple[int, Any, Any, float, float]]:
         """
         Unified iterator for PDF pages - synchronizes pypdfium2 images and pdfminer data.
@@ -3618,6 +3673,7 @@ class PdfProcessor(FileProcessor):
             interpreter: pdfminer PDFPageInterpreter
             converter: pdfminer PDFConverterEx
             dpi: Resolution for image rendering
+            selected_pages: Optional set of 0-based page indices to render
 
         Yields:
             (page_idx, image, ltpage, page_height, page_width) for each page
@@ -3631,8 +3687,14 @@ class PdfProcessor(FileProcessor):
 
         with _open_pdf_document(str(file_path)) as pdf:
             pdf_page_count = len(pdf)
+            max_selected = max(selected_pages) if selected_pages else None
 
             for page_idx, pdfminer_page in enumerate(PDFPage.create_pages(document)):
+                if selected_pages is not None and page_idx not in selected_pages:
+                    if max_selected is not None and page_idx > max_selected:
+                        break
+                    continue
+
                 # Safety check: ensure page index is within pypdfium2 document bounds
                 if page_idx >= pdf_page_count:
                     logger.warning(

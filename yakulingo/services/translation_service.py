@@ -2513,14 +2513,33 @@ class TranslationService:
         """
         # Get page count for progress estimation
         total_pages = processor.get_page_count(input_path)
+        selected_page_indices = None
+        selected_pages = None
+        pages_for_progress = total_pages
+
+        if selected_sections is not None:
+            selected_page_indices = sorted({
+                idx for idx in selected_sections
+                if isinstance(idx, int) and 0 <= idx < total_pages
+            })
+            selected_pages = [idx + 1 for idx in selected_page_indices]
+            pages_for_progress = len(selected_page_indices)
 
         if on_progress:
+            if selected_page_indices is not None:
+                status = (
+                    f"Processing PDF ({pages_for_progress}/{total_pages} pages selected)..."
+                )
+                phase_detail = f"0/{pages_for_progress} pages"
+            else:
+                status = f"Processing PDF ({total_pages} pages)..."
+                phase_detail = f"0/{total_pages} pages"
             on_progress(TranslationProgress(
                 current=0,
                 total=100,
-                status=f"Processing PDF ({total_pages} pages)...",
+                status=status,
                 phase=TranslationPhase.EXTRACTING,
-                phase_detail=f"0/{total_pages} pages",
+                phase_detail=phase_detail,
             ))
 
         all_blocks = []
@@ -2535,11 +2554,12 @@ class TranslationService:
         # PDFMathTranslate compliant: page_cells is always None (TranslationCell removed)
         for page_blocks, _ in processor.extract_text_blocks_streaming(
             input_path,
-            on_progress=self._make_extraction_progress_callback(on_progress, total_pages),
+            on_progress=self._make_extraction_progress_callback(on_progress, pages_for_progress),
             device=device,
             batch_size=batch_size,
             dpi=dpi,
             output_language=output_language,
+            pages=selected_page_indices,
         ):
             all_blocks.extend(page_blocks)
             pages_processed += 1
@@ -2552,10 +2572,8 @@ class TranslationService:
                 )
 
         # Filter blocks by selected sections if specified
-        selected_pages = None
         if selected_sections is not None:
             all_blocks = self._filter_blocks_by_section(all_blocks, selected_sections)
-            selected_pages = [idx + 1 for idx in selected_sections]
 
         total_blocks = len(all_blocks)
 

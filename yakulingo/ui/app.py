@@ -2812,7 +2812,10 @@ class YakuLingoApp:
 
     async def _handle_reference_upload(self, e):
         """Handle file upload from the hidden upload component."""
+        from yakulingo.ui.utils import temp_file_manager
+
         try:
+            uploaded_path = None
             # NiceGUI 3.3+ uses e.file with FileUpload object
             if hasattr(e, 'file'):
                 # NiceGUI 3.x: SmallFileUpload has _data, LargeFileUpload has _path
@@ -2820,14 +2823,18 @@ class YakuLingoApp:
                 name = file_obj.name
                 if hasattr(file_obj, '_path'):
                     # LargeFileUpload: file is saved to temp directory
-                    with open(file_obj._path, 'rb') as f:
-                        content = f.read()
+                    uploaded_path = temp_file_manager.create_temp_file_from_path(
+                        Path(file_obj._path),
+                        name,
+                    )
                 elif hasattr(file_obj, '_data'):
                     # SmallFileUpload: data is in memory
                     content = file_obj._data
+                    uploaded_path = temp_file_manager.create_temp_file(content, name)
                 elif hasattr(file_obj, 'read'):
                     # Fallback: use async read() method
                     content = await file_obj.read()
+                    uploaded_path = temp_file_manager.create_temp_file(content, name)
                 else:
                     raise AttributeError(f"Unknown file upload type: {type(file_obj)}")
             else:
@@ -2837,8 +2844,8 @@ class YakuLingoApp:
                 content = e.content.read()
                 name = e.name
             # Use temp file manager for automatic cleanup
-            from yakulingo.ui.utils import temp_file_manager
-            uploaded_path = temp_file_manager.create_temp_file(content, name)
+            if uploaded_path is None:
+                uploaded_path = temp_file_manager.create_temp_file(content, name)
             # Add to reference files
             self.state.reference_files.append(uploaded_path)
             logger.info("Reference file added: %s, total: %d", name, len(self.state.reference_files))

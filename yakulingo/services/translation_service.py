@@ -571,6 +571,7 @@ class BatchTranslator:
     _SPLIT_REQUEST_MIN_MATCHES = 2
     _SPLIT_RETRY_LIMIT = 2
     _MIN_SPLIT_BATCH_CHARS = 300
+    _UNTRANSLATED_RETRY_MAX_CHARS = 800
 
     def __init__(
         self,
@@ -909,6 +910,7 @@ class BatchTranslator:
                 unique_idx = original_to_unique_idx[idx]
                 if unique_idx < len(unique_translations):
                     translated_text = unique_translations[unique_idx]
+                    is_fallback = False
 
                     # Check for empty translation and log warning
                     if not translated_text or not translated_text.strip():
@@ -918,11 +920,12 @@ class BatchTranslator:
                         )
                         translated_text = block.text
                         untranslated_block_ids.append(block.id)
+                        is_fallback = True
 
                     translations[block.id] = translated_text
 
-                    # Cache the translation for future use (only non-empty)
-                    if self._cache and translated_text and translated_text.strip():
+                    # Cache the translation for future use (only if not a fallback)
+                    if self._cache and not is_fallback and translated_text and translated_text.strip():
                         self._cache.set(block.text, translated_text)
                 else:
                     # Mark untranslated blocks with original text
@@ -932,6 +935,45 @@ class BatchTranslator:
                         block.id, unique_idx, len(unique_translations)
                     )
                     translations[block.id] = block.text
+
+        # Retry missing translations once with smaller batches
+        if untranslated_block_ids and not cancelled and _split_retry_depth == 0:
+            retry_ids = set(untranslated_block_ids)
+            retry_blocks = [block for block in blocks if block.id in retry_ids]
+            if retry_blocks and not self._cancel_event.is_set():
+                retry_char_limit = max(
+                    self._MIN_SPLIT_BATCH_CHARS,
+                    min(batch_char_limit, self._UNTRANSLATED_RETRY_MAX_CHARS),
+                )
+                logger.info(
+                    "Retrying %d untranslated blocks with max_chars_per_batch=%d",
+                    len(retry_blocks),
+                    retry_char_limit,
+                )
+                retry_result = self.translate_blocks_with_result(
+                    retry_blocks,
+                    reference_files=reference_files,
+                    on_progress=None,
+                    output_language=output_language,
+                    translation_style=translation_style,
+                    _max_chars_per_batch=retry_char_limit,
+                    _split_retry_depth=_split_retry_depth + 1,
+                )
+                if retry_result.cancelled:
+                    cancelled = True
+                else:
+                    mismatched_batch_count += retry_result.mismatched_batch_count
+                    retry_untranslated = set(retry_result.untranslated_block_ids)
+                    for block in retry_blocks:
+                        if block.id in retry_untranslated:
+                            continue
+                        translated_text = retry_result.translations.get(block.id)
+                        if translated_text and translated_text.strip():
+                            translations[block.id] = translated_text
+                    untranslated_block_ids = [
+                        block_id for block_id in untranslated_block_ids
+                        if block_id in retry_untranslated
+                    ]
 
         # Log cache stats after translation
         if self._cache:

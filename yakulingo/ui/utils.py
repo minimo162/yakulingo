@@ -85,6 +85,34 @@ class TempFileManager:
         self._temp_files.add(temp_path)
         return temp_path
 
+    def create_temp_file_from_path(self, source_path: Path, filename: Optional[str] = None) -> Path:
+        """
+        Copy an existing file into the managed temp directory.
+
+        This avoids loading large files into memory when handling uploads.
+        """
+        source_path = Path(source_path)
+        if not source_path.exists():
+            raise FileNotFoundError(f"Source file not found: {source_path}")
+
+        safe_filename = os.path.basename(filename or source_path.name)
+        if not safe_filename:
+            safe_filename = "unnamed_file"
+        safe_filename = _RE_FILENAME_FORBIDDEN.sub('_', safe_filename)
+        temp_path = self.temp_dir / safe_filename
+
+        try:
+            if source_path.resolve() == temp_path.resolve():
+                self._temp_files.add(temp_path)
+                return temp_path
+        except OSError:
+            # Fall back to copying if resolve() fails (e.g., permissions).
+            pass
+
+        shutil.copyfile(source_path, temp_path)
+        self._temp_files.add(temp_path)
+        return temp_path
+
     def register_temp_file(self, path: Path) -> None:
         """Register an existing file for cleanup."""
         self._temp_files.add(path)

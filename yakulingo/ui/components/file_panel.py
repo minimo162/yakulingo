@@ -26,6 +26,8 @@ ATTACH_SVG: str = '''
 
 SUPPORTED_FORMATS = ".xlsx,.xls,.docx,.pptx,.pdf,.txt,.msg"
 SUPPORTED_EXTENSIONS = {ext.strip() for ext in SUPPORTED_FORMATS.split(',')}
+MAX_DROP_FILE_SIZE_MB = 5
+MAX_DROP_FILE_SIZE_BYTES = MAX_DROP_FILE_SIZE_MB * 1024 * 1024
 
 # File type icons (Material Icons)
 FILE_TYPE_ICONS = {
@@ -414,19 +416,22 @@ def _drop_zone(on_file_select: Callable[[Path], Union[None, Awaitable[None]]]):
                 name = file_obj.name
                 if hasattr(file_obj, '_path'):
                     # LargeFileUpload: file is saved to temp directory
-                    with open(file_obj._path, 'rb') as f:
-                        content = f.read()
+                    temp_path = temp_file_manager.create_temp_file_from_path(
+                        Path(file_obj._path),
+                        name,
+                    )
                 elif hasattr(file_obj, '_data'):
                     # SmallFileUpload: data is in memory
                     content = file_obj._data
+                    temp_path = temp_file_manager.create_temp_file(content, name)
                 else:
                     raise AttributeError(f"Unknown file upload type: {type(file_obj)}")
             else:
                 # Older NiceGUI: direct content and name attributes
                 content = e.content.read()
                 name = e.name
-            # Use temp file manager for automatic cleanup
-            temp_path = temp_file_manager.create_temp_file(content, name)
+                # Use temp file manager for automatic cleanup
+                temp_path = temp_file_manager.create_temp_file(content, name)
             # Support async callback (use create_task for async functions)
             result = on_file_select(temp_path)
             if asyncio.iscoroutine(result):
@@ -499,6 +504,13 @@ def _drop_zone(on_file_select: Callable[[Path], Union[None, Awaitable[None]]]):
 
             if (!file) {
                 e.currentTarget.dispatchEvent(new CustomEvent('file-ready'));
+                return;
+            }
+
+            const maxBytes = ''' + str(MAX_DROP_FILE_SIZE_BYTES) + ''';
+            if (file.size && file.size > maxBytes) {
+                // Let QUploader handle large files to avoid oversized websocket payloads.
+                window._droppedFileData = null;
                 return;
             }
 

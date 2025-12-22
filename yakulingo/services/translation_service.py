@@ -77,6 +77,15 @@ _RE_TRAILING_FILENAME = re.compile(
     re.IGNORECASE,
 )
 
+_RE_TRAILING_ATTACHMENT_LINK = re.compile(
+    r'\s*\[[^\]]+?\|\s*(?:excel|word|powerpoint|pdf|csv|text|txt|file)\s*\]\([^)]+\)\s*$',
+    re.IGNORECASE,
+)
+_RE_TRAILING_ATTACHMENT_LABEL = re.compile(
+    r'\s*\[[^\]]+?\|\s*(?:excel|word|powerpoint|pdf|csv|text|txt|file)\s*\]\s*$',
+    re.IGNORECASE,
+)
+
 def _sanitize_output_stem(name: str) -> str:
     """Sanitize a filename stem for cross-platform safety.
 
@@ -96,6 +105,20 @@ def _strip_input_markers(text: str) -> str:
         return text
     lines = [line for line in text.splitlines() if not _RE_INPUT_MARKER_LINE.match(line)]
     return "\n".join(lines).strip()
+
+
+def _strip_trailing_attachment_links(text: str) -> str:
+    """Remove trailing Copilot attachment links like [file | Excel](...)."""
+    if not text:
+        return text
+    cleaned = text.strip()
+    while True:
+        updated = _RE_TRAILING_ATTACHMENT_LINK.sub('', cleaned)
+        if updated == cleaned:
+            break
+        cleaned = updated.strip()
+    cleaned = _RE_TRAILING_ATTACHMENT_LABEL.sub('', cleaned).strip()
+    return cleaned
 
 
 # =============================================================================
@@ -612,6 +635,28 @@ class BatchTranslator:
             return self._cache.stats
         return None
 
+    def _clean_batch_translation(self, text: str) -> str:
+        cleaned = _strip_input_markers(text)
+        cleaned = _strip_trailing_attachment_links(cleaned)
+        if cleaned:
+            cleaned = _RE_TRAILING_FILENAME.sub('', cleaned).strip()
+        return cleaned
+
+    def _should_retry_translation(self, original: str, translated: str, output_language: str) -> bool:
+        if output_language != "en":
+            return False
+        if not original or not translated:
+            return False
+        original = original.strip()
+        translated = translated.strip()
+        if not original or not translated:
+            return False
+        if not language_detector.is_japanese(original):
+            return False
+        if original == translated:
+            return True
+        return language_detector.is_japanese(translated, threshold=0.6)
+
     def translate_blocks(
         self,
         blocks: list[TextBlock],
@@ -892,9 +937,22 @@ class BatchTranslator:
                 if len(missing_indices) > 3:
                     logger.warning("  ... and %d more missing translations", len(missing_indices) - 3)
 
+            cleaned_unique_translations = []
+            for idx, translated_text in enumerate(unique_translations):
+                cleaned_text = self._clean_batch_translation(translated_text)
+                if not cleaned_text or not cleaned_text.strip():
+                    cleaned_unique_translations.append("")
+                    continue
+                if self._should_retry_translation(unique_texts[idx], cleaned_text, output_language):
+                    preview = unique_texts[idx][:50].replace("\n", " ")
+                    logger.debug("Scheduling retry for JP->EN text: '%s'", preview)
+                    cleaned_unique_translations.append("")
+                    continue
+                cleaned_unique_translations.append(cleaned_text)
+
             # Detect empty translations (Copilot may return empty strings for some items)
             empty_translation_indices = [
-                idx for idx, trans in enumerate(unique_translations)
+                idx for idx, trans in enumerate(cleaned_unique_translations)
                 if not trans or not trans.strip()
             ]
             if empty_translation_indices:
@@ -908,8 +966,8 @@ class BatchTranslator:
             # Process results, expanding unique translations to all original blocks
             for idx, block in enumerate(batch):
                 unique_idx = original_to_unique_idx[idx]
-                if unique_idx < len(unique_translations):
-                    translated_text = unique_translations[unique_idx]
+                if unique_idx < len(cleaned_unique_translations):
+                    translated_text = cleaned_unique_translations[unique_idx]
                     is_fallback = False
 
                     # Check for empty translation and log warning
@@ -932,7 +990,7 @@ class BatchTranslator:
                     untranslated_block_ids.append(block.id)
                     logger.warning(
                         "Block '%s' was not translated (unique_idx %d >= translation count %d)",
-                        block.id, unique_idx, len(unique_translations)
+                        block.id, unique_idx, len(cleaned_unique_translations)
                     )
                     translations[block.id] = block.text
 

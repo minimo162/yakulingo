@@ -1918,6 +1918,35 @@ class TestBatchTranslatorTranslateBlocksAdditional:
         assert results["b"] == "Trans2"
         assert results["c"] == "Trans3"
 
+    def test_translate_strips_attachment_links(self, mock_copilot, prompt_builder):
+        """Trailing Copilot attachment links are removed from translations"""
+        translator = BatchTranslator(mock_copilot, prompt_builder)
+        mock_copilot.translate_sync.return_value = [
+            "Hello [glossary | Excel](https://example.com/glossary.csv)"
+        ]
+
+        blocks = [TextBlock(id="1", text="source", location="A1")]
+
+        results = translator.translate_blocks(blocks)
+
+        assert results["1"] == "Hello"
+
+    def test_retry_untranslated_jp_to_en(self, mock_copilot, prompt_builder):
+        """JP->EN retries when Copilot returns untranslated Japanese text"""
+        translator = BatchTranslator(mock_copilot, prompt_builder)
+        jp_text = "\u3053\u3093\u306b\u3061\u306f"
+        mock_copilot.translate_sync.side_effect = [
+            [jp_text],  # first attempt returns original Japanese
+            ["Hello"],  # retry succeeds
+        ]
+
+        blocks = [TextBlock(id="1", text=jp_text, location="A1")]
+
+        results = translator.translate_blocks(blocks, output_language="en")
+
+        assert results["1"] == "Hello"
+        assert mock_copilot.translate_sync.call_count == 2
+
     def test_translate_calls_copilot_per_batch(self, mock_copilot, prompt_builder):
         """Copilot is called once per batch (split by char limit)"""
         # Use small char limit to force multiple batches

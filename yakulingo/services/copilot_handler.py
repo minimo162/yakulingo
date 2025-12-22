@@ -7367,7 +7367,7 @@ class CopilotHandler:
 
             # Check if this is the Edge window (our browser process)
             is_edge = False
-            if not is_yakulingo and self.edge_process:
+            if not is_yakulingo and (self.edge_process or self._edge_pid):
                 # Check if foreground window belongs to our Edge process tree
                 fg_pid = wintypes.DWORD()
                 user32.GetWindowThreadProcessId(hwnd, ctypes.byref(fg_pid))
@@ -7434,10 +7434,14 @@ class CopilotHandler:
         Returns:
             True if the PID is our Edge process or one of its children
         """
-        if not self.edge_process:
+        target_pid = None
+        if self.edge_process:
+            target_pid = self.edge_process.pid
+        elif self._edge_pid:
+            target_pid = self._edge_pid
+        if not target_pid:
             return False
 
-        target_pid = self.edge_process.pid
         if pid == target_pid:
             return True
 

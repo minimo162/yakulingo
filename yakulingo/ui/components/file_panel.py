@@ -71,11 +71,6 @@ async def _process_drop_result(
         ui.notify(f'ファイルの読み込みに失敗しました: {err}', type='negative')
         return False
 
-    ext = Path(name).suffix.lower()
-    if ext not in SUPPORTED_EXTENSIONS:
-        ui.notify(f'サポートされていないファイル形式です: {ext}', type='warning')
-        return False
-
     temp_path = temp_file_manager.create_temp_file(content, name)
     callback_result = on_file_select(temp_path)
     if asyncio.iscoroutine(callback_result):

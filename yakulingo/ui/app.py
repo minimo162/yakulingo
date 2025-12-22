@@ -3612,16 +3612,33 @@ class YakuLingoApp:
 
     async def _select_file(self, file_path: Path):
         """Select file for translation with auto language detection (async)"""
-        # Use async version that will attempt auto-reconnection if needed
-        if not await self._ensure_connection_async():
-            return
-
         # Use saved client reference (protected by _client_lock)
         with self._client_lock:
             client = self._client
             if not client:
                 logger.warning("File selection aborted: no client connected")
                 return
+
+        ext = file_path.suffix.lower()
+        from yakulingo.ui.components.file_panel import SUPPORTED_EXTENSIONS
+
+        if ext not in SUPPORTED_EXTENSIONS:
+            if not ext:
+                error_message = "拡張子が判別できないファイルは翻訳できません"
+            elif ext == ".doc":
+                error_message = "このファイル形式は翻訳できません: .doc（.docx に変換してください）"
+            else:
+                error_message = f"このファイル形式は翻訳できません: {ext}"
+            self.state.reset_file_state()
+            self.state.file_state = FileState.ERROR
+            self.state.error_message = error_message
+            with client:
+                self._refresh_content()
+            return
+
+        # Use async version that will attempt auto-reconnection if needed
+        if not await self._ensure_connection_async():
+            return
 
         init_dialog = None
         try:

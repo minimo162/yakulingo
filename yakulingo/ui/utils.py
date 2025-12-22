@@ -66,6 +66,19 @@ class TempFileManager:
             self._temp_dir = Path(tempfile.mkdtemp(prefix='yakulingo_'))
         return self._temp_dir
 
+    def _unique_temp_path(self, base_path: Path) -> Path:
+        """Return a unique path in the temp directory without overwriting."""
+        if not base_path.exists():
+            return base_path
+        stem = base_path.stem or "unnamed_file"
+        suffix = base_path.suffix
+        for counter in range(2, 10001):
+            candidate = base_path.with_name(f"{stem}_{counter}{suffix}")
+            if not candidate.exists():
+                return candidate
+        import time
+        return base_path.with_name(f"{stem}_{int(time.monotonic() * 1000)}{suffix}")
+
     def create_temp_file(self, content: bytes, filename: str) -> Path:
         """
         Create a temporary file with the given content.
@@ -80,7 +93,7 @@ class TempFileManager:
             safe_filename = "unnamed_file"
         # Replace forbidden characters with underscore
         safe_filename = _RE_FILENAME_FORBIDDEN.sub('_', safe_filename)
-        temp_path = self.temp_dir / safe_filename
+        temp_path = self._unique_temp_path(self.temp_dir / safe_filename)
         temp_path.write_bytes(content)
         self._temp_files.add(temp_path)
         return temp_path
@@ -108,6 +121,8 @@ class TempFileManager:
         except OSError:
             # Fall back to copying if resolve() fails (e.g., permissions).
             pass
+
+        temp_path = self._unique_temp_path(temp_path)
 
         shutil.copyfile(source_path, temp_path)
         self._temp_files.add(temp_path)

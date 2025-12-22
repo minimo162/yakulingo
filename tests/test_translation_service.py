@@ -279,6 +279,20 @@ class TestTranslationServiceGenerateOutputPath:
 
             assert output.parent == output_dir
 
+    def test_creates_output_directory_if_missing(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir) / "nested" / "output"
+
+            settings = AppSettings(output_directory=str(output_dir))
+            service = TranslationService(Mock(), settings)
+
+            input_path = Path(tmpdir) / "report.xlsx"
+
+            output = service._generate_output_path(input_path)
+
+            assert output.parent == output_dir
+            assert output_dir.exists()
+
     def test_sanitizes_forbidden_chars_in_filename(self, service):
         with tempfile.TemporaryDirectory() as tmpdir:
             # Windows-forbidden characters (:/?* etc.) should be replaced
@@ -1137,6 +1151,11 @@ class TestDetectLanguageLocal:
         from yakulingo.services.translation_service import detect_language_local
         assert detect_language_local("Hello world") == "英語"
         assert detect_language_local("This is a test") == "英語"
+
+    def test_latin_dominant_with_cjk_detected_as_english(self):
+        """Latin-dominant mixed text is detected as English"""
+        from yakulingo.services.translation_service import detect_language_local
+        assert detect_language_local("IBM社 revenue") == "英語"
 
     def test_hangul_detected_as_korean(self):
         """Hangul text is detected as Korean"""

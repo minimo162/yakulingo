@@ -356,15 +356,15 @@ class LanguageDetector:
         if total_meaningful == 0:
             return "日本語"  # Default for no meaningful characters
 
-        # CJK present → assume Japanese (target users are Japanese)
-        # This handles mixed text like "AAT製", "IBM社", "Google翻訳"
-        if has_cjk:
-            return "日本語"
-
         # If mostly Latin characters, assume English
         latin_ratio = latin_count / total_meaningful
         if latin_ratio > 0.5:
             return "英語"
+
+        # CJK present → assume Japanese (target users are Japanese)
+        # This handles mixed text like "AAT製", "IBM社", "Google翻訳"
+        if has_cjk:
+            return "日本語"
 
         # Other cases → assume Japanese as default
         return "日本語"
@@ -2906,6 +2906,11 @@ class TranslationService:
 
         # Get output directory
         output_dir = self.config.get_output_directory(input_path)
+        try:
+            output_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            logger.error("Failed to create output directory '%s': %s", output_dir, e)
+            raise
 
         # Try base name first
         output_path = output_dir / f"{stem}{suffix}{ext}"

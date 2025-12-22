@@ -55,13 +55,20 @@ class TestTempFileManager:
             ("multi:char/test.txt", "test.txt"),
         ]
 
+        def assert_sanitized_name(path: Path, expected_name: str) -> None:
+            if path.name == expected_name:
+                return
+            expected = Path(expected_name)
+            assert path.suffix == expected.suffix
+            assert path.stem.startswith(f"{expected.stem}_")
+
         for original, expected in test_cases:
             TempFileManager._instance = None
             manager = TempFileManager()
             manager._temp_dir = tmp_path
 
             path = manager.create_temp_file(content, original)
-            assert path.name == expected, f"Expected {expected}, got {path.name} for input {original}"
+            assert_sanitized_name(path, expected)
 
     def test_create_temp_file_preserves_japanese(self, tmp_path):
         """Preserves Japanese characters in filename"""
@@ -103,6 +110,23 @@ class TestTempFileManager:
 
         path = manager.create_temp_file(content, "..\\..\\secret.txt")
         assert path.parent == tmp_path
+
+    def test_create_temp_file_uses_unique_names(self, tmp_path):
+        """Creates unique names when the same filename is reused"""
+        from yakulingo.ui.utils import TempFileManager
+
+        TempFileManager._instance = None
+        manager = TempFileManager()
+        manager._temp_dir = tmp_path
+
+        content = b"test"
+        first = manager.create_temp_file(content, "duplicate.txt")
+        second = manager.create_temp_file(content, "duplicate.txt")
+
+        assert first != second
+        assert first.name == "duplicate.txt"
+        assert second.suffix == ".txt"
+        assert second.stem.startswith("duplicate_")
 
 
 class TestFilenameFormatting:

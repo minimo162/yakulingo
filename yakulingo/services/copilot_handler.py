@@ -987,7 +987,8 @@ class CopilotHandler:
         # Window synchronization for side panel mode
         # When YakuLingo becomes foreground, Edge window is also brought forward
         # When Edge becomes foreground, YakuLingo window is also brought forward
-        self._window_sync_hook = None  # SetWinEventHook handle
+        self._window_sync_hook = None  # SetWinEventHook handle (foreground)
+        self._window_sync_minimize_hook = None  # SetWinEventHook handle (minimize)
         self._window_sync_running = False  # Thread stop flag
         self._window_sync_thread = None  # Dedicated thread for message loop
         # Loop prevention: track last sync time and hwnd to prevent rapid oscillation
@@ -997,6 +998,9 @@ class CopilotHandler:
         self._last_yakulingo_foreground_time: float = 0.0
         # Minimum interval between sync operations (seconds)
         self._SYNC_DEBOUNCE_INTERVAL = 0.3
+        # Suppress foreground sync briefly during minimize to avoid unwanted restore
+        self._MINIMIZE_SYNC_SUPPRESS_SECONDS = 0.6
+        self._minimize_sync_until: float = 0.0
         # Grace period to keep YakuLingo focused after taskbar restore (seconds)
         self._FOREGROUND_GRACE_PERIOD = 0.5
         # Warning frequency control: only show "window not found" warning once
@@ -7220,7 +7224,7 @@ class CopilotHandler:
         """Thread function for window synchronization.
 
         Sets up SetWinEventHook and runs a message loop to receive events.
-        The hook callback is invoked when any window becomes foreground.
+        The hook callback is invoked when any window becomes foreground or minimizes.
         """
         if sys.platform != "win32":
             return
@@ -7249,11 +7253,13 @@ class CopilotHandler:
 
         # EVENT_SYSTEM_FOREGROUND: Sent when a window becomes foreground
         EVENT_SYSTEM_FOREGROUND = 0x0003
+        # EVENT_SYSTEM_MINIMIZESTART: Sent when a window begins minimizing
+        EVENT_SYSTEM_MINIMIZESTART = 0x0016
         # WINEVENT_OUTOFCONTEXT: Callback runs in our process (no DLL injection)
         WINEVENT_OUTOFCONTEXT = 0x0000
 
-        # Set up the hook (must be done in this thread for message delivery)
-        hook = user32.SetWinEventHook(
+        # Set up the hooks (must be done in this thread for message delivery)
+        hook_foreground = user32.SetWinEventHook(
             EVENT_SYSTEM_FOREGROUND,  # eventMin
             EVENT_SYSTEM_FOREGROUND,  # eventMax
             None,                      # hmodWinEventProc (NULL for out-of-context)
@@ -7263,13 +7269,28 @@ class CopilotHandler:
             WINEVENT_OUTOFCONTEXT,     # dwFlags
         )
 
-        if not hook:
+        if not hook_foreground:
             error = ctypes.get_last_error()
-            logger.warning("SetWinEventHook failed with error: %d", error)
+            logger.warning("SetWinEventHook (foreground) failed with error: %d", error)
             self._window_sync_running = False
             return
 
-        self._window_sync_hook = hook
+        hook_minimize = user32.SetWinEventHook(
+            EVENT_SYSTEM_MINIMIZESTART,  # eventMin
+            EVENT_SYSTEM_MINIMIZESTART,  # eventMax
+            None,                         # hmodWinEventProc (NULL for out-of-context)
+            self._winevent_callback,      # pfnWinEventProc
+            0,                            # idProcess (0 = all processes)
+            0,                            # idThread (0 = all threads)
+            WINEVENT_OUTOFCONTEXT,        # dwFlags
+        )
+
+        if not hook_minimize:
+            error = ctypes.get_last_error()
+            logger.warning("SetWinEventHook (minimize) failed with error: %d", error)
+
+        self._window_sync_hook = hook_foreground
+        self._window_sync_minimize_hook = hook_minimize
         logger.debug("SetWinEventHook installed, starting message loop")
 
         # Message loop - required for SetWinEventHook callbacks
@@ -7288,10 +7309,14 @@ class CopilotHandler:
                     time.sleep(0.05)
         finally:
             # Cleanup: unhook when loop exits
-            if hook:
-                user32.UnhookWinEvent(hook)
-                logger.debug("SetWinEventHook uninstalled")
+            if hook_foreground:
+                user32.UnhookWinEvent(hook_foreground)
+                logger.debug("SetWinEventHook (foreground) uninstalled")
+            if hook_minimize:
+                user32.UnhookWinEvent(hook_minimize)
+                logger.debug("SetWinEventHook (minimize) uninstalled")
             self._window_sync_hook = None
+            self._window_sync_minimize_hook = None
 
     def _window_event_callback(
         self,
@@ -7305,10 +7330,11 @@ class CopilotHandler:
     ) -> None:
         """Callback for SetWinEventHook.
 
-        Called when a window becomes the foreground window.
+        Called when a window becomes foreground or begins minimizing.
         Synchronizes YakuLingo and Edge windows bidirectionally:
         - If YakuLingo becomes foreground, brings Edge to front as well.
         - If Edge becomes foreground, brings YakuLingo to front as well.
+        - If either window starts minimizing, minimize the other as well.
 
         Note: This callback runs in the WindowSyncThread.
         Keep processing minimal to avoid blocking message pumping.
@@ -7322,20 +7348,18 @@ class CopilotHandler:
 
             user32 = ctypes.WinDLL('user32', use_last_error=True)
 
-            # Debounce: prevent rapid oscillation between windows
+            EVENT_SYSTEM_FOREGROUND = 0x0003
+            EVENT_SYSTEM_MINIMIZESTART = 0x0016
+
             current_time = time.monotonic()
-            if (hwnd == self._last_sync_hwnd and
-                    current_time - self._last_sync_time < self._SYNC_DEBOUNCE_INTERVAL):
-                return
 
-            # Get window title
-            title_length = user32.GetWindowTextLengthW(hwnd) + 1
-            if title_length <= 1:
-                return
-
-            title = ctypes.create_unicode_buffer(title_length)
-            user32.GetWindowTextW(hwnd, title, title_length)
-            window_title = title.value
+            # Get window title (best-effort; may be empty for some windows)
+            title_length = user32.GetWindowTextLengthW(hwnd)
+            window_title = ""
+            if title_length > 0:
+                title = ctypes.create_unicode_buffer(title_length + 1)
+                user32.GetWindowTextW(hwnd, title, title_length + 1)
+                window_title = title.value
 
             # Check if this is the YakuLingo window
             is_yakulingo = (window_title == "YakuLingo" or
@@ -7348,6 +7372,30 @@ class CopilotHandler:
                 fg_pid = wintypes.DWORD()
                 user32.GetWindowThreadProcessId(hwnd, ctypes.byref(fg_pid))
                 is_edge = self._is_edge_process_pid(fg_pid.value)
+
+            if not is_yakulingo and not is_edge:
+                return
+
+            if event == EVENT_SYSTEM_MINIMIZESTART:
+                self._minimize_sync_until = current_time + self._MINIMIZE_SYNC_SUPPRESS_SECONDS
+                if is_yakulingo:
+                    edge_hwnd = self._find_edge_window_handle()
+                    self._minimize_window_hwnd(edge_hwnd, "Edge")
+                elif is_edge:
+                    yakulingo_hwnd = self._find_yakulingo_window_handle(include_hidden=True)
+                    self._minimize_window_hwnd(yakulingo_hwnd, "YakuLingo")
+                return
+
+            if event != EVENT_SYSTEM_FOREGROUND:
+                return
+
+            if current_time < self._minimize_sync_until:
+                return
+
+            # Debounce: prevent rapid oscillation between windows
+            if (hwnd == self._last_sync_hwnd and
+                    current_time - self._last_sync_time < self._SYNC_DEBOUNCE_INTERVAL):
+                return
 
             if is_yakulingo:
                 logger.debug("YakuLingo became foreground, syncing Edge window")
@@ -7398,6 +7446,29 @@ class CopilotHandler:
         except Exception:
             # psutil not available or process not found
             # Fall back to just checking direct PID match
+            return False
+
+    def _minimize_window_hwnd(self, hwnd: int, label: str) -> bool:
+        """Minimize a window by handle without activating it (best-effort)."""
+        if sys.platform != "win32":
+            return False
+        if not hwnd:
+            return False
+
+        try:
+            import ctypes
+
+            user32 = ctypes.WinDLL('user32', use_last_error=True)
+
+            if user32.IsIconic(hwnd):
+                return True
+
+            SW_SHOWMINNOACTIVE = 7
+            user32.ShowWindow(hwnd, SW_SHOWMINNOACTIVE)
+            logger.debug("%s window minimized (sync)", label)
+            return True
+        except Exception as e:
+            logger.debug("Failed to minimize %s window (sync): %s", label, e)
             return False
 
     def _sync_edge_to_foreground(self, yakulingo_hwnd) -> None:

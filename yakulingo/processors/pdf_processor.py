@@ -2963,16 +2963,19 @@ class PdfProcessor(FileProcessor):
                         initial_font_size = max(MIN_FONT_SIZE, min(initial_font_size, MAX_FONT_SIZE))
 
                         # Apply optional global font size adjustment (JP->EN tends to expand).
-                        # Keep consistent with FontSizeAdjuster semantics:
-                        # - Never increase above original size
-                        # - Respect user-configured minimum
+                        # Keep aligned with PDFMathTranslate: font size stays at source size
+                        # unless the user explicitly adjusts it.
                         if settings and direction == "jp_to_en":
                             try:
                                 size_adjust = float(getattr(settings, 'font_size_adjustment_jp_to_en', 0.0) or 0.0)
                                 min_setting = float(getattr(settings, 'font_size_min', 6.0) or 6.0)
                                 min_setting = max(MIN_FONT_SIZE, min_setting)
-                                adjusted = initial_font_size + size_adjust
-                                initial_font_size = min(initial_font_size, max(adjusted, min_setting))
+                                if size_adjust != 0.0:
+                                    adjusted = initial_font_size + size_adjust
+                                    initial_font_size = max(
+                                        min_setting,
+                                        min(adjusted, MAX_FONT_SIZE),
+                                    )
                             except (TypeError, ValueError):
                                 pass
 
@@ -3083,89 +3086,9 @@ class PdfProcessor(FileProcessor):
                             allow_wrap=allow_wrap,
                         )
 
-                        # For table cells: allow LIMITED font size reduction if text overflows.
-                        # Tables have fixed cell boundaries (NO box expansion), so font
-                        # reduction is the only option when text doesn't fit.
-                        #
-                        # Table cell handling:
-                        # - Box expansion is disabled for table cells (see pdf_layout.py)
-                        # - PP-DocLayout-L cannot detect cell boundaries within tables
-                        # - Font reduction is applied when text overflows vertically
-                        # - TABLE_MIN_LINE_HEIGHT is 1.0 to prevent line overlap
-                        # - Prefer readability over fitting - limit reduction to 70%
-                        # - If text still doesn't fit, allow overflow (better than unreadable)
-                        TABLE_FONT_MIN_READABLE = MIN_FONT_SIZE  # Allow shrink in tight table headers
-                        TABLE_FONT_MIN_RATIO = 0.5     # Allow reduction to 50% for tables (max 50% reduction)
-
-                        if is_table_cell:
-                            text_height = len(lines) * font_size * line_height
-                            # Check if text overflows vertically (allow 5% tolerance)
-                            if text_height > box_height * 1.05:
-                                # Iteratively reduce font size until text fits or minimum reached
-                                # Each iteration: reduce font, recalculate lines, check fit
-                                max_iterations = 5
-                                for iteration in range(max_iterations):
-                                    # Calculate minimum font size to fit exactly
-                                    min_required_font = box_height / (len(lines) * line_height)
-
-                                    # Respect user-configured minimum unless overflow is severe.
-                                    min_setting = MIN_FONT_SIZE
-                                    if settings:
-                                        try:
-                                            min_setting = float(getattr(settings, 'font_size_min', MIN_FONT_SIZE) or MIN_FONT_SIZE)
-                                        except (TypeError, ValueError):
-                                            min_setting = MIN_FONT_SIZE
-                                    min_setting = max(MIN_FONT_SIZE, min_setting)
-                                    min_setting_capped = min(font_size, min_setting)
-                                    if min_required_font < min_setting_capped:
-                                        overflow_ratio = text_height / box_height if box_height > 0 else 0.0
-                                        if overflow_ratio > 1.2:
-                                            min_setting_capped = MIN_FONT_SIZE
-                                            logger.debug(
-                                                "[Table] Block %s: overriding font_size_min to %.1f (overflow=%.2f)",
-                                                block_id, min_setting_capped, overflow_ratio
-                                            )
-
-                                    # Calculate absolute minimum (never increase above original)
-                                    readable_floor = min(initial_font_size, TABLE_FONT_MIN_READABLE)
-                                    absolute_min = max(
-                                        readable_floor,
-                                        initial_font_size * TABLE_FONT_MIN_RATIO,
-                                        min_setting_capped,
-                                    )
-
-                                    # Target font size
-                                    table_target_font = max(absolute_min, min_required_font)
-
-                                    if table_target_font >= font_size:
-                                        # Cannot reduce further
-                                        break
-
-                                    logger.debug(
-                                        "[Table] Block %s (iter %d): reducing font from %.1f to %.1f "
-                                        "to fit %d lines in height %.1f",
-                                        block_id, iteration, font_size, table_target_font,
-                                        len(lines), box_height
-                                    )
-                                    font_size = table_target_font
-
-                                    # Recalculate lines with new font size (smaller font = more chars per line)
-                                    lines = split_text_into_lines_with_font(
-                                        translated, box_width, font_size, font_id, font_registry
-                                    )
-
-                                    # Check if text now fits
-                                    text_height = len(lines) * font_size * line_height
-                                    if text_height <= box_height * 1.05:
-                                        break
-
                         # PDFMathTranslate compliant: Font size is generally FIXED
                         # We preserve the original font size and only adjust line height.
                         # This ensures consistent, readable text across the document.
-                        #
-                        # Exception: Table cells may have reduced font size (see above)
-                        # to prevent overflow into adjacent cells.
-                        #
                         # If text still overflows the box, it will extend beyond the original
                         # bounding box, which is the same behavior as PDFMathTranslate.
                         if len(lines) > original_line_count * 2 and original_line_count >= 1:

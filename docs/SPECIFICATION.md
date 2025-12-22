@@ -997,8 +997,8 @@ class PdfProcessor(FileProcessor):
     - 既存フォント再利用: PDFに埋め込まれたCID/Simpleフォントを検出・再利用
     - フォント種別判定: pdfminer.sixでCID vs Simpleフォントを判定
     - フォントサブセッティング: 未使用グリフを削除してファイルサイズを削減
-    - Form XObjectテキスト除去: 全ページ翻訳時のみ文書全体フィルタを実行
-      - 部分ページ翻訳は未選択ページ保護を優先し、XObjectフィルタをスキップ
+    - Form XObjectテキスト除去: 全ページ翻訳時は文書全体フィルタを実行
+      - 部分ページ翻訳は選択ページ側のXObjectを複製し、複製側のみフィルタ（未選択ページ保護）
 
     フォント種別に応じたエンコーディング:
     - EMBEDDED (新規埋め込み): has_glyph()でグリフID取得 → 4桁hex
@@ -1046,10 +1046,10 @@ class PdfProcessor(FileProcessor):
 
 | 翻訳方向 | 調整 | 最小サイズ |
 |---------|-----|----------|
-| JP → EN | なし (0pt) | 6pt |
-| EN → JP | なし | - |
+| JP → EN | フォントサイズ固定、行間のみ圧縮 | 5pt |
+| EN → JP | フォントサイズ固定、行間のみ圧縮 | 5pt |
 
-**備考:** フォントサイズ調整は設定で変更可能（`font_size_adjustment_jp_to_en`）。
+**備考:** `font_size_adjustment_jp_to_en` が 0 の場合はフォントサイズは原文維持（テーブル含む）。値を設定した場合のみ `font_size_min` を下限に調整する。
 
 ---
 

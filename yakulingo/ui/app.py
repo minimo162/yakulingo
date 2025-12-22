@@ -5049,14 +5049,19 @@ def run_app(
                             if user32.GetWindowRect(hwnd, ctypes.byref(current_rect)):
                                 current_x = current_rect.left
                                 current_y = current_rect.top
+                                current_width = current_rect.right - current_rect.left
+                                current_height = current_rect.bottom - current_rect.top
 
                                 # Check if window is NOT at target position (needs moving)
                                 POSITION_TOLERANCE = 10
+                                SIZE_TOLERANCE = 2
                                 needs_move = (abs(current_x - target_x) > POSITION_TOLERANCE or
                                             abs(current_y - target_y) > POSITION_TOLERANCE)
+                                needs_resize = (abs(current_width - target_width) > SIZE_TOLERANCE or
+                                               abs(current_height - target_height) > SIZE_TOLERANCE)
 
-                                if needs_move:
-                                    # Move window to target position (while still hidden if hidden=True worked)
+                                if needs_move or needs_resize:
+                                    # Move/resize window to target position (while still hidden if hidden=True worked)
                                     result = user32.SetWindowPos(
                                         hwnd, None,
                                         target_x, target_y, target_width, target_height,
@@ -5065,14 +5070,20 @@ def run_app(
                                     if result:
                                         # Log whether window was visible during move (indicates patch failure)
                                         visibility_note = " (visible - patch may not have worked)" if is_visible else " (hidden - OK)"
-                                        logger.debug("[EARLY_POSITION] Window moved from (%d, %d) to (%d, %d) after %dms%s",
-                                                   current_x, current_y, target_x, target_y, waited_ms, visibility_note)
+                                        logger.debug(
+                                            "[EARLY_POSITION] Window moved from (%d, %d) %dx%d to (%d, %d) %dx%d after %dms%s",
+                                            current_x, current_y, current_width, current_height,
+                                            target_x, target_y, target_width, target_height,
+                                            waited_ms, visibility_note
+                                        )
                                     else:
                                         logger.debug("[EARLY_POSITION] SetWindowPos failed after %dms", waited_ms)
                                 else:
-                                    # Window already at correct position (patch worked for x, y)
-                                    logger.debug("[EARLY_POSITION] Window already at correct position (%d, %d) after %dms",
-                                               current_x, current_y, waited_ms)
+                                    # Window already at correct position and size (patch worked for x, y)
+                                    logger.debug(
+                                        "[EARLY_POSITION] Window already at correct position/size (%d, %d) %dx%d after %dms",
+                                        current_x, current_y, current_width, current_height, waited_ms
+                                    )
 
                                 # Now show the window at correct position
                                 if not is_visible:

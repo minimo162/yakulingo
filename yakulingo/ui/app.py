@@ -747,12 +747,12 @@ class YakuLingoApp:
             if not error_message:
                 translation_by_text: dict[str, str] = {}
                 explanation_by_text: dict[str, str] = {}
-                for idx, text in enumerate(cell_texts):
-                    translation_by_text[text] = translations[idx] if idx < len(translations) else ""
-                    explanation_by_text[text] = explanations[idx] if idx < len(explanations) else ""
+                for idx, cell_text in enumerate(cell_texts):
+                    translation_by_text[cell_text] = translations[idx] if idx < len(translations) else ""
+                    explanation_by_text[cell_text] = explanations[idx] if idx < len(explanations) else ""
 
                 missing_translations = [
-                    text for text in cell_texts if not translation_by_text.get(text)
+                    cell_text for cell_text in cell_texts if not translation_by_text.get(cell_text)
                 ]
                 if missing_translations:
                     logger.warning(
@@ -792,8 +792,8 @@ class YakuLingoApp:
                 )
 
                 explanation_blocks = []
-                for text in cell_texts:
-                    explanation = explanation_by_text.get(text, "").strip()
+                for cell_text in cell_texts:
+                    explanation = explanation_by_text.get(cell_text, "").strip()
                     if explanation:
                         explanation_blocks.append(explanation)
                 explanation_text = "\n\n".join(explanation_blocks)

@@ -252,6 +252,12 @@ class AppState:
                     section.selected = selected
                     break
 
+    def set_all_sections_selected(self, selected: bool) -> None:
+        """Set selection state for all sections"""
+        if self.file_info and self.file_info.section_details:
+            for section in self.file_info.section_details:
+                section.selected = selected
+
     def close(self) -> None:
         """Close database connections and cleanup resources"""
         if self._history_db is not None:

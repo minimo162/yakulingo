@@ -2700,6 +2700,8 @@ class YakuLingoApp:
                         on_export_glossary_change=self._on_export_glossary_change,
                         on_style_change=self._on_style_change,
                         on_section_toggle=self._on_section_toggle,
+                        on_section_select_all=self._on_section_select_all,
+                        on_section_clear=self._on_section_clear,
                         on_font_size_change=self._on_font_size_change,
                         on_font_name_change=self._on_font_name_change,
                         on_attach_reference_file=self._attach_reference_file,
@@ -3569,7 +3571,17 @@ class YakuLingoApp:
     def _on_section_toggle(self, section_index: int, selected: bool):
         """Handle section selection toggle for partial translation"""
         self.state.toggle_section_selection(section_index, selected)
-        # Note: Don't call _refresh_content() here as it would close the expansion panel
+        # Don't refresh here; it would close the expansion panel mid-selection.
+
+    def _on_section_select_all(self):
+        """Select all sections for partial translation"""
+        self.state.set_all_sections_selected(True)
+        self._refresh_content()
+
+    def _on_section_clear(self):
+        """Clear section selection for partial translation"""
+        self.state.set_all_sections_selected(False)
+        self._refresh_content()
 
     async def _ensure_layout_initialized(self) -> bool:
         """

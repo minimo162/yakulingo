@@ -129,6 +129,8 @@ def create_file_panel(
     on_export_glossary_change: Optional[Callable[[bool], None]] = None,
     on_style_change: Optional[Callable[[str], None]] = None,
     on_section_toggle: Optional[Callable[[int, bool], None]] = None,
+    on_section_select_all: Optional[Callable[[], None]] = None,
+    on_section_clear: Optional[Callable[[], None]] = None,
     on_font_size_change: Optional[Callable[[float], None]] = None,
     on_font_name_change: Optional[Callable[[str], None]] = None,
     on_attach_reference_file: Optional[Callable[[], None]] = None,
@@ -201,7 +203,12 @@ def create_file_panel(
                             )
                         # Section selector for partial translation
                         if state.file_info and len(state.file_info.section_details) > 1:
-                            _section_selector(state.file_info, on_section_toggle)
+                            _section_selector(
+                                state.file_info,
+                                on_section_toggle,
+                                on_section_select_all,
+                                on_section_clear,
+                            )
                     with ui.row().classes('justify-center mt-4'):
                         # Disable button while file info is loading
                         btn_disabled = state.file_info is None
@@ -658,6 +665,8 @@ def _error_card(error_message: str):
 def _section_selector(
     file_info: FileInfo,
     on_toggle: Optional[Callable[[int, bool], None]],
+    on_select_all: Optional[Callable[[], None]],
+    on_clear: Optional[Callable[[], None]],
 ):
     """Section selector for partial translation - expandable checkbox list"""
     if not file_info.section_details:
@@ -682,6 +691,12 @@ def _section_selector(
 
         with ui.row().classes('items-center gap-2 mb-2'):
             ui.label(f'{selected_count}/{total_count} {section_label}').classes('text-xs text-muted')
+
+        with ui.row().classes('items-center gap-2 mb-2'):
+            if on_select_all:
+                ui.button('全選択', on_click=on_select_all).classes('btn-text').props('dense no-caps')
+            if on_clear:
+                ui.button('全解除', on_click=on_clear).classes('btn-text').props('dense no-caps')
 
         # Section checkboxes (scrollable if many)
         max_height = '200px' if len(file_info.section_details) > 5 else 'auto'

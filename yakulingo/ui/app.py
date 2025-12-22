@@ -571,15 +571,12 @@ class YakuLingoApp:
         # Bring app window to front
         await self._bring_window_to_front()
 
-        # Check if this is Excel-like tabular data (multiple columns)
-        # Only treat as Excel cells if there are at least 2 columns
+        # Treat all hotkey text as standard text translation for consistency.
         if summary.excel_like and summary.max_columns >= 2:
             logger.info(
-                "Hotkey translation [%s] detected Excel format: %d rows x %d cols",
+                "Hotkey translation [%s] detected Excel format: %d rows x %d cols; using standard translation",
                 trace_id, summary.row_count, summary.max_columns,
             )
-            await self._translate_excel_cells(text, trace_id)
-            return
 
         # Set source text (length check is done in _translate_text)
         self.state.source_text = text

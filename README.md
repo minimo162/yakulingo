@@ -409,7 +409,7 @@ YakuLingo/
 │   ├── launcher/             # ネイティブランチャー（Rust製）
 │   └── installer/            # ネットワーク共有インストーラ
 ├── tests/                    # テストスイート（33ファイル）
-├── prompts/                  # 翻訳プロンプト（17ファイル）
+├── prompts/                  # 翻訳プロンプト（14ファイル）
 ├── config/settings.template.json  # 設定テンプレート
 └── glossary.csv              # デフォルト参照ファイル
 ```

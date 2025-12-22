@@ -8,8 +8,6 @@ Prompt file structure:
 - file_translate_to_jp.txt: File translation → Japanese
 - text_translate_to_en_compare.txt: Text translation → English (standard/concise/minimal in one response)
 - text_translate_to_jp.txt: Text translation → Japanese (with explanation)
-- text_translate_to_en_clipboard.txt: Clipboard translation → English (single style)
-- text_translate_to_jp_clipboard.txt: Clipboard translation → Japanese (single style)
 - adjust_*.txt: Adjustment prompts (shorter, longer, custom)
 
 Common translation rules are loaded from translation_rules.txt and injected into

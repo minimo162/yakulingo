@@ -189,14 +189,12 @@ YakuLingo/
 │   ├── conftest.py
 │   └── test_*.py
 │
-├── prompts/                        # 翻訳プロンプト（16ファイル）
+├── prompts/                        # 翻訳プロンプト（14ファイル）
 │   ├── translation_rules.txt       # 共通翻訳ルール
 │   ├── file_translate_to_en_{standard|concise|minimal}.txt  # ファイル翻訳（日→英）
 │   ├── file_translate_to_jp.txt    # ファイル翻訳用（英→日）
 │   ├── text_translate_to_en_compare.txt  # テキスト翻訳（日→英、3スタイル比較）
 │   ├── text_translate_to_jp.txt    # テキスト翻訳用（英→日、解説付き/共通ルール挿入）
-│   ├── text_translate_to_en_clipboard.txt # クリップボード翻訳（日→英）
-│   ├── text_translate_to_jp_clipboard.txt # クリップボード翻訳（英→日）
 │   ├── adjust_custom.txt           # カスタムリクエスト
 │   ├── text_alternatives.txt       # フォローアップ: 他の言い方
 │   ├── text_review_en.txt          # フォローアップ: 英文をチェック
@@ -1079,7 +1077,7 @@ class PromptBuilder:
         テンプレートをキャッシュから取得（初回はファイルから読み込み）
         - JP向け: prompts/text_translate_to_jp.txt
         - EN向け: prompts/text_translate_to_en_compare.txt
-        - クリップボード: prompts/text_translate_to_*_clipboard.txt
+        - クリップボード: 通常のテキスト翻訳テンプレートを使用
         - キャッシュにより毎回のファイルI/Oを回避
         """
 ```

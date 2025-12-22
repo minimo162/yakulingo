@@ -96,6 +96,60 @@ def _get_primary_monitor_size() -> tuple[int, int] | None:
     return None
 
 
+def _get_process_dpi_awareness() -> int | None:
+    """Return process DPI awareness on Windows (0=unaware, 1=system, 2=per-monitor)."""
+    if sys.platform != 'win32':
+        return None
+    try:
+        import ctypes
+
+        awareness = ctypes.c_int()
+        shcore = ctypes.WinDLL('shcore', use_last_error=True)
+        if shcore.GetProcessDpiAwareness(None, ctypes.byref(awareness)) == 0:
+            return awareness.value
+    except Exception:
+        return None
+    return None
+
+
+def _get_windows_dpi_scale() -> float:
+    """Return Windows DPI scale (1.0 at 100%)."""
+    if sys.platform != 'win32':
+        return 1.0
+    try:
+        import ctypes
+
+        user32 = ctypes.WinDLL('user32', use_last_error=True)
+        get_dpi = getattr(user32, 'GetDpiForSystem', None)
+        if get_dpi:
+            dpi = int(get_dpi())
+            if dpi > 0:
+                return dpi / 96.0
+    except Exception:
+        pass
+    try:
+        import ctypes
+
+        user32 = ctypes.WinDLL('user32', use_last_error=True)
+        gdi32 = ctypes.WinDLL('gdi32', use_last_error=True)
+        LOGPIXELSX = 88
+        hdc = user32.GetDC(0)
+        if hdc:
+            dpi = gdi32.GetDeviceCaps(hdc, LOGPIXELSX)
+            user32.ReleaseDC(0, hdc)
+            if dpi > 0:
+                return dpi / 96.0
+    except Exception:
+        pass
+    return 1.0
+
+
+def _scale_size(size: tuple[int, int], scale: float) -> tuple[int, int]:
+    if scale <= 0:
+        return size
+    return (max(1, int(round(size[0] * scale))), max(1, int(round(size[1] * scale))))
+
+
 def _ensure_nicegui_version() -> None:
     """Validate that the installed NiceGUI version meets the minimum requirement.
 
@@ -359,6 +413,11 @@ class YakuLingoApp:
         self._base_dir = Path(__file__).parent.parent.parent
         self._glossary_path = self._base_dir / 'glossary.csv'
 
+        # Window sizing state (logical vs native/DPI-scaled)
+        self._native_window_size: tuple[int, int] | None = None
+        self._dpi_scale: float = 1.0
+        self._window_size_is_logical: bool = True
+
         # UI references for refresh
         self._header_status = None
         self._main_content = None
@@ -488,6 +547,15 @@ class YakuLingoApp:
         """Resolve browser display mode for current screen size."""
         screen_width = self._screen_size[0] if self._screen_size else None
         return resolve_browser_display_mode(self.settings.browser_display_mode, screen_width)
+
+    def _get_window_size_for_native_ops(self) -> tuple[int, int]:
+        """Return window size in the coordinate space used by Win32 APIs."""
+        if self._native_window_size is None:
+            return self._window_size
+        awareness = _get_process_dpi_awareness()
+        if self._window_size_is_logical and awareness in (1, 2):
+            return self._native_window_size
+        return self._window_size
 
     def start_hotkey_manager(self):
         """Start the global hotkey manager for quick translation (Ctrl+Alt+J)."""
@@ -1255,8 +1323,9 @@ class YakuLingoApp:
 
             # Calculate target position using the same function as _position_window_early_sync()
             # This ensures consistent positioning and avoids duplicate repositioning
+            native_window_width, native_window_height = self._get_window_size_for_native_ops()
             target_position = _calculate_app_position_for_side_panel(
-                self._window_size[0], self._window_size[1]
+                native_window_width, native_window_height
             )
             if not target_position:
                 # Fall back to Copilot's position if calculation fails
@@ -1268,7 +1337,7 @@ class YakuLingoApp:
                     return False
             else:
                 app_x, app_y = target_position
-                app_width, app_height = self._window_size
+                app_width, app_height = native_window_width, native_window_height
 
             import ctypes
             from ctypes import wintypes
@@ -4579,24 +4648,42 @@ def run_app(
     # Detect optimal window size BEFORE ui.run() to avoid resize flicker
     # Fallback to browser mode when pywebview cannot create a native window (e.g., headless Linux)
     _t2 = time.perf_counter()
+    dpi_scale = _get_windows_dpi_scale()
+    dpi_awareness_before = _get_process_dpi_awareness()
+    window_size_is_logical = dpi_awareness_before in (None, 0)
+
     screen_size = _get_primary_monitor_size()
-    yakulingo_app._screen_size = screen_size
+    logical_screen_size = screen_size
+    if screen_size is not None and not window_size_is_logical and dpi_scale != 1.0:
+        logical_screen_size = _scale_size(screen_size, 1.0 / dpi_scale)
+    yakulingo_app._screen_size = logical_screen_size
+    yakulingo_app._dpi_scale = dpi_scale
+    yakulingo_app._window_size_is_logical = window_size_is_logical
     requested_display_mode = AppSettings.load(get_default_settings_path()).browser_display_mode
     effective_display_mode = resolve_browser_display_mode(
         requested_display_mode,
-        screen_size[0] if screen_size else None,
+        logical_screen_size[0] if logical_screen_size else None,
     )
-    if screen_size is not None and effective_display_mode != requested_display_mode:
+    if logical_screen_size is not None and effective_display_mode != requested_display_mode:
         logger.info(
             "Small screen detected (work area=%dx%d). Disabling side_panel (%s -> %s)",
-            screen_size[0],
-            screen_size[1],
+            logical_screen_size[0],
+            logical_screen_size[1],
             requested_display_mode,
             effective_display_mode,
         )
     native, webview_module = _check_native_mode_and_get_webview(
         native,
-        fast_path=screen_size is not None,
+        fast_path=logical_screen_size is not None,
+    )
+    dpi_awareness_after = _get_process_dpi_awareness()
+    dpi_awareness_current = (
+        dpi_awareness_after if dpi_awareness_after is not None else dpi_awareness_before
+    )
+    use_native_scale = (
+        window_size_is_logical
+        and dpi_scale != 1.0
+        and dpi_awareness_current in (1, 2)
     )
     _t2_webview = time.perf_counter()
     logger.info("[TIMING] webview.initialize: %.2fs", _t2_webview - _t2)
@@ -4606,17 +4693,21 @@ def run_app(
         # Pass pre-initialized webview module to avoid second initialization
         window_size, panel_sizes = _detect_display_settings(
             webview_module=webview_module,
-            screen_size=screen_size,
+            screen_size=logical_screen_size,
             display_mode=effective_display_mode,
         )
+        native_window_size = window_size
+        if window_size_is_logical and dpi_scale != 1.0:
+            native_window_size = _scale_size(window_size, dpi_scale)
         yakulingo_app._panel_sizes = panel_sizes  # (sidebar_width, input_panel_width, content_width)
         yakulingo_app._window_size = window_size
-        run_window_size = window_size
+        yakulingo_app._native_window_size = native_window_size
+        run_window_size = native_window_size if use_native_scale else window_size
     else:
-        if screen_size is not None:
+        if logical_screen_size is not None:
             window_size, panel_sizes = _detect_display_settings(
                 webview_module=None,
-                screen_size=screen_size,
+                screen_size=logical_screen_size,
                 display_mode=effective_display_mode,
             )
             yakulingo_app._panel_sizes = panel_sizes
@@ -4624,6 +4715,10 @@ def run_app(
             window_size = (1800, 1100)  # Default size for browser mode (reduced for side panel)
             yakulingo_app._panel_sizes = (250, 400, 850)  # Default panel sizes (sidebar, input, content)
         yakulingo_app._window_size = window_size
+        if window_size_is_logical and dpi_scale != 1.0:
+            yakulingo_app._native_window_size = _scale_size(window_size, dpi_scale)
+        else:
+            yakulingo_app._native_window_size = window_size
         run_window_size = None  # Passing a size would re-enable native mode inside NiceGUI
     logger.info("[TIMING] display_settings (total): %.2fs", time.perf_counter() - _t2)
 
@@ -4651,7 +4746,8 @@ def run_app(
         browser_opened = True
 
         url = f"http://{host}:{port}/"
-        width, height = yakulingo_app._window_size
+        native_window_size = yakulingo_app._native_window_size or yakulingo_app._window_size
+        width, height = native_window_size
         try:
             display_mode = yakulingo_app._get_effective_browser_display_mode()
         except Exception:
@@ -4892,8 +4988,11 @@ def run_app(
             screen_width = yakulingo_app._screen_size[0] if yakulingo_app._screen_size else None
             effective_mode = resolve_browser_display_mode(settings.browser_display_mode, screen_width)
             if effective_mode == "side_panel":
+                native_window_width, native_window_height = (
+                    yakulingo_app._get_window_size_for_native_ops()
+                )
                 app_position = _calculate_app_position_for_side_panel(
-                    yakulingo_app._window_size[0], yakulingo_app._window_size[1]
+                    native_window_width, native_window_height
                 )
                 if app_position:
                     nicegui_app.native.window_args['x'] = app_position[0]
@@ -5058,12 +5157,15 @@ def run_app(
                     # For side_panel mode, position window at calculated position
                     if effective_mode == "side_panel":
                         # Calculate target position
+                        native_window_width, native_window_height = (
+                            yakulingo_app._get_window_size_for_native_ops()
+                        )
                         app_position = _calculate_app_position_for_side_panel(
-                            yakulingo_app._window_size[0], yakulingo_app._window_size[1]
+                            native_window_width, native_window_height
                         )
                         if app_position:
                             target_x, target_y = app_position
-                            target_width, target_height = yakulingo_app._window_size
+                            target_width, target_height = native_window_width, native_window_height
 
                             # Get current position
                             current_rect = RECT()

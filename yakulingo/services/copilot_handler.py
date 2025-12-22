@@ -197,6 +197,60 @@ def _get_async_playwright():
     return _playwright_manager.get_async_playwright()
 
 
+def _get_process_dpi_awareness() -> int | None:
+    """Return process DPI awareness on Windows (0=unaware, 1=system, 2=per-monitor)."""
+    if sys.platform != "win32":
+        return None
+    try:
+        import ctypes
+
+        awareness = ctypes.c_int()
+        shcore = ctypes.WinDLL('shcore', use_last_error=True)
+        if shcore.GetProcessDpiAwareness(None, ctypes.byref(awareness)) == 0:
+            return awareness.value
+    except Exception:
+        return None
+    return None
+
+
+def _get_windows_dpi_scale() -> float:
+    """Return Windows DPI scale (1.0 at 100%)."""
+    if sys.platform != "win32":
+        return 1.0
+    try:
+        import ctypes
+
+        user32 = ctypes.WinDLL('user32', use_last_error=True)
+        get_dpi = getattr(user32, 'GetDpiForSystem', None)
+        if get_dpi:
+            dpi = int(get_dpi())
+            if dpi > 0:
+                return dpi / 96.0
+    except Exception:
+        pass
+    try:
+        import ctypes
+
+        user32 = ctypes.WinDLL('user32', use_last_error=True)
+        gdi32 = ctypes.WinDLL('gdi32', use_last_error=True)
+        LOGPIXELSX = 88
+        hdc = user32.GetDC(0)
+        if hdc:
+            dpi = gdi32.GetDeviceCaps(hdc, LOGPIXELSX)
+            user32.ReleaseDC(0, hdc)
+            if dpi > 0:
+                return dpi / 96.0
+    except Exception:
+        pass
+    return 1.0
+
+
+def _scale_value(value: int, scale: float) -> int:
+    if scale <= 0:
+        return value
+    return int(round(value * scale))
+
+
 def _is_copilot_error_response(response: str) -> bool:
     """
     Check if response is a Copilot error message that should trigger retry.
@@ -3077,49 +3131,69 @@ class CopilotHandler:
             # SPI_GETWORKAREA = 0x0030
             user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(work_area), 0)
 
+            work_left = work_area.left
+            work_top = work_area.top
             screen_width = work_area.right - work_area.left
             screen_height = work_area.bottom - work_area.top
-            work_area_key = (work_area.left, work_area.top, screen_width, screen_height)
+
+            dpi_scale = _get_windows_dpi_scale()
+            dpi_awareness = _get_process_dpi_awareness()
+            gap = self.SIDE_PANEL_GAP
+            min_window_height = MIN_WINDOW_HEIGHT
+            min_side_panel_height = self.SIDE_PANEL_MIN_HEIGHT
+            if dpi_scale != 1.0:
+                gap = _scale_value(gap, dpi_scale)
+                min_window_height = _scale_value(min_window_height, dpi_scale)
+                min_side_panel_height = _scale_value(min_side_panel_height, dpi_scale)
+            if dpi_awareness in (None, 0) and dpi_scale != 1.0:
+                work_left = _scale_value(work_left, dpi_scale)
+                work_top = _scale_value(work_top, dpi_scale)
+                screen_width = _scale_value(screen_width, dpi_scale)
+                screen_height = _scale_value(screen_height, dpi_scale)
+
+            work_area_key = (work_left, work_top, screen_width, screen_height)
             if (self._cached_side_panel_work_area == work_area_key and
                     self._cached_side_panel_geometry is not None):
                 return self._cached_side_panel_geometry
 
             # Calculate 1:1 ratio: app and browser each get half the available width.
             # Use full available width (handle odd pixels without leaving gaps).
-            available_width = max(screen_width - self.SIDE_PANEL_GAP, 0)
+            available_width = max(screen_width - gap, 0)
             app_width = available_width // 2
             edge_width = available_width - app_width
             max_window_height = screen_height  # Use full work area height
 
             # Calculate app window height (must match app.py _detect_display_settings)
-            MIN_WINDOW_HEIGHT = 650
-            app_height = min(max(int(screen_height * self.APP_HEIGHT_RATIO), MIN_WINDOW_HEIGHT), max_window_height)
+            app_height = min(
+                max(int(screen_height * self.APP_HEIGHT_RATIO), min_window_height),
+                max_window_height,
+            )
             logger.debug("Using calculated window size: %dx%d", app_width, app_height)
 
             # Calculate total width of app + gap + side panel
-            total_width = app_width + self.SIDE_PANEL_GAP + edge_width
+            total_width = app_width + gap + edge_width
 
             # Position the "set" (app + side panel) centered on screen
             # This ensures both windows fit within the screen
-            set_start_x = work_area.left + (screen_width - total_width) // 2
-            set_start_y = work_area.top + (screen_height - app_height) // 2
+            set_start_x = work_left + (screen_width - total_width) // 2
+            set_start_y = work_top + (screen_height - app_height) // 2
 
             # Ensure set doesn't go off screen (left edge)
-            if set_start_x < work_area.left:
-                set_start_x = work_area.left
+            if set_start_x < work_left:
+                set_start_x = work_left
 
             # App window position (left side of the set)
             app_x = set_start_x
             app_y = set_start_y
 
             # Edge window position (right side of app)
-            edge_x = app_x + app_width + self.SIDE_PANEL_GAP
+            edge_x = app_x + app_width + gap
             edge_y = app_y
             edge_height = app_height
 
             # Ensure minimum height
-            if edge_height < self.SIDE_PANEL_MIN_HEIGHT:
-                edge_height = self.SIDE_PANEL_MIN_HEIGHT
+            if edge_height < min_side_panel_height:
+                edge_height = min_side_panel_height
 
             logger.debug("Side panel geometry from screen: (%d, %d) %dx%d (app_x=%d, screen: %dx%d)",
                         edge_x, edge_y, edge_width, edge_height, app_x, screen_width, screen_height)
@@ -3242,6 +3316,13 @@ class CopilotHandler:
             work_area = monitor_info.rcWork
             screen_width = work_area.right - work_area.left
             screen_height = work_area.bottom - work_area.top
+            gap = self.SIDE_PANEL_GAP
+            min_side_panel_height = self.SIDE_PANEL_MIN_HEIGHT
+            dpi_scale = _get_windows_dpi_scale()
+            dpi_awareness = _get_process_dpi_awareness()
+            if dpi_awareness in (1, 2) and dpi_scale != 1.0:
+                gap = _scale_value(gap, dpi_scale)
+                min_side_panel_height = _scale_value(min_side_panel_height, dpi_scale)
 
             # Get app window dimensions
             app_width = app_rect.right - app_rect.left
@@ -3257,7 +3338,7 @@ class CopilotHandler:
                 app_frame_top_offset = 0
 
             # Target widths based on monitor work area (use full available width)
-            available_width = max(screen_width - self.SIDE_PANEL_GAP, 0)
+            available_width = max(screen_width - gap, 0)
             target_app_width = available_width // 2
             target_edge_width = available_width - target_app_width
             if target_app_width <= 0 or target_edge_width <= 0:
@@ -3280,12 +3361,12 @@ class CopilotHandler:
                     app_height = expected_app_height
 
             # Ensure minimum height for usability
-            if app_height < self.SIDE_PANEL_MIN_HEIGHT:
-                app_height = self.SIDE_PANEL_MIN_HEIGHT
+            if app_height < min_side_panel_height:
+                app_height = min_side_panel_height
             app_frame_height = max(app_height - app_top_inset - app_bottom_inset, 0)
 
             # Calculate total width of app + gap + side panel
-            total_width = target_app_width + self.SIDE_PANEL_GAP + edge_width
+            total_width = target_app_width + gap + edge_width
 
             # Position the "set" (app + side panel) centered on screen
             # This ensures both windows fit within the screen
@@ -3299,7 +3380,7 @@ class CopilotHandler:
             # Calculate new positions
             new_app_x = set_start_x
             new_app_y = set_start_y
-            edge_x = new_app_x + target_app_width + self.SIDE_PANEL_GAP
+            edge_x = new_app_x + target_app_width + gap
             edge_y = new_app_y
 
             POSITION_TOLERANCE = 2
@@ -3516,6 +3597,11 @@ class CopilotHandler:
             user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(work_area), 0)
             width = work_area.right - work_area.left
             height = work_area.bottom - work_area.top
+            dpi_scale = _get_windows_dpi_scale()
+            dpi_awareness = _get_process_dpi_awareness()
+            if dpi_awareness in (1, 2) and dpi_scale != 1.0:
+                width = _scale_value(width, 1.0 / dpi_scale)
+                height = _scale_value(height, 1.0 / dpi_scale)
             if width <= 0 or height <= 0:
                 return None
             return (width, height)

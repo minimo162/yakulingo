@@ -162,6 +162,15 @@ Regards,"""
         assert parsed[0] == "Hello"
         assert parsed[1] == "World"
 
+    def test_parse_allows_increasing_indent(self, handler):
+        """Handles top-level items with slightly increasing indentation"""
+        result = """1. First
+ 2. Second
+  3. Third"""
+        parsed = handler._parse_batch_result(result, 3)
+
+        assert parsed == ["First", "Second", "Third"]
+
     def test_parse_empty_result(self, handler):
         """Handles empty result"""
         result = ""

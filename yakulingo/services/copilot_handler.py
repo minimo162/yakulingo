@@ -484,6 +484,12 @@ class PlaywrightThreadExecutor:
             Exception from the function if it raised
             TimeoutError if the operation times out
         """
+        # If called from the worker thread, execute directly to avoid deadlock.
+        if self._thread is not None and threading.current_thread().ident == self._thread.ident:
+            logger.debug("[THREAD] execute() called from worker thread; running inline: %s",
+                         func.__name__ if hasattr(func, '__name__') else func)
+            return func(*args)
+
         # Check shutdown flag before starting
         if self._shutdown_flag:
             raise RuntimeError("Executor is shutting down")
@@ -1208,6 +1214,13 @@ class CopilotHandler:
         logger.debug("No Edge executable found (platform=%s, candidates=%d)", sys.platform, len(candidates))
         return None
 
+    def _get_profile_dir_path(self) -> Path:
+        """Return the expected Edge profile directory path for YakuLingo."""
+        local_app_data = os.environ.get("LOCALAPPDATA", "")
+        if local_app_data:
+            return Path(local_app_data) / "YakuLingo" / "EdgeProfile"
+        return Path.home() / ".yakulingo" / "edge-profile"
+
     def start_edge(self) -> bool:
         """
         Start Edge browser early (without Playwright connection).
@@ -1218,9 +1231,19 @@ class CopilotHandler:
         Returns:
             True if Edge is now running on our CDP port
         """
-        if self._is_port_in_use():
+        port_status = self._get_cdp_port_status()
+        if port_status == "ours":
             logger.debug("Edge already running on port %d", self.cdp_port)
             return True
+        if port_status != "free":
+            logger.warning(
+                "CDP port %d already in use by another process (%s); "
+                "not starting Edge to avoid terminating unrelated apps",
+                self.cdp_port,
+                port_status,
+            )
+            self.last_connection_error = self.ERROR_CONNECTION_FAILED
+            return False
 
         logger.info("Starting Edge early...")
         return self._start_translator_edge()
@@ -1242,32 +1265,127 @@ class CopilotHandler:
                 except (socket.error, OSError):
                     pass
 
-    def _kill_existing_translator_edge(self):
-        """Kill any Edge using our dedicated port/profile"""
+    def _get_listening_pids(self, port: int) -> list[int]:
+        """Return PIDs listening on the given port (Windows only)."""
+        if sys.platform != "win32":
+            return []
         try:
             netstat_path = r"C:\Windows\System32\netstat.exe"
-            taskkill_path = r"C:\Windows\System32\taskkill.exe"
             local_cwd = os.environ.get("SYSTEMROOT", r"C:\Windows")
-
             result = subprocess.run(
                 [netstat_path, "-ano"],
                 capture_output=True, text=True, timeout=5, cwd=local_cwd,
-                creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+                creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
             )
-            for line in result.stdout.split("\n"):
-                if f":{self.cdp_port}" in line and "LISTENING" in line:
+            pids: list[int] = []
+            for line in result.stdout.splitlines():
+                if f":{port}" in line and "LISTENING" in line:
                     parts = line.split()
                     if parts:
-                        pid = parts[-1]
-                        subprocess.run(
-                            [taskkill_path, "/F", "/T", "/PID", pid],
-                            capture_output=True, timeout=5, cwd=local_cwd,
-                            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-                        )
-                        time.sleep(0.5)  # Reduced from 1s
-                        break
+                        pid_str = parts[-1]
+                        if pid_str.isdigit():
+                            pids.append(int(pid_str))
+            return pids
+        except (subprocess.SubprocessError, OSError, TimeoutError) as e:
+            logger.warning("Failed to get listening PIDs on port %d: %s", port, e)
+            return []
+
+    def _inspect_process_for_cdp(self, pid: int, profile_hint: Optional[str]) -> dict[str, object]:
+        """Inspect a PID for Edge/CDP ownership (best-effort)."""
+        info = {
+            "pid": pid,
+            "is_edge": False,
+            "is_ours": False,
+            "name": "",
+            "cmdline": "",
+        }
+        try:
+            import psutil
+
+            proc = psutil.Process(pid)
+            name = proc.name() or ""
+            exe = proc.exe() or ""
+            cmdline = " ".join(proc.cmdline() or [])
+            lower_name = name.lower()
+            lower_exe = exe.lower()
+            cmdline_cmp = cmdline.replace("\\", "/").lower()
+            profile_cmp = (profile_hint or "").replace("\\", "/").lower()
+
+            is_edge = "msedge" in lower_name or "msedge" in lower_exe
+            has_port_flag = f"--remote-debugging-port={self.cdp_port}" in cmdline_cmp
+            has_profile_flag = bool(profile_cmp) and profile_cmp in cmdline_cmp
+            is_ours = is_edge and (has_port_flag or has_profile_flag)
+
+            info.update(
+                {
+                    "is_edge": is_edge,
+                    "is_ours": is_ours,
+                    "name": name,
+                    "cmdline": cmdline,
+                }
+            )
+        except Exception as e:
+            logger.debug("Failed to inspect process %d: %s", pid, e)
+        return info
+
+    def _get_cdp_port_status(self) -> str:
+        """Return status of the CDP port: free, ours, edge_other, other, unknown."""
+        if not self._is_port_in_use():
+            return "free"
+
+        pids = self._get_listening_pids(self.cdp_port)
+        if not pids:
+            return "unknown"
+
+        profile_dir = self.profile_dir or self._get_profile_dir_path()
+        profile_hint = str(profile_dir)
+        processes = [self._inspect_process_for_cdp(pid, profile_hint) for pid in pids]
+        inspected = any(proc_info["name"] or proc_info["cmdline"] for proc_info in processes)
+
+        if any(proc_info["is_ours"] for proc_info in processes):
+            return "ours"
+        if any(proc_info["is_edge"] for proc_info in processes):
+            return "edge_other"
+        if not inspected:
+            return "unknown"
+        return "other"
+
+    def _kill_existing_translator_edge(self) -> bool:
+        """Kill Edge that is using our dedicated CDP port/profile."""
+        if sys.platform != "win32":
+            logger.warning("Skipping Edge kill: unsupported platform %s", sys.platform)
+            return False
+
+        try:
+            taskkill_path = r"C:\Windows\System32\taskkill.exe"
+            local_cwd = os.environ.get("SYSTEMROOT", r"C:\Windows")
+
+            pids = self._get_listening_pids(self.cdp_port)
+            if not pids:
+                return False
+
+            profile_dir = self.profile_dir or self._get_profile_dir_path()
+            profile_hint = str(profile_dir)
+            for pid in pids:
+                proc_info = self._inspect_process_for_cdp(pid, profile_hint)
+                if proc_info["is_ours"]:
+                    subprocess.run(
+                        [taskkill_path, "/F", "/T", "/PID", str(pid)],
+                        capture_output=True, timeout=5, cwd=local_cwd,
+                        creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
+                    )
+                    time.sleep(0.5)  # Reduced from 1s
+                    return True
+
+            logger.warning(
+                "CDP port %d is in use by a non-YakuLingo process; "
+                "refusing to terminate it",
+                self.cdp_port,
+            )
+            return False
         except (subprocess.SubprocessError, OSError, TimeoutError) as e:
             logger.warning("Failed to kill existing Edge: %s", e)
+            return False
 
     def _kill_process_tree(self, pid: int) -> bool:
         """Kill a process and all its child processes using taskkill /T.
@@ -1318,19 +1436,26 @@ class CopilotHandler:
             return False
 
         # Use user-local profile directory
-        local_app_data = os.environ.get("LOCALAPPDATA", "")
-        if local_app_data:
-            self.profile_dir = Path(local_app_data) / "YakuLingo" / "EdgeProfile"
-        else:
-            self.profile_dir = Path.home() / ".yakulingo" / "edge-profile"
+        self.profile_dir = self._get_profile_dir_path()
         self.profile_dir.mkdir(parents=True, exist_ok=True)
 
-        # Kill any existing process on our port
-        if self._is_port_in_use():
+        # Kill any existing process on our port (only if it's ours)
+        port_status = self._get_cdp_port_status()
+        if port_status == "ours":
             logger.info("Closing previous Edge...")
-            self._kill_existing_translator_edge()
+            if not self._kill_existing_translator_edge():
+                logger.warning("Previous Edge could not be terminated cleanly")
             time.sleep(0.3)  # Reduced from 0.5s
             logger.info("Previous Edge closed")
+        elif port_status != "free":
+            logger.warning(
+                "CDP port %d already in use by another process (%s); "
+                "abort Edge startup to avoid killing unrelated apps",
+                self.cdp_port,
+                port_status,
+            )
+            self.last_connection_error = self.ERROR_CONNECTION_FAILED
+            return False
 
         # Start new Edge with our dedicated port and profile
         logger.info("Starting translator Edge...")
@@ -1582,7 +1707,24 @@ class CopilotHandler:
             # Edge startup runs in background thread while Playwright initializes in current thread
             # Note: Playwright MUST be initialized in the same thread where it will be used
             # (greenlet limitation), so only Edge startup can be parallelized
-            need_start_edge = not self._is_port_in_use()
+            port_status = self._get_cdp_port_status()
+            if port_status in ("edge_other", "other"):
+                logger.warning(
+                    "CDP port %d already in use by another process (%s); "
+                    "aborting connect to avoid attaching to the wrong target",
+                    self.cdp_port,
+                    port_status,
+                )
+                self.last_connection_error = self.ERROR_CONNECTION_FAILED
+                return False
+            if port_status == "unknown":
+                logger.warning(
+                    "CDP port %d is in use but owner could not be identified; "
+                    "attempting to connect anyway",
+                    self.cdp_port,
+                )
+
+            need_start_edge = port_status == "free"
 
             # Try to use pre-initialized Playwright (started before NiceGUI import)
             # Wait up to 30s for initialization to complete (may be running in parallel)
@@ -1647,11 +1789,7 @@ class CopilotHandler:
 
                 # Ensure profile_dir is set even when connecting to existing Edge
                 if not self.profile_dir:
-                    local_app_data = os.environ.get("LOCALAPPDATA", "")
-                    if local_app_data:
-                        self.profile_dir = Path(local_app_data) / "YakuLingo" / "EdgeProfile"
-                    else:
-                        self.profile_dir = Path.home() / ".yakulingo" / "edge-profile"
+                    self.profile_dir = self._get_profile_dir_path()
                     self.profile_dir.mkdir(parents=True, exist_ok=True)
                     logger.debug("Set profile_dir for existing Edge: %s", self.profile_dir)
 
@@ -7218,18 +7356,24 @@ class CopilotHandler:
                 # Strip newlines and other control characters
                 return len(indent.replace('\n', '').replace('\r', ''))
 
-            # Use the first item's indentation as the baseline
-            # Filter out items with MORE indentation (nested lists)
+            # Use the minimum indentation as the baseline, with a small tolerance
+            # for inconsistent whitespace across top-level items.
             # This handles both cases:
             # 1. Inconsistent whitespace: "  1. Hello\n2. World" - both items kept
             # 2. Nested lists: "1. Steps:\n   1. Open\n2. Next" - "   1. Open" filtered
-            first_indent = effective_indent(matches[0][0])
+            indent_levels = [effective_indent(indent) for indent, _, _ in matches]
+            min_indent = min(indent_levels) if indent_levels else 0
+            unique_levels = sorted(set(indent_levels))
+            indent_tolerance = 0
+            if len(unique_levels) > 1 and (unique_levels[1] - unique_levels[0]) <= 1:
+                indent_tolerance = 1
+            allowed_indent = min_indent + indent_tolerance
 
-            # Filter to only keep items at or below the first item's indentation level
+            # Filter to only keep items at or below the allowed indentation level
             # This excludes nested numbered lists within translations
             filtered_matches = [
                 (num, content) for indent, num, content in matches
-                if effective_indent(indent) <= first_indent
+                if effective_indent(indent) <= allowed_indent
             ]
 
             # Sort by number to ensure correct order
@@ -7412,24 +7556,31 @@ class CopilotHandler:
                     pass  # Non-critical - proceed with click
 
                 click_start = time.monotonic()
+                click_dispatched = False
                 if click_only:
                     # OPTIMIZED: Use async click via setTimeout for parallelization
                     # This returns immediately while click executes in background
                     # Safe because: input field is not reset by new chat button click
-                    new_chat_btn.evaluate('el => setTimeout(() => el.click(), 0)')
-                    logger.info("[TIMING] new_chat: async click dispatched: %.2fs", time.monotonic() - click_start)
-                    logger.info("[TIMING] start_new_chat total (click_only): %.2fs", time.monotonic() - new_chat_total_start)
+                    try:
+                        new_chat_btn.evaluate('el => setTimeout(() => el.click(), 0)')
+                        click_dispatched = True
+                        logger.info("[TIMING] new_chat: async click dispatched: %.2fs", time.monotonic() - click_start)
+                        logger.info("[TIMING] start_new_chat total (click_only): %.2fs", time.monotonic() - new_chat_total_start)
+                    except Exception as e:
+                        logger.warning("Async new chat click failed; falling back to sync click: %s", e)
+
+                if click_only and click_dispatched:
                     return  # Return immediately, skip all wait operations
-                else:
-                    # Use JavaScript click to avoid Playwright's actionability checks
-                    # which can block for 30s on slow page loads
-                    new_chat_btn.evaluate('el => el.click()')
-                    click_time = time.monotonic() - click_start
-                    # Log warning if click takes unexpectedly long (should be <100ms)
-                    if click_time > 0.1:
-                        logger.warning("[TIMING] new_chat: click took %.3fs (expected <0.1s) - browser may be slow",
-                                      click_time)
-                    logger.info("[TIMING] new_chat: click: %.2fs", click_time)
+
+                # Use JavaScript click to avoid Playwright's actionability checks
+                # which can block for 30s on slow page loads
+                new_chat_btn.evaluate('el => el.click()')
+                click_time = time.monotonic() - click_start
+                # Log warning if click takes unexpectedly long (should be <100ms)
+                if click_time > 0.1:
+                    logger.warning("[TIMING] new_chat: click took %.3fs (expected <0.1s) - browser may be slow",
+                                  click_time)
+                logger.info("[TIMING] new_chat: click: %.2fs", click_time)
             else:
                 logger.warning("New chat button not found - chat context may not be cleared")
 
@@ -7441,8 +7592,8 @@ class CopilotHandler:
                 logger.info("[TIMING] new_chat: _wait_for_responses_cleared: %.2fs", time.monotonic() - clear_start)
 
             logger.info("[TIMING] start_new_chat total: %.2fs", time.monotonic() - new_chat_total_start)
-        except (PlaywrightError, AttributeError):
-            pass
+        except (PlaywrightError, AttributeError) as e:
+            logger.debug("start_new_chat failed: %s", e)
 
     def _wait_for_responses_cleared(self, timeout: float = 1.0) -> bool:
         """

@@ -189,6 +189,12 @@ VERTICAL_TEXT_ASPECT_RATIO = 2.0  # height/width > 2.0 suggests vertical text (y
 # A value of 2.0 means a box can expand up to 200% of its original width/height.
 # TextBlock-based adjacent block detection is used to prevent overlap instead of reducing this ratio.
 MAX_EXPANSION_RATIO = 2.0
+# OVERWRAP_EXPANSION_RATIO is used when line breaks are excessive; it allows
+# a wider box (still capped by layout-aware margins) to reduce over-wrapping.
+OVERWRAP_EXPANSION_RATIO = 3.0
+# Trigger wrap relief when line count grows too large compared to the original.
+OVERWRAP_LINE_RATIO = 1.5
+OVERWRAP_MIN_LINES = 2
 
 
 class TextAlignment:
@@ -386,6 +392,59 @@ def calculate_expanded_box(
         # Left-aligned: expand to the right
         expansion = min(expandable_right, max_additional_width)
         return box_x0, box_x1 + expansion
+
+
+def calculate_expanded_box_relief(
+    box_x0: float,
+    box_x1: float,
+    expandable_left: float,
+    expandable_right: float,
+    alignment: str,
+    max_expansion_ratio: float,
+) -> tuple[float, float]:
+    """
+    Expand the box more aggressively to reduce excessive line breaks.
+
+    Uses available margins on both sides (within max_expansion_ratio) and
+    distributes the extra width based on alignment, then fills remaining
+    space on the side with more room. This keeps expansion layout-aware
+    while providing additional width when translations over-wrap.
+    """
+    original_width = box_x1 - box_x0
+    if original_width <= 0:
+        return box_x0, box_x1
+
+    max_additional_width = max(0.0, original_width * (max_expansion_ratio - 1.0))
+    available_extra = min(expandable_left + expandable_right, max_additional_width)
+    if available_extra <= 0:
+        return box_x0, box_x1
+
+    expand_left = 0.0
+    expand_right = 0.0
+
+    if alignment == TextAlignment.RIGHT:
+        expand_left = min(expandable_left, available_extra)
+        remaining = available_extra - expand_left
+        if remaining > 0:
+            expand_right = min(expandable_right, remaining)
+    elif alignment == TextAlignment.LEFT:
+        expand_right = min(expandable_right, available_extra)
+        remaining = available_extra - expand_right
+        if remaining > 0:
+            expand_left = min(expandable_left, remaining)
+    else:
+        half = available_extra / 2
+        expand_left = min(expandable_left, half)
+        expand_right = min(expandable_right, half)
+        remaining = available_extra - (expand_left + expand_right)
+        if remaining > 0:
+            extra_right = min(remaining, max(0.0, expandable_right - expand_right))
+            expand_right += extra_right
+            remaining -= extra_right
+        if remaining > 0:
+            expand_left += min(remaining, max(0.0, expandable_left - expand_left))
+
+    return box_x0 - expand_left, box_x1 + expand_right
 
 
 def calculate_expanded_box_vertical(
@@ -2985,14 +3044,54 @@ class PdfProcessor(FileProcessor):
                         #   or we know the original had multiple lines.
                         allow_wrap = bool(is_table_cell or paragraph_brk or (original_line_count > 1))
                         forced_wrap_lines = None
-                        if not allow_wrap and translated:
-                            explicit_line_count = len(translated.split('\n'))
+                        wrap_required = False
+                        explicit_line_count = len(translated.split('\n')) if translated else 0
+                        candidate_lines = None
+
+                        if translated:
                             candidate_lines = split_text_into_lines_with_font(
                                 translated, box_width, initial_font_size, font_id, font_registry
                             )
-                            if len(candidate_lines) > explicit_line_count:
-                                allow_wrap = True
-                                forced_wrap_lines = candidate_lines
+                            if not allow_wrap and len(candidate_lines) > explicit_line_count:
+                                wrap_required = True
+
+                        # If wrapping grows too much, widen the box within safe margins.
+                        if (
+                            candidate_lines
+                            and not block_is_vertical
+                            and (expandable_left > 0 or expandable_right > 0)
+                        ):
+                            line_count = len(candidate_lines)
+                            line_ratio = line_count / max(1, original_line_count)
+                            if (
+                                line_count >= OVERWRAP_MIN_LINES
+                                and line_ratio >= OVERWRAP_LINE_RATIO
+                            ):
+                                relief_x0, relief_x1 = calculate_expanded_box_relief(
+                                    original_box_x0, original_box_x1,
+                                    expandable_left, expandable_right,
+                                    alignment, OVERWRAP_EXPANSION_RATIO
+                                )
+                                relief_width = relief_x1 - relief_x0
+                                if relief_width > box_width + 0.1:
+                                    previous_width = box_width
+                                    pdf_x1 = relief_x0
+                                    pdf_x2 = relief_x1
+                                    box_width = relief_width
+                                    box_pdf = [pdf_x1, pdf_y0, pdf_x2, pdf_y1]
+                                    candidate_lines = split_text_into_lines_with_font(
+                                        translated, box_width, initial_font_size, font_id, font_registry
+                                    )
+                                    if logger.isEnabledFor(logging.DEBUG):
+                                        logger.debug(
+                                            "Block %s: wrap relief width %.1f -> %.1f (lines %d -> %d)",
+                                            block_id, previous_width, box_width,
+                                            line_count, len(candidate_lines)
+                                        )
+
+                        if wrap_required and candidate_lines and len(candidate_lines) > explicit_line_count:
+                            allow_wrap = True
+                            forced_wrap_lines = candidate_lines
 
                         if forced_wrap_lines and not is_table_cell:
                             lang_key = target_lang.lower() if isinstance(target_lang, str) else ""

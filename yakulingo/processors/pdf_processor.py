@@ -166,6 +166,7 @@ _RE_NEGATIVE_NUMBER = re.compile(
     rf"([{re.escape(_NEGATIVE_MARKERS)}])\s*([0-9][0-9,\.]*)([%\uFF05]?)"
 )
 _RE_NEGATIVE_MARKER_ONLY = re.compile(rf"[{re.escape(_NEGATIVE_MARKERS)}]")
+_RE_XOBJECT_ENTRY = re.compile(r'/([^\s/<>[\]()]+)\s+(\d+)\s+0\s+R')
 _HYPHEN_TRANSLATION = str.maketrans({
     "\u2010": "-",  # hyphen
     "\u2011": "-",  # non-breaking hyphen
@@ -2217,6 +2218,148 @@ class PdfProcessor(FileProcessor):
             selected_pages = {p for p in pages if isinstance(p, int)}
         all_pages = set(range(1, total_pages + 1))
         is_full_document = selected_pages is None or selected_pages == all_pages
+        cloned_xrefs: dict[int, int] = {}
+        form_xref_cache: dict[int, bool] = {}
+        cloned_xref_values: set[int] = set()
+        if not is_full_document:
+            selected_pages = selected_pages or set()
+
+        def _is_form_xobject(xref: int) -> bool:
+            cached = form_xref_cache.get(xref)
+            if cached is not None:
+                return cached
+            try:
+                obj_str = doc.xref_object(xref)
+            except (RuntimeError, ValueError, OSError):
+                form_xref_cache[xref] = False
+                return False
+            is_form = "/Subtype /Form" in obj_str or "/Subtype/Form" in obj_str
+            form_xref_cache[xref] = is_form
+            return is_form
+
+        def _parse_xobject_entries(dict_str: str) -> dict[str, int]:
+            entries: dict[str, int] = {}
+            for name, xref in _RE_XOBJECT_ENTRY.findall(dict_str):
+                try:
+                    entries[name] = int(xref)
+                except ValueError:
+                    continue
+            return entries
+
+        def _replace_xobject_entries(dict_str: str, replacements: dict[str, int]) -> str:
+            if not replacements:
+                return dict_str
+
+            def _replace(match: re.Match) -> str:
+                name = match.group(1)
+                if name in replacements:
+                    return f"/{name} {replacements[name]} 0 R"
+                return match.group(0)
+
+            updated = _RE_XOBJECT_ENTRY.sub(_replace, dict_str)
+            for name, new_xref in replacements.items():
+                pattern = rf"/{re.escape(name)}\s+\d+\s+0\s+R"
+                if re.search(pattern, updated):
+                    continue
+                if ">>" in updated:
+                    updated = updated.rstrip()
+                    if updated.endswith(">>"):
+                        updated = updated[:-2].rstrip() + f" /{name} {new_xref} 0 R >>"
+                    else:
+                        updated = updated + f" /{name} {new_xref} 0 R"
+                else:
+                    updated = f"<< /{name} {new_xref} 0 R >>"
+            return updated
+
+        def _ensure_object_resources_xref(obj_xref: int) -> Optional[int]:
+            resources_info = doc.xref_get_key(obj_xref, "Resources")
+            if resources_info[0] == "null" or resources_info[1] == "null":
+                return None
+            if resources_info[0] == "xref":
+                existing_xref = int(resources_info[1].split()[0])
+                try:
+                    existing_obj = doc.xref_object(existing_xref)
+                except (RuntimeError, ValueError, OSError):
+                    return None
+                new_xref = doc.get_new_xref()
+                doc.update_object(new_xref, existing_obj)
+                doc.xref_set_key(obj_xref, "Resources", f"{new_xref} 0 R")
+                return new_xref
+            if resources_info[0] == "dict":
+                new_xref = doc.get_new_xref()
+                doc.update_object(new_xref, resources_info[1])
+                doc.xref_set_key(obj_xref, "Resources", f"{new_xref} 0 R")
+                return new_xref
+            return None
+
+        def _ensure_page_resources_xref(page, replacer: ContentStreamReplacer) -> int:
+            page_xref = page.xref
+            resources_info = doc.xref_get_key(page_xref, "Resources")
+            if resources_info[0] == "null" or resources_info[1] == "null":
+                inherited_resources = replacer._get_inherited_resources(page)
+                resources_xref = doc.get_new_xref()
+                doc.update_object(resources_xref, inherited_resources or "<< >>")
+                doc.xref_set_key(page_xref, "Resources", f"{resources_xref} 0 R")
+                return resources_xref
+            if resources_info[0] == "xref":
+                existing_xref = int(resources_info[1].split()[0])
+                try:
+                    existing_obj = doc.xref_object(existing_xref)
+                except (RuntimeError, ValueError, OSError):
+                    existing_obj = "<< >>"
+                resources_xref = doc.get_new_xref()
+                doc.update_object(resources_xref, existing_obj)
+                doc.xref_set_key(page_xref, "Resources", f"{resources_xref} 0 R")
+                return resources_xref
+            if resources_info[0] == "dict":
+                resources_xref = doc.get_new_xref()
+                doc.update_object(resources_xref, resources_info[1])
+                doc.xref_set_key(page_xref, "Resources", f"{resources_xref} 0 R")
+                return resources_xref
+            resources_xref = doc.get_new_xref()
+            doc.update_object(resources_xref, "<< >>")
+            doc.xref_set_key(page_xref, "Resources", f"{resources_xref} 0 R")
+            return resources_xref
+
+        def _clone_form_xobject(xref: int) -> int:
+            cached = cloned_xrefs.get(xref)
+            if cached:
+                return cached
+            if not _is_form_xobject(xref):
+                return xref
+
+            try:
+                obj_str = doc.xref_object(xref)
+                stream = doc.xref_stream(xref)
+            except (RuntimeError, ValueError, OSError) as e:
+                logger.warning("Failed to clone Form XObject xref=%d: %s", xref, e)
+                return xref
+            new_xref = doc.get_new_xref()
+            doc.update_object(new_xref, obj_str)
+            if stream:
+                doc.update_stream(new_xref, stream)
+            cloned_xrefs[xref] = new_xref
+            cloned_xref_values.add(new_xref)
+
+            resources_xref = _ensure_object_resources_xref(new_xref)
+            if resources_xref is not None:
+                xobj_info = doc.xref_get_key(resources_xref, "XObject")
+                xobj_dict = ""
+                if xobj_info[0] == "dict":
+                    xobj_dict = xobj_info[1]
+                elif xobj_info[0] == "xref":
+                    xobj_dict = doc.xref_object(int(xobj_info[1].split()[0]))
+                if xobj_dict:
+                    entries = _parse_xobject_entries(xobj_dict)
+                    replacements = {}
+                    for name, child_xref in entries.items():
+                        if _is_form_xobject(child_xref):
+                            replacements[name] = _clone_form_xobject(child_xref)
+                    if replacements:
+                        new_dict = _replace_xobject_entries(xobj_dict, replacements)
+                        doc.xref_set_key(resources_xref, "XObject", new_dict)
+
+            return new_xref
 
         result = {
             'total': len(translations),
@@ -2465,12 +2608,42 @@ class PdfProcessor(FileProcessor):
                 # Selective mode (target_bboxes) doesn't filter Form XObjects,
                 # causing original text inside tables/graphics to remain visible.
                 replacer = ContentStreamReplacer(doc, font_registry, preserve_graphics=True)
+                skip_xobject_filtering = True
+                if not is_full_document:
+                    replacements: dict[str, int] = {}
+                    try:
+                        page_xobjects = page.get_xobjects()
+                    except (RuntimeError, ValueError, OSError) as e:
+                        logger.debug("Failed to read page XObjects for page %d: %s", page_num, e)
+                        page_xobjects = []
+
+                    for xobj in page_xobjects:
+                        xref = xobj[0]
+                        name = xobj[1] if len(xobj) > 1 else None
+                        if not name or not _is_form_xobject(xref):
+                            continue
+                        cloned_xref = _clone_form_xobject(xref)
+                        if cloned_xref != xref:
+                            replacements[name] = cloned_xref
+
+                    if replacements:
+                        resources_xref = _ensure_page_resources_xref(page, replacer)
+                        xobj_info = doc.xref_get_key(resources_xref, "XObject")
+                        base_dict = "<< >>"
+                        if xobj_info[0] == "dict":
+                            base_dict = xobj_info[1]
+                        elif xobj_info[0] == "xref":
+                            base_dict = doc.xref_object(int(xobj_info[1].split()[0]))
+                        new_dict = _replace_xobject_entries(base_dict, replacements)
+                        doc.xref_set_key(resources_xref, "XObject", new_dict)
+                    skip_xobject_filtering = False
                 try:
                     replacer.set_base_stream(
                         page,
                         target_bboxes=None,  # Remove all text (PDFMathTranslate compliant)
-                        # Skip per-page XObject filtering to avoid mutating shared resources.
-                        skip_xobject_filtering=True,
+                        # Skip per-page XObject filtering unless we rewired to page-local clones.
+                        skip_xobject_filtering=skip_xobject_filtering,
+                        allowed_xrefs=cloned_xref_values if not is_full_document else None,
                     )
                     logger.info(
                         "Page %d: removing all text for translation (blocks=%d)",

@@ -1125,6 +1125,7 @@ class ContentStreamReplacer:
         target_bboxes: Optional[list[tuple[float, float, float, float]]] = None,
         tolerance: float = 5.0,
         skip_xobject_filtering: bool = False,
+        allowed_xrefs: Optional[set[int]] = None,
     ) -> 'ContentStreamReplacer':
         """
         Capture and filter the original content stream for this page.
@@ -1142,6 +1143,8 @@ class ContentStreamReplacer:
             skip_xobject_filtering: If True, skip Form XObject filtering.
                           Use this when filter_all_document_xobjects() has already
                           been called to avoid redundant processing.
+            allowed_xrefs: Optional set of XObject xrefs to filter. When provided,
+                           only these XObjects are filtered.
 
         Returns:
             self for chaining
@@ -1161,7 +1164,7 @@ class ContentStreamReplacer:
         if target_bboxes is None and not skip_xobject_filtering:
             # Note: Form XObjects are filtered completely for now
             # (selective filtering of XObjects is more complex)
-            self._filter_form_xobjects(page)
+            self._filter_form_xobjects(page, allowed_xrefs)
 
         if target_bboxes is not None:
             # Selective filtering: only remove text at target positions
@@ -1178,7 +1181,7 @@ class ContentStreamReplacer:
 
         return self
 
-    def _filter_form_xobjects(self, page) -> None:
+    def _filter_form_xobjects(self, page, allowed_xrefs: Optional[set[int]] = None) -> None:
         """
         Filter text from Form XObjects referenced by this page.
 
@@ -1192,6 +1195,8 @@ class ContentStreamReplacer:
 
         Args:
             page: PyMuPDF page object
+            allowed_xrefs: Optional set of XObject xrefs to filter. When provided,
+                only these XObjects are filtered.
         """
         try:
             # Use PyMuPDF's get_xobjects() for reliable XObject detection
@@ -1218,6 +1223,8 @@ class ContentStreamReplacer:
 
                 # Skip if already processed (avoid nested duplicates)
                 if xref in processed_xrefs:
+                    continue
+                if allowed_xrefs is not None and xref not in allowed_xrefs:
                     continue
                 processed_xrefs.add(xref)
 

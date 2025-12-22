@@ -6457,6 +6457,77 @@ class CopilotHandler:
         logger.debug("[RESPONSE_TEXT] No response found from any selector")
         return "", False
 
+    def _auto_scroll_to_latest_response(self, prefer_input_anchor: bool = False) -> bool:
+        """Keep the latest response visible in the Copilot chat pane."""
+        if not self._page:
+            return False
+
+        try:
+            return bool(self._page.evaluate('''(selectors, preferInput) => {
+                const getInput = () =>
+                    document.querySelector('#m365-chat-editor-target-element') ||
+                    document.querySelector('[data-lexical-editor="true"]') ||
+                    document.querySelector('[contenteditable="true"]');
+
+                const findScrollableAncestor = (el) => {
+                    let node = el;
+                    while (node && node !== document.body) {
+                        const style = window.getComputedStyle(node);
+                        const canScroll = node.scrollHeight > node.clientHeight &&
+                            /(auto|scroll|overlay)/.test(style.overflowY || '');
+                        if (canScroll) return node;
+                        node = node.parentElement;
+                    }
+                    return document.scrollingElement || document.documentElement || document.body;
+                };
+
+                const scrollContainerToBottom = (el) => {
+                    const scroller = findScrollableAncestor(el);
+                    if (!scroller) return false;
+                    scroller.scrollTop = scroller.scrollHeight;
+                    return true;
+                };
+
+                if (preferInput) {
+                    const input = getInput();
+                    if (input && scrollContainerToBottom(input)) return true;
+                }
+
+                let target = null;
+                for (const selector of selectors || []) {
+                    if (!selector) continue;
+                    const elements = document.querySelectorAll(selector);
+                    if (elements && elements.length) {
+                        target = elements[elements.length - 1];
+                        break;
+                    }
+                }
+
+                if (!target) {
+                    target = getInput();
+                }
+
+                if (target) {
+                    try {
+                        target.scrollIntoView({ block: 'end', behavior: 'instant' });
+                    } catch (e) {
+                        // Ignore scrollIntoView failures; fallback to container scroll.
+                    }
+                    if (scrollContainerToBottom(target)) return true;
+                }
+
+                const root = document.scrollingElement || document.documentElement || document.body;
+                if (root) {
+                    root.scrollTop = root.scrollHeight;
+                    return true;
+                }
+
+                return false;
+            }''', list(self.RESPONSE_SELECTORS), prefer_input_anchor))
+        except Exception as e:
+            logger.debug("[AUTO_SCROLL] Failed to scroll chat: %s", e)
+            return False
+
     def _get_response(
         self,
         timeout: int = 120,
@@ -6496,6 +6567,9 @@ class CopilotHandler:
             has_content = False  # Track if we've seen any content
             poll_iteration = 0
             last_log_time = time.monotonic()
+            last_scroll_time = 0.0
+            scroll_interval_generating = 0.5
+            scroll_interval_active = 0.1
             # Track if stop button was ever visible (including during send verification)
             stop_button_ever_seen = stop_button_seen_during_send
             stop_button_warning_logged = False  # Avoid repeated warnings
@@ -6572,6 +6646,10 @@ class CopilotHandler:
                     # Still generating, reset stability counter and wait
                     # Don't extract text while generating - evaluate() blocks when browser is busy
                     stable_count = 0
+                    now = time.monotonic()
+                    if now - last_scroll_time >= scroll_interval_generating:
+                        self._auto_scroll_to_latest_response(prefer_input_anchor=True)
+                        last_scroll_time = now
                     poll_interval = self.RESPONSE_POLL_INITIAL
                     # Log every 1 second
                     if time.monotonic() - last_log_time >= 1.0:
@@ -6591,6 +6669,7 @@ class CopilotHandler:
                         # Text is stable - return immediately (stop button confirms completion)
                         logger.info("[TIMING] response_stabilized: %.2fs (early termination: stop button disappeared, text stable)",
                                    time.monotonic() - response_start_time)
+                        self._auto_scroll_to_latest_response()
                         return quick_text
 
                 # Warn if stop button was never found (possible selector change)
@@ -6620,6 +6699,10 @@ class CopilotHandler:
                         response_element_first_seen_time = time.monotonic()
                         logger.info("[TIMING] response_element_detected: %.2fs",
                                    response_element_first_seen_time - response_start_time)
+                        now = time.monotonic()
+                        if now - last_scroll_time >= scroll_interval_active:
+                            self._auto_scroll_to_latest_response()
+                            last_scroll_time = now
 
                     # Only count stability if there's actual content
                     # Don't consider empty or whitespace-only text as stable
@@ -6649,6 +6732,10 @@ class CopilotHandler:
                             last_text = current_text
                             # Content is still growing, use active interval
                             poll_interval = self.RESPONSE_POLL_ACTIVE
+                            now = time.monotonic()
+                            if now - last_scroll_time >= scroll_interval_active:
+                                self._auto_scroll_to_latest_response()
+                                last_scroll_time = now
                             # Log content growth every 1 second
                             if time.monotonic() - last_log_time >= 1.0:
                                 remaining = timeout_float - (time.monotonic() - polling_start_time)

@@ -6457,63 +6457,112 @@ class CopilotHandler:
         logger.debug("[RESPONSE_TEXT] No response found from any selector")
         return "", False
 
-    def _auto_scroll_to_latest_response(self, prefer_input_anchor: bool = False) -> bool:
+    def _auto_scroll_to_latest_response(self) -> bool:
         """Keep the latest response visible in the Copilot chat pane."""
         if not self._page:
             return False
 
         try:
-            return bool(self._page.evaluate('''(selectors, preferInput) => {
-                const getInput = () =>
-                    document.querySelector('#m365-chat-editor-target-element') ||
-                    document.querySelector('[data-lexical-editor="true"]') ||
-                    document.querySelector('[contenteditable="true"]');
+            def _scroll_from_element(elem) -> bool:
+                if not elem:
+                    return False
+                try:
+                    elem.scroll_into_view_if_needed()
+                except Exception:
+                    pass
+                try:
+                    return bool(elem.evaluate('''(el) => {
+                        const isScrollable = (node) => {
+                            if (!node || node.nodeType !== Node.ELEMENT_NODE) return false;
+                            const style = window.getComputedStyle(node);
+                            if (!style) return false;
+                            const overflowY = style.overflowY || style.overflow;
+                            if (!/(auto|scroll|overlay)/.test(overflowY)) return false;
+                            return node.scrollHeight > node.clientHeight + 1;
+                        };
 
-                const findScrollableAncestor = (el) => {
-                    let node = el;
-                    while (node && node !== document.body) {
-                        const style = window.getComputedStyle(node);
-                        const canScroll = node.scrollHeight > node.clientHeight &&
-                            /(auto|scroll|overlay)/.test(style.overflowY || '');
-                        if (canScroll) return node;
-                        node = node.parentElement;
+                        const getParent = (node) => {
+                            if (!node) return null;
+                            if (node.parentElement) return node.parentElement;
+                            const root = node.getRootNode ? node.getRootNode() : null;
+                            if (root && root.host) return root.host;
+                            return null;
+                        };
+
+                        let current = el;
+                        let scroller = null;
+                        let safety = 0;
+                        while (current && safety < 50) {
+                            if (isScrollable(current)) {
+                                scroller = current;
+                                break;
+                            }
+                            current = getParent(current);
+                            safety += 1;
+                        }
+
+                        try {
+                            el.scrollIntoView({ block: 'end', behavior: 'instant' });
+                        } catch (e) {
+                            // Ignore scrollIntoView failures; fallback to container scroll.
+                        }
+
+                        if (scroller) {
+                            scroller.scrollTop = scroller.scrollHeight;
+                            return true;
+                        }
+
+                        const root = document.scrollingElement || document.documentElement || document.body;
+                        if (root) {
+                            root.scrollTop = root.scrollHeight;
+                            return true;
+                        }
+
+                        return false;
+                    }'''))
+                except Exception:
+                    return False
+
+            for selector in self.RESPONSE_SELECTORS:
+                try:
+                    elements = self._page.query_selector_all(selector)
+                except Exception:
+                    continue
+                if elements:
+                    if _scroll_from_element(elements[-1]):
+                        return True
+                    break
+
+            try:
+                input_elem = self._page.query_selector(self.CHAT_INPUT_SELECTOR_EXTENDED)
+            except Exception:
+                input_elem = None
+
+            if input_elem and _scroll_from_element(input_elem):
+                return True
+
+            return bool(self._page.evaluate('''() => {
+                const elements = document.querySelectorAll('div, section, main, article');
+                let best = null;
+                let bestOverflow = 0;
+                const max = Math.min(elements.length, 200);
+
+                for (let i = 0; i < max; i++) {
+                    const el = elements[i];
+                    const style = window.getComputedStyle(el);
+                    if (!style) continue;
+                    const overflowY = style.overflowY || style.overflow;
+                    if (!/(auto|scroll|overlay)/.test(overflowY)) continue;
+                    const overflow = el.scrollHeight - el.clientHeight;
+                    if (overflow > bestOverflow) {
+                        bestOverflow = overflow;
+                        best = el;
                     }
-                    return document.scrollingElement || document.documentElement || document.body;
-                };
+                }
 
-                const scrollContainerToBottom = (el) => {
-                    const scroller = findScrollableAncestor(el);
-                    if (!scroller) return false;
-                    scroller.scrollTop = scroller.scrollHeight;
+                if (best) {
+                    best.scrollTop = best.scrollHeight;
                     return true;
-                };
-
-                if (preferInput) {
-                    const input = getInput();
-                    if (input && scrollContainerToBottom(input)) return true;
-                }
-
-                let target = null;
-                for (const selector of selectors || []) {
-                    if (!selector) continue;
-                    const elements = document.querySelectorAll(selector);
-                    if (elements && elements.length) {
-                        target = elements[elements.length - 1];
-                        break;
-                    }
-                }
-
-                if (!target) {
-                    target = getInput();
-                }
-
-                if (target) {
-                    try {
-                        target.scrollIntoView({ block: 'end', behavior: 'instant' });
-                    } catch (e) {
-                        // Ignore scrollIntoView failures; fallback to container scroll.
-                    }
-                    if (scrollContainerToBottom(target)) return true;
                 }
 
                 const root = document.scrollingElement || document.documentElement || document.body;
@@ -6523,7 +6572,7 @@ class CopilotHandler:
                 }
 
                 return false;
-            }''', list(self.RESPONSE_SELECTORS), prefer_input_anchor))
+            }'''))
         except Exception as e:
             logger.debug("[AUTO_SCROLL] Failed to scroll chat: %s", e)
             return False
@@ -6648,7 +6697,7 @@ class CopilotHandler:
                     stable_count = 0
                     now = time.monotonic()
                     if now - last_scroll_time >= scroll_interval_generating:
-                        self._auto_scroll_to_latest_response(prefer_input_anchor=True)
+                        self._auto_scroll_to_latest_response()
                         last_scroll_time = now
                     poll_interval = self.RESPONSE_POLL_INITIAL
                     # Log every 1 second

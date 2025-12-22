@@ -7390,7 +7390,11 @@ class CopilotHandler:
                 return
 
             if current_time < self._minimize_sync_until:
-                return
+                try:
+                    if user32.IsIconic(hwnd):
+                        return
+                except Exception:
+                    return
 
             # Debounce: prevent rapid oscillation between windows
             if (hwnd == self._last_sync_hwnd and
@@ -7541,7 +7545,7 @@ class CopilotHandler:
             user32 = ctypes.WinDLL('user32', use_last_error=True)
 
             # Find YakuLingo window
-            yakulingo_hwnd = self._find_yakulingo_window_handle()
+            yakulingo_hwnd = self._find_yakulingo_window_handle(include_hidden=True)
             if not yakulingo_hwnd:
                 return
 

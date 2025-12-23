@@ -1235,6 +1235,18 @@ textarea:focus-visible {
     background: transparent !important;
 }
 
+.global-drop-upload {
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 2000 !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+body.global-drop-active .global-drop-upload {
+    pointer-events: auto !important;
+}
+
 .drop-zone-icon,
 .drop-zone-text,
 .drop-zone-subtext,

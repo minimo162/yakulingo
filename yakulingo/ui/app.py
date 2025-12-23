@@ -492,7 +492,7 @@ class YakuLingoApp:
 
         # Hidden file upload element for direct file selection (no dialog)
         self._reference_upload = None
-        self._global_drop_target = None
+        self._global_drop_upload = None
 
     @property
     def copilot(self) -> "CopilotHandler":
@@ -2427,117 +2427,154 @@ class YakuLingoApp:
         self._batch_refresh({'tabs', 'content'})
 
     def _setup_global_file_drop(self):
-        if self._global_drop_target is not None:
+        if self._global_drop_upload is not None:
             return
 
-        from yakulingo.ui.components.file_panel import MAX_DROP_FILE_SIZE_BYTES
+        from yakulingo.ui.components.file_panel import MAX_DROP_FILE_SIZE_BYTES, SUPPORTED_FORMATS
 
-        self._global_drop_target = ui.element('div').classes('global-drop-target').style('display: none;')
-        self._global_drop_target.on('global-file-ready', handler=self._handle_global_file_ready)
-        self._global_drop_target.on('global-file-too-large', handler=self._handle_global_file_too_large)
+        self._global_drop_upload = ui.upload(
+            on_upload=self._handle_global_upload,
+            on_rejected=self._handle_global_upload_rejected,
+            auto_upload=True,
+            max_files=1,
+            max_file_size=MAX_DROP_FILE_SIZE_BYTES,
+        ).classes('global-drop-upload drop-zone-upload').props(f'accept="{SUPPORTED_FORMATS}"')
 
-        ui.add_head_html(f'''<script>
-(() => {{
-  const MAX_BYTES = {MAX_DROP_FILE_SIZE_BYTES};
-
-  const isFileDrag = (e) => {{
+        script = '''<script>
+(() => {
+  const isFileDrag = (e) => {
     const dt = e.dataTransfer;
     if (!dt) return false;
     const types = Array.from(dt.types || []);
     if (types.length === 0) return true;
-    if (types.includes('Files') || types.includes('application/x-moz-file') || types.includes('text/uri-list')) {{
+    if (types.includes('Files') || types.includes('application/x-moz-file') || types.includes('text/uri-list')) {
       return true;
-    }}
-    if (dt.items) {{
-      for (const item of dt.items) {{
+    }
+    if (dt.items) {
+      for (const item of dt.items) {
         if (item.kind === 'file') return true;
-      }}
-    }}
+      }
+    }
     return Boolean(dt.files && dt.files.length);
-  }};
-  const getTarget = () => document.querySelector('.global-drop-target');
+  };
 
-  const allowDrop = (e) => {{
+  let dragDepth = 0;
+
+  const activate = () => {
+    if (document.body) {
+      document.body.classList.add('global-drop-active');
+    }
+  };
+
+  const deactivate = () => {
+    if (document.body) {
+      document.body.classList.remove('global-drop-active');
+    }
+  };
+
+  const handleDragEnter = (e) => {
     if (!isFileDrag(e)) return;
+    dragDepth += 1;
+    activate();
     e.preventDefault();
-    if (e.dataTransfer) {{
+    if (e.dataTransfer) {
       e.dataTransfer.dropEffect = 'copy';
-    }}
-  }};
+    }
+  };
 
-  window.addEventListener('dragenter', allowDrop);
-  window.addEventListener('dragover', allowDrop);
-
-  window.addEventListener('drop', (e) => {{
+  const handleDragOver = (e) => {
     if (!isFileDrag(e)) return;
     e.preventDefault();
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = 'copy';
+    }
+  };
 
-    if (e.target && e.target.closest && (e.target.closest('.drop-zone') || e.target.closest('.drop-zone-upload'))) {{
-      return;
-    }}
+  const handleDragLeave = (e) => {
+    if (!isFileDrag(e)) return;
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (dragDepth === 0) {
+      deactivate();
+    }
+  };
 
-    let file = null;
-    const items = e.dataTransfer.items;
-    if (items && items.length) {{
-      for (const item of items) {{
-        if (item.kind === 'file') {{
-          file = item.getAsFile();
-          if (file) break;
-        }}
-      }}
-    }}
+  const handleDrop = (e) => {
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    dragDepth = 0;
+    deactivate();
+  };
 
-    if (!file && e.dataTransfer.files && e.dataTransfer.files.length) {{
-      file = e.dataTransfer.files[0];
-    }}
+  const registerTargets = () => {
+    const targets = [window, document];
+    if (document.body) targets.push(document.body);
+    for (const target of targets) {
+      target.addEventListener('dragenter', handleDragEnter, true);
+      target.addEventListener('dragover', handleDragOver, true);
+      target.addEventListener('dragleave', handleDragLeave, true);
+      target.addEventListener('drop', handleDrop, true);
+    }
+  };
 
-    if (!file) return;
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', registerTargets);
+  } else {
+    registerTargets();
+  }
+})();
+</script>'''
+        ui.add_head_html(script)
 
-    if (file.size && file.size > MAX_BYTES) {{
-      const target = getTarget();
-      if (target) {{
-        target.dispatchEvent(new CustomEvent('global-file-too-large', {{ detail: {{ name: file.name, size: file.size }} }}));
-      }}
-      return;
-    }}
-
-    const reader = new FileReader();
-    reader.onload = (event) => {{
-      const detail = {{
-        name: file.name,
-        data: Array.from(new Uint8Array(event.target.result))
-      }};
-      const target = getTarget();
-      if (target) {{
-        target.dispatchEvent(new CustomEvent('global-file-ready', {{ detail }}));
-      }}
-    }};
-    reader.readAsArrayBuffer(file);
-  }});
-}})();
-</script>''')
-
-    async def _handle_global_file_ready(self, event=None):
+    async def _handle_global_upload(self, e):
         if self.state.is_translating():
             return
-        from yakulingo.ui.components.file_panel import _extract_drop_payload, _process_drop_result
 
-        result = _extract_drop_payload(event)
-        await _process_drop_result(self._select_file, result)
+        from yakulingo.ui.utils import temp_file_manager
 
-    def _handle_global_file_too_large(self, event=None):
+        try:
+            uploaded_path = None
+            content = None
+            name = None
+            if hasattr(e, 'file'):
+                file_obj = e.file
+                name = file_obj.name
+                if hasattr(file_obj, '_path'):
+                    uploaded_path = temp_file_manager.create_temp_file_from_path(
+                        Path(file_obj._path),
+                        name,
+                    )
+                elif hasattr(file_obj, '_data'):
+                    content = file_obj._data
+                    uploaded_path = temp_file_manager.create_temp_file(content, name)
+                elif hasattr(file_obj, 'read'):
+                    content = await file_obj.read()
+                    uploaded_path = temp_file_manager.create_temp_file(content, name)
+                else:
+                    raise AttributeError(f"Unknown file upload type: {type(file_obj)}")
+            else:
+                if not e.content:
+                    return
+                content = e.content.read()
+                name = e.name
+            if uploaded_path is None:
+                if content is None or name is None:
+                    return
+                uploaded_path = temp_file_manager.create_temp_file(content, name)
+
+            await self._select_file(uploaded_path)
+        except (OSError, AttributeError) as err:
+            ui.notify(f'ファイルの読み込みに失敗しました: {err}', type='negative')
+
+    def _handle_global_upload_rejected(self, _event=None):
         if self.state.is_translating():
             return
-        from yakulingo.ui.components.file_panel import _extract_drop_payload, MAX_DROP_FILE_SIZE_MB
+        from yakulingo.ui.components.file_panel import MAX_DROP_FILE_SIZE_MB
 
-        detail = _extract_drop_payload(event) or {}
-        name = detail.get('name') if isinstance(detail, dict) else None
-        suffix = f' ({name})' if name else ''
         ui.notify(
-            f'ファイルが大きいため翻訳できません（{MAX_DROP_FILE_SIZE_MB}MBまで）{suffix}',
+            f'ファイルが大きすぎます（最大{MAX_DROP_FILE_SIZE_MB}MBまで）',
             type='warning',
         )
-
     # =========================================================================
     # Section 4: UI Creation Methods
     # =========================================================================

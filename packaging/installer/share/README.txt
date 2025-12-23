@@ -22,6 +22,7 @@ Share these steps with your users:
   2. Double-click "setup.vbs"
   3. Wait for setup to complete
   4. Launch YakuLingo from the desktop shortcut
+  Note: YakuLingo installs to %LOCALAPPDATA%\YakuLingo (not OneDrive-synced).
 
 ------------------------------------------------------------
 

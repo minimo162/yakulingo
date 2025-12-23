@@ -361,6 +361,25 @@ function Get-LatestZipFile {
     return $zip
 }
 
+function Test-IsUnderPath {
+    param(
+        [string]$Path,
+        [string]$Root
+    )
+
+    if ([string]::IsNullOrEmpty($Path) -or [string]::IsNullOrEmpty($Root)) {
+        return $false
+    }
+
+    try {
+        $normalizedPath = [System.IO.Path]::GetFullPath($Path).TrimEnd('\')
+        $normalizedRoot = [System.IO.Path]::GetFullPath($Root).TrimEnd('\')
+        return $normalizedPath.StartsWith($normalizedRoot, [System.StringComparison]::OrdinalIgnoreCase)
+    } catch {
+        return $false
+    }
+}
+
 function Resolve-SetupPath {
     param(
         [string]$InputPath,
@@ -414,6 +433,25 @@ function Resolve-SetupPath {
         if ($resolvedPath.TrimEnd('\\') -eq $dangerousRoot.TrimEnd('\\')) {
             throw "SetupPath cannot be a system directory: $resolvedPath"
         }
+    }
+
+    # Prevent installing into OneDrive-synced folders to avoid sync-related corruption
+    $oneDriveRoots = @()
+    foreach ($envVar in @("OneDrive", "OneDriveCommercial", "OneDriveConsumer")) {
+        $value = (Get-Item "Env:$envVar" -ErrorAction SilentlyContinue).Value
+        if (-not [string]::IsNullOrEmpty($value)) {
+            $oneDriveRoots += $value
+        }
+    }
+    $oneDriveRoots = $oneDriveRoots | Select-Object -Unique
+
+    foreach ($root in $oneDriveRoots) {
+        if (Test-IsUnderPath -Path $resolvedPath -Root $root -or Test-IsUnderPath -Path $targetPath -Root $root) {
+            throw "SetupPath cannot be inside OneDrive: $resolvedPath`n`nPlease use a local path such as $($env:LOCALAPPDATA)\\$AppName."
+        }
+    }
+    if ($resolvedPath -match "\\\\OneDrive(\\\\|$)") {
+        throw "SetupPath appears to be under OneDrive: $resolvedPath`n`nPlease use a local path such as $($env:LOCALAPPDATA)\\$AppName."
     }
 
     # Debug: Log successful completion

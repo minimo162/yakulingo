@@ -3911,11 +3911,14 @@ class YakuLingoApp:
             # Step 2: Initialize PP-DocLayout-L and pre-initialize Playwright in parallel
             # This saves ~1.5s by starting Playwright initialization during model loading
             logger.info("Initializing PP-DocLayout-L on-demand...")
-            from yakulingo.processors.pdf_processor import prewarm_layout_model
+
+            def _prewarm_layout_model_in_thread() -> bool:
+                from yakulingo.processors.pdf_processor import prewarm_layout_model
+                return prewarm_layout_model()
 
             async def _init_layout():
                 try:
-                    success = await asyncio.to_thread(prewarm_layout_model)
+                    success = await asyncio.to_thread(_prewarm_layout_model_in_thread)
                     if success:
                         self._layout_init_state = LayoutInitializationState.INITIALIZED
                         logger.info("PP-DocLayout-L initialized successfully")
@@ -3931,8 +3934,11 @@ class YakuLingoApp:
                 if not was_connected:
                     return
                 try:
-                    from yakulingo.services.copilot_handler import pre_initialize_playwright
-                    await asyncio.to_thread(pre_initialize_playwright)
+                    def _pre_initialize_playwright_in_thread() -> None:
+                        from yakulingo.services.copilot_handler import pre_initialize_playwright
+                        pre_initialize_playwright()
+
+                    await asyncio.to_thread(_pre_initialize_playwright_in_thread)
                     logger.debug("Playwright pre-initialized during layout init")
                 except Exception as e:
                     logger.debug("Playwright pre-init failed (will retry on reconnect): %s", e)
@@ -5352,13 +5358,8 @@ def run_app(
         @nicegui_app.post('/api/pdf-prepare')
         async def pdf_prepare(_: StarletteRequest):  # type: ignore[misc]
             """Initialize PP-DocLayout-L before uploading/processing a PDF (browser mode UX)."""
-            try:
-                from yakulingo.processors import is_layout_available
-            except Exception:
-                return {"ok": True, "available": False}
-
-            if not is_layout_available():
-                return {"ok": True, "available": False}
+            import time as _time_module
+            _t0 = _time_module.perf_counter()
 
             # Fast path: already initialized or failed (PDF works with degraded quality).
             if yakulingo_app._layout_init_state in (
@@ -5377,8 +5378,20 @@ def run_app(
                         init_dialog = yakulingo_app._create_layout_init_dialog()
                         init_dialog.open()
                     await asyncio.sleep(0)
+                    logger.debug("[TIMING] /api/pdf-prepare dialog opened: %.3fs", _time_module.perf_counter() - _t0)
+
+                # NOTE: Importing via yakulingo.processors triggers lazy loading of pdf_processor (slow).
+                # Use the lightweight pdf_layout module here so the dialog can appear immediately.
+                try:
+                    from yakulingo.processors.pdf_layout import is_layout_available
+                except Exception:
+                    return {"ok": True, "available": False}
+
+                if not is_layout_available():
+                    return {"ok": True, "available": False}
 
                 await yakulingo_app._ensure_layout_initialized()
+                logger.debug("[TIMING] /api/pdf-prepare done: %.3fs", _time_module.perf_counter() - _t0)
                 return {
                     "ok": True,
                     "available": True,

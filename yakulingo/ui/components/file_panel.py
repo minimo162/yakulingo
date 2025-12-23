@@ -125,24 +125,15 @@ def create_file_panel(
     on_download: Callable[[], None],
     on_reset: Callable[[], None],
     on_language_change: Optional[Callable[[str], None]] = None,
-    on_bilingual_change: Optional[Callable[[bool], None]] = None,
-    on_export_glossary_change: Optional[Callable[[bool], None]] = None,
     on_style_change: Optional[Callable[[str], None]] = None,
     on_section_toggle: Optional[Callable[[int, bool], None]] = None,
     on_section_select_all: Optional[Callable[[], None]] = None,
     on_section_clear: Optional[Callable[[], None]] = None,
-    on_font_size_change: Optional[Callable[[float], None]] = None,
-    on_font_name_change: Optional[Callable[[str], None]] = None,
     on_attach_reference_file: Optional[Callable[[], None]] = None,
     on_remove_reference_file: Optional[Callable[[int], None]] = None,
     reference_files: Optional[List[Path]] = None,
-    bilingual_enabled: bool = False,
-    export_glossary_enabled: bool = False,
     translation_style: str = "concise",
     translation_result: Optional[TranslationResult] = None,
-    font_size_adjustment: float = 0.0,
-    font_jp_to_en: str = "Arial",
-    font_en_to_jp: str = "MS Pゴシック",
     use_bundled_glossary: bool = True,
     on_glossary_toggle: Optional[Callable[[bool], None]] = None,
     on_edit_glossary: Optional[Callable[[], None]] = None,
@@ -171,36 +162,16 @@ def create_file_panel(
                         # Translation style selector (only for English output)
                         if state.file_output_language == 'en':
                             _style_selector(translation_style, on_style_change)
-                        # Common file translation options (for all file types)
-                        _bilingual_selector(
-                            state.file_info.file_type if state.file_info else None,
-                            bilingual_enabled,
-                            on_bilingual_change,
-                        )
-                        _export_glossary_selector(export_glossary_enabled, on_export_glossary_change)
-                        # Bundled glossary toggle
+                        # Glossary + reference files
                         _glossary_selector(
                             use_bundled_glossary,
                             on_glossary_toggle,
                             on_edit_glossary,
                             on_edit_translation_rules,
-                        )
-                        # Reference file selector
-                        _reference_file_selector(
                             reference_files,
                             on_attach_reference_file,
                             on_remove_reference_file,
                         )
-                        # Font settings (unified for all file types)
-                        if state.file_info:
-                            _font_settings_selector(
-                                state.file_output_language,
-                                font_size_adjustment,
-                                font_jp_to_en,
-                                font_en_to_jp,
-                                on_font_size_change,
-                                on_font_name_change,
-                            )
                         # Section selector for partial translation
                         if state.file_info and len(state.file_info.section_details) > 1:
                             _section_selector(
@@ -309,51 +280,17 @@ def _style_selector(current_style: str, on_change: Optional[Callable[[str], None
                 btn.tooltip(tooltip)
 
 
-# Bilingual output descriptions by file type
-BILINGUAL_TOOLTIPS = {
-    FileType.EXCEL: '原文と翻訳を交互に配置',
-    FileType.WORD: '原文と翻訳を交互に配置',
-    FileType.POWERPOINT: '原文と翻訳を交互に配置',
-    FileType.PDF: '原文と翻訳を交互に配置',
-}
-
-
-def _bilingual_selector(
-    file_type: Optional[FileType],
-    enabled: bool,
-    on_change: Optional[Callable[[bool], None]],
-):
-    """Bilingual output selector - checkbox for interleaved original/translated content"""
-    tooltip_text = BILINGUAL_TOOLTIPS.get(
-        file_type,
-        '原文と翻訳を交互に配置'
-    )
-    with ui.row().classes('w-full justify-center mt-3 items-center gap-2'):
-        ui.checkbox(
-            '対訳出力',
-            value=enabled,
-            on_change=lambda e: on_change and on_change(e.value),
-        ).classes('pdf-mode-checkbox').tooltip(tooltip_text)
-
-
-def _export_glossary_selector(enabled: bool, on_change: Optional[Callable[[bool], None]]):
-    """Glossary CSV export selector - checkbox for exporting translation pairs"""
-    with ui.row().classes('w-full justify-center mt-2 items-center gap-2'):
-        ui.checkbox(
-            '対訳CSV出力',
-            value=enabled,
-            on_change=lambda e: on_change and on_change(e.value),
-        ).classes('pdf-mode-checkbox').tooltip('翻訳ペアをCSV出力')
-
-
 def _glossary_selector(
     use_bundled_glossary: bool,
     on_toggle: Optional[Callable[[bool], None]],
     on_edit: Optional[Callable[[], None]],
     on_edit_translation_rules: Optional[Callable[[], None]] = None,
+    reference_files: Optional[List[Path]] = None,
+    on_attach: Optional[Callable[[], None]] = None,
+    on_remove: Optional[Callable[[int], None]] = None,
 ):
-    """Bundled glossary toggle button - same style as text panel"""
-    with ui.row().classes('w-full justify-center mt-3 items-center gap-2'):
+    """Glossary toggle + reference file attachment row (simplified)."""
+    with ui.row().classes('w-full justify-center mt-3 items-center gap-2 flex-wrap'):
         # Glossary toggle button
         if on_toggle:
             glossary_btn = ui.button(
@@ -381,26 +318,19 @@ def _glossary_selector(
             ).props('flat dense round size=sm').classes('settings-btn')
             rules_btn.tooltip('翻訳ルールを編集')
 
-
-def _reference_file_selector(
-    reference_files: Optional[List[Path]],
-    on_attach: Optional[Callable[[], None]],
-    on_remove: Optional[Callable[[int], None]],
-):
-    """Reference file selector with attach button and file list"""
-    with ui.row().classes('w-full justify-center mt-3 items-center gap-2 flex-wrap'):
-        # Attach button
+        # Reference file attachment button
         if on_attach:
             has_files = bool(reference_files)
-            attach_btn = ui.button(
-                on_click=on_attach
-            ).classes(f'attach-btn {"has-file" if has_files else ""}').props('flat')
+            attach_btn = ui.button(on_click=on_attach).classes(
+                f'attach-btn {"has-file" if has_files else ""}'
+            ).props('flat')
             with attach_btn:
                 ui.html(ATTACH_SVG, sanitize=False)
             attach_btn.tooltip('参照ファイルを添付' if not has_files else '参照ファイルを追加')
 
-        # Display attached files
-        if reference_files:
+    # Display attached files
+    if reference_files:
+        with ui.row().classes('w-full justify-center mt-2 items-center gap-2 flex-wrap'):
             for i, ref_file in enumerate(reference_files):
                 with ui.element('div').classes('attach-file-indicator'):
                     ui.label(ref_file.name).classes('file-name')
@@ -409,6 +339,7 @@ def _reference_file_selector(
                             icon='close',
                             on_click=lambda idx=i: on_remove(idx)
                         ).props('flat dense round size=xs').classes('remove-btn')
+
 
 
 def _drop_zone(on_file_select: Callable[[Path], Union[None, Awaitable[None]]]):
@@ -694,80 +625,62 @@ def _section_selector(
         icon='tune',
     ).classes('section-selector w-full mt-3'):
         # Selection summary
-        selected_count = file_info.selected_section_count
         total_count = len(file_info.section_details)
+        with ui.row().classes('items-center gap-2 mb-2'):
+            summary_label = ui.label().classes('text-xs text-muted')
+
+        def update_summary() -> None:
+            summary_label.set_text(f'{file_info.selected_section_count}/{total_count} {section_label}')
+
+        update_summary()
+
+        checkboxes_by_index: dict[int, Any] = {}
+
+        def handle_toggle(event: Any, section_index: int) -> None:
+            selected = bool(getattr(event, 'value', False))
+            if on_toggle:
+                on_toggle(section_index, selected)
+            else:
+                for section in file_info.section_details:
+                    if section.index == section_index:
+                        section.selected = selected
+                        break
+            update_summary()
+
+        def set_all(selected: bool) -> None:
+            if selected:
+                if on_select_all:
+                    on_select_all()
+                else:
+                    for section in file_info.section_details:
+                        section.selected = True
+            else:
+                if on_clear:
+                    on_clear()
+                else:
+                    for section in file_info.section_details:
+                        section.selected = False
+
+            for section in file_info.section_details:
+                checkbox = checkboxes_by_index.get(section.index)
+                if checkbox:
+                    checkbox.set_value(section.selected)
+            update_summary()
 
         with ui.row().classes('items-center gap-2 mb-2'):
-            ui.label(f'{selected_count}/{total_count} {section_label}').classes('text-xs text-muted')
-
-        with ui.row().classes('items-center gap-2 mb-2'):
-            if on_select_all:
-                ui.button('全選択', on_click=on_select_all).classes('btn-text').props('dense no-caps')
-            if on_clear:
-                ui.button('全解除', on_click=on_clear).classes('btn-text').props('dense no-caps')
+            if on_select_all or file_info.section_details:
+                ui.button('全選択', on_click=lambda: set_all(True)).classes('btn-text').props('dense no-caps')
+            if on_clear or file_info.section_details:
+                ui.button('全解除', on_click=lambda: set_all(False)).classes('btn-text').props('dense no-caps')
 
         # Section checkboxes (scrollable if many)
         max_height = '200px' if len(file_info.section_details) > 5 else 'auto'
         with ui.column().classes('gap-1 w-full').style(f'max-height: {max_height}; overflow-y: auto;'):
             for section in file_info.section_details:
                 with ui.row().classes('items-center gap-2 w-full section-item'):
-                    ui.checkbox(
+                    checkbox = ui.checkbox(
                         value=section.selected,
-                        on_change=lambda e, idx=section.index: on_toggle and on_toggle(idx, e.value),
+                        on_change=lambda e, idx=section.index: handle_toggle(e, idx),
                     ).props('dense')
+                    checkboxes_by_index[section.index] = checkbox
                     ui.label(section.name).classes('flex-1 text-sm')
-
-
-# Common font options for dropdowns
-FONT_OPTIONS_EN = ['Arial', 'Calibri', 'Times New Roman', 'Segoe UI', 'Verdana', 'Tahoma']
-FONT_OPTIONS_JP = ['MS Pゴシック', 'MS P明朝', 'Meiryo UI', 'Yu Gothic UI', '游明朝', '游ゴシック']
-
-
-def _font_settings_selector(
-    output_language: str,
-    font_size_adjustment: float,
-    font_jp_to_en: str,
-    font_en_to_jp: str,
-    on_font_size_change: Optional[Callable[[float], None]],
-    on_font_name_change: Optional[Callable[[str], None]],
-):
-    """Font settings selector - expandable panel for font customization"""
-    with ui.expansion(
-        'フォント設定',
-        icon='text_fields',
-    ).classes('section-selector w-full mt-3'):
-        with ui.column().classes('gap-3 w-full'):
-            # Font size adjustment (only for JP→EN)
-            if output_language == 'en':
-                with ui.column().classes('gap-1 w-full'):
-                    ui.label('フォントサイズ調整（pt）').classes('text-xs text-muted')
-                    with ui.row().classes('items-center gap-2'):
-                        ui.number(
-                            value=font_size_adjustment,
-                            min=-4.0,
-                            max=0.0,
-                            step=0.5,
-                            format='%.1f',
-                            on_change=lambda e: on_font_size_change and on_font_size_change(e.value),
-                        ).classes('w-20').props('dense')
-                        ui.label('（負値で縮小、0で変更なし）').classes('text-xs text-muted')
-
-            # Font name selection based on output language
-            if output_language == 'en':
-                # JP→EN: Select output English font
-                with ui.column().classes('gap-1 w-full'):
-                    ui.label('出力フォント（英語）').classes('text-xs text-muted')
-                    ui.select(
-                        options=FONT_OPTIONS_EN,
-                        value=font_jp_to_en,
-                        on_change=lambda e: on_font_name_change and on_font_name_change(e.value),
-                    ).classes('w-full').props('dense')
-            else:
-                # EN→JP: Select output Japanese font
-                with ui.column().classes('gap-1 w-full'):
-                    ui.label('出力フォント（日本語）').classes('text-xs text-muted')
-                    ui.select(
-                        options=FONT_OPTIONS_JP,
-                        value=font_en_to_jp,
-                        on_change=lambda e: on_font_name_change and on_font_name_change(e.value),
-                    ).classes('w-full').props('dense')

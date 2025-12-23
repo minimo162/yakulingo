@@ -2962,24 +2962,15 @@ class YakuLingoApp:
                         on_download=self._download,
                         on_reset=self._reset,
                         on_language_change=self._on_language_change,
-                        on_bilingual_change=self._on_bilingual_change,
-                        on_export_glossary_change=self._on_export_glossary_change,
                         on_style_change=self._on_style_change,
                         on_section_toggle=self._on_section_toggle,
                         on_section_select_all=self._on_section_select_all,
                         on_section_clear=self._on_section_clear,
-                        on_font_size_change=self._on_font_size_change,
-                        on_font_name_change=self._on_font_name_change,
                         on_attach_reference_file=self._attach_reference_file,
                         on_remove_reference_file=self._remove_reference_file,
                         reference_files=self.state.reference_files,
-                        bilingual_enabled=self.settings.bilingual_output,
-                        export_glossary_enabled=self.settings.export_glossary,
                         translation_style=self.settings.translation_style,
                         translation_result=self.state.translation_result,
-                        font_size_adjustment=self.settings.font_size_adjustment_jp_to_en,
-                        font_jp_to_en=self.settings.font_jp_to_en,
-                        font_en_to_jp=self.settings.font_en_to_jp,
                         use_bundled_glossary=self.settings.use_bundled_glossary,
                         on_glossary_toggle=self._on_glossary_toggle,
                         on_edit_glossary=self._edit_glossary,
@@ -3842,12 +3833,12 @@ class YakuLingoApp:
     def _on_section_select_all(self):
         """Select all sections for partial translation"""
         self.state.set_all_sections_selected(True)
-        self._refresh_content()
+        # Don't refresh; it would close the expansion panel. The file panel updates in-place.
 
     def _on_section_clear(self):
         """Clear section selection for partial translation"""
         self.state.set_all_sections_selected(False)
-        self._refresh_content()
+        # Don't refresh; it would close the expansion panel. The file panel updates in-place.
 
     async def _ensure_layout_initialized(self, wait_timeout_seconds: float = 120.0) -> bool:
         """

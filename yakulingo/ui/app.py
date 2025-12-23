@@ -2619,8 +2619,7 @@ class YakuLingoApp:
                     '新規翻訳',
                     icon='add',
                     on_click=self._start_new_translation,
-                ).classes('btn-primary w-full').props(btn_props)
-                ui.label('ヒント: ファイルは画面にドラッグ＆ドロップで翻訳できます').classes('text-2xs text-muted px-1')
+                ).classes('btn-tonal w-full sidebar-primary-btn').props(btn_props)
 
         self._tabs_container = actions_container
         actions_container()

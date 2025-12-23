@@ -279,6 +279,8 @@ def _create_large_input_panel(
                 with ui.element('span').classes('keycap keycap-hint'):
                     ui.label('J')
                 ui.label(': 他のアプリで選択中の文章を取り込んで翻訳').classes('text-muted ml-1')
+            with ui.element('div').classes('hint-primary'):
+                ui.label('ファイルは画面にドラッグ＆ドロップで翻訳できます').classes('text-muted')
 
 
 def create_text_result_panel(

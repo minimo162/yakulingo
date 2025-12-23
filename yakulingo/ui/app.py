@@ -2440,30 +2440,30 @@ class YakuLingoApp:
 (() => {{
   const MAX_BYTES = {MAX_DROP_FILE_SIZE_BYTES};
 
-  const isFileDrag = (e) => {
+  const isFileDrag = (e) => {{
     const dt = e.dataTransfer;
     if (!dt) return false;
     const types = Array.from(dt.types || []);
     if (types.length === 0) return true;
-    if (types.includes('Files') || types.includes('application/x-moz-file') || types.includes('text/uri-list')) {
+    if (types.includes('Files') || types.includes('application/x-moz-file') || types.includes('text/uri-list')) {{
       return true;
-    }
-    if (dt.items) {
-      for (const item of dt.items) {
+    }}
+    if (dt.items) {{
+      for (const item of dt.items) {{
         if (item.kind === 'file') return true;
-      }
-    }
+      }}
+    }}
     return Boolean(dt.files && dt.files.length);
-  };
+  }};
   const getTarget = () => document.querySelector('.global-drop-target');
 
-  const allowDrop = (e) => {
+  const allowDrop = (e) => {{
     if (!isFileDrag(e)) return;
     e.preventDefault();
-    if (e.dataTransfer) {
+    if (e.dataTransfer) {{
       e.dataTransfer.dropEffect = 'copy';
-    }
-  };
+    }}
+  }};
 
   window.addEventListener('dragenter', allowDrop);
   window.addEventListener('dragover', allowDrop);

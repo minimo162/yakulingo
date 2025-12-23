@@ -87,13 +87,13 @@ class TestMsgProcessorGetFileInfo:
         info = processor.get_file_info(msg_path)
 
         # First section should be subject
-        assert info.section_details[0].name == "件吁E
+        assert info.section_details[0].name == "件名"
         assert info.section_details[0].index == 0
         assert info.section_details[0].selected is True
 
         # Second and third should be body paragraphs
-        assert info.section_details[1].name == "本斁E段落1"
-        assert info.section_details[2].name == "本斁E段落2"
+        assert info.section_details[1].name == "本文段落1"
+        assert info.section_details[2].name == "本文段落2"
 
 
 class TestMsgProcessorExtractTextBlocks:
@@ -113,7 +113,7 @@ class TestMsgProcessorExtractTextBlocks:
         subject_blocks = [b for b in blocks if b.id == "msg_subject"]
         assert len(subject_blocks) == 1
         assert subject_blocks[0].text == "Hello World"
-        assert subject_blocks[0].location == "件吁E
+        assert subject_blocks[0].location == "件名"
 
     def test_extracts_body_paragraphs(self, processor, tmp_path, mock_extract_msg):
         msg_path = tmp_path / "test.msg"
@@ -269,13 +269,13 @@ class TestMsgProcessorBilingualDocument:
         processor.create_bilingual_document(msg_path, translated_path, output_path)
 
         content = output_path.read_text(encoding='utf-8')
-        assert "【件吁E- 原文、E in content
+        assert "【件名 - 原文】" in content
         assert "Original Subject" in content
-        assert "【件吁E- 訳斁E��E in content
+        assert "【件名 - 訳文】" in content
         assert "Translated Subject" in content
-        assert "【本斁E- 原文、E in content
+        assert "【本文 - 原文】" in content
         assert "Original body." in content
-        assert "【本斁E- 訳斁E��E in content
+        assert "【本文 - 訳文】" in content
         assert "Translated body." in content
 
 
@@ -290,16 +290,16 @@ class TestMsgProcessorGlossary:
             "msg_body_0": "World"
         }
         original_texts = {
-            "msg_subject": "こんにちは",
-            "msg_body_0": "世界"
+            "msg_subject": "縺薙ｓ縺ｫ縺｡縺ｯ",
+            "msg_body_0": "荳也阜"
         }
 
         processor.export_glossary_csv(translations, original_texts, output_path)
 
         content = output_path.read_text(encoding='utf-8-sig')
-        assert "原文,訳斁E in content
-        assert "こんにちは,Hello" in content
-        assert "世界,World" in content
+        assert "原文,訳文" in content
+        assert "縺薙ｓ縺ｫ縺｡縺ｯ,Hello" in content
+        assert "荳也阜,World" in content
 
 
 class TestMsgProcessorChunking:

@@ -27,3 +27,15 @@ def test_normalize_recipient_handles_multiple(processor):
     raw = "john.berzett@mazdatoyota.com; jane.doe@example.com"
     normalized = processor._normalize_recipients(raw)
     assert normalized == "john.berzett@mazdatoyota.com; jane.doe@example.com"
+
+
+def test_normalize_recipient_quotes_comma_display_name(processor):
+    raw = "Doe, John <john.doe@example.com>"
+    normalized = processor._normalize_recipients(raw)
+    assert normalized == '"Doe, John" <john.doe@example.com>'
+
+
+def test_normalize_recipient_handles_comma_separated_angles(processor):
+    raw = "Doe, John <john.doe@example.com>, Jane Smith <jane.smith@example.com>"
+    normalized = processor._normalize_recipients(raw)
+    assert normalized == '"Doe, John" <john.doe@example.com>; Jane Smith <jane.smith@example.com>'

@@ -12,7 +12,6 @@ import logging
 import re
 import sys
 import threading
-from email.utils import getaddresses
 from pathlib import Path
 from typing import Any, Iterator, Optional
 
@@ -24,7 +23,15 @@ logger = logging.getLogger(__name__)
 # Pre-compiled regex for sentence splitting (AGENTS.md: Pre-compile regex patterns)
 _SENTENCE_SPLIT_PATTERN = re.compile(r'(?<=[\u3002\uFF01\uFF1F!?\n])')
 # Basic email validation for recipient normalization (ASCII-only)
-_EMAIL_PATTERN = re.compile(r'^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$')
+_EMAIL_PATTERN = re.compile(r'[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}')
+_RECIPIENT_SPLIT_PATTERN = re.compile(r'[;\n]+')
+_ANGLE_ADDR_FIND_PATTERN = re.compile(
+    r'(?P<name>[^<]*)<(?P<address>[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,})>'
+)
+_PAREN_ADDR_PATTERN = re.compile(
+    r'^(?P<address>[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,})\s*\((?P<name>[^)]*)\)$'
+)
+_QUOTE_NAME_PATTERN = re.compile(r'[",;<>]')
 
 # Maximum characters per block for translation batching
 MAX_CHARS_PER_BLOCK = 3000
@@ -448,34 +455,21 @@ class MsgProcessor(FileProcessor):
         """Normalize recipients to avoid Outlook name-check failures.
 
         Outlook fails to resolve entries like "email <email>" when the
-        display name contains an '@'. Strip such display names and
-        standardize separators to ensure valid recipient entries.
+        display name contains an '@'. Also avoid breaking display names
+        that include commas by not splitting on commas unless needed.
         """
         if not raw:
             return ""
 
-        normalized = raw.replace('\r\n', '\n').replace('\r', '\n')
-        normalized = normalized.replace(';', ',').replace('\n', ',')
-        addresses = getaddresses([normalized])
+        normalized = raw.replace('\r\n', '\n').replace('\r', '\n').strip()
+        if not normalized:
+            return ""
+
+        tokens = self._split_recipient_tokens(normalized)
 
         cleaned: list[str] = []
-        for name, address in addresses:
-            name = name.strip().strip('"')
-            address = address.strip()
-
-            if not address and name and _EMAIL_PATTERN.match(name):
-                address = name
-                name = ""
-
-            if address:
-                if name and ("@" in name or name.lower() == address.lower()):
-                    name = ""
-                if name:
-                    cleaned.append(f'{name} <{address}>')
-                else:
-                    cleaned.append(address)
-            elif name:
-                cleaned.append(name)
+        for token in tokens:
+            cleaned.extend(self._parse_recipient_token(token))
 
         if not cleaned:
             return raw.strip()
@@ -483,6 +477,68 @@ class MsgProcessor(FileProcessor):
         # Remove duplicates while preserving order.
         unique = list(dict.fromkeys(cleaned))
         return '; '.join(unique)
+
+    def _split_recipient_tokens(self, raw: str) -> list[str]:
+        """Split recipient string into tokens using Outlook-style separators."""
+        if ';' in raw or '\n' in raw:
+            return [t.strip() for t in _RECIPIENT_SPLIT_PATTERN.split(raw) if t.strip()]
+        return [raw.strip()]
+
+    def _parse_recipient_token(self, token: str) -> list[str]:
+        """Parse a single recipient token into normalized entries."""
+        token = token.strip()
+        if not token:
+            return []
+
+        angle_matches = list(_ANGLE_ADDR_FIND_PATTERN.finditer(token))
+        if angle_matches:
+            recipients: list[str] = []
+            for match in angle_matches:
+                name = match.group('name').strip().strip('"').strip(' ,;')
+                address = match.group('address').strip()
+                recipients.append(self._format_recipient(name, address))
+            return [r for r in recipients if r]
+
+        paren_match = _PAREN_ADDR_PATTERN.match(token)
+        if paren_match:
+            name = paren_match.group('name').strip().strip('"')
+            address = paren_match.group('address').strip()
+            return [self._format_recipient(name, address)]
+
+        addresses = _EMAIL_PATTERN.findall(token)
+        if len(addresses) > 1:
+            parts = [p.strip() for p in token.split(',') if p.strip()]
+            recipients: list[str] = []
+            for part in parts:
+                recipients.extend(self._parse_recipient_token(part))
+            return recipients
+
+        if addresses:
+            address = addresses[0]
+            name = token.replace(address, '')
+            name = name.replace('<', '').replace('>', '').strip().strip('"')
+            name = name.strip(' ,;()')
+            return [self._format_recipient(name, address)]
+
+        return [token]
+
+    def _format_recipient(self, name: str, address: str) -> str:
+        """Format a recipient entry with safe quoting for Outlook."""
+        name = name.strip().strip('"')
+        address = address.strip()
+
+        if not address:
+            return name
+
+        if name and ("@" in name or name.lower() == address.lower()):
+            name = ""
+
+        if name:
+            if _QUOTE_NAME_PATTERN.search(name):
+                name = f'"{name}"'
+            return f'{name} <{address}>'
+
+        return address
 
     def apply_translations(
         self,

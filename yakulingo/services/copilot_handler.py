@@ -1344,7 +1344,19 @@ class CopilotHandler:
         processes = [self._inspect_process_for_cdp(pid, profile_hint) for pid in pids]
         inspected = any(proc_info["name"] or proc_info["cmdline"] for proc_info in processes)
 
-        if any(proc_info["is_ours"] for proc_info in processes):
+        our_proc = next((proc_info for proc_info in processes if proc_info["is_ours"]), None)
+        if our_proc is not None:
+            if self._edge_pid is None:
+                try:
+                    self._edge_pid = int(our_proc.get("pid") or 0) or None
+                except (TypeError, ValueError):
+                    self._edge_pid = None
+                if self._edge_pid:
+                    logger.debug(
+                        "Detected existing Edge PID %d on CDP port %d",
+                        self._edge_pid,
+                        self.cdp_port,
+                    )
             return "ours"
         if any(proc_info["is_edge"] for proc_info in processes):
             return "edge_other"

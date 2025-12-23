@@ -21,6 +21,9 @@ set UV_PYTHON_INSTALL_DIR=.uv-python
 set PLAYWRIGHT_BROWSERS_PATH=.playwright-browsers
 :: Increase timeout for large packages like paddlepaddle (~500MB-1GB)
 set UV_HTTP_TIMEOUT=600
+:: Use a supported Python version (Playwright/greenlet are not compatible with Python 3.14+ yet)
+set VENV_PYTHON_SPEC=3.11
+set VENV_PYTHON_PATH=
 
 :: ============================================================
 :: Proxy Configuration (optional)
@@ -138,15 +141,15 @@ echo [DONE] uv downloaded.
 echo.
 echo [2/6] Installing Python...
 
-:: Check if Python 3.11 is already installed via uv
-uv.exe python find 3.11 >nul 2>&1
+:: Check if Python is already installed via uv
+uv.exe python find !VENV_PYTHON_SPEC! >nul 2>&1
 if not errorlevel 1 (
-    echo [INFO] Python 3.11 already installed.
+    echo [INFO] Python !VENV_PYTHON_SPEC! already installed.
     goto :python_done
 )
 
 :: Try uv python install first
-uv.exe python install 3.11 --native-tls 2>nul
+uv.exe python install !VENV_PYTHON_SPEC! --native-tls 2>nul
 if not errorlevel 1 (
     echo [DONE] Python installed via uv.
     goto :python_done
@@ -219,6 +222,7 @@ if errorlevel 1 (
 :: Clean up archive
 del "!PYTHON_ARCHIVE!" 2>nul
 echo [DONE] Python installed manually.
+set VENV_PYTHON_PATH=!PYTHON_INSTALL_DIR!\python.exe
 
 :python_done
 echo [DONE] Python installed.
@@ -228,7 +232,11 @@ echo [DONE] Python installed.
 :: ============================================================
 echo.
 echo [3/6] Installing dependencies...
-uv.exe venv --native-tls
+if defined VENV_PYTHON_PATH (
+    uv.exe venv -c -p "!VENV_PYTHON_PATH!" --native-tls
+) else (
+    uv.exe venv -c -p !VENV_PYTHON_SPEC! --native-tls
+)
 if errorlevel 1 (
     echo [ERROR] Failed to create virtual environment.
     pause
@@ -238,12 +246,16 @@ if errorlevel 1 (
 echo [INFO] Installing packages (including paddlepaddle ~500MB-1GB)...
 echo [INFO] This may take 5-15 minutes depending on network speed...
 
+:: Ensure uv uses the intended Python for the project environment (prevents uv from re-creating .venv with a different Python)
+set UV_SYNC_PYTHON_ARG=-p !VENV_PYTHON_SPEC!
+if defined VENV_PYTHON_PATH set UV_SYNC_PYTHON_ARG=-p "!VENV_PYTHON_PATH!"
+
 :: Build uv sync command based on SSL settings
 if "!SKIP_SSL!"=="1" (
     echo [INFO] SSL verification disabled for pypi.org and files.pythonhosted.org
-    uv.exe sync --native-tls --extra ocr --allow-insecure-host pypi.org --allow-insecure-host files.pythonhosted.org
+    uv.exe sync !UV_SYNC_PYTHON_ARG! --native-tls --extra ocr --allow-insecure-host pypi.org --allow-insecure-host files.pythonhosted.org
 ) else (
-    uv.exe sync --native-tls --extra ocr
+    uv.exe sync !UV_SYNC_PYTHON_ARG! --native-tls --extra ocr
 )
 if errorlevel 1 (
     echo [ERROR] Failed to install dependencies.

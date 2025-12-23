@@ -17,6 +17,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 
+from starlette.requests import Request as StarletteRequest
+
 # Module logger
 logger = logging.getLogger(__name__)
 
@@ -218,6 +220,46 @@ def _nicegui_open_window_patched(
                     controller.AllowExternalDrop = True
             except Exception as err:
                 logger.debug("AllowExternalDrop patch failed: %s", err)
+            try:
+                core = getattr(self.webview, 'CoreWebView2', None)
+                if core is not None and hasattr(core, 'add_NavigationStarting'):
+                    if not getattr(self, '_yakulingo_block_file_navigation', False):
+                        def navigation_starting_handler(_sender, event_args):
+                            try:
+                                uri = getattr(event_args, 'Uri', '') or ''
+                                if str(uri).lower().startswith('file:'):
+                                    setattr(event_args, 'Cancel', True)
+                            except Exception:
+                                pass
+
+                        core.add_NavigationStarting(navigation_starting_handler)
+                        self._yakulingo_block_file_navigation = True
+                        self._yakulingo_navigation_starting_handler = navigation_starting_handler
+                if core is not None and hasattr(core, 'Settings'):
+                    settings = getattr(core, 'Settings', None)
+                    try:
+                        if settings is not None and hasattr(settings, 'AreDefaultDropHandlingEnabled'):
+                            settings.AreDefaultDropHandlingEnabled = False
+                    except Exception:
+                        pass
+                if core is not None and hasattr(core, 'add_NewWindowRequested'):
+                    if not getattr(self, '_yakulingo_block_file_new_window', False):
+                        def new_window_requested_handler(_sender, event_args):
+                            try:
+                                uri = getattr(event_args, 'Uri', '') or ''
+                                if str(uri).lower().startswith('file:'):
+                                    if hasattr(event_args, 'Handled'):
+                                        setattr(event_args, 'Handled', True)
+                                    if hasattr(event_args, 'Cancel'):
+                                        setattr(event_args, 'Cancel', True)
+                            except Exception:
+                                pass
+
+                        core.add_NewWindowRequested(new_window_requested_handler)
+                        self._yakulingo_block_file_new_window = True
+                        self._yakulingo_new_window_requested_handler = new_window_requested_handler
+            except Exception as err:
+                logger.debug("NavigationStarting patch failed: %s", err)
 
         EdgeChrome.on_webview_ready = on_webview_ready_patched
         EdgeChrome._yakulingo_allow_external_drop = True
@@ -2461,13 +2503,32 @@ class YakuLingoApp:
         ).classes('global-drop-upload drop-zone-upload').props(f'accept="{SUPPORTED_FORMATS}"')
 
         script = '''<script>
-(() => {
+         (() => {
+           if (window._yakulingoGlobalFileDropInstalled) {
+             return;
+           }
+           window._yakulingoGlobalFileDropInstalled = true;
+
+           const looksLikeFileType = (type) => {
+             const t = String(type || '').toLowerCase();
+             return (
+               t === 'files' ||
+               t === 'application/pdf' ||
+               t === 'application/x-moz-file' ||
+               t === 'text/uri-list' ||
+               t.includes('filegroupdescriptor') ||
+               t.includes('filecontents') ||
+               t.includes('filename') ||
+      t.startsWith('application/x-qt-windows-mime')
+    );
+  };
+
   const isFileDrag = (e) => {
     const dt = e.dataTransfer;
     if (!dt) return false;
     const types = Array.from(dt.types || []);
     if (types.length === 0) return true;
-    if (types.includes('Files') || types.includes('application/x-moz-file') || types.includes('text/uri-list')) {
+    if (types.some(looksLikeFileType)) {
       return true;
     }
     if (dt.items) {
@@ -2478,10 +2539,10 @@ class YakuLingoApp:
     return Boolean(dt.files && dt.files.length);
   };
 
-  let dragDepth = 0;
+           let dragDepth = 0;
 
-  const activate = () => {
-    if (document.body) {
+           const activate = () => {
+             if (document.body) {
       document.body.classList.add('global-drop-active');
     }
   };
@@ -2490,44 +2551,50 @@ class YakuLingoApp:
     if (document.body) {
       document.body.classList.remove('global-drop-active');
     }
-  };
+           };
 
-  const handleDragEnter = (e) => {
-    if (!isFileDrag(e)) return;
+   const handleDragEnter = (e) => {
+    // Always activate for drags so drops are routed to the uploader.
+    // Some Edge/WebView2 builds don't expose file info until drop, so file detection
+    // during dragenter/dragover is not reliable.
+    if (!e.dataTransfer) return;
     dragDepth += 1;
     activate();
     e.preventDefault();
     if (e.dataTransfer) {
       e.dataTransfer.dropEffect = 'copy';
-    }
-  };
+            }
+          };
 
-  const handleDragOver = (e) => {
-    if (!isFileDrag(e)) return;
+   const handleDragOver = (e) => {
+    if (!e.dataTransfer) return;
+    // Always activate + prevent default so the drop event is delivered to the uploader
+    // (otherwise Edge will open the file as a navigation).
+    activate();
     e.preventDefault();
     if (e.dataTransfer) {
       e.dataTransfer.dropEffect = 'copy';
     }
-  };
+   };
 
   const handleDragLeave = (e) => {
-    if (!isFileDrag(e)) return;
+    if (dragDepth === 0) return;
     dragDepth = Math.max(0, dragDepth - 1);
     if (dragDepth === 0) {
       deactivate();
     }
-  };
+          };
 
-  const handleDrop = (e) => {
-    if (!isFileDrag(e)) return;
-    e.preventDefault();
-    dragDepth = 0;
-    // Let q-uploader process this drop before the overlay disables pointer events.
-    setTimeout(deactivate, 0);
-  };
+          const handleDrop = (e) => {
+            // Always prevent default to block browser navigation to file://.
+            e.preventDefault();
+            dragDepth = 0;
+            // Let q-uploader process this drop before the overlay disables pointer events.
+            setTimeout(deactivate, 0);
+          };
 
   const registerTargets = () => {
-    const targets = [window, document];
+    const targets = [window, document, document.documentElement];
     if (document.body) targets.push(document.body);
     for (const target of targets) {
       target.addEventListener('dragenter', handleDragEnter, true);
@@ -2537,13 +2604,9 @@ class YakuLingoApp:
     }
   };
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', registerTargets);
-  } else {
-    registerTargets();
-  }
+  registerTargets();
 })();
-</script>'''
+         </script>'''
         ui.add_head_html(script)
 
     async def _handle_global_upload(self, e):
@@ -2582,8 +2645,21 @@ class YakuLingoApp:
                     return
                 uploaded_path = temp_file_manager.create_temp_file(content, name)
 
+            try:
+                size_bytes = uploaded_path.stat().st_size
+            except OSError:
+                size_bytes = -1
+            logger.debug(
+                "Global file drop received: name=%s path=%s size_bytes=%s",
+                name,
+                uploaded_path,
+                size_bytes,
+            )
+            if name:
+                ui.notify(f'ファイルを受け取りました: {name}', type='info')
             await self._select_file(uploaded_path)
-        except (OSError, AttributeError) as err:
+        except Exception as err:
+            logger.exception("Global file drop handling failed: %s", err)
             ui.notify(f'ファイルの読み込みに失敗しました: {err}', type='negative')
 
     def _handle_global_upload_rejected(self, _event=None):
@@ -5204,6 +5280,118 @@ def run_app(
     ui_dir = Path(__file__).parent
     nicegui_app.add_static_files('/static', ui_dir)
 
+    # Global drag&drop upload API (browser mode)
+    # In some Edge builds, dropping a file on the page will not reach Quasar's uploader.
+    # This endpoint allows the frontend to upload dropped files directly via fetch()
+    # and then reuse the normal _select_file() flow.
+    #
+    # NOTE: This module uses `from __future__ import annotations`, so FastAPI's normal
+    # UploadFile annotation can become a ForwardRef when defined inside run_app().
+    # To avoid pydantic "class-not-fully-defined" errors, parse multipart manually.
+    try:
+        from fastapi import HTTPException
+    except Exception as e:
+        logger.debug("FastAPI upload API unavailable; global drop upload disabled: %s", e)
+    else:
+        @nicegui_app.post('/api/global-drop')
+        async def global_drop_upload(request: StarletteRequest):  # type: ignore[misc]
+            from yakulingo.ui.components.file_panel import (
+                MAX_DROP_FILE_SIZE_BYTES,
+                MAX_DROP_FILE_SIZE_MB,
+                SUPPORTED_EXTENSIONS,
+            )
+            from yakulingo.ui.utils import temp_file_manager
+
+            try:
+                form = await request.form()
+            except Exception as err:
+                logger.exception("Global drop API: failed to parse multipart form: %s", err)
+                raise HTTPException(status_code=400, detail="アップロードを読み取れませんでした") from err
+            uploaded = form.get("file")
+            if uploaded is None or not hasattr(uploaded, "filename") or not hasattr(uploaded, "read"):
+                raise HTTPException(status_code=400, detail="file is required")
+
+            filename = getattr(uploaded, "filename", None) or "unnamed_file"
+            ext = Path(filename).suffix.lower()
+            if ext not in SUPPORTED_EXTENSIONS:
+                raise HTTPException(status_code=400, detail=f"Unsupported file type: {ext or '(no extension)'}")
+
+            # Stream into memory with a hard limit (keeps behavior consistent with UI drop limits).
+            size_bytes = 0
+            buffer = bytearray()
+            try:
+                while True:
+                    chunk = await uploaded.read(1024 * 1024)  # 1MB chunks
+                    if not chunk:
+                        break
+                    size_bytes += len(chunk)
+                    if size_bytes > MAX_DROP_FILE_SIZE_BYTES:
+                        raise HTTPException(
+                            status_code=413,
+                            detail=f"ファイルが大きすぎます（最大{MAX_DROP_FILE_SIZE_MB}MBまで）",
+                        )
+                    buffer.extend(chunk)
+            finally:
+                try:
+                    close = getattr(uploaded, "close", None)
+                    if callable(close):
+                        await close()
+                except Exception:
+                    pass
+
+            uploaded_path = temp_file_manager.create_temp_file(bytes(buffer), filename)
+            logger.info(
+                "Global drop API received: name=%s size_bytes=%d path=%s",
+                filename,
+                size_bytes,
+                uploaded_path,
+            )
+            asyncio.create_task(yakulingo_app._select_file(uploaded_path))
+            return {"ok": True, "filename": filename, "size_bytes": size_bytes}
+
+        @nicegui_app.post('/api/pdf-prepare')
+        async def pdf_prepare(_: StarletteRequest):  # type: ignore[misc]
+            """Initialize PP-DocLayout-L before uploading/processing a PDF (browser mode UX)."""
+            try:
+                from yakulingo.processors import is_layout_available
+            except Exception:
+                return {"ok": True, "available": False}
+
+            if not is_layout_available():
+                return {"ok": True, "available": False}
+
+            # Fast path: already initialized or failed (PDF works with degraded quality).
+            if yakulingo_app._layout_init_state in (
+                LayoutInitializationState.INITIALIZED,
+                LayoutInitializationState.FAILED,
+            ):
+                return {"ok": True, "available": True, "status": yakulingo_app._layout_init_state.value}
+
+            init_dialog = None
+            with yakulingo_app._client_lock:
+                client = yakulingo_app._client
+
+            try:
+                if client is not None:
+                    with client:
+                        init_dialog = yakulingo_app._create_layout_init_dialog()
+                        init_dialog.open()
+                    await asyncio.sleep(0)
+
+                await yakulingo_app._ensure_layout_initialized()
+                return {
+                    "ok": True,
+                    "available": True,
+                    "status": yakulingo_app._layout_init_state.value,
+                }
+            finally:
+                if init_dialog is not None and client is not None:
+                    try:
+                        with client:
+                            init_dialog.close()
+                    except Exception:
+                        pass
+
     # Icon path for window and favicon (used by native mode and _position_window_early_sync)
     icon_path = ui_dir / 'yakulingo.ico'
 
@@ -5699,9 +5887,159 @@ def run_app(
 
         # JavaScript to detect font loading and show icons
         ui.add_head_html('''<script>
-document.fonts.ready.then(function() {
-    document.documentElement.classList.add('fonts-ready');
-});
+ document.fonts.ready.then(function() {
+     document.documentElement.classList.add('fonts-ready');
+ });
+ </script>''')
+
+        # Global file drop handler (browser mode):
+        # 1) Prevent Edge from navigating to file:// on drop
+        # 2) Upload dropped file via fetch() to the local server (/api/global-drop)
+        #    (more reliable than relying on Quasar's uploader across Edge builds).
+        ui.add_head_html('''<script>
+(() => {
+  if (window._yakulingoGlobalDropFetchInstalled) {
+    return;
+  }
+  window._yakulingoGlobalDropFetchInstalled = true;
+
+  const ensureOverlay = () => {
+    let overlay = document.getElementById('yakulingo-global-drop-overlay');
+    if (overlay) return overlay;
+
+    overlay = document.createElement('div');
+    overlay.id = 'yakulingo-global-drop-overlay';
+    overlay.style.position = 'fixed';
+    overlay.style.inset = '12px';
+    overlay.style.zIndex = '5000';
+    overlay.style.display = 'none';
+    overlay.style.alignItems = 'center';
+    overlay.style.justifyContent = 'center';
+    overlay.style.pointerEvents = 'none';
+    overlay.style.borderRadius = '20px';
+    overlay.style.border = '2px dashed rgba(67, 85, 185, 0.7)';
+    overlay.style.background = 'rgba(67, 85, 185, 0.08)';
+
+    const label = document.createElement('div');
+    label.textContent = 'ここにファイルをドロップ';
+    label.style.padding = '14px 18px';
+    label.style.borderRadius = '9999px';
+    label.style.background = 'rgba(254, 251, 255, 0.95)';
+    label.style.boxShadow = '0 8px 24px rgba(0, 0, 0, 0.12)';
+    label.style.color = '#00105C';
+    label.style.fontWeight = '600';
+    label.style.letterSpacing = '0.02em';
+    overlay.appendChild(label);
+
+    document.body.appendChild(overlay);
+    return overlay;
+  };
+
+  let dragDepth = 0;
+
+  const showOverlay = () => {
+    try {
+      const overlay = ensureOverlay();
+      overlay.style.display = 'flex';
+    } catch {}
+  };
+
+  const hideOverlay = () => {
+    try {
+      const overlay = document.getElementById('yakulingo-global-drop-overlay');
+      if (overlay) overlay.style.display = 'none';
+    } catch {}
+  };
+
+  const uploadFile = async (file) => {
+    const form = new FormData();
+    form.append('file', file, file.name || 'unnamed_file');
+    const resp = await fetch('/api/global-drop', { method: 'POST', body: form });
+    if (resp.ok) return;
+    let detail = `アップロードに失敗しました (HTTP ${resp.status})`;
+    try {
+      const data = await resp.json();
+      if (data) {
+        const payload = (data && Object.prototype.hasOwnProperty.call(data, 'detail')) ? data.detail : data;
+        if (typeof payload === 'string') {
+          detail = `${detail}: ${payload}`;
+        } else if (payload !== undefined) {
+          detail = `${detail}: ${JSON.stringify(payload).slice(0, 500)}`;
+        }
+      }
+    } catch {
+      try {
+        const text = await resp.text();
+        if (text) {
+          const snippet = String(text).replace(/\\s+/g, ' ').slice(0, 200);
+          detail = `アップロードに失敗しました (HTTP ${resp.status}): ${snippet}`;
+        }
+      } catch {}
+    }
+    window.alert(detail);
+  };
+
+  const preparePdfIfNeeded = async (file) => {
+    const filename = String((file && file.name) || '').toLowerCase();
+    if (!filename.endsWith('.pdf')) return;
+    try {
+      const resp = await fetch('/api/pdf-prepare', { method: 'POST' });
+      // Always continue to upload even if preparation fails; PDF can still work (degraded) or user may not have OCR extras.
+      if (!resp.ok) {
+        console.warn('[yakulingo] pdf-prepare failed', resp.status);
+      }
+    } catch (err) {
+      console.warn('[yakulingo] pdf-prepare request failed', err);
+    }
+  };
+
+  const handleDragEnter = (e) => {
+    if (!e.dataTransfer) return;
+    dragDepth += 1;
+    showOverlay();
+    e.preventDefault();
+  };
+
+  const handleDragOver = (e) => {
+    if (!e.dataTransfer) return;
+    showOverlay();
+    e.preventDefault();
+  };
+
+  const handleDragLeave = (e) => {
+    if (!e.dataTransfer) return;
+    if (dragDepth === 0) return;
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (dragDepth === 0) hideOverlay();
+  };
+
+  const handleDrop = (e) => {
+    if (!e.dataTransfer) return;
+    e.preventDefault();
+    dragDepth = 0;
+    hideOverlay();
+
+    const files = e.dataTransfer.files;
+    if (files && files.length) {
+      // Stop propagation so the browser/Quasar doesn't also try to handle this drop.
+      e.stopPropagation();
+      (async () => {
+        await preparePdfIfNeeded(files[0]);
+        await uploadFile(files[0]);
+      })().catch((err) => {
+        console.error('[yakulingo] drop upload failed', err);
+        try {
+          window.alert('アップロードに失敗しました。ネットワーク/セキュリティ設定をご確認ください。');
+        } catch {}
+      });
+    }
+  };
+
+  window.addEventListener('dragenter', handleDragEnter, true);
+  window.addEventListener('dragover', handleDragOver, true);
+  window.addEventListener('dragleave', handleDragLeave, true);
+  window.addEventListener('drop', handleDrop, true);
+})();
 </script>''')
 
         # Wait for client connection (WebSocket ready)

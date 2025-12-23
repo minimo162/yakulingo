@@ -232,13 +232,13 @@ class TestYakuLingoAppInit:
     @patch('yakulingo.ui.app.AppSettings')
     @patch('yakulingo.ui.app.get_default_settings_path')
     @patch('yakulingo.ui.app.get_default_prompts_dir')
-    def test_app_applies_last_tab_from_settings(
+    def test_app_starts_in_text_mode_even_if_last_tab_file(
         self,
         mock_prompts_dir,
         mock_settings_path,
         mock_settings_class,
     ):
-        """App should reflect persisted last tab on first load."""
+        """App should start in text mode even if last_tab was file."""
         mock_settings = MagicMock(
             get_reference_file_paths=MagicMock(return_value=[]),
             last_tab="file",
@@ -251,7 +251,7 @@ class TestYakuLingoAppInit:
         # Trigger settings load to apply preferences
         _ = app.settings
 
-        assert app.state.current_tab == Tab.FILE
+        assert app.state.current_tab == Tab.TEXT
 
 
 # =============================================================================

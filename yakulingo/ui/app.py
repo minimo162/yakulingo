@@ -492,6 +492,7 @@ class YakuLingoApp:
 
         # Hidden file upload element for direct file selection (no dialog)
         self._reference_upload = None
+        self._global_drop_target = None
 
     @property
     def copilot(self) -> "CopilotHandler":
@@ -529,12 +530,8 @@ class YakuLingoApp:
             self._settings = AppSettings.load(self.settings_path)
             self.state.reference_files = self._settings.get_reference_file_paths(self._base_dir)
             logger.info("[TIMING] AppSettings.load: %.2fs", time.perf_counter() - start)
-            # Apply persisted UI preferences (e.g., last opened tab)
-            tab_map = {
-                Tab.TEXT.value: Tab.TEXT,
-                Tab.FILE.value: Tab.FILE,
-            }
-            self.state.current_tab = tab_map.get(self._settings.last_tab, Tab.TEXT)
+            # Always start in text mode; file panel opens on drag & drop.
+            self.state.current_tab = Tab.TEXT
         return self._settings
 
     @settings.setter
@@ -2047,7 +2044,7 @@ class YakuLingoApp:
         """Update main area layout classes based on current state"""
         if self._main_area_element:
             # Remove dynamic classes first, then add current ones
-            is_file_mode = self.state.current_tab == Tab.FILE
+            is_file_mode = self._is_file_panel_active()
             has_results = self.state.text_result or self.state.text_translating
 
             # Debug logging for layout state changes
@@ -2419,6 +2416,109 @@ class YakuLingoApp:
             # Enable the button
             self._translate_button.props(':loading=false :disable=false')
 
+    def _start_new_translation(self):
+        """Reset both text and file state and return to text translation."""
+        if self.state.is_translating():
+            return
+        self.state.reset_text_state()
+        self.state.reset_file_state()
+        self.state.current_tab = Tab.TEXT
+        self.settings.last_tab = Tab.TEXT.value
+        self._batch_refresh({'tabs', 'content'})
+
+    def _setup_global_file_drop(self):
+        if self._global_drop_target is not None:
+            return
+
+        from yakulingo.ui.components.file_panel import MAX_DROP_FILE_SIZE_BYTES
+
+        self._global_drop_target = ui.element('div').classes('global-drop-target').style('display: none;')
+        self._global_drop_target.on('global-file-ready', handler=self._handle_global_file_ready)
+        self._global_drop_target.on('global-file-too-large', handler=self._handle_global_file_too_large)
+
+        ui.add_head_html(f'''<script>
+(() => {{
+  const MAX_BYTES = {MAX_DROP_FILE_SIZE_BYTES};
+
+  const isFileDrag = (e) => Array.from(e.dataTransfer?.types || []).includes('Files');
+  const getTarget = () => document.querySelector('.global-drop-target');
+
+  window.addEventListener('dragover', (e) => {{
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  }});
+
+  window.addEventListener('drop', (e) => {{
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+
+    if (e.target && e.target.closest && (e.target.closest('.drop-zone') || e.target.closest('.drop-zone-upload'))) {{
+      return;
+    }}
+
+    let file = null;
+    const items = e.dataTransfer.items;
+    if (items && items.length) {{
+      for (const item of items) {{
+        if (item.kind === 'file') {{
+          file = item.getAsFile();
+          if (file) break;
+        }}
+      }}
+    }}
+
+    if (!file && e.dataTransfer.files && e.dataTransfer.files.length) {{
+      file = e.dataTransfer.files[0];
+    }}
+
+    if (!file) return;
+
+    if (file.size && file.size > MAX_BYTES) {{
+      const target = getTarget();
+      if (target) {{
+        target.dispatchEvent(new CustomEvent('global-file-too-large', {{ detail: {{ name: file.name, size: file.size }} }}));
+      }}
+      return;
+    }}
+
+    const reader = new FileReader();
+    reader.onload = (event) => {{
+      const detail = {{
+        name: file.name,
+        data: Array.from(new Uint8Array(event.target.result))
+      }};
+      const target = getTarget();
+      if (target) {{
+        target.dispatchEvent(new CustomEvent('global-file-ready', {{ detail }}));
+      }}
+    }};
+    reader.readAsArrayBuffer(file);
+  }});
+}})();
+</script>''')
+
+    async def _handle_global_file_ready(self, event=None):
+        if self.state.is_translating():
+            return
+        from yakulingo.ui.components.file_panel import _extract_drop_payload, _process_drop_result
+
+        result = _extract_drop_payload(event)
+        await _process_drop_result(self._select_file, result)
+
+    def _handle_global_file_too_large(self, event=None):
+        if self.state.is_translating():
+            return
+        from yakulingo.ui.components.file_panel import _extract_drop_payload, MAX_DROP_FILE_SIZE_MB
+
+        detail = _extract_drop_payload(event) or {}
+        name = detail.get('name') if isinstance(detail, dict) else None
+        suffix = f' ({name})' if name else ''
+        ui.notify(
+            f'ファイルが大きいため翻訳できません（{MAX_DROP_FILE_SIZE_MB}MBまで）{suffix}',
+            type='warning',
+        )
+
     # =========================================================================
     # Section 4: UI Creation Methods
     # =========================================================================
@@ -2439,6 +2539,8 @@ class YakuLingoApp:
             auto_upload=True,
             max_files=1,
         ).props('accept=".csv,.txt,.pdf,.docx,.xlsx,.pptx,.md,.json"').classes('hidden')
+
+        self._setup_global_file_drop()
 
         # Layout container: 2-column (sidebar + main content)
         with ui.element('div').classes('app-container'):
@@ -2507,15 +2609,21 @@ class YakuLingoApp:
         self._header_status = header_status
         header_status()
 
-        # Navigation tabs (M3 vertical tabs)
+        # Primary action + hint
         @ui.refreshable
-        def tabs_container():
-            with ui.element('nav').classes('sidebar-nav').props('role="tablist" aria-label="翻訳モード" aria-orientation="vertical"'):
-                self._create_nav_item('テキスト翻訳', 'translate', Tab.TEXT)
-                self._create_nav_item('ファイル翻訳', 'description', Tab.FILE)
+        def actions_container():
+            with ui.column().classes('sidebar-nav gap-2'):
+                disabled = self.state.is_translating()
+                btn_props = 'no-caps disable' if disabled else 'no-caps'
+                ui.button(
+                    '新規翻訳',
+                    icon='add',
+                    on_click=self._start_new_translation,
+                ).classes('btn-primary w-full').props(btn_props)
+                ui.label('ヒント: ファイルは画面にドラッグ＆ドロップで翻訳できます').classes('text-2xs text-muted px-1')
 
-        self._tabs_container = tabs_container
-        tabs_container()
+        self._tabs_container = actions_container
+        actions_container()
 
         ui.separator().classes('my-2 opacity-30')
 
@@ -2625,12 +2733,19 @@ class YakuLingoApp:
                 'flat dense round size=xs @click.stop'
             ).classes('history-delete-btn')
 
+    def _is_file_panel_active(self) -> bool:
+        """Return True when file panel should be visible."""
+        return (
+            self.state.current_tab == Tab.FILE
+            and self.state.file_state != FileState.EMPTY
+        )
+
     def _get_main_area_classes(self) -> str:
         """Get dynamic CSS classes for main-area based on current state."""
         from yakulingo.ui.state import TextViewState
         classes = ['main-area']
 
-        if self.state.current_tab == Tab.FILE:
+        if self._is_file_panel_active():
             classes.append('file-mode')
         elif self.state.text_view_state == TextViewState.RESULT or self.state.text_translating:
             # Show results panel in RESULT view state or when translating
@@ -2660,7 +2775,7 @@ class YakuLingoApp:
 
         @ui.refreshable
         def main_content():
-            if self.state.current_tab == Tab.TEXT:
+            if not self._is_file_panel_active():
                 # 2-column layout for text translation
                 # Input panel (shown in INPUT state, hidden in RESULT state via CSS)
                 with ui.column().classes('input-panel'):
@@ -3704,8 +3819,15 @@ class YakuLingoApp:
                 logger.warning("File selection aborted: no client connected")
                 return
 
+        self.state.current_tab = Tab.FILE
+        self.settings.last_tab = Tab.FILE.value
+
         ext = file_path.suffix.lower()
-        from yakulingo.ui.components.file_panel import SUPPORTED_EXTENSIONS
+        from yakulingo.ui.components.file_panel import (
+            MAX_DROP_FILE_SIZE_BYTES,
+            MAX_DROP_FILE_SIZE_MB,
+            SUPPORTED_EXTENSIONS,
+        )
 
         if ext not in SUPPORTED_EXTENSIONS:
             if not ext:
@@ -3717,6 +3839,24 @@ class YakuLingoApp:
             self.state.reset_file_state()
             self.state.file_state = FileState.ERROR
             self.state.error_message = error_message
+            with client:
+                self._refresh_content()
+            return
+
+        try:
+            file_size = file_path.stat().st_size
+        except OSError as err:
+            self.state.reset_file_state()
+            self.state.file_state = FileState.ERROR
+            self.state.error_message = f'ファイルの読み込みに失敗しました: {err}'
+            with client:
+                self._refresh_content()
+            return
+
+        if file_size > MAX_DROP_FILE_SIZE_BYTES:
+            self.state.reset_file_state()
+            self.state.file_state = FileState.ERROR
+            self.state.error_message = f'ファイルが大きいため翻訳できません（{MAX_DROP_FILE_SIZE_MB}MBまで）'
             with client:
                 self._refresh_content()
             return
@@ -4037,7 +4177,7 @@ class YakuLingoApp:
                         on_close=self._refresh_content,
                     )
                 elif result.status == TranslationStatus.CANCELLED:
-                    self.state.reset_file_state()
+                    self._reset_file_state_to_text()
                     ui.notify('キャンセルしました', type='info')
                 else:
                     self.state.error_message = result.error_message or 'エラー'
@@ -4049,12 +4189,18 @@ class YakuLingoApp:
             self._refresh_content()
             self._refresh_tabs()  # Re-enable tabs (translation finished)
 
+    def _reset_file_state_to_text(self):
+        """Clear file state and return to text translation view."""
+        self.state.reset_file_state()
+        self.state.current_tab = Tab.TEXT
+        self.settings.last_tab = Tab.TEXT.value
+
     def _cancel_and_close(self, dialog):
         """Cancel translation and close dialog"""
         if self.translation_service:
             self.translation_service.cancel()
         dialog.close()
-        self.state.reset_file_state()
+        self._reset_file_state_to_text()
         self._refresh_content()
         self._refresh_tabs()  # Re-enable tabs (translation cancelled)
 
@@ -4062,7 +4208,7 @@ class YakuLingoApp:
         """Cancel file translation"""
         if self.translation_service:
             self.translation_service.cancel()
-        self.state.reset_file_state()
+        self._reset_file_state_to_text()
         self._refresh_content()
         self._refresh_tabs()  # Re-enable tabs (translation cancelled)
 
@@ -4078,7 +4224,7 @@ class YakuLingoApp:
 
     def _reset(self):
         """Reset file state"""
-        self.state.reset_file_state()
+        self._reset_file_state_to_text()
         self._refresh_content()
 
     # =========================================================================

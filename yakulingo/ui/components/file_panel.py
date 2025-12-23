@@ -26,7 +26,7 @@ ATTACH_SVG: str = '''
 
 SUPPORTED_FORMATS = ".xlsx,.xls,.docx,.pptx,.pdf,.txt,.msg"
 SUPPORTED_EXTENSIONS = {ext.strip() for ext in SUPPORTED_FORMATS.split(',')}
-MAX_DROP_FILE_SIZE_MB = 5
+MAX_DROP_FILE_SIZE_MB = 20
 MAX_DROP_FILE_SIZE_BYTES = MAX_DROP_FILE_SIZE_MB * 1024 * 1024
 
 # File type icons (Material Icons)
@@ -446,6 +446,12 @@ def _drop_zone(on_file_select: Callable[[Path], Union[None, Awaitable[None]]]):
         except (OSError, AttributeError) as err:
             ui.notify(f'ファイルの読み込みに失敗しました: {err}', type='negative')
 
+    def handle_upload_rejected(_event=None):
+        ui.notify(
+            f'ファイルが大きいため翻訳できません（{MAX_DROP_FILE_SIZE_MB}MBまで）',
+            type='warning',
+        )
+
     # Container with relative positioning for layering
     with ui.element('div').classes('drop-zone w-full') as container:
         # Visual content (pointer-events: none to let clicks pass through)
@@ -458,6 +464,8 @@ def _drop_zone(on_file_select: Callable[[Path], Union[None, Awaitable[None]]]):
         # Upload component for click selection
         upload = ui.upload(
             on_upload=handle_upload,
+            max_file_size=MAX_DROP_FILE_SIZE_BYTES,
+            on_rejected=handle_upload_rejected,
             auto_upload=True,
         ).classes('drop-zone-upload').props(f'accept="{SUPPORTED_FORMATS}"')
 

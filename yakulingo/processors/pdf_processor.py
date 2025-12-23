@@ -3488,6 +3488,10 @@ class PdfProcessor(FileProcessor):
         self._check_scanned_pdf(file_path, selected_pages)
 
         # Use hybrid mode: pdfminer text + PP-DocLayout-L layout (no OCR)
+        extract_kwargs = {}
+        if selected_pages is not None:
+            extract_kwargs["selected_pages"] = selected_pages
+
         yield from self._extract_hybrid_streaming(
             file_path,
             total_pages,
@@ -3495,7 +3499,7 @@ class PdfProcessor(FileProcessor):
             device,
             batch_size,
             dpi,
-            selected_pages=selected_pages,
+            **extract_kwargs,
         )
 
     def _extract_hybrid_streaming(

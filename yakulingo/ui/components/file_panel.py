@@ -67,10 +67,29 @@ async def _process_drop_result(
         ui.notify('ファイルの読み込みに失敗しました: 空のデータです', type='negative')
         return False
 
+    ext = Path(name).suffix.lower()
+    if ext in {'.doc', '.ppt'}:
+        ui.notify(
+            f'{ext} は古い形式のためサポートしていません（.docx / .pptx に変換してください）',
+            type='warning',
+        )
+        return False
+
+    if ext not in SUPPORTED_EXTENSIONS:
+        ui.notify('サポートされていないファイル形式です', type='warning')
+        return False
+
     try:
         content = bytes(data)
     except (TypeError, ValueError) as err:
         ui.notify(f'ファイルの読み込みに失敗しました: {err}', type='negative')
+        return False
+
+    if len(content) > MAX_DROP_FILE_SIZE_BYTES:
+        ui.notify(
+            f'ファイルが大きいため翻訳できません（{MAX_DROP_FILE_SIZE_MB}MBまで）',
+            type='warning',
+        )
         return False
 
     temp_path = temp_file_manager.create_temp_file(content, name)

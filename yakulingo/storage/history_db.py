@@ -53,6 +53,13 @@ class HistoryDB:
 
         self._init_db()
 
+    def __del__(self) -> None:
+        """Best-effort cleanup for tests and abrupt shutdowns."""
+        try:
+            self.close()
+        except Exception:
+            pass
+
     def _get_connection(self) -> sqlite3.Connection:
         """
         Get a database connection for the current thread.
@@ -104,8 +111,18 @@ class HistoryDB:
 
     def _init_db(self):
         """Initialize database schema"""
-        conn = self._get_connection()
+        # Use a short-lived connection for initialization so that merely constructing
+        # HistoryDB doesn't keep the database file locked on Windows.
         with self._lock:
+            conn = sqlite3.connect(
+                self.db_path,
+                timeout=self.DB_TIMEOUT,
+                check_same_thread=False,
+            )
+            # Enable WAL mode for better concurrent read performance
+            conn.execute('PRAGMA journal_mode=WAL')
+            # Enable foreign keys
+            conn.execute('PRAGMA foreign_keys=ON')
             # Create table with backward-compatible schema
             # (direction column kept for backward compatibility with existing DBs)
             conn.execute('''
@@ -131,6 +148,10 @@ class HistoryDB:
                 ON history(source_text COLLATE NOCASE)
             ''')
             conn.commit()
+            try:
+                conn.close()
+            except sqlite3.Error:
+                pass
 
     def add(self, entry: HistoryEntry) -> int:
         """
@@ -169,7 +190,7 @@ class HistoryDB:
                 '''
                 SELECT id, source_text, direction, result_json, timestamp
                 FROM history
-                ORDER BY timestamp DESC
+                ORDER BY timestamp DESC, id DESC
                 LIMIT ?
                 ''',
                 (limit,)

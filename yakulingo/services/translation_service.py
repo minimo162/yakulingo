@@ -923,19 +923,34 @@ class BatchTranslator:
             # Validate translation count matches unique text count
             if len(unique_translations) != len(unique_texts):
                 mismatched_batch_count += 1
-                missing_count = len(unique_texts) - len(unique_translations)
+                diff = len(unique_texts) - len(unique_translations)
+                missing_count = max(0, diff)
+                extra_count = max(0, -diff)
                 logger.warning(
-                    "Translation count mismatch in batch %d: expected %d unique, got %d (missing %d). "
+                    "Translation count mismatch in batch %d: expected %d unique, got %d (missing %d, extra %d). "
                     "Affected texts will use original content as fallback.",
-                    i + 1, len(unique_texts), len(unique_translations), missing_count
+                    i + 1, len(unique_texts), len(unique_translations), missing_count, extra_count
                 )
-                # Log which unique texts are missing translations (first 3 for brevity)
-                missing_indices = list(range(len(unique_translations), len(unique_texts)))
-                for miss_idx in missing_indices[:3]:
-                    original_text = unique_texts[miss_idx][:50] + "..." if len(unique_texts[miss_idx]) > 50 else unique_texts[miss_idx]
-                    logger.warning("  Missing translation for unique_idx %d: '%s'", miss_idx, original_text)
-                if len(missing_indices) > 3:
-                    logger.warning("  ... and %d more missing translations", len(missing_indices) - 3)
+
+                if missing_count:
+                    # Log which unique texts are missing translations (first 3 for brevity)
+                    missing_indices = list(range(len(unique_translations), len(unique_texts)))
+                    for miss_idx in missing_indices[:3]:
+                        original_text = unique_texts[miss_idx][:50] + "..." if len(unique_texts[miss_idx]) > 50 else unique_texts[miss_idx]
+                        logger.warning("  Missing translation for unique_idx %d: '%s'", miss_idx, original_text)
+                    if len(missing_indices) > 3:
+                        logger.warning("  ... and %d more missing translations", len(missing_indices) - 3)
+
+                    # Pad missing translations to maintain index mapping.
+                    unique_translations = unique_translations + ([""] * missing_count)
+
+                if extra_count:
+                    # Extra items make index mapping unreliable (often caused by nested numbering).
+                    # On retries, prefer safety and fall back to original content.
+                    if _split_retry_depth > 0:
+                        unique_translations = [""] * len(unique_texts)
+                    else:
+                        unique_translations = unique_translations[:len(unique_texts)]
 
             cleaned_unique_translations = []
             for idx, translated_text in enumerate(unique_translations):
@@ -994,8 +1009,10 @@ class BatchTranslator:
                     )
                     translations[block.id] = block.text
 
-        # Retry missing translations once with smaller batches
-        if untranslated_block_ids and not cancelled and _split_retry_depth == 0:
+        # Retry missing translations once with smaller batches.
+        # Skip when we already observed count mismatches: the response mapping is unreliable,
+        # and retrying risks overwriting the "use original text" fallbacks.
+        if untranslated_block_ids and not cancelled and _split_retry_depth == 0 and mismatched_batch_count == 0:
             retry_ids = set(untranslated_block_ids)
             retry_blocks = [block for block in blocks if block.id in retry_ids]
             if retry_blocks and not self._cancel_event.is_set():

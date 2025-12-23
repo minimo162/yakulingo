@@ -391,16 +391,17 @@ def _suppress_subprocess_output():
 
     original_popen = subprocess.Popen
 
-    def patched_popen(*args, **kwargs):
-        if kwargs.get("stdout") is None:
-            kwargs["stdout"] = subprocess.DEVNULL
-        if kwargs.get("stderr") is None:
-            kwargs["stderr"] = subprocess.DEVNULL
-        if "creationflags" not in kwargs:
-            kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
-        return original_popen(*args, **kwargs)
+    class PatchedPopen(original_popen):
+        def __init__(self, *args, **kwargs):
+            if kwargs.get("stdout") is None:
+                kwargs["stdout"] = subprocess.DEVNULL
+            if kwargs.get("stderr") is None:
+                kwargs["stderr"] = subprocess.DEVNULL
+            if "creationflags" not in kwargs:
+                kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            super().__init__(*args, **kwargs)
 
-    subprocess.Popen = patched_popen
+    subprocess.Popen = PatchedPopen
     try:
         yield
     finally:

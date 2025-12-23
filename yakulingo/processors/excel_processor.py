@@ -3,7 +3,7 @@
 Processor for Excel files (.xlsx, .xls).
 
 Uses xlwings for full Excel functionality (shapes, charts, textboxes).
-Falls back to openpyxl if xlwings is not available (Linux or no Excel installed).
+Falls back to openpyxl if xlwings/Excel is not available (Linux or no Excel installed).
 """
 
 import gc
@@ -112,6 +112,7 @@ def com_initialized():
 # =============================================================================
 _xlwings = None
 HAS_XLWINGS = False
+_EXCEL_COM_REGISTERED: bool | None = None
 
 def _get_xlwings():
     """Lazy import xlwings."""
@@ -130,6 +131,32 @@ def is_xlwings_available() -> bool:
     """Check if xlwings is available."""
     _get_xlwings()
     return HAS_XLWINGS
+
+
+def _is_excel_com_registered() -> bool:
+    """Return True if Excel's COM ProgID looks registered on Windows."""
+    global _EXCEL_COM_REGISTERED
+    if sys.platform != "win32":
+        return True  # Not applicable (xlwings handles Excel availability on other platforms)
+    if _EXCEL_COM_REGISTERED is not None:
+        return _EXCEL_COM_REGISTERED
+
+    try:
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, r"Excel.Application\\CLSID") as key:
+            clsid, _ = winreg.QueryValueEx(key, None)
+            _EXCEL_COM_REGISTERED = bool(clsid)
+    except Exception:
+        _EXCEL_COM_REGISTERED = False
+
+    return _EXCEL_COM_REGISTERED
+
+
+def _can_use_xlwings() -> bool:
+    """Return True when xlwings can realistically drive Excel for this runtime."""
+    _get_xlwings()
+    return HAS_XLWINGS and _is_excel_com_registered()
 
 
 # Retry settings for Excel COM server connection
@@ -174,6 +201,19 @@ _RECOVERABLE_COM_ERROR_MESSAGES = [
     "-2146959355",  # CO_E_SERVER_EXEC_FAILURE
 ]
 
+_NON_RECOVERABLE_COM_ERROR_HRESULTS = {
+    -2147221005,  # CO_E_CLASSSTRING: invalid class string (Excel not registered)
+    -2147221164,  # REGDB_E_CLASSNOTREG: class not registered
+}
+
+_NON_RECOVERABLE_COM_ERROR_MESSAGES = [
+    "クラス文字列が無効です",
+    "Class string is invalid",
+    "Invalid class string",
+    "クラスが登録されていません",
+    "Class not registered",
+]
+
 
 def _is_recoverable_com_error(e: Exception) -> bool:
     """
@@ -192,11 +232,18 @@ def _is_recoverable_com_error(e: Exception) -> bool:
     is_com_error = False
     if pywintypes is not None:
         is_com_error = isinstance(e, pywintypes.com_error)
+        if is_com_error:
+            try:
+                hresult = e.args[0]
+            except Exception:
+                hresult = None
+            if hresult in _NON_RECOVERABLE_COM_ERROR_HRESULTS:
+                return False
+            if any(msg in error_str for msg in _NON_RECOVERABLE_COM_ERROR_MESSAGES):
+                return False
 
     # Also check for common COM error messages (works on Japanese/English Windows)
-    return is_com_error or any(
-        err_msg in error_str for err_msg in _RECOVERABLE_COM_ERROR_MESSAGES
-    )
+    return is_com_error or any(err_msg in error_str for err_msg in _RECOVERABLE_COM_ERROR_MESSAGES)
 
 
 def _try_create_new_excel_instance(xw, max_attempts: int = 3):
@@ -1083,7 +1130,7 @@ class ExcelProcessor(FileProcessor):
 
         self._ensure_xls_supported(file_path)
 
-        if HAS_XLWINGS:
+        if _can_use_xlwings():
             self._using_openpyxl_fallback = False
             yield from self._extract_text_blocks_xlwings(file_path, xw, output_language)
         else:
@@ -1095,7 +1142,7 @@ class ExcelProcessor(FileProcessor):
                 "フル機能を使用するにはMicrosoft Excelをインストールしてください。"
             )
             logger.warning(
-                "xlwings not available, falling back to openpyxl. "
+                "xlwings/Excel not available, falling back to openpyxl. "
                 "Shapes and charts will not be translated."
             )
             yield from self._extract_text_blocks_openpyxl(file_path, output_language)
@@ -1704,7 +1751,7 @@ class ExcelProcessor(FileProcessor):
 
         self._ensure_xls_supported(input_path)
 
-        if HAS_XLWINGS:
+        if _can_use_xlwings():
             self._apply_translations_xlwings(
                 input_path, output_path, translations, direction, xw, settings,
                 selected_sections, text_blocks
@@ -1726,7 +1773,7 @@ class ExcelProcessor(FileProcessor):
         # Refresh xlwings availability in case environment changes at runtime
         _get_xlwings()
 
-        if file_path.suffix.lower() == '.xls' and not HAS_XLWINGS:
+        if file_path.suffix.lower() == '.xls' and not _can_use_xlwings():
             raise ValueError(
                 "XLS files require Microsoft Excel via xlwings. "
                 "Install xlwings with Excel or convert the file to XLSX."
@@ -2358,7 +2405,7 @@ class ExcelProcessor(FileProcessor):
             Sheet1 (original), Sheet1_translated, Sheet2 (original), Sheet2_translated, ...
 
         Uses xlwings when available to preserve shapes, charts, and images.
-        Falls back to openpyxl (cells only) when xlwings is not available.
+        Falls back to openpyxl (cells only) when xlwings/Excel is not available.
 
         Args:
             original_path: Path to the original workbook
@@ -2370,7 +2417,7 @@ class ExcelProcessor(FileProcessor):
         """
         xw = _get_xlwings()
 
-        if HAS_XLWINGS:
+        if _can_use_xlwings():
             return self._create_bilingual_workbook_xlwings(
                 original_path, translated_path, output_path, xw
             )

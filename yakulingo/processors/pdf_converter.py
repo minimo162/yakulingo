@@ -1273,14 +1273,29 @@ def is_japanese_continuation_line(text: str) -> bool:
     if last_char in CLOSING_BRACKETS:
         return False
 
-    # Third check: single-character continuation indicators
+    # Third check: quantity units typically END a phrase (not continuation)
+    if last_char in QUANTITY_UNITS_JA:
+        return False
+
+    # Fourth check: single-character continuation indicators
     if last_char in JAPANESE_CONTINUATION_CHARS:
         return True
 
-    # Fourth check: multi-character suffix patterns
+    # Fifth check: multi-character suffix patterns
     # Check if text ends with any of the known continuation suffixes
     for suffix in JAPANESE_CONTINUATION_SUFFIXES:
         if stripped.endswith(suffix):
+            return True
+
+    # Sentence-final particles typically indicate the end of an utterance even without punctuation.
+    if last_char in {'ね', 'よ', 'か'}:
+        return False
+
+    # Final heuristic: Japanese wrapped lines often end with hiragana (e.g., verb/adjective endings)
+    # without sentence-ending punctuation.
+    if any(_is_cjk_char(ch) for ch in stripped):
+        code = ord(last_char)
+        if 0x3040 <= code <= 0x309F:  # Hiragana
             return True
 
     return False

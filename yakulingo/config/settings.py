@@ -52,6 +52,7 @@ USER_SETTINGS_KEYS = {
 MIN_SIDE_PANEL_APP_WIDTH = 650
 SIDE_PANEL_GAP = 10
 MIN_SIDE_PANEL_SCREEN_WIDTH = MIN_SIDE_PANEL_APP_WIDTH * 2 + SIDE_PANEL_GAP
+DEFAULT_MAX_CHARS_PER_BATCH = 4000
 
 
 def resolve_browser_display_mode(requested_mode: str, screen_width: Optional[int]) -> str:
@@ -87,7 +88,7 @@ class AppSettings:
     # _detect_display_settings() で論理解像度から動的に計算される。
 
     # Advanced
-    max_chars_per_batch: int = 1000     # Max characters per batch (Copilot input safety)
+    max_chars_per_batch: int = DEFAULT_MAX_CHARS_PER_BATCH  # Max characters per batch (Copilot input safety)
     request_timeout: int = 600          # Seconds (10 minutes - allows for large translations)
     max_retries: int = 3
 
@@ -234,8 +235,12 @@ class AppSettings:
 
         # Batch size constraints
         if self.max_chars_per_batch < 100:
-            logger.warning("max_chars_per_batch too small (%d), resetting to 1000", self.max_chars_per_batch)
-            self.max_chars_per_batch = 1000
+            logger.warning(
+                "max_chars_per_batch too small (%d), resetting to %d",
+                self.max_chars_per_batch,
+                DEFAULT_MAX_CHARS_PER_BATCH,
+            )
+            self.max_chars_per_batch = DEFAULT_MAX_CHARS_PER_BATCH
 
         # Timeout constraints
         if self.request_timeout < 10:
@@ -310,11 +315,13 @@ class AppSettings:
         # Resolve paths
         paths = []
         base_dir_resolved = base_dir.resolve()
+        base_dir_abs = base_dir.absolute()
 
         for ref_file in self.reference_files:
             path = Path(ref_file)
             if not path.is_absolute():
-                path = base_dir / path
+                path = base_dir_abs / path
+            path = path.absolute()
 
             # Resolve to absolute path and check for path traversal
             resolved_path = path.resolve()
@@ -326,8 +333,10 @@ class AppSettings:
                 # Path is outside base directory - skip for security
                 continue
 
-            if resolved_path.exists():
-                paths.append(resolved_path)
+            if path.exists():
+                # Keep the original (absolute) path representation to avoid
+                # Windows 8.3 short/long path mismatches in callers/tests.
+                paths.append(path)
 
         # Update cache
         self._ref_paths_cache = (cache_key, paths)

@@ -550,12 +550,19 @@ class TestCopilotHandlerTranslateSync:
         mock_page.url = "https://m365.cloud.microsoft/chat"
         mock_page.query_selector_all.return_value = []  # No responses (cleared)
         handler._page = mock_page
+        handler.start_new_chat = Mock()
+        handler._send_to_background_impl = Mock()
+        handler._prefill_message = Mock(return_value=True)
         handler._send_message = Mock()
         handler._get_response = Mock(return_value="1. Hello\n2. World")
 
         result = handler.translate_sync(["こんにちは", "世界"], "Translate prompt")
 
-        handler._send_message.assert_called_once_with("Translate prompt")
+        handler._send_message.assert_called_once_with(
+            "Translate prompt",
+            prefilled=True,
+            prefer_click=False,
+        )
         handler._get_response.assert_called_once()
         assert result == ["Hello", "World"]
 
@@ -692,6 +699,10 @@ class TestCopilotHandlerTranslateSingle:
         handler._connect_impl = mock_connect_impl
         handler._send_message = Mock()  # Mock to avoid auth dialog check
         handler._attach_file = Mock(return_value=True)
+        handler._send_to_background_impl = Mock()
+        handler._prefill_message = Mock(return_value=True)
+        handler._wait_for_attachment_ready = Mock(return_value=True)
+        handler.start_new_chat = Mock()
         handler._send_prompt_smart = Mock()
         handler._get_response = Mock(return_value="Translated")
 
@@ -700,7 +711,7 @@ class TestCopilotHandlerTranslateSingle:
         with patch('pathlib.Path.exists', return_value=True):
             result = handler.translate_single("テスト", "prompt", ref_files)
 
-        handler._attach_file.assert_called_once_with(ref_files[0])
+        handler._attach_file.assert_called_once_with(ref_files[0], wait_for_ready=False)
 
 
 class TestCopilotHandlerParseBatchResult:
@@ -907,3 +918,69 @@ class TestCopilotHandlerDisconnect:
         handler.disconnect()
 
         assert handler.is_connected is False
+
+
+class TestCopilotHandlerShutdown:
+    """Tests for shutdown cleanup behavior"""
+
+    def test_force_disconnect_kills_existing_translator_edge_even_if_not_started_by_us(self):
+        """force_disconnect should still close the dedicated Edge when detected on our port/profile."""
+        handler = CopilotHandler()
+        handler._browser_started_by_us = False
+        handler.edge_process = None
+        handler._edge_pid = None
+        handler.stop_window_sync = Mock()
+
+        with patch('yakulingo.services.copilot_handler._playwright_executor.shutdown'):
+            with patch.object(handler, '_get_cdp_port_status', return_value="ours"):
+                with patch.object(handler, '_is_port_in_use', return_value=True):
+                    with patch.object(handler, '_kill_existing_translator_edge', return_value=True) as mock_kill_port:
+                        handler.force_disconnect()
+
+        mock_kill_port.assert_called_once()
+
+
+class TestCopilotHandlerCdpOwnershipDetection:
+    """Tests for CDP ownership heuristics (process inspection)"""
+
+    def test_inspect_process_for_cdp_requires_profile_dir_match(self):
+        """Only matching both port and profile should be considered 'ours'."""
+        handler = CopilotHandler()
+
+        mock_proc = Mock()
+        mock_proc.name.return_value = "msedge.exe"
+        mock_proc.exe.return_value = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+        mock_proc.cmdline.return_value = [
+            "msedge.exe",
+            f"--remote-debugging-port={handler.cdp_port}",
+            r"--user-data-dir=C:\Users\SomeoneElse\EdgeProfile",
+        ]
+
+        with patch("psutil.Process", return_value=mock_proc):
+            info = handler._inspect_process_for_cdp(
+                12345,
+                r"C:\Users\Administrator\AppData\Local\YakuLingo\EdgeProfile",
+            )
+
+        assert info["is_edge"] is True
+        assert info["is_ours"] is False
+
+    def test_inspect_process_for_cdp_accepts_profile_and_port_match(self):
+        """Profile+port match should be considered 'ours'."""
+        handler = CopilotHandler()
+        profile = r"C:\Users\Administrator\AppData\Local\YakuLingo\EdgeProfile"
+
+        mock_proc = Mock()
+        mock_proc.name.return_value = "msedge.exe"
+        mock_proc.exe.return_value = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+        mock_proc.cmdline.return_value = [
+            "msedge.exe",
+            f"--remote-debugging-port={handler.cdp_port}",
+            f"--user-data-dir={profile}",
+        ]
+
+        with patch("psutil.Process", return_value=mock_proc):
+            info = handler._inspect_process_for_cdp(12345, profile)
+
+        assert info["is_edge"] is True
+        assert info["is_ours"] is True

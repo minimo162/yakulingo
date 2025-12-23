@@ -1040,8 +1040,9 @@ class CopilotHandler:
         self._login_cancelled = False
         # Translation cancellation callback (returns True if cancelled)
         self._cancel_callback: Optional[Callable[[], bool]] = None
-        # Flag to track if we started the browser (for cleanup purposes)
-        # This remains True even if edge_process becomes None after cleanup
+        # Flag to track if we "own" the dedicated translator Edge instance for cleanup.
+        # True if we started it in this session OR detected an existing instance on our
+        # dedicated CDP port/profile. This remains True even if edge_process becomes None.
         self._browser_started_by_us = False
         # Store Edge PID separately so we can kill it even if edge_process is None
         self._edge_pid: int | None = None
@@ -1316,7 +1317,9 @@ class CopilotHandler:
             is_edge = "msedge" in lower_name or "msedge" in lower_exe
             has_port_flag = f"--remote-debugging-port={self.cdp_port}" in cmdline_cmp
             has_profile_flag = bool(profile_cmp) and profile_cmp in cmdline_cmp
-            is_ours = is_edge and (has_port_flag or has_profile_flag)
+            # To avoid killing unrelated Edge instances, treat it as "ours" only when
+            # both the dedicated CDP port and the dedicated profile directory match.
+            is_ours = is_edge and has_port_flag and has_profile_flag
 
             info.update(
                 {
@@ -1346,6 +1349,9 @@ class CopilotHandler:
 
         our_proc = next((proc_info for proc_info in processes if proc_info["is_ours"]), None)
         if our_proc is not None:
+            # Mark as ours so shutdown will also terminate an existing dedicated Edge
+            # instance (e.g., leftover from a previous run or early-started Edge).
+            self._browser_started_by_us = True
             if self._edge_pid is None:
                 try:
                     self._edge_pid = int(our_proc.get("pid") or 0) or None
@@ -4703,8 +4709,8 @@ class CopilotHandler:
 
         This method is called during application shutdown to immediately terminate
         the browser connection without going through the Playwright thread executor.
-
-        Only terminates Edge if we started it (_browser_started_by_us flag).
+        Terminates the dedicated translator Edge if it appears to be ours (dedicated
+        CDP port + profile) or if we have a process handle/PID from this session.
         """
         from contextlib import suppress
 
@@ -4732,9 +4738,23 @@ class CopilotHandler:
         # 3. Calling stop() from a different thread causes "Cannot switch to a different thread" error
         # 4. Edge process termination below will close the connection anyway
 
-        # Terminate Edge browser process directly (don't wait for Playwright)
-        # Only if we started the browser in this session
-        if self._browser_started_by_us:
+        # Best-effort refresh: detect an existing dedicated Edge on our CDP port
+        # (may set _edge_pid / _browser_started_by_us for reliable cleanup).
+        port_status: str | None = None
+        with suppress(Exception):
+            port_status = self._get_cdp_port_status()
+
+        # Terminate Edge browser process directly (don't wait for Playwright).
+        # We only try to terminate when we have strong evidence it is our dedicated
+        # translator Edge (profile+port match) or we launched the process.
+        should_terminate_edge = (
+            self.edge_process is not None
+            or self._edge_pid is not None
+            or self._browser_started_by_us
+            or port_status == "ours"
+        )
+
+        if should_terminate_edge:
             browser_terminated = False
 
             # Note: Graceful close (WM_CLOSE) is skipped here because it almost always
@@ -4775,8 +4795,9 @@ class CopilotHandler:
             # If still not terminated, try killing by port as last resort
             if not browser_terminated and self._is_port_in_use():
                 with suppress(Exception):
-                    self._kill_existing_translator_edge()
-                    logger.info("Edge browser terminated (force via port)")
+                    if self._kill_existing_translator_edge():
+                        browser_terminated = True
+                        logger.info("Edge browser terminated (force via port)")
 
         # Clear references (Playwright cleanup may fail but that's OK during shutdown)
         self._browser = None
@@ -4797,8 +4818,8 @@ class CopilotHandler:
                           Playwright connection. This preserves the Edge session
                           for reconnection.
 
-        Only terminates Edge if we started it (_browser_started_by_us flag) and
-        keep_browser is False.
+        Only terminates Edge if it is our dedicated translator instance
+        (_browser_started_by_us flag) and keep_browser is False.
         """
         from contextlib import suppress
 
@@ -5972,10 +5993,13 @@ class CopilotHandler:
                                     stop_button_seen_during_send = True
                             else:
                                 # JS events didn't trigger send - use Playwright as backup
-                                if self._page:
-                                    self._page.keyboard.press("Enter")
-                                else:
+                                try:
                                     input_elem.press("Enter")
+                                except Exception:
+                                    if self._page:
+                                        self._page.keyboard.press("Enter")
+                                    else:
+                                        raise
                                 pw_time = time.monotonic() - send_start
 
                                 # Brief wait before checking state
@@ -6180,10 +6204,13 @@ class CopilotHandler:
                                 logger.debug("[SEND] Button not found, using Enter key")
                                 input_elem.focus()
                                 time.sleep(0.05)
-                                if self._page:
-                                    self._page.keyboard.press("Enter")
-                                else:
+                                try:
                                     input_elem.press("Enter")
+                                except Exception:
+                                    if self._page:
+                                        self._page.keyboard.press("Enter")
+                                    else:
+                                        raise
                                 send_method = "Enter key (button not found)"
 
                         else:
@@ -6227,10 +6254,13 @@ class CopilotHandler:
                                 # Final fallback: Enter key
                                 input_elem.focus()
                                 time.sleep(0.05)
-                                if self._page:
-                                    self._page.keyboard.press("Enter")
-                                else:
+                                try:
                                     input_elem.press("Enter")
+                                except Exception:
+                                    if self._page:
+                                        self._page.keyboard.press("Enter")
+                                    else:
+                                        raise
                                 send_method = "Enter key (final fallback)"
 
                         logger.debug("[SEND] Sent via %s (attempt %d)", send_method, send_attempt + 1)
@@ -6240,10 +6270,13 @@ class CopilotHandler:
                         try:
                             input_elem.focus()
                             time.sleep(0.05)
-                            if self._page:
-                                self._page.keyboard.press("Enter")
-                            else:
+                            try:
                                 input_elem.press("Enter")
+                            except Exception:
+                                if self._page:
+                                    self._page.keyboard.press("Enter")
+                                else:
+                                    raise
                             send_method = "Enter key (exception fallback)"
                         except Exception as enter_err:
                             logger.warning("[SEND] Enter key also failed: %s", enter_err)
@@ -7383,21 +7416,50 @@ class CopilotHandler:
                 indent_tolerance = 1
             allowed_indent = min_indent + indent_tolerance
 
-            # Filter to only keep items at or below the allowed indentation level
-            # This excludes nested numbered lists within translations
-            filtered_matches = [
-                (num, content) for indent, num, content in matches
-                if effective_indent(indent) <= allowed_indent
-            ]
+            # Build candidate items with their indentation level.
+            # We start with the minimum indentation to avoid nested lists, then (if needed)
+            # allow a small indentation increase to recover missing top-level numbers when
+            # Copilot returns inconsistent whitespace like:
+            #   "  1. Hello\n2. World"
+            candidate_items: list[tuple[int, int, str]] = []
+            for indent, num, content in matches:
+                try:
+                    num_int = int(num)
+                except ValueError:
+                    continue
+                if num_int < 1:
+                    continue
+                candidate_items.append((effective_indent(indent), num_int, content.strip()))
 
-            # Sort by number to ensure correct order
-            # Filter out number 0 (invalid for translation numbering which starts from 1)
-            # This prevents false positives like "0.5%" being matched as item 0
             numbered_items = [
-                (int(num), content.strip()) for num, content in filtered_matches
-                if int(num) >= 1
+                (num_int, content) for indent_level, num_int, content in candidate_items
+                if indent_level <= allowed_indent
             ]
             numbered_items.sort(key=lambda x: x[0])
+
+            # If expected_count is known, try to recover missing numbers from slightly deeper
+            # indentation (still excludes deeply nested lists inside a translation item).
+            if expected_count > 0 and numbered_items:
+                expected_numbers = set(range(1, expected_count + 1))
+                found_numbers = {num for num, _ in numbered_items if num in expected_numbers}
+                missing_numbers = expected_numbers - found_numbers
+
+                if missing_numbers:
+                    max_extra_indent = allowed_indent + 4
+                    extra_candidates = [
+                        (indent_level, num_int, content)
+                        for indent_level, num_int, content in candidate_items
+                        if allowed_indent < indent_level <= max_extra_indent and num_int in missing_numbers
+                    ]
+                    extra_candidates.sort(key=lambda x: (x[0], x[1]))
+                    for _, num_int, content in extra_candidates:
+                        if num_int not in missing_numbers:
+                            continue
+                        numbered_items.append((num_int, content))
+                        missing_numbers.remove(num_int)
+                        if not missing_numbers:
+                            break
+                    numbered_items.sort(key=lambda x: x[0])
 
             # If no valid items found after filtering, fall through to fallback
             if not numbered_items:

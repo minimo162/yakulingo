@@ -98,6 +98,21 @@ class TempFileManager:
         self._temp_files.add(temp_path)
         return temp_path
 
+    def create_temp_path(self, filename: str) -> Path:
+        """
+        Reserve a unique temporary file path (without writing content).
+
+        This is useful for streaming uploads directly to disk to avoid loading large
+        files into memory.
+        """
+        safe_filename = os.path.basename(filename)
+        if not safe_filename:
+            safe_filename = "unnamed_file"
+        safe_filename = _RE_FILENAME_FORBIDDEN.sub('_', safe_filename)
+        temp_path = self._unique_temp_path(self.temp_dir / safe_filename)
+        self._temp_files.add(temp_path)
+        return temp_path
+
     def create_temp_file_from_path(self, source_path: Path, filename: Optional[str] = None) -> Path:
         """
         Copy an existing file into the managed temp directory.

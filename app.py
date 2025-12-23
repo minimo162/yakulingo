@@ -173,7 +173,7 @@ def main():
         except Exception:
             pass
 
-    # Import UI module (includes NiceGUI - takes ~3s)
+    # Import UI module (NiceGUI is imported inside run_app() for faster startup)
     _t_import = time.perf_counter()
     try:
         from yakulingo.ui.app import run_app
@@ -188,7 +188,7 @@ def main():
             "共有フォルダの setup.vbs または packaging\\install_deps.bat を実行してください。"
         )
         return
-    logger.info("[TIMING] yakulingo.ui.app import (includes NiceGUI): %.2fs", time.perf_counter() - _t_import)
+    logger.info("[TIMING] yakulingo.ui.app import: %.2fs", time.perf_counter() - _t_import)
 
     try:
         run_app(

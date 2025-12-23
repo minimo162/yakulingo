@@ -3849,7 +3849,7 @@ class YakuLingoApp:
         self.state.set_all_sections_selected(False)
         self._refresh_content()
 
-    async def _ensure_layout_initialized(self) -> bool:
+    async def _ensure_layout_initialized(self, wait_timeout_seconds: float = 120.0) -> bool:
         """
         Ensure PP-DocLayout-L is initialized before PDF processing.
 
@@ -3887,15 +3887,21 @@ class YakuLingoApp:
 
         # Wait if another task is initializing (not us)
         if not should_initialize:
-            # Poll until initialization completes (max 30 seconds)
-            for _ in range(60):
-                await asyncio.sleep(0.5)
+            # Poll until initialization completes (default: 120 seconds).
+            # This can take longer on the first run due to large dependency imports.
+            poll_interval = 0.5
+            max_polls = max(1, int(wait_timeout_seconds / poll_interval))
+            for _ in range(max_polls):
+                await asyncio.sleep(poll_interval)
                 if self._layout_init_state in (
                     LayoutInitializationState.INITIALIZED,
                     LayoutInitializationState.FAILED,
                 ):
                     return True
-            logger.warning("PP-DocLayout-L initialization timeout while waiting")
+            logger.warning(
+                "PP-DocLayout-L initialization timeout while waiting (%.1fs)",
+                wait_timeout_seconds,
+            )
             return True  # Proceed anyway
 
         # Perform initialization (dialog is shown by caller)
@@ -3913,8 +3919,10 @@ class YakuLingoApp:
             logger.info("Initializing PP-DocLayout-L on-demand...")
 
             def _prewarm_layout_model_in_thread() -> bool:
-                from yakulingo.processors.pdf_processor import prewarm_layout_model
-                return prewarm_layout_model()
+                from yakulingo.processors.pdf_layout import prewarm_layout_model
+
+                device = getattr(self.settings, "ocr_device", "auto") or "auto"
+                return prewarm_layout_model(device=device)
 
             async def _init_layout():
                 try:
@@ -3964,7 +3972,7 @@ class YakuLingoApp:
         with dialog, ui.card().classes('items-center p-8'):
             ui.spinner('dots', size='3em', color='primary')
             ui.label('PDF翻訳機能を準備中...').classes('text-lg mt-4')
-            ui.label('（約10秒）').classes('text-sm text-gray-500 mt-1')
+            ui.label('（初回は時間がかかる場合があります）').classes('text-sm text-gray-500 mt-1')
         return dialog
 
     async def _select_file(self, file_path: Path):
@@ -4018,48 +4026,31 @@ class YakuLingoApp:
                 self._refresh_content()
             return
 
-        # Use async version that will attempt auto-reconnection if needed
-        if not await self._ensure_connection_async():
+        # File selection should not require Copilot connection.
+        # Initialize TranslationService lazily to enable local operations (file info, language detection).
+        if not self._ensure_translation_service():
             return
 
-        init_dialog = None
         try:
             # Set loading state immediately for fast UI feedback
             self.state.selected_file = file_path
             self.state.file_state = FileState.SELECTED
             self.state.file_detected_language = None  # Clear previous detection
             self.state.file_info = None  # Will be loaded async
-            delay_refresh = False
 
-            # On-demand PP-DocLayout-L initialization for PDF files
+            # Show selection immediately; PP-DocLayout-L initialization (if needed) is handled
+            # on-demand when the user starts PDF translation.
+            with client:
+                self._refresh_content()
+
             if file_path.suffix.lower() == '.pdf':
-                from yakulingo.processors import is_layout_available
+                try:
+                    from yakulingo.processors.pdf_layout import is_layout_available
+                    layout_available = is_layout_available()
+                except Exception:
+                    layout_available = False
 
-                # Fast path: already initialized (from File tab preload)
-                needs_init = (
-                    self._layout_init_state == LayoutInitializationState.NOT_INITIALIZED
-                    and is_layout_available()
-                )
-
-                if needs_init:
-                    delay_refresh = True
-                    # Show initialization dialog only if initialization is actually needed
-                    with client:
-                        init_dialog = self._create_layout_init_dialog()
-                        init_dialog.open()
-                    # Yield to event loop to ensure dialog is rendered
-                    await asyncio.sleep(0)
-                    await self._ensure_layout_initialized()
-                elif self._layout_init_state == LayoutInitializationState.INITIALIZING:
-                    delay_refresh = True
-                    # Initialization in progress (from preload) - wait for it
-                    with client:
-                        init_dialog = self._create_layout_init_dialog()
-                        init_dialog.open()
-                    await asyncio.sleep(0)
-                    await self._ensure_layout_initialized()
-                elif not is_layout_available():
-                    # PP-DocLayout-L not installed - warn user
+                if not layout_available:
                     with client:
                         ui.notify(
                             'PDF翻訳: レイアウト解析(PP-DocLayout-L)が未インストールのため、'
@@ -4068,12 +4059,6 @@ class YakuLingoApp:
                             position='top',
                             timeout=8000,
                         )
-                # else: already INITIALIZED or FAILED - proceed immediately
-            if delay_refresh:
-                with client:
-                    self._refresh_content()
-            else:
-                self._refresh_content()
 
             # Load file info in background thread to avoid UI blocking
             file_info = await asyncio.to_thread(
@@ -4097,14 +4082,6 @@ class YakuLingoApp:
             with client:
                 self._notify_error(str(e))
                 self._refresh_content()
-        finally:
-            # Close initialization dialog if shown
-            if init_dialog:
-                try:
-                    with client:
-                        init_dialog.close()
-                except Exception:
-                    pass
 
     async def _detect_file_language(self, file_path: Path):
         """Detect source language of file and set output language accordingly"""
@@ -4186,6 +4163,38 @@ class YakuLingoApp:
             if not client:
                 logger.warning("File translation aborted: no client connected")
                 return
+
+        # For PDF translation, ensure PP-DocLayout-L is ready (if installed).
+        # This is intentionally done here (not at upload/select time) so uploads stay fast.
+        init_dialog = None
+        if self.state.selected_file.suffix.lower() == '.pdf':
+            try:
+                from yakulingo.processors.pdf_layout import is_layout_available
+                layout_available = is_layout_available()
+            except Exception:
+                layout_available = False
+
+            if layout_available and self._layout_init_state in (
+                LayoutInitializationState.NOT_INITIALIZED,
+                LayoutInitializationState.INITIALIZING,
+            ):
+                try:
+                    with client:
+                        init_dialog = self._create_layout_init_dialog()
+                        init_dialog.open()
+                    await asyncio.sleep(0)
+                    await self._ensure_layout_initialized(wait_timeout_seconds=180.0)
+                finally:
+                    if init_dialog is not None:
+                        try:
+                            with client:
+                                init_dialog.close()
+                        except Exception:
+                            pass
+
+                # PP-DocLayout-L initialization temporarily disconnects Copilot; re-check connection.
+                if not await self._ensure_connection_async():
+                    return
 
         self.state.file_state = FileState.TRANSLATING
         self.state.translation_progress = 0.0
@@ -4839,24 +4848,21 @@ def run_app(
     _early_edge_thread = None
     _early_connection_event = None
     _early_connection_result_ref = None
+    _early_connect_fn = None
 
     if allow_early_connect:
         try:
-            from yakulingo.services.copilot_handler import (
-                CopilotHandler,
-                pre_initialize_playwright,
-            )
-            pre_initialize_playwright()
-            # Playwright init runs in background - DO NOT wait here
-            # Edge connection will wait for Playwright init to complete when needed
-            # This allows NiceGUI import to start immediately (~15s faster startup)
-            # Note: I/O contention with antivirus is handled by Edge connection waiting
-
+            # NOTE:
+            # - Edge can be started before NiceGUI import (cheap).
+            # - Playwright (Node.js server) startup is I/O heavy on Windows and can
+            #   dramatically slow down NiceGUI import when run in parallel (AV scan).
+            #   We therefore start Playwright initialization AFTER NiceGUI import.
+            from yakulingo.services.copilot_handler import CopilotHandler
             _early_copilot = CopilotHandler()
             _early_connection_event = threading.Event()
             _early_connection_result_ref = _EarlyConnectionResult()
 
-            # Start Edge in parallel with Playwright initialization (~1.5s savings)
+            # Start Edge early (no Playwright required).
             # Edge startup uses subprocess.Popen, which doesn't require Playwright
             # connect() will skip Edge startup if it's already running on the CDP port
             def _start_edge_early():
@@ -4872,18 +4878,13 @@ def run_app(
                 target=_start_edge_early, daemon=True, name="early_edge"
             )
             _early_edge_thread.start()
-            logger.info("[TIMING] Started early Edge startup (parallel with Playwright init)")
+            logger.info("[TIMING] Started early Edge startup (parallel with NiceGUI import)")
 
             # Start Copilot connection in background thread
-            # This runs in parallel with NiceGUI import + display_settings (~3.8s)
-            # Playwright init completion is waited inside CopilotHandler.connect()
-            # Edge startup is already in progress (or completed) in parallel thread
+            # NOTE: Actual thread start is deferred until after NiceGUI import to avoid
+            # I/O contention between Playwright and NiceGUI import on Windows.
             def _early_connect():
-                """Connect to Copilot in background (runs during NiceGUI import).
-
-                Connection is started early to overlap with startup work.
-                GPT mode switching is deferred until after the UI is visible.
-                """
+                """Connect to Copilot in background (after NiceGUI import)."""
                 try:
                     _t_early = time.perf_counter()
 
@@ -4913,9 +4914,7 @@ def run_app(
                     if _early_connection_event is not None:
                         _early_connection_event.set()
 
-            _early_connect_thread = threading.Thread(target=_early_connect, daemon=True, name="early_connect")
-            _early_connect_thread.start()
-            logger.info("[TIMING] Started early Copilot connection (background thread)")
+            _early_connect_fn = _early_connect
         except Exception as e:
             logger.debug("Failed to start Playwright/Edge pre-initialization: %s", e)
 
@@ -4936,6 +4935,28 @@ def run_app(
     nicegui_app = _nicegui_app
     nicegui_Client = _nicegui_Client
     logger.info("[TIMING] NiceGUI import total: %.2fs", time.perf_counter() - _t_nicegui_import)
+
+    # Start Playwright initialization + Copilot connection AFTER NiceGUI import to reduce
+    # Windows startup I/O contention (antivirus scanning).
+    if allow_early_connect and _early_copilot is not None and _early_connect_fn is not None:
+        try:
+            from yakulingo.services.copilot_handler import pre_initialize_playwright
+        except Exception as e:
+            logger.debug("Playwright pre-initialization unavailable: %s", e)
+        else:
+            try:
+                pre_initialize_playwright()
+            except Exception as e:
+                logger.debug("Playwright pre-initialization failed: %s", e)
+
+        try:
+            _early_connect_thread = threading.Thread(
+                target=_early_connect_fn, daemon=True, name="early_connect"
+            )
+            _early_connect_thread.start()
+            logger.info("[TIMING] Started early Copilot connection (background thread)")
+        except Exception as e:
+            logger.debug("Failed to start early Copilot connection thread: %s", e)
 
     # Validate NiceGUI version after import
     _ensure_nicegui_version()
@@ -5322,21 +5343,32 @@ def run_app(
             if ext not in SUPPORTED_EXTENSIONS:
                 raise HTTPException(status_code=400, detail=f"Unsupported file type: {ext or '(no extension)'}")
 
-            # Stream into memory with a hard limit (keeps behavior consistent with UI drop limits).
+            # Stream directly to disk with a hard limit (avoids loading large files into memory).
             size_bytes = 0
-            buffer = bytearray()
+            uploaded_path = temp_file_manager.create_temp_path(filename)
             try:
-                while True:
-                    chunk = await uploaded.read(1024 * 1024)  # 1MB chunks
-                    if not chunk:
-                        break
-                    size_bytes += len(chunk)
-                    if size_bytes > MAX_DROP_FILE_SIZE_BYTES:
-                        raise HTTPException(
-                            status_code=413,
-                            detail=f"ファイルが大きすぎます（最大{MAX_DROP_FILE_SIZE_MB}MBまで）",
-                        )
-                    buffer.extend(chunk)
+                try:
+                    with open(uploaded_path, "wb") as out_file:
+                        while True:
+                            chunk = await uploaded.read(1024 * 1024)  # 1MB chunks
+                            if not chunk:
+                                break
+                            size_bytes += len(chunk)
+                            if size_bytes > MAX_DROP_FILE_SIZE_BYTES:
+                                raise HTTPException(
+                                    status_code=413,
+                                    detail=f"ファイルが大きすぎます（最大{MAX_DROP_FILE_SIZE_MB}MBまで）",
+                                )
+                            out_file.write(chunk)
+                except HTTPException:
+                    temp_file_manager.remove_temp_file(uploaded_path)
+                    raise
+                except Exception as err:
+                    temp_file_manager.remove_temp_file(uploaded_path)
+                    raise HTTPException(
+                        status_code=400,
+                        detail="アップロードの保存に失敗しました",
+                    ) from err
             finally:
                 try:
                     close = getattr(uploaded, "close", None)
@@ -5345,7 +5377,6 @@ def run_app(
                 except Exception:
                     pass
 
-            uploaded_path = temp_file_manager.create_temp_file(bytes(buffer), filename)
             logger.info(
                 "Global drop API received: name=%s size_bytes=%d path=%s",
                 filename,
@@ -5368,42 +5399,27 @@ def run_app(
             ):
                 return {"ok": True, "available": True, "status": yakulingo_app._layout_init_state.value}
 
-            init_dialog = None
-            with yakulingo_app._client_lock:
-                client = yakulingo_app._client
-
+            # NOTE: Keep this endpoint non-blocking. Initialization can take a long time
+            # on first run (large imports), and blocking here delays drag&drop uploads.
             try:
-                if client is not None:
-                    with client:
-                        init_dialog = yakulingo_app._create_layout_init_dialog()
-                        init_dialog.open()
-                    await asyncio.sleep(0)
-                    logger.debug("[TIMING] /api/pdf-prepare dialog opened: %.3fs", _time_module.perf_counter() - _t0)
+                from yakulingo.processors.pdf_layout import is_layout_available
+            except Exception:
+                return {"ok": True, "available": False}
 
-                # NOTE: Importing via yakulingo.processors triggers lazy loading of pdf_processor (slow).
-                # Use the lightweight pdf_layout module here so the dialog can appear immediately.
-                try:
-                    from yakulingo.processors.pdf_layout import is_layout_available
-                except Exception:
-                    return {"ok": True, "available": False}
+            if not is_layout_available():
+                return {"ok": True, "available": False}
 
-                if not is_layout_available():
-                    return {"ok": True, "available": False}
+            if yakulingo_app._layout_init_state == LayoutInitializationState.NOT_INITIALIZED:
+                asyncio.create_task(yakulingo_app._ensure_layout_initialized())
+                # Yield so the task can flip state to INITIALIZING before we respond.
+                await asyncio.sleep(0)
 
-                await yakulingo_app._ensure_layout_initialized()
-                logger.debug("[TIMING] /api/pdf-prepare done: %.3fs", _time_module.perf_counter() - _t0)
-                return {
-                    "ok": True,
-                    "available": True,
-                    "status": yakulingo_app._layout_init_state.value,
-                }
-            finally:
-                if init_dialog is not None and client is not None:
-                    try:
-                        with client:
-                            init_dialog.close()
-                    except Exception:
-                        pass
+            logger.debug("[TIMING] /api/pdf-prepare scheduled: %.3fs", _time_module.perf_counter() - _t0)
+            return {
+                "ok": True,
+                "available": True,
+                "status": yakulingo_app._layout_init_state.value,
+            }
 
     # Icon path for window and favicon (used by native mode and _position_window_early_sync)
     icon_path = ui_dir / 'yakulingo.ico'

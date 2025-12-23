@@ -893,6 +893,8 @@ class CopilotHandler:
     # App window size calculation ratios (must match app.py _detect_display_settings)
     APP_WIDTH_RATIO = 0.5            # App and browser each get 50% of available width (1:1 ratio)
     APP_HEIGHT_RATIO = 1.0           # Full work-area height (taskbar excluded)
+    # Minimum app window height (must match yakulingo/ui/app.py MIN_WINDOW_HEIGHT)
+    MIN_APP_WINDOW_HEIGHT = 650
 
     # =========================================================================
     # UI Selectors - Centralized for easier maintenance when Copilot UI changes
@@ -3277,7 +3279,7 @@ class CopilotHandler:
             dpi_scale = _get_windows_dpi_scale()
             dpi_awareness = _get_process_dpi_awareness()
             gap = self.SIDE_PANEL_GAP
-            min_window_height = MIN_WINDOW_HEIGHT
+            min_window_height = self.MIN_APP_WINDOW_HEIGHT
             min_side_panel_height = self.SIDE_PANEL_MIN_HEIGHT
             if dpi_scale != 1.0:
                 gap = _scale_value(gap, dpi_scale)

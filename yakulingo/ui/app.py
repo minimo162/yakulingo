@@ -2521,9 +2521,9 @@ class YakuLingoApp:
   const handleDrop = (e) => {
     if (!isFileDrag(e)) return;
     e.preventDefault();
-    e.stopPropagation();
     dragDepth = 0;
-    deactivate();
+    // Let q-uploader process this drop before the overlay disables pointer events.
+    setTimeout(deactivate, 0);
   };
 
   const registerTargets = () => {

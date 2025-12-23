@@ -15,7 +15,7 @@ This document provides essential context for AI assistants working with the Yaku
 
 ```bash
 # Run the application
-python app.py
+uv run python app.py
 
 # Run all tests (IMPORTANT: use --extra test to include all dependencies)
 uv run --extra test pytest
@@ -3118,4 +3118,3 @@ Based on recent commits:
 - Feature branches: `claude/claude-md-*`
 - Commit messages: descriptive, focus on "why" not "what"
 - Lock file (`uv.lock`) included for reproducible dependency resolution
-

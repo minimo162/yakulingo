@@ -143,13 +143,13 @@ playwright install chromium
 pip install -r requirements_pdf.txt
 
 # 起動（デスクトップアプリとして自動で立ち上がります）
-python app.py
+uv run python app.py
 ```
 
 ### クイックスタート（最短手順）
 1. `packaging\install_deps.bat` を実行（推奨）、または `uv sync` / `pip install -r requirements.txt`
 2. `playwright install chromium`（install_deps.bat使用時は不要）
-3. `YakuLingo.exe` または `python app.py` を実行
+3. `YakuLingo.exe` または `uv run python app.py` を実行
 
 ## 初回セットアップ
 
@@ -162,7 +162,7 @@ YakuLingoを初めて使う際は、以下の手順でM365 Copilotにログイ�
 4. チャット画面が表示されることを確認
 
 ### 2. YakuLingoの起動
-1. `python app.py` を実行
+1. `uv run python app.py` を実行
 2. YakuLingoが自動的にEdgeに接続
 3. ログイン画面が表示された場合は、Edgeウィンドウでログインを完了
 

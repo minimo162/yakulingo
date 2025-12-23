@@ -4036,8 +4036,11 @@ class YakuLingoApp:
 
             if file_path.suffix.lower() == '.pdf':
                 try:
-                    from yakulingo.processors.pdf_layout import is_layout_available
-                    layout_available = is_layout_available()
+                    import importlib.util as _importlib_util
+                    layout_available = (
+                        _importlib_util.find_spec("paddle") is not None
+                        and _importlib_util.find_spec("paddleocr") is not None
+                    )
                 except Exception:
                     layout_available = False
 
@@ -4160,8 +4163,11 @@ class YakuLingoApp:
         init_dialog = None
         if self.state.selected_file.suffix.lower() == '.pdf':
             try:
-                from yakulingo.processors.pdf_layout import is_layout_available
-                layout_available = is_layout_available()
+                import importlib.util as _importlib_util
+                layout_available = (
+                    _importlib_util.find_spec("paddle") is not None
+                    and _importlib_util.find_spec("paddleocr") is not None
+                )
             except Exception:
                 layout_available = False
 
@@ -5393,11 +5399,15 @@ def run_app(
             # NOTE: Keep this endpoint non-blocking. Initialization can take a long time
             # on first run (large imports), and blocking here delays drag&drop uploads.
             try:
-                from yakulingo.processors.pdf_layout import is_layout_available
+                # Import-free availability check (keeps drag&drop fast, avoids model hoster health checks).
+                import importlib.util as _importlib_util
             except Exception:
                 return {"ok": True, "available": False}
 
-            if not is_layout_available():
+            if (
+                _importlib_util.find_spec("paddle") is None
+                or _importlib_util.find_spec("paddleocr") is None
+            ):
                 return {"ok": True, "available": False}
 
             if yakulingo_app._layout_init_state == LayoutInitializationState.NOT_INITIALIZED:

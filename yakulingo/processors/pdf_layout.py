@@ -18,6 +18,7 @@ Based on PDFMathTranslate: https://github.com/PDFMathTranslate/PDFMathTranslate
 import logging
 import os
 import threading
+import importlib.util
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any, Optional
@@ -42,14 +43,19 @@ def _disable_network_checks():
     """
     Disable PaddleOCR network availability checks for faster startup.
 
-    PaddleOCR checks connectivity to multiple model hosting services
-    (HuggingFace, ModelScope, Baidu AIStudio, etc.) on import.
-    This adds 4-6 seconds of delay that we can skip since models
-    are already cached locally after first download.
+    PaddleOCR/PaddleX performs connectivity checks to multiple model hosting
+    services (HuggingFace, ModelScope, Baidu AIStudio, etc.) during import
+    to decide which hoster to use. These checks can add seconds of latency
+    and are unnecessary in typical runs where models are already cached.
     """
     global _network_check_disabled
     if _network_check_disabled:
         return
+
+    # PaddleX (used internally by PaddleOCR 3.x) connectivity checks.
+    # NOTE: paddlex reads this flag directly from env (string truthiness),
+    # so any non-empty value disables hoster health checks.
+    os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "1")
 
     # Disable HuggingFace Hub network check
     os.environ.setdefault("HF_HUB_OFFLINE", "1")
@@ -131,6 +137,7 @@ def _get_table_cell_detector():
     """Lazy import TableCellsDetection for table cell boundary detection."""
     global _table_cell_detector
     if _table_cell_detector is None:
+        _disable_network_checks()
         try:
             from paddleocr import TableCellsDetection
             _table_cell_detector = TableCellsDetection
@@ -275,30 +282,50 @@ class LayoutArray:
 
 # Cache for is_layout_available() - checked once per process lifetime
 _layout_available_cache: bool | None = None
+_layout_available_strict_cache: bool | None = None
 
 
-def is_layout_available() -> bool:
+def is_layout_available(*, strict: bool = False) -> bool:
     """
     Check if PP-DocLayout-L is available (cached).
 
-    The result is cached since paddleocr availability won't change during runtime.
-    This avoids the ~100-200ms import overhead on repeated calls.
+    By default this uses `importlib.util.find_spec` for a fast, side-effect-free
+    check (no PaddleOCR import, no network health checks). Set `strict=True` to
+    validate that PaddleOCR can actually be imported.
 
     Returns:
-        True if paddleocr is installed and LayoutDetection is available
+        True if layout analysis dependencies appear available
     """
-    global _layout_available_cache
+    global _layout_available_cache, _layout_available_strict_cache
+
+    if strict:
+        if _layout_available_strict_cache is not None:
+            return _layout_available_strict_cache
+
+        # Quick negative check before triggering heavy imports.
+        if (
+            importlib.util.find_spec("paddle") is None
+            or importlib.util.find_spec("paddleocr") is None
+        ):
+            _layout_available_strict_cache = False
+            return False
+
+        _disable_network_checks()
+        try:
+            from paddleocr import LayoutDetection  # noqa: F401
+            _layout_available_strict_cache = True
+        except Exception:
+            _layout_available_strict_cache = False
+        return _layout_available_strict_cache
+
     if _layout_available_cache is not None:
         return _layout_available_cache
 
-    # Disable network checks before importing (saves ~4-6 seconds)
-    _disable_network_checks()
-
-    try:
-        from paddleocr import LayoutDetection  # noqa: F401
-        _layout_available_cache = True
-    except ImportError:
-        _layout_available_cache = False
+    # Fast path: check module presence without importing PaddleOCR.
+    _layout_available_cache = (
+        importlib.util.find_spec("paddle") is not None
+        and importlib.util.find_spec("paddleocr") is not None
+    )
     return _layout_available_cache
 
 

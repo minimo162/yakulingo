@@ -202,6 +202,26 @@ def _nicegui_open_window_patched(
         warnings.filterwarnings('ignore', category=DeprecationWarning)
         import webview
 
+    try:
+        from webview.platforms.edgechromium import EdgeChrome
+    except Exception:
+        EdgeChrome = None
+
+    if EdgeChrome and not getattr(EdgeChrome, '_yakulingo_allow_external_drop', False):
+        original_on_webview_ready = EdgeChrome.on_webview_ready
+
+        def on_webview_ready_patched(self, sender, args):
+            original_on_webview_ready(self, sender, args)
+            try:
+                controller = getattr(self.webview, 'CoreWebView2Controller', None)
+                if controller is not None and hasattr(controller, 'AllowExternalDrop'):
+                    controller.AllowExternalDrop = True
+            except Exception as err:
+                logger.debug("AllowExternalDrop patch failed: %s", err)
+
+        EdgeChrome.on_webview_ready = on_webview_ready_patched
+        EdgeChrome._yakulingo_allow_external_drop = True
+
     while not helpers.is_port_open(host, port):
         time.sleep(0.1)
 

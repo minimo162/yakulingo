@@ -754,6 +754,7 @@ class AutoUpdater:
     SOURCE_DIRS = ["yakulingo", "prompts", "config"]
     SOURCE_FILES = [
         "app.py",           # エントリーポイント
+        ".python-version",  # uv の Python バージョン固定（.uv-python に複数混在すると起動が不安定になるため）
         "pyproject.toml",   # プロジェクト設定
         "uv.lock",          # 依存関係ロックファイル
         "uv.toml",          # UV設定

@@ -142,7 +142,7 @@ mkdir "%DIST_DIR%"
 mkdir "%SHARE_DIR%"
 
 :: Copy individual files
-for %%f in ("YakuLingo.exe" "app.py" "glossary.csv" "glossary_old.csv" "pyproject.toml" "uv.lock" "uv.toml" "README.md") do (
+for %%f in ("YakuLingo.exe" "app.py" ".python-version" "glossary.csv" "glossary_old.csv" "pyproject.toml" "uv.lock" "uv.toml" "README.md") do (
     if exist "%%~f" copy /y "%%~f" "%DIST_DIR%\" >nul
 )
 

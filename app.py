@@ -160,9 +160,34 @@ def main():
     logger = logging.getLogger(__name__)
     logger.info("[TIMING] main() setup: %.2fs", time.perf_counter() - _t_start)
 
+    def _show_startup_error(message: str) -> None:
+        """Show a blocking error dialog (useful when launched from YakuLingo.exe with no console)."""
+        if sys.platform != "win32":
+            return
+        try:
+            import ctypes
+
+            MB_OK = 0x0
+            MB_ICONERROR = 0x10
+            ctypes.windll.user32.MessageBoxW(None, message, "YakuLingo - Error", MB_OK | MB_ICONERROR)
+        except Exception:
+            pass
+
     # Import UI module (includes NiceGUI - takes ~3s)
     _t_import = time.perf_counter()
-    from yakulingo.ui.app import run_app
+    try:
+        from yakulingo.ui.app import run_app
+    except Exception as e:
+        logger.exception("Failed to import UI module: %s", e)
+        log_path = Path.home() / ".yakulingo" / "logs" / "startup.log"
+        _show_startup_error(
+            "YakuLingo の起動に失敗しました。\n\n"
+            f"{type(e).__name__}: {e}\n\n"
+            f"ログ: {log_path}\n\n"
+            "対処: 依存関係の再インストールが必要な可能性があります。\n"
+            "共有フォルダの setup.vbs または packaging\\install_deps.bat を実行してください。"
+        )
+        return
     logger.info("[TIMING] yakulingo.ui.app import (includes NiceGUI): %.2fs", time.perf_counter() - _t_import)
 
     try:
@@ -180,6 +205,15 @@ def main():
     except SystemExit:
         # Normal exit
         pass
+    except Exception as e:
+        logger.exception("Application crashed: %s", e)
+        log_path = Path.home() / ".yakulingo" / "logs" / "startup.log"
+        _show_startup_error(
+            "YakuLingo が異常終了しました。\n\n"
+            f"{type(e).__name__}: {e}\n\n"
+            f"ログ: {log_path}"
+        )
+        raise
 
 
 if __name__ == '__main__':

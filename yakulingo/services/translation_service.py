@@ -2238,7 +2238,7 @@ class TranslationService:
             # - Excel: 'sheet_idx'
             # - PowerPoint: 'slide_idx'
             # - PDF: 'page_idx'
-            # - Word: no section (always include)
+            # - Word: 'page_idx' (when page mapping is available)
             section_idx = None
             metadata = block.metadata
 

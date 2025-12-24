@@ -6,8 +6,12 @@ Processor for Word files (.docx).
 import logging
 import re
 import shutil
+import sys
 import tempfile
+import threading
 import zipfile
+from contextlib import contextmanager
+from functools import lru_cache
 from pathlib import Path
 from typing import Iterator, Optional
 from xml.etree import ElementTree as ET
@@ -35,6 +39,270 @@ WORD_NS = {
     'mc': 'http://schemas.openxmlformats.org/markup-compatibility/2006',
     'v': 'urn:schemas-microsoft-com:vml',
 }
+
+# =============================================================================
+# Page mapping via Word COM (for page-select translation)
+# =============================================================================
+# NOTE: .docx has no fixed "pages" without layout rendering.
+# We use Microsoft Word COM automation on Windows to obtain true page numbers.
+_pythoncom = None
+
+# Word constants (avoid win32com.client.constants to keep things robust without gencache)
+_WD_MAIN_TEXT_STORY = 1
+_WD_STATISTIC_PAGES = 2
+_WD_ACTIVE_END_PAGE_NUMBER = 3
+_WD_WITHIN_TABLE = 12
+
+# Office constants
+_MSO_AUTOMATION_SECURITY_FORCE_DISABLE = 3
+
+
+def _get_pythoncom():
+    """Lazy import pythoncom (Windows COM library)."""
+    global _pythoncom
+    if _pythoncom is None and sys.platform == "win32":
+        try:
+            import pythoncom
+            _pythoncom = pythoncom
+        except ImportError:
+            logger.debug("pythoncom not available")
+    return _pythoncom
+
+
+@contextmanager
+def _com_initialized():
+    """
+    Ensure COM is initialized for the current thread (required in worker threads).
+    On non-Windows platforms this is a no-op.
+    """
+    pythoncom = _get_pythoncom()
+    initialized = False
+
+    if pythoncom is not None:
+        try:
+            thread_id = threading.current_thread().ident
+            try:
+                hr = pythoncom.CoInitializeEx(pythoncom.COINIT_APARTMENTTHREADED)
+                # S_OK (0)=newly initialized, S_FALSE (1)=already initialized
+                initialized = (hr == 0 or hr is None)
+                logger.debug(
+                    "Word COM initialized (STA) thread=%s hr=%s will_uninit=%s",
+                    thread_id, hr, initialized,
+                )
+            except Exception:
+                hr = pythoncom.CoInitialize()
+                initialized = (hr == 0 or hr is None)
+                logger.debug(
+                    "Word COM initialized (fallback) thread=%s hr=%s will_uninit=%s",
+                    thread_id, hr, initialized,
+                )
+        except Exception as e:
+            logger.debug("Word COM initialization skipped: %s", e)
+
+    try:
+        yield
+    finally:
+        if initialized and pythoncom is not None:
+            try:
+                thread_id = threading.current_thread().ident
+                pythoncom.CoUninitialize()
+                logger.debug("Word COM uninitialized thread=%s", thread_id)
+            except Exception as e:
+                logger.debug("Word COM uninitialization failed: %s", e)
+
+
+def _try_get_word_page_data_via_com(file_path: Path) -> tuple[Optional[int], dict[str, int]]:
+    """
+    Get page count and block_id -> page_idx mapping via Microsoft Word COM.
+
+    Returns:
+        (page_count, page_map) where page_idx is 0-based.
+        On failure: (None, {}).
+    """
+    if sys.platform != "win32":
+        return None, {}
+
+    try:
+        import win32com.client  # type: ignore[import-not-found]
+    except ImportError:
+        logger.debug("win32com not available: Word page mapping disabled")
+        return None, {}
+
+    with _com_initialized():
+        word = None
+        doc = None
+        try:
+            word = win32com.client.DispatchEx("Word.Application")
+            word.Visible = False
+            word.DisplayAlerts = 0
+            try:
+                word.AutomationSecurity = _MSO_AUTOMATION_SECURITY_FORCE_DISABLE
+            except Exception:
+                pass
+
+            doc = word.Documents.Open(
+                str(file_path),
+                ReadOnly=True,
+                AddToRecentFiles=False,
+                Visible=False,
+            )
+
+            try:
+                doc.Repaginate()
+            except Exception:
+                pass
+
+            page_count: Optional[int]
+            try:
+                page_count = int(doc.ComputeStatistics(_WD_STATISTIC_PAGES))
+            except Exception:
+                page_count = None
+
+            try:
+                main_range = doc.StoryRanges(_WD_MAIN_TEXT_STORY)
+            except Exception:
+                main_range = doc.Range()
+
+            page_map: dict[str, int] = {}
+
+            # --- Body paragraphs (exclude table paragraphs to match python-docx Document.paragraphs) ---
+            para_idx = 0
+            try:
+                paragraphs = main_range.Paragraphs
+                for i in range(1, int(paragraphs.Count) + 1):
+                    para = paragraphs(i)
+                    try:
+                        if bool(para.Range.Information(_WD_WITHIN_TABLE)):
+                            continue
+                    except Exception:
+                        pass
+
+                    try:
+                        page_num = int(para.Range.Information(_WD_ACTIVE_END_PAGE_NUMBER))
+                    except Exception:
+                        page_num = 1
+                    page_map[f"para_{para_idx}"] = max(0, page_num - 1)
+                    para_idx += 1
+            except Exception as e:
+                logger.debug("Failed to read Word paragraph pages via COM: %s", e)
+
+            # --- Tables (top-level only, to match python-docx Document.tables) ---
+            table_idx = 0
+            try:
+                tables = main_range.Tables
+                for i in range(1, int(tables.Count) + 1):
+                    table = tables(i)
+                    try:
+                        nesting_level = int(getattr(table, "NestingLevel", 1))
+                    except Exception:
+                        nesting_level = 1
+                    if nesting_level != 1:
+                        continue
+
+                    try:
+                        row_count = int(table.Rows.Count)
+                        col_count = int(table.Columns.Count)
+                    except Exception:
+                        row_count = 0
+                        col_count = 0
+
+                    for row in range(1, row_count + 1):
+                        for col in range(1, col_count + 1):
+                            try:
+                                cell = table.Cell(row, col)
+                            except Exception:
+                                continue
+
+                            try:
+                                page_num = int(cell.Range.Information(_WD_ACTIVE_END_PAGE_NUMBER))
+                            except Exception:
+                                page_num = 1
+
+                            page_map[f"table_{table_idx}_r{row - 1}_c{col - 1}"] = max(0, page_num - 1)
+
+                    table_idx += 1
+            except Exception as e:
+                logger.debug("Failed to read Word table pages via COM: %s", e)
+
+            # --- Text boxes / Shapes (best effort) ---
+            textbox_idx = 0
+            try:
+                shapes_with_text = []
+                shapes = doc.Shapes
+                for i in range(1, int(shapes.Count) + 1):
+                    shape = shapes(i)
+                    try:
+                        anchor = shape.Anchor
+                        if int(anchor.StoryType) != _WD_MAIN_TEXT_STORY:
+                            continue
+                    except Exception:
+                        anchor = None
+
+                    try:
+                        if not bool(shape.TextFrame.HasText):
+                            continue
+                        text = str(shape.TextFrame.TextRange.Text).strip()
+                    except Exception:
+                        continue
+
+                    if not text:
+                        continue
+
+                    try:
+                        page_num = int((anchor or shape.Anchor).Information(_WD_ACTIVE_END_PAGE_NUMBER))
+                    except Exception:
+                        page_num = 1
+
+                    try:
+                        anchor_start = int((anchor or shape.Anchor).Start)
+                    except Exception:
+                        anchor_start = 0
+
+                    shapes_with_text.append((anchor_start, page_num))
+
+                shapes_with_text.sort(key=lambda x: x[0])
+
+                for _, page_num in shapes_with_text:
+                    page_map[f"textbox_{textbox_idx}"] = max(0, int(page_num) - 1)
+                    textbox_idx += 1
+            except Exception as e:
+                logger.debug("Failed to read Word shape pages via COM: %s", e)
+
+            return page_count, page_map
+
+        except Exception as e:
+            logger.debug("Word COM page mapping failed for '%s': %s", file_path, e)
+            return None, {}
+
+        finally:
+            try:
+                if doc is not None:
+                    doc.Close(False)
+            except Exception:
+                pass
+            try:
+                if word is not None:
+                    # Do not save changes (we opened ReadOnly=True anyway).
+                    word.Quit(False)
+            except Exception:
+                pass
+            # Help GC release COM proxies
+            try:
+                del doc
+            except Exception:
+                pass
+            try:
+                del word
+            except Exception:
+                pass
+
+
+@lru_cache(maxsize=8)
+def _get_word_page_data_cached(
+    path_str: str, mtime_ns: int, size_bytes: int
+) -> tuple[Optional[int], dict[str, int]]:
+    # mtime_ns/size_bytes are included to invalidate cache on file changes.
+    return _try_get_word_page_data_via_com(Path(path_str))
 
 
 def _extract_text_from_txbx_content(txbx_content) -> str:
@@ -267,16 +535,38 @@ class WordProcessor(FileProcessor):
         return ['.docx']
 
     def get_file_info(self, file_path: Path) -> FileInfo:
-        """Get Word file info (fast: no text scanning)"""
-        # Word documents are treated as a single section (no page-level breakdown)
-        # Page count would require full rendering, so we skip it
-        section_details = [SectionDetail(index=0, name="全体")]
+        """Get Word file info (page count via Word COM when available)."""
+        page_count = None
+        page_map: dict[str, int] = {}
+
+        try:
+            stat = file_path.stat()
+            page_count, page_map = _get_word_page_data_cached(
+                str(file_path), stat.st_mtime_ns, stat.st_size
+            )
+        except Exception:
+            page_count = None
+            page_map = {}
+
+        if page_count is None and page_map:
+            try:
+                page_count = max(page_map.values()) + 1
+            except ValueError:
+                page_count = None
+
+        if page_count and page_count > 1:
+            section_details = [
+                SectionDetail(index=idx, name=f"ページ {idx + 1}")
+                for idx in range(page_count)
+            ]
+        else:
+            section_details = [SectionDetail(index=0, name="全体")]
 
         return FileInfo(
             path=file_path,
             file_type=FileType.WORD,
             size_bytes=file_path.stat().st_size,
-            page_count=None,
+            page_count=page_count,
             section_details=section_details,
         )
 
@@ -350,6 +640,15 @@ class WordProcessor(FileProcessor):
             file_path: Path to the Word file
             output_language: "en" for JP→EN, "jp" for EN→JP translation
         """
+        page_map: dict[str, int] = {}
+        try:
+            stat = file_path.stat()
+            _, page_map = _get_word_page_data_cached(
+                str(file_path), stat.st_mtime_ns, stat.st_size
+            )
+        except Exception:
+            page_map = {}
+
         doc = Document(file_path)
         try:
             # === Body Paragraphs ===
@@ -371,8 +670,11 @@ class WordProcessor(FileProcessor):
                         if font_names:
                             font_name = font_names[0]
 
+                    block_id = f"para_{idx}"
+                    page_idx = page_map.get(block_id)
+
                     yield TextBlock(
-                        id=f"para_{idx}",
+                        id=block_id,
                         text=para.text,
                         location=f"Paragraph {idx + 1}",
                         metadata={
@@ -381,6 +683,7 @@ class WordProcessor(FileProcessor):
                             'style': para.style.name if para.style else None,
                             'font_name': font_name,
                             'font_size': font_size,
+                            **({'page_idx': page_idx} if page_idx is not None else {}),
                         }
                     )
 
@@ -408,8 +711,11 @@ class WordProcessor(FileProcessor):
                                 if first_run.font.size:
                                     font_size = first_run.font.size.pt
 
+                            block_id = f"table_{table_idx}_r{row_idx}_c{cell_idx}"
+                            page_idx = page_map.get(block_id)
+
                             yield TextBlock(
-                                id=f"table_{table_idx}_r{row_idx}_c{cell_idx}",
+                                id=block_id,
                                 text=cell_text,
                                 location=f"Table {table_idx + 1}, Row {row_idx + 1}, Cell {cell_idx + 1}",
                                 metadata={
@@ -419,6 +725,7 @@ class WordProcessor(FileProcessor):
                                     'col': cell_idx,
                                     'font_name': font_name,
                                     'font_size': font_size,
+                                    **({'page_idx': page_idx} if page_idx is not None else {}),
                                 }
                             )
 
@@ -432,13 +739,16 @@ class WordProcessor(FileProcessor):
                     tb_idx = tb['textbox_index']
 
                     if self.para_translator.should_translate(text, output_language):
+                        block_id = f"textbox_{tb_idx}"
+                        page_idx = page_map.get(block_id)
                         yield TextBlock(
-                            id=f"textbox_{tb_idx}",
+                            id=block_id,
                             text=text,
                             location=f"TextBox {tb_idx + 1}",
                             metadata={
                                 'type': 'textbox',
                                 'textbox': tb_idx,
+                                **({'page_idx': page_idx} if page_idx is not None else {}),
                             }
                         )
         finally:

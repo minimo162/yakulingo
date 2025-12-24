@@ -635,7 +635,7 @@ def _section_selector(
         FileType.EXCEL: 'シート',
         FileType.POWERPOINT: 'スライド',
         FileType.PDF: 'ページ',
-        FileType.WORD: 'セクション',
+        FileType.WORD: 'ページ',
     }
     section_label = section_type_labels.get(file_info.file_type, 'セクション')
 

@@ -5211,6 +5211,9 @@ def run_app(
                     edge_exe,
                     f"--app={url}",
                     f"--window-size={width},{height}",
+                    # Prevent Edge's "Translate this page?" prompt for the app UI.
+                    "--disable-features=Translate",
+                    "--lang=ja",
                     # Use a dedicated profile to ensure the spawned Edge instance is isolated and
                     # can be terminated reliably on app exit (avoid reusing user's main Edge).
                     *( [f"--user-data-dir={browser_profile_dir}"] if browser_profile_dir is not None else [] ),
@@ -5900,6 +5903,21 @@ def run_app(
 
         # Lazy-load settings when the first client connects (defers disk I/O from startup)
         yakulingo_app.settings
+
+        # Hint the page language (and opt out of translation) to prevent Edge/Chromium from
+        # mis-detecting the UI as English and showing a "Translate this page?" dialog.
+        ui.add_head_html('<meta http-equiv="Content-Language" content="ja">')
+        ui.add_head_html('<meta name="google" content="notranslate">')
+        ui.add_head_html('''<script>
+(() => {
+  try {
+    const root = document.documentElement;
+    root.lang = 'ja';
+    root.setAttribute('translate', 'no');
+    root.classList.add('notranslate');
+  } catch (err) {}
+})();
+</script>''')
 
         # Set dynamic panel sizes as CSS variables (calculated from monitor resolution)
         sidebar_width, input_panel_width, content_width = yakulingo_app._panel_sizes

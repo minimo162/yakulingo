@@ -3,7 +3,8 @@
 Outlook MSG file processor for email translation.
 
 Uses extract-msg library to read .msg files (Outlook email format).
-On Windows with Outlook installed, creates new .msg file with translated content.
+On Windows with Outlook installed, saves translated output as a .msg file while
+preserving the "received mail" style (read mode) whenever possible.
 Falls back to .txt output on other platforms.
 """
 
@@ -75,7 +76,8 @@ class MsgProcessor(FileProcessor):
     Processor for Outlook MSG files (.msg).
 
     Extracts subject and body text for translation.
-    On Windows with Outlook, creates new .msg file with translated content.
+    On Windows with Outlook, saves translated output as a .msg file while trying
+    to preserve the "received mail" form (read mode, not a sendable draft).
     Falls back to .txt output on other platforms.
 
     Note:
@@ -390,27 +392,139 @@ class MsgProcessor(FileProcessor):
 
     def _create_msg_via_outlook(
         self,
+        input_path: Path,
+        output_path: Path,
+        subject: str,
+        body: str,
+    ) -> bool:
+        """
+        Create a translated .msg file using Outlook COM, preserving received-mail form.
+
+        Strategy:
+        1) Open the original .msg via Session.OpenSharedItem and modify it, then SaveAs.
+           This preserves message flags so the output opens in read mode (no "Send").
+        2) Fallback: create a new mail item and SaveAs (best-effort).
+        """
+        if not self.outlook_available:
+            return False
+
+        # Prefer copying from the original to preserve "received mail" flags.
+        if self._create_msg_from_original_via_outlook(input_path, output_path, subject, body):
+            return True
+
+        # Fallback: create a new mail item (may open as a draft depending on Outlook).
+        content = self._get_cached_content(input_path)
+        to = content.get('to', '') if isinstance(content, dict) else ''
+        cc = content.get('cc', '') if isinstance(content, dict) else ''
+        return self._create_new_msg_via_outlook(output_path, subject, body, to=to, cc=cc)
+
+    def _clear_unsent_flag_best_effort(self, mail: Any) -> bool:
+        """Best-effort: clear MSGFLAG_UNSENT so saved .msg opens in read mode.
+
+        Outlook draft-like .msg files are typically marked with MSGFLAG_UNSENT (0x8)
+        in PR_MESSAGE_FLAGS (0x0E07). Clearing this flag helps avoid opening the
+        output in the compose UI with a "Send" button.
+        """
+        try:
+            accessor = getattr(mail, 'PropertyAccessor', None)
+            if accessor is None:
+                return False
+
+            # PR_MESSAGE_FLAGS (PT_LONG): http://schemas.microsoft.com/mapi/proptag/0x0E070003
+            prop_tag = "http://schemas.microsoft.com/mapi/proptag/0x0E070003"
+            flags = accessor.GetProperty(prop_tag)
+            if not isinstance(flags, int):
+                return False
+
+            MSGFLAG_UNSENT = 0x00000008
+            if not (flags & MSGFLAG_UNSENT):
+                return True
+
+            new_flags = flags & ~MSGFLAG_UNSENT
+            accessor.SetProperty(prop_tag, new_flags)
+
+            # Verify (best-effort). If verification fails, treat as not cleared.
+            verified = accessor.GetProperty(prop_tag)
+            return isinstance(verified, int) and not (verified & MSGFLAG_UNSENT)
+        except Exception:
+            # Ignore: not all Outlook configurations allow writing message flags.
+            return False
+
+    def _create_msg_from_original_via_outlook(
+        self,
+        input_path: Path,
+        output_path: Path,
+        subject: str,
+        body: str,
+    ) -> bool:
+        """
+        Create a translated .msg by opening the original .msg and saving a modified copy.
+
+        Args:
+            input_path: Path to the original .msg file
+            output_path: Path for the output .msg file
+            subject: Email subject
+            body: Email body text
+
+        Returns:
+            True if successful, False otherwise
+
+        Note:
+            Call Close() after SaveAs to avoid leaving Outlook in reply state.
+        """
+        mail = None
+        outlook = None
+        try:
+            import win32com.client
+
+            outlook = win32com.client.Dispatch("Outlook.Application")
+            # OpenSharedItem preserves received-mail message flags (no Send button).
+            mail = outlook.Session.OpenSharedItem(str(input_path))
+            if mail is None:
+                return False
+
+            mail.Subject = subject
+            mail.Body = body
+            self._clear_unsent_flag_best_effort(mail)
+
+            # Save as .msg file
+            # 3 = olMSG format
+            mail.SaveAs(str(output_path), 3)
+
+            logger.info("MSG file created via Outlook (preserve received form): %s", output_path)
+            return True
+
+        except Exception as e:
+            logger.warning("Failed to create MSG via Outlook (from original): %s", e)
+            return False
+
+        finally:
+            # Ensure COM objects are released.
+            if mail is not None:
+                try:
+                    # olDiscard = 1: close without saving changes.
+                    mail.Close(1)
+                except Exception:
+                    pass
+                # Explicitly delete COM objects to avoid leaks.
+                del mail
+            if outlook is not None:
+                del outlook
+            gc.collect()
+
+    def _create_new_msg_via_outlook(
+        self,
         output_path: Path,
         subject: str,
         body: str,
         to: str = "",
         cc: str = "",
     ) -> bool:
+        """Fallback: create a new .msg file using Outlook COM.
+
+        This may open as a draft depending on Outlook, so we try to clear
+        MSGFLAG_UNSENT as a best-effort mitigation.
         """
-        Create a new .msg file using Outlook COM.
-
-        Args:
-            output_path: Path for the output .msg file
-            subject: Email subject
-            body: Email body text
-            to: Recipients (To field)
-            cc: CC recipients
-
-        Returns:
-            True if successful, False otherwise
-
-        Note:
-            Call Close() after SaveAs to avoid leaving Outlook in reply state.        """
         mail = None
         outlook = None
         try:
@@ -426,26 +540,29 @@ class MsgProcessor(FileProcessor):
             if cc:
                 mail.CC = self._normalize_recipients(cc)
 
+            if not self._clear_unsent_flag_best_effort(mail):
+                logger.info(
+                    "Could not clear MSGFLAG_UNSENT; falling back to safe text output"
+                )
+                return False
+
             # Save as .msg file
             # 3 = olMSG format
             mail.SaveAs(str(output_path), 3)
 
-            logger.info("MSG file created via Outlook: %s", output_path)
+            logger.info("MSG file created via Outlook (new item): %s", output_path)
             return True
 
         except Exception as e:
-            logger.warning("Failed to create MSG via Outlook: %s", e)
+            logger.warning("Failed to create MSG via Outlook (new item): %s", e)
             return False
 
         finally:
-            # Ensure COM objects are released.
             if mail is not None:
                 try:
-                    # olDiscard = 1: close without saving changes.
                     mail.Close(1)
                 except Exception:
                     pass
-                # Explicitly delete COM objects to avoid leaks.
                 del mail
             if outlook is not None:
                 del outlook
@@ -553,7 +670,7 @@ class MsgProcessor(FileProcessor):
         """
         Apply translations and save output file.
 
-        On Windows with Outlook installed, creates a new .msg file.
+        On Windows with Outlook installed, saves a translated .msg file.
         Otherwise, falls back to .txt output.
         """
         translated_subject, translated_body = self._build_translated_content(
@@ -572,12 +689,14 @@ class MsgProcessor(FileProcessor):
             # Ensure output has .msg extension
             msg_output_path = output_path.with_suffix('.msg')
             if self._create_msg_via_outlook(
-                msg_output_path, translated_subject, translated_body, to, cc
+                input_path, msg_output_path, translated_subject, translated_body
             ):
                 return None
+            logger.info("Failed to create MSG via Outlook, saving as .txt")
+        else:
+            logger.info("Outlook not available, saving as .txt")
 
         # Fallback: save as .txt
-        logger.info("Outlook not available, saving as .txt")
         txt_output_path = output_path.with_suffix('.txt')
 
         output_lines = []

@@ -144,13 +144,42 @@ def generate_ico(output_path: Path) -> None:
             large_draw.line([(9 * scale, 10 * scale), (12 * scale, 14 * scale)], fill=WHITE, width=line_width)
 
         else:
-            # Simplified icon for 16x16
-            # Just draw "文A" text representation
-            line_width = max(1, int(scale))
-            # Horizontal bar
-            large_draw.rectangle([4 * scale, 7 * scale, 20 * scale, 7 * scale + line_width * 2], fill=WHITE)
-            # Vertical bar
-            large_draw.rectangle([11 * scale, 5 * scale, 13 * scale, 19 * scale], fill=WHITE)
+            # Compact icon for small sizes (16/20/24px, used by taskbar at common DPI scales).
+            # Keep the same visual identity as the larger icons to avoid looking like a zoomed/cropped part.
+
+            # "A" character shape (right side) - same silhouette, no inner cutout for readability.
+            a_points = [
+                (17.5 * scale, 5.2 * scale),   # top
+                (21.0 * scale, 17.0 * scale),  # bottom right
+                (19.3 * scale, 17.0 * scale),  # inner right
+                (18.2 * scale, 13.8 * scale),  # notch right
+                (15.0 * scale, 13.8 * scale),  # notch left
+                (13.9 * scale, 17.0 * scale),  # inner left
+                (12.2 * scale, 17.0 * scale),  # bottom left
+            ]
+            large_draw.polygon(a_points, fill=WHITE)
+
+            # Japanese side (left) - simplified strokes (no arrow) to stay legible.
+            line_width = max(1, int(1.6 * scale))
+            if size >= 20:
+                large_draw.rectangle(
+                    [4.2 * scale, 5.4 * scale, 12.2 * scale, 5.4 * scale + line_width],
+                    fill=WHITE,
+                )
+                large_draw.rectangle(
+                    [4.2 * scale, 8.4 * scale, 11.2 * scale, 8.4 * scale + line_width],
+                    fill=WHITE,
+                )
+                large_draw.rectangle(
+                    [8.0 * scale, 5.4 * scale, 8.0 * scale + line_width, 10.4 * scale],
+                    fill=WHITE,
+                )
+            else:
+                # 16x16: even simpler to avoid blur.
+                large_draw.rectangle(
+                    [4.5 * scale, 7.0 * scale, 11.8 * scale, 7.0 * scale + line_width],
+                    fill=WHITE,
+                )
 
         # Downsample with high-quality resampling for antialiased edges
         img = large_img.resize((size, size), Image.LANCZOS)

@@ -270,6 +270,8 @@ body {
 .result-panel > .nicegui-column {
     padding: 1.5rem;
     flex: none;  /* Don't participate in flex sizing - use natural content height */
+    max-width: var(--content-width);
+    box-sizing: border-box;
 }
 
 /* Result panel inner content - full width */
@@ -328,16 +330,29 @@ body {
 }
 
 .source-copy-btn {
-    color: var(--md-sys-color-on-surface-variant);
+    width: var(--md-comp-icon-button-size) !important;
+    height: var(--md-comp-icon-button-size) !important;
+    min-width: var(--md-comp-icon-button-size) !important;
+    min-height: var(--md-comp-icon-button-size) !important;
+    padding: 0 !important;
+    border-radius: var(--md-sys-shape-corner-full) !important;
+    color: var(--md-sys-color-on-surface-variant) !important;
     flex-shrink: 0;
-    background: transparent;
-    border-radius: var(--md-sys-shape-corner-small);
-    transition: background-color var(--md-sys-motion-duration-short), color var(--md-sys-motion-duration-short);
+    background: transparent !important;
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard) !important;
 }
 
 .source-copy-btn:hover {
-    background-color: var(--md-sys-color-surface-container-high);
-    color: var(--md-sys-color-primary);
+    background-color: var(--md-sys-color-surface-container-high) !important;
+    color: var(--md-sys-color-primary) !important;
+}
+
+.source-copy-btn:active {
+    background-color: var(--md-sys-color-surface-container-highest) !important;
+}
+
+.source-copy-btn .q-icon {
+    font-size: 1.25rem !important;
 }
 
 /* === Translation Status Section === */
@@ -1434,6 +1449,42 @@ body.yakulingo-drag-active .global-drop-indicator {
     padding: 1.25rem;
     -webkit-user-select: text !important;
     user-select: text !important;
+}
+
+.option-card-header {
+    margin-bottom: 0.25rem;
+}
+
+.option-card-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.result-action-btn {
+    width: var(--md-comp-icon-button-size) !important;
+    height: var(--md-comp-icon-button-size) !important;
+    min-width: var(--md-comp-icon-button-size) !important;
+    min-height: var(--md-comp-icon-button-size) !important;
+    padding: 0 !important;
+    border-radius: var(--md-sys-shape-corner-full) !important;
+    color: var(--md-sys-color-on-surface-variant) !important;
+    background: transparent !important;
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard) !important;
+    flex-shrink: 0;
+}
+
+.result-action-btn:hover {
+    background: color-mix(in srgb, var(--md-sys-color-primary) calc(var(--md-sys-state-hover-opacity) * 100%), transparent) !important;
+    color: var(--md-sys-color-primary) !important;
+}
+
+.result-action-btn:active {
+    background: color-mix(in srgb, var(--md-sys-color-primary) calc(var(--md-sys-state-pressed-opacity) * 100%), transparent) !important;
+}
+
+.result-action-btn .q-icon {
+    font-size: 1.25rem !important;
 }
 
 .option-text {

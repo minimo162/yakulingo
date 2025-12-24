@@ -329,7 +329,7 @@ def create_text_result_panel(
         state.text_view_state
     )
 
-    with ui.column().classes('flex-1 w-full gap-4'):
+    with ui.column().classes('flex-1 w-full gap-3'):
         # Source text section at the top (when translating or has result)
         source_text_to_display = None
         if state.text_translating and state.source_text:
@@ -566,24 +566,28 @@ def _render_results_to_jp(
                 for option in result.options:
                     with ui.card().classes('option-card w-full'):
                         with ui.column().classes('w-full gap-2'):
+                            # Header: actions (right)
+                            with ui.row().classes('w-full items-center justify-between gap-2 option-card-header'):
+                                with ui.row().classes('items-center gap-2 min-w-0'):
+                                    pass
+
+                                with ui.row().classes('items-center option-card-actions'):
+                                    # Copy button
+                                    ui.button(
+                                        icon='content_copy',
+                                        on_click=lambda o=option: on_copy(o.text)
+                                    ).props('flat dense round size=sm aria-label="コピー"').classes('option-action result-action-btn').tooltip('コピー')
+
+                                    # Back-translate button
+                                    if on_back_translate:
+                                        ui.button(
+                                            '戻し訳',
+                                            icon='g_translate',
+                                            on_click=lambda o=option: on_back_translate(o.text)
+                                        ).props('flat no-caps size=sm').classes('back-translate-btn').tooltip('精度チェック')
+
                             # Translation text
                             _render_translation_text(option.text)
-
-                            # Actions row (same as English)
-                            with ui.row().classes('w-full justify-end items-center gap-1'):
-                                # Copy button
-                                ui.button(
-                                    icon='content_copy',
-                                    on_click=lambda o=option: on_copy(o.text)
-                                ).props('flat dense round size=sm aria-label="コピー"').classes('option-action').tooltip('コピー')
-
-                                # Back-translate button
-                                if on_back_translate:
-                                    ui.button(
-                                        '戻し訳',
-                                        icon='g_translate',
-                                        on_click=lambda o=option: on_back_translate(o.text)
-                                    ).props('flat no-caps size=sm').classes('back-translate-btn').tooltip('精度チェック')
 
                             # Detailed explanation section (same as English)
                             if option.explanation:
@@ -672,28 +676,30 @@ def _render_option_en(
 
     with ui.card().classes('option-card w-full'):
         with ui.column().classes('w-full gap-2'):
-            if show_style_badge and option.style:
-                style_label = TEXT_STYLE_LABELS.get(option.style, option.style)
-                ui.label(style_label).classes('chip')
+            # Header: style badge (left) + actions (right)
+            with ui.row().classes('w-full items-center justify-between gap-2 option-card-header'):
+                with ui.row().classes('items-center gap-2 min-w-0'):
+                    if show_style_badge and option.style:
+                        style_label = TEXT_STYLE_LABELS.get(option.style, option.style)
+                        ui.label(style_label).classes('chip')
+
+                with ui.row().classes('items-center option-card-actions'):
+                    # Copy button
+                    ui.button(
+                        icon='content_copy',
+                        on_click=lambda o=option: on_copy(o.text)
+                    ).props('flat dense round size=sm aria-label="コピー"').classes('option-action result-action-btn').tooltip('コピー')
+
+                    # Back-translate button
+                    if on_back_translate:
+                        ui.button(
+                            '戻し訳',
+                            icon='g_translate',
+                            on_click=lambda o=option: on_back_translate(o.text)
+                        ).props('flat no-caps size=sm').classes('back-translate-btn').tooltip('精度チェック')
 
             # Translation text
             _render_translation_text(option.text)
-
-            # Actions row
-            with ui.row().classes('w-full justify-end items-center gap-1'):
-                # Copy button
-                ui.button(
-                    icon='content_copy',
-                    on_click=lambda o=option: on_copy(o.text)
-                ).props('flat dense round size=sm aria-label="コピー"').classes('option-action').tooltip('コピー')
-
-                # Back-translate button
-                if on_back_translate:
-                    ui.button(
-                        '戻し訳',
-                        icon='g_translate',
-                        on_click=lambda o=option: on_back_translate(o.text)
-                    ).props('flat no-caps size=sm').classes('back-translate-btn').tooltip('精度チェック')
 
             # Detailed explanation section (same style as JP)
             if option.explanation:

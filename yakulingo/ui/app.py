@@ -2508,7 +2508,7 @@ class YakuLingoApp:
             with self._global_drop_indicator:
                 with ui.row().classes('global-drop-indicator-label items-center'):
                     ui.icon('upload_file').classes('global-drop-indicator-icon')
-                    ui.label('ここにファイルをドロップ').classes('global-drop-indicator-text')
+                    ui.label('ファイルをドロップで翻訳').classes('global-drop-indicator-text')
 
         script = '''<script>
          (() => {
@@ -5936,6 +5936,20 @@ def run_app(
   }
   window._yakulingoGlobalDropFetchInstalled = true;
 
+  let dragDepth = 0;
+
+  const activateVisual = () => {
+    try {
+      if (document.body) document.body.classList.add('yakulingo-drag-active');
+    } catch (err) {}
+  };
+
+  const deactivateVisual = () => {
+    try {
+      if (document.body) document.body.classList.remove('yakulingo-drag-active');
+    } catch (err) {}
+  };
+
   const uploadFile = async (file) => {
     const form = new FormData();
     form.append('file', file, file.name || 'unnamed_file');
@@ -5979,6 +5993,8 @@ def run_app(
   };
 
   const handleDragEnter = (e) => {
+    dragDepth += 1;
+    activateVisual();
     e.preventDefault();
     if (e.dataTransfer) {
       e.dataTransfer.dropEffect = 'copy';
@@ -5986,14 +6002,23 @@ def run_app(
   };
 
   const handleDragOver = (e) => {
+    activateVisual();
     e.preventDefault();
     if (e.dataTransfer) {
       e.dataTransfer.dropEffect = 'copy';
     }
   };
 
+  const handleDragLeave = (_e) => {
+    if (dragDepth === 0) return;
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (dragDepth === 0) deactivateVisual();
+  };
+
   const handleDrop = (e) => {
     e.preventDefault();
+    dragDepth = 0;
+    deactivateVisual();
 
     const files = e.dataTransfer ? e.dataTransfer.files : null;
     if (files && files.length) {
@@ -6019,6 +6044,7 @@ def run_app(
     for (const target of targets) {
       target.addEventListener('dragenter', handleDragEnter, listenerOptions);
       target.addEventListener('dragover', handleDragOver, listenerOptions);
+      target.addEventListener('dragleave', handleDragLeave, listenerOptions);
       target.addEventListener('drop', handleDrop, listenerOptions);
     }
   };

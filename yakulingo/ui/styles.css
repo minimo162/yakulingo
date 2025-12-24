@@ -1264,7 +1264,8 @@ body.global-drop-active .global-drop-upload {
                 transform var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
 }
 
-body.global-drop-active .global-drop-indicator {
+body.global-drop-active .global-drop-indicator,
+body.yakulingo-drag-active .global-drop-indicator {
     opacity: 1;
     transform: translateY(0);
 }

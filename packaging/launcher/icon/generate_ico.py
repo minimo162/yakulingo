@@ -7,6 +7,7 @@ Uses manual ICO creation with PNG-embedded images for proper transparency suppor
 Pillow's default ICO save may not handle transparency correctly for smaller sizes.
 """
 
+import argparse
 import struct
 from io import BytesIO
 from pathlib import Path
@@ -71,18 +72,23 @@ def save_ico_with_png(images: list, output_path: Path) -> None:
             f.write(data)
 
 
-def generate_ico():
+def _default_output_path() -> Path:
+    repo_root = Path(__file__).resolve().parents[3]
+    return repo_root / "yakulingo" / "ui" / "yakulingo.ico"
+
+
+def generate_ico(output_path: Path) -> None:
     from PIL import Image, ImageDraw
 
-    script_dir = Path(__file__).parent
-    ico_path = script_dir / "yakulingo.ico"
+    ico_path = output_path
 
     # Brand color (from styles.py)
     BRAND_COLOR = (67, 85, 185, 255)  # #4355B9
     WHITE = (255, 255, 255, 255)
 
-    # Standard Windows icon sizes (must be sorted descending for ICO format)
-    sizes = [256, 48, 32, 16]
+    # Windows icon sizes (sorted descending for ICO format).
+    # Include non-standard sizes for common DPI scales (125% => 20/40px) to avoid blur.
+    sizes = [256, 128, 64, 48, 40, 32, 24, 20, 16]
 
     # Supersampling factor for antialiased edges
     # Higher = smoother edges but slower
@@ -161,4 +167,12 @@ def generate_ico():
 
 
 if __name__ == "__main__":
-    generate_ico()
+    parser = argparse.ArgumentParser(description="Generate YakuLingo Windows .ico file")
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=_default_output_path(),
+        help="Output .ico path (default: yakulingo/ui/yakulingo.ico)",
+    )
+    args = parser.parse_args()
+    generate_ico(args.output)

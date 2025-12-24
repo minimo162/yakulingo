@@ -194,6 +194,14 @@ def _nicegui_open_window_patched(
     start_args: dict,
 ) -> None:
     """Open pywebview window with parent-provided window_args in child process."""
+    if sys.platform == "win32":
+        try:
+            import ctypes
+
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("YakuLingo.App")
+        except Exception:
+            pass
+
     import time
     import warnings
     from threading import Event
@@ -5617,14 +5625,23 @@ def run_app(
                     # This ensures taskbar shows YakuLingo icon instead of Python icon
                     if icon_path_str:
                         try:
-                            # Load icon for both small (16x16) and big (32x32) sizes
+                            SM_CXICON = 11
+                            SM_CYICON = 12
+                            SM_CXSMICON = 49
+                            SM_CYSMICON = 50
+
+                            cx_small = user32.GetSystemMetrics(SM_CXSMICON) or 16
+                            cy_small = user32.GetSystemMetrics(SM_CYSMICON) or 16
+                            cx_big = user32.GetSystemMetrics(SM_CXICON) or 32
+                            cy_big = user32.GetSystemMetrics(SM_CYICON) or 32
+
                             hicon_small = user32.LoadImageW(
                                 None, icon_path_str, IMAGE_ICON,
-                                16, 16, LR_LOADFROMFILE
+                                cx_small, cy_small, LR_LOADFROMFILE
                             )
                             hicon_big = user32.LoadImageW(
                                 None, icon_path_str, IMAGE_ICON,
-                                32, 32, LR_LOADFROMFILE
+                                cx_big, cy_big, LR_LOADFROMFILE
                             )
                             if hicon_small:
                                 user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL, hicon_small)

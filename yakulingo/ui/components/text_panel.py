@@ -131,6 +131,7 @@ def create_text_input_panel(
     on_translate: Callable[[], None],
     on_source_change: Callable[[str], None],
     on_clear: Callable[[], None],
+    on_open_file_picker: Optional[Callable[[], None]] = None,
     on_attach_reference_file: Optional[Callable[[], None]] = None,
     on_remove_reference_file: Optional[Callable[[int], None]] = None,
     on_translate_button_created: Optional[Callable[[ui.button], None]] = None,
@@ -146,6 +147,7 @@ def create_text_input_panel(
     """
     _create_large_input_panel(
         state, on_translate, on_source_change, on_clear,
+        on_open_file_picker,
         on_attach_reference_file, on_remove_reference_file,
         on_translate_button_created,
         use_bundled_glossary, on_glossary_toggle, on_edit_glossary,
@@ -158,6 +160,7 @@ def _create_large_input_panel(
     on_translate: Callable[[], None],
     on_source_change: Callable[[str], None],
     on_clear: Callable[[], None],
+    on_open_file_picker: Optional[Callable[[], None]] = None,
     on_attach_reference_file: Optional[Callable[[], None]] = None,
     on_remove_reference_file: Optional[Callable[[int], None]] = None,
     on_translate_button_created: Optional[Callable[[ui.button], None]] = None,
@@ -169,6 +172,10 @@ def _create_large_input_panel(
 ):
     """Large input panel for INPUT state - spans 2 columns"""
     with ui.column().classes('flex-1 w-full gap-4'):
+        # Empty state (fills the unused canvas in INPUT mode)
+        if not state.source_text and not state.text_translating:
+            _render_input_empty_state(on_open_file_picker)
+
         # Main card container - centered and larger
         with ui.element('div').classes('main-card w-full'):
             # Input container
@@ -281,6 +288,21 @@ def _create_large_input_panel(
                 ui.label(': 他のアプリで選択中の文章を取り込んで翻訳').classes('text-muted ml-1')
             with ui.element('div').classes('hint-primary'):
                 ui.label('ファイルは画面にドラッグ＆ドロップで翻訳できます').classes('text-muted')
+
+
+def _render_input_empty_state(on_open_file_picker: Optional[Callable[[], None]] = None) -> None:
+    """Render empty state placeholder for the INPUT panel."""
+    with ui.element('div').classes('input-empty-state'):
+        ui.icon('translate').classes('input-empty-icon')
+        ui.label('翻訳したい文章を入力してください').classes('input-empty-title')
+        ui.label('日本語→英語（3スタイル） / 英語→日本語（解説付き）').classes('input-empty-subtitle')
+
+        if on_open_file_picker:
+            ui.button(
+                'ファイルを選択',
+                icon='upload_file',
+                on_click=on_open_file_picker,
+            ).props('no-caps').classes('btn-tonal input-empty-file-btn')
 
 
 def create_text_result_panel(

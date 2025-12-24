@@ -2944,6 +2944,7 @@ class YakuLingoApp:
                         on_translate=self._translate_text,
                         on_source_change=self._on_source_change,
                         on_clear=self._clear,
+                        on_open_file_picker=self._open_translation_file_picker,
                         on_attach_reference_file=self._attach_reference_file,
                         on_remove_reference_file=self._remove_reference_file,
                         on_translate_button_created=self._on_translate_button_created,
@@ -3146,6 +3147,13 @@ class YakuLingoApp:
         # Use Quasar's pickFiles() method to open file picker directly (no dialog)
         if self._reference_upload:
             self._reference_upload.run_method('pickFiles')
+
+    def _open_translation_file_picker(self) -> None:
+        """Open file picker for file translation (same handler as drag & drop)."""
+        if self.state.is_translating():
+            return
+        if self._global_drop_upload:
+            self._global_drop_upload.run_method('pickFiles')
 
     async def _handle_reference_upload(self, e):
         """Handle file upload from the hidden upload component."""

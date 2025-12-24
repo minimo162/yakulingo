@@ -1608,7 +1608,7 @@ body.yakulingo-drag-active .global-drop-indicator {
     border-right: none;
     display: flex;
     flex-direction: column;  /* Stack children vertically */
-    justify-content: center;  /* Center content horizontally */
+    justify-content: flex-start;  /* Child column handles vertical placement */
     align-items: center;  /* Center children horizontally */
     padding: 1.5rem;  /* 均等なパディング */
     box-sizing: border-box;  /* Include padding in width */
@@ -1625,7 +1625,7 @@ body.yakulingo-drag-active .global-drop-indicator {
     display: flex;
     flex-direction: column;
     align-items: center;  /* Center card horizontally */
-    justify-content: center;  /* Balance content vertically when results are hidden */
+    justify-content: flex-end;  /* Keep the composer anchored to the bottom */
 }
 
 /* Card fits content, full width */
@@ -1634,6 +1634,7 @@ body.yakulingo-drag-active .global-drop-indicator {
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    max-width: var(--content-width);
 }
 
 .main-area:not(.has-results) .input-panel .main-card-inner {
@@ -1688,6 +1689,45 @@ body.yakulingo-drag-active .global-drop-indicator {
 .main-area:not(.has-results) .input-panel .hint-section {
     flex-shrink: 0;  /* Don't shrink */
     margin-top: 0.75rem;  /* Fixed margin below card */
+    max-width: var(--content-width);
+    align-items: center;
+}
+
+/* INPUT mode empty state (fills the unused canvas above the composer) */
+.input-empty-state {
+    width: 100%;
+    max-width: var(--content-width);
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    gap: 0.5rem;
+    padding: 0 1rem;
+    animation: fadeInSpring var(--md-sys-motion-duration-long) var(--md-sys-motion-easing-fluid);
+}
+
+.input-empty-icon {
+    font-size: 3rem !important;
+    color: var(--md-sys-color-on-surface-variant);
+    opacity: 0.35;
+}
+
+.input-empty-title {
+    font-size: var(--md-sys-typescale-size-lg);
+    font-weight: var(--md-sys-typescale-weight-semibold);
+    color: var(--md-sys-color-on-surface);
+}
+
+.input-empty-subtitle {
+    font-size: 0.9375rem;
+    color: var(--md-sys-color-on-surface-variant);
+}
+
+.input-empty-file-btn {
+    margin-top: 0.5rem;
 }
 
 /* Hide result panel completely in 2-column mode */

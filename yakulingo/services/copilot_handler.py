@@ -979,6 +979,21 @@ class CopilotHandler:
     )
     RESPONSE_SELECTOR_COMBINED = ", ".join(RESPONSE_SELECTORS)
 
+    # Chain-of-Thought (活動/思考過程) UI selectors (scroll-only)
+    # NOTE: Do not include these in RESPONSE_SELECTORS because RESPONSE_SELECTORS are also
+    # used for extracting the final answer text.
+    CHAIN_OF_THOUGHT_CARD_SELECTORS = (
+        '.fai-ChainOfThought__card',
+        '[class*="ChainOfThought__card"]',
+    )
+    CHAIN_OF_THOUGHT_PANEL_SELECTORS = (
+        '.fai-ChainOfThought__activitiesPanel',
+        '[class*="ChainOfThought__activitiesPanel"]',
+        '.fai-ChainOfThought__activitiesAccordion',
+        '[class*="ChainOfThought__activitiesAccordion"]',
+        '[id^="cot-"][id$="activity-panel"]',
+    )
+
     # GPT Mode switcher selectors
     # Used to ensure GPT-5.2 Think Deeper mode is selected for better translation quality
     # Flow: 1. Click #gptModeSwitcher -> 2. Click "More" (role=button) -> 3. Click target (role=menuitem)
@@ -6805,7 +6820,7 @@ class CopilotHandler:
         return "", False
 
     def _auto_scroll_to_latest_response(self) -> bool:
-        """Keep the latest response visible in the Copilot chat pane."""
+        """Keep the latest response visible in the Copilot chat pane (incl. Chain-of-Thought)."""
         if not self._page:
             return False
 
@@ -6870,15 +6885,42 @@ class CopilotHandler:
                 except Exception:
                     return False
 
-            for selector in self.RESPONSE_SELECTORS:
-                try:
-                    elements = self._page.query_selector_all(selector)
-                except Exception:
-                    continue
-                if elements:
-                    if _scroll_from_element(elements[-1]):
-                        return True
-                    break
+            def _scroll_latest_for_selectors(
+                selectors: tuple[str, ...],
+                *,
+                max_elements_to_try: int = 3,
+            ) -> bool:
+                for selector in selectors:
+                    try:
+                        elements = self._page.query_selector_all(selector)
+                    except Exception:
+                        continue
+                    if not elements:
+                        continue
+
+                    # Try a few of the latest matches. Some selectors can hit hidden/stale DOM nodes.
+                    for element in reversed(elements[-max_elements_to_try:]):
+                        try:
+                            if not element.is_visible():
+                                continue
+                        except Exception:
+                            pass
+                        if _scroll_from_element(element):
+                            return True
+
+                return False
+
+            # 1) Scroll the chat pane to the newest assistant output.
+            scrolled_chat = _scroll_latest_for_selectors(self.RESPONSE_SELECTORS)
+            if not scrolled_chat:
+                # During generation, Copilot may render the Chain-of-Thought card before the reply body.
+                scrolled_chat = _scroll_latest_for_selectors(self.CHAIN_OF_THOUGHT_CARD_SELECTORS)
+
+            # 2) Chain-of-Thought panels can be internally scrollable; keep them at the latest item too.
+            scrolled_cot = _scroll_latest_for_selectors(self.CHAIN_OF_THOUGHT_PANEL_SELECTORS)
+
+            if scrolled_chat or scrolled_cot:
+                return True
 
             try:
                 input_elem = self._page.query_selector(self.CHAT_INPUT_SELECTOR_EXTENDED)

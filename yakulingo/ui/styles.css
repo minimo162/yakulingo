@@ -122,7 +122,7 @@
 
     /* Panel widths are calculated dynamically by JavaScript based on window.innerWidth.
        These defaults are only visible until JS executes (typically < 100ms). */
-    --sidebar-width: 280px;
+    --sidebar-width: 240px;
     --input-panel-width: 400px;
     /* Unified content width for both input and result panels (600-900px range) */
     --content-width: 800px;
@@ -1691,6 +1691,7 @@ body.yakulingo-drag-active .global-drop-indicator {
     margin-top: 0.75rem;  /* Fixed margin below card */
     max-width: var(--content-width);
     align-items: center;
+    padding: 0;
 }
 
 /* INPUT mode empty state (shown above the composer) */
@@ -1724,6 +1725,12 @@ body.yakulingo-drag-active .global-drop-indicator {
 .input-empty-subtitle {
     font-size: 0.9375rem;
     color: var(--md-sys-color-on-surface-variant);
+}
+
+.input-empty-shortcuts {
+    font-size: 0.8125rem;
+    color: var(--md-sys-color-on-surface-variant);
+    opacity: 0.9;
 }
 
 .input-empty-file-btn {
@@ -2443,6 +2450,14 @@ body.yakulingo-drag-active .global-drop-indicator {
     border: 1px solid var(--md-sys-color-outline-variant);
     padding: 0.25rem 0.5rem;
     border-radius: var(--md-sys-shape-corner-full);
+    flex-wrap: wrap;  /* Allow long hints to wrap on narrower windows */
+    max-width: 100%;
+}
+
+.hint-primary .nicegui-label,
+.hint-primary .text-muted {
+    min-width: 0;  /* Required for wrapping inside flex containers */
+    white-space: normal;
 }
 
 .hint-primary .q-icon,

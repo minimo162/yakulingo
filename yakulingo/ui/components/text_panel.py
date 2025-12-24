@@ -296,6 +296,7 @@ def _render_input_empty_state(on_open_file_picker: Optional[Callable[[], None]] 
         ui.icon('translate').classes('input-empty-icon')
         ui.label('翻訳したい文章を入力してください').classes('input-empty-title')
         ui.label('日本語→英語（3スタイル） / 英語→日本語（解説付き）').classes('input-empty-subtitle')
+        ui.label('Ctrl+Enterで翻訳 / Ctrl+Alt+Jで取り込み').classes('input-empty-shortcuts')
 
         if on_open_file_picker:
             ui.button(

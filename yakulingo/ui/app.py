@@ -4500,13 +4500,15 @@ def _detect_display_settings(
     # Example: 1366x768 at 125% = 1092x614 logical → window ~810x469 (74% ratio)
     MIN_WINDOW_WIDTH = 900    # Lowered from 1400 to avoid over-shrinking at ~1k width
     MIN_WINDOW_HEIGHT = 650   # Lowered from 850 to maintain ~76% ratio on smaller screens
-    MIN_SIDEBAR_WIDTH = 280   # Narrower sidebar
+    MIN_SIDEBAR_WIDTH = 240   # More compact sidebar (better in side-panel mode)
     MIN_INPUT_PANEL_WIDTH = 320  # Lowered from 380 for smaller screens
 
-    # Unified content width for both input and result panels
-    # Uses mainAreaWidth * 0.55, clamped to min-max range
-    # This ensures consistent panel proportions across all resolutions
-    CONTENT_RATIO = 0.55
+    # Unified content width for both input and result panels.
+    # Uses mainAreaWidth * CONTENT_RATIO, clamped to min-max range.
+    #
+    # In side-panel mode the app window is narrower, so we intentionally give the
+    # composer more horizontal room (ratio higher than the previous 0.55).
+    CONTENT_RATIO = 0.85
     MIN_CONTENT_WIDTH = 500  # Lowered from 600 for smaller screens
     MAX_CONTENT_WIDTH = 900
 
@@ -4558,7 +4560,7 @@ def _detect_display_settings(
         # Main area = window - sidebar
         main_area_width = window_width - sidebar_width
 
-        # Content width: mainAreaWidth * 0.55, clamped to 600-900px and never exceeds main area
+        # Content width: mainAreaWidth * CONTENT_RATIO, clamped to min-max range and never exceeds main area
         # This ensures consistent proportions across all resolutions
         content_width = min(
             max(int(main_area_width * CONTENT_RATIO), MIN_CONTENT_WIDTH),
@@ -5774,10 +5776,10 @@ def run_app(
         # Fixed base font size (no dynamic scaling)
         base_font_size = 16
 
-        # Calculate input min-height based on 7 lines of text (Nani-style)
-        # Formula: 7 lines × line-height × font-size + padding
+        # Calculate input min-height based on 9 lines of text (Nani-style)
+        # Formula: 9 lines × line-height × font-size + padding
         # line-height: 1.5, font-size: base × 1.125, padding: 1.6em equivalent
-        TEXTAREA_LINES = 7
+        TEXTAREA_LINES = 9
         TEXTAREA_LINE_HEIGHT = 1.5
         TEXTAREA_FONT_RATIO = 1.125  # --textarea-font-size ratio
         TEXTAREA_PADDING_RATIO = 1.6  # Total padding in em
@@ -5811,14 +5813,14 @@ def run_app(
     const SIDEBAR_RATIO = 280 / 1800;
     const INPUT_PANEL_RATIO = 400 / 1800;
     const MIN_WINDOW_WIDTH = 900;  // Match Python logic for small screens
-    const MIN_SIDEBAR_WIDTH = 280;  // Narrower sidebar
+    const MIN_SIDEBAR_WIDTH = 240;  // More compact sidebar (better in side-panel mode)
     const MIN_INPUT_PANEL_WIDTH = 320;  // Lowered for smaller screens
     // Unified content width for both input and result panels
-    // Uses mainAreaWidth * 0.55, clamped to min-max range
-    const CONTENT_RATIO = 0.55;
+    // Uses mainAreaWidth * CONTENT_RATIO, clamped to min-max range
+    const CONTENT_RATIO = 0.85;
     const MIN_CONTENT_WIDTH = 500;  // Lowered for smaller screens
     const MAX_CONTENT_WIDTH = 900;
-    const TEXTAREA_LINES = 7;
+    const TEXTAREA_LINES = 9;
     const TEXTAREA_LINE_HEIGHT = 1.5;
     const TEXTAREA_FONT_RATIO = 1.125;
     const TEXTAREA_PADDING_RATIO = 1.6;
@@ -5843,7 +5845,7 @@ def run_app(
         // Calculate unified content width for both input and result panels
         const mainAreaWidth = windowWidth - sidebarWidth;
 
-        // Content width: mainAreaWidth * 0.55, clamped to 600-900px and never exceeds main area
+        // Content width: mainAreaWidth * CONTENT_RATIO, clamped to min-max range and never exceeds main area
         // This ensures consistent proportions across all resolutions
         const contentWidth = Math.min(
             Math.max(Math.round(mainAreaWidth * CONTENT_RATIO), MIN_CONTENT_WIDTH),

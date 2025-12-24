@@ -3794,6 +3794,7 @@ class YakuLingoApp:
     def _on_language_change(self, lang: str):
         """Handle output language change for file translation"""
         self.state.file_output_language = lang
+        self.state.file_output_language_overridden = True
         self._refresh_content()
 
     def _on_bilingual_change(self, enabled: bool):
@@ -4030,6 +4031,8 @@ class YakuLingoApp:
             self.state.selected_file = file_path
             self.state.file_state = FileState.SELECTED
             self.state.file_detected_language = None  # Clear previous detection
+            # New file selection: allow auto-detection to choose output language again
+            self.state.file_output_language_overridden = False
             self.state.file_info = None  # Will be loaded async
 
             # Show selection immediately; PP-DocLayout-L initialization (if needed) is handled
@@ -4124,7 +4127,8 @@ class YakuLingoApp:
         # Update state based on detection (or default)
         self.state.file_detected_language = detected_language
         is_japanese = detected_language == "日本語"
-        self.state.file_output_language = "en" if is_japanese else "jp"
+        if not self.state.file_output_language_overridden:
+            self.state.file_output_language = "en" if is_japanese else "jp"
 
         # Refresh UI to show detected language
         # Re-acquire client reference to ensure it's still valid

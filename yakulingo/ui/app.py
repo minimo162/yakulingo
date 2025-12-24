@@ -238,8 +238,10 @@ def _nicegui_open_window_patched(
                 if core is not None and hasattr(core, 'Settings'):
                     settings = getattr(core, 'Settings', None)
                     try:
-                        if settings is not None and hasattr(settings, 'AreDefaultDropHandlingEnabled'):
-                            settings.AreDefaultDropHandlingEnabled = False
+                        if settings is not None:
+                            for attr in ('AreDefaultDropHandlingEnabled', 'AreDefaultDropHandlersEnabled'):
+                                if hasattr(settings, attr):
+                                    setattr(settings, attr, False)
                     except Exception:
                         pass
                 if core is not None and hasattr(core, 'add_NewWindowRequested'):
@@ -5969,14 +5971,14 @@ def run_app(
     try {
       const overlay = ensureOverlay();
       overlay.style.display = 'flex';
-    } catch {}
+    } catch (err) {}
   };
 
   const hideOverlay = () => {
     try {
       const overlay = document.getElementById('yakulingo-global-drop-overlay');
       if (overlay) overlay.style.display = 'none';
-    } catch {}
+    } catch (err) {}
   };
 
   const uploadFile = async (file) => {
@@ -5995,14 +5997,14 @@ def run_app(
           detail = `${detail}: ${JSON.stringify(payload).slice(0, 500)}`;
         }
       }
-    } catch {
+    } catch (err) {
       try {
         const text = await resp.text();
         if (text) {
           const snippet = String(text).replace(/\\s+/g, ' ').slice(0, 200);
           detail = `アップロードに失敗しました (HTTP ${resp.status}): ${snippet}`;
         }
-      } catch {}
+      } catch (err2) {}
     }
     window.alert(detail);
   };
@@ -6025,11 +6027,17 @@ def run_app(
     dragDepth += 1;
     showOverlay();
     e.preventDefault();
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = 'copy';
+    }
   };
 
   const handleDragOver = (e) => {
     showOverlay();
     e.preventDefault();
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = 'copy';
+    }
   };
 
   const handleDragLeave = (e) => {
@@ -6054,15 +6062,25 @@ def run_app(
         console.error('[yakulingo] drop upload failed', err);
         try {
           window.alert('アップロードに失敗しました。ネットワーク/セキュリティ設定をご確認ください。');
-        } catch {}
+        } catch (err2) {}
       });
     }
   };
 
-  window.addEventListener('dragenter', handleDragEnter, true);
-  window.addEventListener('dragover', handleDragOver, true);
-  window.addEventListener('dragleave', handleDragLeave, true);
-  window.addEventListener('drop', handleDrop, true);
+  const listenerOptions = { capture: true, passive: false };
+
+  const registerTargets = () => {
+    const targets = [window, document, document.documentElement];
+    if (document.body) targets.push(document.body);
+    for (const target of targets) {
+      target.addEventListener('dragenter', handleDragEnter, listenerOptions);
+      target.addEventListener('dragover', handleDragOver, listenerOptions);
+      target.addEventListener('dragleave', handleDragLeave, listenerOptions);
+      target.addEventListener('drop', handleDrop, listenerOptions);
+    }
+  };
+
+  registerTargets();
 })();
 </script>''')
 

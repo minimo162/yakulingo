@@ -1247,6 +1247,48 @@ body.global-drop-active .global-drop-upload {
     pointer-events: auto !important;
 }
 
+.global-drop-indicator {
+    position: fixed;
+    inset: 12px;
+    z-index: 5000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    border-radius: var(--md-sys-shape-corner-large);
+    border: 2px dashed color-mix(in srgb, var(--md-sys-color-primary) 70%, transparent);
+    background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent);
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard),
+                transform var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+}
+
+body.global-drop-active .global-drop-indicator {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.global-drop-indicator-label {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 14px 18px;
+    border-radius: var(--md-sys-shape-corner-full);
+    background: color-mix(in srgb, var(--md-sys-color-surface) 92%, transparent);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.global-drop-indicator-icon {
+    color: var(--md-sys-color-primary);
+}
+
+.global-drop-indicator-text {
+    color: var(--md-sys-color-on-surface);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
 .drop-zone-icon,
 .drop-zone-text,
 .drop-zone-subtext,

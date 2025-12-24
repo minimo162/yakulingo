@@ -557,6 +557,7 @@ class YakuLingoApp:
         # Hidden file upload element for direct file selection (no dialog)
         self._reference_upload = None
         self._global_drop_upload = None
+        self._global_drop_indicator = None
 
     @property
     def copilot(self) -> "CopilotHandler":
@@ -2491,18 +2492,23 @@ class YakuLingoApp:
         self._batch_refresh({'tabs', 'content'})
 
     def _setup_global_file_drop(self):
-        if self._global_drop_upload is not None:
-            return
-
         from yakulingo.ui.components.file_panel import MAX_DROP_FILE_SIZE_BYTES, SUPPORTED_FORMATS
 
-        self._global_drop_upload = ui.upload(
-            on_upload=self._handle_global_upload,
-            on_rejected=self._handle_global_upload_rejected,
-            auto_upload=True,
-            max_files=1,
-            max_file_size=MAX_DROP_FILE_SIZE_BYTES,
-        ).classes('global-drop-upload drop-zone-upload').props(f'accept="{SUPPORTED_FORMATS}"')
+        if self._global_drop_upload is None:
+            self._global_drop_upload = ui.upload(
+                on_upload=self._handle_global_upload,
+                on_rejected=self._handle_global_upload_rejected,
+                auto_upload=True,
+                max_files=1,
+                max_file_size=MAX_DROP_FILE_SIZE_BYTES,
+            ).classes('global-drop-upload drop-zone-upload').props(f'accept="{SUPPORTED_FORMATS}"')
+
+        if self._global_drop_indicator is None:
+            self._global_drop_indicator = ui.element('div').classes('global-drop-indicator').props('aria-hidden="true"')
+            with self._global_drop_indicator:
+                with ui.row().classes('global-drop-indicator-label items-center'):
+                    ui.icon('upload_file').classes('global-drop-indicator-icon')
+                    ui.label('ここにファイルをドロップ').classes('global-drop-indicator-text')
 
         script = '''<script>
          (() => {
@@ -2886,10 +2892,7 @@ class YakuLingoApp:
 
     def _is_file_panel_active(self) -> bool:
         """Return True when file panel should be visible."""
-        return (
-            self.state.current_tab == Tab.FILE
-            and self.state.file_state != FileState.EMPTY
-        )
+        return self.state.current_tab == Tab.FILE
 
     def _get_main_area_classes(self) -> str:
         """Get dynamic CSS classes for main-area based on current state."""
@@ -5933,54 +5936,6 @@ def run_app(
   }
   window._yakulingoGlobalDropFetchInstalled = true;
 
-  const ensureOverlay = () => {
-    let overlay = document.getElementById('yakulingo-global-drop-overlay');
-    if (overlay) return overlay;
-
-    overlay = document.createElement('div');
-    overlay.id = 'yakulingo-global-drop-overlay';
-    overlay.style.position = 'fixed';
-    overlay.style.inset = '12px';
-    overlay.style.zIndex = '5000';
-    overlay.style.display = 'none';
-    overlay.style.alignItems = 'center';
-    overlay.style.justifyContent = 'center';
-    overlay.style.pointerEvents = 'none';
-    overlay.style.borderRadius = '20px';
-    overlay.style.border = '2px dashed rgba(67, 85, 185, 0.7)';
-    overlay.style.background = 'rgba(67, 85, 185, 0.08)';
-
-    const label = document.createElement('div');
-    label.textContent = 'ここにファイルをドロップ';
-    label.style.padding = '14px 18px';
-    label.style.borderRadius = '9999px';
-    label.style.background = 'rgba(254, 251, 255, 0.95)';
-    label.style.boxShadow = '0 8px 24px rgba(0, 0, 0, 0.12)';
-    label.style.color = '#00105C';
-    label.style.fontWeight = '600';
-    label.style.letterSpacing = '0.02em';
-    overlay.appendChild(label);
-
-    document.body.appendChild(overlay);
-    return overlay;
-  };
-
-  let dragDepth = 0;
-
-  const showOverlay = () => {
-    try {
-      const overlay = ensureOverlay();
-      overlay.style.display = 'flex';
-    } catch (err) {}
-  };
-
-  const hideOverlay = () => {
-    try {
-      const overlay = document.getElementById('yakulingo-global-drop-overlay');
-      if (overlay) overlay.style.display = 'none';
-    } catch (err) {}
-  };
-
   const uploadFile = async (file) => {
     const form = new FormData();
     form.append('file', file, file.name || 'unnamed_file');
@@ -6024,8 +5979,6 @@ def run_app(
   };
 
   const handleDragEnter = (e) => {
-    dragDepth += 1;
-    showOverlay();
     e.preventDefault();
     if (e.dataTransfer) {
       e.dataTransfer.dropEffect = 'copy';
@@ -6033,23 +5986,14 @@ def run_app(
   };
 
   const handleDragOver = (e) => {
-    showOverlay();
     e.preventDefault();
     if (e.dataTransfer) {
       e.dataTransfer.dropEffect = 'copy';
     }
   };
 
-  const handleDragLeave = (e) => {
-    if (dragDepth === 0) return;
-    dragDepth = Math.max(0, dragDepth - 1);
-    if (dragDepth === 0) hideOverlay();
-  };
-
   const handleDrop = (e) => {
     e.preventDefault();
-    dragDepth = 0;
-    hideOverlay();
 
     const files = e.dataTransfer ? e.dataTransfer.files : null;
     if (files && files.length) {
@@ -6075,7 +6019,6 @@ def run_app(
     for (const target of targets) {
       target.addEventListener('dragenter', handleDragEnter, listenerOptions);
       target.addEventListener('dragover', handleDragOver, listenerOptions);
-      target.addEventListener('dragleave', handleDragLeave, listenerOptions);
       target.addEventListener('drop', handleDrop, listenerOptions);
     }
   };

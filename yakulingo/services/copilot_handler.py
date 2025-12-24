@@ -3521,21 +3521,29 @@ class CopilotHandler:
             # 1:1 ratio: browser width equals app width (use target widths)
             edge_width = target_edge_width
 
-            # If expected app position is saved (from early connection), use its height
-            # This prevents Edge height from shrinking during app startup when window
-            # hasn't fully initialized yet
-            if hasattr(self, '_expected_app_position') and self._expected_app_position:
-                expected_app_x, expected_app_y, expected_app_width, expected_app_height = self._expected_app_position
-                # Use expected height if current height is significantly smaller
-                # (indicates app window hasn't finished initializing)
-                if app_height < expected_app_height * 0.9:  # Allow 10% tolerance
-                    logger.debug("Using expected app height %d instead of current %d (startup)",
-                                expected_app_height, app_height)
-                    app_height = expected_app_height
+            # Determine target app height.
+            #
+            # In browser mode, Chromium's `--window-size` may be interpreted as the *client* size,
+            # which can make the actual window taller than the monitor work area (rcWork).
+            # If we keep using the current height, the vertical centering math can push the window
+            # partially off-screen (negative y), and the bottom can overlap the taskbar area.
+            #
+            # Always clamp the app window height to the monitor work area to keep the full window
+            # visible and stable across DPI/chrome variations.
+            current_app_height = app_height
+            target_app_height = screen_height if screen_height > 0 else current_app_height
 
-            # Ensure minimum height for usability
-            if app_height < min_side_panel_height:
-                app_height = min_side_panel_height
+            # Fall back to expected height only if monitor work area height is unavailable.
+            if (screen_height <= 0) and hasattr(self, '_expected_app_position') and self._expected_app_position:
+                _, _, _, expected_app_height = self._expected_app_position
+                if expected_app_height > 0:
+                    target_app_height = expected_app_height
+
+            # Ensure minimum height for usability, but keep within work area.
+            target_app_height = max(target_app_height, min_side_panel_height)
+            target_app_height = min(target_app_height, screen_height) if screen_height > 0 else target_app_height
+
+            app_height = target_app_height
             app_frame_height = max(app_height - app_top_inset - app_bottom_inset, 0)
 
             # Calculate total width of app + gap + side panel
@@ -3564,7 +3572,10 @@ class CopilotHandler:
                 abs(app_rect.left - new_app_x) > POSITION_TOLERANCE or
                 abs(app_rect.top - new_app_y) > POSITION_TOLERANCE
             )
-            app_needs_resize = abs(app_width - target_app_width) > SIZE_TOLERANCE
+            app_needs_resize = (
+                abs(app_width - target_app_width) > SIZE_TOLERANCE or
+                abs(current_app_height - target_app_height) > SIZE_TOLERANCE
+            )
 
             # SetWindowPos flags
             SWP_NOACTIVATE = 0x0010  # Don't activate window
@@ -3578,13 +3589,13 @@ class CopilotHandler:
                 if app_needs_resize and app_needs_move:
                     logger.debug(
                         "Moving/resizing YakuLingo app from (%d,%d) %dx%d to (%d,%d) %dx%d",
-                        app_rect.left, app_rect.top, app_width, app_height,
-                        new_app_x, new_app_y, target_app_width, app_height
+                        app_rect.left, app_rect.top, app_width, current_app_height,
+                        new_app_x, new_app_y, target_app_width, target_app_height
                     )
                 elif app_needs_resize:
                     logger.debug(
                         "Resizing YakuLingo app from %dx%d to %dx%d",
-                        app_width, app_height, target_app_width, app_height
+                        app_width, current_app_height, target_app_width, target_app_height
                     )
                 else:
                     logger.debug("Moving YakuLingo app from (%d,%d) to (%d,%d)",
@@ -3600,7 +3611,7 @@ class CopilotHandler:
                     new_app_x,
                     new_app_y,
                     target_app_width,
-                    app_height,
+                    target_app_height,
                     flags
                 )
 

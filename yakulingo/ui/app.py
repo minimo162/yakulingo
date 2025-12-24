@@ -2557,7 +2557,6 @@ class YakuLingoApp:
     // Always activate for drags so drops are routed to the uploader.
     // Some Edge/WebView2 builds don't expose file info until drop, so file detection
     // during dragenter/dragover is not reliable.
-    if (!e.dataTransfer) return;
     dragDepth += 1;
     activate();
     e.preventDefault();
@@ -2567,7 +2566,6 @@ class YakuLingoApp:
           };
 
    const handleDragOver = (e) => {
-    if (!e.dataTransfer) return;
     // Always activate + prevent default so the drop event is delivered to the uploader
     // (otherwise Edge will open the file as a navigation).
     activate();
@@ -6024,32 +6022,28 @@ def run_app(
   };
 
   const handleDragEnter = (e) => {
-    if (!e.dataTransfer) return;
     dragDepth += 1;
     showOverlay();
     e.preventDefault();
   };
 
   const handleDragOver = (e) => {
-    if (!e.dataTransfer) return;
     showOverlay();
     e.preventDefault();
   };
 
   const handleDragLeave = (e) => {
-    if (!e.dataTransfer) return;
     if (dragDepth === 0) return;
     dragDepth = Math.max(0, dragDepth - 1);
     if (dragDepth === 0) hideOverlay();
   };
 
   const handleDrop = (e) => {
-    if (!e.dataTransfer) return;
     e.preventDefault();
     dragDepth = 0;
     hideOverlay();
 
-    const files = e.dataTransfer.files;
+    const files = e.dataTransfer ? e.dataTransfer.files : null;
     if (files && files.length) {
       // Stop propagation so the browser/Quasar doesn't also try to handle this drop.
       e.stopPropagation();

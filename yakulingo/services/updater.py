@@ -485,7 +485,9 @@ class AutoUpdater:
             # バージョン情報を抽出
             latest_version = release_info.get("tag_name", "").lstrip("v")
             release_date = release_info.get("published_at", "")[:10]
-            release_notes = release_info.get("body", "")
+            # GitHub API returns `null` for body on some releases (e.g., draft/empty notes).
+            # Ensure we always treat it as a string to avoid TypeError in downstream checks.
+            release_notes = release_info.get("body") or ""
             if not latest_version:
                 raise ValueError("Latest version not found in release response")
 

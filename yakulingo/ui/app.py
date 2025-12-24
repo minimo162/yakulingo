@@ -9,6 +9,7 @@ Japanese → English, Other → Japanese (auto-detected by AI).
 import atexit
 import asyncio
 import logging
+import os
 import sys
 import threading
 import time
@@ -2038,7 +2039,9 @@ class YakuLingoApp:
 
                 # 設定を保存（最終チェック日時を更新）
                 self.settings.save(get_default_settings_path())
-        except (OSError, ValueError, RuntimeError) as e:
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
             # サイレントに失敗（バックグラウンド処理なのでユーザーには通知しない）
             logger.debug("Failed to check for updates: %s", e)
 
@@ -2134,6 +2137,9 @@ class YakuLingoApp:
 
     def _log_layout_dimensions(self):
         """Log layout container dimensions for debugging via JavaScript"""
+        if os.environ.get("YAKULINGO_LAYOUT_DEBUG", "").lower() not in ("1", "true", "yes", "on"):
+            return
+
         # JavaScript to collect and log layout dimensions
         js_code = """
         (function() {
@@ -2391,23 +2397,23 @@ class YakuLingoApp:
                             result = await client.run_javascript(js_code)
                         if result:
                             # Window and document info
-                            logger.info("[LAYOUT_DEBUG] window: %s", result.get('window'))
-                            logger.info("[LAYOUT_DEBUG] niceguiContent: %s", result.get('niceguiContent'))
-                            logger.info("[LAYOUT_DEBUG] mainAppContainer: %s", result.get('mainAppContainer'))
-                            logger.info("[LAYOUT_DEBUG] appContainer: %s", result.get('appContainer'))
-                            logger.info("[LAYOUT_DEBUG] sidebar: %s", result.get('sidebar'))
-                            logger.info("[LAYOUT_DEBUG] mainArea: %s", result.get('mainArea'))
+                            logger.debug("[LAYOUT_DEBUG] window: %s", result.get('window'))
+                            logger.debug("[LAYOUT_DEBUG] niceguiContent: %s", result.get('niceguiContent'))
+                            logger.debug("[LAYOUT_DEBUG] mainAppContainer: %s", result.get('mainAppContainer'))
+                            logger.debug("[LAYOUT_DEBUG] appContainer: %s", result.get('appContainer'))
+                            logger.debug("[LAYOUT_DEBUG] sidebar: %s", result.get('sidebar'))
+                            logger.debug("[LAYOUT_DEBUG] mainArea: %s", result.get('mainArea'))
                             # Input panel detailed info (for margin debugging)
-                            logger.info("[LAYOUT_DEBUG] inputPanel: %s", result.get('inputPanel'))
-                            logger.info("[LAYOUT_DEBUG] inputPanelColumn: %s", result.get('inputPanelColumn'))
-                            logger.info("[LAYOUT_DEBUG] mainCard: %s", result.get('mainCard'))
+                            logger.debug("[LAYOUT_DEBUG] inputPanel: %s", result.get('inputPanel'))
+                            logger.debug("[LAYOUT_DEBUG] inputPanelColumn: %s", result.get('inputPanelColumn'))
+                            logger.debug("[LAYOUT_DEBUG] mainCard: %s", result.get('mainCard'))
                             # Result panel info
-                            logger.info("[LAYOUT_DEBUG] resultPanel: %s", result.get('resultPanel'))
-                            logger.info("[LAYOUT_DEBUG] resultPanelNiceguiColumn: %s", result.get('resultPanelNiceguiColumn'))
-                            logger.info("[LAYOUT_DEBUG] innerColumn: %s", result.get('innerColumn'))
+                            logger.debug("[LAYOUT_DEBUG] resultPanel: %s", result.get('resultPanel'))
+                            logger.debug("[LAYOUT_DEBUG] resultPanelNiceguiColumn: %s", result.get('resultPanelNiceguiColumn'))
+                            logger.debug("[LAYOUT_DEBUG] innerColumn: %s", result.get('innerColumn'))
                             # Overflow status
-                            logger.info("[LAYOUT_DEBUG] hasHorizontalOverflow: %s", result.get('hasHorizontalOverflow'))
-                            logger.info("[LAYOUT_DEBUG] hasVerticalOverflow: %s", result.get('hasVerticalOverflow'))
+                            logger.debug("[LAYOUT_DEBUG] hasHorizontalOverflow: %s", result.get('hasHorizontalOverflow'))
+                            logger.debug("[LAYOUT_DEBUG] hasVerticalOverflow: %s", result.get('hasVerticalOverflow'))
                     except Exception as inner_e:
                         logger.warning("[LAYOUT] JavaScript execution failed: %s", inner_e)
                 asyncio.create_task(log_layout())
@@ -4835,7 +4841,7 @@ def run_app(
 
     available_memory_gb = _get_available_memory_gb()
     allow_early_connect = True
-    if available_memory_gb is not None and available_memory_gb < MIN_AVAILABLE_MEMORY_GB_FOR_EARLY_CONNECT:
+    if available_memory_gb is not None and available_memory_gb <= MIN_AVAILABLE_MEMORY_GB_FOR_EARLY_CONNECT:
         allow_early_connect = False
         logger.info(
             "Skipping early Copilot pre-initialization due to low available memory: %.1fGB < %.1fGB",

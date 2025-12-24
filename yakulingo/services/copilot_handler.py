@@ -590,6 +590,8 @@ def _log_playwright_init_details(phase: str, include_paths: bool = False) -> flo
 def _log_playwright_paths() -> None:
     """Log Playwright installation paths for debugging slow initialization."""
     try:
+        deep_scan = os.environ.get("YAKULINGO_PLAYWRIGHT_PATH_DEEP_SCAN", "").lower() in ("1", "true", "yes", "on")
+
         # Check PLAYWRIGHT_BROWSERS_PATH environment variable
         browsers_path_env = os.environ.get('PLAYWRIGHT_BROWSERS_PATH', '')
         if browsers_path_env:
@@ -603,21 +605,32 @@ def _log_playwright_paths() -> None:
             default_path = Path.home() / '.cache' / 'ms-playwright'
 
         if default_path and default_path.exists():
-            # List browser directories
+            # List browser directories (lightweight).
+            # NOTE: Avoid deep scans (rglob/stat) by default because it can trigger
+            # antivirus scanning and significantly slow down cold Playwright startup.
             browser_dirs = [d.name for d in default_path.iterdir() if d.is_dir()]
-            total_size_mb = sum(
-                sum(f.stat().st_size for f in d.rglob('*') if f.is_file())
-                for d in default_path.iterdir() if d.is_dir()
-            ) / (1024 * 1024)
-            logger.debug(
-                "[PLAYWRIGHT_INIT] Browser path: %s (%.1f MB, browsers: %s)",
-                default_path, total_size_mb, ', '.join(browser_dirs[:5])
-            )
+            if deep_scan:
+                total_size_mb = sum(
+                    sum(f.stat().st_size for f in d.rglob('*') if f.is_file())
+                    for d in default_path.iterdir() if d.is_dir()
+                ) / (1024 * 1024)
+                logger.debug(
+                    "[PLAYWRIGHT_INIT] Browser path: %s (%.1f MB, browsers: %s)",
+                    default_path,
+                    total_size_mb,
+                    ', '.join(browser_dirs[:5]),
+                )
+            else:
+                logger.debug(
+                    "[PLAYWRIGHT_INIT] Browser path: %s (browsers: %s)",
+                    default_path,
+                    ', '.join(browser_dirs[:5]),
+                )
         elif default_path:
             logger.debug("[PLAYWRIGHT_INIT] Browser path not found: %s", default_path)
 
         # Check for Node.js in Playwright
-        if default_path:
+        if default_path and deep_scan:
             node_paths = list(default_path.rglob('node.exe' if sys.platform == 'win32' else 'node'))
             if node_paths:
                 logger.debug("[PLAYWRIGHT_INIT] Node.js found: %s", node_paths[0])
@@ -1706,9 +1719,11 @@ class CopilotHandler:
         os.environ.setdefault('NO_PROXY', 'localhost,127.0.0.1')
         os.environ.setdefault('no_proxy', 'localhost,127.0.0.1')
 
-        # Enable Playwright debug logging to investigate slow startup
-        # DEBUG=pw:api shows API calls, DEBUG=pw:* shows all internal logs
-        os.environ.setdefault('DEBUG', 'pw:api')
+        # Optional: enable Playwright debug logging via env var (kept off by default).
+        # Example: set YAKULINGO_PLAYWRIGHT_DEBUG=pw:api
+        pw_debug = os.environ.get("YAKULINGO_PLAYWRIGHT_DEBUG")
+        if pw_debug and "DEBUG" not in os.environ:
+            os.environ["DEBUG"] = pw_debug
 
         try:
             error_types = _get_playwright_errors()

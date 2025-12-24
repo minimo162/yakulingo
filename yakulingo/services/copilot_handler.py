@@ -7975,6 +7975,8 @@ class CopilotHandler:
                 return
 
             if event == EVENT_SYSTEM_MINIMIZESTART:
+                if current_time < self._minimize_sync_until:
+                    return
                 self._minimize_sync_until = current_time + self._MINIMIZE_SYNC_SUPPRESS_SECONDS
                 if is_yakulingo:
                     edge_hwnd = self._find_edge_window_handle()
@@ -7985,6 +7987,11 @@ class CopilotHandler:
                 return
 
             if event == EVENT_SYSTEM_MINIMIZEEND:
+                try:
+                    if user32.IsIconic(hwnd):
+                        return
+                except Exception:
+                    return
                 if is_yakulingo:
                     edge_hwnd = self._find_edge_window_handle()
                     if edge_hwnd and user32.IsIconic(edge_hwnd):
@@ -7999,11 +8006,7 @@ class CopilotHandler:
                 return
 
             if current_time < self._minimize_sync_until:
-                try:
-                    if user32.IsIconic(hwnd):
-                        return
-                except Exception:
-                    return
+                return
 
             # Debounce: prevent rapid oscillation between windows
             if (hwnd == self._last_sync_hwnd and

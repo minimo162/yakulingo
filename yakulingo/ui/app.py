@@ -4867,6 +4867,8 @@ def run_app(
             MIN_AVAILABLE_MEMORY_GB_FOR_EARLY_CONNECT,
         )
 
+    shutdown_event = threading.Event()
+
     # Playwright pre-initialization (parallel)
     # Early Edge startup: Start Edge browser BEFORE NiceGUI import
     # This allows Copilot page to load during NiceGUI import (~2.6s) and display_settings (~1.2s)
@@ -4895,6 +4897,8 @@ def run_app(
             # connect() will skip Edge startup if it's already running on the CDP port
             def _start_edge_early():
                 try:
+                    if shutdown_event.is_set():
+                        return
                     _t_edge = time.perf_counter()
                     result = _early_copilot.start_edge()
                     logger.info("[TIMING] Early Edge startup (parallel): %.2fs, success=%s",
@@ -4914,6 +4918,8 @@ def run_app(
             def _early_connect():
                 """Connect to Copilot in background (after NiceGUI import)."""
                 try:
+                    if shutdown_event.is_set():
+                        return
                     _t_early = time.perf_counter()
 
                     # Wait for early Edge startup to complete before connecting
@@ -4923,6 +4929,9 @@ def run_app(
                         logger.debug("Waiting for early Edge startup to complete...")
                         _early_edge_thread.join(timeout=20.0)  # Max Edge startup time
                         logger.debug("Early Edge startup thread completed")
+
+                    if shutdown_event.is_set():
+                        return
 
                     # Use defer_window_positioning=True to skip waiting for YakuLingo window
                     # Window positioning will be done after YakuLingo window is created
@@ -5097,6 +5106,66 @@ def run_app(
     # to show loading screen while initializing (better UX than blank screen)
 
     browser_opened = False
+    browser_pid: int | None = None
+    browser_profile_dir: Path | None = None
+
+    def _get_profile_dir_for_browser_app() -> Path:
+        local_app_data = os.environ.get("LOCALAPPDATA", "")
+        if local_app_data:
+            return Path(local_app_data) / "YakuLingo" / "AppWindowProfile"
+        return Path.home() / ".yakulingo" / "app-window-profile"
+
+    def _kill_process_tree(pid: int) -> bool:
+        if sys.platform != "win32":
+            return False
+        try:
+            import subprocess
+
+            taskkill_path = r"C:\Windows\System32\taskkill.exe"
+            local_cwd = os.environ.get("SYSTEMROOT", r"C:\Windows")
+            result = subprocess.run(
+                [taskkill_path, "/F", "/T", "/PID", str(pid)],
+                capture_output=True,
+                timeout=1,
+                cwd=local_cwd,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+            return result.returncode in (0, 128)
+        except Exception as e:
+            logger.debug("Failed to kill process tree: %s", e)
+            return False
+
+    def _kill_edge_processes_by_profile_dir(profile_dir: Path) -> bool:
+        if sys.platform != "win32":
+            return False
+        try:
+            import psutil
+        except Exception:
+            return False
+
+        profile_cmp = str(profile_dir).replace("\\", "/").lower()
+        pids: set[int] = set()
+        for proc in psutil.process_iter(['pid', 'name', 'exe', 'cmdline']):
+            try:
+                name = (proc.info.get('name') or '').lower()
+                exe = (proc.info.get('exe') or '').lower()
+                if 'msedge' not in name and 'msedge' not in exe:
+                    continue
+                cmdline = " ".join(proc.info.get('cmdline') or []).replace("\\", "/").lower()
+                if profile_cmp in cmdline:
+                    pid = proc.info.get('pid')
+                    if isinstance(pid, int):
+                        pids.add(pid)
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+            except Exception:
+                continue
+
+        killed_any = False
+        for pid in sorted(pids):
+            if _kill_process_tree(pid):
+                killed_any = True
+        return killed_any
 
     def _find_edge_exe_for_browser_open() -> str | None:
         if sys.platform != "win32":
@@ -5112,7 +5181,12 @@ def run_app(
 
     def _open_browser_window() -> None:
         nonlocal browser_opened
+        nonlocal browser_pid, browser_profile_dir
         if browser_opened:
+            return
+        if shutdown_event.is_set():
+            return
+        if getattr(yakulingo_app, "_shutdown_requested", False):
             return
         browser_opened = True
 
@@ -5128,10 +5202,24 @@ def run_app(
             edge_exe = _find_edge_exe_for_browser_open()
             if edge_exe:
                 # App mode makes the taskbar entry use the site's icon/title (clearer than Edge).
+                browser_profile_dir = _get_profile_dir_for_browser_app()
+                try:
+                    browser_profile_dir.mkdir(parents=True, exist_ok=True)
+                except Exception:
+                    browser_profile_dir = None
                 args = [
                     edge_exe,
                     f"--app={url}",
                     f"--window-size={width},{height}",
+                    # Use a dedicated profile to ensure the spawned Edge instance is isolated and
+                    # can be terminated reliably on app exit (avoid reusing user's main Edge).
+                    *( [f"--user-data-dir={browser_profile_dir}"] if browser_profile_dir is not None else [] ),
+                    "--no-first-run",
+                    "--no-default-browser-check",
+                    "--disable-sync",
+                    "--proxy-bypass-list=localhost;127.0.0.1",
+                    "--disable-session-crashed-bubble",
+                    "--hide-crash-restore-bubble",
                 ]
                 if display_mode == "side_panel":
                     position = _calculate_app_position_for_side_panel(width, height)
@@ -5139,7 +5227,16 @@ def run_app(
                         args.append(f"--window-position={position[0]},{position[1]}")
                 try:
                     import subprocess
-                    subprocess.Popen(args)
+
+                    local_cwd = os.environ.get("SYSTEMROOT", r"C:\Windows")
+                    proc = subprocess.Popen(
+                        args,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        cwd=local_cwd,
+                        creationflags=subprocess.CREATE_NO_WINDOW,
+                    )
+                    browser_pid = proc.pid
                     logger.info("Opened browser app window: %s", url)
                     return
                 except Exception as e:
@@ -5154,6 +5251,7 @@ def run_app(
 
     def _close_browser_window_on_shutdown() -> None:
         """Close the app's browser window (browser mode only, Windows)."""
+        nonlocal browser_pid, browser_profile_dir
         if native or sys.platform != "win32":
             return
         try:
@@ -5182,6 +5280,22 @@ def run_app(
         except Exception as e:
             logger.debug("Failed to close browser window: %s", e)
 
+        # Best-effort: also terminate the dedicated Edge instance used for the UI window.
+        # WM_CLOSE may fail if the page title isn't applied yet (e.g., very early shutdown),
+        # or if Edge is stuck during startup.
+        try:
+            import time as _time
+            _time.sleep(0.2)
+        except Exception:
+            pass
+
+        if browser_profile_dir is not None:
+            if _kill_edge_processes_by_profile_dir(browser_profile_dir):
+                logger.debug("Terminated UI Edge (profile dir match): %s", browser_profile_dir)
+        elif browser_pid is not None:
+            if _kill_process_tree(browser_pid):
+                logger.debug("Terminated UI Edge (PID): %s", browser_pid)
+
     # Track if cleanup has been executed (prevent double execution)
     cleanup_done = False
 
@@ -5193,6 +5307,7 @@ def run_app(
         if cleanup_done:
             return
         cleanup_done = True
+        shutdown_event.set()
 
         cleanup_start = time_module.time()
         logger.info("Shutting down YakuLingo...")

@@ -1420,6 +1420,47 @@ class CopilotHandler:
             logger.warning("Failed to kill existing Edge: %s", e)
             return False
 
+    def _kill_edge_processes_by_profile_and_port(self, profile_dir: Path, port: int) -> bool:
+        """Kill Edge processes matching our dedicated profile + CDP port (Windows only).
+
+        This is a last-resort cleanup path for shutdown races where we may lose the
+        process handle/PID (e.g., the launcher process exits early), but the
+        dedicated Edge instance is still running.
+        """
+        if sys.platform != "win32":
+            return False
+
+        try:
+            import psutil
+        except Exception:
+            return False
+
+        profile_cmp = str(profile_dir).replace("\\", "/").lower()
+        port_flag = f"--remote-debugging-port={port}"
+
+        pids: set[int] = set()
+        for proc in psutil.process_iter(['pid', 'name', 'exe', 'cmdline']):
+            try:
+                name = (proc.info.get('name') or '').lower()
+                exe = (proc.info.get('exe') or '').lower()
+                if 'msedge' not in name and 'msedge' not in exe:
+                    continue
+                cmdline = " ".join(proc.info.get('cmdline') or []).replace("\\", "/").lower()
+                if port_flag in cmdline and profile_cmp in cmdline:
+                    pid = proc.info.get('pid')
+                    if isinstance(pid, int):
+                        pids.add(pid)
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+            except Exception:
+                continue
+
+        killed_any = False
+        for pid in sorted(pids):
+            if self._kill_process_tree(pid):
+                killed_any = True
+        return killed_any
+
     def _kill_process_tree(self, pid: int) -> bool:
         """Kill a process and all its child processes using taskkill /T.
 
@@ -4824,6 +4865,15 @@ class CopilotHandler:
                     if self._kill_existing_translator_edge():
                         browser_terminated = True
                         logger.info("Edge browser terminated (force via port)")
+
+            # Last resort: kill by profile+port scan in case PID tracking was lost
+            # (e.g., Edge launcher process exited early and child remained).
+            if not browser_terminated and sys.platform == "win32":
+                with suppress(Exception):
+                    profile_dir = self.profile_dir or self._get_profile_dir_path()
+                    if self._kill_edge_processes_by_profile_and_port(profile_dir, self.cdp_port):
+                        browser_terminated = True
+                        logger.info("Edge browser terminated (force via profile scan)")
 
         # Clear references (Playwright cleanup may fail but that's OK during shutdown)
         self._browser = None

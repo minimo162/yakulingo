@@ -2234,6 +2234,7 @@ class TranslationService:
         for block in blocks:
             # Get section index from block metadata
             # Different file types use different keys:
+            # - Generic: 'section_idx' (e.g., email paragraphs)
             # - Excel: 'sheet_idx'
             # - PowerPoint: 'slide_idx'
             # - PDF: 'page_idx'
@@ -2241,7 +2242,9 @@ class TranslationService:
             section_idx = None
             metadata = block.metadata
 
-            if 'sheet_idx' in metadata:
+            if 'section_idx' in metadata:
+                section_idx = metadata['section_idx']
+            elif 'sheet_idx' in metadata:
                 section_idx = metadata['sheet_idx']
             elif 'slide_idx' in metadata:
                 section_idx = metadata['slide_idx']

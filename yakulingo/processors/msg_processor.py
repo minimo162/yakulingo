@@ -250,7 +250,7 @@ class MsgProcessor(FileProcessor):
                 id="msg_subject",
                 text=subject,
                 location="\u4ef6\u540d",
-                metadata={'field': 'subject'}
+                metadata={'field': 'subject', 'section_idx': 0}
             )
 
         # Extract body paragraphs
@@ -278,6 +278,9 @@ class MsgProcessor(FileProcessor):
                             location=f"\u672c\u6587\u6bb5\u843d{non_empty_index + 1} (\u5206\u5272{chunk_index + 1})",
                             metadata={
                                 'field': 'body',
+                                # Section index for partial translation UI:
+                                # 0 = subject, 1.. = body paragraphs (including empty paragraphs).
+                                'section_idx': para_index + 1,
                                 'paragraph_index': para_index,  # Original index including empty paragraphs
                                 'chunk_index': chunk_index,
                                 'is_chunked': True,
@@ -291,6 +294,9 @@ class MsgProcessor(FileProcessor):
                         location=f"\u672c\u6587\u6bb5\u843d{non_empty_index + 1}",
                         metadata={
                             'field': 'body',
+                            # Section index for partial translation UI:
+                            # 0 = subject, 1.. = body paragraphs (including empty paragraphs).
+                            'section_idx': para_index + 1,
                             'paragraph_index': para_index,  # Original index including empty paragraphs
                             'is_chunked': False,
                         }

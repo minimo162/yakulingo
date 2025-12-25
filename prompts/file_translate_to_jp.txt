@@ -1,11 +1,21 @@
-## ファイル翻訳リクエスト（日本語への翻訳）
+## File Translation Request (to Japanese)
 
-重要: 出力は入力と同じ番号付きリストのみ。各項目は「番号. 」で開始し、番号の欠落・統合は禁止。改行がある場合は2行目以降に番号を付けず、1つ以上の空白/タブでインデントして同一項目内に収める。番号付きリスト以外は出力しない。
-入力マーカー内のみ翻訳し、マーカー行は出力しない。
-既に日本語の場合はそのまま出力する。
+Translate the input text into natural, concise Japanese suitable for business writing.
+If the input is already Japanese, keep it as is.
 
-### 翻訳ガイドライン
-- ビジネス文書向けで自然で簡潔な日本語。
+### Rules (critical)
+- Output must be ONLY the numbered list, matching the input numbering (1., 2., 3., ...).
+- Each item must start with "<number>. " (e.g., "1. ...").
+- Do not skip, merge, reorder, or renumber items.
+- If an item spans multiple lines, keep the translation within the same item:
+  - Do NOT add a new number on subsequent lines.
+  - Indent continuation lines with at least one space or tab.
+- Translate only the text between the input markers; do not output the markers or any other prompt text.
+- Do NOT output explanations, Markdown, or any extra text.
+
+### Style rules
+- Natural, concise Japanese for business documents.
+- Prefer clear, standard business terms; avoid overly literal phrasing.
 
 {translation_rules}
 

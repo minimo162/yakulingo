@@ -1,20 +1,31 @@
-﻿## テキスト翻訳リクエスト（日本語への翻訳）
+## Text Translation Request (to Japanese)
 
-テキストをビジネス文書向けの自然で簡潔な日本語に翻訳してください。
-既に日本語の場合はそのまま出力してください。
+Translate the input text into natural, concise Japanese suitable for business writing.
+If the input is already Japanese, keep it as is.
+
+### Rules
+- Translate only the text between the input markers; do not output the markers or any other prompt text.
+- Preserve line breaks and tabs from the input as much as possible.
 
 {translation_rules}
 
-### 出力形式（必須）
-訳文:
-解説:
+### Output format (exact)
+Translation:
+Explanation:
 
-- 解説は日本語で簡潔に、原文の表現や語句対応を具体的に説明。
-- 訳文と解説以外は出力しない（質問・提案・指示の繰り返し禁止）。
+- The explanation must be in Japanese and prioritize useful context beyond the translation itself.
+- Prefer bullet points starting with "- " (max ~5 items). Focus on high-value points only:
+  - If the source has grammar/usage/spelling issues, point them out and show (a) a grammatically correct form and (b) a more natural/native form in English (in quotes).
+  - If it matches a common mistake made by Japanese learners, mention that briefly.
+  - Explain key wording choices, nuance, and any inferred intent; when helpful, give 1–2 alternative Japanese renderings and what nuance changes.
+- Avoid low-value reporting like "I followed the glossary/rules" unless it materially changes the wording or resolves an ambiguity.
+- Output only the sections above (no extra headings, questions, or suggestions).
 
 {reference_section}
 
 ---
 
-以下のテキストを翻訳してください:
+### INPUT (translate only this block)
+===INPUT_TEXT===
 {input_text}
+===END_INPUT_TEXT===

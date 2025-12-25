@@ -46,7 +46,7 @@ M365 Copilotを翻訳エンジンとして使用し、テキストとドキュ�
 
 ### 1.3 言語自動検出
 
-入力テキストの言語をM365 Copilotで自動検出し、適切な方向に翻訳：
+入力テキストの言語をローカルで自動検出し、適切な方向に翻訳：
 
 | 入力言語 | 出力 |
 |---------|------|
@@ -65,12 +65,12 @@ M365 Copilotを翻訳エンジンとして使用し、テキストとドキュ�
 
 | 形式 | 拡張子 | ライブラリ |
 |------|--------|----------|
-| Excel | `.xlsx` `.xls` | xlwings (Win/Mac) / openpyxl (fallback) |
+| Excel | `.xlsx` `.xls` | xlwings (Win/Mac, Excel必須。`.xls` は xlwings のみ) / openpyxl (fallback, `.xlsx` のみ) |
 | Word | `.docx` | python-docx（*.doc* は未対応） |
-| PowerPoint | `.pptx` `.ppt` | python-pptx |
+| PowerPoint | `.pptx` | python-pptx（*.ppt は未対応） |
 | PDF | `.pdf` | PyMuPDF, pdfminer.six, PP-DocLayout-L (PaddleOCR) |
 | Text | `.txt` | Built-in (plain text) |
-| Outlook | `.msg` | win32com (Windows + Outlook環境のみ) |
+| Outlook | `.msg` | extract-msg（読込） / win32com（書込: Windows + Outlook環境） |
 
 ### 1.5 技術スタック
 
@@ -725,13 +725,10 @@ class CopilotHandler:
 - Free ライセンス: 8,000文字
 - Paid ライセンス: 128,000文字
 
-**動的プロンプト切り替え:**
-プロンプトが`max_chars_per_batch`（デフォルト: 4,000文字）を超える場合、自動的にファイル添付モードに切り替え：
-1. プロンプトを一時ファイルとして保存
-2. Copilotにファイルを添付
-3. トリガーメッセージを送信: "Please follow the instructions in the attached file and translate accordingly."
-
-これにより、FreeとPaidの両方のCopilotユーザーに対応。
+**バッチ分割とリトライ:**
+- `max_chars_per_batch`（デフォルト: 1,000文字、`config/settings.template.json`）でテキストブロックをバッチ分割
+- 単一ブロックが上限を超える場合は単独バッチとして処理（警告ログ）
+- Copilotの応答が「分割要求」と判定された場合、`max_chars_per_batch` を段階的に縮小してリトライ（上限回数あり）
 
 ### 6.2 TranslationService
 
@@ -743,11 +740,10 @@ class TranslationService:
         '.xlsx': ExcelProcessor(),
         '.xls': ExcelProcessor(),
         '.docx': WordProcessor(),
-        '.doc': WordProcessor(),
         '.pptx': PptxProcessor(),
-        '.ppt': PptxProcessor(),
         '.pdf': PdfProcessor(),
         '.txt': TxtProcessor(),
+        '.msg': MsgProcessor(),
     }
 
     def detect_language(text: str) -> str:
@@ -784,8 +780,8 @@ class TranslationService:
 
 ```python
 class BatchTranslator:
-    MAX_BATCH_SIZE = 50         # ブロック数上限
-    MAX_CHARS_PER_BATCH = 4000  # 文字数上限（信頼性向上のため縮小）
+    DEFAULT_MAX_CHARS_PER_BATCH = 1000  # 文字数上限（Copilot入力の安全値）
+    DEFAULT_REQUEST_TIMEOUT = 600       # タイムアウト（秒）
 
     def translate_blocks(blocks, reference_files, on_progress) -> dict[str, str]:
         """
@@ -1173,7 +1169,8 @@ class HistoryDB:
 
 | データ | パス |
 |--------|------|
-| アプリ設定 | `config/settings.json` |
+| アプリ設定（ユーザー） | `config/user_settings.json` |
+| アプリ設定（デフォルト） | `config/settings.template.json` |
 | 翻訳履歴 | `~/.yakulingo/history.db` |
 | 参照ファイル | `glossary.csv`（デフォルト） |
 
@@ -1239,17 +1236,17 @@ if HAS_PYWIN32:
 @dataclass
 class AppSettings:
     # Reference Files (用語集、参考資料など)
-    # デフォルトで同梱のglossary.csvを参照
-    reference_files: list[str] = field(default_factory=lambda: ["glossary.csv"])
+    # reference_files は追加の参照ファイル（ユーザー指定）
+    # 同梱 glossary.csv の自動参照は use_bundled_glossary で制御
+    reference_files: list[str] = field(default_factory=list)
     output_directory: Optional[str] = None  # None = 入力と同じ
 
     # UI
     last_tab: str = "text"
-    window_width: int = 1400              # 3カラムレイアウト対応
-    window_height: int = 850
+    # NOTE: window_width/window_height は廃止（表示領域から動的に計算）
 
     # Advanced
-    max_chars_per_batch: int = 4000      # 信頼性向上のため縮小
+    max_chars_per_batch: int = 1000      # 文字数上限（Copilot入力の安全値）
     request_timeout: int = 600           # 10分（大規模翻訳対応）
     max_retries: int = 3
 
@@ -1259,34 +1256,37 @@ class AppSettings:
     translation_style: str = "concise"   # ファイル翻訳の英訳スタイル
 
     # Text Translation Options
-    use_bundled_glossary: bool = False        # 同梱glossary.csvを常に利用
+    use_bundled_glossary: bool = True         # 同梱 glossary.csv を使用（デフォルトでオン）
 
     # Font Settings (全ファイル形式共通)
     font_size_adjustment_jp_to_en: float = 0.0  # pt（0で調整なし）
-    font_size_min: float = 6.0                  # pt（最小フォントサイズ）
+    font_size_min: float = 8.0                  # pt（最小フォントサイズ）
     font_jp_to_en: str = "Arial"                # 英訳時の出力フォント
     font_en_to_jp: str = "MS Pゴシック"         # 和訳時の出力フォント
 
     # PDF Layout Options (PP-DocLayout-L)
     ocr_batch_size: int = 5              # ページ/バッチ
-    ocr_dpi: int = 200                   # レイアウト解析解像度
+    ocr_dpi: int = 300                   # レイアウト解析解像度
     ocr_device: str = "auto"             # "auto", "cpu", "cuda"
+
+    # Browser Display Mode
+    browser_display_mode: str = "side_panel"   # "side_panel", "minimized", "foreground"
 
     # Auto Update
     auto_update_enabled: bool = True
-    auto_update_check_interval: int = 86400  # 24時間
+    auto_update_check_interval: int = 0       # 0=起動毎
     github_repo_owner: str = "minimo162"
     github_repo_name: str = "yakulingo"
     last_update_check: Optional[str] = None
 ```
 
-**設定ファイル:** `config/settings.json`
+**設定ファイル:** `config/settings.template.json`（デフォルト） / `config/user_settings.json`（ユーザー設定）
 
 ### 12.2 起動方法
 
 ```bash
 # 開発環境
-python app.py
+uv run python app.py
 
 # 配布版
 YakuLingo.exe    # Rust製ネイティブランチャー
@@ -1681,7 +1681,7 @@ python -c "import time; t=time.time(); from yakulingo.ui import run_app; print(f
 - WindowsのDPIスケーリング対応を改善
 - アプリ終了時のクリーンアップ処理を確実に実行
 - Excel図形テキスト取得時のCOMオブジェクトアクセスを最適化
-- 自動更新時にglossary.csvとsettings.jsonを上書きするように変更
+- 自動更新時に `glossary.csv` と `settings.template.json` を更新（`user_settings.json` は保持）
 
 ### 2.11 (2025-12)
 - ウィンドウサイズを固定（1400×850、ノートPC 1920×1200 向け）
@@ -1735,7 +1735,7 @@ python -c "import time; t=time.time(); from yakulingo.ui import run_app; print(f
 - 翻訳完了ダイアログ改善（出力ファイル一覧・アクションボタン）
 
 ### 2.3 (2025-12)
-- Copilot Free対応（動的プロンプト切り替え）
+- Copilot Free対応（バッチ分割/リトライ）
 - コード品質向上（例外処理、リソース管理、定数化）
 
 ### 2.2 (2025-12)

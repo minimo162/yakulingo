@@ -81,18 +81,19 @@ setup.ps1は以下を実行：
 2. 既存インストールがあれば**全てのファイルを削除**（環境フォルダ含む）
 3. ZIPをローカルにコピー・展開（robocopyスキップ時は警告表示）
 4. `%LOCALAPPDATA%\YakuLingo` にファイル配置
-5. **ユーザーデータの復元**: glossary.csvとsettings.jsonをマージ
+5. **ユーザーデータの復元**: `config/user_settings.json` は保持（復元）、`glossary.csv` は差分があればバックアップして更新
 6. ショートカット作成
 7. YakuLingoを起動
 
-### ユーザーデータのマージ処理
+### ユーザーデータの保持/更新処理
 
-| データ | マージ方法 |
+| データ | 動作 |
 |--------|----------|
-| glossary.csv | 既存の用語を保持しつつ、新規用語を追加（「ソース,翻訳」ペアで重複判定） |
-| settings.json | 新設定をベースに、ユーザー保護対象の設定のみ上書き（翻訳スタイル、フォント設定等） |
+| `config/user_settings.json` | 既存ファイルをバックアップ → 展開後に復元（ユーザー設定は保持） |
+| `config/settings.template.json` | 新バージョンで上書き（デフォルト設定） |
+| `glossary.csv` | 新旧・旧版（`glossary_old.csv`）と比較し、カスタマイズ検出時はデスクトップへ `glossary_backup_YYYYMMDD*.csv` を作成してから上書き |
 
-> **Note**: マージ処理は末尾改行やネストしたオブジェクトを正しく処理します。
+> **Note**: `glossary.csv` は自動マージではなく「比較 → 必要ならバックアップ → 上書き」です（意図せず用語集が消えるのを防ぐため）。
 
 ### 環境フォルダの扱い
 
@@ -123,7 +124,7 @@ setup.vbsは常にクリーンインストールを行い、環境フォルダ�
 | **ファイル** | `app.py`, `pyproject.toml`, `uv.lock`, `uv.toml`, `YakuLingo.exe`, `README.md`, `glossary.csv` |
 | **保持（更新対象外）** | `.venv/`, `.uv-python/`, `.playwright-browsers/` |
 
-> **Note**: `config/settings.json` は `config/` フォルダごと上書きされます（ユーザー設定はリセット）
+> **Note**: `config/settings.template.json` は上書きされますが、`config/user_settings.json` は保持されます。
 
 ### プロキシ環境での動作
 
@@ -152,12 +153,13 @@ setup.vbsは常にクリーンインストールを行い、環境フォルダ�
 
 | データ | 場所 | 更新時の扱い |
 |--------|------|-------------|
-| アプリ設定 | `%LOCALAPPDATA%\YakuLingo\config\settings.json` | 上書き |
+| アプリ設定（ユーザー） | `%LOCALAPPDATA%\YakuLingo\config\user_settings.json` | 保持 |
+| アプリ設定（デフォルト） | `%LOCALAPPDATA%\YakuLingo\config\settings.template.json` | 上書き |
 | 翻訳履歴 | `%USERPROFILE%\.yakulingo\history.db` | 保持 |
-| 用語集 | `%LOCALAPPDATA%\YakuLingo\glossary.csv` | 上書き |
+| 用語集 | `%LOCALAPPDATA%\YakuLingo\glossary.csv` | 上書き（カスタマイズ検出時はデスクトップへバックアップ） |
 
 > **Note**: 翻訳履歴はアプリケーションフォルダ外に保存されるため、アンインストール後も残ります。
-> アプリ設定と用語集は自動更新時に上書きされます。カスタマイズした設定は更新後に再設定してください。
+> 用語集をカスタマイズしている場合、更新時にデスクトップへバックアップが作成されます。
 
 ## トラブルシューティング
 

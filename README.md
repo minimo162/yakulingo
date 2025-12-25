@@ -52,6 +52,7 @@ YakuLingoが提供する主な機能一覧です。
 | Outlook | `.msg` | メール本文（Windows + Outlook環境のみ） | - |
 
 > **Note**: ヘッダー/フッターは全形式で翻訳対象外
+> **Note**: `.xls` は xlwings（Excel）経由で処理するため、Excel がインストールされた環境が必要です。
 
 ### PDF翻訳について
 
@@ -63,8 +64,10 @@ PDF翻訳はPP-DocLayout-L（PaddleOCR）によるレイアウト解析を使用
 - **埋め込みテキストのみ対応**: スキャンPDF（画像のみ）は翻訳不可
 - **部分ページ翻訳**: 未選択ページは原文のまま保持
 
-> **Note**: PDF翻訳機能を使用するには追加の依存関係が必要です：
+> **Note**: PDFのレイアウト解析（PP-DocLayout-L）を使用するには追加の依存関係が必要です：
 > ```bash
+> uv sync --extra ocr
+> # または
 > pip install -r requirements_pdf.txt
 > ```
 
@@ -139,7 +142,9 @@ pip install -r requirements.txt
 # Playwrightブラウザのインストール
 playwright install chromium
 
-# PDF翻訳機能を使用する場合（オプション）
+# PDFのレイアウト解析（PP-DocLayout-L）を使う場合（オプション）
+uv sync --extra ocr
+# または
 pip install -r requirements_pdf.txt
 
 # 起動（デスクトップアプリとして自動で立ち上がります）
@@ -226,22 +231,27 @@ YakuLingoを初めて使う際は、以下の手順でM365 Copilotにログイ�
 
 ## 設定
 
-### config/settings.json
+### 設定ファイル
+
+- `config/settings.template.json`: デフォルト値（開発者が管理、アップデートで上書き）
+- `config/user_settings.json`: ユーザーが変更した設定のみ（アップデートで保持）
+
+#### config/settings.template.json（例）
 
 ```json
 {
   "reference_files": [],
   "output_directory": null,
   "last_tab": "text",
-  "max_chars_per_batch": 4000,
+  "max_chars_per_batch": 1000,
   "request_timeout": 600,
   "max_retries": 3,
   "bilingual_output": false,
   "export_glossary": false,
   "translation_style": "concise",
-  "use_bundled_glossary": false,
+  "use_bundled_glossary": true,
   "font_size_adjustment_jp_to_en": 0.0,
-  "font_size_min": 6.0,
+  "font_size_min": 8.0,
   "font_jp_to_en": "Arial",
   "font_en_to_jp": "MS Pゴシック",
   "ocr_batch_size": 5,
@@ -249,10 +259,26 @@ YakuLingoを初めて使う際は、以下の手順でM365 Copilotにログイ�
   "ocr_device": "auto",
   "browser_display_mode": "side_panel",
   "auto_update_enabled": true,
-  "auto_update_check_interval": 86400,
+  "auto_update_check_interval": 0,
   "github_repo_owner": "minimo162",
   "github_repo_name": "yakulingo",
   "last_update_check": null
+}
+```
+
+#### config/user_settings.json（例）
+
+```json
+{
+  "translation_style": "concise",
+  "font_jp_to_en": "Arial",
+  "font_en_to_jp": "MS Pゴシック",
+  "font_size_adjustment_jp_to_en": 0.0,
+  "bilingual_output": false,
+  "export_glossary": false,
+  "use_bundled_glossary": true,
+  "browser_display_mode": "side_panel",
+  "last_tab": "text"
 }
 ```
 
@@ -263,10 +289,10 @@ YakuLingoを初めて使う際は、以下の手順でM365 Copilotにログイ�
 | `translation_style` | ファイル翻訳のスタイル | "concise" |
 | `bilingual_output` | 対訳ファイルを生成 | false |
 | `export_glossary` | 用語集CSVを生成 | false |
+| `use_bundled_glossary` | 同梱 `glossary.csv` を自動で参照 | true |
 | `font_jp_to_en` | 英訳時の出力フォント | Arial |
 | `font_en_to_jp` | 和訳時の出力フォント | MS Pゴシック |
 | `browser_display_mode` | ブラウザ表示モード | "side_panel" |
-| `auto_update_enabled` | 起動時の自動更新チェック | true |
 
 **翻訳スタイル**: `"standard"`（標準）, `"concise"`（簡潔）, `"minimal"`（最簡潔）
 
@@ -279,20 +305,21 @@ YakuLingoを初めて使う際は、以下の手順でM365 Copilotにログイ�
 > **Note**: 画面が狭い場合（作業領域幅 < 1310px）は `side_panel` を自動的に `minimized` へフォールバックし、アプリは1パネル（フル幅）で起動します。
 > **Note**: Windowsではウィンドウサイズはプライマリモニターの作業領域（タスクバー除外）を基準に自動計算されます。取得できない場合は最も大きいモニターを使用します。
 
-**用語集処理**: 用語集は常にファイルとして添付されます（用語集が増えても対応可能）。
+**用語集処理**: `use_bundled_glossary=true` の場合、同梱 `glossary.csv` をファイルとして自動添付します（デフォルト: true）。
 
 #### 詳細設定（通常は変更不要）
 
 | 設定 | 説明 | デフォルト |
 |------|------|----------|
 | `output_directory` | 出力先フォルダ（nullは入力と同じ場所） | null |
-| `use_bundled_glossary` | 同梱 `glossary.csv` を常に利用 | false |
 | `font_size_adjustment_jp_to_en` | JP→EN時のサイズ調整 (pt) | 0.0 |
-| `font_size_min` | 最小フォントサイズ (pt) | 6.0 |
+| `font_size_min` | 最小フォントサイズ (pt) | 8.0 |
 | `ocr_batch_size` | PDF処理のバッチページ数 | 5 |
 | `ocr_dpi` | PDF処理の解像度 | 300 |
-| `max_chars_per_batch` | Copilot送信1回あたりの最大文字数 | 4000 |
+| `max_chars_per_batch` | Copilot送信1回あたりの最大文字数 | 1000 |
 | `request_timeout` | 翻訳リクエストのタイムアウト（秒） | 600 |
+| `auto_update_enabled` | 起動時の自動更新チェック | true |
+| `auto_update_check_interval` | 自動更新チェック間隔（秒、0=起動毎） | 0 |
 
 > **Note**: `ocr_*` 設定はPDF処理（レイアウト解析）に使用されます。設定名は互換性のため維持しています。
 
@@ -431,7 +458,7 @@ YakuLingo/
 
 | データ | 場所 |
 |--------|------|
-| 設定ファイル | `config/settings.json` |
+| 設定ファイル | `config/user_settings.json`（ユーザー設定） / `config/settings.template.json`（デフォルト） |
 | 翻訳履歴 | `~/.yakulingo/history.db` |
 | ログファイル | `~/.yakulingo/logs/startup.log` |
 | 参照ファイル | `glossary.csv`（デフォルト） |

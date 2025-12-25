@@ -24,7 +24,7 @@ def _create_textarea_with_keyhandler(
     state: AppState,
     on_source_change: Callable[[str], None],
     on_translate: Callable[[], None],
-    placeholder: str = '好きな言語で入力…',
+    placeholder: str = '翻訳したい文章を入力してください',
     value: Optional[str] = None,
     extra_classes: str = '',
     autogrow: bool = False,
@@ -165,10 +165,6 @@ def _create_large_input_panel(
 ):
     """Large input panel for INPUT state - spans 2 columns"""
     with ui.column().classes('flex-1 w-full gap-4'):
-        # Empty state (fills the unused canvas in INPUT mode)
-        if not state.source_text and not state.text_translating:
-            _render_input_empty_state(on_open_file_picker)
-
         # Main card container - centered and larger
         with ui.element('div').classes('main-card w-full'):
             # Input container
@@ -251,13 +247,6 @@ def _create_large_input_panel(
 
                         with ui.button(on_click=handle_translate_click).classes('translate-btn').props('no-caps') as btn:
                             ui.label('翻訳する')
-                            with ui.row().classes('shortcut-keys ml-2'):
-                                with ui.element('span').classes('keycap'):
-                                    ui.label('Ctrl')
-                                with ui.element('span').classes('keycap-plus'):
-                                    ui.label('+')
-                                with ui.element('span').classes('keycap'):
-                                    ui.label('Enter')
                         if state.text_translating:
                             btn.props('loading disable')
                         elif not state.can_translate():
@@ -266,28 +255,6 @@ def _create_large_input_panel(
                         # Provide button reference for dynamic state updates
                         if on_translate_button_created:
                             on_translate_button_created(btn)
-
-        # Hint text - Nani-style single line, centered
-        with ui.element('div').classes('hint-section'):
-            with ui.element('div').classes('hint-primary'):
-                with ui.element('span').classes('keycap keycap-hint'):
-                    ui.label('Ctrl')
-                ui.label('+').classes('text-muted text-xs mx-0.5')
-                with ui.element('span').classes('keycap keycap-hint'):
-                    ui.label('Alt')
-                ui.label('+').classes('text-muted text-xs mx-0.5')
-                with ui.element('span').classes('keycap keycap-hint'):
-                    ui.label('J')
-                ui.label(': 他のアプリで選択中の文章を取り込んで翻訳').classes('text-muted ml-1')
-            with ui.element('div').classes('hint-primary'):
-                ui.label('ファイルは画面にドラッグ＆ドロップで翻訳できます').classes('text-muted')
-
-
-def _render_input_empty_state(on_open_file_picker: Optional[Callable[[], None]] = None) -> None:
-    """Render empty state placeholder for the INPUT panel."""
-    with ui.element('div').classes('input-empty-state'):
-        ui.icon('translate').classes('input-empty-icon')
-        ui.label('翻訳したい文章を入力してください').classes('input-empty-title')
 
 
 def create_text_result_panel(
@@ -671,4 +638,3 @@ def _render_option_en(
             if option.explanation:
                 with ui.element('div').classes('nani-explanation'):
                     _render_explanation(option.explanation)
-

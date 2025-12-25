@@ -2729,54 +2729,106 @@ class YakuLingoApp:
         """Create left sidebar with logo, nav, and history"""
         # Logo section
         with ui.row().classes('sidebar-header items-center gap-3'):
-            with ui.element('div').classes('app-logo-icon'):
-                ui.html('<svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M12.87 15.07l-2.54-2.51.03-.03c1.74-1.94 2.98-4.17 3.71-6.53H17V4h-7V2H8v2H1v1.99h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2l-4.5-12zm-2.62 7l1.62-4.33L19.12 17h-3.24z"/></svg>', sanitize=False)
-            ui.label('YakuLingo').classes('app-logo')
+            def on_logo_click():
+                self._start_new_translation()
 
-        # Status indicator (browser connection only, not login state)
+            with ui.element('div').classes('app-logo-icon').props('role="button" aria-label="新規翻訳"') as logo_icon:
+                ui.html('<svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M12.87 15.07l-2.54-2.51.03-.03c1.74-1.94 2.98-4.17 3.71-6.53H17V4h-7V2H8v2H1v1.99h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2l-4.5-12zm-2.62 7l1.62-4.33L19.12 17h-3.24z"/></svg>', sanitize=False)
+
+            logo_icon.on('click', on_logo_click)
+            ui.label('YakuLingo').classes('app-logo app-logo-hidden')
+
+        # Status indicator (Copilot readiness: user can start translation safely)
         @ui.refreshable
         def header_status():
-            # Check actual connection state, not just cached flag
-            is_connected = self.copilot.is_connected if self._copilot else False
-            # Update cached state to match actual state
-            self.state.copilot_ready = is_connected
+            # Keep Copilot lazy-loaded for startup performance (don't create it just for UI).
+            copilot = self._copilot
+            if not copilot:
+                self.state.copilot_ready = False
+                self.state.connection_state = ConnectionState.CONNECTING
+                with ui.element('div').classes('status-indicator connecting').props('role="status" aria-live="polite"'):
+                    ui.element('div').classes('status-dot connecting').props('aria-hidden="true"')
+                    with ui.column().classes('gap-0'):
+                        ui.label('準備中...').classes('text-xs')
+                        ui.label('翻訳の準備をしています').classes('text-2xs opacity-80')
+                return
 
-            if is_connected:
+            # Check real page state (URL + chat input) to avoid showing "ready" while login/session expired.
+            from yakulingo.services.copilot_handler import CopilotHandler
+            from yakulingo.services.copilot_handler import ConnectionState as CopilotConnectionState
+
+            error = copilot.last_connection_error or ""
+            is_connected = copilot.is_connected  # cached flag; validated by check_copilot_state below
+
+            copilot_state: str | None = None
+            try:
+                copilot_state = copilot.check_copilot_state(timeout=1)
+            except TimeoutError:
+                copilot_state = None
+            except Exception as e:
+                logger.debug("Failed to check Copilot state for UI: %s", e)
+                copilot_state = None
+
+            if is_connected and copilot_state == CopilotConnectionState.READY:
+                self.state.copilot_ready = True
                 self.state.connection_state = ConnectionState.CONNECTED
                 with ui.element('div').classes('status-indicator connected').props('role="status" aria-live="polite"'):
                     ui.element('div').classes('status-dot connected').props('aria-hidden="true"')
-                    ui.label('接続済み')
-            else:
-                # Check for specific error states from CopilotHandler
-                error = self.copilot.last_connection_error if self._copilot else ""
-                from yakulingo.services.copilot_handler import CopilotHandler
+                    with ui.column().classes('gap-0'):
+                        ui.label('準備完了').classes('text-xs')
+                        ui.label('翻訳できます').classes('text-2xs opacity-80')
+                return
 
-                if error == CopilotHandler.ERROR_LOGIN_REQUIRED:
-                    self.state.connection_state = ConnectionState.LOGIN_REQUIRED
-                    with ui.element('div').classes('status-indicator error').props('role="status" aria-live="polite"'):
-                        ui.element('div').classes('status-dot error').props('aria-hidden="true"')
-                        with ui.column().classes('gap-0'):
-                            ui.label('ログインが必要').classes('text-xs')
-                            ui.label('ログイン後、自動で接続します').classes('text-2xs text-muted')
-                            ui.label('再接続').classes('text-2xs cursor-pointer text-primary').style('text-decoration: underline').on('click', lambda: asyncio.create_task(self._reconnect()))
-                elif error == CopilotHandler.ERROR_EDGE_NOT_FOUND:
-                    self.state.connection_state = ConnectionState.EDGE_NOT_RUNNING
-                    with ui.element('div').classes('status-indicator error').props('role="status" aria-live="polite"'):
-                        ui.element('div').classes('status-dot error').props('aria-hidden="true"')
-                        with ui.column().classes('gap-0'):
-                            ui.label('Edgeが見つかりません').classes('text-xs')
-                elif error in (CopilotHandler.ERROR_CONNECTION_FAILED, CopilotHandler.ERROR_NETWORK):
-                    self.state.connection_state = ConnectionState.CONNECTION_FAILED
-                    with ui.element('div').classes('status-indicator error').props('role="status" aria-live="polite"'):
-                        ui.element('div').classes('status-dot error').props('aria-hidden="true"')
-                        with ui.column().classes('gap-0'):
-                            ui.label('接続に失敗').classes('text-xs')
-                            ui.label('再試行中...').classes('text-2xs text-muted')
-                else:
-                    self.state.connection_state = ConnectionState.CONNECTING
-                    with ui.element('div').classes('status-indicator connecting').props('role="status" aria-live="polite"'):
-                        ui.element('div').classes('status-dot connecting').props('aria-hidden="true"')
-                        ui.label('接続中...')
+            # Not ready (yet) from here.
+            self.state.copilot_ready = False
+
+            if (error == CopilotHandler.ERROR_LOGIN_REQUIRED
+                    or copilot_state == CopilotConnectionState.LOGIN_REQUIRED):
+                self.state.connection_state = ConnectionState.LOGIN_REQUIRED
+                with ui.element('div').classes('status-indicator login-required').props('role="status" aria-live="polite"'):
+                    ui.element('div').classes('status-dot login-required').props('aria-hidden="true"')
+                    with ui.column().classes('gap-0'):
+                        ui.label('ログインが必要').classes('text-xs')
+                        ui.label('ログイン後に翻訳できます').classes('text-2xs opacity-80')
+                        ui.label('再接続').classes('text-2xs cursor-pointer text-primary').style('text-decoration: underline').on(
+                            'click', lambda: asyncio.create_task(self._reconnect())
+                        )
+                return
+
+            if copilot_state == CopilotConnectionState.LOADING:
+                self.state.connection_state = ConnectionState.CONNECTING
+                with ui.element('div').classes('status-indicator connecting').props('role="status" aria-live="polite"'):
+                    ui.element('div').classes('status-dot connecting').props('aria-hidden="true"')
+                    with ui.column().classes('gap-0'):
+                        ui.label('準備中...').classes('text-xs')
+                        ui.label('Copilotを読み込み中').classes('text-2xs opacity-80')
+                return
+
+            if error == CopilotHandler.ERROR_EDGE_NOT_FOUND:
+                self.state.connection_state = ConnectionState.EDGE_NOT_RUNNING
+                with ui.element('div').classes('status-indicator error').props('role="status" aria-live="polite"'):
+                    ui.element('div').classes('status-dot error').props('aria-hidden="true"')
+                    with ui.column().classes('gap-0'):
+                        ui.label('Edgeが見つかりません').classes('text-xs')
+                return
+
+            if (error in (CopilotHandler.ERROR_CONNECTION_FAILED, CopilotHandler.ERROR_NETWORK)
+                    or (is_connected and copilot_state == CopilotConnectionState.ERROR)):
+                self.state.connection_state = ConnectionState.CONNECTION_FAILED
+                with ui.element('div').classes('status-indicator error').props('role="status" aria-live="polite"'):
+                    ui.element('div').classes('status-dot error').props('aria-hidden="true"')
+                    with ui.column().classes('gap-0'):
+                        ui.label('接続に失敗').classes('text-xs')
+                        ui.label('再試行中...').classes('text-2xs opacity-80')
+                return
+
+            # Default: still preparing / connecting.
+            self.state.connection_state = ConnectionState.CONNECTING
+            with ui.element('div').classes('status-indicator connecting').props('role="status" aria-live="polite"'):
+                ui.element('div').classes('status-dot connecting').props('aria-hidden="true"')
+                with ui.column().classes('gap-0'):
+                    ui.label('準備中...').classes('text-xs')
+                    ui.label('翻訳の準備をしています').classes('text-2xs opacity-80')
 
         self._header_status = header_status
         header_status()

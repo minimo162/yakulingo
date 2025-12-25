@@ -96,8 +96,9 @@ class AppState:
     # Reference files
     reference_files: list[Path] = field(default_factory=list)
 
-    # Copilot connection (lazy detection - checked on first translation)
-    copilot_ready: bool = False  # Set to True after first successful translation
+    # Copilot connection / readiness
+    # True when Copilot chat UI is ready (user can start translation without extra setup).
+    copilot_ready: bool = False
     copilot_error: str = ""
     connection_state: ConnectionState = ConnectionState.CONNECTING  # Current connection state for UI
 

@@ -986,6 +986,11 @@ class CopilotHandler:
         '.fai-ChainOfThought__card',
         '[class*="ChainOfThought__card"]',
     )
+    CHAIN_OF_THOUGHT_EXPAND_BUTTON_SELECTORS = (
+        '.fai-ChainOfThought__expandButton',
+        '[class*="ChainOfThought__expandButton"]',
+        '[id^="cot-"][id$="expand-button"]',
+    )
     CHAIN_OF_THOUGHT_PANEL_SELECTORS = (
         '.fai-ChainOfThought__activitiesPanel',
         '[class*="ChainOfThought__activitiesPanel"]',
@@ -4731,7 +4736,9 @@ class CopilotHandler:
 
     def check_copilot_state(self, timeout: int = 5) -> str:
         """Thread-safe wrapper for _check_copilot_state."""
-        return _playwright_executor.execute(self._check_copilot_state, timeout)
+        # NOTE: The `timeout` argument is treated as the maximum wait time for the Playwright
+        # thread operation (not the internal logic timeout).
+        return _playwright_executor.execute(self._check_copilot_state, timeout, timeout=timeout)
 
     def wait_for_page_load(self, wait_seconds: float = 3.0) -> bool:
         """ページの読み込み完了を待機する（スレッドセーフ）。
@@ -6915,6 +6922,9 @@ class CopilotHandler:
             if not scrolled_chat:
                 # During generation, Copilot may render the Chain-of-Thought card before the reply body.
                 scrolled_chat = _scroll_latest_for_selectors(self.CHAIN_OF_THOUGHT_CARD_SELECTORS)
+            if not scrolled_chat:
+                # Some UI variants render only the Chain-of-Thought expand button (no card wrapper).
+                scrolled_chat = _scroll_latest_for_selectors(self.CHAIN_OF_THOUGHT_EXPAND_BUTTON_SELECTORS)
 
             # 2) Chain-of-Thought panels can be internally scrollable; keep them at the latest item too.
             scrolled_cot = _scroll_latest_for_selectors(self.CHAIN_OF_THOUGHT_PANEL_SELECTORS)

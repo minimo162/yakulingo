@@ -446,7 +446,7 @@ function Resolve-SetupPath {
     $oneDriveRoots = $oneDriveRoots | Select-Object -Unique
 
     foreach ($root in $oneDriveRoots) {
-        if (Test-IsUnderPath -Path $resolvedPath -Root $root -or Test-IsUnderPath -Path $targetPath -Root $root) {
+        if ((Test-IsUnderPath -Path $resolvedPath -Root $root) -or (Test-IsUnderPath -Path $targetPath -Root $root)) {
             throw "SetupPath cannot be inside OneDrive: $resolvedPath`n`nPlease use a local path such as $($env:LOCALAPPDATA)\\$AppName."
         }
     }

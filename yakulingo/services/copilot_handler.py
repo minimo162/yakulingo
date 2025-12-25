@@ -592,50 +592,114 @@ def _log_playwright_paths() -> None:
     try:
         deep_scan = os.environ.get("YAKULINGO_PLAYWRIGHT_PATH_DEEP_SCAN", "").lower() in ("1", "true", "yes", "on")
 
-        # Check PLAYWRIGHT_BROWSERS_PATH environment variable
-        browsers_path_env = os.environ.get('PLAYWRIGHT_BROWSERS_PATH', '')
-        if browsers_path_env:
-            logger.debug("[PLAYWRIGHT_INIT] PLAYWRIGHT_BROWSERS_PATH=%s", browsers_path_env)
-
-        # Default Playwright browser location
-        if sys.platform == 'win32':
-            local_app_data = os.environ.get('LOCALAPPDATA', '')
-            default_path = Path(local_app_data) / 'ms-playwright' if local_app_data else None
-        else:
-            default_path = Path.home() / '.cache' / 'ms-playwright'
-
-        if default_path and default_path.exists():
-            # List browser directories (lightweight).
-            # NOTE: Avoid deep scans (rglob/stat) by default because it can trigger
-            # antivirus scanning and significantly slow down cold Playwright startup.
-            browser_dirs = [d.name for d in default_path.iterdir() if d.is_dir()]
-            if deep_scan:
-                total_size_mb = sum(
-                    sum(f.stat().st_size for f in d.rglob('*') if f.is_file())
-                    for d in default_path.iterdir() if d.is_dir()
-                ) / (1024 * 1024)
-                logger.debug(
-                    "[PLAYWRIGHT_INIT] Browser path: %s (%.1f MB, browsers: %s)",
-                    default_path,
-                    total_size_mb,
-                    ', '.join(browser_dirs[:5]),
-                )
+        browsers_path_env_raw = os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "").strip()
+        if browsers_path_env_raw:
+            if browsers_path_env_raw == "0":
+                logger.debug("[PLAYWRIGHT_INIT] PLAYWRIGHT_BROWSERS_PATH=0 (special value)")
             else:
+                resolved_env_path = _resolve_playwright_browsers_path(browsers_path_env_raw)
                 logger.debug(
-                    "[PLAYWRIGHT_INIT] Browser path: %s (browsers: %s)",
-                    default_path,
-                    ', '.join(browser_dirs[:5]),
+                    "[PLAYWRIGHT_INIT] PLAYWRIGHT_BROWSERS_PATH=%s (resolved=%s)",
+                    browsers_path_env_raw,
+                    resolved_env_path,
                 )
-        elif default_path:
-            logger.debug("[PLAYWRIGHT_INIT] Browser path not found: %s", default_path)
 
-        # Check for Node.js in Playwright
-        if default_path and deep_scan:
-            node_paths = list(default_path.rglob('node.exe' if sys.platform == 'win32' else 'node'))
-            if node_paths:
-                logger.debug("[PLAYWRIGHT_INIT] Node.js found: %s", node_paths[0])
+        effective_browsers_path = _get_effective_playwright_browsers_path()
+        if effective_browsers_path:
+            _log_playwright_browsers_path(
+                effective_browsers_path,
+                label="effective",
+                deep_scan=deep_scan,
+            )
+
+        # If an env override is set, also show the default path for troubleshooting, but label it clearly.
+        default_browsers_path = _get_default_playwright_browsers_path()
+        if (
+            browsers_path_env_raw
+            and browsers_path_env_raw != "0"
+            and default_browsers_path
+            and effective_browsers_path
+            and default_browsers_path != effective_browsers_path
+        ):
+            _log_playwright_browsers_path(
+                default_browsers_path,
+                label="default",
+                deep_scan=deep_scan,
+            )
     except Exception as e:
         logger.debug("[PLAYWRIGHT_INIT] Failed to get Playwright paths: %s", e)
+
+
+def _resolve_playwright_browsers_path(path_str: str) -> Path:
+    expanded = os.path.expandvars(path_str)
+    path = Path(expanded).expanduser()
+    if not path.is_absolute():
+        return (Path.cwd() / path).resolve()
+    return path.resolve()
+
+
+def _get_default_playwright_browsers_path() -> Path | None:
+    if sys.platform == "win32":
+        local_app_data = os.environ.get("LOCALAPPDATA", "")
+        if not local_app_data:
+            return None
+        return Path(local_app_data) / "ms-playwright"
+    return Path.home() / ".cache" / "ms-playwright"
+
+
+def _get_effective_playwright_browsers_path() -> Path | None:
+    browsers_path_env_raw = os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "").strip()
+    if browsers_path_env_raw and browsers_path_env_raw != "0":
+        return _resolve_playwright_browsers_path(browsers_path_env_raw)
+    return _get_default_playwright_browsers_path()
+
+
+def _log_playwright_browsers_path(path: Path, label: str, deep_scan: bool) -> None:
+    """Log the Playwright browsers/cache directory (lightweight by default)."""
+    if not path.exists():
+        logger.debug("[PLAYWRIGHT_INIT] Browser path (%s) not found: %s", label, path)
+        return
+
+    # List browser directories (lightweight).
+    # NOTE: Avoid deep scans (rglob/stat) by default because it can trigger antivirus scanning
+    # and significantly slow down cold Playwright startup.
+    browser_dirs = sorted(d.name for d in path.iterdir() if d.is_dir())
+
+    if deep_scan:
+        total_size_mb = sum(
+            sum(f.stat().st_size for f in d.rglob("*") if f.is_file())
+            for d in path.iterdir()
+            if d.is_dir()
+        ) / (1024 * 1024)
+        logger.debug(
+            "[PLAYWRIGHT_INIT] Browser path (%s): %s (%.1f MB, browsers: %s)",
+            label,
+            path,
+            total_size_mb,
+            ", ".join(browser_dirs[:10]),
+        )
+    else:
+        logger.debug(
+            "[PLAYWRIGHT_INIT] Browser path (%s): %s (browsers: %s)",
+            label,
+            path,
+            ", ".join(browser_dirs[:10]),
+        )
+
+    links_dir = path / ".links"
+    if links_dir.exists():
+        link_files = [p for p in links_dir.iterdir() if p.is_file()]
+        if link_files:
+            newest_link = max(link_files, key=lambda p: p.stat().st_mtime)
+            try:
+                driver_package_str = newest_link.read_text(encoding="utf-8").strip()
+            except Exception:
+                driver_package_str = ""
+            if driver_package_str:
+                driver_package_path = Path(driver_package_str)
+                node_exe = driver_package_path.parent / ("node.exe" if sys.platform == "win32" else "node")
+                if node_exe.exists():
+                    logger.debug("[PLAYWRIGHT_INIT] Driver node (%s): %s", label, node_exe)
 
 
 def _pre_init_playwright_impl():
@@ -687,10 +751,12 @@ def _pre_init_playwright_impl():
 
         # Warn if initialization took too long (with detailed breakdown)
         if total_time > 5.0:
+            browsers_path_hint = _get_effective_playwright_browsers_path()
             logger.warning(
                 "[PLAYWRIGHT_INIT] Slow initialization detected (%.2fs). "
-                "Check antivirus exclusions for: %%LOCALAPPDATA%%\\ms-playwright",
-                total_time
+                "Check antivirus exclusions for: %s",
+                total_time,
+                browsers_path_hint or ("%LOCALAPPDATA%\\ms-playwright" if sys.platform == "win32" else "~/.cache/ms-playwright"),
             )
 
         return True

@@ -20,6 +20,14 @@ from pathlib import Path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
+# Prefer bundled Playwright browsers when available (offline/corporate-friendly).
+# The Rust launcher and packaging scripts already set this, but dev runs via `python app.py`
+# may not. Setting a default here prevents Playwright from falling back to per-user installs
+# under `%LOCALAPPDATA%\ms-playwright` and makes startup logs consistent.
+bundled_playwright_browsers_dir = project_root / ".playwright-browsers"
+if bundled_playwright_browsers_dir.exists():
+    os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(bundled_playwright_browsers_dir))
+
 
 def setup_logging():
     """Configure logging to console and file for debugging.

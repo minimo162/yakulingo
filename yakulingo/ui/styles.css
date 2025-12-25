@@ -2918,22 +2918,6 @@ body.yakulingo-drag-active .global-drop-indicator {
     flex-shrink: 0;
 }
 
-.adjust-option-btn-full {
-    width: 100%;
-    padding: 0.625rem 0.875rem !important;
-    font-size: var(--md-sys-typescale-size-xs) !important;
-    color: var(--md-sys-color-on-surface) !important;
-    background: var(--md-sys-color-surface-container) !important;
-    border-radius: var(--md-sys-shape-corner-medium) !important;
-    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard) !important;
-    text-align: left !important;
-    justify-content: flex-start !important;
-}
-
-.adjust-option-btn-full:hover {
-    background: var(--md-sys-color-surface-container-high) !important;
-}
-
 /* === Custom Request Button (Expandable) === */
 .custom-request-container {
     margin-top: 0.25rem;
@@ -2972,25 +2956,6 @@ body.yakulingo-drag-active .global-drop-indicator {
 
 .custom-request-input textarea {
     min-height: 80px !important;
-}
-
-.cancel-btn {
-    color: var(--md-sys-color-on-surface-variant) !important;
-}
-
-.cancel-btn:hover {
-    background: var(--md-sys-color-surface-container-high) !important;
-}
-
-.send-request-btn {
-    background: var(--md-sys-color-primary) !important;
-    color: var(--md-sys-color-on-primary) !important;
-    border-radius: var(--md-sys-shape-corner-full) !important;
-}
-
-.send-request-btn:hover {
-    background: linear-gradient(rgba(255,255,255,0.08), rgba(255,255,255,0.08)), var(--md-sys-color-primary) !important;
-    box-shadow: var(--md-sys-elevation-1) !important;
 }
 
 /* === Inline Question Section === */

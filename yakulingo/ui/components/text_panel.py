@@ -2,7 +2,7 @@
 """
 Text translation panel with language-specific UI.
 - Japanese → English: Multiple style options shown together
-- Other → Japanese: Single translation with detailed explanation + follow-up actions
+- Other → Japanese: Single translation with detailed explanation
 Designed for Japanese users.
 """
 
@@ -94,13 +94,6 @@ def _create_textarea_with_keyhandler(
 
     return textarea
 
-
-# Action icons for →jp follow-up features
-ACTION_ICONS: dict[str, str] = {
-    'review': 'rate_review',
-    'question': 'help_outline',
-    'reply': 'reply',
-}
 
 TEXT_STYLE_LABELS: dict[str, str] = {
     'standard': '標準',
@@ -295,21 +288,11 @@ def _render_input_empty_state(on_open_file_picker: Optional[Callable[[], None]] 
     with ui.element('div').classes('input-empty-state'):
         ui.icon('translate').classes('input-empty-icon')
         ui.label('翻訳したい文章を入力してください').classes('input-empty-title')
-        ui.label('日本語→英語（3スタイル） / 日本語以外→日本語（解説付き）').classes('input-empty-subtitle')
-        ui.label('Ctrl+Enterで翻訳 / Ctrl+Alt+Jで取り込み').classes('input-empty-shortcuts')
-
-        if on_open_file_picker:
-            ui.button(
-                'ファイルを選択',
-                icon='upload_file',
-                on_click=on_open_file_picker,
-            ).props('no-caps').classes('btn-tonal input-empty-file-btn')
 
 
 def create_text_result_panel(
     state: AppState,
     on_copy: Callable[[str], None],
-    on_follow_up: Optional[Callable[[str, str], None]] = None,
     on_back_translate: Optional[Callable[[str], None]] = None,
     on_retry: Optional[Callable[[], None]] = None,
     compare_mode: bool = False,
@@ -364,12 +347,10 @@ def create_text_result_panel(
         # Results section - language-specific UI
         if state.text_result and state.text_result.options:
             if state.text_result.is_to_japanese:
-                # →Japanese: Single result with detailed explanation + follow-up actions
+                # →Japanese: Single result with detailed explanation
                 _render_results_to_jp(
                     state.text_result,
-                    state.text_result.source_text,  # Use stored source text
                     on_copy,
-                    on_follow_up,
                     on_back_translate,
                     elapsed_time,
                     on_retry,
@@ -382,7 +363,6 @@ def create_text_result_panel(
                     on_back_translate,
                     elapsed_time,
                     on_retry,
-                    on_follow_up,
                     compare_mode,
                 )
         elif not state.text_translating:
@@ -508,7 +488,6 @@ def _render_results_to_en(
     on_back_translate: Optional[Callable[[str], None]] = None,
     elapsed_time: Optional[float] = None,
     on_retry: Optional[Callable[[], None]] = None,
-    on_follow_up: Optional[Callable[[str, str], None]] = None,
     compare_mode: bool = False,
 ):
     """Render →English results: multiple style options"""
@@ -539,22 +518,15 @@ def _render_results_to_en(
                 ).props('flat no-caps size=sm').classes('retry-btn')
                 retry_btn.tooltip('もう一度翻訳する')
 
-        # Check my English section
-        if on_follow_up and result.options:
-            latest_option = result.options[-1]
-            _render_check_my_english(latest_option.text, on_follow_up)
-
 
 def _render_results_to_jp(
     result: TextTranslationResult,
-    source_text: str,
     on_copy: Callable[[str], None],
-    on_follow_up: Optional[Callable[[str, str], None]],
     on_back_translate: Optional[Callable[[str], None]] = None,
     elapsed_time: Optional[float] = None,
     on_retry: Optional[Callable[[], None]] = None,
 ):
-    """Render →Japanese results: translations with detailed explanations + follow-up actions"""
+    """Render →Japanese results: translations with detailed explanations"""
 
     if not result.options:
         return
@@ -603,12 +575,6 @@ def _render_results_to_jp(
                     on_click=on_retry
                 ).props('flat no-caps size=sm').classes('retry-btn')
                 retry_btn.tooltip('もう一度翻訳する')
-
-        # Follow-up actions section (aligned to →English layout)
-        if on_follow_up:
-            with ui.column().classes('gap-2 w-full'):
-                # Reply composer section (same structure as check-my-english)
-                _render_reply_composer(on_follow_up)
 
 
 def _render_explanation(explanation: str):
@@ -706,125 +672,3 @@ def _render_option_en(
                 with ui.element('div').classes('nani-explanation'):
                     _render_explanation(option.explanation)
 
-
-def _render_check_my_english(
-    reference_translation: str,
-    on_follow_up: Callable[[str, str], None],
-):
-    """Render check my English section for reviewing user's own English writing"""
-
-    with ui.element('div').classes('check-my-english-container w-full'):
-        # Collapsed state: Button
-        collapsed_container = ui.element('div').classes('w-full')
-        # Expanded state: Input area
-        expanded_container = ui.element('div').classes('w-full check-my-english-expanded').style('display: none')
-
-        with collapsed_container:
-            def show_input():
-                collapsed_container.style('display: none')
-                expanded_container.style('display: block')
-                english_input.run_method('focus')
-
-            ui.button(
-                'アレンジした英文をチェック',
-                icon='spellcheck',
-                on_click=show_input
-            ).props('flat no-caps').classes('adjust-option-btn-full')
-
-        with expanded_container:
-            with ui.column().classes('gap-2 w-full'):
-                # Label for the input
-                ui.label('アレンジした英文を入力').classes('text-sm text-muted')
-
-                # Textarea for user's English
-                english_input = ui.textarea(
-                    placeholder='例: I will review the document tomorrow and update you.'
-                ).classes('w-full check-my-english-input').props('autogrow rows=3')
-
-                with ui.row().classes('justify-end gap-2'):
-                    # Cancel button
-                    def cancel_input():
-                        english_input.set_value('')
-                        expanded_container.style('display: none')
-                        collapsed_container.style('display: block')
-
-                    ui.button(
-                        'キャンセル',
-                        on_click=cancel_input
-                    ).props('flat no-caps size=sm').classes('cancel-btn')
-
-                    # Check button
-                    async def check_english():
-                        user_english = english_input.value.strip() if english_input.value else ''
-                        if user_english:
-                            await on_follow_up('check_my_english', user_english)
-                            english_input.set_value('')
-                            expanded_container.style('display: none')
-                            collapsed_container.style('display: block')
-
-                    ui.button(
-                        'チェック',
-                        icon='check',
-                        on_click=check_english
-                    ).props('no-caps size=sm').classes('send-request-btn')
-
-
-def _render_reply_composer(
-    on_follow_up: Callable[[str, str], None],
-):
-    """Render reply composer section for creating reply emails"""
-
-    with ui.element('div').classes('reply-composer-container w-full'):
-        # Collapsed state: Button
-        collapsed_container = ui.element('div').classes('w-full')
-        # Expanded state: Input area
-        expanded_container = ui.element('div').classes('w-full reply-composer-expanded').style('display: none')
-
-        with collapsed_container:
-            def show_composer():
-                collapsed_container.style('display: none')
-                expanded_container.style('display: block')
-                reply_input.run_method('focus')
-
-            ui.button(
-                '返信文を作成',
-                icon='reply',
-                on_click=show_composer
-            ).props('flat no-caps').classes('adjust-option-btn-full')
-
-        with expanded_container:
-            with ui.column().classes('gap-2 w-full'):
-                # Label for the input
-                ui.label('返信したい内容を入力（日本語でも英語でもOK）').classes('text-sm text-muted')
-
-                # Textarea for reply intent
-                reply_input = ui.textarea(
-                    placeholder='例: 承知しました。明日確認してご連絡します。'
-                ).classes('w-full reply-composer-input').props('autogrow rows=3')
-
-                with ui.row().classes('justify-end gap-2'):
-                    # Cancel button
-                    def cancel_composer():
-                        reply_input.set_value('')
-                        expanded_container.style('display: none')
-                        collapsed_container.style('display: block')
-
-                    ui.button(
-                        'キャンセル',
-                        on_click=cancel_composer
-                    ).props('flat no-caps size=sm').classes('cancel-btn')
-
-                    # Create reply button
-                    async def create_reply():
-                        intent = reply_input.value.strip() if reply_input.value else ''
-                        if intent:
-                            await on_follow_up('reply', intent)
-                            reply_input.set_value('')
-                            expanded_container.style('display: none')
-                            collapsed_container.style('display: block')
-
-                    ui.button(
-                        '作成',
-                        icon='send',
-                        on_click=create_reply
-                    ).props('no-caps size=sm').classes('send-request-btn')

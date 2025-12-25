@@ -2461,6 +2461,48 @@ class CopilotHandler:
         self._gpt_mode_set = False
         self._clear_gpt_mode_retry_state()
 
+    @property
+    def is_gpt_mode_set(self) -> bool:
+        """Return True if GPT mode was confirmed/set in this session."""
+        return self._gpt_mode_set
+
+    def wait_for_gpt_mode_setup(self, timeout_seconds: float = 20.0, poll_interval: float = 0.1) -> bool:
+        """Block until GPT mode setup finishes (set or attempts exhausted).
+
+        This is intended for the UI layer to wait until GPT mode switching is no longer
+        in progress before enabling translation actions. It does not guarantee the mode
+        was successfully set; it returns False when setup finished without reaching the
+        target mode (e.g., button not found or target not available).
+
+        Args:
+            timeout_seconds: Maximum time to wait for the setup process to finish.
+            poll_interval: Polling interval while waiting.
+
+        Returns:
+            True if GPT mode is set, False otherwise (including timeout).
+        """
+        if timeout_seconds <= 0:
+            return self._gpt_mode_set
+
+        # Start (or join) GPT mode setup.
+        try:
+            self.ensure_gpt_mode()
+        except Exception:
+            return self._gpt_mode_set
+
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline:
+            if self._gpt_mode_set:
+                return True
+            with self._gpt_mode_retry_lock:
+                in_progress = self._gpt_mode_attempt_in_progress
+            if not in_progress:
+                return self._gpt_mode_set
+            time.sleep(max(poll_interval, 0.05))
+
+        # Timed out; allow caller to proceed (do not block indefinitely).
+        return self._gpt_mode_set
+
     def _clear_gpt_mode_retry_state(self) -> None:
         timer = None
         with self._gpt_mode_retry_lock:

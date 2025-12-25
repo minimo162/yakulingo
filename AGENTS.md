@@ -241,7 +241,7 @@ The application uses **local-only language detection** via `detect_language()`:
 
 Translation direction based on detection:
 - **Japanese input ("日本語")** → English output (standard/concise/minimal shown together)
-- **Non-Japanese input** → Japanese output (single translation + explanation + expandable input)
+- **Non-Japanese input** → Japanese output (single translation + explanation)
 
 No manual direction selection is required for text translation. File translation also uses auto-detection with optional manual override via language toggle buttons.
 
@@ -251,15 +251,12 @@ No manual direction selection is required for text translation. File translation
 - **Source text section** (原文セクション): 翻訳結果パネル上部に原文を表示 + コピーボタン
 - **Translation status** (翻訳状態表示): 「英訳中...」「和訳中...」→「? 英訳しました」「? 和訳しました」+ 経過時間バッジ
 - **Suggestion hint row**: [再翻訳] ボタン
-- **Follow-up inputs**: 展開型の追加入力（英訳: 「アレンジした英文をチェック」 / 和訳: 「返信文を作成」）
 
 ### Japanese → English (英訳)
 - **3つのスタイル出力**（標準/簡潔/最簡潔）を縦並びで表示
-- **Check my English**: [アレンジした英文をチェック] 展開型入力欄（翻訳結果を少し直した英文の添削）
 
 ### English → Japanese (和訳)
 - **Single translation output** with detailed explanation
-- **Reply composer**: [返信文を作成] 展開型入力欄
 
 ### Common Features
 - **Elapsed time badge**: Shows translation duration
@@ -3007,10 +3004,8 @@ Based on recent commits:
 - **Text Translation UI Unification**:
   - **3-style output**: 標準/簡潔/最簡潔を同時表示
   - **Style toggle removed**: スタイル切り替えUIを廃止
-  - **Unified structure**: 英訳 and 和訳 now share same UI pattern (hint row + expandable inputs)
+  - **Unified structure**: 英訳 and 和訳 now share same UI pattern (hint row + result cards)
   - **Suggestion hint row**: [再翻訳] ボタン for both directions
-  - **和訳 input**: 「返信文を作成」展開型入力欄
-  - **英訳 input**: 「アレンジした英文をチェック」展開型入力欄
   - **Removed**: カスタムリクエスト入力欄、[これはどう？] quick chip、connector line design、settings dialog
 - **Settings Dialog**: Removed
 - **Installation**: Desktop shortcut only (removed Start Menu entry)

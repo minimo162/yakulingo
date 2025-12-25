@@ -163,11 +163,11 @@ class AppState:
         self.error_message = ""
 
     def can_translate(self) -> bool:
-        """Check if translation is possible (connection checked on execution)"""
+        """Check if translation is possible (requires Copilot ready)."""
         if self.current_tab == Tab.TEXT:
-            return bool(self.source_text.strip()) and not self.text_translating
+            return bool(self.source_text.strip()) and not self.text_translating and self.copilot_ready
         elif self.current_tab == Tab.FILE:
-            return self.file_state == FileState.SELECTED
+            return self.file_state == FileState.SELECTED and self.copilot_ready
         return False
 
     def is_translating(self) -> bool:

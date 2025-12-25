@@ -464,7 +464,7 @@ class YakuLingoApp:
     3. UI Refresh Methods - Methods that update UI state
     4. UI Creation Methods - Methods that build UI components
     5. Error Handling Helpers - Unified error handling methods
-    6. Text Translation - Text input, translation, follow-up actions
+    6. Text Translation - Text input, translation, back-translate
     7. File Translation - File selection, translation, progress methods
     8. Settings & History - Settings dialog, history management
     """
@@ -537,6 +537,8 @@ class YakuLingoApp:
         # Login polling state (prevents duplicate polling)
         self._login_polling_active = False
         self._login_polling_task: "asyncio.Task | None" = None
+        # GPT mode preparation task (wait until mode switch is done)
+        self._gpt_mode_setup_task: "asyncio.Task | None" = None
         self._shutdown_requested = False
         self._copilot_window_monitor_task: "asyncio.Task | None" = None
         self._copilot_window_seen = False
@@ -1560,8 +1562,11 @@ class YakuLingoApp:
             success = await loop.run_in_executor(None, edge_future.result, 60)  # 60s timeout
 
             if success:
-                self.state.copilot_ready = True
+                # Keep "準備中..." until GPT mode switching is finished.
+                self.state.copilot_ready = False
+                self.state.connection_state = ConnectionState.CONNECTING
                 self._refresh_status()
+                await self._ensure_gpt_mode_setup()
                 logger.info("Edge connection ready (parallel startup)")
                 # Notify user without changing window z-order to avoid flicker
                 await self._on_browser_ready(bring_to_front=False)
@@ -1625,20 +1630,26 @@ class YakuLingoApp:
                             result = task.result()
                             logger.info("Early connection completed in background: %s", result)
                             if result:
-                                # Connection succeeded - update UI state
-                                self.state.copilot_ready = True
-                                self.state.connection_state = ConnectionState.CONNECTED
-                                # Set GPT mode in background (only on initial connection)
-                                asyncio.create_task(
-                                    asyncio.to_thread(self.copilot.ensure_gpt_mode)
-                                )
-                                # Schedule UI refresh on main thread
-                                if self._client is not None:
+                                async def _finalize_after_early_connect() -> None:
+                                    if self._shutdown_requested:
+                                        return
+                                    # Keep "準備中..." until GPT mode switching is finished.
+                                    self.state.copilot_ready = False
+                                    self.state.connection_state = ConnectionState.CONNECTING
+                                    self._refresh_status()
+
+                                    # Apply deferred window positioning now that app window exists.
                                     try:
-                                        with self._client:
-                                            self._refresh_status()
+                                        await asyncio.to_thread(self.copilot.position_as_side_panel)
                                     except Exception as e:
-                                        logger.debug("Failed to refresh UI from background: %s", e)
+                                        logger.debug("Failed to position side panel after early connection: %s", e)
+
+                                    await self._ensure_gpt_mode_setup()
+                                    if self._shutdown_requested:
+                                        return
+                                    await self._on_browser_ready(bring_to_front=False)
+
+                                asyncio.create_task(_finalize_after_early_connect())
                         except asyncio.CancelledError:
                             logger.debug("Early connection task was cancelled")
                         except Exception as e:
@@ -1673,12 +1684,13 @@ class YakuLingoApp:
             # Early connection succeeded - just update UI
             logger.info("[TIMING] Using early connection result (saved %.2fs)",
                        _time_module.perf_counter() - _t_start)
-            self.state.copilot_ready = True
+            # Keep "準備中..." until GPT mode switching is finished.
+            self.state.copilot_ready = False
+            self.state.connection_state = ConnectionState.CONNECTING
             self._refresh_status()
             # Apply deferred window positioning now that app window exists
             await asyncio.to_thread(self.copilot.position_as_side_panel)
-            # Set GPT mode in background (non-blocking, don't delay "Ready" notification)
-            asyncio.create_task(asyncio.to_thread(self.copilot.ensure_gpt_mode))
+            await self._ensure_gpt_mode_setup()
             await self._on_browser_ready(bring_to_front=False)
         elif self._early_connection_result is False:
             # Early connection failed - update UI and check if login needed
@@ -1695,6 +1707,44 @@ class YakuLingoApp:
             # Early connection not started or result unknown - fall back to normal connection
             logger.info("Early connection not available, starting normal connection")
             await self.start_edge_and_connect()
+
+    def _is_gpt_mode_setup_in_progress(self) -> bool:
+        return self._gpt_mode_setup_task is not None and not self._gpt_mode_setup_task.done()
+
+    async def _ensure_gpt_mode_setup(self) -> None:
+        """Ensure GPT mode setup has finished (set or attempts exhausted)."""
+        if self._shutdown_requested:
+            return
+
+        copilot = self._copilot
+        if copilot is None or not copilot.is_connected:
+            return
+
+        if self._gpt_mode_setup_task is None or self._gpt_mode_setup_task.done():
+            self._gpt_mode_setup_task = asyncio.create_task(self._run_gpt_mode_setup())
+            self._refresh_status()
+
+        try:
+            await self._gpt_mode_setup_task
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.debug("GPT mode setup task failed: %s", e)
+
+    async def _run_gpt_mode_setup(self) -> None:
+        copilot = self._copilot
+        if copilot is None or not copilot.is_connected:
+            return
+        try:
+            await asyncio.to_thread(copilot.wait_for_gpt_mode_setup, 25.0)
+        except Exception as e:
+            logger.debug("GPT mode setup failed: %s", e)
+        finally:
+            if self._shutdown_requested:
+                return
+            # Refresh status/button after GPT mode attempt completes (prevents stale "準備中...").
+            self._refresh_status()
+            self._refresh_translate_button_state()
 
     async def start_edge_and_connect(self):
         """Start Edge and connect to browser in background (non-blocking).
@@ -1720,10 +1770,11 @@ class YakuLingoApp:
             success = await asyncio.to_thread(self.copilot.connect)
 
             if success:
-                self.state.copilot_ready = True
+                # Keep "準備中..." until GPT mode switching is finished.
+                self.state.copilot_ready = False
+                self.state.connection_state = ConnectionState.CONNECTING
                 self._refresh_status()
-                # Set GPT mode in background (non-blocking, don't delay "Ready" notification)
-                asyncio.create_task(asyncio.to_thread(self.copilot.ensure_gpt_mode))
+                await self._ensure_gpt_mode_setup()
                 # Notify user without changing window z-order to avoid flicker
                 await self._on_browser_ready(bring_to_front=False)
             else:
@@ -1882,7 +1933,9 @@ class YakuLingoApp:
 
                     # Use explicit constant to reflect successful login
                     self.copilot.last_connection_error = CopilotHandler.ERROR_NONE
-                    self.state.copilot_ready = True
+                    # Keep "準備中..." until GPT mode switching is finished.
+                    self.state.copilot_ready = False
+                    self.state.connection_state = ConnectionState.CONNECTING
 
                     # Hide Edge window once login completes
                     await asyncio.to_thread(self.copilot.send_to_background)
@@ -1894,8 +1947,7 @@ class YakuLingoApp:
                     # Reset GPT mode flag on re-login (session was reset, mode setting is lost)
                     # This ensures ensure_gpt_mode() will actually run
                     self.copilot.reset_gpt_mode_state()
-                    # Set GPT mode in background (non-blocking, don't delay "Ready" notification)
-                    asyncio.create_task(asyncio.to_thread(self.copilot.ensure_gpt_mode))
+                    await self._ensure_gpt_mode_setup()
 
                     if not self._shutdown_requested:
                         await self._on_browser_ready(bring_to_front=True)
@@ -1947,8 +1999,9 @@ class YakuLingoApp:
 
                 if connected:
                     logger.info("Copilot reconnected successfully (attempt %d/%d)", attempt + 1, max_retries)
-                    self.state.copilot_ready = True
-                    self.state.connection_state = ConnectionState.CONNECTED
+                    # Keep "準備中..." until GPT mode switching is finished.
+                    self.state.copilot_ready = False
+                    self.state.connection_state = ConnectionState.CONNECTING
 
                     # Handle Edge window based on effective browser_display_mode
                     if self._settings and self._get_effective_browser_display_mode() == "side_panel":
@@ -1958,6 +2011,12 @@ class YakuLingoApp:
                         await asyncio.to_thread(self.copilot._minimize_edge_window, None)
                         logger.debug("Edge minimized after reconnection")
                     # In foreground mode, do nothing (leave Edge as is)
+
+                    if self._client:
+                        with self._client:
+                            self._refresh_status()
+
+                    await self._ensure_gpt_mode_setup()
 
                     if self._client:
                         with self._client:
@@ -2085,6 +2144,25 @@ class YakuLingoApp:
             except Exception as e2:
                 logger.debug("Status refresh with saved client failed: %s", e2)
 
+    def _refresh_translate_button_state(self) -> None:
+        """Refresh translate button enabled/disabled/loading state safely."""
+        if self._translate_button is None:
+            return
+
+        try:
+            # Fast path: already in a valid client context.
+            self._update_translate_button_state()
+            return
+        except Exception as e:
+            if self._client is None:
+                logger.debug("Translate button refresh failed (no client): %s", e)
+                return
+            try:
+                with self._client:
+                    self._update_translate_button_state()
+            except Exception as e2:
+                logger.debug("Translate button refresh with saved client failed: %s", e2)
+
     def _refresh_content(self):
         """Refresh main content area and update layout classes"""
         self._update_layout_classes()
@@ -2125,12 +2203,12 @@ class YakuLingoApp:
             if self._result_panel:
                 self._result_panel.refresh()
 
-        if 'button' in refresh_types:
-            self._update_translate_button_state()
-
         if 'status' in refresh_types:
             if self._header_status:
                 self._header_status.refresh()
+
+        if 'button' in refresh_types:
+            self._update_translate_button_state()
 
         if 'history' in refresh_types:
             if self._history_list:
@@ -2783,9 +2861,21 @@ class YakuLingoApp:
             error = copilot.last_connection_error or ""
             is_connected = copilot.is_connected  # cached flag; validated by check_copilot_state below
 
+            # While GPT mode is switching, avoid calling check_copilot_state with a short timeout.
+            # The Playwright thread is busy and status checks can time out, leaving the UI stuck.
+            if self._is_gpt_mode_setup_in_progress():
+                self.state.copilot_ready = False
+                self.state.connection_state = ConnectionState.CONNECTING
+                with ui.element('div').classes('status-indicator connecting').props('role="status" aria-live="polite"'):
+                    ui.element('div').classes('status-dot connecting').props('aria-hidden="true"')
+                    with ui.column().classes('gap-0'):
+                        ui.label('準備中...').classes('text-xs')
+                        ui.label('GPTモードを切り替えています').classes('text-2xs opacity-80')
+                return
+
             copilot_state: str | None = None
             try:
-                copilot_state = copilot.check_copilot_state(timeout=1)
+                copilot_state = copilot.check_copilot_state(timeout=2)
             except TimeoutError:
                 copilot_state = None
             except Exception as e:
@@ -2799,7 +2889,10 @@ class YakuLingoApp:
                     ui.element('div').classes('status-dot connected').props('aria-hidden="true"')
                     with ui.column().classes('gap-0'):
                         ui.label('準備完了').classes('text-xs')
-                        ui.label('翻訳できます').classes('text-2xs opacity-80')
+                        if copilot.is_gpt_mode_set:
+                            ui.label('翻訳できます').classes('text-2xs opacity-80')
+                        else:
+                            ui.label('翻訳できます（GPTモード未設定）').classes('text-2xs opacity-80')
                 return
 
             # Not ready (yet) from here.
@@ -3008,7 +3101,6 @@ class YakuLingoApp:
             create_text_result_panel(
                 state=self.state,
                 on_copy=self._copy_text,
-                on_follow_up=self._follow_up_action,
                 on_back_translate=self._back_translate,
                 on_retry=self._retry_translation,
                 compare_mode=True,
@@ -3184,6 +3276,29 @@ class YakuLingoApp:
         # Check if already connected
         if self.state.copilot_ready and self.copilot.is_connected:
             return True
+
+        # If we are connected but "not ready", it is often because GPT mode is still
+        # switching (Playwright thread busy) and the status UI has not updated yet.
+        # Avoid triggering reconnect loops; wait for GPT mode setup to complete first.
+        if self._copilot and self.copilot.is_connected:
+            if self._is_gpt_mode_setup_in_progress():
+                try:
+                    await asyncio.wait_for(self._gpt_mode_setup_task, timeout=30.0)  # type: ignore[arg-type]
+                except asyncio.TimeoutError:
+                    if self._client:
+                        with self._client:
+                            ui.notify(
+                                '準備中です（GPTモード切替中）...',
+                                type='info',
+                                position='bottom-right',
+                                timeout=2000
+                            )
+                    return False
+            else:
+                await self._ensure_gpt_mode_setup()
+
+            if self.state.copilot_ready and self.copilot.is_connected:
+                return True
 
         # Check if login is in progress (don't interfere)
         if self._login_polling_active:
@@ -3803,86 +3918,6 @@ class YakuLingoApp:
         else:
             prompt = config['fallback']
             return prompt.replace("{reference_section}", reference_section)
-
-    def _add_follow_up_result(self, source_text: str, text: str, explanation: str):
-        """Add follow-up result to current translation options."""
-        new_option = TranslationOption(text=text, explanation=explanation)
-
-        if self.state.text_result:
-            self.state.text_result.options.append(new_option)
-        else:
-            self.state.text_result = TextTranslationResult(
-                source_text=source_text,
-                source_char_count=len(source_text),
-                options=[new_option],
-                output_language="jp",
-            )
-
-    async def _follow_up_action(self, action_type: str, content: str):
-        """Handle follow-up actions for →Japanese translations"""
-        # Use async version that will attempt auto-reconnection if needed
-        if not await self._ensure_connection_async():
-            return
-
-        # Use saved client reference (protected by _client_lock)
-        with self._client_lock:
-            client = self._client
-            if not client:
-                logger.warning("Follow-up action aborted: no client connected")
-                return
-
-        self.state.text_translating = True
-        self._refresh_content()
-        self._refresh_tabs()  # Disable tabs during translation
-
-        error_message = None
-        try:
-            # Yield control to event loop before starting blocking operation
-            await asyncio.sleep(0)
-
-            # Build context from current translation result (use stored source text, not input field)
-            source_text = self.state.text_result.source_text if self.state.text_result else self.state.source_text
-            translation = self.state.text_result.options[-1].text if self.state.text_result and self.state.text_result.options else ""
-
-            reference_files = self._get_effective_reference_files()
-
-            # Build prompt
-            prompt = self._build_follow_up_prompt(
-                action_type, source_text, translation, content, reference_files
-            )
-            if prompt is None:
-                error_message = '不明なアクションタイプです'
-                self.state.text_translating = False
-                with client:
-                    ui.notify(error_message, type='warning')
-                    self._refresh_content()
-                    self._refresh_tabs()  # Re-enable tabs on early return
-                return
-
-            # Send to Copilot (with reference files for consistent translations)
-            result = await asyncio.to_thread(
-                lambda: self.copilot.translate_single(source_text, prompt, reference_files)
-            )
-
-            # Parse result and update UI
-            if result:
-                from yakulingo.ui.utils import parse_translation_result
-                text, explanation = parse_translation_result(result)
-                self._add_follow_up_result(source_text, text, explanation)
-            else:
-                error_message = '応答の取得に失敗しました'
-
-        except Exception as e:
-            error_message = str(e)
-
-        self.state.text_translating = False
-
-        # Restore client context for UI operations
-        with client:
-            if error_message:
-                self._notify_error(error_message)
-            self._refresh_content()
-            self._refresh_tabs()  # Re-enable tabs (translation finished)
 
     # =========================================================================
     # Section 7: File Translation

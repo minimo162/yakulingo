@@ -1451,17 +1451,20 @@ class CopilotHandler:
             # Mark as ours so shutdown will also terminate an existing dedicated Edge
             # instance (e.g., leftover from a previous run or early-started Edge).
             self._browser_started_by_us = True
-            if self._edge_pid is None:
-                try:
-                    self._edge_pid = int(our_proc.get("pid") or 0) or None
-                except (TypeError, ValueError):
-                    self._edge_pid = None
-                if self._edge_pid:
+            detected_pid: int | None = None
+            try:
+                detected_pid = int(our_proc.get("pid") or 0) or None
+            except (TypeError, ValueError):
+                detected_pid = None
+            if detected_pid:
+                if self._edge_pid != detected_pid:
                     logger.debug(
-                        "Detected existing Edge PID %d on CDP port %d",
-                        self._edge_pid,
+                        "Detected existing Edge PID %d on CDP port %d (previous _edge_pid=%s)",
+                        detected_pid,
                         self.cdp_port,
+                        self._edge_pid,
                     )
+                self._edge_pid = detected_pid
             return "ours"
         if any(proc_info["is_edge"] for proc_info in processes):
             return "edge_other"
@@ -4921,8 +4924,10 @@ class CopilotHandler:
             taskkill_start = time.monotonic()
 
             # Get PID from edge_process or fall back to saved _edge_pid
-            pid_to_kill = None
-            if self.edge_process and self.edge_process.pid:
+            pid_to_kill: int | None = None
+            if port_status == "ours" and self._edge_pid:
+                pid_to_kill = self._edge_pid
+            elif self.edge_process and self.edge_process.pid:
                 pid_to_kill = self.edge_process.pid
             elif self._edge_pid:
                 pid_to_kill = self._edge_pid
@@ -4931,19 +4936,40 @@ class CopilotHandler:
             with suppress(Exception):
                 if pid_to_kill:
                     if self._kill_process_tree(pid_to_kill):
-                        browser_terminated = True
-                        logger.info("Edge browser terminated (force via process tree kill)")
+                        # If the CDP port is still open, the PID we killed may have been a stale/launcher PID.
+                        # In that case, fall back to port/profile-based termination to avoid leaving Edge running.
+                        for _ in range(5):  # ~0.5s total
+                            if not self._is_port_in_use():
+                                break
+                            time.sleep(0.1)
+                        if not self._is_port_in_use():
+                            browser_terminated = True
+                            logger.info("Edge browser terminated (force via process tree kill)")
+                        else:
+                            logger.debug(
+                                "CDP port %d still in use after killing PID %s; falling back to port/profile termination",
+                                self.cdp_port,
+                                pid_to_kill,
+                            )
                     elif self.edge_process:
                         # Fall back to terminate/kill if taskkill failed and we have process object
                         self.edge_process.terminate()
                         try:
                             self.edge_process.wait(timeout=0.05)
-                            browser_terminated = True
                         except subprocess.TimeoutExpired:
                             self.edge_process.kill()
-                            browser_terminated = True  # Assume success after kill
-                        if browser_terminated:
+                        for _ in range(5):  # ~0.5s total
+                            if not self._is_port_in_use():
+                                break
+                            time.sleep(0.1)
+                        if not self._is_port_in_use():
+                            browser_terminated = True
                             logger.info("Edge browser terminated (force via terminate)")
+                        else:
+                            logger.debug(
+                                "CDP port %d still in use after terminate/kill; falling back to port/profile termination",
+                                self.cdp_port,
+                            )
             logger.debug("[TIMING] kill_process_tree: %.2fs", time.monotonic() - taskkill_start)
 
             # If still not terminated, try killing by port as last resort
@@ -5012,7 +5038,13 @@ class CopilotHandler:
             # First try graceful close via WM_CLOSE (avoids "closed unexpectedly" message)
             with suppress(Exception):
                 if self._close_edge_gracefully(timeout=3.0):
-                    browser_terminated = True
+                    if not self._is_port_in_use():
+                        browser_terminated = True
+                    else:
+                        logger.debug(
+                            "CDP port %d still in use after graceful close; falling back to force termination",
+                            self.cdp_port,
+                        )
 
             # Fall back to kill process tree if graceful close failed
             # Use _kill_process_tree to kill all child processes (renderer, GPU, etc.)
@@ -5029,8 +5061,19 @@ class CopilotHandler:
                 with suppress(Exception):
                     if pid_to_kill:
                         if self._kill_process_tree(pid_to_kill):
-                            browser_terminated = True
-                            logger.info("Edge browser terminated (via process tree kill)")
+                            for _ in range(5):  # ~0.5s total
+                                if not self._is_port_in_use():
+                                    break
+                                time.sleep(0.1)
+                            if not self._is_port_in_use():
+                                browser_terminated = True
+                                logger.info("Edge browser terminated (via process tree kill)")
+                            else:
+                                logger.debug(
+                                    "CDP port %d still in use after killing PID %s; falling back to port termination",
+                                    self.cdp_port,
+                                    pid_to_kill,
+                                )
                         elif self.edge_process:
                             # Fall back to terminate/kill if taskkill failed and we have process object
                             self.edge_process.terminate()
@@ -5038,14 +5081,34 @@ class CopilotHandler:
                                 self.edge_process.wait(timeout=2)
                             except subprocess.TimeoutExpired:
                                 self.edge_process.kill()
-                            logger.info("Edge browser terminated (via terminate)")
-                            browser_terminated = True
+                            for _ in range(5):  # ~0.5s total
+                                if not self._is_port_in_use():
+                                    break
+                                time.sleep(0.1)
+                            if not self._is_port_in_use():
+                                logger.info("Edge browser terminated (via terminate)")
+                                browser_terminated = True
+                            else:
+                                logger.debug(
+                                    "CDP port %d still in use after terminate/kill; falling back to port termination",
+                                    self.cdp_port,
+                                )
 
             # If still not terminated, try killing by port as last resort
             if not browser_terminated and self._is_port_in_use():
                 with suppress(Exception):
-                    self._kill_existing_translator_edge()
-                    logger.info("Edge browser terminated (via port)")
+                    if self._kill_existing_translator_edge():
+                        browser_terminated = True
+                        logger.info("Edge browser terminated (via port)")
+
+            # Last resort: kill by profile+port scan in case PID tracking was lost
+            # (e.g., Edge launcher process exited early and child remained).
+            if not browser_terminated and sys.platform == "win32":
+                with suppress(Exception):
+                    profile_dir = self.profile_dir or self._get_profile_dir_path()
+                    if self._kill_edge_processes_by_profile_and_port(profile_dir, self.cdp_port):
+                        browser_terminated = True
+                        logger.info("Edge browser terminated (via profile scan)")
 
             # Clear edge_process and PID after termination
             self.edge_process = None

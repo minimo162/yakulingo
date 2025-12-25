@@ -929,45 +929,47 @@ class ExcelProcessor(FileProcessor):
         return ['.xlsx', '.xls']
 
     def get_file_info(self, file_path: Path) -> FileInfo:
-        """Get Excel file info (always uses openpyxl for speed)
+        """Get Excel file info.
 
-        Note: We always use openpyxl here because it's much faster than xlwings
-        for simple metadata extraction (sheet names only). xlwings requires
-        starting an Excel COM server which takes 3-15 seconds, while openpyxl
-        can read the ZIP structure directly in 200-400ms.
+        Uses fast ZIP parsing (openpyxl) for `.xlsx` because it's much faster than
+        starting an Excel COM server via xlwings (often 3-15 seconds).
 
-        xlwings is still used for extract_text_blocks() and apply_translations()
-        when full Excel functionality (shapes, charts) is needed.
+        For legacy `.xls`, openpyxl cannot read the format, so we require Microsoft
+        Excel via xlwings.
         """
         self._ensure_xls_supported(file_path)
+        if file_path.suffix.lower() == ".xls":
+            xw = _get_xlwings()
+            return self._get_file_info_xlwings(file_path, xw)
         return self._get_file_info_openpyxl(file_path)
 
     def _get_file_info_xlwings(self, file_path: Path, xw) -> FileInfo:
         """Get file info using xlwings (fast: sheet names only, no cell scanning)"""
-        # Use isolated app creation to prevent connecting to existing Excel instances
-        app = _create_excel_app_with_retry(xw)
-        try:
-            wb = app.books.open(str(file_path), ignore_read_only_recommended=True)
-            # SAFETY: Verify we opened the correct workbook (even for read-only)
-            _verify_workbook_path(wb, file_path, "get_file_info")
+        with com_initialized():
+            # Use isolated app creation to prevent connecting to existing Excel instances
+            app = _create_excel_app_with_retry(xw)
             try:
-                sheet_count = len(wb.sheets)
-                section_details = [
-                    SectionDetail(index=idx, name=sheet.name)
-                    for idx, sheet in enumerate(wb.sheets)
-                ]
+                wb = app.books.open(str(file_path), ignore_read_only_recommended=True)
+                # SAFETY: Verify we opened the correct workbook (even for read-only)
+                _verify_workbook_path(wb, file_path, "get_file_info")
+                try:
+                    sheet_count = len(wb.sheets)
+                    section_details = [
+                        SectionDetail(index=idx, name=sheet.name)
+                        for idx, sheet in enumerate(wb.sheets)
+                    ]
 
-                return FileInfo(
-                    path=file_path,
-                    file_type=FileType.EXCEL,
-                    size_bytes=file_path.stat().st_size,
-                    sheet_count=sheet_count,
-                    section_details=section_details,
-                )
+                    return FileInfo(
+                        path=file_path,
+                        file_type=FileType.EXCEL,
+                        size_bytes=file_path.stat().st_size,
+                        sheet_count=sheet_count,
+                        section_details=section_details,
+                    )
+                finally:
+                    wb.close()
             finally:
-                wb.close()
-        finally:
-            app.quit()
+                app.quit()
 
     def _get_file_info_openpyxl(self, file_path: Path) -> FileInfo:
         """Get file info using fast ZIP parsing, falling back to openpyxl."""
@@ -1147,6 +1149,50 @@ class ExcelProcessor(FileProcessor):
             )
             yield from self._extract_text_blocks_openpyxl(file_path, output_language)
 
+    def _read_used_range_values_2d(self, used_range):
+        """Read an xlwings range value as a 2D sequence.
+
+        xlwings returns a 1D list for single-row/column ranges. If we misinterpret the
+        orientation, extracted (row, col) metadata can be wrong, which later causes
+        translations to be applied to the wrong cells.
+        """
+        try:
+            values = used_range.options(ndim=2).value
+        except Exception:
+            values = used_range.value
+
+        if values is None:
+            return None
+
+        if not isinstance(values, (list, tuple)):
+            return [[values]]
+
+        if values and not isinstance(values[0], (list, tuple)):
+            # 1D list: distinguish single row vs single column.
+            row_count = None
+            col_count = None
+            try:
+                row_count = used_range.rows.count
+                col_count = used_range.columns.count
+            except Exception:
+                try:
+                    row_count = used_range.api.Rows.Count
+                    col_count = used_range.api.Columns.Count
+                except Exception:
+                    row_count = None
+                    col_count = None
+
+            if row_count == 1 and col_count != 1:
+                return [list(values)]
+            if col_count == 1 and row_count != 1:
+                return [[v] for v in values]
+
+            # Last resort: prefer treating it as a single column, which avoids shifting
+            # vertical lists across columns.
+            return [[v] for v in values]
+
+        return values
+
     def _extract_text_blocks_xlwings(
         self, file_path: Path, xw, output_language: str = "en"
     ) -> Iterator[TextBlock]:
@@ -1214,34 +1260,8 @@ class ExcelProcessor(FileProcessor):
                             used_range = sheet.used_range
                             if used_range is not None:
                                 # Get all values at once (much faster than cell-by-cell)
-                                all_values = used_range.value
+                                all_values = self._read_used_range_values_2d(used_range)
                                 if all_values is not None:
-                                    # Normalize to 2D list (single cell returns scalar, single row/col returns 1D)
-                                    # xlwings returns:
-                                    #   - Single cell: scalar
-                                    #   - Single row (1 row, N cols): [v1, v2, ..., vN]
-                                    #   - Single column (N rows, 1 col): [v1, v2, ..., vN]
-                                    #   - Multiple rows/cols: [[r1c1, r1c2], [r2c1, r2c2], ...]
-                                    if not isinstance(all_values, list):
-                                        # Single cell case
-                                        all_values = [[all_values]]
-                                    elif all_values and not isinstance(all_values[0], list):
-                                        # 1D list: need to distinguish single row vs single column
-                                        # Check used_range shape to determine orientation
-                                        try:
-                                            row_count = used_range.rows.count
-                                            col_count = used_range.columns.count
-                                        except Exception:
-                                            # Fallback: assume single row if can't determine
-                                            row_count = 1
-                                            col_count = len(all_values)
-
-                                        if row_count == 1:
-                                            # Single row: [[v1, v2, v3]]
-                                            all_values = [all_values]
-                                        else:
-                                            # Single column: [[v1], [v2], [v3]]
-                                            all_values = [[v] for v in all_values]
 
                                     # Get start position of used_range
                                     start_row = used_range.row
@@ -1262,6 +1282,27 @@ class ExcelProcessor(FileProcessor):
                                     # Skip if no translatable cells found
                                     if not translatable_cells:
                                         continue
+
+                                    # Merged cells: xlwings/COM may report the merged value on every cell in the merge area.
+                                    # Keep only the merge area's top-left cell to avoid duplicate translation blocks and
+                                    # misaligned output when applying translations.
+                                    try:
+                                        merged_map = self._get_merged_cells_map(sheet)
+                                    except Exception:
+                                        merged_map = {}
+
+                                    if merged_map:
+                                        filtered_cells: list[tuple[int, int, str]] = []
+                                        for r, c, txt in translatable_cells:
+                                            merge_address = self._is_cell_in_merged_area(r, c, merged_map)
+                                            if merge_address:
+                                                r1, c1, _r2, _c2 = merged_map[merge_address]
+                                                if (r, c) != (r1, c1):
+                                                    continue
+                                            filtered_cells.append((r, c, txt))
+                                        translatable_cells = filtered_cells
+                                        if not translatable_cells:
+                                            continue
 
                                     # Batch optimization: Get formula cells in one COM call
                                     # Uses SpecialCells(xlCellTypeFormulas) which is much faster
@@ -1978,8 +2019,9 @@ class ExcelProcessor(FileProcessor):
         """Apply cell translations with batch optimization for xlwings.
 
         Optimization strategy:
-        1. Write all cell values first (batched by contiguous row ranges)
-        2. Apply font to entire used_range via Excel API (handles merged cells)
+        1. Write cell values (batched by contiguous row ranges)
+        2. Apply output font *name* only to translated ranges (preserves existing sizes/styles)
+        3. Optionally apply per-cell font-size adjustment when configured (JP→EN only)
 
         Args:
             sheet: xlwings Sheet object
@@ -1990,20 +2032,73 @@ class ExcelProcessor(FileProcessor):
         if not cell_translations:
             return
 
+        debug_stats = logger.isEnabledFor(logging.DEBUG)
+        if debug_stats:
+            t_start = time.perf_counter()
+            t_values = 0.0
+            t_fonts = 0.0
+            t_sizes = 0.0
+            total_ranges = 0
+            value_range_writes = 0
+            value_cell_writes = 0
+            font_range_applies = 0
+            font_cell_applies = 0
+            font_range_fallbacks = 0
+
         # Get output font settings (single lookup)
         output_font_name = font_manager.get_output_font()
 
-        # Get default font size from cache (all cells use same size after read optimization)
-        # Use first cached value or default
-        default_font_size = 11.0
-        for (row, col), (_, cell_ref) in cell_translations.items():
-            block_id = f"{sheet_name}_{cell_ref}"
-            cached_font = self._font_cache.get(block_id)
-            if cached_font:
-                _, default_font_size = cached_font
-                break
+        # Handle merged cells:
+        # - If extraction (or Excel) reports the same merged value for non-top-left cells,
+        #   normalize them to the merge area's top-left so we don't write to invalid cells.
+        # - Avoid batched range writes/formatting when a batch includes merged cells.
+        merged_map: dict[str, tuple[int, int, int, int]] = {}
+        merged_top_lefts: set[tuple[int, int]] = set()
+        try:
+            merged_map = self._get_merged_cells_map(sheet)
+            if merged_map:
+                merged_top_lefts = {(r1, c1) for (r1, c1, _r2, _c2) in merged_map.values()}
+        except Exception as e:
+            logger.debug("Could not build merged cells map for sheet '%s': %s", sheet_name, e)
+            merged_map = {}
+            merged_top_lefts = set()
 
-        _, new_font_size = font_manager.select_font(None, default_font_size)
+        if merged_map:
+            normalized: dict[tuple[int, int], tuple[str, str]] = {}
+            normalized_is_top_left_source: dict[tuple[int, int], bool] = {}
+            redirected = 0
+
+            for (row, col), (translated_text, cell_ref) in cell_translations.items():
+                target_row, target_col = row, col
+                is_top_left_source = True
+
+                merge_address = self._is_cell_in_merged_area(row, col, merged_map)
+                if merge_address:
+                    r1, c1, _r2, _c2 = merged_map[merge_address]
+                    if (row, col) != (r1, c1):
+                        target_row, target_col = r1, c1
+                        is_top_left_source = False
+                        cell_ref = f"{get_column_letter(c1)}{r1}"
+                        redirected += 1
+
+                key = (target_row, target_col)
+                if key not in normalized:
+                    normalized[key] = (translated_text, cell_ref)
+                    normalized_is_top_left_source[key] = is_top_left_source
+                    continue
+
+                # Prefer the translation originating from the top-left cell if both exist.
+                if is_top_left_source and not normalized_is_top_left_source.get(key, False):
+                    normalized[key] = (translated_text, cell_ref)
+                    normalized_is_top_left_source[key] = True
+
+            if redirected:
+                logger.debug(
+                    "Normalized %d merged-cell translations to top-left in sheet '%s'",
+                    redirected, sheet_name,
+                )
+
+            cell_translations = normalized
 
         # Group translations by row for batch value writing
         rows_data: dict[int, list[tuple[int, str, str]]] = {}  # row -> [(col, text, cell_ref), ...]
@@ -2016,26 +2111,158 @@ class ExcelProcessor(FileProcessor):
         for row in rows_data:
             rows_data[row].sort(key=lambda x: x[0])
 
-        # Phase 1: Write all cell values (batched by contiguous ranges)
+        # Font-size adjustment is only relevant for JP→EN when user configured a negative adjustment.
+        # (Positive adjustments are clamped to the original size by FontSizeAdjuster.)
+        needs_size_adjustment = (
+            getattr(font_manager, "direction", None) == "jp_to_en"
+            and getattr(getattr(font_manager, "font_size_adjuster", None), "adjustment_jp_to_en", 0.0) < 0
+        )
+
+        # Phase 1+2: Write values, then apply font name to the same translated ranges.
         for row, cells in rows_data.items():
             ranges = self._find_contiguous_ranges(cells)
             for start_col, end_col, range_cells in ranges:
-                self._write_cell_values_batch(sheet, sheet_name, row, start_col, end_col, range_cells)
-
-        # Phase 2: Apply font to entire used range (single COM call)
-        # This handles merged cells correctly without boundary issues
-        try:
-            used_range = sheet.used_range
-            if used_range is not None:
-                # Use API directly for faster font application
-                used_range.api.Font.Name = output_font_name
-                used_range.api.Font.Size = new_font_size
-                logger.debug(
-                    "Applied font '%s' size %.1f to used_range in sheet '%s'",
-                    output_font_name, new_font_size, sheet_name
+                if debug_stats:
+                    total_ranges += 1
+                has_merge_in_range = bool(merged_top_lefts) and any(
+                    (row, col) in merged_top_lefts for col, _text, _cell_ref in range_cells
                 )
-        except Exception as e:
-            logger.warning("Error applying font to used_range in '%s': %s", sheet_name, e)
+
+                # Write values: avoid batched range writes when merged cells are involved.
+                if has_merge_in_range and len(range_cells) > 1:
+                    for col, text, cell_ref in range_cells:
+                        if debug_stats:
+                            t0 = time.perf_counter()
+                        self._write_cell_values_batch(
+                            sheet, sheet_name, row, col, col, [(col, text, cell_ref)]
+                        )
+                        if debug_stats:
+                            t_values += time.perf_counter() - t0
+                            value_cell_writes += 1
+                else:
+                    if debug_stats:
+                        t0 = time.perf_counter()
+                    wrote_as_range = self._write_cell_values_batch(
+                        sheet, sheet_name, row, start_col, end_col, range_cells
+                    )
+                    if debug_stats:
+                        t_values += time.perf_counter() - t0
+                        if wrote_as_range:
+                            value_range_writes += 1
+                        else:
+                            value_cell_writes += len(range_cells)
+
+                # Apply output font name ONLY to translated cells/ranges.
+                # Do NOT touch the entire used_range: it would flatten header font sizes, etc.
+                try:
+                    if has_merge_in_range:
+                        # Apply per-cell to avoid merged-range formatting errors.
+                        for col, _text, _cell_ref in range_cells:
+                            if debug_stats:
+                                t0 = time.perf_counter()
+                            cell = sheet.range(row, col)
+                            if (row, col) in merged_top_lefts:
+                                try:
+                                    cell.api.MergeArea.Font.Name = output_font_name
+                                except Exception:
+                                    cell.api.Font.Name = output_font_name
+                            else:
+                                cell.api.Font.Name = output_font_name
+                            if debug_stats:
+                                t_fonts += time.perf_counter() - t0
+                                font_cell_applies += 1
+                    else:
+                        if debug_stats:
+                            t0 = time.perf_counter()
+                        if start_col == end_col:
+                            target_range = sheet.range(row, start_col)
+                        else:
+                            target_range = sheet.range((row, start_col), (row, end_col))
+                        target_range.api.Font.Name = output_font_name
+                        if debug_stats:
+                            t_fonts += time.perf_counter() - t0
+                            font_range_applies += 1
+                except Exception as e:
+                    # Fallback: apply per-cell
+                    logger.debug(
+                        "Range font apply failed for row %d cols %d-%d in '%s': %s (falling back to per-cell)",
+                        row, start_col, end_col, sheet_name, e,
+                    )
+                    if debug_stats:
+                        font_range_fallbacks += 1
+                    for col, _, _cell_ref in range_cells:
+                        try:
+                            if debug_stats:
+                                t0 = time.perf_counter()
+                            cell = sheet.range(row, col)
+                            try:
+                                if getattr(cell.api, "MergeCells", False):
+                                    cell.api.MergeArea.Font.Name = output_font_name
+                                else:
+                                    cell.api.Font.Name = output_font_name
+                            except Exception:
+                                cell.api.Font.Name = output_font_name
+                            if debug_stats:
+                                t_fonts += time.perf_counter() - t0
+                                font_cell_applies += 1
+                        except Exception as inner_e:
+                            logger.debug(
+                                "Cell font apply failed for row %d col %d in '%s': %s",
+                                row, col, sheet_name, inner_e,
+                            )
+
+        # Phase 3 (optional): apply font-size adjustment per translated cell.
+        if needs_size_adjustment:
+            for (row, col), (_translated_text, cell_ref) in cell_translations.items():
+                t0 = time.perf_counter() if debug_stats else None
+                try:
+                    cell = sheet.range(row, col)
+                    try:
+                        original_size = float(cell.api.Font.Size)
+                    except Exception:
+                        continue
+
+                    _, adjusted_size = font_manager.select_font(None, original_size)
+                    if adjusted_size == original_size:
+                        continue
+
+                    try:
+                        # Merged cells: apply to the whole merge area for consistency
+                        if getattr(cell.api, "MergeCells", False):
+                            cell.api.MergeArea.Font.Size = adjusted_size
+                        else:
+                            cell.api.Font.Size = adjusted_size
+                    except Exception:
+                        cell.api.Font.Size = adjusted_size
+                except Exception as e:
+                    logger.debug(
+                        "Font size adjustment failed for %s_%s: %s",
+                        sheet_name, cell_ref, e,
+                    )
+                finally:
+                    if debug_stats and t0 is not None:
+                        t_sizes += time.perf_counter() - t0
+
+        if debug_stats:
+            total_seconds = time.perf_counter() - t_start
+            logger.debug(
+                "[TIMING] Excel apply (cells) '%s': cells=%d rows=%d ranges=%d "
+                "values(range=%d cell=%d, %.2fs) fonts(range=%d cell=%d fallback=%d, %.2fs) "
+                "sizes(%.2fs) total=%.2fs",
+                sheet_name,
+                len(cell_translations),
+                len(rows_data),
+                total_ranges,
+                value_range_writes,
+                value_cell_writes,
+                t_values,
+                font_range_applies,
+                font_cell_applies,
+                font_range_fallbacks,
+                t_fonts,
+                t_sizes,
+                total_seconds,
+            )
 
     def _find_contiguous_ranges(
         self, cells: list[tuple[int, str, str]]
@@ -2080,7 +2307,7 @@ class ExcelProcessor(FileProcessor):
         start_col: int,
         end_col: int,
         cells: list[tuple[int, str, str]],
-    ) -> None:
+    ) -> bool:
         """Write cell values in batch (values only, no font).
 
         Args:
@@ -2090,6 +2317,10 @@ class ExcelProcessor(FileProcessor):
             start_col: Starting column
             end_col: Ending column
             cells: List of (col, text, cell_ref) sorted by col
+
+        Returns:
+            True if written as a multi-cell range write, False if written cell-by-cell
+            (single cell or fallback due to COM/merged-cell constraints).
         """
         try:
             if len(cells) == 1:
@@ -2103,6 +2334,7 @@ class ExcelProcessor(FileProcessor):
                         sheet_name, cell_ref, len(text), len(final_text)
                     )
                 sheet.range(row, col).value = final_text
+                return False
             else:
                 # Multiple contiguous cells - batch write
                 values = []
@@ -2116,6 +2348,7 @@ class ExcelProcessor(FileProcessor):
                         )
                     values.append(final_text)
                 sheet.range((row, start_col), (row, end_col)).value = values
+                return True
         except Exception as e:
             logger.warning(
                 "Error writing values to row %d cols %d-%d in '%s': %s",
@@ -2127,9 +2360,23 @@ class ExcelProcessor(FileProcessor):
                     final_text = text
                     if text and len(text) > EXCEL_CELL_CHAR_LIMIT:
                         final_text = text[:EXCEL_CELL_CHAR_LIMIT - 3] + "..."
-                    sheet.range(row, col).value = final_text
+                    try:
+                        sheet.range(row, col).value = final_text
+                    except Exception as write_e:
+                        # Merged cells: Excel may reject writes to non-top-left cells.
+                        # Attempt to write to the merge area's top-left instead.
+                        try:
+                            cell = sheet.range(row, col)
+                            if getattr(cell.api, "MergeCells", False):
+                                merge_area = cell.api.MergeArea
+                                sheet.range(merge_area.Row, merge_area.Column).value = final_text
+                            else:
+                                raise write_e
+                        except Exception:
+                            raise write_e
                 except Exception as inner_e:
                     logger.debug("Error writing cell %s_%s: %s", sheet_name, cell_ref, inner_e)
+            return False
 
     def _apply_single_cell_xlwings(
         self,

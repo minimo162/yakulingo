@@ -539,6 +539,8 @@ class YakuLingoApp:
         self._login_polling_task: "asyncio.Task | None" = None
         # GPT mode preparation task (wait until mode switch is done)
         self._gpt_mode_setup_task: "asyncio.Task | None" = None
+        # Connection status auto-refresh (avoids stale "準備中..." UI after transient timeouts)
+        self._status_auto_refresh_task: "asyncio.Task | None" = None
         self._shutdown_requested = False
         self._copilot_window_monitor_task: "asyncio.Task | None" = None
         self._copilot_window_seen = False
@@ -1856,12 +1858,16 @@ class YakuLingoApp:
         # Some background Playwright operations can temporarily block quick state checks,
         # so refresh once more shortly after to avoid a stale "準備中..." UI.
         self._refresh_status()
+        self._refresh_translate_button_state()
+        self._start_status_auto_refresh("browser_ready")
 
         async def _refresh_status_later() -> None:
             await asyncio.sleep(1.0)
             if self._shutdown_requested:
                 return
             self._refresh_status()
+            self._refresh_translate_button_state()
+            self._start_status_auto_refresh("browser_ready_later")
 
         asyncio.create_task(_refresh_status_later())
 
@@ -2162,6 +2168,57 @@ class YakuLingoApp:
                     self._update_translate_button_state()
             except Exception as e2:
                 logger.debug("Translate button refresh with saved client failed: %s", e2)
+
+    def _start_status_auto_refresh(self, reason: str = "") -> None:
+        """Retry status refresh briefly to avoid a stuck '準備中...' indicator.
+
+        The Copilot readiness check runs on a single Playwright executor thread.
+        When that thread is busy, quick UI checks can time out and leave the UI
+        showing "準備中..." even after Copilot is ready.
+        """
+        if self._shutdown_requested:
+            return
+        if self._header_status is None or self._client is None:
+            return
+        if self.state.copilot_ready or self.state.connection_state != ConnectionState.CONNECTING:
+            return
+
+        existing = self._status_auto_refresh_task
+        if existing is not None and not existing.done():
+            return
+
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return
+
+        logger.debug("Starting status auto-refresh: %s", reason)
+        self._status_auto_refresh_task = asyncio.create_task(self._status_auto_refresh_loop())
+
+    async def _status_auto_refresh_loop(self) -> None:
+        """Auto-refresh status a few times until it stabilizes (ready/error)."""
+        delays = (0.5, 0.5, 1.0, 1.0, 2.0, 3.0, 5.0, 5.0, 5.0)
+        current_task = asyncio.current_task()
+        try:
+            for delay in delays:
+                if self._shutdown_requested:
+                    return
+                if self.state.is_translating():
+                    return
+                self._refresh_status()
+                self._refresh_translate_button_state()
+                if self.state.copilot_ready:
+                    return
+                if self.state.connection_state != ConnectionState.CONNECTING:
+                    return
+                await asyncio.sleep(delay)
+
+            if not self._shutdown_requested and not self.state.is_translating():
+                self._refresh_status()
+                self._refresh_translate_button_state()
+        finally:
+            if current_task is not None and self._status_auto_refresh_task is current_task:
+                self._status_auto_refresh_task = None
 
     def _refresh_content(self):
         """Refresh main content area and update layout classes"""
@@ -2874,15 +2931,18 @@ class YakuLingoApp:
                 return
 
             copilot_state: str | None = None
+            state_check_failed = False
             try:
                 copilot_state = copilot.check_copilot_state(timeout=2)
             except TimeoutError:
+                state_check_failed = True
                 copilot_state = None
             except Exception as e:
+                state_check_failed = True
                 logger.debug("Failed to check Copilot state for UI: %s", e)
                 copilot_state = None
 
-            if is_connected and copilot_state == CopilotConnectionState.READY:
+            if copilot_state == CopilotConnectionState.READY:
                 self.state.copilot_ready = True
                 self.state.connection_state = ConnectionState.CONNECTED
                 with ui.element('div').classes('status-indicator connected').props('role="status" aria-live="polite"'):
@@ -2918,6 +2978,7 @@ class YakuLingoApp:
                     with ui.column().classes('gap-0'):
                         ui.label('準備中...').classes('text-xs')
                         ui.label('Copilotを読み込み中').classes('text-2xs opacity-80')
+                self._start_status_auto_refresh("copilot_loading")
                 return
 
             if error == CopilotHandler.ERROR_EDGE_NOT_FOUND:
@@ -2945,6 +3006,8 @@ class YakuLingoApp:
                 with ui.column().classes('gap-0'):
                     ui.label('準備中...').classes('text-xs')
                     ui.label('翻訳の準備をしています').classes('text-2xs opacity-80')
+            if state_check_failed:
+                self._start_status_auto_refresh("copilot_state_check_failed")
 
         self._header_status = header_status
         header_status()
@@ -5477,6 +5540,14 @@ def run_app(
             except Exception:
                 pass
             logger.debug("[TIMING] Cancel: login_polling_task: %.3fs", time_module.time() - t0)
+
+        if yakulingo_app._status_auto_refresh_task is not None:
+            t0 = time_module.time()
+            try:
+                yakulingo_app._status_auto_refresh_task.cancel()
+            except Exception:
+                pass
+            logger.debug("[TIMING] Cancel: status_auto_refresh_task: %.3fs", time_module.time() - t0)
 
         if yakulingo_app.translation_service is not None:
             t0 = time_module.time()

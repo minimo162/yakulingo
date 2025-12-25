@@ -1801,11 +1801,18 @@ class YakuLingoApp:
 
         await self._sync_side_panel_windows()
 
-        # Show ready notification (need client context for UI operations in async task)
-        # Use English to avoid encoding issues on Windows
-        if self._client:
-            with self._client:
-                ui.notify('Ready', type='positive', position='bottom-right', timeout=2000)
+        # Ensure header status reflects the latest connection state.
+        # Some background Playwright operations can temporarily block quick state checks,
+        # so refresh once more shortly after to avoid a stale "準備中..." UI.
+        self._refresh_status()
+
+        async def _refresh_status_later() -> None:
+            await asyncio.sleep(1.0)
+            if self._shutdown_requested:
+                return
+            self._refresh_status()
+
+        asyncio.create_task(_refresh_status_later())
 
     async def _wait_for_login_completion(self):
         """ログイン完了をバックグラウンドでポーリング待機。
@@ -2059,8 +2066,24 @@ class YakuLingoApp:
 
     def _refresh_status(self):
         """Refresh status indicator"""
-        if self._header_status:
+        if not self._header_status:
+            return
+
+        try:
+            # Fast path: we are already in a valid client context.
             self._header_status.refresh()
+            return
+        except Exception as e:
+            # When called from async/background tasks, NiceGUI context may not be set.
+            # Retry with the saved client context.
+            if self._client is None:
+                logger.debug("Status refresh failed (no client): %s", e)
+                return
+            try:
+                with self._client:
+                    self._header_status.refresh()
+            except Exception as e2:
+                logger.debug("Status refresh with saved client failed: %s", e2)
 
     def _refresh_content(self):
         """Refresh main content area and update layout classes"""
@@ -5623,8 +5646,11 @@ def run_app(
                 "status": yakulingo_app._layout_init_state.value,
             }
 
-    # Icon path for window and favicon (used by native mode and _position_window_early_sync)
+    # Icon path for native window (pywebview) and browser favicon.
     icon_path = ui_dir / 'yakulingo.ico'
+    browser_favicon_path = ui_dir / 'yakulingo_favicon.svg'
+    if not browser_favicon_path.exists():
+        browser_favicon_path = icon_path
 
     # Optimize pywebview startup (native mode only)
     # - hidden: Start window hidden and show after positioning (prevents flicker)
@@ -5633,7 +5659,7 @@ def run_app(
     # - easy_drag: Disable titlebar drag region (not needed, window has native titlebar)
     # - icon: Use YakuLingo icon for taskbar (instead of default Python icon)
     if native:
-        nicegui_app.native.window_args['background_color'] = '#FEFBFF'  # M3 surface color
+        nicegui_app.native.window_args['background_color'] = '#F4F6F8'  # Match app background (styles.css --md-expressive-surface)
         nicegui_app.native.window_args['easy_drag'] = False
 
         # Start window hidden to prevent position flicker
@@ -5991,6 +6017,11 @@ def run_app(
 })();
 </script>''')
 
+        # Provide an explicit SVG favicon for browser mode (Edge --app taskbar icon can look
+        # blurry when it falls back to a low-resolution ICO entry).
+        if not native and browser_favicon_path != icon_path and browser_favicon_path.exists():
+            ui.add_head_html('<link rel="icon" href="/static/yakulingo_favicon.svg" type="image/svg+xml">')
+
         # Set dynamic panel sizes as CSS variables (calculated from monitor resolution)
         sidebar_width, input_panel_width, content_width = yakulingo_app._panel_sizes
         window_width, window_height = yakulingo_app._window_size
@@ -6125,7 +6156,7 @@ def run_app(
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    background: #FEFBFF;
+    background: var(--md-expressive-surface, #F4F6F8);
     z-index: 9999;
     opacity: 1;
     transition: opacity 0.25s ease-out;
@@ -6138,7 +6169,7 @@ def run_app(
     margin-top: 1.5rem;
     font-size: 1.75rem;
     font-weight: 500;
-    color: #1B1B1F;
+    color: var(--md-sys-color-on-surface, #2C3538);
     letter-spacing: 0.02em;
 }
 /* Main app fade-in animation */
@@ -6357,12 +6388,12 @@ def run_app(
     # This approach ensures the window appears at the correct position from the start.
 
     window_title = "YakuLingo" if native else "YakuLingo (UI)"
-    # Use the same icon for favicon (browser tab icon)
+    # Browser mode: prefer SVG favicon for a sharper Edge --app taskbar icon.
     ui.run(
         host=host,
         port=port,
         title=window_title,
-        favicon=icon_path,
+        favicon=icon_path if native else browser_favicon_path,
         dark=False,
         reload=False,
         native=native,

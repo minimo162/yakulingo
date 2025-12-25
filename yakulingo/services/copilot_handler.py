@@ -1700,15 +1700,14 @@ class CopilotHandler:
                 self.last_connection_error = self.ERROR_LOGIN_REQUIRED
                 return False
 
-            # Check 2: URL is still Copilot page
-            is_copilot = "m365.cloud.microsoft" in url
-            if not is_copilot:
+            # Check 2: URL is still a Copilot page (user didn't navigate away)
+            if not _is_copilot_url(url):
                 logger.debug("Page validity check: URL is not Copilot (%s)", url[:50] if url else "empty")
                 return False
 
             # Check 3: Chat input element exists (verifies login state)
             # Use query_selector for instant check (no wait/timeout)
-            input_selector = self.CHAT_INPUT_SELECTOR
+            input_selector = self.CHAT_INPUT_SELECTOR_EXTENDED
             input_elem = self._page.query_selector(input_selector)
             if input_elem:
                 return True
@@ -4541,7 +4540,7 @@ class CopilotHandler:
             if "/chat" in current_url and _is_copilot_url(current_url):
                 # Be conservative: URL alone can be true during redirect; require the chat input to be present.
                 try:
-                    if page.query_selector(self.CHAT_INPUT_SELECTOR):
+                    if page.query_selector(self.CHAT_INPUT_SELECTOR_EXTENDED):
                         logger.info("On Copilot chat page - ready")
                         return ConnectionState.READY
                 except Exception:
@@ -4720,7 +4719,7 @@ class CopilotHandler:
 
             # Wait for the chat input to become available; fixed sleep alone is flaky right after login.
             try:
-                page.wait_for_selector(self.CHAT_INPUT_SELECTOR, timeout=30000, state='visible')
+                page.wait_for_selector(self.CHAT_INPUT_SELECTOR_EXTENDED, timeout=30000, state='visible')
             except PlaywrightTimeoutError:
                 logger.info("wait_for_page_load: chat input not visible yet, continuing with fixed wait")
 

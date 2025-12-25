@@ -1,7 +1,7 @@
 /* === M3 Design Tokens === */
 :root {
-    /* Primary - Purple/Blue-purple CTA (Nani-inspired, professional) */
-    --md-sys-color-primary: #6366F1;
+    /* Primary - Indigo CTA (Expressive, higher contrast on-white) */
+    --md-sys-color-primary: #4F46E5;
     --md-sys-color-on-primary: #FFFFFF;
     --md-sys-color-primary-container: #E0E7FF;
     --md-sys-color-on-primary-container: #312E81;
@@ -43,14 +43,14 @@
     --md-sys-color-error-container: #FEE2E2;
     --md-sys-color-on-error-container: #7F1D1D;
 
-    /* Success (extended - muted green) */
-    --md-sys-color-success: #16A34A;
+    /* Success (extended - muted green, higher contrast on-white) */
+    --md-sys-color-success: #15803D;
     --md-sys-color-on-success: #FFFFFF;
     --md-sys-color-success-container: #DCFCE7;
     --md-sys-color-on-success-container: #166534;
 
-    /* Warning (extended - muted amber) */
-    --md-sys-color-warning: #D97706;
+    /* Warning (extended - muted amber, higher contrast on-white) */
+    --md-sys-color-warning: #B45309;
     --md-sys-color-on-warning: #FFFFFF;
     --md-sys-color-warning-container: #FEF3C7;
     --md-sys-color-on-warning-container: #92400E;
@@ -114,7 +114,7 @@
     --md-card-border-hover: 1px solid rgba(0, 0, 0, 0.10);
 
     /* Expressive overlays (subtle, content-focused) */
-    --md-expressive-primary-glow: radial-gradient(circle at 18% 20%, rgba(99, 102, 241, 0.03), transparent 55%);
+    --md-expressive-primary-glow: radial-gradient(circle at 18% 20%, rgba(79, 70, 229, 0.03), transparent 55%);
     --md-expressive-secondary-glow: radial-gradient(circle at 80% 12%, rgba(255, 207, 81, 0.02), transparent 50%);
     --md-expressive-surface: #F4F6F8;
     --md-expressive-border: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 60%, transparent);
@@ -2239,10 +2239,10 @@ body.yakulingo-drag-active .global-drop-indicator {
 /* === Nani-style Explanation === */
 /* Nani-style: bg-primary-bg-lighter - softer primary background */
 .nani-explanation {
-    background: #EDEAFF;  /* primary-container - solid color for readability */
+    background: var(--md-sys-color-primary-container);  /* primary-container - solid color for readability */
     padding: 0.875rem;  /* 14px - matches Nani's p-3.5 */
     margin-top: 0.25rem;
-    color: rgba(30, 37, 40, 0.8);  /* on-surface at 80% opacity */
+    color: color-mix(in srgb, var(--md-sys-color-on-surface) 80%, transparent);  /* on-surface at 80% */
     border-radius: 1rem;
     font-size: var(--md-sys-typescale-size-sm);  /* 14px - matches Nani's text-sm */
     line-height: 1.85;  /* matches Nani's --html-base-line-height */
@@ -3390,7 +3390,7 @@ a {
 }
 
 a:hover {
-    color: #5A6AC9;
+    color: color-mix(in srgb, var(--md-sys-color-primary) 85%, var(--md-sys-color-on-surface) 15%);
     text-decoration: underline;
 }
 

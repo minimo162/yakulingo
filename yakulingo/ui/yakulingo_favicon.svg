@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <title>YakuLingo</title>
+  <circle cx="12" cy="12" r="12" fill="#4F46E5" />
+  <!-- "A" shape (right side) -->
+  <polygon fill="#FFFFFF" points="17.5 5 21 17 19 17 18.12 14 14.88 14 14 17 12 17" />
+  <!-- "A" crossbar cutout -->
+  <polygon fill="#4F46E5" points="15.5 12 17.5 12 16.5 9" />
+  <!-- Japanese symbol (left side) -->
+  <rect x="4" y="5" width="8" height="1" fill="#FFFFFF" />
+  <rect x="4" y="8" width="7" height="1" fill="#FFFFFF" />
+  <rect x="8" y="5" width="1" height="5" fill="#FFFFFF" />
+  <!-- Curved arrow (simplified) -->
+  <path d="M5 14 L9 10 L12 14" stroke="#FFFFFF" stroke-width="1" fill="none" stroke-linecap="round" stroke-linejoin="round" />
+</svg>

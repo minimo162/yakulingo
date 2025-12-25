@@ -574,45 +574,103 @@ function Update-PyVenvConfig {
         throw "pyvenv.cfg not found.`n`nExpected location: $pyvenvPath`n`nThe ZIP package may be corrupted or incomplete. Please re-download from the network share."
     }
 
-    # Find python.exe in .uv-python (structure: .uv-python/cpython-x.x.x-*/python.exe)
-    # Only search one level deep to avoid slow recursive enumeration
     $uvPythonDir = Join-Path $SetupPath ".uv-python"
     if (-not (Test-Path $uvPythonDir)) {
         throw "Python runtime directory not found.`n`nExpected location: $uvPythonDir`n`nThe ZIP package may be corrupted or incomplete. Please re-download from the network share."
     }
 
-    $pythonExe = $null
-    $searchedDirs = @()
-    Get-ChildItem -Path $uvPythonDir -Directory -ErrorAction SilentlyContinue | ForEach-Object {
-        $searchedDirs += $_.Name
-        $candidate = Join-Path $_.FullName "python.exe"
-        if (Test-Path $candidate) {
-            $pythonExe = Get-Item $candidate
-            return  # Break out of ForEach-Object
+    # pyvenv.cfg is read by Python with encoding='utf-8' (no BOM).
+    # Use UTF-8 without BOM here to support non-ASCII install paths while avoiding a BOM that would break parsing.
+    $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+
+    try {
+        $pyvenvLines = [System.IO.File]::ReadAllLines($pyvenvPath, $utf8NoBom)
+    } catch {
+        throw "Failed to read pyvenv.cfg as UTF-8.`n`nPath: $pyvenvPath`nError: $($_.Exception.Message)"
+    }
+
+    # Extract the desired Python version from pyvenv.cfg (uv uses version_info, venv uses version).
+    $desiredVersionText = $null
+    foreach ($line in $pyvenvLines) {
+        if ($line -match '^\s*version_info\s*=\s*(.+?)\s*$') {
+            $desiredVersionText = $Matches[1].Trim()
+            break
+        }
+        if ($line -match '^\s*version\s*=\s*(.+?)\s*$') {
+            $desiredVersionText = $Matches[1].Trim()
+            break
         }
     }
-    if (-not $pythonExe) {
+
+    $desiredVersion = $null
+    if ($desiredVersionText) {
+        try { $desiredVersion = [Version]$desiredVersionText } catch { $desiredVersion = $null }
+    }
+
+    # Find python.exe in .uv-python (structure: .uv-python/cpython-x.x.x-*/python.exe)
+    # Only search one level deep to avoid slow recursive enumeration.
+    $searchedDirs = @()
+    $candidates = @()
+    foreach ($dir in (Get-ChildItem -Path $uvPythonDir -Directory -ErrorAction SilentlyContinue)) {
+        $searchedDirs += $dir.Name
+        $pythonExePath = Join-Path $dir.FullName "python.exe"
+        if (-not (Test-Path $pythonExePath)) {
+            continue
+        }
+
+        $candidateVersion = $null
+        if ($dir.Name -match '^cpython-(\d+\.\d+\.\d+)-') {
+            try { $candidateVersion = [Version]$Matches[1] } catch { $candidateVersion = $null }
+        }
+
+        $candidates += [PSCustomObject]@{
+            Directory = $dir
+            PythonExe = $pythonExePath
+            Version = $candidateVersion
+        }
+    }
+
+    if (-not $candidates -or $candidates.Count -eq 0) {
         $searchedInfo = if ($searchedDirs.Count -gt 0) { "Searched in: $($searchedDirs -join ', ')" } else { "No subdirectories found in .uv-python" }
         throw "python.exe not found in bundled Python runtime.`n`nLocation: $uvPythonDir`n$searchedInfo`n`nThe ZIP package may be corrupted or incomplete. Please re-download from the network share."
     }
 
-    $pythonHome = Split-Path -Parent $pythonExe.FullName
+    # Prefer an exact version match; otherwise prefer latest patch within the same major.minor; otherwise choose the latest available.
+    $selected = $null
+    if ($desiredVersion) {
+        $selected = $candidates | Where-Object { $_.Version -and $_.Version -eq $desiredVersion } | Sort-Object Version -Descending | Select-Object -First 1
+        if (-not $selected) {
+            $selected = $candidates | Where-Object { $_.Version -and $_.Version.Major -eq $desiredVersion.Major -and $_.Version.Minor -eq $desiredVersion.Minor } | Sort-Object Version -Descending | Select-Object -First 1
+        }
+    }
+    if (-not $selected) {
+        $selected = $candidates | Where-Object { $_.Version } | Sort-Object Version -Descending | Select-Object -First 1
+    }
+    if (-not $selected) {
+        $selected = $candidates | Select-Object -First 1
+    }
+
+    $pythonHome = Split-Path -Parent $selected.PythonExe
 
     $updated = $false
-    $newLines = Get-Content -Path $pyvenvPath | ForEach-Object {
-        if ($_ -match '^home\s*=') {
+    $newLines = foreach ($line in $pyvenvLines) {
+        if ($line -match '^\s*home\s*=') {
             $updated = $true
             "home = $pythonHome"
         } else {
-            $_
+            $line
         }
     }
 
     if (-not $updated) {
-        $newLines += "home = $pythonHome"
+        $newLines = @("home = $pythonHome") + $newLines
     }
 
-    $newLines | Set-Content -Path $pyvenvPath -Encoding ASCII
+    try {
+        [System.IO.File]::WriteAllLines($pyvenvPath, $newLines, $utf8NoBom)
+    } catch {
+        throw "Failed to write pyvenv.cfg.`n`nPath: $pyvenvPath`nError: $($_.Exception.Message)"
+    }
 }
 
 # ============================================================

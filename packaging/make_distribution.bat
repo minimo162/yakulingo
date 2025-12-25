@@ -118,15 +118,8 @@ echo        Pre-compiling Python bytecode (parallel)...
 echo        Warming up module cache...
 .venv\Scripts\python.exe -c "import nicegui; from nicegui import ui, app, Client, events; import nicegui.elements; import fastapi; import uvicorn; import starlette; import pydantic; import httptools; import anyio; import h11; import watchfiles; import webview; from yakulingo.ui import app; from yakulingo.services import translation_service" 2>nul
 
-:: Fix pyvenv.cfg - extract version and rewrite
-set "PYTHON_VERSION="
-for /f "tokens=2 delims==" %%v in ('findstr /b "version" ".venv\pyvenv.cfg"') do set "PYTHON_VERSION=%%v"
-set "PYTHON_VERSION=!PYTHON_VERSION: =!"
-(
-    echo home = __PYTHON_HOME__
-    echo include-system-site-packages = false
-    echo version = !PYTHON_VERSION!
-) > ".venv\pyvenv.cfg"
+:: NOTE: Do NOT modify the local .venv\pyvenv.cfg here (it breaks the developer venv).
+:: We patch the copied file in dist_temp after robocopy instead.
 
 :: Get current date (YYYYMMDD format)
 for /f %%d in ('powershell -NoProfile -Command "(Get-Date).ToString('yyyyMMdd')"') do set "DIST_DATE=%%d"
@@ -210,6 +203,27 @@ if defined ROBOCOPY_WARNINGS (
     echo        --- Skipped/Failed files ---
     findstr /C:"FAILED" /C:"Skipped" "%ROBOCOPY_LOG%"
     echo        ----------------------------
+)
+
+:: ============================================================
+:: Patch dist pyvenv.cfg (relocatable, no dev-machine paths)
+:: - Ensure UTF-8 without BOM (Python reads pyvenv.cfg as UTF-8)
+:: - Replace "home =" with placeholder (setup.ps1 will rewrite to bundled runtime)
+:: ============================================================
+echo        Patching dist pyvenv.cfg...
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+    "$pyvenv = '%DIST_DIR%\.venv\pyvenv.cfg';" ^
+    "if (-not (Test-Path $pyvenv)) { Write-Host ('[ERROR] pyvenv.cfg not found: ' + $pyvenv); exit 1 };" ^
+    "$utf8NoBom = New-Object System.Text.UTF8Encoding $false;" ^
+    "$lines = [System.IO.File]::ReadAllLines($pyvenv, $utf8NoBom);" ^
+    "$updated = $false;" ^
+    "$newLines = foreach ($line in $lines) { if ($line -match '^\\s*home\\s*=') { $updated = $true; 'home = __PYTHON_HOME__' } else { $line } };" ^
+    "if (-not $updated) { $newLines = @('home = __PYTHON_HOME__') + $newLines };" ^
+    "[System.IO.File]::WriteAllLines($pyvenv, $newLines, $utf8NoBom)"
+if errorlevel 1 (
+    echo        [ERROR] Failed to patch dist pyvenv.cfg.
+    pause
+    exit /b 1
 )
 
 :: ============================================================

@@ -246,3 +246,33 @@ def test_xlwings_apply_batches_range_ops_for_dense_rows(monkeypatch: pytest.Monk
     # roughly two range calls per row (values + font), not per-cell.
     assert len(sheet.range_calls) <= rows * 2 + 2
     assert all((r1, c1) != (r2, c2) for (r1, c1, r2, c2) in sheet.range_calls)
+
+
+@pytest.mark.unit
+def test_xlwings_apply_batches_non_merged_segments_around_merged_cells(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    processor = ExcelProcessor()
+    sheet = _FakeSheet("Sheet1", merged_areas=[(1, 1, 2, 1)])  # A1:A2 merged (vertical)
+
+    merged_map = {"A1:A2": (1, 1, 2, 1)}
+    monkeypatch.setattr(processor, "_get_merged_cells_map", lambda _sheet: merged_map)
+
+    # Row 1 has a merged cell (A1) plus many contiguous normal cells. We should still be
+    # able to batch-write/apply fonts for the non-merged segment (B1:J1) without touching A1.
+    cell_translations: dict[tuple[int, int], tuple[str, str]] = {}
+    for col in range(1, 11):  # A..J
+        cell_ref = f"{get_column_letter(col)}1"
+        cell_translations[(1, col)] = (f"T{col}", cell_ref)
+
+    processor._apply_cell_translations_xlwings_batch(  # noqa: SLF001 (unit test)
+        sheet, "Sheet1", cell_translations, FontManager("jp_to_en")
+    )
+
+    assert sheet.values[(1, 1)] == "T1"
+    assert sheet.values[(1, 10)] == "T10"
+
+    # Never attempt to batch-write across the merged cell (A1).
+    assert (1, 1, 1, 10) not in sheet.range_calls
+    # But we should batch the non-merged segment (B1:J1) for performance.
+    assert (1, 2, 1, 10) in sheet.range_calls

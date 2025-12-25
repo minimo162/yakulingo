@@ -241,7 +241,7 @@ The application uses **local-only language detection** via `detect_language()`:
 
 Translation direction based on detection:
 - **Japanese input ("日本語")** → English output (standard/concise/minimal shown together)
-- **Non-Japanese input** → Japanese output (single translation + explanation + action buttons + inline input)
+- **Non-Japanese input** → Japanese output (single translation + explanation + expandable input)
 
 No manual direction selection is required for text translation. File translation also uses auto-detection with optional manual override via language toggle buttons.
 
@@ -251,15 +251,14 @@ No manual direction selection is required for text translation. File translation
 - **Source text section** (原文セクション): 翻訳結果パネル上部に原文を表示 + コピーボタン
 - **Translation status** (翻訳状態表示): 「英訳中...」「和訳中...」→「? 英訳しました」「? 和訳しました」+ 経過時間バッジ
 - **Suggestion hint row**: [再翻訳] ボタン
-- **Action options**: 単独オプションスタイルのボタン
+- **Follow-up inputs**: 展開型の追加入力（英訳: 「アレンジした英文をチェック」 / 和訳: 「返信文を作成」）
 
 ### Japanese → English (英訳)
 - **3つのスタイル出力**（標準/簡潔/最簡潔）を縦並びで表示
-- **Check my English**: [アレンジした英文をチェック] 展開型入力欄
+- **Check my English**: [アレンジした英文をチェック] 展開型入力欄（翻訳結果を少し直した英文の添削）
 
 ### English → Japanese (和訳)
 - **Single translation output** with detailed explanation
-- **Action buttons**: [英文をチェック] [要点を教えて]
 - **Reply composer**: [返信文を作成] 展開型入力欄
 
 ### Common Features
@@ -367,7 +366,7 @@ The application uses M3 (Material Design 3) component-based styling:
 | `.explain-more-btn` | 詳細説明ボタン |
 | `.settings-btn` | 設定ボタン |
 | `.glossary-toggle-btn` | 用語集トグル（Chip-style） |
-| `.follow-up-btn` | フォローアップボタン |
+| `.follow-up-btn` | （Legacy）フォローアップボタン（現在UIでは未使用） |
 
 ### その他のKey CSS Classes
 - `.text-box` - M3 text field container
@@ -3008,10 +3007,10 @@ Based on recent commits:
 - **Text Translation UI Unification**:
   - **3-style output**: 標準/簡潔/最簡潔を同時表示
   - **Style toggle removed**: スタイル切り替えUIを廃止
-  - **Unified structure**: 英訳 and 和訳 now share same UI pattern (hint row + action buttons + expandable inputs)
+  - **Unified structure**: 英訳 and 和訳 now share same UI pattern (hint row + expandable inputs)
   - **Suggestion hint row**: [再翻訳] ボタン for both directions
-  - **和訳 buttons**: [英文をチェック] [要点を教えて] [返信文を作成] as single option style
-  - **英訳 buttons**: [アレンジした英文をチェック]
+  - **和訳 input**: 「返信文を作成」展開型入力欄
+  - **英訳 input**: 「アレンジした英文をチェック」展開型入力欄
   - **Removed**: カスタムリクエスト入力欄、[これはどう？] quick chip、connector line design、settings dialog
 - **Settings Dialog**: Removed
 - **Installation**: Desktop shortcut only (removed Start Menu entry)

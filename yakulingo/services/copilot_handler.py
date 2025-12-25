@@ -1544,11 +1544,100 @@ class CopilotHandler:
             except Exception:
                 continue
 
+        if not pids:
+            return False
+
+        # Reduce redundant kills: pick "root" processes whose parent isn't in the matched set.
+        # Edge spawns many child processes that inherit the same cmdline flags; killing every PID
+        # (especially with /T) is slow and unnecessary.
+        root_pids = set(pids)
+        for pid in list(pids):
+            try:
+                parent_pid = psutil.Process(pid).ppid()
+                if parent_pid in pids:
+                    root_pids.discard(pid)
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+            except Exception:
+                continue
+        if not root_pids:
+            root_pids = pids
+
         killed_any = False
-        for pid in sorted(pids):
+        for pid in sorted(root_pids):
             if self._kill_process_tree(pid):
                 killed_any = True
         return killed_any
+
+    def _spawn_kill_process_tree(self, pid: int) -> bool:
+        """Spawn taskkill (/F /T) without waiting (Windows only)."""
+        if sys.platform != "win32":
+            return False
+        try:
+            taskkill_path = r"C:\Windows\System32\taskkill.exe"
+            local_cwd = os.environ.get("SYSTEMROOT", r"C:\Windows")
+            subprocess.Popen(
+                [taskkill_path, "/F", "/T", "/PID", str(pid)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                cwd=local_cwd,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+            return True
+        except Exception as e:
+            logger.debug("Failed to spawn taskkill for PID %s: %s", pid, e)
+            return False
+
+    def _kill_edge_processes_by_profile_and_port_async(self, profile_dir: Path, port: int) -> bool:
+        """Spawn taskkill for Edge processes matching our dedicated profile + CDP port (Windows only)."""
+        if sys.platform != "win32":
+            return False
+        try:
+            import psutil
+        except Exception:
+            return False
+
+        profile_cmp = str(profile_dir).replace("\\", "/").lower()
+        port_flag = f"--remote-debugging-port={port}"
+
+        pids: set[int] = set()
+        for proc in psutil.process_iter(['pid', 'name', 'exe', 'cmdline']):
+            try:
+                name = (proc.info.get('name') or '').lower()
+                exe = (proc.info.get('exe') or '').lower()
+                if 'msedge' not in name and 'msedge' not in exe:
+                    continue
+                cmdline = " ".join(proc.info.get('cmdline') or []).replace("\\", "/").lower()
+                if port_flag in cmdline and profile_cmp in cmdline:
+                    pid = proc.info.get('pid')
+                    if isinstance(pid, int):
+                        pids.add(pid)
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+            except Exception:
+                continue
+
+        if not pids:
+            return False
+
+        root_pids = set(pids)
+        for pid in list(pids):
+            try:
+                parent_pid = psutil.Process(pid).ppid()
+                if parent_pid in pids:
+                    root_pids.discard(pid)
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+            except Exception:
+                continue
+        if not root_pids:
+            root_pids = pids
+
+        spawned_any = False
+        for pid in sorted(root_pids):
+            if self._spawn_kill_process_tree(pid):
+                spawned_any = True
+        return spawned_any
 
     def _kill_process_tree(self, pid: int) -> bool:
         """Kill a process and all its child processes using taskkill /T.
@@ -4895,11 +4984,15 @@ class CopilotHandler:
         # 3. Calling stop() from a different thread causes "Cannot switch to a different thread" error
         # 4. Edge process termination below will close the connection anyway
 
-        # Best-effort refresh: detect an existing dedicated Edge on our CDP port
-        # (may set _edge_pid / _browser_started_by_us for reliable cleanup).
+        # Determine ownership evidence for shutdown cleanup.
+        #
+        # NOTE: _get_cdp_port_status() relies on netstat and can be slow on some systems.
+        # On shutdown, prefer PID/profile-based cleanup paths and avoid netstat unless we
+        # have no other evidence.
         port_status: str | None = None
         with suppress(Exception):
-            port_status = self._get_cdp_port_status()
+            if self.edge_process is None and self._edge_pid is None and not self._browser_started_by_us:
+                port_status = self._get_cdp_port_status()
 
         # Terminate Edge browser process directly (don't wait for Playwright).
         # We only try to terminate when we have strong evidence it is our dedicated
@@ -4912,81 +5005,33 @@ class CopilotHandler:
         )
 
         if should_terminate_edge:
-            browser_terminated = False
-
-            # Note: Graceful close (WM_CLOSE) is skipped here because it almost always
-            # times out due to M365 Copilot's state. Instead, we use --disable-session-crashed-bubble
-            # flag when starting Edge to suppress the "Restore pages" prompt.
-
-            # Directly kill process tree (fastest method)
-            # Use _kill_process_tree to kill all child processes (renderer, GPU, etc.)
-            # that may be holding file handles to the profile directory
+            # On shutdown, prefer non-blocking termination. Waiting for taskkill to finish can
+            # noticeably delay app exit (Edge can have many child processes).
             taskkill_start = time.monotonic()
 
-            # Get PID from edge_process or fall back to saved _edge_pid
-            pid_to_kill: int | None = None
-            if port_status == "ours" and self._edge_pid:
-                pid_to_kill = self._edge_pid
-            elif self.edge_process and self.edge_process.pid:
-                pid_to_kill = self.edge_process.pid
-            elif self._edge_pid:
-                pid_to_kill = self._edge_pid
-                logger.debug("Using saved _edge_pid %s (edge_process is None)", pid_to_kill)
+            pids_to_kill: set[int] = set()
+            if self.edge_process and self.edge_process.pid:
+                pids_to_kill.add(self.edge_process.pid)
+            if self._edge_pid:
+                pids_to_kill.add(self._edge_pid)
 
-            with suppress(Exception):
-                if pid_to_kill:
-                    if self._kill_process_tree(pid_to_kill):
-                        # If the CDP port is still open, the PID we killed may have been a stale/launcher PID.
-                        # In that case, fall back to port/profile-based termination to avoid leaving Edge running.
-                        for _ in range(5):  # ~0.5s total
-                            if not self._is_port_in_use():
-                                break
-                            time.sleep(0.1)
-                        if not self._is_port_in_use():
-                            browser_terminated = True
-                            logger.info("Edge browser terminated (force via process tree kill)")
-                        else:
-                            logger.debug(
-                                "CDP port %d still in use after killing PID %s; falling back to port/profile termination",
-                                self.cdp_port,
-                                pid_to_kill,
-                            )
-                    elif self.edge_process:
-                        # Fall back to terminate/kill if taskkill failed and we have process object
-                        self.edge_process.terminate()
-                        try:
-                            self.edge_process.wait(timeout=0.05)
-                        except subprocess.TimeoutExpired:
-                            self.edge_process.kill()
-                        for _ in range(5):  # ~0.5s total
-                            if not self._is_port_in_use():
-                                break
-                            time.sleep(0.1)
-                        if not self._is_port_in_use():
-                            browser_terminated = True
-                            logger.info("Edge browser terminated (force via terminate)")
-                        else:
-                            logger.debug(
-                                "CDP port %d still in use after terminate/kill; falling back to port/profile termination",
-                                self.cdp_port,
-                            )
-            logger.debug("[TIMING] kill_process_tree: %.2fs", time.monotonic() - taskkill_start)
+            spawned_any = False
+            for pid in sorted(pids_to_kill):
+                if self._spawn_kill_process_tree(pid):
+                    spawned_any = True
 
-            # If still not terminated, try killing by port as last resort
-            if not browser_terminated and self._is_port_in_use():
+            # Backup: if PID tracking was lost (no PID/handle), kill by profile+port.
+            # This scan can be relatively expensive, so skip it when we already have a PID.
+            if not pids_to_kill:
                 with suppress(Exception):
-                    if self._kill_existing_translator_edge():
-                        browser_terminated = True
-                        logger.info("Edge browser terminated (force via port)")
+                    if sys.platform == "win32":
+                        profile_dir = self.profile_dir or self._get_profile_dir_path()
+                        if self._kill_edge_processes_by_profile_and_port_async(profile_dir, self.cdp_port):
+                            spawned_any = True
 
-            # Last resort: kill by profile+port scan in case PID tracking was lost
-            # (e.g., Edge launcher process exited early and child remained).
-            if not browser_terminated and sys.platform == "win32":
-                with suppress(Exception):
-                    profile_dir = self.profile_dir or self._get_profile_dir_path()
-                    if self._kill_edge_processes_by_profile_and_port(profile_dir, self.cdp_port):
-                        browser_terminated = True
-                        logger.info("Edge browser terminated (force via profile scan)")
+            if spawned_any:
+                logger.info("Requested Edge termination (shutdown, async)")
+            logger.debug("[TIMING] kill_process_tree request: %.2fs", time.monotonic() - taskkill_start)
 
         # Clear references (Playwright cleanup may fail but that's OK during shutdown)
         self._browser = None

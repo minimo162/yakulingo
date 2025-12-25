@@ -5198,14 +5198,16 @@ def run_app(
 
             taskkill_path = r"C:\Windows\System32\taskkill.exe"
             local_cwd = os.environ.get("SYSTEMROOT", r"C:\Windows")
-            result = subprocess.run(
+            # Do not capture output: taskkill can emit many lines for large process trees,
+            # and collecting them is unnecessary during shutdown.
+            subprocess.Popen(
                 [taskkill_path, "/F", "/T", "/PID", str(pid)],
-                capture_output=True,
-                timeout=1,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
                 cwd=local_cwd,
                 creationflags=subprocess.CREATE_NO_WINDOW,
             )
-            return result.returncode in (0, 128)
+            return True
         except Exception as e:
             logger.debug("Failed to kill process tree: %s", e)
             return False
@@ -5236,8 +5238,26 @@ def run_app(
             except Exception:
                 continue
 
+        if not pids:
+            return False
+
+        # Reduce redundant kills: Edge child processes often contain the same profile flag.
+        # Kill only likely root processes (whose parent isn't in the matched set).
+        root_pids = set(pids)
+        for pid in list(pids):
+            try:
+                parent_pid = psutil.Process(pid).ppid()
+                if parent_pid in pids:
+                    root_pids.discard(pid)
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+            except Exception:
+                continue
+        if not root_pids:
+            root_pids = pids
+
         killed_any = False
-        for pid in sorted(pids):
+        for pid in sorted(root_pids):
             if _kill_process_tree(pid):
                 killed_any = True
         return killed_any

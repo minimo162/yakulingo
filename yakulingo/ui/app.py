@@ -5765,6 +5765,7 @@ def run_app(
             WM_SETICON = 0x0080
             ICON_SMALL = 0
             ICON_BIG = 1
+            ICON_SMALL2 = 2  # used by some shell components (taskbar/window list)
             IMAGE_ICON = 1
             LR_LOADFROMFILE = 0x0010
             LR_DEFAULTSIZE = 0x0040
@@ -5809,15 +5810,34 @@ def run_app(
                                 None, icon_path_str, IMAGE_ICON,
                                 cx_small, cy_small, LR_LOADFROMFILE
                             )
+
+                            # Prefer a large icon handle to avoid blurry upscaling on high-DPI taskbar sizes.
+                            # Windows will downscale as needed for the current UI scale.
                             hicon_big = user32.LoadImageW(
                                 None, icon_path_str, IMAGE_ICON,
+                                256, 256, LR_LOADFROMFILE
+                            ) or user32.LoadImageW(
+                                None, icon_path_str, IMAGE_ICON,
                                 cx_big, cy_big, LR_LOADFROMFILE
+                            ) or user32.LoadImageW(
+                                None, icon_path_str, IMAGE_ICON,
+                                0, 0, LR_LOADFROMFILE | LR_DEFAULTSIZE
                             )
+
+                            # Some shell components request ICON_SMALL2 (taskbar/window list),
+                            # so set it explicitly with a high-res handle when available.
+                            hicon_taskbar = hicon_big or hicon_small
+
                             if hicon_small:
                                 user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL, hicon_small)
-                            if hicon_big:
-                                user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG, hicon_big)
-                            if hicon_small or hicon_big:
+                            elif hicon_taskbar:
+                                user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL, hicon_taskbar)
+
+                            if hicon_taskbar:
+                                user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG, hicon_taskbar)
+                                user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL2, hicon_taskbar)
+
+                            if hicon_small or hicon_taskbar:
                                 logger.debug("[EARLY_POSITION] Window icon set successfully")
                         except Exception as e:
                             logger.debug("[EARLY_POSITION] Failed to set window icon: %s", e)

@@ -16,7 +16,7 @@ import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, TYPE_CHECKING
+from typing import Callable, Optional, TYPE_CHECKING
 
 from starlette.requests import Request as StarletteRequest
 
@@ -396,6 +396,7 @@ if TYPE_CHECKING:
 # App constants
 COPILOT_LOGIN_TIMEOUT = 300  # 5 minutes for login
 MAX_HISTORY_DISPLAY = 20  # Maximum history items to display in sidebar
+MAX_HISTORY_DRAWER_DISPLAY = 100  # Maximum history items to show in history drawer
 MIN_AVAILABLE_MEMORY_GB_FOR_EARLY_CONNECT = 0.5  # Skip early Copilot init only on very low memory
 TEXT_TRANSLATION_CHAR_LIMIT = 5000  # Max chars for text translation (Ctrl+Alt+J, Ctrl+Enter)
 DEFAULT_TEXT_STYLE = "concise"
@@ -498,6 +499,8 @@ class YakuLingoApp:
         self._tabs_container = None
         self._nav_buttons: dict[Tab, ui.button] = {}
         self._history_list = None
+        self._history_dialog: Optional[ui.dialog] = None
+        self._history_dialog_list = None
         self._main_area_element = None
 
         # Auto-update
@@ -2615,6 +2618,8 @@ class YakuLingoApp:
         """Refresh history list"""
         if self._history_list:
             self._history_list.refresh()
+        if self._history_dialog_list:
+            self._history_dialog_list.refresh()
 
     def _on_translate_button_created(self, button: ui.button):
         """Store reference to translate button for dynamic state updates"""
@@ -3028,7 +3033,16 @@ class YakuLingoApp:
                     '新規翻訳',
                     icon='add',
                     on_click=self._start_new_translation,
-                ).classes('btn-primary w-full sidebar-primary-btn').props(btn_props)
+                ).classes('btn-primary w-full sidebar-primary-btn').props(btn_props).tooltip('新規翻訳')
+
+                # Compact sidebar (rail) uses an icon-only history button; hidden by CSS in normal mode.
+                history_props = 'flat round aria-label="履歴"'
+                if disabled:
+                    history_props += ' disable'
+                ui.button(
+                    icon='history',
+                    on_click=self._open_history_dialog,
+                ).classes('icon-btn icon-btn-tonal history-rail-btn').props(history_props).tooltip('履歴')
 
         self._tabs_container = actions_container
         actions_container()
@@ -3057,6 +3071,49 @@ class YakuLingoApp:
 
             self._history_list = history_list
             history_list()
+
+        self._ensure_history_dialog()
+
+    def _ensure_history_dialog(self) -> None:
+        """Create the history drawer (dialog) used in sidebar rail mode."""
+        if self._history_dialog is not None:
+            return
+
+        with ui.dialog() as dialog:
+            dialog.props('position=right')
+            with ui.card().classes('history-drawer-card'):
+                with ui.row().classes('items-center justify-between'):
+                    ui.label('履歴').classes('text-lg font-semibold')
+                    ui.button(icon='close', on_click=dialog.close).props(
+                        'flat round dense aria-label="閉じる"'
+                    ).classes('icon-btn')
+
+                ui.separator().classes('opacity-20')
+
+                @ui.refreshable
+                def history_drawer_list():
+                    self.state._ensure_history_db()
+                    if not self.state.history:
+                        with ui.column().classes('w-full flex-1 items-center justify-center py-10 opacity-60'):
+                            ui.icon('history').classes('text-2xl')
+                            ui.label('履歴がありません').classes('text-xs mt-1')
+                        return
+
+                    with ui.scroll_area().classes('history-drawer-scroll'):
+                        with ui.column().classes('gap-1'):
+                            for entry in self.state.history[:MAX_HISTORY_DRAWER_DISPLAY]:
+                                self._create_history_item(entry, on_select=dialog.close)
+
+                self._history_dialog_list = history_drawer_list
+                history_drawer_list()
+
+        self._history_dialog = dialog
+
+    def _open_history_dialog(self) -> None:
+        """Open the history drawer (used for compact sidebar rail mode)."""
+        self._ensure_history_dialog()
+        if self._history_dialog is not None:
+            self._history_dialog.open()
 
     def _create_nav_item(self, label: str, icon: str, tab: Tab):
         """Create a navigation tab item (M3 vertical tabs)
@@ -3101,12 +3158,14 @@ class YakuLingoApp:
             ui.label(label).classes('flex-1')
         self._nav_buttons[tab] = btn
 
-    def _create_history_item(self, entry: HistoryEntry):
-        """Create a history item with hover menu"""
+    def _create_history_item(self, entry: HistoryEntry, on_select: Callable[[], None] | None = None):
+        """Create a history item with hover menu."""
         with ui.element('div').classes('history-item group') as item:
             # Clickable area for loading entry
             def load_entry():
                 self._load_from_history(entry)
+                if on_select is not None:
+                    on_select()
 
             item.on('click', load_entry)
 
@@ -6210,6 +6269,21 @@ def run_app(
         TEXTAREA_FONT_RATIO_COMPACT = 1.0625
         TEXTAREA_PADDING_RATIO = 1.6  # Total padding in em
         is_compact_window = window_width < 1400 or window_height < 820
+
+        # Compact window: use M3 Navigation Rail proportions (narrow sidebar).
+        if is_compact_window:
+            RAIL_SIDEBAR_WIDTH = 80
+            CONTENT_RATIO = 0.85
+            MIN_CONTENT_WIDTH = 500
+            MAX_CONTENT_WIDTH = 900
+            sidebar_width = min(RAIL_SIDEBAR_WIDTH, window_width)
+            main_area_width = max(window_width - sidebar_width, 0)
+            content_width = min(
+                max(int(main_area_width * CONTENT_RATIO), MIN_CONTENT_WIDTH),
+                MAX_CONTENT_WIDTH,
+                main_area_width,
+            )
+
         textarea_lines = TEXTAREA_LINES_COMPACT if is_compact_window else TEXTAREA_LINES_DEFAULT
         textarea_font_ratio = TEXTAREA_FONT_RATIO_COMPACT if is_compact_window else TEXTAREA_FONT_RATIO
         textarea_font_size = base_font_size * textarea_font_ratio
@@ -6258,6 +6332,7 @@ def run_app(
     const TEXTAREA_PADDING_RATIO = 1.6;
     const COMPACT_WIDTH_THRESHOLD = 1400;
     const COMPACT_HEIGHT_THRESHOLD = 820;
+    const RAIL_SIDEBAR_WIDTH = 80;
 
     function updateCSSVariables() {
         const windowWidth = window.innerWidth;
@@ -6279,11 +6354,11 @@ def run_app(
         sidebarWidth = Math.min(sidebarWidth, MAX_SIDEBAR_WIDTH, windowWidth);
 
         // Calculate unified content width for both input and result panels
-        const mainAreaWidth = windowWidth - sidebarWidth;
+        let mainAreaWidth = windowWidth - sidebarWidth;
 
         // Content width: mainAreaWidth * CONTENT_RATIO, clamped to min-max range and never exceeds main area
         // This ensures consistent proportions across all resolutions
-        const contentWidth = Math.min(
+        let contentWidth = Math.min(
             Math.max(Math.round(mainAreaWidth * CONTENT_RATIO), MIN_CONTENT_WIDTH),
             MAX_CONTENT_WIDTH,
             mainAreaWidth
@@ -6291,6 +6366,15 @@ def run_app(
 
         // Calculate input min/max height
         const isCompact = windowWidth < COMPACT_WIDTH_THRESHOLD || windowHeight < COMPACT_HEIGHT_THRESHOLD;
+        if (isCompact) {
+            sidebarWidth = Math.min(RAIL_SIDEBAR_WIDTH, windowWidth);
+            mainAreaWidth = windowWidth - sidebarWidth;
+            contentWidth = Math.min(
+                Math.max(Math.round(mainAreaWidth * CONTENT_RATIO), MIN_CONTENT_WIDTH),
+                MAX_CONTENT_WIDTH,
+                mainAreaWidth
+            );
+        }
         const textareaLines = isCompact ? 8 : 9;
         const textareaFontRatio = isCompact ? TEXTAREA_FONT_RATIO_COMPACT : TEXTAREA_FONT_RATIO;
         const textareaFontSize = baseFontSize * textareaFontRatio;
@@ -6305,6 +6389,7 @@ def run_app(
 
         // Update CSS variables
         const root = document.documentElement;
+        root.classList.toggle('sidebar-rail', isCompact);
         root.style.setProperty('--viewport-height', windowHeight + 'px');
         root.style.setProperty('--base-font-size', baseFontSize + 'px');
         root.style.setProperty('--sidebar-width', sidebarWidth + 'px');

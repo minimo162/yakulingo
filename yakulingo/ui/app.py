@@ -6291,18 +6291,34 @@ def run_app(
     opacity: 0;
     pointer-events: none;
 }
-.loading-title {
-    margin-top: 1.5rem;
-    font-size: 1.75rem;
-    font-weight: 500;
-    color: var(--md-sys-color-on-surface, #2C3538);
-    letter-spacing: 0.02em;
-}
+ .loading-title {
+     margin-top: 1.5rem;
+     font-size: 1.75rem;
+     font-weight: 500;
+     color: var(--md-sys-color-on-surface, #2C3538);
+     letter-spacing: 0.02em;
+ }
+ .loading-spinner {
+     width: 56px;
+     height: 56px;
+     border: 4px solid rgba(0, 0, 0, 0.08);
+     border-top-color: var(--md-sys-color-primary, #4355B9);
+     border-radius: 50%;
+     animation: yakulingo-spin 0.9s linear infinite;
+ }
+ @media (prefers-reduced-motion: reduce) {
+     .loading-spinner {
+         animation: none;
+     }
+ }
+ @keyframes yakulingo-spin {
+     to { transform: rotate(360deg); }
+ }
 /* Main app fade-in animation */
-.main-app-container {
-    width: 100%;
-    opacity: 0;
-    transition: opacity 0.3s ease-in;
+ .main-app-container {
+     width: 100%;
+     opacity: 0;
+     transition: opacity 0.3s ease-in;
 }
 .main-app-container.visible {
     opacity: 1;
@@ -6493,8 +6509,17 @@ body.yakulingo-drag-active .global-drop-indicator {
         await client.connected()
         logger.info("[TIMING] client.connected(): %.2fs", _time_module.perf_counter() - _t_conn)
 
-        # Close splash screen now that NiceGUI is ready
-        # This provides seamless transition: splash → main UI (no intermediate loading screen)
+        # Show a startup loading overlay while the UI tree is being constructed.
+        # This avoids a brief flash of a partially-rendered UI on slow machines.
+        loading_screen = ui.element('div').classes('loading-screen')
+        with loading_screen:
+            ui.element('div').classes('loading-spinner').props('aria-hidden="true"')
+            ui.label('YakuLingo').classes('loading-title')
+
+        # Yield once so the loading overlay is sent to the client before we start building the full UI.
+        await asyncio.sleep(0)
+
+        # Close external splash screen (if provided) after the in-page loading overlay is visible.
         if on_ready is not None:
             try:
                 on_ready()
@@ -6506,12 +6531,26 @@ body.yakulingo-drag-active .global-drop-indicator {
         # This saves ~10 seconds on startup for users who don't use PDF translation.
         # See _ensure_layout_initialized() for the on-demand initialization logic.
 
-        # Create main UI directly (no loading screen needed - splash handles that)
+        # Create main UI (kept hidden until construction completes)
         _t_ui = _time_module.perf_counter()
-        main_container = ui.element('div').classes('main-app-container visible')
+        main_container = ui.element('div').classes('main-app-container')
         with main_container:
             yakulingo_app.create_ui()
         logger.info("[TIMING] create_ui(): %.2fs", _time_module.perf_counter() - _t_ui)
+
+        # Reveal the UI and fade out the startup overlay.
+        main_container.classes(add='visible')
+        loading_screen.classes(add='fade-out')
+
+        async def _remove_startup_overlay() -> None:
+            await asyncio.sleep(0.35)
+            try:
+                with client:
+                    loading_screen.delete()
+            except Exception:
+                pass
+
+        asyncio.create_task(_remove_startup_overlay())
 
         # Start hotkey manager immediately after UI is displayed (doesn't need connection)
         yakulingo_app.start_hotkey_manager()

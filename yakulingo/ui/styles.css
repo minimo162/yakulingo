@@ -60,20 +60,21 @@
 
     /* Shape - M3 corner radius scale (m3.material.io/foundations/shape/shape-scale) */
     --md-sys-shape-corner-full: 9999px;
-    --md-sys-shape-corner-3xl: 28px;   /* Extra-large surfaces (cards/dialogs) */
-    --md-sys-shape-corner-2xl: 24px;   /* Large surfaces */
-    --md-sys-shape-corner-xl: 20px;    /* Medium-large surfaces */
-    --md-sys-shape-corner-large: 16px; /* Large components */
-    --md-sys-shape-corner-medium: 12px; /* Medium components */
+    /* Use clamp() so smaller windows stay sharp (less "bulky") */
+    --md-sys-shape-corner-3xl: clamp(20px, 1.6vw, 28px);   /* Extra-large surfaces (cards/dialogs) */
+    --md-sys-shape-corner-2xl: clamp(18px, 1.3vw, 24px);   /* Large surfaces */
+    --md-sys-shape-corner-xl: clamp(16px, 1.1vw, 20px);    /* Medium-large surfaces */
+    --md-sys-shape-corner-large: clamp(12px, 0.95vw, 16px); /* Large components */
+    --md-sys-shape-corner-medium: clamp(10px, 0.75vw, 12px); /* Medium components */
     --md-sys-shape-corner-small: 8px;  /* Small components */
 
-    /* M3 Button sizing tokens */
-    --md-comp-button-height: 2.5rem;         /* 40dp - M3 standard button height */
-    --md-comp-button-padding-x: 1.5rem;      /* 24dp - horizontal padding with icon */
-    --md-comp-button-padding-x-no-icon: 1rem; /* 16dp - horizontal padding without icon */
-    --md-comp-icon-button-size: 2.5rem;      /* 40dp - icon button container */
-    --md-comp-icon-button-icon-size: 1.5rem; /* 24dp - icon size inside button */
-    --md-comp-touch-target-size: 3rem;       /* 48dp - minimum touch target */
+    /* M3 Button sizing tokens (responsive density: compact on smaller windows) */
+    --md-comp-button-height: clamp(2.25rem, 2.2vw, 2.5rem);          /* 36-40dp */
+    --md-comp-button-padding-x: clamp(1.25rem, 1.4vw, 1.5rem);       /* 20-24dp */
+    --md-comp-button-padding-x-no-icon: clamp(0.875rem, 1vw, 1rem);  /* 14-16dp */
+    --md-comp-icon-button-size: clamp(2.25rem, 2.3vw, 2.5rem);       /* 36-40dp */
+    --md-comp-icon-button-icon-size: clamp(1.375rem, 1.4vw, 1.5rem); /* 22-24dp */
+    --md-comp-touch-target-size: clamp(2.75rem, 2.9vw, 3rem);        /* 44-48dp */
 
     /* M3 State layer opacity tokens (m3.material.io/foundations/interaction/states) */
     --md-sys-state-hover-opacity: 0.08;      /* Hover state: 8% */
@@ -829,7 +830,7 @@ body {
     background: var(--md-sys-color-surface-container-lowest);
     border-bottom-left-radius: 0;
     border-bottom-right-radius: 0;
-    padding: 0.75rem 1rem;
+    padding: clamp(0.625rem, 1.2vw, 0.75rem) clamp(0.75rem, 1.6vw, 1rem);
 }
 
 .input-toolbar-left,
@@ -1123,9 +1124,9 @@ textarea:focus-visible {
 
 /* Sidebar primary action button (New translation CTA) */
 .btn-primary.sidebar-primary-btn {
-    height: 3.5rem;
-    min-height: 3.5rem;
-    padding: 0 2.25rem;
+    height: clamp(3.125rem, 3.6vw, 3.5rem);
+    min-height: clamp(3.125rem, 3.6vw, 3.5rem);
+    padding: 0 clamp(1.75rem, 2.2vw, 2.25rem);
     font-size: 1rem;
     font-weight: var(--md-sys-typescale-weight-semibold);
     width: 100%;
@@ -1659,9 +1660,8 @@ body.yakulingo-drag-active .global-drop-indicator {
     flex-direction: column;  /* Stack children vertically */
     justify-content: flex-start;  /* Child column handles vertical placement */
     align-items: center;  /* Center children horizontally */
-    padding-inline: 1.5rem;
-    padding-top: 1.25rem;
-    padding-bottom: 2.25rem;
+    padding-inline: clamp(1rem, 2.2vw, 1.5rem);
+    padding-block: clamp(1rem, 2.2vw, 1.5rem);
     box-sizing: border-box;  /* Include padding in width */
     overflow-x: hidden;  /* スクロールバーによるズレを防止 */
 }

@@ -6203,30 +6203,36 @@ def run_app(
         # Calculate input min-height based on 9 lines of text (Nani-style)
         # Formula: 9 lines × line-height × font-size + padding
         # line-height: 1.5, font-size: base × 1.125, padding: 1.6em equivalent
-        TEXTAREA_LINES = 9
+        TEXTAREA_LINES_DEFAULT = 9
+        TEXTAREA_LINES_COMPACT = 8
         TEXTAREA_LINE_HEIGHT = 1.5
         TEXTAREA_FONT_RATIO = 1.125  # --textarea-font-size ratio
+        TEXTAREA_FONT_RATIO_COMPACT = 1.0625
         TEXTAREA_PADDING_RATIO = 1.6  # Total padding in em
-        textarea_font_size = base_font_size * TEXTAREA_FONT_RATIO
+        is_compact_window = window_width < 1400 or window_height < 820
+        textarea_lines = TEXTAREA_LINES_COMPACT if is_compact_window else TEXTAREA_LINES_DEFAULT
+        textarea_font_ratio = TEXTAREA_FONT_RATIO_COMPACT if is_compact_window else TEXTAREA_FONT_RATIO
+        textarea_font_size = base_font_size * textarea_font_ratio
         input_min_height = int(
-            TEXTAREA_LINES * TEXTAREA_LINE_HEIGHT * textarea_font_size +
+            textarea_lines * TEXTAREA_LINE_HEIGHT * textarea_font_size +
             TEXTAREA_PADDING_RATIO * textarea_font_size
         )
 
         # Calculate input max-height based on content width to maintain consistent aspect ratio
         # Aspect ratio 4:3 (height = width * 0.75) for balanced appearance across resolutions
-        input_max_height = int(content_width * 0.75)
+        input_max_height = min(int(content_width * 0.75), int(window_height * 0.55))
 
         ui.add_head_html(f'''<style>
-:root {{
-    --base-font-size: {base_font_size}px;
-    --sidebar-width: {sidebar_width}px;
-    --input-panel-width: {input_panel_width}px;
-    --content-width: {content_width}px;
-    --input-min-height: {input_min_height}px;
-    --input-max-height: {input_max_height}px;
-}}
-</style>''')
+ :root {{
+     --base-font-size: {base_font_size}px;
+     --sidebar-width: {sidebar_width}px;
+     --input-panel-width: {input_panel_width}px;
+     --content-width: {content_width}px;
+     --textarea-font-size: {textarea_font_size}px;
+     --input-min-height: {input_min_height}px;
+     --input-max-height: {input_max_height}px;
+ }}
+ </style>''')
 
         # Add JavaScript for dynamic resize handling
         # This updates CSS variables when the window is resized
@@ -6246,13 +6252,16 @@ def run_app(
     const CONTENT_RATIO = 0.85;
     const MIN_CONTENT_WIDTH = 500;  // Lowered for smaller screens
     const MAX_CONTENT_WIDTH = 900;
-    const TEXTAREA_LINES = 9;
     const TEXTAREA_LINE_HEIGHT = 1.5;
     const TEXTAREA_FONT_RATIO = 1.125;
+    const TEXTAREA_FONT_RATIO_COMPACT = 1.0625;
     const TEXTAREA_PADDING_RATIO = 1.6;
+    const COMPACT_WIDTH_THRESHOLD = 1400;
+    const COMPACT_HEIGHT_THRESHOLD = 820;
 
     function updateCSSVariables() {
         const windowWidth = window.innerWidth;
+        const windowHeight = window.innerHeight;
 
         // Fixed base font size (no dynamic scaling)
         const baseFontSize = BASE_FONT_SIZE;
@@ -6281,20 +6290,27 @@ def run_app(
         );
 
         // Calculate input min/max height
-        const textareaFontSize = baseFontSize * TEXTAREA_FONT_RATIO;
+        const isCompact = windowWidth < COMPACT_WIDTH_THRESHOLD || windowHeight < COMPACT_HEIGHT_THRESHOLD;
+        const textareaLines = isCompact ? 8 : 9;
+        const textareaFontRatio = isCompact ? TEXTAREA_FONT_RATIO_COMPACT : TEXTAREA_FONT_RATIO;
+        const textareaFontSize = baseFontSize * textareaFontRatio;
         const inputMinHeight = Math.round(
-            TEXTAREA_LINES * TEXTAREA_LINE_HEIGHT * textareaFontSize +
+            textareaLines * TEXTAREA_LINE_HEIGHT * textareaFontSize +
             TEXTAREA_PADDING_RATIO * textareaFontSize
         );
-        const inputMaxHeight = Math.round(contentWidth * 0.75);
+        const inputMaxHeight = Math.min(
+            Math.round(contentWidth * 0.75),
+            Math.round(windowHeight * 0.55)
+        );
 
         // Update CSS variables
         const root = document.documentElement;
-        root.style.setProperty('--viewport-height', window.innerHeight + 'px');
+        root.style.setProperty('--viewport-height', windowHeight + 'px');
         root.style.setProperty('--base-font-size', baseFontSize + 'px');
         root.style.setProperty('--sidebar-width', sidebarWidth + 'px');
         root.style.setProperty('--input-panel-width', inputPanelWidth + 'px');
         root.style.setProperty('--content-width', contentWidth + 'px');
+        root.style.setProperty('--textarea-font-size', textareaFontSize + 'px');
         root.style.setProperty('--input-min-height', inputMinHeight + 'px');
         root.style.setProperty('--input-max-height', inputMaxHeight + 'px');
     }

@@ -4720,8 +4720,13 @@ def _detect_display_settings(
     # Example: 1366x768 at 125% = 1092x614 logical → window ~810x469 (74% ratio)
     MIN_WINDOW_WIDTH = 900    # Lowered from 1400 to avoid over-shrinking at ~1k width
     MIN_WINDOW_HEIGHT = 650   # Lowered from 850 to maintain ~76% ratio on smaller screens
-    MIN_SIDEBAR_WIDTH = 240   # More compact sidebar (better in side-panel mode)
+    MIN_SIDEBAR_WIDTH = 240   # Baseline sidebar width for normal windows
+    # In side_panel mode on smaller displays the app window can be ~650-900px wide.
+    # The sidebar must remain usable in that range (status chip + CTA button).
+    MIN_SIDEBAR_WIDTH_COMPACT = 180
     MIN_INPUT_PANEL_WIDTH = 320  # Lowered from 380 for smaller screens
+    # Clamp sidebar on ultra-wide single-window mode to avoid wasting space.
+    MAX_SIDEBAR_WIDTH = 320
 
     # Unified content width for both input and result panels.
     # Uses mainAreaWidth * CONTENT_RATIO, clamped to min-max range.
@@ -4768,13 +4773,14 @@ def _detect_display_settings(
 
         # For smaller windows, use ratio-based panel sizes instead of fixed minimums
         if window_width < MIN_WINDOW_WIDTH:
-            # Small screen: use pure ratio-based sizes
-            sidebar_width = int(window_width * SIDEBAR_RATIO)
+            # Small screen: ratio-based sizes with a smaller safety minimum for usability.
+            sidebar_width = max(int(window_width * SIDEBAR_RATIO), MIN_SIDEBAR_WIDTH_COMPACT)
             input_panel_width = int(window_width * INPUT_PANEL_RATIO)
         else:
             # Normal screen: apply minimums
             sidebar_width = max(int(window_width * SIDEBAR_RATIO), MIN_SIDEBAR_WIDTH)
             input_panel_width = max(int(window_width * INPUT_PANEL_RATIO), MIN_INPUT_PANEL_WIDTH)
+        sidebar_width = min(sidebar_width, MAX_SIDEBAR_WIDTH, window_width)
 
         # Calculate unified content width for both input and result panels
         # Main area = window - sidebar
@@ -6231,8 +6237,10 @@ def run_app(
     const SIDEBAR_RATIO = 280 / 1800;
     const INPUT_PANEL_RATIO = 400 / 1800;
     const MIN_WINDOW_WIDTH = 900;  // Match Python logic for small screens
-    const MIN_SIDEBAR_WIDTH = 240;  // More compact sidebar (better in side-panel mode)
+    const MIN_SIDEBAR_WIDTH = 240;  // Baseline sidebar width for normal windows
+    const MIN_SIDEBAR_WIDTH_COMPACT = 180;  // Usability floor for 650-900px windows (side_panel)
     const MIN_INPUT_PANEL_WIDTH = 320;  // Lowered for smaller screens
+    const MAX_SIDEBAR_WIDTH = 320;  // Clamp for ultra-wide single-window mode
     // Unified content width for both input and result panels
     // Uses mainAreaWidth * CONTENT_RATIO, clamped to min-max range
     const CONTENT_RATIO = 0.85;
@@ -6253,12 +6261,13 @@ def run_app(
         let sidebarWidth;
         let inputPanelWidth;
         if (windowWidth < MIN_WINDOW_WIDTH) {
-            sidebarWidth = Math.round(windowWidth * SIDEBAR_RATIO);
+            sidebarWidth = Math.max(Math.round(windowWidth * SIDEBAR_RATIO), MIN_SIDEBAR_WIDTH_COMPACT);
             inputPanelWidth = Math.round(windowWidth * INPUT_PANEL_RATIO);
         } else {
             sidebarWidth = Math.max(Math.round(windowWidth * SIDEBAR_RATIO), MIN_SIDEBAR_WIDTH);
             inputPanelWidth = Math.max(Math.round(windowWidth * INPUT_PANEL_RATIO), MIN_INPUT_PANEL_WIDTH);
         }
+        sidebarWidth = Math.min(sidebarWidth, MAX_SIDEBAR_WIDTH, windowWidth);
 
         // Calculate unified content width for both input and result panels
         const mainAreaWidth = windowWidth - sidebarWidth;

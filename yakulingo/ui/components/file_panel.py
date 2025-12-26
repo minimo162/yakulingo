@@ -277,11 +277,13 @@ def _style_selector(current_style: str, on_change: Optional[Callable[[str], None
                 if current_style == style_key:
                     style_classes += ' style-btn-active'
 
+                display_label = f'{label} ({style_key})'
+                display_tooltip = f'{tooltip} ({style_key})'
                 btn = ui.button(
-                    label,
+                    display_label,
                     on_click=lambda k=style_key: on_change and on_change(k)
                 ).classes(style_classes).props('flat no-caps dense')
-                btn.tooltip(tooltip)
+                btn.tooltip(display_tooltip)
 
 
 def _glossary_selector(

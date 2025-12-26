@@ -6315,6 +6315,41 @@ def run_app(
 .fonts-ready .material-icons, .fonts-ready .q-icon {
     opacity: 1;
 }
+
+/* Critical: keep normally-hidden UI elements hidden even before styles.css is injected */
+.hidden {
+    display: none !important;
+    visibility: hidden !important;
+}
+.app-logo-hidden {
+    opacity: 0;
+}
+.global-drop-upload {
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 2000 !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+body.global-drop-active .global-drop-upload {
+    pointer-events: auto !important;
+}
+.global-drop-indicator {
+    position: fixed;
+    inset: 12px;
+    z-index: 5000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+}
+body.global-drop-active .global-drop-indicator,
+body.yakulingo-drag-active .global-drop-indicator {
+    opacity: 1;
+    visibility: visible;
+}
 </style>''')
 
         # JavaScript to detect font loading and show icons

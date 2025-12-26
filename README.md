@@ -443,7 +443,7 @@ YakuLingo/
 
 | カテゴリ | 技術 |
 |---------|------|
-| UI | NiceGUI + pywebview (Material Design 3) |
+| UI | NiceGUI + pywebview (Material Design 3 / Expressive) |
 | 翻訳エンジン | M365 Copilot (Playwright) |
 | Excel処理 | xlwings (Windows/macOS) / openpyxl (フォールバック) |
 | Word処理 | python-docx |

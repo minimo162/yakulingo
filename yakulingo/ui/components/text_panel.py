@@ -240,7 +240,7 @@ def _create_large_input_panel(
                                 'flat dense round size=sm aria-label="クリア"'
                             ).classes('result-action-btn')
 
-                        # Translate button with keycap-style shortcut
+                        # Translate button
                         def handle_translate_click():
                             logger.info("Translate button clicked")
                             asyncio.create_task(on_translate())

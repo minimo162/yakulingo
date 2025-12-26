@@ -300,26 +300,37 @@ class TxtProcessor:
     def export_glossary_csv(translations, original_texts, output)  # Source/translation pairs
 ```
 
-## UI Design System (Material Design 3)
+## UI Design System (Material Design 3 / Expressive)
 
-The application uses M3 (Material Design 3) component-based styling:
+The application uses Material Design 3 / Expressive design tokens and state layers (no gradients/patterns):
 
 ### Design Tokens (in `styles.css`)
 ```css
-/* Primary - Professional indigo palette */
+/* Primary (M3 tonal palette) */
 --md-sys-color-primary: #4355B9;
+--md-sys-color-on-primary: #FFFFFF;
 --md-sys-color-primary-container: #DEE0FF;
 --md-sys-color-on-primary-container: #00105C;
 
+/* Secondary */
+--md-sys-color-secondary: #5B5F6A;
+--md-sys-color-secondary-container: #E6E7EB;
+--md-sys-color-on-secondary-container: #1F2328;
+
 /* Surface colors */
---md-sys-color-surface: #FEFBFF;
---md-sys-color-surface-container: #F2EFF4;
+--md-sys-color-surface: #FCFCFD;
+--md-sys-color-surface-container: #EEF0F5;
+--md-sys-color-on-surface: #1D1D1F;
+--md-sys-color-on-surface-variant: #5A5A63;
+--md-sys-color-outline: #7E7E87;
+--md-sys-color-outline-variant: #D0D2DA;
 
 /* Shape system */
 --md-sys-shape-corner-full: 9999px;   /* Pills/FABs/Buttons */
---md-sys-shape-corner-large: 20px;    /* Cards/Dialogs */
---md-sys-shape-corner-medium: 16px;   /* Inputs/Chips */
---md-sys-shape-corner-small: 12px;    /* Small elements */
+--md-sys-shape-corner-3xl: 28px;      /* Cards/Dialogs */
+--md-sys-shape-corner-xl: 20px;
+--md-sys-shape-corner-medium: 12px;   /* Inputs/Chips */
+--md-sys-shape-corner-small: 8px;     /* Small elements */
 
 /* M3 State layer opacity tokens */
 --md-sys-state-hover-opacity: 0.08;      /* Hover: 8% */
@@ -334,6 +345,9 @@ The application uses M3 (Material Design 3) component-based styling:
 --md-comp-icon-button-icon-size: 1.5rem; /* 24dp */
 ```
 
+**UI方針（可読性優先）**
+- **グラデーション/パターンは使わず単色**（hover/focus/pressed は state layer で表現）
+
 ### M3 Button Classes
 
 | クラス | 用途 | 特徴 |
@@ -341,7 +355,7 @@ The application uses M3 (Material Design 3) component-based styling:
 | `.btn-primary` | 主要アクション（保存、確認等） | Filled button、elevation 1 on hover |
 | `.btn-outline` | 中優先度アクション | 1px border、transparent background |
 | `.btn-tonal` | 低?中優先度アクション | secondary-container fill |
-| `.btn-elevated` | パターン背景からの分離が必要な場合 | surface-container fill、elevation 1 |
+| `.btn-elevated` | surfaceからの分離が必要な場合 | surface-container fill、elevation 1 |
 | `.btn-text` | 最低優先度アクション | transparent、padding 12dp |
 | `.translate-btn` | 翻訳ボタン（btn-primaryのalias） | 後方互換性のため維持 |
 
@@ -2781,8 +2795,8 @@ Based on recent commits:
   - **2-column layout**: 3カラム（サイドバー+入力パネル+結果パネル）から2カラム（サイドバー+結果パネル）に簡素化
   - **CSS visibility toggle**: 翻訳結果表示時は入力パネルをCSSで非表示にし、結果パネルを中央配置
   - **Tab-based navigation**: 新しい翻訳は「テキスト翻訳」タブをクリックしてINPUT状態に戻す
-- **Ctrl+Alt+J Hint Styling (2024-12)**:
-  - **Larger font size**: Ctrl+Alt+Jヒントのフォントサイズを拡大して視認性向上
+- **Ctrl+Alt+J UI Hint Removal (2025-12)**:
+  - **Clean UI**: ホットキー（Ctrl+Alt+J）は維持しつつ、UIのヒント行/キーキャップ表示を廃止
 - **File Panel UI (2024-12)**:
   - **Simplified completion**: ファイル翻訳完了画面から「新しいファイルを翻訳」ボタンを削除
 - **Copilot Submission Reliability (2024-12)**:
@@ -3004,7 +3018,7 @@ Based on recent commits:
 - **Text Translation UI Unification**:
   - **3-style output**: 標準/簡潔/最簡潔を同時表示
   - **Style toggle removed**: スタイル切り替えUIを廃止
-  - **Unified structure**: 英訳 and 和訳 now share same UI pattern (hint row + result cards)
+  - **Unified structure**: 英訳 and 和訳 now share same UI pattern (suggestion hint row + result cards)
   - **Suggestion hint row**: [再翻訳] ボタン for both directions
   - **Removed**: カスタムリクエスト入力欄、[これはどう？] quick chip、connector line design、settings dialog
 - **Settings Dialog**: Removed
@@ -3048,9 +3062,8 @@ Based on recent commits:
   - **Race condition handling**: Discards detection result if user selects different file during detection
   - **Manual override**: Language toggle buttons allow manual selection after auto-detection
   - **UI feedback**: Shows detected language (e.g., "日本語を検出 → 英訳します")
-- **Unified Ctrl+Alt+J Hint**:
-  - **Both panels**: Text and file translation panels show same Ctrl+Alt+J hint with keycap styling
-  - **Consistent messaging**: "[Ctrl] + [Alt] + [J] : 他アプリで選択したテキストを翻訳"
+- **Ctrl+Alt+J UI Hint**:
+  - **No on-screen hint**: UIには表示せず、ショートカット機能として提供（画面を静かに保つ）
 - **setup.ps1 Robustness & Reliability**:
   - **Running process detection**: YakuLingo実行中の再インストール試行を検出してエラー表示
   - **Python process detection**: YakuLingoインストールディレクトリで実行中のPythonプロセスも検出

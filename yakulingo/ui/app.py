@@ -3028,7 +3028,7 @@ class YakuLingoApp:
                     '新規翻訳',
                     icon='add',
                     on_click=self._start_new_translation,
-                ).classes('btn-tonal w-full sidebar-primary-btn').props(btn_props)
+                ).classes('btn-primary w-full sidebar-primary-btn').props(btn_props)
 
         self._tabs_container = actions_container
         actions_container()
@@ -5824,7 +5824,7 @@ def run_app(
     # - easy_drag: Disable titlebar drag region (not needed, window has native titlebar)
     # - icon: Use YakuLingo icon for taskbar (instead of default Python icon)
     if native:
-        nicegui_app.native.window_args['background_color'] = '#F4F6F8'  # Match app background (styles.css --md-expressive-surface)
+        nicegui_app.native.window_args['background_color'] = '#FFFBFE'  # Match app background (styles.css --md-sys-color-surface)
         nicegui_app.native.window_args['easy_drag'] = False
 
         # Start window hidden to prevent position flicker
@@ -6321,7 +6321,7 @@ def run_app(
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    background: var(--md-expressive-surface, #F4F6F8);
+    background: var(--md-sys-color-surface, #FFFBFE);
     z-index: 9999;
     opacity: 1;
     transition: opacity 0.25s ease-out;
@@ -6334,7 +6334,7 @@ def run_app(
      margin-top: 1.5rem;
      font-size: 1.75rem;
      font-weight: 500;
-     color: var(--md-sys-color-on-surface, #2C3538);
+     color: var(--md-sys-color-on-surface, #1C1B1F);
      letter-spacing: 0.02em;
  }
  .loading-spinner {

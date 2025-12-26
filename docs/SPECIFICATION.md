@@ -76,7 +76,7 @@ M365 Copilotを翻訳エンジンとして使用し、テキストとドキュ�
 
 | Layer | Technology |
 |-------|------------|
-| UI | NiceGUI + pywebview (Material Design 3) |
+| UI | NiceGUI + pywebview (Material Design 3 / Expressive) |
 | Backend | FastAPI (via NiceGUI) |
 | Translation | M365 Copilot (Playwright + Edge) |
 | File Processing | openpyxl, python-docx, python-pptx, PyMuPDF |
@@ -435,7 +435,7 @@ class AppState:
 | Port | 8765 |
 | Title | YakuLingo |
 | Favicon | 🍎 |
-| Theme | Light (M3 Design) |
+| Theme | Light (Material Design 3 / Expressive) |
 
 ### 5.2 全体レイアウト
 
@@ -595,34 +595,40 @@ NiceGUIの`await client.connected()`パターンを使用して、クライア�
 - **外部モニター対応**: 外部モニターへのスケーリングはOSのDPI設定に任せる
 - **設定ファイル**: `window_width`/`window_height`（デフォルト: 1400×850）で変更可能
 
-### 5.8 カラーシステム (Material Design 3)
+### 5.8 カラーシステム (Material Design 3 / Expressive)
+
+**方針:**
+- 配色は `yakulingo/ui/styles.css` の M3 トークン（トーンパレット）に準拠
+- 可読性優先のため **グラデーション/パターンは使用せず単色**（状態変化は state layer を使用）
+- ビジネス用途を想定し、Surface 系トークンはニュートラル寄り（長時間利用でも目が疲れにくい配色）
 
 ```css
 :root {
-  /* Primary - Professional indigo palette */
+  /* Primary */
   --md-sys-color-primary: #4355B9;
-  --md-sys-color-primary-container: #DEE0FF;
   --md-sys-color-on-primary: #FFFFFF;
+  --md-sys-color-primary-container: #DEE0FF;
   --md-sys-color-on-primary-container: #00105C;
 
-  /* Secondary - Neutral blue-gray */
-  --md-sys-color-secondary: #595D72;
-  --md-sys-color-secondary-container: #DDE1F9;
+  /* Secondary */
+  --md-sys-color-secondary: #5B5F6A;
+  --md-sys-color-secondary-container: #E6E7EB;
+  --md-sys-color-on-secondary-container: #1F2328;
 
   /* Surface */
-  --md-sys-color-surface: #FEFBFF;
-  --md-sys-color-surface-container: #F2EFF4;
-  --md-sys-color-surface-container-high: #ECE9EE;
-  --md-sys-color-on-surface: #1B1B1F;
-  --md-sys-color-on-surface-variant: #46464F;
+  --md-sys-color-surface: #FCFCFD;
+  --md-sys-color-surface-container: #EEF0F5;
+  --md-sys-color-surface-container-high: #E7E9F0;
+  --md-sys-color-on-surface: #1D1D1F;
+  --md-sys-color-on-surface-variant: #5A5A63;
 
   /* Outline */
-  --md-sys-color-outline: #777680;
-  --md-sys-color-outline-variant: #C7C5D0;
+  --md-sys-color-outline: #7E7E87;
+  --md-sys-color-outline-variant: #D0D2DA;
 
   /* Status */
-  --md-sys-color-error: #BA1A1A;
-  --md-sys-color-success: #1B6B3D;
+  --md-sys-color-error: #B3261E;
+  --md-sys-color-success: #15803D;
 }
 ```
 
@@ -631,17 +637,20 @@ NiceGUIの`await client.connected()`パターンを使用して、クライア�
 ```css
 :root {
   --md-sys-shape-corner-full: 9999px;   /* Pills, FABs */
-  --md-sys-shape-corner-large: 20px;    /* Cards, Dialogs */
-  --md-sys-shape-corner-medium: 16px;   /* Inputs, Chips */
-  --md-sys-shape-corner-small: 12px;    /* Small elements */
+  --md-sys-shape-corner-3xl: 28px;      /* Cards, Dialogs */
+  --md-sys-shape-corner-2xl: 24px;
+  --md-sys-shape-corner-xl: 20px;
+  --md-sys-shape-corner-large: 16px;    /* Inputs, Chips */
+  --md-sys-shape-corner-medium: 12px;
+  --md-sys-shape-corner-small: 8px;     /* Small elements */
 }
 ```
 
 ### 5.10 フォント
 
 ```css
-font-family: 'Meiryo UI', 'Meiryo', 'Yu Gothic UI',
-             'Hiragino Sans', 'Noto Sans JP', sans-serif;
+font-family: 'BIZ UDPGothic', 'Yu Gothic UI', 'Hiragino Sans',
+             'Segoe UI', -apple-system, sans-serif;
 ```
 
 ---
@@ -1620,7 +1629,7 @@ python -c "import time; t=time.time(); from yakulingo.ui import run_app; print(f
   - 3カラム（サイドバー+入力パネル+結果パネル）→2カラム（サイドバー+結果パネル）に簡素化
   - 翻訳結果表示時は入力パネルをCSSで非表示にし、結果パネルを中央配置
   - 新しい翻訳は「テキスト翻訳」タブをクリックしてINPUT状態に戻す
-- Ctrl+Jヒントのフォントサイズを拡大
+- Ctrl+Alt+Jホットキーは維持しつつ、UIのヒント行/キーキャップ表示を削除（ミニマル化）
 - ファイル翻訳完了画面から「新しいファイルを翻訳」ボタンを削除
 - Copilot送信の信頼性向上
   - Enter送信前にフォーカスを再設定

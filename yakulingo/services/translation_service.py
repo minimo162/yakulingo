@@ -10,6 +10,7 @@ import logging
 import threading
 import time
 from contextlib import contextmanager
+from functools import lru_cache
 from itertools import islice
 from pathlib import Path
 from typing import Callable, Optional
@@ -159,6 +160,24 @@ class LanguageDetector:
     # Japanese-specific punctuation (not used in Chinese)
     _JAPANESE_PUNCTUATION = frozenset('、・「」『』')
 
+    # Chinese detection heuristic (no extra data):
+    # Approximate "Japanese-usable character set" with shift_jisx0213.
+    # If the text has no kana and contains >= N CJK ideographs that are not encodable
+    # in shift_jisx0213, treat it as Chinese.
+    #
+    # This is intentionally conservative because JP→EN is the primary use case; false
+    # positives (treating Japanese as Chinese) are more harmful than misses.
+    _MIN_UNENCODABLE_CJK_FOR_CHINESE = 2
+
+    @staticmethod
+    @lru_cache(maxsize=4096)
+    def _is_encodable_in_shift_jisx0213(char: str) -> bool:
+        try:
+            char.encode("shift_jisx0213")
+            return True
+        except UnicodeEncodeError:
+            return False
+
     # =========================================================================
     # Character Detection Helpers (static methods)
     # =========================================================================
@@ -300,9 +319,10 @@ class LanguageDetector:
         Detection priority:
         1. Hiragana/Katakana present → "日本語" (definite Japanese)
         2. Hangul present → "韓国語" (definite Korean)
-        3. Latin alphabet dominant → "英語" (assume English for speed)
-        4. CJK only (no kana) → "日本語" (assume Japanese for target users)
-        5. Other/mixed → "日本語" (default fallback)
+        3. CJK with many non-JIS ideographs → "中国語" (conservative heuristic)
+        4. Latin alphabet dominant → "英語" (assume English for speed)
+        5. CJK only (no kana) → "日本語" (assume Japanese for target users)
+        6. Other/mixed → "日本語" (default fallback)
 
         Note: This method always returns a language name (never None) to avoid
         slow Copilot calls for language detection. Target users are Japanese,
@@ -324,6 +344,8 @@ class LanguageDetector:
         has_katakana = False
         has_hangul = False
         has_cjk = False
+        cjk_count = 0
+        unencodable_cjk_count = 0
         latin_count = 0
         total_meaningful = 0
 
@@ -342,6 +364,9 @@ class LanguageDetector:
                 has_hangul = True
             elif self.is_cjk_ideograph(code):
                 has_cjk = True
+                cjk_count += 1
+                if not self._is_encodable_in_shift_jisx0213(char):
+                    unencodable_cjk_count += 1
             elif self.is_latin(code):
                 latin_count += 1
 
@@ -355,6 +380,14 @@ class LanguageDetector:
 
         if total_meaningful == 0:
             return "日本語"  # Default for no meaningful characters
+
+        if (
+            has_cjk
+            and not (has_hiragana or has_katakana)
+            and cjk_count > 0
+            and unencodable_cjk_count >= self._MIN_UNENCODABLE_CJK_FOR_CHINESE
+        ):
+            return "中国語"
 
         # If mostly Latin characters, assume English
         latin_ratio = latin_count / total_meaningful

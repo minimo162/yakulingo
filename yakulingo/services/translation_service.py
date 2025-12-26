@@ -2959,6 +2959,18 @@ class TranslationService:
             if pdf_processor and hasattr(pdf_processor, 'cancel'):
                 pdf_processor.cancel()
 
+    def reset_cancel(self) -> None:
+        """Reset cancellation flags (thread-safe)."""
+        self._cancel_event.clear()
+        self.batch_translator.reset_cancel()
+
+        # Reset PDF processor cancellation flag if already initialized
+        # Use _processors (not processors property) to avoid lazy initialization.
+        if self._processors is not None:
+            pdf_processor = self._processors.get('.pdf')
+            if pdf_processor and hasattr(pdf_processor, 'reset_cancel'):
+                pdf_processor.reset_cancel()
+
     def _get_processor(self, file_path: Path) -> FileProcessor:
         """Get appropriate processor for file type"""
         ext = file_path.suffix.lower()

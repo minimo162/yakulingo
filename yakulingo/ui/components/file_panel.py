@@ -203,9 +203,11 @@ def create_file_panel(
                         # Disable button while file info is loading
                         btn_disabled = state.file_info is None
                         btn_props = 'no-caps disable' if btn_disabled else 'no-caps'
-                        with ui.button(on_click=on_translate).classes('translate-btn').props(btn_props):
-                            ui.label('翻訳する')
-                            ui.icon('south').classes('text-base')
+                        btn = ui.button(
+                            icon='translate',
+                            on_click=on_translate,
+                        ).classes('translate-btn').props(f'{btn_props} aria-label="翻訳する"')
+                        btn.tooltip('翻訳する')
 
                 elif state.file_state == FileState.TRANSLATING:
                     _progress_card(state.file_info, state.translation_progress, state.translation_status)

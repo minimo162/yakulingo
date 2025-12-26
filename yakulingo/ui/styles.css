@@ -263,6 +263,7 @@ body {
     height: var(--md-comp-touch-target-size);
     min-height: var(--md-comp-touch-target-size);
     justify-content: center;
+    cursor: help;
 }
 
 .sidebar-rail .status-indicator > .nicegui-column {
@@ -1240,8 +1241,6 @@ textarea:focus-visible {
 }
 
 .btn-primary.sidebar-primary-btn .q-btn__content .q-icon {
-    position: absolute;
-    left: 0.75rem;
     color: currentColor;
 }
 
@@ -2039,7 +2038,23 @@ body.yakulingo-drag-active .global-drop-indicator {
 }
 
 .history-drawer-scroll .q-scrollarea {
+    width: 100% !important;
     height: 100% !important;
+}
+
+.history-drawer-scroll .q-scrollarea__container {
+    width: 100% !important;
+    overflow-x: hidden !important;
+}
+
+.history-drawer-scroll .q-scrollarea__content {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+}
+
+.history-drawer-scroll .nicegui-column {
+    width: 100% !important;
 }
 
 /* === M3 Snackbar / Notifications === */

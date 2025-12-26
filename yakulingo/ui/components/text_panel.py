@@ -245,8 +245,11 @@ def _create_large_input_panel(
                             logger.info("Translate button clicked")
                             asyncio.create_task(on_translate())
 
-                        with ui.button(on_click=handle_translate_click).classes('translate-btn').props('no-caps') as btn:
-                            ui.label('翻訳する')
+                        btn = ui.button(
+                            icon='translate',
+                            on_click=handle_translate_click,
+                        ).classes('translate-btn').props('no-caps aria-label="翻訳する"')
+                        btn.tooltip('翻訳する')
                         if state.text_translating:
                             btn.props('loading disable')
                         elif not state.can_translate():

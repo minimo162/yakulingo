@@ -782,6 +782,8 @@ class YakuLingoApp:
         # Use async version that will attempt auto-reconnection if needed
         if not await self._ensure_connection_async():
             return
+        if self.translation_service:
+            self.translation_service.reset_cancel()
 
         # Parse the tabular data into 2D array
         normalized = text.replace("\r\n", "\n")
@@ -847,6 +849,8 @@ class YakuLingoApp:
         translated_text = None
 
         try:
+            from yakulingo.services.copilot_handler import TranslationCancelledError
+
             # Yield control to event loop before starting blocking operation
             # This ensures the loading UI is sent to the client before we start measuring
             await asyncio.sleep(0)
@@ -960,6 +964,8 @@ class YakuLingoApp:
                 self.state.text_view_state = TextViewState.RESULT
                 self.state.source_text = ""
 
+        except TranslationCancelledError:
+            error_message = "翻訳がキャンセルされました"
         except Exception as e:
             logger.exception("Translation error [%s]: %s", trace_id, e)
             error_message = str(e)
@@ -968,9 +974,12 @@ class YakuLingoApp:
         self.state.text_detected_language = None
 
         with client:
-            if error_message:
-                ui.notify(f"翻訳エラー: {error_message}", type="negative")
+            if error_message == "翻訳がキャンセルされました":
+                ui.notify('キャンセルしました', type='info')
+            elif error_message:
+                self._notify_error(error_message)
             self._refresh_content()
+            self._refresh_tabs()
 
         self._active_translation_trace_id = None
 
@@ -1061,11 +1070,21 @@ class YakuLingoApp:
         prompt += "\n[1]\n訳文: 翻訳結果1\n解説: ...\n[2]\n訳文: 翻訳結果2\n解説: ..."
 
         try:
-            response = self.copilot.translate_single(
-                combined_text,  # text (unused, for API compatibility)
-                prompt,
-                files_to_attach,
-            )
+            from yakulingo.services.copilot_handler import TranslationCancelledError
+
+            if self.translation_service:
+                response = self.translation_service._translate_single_with_cancel(
+                    combined_text,
+                    prompt,
+                    files_to_attach,
+                    None,
+                )
+            else:
+                response = self.copilot.translate_single(
+                    combined_text,  # text (unused, for API compatibility)
+                    prompt,
+                    files_to_attach,
+                )
 
             if not response:
                 return None
@@ -1076,6 +1095,8 @@ class YakuLingoApp:
             )
             return translations, explanations
 
+        except TranslationCancelledError:
+            raise
         except Exception as e:
             logger.error("Batch translation error: %s", e)
             return None
@@ -2905,6 +2926,7 @@ class YakuLingoApp:
                 ui.html('<svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M12.87 15.07l-2.54-2.51.03-.03c1.74-1.94 2.98-4.17 3.71-6.53H17V4h-7V2H8v2H1v1.99h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2l-4.5-12zm-2.62 7l1.62-4.33L19.12 17h-3.24z"/></svg>', sanitize=False)
 
             logo_icon.on('click', on_logo_click)
+            logo_icon.tooltip('YakuLingo')
             ui.label('YakuLingo').classes('app-logo app-logo-hidden')
 
         # Status indicator (Copilot readiness: user can start translation safely)
@@ -2915,11 +2937,15 @@ class YakuLingoApp:
             if not copilot:
                 self.state.copilot_ready = False
                 self.state.connection_state = ConnectionState.CONNECTING
-                with ui.element('div').classes('status-indicator connecting').props('role="status" aria-live="polite"'):
+                tooltip = '準備中: 翻訳の準備をしています'
+                with ui.element('div').classes('status-indicator connecting').props(
+                    f'role="status" aria-live="polite" aria-label="{tooltip}"'
+                ) as status_indicator:
                     ui.element('div').classes('status-dot connecting').props('aria-hidden="true"')
                     with ui.column().classes('gap-0'):
                         ui.label('準備中...').classes('text-xs')
                         ui.label('翻訳の準備をしています').classes('text-2xs opacity-80')
+                status_indicator.tooltip(tooltip)
                 return
 
             # Check real page state (URL + chat input) to avoid showing "ready" while login/session expired.
@@ -2934,11 +2960,15 @@ class YakuLingoApp:
             if self._is_gpt_mode_setup_in_progress():
                 self.state.copilot_ready = False
                 self.state.connection_state = ConnectionState.CONNECTING
-                with ui.element('div').classes('status-indicator connecting').props('role="status" aria-live="polite"'):
+                tooltip = '準備中: GPTモードを切り替えています'
+                with ui.element('div').classes('status-indicator connecting').props(
+                    f'role="status" aria-live="polite" aria-label="{tooltip}"'
+                ) as status_indicator:
                     ui.element('div').classes('status-dot connecting').props('aria-hidden="true"')
                     with ui.column().classes('gap-0'):
                         ui.label('準備中...').classes('text-xs')
                         ui.label('GPTモードを切り替えています').classes('text-2xs opacity-80')
+                status_indicator.tooltip(tooltip)
                 return
 
             copilot_state: str | None = None
@@ -2956,7 +2986,12 @@ class YakuLingoApp:
             if copilot_state == CopilotConnectionState.READY:
                 self.state.copilot_ready = True
                 self.state.connection_state = ConnectionState.CONNECTED
-                with ui.element('div').classes('status-indicator connected').props('role="status" aria-live="polite"'):
+                tooltip = '準備完了: 翻訳できます'
+                if not copilot.is_gpt_mode_set:
+                    tooltip = '準備完了: 翻訳できます（GPTモード未設定）'
+                with ui.element('div').classes('status-indicator connected').props(
+                    f'role="status" aria-live="polite" aria-label="{tooltip}"'
+                ) as status_indicator:
                     ui.element('div').classes('status-dot connected').props('aria-hidden="true"')
                     with ui.column().classes('gap-0'):
                         ui.label('準備完了').classes('text-xs')
@@ -2964,6 +2999,7 @@ class YakuLingoApp:
                             ui.label('翻訳できます').classes('text-2xs opacity-80')
                         else:
                             ui.label('翻訳できます（GPTモード未設定）').classes('text-2xs opacity-80')
+                status_indicator.tooltip(tooltip)
                 return
 
             # Not ready (yet) from here.
@@ -2972,7 +3008,10 @@ class YakuLingoApp:
             if (error == CopilotHandler.ERROR_LOGIN_REQUIRED
                     or copilot_state == CopilotConnectionState.LOGIN_REQUIRED):
                 self.state.connection_state = ConnectionState.LOGIN_REQUIRED
-                with ui.element('div').classes('status-indicator login-required').props('role="status" aria-live="polite"'):
+                tooltip = 'ログインが必要: ログイン後に翻訳できます'
+                with ui.element('div').classes('status-indicator login-required').props(
+                    f'role="status" aria-live="polite" aria-label="{tooltip}"'
+                ) as status_indicator:
                     ui.element('div').classes('status-dot login-required').props('aria-hidden="true"')
                     with ui.column().classes('gap-0'):
                         ui.label('ログインが必要').classes('text-xs')
@@ -2980,43 +3019,60 @@ class YakuLingoApp:
                         ui.label('再接続').classes('text-2xs cursor-pointer text-primary').style('text-decoration: underline').on(
                             'click', lambda: asyncio.create_task(self._reconnect())
                         )
+                status_indicator.tooltip(tooltip)
                 return
 
             if copilot_state == CopilotConnectionState.LOADING:
                 self.state.connection_state = ConnectionState.CONNECTING
-                with ui.element('div').classes('status-indicator connecting').props('role="status" aria-live="polite"'):
+                tooltip = '準備中: Copilotを読み込み中'
+                with ui.element('div').classes('status-indicator connecting').props(
+                    f'role="status" aria-live="polite" aria-label="{tooltip}"'
+                ) as status_indicator:
                     ui.element('div').classes('status-dot connecting').props('aria-hidden="true"')
                     with ui.column().classes('gap-0'):
                         ui.label('準備中...').classes('text-xs')
                         ui.label('Copilotを読み込み中').classes('text-2xs opacity-80')
+                status_indicator.tooltip(tooltip)
                 self._start_status_auto_refresh("copilot_loading")
                 return
 
             if error == CopilotHandler.ERROR_EDGE_NOT_FOUND:
                 self.state.connection_state = ConnectionState.EDGE_NOT_RUNNING
-                with ui.element('div').classes('status-indicator error').props('role="status" aria-live="polite"'):
+                tooltip = 'Edgeが見つかりません: Edgeを起動してください'
+                with ui.element('div').classes('status-indicator error').props(
+                    f'role="status" aria-live="polite" aria-label="{tooltip}"'
+                ) as status_indicator:
                     ui.element('div').classes('status-dot error').props('aria-hidden="true"')
                     with ui.column().classes('gap-0'):
                         ui.label('Edgeが見つかりません').classes('text-xs')
+                status_indicator.tooltip(tooltip)
                 return
 
             if (error in (CopilotHandler.ERROR_CONNECTION_FAILED, CopilotHandler.ERROR_NETWORK)
                     or (is_connected and copilot_state == CopilotConnectionState.ERROR)):
                 self.state.connection_state = ConnectionState.CONNECTION_FAILED
-                with ui.element('div').classes('status-indicator error').props('role="status" aria-live="polite"'):
+                tooltip = '接続に失敗: 再試行中...'
+                with ui.element('div').classes('status-indicator error').props(
+                    f'role="status" aria-live="polite" aria-label="{tooltip}"'
+                ) as status_indicator:
                     ui.element('div').classes('status-dot error').props('aria-hidden="true"')
                     with ui.column().classes('gap-0'):
                         ui.label('接続に失敗').classes('text-xs')
                         ui.label('再試行中...').classes('text-2xs opacity-80')
+                status_indicator.tooltip(tooltip)
                 return
 
             # Default: still preparing / connecting.
             self.state.connection_state = ConnectionState.CONNECTING
-            with ui.element('div').classes('status-indicator connecting').props('role="status" aria-live="polite"'):
+            tooltip = '準備中: 翻訳の準備をしています'
+            with ui.element('div').classes('status-indicator connecting').props(
+                f'role="status" aria-live="polite" aria-label="{tooltip}"'
+            ) as status_indicator:
                 ui.element('div').classes('status-dot connecting').props('aria-hidden="true"')
                 with ui.column().classes('gap-0'):
                     ui.label('準備中...').classes('text-xs')
                     ui.label('翻訳の準備をしています').classes('text-2xs opacity-80')
+            status_indicator.tooltip(tooltip)
             if state_check_failed:
                 self._start_status_auto_refresh("copilot_state_check_failed")
 
@@ -3027,17 +3083,26 @@ class YakuLingoApp:
         @ui.refreshable
         def actions_container():
             with ui.column().classes('sidebar-nav gap-2'):
-                disabled = self.state.is_translating()
-                btn_props = 'no-caps disable' if disabled else 'no-caps'
-                ui.button(
-                    '新規翻訳',
-                    icon='add',
-                    on_click=self._start_new_translation,
-                ).classes('btn-primary w-full sidebar-primary-btn').props(btn_props).tooltip('新規翻訳')
+                if self.state.text_translating:
+                    ui.button(
+                        icon='close',
+                        on_click=self._cancel_text_translation,
+                    ).classes('btn-primary w-full sidebar-primary-btn').props(
+                        'no-caps aria-label="キャンセル"'
+                    ).tooltip('キャンセル')
+                else:
+                    disabled = self.state.is_translating()
+                    btn_props = 'no-caps disable' if disabled else 'no-caps'
+                    ui.button(
+                        icon='add',
+                        on_click=self._start_new_translation,
+                    ).classes('btn-primary w-full sidebar-primary-btn').props(
+                        f'{btn_props} aria-label="新規翻訳"'
+                    ).tooltip('新規翻訳')
 
                 # Compact sidebar (rail) uses an icon-only history button; hidden by CSS in normal mode.
                 history_props = 'flat round aria-label="履歴"'
-                if disabled:
+                if self.state.is_translating():
                     history_props += ' disable'
                 ui.button(
                     icon='history',
@@ -3460,7 +3525,9 @@ class YakuLingoApp:
         """
         self.state.text_translating = False
         with client:
-            if error_message:
+            if error_message == "翻訳がキャンセルされました":
+                ui.notify('キャンセルしました', type='info')
+            elif error_message:
                 self._notify_error(error_message)
             # Batch refresh: result panel, button state, status, and tabs in one operation
             self._batch_refresh({'result', 'button', 'status', 'tabs'})
@@ -3636,6 +3703,8 @@ class YakuLingoApp:
         # Use async version that will attempt auto-reconnection if needed
         if not await self._ensure_connection_async():
             return
+        if self.translation_service:
+            self.translation_service.reset_cancel()
 
         source_text = self.state.source_text
 
@@ -3682,6 +3751,8 @@ class YakuLingoApp:
             self._refresh_result_panel()
             self._refresh_tabs()  # Update tab disabled state
 
+        from yakulingo.services.copilot_handler import TranslationCancelledError
+
         error_message = None
         detected_language = None
         try:
@@ -3711,6 +3782,8 @@ class YakuLingoApp:
 
             # Yield control again before translation
             await asyncio.sleep(0)
+            if self.translation_service and self.translation_service._cancel_event.is_set():
+                raise TranslationCancelledError
 
             # Step 2: Translate with pre-detected language (skip detection in translate_text_with_options)
             style_order = ['standard', 'concise', 'minimal']
@@ -3782,6 +3855,9 @@ class YakuLingoApp:
             else:
                 error_message = result.error_message if result else 'Unknown error'
 
+        except TranslationCancelledError:
+            logger.info("Translation [%s] cancelled by user", trace_id)
+            error_message = "翻訳がキャンセルされました"
         except Exception as e:
             logger.exception("Translation error [%s]: %s", trace_id, e)
             error_message = str(e)
@@ -3796,7 +3872,9 @@ class YakuLingoApp:
         logger.debug("[LAYOUT] Translation [%s] starting UI refresh (text_result=%s, text_translating=%s)",
                      trace_id, bool(self.state.text_result), self.state.text_translating)
         with client:
-            if error_message:
+            if error_message == "翻訳がキャンセルされました":
+                ui.notify('キャンセルしました', type='info')
+            elif error_message:
                 self._notify_error(error_message)
             # Only refresh result panel (input panel is already in compact state)
             self._refresh_result_panel()
@@ -3818,11 +3896,19 @@ class YakuLingoApp:
 
         self._active_translation_trace_id = None
 
+    def _cancel_text_translation(self) -> None:
+        """Request cancellation of the current text translation."""
+        if self.translation_service:
+            self.translation_service.cancel()
+        ui.notify('キャンセル中...', type='info')
+
     async def _back_translate(self, text: str):
         """Back-translate text to verify translation quality"""
         # Use async version that will attempt auto-reconnection if needed
         if not await self._ensure_connection_async():
             return
+        if self.translation_service:
+            self.translation_service.reset_cancel()
 
         # Use saved client reference (protected by _client_lock)
         with self._client_lock:
@@ -3839,6 +3925,8 @@ class YakuLingoApp:
 
         error_message = None
         try:
+            from yakulingo.services.copilot_handler import TranslationCancelledError
+
             # Yield control to event loop before starting blocking operation
             await asyncio.sleep(0)
 
@@ -3868,13 +3956,22 @@ class YakuLingoApp:
 - 「続けますか？」「他に質問はありますか？」などの対話継続の質問
 - 指定形式以外の追加説明やコメント
 
-{reference_section}
+            {reference_section}
 """
 
             # Send to Copilot with reference files attached
-            result = await asyncio.to_thread(
-                lambda: self.copilot.translate_single(text, prompt, reference_files)
-            )
+            if self.translation_service:
+                result = await asyncio.to_thread(
+                    self.translation_service._translate_single_with_cancel,
+                    text,
+                    prompt,
+                    reference_files if reference_files else None,
+                    None,
+                )
+            else:
+                result = await asyncio.to_thread(
+                    lambda: self.copilot.translate_single(text, prompt, reference_files)
+                )
 
             # Parse result and add to options
             if result:
@@ -3898,6 +3995,8 @@ class YakuLingoApp:
             else:
                 error_message = '戻し訳に失敗しました'
 
+        except TranslationCancelledError:
+            error_message = "翻訳がキャンセルされました"
         except Exception as e:
             error_message = str(e)
 

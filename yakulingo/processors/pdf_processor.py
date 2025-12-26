@@ -141,6 +141,11 @@ _RE_TABLE_ROW_LABEL_PREFIX = re.compile(
     r"^\s*[\d,]+(?:\.\d+)?\s*\S{0,3}\s+(?=[\u2460-\u2473])"
 )
 
+# PDFMiner can split Japanese dates into small table-cell fragments like "2025年", "11月", "13日".
+# Excel-style translation skipping treats these as "date-like" and preserves them, which leaves
+# Japanese characters in JP→EN PDF output. PDFs should translate these fragments.
+_RE_JP_DATE_FRAGMENT = re.compile(r"^[0-9\uFF10-\uFF19]+[年月日時分秒]$")
+
 
 def _split_toc_title_and_page(text: str) -> tuple[str, str, str] | None:
     """Split a TOC line into (title, leader, page_number) if possible."""
@@ -1954,7 +1959,14 @@ class PdfProcessor(FileProcessor):
         Returns:
             True if text should be translated
         """
-        return self._cell_translator.should_translate(text, self._output_language)
+        if not text:
+            return False
+        stripped = text.strip()
+        if not stripped:
+            return False
+        if self._output_language == "en" and _RE_JP_DATE_FRAGMENT.match(stripped):
+            return True
+        return self._cell_translator.should_translate(stripped, self._output_language)
 
     @property
     def failed_pages(self) -> list[int]:
@@ -5188,7 +5200,7 @@ class PdfProcessor(FileProcessor):
                     # Special case: very short CJK text should not be split
                     # Examples: "代 表 者" with spaces → "代", "表", "者" should be joined
                     # Single CJK characters are clearly incomplete and should continue.
-                    if should_start_new and sstk and sstk[-1]:
+                    if should_start_new and not is_strong_boundary and sstk and sstk[-1]:
                         prev_text_check = sstk[-1].rstrip()
                         # Check if text is 1-2 CJK characters only (excluding spaces)
                         if prev_text_check and len(prev_text_check) <= 2:

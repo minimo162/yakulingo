@@ -926,6 +926,13 @@ def detect_paragraph_boundary(
                         # Large X gap in table = new cell = new paragraph
                         new_paragraph = True
                         is_strong_boundary = True  # Table cell boundary is strong
+                    elif (prev_x1 - char_x0) > x_column_thresh and y_diff <= TABLE_ROW_Y_THRESHOLD:
+                        # PP-DocLayout-L reading order can jump from a right-side cell back to a
+                        # left-side cell on the same row. In that case, x_gap becomes negative and
+                        # the standard "gap" heuristic fails, causing distant cells to be merged
+                        # into a single paragraph (e.g., table headers).
+                        new_paragraph = True
+                        is_strong_boundary = True  # Column reset within table row is strong
                     elif y_diff > TABLE_ROW_Y_THRESHOLD:
                         # Y movement in table = new row = new paragraph
                         new_paragraph = True

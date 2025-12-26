@@ -725,10 +725,13 @@ def detect_table_cells(
 
     # Extract cells from results
     for result in results:
-        if hasattr(result, 'boxes'):
-            boxes = result.boxes
-        else:
-            boxes = []
+        boxes = []
+        # PaddleX 3.x returns DetResult which behaves like a dict and stores boxes under the
+        # 'boxes' key, but does not expose them as an attribute. Handle both formats.
+        if isinstance(result, dict):
+            boxes = result.get('boxes') or []
+        elif hasattr(result, 'boxes'):
+            boxes = result.boxes or []
 
         for box in boxes:
             if isinstance(box, dict):

@@ -313,7 +313,7 @@ def _glossary_selector(
                 edit_btn = ui.button(
                     icon='edit',
                     on_click=on_edit
-                ).props('flat dense round size=sm').classes('settings-btn')
+                ).props('flat dense round size=sm aria-label="Edit glossary"').classes('settings-btn')
                 edit_btn.tooltip('用語集をExcelで編集')
 
         # Edit translation rules button
@@ -321,7 +321,7 @@ def _glossary_selector(
             rules_btn = ui.button(
                 icon='rule',
                 on_click=on_edit_translation_rules
-            ).props('flat dense round size=sm').classes('settings-btn')
+            ).props('flat dense round size=sm aria-label="Edit translation rules"').classes('settings-btn')
             rules_btn.tooltip('翻訳ルールを編集')
 
         # Reference file attachment button
@@ -329,7 +329,7 @@ def _glossary_selector(
             has_files = bool(reference_files)
             attach_btn = ui.button(on_click=on_attach).classes(
                 f'attach-btn {"has-file" if has_files else ""}'
-            ).props('flat')
+            ).props('flat aria-label="Attach reference file"')
             with attach_btn:
                 ui.html(ATTACH_SVG, sanitize=False)
             attach_btn.tooltip('参照ファイルを添付' if not has_files else '参照ファイルを追加')
@@ -344,7 +344,7 @@ def _glossary_selector(
                         ui.button(
                             icon='close',
                             on_click=lambda idx=i: on_remove(idx)
-                        ).props('flat dense round size=xs').classes('remove-btn')
+                        ).props('flat dense round size=xs aria-label="Remove reference file"').classes('remove-btn')
 
 
 
@@ -500,7 +500,7 @@ def _file_card(file_info: FileInfo, on_remove: Callable[[], None]):
                 ui.label(file_info.size_display).classes('text-xs text-muted')
 
             # Remove button
-            ui.button(icon='close', on_click=on_remove).props('flat dense round').classes('text-muted')
+            ui.button(icon='close', on_click=on_remove).props('flat dense round aria-label="Remove file"').classes('result-action-btn')
 
         # Stats chips
         with ui.row().classes('gap-2 mt-3 flex-wrap'):
@@ -526,7 +526,7 @@ def _file_loading_card(file_path: Optional[Path], on_remove: Callable[[], None])
                 ui.label('ファイル情報を読み込み中...').classes('text-xs text-muted')
 
             # Remove button
-            ui.button(icon='close', on_click=on_remove).props('flat dense round').classes('text-muted')
+            ui.button(icon='close', on_click=on_remove).props('flat dense round aria-label="Remove file"').classes('result-action-btn')
 
 
 def _progress_card(file_info: FileInfo, progress: float, status: str):

@@ -338,8 +338,8 @@ body {
 .source-copy-btn {
     width: var(--md-comp-icon-button-size) !important;
     height: var(--md-comp-icon-button-size) !important;
-    min-width: var(--md-comp-icon-button-size) !important;
-    min-height: var(--md-comp-icon-button-size) !important;
+    min-width: var(--md-comp-touch-target-size) !important;
+    min-height: var(--md-comp-touch-target-size) !important;
     padding: 0 !important;
     border-radius: var(--md-sys-shape-corner-full) !important;
     color: var(--md-sys-color-on-surface-variant) !important;
@@ -349,12 +349,12 @@ body {
 }
 
 .source-copy-btn:hover {
-    background-color: var(--md-sys-color-surface-container-high) !important;
+    background: color-mix(in srgb, var(--md-sys-color-primary) calc(var(--md-sys-state-hover-opacity) * 100%), transparent) !important;
     color: var(--md-sys-color-primary) !important;
 }
 
 .source-copy-btn:active {
-    background-color: var(--md-sys-color-surface-container-highest) !important;
+    background: color-mix(in srgb, var(--md-sys-color-primary) calc(var(--md-sys-state-pressed-opacity) * 100%), transparent) !important;
 }
 
 .source-copy-btn .q-icon {
@@ -513,7 +513,8 @@ body {
 
 /* M3 hover state layer (Nani-style: subtle) */
 .nav-item:hover {
-    background: color-mix(in srgb, var(--md-sys-color-on-surface) 5%, transparent);
+    /* M3: State layer with on-surface at hover opacity */
+    background: color-mix(in srgb, var(--md-sys-color-on-surface) calc(var(--md-sys-state-hover-opacity) * 100%), transparent);
     color: var(--md-sys-color-on-surface);
     transform: none;
 }
@@ -669,7 +670,8 @@ body {
 .history-item:nth-child(5) { animation-delay: 160ms; }
 
 .history-item:hover {
-    background: color-mix(in srgb, var(--md-sys-color-on-surface) 6%, transparent);
+    /* M3: State layer with on-surface at hover opacity */
+    background: color-mix(in srgb, var(--md-sys-color-on-surface) calc(var(--md-sys-state-hover-opacity) * 100%), transparent);
     transform: none;
 }
 
@@ -1347,7 +1349,7 @@ body.yakulingo-drag-active .global-drop-indicator {
     border-color: var(--md-sys-color-outline);
     background: var(--md-sys-color-surface-container-low);
     box-shadow: var(--md-sys-elevation-1);
-    transform: translateY(-1px);
+    transform: none;
 }
 
 /* Active drag-over state (slightly more prominent than hover) */
@@ -1355,7 +1357,7 @@ body.yakulingo-drag-active .global-drop-indicator {
     border-color: var(--md-sys-color-primary);
     background: var(--md-sys-color-primary-container);
     box-shadow: var(--md-sys-elevation-2);
-    transform: translateY(-2px);
+    transform: none;
     animation: dropZonePulse 1.5s var(--md-sys-motion-easing-smooth) infinite;
 }
 
@@ -1376,7 +1378,6 @@ body.yakulingo-drag-active .global-drop-indicator {
 }
 
 .drop-zone:hover .drop-zone-icon {
-    transform: translateY(-4px);
     color: var(--md-sys-color-primary);
 }
 
@@ -1494,8 +1495,8 @@ body.yakulingo-drag-active .global-drop-indicator {
 .result-action-btn {
     width: var(--md-comp-icon-button-size) !important;
     height: var(--md-comp-icon-button-size) !important;
-    min-width: var(--md-comp-icon-button-size) !important;
-    min-height: var(--md-comp-icon-button-size) !important;
+    min-width: var(--md-comp-touch-target-size) !important;
+    min-height: var(--md-comp-touch-target-size) !important;
     padding: 0 !important;
     border-radius: var(--md-sys-shape-corner-full) !important;
     color: var(--md-sys-color-on-surface-variant) !important;
@@ -2714,8 +2715,8 @@ body.yakulingo-drag-active .global-drop-indicator {
     place-items: center;
     width: var(--md-comp-icon-button-size);
     height: var(--md-comp-icon-button-size);
-    min-width: var(--md-comp-icon-button-size) !important;
-    min-height: var(--md-comp-icon-button-size) !important;
+    min-width: var(--md-comp-touch-target-size) !important;
+    min-height: var(--md-comp-touch-target-size) !important;
     padding: 0 !important;
     border: none;
     border-radius: var(--md-sys-shape-corner-full);
@@ -2787,7 +2788,13 @@ body.yakulingo-drag-active .global-drop-indicator {
 }
 
 .attach-file-indicator .remove-btn:hover {
-    background: rgba(0, 0, 0, 0.1);
+    /* M3: State layer with on-primary-container at hover opacity */
+    background: color-mix(in srgb, var(--md-sys-color-on-primary-container) calc(var(--md-sys-state-hover-opacity) * 100%), transparent);
+}
+
+.attach-file-indicator .remove-btn:active {
+    /* M3: State layer with on-primary-container at pressed opacity */
+    background: color-mix(in srgb, var(--md-sys-color-on-primary-container) calc(var(--md-sys-state-pressed-opacity) * 100%), transparent);
 }
 
 /* === Nani-style Inline Adjustment Section === */
@@ -2995,6 +3002,9 @@ body.yakulingo-drag-active .global-drop-indicator {
     color: var(--md-sys-color-on-primary) !important;
     width: var(--md-comp-icon-button-size) !important;
     height: var(--md-comp-icon-button-size) !important;
+    min-width: var(--md-comp-touch-target-size) !important;
+    min-height: var(--md-comp-touch-target-size) !important;
+    border-radius: var(--md-sys-shape-corner-full) !important;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard) !important;
 }
 
@@ -3088,6 +3098,8 @@ body.yakulingo-drag-active .global-drop-indicator {
 .settings-btn {
     width: var(--md-comp-icon-button-size) !important;
     height: var(--md-comp-icon-button-size) !important;
+    min-width: var(--md-comp-touch-target-size) !important;
+    min-height: var(--md-comp-touch-target-size) !important;
     color: var(--md-sys-color-on-surface-variant) !important;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard) !important;
 }
@@ -3608,22 +3620,25 @@ a:hover {
     padding: 0 1.5rem;
     font-size: 0.9375rem;
     border-radius: var(--md-sys-shape-corner-large);
-    box-shadow: var(--md-sys-elevation-2);
+    /* M3: keep elevation subtle for primary actions */
+    box-shadow: var(--md-sys-elevation-1);
 }
 
 .main-area:not(.has-results) .input-panel .translate-btn:hover:not(:disabled) {
-    box-shadow: var(--md-sys-elevation-3);
-    transform: translateY(-1px);
+    box-shadow: var(--md-sys-elevation-2);
+    transform: none;
 }
 
 .main-area:not(.has-results) .input-panel .translate-btn:active:not(:disabled) {
     box-shadow: var(--md-sys-elevation-1);
-    transform: translateY(0);
+    transform: none;
 }
 
 .main-area:not(.has-results) .input-panel .settings-btn {
     width: 2.5rem !important;
     height: 2.5rem !important;
+    min-width: var(--md-comp-touch-target-size) !important;
+    min-height: var(--md-comp-touch-target-size) !important;
 }
 
 .main-area:not(.has-results) .input-panel .settings-btn .q-icon {
@@ -3633,8 +3648,8 @@ a:hover {
 .main-area:not(.has-results) .input-panel .attach-btn {
     width: 2.5rem;
     height: 2.5rem;
-    min-width: 2.5rem !important;
-    min-height: 2.5rem !important;
+    min-width: var(--md-comp-touch-target-size) !important;
+    min-height: var(--md-comp-touch-target-size) !important;
 }
 
 .main-area:not(.has-results) .input-panel .attach-btn svg {

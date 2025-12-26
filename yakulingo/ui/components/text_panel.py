@@ -194,7 +194,7 @@ def _create_large_input_panel(
                                         ui.button(
                                             icon='close',
                                             on_click=lambda idx=i: on_remove_reference_file(idx)
-                                        ).props('flat dense round size=xs').classes('remove-btn')
+                                        ).props('flat dense round size=xs aria-label="Remove reference file"').classes('remove-btn')
 
                     with ui.row().classes('input-toolbar-right items-center gap-2'):
                         # Bundled glossary toggle chip
@@ -213,7 +213,7 @@ def _create_large_input_panel(
                                 edit_btn = ui.button(
                                     icon='edit',
                                     on_click=on_edit_glossary
-                                ).props('flat dense round size=sm').classes('settings-btn')
+                                ).props('flat dense round size=sm aria-label="Edit glossary"').classes('settings-btn')
                                 edit_btn.tooltip('用語集をExcelで編集')
 
                         # Edit translation rules button
@@ -221,7 +221,7 @@ def _create_large_input_panel(
                             rules_btn = ui.button(
                                 icon='rule',
                                 on_click=on_edit_translation_rules
-                            ).props('flat dense round size=sm').classes('settings-btn')
+                            ).props('flat dense round size=sm aria-label="Edit translation rules"').classes('settings-btn')
                             rules_btn.tooltip('翻訳ルールを編集')
 
                         # Reference file attachment button
@@ -229,7 +229,7 @@ def _create_large_input_panel(
                             has_files = bool(state.reference_files)
                             attach_btn = ui.button(
                                 on_click=on_attach_reference_file
-                            ).classes(f'attach-btn {"has-file" if has_files else ""}').props('flat')
+                            ).classes(f'attach-btn {"has-file" if has_files else ""}').props('flat aria-label="Attach reference file"')
                             with attach_btn:
                                 ui.html(ATTACH_SVG, sanitize=False)
                             attach_btn.tooltip('その他の参照ファイルを添付' if not has_files else '参照ファイルを追加')
@@ -238,7 +238,7 @@ def _create_large_input_panel(
                         if state.source_text:
                             ui.button(icon='close', on_click=on_clear).props(
                                 'flat dense round size=sm aria-label="クリア"'
-                            ).classes('text-muted')
+                            ).classes('result-action-btn')
 
                         # Translate button with keycap-style shortcut
                         def handle_translate_click():

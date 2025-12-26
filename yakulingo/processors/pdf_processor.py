@@ -125,6 +125,96 @@ from .pdf_layout import (
 # =============================================================================
 _pypdfium2 = None
 
+# =============================================================================
+# TOC (Table of Contents) helpers
+# =============================================================================
+
+# Common leader characters used in table-of-contents lines.
+# We keep this local to avoid depending on mojibake-prone literals elsewhere.
+_TOC_LEADER_CHARS = frozenset({
+    ".", "．", "…", "‥", "⋯",
+    "・", "･", "·", "∙", "⋅",
+    "•", "‧",
+})
+
+_RE_TABLE_ROW_LABEL_PREFIX = re.compile(
+    r"^\s*[\d,]+(?:\.\d+)?\s*\S{0,3}\s+(?=[\u2460-\u2473])"
+)
+
+
+def _split_toc_title_and_page(text: str) -> tuple[str, str, str] | None:
+    """Split a TOC line into (title, leader, page_number) if possible."""
+    if not text:
+        return None
+    stripped = text.rstrip()
+    if not stripped:
+        return None
+
+    end = len(stripped) - 1
+    # Skip trailing spaces (including full-width).
+    while end >= 0 and stripped[end] in " \u3000":
+        end -= 1
+    if end < 0:
+        return None
+
+    digit_end = end
+    while digit_end >= 0 and stripped[digit_end].isdigit():
+        digit_end -= 1
+    if digit_end == end:
+        # No trailing digits.
+        return None
+
+    page_number = stripped[digit_end + 1 : end + 1]
+
+    leader_end = digit_end
+    while leader_end >= 0 and stripped[leader_end] in " \u3000":
+        leader_end -= 1
+    if leader_end < 0:
+        return None
+
+    leader_start = leader_end
+    while leader_start >= 0 and stripped[leader_start] in _TOC_LEADER_CHARS:
+        leader_start -= 1
+    if leader_start == leader_end:
+        # No leader characters before the page number.
+        return None
+
+    leader = stripped[leader_start + 1 : leader_end + 1]
+    title = stripped[: leader_start + 1].rstrip()
+    if not title:
+        return None
+
+    return title, leader, page_number
+
+
+def _restore_formula_placeholders_from_texts(translated_text: str, formula_texts: list[str]) -> str:
+    """Restore {vN} placeholders using a page-level list of formula texts."""
+    if not translated_text or not formula_texts:
+        return translated_text
+    if not _RE_FORMULA_PLACEHOLDER.search(translated_text):
+        return translated_text
+
+    def replace_placeholder(match: re.Match) -> str:
+        indices_str = match.group(1)
+        indices = indices_str.split()
+        restored_parts: list[str] = []
+
+        for idx_str in indices:
+            try:
+                idx = int(idx_str)
+            except ValueError:
+                restored_parts.append(f"{{v{idx_str}}}")
+                continue
+
+            if 0 <= idx < len(formula_texts):
+                restored_parts.append(formula_texts[idx])
+            else:
+                restored_parts.append(f"{{v{idx_str}}}")
+
+        return "".join(restored_parts)
+
+    return _RE_FORMULA_PLACEHOLDER.sub(replace_placeholder, translated_text)
+
 
 def _get_pypdfium2():
     """Lazy import pypdfium2 (for PDF to image conversion)."""
@@ -2600,14 +2690,10 @@ class PdfProcessor(FileProcessor):
                         else:
                             # Block not in translations (skip_translation, etc.)
                             # Preserve original text
-                            text_to_render = text_block.text
+                            toc_original = text_block.metadata.get('toc_original_text')
+                            text_to_render = toc_original if isinstance(toc_original, str) and toc_original else text_block.text
                             is_preserved = True
 
-                        # Restore formula placeholders if applicable
-                        if formula_vars_map and block_id in formula_vars_map:
-                            text_to_render = restore_formula_placeholders(
-                                text_to_render, formula_vars_map[block_id]
-                            )
                         blocks_to_process.append((block_id, text_to_render, is_preserved))
                 else:
                     # Fallback: translated blocks only (PyMuPDF IDs)
@@ -2742,6 +2828,20 @@ class PdfProcessor(FileProcessor):
                         if not text_block.metadata:
                             logger.warning("TextBlock %s has no metadata, skipping", block_id)
                             continue
+
+                        # Restore formula placeholders using page-level formula texts.
+                        # This prevents {vN} tokens from leaking into the rendered PDF.
+                        formula_texts = text_block.metadata.get('formula_texts')
+                        if (
+                            isinstance(formula_texts, list)
+                            and formula_texts
+                            and isinstance(translated, str)
+                            and _RE_FORMULA_PLACEHOLDER.search(translated)
+                        ):
+                            translated = _restore_formula_placeholders_from_texts(
+                                translated, formula_texts
+                            )
+
                         # TextBlock bbox is already in PDF coordinates (origin at bottom-left)
                         # Format: (x0, y0, x1, y1) where y0 < y1
                         bbox = text_block.metadata.get('bbox')
@@ -3158,6 +3258,146 @@ class PdfProcessor(FileProcessor):
                         # Format: [x1, y0, x2, y1] where y0 < y1 (bottom < top)
                         box_pdf = [pdf_x1, pdf_y0, pdf_x2, pdf_y1]
 
+                        # TOC (Table of Contents) entry rendering:
+                        # - Translate only the title portion (done at extraction time)
+                        # - Keep the original page number right-aligned
+                        # - Optionally draw leader characters between title and page number
+                        toc_page_number = None
+                        toc_leader = None
+                        if text_blocks and text_block.metadata:
+                            toc_page_number = text_block.metadata.get('toc_page_number')
+                            toc_leader = text_block.metadata.get('toc_leader')
+
+                        if (
+                            not is_preserved_original
+                            and not is_table_cell
+                            and not block_is_vertical
+                            and isinstance(toc_page_number, str)
+                            and toc_page_number.strip()
+                        ):
+                            page_number_text = toc_page_number.strip()
+                            page_number_width = _get_token_width(
+                                page_number_text, font_id, initial_font_size, font_registry
+                            )
+                            page_number_x = pdf_x2 - page_number_width
+                            gap = 6.0
+                            label_left_x = getattr(paragraph, 'x', None) if paragraph is not None else None
+                            if label_left_x is None:
+                                label_left_x = pdf_x1
+                            label_box_width = max(0.0, (page_number_x - gap) - label_left_x)
+
+                            if label_box_width > 1.0:
+                                toc_title_text = translated.strip()
+                                if toc_title_text and page_number_text:
+                                    leader_chars_re = "".join(
+                                        re.escape(ch) for ch in sorted(_TOC_LEADER_CHARS)
+                                    )
+                                    toc_title_text = re.sub(
+                                        rf"[{leader_chars_re}\s\u3000]+{re.escape(page_number_text)}\s*$",
+                                        "",
+                                        toc_title_text,
+                                    ).rstrip()
+
+                                # Allow wrapping for TOC entries (translations often expand)
+                                toc_line_height = calculate_line_height_with_font(
+                                    toc_title_text,
+                                    label_box_width,
+                                    box_height,
+                                    initial_font_size,
+                                    font_id,
+                                    font_registry,
+                                    target_lang,
+                                    is_table_cell=False,
+                                    allow_wrap=True,
+                                )
+                                toc_lines = split_text_into_lines_with_font(
+                                    toc_title_text, label_box_width, initial_font_size, font_id, font_registry
+                                )
+
+                                # PDFMathTranslate compliant: Get initial position from Paragraph
+                                initial_y = None
+                                initial_x = None
+                                left_margin_x = None
+                                if paragraph is not None:
+                                    initial_y = getattr(paragraph, 'y', None)
+                                    initial_x = getattr(paragraph, 'x', None)
+                                    left_margin_x = getattr(paragraph, 'x0', None)
+
+                                # Baseline shift when TOC title wraps to multiple lines.
+                                # Prefer using available bottom space (expandable_bottom) to avoid
+                                # pushing content upward, and only shift up if still needed.
+                                if len(toc_lines) > 1:
+                                    baseline_y = initial_y if initial_y is not None else box_pdf[1]
+                                    min_bottom_y = box_pdf[1] - max(0.0, expandable_bottom)
+                                    bottom_line_y = baseline_y - ((len(toc_lines) - 1) * initial_font_size * toc_line_height)
+                                    if bottom_line_y < min_bottom_y and expandable_top > 0:
+                                        deficit = min_bottom_y - bottom_line_y
+                                        shift_up = min(deficit, expandable_top)
+                                        if shift_up > 0:
+                                            initial_y = baseline_y + shift_up
+
+                                # Render TOC title lines
+                                first_line_x = None
+                                first_line_y = None
+                                first_line_text = ""
+                                for line_idx, line_text in enumerate(toc_lines):
+                                    if not line_text.strip():
+                                        continue
+                                    x, y = calculate_text_position(
+                                        tuple(box_pdf),
+                                        line_idx,
+                                        initial_font_size,
+                                        toc_line_height,
+                                        initial_y,
+                                        initial_x,
+                                        left_margin_x,
+                                    )
+                                    if line_idx == 0:
+                                        first_line_x = x
+                                        first_line_y = y
+                                        first_line_text = line_text
+
+                                    hex_text = op_gen.raw_string(font_id, line_text)
+                                    op = op_gen.gen_op_txt(font_id, initial_font_size, x, y, hex_text)
+                                    replacer.add_text_operator(op, font_id)
+
+                                # Draw leader + right-aligned page number on the first line
+                                if first_line_x is not None and first_line_y is not None:
+                                    # Leader characters (optional)
+                                    leader_char = "…"
+                                    if isinstance(toc_leader, str) and toc_leader:
+                                        leader_char = toc_leader[-1]
+
+                                    leader_char_width = font_registry.get_char_width(
+                                        font_id, leader_char, initial_font_size
+                                    )
+                                    title_width = _get_token_width(
+                                        first_line_text, font_id, initial_font_size, font_registry
+                                    )
+                                    leader_start_x = first_line_x + title_width + gap
+                                    leader_end_x = page_number_x - gap
+                                    available = leader_end_x - leader_start_x
+                                    if leader_char_width > 0 and available > leader_char_width * 2:
+                                        leader_count = int(available // leader_char_width)
+                                        leader_count = max(0, min(leader_count, 256))
+                                        if leader_count > 0:
+                                            leader_text = leader_char * leader_count
+                                            hex_leader = op_gen.raw_string(font_id, leader_text)
+                                            op = op_gen.gen_op_txt(
+                                                font_id, initial_font_size, leader_start_x, first_line_y, hex_leader
+                                            )
+                                            replacer.add_text_operator(op, font_id)
+
+                                    # Page number (right aligned)
+                                    hex_page = op_gen.raw_string(font_id, page_number_text)
+                                    op = op_gen.gen_op_txt(
+                                        font_id, initial_font_size, page_number_x, first_line_y, hex_page
+                                    )
+                                    replacer.add_text_operator(op, font_id)
+
+                                result['success'] += 1
+                                continue
+
                         # Calculate line height with dynamic compression using font metrics
                         # Pass is_table_cell for more aggressive compression in tables
                         line_height = calculate_line_height_with_font(
@@ -3184,6 +3424,55 @@ class PdfProcessor(FileProcessor):
                             line_height,
                             allow_wrap=allow_wrap,
                         )
+
+                        # Table cells are height-constrained and overflow causes unreadable overlaps.
+                        # PDFMathTranslate keeps font size fixed, but in financial PDFs tables often
+                        # have single-line boxes where JP→EN expansion cannot fit without shrinking.
+                        if is_table_cell and translated and lines:
+                            required_height = len(lines) * font_size * line_height
+                            if required_height > box_height + 0.1:
+                                min_table_font_size = MIN_FONT_SIZE
+                                max_iterations = 20
+                                new_font_size = font_size
+                                new_line_height = line_height
+                                new_lines = lines
+                                for _ in range(max_iterations):
+                                    if required_height <= box_height + 0.1:
+                                        break
+                                    if new_font_size <= min_table_font_size + 0.01:
+                                        break
+
+                                    scale = box_height / max(0.001, required_height)
+                                    candidate = max(min_table_font_size, new_font_size * scale)
+                                    if candidate >= new_font_size - 0.01:
+                                        candidate = max(min_table_font_size, new_font_size - 0.5)
+                                    new_font_size = candidate
+
+                                    new_line_height = calculate_line_height_with_font(
+                                        translated,
+                                        box_width,
+                                        box_height,
+                                        new_font_size,
+                                        font_id,
+                                        font_registry,
+                                        target_lang,
+                                        is_table_cell=True,
+                                        allow_wrap=True,
+                                    )
+                                    new_lines = split_text_into_lines_with_font(
+                                        translated, box_width, new_font_size, font_id, font_registry
+                                    )
+                                    required_height = len(new_lines) * new_font_size * new_line_height
+
+                                if new_font_size < font_size - 0.01:
+                                    logger.debug(
+                                        "[Layout] Table cell %s: shrink font %.1f -> %.1f (lines=%d -> %d, height=%.1f)",
+                                        block_id, font_size, new_font_size,
+                                        len(lines), len(new_lines), box_height
+                                    )
+                                    font_size = new_font_size
+                                    line_height = new_line_height
+                                    lines = new_lines
 
                         # PDFMathTranslate compliant: Font size is generally FIXED
                         # We preserve the original font size and only adjust line height.
@@ -4270,6 +4559,7 @@ class PdfProcessor(FileProcessor):
         skipped_empty = 0
         skipped_formula = 0
         skipped_no_translate = 0
+        formula_texts = [fv.text for fv in var] if var else []
 
         for block_idx, (text, para) in enumerate(zip(sstk, pstk)):
             text = text.strip()
@@ -4286,6 +4576,21 @@ class PdfProcessor(FileProcessor):
                 # Skip pure formula blocks (will be preserved as-is)
                 skipped_formula += 1
                 continue
+
+            # TOC entries: translate only the title portion, and preserve the
+            # leader + page number for rendering-time reconstruction.
+            toc_original_text: str | None = None
+            toc_leader: str | None = None
+            toc_page_number: str | None = None
+            if is_toc_line_ending(text_without_placeholders):
+                toc_parts = _split_toc_title_and_page(text_without_placeholders)
+                if toc_parts:
+                    toc_title, toc_leader_candidate, toc_page_number_candidate = toc_parts
+                    toc_original_text = text
+                    toc_leader = toc_leader_candidate
+                    toc_page_number = toc_page_number_candidate
+                    text = toc_title
+                    text_without_placeholders = toc_title
 
             layout_role = None
             if layout is not None:
@@ -4409,10 +4714,15 @@ class PdfProcessor(FileProcessor):
                     'original_line_count': original_line_count,
                     'paragraph': para,
                     'formula_vars': block_vars,
+                    'formula_texts': formula_texts,
                     'has_formulas': bool(block_vars),
                     'layout_class': para.layout_class,  # For table detection
                     'role': layout_role,
                     'skip_translation': skip_translation,  # Preserve original text if True
+                    'is_toc_entry': bool(toc_page_number),
+                    'toc_page_number': toc_page_number,
+                    'toc_leader': toc_leader,
+                    'toc_original_text': toc_original_text,
                     'expandable_width': expandable_width,  # Max width block can expand to (legacy)
                     'expandable_left': expandable_left,  # How much can expand to the left
                     'expandable_right': expandable_right,  # How much can expand to the right
@@ -4421,6 +4731,92 @@ class PdfProcessor(FileProcessor):
                     'is_vertical': block_is_vertical,  # True if vertical text
                 }
             ))
+
+        # Post-process: table row labels sometimes appear as a single wide "hidden text"
+        # block that concatenates a value and a label (e.g., "631,803,979株 ①...").
+        # This can overlap real table cell values when redrawn. When we detect such
+        # blocks, trim the leading value and shrink the bbox to the left side of
+        # the table row to preserve layout.
+        if layout is not None and page_width > 0:
+            wide_threshold = max(200.0, page_width * 0.6)
+            for tb in blocks:
+                meta = tb.metadata or {}
+                if meta.get('role') != 'table_cell':
+                    continue
+                bbox = meta.get('bbox')
+                if not bbox or len(bbox) < 4:
+                    continue
+                x0, y0, x1, y1 = bbox[0], bbox[1], bbox[2], bbox[3]
+                if (x1 - x0) < wide_threshold:
+                    continue
+
+                prefix_match = _RE_TABLE_ROW_LABEL_PREFIX.match(tb.text)
+                if not prefix_match:
+                    continue
+
+                # Find the left edge of the first real cell in the same row.
+                row_cells: list[TextBlock] = []
+                for other in blocks:
+                    if other is tb:
+                        continue
+                    o_meta = other.metadata or {}
+                    if o_meta.get('role') != 'table_cell':
+                        continue
+                    if o_meta.get('layout_class') != meta.get('layout_class'):
+                        continue
+                    o_bbox = o_meta.get('bbox')
+                    if not o_bbox or len(o_bbox) < 4:
+                        continue
+                    ox0, oy0, ox1, oy1 = o_bbox[0], o_bbox[1], o_bbox[2], o_bbox[3]
+                    if (ox1 - ox0) >= wide_threshold:
+                        continue
+
+                    # Same row: significant vertical overlap.
+                    overlap = min(y1, oy1) - max(y0, oy0)
+                    if overlap <= 0:
+                        continue
+                    min_h = min(y1 - y0, oy1 - oy0)
+                    if min_h <= 0:
+                        continue
+                    if (overlap / min_h) < 0.7:
+                        continue
+
+                    row_cells.append(other)
+
+                if not row_cells:
+                    continue
+
+                cut_x = min(
+                    (o_meta.get('bbox')[0] for o_meta in (c.metadata for c in row_cells) if o_meta and o_meta.get('bbox')),
+                    default=None
+                )
+                if cut_x is None:
+                    continue
+
+                new_x1 = min(x1, cut_x - 2.0)
+                if new_x1 <= x0 + 20.0:
+                    continue
+
+                trimmed = tb.text[prefix_match.end():].lstrip()
+                if not trimmed:
+                    continue
+
+                # Update TextBlock text and bbox.
+                tb.text = trimmed
+                meta['bbox'] = (x0, y0, new_x1, y1)
+                meta['expandable_width'] = new_x1 - x0
+                meta['expandable_left'] = 0.0
+                meta['expandable_right'] = 0.0
+                meta['table_row_label_trimmed'] = True
+
+                para = meta.get('paragraph')
+                if para is not None:
+                    try:
+                        para.x0 = x0
+                        para.x1 = new_x1
+                        para.x = x0
+                    except Exception:
+                        pass
 
         # DEBUG: Log conversion summary
         logger.info(

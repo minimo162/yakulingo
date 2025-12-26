@@ -781,8 +781,8 @@ body {
 
 /* Focus state for main card (when textarea is focused) - Nani-style: subtle */
 .main-card-inner:focus-within {
-    outline: 2px solid color-mix(in srgb, var(--md-sys-color-primary) 35%, transparent);
-    outline-offset: -2px;
+    outline: none;
+    outline-offset: 0;
     box-shadow: none;
     transform: none;
 }
@@ -816,8 +816,8 @@ body {
 }
 
 .text-box:focus-within {
-    outline: 2px solid color-mix(in srgb, var(--md-sys-color-primary) 35%, transparent);
-    outline-offset: -2px;
+    outline: none;
+    outline-offset: 0;
     box-shadow: none;
     transform: none;
 }
@@ -974,8 +974,8 @@ a:focus-visible {
 
 input:focus-visible,
 textarea:focus-visible {
-    outline: 2px solid var(--md-sys-color-primary);
-    outline-offset: -2px;
+    outline: none;
+    outline-offset: 0;
 }
 
 /* Compact translate button for RESULT state */
@@ -3407,7 +3407,7 @@ input, textarea {
 }
 
 /* === Focus Ring Enhancement === */
-*:focus-visible {
+*:focus-visible:not(input):not(textarea) {
     outline: 2px solid var(--md-sys-color-primary);
     outline-offset: 2px;
 }

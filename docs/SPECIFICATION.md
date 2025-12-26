@@ -602,7 +602,7 @@ NiceGUIの`await client.connected()`パターンを使用して、クライア�
 - 配色は `yakulingo/ui/styles.css` の M3 トークン（トーンパレット）に準拠
 - 可読性優先のため **グラデーション/パターンは使用せず単色**（状態変化は state layer を使用）
 - ビジネス用途を想定し、Surface 系トークンはニュートラル寄り（長時間利用でも目が疲れにくい配色）
-- 枠線（アウトライン）を多用せず、Surface のトーン差 + 低い Elevation でレイヤーを表現
+- 枠線（アウトライン）や影（Elevation）を多用せず、Surface のトーン差 + 余白でレイヤーを表現
 
 ```css
 :root {

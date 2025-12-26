@@ -505,6 +505,8 @@ class YakuLingoApp:
 
         # Translate button reference for dynamic state updates
         self._translate_button: Optional[ui.button] = None
+        # Streaming preview label reference (updated without full refresh)
+        self._streaming_preview_label: Optional[ui.label] = None
 
         # Client reference for async handlers (saved from @ui.page handler)
         # Protected by _client_lock for thread-safe access across async operations
@@ -2618,6 +2620,10 @@ class YakuLingoApp:
         """Store reference to translate button for dynamic state updates"""
         self._translate_button = button
 
+    def _on_streaming_preview_label_created(self, label: ui.label):
+        """Store reference to streaming preview label for incremental updates."""
+        self._streaming_preview_label = label
+
     def _on_textarea_created(self, textarea: ui.textarea):
         """Store reference to text input textarea and set initial focus.
 
@@ -3167,6 +3173,7 @@ class YakuLingoApp:
                 on_back_translate=self._back_translate,
                 on_retry=self._retry_translation,
                 compare_mode=True,
+                on_streaming_preview_label_created=self._on_streaming_preview_label_created,
             )
 
         self._result_panel = result_panel_content
@@ -3608,6 +3615,8 @@ class YakuLingoApp:
         self.state.text_detected_language = None
         self.state.text_result = None
         self.state.text_translation_elapsed_time = None
+        self.state.text_streaming_preview = None
+        self._streaming_preview_label = None
         with client:
             # Only refresh result panel to minimize DOM updates and prevent flickering
             # Layout classes update will show result panel and hide input panel via CSS
@@ -3650,13 +3659,41 @@ class YakuLingoApp:
             if current_style in style_order:
                 style_order = [s for s in style_order if s != current_style] + [current_style]
 
+            # Streaming preview (AI chat style): update result panel with partial output as it arrives.
+            loop = asyncio.get_running_loop()
+            last_preview_update = 0.0
+            preview_update_interval_seconds = 0.12
+
+            def on_chunk(partial_text: str) -> None:
+                nonlocal last_preview_update
+                self.state.text_streaming_preview = partial_text
+                now = time.monotonic()
+                if now - last_preview_update < preview_update_interval_seconds:
+                    return
+                last_preview_update = now
+
+                def update_streaming_preview() -> None:
+                    if not self.state.text_translating:
+                        return
+                    try:
+                        with client:
+                            # Render streaming block on first chunk (captures label reference)
+                            if self._streaming_preview_label is None:
+                                self._refresh_result_panel()
+                            if self._streaming_preview_label is not None:
+                                self._streaming_preview_label.set_text(partial_text)
+                    except Exception:
+                        logger.debug("Streaming preview refresh failed", exc_info=True)
+
+                loop.call_soon_threadsafe(update_streaming_preview)
+
             result = await asyncio.to_thread(
                 self.translation_service.translate_text_with_style_comparison,
                 source_text,
                 reference_files,
                 style_order,
                 detected_language,
-                None,  # on_chunk (not using streaming)
+                on_chunk,
             )
 
             # Calculate elapsed time
@@ -3692,6 +3729,8 @@ class YakuLingoApp:
 
         self.state.text_translating = False
         self.state.text_detected_language = None
+        self.state.text_streaming_preview = None
+        self._streaming_preview_label = None
 
         # Restore client context for UI operations after asyncio.to_thread
         ui_refresh_start = time.monotonic()

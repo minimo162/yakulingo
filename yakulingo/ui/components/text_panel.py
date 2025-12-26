@@ -263,6 +263,7 @@ def create_text_result_panel(
     on_back_translate: Optional[Callable[[str], None]] = None,
     on_retry: Optional[Callable[[], None]] = None,
     compare_mode: bool = False,
+    on_streaming_preview_label_created: Optional[Callable[[ui.label], None]] = None,
 ):
     """
     Text result panel for 2-column layout.
@@ -310,6 +311,13 @@ def create_text_result_panel(
                 elapsed_time=elapsed_time,
                 output_language=state.text_result.output_language,
             )
+
+        # Streaming preview (partial output while Copilot is generating)
+        if state.text_translating and state.text_streaming_preview:
+            with ui.element('div').classes('streaming-preview'):
+                label = ui.label(state.text_streaming_preview).classes('streaming-text')
+                if on_streaming_preview_label_created:
+                    on_streaming_preview_label_created(label)
 
         # Results section - language-specific UI
         if state.text_result and state.text_result.options:
@@ -370,29 +378,25 @@ def _render_translation_status(
     else:
         is_to_english = detected_language == "日本語"
 
-    with ui.element('div').classes('translation-status-section'):
-        with ui.row().classes('items-center gap-2'):
-            if translating:
-                # Translating state
-                ui.spinner('dots', size='sm').classes('text-primary')
-                if detected_language:
-                    if is_to_english:
-                        ui.label('英訳中...').classes('status-text')
-                    else:
-                        ui.label('和訳中...').classes('status-text')
-                else:
-                    ui.label('翻訳中...').classes('status-text')
-            else:
-                # Completed state (translation done)
-                ui.icon('check_circle').classes('text-lg text-success')
-                if is_to_english:
-                    ui.label('英訳しました').classes('status-text')
-                else:
-                    ui.label('和訳しました').classes('status-text')
+    # AI chat style: assistant avatar + status row
+    with ui.element('div').classes('avatar-status-row'):
+        with ui.element('div').classes('avatar-container').props('aria-hidden="true"'):
+            ui.html(AVATAR_SVG, sanitize=False)
 
-                # Elapsed time badge (only when fully complete)
-                if elapsed_time:
-                    ui.label(f'{elapsed_time:.1f}秒').classes('elapsed-time-badge')
+        with ui.column().classes('gap-0 status-text'):
+            with ui.row().classes('items-center gap-2'):
+                if translating:
+                    ui.spinner('dots', size='sm').classes('text-primary')
+                    if detected_language:
+                        ui.label('英訳中...' if is_to_english else '和訳中...').classes('status-text')
+                    else:
+                        ui.label('翻訳中...').classes('status-text')
+                else:
+                    ui.icon('check_circle').classes('text-lg text-success')
+                    ui.label('英訳しました' if is_to_english else '和訳しました').classes('status-text')
+
+                    if elapsed_time:
+                        ui.label(f'{elapsed_time:.1f}秒').classes('elapsed-time-badge')
 
 
 def _render_empty_result_state():

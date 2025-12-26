@@ -2019,7 +2019,9 @@ class ExcelProcessor(FileProcessor):
         """Apply cell translations with batch optimization for xlwings.
 
         Optimization strategy:
-        1. Write cell values (batched by contiguous row ranges)
+        1. Write cell values (batched by contiguous ranges)
+           - Row-wise batching for row-dense tables
+           - Column-wise batching for column-heavy sheets (common: 1 text column)
         2. Apply output font *name* only to translated ranges (preserves existing sizes/styles)
         3. Optionally apply per-cell font-size adjustment when configured (JP→EN only)
 
@@ -2038,7 +2040,7 @@ class ExcelProcessor(FileProcessor):
             t_values = 0.0
             t_fonts = 0.0
             t_sizes = 0.0
-            total_ranges = 0
+            total_segments = 0
             value_range_writes = 0
             value_cell_writes = 0
             font_range_applies = 0
@@ -2100,16 +2102,18 @@ class ExcelProcessor(FileProcessor):
 
             cell_translations = normalized
 
-        # Group translations by row for batch value writing
+        # Group translations by row/col for batch value writing.
         rows_data: dict[int, list[tuple[int, str, str]]] = {}  # row -> [(col, text, cell_ref), ...]
+        cols_data: dict[int, list[tuple[int, str, str]]] = {}  # col -> [(row, text, cell_ref), ...]
         for (row, col), (translated_text, cell_ref) in cell_translations.items():
-            if row not in rows_data:
-                rows_data[row] = []
-            rows_data[row].append((col, translated_text, cell_ref))
+            rows_data.setdefault(row, []).append((col, translated_text, cell_ref))
+            cols_data.setdefault(col, []).append((row, translated_text, cell_ref))
 
-        # Sort cells within each row by column
+        # Sort cells within each row/col by position (for contiguous range detection).
         for row in rows_data:
             rows_data[row].sort(key=lambda x: x[0])
+        for col in cols_data:
+            cols_data[col].sort(key=lambda x: x[0])
 
         # Font-size adjustment is only relevant for JP→EN when user configured a negative adjustment.
         # (Positive adjustments are clamped to the original size by FontSizeAdjuster.)
@@ -2118,200 +2122,213 @@ class ExcelProcessor(FileProcessor):
             and getattr(getattr(font_manager, "font_size_adjuster", None), "adjustment_jp_to_en", 0.0) < 0
         )
 
-        # Phase 1+2: Write values, then apply font name to the same translated ranges.
-        for row, cells in rows_data.items():
-            ranges = self._find_contiguous_ranges(cells)
-            for start_col, end_col, range_cells in ranges:
-                if debug_stats:
-                    total_ranges += 1
-                has_merge_in_range = bool(merged_top_lefts) and any(
-                    (row, col) in merged_top_lefts for col, _text, _cell_ref in range_cells
-                )
+        def _split_on_merged_cells(
+            axis: str,
+            fixed: int,
+            contiguous_cells: list[tuple[int, str, str]],
+        ) -> list[list[tuple[int, str, str]]]:
+            """Split a contiguous segment so merged top-left cells become single-cell segments."""
+            if not merged_top_lefts or len(contiguous_cells) <= 1:
+                return [contiguous_cells]
 
-                # Write values: never perform a range write that intersects a merged cell.
-                # When a contiguous translated range contains merged cells, split it into
-                # non-merged subranges and single-cell merged writes so we preserve correctness
-                # without degrading to per-cell for the entire row segment.
-                if has_merge_in_range and len(range_cells) > 1:
-                    segments: list[list[tuple[int, str, str]]] = []
-                    current_segment: list[tuple[int, str, str]] = []
-                    for col, text, cell_ref in range_cells:
-                        if (row, col) in merged_top_lefts:
-                            if current_segment:
-                                segments.append(current_segment)
-                                current_segment = []
-                            segments.append([(col, text, cell_ref)])
-                        else:
-                            current_segment.append((col, text, cell_ref))
+            segments: list[list[tuple[int, str, str]]] = []
+            current_segment: list[tuple[int, str, str]] = []
+            for pos, text, cell_ref in contiguous_cells:
+                cell_key = (fixed, pos) if axis == "row" else (pos, fixed)
+                if cell_key in merged_top_lefts:
                     if current_segment:
                         segments.append(current_segment)
-
-                    for segment in segments:
-                        seg_start = segment[0][0]
-                        seg_end = segment[-1][0]
-                        if debug_stats:
-                            t0 = time.perf_counter()
-                        wrote_as_range = self._write_cell_values_batch(
-                            sheet, sheet_name, row, seg_start, seg_end, segment
-                        )
-                        if debug_stats:
-                            t_values += time.perf_counter() - t0
-                            if wrote_as_range:
-                                value_range_writes += 1
-                            else:
-                                value_cell_writes += len(segment)
+                        current_segment = []
+                    segments.append([(pos, text, cell_ref)])
                 else:
-                    if debug_stats:
-                        t0 = time.perf_counter()
-                    wrote_as_range = self._write_cell_values_batch(
-                        sheet, sheet_name, row, start_col, end_col, range_cells
-                    )
-                    if debug_stats:
-                        t_values += time.perf_counter() - t0
-                        if wrote_as_range:
-                            value_range_writes += 1
-                        else:
-                            value_cell_writes += len(range_cells)
+                    current_segment.append((pos, text, cell_ref))
+            if current_segment:
+                segments.append(current_segment)
+            return segments
+
+        row_segments: list[tuple[int, list[tuple[int, str, str]]]] = []
+        col_segments: list[tuple[int, list[tuple[int, str, str]]]] = []
+
+        for row in sorted(rows_data):
+            for _start, _end, contiguous in self._find_contiguous_ranges(rows_data[row]):
+                for seg in _split_on_merged_cells("row", row, contiguous):
+                    row_segments.append((row, seg))
+
+        for col in sorted(cols_data):
+            for _start, _end, contiguous in self._find_contiguous_ranges(cols_data[col]):
+                for seg in _split_on_merged_cells("col", col, contiguous):
+                    col_segments.append((col, seg))
+
+        # Choose the batching direction that yields fewer range operations.
+        # Column-wise batching drastically reduces COM calls for the common "single text column" case.
+        use_column_strategy = len(col_segments) < len(row_segments)
+        strategy = "col" if use_column_strategy else "row"
+
+        # Phase 1+2: Write values, then apply font name to the same translated ranges.
+        if use_column_strategy:
+            for col, segment in col_segments:
+                if debug_stats:
+                    total_segments += 1
+
+                seg_start = segment[0][0]
+                seg_end = segment[-1][0]
+
+                t0 = time.perf_counter() if debug_stats else None
+                wrote_as_range, wrote_range = self._write_cell_values_batch_column(
+                    sheet, sheet_name, col, seg_start, seg_end, segment
+                )
+                if debug_stats and t0 is not None:
+                    t_values += time.perf_counter() - t0
+                    if wrote_as_range:
+                        value_range_writes += 1
+                    else:
+                        value_cell_writes += len(segment)
 
                 # Apply output font name ONLY to translated cells/ranges.
-                # Do NOT touch the entire used_range: it would flatten header font sizes, etc.
-                try:
-                    if has_merge_in_range and len(range_cells) > 1:
-                        segments = []
-                        current_segment = []
-                        for col, text, cell_ref in range_cells:
-                            if (row, col) in merged_top_lefts:
-                                if current_segment:
-                                    segments.append(current_segment)
-                                    current_segment = []
-                                segments.append([(col, text, cell_ref)])
-                            else:
-                                current_segment.append((col, text, cell_ref))
-                        if current_segment:
-                            segments.append(current_segment)
-
-                        for segment in segments:
-                            seg_start = segment[0][0]
-                            seg_end = segment[-1][0]
-                            is_merged_cell = (
-                                len(segment) == 1 and (row, seg_start) in merged_top_lefts
-                            )
-
-                            if is_merged_cell or len(segment) == 1:
-                                for col, _text, _cell_ref in segment:
-                                    if debug_stats:
-                                        t0 = time.perf_counter()
-                                    cell = sheet.range(row, col)
-                                    if (row, col) in merged_top_lefts:
-                                        try:
-                                            cell.api.MergeArea.Font.Name = output_font_name
-                                        except Exception:
-                                            cell.api.Font.Name = output_font_name
-                                    else:
-                                        cell.api.Font.Name = output_font_name
-                                    if debug_stats:
-                                        t_fonts += time.perf_counter() - t0
-                                        font_cell_applies += 1
-                                continue
-
+                if len(segment) == 1:
+                    row_pos = segment[0][0]
+                    cell = wrote_range or sheet.range(row_pos, col)
+                    t0 = time.perf_counter() if debug_stats else None
+                    try:
+                        if (row_pos, col) in merged_top_lefts:
                             try:
-                                if debug_stats:
-                                    t0 = time.perf_counter()
-                                target_range = sheet.range((row, seg_start), (row, seg_end))
-                                target_range.api.Font.Name = output_font_name
-                                if debug_stats:
-                                    t_fonts += time.perf_counter() - t0
-                                    font_range_applies += 1
-                            except Exception as seg_e:
-                                logger.debug(
-                                    "Segment font apply failed for row %d cols %d-%d in '%s': %s "
-                                    "(falling back to per-cell)",
-                                    row,
-                                    seg_start,
-                                    seg_end,
-                                    sheet_name,
-                                    seg_e,
-                                )
-                                if debug_stats:
-                                    font_range_fallbacks += 1
-                                for col, _, _cell_ref in segment:
-                                    try:
-                                        if debug_stats:
-                                            t0 = time.perf_counter()
-                                        cell = sheet.range(row, col)
-                                        try:
-                                            if getattr(cell.api, "MergeCells", False):
-                                                cell.api.MergeArea.Font.Name = output_font_name
-                                            else:
-                                                cell.api.Font.Name = output_font_name
-                                        except Exception:
-                                            cell.api.Font.Name = output_font_name
-                                        if debug_stats:
-                                            t_fonts += time.perf_counter() - t0
-                                            font_cell_applies += 1
-                                    except Exception as inner_e:
-                                        logger.debug(
-                                            "Cell font apply failed for row %d col %d in '%s': %s",
-                                            row,
-                                            col,
-                                            sheet_name,
-                                            inner_e,
-                                        )
-                    elif has_merge_in_range:
-                        # Apply per-cell to avoid merged-range formatting errors.
-                        for col, _text, _cell_ref in range_cells:
-                            if debug_stats:
-                                t0 = time.perf_counter()
-                            cell = sheet.range(row, col)
-                            if (row, col) in merged_top_lefts:
-                                try:
-                                    cell.api.MergeArea.Font.Name = output_font_name
-                                except Exception:
-                                    cell.api.Font.Name = output_font_name
-                            else:
-                                cell.api.Font.Name = output_font_name
-                            if debug_stats:
-                                t_fonts += time.perf_counter() - t0
-                                font_cell_applies += 1
-                    else:
-                        if debug_stats:
-                            t0 = time.perf_counter()
-                        if start_col == end_col:
-                            target_range = sheet.range(row, start_col)
-                        else:
-                            target_range = sheet.range((row, start_col), (row, end_col))
-                        target_range.api.Font.Name = output_font_name
-                        if debug_stats:
-                            t_fonts += time.perf_counter() - t0
-                            font_range_applies += 1
-                except Exception as e:
-                    # Fallback: apply per-cell
-                    logger.debug(
-                        "Range font apply failed for row %d cols %d-%d in '%s': %s (falling back to per-cell)",
-                        row, start_col, end_col, sheet_name, e,
-                    )
-                    if debug_stats:
-                        font_range_fallbacks += 1
-                    for col, _, _cell_ref in range_cells:
-                        try:
-                            if debug_stats:
-                                t0 = time.perf_counter()
-                            cell = sheet.range(row, col)
-                            try:
-                                if getattr(cell.api, "MergeCells", False):
-                                    cell.api.MergeArea.Font.Name = output_font_name
-                                else:
-                                    cell.api.Font.Name = output_font_name
+                                cell.api.MergeArea.Font.Name = output_font_name
                             except Exception:
                                 cell.api.Font.Name = output_font_name
-                            if debug_stats:
+                        else:
+                            cell.api.Font.Name = output_font_name
+                        if debug_stats and t0 is not None:
+                            t_fonts += time.perf_counter() - t0
+                            font_cell_applies += 1
+                    except Exception as e:
+                        logger.debug(
+                            "Cell font apply failed for row %d col %d in '%s': %s",
+                            row_pos, col, sheet_name, e,
+                        )
+                else:
+                    # Multi-cell segment: no merged cells are included (they were split out).
+                    if wrote_as_range and wrote_range is not None:
+                        t0 = time.perf_counter() if debug_stats else None
+                        try:
+                            wrote_range.api.Font.Name = output_font_name
+                            if debug_stats and t0 is not None:
                                 t_fonts += time.perf_counter() - t0
-                                font_cell_applies += 1
-                        except Exception as inner_e:
+                                font_range_applies += 1
+                        except Exception as e:
                             logger.debug(
-                                "Cell font apply failed for row %d col %d in '%s': %s",
-                                row, col, sheet_name, inner_e,
+                                "Range font apply failed for col %d rows %d-%d in '%s': %s (falling back to per-cell)",
+                                col, seg_start, seg_end, sheet_name, e,
                             )
+                            if debug_stats:
+                                font_range_fallbacks += 1
+                            for row_pos, _text, _cell_ref in segment:
+                                try:
+                                    t0 = time.perf_counter() if debug_stats else None
+                                    sheet.range(row_pos, col).api.Font.Name = output_font_name
+                                    if debug_stats and t0 is not None:
+                                        t_fonts += time.perf_counter() - t0
+                                        font_cell_applies += 1
+                                except Exception as inner_e:
+                                    logger.debug(
+                                        "Cell font apply failed for row %d col %d in '%s': %s",
+                                        row_pos, col, sheet_name, inner_e,
+                                    )
+                    else:
+                        # Value write fell back to per-cell; apply font per-cell as well.
+                        for row_pos, _text, _cell_ref in segment:
+                            try:
+                                t0 = time.perf_counter() if debug_stats else None
+                                sheet.range(row_pos, col).api.Font.Name = output_font_name
+                                if debug_stats and t0 is not None:
+                                    t_fonts += time.perf_counter() - t0
+                                    font_cell_applies += 1
+                            except Exception as inner_e:
+                                logger.debug(
+                                    "Cell font apply failed for row %d col %d in '%s': %s",
+                                    row_pos, col, sheet_name, inner_e,
+                                )
+        else:
+            for row, segment in row_segments:
+                if debug_stats:
+                    total_segments += 1
+
+                seg_start = segment[0][0]
+                seg_end = segment[-1][0]
+
+                t0 = time.perf_counter() if debug_stats else None
+                wrote_as_range, wrote_range = self._write_cell_values_batch(
+                    sheet, sheet_name, row, seg_start, seg_end, segment
+                )
+                if debug_stats and t0 is not None:
+                    t_values += time.perf_counter() - t0
+                    if wrote_as_range:
+                        value_range_writes += 1
+                    else:
+                        value_cell_writes += len(segment)
+
+                # Apply output font name ONLY to translated cells/ranges.
+                if len(segment) == 1:
+                    col_pos = segment[0][0]
+                    cell = wrote_range or sheet.range(row, col_pos)
+                    t0 = time.perf_counter() if debug_stats else None
+                    try:
+                        if (row, col_pos) in merged_top_lefts:
+                            try:
+                                cell.api.MergeArea.Font.Name = output_font_name
+                            except Exception:
+                                cell.api.Font.Name = output_font_name
+                        else:
+                            cell.api.Font.Name = output_font_name
+                        if debug_stats and t0 is not None:
+                            t_fonts += time.perf_counter() - t0
+                            font_cell_applies += 1
+                    except Exception as e:
+                        logger.debug(
+                            "Cell font apply failed for row %d col %d in '%s': %s",
+                            row, col_pos, sheet_name, e,
+                        )
+                else:
+                    # Multi-cell segment: no merged cells are included (they were split out).
+                    if wrote_as_range and wrote_range is not None:
+                        t0 = time.perf_counter() if debug_stats else None
+                        try:
+                            wrote_range.api.Font.Name = output_font_name
+                            if debug_stats and t0 is not None:
+                                t_fonts += time.perf_counter() - t0
+                                font_range_applies += 1
+                        except Exception as e:
+                            logger.debug(
+                                "Range font apply failed for row %d cols %d-%d in '%s': %s (falling back to per-cell)",
+                                row, seg_start, seg_end, sheet_name, e,
+                            )
+                            if debug_stats:
+                                font_range_fallbacks += 1
+                            for col_pos, _text, _cell_ref in segment:
+                                try:
+                                    t0 = time.perf_counter() if debug_stats else None
+                                    sheet.range(row, col_pos).api.Font.Name = output_font_name
+                                    if debug_stats and t0 is not None:
+                                        t_fonts += time.perf_counter() - t0
+                                        font_cell_applies += 1
+                                except Exception as inner_e:
+                                    logger.debug(
+                                        "Cell font apply failed for row %d col %d in '%s': %s",
+                                        row, col_pos, sheet_name, inner_e,
+                                    )
+                    else:
+                        # Value write fell back to per-cell; apply font per-cell as well.
+                        for col_pos, _text, _cell_ref in segment:
+                            try:
+                                t0 = time.perf_counter() if debug_stats else None
+                                sheet.range(row, col_pos).api.Font.Name = output_font_name
+                                if debug_stats and t0 is not None:
+                                    t_fonts += time.perf_counter() - t0
+                                    font_cell_applies += 1
+                            except Exception as inner_e:
+                                logger.debug(
+                                    "Cell font apply failed for row %d col %d in '%s': %s",
+                                    row, col_pos, sheet_name, inner_e,
+                                )
 
         # Phase 3 (optional): apply font-size adjustment per translated cell.
         if needs_size_adjustment:
@@ -2348,13 +2365,14 @@ class ExcelProcessor(FileProcessor):
         if debug_stats:
             total_seconds = time.perf_counter() - t_start
             logger.debug(
-                "[TIMING] Excel apply (cells) '%s': cells=%d rows=%d ranges=%d "
+                "[TIMING] Excel apply (cells) '%s': cells=%d strategy=%s lines=%d segments=%d "
                 "values(range=%d cell=%d, %.2fs) fonts(range=%d cell=%d fallback=%d, %.2fs) "
                 "sizes(%.2fs) total=%.2fs",
                 sheet_name,
                 len(cell_translations),
-                len(rows_data),
-                total_ranges,
+                strategy,
+                len(cols_data) if use_column_strategy else len(rows_data),
+                total_segments,
                 value_range_writes,
                 value_cell_writes,
                 t_values,
@@ -2369,13 +2387,13 @@ class ExcelProcessor(FileProcessor):
     def _find_contiguous_ranges(
         self, cells: list[tuple[int, str, str]]
     ) -> list[tuple[int, int, list[tuple[int, str, str]]]]:
-        """Find contiguous column ranges in a sorted list of cells.
+        """Find contiguous ranges in a sorted 1D list of cells.
 
         Args:
-            cells: List of (col, text, cell_ref) sorted by col
+            cells: List of (pos, text, cell_ref) sorted by pos
 
         Returns:
-            List of (start_col, end_col, cells_in_range)
+            List of (start_pos, end_pos, cells_in_range)
         """
         if not cells:
             return []
@@ -2409,7 +2427,7 @@ class ExcelProcessor(FileProcessor):
         start_col: int,
         end_col: int,
         cells: list[tuple[int, str, str]],
-    ) -> bool:
+    ) -> tuple[bool, object | None]:
         """Write cell values in batch (values only, no font).
 
         Args:
@@ -2421,8 +2439,10 @@ class ExcelProcessor(FileProcessor):
             cells: List of (col, text, cell_ref) sorted by col
 
         Returns:
-            True if written as a multi-cell range write, False if written cell-by-cell
-            (single cell or fallback due to COM/merged-cell constraints).
+            (written_as_range, range_obj)
+
+            - written_as_range: True if written as a multi-cell range write.
+            - range_obj: xlwings Range used for the write (may be reused for font apply).
         """
         try:
             if len(cells) == 1:
@@ -2435,8 +2455,9 @@ class ExcelProcessor(FileProcessor):
                         "Translation truncated for cell %s_%s: %d -> %d chars",
                         sheet_name, cell_ref, len(text), len(final_text)
                     )
-                sheet.range(row, col).value = final_text
-                return False
+                cell_range = sheet.range(row, col)
+                cell_range.value = final_text
+                return False, cell_range
             else:
                 # Multiple contiguous cells - batch write
                 values = []
@@ -2449,8 +2470,9 @@ class ExcelProcessor(FileProcessor):
                             sheet_name, cell_ref, len(text), len(final_text)
                         )
                     values.append(final_text)
-                sheet.range((row, start_col), (row, end_col)).value = values
-                return True
+                rng = sheet.range((row, start_col), (row, end_col))
+                rng.value = values
+                return True, rng
         except Exception as e:
             logger.warning(
                 "Error writing values to row %d cols %d-%d in '%s': %s",
@@ -2478,7 +2500,86 @@ class ExcelProcessor(FileProcessor):
                             raise write_e
                 except Exception as inner_e:
                     logger.debug("Error writing cell %s_%s: %s", sheet_name, cell_ref, inner_e)
-            return False
+            return False, None
+
+    def _write_cell_values_batch_column(
+        self,
+        sheet,
+        sheet_name: str,
+        col: int,
+        start_row: int,
+        end_row: int,
+        cells: list[tuple[int, str, str]],
+    ) -> tuple[bool, object | None]:
+        """Write cell values in batch for a single column segment (values only, no font).
+
+        Args:
+            sheet: xlwings Sheet object
+            sheet_name: Name of the sheet (for logging)
+            col: Column number
+            start_row: Starting row
+            end_row: Ending row
+            cells: List of (row, text, cell_ref) sorted by row
+
+        Returns:
+            (written_as_range, range_obj)
+
+            - written_as_range: True if written as a multi-cell range write.
+            - range_obj: xlwings Range used for the write (may be reused for font apply).
+        """
+        try:
+            if len(cells) == 1:
+                row, text, cell_ref = cells[0]
+                final_text = text
+                if text and len(text) > EXCEL_CELL_CHAR_LIMIT:
+                    final_text = text[:EXCEL_CELL_CHAR_LIMIT - 3] + "..."
+                    logger.warning(
+                        "Translation truncated for cell %s_%s: %d -> %d chars",
+                        sheet_name, cell_ref, len(text), len(final_text)
+                    )
+                cell_range = sheet.range(row, col)
+                cell_range.value = final_text
+                return False, cell_range
+
+            values: list[list[str]] = []
+            for row, text, cell_ref in cells:
+                final_text = text
+                if text and len(text) > EXCEL_CELL_CHAR_LIMIT:
+                    final_text = text[:EXCEL_CELL_CHAR_LIMIT - 3] + "..."
+                    logger.warning(
+                        "Translation truncated for cell %s_%s: %d -> %d chars",
+                        sheet_name, cell_ref, len(text), len(final_text)
+                    )
+                values.append([final_text])
+
+            rng = sheet.range((start_row, col), (end_row, col))
+            rng.value = values
+            return True, rng
+        except Exception as e:
+            logger.warning(
+                "Error writing values to col %d rows %d-%d in '%s': %s",
+                col, start_row, end_row, sheet_name, e,
+            )
+            for row, text, cell_ref in cells:
+                try:
+                    final_text = text
+                    if text and len(text) > EXCEL_CELL_CHAR_LIMIT:
+                        final_text = text[:EXCEL_CELL_CHAR_LIMIT - 3] + "..."
+                    try:
+                        sheet.range(row, col).value = final_text
+                    except Exception as write_e:
+                        try:
+                            cell = sheet.range(row, col)
+                            if getattr(cell.api, "MergeCells", False):
+                                merge_area = cell.api.MergeArea
+                                sheet.range(merge_area.Row, merge_area.Column).value = final_text
+                            else:
+                                raise write_e
+                        except Exception:
+                            raise write_e
+                except Exception as inner_e:
+                    logger.debug("Error writing cell %s_%s: %s", sheet_name, cell_ref, inner_e)
+            return False, None
 
     def _apply_single_cell_xlwings(
         self,

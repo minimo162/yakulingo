@@ -87,7 +87,11 @@ class _FakeApiRange:
     def MergeCells(self) -> bool:  # noqa: N802 (Excel API style)
         (r1, c1, r2, c2) = self._bounds
         if (r1, c1) != (r2, c2):
-            return any(self._sheet.find_merge_bounds(r1, c) for c in range(c1, c2 + 1))
+            for r in range(r1, r2 + 1):
+                for c in range(c1, c2 + 1):
+                    if self._sheet.find_merge_bounds(r, c) is not None:
+                        return True
+            return False
         return self._sheet.find_merge_bounds(r1, c1) is not None
 
     @property
@@ -125,18 +129,43 @@ class _FakeRange:
             return
 
         # Simulate Excel raising on batched writes that intersect merged cells.
-        if r1 != r2:
-            raise RuntimeError("Only single-row batch writes supported in fake")
-        for c in range(c1, c2 + 1):
-            if self._sheet.find_merge_bounds(r1, c) is not None:
+        is_single_row = r1 == r2
+        is_single_col = c1 == c2
+        if not (is_single_row or is_single_col):
+            raise RuntimeError("Only single-row or single-column batch writes supported in fake")
+
+        if is_single_row:
+            for c in range(c1, c2 + 1):
+                if self._sheet.find_merge_bounds(r1, c) is not None:
+                    raise RuntimeError("Cannot batch-write across merged cells")
+
+            if not isinstance(v, list):
+                raise RuntimeError("Batch write expects list")
+            if len(v) != (c2 - c1 + 1):
+                raise RuntimeError("Batch write list length mismatch")
+            for idx, c in enumerate(range(c1, c2 + 1)):
+                self._sheet.values[(r1, c)] = v[idx]
+            return
+
+        for r in range(r1, r2 + 1):
+            if self._sheet.find_merge_bounds(r, c1) is not None:
                 raise RuntimeError("Cannot batch-write across merged cells")
 
         if not isinstance(v, list):
             raise RuntimeError("Batch write expects list")
-        if len(v) != (c2 - c1 + 1):
+
+        values: list[str] = []
+        if v and isinstance(v[0], list):
+            if any(len(item) != 1 for item in v):
+                raise RuntimeError("Vertical batch write expects Nx1 values")
+            values = [item[0] for item in v]
+        else:
+            values = v
+
+        if len(values) != (r2 - r1 + 1):
             raise RuntimeError("Batch write list length mismatch")
-        for idx, c in enumerate(range(c1, c2 + 1)):
-            self._sheet.values[(r1, c)] = v[idx]
+        for idx, r in enumerate(range(r1, r2 + 1)):
+            self._sheet.values[(r, c1)] = values[idx]
 
 
 class _FakeSheet:
@@ -276,3 +305,29 @@ def test_xlwings_apply_batches_non_merged_segments_around_merged_cells(
     assert (1, 1, 1, 10) not in sheet.range_calls
     # But we should batch the non-merged segment (B1:J1) for performance.
     assert (1, 2, 1, 10) in sheet.range_calls
+
+
+@pytest.mark.unit
+def test_xlwings_apply_batches_vertical_segments_for_column_heavy_sheet(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    processor = ExcelProcessor()
+    sheet = _FakeSheet("Sheet1")
+
+    monkeypatch.setattr(processor, "_get_merged_cells_map", lambda _sheet: {})
+
+    rows = 200
+    cell_translations: dict[tuple[int, int], tuple[str, str]] = {}
+    for row in range(1, rows + 1):
+        cell_translations[(row, 1)] = (f"T{row}", f"A{row}")
+
+    processor._apply_cell_translations_xlwings_batch(  # noqa: SLF001 (unit test)
+        sheet, "Sheet1", cell_translations, FontManager("jp_to_en")
+    )
+
+    assert sheet.values[(1, 1)] == "T1"
+    assert sheet.values[(rows, 1)] == f"T{rows}"
+
+    # A column-heavy sheet should be written as one vertical range, not per-row/per-cell.
+    assert (1, 1, rows, 1) in sheet.range_calls
+    assert len(sheet.range_calls) <= 4

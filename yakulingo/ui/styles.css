@@ -1680,7 +1680,9 @@ body.yakulingo-drag-active .global-drop-indicator {
     flex-direction: column;  /* Stack children vertically */
     justify-content: flex-start;  /* Child column handles vertical placement */
     align-items: center;  /* Center children horizontally */
-    padding: 1.5rem;  /* 均等なパディング */
+    padding-inline: 1.5rem;
+    padding-top: 1.25rem;
+    padding-bottom: 2.25rem;
     box-sizing: border-box;  /* Include padding in width */
     overflow-x: hidden;  /* スクロールバーによるズレを防止 */
 }
@@ -1690,6 +1692,7 @@ body.yakulingo-drag-active .global-drop-indicator {
     width: 100%;
     flex: 1;
     min-height: 0;
+    height: 100%;
     max-height: 100%;
     overflow: hidden;
     display: flex;
@@ -1705,6 +1708,7 @@ body.yakulingo-drag-active .global-drop-indicator {
     flex-direction: column;
     overflow: hidden;
     max-width: var(--content-width);
+    margin-block: auto;
 }
 
 .main-area:not(.has-results) .input-panel .main-card-inner {

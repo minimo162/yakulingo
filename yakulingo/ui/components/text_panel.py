@@ -617,7 +617,12 @@ def _render_option_en(
             with ui.row().classes('w-full items-center justify-between gap-2 option-card-header'):
                 with ui.row().classes('items-center gap-2 min-w-0'):
                     if show_style_badge and option.style:
-                        style_label = TEXT_STYLE_LABELS.get(option.style, option.style)
+                        style_base = TEXT_STYLE_LABELS.get(option.style, option.style)
+                        style_label = (
+                            f'{style_base} ({option.style})'
+                            if option.style in TEXT_STYLE_ORDER
+                            else style_base
+                        )
                         ui.label(style_label).classes('chip')
 
                 with ui.row().classes('items-center option-card-actions'):

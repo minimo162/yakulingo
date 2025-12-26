@@ -508,7 +508,7 @@ NiceGUIの`await client.connected()`パターンを使用して、クライア�
 - 言語判定中: 「🔍 言語を判定しています...」
 
 **日本語入力時（英訳）:**
-- 結果カード: 3スタイルの訳文（標準/簡潔/最簡潔）を縦並び表示
+- 結果カード: 3スタイルの訳文（標準 (standard) / 簡潔 (concise) / 最簡潔 (minimal)）を縦並び表示
 - ?? [再翻訳]: 吹き出し風ヒント行
 
 **その他入力時（和訳）:**
@@ -519,10 +519,11 @@ NiceGUIの`await client.connected()`パターンを使用して、クライア�
 
 | Property | Value |
 |----------|-------|
-| Min height | 160px |
-| Font | System default |
-| Auto-grow | Yes |
-| Padding | 16px |
+| Min height | `--input-min-height`（デフォルト: 9行相当） |
+| Font | System default（BIZ UDPGothic / Yu Gothic UI / Hiragino Sans / Segoe UI / -apple-system） |
+| Auto-grow | No（高さは固定し、内容はスクロール） |
+| Padding | `--textarea-padding-block` / `--textarea-padding-inline` |
+| Toolbar | テキスト入力と一体化（単一カード、ディバイダなし） |
 
 ### 5.5 File Tab
 
@@ -601,6 +602,7 @@ NiceGUIの`await client.connected()`パターンを使用して、クライア�
 - 配色は `yakulingo/ui/styles.css` の M3 トークン（トーンパレット）に準拠
 - 可読性優先のため **グラデーション/パターンは使用せず単色**（状態変化は state layer を使用）
 - ビジネス用途を想定し、Surface 系トークンはニュートラル寄り（長時間利用でも目が疲れにくい配色）
+- 枠線（アウトライン）を多用せず、Surface のトーン差 + 低い Elevation でレイヤーを表現
 
 ```css
 :root {
@@ -628,7 +630,12 @@ NiceGUIの`await client.connected()`パターンを使用して、クライア�
 
   /* Status */
   --md-sys-color-error: #B3261E;
-  --md-sys-color-success: #15803D;
+  --md-sys-color-success: #1B7A44;
+  --md-sys-color-success-container: #E8F5EE;
+  --md-sys-color-on-success-container: #0F5132;
+  --md-sys-color-warning: #9A5B00;
+  --md-sys-color-warning-container: #FFF4D6;
+  --md-sys-color-on-warning-container: #5C3A00;
 }
 ```
 

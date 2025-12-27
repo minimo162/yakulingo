@@ -1067,7 +1067,7 @@ class CopilotHandler:
 
     # GPT Mode switcher selectors
     # Used to ensure GPT-5.2 Think Deeper mode is selected for better translation quality
-    # Flow: 1. Click #gptModeSwitcher -> 2. Click "More" (role=button) -> 3. Click target (role=menuitem)
+    # Flow: 1. Click #gptModeSwitcher -> 2. Hover "More" (role=button) -> 3. Click target (role=menuitem)
     GPT_MODE_BUTTON_SELECTOR = '#gptModeSwitcher'
     GPT_MODE_TEXT_SELECTOR = '#gptModeSwitcher div'
     # "More" button has role="button" with aria-haspopup="menu", target has role="menuitem"
@@ -2679,10 +2679,22 @@ class CopilotHandler:
                 except PlaywrightTimeoutError:
                     elapsed = time.monotonic() - start_time
                     logger.debug("GPT mode button did not appear after %.2fs", elapsed)
+                    fallback = self._switch_gpt_mode_via_overflow_menu(wait_timeout_ms=1200)
+                    if fallback.get('success'):
+                        self._gpt_mode_set = True
+                        return "set"
+                    if fallback.get('error') == 'target_not_found':
+                        return "target_not_found"
                     return "not_ready"
 
             if not current_mode:
                 logger.debug("GPT mode text is empty or selector changed")
+                fallback = self._switch_gpt_mode_via_overflow_menu(wait_timeout_ms=1200)
+                if fallback.get('success'):
+                    self._gpt_mode_set = True
+                    return "set"
+                if fallback.get('error') == 'target_not_found':
+                    return "target_not_found"
                 return "not_ready"
 
             logger.debug("Current GPT mode: %s", current_mode)
@@ -2696,81 +2708,7 @@ class CopilotHandler:
             # Need to switch mode
             logger.info("Switching GPT mode from '%s' to '%s'...", current_mode, self.GPT_MODE_TARGET)
 
-            # Execute menu navigation via JavaScript with polling for each step
-            # Each step polls until element is found (max 500ms per step, 20ms interval)
-            # This handles React re-rendering delays more robustly than fixed waits
-            switch_result = self._page.evaluate('''([targetMode, moreText]) => {
-                // Helper: poll until element is found or timeout
-                const waitFor = (finder, maxWait = 500, interval = 20) => {
-                    return new Promise((resolve) => {
-                        const start = Date.now();
-                        const check = () => {
-                            const result = finder();
-                            if (result) return resolve(result);
-                            if (Date.now() - start < maxWait) {
-                                setTimeout(check, interval);
-                            } else {
-                                resolve(null);
-                            }
-                        };
-                        check();
-                    });
-                };
-
-                return (async () => {
-                    // Step 1: Click main button (should exist immediately)
-                    const mainBtn = document.querySelector('#gptModeSwitcher');
-                    if (!mainBtn) return {success: false, error: 'main_button_not_found'};
-                    mainBtn.click();
-
-                    // Step 2: Wait for and click "More" button
-                    const moreBtn = await waitFor(() => {
-                        const btns = document.querySelectorAll('[role="button"][aria-haspopup="menu"]');
-                        for (const btn of btns) {
-                            if (btn.textContent?.includes(moreText)) return btn;
-                        }
-                        return null;
-                    });
-                    if (!moreBtn) return {success: false, error: 'more_button_not_found'};
-                    moreBtn.click();
-
-                    // Step 3: Wait for and click target menu item
-                    const targetResult = await waitFor(() => {
-                        const items = document.querySelectorAll('[role="menuitem"]');
-                        const available = [];
-                        for (const item of items) {
-                            const text = item.textContent;
-                            if (text) {
-                                available.push(text.trim());
-                                if (text.includes(targetMode)) {
-                                    return {item, available};
-                                }
-                            }
-                        }
-                        return items.length > 0 ? {item: null, available} : null;
-                    });
-                    if (!targetResult?.item) {
-                        return {
-                            success: false,
-                            error: 'target_not_found',
-                            available: targetResult?.available || []
-                        };
-                    }
-                    targetResult.item.click();
-
-                    // Step 4: Wait for mode to update
-                    const newMode = await waitFor(() => {
-                        const el = document.querySelector('#gptModeSwitcher div');
-                        const text = el?.textContent?.trim();
-                        return text?.includes(targetMode) ? text : null;
-                    }, 300);
-
-                    return {
-                        success: !!newMode,
-                        newMode: newMode || document.querySelector('#gptModeSwitcher div')?.textContent?.trim() || ''
-                    };
-                })();
-            }''', [self.GPT_MODE_TARGET, self.GPT_MODE_MORE_TEXT])
+            switch_result = self._switch_gpt_mode_via_switcher_menu(wait_timeout_ms=min(wait_timeout_ms, 1500))
 
             elapsed = time.monotonic() - start_time
             if switch_result.get('success'):
@@ -2783,6 +2721,15 @@ class CopilotHandler:
                               self.GPT_MODE_TARGET, switch_result.get('available', []))
                 self._close_menu_safely()
                 return "target_not_found"
+            elif switch_result.get('error') == 'main_button_not_found':
+                fallback = self._switch_gpt_mode_via_overflow_menu(wait_timeout_ms=1200)
+                if fallback.get('success'):
+                    self._gpt_mode_set = True
+                    return "set"
+                if fallback.get('error') == 'target_not_found':
+                    return "target_not_found"
+                self._close_menu_safely()
+                return "not_ready"
             else:
                 logger.warning("GPT mode switch failed: %s (%.2fs)",
                               switch_result.get('error', 'unknown'), elapsed)
@@ -2793,6 +2740,135 @@ class CopilotHandler:
             logger.warning("Failed to check/switch GPT mode: %s", e)
             # Don't block translation on GPT mode errors - user can manually switch
             return "error"
+
+    def _switch_gpt_mode_via_switcher_menu(self, wait_timeout_ms: int = 1200) -> dict[str, object]:
+        """Switch GPT mode via #gptModeSwitcher menu (hover "More" submenu).
+
+        Normal Copilot layouts expose the switcher directly:
+        1) Click #gptModeSwitcher
+        2) Hover the "More" menu item to open submenu
+        3) Click the target mode entry (role=menuitem)
+        """
+        if not self._page:
+            return {"success": False, "error": "no_page"}
+
+        error_types = _get_playwright_errors()
+        PlaywrightTimeoutError = error_types['TimeoutError']
+
+        try:
+            main_btn = self._page.locator(self.GPT_MODE_BUTTON_SELECTOR).first
+            try:
+                main_btn.wait_for(state='visible', timeout=wait_timeout_ms)
+            except PlaywrightTimeoutError:
+                return {"success": False, "error": "main_button_not_found"}
+
+            main_btn.click()
+            self._page.wait_for_selector('[role="menu"]', state='visible', timeout=wait_timeout_ms)
+
+            menu = self._page.locator('[role="menu"]:visible').last
+            more_trigger = menu.locator(
+                f'[role="button"][aria-haspopup="menu"]:has-text("{self.GPT_MODE_MORE_TEXT}")'
+            ).first
+            try:
+                more_trigger.wait_for(state='visible', timeout=wait_timeout_ms)
+            except PlaywrightTimeoutError:
+                return {"success": False, "error": "more_button_not_found"}
+            more_trigger.hover()
+
+            target_item = self._page.locator(
+                f'[role="menuitem"]:has-text("{self.GPT_MODE_TARGET}")'
+            ).first
+            try:
+                target_item.wait_for(state='visible', timeout=min(wait_timeout_ms, 800))
+            except PlaywrightTimeoutError:
+                # Some variants may require a click to open the submenu even though the UI is hover-based.
+                more_trigger.click()
+                try:
+                    target_item.wait_for(state='visible', timeout=min(wait_timeout_ms, 800))
+                except PlaywrightTimeoutError:
+                    available = []
+                    try:
+                        available = self._page.evaluate('''() => {
+                            return Array.from(document.querySelectorAll('[role="menuitem"]'))
+                                .map(e => e.textContent?.trim())
+                                .filter(Boolean);
+                        }''') or []
+                    except Exception:
+                        available = []
+                    return {"success": False, "error": "target_not_found", "available": available}
+
+            target_item.click()
+
+            new_mode = self._page.evaluate('''(selector) => {
+                const el = document.querySelector(selector);
+                return el ? el.textContent?.trim() : null;
+            }''', self.GPT_MODE_TEXT_SELECTOR)
+
+            return {"success": True, "newMode": new_mode or self.GPT_MODE_TARGET}
+
+        except PlaywrightTimeoutError:
+            return {"success": False, "error": "timeout"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+        finally:
+            self._close_menu_safely()
+
+    def _switch_gpt_mode_via_overflow_menu(self, wait_timeout_ms: int = 1200) -> dict[str, object]:
+        """Fallback for compact Copilot layouts where #gptModeSwitcher is hidden.
+
+        Some responsive variants hide the GPT mode switcher behind an overflow menu:
+        1) Click #moreButton ("開くCopilot チャットなど")
+        2) Hover the "More" menu item (submenu)
+        3) Click the target mode entry (role=menuitem)
+        """
+
+        if not self._page:
+            return {"success": False, "error": "no_page"}
+
+        error_types = _get_playwright_errors()
+        PlaywrightTimeoutError = error_types['TimeoutError']
+
+        try:
+            more_button = (
+                self._page.query_selector('#moreButton')
+                or self._page.query_selector('[data-automation-id="moreButton"]')
+            )
+            if not more_button:
+                return {"success": False, "error": "more_button_not_found"}
+
+            # Open the overflow menu
+            more_button.click()
+            self._page.wait_for_selector('[role="menu"]', state='visible', timeout=wait_timeout_ms)
+
+            # Hover the "More" submenu trigger
+            menu = self._page.locator('[role="menu"]').last
+            more_trigger = menu.locator(
+                f'[role="button"][aria-haspopup="menu"]:has-text("{self.GPT_MODE_MORE_TEXT}")'
+            ).first
+            more_trigger.wait_for(state='visible', timeout=wait_timeout_ms)
+            more_trigger.hover()
+
+            # Click the target mode entry
+            target_item = self._page.locator(
+                f'[role="menuitem"]:has-text("{self.GPT_MODE_TARGET}")'
+            ).first
+            target_item.wait_for(state='visible', timeout=wait_timeout_ms)
+            target_item.click()
+
+            # Best-effort confirmation (may be hidden in compact layouts)
+            new_mode = self._page.evaluate('''(selector) => {
+                const el = document.querySelector(selector);
+                return el ? el.textContent?.trim() : null;
+            }''', self.GPT_MODE_TEXT_SELECTOR)
+
+            return {"success": True, "newMode": new_mode or self.GPT_MODE_TARGET}
+
+        except PlaywrightTimeoutError:
+            return {"success": False, "error": "timeout"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+        finally:
+            self._close_menu_safely()
 
     def _close_menu_safely(self) -> None:
         """Close any open menu by pressing Escape."""
@@ -3589,11 +3665,20 @@ class CopilotHandler:
                     self._cached_side_panel_geometry is not None):
                 return self._cached_side_panel_geometry
 
-            # Calculate 1:1 ratio: app and browser each get half the available width.
-            # Use full available width (handle odd pixels without leaving gaps).
-            available_width = max(screen_width - gap, 0)
-            app_width = available_width // 2
-            edge_width = available_width - app_width
+            from yakulingo.config.settings import calculate_side_panel_window_widths, MAX_SIDE_PANEL_EDGE_WIDTH
+
+            max_edge_width = MAX_SIDE_PANEL_EDGE_WIDTH
+            if dpi_scale != 1.0:
+                max_edge_width = _scale_value(max_edge_width, dpi_scale)
+
+            # Side panel split:
+            # - Normal screens: 1:1 (half/half)
+            # - Ultra-wide screens: cap Edge width to avoid wasting space
+            app_width, edge_width = calculate_side_panel_window_widths(
+                screen_width,
+                gap,
+                max_edge_width=max_edge_width,
+            )
             max_window_height = screen_height  # Use full work area height
 
             # Calculate app window height (must match app.py _detect_display_settings)
@@ -3770,16 +3855,23 @@ class CopilotHandler:
                 app_bottom_inset = 0
                 app_frame_top_offset = 0
 
-            # Target widths based on monitor work area (use full available width)
-            available_width = max(screen_width - gap, 0)
-            target_app_width = available_width // 2
-            target_edge_width = available_width - target_app_width
-            if target_app_width <= 0 or target_edge_width <= 0:
-                target_app_width = app_width
-                target_edge_width = app_width
+            from yakulingo.config.settings import calculate_side_panel_window_widths, MAX_SIDE_PANEL_EDGE_WIDTH
 
-            # 1:1 ratio: browser width equals app width (use target widths)
-            edge_width = target_edge_width
+            max_edge_width = MAX_SIDE_PANEL_EDGE_WIDTH
+            if dpi_awareness in (1, 2) and dpi_scale != 1.0:
+                max_edge_width = _scale_value(max_edge_width, dpi_scale)
+
+            # Target widths based on monitor work area:
+            # - Normal screens: 1:1 (half/half)
+            # - Ultra-wide screens: cap Edge width
+            target_app_width, edge_width = calculate_side_panel_window_widths(
+                screen_width,
+                gap,
+                max_edge_width=max_edge_width,
+            )
+            if target_app_width <= 0 or edge_width <= 0:
+                target_app_width = app_width
+                edge_width = app_width
 
             # Determine target app height.
             #

@@ -4859,10 +4859,11 @@ def _detect_display_settings(
         - content_width: Unified width for both input and result panel content (600-900px)
     """
     # Reference ratios based on 2560x1440 → 1800x1100
-    # App and browser use 1:1 ratio (each gets half the screen) in side_panel mode
-    # This ensures browser has enough space for GPT mode UI elements
+    # Side panel layout:
+    # - Normal screens: 1:1 split (app and browser each get half the screen)
+    # - Ultra-wide screens: cap browser width so it doesn't become excessively wide
     # Example: 1920px - 10px gap = 1910px available → 955px each
-    WIDTH_RATIO = 0.5  # App and browser each get 50% (1:1 ratio)
+    WIDTH_RATIO = 0.5  # Historical reference (actual split may be capped)
     HEIGHT_RATIO = 1.0  # Full work-area height (taskbar excluded)
 
     # Side panel dimensions (must match copilot_handler.py constants)
@@ -4896,14 +4897,12 @@ def _detect_display_settings(
     MAX_CONTENT_WIDTH = 900
 
     use_side_panel = display_mode == "side_panel"
+    from yakulingo.config.settings import calculate_side_panel_window_widths
 
     def calculate_side_panel_width(screen_width: int) -> int:
-        """Calculate side panel width for 1:1 ratio with app window.
-
-        Both app and browser get equal width (half of available space).
-        """
-        available_width = screen_width - SIDE_PANEL_GAP
-        return available_width // 2
+        """Calculate side panel width for the current screen size."""
+        _, edge_width = calculate_side_panel_window_widths(screen_width, SIDE_PANEL_GAP)
+        return edge_width
 
     def calculate_sizes(
         screen_width: int,
@@ -4912,17 +4911,16 @@ def _detect_display_settings(
     ) -> tuple[tuple[int, int], tuple[int, int, int]]:
         """Calculate window size and panel widths from screen resolution.
 
-        Uses 1:1 ratio for app and browser windows (each gets half the screen)
-        when side_panel mode is enabled.
+        Uses a 1:1 split for app and browser windows on normal screens, but caps
+        the browser (Edge) width on ultra-wide screens to avoid wasting space.
 
         Returns:
             Tuple of ((window_width, window_height),
                       (sidebar_width, input_panel_width, content_width))
         """
         if use_side_panel:
-            # 1:1 ratio: app and browser each get half the available width
-            available_width = screen_width - SIDE_PANEL_GAP
-            window_width = available_width // 2
+            # Side panel layout: keep 1:1 on normal screens, cap browser width on ultra-wide.
+            window_width, _ = calculate_side_panel_window_widths(screen_width, SIDE_PANEL_GAP)
         else:
             # Single panel: use full work area width
             window_width = screen_width
@@ -5146,9 +5144,13 @@ def _calculate_app_position_for_side_panel(
         screen_width = work_area.right - work_area.left
         screen_height = work_area.bottom - work_area.top
 
-        # 1:1 ratio: app and browser each get half the available width
+        from yakulingo.config.settings import calculate_side_panel_window_widths
+
         SIDE_PANEL_GAP = 10
-        edge_width = window_width  # Browser width equals app width
+        # Use the same split logic as CopilotHandler so the "app + gap + Edge" set fits.
+        _, edge_width = calculate_side_panel_window_widths(screen_width, SIDE_PANEL_GAP)
+        if edge_width <= 0:
+            edge_width = window_width  # Fallback: preserve legacy 1:1 assumption
 
         # Calculate total width of app + gap + side panel
         total_width = window_width + SIDE_PANEL_GAP + edge_width

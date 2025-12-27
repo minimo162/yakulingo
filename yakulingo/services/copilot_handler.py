@@ -1086,6 +1086,9 @@ class CopilotHandler:
     GPT_MODE_BUTTON_WAIT_FAST_MS = 2000  # Per-attempt timeout (2s)
     # Retry delays between short attempts (seconds).
     GPT_MODE_RETRY_DELAYS = (0.5, 1.0, 2.0)
+    # Compact Copilot layouts hide the GPT switcher behind an overflow menu.
+    # Avoid clicking #moreButton in normal layouts while the switcher is still loading.
+    GPT_MODE_OVERFLOW_FALLBACK_MAX_VIEWPORT_WIDTH = 800
 
     # Dynamic polling intervals for faster response detection
     # OPTIMIZED: Reduced intervals for quicker response detection (0.15s -> 0.1s)
@@ -2650,6 +2653,17 @@ class CopilotHandler:
                 else wait_timeout_ms
             )
 
+            try:
+                viewport_width = int(self._page.evaluate('''() => {
+                    const w = window.innerWidth || document.documentElement?.clientWidth || 0;
+                    return (typeof w === 'number' && Number.isFinite(w)) ? w : 0;
+                }''') or 0)
+            except Exception:
+                viewport_width = 0
+            allow_overflow_fallback = (
+                viewport_width > 0 and viewport_width <= self.GPT_MODE_OVERFLOW_FALLBACK_MAX_VIEWPORT_WIDTH
+            )
+
             # OPTIMIZED: Quick check first, then wait_for_selector if not found
             # This avoids unnecessary waiting when button is already visible
             current_mode = self._page.evaluate('''(selector) => {
@@ -2679,6 +2693,8 @@ class CopilotHandler:
                 except PlaywrightTimeoutError:
                     elapsed = time.monotonic() - start_time
                     logger.debug("GPT mode button did not appear after %.2fs", elapsed)
+                    if not allow_overflow_fallback:
+                        return "not_ready"
                     fallback = self._switch_gpt_mode_via_overflow_menu(wait_timeout_ms=min(wait_timeout_ms, 3000))
                     if fallback.get('success'):
                         self._gpt_mode_set = True
@@ -2689,12 +2705,19 @@ class CopilotHandler:
 
             if not current_mode:
                 logger.debug("GPT mode text is empty or selector changed")
-                fallback = self._switch_gpt_mode_via_overflow_menu(wait_timeout_ms=min(wait_timeout_ms, 3000))
-                if fallback.get('success'):
+                switch_result = self._switch_gpt_mode_via_switcher_menu(wait_timeout_ms=min(wait_timeout_ms, 3000))
+                if switch_result.get('success'):
                     self._gpt_mode_set = True
                     return "set"
-                if fallback.get('error') == 'target_not_found':
+                if switch_result.get('error') == 'target_not_found':
                     return "target_not_found"
+                if (switch_result.get('error') == 'main_button_not_found') and allow_overflow_fallback:
+                    fallback = self._switch_gpt_mode_via_overflow_menu(wait_timeout_ms=min(wait_timeout_ms, 3000))
+                    if fallback.get('success'):
+                        self._gpt_mode_set = True
+                        return "set"
+                    if fallback.get('error') == 'target_not_found':
+                        return "target_not_found"
                 return "not_ready"
 
             logger.debug("Current GPT mode: %s", current_mode)
@@ -2722,12 +2745,13 @@ class CopilotHandler:
                 self._close_menu_safely()
                 return "target_not_found"
             elif switch_result.get('error') == 'main_button_not_found':
-                fallback = self._switch_gpt_mode_via_overflow_menu(wait_timeout_ms=min(wait_timeout_ms, 3000))
-                if fallback.get('success'):
-                    self._gpt_mode_set = True
-                    return "set"
-                if fallback.get('error') == 'target_not_found':
-                    return "target_not_found"
+                if allow_overflow_fallback:
+                    fallback = self._switch_gpt_mode_via_overflow_menu(wait_timeout_ms=min(wait_timeout_ms, 3000))
+                    if fallback.get('success'):
+                        self._gpt_mode_set = True
+                        return "set"
+                    if fallback.get('error') == 'target_not_found':
+                        return "target_not_found"
                 self._close_menu_safely()
                 return "not_ready"
             else:

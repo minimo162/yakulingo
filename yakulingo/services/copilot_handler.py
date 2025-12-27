@@ -1080,8 +1080,8 @@ class CopilotHandler:
     # GPT mode button wait timeout
     # Early connection thread calls ensure_gpt_mode() during NiceGUI startup (~8s)
     # Copilot React UI takes ~11s from connection to fully render GPT mode button
-    # 15s timeout allows early connection to complete GPT mode setup with margin
-    GPT_MODE_BUTTON_WAIT_MS = 15000  # Total timeout for button appearance (15s)
+    # Closing/reopening the Copilot window can delay this significantly; allow extra margin.
+    GPT_MODE_BUTTON_WAIT_MS = 25000  # Total timeout for button appearance (25s)
     # Short per-attempt wait to keep the Playwright thread responsive.
     GPT_MODE_BUTTON_WAIT_FAST_MS = 2000  # Per-attempt timeout (2s)
     # Retry delays between short attempts (seconds).
@@ -2591,6 +2591,39 @@ class CopilotHandler:
             logger.debug("Skipping ensure_gpt_mode: no page available")
             return
 
+        # When called from the Playwright worker thread (e.g., during translation),
+        # we must ensure GPT mode is set *before* sending prompts. The non-blocking
+        # retry/timer approach can race and let translation start in the default mode.
+        # In that case, run a blocking attempt inline with the full wait timeout.
+        in_playwright_thread = False
+        try:
+            in_playwright_thread = (
+                _playwright_executor._thread is not None
+                and threading.current_thread().ident == _playwright_executor._thread.ident
+            )
+        except Exception:
+            in_playwright_thread = False
+
+        if in_playwright_thread:
+            timer = None
+            with self._gpt_mode_retry_lock:
+                timer = self._gpt_mode_retry_timer
+                self._gpt_mode_retry_timer = None
+                self._gpt_mode_attempt_in_progress = True
+                self._gpt_mode_retry_index = 0
+            if timer:
+                try:
+                    timer.cancel()
+                except Exception:
+                    pass
+            try:
+                self._ensure_gpt_mode_impl(None)
+            except Exception as e:
+                logger.debug("Failed to set GPT mode (blocking): %s", e)
+            finally:
+                self._clear_gpt_mode_retry_state()
+            return
+
         with self._gpt_mode_retry_lock:
             if self._gpt_mode_attempt_in_progress:
                 logger.debug("Skipping ensure_gpt_mode: attempt already in progress")
@@ -2699,12 +2732,13 @@ class CopilotHandler:
                 except PlaywrightTimeoutError:
                     elapsed = time.monotonic() - start_time
                     logger.debug("GPT mode button did not appear after %.2fs", elapsed)
-                    fallback = self._switch_gpt_mode_via_overflow_menu(wait_timeout_ms=min(wait_timeout_ms, 3000))
-                    if fallback.get('success'):
-                        self._gpt_mode_set = True
-                        return "set"
-                    if fallback.get('error') == 'target_not_found':
-                        return "target_not_found"
+                    if allow_overflow_fallback:
+                        fallback = self._switch_gpt_mode_via_overflow_menu(wait_timeout_ms=min(wait_timeout_ms, 3000))
+                        if fallback.get('success'):
+                            self._gpt_mode_set = True
+                            return "set"
+                        if fallback.get('error') == 'target_not_found':
+                            return "target_not_found"
                     return "not_ready"
 
             if not current_mode:
@@ -2716,12 +2750,13 @@ class CopilotHandler:
                 if switch_result.get('error') == 'target_not_found':
                     return "target_not_found"
                 if switch_result.get('error') == 'main_button_not_found':
-                    fallback = self._switch_gpt_mode_via_overflow_menu(wait_timeout_ms=min(wait_timeout_ms, 3000))
-                    if fallback.get('success'):
-                        self._gpt_mode_set = True
-                        return "set"
-                    if fallback.get('error') == 'target_not_found':
-                        return "target_not_found"
+                    if allow_overflow_fallback:
+                        fallback = self._switch_gpt_mode_via_overflow_menu(wait_timeout_ms=min(wait_timeout_ms, 3000))
+                        if fallback.get('success'):
+                            self._gpt_mode_set = True
+                            return "set"
+                        if fallback.get('error') == 'target_not_found':
+                            return "target_not_found"
                 return "not_ready"
 
             logger.debug("Current GPT mode: %s", current_mode)
@@ -2749,12 +2784,13 @@ class CopilotHandler:
                 self._close_menu_safely()
                 return "target_not_found"
             elif switch_result.get('error') == 'main_button_not_found':
-                fallback = self._switch_gpt_mode_via_overflow_menu(wait_timeout_ms=min(wait_timeout_ms, 3000))
-                if fallback.get('success'):
-                    self._gpt_mode_set = True
-                    return "set"
-                if fallback.get('error') == 'target_not_found':
-                    return "target_not_found"
+                if allow_overflow_fallback:
+                    fallback = self._switch_gpt_mode_via_overflow_menu(wait_timeout_ms=min(wait_timeout_ms, 3000))
+                    if fallback.get('success'):
+                        self._gpt_mode_set = True
+                        return "set"
+                    if fallback.get('error') == 'target_not_found':
+                        return "target_not_found"
                 self._close_menu_safely()
                 return "not_ready"
             else:
@@ -2839,6 +2875,15 @@ class CopilotHandler:
         PlaywrightTimeoutError = error_types['TimeoutError']
 
         try:
+            try:
+                self._page.wait_for_selector(
+                    '#moreButton, [data-automation-id="moreButton"]',
+                    state='visible',
+                    timeout=wait_timeout_ms,
+                )
+            except PlaywrightTimeoutError:
+                return {"success": False, "error": "more_button_not_found"}
+
             more_button = (
                 self._page.query_selector('#moreButton')
                 or self._page.query_selector('[data-automation-id="moreButton"]')

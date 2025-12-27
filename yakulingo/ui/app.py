@@ -6811,6 +6811,27 @@ def run_app(
                     yakulingo_app._client = None
             browser_opened = False
 
+            copilot = getattr(yakulingo_app, "_copilot", None)
+            if copilot is not None and sys.platform == "win32":
+                def _minimize_copilot_edge_window() -> None:
+                    try:
+                        copilot.stop_window_sync()
+                    except Exception:
+                        pass
+                    try:
+                        copilot.minimize_edge_window()
+                    except Exception:
+                        pass
+
+                try:
+                    threading.Thread(
+                        target=_minimize_copilot_edge_window,
+                        daemon=True,
+                        name="minimize_copilot_edge_on_ui_close",
+                    ).start()
+                except Exception:
+                    pass
+
         try:
             client.on_disconnect(_clear_cached_client_on_disconnect)
         except Exception:

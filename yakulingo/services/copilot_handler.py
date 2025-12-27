@@ -5055,6 +5055,21 @@ class CopilotHandler:
         except Exception as e:
             logger.debug("Failed to send window to background: %s", e)
 
+    def minimize_edge_window(self) -> bool:
+        """Minimize the Copilot Edge window (best-effort, Windows only).
+
+        This is used by the UI layer when the UI window is closed in resident mode.
+        Even when browser_display_mode is "side_panel", the Copilot Edge window should
+        not remain visible after the UI is gone.
+        """
+        if sys.platform != "win32":
+            return False
+        try:
+            return self._minimize_edge_window(None)
+        except Exception as e:
+            logger.debug("Failed to minimize Edge window: %s", e)
+            return False
+
     def disconnect(self, keep_browser: bool = False) -> None:
         """Close browser connection and cleanup.
 

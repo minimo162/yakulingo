@@ -6149,6 +6149,17 @@ def run_app(
             )
 
             def enum_windows_callback(hwnd, _lparam):
+                # Only target Chromium windows (Edge/Chrome) to avoid closing unrelated
+                # dialogs like the installer progress window ("YakuLingo Setup ...").
+                try:
+                    class_name = ctypes.create_unicode_buffer(256)
+                    if user32.GetClassNameW(hwnd, class_name, 256) == 0:
+                        return True
+                    if class_name.value not in ("Chrome_WidgetWin_0", "Chrome_WidgetWin_1"):
+                        return True
+                except Exception:
+                    return True
+
                 title_length = user32.GetWindowTextLengthW(hwnd)
                 if title_length <= 0:
                     return True

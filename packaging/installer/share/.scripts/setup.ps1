@@ -86,6 +86,8 @@ if (Test-Path $shareDirFile) {
     try { "ShareDir from parent: $($script:ShareDir)" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
 }
 $script:AppName = "YakuLingo"
+$script:SetupUiTitle = "Setup - $($script:AppName)"
+$script:SetupUiTitleError = "$($script:SetupUiTitle) - Error"
 
 # Debug: Log resolved paths
 try {
@@ -291,7 +293,7 @@ if ($GuiMode) {
         [System.Windows.Forms.MessageBox]::Show(
             $ownerForm,
             $Message,
-            "YakuLingo Setup - Error",
+            $script:SetupUiTitleError,
             [System.Windows.Forms.MessageBoxButtons]::OK,
             [System.Windows.Forms.MessageBoxIcon]::Error
         ) | Out-Null
@@ -318,7 +320,7 @@ if ($GuiMode) {
         [System.Windows.Forms.MessageBox]::Show(
             $ownerForm,
             $Message,
-            "YakuLingo Setup",
+            $script:SetupUiTitle,
             [System.Windows.Forms.MessageBoxButtons]::OK,
             [System.Windows.Forms.MessageBoxIcon]::Information
         ) | Out-Null
@@ -339,7 +341,7 @@ function Write-Status {
     )
     if ($GuiMode) {
         if ($Progress) {
-            Show-Progress -Title "YakuLingo Setup" -Status $Message -Step $Step -Percent $Percent
+            Show-Progress -Title $script:SetupUiTitle -Status $Message -Step $Step -Percent $Percent
         }
     } else {
         Write-Host $Message -ForegroundColor $Color
@@ -1002,7 +1004,7 @@ function Invoke-Setup {
             # Map to 30-50% of overall progress
             $overallPercent = 30 + [int]($percentComplete * 0.2)
             if ($GuiMode) {
-                Show-Progress -Title "YakuLingo Setup" -Status "Copying: ${copiedMB}MB / ${totalMB}MB" -Step "Step 2/4: Copying" -Percent $overallPercent
+                Show-Progress -Title $script:SetupUiTitle -Status "Copying: ${copiedMB}MB / ${totalMB}MB" -Step "Step 2/4: Copying" -Percent $overallPercent
             }
         }
     }
@@ -1157,7 +1159,7 @@ function Invoke-Setup {
                     } else {
                         $timeInfo = " (${elapsedSec}s)"
                     }
-                    Show-Progress -Title "YakuLingo Setup" -Status "Extracting files$dots$timeInfo" -Step "Step 3/4: Extracting (this may take a few minutes)" -Percent 60
+                    Show-Progress -Title $script:SetupUiTitle -Status "Extracting files$dots$timeInfo" -Step "Step 3/4: Extracting (this may take a few minutes)" -Percent 60
                 }
 
                 $jobResult = Receive-Job -Job $extractJob

@@ -24,7 +24,8 @@ Share these steps with your users:
   4. YakuLingo starts automatically on logon (resident mode)
      (it is also started immediately after setup completes)
   5. Select text (or select files in Explorer) and press Ctrl+Alt+J to translate (result copied to clipboard)
-  6. Open UI from the desktop or Start Menu shortcut when needed
+     - For file translation, paste (Ctrl+V) into a folder to save the translated file(s)
+  6. Open UI from the desktop or Start Menu shortcut when needed (closing the UI does not exit the resident service)
   7. To exit: Start Menu > YakuLingo > "YakuLingo 終了"
   Note: YakuLingo installs to %LOCALAPPDATA%\YakuLingo (not OneDrive-synced).
 

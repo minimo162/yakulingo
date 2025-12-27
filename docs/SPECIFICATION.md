@@ -76,7 +76,7 @@ M365 Copilotを翻訳エンジンとして使用し、テキストとドキュ�
 
 | Layer | Technology |
 |-------|------------|
-| UI | NiceGUI + pywebview (Material Design 3 / Expressive) |
+| UI | NiceGUI (browser mode) / pywebview (optional native) (Material Design 3 / Expressive) |
 | Backend | FastAPI (via NiceGUI) |
 | Translation | M365 Copilot (Playwright + Edge) |
 | File Processing | openpyxl, python-docx, python-pptx, PyMuPDF |
@@ -430,12 +430,34 @@ class AppState:
 
 | Property | Value |
 |----------|-------|
-| Mode | Native window (pywebview) |
+| Mode | Browser mode (external browser / Edge app window) |
 | Host | 127.0.0.1 |
 | Port | 8765 |
 | Title | YakuLingo |
 | Favicon | 🍎 |
 | Theme | Light (Material Design 3 / Expressive) |
+
+### 5.1.1 常駐モード（推奨）
+
+YakuLingoは「常駐＋ホットキー」を前提として動作します。
+
+- 起動時はUIを自動表示せず、バックグラウンドでNiceGUIサーバーが常駐する
+- UIを閉じてもプロセスは終了しない（迷子を防ぐため）
+- 終了は明示的に実行する（インストーラが作成する `YakuLingo 終了` ショートカット）
+  - ローカルAPI `POST /api/shutdown`（localhostのみ）で正常終了
+
+### 5.1.2 Ctrl+Alt+J（グローバルホットキー）
+
+Windows API (`RegisterHotKey`) で `Ctrl+Alt+J` を登録し、どのアプリからでも翻訳を実行できる。
+
+- 実装概要
+  - `SendInput` で `Ctrl+C` を送出し、選択中の内容をクリップボードへコピー
+  - クリップボード内容に応じて分岐
+    - `CF_UNICODETEXT`（テキスト）: テキスト翻訳 → 訳文をクリップボードへコピー
+    - `CF_HDROP`（ファイル）: ファイル翻訳 → 出力ファイルを `CF_HDROP` でクリップボードへコピー（フォルダで貼り付け）
+- ファイル翻訳（ホットキー）の制約
+  - 対応拡張子: `.xlsx` `.xls` `.docx` `.doc` `.pptx` `.ppt` `.pdf` `.txt`
+  - 一度に処理するファイル数: 最大10
 
 ### 5.2 全体レイアウト
 

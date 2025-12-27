@@ -61,7 +61,12 @@ share_package/            # 共有フォルダ用パッケージ
 1. `\\server\share\YakuLingo` を開く
 2. `setup.vbs` をダブルクリック
 3. セットアップ完了を待つ
-4. 完了後、YakuLingoが自動的に起動
+4. 完了後、YakuLingoが自動的に起動（常駐）
+5. 普段の使い方:
+   - テキストを選択して `Ctrl+Alt+J` → 訳文がクリップボードにコピー
+   - エクスプローラーでファイルを選択して `Ctrl+Alt+J` → 翻訳済みファイルがクリップボードにコピー（フォルダで貼り付け）
+6. UIを開く: デスクトップ / スタートメニューの `YakuLingo`
+7. 終了する: スタートメニュー > `YakuLingo` > `YakuLingo 終了`
 
 ### インストール先
 
@@ -71,7 +76,10 @@ share_package/            # 共有フォルダ用パッケージ
 
 ### 作成されるショートカット
 
-- デスクトップ: `YakuLingo.lnk`
+- デスクトップ: `YakuLingo.lnk`（UIを開く）
+- スタートメニュー: `YakuLingo\YakuLingo.lnk`（UIを開く）
+- スタートメニュー: `YakuLingo\YakuLingo 終了.lnk`（常駐を終了）
+- スタートアップ: `YakuLingo.lnk`（ログオン時に常駐を自動起動）
 
 ## セットアップの動作
 
@@ -82,8 +90,8 @@ setup.ps1は以下を実行：
 3. ZIPをローカルにコピー・展開（robocopyスキップ時は警告表示）
 4. `%LOCALAPPDATA%\YakuLingo` にファイル配置
 5. **ユーザーデータの復元**: `config/user_settings.json` は保持（復元）、`glossary.csv` は差分があればバックアップして更新
-6. ショートカット作成
-7. YakuLingoを起動
+6. ショートカット作成（デスクトップ / スタートメニュー / スタートアップ / 終了）
+7. YakuLingoを起動（常駐 + UIを開く）
 
 ### ユーザーデータの保持/更新処理
 
@@ -190,10 +198,12 @@ powershell -ExecutionPolicy Bypass -File ".scripts\setup.ps1"
 
 1. `%LOCALAPPDATA%\YakuLingo`
 2. デスクトップの `YakuLingo.lnk`
+3. スタートメニューの `YakuLingo` フォルダ
+4. スタートアップの `YakuLingo.lnk`
 
 ### 翻訳履歴も削除する場合
 
-3. `%USERPROFILE%\.yakulingo`
+5. `%USERPROFILE%\.yakulingo`
 
 ## システム要件
 

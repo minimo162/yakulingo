@@ -564,6 +564,7 @@ class YakuLingoApp:
 
         # Hotkey manager for quick translation (Ctrl+Alt+J)
         self._hotkey_manager = None
+        self._open_ui_window_callback: Callable[[], None] | None = None
 
         # PP-DocLayout-L initialization state (on-demand for PDF)
         self._layout_init_state = LayoutInitializationState.NOT_INITIALIZED
@@ -735,6 +736,26 @@ class YakuLingoApp:
             summary = summarize_clipboard_text(text)
             self._log_hotkey_debug_info(trace_id, summary)
 
+            # Bring the UI window to front when running with an active client (hotkey UX).
+            # Hotkey translation still works headlessly when the UI has never been opened.
+            with self._client_lock:
+                client = self._client
+
+            if client:
+                try:
+                    brought_to_front = await self._bring_window_to_front()
+                except Exception as e:
+                    logger.debug("Failed to bring window to front for hotkey: %s", e)
+                else:
+                    # If the UI window no longer exists (e.g., browser window was closed),
+                    # clear the cached client and fall back to headless translation.
+                    if sys.platform == "win32" and not brought_to_front:
+                        logger.debug("Hotkey UI client exists but UI window not found; using headless mode")
+                        with self._client_lock:
+                            if self._client is client:
+                                self._client = None
+                        client = None
+
             is_path_selection, file_paths = self._extract_hotkey_file_paths(text)
             if is_path_selection:
                 if not file_paths:
@@ -746,10 +767,13 @@ class YakuLingoApp:
                 await self._translate_files_headless(file_paths, trace_id)
                 return
 
-            # Decide whether we have an active UI client. Hotkey translation should work
-            # even when the UI has never been opened (resident mode).
-            with self._client_lock:
-                client = self._client
+            if not client:
+                open_ui = self._open_ui_window_callback
+                if open_ui is not None:
+                    try:
+                        asyncio.create_task(asyncio.to_thread(open_ui))
+                    except Exception as e:
+                        logger.debug("Failed to request UI open for hotkey: %s", e)
 
             if summary.excel_like and summary.max_columns >= 2:
                 logger.info(
@@ -789,7 +813,6 @@ class YakuLingoApp:
 
             # Trigger translation
             await self._translate_text()
-            self._copy_hotkey_result_to_clipboard(trace_id)
         finally:
             self._hotkey_translation_active = False
             if self._active_translation_trace_id == trace_id:
@@ -979,6 +1002,14 @@ class YakuLingoApp:
         """Translate hotkey text without requiring a UI client (resident mode)."""
         import time
 
+        from yakulingo.ui.state import Tab, TextViewState
+
+        self.state.source_text = text
+        self.state.current_tab = Tab.TEXT
+        self.state.text_view_state = TextViewState.INPUT
+        self.state.text_streaming_preview = None
+        self._streaming_preview_label = None
+
         if not self._ensure_translation_service():
             return
 
@@ -992,6 +1023,11 @@ class YakuLingoApp:
             )
             return
 
+        self.state.text_translating = True
+        self.state.text_detected_language = None
+        self.state.text_result = None
+        self.state.text_translation_elapsed_time = None
+
         reference_files = self._get_effective_reference_files()
 
         start_time = time.monotonic()
@@ -1000,6 +1036,7 @@ class YakuLingoApp:
                 self.translation_service.detect_language,
                 text,
             )
+            self.state.text_detected_language = detected_language
             result = await asyncio.to_thread(
                 self.translation_service.translate_text_with_style_comparison,
                 text,
@@ -1011,6 +1048,12 @@ class YakuLingoApp:
         except Exception as e:
             logger.info("Hotkey translation [%s] failed: %s", trace_id, e)
             return
+        finally:
+            self.state.text_translating = False
+
+        self.state.text_translation_elapsed_time = time.monotonic() - start_time
+        self.state.text_result = result
+        self.state.text_view_state = TextViewState.RESULT
 
         if result.error_message:
             logger.info("Hotkey translation [%s] failed: %s", trace_id, result.error_message)
@@ -1019,29 +1062,18 @@ class YakuLingoApp:
             logger.info("Hotkey translation [%s] produced no options", trace_id)
             return
 
-        chosen = result.options[0]
-        if result.output_language == "en":
-            for option in result.options:
-                if option.style == DEFAULT_TEXT_STYLE:
-                    chosen = option
-                    break
-
-        try:
-            from yakulingo.services.hotkey_manager import set_clipboard_text
-            if set_clipboard_text(chosen.text):
-                logger.info(
-                    "Hotkey translation [%s] completed in %.2fs (copied to clipboard)",
-                    trace_id,
-                    time.monotonic() - start_time,
-                )
-            else:
-                logger.warning("Hotkey translation [%s] completed but clipboard copy failed", trace_id)
-        except Exception as e:
-            logger.debug("Hotkey translation [%s] clipboard error: %s", trace_id, e)
+        logger.info(
+            "Hotkey translation [%s] completed in %.2fs",
+            trace_id,
+            time.monotonic() - start_time,
+        )
 
     async def _translate_excel_cells_headless(self, text: str, trace_id: str) -> None:
         """Translate Excel-like tabular hotkey text without a UI client."""
         import time
+
+        from yakulingo.models.types import TextTranslationResult, TranslationOption
+        from yakulingo.ui.state import Tab, TextViewState
 
         if not self._ensure_translation_service():
             return
@@ -1069,12 +1101,24 @@ class YakuLingoApp:
                 seen_texts.add(cell_text)
                 unique_texts.append(cell_text)
 
+        # Prepare state so the UI can display progress/results when opened later.
+        self.state.source_text = normalized
+        self.state.current_tab = Tab.TEXT
+        self.state.text_view_state = TextViewState.INPUT
+        self.state.text_translating = True
+        self.state.text_detected_language = None
+        self.state.text_result = None
+        self.state.text_translation_elapsed_time = None
+        self.state.text_streaming_preview = None
+        self._streaming_preview_label = None
+
         start_time = time.monotonic()
         try:
             detected_language = await asyncio.to_thread(
                 self.translation_service.detect_language,
                 cells_to_translate[0][2],
             )
+            self.state.text_detected_language = detected_language
             output_language = "en" if detected_language == "日本語" else "jp"
             reference_files = self._get_effective_reference_files()
 
@@ -1096,8 +1140,10 @@ class YakuLingoApp:
                 explanations.extend(batch_explanations)
 
             translation_by_text: dict[str, str] = {}
+            explanation_by_text: dict[str, str] = {}
             for idx, cell_text in enumerate(unique_texts):
                 translation_by_text[cell_text] = translations[idx] if idx < len(translations) else ""
+                explanation_by_text[cell_text] = explanations[idx] if idx < len(explanations) else ""
 
             translated_2d = [row[:] for row in cells_2d]
             for row_idx, col_idx, cell_text in cells_to_translate:
@@ -1107,24 +1153,48 @@ class YakuLingoApp:
             translated_rows = ["\t".join(row) for row in translated_2d]
             translated_text = "\n".join(translated_rows)
 
-            from yakulingo.services.hotkey_manager import set_clipboard_text
-            if set_clipboard_text(translated_text):
-                logger.info(
-                    "Hotkey translation [%s] completed %d cells in %.2fs (copied to clipboard)",
-                    trace_id,
-                    len(cells_to_translate),
-                    time.monotonic() - start_time,
-                )
-            else:
-                logger.warning("Hotkey translation [%s] completed but clipboard copy failed", trace_id)
+            elapsed_time = time.monotonic() - start_time
+
+            explanation_blocks: list[str] = []
+            for cell_text in unique_texts:
+                explanation = explanation_by_text.get(cell_text, "").strip()
+                if explanation:
+                    explanation_blocks.append(explanation)
+            explanation_text = "\n\n".join(explanation_blocks)
+
+            self.state.text_translation_elapsed_time = elapsed_time
+            self.state.text_result = TextTranslationResult(
+                source_text=text,
+                source_char_count=len(text),
+                options=[
+                    TranslationOption(
+                        text=translated_text,
+                        explanation=explanation_text,
+                        char_count=len(translated_text),
+                    ),
+                ],
+                output_language=output_language,
+                detected_language=detected_language,
+            )
+            self.state.text_view_state = TextViewState.RESULT
+            self.state.source_text = ""
+
+            logger.info(
+                "Hotkey translation [%s] completed %d cells in %.2fs",
+                trace_id,
+                len(cells_to_translate),
+                elapsed_time,
+            )
         except Exception as e:
             logger.exception("Hotkey translation [%s] error: %s", trace_id, e)
+        finally:
+            self.state.text_translating = False
 
     async def _translate_excel_cells(self, text: str, trace_id: str):
         """Translate Excel-like tabular data (tab-separated cells).
 
         Translates each cell individually while preserving the table structure,
-        then copies the result to clipboard for easy paste back to Excel.
+        then displays the result in the UI.
 
         Args:
             text: Tab-separated text from clipboard
@@ -1274,16 +1344,6 @@ class YakuLingoApp:
                 # Reconstruct tab-separated text
                 translated_rows = ["\t".join(row) for row in translated_2d]
                 translated_text = "\n".join(translated_rows)
-
-                # Copy to clipboard
-                try:
-                    from yakulingo.services.hotkey_manager import set_clipboard_text
-                    if set_clipboard_text(translated_text):
-                        logger.info("Translation [%s] copied to clipboard", trace_id)
-                    else:
-                        logger.warning("Translation [%s] failed to copy to clipboard", trace_id)
-                except Exception as e:
-                    logger.warning("Translation [%s] clipboard error: %s", trace_id, e)
 
                 # Calculate elapsed time
                 elapsed_time = time.monotonic() - start_time
@@ -1528,7 +1588,7 @@ class YakuLingoApp:
         translations = self._parse_numbered_translations(response, expected_count)
         return translations, explanations
 
-    async def _bring_window_to_front(self):
+    async def _bring_window_to_front(self) -> bool:
         """Bring the app window to front.
 
         Uses multiple methods to ensure the window is brought to front:
@@ -1552,6 +1612,7 @@ class YakuLingoApp:
             logger.debug(f"pywebview bring_to_front failed: {e}")
 
         # Method 2: Windows API (more reliable for hotkey activation)
+        win32_success = True
         if sys.platform == 'win32':
             win32_success = await asyncio.to_thread(self._bring_window_to_front_win32)
             logger.debug("Windows API bring_to_front result: %s", win32_success)
@@ -1569,6 +1630,7 @@ class YakuLingoApp:
                     logger.debug("Edge positioned as side panel after bring to front")
                 except Exception as e:
                     logger.debug("Failed to position Edge as side panel: %s", e)
+        return win32_success
 
     def _bring_window_to_front_win32(self) -> bool:
         """Bring YakuLingo window to front using Windows API.
@@ -5847,6 +5909,7 @@ def run_app(
     # to show loading screen while initializing (better UX than blank screen)
 
     browser_opened = False
+    browser_opened_at: float | None = None
     browser_pid: int | None = None
     browser_profile_dir: Path | None = None
 
@@ -5942,14 +6005,26 @@ def run_app(
 
     def _open_browser_window() -> None:
         nonlocal browser_opened
+        nonlocal browser_opened_at
         nonlocal browser_pid, browser_profile_dir
-        if browser_opened:
-            return
         if shutdown_event.is_set():
             return
         if getattr(yakulingo_app, "_shutdown_requested", False):
             return
+
+        if browser_opened:
+            try:
+                if sys.platform == "win32" and yakulingo_app._bring_window_to_front_win32():
+                    return
+            except Exception:
+                pass
+            now = time.monotonic()
+            if browser_opened_at is not None and (now - browser_opened_at) < 5.0:
+                return
+            browser_opened = False
+
         browser_opened = True
+        browser_opened_at = time.monotonic()
 
         url = f"http://{host}:{port}/"
         native_window_size = yakulingo_app._native_window_size or yakulingo_app._window_size
@@ -6012,6 +6087,8 @@ def run_app(
             logger.info("Opened browser via default handler: %s", url)
         except Exception as e:
             logger.debug("Failed to open browser: %s", e)
+
+    yakulingo_app._open_ui_window_callback = _open_browser_window
 
     def _close_browser_window_on_shutdown() -> None:
         """Close the app's browser window (browser mode only, Windows)."""

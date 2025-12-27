@@ -410,6 +410,7 @@ HOTKEY_SUPPORTED_FILE_SUFFIXES = {
     ".ppt",
     ".pdf",
     ".txt",
+    ".msg",
 }
 
 
@@ -712,11 +713,12 @@ class YakuLingoApp:
         except Exception as e:
             logger.error(f"Failed to schedule hotkey handler: {e}")
 
-    async def _handle_hotkey_text(self, text: str):
+    async def _handle_hotkey_text(self, text: str, open_ui: bool = True):
         """Handle hotkey text in the main event loop.
 
         Args:
             text: Clipboard payload (text or newline-joined file paths)
+            open_ui: If True, open UI window when translating text headlessly.
         """
         # Double-check: Skip if translation started while we were waiting
         if self.state.text_translating:
@@ -781,11 +783,11 @@ class YakuLingoApp:
                 await self._translate_files_headless(file_paths, trace_id)
                 return
 
-            if not client:
-                open_ui = self._open_ui_window_callback
-                if open_ui is not None:
+            if open_ui and not client:
+                open_ui_callback = self._open_ui_window_callback
+                if open_ui_callback is not None:
                     try:
-                        asyncio.create_task(asyncio.to_thread(open_ui))
+                        asyncio.create_task(asyncio.to_thread(open_ui_callback))
                     except Exception as e:
                         logger.debug("Failed to request UI open for hotkey: %s", e)
 
@@ -6388,8 +6390,8 @@ def run_app(
         from fastapi import HTTPException
     except Exception as e:
         logger.debug("FastAPI upload API unavailable; global drop upload disabled: %s", e)
-    else:
-        @nicegui_app.post('/api/global-drop')
+        else:
+            @nicegui_app.post('/api/global-drop')
         async def global_drop_upload(request: StarletteRequest):  # type: ignore[misc]
             from yakulingo.ui.components.file_panel import (
                 MAX_DROP_FILE_SIZE_BYTES,
@@ -6527,6 +6529,65 @@ def run_app(
                 pass
 
             nicegui_app.shutdown()
+            return {"ok": True}
+
+        @nicegui_app.post('/api/hotkey')
+        async def hotkey_api(request: StarletteRequest):  # type: ignore[misc]
+            """Trigger hotkey translation via API (local machine only)."""
+            try:
+                client_host = getattr(getattr(request, "client", None), "host", None)
+                if client_host not in ("127.0.0.1", "::1"):
+                    raise HTTPException(status_code=403, detail="forbidden")
+            except HTTPException:
+                raise
+            except Exception:
+                raise HTTPException(status_code=403, detail="forbidden")
+
+            # Mitigate CSRF-from-browser to localhost: reject non-local Origin/Referer.
+            origin = None
+            referer = None
+            try:
+                origin = request.headers.get("origin")
+                referer = request.headers.get("referer")
+            except Exception:
+                origin = None
+                referer = None
+
+            def _is_local_web_origin(value: str | None) -> bool:
+                if not value:
+                    return True
+                lower = value.lower()
+                return (
+                    lower.startswith("http://127.0.0.1")
+                    or lower.startswith("http://localhost")
+                    or lower.startswith("https://127.0.0.1")
+                    or lower.startswith("https://localhost")
+                )
+
+            if not _is_local_web_origin(origin) or not _is_local_web_origin(referer):
+                raise HTTPException(status_code=403, detail="forbidden")
+
+            try:
+                data = await request.json()
+            except Exception as err:
+                raise HTTPException(status_code=400, detail="invalid json") from err
+
+            payload = data.get("payload", "")
+            if not isinstance(payload, str) or not payload.strip():
+                raise HTTPException(status_code=400, detail="payload is required")
+
+            open_ui = bool(data.get("open_ui", False))
+
+            try:
+                from nicegui import background_tasks
+
+                background_tasks.create(
+                    yakulingo_app._handle_hotkey_text(payload, open_ui=open_ui)
+                )
+            except Exception as err:
+                logger.debug("Failed to schedule /api/hotkey: %s", err)
+                raise HTTPException(status_code=500, detail="failed") from err
+
             return {"ok": True}
 
     # Icon path for native window (pywebview) and browser favicon.

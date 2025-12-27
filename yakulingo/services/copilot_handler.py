@@ -2115,6 +2115,7 @@ class CopilotHandler:
 
             # Step 4: Get or create Copilot page
             _t_page = _time.perf_counter()
+            previous_page = self._page
             self._page = self._get_or_create_copilot_page()
             logger.debug("[TIMING] _get_or_create_copilot_page(): %.2fs", _time.perf_counter() - _t_page)
             if not self._page:
@@ -2122,6 +2123,11 @@ class CopilotHandler:
                 self.last_connection_error = self.ERROR_CONNECTION_FAILED
                 self._cleanup_on_error()
                 return False
+            if previous_page is not None and previous_page is not self._page:
+                # A new Copilot page means the previous session state (including GPT mode)
+                # may no longer apply. Reset tracking so we can safely attempt mode setup
+                # without being blocked by a stale flag.
+                self.reset_gpt_mode_state()
 
             # Note: Browser is only brought to foreground when login is required
             # (handled in _quick_login_check), not on every startup
@@ -2693,8 +2699,6 @@ class CopilotHandler:
                 except PlaywrightTimeoutError:
                     elapsed = time.monotonic() - start_time
                     logger.debug("GPT mode button did not appear after %.2fs", elapsed)
-                    if not allow_overflow_fallback:
-                        return "not_ready"
                     fallback = self._switch_gpt_mode_via_overflow_menu(wait_timeout_ms=min(wait_timeout_ms, 3000))
                     if fallback.get('success'):
                         self._gpt_mode_set = True
@@ -2711,7 +2715,7 @@ class CopilotHandler:
                     return "set"
                 if switch_result.get('error') == 'target_not_found':
                     return "target_not_found"
-                if (switch_result.get('error') == 'main_button_not_found') and allow_overflow_fallback:
+                if switch_result.get('error') == 'main_button_not_found':
                     fallback = self._switch_gpt_mode_via_overflow_menu(wait_timeout_ms=min(wait_timeout_ms, 3000))
                     if fallback.get('success'):
                         self._gpt_mode_set = True
@@ -2745,13 +2749,12 @@ class CopilotHandler:
                 self._close_menu_safely()
                 return "target_not_found"
             elif switch_result.get('error') == 'main_button_not_found':
-                if allow_overflow_fallback:
-                    fallback = self._switch_gpt_mode_via_overflow_menu(wait_timeout_ms=min(wait_timeout_ms, 3000))
-                    if fallback.get('success'):
-                        self._gpt_mode_set = True
-                        return "set"
-                    if fallback.get('error') == 'target_not_found':
-                        return "target_not_found"
+                fallback = self._switch_gpt_mode_via_overflow_menu(wait_timeout_ms=min(wait_timeout_ms, 3000))
+                if fallback.get('success'):
+                    self._gpt_mode_set = True
+                    return "set"
+                if fallback.get('error') == 'target_not_found':
+                    return "target_not_found"
                 self._close_menu_safely()
                 return "not_ready"
             else:
@@ -5422,6 +5425,13 @@ class CopilotHandler:
                 raise RuntimeError("Copilotへのログインが必要です。Edgeブラウザでログインしてください。")
             raise RuntimeError("Copilotページにアクセスできませんでした。")
 
+        # Best-effort: ensure GPT mode is prepared even when the UI is not open.
+        # This keeps hotkey/resident translations consistent with the UI flow.
+        try:
+            self.ensure_gpt_mode()
+        except Exception:
+            pass
+
         # Check for cancellation before starting translation
         if self._is_cancelled():
             logger.info("Translation cancelled before starting")
@@ -5654,6 +5664,13 @@ class CopilotHandler:
             if self.last_connection_error == self.ERROR_LOGIN_REQUIRED:
                 raise RuntimeError("Copilotへのログインが必要です。Edgeブラウザでログインしてください。")
             raise RuntimeError("Copilotページにアクセスできませんでした。")
+
+        # Best-effort: ensure GPT mode is prepared even in headless/hotkey flows.
+        # This is safe to call from the Playwright thread (executor runs inline).
+        try:
+            self.ensure_gpt_mode()
+        except Exception:
+            pass
 
         # Check for cancellation before starting translation
         if self._is_cancelled():

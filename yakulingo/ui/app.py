@@ -6513,12 +6513,17 @@ def run_app(
     // Listen for resize events
     window.addEventListener('resize', handleResize);
 
+    // Expose updater for post-render stabilization (used to avoid flicker on startup).
+    try {
+        window._yakulingoUpdateCSSVariables = updateCSSVariables;
+    } catch (err) {}
+
     // Apply variables immediately on first paint so the layout matches the
     // actual viewport size even when the server-side defaults were calculated
     // for a different resolution (e.g., browser mode or multi-monitor setups).
     updateCSSVariables();
-})();
-</script>''')
+ })();
+ </script>''')
 
         # Add early CSS for loading screen and font loading handling
         # This runs before create_ui() which loads COMPLETE_CSS
@@ -6789,6 +6794,49 @@ body.yakulingo-drag-active .global-drop-indicator {
         with main_container:
             yakulingo_app.create_ui()
         logger.info("[TIMING] create_ui(): %.2fs", _time_module.perf_counter() - _t_ui)
+
+        # Wait for styles and layout variables to be applied before revealing the UI.
+        # This prevents a brief flash of a partially-styled layout on slow machines.
+        css_ready = False
+        try:
+            css_ready = await client.run_javascript('''
+                return await new Promise((resolve) => {
+                    try {
+                        if (window._yakulingoUpdateCSSVariables) window._yakulingoUpdateCSSVariables();
+                    } catch (err) {}
+
+                    const start = performance.now();
+                    const timeoutMs = 2000;
+                    const root = document.documentElement;
+
+                    const isCssReady = () => {
+                        try {
+                            const value = getComputedStyle(root).getPropertyValue('--md-sys-color-primary');
+                            return Boolean(value && String(value).trim().length);
+                        } catch (err) {
+                            return false;
+                        }
+                    };
+
+                    const tick = () => {
+                        if (isCssReady()) {
+                            requestAnimationFrame(() => requestAnimationFrame(() => resolve(true)));
+                            return;
+                        }
+                        if (performance.now() - start > timeoutMs) {
+                            resolve(false);
+                            return;
+                        }
+                        requestAnimationFrame(tick);
+                    };
+
+                    tick();
+                });
+            ''')
+        except Exception as e:
+            logger.debug("Startup CSS readiness check failed: %s", e)
+        if not css_ready:
+            logger.debug("Startup CSS readiness check timed out; revealing UI anyway")
 
         # Reveal the UI and fade out the startup overlay.
         main_container.classes(add='visible')

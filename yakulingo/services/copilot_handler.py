@@ -7041,6 +7041,58 @@ class CopilotHandler:
         logger.debug("[RESPONSE_TEXT] No response found from any selector")
         return "", False
 
+    def _get_latest_response_text_fast(self) -> tuple[str, bool]:
+        """Best-effort response text extraction for streaming while generating.
+
+        `_get_latest_response_text` preserves HTML entities, ordered list numbers, etc.
+        That logic can be relatively heavy while Copilot is actively re-rendering.
+
+        This method intentionally prioritizes responsiveness over perfect formatting and
+        is intended for UI preview only. Final parsing should still rely on
+        `_get_latest_response_text`.
+        """
+
+        if not self._page:
+            return "", False
+
+        error_types = _get_playwright_errors()
+        PlaywrightError = error_types['Error']
+
+        try:
+            elements = self._page.query_selector_all(self.RESPONSE_SELECTOR_COMBINED)
+        except PlaywrightError:
+            # Fallback: try individual selectors (keeps this method resilient to CSS engine quirks).
+            elements = []
+            for selector in self.RESPONSE_SELECTORS:
+                try:
+                    elements.extend(self._page.query_selector_all(selector))
+                except PlaywrightError:
+                    continue
+
+        if not elements:
+            return "", False
+
+        # Try a few of the latest matches. Some selectors can hit hidden/stale DOM nodes.
+        for element in reversed(elements[-5:]):
+            try:
+                if not element.is_visible():
+                    continue
+            except Exception:
+                pass
+
+            try:
+                text = element.inner_text()
+            except PlaywrightError:
+                continue
+
+            if text and text.strip():
+                return text, True
+
+        try:
+            return elements[-1].inner_text() or "", True
+        except PlaywrightError:
+            return "", True
+
     def _auto_scroll_to_latest_response(self) -> bool:
         """Keep the latest response visible in the Copilot chat pane (incl. Chain-of-Thought)."""
         if not self._page:
@@ -7233,6 +7285,8 @@ class CopilotHandler:
             last_scroll_time = 0.0
             scroll_interval_generating = 0.5
             scroll_interval_active = 0.1
+            last_stream_extract_time = 0.0
+            stream_extract_interval_generating = 0.25
             # Track if stop button was ever visible (including during send verification)
             stop_button_ever_seen = stop_button_seen_during_send
             stop_button_warning_logged = False  # Avoid repeated warnings
@@ -7307,12 +7361,38 @@ class CopilotHandler:
                 if stop_button_visible:
                     stop_button_ever_seen = True
                     # Still generating, reset stability counter and wait
-                    # Don't extract text while generating - evaluate() blocks when browser is busy
                     stable_count = 0
                     now = time.monotonic()
                     if now - last_scroll_time >= scroll_interval_generating:
                         self._auto_scroll_to_latest_response()
                         last_scroll_time = now
+
+                    # Streaming preview: best-effort extraction while generating.
+                    # Keep this lightweight and throttled; the final answer is still captured
+                    # after generation completes.
+                    if on_chunk and (now - last_stream_extract_time) >= stream_extract_interval_generating:
+                        last_stream_extract_time = now
+                        try:
+                            current_text, found_response = self._get_latest_response_text_fast()
+                        except Exception:
+                            current_text, found_response = "", False
+
+                        if found_response and current_text and current_text.strip() and current_text != last_text:
+                            last_text = current_text
+                            if not has_content:
+                                has_content = True
+                                first_content_time = first_content_time or time.monotonic()
+                            try:
+                                on_chunk(current_text)
+                            except Exception as e:
+                                logger.debug("Streaming callback error: %s", e)
+                            if not streaming_logged:
+                                logger.debug(
+                                    "Streaming update received from Copilot (length=%d)",
+                                    len(current_text),
+                                )
+                                streaming_logged = True
+
                     poll_interval = self.RESPONSE_POLL_INITIAL
                     # Log every 1 second
                     if time.monotonic() - last_log_time >= 1.0:

@@ -488,8 +488,9 @@ body {
     border: none;
     border-radius: var(--md-sys-shape-corner-medium);
     box-shadow: none;
-    max-height: 300px;
-    overflow-y: auto;
+    /* Let the preview grow with content; the outer result panel provides scrolling. */
+    max-height: none;
+    overflow: visible;
     /* Subtle fade-in, matches result-container animation */
     animation: streamingFadeIn 0.2s ease-out;
 }

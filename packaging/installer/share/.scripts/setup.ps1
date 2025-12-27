@@ -1556,7 +1556,7 @@ exit 0
             throw "セットアップがキャンセルされました。"
         }
         Write-Status -Message "Setup completed!" -Progress -Step "Step 4/4: Finalizing" -Percent 100
-        $successMsg = "セットアップが完了しました。`n`nログオン時にYakuLingoが自動で常駐します。`n`n使い方:`n- 翻訳したい文字を選択して Ctrl+Alt+J`n  → 訳文がクリップボードにコピーされます`n- エクスプローラーでファイルを選択して Ctrl+Alt+J`n  → 翻訳済みファイルがクリップボードにコピーされます（貼り付けで保存）`n- UIを開く: デスクトップ / スタートメニューの YakuLingo`n- UIは閉じても終了せず常駐します（終了はショートカットから）`n- 終了する: スタートメニュー > YakuLingo > YakuLingo 終了`n`nOK を押すと、今すぐ YakuLingo を起動します。"
+        $successMsg = "セットアップが完了しました。`n`nログオン時にYakuLingoが自動で常駐します（UIを閉じても終了しません）。`n`n使い方:`n- 翻訳したい文字を選択して Ctrl+Alt+J`n  → 訳文がクリップボードにコピーされます`n- エクスプローラーでファイルを選択して Ctrl+Alt+J`n  → 翻訳済みファイルがクリップボードにコピーされます（貼り付けで保存）`n- UIを開く: デスクトップ / スタートメニューの YakuLingo`n- UIを閉じる: 常駐は継続します（Copilot Edge は自動で最小化されます）`n- 終了する: スタートメニュー > YakuLingo > YakuLingo 終了`n`nOK を押すと、今すぐ UI を開きます。"
         if ($script:GlossaryBackupPath) {
             $backupFileName = Split-Path -Leaf $script:GlossaryBackupPath
             $successMsg += "`n`n用語集が更新されました。`n以前の用語集はデスクトップに保存しました:`n  $backupFileName"

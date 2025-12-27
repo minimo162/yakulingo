@@ -741,7 +741,21 @@ class YakuLingoApp:
             with self._client_lock:
                 client = self._client
 
-            if client:
+            if client is not None:
+                # NiceGUI Client object can remain referenced after the browser window is closed.
+                # Ensure the cached client still has an active WebSocket connection before using it.
+                try:
+                    has_socket_connection = bool(getattr(client, "has_socket_connection", True))
+                except Exception:
+                    has_socket_connection = True
+                if not has_socket_connection:
+                    logger.debug("Hotkey UI client cached but disconnected; using headless mode")
+                    with self._client_lock:
+                        if self._client is client:
+                            self._client = None
+                    client = None
+
+            if client is not None:
                 try:
                     brought_to_front = await self._bring_window_to_front()
                 except Exception as e:
@@ -6785,7 +6799,22 @@ def run_app(
     @ui.page('/')
     async def main_page(client: nicegui_Client):
         # Save client reference for async handlers (context.client not available in async tasks)
-        yakulingo_app._client = client
+        with yakulingo_app._client_lock:
+            yakulingo_app._client = client
+
+        def _clear_cached_client_on_disconnect(_client: nicegui_Client | None = None) -> None:
+            # When the UI window is closed, keep the resident service alive but clear the cached
+            # client so Ctrl+Alt+J can reopen the UI window on demand.
+            nonlocal browser_opened
+            with yakulingo_app._client_lock:
+                if yakulingo_app._client is client:
+                    yakulingo_app._client = None
+            browser_opened = False
+
+        try:
+            client.on_disconnect(_clear_cached_client_on_disconnect)
+        except Exception:
+            pass
 
         # Lazy-load settings when the first client connects (defers disk I/O from startup)
         yakulingo_app.settings

@@ -4861,9 +4861,9 @@ def _detect_display_settings(
     # Reference ratios based on 2560x1440 → 1800x1100
     # Side panel layout:
     # - Normal screens: 1:1 split (app and browser each get half the screen)
-    # - Ultra-wide screens: cap browser width so it doesn't become excessively wide
+    # - Ultra-wide screens: still 1:1 split (no cap)
     # Example: 1920px - 10px gap = 1910px available → 955px each
-    WIDTH_RATIO = 0.5  # Historical reference (actual split may be capped)
+    WIDTH_RATIO = 0.5  # Historical reference (1:1 split)
     HEIGHT_RATIO = 1.0  # Full work-area height (taskbar excluded)
 
     # Side panel dimensions (must match copilot_handler.py constants)
@@ -4911,15 +4911,14 @@ def _detect_display_settings(
     ) -> tuple[tuple[int, int], tuple[int, int, int]]:
         """Calculate window size and panel widths from screen resolution.
 
-        Uses a 1:1 split for app and browser windows on normal screens, but caps
-        the browser (Edge) width on ultra-wide screens to avoid wasting space.
+        Uses a 1:1 split for app and browser windows in side_panel mode.
 
         Returns:
             Tuple of ((window_width, window_height),
                       (sidebar_width, input_panel_width, content_width))
         """
         if use_side_panel:
-            # Side panel layout: keep 1:1 on normal screens, cap browser width on ultra-wide.
+            # Side panel layout: 1:1 split for app and browser windows.
             window_width, _ = calculate_side_panel_window_widths(screen_width, SIDE_PANEL_GAP)
         else:
             # Single panel: use full work area width
@@ -6338,15 +6337,16 @@ def run_app(
         ui.add_head_html('<meta http-equiv="Content-Language" content="ja">')
         ui.add_head_html('<meta name="google" content="notranslate">')
         ui.add_head_html('''<script>
-(() => {
-  try {
-    const root = document.documentElement;
-    root.lang = 'ja';
-    root.setAttribute('translate', 'no');
-    root.classList.add('notranslate');
-  } catch (err) {}
-})();
-</script>''')
+ (() => {
+   try {
+     const root = document.documentElement;
+     root.lang = 'ja';
+     root.setAttribute('translate', 'no');
+     root.classList.add('notranslate');
+     root.classList.add('sidebar-rail');
+   } catch (err) {}
+ })();
+ </script>''')
 
         # Provide an explicit SVG favicon for browser mode (Edge --app taskbar icon can look
         # blurry when it falls back to a low-resolution ICO entry).
@@ -6369,10 +6369,11 @@ def run_app(
         TEXTAREA_FONT_RATIO = 1.125  # --textarea-font-size ratio
         TEXTAREA_FONT_RATIO_COMPACT = 1.0625
         TEXTAREA_PADDING_RATIO = 1.6  # Total padding in em
-        is_compact_window = window_width < 1400 or window_height < 820
+        is_compact_layout = window_width < 1400 or window_height < 820
+        use_sidebar_rail = True
 
-        # Compact window: use M3 Navigation Rail proportions (narrow sidebar).
-        if is_compact_window:
+        # Use M3 Navigation Rail proportions (narrow sidebar).
+        if use_sidebar_rail:
             RAIL_SIDEBAR_WIDTH = 80
             CONTENT_RATIO = 0.85
             MIN_CONTENT_WIDTH = 500
@@ -6385,8 +6386,8 @@ def run_app(
                 main_area_width,
             )
 
-        textarea_lines = TEXTAREA_LINES_COMPACT if is_compact_window else TEXTAREA_LINES_DEFAULT
-        textarea_font_ratio = TEXTAREA_FONT_RATIO_COMPACT if is_compact_window else TEXTAREA_FONT_RATIO
+        textarea_lines = TEXTAREA_LINES_COMPACT if is_compact_layout else TEXTAREA_LINES_DEFAULT
+        textarea_font_ratio = TEXTAREA_FONT_RATIO_COMPACT if is_compact_layout else TEXTAREA_FONT_RATIO
         textarea_font_size = base_font_size * textarea_font_ratio
         input_min_height = int(
             textarea_lines * TEXTAREA_LINE_HEIGHT * textarea_font_size +
@@ -6412,7 +6413,7 @@ def run_app(
         # Add JavaScript for dynamic resize handling
         # This updates CSS variables when the window is resized
         ui.add_head_html('''<script>
-(function() {
+ (function() {
     // Constants matching Python calculation (from _detect_display_settings)
     const BASE_FONT_SIZE = 16;  // Fixed font size (no dynamic scaling)
     const SIDEBAR_RATIO = 280 / 1800;
@@ -6466,8 +6467,9 @@ def run_app(
         );
 
         // Calculate input min/max height
-        const isCompact = windowWidth < COMPACT_WIDTH_THRESHOLD || windowHeight < COMPACT_HEIGHT_THRESHOLD;
-        if (isCompact) {
+        const isCompactLayout = windowWidth < COMPACT_WIDTH_THRESHOLD || windowHeight < COMPACT_HEIGHT_THRESHOLD;
+        const useRail = true;
+        if (useRail) {
             sidebarWidth = Math.min(RAIL_SIDEBAR_WIDTH, windowWidth);
             mainAreaWidth = windowWidth - sidebarWidth;
             contentWidth = Math.min(
@@ -6476,8 +6478,8 @@ def run_app(
                 mainAreaWidth
             );
         }
-        const textareaLines = isCompact ? 8 : 9;
-        const textareaFontRatio = isCompact ? TEXTAREA_FONT_RATIO_COMPACT : TEXTAREA_FONT_RATIO;
+        const textareaLines = isCompactLayout ? 8 : 9;
+        const textareaFontRatio = isCompactLayout ? TEXTAREA_FONT_RATIO_COMPACT : TEXTAREA_FONT_RATIO;
         const textareaFontSize = baseFontSize * textareaFontRatio;
         const inputMinHeight = Math.round(
             textareaLines * TEXTAREA_LINE_HEIGHT * textareaFontSize +
@@ -6490,7 +6492,7 @@ def run_app(
 
         // Update CSS variables
         const root = document.documentElement;
-        root.classList.toggle('sidebar-rail', isCompact);
+        root.classList.toggle('sidebar-rail', useRail);
         root.style.setProperty('--viewport-height', windowHeight + 'px');
         root.style.setProperty('--base-font-size', baseFontSize + 'px');
         root.style.setProperty('--sidebar-width', sidebarWidth + 'px');

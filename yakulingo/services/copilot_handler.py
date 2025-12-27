@@ -3646,20 +3646,10 @@ class CopilotHandler:
                     self._cached_side_panel_geometry is not None):
                 return self._cached_side_panel_geometry
 
-            from yakulingo.config.settings import calculate_side_panel_window_widths, MAX_SIDE_PANEL_EDGE_WIDTH
+            from yakulingo.config.settings import calculate_side_panel_window_widths
 
-            max_edge_width = MAX_SIDE_PANEL_EDGE_WIDTH
-            if dpi_scale != 1.0:
-                max_edge_width = _scale_value(max_edge_width, dpi_scale)
-
-            # Side panel split:
-            # - Normal screens: 1:1 (half/half)
-            # - Ultra-wide screens: cap Edge width to avoid wasting space
-            app_width, edge_width = calculate_side_panel_window_widths(
-                screen_width,
-                gap,
-                max_edge_width=max_edge_width,
-            )
+            # Side panel split: 1:1 (half/half)
+            app_width, edge_width = calculate_side_panel_window_widths(screen_width, gap)
             max_window_height = screen_height  # Use full work area height
 
             # Calculate app window height (must match app.py _detect_display_settings)
@@ -3836,20 +3826,10 @@ class CopilotHandler:
                 app_bottom_inset = 0
                 app_frame_top_offset = 0
 
-            from yakulingo.config.settings import calculate_side_panel_window_widths, MAX_SIDE_PANEL_EDGE_WIDTH
+            from yakulingo.config.settings import calculate_side_panel_window_widths
 
-            max_edge_width = MAX_SIDE_PANEL_EDGE_WIDTH
-            if dpi_awareness in (1, 2) and dpi_scale != 1.0:
-                max_edge_width = _scale_value(max_edge_width, dpi_scale)
-
-            # Target widths based on monitor work area:
-            # - Normal screens: 1:1 (half/half)
-            # - Ultra-wide screens: cap Edge width
-            target_app_width, edge_width = calculate_side_panel_window_widths(
-                screen_width,
-                gap,
-                max_edge_width=max_edge_width,
-            )
+            # Target widths based on monitor work area: 1:1 (half/half)
+            target_app_width, edge_width = calculate_side_panel_window_widths(screen_width, gap)
             if target_app_width <= 0 or edge_width <= 0:
                 target_app_width = app_width
                 edge_width = app_width

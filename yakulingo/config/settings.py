@@ -48,18 +48,15 @@ USER_SETTINGS_KEYS = {
 }
 
 # Minimum screen width (logical px) to keep side_panel layout.
-# If the app window would be too narrow, fall back to minimized mode.
+# If the work area is extremely narrow, fall back to minimized mode.
 #
 # NOTE:
 # - The app uses a rail-style sidebar in compact layouts, so we can support
 #   slightly narrower windows than before.
-# - The browser (Edge) is primarily for transparency and error diagnostics,
-#   so on ultra-wide screens we cap its width to avoid wasting space.
+# - The browser (Edge) is primarily for transparency and error diagnostics.
 MIN_SIDE_PANEL_APP_WIDTH = 580
-MIN_SIDE_PANEL_EDGE_WIDTH = 580
-MAX_SIDE_PANEL_EDGE_WIDTH = 1000
 SIDE_PANEL_GAP = 10
-MIN_SIDE_PANEL_SCREEN_WIDTH = MIN_SIDE_PANEL_APP_WIDTH + MIN_SIDE_PANEL_EDGE_WIDTH + SIDE_PANEL_GAP
+MIN_SIDE_PANEL_SCREEN_WIDTH = MIN_SIDE_PANEL_APP_WIDTH + SIDE_PANEL_GAP
 DEFAULT_MAX_CHARS_PER_BATCH = 4000
 
 
@@ -71,8 +68,8 @@ def calculate_side_panel_window_widths(
 ) -> tuple[int, int]:
     """Return (app_width, edge_width) for side_panel layout.
 
-    The layout keeps a 1:1 split on normal screens, but caps the Edge width on
-    very large screens so the app can use the extra space.
+    By default the layout keeps a 1:1 split (half/half). If max_edge_width is
+    provided, the Edge width is capped accordingly.
     """
 
     if screen_width <= 0:
@@ -83,9 +80,8 @@ def calculate_side_panel_window_widths(
         return (0, 0)
 
     edge_width = available_width // 2
-    max_edge = MAX_SIDE_PANEL_EDGE_WIDTH if max_edge_width is None else max_edge_width
-    if max_edge and max_edge > 0:
-        edge_width = min(edge_width, max_edge)
+    if max_edge_width and max_edge_width > 0:
+        edge_width = min(edge_width, max_edge_width)
 
     app_width = max(available_width - edge_width, 0)
     return (app_width, edge_width)

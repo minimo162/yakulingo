@@ -4292,27 +4292,35 @@ class YakuLingoApp:
                 from yakulingo.services.prompt_builder import REFERENCE_INSTRUCTION
                 reference_section = REFERENCE_INSTRUCTION
 
-            # Build back-translation prompt
-            prompt = f"""以下の翻訳文を元の言語に戻して翻訳してください。
-これは翻訳の正確性をチェックするための「戻し訳」です。
+            translation_rules = ""
+            try:
+                if self.translation_service:
+                    self.translation_service.prompt_builder.reload_translation_rules()
+                    translation_rules = self.translation_service.prompt_builder.get_translation_rules()
+                else:
+                    from yakulingo.services.prompt_builder import DEFAULT_TRANSLATION_RULES
 
-## 翻訳文
-{text}
+                    rules_path = get_default_prompts_dir() / "translation_rules.txt"
+                    if rules_path.exists():
+                        translation_rules = rules_path.read_text(encoding="utf-8")
+                    else:
+                        translation_rules = DEFAULT_TRANSLATION_RULES
+            except Exception:
+                translation_rules = ""
+  
+            # Build back-translation prompt from prompts/text_back_translate.txt
+            prompt_path = get_default_prompts_dir() / "text_back_translate.txt"
+            if not prompt_path.exists():
+                error_message = f"Missing prompt template: {prompt_path}"
+                self._on_text_translation_complete(client, error_message)
+                return
 
-## 出力形式（厳守）
-訳文: （元の言語への翻訳）
-解説:
-- 戻し訳の結果から分かる翻訳の正確性
-- 意味のずれがあれば指摘
-- 改善案があれば提案
-
-## 禁止事項
-- 「続けますか？」「他に質問はありますか？」などの対話継続の質問
-- 指定形式以外の追加説明やコメント
-
-            {reference_section}
-"""
-
+            prompt = prompt_path.read_text(encoding="utf-8")
+            prompt = prompt.replace("{translation_rules}", translation_rules)
+            prompt = prompt.replace("{input_text}", text)
+            prompt = prompt.replace("{text}", text)  # Backward-compatible placeholder
+            prompt = prompt.replace("{reference_section}", reference_section)
+  
             # Send to Copilot with reference files attached
             if self.translation_service:
                 result = await asyncio.to_thread(

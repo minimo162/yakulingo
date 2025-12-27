@@ -31,7 +31,7 @@ _RE_QUOTE = re.compile(r'"([^"]+)"')
 # Supports multiple explanation markers for robustness against Copilot format changes
 _EXPLANATION_MARKERS = r'(?:解説|説明|Explanation|Notes?)[:：]?'
 _RE_TRANSLATION_TEXT = re.compile(
-    r'[#>*\s-]*訳文[:：]\s*(.+?)(?=[\n\s]*[#>*\s-]*' + _EXPLANATION_MARKERS + r'|$)',
+    r'[#>*\s-]*\**(?:訳文|Translation|Translated)\**[:：]\s*(.+?)(?=[\n\s]*[#>*\s-]*' + _EXPLANATION_MARKERS + r'|$)',
     re.DOTALL | re.IGNORECASE
 )
 _RE_EXPLANATION = re.compile(

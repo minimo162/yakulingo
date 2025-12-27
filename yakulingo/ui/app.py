@@ -1075,13 +1075,57 @@ class YakuLingoApp:
                 text,
             )
             self.state.text_detected_language = detected_language
+
+            loop = asyncio.get_running_loop()
+            last_preview_update = 0.0
+            preview_update_interval_seconds = 0.12
+
+            def on_chunk(partial_text: str) -> None:
+                nonlocal last_preview_update
+                self.state.text_streaming_preview = partial_text
+                now = time.monotonic()
+                if now - last_preview_update < preview_update_interval_seconds:
+                    return
+                last_preview_update = now
+
+                def update_streaming_preview() -> None:
+                    if not self.state.text_translating:
+                        return
+                    if self._shutdown_requested:
+                        return
+                    with self._client_lock:
+                        client = self._client
+                    if client is None:
+                        return
+                    try:
+                        if not getattr(client, "has_socket_connection", True):
+                            return
+                    except Exception:
+                        pass
+                    try:
+                        with client:
+                            # Render streaming block on first chunk (captures label reference)
+                            if self._streaming_preview_label is None:
+                                self._refresh_result_panel()
+                                self._refresh_tabs()
+                            if self._streaming_preview_label is not None:
+                                self._streaming_preview_label.set_text(partial_text)
+                    except Exception:
+                        logger.debug(
+                            "Hotkey translation [%s] streaming preview refresh failed",
+                            trace_id,
+                            exc_info=True,
+                        )
+
+                loop.call_soon_threadsafe(update_streaming_preview)
+
             result = await asyncio.to_thread(
                 self.translation_service.translate_text_with_style_comparison,
                 text,
                 reference_files,
                 None,
                 detected_language,
-                None,
+                on_chunk,
             )
         except Exception as e:
             logger.info("Hotkey translation [%s] failed: %s", trace_id, e)

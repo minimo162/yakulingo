@@ -722,10 +722,22 @@ function Invoke-Setup {
 
             # Wait briefly for the process to exit (app schedules a forced exit after 5s).
             $shutdownRetryRequested = $false
+            $forceKillAttempted = $false
+            $lastStatusSecond = -1
             $waitStart = Get-Date
-            $deadline = $waitStart.AddSeconds(15)
+            $deadline = $waitStart.AddSeconds(30)
             while ((Get-Date) -lt $deadline) {
-                Start-Sleep -Milliseconds 250
+                # Keep GUI responsive during wait
+                if ($GuiMode) {
+                    try { Test-Cancelled } catch { throw }
+                }
+
+                $elapsedSeconds = [int]((Get-Date) - $waitStart).TotalSeconds
+                if ($elapsedSeconds -ne $lastStatusSecond) {
+                    $lastStatusSecond = $elapsedSeconds
+                    Write-Status -Message "Waiting for YakuLingo to exit... (${elapsedSeconds}s)" -Progress -Step "Preflight: Closing YakuLingo" -Percent 1
+                }
+
                 $pythonProcesses = Get-Process -Name "python*" -ErrorAction SilentlyContinue | Where-Object {
                     try {
                         $processPath = $_.Path
@@ -745,7 +757,6 @@ function Invoke-Setup {
                 # Retry shutdown once after a short delay (handles cases where the service is busy
                 # or the HTTP endpoint is temporarily unresponsive).
                 if (-not $shutdownRetryRequested) {
-                    $elapsedSeconds = ((Get-Date) - $waitStart).TotalSeconds
                     if ($elapsedSeconds -ge 5) {
                         $shutdownRetryRequested = $true
                         try {
@@ -756,6 +767,48 @@ function Invoke-Setup {
                             try { "Invoke-Setup: Shutdown re-request failed: $($_.Exception.Message)" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
                         }
                     }
+                }
+
+                # Last resort: if the service doesn't exit, forcibly stop processes under the install dir.
+                if (-not $forceKillAttempted -and $elapsedSeconds -ge 12) {
+                    $forceKillAttempted = $true
+                    Write-Status -Message "Force closing YakuLingo..." -Progress -Step "Preflight: Closing YakuLingo" -Percent 1
+                    try {
+                        $processesToStop = Get-Process -ErrorAction SilentlyContinue | Where-Object {
+                            try {
+                                $processPath = $_.Path
+                                if ($processPath) {
+                                    $processPath.StartsWith($expectedSetupPath, [System.StringComparison]::OrdinalIgnoreCase)
+                                } else {
+                                    $false
+                                }
+                            } catch {
+                                $false
+                            }
+                        }
+                        if ($processesToStop) {
+                            try { "Invoke-Setup: Force stopping processes: $($processesToStop.Id -join ',')" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
+                            $processesToStop | Stop-Process -Force -ErrorAction SilentlyContinue
+                        }
+                    } catch {
+                        try { "Invoke-Setup: Force stop failed: $($_.Exception.Message)" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
+                    }
+                }
+
+                Start-Sleep -Milliseconds 250
+            }
+
+            # Final refresh after wait/force-kill attempts
+            $pythonProcesses = Get-Process -Name "python*" -ErrorAction SilentlyContinue | Where-Object {
+                try {
+                    $processPath = $_.Path
+                    if ($processPath) {
+                        $processPath.StartsWith($expectedSetupPath, [System.StringComparison]::OrdinalIgnoreCase)
+                    } else {
+                        $false
+                    }
+                } catch {
+                    $false
                 }
             }
 

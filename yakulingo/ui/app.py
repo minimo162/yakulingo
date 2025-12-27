@@ -1012,6 +1012,30 @@ class YakuLingoApp:
         except Exception as e:
             logger.debug("Hotkey translation [%s] clipboard copy failed: %s", trace_id, e)
 
+    def _refresh_ui_after_hotkey_translation(self, trace_id: str) -> None:
+        """Refresh UI after a hotkey translation when a client is connected.
+
+        Headless hotkey translations can finish while the UI is opening; in that case, we
+        still want to render the latest state (progress/results) once a client exists.
+        """
+        if self._shutdown_requested:
+            return
+        with self._client_lock:
+            client = self._client
+        if client is None:
+            return
+        try:
+            if not getattr(client, "has_socket_connection", True):
+                return
+        except Exception:
+            pass
+        try:
+            with client:
+                self._refresh_content()
+                self._refresh_tabs()
+        except Exception as e:
+            logger.debug("Hotkey translation [%s] UI refresh failed: %s", trace_id, e)
+
     async def _translate_text_headless(self, text: str, trace_id: str) -> None:
         """Translate hotkey text without requiring a UI client (resident mode)."""
         import time
@@ -1068,6 +1092,8 @@ class YakuLingoApp:
         self.state.text_translation_elapsed_time = time.monotonic() - start_time
         self.state.text_result = result
         self.state.text_view_state = TextViewState.RESULT
+        self._copy_hotkey_result_to_clipboard(trace_id)
+        self._refresh_ui_after_hotkey_translation(trace_id)
 
         if result.error_message:
             logger.info("Hotkey translation [%s] failed: %s", trace_id, result.error_message)
@@ -1192,6 +1218,8 @@ class YakuLingoApp:
             )
             self.state.text_view_state = TextViewState.RESULT
             self.state.source_text = ""
+            self._copy_hotkey_result_to_clipboard(trace_id)
+            self._refresh_ui_after_hotkey_translation(trace_id)
 
             logger.info(
                 "Hotkey translation [%s] completed %d cells in %.2fs",

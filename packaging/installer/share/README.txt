@@ -22,6 +22,7 @@ Share these steps with your users:
   2. Double-click "setup.vbs"
   3. Wait for setup to complete
   4. YakuLingo starts automatically on logon (resident mode)
+     (it is also started immediately after setup completes)
   5. Select text (or select files in Explorer) and press Ctrl+Alt+J to translate (result copied to clipboard)
   6. Open UI from the desktop or Start Menu shortcut when needed
   7. To exit: Start Menu > YakuLingo > "YakuLingo 終了"

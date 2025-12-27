@@ -400,6 +400,17 @@ MAX_HISTORY_DRAWER_DISPLAY = 100  # Maximum history items to show in history dra
 MIN_AVAILABLE_MEMORY_GB_FOR_EARLY_CONNECT = 0.5  # Skip early Copilot init only on very low memory
 TEXT_TRANSLATION_CHAR_LIMIT = 5000  # Max chars for text translation (Ctrl+Alt+J, Ctrl+Enter)
 DEFAULT_TEXT_STYLE = "concise"
+HOTKEY_MAX_FILE_COUNT = 10
+HOTKEY_SUPPORTED_FILE_SUFFIXES = {
+    ".xlsx",
+    ".xls",
+    ".docx",
+    ".doc",
+    ".pptx",
+    ".ppt",
+    ".pdf",
+    ".txt",
+}
 
 
 @dataclass
@@ -518,6 +529,7 @@ class YakuLingoApp:
 
         # Debug trace identifier for correlating hotkey → translation pipeline
         self._active_translation_trace_id: Optional[str] = None
+        self._hotkey_translation_active: bool = False
 
         # Timer lock for progress timer management (prevents orphaned timers)
         self._timer_lock = threading.Lock()
@@ -600,7 +612,11 @@ class YakuLingoApp:
             return True
         except Exception as e:  # pragma: no cover - defensive guard for unexpected init errors
             logger.error("Failed to initialize translation service: %s", e)
-            ui.notify('翻訳サービスの初期化に失敗しました', type='negative')
+            try:
+                from yakulingo.ui.utils import _safe_notify
+                _safe_notify('翻訳サービスの初期化に失敗しました', type='negative')
+            except Exception:
+                pass
             return False
 
     @property
@@ -668,7 +684,7 @@ class YakuLingoApp:
         """Handle hotkey trigger - set text and translate in main app.
 
         Args:
-            text: Text from clipboard (only called when text is available)
+            text: Clipboard payload (text or newline-joined file paths)
         """
         # Double-check: text should always be non-empty (HotkeyManager filters empty)
         if not text:
@@ -682,10 +698,8 @@ class YakuLingoApp:
         if self.state.file_state == FileState.TRANSLATING:
             logger.debug("Hotkey ignored - file translation in progress")
             return
-
-        # Skip if client not ready
-        if not self._client:
-            logger.debug("Hotkey ignored - client not ready")
+        if getattr(self, "_hotkey_translation_active", False):
+            logger.debug("Hotkey ignored - hotkey translation in progress")
             return
 
         # Schedule UI update on NiceGUI's event loop
@@ -701,7 +715,7 @@ class YakuLingoApp:
         """Handle hotkey text in the main event loop.
 
         Args:
-            text: Text to translate
+            text: Clipboard payload (text or newline-joined file paths)
         """
         # Double-check: Skip if translation started while we were waiting
         if self.state.text_translating:
@@ -710,45 +724,216 @@ class YakuLingoApp:
         if self.state.file_state == FileState.TRANSLATING:
             logger.debug("Hotkey handler skipped - file translation already in progress")
             return
+        if self._hotkey_translation_active:
+            logger.debug("Hotkey handler skipped - hotkey translation already in progress")
+            return
+        self._hotkey_translation_active = True
 
         trace_id = f"hotkey-{uuid.uuid4().hex[:8]}"
         self._active_translation_trace_id = trace_id
-        summary = summarize_clipboard_text(text)
-        self._log_hotkey_debug_info(trace_id, summary)
+        try:
+            summary = summarize_clipboard_text(text)
+            self._log_hotkey_debug_info(trace_id, summary)
 
-        # Bring app window to front
-        await self._bring_window_to_front()
+            is_path_selection, file_paths = self._extract_hotkey_file_paths(text)
+            if is_path_selection:
+                if not file_paths:
+                    logger.info(
+                        "Hotkey translation [%s] detected file selection but no supported files",
+                        trace_id,
+                    )
+                    return
+                await self._translate_files_headless(file_paths, trace_id)
+                return
 
-        # Treat all hotkey text as standard text translation for consistency.
-        if summary.excel_like and summary.max_columns >= 2:
-            logger.info(
-                "Hotkey translation [%s] detected Excel format: %d rows x %d cols; using standard translation",
-                trace_id, summary.row_count, summary.max_columns,
-            )
+            # Decide whether we have an active UI client. Hotkey translation should work
+            # even when the UI has never been opened (resident mode).
+            with self._client_lock:
+                client = self._client
 
-        # Set source text (length check is done in _translate_text)
-        self.state.source_text = text
+            if summary.excel_like and summary.max_columns >= 2:
+                logger.info(
+                    "Hotkey translation [%s] detected Excel format: %d rows x %d cols; using cell-by-cell translation",
+                    trace_id, summary.row_count, summary.max_columns,
+                )
+                if client:
+                    await self._translate_excel_cells(text, trace_id)
+                else:
+                    await self._translate_excel_cells_headless(text, trace_id)
+                return
 
-        # Switch to text tab if not already
-        from yakulingo.ui.state import Tab, TextViewState
-        self.state.current_tab = Tab.TEXT
-        self.state.text_view_state = TextViewState.INPUT
+            if not client:
+                await self._translate_text_headless(text, trace_id)
+                return
 
-        # Refresh UI to show the text
-        if self._client:
-            with self._client:
+            # UI mode: show the captured text and run the normal pipeline.
+            # Set source text (length check is done in _translate_text)
+            self.state.source_text = text
+
+            # Switch to text tab if not already
+            from yakulingo.ui.state import Tab, TextViewState
+            self.state.current_tab = Tab.TEXT
+            self.state.text_view_state = TextViewState.INPUT
+
+            # Refresh UI to show the text
+            with client:
                 self._refresh_content()
 
-        # Small delay to let UI update
-        await asyncio.sleep(0.1)
+            # Small delay to let UI update
+            await asyncio.sleep(0.1)
 
-        # Final check before triggering translation
-        if self.state.text_translating:
-            logger.debug("Hotkey handler skipped - translation started during UI update")
+            # Final check before triggering translation
+            if self.state.text_translating:
+                logger.debug("Hotkey handler skipped - translation started during UI update")
+                return
+
+            # Trigger translation
+            await self._translate_text()
+            self._copy_hotkey_result_to_clipboard(trace_id)
+        finally:
+            self._hotkey_translation_active = False
+            if self._active_translation_trace_id == trace_id:
+                self._active_translation_trace_id = None
+
+    def _extract_hotkey_file_paths(self, text: str) -> tuple[bool, list[Path]]:
+        """Detect whether the hotkey payload represents a file selection.
+
+        Returns:
+            (is_path_selection, supported_files)
+        """
+
+        normalized = text.replace("\r\n", "\n")
+        candidates: list[str] = []
+        for raw in normalized.split("\n"):
+            item = raw.strip()
+            if not item:
+                continue
+            if (item.startswith('"') and item.endswith('"')) or (item.startswith("'") and item.endswith("'")):
+                item = item[1:-1].strip()
+            candidates.append(item)
+
+        if not candidates:
+            return False, []
+
+        paths: list[Path] = []
+        for candidate in candidates:
+            try:
+                path = Path(candidate)
+            except Exception:
+                return False, []
+            if not path.exists():
+                return False, []
+            paths.append(path)
+
+        supported: list[Path] = []
+        for path in paths:
+            if path.is_file() and path.suffix.lower() in HOTKEY_SUPPORTED_FILE_SUFFIXES:
+                supported.append(path)
+
+        if len(supported) > HOTKEY_MAX_FILE_COUNT:
+            logger.info(
+                "Hotkey file translation limiting files: %d -> %d",
+                len(supported),
+                HOTKEY_MAX_FILE_COUNT,
+            )
+            supported = supported[:HOTKEY_MAX_FILE_COUNT]
+
+        return True, supported
+
+    async def _translate_files_headless(self, file_paths: list[Path], trace_id: str) -> None:
+        """Translate file(s) captured via hotkey without requiring a UI client."""
+
+        import time
+
+        if not self._ensure_translation_service():
             return
 
-        # Trigger translation
-        await self._translate_text()
+        reference_files = self._get_effective_reference_files()
+        translation_style = self.settings.translation_style
+
+        start_time = time.monotonic()
+        output_files: list[str] = []
+
+        for input_path in file_paths:
+            detected_language = "日本語"  # Default fallback
+            try:
+                sample_text = await asyncio.to_thread(
+                    self.translation_service.extract_detection_sample,
+                    input_path,
+                )
+                if sample_text and sample_text.strip():
+                    detected_language = await asyncio.to_thread(
+                        self.translation_service.detect_language,
+                        sample_text,
+                    )
+            except Exception as e:
+                logger.debug(
+                    "Hotkey file translation [%s] language detection failed for %s: %s",
+                    trace_id,
+                    input_path,
+                    e,
+                )
+
+            output_language = "en" if detected_language == "日本語" else "jp"
+
+            logger.info(
+                "Hotkey file translation [%s] translating %s -> %s",
+                trace_id,
+                input_path.name,
+                output_language,
+            )
+
+            try:
+                result = await asyncio.to_thread(
+                    self.translation_service.translate_file,
+                    input_path,
+                    reference_files,
+                    None,
+                    output_language,
+                    translation_style,
+                    None,
+                )
+            except Exception as e:
+                logger.exception(
+                    "Hotkey file translation [%s] failed for %s: %s", trace_id, input_path, e
+                )
+                continue
+
+            if result.status != TranslationStatus.COMPLETED:
+                logger.info(
+                    "Hotkey file translation [%s] failed for %s: %s",
+                    trace_id,
+                    input_path,
+                    result.error_message,
+                )
+                continue
+
+            for out_path, _desc in result.output_files:
+                output_files.append(str(out_path))
+
+        if not output_files:
+            logger.info("Hotkey file translation [%s] produced no output files", trace_id)
+            return
+
+        try:
+            from yakulingo.services.hotkey_manager import set_clipboard_files
+
+            if set_clipboard_files(output_files):
+                logger.info(
+                    "Hotkey file translation [%s] completed %d file(s) in %.2fs (copied to clipboard)",
+                    trace_id,
+                    len(output_files),
+                    time.monotonic() - start_time,
+                )
+            else:
+                logger.warning(
+                    "Hotkey file translation [%s] completed but clipboard copy failed",
+                    trace_id,
+                )
+        except Exception as e:
+            logger.debug(
+                "Hotkey file translation [%s] clipboard copy failed: %s", trace_id, e
+            )
 
     def _log_hotkey_debug_info(self, trace_id: str, summary: ClipboardDebugSummary) -> None:
         """Log structured debug info for clipboard-triggered translations."""
@@ -765,6 +950,175 @@ class YakuLingoApp:
 
         if summary.preview:
             logger.debug("Hotkey translation [%s] preview: %s", trace_id, summary.preview)
+
+    def _copy_hotkey_result_to_clipboard(self, trace_id: str) -> None:
+        """Copy the latest hotkey translation result to clipboard (best-effort)."""
+        try:
+            result = self.state.text_result
+            if result is None or result.error_message:
+                return
+            if not result.options:
+                return
+
+            chosen = result.options[0]
+            if result.output_language == "en":
+                for option in result.options:
+                    if option.style == DEFAULT_TEXT_STYLE:
+                        chosen = option
+                        break
+
+            from yakulingo.services.hotkey_manager import set_clipboard_text
+            if set_clipboard_text(chosen.text):
+                logger.info("Hotkey translation [%s] copied to clipboard", trace_id)
+            else:
+                logger.warning("Hotkey translation [%s] failed to copy to clipboard", trace_id)
+        except Exception as e:
+            logger.debug("Hotkey translation [%s] clipboard copy failed: %s", trace_id, e)
+
+    async def _translate_text_headless(self, text: str, trace_id: str) -> None:
+        """Translate hotkey text without requiring a UI client (resident mode)."""
+        import time
+
+        if not self._ensure_translation_service():
+            return
+
+        # Enforce the same safety limit as the UI.
+        if len(text) > TEXT_TRANSLATION_CHAR_LIMIT:
+            logger.info(
+                "Hotkey translation [%s] skipped (len=%d > limit=%d)",
+                trace_id,
+                len(text),
+                TEXT_TRANSLATION_CHAR_LIMIT,
+            )
+            return
+
+        reference_files = self._get_effective_reference_files()
+
+        start_time = time.monotonic()
+        try:
+            detected_language = await asyncio.to_thread(
+                self.translation_service.detect_language,
+                text,
+            )
+            result = await asyncio.to_thread(
+                self.translation_service.translate_text_with_style_comparison,
+                text,
+                reference_files,
+                None,
+                detected_language,
+                None,
+            )
+        except Exception as e:
+            logger.info("Hotkey translation [%s] failed: %s", trace_id, e)
+            return
+
+        if result.error_message:
+            logger.info("Hotkey translation [%s] failed: %s", trace_id, result.error_message)
+            return
+        if not result.options:
+            logger.info("Hotkey translation [%s] produced no options", trace_id)
+            return
+
+        chosen = result.options[0]
+        if result.output_language == "en":
+            for option in result.options:
+                if option.style == DEFAULT_TEXT_STYLE:
+                    chosen = option
+                    break
+
+        try:
+            from yakulingo.services.hotkey_manager import set_clipboard_text
+            if set_clipboard_text(chosen.text):
+                logger.info(
+                    "Hotkey translation [%s] completed in %.2fs (copied to clipboard)",
+                    trace_id,
+                    time.monotonic() - start_time,
+                )
+            else:
+                logger.warning("Hotkey translation [%s] completed but clipboard copy failed", trace_id)
+        except Exception as e:
+            logger.debug("Hotkey translation [%s] clipboard error: %s", trace_id, e)
+
+    async def _translate_excel_cells_headless(self, text: str, trace_id: str) -> None:
+        """Translate Excel-like tabular hotkey text without a UI client."""
+        import time
+
+        if not self._ensure_translation_service():
+            return
+        self.translation_service.reset_cancel()
+
+        normalized = text.replace("\r\n", "\n")
+        rows = normalized.split("\n")
+        cells_2d: list[list[str]] = [row.split("\t") for row in rows]
+
+        cells_to_translate: list[tuple[int, int, str]] = []
+        for row_idx, row in enumerate(cells_2d):
+            for col_idx, cell in enumerate(row):
+                cell_text = cell.strip()
+                if cell_text:
+                    cells_to_translate.append((row_idx, col_idx, cell_text))
+
+        if not cells_to_translate:
+            logger.info("Hotkey translation [%s] no cells to translate", trace_id)
+            return
+
+        unique_texts: list[str] = []
+        seen_texts: set[str] = set()
+        for _, _, cell_text in cells_to_translate:
+            if cell_text not in seen_texts:
+                seen_texts.add(cell_text)
+                unique_texts.append(cell_text)
+
+        start_time = time.monotonic()
+        try:
+            detected_language = await asyncio.to_thread(
+                self.translation_service.detect_language,
+                cells_to_translate[0][2],
+            )
+            output_language = "en" if detected_language == "日本語" else "jp"
+            reference_files = self._get_effective_reference_files()
+
+            batches = self._split_cell_batches(unique_texts, self.settings.max_chars_per_batch)
+            translations: list[str] = []
+            explanations: list[str] = []
+            for batch in batches:
+                batch_result = await asyncio.to_thread(
+                    self._translate_cell_batch,
+                    batch,
+                    output_language,
+                    reference_files,
+                )
+                if batch_result is None:
+                    logger.info("Hotkey translation [%s] failed (batch)", trace_id)
+                    return
+                batch_translations, batch_explanations = batch_result
+                translations.extend(batch_translations)
+                explanations.extend(batch_explanations)
+
+            translation_by_text: dict[str, str] = {}
+            for idx, cell_text in enumerate(unique_texts):
+                translation_by_text[cell_text] = translations[idx] if idx < len(translations) else ""
+
+            translated_2d = [row[:] for row in cells_2d]
+            for row_idx, col_idx, cell_text in cells_to_translate:
+                translated_value = translation_by_text.get(cell_text) or cells_2d[row_idx][col_idx]
+                translated_2d[row_idx][col_idx] = translated_value
+
+            translated_rows = ["\t".join(row) for row in translated_2d]
+            translated_text = "\n".join(translated_rows)
+
+            from yakulingo.services.hotkey_manager import set_clipboard_text
+            if set_clipboard_text(translated_text):
+                logger.info(
+                    "Hotkey translation [%s] completed %d cells in %.2fs (copied to clipboard)",
+                    trace_id,
+                    len(cells_to_translate),
+                    time.monotonic() - start_time,
+                )
+            else:
+                logger.warning("Hotkey translation [%s] completed but clipboard copy failed", trace_id)
+        except Exception as e:
+            logger.exception("Hotkey translation [%s] error: %s", trace_id, e)
 
     async def _translate_excel_cells(self, text: str, trace_id: str):
         """Translate Excel-like tabular data (tab-separated cells).
@@ -5235,8 +5589,10 @@ def run_app(
         return
 
     available_memory_gb = _get_available_memory_gb()
-    allow_early_connect = True
-    if available_memory_gb is not None and available_memory_gb <= MIN_AVAILABLE_MEMORY_GB_FOR_EARLY_CONNECT:
+    # Early connect spins up Edge (and later Playwright). In browser mode we run as a resident
+    # background service and should stay silent at startup; connect on demand instead.
+    allow_early_connect = bool(native)
+    if allow_early_connect and available_memory_gb is not None and available_memory_gb <= MIN_AVAILABLE_MEMORY_GB_FOR_EARLY_CONNECT:
         allow_early_connect = False
         logger.info(
             "Skipping early Copilot pre-initialization due to low available memory: %.1fGB < %.1fGB",
@@ -5831,28 +6187,8 @@ def run_app(
     nicegui_app.on_shutdown(cleanup)
     atexit.register(cleanup)
 
-    # Auto-shutdown when the last browser client disconnects (browser mode).
-    # Without this, closing the window leaves the server running.
-    shutdown_check_task: "asyncio.Task | None" = None
-
-    async def _shutdown_if_no_clients() -> None:
-        await asyncio.sleep(1.0)
-        if cleanup_done or yakulingo_app._shutdown_requested:
-            return
-        if any(client.has_socket_connection for client in nicegui_Client.instances.values()):
-            return
-        logger.info("No active clients detected; shutting down NiceGUI")
-        nicegui_app.shutdown()
-
-    def _on_disconnect(_: "nicegui_Client | None" = None) -> None:
-        nonlocal shutdown_check_task
-        if cleanup_done or yakulingo_app._shutdown_requested:
-            return
-        if shutdown_check_task is not None and not shutdown_check_task.done():
-            return
-        shutdown_check_task = asyncio.create_task(_shutdown_if_no_clients())
-
-    nicegui_app.on_disconnect(_on_disconnect)
+    # NOTE: We intentionally keep the server running even when all UI clients disconnect.
+    # YakuLingo is designed to run as a resident background service (Ctrl+Alt+J hotkey).
 
     # Serve styles.css as static file for browser caching (faster subsequent loads)
     ui_dir = Path(__file__).parent
@@ -5975,6 +6311,41 @@ def run_app(
                 "available": True,
                 "status": yakulingo_app._layout_init_state.value,
             }
+
+        @nicegui_app.post('/api/shutdown')
+        async def shutdown_api(request: StarletteRequest):  # type: ignore[misc]
+            """Shut down the resident YakuLingo service (local machine only)."""
+            try:
+                client_host = getattr(getattr(request, "client", None), "host", None)
+                if client_host not in ("127.0.0.1", "::1"):
+                    raise HTTPException(status_code=403, detail="forbidden")
+            except HTTPException:
+                raise
+            except Exception:
+                # If we cannot determine the client reliably, refuse the request.
+                raise HTTPException(status_code=403, detail="forbidden")
+
+            logger.info("Shutdown requested via /api/shutdown")
+
+            # Graceful shutdown (runs cleanup via on_shutdown). Some environments keep
+            # background threads alive; force-exit after a short grace period.
+            def _force_exit_after_grace() -> None:
+                import os as _os
+                import time as _time
+                _time.sleep(5.0)
+                _os._exit(0)
+
+            try:
+                threading.Thread(
+                    target=_force_exit_after_grace,
+                    daemon=True,
+                    name="force_exit_after_shutdown",
+                ).start()
+            except Exception:
+                pass
+
+            nicegui_app.shutdown()
+            return {"ok": True}
 
     # Icon path for native window (pywebview) and browser favicon.
     icon_path = ui_dir / 'yakulingo.ico'
@@ -6314,15 +6685,17 @@ def run_app(
     @nicegui_app.on_startup
     async def on_startup():
         """Called when NiceGUI server starts (before clients connect)."""
-        # Start Copilot connection early - runs in parallel with pywebview window creation
-        yakulingo_app._early_connection_task = asyncio.create_task(_early_connect_copilot())
+        # Start hotkey manager immediately so clipboard translation works even without the UI.
+        yakulingo_app.start_hotkey_manager()
+
+        # Start Copilot connection early only in native mode; browser mode should remain silent
+        # and connect on demand (hotkey/UI).
+        if native:
+            yakulingo_app._early_connection_task = asyncio.create_task(_early_connect_copilot())
 
         # Start early window positioning - moves window before UI is rendered
         if native and sys.platform == 'win32':
             _start_early_positioning_thread()
-
-        if not native:
-            asyncio.create_task(asyncio.to_thread(_open_browser_window))
 
     @ui.page('/')
     async def main_page(client: nicegui_Client):
@@ -6851,12 +7224,6 @@ body.yakulingo-drag-active .global-drop-indicator {
                 pass
 
         asyncio.create_task(_remove_startup_overlay())
-
-        # Start hotkey manager immediately after UI is displayed (doesn't need connection)
-        yakulingo_app.start_hotkey_manager()
-
-        # Monitor Copilot window close to exit the app
-        yakulingo_app._ensure_copilot_window_monitor()
 
         # Apply early connection result or start new connection
         asyncio.create_task(yakulingo_app._apply_early_connection_or_connect())

@@ -47,6 +47,7 @@ else:
 
     # Clipboard format
     CF_UNICODETEXT = 13
+    CF_HDROP = 15
 
     # Virtual key codes for Ctrl+C
     VK_CONTROL = 0x11
@@ -122,6 +123,7 @@ else:
     # WinDLL with use_last_error for proper GetLastError retrieval
     _user32 = ctypes.WinDLL("user32", use_last_error=True)
     _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    _shell32 = ctypes.WinDLL("shell32", use_last_error=True)
 
 
     class HotkeyManager:
@@ -238,7 +240,7 @@ else:
                     logger.info("Unregistered global hotkey: Ctrl+Alt+J")
 
         def _handle_hotkey(self):
-            """Handle hotkey press: copy selected text and trigger callback."""
+            """Handle hotkey press: copy selected content (text/files) and trigger callback."""
             with self._lock:
                 callback = self._callback
 
@@ -253,8 +255,9 @@ else:
                 # Track clipboard sequence to detect actual updates even if content is identical
                 sequence_before = self._get_clipboard_sequence_number()
 
-                # Get current clipboard content to detect change
+                # Get current clipboard content to detect change when sequence numbers are unavailable
                 old_text = self._get_clipboard_text()
+                old_files = self._get_clipboard_file_paths()
 
                 # Send Ctrl+C to copy selected text
                 self._send_ctrl_c()
@@ -262,8 +265,8 @@ else:
                 # Wait for clipboard to update
                 time.sleep(CLIPBOARD_WAIT_SEC)
 
-                # Get text from clipboard (with retry)
-                text = self._get_clipboard_text_with_retry()
+                # Get clipboard content (with retry). Some apps (e.g., Explorer) may only provide CF_HDROP.
+                text, files = self._get_clipboard_payload_with_retry()
 
                 # Check clipboard sequence after copy (may be None on failure)
                 sequence_after = self._get_clipboard_sequence_number()
@@ -272,26 +275,27 @@ else:
                 if sequence_before is not None and sequence_after is not None:
                     clipboard_changed = sequence_after != sequence_before
 
-                # If clipboard didn't change, no text was selected - skip translation
-                if text is not None and text == old_text:
-                    if clipboard_changed is False:
-                        logger.info(
-                            "Clipboard sequence unchanged (%s) - skipping hotkey translation",
-                            sequence_after,
-                        )
-                        return
-
-                    if clipboard_changed is None:
-                        logger.info("Clipboard unchanged - no text was selected, skipping")
-                        return
-
-                # If clipboard is empty after Ctrl+C, nothing was selected
-                if text is None:
-                    logger.info("No text in clipboard after Ctrl+C, skipping")
+                if clipboard_changed is False:
+                    logger.info(
+                        "Clipboard sequence unchanged (%s) - skipping hotkey translation",
+                        sequence_after,
+                    )
                     return
 
-                # Trigger callback
-                callback(text)
+                if clipboard_changed is None and text == old_text and files == old_files:
+                    logger.info("Clipboard unchanged - skipping hotkey translation")
+                    return
+
+                if files:
+                    callback("\n".join(files))
+                    return
+
+                if text:
+                    callback(text)
+                    return
+
+                logger.info("No clipboard content (text/files) after Ctrl+C, skipping")
+                return
 
             except Exception as e:
                 logger.error(f"Error handling hotkey: {e}", exc_info=True)
@@ -365,6 +369,23 @@ else:
 
             logger.warning("Failed to get clipboard text after all retries")
             return None
+
+        def _get_clipboard_payload_with_retry(self) -> tuple[Optional[str], list[str]]:
+            """Get either clipboard text or file paths, with retry on failure."""
+
+            for attempt in range(CLIPBOARD_RETRY_COUNT):
+                text = self._get_clipboard_text()
+                files = self._get_clipboard_file_paths()
+
+                if text is not None or files:
+                    return text, files
+
+                if attempt < CLIPBOARD_RETRY_COUNT - 1:
+                    time.sleep(CLIPBOARD_RETRY_DELAY_SEC)
+                    logger.debug(f"Clipboard retry {attempt + 1}/{CLIPBOARD_RETRY_COUNT}")
+
+            logger.warning("Failed to get clipboard content after all retries")
+            return None, []
 
         def _get_clipboard_sequence_number(self) -> Optional[int]:
             """Return the clipboard sequence number or None on failure.
@@ -448,6 +469,56 @@ else:
                         return None
                 finally:
                     _kernel32.GlobalUnlock(handle)
+            finally:
+                _user32.CloseClipboard()
+
+        def _get_clipboard_file_paths(self) -> list[str]:
+            """Get file paths from the clipboard (CF_HDROP), if present."""
+
+            _user32.OpenClipboard.argtypes = [ctypes.wintypes.HWND]
+            _user32.OpenClipboard.restype = ctypes.wintypes.BOOL
+            _user32.CloseClipboard.argtypes = []
+            _user32.CloseClipboard.restype = ctypes.wintypes.BOOL
+            _user32.IsClipboardFormatAvailable.argtypes = [ctypes.wintypes.UINT]
+            _user32.IsClipboardFormatAvailable.restype = ctypes.wintypes.BOOL
+            _user32.GetClipboardData.argtypes = [ctypes.wintypes.UINT]
+            _user32.GetClipboardData.restype = ctypes.wintypes.HANDLE
+
+            _shell32.DragQueryFileW.argtypes = [
+                ctypes.wintypes.HANDLE,
+                ctypes.wintypes.UINT,
+                ctypes.wintypes.LPWSTR,
+                ctypes.wintypes.UINT,
+            ]
+            _shell32.DragQueryFileW.restype = ctypes.wintypes.UINT
+
+            if not _user32.OpenClipboard(None):
+                error_code = ctypes.get_last_error()
+                logger.warning(f"Failed to open clipboard (error: {error_code})")
+                return []
+
+            try:
+                if not _user32.IsClipboardFormatAvailable(CF_HDROP):
+                    return []
+
+                h_drop = _user32.GetClipboardData(CF_HDROP)
+                if not h_drop:
+                    error_code = ctypes.get_last_error()
+                    logger.debug(f"GetClipboardData(CF_HDROP) returned null (error: {error_code})")
+                    return []
+
+                count = int(_shell32.DragQueryFileW(h_drop, 0xFFFFFFFF, None, 0))
+                paths: list[str] = []
+                for idx in range(count):
+                    # Get required length (in chars) excluding null terminator
+                    length = int(_shell32.DragQueryFileW(h_drop, idx, None, 0))
+                    if length <= 0:
+                        continue
+                    buf = ctypes.create_unicode_buffer(length + 1)
+                    copied = int(_shell32.DragQueryFileW(h_drop, idx, buf, length + 1))
+                    if copied > 0 and buf.value:
+                        paths.append(buf.value)
+                return paths
             finally:
                 _user32.CloseClipboard()
 
@@ -547,6 +618,174 @@ else:
                 return False
 
             logger.debug("Successfully set clipboard text (len=%d)", len(text))
+            return True
+        finally:
+            _user32.CloseClipboard()
+
+    # Clipboard file drop constants
+    DROPEFFECT_COPY = 1
+
+
+    class DROPFILES(ctypes.Structure):
+        _fields_ = [
+            ("pFiles", ctypes.wintypes.DWORD),
+            ("pt", ctypes.wintypes.POINT),
+            ("fNC", ctypes.wintypes.BOOL),
+            ("fWide", ctypes.wintypes.BOOL),
+        ]
+
+
+    def set_clipboard_files(paths: list[str], *, also_set_text: bool = True) -> bool:
+        """Set file paths to clipboard so Explorer can paste them (CF_HDROP).
+
+        Args:
+            paths: File paths to put on the clipboard.
+            also_set_text: If True, also set CF_UNICODETEXT with newline-joined paths.
+
+        Returns:
+            True if CF_HDROP was successfully set, False otherwise.
+        """
+
+        if not paths:
+            return False
+
+        # Build DROPFILES payload (UTF-16LE, double-null terminated)
+        file_list = "\0".join(paths) + "\0\0"
+        file_bytes = file_list.encode("utf-16-le")
+
+        dropfiles = DROPFILES()
+        dropfiles.pFiles = ctypes.sizeof(DROPFILES)
+        dropfiles.pt = ctypes.wintypes.POINT(0, 0)
+        dropfiles.fNC = 0
+        dropfiles.fWide = 1
+
+        total_size = ctypes.sizeof(DROPFILES) + len(file_bytes)
+
+        _kernel32.GlobalAlloc.argtypes = [ctypes.wintypes.UINT, ctypes.c_size_t]
+        _kernel32.GlobalAlloc.restype = ctypes.wintypes.HGLOBAL
+        _kernel32.GlobalLock.argtypes = [ctypes.wintypes.HGLOBAL]
+        _kernel32.GlobalLock.restype = ctypes.wintypes.LPVOID
+        _kernel32.GlobalUnlock.argtypes = [ctypes.wintypes.HGLOBAL]
+        _kernel32.GlobalUnlock.restype = ctypes.wintypes.BOOL
+        _kernel32.GlobalFree.argtypes = [ctypes.wintypes.HGLOBAL]
+        _kernel32.GlobalFree.restype = ctypes.wintypes.HGLOBAL
+
+        _user32.OpenClipboard.argtypes = [ctypes.wintypes.HWND]
+        _user32.OpenClipboard.restype = ctypes.wintypes.BOOL
+        _user32.CloseClipboard.argtypes = []
+        _user32.CloseClipboard.restype = ctypes.wintypes.BOOL
+        _user32.EmptyClipboard.argtypes = []
+        _user32.EmptyClipboard.restype = ctypes.wintypes.BOOL
+        _user32.SetClipboardData.argtypes = [ctypes.wintypes.UINT, ctypes.wintypes.HANDLE]
+        _user32.SetClipboardData.restype = ctypes.wintypes.HANDLE
+        _user32.RegisterClipboardFormatW.argtypes = [ctypes.wintypes.LPCWSTR]
+        _user32.RegisterClipboardFormatW.restype = ctypes.wintypes.UINT
+
+        h_drop_mem = _kernel32.GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, total_size)
+        if not h_drop_mem:
+            error_code = ctypes.get_last_error()
+            logger.warning(f"Failed to allocate global memory for CF_HDROP (error: {error_code})")
+            return False
+
+        ptr = _kernel32.GlobalLock(h_drop_mem)
+        if not ptr:
+            error_code = ctypes.get_last_error()
+            logger.warning(f"GlobalLock failed for CF_HDROP (error: {error_code})")
+            _kernel32.GlobalFree(h_drop_mem)
+            return False
+
+        try:
+            base = ctypes.cast(ptr, ctypes.c_void_p).value
+            assert base is not None
+            ctypes.memmove(base, ctypes.byref(dropfiles), ctypes.sizeof(DROPFILES))
+            ctypes.memmove(base + ctypes.sizeof(DROPFILES), file_bytes, len(file_bytes))
+        finally:
+            _kernel32.GlobalUnlock(h_drop_mem)
+
+        h_text_mem = None
+        if also_set_text:
+            text = "\n".join(paths)
+            encoded = (text + "\0").encode("utf-16-le")
+            h_text_mem = _kernel32.GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, len(encoded))
+            if h_text_mem:
+                text_ptr = _kernel32.GlobalLock(h_text_mem)
+                if text_ptr:
+                    try:
+                        ctypes.memmove(text_ptr, encoded, len(encoded))
+                    finally:
+                        _kernel32.GlobalUnlock(h_text_mem)
+                else:
+                    _kernel32.GlobalFree(h_text_mem)
+                    h_text_mem = None
+
+        h_drop_effect_mem = None
+        drop_effect_format = _user32.RegisterClipboardFormatW("Preferred DropEffect")
+        if drop_effect_format:
+            h_drop_effect_mem = _kernel32.GlobalAlloc(
+                GMEM_MOVEABLE | GMEM_ZEROINIT, ctypes.sizeof(ctypes.wintypes.DWORD)
+            )
+            if h_drop_effect_mem:
+                effect_ptr = _kernel32.GlobalLock(h_drop_effect_mem)
+                if effect_ptr:
+                    try:
+                        effect = ctypes.wintypes.DWORD(DROPEFFECT_COPY)
+                        ctypes.memmove(effect_ptr, ctypes.byref(effect), ctypes.sizeof(effect))
+                    finally:
+                        _kernel32.GlobalUnlock(h_drop_effect_mem)
+                else:
+                    _kernel32.GlobalFree(h_drop_effect_mem)
+                    h_drop_effect_mem = None
+
+        if not _user32.OpenClipboard(None):
+            error_code = ctypes.get_last_error()
+            logger.warning(f"Failed to open clipboard (error: {error_code})")
+            _kernel32.GlobalFree(h_drop_mem)
+            if h_text_mem:
+                _kernel32.GlobalFree(h_text_mem)
+            if h_drop_effect_mem:
+                _kernel32.GlobalFree(h_drop_effect_mem)
+            return False
+
+        try:
+            if not _user32.EmptyClipboard():
+                error_code = ctypes.get_last_error()
+                logger.warning(f"Failed to empty clipboard (error: {error_code})")
+                _kernel32.GlobalFree(h_drop_mem)
+                if h_text_mem:
+                    _kernel32.GlobalFree(h_text_mem)
+                if h_drop_effect_mem:
+                    _kernel32.GlobalFree(h_drop_effect_mem)
+                return False
+
+            # CF_HDROP (required)
+            result = _user32.SetClipboardData(CF_HDROP, h_drop_mem)
+            if not result:
+                error_code = ctypes.get_last_error()
+                logger.warning(f"Failed to set CF_HDROP (error: {error_code})")
+                _kernel32.GlobalFree(h_drop_mem)
+                if h_text_mem:
+                    _kernel32.GlobalFree(h_text_mem)
+                if h_drop_effect_mem:
+                    _kernel32.GlobalFree(h_drop_effect_mem)
+                return False
+
+            # Optional: hint Explorer to treat this as a copy operation
+            if drop_effect_format and h_drop_effect_mem:
+                if not _user32.SetClipboardData(drop_effect_format, h_drop_effect_mem):
+                    error_code = ctypes.get_last_error()
+                    logger.debug(
+                        "Failed to set Preferred DropEffect (error: %s)", error_code
+                    )
+                    _kernel32.GlobalFree(h_drop_effect_mem)
+
+            # Optional: also publish text paths (useful for pasting into editors)
+            if h_text_mem:
+                if not _user32.SetClipboardData(CF_UNICODETEXT, h_text_mem):
+                    error_code = ctypes.get_last_error()
+                    logger.debug("Failed to set CF_UNICODETEXT (error: %s)", error_code)
+                    _kernel32.GlobalFree(h_text_mem)
+
+            logger.debug("Successfully set clipboard files (count=%d)", len(paths))
             return True
         finally:
             _user32.CloseClipboard()

@@ -1215,24 +1215,173 @@ function Invoke-Setup {
 
     $WshShell = New-Object -ComObject WScript.Shell
 
-    # Desktop shortcut - use YakuLingo.exe for silent launch
-    $DesktopPath = [Environment]::GetFolderPath("Desktop")
-    $ShortcutPath = Join-Path $DesktopPath "$AppName.lnk"
-    $Shortcut = $WshShell.CreateShortcut($ShortcutPath)
-    $ExePath = Join-Path $SetupPath "YakuLingo.exe"
-    $Shortcut.TargetPath = $ExePath
-    $Shortcut.WorkingDirectory = $SetupPath
-    # Prefer explicit ICO file for reliable desktop rendering
-    $IconPath = Join-Path $SetupPath "yakulingo\ui\yakulingo.ico"
-    if (Test-Path $IconPath) {
-        $Shortcut.IconLocation = "$IconPath,0"
-    } else {
-        $Shortcut.IconLocation = "$ExePath,0"
+    # Create helper scripts in install directory (UI opener / exit).
+    # These keep the UX simple:
+    # - YakuLingo runs as a resident background service (hotkey enabled)
+    # - UI is opened on demand
+    # - Exit is explicit via shortcut
+
+    $OpenUiScriptPath = Join-Path $SetupPath "YakuLingo_OpenUI.ps1"
+    $ExitScriptPath = Join-Path $SetupPath "YakuLingo_Exit.ps1"
+
+    $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+
+    $openUiScript = @"
+`$ErrorActionPreference = 'Stop'
+
+`$installDir = Split-Path -Parent `$MyInvocation.MyCommand.Definition
+`$pythonw = Join-Path `$installDir '.venv\\Scripts\\pythonw.exe'
+`$appPy = Join-Path `$installDir 'app.py'
+`$port = 8765
+`$url = "http://127.0.0.1:`$port/"
+
+function Test-PortOpen([int]`$p) {
+  try {
+    `$client = New-Object System.Net.Sockets.TcpClient
+    `$async = `$client.BeginConnect('127.0.0.1', `$p, `$null, `$null)
+    if (-not `$async.AsyncWaitHandle.WaitOne(200)) { return `$false }
+    `$client.EndConnect(`$async) | Out-Null
+    `$client.Close()
+    return `$true
+  } catch { return `$false }
+}
+
+if (-not (Test-PortOpen `$port)) {
+  if (Test-Path `$pythonw -PathType Leaf) {
+    Start-Process -FilePath `$pythonw -ArgumentList `$appPy -WorkingDirectory `$installDir -WindowStyle Hidden | Out-Null
+    `$deadline = (Get-Date).AddSeconds(15)
+    while ((Get-Date) -lt `$deadline -and -not (Test-PortOpen `$port)) { Start-Sleep -Milliseconds 200 }
+  }
+}
+
+`$edge = `$null
+`$candidates = @(
+  'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+  'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'
+)
+foreach (`$p in `$candidates) {
+  if (Test-Path `$p -PathType Leaf) { `$edge = `$p; break }
+}
+
+if (`$edge) {
+  `$profileDir = Join-Path `$env:LOCALAPPDATA 'YakuLingo\\AppWindowProfile'
+  New-Item -ItemType Directory -Force -Path `$profileDir | Out-Null
+  `$args = @(
+    "--app=`$url",
+    "--disable-features=Translate",
+    "--lang=ja",
+    "--user-data-dir=`$profileDir",
+    "--no-first-run",
+    "--no-default-browser-check",
+    "--disable-sync",
+    "--proxy-bypass-list=localhost;127.0.0.1",
+    "--disable-session-crashed-bubble",
+    "--hide-crash-restore-bubble"
+  )
+  Start-Process -FilePath `$edge -ArgumentList `$args | Out-Null
+} else {
+  Start-Process `$url | Out-Null
+}
+"@
+
+    $exitScript = @"
+`$ErrorActionPreference = 'SilentlyContinue'
+`$port = 8765
+`$shutdownUrl = "http://127.0.0.1:`$port/api/shutdown"
+
+try {
+  Invoke-WebRequest -UseBasicParsing -Method Post -Uri `$shutdownUrl -TimeoutSec 3 | Out-Null
+  exit 0
+} catch { }
+
+# Fallback: kill the process listening on the UI port
+try {
+  `$conn = Get-NetTCPConnection -LocalAddress 127.0.0.1 -LocalPort `$port -State Listen -ErrorAction Stop | Select-Object -First 1
+  if (`$conn -and `$conn.OwningProcess) {
+    Stop-Process -Id `$conn.OwningProcess -Force
+    exit 0
+  }
+} catch { }
+
+try {
+  `$line = (& netstat -ano | Select-String ":`$port" | Select-String "LISTENING" | Select-Object -First 1).Line
+  if (`$line) {
+    `$pid = (`$line -split '\s+')[-1]
+    if (`$pid -match '^\d+$') {
+      Stop-Process -Id ([int]`$pid) -Force
+      exit 0
     }
-    $Shortcut.Description = "YakuLingo Translation Tool"
-    $Shortcut.Save()
+  }
+} catch { }
+exit 0
+"@
+
+    [System.IO.File]::WriteAllText($OpenUiScriptPath, $openUiScript, $utf8NoBom)
+    [System.IO.File]::WriteAllText($ExitScriptPath, $exitScript, $utf8NoBom)
+
+    # Common icon path
+    $IconPath = Join-Path $SetupPath "yakulingo\ui\yakulingo.ico"
+
+    # Desktop shortcut - open UI (service runs resident in background)
+    $DesktopPath = [Environment]::GetFolderPath("Desktop")
+    $DesktopShortcutPath = Join-Path $DesktopPath "$AppName.lnk"
+    $DesktopShortcut = $WshShell.CreateShortcut($DesktopShortcutPath)
+    $DesktopShortcut.TargetPath = "powershell.exe"
+    $DesktopShortcut.Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$OpenUiScriptPath`""
+    $DesktopShortcut.WorkingDirectory = $SetupPath
+    if (Test-Path $IconPath) {
+        $DesktopShortcut.IconLocation = "$IconPath,0"
+    }
+    $DesktopShortcut.Description = "YakuLingo (UIを開く)"
+    $DesktopShortcut.Save()
+
+    # Start Menu shortcuts (per-user)
+    $ProgramsPath = [Environment]::GetFolderPath("Programs")
+    $StartMenuDir = Join-Path $ProgramsPath $AppName
+    if (-not (Test-Path $StartMenuDir)) {
+        New-Item -ItemType Directory -Path $StartMenuDir | Out-Null
+    }
+
+    $StartMenuOpenPath = Join-Path $StartMenuDir "$AppName.lnk"
+    $StartMenuOpen = $WshShell.CreateShortcut($StartMenuOpenPath)
+    $StartMenuOpen.TargetPath = "powershell.exe"
+    $StartMenuOpen.Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$OpenUiScriptPath`""
+    $StartMenuOpen.WorkingDirectory = $SetupPath
+    if (Test-Path $IconPath) {
+        $StartMenuOpen.IconLocation = "$IconPath,0"
+    }
+    $StartMenuOpen.Description = "YakuLingo (UIを開く)"
+    $StartMenuOpen.Save()
+
+    $StartMenuExitPath = Join-Path $StartMenuDir "$AppName 終了.lnk"
+    $StartMenuExit = $WshShell.CreateShortcut($StartMenuExitPath)
+    $StartMenuExit.TargetPath = "powershell.exe"
+    $StartMenuExit.Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$ExitScriptPath`""
+    $StartMenuExit.WorkingDirectory = $SetupPath
+    if (Test-Path $IconPath) {
+        $StartMenuExit.IconLocation = "$IconPath,0"
+    }
+    $StartMenuExit.Description = "YakuLingo を終了"
+    $StartMenuExit.Save()
+
+    # Startup shortcut (auto-start resident service on logon; no UI auto-open)
+    $StartupPath = [Environment]::GetFolderPath("Startup")
+    $StartupShortcutPath = Join-Path $StartupPath "$AppName.lnk"
+    $StartupShortcut = $WshShell.CreateShortcut($StartupShortcutPath)
+    $PythonwPath = Join-Path $SetupPath ".venv\Scripts\pythonw.exe"
+    $AppPyPath = Join-Path $SetupPath "app.py"
+    $StartupShortcut.TargetPath = $PythonwPath
+    $StartupShortcut.Arguments = "`"$AppPyPath`""
+    $StartupShortcut.WorkingDirectory = $SetupPath
+    if (Test-Path $IconPath) {
+        $StartupShortcut.IconLocation = "$IconPath,0"
+    }
+    $StartupShortcut.Description = "YakuLingo (常駐起動)"
+    $StartupShortcut.Save()
     if (-not $GuiMode) {
-        Write-Host "      Desktop: $ShortcutPath" -ForegroundColor Gray
+        Write-Host "      Desktop: $DesktopShortcutPath" -ForegroundColor Gray
+        Write-Host "      Start Menu: $StartMenuDir" -ForegroundColor Gray
+        Write-Host "      Startup: $StartupShortcutPath" -ForegroundColor Gray
         Write-Host "[OK] Shortcuts created" -ForegroundColor Green
     }
 
@@ -1245,7 +1394,7 @@ function Invoke-Setup {
             throw "セットアップがキャンセルされました。"
         }
         Write-Status -Message "Setup completed!" -Progress -Step "Step 4/4: Finalizing" -Percent 100
-        $successMsg = "セットアップが完了しました。`n`nデスクトップのショートカットからYakuLingoを起動してください。"
+        $successMsg = "セットアップが完了しました。`n`nログオン時にYakuLingoが自動で常駐します。`n`n使い方:`n- 翻訳したい文字を選択して Ctrl+Alt+J`n  → 訳文がクリップボードにコピーされます`n- エクスプローラーでファイルを選択して Ctrl+Alt+J`n  → 翻訳済みファイルがクリップボードにコピーされます（貼り付けで保存）`n- UIを開く: デスクトップ / スタートメニューの YakuLingo`n- UIは閉じても終了せず常駐します（終了はショートカットから）`n- 終了する: スタートメニュー > YakuLingo > YakuLingo 終了"
         if ($script:GlossaryBackupPath) {
             $backupFileName = Split-Path -Leaf $script:GlossaryBackupPath
             $successMsg += "`n`n用語集が更新されました。`n以前の用語集はデスクトップに保存しました:`n  $backupFileName"
@@ -1258,7 +1407,10 @@ function Invoke-Setup {
         Write-Host "============================================================" -ForegroundColor Green
         Write-Host ""
         Write-Host " Location: $SetupPath" -ForegroundColor White
-        Write-Host " Please launch YakuLingo from the desktop shortcut." -ForegroundColor Cyan
+        Write-Host " YakuLingo will start automatically on logon (resident mode)." -ForegroundColor Cyan
+        Write-Host " Hotkey: Select text OR files in Explorer and press Ctrl+Alt+J (result copied to clipboard)." -ForegroundColor Cyan
+        Write-Host " Open UI: Desktop or Start Menu shortcut." -ForegroundColor Cyan
+        Write-Host " Exit: Start Menu > YakuLingo > YakuLingo 終了" -ForegroundColor Cyan
         if ($script:GlossaryBackupPath) {
             Write-Host ""
             $backupFileName = Split-Path -Leaf $script:GlossaryBackupPath

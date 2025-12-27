@@ -786,12 +786,44 @@ function Invoke-Setup {
             }
         }
 
-        # Safety check: Only overwrite if it looks like a YakuLingo installation
-        # This prevents accidental overwriting of unrelated directories
-        # (robocopy /MIR will delete files not in source, so this check is critical)
+        # Safety check: Only overwrite if it looks like a YakuLingo installation (or its data dir)
+        # This prevents accidental overwriting of unrelated directories.
+        #
+        # NOTE: %LOCALAPPDATA%\YakuLingo may already exist even before installation
+        # (e.g., launcher logs / Edge profile dirs from a portable run or a prior uninstall).
+        # Treat those known data subfolders as valid markers to allow reinstall without data loss.
         $isYakuLingoDir = $false
-        $markerFiles = @("YakuLingo.exe", "app.py", "yakulingo\__init__.py", ".venv\pyvenv.cfg")
-        foreach ($marker in $markerFiles) {
+        $markerPaths = @(
+            # Program markers
+            "YakuLingo.exe",
+            "app.py",
+            "yakulingo\__init__.py",
+            ".venv\pyvenv.cfg"
+        )
+
+        # Data markers are only used for the default install path to avoid
+        # accidentally treating arbitrary directories as "safe" to overwrite.
+        $includeDataMarkers = $false
+        if ($env:LOCALAPPDATA) {
+            try {
+                $defaultInstallRoot = Join-Path $env:LOCALAPPDATA $AppName
+                $normalizedSetup = [System.IO.Path]::GetFullPath($SetupPath).TrimEnd('\')
+                $normalizedDefault = [System.IO.Path]::GetFullPath($defaultInstallRoot).TrimEnd('\')
+                $includeDataMarkers = $normalizedSetup.Equals($normalizedDefault, [System.StringComparison]::OrdinalIgnoreCase)
+            } catch {
+                $includeDataMarkers = $false
+            }
+        }
+
+        if ($includeDataMarkers) {
+            $markerPaths += @(
+                "EdgeProfile",
+                "AppWindowProfile",
+                "logs\launcher.log",
+                "updates\latest_release.json"
+            )
+        }
+        foreach ($marker in $markerPaths) {
             if (Test-Path (Join-Path $SetupPath $marker)) {
                 $isYakuLingoDir = $true
                 break
@@ -799,8 +831,20 @@ function Invoke-Setup {
         }
 
         if (-not $isYakuLingoDir) {
-            # Directory exists but doesn't look like YakuLingo - refuse to overwrite
-            throw "Directory exists but does not appear to be a YakuLingo installation: $SetupPath`n`nTo reinstall, please delete this directory manually first, or choose a different location."
+            # Allow empty directory (e.g., leftover folder from a cancelled setup)
+            $hasAnyChild = $false
+            try {
+                $hasAnyChild = @(
+                    Get-ChildItem -Path $SetupPath -Force -ErrorAction SilentlyContinue |
+                        Select-Object -First 1
+                ).Count -gt 0
+            } catch {
+                $hasAnyChild = $true
+            }
+
+            if ($hasAnyChild) {
+                throw "Directory exists but does not appear to be a YakuLingo installation: $SetupPath`n`nTo reinstall, please delete this directory manually first, or choose a different location."
+            }
         }
 
         if (-not $GuiMode) {

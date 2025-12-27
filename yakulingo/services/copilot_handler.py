@@ -2679,7 +2679,7 @@ class CopilotHandler:
                 except PlaywrightTimeoutError:
                     elapsed = time.monotonic() - start_time
                     logger.debug("GPT mode button did not appear after %.2fs", elapsed)
-                    fallback = self._switch_gpt_mode_via_overflow_menu(wait_timeout_ms=1200)
+                    fallback = self._switch_gpt_mode_via_overflow_menu(wait_timeout_ms=min(wait_timeout_ms, 3000))
                     if fallback.get('success'):
                         self._gpt_mode_set = True
                         return "set"
@@ -2689,7 +2689,7 @@ class CopilotHandler:
 
             if not current_mode:
                 logger.debug("GPT mode text is empty or selector changed")
-                fallback = self._switch_gpt_mode_via_overflow_menu(wait_timeout_ms=1200)
+                fallback = self._switch_gpt_mode_via_overflow_menu(wait_timeout_ms=min(wait_timeout_ms, 3000))
                 if fallback.get('success'):
                     self._gpt_mode_set = True
                     return "set"
@@ -2708,7 +2708,7 @@ class CopilotHandler:
             # Need to switch mode
             logger.info("Switching GPT mode from '%s' to '%s'...", current_mode, self.GPT_MODE_TARGET)
 
-            switch_result = self._switch_gpt_mode_via_switcher_menu(wait_timeout_ms=min(wait_timeout_ms, 1500))
+            switch_result = self._switch_gpt_mode_via_switcher_menu(wait_timeout_ms=min(wait_timeout_ms, 3000))
 
             elapsed = time.monotonic() - start_time
             if switch_result.get('success'):
@@ -2722,7 +2722,7 @@ class CopilotHandler:
                 self._close_menu_safely()
                 return "target_not_found"
             elif switch_result.get('error') == 'main_button_not_found':
-                fallback = self._switch_gpt_mode_via_overflow_menu(wait_timeout_ms=1200)
+                fallback = self._switch_gpt_mode_via_overflow_menu(wait_timeout_ms=min(wait_timeout_ms, 3000))
                 if fallback.get('success'):
                     self._gpt_mode_set = True
                     return "set"
@@ -2741,7 +2741,7 @@ class CopilotHandler:
             # Don't block translation on GPT mode errors - user can manually switch
             return "error"
 
-    def _switch_gpt_mode_via_switcher_menu(self, wait_timeout_ms: int = 1200) -> dict[str, object]:
+    def _switch_gpt_mode_via_switcher_menu(self, wait_timeout_ms: int = 2500) -> dict[str, object]:
         """Switch GPT mode via #gptModeSwitcher menu (hover "More" submenu).
 
         Normal Copilot layouts expose the switcher directly:
@@ -2775,29 +2775,12 @@ class CopilotHandler:
                 return {"success": False, "error": "more_button_not_found"}
             more_trigger.hover()
 
-            target_item = self._page.locator(
-                f'[role="menuitem"]:has-text("{self.GPT_MODE_TARGET}")'
-            ).first
             try:
-                target_item.wait_for(state='visible', timeout=min(wait_timeout_ms, 800))
+                target_selector = f'[role="menuitem"]:has-text("{self.GPT_MODE_TARGET}"):visible'
+                self._page.wait_for_selector(target_selector, state='visible', timeout=wait_timeout_ms)
+                self._page.locator(target_selector).first.click()
             except PlaywrightTimeoutError:
-                # Some variants may require a click to open the submenu even though the UI is hover-based.
-                more_trigger.click()
-                try:
-                    target_item.wait_for(state='visible', timeout=min(wait_timeout_ms, 800))
-                except PlaywrightTimeoutError:
-                    available = []
-                    try:
-                        available = self._page.evaluate('''() => {
-                            return Array.from(document.querySelectorAll('[role="menuitem"]'))
-                                .map(e => e.textContent?.trim())
-                                .filter(Boolean);
-                        }''') or []
-                    except Exception:
-                        available = []
-                    return {"success": False, "error": "target_not_found", "available": available}
-
-            target_item.click()
+                return {"success": False, "error": "timeout"}
 
             new_mode = self._page.evaluate('''(selector) => {
                 const el = document.querySelector(selector);
@@ -2813,7 +2796,7 @@ class CopilotHandler:
         finally:
             self._close_menu_safely()
 
-    def _switch_gpt_mode_via_overflow_menu(self, wait_timeout_ms: int = 1200) -> dict[str, object]:
+    def _switch_gpt_mode_via_overflow_menu(self, wait_timeout_ms: int = 2500) -> dict[str, object]:
         """Fallback for compact Copilot layouts where #gptModeSwitcher is hidden.
 
         Some responsive variants hide the GPT mode switcher behind an overflow menu:
@@ -2841,7 +2824,7 @@ class CopilotHandler:
             self._page.wait_for_selector('[role="menu"]', state='visible', timeout=wait_timeout_ms)
 
             # Hover the "More" submenu trigger
-            menu = self._page.locator('[role="menu"]').last
+            menu = self._page.locator('[role="menu"]:visible').last
             more_trigger = menu.locator(
                 f'[role="button"][aria-haspopup="menu"]:has-text("{self.GPT_MODE_MORE_TEXT}")'
             ).first
@@ -2849,11 +2832,9 @@ class CopilotHandler:
             more_trigger.hover()
 
             # Click the target mode entry
-            target_item = self._page.locator(
-                f'[role="menuitem"]:has-text("{self.GPT_MODE_TARGET}")'
-            ).first
-            target_item.wait_for(state='visible', timeout=wait_timeout_ms)
-            target_item.click()
+            target_selector = f'[role="menuitem"]:has-text("{self.GPT_MODE_TARGET}"):visible'
+            self._page.wait_for_selector(target_selector, state='visible', timeout=wait_timeout_ms)
+            self._page.locator(target_selector).first.click()
 
             # Best-effort confirmation (may be hidden in compact layouts)
             new_mode = self._page.evaluate('''(selector) => {

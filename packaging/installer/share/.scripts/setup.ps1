@@ -1653,141 +1653,53 @@ try {
     }
 
     # ============================================================
-    # Office COM Add-in: "YakuLingoで翻訳" (Outlook/Word/Excel/PowerPoint)
+    # Remove legacy Office COM Add-in registration (deprecated)
     # ============================================================
-    # Adds a Ribbon tab with a button that sends selected text to YakuLingo.
-    # Requires Office 64-bit (target users) and registers per-user (HKCU).
     try {
-        # Store install path for integrations (used by the Office add-in to locate YakuLingo.exe)
-        try {
-            $appKey = "HKCU:\Software\YakuLingo"
-            New-Item -Path $appKey -Force | Out-Null
-            New-ItemProperty -Path $appKey -Name "SetupPath" -Value $SetupPath -PropertyType String -Force | Out-Null
-        } catch { }
+        $progId = "YakuLingo.OfficeAddin"
+        $clsid = "{2BD0EC3D-2947-4873-923C-BF4FC30DB4CB}"
 
-        $officeAddinSourcePath = Join-Path $script:ScriptDir "office_addin\YakuLingo.OfficeAddin.cs"
-        if (-not (Test-Path $officeAddinSourcePath -PathType Leaf)) {
+        $officeApps = @("Outlook", "Word", "Excel", "PowerPoint")
+        $officeVersions = @("16.0")
+
+        foreach ($app in $officeApps) {
             try {
-                $sourceRoot = Join-Path $script:ShareDir ".scripts"
-                $officeAddinSourcePath = Join-Path $sourceRoot "office_addin\YakuLingo.OfficeAddin.cs"
+                $addinKey = "HKCU:\Software\Microsoft\Office\$app\Addins\$progId"
+                if (Test-Path $addinKey) {
+                    Remove-Item -Path $addinKey -Recurse -Force
+                }
             } catch { }
-        }
-        if (Test-Path $officeAddinSourcePath -PathType Leaf) {
-            $officeAddinOutDir = Join-Path $SetupPath "office_addin"
-            New-Item -Path $officeAddinOutDir -ItemType Directory -Force | Out-Null
-            $officeAddinDllPath = Join-Path $officeAddinOutDir "YakuLingo.OfficeAddin.dll"
 
-            $frameworkDir = Join-Path $env:WINDIR "Microsoft.NET\Framework64\v4.0.30319"
-            $csc = Join-Path $frameworkDir "csc.exe"
-            if (Test-Path $csc -PathType Leaf) {
-                $refs = @(
-                    (Join-Path $frameworkDir "System.Net.Http.dll"),
-                    (Join-Path $frameworkDir "System.Windows.Forms.dll"),
-                    (Join-Path $frameworkDir "Microsoft.CSharp.dll")
-                )
-
-                # Extensibility.dll (Office COM Add-in interface definitions)
-                # Prefer loading from GAC via reflection; fallback to common GAC locations.
+            foreach ($version in $officeVersions) {
                 try {
-                    $extAsm = [System.Reflection.Assembly]::LoadWithPartialName("Extensibility")
-                    if ($extAsm -and $extAsm.Location -and (Test-Path $extAsm.Location -PathType Leaf)) {
-                        $refs += $extAsm.Location
-                    } else {
-                        $gacCandidates = @(
-                            (Join-Path $env:WINDIR "assembly\GAC\Extensibility\*\Extensibility.dll"),
-                            (Join-Path $env:WINDIR "Microsoft.NET\assembly\GAC_MSIL\Extensibility\*\Extensibility.dll")
-                        )
-                        foreach ($pattern in $gacCandidates) {
-                            $match = Get-ChildItem -Path $pattern -ErrorAction SilentlyContinue | Select-Object -First 1
-                            if ($match -and (Test-Path $match.FullName -PathType Leaf)) {
-                                $refs += $match.FullName
-                                break
-                            }
-                        }
+                    $versionedKey = "HKCU:\Software\Microsoft\Office\$version\$app\Addins\$progId"
+                    if (Test-Path $versionedKey) {
+                        Remove-Item -Path $versionedKey -Recurse -Force
                     }
                 } catch { }
-
-                $refArgs = @()
-                foreach ($r in $refs) {
-                    if (Test-Path $r -PathType Leaf) {
-                        $refArgs += "/reference:$r"
-                    }
-                }
-                $compileArgs = @(
-                    "/nologo",
-                    "/target:library",
-                    "/optimize+",
-                    "/codepage:65001",
-                    "/platform:anycpu",
-                    "/out:$officeAddinDllPath"
-                ) + $refArgs + @($officeAddinSourcePath)
-                & $csc @compileArgs 2>> $debugLog | Out-Null
-                if ($LASTEXITCODE -ne 0) {
-                    try { "Office add-in compile failed (csc exit code: $LASTEXITCODE)" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
-                }
-            } else {
-                try { "Office add-in compile skipped: csc.exe not found at $csc" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
             }
+        }
 
-            if (Test-Path $officeAddinDllPath -PathType Leaf) {
-                $progId = "YakuLingo.OfficeAddin"
-                $clsid = "{2BD0EC3D-2947-4873-923C-BF4FC30DB4CB}"
-                $className = "YakuLingo.OfficeAddin.YakuLingoAddin"
-                $assemblyName = "YakuLingo.OfficeAddin, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
-                $runtimeVersion = "v4.0.30319"
-                $codeBase = (New-Object System.Uri($officeAddinDllPath)).AbsoluteUri
+        $classesRoot = "HKCU:\Software\Classes"
+        $progKey = Join-Path $classesRoot $progId
+        if (Test-Path $progKey) {
+            Remove-Item -Path $progKey -Recurse -Force
+        }
+        $clsidKey = Join-Path $classesRoot ("CLSID\$clsid")
+        if (Test-Path $clsidKey) {
+            Remove-Item -Path $clsidKey -Recurse -Force
+        }
 
-                $classesRoot = "HKCU:\Software\Classes"
-                $clsidKey = Join-Path $classesRoot ("CLSID\$clsid")
-                New-Item -Path $clsidKey -Force | Out-Null
-                Set-ItemProperty -Path $clsidKey -Name "(default)" -Value $className -Force | Out-Null
-
-                $inprocKey = Join-Path $clsidKey "InprocServer32"
-                New-Item -Path $inprocKey -Force | Out-Null
-                Set-ItemProperty -Path $inprocKey -Name "(default)" -Value "mscoree.dll" -Force | Out-Null
-                New-ItemProperty -Path $inprocKey -Name "ThreadingModel" -Value "Both" -PropertyType String -Force | Out-Null
-                New-ItemProperty -Path $inprocKey -Name "Class" -Value $className -PropertyType String -Force | Out-Null
-                New-ItemProperty -Path $inprocKey -Name "Assembly" -Value $assemblyName -PropertyType String -Force | Out-Null
-                New-ItemProperty -Path $inprocKey -Name "RuntimeVersion" -Value $runtimeVersion -PropertyType String -Force | Out-Null
-                New-ItemProperty -Path $inprocKey -Name "CodeBase" -Value $codeBase -PropertyType String -Force | Out-Null
-
-                $progIdSubKey = Join-Path $clsidKey "ProgId"
-                New-Item -Path $progIdSubKey -Force | Out-Null
-                Set-ItemProperty -Path $progIdSubKey -Name "(default)" -Value $progId -Force | Out-Null
-
-                $catKey = Join-Path $clsidKey "Implemented Categories\{62C8FE65-4EBB-45E7-B440-6E39B2CDBF29}"
-                New-Item -Path $catKey -Force | Out-Null
-
-                $progKey = Join-Path $classesRoot $progId
-                New-Item -Path $progKey -Force | Out-Null
-                Set-ItemProperty -Path $progKey -Name "(default)" -Value $progId -Force | Out-Null
-                $progClsidKey = Join-Path $progKey "CLSID"
-                New-Item -Path $progClsidKey -Force | Out-Null
-                Set-ItemProperty -Path $progClsidKey -Name "(default)" -Value $clsid -Force | Out-Null
-
-                # Office add-in registration
-                # NOTE: Office reads COM add-ins from the versionless path:
-                #   HKCU\Software\Microsoft\Office\<App>\Addins\<ProgId>
-                # (Some older docs mention versioned paths, but Word/Excel/PowerPoint/Outlook use versionless in practice.)
-                $officeApps = @("Outlook", "Word", "Excel", "PowerPoint")
-                foreach ($app in $officeApps) {
-                    try {
-                        $addinKey = "HKCU:\Software\Microsoft\Office\$app\Addins\$progId"
-                        New-Item -Path $addinKey -Force | Out-Null
-                        New-ItemProperty -Path $addinKey -Name "FriendlyName" -Value $script:AppName -PropertyType String -Force | Out-Null
-                        New-ItemProperty -Path $addinKey -Name "Description" -Value "Send selected text to YakuLingo" -PropertyType String -Force | Out-Null
-                        New-ItemProperty -Path $addinKey -Name "LoadBehavior" -Value 3 -PropertyType DWord -Force | Out-Null
-                        if ($app -eq "Outlook") {
-                            New-ItemProperty -Path $addinKey -Name "CommandLineSafe" -Value 0 -PropertyType DWord -Force | Out-Null
-                        }
-                    } catch {
-                        try { "Failed to register Office add-in for ${app}: $($_.Exception.Message)" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
-                    }
-                }
+        $appKey = "HKCU:\Software\YakuLingo"
+        if (Test-Path $appKey) {
+            Remove-ItemProperty -Path $appKey -Name "SetupPath" -ErrorAction SilentlyContinue
+            $props = (Get-ItemProperty -Path $appKey -ErrorAction SilentlyContinue | Get-Member -MemberType NoteProperty).Count
+            if ($props -eq 0) {
+                Remove-Item -Path $appKey -Recurse -Force
             }
         }
     } catch {
-        try { "Office add-in installation failed: $($_.Exception.Message)" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
+        try { "Office add-in cleanup failed: $($_.Exception.Message)" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
     }
 
     # ============================================================
@@ -1799,7 +1711,7 @@ try {
             throw "セットアップがキャンセルされました。"
         }
         Write-Status -Message "Setup completed!" -Progress -Step "Step 4/4: Finalizing" -Percent 100
-        $successMsg = "セットアップが完了しました。`n`nログオン時にYakuLingoが自動で常駐します（UIを閉じても終了しません）。`n`n使い方:`n- 翻訳したい文字を選択して Ctrl+Alt+J`n  → YakuLingo のUIに結果が表示されます（必要な訳をコピー）`n- エクスプローラーでファイルを選択して Ctrl+Alt+J`n  → UIのファイルタブに結果が表示されます（必要な出力をダウンロード）`n- エクスプローラーでファイルを右クリック > 「YakuLingoで翻訳」`n  → 翻訳を開始します（Windows 11 は「その他のオプション」に表示）`n- Office (Outlook/Word/Excel/PowerPoint) のリボン > 「YakuLingo」タブ > 「YakuLingoで翻訳」`n  → 選択中のテキストをYakuLingoに送ります（反映にはOfficeの再起動が必要な場合があります）`n- UIを開く: デスクトップ / スタートメニューの YakuLingo`n- UIを閉じる: 常駐は継続します（Copilot Edge は自動で最小化されます）`n- 終了する: スタートメニュー > YakuLingo > YakuLingo 終了`n`nOK を押すと、YakuLingo を常駐起動します（UIは自動で開きません）。"
+        $successMsg = "セットアップが完了しました。`n`nログオン時にYakuLingoが自動で常駐します（UIを閉じても終了しません）。`n`n使い方:`n- 翻訳したい文字を選択して 同じウィンドウで Ctrl+C を短時間に2回`n  → YakuLingo のUIに結果が表示されます（必要な訳をコピー）`n- エクスプローラーでファイルを選択して 同じウィンドウで Ctrl+C を短時間に2回`n  → UIのファイルタブに結果が表示されます（必要な出力をダウンロード）`n- エクスプローラーでファイルを右クリック > 「YakuLingoで翻訳」`n  → 翻訳を開始します（Windows 11 は「その他のオプション」に表示）`n- UIを開く: デスクトップ / スタートメニューの YakuLingo`n- UIを閉じる: 常駐は継続します（Copilot Edge は自動で最小化されます）`n- 終了する: スタートメニュー > YakuLingo > YakuLingo 終了`n`nOK を押すと、YakuLingo を常駐起動します（UIは自動で開きません）。"
         if ($script:GlossaryBackupPath) {
             $backupFileName = Split-Path -Leaf $script:GlossaryBackupPath
             $successMsg += "`n`n用語集が更新されました。`n以前の用語集はデスクトップに保存しました:`n  $backupFileName"
@@ -1839,9 +1751,8 @@ try {
         Write-Host ""
         Write-Host " Location: $SetupPath" -ForegroundColor White
         Write-Host " YakuLingo will start automatically on logon (resident mode)." -ForegroundColor Cyan
-        Write-Host " Hotkey: Select text/files and press Ctrl+Alt+J (result appears in UI; download file outputs from the UI)." -ForegroundColor Cyan
+        Write-Host " Trigger: Select text/files and press Ctrl+C twice quickly in the same window (result appears in UI; download file outputs from the UI)." -ForegroundColor Cyan
         Write-Host " Explorer: Right-click file > 'YakuLingoで翻訳' (Win11: Show more options)." -ForegroundColor Cyan
-        Write-Host " Office: Ribbon tab 'YakuLingo' > 'YakuLingoで翻訳' (may require restarting Office)." -ForegroundColor Cyan
         Write-Host " Open UI: Desktop or Start Menu shortcut." -ForegroundColor Cyan
         Write-Host " Exit: Start Menu > YakuLingo > YakuLingo 終了" -ForegroundColor Cyan
         if ($script:GlossaryBackupPath) {

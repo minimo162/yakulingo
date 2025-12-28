@@ -1,9 +1,10 @@
 # yakulingo/services/hotkey_manager.py
 """
-Global hotkey manager for quick translation via Ctrl+Alt+J.
+Clipboard trigger manager for quick translation via double Ctrl+C.
 
-Uses RegisterHotKey API to register a global hotkey. Ctrl+Alt+J is used
-instead of Ctrl+J to avoid conflicts with Excel/Word's built-in shortcuts.
+Listens for clipboard updates and fires when the user copies twice within a
+short window from the same foreground window. This avoids global hotkey
+registration and works in environments where add-ins are restricted.
 
 The full implementation uses Windows-specific APIs. To avoid import errors on
 other platforms (e.g., macOS/Linux during development or testing), the module
@@ -14,6 +15,7 @@ Windows.
 import ctypes
 import ctypes.wintypes
 import logging
+import os
 import sys
 import threading
 import time
@@ -26,7 +28,7 @@ _IS_WINDOWS = hasattr(ctypes, "WinDLL") and sys.platform == "win32"
 
 if not _IS_WINDOWS:
     class HotkeyManager:
-        """Placeholder that prevents Windows-only hotkey code from loading on other platforms."""
+        """Placeholder that prevents Windows-only clipboard trigger code from loading."""
 
         def __init__(self, *_: object, **__: object) -> None:
             raise OSError("HotkeyManager is only available on Windows platforms.")
@@ -36,88 +38,18 @@ if not _IS_WINDOWS:
 
         raise OSError("HotkeyManager is only available on Windows platforms.")
 else:
-    # Windows API constants for RegisterHotKey
-    MOD_ALT = 0x0001
-    MOD_CONTROL = 0x0002
-    MOD_NOREPEAT = 0x4000
-
-    VK_J = 0x4A  # J key
-
-    WM_HOTKEY = 0x0312
-
     # Clipboard format
     CF_UNICODETEXT = 13
     CF_HDROP = 15
 
-    # Virtual key codes for Ctrl+C
-    VK_CONTROL = 0x11
-    VK_C = 0x43
-
-    # SendInput constants (replaces legacy keybd_event)
-    INPUT_KEYBOARD = 1
-    KEYEVENTF_KEYUP = 0x0002
-
     # Timing constants
-    CLIPBOARD_WAIT_SEC = 0.2  # Wait for clipboard to update after Ctrl+C (increased)
+    DOUBLE_COPY_WINDOW_SEC = 0.7  # Max time between copies to trigger (700ms)
+    DOUBLE_COPY_COOLDOWN_SEC = 0.7  # Prevent repeat triggers on rapid multi-copy
+    CLIPBOARD_DEBOUNCE_SEC = 0.15  # Ignore rapid clipboard churn from a single copy
+    CLIPBOARD_POLL_INTERVAL_SEC = 0.05  # Clipboard sequence polling interval
     CLIPBOARD_RETRY_COUNT = 10  # Retry count for clipboard access (increased)
     CLIPBOARD_RETRY_DELAY_SEC = 0.1  # Delay between retries (increased)
-    MESSAGE_POLL_INTERVAL_SEC = 0.05  # Interval for PeekMessage loop
-    KEY_EVENT_DELAY_SEC = 0.02  # Delay between key events for reliability (increased)
-    CTRL_RELEASE_WAIT_SEC = 0.1  # Wait for user to release Ctrl key
-
-
-    # ULONG_PTR type (pointer-sized unsigned integer)
-    ULONG_PTR = ctypes.c_size_t
-
-
-    # SendInput structures (must match Windows API exactly)
-    class MOUSEINPUT(ctypes.Structure):
-        """Mouse input structure for SendInput."""
-        _fields_ = [
-            ("dx", ctypes.wintypes.LONG),
-            ("dy", ctypes.wintypes.LONG),
-            ("mouseData", ctypes.wintypes.DWORD),
-            ("dwFlags", ctypes.wintypes.DWORD),
-            ("time", ctypes.wintypes.DWORD),
-            ("dwExtraInfo", ULONG_PTR),
-        ]
-
-
-    class KEYBDINPUT(ctypes.Structure):
-        """Keyboard input structure for SendInput."""
-        _fields_ = [
-            ("wVk", ctypes.wintypes.WORD),
-            ("wScan", ctypes.wintypes.WORD),
-            ("dwFlags", ctypes.wintypes.DWORD),
-            ("time", ctypes.wintypes.DWORD),
-            ("dwExtraInfo", ULONG_PTR),
-        ]
-
-
-    class HARDWAREINPUT(ctypes.Structure):
-        """Hardware input structure for SendInput."""
-        _fields_ = [
-            ("uMsg", ctypes.wintypes.DWORD),
-            ("wParamL", ctypes.wintypes.WORD),
-            ("wParamH", ctypes.wintypes.WORD),
-        ]
-
-
-    class INPUT(ctypes.Structure):
-        """Input structure for SendInput (must include all input types for correct size)."""
-
-        class _INPUT_UNION(ctypes.Union):
-            _fields_ = [
-                ("mi", MOUSEINPUT),
-                ("ki", KEYBDINPUT),
-                ("hi", HARDWAREINPUT),
-            ]
-
-        _anonymous_ = ("_input_union",)
-        _fields_ = [
-            ("type", ctypes.wintypes.DWORD),
-            ("_input_union", _INPUT_UNION),
-        ]
+    IGNORED_WINDOW_TITLE_KEYWORDS = ()
 
 
     # WinDLL with use_last_error for proper GetLastError retrieval
@@ -128,10 +60,7 @@ else:
 
     class HotkeyManager:
         """
-        Manages global hotkey registration for quick translation.
-
-        Uses Ctrl+Alt+J instead of Ctrl+J to avoid conflicts with Excel/Word's
-        built-in Justify shortcuts (Ctrl+J and Ctrl+Shift+J).
+        Manages clipboard-triggered translation via double Ctrl+C.
 
         Usage:
             manager = HotkeyManager()
@@ -141,19 +70,22 @@ else:
             manager.stop()
         """
 
-        # Hotkey ID (must be unique across the application)
-        HOTKEY_ID = 1
-
         def __init__(self):
             self._callback: Optional[Callable[[str, Optional[int]], None]] = None
             self._thread: Optional[threading.Thread] = None
             self._running = False
             self._registered = False
             self._lock = threading.Lock()
+            self._last_clipboard_seq: Optional[int] = None
+            self._last_copy_time: Optional[float] = None
+            self._last_copy_hwnd: Optional[int] = None
+            self._last_trigger_time: Optional[float] = None
+            self._last_clipboard_event_time: Optional[float] = None
+            self._last_clipboard_event_hwnd: Optional[int] = None
 
         def set_callback(self, callback: Callable[[str, Optional[int]], None]):
             """
-            Set callback function to be called when hotkey is triggered.
+            Set callback function to be called when the clipboard trigger fires.
 
             Args:
                 callback: Function that receives clipboard payload and the source window handle.
@@ -162,19 +94,19 @@ else:
                 self._callback = callback
 
         def start(self):
-            """Start hotkey listener in background thread."""
+            """Start clipboard listener in background thread."""
             with self._lock:
                 if self._running:
-                    logger.warning("HotkeyManager already running")
+                    logger.warning("Clipboard trigger already running")
                     return
 
                 self._running = True
-                self._thread = threading.Thread(target=self._hotkey_loop, daemon=True)
+                self._thread = threading.Thread(target=self._clipboard_loop, daemon=True)
                 self._thread.start()
-                logger.info("HotkeyManager started")
+                logger.info("Clipboard trigger started (double Ctrl+C)")
 
         def stop(self):
-            """Stop hotkey listener."""
+            """Stop clipboard listener."""
             with self._lock:
                 if not self._running:
                     return
@@ -183,194 +115,146 @@ else:
             if self._thread:
                 self._thread.join(timeout=2.0)
                 if self._thread.is_alive():
-                    logger.debug("HotkeyManager thread did not stop in time")
-                    # Fallback: manually unregister hotkey if thread didn't clean up
-                    if self._registered:
-                        try:
-                            _user32.UnregisterHotKey(None, self.HOTKEY_ID)
-                            self._registered = False
-                            logger.info("Manually unregistered hotkey after timeout")
-                        except Exception as e:
-                            logger.debug("Failed to manually unregister hotkey: %s", e)
+                    logger.debug("Clipboard trigger thread did not stop in time")
                 self._thread = None
-            logger.info("HotkeyManager stopped")
+            logger.info("Clipboard trigger stopped")
 
         @property
         def is_running(self) -> bool:
-            """Check if hotkey manager is running."""
+            """Check if clipboard trigger is running."""
             return self._running and self._registered
 
-        def _hotkey_loop(self):
-            """Main loop that listens for hotkey events."""
-            # Register hotkey: Ctrl+Alt+J
-            # MOD_NOREPEAT prevents repeated firing when key is held
-            success = _user32.RegisterHotKey(
-                None,  # No window, thread-level hotkey
-                self.HOTKEY_ID,
-                MOD_CONTROL | MOD_ALT | MOD_NOREPEAT,
-                VK_J
-            )
-
-            if not success:
-                error_code = ctypes.get_last_error()
-                logger.error(f"Failed to register hotkey Ctrl+Alt+J (error: {error_code})")
-                logger.error("The hotkey may be registered by another application")
-                self._running = False
-                return
-
+        def _clipboard_loop(self):
+            """Main loop that listens for clipboard updates."""
             self._registered = True
-            logger.info("Registered global hotkey: Ctrl+Alt+J")
+            self._last_clipboard_seq = self._get_clipboard_sequence_number()
 
-            try:
-                msg = ctypes.wintypes.MSG()
-                while self._running:
-                    # PeekMessage with PM_REMOVE (non-blocking)
-                    if _user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, 1):
-                        if msg.message == WM_HOTKEY and msg.wParam == self.HOTKEY_ID:
-                            logger.debug("Hotkey Ctrl+Alt+J triggered")
-                            self._handle_hotkey()
-                    else:
-                        # Sleep a bit to avoid busy waiting
-                        time.sleep(MESSAGE_POLL_INTERVAL_SEC)
-            finally:
-                # Unregister hotkey
-                if self._registered:
-                    _user32.UnregisterHotKey(None, self.HOTKEY_ID)
-                    self._registered = False
-                    logger.info("Unregistered global hotkey: Ctrl+Alt+J")
+            while self._running:
+                sequence = self._get_clipboard_sequence_number()
+                if sequence is None:
+                    time.sleep(CLIPBOARD_POLL_INTERVAL_SEC)
+                    continue
 
-        def _handle_hotkey(self):
-            """Handle hotkey press: copy selected content (text/files) and trigger callback."""
+                if self._last_clipboard_seq is None:
+                    self._last_clipboard_seq = sequence
+                    time.sleep(CLIPBOARD_POLL_INTERVAL_SEC)
+                    continue
+
+                if sequence != self._last_clipboard_seq:
+                    self._last_clipboard_seq = sequence
+                    self._handle_clipboard_update()
+
+                time.sleep(CLIPBOARD_POLL_INTERVAL_SEC)
+
+            self._registered = False
+
+        def _handle_clipboard_update(self):
+            """Handle clipboard updates and trigger on double Ctrl+C."""
             with self._lock:
                 callback = self._callback
 
             if not callback:
-                logger.warning("No callback set for hotkey")
+                logger.warning("No callback set for clipboard trigger")
                 return
 
-            source_hwnd: Optional[int] = None
-            try:
-                hwnd = _user32.GetForegroundWindow()
-                if hwnd:
-                    source_hwnd = int(hwnd)
-            except Exception:
-                source_hwnd = None
-
-            try:
-                # Wait for user to release Ctrl key to avoid interference
-                self._wait_for_ctrl_release()
-
-                # Track clipboard sequence to detect actual updates even if content is identical
-                sequence_before = self._get_clipboard_sequence_number()
-
-                # Get current clipboard content to detect change when sequence numbers are unavailable
-                old_text = self._get_clipboard_text()
-                old_files = self._get_clipboard_file_paths()
-
-                # Send Ctrl+C to copy selected text
-                self._send_ctrl_c()
-
-                # Wait for clipboard to update
-                time.sleep(CLIPBOARD_WAIT_SEC)
-
-                # Get clipboard content (with retry). Some apps (e.g., Explorer) may only provide CF_HDROP.
-                text, files = self._get_clipboard_payload_with_retry()
-
-                # Check clipboard sequence after copy (may be None on failure)
-                sequence_after = self._get_clipboard_sequence_number()
-
-                clipboard_changed = None
-                if sequence_before is not None and sequence_after is not None:
-                    clipboard_changed = sequence_after != sequence_before
-
-                if clipboard_changed is False:
-                    logger.info(
-                        "Clipboard sequence unchanged (%s) - skipping hotkey translation",
-                        sequence_after,
-                    )
-                    return
-
-                if clipboard_changed is None and text == old_text and files == old_files:
-                    logger.info("Clipboard unchanged - skipping hotkey translation")
-                    return
-
-                if files:
-                    payload = "\n".join(files)
-                    try:
-                        callback(payload, source_hwnd)
-                    except TypeError:
-                        callback(payload)
-                    return
-
-                if text:
-                    try:
-                        callback(text, source_hwnd)
-                    except TypeError:
-                        callback(text)
-                    return
-
-                logger.info("No clipboard content (text/files) after Ctrl+C, skipping")
+            source_hwnd, window_title = self._get_foreground_window_info()
+            if source_hwnd is None:
                 return
 
-            except Exception as e:
-                logger.error(f"Error handling hotkey: {e}", exc_info=True)
+            if self._is_ignored_source_window(source_hwnd, window_title):
+                return
 
-        def _wait_for_ctrl_release(self):
-            """Wait for user to release Ctrl key to avoid key state conflicts."""
-            max_wait = 1.0  # Maximum wait time in seconds
-            start_time = time.monotonic()
+            text, files = self._get_clipboard_payload_with_retry()
+            if not text and not files:
+                return
 
-            while time.monotonic() - start_time < max_wait:
-                # GetAsyncKeyState returns negative if key is pressed
-                ctrl_state = _user32.GetAsyncKeyState(VK_CONTROL)
-                if not (ctrl_state & 0x8000):  # High bit indicates key is down
-                    time.sleep(CTRL_RELEASE_WAIT_SEC)  # Small additional delay
+            now = time.monotonic()
+            if (
+                self._last_clipboard_event_time is not None
+                and self._last_clipboard_event_hwnd == source_hwnd
+                and (now - self._last_clipboard_event_time) <= CLIPBOARD_DEBOUNCE_SEC
+            ):
+                self._last_clipboard_event_time = now
+                self._last_clipboard_event_hwnd = source_hwnd
+                return
+
+            self._last_clipboard_event_time = now
+            self._last_clipboard_event_hwnd = source_hwnd
+            if (
+                self._last_copy_time is not None
+                and self._last_copy_hwnd == source_hwnd
+                and (now - self._last_copy_time) <= DOUBLE_COPY_WINDOW_SEC
+            ):
+                if self._last_trigger_time is not None and (
+                    now - self._last_trigger_time
+                ) <= DOUBLE_COPY_COOLDOWN_SEC:
+                    self._reset_last_copy()
                     return
-                time.sleep(0.01)
 
-            logger.debug("Ctrl key still pressed after timeout, proceeding anyway")
+                self._last_trigger_time = now
+                self._reset_last_copy()
 
-        def _send_ctrl_c(self):
-            """Send Ctrl+C keystroke using SendInput (modern API)."""
-            # Set argument types for SendInput
-            _user32.SendInput.argtypes = [
-                ctypes.wintypes.UINT,
-                ctypes.POINTER(INPUT),
+                payload = "\n".join(files) if files else text
+                try:
+                    callback(payload, source_hwnd)
+                except TypeError:
+                    callback(payload)
+                return
+
+            self._last_copy_time = now
+            self._last_copy_hwnd = source_hwnd
+
+        def _reset_last_copy(self) -> None:
+            self._last_copy_time = None
+            self._last_copy_hwnd = None
+
+        def _get_foreground_window_info(self) -> tuple[Optional[int], Optional[str]]:
+            _user32.GetForegroundWindow.restype = ctypes.wintypes.HWND
+            _user32.GetWindowTextW.argtypes = [
+                ctypes.wintypes.HWND,
+                ctypes.wintypes.LPWSTR,
                 ctypes.c_int,
             ]
-            _user32.SendInput.restype = ctypes.wintypes.UINT
+            _user32.GetWindowTextLengthW.argtypes = [ctypes.wintypes.HWND]
+            _user32.GetWindowTextLengthW.restype = ctypes.c_int
 
-            # Create input events: Ctrl down, C down, C up, Ctrl up
-            inputs = (INPUT * 4)()
+            try:
+                hwnd = _user32.GetForegroundWindow()
+                if not hwnd:
+                    return None, None
+                length = _user32.GetWindowTextLengthW(hwnd)
+                title = None
+                if length > 0:
+                    buffer = ctypes.create_unicode_buffer(length + 1)
+                    _user32.GetWindowTextW(hwnd, buffer, length + 1)
+                    if buffer.value:
+                        title = buffer.value
+                return int(hwnd), title
+            except Exception:
+                return None, None
 
-            # Ctrl key down
-            inputs[0].type = INPUT_KEYBOARD
-            inputs[0].ki.wVk = VK_CONTROL
-            inputs[0].ki.dwFlags = 0
+        def _is_ignored_source_window(self, hwnd: int, title: Optional[str]) -> bool:
+            _user32.GetWindowThreadProcessId.argtypes = [
+                ctypes.wintypes.HWND,
+                ctypes.POINTER(ctypes.wintypes.DWORD),
+            ]
+            _user32.GetWindowThreadProcessId.restype = ctypes.wintypes.DWORD
 
-            # C key down
-            inputs[1].type = INPUT_KEYBOARD
-            inputs[1].ki.wVk = VK_C
-            inputs[1].ki.dwFlags = 0
+            try:
+                pid = ctypes.wintypes.DWORD()
+                _user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+                if pid.value == os.getpid():
+                    return True
+            except Exception:
+                pass
 
-            # C key up
-            inputs[2].type = INPUT_KEYBOARD
-            inputs[2].ki.wVk = VK_C
-            inputs[2].ki.dwFlags = KEYEVENTF_KEYUP
-
-            # Ctrl key up
-            inputs[3].type = INPUT_KEYBOARD
-            inputs[3].ki.wVk = VK_CONTROL
-            inputs[3].ki.dwFlags = KEYEVENTF_KEYUP
-
-            # Send all inputs at once for better reliability
-            input_size = ctypes.sizeof(INPUT)
-            sent = _user32.SendInput(4, inputs, input_size)
-            if sent != 4:
-                error_code = ctypes.get_last_error()
-                logger.warning(
-                    f"SendInput sent {sent}/4 inputs (error: {error_code}, input_size: {input_size})"
-                )
+            if not title:
+                return False
+            lowered = title.lower()
+            for keyword in IGNORED_WINDOW_TITLE_KEYWORDS:
+                if keyword.lower() in lowered:
+                    return True
+            return False
 
         def _get_clipboard_text_with_retry(self) -> Optional[str]:
             """Get text from clipboard with retry on failure."""

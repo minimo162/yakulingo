@@ -251,6 +251,14 @@ if exist "%ROBOCOPY_LOG%" (
 
 rd /s /q "dist_temp" 2>nul
 
+:: Remove local __pycache__ created by compileall (exclude venv and output folders)
+echo        Cleaning local __pycache__...
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+    "$excludePattern = '\\\\.venv\\\\|\\\\dist_temp\\\\|\\\\share_package\\\\|\\\\\\.uv-cache\\\\|\\\\\\.uv-python\\\\|\\\\\\.playwright-browsers\\\\';" ^
+    "Get-ChildItem -Path . -Directory -Filter '__pycache__' -Recurse -Force -ErrorAction SilentlyContinue |" ^
+    "Where-Object { $_.FullName -notmatch $excludePattern } |" ^
+    "Remove-Item -Recurse -Force -ErrorAction SilentlyContinue"
+
 :: Calculate elapsed time using PowerShell ticks
 for /f %%e in ('powershell -NoProfile -Command "$e=([DateTime]::Now.Ticks-%START_TICKS%)/10000000;$m=[math]::Floor($e/60);$s=[math]::Floor($e%%60);if($m-gt0){\"${m}m ${s}s\"}else{\"${s}s\"}"') do set "ELAPSED_TIME=%%e"
 

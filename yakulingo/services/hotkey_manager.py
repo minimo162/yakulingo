@@ -79,9 +79,11 @@ else:
             self._last_clipboard_seq: Optional[int] = None
             self._last_copy_time: Optional[float] = None
             self._last_copy_hwnd: Optional[int] = None
+            self._last_copy_pid: Optional[int] = None
             self._last_trigger_time: Optional[float] = None
             self._last_clipboard_event_time: Optional[float] = None
             self._last_clipboard_event_hwnd: Optional[int] = None
+            self._last_clipboard_event_pid: Optional[int] = None
 
         def set_callback(self, callback: Callable[[str, Optional[int]], None]):
             """
@@ -157,11 +159,11 @@ else:
                 logger.warning("No callback set for clipboard trigger")
                 return
 
-            source_hwnd, window_title = self._get_foreground_window_info()
+            source_hwnd, window_title, source_pid = self._get_foreground_window_info()
             if source_hwnd is None:
                 return
 
-            if self._is_ignored_source_window(source_hwnd, window_title):
+            if self._is_ignored_source_window(source_hwnd, window_title, source_pid):
                 return
 
             text, files = self._get_clipboard_payload_with_retry()
@@ -171,18 +173,30 @@ else:
             now = time.monotonic()
             if (
                 self._last_clipboard_event_time is not None
-                and self._last_clipboard_event_hwnd == source_hwnd
+                and self._is_same_source(
+                    self._last_clipboard_event_hwnd,
+                    self._last_clipboard_event_pid,
+                    source_hwnd,
+                    source_pid,
+                )
                 and (now - self._last_clipboard_event_time) <= CLIPBOARD_DEBOUNCE_SEC
             ):
                 self._last_clipboard_event_time = now
                 self._last_clipboard_event_hwnd = source_hwnd
+                self._last_clipboard_event_pid = source_pid
                 return
 
             self._last_clipboard_event_time = now
             self._last_clipboard_event_hwnd = source_hwnd
+            self._last_clipboard_event_pid = source_pid
             if (
                 self._last_copy_time is not None
-                and self._last_copy_hwnd == source_hwnd
+                and self._is_same_source(
+                    self._last_copy_hwnd,
+                    self._last_copy_pid,
+                    source_hwnd,
+                    source_pid,
+                )
                 and (now - self._last_copy_time) <= DOUBLE_COPY_WINDOW_SEC
             ):
                 if self._last_trigger_time is not None and (
@@ -203,12 +217,27 @@ else:
 
             self._last_copy_time = now
             self._last_copy_hwnd = source_hwnd
+            self._last_copy_pid = source_pid
 
         def _reset_last_copy(self) -> None:
             self._last_copy_time = None
             self._last_copy_hwnd = None
+            self._last_copy_pid = None
 
-        def _get_foreground_window_info(self) -> tuple[Optional[int], Optional[str]]:
+        def _is_same_source(
+            self,
+            hwnd_a: Optional[int],
+            pid_a: Optional[int],
+            hwnd_b: Optional[int],
+            pid_b: Optional[int],
+        ) -> bool:
+            if hwnd_a is not None and hwnd_b is not None and hwnd_a == hwnd_b:
+                return True
+            if pid_a is not None and pid_b is not None and pid_a == pid_b:
+                return True
+            return False
+
+        def _get_foreground_window_info(self) -> tuple[Optional[int], Optional[str], Optional[int]]:
             _user32.GetForegroundWindow.restype = ctypes.wintypes.HWND
             _user32.GetWindowTextW.argtypes = [
                 ctypes.wintypes.HWND,
@@ -217,23 +246,6 @@ else:
             ]
             _user32.GetWindowTextLengthW.argtypes = [ctypes.wintypes.HWND]
             _user32.GetWindowTextLengthW.restype = ctypes.c_int
-
-            try:
-                hwnd = _user32.GetForegroundWindow()
-                if not hwnd:
-                    return None, None
-                length = _user32.GetWindowTextLengthW(hwnd)
-                title = None
-                if length > 0:
-                    buffer = ctypes.create_unicode_buffer(length + 1)
-                    _user32.GetWindowTextW(hwnd, buffer, length + 1)
-                    if buffer.value:
-                        title = buffer.value
-                return int(hwnd), title
-            except Exception:
-                return None, None
-
-        def _is_ignored_source_window(self, hwnd: int, title: Optional[str]) -> bool:
             _user32.GetWindowThreadProcessId.argtypes = [
                 ctypes.wintypes.HWND,
                 ctypes.POINTER(ctypes.wintypes.DWORD),
@@ -241,9 +253,43 @@ else:
             _user32.GetWindowThreadProcessId.restype = ctypes.wintypes.DWORD
 
             try:
-                pid = ctypes.wintypes.DWORD()
-                _user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-                if pid.value == os.getpid():
+                hwnd = _user32.GetForegroundWindow()
+                if not hwnd:
+                    return None, None, None
+                length = _user32.GetWindowTextLengthW(hwnd)
+                title = None
+                if length > 0:
+                    buffer = ctypes.create_unicode_buffer(length + 1)
+                    _user32.GetWindowTextW(hwnd, buffer, length + 1)
+                    if buffer.value:
+                        title = buffer.value
+                pid_value = None
+                try:
+                    pid = ctypes.wintypes.DWORD()
+                    _user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+                    if pid.value:
+                        pid_value = int(pid.value)
+                except Exception:
+                    pid_value = None
+                return int(hwnd), title, pid_value
+            except Exception:
+                return None, None, None
+
+        def _is_ignored_source_window(
+            self, hwnd: int, title: Optional[str], pid: Optional[int] = None
+        ) -> bool:
+            _user32.GetWindowThreadProcessId.argtypes = [
+                ctypes.wintypes.HWND,
+                ctypes.POINTER(ctypes.wintypes.DWORD),
+            ]
+            _user32.GetWindowThreadProcessId.restype = ctypes.wintypes.DWORD
+
+            try:
+                if pid is None:
+                    pid_value = ctypes.wintypes.DWORD()
+                    _user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid_value))
+                    pid = int(pid_value.value) if pid_value.value else None
+                if pid == os.getpid():
                     return True
             except Exception:
                 pass

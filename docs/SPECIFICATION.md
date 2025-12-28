@@ -76,7 +76,7 @@ M365 Copilotを翻訳エンジンとして使用し、テキストとドキュ�
 
 | Layer | Technology |
 |-------|------------|
-| UI | NiceGUI (browser mode) / pywebview (optional native) (Material Design 3 / Expressive) |
+| UI | NiceGUI (browser mode, default) / pywebview (optional native; disabled in distribution) (Material Design 3 / Expressive) |
 | Backend | FastAPI (via NiceGUI) |
 | Translation | M365 Copilot (Playwright + Edge) |
 | File Processing | openpyxl, python-docx, python-pptx, PyMuPDF |
@@ -1305,6 +1305,8 @@ class AppSettings:
     ocr_device: str = "auto"             # "auto", "cpu", "cuda"
 
     # Browser Display Mode
+    # NOTE: browser_display_mode applies to Copilot Edge.
+    # In browser mode (default), the UI itself is Edge --app and window sync is disabled.
     browser_display_mode: str = "side_panel"   # "side_panel", "minimized", "foreground"
 
     # Auto Update
@@ -1334,7 +1336,7 @@ YakuLingo.exe    # Rust製ネイティブランチャー
 2. PYWEBVIEW_GUI=edgechromium環境変数を設定（ランタイムインストールダイアログ回避）
 3. ロギング設定（コンソール出力）
 4. NiceGUI importを遅延実行（ネイティブモードでの二重初期化を回避）
-5. pywebviewでネイティブウィンドウを起動
+5. browser mode: Edge --appでUI起動 / native mode: pywebviewでネイティブウィンドウを起動
 6. ローディングスクリーンを即座に表示（await client.connected()後にUI構築）
 7. NiceGUIサーバー起動（port=8765, reconnect_timeout=30.0）
 8. Copilot接続開始（バックグラウンド、PlaywrightThreadExecutorで専用スレッド実行）

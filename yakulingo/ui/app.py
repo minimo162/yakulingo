@@ -2268,10 +2268,11 @@ class YakuLingoApp:
             except Exception as e:
                 logger.debug("Windows API restore failed: %s", e)
 
-            # Start window synchronization for side_panel mode
-            # This makes app and Edge window act as a "set" - when user clicks on
-            # YakuLingo in taskbar, Edge window also comes to front automatically
-            if self._settings and self._get_effective_browser_display_mode() == "side_panel":
+            # Start window synchronization for side_panel mode (native only).
+            # Browser mode uses Edge for the UI itself, so syncing would minimize the UI.
+            if self._native_mode_enabled is False:
+                logger.debug("Skipping window sync (browser mode)")
+            elif self._settings and self._get_effective_browser_display_mode() == "side_panel":
                 try:
                     if self._copilot:
                         self._copilot.start_window_sync()

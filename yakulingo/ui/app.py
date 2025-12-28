@@ -6503,6 +6503,25 @@ def run_app(
             return
         if getattr(yakulingo_app, "_shutdown_requested", False):
             return
+        if native:
+            try:
+                if nicegui_app and hasattr(nicegui_app, 'native') and nicegui_app.native.main_window:
+                    window = nicegui_app.native.main_window
+                    if hasattr(window, 'restore'):
+                        window.restore()
+                    if hasattr(window, 'show'):
+                        window.show()
+                    window.on_top = True
+                    time.sleep(0.05)
+                    window.on_top = False
+            except Exception as e:
+                logger.debug("Failed to show native UI window: %s", e)
+            if sys.platform == "win32":
+                try:
+                    yakulingo_app._restore_app_window_win32()
+                except Exception as e:
+                    logger.debug("Failed to restore native UI window: %s", e)
+            return
 
         if browser_opened:
             try:

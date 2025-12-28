@@ -45,6 +45,7 @@ else:
     # Timing constants
     DOUBLE_COPY_WINDOW_SEC = 0.7  # Max time between copies to trigger (700ms)
     DOUBLE_COPY_COOLDOWN_SEC = 0.7  # Prevent repeat triggers on rapid multi-copy
+    DOUBLE_COPY_MIN_GAP_SEC = 0.2  # Require a small gap to avoid duplicate format churn
     CLIPBOARD_DEBOUNCE_SEC = 0.15  # Ignore rapid clipboard churn from a single copy
     CLIPBOARD_POLL_INTERVAL_SEC = 0.05  # Clipboard sequence polling interval
     CLIPBOARD_RETRY_COUNT = 10  # Retry count for clipboard access (increased)
@@ -181,10 +182,15 @@ else:
                 )
                 and (now - self._last_clipboard_event_time) <= CLIPBOARD_DEBOUNCE_SEC
             ):
-                self._last_clipboard_event_time = now
-                self._last_clipboard_event_hwnd = source_hwnd
-                self._last_clipboard_event_pid = source_pid
-                return
+                # Allow a second copy if enough time passed since the last accepted copy.
+                if (
+                    self._last_copy_time is None
+                    or (now - self._last_copy_time) < DOUBLE_COPY_MIN_GAP_SEC
+                ):
+                    self._last_clipboard_event_time = now
+                    self._last_clipboard_event_hwnd = source_hwnd
+                    self._last_clipboard_event_pid = source_pid
+                    return
 
             self._last_clipboard_event_time = now
             self._last_clipboard_event_hwnd = source_hwnd

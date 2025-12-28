@@ -1243,6 +1243,21 @@ function Invoke-Setup {
                 Write-Host "      Removed updates directory" -ForegroundColor Gray
             }
         }
+
+        # Remove app-level __pycache__ to avoid stale bytecode after updates.
+        $appCacheRoot = Join-Path $SetupPath "yakulingo"
+        if (Test-Path $appCacheRoot) {
+            $cacheDirs = Get-ChildItem -Path $appCacheRoot -Directory -Filter "__pycache__" -Recurse -Force -ErrorAction SilentlyContinue
+            foreach ($cache in $cacheDirs) {
+                try {
+                    Remove-Item -Path $cache.FullName -Recurse -Force -ErrorAction SilentlyContinue
+                } catch { }
+            }
+            "Removed __pycache__ under yakulingo" | Out-File -FilePath $extractLogPath -Append -Encoding UTF8
+            if (-not $GuiMode) {
+                Write-Host "      Removed app __pycache__" -ForegroundColor Gray
+            }
+        }
     } catch {
         # Ignore cleanup errors
     }

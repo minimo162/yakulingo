@@ -1685,6 +1685,28 @@ try {
                     (Join-Path $frameworkDir "System.Windows.Forms.dll"),
                     (Join-Path $frameworkDir "Microsoft.CSharp.dll")
                 )
+
+                # Extensibility.dll (Office COM Add-in interface definitions)
+                # Prefer loading from GAC via reflection; fallback to common GAC locations.
+                try {
+                    $extAsm = [System.Reflection.Assembly]::LoadWithPartialName("Extensibility")
+                    if ($extAsm -and $extAsm.Location -and (Test-Path $extAsm.Location -PathType Leaf)) {
+                        $refs += $extAsm.Location
+                    } else {
+                        $gacCandidates = @(
+                            (Join-Path $env:WINDIR "assembly\GAC\Extensibility\*\Extensibility.dll"),
+                            (Join-Path $env:WINDIR "Microsoft.NET\assembly\GAC_MSIL\Extensibility\*\Extensibility.dll")
+                        )
+                        foreach ($pattern in $gacCandidates) {
+                            $match = Get-ChildItem -Path $pattern -ErrorAction SilentlyContinue | Select-Object -First 1
+                            if ($match -and (Test-Path $match.FullName -PathType Leaf)) {
+                                $refs += $match.FullName
+                                break
+                            }
+                        }
+                    }
+                } catch { }
+
                 $refArgs = @()
                 foreach ($r in $refs) {
                     if (Test-Path $r -PathType Leaf) {
@@ -1743,12 +1765,14 @@ try {
                 New-Item -Path $progClsidKey -Force | Out-Null
                 Set-ItemProperty -Path $progClsidKey -Name "(default)" -Value $clsid -Force | Out-Null
 
-                # Office add-in registration (M365/Office 2016+ uses 16.0)
-                $officeVersion = "16.0"
+                # Office add-in registration
+                # NOTE: Office reads COM add-ins from the versionless path:
+                #   HKCU\Software\Microsoft\Office\<App>\Addins\<ProgId>
+                # (Some older docs mention versioned paths, but Word/Excel/PowerPoint/Outlook use versionless in practice.)
                 $officeApps = @("Outlook", "Word", "Excel", "PowerPoint")
                 foreach ($app in $officeApps) {
                     try {
-                        $addinKey = "HKCU:\Software\Microsoft\Office\$officeVersion\$app\Addins\$progId"
+                        $addinKey = "HKCU:\Software\Microsoft\Office\$app\Addins\$progId"
                         New-Item -Path $addinKey -Force | Out-Null
                         New-ItemProperty -Path $addinKey -Name "FriendlyName" -Value $script:AppName -PropertyType String -Force | Out-Null
                         New-ItemProperty -Path $addinKey -Name "Description" -Value "Send selected text to YakuLingo" -PropertyType String -Force | Out-Null

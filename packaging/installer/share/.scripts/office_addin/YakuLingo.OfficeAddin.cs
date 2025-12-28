@@ -1,13 +1,13 @@
 using System;
 using System.Diagnostics;
 using System.Net.Http;
-using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Microsoft.Win32;
+using Extensibility;
 
 [assembly: ComVisible(true)]
 [assembly: Guid("5F5C7D1D-2F4D-4A2E-BBBA-3B4E7844F5E8")]
@@ -17,42 +17,6 @@ using Microsoft.Win32;
 
 namespace YakuLingo.OfficeAddin
 {
-    [ComVisible(true)]
-    [Guid("B65AD801-ABAF-11D0-BB8B-00A0C90F2744")]
-    [InterfaceType(ComInterfaceType.InterfaceIsIDispatch)]
-    public interface IDTExtensibility2
-    {
-        [DispId(1)]
-        void OnConnection(object Application, ext_ConnectMode ConnectMode, object AddInInst, ref Array custom);
-
-        [DispId(2)]
-        void OnDisconnection(ext_DisconnectMode RemoveMode, ref Array custom);
-
-        [DispId(3)]
-        void OnAddInsUpdate(ref Array custom);
-
-        [DispId(4)]
-        void OnStartupComplete(ref Array custom);
-
-        [DispId(5)]
-        void OnBeginShutdown(ref Array custom);
-    }
-
-    public enum ext_ConnectMode
-    {
-        ext_cm_AfterStartup = 0,
-        ext_cm_Startup = 1,
-        ext_cm_External = 2,
-        ext_cm_CommandLine = 3,
-        ext_cm_Solution = 4,
-    }
-
-    public enum ext_DisconnectMode
-    {
-        ext_dm_HostShutdown = 0,
-        ext_dm_UserClosed = 1,
-    }
-
     [ComVisible(true)]
     [Guid("000C0396-0000-0000-C000-000000000046")]
     [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
@@ -510,4 +474,3 @@ namespace YakuLingo.OfficeAddin
         }
     }
 }
-

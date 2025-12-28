@@ -29,6 +29,56 @@ if bundled_playwright_browsers_dir.exists():
     os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(bundled_playwright_browsers_dir))
 
 
+def _relaunch_with_pythonw_if_needed() -> None:
+    """Relaunch with pythonw.exe on Windows to avoid a console window."""
+    if sys.platform != "win32":
+        return
+    if os.environ.get("YAKULINGO_ALLOW_CONSOLE") == "1":
+        return
+    if os.environ.get("YAKULINGO_RELAUNCHED") == "1":
+        return
+
+    exe_path = Path(sys.executable)
+    if exe_path.name.lower() != "python.exe":
+        return
+
+    try:
+        import ctypes
+
+        hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+        if not hwnd:
+            return
+        if ctypes.windll.user32.IsWindowVisible(hwnd) == 0:
+            return
+    except Exception:
+        # If console detection fails, proceed with relaunch attempt.
+        pass
+
+    pythonw_path = exe_path.with_name("pythonw.exe")
+    if not pythonw_path.exists():
+        return
+
+    args = [str(pythonw_path), str(Path(__file__))] + sys.argv[1:]
+    env = os.environ.copy()
+    env["YAKULINGO_RELAUNCHED"] = "1"
+
+    try:
+        import subprocess
+
+        subprocess.Popen(
+            args,
+            env=env,
+            cwd=str(Path.cwd()),
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        raise SystemExit(0)
+    except SystemExit:
+        raise
+    except Exception:
+        # If relaunch fails, continue with current process (console may appear).
+        return
+
+
 def setup_logging():
     """Configure logging to console and file for debugging.
 
@@ -151,6 +201,8 @@ def main():
     import multiprocessing
     import os
     import time
+
+    _relaunch_with_pythonw_if_needed()
 
     _t_start = time.perf_counter()
 

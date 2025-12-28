@@ -7364,6 +7364,15 @@ def run_app(
         if native and sys.platform == 'win32':
             _start_early_positioning_thread()
 
+        if not native:
+            no_auto_open = os.environ.get("YAKULINGO_NO_AUTO_OPEN", "")
+            if no_auto_open.strip().lower() not in ("1", "true", "yes"):
+                try:
+                    asyncio.create_task(asyncio.to_thread(_open_browser_window))
+                    logger.info("Auto-opening UI window (browser mode)")
+                except Exception as e:
+                    logger.debug("Failed to auto-open UI window: %s", e)
+
     @ui.page('/')
     async def main_page(client: nicegui_Client):
         # Save client reference for async handlers (context.client not available in async tasks)
@@ -7936,7 +7945,14 @@ body.yakulingo-drag-active .global-drop-indicator {
         # Edge startup (early connection) may steal focus, so we restore it here
         asyncio.create_task(yakulingo_app._ensure_app_window_visible())
 
-        logger.info("[TIMING] UI displayed - total from run_app: %.2fs", _time_module.perf_counter() - _t0)
+        _t_ui_displayed = _time_module.perf_counter()
+        elapsed_from_start = _t_ui_displayed - _t0
+        elapsed_from_client = _t_ui_displayed - _t_conn
+        logger.info(
+            "[TIMING] UI displayed - after client connect: %.2fs (run_app +%.2fs)",
+            elapsed_from_client,
+            elapsed_from_start,
+        )
 
         # Log layout dimensions for debugging (after a short delay to ensure DOM is ready)
         async def log_layout_after_delay():

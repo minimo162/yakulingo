@@ -6667,8 +6667,8 @@ def run_app(
         from fastapi import HTTPException
     except Exception as e:
         logger.debug("FastAPI upload API unavailable; global drop upload disabled: %s", e)
-        else:
-            @nicegui_app.post('/api/global-drop')
+    else:
+        @nicegui_app.post('/api/global-drop')
         async def global_drop_upload(request: StarletteRequest):  # type: ignore[misc]
             from yakulingo.ui.components.file_panel import (
                 MAX_DROP_FILE_SIZE_BYTES,

@@ -39,11 +39,14 @@ if not _IS_WINDOWS:
         raise OSError("HotkeyManager is only available on Windows platforms.")
 else:
     # Clipboard format
+    CF_TEXT = 1
     CF_UNICODETEXT = 13
     CF_HDROP = 15
 
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+
     # Timing constants
-    DOUBLE_COPY_WINDOW_SEC = 0.7  # Max time between copies to trigger (700ms)
+    DOUBLE_COPY_WINDOW_SEC = 1.0  # Max time between copies to trigger
     DOUBLE_COPY_COOLDOWN_SEC = 0.7  # Prevent repeat triggers on rapid multi-copy
     DOUBLE_COPY_MIN_GAP_SEC = 0.2  # Require a small gap to avoid duplicate format churn
     CLIPBOARD_DEBOUNCE_SEC = 0.15  # Ignore rapid clipboard churn from a single copy
@@ -308,6 +311,95 @@ else:
                     return True
             return False
 
+        def _describe_clipboard_owner(self) -> str:
+            """Return a best-effort description of the process holding the clipboard."""
+            _user32.GetOpenClipboardWindow.restype = ctypes.wintypes.HWND
+            _user32.GetWindowTextW.argtypes = [
+                ctypes.wintypes.HWND,
+                ctypes.wintypes.LPWSTR,
+                ctypes.c_int,
+            ]
+            _user32.GetWindowTextLengthW.argtypes = [ctypes.wintypes.HWND]
+            _user32.GetWindowTextLengthW.restype = ctypes.c_int
+            _user32.GetWindowThreadProcessId.argtypes = [
+                ctypes.wintypes.HWND,
+                ctypes.POINTER(ctypes.wintypes.DWORD),
+            ]
+            _user32.GetWindowThreadProcessId.restype = ctypes.wintypes.DWORD
+
+            _kernel32.OpenProcess.argtypes = [
+                ctypes.wintypes.DWORD,
+                ctypes.wintypes.BOOL,
+                ctypes.wintypes.DWORD,
+            ]
+            _kernel32.OpenProcess.restype = ctypes.wintypes.HANDLE
+            _kernel32.QueryFullProcessImageNameW.argtypes = [
+                ctypes.wintypes.HANDLE,
+                ctypes.wintypes.DWORD,
+                ctypes.wintypes.LPWSTR,
+                ctypes.POINTER(ctypes.wintypes.DWORD),
+            ]
+            _kernel32.QueryFullProcessImageNameW.restype = ctypes.wintypes.BOOL
+            _kernel32.CloseHandle.argtypes = [ctypes.wintypes.HANDLE]
+            _kernel32.CloseHandle.restype = ctypes.wintypes.BOOL
+
+            try:
+                hwnd = _user32.GetOpenClipboardWindow()
+                if not hwnd:
+                    return "unknown"
+
+                title = None
+                length = _user32.GetWindowTextLengthW(hwnd)
+                if length > 0:
+                    buffer = ctypes.create_unicode_buffer(length + 1)
+                    _user32.GetWindowTextW(hwnd, buffer, length + 1)
+                    if buffer.value:
+                        title = buffer.value
+
+                pid_value = None
+                pid = ctypes.wintypes.DWORD()
+                _user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+                if pid.value:
+                    pid_value = int(pid.value)
+
+                process_path = None
+                if pid_value:
+                    handle = _kernel32.OpenProcess(
+                        PROCESS_QUERY_LIMITED_INFORMATION,
+                        False,
+                        pid_value,
+                    )
+                    if handle:
+                        try:
+                            size = ctypes.wintypes.DWORD(260)
+                            buffer = ctypes.create_unicode_buffer(size.value)
+                            if _kernel32.QueryFullProcessImageNameW(
+                                handle, 0, buffer, ctypes.byref(size)
+                            ):
+                                process_path = buffer.value
+                        finally:
+                            _kernel32.CloseHandle(handle)
+
+                parts = [f"hwnd=0x{int(hwnd):x}"]
+                if pid_value is not None:
+                    parts.append(f"pid={pid_value}")
+                if title:
+                    parts.append(f"title={title}")
+                if process_path:
+                    parts.append(f"path={process_path}")
+                return " ".join(parts)
+            except Exception:
+                return "unknown"
+
+        def _log_clipboard_open_failure(self, error_code: int, context: str) -> None:
+            owner = self._describe_clipboard_owner()
+            logger.warning(
+                "Failed to open clipboard (%s, error: %s, owner: %s)",
+                context,
+                error_code,
+                owner,
+            )
+
         def _get_clipboard_text_with_retry(self) -> Optional[str]:
             """Get text from clipboard with retry on failure."""
             for attempt in range(CLIPBOARD_RETRY_COUNT):
@@ -377,15 +469,21 @@ else:
 
             if not _user32.OpenClipboard(None):
                 error_code = ctypes.get_last_error()
-                logger.warning(f"Failed to open clipboard (error: {error_code})")
+                self._log_clipboard_open_failure(error_code, "text")
                 return None
 
             try:
-                if not _user32.IsClipboardFormatAvailable(CF_UNICODETEXT):
-                    logger.debug("No unicode text in clipboard")
+                has_unicode = bool(_user32.IsClipboardFormatAvailable(CF_UNICODETEXT))
+                has_ansi = bool(_user32.IsClipboardFormatAvailable(CF_TEXT))
+                if not has_unicode and not has_ansi:
+                    logger.debug("No unicode/ansi text in clipboard")
                     return None
 
-                handle = _user32.GetClipboardData(CF_UNICODETEXT)
+                if has_unicode:
+                    handle = _user32.GetClipboardData(CF_UNICODETEXT)
+                else:
+                    logger.debug("No unicode text in clipboard; falling back to CF_TEXT")
+                    handle = _user32.GetClipboardData(CF_TEXT)
                 if not handle:
                     error_code = ctypes.get_last_error()
                     logger.debug(f"GetClipboardData returned null (error: {error_code})")
@@ -405,15 +503,19 @@ else:
                         logger.debug("GlobalSize returned 0")
                         return None
 
-                    # Calculate max characters (size is in bytes, wchar is 2 bytes)
-                    max_chars = size // 2
-
-                    # Read as Unicode string with size limit for safety
                     try:
-                        text = ctypes.wstring_at(ptr, max_chars)
-                        # Remove null terminator if present
-                        if text and '\x00' in text:
-                            text = text.split('\x00')[0]
+                        if has_unicode:
+                            # Calculate max characters (size is in bytes, wchar is 2 bytes)
+                            max_chars = size // 2
+                            text = ctypes.wstring_at(ptr, max_chars)
+                            if text and '\x00' in text:
+                                text = text.split('\x00')[0]
+                            return text if text else None
+
+                        raw = ctypes.string_at(ptr, size)
+                        if raw and b"\x00" in raw:
+                            raw = raw.split(b"\x00")[0]
+                        text = raw.decode("mbcs", errors="replace")
                         return text if text else None
                     except OSError as e:
                         logger.warning(f"Failed to read clipboard string: {e}")
@@ -445,7 +547,7 @@ else:
 
             if not _user32.OpenClipboard(None):
                 error_code = ctypes.get_last_error()
-                logger.warning(f"Failed to open clipboard (error: {error_code})")
+                self._log_clipboard_open_failure(error_code, "files")
                 return []
 
             try:

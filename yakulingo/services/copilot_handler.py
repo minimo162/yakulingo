@@ -1171,6 +1171,10 @@ class CopilotHandler:
         # Suppress foreground sync briefly during minimize to avoid unwanted restore
         self._MINIMIZE_SYNC_SUPPRESS_SECONDS = 0.6
         self._minimize_sync_until: float = 0.0
+        # Temporary suppression for hotkey work-priority layout
+        self._suppress_window_sync_until: float = 0.0
+        self._suppress_display_mode_until: float = 0.0
+        self._hotkey_layout_active: bool = False
         # Grace period to keep YakuLingo focused after taskbar restore (seconds)
         self._FOREGROUND_GRACE_PERIOD = 0.5
         # Warning frequency control: only show "window not found" warning once
@@ -1228,6 +1232,20 @@ class CopilotHandler:
             return self._find_edge_window_handle() is not None
         except Exception:
             return self.is_edge_process_alive()
+
+    def suppress_side_panel_behavior(self, duration_sec: float = 3.0) -> None:
+        """Temporarily suppress side_panel window sync/positioning."""
+        until = time.monotonic() + max(duration_sec, 0.0)
+        if until > self._suppress_window_sync_until:
+            self._suppress_window_sync_until = until
+        if until > self._suppress_display_mode_until:
+            self._suppress_display_mode_until = until
+        logger.debug("Side panel suppression active for %.1fs", duration_sec)
+
+    def set_hotkey_layout_active(self, active: bool) -> None:
+        """Disable side_panel window management while a hotkey layout is active."""
+        self._hotkey_layout_active = active
+        logger.debug("Hotkey layout active: %s", active)
 
     def _apply_retry_backoff(self, attempt: int, max_retries: int) -> None:
         """Apply exponential backoff before retry.
@@ -4595,6 +4613,12 @@ class CopilotHandler:
         """
         if sys.platform == "win32":
             mode = self._get_browser_display_mode()
+            if self._hotkey_layout_active:
+                logger.debug("Side panel display mode suppressed due to hotkey layout")
+                mode = "minimized"
+            elif time.monotonic() < self._suppress_display_mode_until:
+                logger.debug("Side panel display mode suppressed for hotkey layout")
+                mode = "minimized"
 
             if mode == "minimized":
                 # Only minimize in minimized mode
@@ -8575,6 +8599,10 @@ class CopilotHandler:
             EVENT_SYSTEM_MINIMIZEEND = 0x0017
 
             current_time = time.monotonic()
+            if self._hotkey_layout_active:
+                return
+            if current_time < self._suppress_window_sync_until:
+                return
 
             # Get window title (best-effort; may be empty for some windows)
             title_length = user32.GetWindowTextLengthW(hwnd)

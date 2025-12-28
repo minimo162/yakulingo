@@ -16,7 +16,7 @@
   "ocr_batch_size": 5,
   "ocr_dpi": 300,
   "ocr_device": "auto",
-  "browser_display_mode": "side_panel",
+  "browser_display_mode": "minimized",
   "auto_update_enabled": true,
   "auto_update_check_interval": 0,
   "github_repo_owner": "minimo162",

@@ -46,13 +46,18 @@ else:
     PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 
     # Timing constants
-    DOUBLE_COPY_WINDOW_SEC = 1.0  # Max time between copies to trigger
+    DOUBLE_COPY_WINDOW_SEC = 1.3  # Max time between copies to trigger
     DOUBLE_COPY_COOLDOWN_SEC = 0.7  # Prevent repeat triggers on rapid multi-copy
-    DOUBLE_COPY_MIN_GAP_SEC = 0.2  # Require a small gap to avoid duplicate format churn
-    CLIPBOARD_DEBOUNCE_SEC = 0.15  # Ignore rapid clipboard churn from a single copy
+    DOUBLE_COPY_MIN_GAP_SEC = 0.02  # Minimum gap to treat as a new copy event
+    CLIPBOARD_DEBOUNCE_SEC = 0.08  # Ignore rapid clipboard churn from a single copy
+    CLIPBOARD_TRIGGER_READ_DELAY_SEC = 0.08  # Let clipboard settle before reading on trigger
     CLIPBOARD_POLL_INTERVAL_SEC = 0.05  # Clipboard sequence polling interval
     CLIPBOARD_RETRY_COUNT = 10  # Retry count for clipboard access (increased)
     CLIPBOARD_RETRY_DELAY_SEC = 0.1  # Delay between retries (increased)
+    CLIPBOARD_CACHE_RETRY_COUNT = 3  # Quick attempts to cache first copy payload
+    CLIPBOARD_CACHE_RETRY_DELAY_SEC = 0.05  # Delay between cache retries
+    CLIPBOARD_PENDING_TRIGGER_WINDOW_SEC = 10.0  # Extra window to fetch payload after double copy
+    CLIPBOARD_PENDING_TRIGGER_DELAY_SEC = 0.2  # Delay between pending trigger reads
     IGNORED_WINDOW_TITLE_KEYWORDS = ()
 
 
@@ -88,6 +93,15 @@ else:
             self._last_clipboard_event_time: Optional[float] = None
             self._last_clipboard_event_hwnd: Optional[int] = None
             self._last_clipboard_event_pid: Optional[int] = None
+            self._last_payload_text: Optional[str] = None
+            self._last_payload_files: list[str] = []
+            self._last_payload_time: Optional[float] = None
+            self._last_payload_hwnd: Optional[int] = None
+            self._last_payload_pid: Optional[int] = None
+            self._pending_trigger_until: Optional[float] = None
+            self._pending_trigger_hwnd: Optional[int] = None
+            self._pending_trigger_pid: Optional[int] = None
+            self._pending_trigger_next_attempt: float = 0.0
 
         def set_callback(self, callback: Callable[[str, Optional[int]], None]):
             """
@@ -136,19 +150,29 @@ else:
             self._last_clipboard_seq = self._get_clipboard_sequence_number()
 
             while self._running:
+                with self._lock:
+                    callback = self._callback
+
                 sequence = self._get_clipboard_sequence_number()
                 if sequence is None:
+                    if callback:
+                        self._check_pending_trigger(callback)
                     time.sleep(CLIPBOARD_POLL_INTERVAL_SEC)
                     continue
 
                 if self._last_clipboard_seq is None:
                     self._last_clipboard_seq = sequence
+                    if callback:
+                        self._check_pending_trigger(callback)
                     time.sleep(CLIPBOARD_POLL_INTERVAL_SEC)
                     continue
 
                 if sequence != self._last_clipboard_seq:
                     self._last_clipboard_seq = sequence
                     self._handle_clipboard_update()
+
+                if callback:
+                    self._check_pending_trigger(callback)
 
                 time.sleep(CLIPBOARD_POLL_INTERVAL_SEC)
 
@@ -170,11 +194,25 @@ else:
             if self._is_ignored_source_window(source_hwnd, window_title, source_pid):
                 return
 
-            text, files = self._get_clipboard_payload_with_retry()
-            if not text and not files:
-                return
-
             now = time.monotonic()
+            if self._pending_trigger_until is not None:
+                if self._is_same_source(
+                    self._pending_trigger_hwnd,
+                    self._pending_trigger_pid,
+                    source_hwnd,
+                    source_pid,
+                ):
+                    extended_until = now + CLIPBOARD_PENDING_TRIGGER_WINDOW_SEC
+                    if extended_until > self._pending_trigger_until:
+                        self._pending_trigger_until = extended_until
+                    self._pending_trigger_next_attempt = max(
+                        self._pending_trigger_next_attempt,
+                        now + CLIPBOARD_PENDING_TRIGGER_DELAY_SEC,
+                    )
+                    return
+                logger.debug("Hotkey pending trigger cleared (source changed)")
+                self._clear_pending_trigger()
+
             if (
                 self._last_clipboard_event_time is not None
                 and self._is_same_source(
@@ -185,7 +223,6 @@ else:
                 )
                 and (now - self._last_clipboard_event_time) <= CLIPBOARD_DEBOUNCE_SEC
             ):
-                # Allow a second copy if enough time passed since the last accepted copy.
                 if (
                     self._last_copy_time is None
                     or (now - self._last_copy_time) < DOUBLE_COPY_MIN_GAP_SEC
@@ -194,6 +231,9 @@ else:
                     self._last_clipboard_event_hwnd = source_hwnd
                     self._last_clipboard_event_pid = source_pid
                     return
+                self._last_clipboard_event_time = now
+                self._last_clipboard_event_hwnd = source_hwnd
+                self._last_clipboard_event_pid = source_pid
 
             self._last_clipboard_event_time = now
             self._last_clipboard_event_hwnd = source_hwnd
@@ -214,6 +254,30 @@ else:
                     self._reset_last_copy()
                     return
 
+                if CLIPBOARD_TRIGGER_READ_DELAY_SEC > 0:
+                    time.sleep(CLIPBOARD_TRIGGER_READ_DELAY_SEC)
+
+                text, files = self._get_clipboard_payload_with_retry()
+                if not text and not files:
+                    cached_text, cached_files = self._get_cached_payload(
+                        now,
+                        source_hwnd,
+                        source_pid,
+                    )
+                    if cached_text is not None or cached_files:
+                        payload = "\n".join(cached_files) if cached_files else cached_text
+                        self._last_trigger_time = now
+                        self._reset_last_copy()
+                        try:
+                            callback(payload, source_hwnd)
+                        except TypeError:
+                            callback(payload)
+                        return
+                    self._set_pending_trigger(now, source_hwnd, source_pid)
+                    self._reset_last_copy()
+                    return
+
+                self._cache_payload(text, files, now, source_hwnd, source_pid)
                 self._last_trigger_time = now
                 self._reset_last_copy()
 
@@ -223,6 +287,14 @@ else:
                 except TypeError:
                     callback(payload)
                 return
+
+            text, files = self._get_clipboard_payload_with_retry(
+                retry_count=CLIPBOARD_CACHE_RETRY_COUNT,
+                retry_delay_sec=CLIPBOARD_CACHE_RETRY_DELAY_SEC,
+                log_fail=False,
+            )
+            if text is not None or files:
+                self._cache_payload(text, files, now, source_hwnd, source_pid)
 
             self._last_copy_time = now
             self._last_copy_hwnd = source_hwnd
@@ -413,21 +485,121 @@ else:
             logger.warning("Failed to get clipboard text after all retries")
             return None
 
-        def _get_clipboard_payload_with_retry(self) -> tuple[Optional[str], list[str]]:
+        def _cache_payload(
+            self,
+            text: Optional[str],
+            files: list[str],
+            timestamp: float,
+            source_hwnd: int,
+            source_pid: Optional[int],
+        ) -> None:
+            if text is None and not files:
+                return
+            self._last_payload_text = text
+            self._last_payload_files = files
+            self._last_payload_time = timestamp
+            self._last_payload_hwnd = source_hwnd
+            self._last_payload_pid = source_pid
+
+        def _get_cached_payload(
+            self,
+            now: float,
+            source_hwnd: int,
+            source_pid: Optional[int],
+        ) -> tuple[Optional[str], list[str]]:
+            if self._last_payload_time is None:
+                return None, []
+            if (now - self._last_payload_time) > DOUBLE_COPY_WINDOW_SEC:
+                return None, []
+            if not self._is_same_source(
+                self._last_payload_hwnd,
+                self._last_payload_pid,
+                source_hwnd,
+                source_pid,
+            ):
+                return None, []
+            return self._last_payload_text, self._last_payload_files
+
+        def _set_pending_trigger(
+            self,
+            now: float,
+            source_hwnd: int,
+            source_pid: Optional[int],
+        ) -> None:
+            self._pending_trigger_until = now + CLIPBOARD_PENDING_TRIGGER_WINDOW_SEC
+            self._pending_trigger_hwnd = source_hwnd
+            self._pending_trigger_pid = source_pid
+            self._pending_trigger_next_attempt = now + CLIPBOARD_PENDING_TRIGGER_DELAY_SEC
+            logger.debug(
+                "Hotkey pending trigger armed (window=%.1fs)",
+                CLIPBOARD_PENDING_TRIGGER_WINDOW_SEC,
+            )
+
+        def _clear_pending_trigger(self) -> None:
+            self._pending_trigger_until = None
+            self._pending_trigger_hwnd = None
+            self._pending_trigger_pid = None
+            self._pending_trigger_next_attempt = 0.0
+
+        def _check_pending_trigger(
+            self,
+            callback: Callable[[str, Optional[int]], None],
+        ) -> None:
+            if self._pending_trigger_until is None:
+                return
+
+            now = time.monotonic()
+            if now >= self._pending_trigger_until:
+                logger.debug("Hotkey pending trigger expired")
+                self._clear_pending_trigger()
+                return
+            if now < self._pending_trigger_next_attempt:
+                return
+
+            pending_hwnd = self._pending_trigger_hwnd
+            pending_pid = self._pending_trigger_pid
+            text, files = self._get_clipboard_payload_with_retry(
+                retry_count=1,
+                retry_delay_sec=0.0,
+                log_fail=False,
+            )
+            if text is not None or files:
+                payload = "\n".join(files) if files else text
+                payload_hwnd = pending_hwnd if pending_hwnd is not None else 0
+                self._cache_payload(text, files, now, payload_hwnd, pending_pid)
+                self._last_trigger_time = now
+                self._reset_last_copy()
+                self._clear_pending_trigger()
+                try:
+                    callback(payload, pending_hwnd)
+                except TypeError:
+                    callback(payload)
+                return
+
+            self._pending_trigger_next_attempt = now + CLIPBOARD_PENDING_TRIGGER_DELAY_SEC
+
+        def _get_clipboard_payload_with_retry(
+            self,
+            *,
+            retry_count: int = CLIPBOARD_RETRY_COUNT,
+            retry_delay_sec: float = CLIPBOARD_RETRY_DELAY_SEC,
+            log_fail: bool = True,
+        ) -> tuple[Optional[str], list[str]]:
             """Get either clipboard text or file paths, with retry on failure."""
 
-            for attempt in range(CLIPBOARD_RETRY_COUNT):
+            for attempt in range(retry_count):
                 text = self._get_clipboard_text()
                 files = self._get_clipboard_file_paths()
 
                 if text is not None or files:
                     return text, files
 
-                if attempt < CLIPBOARD_RETRY_COUNT - 1:
-                    time.sleep(CLIPBOARD_RETRY_DELAY_SEC)
-                    logger.debug(f"Clipboard retry {attempt + 1}/{CLIPBOARD_RETRY_COUNT}")
+                if attempt < retry_count - 1:
+                    time.sleep(retry_delay_sec)
+                    logger.debug(f"Clipboard retry {attempt + 1}/{retry_count}")
 
-            logger.warning("Failed to get clipboard content after all retries")
+            if log_fail:
+                logger.warning("Failed to get clipboard content after all retries")
             return None, []
 
         def _get_clipboard_sequence_number(self) -> Optional[int]:

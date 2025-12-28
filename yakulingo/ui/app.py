@@ -538,6 +538,7 @@ class YakuLingoApp:
         # Debug trace identifier for correlating hotkey → translation pipeline
         self._active_translation_trace_id: Optional[str] = None
         self._hotkey_translation_active: bool = False
+        self._last_hotkey_source_hwnd: Optional[int] = None
 
         # Timer lock for progress timer management (prevents orphaned timers)
         self._timer_lock = threading.Lock()
@@ -750,8 +751,28 @@ class YakuLingoApp:
         trace_id = f"hotkey-{uuid.uuid4().hex[:8]}"
         self._active_translation_trace_id = trace_id
         try:
+            if source_hwnd:
+                self._last_hotkey_source_hwnd = source_hwnd
+
             summary = summarize_clipboard_text(text)
             self._log_hotkey_debug_info(trace_id, summary)
+
+            layout_result: bool | None = None
+            if sys.platform == "win32" and open_ui:
+                try:
+                    self.copilot.set_hotkey_layout_active(True)
+                except Exception as e:
+                    logger.debug("Failed to set hotkey layout active: %s", e)
+                try:
+                    layout_result = await asyncio.to_thread(
+                        self._apply_hotkey_work_priority_layout_win32,
+                        source_hwnd,
+                    )
+                except Exception as e:
+                    logger.debug("Failed to apply hotkey work-priority window layout: %s", e)
+                else:
+                    if layout_result is False:
+                        logger.debug("Hotkey UI layout requested but UI window not found")
 
             # Bring the UI window to front when running with an active client (hotkey UX).
             # Hotkey translation still works headlessly when the UI has never been opened.
@@ -773,16 +794,8 @@ class YakuLingoApp:
                     client = None
 
             if client is not None:
-                if sys.platform == "win32" and source_hwnd is not None:
-                    try:
-                        ui_window_found = await asyncio.to_thread(
-                            self._apply_hotkey_work_priority_layout_win32,
-                            source_hwnd,
-                        )
-                    except Exception as e:
-                        logger.debug("Failed to apply hotkey work-priority window layout: %s", e)
-                        ui_window_found = True
-                    if not ui_window_found:
+                if sys.platform == "win32":
+                    if layout_result is False:
                         logger.debug("Hotkey UI client exists but UI window not found; using headless mode")
                         with self._client_lock:
                             if self._client is client:
@@ -810,6 +823,20 @@ class YakuLingoApp:
                         asyncio.create_task(asyncio.to_thread(open_ui_callback))
                     except Exception as e:
                         logger.debug("Failed to request UI open for hotkey: %s", e)
+                    if sys.platform == "win32":
+                        try:
+                            asyncio.create_task(
+                                asyncio.to_thread(
+                                    self._retry_hotkey_layout_win32,
+                                    source_hwnd,
+                                )
+                            )
+                        except Exception as e:
+                            logger.debug("Failed to schedule hotkey layout retry: %s", e)
+                        try:
+                            self.copilot.suppress_side_panel_behavior(4.0)
+                        except Exception as e:
+                            logger.debug("Failed to suppress side panel behavior: %s", e)
 
             is_path_selection, file_paths = self._extract_hotkey_file_paths(text)
             if is_path_selection:
@@ -861,6 +888,11 @@ class YakuLingoApp:
             # Trigger translation
             await self._translate_text()
         finally:
+            if sys.platform == "win32" and open_ui and self._copilot is not None:
+                try:
+                    self._copilot.set_hotkey_layout_active(False)
+                except Exception as e:
+                    logger.debug("Failed to clear hotkey layout active: %s", e)
             self._hotkey_translation_active = False
             if self._active_translation_trace_id == trace_id:
                 self._active_translation_trace_id = None
@@ -1814,7 +1846,7 @@ class YakuLingoApp:
                     logger.debug("Failed to position Edge as side panel: %s", e)
         return win32_success
 
-    def _apply_hotkey_work_priority_layout_win32(self, source_hwnd: int) -> bool:
+    def _apply_hotkey_work_priority_layout_win32(self, source_hwnd: int | None) -> bool:
         """Tile source window left and YakuLingo UI right for hotkey translations.
 
         This aims to keep the user's working app (Word/Excel/PPT/Browser, etc.) active
@@ -1869,14 +1901,57 @@ class YakuLingoApp:
             if not yakulingo_hwnd:
                 return False
 
-            if not source_hwnd or source_hwnd == yakulingo_hwnd:
+            def _is_valid_window(hwnd_value: int | None) -> bool:
+                if not hwnd_value:
+                    return False
+                try:
+                    return bool(user32.IsWindow(wintypes.HWND(hwnd_value)))
+                except Exception:
+                    return False
+
+            original_source_hwnd = source_hwnd
+            resolved_source_hwnd = source_hwnd
+            if (
+                not _is_valid_window(resolved_source_hwnd)
+                or resolved_source_hwnd == yakulingo_hwnd
+            ):
+                cached_hwnd = self._last_hotkey_source_hwnd
+                if _is_valid_window(cached_hwnd) and cached_hwnd != yakulingo_hwnd:
+                    resolved_source_hwnd = cached_hwnd
+                else:
+                    try:
+                        foreground = user32.GetForegroundWindow()
+                    except Exception:
+                        foreground = None
+                    if foreground:
+                        candidate = int(foreground)
+                        if candidate != yakulingo_hwnd and _is_valid_window(candidate):
+                            resolved_source_hwnd = candidate
+
+            if (
+                not _is_valid_window(resolved_source_hwnd)
+                or resolved_source_hwnd == yakulingo_hwnd
+            ):
+                logger.debug(
+                    "Hotkey layout skipped: no valid source window (source=%s)",
+                    source_hwnd,
+                )
                 return True
 
-            try:
-                if not user32.IsWindow(wintypes.HWND(source_hwnd)):
-                    return True
-            except Exception:
-                return True
+            source_hwnd = resolved_source_hwnd
+            if source_hwnd != original_source_hwnd:
+                logger.debug(
+                    "Hotkey layout resolved source hwnd=%s (orig=%s) yakulingo=%s",
+                    f"0x{source_hwnd:x}" if source_hwnd else "None",
+                    f"0x{original_source_hwnd:x}" if original_source_hwnd else "None",
+                    f"0x{yakulingo_hwnd:x}" if yakulingo_hwnd else "None",
+                )
+            else:
+                logger.debug(
+                    "Hotkey layout using source hwnd=%s yakulingo=%s",
+                    f"0x{source_hwnd:x}" if source_hwnd else "None",
+                    f"0x{yakulingo_hwnd:x}" if yakulingo_hwnd else "None",
+                )
 
             # Monitor work area for the monitor containing the source window.
             class RECT(ctypes.Structure):
@@ -1935,6 +2010,16 @@ class YakuLingoApp:
                 target_width = work_width - gap - ui_width
 
             if ui_width <= 0 or target_width <= 0:
+                if work_width > gap:
+                    ui_width = max(int(work_width * 0.45), 1)
+                    target_width = max(work_width - gap - ui_width, 1)
+
+            if ui_width <= 0 or target_width <= 0:
+                logger.debug(
+                    "Hotkey layout skipped: insufficient work area (width=%d, gap=%d)",
+                    work_width,
+                    gap,
+                )
                 return True
 
             target_x = int(work_area.left)
@@ -1961,7 +2046,18 @@ class YakuLingoApp:
             _restore_window(source_hwnd)
             _restore_window(yakulingo_hwnd)
 
-            user32.SetWindowPos(
+            user32.SetWindowPos.argtypes = [
+                wintypes.HWND,
+                wintypes.HWND,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+                wintypes.UINT,
+            ]
+            user32.SetWindowPos.restype = wintypes.BOOL
+
+            result_source = user32.SetWindowPos(
                 wintypes.HWND(source_hwnd),
                 None,
                 target_x,
@@ -1970,7 +2066,13 @@ class YakuLingoApp:
                 work_height,
                 SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW,
             )
-            user32.SetWindowPos(
+            if not result_source:
+                logger.debug(
+                    "Hotkey layout: failed to move source window (error=%d)",
+                    ctypes.get_last_error(),
+                )
+
+            result_app = user32.SetWindowPos(
                 wintypes.HWND(yakulingo_hwnd),
                 wintypes.HWND(HWND_TOP),
                 app_x,
@@ -1979,6 +2081,11 @@ class YakuLingoApp:
                 work_height,
                 SWP_NOACTIVATE | SWP_SHOWWINDOW,
             )
+            if not result_app:
+                logger.debug(
+                    "Hotkey layout: failed to move app window (error=%d)",
+                    ctypes.get_last_error(),
+                )
 
             # Keep focus on the user's working app.
             ASFW_ANY = -1
@@ -1996,6 +2103,26 @@ class YakuLingoApp:
         except Exception as e:
             logger.debug("Hotkey work-priority layout failed: %s", e)
             return True
+
+    def _retry_hotkey_layout_win32(
+        self,
+        source_hwnd: int | None,
+        *,
+        attempts: int = 20,
+        delay_sec: float = 0.15,
+    ) -> None:
+        """Retry hotkey layout until the UI window becomes available."""
+        if sys.platform != "win32":
+            return
+        import time as time_module
+
+        for _ in range(attempts):
+            if self._shutdown_requested:
+                return
+            if self._apply_hotkey_work_priority_layout_win32(source_hwnd):
+                return
+            time_module.sleep(delay_sec)
+        logger.debug("Hotkey layout retry exhausted (attempts=%d)", attempts)
 
     def _bring_window_to_front_win32(self) -> bool:
         """Bring YakuLingo window to front using Windows API.

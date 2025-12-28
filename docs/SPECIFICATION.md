@@ -456,8 +456,11 @@ Windows API (`RegisterHotKey`) で `Ctrl+Alt+J` を登録し、どのアプリ�
     - `CF_UNICODETEXT`（テキスト）: テキスト翻訳 → 訳文をクリップボードへコピー
     - `CF_HDROP`（ファイル）: ファイル翻訳 → 出力ファイルを `CF_HDROP` でクリップボードへコピー（フォルダで貼り付け）
 - ファイル翻訳（ホットキー）の制約
-  - 対応拡張子: `.xlsx` `.xls` `.docx` `.doc` `.pptx` `.ppt` `.pdf` `.txt`
+  - 対応拡張子: `.xlsx` `.xls` `.docx` `.doc` `.pptx` `.ppt` `.pdf` `.txt` `.msg`
   - 一度に処理するファイル数: 最大10
+- 補足（統合）
+  - ローカルAPI `POST /api/hotkey`（localhostのみ）でホットキーと同じ翻訳パイプラインを起動できる
+  - Explorer右クリックメニュー/Office（Outlook/Word/Excel/PowerPoint）リボンの `YakuLingoで翻訳` はこのAPIを利用する
 
 ### 5.2 全体レイアウト
 

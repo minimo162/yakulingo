@@ -23,8 +23,13 @@ Share these steps with your users:
   3. Wait for setup to complete
   4. YakuLingo starts automatically on logon (resident mode)
      (it is also started immediately after setup completes)
-  5. Select text (or select files in Explorer) and press Ctrl+Alt+J to translate (result copied to clipboard)
-     - For file translation, paste (Ctrl+V) into a folder to save the translated file(s)
+  5. Translate (result copied to clipboard)
+     - Text: select text in any app and press Ctrl+Alt+J
+     - Files: select files in Explorer and press Ctrl+Alt+J, then paste (Ctrl+V) into a folder to save translated file(s)
+     - Files (context menu): right-click a supported file and choose "YakuLingoで翻訳"
+       (Windows 11: under "Show more options" / classic context menu)
+     - Office (optional): in Outlook/Word/Excel/PowerPoint, select text then Ribbon "YakuLingo" tab > "YakuLingoで翻訳"
+       (may require restarting Office after installation)
   6. Open UI from the desktop or Start Menu shortcut when needed (closing the UI does not exit the resident service)
   7. To exit: Start Menu > YakuLingo > "YakuLingo 終了"
   Note: YakuLingo installs to %LOCALAPPDATA%\YakuLingo (not OneDrive-synced).
@@ -47,6 +52,7 @@ REQUIREMENTS
 - Windows 10/11
 - PowerShell 5.1+ (included with Windows)
 - Read access to the shared folder
+- Office (optional): Outlook/Word/Excel/PowerPoint (64-bit recommended)
 
 ------------------------------------------------------------
 

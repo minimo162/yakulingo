@@ -25,6 +25,8 @@ YakuLingoが提供する主な機能一覧です。
 - **レイアウト保持**: 原文の体裁を維持したまま出力
 - **対訳出力 & 用語集エクスポート**: 翻訳ペアを対訳ファイル・CSVで保存
 - **参照ファイル対応**: glossary などの用語集やスタイルガイドを利用可能
+- **Office連携（Outlook/Word/Excel/PowerPoint）**: 選択中テキストをワンクリックでYakuLingoへ（配布版 `setup.vbs` インストール時）
+- **Explorer右クリック**: ファイル右クリックから翻訳開始（配布版 `setup.vbs` インストール時）
 - **フォント自動調整**: 翻訳方向に合わせて最適なフォントを選択
 - **翻訳履歴**: ローカル保存＆検索に対応
 - **自動更新**: GitHub Releases から最新バージョンを取得
@@ -76,13 +78,24 @@ PDF翻訳はPP-DocLayout-L（PaddleOCR）によるレイアウト解析を使用
 | 項目 | 要件 |
 |------|------|
 | OS | Windows 10/11 |
-| Python | 3.11以上（[公式サイト](https://www.python.org/downloads/)からインストール） |
+| Python | 3.11以上（[公式サイト](https://www.python.org/downloads/)からインストール、配布版 `setup.vbs` は同梱のため不要） |
 | ブラウザ | Microsoft Edge |
 | M365 Copilot | 有料ライセンス または [無料版](https://m365.cloud.microsoft/chat) へのアクセス |
+| Office（任意） | Outlook/Word/Excel/PowerPoint（64bit推奨、配布版 `setup.vbs` はリボン連携を自動登録） |
 
 > **M365 Copilotについて**: YakuLingoはM365 Copilotを翻訳エンジンとして使用します。[m365.cloud.microsoft/chat](https://m365.cloud.microsoft/chat) にアクセスしてログインできることを事前に確認してください。
 
 ## インストールと起動
+
+### 方法0: 配布版（ネットワーク共有 / zip + setup.vbs）
+
+社内配布（ネットワーク共有）向けの最短手順です。Pythonの個別インストールは不要です。
+
+1. 共有フォルダの `setup.vbs` をダブルクリック
+2. セットアップ完了後、YakuLingo が常駐します（ログオン時にも自動起動）
+3. 必要に応じてUIを開く（デスクトップ/スタートメニューの `YakuLingo`）
+
+> **Note**: インストール先は `%LOCALAPPDATA%\\YakuLingo` です（OneDrive配下は避けます）。
 
 ### 方法1: install_deps.bat を使用（推奨）
 
@@ -229,6 +242,23 @@ YakuLingoを初めて使う際は、以下の手順でM365 Copilotにログイ�
    - 対応拡張子: `.xlsx` `.xls` `.docx` `.pptx` `.pdf` `.txt` `.msg`（最大10ファイルまで）
 
 > **Note**: 5,000文字を超えるテキストはクリップボード翻訳では処理しません。ファイル翻訳を使うか、分割してください。
+
+### Explorer 右クリック（ファイル翻訳）
+
+対応ファイルを右クリックして **「YakuLingoで翻訳」** を選ぶと、翻訳を開始します。
+
+- Windows 11 は「その他のオプション」に表示されます（クラシックメニュー）
+- 完了後、翻訳済みファイルがクリップボードに入るので、フォルダで `Ctrl+V` して保存します
+
+### Office リボン（Outlook/Word/Excel/PowerPoint）
+
+配布版 `setup.vbs` でインストールしている場合、Officeのリボンに `YakuLingo` タブが追加されます。
+
+1. 翻訳したい部分を選択
+2. リボン `YakuLingo` タブ → `YakuLingoで翻訳`
+3. YakuLingo のUIに結果が表示され、訳文がクリップボードにコピーされます
+
+> **Note**: タブが表示されない場合はOfficeを再起動してください。必要に応じて「COMアドイン」の有効/無効も確認してください。
 
 ## 設定
 

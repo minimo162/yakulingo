@@ -65,6 +65,8 @@ share_package/            # 共有フォルダ用パッケージ
 5. 普段の使い方:
    - テキストを選択して `Ctrl+Alt+J` → 訳文がクリップボードにコピー
    - エクスプローラーでファイルを選択して `Ctrl+Alt+J` → 翻訳済みファイルがクリップボードにコピー（フォルダで貼り付け）
+   - エクスプローラーでファイルを右クリック → `YakuLingoで翻訳` → 翻訳を開始（Windows 11 は「その他のオプション」に表示）
+   - Office（Outlook/Word/Excel/PowerPoint）: 選択してリボン `YakuLingo` タブ → `YakuLingoで翻訳`（反映にはOffice再起動が必要な場合あり）
 6. UIを開く: デスクトップ / スタートメニューの `YakuLingo`
 7. 終了する: スタートメニュー > `YakuLingo` > `YakuLingo 終了`
 
@@ -81,6 +83,11 @@ share_package/            # 共有フォルダ用パッケージ
 - スタートメニュー: `YakuLingo\YakuLingo 終了.lnk`（常駐を終了）
 - スタートアップ: `YakuLingo.lnk`（ログオン時に常駐を自動起動）
 
+### 追加される統合（配布版setup.vbs）
+
+- Explorer: 対応ファイルの右クリックに `YakuLingoで翻訳` を追加（Windows 11 は「その他のオプション」側）
+- Office: Outlook/Word/Excel/PowerPoint のリボンに `YakuLingo` タブを追加（選択テキストを送信）
+
 ## セットアップの動作
 
 setup.ps1は以下を実行：
@@ -91,7 +98,9 @@ setup.ps1は以下を実行：
 4. `%LOCALAPPDATA%\YakuLingo` にファイル配置
 5. **ユーザーデータの復元**: `config/user_settings.json` は保持（復元）、`glossary.csv` は差分があればバックアップして更新
 6. ショートカット作成（デスクトップ / スタートメニュー / スタートアップ / 終了）
-7. YakuLingoを起動（常駐 + UIを開く）
+7. Explorer右クリックメニュー登録（対応拡張子に `YakuLingoで翻訳` を追加）
+8. Office COMアドイン登録（Outlook/Word/Excel/PowerPoint、リボン `YakuLingo` タブ）
+9. YakuLingoを起動（常駐 + UIを開く）
 
 ### ユーザーデータの保持/更新処理
 
@@ -186,6 +195,18 @@ powershell -ExecutionPolicy Bypass -File ".scripts\setup.ps1"
 
 - 共有フォルダへの読み取り権限を確認
 
+### Explorerの右クリックメニューが表示されない
+
+- Windows 11 は右クリック後の「その他のオプション」に表示されます（クラシックメニュー）
+- 反映しない場合は、エクスプローラーを再起動（サインアウト/再起動でも可）
+- それでも出ない場合は、もう一度 `setup.vbs` を実行して上書きインストール
+
+### Officeの `YakuLingo` タブが表示されない
+
+- Office（Outlook/Word/Excel/PowerPoint）を再起動
+- `ファイル > オプション > アドイン > COM アドイン` で `YakuLingo` が無効化されていないか確認
+- それでも出ない場合は、もう一度 `setup.vbs` を実行して上書きインストール
+
 ### 自動更新が動作しない
 
 - GitHubへのネットワーク接続を確認
@@ -201,6 +222,14 @@ powershell -ExecutionPolicy Bypass -File ".scripts\setup.ps1"
 3. スタートメニューの `YakuLingo` フォルダ
 4. スタートアップの `YakuLingo.lnk`
 
+### 統合（右クリック/Office）の削除（任意）
+
+右クリックメニューやOfficeアドインも消したい場合は、ユーザーのレジストリ（HKCU）から以下を削除します：
+
+- Explorer右クリック: `Software\\Classes\\SystemFileAssociations\\.<ext>\\shell\\YakuLingoTranslate`（`<ext>`: `.xlsx` `.xls` `.docx` `.doc` `.pptx` `.ppt` `.pdf` `.txt` `.msg`）
+- Officeアドイン: `Software\\Microsoft\\Office\\16.0\\{Outlook|Word|Excel|PowerPoint}\\Addins\\YakuLingo.OfficeAddin`
+- COM登録: `Software\\Classes\\YakuLingo.OfficeAddin`, `Software\\Classes\\CLSID\\{2BD0EC3D-2947-4873-923C-BF4FC30DB4CB}`
+
 ### 翻訳履歴も削除する場合
 
 5. `%USERPROFILE%\.yakulingo`
@@ -213,3 +242,4 @@ powershell -ExecutionPolicy Bypass -File ".scripts\setup.ps1"
 | PowerShell | 5.1以上（Windows標準） |
 | ネットワーク | 共有フォルダへのアクセス |
 | 自動更新 | GitHubへのアクセス（オプション） |
+| Office（任意） | Outlook/Word/Excel/PowerPoint（64bit推奨） |

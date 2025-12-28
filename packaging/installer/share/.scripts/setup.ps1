@@ -815,9 +815,9 @@ function Invoke-Setup {
             }
 
             if ($pythonProcesses) {
-                $msg = "YakuLingo's Python process is still running.`n`nPlease close YakuLingo completely and try again."
+                $msg = "YakuLingo のプロセスがまだ実行中です。`n`n対処:`n- スタートメニュー > YakuLingo > 「YakuLingo 終了」を実行`n- それでも残る場合は、タスクマネージャーで pythonw.exe / python.exe を終了`n`nその後、もう一度 setup.vbs を実行してください。"
                 if ($shutdownRequested) {
-                    $msg = "YakuLingo is still running (auto shutdown timed out).`n`nPlease close YakuLingo completely and try again."
+                    $msg = "YakuLingo が終了できませんでした（自動終了がタイムアウトしました）。`n`n対処:`n- スタートメニュー > YakuLingo > 「YakuLingo 終了」を実行`n- それでも残る場合は、タスクマネージャーで pythonw.exe / python.exe を終了`n`nその後、もう一度 setup.vbs を実行してください。"
                 }
                 throw $msg
             }

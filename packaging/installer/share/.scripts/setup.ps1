@@ -1695,6 +1695,7 @@ try {
                     "/nologo",
                     "/target:library",
                     "/optimize+",
+                    "/codepage:65001",
                     "/platform:anycpu",
                     "/out:$officeAddinDllPath"
                 ) + $refArgs + @($officeAddinSourcePath)

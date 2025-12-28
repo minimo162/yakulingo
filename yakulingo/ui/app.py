@@ -682,11 +682,12 @@ class YakuLingoApp:
                 logger.debug(f"Error stopping hotkey manager: {e}")
             self._hotkey_manager = None
 
-    def _on_hotkey_triggered(self, text: str):
+    def _on_hotkey_triggered(self, text: str, source_hwnd: int | None = None):
         """Handle hotkey trigger - set text and translate in main app.
 
         Args:
             text: Clipboard payload (text or newline-joined file paths)
+            source_hwnd: Foreground window handle at hotkey time (best-effort; Windows only)
         """
         # Double-check: text should always be non-empty (HotkeyManager filters empty)
         if not text:
@@ -709,16 +710,23 @@ class YakuLingoApp:
         try:
             # Use background_tasks to safely schedule async work from another thread
             from nicegui import background_tasks
-            background_tasks.create(self._handle_hotkey_text(text))
+            background_tasks.create(self._handle_hotkey_text(text, source_hwnd=source_hwnd))
         except Exception as e:
             logger.error(f"Failed to schedule hotkey handler: {e}")
 
-    async def _handle_hotkey_text(self, text: str, open_ui: bool = True):
+    async def _handle_hotkey_text(
+        self,
+        text: str,
+        open_ui: bool = True,
+        *,
+        source_hwnd: int | None = None,
+    ):
         """Handle hotkey text in the main event loop.
 
         Args:
             text: Clipboard payload (text or newline-joined file paths)
             open_ui: If True, open UI window when translating text headlessly.
+            source_hwnd: Foreground window handle at hotkey time (best-effort; Windows only)
         """
         # Double-check: Skip if translation started while we were waiting
         if self.state.text_translating:
@@ -758,19 +766,35 @@ class YakuLingoApp:
                     client = None
 
             if client is not None:
-                try:
-                    brought_to_front = await self._bring_window_to_front()
-                except Exception as e:
-                    logger.debug("Failed to bring window to front for hotkey: %s", e)
-                else:
-                    # If the UI window no longer exists (e.g., browser window was closed),
-                    # clear the cached client and fall back to headless translation.
-                    if sys.platform == "win32" and not brought_to_front:
+                if sys.platform == "win32" and source_hwnd is not None:
+                    try:
+                        ui_window_found = await asyncio.to_thread(
+                            self._apply_hotkey_work_priority_layout_win32,
+                            source_hwnd,
+                        )
+                    except Exception as e:
+                        logger.debug("Failed to apply hotkey work-priority window layout: %s", e)
+                        ui_window_found = True
+                    if not ui_window_found:
                         logger.debug("Hotkey UI client exists but UI window not found; using headless mode")
                         with self._client_lock:
                             if self._client is client:
                                 self._client = None
                         client = None
+                else:
+                    try:
+                        brought_to_front = await self._bring_window_to_front(position_edge=True)
+                    except Exception as e:
+                        logger.debug("Failed to bring window to front for hotkey: %s", e)
+                    else:
+                        # If the UI window no longer exists (e.g., browser window was closed),
+                        # clear the cached client and fall back to headless translation.
+                        if sys.platform == "win32" and not brought_to_front:
+                            logger.debug("Hotkey UI client exists but UI window not found; using headless mode")
+                            with self._client_lock:
+                                if self._client is client:
+                                    self._client = None
+                            client = None
 
             is_path_selection, file_paths = self._extract_hotkey_file_paths(text)
             if is_path_selection:
@@ -1676,7 +1700,7 @@ class YakuLingoApp:
         translations = self._parse_numbered_translations(response, expected_count)
         return translations, explanations
 
-    async def _bring_window_to_front(self) -> bool:
+    async def _bring_window_to_front(self, *, position_edge: bool = True) -> bool:
         """Bring the app window to front.
 
         Uses multiple methods to ensure the window is brought to front:
@@ -1708,7 +1732,7 @@ class YakuLingoApp:
         # Method 3: Position Edge as side panel if in side_panel mode
         # This ensures Edge is visible alongside the app when activated via hotkey
         # Note: Don't check _connected - Edge may be running even before Copilot connects
-        if sys.platform == 'win32' and self._settings and self._copilot:
+        if position_edge and sys.platform == 'win32' and self._settings and self._copilot:
             if self._get_effective_browser_display_mode() == "side_panel":
                 try:
                     # bring_to_front=True ensures Edge is visible when activated via hotkey
@@ -1719,6 +1743,189 @@ class YakuLingoApp:
                 except Exception as e:
                     logger.debug("Failed to position Edge as side panel: %s", e)
         return win32_success
+
+    def _apply_hotkey_work_priority_layout_win32(self, source_hwnd: int) -> bool:
+        """Tile source window left and YakuLingo UI right for hotkey translations.
+
+        This aims to keep the user's working app (Word/Excel/PPT/Browser, etc.) active
+        while showing YakuLingo on the right side for quick reference.
+
+        Returns:
+            True if the YakuLingo window was found (layout may still be skipped on failure),
+            False if the YakuLingo window could not be located (cached client likely stale).
+        """
+        if sys.platform != "win32":
+            return False
+
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.WinDLL("user32", use_last_error=True)
+
+            # Resolve YakuLingo window handle first (used to detect stale UI client).
+            yakulingo_hwnd: int | None = None
+            copilot = getattr(self, "_copilot", None)
+            if copilot is not None:
+                try:
+                    yakulingo_hwnd = copilot._find_yakulingo_window_handle(include_hidden=True)
+                except Exception:
+                    yakulingo_hwnd = None
+
+            if not yakulingo_hwnd:
+                hwnd = user32.FindWindowW(None, "YakuLingo")
+                if hwnd:
+                    yakulingo_hwnd = int(hwnd)
+
+            if not yakulingo_hwnd:
+                EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+                found_hwnd: dict[str, int | None] = {"value": None}
+
+                @EnumWindowsProc
+                def _enum_windows(hwnd_enum, _):
+                    length = user32.GetWindowTextLengthW(hwnd_enum)
+                    if length <= 0:
+                        return True
+                    buffer = ctypes.create_unicode_buffer(length + 1)
+                    user32.GetWindowTextW(hwnd_enum, buffer, length + 1)
+                    if "YakuLingo" in buffer.value:
+                        found_hwnd["value"] = int(hwnd_enum)
+                        return False
+                    return True
+
+                user32.EnumWindows(_enum_windows, 0)
+                yakulingo_hwnd = found_hwnd["value"]
+
+            if not yakulingo_hwnd:
+                return False
+
+            if not source_hwnd or source_hwnd == yakulingo_hwnd:
+                return True
+
+            try:
+                if not user32.IsWindow(wintypes.HWND(source_hwnd)):
+                    return True
+            except Exception:
+                return True
+
+            # Monitor work area for the monitor containing the source window.
+            class RECT(ctypes.Structure):
+                _fields_ = [
+                    ("left", ctypes.c_long),
+                    ("top", ctypes.c_long),
+                    ("right", ctypes.c_long),
+                    ("bottom", ctypes.c_long),
+                ]
+
+            class MONITORINFO(ctypes.Structure):
+                _fields_ = [
+                    ("cbSize", wintypes.DWORD),
+                    ("rcMonitor", RECT),
+                    ("rcWork", RECT),
+                    ("dwFlags", wintypes.DWORD),
+                ]
+
+            MONITOR_DEFAULTTONEAREST = 2
+            monitor = user32.MonitorFromWindow(wintypes.HWND(source_hwnd), MONITOR_DEFAULTTONEAREST)
+            if not monitor:
+                monitor = user32.MonitorFromWindow(wintypes.HWND(yakulingo_hwnd), MONITOR_DEFAULTTONEAREST)
+                if not monitor:
+                    return True
+
+            monitor_info = MONITORINFO()
+            monitor_info.cbSize = ctypes.sizeof(MONITORINFO)
+            if not user32.GetMonitorInfoW(monitor, ctypes.byref(monitor_info)):
+                return True
+
+            work_area = monitor_info.rcWork
+            work_width = int(work_area.right - work_area.left)
+            work_height = int(work_area.bottom - work_area.top)
+            if work_width <= 0 or work_height <= 0:
+                return True
+
+            # Layout constants (logical px); scale when process is DPI-aware.
+            gap = 10
+            min_ui_width = 580
+            min_target_width = 580
+            ui_ratio = 0.4  # Work-priority: give more width to the source app
+
+            dpi_scale = _get_windows_dpi_scale()
+            dpi_awareness = _get_process_dpi_awareness()
+            if dpi_awareness in (1, 2) and dpi_scale != 1.0:
+                gap = int(round(gap * dpi_scale))
+                min_ui_width = int(round(min_ui_width * dpi_scale))
+                min_target_width = int(round(min_target_width * dpi_scale))
+
+            ui_width = max(int(work_width * ui_ratio), min_ui_width)
+            ui_width = min(ui_width, max(work_width - gap - min_target_width, 0))
+            target_width = work_width - gap - ui_width
+            if target_width < min_target_width:
+                ui_width = max(work_width - gap - min_target_width, 0)
+                ui_width = max(ui_width, min_ui_width)
+                target_width = work_width - gap - ui_width
+
+            if ui_width <= 0 or target_width <= 0:
+                return True
+
+            target_x = int(work_area.left)
+            target_y = int(work_area.top)
+            app_x = int(work_area.left + target_width + gap)
+            app_y = target_y
+
+            SW_RESTORE = 9
+            SW_SHOW = 5
+            SWP_NOZORDER = 0x0004
+            SWP_NOACTIVATE = 0x0010
+            SWP_SHOWWINDOW = 0x0040
+            HWND_TOP = 0
+
+            def _restore_window(hwnd_to_restore: int) -> None:
+                try:
+                    if user32.IsIconic(wintypes.HWND(hwnd_to_restore)) or user32.IsZoomed(wintypes.HWND(hwnd_to_restore)):
+                        user32.ShowWindow(wintypes.HWND(hwnd_to_restore), SW_RESTORE)
+                    else:
+                        user32.ShowWindow(wintypes.HWND(hwnd_to_restore), SW_SHOW)
+                except Exception:
+                    return
+
+            _restore_window(source_hwnd)
+            _restore_window(yakulingo_hwnd)
+
+            user32.SetWindowPos(
+                wintypes.HWND(source_hwnd),
+                None,
+                target_x,
+                target_y,
+                target_width,
+                work_height,
+                SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW,
+            )
+            user32.SetWindowPos(
+                wintypes.HWND(yakulingo_hwnd),
+                wintypes.HWND(HWND_TOP),
+                app_x,
+                app_y,
+                ui_width,
+                work_height,
+                SWP_NOACTIVATE | SWP_SHOWWINDOW,
+            )
+
+            # Keep focus on the user's working app.
+            ASFW_ANY = -1
+            try:
+                user32.AllowSetForegroundWindow(ASFW_ANY)
+            except Exception:
+                pass
+            try:
+                user32.SetForegroundWindow(wintypes.HWND(source_hwnd))
+            except Exception:
+                pass
+
+            return True
+
+        except Exception as e:
+            logger.debug("Hotkey work-priority layout failed: %s", e)
+            return True
 
     def _bring_window_to_front_win32(self) -> bool:
         """Bring YakuLingo window to front using Windows API.

@@ -145,18 +145,18 @@ else:
         HOTKEY_ID = 1
 
         def __init__(self):
-            self._callback: Optional[Callable[[str], None]] = None
+            self._callback: Optional[Callable[[str, Optional[int]], None]] = None
             self._thread: Optional[threading.Thread] = None
             self._running = False
             self._registered = False
             self._lock = threading.Lock()
 
-        def set_callback(self, callback: Callable[[str], None]):
+        def set_callback(self, callback: Callable[[str, Optional[int]], None]):
             """
             Set callback function to be called when hotkey is triggered.
 
             Args:
-                callback: Function that receives text from clipboard (empty string if none)
+                callback: Function that receives clipboard payload and the source window handle.
             """
             with self._lock:
                 self._callback = callback
@@ -248,6 +248,14 @@ else:
                 logger.warning("No callback set for hotkey")
                 return
 
+            source_hwnd: Optional[int] = None
+            try:
+                hwnd = _user32.GetForegroundWindow()
+                if hwnd:
+                    source_hwnd = int(hwnd)
+            except Exception:
+                source_hwnd = None
+
             try:
                 # Wait for user to release Ctrl key to avoid interference
                 self._wait_for_ctrl_release()
@@ -287,11 +295,18 @@ else:
                     return
 
                 if files:
-                    callback("\n".join(files))
+                    payload = "\n".join(files)
+                    try:
+                        callback(payload, source_hwnd)
+                    except TypeError:
+                        callback(payload)
                     return
 
                 if text:
-                    callback(text)
+                    try:
+                        callback(text, source_hwnd)
+                    except TypeError:
+                        callback(text)
                     return
 
                 logger.info("No clipboard content (text/files) after Ctrl+C, skipping")

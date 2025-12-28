@@ -2478,10 +2478,11 @@ class CopilotHandler:
     def wait_for_gpt_mode_setup(self, timeout_seconds: float = 20.0, poll_interval: float = 0.1) -> bool:
         """Block until GPT mode setup finishes (set or attempts exhausted).
 
-        This is intended for the UI layer to wait until GPT mode switching is no longer
-        in progress before enabling translation actions. It does not guarantee the mode
-        was successfully set; it returns False when setup finished without reaching the
-        target mode (e.g., button not found or target not available).
+        This is intended for the UI layer to wait until GPT mode switching is finished
+        before enabling translation actions. For performance and determinism, this method
+        runs a single blocking attempt on the Playwright thread (up to the given timeout)
+        when no attempt is already in progress. If another attempt is already running,
+        it polls until completion.
 
         Args:
             timeout_seconds: Maximum time to wait for the setup process to finish.
@@ -2493,23 +2494,55 @@ class CopilotHandler:
         if timeout_seconds <= 0:
             return self._gpt_mode_set
 
-        # Start (or join) GPT mode setup.
-        try:
-            self.ensure_gpt_mode()
-        except Exception:
+        if self._gpt_mode_set:
+            return True
+
+        # If another attempt is already running, just wait for it.
+        deadline = time.monotonic() + timeout_seconds
+        with self._gpt_mode_retry_lock:
+            in_progress = self._gpt_mode_attempt_in_progress
+        if in_progress:
+            while time.monotonic() < deadline:
+                if self._gpt_mode_set:
+                    return True
+                with self._gpt_mode_retry_lock:
+                    in_progress = self._gpt_mode_attempt_in_progress
+                if not in_progress:
+                    return self._gpt_mode_set
+                time.sleep(max(poll_interval, 0.05))
             return self._gpt_mode_set
 
-        deadline = time.monotonic() + timeout_seconds
-        while time.monotonic() < deadline:
-            if self._gpt_mode_set:
-                return True
-            with self._gpt_mode_retry_lock:
-                in_progress = self._gpt_mode_attempt_in_progress
-            if not in_progress:
-                return self._gpt_mode_set
-            time.sleep(max(poll_interval, 0.05))
+        # No attempt is running; perform a single blocking attempt with the remaining timeout.
+        wait_timeout_ms = int(max(0.1, min(timeout_seconds, self.GPT_MODE_BUTTON_WAIT_MS / 1000.0)) * 1000)
+        timer = None
+        with self._gpt_mode_retry_lock:
+            timer = self._gpt_mode_retry_timer
+            self._gpt_mode_retry_timer = None
+            self._gpt_mode_attempt_in_progress = True
+            self._gpt_mode_retry_index = 0
 
-        # Timed out; allow caller to proceed (do not block indefinitely).
+        if timer:
+            try:
+                timer.cancel()
+            except Exception:
+                pass
+
+        try:
+            # Add a small cushion on the executor wait to cover non-selector work.
+            execute_timeout = max(10.0, timeout_seconds + 5.0)
+            _playwright_executor.execute(
+                self._ensure_gpt_mode_impl,
+                wait_timeout_ms,
+                timeout=execute_timeout,
+            )
+        except TimeoutError:
+            logger.debug("GPT mode setup timed out (executor)")
+        except Exception as e:
+            logger.debug("GPT mode setup failed (blocking): %s", e)
+        finally:
+            # Clear attempt state even when the call errors/times out.
+            self._clear_gpt_mode_retry_state()
+
         return self._gpt_mode_set
 
     def _clear_gpt_mode_retry_state(self) -> None:
@@ -2829,12 +2862,53 @@ class CopilotHandler:
             self._page.wait_for_selector('[role="menu"]', state='visible', timeout=wait_timeout_ms)
 
             menu = self._page.locator('[role="menu"]:visible').last
+
+            # Fast path: the target may already be in the top-level menu (no "More" submenu).
+            try:
+                direct_target = menu.locator(
+                    f'[role="menuitem"]:has-text("{self.GPT_MODE_TARGET}")'
+                ).first
+                direct_target.wait_for(state='visible', timeout=min(wait_timeout_ms, 250))
+                direct_target.click()
+                new_mode = self._page.evaluate('''(selector) => {
+                    const el = document.querySelector(selector);
+                    return el ? el.textContent?.trim() : null;
+                }''', self.GPT_MODE_TEXT_SELECTOR)
+                return {"success": True, "newMode": new_mode or self.GPT_MODE_TARGET}
+            except PlaywrightTimeoutError:
+                pass
+            except Exception:
+                pass
+
             more_trigger = menu.locator(
                 f'[role="button"][aria-haspopup="menu"]:has-text("{self.GPT_MODE_MORE_TEXT}")'
             ).first
             try:
                 more_trigger.wait_for(state='visible', timeout=wait_timeout_ms)
             except PlaywrightTimeoutError:
+                # If there's no "More" button, check if the target exists anywhere in visible menus.
+                try:
+                    probe = self._page.evaluate('''(targetText) => {
+                        const items = Array.from(document.querySelectorAll('[role="menuitem"]'));
+                        const hasTarget = items.some(el => (el.textContent || '').includes(targetText));
+                        const visible = items
+                            .filter(el => {
+                                const style = window.getComputedStyle(el);
+                                if (!style) return false;
+                                if (style.display === 'none' || style.visibility === 'hidden') return false;
+                                const rect = el.getBoundingClientRect();
+                                return rect.width > 0 && rect.height > 0;
+                            })
+                            .map(el => (el.textContent || '').trim())
+                            .filter(t => t);
+                        return { hasTarget, visible };
+                    }''', self.GPT_MODE_TARGET) or {}
+                    has_target = bool(probe.get('hasTarget', False))
+                    available = probe.get('visible', []) if isinstance(probe.get('visible', []), list) else []
+                    if (not has_target) and available:
+                        return {"success": False, "error": "target_not_found", "available": available}
+                except Exception:
+                    pass
                 return {"success": False, "error": "more_button_not_found"}
             more_trigger.hover()
 

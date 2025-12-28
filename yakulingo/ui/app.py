@@ -431,6 +431,13 @@ class _EarlyConnectionResult:
     value: Optional[bool] = None
 
 
+@dataclass
+class HotkeyFileOutputSummary:
+    """Output file list for multi-file hotkey translations (downloaded via UI)."""
+
+    output_files: list[tuple[Path, str]]
+
+
 def summarize_clipboard_text(text: str, max_preview: int = 200) -> ClipboardDebugSummary:
     """Create a concise summary of clipboard text for debugging.
 
@@ -725,7 +732,7 @@ class YakuLingoApp:
 
         Args:
             text: Clipboard payload (text or newline-joined file paths)
-            open_ui: If True, open UI window when translating text headlessly.
+            open_ui: If True, open UI window when translating headlessly.
             source_hwnd: Foreground window handle at hotkey time (best-effort; Windows only)
         """
         # Double-check: Skip if translation started while we were waiting
@@ -796,6 +803,14 @@ class YakuLingoApp:
                                     self._client = None
                             client = None
 
+            if open_ui and not client:
+                open_ui_callback = self._open_ui_window_callback
+                if open_ui_callback is not None:
+                    try:
+                        asyncio.create_task(asyncio.to_thread(open_ui_callback))
+                    except Exception as e:
+                        logger.debug("Failed to request UI open for hotkey: %s", e)
+
             is_path_selection, file_paths = self._extract_hotkey_file_paths(text)
             if is_path_selection:
                 if not file_paths:
@@ -806,14 +821,6 @@ class YakuLingoApp:
                     return
                 await self._translate_files_headless(file_paths, trace_id)
                 return
-
-            if open_ui and not client:
-                open_ui_callback = self._open_ui_window_callback
-                if open_ui_callback is not None:
-                    try:
-                        asyncio.create_task(asyncio.to_thread(open_ui_callback))
-                    except Exception as e:
-                        logger.debug("Failed to request UI open for hotkey: %s", e)
 
             if summary.excel_like and summary.max_columns >= 2:
                 logger.info(
@@ -904,20 +911,73 @@ class YakuLingoApp:
         return True, supported
 
     async def _translate_files_headless(self, file_paths: list[Path], trace_id: str) -> None:
-        """Translate file(s) captured via hotkey without requiring a UI client."""
+        """Translate file(s) captured via hotkey and show outputs in the UI."""
 
         import time
 
         if not self._ensure_translation_service():
             return
+        if self.translation_service:
+            self.translation_service.reset_cancel()
 
         reference_files = self._get_effective_reference_files()
         translation_style = self.settings.translation_style
 
-        start_time = time.monotonic()
-        output_files: list[str] = []
+        from yakulingo.models.types import FileInfo, FileType
 
-        for input_path in file_paths:
+        def file_type_for_path(path: Path) -> FileType:
+            suffix = path.suffix.lower()
+            if suffix in (".xlsx", ".xls"):
+                return FileType.EXCEL
+            if suffix in (".docx", ".doc"):
+                return FileType.WORD
+            if suffix in (".pptx", ".ppt"):
+                return FileType.POWERPOINT
+            if suffix == ".pdf":
+                return FileType.PDF
+            if suffix == ".msg":
+                return FileType.EMAIL
+            return FileType.TEXT
+
+        def minimal_file_info(path: Path) -> FileInfo:
+            try:
+                size_bytes = path.stat().st_size
+            except OSError:
+                size_bytes = 0
+            return FileInfo(
+                path=path,
+                file_type=file_type_for_path(path),
+                size_bytes=size_bytes,
+            )
+
+        total_files = len(file_paths)
+        if total_files <= 0:
+            return
+
+        first_path = file_paths[0]
+        # Prepare UI state early so the UI can safely render while translation runs.
+        self.state.current_tab = Tab.FILE
+        self.state.selected_file = first_path
+        self.state.file_info = minimal_file_info(first_path)
+        self.state.file_state = FileState.TRANSLATING
+        self.state.translation_progress = 0.0
+        self.state.translation_status = f"Starting... (1/{total_files})"
+        self.state.output_file = None
+        self.state.translation_result = None
+        self.state.error_message = ""
+        self._refresh_ui_after_hotkey_translation(trace_id)
+
+        start_time = time.monotonic()
+        output_files: list[tuple[Path, str]] = []
+        completed_results = []
+        error_messages: list[str] = []
+
+        for idx, input_path in enumerate(file_paths, start=1):
+            self.state.selected_file = input_path
+            self.state.file_info = minimal_file_info(input_path)
+            self.state.translation_progress = (idx - 1) / max(total_files, 1)
+            self.state.translation_status = f"Translating... ({idx}/{total_files})"
+            self._refresh_ui_after_hotkey_translation(trace_id)
             detected_language = "日本語"  # Default fallback
             try:
                 sample_text = await asyncio.to_thread(
@@ -960,6 +1020,7 @@ class YakuLingoApp:
                 logger.exception(
                     "Hotkey file translation [%s] failed for %s: %s", trace_id, input_path, e
                 )
+                error_messages.append(f"{input_path.name}: {e}")
                 continue
 
             if result.status != TranslationStatus.COMPLETED:
@@ -969,34 +1030,45 @@ class YakuLingoApp:
                     input_path,
                     result.error_message,
                 )
+                error_messages.append(f"{input_path.name}: {result.error_message or 'failed'}")
                 continue
 
-            for out_path, _desc in result.output_files:
-                output_files.append(str(out_path))
+            completed_results.append(result)
+            for out_path, desc in result.output_files:
+                output_files.append((out_path, f"{input_path.name}: {desc}"))
 
         if not output_files:
             logger.info("Hotkey file translation [%s] produced no output files", trace_id)
+            self.state.file_state = FileState.ERROR
+            self.state.translation_progress = 0.0
+            self.state.translation_status = ""
+            self.state.output_file = None
+            self.state.translation_result = None
+            self.state.error_message = (
+                "\n".join(error_messages[:3]) if error_messages else "No output files were generated."
+            )
+            self._refresh_ui_after_hotkey_translation(trace_id)
             return
 
-        try:
-            from yakulingo.services.hotkey_manager import set_clipboard_files
+        self.state.translation_progress = 1.0
+        self.state.translation_status = "Completed"
+        self.state.file_state = FileState.COMPLETE
 
-            if set_clipboard_files(output_files):
-                logger.info(
-                    "Hotkey file translation [%s] completed %d file(s) in %.2fs (copied to clipboard)",
-                    trace_id,
-                    len(output_files),
-                    time.monotonic() - start_time,
-                )
-            else:
-                logger.warning(
-                    "Hotkey file translation [%s] completed but clipboard copy failed",
-                    trace_id,
-                )
-        except Exception as e:
-            logger.debug(
-                "Hotkey file translation [%s] clipboard copy failed: %s", trace_id, e
-            )
+        if len(file_paths) == 1 and len(completed_results) == 1:
+            single = completed_results[0]
+            self.state.translation_result = single
+            self.state.output_file = single.output_path
+        else:
+            self.state.translation_result = HotkeyFileOutputSummary(output_files=output_files)
+            self.state.output_file = output_files[0][0] if output_files else None
+
+        self._refresh_ui_after_hotkey_translation(trace_id)
+        logger.info(
+            "Hotkey file translation [%s] completed %d file(s) in %.2fs (download via UI)",
+            trace_id,
+            len(file_paths),
+            time.monotonic() - start_time,
+        )
 
     def _log_hotkey_debug_info(self, trace_id: str, summary: ClipboardDebugSummary) -> None:
         """Log structured debug info for clipboard-triggered translations."""
@@ -1162,7 +1234,6 @@ class YakuLingoApp:
         self.state.text_translation_elapsed_time = time.monotonic() - start_time
         self.state.text_result = result
         self.state.text_view_state = TextViewState.RESULT
-        self._copy_hotkey_result_to_clipboard(trace_id)
         self._refresh_ui_after_hotkey_translation(trace_id)
 
         if result.error_message:
@@ -1288,7 +1359,6 @@ class YakuLingoApp:
             )
             self.state.text_view_state = TextViewState.RESULT
             self.state.source_text = ""
-            self._copy_hotkey_result_to_clipboard(trace_id)
             self._refresh_ui_after_hotkey_translation(trace_id)
 
             logger.info(

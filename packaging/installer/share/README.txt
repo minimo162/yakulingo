@@ -23,9 +23,9 @@ Share these steps with your users:
   3. Wait for setup to complete
   4. YakuLingo starts automatically on logon (resident mode)
      (it is also started immediately after setup completes)
-  5. Translate (result copied to clipboard)
-     - Text: select text in any app and press Ctrl+Alt+J
-     - Files: select files in Explorer and press Ctrl+Alt+J, then paste (Ctrl+V) into a folder to save translated file(s)
+  5. Translate
+     - Text: select text in any app and press Ctrl+Alt+J (result appears in the YakuLingo UI; copy the desired option)
+     - Files: select files in Explorer and press Ctrl+Alt+J (result appears in the YakuLingo UI; download the output file(s))
      - Files (context menu): right-click a supported file and choose "YakuLingoで翻訳"
        (Windows 11: under "Show more options" / classic context menu)
      - Office (optional): in Outlook/Word/Excel/PowerPoint, select text then Ribbon "YakuLingo" tab > "YakuLingoで翻訳"

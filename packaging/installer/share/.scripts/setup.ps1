@@ -1523,7 +1523,7 @@ if (-not (Test-PortOpen `$port)) {
 }
 
 try {
-  `$body = @{ payload = `$payload; open_ui = `$false } | ConvertTo-Json -Compress
+  `$body = @{ payload = `$payload; open_ui = `$true } | ConvertTo-Json -Compress
   Invoke-WebRequest -UseBasicParsing -Method Post -Uri `$apiUrl -Body `$body -ContentType 'application/json' -TimeoutSec 3 | Out-Null
   exit 0
 } catch {
@@ -1775,22 +1775,30 @@ try {
             throw "セットアップがキャンセルされました。"
         }
         Write-Status -Message "Setup completed!" -Progress -Step "Step 4/4: Finalizing" -Percent 100
-        $successMsg = "セットアップが完了しました。`n`nログオン時にYakuLingoが自動で常駐します（UIを閉じても終了しません）。`n`n使い方:`n- 翻訳したい文字を選択して Ctrl+Alt+J`n  → 訳文がクリップボードにコピーされます`n- エクスプローラーでファイルを選択して Ctrl+Alt+J`n  → 翻訳済みファイルがクリップボードにコピーされます（貼り付けで保存）`n- エクスプローラーでファイルを右クリック > 「YakuLingoで翻訳」`n  → 翻訳を開始します（Windows 11 は「その他のオプション」に表示）`n- Office (Outlook/Word/Excel/PowerPoint) のリボン > 「YakuLingo」タブ > 「YakuLingoで翻訳」`n  → 選択中のテキストをYakuLingoに送ります（反映にはOfficeの再起動が必要な場合があります）`n- UIを開く: デスクトップ / スタートメニューの YakuLingo`n- UIを閉じる: 常駐は継続します（Copilot Edge は自動で最小化されます）`n- 終了する: スタートメニュー > YakuLingo > YakuLingo 終了`n`nOK を押すと、今すぐ UI を開きます。"
+        $successMsg = "セットアップが完了しました。`n`nログオン時にYakuLingoが自動で常駐します（UIを閉じても終了しません）。`n`n使い方:`n- 翻訳したい文字を選択して Ctrl+Alt+J`n  → YakuLingo のUIに結果が表示されます（必要な訳をコピー）`n- エクスプローラーでファイルを選択して Ctrl+Alt+J`n  → UIのファイルタブに結果が表示されます（必要な出力をダウンロード）`n- エクスプローラーでファイルを右クリック > 「YakuLingoで翻訳」`n  → 翻訳を開始します（Windows 11 は「その他のオプション」に表示）`n- Office (Outlook/Word/Excel/PowerPoint) のリボン > 「YakuLingo」タブ > 「YakuLingoで翻訳」`n  → 選択中のテキストをYakuLingoに送ります（反映にはOfficeの再起動が必要な場合があります）`n- UIを開く: デスクトップ / スタートメニューの YakuLingo`n- UIを閉じる: 常駐は継続します（Copilot Edge は自動で最小化されます）`n- 終了する: スタートメニュー > YakuLingo > YakuLingo 終了`n`nOK を押すと、YakuLingo を常駐起動します（UIは自動で開きません）。"
         if ($script:GlossaryBackupPath) {
             $backupFileName = Split-Path -Leaf $script:GlossaryBackupPath
             $successMsg += "`n`n用語集が更新されました。`n以前の用語集はデスクトップに保存しました:`n  $backupFileName"
         }
         Show-Success $successMsg
 
-        # Start YakuLingo immediately (no need to logoff/logon).
-        # Use the UI opener script because it avoids duplicate instances.
+        # Start YakuLingo immediately in resident mode (no UI auto-open).
         try {
-            if (Test-Path $OpenUiScriptPath -PathType Leaf) {
-                Start-Process -FilePath "powershell.exe" `
-                    -ArgumentList "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$OpenUiScriptPath`"" `
-                    -WorkingDirectory $SetupPath `
-                    -WindowStyle Hidden | Out-Null
-            } elseif (Test-Path $PythonwPath -PathType Leaf -and (Test-Path $AppPyPath -PathType Leaf)) {
+            $port = 8765
+            $portOpen = $false
+            try {
+                $client = New-Object System.Net.Sockets.TcpClient
+                $async = $client.BeginConnect('127.0.0.1', $port, $null, $null)
+                if ($async.AsyncWaitHandle.WaitOne(200)) {
+                    $client.EndConnect($async) | Out-Null
+                    $portOpen = $true
+                }
+                $client.Close()
+            } catch {
+                $portOpen = $false
+            }
+
+            if (-not $portOpen -and (Test-Path $PythonwPath -PathType Leaf -and (Test-Path $AppPyPath -PathType Leaf))) {
                 Start-Process -FilePath $PythonwPath `
                     -ArgumentList "`"$AppPyPath`"" `
                     -WorkingDirectory $SetupPath `
@@ -1807,7 +1815,7 @@ try {
         Write-Host ""
         Write-Host " Location: $SetupPath" -ForegroundColor White
         Write-Host " YakuLingo will start automatically on logon (resident mode)." -ForegroundColor Cyan
-        Write-Host " Hotkey: Select text OR files in Explorer and press Ctrl+Alt+J (result copied to clipboard)." -ForegroundColor Cyan
+        Write-Host " Hotkey: Select text/files and press Ctrl+Alt+J (result appears in UI; download file outputs from the UI)." -ForegroundColor Cyan
         Write-Host " Explorer: Right-click file > 'YakuLingoで翻訳' (Win11: Show more options)." -ForegroundColor Cyan
         Write-Host " Office: Ribbon tab 'YakuLingo' > 'YakuLingoで翻訳' (may require restarting Office)." -ForegroundColor Cyan
         Write-Host " Open UI: Desktop or Start Menu shortcut." -ForegroundColor Cyan

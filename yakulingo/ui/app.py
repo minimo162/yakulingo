@@ -812,7 +812,18 @@ class YakuLingoApp:
 
     def _on_clipboard_triggered(self, text: str) -> None:
         """Handle clipboard double-copy trigger."""
-        self._on_hotkey_triggered(text, source_hwnd=None)
+        source_hwnd: int | None = None
+        if sys.platform == "win32":
+            try:
+                import ctypes
+
+                user32 = ctypes.WinDLL("user32", use_last_error=True)
+                hwnd = user32.GetForegroundWindow()
+                if hwnd:
+                    source_hwnd = int(hwnd)
+            except Exception:
+                source_hwnd = None
+        self._on_hotkey_triggered(text, source_hwnd=source_hwnd)
 
     async def _handle_hotkey_text(
         self,
@@ -2428,14 +2439,14 @@ class YakuLingoApp:
                         ctypes.get_last_error(),
                     )
 
-            # Keep focus on the user's working app for explicit hotkey triggers.
-            # For clipboard double-copy (no source_hwnd), bring YakuLingo to foreground.
+            # Keep focus on the resolved source window when available (including clipboard triggers).
+            # If we still do not have a valid source, bring YakuLingo to foreground.
             ASFW_ANY = -1
             try:
                 user32.AllowSetForegroundWindow(ASFW_ANY)
             except Exception:
                 pass
-            if original_source_hwnd is not None:
+            if _is_valid_window(source_hwnd) and source_hwnd != yakulingo_hwnd:
                 try:
                     user32.SetForegroundWindow(wintypes.HWND(source_hwnd))
                 except Exception:

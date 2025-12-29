@@ -1810,15 +1810,16 @@ try {
         if ($script:cancelled) {
             throw "セットアップがキャンセルされました。"
         }
+        Write-Status -Message "Starting YakuLingo (resident mode)..." -Progress -Step "Step 4/4: Finalizing" -Percent 95
+        # Start YakuLingo immediately in resident mode (no UI auto-open).
+        Start-ResidentService -SetupPath $SetupPath -PythonwPath $PythonwPath -AppPyPath $AppPyPath
+
         Write-Status -Message "Setup completed!" -Progress -Step "Step 4/4: Finalizing" -Percent 100
         $successMsg = "セットアップが完了しました。`n`nログオン時にYakuLingoが自動で常駐します（UIを閉じても終了しません）。`n`n使い方:`n- 翻訳したい文字を選択して 同じウィンドウで Ctrl+C を短時間に2回`n  → YakuLingo のUIに結果が表示されます（必要な訳をコピー）`n- エクスプローラーでファイルを選択して 同じウィンドウで Ctrl+C を短時間に2回`n  → UIのファイルタブに結果が表示されます（必要な出力をダウンロード）`n- エクスプローラーでファイルを右クリック > 「YakuLingoで翻訳」`n  → 翻訳を開始します（Windows 11 は「その他のオプション」に表示）`n- UIを開く: デスクトップ / スタートメニューの YakuLingo`n- UIを閉じる: 常駐は継続します（Copilot Edge は自動で最小化されます）`n- 終了する: スタートメニュー > YakuLingo > YakuLingo 終了`n`nYakuLingo を常駐起動しました（UIは自動で開きません）。"
         if ($script:GlossaryBackupPath) {
             $backupFileName = Split-Path -Leaf $script:GlossaryBackupPath
             $successMsg += "`n`n用語集が更新されました。`n以前の用語集はデスクトップに保存しました:`n  $backupFileName"
         }
-        # Start YakuLingo immediately in resident mode (no UI auto-open).
-        Start-ResidentService -SetupPath $SetupPath -PythonwPath $PythonwPath -AppPyPath $AppPyPath
-
         Show-Success $successMsg
     } else {
         Write-Host ""
@@ -1844,6 +1845,7 @@ try {
         Write-Host "   Extract: $extractLogPath" -ForegroundColor Gray
         Write-Host ""
 
+        Write-Host "[INFO] Starting YakuLingo (resident mode)..." -ForegroundColor Gray
         # Start YakuLingo immediately in resident mode (no UI auto-open).
         Start-ResidentService -SetupPath $SetupPath -PythonwPath $PythonwPath -AppPyPath $AppPyPath
     }

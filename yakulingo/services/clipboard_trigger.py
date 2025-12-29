@@ -50,8 +50,8 @@ else:
             callback: Callable[[str], None],
             *,
             double_copy_window_sec: float = 1.6,
-            poll_interval_sec: float = 0.01,
-            settle_delay_sec: float = 0.03,
+            poll_interval_sec: float = 0.005,
+            settle_delay_sec: float = 0.005,
             cooldown_sec: float = 1.2,
         ) -> None:
             self._callback: Optional[Callable[[str], None]] = callback
@@ -128,7 +128,15 @@ else:
 
                 self._last_sequence = sequence
                 logger.debug("Clipboard sequence changed: seq=%s", sequence)
-                time.sleep(self._settle_delay_sec)
+                # Collapse rapid consecutive updates (e.g., multiple clipboard formats).
+                for _ in range(2):
+                    if self._stop_event.wait(self._settle_delay_sec):
+                        return
+                    settled_sequence = _clipboard.get_clipboard_sequence_number_raw()
+                    if settled_sequence is None or settled_sequence == sequence:
+                        break
+                    sequence = settled_sequence
+                    self._last_sequence = sequence
 
                 now = time.monotonic()
                 if now < self._cooldown_until:

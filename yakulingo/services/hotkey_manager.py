@@ -52,6 +52,8 @@ else:
     CLIPBOARD_DEBOUNCE_SEC = 0.03  # Ignore rapid clipboard churn from a single copy
     CLIPBOARD_TRIGGER_READ_DELAY_SEC = 0.08  # Let clipboard settle before reading on trigger
     CLIPBOARD_POLL_INTERVAL_SEC = 0.02  # Clipboard sequence polling interval
+    DOUBLE_CTRL_C_WINDOW_SEC = 0.6  # Max time between Ctrl+C presses to trigger (fallback)
+    KEYBOARD_POLL_INTERVAL_SEC = 0.02  # Ctrl+C polling interval
     CLIPBOARD_RETRY_COUNT = 10  # Retry count for clipboard access (increased)
     CLIPBOARD_RETRY_DELAY_SEC = 0.1  # Delay between retries (increased)
     CLIPBOARD_CACHE_RETRY_COUNT = 3  # Quick attempts to cache first copy payload
@@ -176,6 +178,10 @@ else:
             self._clipboard_listener_thread_id: Optional[int] = None
             self._clipboard_wndproc: Optional[WNDPROCTYPE] = None
             self._clipboard_window_class: Optional[str] = None
+            self._keyboard_thread: Optional[threading.Thread] = None
+            self._last_ctrl_c_time: Optional[float] = None
+            self._last_ctrl_c_hwnd: Optional[int] = None
+            self._last_ctrl_c_pid: Optional[int] = None
 
         def set_callback(self, callback: Callable[[str, Optional[int]], None]):
             """
@@ -198,6 +204,7 @@ else:
                 self._thread = threading.Thread(target=self._clipboard_loop, daemon=True)
                 self._thread.start()
                 self._start_clipboard_listener()
+                self._start_keyboard_listener()
                 logger.info("Clipboard trigger started (double Ctrl+C)")
 
         def stop(self):
@@ -212,6 +219,9 @@ else:
                 if self._thread.is_alive():
                     logger.debug("Clipboard trigger thread did not stop in time")
                 self._thread = None
+            if self._keyboard_thread:
+                self._keyboard_thread.join(timeout=1.0)
+                self._keyboard_thread = None
             self._stop_clipboard_listener()
             logger.info("Clipboard trigger stopped")
 
@@ -408,6 +418,94 @@ else:
             self._last_copy_time = now
             self._last_copy_hwnd = source_hwnd
             self._last_copy_pid = source_pid
+
+        def _start_keyboard_listener(self) -> None:
+            if self._keyboard_thread:
+                return
+            self._keyboard_thread = threading.Thread(
+                target=self._keyboard_loop,
+                daemon=True,
+            )
+            self._keyboard_thread.start()
+
+        def _keyboard_loop(self) -> None:
+            try:
+                _user32.GetAsyncKeyState.argtypes = [ctypes.c_int]
+                _user32.GetAsyncKeyState.restype = ctypes.wintypes.SHORT
+            except Exception:
+                return
+
+            VK_CONTROL = 0x11
+            VK_C = 0x43
+
+            while self._running:
+                try:
+                    state_c = _user32.GetAsyncKeyState(VK_C)
+                    if state_c & 0x0001:
+                        state_ctrl = _user32.GetAsyncKeyState(VK_CONTROL)
+                        if state_ctrl & 0x8000:
+                            self._handle_ctrl_c_press()
+                except Exception:
+                    pass
+                time.sleep(KEYBOARD_POLL_INTERVAL_SEC)
+
+        def _handle_ctrl_c_press(self) -> None:
+            with self._lock:
+                callback = self._callback
+            if not callback:
+                return
+
+            now = time.monotonic()
+            sequence = _get_clipboard_sequence_number_raw()
+            if self._should_ignore_self_clipboard(now, sequence):
+                return
+
+            source_hwnd, window_title, source_pid = self._get_foreground_window_info()
+            if source_hwnd is None:
+                return
+            if self._is_ignored_source_window(source_hwnd, window_title, source_pid):
+                return
+
+            if (
+                self._last_ctrl_c_time is not None
+                and self._is_same_source(
+                    self._last_ctrl_c_hwnd,
+                    self._last_ctrl_c_pid,
+                    source_hwnd,
+                    source_pid,
+                )
+                and (now - self._last_ctrl_c_time) <= DOUBLE_CTRL_C_WINDOW_SEC
+            ):
+                if self._last_trigger_time is not None and (
+                    now - self._last_trigger_time
+                ) <= DOUBLE_COPY_COOLDOWN_SEC:
+                    self._last_ctrl_c_time = now
+                    self._last_ctrl_c_hwnd = source_hwnd
+                    self._last_ctrl_c_pid = source_pid
+                    return
+
+                text, files = self._get_clipboard_payload_with_retry()
+                if not text and not files:
+                    self._last_ctrl_c_time = now
+                    self._last_ctrl_c_hwnd = source_hwnd
+                    self._last_ctrl_c_pid = source_pid
+                    return
+
+                self._cache_payload(text, files, now, source_hwnd, source_pid)
+                self._last_trigger_time = now
+                self._reset_last_copy()
+                self._last_ctrl_c_time = None
+
+                payload = "\n".join(files) if files else text
+                try:
+                    callback(payload, source_hwnd)
+                except TypeError:
+                    callback(payload)
+                return
+
+            self._last_ctrl_c_time = now
+            self._last_ctrl_c_hwnd = source_hwnd
+            self._last_ctrl_c_pid = source_pid
 
         def _reset_last_copy(self) -> None:
             self._last_copy_time = None

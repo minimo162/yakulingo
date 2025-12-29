@@ -1089,6 +1089,7 @@ class CopilotHandler:
     GPT_MODE_MORE_TEXT = 'More'
     # OPTIMIZED: Reduced menu wait to minimum (just enough for React to update)
     GPT_MODE_MENU_WAIT = 0.05  # Wait for menu to open/close (50ms)
+    GPT_MODE_MORE_HOVER_WAIT = 0.15  # Wait for submenu to render after hover
     # GPT mode button wait timeout
     # Early connection thread calls ensure_gpt_mode() during NiceGUI startup (~8s)
     # Copilot React UI takes ~11s from connection to fully render GPT mode button
@@ -3023,6 +3024,7 @@ class CopilotHandler:
 
             if more_visible:
                 more_trigger.hover()
+                time.sleep(self.GPT_MODE_MORE_HOVER_WAIT)
                 self._log_gpt_mode_menu_snapshot("switcher:more_hovered", candidates)
 
                 try:
@@ -3065,7 +3067,33 @@ class CopilotHandler:
                 except PlaywrightTimeoutError:
                     return {"success": False, "error": "timeout"}
             else:
-                # No "More" submenu; treat as not-ready to avoid unreliable fallbacks.
+                # No "More" submenu; fall back to direct click if target is visible.
+                target_clicked = False
+                target_label = None
+                per_candidate_timeout = min(wait_timeout_ms, 500)
+                for candidate in candidates:
+                    target_selector = self.GPT_MODE_MENU_ITEM_VISIBLE_TEXT_SELECTOR.format(text=candidate)
+                    try:
+                        self._page.wait_for_selector(
+                            target_selector,
+                            state='visible',
+                            timeout=per_candidate_timeout,
+                        )
+                        self._page.locator(target_selector).first.click()
+                        target_clicked = True
+                        target_label = candidate
+                        break
+                    except PlaywrightTimeoutError:
+                        continue
+
+                if target_clicked:
+                    new_mode = self._page.evaluate('''(selector) => {
+                        const el = document.querySelector(selector);
+                        return el ? el.textContent?.trim() : null;
+                    }''', self.GPT_MODE_SWITCHER_TEXT_SELECTOR)
+                    return {"success": True, "newMode": new_mode or target_label or self.GPT_MODE_TARGET}
+
+                # No "More" submenu and target not visible; treat as not-ready.
                 self._log_gpt_mode_menu_snapshot("switcher:more_missing", candidates)
                 return {"success": False, "error": "more_button_not_found"}
 

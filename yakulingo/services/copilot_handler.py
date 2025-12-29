@@ -1126,6 +1126,11 @@ class CopilotHandler:
     RETRY_BACKOFF_BASE = 2.0  # Base for exponential backoff (2^attempt seconds)
     RETRY_BACKOFF_MAX = 16.0  # Maximum backoff time in seconds
     RETRY_JITTER_MAX = 1.0    # Random jitter to avoid thundering herd
+    _PLAYWRIGHT_UNRESPONSIVE_MARKERS = (
+        "Connection closed while reading from the driver",
+        "Target page, context or browser has been closed",
+        "Browser has been closed",
+    )
 
     def __init__(self):
         self._playwright = None
@@ -1191,6 +1196,8 @@ class CopilotHandler:
         self._gpt_mode_retry_index = 0
         self._gpt_mode_retry_timer = None
         self._gpt_mode_retry_lock = threading.Lock()
+        self._playwright_unresponsive = False
+        self._playwright_unresponsive_reason: Optional[str] = None
 
     @property
     def is_connected(self) -> bool:
@@ -1854,6 +1861,14 @@ class CopilotHandler:
             self.last_connection_error = self.ERROR_EDGE_NOT_FOUND
             return False
 
+    def _mark_playwright_unresponsive(self, error: Exception | str) -> None:
+        message = str(error)
+        if any(marker in message for marker in self._PLAYWRIGHT_UNRESPONSIVE_MARKERS):
+            if not self._playwright_unresponsive:
+                logger.warning("Playwright connection appears closed; skipping graceful shutdown")
+            self._playwright_unresponsive = True
+            self._playwright_unresponsive_reason = message
+
     def _is_page_valid(self) -> bool:
         """Check if the current page reference is still valid and usable.
 
@@ -1895,9 +1910,11 @@ class CopilotHandler:
                 return False
 
         except PlaywrightError as e:
+            self._mark_playwright_unresponsive(e)
             logger.debug("Page validity check failed (Playwright): %s", e)
             return False
         except Exception as e:
+            self._mark_playwright_unresponsive(e)
             logger.debug("Page validity check failed (other): %s", e)
             return False
 
@@ -2197,6 +2214,7 @@ class CopilotHandler:
             return True
 
         except (PlaywrightError, PlaywrightTimeoutError) as e:
+            self._mark_playwright_unresponsive(e)
             logger.error("Browser connection failed: %s", e)
             self.last_connection_error = self.ERROR_CONNECTION_FAILED
             self._cleanup_on_error()
@@ -2242,6 +2260,17 @@ class CopilotHandler:
         from contextlib import suppress
 
         self._connected = False
+        skip_playwright_shutdown = self._playwright_unresponsive
+        if skip_playwright_shutdown:
+            if self._playwright_unresponsive_reason:
+                logger.warning(
+                    "Skipping Playwright shutdown (connection closed): %s",
+                    self._playwright_unresponsive_reason,
+                )
+            else:
+                logger.warning("Skipping Playwright shutdown (connection closed)")
+        self._playwright_unresponsive = False
+        self._playwright_unresponsive_reason = None
 
         # Minimize Edge window before cleanup to prevent it from staying in foreground
         # This handles cases where timeout errors or other failures leave the window visible
@@ -2253,11 +2282,17 @@ class CopilotHandler:
 
         with suppress(Exception):
             if self._browser:
-                self._browser.close()
+                if skip_playwright_shutdown:
+                    logger.debug("Skipping browser.close() due to unresponsive Playwright")
+                else:
+                    self._browser.close()
 
         with suppress(Exception):
             if self._playwright:
-                self._playwright.stop()
+                if skip_playwright_shutdown:
+                    logger.debug("Skipping playwright.stop() due to unresponsive Playwright")
+                else:
+                    self._playwright.stop()
                 # Clear the pre-initialized Playwright global if this was the same instance
                 clear_pre_initialized_playwright()
 

@@ -46,12 +46,12 @@ else:
     PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 
     # Timing constants
-    DOUBLE_COPY_WINDOW_SEC = 1.3  # Max time between copies to trigger
+    DOUBLE_COPY_WINDOW_SEC = 3.0  # Max time between copies to trigger
     DOUBLE_COPY_COOLDOWN_SEC = 0.7  # Prevent repeat triggers on rapid multi-copy
-    DOUBLE_COPY_MIN_GAP_SEC = 0.2  # Minimum gap to treat as a new copy event
-    CLIPBOARD_DEBOUNCE_SEC = 0.08  # Ignore rapid clipboard churn from a single copy
+    DOUBLE_COPY_MIN_GAP_SEC = 0.03  # Minimum gap to treat as a new copy event
+    CLIPBOARD_DEBOUNCE_SEC = 0.03  # Ignore rapid clipboard churn from a single copy
     CLIPBOARD_TRIGGER_READ_DELAY_SEC = 0.08  # Let clipboard settle before reading on trigger
-    CLIPBOARD_POLL_INTERVAL_SEC = 0.05  # Clipboard sequence polling interval
+    CLIPBOARD_POLL_INTERVAL_SEC = 0.02  # Clipboard sequence polling interval
     CLIPBOARD_RETRY_COUNT = 10  # Retry count for clipboard access (increased)
     CLIPBOARD_RETRY_DELAY_SEC = 0.1  # Delay between retries (increased)
     CLIPBOARD_CACHE_RETRY_COUNT = 3  # Quick attempts to cache first copy payload
@@ -72,6 +72,17 @@ else:
         _LRESULT = ctypes.wintypes.LRESULT
     else:
         _LRESULT = ctypes.c_longlong if ctypes.sizeof(ctypes.c_void_p) == 8 else ctypes.c_long
+    # Some minimal Python builds omit handle typedefs; provide fallbacks.
+    if not hasattr(ctypes.wintypes, "HICON"):
+        ctypes.wintypes.HICON = ctypes.wintypes.HANDLE
+    if not hasattr(ctypes.wintypes, "HCURSOR"):
+        ctypes.wintypes.HCURSOR = ctypes.wintypes.HANDLE
+    if not hasattr(ctypes.wintypes, "HBRUSH"):
+        ctypes.wintypes.HBRUSH = ctypes.wintypes.HANDLE
+    if not hasattr(ctypes.wintypes, "HINSTANCE"):
+        ctypes.wintypes.HINSTANCE = ctypes.wintypes.HANDLE
+    if not hasattr(ctypes.wintypes, "HMENU"):
+        ctypes.wintypes.HMENU = ctypes.wintypes.HANDLE
 
     WNDPROCTYPE = ctypes.WINFUNCTYPE(
         _LRESULT,
@@ -684,7 +695,7 @@ else:
             _user32.TranslateMessage.argtypes = [ctypes.POINTER(ctypes.wintypes.MSG)]
             _user32.TranslateMessage.restype = ctypes.wintypes.BOOL
             _user32.DispatchMessageW.argtypes = [ctypes.POINTER(ctypes.wintypes.MSG)]
-            _user32.DispatchMessageW.restype = ctypes.wintypes.LRESULT
+            _user32.DispatchMessageW.restype = _LRESULT
 
             if not _user32.AddClipboardFormatListener(hwnd):
                 error_code = ctypes.get_last_error()
@@ -732,7 +743,7 @@ else:
                 ctypes.wintypes.WPARAM,
                 ctypes.wintypes.LPARAM,
             ]
-            _user32.DefWindowProcW.restype = ctypes.wintypes.LRESULT
+            _user32.DefWindowProcW.restype = _LRESULT
             _user32.DestroyWindow.argtypes = [ctypes.wintypes.HWND]
             _user32.DestroyWindow.restype = ctypes.wintypes.BOOL
             _user32.PostQuitMessage.argtypes = [ctypes.c_int]

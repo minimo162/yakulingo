@@ -6614,6 +6614,21 @@ def run_app(
                     )
                     browser_pid = proc.pid
                     logger.info("Opened browser app window: %s", url)
+                    try:
+                        def _bring_browser_window_foreground() -> None:
+                            for _ in range(8):
+                                if shutdown_event.is_set():
+                                    return
+                                time.sleep(0.2)
+                                if yakulingo_app._bring_window_to_front_win32():
+                                    return
+                        threading.Thread(
+                            target=_bring_browser_window_foreground,
+                            daemon=True,
+                            name="bring_browser_ui_foreground",
+                        ).start()
+                    except Exception:
+                        pass
                     return
                 except Exception as e:
                     logger.debug("Failed to open Edge with window size: %s", e)

@@ -40,7 +40,7 @@ if not _IS_WINDOWS:
         def stop(self) -> None:  # pragma: no cover
             return
 else:
-    from yakulingo.services import hotkey_manager as _hotkey
+    from yakulingo.services import clipboard_utils as _clipboard
 
     class ClipboardTrigger:
         """Monitor clipboard for double-copy triggers."""
@@ -49,9 +49,9 @@ else:
             self,
             callback: Callable[[str], None],
             *,
-            double_copy_window_sec: float = 1.2,
-            poll_interval_sec: float = 0.05,
-            settle_delay_sec: float = 0.1,
+            double_copy_window_sec: float = 1.6,
+            poll_interval_sec: float = 0.01,
+            settle_delay_sec: float = 0.03,
             cooldown_sec: float = 1.2,
         ) -> None:
             self._callback: Optional[Callable[[str], None]] = callback
@@ -60,7 +60,6 @@ else:
             self._settle_delay_sec = settle_delay_sec
             self._cooldown_sec = cooldown_sec
 
-            self._reader = _hotkey.HotkeyManager()
             self._lock = threading.Lock()
             self._stop_event = threading.Event()
             self._thread: Optional[threading.Thread] = None
@@ -111,14 +110,14 @@ else:
             logger.info("Clipboard trigger stopped")
 
         def _reset_state(self) -> None:
-            self._last_sequence = _hotkey._get_clipboard_sequence_number_raw()
+            self._last_sequence = _clipboard.get_clipboard_sequence_number_raw()
             self._last_payload = None
             self._last_payload_time = None
             self._cooldown_until = 0.0
 
         def _clipboard_listener_loop(self) -> None:
             while not self._stop_event.is_set():
-                sequence = _hotkey._get_clipboard_sequence_number_raw()
+                sequence = _clipboard.get_clipboard_sequence_number_raw()
                 if sequence is None:
                     self._stop_event.wait(self._poll_interval_sec)
                     continue
@@ -136,13 +135,13 @@ else:
                     continue
 
                 try:
-                    if self._reader._should_ignore_self_clipboard(now, sequence):
+                    if _clipboard.should_ignore_self_clipboard(now, sequence):
                         continue
                 except Exception:
                     pass
 
                 try:
-                    text, files = self._reader._get_clipboard_payload_with_retry(log_fail=False)
+                    text, files = _clipboard.get_clipboard_payload_with_retry(log_fail=False)
                 except Exception as exc:
                     logger.debug("Clipboard trigger read failed: %s", exc)
                     continue

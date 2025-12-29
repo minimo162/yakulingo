@@ -69,7 +69,7 @@ for %%f in (.venv .uv-python .playwright-browsers app.py yakulingo YakuLingo.exe
 if not exist ".venv\pyvenv.cfg" set "MISSING=!MISSING! .venv\pyvenv.cfg"
 if not exist "packaging\installer\share\setup.vbs" set "MISSING=!MISSING! packaging\installer\share\setup.vbs"
 if not exist "packaging\installer\share\.scripts\setup.ps1" set "MISSING=!MISSING! packaging\installer\share\.scripts\setup.ps1"
-if not exist "packaging\installer\share\README.txt" set "MISSING=!MISSING! packaging\installer\share\README.txt"
+if not exist "packaging\installer\share\README.html" set "MISSING=!MISSING! packaging\installer\share\README.html"
 if defined MISSING (
     echo        [ERROR] Missing:!MISSING!
     echo.
@@ -240,7 +240,7 @@ popd
 :: Copy installer files and cleanup in parallel
 echo        Copying installer files...
 copy /y "packaging\installer\share\setup.vbs" "%SHARE_DIR%\" >nul
-copy /y "packaging\installer\share\README.txt" "%SHARE_DIR%\" >nul
+copy /y "packaging\installer\share\README.html" "%SHARE_DIR%\" >nul
 xcopy /E /I /Q /Y "packaging\installer\share\.scripts" "%SHARE_DIR%\.scripts" >nul
 
 :: Move log to share_package before cleanup
@@ -272,7 +272,7 @@ if exist "%SHARE_DIR%\%DIST_ZIP%" (
     echo   Folder: %SHARE_DIR%\
     echo     - setup.vbs    ^<-- Users run this
     echo     - %DIST_ZIP%
-    echo     - README.txt
+    echo     - README.html
     echo.
     for %%A in ("%SHARE_DIR%\%DIST_ZIP%") do echo   Size: %%~zA bytes
     echo   Time: %ELAPSED_TIME%

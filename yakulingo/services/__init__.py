@@ -24,8 +24,6 @@ _LAZY_IMPORTS = {
     'ProxyConfig': 'updater',
     'VersionInfo': 'updater',
     'ClipboardTrigger': 'clipboard_trigger',
-    'HotkeyManager': 'hotkey_manager',
-    'get_hotkey_manager': 'hotkey_manager',
 }
 
 # Submodules that can be accessed via __getattr__ (for patching support)
@@ -35,7 +33,7 @@ _SUBMODULES = {
     'updater',
     'prompt_builder',
     'clipboard_trigger',
-    'hotkey_manager',
+    'clipboard_utils',
 }
 
 
@@ -66,6 +64,4 @@ __all__ = [
     'ProxyConfig',
     'VersionInfo',
     'ClipboardTrigger',
-    'HotkeyManager',
-    'get_hotkey_manager',
 ]

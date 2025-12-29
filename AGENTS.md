@@ -705,7 +705,7 @@ def _open_window_patched(..., window_args, settings_dict, start_args):
 - ブラウザスロットリング問題を回避可能
 - ログイン時の前面表示処理がスキップされる（既に見えているため）
 - **アプリとEdgeを最初から正しい位置に配置**（ちらつきなし）
-- **Ctrl+Alt+Jホットキー時もアプリとEdgeをセットで前面に配置**
+- **ダブルコピー時もアプリとEdgeをセットで前面に配置**
 - **PDF翻訳再接続時もEdgeをサイドパネル位置に維持**（最小化しない）
 
 **サイドパネルのレイアウト:**
@@ -2482,8 +2482,8 @@ Based on recent commits:
     - サイドパネル/foregroundモードではEdge起動時に画面外配置オプションを使用しない
     - サイドパネル/foregroundモードでは自動ログイン中もEdgeを最小化しない（常に表示）
     - `_bring_to_foreground_impl`、`_ensure_edge_minimized`、`_wait_for_auto_login_impl`がモードを考慮
-  - **Hotkey & reconnect handling (2024-12)**:
-    - Ctrl+Alt+Jホットキー時: `_bring_window_to_front`でサイドパネルモード時にEdgeも配置
+  - **Double-copy & reconnect handling (2024-12)**:
+    - ダブルコピー時: `_bring_window_to_front`でサイドパネルモード時にEdgeも配置
     - PDF翻訳再接続時: `_reconnect_copilot_with_retry`で`browser_display_mode`をチェック
     - 自動ログイン完了時: `should_minimize`条件を追加して不要な最小化を防止
   - **Bidirectional window synchronization (2024-12)**:
@@ -2591,10 +2591,8 @@ Based on recent commits:
   - **Quantity units exclusion**: `is_japanese_continuation_line()`に数量単位（円万億千台個件名社年月日回本枚％%）を非継続行として追加。テーブルセルの結合を防止
   - **Opening bracket protection**: 強い境界でも開き括弧（(（「『【〔〈《｛［）で終わる場合は分割しない。「百万円(」のような分割を防止
   - **Short CJK text protection**: 強い境界でも1-2文字のCJKテキストは分割しない。スペース入りテキスト（「代 表 者」等）の分割を防止
-- **Global Hotkey Change to Ctrl+Alt+J (2024-12)**:
-  - **Excel/Word conflict resolution**: Ctrl+JはExcelのJustifyショートカット、Ctrl+Shift+JはWordのJustifyショートカットと競合するため、Ctrl+Alt+Jに変更
-  - **Low-level keyboard hook**: WH_KEYBOARD_LLを使用して確実にホットキーを処理
-  - **Exception handling fix**: 低レベルキーボードフックの例外処理を修正してキーボードブロックを防止
+- **Global Hotkey Removal (2025-12)**:
+  - **Ctrl+Alt+J removed**: ダブルコピー（Ctrl+C x2）に統一
 - **Session Persistence Improvements (2024-12)**:
   - **auth=2 parameter removal**: COPILOT_URLから?auth=2パラメータを削除。M365は?authパラメータがなくても既存セッションの認証タイプを自動検出
   - **storage_state.json removed**: EdgeProfileのCookiesがセッション保持を担うため、storage_state.json関連のコードを削除（-93行）
@@ -2795,8 +2793,8 @@ Based on recent commits:
   - **2-column layout**: 3カラム（サイドバー+入力パネル+結果パネル）から2カラム（サイドバー+結果パネル）に簡素化
   - **CSS visibility toggle**: 翻訳結果表示時は入力パネルをCSSで非表示にし、結果パネルを中央配置
   - **Tab-based navigation**: 新しい翻訳は「テキスト翻訳」タブをクリックしてINPUT状態に戻す
-- **Ctrl+Alt+J UI Hint Removal (2025-12)**:
-  - **Clean UI**: ホットキー（Ctrl+Alt+J）は維持しつつ、UIのヒント行/キーキャップ表示を廃止
+- **Double-copy UI Hint Removal (2025-12)**:
+  - **Clean UI**: ダブルコピー（Ctrl+C x2）は維持しつつ、UIのヒント行/キーキャップ表示を廃止
 - **File Panel UI (2024-12)**:
   - **Simplified completion**: ファイル翻訳完了画面から「新しいファイルを翻訳」ボタンを削除
 - **Copilot Submission Reliability (2024-12)**:
@@ -3046,8 +3044,8 @@ Based on recent commits:
     - 1600px screen → 795px app + 10px gap + 795px browser
   - **Sidebar ratio**: `SIDEBAR_RATIO = 280 / 1800` (~16%), `MIN_SIDEBAR_WIDTH = 280px`
   - **Content width**: 横幅制限撤廃（`--content-width`による制限を削除、メインエリアいっぱいに表示）
-- **Global Hotkey (Ctrl+Alt+J)**:
-  - **Quick translation**: Select text in any app, press Ctrl+Alt+J to translate
+- **Double-copy trigger (Ctrl+C x2)**:
+  - **Quick translation**: Select text in any app, press Ctrl+C twice quickly to translate
   - **Character limit**: 5,000 chars max for text translation
   - **Auto file translation**: Texts exceeding limit automatically switch to file translation mode (saves as .txt, translates via batch processing)
   - **SendInput API**: Uses modern Windows API for reliable Ctrl+C simulation
@@ -3062,8 +3060,8 @@ Based on recent commits:
   - **Race condition handling**: Discards detection result if user selects different file during detection
   - **Manual override**: Language toggle buttons allow manual selection after auto-detection
   - **UI feedback**: Shows detected language (e.g., "日本語を検出 → 英訳します")
-- **Ctrl+Alt+J UI Hint**:
-  - **No on-screen hint**: UIには表示せず、ショートカット機能として提供（画面を静かに保つ）
+- **Double-copy UI Hint**:
+  - **No on-screen hint**: UIには表示せず、ダブルコピーの操作として提供（画面を静かに保つ）
 - **setup.ps1 Robustness & Reliability**:
   - **Running process detection**: YakuLingo実行中の再インストール試行を検出してエラー表示
   - **Python process detection**: YakuLingoインストールディレクトリで実行中のPythonプロセスも検出
@@ -3111,7 +3109,7 @@ Based on recent commits:
     - `app.py`: UI経過時間表示（11箇所）
     - `translation_service.py`: `duration_seconds`計算（17箇所）
     - `copilot_handler.py`: タイムアウト待機、GPTモード設定（86箇所）
-    - `hotkey_manager.py`: クリップボード待機（2箇所）
+    - `clipboard_utils.py`: クリップボード待機（2箇所）
   - **Exclusion**: `updater.py`のキャッシュタイムスタンプは絶対時刻が必要なため`time.time()`を維持
   - **Time function guidelines**:
     - `time.monotonic()`: 経過時間計測（推奨）

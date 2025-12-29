@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>YakuLingo 配布ガイド</title>
+    <style>
+      :root {
+        --bg: #f6f7fb;
+        --card: #ffffff;
+        --text: #1f2933;
+        --muted: #4b5968;
+        --accent: #2b6cb0;
+        --border: #e1e6eb;
+        --note: #eef6ff;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: "BIZ UDPGothic", "Yu Gothic UI", "Segoe UI", sans-serif;
+        line-height: 1.6;
+      }
+
+      .container {
+        max-width: 960px;
+        margin: 32px auto 64px;
+        padding: 0 20px;
+      }
+
+      header {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 24px;
+        box-shadow: 0 6px 16px rgba(16, 24, 40, 0.05);
+      }
+
+      header h1 {
+        margin: 0 0 6px;
+        font-size: 28px;
+      }
+
+      header p {
+        margin: 0;
+        color: var(--muted);
+      }
+
+      nav {
+        margin-top: 16px;
+        padding-top: 16px;
+        border-top: 1px solid var(--border);
+      }
+
+      nav ul {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px 18px;
+      }
+
+      nav a {
+        color: var(--accent);
+        text-decoration: none;
+        font-weight: 600;
+      }
+
+      nav a:hover {
+        text-decoration: underline;
+      }
+
+      section {
+        margin-top: 24px;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 22px 24px;
+      }
+
+      h2 {
+        margin: 0 0 12px;
+        font-size: 22px;
+      }
+
+      h3 {
+        margin: 16px 0 8px;
+        font-size: 18px;
+      }
+
+      .note {
+        background: var(--note);
+        border: 1px solid #cfe3ff;
+        border-radius: 12px;
+        padding: 12px 14px;
+        color: #1f3b5b;
+      }
+
+      code {
+        background: #f1f3f7;
+        border-radius: 6px;
+        padding: 2px 6px;
+        font-family: "Consolas", "Courier New", monospace;
+        font-size: 0.95em;
+      }
+
+      pre {
+        background: #f1f3f7;
+        border-radius: 12px;
+        padding: 14px 16px;
+        overflow-x: auto;
+        margin: 12px 0;
+      }
+
+      pre code {
+        background: none;
+        padding: 0;
+      }
+
+      ol, ul {
+        margin: 0 0 0 20px;
+        padding: 0;
+      }
+
+      li + li {
+        margin-top: 8px;
+      }
+
+      .split {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      }
+
+      .card {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 14px;
+        background: #fbfcff;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>YakuLingo 配布ガイド</h1>
+        <p>管理者向け：配布パッケージ作成・共有フォルダ展開手順</p>
+        <nav>
+          <ul>
+            <li><a href="#folder-structure">フォルダ構成</a></li>
+            <li><a href="#user-instructions">ユーザー向け手順</a></li>
+            <li><a href="#updating">更新手順</a></li>
+            <li><a href="#requirements">要件</a></li>
+            <li><a href="#troubleshooting">トラブルシュート</a></li>
+          </ul>
+        </nav>
+      </header>
+
+      <section id="folder-structure">
+        <h2>フォルダ構成</h2>
+        <p>共有フォルダに以下を配置してください。</p>
+        <pre><code>\\server\share\YakuLingo\
+  setup.vbs              &lt;-- 実行するファイル
+  YakuLingo_YYYYMMDD.zip &lt;-- 配布パッケージ
+  README.html            &lt;-- このガイド
+  .scripts\              &lt;-- 内部スクリプト（変更禁止）
+</code></pre>
+      </section>
+
+      <section id="user-instructions">
+        <h2>ユーザー向け手順</h2>
+        <ol>
+          <li><code>\\server\share\YakuLingo</code> を開く。</li>
+          <li><code>setup.vbs</code> をダブルクリック。</li>
+          <li>セットアップ完了まで待つ。</li>
+          <li>YakuLingo はログオン時に常駐起動（セットアップ完了直後にも起動）。</li>
+          <li>
+            翻訳の使い方:
+            <ul>
+              <li>テキスト: 同じウィンドウで <code>Ctrl+C</code> を短時間に2回 → UIに結果表示。</li>
+              <li>ファイル: エクスプローラーで同じウィンドウ内 <code>Ctrl+C</code> を短時間に2回 → Fileタブに結果表示。</li>
+              <li>ファイル（右クリック）: 対応ファイルを右クリック → 「YakuLingoで翻訳」（Windows 11 は「その他のオプション」内）。</li>
+            </ul>
+          </li>
+          <li>UIを開く: デスクトップ or スタートメニューのショートカット（UIを閉じても常駐は終了しません）。</li>
+          <li>終了: スタートメニュー &gt; YakuLingo &gt; 「YakuLingo 終了」。</li>
+        </ol>
+        <div class="note" style="margin-top: 14px;">
+          注: インストール先は <code>%LOCALAPPDATA%\YakuLingo</code>（OneDrive同期外）。
+        </div>
+      </section>
+
+      <section id="updating">
+        <h2>更新手順</h2>
+        <ol>
+          <li>開発環境で以下を実行:
+            <ul>
+              <li>必要に応じて <code>install_deps.bat</code>。</li>
+              <li><code>make_distribution.bat</code> を実行。</li>
+            </ul>
+          </li>
+          <li>新しい <code>YakuLingo_YYYYMMDD.zip</code> を共有フォルダへコピー。</li>
+          <li>古い ZIP は削除（setup.ps1 は最新ZIPを使用）。</li>
+        </ol>
+      </section>
+
+      <section id="requirements">
+        <h2>要件</h2>
+        <div class="split">
+          <div class="card">
+            <strong>OS</strong>
+            <p>Windows 10/11</p>
+          </div>
+          <div class="card">
+            <strong>PowerShell</strong>
+            <p>PowerShell 5.1+（Windows標準）</p>
+          </div>
+          <div class="card">
+            <strong>権限</strong>
+            <p>共有フォルダへの読み取り権限</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="troubleshooting">
+        <h2>トラブルシュート</h2>
+        <h3>スクリプト実行が無効</h3>
+        <p><code>setup.vbs</code> を実行してください（<code>.scripts\setup.ps1</code> を直接実行しない）。VBS が実行ポリシーを調整します。</p>
+
+        <h3>ZIP が見つからない</h3>
+        <p>同じフォルダに <code>YakuLingo*.zip</code> があるか確認してください。</p>
+
+        <h3>Access denied</h3>
+        <p>共有フォルダの読み取り権限を確認してください。</p>
+      </section>
+    </div>
+  </body>
+</html>

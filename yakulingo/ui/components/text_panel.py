@@ -8,6 +8,7 @@ Designed for Japanese users.
 
 import asyncio
 import html
+import json
 import logging
 from typing import Callable, Optional
 
@@ -18,6 +19,66 @@ from yakulingo.ui.utils import format_markdown_text
 from yakulingo.models.types import TranslationOption, TextTranslationResult
 
 logger = logging.getLogger(__name__)
+
+
+def _build_copy_js_handler(text: str) -> str:
+    payload = json.dumps(text)
+    return f"""(e) => {{
+        const text = {payload};
+        const target = e.currentTarget;
+        const flash = () => {{
+            if (!target) {{
+                return;
+            }}
+            target.classList.remove('copy-success');
+            void target.offsetWidth;
+            target.classList.add('copy-success');
+        }};
+        const fallbackCopy = () => {{
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.setAttribute('readonly', '');
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            textarea.style.left = '-9999px';
+            document.body.appendChild(textarea);
+            textarea.focus();
+            textarea.select();
+            try {{
+                document.execCommand('copy');
+            }} catch (err) {{
+            }}
+            document.body.removeChild(textarea);
+        }};
+        try {{
+            flash();
+            if (navigator.clipboard && navigator.clipboard.writeText) {{
+                navigator.clipboard.writeText(text).catch(() => {{
+                    fallbackCopy();
+                }});
+            }} else {{
+                fallbackCopy();
+            }}
+        }} catch (err) {{
+            fallbackCopy();
+        }}
+        emit(e);
+    }}"""
+
+
+def _create_copy_button(
+    text: str,
+    on_copy: Callable[[str], None],
+    *,
+    classes: str,
+    aria_label: str,
+    tooltip: str,
+) -> None:
+    button = ui.button(icon='content_copy').props(
+        f'flat dense round size=sm aria-label="{aria_label}"'
+    ).classes(classes)
+    button.tooltip(tooltip)
+    button.on('click', lambda: on_copy(text), js_handler=_build_copy_js_handler(text))
 
 
 def _create_textarea_with_keyhandler(
@@ -356,10 +417,13 @@ def _render_source_text_section(source_text: str, on_copy: Callable[[str], None]
                 ui.label('原文').classes('text-xs text-muted font-medium')
                 ui.label(source_text).classes('source-text-content')
             # Copy button
-            ui.button(
-                icon='content_copy',
-                on_click=lambda: on_copy(source_text)
-            ).props('flat dense round size=sm aria-label="原文をコピー"').classes('source-copy-btn').tooltip('原文をコピー')
+            _create_copy_button(
+                source_text,
+                on_copy,
+                classes='source-copy-btn',
+                aria_label='原文をコピー',
+                tooltip='原文をコピー',
+            )
 
 
 def _render_translation_status(
@@ -519,10 +583,13 @@ def _render_results_to_jp(
 
                                 with ui.row().classes('items-center option-card-actions'):
                                     # Copy button
-                                    ui.button(
-                                        icon='content_copy',
-                                        on_click=lambda o=option: on_copy(o.text)
-                                    ).props('flat dense round size=sm aria-label="コピー"').classes('option-action result-action-btn').tooltip('コピー')
+                                    _create_copy_button(
+                                        option.text,
+                                        on_copy,
+                                        classes='option-action result-action-btn',
+                                        aria_label='コピー',
+                                        tooltip='コピー',
+                                    )
 
                                     # Back-translate button
                                     if on_back_translate:
@@ -630,10 +697,13 @@ def _render_option_en(
 
                 with ui.row().classes('items-center option-card-actions'):
                     # Copy button
-                    ui.button(
-                        icon='content_copy',
-                        on_click=lambda o=option: on_copy(o.text)
-                    ).props('flat dense round size=sm aria-label="コピー"').classes('option-action result-action-btn').tooltip('コピー')
+                    _create_copy_button(
+                        option.text,
+                        on_copy,
+                        classes='option-action result-action-btn',
+                        aria_label='コピー',
+                        tooltip='コピー',
+                    )
 
                     # Back-translate button
                     if on_back_translate:

@@ -452,18 +452,32 @@ else:
             with self._lock:
                 callback = self._callback
             if not callback:
+                logger.debug("Hotkey trigger ignored (no callback)")
                 return
+            logger.debug("Hotkey message received (Ctrl+Alt+J)")
 
             now = time.monotonic()
             if self._last_trigger_time is not None and (
                 now - self._last_trigger_time
             ) <= HOTKEY_COOLDOWN_SEC:
+                logger.debug("Hotkey trigger ignored (cooldown)")
                 return
 
             source_hwnd, window_title, source_pid = self._get_foreground_window_info()
             if source_hwnd is None:
+                logger.debug("Hotkey trigger with no foreground window; opening UI only")
+                self._last_trigger_time = now
+                try:
+                    callback("", None)
+                except TypeError:
+                    callback("")
                 return
             if self._is_ignored_source_window(source_hwnd, window_title, source_pid):
+                logger.debug(
+                    "Hotkey trigger ignored (source window pid=%s title=%s)",
+                    source_pid,
+                    window_title,
+                )
                 return
 
             payload = self._capture_clipboard_payload()

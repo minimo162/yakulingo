@@ -29,6 +29,24 @@ if bundled_playwright_browsers_dir.exists():
     os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(bundled_playwright_browsers_dir))
 
 
+def _hide_console_window_if_needed() -> None:
+    """Hide an attached console window (Windows only)."""
+    if sys.platform != "win32":
+        return
+    if os.environ.get("YAKULINGO_ALLOW_CONSOLE") == "1":
+        return
+    try:
+        import ctypes
+
+        hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+        if not hwnd:
+            return
+        SW_HIDE = 0
+        ctypes.windll.user32.ShowWindow(hwnd, SW_HIDE)
+    except Exception:
+        return
+
+
 def _relaunch_with_pythonw_if_needed() -> None:
     """Relaunch with pythonw.exe on Windows to avoid a console window."""
     if sys.platform != "win32":
@@ -50,6 +68,7 @@ def _relaunch_with_pythonw_if_needed() -> None:
             return
         if ctypes.windll.user32.IsWindowVisible(hwnd) == 0:
             return
+        _hide_console_window_if_needed()
     except Exception:
         # If console detection fails, proceed with relaunch attempt.
         pass
@@ -187,6 +206,99 @@ def setup_logging():
 # Global reference to keep log handlers alive (prevents garbage collection)
 # Tuple of (console_handler, file_handler)
 _global_log_handlers = None
+_single_instance_mutex = None
+
+
+def _try_focus_existing_window() -> None:
+    """Bring an existing YakuLingo window to the foreground (Windows only)."""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        EnumWindowsProc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+        found_hwnd: list[int] = []
+
+        def enum_proc(hwnd, _lparam):
+            if user32.IsWindowVisible(hwnd) == 0:
+                return True
+            length = user32.GetWindowTextLengthW(hwnd)
+            if length <= 0:
+                return True
+            buffer = ctypes.create_unicode_buffer(length + 1)
+            if user32.GetWindowTextW(hwnd, buffer, length + 1) == 0:
+                return True
+            title = buffer.value
+            if "YakuLingo" in title:
+                found_hwnd.append(hwnd)
+                return False
+            return True
+
+        user32.EnumWindows(EnumWindowsProc(enum_proc), 0)
+        if not found_hwnd:
+            return
+        hwnd = found_hwnd[0]
+        SW_RESTORE = 9
+        SW_SHOW = 5
+        if user32.IsIconic(hwnd) != 0:
+            user32.ShowWindow(hwnd, SW_RESTORE)
+        else:
+            user32.ShowWindow(hwnd, SW_SHOW)
+        user32.SetForegroundWindow(hwnd)
+    except Exception:
+        return
+
+
+def _ensure_single_instance() -> bool:
+    """Return True if this is the primary instance (Windows only)."""
+    if sys.platform != "win32":
+        return True
+    if os.environ.get("YAKULINGO_ALLOW_MULTI_INSTANCE") == "1":
+        return True
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.CreateMutexW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
+        kernel32.CreateMutexW.restype = wintypes.HANDLE
+
+        handle = kernel32.CreateMutexW(None, False, "Local\\YakuLingoSingleton")
+        if not handle:
+            return True
+        if ctypes.get_last_error() == 183:  # ERROR_ALREADY_EXISTS
+            kernel32.CloseHandle(handle)
+            return False
+        global _single_instance_mutex
+        _single_instance_mutex = handle
+    except Exception:
+        return True
+    return True
+
+
+def _start_bootstrap_hotkey() -> None:
+    """Start hotkey capture early to avoid missing startup presses."""
+    if sys.platform != "win32":
+        return
+    if os.environ.get("YAKULINGO_DISABLE_BOOTSTRAP_HOTKEY") == "1":
+        return
+    try:
+        from yakulingo.services.hotkey_manager import get_hotkey_manager
+        from yakulingo.services.hotkey_pending import record_pending_hotkey
+    except Exception as exc:
+        logging.getLogger(__name__).debug("Early hotkey bootstrap unavailable: %s", exc)
+        return
+
+    def _record(payload: str, *_: object) -> None:
+        record_pending_hotkey(payload)
+
+    manager = get_hotkey_manager()
+    manager.set_callback(_record)
+    manager.start()
+    logging.getLogger(__name__).info("Early hotkey listener started")
 
 
 def main():
@@ -204,6 +316,10 @@ def main():
 
     _relaunch_with_pythonw_if_needed()
 
+    if not _ensure_single_instance():
+        _try_focus_existing_window()
+        return
+
     _t_start = time.perf_counter()
 
     # Windows用: multiprocessing対策（pyinstallerでの実行時に必要）
@@ -219,6 +335,8 @@ def main():
 
     logger = logging.getLogger(__name__)
     logger.info("[TIMING] main() setup: %.2fs", time.perf_counter() - _t_start)
+
+    _start_bootstrap_hotkey()
 
     def _show_startup_error(message: str) -> None:
         """Show a blocking error dialog (useful when launched from YakuLingo.exe with no console)."""

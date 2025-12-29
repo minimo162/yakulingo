@@ -677,8 +677,11 @@ class YakuLingoApp:
 
             self._hotkey_manager = get_hotkey_manager()
             self._hotkey_manager.set_callback(self._on_hotkey_triggered)
-            self._hotkey_manager.start()
-            logger.info("Global hotkey started (Ctrl+Alt+J)")
+            if not self._hotkey_manager.is_running:
+                self._hotkey_manager.start()
+                logger.info("Global hotkey started (Ctrl+Alt+J)")
+            else:
+                logger.info("Global hotkey already running (Ctrl+Alt+J)")
         except Exception as e:
             logger.error(f"Failed to start hotkey manager: {e}")
 
@@ -707,6 +710,16 @@ class YakuLingoApp:
                     has_client = self._client is not None
                 if not has_client:
                     logger.debug("Resident heartbeat: running (no UI client)")
+                if sys.platform == "win32":
+                    try:
+                        manager = self._hotkey_manager
+                        if manager is None or not manager.is_running:
+                            logger.warning(
+                                "Resident heartbeat detected hotkey manager stopped; restarting"
+                            )
+                            self.start_hotkey_manager()
+                    except Exception as e:
+                        logger.debug("Resident heartbeat hotkey check failed: %s", e)
                 await asyncio.sleep(interval_sec)
         except asyncio.CancelledError:
             pass
@@ -6445,6 +6458,8 @@ def run_app(
     browser_opened_at: float | None = None
     browser_pid: int | None = None
     browser_profile_dir: Path | None = None
+    browser_open_lock = threading.Lock()
+    browser_open_in_progress = False
 
     def _get_profile_dir_for_browser_app() -> Path:
         local_app_data = os.environ.get("LOCALAPPDATA", "")
@@ -6540,6 +6555,7 @@ def run_app(
         nonlocal browser_opened
         nonlocal browser_opened_at
         nonlocal browser_pid, browser_profile_dir
+        nonlocal browser_open_in_progress
         if shutdown_event.is_set():
             return
         if getattr(yakulingo_app, "_shutdown_requested", False):
@@ -6564,96 +6580,110 @@ def run_app(
                     logger.debug("Failed to restore native UI window: %s", e)
             return
 
-        if browser_opened:
-            try:
-                if sys.platform == "win32" and yakulingo_app._bring_window_to_front_win32():
-                    return
-            except Exception:
-                pass
-            now = time.monotonic()
-            if browser_opened_at is not None and (now - browser_opened_at) < 5.0:
+        with browser_open_lock:
+            if browser_open_in_progress:
                 return
-            browser_opened = False
-
-        browser_opened = True
-        browser_opened_at = time.monotonic()
-
-        url = f"http://{host}:{port}/"
-        native_window_size = yakulingo_app._native_window_size or yakulingo_app._window_size
-        width, height = native_window_size
-        try:
-            display_mode = yakulingo_app._get_effective_browser_display_mode()
-        except Exception:
-            display_mode = "side_panel"
-
-        if sys.platform == "win32":
-            edge_exe = _find_edge_exe_for_browser_open()
-            if edge_exe:
-                # App mode makes the taskbar entry use the site's icon/title (clearer than Edge).
-                browser_profile_dir = _get_profile_dir_for_browser_app()
+            if browser_opened:
                 try:
-                    browser_profile_dir.mkdir(parents=True, exist_ok=True)
+                    if sys.platform == "win32" and yakulingo_app._bring_window_to_front_win32():
+                        return
                 except Exception:
-                    browser_profile_dir = None
-                args = [
-                    edge_exe,
-                    f"--app={url}",
-                    f"--window-size={width},{height}",
-                    # Prevent Edge's "Translate this page?" prompt for the app UI.
-                    "--disable-features=Translate",
-                    "--lang=ja",
-                    # Use a dedicated profile to ensure the spawned Edge instance is isolated and
-                    # can be terminated reliably on app exit (avoid reusing user's main Edge).
-                    *( [f"--user-data-dir={browser_profile_dir}"] if browser_profile_dir is not None else [] ),
-                    "--no-first-run",
-                    "--no-default-browser-check",
-                    "--disable-sync",
-                    "--proxy-bypass-list=localhost;127.0.0.1",
-                    "--disable-session-crashed-bubble",
-                    "--hide-crash-restore-bubble",
-                ]
-                if display_mode == "side_panel":
-                    position = _calculate_app_position_for_side_panel(width, height)
-                    if position:
-                        args.append(f"--window-position={position[0]},{position[1]}")
-                try:
-                    import subprocess
-
-                    local_cwd = os.environ.get("SYSTEMROOT", r"C:\Windows")
-                    proc = subprocess.Popen(
-                        args,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        cwd=local_cwd,
-                        creationflags=subprocess.CREATE_NO_WINDOW,
-                    )
-                    browser_pid = proc.pid
-                    logger.info("Opened browser app window: %s", url)
-                    try:
-                        def _bring_browser_window_foreground() -> None:
-                            for _ in range(8):
-                                if shutdown_event.is_set():
-                                    return
-                                time.sleep(0.2)
-                                if yakulingo_app._bring_window_to_front_win32():
-                                    return
-                        threading.Thread(
-                            target=_bring_browser_window_foreground,
-                            daemon=True,
-                            name="bring_browser_ui_foreground",
-                        ).start()
-                    except Exception:
-                        pass
+                    pass
+                now = time.monotonic()
+                if browser_opened_at is not None and (now - browser_opened_at) < 5.0:
                     return
-                except Exception as e:
-                    logger.debug("Failed to open Edge with window size: %s", e)
+                browser_opened = False
 
+            browser_open_in_progress = True
+            browser_opened = True
+            browser_opened_at = time.monotonic()
+
+        opened = False
         try:
-            import webbrowser
-            webbrowser.open(url)
-            logger.info("Opened browser via default handler: %s", url)
-        except Exception as e:
-            logger.debug("Failed to open browser: %s", e)
+            url = f"http://{host}:{port}/"
+            native_window_size = yakulingo_app._native_window_size or yakulingo_app._window_size
+            width, height = native_window_size
+            try:
+                display_mode = yakulingo_app._get_effective_browser_display_mode()
+            except Exception:
+                display_mode = "side_panel"
+
+            if sys.platform == "win32":
+                edge_exe = _find_edge_exe_for_browser_open()
+                if edge_exe:
+                    # App mode makes the taskbar entry use the site's icon/title (clearer than Edge).
+                    browser_profile_dir = _get_profile_dir_for_browser_app()
+                    try:
+                        browser_profile_dir.mkdir(parents=True, exist_ok=True)
+                    except Exception:
+                        browser_profile_dir = None
+                    args = [
+                        edge_exe,
+                        f"--app={url}",
+                        f"--window-size={width},{height}",
+                        # Prevent Edge's "Translate this page?" prompt for the app UI.
+                        "--disable-features=Translate",
+                        "--lang=ja",
+                        # Use a dedicated profile to ensure the spawned Edge instance is isolated and
+                        # can be terminated reliably on app exit (avoid reusing user's main Edge).
+                        *( [f"--user-data-dir={browser_profile_dir}"] if browser_profile_dir is not None else [] ),
+                        "--no-first-run",
+                        "--no-default-browser-check",
+                        "--disable-sync",
+                        "--proxy-bypass-list=localhost;127.0.0.1",
+                        "--disable-session-crashed-bubble",
+                        "--hide-crash-restore-bubble",
+                    ]
+                    if display_mode == "side_panel":
+                        position = _calculate_app_position_for_side_panel(width, height)
+                        if position:
+                            args.append(f"--window-position={position[0]},{position[1]}")
+                    try:
+                        import subprocess
+
+                        local_cwd = os.environ.get("SYSTEMROOT", r"C:\Windows")
+                        proc = subprocess.Popen(
+                            args,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                            cwd=local_cwd,
+                            creationflags=subprocess.CREATE_NO_WINDOW,
+                        )
+                        browser_pid = proc.pid
+                        opened = True
+                        logger.info("Opened browser app window: %s", url)
+                        try:
+                            def _bring_browser_window_foreground() -> None:
+                                for _ in range(8):
+                                    if shutdown_event.is_set():
+                                        return
+                                    time.sleep(0.2)
+                                    if yakulingo_app._bring_window_to_front_win32():
+                                        return
+                            threading.Thread(
+                                target=_bring_browser_window_foreground,
+                                daemon=True,
+                                name="bring_browser_ui_foreground",
+                            ).start()
+                        except Exception:
+                            pass
+                        return
+                    except Exception as e:
+                        logger.debug("Failed to open Edge with window size: %s", e)
+
+            try:
+                import webbrowser
+                webbrowser.open(url)
+                opened = True
+                logger.info("Opened browser via default handler: %s", url)
+            except Exception as e:
+                logger.debug("Failed to open browser: %s", e)
+        finally:
+            with browser_open_lock:
+                browser_open_in_progress = False
+                if not opened:
+                    browser_opened = False
+                    browser_opened_at = None
 
     yakulingo_app._open_ui_window_callback = _open_browser_window
 
@@ -6989,6 +7019,9 @@ def run_app(
             try:
                 client_host = getattr(getattr(request, "client", None), "host", None)
                 if client_host not in ("127.0.0.1", "::1"):
+                    raise HTTPException(status_code=403, detail="forbidden")
+                shutdown_header = request.headers.get("X-YakuLingo-Exit")
+                if shutdown_header != "1":
                     raise HTTPException(status_code=403, detail="forbidden")
             except HTTPException:
                 raise
@@ -7418,6 +7451,18 @@ def run_app(
         # Start clipboard trigger immediately so clipboard translation works even without the UI.
         yakulingo_app.start_hotkey_manager()
         yakulingo_app._start_resident_heartbeat()
+
+        try:
+            from yakulingo.services.hotkey_pending import consume_pending_hotkey
+
+            pending_text = consume_pending_hotkey()
+            if pending_text is not None:
+                logger.info("Pending hotkey payload detected at startup")
+                asyncio.create_task(
+                    yakulingo_app._handle_hotkey_text(pending_text, open_ui=True)
+                )
+        except Exception as e:
+            logger.debug("Failed to process pending hotkey payload: %s", e)
 
         # Start Copilot connection early only in native mode; browser mode should remain silent
         # and connect on demand (hotkey/UI).

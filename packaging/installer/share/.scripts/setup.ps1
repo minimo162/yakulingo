@@ -360,24 +360,47 @@ function Start-ResidentService {
     )
 
     try {
-        $portOpen = $false
-        try {
-            $client = New-Object System.Net.Sockets.TcpClient
-            $async = $client.BeginConnect('127.0.0.1', $Port, $null, $null)
-            if ($async.AsyncWaitHandle.WaitOne(200)) {
+        function Test-PortOpen([int]$p) {
+            try {
+                $client = New-Object System.Net.Sockets.TcpClient
+                $async = $client.BeginConnect('127.0.0.1', $p, $null, $null)
+                if (-not $async.AsyncWaitHandle.WaitOne(200)) { return $false }
                 $client.EndConnect($async) | Out-Null
-                $portOpen = $true
+                $client.Close()
+                return $true
+            } catch {
+                return $false
             }
-            $client.Close()
-        } catch {
-            $portOpen = $false
         }
 
+        $portOpen = Test-PortOpen $Port
         if (-not $portOpen -and (Test-Path $PythonwPath -PathType Leaf -and (Test-Path $AppPyPath -PathType Leaf))) {
-            Start-Process -FilePath $PythonwPath `
-                -ArgumentList "`"$AppPyPath`"" `
-                -WorkingDirectory $SetupPath `
-                -WindowStyle Hidden | Out-Null
+            $previousNoOpen = $env:YAKULINGO_NO_AUTO_OPEN
+            $env:YAKULINGO_NO_AUTO_OPEN = "1"
+            try {
+                Start-Process -FilePath $PythonwPath `
+                    -ArgumentList "`"$AppPyPath`"" `
+                    -WorkingDirectory $SetupPath `
+                    -WindowStyle Hidden | Out-Null
+            } finally {
+                if ($null -eq $previousNoOpen) {
+                    Remove-Item Env:YAKULINGO_NO_AUTO_OPEN -ErrorAction SilentlyContinue
+                } else {
+                    $env:YAKULINGO_NO_AUTO_OPEN = $previousNoOpen
+                }
+            }
+
+            $deadline = (Get-Date).AddSeconds(15)
+            while ((Get-Date) -lt $deadline -and -not (Test-PortOpen $Port)) {
+                Start-Sleep -Milliseconds 200
+            }
+        }
+
+        if (-not (Test-PortOpen $Port)) {
+            try { "Start-ResidentService: Port $Port did not open after setup." | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
+            if (-not $GuiMode) {
+                Write-Host "[WARN] YakuLingo resident service did not start (port $Port closed)." -ForegroundColor Yellow
+            }
         }
     } catch {
         # Non-fatal: setup succeeded even if auto-launch fails.
@@ -748,7 +771,7 @@ function Invoke-Setup {
             $shutdownUrl = "http://127.0.0.1:$port/api/shutdown"
             $shutdownRequested = $false
             try {
-                Invoke-WebRequest -UseBasicParsing -Method Post -Uri $shutdownUrl -TimeoutSec 8 | Out-Null
+                Invoke-WebRequest -UseBasicParsing -Method Post -Uri $shutdownUrl -TimeoutSec 8 -Headers @{ "X-YakuLingo-Exit" = "1" } | Out-Null
                 $shutdownRequested = $true
                 try { "Invoke-Setup: Shutdown requested via $shutdownUrl" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
             } catch {
@@ -795,7 +818,7 @@ function Invoke-Setup {
                     if ($elapsedSeconds -ge 5) {
                         $shutdownRetryRequested = $true
                         try {
-                            Invoke-WebRequest -UseBasicParsing -Method Post -Uri $shutdownUrl -TimeoutSec 5 | Out-Null
+                            Invoke-WebRequest -UseBasicParsing -Method Post -Uri $shutdownUrl -TimeoutSec 5 -Headers @{ "X-YakuLingo-Exit" = "1" } | Out-Null
                             $shutdownRequested = $true
                             try { "Invoke-Setup: Shutdown re-requested via $shutdownUrl" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
                         } catch {
@@ -1501,7 +1524,7 @@ if (`$edge) {
 `$shutdownUrl = "http://127.0.0.1:`$port/api/shutdown"
 
 try {
-  Invoke-WebRequest -UseBasicParsing -Method Post -Uri `$shutdownUrl -TimeoutSec 3 | Out-Null
+  Invoke-WebRequest -UseBasicParsing -Method Post -Uri `$shutdownUrl -TimeoutSec 3 -Headers @{ "X-YakuLingo-Exit" = "1" } | Out-Null
   exit 0
 } catch { }
 

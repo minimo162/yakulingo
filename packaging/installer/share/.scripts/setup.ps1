@@ -351,6 +351,39 @@ function Write-Status {
 # ============================================================
 # Helper Functions
 # ============================================================
+function Start-ResidentService {
+    param(
+        [string]$SetupPath,
+        [string]$PythonwPath,
+        [string]$AppPyPath,
+        [int]$Port = 8765
+    )
+
+    try {
+        $portOpen = $false
+        try {
+            $client = New-Object System.Net.Sockets.TcpClient
+            $async = $client.BeginConnect('127.0.0.1', $Port, $null, $null)
+            if ($async.AsyncWaitHandle.WaitOne(200)) {
+                $client.EndConnect($async) | Out-Null
+                $portOpen = $true
+            }
+            $client.Close()
+        } catch {
+            $portOpen = $false
+        }
+
+        if (-not $portOpen -and (Test-Path $PythonwPath -PathType Leaf -and (Test-Path $AppPyPath -PathType Leaf))) {
+            Start-Process -FilePath $PythonwPath `
+                -ArgumentList "`"$AppPyPath`"" `
+                -WorkingDirectory $SetupPath `
+                -WindowStyle Hidden | Out-Null
+        }
+    } catch {
+        # Non-fatal: setup succeeded even if auto-launch fails.
+    }
+}
+
 function Get-LatestZipFile {
     param(
         [string]$ShareDir
@@ -1734,30 +1767,7 @@ try {
         Show-Success $successMsg
 
         # Start YakuLingo immediately in resident mode (no UI auto-open).
-        try {
-            $port = 8765
-            $portOpen = $false
-            try {
-                $client = New-Object System.Net.Sockets.TcpClient
-                $async = $client.BeginConnect('127.0.0.1', $port, $null, $null)
-                if ($async.AsyncWaitHandle.WaitOne(200)) {
-                    $client.EndConnect($async) | Out-Null
-                    $portOpen = $true
-                }
-                $client.Close()
-            } catch {
-                $portOpen = $false
-            }
-
-            if (-not $portOpen -and (Test-Path $PythonwPath -PathType Leaf -and (Test-Path $AppPyPath -PathType Leaf))) {
-                Start-Process -FilePath $PythonwPath `
-                    -ArgumentList "`"$AppPyPath`"" `
-                    -WorkingDirectory $SetupPath `
-                    -WindowStyle Hidden | Out-Null
-            }
-        } catch {
-            # Non-fatal: setup succeeded even if auto-launch fails.
-        }
+        Start-ResidentService -SetupPath $SetupPath -PythonwPath $PythonwPath -AppPyPath $AppPyPath
     } else {
         Write-Host ""
         Write-Host "============================================================" -ForegroundColor Green
@@ -1781,6 +1791,9 @@ try {
         Write-Host "   Debug: $debugLog" -ForegroundColor Gray
         Write-Host "   Extract: $extractLogPath" -ForegroundColor Gray
         Write-Host ""
+
+        # Start YakuLingo immediately in resident mode (no UI auto-open).
+        Start-ResidentService -SetupPath $SetupPath -PythonwPath $PythonwPath -AppPyPath $AppPyPath
     }
 }
 

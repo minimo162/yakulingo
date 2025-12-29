@@ -24,8 +24,8 @@ Share these steps with your users:
   4. YakuLingo starts automatically on logon (resident mode)
      (it is also started immediately after setup completes)
   5. Translate
-     - Text: select text in any app and press Ctrl+C twice quickly in the same window (result appears in the YakuLingo UI; copy the desired option)
-     - Files: select files in Explorer and press Ctrl+C twice quickly in the same window (result appears in the YakuLingo UI; download the output file(s))
+     - Text: select text in any app and press Ctrl+Alt+J (result appears in the YakuLingo UI; copy the desired option)
+     - Files: select files in Explorer and press Ctrl+Alt+J (result appears in the YakuLingo UI; download the output file(s))
      - Files (context menu): right-click a supported file and choose "YakuLingoで翻訳"
        (Windows 11: under "Show more options" / classic context menu)
   6. Open UI from the desktop or Start Menu shortcut when needed (closing the UI does not exit the resident service)

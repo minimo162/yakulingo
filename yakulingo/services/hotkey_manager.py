@@ -1,10 +1,10 @@
 # yakulingo/services/hotkey_manager.py
 """
-Clipboard trigger manager for quick translation via double Ctrl+C.
+Global hotkey manager for quick translation via Ctrl+Alt+J.
 
-Listens for clipboard updates and fires when the user copies twice within a
-short window from the same foreground window. This avoids global hotkey
-registration and works in environments where add-ins are restricted.
+Registers a system-wide hotkey, simulates Ctrl+C to copy the current selection,
+and reads the clipboard payload. This avoids relying on double-copy timing while
+still working without add-ins.
 
 The full implementation uses Windows-specific APIs. To avoid import errors on
 other platforms (e.g., macOS/Linux during development or testing), the module
@@ -28,7 +28,7 @@ _IS_WINDOWS = hasattr(ctypes, "WinDLL") and sys.platform == "win32"
 
 if not _IS_WINDOWS:
     class HotkeyManager:
-        """Placeholder that prevents Windows-only clipboard trigger code from loading."""
+        """Placeholder that prevents Windows-only hotkey code from loading."""
 
         def __init__(self, *_: object, **__: object) -> None:
             raise OSError("HotkeyManager is only available on Windows platforms.")
@@ -45,25 +45,26 @@ else:
 
     PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 
+    # Hotkey constants (Ctrl+Alt+J)
+    HOTKEY_ID = 1
+    MOD_ALT = 0x0001
+    MOD_CONTROL = 0x0002
+    MOD_NOREPEAT = 0x4000
+    VK_J = 0x4A
+
     # Timing constants
-    DOUBLE_COPY_WINDOW_SEC = 3.0  # Max time between copies to trigger
-    DOUBLE_COPY_COOLDOWN_SEC = 0.7  # Prevent repeat triggers on rapid multi-copy
-    DOUBLE_COPY_MIN_GAP_SEC = 0.03  # Minimum gap to treat as a new copy event
-    CLIPBOARD_DEBOUNCE_SEC = 0.03  # Ignore rapid clipboard churn from a single copy
-    CLIPBOARD_TRIGGER_READ_DELAY_SEC = 0.08  # Let clipboard settle before reading on trigger
-    CLIPBOARD_POLL_INTERVAL_SEC = 0.02  # Clipboard sequence polling interval
-    DOUBLE_CTRL_C_WINDOW_SEC = 0.6  # Max time between Ctrl+C presses to trigger (fallback)
-    KEYBOARD_POLL_INTERVAL_SEC = 0.02  # Ctrl+C polling interval
-    CLIPBOARD_RETRY_COUNT = 10  # Retry count for clipboard access (increased)
-    CLIPBOARD_RETRY_DELAY_SEC = 0.1  # Delay between retries (increased)
-    CLIPBOARD_CACHE_RETRY_COUNT = 3  # Quick attempts to cache first copy payload
-    CLIPBOARD_CACHE_RETRY_DELAY_SEC = 0.05  # Delay between cache retries
-    CLIPBOARD_PENDING_TRIGGER_WINDOW_SEC = 10.0  # Extra window to fetch payload after double copy
-    CLIPBOARD_PENDING_TRIGGER_DELAY_SEC = 0.2  # Delay between pending trigger reads
-    SELF_CLIPBOARD_IGNORE_SEC = 0.6  # Ignore clipboard updates right after self-set
+    HOTKEY_COOLDOWN_SEC = 0.7
+    HOTKEY_MODIFIER_RELEASE_TIMEOUT_SEC = 0.12
+    HOTKEY_MODIFIER_POLL_INTERVAL_SEC = 0.01
+    HOTKEY_COPY_SETTLE_SEC = 0.05
+    HOTKEY_COPY_TIMEOUT_SEC = 0.6
+    HOTKEY_COPY_POLL_INTERVAL_SEC = 0.02
+    CLIPBOARD_RETRY_COUNT = 10
+    CLIPBOARD_RETRY_DELAY_SEC = 0.1
+    SELF_CLIPBOARD_IGNORE_SEC = 0.6
     IGNORED_WINDOW_TITLE_KEYWORDS = ()
 
-    WM_CLIPBOARDUPDATE = 0x031D
+    WM_HOTKEY = 0x0312
     WM_CLOSE = 0x0010
     WM_DESTROY = 0x0002
     WM_QUIT = 0x0012
@@ -85,6 +86,10 @@ else:
         ctypes.wintypes.HINSTANCE = ctypes.wintypes.HANDLE
     if not hasattr(ctypes.wintypes, "HMENU"):
         ctypes.wintypes.HMENU = ctypes.wintypes.HANDLE
+    if hasattr(ctypes.wintypes, "ULONG_PTR"):
+        _ULONG_PTR = ctypes.wintypes.ULONG_PTR
+    else:
+        _ULONG_PTR = ctypes.c_ulonglong if ctypes.sizeof(ctypes.c_void_p) == 8 else ctypes.c_ulong
 
     WNDPROCTYPE = ctypes.WINFUNCTYPE(
         _LRESULT,
@@ -136,9 +141,56 @@ else:
             _last_self_clipboard_set_seq = seq
 
 
+    INPUT_KEYBOARD = 1
+    KEYEVENTF_KEYUP = 0x0002
+    VK_CONTROL = 0x11
+    VK_MENU = 0x12
+    VK_C = 0x43
+
+    class MOUSEINPUT(ctypes.Structure):
+        _fields_ = [
+            ("dx", ctypes.wintypes.LONG),
+            ("dy", ctypes.wintypes.LONG),
+            ("mouseData", ctypes.wintypes.DWORD),
+            ("dwFlags", ctypes.wintypes.DWORD),
+            ("time", ctypes.wintypes.DWORD),
+            ("dwExtraInfo", _ULONG_PTR),
+        ]
+
+    class KEYBDINPUT(ctypes.Structure):
+        _fields_ = [
+            ("wVk", ctypes.wintypes.WORD),
+            ("wScan", ctypes.wintypes.WORD),
+            ("dwFlags", ctypes.wintypes.DWORD),
+            ("time", ctypes.wintypes.DWORD),
+            ("dwExtraInfo", _ULONG_PTR),
+        ]
+
+    class HARDWAREINPUT(ctypes.Structure):
+        _fields_ = [
+            ("uMsg", ctypes.wintypes.DWORD),
+            ("wParamL", ctypes.wintypes.WORD),
+            ("wParamH", ctypes.wintypes.WORD),
+        ]
+
+    class INPUT(ctypes.Structure):
+        class _INPUT_UNION(ctypes.Union):
+            _fields_ = [
+                ("mi", MOUSEINPUT),
+                ("ki", KEYBDINPUT),
+                ("hi", HARDWAREINPUT),
+            ]
+
+        _anonymous_ = ("_input_union",)
+        _fields_ = [
+            ("type", ctypes.wintypes.DWORD),
+            ("_input_union", _INPUT_UNION),
+        ]
+
+
     class HotkeyManager:
         """
-        Manages clipboard-triggered translation via double Ctrl+C.
+        Manages global hotkey translation via Ctrl+Alt+J.
 
         Usage:
             manager = HotkeyManager()
@@ -154,310 +206,258 @@ else:
             self._running = False
             self._registered = False
             self._lock = threading.Lock()
-            self._last_clipboard_seq: Optional[int] = None
-            self._last_copy_time: Optional[float] = None
-            self._last_copy_hwnd: Optional[int] = None
-            self._last_copy_pid: Optional[int] = None
+            self._hotkey_listener_hwnd: Optional[int] = None
+            self._hotkey_listener_thread_id: Optional[int] = None
+            self._hotkey_wndproc: Optional[WNDPROCTYPE] = None
+            self._hotkey_window_class: Optional[str] = None
             self._last_trigger_time: Optional[float] = None
-            self._last_clipboard_event_time: Optional[float] = None
-            self._last_clipboard_event_hwnd: Optional[int] = None
-            self._last_clipboard_event_pid: Optional[int] = None
-            self._last_payload_text: Optional[str] = None
-            self._last_payload_files: list[str] = []
-            self._last_payload_time: Optional[float] = None
-            self._last_payload_hwnd: Optional[int] = None
-            self._last_payload_pid: Optional[int] = None
-            self._pending_trigger_until: Optional[float] = None
-            self._pending_trigger_hwnd: Optional[int] = None
-            self._pending_trigger_pid: Optional[int] = None
-            self._pending_trigger_next_attempt: float = 0.0
-            self._pending_trigger_sequence: Optional[int] = None
-            self._clipboard_event = threading.Event()
-            self._clipboard_listener_thread: Optional[threading.Thread] = None
-            self._clipboard_listener_hwnd: Optional[int] = None
-            self._clipboard_listener_thread_id: Optional[int] = None
-            self._clipboard_wndproc: Optional[WNDPROCTYPE] = None
-            self._clipboard_window_class: Optional[str] = None
-            self._keyboard_thread: Optional[threading.Thread] = None
-            self._last_ctrl_c_time: Optional[float] = None
-            self._last_ctrl_c_hwnd: Optional[int] = None
-            self._last_ctrl_c_pid: Optional[int] = None
 
         def set_callback(self, callback: Callable[[str, Optional[int]], None]):
             """
-            Set callback function to be called when the clipboard trigger fires.
+            Set callback function to be called when the hotkey fires.
 
             Args:
                 callback: Function that receives clipboard payload and the source window handle.
+                    An empty string indicates no clipboard payload was captured.
             """
             with self._lock:
                 self._callback = callback
 
         def start(self):
-            """Start clipboard listener in background thread."""
+            """Start the global hotkey listener in a background thread."""
             with self._lock:
                 if self._running:
-                    logger.warning("Clipboard trigger already running")
+                    logger.warning("Hotkey listener already running")
                     return
 
                 self._running = True
-                self._thread = threading.Thread(target=self._clipboard_loop, daemon=True)
+                self._thread = threading.Thread(target=self._hotkey_listener_loop, daemon=True)
                 self._thread.start()
-                self._start_clipboard_listener()
-                self._start_keyboard_listener()
-                logger.info("Clipboard trigger started (double Ctrl+C)")
+                logger.info("Global hotkey started (Ctrl+Alt+J)")
 
         def stop(self):
-            """Stop clipboard listener."""
+            """Stop the global hotkey listener."""
             with self._lock:
                 if not self._running:
                     return
                 self._running = False
 
+            self._stop_hotkey_listener()
+
             if self._thread:
                 self._thread.join(timeout=2.0)
                 if self._thread.is_alive():
-                    logger.debug("Clipboard trigger thread did not stop in time")
+                    logger.debug("Hotkey listener thread did not stop in time")
                 self._thread = None
-            if self._keyboard_thread:
-                self._keyboard_thread.join(timeout=1.0)
-                self._keyboard_thread = None
-            self._stop_clipboard_listener()
-            logger.info("Clipboard trigger stopped")
+
+            logger.info("Global hotkey stopped")
 
         @property
         def is_running(self) -> bool:
-            """Check if clipboard trigger is running."""
+            """Check if hotkey listener is running."""
             return self._running and self._registered
 
-        def _clipboard_loop(self):
-            """Main loop that listens for clipboard updates."""
-            self._registered = True
-            self._last_clipboard_seq = self._get_clipboard_sequence_number()
+        def _hotkey_listener_loop(self) -> None:
+            try:
+                hwnd = self._create_hotkey_listener_window()
+            except Exception as exc:
+                logger.debug("Hotkey listener init failed: %s", exc)
+                return
 
-            while self._running:
+            if not hwnd:
+                logger.debug("Hotkey listener window not created")
                 with self._lock:
-                    callback = self._callback
+                    self._running = False
+                return
 
-                if self._clipboard_event.wait(timeout=CLIPBOARD_POLL_INTERVAL_SEC):
-                    self._clipboard_event.clear()
+            _kernel32.GetCurrentThreadId.argtypes = []
+            _kernel32.GetCurrentThreadId.restype = ctypes.wintypes.DWORD
 
-                sequence = self._get_clipboard_sequence_number()
-                if sequence is None:
-                    if callback:
-                        self._check_pending_trigger(callback, sequence)
-                    continue
+            self._hotkey_listener_hwnd = hwnd
+            self._hotkey_listener_thread_id = _kernel32.GetCurrentThreadId()
 
-                if self._last_clipboard_seq is None:
-                    self._last_clipboard_seq = sequence
-                    if callback:
-                        self._check_pending_trigger(callback, sequence)
-                    continue
+            _user32.RegisterHotKey.argtypes = [
+                ctypes.wintypes.HWND,
+                ctypes.c_int,
+                ctypes.wintypes.UINT,
+                ctypes.wintypes.UINT,
+            ]
+            _user32.RegisterHotKey.restype = ctypes.wintypes.BOOL
+            _user32.UnregisterHotKey.argtypes = [ctypes.wintypes.HWND, ctypes.c_int]
+            _user32.UnregisterHotKey.restype = ctypes.wintypes.BOOL
+            _user32.DestroyWindow.argtypes = [ctypes.wintypes.HWND]
+            _user32.DestroyWindow.restype = ctypes.wintypes.BOOL
+            _user32.IsWindow.argtypes = [ctypes.wintypes.HWND]
+            _user32.IsWindow.restype = ctypes.wintypes.BOOL
+            _user32.GetMessageW.argtypes = [
+                ctypes.POINTER(ctypes.wintypes.MSG),
+                ctypes.wintypes.HWND,
+                ctypes.wintypes.UINT,
+                ctypes.wintypes.UINT,
+            ]
+            _user32.GetMessageW.restype = ctypes.wintypes.BOOL
+            _user32.TranslateMessage.argtypes = [ctypes.POINTER(ctypes.wintypes.MSG)]
+            _user32.TranslateMessage.restype = ctypes.wintypes.BOOL
+            _user32.DispatchMessageW.argtypes = [ctypes.POINTER(ctypes.wintypes.MSG)]
+            _user32.DispatchMessageW.restype = _LRESULT
 
-                if sequence != self._last_clipboard_seq:
-                    self._last_clipboard_seq = sequence
-                    self._handle_clipboard_update(sequence)
+            modifiers = MOD_CONTROL | MOD_ALT | MOD_NOREPEAT
+            if not _user32.RegisterHotKey(hwnd, HOTKEY_ID, modifiers, VK_J):
+                error_code = ctypes.get_last_error()
+                logger.warning("RegisterHotKey failed for Ctrl+Alt+J (error=%s)", error_code)
+                _user32.DestroyWindow(hwnd)
+                with self._lock:
+                    self._running = False
+                return
 
-                if callback:
-                    self._check_pending_trigger(callback, sequence)
+            self._registered = True
+
+            msg = ctypes.wintypes.MSG()
+            while True:
+                result = _user32.GetMessageW(ctypes.byref(msg), 0, 0, 0)
+                if result == 0:
+                    break
+                if result == -1:
+                    break
+                _user32.TranslateMessage(ctypes.byref(msg))
+                _user32.DispatchMessageW(ctypes.byref(msg))
 
             self._registered = False
-
-        def _handle_clipboard_update(self, sequence: Optional[int] = None):
-            """Handle clipboard updates and trigger on double Ctrl+C."""
-            with self._lock:
-                callback = self._callback
-
-            if not callback:
-                logger.warning("No callback set for clipboard trigger")
-                return
-
-            source_hwnd, window_title, source_pid = self._get_foreground_window_info()
-            if source_hwnd is None:
-                return
-
-            if self._is_ignored_source_window(source_hwnd, window_title, source_pid):
-                return
-
-            now = time.monotonic()
-            if self._should_ignore_self_clipboard(now, sequence):
-                logger.debug("Ignoring clipboard update from self (seq=%s)", sequence)
-                self._reset_last_copy()
-                self._clear_pending_trigger()
-                return
-
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(
-                    "Clipboard update (seq=%s, hwnd=%s, pid=%s, title=%s)",
-                    sequence if sequence is not None else "None",
-                    f"0x{source_hwnd:x}" if source_hwnd else "None",
-                    source_pid,
-                    window_title or "",
-                )
-            if self._pending_trigger_until is not None:
-                if self._is_same_source(
-                    self._pending_trigger_hwnd,
-                    self._pending_trigger_pid,
-                    source_hwnd,
-                    source_pid,
-                ):
-                    self._pending_trigger_next_attempt = max(
-                        self._pending_trigger_next_attempt,
-                        now + CLIPBOARD_PENDING_TRIGGER_DELAY_SEC,
-                    )
-                    return
-                logger.debug("Hotkey pending trigger cleared (source changed)")
-                self._clear_pending_trigger()
-
-            if (
-                self._last_copy_time is not None
-                and self._is_same_source(
-                    self._last_copy_hwnd,
-                    self._last_copy_pid,
-                    source_hwnd,
-                    source_pid,
-                )
-                and (now - self._last_copy_time) < DOUBLE_COPY_MIN_GAP_SEC
-            ):
-                self._last_clipboard_event_time = now
-                self._last_clipboard_event_hwnd = source_hwnd
-                self._last_clipboard_event_pid = source_pid
-
-                text, files = self._get_clipboard_payload_with_retry(
-                    retry_count=CLIPBOARD_CACHE_RETRY_COUNT,
-                    retry_delay_sec=CLIPBOARD_CACHE_RETRY_DELAY_SEC,
-                    log_fail=False,
-                )
-                if text is not None or files:
-                    self._cache_payload(text, files, now, source_hwnd, source_pid)
-                return
-
-            if (
-                self._last_clipboard_event_time is not None
-                and self._is_same_source(
-                    self._last_clipboard_event_hwnd,
-                    self._last_clipboard_event_pid,
-                    source_hwnd,
-                    source_pid,
-                )
-                and (now - self._last_clipboard_event_time) <= CLIPBOARD_DEBOUNCE_SEC
-            ):
-                if (
-                    self._last_copy_time is None
-                    or (now - self._last_copy_time) < DOUBLE_COPY_MIN_GAP_SEC
-                ):
-                    self._last_clipboard_event_time = now
-                    self._last_clipboard_event_hwnd = source_hwnd
-                    self._last_clipboard_event_pid = source_pid
-                    return
-                self._last_clipboard_event_time = now
-                self._last_clipboard_event_hwnd = source_hwnd
-                self._last_clipboard_event_pid = source_pid
-
-            self._last_clipboard_event_time = now
-            self._last_clipboard_event_hwnd = source_hwnd
-            self._last_clipboard_event_pid = source_pid
-            if (
-                self._last_copy_time is not None
-                and self._is_same_source(
-                    self._last_copy_hwnd,
-                    self._last_copy_pid,
-                    source_hwnd,
-                    source_pid,
-                )
-                and (now - self._last_copy_time) <= DOUBLE_COPY_WINDOW_SEC
-            ):
-                if self._last_trigger_time is not None and (
-                    now - self._last_trigger_time
-                ) <= DOUBLE_COPY_COOLDOWN_SEC:
-                    self._reset_last_copy()
-                    return
-
-                if CLIPBOARD_TRIGGER_READ_DELAY_SEC > 0:
-                    time.sleep(CLIPBOARD_TRIGGER_READ_DELAY_SEC)
-
-                text, files = self._get_clipboard_payload_with_retry()
-                if not text and not files:
-                    cached_text, cached_files = self._get_cached_payload(
-                        now,
-                        source_hwnd,
-                        source_pid,
-                    )
-                    if cached_text is not None or cached_files:
-                        payload = "\n".join(cached_files) if cached_files else cached_text
-                        self._last_trigger_time = now
-                        self._reset_last_copy()
-                        try:
-                            callback(payload, source_hwnd)
-                        except TypeError:
-                            callback(payload)
-                        return
-                    self._set_pending_trigger(now, source_hwnd, source_pid, sequence)
-                    self._reset_last_copy()
-                    return
-
-                self._cache_payload(text, files, now, source_hwnd, source_pid)
-                self._last_trigger_time = now
-                self._reset_last_copy()
-
-                payload = "\n".join(files) if files else text
-                try:
-                    callback(payload, source_hwnd)
-                except TypeError:
-                    callback(payload)
-                return
-
-            text, files = self._get_clipboard_payload_with_retry(
-                retry_count=CLIPBOARD_CACHE_RETRY_COUNT,
-                retry_delay_sec=CLIPBOARD_CACHE_RETRY_DELAY_SEC,
-                log_fail=False,
-            )
-            if text is not None or files:
-                self._cache_payload(text, files, now, source_hwnd, source_pid)
-
-            self._last_copy_time = now
-            self._last_copy_hwnd = source_hwnd
-            self._last_copy_pid = source_pid
-
-        def _start_keyboard_listener(self) -> None:
-            if self._keyboard_thread:
-                return
-            self._keyboard_thread = threading.Thread(
-                target=self._keyboard_loop,
-                daemon=True,
-            )
-            self._keyboard_thread.start()
-
-        def _keyboard_loop(self) -> None:
             try:
-                _user32.GetAsyncKeyState.argtypes = [ctypes.c_int]
-                _user32.GetAsyncKeyState.restype = ctypes.wintypes.SHORT
+                _user32.UnregisterHotKey(hwnd, HOTKEY_ID)
             except Exception:
-                return
+                pass
+            if _user32.IsWindow(hwnd):
+                _user32.DestroyWindow(hwnd)
+            with self._lock:
+                self._running = False
 
-            VK_CONTROL = 0x11
-            VK_C = 0x43
+        def _stop_hotkey_listener(self) -> None:
+            _user32.PostMessageW.argtypes = [
+                ctypes.wintypes.HWND,
+                ctypes.wintypes.UINT,
+                ctypes.wintypes.WPARAM,
+                ctypes.wintypes.LPARAM,
+            ]
+            _user32.PostMessageW.restype = ctypes.wintypes.BOOL
+            _user32.PostThreadMessageW.argtypes = [
+                ctypes.wintypes.DWORD,
+                ctypes.wintypes.UINT,
+                ctypes.wintypes.WPARAM,
+                ctypes.wintypes.LPARAM,
+            ]
+            _user32.PostThreadMessageW.restype = ctypes.wintypes.BOOL
 
-            while self._running:
-                try:
-                    state_c = _user32.GetAsyncKeyState(VK_C)
-                    if state_c & 0x0001:
-                        state_ctrl = _user32.GetAsyncKeyState(VK_CONTROL)
-                        if state_ctrl & 0x8000:
-                            self._handle_ctrl_c_press()
-                except Exception:
-                    pass
-                time.sleep(KEYBOARD_POLL_INTERVAL_SEC)
+            hwnd = self._hotkey_listener_hwnd
+            thread_id = self._hotkey_listener_thread_id
+            if hwnd:
+                _user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
+            elif thread_id:
+                _user32.PostThreadMessageW(thread_id, WM_QUIT, 0, 0)
 
-        def _handle_ctrl_c_press(self) -> None:
+            self._hotkey_listener_hwnd = None
+            self._hotkey_listener_thread_id = None
+
+        def _create_hotkey_listener_window(self) -> Optional[int]:
+            _user32.RegisterClassW.argtypes = [ctypes.POINTER(WNDCLASS)]
+            _user32.RegisterClassW.restype = ctypes.wintypes.ATOM
+            _user32.CreateWindowExW.argtypes = [
+                ctypes.wintypes.DWORD,
+                ctypes.wintypes.LPCWSTR,
+                ctypes.wintypes.LPCWSTR,
+                ctypes.wintypes.DWORD,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.wintypes.HWND,
+                ctypes.wintypes.HMENU,
+                ctypes.wintypes.HINSTANCE,
+                ctypes.wintypes.LPVOID,
+            ]
+            _user32.CreateWindowExW.restype = ctypes.wintypes.HWND
+            _user32.DefWindowProcW.argtypes = [
+                ctypes.wintypes.HWND,
+                ctypes.wintypes.UINT,
+                ctypes.wintypes.WPARAM,
+                ctypes.wintypes.LPARAM,
+            ]
+            _user32.DefWindowProcW.restype = _LRESULT
+            _user32.DestroyWindow.argtypes = [ctypes.wintypes.HWND]
+            _user32.DestroyWindow.restype = ctypes.wintypes.BOOL
+            _user32.PostQuitMessage.argtypes = [ctypes.c_int]
+            _user32.PostQuitMessage.restype = None
+
+            _kernel32.GetModuleHandleW.argtypes = [ctypes.wintypes.LPCWSTR]
+            _kernel32.GetModuleHandleW.restype = ctypes.wintypes.HMODULE
+
+            class_name = f"YakuLingoHotkeyListener{os.getpid()}"
+            self._hotkey_window_class = class_name
+
+            def _wnd_proc(hwnd, msg, wparam, lparam):
+                if msg == WM_HOTKEY:
+                    if int(wparam) == HOTKEY_ID:
+                        self._handle_hotkey_message()
+                    return 0
+                if msg == WM_CLOSE:
+                    _user32.DestroyWindow(hwnd)
+                    return 0
+                if msg == WM_DESTROY:
+                    _user32.PostQuitMessage(0)
+                    return 0
+                return _user32.DefWindowProcW(hwnd, msg, wparam, lparam)
+
+            self._hotkey_wndproc = WNDPROCTYPE(_wnd_proc)
+
+            wc = WNDCLASS()
+            wc.style = 0
+            wc.lpfnWndProc = self._hotkey_wndproc
+            wc.cbClsExtra = 0
+            wc.cbWndExtra = 0
+            wc.hInstance = _kernel32.GetModuleHandleW(None)
+            wc.hIcon = None
+            wc.hCursor = None
+            wc.hbrBackground = None
+            wc.lpszMenuName = None
+            wc.lpszClassName = class_name
+
+            atom = _user32.RegisterClassW(ctypes.byref(wc))
+            if not atom:
+                error_code = ctypes.get_last_error()
+                if error_code != ERROR_CLASS_ALREADY_EXISTS:
+                    logger.debug("RegisterClassW failed (error=%s)", error_code)
+                    return None
+
+            hwnd = _user32.CreateWindowExW(
+                0,
+                class_name,
+                class_name,
+                0,
+                0,
+                0,
+                0,
+                0,
+                HWND_MESSAGE,
+                None,
+                wc.hInstance,
+                None,
+            )
+            if not hwnd:
+                error_code = ctypes.get_last_error()
+                logger.debug("CreateWindowExW failed (error=%s)", error_code)
+                return None
+            return int(hwnd)
+
+        def _handle_hotkey_message(self) -> None:
             with self._lock:
                 callback = self._callback
             if not callback:
                 return
 
             now = time.monotonic()
-            sequence = _get_clipboard_sequence_number_raw()
-            if self._should_ignore_self_clipboard(now, sequence):
+            if self._last_trigger_time is not None and (
+                now - self._last_trigger_time
+            ) <= HOTKEY_COOLDOWN_SEC:
                 return
 
             source_hwnd, window_title, source_pid = self._get_foreground_window_info()
@@ -466,64 +466,145 @@ else:
             if self._is_ignored_source_window(source_hwnd, window_title, source_pid):
                 return
 
-            if (
-                self._last_ctrl_c_time is not None
-                and self._is_same_source(
-                    self._last_ctrl_c_hwnd,
-                    self._last_ctrl_c_pid,
-                    source_hwnd,
-                    source_pid,
-                )
-                and (now - self._last_ctrl_c_time) <= DOUBLE_CTRL_C_WINDOW_SEC
-            ):
-                if self._last_trigger_time is not None and (
-                    now - self._last_trigger_time
-                ) <= DOUBLE_COPY_COOLDOWN_SEC:
-                    self._last_ctrl_c_time = now
-                    self._last_ctrl_c_hwnd = source_hwnd
-                    self._last_ctrl_c_pid = source_pid
-                    return
-
-                text, files = self._get_clipboard_payload_with_retry()
-                if not text and not files:
-                    self._last_ctrl_c_time = now
-                    self._last_ctrl_c_hwnd = source_hwnd
-                    self._last_ctrl_c_pid = source_pid
-                    return
-
-                self._cache_payload(text, files, now, source_hwnd, source_pid)
+            payload = self._capture_clipboard_payload()
+            if not payload:
+                logger.debug("Hotkey trigger had no clipboard payload; opening UI only")
                 self._last_trigger_time = now
-                self._reset_last_copy()
-                self._last_ctrl_c_time = None
-
-                payload = "\n".join(files) if files else text
                 try:
-                    callback(payload, source_hwnd)
+                    callback("", source_hwnd)
                 except TypeError:
-                    callback(payload)
+                    callback("")
                 return
 
-            self._last_ctrl_c_time = now
-            self._last_ctrl_c_hwnd = source_hwnd
-            self._last_ctrl_c_pid = source_pid
+            self._last_trigger_time = now
+            try:
+                callback(payload, source_hwnd)
+            except TypeError:
+                callback(payload)
 
-        def _reset_last_copy(self) -> None:
-            self._last_copy_time = None
-            self._last_copy_hwnd = None
-            self._last_copy_pid = None
+        def _capture_clipboard_payload(self) -> Optional[str]:
+            sequence_before = self._get_clipboard_sequence_number()
 
-        def _is_same_source(
+            self._wait_for_modifier_release()
+            if not self._send_ctrl_c():
+                logger.debug("Hotkey copy: failed to send Ctrl+C")
+
+            sequence_after, changed = self._wait_for_clipboard_update(sequence_before)
+            if sequence_before is not None and not changed:
+                logger.debug("Hotkey copy did not update clipboard")
+                return None
+
+            if self._should_ignore_self_clipboard(time.monotonic(), sequence_after):
+                logger.debug("Hotkey clipboard ignored (self-set)")
+                return None
+
+            text, files = self._get_clipboard_payload_with_retry(log_fail=False)
+            if not text and not files:
+                return None
+
+            return "\n".join(files) if files else text
+
+        def _wait_for_modifier_release(self) -> None:
+            _user32.GetAsyncKeyState.argtypes = [ctypes.c_int]
+            _user32.GetAsyncKeyState.restype = ctypes.wintypes.SHORT
+
+            deadline = time.monotonic() + HOTKEY_MODIFIER_RELEASE_TIMEOUT_SEC
+            while time.monotonic() < deadline:
+                ctrl_down = bool(_user32.GetAsyncKeyState(VK_CONTROL) & 0x8000)
+                alt_down = bool(_user32.GetAsyncKeyState(VK_MENU) & 0x8000)
+                if not ctrl_down and not alt_down:
+                    return
+                time.sleep(HOTKEY_MODIFIER_POLL_INTERVAL_SEC)
+
+        def _send_ctrl_c(self) -> bool:
+            _user32.SendInput.argtypes = [
+                ctypes.wintypes.UINT,
+                ctypes.POINTER(INPUT),
+                ctypes.c_int,
+            ]
+            _user32.SendInput.restype = ctypes.wintypes.UINT
+
+            inputs = (INPUT * 4)()
+            inputs[0].type = INPUT_KEYBOARD
+            inputs[0].ki.wVk = VK_CONTROL
+            inputs[0].ki.dwFlags = 0
+
+            inputs[1].type = INPUT_KEYBOARD
+            inputs[1].ki.wVk = VK_C
+            inputs[1].ki.dwFlags = 0
+
+            inputs[2].type = INPUT_KEYBOARD
+            inputs[2].ki.wVk = VK_C
+            inputs[2].ki.dwFlags = KEYEVENTF_KEYUP
+
+            inputs[3].type = INPUT_KEYBOARD
+            inputs[3].ki.wVk = VK_CONTROL
+            inputs[3].ki.dwFlags = KEYEVENTF_KEYUP
+
+            input_size = ctypes.sizeof(INPUT)
+            sent = _user32.SendInput(4, inputs, input_size)
+            if sent != 4:
+                error_code = ctypes.get_last_error()
+                logger.warning(
+                    "SendInput sent %d/4 inputs (error: %s, input_size: %s)",
+                    sent,
+                    error_code,
+                    input_size,
+                )
+            return sent == 4
+
+        def _wait_for_clipboard_update(
+            self, sequence_before: Optional[int]
+        ) -> tuple[Optional[int], bool]:
+            if sequence_before is None:
+                time.sleep(HOTKEY_COPY_SETTLE_SEC)
+                return None, True
+
+            deadline = time.monotonic() + HOTKEY_COPY_TIMEOUT_SEC
+            while time.monotonic() < deadline:
+                sequence = _get_clipboard_sequence_number_raw()
+                if sequence is None:
+                    time.sleep(HOTKEY_COPY_POLL_INTERVAL_SEC)
+                    continue
+                if sequence != sequence_before:
+                    return sequence, True
+                time.sleep(HOTKEY_COPY_POLL_INTERVAL_SEC)
+            return sequence_before, False
+
+        def _get_clipboard_payload_with_retry(
             self,
-            hwnd_a: Optional[int],
-            pid_a: Optional[int],
-            hwnd_b: Optional[int],
-            pid_b: Optional[int],
-        ) -> bool:
-            if hwnd_a is not None and hwnd_b is not None and hwnd_a == hwnd_b:
-                return True
-            if pid_a is not None and pid_b is not None and pid_a == pid_b:
-                return True
-            return False
+            *,
+            retry_count: int = CLIPBOARD_RETRY_COUNT,
+            retry_delay_sec: float = CLIPBOARD_RETRY_DELAY_SEC,
+            log_fail: bool = True,
+        ) -> tuple[Optional[str], list[str]]:
+            """Get either clipboard text or file paths, with retry on failure."""
+
+            for attempt in range(retry_count):
+                text = self._get_clipboard_text()
+                files = self._get_clipboard_file_paths()
+
+                if text is not None or files:
+                    return text, files
+
+                if attempt < retry_count - 1:
+                    time.sleep(retry_delay_sec)
+                    logger.debug("Clipboard retry %d/%d", attempt + 1, retry_count)
+
+            if log_fail:
+                formats = self._get_clipboard_format_summary()
+                owner = self._describe_clipboard_owner()
+                logger.warning(
+                    "Failed to get clipboard content after all retries (formats=%s, owner=%s)",
+                    formats,
+                    owner,
+                )
+            return None, []
+
+        def _get_clipboard_sequence_number(self) -> Optional[int]:
+            """Return the clipboard sequence number or None on failure."""
+
+            return _get_clipboard_sequence_number_raw()
 
         def _should_ignore_self_clipboard(
             self,
@@ -607,86 +688,6 @@ else:
                     return True
             return False
 
-        def _describe_clipboard_owner(self) -> str:
-            """Return a best-effort description of the process holding the clipboard."""
-            _user32.GetOpenClipboardWindow.restype = ctypes.wintypes.HWND
-            _user32.GetWindowTextW.argtypes = [
-                ctypes.wintypes.HWND,
-                ctypes.wintypes.LPWSTR,
-                ctypes.c_int,
-            ]
-            _user32.GetWindowTextLengthW.argtypes = [ctypes.wintypes.HWND]
-            _user32.GetWindowTextLengthW.restype = ctypes.c_int
-            _user32.GetWindowThreadProcessId.argtypes = [
-                ctypes.wintypes.HWND,
-                ctypes.POINTER(ctypes.wintypes.DWORD),
-            ]
-            _user32.GetWindowThreadProcessId.restype = ctypes.wintypes.DWORD
-
-            _kernel32.OpenProcess.argtypes = [
-                ctypes.wintypes.DWORD,
-                ctypes.wintypes.BOOL,
-                ctypes.wintypes.DWORD,
-            ]
-            _kernel32.OpenProcess.restype = ctypes.wintypes.HANDLE
-            _kernel32.QueryFullProcessImageNameW.argtypes = [
-                ctypes.wintypes.HANDLE,
-                ctypes.wintypes.DWORD,
-                ctypes.wintypes.LPWSTR,
-                ctypes.POINTER(ctypes.wintypes.DWORD),
-            ]
-            _kernel32.QueryFullProcessImageNameW.restype = ctypes.wintypes.BOOL
-            _kernel32.CloseHandle.argtypes = [ctypes.wintypes.HANDLE]
-            _kernel32.CloseHandle.restype = ctypes.wintypes.BOOL
-
-            try:
-                hwnd = _user32.GetOpenClipboardWindow()
-                if not hwnd:
-                    return "unknown"
-
-                title = None
-                length = _user32.GetWindowTextLengthW(hwnd)
-                if length > 0:
-                    buffer = ctypes.create_unicode_buffer(length + 1)
-                    _user32.GetWindowTextW(hwnd, buffer, length + 1)
-                    if buffer.value:
-                        title = buffer.value
-
-                pid_value = None
-                pid = ctypes.wintypes.DWORD()
-                _user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-                if pid.value:
-                    pid_value = int(pid.value)
-
-                process_path = None
-                if pid_value:
-                    handle = _kernel32.OpenProcess(
-                        PROCESS_QUERY_LIMITED_INFORMATION,
-                        False,
-                        pid_value,
-                    )
-                    if handle:
-                        try:
-                            size = ctypes.wintypes.DWORD(260)
-                            buffer = ctypes.create_unicode_buffer(size.value)
-                            if _kernel32.QueryFullProcessImageNameW(
-                                handle, 0, buffer, ctypes.byref(size)
-                            ):
-                                process_path = buffer.value
-                        finally:
-                            _kernel32.CloseHandle(handle)
-
-                parts = [f"hwnd=0x{int(hwnd):x}"]
-                if pid_value is not None:
-                    parts.append(f"pid={pid_value}")
-                if title:
-                    parts.append(f"title={title}")
-                if process_path:
-                    parts.append(f"path={process_path}")
-                return " ".join(parts)
-            except Exception:
-                return "unknown"
-
         def _log_clipboard_open_failure(self, error_code: int, context: str) -> None:
             owner = self._describe_clipboard_owner()
             logger.warning(
@@ -714,368 +715,6 @@ else:
             if has_files:
                 formats.append("files")
             return ",".join(formats) if formats else "none"
-
-        def _start_clipboard_listener(self) -> None:
-            if self._clipboard_listener_thread:
-                return
-            if not hasattr(_user32, "AddClipboardFormatListener"):
-                logger.debug("Clipboard listener not available; using polling")
-                return
-
-            self._clipboard_listener_thread = threading.Thread(
-                target=self._clipboard_listener_loop,
-                daemon=True,
-            )
-            self._clipboard_listener_thread.start()
-
-        def _stop_clipboard_listener(self) -> None:
-            _user32.PostMessageW.argtypes = [
-                ctypes.wintypes.HWND,
-                ctypes.wintypes.UINT,
-                ctypes.wintypes.WPARAM,
-                ctypes.wintypes.LPARAM,
-            ]
-            _user32.PostMessageW.restype = ctypes.wintypes.BOOL
-            _user32.PostThreadMessageW.argtypes = [
-                ctypes.wintypes.DWORD,
-                ctypes.wintypes.UINT,
-                ctypes.wintypes.WPARAM,
-                ctypes.wintypes.LPARAM,
-            ]
-            _user32.PostThreadMessageW.restype = ctypes.wintypes.BOOL
-
-            hwnd = self._clipboard_listener_hwnd
-            thread_id = self._clipboard_listener_thread_id
-            if hwnd:
-                _user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
-            elif thread_id:
-                _user32.PostThreadMessageW(thread_id, WM_QUIT, 0, 0)
-
-            if self._clipboard_listener_thread:
-                self._clipboard_listener_thread.join(timeout=1.0)
-                self._clipboard_listener_thread = None
-
-            self._clipboard_listener_hwnd = None
-            self._clipboard_listener_thread_id = None
-
-        def _clipboard_listener_loop(self) -> None:
-            try:
-                hwnd = self._create_clipboard_listener_window()
-            except Exception as exc:
-                logger.debug("Clipboard listener init failed: %s", exc)
-                return
-
-            if not hwnd:
-                logger.debug("Clipboard listener window not created")
-                return
-
-            _kernel32.GetCurrentThreadId.argtypes = []
-            _kernel32.GetCurrentThreadId.restype = ctypes.wintypes.DWORD
-
-            self._clipboard_listener_hwnd = hwnd
-            self._clipboard_listener_thread_id = _kernel32.GetCurrentThreadId()
-
-            _user32.AddClipboardFormatListener.argtypes = [ctypes.wintypes.HWND]
-            _user32.AddClipboardFormatListener.restype = ctypes.wintypes.BOOL
-            _user32.RemoveClipboardFormatListener.argtypes = [ctypes.wintypes.HWND]
-            _user32.RemoveClipboardFormatListener.restype = ctypes.wintypes.BOOL
-            _user32.DestroyWindow.argtypes = [ctypes.wintypes.HWND]
-            _user32.DestroyWindow.restype = ctypes.wintypes.BOOL
-            _user32.IsWindow.argtypes = [ctypes.wintypes.HWND]
-            _user32.IsWindow.restype = ctypes.wintypes.BOOL
-            _user32.GetMessageW.argtypes = [
-                ctypes.POINTER(ctypes.wintypes.MSG),
-                ctypes.wintypes.HWND,
-                ctypes.wintypes.UINT,
-                ctypes.wintypes.UINT,
-            ]
-            _user32.GetMessageW.restype = ctypes.wintypes.BOOL
-            _user32.TranslateMessage.argtypes = [ctypes.POINTER(ctypes.wintypes.MSG)]
-            _user32.TranslateMessage.restype = ctypes.wintypes.BOOL
-            _user32.DispatchMessageW.argtypes = [ctypes.POINTER(ctypes.wintypes.MSG)]
-            _user32.DispatchMessageW.restype = _LRESULT
-
-            if not _user32.AddClipboardFormatListener(hwnd):
-                error_code = ctypes.get_last_error()
-                logger.debug(
-                    "AddClipboardFormatListener failed (error=%s)", error_code
-                )
-                _user32.DestroyWindow(hwnd)
-                return
-
-            msg = ctypes.wintypes.MSG()
-            while True:
-                result = _user32.GetMessageW(ctypes.byref(msg), 0, 0, 0)
-                if result == 0:
-                    break
-                if result == -1:
-                    break
-                _user32.TranslateMessage(ctypes.byref(msg))
-                _user32.DispatchMessageW(ctypes.byref(msg))
-
-            _user32.RemoveClipboardFormatListener(hwnd)
-            if _user32.IsWindow(hwnd):
-                _user32.DestroyWindow(hwnd)
-
-        def _create_clipboard_listener_window(self) -> Optional[int]:
-            _user32.RegisterClassW.argtypes = [ctypes.POINTER(WNDCLASS)]
-            _user32.RegisterClassW.restype = ctypes.wintypes.ATOM
-            _user32.CreateWindowExW.argtypes = [
-                ctypes.wintypes.DWORD,
-                ctypes.wintypes.LPCWSTR,
-                ctypes.wintypes.LPCWSTR,
-                ctypes.wintypes.DWORD,
-                ctypes.c_int,
-                ctypes.c_int,
-                ctypes.c_int,
-                ctypes.c_int,
-                ctypes.wintypes.HWND,
-                ctypes.wintypes.HMENU,
-                ctypes.wintypes.HINSTANCE,
-                ctypes.wintypes.LPVOID,
-            ]
-            _user32.CreateWindowExW.restype = ctypes.wintypes.HWND
-            _user32.DefWindowProcW.argtypes = [
-                ctypes.wintypes.HWND,
-                ctypes.wintypes.UINT,
-                ctypes.wintypes.WPARAM,
-                ctypes.wintypes.LPARAM,
-            ]
-            _user32.DefWindowProcW.restype = _LRESULT
-            _user32.DestroyWindow.argtypes = [ctypes.wintypes.HWND]
-            _user32.DestroyWindow.restype = ctypes.wintypes.BOOL
-            _user32.PostQuitMessage.argtypes = [ctypes.c_int]
-            _user32.PostQuitMessage.restype = None
-
-            _kernel32.GetModuleHandleW.argtypes = [ctypes.wintypes.LPCWSTR]
-            _kernel32.GetModuleHandleW.restype = ctypes.wintypes.HMODULE
-
-            class_name = f"YakuLingoClipboardListener{os.getpid()}"
-            self._clipboard_window_class = class_name
-
-            def _wnd_proc(hwnd, msg, wparam, lparam):
-                if msg == WM_CLIPBOARDUPDATE:
-                    self._clipboard_event.set()
-                    return 0
-                if msg == WM_CLOSE:
-                    _user32.DestroyWindow(hwnd)
-                    return 0
-                if msg == WM_DESTROY:
-                    _user32.PostQuitMessage(0)
-                    return 0
-                return _user32.DefWindowProcW(hwnd, msg, wparam, lparam)
-
-            self._clipboard_wndproc = WNDPROCTYPE(_wnd_proc)
-
-            wc = WNDCLASS()
-            wc.style = 0
-            wc.lpfnWndProc = self._clipboard_wndproc
-            wc.cbClsExtra = 0
-            wc.cbWndExtra = 0
-            wc.hInstance = _kernel32.GetModuleHandleW(None)
-            wc.hIcon = None
-            wc.hCursor = None
-            wc.hbrBackground = None
-            wc.lpszMenuName = None
-            wc.lpszClassName = class_name
-
-            atom = _user32.RegisterClassW(ctypes.byref(wc))
-            if not atom:
-                error_code = ctypes.get_last_error()
-                if error_code != ERROR_CLASS_ALREADY_EXISTS:
-                    logger.debug(
-                        "RegisterClassW failed (error=%s)", error_code
-                    )
-                    return None
-
-            hwnd = _user32.CreateWindowExW(
-                0,
-                class_name,
-                class_name,
-                0,
-                0,
-                0,
-                0,
-                0,
-                HWND_MESSAGE,
-                None,
-                wc.hInstance,
-                None,
-            )
-            if not hwnd:
-                error_code = ctypes.get_last_error()
-                logger.debug(
-                    "CreateWindowExW failed (error=%s)", error_code
-                )
-                return None
-            return int(hwnd)
-
-        def _get_clipboard_text_with_retry(self) -> Optional[str]:
-            """Get text from clipboard with retry on failure."""
-            for attempt in range(CLIPBOARD_RETRY_COUNT):
-                text = self._get_clipboard_text()
-                if text is not None:
-                    return text
-                if attempt < CLIPBOARD_RETRY_COUNT - 1:
-                    time.sleep(CLIPBOARD_RETRY_DELAY_SEC)
-                    logger.debug(f"Clipboard retry {attempt + 1}/{CLIPBOARD_RETRY_COUNT}")
-
-            logger.warning("Failed to get clipboard text after all retries")
-            return None
-
-        def _cache_payload(
-            self,
-            text: Optional[str],
-            files: list[str],
-            timestamp: float,
-            source_hwnd: int,
-            source_pid: Optional[int],
-        ) -> None:
-            if text is None and not files:
-                return
-            self._last_payload_text = text
-            self._last_payload_files = files
-            self._last_payload_time = timestamp
-            self._last_payload_hwnd = source_hwnd
-            self._last_payload_pid = source_pid
-
-        def _get_cached_payload(
-            self,
-            now: float,
-            source_hwnd: int,
-            source_pid: Optional[int],
-        ) -> tuple[Optional[str], list[str]]:
-            if self._last_payload_time is None:
-                return None, []
-            if (now - self._last_payload_time) > DOUBLE_COPY_WINDOW_SEC:
-                return None, []
-            if not self._is_same_source(
-                self._last_payload_hwnd,
-                self._last_payload_pid,
-                source_hwnd,
-                source_pid,
-            ):
-                return None, []
-            return self._last_payload_text, self._last_payload_files
-
-        def _set_pending_trigger(
-            self,
-            now: float,
-            source_hwnd: int,
-            source_pid: Optional[int],
-            sequence: Optional[int],
-        ) -> None:
-            self._pending_trigger_until = now + CLIPBOARD_PENDING_TRIGGER_WINDOW_SEC
-            self._pending_trigger_hwnd = source_hwnd
-            self._pending_trigger_pid = source_pid
-            self._pending_trigger_next_attempt = now + CLIPBOARD_PENDING_TRIGGER_DELAY_SEC
-            self._pending_trigger_sequence = sequence
-            logger.debug(
-                "Hotkey pending trigger armed (window=%.1fs, seq=%s)",
-                CLIPBOARD_PENDING_TRIGGER_WINDOW_SEC,
-                sequence,
-            )
-
-        def _clear_pending_trigger(self) -> None:
-            self._pending_trigger_until = None
-            self._pending_trigger_hwnd = None
-            self._pending_trigger_pid = None
-            self._pending_trigger_next_attempt = 0.0
-            self._pending_trigger_sequence = None
-
-        def _check_pending_trigger(
-            self,
-            callback: Callable[[str, Optional[int]], None],
-            current_sequence: Optional[int],
-        ) -> None:
-            if self._pending_trigger_until is None:
-                return
-
-            now = time.monotonic()
-            pending_sequence = self._pending_trigger_sequence
-            if (
-                pending_sequence is not None
-                and current_sequence is not None
-                and pending_sequence != current_sequence
-            ):
-                logger.debug(
-                    "Hotkey pending trigger cleared (sequence changed: %s -> %s)",
-                    pending_sequence,
-                    current_sequence,
-                )
-                self._clear_pending_trigger()
-                return
-            if now >= self._pending_trigger_until:
-                logger.debug("Hotkey pending trigger expired")
-                self._clear_pending_trigger()
-                return
-            if now < self._pending_trigger_next_attempt:
-                return
-
-            pending_hwnd = self._pending_trigger_hwnd
-            pending_pid = self._pending_trigger_pid
-            text, files = self._get_clipboard_payload_with_retry(
-                retry_count=1,
-                retry_delay_sec=0.0,
-                log_fail=False,
-            )
-            if text is not None or files:
-                payload = "\n".join(files) if files else text
-                payload_hwnd = pending_hwnd if pending_hwnd is not None else 0
-                self._cache_payload(text, files, now, payload_hwnd, pending_pid)
-                self._last_trigger_time = now
-                self._reset_last_copy()
-                self._clear_pending_trigger()
-                logger.debug(
-                    "Hotkey pending trigger resolved (seq=%s)", pending_sequence
-                )
-                try:
-                    callback(payload, pending_hwnd)
-                except TypeError:
-                    callback(payload)
-                return
-
-            self._pending_trigger_next_attempt = now + CLIPBOARD_PENDING_TRIGGER_DELAY_SEC
-
-        def _get_clipboard_payload_with_retry(
-            self,
-            *,
-            retry_count: int = CLIPBOARD_RETRY_COUNT,
-            retry_delay_sec: float = CLIPBOARD_RETRY_DELAY_SEC,
-            log_fail: bool = True,
-        ) -> tuple[Optional[str], list[str]]:
-            """Get either clipboard text or file paths, with retry on failure."""
-
-            for attempt in range(retry_count):
-                text = self._get_clipboard_text()
-                files = self._get_clipboard_file_paths()
-
-                if text is not None or files:
-                    return text, files
-
-                if attempt < retry_count - 1:
-                    time.sleep(retry_delay_sec)
-                    logger.debug(f"Clipboard retry {attempt + 1}/{retry_count}")
-
-            if log_fail:
-                formats = self._get_clipboard_format_summary()
-                owner = self._describe_clipboard_owner()
-                logger.warning(
-                    "Failed to get clipboard content after all retries (formats=%s, owner=%s)",
-                    formats,
-                    owner,
-                )
-            return None, []
-
-        def _get_clipboard_sequence_number(self) -> Optional[int]:
-            """Return the clipboard sequence number or None on failure.
-
-            The sequence number increments whenever the clipboard content changes,
-            allowing us to detect a copy operation even if the text itself is
-            identical to the previous clipboard contents.
-            """
-
-            return _get_clipboard_sequence_number_raw()
 
         def _get_clipboard_text(self) -> Optional[str]:
             """Get text from clipboard with proper type safety."""
@@ -1115,14 +754,14 @@ else:
                     handle = _user32.GetClipboardData(CF_TEXT)
                 if not handle:
                     error_code = ctypes.get_last_error()
-                    logger.debug(f"GetClipboardData returned null (error: {error_code})")
+                    logger.debug("GetClipboardData returned null (error: %s)", error_code)
                     return None
 
                 # Lock global memory with proper type
                 ptr = _kernel32.GlobalLock(handle)
                 if not ptr:
                     error_code = ctypes.get_last_error()
-                    logger.warning(f"GlobalLock failed (error: {error_code})")
+                    logger.warning("GlobalLock failed (error: %s)", error_code)
                     return None
 
                 try:
@@ -1147,7 +786,7 @@ else:
                         text = raw.decode("mbcs", errors="replace")
                         return text if text else None
                     except OSError as e:
-                        logger.warning(f"Failed to read clipboard string: {e}")
+                        logger.warning("Failed to read clipboard string: %s", e)
                         return None
                 finally:
                     _kernel32.GlobalUnlock(handle)
@@ -1186,7 +825,7 @@ else:
                 h_drop = _user32.GetClipboardData(CF_HDROP)
                 if not h_drop:
                     error_code = ctypes.get_last_error()
-                    logger.debug(f"GetClipboardData(CF_HDROP) returned null (error: {error_code})")
+                    logger.debug("GetClipboardData(CF_HDROP) returned null (error: %s)", error_code)
                     return []
 
                 count = int(_shell32.DragQueryFileW(h_drop, 0xFFFFFFFF, None, 0))
@@ -1203,6 +842,78 @@ else:
                 return paths
             finally:
                 _user32.CloseClipboard()
+
+        def _describe_clipboard_owner(self) -> str:
+            """Return a best-effort description of the process holding the clipboard."""
+            _user32.GetOpenClipboardWindow.restype = ctypes.wintypes.HWND
+            _user32.GetWindowTextW.argtypes = [
+                ctypes.wintypes.HWND,
+                ctypes.wintypes.LPWSTR,
+                ctypes.c_int,
+            ]
+            _user32.GetWindowTextLengthW.argtypes = [ctypes.wintypes.HWND]
+            _user32.GetWindowTextLengthW.restype = ctypes.c_int
+            _user32.GetWindowThreadProcessId.argtypes = [
+                ctypes.wintypes.HWND,
+                ctypes.POINTER(ctypes.wintypes.DWORD),
+            ]
+            _user32.GetWindowThreadProcessId.restype = ctypes.wintypes.DWORD
+
+            _kernel32.OpenProcess.argtypes = [
+                ctypes.wintypes.DWORD,
+                ctypes.wintypes.BOOL,
+                ctypes.wintypes.DWORD,
+            ]
+            _kernel32.OpenProcess.restype = ctypes.wintypes.HANDLE
+            _kernel32.QueryFullProcessImageNameW.argtypes = [
+                ctypes.wintypes.HANDLE,
+                ctypes.wintypes.DWORD,
+                ctypes.wintypes.LPWSTR,
+                ctypes.POINTER(ctypes.wintypes.DWORD),
+            ]
+            _kernel32.QueryFullProcessImageNameW.restype = ctypes.wintypes.BOOL
+            _kernel32.CloseHandle.argtypes = [ctypes.wintypes.HANDLE]
+            _kernel32.CloseHandle.restype = ctypes.wintypes.BOOL
+
+            try:
+                hwnd = _user32.GetOpenClipboardWindow()
+                if not hwnd:
+                    return "unknown"
+                length = _user32.GetWindowTextLengthW(hwnd)
+                title = None
+                if length > 0:
+                    buffer = ctypes.create_unicode_buffer(length + 1)
+                    _user32.GetWindowTextW(hwnd, buffer, length + 1)
+                    if buffer.value:
+                        title = buffer.value
+
+                pid_value = ctypes.wintypes.DWORD()
+                _user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid_value))
+                pid = int(pid_value.value) if pid_value.value else None
+
+                process_path = None
+                if pid:
+                    handle = _kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+                    if handle:
+                        try:
+                            buf_len = ctypes.wintypes.DWORD(512)
+                            buffer = ctypes.create_unicode_buffer(buf_len.value)
+                            if _kernel32.QueryFullProcessImageNameW(handle, 0, buffer, ctypes.byref(buf_len)):
+                                if buffer.value:
+                                    process_path = buffer.value
+                        finally:
+                            _kernel32.CloseHandle(handle)
+
+                parts = []
+                if pid:
+                    parts.append(f"pid={pid}")
+                if title:
+                    parts.append(f"title={title}")
+                if process_path:
+                    parts.append(f"path={process_path}")
+                return " ".join(parts) if parts else "unknown"
+            except Exception:
+                return "unknown"
 
 
     # Singleton instance with thread-safe initialization
@@ -1261,14 +972,14 @@ else:
         h_mem = _kernel32.GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, size)
         if not h_mem:
             error_code = ctypes.get_last_error()
-            logger.warning(f"Failed to allocate global memory (error: {error_code})")
+            logger.warning("Failed to allocate global memory (error: %s)", error_code)
             return False
 
         # Lock and copy data
         ptr = _kernel32.GlobalLock(h_mem)
         if not ptr:
             error_code = ctypes.get_last_error()
-            logger.warning(f"GlobalLock failed (error: {error_code})")
+            logger.warning("GlobalLock failed (error: %s)", error_code)
             _kernel32.GlobalFree(h_mem)
             return False
 
@@ -1282,14 +993,14 @@ else:
         # Open clipboard and set data
         if not _user32.OpenClipboard(None):
             error_code = ctypes.get_last_error()
-            logger.warning(f"Failed to open clipboard (error: {error_code})")
+            logger.warning("Failed to open clipboard (error: %s)", error_code)
             _kernel32.GlobalFree(h_mem)
             return False
 
         try:
             if not _user32.EmptyClipboard():
                 error_code = ctypes.get_last_error()
-                logger.warning(f"Failed to empty clipboard (error: {error_code})")
+                logger.warning("Failed to empty clipboard (error: %s)", error_code)
                 _kernel32.GlobalFree(h_mem)
                 return False
 
@@ -1297,7 +1008,7 @@ else:
             result = _user32.SetClipboardData(CF_UNICODETEXT, h_mem)
             if not result:
                 error_code = ctypes.get_last_error()
-                logger.warning(f"Failed to set clipboard data (error: {error_code})")
+                logger.warning("Failed to set clipboard data (error: %s)", error_code)
                 _kernel32.GlobalFree(h_mem)
                 return False
 
@@ -1371,13 +1082,13 @@ else:
         h_drop_mem = _kernel32.GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, total_size)
         if not h_drop_mem:
             error_code = ctypes.get_last_error()
-            logger.warning(f"Failed to allocate global memory for CF_HDROP (error: {error_code})")
+            logger.warning("Failed to allocate global memory for CF_HDROP (error: %s)", error_code)
             return False
 
         ptr = _kernel32.GlobalLock(h_drop_mem)
         if not ptr:
             error_code = ctypes.get_last_error()
-            logger.warning(f"GlobalLock failed for CF_HDROP (error: {error_code})")
+            logger.warning("GlobalLock failed for CF_HDROP (error: %s)", error_code)
             _kernel32.GlobalFree(h_drop_mem)
             return False
 
@@ -1427,7 +1138,7 @@ else:
 
         if not _user32.OpenClipboard(None):
             error_code = ctypes.get_last_error()
-            logger.warning(f"Failed to open clipboard (error: {error_code})")
+            logger.warning("Failed to open clipboard (error: %s)", error_code)
             _kernel32.GlobalFree(h_drop_mem)
             if h_text_mem:
                 _kernel32.GlobalFree(h_text_mem)
@@ -1438,7 +1149,7 @@ else:
         try:
             if not _user32.EmptyClipboard():
                 error_code = ctypes.get_last_error()
-                logger.warning(f"Failed to empty clipboard (error: {error_code})")
+                logger.warning("Failed to empty clipboard (error: %s)", error_code)
                 _kernel32.GlobalFree(h_drop_mem)
                 if h_text_mem:
                     _kernel32.GlobalFree(h_text_mem)
@@ -1450,7 +1161,7 @@ else:
             result = _user32.SetClipboardData(CF_HDROP, h_drop_mem)
             if not result:
                 error_code = ctypes.get_last_error()
-                logger.warning(f"Failed to set CF_HDROP (error: {error_code})")
+                logger.warning("Failed to set CF_HDROP (error: %s)", error_code)
                 _kernel32.GlobalFree(h_drop_mem)
                 if h_text_mem:
                     _kernel32.GlobalFree(h_text_mem)
@@ -1462,9 +1173,7 @@ else:
             if drop_effect_format and h_drop_effect_mem:
                 if not _user32.SetClipboardData(drop_effect_format, h_drop_effect_mem):
                     error_code = ctypes.get_last_error()
-                    logger.debug(
-                        "Failed to set Preferred DropEffect (error: %s)", error_code
-                    )
+                    logger.debug("Failed to set Preferred DropEffect (error: %s)", error_code)
                     _kernel32.GlobalFree(h_drop_effect_mem)
 
             # Optional: also publish text paths (useful for pasting into editors)

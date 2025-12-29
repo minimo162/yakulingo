@@ -398,7 +398,7 @@ COPILOT_LOGIN_TIMEOUT = 300  # 5 minutes for login
 MAX_HISTORY_DISPLAY = 20  # Maximum history items to display in sidebar
 MAX_HISTORY_DRAWER_DISPLAY = 100  # Maximum history items to show in history drawer
 MIN_AVAILABLE_MEMORY_GB_FOR_EARLY_CONNECT = 0.5  # Skip early Copilot init only on very low memory
-TEXT_TRANSLATION_CHAR_LIMIT = 5000  # Max chars for text translation (double Ctrl+C, Ctrl+Enter)
+TEXT_TRANSLATION_CHAR_LIMIT = 5000  # Max chars for text translation (Ctrl+Alt+J, Ctrl+Enter)
 DEFAULT_TEXT_STYLE = "concise"
 RESIDENT_HEARTBEAT_INTERVAL_SEC = 300  # Update startup.log even when UI is closed
 HOTKEY_MAX_FILE_COUNT = 10
@@ -573,7 +573,7 @@ class YakuLingoApp:
         self._copilot_window_seen = False
         self._resident_heartbeat_task: "asyncio.Task | None" = None
 
-        # Clipboard trigger manager for quick translation (double Ctrl+C)
+        # Global hotkey manager for quick translation (Ctrl+Alt+J)
         self._hotkey_manager = None
         self._open_ui_window_callback: Callable[[], None] | None = None
 
@@ -666,10 +666,10 @@ class YakuLingoApp:
         return self._window_size
 
     def start_hotkey_manager(self):
-        """Start the clipboard trigger manager for quick translation (double Ctrl+C)."""
+        """Start the global hotkey manager for quick translation (Ctrl+Alt+J)."""
         import sys
         if sys.platform != 'win32':
-            logger.info("Clipboard trigger only available on Windows")
+            logger.info("Global hotkey only available on Windows")
             return
 
         try:
@@ -678,16 +678,16 @@ class YakuLingoApp:
             self._hotkey_manager = get_hotkey_manager()
             self._hotkey_manager.set_callback(self._on_hotkey_triggered)
             self._hotkey_manager.start()
-            logger.info("Clipboard trigger started (double Ctrl+C)")
+            logger.info("Global hotkey started (Ctrl+Alt+J)")
         except Exception as e:
             logger.error(f"Failed to start hotkey manager: {e}")
 
     def stop_hotkey_manager(self):
-        """Stop the clipboard trigger manager."""
+        """Stop the global hotkey manager."""
         if self._hotkey_manager:
             try:
                 self._hotkey_manager.stop()
-                logger.info("Clipboard trigger stopped")
+                logger.info("Global hotkey stopped")
             except Exception as e:
                 logger.debug(f"Error stopping hotkey manager: {e}")
             self._hotkey_manager = None
@@ -722,21 +722,21 @@ class YakuLingoApp:
             text: Clipboard payload (text or newline-joined file paths)
             source_hwnd: Foreground window handle at hotkey time (best-effort; Windows only)
         """
-        # Double-check: text should always be non-empty (HotkeyManager filters empty)
-        if not text:
-            logger.debug("Hotkey triggered but no text provided")
-            return
+        is_empty = not text
+        if is_empty:
+            logger.debug("Hotkey triggered with empty clipboard; opening UI only")
 
-        # Skip if already translating (text or file)
-        if self.state.text_translating:
-            logger.debug("Hotkey ignored - text translation in progress")
-            return
-        if self.state.file_state == FileState.TRANSLATING:
-            logger.debug("Hotkey ignored - file translation in progress")
-            return
-        if getattr(self, "_hotkey_translation_active", False):
-            logger.debug("Hotkey ignored - hotkey translation in progress")
-            return
+        # Skip if already translating (text or file), unless we only need to open the UI.
+        if not is_empty:
+            if self.state.text_translating:
+                logger.debug("Hotkey ignored - text translation in progress")
+                return
+            if self.state.file_state == FileState.TRANSLATING:
+                logger.debug("Hotkey ignored - file translation in progress")
+                return
+            if getattr(self, "_hotkey_translation_active", False):
+                logger.debug("Hotkey ignored - hotkey translation in progress")
+                return
 
         # Schedule UI update on NiceGUI's event loop
         # This is called from HotkeyManager's background thread
@@ -761,6 +761,21 @@ class YakuLingoApp:
             open_ui: If True, open UI window when translating headlessly.
             source_hwnd: Foreground window handle at hotkey time (best-effort; Windows only)
         """
+        if not text:
+            if open_ui:
+                open_ui_callback = self._open_ui_window_callback
+                if open_ui_callback is not None:
+                    try:
+                        await asyncio.to_thread(open_ui_callback)
+                    except Exception as e:
+                        logger.debug("Failed to request UI open for hotkey: %s", e)
+                else:
+                    try:
+                        await self._bring_window_to_front(position_edge=True)
+                    except Exception as e:
+                        logger.debug("Failed to bring window to front for hotkey: %s", e)
+            return
+
         # Double-check: Skip if translation started while we were waiting
         if self.state.text_translating:
             logger.debug("Hotkey handler skipped - text translation already in progress")
@@ -6844,7 +6859,7 @@ def run_app(
     atexit.register(cleanup)
 
     # NOTE: We intentionally keep the server running even when all UI clients disconnect.
-    # YakuLingo is designed to run as a resident background service (double Ctrl+C trigger).
+    # YakuLingo is designed to run as a resident background service (Ctrl+Alt+J hotkey).
 
     # Serve styles.css as static file for browser caching (faster subsequent loads)
     ui_dir = Path(__file__).parent
@@ -7430,7 +7445,7 @@ def run_app(
 
         def _clear_cached_client_on_disconnect(_client: nicegui_Client | None = None) -> None:
             # When the UI window is closed, keep the resident service alive but clear the cached
-        # client so double Ctrl+C can reopen the UI window on demand.
+        # client so the hotkey can reopen the UI window on demand.
             nonlocal browser_opened
             with yakulingo_app._client_lock:
                 if yakulingo_app._client is client:

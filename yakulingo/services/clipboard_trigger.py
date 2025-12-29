@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import ctypes
 import logging
+import os
 import sys
 import threading
 import time
@@ -45,6 +46,103 @@ else:
     class ClipboardTrigger:
         """Monitor clipboard for double-copy triggers."""
 
+        @staticmethod
+        def _normalize_payload(payload: str) -> str:
+            normalized = payload.replace("\r\n", "\n").replace("\r", "\n")
+            if normalized.endswith("\n"):
+                normalized = normalized.rstrip("\n")
+            return normalized
+
+        @staticmethod
+        def _can_fast_partial_match(shorter: str, longer: str) -> bool:
+            if len(shorter) < 12:
+                return False
+            if len(longer) <= 0:
+                return False
+            if (len(shorter) / len(longer)) < 0.7:
+                return False
+            if "\n" in shorter or "\n" in longer:
+                return True
+            return len(longer) >= 60
+
+        @staticmethod
+        def _is_line_prefix(shorter: str, longer: str) -> bool:
+            if not longer.startswith(shorter):
+                return False
+            if len(shorter) == len(longer):
+                return True
+            return longer[len(shorter)] == "\n"
+
+        @staticmethod
+        def _get_foreground_process_info() -> tuple[str | None, str | None]:
+            try:
+                user32 = ctypes.WinDLL("user32", use_last_error=True)
+                kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+
+                user32.GetForegroundWindow.restype = ctypes.wintypes.HWND
+                user32.GetWindowTextLengthW.argtypes = [ctypes.wintypes.HWND]
+                user32.GetWindowTextLengthW.restype = ctypes.c_int
+                user32.GetWindowTextW.argtypes = [
+                    ctypes.wintypes.HWND,
+                    ctypes.wintypes.LPWSTR,
+                    ctypes.c_int,
+                ]
+                user32.GetWindowThreadProcessId.argtypes = [
+                    ctypes.wintypes.HWND,
+                    ctypes.POINTER(ctypes.wintypes.DWORD),
+                ]
+                user32.GetWindowThreadProcessId.restype = ctypes.wintypes.DWORD
+
+                kernel32.OpenProcess.argtypes = [
+                    ctypes.wintypes.DWORD,
+                    ctypes.wintypes.BOOL,
+                    ctypes.wintypes.DWORD,
+                ]
+                kernel32.OpenProcess.restype = ctypes.wintypes.HANDLE
+                kernel32.QueryFullProcessImageNameW.argtypes = [
+                    ctypes.wintypes.HANDLE,
+                    ctypes.wintypes.DWORD,
+                    ctypes.wintypes.LPWSTR,
+                    ctypes.POINTER(ctypes.wintypes.DWORD),
+                ]
+                kernel32.QueryFullProcessImageNameW.restype = ctypes.wintypes.BOOL
+                kernel32.CloseHandle.argtypes = [ctypes.wintypes.HANDLE]
+                kernel32.CloseHandle.restype = ctypes.wintypes.BOOL
+
+                hwnd = user32.GetForegroundWindow()
+                if not hwnd:
+                    return (None, None)
+
+                title = None
+                title_length = user32.GetWindowTextLengthW(hwnd)
+                if title_length > 0:
+                    buffer = ctypes.create_unicode_buffer(title_length + 1)
+                    user32.GetWindowTextW(hwnd, buffer, title_length + 1)
+                    if buffer.value:
+                        title = buffer.value.lower()
+
+                pid_value = ctypes.wintypes.DWORD()
+                user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid_value))
+                pid = int(pid_value.value) if pid_value.value else None
+
+                process_name = None
+                if pid:
+                    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+                    handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+                    if handle:
+                        try:
+                            buf_len = ctypes.wintypes.DWORD(512)
+                            buffer = ctypes.create_unicode_buffer(buf_len.value)
+                            if kernel32.QueryFullProcessImageNameW(handle, 0, buffer, ctypes.byref(buf_len)):
+                                if buffer.value:
+                                    process_name = os.path.basename(buffer.value).lower()
+                        finally:
+                            kernel32.CloseHandle(handle)
+
+                return (process_name, title)
+            except Exception:
+                return (None, None)
+
         def __init__(
             self,
             callback: Callable[[str], None],
@@ -53,12 +151,16 @@ else:
             poll_interval_sec: float = 0.005,
             settle_delay_sec: float = 0.005,
             cooldown_sec: float = 1.2,
+            fast_partial_match_window_sec: float = 0.35,
+            ignore_processes: Optional[list[str] | str] = None,
         ) -> None:
             self._callback: Optional[Callable[[str], None]] = callback
             self._double_copy_window_sec = double_copy_window_sec
             self._poll_interval_sec = poll_interval_sec
             self._settle_delay_sec = settle_delay_sec
             self._cooldown_sec = cooldown_sec
+            self._fast_partial_match_window_sec = fast_partial_match_window_sec
+            self._ignore_process_tokens: list[str] = []
 
             self._lock = threading.Lock()
             self._stop_event = threading.Event()
@@ -67,8 +169,19 @@ else:
 
             self._last_sequence: Optional[int] = None
             self._last_payload: Optional[str] = None
+            self._last_payload_normalized: Optional[str] = None
             self._last_payload_time: Optional[float] = None
             self._cooldown_until = 0.0
+            self.set_ignore_processes(ignore_processes)
+            self._ctrl_c_lock = threading.Lock()
+            self._ctrl_c_times: list[float] = []
+            self._keyboard_hook_stop = threading.Event()
+            self._keyboard_hook_ready = threading.Event()
+            self._keyboard_hook_thread: Optional[threading.Thread] = None
+            self._keyboard_hook_proc = None
+            self._keyboard_hook_handle = None
+            self._keyboard_hook_thread_id: Optional[int] = None
+            self._keyboard_hook_active = False
 
         @property
         def is_running(self) -> bool:
@@ -77,6 +190,203 @@ else:
         def set_callback(self, callback: Callable[[str], None]) -> None:
             with self._lock:
                 self._callback = callback
+
+        def set_ignore_processes(self, ignore_processes: Optional[list[str] | str]) -> None:
+            tokens: list[str] = []
+            if isinstance(ignore_processes, str):
+                tokens = [item.strip().lower() for item in ignore_processes.split(",")]
+            elif isinstance(ignore_processes, (list, tuple, set)):
+                tokens = [str(item).strip().lower() for item in ignore_processes]
+            self._ignore_process_tokens = [token for token in tokens if token]
+
+        def _should_ignore_foreground_app(self) -> bool:
+            if not self._ignore_process_tokens:
+                return False
+            process_name, window_title = self._get_foreground_process_info()
+            if not process_name and not window_title:
+                return False
+            for token in self._ignore_process_tokens:
+                if process_name and token in process_name:
+                    logger.debug(
+                        "Clipboard trigger ignored (foreground process=%s)",
+                        process_name,
+                    )
+                    return True
+                if window_title and token in window_title:
+                    logger.debug(
+                        "Clipboard trigger ignored (foreground title=%s)",
+                        window_title,
+                    )
+                    return True
+            return False
+
+        def _note_ctrl_c_event(self) -> None:
+            now = time.monotonic()
+            with self._ctrl_c_lock:
+                self._ctrl_c_times.append(now)
+                cutoff = now - self._double_copy_window_sec
+                while self._ctrl_c_times and self._ctrl_c_times[0] < cutoff:
+                    self._ctrl_c_times.pop(0)
+
+        def _consume_recent_ctrl_c(self, now: float) -> bool:
+            if not self._keyboard_hook_active:
+                return True
+            with self._ctrl_c_lock:
+                cutoff = now - self._double_copy_window_sec
+                self._ctrl_c_times = [t for t in self._ctrl_c_times if t >= cutoff]
+                if len(self._ctrl_c_times) >= 2:
+                    self._ctrl_c_times = self._ctrl_c_times[-1:]
+                    return True
+            return False
+
+        def _start_keyboard_hook(self) -> None:
+            if self._keyboard_hook_thread and self._keyboard_hook_thread.is_alive():
+                return
+            self._keyboard_hook_stop.clear()
+            self._keyboard_hook_ready.clear()
+            self._keyboard_hook_thread = threading.Thread(
+                target=self._keyboard_hook_loop,
+                name="clipboard_key_hook",
+                daemon=True,
+            )
+            self._keyboard_hook_thread.start()
+            self._keyboard_hook_ready.wait(timeout=1.0)
+
+        def _stop_keyboard_hook(self) -> None:
+            if not self._keyboard_hook_thread:
+                return
+            self._keyboard_hook_stop.set()
+            if self._keyboard_hook_thread_id:
+                try:
+                    user32 = ctypes.WinDLL("user32", use_last_error=True)
+                    user32.PostThreadMessageW.argtypes = [
+                        ctypes.wintypes.DWORD,
+                        ctypes.wintypes.UINT,
+                        ctypes.wintypes.WPARAM,
+                        ctypes.wintypes.LPARAM,
+                    ]
+                    user32.PostThreadMessageW.restype = ctypes.wintypes.BOOL
+                    WM_QUIT = 0x0012
+                    user32.PostThreadMessageW(
+                        self._keyboard_hook_thread_id, WM_QUIT, 0, 0
+                    )
+                except Exception:
+                    pass
+            self._keyboard_hook_thread.join(timeout=1.0)
+            self._keyboard_hook_thread = None
+            self._keyboard_hook_thread_id = None
+            self._keyboard_hook_active = False
+
+        def _keyboard_hook_loop(self) -> None:
+            user32 = None
+            kernel32 = None
+            try:
+                user32 = ctypes.WinDLL("user32", use_last_error=True)
+                kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+
+                WH_KEYBOARD_LL = 13
+                WM_KEYDOWN = 0x0100
+                WM_SYSKEYDOWN = 0x0104
+                VK_CONTROL = 0x11
+                VK_LCONTROL = 0xA2
+                VK_RCONTROL = 0xA3
+                VK_C = 0x43
+                LLKHF_INJECTED = 0x10
+                LLKHF_LOWER_IL_INJECTED = 0x02
+                HC_ACTION = 0
+
+                ULONG_PTR = (
+                    ctypes.c_ulonglong
+                    if ctypes.sizeof(ctypes.c_void_p) == 8
+                    else ctypes.c_ulong
+                )
+
+                class KBDLLHOOKSTRUCT(ctypes.Structure):
+                    _fields_ = [
+                        ("vkCode", ctypes.wintypes.DWORD),
+                        ("scanCode", ctypes.wintypes.DWORD),
+                        ("flags", ctypes.wintypes.DWORD),
+                        ("time", ctypes.wintypes.DWORD),
+                        ("dwExtraInfo", ULONG_PTR),
+                    ]
+
+                HookProc = ctypes.WINFUNCTYPE(
+                    ctypes.c_long,
+                    ctypes.c_int,
+                    ctypes.wintypes.WPARAM,
+                    ctypes.wintypes.LPARAM,
+                )
+
+                def _ctrl_pressed() -> bool:
+                    return bool(
+                        (user32.GetAsyncKeyState(VK_CONTROL) & 0x8000)
+                        or (user32.GetAsyncKeyState(VK_LCONTROL) & 0x8000)
+                        or (user32.GetAsyncKeyState(VK_RCONTROL) & 0x8000)
+                    )
+
+                @HookProc
+                def hook_proc(n_code, w_param, l_param):
+                    try:
+                        if n_code == HC_ACTION and w_param in (WM_KEYDOWN, WM_SYSKEYDOWN):
+                            kbd = ctypes.cast(
+                                l_param, ctypes.POINTER(KBDLLHOOKSTRUCT)
+                            ).contents
+                            if kbd.vkCode == VK_C and not (
+                                kbd.flags & (LLKHF_INJECTED | LLKHF_LOWER_IL_INJECTED)
+                            ):
+                                if _ctrl_pressed():
+                                    self._note_ctrl_c_event()
+                    except Exception:
+                        pass
+                    return user32.CallNextHookEx(None, n_code, w_param, l_param)
+
+                self._keyboard_hook_proc = hook_proc
+                user32.SetWindowsHookExW.argtypes = [
+                    ctypes.c_int,
+                    HookProc,
+                    ctypes.wintypes.HINSTANCE,
+                    ctypes.wintypes.DWORD,
+                ]
+                user32.SetWindowsHookExW.restype = ctypes.wintypes.HANDLE
+                kernel32.GetModuleHandleW.argtypes = [ctypes.wintypes.LPCWSTR]
+                kernel32.GetModuleHandleW.restype = ctypes.wintypes.HMODULE
+                module_handle = kernel32.GetModuleHandleW(None)
+                hook = user32.SetWindowsHookExW(
+                    WH_KEYBOARD_LL, hook_proc, module_handle, 0
+                )
+                if not hook:
+                    logger.debug(
+                        "Failed to install keyboard hook (error=%d)",
+                        ctypes.get_last_error(),
+                    )
+                    self._keyboard_hook_active = False
+                    self._keyboard_hook_ready.set()
+                    return
+
+                self._keyboard_hook_handle = hook
+                kernel32.GetCurrentThreadId.restype = ctypes.wintypes.DWORD
+                self._keyboard_hook_thread_id = int(kernel32.GetCurrentThreadId())
+                self._keyboard_hook_active = True
+                self._keyboard_hook_ready.set()
+
+                msg = ctypes.wintypes.MSG()
+                while not self._keyboard_hook_stop.is_set():
+                    result = user32.GetMessageW(ctypes.byref(msg), 0, 0, 0)
+                    if result <= 0:
+                        break
+                    user32.TranslateMessage(ctypes.byref(msg))
+                    user32.DispatchMessageW(ctypes.byref(msg))
+            except Exception as exc:
+                logger.debug("Keyboard hook loop failed: %s", exc)
+            finally:
+                if user32 and self._keyboard_hook_handle:
+                    try:
+                        user32.UnhookWindowsHookEx(self._keyboard_hook_handle)
+                    except Exception:
+                        pass
+                self._keyboard_hook_handle = None
+                self._keyboard_hook_active = False
+                self._keyboard_hook_ready.set()
 
         def start(self) -> None:
             with self._lock:
@@ -92,6 +402,7 @@ else:
                     name="clipboard_trigger",
                 )
                 self._thread.start()
+                self._start_keyboard_hook()
                 logger.info("Clipboard trigger started (double-copy)")
 
         def stop(self) -> None:
@@ -100,6 +411,7 @@ else:
                     return
                 self._running = False
                 self._stop_event.set()
+            self._stop_keyboard_hook()
 
             if self._thread:
                 self._thread.join(timeout=2.0)
@@ -112,8 +424,11 @@ else:
         def _reset_state(self) -> None:
             self._last_sequence = _clipboard.get_clipboard_sequence_number_raw()
             self._last_payload = None
+            self._last_payload_normalized = None
             self._last_payload_time = None
             self._cooldown_until = 0.0
+            with self._ctrl_c_lock:
+                self._ctrl_c_times.clear()
 
         def _clipboard_listener_loop(self) -> None:
             while not self._stop_event.is_set():
@@ -169,6 +484,7 @@ else:
                     )
                     continue
 
+                normalized_payload = self._normalize_payload(payload)
                 logger.debug(
                     "Clipboard payload read (seq=%s, len=%d)",
                     sequence,
@@ -176,25 +492,56 @@ else:
                 )
 
                 last_payload = self._last_payload
+                last_payload_normalized = self._last_payload_normalized
                 last_time = self._last_payload_time
-                is_match = (
-                    last_payload is not None
-                    and payload == last_payload
+                delta_sec = (now - last_time) if last_time is not None else None
+                exact_match = (
+                    last_payload_normalized is not None
+                    and normalized_payload == last_payload_normalized
                     and last_time is not None
-                    and (now - last_time) <= self._double_copy_window_sec
+                    and delta_sec <= self._double_copy_window_sec
                 )
+                partial_match = False
+                if (
+                    not exact_match
+                    and last_payload_normalized is not None
+                    and last_time is not None
+                    and delta_sec <= self._fast_partial_match_window_sec
+                ):
+                    shorter = normalized_payload
+                    longer = last_payload_normalized
+                    if len(shorter) > len(longer):
+                        shorter, longer = longer, shorter
+                    if self._can_fast_partial_match(shorter, longer):
+                        if "\n" in shorter or "\n" in longer:
+                            if self._is_line_prefix(shorter, longer):
+                                partial_match = True
+                        elif longer.startswith(shorter):
+                            partial_match = True
+                is_match = exact_match or partial_match
                 logger.debug(
-                    "Clipboard double-copy check: match=%s, delta=%.3fs, window=%.3fs",
+                    "Clipboard double-copy check: match=%s, mode=%s, delta=%.3fs, window=%.3fs",
                     is_match,
-                    (now - last_time) if last_time is not None else -1.0,
+                    "partial" if partial_match else "exact" if exact_match else "none",
+                    delta_sec if delta_sec is not None else -1.0,
                     self._double_copy_window_sec,
                 )
-                if (
-                    last_payload is not None
-                    and payload == last_payload
-                    and last_time is not None
-                    and (now - last_time) <= self._double_copy_window_sec
-                ):
+                if is_match:
+                    if self._should_ignore_foreground_app():
+                        self._cooldown_until = now + self._cooldown_sec
+                        self._last_payload = payload
+                        self._last_payload_normalized = normalized_payload
+                        self._last_payload_time = now
+                        continue
+                    if not self._consume_recent_ctrl_c(now):
+                        logger.debug(
+                            "Clipboard trigger suppressed (no recent physical Ctrl+C)"
+                        )
+                        self._cooldown_until = now + self._cooldown_sec
+                        self._last_payload = payload
+                        self._last_payload_normalized = normalized_payload
+                        self._last_payload_time = now
+                        continue
                     self._cooldown_until = now + self._cooldown_sec
                     callback = self._callback
                     if callback:
@@ -206,4 +553,5 @@ else:
                     continue
 
                 self._last_payload = payload
+                self._last_payload_normalized = normalized_payload
                 self._last_payload_time = now

@@ -45,6 +45,7 @@ USER_SETTINGS_KEYS = {
     "browser_display_mode",
     # UI状態（自動保存）
     "last_tab",
+    "clipboard_trigger_ignore_processes",
 }
 
 # Minimum screen width (logical px) to keep side_panel layout.
@@ -131,6 +132,7 @@ class AppSettings:
 
     # Text Translation Options
     use_bundled_glossary: bool = True        # 同梱の glossary.csv を使用するか（デフォルトでオン）
+    clipboard_trigger_ignore_processes: list[str] = field(default_factory=list)
 
     # Font Settings (ファイル翻訳用 - 全形式共通)
     # フォントサイズ調整（JP→EN時）: 0で調整なし、負値で縮小

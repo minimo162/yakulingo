@@ -49,10 +49,10 @@ else:
             self,
             callback: Callable[[str], None],
             *,
-            double_copy_window_sec: float = 0.8,
-            poll_interval_sec: float = 0.1,
-            settle_delay_sec: float = 0.05,
-            cooldown_sec: float = 1.0,
+            double_copy_window_sec: float = 1.2,
+            poll_interval_sec: float = 0.05,
+            settle_delay_sec: float = 0.1,
+            cooldown_sec: float = 1.2,
         ) -> None:
             self._callback: Optional[Callable[[str], None]] = callback
             self._double_copy_window_sec = double_copy_window_sec
@@ -128,6 +128,7 @@ else:
                     continue
 
                 self._last_sequence = sequence
+                logger.debug("Clipboard sequence changed: seq=%s", sequence)
                 time.sleep(self._settle_delay_sec)
 
                 now = time.monotonic()
@@ -153,10 +154,34 @@ else:
                     payload = text
 
                 if not payload:
+                    logger.debug(
+                        "Clipboard payload empty after read (seq=%s, text=%s, files=%d)",
+                        sequence,
+                        "yes" if text else "no",
+                        len(files),
+                    )
                     continue
+
+                logger.debug(
+                    "Clipboard payload read (seq=%s, len=%d)",
+                    sequence,
+                    len(payload),
+                )
 
                 last_payload = self._last_payload
                 last_time = self._last_payload_time
+                is_match = (
+                    last_payload is not None
+                    and payload == last_payload
+                    and last_time is not None
+                    and (now - last_time) <= self._double_copy_window_sec
+                )
+                logger.debug(
+                    "Clipboard double-copy check: match=%s, delta=%.3fs, window=%.3fs",
+                    is_match,
+                    (now - last_time) if last_time is not None else -1.0,
+                    self._double_copy_window_sec,
+                )
                 if (
                     last_payload is not None
                     and payload == last_payload
@@ -175,4 +200,3 @@ else:
 
                 self._last_payload = payload
                 self._last_payload_time = now
-

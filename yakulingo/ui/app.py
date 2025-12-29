@@ -16,6 +16,7 @@ import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+from types import ModuleType
 from typing import Callable, Optional, TYPE_CHECKING
 
 from starlette.requests import Request as StarletteRequest
@@ -388,6 +389,12 @@ from yakulingo.config.settings import (
 
 # Type hints only - not imported at runtime for faster startup
 if TYPE_CHECKING:
+    from nicegui import Client as NiceGUIClient
+    from nicegui.elements.button import Button as UiButton
+    from nicegui.elements.dialog import Dialog as UiDialog
+    from nicegui.elements.label import Label as UiLabel
+    from nicegui.elements.textarea import Textarea as UiTextarea
+    from nicegui.elements.timer import Timer as UiTimer
     from yakulingo.services.copilot_handler import CopilotHandler
     from yakulingo.services.translation_service import TranslationService
     from yakulingo.ui.components.update_notification import UpdateNotification
@@ -517,9 +524,9 @@ class YakuLingoApp:
         self._main_content = None
         self._result_panel = None  # Separate refreshable for result panel only
         self._tabs_container = None
-        self._nav_buttons: dict[Tab, ui.button] = {}
+        self._nav_buttons: dict[Tab, UiButton] = {}
         self._history_list = None
-        self._history_dialog: Optional[ui.dialog] = None
+        self._history_dialog: Optional[UiDialog] = None
         self._history_dialog_list = None
         self._main_area_element = None
 
@@ -527,9 +534,9 @@ class YakuLingoApp:
         self._update_notification: Optional["UpdateNotification"] = None
 
         # Translate button reference for dynamic state updates
-        self._translate_button: Optional[ui.button] = None
+        self._translate_button: Optional[UiButton] = None
         # Streaming preview label reference (updated without full refresh)
-        self._streaming_preview_label: Optional[ui.label] = None
+        self._streaming_preview_label: Optional[UiLabel] = None
 
         # Client reference for async handlers (saved from @ui.page handler)
         # Protected by _client_lock for thread-safe access across async operations
@@ -545,7 +552,7 @@ class YakuLingoApp:
         self._timer_lock = threading.Lock()
 
         # File translation progress timer management (prevents orphaned timers)
-        self._active_progress_timer: Optional[ui.timer] = None
+        self._active_progress_timer: Optional[UiTimer] = None
 
         # Panel sizes (sidebar_width, input_panel_width, content_width) in pixels
         # Set by run_app() based on monitor detection
@@ -594,7 +601,7 @@ class YakuLingoApp:
         self._side_panel_sync_done = False
 
         # Text input textarea reference for auto-focus
-        self._text_input_textarea: Optional[ui.textarea] = None
+        self._text_input_textarea: Optional[UiTextarea] = None
 
         # Hidden file upload element for direct file selection (no dialog)
         self._reference_upload = None
@@ -728,6 +735,48 @@ class YakuLingoApp:
             current_task = asyncio.current_task()
             if current_task is not None and self._resident_heartbeat_task is current_task:
                 self._resident_heartbeat_task = None
+
+    async def _warmup_resident_gpt_mode(self) -> None:
+        """Warm up Copilot GPT mode during resident startup (no UI auto-open)."""
+        if self._shutdown_requested:
+            return
+
+        if self._early_connection_event is not None and not self._early_connection_event.is_set():
+            try:
+                await asyncio.to_thread(self._early_connection_event.wait)
+            except Exception as e:
+                logger.debug("Resident warmup: early connection wait failed: %s", e)
+
+        if self._early_connection_result is None and self._early_connection_result_ref is not None:
+            self._early_connection_result = self._early_connection_result_ref.value
+
+        copilot = self.copilot
+        if not copilot.is_connected:
+            try:
+                result = await asyncio.to_thread(
+                    copilot.connect,
+                    bring_to_foreground_on_login=True,
+                    defer_window_positioning=True,
+                )
+                self._early_connection_result = result
+            except Exception as e:
+                logger.debug("Resident warmup: Copilot connect failed: %s", e)
+                return
+
+        if self._shutdown_requested or not copilot.is_connected:
+            return
+
+        try:
+            await self._ensure_gpt_mode_setup()
+        except Exception as e:
+            logger.debug("Resident warmup: GPT mode setup failed: %s", e)
+
+        if sys.platform != "win32":
+            return
+        try:
+            await asyncio.to_thread(copilot.minimize_edge_window)
+        except Exception as e:
+            logger.debug("Resident warmup: Edge minimize failed: %s", e)
 
     def _on_hotkey_triggered(self, text: str, source_hwnd: int | None = None):
         """Handle hotkey trigger - set text and translate in main app.
@@ -3619,15 +3668,15 @@ class YakuLingoApp:
         if self._history_dialog_list:
             self._history_dialog_list.refresh()
 
-    def _on_translate_button_created(self, button: ui.button):
+    def _on_translate_button_created(self, button: UiButton):
         """Store reference to translate button for dynamic state updates"""
         self._translate_button = button
 
-    def _on_streaming_preview_label_created(self, label: ui.label):
+    def _on_streaming_preview_label_created(self, label: UiLabel):
         """Store reference to streaming preview label for incremental updates."""
         self._streaming_preview_label = label
 
-    def _on_textarea_created(self, textarea: ui.textarea):
+    def _on_textarea_created(self, textarea: UiTextarea):
         """Store reference to text input textarea and set initial focus.
 
         Called when the text input textarea is created. Stores the reference
@@ -5338,7 +5387,7 @@ class YakuLingoApp:
             self._layout_init_state = LayoutInitializationState.FAILED
             return True  # Proceed anyway, PDF will work with degraded quality
 
-    def _create_layout_init_dialog(self) -> "ui.dialog":
+    def _create_layout_init_dialog(self) -> UiDialog:
         """Create a dialog showing PP-DocLayout-L initialization progress."""
         dialog = ui.dialog().props('persistent')
         with dialog, ui.card().classes('items-center p-8'):
@@ -7482,7 +7531,10 @@ def run_app(
 
         if not native:
             no_auto_open = os.environ.get("YAKULINGO_NO_AUTO_OPEN", "")
-            if no_auto_open.strip().lower() not in ("1", "true", "yes"):
+            no_auto_open_flag = no_auto_open.strip().lower() in ("1", "true", "yes")
+            if no_auto_open_flag:
+                asyncio.create_task(yakulingo_app._warmup_resident_gpt_mode())
+            else:
                 try:
                     asyncio.create_task(asyncio.to_thread(_open_browser_window))
                     logger.info("Auto-opening UI window (browser mode)")
@@ -7490,12 +7542,12 @@ def run_app(
                     logger.debug("Failed to auto-open UI window: %s", e)
 
     @ui.page('/')
-    async def main_page(client: nicegui_Client):
+    async def main_page(client: NiceGUIClient):
         # Save client reference for async handlers (context.client not available in async tasks)
         with yakulingo_app._client_lock:
             yakulingo_app._client = client
 
-        def _clear_cached_client_on_disconnect(_client: nicegui_Client | None = None) -> None:
+        def _clear_cached_client_on_disconnect(_client: NiceGUIClient | None = None) -> None:
             # When the UI window is closed, keep the resident service alive but clear the cached
         # client so the clipboard trigger can reopen the UI window on demand.
             nonlocal browser_opened

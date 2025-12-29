@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import ctypes
 import logging
-import os
 import sys
 import threading
 import time
@@ -73,76 +72,6 @@ else:
                 return True
             return longer[len(shorter)] == "\n"
 
-        @staticmethod
-        def _get_foreground_process_info() -> tuple[str | None, str | None]:
-            try:
-                user32 = ctypes.WinDLL("user32", use_last_error=True)
-                kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-
-                user32.GetForegroundWindow.restype = ctypes.wintypes.HWND
-                user32.GetWindowTextLengthW.argtypes = [ctypes.wintypes.HWND]
-                user32.GetWindowTextLengthW.restype = ctypes.c_int
-                user32.GetWindowTextW.argtypes = [
-                    ctypes.wintypes.HWND,
-                    ctypes.wintypes.LPWSTR,
-                    ctypes.c_int,
-                ]
-                user32.GetWindowThreadProcessId.argtypes = [
-                    ctypes.wintypes.HWND,
-                    ctypes.POINTER(ctypes.wintypes.DWORD),
-                ]
-                user32.GetWindowThreadProcessId.restype = ctypes.wintypes.DWORD
-
-                kernel32.OpenProcess.argtypes = [
-                    ctypes.wintypes.DWORD,
-                    ctypes.wintypes.BOOL,
-                    ctypes.wintypes.DWORD,
-                ]
-                kernel32.OpenProcess.restype = ctypes.wintypes.HANDLE
-                kernel32.QueryFullProcessImageNameW.argtypes = [
-                    ctypes.wintypes.HANDLE,
-                    ctypes.wintypes.DWORD,
-                    ctypes.wintypes.LPWSTR,
-                    ctypes.POINTER(ctypes.wintypes.DWORD),
-                ]
-                kernel32.QueryFullProcessImageNameW.restype = ctypes.wintypes.BOOL
-                kernel32.CloseHandle.argtypes = [ctypes.wintypes.HANDLE]
-                kernel32.CloseHandle.restype = ctypes.wintypes.BOOL
-
-                hwnd = user32.GetForegroundWindow()
-                if not hwnd:
-                    return (None, None)
-
-                title = None
-                title_length = user32.GetWindowTextLengthW(hwnd)
-                if title_length > 0:
-                    buffer = ctypes.create_unicode_buffer(title_length + 1)
-                    user32.GetWindowTextW(hwnd, buffer, title_length + 1)
-                    if buffer.value:
-                        title = buffer.value.lower()
-
-                pid_value = ctypes.wintypes.DWORD()
-                user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid_value))
-                pid = int(pid_value.value) if pid_value.value else None
-
-                process_name = None
-                if pid:
-                    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-                    handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
-                    if handle:
-                        try:
-                            buf_len = ctypes.wintypes.DWORD(512)
-                            buffer = ctypes.create_unicode_buffer(buf_len.value)
-                            if kernel32.QueryFullProcessImageNameW(handle, 0, buffer, ctypes.byref(buf_len)):
-                                if buffer.value:
-                                    process_name = os.path.basename(buffer.value).lower()
-                        finally:
-                            kernel32.CloseHandle(handle)
-
-                return (process_name, title)
-            except Exception:
-                return (None, None)
-
         def __init__(
             self,
             callback: Callable[[str], None],
@@ -152,7 +81,6 @@ else:
             settle_delay_sec: float = 0.005,
             cooldown_sec: float = 1.2,
             fast_partial_match_window_sec: float = 0.35,
-            ignore_processes: Optional[list[str] | str] = None,
         ) -> None:
             self._callback: Optional[Callable[[str], None]] = callback
             self._double_copy_window_sec = double_copy_window_sec
@@ -160,7 +88,6 @@ else:
             self._settle_delay_sec = settle_delay_sec
             self._cooldown_sec = cooldown_sec
             self._fast_partial_match_window_sec = fast_partial_match_window_sec
-            self._ignore_process_tokens: list[str] = []
 
             self._lock = threading.Lock()
             self._stop_event = threading.Event()
@@ -172,7 +99,6 @@ else:
             self._last_payload_normalized: Optional[str] = None
             self._last_payload_time: Optional[float] = None
             self._cooldown_until = 0.0
-            self.set_ignore_processes(ignore_processes)
             self._ctrl_c_lock = threading.Lock()
             self._ctrl_c_times: list[float] = []
             self._keyboard_hook_stop = threading.Event()
@@ -190,35 +116,6 @@ else:
         def set_callback(self, callback: Callable[[str], None]) -> None:
             with self._lock:
                 self._callback = callback
-
-        def set_ignore_processes(self, ignore_processes: Optional[list[str] | str]) -> None:
-            tokens: list[str] = []
-            if isinstance(ignore_processes, str):
-                tokens = [item.strip().lower() for item in ignore_processes.split(",")]
-            elif isinstance(ignore_processes, (list, tuple, set)):
-                tokens = [str(item).strip().lower() for item in ignore_processes]
-            self._ignore_process_tokens = [token for token in tokens if token]
-
-        def _should_ignore_foreground_app(self) -> bool:
-            if not self._ignore_process_tokens:
-                return False
-            process_name, window_title = self._get_foreground_process_info()
-            if not process_name and not window_title:
-                return False
-            for token in self._ignore_process_tokens:
-                if process_name and token in process_name:
-                    logger.debug(
-                        "Clipboard trigger ignored (foreground process=%s)",
-                        process_name,
-                    )
-                    return True
-                if window_title and token in window_title:
-                    logger.debug(
-                        "Clipboard trigger ignored (foreground title=%s)",
-                        window_title,
-                    )
-                    return True
-            return False
 
         def _note_ctrl_c_event(self) -> None:
             now = time.monotonic()
@@ -527,12 +424,6 @@ else:
                     self._double_copy_window_sec,
                 )
                 if is_match:
-                    if self._should_ignore_foreground_app():
-                        self._cooldown_until = now + self._cooldown_sec
-                        self._last_payload = payload
-                        self._last_payload_normalized = normalized_payload
-                        self._last_payload_time = now
-                        continue
                     if not self._consume_recent_ctrl_c(now):
                         logger.debug(
                             "Clipboard trigger suppressed (no recent physical Ctrl+C)"

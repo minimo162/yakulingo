@@ -682,23 +682,10 @@ class YakuLingoApp:
         try:
             from yakulingo.services.clipboard_trigger import ClipboardTrigger
 
-            ignore_processes = []
-            try:
-                ignore_processes = self.settings.clipboard_trigger_ignore_processes
-            except Exception as e:
-                logger.debug("Failed to load clipboard ignore list: %s", e)
-
             if self._clipboard_trigger is None:
-                self._clipboard_trigger = ClipboardTrigger(
-                    self._on_clipboard_triggered,
-                    ignore_processes=ignore_processes,
-                )
+                self._clipboard_trigger = ClipboardTrigger(self._on_clipboard_triggered)
             else:
                 self._clipboard_trigger.set_callback(self._on_clipboard_triggered)
-                try:
-                    self._clipboard_trigger.set_ignore_processes(ignore_processes)
-                except Exception as e:
-                    logger.debug("Failed to update clipboard ignore list: %s", e)
 
             if not self._clipboard_trigger.is_running:
                 self._clipboard_trigger.start()

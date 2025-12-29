@@ -400,6 +400,7 @@ MAX_HISTORY_DRAWER_DISPLAY = 100  # Maximum history items to show in history dra
 MIN_AVAILABLE_MEMORY_GB_FOR_EARLY_CONNECT = 0.5  # Skip early Copilot init only on very low memory
 TEXT_TRANSLATION_CHAR_LIMIT = 5000  # Max chars for text translation (double Ctrl+C, Ctrl+Enter)
 DEFAULT_TEXT_STYLE = "concise"
+RESIDENT_HEARTBEAT_INTERVAL_SEC = 300  # Update startup.log even when UI is closed
 HOTKEY_MAX_FILE_COUNT = 10
 HOTKEY_SUPPORTED_FILE_SUFFIXES = {
     ".xlsx",
@@ -570,6 +571,7 @@ class YakuLingoApp:
         self._shutdown_requested = False
         self._copilot_window_monitor_task: "asyncio.Task | None" = None
         self._copilot_window_seen = False
+        self._resident_heartbeat_task: "asyncio.Task | None" = None
 
         # Clipboard trigger manager for quick translation (double Ctrl+C)
         self._hotkey_manager = None
@@ -689,6 +691,29 @@ class YakuLingoApp:
             except Exception as e:
                 logger.debug(f"Error stopping hotkey manager: {e}")
             self._hotkey_manager = None
+
+    def _start_resident_heartbeat(self, interval_sec: float = RESIDENT_HEARTBEAT_INTERVAL_SEC) -> None:
+        existing = self._resident_heartbeat_task
+        if existing is not None and not existing.done():
+            return
+        self._resident_heartbeat_task = asyncio.create_task(
+            self._resident_heartbeat_loop(interval_sec)
+        )
+
+    async def _resident_heartbeat_loop(self, interval_sec: float) -> None:
+        try:
+            while not self._shutdown_requested:
+                with self._client_lock:
+                    has_client = self._client is not None
+                if not has_client:
+                    logger.debug("Resident heartbeat: running (no UI client)")
+                await asyncio.sleep(interval_sec)
+        except asyncio.CancelledError:
+            pass
+        finally:
+            current_task = asyncio.current_task()
+            if current_task is not None and self._resident_heartbeat_task is current_task:
+                self._resident_heartbeat_task = None
 
     def _on_hotkey_triggered(self, text: str, source_hwnd: int | None = None):
         """Handle hotkey trigger - set text and translate in main app.
@@ -6717,6 +6742,14 @@ def run_app(
                 pass
             logger.debug("[TIMING] Cancel: status_auto_refresh_task: %.3fs", time_module.time() - t0)
 
+        if yakulingo_app._resident_heartbeat_task is not None:
+            t0 = time_module.time()
+            try:
+                yakulingo_app._resident_heartbeat_task.cancel()
+            except Exception:
+                pass
+            logger.debug("[TIMING] Cancel: resident_heartbeat_task: %.3fs", time_module.time() - t0)
+
         if yakulingo_app.translation_service is not None:
             t0 = time_module.time()
             try:
@@ -7354,6 +7387,7 @@ def run_app(
         """Called when NiceGUI server starts (before clients connect)."""
         # Start clipboard trigger immediately so clipboard translation works even without the UI.
         yakulingo_app.start_hotkey_manager()
+        yakulingo_app._start_resident_heartbeat()
 
         # Start Copilot connection early only in native mode; browser mode should remain silent
         # and connect on demand (hotkey/UI).

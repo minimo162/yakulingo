@@ -1504,6 +1504,14 @@ if (-not (Test-PortOpen `$port)) {
   }
 }
 
+`$layoutUrl = "http://127.0.0.1:`$port/api/window-layout"
+`$sourceHwndValue = 0
+try {
+  Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class YakuLingoWin32 { [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow(); }'
+  `$sourceHwnd = [YakuLingoWin32]::GetForegroundWindow()
+  if (`$sourceHwnd -ne [IntPtr]::Zero) { `$sourceHwndValue = `$sourceHwnd.ToInt64() }
+} catch { }
+
 `$edge = `$null
 `$candidates = @(
   'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
@@ -1532,6 +1540,11 @@ if (`$edge) {
 } else {
   Start-Process `$url | Out-Null
 }
+
+try {
+  `$body = @{ source_hwnd = `$sourceHwndValue; edge_layout = "offscreen" } | ConvertTo-Json -Compress
+  Invoke-WebRequest -UseBasicParsing -Method Post -Uri `$layoutUrl -Body `$body -ContentType 'application/json' -TimeoutSec 2 | Out-Null
+} catch { }
 "@
 
     $exitScript = @"

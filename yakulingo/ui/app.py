@@ -864,16 +864,23 @@ class YakuLingoApp:
             summary = summarize_clipboard_text(text)
             self._log_hotkey_debug_info(trace_id, summary)
 
+            preserve_edge = open_ui and source_hwnd is None
+            edge_layout_mode = "offscreen"
             layout_result: bool | None = None
             if sys.platform == "win32" and open_ui:
                 try:
-                    self.copilot.set_hotkey_layout_active(True)
+                    self.copilot.set_hotkey_layout_active(True, preserve_edge=preserve_edge)
                 except Exception as e:
                     logger.debug("Failed to set hotkey layout active: %s", e)
+                try:
+                    self.copilot.set_edge_layout_mode("offscreen")
+                except Exception as e:
+                    logger.debug("Failed to set Edge layout mode: %s", e)
                 try:
                     layout_result = await asyncio.to_thread(
                         self._apply_hotkey_work_priority_layout_win32,
                         source_hwnd,
+                        edge_layout=edge_layout_mode,
                     )
                 except Exception as e:
                     logger.debug("Failed to apply hotkey work-priority window layout: %s", e)
@@ -908,9 +915,25 @@ class YakuLingoApp:
                             if self._client is client:
                                 self._client = None
                         client = None
+                    elif open_ui and source_hwnd is None:
+                        try:
+                            brought_to_front = await self._bring_window_to_front(
+                                position_edge=not preserve_edge
+                            )
+                        except Exception as e:
+                            logger.debug("Failed to bring window to front for hotkey: %s", e)
+                        else:
+                            if not brought_to_front:
+                                logger.debug("Hotkey UI client exists but UI window not found; using headless mode")
+                                with self._client_lock:
+                                    if self._client is client:
+                                        self._client = None
+                                client = None
                 else:
                     try:
-                        brought_to_front = await self._bring_window_to_front(position_edge=True)
+                        brought_to_front = await self._bring_window_to_front(
+                            position_edge=not preserve_edge
+                        )
                     except Exception as e:
                         logger.debug("Failed to bring window to front for hotkey: %s", e)
                     else:
@@ -936,14 +959,16 @@ class YakuLingoApp:
                                 asyncio.to_thread(
                                     self._retry_hotkey_layout_win32,
                                     source_hwnd,
+                                    edge_layout=edge_layout_mode,
                                 )
                             )
                         except Exception as e:
                             logger.debug("Failed to schedule hotkey layout retry: %s", e)
-                        try:
-                            self.copilot.suppress_side_panel_behavior(4.0)
-                        except Exception as e:
-                            logger.debug("Failed to suppress side panel behavior: %s", e)
+                        if not preserve_edge:
+                            try:
+                                self.copilot.suppress_side_panel_behavior(4.0)
+                            except Exception as e:
+                                logger.debug("Failed to suppress side panel behavior: %s", e)
 
             is_path_selection, file_paths = self._extract_hotkey_file_paths(text)
             if is_path_selection:
@@ -1241,7 +1266,7 @@ class YakuLingoApp:
                         chosen = option
                         break
 
-            from yakulingo.services.hotkey_manager import set_clipboard_text
+            from yakulingo.services.clipboard_utils import set_clipboard_text
             if set_clipboard_text(chosen.text):
                 logger.info("Hotkey translation [%s] copied to clipboard", trace_id)
             else:
@@ -1943,6 +1968,8 @@ class YakuLingoApp:
         # Note: Don't check _connected - Edge may be running even before Copilot connects
         if position_edge and sys.platform == 'win32' and self._settings and self._copilot:
             if self._get_effective_browser_display_mode() == "side_panel":
+                if getattr(self._copilot, "_edge_layout_mode", None) == "offscreen":
+                    return win32_success
                 try:
                     # bring_to_front=True ensures Edge is visible when activated via hotkey
                     await asyncio.to_thread(
@@ -1953,7 +1980,12 @@ class YakuLingoApp:
                     logger.debug("Failed to position Edge as side panel: %s", e)
         return win32_success
 
-    def _apply_hotkey_work_priority_layout_win32(self, source_hwnd: int | None) -> bool:
+    def _apply_hotkey_work_priority_layout_win32(
+        self,
+        source_hwnd: int | None,
+        *,
+        edge_layout: str = "auto",
+    ) -> bool:
         """Tile source window left and YakuLingo UI right for hotkey translations.
 
         This aims to keep the user's working app (Word/Excel/PPT/Browser, etc.) active
@@ -1971,6 +2003,11 @@ class YakuLingoApp:
             from ctypes import wintypes
 
             user32 = ctypes.WinDLL("user32", use_last_error=True)
+            dwmapi = None
+            try:
+                dwmapi = ctypes.WinDLL("dwmapi", use_last_error=True)
+            except Exception:
+                dwmapi = None
 
             # Resolve YakuLingo window handle first (used to detect stale UI client).
             yakulingo_hwnd: int | None = None
@@ -2060,6 +2097,35 @@ class YakuLingoApp:
                     f"0x{yakulingo_hwnd:x}" if yakulingo_hwnd else "None",
                 )
 
+            edge_hwnd: int | None = None
+            use_triple_layout = False
+            move_edge_offscreen = False
+            edge_layout_mode = (edge_layout or "auto").strip().lower()
+            if edge_layout_mode not in ("auto", "offscreen", "triple"):
+                edge_layout_mode = "auto"
+            if edge_layout_mode == "auto" and getattr(copilot, "_edge_layout_mode", None) == "offscreen":
+                edge_layout_mode = "offscreen"
+            if copilot is not None and (
+                edge_layout_mode in ("offscreen", "triple") or original_source_hwnd is None
+            ):
+                try:
+                    edge_hwnd = copilot._find_edge_window_handle()
+                except Exception:
+                    edge_hwnd = None
+                if edge_hwnd and not _is_valid_window(edge_hwnd):
+                    edge_hwnd = None
+            if edge_layout_mode == "triple":
+                if edge_hwnd is not None:
+                    use_triple_layout = True
+                else:
+                    logger.debug("Hotkey layout: Edge window not found; falling back to 1:1 layout")
+            elif edge_layout_mode == "offscreen":
+                if edge_hwnd is not None:
+                    move_edge_offscreen = True
+            elif original_source_hwnd is None and edge_hwnd is not None:
+                # For clipboard-triggered hotkey, keep Edge off-screen and layout source/UI 1:1.
+                move_edge_offscreen = True
+
             # Monitor work area for the monitor containing the source window.
             class RECT(ctypes.Structure):
                 _fields_ = [
@@ -2099,7 +2165,7 @@ class YakuLingoApp:
             gap = 10
             min_ui_width = 580
             min_target_width = 580
-            ui_ratio = 0.4  # Work-priority: give more width to the source app
+            ui_ratio = 0.5  # 1:1 split between source app and YakuLingo UI
 
             dpi_scale = _get_windows_dpi_scale()
             dpi_awareness = _get_process_dpi_awareness()
@@ -2108,22 +2174,51 @@ class YakuLingoApp:
                 min_ui_width = int(round(min_ui_width * dpi_scale))
                 min_target_width = int(round(min_target_width * dpi_scale))
 
-            ui_width = max(int(work_width * ui_ratio), min_ui_width)
-            ui_width = min(ui_width, max(work_width - gap - min_target_width, 0))
-            target_width = work_width - gap - ui_width
-            if target_width < min_target_width:
-                ui_width = max(work_width - gap - min_target_width, 0)
-                ui_width = max(ui_width, min_ui_width)
+            edge_width: int | None = None
+            if use_triple_layout:
+                available_width = work_width - (gap * 2)
+                base_unit = available_width // 3
+                if (
+                    available_width <= 0
+                    or base_unit < min_target_width
+                    or base_unit < min_ui_width
+                ):
+                    use_triple_layout = False
+                else:
+                    # 1:1:1 split across source/UI/Edge (distribute remainder by 1px).
+                    remainder = available_width - (base_unit * 3)
+                    target_width = base_unit + (1 if remainder > 0 else 0)
+                    ui_width = base_unit + (1 if remainder > 1 else 0)
+                    edge_width = available_width - target_width - ui_width
+                    if edge_width <= 0 or target_width <= 0 or ui_width <= 0:
+                        use_triple_layout = False
+            if not use_triple_layout and edge_layout_mode == "triple" and edge_hwnd is not None:
+                move_edge_offscreen = True
+
+            if not use_triple_layout:
+                ui_width = max(int(work_width * ui_ratio), min_ui_width)
+                ui_width = min(ui_width, max(work_width - gap - min_target_width, 0))
                 target_width = work_width - gap - ui_width
+                if target_width < min_target_width:
+                    ui_width = max(work_width - gap - min_target_width, 0)
+                    ui_width = max(ui_width, min_ui_width)
+                    target_width = work_width - gap - ui_width
 
-            if ui_width <= 0 or target_width <= 0:
-                if work_width > gap:
-                    ui_width = max(int(work_width * 0.45), 1)
-                    target_width = max(work_width - gap - ui_width, 1)
+                if ui_width <= 0 or target_width <= 0:
+                    if work_width > gap:
+                        ui_width = max(int(work_width * 0.45), 1)
+                        target_width = max(work_width - gap - ui_width, 1)
 
-            if ui_width <= 0 or target_width <= 0:
+                if ui_width <= 0 or target_width <= 0:
+                    logger.debug(
+                        "Hotkey layout skipped: insufficient work area (width=%d, gap=%d)",
+                        work_width,
+                        gap,
+                    )
+                    return True
+            elif edge_width is None or target_width <= 0 or ui_width <= 0 or edge_width <= 0:
                 logger.debug(
-                    "Hotkey layout skipped: insufficient work area (width=%d, gap=%d)",
+                    "Hotkey layout skipped: invalid triple layout (width=%d, gap=%d)",
                     work_width,
                     gap,
                 )
@@ -2133,6 +2228,8 @@ class YakuLingoApp:
             target_y = int(work_area.top)
             app_x = int(work_area.left + target_width + gap)
             app_y = target_y
+            edge_x = int(app_x + ui_width + gap) if use_triple_layout else None
+            edge_y = target_y
 
             SW_RESTORE = 9
             SW_SHOW = 5
@@ -2140,6 +2237,30 @@ class YakuLingoApp:
             SWP_NOACTIVATE = 0x0010
             SWP_SHOWWINDOW = 0x0040
             HWND_TOP = 0
+            DWMWA_EXTENDED_FRAME_BOUNDS = 9
+            SM_XVIRTUALSCREEN = 76
+            SM_YVIRTUALSCREEN = 77
+            SM_CXVIRTUALSCREEN = 78
+            SM_CYVIRTUALSCREEN = 79
+
+            user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(RECT)]
+            user32.GetWindowRect.restype = wintypes.BOOL
+            user32.GetSystemMetrics.argtypes = [ctypes.c_int]
+            user32.GetSystemMetrics.restype = ctypes.c_int
+
+            dwm_get_window_attribute = None
+            if dwmapi is not None:
+                try:
+                    dwm_get_window_attribute = dwmapi.DwmGetWindowAttribute
+                    dwm_get_window_attribute.argtypes = [
+                        wintypes.HWND,
+                        wintypes.DWORD,
+                        ctypes.c_void_p,
+                        wintypes.DWORD,
+                    ]
+                    dwm_get_window_attribute.restype = ctypes.c_int
+                except Exception:
+                    dwm_get_window_attribute = None
 
             def _restore_window(hwnd_to_restore: int) -> None:
                 try:
@@ -2152,6 +2273,83 @@ class YakuLingoApp:
 
             _restore_window(source_hwnd)
             _restore_window(yakulingo_hwnd)
+            if edge_hwnd and (use_triple_layout or move_edge_offscreen):
+                _restore_window(edge_hwnd)
+
+            def _get_frame_margins(hwnd_value: int) -> tuple[int, int, int, int]:
+                if not dwm_get_window_attribute:
+                    return (0, 0, 0, 0)
+                try:
+                    outer = RECT()
+                    if not user32.GetWindowRect(wintypes.HWND(hwnd_value), ctypes.byref(outer)):
+                        return (0, 0, 0, 0)
+                    extended = RECT()
+                    result = dwm_get_window_attribute(
+                        wintypes.HWND(hwnd_value),
+                        DWMWA_EXTENDED_FRAME_BOUNDS,
+                        ctypes.byref(extended),
+                        ctypes.sizeof(extended),
+                    )
+                    if result != 0:
+                        return (0, 0, 0, 0)
+                    left = max(0, extended.left - outer.left)
+                    top = max(0, extended.top - outer.top)
+                    right = max(0, outer.right - extended.right)
+                    bottom = max(0, outer.bottom - extended.bottom)
+                    return (left, top, right, bottom)
+                except Exception:
+                    return (0, 0, 0, 0)
+
+            def _get_window_size(hwnd_value: int) -> tuple[int, int] | None:
+                try:
+                    rect = RECT()
+                    if not user32.GetWindowRect(wintypes.HWND(hwnd_value), ctypes.byref(rect)):
+                        return None
+                    width = max(0, int(rect.right - rect.left))
+                    height = max(0, int(rect.bottom - rect.top))
+                    if width <= 0 or height <= 0:
+                        return None
+                    return (width, height)
+                except Exception:
+                    return None
+
+            def _get_virtual_screen_bounds() -> tuple[int, int, int, int]:
+                left = int(user32.GetSystemMetrics(SM_XVIRTUALSCREEN))
+                top = int(user32.GetSystemMetrics(SM_YVIRTUALSCREEN))
+                width = int(user32.GetSystemMetrics(SM_CXVIRTUALSCREEN))
+                height = int(user32.GetSystemMetrics(SM_CYVIRTUALSCREEN))
+                return (left, top, width, height)
+
+            def _set_window_pos_with_frame_adjust(
+                hwnd_value: int,
+                x: int,
+                y: int,
+                width: int,
+                height: int,
+                insert_after,
+                flags: int,
+            ) -> bool:
+                left, top, right, bottom = _get_frame_margins(hwnd_value)
+                adj_x = x - left
+                adj_y = y - top
+                adj_width = width + left + right
+                adj_height = height + top + bottom
+                if adj_width <= 0 or adj_height <= 0:
+                    adj_x = x
+                    adj_y = y
+                    adj_width = width
+                    adj_height = height
+                return bool(
+                    user32.SetWindowPos(
+                        wintypes.HWND(hwnd_value),
+                        insert_after,
+                        adj_x,
+                        adj_y,
+                        adj_width,
+                        adj_height,
+                        flags,
+                    )
+                )
 
             user32.SetWindowPos.argtypes = [
                 wintypes.HWND,
@@ -2164,13 +2362,13 @@ class YakuLingoApp:
             ]
             user32.SetWindowPos.restype = wintypes.BOOL
 
-            result_source = user32.SetWindowPos(
-                wintypes.HWND(source_hwnd),
-                None,
+            result_source = _set_window_pos_with_frame_adjust(
+                source_hwnd,
                 target_x,
                 target_y,
                 target_width,
                 work_height,
+                None,
                 SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW,
             )
             if not result_source:
@@ -2179,13 +2377,13 @@ class YakuLingoApp:
                     ctypes.get_last_error(),
                 )
 
-            result_app = user32.SetWindowPos(
-                wintypes.HWND(yakulingo_hwnd),
-                wintypes.HWND(HWND_TOP),
+            result_app = _set_window_pos_with_frame_adjust(
+                yakulingo_hwnd,
                 app_x,
                 app_y,
                 ui_width,
                 work_height,
+                wintypes.HWND(HWND_TOP),
                 SWP_NOACTIVATE | SWP_SHOWWINDOW,
             )
             if not result_app:
@@ -2194,16 +2392,59 @@ class YakuLingoApp:
                     ctypes.get_last_error(),
                 )
 
-            # Keep focus on the user's working app.
+            if use_triple_layout and edge_hwnd and edge_width is not None and edge_x is not None:
+                result_edge = _set_window_pos_with_frame_adjust(
+                    edge_hwnd,
+                    edge_x,
+                    edge_y,
+                    edge_width,
+                    work_height,
+                    None,
+                    SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW,
+                )
+                if not result_edge:
+                    logger.debug(
+                        "Hotkey layout: failed to move edge window (error=%d)",
+                        ctypes.get_last_error(),
+                    )
+            elif move_edge_offscreen and edge_hwnd:
+                v_left, v_top, v_width, _v_height = _get_virtual_screen_bounds()
+                offscreen_x = v_left + v_width + max(gap, 10) + 200
+                offscreen_y = v_top
+                edge_off_width = ui_width
+                edge_off_height = work_height
+                result_edge = _set_window_pos_with_frame_adjust(
+                    edge_hwnd,
+                    offscreen_x,
+                    offscreen_y,
+                    edge_off_width,
+                    edge_off_height,
+                    None,
+                    SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW,
+                )
+                if not result_edge:
+                    logger.debug(
+                        "Hotkey layout: failed to move edge off-screen (error=%d)",
+                        ctypes.get_last_error(),
+                    )
+
+            # Keep focus on the user's working app for explicit hotkey triggers.
+            # For clipboard double-copy (no source_hwnd), bring YakuLingo to foreground.
             ASFW_ANY = -1
             try:
                 user32.AllowSetForegroundWindow(ASFW_ANY)
             except Exception:
                 pass
-            try:
-                user32.SetForegroundWindow(wintypes.HWND(source_hwnd))
-            except Exception:
-                pass
+            if original_source_hwnd is not None:
+                try:
+                    user32.SetForegroundWindow(wintypes.HWND(source_hwnd))
+                except Exception:
+                    pass
+            else:
+                try:
+                    user32.SetForegroundWindow(wintypes.HWND(yakulingo_hwnd))
+                except Exception:
+                    pass
 
             return True
 
@@ -2215,6 +2456,7 @@ class YakuLingoApp:
         self,
         source_hwnd: int | None,
         *,
+        edge_layout: str = "auto",
         attempts: int = 20,
         delay_sec: float = 0.15,
     ) -> None:
@@ -2226,7 +2468,7 @@ class YakuLingoApp:
         for _ in range(attempts):
             if self._shutdown_requested:
                 return
-            if self._apply_hotkey_work_priority_layout_win32(source_hwnd):
+            if self._apply_hotkey_work_priority_layout_win32(source_hwnd, edge_layout=edge_layout):
                 return
             time_module.sleep(delay_sec)
         logger.debug("Hotkey layout retry exhausted (attempts=%d)", attempts)
@@ -2368,9 +2610,12 @@ class YakuLingoApp:
         # This ensures windows are positioned correctly even if pywebview placed app at center
         # Skip if early positioning already completed (prevents duplicate repositioning)
         if sys.platform == 'win32':
+            edge_offscreen = bool(
+                self._copilot and getattr(self._copilot, "_edge_layout_mode", None) == "offscreen"
+            )
             if not self._early_position_completed:
-                if self._native_mode_enabled is False:
-                    logger.debug("Skipping app window repositioning (browser mode)")
+                if self._native_mode_enabled is False or edge_offscreen:
+                    logger.debug("Skipping app window repositioning (edge offscreen or browser mode)")
                 else:
                     try:
                         await asyncio.to_thread(self._reposition_windows_for_side_panel)
@@ -2387,8 +2632,8 @@ class YakuLingoApp:
 
             # Start window synchronization for side_panel mode (native only).
             # Browser mode uses Edge for the UI itself, so syncing would minimize the UI.
-            if self._native_mode_enabled is False:
-                logger.debug("Skipping window sync (browser mode)")
+            if self._native_mode_enabled is False or edge_offscreen:
+                logger.debug("Skipping window sync (edge offscreen or browser mode)")
             elif self._settings and self._get_effective_browser_display_mode() == "side_panel":
                 try:
                     if self._copilot:
@@ -2401,6 +2646,8 @@ class YakuLingoApp:
         if self._side_panel_sync_done or sys.platform != 'win32':
             return
         if self._native_mode_enabled is False:
+            return
+        if self._copilot and getattr(self._copilot, "_edge_layout_mode", None) == "offscreen":
             return
         settings = self._settings
         if not settings or self._get_effective_browser_display_mode() != "side_panel":
@@ -2446,6 +2693,8 @@ class YakuLingoApp:
             # Check if side_panel mode is enabled
             settings = self._settings
             if not settings or self._get_effective_browser_display_mode() != "side_panel":
+                return False
+            if self._copilot and getattr(self._copilot, "_edge_layout_mode", None) == "offscreen":
                 return False
 
             # Calculate target position using the same function as _position_window_early_sync()
@@ -4461,9 +4710,8 @@ class YakuLingoApp:
         return files if files else None
 
     def _copy_text(self, text: str):
-        """Copy specified text to clipboard"""
+        """Show copy notification (clipboard write is handled client-side)."""
         if text:
-            ui.clipboard.write(text)
             ui.notify('コピーしました', type='positive')
 
     # =========================================================================
@@ -7177,6 +7425,107 @@ def run_app(
                 raise HTTPException(status_code=500, detail="failed") from err
 
             return {"ok": True}
+
+        @nicegui_app.post('/api/window-layout')
+        async def window_layout_api(request: StarletteRequest):  # type: ignore[misc]
+            """Apply work-priority window layout (local machine only)."""
+            try:
+                client_host = getattr(getattr(request, "client", None), "host", None)
+                if client_host not in ("127.0.0.1", "::1"):
+                    raise HTTPException(status_code=403, detail="forbidden")
+            except HTTPException:
+                raise
+            except Exception:
+                raise HTTPException(status_code=403, detail="forbidden")
+
+            origin = None
+            referer = None
+            try:
+                origin = request.headers.get("origin")
+                referer = request.headers.get("referer")
+            except Exception:
+                origin = None
+                referer = None
+
+            def _is_local_web_origin(value: str | None) -> bool:
+                if not value:
+                    return True
+                lower = value.lower()
+                return (
+                    lower.startswith("http://127.0.0.1")
+                    or lower.startswith("http://localhost")
+                    or lower.startswith("https://127.0.0.1")
+                    or lower.startswith("https://localhost")
+                )
+
+            if not _is_local_web_origin(origin) or not _is_local_web_origin(referer):
+                raise HTTPException(status_code=403, detail="forbidden")
+
+            try:
+                data = await request.json()
+            except Exception as err:
+                raise HTTPException(status_code=400, detail="invalid json") from err
+
+            raw_hwnd = data.get("source_hwnd")
+            source_hwnd: int | None = None
+            if isinstance(raw_hwnd, str):
+                try:
+                    source_hwnd = int(raw_hwnd, 0)
+                except Exception:
+                    source_hwnd = None
+            elif isinstance(raw_hwnd, (int, float)):
+                try:
+                    source_hwnd = int(raw_hwnd)
+                except Exception:
+                    source_hwnd = None
+            if source_hwnd == 0:
+                source_hwnd = None
+            if source_hwnd:
+                yakulingo_app._last_hotkey_source_hwnd = source_hwnd
+
+            layout_value = data.get("edge_layout") or data.get("layout") or "auto"
+            if isinstance(layout_value, str):
+                layout_value = layout_value.strip().lower()
+            else:
+                layout_value = "auto"
+            if layout_value in ("none", "off", "disabled", ""):
+                layout_value = "auto"
+                edge_layout_mode = None
+            elif layout_value in ("offscreen", "triple", "auto"):
+                edge_layout_mode = None if layout_value == "auto" else layout_value
+            else:
+                layout_value = "auto"
+                edge_layout_mode = None
+
+            if edge_layout_mode is not None and sys.platform == "win32" and yakulingo_app._copilot is not None:
+                try:
+                    yakulingo_app.copilot.set_edge_layout_mode(edge_layout_mode)
+                except Exception as err:
+                    logger.debug("Failed to set Edge layout mode: %s", err)
+
+            try:
+                layout_result = await asyncio.to_thread(
+                    yakulingo_app._apply_hotkey_work_priority_layout_win32,
+                    source_hwnd,
+                    edge_layout=layout_value,
+                )
+            except Exception as err:
+                logger.debug("Failed to apply window layout: %s", err)
+                raise HTTPException(status_code=500, detail="failed") from err
+
+            if layout_result is False and sys.platform == "win32":
+                try:
+                    asyncio.create_task(
+                        asyncio.to_thread(
+                            yakulingo_app._retry_hotkey_layout_win32,
+                            source_hwnd,
+                            edge_layout=layout_value,
+                        )
+                    )
+                except Exception as err:
+                    logger.debug("Failed to schedule layout retry: %s", err)
+
+            return {"ok": True, "layout": edge_layout_mode or "auto"}
 
     # Icon path for native window (pywebview) and browser favicon.
     icon_path = ui_dir / 'yakulingo.ico'

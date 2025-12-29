@@ -1089,7 +1089,7 @@ class CopilotHandler:
     GPT_MODE_MORE_TEXT = 'More'
     # OPTIMIZED: Reduced menu wait to minimum (just enough for React to update)
     GPT_MODE_MENU_WAIT = 0.05  # Wait for menu to open/close (50ms)
-    GPT_MODE_MORE_HOVER_WAIT = 0.15  # Wait for submenu to render after hover
+    GPT_MODE_MORE_HOVER_WAIT = 0.6  # Wait for submenu to render after hover
     # GPT mode button wait timeout
     # Early connection thread calls ensure_gpt_mode() during NiceGUI startup (~8s)
     # Copilot React UI takes ~11s from connection to fully render GPT mode button
@@ -1193,6 +1193,10 @@ class CopilotHandler:
         self._suppress_window_sync_until: float = 0.0
         self._suppress_display_mode_until: float = 0.0
         self._hotkey_layout_active: bool = False
+        self._hotkey_preserve_edge: bool = False
+        # Keep Edge off-screen by default to avoid accidental interaction.
+        self._edge_layout_mode: str | None = "offscreen"
+        self._edge_restore_rect: tuple[int, int, int, int] | None = None
         # Grace period to keep YakuLingo focused after taskbar restore (seconds)
         self._FOREGROUND_GRACE_PERIOD = 0.5
         # Warning frequency control: only show "window not found" warning once
@@ -1262,10 +1266,25 @@ class CopilotHandler:
             self._suppress_display_mode_until = until
         logger.debug("Side panel suppression active for %.1fs", duration_sec)
 
-    def set_hotkey_layout_active(self, active: bool) -> None:
+    def set_hotkey_layout_active(self, active: bool, *, preserve_edge: bool = False) -> None:
         """Disable side_panel window management while a hotkey layout is active."""
         self._hotkey_layout_active = active
-        logger.debug("Hotkey layout active: %s", active)
+        self._hotkey_preserve_edge = preserve_edge if active else False
+        logger.debug(
+            "Hotkey layout active: %s (preserve_edge=%s)",
+            active,
+            self._hotkey_preserve_edge,
+        )
+
+    def set_edge_layout_mode(self, mode: str | None) -> None:
+        """Override Edge layout behavior ("offscreen", "triple", or None)."""
+        normalized = mode.strip().lower() if isinstance(mode, str) else None
+        if normalized not in ("offscreen", "triple"):
+            normalized = None
+        if normalized != getattr(self, "_edge_layout_mode", None):
+            self._edge_restore_rect = None
+        self._edge_layout_mode = normalized
+        logger.debug("Edge layout override: %s", normalized)
 
     def _apply_retry_backoff(self, attempt: int, max_retries: int) -> None:
         """Apply exponential backoff before retry.
@@ -1757,6 +1776,8 @@ class CopilotHandler:
 
             # Get browser display mode from cached settings
             display_mode = self._get_browser_display_mode()
+            if getattr(self, "_edge_layout_mode", None) == "offscreen":
+                display_mode = "minimized"
 
             startupinfo = None
             creationflags = 0
@@ -3030,7 +3051,7 @@ class CopilotHandler:
                 try:
                     target_clicked = False
                     target_label = None
-                    per_candidate_timeout = min(wait_timeout_ms, 500)
+                    per_candidate_timeout = min(wait_timeout_ms, 1200)
                     for candidate in candidates:
                         target_selector = self.GPT_MODE_MENU_ITEM_VISIBLE_TEXT_SELECTOR.format(text=candidate)
                         try:
@@ -3070,7 +3091,7 @@ class CopilotHandler:
                 # No "More" submenu; fall back to direct click if target is visible.
                 target_clicked = False
                 target_label = None
-                per_candidate_timeout = min(wait_timeout_ms, 500)
+                per_candidate_timeout = min(wait_timeout_ms, 1200)
                 for candidate in candidates:
                     target_selector = self.GPT_MODE_MENU_ITEM_VISIBLE_TEXT_SELECTOR.format(text=candidate)
                     try:
@@ -3161,7 +3182,7 @@ class CopilotHandler:
             # Click the target mode entry
             target_clicked = False
             target_label = None
-            per_candidate_timeout = min(wait_timeout_ms, 500)
+            per_candidate_timeout = min(wait_timeout_ms, 1200)
             for candidate in candidates:
                 target_selector = self.GPT_MODE_MENU_ITEM_VISIBLE_TEXT_SELECTOR.format(text=candidate)
                 try:
@@ -3756,8 +3777,8 @@ class CopilotHandler:
         1. Playwright's bring_to_front() - works within browser context
         2. Windows API (pywin32/ctypes) - forces window to foreground
 
-        Note: In side_panel or foreground mode, this method does nothing because
-        the browser is already visible to the user.
+        Note: In side_panel or foreground mode, this method does nothing unless
+        an Edge layout override is active (e.g., offscreen/triple).
 
         Args:
             page: The Playwright page to bring to front
@@ -3766,8 +3787,9 @@ class CopilotHandler:
         # Check browser display mode - skip for side_panel/foreground modes
         # (browser is already visible, no need to bring to front)
         mode = self._get_browser_display_mode()
+        edge_layout_mode = getattr(self, "_edge_layout_mode", None)
 
-        if mode in ("side_panel", "foreground"):
+        if mode in ("side_panel", "foreground") and edge_layout_mode is None:
             logger.debug("Skipping bring_to_foreground in %s mode (already visible): %s", mode, reason)
             return
 
@@ -3798,7 +3820,11 @@ class CopilotHandler:
 
         # Method 2: Windows API to force window to foreground
         if sys.platform == "win32":
-            self._bring_edge_window_to_front(page_title)
+            positioned = False
+            if edge_layout_mode in ("offscreen", "triple"):
+                positioned = self._position_edge_over_app()
+            if not positioned:
+                self._bring_edge_window_to_front(page_title)
 
         logger.info("Browser window brought to foreground for: %s", reason)
 
@@ -4382,6 +4408,416 @@ class CopilotHandler:
             logger.warning("Failed to position Edge as side panel: %s", e)
             return False
 
+    def _position_edge_offscreen(self) -> bool:
+        """Move the Edge window off-screen while keeping it open."""
+        if sys.platform != "win32":
+            return False
+
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.WinDLL('user32', use_last_error=True)
+            try:
+                dwmapi = ctypes.WinDLL('dwmapi', use_last_error=True)
+            except Exception:
+                dwmapi = None
+
+            edge_hwnd = self._find_edge_window_handle()
+            if not edge_hwnd:
+                return False
+            self._set_edge_taskbar_visibility(False)
+
+            class RECT(ctypes.Structure):
+                _fields_ = [
+                    ("left", wintypes.LONG),
+                    ("top", wintypes.LONG),
+                    ("right", wintypes.LONG),
+                    ("bottom", wintypes.LONG),
+                ]
+
+            def _get_frame_rect(hwnd):
+                if not dwmapi:
+                    return None
+                try:
+                    rect = RECT()
+                    DWMWA_EXTENDED_FRAME_BOUNDS = 9
+                    if dwmapi.DwmGetWindowAttribute(
+                        hwnd,
+                        DWMWA_EXTENDED_FRAME_BOUNDS,
+                        ctypes.byref(rect),
+                        ctypes.sizeof(rect),
+                    ) == 0:
+                        return rect
+                except Exception:
+                    return None
+                return None
+
+            def _get_window_rect(hwnd):
+                rect = RECT()
+                if not user32.GetWindowRect(wintypes.HWND(hwnd), ctypes.byref(rect)):
+                    return None
+                return rect
+
+            def _get_frame_margins(hwnd):
+                outer = _get_window_rect(hwnd)
+                if outer is None:
+                    return (0, 0, 0, 0)
+                frame = _get_frame_rect(hwnd)
+                if frame is None:
+                    return (0, 0, 0, 0)
+                left = max(0, frame.left - outer.left)
+                top = max(0, frame.top - outer.top)
+                right = max(0, outer.right - frame.right)
+                bottom = max(0, outer.bottom - frame.bottom)
+                return (left, top, right, bottom)
+
+            def _set_window_pos_with_frame_adjust(hwnd, x, y, width, height, insert_after, flags):
+                left, top, right, bottom = _get_frame_margins(hwnd)
+                adj_x = x - left
+                adj_y = y - top
+                adj_width = width + left + right
+                adj_height = height + top + bottom
+                if adj_width <= 0 or adj_height <= 0:
+                    adj_x = x
+                    adj_y = y
+                    adj_width = width
+                    adj_height = height
+                return bool(
+                    user32.SetWindowPos(
+                        wintypes.HWND(hwnd),
+                        insert_after,
+                        adj_x,
+                        adj_y,
+                        adj_width,
+                        adj_height,
+                        flags,
+                    )
+                )
+
+            app_hwnd = self._find_yakulingo_window_handle(include_hidden=True)
+            target_rect = _get_frame_rect(app_hwnd) if app_hwnd else None
+            if target_rect is None and app_hwnd:
+                target_rect = _get_window_rect(app_hwnd)
+            if target_rect is None:
+                target_rect = _get_window_rect(edge_hwnd)
+            if target_rect is None:
+                return False
+
+            target_width = target_rect.right - target_rect.left
+            target_height = target_rect.bottom - target_rect.top
+            if target_width <= 0 or target_height <= 0:
+                return False
+
+            current_rect = _get_window_rect(edge_hwnd)
+            if current_rect and self._edge_restore_rect is None:
+                self._edge_restore_rect = (
+                    int(current_rect.left),
+                    int(current_rect.top),
+                    int(current_rect.right),
+                    int(current_rect.bottom),
+                )
+
+            SM_XVIRTUALSCREEN = 76
+            SM_YVIRTUALSCREEN = 77
+            SM_CXVIRTUALSCREEN = 78
+            SM_CYVIRTUALSCREEN = 79
+            v_left = int(user32.GetSystemMetrics(SM_XVIRTUALSCREEN))
+            v_top = int(user32.GetSystemMetrics(SM_YVIRTUALSCREEN))
+            v_width = int(user32.GetSystemMetrics(SM_CXVIRTUALSCREEN))
+            _v_height = int(user32.GetSystemMetrics(SM_CYVIRTUALSCREEN))
+
+            gap = max(self.SIDE_PANEL_GAP, 10)
+            offscreen_x = v_left + v_width + gap + 200
+            offscreen_y = target_rect.top if target_rect else v_top
+
+            SW_RESTORE = 9
+            SW_SHOW = 5
+            if user32.IsIconic(wintypes.HWND(edge_hwnd)):
+                user32.ShowWindow(wintypes.HWND(edge_hwnd), SW_RESTORE)
+            else:
+                user32.ShowWindow(wintypes.HWND(edge_hwnd), SW_SHOW)
+
+            SWP_NOZORDER = 0x0004
+            SWP_NOACTIVATE = 0x0010
+            SWP_SHOWWINDOW = 0x0040
+            success = _set_window_pos_with_frame_adjust(
+                edge_hwnd,
+                offscreen_x,
+                offscreen_y,
+                target_width,
+                target_height,
+                None,
+                SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW,
+            )
+            if success:
+                logger.debug("Edge moved off-screen (layout override)")
+            return bool(success)
+        except Exception as e:
+            logger.debug("Failed to move Edge off-screen: %s", e)
+            return False
+
+    def _position_edge_over_app(self) -> bool:
+        """Position Edge over the YakuLingo window (login overlay)."""
+        if sys.platform != "win32":
+            return False
+
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.WinDLL('user32', use_last_error=True)
+            try:
+                dwmapi = ctypes.WinDLL('dwmapi', use_last_error=True)
+            except Exception:
+                dwmapi = None
+
+            edge_hwnd = self._find_edge_window_handle()
+            yakulingo_hwnd = self._find_yakulingo_window_handle(include_hidden=True)
+            if not edge_hwnd or not yakulingo_hwnd:
+                return False
+            self._set_edge_taskbar_visibility(False)
+
+            class RECT(ctypes.Structure):
+                _fields_ = [
+                    ("left", wintypes.LONG),
+                    ("top", wintypes.LONG),
+                    ("right", wintypes.LONG),
+                    ("bottom", wintypes.LONG),
+                ]
+
+            def _get_frame_rect(hwnd):
+                if not dwmapi:
+                    return None
+                try:
+                    rect = RECT()
+                    DWMWA_EXTENDED_FRAME_BOUNDS = 9
+                    if dwmapi.DwmGetWindowAttribute(
+                        hwnd,
+                        DWMWA_EXTENDED_FRAME_BOUNDS,
+                        ctypes.byref(rect),
+                        ctypes.sizeof(rect),
+                    ) == 0:
+                        return rect
+                except Exception:
+                    return None
+                return None
+
+            def _get_window_rect(hwnd):
+                rect = RECT()
+                if not user32.GetWindowRect(wintypes.HWND(hwnd), ctypes.byref(rect)):
+                    return None
+                return rect
+
+            def _get_frame_margins(hwnd):
+                outer = _get_window_rect(hwnd)
+                if outer is None:
+                    return (0, 0, 0, 0)
+                frame = _get_frame_rect(hwnd)
+                if frame is None:
+                    return (0, 0, 0, 0)
+                left = max(0, frame.left - outer.left)
+                top = max(0, frame.top - outer.top)
+                right = max(0, outer.right - frame.right)
+                bottom = max(0, outer.bottom - frame.bottom)
+                return (left, top, right, bottom)
+
+            def _set_window_pos_with_frame_adjust(hwnd, x, y, width, height, insert_after, flags):
+                left, top, right, bottom = _get_frame_margins(hwnd)
+                adj_x = x - left
+                adj_y = y - top
+                adj_width = width + left + right
+                adj_height = height + top + bottom
+                if adj_width <= 0 or adj_height <= 0:
+                    adj_x = x
+                    adj_y = y
+                    adj_width = width
+                    adj_height = height
+                return bool(
+                    user32.SetWindowPos(
+                        wintypes.HWND(hwnd),
+                        insert_after,
+                        adj_x,
+                        adj_y,
+                        adj_width,
+                        adj_height,
+                        flags,
+                    )
+                )
+
+            target_rect = _get_frame_rect(yakulingo_hwnd)
+            if target_rect is None:
+                target_rect = _get_window_rect(yakulingo_hwnd)
+            if target_rect is None:
+                return False
+
+            target_width = target_rect.right - target_rect.left
+            target_height = target_rect.bottom - target_rect.top
+            if target_width <= 0 or target_height <= 0:
+                return False
+
+            SW_RESTORE = 9
+            SW_SHOW = 5
+            if user32.IsIconic(wintypes.HWND(edge_hwnd)):
+                user32.ShowWindow(wintypes.HWND(edge_hwnd), SW_RESTORE)
+            else:
+                user32.ShowWindow(wintypes.HWND(edge_hwnd), SW_SHOW)
+
+            SWP_SHOWWINDOW = 0x0040
+            HWND_TOPMOST = -1
+            HWND_NOTOPMOST = -2
+            success = _set_window_pos_with_frame_adjust(
+                edge_hwnd,
+                target_rect.left,
+                target_rect.top,
+                target_width,
+                target_height,
+                wintypes.HWND(HWND_TOPMOST),
+                SWP_SHOWWINDOW,
+            )
+            user32.SetWindowPos(
+                wintypes.HWND(edge_hwnd),
+                wintypes.HWND(HWND_NOTOPMOST),
+                0,
+                0,
+                0,
+                0,
+                0x0002 | 0x0001 | 0x0010 | SWP_SHOWWINDOW,
+            )
+
+            ASFW_ANY = -1
+            try:
+                user32.AllowSetForegroundWindow(ASFW_ANY)
+                user32.SetForegroundWindow(wintypes.HWND(edge_hwnd))
+            except Exception:
+                pass
+
+            if success:
+                logger.debug("Edge positioned over YakuLingo window for login")
+            return bool(success)
+        except Exception as e:
+            logger.debug("Failed to position Edge over YakuLingo: %s", e)
+            return False
+
+    def _set_edge_taskbar_visibility(self, visible: bool) -> bool:
+        """Toggle Edge window visibility in the taskbar (Windows only)."""
+        if sys.platform != "win32":
+            return False
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.WinDLL('user32', use_last_error=True)
+            edge_hwnd = self._find_edge_window_handle()
+            if not edge_hwnd:
+                return False
+
+            GWL_EXSTYLE = -20
+            WS_EX_TOOLWINDOW = 0x00000080
+            WS_EX_APPWINDOW = 0x00040000
+            SWP_NOMOVE = 0x0002
+            SWP_NOSIZE = 0x0001
+            SWP_NOZORDER = 0x0004
+            SWP_NOACTIVATE = 0x0010
+            SWP_FRAMECHANGED = 0x0020
+
+            is_64 = ctypes.sizeof(ctypes.c_void_p) == ctypes.sizeof(ctypes.c_longlong)
+            if is_64:
+                GetWindowLongPtr = user32.GetWindowLongPtrW
+                SetWindowLongPtr = user32.SetWindowLongPtrW
+                GetWindowLongPtr.restype = ctypes.c_longlong
+                SetWindowLongPtr.restype = ctypes.c_longlong
+                set_style_type = ctypes.c_longlong
+            else:
+                GetWindowLongPtr = user32.GetWindowLongW
+                SetWindowLongPtr = user32.SetWindowLongW
+                GetWindowLongPtr.restype = ctypes.c_long
+                SetWindowLongPtr.restype = ctypes.c_long
+                set_style_type = ctypes.c_long
+
+            GetWindowLongPtr.argtypes = [wintypes.HWND, ctypes.c_int]
+            SetWindowLongPtr.argtypes = [wintypes.HWND, ctypes.c_int, set_style_type]
+
+            style = GetWindowLongPtr(wintypes.HWND(edge_hwnd), GWL_EXSTYLE)
+            if visible:
+                new_style = (style | WS_EX_APPWINDOW) & ~WS_EX_TOOLWINDOW
+            else:
+                new_style = (style | WS_EX_TOOLWINDOW) & ~WS_EX_APPWINDOW
+
+            if new_style == style:
+                return True
+
+            SetWindowLongPtr(wintypes.HWND(edge_hwnd), GWL_EXSTYLE, new_style)
+            user32.SetWindowPos(
+                wintypes.HWND(edge_hwnd),
+                None,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+            )
+            logger.debug("Edge taskbar visibility set to: %s", "visible" if visible else "hidden")
+            return True
+        except Exception as e:
+            logger.debug("Failed to set Edge taskbar visibility: %s", e)
+            return False
+
+    def _ensure_edge_window_visible(self) -> None:
+        """Ensure the Edge window is restored without changing its position."""
+        if sys.platform != "win32":
+            return
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.WinDLL('user32', use_last_error=True)
+            edge_hwnd = self._find_edge_window_handle()
+            if not edge_hwnd:
+                return
+            if user32.IsIconic(wintypes.HWND(edge_hwnd)):
+                SW_SHOWNOACTIVATE = 4
+                user32.ShowWindow(wintypes.HWND(edge_hwnd), SW_SHOWNOACTIVATE)
+        except Exception:
+            return
+
+    def _restore_edge_from_overlay(self) -> bool:
+        """Restore Edge window to its pre-overlay position (if stored)."""
+        if sys.platform != "win32":
+            return False
+        rect = self._edge_restore_rect
+        if not rect:
+            return False
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.WinDLL('user32', use_last_error=True)
+            edge_hwnd = self._find_edge_window_handle()
+            if not edge_hwnd:
+                return False
+            left, top, right, bottom = rect
+            width = right - left
+            height = bottom - top
+            if width <= 0 or height <= 0:
+                return False
+            SWP_NOZORDER = 0x0004
+            SWP_NOACTIVATE = 0x0010
+            SWP_SHOWWINDOW = 0x0040
+            user32.SetWindowPos(
+                wintypes.HWND(edge_hwnd),
+                None,
+                left,
+                top,
+                width,
+                height,
+                SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW,
+            )
+            self._edge_restore_rect = None
+            return True
+        except Exception:
+            return False
+
     def _apply_browser_display_mode(self, page_title: str = None) -> None:
         """Apply browser display mode based on settings.
 
@@ -4390,6 +4826,15 @@ class CopilotHandler:
         """
         # Use cached settings if available
         mode = self._get_browser_display_mode()
+        edge_layout_mode = getattr(self, "_edge_layout_mode", None)
+        if edge_layout_mode == "offscreen":
+            if not self._position_edge_offscreen():
+                self._minimize_edge_window(page_title)
+            return
+        if edge_layout_mode == "triple":
+            if not self._restore_edge_from_overlay():
+                self._ensure_edge_window_visible()
+            return
 
         if mode == "side_panel":
             # For side_panel mode, wait for YakuLingo window to be available
@@ -4581,6 +5026,8 @@ class CopilotHandler:
             if not edge_hwnd:
                 logger.debug("Edge window not found via EnumWindows")
                 return False
+            if getattr(self, "_edge_layout_mode", None) == "offscreen":
+                self._set_edge_taskbar_visibility(False)
 
             SW_SHOW = 5
             SW_RESTORE = 9
@@ -4768,6 +5215,9 @@ class CopilotHandler:
                 logger.warning("Edge window not found for minimization after %d attempts", max_retries)
                 return False
 
+            if getattr(self, "_edge_layout_mode", None) == "offscreen":
+                self._set_edge_taskbar_visibility(False)
+
             # Check if already minimized - skip all processing if so
             # This prevents unnecessary window operations that could cause flicker
             if user32.IsIconic(edge_hwnd):
@@ -4809,7 +5259,21 @@ class CopilotHandler:
         """
         if sys.platform == "win32":
             mode = self._get_browser_display_mode()
+            edge_layout_mode = getattr(self, "_edge_layout_mode", None)
+            if edge_layout_mode == "offscreen":
+                if not self._position_edge_offscreen():
+                    self._minimize_edge_window(None)
+                logger.debug("Edge layout override active: offscreen")
+                return
+            if edge_layout_mode == "triple":
+                if not self._restore_edge_from_overlay():
+                    self._ensure_edge_window_visible()
+                logger.debug("Edge layout override active: triple")
+                return
             if self._hotkey_layout_active:
+                if self._hotkey_preserve_edge:
+                    logger.debug("Side panel display mode suppressed due to hotkey layout (preserve edge)")
+                    return
                 logger.debug("Side panel display mode suppressed due to hotkey layout")
                 mode = "minimized"
             elif time.monotonic() < self._suppress_display_mode_until:
@@ -4877,7 +5341,14 @@ class CopilotHandler:
         """
         # Check browser display mode - skip for side_panel/foreground modes
         mode = self._get_browser_display_mode()
+        edge_layout_mode = getattr(self, "_edge_layout_mode", None)
 
+        if edge_layout_mode == "offscreen":
+            if self._is_edge_in_foreground():
+                self._position_edge_offscreen()
+            return
+        if edge_layout_mode == "triple":
+            return
         if mode in ("side_panel", "foreground"):
             # Browser is intentionally visible, no need to minimize
             return

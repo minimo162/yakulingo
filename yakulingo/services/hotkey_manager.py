@@ -67,8 +67,14 @@ else:
     WM_QUIT = 0x0012
     ERROR_CLASS_ALREADY_EXISTS = 1410
     HWND_MESSAGE = ctypes.wintypes.HWND(-3)
+    # ctypes.wintypes.LRESULT is missing on some Python builds; fall back to LONG_PTR.
+    if hasattr(ctypes.wintypes, "LRESULT"):
+        _LRESULT = ctypes.wintypes.LRESULT
+    else:
+        _LRESULT = ctypes.c_longlong if ctypes.sizeof(ctypes.c_void_p) == 8 else ctypes.c_long
+
     WNDPROCTYPE = ctypes.WINFUNCTYPE(
-        ctypes.wintypes.LRESULT,
+        _LRESULT,
         ctypes.wintypes.HWND,
         ctypes.wintypes.UINT,
         ctypes.wintypes.WPARAM,

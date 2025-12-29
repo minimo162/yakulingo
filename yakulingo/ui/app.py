@@ -398,7 +398,7 @@ COPILOT_LOGIN_TIMEOUT = 300  # 5 minutes for login
 MAX_HISTORY_DISPLAY = 20  # Maximum history items to display in sidebar
 MAX_HISTORY_DRAWER_DISPLAY = 100  # Maximum history items to show in history drawer
 MIN_AVAILABLE_MEMORY_GB_FOR_EARLY_CONNECT = 0.5  # Skip early Copilot init only on very low memory
-TEXT_TRANSLATION_CHAR_LIMIT = 5000  # Max chars for text translation (Ctrl+Alt+J, Ctrl+Enter)
+TEXT_TRANSLATION_CHAR_LIMIT = 5000  # Max chars for text translation (clipboard trigger, Ctrl+Enter)
 DEFAULT_TEXT_STYLE = "concise"
 RESIDENT_HEARTBEAT_INTERVAL_SEC = 300  # Update startup.log even when UI is closed
 HOTKEY_MAX_FILE_COUNT = 10
@@ -434,7 +434,7 @@ class _EarlyConnectionResult:
 
 @dataclass
 class HotkeyFileOutputSummary:
-    """Output file list for multi-file hotkey translations (downloaded via UI)."""
+    """Output file list for multi-file clipboard-triggered translations (downloaded via UI)."""
 
     output_files: list[tuple[Path, str]]
 
@@ -443,7 +443,7 @@ def summarize_clipboard_text(text: str, max_preview: int = 200) -> ClipboardDebu
     """Create a concise summary of clipboard text for debugging.
 
     Args:
-        text: Clipboard text captured via the hotkey.
+        text: Clipboard text captured via the clipboard trigger.
         max_preview: Maximum length for the preview string (with escaped newlines/tabs).
 
     Returns:
@@ -536,7 +536,7 @@ class YakuLingoApp:
         self._client = None
         self._client_lock = threading.Lock()
 
-        # Debug trace identifier for correlating hotkey → translation pipeline
+        # Debug trace identifier for correlating clipboard trigger → translation pipeline
         self._active_translation_trace_id: Optional[str] = None
         self._hotkey_translation_active: bool = False
         self._last_hotkey_source_hwnd: Optional[int] = None
@@ -573,8 +573,8 @@ class YakuLingoApp:
         self._copilot_window_seen = False
         self._resident_heartbeat_task: "asyncio.Task | None" = None
 
-        # Global hotkey manager for quick translation (Ctrl+Alt+J)
-        self._hotkey_manager = None
+        # Clipboard trigger for double-copy translation.
+        self._clipboard_trigger = None
         self._open_ui_window_callback: Callable[[], None] | None = None
 
         # PP-DocLayout-L initialization state (on-demand for PDF)
@@ -665,35 +665,36 @@ class YakuLingoApp:
             return self._native_window_size
         return self._window_size
 
-    def start_hotkey_manager(self):
-        """Start the global hotkey manager for quick translation (Ctrl+Alt+J)."""
+    def start_clipboard_trigger(self):
+        """Start the clipboard double-copy trigger."""
         import sys
         if sys.platform != 'win32':
-            logger.info("Global hotkey only available on Windows")
+            logger.info("Clipboard trigger only available on Windows")
             return
 
         try:
-            from yakulingo.services.hotkey_manager import get_hotkey_manager
+            from yakulingo.services.clipboard_trigger import ClipboardTrigger
 
-            self._hotkey_manager = get_hotkey_manager()
-            self._hotkey_manager.set_callback(self._on_hotkey_triggered)
-            if not self._hotkey_manager.is_running:
-                self._hotkey_manager.start()
-                logger.info("Global hotkey started (Ctrl+Alt+J)")
+            if self._clipboard_trigger is None:
+                self._clipboard_trigger = ClipboardTrigger(self._on_clipboard_triggered)
             else:
-                logger.info("Global hotkey already running (Ctrl+Alt+J)")
-        except Exception as e:
-            logger.error(f"Failed to start hotkey manager: {e}")
+                self._clipboard_trigger.set_callback(self._on_clipboard_triggered)
 
-    def stop_hotkey_manager(self):
-        """Stop the global hotkey manager."""
-        if self._hotkey_manager:
+            if not self._clipboard_trigger.is_running:
+                self._clipboard_trigger.start()
+            else:
+                logger.info("Clipboard trigger already running (double-copy)")
+        except Exception as e:
+            logger.error("Failed to start clipboard trigger: %s", e)
+
+    def stop_clipboard_trigger(self):
+        """Stop the clipboard trigger."""
+        if self._clipboard_trigger:
             try:
-                self._hotkey_manager.stop()
-                logger.info("Global hotkey stopped")
+                self._clipboard_trigger.stop()
             except Exception as e:
-                logger.debug(f"Error stopping hotkey manager: {e}")
-            self._hotkey_manager = None
+                logger.debug("Error stopping clipboard trigger: %s", e)
+            self._clipboard_trigger = None
 
     def _start_resident_heartbeat(self, interval_sec: float = RESIDENT_HEARTBEAT_INTERVAL_SEC) -> None:
         existing = self._resident_heartbeat_task
@@ -712,14 +713,14 @@ class YakuLingoApp:
                     logger.debug("Resident heartbeat: running (no UI client)")
                 if sys.platform == "win32":
                     try:
-                        manager = self._hotkey_manager
+                        manager = self._clipboard_trigger
                         if manager is None or not manager.is_running:
                             logger.warning(
-                                "Resident heartbeat detected hotkey manager stopped; restarting"
+                                "Resident heartbeat detected clipboard trigger stopped; restarting"
                             )
-                            self.start_hotkey_manager()
+                            self.start_clipboard_trigger()
                     except Exception as e:
-                        logger.debug("Resident heartbeat hotkey check failed: %s", e)
+                        logger.debug("Resident heartbeat clipboard check failed: %s", e)
                 await asyncio.sleep(interval_sec)
         except asyncio.CancelledError:
             pass
@@ -752,13 +753,17 @@ class YakuLingoApp:
                 return
 
         # Schedule UI update on NiceGUI's event loop
-        # This is called from HotkeyManager's background thread
+        # This is called from the clipboard trigger background thread.
         try:
             # Use background_tasks to safely schedule async work from another thread
             from nicegui import background_tasks
             background_tasks.create(self._handle_hotkey_text(text, source_hwnd=source_hwnd))
         except Exception as e:
             logger.error(f"Failed to schedule hotkey handler: {e}")
+
+    def _on_clipboard_triggered(self, text: str) -> None:
+        """Handle clipboard double-copy trigger."""
+        self._on_hotkey_triggered(text, source_hwnd=None)
 
     async def _handle_hotkey_text(
         self,
@@ -2222,6 +2227,16 @@ class YakuLingoApp:
                     buffer = ctypes.create_unicode_buffer(length + 1)
                     user32.GetWindowTextW(hwnd_enum, buffer, length + 1)
                     title = buffer.value
+                    title_lower = title.lower()
+                    if "playwright\\driver\\node.exe" in title_lower:
+                        try:
+                            if user32.IsWindowVisible(hwnd_enum):
+                                SW_HIDE = 0
+                                user32.ShowWindow(hwnd_enum, SW_HIDE)
+                                logger.debug("Hidden Playwright driver window: %s", title)
+                        except Exception:
+                            pass
+                        return True
                     if "YakuLingo" in title:
                         found_hwnd['value'] = hwnd_enum
                         found_hwnd['title'] = title
@@ -6205,13 +6220,16 @@ def run_app(
         return
 
     available_memory_gb = _get_available_memory_gb()
-    # Early connect spins up Edge (and later Playwright). In browser mode we run as a resident
-    # background service and should stay silent at startup; connect on demand instead.
-    allow_early_connect = bool(native)
-    if allow_early_connect and available_memory_gb is not None and available_memory_gb <= MIN_AVAILABLE_MEMORY_GB_FOR_EARLY_CONNECT:
+    # Early connect spins up Edge (and later Playwright).
+    # Enable it in both native and browser modes for faster first translation.
+    allow_early_connect = True
+    # Playwright pre-initialization does not open a window, so it's safe in browser mode.
+    allow_playwright_preinit = True
+    if available_memory_gb is not None and available_memory_gb <= MIN_AVAILABLE_MEMORY_GB_FOR_EARLY_CONNECT:
         allow_early_connect = False
+        allow_playwright_preinit = False
         logger.info(
-            "Skipping early Copilot pre-initialization due to low available memory: %.1fGB < %.1fGB",
+            "Skipping early Playwright/Copilot pre-initialization due to low available memory: %.1fGB < %.1fGB",
             available_memory_gb,
             MIN_AVAILABLE_MEMORY_GB_FOR_EARLY_CONNECT,
         )
@@ -6324,7 +6342,7 @@ def run_app(
 
     # Start Playwright initialization + Copilot connection AFTER NiceGUI import to reduce
     # Windows startup I/O contention (antivirus scanning).
-    if allow_early_connect and _early_copilot is not None and _early_connect_fn is not None:
+    if allow_playwright_preinit:
         try:
             from yakulingo.services.copilot_handler import pre_initialize_playwright
         except Exception as e:
@@ -6335,6 +6353,7 @@ def run_app(
             except Exception as e:
                 logger.debug("Playwright pre-initialization failed: %s", e)
 
+    if allow_early_connect and _early_copilot is not None and _early_connect_fn is not None:
         try:
             _early_connect_thread = threading.Thread(
                 target=_early_connect_fn, daemon=True, name="early_connect"
@@ -6822,8 +6841,8 @@ def run_app(
 
         # Stop clipboard trigger (quick, just stops the watcher)
         step_start = time_module.time()
-        yakulingo_app.stop_hotkey_manager()
-        logger.debug("[TIMING] Hotkey manager stop: %.2fs", time_module.time() - step_start)
+        yakulingo_app.stop_clipboard_trigger()
+        logger.debug("[TIMING] Clipboard trigger stop: %.2fs", time_module.time() - step_start)
 
         # Force disconnect from Copilot (the main time-consuming step)
         step_start = time_module.time()
@@ -6889,7 +6908,7 @@ def run_app(
     atexit.register(cleanup)
 
     # NOTE: We intentionally keep the server running even when all UI clients disconnect.
-    # YakuLingo is designed to run as a resident background service (Ctrl+Alt+J hotkey).
+    # YakuLingo is designed to run as a resident background service (clipboard trigger).
 
     # Serve styles.css as static file for browser caching (faster subsequent loads)
     ui_dir = Path(__file__).parent
@@ -7053,7 +7072,7 @@ def run_app(
 
         @nicegui_app.post('/api/hotkey')
         async def hotkey_api(request: StarletteRequest):  # type: ignore[misc]
-            """Trigger hotkey translation via API (local machine only)."""
+            """Trigger clipboard translation via API (local machine only)."""
             try:
                 client_host = getattr(getattr(request, "client", None), "host", None)
                 if client_host not in ("127.0.0.1", "::1"):
@@ -7449,23 +7468,11 @@ def run_app(
     async def on_startup():
         """Called when NiceGUI server starts (before clients connect)."""
         # Start clipboard trigger immediately so clipboard translation works even without the UI.
-        yakulingo_app.start_hotkey_manager()
+        yakulingo_app.start_clipboard_trigger()
         yakulingo_app._start_resident_heartbeat()
 
-        try:
-            from yakulingo.services.hotkey_pending import consume_pending_hotkey
-
-            pending_text = consume_pending_hotkey()
-            if pending_text is not None:
-                logger.info("Pending hotkey payload detected at startup")
-                asyncio.create_task(
-                    yakulingo_app._handle_hotkey_text(pending_text, open_ui=True)
-                )
-        except Exception as e:
-            logger.debug("Failed to process pending hotkey payload: %s", e)
-
         # Start Copilot connection early only in native mode; browser mode should remain silent
-        # and connect on demand (hotkey/UI).
+        # and connect on demand (clipboard/UI).
         if native:
             yakulingo_app._early_connection_task = asyncio.create_task(_early_connect_copilot())
 
@@ -7490,7 +7497,7 @@ def run_app(
 
         def _clear_cached_client_on_disconnect(_client: nicegui_Client | None = None) -> None:
             # When the UI window is closed, keep the resident service alive but clear the cached
-        # client so the hotkey can reopen the UI window on demand.
+        # client so the clipboard trigger can reopen the UI window on demand.
             nonlocal browser_opened
             with yakulingo_app._client_lock:
                 if yakulingo_app._client is client:

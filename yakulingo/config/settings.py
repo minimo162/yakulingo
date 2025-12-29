@@ -150,7 +150,7 @@ class AppSettings:
     # "side_panel": アプリの横にパネルとして表示（翻訳経過が見える、デフォルト）
     # "minimized": 最小化して非表示
     # "foreground": 前面に表示
-    browser_display_mode: str = "side_panel"
+    browser_display_mode: str = "minimized"
 
     # Auto Update
     auto_update_enabled: bool = True            # 起動時に自動チェック

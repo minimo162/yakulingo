@@ -23,12 +23,20 @@ _LAZY_IMPORTS = {
     'UpdateResult': 'updater',
     'ProxyConfig': 'updater',
     'VersionInfo': 'updater',
+    'ClipboardTrigger': 'clipboard_trigger',
     'HotkeyManager': 'hotkey_manager',
     'get_hotkey_manager': 'hotkey_manager',
 }
 
 # Submodules that can be accessed via __getattr__ (for patching support)
-_SUBMODULES = {'copilot_handler', 'translation_service', 'updater', 'prompt_builder', 'hotkey_manager'}
+_SUBMODULES = {
+    'copilot_handler',
+    'translation_service',
+    'updater',
+    'prompt_builder',
+    'clipboard_trigger',
+    'hotkey_manager',
+}
 
 
 def __getattr__(name: str):
@@ -57,6 +65,7 @@ __all__ = [
     'UpdateResult',
     'ProxyConfig',
     'VersionInfo',
+    'ClipboardTrigger',
     'HotkeyManager',
     'get_hotkey_manager',
 ]

@@ -360,6 +360,19 @@ function Start-ResidentService {
     )
 
     try {
+        if ([string]::IsNullOrWhiteSpace($SetupPath)) {
+            $SetupPath = Join-Path $env:LOCALAPPDATA $script:AppName
+        }
+        if ([string]::IsNullOrWhiteSpace($PythonwPath)) {
+            $PythonwPath = Join-Path $SetupPath ".venv\Scripts\pythonw.exe"
+        }
+        if ([string]::IsNullOrWhiteSpace($AppPyPath)) {
+            $AppPyPath = Join-Path $SetupPath "app.py"
+        }
+        try {
+            "Start-ResidentService: SetupPath='$SetupPath' PythonwPath='$PythonwPath' AppPyPath='$AppPyPath'" | Out-File -FilePath $debugLog -Append -Encoding UTF8
+        } catch { }
+
         function Test-PortOpen([int]$p) {
             try {
                 $client = New-Object System.Net.Sockets.TcpClient
@@ -374,12 +387,12 @@ function Start-ResidentService {
         }
 
         $portOpen = Test-PortOpen $Port
-        if (-not $portOpen -and (Test-Path $PythonwPath -PathType Leaf -and (Test-Path $AppPyPath -PathType Leaf))) {
+        if (-not $portOpen -and (Test-Path $PythonwPath -PathType Leaf) -and (Test-Path $AppPyPath -PathType Leaf)) {
             $previousNoOpen = $env:YAKULINGO_NO_AUTO_OPEN
             $env:YAKULINGO_NO_AUTO_OPEN = "1"
             try {
                 Start-Process -FilePath $PythonwPath `
-                    -ArgumentList "`"$AppPyPath`"" `
+                    -ArgumentList @($AppPyPath) `
                     -WorkingDirectory $SetupPath `
                     -WindowStyle Hidden | Out-Null
             } finally {
@@ -403,7 +416,10 @@ function Start-ResidentService {
             }
         }
     } catch {
-        # Non-fatal: setup succeeded even if auto-launch fails.
+        try { "Start-ResidentService failed: $($_.Exception.Message)" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
+        if (-not $GuiMode) {
+            Write-Host "[WARN] Failed to start YakuLingo resident service." -ForegroundColor Yellow
+        }
     }
 }
 
@@ -1782,15 +1798,15 @@ try {
             throw "セットアップがキャンセルされました。"
         }
         Write-Status -Message "Setup completed!" -Progress -Step "Step 4/4: Finalizing" -Percent 100
-        $successMsg = "セットアップが完了しました。`n`nログオン時にYakuLingoが自動で常駐します（UIを閉じても終了しません）。`n`n使い方:`n- 翻訳したい文字を選択して 同じウィンドウで Ctrl+C を短時間に2回`n  → YakuLingo のUIに結果が表示されます（必要な訳をコピー）`n- エクスプローラーでファイルを選択して 同じウィンドウで Ctrl+C を短時間に2回`n  → UIのファイルタブに結果が表示されます（必要な出力をダウンロード）`n- エクスプローラーでファイルを右クリック > 「YakuLingoで翻訳」`n  → 翻訳を開始します（Windows 11 は「その他のオプション」に表示）`n- UIを開く: デスクトップ / スタートメニューの YakuLingo`n- UIを閉じる: 常駐は継続します（Copilot Edge は自動で最小化されます）`n- 終了する: スタートメニュー > YakuLingo > YakuLingo 終了`n`nOK を押すと、YakuLingo を常駐起動します（UIは自動で開きません）。"
+        $successMsg = "セットアップが完了しました。`n`nログオン時にYakuLingoが自動で常駐します（UIを閉じても終了しません）。`n`n使い方:`n- 翻訳したい文字を選択して 同じウィンドウで Ctrl+C を短時間に2回`n  → YakuLingo のUIに結果が表示されます（必要な訳をコピー）`n- エクスプローラーでファイルを選択して 同じウィンドウで Ctrl+C を短時間に2回`n  → UIのファイルタブに結果が表示されます（必要な出力をダウンロード）`n- エクスプローラーでファイルを右クリック > 「YakuLingoで翻訳」`n  → 翻訳を開始します（Windows 11 は「その他のオプション」に表示）`n- UIを開く: デスクトップ / スタートメニューの YakuLingo`n- UIを閉じる: 常駐は継続します（Copilot Edge は自動で最小化されます）`n- 終了する: スタートメニュー > YakuLingo > YakuLingo 終了`n`nYakuLingo を常駐起動しました（UIは自動で開きません）。"
         if ($script:GlossaryBackupPath) {
             $backupFileName = Split-Path -Leaf $script:GlossaryBackupPath
             $successMsg += "`n`n用語集が更新されました。`n以前の用語集はデスクトップに保存しました:`n  $backupFileName"
         }
-        Show-Success $successMsg
-
         # Start YakuLingo immediately in resident mode (no UI auto-open).
         Start-ResidentService -SetupPath $SetupPath -PythonwPath $PythonwPath -AppPyPath $AppPyPath
+
+        Show-Success $successMsg
     } else {
         Write-Host ""
         Write-Host "============================================================" -ForegroundColor Green

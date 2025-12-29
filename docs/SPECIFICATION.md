@@ -741,6 +741,7 @@ class CopilotHandler:
         - 接続完了後、UI表示後に非同期で呼び出し（UIブロック回避）
         - ポーリング方式（100msごとにチェック、最大15秒）
         - ボタンが見つからない場合は静かにスキップ
+        - 注意: "Think Deeper" は別モードのため選択しない（"GPT-5.2 Think Deeper"のみ許可）
         """
 ```
 
@@ -755,6 +756,7 @@ class CopilotHandler:
 - メニュー表示: `div[role="menu"]`の表示を確認
 - ファイル添付: 添付インジケータをポーリングで確認
 - GPTモード: UI表示後に`ensure_gpt_mode()`で非同期設定（wait_for_selector + JS一括実行）
+- GPT-5.2 Think Deeperのみを選択（"Think Deeper"へのフォールバックは禁止）
 
 **Copilot文字数制限:**
 - Free ライセンス: 8,000文字

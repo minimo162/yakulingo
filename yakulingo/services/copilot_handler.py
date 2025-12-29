@@ -1068,12 +1068,24 @@ class CopilotHandler:
     # GPT Mode switcher selectors
     # Used to ensure GPT-5.2 Think Deeper mode is selected for better translation quality
     # Flow: 1. Click #gptModeSwitcher -> 2. Hover "More" (role=button) -> 3. Click target (role=menuitem)
-    GPT_MODE_BUTTON_SELECTOR = '#gptModeSwitcher'
-    GPT_MODE_TEXT_SELECTOR = '#gptModeSwitcher div'
-    # "More" button has role="button" with aria-haspopup="menu", target has role="menuitem"
-    GPT_MODE_MORE_SELECTOR = '[role="button"][aria-haspopup="menu"]'
+    GPT_MODE_SWITCHER_SELECTOR = '#gptModeSwitcher'
+    GPT_MODE_SWITCHER_TEXT_SELECTOR = '#gptModeSwitcher div'
+    GPT_MODE_MENU_SELECTOR = '[role="menu"]'
+    GPT_MODE_MENU_VISIBLE_SELECTOR = '[role="menu"]:visible'
     GPT_MODE_MENU_ITEM_SELECTOR = '[role="menuitem"]'
-    GPT_MODE_TARGET = 'GPT-5.2 Think Deeper'
+    GPT_MODE_MENU_ITEM_TEXT_SELECTOR = '[role="menuitem"]:has-text("{text}")'
+    GPT_MODE_MENU_ITEM_VISIBLE_TEXT_SELECTOR = '[role="menuitem"]:has-text("{text}"):visible'
+    # "More" button has role="button" with aria-haspopup="menu".
+    GPT_MODE_MORE_MENU_BUTTON_SELECTOR = '[role="button"][aria-haspopup="menu"]'
+    GPT_MODE_OVERFLOW_MENU_BUTTON_SELECTORS = (
+        '#moreButton',
+        '[data-automation-id="moreButton"]',
+    )
+    GPT_MODE_OVERFLOW_MENU_BUTTON_SELECTOR = ", ".join(GPT_MODE_OVERFLOW_MENU_BUTTON_SELECTORS)
+    # IMPORTANT: "Think Deeper" is a different mode; do NOT fall back to it.
+    # Only "GPT-5.2 Think Deeper" is accepted.
+    GPT_MODE_TARGETS = ('GPT-5.2 Think Deeper',)
+    GPT_MODE_TARGET = GPT_MODE_TARGETS[0]
     GPT_MODE_MORE_TEXT = 'More'
     # OPTIMIZED: Reduced menu wait to minimum (just enough for React to update)
     GPT_MODE_MENU_WAIT = 0.05  # Wait for menu to open/close (50ms)
@@ -1081,9 +1093,9 @@ class CopilotHandler:
     # Early connection thread calls ensure_gpt_mode() during NiceGUI startup (~8s)
     # Copilot React UI takes ~11s from connection to fully render GPT mode button
     # Closing/reopening the Copilot window can delay this significantly; allow extra margin.
-    GPT_MODE_BUTTON_WAIT_MS = 25000  # Total timeout for button appearance (25s)
+    GPT_MODE_BUTTON_WAIT_MS = 45000  # Total timeout for button appearance (45s)
     # Short per-attempt wait to keep the Playwright thread responsive.
-    GPT_MODE_BUTTON_WAIT_FAST_MS = 2000  # Per-attempt timeout (2s)
+    GPT_MODE_BUTTON_WAIT_FAST_MS = 4000  # Per-attempt timeout (4s)
     # Retry delays between short attempts (seconds).
     GPT_MODE_RETRY_DELAYS = (0.5, 1.0, 2.0)
     # Compact Copilot layouts hide the GPT switcher behind an overflow menu.
@@ -2750,6 +2762,80 @@ class CopilotHandler:
         logger.debug("GPT mode not ready (result=%s); retrying in %.1fs", result, delay)
         self._schedule_gpt_mode_retry(delay)
 
+    def _get_gpt_mode_target_candidates(self) -> tuple[str, ...]:
+        return tuple(candidate for candidate in self.GPT_MODE_TARGETS if candidate)
+
+    def _is_gpt_mode_target(self, current_mode: str | None) -> bool:
+        if not current_mode:
+            return False
+        current_lower = current_mode.lower()
+        for candidate in self._get_gpt_mode_target_candidates():
+            if candidate.lower() in current_lower:
+                return True
+        return False
+
+    def _warn_if_think_deeper_only(self, available: list[str] | None) -> None:
+        if not available:
+            return
+        has_think_deeper = any("Think Deeper" in item for item in available)
+        has_gpt52 = any("GPT-5.2 Think Deeper" in item for item in available)
+        if has_think_deeper and not has_gpt52:
+            logger.warning(
+                "Found 'Think Deeper' in GPT mode list, but it is not GPT-5.2 Think Deeper; skipping."
+            )
+
+    def _log_gpt_mode_menu_snapshot(self, label: str, candidates: tuple[str, ...]) -> None:
+        if not self._page:
+            return
+        try:
+            snapshot = self._page.evaluate(
+                '''(payload) => {
+                    const menuSelector = payload.menuSelector;
+                    const itemSelector = payload.itemSelector;
+                    const targets = payload.targets || [];
+                    const menu = document.querySelector(menuSelector);
+                    const items = Array.from(document.querySelectorAll(itemSelector));
+                    const visibleItems = items.filter(el => {
+                        const style = window.getComputedStyle(el);
+                        if (!style) return false;
+                        if (style.display === 'none' || style.visibility === 'hidden') return false;
+                        const rect = el.getBoundingClientRect();
+                        return rect.width > 0 && rect.height > 0;
+                    });
+                    const texts = visibleItems
+                        .map(el => (el.textContent || '').trim())
+                        .filter(t => t);
+                    const containsTarget = texts.some(text => targets.some(target => text.includes(target)));
+                    const menuText = menu ? (menu.textContent || '').trim() : '';
+                    const menuPreview = menuText ? menuText.slice(0, 200) : '';
+                    return {
+                        menuFound: Boolean(menu),
+                        itemCount: items.length,
+                        visibleCount: visibleItems.length,
+                        visibleTexts: texts,
+                        containsTarget,
+                        menuPreview,
+                    };
+                }''',
+                {
+                    "menuSelector": self.GPT_MODE_MENU_SELECTOR,
+                    "itemSelector": self.GPT_MODE_MENU_ITEM_SELECTOR,
+                    "targets": list(candidates),
+                },
+            ) or {}
+            logger.info(
+                "[GPT_MODE_MENU] %s menuFound=%s items=%s visible=%s containsTarget=%s preview='%s' texts=%s",
+                label,
+                snapshot.get("menuFound"),
+                snapshot.get("itemCount"),
+                snapshot.get("visibleCount"),
+                snapshot.get("containsTarget"),
+                snapshot.get("menuPreview"),
+                snapshot.get("visibleTexts"),
+            )
+        except Exception as e:
+            logger.debug("GPT mode menu snapshot failed (%s): %s", label, e)
+
     def _ensure_gpt_mode_impl(self, wait_timeout_ms: int | None = None) -> str:
         """Implementation of ensure_gpt_mode() that runs in Playwright thread.
 
@@ -2769,6 +2855,7 @@ class CopilotHandler:
 
         error_types = _get_playwright_errors()
         PlaywrightTimeoutError = error_types['TimeoutError']
+        candidates = self._get_gpt_mode_target_candidates()
 
         try:
             start_time = time.monotonic()
@@ -2794,7 +2881,7 @@ class CopilotHandler:
             current_mode = self._page.evaluate('''(selector) => {
                 const el = document.querySelector(selector);
                 return el ? el.textContent?.trim() : null;
-            }''', self.GPT_MODE_TEXT_SELECTOR)
+            }''', self.GPT_MODE_SWITCHER_TEXT_SELECTOR)
 
             if current_mode:
                 elapsed = time.monotonic() - start_time
@@ -2803,7 +2890,7 @@ class CopilotHandler:
                 # Button not found yet - wait for it
                 try:
                     self._page.wait_for_selector(
-                        self.GPT_MODE_BUTTON_SELECTOR,
+                        self.GPT_MODE_SWITCHER_SELECTOR,
                         state='visible',
                         timeout=wait_timeout_ms
                     )
@@ -2814,7 +2901,7 @@ class CopilotHandler:
                     current_mode = self._page.evaluate('''(selector) => {
                         const el = document.querySelector(selector);
                         return el ? el.textContent?.trim() : null;
-                    }''', self.GPT_MODE_TEXT_SELECTOR)
+                    }''', self.GPT_MODE_SWITCHER_TEXT_SELECTOR)
                 except PlaywrightTimeoutError:
                     elapsed = time.monotonic() - start_time
                     logger.debug("GPT mode button did not appear after %.2fs", elapsed)
@@ -2824,6 +2911,7 @@ class CopilotHandler:
                             self._gpt_mode_set = True
                             return "set"
                         if fallback.get('error') == 'target_not_found':
+                            self._warn_if_think_deeper_only(fallback.get('available'))
                             return "target_not_found"
                     return "not_ready"
 
@@ -2834,6 +2922,7 @@ class CopilotHandler:
                     self._gpt_mode_set = True
                     return "set"
                 if switch_result.get('error') == 'target_not_found':
+                    self._warn_if_think_deeper_only(switch_result.get('available'))
                     return "target_not_found"
                 if switch_result.get('error') == 'main_button_not_found':
                     if allow_overflow_fallback:
@@ -2842,31 +2931,34 @@ class CopilotHandler:
                             self._gpt_mode_set = True
                             return "set"
                         if fallback.get('error') == 'target_not_found':
+                            self._warn_if_think_deeper_only(fallback.get('available'))
                             return "target_not_found"
                 return "not_ready"
 
             logger.debug("Current GPT mode: %s", current_mode)
 
             # Check if already in target mode
-            if self.GPT_MODE_TARGET in current_mode:
+            if self._is_gpt_mode_target(current_mode):
                 logger.debug("GPT mode is already '%s'", current_mode)
                 self._gpt_mode_set = True
                 return "already"
 
             # Need to switch mode
-            logger.info("Switching GPT mode from '%s' to '%s'...", current_mode, self.GPT_MODE_TARGET)
+            target_label = self._get_gpt_mode_target_candidates()[0]
+            logger.info("Switching GPT mode from '%s' to '%s'...", current_mode, target_label)
 
             switch_result = self._switch_gpt_mode_via_switcher_menu(wait_timeout_ms=min(wait_timeout_ms, 3000))
 
             elapsed = time.monotonic() - start_time
             if switch_result.get('success'):
                 logger.info("Successfully switched GPT mode to '%s' (%.2fs)",
-                           switch_result.get('newMode', self.GPT_MODE_TARGET), elapsed)
+                           switch_result.get('newMode', target_label), elapsed)
                 self._gpt_mode_set = True
                 return "set"
             elif switch_result.get('error') == 'target_not_found':
-                logger.warning("Target mode '%s' not found. Available: %s",
-                              self.GPT_MODE_TARGET, switch_result.get('available', []))
+                self._warn_if_think_deeper_only(switch_result.get('available'))
+                logger.warning("Target GPT mode not found. Available: %s",
+                              switch_result.get('available', []))
                 self._close_menu_safely()
                 return "target_not_found"
             elif switch_result.get('error') == 'main_button_not_found':
@@ -2876,6 +2968,7 @@ class CopilotHandler:
                         self._gpt_mode_set = True
                         return "set"
                     if fallback.get('error') == 'target_not_found':
+                        self._warn_if_think_deeper_only(fallback.get('available'))
                         return "target_not_found"
                 self._close_menu_safely()
                 return "not_ready"
@@ -2903,81 +2996,85 @@ class CopilotHandler:
 
         error_types = _get_playwright_errors()
         PlaywrightTimeoutError = error_types['TimeoutError']
+        candidates = self._get_gpt_mode_target_candidates()
 
         try:
-            main_btn = self._page.locator(self.GPT_MODE_BUTTON_SELECTOR).first
+            main_btn = self._page.locator(self.GPT_MODE_SWITCHER_SELECTOR).first
             try:
                 main_btn.wait_for(state='visible', timeout=wait_timeout_ms)
             except PlaywrightTimeoutError:
                 return {"success": False, "error": "main_button_not_found"}
 
             main_btn.click()
-            self._page.wait_for_selector('[role="menu"]', state='visible', timeout=wait_timeout_ms)
+            self._page.wait_for_selector(self.GPT_MODE_MENU_SELECTOR, state='visible', timeout=wait_timeout_ms)
 
-            menu = self._page.locator('[role="menu"]:visible').last
-
-            # Fast path: the target may already be in the top-level menu (no "More" submenu).
-            try:
-                direct_target = menu.locator(
-                    f'[role="menuitem"]:has-text("{self.GPT_MODE_TARGET}")'
-                ).first
-                direct_target.wait_for(state='visible', timeout=min(wait_timeout_ms, 250))
-                direct_target.click()
-                new_mode = self._page.evaluate('''(selector) => {
-                    const el = document.querySelector(selector);
-                    return el ? el.textContent?.trim() : null;
-                }''', self.GPT_MODE_TEXT_SELECTOR)
-                return {"success": True, "newMode": new_mode or self.GPT_MODE_TARGET}
-            except PlaywrightTimeoutError:
-                pass
-            except Exception:
-                pass
+            menu = self._page.locator(self.GPT_MODE_MENU_VISIBLE_SELECTOR).last
+            self._log_gpt_mode_menu_snapshot("switcher:menu_opened", candidates)
 
             more_trigger = menu.locator(
-                f'[role="button"][aria-haspopup="menu"]:has-text("{self.GPT_MODE_MORE_TEXT}")'
+                f'{self.GPT_MODE_MORE_MENU_BUTTON_SELECTOR}:has-text("{self.GPT_MODE_MORE_TEXT}")'
             ).first
+            more_visible = False
             try:
                 more_trigger.wait_for(state='visible', timeout=wait_timeout_ms)
+                more_visible = True
             except PlaywrightTimeoutError:
-                # If there's no "More" button, check if the target exists anywhere in visible menus.
-                try:
-                    probe = self._page.evaluate('''(targetText) => {
-                        const items = Array.from(document.querySelectorAll('[role="menuitem"]'));
-                        const hasTarget = items.some(el => (el.textContent || '').includes(targetText));
-                        const visible = items
-                            .filter(el => {
-                                const style = window.getComputedStyle(el);
-                                if (!style) return false;
-                                if (style.display === 'none' || style.visibility === 'hidden') return false;
-                                const rect = el.getBoundingClientRect();
-                                return rect.width > 0 && rect.height > 0;
-                            })
-                            .map(el => (el.textContent || '').trim())
-                            .filter(t => t);
-                        return { hasTarget, visible };
-                    }''', self.GPT_MODE_TARGET) or {}
-                    has_target = bool(probe.get('hasTarget', False))
-                    available = probe.get('visible', []) if isinstance(probe.get('visible', []), list) else []
-                    if (not has_target) and available:
-                        return {"success": False, "error": "target_not_found", "available": available}
-                except Exception:
-                    pass
-                return {"success": False, "error": "more_button_not_found"}
-            more_trigger.hover()
+                more_visible = False
 
-            try:
-                target_selector = f'[role="menuitem"]:has-text("{self.GPT_MODE_TARGET}"):visible'
-                self._page.wait_for_selector(target_selector, state='visible', timeout=wait_timeout_ms)
-                self._page.locator(target_selector).first.click()
-            except PlaywrightTimeoutError:
-                return {"success": False, "error": "timeout"}
+            if more_visible:
+                more_trigger.hover()
+                self._log_gpt_mode_menu_snapshot("switcher:more_hovered", candidates)
+
+                try:
+                    target_clicked = False
+                    target_label = None
+                    per_candidate_timeout = min(wait_timeout_ms, 500)
+                    for candidate in candidates:
+                        target_selector = self.GPT_MODE_MENU_ITEM_VISIBLE_TEXT_SELECTOR.format(text=candidate)
+                        try:
+                            self._page.wait_for_selector(
+                                target_selector,
+                                state='visible',
+                                timeout=per_candidate_timeout,
+                            )
+                            self._page.locator(target_selector).first.click()
+                            target_clicked = True
+                            target_label = candidate
+                            break
+                        except PlaywrightTimeoutError:
+                            continue
+                    if not target_clicked:
+                        available = []
+                        try:
+                            available = self._page.evaluate('''(itemSelector) => {
+                                const items = Array.from(document.querySelectorAll(itemSelector));
+                                return items
+                                    .filter(el => {
+                                        const style = window.getComputedStyle(el);
+                                        if (!style) return false;
+                                        if (style.display === 'none' || style.visibility === 'hidden') return false;
+                                        const rect = el.getBoundingClientRect();
+                                        return rect.width > 0 && rect.height > 0;
+                                    })
+                                    .map(el => (el.textContent || '').trim())
+                                    .filter(t => t);
+                            }''', self.GPT_MODE_MENU_ITEM_SELECTOR) or []
+                        except Exception:
+                            available = []
+                        return {"success": False, "error": "target_not_found", "available": available}
+                except PlaywrightTimeoutError:
+                    return {"success": False, "error": "timeout"}
+            else:
+                # No "More" submenu; treat as not-ready to avoid unreliable fallbacks.
+                self._log_gpt_mode_menu_snapshot("switcher:more_missing", candidates)
+                return {"success": False, "error": "more_button_not_found"}
 
             new_mode = self._page.evaluate('''(selector) => {
                 const el = document.querySelector(selector);
                 return el ? el.textContent?.trim() : null;
-            }''', self.GPT_MODE_TEXT_SELECTOR)
+            }''', self.GPT_MODE_SWITCHER_TEXT_SELECTOR)
 
-            return {"success": True, "newMode": new_mode or self.GPT_MODE_TARGET}
+            return {"success": True, "newMode": new_mode or target_label or self.GPT_MODE_TARGET}
 
         except PlaywrightTimeoutError:
             return {"success": False, "error": "timeout"}
@@ -3004,44 +3101,80 @@ class CopilotHandler:
         try:
             try:
                 self._page.wait_for_selector(
-                    '#moreButton, [data-automation-id="moreButton"]',
+                    self.GPT_MODE_OVERFLOW_MENU_BUTTON_SELECTOR,
                     state='visible',
                     timeout=wait_timeout_ms,
                 )
             except PlaywrightTimeoutError:
                 return {"success": False, "error": "more_button_not_found"}
 
-            more_button = (
-                self._page.query_selector('#moreButton')
-                or self._page.query_selector('[data-automation-id="moreButton"]')
-            )
+            more_button = None
+            for selector in self.GPT_MODE_OVERFLOW_MENU_BUTTON_SELECTORS:
+                more_button = self._page.query_selector(selector)
+                if more_button:
+                    break
             if not more_button:
                 return {"success": False, "error": "more_button_not_found"}
 
             # Open the overflow menu
             more_button.click()
-            self._page.wait_for_selector('[role="menu"]', state='visible', timeout=wait_timeout_ms)
+            self._page.wait_for_selector(self.GPT_MODE_MENU_SELECTOR, state='visible', timeout=wait_timeout_ms)
 
             # Hover the "More" submenu trigger
-            menu = self._page.locator('[role="menu"]:visible').last
+            menu = self._page.locator(self.GPT_MODE_MENU_VISIBLE_SELECTOR).last
+            self._log_gpt_mode_menu_snapshot("overflow:menu_opened", candidates)
             more_trigger = menu.locator(
-                f'[role="button"][aria-haspopup="menu"]:has-text("{self.GPT_MODE_MORE_TEXT}")'
+                f'{self.GPT_MODE_MORE_MENU_BUTTON_SELECTOR}:has-text("{self.GPT_MODE_MORE_TEXT}")'
             ).first
             more_trigger.wait_for(state='visible', timeout=wait_timeout_ms)
             more_trigger.hover()
+            self._log_gpt_mode_menu_snapshot("overflow:more_hovered", candidates)
 
             # Click the target mode entry
-            target_selector = f'[role="menuitem"]:has-text("{self.GPT_MODE_TARGET}"):visible'
-            self._page.wait_for_selector(target_selector, state='visible', timeout=wait_timeout_ms)
-            self._page.locator(target_selector).first.click()
+            target_clicked = False
+            target_label = None
+            per_candidate_timeout = min(wait_timeout_ms, 500)
+            for candidate in candidates:
+                target_selector = self.GPT_MODE_MENU_ITEM_VISIBLE_TEXT_SELECTOR.format(text=candidate)
+                try:
+                    self._page.wait_for_selector(
+                        target_selector,
+                        state='visible',
+                        timeout=per_candidate_timeout,
+                    )
+                    self._page.locator(target_selector).first.click()
+                    target_clicked = True
+                    target_label = candidate
+                    break
+                except PlaywrightTimeoutError:
+                    continue
+            if not target_clicked:
+                available = []
+                try:
+                    available = self._page.evaluate('''(itemSelector) => {
+                        const items = Array.from(document.querySelectorAll(itemSelector));
+                        return items
+                            .filter(el => {
+                                const style = window.getComputedStyle(el);
+                                if (!style) return false;
+                                if (style.display === 'none' || style.visibility === 'hidden') return false;
+                                const rect = el.getBoundingClientRect();
+                                return rect.width > 0 && rect.height > 0;
+                            })
+                            .map(el => (el.textContent || '').trim())
+                            .filter(t => t);
+                    }''', self.GPT_MODE_MENU_ITEM_SELECTOR) or []
+                except Exception:
+                    available = []
+                return {"success": False, "error": "target_not_found", "available": available}
 
             # Best-effort confirmation (may be hidden in compact layouts)
             new_mode = self._page.evaluate('''(selector) => {
                 const el = document.querySelector(selector);
                 return el ? el.textContent?.trim() : null;
-            }''', self.GPT_MODE_TEXT_SELECTOR)
+            }''', self.GPT_MODE_SWITCHER_TEXT_SELECTOR)
 
-            return {"success": True, "newMode": new_mode or self.GPT_MODE_TARGET}
+            return {"success": True, "newMode": new_mode or target_label or self.GPT_MODE_TARGET}
 
         except PlaywrightTimeoutError:
             return {"success": False, "error": "timeout"}

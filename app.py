@@ -279,28 +279,6 @@ def _ensure_single_instance() -> bool:
     return True
 
 
-def _start_bootstrap_hotkey() -> None:
-    """Start hotkey capture early to avoid missing startup presses."""
-    if sys.platform != "win32":
-        return
-    if os.environ.get("YAKULINGO_DISABLE_BOOTSTRAP_HOTKEY") == "1":
-        return
-    try:
-        from yakulingo.services.hotkey_manager import get_hotkey_manager
-        from yakulingo.services.hotkey_pending import record_pending_hotkey
-    except Exception as exc:
-        logging.getLogger(__name__).debug("Early hotkey bootstrap unavailable: %s", exc)
-        return
-
-    def _record(payload: str, *_: object) -> None:
-        record_pending_hotkey(payload)
-
-    manager = get_hotkey_manager()
-    manager.set_callback(_record)
-    manager.start()
-    logging.getLogger(__name__).info("Early hotkey listener started")
-
-
 def main():
     """Main entry point
 
@@ -335,8 +313,6 @@ def main():
 
     logger = logging.getLogger(__name__)
     logger.info("[TIMING] main() setup: %.2fs", time.perf_counter() - _t_start)
-
-    _start_bootstrap_hotkey()
 
     def _show_startup_error(message: str) -> None:
         """Show a blocking error dialog (useful when launched from YakuLingo.exe with no console)."""

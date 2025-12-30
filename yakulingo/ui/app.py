@@ -6825,6 +6825,8 @@ def run_app(
     if multiprocessing.current_process().name != 'MainProcess':
         return
 
+    os.environ["YAKULINGO_NO_AUTO_OPEN"] = "1"
+
     available_memory_gb = _get_available_memory_gb()
     # Early connect spins up Edge (and later Playwright).
     # Enable it in both native and browser modes for faster first translation.

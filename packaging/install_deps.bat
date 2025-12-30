@@ -9,6 +9,11 @@ echo.
 
 cd /d "%~dp0\.."
 
+:: Ensure YakuLingo is not running (close it if needed)
+set "ROOT_DIR=%CD%"
+call :ensure_yakulingo_closed
+if errorlevel 1 exit /b 1
+
 :: ============================================================
 :: Proxy Settings (optional)
 :: ============================================================
@@ -364,6 +369,58 @@ echo ============================================================
 echo.
 pause
 endlocal
+exit /b 0
+
+:: ============================================================
+:: Function: Ensure YakuLingo is not running
+:: ============================================================
+:ensure_yakulingo_closed
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$ErrorActionPreference = 'SilentlyContinue'; ^
+  $root = [System.IO.Path]::GetFullPath('%ROOT_DIR%'); ^
+  $installRoot = Join-Path $env:LOCALAPPDATA 'YakuLingo'; ^
+  $pathsToCheck = @($root, $installRoot) | Where-Object { $_ -and (Test-Path $_) }; ^
+  $yakuProc = Get-Process -Name 'YakuLingo' -ErrorAction SilentlyContinue; ^
+  $pyProcs = Get-Process -Name 'python','pythonw' -ErrorAction SilentlyContinue | Where-Object { ^
+    try { $p = $_.Path } catch { return $false } ^
+    if (-not $p) { return $false } ^
+    foreach ($dir in $pathsToCheck) { if ($p.StartsWith($dir, [System.StringComparison]::OrdinalIgnoreCase)) { return $true } } ^
+    return $false ^
+  }; ^
+  if (-not $yakuProc -and -not $pyProcs) { exit 0 }; ^
+  Write-Host '[INFO] Closing running YakuLingo...'; ^
+  $shutdownUrl = 'http://127.0.0.1:8765/api/shutdown'; ^
+  $shutdownRequested = $false; ^
+  try { Invoke-WebRequest -UseBasicParsing -Method Post -Uri $shutdownUrl -TimeoutSec 8 -Headers @{ 'X-YakuLingo-Exit' = '1' } | Out-Null; $shutdownRequested = $true } catch { }; ^
+  $waitStart = Get-Date; $deadline = $waitStart.AddSeconds(30); $forceKillAttempted = $false; ^
+  while ((Get-Date) -lt $deadline) { ^
+    $pyProcs = Get-Process -Name 'python','pythonw' -ErrorAction SilentlyContinue | Where-Object { ^
+      try { $p = $_.Path } catch { return $false } ^
+      if (-not $p) { return $false } ^
+      foreach ($dir in $pathsToCheck) { if ($p.StartsWith($dir, [System.StringComparison]::OrdinalIgnoreCase)) { return $true } } ^
+      return $false ^
+    }; ^
+    $yakuProc = Get-Process -Name 'YakuLingo' -ErrorAction SilentlyContinue; ^
+    if (-not $yakuProc -and -not $pyProcs) { exit 0 } ^
+    $elapsed = [int]((Get-Date) - $waitStart).TotalSeconds; ^
+    if (-not $shutdownRequested -and $elapsed -ge 5) { ^
+      try { Invoke-WebRequest -UseBasicParsing -Method Post -Uri $shutdownUrl -TimeoutSec 5 -Headers @{ 'X-YakuLingo-Exit' = '1' } | Out-Null; $shutdownRequested = $true } catch { } ^
+    } ^
+    if (-not $forceKillAttempted -and $elapsed -ge 12) { ^
+      $forceKillAttempted = $true; ^
+      $targets = @(); ^
+      if ($yakuProc) { $targets += $yakuProc } ^
+      if ($pyProcs) { $targets += $pyProcs } ^
+      if ($targets) { $targets | Stop-Process -Force -ErrorAction SilentlyContinue } ^
+    } ^
+    Start-Sleep -Milliseconds 250 ^
+  } ^
+  Write-Host '[ERROR] YakuLingo is still running. Please close it and retry.'; exit 1"
+if errorlevel 1 (
+    echo [ERROR] YakuLingo is still running. Please close it and retry.
+    pause
+    exit /b 1
+)
 exit /b 0
 
 :: ============================================================

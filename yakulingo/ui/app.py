@@ -486,6 +486,8 @@ if TYPE_CHECKING:
 
 # App constants
 COPILOT_LOGIN_TIMEOUT = 300  # 5 minutes for login
+CLIENT_CONNECTED_TIMEOUT_SEC = 12  # Soft timeout for client.connected() before fallback
+STARTUP_SPLASH_TIMEOUT_SEC = 25  # Close external splash if startup stalls
 MAX_HISTORY_DISPLAY = 20  # Maximum history items to display in sidebar
 MAX_HISTORY_DRAWER_DISPLAY = 100  # Maximum history items to show in history drawer
 MIN_AVAILABLE_MEMORY_GB_FOR_EARLY_CONNECT = 0.5  # Skip early Copilot init only on very low memory
@@ -673,6 +675,7 @@ class YakuLingoApp:
         self._resident_startup_started_at: float | None = None
         self._resident_startup_error: str | None = None
         self._resident_mode = False
+        self._resident_login_required = False
         self._resident_show_requested = False
 
         # Clipboard trigger for double-copy translation.
@@ -1124,6 +1127,8 @@ class YakuLingoApp:
                 shown = True
             except Exception as e:
                 logger.debug("Resident UI open failed (%s): %s", reason, e)
+        elif open_ui_callback is None and not has_client:
+            logger.debug("Resident UI open callback missing (%s); using Win32 fallback", reason)
 
         if sys.platform == "win32":
             try:
@@ -1131,12 +1136,24 @@ class YakuLingoApp:
                 shown = shown or brought_to_front
             except Exception as e:
                 logger.debug("Resident UI bring-to-front failed (%s): %s", reason, e)
+            if not shown and open_ui_callback is None:
+                for attempt in range(3):
+                    try:
+                        restored = await asyncio.to_thread(self._restore_app_window_win32)
+                        if restored:
+                            shown = True
+                            break
+                    except Exception as e:
+                        logger.debug("Resident UI restore attempt failed (%s): %s", reason, e)
+                    await asyncio.sleep(0.2)
 
         return shown
 
     async def _show_resident_login_prompt(self, reason: str) -> None:
         if not self._resident_mode:
             return
+
+        self._resident_login_required = True
 
         with self._client_lock:
             has_client_before = self._client is not None
@@ -1247,6 +1264,8 @@ class YakuLingoApp:
             self._resident_startup_ready = True
             self.state.copilot_ready = True
             self.state.connection_state = ConnectionState.CONNECTED
+            if self._resident_mode:
+                self._resident_login_required = False
             self._refresh_status()
             self._refresh_translate_button_state()
         finally:
@@ -3165,7 +3184,31 @@ class YakuLingoApp:
         This is called after create_ui() to restore focus to the app window,
         as Edge startup may steal focus.
         """
-        if self._resident_mode and not self._resident_show_requested:
+        auto_hide_allowed = True
+        if self._resident_mode:
+            copilot = getattr(self, "_copilot", None)
+            last_error = getattr(copilot, "last_connection_error", None) if copilot else None
+            login_required_error = "login_required"
+            try:
+                from yakulingo.services.copilot_handler import CopilotHandler
+                login_required_error = CopilotHandler.ERROR_LOGIN_REQUIRED
+            except Exception:
+                pass
+
+            if self.state.connection_state == ConnectionState.CONNECTED:
+                self._resident_login_required = False
+            elif copilot is not None and last_error != login_required_error:
+                self._resident_login_required = False
+
+            login_required_guard = (
+                self._resident_login_required
+                or self._login_polling_active
+                or self.state.connection_state == ConnectionState.LOGIN_REQUIRED
+                or last_error == login_required_error
+            )
+            auto_hide_allowed = not login_required_guard
+
+        if self._resident_mode and not self._resident_show_requested and auto_hide_allowed:
             with self._client_lock:
                 has_client = self._client is not None
             if has_client:
@@ -3620,6 +3663,21 @@ class YakuLingoApp:
             except (AttributeError, RuntimeError) as e:
                 logger.debug("Failed to bring window to front: %s", e)
 
+        if self._resident_mode:
+            copilot = getattr(self, "_copilot", None)
+            last_error = getattr(copilot, "last_connection_error", None) if copilot else None
+            login_required_error = "login_required"
+            try:
+                from yakulingo.services.copilot_handler import CopilotHandler
+                login_required_error = CopilotHandler.ERROR_LOGIN_REQUIRED
+            except Exception:
+                pass
+
+            if self.state.connection_state == ConnectionState.CONNECTED:
+                self._resident_login_required = False
+            elif copilot is not None and last_error != login_required_error:
+                self._resident_login_required = False
+
         # Ensure header status reflects the latest connection state.
         # Some background Playwright operations can temporarily block quick state checks,
         # so refresh once more shortly after to avoid a stale "準備中..." UI.
@@ -3705,6 +3763,8 @@ class YakuLingoApp:
 
                     # Use explicit constant to reflect successful login
                     self.copilot.last_connection_error = CopilotHandler.ERROR_NONE
+                    if self._resident_mode:
+                        self._resident_login_required = False
                     # Keep "準備中..." until GPT mode switching is finished.
                     self.state.copilot_ready = False
                     self.state.connection_state = ConnectionState.CONNECTING
@@ -6917,7 +6977,7 @@ def run_app(
         host: Host to bind to
         port: Port to bind to
         native: Use native window mode (pywebview)
-        on_ready: Callback to call after client connection is ready (before UI shows).
+        on_ready: Callback to call after the UI becomes visible.
                   Use this to close splash screens for seamless transition.
     """
     import multiprocessing
@@ -8704,26 +8764,31 @@ body.yakulingo-drag-active .global-drop-indicator {
         # Wait for client connection (WebSocket ready)
         import time as _time_module
         _t_conn = _time_module.perf_counter()
-        await client.connected()
-        logger.info("[TIMING] client.connected(): %.2fs", _time_module.perf_counter() - _t_conn)
+        client_connected = False
+        try:
+            await asyncio.wait_for(
+                asyncio.shield(client.connected()),
+                timeout=CLIENT_CONNECTED_TIMEOUT_SEC,
+            )
+            client_connected = True
+            logger.info("[TIMING] client.connected(): %.2fs", _time_module.perf_counter() - _t_conn)
+        except asyncio.TimeoutError:
+            logger.warning(
+                "client.connected() timed out after %.1fs; skipping startup JS",
+                CLIENT_CONNECTED_TIMEOUT_SEC,
+            )
 
         # Show a startup loading overlay while the UI tree is being constructed.
         # This avoids a brief flash of a partially-rendered UI on slow machines.
         loading_screen = ui.element('div').classes('loading-screen')
         with loading_screen:
             ui.element('div').classes('loading-spinner').props('aria-hidden="true"')
-            ui.label('YakuLingo').classes('loading-title')
+            loading_title = ui.label('YakuLingo').classes('loading-title')
+        if not client_connected:
+            loading_title.set_text('接続に時間がかかっています...')
 
         # Yield once so the loading overlay is sent to the client before we start building the full UI.
         await asyncio.sleep(0)
-
-        # Close external splash screen (if provided) after the in-page loading overlay is visible.
-        if on_ready is not None:
-            try:
-                on_ready()
-                logger.info("[TIMING] on_ready callback executed (splash closed)")
-            except Exception as e:
-                logger.debug("on_ready callback failed: %s", e)
 
         # NOTE: PP-DocLayout-L initialization moved to on-demand (when user selects PDF)
         # This saves ~10 seconds on startup for users who don't use PDF translation.
@@ -8738,16 +8803,15 @@ body.yakulingo-drag-active .global-drop-indicator {
 
         # Wait for styles and layout variables to be applied before revealing the UI.
         # This prevents a brief flash of a partially-styled layout on slow machines.
-        css_ready = False
-        try:
-            css_ready = await client.run_javascript('''
+        async def _wait_for_css_ready(timeout_ms: int) -> bool:
+            js_code = '''
                 return await new Promise((resolve) => {
                     try {
                         if (window._yakulingoUpdateCSSVariables) window._yakulingoUpdateCSSVariables();
                     } catch (err) {}
 
                     const start = performance.now();
-                    const timeoutMs = 2000;
+                    const timeoutMs = __TIMEOUT_MS__;
                     const root = document.documentElement;
 
                     const isCssReady = () => {
@@ -8773,15 +8837,37 @@ body.yakulingo-drag-active .global-drop-indicator {
 
                     tick();
                 });
-            ''')
-        except Exception as e:
-            logger.debug("Startup CSS readiness check failed: %s", e)
-        if not css_ready:
-            logger.debug("Startup CSS readiness check timed out; revealing UI anyway")
+            '''
+            try:
+                return await client.run_javascript(
+                    js_code.replace("__TIMEOUT_MS__", str(timeout_ms))
+                )
+            except Exception as e:
+                logger.debug("Startup CSS readiness check failed: %s", e)
+                return False
 
-        # Reveal the UI and fade out the startup overlay.
+        if client_connected:
+            css_ready = await _wait_for_css_ready(2000)
+            if not css_ready:
+                logger.debug("Startup CSS readiness check timed out; revealing UI anyway")
+
+        # Reveal the UI and optionally fade out the startup overlay.
         main_container.classes(add='visible')
-        loading_screen.classes(add='fade-out')
+
+        on_ready_called = False
+
+        def _run_on_ready() -> None:
+            nonlocal on_ready_called
+            if on_ready_called:
+                return
+            on_ready_called = True
+            if on_ready is None:
+                return
+            try:
+                on_ready()
+                logger.info("[TIMING] on_ready callback executed (splash closed)")
+            except Exception as e:
+                logger.debug("on_ready callback failed: %s", e)
 
         async def _remove_startup_overlay() -> None:
             await asyncio.sleep(0.35)
@@ -8791,7 +8877,44 @@ body.yakulingo-drag-active .global-drop-indicator {
             except Exception:
                 pass
 
-        asyncio.create_task(_remove_startup_overlay())
+        async def _finalize_startup_overlay() -> None:
+            loading_screen.classes(add='fade-out')
+            asyncio.create_task(_remove_startup_overlay())
+            _run_on_ready()
+
+        async def _splash_timeout() -> None:
+            if on_ready is None:
+                return
+            await asyncio.sleep(STARTUP_SPLASH_TIMEOUT_SEC)
+            if on_ready_called:
+                return
+            logger.warning(
+                "Startup splash timeout after %.1fs; keeping in-app overlay visible",
+                STARTUP_SPLASH_TIMEOUT_SEC,
+            )
+            _run_on_ready()
+
+        if client_connected:
+            await asyncio.sleep(0)
+            await _finalize_startup_overlay()
+        else:
+            async def _wait_for_late_connection() -> None:
+                try:
+                    await client.connected()
+                except Exception as e:
+                    logger.debug("Late client connection wait failed: %s", e)
+                    return
+                css_ready = await _wait_for_css_ready(1500)
+                if not css_ready:
+                    logger.debug("Late CSS readiness check timed out; revealing UI anyway")
+                try:
+                    with client:
+                        await _finalize_startup_overlay()
+                except Exception:
+                    await _finalize_startup_overlay()
+
+            asyncio.create_task(_wait_for_late_connection())
+            asyncio.create_task(_splash_timeout())
 
         # Apply early connection result or start new connection
         asyncio.create_task(yakulingo_app._apply_early_connection_or_connect())
@@ -8814,7 +8937,8 @@ body.yakulingo-drag-active .global-drop-indicator {
         async def log_layout_after_delay():
             await asyncio.sleep(0.5)  # Wait for DOM to be fully rendered
             yakulingo_app._log_layout_dimensions()
-        asyncio.create_task(log_layout_after_delay())
+        if client_connected:
+            asyncio.create_task(log_layout_after_delay())
 
     # window_size is already determined at the start of run_app()
     logger.info("[TIMING] Before ui.run(): %.2fs", time.perf_counter() - _t0)

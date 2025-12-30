@@ -534,6 +534,11 @@ _pre_init_thread_id = None  # Track which thread initialized Playwright
 _pre_init_started = False  # Track whether pre-initialization was requested
 
 
+def is_playwright_preinit_in_progress() -> bool:
+    """Return True when Playwright pre-initialization is still running."""
+    return _pre_init_started and not _pre_init_event.is_set()
+
+
 def _log_playwright_init_details(phase: str, include_paths: bool = False) -> float:
     """Log detailed system information during Playwright initialization.
 
@@ -1140,6 +1145,7 @@ class CopilotHandler:
     RETRY_BACKOFF_BASE = 2.0  # Base for exponential backoff (2^attempt seconds)
     RETRY_BACKOFF_MAX = 16.0  # Maximum backoff time in seconds
     RETRY_JITTER_MAX = 1.0    # Random jitter to avoid thundering herd
+    STATE_CHECK_BACKOFF_SECONDS = 2.0  # Brief pause after state check timeouts
     _PLAYWRIGHT_UNRESPONSIVE_MARKERS = (
         "Connection closed while reading from the driver",
         "Target page, context or browser has been closed",
@@ -1181,6 +1187,7 @@ class CopilotHandler:
         self._gpt_mode_retry_lock = threading.Lock()
         self._playwright_unresponsive = False
         self._playwright_unresponsive_reason: Optional[str] = None
+        self._state_check_backoff_until = 0.0
 
     @property
     def is_connected(self) -> bool:
@@ -5328,7 +5335,25 @@ class CopilotHandler:
         """Thread-safe wrapper for _check_copilot_state."""
         # NOTE: The `timeout` argument is treated as the maximum wait time for the Playwright
         # thread operation (not the internal logic timeout).
-        return _playwright_executor.execute(self._check_copilot_state, timeout, timeout=timeout)
+        if is_playwright_preinit_in_progress():
+            logger.debug("check_copilot_state: Playwright pre-init in progress")
+            return ConnectionState.LOADING
+
+        now = time.monotonic()
+        if now < self._state_check_backoff_until:
+            remaining = self._state_check_backoff_until - now
+            logger.debug("check_copilot_state: backoff active (%.2fs remaining)", remaining)
+            return ConnectionState.LOADING
+
+        try:
+            return _playwright_executor.execute(self._check_copilot_state, timeout, timeout=timeout)
+        except TimeoutError:
+            self._state_check_backoff_until = time.monotonic() + self.STATE_CHECK_BACKOFF_SECONDS
+            logger.debug(
+                "check_copilot_state: timed out, backing off for %.1fs",
+                self.STATE_CHECK_BACKOFF_SECONDS,
+            )
+            return ConnectionState.LOADING
 
     def wait_for_page_load(self, wait_seconds: float = 3.0) -> bool:
         """ページの読み込み完了を待機する（スレッドセーフ）。

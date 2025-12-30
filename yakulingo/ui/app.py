@@ -2582,6 +2582,7 @@ class YakuLingoApp:
             HWND_NOTOPMOST = -2
             SWP_NOMOVE = 0x0002
             SWP_NOSIZE = 0x0001
+            SWP_NOZORDER = 0x0004
             SWP_SHOWWINDOW = 0x0040
 
             user32 = ctypes.windll.user32

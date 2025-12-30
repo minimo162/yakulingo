@@ -351,6 +351,60 @@ function Write-Status {
 # ============================================================
 # Helper Functions
 # ============================================================
+function Get-UniquePath {
+    param(
+        [string]$Path
+    )
+
+    if (-not (Test-Path $Path)) {
+        return $Path
+    }
+
+    $dir = Split-Path -Parent $Path
+    $base = [System.IO.Path]::GetFileNameWithoutExtension($Path)
+    $ext = [System.IO.Path]::GetExtension($Path)
+    $counter = 1
+
+    do {
+        $candidate = Join-Path $dir "${base}_${counter}${ext}"
+        $counter++
+    } while (Test-Path $candidate)
+
+    return $candidate
+}
+
+function Preserve-UserFile {
+    param(
+        [string]$UserBackupPath,
+        [string]$TargetPath,
+        [string]$DistPath
+    )
+
+    if (-not $UserBackupPath -or -not (Test-Path $UserBackupPath)) {
+        return $null
+    }
+
+    if (-not (Test-Path $TargetPath)) {
+        $parent = Split-Path -Parent $TargetPath
+        if (-not (Test-Path $parent)) {
+            New-Item -ItemType Directory -Path $parent -Force | Out-Null
+        }
+        Copy-Item -Path $UserBackupPath -Destination $TargetPath -Force
+        return $null
+    }
+
+    $userHash = (Get-FileHash -Path $UserBackupPath -Algorithm MD5).Hash
+    $newHash = (Get-FileHash -Path $TargetPath -Algorithm MD5).Hash
+    if ($userHash -ne $newHash) {
+        $safeDist = Get-UniquePath -Path $DistPath
+        Copy-Item -Path $TargetPath -Destination $safeDist -Force
+        Copy-Item -Path $UserBackupPath -Destination $TargetPath -Force
+        return $safeDist
+    }
+
+    return $null
+}
+
 function Start-ResidentService {
     param(
         [string]$SetupPath,
@@ -1008,11 +1062,12 @@ function Invoke-Setup {
     }
 
     # Backup user data files before removing the directory
-    # Note: glossary.csv is handled separately (compare & backup to Desktop if changed)
+    # Note: glossary.csv and prompts\translation_rules.txt are preserved after extraction.
     # Note: settings.json は廃止、user_settings.json にユーザー設定のみ保存
     $BackupFiles = @()
     $UserDataFiles = @("config\user_settings.json")
-    $script:GlossaryBackupPath = $null  # Will be set if glossary was backed up
+    $script:GlossaryDistPath = $null
+    $script:TranslationRulesDistPath = $null
     $BackupDir = Join-Path $env:TEMP "YakuLingo_Backup_$(Get-Date -Format 'yyyyMMddHHmmss')"
 
     if (Test-Path $SetupPath) {
@@ -1045,6 +1100,23 @@ function Invoke-Setup {
             Copy-Item -Path $glossaryPath -Destination $glossaryBackupPath -Force
             if (-not $GuiMode) {
                 Write-Host "      Backed up: glossary.csv" -ForegroundColor Gray
+            }
+        }
+
+        # Also backup prompts\translation_rules.txt separately for comparison later
+        $rulesPath = Join-Path $SetupPath "prompts\translation_rules.txt"
+        if (Test-Path $rulesPath) {
+            if (-not (Test-Path $BackupDir)) {
+                New-Item -ItemType Directory -Path $BackupDir -Force | Out-Null
+            }
+            $rulesBackupPath = Join-Path $BackupDir "prompts\translation_rules.txt"
+            $rulesBackupParent = Split-Path -Parent $rulesBackupPath
+            if (-not (Test-Path $rulesBackupParent)) {
+                New-Item -ItemType Directory -Path $rulesBackupParent -Force | Out-Null
+            }
+            Copy-Item -Path $rulesPath -Destination $rulesBackupPath -Force
+            if (-not $GuiMode) {
+                Write-Host "      Backed up: prompts\\translation_rules.txt" -ForegroundColor Gray
             }
         }
 
@@ -1443,77 +1515,57 @@ function Invoke-Setup {
                 }
             }
         }
+    }
 
-        # ============================================================
-        # Handle glossary.csv: Compare and backup to Desktop if changed
-        # (Must be done BEFORE cleaning up backup directory)
-        # ============================================================
+    # ============================================================
+    # Preserve user-edited files (keep existing, store new as .dist)
+    # ============================================================
+    $userGlossaryBackup = $null
+    $userRulesBackup = $null
+    if (Test-Path $BackupDir) {
+        $glossaryBackupPath = Join-Path $BackupDir "glossary.csv"
+        if (Test-Path $glossaryBackupPath) {
+            $userGlossaryBackup = $glossaryBackupPath
+        }
+        $rulesBackupPath = Join-Path $BackupDir "prompts\translation_rules.txt"
+        if (Test-Path $rulesBackupPath) {
+            $userRulesBackup = $rulesBackupPath
+        }
+    }
+
+    if ($userGlossaryBackup -or $userRulesBackup) {
+        Write-Status -Message "Preserving user files..." -Progress -Step "Step 3/4: Extracting" -Percent 88
+
         $userGlossaryPath = Join-Path $SetupPath "glossary.csv"
+        $script:GlossaryDistPath = Preserve-UserFile `
+            -UserBackupPath $userGlossaryBackup `
+            -TargetPath $userGlossaryPath `
+            -DistPath (Join-Path $SetupPath "glossary.dist.csv")
 
-        # Check if user had a glossary.csv before extraction
-        if (Test-Path $BackupDir) {
-            $userGlossaryBackup = Get-ChildItem -Path $BackupDir -Filter "glossary.csv" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-        }
+        $userRulesPath = Join-Path $SetupPath "prompts\translation_rules.txt"
+        $script:TranslationRulesDistPath = Preserve-UserFile `
+            -UserBackupPath $userRulesBackup `
+            -TargetPath $userRulesPath `
+            -DistPath (Join-Path $SetupPath "prompts\translation_rules.dist.txt")
 
-        # If user's glossary existed and new glossary exists, compare them
-        if ($userGlossaryBackup -and (Test-Path $userGlossaryPath)) {
-            Write-Status -Message "Checking glossary updates..." -Progress -Step "Step 3/4: Extracting" -Percent 88
-
-            # Compare file hashes
-            $userHash = (Get-FileHash -Path $userGlossaryBackup.FullName -Algorithm MD5).Hash
-            $newHash = (Get-FileHash -Path $userGlossaryPath -Algorithm MD5).Hash
-
-            # Also check against glossary_old.csv (previous version)
-            # Skip backup if user's glossary matches either new or old version (not customized)
-            $oldGlossaryPath = Join-Path $SetupPath "glossary_old.csv"
-            $oldHash = $null
-            if (Test-Path $oldGlossaryPath) {
-                $oldHash = (Get-FileHash -Path $oldGlossaryPath -Algorithm MD5).Hash
+        if (-not $GuiMode) {
+            if ($script:GlossaryDistPath) {
+                Write-Host "      New glossary saved: $script:GlossaryDistPath" -ForegroundColor Cyan
             }
-
-            # Only backup if user's glossary differs from both new and old versions
-            $matchesNew = ($userHash -eq $newHash)
-            $matchesOld = ($oldHash -and $userHash -eq $oldHash)
-
-            if (-not $matchesNew -and -not $matchesOld) {
-                # Files are different - backup user's glossary to Desktop
-                $desktopPath = [Environment]::GetFolderPath("Desktop")
-                $timestamp = Get-Date -Format "yyyyMMdd"
-                $backupFileName = "glossary_backup_$timestamp.csv"
-                $script:GlossaryBackupPath = Join-Path $desktopPath $backupFileName
-
-                # Avoid overwriting existing backup
-                $counter = 1
-                while (Test-Path $script:GlossaryBackupPath) {
-                    $backupFileName = "glossary_backup_${timestamp}_$counter.csv"
-                    $script:GlossaryBackupPath = Join-Path $desktopPath $backupFileName
-                    $counter++
-                }
-
-                Copy-Item -Path $userGlossaryBackup.FullName -Destination $script:GlossaryBackupPath -Force
-
-                if (-not $GuiMode) {
-                    Write-Host "      Glossary updated - backup saved to Desktop: $backupFileName" -ForegroundColor Cyan
-                }
-            } else {
-                # User's glossary matches new or old version (not customized) - no backup needed
-                if (-not $GuiMode) {
-                    if ($matchesNew) {
-                        Write-Host "      Glossary unchanged" -ForegroundColor Gray
-                    } else {
-                        Write-Host "      Glossary not customized (matches previous version)" -ForegroundColor Gray
-                    }
-                }
+            if ($script:TranslationRulesDistPath) {
+                Write-Host "      New translation rules saved: $script:TranslationRulesDistPath" -ForegroundColor Cyan
             }
         }
+    }
 
-        # Clean up backup directory (with safety check)
-        if (Test-Path $BackupDir) {
-            $backupLeafName = Split-Path -Leaf $BackupDir
-            if ($BackupDir.StartsWith($env:TEMP, [System.StringComparison]::OrdinalIgnoreCase) -and $backupLeafName.StartsWith("YakuLingo_")) {
-                & cmd /c "rd /s /q `"$BackupDir`" 2>nul"
-            }
+    # Clean up backup directory (with safety check)
+    if (Test-Path $BackupDir) {
+        $backupLeafName = Split-Path -Leaf $BackupDir
+        if ($BackupDir.StartsWith($env:TEMP, [System.StringComparison]::OrdinalIgnoreCase) -and $backupLeafName.StartsWith("YakuLingo_")) {
+            & cmd /c "rd /s /q `"$BackupDir`" 2>nul"
         }
+    }
+    if ($BackupFiles.Count -gt 0 -or $userGlossaryBackup -or $userRulesBackup) {
         Write-Status -Message "User data restored" -Progress -Step "Step 3/4: Extracting" -Percent 89
         if (-not $GuiMode) {
             Write-Host "[OK] User data restored" -ForegroundColor Green
@@ -1936,9 +1988,14 @@ try {
 
         Write-Status -Message "Setup completed!" -Progress -Step "Step 4/4: Finalizing" -Percent 100
         $successMsg = "セットアップが完了しました。`n`nログオン時にYakuLingoが自動で常駐します（UIを閉じても終了しません）。`n`n使い方:`n- 翻訳したい文字を選択して 同じウィンドウで Ctrl+C を短時間に2回`n  → YakuLingo のUIに結果が表示されます（必要な訳をコピー）`n- エクスプローラーでファイルを選択して 同じウィンドウで Ctrl+C を短時間に2回`n  → UIのファイルタブに結果が表示されます（必要な出力をダウンロード）`n- エクスプローラーでファイルを右クリック > 「YakuLingoで翻訳」`n  → 翻訳を開始します（Windows 11 は「その他のオプション」に表示）`n- UIを開く: スタートメニューの YakuLingo`n- UIを閉じる: 常駐は継続します（Copilot Edge は自動で画面外に移動します）`n- 終了する: スタートメニュー > YakuLingo 終了`n`nYakuLingo を常駐起動しました（準備中はUIが開きます）。"
-        if ($script:GlossaryBackupPath) {
-            $backupFileName = Split-Path -Leaf $script:GlossaryBackupPath
-            $successMsg += "`n`n用語集が更新されました。`n以前の用語集はデスクトップに保存しました:`n  $backupFileName"
+        if ($script:GlossaryDistPath -or $script:TranslationRulesDistPath) {
+            $successMsg += "`n`n既存ファイルは保持しました。新しい既定ファイルは以下に保存されています:"
+            if ($script:GlossaryDistPath) {
+                $successMsg += "`n- $script:GlossaryDistPath"
+            }
+            if ($script:TranslationRulesDistPath) {
+                $successMsg += "`n- $script:TranslationRulesDistPath"
+            }
         }
         Show-Success $successMsg
     } else {
@@ -1953,11 +2010,15 @@ try {
         Write-Host " Explorer: Right-click file > 'YakuLingoで翻訳' (Win11: Show more options)." -ForegroundColor Cyan
         Write-Host " Open UI: Start Menu shortcut." -ForegroundColor Cyan
         Write-Host " Exit: Start Menu > YakuLingo 終了" -ForegroundColor Cyan
-        if ($script:GlossaryBackupPath) {
+        if ($script:GlossaryDistPath -or $script:TranslationRulesDistPath) {
             Write-Host ""
-            $backupFileName = Split-Path -Leaf $script:GlossaryBackupPath
-            Write-Host " Glossary updated. Previous version backed up to Desktop:" -ForegroundColor Yellow
-            Write-Host "   $backupFileName" -ForegroundColor Yellow
+            Write-Host " Existing files preserved. New defaults saved to:" -ForegroundColor Yellow
+            if ($script:GlossaryDistPath) {
+                Write-Host "   $script:GlossaryDistPath" -ForegroundColor Yellow
+            }
+            if ($script:TranslationRulesDistPath) {
+                Write-Host "   $script:TranslationRulesDistPath" -ForegroundColor Yellow
+            }
         }
         Write-Host ""
         Write-Host " Log files (for troubleshooting):" -ForegroundColor Gray

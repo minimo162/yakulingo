@@ -94,7 +94,7 @@ setup.ps1は以下を実行：
 2. 既存インストールがあれば**全てのファイルを削除**（環境フォルダ含む）
 3. ZIPをローカルにコピー・展開（robocopyスキップ時は警告表示）
 4. `%LOCALAPPDATA%\YakuLingo` にファイル配置
-5. **ユーザーデータの復元**: `config/user_settings.json` は保持（復元）、`glossary.csv` は差分があればバックアップして更新
+5. **ユーザーデータの復元**: `config/user_settings.json` は保持（復元）、`glossary.csv` と `prompts/translation_rules.txt` は既存保持（新しい既定版は `.dist` として保存）
 6. ショートカット作成（デスクトップ / スタートメニュー / スタートアップ / 終了）
 7. Explorer右クリックメニュー登録（対応拡張子に `YakuLingoで翻訳` を追加）
 8. YakuLingoを起動（常駐 + UIを開く）
@@ -105,9 +105,10 @@ setup.ps1は以下を実行：
 |--------|----------|
 | `config/user_settings.json` | 既存ファイルをバックアップ → 展開後に復元（ユーザー設定は保持） |
 | `config/settings.template.json` | 新バージョンで上書き（デフォルト設定） |
-| `glossary.csv` | 新旧・旧版（`glossary_old.csv`）と比較し、カスタマイズ検出時はデスクトップへ `glossary_backup_YYYYMMDD*.csv` を作成してから上書き |
+| `glossary.csv` | 既存ファイルを保持し、新しい既定版は `glossary.dist.csv` として保存 |
+| `prompts/translation_rules.txt` | 既存ファイルを保持し、新しい既定版は `translation_rules.dist.txt` として保存 |
 
-> **Note**: `glossary.csv` は自動マージではなく「比較 → 必要ならバックアップ → 上書き」です（意図せず用語集が消えるのを防ぐため）。
+> **Note**: setup.vbs は既存の用語集・翻訳ルールを上書きしません。新しい既定版は `.dist` として保存されるため、必要に応じて手動で取り込みます。
 
 ### 環境フォルダの扱い
 

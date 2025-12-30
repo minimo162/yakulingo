@@ -677,6 +677,7 @@ class YakuLingoApp:
         self._resident_mode = False
         self._resident_login_required = False
         self._resident_show_requested = False
+        self._login_auto_show = False
 
         # Clipboard trigger for double-copy translation.
         self._clipboard_trigger = None
@@ -1157,8 +1158,17 @@ class YakuLingoApp:
 
         with self._client_lock:
             has_client_before = self._client is not None
+        auto_open_attempted = False
+        native_mode_enabled = bool(self._native_mode_enabled)
         if not has_client_before:
             self._resident_show_requested = True
+            auto_open_attempted = (
+                native_mode_enabled
+                and (self._open_ui_window_callback is not None or sys.platform == "win32")
+            )
+            self._login_auto_show = auto_open_attempted
+        else:
+            self._login_auto_show = False
 
         shown = await self._ensure_resident_ui_visible(reason)
         with self._client_lock:
@@ -1333,6 +1343,7 @@ class YakuLingoApp:
             source_hwnd: Foreground window handle at hotkey time (best-effort; Windows only)
         """
         if open_ui and self._resident_mode:
+            self._login_auto_show = False
             self._resident_show_requested = True
 
         if not text:
@@ -3769,8 +3780,18 @@ class YakuLingoApp:
                     self.state.copilot_ready = False
                     self.state.connection_state = ConnectionState.CONNECTING
 
+                    should_auto_hide = (
+                        self._resident_mode
+                        and self._login_auto_show
+                        and bool(self._native_mode_enabled)
+                    )
+
                     # Hide Edge window once login completes
                     await asyncio.to_thread(self.copilot.send_to_background)
+                    if should_auto_hide:
+                        self._resident_show_requested = False
+                        if sys.platform == "win32":
+                            self._hide_resident_window_win32("login_complete")
 
                     if self._client and not self._shutdown_requested:
                         with self._client:
@@ -3782,7 +3803,7 @@ class YakuLingoApp:
                     await self._ensure_gpt_mode_setup()
 
                     if not self._shutdown_requested:
-                        await self._on_browser_ready(bring_to_front=True)
+                        await self._on_browser_ready(bring_to_front=not should_auto_hide)
                     return
 
             # タイムアウト（翻訳ボタン押下時に再試行される）
@@ -3795,6 +3816,7 @@ class YakuLingoApp:
         finally:
             self._login_polling_active = False
             self._login_polling_task = None
+            self._login_auto_show = False
 
     async def _reconnect(self, max_retries: int = 3, show_progress: bool = True):
         """再接続を試みる（UIボタン用、リトライ付き）。
@@ -8303,6 +8325,7 @@ def run_app(
                 if yakulingo_app._client is client:
                     yakulingo_app._client = None
             yakulingo_app._resident_show_requested = False
+            yakulingo_app._login_auto_show = False
             browser_opened = False
             yakulingo_app._history_list = None
             yakulingo_app._history_dialog = None

@@ -47,55 +47,16 @@ USER_SETTINGS_KEYS = {
     "last_tab",
 }
 
-# Minimum screen width (logical px) to keep side_panel layout.
-# If the work area is extremely narrow, fall back to minimized mode.
-#
-# NOTE:
-# - The app uses a rail-style sidebar in compact layouts, so we can support
-#   slightly narrower windows than before.
-# - The browser (Edge) is primarily for transparency and error diagnostics.
-MIN_SIDE_PANEL_APP_WIDTH = 580
-SIDE_PANEL_GAP = 10
-MIN_SIDE_PANEL_SCREEN_WIDTH = MIN_SIDE_PANEL_APP_WIDTH + SIDE_PANEL_GAP
 DEFAULT_MAX_CHARS_PER_BATCH = 4000
 
 
-def calculate_side_panel_window_widths(
-    screen_width: int,
-    gap: int = SIDE_PANEL_GAP,
-    *,
-    max_edge_width: int | None = None,
-) -> tuple[int, int]:
-    """Return (app_width, edge_width) for side_panel layout.
-
-    By default the layout keeps a 1:1 split (half/half). If max_edge_width is
-    provided, the Edge width is capped accordingly.
-    """
-
-    if screen_width <= 0:
-        return (0, 0)
-
-    available_width = max(screen_width - gap, 0)
-    if available_width <= 0:
-        return (0, 0)
-
-    edge_width = available_width // 2
-    if max_edge_width and max_edge_width > 0:
-        edge_width = min(edge_width, max_edge_width)
-
-    app_width = max(available_width - edge_width, 0)
-    return (app_width, edge_width)
-
-
 def resolve_browser_display_mode(requested_mode: str, screen_width: Optional[int]) -> str:
-    """Resolve browser display mode based on available screen width."""
-    if requested_mode != "side_panel":
-        return requested_mode
-    if screen_width is None:
-        return requested_mode
-    if screen_width < MIN_SIDE_PANEL_SCREEN_WIDTH:
+    """Resolve browser display mode (side_panel is no longer supported)."""
+    if requested_mode == "foreground":
+        return "foreground"
+    if requested_mode == "minimized":
         return "minimized"
-    return requested_mode
+    return "minimized"
 
 
 @dataclass
@@ -147,7 +108,6 @@ class AppSettings:
     ocr_device: str = "auto"            # "auto", "cpu", "cuda"
 
     # Browser Display Mode (翻訳時のEdgeブラウザ表示方法)
-    # "side_panel": アプリの横にパネルとして表示（翻訳経過が見える、デフォルト）
     # "minimized": 最小化して非表示
     # "foreground": 前面に表示
     browser_display_mode: str = "minimized"

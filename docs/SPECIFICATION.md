@@ -1309,7 +1309,7 @@ class AppSettings:
     # Browser Display Mode
     # NOTE: browser_display_mode applies to Copilot Edge.
     # In browser mode (default), the UI itself is Edge --app and window sync is disabled.
-    browser_display_mode: str = "side_panel"   # "side_panel", "minimized", "foreground"
+    browser_display_mode: str = "minimized"   # "minimized", "foreground" (side_panel deprecated)
 
     # Auto Update
     auto_update_enabled: bool = True

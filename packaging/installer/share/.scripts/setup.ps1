@@ -403,7 +403,7 @@ function Start-ResidentService {
                 }
             }
 
-            $deadline = (Get-Date).AddSeconds(15)
+            $deadline = (Get-Date).AddSeconds(30)
             while ((Get-Date) -lt $deadline -and -not (Test-PortOpen $Port)) {
                 Start-Sleep -Milliseconds 200
             }

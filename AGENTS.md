@@ -1,4 +1,4 @@
-# AGENTS.md - AI Assistant Guide for YakuLingo
+﻿# AGENTS.md - AI Assistant Guide for YakuLingo
 
 This document provides essential context for AI assistants working with the YakuLingo codebase.
 
@@ -662,7 +662,7 @@ def _open_window_patched(..., window_args, settings_dict, start_args):
   "ocr_batch_size": 5,
   "ocr_dpi": 300,
   "ocr_device": "auto",
-  "browser_display_mode": "side_panel",
+  "browser_display_mode": "minimized",
   "auto_update_enabled": true,
   "auto_update_check_interval": 0,
   "github_repo_owner": "minimo162",
@@ -678,7 +678,7 @@ def _open_window_patched(..., window_args, settings_dict, start_args):
   "font_jp_to_en": "Arial",
   "font_en_to_jp": "MS Pゴシック",
   "bilingual_output": false,
-  "browser_display_mode": "side_panel",
+  "browser_display_mode": "minimized",
   "last_tab": "text"
 }
 ```
@@ -689,45 +689,10 @@ def _open_window_patched(..., window_args, settings_dict, start_args):
 
 | 値 | 説明 |
 |-----|------|
-| `"side_panel"` | アプリの横にパネルとして表示（デフォルト、翻訳経過が見える） |
-| `"minimized"` | 最小化して非表示（従来動作） |
+| `"minimized"` | 最小化して非表示（デフォルト） |
 | `"foreground"` | 前面に表示 |
 
-**小解像度時の自動フォールバック**:
-- 画面の作業領域幅が 1310px 未満の場合、`side_panel` は自動的に `minimized` に切り替え
-- アプリは1パネル（フル幅）で起動し、レイアウト崩れを回避
-
-サイドパネルモード (`side_panel`) の動作:
-- アプリとサイドパネルを「セット」として画面中央に配置
-- EdgeウィンドウをYakuLingoアプリの右側に配置
-- アプリと高さを揃えて表示（最小高さ500px）
-- マルチモニター対応（アプリと同じモニターに表示）
-- ブラウザスロットリング問題を回避可能
-- ログイン時の前面表示処理がスキップされる（既に見えているため）
-- **アプリとEdgeを最初から正しい位置に配置**（ちらつきなし）
-- **ダブルコピー時もアプリとEdgeをセットで前面に配置**
-- **PDF翻訳再接続時もEdgeをサイドパネル位置に維持**（最小化しない）
-
-**サイドパネルのレイアウト:**
-```
-|---余白---|---アプリ---|---隙間---|---サイドパネル---|---余白---|
-```
-- アプリとサイドパネルの全体幅（`app_width + gap + side_panel_width`）を画面中央に配置
-- `_position_window_early_sync()` で5msポーリングによりウィンドウ作成直後に正しい位置へ移動
-- `--window-position` でEdge起動時に位置を指定
-
-**サイドパネルのサイズ計算（1:1比率）:**
-
-アプリとブラウザは1:1の比率で画面を分割します（GPTモードUIのスペース確保のため）。
-
-| 画面幅 | アプリ幅 | サイドパネル幅 | ギャップ | 合計 |
-|--------|---------|---------------|---------|------|
-| 1920px | 955px | 955px | 10px | 1920px |
-| 1600px | 795px | 795px | 10px | 1600px |
-| 1366px | 678px | 678px | 10px | 1366px |
-
-- 計算式: `available_width = screen_width - SIDE_PANEL_GAP (10px)` → 2分割
-- 定数: `APP_WIDTH_RATIO=0.5`, `SIDE_PANEL_GAP=10`, `SIDE_PANEL_MIN_HEIGHT=500`
+**Note**: `side_panel` is deprecated and treated as `minimized`.
 
 **用語集の処理モード**:
 - `use_bundled_glossary`: 同梱の glossary.csv を使用するか（デフォルト: true）
@@ -878,23 +843,10 @@ import nicegui                        # Copilot page loads during import
 - NiceGUI import (~2.6秒) + display_settings (~1.2秒) の間にCopilotページがロード
 - GPTモード切替はUI表示後に非同期で実行（UI優先）
 - ウィンドウ検出ポーリング間隔を0.1秒→0.05秒に短縮
-- `defer_window_positioning=True`でウィンドウ位置設定を延期（約3.5秒短縮）
+- `defer_window_positioning` は互換性のため残っているが現在は無視される
 
 **ウィンドウ位置設定の延期**:
-早期Edge接続時はYakuLingoウィンドウがまだ存在しないため、`defer_window_positioning=True`で
-ウィンドウ位置設定をスキップします。ウィンドウ作成後に`position_as_side_panel()`を呼び出して
-位置設定を適用します。
-
-```python
-# 早期接続（ウィンドウ作成前）
-result = copilot.connect(
-    bring_to_foreground_on_login=False,
-    defer_window_positioning=True  # ウィンドウ位置設定をスキップ
-)
-
-# ウィンドウ作成後に位置設定を適用
-copilot.position_as_side_panel()
-```
+`defer_window_positioning` は互換性のため残っていますが、現在は無視されます。
 
 **重要**: `disconnect()`や`_cleanup_on_error()`で`self._playwright.stop()`を呼び出した後は、
 必ず`clear_pre_initialized_playwright()`を呼び出すこと。停止済みのPlaywrightインスタンスを
@@ -2457,53 +2409,6 @@ Based on recent commits:
     - 決算短信などで「△43,633」のような負号付き数値を正しく分離
     - テーブル領域内: 0pt以上のギャップで分離
     - テーブル外: 1pt以上のギャップが必要
-- **Browser Side Panel Display Mode (2024-12)**:
-  - **Default changed**: `browser_display_mode` のデフォルトを `"side_panel"` に変更
-  - **Modes**: `"side_panel"`（デフォルト）、`"minimized"`（従来）、`"foreground"`（前面）
-  - **1:1 ratio sizing**: アプリとブラウザは1:1の比率で画面を分割（GPTモードUIのスペース確保）
-    - 計算式: `available_width = screen_width - gap` → 2分割
-    - 定数: `APP_WIDTH_RATIO=0.5`, `SIDE_PANEL_GAP=10`, `SIDE_PANEL_MIN_HEIGHT=500`
-  - **Side panel features**:
-    - アプリとサイドパネルを「セット」として画面中央に配置（重なりを防止）
-    - YakuLingoアプリの右側にEdgeを配置
-    - アプリと高さを揃えて表示（最小高さ500px）
-    - マルチモニター対応（`MonitorFromWindow` API使用）
-    - **アプリとEdgeを最初から正しい位置に配置**（ちらつきなし）
-  - **Window positioning optimization (2024-12)**:
-    - `_calculate_app_position_for_side_panel()`: サイドパネルモードのアプリ位置を事前計算
-    - `_position_window_early_sync()`: on_startupでウィンドウ監視タスクを開始し、pywebviewウィンドウが作成されたら即座に（5msポーリング）正しい位置に移動
-    - `_calculate_side_panel_geometry_from_screen()`: Edge位置計算 + アプリ位置を`_expected_app_position`に保存
-    - `--window-position`: Edge起動時に正しい位置を指定
-    - **早期ウィンドウ配置**: NiceGUIのmultiprocessingによりwindow_argsが子プロセスに渡されないため、ウィンドウ作成を5msポーリングで監視しSetWindowPos()で移動
-    - `_reposition_windows_for_side_panel()`: `_calculate_app_position_for_side_panel()`と同じ位置計算を使用し、既に正しい位置なら移動をスキップ
-    - **ウィンドウ配置タイミング最適化**: `_apply_browser_display_mode()`をEdge起動直後ではなく`_finalize_connected_state()`（Copilot準備完了後）に移動。NiceGUI import中もCopilot準備が並列で進行し、YakuLingoウィンドウ待機タイムアウトによる一時最小化を回避
-  - **Simplified browser handling**:
-    - サイドパネル/foregroundモードではログイン時の前面表示処理をスキップ
-    - サイドパネル/foregroundモードではEdge起動時に画面外配置オプションを使用しない
-    - サイドパネル/foregroundモードでは自動ログイン中もEdgeを最小化しない（常に表示）
-    - `_bring_to_foreground_impl`、`_ensure_edge_minimized`、`_wait_for_auto_login_impl`がモードを考慮
-  - **Double-copy & reconnect handling (2024-12)**:
-    - ダブルコピー時: `_bring_window_to_front`でサイドパネルモード時にEdgeも配置
-    - PDF翻訳再接続時: `_reconnect_copilot_with_retry`で`browser_display_mode`をチェック
-    - 自動ログイン完了時: `should_minimize`条件を追加して不要な最小化を防止
-  - **Bidirectional window synchronization (2024-12)**:
-    - YakuLingoがフォアグラウンド → Edgeを連動表示（既存）
-    - **Edgeがフォアグラウンド → YakuLingoを連動表示（新規追加）**
-    - `SetWinEventHook`で`EVENT_SYSTEM_FOREGROUND`イベントを監視
-    - `_is_edge_process_pid()`: Edgeプロセスツリーの判定（psutil使用）
-    - `_sync_yakulingo_to_foreground()`: YakuLingoをEdgeの後ろに配置
-    - **ループ防止**: デバウンス処理（0.3秒）+ `SWP_NOACTIVATE`フラグ
-    - タスクバーからEdgeを選択しても、両方のウィンドウが表示される
-  - **PDF Translation Reconnection Fix (2024-12)**:
-    - **Problem**: PP-DocLayout-L初期化後の再接続でセッション喪失→ログイン要求
-    - **Root cause**: `_get_or_create_context()`の待機時間が0.2秒と短く、CDP接続確立前にコンテキスト取得失敗
-    - **Fixes**:
-      - `_get_or_create_context()`: 待機時間を最大3秒（0.3秒×10回リトライ）に延長
-      - `_cleanup_on_error()`: `browser_display_mode`をチェックしside_panel/foregroundモードで最小化をスキップ
-      - `_reconnect_copilot_with_retry()`: ログイン要求時にブラウザを前面表示＋UI通知を追加
-    - **Constants**: `CONTEXT_RETRY_COUNT=10`, `CONTEXT_RETRY_INTERVAL=0.3`
-  - **Benefits**: ブラウザスロットリング問題を回避、翻訳経過をリアルタイムで確認可能
-  - **Implementation**: `_calculate_app_position_for_side_panel()`, `_calculate_side_panel_geometry_from_screen()`, `_expected_app_position`, `_position_window_early_sync()`, `_find_yakulingo_window_handle()`, `_position_edge_as_side_panel()`, `_reposition_windows_for_side_panel()`, `_sync_edge_to_foreground()`, `_sync_yakulingo_to_foreground()`, `_is_edge_process_pid()`, `start_window_sync()`, `stop_window_sync()`
 - **Window Minimization Fix at Startup (2024-12)**:
   - **Problem**: アプリ起動時にウィンドウが最小化されて画面に表示されないことがある
   - **Root causes**:

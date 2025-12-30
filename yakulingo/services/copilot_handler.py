@@ -962,18 +962,10 @@ class CopilotHandler:
     MIN_EDGE_WINDOW_HEIGHT = 768   # Minimum height in pixels
 
     # =========================================================================
-    # Side Panel Mode Settings
+    # Edge Off-screen Placement Settings
     # =========================================================================
-    # Side panel configuration: App and browser windows use 1:1 ratio
-    # This ensures both windows get equal screen space for optimal usability
-    SIDE_PANEL_GAP = 10              # Gap between app and side panel
-    SIDE_PANEL_MIN_HEIGHT = 500      # Minimum height for usability
-
-    # App window size calculation ratios (must match app.py _detect_display_settings)
-    APP_WIDTH_RATIO = 0.5            # App and browser each get 50% of available width (1:1 ratio)
-    APP_HEIGHT_RATIO = 1.0           # Full work-area height (taskbar excluded)
-    # Minimum app window height (must match yakulingo/ui/app.py MIN_WINDOW_HEIGHT)
-    MIN_APP_WINDOW_HEIGHT = 650
+    # Extra gap beyond virtual screen bounds when hiding Edge off-screen.
+    EDGE_OFFSCREEN_GAP = 10
 
     # =========================================================================
     # UI Selectors - Centralized for easier maintenance when Copilot UI changes
@@ -1166,46 +1158,11 @@ class CopilotHandler:
         self._browser_started_by_us = False
         # Store Edge PID separately so we can kill it even if edge_process is None
         self._edge_pid: int | None = None
-        # Expected app position calculated during early connection (for side panel mode)
-        # This allows the app window to move directly to the correct position
-        # without waiting for Edge window to be found
-        self._expected_app_position: tuple[int, int, int, int] | None = None
-        self._cached_side_panel_geometry: tuple[int, int, int, int] | None = None
-        self._cached_side_panel_work_area: tuple[int, int, int, int] | None = None
-        # Window synchronization for side panel mode
-        # When YakuLingo becomes foreground, Edge window is also brought forward
-        # When Edge becomes foreground, YakuLingo window is also brought forward
-        self._window_sync_hook = None  # SetWinEventHook handle (foreground)
-        self._window_sync_minimize_hook = None  # SetWinEventHook handle (minimize)
-        self._window_sync_running = False  # Thread stop flag
-        self._window_sync_thread = None  # Dedicated thread for message loop
-        # Loop prevention: track last sync time and hwnd to prevent rapid oscillation
-        self._last_sync_time: float = 0.0
-        self._last_sync_hwnd: int = 0
-        # Track last time YakuLingo became foreground (taskbar restore focus guard)
-        self._last_yakulingo_foreground_time: float = 0.0
-        # Minimum interval between sync operations (seconds)
-        self._SYNC_DEBOUNCE_INTERVAL = 0.3
-        # Suppress foreground sync briefly during minimize to avoid unwanted restore
-        self._MINIMIZE_SYNC_SUPPRESS_SECONDS = 0.6
-        self._minimize_sync_until: float = 0.0
-        # Temporary suppression for hotkey work-priority layout
-        self._suppress_window_sync_until: float = 0.0
-        self._suppress_display_mode_until: float = 0.0
         self._hotkey_layout_active: bool = False
         self._hotkey_preserve_edge: bool = False
         # Keep Edge off-screen by default to avoid accidental interaction.
         self._edge_layout_mode: str | None = "offscreen"
         self._edge_restore_rect: tuple[int, int, int, int] | None = None
-        # Grace period to keep YakuLingo focused after taskbar restore (seconds)
-        self._FOREGROUND_GRACE_PERIOD = 0.5
-        # Warning frequency control: only show "window not found" warning once
-        # During startup, _position_edge_as_side_panel() may be called many times
-        # before YakuLingo window is created. Show WARNING first time, DEBUG after.
-        self._window_not_found_warning_shown = False
-        self._edge_not_found_warning_shown = False
-        self._edge_window_log_shown = False
-        self._window_positioning_deferred = False  # True if positioning was deferred during connect
         # GPT mode flag: only set mode once per session to respect user's manual changes
         # Set to True after successful mode switch in _ensure_gpt_mode_impl
         self._gpt_mode_set = False
@@ -1257,17 +1214,8 @@ class CopilotHandler:
         except Exception:
             return self.is_edge_process_alive()
 
-    def suppress_side_panel_behavior(self, duration_sec: float = 3.0) -> None:
-        """Temporarily suppress side_panel window sync/positioning."""
-        until = time.monotonic() + max(duration_sec, 0.0)
-        if until > self._suppress_window_sync_until:
-            self._suppress_window_sync_until = until
-        if until > self._suppress_display_mode_until:
-            self._suppress_display_mode_until = until
-        logger.debug("Side panel suppression active for %.1fs", duration_sec)
-
     def set_hotkey_layout_active(self, active: bool, *, preserve_edge: bool = False) -> None:
-        """Disable side_panel window management while a hotkey layout is active."""
+        """Track whether a hotkey layout is active."""
         self._hotkey_layout_active = active
         self._hotkey_preserve_edge = preserve_edge if active else False
         logger.debug(
@@ -1846,21 +1794,6 @@ class CopilotHandler:
                     self.MIN_EDGE_WINDOW_WIDTH,
                     self.MIN_EDGE_WINDOW_HEIGHT,
                 )
-            elif display_mode == "side_panel":
-                # Calculate side panel position from screen resolution
-                # This allows Edge to start in the correct position without moving
-                geometry = self._calculate_side_panel_geometry_from_screen()
-                if geometry:
-                    edge_x, edge_y, edge_width, edge_height = geometry
-                    edge_args.extend([
-                        f"--window-position={edge_x},{edge_y}",
-                        f"--window-size={edge_width},{edge_height}",
-                    ])
-                    logger.debug("Starting Edge in side_panel mode at (%d, %d) %dx%d",
-                                edge_x, edge_y, edge_width, edge_height)
-                else:
-                    # Fallback: start visible and let _apply_browser_display_mode position it
-                    logger.debug("Starting Edge in side_panel mode (position will be adjusted)")
             else:
                 logger.debug("Starting Edge in %s mode (visible)", display_mode)
 
@@ -1965,9 +1898,7 @@ class CopilotHandler:
             bring_to_foreground_on_login: If True, bring browser to foreground when
                 manual login is required. Set to False for background reconnection
                 (e.g., after PP-DocLayout-L initialization).
-            defer_window_positioning: If True, skip window positioning during connect.
-                Used for early connection before app window exists. Call
-                position_as_side_panel() later when window is ready.
+            defer_window_positioning: Deprecated; retained for call compatibility.
 
         Returns:
             True if browser connection established
@@ -1994,7 +1925,7 @@ class CopilotHandler:
         Args:
             bring_to_foreground_on_login: If True, bring browser to foreground when
                 manual login is required. Set to False for background reconnection.
-            defer_window_positioning: If True, skip window positioning during connect.
+            defer_window_positioning: Deprecated; retained for call compatibility.
         """
         logger.debug("[THREAD] _connect_impl running in thread %s", threading.current_thread().ident)
 
@@ -2268,12 +2199,10 @@ class CopilotHandler:
         """Mark the connection as established and persist session state.
 
         Args:
-            defer_window_positioning: If True, skip window positioning.
-                Call position_as_side_panel() later when app window is ready.
+            defer_window_positioning: Deprecated; retained for call compatibility.
         """
         self._connected = True
         self.last_connection_error = self.ERROR_NONE
-        self._window_positioning_deferred = defer_window_positioning
 
         # Note: Do NOT call window.stop() here as it interrupts M365 background
         # authentication/session establishment, causing auth dialogs to appear.
@@ -2281,11 +2210,8 @@ class CopilotHandler:
         # Copilot page is verified lazily at translation time via
         # _ensure_copilot_page(), so no need to verify here.
 
-        # Apply browser display mode based on settings (unless deferred)
-        if not defer_window_positioning:
-            self._apply_browser_display_mode(None)
-        else:
-            logger.debug("Window positioning deferred (app window not ready yet)")
+        # Apply browser display mode based on settings
+        self._apply_browser_display_mode(None)
 
         # Note: GPT mode is now set from UI layer (app.py) after initial connection
 
@@ -2308,10 +2234,10 @@ class CopilotHandler:
 
         # Minimize Edge window before cleanup to prevent it from staying in foreground
         # This handles cases where timeout errors or other failures leave the window visible
-        # Note: Skip minimization in side_panel/foreground mode since browser is intentionally visible
+        # Note: Skip minimization in foreground mode since the browser is intentionally visible
         with suppress(Exception):
             mode = self._get_browser_display_mode()
-            if mode not in ("side_panel", "foreground"):
+            if mode != "foreground":
                 self._minimize_edge_window(None)
 
         with suppress(Exception):
@@ -2405,8 +2331,8 @@ class CopilotHandler:
         PlaywrightError = error_types['Error']
         PlaywrightTimeoutError = error_types['TimeoutError']
 
-        # Check browser display mode - skip minimize for side_panel/foreground modes
-        should_minimize = self._get_browser_display_mode() not in ("side_panel", "foreground")
+        # Check browser display mode - skip minimize for foreground mode
+        should_minimize = self._get_browser_display_mode() != "foreground"
 
         logger.info("Checking for existing Copilot page...")
         pages = self._context.pages
@@ -2445,7 +2371,7 @@ class CopilotHandler:
             logger.info("Created new tab for Copilot")
 
         # Minimize before navigation to prevent flash during redirect
-        # (only in minimized mode - side_panel/foreground should stay visible)
+        # (only in minimized mode)
         if should_minimize:
             self._minimize_edge_window(None)
 
@@ -3586,7 +3512,6 @@ class CopilotHandler:
         PlaywrightTimeoutError = error_types['TimeoutError']
 
         # Check browser display mode - only minimize in "minimized" mode
-        # In side_panel/foreground mode, browser should remain visible
         should_minimize = self._get_browser_display_mode() == "minimized"
 
         elapsed = 0.0
@@ -3598,7 +3523,7 @@ class CopilotHandler:
         logger.info("Waiting for auto-login to complete (max %.1fs)...", max_wait)
 
         # Minimize browser window at start - login redirects may bring it to foreground
-        # (only in minimized mode - side_panel/foreground should stay visible)
+        # (only in minimized mode)
         if should_minimize:
             self._minimize_edge_window(None)
 
@@ -3714,7 +3639,7 @@ class CopilotHandler:
                         logger.debug("Auto-login progressing: %s -> %s", last_url[:50], current_url[:50])
                         stable_count = 0
                         # Re-minimize after redirect - Edge may steal focus during redirects
-                        # (only in minimized mode - side_panel/foreground should stay visible)
+                        # (only in minimized mode)
                         if should_minimize:
                             self._minimize_edge_window(None)
 
@@ -3777,19 +3702,19 @@ class CopilotHandler:
         1. Playwright's bring_to_front() - works within browser context
         2. Windows API (pywin32/ctypes) - forces window to foreground
 
-        Note: In side_panel or foreground mode, this method does nothing unless
-        an Edge layout override is active (e.g., offscreen/triple).
+        Note: In foreground mode, this method does nothing unless an Edge layout
+        override is active (e.g., offscreen/triple).
 
         Args:
             page: The Playwright page to bring to front
             reason: Reason for bringing window to foreground (for logging)
         """
-        # Check browser display mode - skip for side_panel/foreground modes
+        # Check browser display mode - skip for foreground mode
         # (browser is already visible, no need to bring to front)
         mode = self._get_browser_display_mode()
         edge_layout_mode = getattr(self, "_edge_layout_mode", None)
 
-        if mode in ("side_panel", "foreground") and edge_layout_mode is None:
+        if mode == "foreground" and edge_layout_mode is None:
             logger.debug("Skipping bring_to_foreground in %s mode (already visible): %s", mode, reason)
             return
 
@@ -3971,443 +3896,6 @@ class CopilotHandler:
             logger.debug("Failed to locate YakuLingo window handle: %s", e)
             return None
 
-    def _calculate_side_panel_geometry_from_screen(self) -> tuple[int, int, int, int] | None:
-        """Calculate side panel position and size from screen resolution.
-
-        This method calculates where the Edge window should be placed as a side panel.
-        App and side panel are positioned as a "set" centered on screen, ensuring
-        both windows fit without overlapping.
-
-        Layout: |---margin---|---app_window---|---gap---|---side_panel---|---margin---|
-
-        Used when Edge is started before the YakuLingo window is visible (early connection).
-
-        Returns:
-            Tuple of (x, y, width, height) for the Edge window, or None if calculation fails.
-        """
-        if sys.platform != "win32":
-            return None
-
-        try:
-            import ctypes
-            from ctypes import wintypes
-
-            user32 = ctypes.WinDLL('user32', use_last_error=True)
-
-            # Get primary monitor work area (excludes taskbar)
-            class RECT(ctypes.Structure):
-                _fields_ = [
-                    ("left", wintypes.LONG),
-                    ("top", wintypes.LONG),
-                    ("right", wintypes.LONG),
-                    ("bottom", wintypes.LONG),
-                ]
-
-            work_area = RECT()
-            # SPI_GETWORKAREA = 0x0030
-            user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(work_area), 0)
-
-            work_left = work_area.left
-            work_top = work_area.top
-            screen_width = work_area.right - work_area.left
-            screen_height = work_area.bottom - work_area.top
-
-            dpi_scale = _get_windows_dpi_scale()
-            dpi_awareness = _get_process_dpi_awareness()
-            gap = self.SIDE_PANEL_GAP
-            min_window_height = self.MIN_APP_WINDOW_HEIGHT
-            min_side_panel_height = self.SIDE_PANEL_MIN_HEIGHT
-            if dpi_scale != 1.0:
-                gap = _scale_value(gap, dpi_scale)
-                min_window_height = _scale_value(min_window_height, dpi_scale)
-                min_side_panel_height = _scale_value(min_side_panel_height, dpi_scale)
-            if dpi_awareness in (None, 0) and dpi_scale != 1.0:
-                work_left = _scale_value(work_left, dpi_scale)
-                work_top = _scale_value(work_top, dpi_scale)
-                screen_width = _scale_value(screen_width, dpi_scale)
-                screen_height = _scale_value(screen_height, dpi_scale)
-
-            work_area_key = (work_left, work_top, screen_width, screen_height)
-            if (self._cached_side_panel_work_area == work_area_key and
-                    self._cached_side_panel_geometry is not None):
-                return self._cached_side_panel_geometry
-
-            from yakulingo.config.settings import calculate_side_panel_window_widths
-
-            # Side panel split: 1:1 (half/half)
-            app_width, edge_width = calculate_side_panel_window_widths(screen_width, gap)
-            max_window_height = screen_height  # Use full work area height
-
-            # Calculate app window height (must match app.py _detect_display_settings)
-            app_height = min(
-                max(int(screen_height * self.APP_HEIGHT_RATIO), min_window_height),
-                max_window_height,
-            )
-            logger.debug("Using calculated window size: %dx%d", app_width, app_height)
-
-            # Calculate total width of app + gap + side panel
-            total_width = app_width + gap + edge_width
-
-            # Position the "set" (app + side panel) centered on screen
-            # This ensures both windows fit within the screen
-            set_start_x = work_left + (screen_width - total_width) // 2
-            set_start_y = work_top + (screen_height - app_height) // 2
-
-            # Ensure set doesn't go off screen (left edge)
-            if set_start_x < work_left:
-                set_start_x = work_left
-
-            # App window position (left side of the set)
-            app_x = set_start_x
-            app_y = set_start_y
-
-            # Edge window position (right side of app)
-            edge_x = app_x + app_width + gap
-            edge_y = app_y
-            edge_height = app_height
-
-            # Ensure minimum height
-            if edge_height < min_side_panel_height:
-                edge_height = min_side_panel_height
-
-            logger.debug("Side panel geometry from screen: (%d, %d) %dx%d (app_x=%d, screen: %dx%d)",
-                        edge_x, edge_y, edge_width, edge_height, app_x, screen_width, screen_height)
-
-            # Save expected app position for later use (avoids recalculation and flickering)
-            self._expected_app_position = (app_x, app_y, app_width, app_height)
-            self._cached_side_panel_work_area = work_area_key
-            self._cached_side_panel_geometry = (edge_x, edge_y, edge_width, edge_height)
-
-            return (edge_x, edge_y, edge_width, edge_height)
-
-        except Exception as e:
-            logger.warning("Failed to calculate side panel geometry: %s", e)
-            return None
-
-    def _position_edge_as_side_panel(self, page_title: str = None, bring_to_front: bool = False) -> bool:
-        """Position Edge window as a side panel next to YakuLingo app.
-
-        This method positions both the YakuLingo app and Edge browser as a "set"
-        centered on screen, ensuring both windows fit without overlapping.
-
-        Layout: |---margin---|---app_window---|---gap---|---side_panel---|---margin---|
-
-        Both app and browser use 1:1 ratio (each gets 50% of available width)
-        Example: 1920px screen - 10px gap = 1910px available → 955px each
-
-        Args:
-            page_title: The current page title for exact matching
-            bring_to_front: If True, bring Edge window to front (for hotkey activation)
-
-        Returns:
-            True if windows were successfully positioned
-        """
-        if sys.platform != "win32":
-            return False
-
-        try:
-            import ctypes
-            from ctypes import wintypes
-
-            user32 = ctypes.WinDLL('user32', use_last_error=True)
-
-            class RECT(ctypes.Structure):
-                _fields_ = [
-                    ("left", wintypes.LONG),
-                    ("top", wintypes.LONG),
-                    ("right", wintypes.LONG),
-                    ("bottom", wintypes.LONG),
-                ]
-
-            def _get_frame_rect(hwnd):
-                try:
-                    dwmapi = ctypes.WinDLL('dwmapi', use_last_error=True)
-                    DWMWA_EXTENDED_FRAME_BOUNDS = 9
-                    rect = RECT()
-                    if dwmapi.DwmGetWindowAttribute(
-                        hwnd,
-                        DWMWA_EXTENDED_FRAME_BOUNDS,
-                        ctypes.byref(rect),
-                        ctypes.sizeof(rect),
-                    ) == 0:
-                        return rect
-                except Exception:
-                    return None
-                return None
-
-            # Find both windows (include hidden for robustness during startup)
-            yakulingo_hwnd = self._find_yakulingo_window_handle(include_hidden=True)
-            edge_hwnd = self._find_edge_window_handle(page_title)
-
-            if not yakulingo_hwnd:
-                # Only log once when waiting starts, suppress repeated logs
-                if not self._window_not_found_warning_shown:
-                    logger.debug("Waiting for YakuLingo window to be created...")
-                    self._window_not_found_warning_shown = True
-                    self._window_wait_count = 0
-                self._window_wait_count = getattr(self, '_window_wait_count', 0) + 1
-                return False
-            if not edge_hwnd:
-                if not self._edge_not_found_warning_shown:
-                    logger.debug("Waiting for Edge window to be created...")
-                    self._edge_not_found_warning_shown = True
-                    self._edge_wait_count = 0
-                self._edge_wait_count = getattr(self, '_edge_wait_count', 0) + 1
-                return False
-
-            # Log if we were waiting and finally found the windows
-            if getattr(self, '_window_wait_count', 0) > 0:
-                logger.debug("YakuLingo window found after %d attempts", self._window_wait_count)
-                self._window_wait_count = 0
-            if getattr(self, '_edge_wait_count', 0) > 0:
-                logger.debug("Edge window found after %d attempts", self._edge_wait_count)
-                self._edge_wait_count = 0
-
-            # Get YakuLingo window rect
-            app_rect = RECT()
-            if not user32.GetWindowRect(yakulingo_hwnd, ctypes.byref(app_rect)):
-                logger.warning("Failed to get YakuLingo window rect")
-                return False
-
-            # Get monitor info for the monitor containing YakuLingo window
-            # This handles multi-monitor setups correctly
-            class MONITORINFO(ctypes.Structure):
-                _fields_ = [
-                    ("cbSize", wintypes.DWORD),
-                    ("rcMonitor", RECT),
-                    ("rcWork", RECT),
-                    ("dwFlags", wintypes.DWORD),
-                ]
-
-            # Get monitor from YakuLingo window position
-            MONITOR_DEFAULTTONEAREST = 2
-            monitor = user32.MonitorFromWindow(yakulingo_hwnd, MONITOR_DEFAULTTONEAREST)
-
-            monitor_info = MONITORINFO()
-            monitor_info.cbSize = ctypes.sizeof(MONITORINFO)
-            user32.GetMonitorInfoW(monitor, ctypes.byref(monitor_info))
-
-            # Use work area (excludes taskbar) of the monitor containing YakuLingo
-            work_area = monitor_info.rcWork
-            screen_width = work_area.right - work_area.left
-            screen_height = work_area.bottom - work_area.top
-            gap = self.SIDE_PANEL_GAP
-            min_side_panel_height = self.SIDE_PANEL_MIN_HEIGHT
-            dpi_scale = _get_windows_dpi_scale()
-            dpi_awareness = _get_process_dpi_awareness()
-            if dpi_awareness in (1, 2) and dpi_scale != 1.0:
-                gap = _scale_value(gap, dpi_scale)
-                min_side_panel_height = _scale_value(min_side_panel_height, dpi_scale)
-
-            # Get app window dimensions
-            app_width = app_rect.right - app_rect.left
-            app_height = app_rect.bottom - app_rect.top
-            app_frame_rect = _get_frame_rect(yakulingo_hwnd)
-            if app_frame_rect:
-                app_top_inset = app_frame_rect.top - app_rect.top
-                app_bottom_inset = app_rect.bottom - app_frame_rect.bottom
-                app_frame_top_offset = app_top_inset
-            else:
-                app_top_inset = 0
-                app_bottom_inset = 0
-                app_frame_top_offset = 0
-
-            from yakulingo.config.settings import calculate_side_panel_window_widths
-
-            # Target widths based on monitor work area: 1:1 (half/half)
-            target_app_width, edge_width = calculate_side_panel_window_widths(screen_width, gap)
-            if target_app_width <= 0 or edge_width <= 0:
-                target_app_width = app_width
-                edge_width = app_width
-
-            # Determine target app height.
-            #
-            # In browser mode, Chromium's `--window-size` may be interpreted as the *client* size,
-            # which can make the actual window taller than the monitor work area (rcWork).
-            # If we keep using the current height, the vertical centering math can push the window
-            # partially off-screen (negative y), and the bottom can overlap the taskbar area.
-            #
-            # Always clamp the app window height to the monitor work area to keep the full window
-            # visible and stable across DPI/chrome variations.
-            current_app_height = app_height
-            target_app_height = screen_height if screen_height > 0 else current_app_height
-
-            # Fall back to expected height only if monitor work area height is unavailable.
-            if (screen_height <= 0) and hasattr(self, '_expected_app_position') and self._expected_app_position:
-                _, _, _, expected_app_height = self._expected_app_position
-                if expected_app_height > 0:
-                    target_app_height = expected_app_height
-
-            # Ensure minimum height for usability, but keep within work area.
-            target_app_height = max(target_app_height, min_side_panel_height)
-            target_app_height = min(target_app_height, screen_height) if screen_height > 0 else target_app_height
-
-            app_height = target_app_height
-            app_frame_height = max(app_height - app_top_inset - app_bottom_inset, 0)
-
-            # Calculate total width of app + gap + side panel
-            total_width = target_app_width + gap + edge_width
-
-            # Position the "set" (app + side panel) centered on screen
-            # This ensures both windows fit within the screen
-            set_start_x = work_area.left + (screen_width - total_width) // 2
-            set_start_y = work_area.top + (screen_height - app_height) // 2
-
-            # Ensure set doesn't go off screen (left edge)
-            if set_start_x < work_area.left:
-                set_start_x = work_area.left
-
-            # Calculate new positions
-            new_app_x = set_start_x
-            new_app_y = set_start_y
-            edge_x = new_app_x + target_app_width + gap
-            edge_y = new_app_y
-
-            POSITION_TOLERANCE = 2
-            SIZE_TOLERANCE = 2
-
-            # Check if app needs to be moved or resized (compare with target)
-            app_needs_move = (
-                abs(app_rect.left - new_app_x) > POSITION_TOLERANCE or
-                abs(app_rect.top - new_app_y) > POSITION_TOLERANCE
-            )
-            app_needs_resize = (
-                abs(app_width - target_app_width) > SIZE_TOLERANCE or
-                abs(current_app_height - target_app_height) > SIZE_TOLERANCE
-            )
-
-            # SetWindowPos flags
-            SWP_NOACTIVATE = 0x0010  # Don't activate window
-            SWP_NOZORDER = 0x0004    # Don't change Z-order
-            SWP_NOSIZE = 0x0001      # Don't change size
-            SWP_NOMOVE = 0x0002      # Don't change position
-            SWP_SHOWWINDOW = 0x0040  # Show window
-
-            # Move/resize YakuLingo app if needed
-            if app_needs_move or app_needs_resize:
-                if app_needs_resize and app_needs_move:
-                    logger.debug(
-                        "Moving/resizing YakuLingo app from (%d,%d) %dx%d to (%d,%d) %dx%d",
-                        app_rect.left, app_rect.top, app_width, current_app_height,
-                        new_app_x, new_app_y, target_app_width, target_app_height
-                    )
-                elif app_needs_resize:
-                    logger.debug(
-                        "Resizing YakuLingo app from %dx%d to %dx%d",
-                        app_width, current_app_height, target_app_width, target_app_height
-                    )
-                else:
-                    logger.debug("Moving YakuLingo app from (%d,%d) to (%d,%d)",
-                                app_rect.left, app_rect.top, new_app_x, new_app_y)
-                flags = SWP_NOACTIVATE | SWP_NOZORDER
-                if not app_needs_resize:
-                    flags |= SWP_NOSIZE
-                if not app_needs_move:
-                    flags |= SWP_NOMOVE
-                user32.SetWindowPos(
-                    yakulingo_hwnd,
-                    None,  # hWndInsertAfter
-                    new_app_x,
-                    new_app_y,
-                    target_app_width,
-                    target_app_height,
-                    flags
-                )
-
-            # Check if Edge window is off-screen or minimized
-            current_rect = RECT()
-            user32.GetWindowRect(edge_hwnd, ctypes.byref(current_rect))
-            is_off_screen = current_rect.left < -10000 or current_rect.top < -10000
-            is_minimized = user32.IsIconic(edge_hwnd)
-
-            edge_frame_rect = _get_frame_rect(edge_hwnd)
-            if edge_frame_rect:
-                edge_top_inset = edge_frame_rect.top - current_rect.top
-                edge_bottom_inset = current_rect.bottom - edge_frame_rect.bottom
-            else:
-                edge_top_inset = 0
-                edge_bottom_inset = 0
-
-            # Align Edge visible frame to app frame bounds (avoids slight height mismatch).
-            target_edge_height = app_frame_height + edge_top_inset + edge_bottom_inset
-            target_edge_y = (new_app_y + app_frame_top_offset) - edge_top_inset
-            edge_y = target_edge_y
-
-            # Check if Edge needs to be moved (position or size change)
-            current_edge_width = current_rect.right - current_rect.left
-            current_edge_height = current_rect.bottom - current_rect.top
-            edge_needs_move = (
-                abs(current_rect.left - edge_x) > POSITION_TOLERANCE or
-                abs(current_rect.top - edge_y) > POSITION_TOLERANCE or
-                abs(current_edge_width - edge_width) > SIZE_TOLERANCE or
-                abs(current_edge_height - target_edge_height) > SIZE_TOLERANCE
-            )
-
-            # Early return if neither window needs adjustment and not bringing to front
-            if not app_needs_move and not edge_needs_move and not is_off_screen and not is_minimized and not bring_to_front:
-                return True  # Already in correct position
-
-            # If window is off-screen or minimized, restore it first
-            SW_RESTORE = 9
-            if is_off_screen or is_minimized:
-                user32.ShowWindow(edge_hwnd, SW_RESTORE)
-
-            # Position and resize Edge window only if needed
-            HWND_TOPMOST = -1
-            HWND_NOTOPMOST = -2
-
-            if bring_to_front:
-                # First, bring Edge to front using TOPMOST
-                flags = SWP_NOACTIVATE | SWP_SHOWWINDOW
-                user32.SetWindowPos(
-                    edge_hwnd,
-                    HWND_TOPMOST,
-                    edge_x,
-                    edge_y,
-                    edge_width,
-                    target_edge_height,
-                    flags
-                )
-                # Then reset to NOTOPMOST so other windows can go on top later
-                user32.SetWindowPos(
-                    edge_hwnd,
-                    HWND_NOTOPMOST,
-                    0, 0, 0, 0,
-                    SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE
-                )
-                # After NOTOPMOST, Edge may be behind the foreground window (YakuLingo app)
-                # Insert Edge right after YakuLingo in Z-order so both windows are visible
-                user32.SetWindowPos(
-                    edge_hwnd,
-                    yakulingo_hwnd,
-                    0, 0, 0, 0,
-                    SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
-                )
-                logger.debug("Edge brought to front (placed after YakuLingo in Z-order)")
-            elif edge_needs_move:
-                flags = SWP_NOACTIVATE | SWP_SHOWWINDOW
-                user32.SetWindowPos(
-                    edge_hwnd,
-                    None,  # hWndInsertAfter
-                    edge_x,
-                    edge_y,
-                    edge_width,
-                    target_edge_height,
-                    flags
-                )
-
-            # Ensure window is visible (not minimized, not activated)
-            SW_SHOWNOACTIVATE = 4
-            user32.ShowWindow(edge_hwnd, SW_SHOWNOACTIVATE)
-
-            logger.debug("Windows positioned: app=(%d,%d), edge=(%d,%d) %dx%d",
-                        new_app_x, new_app_y, edge_x, edge_y, edge_width, target_edge_height)
-            return True
-
-        except Exception as e:
-            logger.warning("Failed to position Edge as side panel: %s", e)
-            return False
-
     def _position_edge_offscreen(self) -> bool:
         """Move the Edge window off-screen while keeping it open."""
         if sys.platform != "win32":
@@ -4527,7 +4015,7 @@ class CopilotHandler:
             v_width = int(user32.GetSystemMetrics(SM_CXVIRTUALSCREEN))
             _v_height = int(user32.GetSystemMetrics(SM_CYVIRTUALSCREEN))
 
-            gap = max(self.SIDE_PANEL_GAP, 10)
+            gap = max(self.EDGE_OFFSCREEN_GAP, 10)
             offscreen_x = v_left + v_width + gap + 200
             offscreen_y = target_rect.top if target_rect else v_top
 
@@ -4836,45 +4324,10 @@ class CopilotHandler:
                 self._ensure_edge_window_visible()
             return
 
-        if mode == "side_panel":
-            # For side_panel mode, wait for YakuLingo window to be available
-            # With defer_window_positioning, window should already exist when this is called
-            MAX_WAIT_SECONDS = 3.0
-            POLL_INTERVAL = 0.05  # Reduced from 0.1s for faster window detection
-            waited = 0.0
-
-            while waited < MAX_WAIT_SECONDS:
-                if self._position_edge_as_side_panel(page_title):
-                    return  # Success
-                # Window not found yet, wait and retry
-                time.sleep(POLL_INTERVAL)
-                waited += POLL_INTERVAL
-
-            # Failed after retries - log warning and minimize as fallback
-            logger.warning("Side panel positioning failed after %.1fs, minimizing Edge", MAX_WAIT_SECONDS)
-            self._minimize_edge_window(page_title)
-        elif mode == "foreground":
+        if mode == "foreground":
             self._bring_edge_to_foreground_impl(page_title, reason="foreground display mode")
         else:  # "minimized" (default)
             self._minimize_edge_window(page_title)
-
-    def position_as_side_panel(self) -> bool:
-        """Apply deferred window positioning after app window is ready.
-
-        This method should be called from the UI layer after the app window is created,
-        if connect() was called with defer_window_positioning=True.
-
-        Returns:
-            True if positioning was applied successfully or was not deferred.
-        """
-        if not self._window_positioning_deferred:
-            logger.debug("Window positioning was not deferred, skipping")
-            return True
-
-        logger.debug("Applying deferred window positioning")
-        self._window_positioning_deferred = False
-        self._apply_browser_display_mode(None)
-        return True
 
     def _get_primary_work_area_size(self) -> tuple[int, int] | None:
         """Return primary monitor work area size (logical pixels)."""
@@ -4914,7 +4367,7 @@ class CopilotHandler:
         """Get browser display mode from cached settings.
 
         Returns:
-            Browser display mode string ("side_panel", "foreground", or "minimized")
+            Browser display mode string ("foreground" or "minimized")
         """
         # Cache settings to avoid repeated disk I/O during startup
         if not hasattr(self, '_cached_browser_display_mode'):
@@ -4930,7 +4383,7 @@ class CopilotHandler:
             effective_mode = resolve_browser_display_mode(settings.browser_display_mode, screen_width)
             if effective_mode != settings.browser_display_mode and work_area:
                 logger.debug(
-                    "Small screen detected (work area=%dx%d). Disabling side_panel (%s -> %s)",
+                    "Display mode adjusted (work area=%dx%d): %s -> %s",
                     work_area[0],
                     work_area[1],
                     settings.browser_display_mode,
@@ -5254,7 +4707,6 @@ class CopilotHandler:
 
         Behavior depends on browser_display_mode setting:
         - "minimized": Minimize Edge window (default)
-        - "side_panel": Position Edge as side panel next to app
         - "foreground": Keep Edge in foreground (no action needed)
         """
         if sys.platform == "win32":
@@ -5270,22 +4722,9 @@ class CopilotHandler:
                     self._ensure_edge_window_visible()
                 logger.debug("Edge layout override active: triple")
                 return
-            if self._hotkey_layout_active:
-                if self._hotkey_preserve_edge:
-                    logger.debug("Side panel display mode suppressed due to hotkey layout (preserve edge)")
-                    return
-                logger.debug("Side panel display mode suppressed due to hotkey layout")
-                mode = "minimized"
-            elif time.monotonic() < self._suppress_display_mode_until:
-                logger.debug("Side panel display mode suppressed for hotkey layout")
-                mode = "minimized"
-
             if mode == "minimized":
                 # Only minimize in minimized mode
                 self._minimize_edge_window(None)
-            elif mode == "side_panel":
-                # Ensure Edge is positioned as side panel (handles hotkey activation)
-                self._position_edge_as_side_panel(None)
             # For foreground mode, keep the window visible as-is
             logger.debug("Browser display mode: %s", mode)
         else:
@@ -5332,14 +4771,14 @@ class CopilotHandler:
         This is called during auto-login wait to prevent Edge from staying
         in foreground when login is not yet required.
 
-        Note: In side_panel or foreground mode, this method does nothing because
-        the browser is intentionally visible.
+        Note: In foreground mode, this method does nothing because the browser
+        is intentionally visible.
 
         Args:
             during_auto_login: If True, this is expected behavior during SSO
                 redirects and will be logged at a lower level.
         """
-        # Check browser display mode - skip for side_panel/foreground modes
+        # Check browser display mode - skip for foreground mode
         mode = self._get_browser_display_mode()
         edge_layout_mode = getattr(self, "_edge_layout_mode", None)
 
@@ -5349,7 +4788,7 @@ class CopilotHandler:
             return
         if edge_layout_mode == "triple":
             return
-        if mode in ("side_panel", "foreground"):
+        if mode == "foreground":
             # Browser is intentionally visible, no need to minimize
             return
 
@@ -5872,8 +5311,8 @@ class CopilotHandler:
         """Minimize the Copilot Edge window (best-effort, Windows only).
 
         This is used by the UI layer when the UI window is closed in resident mode.
-        Even when browser_display_mode is "side_panel", the Copilot Edge window should
-        not remain visible after the UI is gone.
+        Regardless of browser_display_mode, the Copilot Edge window should not remain
+        visible after the UI is gone.
         """
         if sys.platform != "win32":
             return False
@@ -5912,9 +5351,6 @@ class CopilotHandler:
 
         # Mark as disconnected first
         self._connected = False
-
-        # Stop window synchronization (side panel mode)
-        self.stop_window_sync()
 
         # Note: about:blank navigation removed for performance optimization (~1s saved)
         # --disable-session-crashed-bubble flag should suppress "Restore pages" dialog
@@ -9066,468 +8502,3 @@ class CopilotHandler:
     # - We use a dedicated thread with GetMessage() loop for this
     # - The callback must be fast to avoid blocking the message pump
 
-    def start_window_sync(self) -> bool:
-        """Start window synchronization for side panel mode.
-
-        Uses SetWinEventHook to monitor foreground window changes.
-        When YakuLingo becomes the foreground window, Edge is brought forward
-        (placed right after YakuLingo in Z-order).
-
-        This should only be called in side_panel browser display mode.
-        Creates a dedicated thread with a message loop for the event hook.
-
-        Returns:
-            True if synchronization started successfully, False otherwise.
-        """
-        if sys.platform != "win32":
-            logger.debug("Window sync not supported on this platform")
-            return False
-
-        if self._window_sync_running:
-            logger.debug("Window sync already running")
-            return True
-
-        try:
-            # Start dedicated thread for message loop
-            self._window_sync_running = True
-            self._window_sync_thread = threading.Thread(
-                target=self._window_sync_thread_func,
-                daemon=True,
-                name="WindowSyncThread"
-            )
-            self._window_sync_thread.start()
-            logger.info("Window synchronization started for side panel mode")
-            return True
-
-        except Exception as e:
-            logger.warning("Failed to start window sync: %s", e)
-            self._window_sync_running = False
-            return False
-
-    def stop_window_sync(self) -> None:
-        """Stop window synchronization.
-
-        Signals the thread to stop and waits for cleanup.
-        Safe to call multiple times.
-        """
-        if not self._window_sync_running:
-            return
-
-        self._window_sync_running = False
-        logger.info("Window synchronization stopping...")
-
-        # Thread will exit on next message loop iteration
-        # Don't wait too long as we may be in shutdown
-        thread = getattr(self, '_window_sync_thread', None)
-        if thread is not None:
-            try:
-                thread.join(timeout=1.0)
-                if thread.is_alive():
-                    logger.debug("Window sync thread did not stop within timeout")
-            except Exception:
-                pass
-            self._window_sync_thread = None
-
-        # Clear callback reference
-        self._winevent_callback = None
-
-    def _window_sync_thread_func(self) -> None:
-        """Thread function for window synchronization.
-
-        Sets up SetWinEventHook and runs a message loop to receive events.
-        The hook callback is invoked when any window becomes foreground or minimizes.
-        """
-        if sys.platform != "win32":
-            return
-
-        import ctypes
-        from ctypes import wintypes
-
-        user32 = ctypes.WinDLL('user32', use_last_error=True)
-
-        # Define callback type for SetWinEventHook
-        # WINEVENTPROC: (HWINEVENTHOOK, DWORD, HWND, LONG, LONG, DWORD, DWORD) -> void
-        WINEVENTPROC = ctypes.WINFUNCTYPE(
-            None,
-            wintypes.HANDLE,  # hWinEventHook
-            wintypes.DWORD,   # event
-            wintypes.HWND,    # hwnd
-            wintypes.LONG,    # idObject
-            wintypes.LONG,    # idChild
-            wintypes.DWORD,   # dwEventThread
-            wintypes.DWORD,   # dwmsEventTime
-        )
-
-        # Store callback reference in self to prevent garbage collection
-        # (must be kept alive while the hook is active)
-        self._winevent_callback = WINEVENTPROC(self._window_event_callback)
-
-        # EVENT_SYSTEM_FOREGROUND: Sent when a window becomes foreground
-        EVENT_SYSTEM_FOREGROUND = 0x0003
-        # EVENT_SYSTEM_MINIMIZESTART: Sent when a window begins minimizing
-        EVENT_SYSTEM_MINIMIZESTART = 0x0016
-        # EVENT_SYSTEM_MINIMIZEEND: Sent when a window finishes minimizing/restoring
-        EVENT_SYSTEM_MINIMIZEEND = 0x0017
-        # WINEVENT_OUTOFCONTEXT: Callback runs in our process (no DLL injection)
-        WINEVENT_OUTOFCONTEXT = 0x0000
-
-        # Set up the hooks (must be done in this thread for message delivery)
-        hook_foreground = user32.SetWinEventHook(
-            EVENT_SYSTEM_FOREGROUND,  # eventMin
-            EVENT_SYSTEM_FOREGROUND,  # eventMax
-            None,                      # hmodWinEventProc (NULL for out-of-context)
-            self._winevent_callback,   # pfnWinEventProc
-            0,                         # idProcess (0 = all processes)
-            0,                         # idThread (0 = all threads)
-            WINEVENT_OUTOFCONTEXT,     # dwFlags
-        )
-
-        if not hook_foreground:
-            error = ctypes.get_last_error()
-            logger.warning("SetWinEventHook (foreground) failed with error: %d", error)
-            self._window_sync_running = False
-            return
-
-        hook_minimize = user32.SetWinEventHook(
-            EVENT_SYSTEM_MINIMIZESTART,  # eventMin
-            EVENT_SYSTEM_MINIMIZEEND,    # eventMax
-            None,                         # hmodWinEventProc (NULL for out-of-context)
-            self._winevent_callback,      # pfnWinEventProc
-            0,                            # idProcess (0 = all processes)
-            0,                            # idThread (0 = all threads)
-            WINEVENT_OUTOFCONTEXT,        # dwFlags
-        )
-
-        if not hook_minimize:
-            error = ctypes.get_last_error()
-            logger.warning("SetWinEventHook (minimize) failed with error: %d", error)
-
-        self._window_sync_hook = hook_foreground
-        self._window_sync_minimize_hook = hook_minimize
-        logger.debug("SetWinEventHook installed, starting message loop")
-
-        # Message loop - required for SetWinEventHook callbacks
-        # Using PeekMessage with PM_REMOVE for non-blocking check
-        PM_REMOVE = 0x0001
-        msg = wintypes.MSG()
-
-        try:
-            while self._window_sync_running:
-                # Check for messages without blocking
-                if user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, PM_REMOVE):
-                    user32.TranslateMessage(ctypes.byref(msg))
-                    user32.DispatchMessageW(ctypes.byref(msg))
-                else:
-                    # No message, sleep briefly to avoid busy loop
-                    time.sleep(0.05)
-        finally:
-            # Cleanup: unhook when loop exits
-            if hook_foreground:
-                user32.UnhookWinEvent(hook_foreground)
-                logger.debug("SetWinEventHook (foreground) uninstalled")
-            if hook_minimize:
-                user32.UnhookWinEvent(hook_minimize)
-                logger.debug("SetWinEventHook (minimize) uninstalled")
-            self._window_sync_hook = None
-            self._window_sync_minimize_hook = None
-
-    def _window_event_callback(
-        self,
-        hWinEventHook,
-        event,
-        hwnd,
-        idObject,
-        idChild,
-        dwEventThread,
-        dwmsEventTime,
-    ) -> None:
-        """Callback for SetWinEventHook.
-
-        Called when a window becomes foreground or begins minimizing.
-        Synchronizes YakuLingo and Edge windows bidirectionally:
-        - If YakuLingo becomes foreground, brings Edge to front as well.
-        - If Edge becomes foreground, brings YakuLingo to front as well.
-        - If either window starts minimizing, minimize the other as well.
-
-        Note: This callback runs in the WindowSyncThread.
-        Keep processing minimal to avoid blocking message pumping.
-        """
-        if not self._window_sync_running:
-            return
-
-        try:
-            import ctypes
-            from ctypes import wintypes
-
-            user32 = ctypes.WinDLL('user32', use_last_error=True)
-
-            EVENT_SYSTEM_FOREGROUND = 0x0003
-            EVENT_SYSTEM_MINIMIZESTART = 0x0016
-            EVENT_SYSTEM_MINIMIZEEND = 0x0017
-
-            current_time = time.monotonic()
-            if self._hotkey_layout_active:
-                return
-            if current_time < self._suppress_window_sync_until:
-                return
-
-            # Get window title (best-effort; may be empty for some windows)
-            title_length = user32.GetWindowTextLengthW(hwnd)
-            window_title = ""
-            if title_length > 0:
-                title = ctypes.create_unicode_buffer(title_length + 1)
-                user32.GetWindowTextW(hwnd, title, title_length + 1)
-                window_title = title.value
-
-            # Check if this is the YakuLingo window
-            is_yakulingo = (window_title == "YakuLingo" or
-                           window_title.startswith("YakuLingo"))
-
-            # Check if this is the Edge window (our browser process)
-            is_edge = False
-            if not is_yakulingo and (self.edge_process or self._edge_pid):
-                # Check if foreground window belongs to our Edge process tree
-                fg_pid = wintypes.DWORD()
-                user32.GetWindowThreadProcessId(hwnd, ctypes.byref(fg_pid))
-                is_edge = self._is_edge_process_pid(fg_pid.value)
-
-            if not is_yakulingo and not is_edge:
-                return
-
-            if event == EVENT_SYSTEM_MINIMIZESTART:
-                if current_time < self._minimize_sync_until:
-                    return
-                self._minimize_sync_until = current_time + self._MINIMIZE_SYNC_SUPPRESS_SECONDS
-                if is_yakulingo:
-                    edge_hwnd = self._find_edge_window_handle()
-                    self._minimize_window_hwnd(edge_hwnd, "Edge")
-                elif is_edge:
-                    yakulingo_hwnd = self._find_yakulingo_window_handle(include_hidden=True)
-                    self._minimize_window_hwnd(yakulingo_hwnd, "YakuLingo")
-                return
-
-            if event == EVENT_SYSTEM_MINIMIZEEND:
-                try:
-                    if user32.IsIconic(hwnd):
-                        return
-                except Exception:
-                    return
-                if is_yakulingo:
-                    edge_hwnd = self._find_edge_window_handle()
-                    if edge_hwnd and user32.IsIconic(edge_hwnd):
-                        self._sync_edge_to_foreground(hwnd)
-                elif is_edge:
-                    yakulingo_hwnd = self._find_yakulingo_window_handle(include_hidden=True)
-                    if yakulingo_hwnd and user32.IsIconic(yakulingo_hwnd):
-                        self._sync_yakulingo_to_foreground(hwnd, activate=False)
-                return
-
-            if event != EVENT_SYSTEM_FOREGROUND:
-                return
-
-            if current_time < self._minimize_sync_until:
-                return
-
-            # Debounce: prevent rapid oscillation between windows
-            if (hwnd == self._last_sync_hwnd and
-                    current_time - self._last_sync_time < self._SYNC_DEBOUNCE_INTERVAL):
-                return
-
-            if is_yakulingo:
-                logger.debug("YakuLingo became foreground, syncing Edge window")
-                self._last_sync_hwnd = hwnd
-                self._last_sync_time = current_time
-                self._last_yakulingo_foreground_time = current_time
-                # Bring Edge to front (non-blocking, minimal processing)
-                self._sync_edge_to_foreground(hwnd)
-
-            elif is_edge:
-                logger.debug("Edge became foreground, syncing YakuLingo window")
-                self._last_sync_hwnd = hwnd
-                self._last_sync_time = current_time
-                # Bring YakuLingo to front (non-blocking, minimal processing)
-                should_activate = (
-                    current_time - self._last_yakulingo_foreground_time <= self._FOREGROUND_GRACE_PERIOD
-                )
-                if should_activate:
-                    logger.debug("Edge foreground within grace period; re-activating YakuLingo window")
-                self._sync_yakulingo_to_foreground(hwnd, activate=should_activate)
-
-        except Exception as e:
-            # Don't log errors in callback to avoid flooding
-            pass
-
-    def _is_edge_process_pid(self, pid: int) -> bool:
-        """Check if a PID belongs to our Edge process tree.
-
-        Args:
-            pid: Process ID to check
-
-        Returns:
-            True if the PID is our Edge process or one of its children
-        """
-        target_pid = None
-        if self.edge_process:
-            target_pid = self.edge_process.pid
-        elif self._edge_pid:
-            target_pid = self._edge_pid
-        if not target_pid:
-            return False
-
-        if pid == target_pid:
-            return True
-
-        # Check child processes (Edge uses multi-process architecture)
-        try:
-            import psutil
-            parent = psutil.Process(target_pid)
-            children = parent.children(recursive=True)
-            return any(child.pid == pid for child in children)
-        except Exception:
-            # psutil not available or process not found
-            # Fall back to just checking direct PID match
-            return False
-
-    def _minimize_window_hwnd(self, hwnd: int, label: str) -> bool:
-        """Minimize a window by handle without activating it (best-effort)."""
-        if sys.platform != "win32":
-            return False
-        if not hwnd:
-            return False
-
-        try:
-            import ctypes
-
-            user32 = ctypes.WinDLL('user32', use_last_error=True)
-
-            if user32.IsIconic(hwnd):
-                return True
-
-            SW_SHOWMINNOACTIVE = 7
-            user32.ShowWindow(hwnd, SW_SHOWMINNOACTIVE)
-            logger.debug("%s window minimized (sync)", label)
-            return True
-        except Exception as e:
-            logger.debug("Failed to minimize %s window (sync): %s", label, e)
-            return False
-
-    def _sync_edge_to_foreground(self, yakulingo_hwnd) -> None:
-        """Bring Edge window to foreground when YakuLingo is activated.
-
-        Places Edge window right after YakuLingo in Z-order so both windows
-        are visible together. Does not change window positions.
-
-        Args:
-            yakulingo_hwnd: Handle to the YakuLingo window (for Z-order reference)
-        """
-        if sys.platform != "win32":
-            return
-
-        try:
-            import ctypes
-            from ctypes import wintypes
-
-            user32 = ctypes.WinDLL('user32', use_last_error=True)
-
-            # Find Edge window
-            edge_hwnd = self._find_edge_window_handle()
-            if not edge_hwnd:
-                return
-
-            # Check if Edge is minimized
-            is_minimized = user32.IsIconic(edge_hwnd)
-            if is_minimized:
-                # Restore without activating
-                SW_SHOWNOACTIVATE = 4
-                user32.ShowWindow(edge_hwnd, SW_SHOWNOACTIVATE)
-
-            # SetWindowPos flags
-            SWP_NOACTIVATE = 0x0010  # Don't activate window
-            SWP_NOMOVE = 0x0002      # Don't change position
-            SWP_NOSIZE = 0x0001      # Don't change size
-            SWP_SHOWWINDOW = 0x0040  # Show window
-
-            # Place Edge right after YakuLingo in Z-order
-            # This ensures Edge is visible but YakuLingo stays focused
-            user32.SetWindowPos(
-                edge_hwnd,
-                yakulingo_hwnd,  # hWndInsertAfter: place after YakuLingo
-                0, 0, 0, 0,      # x, y, cx, cy (ignored due to flags)
-                SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
-            )
-
-            logger.debug("Edge window synced to foreground (after YakuLingo)")
-
-        except Exception as e:
-            logger.debug("Failed to sync Edge window: %s", e)
-
-    def _sync_yakulingo_to_foreground(self, edge_hwnd, activate: bool = False) -> None:
-        """Bring YakuLingo window to foreground when Edge is activated.
-
-        Places YakuLingo window right after Edge in Z-order so both windows
-        are visible together. Does not change window positions.
-
-        Args:
-            edge_hwnd: Handle to the Edge window (for Z-order reference)
-            activate: If True, activate YakuLingo window (used for taskbar restore)
-        """
-        if sys.platform != "win32":
-            return
-
-        try:
-            import ctypes
-            from ctypes import wintypes
-
-            user32 = ctypes.WinDLL('user32', use_last_error=True)
-
-            # Find YakuLingo window
-            yakulingo_hwnd = self._find_yakulingo_window_handle(include_hidden=True)
-            if not yakulingo_hwnd:
-                return
-
-            # Check if YakuLingo is minimized
-            is_minimized = user32.IsIconic(yakulingo_hwnd)
-            if is_minimized:
-                if activate:
-                    SW_RESTORE = 9
-                    user32.ShowWindow(yakulingo_hwnd, SW_RESTORE)
-                else:
-                    # Restore without activating
-                    SW_SHOWNOACTIVATE = 4
-                    user32.ShowWindow(yakulingo_hwnd, SW_SHOWNOACTIVATE)
-
-            # SetWindowPos flags
-            SWP_NOACTIVATE = 0x0010  # Don't activate window
-            SWP_NOMOVE = 0x0002      # Don't change position
-            SWP_NOSIZE = 0x0001      # Don't change size
-            SWP_SHOWWINDOW = 0x0040  # Show window
-            HWND_TOPMOST = -1
-            HWND_NOTOPMOST = -2
-
-            # Place YakuLingo right after Edge in Z-order
-            # This ensures YakuLingo is visible but Edge stays focused
-            user32.SetWindowPos(
-                yakulingo_hwnd,
-                edge_hwnd,  # hWndInsertAfter: place after Edge
-                0, 0, 0, 0,      # x, y, cx, cy (ignored due to flags)
-                (SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW | (0 if activate else SWP_NOACTIVATE))
-            )
-
-            if activate:
-                ASFW_ANY = -1
-                user32.AllowSetForegroundWindow(ASFW_ANY)
-                user32.SetWindowPos(
-                    yakulingo_hwnd, HWND_TOPMOST, 0, 0, 0, 0,
-                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
-                )
-                user32.SetForegroundWindow(yakulingo_hwnd)
-                user32.SetWindowPos(
-                    yakulingo_hwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
-                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
-                )
-                logger.debug("YakuLingo window activated after Edge foreground")
-            else:
-                logger.debug("YakuLingo window synced to foreground (after Edge)")
-
-        except Exception as e:
-            logger.debug("Failed to sync YakuLingo window: %s", e)

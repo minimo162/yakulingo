@@ -71,7 +71,7 @@ def _get_primary_monitor_size() -> tuple[int, int] | None:
             info = MONITORINFO()
             info.cbSize = ctypes.sizeof(MONITORINFO)
             if user32.GetMonitorInfoW(hmonitor, ctypes.byref(info)):
-                # Use work area (excludes taskbar) to match side panel sizing logic.
+                # Use work area (excludes taskbar) for consistent window sizing.
                 width = info.rcWork.right - info.rcWork.left
                 height = info.rcWork.bottom - info.rcWork.top
                 if width > 0 and height > 0:
@@ -561,7 +561,6 @@ class YakuLingoApp:
 
         # Window size (width, height) in pixels
         # Set by run_app() based on monitor detection
-        # Window width is reduced to accommodate side panel mode (500px + 10px gap)
         self._window_size: tuple[int, int] = (1800, 1100)
         # Screen size (work area) in logical pixels for display mode decisions
         self._screen_size: tuple[int, int] | None = None
@@ -594,11 +593,6 @@ class YakuLingoApp:
         self._early_connect_thread: "threading.Thread | None" = None  # Background Edge startup
         self._early_connection_event: "threading.Event | None" = None
         self._early_connection_result_ref: "_EarlyConnectionResult | None" = None
-
-        # Early window positioning flag (prevents duplicate repositioning)
-        self._early_position_completed = False
-        # Side panel sync flag (avoid repeated size adjustments)
-        self._side_panel_sync_done = False
 
         # Text input textarea reference for auto-focus
         self._text_input_textarea: Optional[UiTextarea] = None
@@ -975,11 +969,6 @@ class YakuLingoApp:
                             )
                         except Exception as e:
                             logger.debug("Failed to schedule hotkey layout retry: %s", e)
-                        if not preserve_edge:
-                            try:
-                                self.copilot.suppress_side_panel_behavior(4.0)
-                            except Exception as e:
-                                logger.debug("Failed to suppress side panel behavior: %s", e)
 
             is_path_selection, file_paths = self._extract_hotkey_file_paths(text)
             if is_path_selection:
@@ -1974,21 +1963,6 @@ class YakuLingoApp:
             win32_success = await asyncio.to_thread(self._bring_window_to_front_win32)
             logger.debug("Windows API bring_to_front result: %s", win32_success)
 
-        # Method 3: Position Edge as side panel if in side_panel mode
-        # This ensures Edge is visible alongside the app when activated via hotkey
-        # Note: Don't check _connected - Edge may be running even before Copilot connects
-        if position_edge and sys.platform == 'win32' and self._settings and self._copilot:
-            if self._get_effective_browser_display_mode() == "side_panel":
-                if getattr(self._copilot, "_edge_layout_mode", None) == "offscreen":
-                    return win32_success
-                try:
-                    # bring_to_front=True ensures Edge is visible when activated via hotkey
-                    await asyncio.to_thread(
-                        self._copilot._position_edge_as_side_panel, None, True
-                    )
-                    logger.debug("Edge positioned as side panel after bring to front")
-                except Exception as e:
-                    logger.debug("Failed to position Edge as side panel: %s", e)
         return win32_success
 
     def _apply_hotkey_work_priority_layout_win32(
@@ -2594,13 +2568,60 @@ class YakuLingoApp:
         """Ensure the app window is visible and in front after UI is ready.
 
         This is called after create_ui() to restore focus to the app window,
-        as Edge startup (side_panel mode) may steal focus.
-
-        For side_panel mode, this also repositions both app and Edge windows
-        to be centered as a "set" on screen, ensuring no overlap.
+        as Edge startup may steal focus.
         """
         # Small delay to ensure pywebview window is fully initialized
         await asyncio.sleep(0.5)
+
+        if sys.platform == 'win32':
+            hotkey_layout_active = False
+            source_hwnd = None
+            try:
+                source_hwnd = self._last_hotkey_source_hwnd
+                if self._hotkey_translation_active:
+                    hotkey_layout_active = True
+                elif self._copilot and getattr(self._copilot, "_hotkey_layout_active", False):
+                    hotkey_layout_active = True
+            except Exception:
+                hotkey_layout_active = False
+
+            if hotkey_layout_active and source_hwnd:
+                try:
+                    import ctypes
+                    from ctypes import wintypes
+
+                    user32 = ctypes.WinDLL("user32", use_last_error=True)
+                    if not user32.IsWindow(wintypes.HWND(source_hwnd)):
+                        source_hwnd = None
+                    else:
+                        yakulingo_hwnd = None
+                        if self._copilot:
+                            try:
+                                yakulingo_hwnd = self._copilot._find_yakulingo_window_handle(
+                                    include_hidden=True
+                                )
+                            except Exception:
+                                yakulingo_hwnd = None
+                        if not yakulingo_hwnd:
+                            yakulingo_hwnd = user32.FindWindowW(None, "YakuLingo")
+                        if yakulingo_hwnd and source_hwnd == int(yakulingo_hwnd):
+                            source_hwnd = None
+                except Exception:
+                    source_hwnd = None
+
+            if hotkey_layout_active and source_hwnd:
+                try:
+                    layout_applied = await asyncio.to_thread(
+                        self._apply_hotkey_work_priority_layout_win32,
+                        source_hwnd,
+                        edge_layout="offscreen",
+                    )
+                except Exception as e:
+                    logger.debug("Failed to apply hotkey layout during UI ready: %s", e)
+                else:
+                    if layout_applied:
+                        # Keep focus on the source window; skip foreground sync.
+                        return
 
         try:
             # Use pywebview's on_top toggle to bring window to front
@@ -2617,180 +2638,12 @@ class YakuLingoApp:
         except (AttributeError, RuntimeError) as e:
             logger.debug("Failed to bring app window to front: %s", e)
 
-        # For side_panel mode, reposition both windows after UI is fully displayed
-        # This ensures windows are positioned correctly even if pywebview placed app at center
-        # Skip if early positioning already completed (prevents duplicate repositioning)
         if sys.platform == 'win32':
-            edge_offscreen = bool(
-                self._copilot and getattr(self._copilot, "_edge_layout_mode", None) == "offscreen"
-            )
-            if not self._early_position_completed:
-                if self._native_mode_enabled is False or edge_offscreen:
-                    logger.debug("Skipping app window repositioning (edge offscreen or browser mode)")
-                else:
-                    try:
-                        await asyncio.to_thread(self._reposition_windows_for_side_panel)
-                    except Exception as e:
-                        logger.debug("Window repositioning failed: %s", e)
-            else:
-                logger.debug("Skipping window repositioning (early positioning already completed)")
-
             # Additional Windows API fallback to bring app to front
             try:
                 await asyncio.to_thread(self._restore_app_window_win32)
             except Exception as e:
                 logger.debug("Windows API restore failed: %s", e)
-
-            # Start window synchronization for side_panel mode (native only).
-            # Browser mode uses Edge for the UI itself, so syncing would minimize the UI.
-            if self._native_mode_enabled is False or edge_offscreen:
-                logger.debug("Skipping window sync (edge offscreen or browser mode)")
-            elif self._settings and self._get_effective_browser_display_mode() == "side_panel":
-                try:
-                    if self._copilot:
-                        self._copilot.start_window_sync()
-                except Exception as e:
-                    logger.debug("Failed to start window sync: %s", e)
-
-    async def _sync_side_panel_windows(self) -> None:
-        """Ensure side panel windows are aligned after UI is ready."""
-        if self._side_panel_sync_done or sys.platform != 'win32':
-            return
-        if self._native_mode_enabled is False:
-            return
-        if self._copilot and getattr(self._copilot, "_edge_layout_mode", None) == "offscreen":
-            return
-        settings = self._settings
-        if not settings or self._get_effective_browser_display_mode() != "side_panel":
-            return
-        copilot = self._copilot
-        if not copilot:
-            return
-        try:
-            if not copilot.is_edge_window_open():
-                return
-        except Exception:
-            return
-        try:
-            synced = await asyncio.to_thread(copilot._position_edge_as_side_panel, None, False)
-        except Exception as e:
-            logger.debug("Side panel sync failed: %s", e)
-            return
-        if synced:
-            self._side_panel_sync_done = True
-
-    def _reposition_windows_for_side_panel(self) -> bool:
-        """Reposition app window for side_panel mode using consistent position calculation.
-
-        This is called after UI is displayed to fix window positions.
-        pywebview places the app at screen center, which may cause overlap
-        with the side panel. This method moves only the app window to the
-        calculated position (Edge is already in the correct position).
-
-        Uses _calculate_app_position_for_side_panel() for consistent position
-        calculation with _position_window_early_sync(), preventing duplicate
-        repositioning when early positioning has already placed the window correctly.
-
-        If the window is already at the correct position (within tolerance),
-        SetWindowPos() is skipped to avoid unnecessary visual flickering.
-
-        Returns:
-            True if repositioning was successful or skipped (already correct)
-        """
-        if sys.platform != 'win32':
-            return False
-
-        try:
-            # Check if side_panel mode is enabled
-            settings = self._settings
-            if not settings or self._get_effective_browser_display_mode() != "side_panel":
-                return False
-            if self._copilot and getattr(self._copilot, "_edge_layout_mode", None) == "offscreen":
-                return False
-
-            # Calculate target position using the same function as _position_window_early_sync()
-            # This ensures consistent positioning and avoids duplicate repositioning
-            native_window_width, native_window_height = self._get_window_size_for_native_ops()
-            target_position = _calculate_app_position_for_side_panel(
-                native_window_width, native_window_height
-            )
-            if not target_position:
-                # Fall back to Copilot's position if calculation fails
-                if self._copilot and self._copilot._expected_app_position:
-                    app_x, app_y, app_width, app_height = self._copilot._expected_app_position
-                elif self._copilot and self._copilot._connected:
-                    return self._copilot._position_edge_as_side_panel()
-                else:
-                    return False
-            else:
-                app_x, app_y = target_position
-                app_width, app_height = native_window_width, native_window_height
-
-            import ctypes
-            from ctypes import wintypes
-
-            user32 = ctypes.WinDLL('user32', use_last_error=True)
-
-            # Find YakuLingo window (include hidden in case startup hasn't fully completed)
-            yakulingo_hwnd = self._copilot._find_yakulingo_window_handle(include_hidden=True)
-            if not yakulingo_hwnd:
-                logger.debug("YakuLingo window not found for repositioning")
-                return False
-
-            # Get current window position to check if repositioning is needed
-            class RECT(ctypes.Structure):
-                _fields_ = [
-                    ("left", ctypes.c_long),
-                    ("top", ctypes.c_long),
-                    ("right", ctypes.c_long),
-                    ("bottom", ctypes.c_long),
-                ]
-
-            current_rect = RECT()
-            if user32.GetWindowRect(yakulingo_hwnd, ctypes.byref(current_rect)):
-                current_x = current_rect.left
-                current_y = current_rect.top
-                current_width = current_rect.right - current_rect.left
-                current_height = current_rect.bottom - current_rect.top
-
-                # Tolerance for position comparison (accounts for DPI scaling/rounding)
-                POSITION_TOLERANCE = 10  # pixels
-
-                # Skip repositioning if already at correct position
-                if (abs(current_x - app_x) <= POSITION_TOLERANCE and
-                    abs(current_y - app_y) <= POSITION_TOLERANCE and
-                    abs(current_width - app_width) <= POSITION_TOLERANCE and
-                    abs(current_height - app_height) <= POSITION_TOLERANCE):
-                    logger.debug("App window already at correct position: (%d, %d) %dx%d, skipping repositioning",
-                               current_x, current_y, current_width, current_height)
-                    return True
-
-                logger.debug("App window position change needed: (%d, %d) %dx%d -> (%d, %d) %dx%d",
-                           current_x, current_y, current_width, current_height,
-                           app_x, app_y, app_width, app_height)
-
-            # Move app window to pre-calculated position
-            SWP_NOZORDER = 0x0004
-            SWP_NOACTIVATE = 0x0010
-            flags = SWP_NOZORDER | SWP_NOACTIVATE
-
-            result = user32.SetWindowPos(
-                yakulingo_hwnd, None,
-                app_x, app_y, app_width, app_height,
-                flags
-            )
-
-            if result:
-                logger.debug("App window moved to pre-calculated position: (%d, %d) %dx%d",
-                           app_x, app_y, app_width, app_height)
-                return True
-            else:
-                logger.debug("Failed to move app window to pre-calculated position")
-                return False
-
-        except Exception as e:
-            logger.debug("Failed to reposition windows for side panel: %s", e)
-            return False
 
     def _restore_app_window_win32(self) -> bool:
         """Restore and bring app window to front using Windows API.
@@ -2952,12 +2805,6 @@ class YakuLingoApp:
                                     self.state.connection_state = ConnectionState.CONNECTING
                                     self._refresh_status()
 
-                                    # Apply deferred window positioning now that app window exists.
-                                    try:
-                                        await asyncio.to_thread(self.copilot.position_as_side_panel)
-                                    except Exception as e:
-                                        logger.debug("Failed to position side panel after early connection: %s", e)
-
                                     await self._ensure_gpt_mode_setup()
                                     if self._shutdown_requested:
                                         return
@@ -3002,8 +2849,6 @@ class YakuLingoApp:
             self.state.copilot_ready = False
             self.state.connection_state = ConnectionState.CONNECTING
             self._refresh_status()
-            # Apply deferred window positioning now that app window exists
-            await asyncio.to_thread(self.copilot.position_as_side_panel)
             await self._ensure_gpt_mode_setup()
             await self._on_browser_ready(bring_to_front=False)
         elif self._early_connection_result is False:
@@ -3164,8 +3009,6 @@ class YakuLingoApp:
             except (AttributeError, RuntimeError) as e:
                 logger.debug("Failed to bring window to front: %s", e)
 
-        await self._sync_side_panel_windows()
-
         # Ensure header status reflects the latest connection state.
         # Some background Playwright operations can temporarily block quick state checks,
         # so refresh once more shortly after to avoid a stale "準備中..." UI.
@@ -3322,10 +3165,7 @@ class YakuLingoApp:
                     self.state.connection_state = ConnectionState.CONNECTING
 
                     # Handle Edge window based on effective browser_display_mode
-                    if self._settings and self._get_effective_browser_display_mode() == "side_panel":
-                        await asyncio.to_thread(self.copilot._position_edge_as_side_panel, None)
-                        logger.debug("Edge positioned as side panel after reconnection")
-                    elif self._settings and self._get_effective_browser_display_mode() == "minimized":
+                    if self._settings and self._get_effective_browser_display_mode() == "minimized":
                         await asyncio.to_thread(self.copilot._minimize_edge_window, None)
                         logger.debug("Edge minimized after reconnection")
                     # In foreground mode, do nothing (leave Edge as is)
@@ -6121,7 +5961,7 @@ def create_app() -> YakuLingoApp:
 def _detect_display_settings(
     webview_module: "ModuleType | None" = None,
     screen_size: tuple[int, int] | None = None,
-    display_mode: str = "side_panel",
+    display_mode: str = "minimized",
 ) -> tuple[tuple[int, int], tuple[int, int, int]]:
     """Detect connected monitors and determine window size and panel widths.
 
@@ -6145,22 +5985,14 @@ def _detect_display_settings(
     Args:
         webview_module: Pre-initialized webview module (avoids redundant initialization).
         screen_size: Optional pre-detected work area size (logical pixels).
-        display_mode: Requested browser display mode (side_panel/foreground/minimized).
+        display_mode: Requested browser display mode (foreground/minimized).
 
     Returns:
         Tuple of ((window_width, window_height), (sidebar_width, input_panel_width, content_width))
         - content_width: Unified width for both input and result panel content (600-900px)
     """
-    # Reference ratios based on 2560x1440 → 1800x1100
-    # Side panel layout:
-    # - Normal screens: 1:1 split (app and browser each get half the screen)
-    # - Ultra-wide screens: still 1:1 split (no cap)
-    # Example: 1920px - 10px gap = 1910px available → 955px each
-    WIDTH_RATIO = 0.5  # Historical reference (1:1 split)
+    # Reference ratios based on 2560x1440 -> 1800x1100
     HEIGHT_RATIO = 1.0  # Full work-area height (taskbar excluded)
-
-    # Side panel dimensions (must match copilot_handler.py constants)
-    SIDE_PANEL_GAP = 10
 
     # Panel ratios based on 1800px window width
     SIDEBAR_RATIO = 280 / 1800  # ~0.156
@@ -6169,12 +6001,9 @@ def _detect_display_settings(
     # Minimum sizes to prevent layout breaking on smaller screens
     # These are absolute minimums - below this, UI elements may overlap
     # Note: These values are in logical pixels, not physical pixels
-    # Example: 1366x768 at 125% = 1092x614 logical → window ~810x469 (74% ratio)
     MIN_WINDOW_WIDTH = 900    # Lowered from 1400 to avoid over-shrinking at ~1k width
     MIN_WINDOW_HEIGHT = 650   # Lowered from 850 to maintain ~76% ratio on smaller screens
     MIN_SIDEBAR_WIDTH = 240   # Baseline sidebar width for normal windows
-    # In side_panel mode on smaller displays the app window can be ~650-900px wide.
-    # The sidebar must remain usable in that range (status chip + CTA button).
     MIN_SIDEBAR_WIDTH_COMPACT = 180
     MIN_INPUT_PANEL_WIDTH = 320  # Lowered from 380 for smaller screens
     # Clamp sidebar on ultra-wide single-window mode to avoid wasting space.
@@ -6182,40 +6011,22 @@ def _detect_display_settings(
 
     # Unified content width for both input and result panels.
     # Uses mainAreaWidth * CONTENT_RATIO, clamped to min-max range.
-    #
-    # In side-panel mode the app window is narrower, so we intentionally give the
-    # composer more horizontal room (ratio higher than the previous 0.55).
     CONTENT_RATIO = 0.85
     MIN_CONTENT_WIDTH = 500  # Lowered from 600 for smaller screens
     MAX_CONTENT_WIDTH = 900
 
-    use_side_panel = display_mode == "side_panel"
-    from yakulingo.config.settings import calculate_side_panel_window_widths
-
-    def calculate_side_panel_width(screen_width: int) -> int:
-        """Calculate side panel width for the current screen size."""
-        _, edge_width = calculate_side_panel_window_widths(screen_width, SIDE_PANEL_GAP)
-        return edge_width
-
     def calculate_sizes(
         screen_width: int,
         screen_height: int,
-        use_side_panel: bool,
     ) -> tuple[tuple[int, int], tuple[int, int, int]]:
         """Calculate window size and panel widths from screen resolution.
-
-        Uses a 1:1 split for app and browser windows in side_panel mode.
 
         Returns:
             Tuple of ((window_width, window_height),
                       (sidebar_width, input_panel_width, content_width))
         """
-        if use_side_panel:
-            # Side panel layout: 1:1 split for app and browser windows.
-            window_width, _ = calculate_side_panel_window_widths(screen_width, SIDE_PANEL_GAP)
-        else:
-            # Single panel: use full work area width
-            window_width = screen_width
+        # Single panel: use full work area width
+        window_width = screen_width
         max_window_height = screen_height  # Use full work area height
         window_height = min(max(int(screen_height * HEIGHT_RATIO), MIN_WINDOW_HEIGHT), max_window_height)
 
@@ -6248,11 +6059,11 @@ def _detect_display_settings(
     _t_func_start = _time.perf_counter()
 
     # Default based on 1920x1080 screen
-    default_window, default_panels = calculate_sizes(1920, 1080, use_side_panel)
+    default_window, default_panels = calculate_sizes(1920, 1080)
 
     if screen_size is not None:
         screen_width, screen_height = screen_size
-        window_size, panel_sizes = calculate_sizes(screen_width, screen_height, use_side_panel)
+        window_size, panel_sizes = calculate_sizes(screen_width, screen_height)
         logger.info(
             "Display detection (fast): work area=%dx%d",
             screen_width,
@@ -6312,7 +6123,7 @@ def _detect_display_settings(
 
         # Calculate window and panel sizes based on logical screen resolution
         _t_calc = _time.perf_counter()
-        window_size, panel_sizes = calculate_sizes(logical_width, logical_height, use_side_panel)
+        window_size, panel_sizes = calculate_sizes(logical_width, logical_height)
         logger.debug("[DISPLAY_DETECT] calculate_sizes: %.3fs", _time.perf_counter() - _t_calc)
 
         logger.info(
@@ -6392,81 +6203,6 @@ def _check_native_mode_and_get_webview(
         return (False, None)
 
     return (True, webview)
-
-
-def _calculate_app_position_for_side_panel(
-    window_width: int,
-    window_height: int
-) -> tuple[int, int] | None:
-    """Calculate app window position for side panel mode.
-
-    This calculates where the app window should be placed so that both
-    the app and the side panel (Edge browser) are centered on screen as a set.
-
-    Layout: |---margin---|---app_window---|---gap---|---side_panel---|---margin---|
-
-    Args:
-        window_width: The app window width
-        window_height: The app window height
-
-    Returns:
-        Tuple of (x, y) for the app window, or None if calculation fails.
-    """
-    if sys.platform != 'win32':
-        return None
-
-    try:
-        import ctypes
-
-        user32 = ctypes.WinDLL('user32', use_last_error=True)
-
-        # Get primary monitor work area (excludes taskbar)
-        class RECT(ctypes.Structure):
-            _fields_ = [
-                ("left", ctypes.c_long),
-                ("top", ctypes.c_long),
-                ("right", ctypes.c_long),
-                ("bottom", ctypes.c_long),
-            ]
-
-        work_area = RECT()
-        # SPI_GETWORKAREA = 0x0030
-        user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(work_area), 0)
-
-        screen_width = work_area.right - work_area.left
-        screen_height = work_area.bottom - work_area.top
-
-        from yakulingo.config.settings import calculate_side_panel_window_widths
-
-        SIDE_PANEL_GAP = 10
-        # Use the same split logic as CopilotHandler so the "app + gap + Edge" set fits.
-        _, edge_width = calculate_side_panel_window_widths(screen_width, SIDE_PANEL_GAP)
-        if edge_width <= 0:
-            edge_width = window_width  # Fallback: preserve legacy 1:1 assumption
-
-        # Calculate total width of app + gap + side panel
-        total_width = window_width + SIDE_PANEL_GAP + edge_width
-
-        # Position the "set" (app + side panel) centered on screen
-        set_start_x = work_area.left + (screen_width - total_width) // 2
-        set_start_y = work_area.top + (screen_height - window_height) // 2
-
-        # Ensure set doesn't go off screen (left edge)
-        if set_start_x < work_area.left:
-            set_start_x = work_area.left
-
-        # App window position (left side of the set)
-        app_x = set_start_x
-        app_y = set_start_y
-
-        logger.debug("Calculated app position for side panel: (%d, %d) (screen: %dx%d)",
-                    app_x, app_y, screen_width, screen_height)
-
-        return (app_x, app_y)
-
-    except Exception as e:
-        logger.debug("Failed to calculate app position for side panel: %s", e)
-        return None
 
 
 def _get_available_memory_gb() -> float | None:
@@ -6722,7 +6458,7 @@ def run_app(
     )
     if logical_screen_size is not None and effective_display_mode != requested_display_mode:
         logger.info(
-            "Small screen detected (work area=%dx%d). Disabling side_panel (%s -> %s)",
+            "Display mode adjusted (work area=%dx%d): %s -> %s",
             logical_screen_size[0],
             logical_screen_size[1],
             requested_display_mode,
@@ -6768,7 +6504,7 @@ def run_app(
             )
             yakulingo_app._panel_sizes = panel_sizes
         else:
-            window_size = (1800, 1100)  # Default size for browser mode (reduced for side panel)
+            window_size = (1800, 1100)  # Default size for browser mode
             yakulingo_app._panel_sizes = (250, 400, 850)  # Default panel sizes (sidebar, input, content)
         yakulingo_app._window_size = window_size
         if window_size_is_logical and dpi_scale != 1.0:
@@ -6930,11 +6666,6 @@ def run_app(
             url = f"http://{host}:{port}/"
             native_window_size = yakulingo_app._native_window_size or yakulingo_app._window_size
             width, height = native_window_size
-            try:
-                display_mode = yakulingo_app._get_effective_browser_display_mode()
-            except Exception:
-                display_mode = "side_panel"
-
             if sys.platform == "win32":
                 edge_exe = _find_edge_exe_for_browser_open()
                 if edge_exe:
@@ -6961,10 +6692,6 @@ def run_app(
                         "--disable-session-crashed-bubble",
                         "--hide-crash-restore-bubble",
                     ]
-                    if display_mode == "side_panel":
-                        position = _calculate_app_position_for_side_panel(width, height)
-                        if position:
-                            args.append(f"--window-position={position[0]},{position[1]}")
                     try:
                         import subprocess
 
@@ -7546,7 +7273,7 @@ def run_app(
 
     # Optimize pywebview startup (native mode only)
     # - hidden: Start window hidden and show after positioning (prevents flicker)
-    # - x, y: Pre-calculate window position for side_panel mode
+    # - x, y: Pre-calculate window position for native mode
     # - background_color: Match app background to reduce visual flicker
     # - easy_drag: Disable titlebar drag region (not needed, window has native titlebar)
     # - icon: Use YakuLingo icon for taskbar (instead of default Python icon)
@@ -7557,26 +7284,6 @@ def run_app(
         # Start window hidden to prevent position flicker
         # Window will be shown by _position_window_early_sync() after positioning
         nicegui_app.native.window_args['hidden'] = True
-
-        # Pre-calculate window position for side_panel mode
-        # This allows pywebview to create window at correct position (if it gets passed to child process)
-        try:
-            settings = AppSettings.load(get_default_settings_path())
-            screen_width = yakulingo_app._screen_size[0] if yakulingo_app._screen_size else None
-            effective_mode = resolve_browser_display_mode(settings.browser_display_mode, screen_width)
-            if effective_mode == "side_panel":
-                native_window_width, native_window_height = (
-                    yakulingo_app._get_window_size_for_native_ops()
-                )
-                app_position = _calculate_app_position_for_side_panel(
-                    native_window_width, native_window_height
-                )
-                if app_position:
-                    nicegui_app.native.window_args['x'] = app_position[0]
-                    nicegui_app.native.window_args['y'] = app_position[1]
-                    logger.debug("Pre-set window position: x=%d, y=%d", app_position[0], app_position[1])
-        except Exception as e:
-            logger.debug("Failed to pre-set window position: %s", e)
 
         # Set pywebview window icon (may not affect taskbar, but helps title bar)
         if icon_path.exists():
@@ -7629,7 +7336,7 @@ def run_app(
         """Position YakuLingo window immediately when it's created (sync, runs in thread).
 
         This function ensures the app window is visible and properly positioned for all
-        browser display modes (side_panel, minimized, foreground).
+        browser display modes (minimized, foreground).
 
         Key behaviors:
         - Window is created with hidden=True in window_args
@@ -7641,9 +7348,6 @@ def run_app(
 
         try:
             import ctypes
-
-            # Resolve effective browser display mode for window positioning
-            effective_mode = yakulingo_app._get_effective_browser_display_mode()
 
             user32 = ctypes.WinDLL('user32', use_last_error=True)
 
@@ -7760,87 +7464,15 @@ def run_app(
                         except Exception as e:
                             logger.debug("[EARLY_POSITION] Failed to set window icon: %s", e)
 
-                    # For side_panel mode, position window at calculated position
-                    if effective_mode == "side_panel":
-                        # Calculate target position
-                        native_window_width, native_window_height = (
-                            yakulingo_app._get_window_size_for_native_ops()
-                        )
-                        app_position = _calculate_app_position_for_side_panel(
-                            native_window_width, native_window_height
-                        )
-                        if app_position:
-                            target_x, target_y = app_position
-                            target_width, target_height = native_window_width, native_window_height
-
-                            # Get current position
-                            current_rect = RECT()
-                            if user32.GetWindowRect(hwnd, ctypes.byref(current_rect)):
-                                current_x = current_rect.left
-                                current_y = current_rect.top
-                                current_width = current_rect.right - current_rect.left
-                                current_height = current_rect.bottom - current_rect.top
-
-                                # Check if window is NOT at target position (needs moving)
-                                POSITION_TOLERANCE = 10
-                                SIZE_TOLERANCE = 2
-                                needs_move = (abs(current_x - target_x) > POSITION_TOLERANCE or
-                                            abs(current_y - target_y) > POSITION_TOLERANCE)
-                                needs_resize = (abs(current_width - target_width) > SIZE_TOLERANCE or
-                                               abs(current_height - target_height) > SIZE_TOLERANCE)
-
-                                if needs_move or needs_resize:
-                                    # Move/resize window to target position (while still hidden if hidden=True worked)
-                                    result = user32.SetWindowPos(
-                                        hwnd, None,
-                                        target_x, target_y, target_width, target_height,
-                                        SWP_NOZORDER | SWP_NOACTIVATE
-                                    )
-                                    if result:
-                                        # Log whether window was visible during move (indicates patch failure)
-                                        visibility_note = " (visible - patch may not have worked)" if is_visible else " (hidden - OK)"
-                                        logger.debug(
-                                            "[EARLY_POSITION] Window moved from (%d, %d) %dx%d to (%d, %d) %dx%d after %dms%s",
-                                            current_x, current_y, current_width, current_height,
-                                            target_x, target_y, target_width, target_height,
-                                            waited_ms, visibility_note
-                                        )
-                                    else:
-                                        logger.debug("[EARLY_POSITION] SetWindowPos failed after %dms", waited_ms)
-                                else:
-                                    # Window already at correct position and size (patch worked for x, y)
-                                    logger.debug(
-                                        "[EARLY_POSITION] Window already at correct position/size (%d, %d) %dx%d after %dms",
-                                        current_x, current_y, current_width, current_height, waited_ms
-                                    )
-
-                                # Now show the window at correct position
-                                if not is_visible:
-                                    user32.ShowWindow(hwnd, SW_SHOW)
-                                    logger.debug("[EARLY_POSITION] Window shown after positioning (was hidden - patch worked)")
-                                else:
-                                    # Window was already visible, just ensure it's in correct state
-                                    user32.SetWindowPos(
-                                        hwnd, None, 0, 0, 0, 0,
-                                        SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_NOSIZE | SWP_NOMOVE
-                                    )
-                                    if needs_move:
-                                        logger.warning("[EARLY_POSITION] Window was visible during move - hidden=True did not work (NiceGUI patch may have failed)")
-
-                                yakulingo_app._early_position_completed = True
+                    if not is_visible:
+                        user32.ShowWindow(hwnd, SW_SHOW)
+                        logger.debug("[EARLY_POSITION] Window shown after %dms", waited_ms)
                     else:
-                        # For minimized/foreground modes, just ensure window is visible
-                        if not is_visible:
-                            user32.ShowWindow(hwnd, SW_SHOW)
-                            logger.debug("[EARLY_POSITION] Window shown (%s mode, was hidden) after %dms",
-                                       effective_mode, waited_ms)
-                        else:
-                            user32.SetWindowPos(
-                                hwnd, None, 0, 0, 0, 0,
-                                SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_NOSIZE | SWP_NOMOVE
-                            )
-                            logger.debug("[EARLY_POSITION] Window visibility ensured (%s mode) after %dms",
-                                       effective_mode, waited_ms)
+                        user32.SetWindowPos(
+                            hwnd, None, 0, 0, 0, 0,
+                            SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_NOSIZE | SWP_NOMOVE
+                        )
+                        logger.debug("[EARLY_POSITION] Window visibility ensured after %dms", waited_ms)
                     return
 
                 # Determine current poll interval based on elapsed time
@@ -7919,10 +7551,6 @@ def run_app(
             copilot = getattr(yakulingo_app, "_copilot", None)
             if copilot is not None and sys.platform == "win32":
                 def _minimize_copilot_edge_window() -> None:
-                    try:
-                        copilot.stop_window_sync()
-                    except Exception:
-                        pass
                     try:
                         copilot.minimize_edge_window()
                     except Exception:
@@ -8033,7 +7661,7 @@ def run_app(
     const INPUT_PANEL_RATIO = 400 / 1800;
     const MIN_WINDOW_WIDTH = 900;  // Match Python logic for small screens
     const MIN_SIDEBAR_WIDTH = 240;  // Baseline sidebar width for normal windows
-    const MIN_SIDEBAR_WIDTH_COMPACT = 180;  // Usability floor for 650-900px windows (side_panel)
+    const MIN_SIDEBAR_WIDTH_COMPACT = 180;  // Usability floor for narrower windows
     const MIN_INPUT_PANEL_WIDTH = 320;  // Lowered for smaller screens
     const MAX_SIDEBAR_WIDTH = 320;  // Clamp for ultra-wide single-window mode
     // Unified content width for both input and result panels

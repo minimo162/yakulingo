@@ -277,7 +277,7 @@ YakuLingoを初めて使う際は、以下の手順でM365 Copilotにログイ�
   "ocr_batch_size": 5,
   "ocr_dpi": 300,
   "ocr_device": "auto",
-  "browser_display_mode": "side_panel",
+  "browser_display_mode": "minimized",
   "auto_update_enabled": true,
   "auto_update_check_interval": 0,
   "github_repo_owner": "minimo162",
@@ -297,7 +297,7 @@ YakuLingoを初めて使う際は、以下の手順でM365 Copilotにログイ�
   "bilingual_output": false,
   "export_glossary": false,
   "use_bundled_glossary": true,
-  "browser_display_mode": "side_panel",
+  "browser_display_mode": "minimized",
   "last_tab": "text"
 }
 ```
@@ -312,17 +312,16 @@ YakuLingoを初めて使う際は、以下の手順でM365 Copilotにログイ�
 | `use_bundled_glossary` | 同梱 `glossary.csv` を自動で参照 | true |
 | `font_jp_to_en` | 英訳時の出力フォント | Arial |
 | `font_en_to_jp` | 和訳時の出力フォント | MS Pゴシック |
-| `browser_display_mode` | ブラウザ表示モード | "side_panel" |
+| `browser_display_mode` | ブラウザ表示モード | "minimized" |
 
 **翻訳スタイル**: `"standard"`（標準）, `"concise"`（簡潔）, `"minimal"`（最簡潔）
 
 **ブラウザ表示モード**:
 | 値 | 説明 |
 |-----|------|
-| `"side_panel"` | アプリの横にパネルとして表示（デフォルト、翻訳経過が見える） |
-| `"minimized"` | 最小化して非表示 |
+| `"minimized"` | 最小化して非表示（デフォルト） |
 | `"foreground"` | 前面に表示 |
-> **Note**: 画面が狭い場合（作業領域幅 < 1310px）は `side_panel` を自動的に `minimized` へフォールバックし、アプリは1パネル（フル幅）で起動します。
+> **Note**: `side_panel` は廃止され、`minimized` と同等に扱われます。
 > **Note**: Windowsではウィンドウサイズはプライマリモニターの作業領域（タスクバー除外）を基準に自動計算されます。取得できない場合は最も大きいモニターを使用します。
 
 **用語集処理**: `use_bundled_glossary=true` の場合、同梱 `glossary.csv` をファイルとして自動添付します（デフォルト: true）。

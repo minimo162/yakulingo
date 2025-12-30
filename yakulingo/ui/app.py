@@ -3818,6 +3818,47 @@ class YakuLingoApp:
             self._login_polling_task = None
             self._login_auto_show = False
 
+    async def _show_login_browser(self, reason: str = "ui_login_banner") -> None:
+        """ログイン用にEdgeを前面表示する（UIボタン用）。"""
+        if self._shutdown_requested:
+            return
+
+        if self._resident_mode:
+            await self._show_resident_login_prompt(reason)
+        else:
+            copilot = self._copilot
+            if copilot is None:
+                if self._client:
+                    with self._client:
+                        ui.notify(
+                            'Copilotが起動していません。再接続してください。',
+                            type='warning',
+                            position='top',
+                            timeout=4000,
+                        )
+                return
+
+            try:
+                await asyncio.to_thread(
+                    copilot.bring_to_foreground,
+                    reason=f"login prompt: {reason}",
+                )
+            except Exception as e:
+                logger.debug("Failed to bring Edge to foreground: %s", e)
+                if self._client:
+                    with self._client:
+                        ui.notify(
+                            'Edgeを前面表示できませんでした。',
+                            type='warning',
+                            position='top',
+                            timeout=4000,
+                        )
+
+        if self.state.connection_state == ConnectionState.LOGIN_REQUIRED:
+            await self._start_login_polling_if_needed()
+            if not self._login_polling_active and self._login_polling_task is None:
+                self._login_polling_task = asyncio.create_task(self._wait_for_login_completion())
+
     async def _reconnect(self, max_retries: int = 3, show_progress: bool = True):
         """再接続を試みる（UIボタン用、リトライ付き）。
 
@@ -5138,7 +5179,21 @@ class YakuLingoApp:
 
         @ui.refreshable
         def login_banner():
-            if self.state.connection_state != ConnectionState.LOGIN_REQUIRED:
+            copilot = self._copilot
+            last_error = getattr(copilot, "last_connection_error", None) if copilot else None
+            login_required_error = "login_required"
+            try:
+                from yakulingo.services.copilot_handler import CopilotHandler
+                login_required_error = CopilotHandler.ERROR_LOGIN_REQUIRED
+            except Exception:
+                pass
+
+            if (
+                self.state.connection_state != ConnectionState.LOGIN_REQUIRED
+                and not self._resident_login_required
+                and not self._login_polling_active
+                and last_error != login_required_error
+            ):
                 return
 
             with ui.element('div').classes('w-full warning-box mb-3'):
@@ -5152,10 +5207,15 @@ class YakuLingoApp:
                             ui.label('ブラウザでログインしてください。ログイン後に翻訳できます。').classes(
                                 'text-xs text-on-warning-container opacity-80'
                             )
-                    ui.button(
-                        '再接続',
-                        on_click=lambda: asyncio.create_task(self._reconnect()),
-                    ).classes('btn-text').props('no-caps')
+                    with ui.row().classes('items-center gap-2 shrink-0'):
+                        ui.button(
+                            'Edgeを前面表示',
+                            on_click=lambda: asyncio.create_task(self._show_login_browser()),
+                        ).classes('btn-outline').props('no-caps')
+                        ui.button(
+                            '再接続',
+                            on_click=lambda: asyncio.create_task(self._reconnect()),
+                        ).classes('btn-text').props('no-caps')
 
         self._login_banner = login_banner
 

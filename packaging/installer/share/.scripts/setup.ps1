@@ -536,12 +536,34 @@ function Resolve-SetupPath {
     return $targetPath
 }
 
+function Cleanup-OldTempCaches {
+    param(
+        [string]$TempRoot = $env:TEMP
+    )
+
+    if ([string]::IsNullOrWhiteSpace($TempRoot)) { return }
+    if (-not (Test-Path $TempRoot)) { return }
+
+    # Remove stale setup/backup temp folders from previous runs.
+    $patterns = @("YakuLingo_Setup_*", "YakuLingo_Backup_*")
+    foreach ($pattern in $patterns) {
+        try {
+            $dirs = Get-ChildItem -Path $TempRoot -Directory -Filter $pattern -ErrorAction SilentlyContinue
+            foreach ($dir in $dirs) {
+                try {
+                    Remove-Item -Path $dir.FullName -Recurse -Force -ErrorAction SilentlyContinue
+                } catch { }
+            }
+        } catch { }
+    }
+}
+
 function Prepare-TempWorkspace {
     param(
         [string]$ZipFileName
     )
 
-    # Create new temp folder with timestamp (old folders are cleaned up by Windows automatically)
+    # Create new temp folder with timestamp (stale folders are cleaned up at startup)
     $TempZipDir = Join-Path $env:TEMP "YakuLingo_Setup_$(Get-Date -Format 'yyyyMMddHHmmss')"
     New-Item -ItemType Directory -Path $TempZipDir -Force | Out-Null
 
@@ -925,6 +947,9 @@ function Invoke-Setup {
     try {
         "Invoke-Setup: SetupPath resolved to '$SetupPath'" | Out-File -FilePath $debugLog -Append -Encoding UTF8
     } catch { }
+
+    Write-Status -Message "Cleaning up old cache..." -Progress -Step "Preflight: Cleaning cache" -Percent 3
+    Cleanup-OldTempCaches
 
     # ============================================================
     # Step 1: Prepare destination (backup user data first)

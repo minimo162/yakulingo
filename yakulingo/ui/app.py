@@ -7185,6 +7185,12 @@ def run_app(
             return
         if getattr(yakulingo_app, "_shutdown_requested", False):
             return
+        if sys.platform == "win32":
+            try:
+                if yakulingo_app._bring_window_to_front_win32():
+                    return
+            except Exception as e:
+                logger.debug("Failed to bring existing UI window to front: %s", e)
         if native:
             try:
                 if nicegui_app and hasattr(nicegui_app, 'native') and nicegui_app.native.main_window:

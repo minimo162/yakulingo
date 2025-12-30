@@ -672,6 +672,8 @@ class YakuLingoApp:
         self._resident_startup_ready = False
         self._resident_startup_started_at: float | None = None
         self._resident_startup_error: str | None = None
+        self._resident_mode = False
+        self._resident_show_requested = False
 
         # Clipboard trigger for double-copy translation.
         self._clipboard_trigger = None
@@ -1107,8 +1109,58 @@ class YakuLingoApp:
         status["gpt_mode_set"] = bool(getattr(copilot, "is_gpt_mode_set", False))
         return status
 
+    async def _ensure_resident_ui_visible(self, reason: str) -> bool:
+        if not self._resident_mode:
+            return False
+
+        shown = False
+        open_ui_callback = self._open_ui_window_callback
+        with self._client_lock:
+            has_client = self._client is not None
+
+        if open_ui_callback is not None and not has_client:
+            try:
+                await asyncio.to_thread(open_ui_callback)
+                shown = True
+            except Exception as e:
+                logger.debug("Resident UI open failed (%s): %s", reason, e)
+
+        if sys.platform == "win32":
+            try:
+                brought_to_front = await self._bring_window_to_front(position_edge=False)
+                shown = shown or brought_to_front
+            except Exception as e:
+                logger.debug("Resident UI bring-to-front failed (%s): %s", reason, e)
+
+        return shown
+
+    async def _show_resident_login_prompt(self, reason: str) -> None:
+        if not self._resident_mode:
+            return
+
+        shown = await self._ensure_resident_ui_visible(reason)
+        if not shown and sys.platform == "win32":
+            self._resident_show_requested = True
+        else:
+            self._resident_show_requested = False
+
+        if self._copilot is not None:
+            try:
+                await asyncio.to_thread(
+                    self._copilot.bring_to_foreground,
+                    reason=f"resident login required: {reason}",
+                )
+            except Exception as e:
+                logger.debug("Resident login Edge foreground failed (%s): %s", reason, e)
+
+        if sys.platform == "win32":
+            try:
+                await asyncio.to_thread(self._retry_resident_startup_layout_win32)
+            except Exception as e:
+                logger.debug("Resident login layout failed (%s): %s", reason, e)
+
     async def _warmup_resident_gpt_mode(self) -> None:
-        """Warm up Copilot and show UI/Copilot side-by-side for resident startup."""
+        """Warm up Copilot in resident mode without showing UI until needed."""
         if self._shutdown_requested:
             return
 
@@ -1131,24 +1183,17 @@ class YakuLingoApp:
                 self._early_connection_result = self._early_connection_result_ref.value
 
             copilot = self.copilot
-            if getattr(copilot, "_edge_layout_mode", None) == "offscreen":
+            if getattr(copilot, "_edge_layout_mode", None) != "offscreen":
                 try:
-                    copilot.set_edge_layout_mode(None)
+                    copilot.set_edge_layout_mode("offscreen")
                 except Exception:
                     pass
-
-            open_ui_callback = self._open_ui_window_callback
-            if open_ui_callback is not None:
-                try:
-                    await asyncio.to_thread(open_ui_callback)
-                except Exception as e:
-                    logger.debug("Resident startup: failed to open UI window: %s", e)
 
             if not copilot.is_connected:
                 try:
                     result = await asyncio.to_thread(
                         copilot.connect,
-                        bring_to_foreground_on_login=True,
+                        bring_to_foreground_on_login=not self._resident_mode,
                         defer_window_positioning=True,
                     )
                     self._early_connection_result = result
@@ -1157,20 +1202,21 @@ class YakuLingoApp:
                     self._resident_startup_error = str(e)
                     return
 
+            from yakulingo.services.copilot_handler import CopilotHandler
+            login_required = (
+                not copilot.is_connected
+                and copilot.last_connection_error == CopilotHandler.ERROR_LOGIN_REQUIRED
+            )
+            if login_required:
+                await self._show_resident_login_prompt("startup")
+
             if self._shutdown_requested:
                 return
-            from yakulingo.services.copilot_handler import CopilotHandler
             if (
                 not copilot.is_connected
                 and copilot.last_connection_error != CopilotHandler.ERROR_LOGIN_REQUIRED
             ):
                 return
-
-            if sys.platform == "win32":
-                try:
-                    await asyncio.to_thread(self._retry_resident_startup_layout_win32)
-                except Exception as e:
-                    logger.debug("Resident startup layout failed: %s", e)
 
             ready = await self._wait_for_copilot_ready()
             if not ready:
@@ -3083,6 +3129,11 @@ class YakuLingoApp:
         This is called after create_ui() to restore focus to the app window,
         as Edge startup may steal focus.
         """
+        if self._resident_mode and not self._resident_show_requested:
+            logger.debug("Resident mode: skipping auto-show for UI window")
+            return
+        self._resident_show_requested = False
+
         # Small delay to ensure pywebview window is fully initialized
         await asyncio.sleep(0.5)
 
@@ -3439,7 +3490,10 @@ class YakuLingoApp:
         # Connect to browser (starts Edge if needed, doesn't check login state)
         # connect() now runs in dedicated Playwright thread via PlaywrightThreadExecutor
         try:
-            success = await asyncio.to_thread(self.copilot.connect)
+            success = await asyncio.to_thread(
+                self.copilot.connect,
+                bring_to_foreground_on_login=not self._resident_mode,
+            )
 
             if success:
                 # Keep "準備中..." until GPT mode switching is finished.
@@ -3465,6 +3519,7 @@ class YakuLingoApp:
             return
         from yakulingo.services.copilot_handler import CopilotHandler
         if self.copilot.last_connection_error == CopilotHandler.ERROR_LOGIN_REQUIRED:
+            await self._show_resident_login_prompt("polling")
             if not self._login_polling_active:
                 self._login_polling_task = asyncio.create_task(self._wait_for_login_completion())
 
@@ -3669,7 +3724,10 @@ class YakuLingoApp:
                     )
 
             try:
-                connected = await asyncio.to_thread(self.copilot.connect)
+                connected = await asyncio.to_thread(
+                    self.copilot.connect,
+                    bring_to_foreground_on_login=not self._resident_mode,
+                )
 
                 if connected:
                     logger.info("Copilot reconnected successfully (attempt %d/%d)", attempt + 1, max_retries)
@@ -3708,17 +3766,20 @@ class YakuLingoApp:
                         self.state.connection_state = ConnectionState.LOGIN_REQUIRED
                         self.state.copilot_ready = False
 
-                        # Bring browser to foreground so user can login
-                        # This is critical for PDF translation reconnection
-                        try:
-                            await asyncio.to_thread(
-                                self.copilot._bring_to_foreground_impl,
-                                self.copilot._page,
-                                "reconnect: login required"
-                            )
-                            logger.info("Browser brought to foreground for login")
-                        except Exception as e:
-                            logger.warning("Failed to bring browser to foreground: %s", e)
+                        if self._resident_mode:
+                            await self._show_resident_login_prompt("reconnect")
+                        else:
+                            # Bring browser to foreground so user can login
+                            # This is critical for PDF translation reconnection
+                            try:
+                                await asyncio.to_thread(
+                                    self.copilot._bring_to_foreground_impl,
+                                    self.copilot._page,
+                                    "reconnect: login required"
+                                )
+                                logger.info("Browser brought to foreground for login")
+                            except Exception as e:
+                                logger.warning("Failed to bring browser to foreground: %s", e)
 
                         if self._client:
                             with self._client:
@@ -6825,7 +6886,8 @@ def run_app(
     if multiprocessing.current_process().name != 'MainProcess':
         return
 
-    os.environ["YAKULINGO_NO_AUTO_OPEN"] = "1"
+    os.environ.setdefault("YAKULINGO_NO_AUTO_OPEN", "1")
+    resident_mode = os.environ.get("YAKULINGO_NO_AUTO_OPEN", "").strip().lower() in ("1", "true", "yes")
 
     available_memory_gb = _get_available_memory_gb()
     # Early connect spins up Edge (and later Playwright).
@@ -6991,6 +7053,7 @@ def run_app(
     _t0 = time.perf_counter()  # Start timing for total run_app duration
     _t1 = time.perf_counter()
     yakulingo_app = create_app()
+    yakulingo_app._resident_mode = resident_mode
     logger.info("[TIMING] create_app: %.2fs", time.perf_counter() - _t1)
 
     # Pass early-created CopilotHandler to avoid creating a new one
@@ -7903,7 +7966,7 @@ def run_app(
             logger.info("[TIMING] Starting Copilot connection (fallback)")
             result = await asyncio.to_thread(
                 yakulingo_app.copilot.connect,
-                bring_to_foreground_on_login=True,
+                bring_to_foreground_on_login=not resident_mode,
                 defer_window_positioning=True
             )
             yakulingo_app._early_connection_result = result
@@ -8048,6 +8111,11 @@ def run_app(
                         except Exception as e:
                             logger.debug("[EARLY_POSITION] Failed to set window icon: %s", e)
 
+                    if resident_mode:
+                        _hide_native_window_offscreen_win32("YakuLingo")
+                        logger.debug("[EARLY_POSITION] Resident mode: window kept offscreen")
+                        return
+
                     if not is_visible:
                         user32.ShowWindow(hwnd, SW_SHOW)
                         logger.debug("[EARLY_POSITION] Window shown after %dms", waited_ms)
@@ -8096,14 +8164,11 @@ def run_app(
         yakulingo_app.start_clipboard_trigger()
         yakulingo_app._start_resident_heartbeat()
 
-        no_auto_open = os.environ.get("YAKULINGO_NO_AUTO_OPEN", "")
-        no_auto_open_flag = no_auto_open.strip().lower() in ("1", "true", "yes")
-
         # Start Copilot connection early only in native mode; browser mode should remain silent
         # and connect on demand (clipboard/UI).
         if native:
             yakulingo_app._early_connection_task = asyncio.create_task(_early_connect_copilot())
-            if no_auto_open_flag:
+            if resident_mode:
                 # Resident setup uses native mode; warm up Copilot so setup.ps1 can detect readiness.
                 asyncio.create_task(yakulingo_app._warmup_resident_gpt_mode())
 
@@ -8112,7 +8177,7 @@ def run_app(
             _start_early_positioning_thread()
 
         if not native:
-            if no_auto_open_flag:
+            if resident_mode:
                 asyncio.create_task(yakulingo_app._warmup_resident_gpt_mode())
             else:
                 try:

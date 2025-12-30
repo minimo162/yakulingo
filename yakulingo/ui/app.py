@@ -4847,15 +4847,18 @@ class YakuLingoApp:
 
             copilot_state: str | None = None
             state_check_failed = False
-            try:
-                copilot_state = copilot.check_copilot_state(timeout=2)
-            except TimeoutError:
-                state_check_failed = True
-                copilot_state = None
-            except Exception as e:
-                state_check_failed = True
-                logger.debug("Failed to check Copilot state for UI: %s", e)
-                copilot_state = None
+            if copilot.is_connecting:
+                copilot_state = CopilotConnectionState.LOADING
+            else:
+                try:
+                    copilot_state = copilot.check_copilot_state(timeout=2)
+                except TimeoutError:
+                    state_check_failed = True
+                    copilot_state = None
+                except Exception as e:
+                    state_check_failed = True
+                    logger.debug("Failed to check Copilot state for UI: %s", e)
+                    copilot_state = None
 
             if copilot_state == CopilotConnectionState.READY:
                 self.state.copilot_ready = True
@@ -8844,6 +8847,13 @@ body.yakulingo-drag-active .global-drop-indicator {
 })();
 </script>''')
 
+        # Show a startup loading overlay while the UI tree is being constructed.
+        # This avoids a brief flash of a partially-rendered UI on slow machines.
+        loading_screen = ui.element('div').classes('loading-screen')
+        with loading_screen:
+            ui.element('div').classes('loading-spinner').props('aria-hidden="true"')
+            loading_title = ui.label('YakuLingo').classes('loading-title')
+
         # Wait for client connection (WebSocket ready)
         import time as _time_module
         _t_conn = _time_module.perf_counter()
@@ -8860,13 +8870,6 @@ body.yakulingo-drag-active .global-drop-indicator {
                 "client.connected() timed out after %.1fs; skipping startup JS",
                 CLIENT_CONNECTED_TIMEOUT_SEC,
             )
-
-        # Show a startup loading overlay while the UI tree is being constructed.
-        # This avoids a brief flash of a partially-rendered UI on slow machines.
-        loading_screen = ui.element('div').classes('loading-screen')
-        with loading_screen:
-            ui.element('div').classes('loading-spinner').props('aria-hidden="true"')
-            loading_title = ui.label('YakuLingo').classes('loading-title')
         if not client_connected:
             loading_title.set_text('接続に時間がかかっています...')
 

@@ -1188,6 +1188,10 @@ class CopilotHandler:
         self._playwright_unresponsive = False
         self._playwright_unresponsive_reason: Optional[str] = None
         self._state_check_backoff_until = 0.0
+        # Track concurrent connect attempts (ref-count) to avoid UI state checks
+        # while connect() is still running.
+        self._connect_inflight_count = 0
+        self._connect_inflight_lock = threading.Lock()
 
     @property
     def is_connected(self) -> bool:
@@ -1200,6 +1204,37 @@ class CopilotHandler:
         Use _is_page_valid() within Playwright thread for actual validation.
         """
         return self._connected
+
+    def _mark_connect_start(self) -> None:
+        """Increment the in-flight connect counter (thread-safe)."""
+        with self._connect_inflight_lock:
+            self._connect_inflight_count += 1
+
+    def _mark_connect_end(self) -> None:
+        """Decrement the in-flight connect counter (thread-safe)."""
+        with self._connect_inflight_lock:
+            if self._connect_inflight_count > 0:
+                self._connect_inflight_count -= 1
+            else:
+                self._connect_inflight_count = 0
+
+    @property
+    def is_connecting(self) -> bool:
+        """Return True while one or more connect attempts are in progress."""
+        with self._connect_inflight_lock:
+            return self._connect_inflight_count > 0
+
+    def _connect_with_tracking(
+        self,
+        bring_to_foreground_on_login: bool = True,
+        defer_window_positioning: bool = False,
+    ) -> bool:
+        """Run _connect_impl with connect-inflight tracking."""
+        self._mark_connect_start()
+        try:
+            return self._connect_impl(bring_to_foreground_on_login, defer_window_positioning)
+        finally:
+            self._mark_connect_end()
 
     def is_edge_process_alive(self) -> bool:
         """Return True if the dedicated Edge process appears to be running."""
@@ -1922,9 +1957,13 @@ class CopilotHandler:
         logger.info("connect() called - delegating to Playwright thread "
                     "(bring_to_foreground_on_login=%s, defer_window_positioning=%s)",
                     bring_to_foreground_on_login, defer_window_positioning)
-        return _playwright_executor.execute(
-            self._connect_impl, bring_to_foreground_on_login, defer_window_positioning
-        )
+        self._mark_connect_start()
+        try:
+            return _playwright_executor.execute(
+                self._connect_impl, bring_to_foreground_on_login, defer_window_positioning
+            )
+        finally:
+            self._mark_connect_end()
 
     def _connect_impl(self, bring_to_foreground_on_login: bool = True,
                       defer_window_positioning: bool = False) -> bool:
@@ -5335,6 +5374,8 @@ class CopilotHandler:
         """Thread-safe wrapper for _check_copilot_state."""
         # NOTE: The `timeout` argument is treated as the maximum wait time for the Playwright
         # thread operation (not the internal logic timeout).
+        if self.is_connecting:
+            return ConnectionState.LOADING
         if is_playwright_preinit_in_progress():
             logger.debug("check_copilot_state: Playwright pre-init in progress")
             return ConnectionState.LOADING
@@ -5746,7 +5787,7 @@ class CopilotHandler:
         """
         # Call _connect_impl directly since we're already in the Playwright thread
         # (calling connect() would cause nested executor calls)
-        if not self._connect_impl():
+        if not self._connect_with_tracking():
             # Provide specific error message based on connection error type
             if self.last_connection_error == self.ERROR_LOGIN_REQUIRED:
                 raise RuntimeError("Copilotへのログインが必要です。Edgeブラウザでログインしてください。")
@@ -5986,7 +6027,7 @@ class CopilotHandler:
 
         # Call _connect_impl directly since we're already in the Playwright thread
         connect_start = time.monotonic()
-        if not self._connect_impl():
+        if not self._connect_with_tracking():
             # Provide specific error message based on connection error type
             if self.last_connection_error == self.ERROR_LOGIN_REQUIRED:
                 raise RuntimeError("Copilotへのログインが必要です。Edgeブラウザでログインしてください。")

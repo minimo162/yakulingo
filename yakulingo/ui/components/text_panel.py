@@ -172,14 +172,6 @@ ATTACH_SVG: str = '''
 </svg>
 '''
 
-# YakuLingo avatar SVG (Apple icon) with aria-label for accessibility
-AVATAR_SVG: str = '''
-<svg viewBox="0 0 24 24" fill="currentColor" class="avatar-icon" role="img" aria-label="YakuLingo">
-    <title>YakuLingo アシスタント</title>
-    <path d="M17.318 5.955c-.834-.952-1.964-1.455-3.068-1.455-.789 0-1.475.194-2.072.487-.399.196-.748.436-1.178.436-.462 0-.865-.256-1.29-.468-.564-.281-1.195-.455-1.96-.455-1.14 0-2.322.529-3.168 1.534C3.41 7.425 3 9.26 3 11.314c0 2.554.944 5.298 2.432 7.106.847 1.03 1.63 1.58 2.568 1.58.652 0 1.061-.213 1.605-.473.579-.276 1.298-.619 2.395-.619 1.065 0 1.763.336 2.323.61.53.258.923.482 1.577.482.99 0 1.828-.639 2.632-1.594 1.127-1.337 1.672-2.728 1.962-3.555-1.313-.596-2.494-2.03-2.494-4.143 0-1.813.994-3.166 2.13-3.835-.844-1.143-2.044-1.918-3.332-1.918-.82 0-1.464.284-2.025.556a4.27 4.27 0 0 1-.387.175c.063-.033.128-.068.194-.106.524-.303 1.181-.681 1.736-.681.476 0 .829.139 1.148.28zM12.5 3c.735 0 1.578-.326 2.168-.902.533-.52.892-1.228.892-2.008 0-.053-.003-.107-.01-.158-.793.03-1.703.451-2.293 1.045-.51.507-.933 1.231-.933 2.023 0 .069.007.137.016.191.05.009.11.014.16.014z"/>
-</svg>
-'''
-
 def create_text_input_panel(
     state: AppState,
     on_translate: Callable[[], None],
@@ -445,11 +437,7 @@ def _render_translation_status(
     else:
         is_to_english = detected_language == "日本語"
 
-    # AI chat style: assistant avatar + status row
     with ui.element('div').classes('avatar-status-row'):
-        with ui.element('div').classes('avatar-container').props('aria-hidden="true"'):
-            ui.html(AVATAR_SVG, sanitize=False)
-
         with ui.column().classes('gap-0 status-text'):
             with ui.row().classes('items-center gap-2'):
                 if translating:

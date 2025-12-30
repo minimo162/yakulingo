@@ -1036,6 +1036,15 @@ class CopilotHandler:
         '.chat-message-assistant',
     )
     RESPONSE_SELECTOR_COMBINED = ", ".join(RESPONSE_SELECTORS)
+    # Streaming preview selectors (avoid broad containers used for final parsing).
+    STREAMING_RESPONSE_SELECTORS = RESPONSE_SELECTORS + (
+        '[data-testid="message-content"]',
+        '[data-testid="messageContent"]',
+        '[data-testid="chat-message-content"]',
+        '[data-testid="message-content-body"]',
+        '[data-testid="assistant-message-content"]',
+    )
+    STREAMING_RESPONSE_SELECTOR_COMBINED = ", ".join(STREAMING_RESPONSE_SELECTORS)
 
     # Chain-of-Thought (活動/思考過程) UI selectors (scroll-only)
     # NOTE: Do not include these in RESPONSE_SELECTORS because RESPONSE_SELECTORS are also
@@ -7414,11 +7423,11 @@ class CopilotHandler:
         PlaywrightError = error_types['Error']
 
         try:
-            elements = self._page.query_selector_all(self.RESPONSE_SELECTOR_COMBINED)
+            elements = self._page.query_selector_all(self.STREAMING_RESPONSE_SELECTOR_COMBINED)
         except PlaywrightError:
             # Fallback: try individual selectors (keeps this method resilient to CSS engine quirks).
             elements = []
-            for selector in self.RESPONSE_SELECTORS:
+            for selector in self.STREAMING_RESPONSE_SELECTORS:
                 try:
                     elements.extend(self._page.query_selector_all(selector))
                 except PlaywrightError:
@@ -7429,24 +7438,32 @@ class CopilotHandler:
 
         # Try a few of the latest matches. Some selectors can hit hidden/stale DOM nodes.
         for element in reversed(elements[-5:]):
+            text = ""
             try:
-                if not element.is_visible():
-                    continue
+                if element.is_visible():
+                    text = element.inner_text()
             except Exception:
                 pass
 
-            try:
-                text = element.inner_text()
-            except PlaywrightError:
-                continue
+            if not text or not text.strip():
+                try:
+                    text = element.text_content() or ""
+                except PlaywrightError:
+                    continue
 
             if text and text.strip():
-                return text, True
+                return text.strip(), True
 
         try:
-            return elements[-1].inner_text() or "", True
+            text = elements[-1].inner_text() or ""
         except PlaywrightError:
-            return "", True
+            text = ""
+        if not text or not text.strip():
+            try:
+                text = elements[-1].text_content() or ""
+            except PlaywrightError:
+                return "", True
+        return text.strip() if text else "", True
 
     def _auto_scroll_to_latest_response(self) -> bool:
         """Keep the latest response visible in the Copilot chat pane (incl. Chain-of-Thought)."""
@@ -7641,7 +7658,7 @@ class CopilotHandler:
             scroll_interval_generating = 0.5
             scroll_interval_active = 0.1
             last_stream_extract_time = 0.0
-            stream_extract_interval_generating = 0.25
+            stream_extract_interval_generating = 0.12
             # Track if stop button was ever visible (including during send verification)
             stop_button_ever_seen = stop_button_seen_during_send
             stop_button_warning_logged = False  # Avoid repeated warnings

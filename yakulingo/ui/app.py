@@ -148,6 +148,75 @@ def _get_windows_dpi_scale() -> float:
     return 1.0
 
 
+def _hide_native_window_offscreen_win32(window_title: str) -> None:
+    """Move the native window offscreen and hide it (Windows only)."""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+
+        hwnd = user32.FindWindowW(None, window_title)
+        matched_title = window_title
+        if not hwnd:
+            EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+            found_hwnd = {"value": None, "title": None}
+
+            @EnumWindowsProc
+            def _enum_windows(hwnd_enum, _):
+                length = user32.GetWindowTextLengthW(hwnd_enum)
+                if length <= 0:
+                    return True
+                buffer = ctypes.create_unicode_buffer(length + 1)
+                user32.GetWindowTextW(hwnd_enum, buffer, length + 1)
+                title = buffer.value
+                if window_title in title:
+                    found_hwnd["value"] = hwnd_enum
+                    found_hwnd["title"] = title
+                    return False
+                return True
+
+            user32.EnumWindows(_enum_windows, 0)
+            hwnd = found_hwnd["value"]
+            matched_title = found_hwnd["title"] or window_title
+
+        if not hwnd:
+            return
+
+        SM_XVIRTUALSCREEN = 76
+        SM_YVIRTUALSCREEN = 77
+        SM_CXVIRTUALSCREEN = 78
+        SM_CYVIRTUALSCREEN = 79
+        virtual_left = user32.GetSystemMetrics(SM_XVIRTUALSCREEN)
+        virtual_top = user32.GetSystemMetrics(SM_YVIRTUALSCREEN)
+        virtual_width = user32.GetSystemMetrics(SM_CXVIRTUALSCREEN)
+        virtual_height = user32.GetSystemMetrics(SM_CYVIRTUALSCREEN)
+        if virtual_width <= 0 or virtual_height <= 0:
+            virtual_left = 0
+            virtual_top = 0
+            virtual_width = 3840
+            virtual_height = 2160
+
+        offscreen_x = int(virtual_left + virtual_width + 100)
+        offscreen_y = int(virtual_top + 100)
+
+        SWP_NOZORDER = 0x0004
+        SWP_NOSIZE = 0x0001
+        SWP_NOACTIVATE = 0x0010
+        SW_HIDE = 0
+
+        user32.SetWindowPos(
+            hwnd, None, offscreen_x, offscreen_y, 0, 0,
+            SWP_NOZORDER | SWP_NOSIZE | SWP_NOACTIVATE
+        )
+        user32.ShowWindow(hwnd, SW_HIDE)
+        logger.debug("Native window hidden offscreen: %s (title=%s)", hwnd, matched_title)
+    except Exception as e:
+        logger.debug("Failed to hide native window offscreen: %s", e)
+
+
 def _scale_size(size: tuple[int, int], scale: float) -> tuple[int, int]:
     if scale <= 0:
         return size
@@ -291,6 +360,21 @@ def _nicegui_open_window_patched(
     webview.settings.update(**settings_dict)
     window = webview.create_window(**window_kwargs)
     assert window is not None
+    def _handle_window_closing(*_args, **_kwargs):
+        try:
+            if sys.platform == "win32":
+                _hide_native_window_offscreen_win32(title)
+            if hasattr(window, "hide"):
+                window.hide()
+        except Exception as e:
+            logger.debug("Native window close handler failed: %s", e)
+        return False
+
+    try:
+        if hasattr(window.events, "closing"):
+            window.events.closing += _handle_window_closing
+    except Exception as e:
+        logger.debug("Failed to attach native close handler: %s", e)
     closed = Event()
     window.events.closed += closed.set
     _native_mode._start_window_method_executor(window, method_queue, response_queue, closed)
@@ -525,6 +609,7 @@ class YakuLingoApp:
         self._result_panel = None  # Separate refreshable for result panel only
         self._tabs_container = None
         self._nav_buttons: dict[Tab, UiButton] = {}
+        self._sidebar_action_translating: Optional[bool] = None
         self._history_list = None
         self._history_dialog: Optional[UiDialog] = None
         self._history_dialog_list = None
@@ -866,6 +951,18 @@ class YakuLingoApp:
             if source_hwnd:
                 self._last_hotkey_source_hwnd = source_hwnd
 
+            layout_source_hwnd = source_hwnd
+            if layout_source_hwnd is None and sys.platform == "win32":
+                try:
+                    import ctypes
+
+                    user32 = ctypes.WinDLL("user32", use_last_error=True)
+                    hwnd = user32.GetForegroundWindow()
+                    if hwnd:
+                        layout_source_hwnd = int(hwnd)
+                except Exception:
+                    layout_source_hwnd = None
+
             summary = summarize_clipboard_text(text)
             self._log_hotkey_debug_info(trace_id, summary)
 
@@ -884,7 +981,7 @@ class YakuLingoApp:
                 try:
                     layout_result = await asyncio.to_thread(
                         self._apply_hotkey_work_priority_layout_win32,
-                        source_hwnd,
+                        layout_source_hwnd,
                         edge_layout=edge_layout_mode,
                     )
                 except Exception as e:
@@ -921,19 +1018,20 @@ class YakuLingoApp:
                                 self._client = None
                         client = None
                     elif open_ui and source_hwnd is None:
-                        try:
-                            brought_to_front = await self._bring_window_to_front(
-                                position_edge=not preserve_edge
-                            )
-                        except Exception as e:
-                            logger.debug("Failed to bring window to front for hotkey: %s", e)
-                        else:
-                            if not brought_to_front:
-                                logger.debug("Hotkey UI client exists but UI window not found; using headless mode")
-                                with self._client_lock:
-                                    if self._client is client:
-                                        self._client = None
-                                client = None
+                        if not layout_result:
+                            try:
+                                brought_to_front = await self._bring_window_to_front(
+                                    position_edge=not preserve_edge
+                                )
+                            except Exception as e:
+                                logger.debug("Failed to bring window to front for hotkey: %s", e)
+                            else:
+                                if not brought_to_front:
+                                    logger.debug("Hotkey UI client exists but UI window not found; using headless mode")
+                                    with self._client_lock:
+                                        if self._client is client:
+                                            self._client = None
+                                    client = None
                 else:
                     try:
                         brought_to_front = await self._bring_window_to_front(
@@ -963,7 +1061,7 @@ class YakuLingoApp:
                             asyncio.create_task(
                                 asyncio.to_thread(
                                     self._retry_hotkey_layout_win32,
-                                    source_hwnd,
+                                    layout_source_hwnd,
                                     edge_layout=edge_layout_mode,
                                 )
                             )
@@ -1275,7 +1373,7 @@ class YakuLingoApp:
             logger.debug("Hotkey translation [%s] clipboard copy failed: %s", trace_id, e)
 
     def _refresh_ui_after_hotkey_translation(self, trace_id: str) -> None:
-        """Refresh UI after a hotkey translation when a client is connected.
+        """Refresh UI for a hotkey translation when a client is connected.
 
         Headless hotkey translations can finish while the UI is opening; in that case, we
         still want to render the latest state (progress/results) once a client exists.
@@ -1294,6 +1392,7 @@ class YakuLingoApp:
         try:
             with client:
                 self._refresh_content()
+                self._update_translate_button_state()
                 self._refresh_tabs()
         except Exception as e:
             logger.debug("Hotkey translation [%s] UI refresh failed: %s", trace_id, e)
@@ -1327,6 +1426,7 @@ class YakuLingoApp:
         self.state.text_detected_language = None
         self.state.text_result = None
         self.state.text_translation_elapsed_time = None
+        self._refresh_ui_after_hotkey_translation(trace_id)
 
         reference_files = self._get_effective_reference_files()
 
@@ -1456,6 +1556,7 @@ class YakuLingoApp:
         self.state.text_translation_elapsed_time = None
         self.state.text_streaming_preview = None
         self._streaming_preview_label = None
+        self._refresh_ui_after_hotkey_translation(trace_id)
 
         start_time = time.monotonic()
         try:
@@ -2528,6 +2629,77 @@ class YakuLingoApp:
                 return False
 
             logger.debug("Found YakuLingo window handle=%s title=%s", hwnd, matched_title)
+
+            class RECT(ctypes.Structure):
+                _fields_ = [
+                    ("left", ctypes.c_long),
+                    ("top", ctypes.c_long),
+                    ("right", ctypes.c_long),
+                    ("bottom", ctypes.c_long),
+                ]
+
+            class MONITORINFO(ctypes.Structure):
+                _fields_ = [
+                    ("cbSize", wintypes.DWORD),
+                    ("rcMonitor", RECT),
+                    ("rcWork", RECT),
+                    ("dwFlags", wintypes.DWORD),
+                ]
+
+            MONITOR_DEFAULTTONEAREST = 2
+            SM_XVIRTUALSCREEN = 76
+            SM_YVIRTUALSCREEN = 77
+            SM_CXVIRTUALSCREEN = 78
+            SM_CYVIRTUALSCREEN = 79
+
+            user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(RECT)]
+            user32.GetWindowRect.restype = ctypes.wintypes.BOOL
+
+            rect = RECT()
+            got_rect = bool(user32.GetWindowRect(hwnd, ctypes.byref(rect)))
+            rect_width = int(rect.right - rect.left)
+            rect_height = int(rect.bottom - rect.top)
+            if rect_width <= 0 or rect_height <= 0:
+                fallback_width, fallback_height = self._get_window_size_for_native_ops()
+                rect_width = max(rect_width, fallback_width)
+                rect_height = max(rect_height, fallback_height)
+
+            virtual_left = user32.GetSystemMetrics(SM_XVIRTUALSCREEN)
+            virtual_top = user32.GetSystemMetrics(SM_YVIRTUALSCREEN)
+            virtual_width = user32.GetSystemMetrics(SM_CXVIRTUALSCREEN)
+            virtual_height = user32.GetSystemMetrics(SM_CYVIRTUALSCREEN)
+            virtual_right = int(virtual_left + virtual_width)
+            virtual_bottom = int(virtual_top + virtual_height)
+
+            is_visible = user32.IsWindowVisible(hwnd) != 0
+            is_offscreen = False
+            if got_rect and virtual_width > 0 and virtual_height > 0:
+                margin = 40
+                is_offscreen = (
+                    rect.right < (virtual_left + margin)
+                    or rect.left > (virtual_right - margin)
+                    or rect.bottom < (virtual_top + margin)
+                    or rect.top > (virtual_bottom - margin)
+                )
+
+            if not is_visible or is_offscreen:
+                target_x = 0
+                target_y = 0
+                monitor = user32.MonitorFromWindow(wintypes.HWND(hwnd), MONITOR_DEFAULTTONEAREST)
+                if monitor:
+                    monitor_info = MONITORINFO()
+                    monitor_info.cbSize = ctypes.sizeof(MONITORINFO)
+                    if user32.GetMonitorInfoW(monitor, ctypes.byref(monitor_info)):
+                        work = monitor_info.rcWork
+                        work_width = int(work.right - work.left)
+                        work_height = int(work.bottom - work.top)
+                        if work_width > 0 and work_height > 0:
+                            target_x = int(work.left + max(0, (work_width - rect_width) // 2))
+                            target_y = int(work.top + max(0, (work_height - rect_height) // 2))
+                user32.SetWindowPos(
+                    hwnd, None, target_x, target_y, 0, 0,
+                    SWP_NOZORDER | SWP_NOSIZE | SWP_SHOWWINDOW
+                )
 
             # Check if window is minimized and restore it
             if user32.IsIconic(hwnd):
@@ -3740,9 +3912,13 @@ class YakuLingoApp:
 
     def _refresh_tabs(self):
         """Update tab buttons in place to avoid sidebar redraw flicker."""
-        if not self._nav_buttons:
-            if self._tabs_container:
+        if self._tabs_container:
+            current_translating = self.state.is_translating()
+            if self._sidebar_action_translating != current_translating:
+                self._sidebar_action_translating = current_translating
                 self._tabs_container.refresh()
+
+        if not self._nav_buttons:
             return
 
         for tab, btn in self._nav_buttons.items():
@@ -4268,7 +4444,14 @@ class YakuLingoApp:
     def _ensure_history_dialog(self) -> None:
         """Create the history drawer (dialog) used in sidebar rail mode."""
         if self._history_dialog is not None:
-            return
+            try:
+                dialog_client = getattr(self._history_dialog, "client", None)
+            except Exception:
+                dialog_client = None
+            if self._client is None or dialog_client is self._client:
+                return
+            self._history_dialog = None
+            self._history_dialog_list = None
 
         with ui.dialog() as dialog:
             dialog.props('position=right')
@@ -4304,7 +4487,15 @@ class YakuLingoApp:
         """Open the history drawer (used for compact sidebar rail mode)."""
         self._ensure_history_dialog()
         if self._history_dialog is not None:
-            self._history_dialog.open()
+            try:
+                self._history_dialog.open()
+            except RuntimeError as e:
+                logger.debug("History dialog open failed: %s", e)
+                self._history_dialog = None
+                self._history_dialog_list = None
+                self._ensure_history_dialog()
+                if self._history_dialog is not None:
+                    self._history_dialog.open()
 
     def _create_nav_item(self, label: str, icon: str, tab: Tab):
         """Create a navigation tab item (M3 vertical tabs)
@@ -7547,6 +7738,9 @@ def run_app(
                 if yakulingo_app._client is client:
                     yakulingo_app._client = None
             browser_opened = False
+            yakulingo_app._history_list = None
+            yakulingo_app._history_dialog = None
+            yakulingo_app._history_dialog_list = None
 
             copilot = getattr(yakulingo_app, "_copilot", None)
             if copilot is not None and sys.platform == "win32":

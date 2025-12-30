@@ -218,35 +218,108 @@ def _try_focus_existing_window() -> None:
         from ctypes import wintypes
 
         user32 = ctypes.WinDLL("user32", use_last_error=True)
-        EnumWindowsProc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
 
-        found_hwnd: list[int] = []
+        hwnd = user32.FindWindowW(None, "YakuLingo")
 
-        def enum_proc(hwnd, _lparam):
-            if user32.IsWindowVisible(hwnd) == 0:
-                return True
-            length = user32.GetWindowTextLengthW(hwnd)
-            if length <= 0:
-                return True
-            buffer = ctypes.create_unicode_buffer(length + 1)
-            if user32.GetWindowTextW(hwnd, buffer, length + 1) == 0:
-                return True
-            title = buffer.value
-            if "YakuLingo" in title:
-                found_hwnd.append(hwnd)
-                return False
-            return True
+        if not hwnd:
+            EnumWindowsProc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+            found_hwnd: list[int] = []
 
-        user32.EnumWindows(EnumWindowsProc(enum_proc), 0)
-        if not found_hwnd:
+            def enum_proc(hwnd_enum, _lparam):
+                length = user32.GetWindowTextLengthW(hwnd_enum)
+                if length <= 0:
+                    return True
+                buffer = ctypes.create_unicode_buffer(length + 1)
+                if user32.GetWindowTextW(hwnd_enum, buffer, length + 1) == 0:
+                    return True
+                title = buffer.value
+                if "YakuLingo" in title:
+                    found_hwnd.append(hwnd_enum)
+                    return False
+                return True
+
+            user32.EnumWindows(EnumWindowsProc(enum_proc), 0)
+            if not found_hwnd:
+                return
+            hwnd = found_hwnd[0]
+
+        if not hwnd:
             return
-        hwnd = found_hwnd[0]
+
         SW_RESTORE = 9
         SW_SHOW = 5
+        SWP_NOZORDER = 0x0004
+        SWP_NOSIZE = 0x0001
+        SWP_SHOWWINDOW = 0x0040
+
+        class RECT(ctypes.Structure):
+            _fields_ = [
+                ("left", ctypes.c_long),
+                ("top", ctypes.c_long),
+                ("right", ctypes.c_long),
+                ("bottom", ctypes.c_long),
+            ]
+
+        class MONITORINFO(ctypes.Structure):
+            _fields_ = [
+                ("cbSize", wintypes.DWORD),
+                ("rcMonitor", RECT),
+                ("rcWork", RECT),
+                ("dwFlags", wintypes.DWORD),
+            ]
+
+        rect = RECT()
+        got_rect = bool(user32.GetWindowRect(hwnd, ctypes.byref(rect)))
+        rect_width = int(rect.right - rect.left)
+        rect_height = int(rect.bottom - rect.top)
+
+        SM_XVIRTUALSCREEN = 76
+        SM_YVIRTUALSCREEN = 77
+        SM_CXVIRTUALSCREEN = 78
+        SM_CYVIRTUALSCREEN = 79
+        virtual_left = user32.GetSystemMetrics(SM_XVIRTUALSCREEN)
+        virtual_top = user32.GetSystemMetrics(SM_YVIRTUALSCREEN)
+        virtual_width = user32.GetSystemMetrics(SM_CXVIRTUALSCREEN)
+        virtual_height = user32.GetSystemMetrics(SM_CYVIRTUALSCREEN)
+        virtual_right = int(virtual_left + virtual_width)
+        virtual_bottom = int(virtual_top + virtual_height)
+
+        is_visible = user32.IsWindowVisible(hwnd) != 0
+        is_offscreen = False
+        if got_rect and virtual_width > 0 and virtual_height > 0:
+            margin = 40
+            is_offscreen = (
+                rect.right < (virtual_left + margin)
+                or rect.left > (virtual_right - margin)
+                or rect.bottom < (virtual_top + margin)
+                or rect.top > (virtual_bottom - margin)
+            )
+
         if user32.IsIconic(hwnd) != 0:
             user32.ShowWindow(hwnd, SW_RESTORE)
-        else:
+        elif not is_visible:
             user32.ShowWindow(hwnd, SW_SHOW)
+
+        if is_offscreen and rect_width > 0 and rect_height > 0:
+            MONITOR_DEFAULTTONEAREST = 2
+            monitor = user32.MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST)
+            target_x = 0
+            target_y = 0
+            if monitor:
+                monitor_info = MONITORINFO()
+                monitor_info.cbSize = ctypes.sizeof(MONITORINFO)
+                if user32.GetMonitorInfoW(monitor, ctypes.byref(monitor_info)):
+                    work = monitor_info.rcWork
+                    work_width = int(work.right - work.left)
+                    work_height = int(work.bottom - work.top)
+                    if work_width > 0 and work_height > 0:
+                        target_x = int(work.left + max(0, (work_width - rect_width) // 2))
+                        target_y = int(work.top + max(0, (work_height - rect_height) // 2))
+            user32.SetWindowPos(
+                hwnd, None, target_x, target_y, 0, 0,
+                SWP_NOZORDER | SWP_NOSIZE | SWP_SHOWWINDOW
+            )
+
         user32.SetForegroundWindow(hwnd)
     except Exception:
         return
@@ -348,7 +421,7 @@ def main():
         run_app(
             host='127.0.0.1',
             port=8765,
-            native=False,  # Browser mode (use external browser)
+            native=True,
         )
     except KeyboardInterrupt:
         # Normal shutdown via window close or Ctrl+C

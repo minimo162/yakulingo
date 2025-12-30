@@ -3704,6 +3704,57 @@ class CopilotHandler:
         except PlaywrightError:
             return False
 
+    def _is_edge_window_offscreen(self, page_title: str | None = None) -> bool:
+        """Return True if the Edge window is off-screen or unusable."""
+        if sys.platform != "win32":
+            return False
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.WinDLL('user32', use_last_error=True)
+            edge_hwnd = self._find_edge_window_handle(page_title)
+            if not edge_hwnd:
+                return False
+
+            if user32.IsIconic(wintypes.HWND(edge_hwnd)):
+                return True
+
+            rect = wintypes.RECT()
+            if not user32.GetWindowRect(wintypes.HWND(edge_hwnd), ctypes.byref(rect)):
+                return False
+
+            width = rect.right - rect.left
+            height = rect.bottom - rect.top
+            if width <= 0 or height <= 0:
+                return True
+
+            if width < self.MIN_EDGE_WINDOW_WIDTH or height < self.MIN_EDGE_WINDOW_HEIGHT:
+                return True
+
+            SM_XVIRTUALSCREEN = 76
+            SM_YVIRTUALSCREEN = 77
+            SM_CXVIRTUALSCREEN = 78
+            SM_CYVIRTUALSCREEN = 79
+            v_left = int(user32.GetSystemMetrics(SM_XVIRTUALSCREEN))
+            v_top = int(user32.GetSystemMetrics(SM_YVIRTUALSCREEN))
+            v_width = int(user32.GetSystemMetrics(SM_CXVIRTUALSCREEN))
+            v_height = int(user32.GetSystemMetrics(SM_CYVIRTUALSCREEN))
+            v_right = v_left + v_width
+            v_bottom = v_top + v_height
+
+            offscreen_by_bounds = (
+                rect.right <= v_left
+                or rect.left >= v_right
+                or rect.bottom <= v_top
+                or rect.top >= v_bottom
+            )
+            offscreen_by_position = rect.left < -10000 or rect.top < -10000
+            return offscreen_by_bounds or offscreen_by_position
+        except Exception as e:
+            logger.debug("Failed to check Edge window off-screen state: %s", e)
+            return False
+
     def _bring_to_foreground_impl(self, page, reason: str = "login required") -> None:
         """Bring browser window to foreground (internal implementation).
 
@@ -3724,8 +3775,10 @@ class CopilotHandler:
         edge_layout_mode = getattr(self, "_edge_layout_mode", None)
 
         if mode == "foreground" and edge_layout_mode is None:
-            logger.debug("Skipping bring_to_foreground in %s mode (already visible): %s", mode, reason)
-            return
+            if not self._is_edge_window_offscreen():
+                logger.debug("Skipping bring_to_foreground in %s mode (already visible): %s", mode, reason)
+                return
+            logger.info("Edge window is off-screen in foreground mode; restoring to visible area")
 
         error_types = _get_playwright_errors()
         PlaywrightError = error_types['Error']
@@ -8518,4 +8571,3 @@ class CopilotHandler:
     # - SetWinEventHook requires a message loop in the calling thread
     # - We use a dedicated thread with GetMessage() loop for this
     # - The callback must be fast to avoid blocking the message pump
-

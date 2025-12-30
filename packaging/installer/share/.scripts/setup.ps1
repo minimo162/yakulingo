@@ -415,12 +415,59 @@ function Start-ResidentService {
                 Write-Host "[WARN] YakuLingo resident service did not start (port $Port closed)." -ForegroundColor Yellow
             }
         }
+        return (Test-PortOpen $Port)
     } catch {
         try { "Start-ResidentService failed: $($_.Exception.Message)" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
         if (-not $GuiMode) {
             Write-Host "[WARN] Failed to start YakuLingo resident service." -ForegroundColor Yellow
         }
+        return $false
     }
+}
+
+function Wait-ResidentReady {
+    param(
+        [int]$Port = 8765,
+        [int]$TimeoutSec = 1200
+    )
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSec)
+    $lastState = ""
+
+    while ((Get-Date) -lt $deadline) {
+        if ($GuiMode -and $script:cancelled) {
+            throw "セットアップがキャンセルされました。"
+        }
+
+        $status = $null
+        try {
+            $status = Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:$Port/api/setup-status" -TimeoutSec 5
+        } catch {
+            $status = $null
+        }
+
+        if ($status -and $status.ready) {
+            return $true
+        }
+
+        $state = if ($status -and $status.state) { "$($status.state)" } else { "starting" }
+        if ($state -ne $lastState) {
+            $lastState = $state
+            try { "Wait-ResidentReady: state=$state" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
+        }
+
+        $message = "Copilotの準備中です..."
+        if ($state -eq "login_required") {
+            $message = "Copilotにログインしてください（右側の画面）..."
+        } elseif ($state -eq "loading") {
+            $message = "Copilotを読み込み中です..."
+        }
+
+        Write-Status -Message $message -Progress -Step "Step 4/4: Finalizing" -Percent 95
+        Start-Sleep -Seconds 2
+    }
+
+    return $false
 }
 
 function Get-LatestZipFile {
@@ -1876,10 +1923,17 @@ try {
         }
         Write-Status -Message "Starting YakuLingo (resident mode)..." -Progress -Step "Step 4/4: Finalizing" -Percent 95
         # Start YakuLingo immediately in resident mode (no UI auto-open).
-        Start-ResidentService -SetupPath $SetupPath -PythonwPath $PythonwPath -AppPyPath $AppPyPath
+        $residentStarted = Start-ResidentService -SetupPath $SetupPath -PythonwPath $PythonwPath -AppPyPath $AppPyPath
+        if (-not $residentStarted) {
+            throw "YakuLingoの起動に失敗しました。"
+        }
+        $residentReady = Wait-ResidentReady -Port 8765 -TimeoutSec 1200
+        if (-not $residentReady) {
+            throw "Copilotの準備が完了しませんでした。ログインを完了してから再実行してください。"
+        }
 
         Write-Status -Message "Setup completed!" -Progress -Step "Step 4/4: Finalizing" -Percent 100
-        $successMsg = "セットアップが完了しました。`n`nログオン時にYakuLingoが自動で常駐します（UIを閉じても終了しません）。`n`n使い方:`n- 翻訳したい文字を選択して 同じウィンドウで Ctrl+C を短時間に2回`n  → YakuLingo のUIに結果が表示されます（必要な訳をコピー）`n- エクスプローラーでファイルを選択して 同じウィンドウで Ctrl+C を短時間に2回`n  → UIのファイルタブに結果が表示されます（必要な出力をダウンロード）`n- エクスプローラーでファイルを右クリック > 「YakuLingoで翻訳」`n  → 翻訳を開始します（Windows 11 は「その他のオプション」に表示）`n- UIを開く: デスクトップ / スタートメニューの YakuLingo`n- UIを閉じる: 常駐は継続します（Copilot Edge は自動で最小化されます）`n- 終了する: スタートメニュー > YakuLingo > YakuLingo 終了`n`nYakuLingo を常駐起動しました（UIは自動で開きません）。"
+        $successMsg = "セットアップが完了しました。`n`nログオン時にYakuLingoが自動で常駐します（UIを閉じても終了しません）。`n`n使い方:`n- 翻訳したい文字を選択して 同じウィンドウで Ctrl+C を短時間に2回`n  → YakuLingo のUIに結果が表示されます（必要な訳をコピー）`n- エクスプローラーでファイルを選択して 同じウィンドウで Ctrl+C を短時間に2回`n  → UIのファイルタブに結果が表示されます（必要な出力をダウンロード）`n- エクスプローラーでファイルを右クリック > 「YakuLingoで翻訳」`n  → 翻訳を開始します（Windows 11 は「その他のオプション」に表示）`n- UIを開く: デスクトップ / スタートメニューの YakuLingo`n- UIを閉じる: 常駐は継続します（Copilot Edge は自動で画面外に移動します）`n- 終了する: スタートメニュー > YakuLingo > YakuLingo 終了`n`nYakuLingo を常駐起動しました（準備中はUIが開きます）。"
         if ($script:GlossaryBackupPath) {
             $backupFileName = Split-Path -Leaf $script:GlossaryBackupPath
             $successMsg += "`n`n用語集が更新されました。`n以前の用語集はデスクトップに保存しました:`n  $backupFileName"
@@ -1911,7 +1965,14 @@ try {
 
         Write-Host "[INFO] Starting YakuLingo (resident mode)..." -ForegroundColor Gray
         # Start YakuLingo immediately in resident mode (no UI auto-open).
-        Start-ResidentService -SetupPath $SetupPath -PythonwPath $PythonwPath -AppPyPath $AppPyPath
+        $residentStarted = Start-ResidentService -SetupPath $SetupPath -PythonwPath $PythonwPath -AppPyPath $AppPyPath
+        if (-not $residentStarted) {
+            throw "YakuLingoの起動に失敗しました。"
+        }
+        $residentReady = Wait-ResidentReady -Port 8765 -TimeoutSec 1200
+        if (-not $residentReady) {
+            throw "Copilotの準備が完了しませんでした。ログインを完了してから再実行してください。"
+        }
     }
 }
 

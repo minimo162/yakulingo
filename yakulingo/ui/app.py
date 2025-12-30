@@ -492,6 +492,10 @@ MIN_AVAILABLE_MEMORY_GB_FOR_EARLY_CONNECT = 0.5  # Skip early Copilot init only 
 TEXT_TRANSLATION_CHAR_LIMIT = 5000  # Max chars for text translation (clipboard trigger, Ctrl+Enter)
 DEFAULT_TEXT_STYLE = "concise"
 RESIDENT_HEARTBEAT_INTERVAL_SEC = 300  # Update startup.log even when UI is closed
+RESIDENT_STARTUP_READY_TIMEOUT_SEC = 900  # Allow manual login during resident startup
+RESIDENT_STARTUP_POLL_INTERVAL_SEC = 2
+RESIDENT_STARTUP_LAYOUT_RETRY_ATTEMPTS = 40
+RESIDENT_STARTUP_LAYOUT_RETRY_DELAY_SEC = 0.25
 HOTKEY_MAX_FILE_COUNT = 10
 HOTKEY_SUPPORTED_FILE_SUFFIXES = {
     ".xlsx",
@@ -605,6 +609,7 @@ class YakuLingoApp:
 
         # UI references for refresh
         self._header_status = None
+        self._login_banner = None
         self._main_content = None
         self._result_panel = None  # Separate refreshable for result panel only
         self._tabs_container = None
@@ -663,6 +668,10 @@ class YakuLingoApp:
         self._copilot_window_monitor_task: "asyncio.Task | None" = None
         self._copilot_window_seen = False
         self._resident_heartbeat_task: "asyncio.Task | None" = None
+        self._resident_startup_active = False
+        self._resident_startup_ready = False
+        self._resident_startup_started_at: float | None = None
+        self._resident_startup_error: str | None = None
 
         # Clipboard trigger for double-copy translation.
         self._clipboard_trigger = None
@@ -815,47 +824,378 @@ class YakuLingoApp:
             if current_task is not None and self._resident_heartbeat_task is current_task:
                 self._resident_heartbeat_task = None
 
+    def _apply_resident_startup_layout_win32(self) -> bool:
+        """Tile YakuLingo (left) and Copilot (right) during resident startup."""
+        if sys.platform != "win32":
+            return False
+
+        copilot = self._copilot
+        if copilot is None:
+            return False
+
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.WinDLL("user32", use_last_error=True)
+            dwmapi = None
+            try:
+                dwmapi = ctypes.WinDLL("dwmapi", use_last_error=True)
+            except Exception:
+                dwmapi = None
+
+            yakulingo_hwnd = None
+            try:
+                yakulingo_hwnd = copilot._find_yakulingo_window_handle(include_hidden=True)
+            except Exception:
+                yakulingo_hwnd = None
+            if not yakulingo_hwnd:
+                yakulingo_hwnd = user32.FindWindowW(None, "YakuLingo")
+
+            edge_hwnd = None
+            try:
+                edge_hwnd = copilot._find_edge_window_handle()
+            except Exception:
+                edge_hwnd = None
+
+            if not yakulingo_hwnd or not edge_hwnd:
+                return False
+
+            class RECT(ctypes.Structure):
+                _fields_ = [
+                    ("left", ctypes.c_long),
+                    ("top", ctypes.c_long),
+                    ("right", ctypes.c_long),
+                    ("bottom", ctypes.c_long),
+                ]
+
+            class MONITORINFO(ctypes.Structure):
+                _fields_ = [
+                    ("cbSize", wintypes.DWORD),
+                    ("rcMonitor", RECT),
+                    ("rcWork", RECT),
+                    ("dwFlags", wintypes.DWORD),
+                ]
+
+            MONITOR_DEFAULTTONEAREST = 2
+            monitor = user32.MonitorFromWindow(wintypes.HWND(yakulingo_hwnd), MONITOR_DEFAULTTONEAREST)
+            if not monitor:
+                monitor = user32.MonitorFromWindow(wintypes.HWND(edge_hwnd), MONITOR_DEFAULTTONEAREST)
+                if not monitor:
+                    return False
+
+            monitor_info = MONITORINFO()
+            monitor_info.cbSize = ctypes.sizeof(MONITORINFO)
+            if not user32.GetMonitorInfoW(monitor, ctypes.byref(monitor_info)):
+                return False
+
+            work_area = monitor_info.rcWork
+            work_width = int(work_area.right - work_area.left)
+            work_height = int(work_area.bottom - work_area.top)
+            if work_width <= 0 or work_height <= 0:
+                return False
+
+            gap = 10
+            min_ui_width = 580
+            min_edge_width = 580
+
+            dpi_scale = _get_windows_dpi_scale()
+            dpi_awareness = _get_process_dpi_awareness()
+            if dpi_awareness in (1, 2) and dpi_scale != 1.0:
+                gap = int(round(gap * dpi_scale))
+                min_ui_width = int(round(min_ui_width * dpi_scale))
+                min_edge_width = int(round(min_edge_width * dpi_scale))
+
+            available_width = work_width - gap
+            if available_width <= 0:
+                return False
+
+            ui_width = max(available_width // 2, min_ui_width)
+            edge_width = max(available_width - ui_width, min_edge_width)
+            if ui_width + edge_width + gap > work_width:
+                ui_width = max(work_width - gap - min_edge_width, min_ui_width)
+                edge_width = max(work_width - gap - ui_width, 1)
+
+            if ui_width <= 0 or edge_width <= 0:
+                ui_width = max(available_width // 2, 1)
+                edge_width = max(available_width - ui_width, 1)
+
+            if ui_width <= 0 or edge_width <= 0:
+                return False
+
+            SW_RESTORE = 9
+            SW_SHOW = 5
+            SWP_NOZORDER = 0x0004
+            SWP_NOACTIVATE = 0x0010
+            SWP_SHOWWINDOW = 0x0040
+
+            def _restore_window(hwnd_value: int) -> None:
+                try:
+                    if user32.IsIconic(wintypes.HWND(hwnd_value)) or user32.IsZoomed(wintypes.HWND(hwnd_value)):
+                        user32.ShowWindow(wintypes.HWND(hwnd_value), SW_RESTORE)
+                    else:
+                        user32.ShowWindow(wintypes.HWND(hwnd_value), SW_SHOW)
+                except Exception:
+                    return
+
+            _restore_window(int(yakulingo_hwnd))
+            _restore_window(int(edge_hwnd))
+
+            def _get_frame_rect(hwnd_value):
+                if not dwmapi:
+                    return None
+                try:
+                    rect = RECT()
+                    DWMWA_EXTENDED_FRAME_BOUNDS = 9
+                    if dwmapi.DwmGetWindowAttribute(
+                        wintypes.HWND(hwnd_value),
+                        DWMWA_EXTENDED_FRAME_BOUNDS,
+                        ctypes.byref(rect),
+                        ctypes.sizeof(rect),
+                    ) == 0:
+                        return rect
+                except Exception:
+                    return None
+                return None
+
+            def _get_window_rect(hwnd_value):
+                rect = RECT()
+                if not user32.GetWindowRect(wintypes.HWND(hwnd_value), ctypes.byref(rect)):
+                    return None
+                return rect
+
+            def _get_frame_margins(hwnd_value):
+                outer = _get_window_rect(hwnd_value)
+                if outer is None:
+                    return (0, 0, 0, 0)
+                frame = _get_frame_rect(hwnd_value)
+                if frame is None:
+                    return (0, 0, 0, 0)
+                left = max(0, frame.left - outer.left)
+                top = max(0, frame.top - outer.top)
+                right = max(0, outer.right - frame.right)
+                bottom = max(0, outer.bottom - frame.bottom)
+                return (left, top, right, bottom)
+
+            def _set_window_pos_with_frame_adjust(
+                hwnd_value: int,
+                x: int,
+                y: int,
+                width: int,
+                height: int,
+                insert_after,
+                flags: int,
+            ) -> bool:
+                left, top, right, bottom = _get_frame_margins(hwnd_value)
+                adj_x = x - left
+                adj_y = y - top
+                adj_width = width + left + right
+                adj_height = height + top + bottom
+                if adj_width <= 0 or adj_height <= 0:
+                    adj_x = x
+                    adj_y = y
+                    adj_width = width
+                    adj_height = height
+                return bool(
+                    user32.SetWindowPos(
+                        wintypes.HWND(hwnd_value),
+                        insert_after,
+                        adj_x,
+                        adj_y,
+                        adj_width,
+                        adj_height,
+                        flags,
+                    )
+                )
+
+            ui_x = int(work_area.left)
+            ui_y = int(work_area.top)
+            edge_x = int(work_area.left + ui_width + gap)
+            edge_y = ui_y
+
+            _set_window_pos_with_frame_adjust(
+                int(yakulingo_hwnd),
+                ui_x,
+                ui_y,
+                ui_width,
+                work_height,
+                None,
+                SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW,
+            )
+            _set_window_pos_with_frame_adjust(
+                int(edge_hwnd),
+                edge_x,
+                edge_y,
+                edge_width,
+                work_height,
+                None,
+                SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW,
+            )
+
+            return True
+
+        except Exception as e:
+            logger.debug("Resident startup layout failed: %s", e)
+            return False
+
+    def _retry_resident_startup_layout_win32(
+        self,
+        *,
+        attempts: int = RESIDENT_STARTUP_LAYOUT_RETRY_ATTEMPTS,
+        delay_sec: float = RESIDENT_STARTUP_LAYOUT_RETRY_DELAY_SEC,
+    ) -> None:
+        if sys.platform != "win32":
+            return
+        import time as time_module
+
+        for _ in range(attempts):
+            if self._shutdown_requested:
+                return
+            if self._apply_resident_startup_layout_win32():
+                return
+            time_module.sleep(delay_sec)
+
+    async def _wait_for_copilot_ready(self, timeout_sec: int = RESIDENT_STARTUP_READY_TIMEOUT_SEC) -> bool:
+        """Wait for Copilot to become ready (login may require user interaction)."""
+        from yakulingo.services.copilot_handler import ConnectionState as CopilotConnectionState
+
+        deadline = time.time() + timeout_sec
+        while time.time() < deadline and not self._shutdown_requested:
+            try:
+                state = await asyncio.to_thread(self.copilot.check_copilot_state, 5)
+            except Exception as e:
+                logger.debug("Resident startup: state check failed: %s", e)
+                state = None
+
+            if state == CopilotConnectionState.READY:
+                return True
+
+            await asyncio.sleep(RESIDENT_STARTUP_POLL_INTERVAL_SEC)
+
+        return False
+
+    async def _get_resident_startup_status(self) -> dict[str, object]:
+        """Return resident startup status for setup scripts."""
+        status: dict[str, object] = {
+            "ready": self._resident_startup_ready,
+            "active": self._resident_startup_active,
+        }
+        if self._resident_startup_started_at is not None:
+            status["elapsed_sec"] = max(0.0, time.time() - self._resident_startup_started_at)
+        if self._resident_startup_error:
+            status["error"] = self._resident_startup_error
+
+        copilot = getattr(self, "_copilot", None)
+        if copilot is None:
+            status["state"] = "not_initialized"
+            return status
+
+        from yakulingo.services.copilot_handler import ConnectionState as CopilotConnectionState
+        from yakulingo.services.copilot_handler import CopilotHandler
+
+        try:
+            state = await asyncio.to_thread(copilot.check_copilot_state, 2)
+        except Exception as e:
+            logger.debug("Resident startup: status check failed: %s", e)
+            state = None
+
+        status["state"] = state or "unknown"
+        status["login_required"] = (
+            state == CopilotConnectionState.LOGIN_REQUIRED
+            or copilot.last_connection_error == CopilotHandler.ERROR_LOGIN_REQUIRED
+        )
+        status["gpt_mode_set"] = bool(getattr(copilot, "is_gpt_mode_set", False))
+        return status
+
     async def _warmup_resident_gpt_mode(self) -> None:
-        """Warm up Copilot GPT mode during resident startup (no UI auto-open)."""
+        """Warm up Copilot and show UI/Copilot side-by-side for resident startup."""
         if self._shutdown_requested:
             return
 
-        if self._early_connection_event is not None and not self._early_connection_event.is_set():
-            try:
-                await asyncio.to_thread(self._early_connection_event.wait)
-            except Exception as e:
-                logger.debug("Resident warmup: early connection wait failed: %s", e)
+        if self._resident_startup_active:
+            return
 
-        if self._early_connection_result is None and self._early_connection_result_ref is not None:
-            self._early_connection_result = self._early_connection_result_ref.value
+        self._resident_startup_active = True
+        self._resident_startup_ready = False
+        self._resident_startup_error = None
+        self._resident_startup_started_at = time.time()
 
-        copilot = self.copilot
-        if not copilot.is_connected:
-            try:
-                result = await asyncio.to_thread(
-                    copilot.connect,
-                    bring_to_foreground_on_login=True,
-                    defer_window_positioning=True,
-                )
-                self._early_connection_result = result
-            except Exception as e:
-                logger.debug("Resident warmup: Copilot connect failed: %s", e)
+        try:
+            if self._early_connection_event is not None and not self._early_connection_event.is_set():
+                try:
+                    await asyncio.to_thread(self._early_connection_event.wait)
+                except Exception as e:
+                    logger.debug("Resident warmup: early connection wait failed: %s", e)
+
+            if self._early_connection_result is None and self._early_connection_result_ref is not None:
+                self._early_connection_result = self._early_connection_result_ref.value
+
+            copilot = self.copilot
+            if getattr(copilot, "_edge_layout_mode", None) == "offscreen":
+                try:
+                    copilot.set_edge_layout_mode(None)
+                except Exception:
+                    pass
+
+            open_ui_callback = self._open_ui_window_callback
+            if open_ui_callback is not None:
+                try:
+                    await asyncio.to_thread(open_ui_callback)
+                except Exception as e:
+                    logger.debug("Resident startup: failed to open UI window: %s", e)
+
+            if not copilot.is_connected:
+                try:
+                    result = await asyncio.to_thread(
+                        copilot.connect,
+                        bring_to_foreground_on_login=True,
+                        defer_window_positioning=True,
+                    )
+                    self._early_connection_result = result
+                except Exception as e:
+                    logger.debug("Resident warmup: Copilot connect failed: %s", e)
+                    self._resident_startup_error = str(e)
+                    return
+
+            if self._shutdown_requested:
+                return
+            from yakulingo.services.copilot_handler import CopilotHandler
+            if (
+                not copilot.is_connected
+                and copilot.last_connection_error != CopilotHandler.ERROR_LOGIN_REQUIRED
+            ):
                 return
 
-        if self._shutdown_requested or not copilot.is_connected:
-            return
+            if sys.platform == "win32":
+                try:
+                    await asyncio.to_thread(self._retry_resident_startup_layout_win32)
+                except Exception as e:
+                    logger.debug("Resident startup layout failed: %s", e)
 
-        try:
-            await self._ensure_gpt_mode_setup()
-        except Exception as e:
-            logger.debug("Resident warmup: GPT mode setup failed: %s", e)
+            ready = await self._wait_for_copilot_ready()
+            if not ready:
+                self._resident_startup_error = "timeout"
+                return
 
-        if sys.platform != "win32":
-            return
-        try:
-            await asyncio.to_thread(copilot.minimize_edge_window)
-        except Exception as e:
-            logger.debug("Resident warmup: Edge minimize failed: %s", e)
+            try:
+                await self._ensure_gpt_mode_setup()
+            except Exception as e:
+                logger.debug("Resident warmup: GPT mode setup failed: %s", e)
+
+            if sys.platform == "win32":
+                try:
+                    copilot.set_edge_layout_mode("offscreen")
+                    await asyncio.to_thread(copilot._position_edge_offscreen)
+                except Exception as e:
+                    logger.debug("Resident warmup: Edge offscreen move failed: %s", e)
+
+            self._resident_startup_ready = True
+            self.state.copilot_ready = True
+            self.state.connection_state = ConnectionState.CONNECTED
+            self._refresh_status()
+            self._refresh_translate_button_state()
+        finally:
+            self._resident_startup_active = False
 
     def _on_hotkey_triggered(self, text: str, source_hwnd: int | None = None):
         """Handle hotkey trigger - set text and translate in main app.
@@ -3462,6 +3802,8 @@ class YakuLingoApp:
         try:
             # Fast path: we are already in a valid client context.
             self._header_status.refresh()
+            if self._login_banner:
+                self._login_banner.refresh()
             return
         except Exception as e:
             # When called from async/background tasks, NiceGUI context may not be set.
@@ -3472,6 +3814,8 @@ class YakuLingoApp:
             try:
                 with self._client:
                     self._header_status.refresh()
+                    if self._login_banner:
+                        self._login_banner.refresh()
             except Exception as e2:
                 logger.debug("Status refresh with saved client failed: %s", e2)
 
@@ -4606,6 +4950,29 @@ class YakuLingoApp:
         from yakulingo.ui.components.text_panel import create_text_input_panel, create_text_result_panel
         from yakulingo.ui.components.file_panel import create_file_panel
 
+        @ui.refreshable
+        def login_banner():
+            if self.state.connection_state != ConnectionState.LOGIN_REQUIRED:
+                return
+
+            with ui.element('div').classes('w-full warning-box mb-3'):
+                with ui.row().classes('items-start justify-between gap-3 w-full'):
+                    with ui.row().classes('items-start gap-2 flex-1'):
+                        ui.icon('warning').classes('text-warning text-lg mt-0.5')
+                        with ui.column().classes('gap-0.5'):
+                            ui.label('Copilotへのログインが必要です').classes(
+                                'text-sm font-semibold text-on-warning-container'
+                            )
+                            ui.label('ブラウザでログインしてください。ログイン後に翻訳できます。').classes(
+                                'text-xs text-on-warning-container opacity-80'
+                            )
+                    ui.button(
+                        '再接続',
+                        on_click=lambda: asyncio.create_task(self._reconnect()),
+                    ).classes('btn-text').props('no-caps')
+
+        self._login_banner = login_banner
+
         # Separate refreshable for result panel only (avoids input panel flicker)
         @ui.refreshable
         def result_panel_content():
@@ -4626,6 +4993,7 @@ class YakuLingoApp:
                 # 2-column layout for text translation
                 # Input panel (shown in INPUT state, hidden in RESULT state via CSS)
                 with ui.column().classes('input-panel'):
+                    login_banner()
                     create_text_input_panel(
                         state=self.state,
                         on_translate=self._translate_text,
@@ -4644,6 +5012,7 @@ class YakuLingoApp:
 
                 # Result panel (right column - shown when has results)
                 with ui.column().classes('result-panel'):
+                    login_banner()
                     result_panel_content()
             else:
                 # File panel: 2-column layout (sidebar + centered file panel)
@@ -4651,28 +5020,29 @@ class YakuLingoApp:
                 with ui.column().classes('input-panel file-panel-container'):
                     with ui.scroll_area().classes('file-panel-scroll'):
                         with ui.column().classes('w-full max-w-2xl mx-auto py-8'):
+                            login_banner()
                             create_file_panel(
-                        state=self.state,
-                        on_file_select=self._select_file,
-                        on_translate=self._translate_file,
-                        on_cancel=self._cancel,
-                        on_download=self._download,
-                        on_reset=self._reset,
-                        on_language_change=self._on_language_change,
-                        on_style_change=self._on_style_change,
-                        on_section_toggle=self._on_section_toggle,
-                        on_section_select_all=self._on_section_select_all,
-                        on_section_clear=self._on_section_clear,
-                        on_attach_reference_file=self._attach_reference_file,
-                        on_remove_reference_file=self._remove_reference_file,
-                        reference_files=self.state.reference_files,
-                        translation_style=self.settings.translation_style,
-                        translation_result=self.state.translation_result,
-                        use_bundled_glossary=self.settings.use_bundled_glossary,
-                        on_glossary_toggle=self._on_glossary_toggle,
-                        on_edit_glossary=self._edit_glossary,
-                        on_edit_translation_rules=self._edit_translation_rules,
-                    )
+                                state=self.state,
+                                on_file_select=self._select_file,
+                                on_translate=self._translate_file,
+                                on_cancel=self._cancel,
+                                on_download=self._download,
+                                on_reset=self._reset,
+                                on_language_change=self._on_language_change,
+                                on_style_change=self._on_style_change,
+                                on_section_toggle=self._on_section_toggle,
+                                on_section_select_all=self._on_section_select_all,
+                                on_section_clear=self._on_section_clear,
+                                on_attach_reference_file=self._attach_reference_file,
+                                on_remove_reference_file=self._remove_reference_file,
+                                reference_files=self.state.reference_files,
+                                translation_style=self.settings.translation_style,
+                                translation_result=self.state.translation_result,
+                                use_bundled_glossary=self.settings.use_bundled_glossary,
+                                on_glossary_toggle=self._on_glossary_toggle,
+                                on_edit_glossary=self._edit_glossary,
+                                on_edit_translation_rules=self._edit_translation_rules,
+                            )
 
         self._main_content = main_content
         main_content()
@@ -7355,6 +7725,20 @@ def run_app(
                 raise HTTPException(status_code=500, detail="failed") from err
 
             return {"ok": True}
+
+        @nicegui_app.get('/api/setup-status')
+        async def setup_status_api(request: StarletteRequest):  # type: ignore[misc]
+            """Expose resident startup readiness for setup scripts (local machine only)."""
+            try:
+                client_host = getattr(getattr(request, "client", None), "host", None)
+                if client_host not in ("127.0.0.1", "::1"):
+                    raise HTTPException(status_code=403, detail="forbidden")
+            except HTTPException:
+                raise
+            except Exception:
+                raise HTTPException(status_code=403, detail="forbidden")
+
+            return await yakulingo_app._get_resident_startup_status()
 
         @nicegui_app.post('/api/window-layout')
         async def window_layout_api(request: StarletteRequest):  # type: ignore[misc]

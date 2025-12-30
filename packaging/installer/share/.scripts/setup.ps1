@@ -1464,13 +1464,14 @@ function Invoke-Setup {
 
     $WshShell = New-Object -ComObject WScript.Shell
 
-    # Create helper scripts in install directory (UI opener / exit).
+    # Create helper scripts in install directory (resident / UI opener / exit).
     # These keep the UX simple:
     # - YakuLingo runs as a resident background service (hotkey enabled)
     # - UI is opened on demand
     # - Exit is explicit via shortcut
 
     $OpenUiScriptPath = Join-Path $SetupPath "YakuLingo_OpenUI.ps1"
+    $ResidentScriptPath = Join-Path $SetupPath "YakuLingo_Resident.ps1"
     $ExitScriptPath = Join-Path $SetupPath "YakuLingo_Exit.ps1"
     $TranslateScriptPath = Join-Path $SetupPath "YakuLingo_Translate.ps1"
 
@@ -1545,6 +1546,45 @@ try {
   `$body = @{ source_hwnd = `$sourceHwndValue; edge_layout = "offscreen" } | ConvertTo-Json -Compress
   Invoke-WebRequest -UseBasicParsing -Method Post -Uri `$layoutUrl -Body `$body -ContentType 'application/json' -TimeoutSec 2 | Out-Null
 } catch { }
+"@
+
+    $residentScript = @"
+`$ErrorActionPreference = 'SilentlyContinue'
+
+`$installDir = Split-Path -Parent `$MyInvocation.MyCommand.Definition
+`$pythonw = Join-Path `$installDir '.venv\\Scripts\\pythonw.exe'
+`$appPy = Join-Path `$installDir 'app.py'
+`$port = 8765
+
+function Test-PortOpen([int]`$p) {
+  try {
+    `$client = New-Object System.Net.Sockets.TcpClient
+    `$async = `$client.BeginConnect('127.0.0.1', `$p, `$null, `$null)
+    if (-not `$async.AsyncWaitHandle.WaitOne(200)) { return `$false }
+    `$client.EndConnect(`$async) | Out-Null
+    `$client.Close()
+    return `$true
+  } catch { return `$false }
+}
+
+if (-not (Test-PortOpen `$port)) {
+  if ((Test-Path `$pythonw -PathType Leaf) -and (Test-Path `$appPy -PathType Leaf)) {
+    `$previousNoOpen = `$env:YAKULINGO_NO_AUTO_OPEN
+    `$env:YAKULINGO_NO_AUTO_OPEN = "1"
+    try {
+      Start-Process -FilePath `$pythonw -ArgumentList `$appPy -WorkingDirectory `$installDir -WindowStyle Hidden | Out-Null
+    } finally {
+      if (`$null -eq `$previousNoOpen) {
+        Remove-Item Env:YAKULINGO_NO_AUTO_OPEN -ErrorAction SilentlyContinue
+      } else {
+        `$env:YAKULINGO_NO_AUTO_OPEN = `$previousNoOpen
+      }
+    }
+
+    `$deadline = (Get-Date).AddSeconds(30)
+    while ((Get-Date) -lt `$deadline -and -not (Test-PortOpen `$port)) { Start-Sleep -Milliseconds 200 }
+  }
+}
 "@
 
     $exitScript = @"
@@ -1641,6 +1681,7 @@ try {
 "@
 
     [System.IO.File]::WriteAllText($OpenUiScriptPath, $openUiScript, $utf8NoBom)
+    [System.IO.File]::WriteAllText($ResidentScriptPath, $residentScript, $utf8NoBom)
     [System.IO.File]::WriteAllText($ExitScriptPath, $exitScript, $utf8NoBom)
     [System.IO.File]::WriteAllText($TranslateScriptPath, $translateScript, $utf8NoBom)
 
@@ -1693,10 +1734,8 @@ try {
     $StartupPath = [Environment]::GetFolderPath("Startup")
     $StartupShortcutPath = Join-Path $StartupPath "$AppName.lnk"
     $StartupShortcut = $WshShell.CreateShortcut($StartupShortcutPath)
-    $PythonwPath = Join-Path $SetupPath ".venv\Scripts\pythonw.exe"
-    $AppPyPath = Join-Path $SetupPath "app.py"
-    $StartupShortcut.TargetPath = $PythonwPath
-    $StartupShortcut.Arguments = "`"$AppPyPath`""
+    $StartupShortcut.TargetPath = "powershell.exe"
+    $StartupShortcut.Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$ResidentScriptPath`""
     $StartupShortcut.WorkingDirectory = $SetupPath
     if (Test-Path $IconPath) {
         $StartupShortcut.IconLocation = "$IconPath,0"

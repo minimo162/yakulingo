@@ -8088,18 +8088,22 @@ def run_app(
         yakulingo_app.start_clipboard_trigger()
         yakulingo_app._start_resident_heartbeat()
 
+        no_auto_open = os.environ.get("YAKULINGO_NO_AUTO_OPEN", "")
+        no_auto_open_flag = no_auto_open.strip().lower() in ("1", "true", "yes")
+
         # Start Copilot connection early only in native mode; browser mode should remain silent
         # and connect on demand (clipboard/UI).
         if native:
             yakulingo_app._early_connection_task = asyncio.create_task(_early_connect_copilot())
+            if no_auto_open_flag:
+                # Resident setup uses native mode; warm up Copilot so setup.ps1 can detect readiness.
+                asyncio.create_task(yakulingo_app._warmup_resident_gpt_mode())
 
         # Start early window positioning - moves window before UI is rendered
         if native and sys.platform == 'win32':
             _start_early_positioning_thread()
 
         if not native:
-            no_auto_open = os.environ.get("YAKULINGO_NO_AUTO_OPEN", "")
-            no_auto_open_flag = no_auto_open.strip().lower() in ("1", "true", "yes")
             if no_auto_open_flag:
                 asyncio.create_task(yakulingo_app._warmup_resident_gpt_mode())
             else:

@@ -1138,11 +1138,20 @@ class YakuLingoApp:
         if not self._resident_mode:
             return
 
-        shown = await self._ensure_resident_ui_visible(reason)
-        if not shown and sys.platform == "win32":
+        with self._client_lock:
+            has_client_before = self._client is not None
+        if not has_client_before:
             self._resident_show_requested = True
-        else:
+
+        shown = await self._ensure_resident_ui_visible(reason)
+        with self._client_lock:
+            has_client_after = self._client is not None
+        if has_client_after and shown:
             self._resident_show_requested = False
+        elif not has_client_after:
+            self._resident_show_requested = True
+        elif not shown:
+            self._resident_show_requested = True
 
         if self._copilot is not None:
             try:
@@ -1304,6 +1313,9 @@ class YakuLingoApp:
             open_ui: If True, open UI window when translating headlessly.
             source_hwnd: Foreground window handle at hotkey time (best-effort; Windows only)
         """
+        if open_ui and self._resident_mode:
+            self._resident_show_requested = True
+
         if not text:
             if open_ui:
                 open_ui_callback = self._open_ui_window_callback
@@ -1314,9 +1326,12 @@ class YakuLingoApp:
                         logger.debug("Failed to request UI open for hotkey: %s", e)
                 else:
                     try:
-                        await self._bring_window_to_front(position_edge=True)
+                        brought_to_front = await self._bring_window_to_front(position_edge=True)
                     except Exception as e:
                         logger.debug("Failed to bring window to front for hotkey: %s", e)
+                    else:
+                        if brought_to_front and self._resident_mode:
+                            self._resident_show_requested = False
             return
 
         # Double-check: Skip if translation started while we were waiting
@@ -1412,6 +1427,8 @@ class YakuLingoApp:
                             except Exception as e:
                                 logger.debug("Failed to bring window to front for hotkey: %s", e)
                             else:
+                                if brought_to_front and self._resident_mode:
+                                    self._resident_show_requested = False
                                 if not brought_to_front:
                                     logger.debug("Hotkey UI client exists but UI window not found; using headless mode")
                                     with self._client_lock:
@@ -1426,6 +1443,8 @@ class YakuLingoApp:
                     except Exception as e:
                         logger.debug("Failed to bring window to front for hotkey: %s", e)
                     else:
+                        if brought_to_front and self._resident_mode:
+                            self._resident_show_requested = False
                         # If the UI window no longer exists (e.g., browser window was closed),
                         # clear the cached client and fall back to headless translation.
                         if sys.platform == "win32" and not brought_to_front:
@@ -3123,6 +3142,23 @@ class YakuLingoApp:
     # Section 2: Connection & Startup
     # =========================================================================
 
+    def _hide_resident_window_win32(self, reason: str) -> None:
+        if sys.platform != "win32":
+            return
+        try:
+            if nicegui_app and hasattr(nicegui_app, "native") and nicegui_app.native.main_window:
+                window = nicegui_app.native.main_window
+                if hasattr(window, "hide"):
+                    window.hide()
+                elif hasattr(window, "minimize"):
+                    window.minimize()
+        except Exception as e:
+            logger.debug("Failed to hide resident window via pywebview (%s): %s", reason, e)
+        try:
+            _hide_native_window_offscreen_win32("YakuLingo")
+        except Exception as e:
+            logger.debug("Failed to hide resident window offscreen (%s): %s", reason, e)
+
     async def _ensure_app_window_visible(self):
         """Ensure the app window is visible and in front after UI is ready.
 
@@ -3130,7 +3166,14 @@ class YakuLingoApp:
         as Edge startup may steal focus.
         """
         if self._resident_mode and not self._resident_show_requested:
+            with self._client_lock:
+                has_client = self._client is not None
+            if has_client:
+                logger.debug("Resident mode: client connected; skipping auto-hide")
+                return
             logger.debug("Resident mode: skipping auto-show for UI window")
+            if sys.platform == "win32":
+                self._hide_resident_window_win32("startup")
             return
         self._resident_show_requested = False
 
@@ -8199,6 +8242,7 @@ def run_app(
             with yakulingo_app._client_lock:
                 if yakulingo_app._client is client:
                     yakulingo_app._client = None
+            yakulingo_app._resident_show_requested = False
             browser_opened = False
             yakulingo_app._history_list = None
             yakulingo_app._history_dialog = None

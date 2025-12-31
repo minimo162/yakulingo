@@ -728,6 +728,9 @@ class YakuLingoApp:
         self._gpt_mode_setup_task: "asyncio.Task | None" = None
         # Connection status auto-refresh (avoids stale "準備中..." UI after transient timeouts)
         self._status_auto_refresh_task: "asyncio.Task | None" = None
+        # Result panel auto-scroll debounce (avoid scheduling a task for every stream chunk)
+        self._result_panel_scroll_task: "asyncio.Task | None" = None
+        self._result_panel_scroll_handle: "asyncio.Handle | None" = None
         self._shutdown_requested = False
         self._copilot_window_monitor_task: "asyncio.Task | None" = None
         self._copilot_window_seen = False
@@ -4690,7 +4693,7 @@ class YakuLingoApp:
         except Exception:
             pass
         try:
-            asyncio.get_running_loop()
+            loop = asyncio.get_running_loop()
         except RuntimeError:
             return
 
@@ -4733,8 +4736,33 @@ class YakuLingoApp:
             }
         })();
         """
+        existing = self._result_panel_scroll_handle
+        if existing is not None and not existing.cancelled():
+            return
+        self._result_panel_scroll_handle = loop.call_later(
+            0.05, self._start_result_panel_scroll_task, client, js_code
+        )
+
+    def _start_result_panel_scroll_task(self, client: NiceGUIClient, js_code: str) -> None:
+        self._result_panel_scroll_handle = None
+        if self._shutdown_requested:
+            return
+        if self._result_panel_scroll_task is not None and not self._result_panel_scroll_task.done():
+            return
+
+        async def _run_scroll() -> None:
+            try:
+                if not getattr(client, "has_socket_connection", True):
+                    return
+            except Exception:
+                return
+            try:
+                await client.run_javascript(js_code)
+            except Exception:
+                logger.debug("Result panel auto-scroll failed", exc_info=True)
+
         try:
-            asyncio.create_task(client.run_javascript(js_code))
+            self._result_panel_scroll_task = asyncio.create_task(_run_scroll())
         except Exception:
             logger.debug("Result panel auto-scroll scheduling failed", exc_info=True)
 

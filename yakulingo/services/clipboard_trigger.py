@@ -282,7 +282,6 @@ else:
                     and seq_before is not None
                     and seq_after != seq_before
                 )
-                recheck_done = False
                 payload_to_store = payload
                 normalized_to_store = normalized_payload
                 payload_hash_to_store = payload_hash
@@ -290,47 +289,44 @@ else:
                 if (
                     updated_during_read
                     and seq_after != self._last_processed_seq
-                    and not recheck_done
                 ):
-                    recheck_now = time.monotonic()
-                    if (
-                        last_payload_hash is not None
-                        and payload_hash == last_payload_hash
-                        and self._last_event_time is not None
-                        and (recheck_now - self._last_event_time) <= self._same_payload_suppress_sec
-                    ):
-                        pass
-                    else:
-                        if self._stop_event.wait(self._recheck_settle_sec):
-                            return
-                        if _clipboard.get_clipboard_sequence_number_raw() == seq_after:
-                            skip_recheck = False
+                    if self._stop_event.wait(self._recheck_settle_sec):
+                        return
+                    if _clipboard.get_clipboard_sequence_number_raw() == seq_after:
+                        skip_recheck = False
+                        try:
+                            if _clipboard.should_ignore_self_clipboard(
+                                time.monotonic(), seq_after
+                            ):
+                                skip_recheck = True
+                        except Exception:
+                            pass
+                        if not skip_recheck:
                             try:
-                                if _clipboard.should_ignore_self_clipboard(
-                                    time.monotonic(), seq_after
-                                ):
-                                    skip_recheck = True
-                            except Exception:
-                                pass
-                            if not skip_recheck:
-                                recheck_done = True
-                                try:
-                                    re_text, re_files = _clipboard.get_clipboard_payload_with_retry(
-                                        log_fail=False
-                                    )
-                                except Exception as exc:
-                                    logger.debug("Clipboard trigger recheck read failed: %s", exc)
-                                    re_text = None
-                                    re_files = []
-                                re_payload = None
-                                if re_files:
-                                    re_payload = "\n".join(re_files)
-                                elif re_text:
-                                    re_payload = re_text
-                                if re_payload:
-                                    re_now = time.monotonic()
-                                    re_normalized = self._normalize_payload(re_payload)
-                                    re_payload_hash = self._hash_payload(re_normalized)
+                                re_text, re_files = _clipboard.get_clipboard_payload_with_retry(
+                                    log_fail=False
+                                )
+                            except Exception as exc:
+                                logger.debug("Clipboard trigger recheck read failed: %s", exc)
+                                re_text = None
+                                re_files = []
+                            re_payload = None
+                            if re_files:
+                                re_payload = "\n".join(re_files)
+                            elif re_text:
+                                re_payload = re_text
+                            if re_payload:
+                                re_now = time.monotonic()
+                                re_normalized = self._normalize_payload(re_payload)
+                                re_payload_hash = self._hash_payload(re_normalized)
+                                suppress_recheck = (
+                                    last_payload_hash is not None
+                                    and re_payload_hash == last_payload_hash
+                                    and self._last_event_time is not None
+                                    and (re_now - self._last_event_time)
+                                    <= self._same_payload_suppress_sec
+                                )
+                                if not suppress_recheck:
                                     re_delta_sec = (
                                         (re_now - last_time) if last_time is not None else None
                                     )
@@ -387,10 +383,10 @@ else:
                                             self._last_processed_seq = seq_after
                                             self._last_sequence = seq_after
                                         continue
-                                    payload_to_store = re_payload
-                                    normalized_to_store = re_normalized
-                                    payload_hash_to_store = re_payload_hash
-                                    store_time = re_now
+                                payload_to_store = re_payload
+                                normalized_to_store = re_normalized
+                                payload_hash_to_store = re_payload_hash
+                                store_time = re_now
 
                 self._last_payload = payload_to_store
                 self._last_payload_normalized = normalized_to_store

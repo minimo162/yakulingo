@@ -3611,6 +3611,51 @@ class YakuLingoApp:
         except Exception:
             pass
 
+    def _handle_ui_disconnect(
+        self,
+        client: "NiceGUIClient | None",
+        *,
+        clear_browser_state: Callable[[], None] | None = None,
+    ) -> None:
+        """Handle UI disconnect without terminating resident mode."""
+        with self._client_lock:
+            if self._client is client:
+                self._client = None
+        self._clear_ui_ready()
+        close_to_resident = _is_close_to_resident_enabled() or self._resident_mode
+        keep_resident_on_close = close_to_resident
+        logger.debug(
+            "UI disconnected: keep_resident=%s native=%s close_to_resident=%s",
+            keep_resident_on_close,
+            self._native_mode_enabled,
+            close_to_resident,
+        )
+        self._resident_mode = keep_resident_on_close
+        self._resident_show_requested = False
+        self._manual_show_requested = False
+        if clear_browser_state is not None:
+            clear_browser_state()
+        self._history_list = None
+        self._history_dialog = None
+        self._history_dialog_list = None
+
+        copilot = getattr(self, "_copilot", None)
+        if copilot is not None and sys.platform == "win32":
+            def _minimize_copilot_edge_window() -> None:
+                try:
+                    copilot.minimize_edge_window()
+                except Exception:
+                    pass
+
+            try:
+                threading.Thread(
+                    target=_minimize_copilot_edge_window,
+                    daemon=True,
+                    name="minimize_copilot_edge_on_ui_close",
+                ).start()
+            except Exception:
+                pass
+
     def _schedule_ui_ready_retry(self, reason: str) -> None:
         task = self._ui_ready_retry_task
         if task is not None and not task.done():
@@ -9112,42 +9157,14 @@ def run_app(
             # When the UI window is closed in native close-to-resident mode, keep the service
             # alive but clear the cached client so the clipboard trigger can reopen on demand.
             nonlocal browser_opened
-            with yakulingo_app._client_lock:
-                if yakulingo_app._client is client:
-                    yakulingo_app._client = None
-            yakulingo_app._clear_ui_ready()
-            close_to_resident = _is_close_to_resident_enabled() or yakulingo_app._resident_mode
-            keep_resident_on_close = close_to_resident
-            logger.debug(
-                "UI disconnected: keep_resident=%s native=%s close_to_resident=%s",
-                keep_resident_on_close,
-                yakulingo_app._native_mode_enabled,
-                close_to_resident,
+            def _clear_browser_state() -> None:
+                nonlocal browser_opened
+                browser_opened = False
+
+            yakulingo_app._handle_ui_disconnect(
+                client,
+                clear_browser_state=_clear_browser_state,
             )
-            yakulingo_app._resident_mode = keep_resident_on_close
-            yakulingo_app._resident_show_requested = False
-            yakulingo_app._manual_show_requested = False
-            browser_opened = False
-            yakulingo_app._history_list = None
-            yakulingo_app._history_dialog = None
-            yakulingo_app._history_dialog_list = None
-
-            copilot = getattr(yakulingo_app, "_copilot", None)
-            if copilot is not None and sys.platform == "win32":
-                def _minimize_copilot_edge_window() -> None:
-                    try:
-                        copilot.minimize_edge_window()
-                    except Exception:
-                        pass
-
-                try:
-                    threading.Thread(
-                        target=_minimize_copilot_edge_window,
-                        daemon=True,
-                        name="minimize_copilot_edge_on_ui_close",
-                    ).start()
-                except Exception:
-                    pass
 
         try:
             client.on_disconnect(_clear_cached_client_on_disconnect)

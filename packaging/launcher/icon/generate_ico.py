@@ -82,9 +82,40 @@ def generate_ico(output_path: Path) -> None:
 
     ico_path = output_path
 
-    # Brand color (from styles.py)
-    BRAND_COLOR = (67, 85, 185, 255)  # #4355B9
-    WHITE = (255, 255, 255, 255)
+    APPLE_RED = (229, 57, 53, 255)    # #E53935
+    APPLE_STEM = (141, 110, 99, 255)  # #8D6E63
+    APPLE_LEAF = (67, 160, 71, 255)   # #43A047
+
+    def _bezier_point(p0, p1, p2, p3, t: float) -> tuple[float, float]:
+        one_minus = 1.0 - t
+        return (
+            (one_minus ** 3) * p0[0]
+            + 3 * (one_minus ** 2) * t * p1[0]
+            + 3 * one_minus * (t ** 2) * p2[0]
+            + (t ** 3) * p3[0],
+            (one_minus ** 3) * p0[1]
+            + 3 * (one_minus ** 2) * t * p1[1]
+            + 3 * one_minus * (t ** 2) * p2[1]
+            + (t ** 3) * p3[1],
+        )
+
+    def _leaf_polygon(scale: float, steps: int = 24) -> list[tuple[float, float]]:
+        p0 = (34 * scale, 12 * scale)
+        p1 = (42 * scale, 4 * scale)
+        p2 = (54 * scale, 6 * scale)
+        p3 = (56 * scale, 18 * scale)
+        p4 = (46 * scale, 20 * scale)
+        p5 = (38 * scale, 18 * scale)
+        p6 = p0
+
+        points = []
+        for i in range(steps + 1):
+            t = i / steps
+            points.append(_bezier_point(p0, p1, p2, p3, t))
+        for i in range(steps + 1):
+            t = i / steps
+            points.append(_bezier_point(p3, p4, p5, p6, t))
+        return points
 
     # Windows icon sizes (sorted descending for ICO format).
     # Include non-standard sizes for common DPI scales (125% => 20/40px) to avoid blur.
@@ -101,85 +132,31 @@ def generate_ico(output_path: Path) -> None:
         large_img = Image.new("RGBA", (large_size, large_size), (0, 0, 0, 0))
         large_draw = ImageDraw.Draw(large_img)
 
-        # Draw filled circle (brand color background) at larger size
-        large_draw.ellipse([0, 0, large_size - 1, large_size - 1], fill=BRAND_COLOR)
+        # Draw apple icon from the SVG proportions (64x64 viewbox).
+        scale = large_size / 64
+        body_center = (32 * scale, 38 * scale)
+        body_radius = 20 * scale
+        large_draw.ellipse(
+            [
+                body_center[0] - body_radius,
+                body_center[1] - body_radius,
+                body_center[0] + body_radius,
+                body_center[1] + body_radius,
+            ],
+            fill=APPLE_RED,
+        )
 
-        # Draw translate icon (simplified for small sizes)
-        # Scale factor from 24x24 base to target large size
-        scale = large_size / 24
+        stem_rect = [
+            30 * scale,
+            10 * scale,
+            (30 + 4) * scale,
+            (10 + 12) * scale,
+        ]
+        stem_radius = 2 * scale
+        large_draw.rounded_rectangle(stem_rect, radius=stem_radius, fill=APPLE_STEM)
 
-        if size >= 32:
-            # Full icon for larger sizes
-            # "A" character shape (right side)
-            a_points = [
-                (17.5 * scale, 5 * scale),   # top
-                (21 * scale, 17 * scale),    # bottom right
-                (19 * scale, 17 * scale),    # inner right
-                (18.12 * scale, 14 * scale), # notch right
-                (14.88 * scale, 14 * scale), # notch left
-                (14 * scale, 17 * scale),    # inner left
-                (12 * scale, 17 * scale),    # bottom left
-            ]
-            large_draw.polygon(a_points, fill=WHITE)
-
-            # "A" crossbar cutout
-            a_bar = [
-                (15.5 * scale, 12 * scale),
-                (17.5 * scale, 12 * scale),
-                (16.5 * scale, 9 * scale),
-            ]
-            large_draw.polygon(a_bar, fill=BRAND_COLOR)
-
-            # Japanese text symbol (left side) - simplified
-            # Horizontal lines
-            line_width = max(1, int(1.5 * scale))
-            large_draw.rectangle([4 * scale, 5 * scale, 12 * scale, 5 * scale + line_width], fill=WHITE)
-            large_draw.rectangle([4 * scale, 8 * scale, 11 * scale, 8 * scale + line_width], fill=WHITE)
-
-            # Vertical line
-            large_draw.rectangle([8 * scale, 5 * scale, 8 * scale + line_width, 10 * scale], fill=WHITE)
-
-            # Curved arrow (simplified as lines)
-            large_draw.line([(5 * scale, 14 * scale), (9 * scale, 10 * scale)], fill=WHITE, width=line_width)
-            large_draw.line([(9 * scale, 10 * scale), (12 * scale, 14 * scale)], fill=WHITE, width=line_width)
-
-        else:
-            # Compact icon for small sizes (16/20/24px, used by taskbar at common DPI scales).
-            # Keep the same visual identity as the larger icons to avoid looking like a zoomed/cropped part.
-
-            # "A" character shape (right side) - same silhouette, no inner cutout for readability.
-            a_points = [
-                (17.5 * scale, 5.2 * scale),   # top
-                (21.0 * scale, 17.0 * scale),  # bottom right
-                (19.3 * scale, 17.0 * scale),  # inner right
-                (18.2 * scale, 13.8 * scale),  # notch right
-                (15.0 * scale, 13.8 * scale),  # notch left
-                (13.9 * scale, 17.0 * scale),  # inner left
-                (12.2 * scale, 17.0 * scale),  # bottom left
-            ]
-            large_draw.polygon(a_points, fill=WHITE)
-
-            # Japanese side (left) - simplified strokes (no arrow) to stay legible.
-            line_width = max(1, int(1.6 * scale))
-            if size >= 20:
-                large_draw.rectangle(
-                    [4.2 * scale, 5.4 * scale, 12.2 * scale, 5.4 * scale + line_width],
-                    fill=WHITE,
-                )
-                large_draw.rectangle(
-                    [4.2 * scale, 8.4 * scale, 11.2 * scale, 8.4 * scale + line_width],
-                    fill=WHITE,
-                )
-                large_draw.rectangle(
-                    [8.0 * scale, 5.4 * scale, 8.0 * scale + line_width, 10.4 * scale],
-                    fill=WHITE,
-                )
-            else:
-                # 16x16: even simpler to avoid blur.
-                large_draw.rectangle(
-                    [4.5 * scale, 7.0 * scale, 11.8 * scale, 7.0 * scale + line_width],
-                    fill=WHITE,
-                )
+        leaf_points = _leaf_polygon(scale)
+        large_draw.polygon(leaf_points, fill=APPLE_LEAF)
 
         # Downsample with high-quality resampling for antialiased edges
         img = large_img.resize((size, size), Image.LANCZOS)

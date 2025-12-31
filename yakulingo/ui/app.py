@@ -451,7 +451,7 @@ def _nicegui_open_window_patched(
             for key in ("event", "args", "event_args"):
                 _try_cancel(_kwargs.get(key))
             return False
-        return False
+        return True
 
     try:
         if hasattr(window.events, "closing"):
@@ -601,6 +601,11 @@ ALWAYS_CLOSE_TO_RESIDENT = True  # Keep service alive when native UI window is c
 
 
 def _is_close_to_resident_enabled() -> bool:
+    watchdog_enabled = os.environ.get("YAKULINGO_WATCHDOG", "").strip().lower() in (
+        "1", "true", "yes"
+    )
+    if watchdog_enabled:
+        return False
     resident_mode = os.environ.get("YAKULINGO_NO_AUTO_OPEN", "").strip().lower() in (
         "1", "true", "yes"
     )
@@ -8700,6 +8705,8 @@ def run_app(
                 # If we cannot determine the client reliably, refuse the request.
                 raise HTTPException(status_code=403, detail="forbidden")
 
+            from yakulingo.ui.utils import write_launcher_state
+            write_launcher_state("user_exit")
             logger.info("Shutdown requested via /api/shutdown")
 
             # Graceful shutdown (runs cleanup via on_shutdown). Some environments keep
@@ -8708,7 +8715,7 @@ def run_app(
                 import os as _os
                 import time as _time
                 _time.sleep(5.0)
-                _os._exit(0)
+                _os._exit(10)
 
             try:
                 threading.Thread(

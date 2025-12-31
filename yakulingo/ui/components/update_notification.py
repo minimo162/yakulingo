@@ -295,7 +295,9 @@ class UpdateNotification:
                 # 少し待ってからアプリを終了（通知を表示する時間）
                 await asyncio.sleep(1.0)
                 # アプリを終了（Windowsの場合はバッチファイルが処理を引き継ぐ）
-                await self._shutdown_app()
+                from yakulingo.ui.utils import write_launcher_state
+                write_launcher_state("update_in_progress")
+                await self._shutdown_app(exit_code=0)
             else:
                 install_btn.enable()
                 install_btn.text = 'インストール'
@@ -307,7 +309,7 @@ class UpdateNotification:
             later_btn.enable()
             ui.notify(f'インストールエラー: {e}', type='negative')
 
-    async def _shutdown_app(self):
+    async def _shutdown_app(self, exit_code: int = 0):
         """アプリケーションを確実に終了する
 
         NiceGUIのon_shutdownで登録されたcleanup処理（Copilot切断、DB閉鎖など）を
@@ -325,7 +327,7 @@ class UpdateNotification:
         await asyncio.sleep(3.0)
 
         # NiceGUI shutdown でプロセスが終了しない場合のフォールバック
-        os._exit(0)
+        os._exit(exit_code)
 
 
 async def check_updates_on_startup(

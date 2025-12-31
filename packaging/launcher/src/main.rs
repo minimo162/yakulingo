@@ -14,8 +14,9 @@ use std::fs::OpenOptions;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::path::PathBuf;
-use std::process::Command;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::process::{Child, Command};
+use std::thread;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -23,6 +24,10 @@ use std::os::windows::process::CommandExt;
 const APP_PORT: u16 = 8765;
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
+const USER_EXIT_CODE: i32 = 10;
+const MAX_RESTARTS: u32 = 3;
+const RESTART_BACKOFF_BASE_SEC: u64 = 1;
+const RESTART_RESET_AFTER_SEC: u64 = 60;
 
 fn main() {
     if let Err(e) = run() {
@@ -80,10 +85,77 @@ fn run() -> Result<(), String> {
     setup_environment(&base_dir, &venv_dir, &python_dir);
     log_event(&log_path, "Environment variables configured");
 
-    // Launch application and wait for window
+    // Launch application and keep a watchdog loop
     let app_script = base_dir.join("app.py");
-    launch_app(&python_exe, &app_script, &base_dir, &log_path)?;
-    log_event(&log_path, "Window appeared, launcher exiting");
+    let launcher_state_path = get_launcher_state_path(&base_dir);
+    let mut restart_attempts: u32 = 0;
+    let mut backoff = Duration::from_secs(RESTART_BACKOFF_BASE_SEC);
+
+    loop {
+        let start_time = Instant::now();
+        let mut child = launch_app(&python_exe, &app_script, &base_dir, &log_path)?;
+        log_event(&log_path, "Python process spawned, watchdog active");
+
+        let status = child
+            .wait()
+            .map_err(|e| format!("Failed to wait for application: {}", e))?;
+        let exit_code = status.code().unwrap_or(-1);
+        let elapsed = start_time.elapsed();
+
+        if let Some(reason) = read_and_clear_launcher_state(&launcher_state_path) {
+            log_event(
+                &log_path,
+                &format!("Launcher state detected ({}) - stopping restart", reason),
+            );
+            break;
+        }
+
+        if exit_code == USER_EXIT_CODE {
+            log_event(
+                &log_path,
+                "Explicit user exit detected (exit code 10) - stopping restart",
+            );
+            break;
+        }
+
+        if exit_code == 0 {
+            log_event(&log_path, "UI exited (code 0) - restarting");
+            thread::sleep(Duration::from_secs(RESTART_BACKOFF_BASE_SEC));
+            restart_attempts = 0;
+            backoff = Duration::from_secs(RESTART_BACKOFF_BASE_SEC);
+            continue;
+        }
+
+        if elapsed > Duration::from_secs(RESTART_RESET_AFTER_SEC) {
+            restart_attempts = 0;
+            backoff = Duration::from_secs(RESTART_BACKOFF_BASE_SEC);
+        }
+
+        if restart_attempts >= MAX_RESTARTS {
+            log_event(
+                &log_path,
+                &format!(
+                    "Restart limit reached (exit code {}) - watchdog stopping",
+                    exit_code
+                ),
+            );
+            break;
+        }
+
+        log_event(
+            &log_path,
+            &format!(
+                "UI exited (code {}), restarting in {}s (attempt {}/{})",
+                exit_code,
+                backoff.as_secs(),
+                restart_attempts + 1,
+                MAX_RESTARTS
+            ),
+        );
+        thread::sleep(backoff);
+        restart_attempts += 1;
+        backoff = Duration::from_secs(backoff.as_secs().saturating_mul(2).max(1));
+    }
 
     Ok(())
 }
@@ -189,6 +261,30 @@ fn log_event(log_path: &Option<PathBuf>, message: &str) {
             let _ = writeln!(file, "[{}] {}", timestamp, message);
         }
     }
+}
+
+fn get_launcher_state_path(base_dir: &PathBuf) -> Option<PathBuf> {
+    if let Ok(home) = env::var("USERPROFILE").or_else(|_| env::var("HOME")) {
+        return Some(PathBuf::from(home).join(".yakulingo").join("launcher_state.json"));
+    }
+    Some(base_dir.join("launcher_state.json"))
+}
+
+fn read_and_clear_launcher_state(path: &Option<PathBuf>) -> Option<String> {
+    let path = path.as_ref()?;
+    if !path.exists() {
+        return None;
+    }
+    let content = fs::read_to_string(path).ok();
+    let _ = fs::remove_file(path);
+    let content = content?;
+    if content.contains("update_in_progress") {
+        return Some("update_in_progress".to_string());
+    }
+    if content.contains("user_exit") {
+        return Some("user_exit".to_string());
+    }
+    None
 }
 
 /// Check if the application is already running by attempting TCP connection
@@ -318,7 +414,7 @@ fn launch_app(
     app_script: &PathBuf,
     working_dir: &PathBuf,
     log_path: &Option<PathBuf>,
-) -> Result<(), String> {
+) -> Result<Child, String> {
     let mut command = Command::new(python_exe);
     command
         .arg(app_script)
@@ -331,8 +427,9 @@ fn launch_app(
     if env::var("YAKULINGO_LAUNCH_SOURCE").is_err() {
         command.env("YAKULINGO_LAUNCH_SOURCE", "launcher");
     }
+    command.env("YAKULINGO_WATCHDOG", "1");
 
-    command
+    let child = command
         .spawn()
         .map_err(|e| format!("Failed to start application: {}", e))?;
 
@@ -342,7 +439,7 @@ fn launch_app(
     // This keeps the launcher alive, maintaining the Windows busy cursor
     wait_for_window("YakuLingo", Duration::from_secs(30));
 
-    Ok(())
+    Ok(child)
 }
 
 /// Wait for a window with the specified title to appear
@@ -380,14 +477,23 @@ fn launch_app(
     app_script: &PathBuf,
     working_dir: &PathBuf,
     _log_path: &Option<PathBuf>,
-) -> Result<(), String> {
-    Command::new(python_exe)
+) -> Result<Child, String> {
+    let mut command = Command::new(python_exe);
+    command
         .arg(app_script)
-        .current_dir(working_dir)
-        .spawn()
-        .map_err(|e| format!("Failed to start application: {}", e))?;
+        .current_dir(working_dir);
 
-    Ok(())
+    if env::var("YAKULINGO_NO_AUTO_OPEN").is_err() {
+        command.env("YAKULINGO_NO_AUTO_OPEN", "1");
+    }
+    if env::var("YAKULINGO_LAUNCH_SOURCE").is_err() {
+        command.env("YAKULINGO_LAUNCH_SOURCE", "launcher");
+    }
+    command.env("YAKULINGO_WATCHDOG", "1");
+
+    command
+        .spawn()
+        .map_err(|e| format!("Failed to start application: {}", e))
 }
 
 /// Show error message box (Windows) or print to stderr

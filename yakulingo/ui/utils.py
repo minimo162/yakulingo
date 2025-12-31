@@ -5,6 +5,7 @@ Includes temp file management, text formatting, and dialog helpers.
 """
 
 import atexit
+import json
 import importlib
 import logging
 import os
@@ -12,6 +13,7 @@ import platform
 import re
 import shutil
 import tempfile
+import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional, Callable, Set, Iterator
@@ -41,6 +43,31 @@ _RE_EXPLANATION = re.compile(
 
 # Filename forbidden characters (Windows: \ / : * ? " < > |, also control chars)
 _RE_FILENAME_FORBIDDEN = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
+
+
+def get_launcher_state_path() -> Path:
+    return Path.home() / ".yakulingo" / "launcher_state.json"
+
+
+def write_launcher_state(reason: str) -> None:
+    if not reason:
+        return
+    try:
+        path = get_launcher_state_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {"reason": reason, "ts": time.time()}
+        path.write_text(json.dumps(payload), encoding="utf-8")
+    except Exception as e:
+        logger.debug("Failed to write launcher state: %s", e)
+
+
+def clear_launcher_state() -> None:
+    try:
+        path = get_launcher_state_path()
+        if path.exists():
+            path.unlink()
+    except Exception as e:
+        logger.debug("Failed to clear launcher state: %s", e)
 
 
 class TempFileManager:

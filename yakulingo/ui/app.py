@@ -405,10 +405,7 @@ def _nicegui_activate_patched(
     def check_shutdown() -> None:
         while process.is_alive():
             time.sleep(0.1)
-        resident_mode = os.environ.get("YAKULINGO_NO_AUTO_OPEN", "").strip().lower() in (
-            "1", "true", "yes"
-        )
-        if ALWAYS_CLOSE_TO_RESIDENT or resident_mode:
+        if _is_close_to_resident_enabled():
             logger.info("Native UI process exited; keeping service alive (close-to-resident)")
             try:
                 native.remove_queues()
@@ -518,7 +515,14 @@ RESIDENT_STARTUP_READY_TIMEOUT_SEC = 900  # Allow manual login during resident s
 RESIDENT_STARTUP_POLL_INTERVAL_SEC = 2
 RESIDENT_STARTUP_LAYOUT_RETRY_ATTEMPTS = 40
 RESIDENT_STARTUP_LAYOUT_RETRY_DELAY_SEC = 0.25
-ALWAYS_CLOSE_TO_RESIDENT = True  # Keep service alive when UI window is closed
+ALWAYS_CLOSE_TO_RESIDENT = True  # Keep service alive when native UI window is closed
+
+
+def _is_close_to_resident_enabled() -> bool:
+    resident_mode = os.environ.get("YAKULINGO_NO_AUTO_OPEN", "").strip().lower() in (
+        "1", "true", "yes"
+    )
+    return ALWAYS_CLOSE_TO_RESIDENT or resident_mode
 HOTKEY_MAX_FILE_COUNT = 10
 HOTKEY_SUPPORTED_FILE_SUFFIXES = {
     ".xlsx",
@@ -8946,14 +8950,18 @@ def run_app(
         yakulingo_app._clear_ui_ready()
 
         def _clear_cached_client_on_disconnect(_client: NiceGUIClient | None = None) -> None:
-            # When the UI window is closed, keep the resident service alive but clear the cached
-            # client so the clipboard trigger can reopen the UI window on demand.
+            # When the UI window is closed in native close-to-resident mode, keep the service
+            # alive but clear the cached client so the clipboard trigger can reopen on demand.
             nonlocal browser_opened
             with yakulingo_app._client_lock:
                 if yakulingo_app._client is client:
                     yakulingo_app._client = None
             yakulingo_app._clear_ui_ready()
-            yakulingo_app._resident_mode = True
+            keep_resident_on_close = (
+                bool(yakulingo_app._native_mode_enabled)
+                and _is_close_to_resident_enabled()
+            )
+            yakulingo_app._resident_mode = keep_resident_on_close
             yakulingo_app._resident_show_requested = False
             yakulingo_app._manual_show_requested = False
             browser_opened = False

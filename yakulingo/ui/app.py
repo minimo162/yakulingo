@@ -37,6 +37,31 @@ nicegui_app = None
 nicegui_Client = None
 
 
+def _resolve_icon_path(preferred_dir: Path | None = None) -> Path | None:
+    """Resolve the YakuLingo .ico path across dev/zip layouts."""
+    candidates: list[Path] = []
+    if preferred_dir is not None:
+        candidates.append(preferred_dir / "yakulingo.ico")
+    try:
+        candidates.append(Path(__file__).resolve().parent / "yakulingo.ico")
+    except Exception:
+        pass
+    try:
+        candidates.append(Path.cwd() / "yakulingo" / "ui" / "yakulingo.ico")
+    except Exception:
+        pass
+    try:
+        exe_dir = Path(sys.argv[0]).resolve().parent
+        candidates.append(exe_dir / "yakulingo" / "ui" / "yakulingo.ico")
+    except Exception:
+        pass
+
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None
+
+
 def _get_primary_monitor_size() -> tuple[int, int] | None:
     if sys.platform != 'win32':
         return None
@@ -265,6 +290,17 @@ def _nicegui_open_window_patched(
     start_args: dict,
 ) -> None:
     """Open pywebview window with parent-provided window_args in child process."""
+    try:
+        icon_value = window_args.get("icon")
+        icon_path = Path(icon_value) if icon_value else None
+        if not icon_path or not icon_path.exists():
+            resolved = _resolve_icon_path()
+            if resolved is not None:
+                window_args["icon"] = str(resolved)
+                logger.debug("Resolved native window icon for child process: %s", resolved)
+    except Exception:
+        pass
+
     if sys.platform == "win32":
         try:
             import ctypes
@@ -8792,7 +8828,7 @@ def run_app(
             return {"ok": True, "layout": edge_layout_mode or "auto"}
 
     # Icon path for native window (pywebview) and browser favicon.
-    icon_path = ui_dir / 'yakulingo.ico'
+    icon_path = _resolve_icon_path(ui_dir)
     browser_favicon_path = ui_dir / 'yakulingo_favicon.svg'
     if not browser_favicon_path.exists():
         browser_favicon_path = icon_path
@@ -8812,7 +8848,7 @@ def run_app(
         nicegui_app.native.window_args['hidden'] = True
 
         # Set pywebview window icon (may not affect taskbar, but helps title bar)
-        if icon_path.exists():
+        if icon_path is not None and icon_path.exists():
             nicegui_app.native.window_args['icon'] = str(icon_path)
 
     # Early Copilot connection: Wait for background thread or start new connection
@@ -8919,7 +8955,7 @@ def run_app(
             LR_DEFAULTSIZE = 0x0040
 
             # Use icon_path from outer scope (defined in run_app)
-            icon_path_str = str(icon_path) if icon_path.exists() else None
+            icon_path_str = str(icon_path) if icon_path is not None and icon_path.exists() else None
 
             while waited_ms < MAX_WAIT_MS:
                 # Find YakuLingo window by title

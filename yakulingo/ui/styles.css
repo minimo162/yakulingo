@@ -3804,6 +3804,18 @@ a:hover {
     letter-spacing: 0.02em;
 }
 
+.startup-fallback {
+    margin-top: 0.75rem;
+    max-width: 22rem;
+    text-align: center;
+    font-size: 0.875rem;
+    color: var(--md-sys-color-on-surface-variant);
+}
+
+.startup-fallback.hidden {
+    display: none;
+}
+
 /* === INPUT State Button Size Enhancement === */
 /* Larger buttons for 2-column mode (INPUT state) */
 .main-area:not(.has-results) .input-panel .translate-btn {

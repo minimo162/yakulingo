@@ -14,12 +14,16 @@ Application settings management for YakuLingo.
 - invalidate_cache()で明示的にキャッシュをクリア可能
 """
 
+import importlib.metadata
 import logging
+import os
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 import json
+from importlib.metadata import PackageNotFoundError
+from packaging.version import InvalidVersion, Version
 
 # Module logger
 logger = logging.getLogger(__name__)
@@ -57,6 +61,214 @@ def resolve_browser_display_mode(requested_mode: str, screen_width: Optional[int
     if requested_mode == "minimized":
         return "minimized"
     return "minimized"
+
+
+@dataclass(frozen=True)
+class LoginOverlayGuardResolved:
+    enabled: bool
+    source: str
+    remove_after_version: Optional[str]
+    current_version: Optional[str]
+    expired: bool
+    disable_reason: Optional[str]
+
+
+@dataclass(frozen=True)
+class BrowserDisplayAction:
+    overlay_allowed: bool
+    foreground_allowed: bool
+    effective_mode: str
+    guard_enabled: bool
+    guard_source: str
+    guard_disable_reason: Optional[str]
+
+
+_ENV_WARNING_LOGGED: set[str] = set()
+
+
+def _warn_env_once(var_name: str, message: str) -> None:
+    if var_name in _ENV_WARNING_LOGGED:
+        return
+    _ENV_WARNING_LOGGED.add(var_name)
+    logger.warning(message)
+
+
+def _parse_env_bool(var_name: str, raw_value: Optional[str]) -> Optional[bool]:
+    if raw_value is None:
+        return None
+    value = raw_value.strip().lower()
+    if not value:
+        _warn_env_once(var_name, f"Env {var_name} is empty; treating as unset")
+        return None
+    if value in ("1", "true", "yes", "on"):
+        return True
+    if value in ("0", "false", "no", "off"):
+        return False
+    _warn_env_once(var_name, f"Env {var_name} has invalid value '{raw_value}'; treating as unset")
+    return None
+
+
+def _parse_env_version(var_name: str, raw_value: Optional[str]) -> Optional[Version]:
+    if raw_value is None:
+        return None
+    value = raw_value.strip()
+    if not value:
+        _warn_env_once(var_name, f"Env {var_name} is empty; treating as unset")
+        return None
+    try:
+        return Version(value)
+    except InvalidVersion:
+        _warn_env_once(var_name, f"Env {var_name} has invalid version '{raw_value}'; treating as unset")
+        return None
+
+
+def _parse_version_value(raw_value: object, field_name: str) -> Optional[Version]:
+    if raw_value is None:
+        return None
+    if not isinstance(raw_value, str):
+        logger.warning("Login overlay guard %s must be a string, got %s", field_name, type(raw_value).__name__)
+        return None
+    try:
+        return Version(raw_value)
+    except InvalidVersion:
+        logger.warning("Login overlay guard %s has invalid version '%s'", field_name, raw_value)
+        return None
+
+
+def _get_current_version() -> Optional[Version]:
+    version_text: Optional[str] = None
+    try:
+        version_text = importlib.metadata.version("yakulingo")
+    except PackageNotFoundError:
+        try:
+            from yakulingo import __version__ as fallback_version
+        except Exception:
+            fallback_version = None
+        if fallback_version:
+            version_text = fallback_version
+    if not version_text:
+        return None
+    try:
+        return Version(version_text)
+    except InvalidVersion:
+        logger.warning("Current version string is invalid: %s", version_text)
+        return None
+
+
+def resolve_login_overlay_guard(
+    guard_config: object,
+    source: str,
+) -> LoginOverlayGuardResolved:
+    config_enabled = False
+    config_remove_after_version = None
+    if isinstance(guard_config, dict):
+        config_enabled = bool(guard_config.get("enabled", False))
+        config_remove_after_version = guard_config.get("remove_after_version")
+    elif guard_config is not None:
+        logger.warning(
+            "Login overlay guard config should be an object, got %s",
+            type(guard_config).__name__,
+        )
+
+    env_enabled_raw = os.environ.get("YAKULINGO_LOGIN_OVERLAY_GUARD_ENABLED")
+    env_remove_raw = os.environ.get("YAKULINGO_LOGIN_OVERLAY_GUARD_REMOVE_AFTER_VERSION")
+    env_enabled = _parse_env_bool("YAKULINGO_LOGIN_OVERLAY_GUARD_ENABLED", env_enabled_raw)
+    env_remove_after = _parse_env_version(
+        "YAKULINGO_LOGIN_OVERLAY_GUARD_REMOVE_AFTER_VERSION",
+        env_remove_raw,
+    )
+
+    if env_enabled_raw is not None or env_remove_raw is not None:
+        logger.info(
+            "Login overlay guard env inputs: enabled=%r parsed=%s, remove_after_version=%r parsed=%s",
+            env_enabled_raw,
+            env_enabled,
+            env_remove_raw,
+            str(env_remove_after) if env_remove_after else None,
+        )
+
+    use_env = env_enabled is not None or env_remove_after is not None
+    resolved_source = source
+    enabled = config_enabled
+    remove_after_version = _parse_version_value(config_remove_after_version, "remove_after_version")
+    if use_env:
+        resolved_source = "env"
+        enabled = bool(env_enabled) if env_enabled is not None else False
+        remove_after_version = env_remove_after
+
+    disable_reason = None
+    expired = False
+    current_version = _get_current_version()
+
+    if enabled:
+        if remove_after_version is None:
+            disable_reason = "missing_or_invalid_remove_after_version"
+            enabled = False
+        elif current_version is None:
+            disable_reason = "current_version_unknown"
+            enabled = False
+        elif current_version >= remove_after_version:
+            disable_reason = "expired"
+            enabled = False
+            expired = True
+    else:
+        disable_reason = "disabled"
+
+    if not enabled and disable_reason is None:
+        disable_reason = "disabled"
+
+    resolved = LoginOverlayGuardResolved(
+        enabled=enabled,
+        source=resolved_source,
+        remove_after_version=str(remove_after_version) if remove_after_version else None,
+        current_version=str(current_version) if current_version else None,
+        expired=expired,
+        disable_reason=disable_reason,
+    )
+
+    logger.info(
+        "Login overlay guard resolved: enabled=%s source=%s remove_after_version=%s current_version=%s expired=%s disable_reason=%s",
+        resolved.enabled,
+        resolved.source,
+        resolved.remove_after_version,
+        resolved.current_version,
+        resolved.expired,
+        resolved.disable_reason,
+    )
+
+    return resolved
+
+
+def resolve_browser_display_action(
+    requested_mode: str,
+    screen_width: Optional[int],
+    guard: LoginOverlayGuardResolved,
+) -> BrowserDisplayAction:
+    effective_mode = resolve_browser_display_mode(requested_mode, screen_width)
+    overlay_allowed = not guard.enabled
+    foreground_allowed = effective_mode == "foreground" or not guard.enabled
+
+    action = BrowserDisplayAction(
+        overlay_allowed=overlay_allowed,
+        foreground_allowed=foreground_allowed,
+        effective_mode=effective_mode,
+        guard_enabled=guard.enabled,
+        guard_source=guard.source,
+        guard_disable_reason=guard.disable_reason,
+    )
+
+    logger.info(
+        "Browser display action resolved: requested=%s effective=%s guard_enabled=%s guard_source=%s guard_reason=%s overlay_allowed=%s foreground_allowed=%s",
+        requested_mode,
+        effective_mode,
+        guard.enabled,
+        guard.source,
+        guard.disable_reason,
+        action.overlay_allowed,
+        action.foreground_allowed,
+    )
+
+    return action
 
 
 @dataclass
@@ -111,6 +323,10 @@ class AppSettings:
     # "minimized": 最小化して非表示
     # "foreground": 前面に表示
     browser_display_mode: str = "minimized"
+    # Login overlay guard (Edge foreground/overlay A/B guard)
+    login_overlay_guard: dict[str, object] = field(
+        default_factory=lambda: {"enabled": False, "remove_after_version": None}
+    )
 
     # Auto Update
     auto_update_enabled: bool = True            # 起動時に自動チェック
@@ -118,6 +334,13 @@ class AppSettings:
     github_repo_owner: str = "minimo162"        # GitHubリポジトリオーナー
     github_repo_name: str = "yakulingo"         # GitHubリポジトリ名
     last_update_check: Optional[str] = None     # 最後のチェック日時（ISO形式）
+
+    _login_overlay_guard_resolved: Optional[LoginOverlayGuardResolved] = field(
+        default=None, init=False, repr=False, compare=False
+    )
+    _login_overlay_guard_source: str = field(
+        default="default", init=False, repr=False, compare=False
+    )
 
     @classmethod
     def load(cls, path: Path, use_cache: bool = True) -> "AppSettings":
@@ -159,12 +382,15 @@ class AppSettings:
 
         # Start with defaults
         data = {}
+        guard_source = "default"
 
         # 1. Load from template (developer defaults)
         if template_path.exists():
             try:
                 with open(template_path, 'r', encoding='utf-8-sig') as f:
                     data = json.load(f)
+                    if "login_overlay_guard" in data:
+                        guard_source = "template"
                     logger.debug("Loaded template settings from: %s", template_path)
             except (json.JSONDecodeError, UnicodeDecodeError) as e:
                 logger.warning("Failed to load template settings: %s", e)
@@ -178,6 +404,9 @@ class AppSettings:
                     for key in USER_SETTINGS_KEYS:
                         if key in user_data:
                             data[key] = user_data[key]
+                    if "login_overlay_guard" in user_data:
+                        data["login_overlay_guard"] = user_data["login_overlay_guard"]
+                        guard_source = "user"
                     logger.debug("Loaded user settings from: %s", user_settings_path)
             except (json.JSONDecodeError, UnicodeDecodeError) as e:
                 logger.warning("Failed to load user settings: %s", e)
@@ -203,7 +432,12 @@ class AppSettings:
         filtered_data = {k: v for k, v in data.items() if k in known_fields}
 
         settings = cls(**filtered_data)
+        settings._login_overlay_guard_source = guard_source
         settings._validate()
+        settings._login_overlay_guard_resolved = resolve_login_overlay_guard(
+            settings.login_overlay_guard,
+            settings._login_overlay_guard_source,
+        )
 
         # Update cache
         with _settings_cache_lock:
@@ -248,6 +482,16 @@ class AppSettings:
         if self.ocr_dpi < 72 or self.ocr_dpi > 600:
             logger.warning("ocr_dpi out of range (%d), resetting to 300", self.ocr_dpi)
             self.ocr_dpi = 300
+
+    @property
+    def login_overlay_guard_resolved(self) -> LoginOverlayGuardResolved:
+        """Return the resolved login overlay guard configuration."""
+        if self._login_overlay_guard_resolved is None:
+            self._login_overlay_guard_resolved = resolve_login_overlay_guard(
+                self.login_overlay_guard,
+                self._login_overlay_guard_source,
+            )
+        return self._login_overlay_guard_resolved
 
     def save(self, path: Path) -> None:
         """Save user settings to user_settings.json.

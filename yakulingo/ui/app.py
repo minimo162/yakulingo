@@ -436,6 +436,9 @@ def _nicegui_activate_patched(
 # Note: Version check moved to run_app() after import
 
 
+_NICEGUI_NATIVE_PATCH_APPLIED = False
+
+
 def _patch_nicegui_native_mode() -> None:
     """Patch NiceGUI's native_mode to pass window_args to child process.
 
@@ -446,15 +449,18 @@ def _patch_nicegui_native_mode() -> None:
     This patch modifies native_mode.activate() and native_mode._open_window()
     to explicitly pass window_args as a process argument.
     """
+    global _NICEGUI_NATIVE_PATCH_APPLIED
     try:
         from nicegui.native import native, native_mode
 
         # Apply the patch to both entry points used by NiceGUI
         native_mode.activate = _nicegui_activate_patched
         native.activate = _nicegui_activate_patched
+        _NICEGUI_NATIVE_PATCH_APPLIED = True
         logger.debug("NiceGUI native_mode patched to pass window_args to child process")
 
     except Exception as e:
+        _NICEGUI_NATIVE_PATCH_APPLIED = False
         logger.warning("Failed to patch NiceGUI native_mode: %s", e)
 
 
@@ -488,6 +494,9 @@ if TYPE_CHECKING:
 COPILOT_LOGIN_TIMEOUT = 300  # 5 minutes for login
 CLIENT_CONNECTED_TIMEOUT_SEC = 12  # Soft timeout for client.connected() before fallback
 STARTUP_SPLASH_TIMEOUT_SEC = 25  # Close external splash if startup stalls
+STARTUP_UI_READY_TIMEOUT_MS = 2000  # Startup UI readiness timeout
+STARTUP_UI_READY_FALLBACK_GRACE_MS = 300  # Grace period before rendering fallback
+STARTUP_UI_READY_SELECTOR = '[data-yakulingo-root="true"]'
 MAX_HISTORY_DISPLAY = 20  # Maximum history items to display in sidebar
 MAX_HISTORY_DRAWER_DISPLAY = 100  # Maximum history items to show in history drawer
 MIN_AVAILABLE_MEMORY_GB_FOR_EARLY_CONNECT = 0.5  # Skip early Copilot init only on very low memory
@@ -678,6 +687,8 @@ class YakuLingoApp:
         self._resident_login_required = False
         self._resident_show_requested = False
         self._login_auto_show = False
+        self._startup_fallback_rendered = False
+        self._startup_fallback_element = None
 
         # Clipboard trigger for double-copy translation.
         self._clipboard_trigger = None
@@ -707,7 +718,9 @@ class YakuLingoApp:
         """Lazy-load CopilotHandler for faster startup."""
         if self._copilot is None:
             from yakulingo.services.copilot_handler import CopilotHandler
-            self._copilot = CopilotHandler()
+            native_mode_enabled = bool(self._native_mode_enabled)
+            patch_marker = _NICEGUI_NATIVE_PATCH_APPLIED or not native_mode_enabled
+            self._copilot = CopilotHandler(native_patch_applied=patch_marker)
         return self._copilot
 
     def _ensure_translation_service(self) -> bool:
@@ -4026,11 +4039,17 @@ class YakuLingoApp:
         if not self._header_status:
             return
 
+        def _refresh_login_banner(context: str, has_client: bool) -> None:
+            if not self._login_banner:
+                return
+            logger.debug("Login banner refresh attempt (client=%s, context=%s)", has_client, context)
+            self._login_banner.refresh()
+            logger.debug("Login banner refresh completed (client=%s, context=%s)", has_client, context)
+
         try:
             # Fast path: we are already in a valid client context.
             self._header_status.refresh()
-            if self._login_banner:
-                self._login_banner.refresh()
+            _refresh_login_banner("direct", self._client is not None)
             return
         except Exception as e:
             # When called from async/background tasks, NiceGUI context may not be set.
@@ -4041,8 +4060,7 @@ class YakuLingoApp:
             try:
                 with self._client:
                     self._header_status.refresh()
-                    if self._login_banner:
-                        self._login_banner.refresh()
+                    _refresh_login_banner("with_client", True)
             except Exception as e2:
                 logger.debug("Status refresh with saved client failed: %s", e2)
 
@@ -7113,7 +7131,8 @@ def run_app(
             #   dramatically slow down NiceGUI import when run in parallel (AV scan).
             #   We therefore start Playwright initialization AFTER NiceGUI import.
             from yakulingo.services.copilot_handler import CopilotHandler
-            _early_copilot = CopilotHandler()
+            patch_marker = _NICEGUI_NATIVE_PATCH_APPLIED or not native
+            _early_copilot = CopilotHandler(native_patch_applied=patch_marker)
             _early_connection_event = threading.Event()
             _early_connection_result_ref = _EarlyConnectionResult()
 
@@ -7228,6 +7247,9 @@ def run_app(
     # This must be done before ui.run() is called
     if native:
         _patch_nicegui_native_mode()
+        logger.info("Native mode patch applied: %s", _NICEGUI_NATIVE_PATCH_APPLIED)
+        if _early_copilot is not None:
+            _early_copilot.set_native_patch_applied(_NICEGUI_NATIVE_PATCH_APPLIED)
 
     # Set Windows AppUserModelID for correct taskbar icon
     # Without this, Windows uses the default Python icon instead of YakuLingo icon
@@ -7296,6 +7318,11 @@ def run_app(
     logger.info("[TIMING] webview.initialize: %.2fs", _t2_webview - _t2)
     logger.info("Native mode enabled: %s", native)
     yakulingo_app._native_mode_enabled = native
+    patch_marker = _NICEGUI_NATIVE_PATCH_APPLIED or not native
+    if _early_copilot is not None:
+        _early_copilot.set_native_patch_applied(patch_marker)
+    if yakulingo_app._copilot is not None:
+        yakulingo_app._copilot.set_native_patch_applied(patch_marker)
     if native:
         # Pass pre-initialized webview module to avoid second initialization
         window_size, panel_sizes = _detect_display_settings(
@@ -8853,6 +8880,8 @@ body.yakulingo-drag-active .global-drop-indicator {
         with loading_screen:
             ui.element('div').classes('loading-spinner').props('aria-hidden="true"')
             loading_title = ui.label('YakuLingo').classes('loading-title')
+            fallback_message = ui.label('読み込みに時間がかかっています...').classes('startup-fallback hidden')
+        yakulingo_app._startup_fallback_element = fallback_message
 
         # Wait for client connection (WebSocket ready)
         import time as _time_module
@@ -8882,14 +8911,35 @@ body.yakulingo-drag-active .global-drop-indicator {
 
         # Create main UI (kept hidden until construction completes)
         _t_ui = _time_module.perf_counter()
-        main_container = ui.element('div').classes('main-app-container')
+        main_container = ui.element('div').classes('main-app-container').props('data-yakulingo-root="true"')
         with main_container:
             yakulingo_app.create_ui()
         logger.info("[TIMING] create_ui(): %.2fs", _time_module.perf_counter() - _t_ui)
 
-        # Wait for styles and layout variables to be applied before revealing the UI.
+        # Wait for styles and the root UI element to be applied before revealing the UI.
         # This prevents a brief flash of a partially-styled layout on slow machines.
-        async def _wait_for_css_ready(timeout_ms: int) -> bool:
+        async def _check_ui_ready_once() -> bool:
+            js_code = '''
+                try {
+                    const selector = "__ROOT_SELECTOR__";
+                    const root = document.querySelector(selector);
+                    if (!root) return false;
+                    const value = getComputedStyle(document.documentElement).getPropertyValue('--md-sys-color-primary');
+                    return Boolean(value && String(value).trim().length);
+                } catch (err) {
+                    return false;
+                }
+            '''
+            selector = STARTUP_UI_READY_SELECTOR.replace('"', '\\"')
+            try:
+                return await client.run_javascript(
+                    js_code.replace("__ROOT_SELECTOR__", selector)
+                )
+            except Exception as e:
+                logger.debug("Startup UI readiness check failed: %s", e)
+                return False
+
+        async def _wait_for_ui_ready(timeout_ms: int) -> bool:
             js_code = '''
                 return await new Promise((resolve) => {
                     try {
@@ -8898,11 +8948,13 @@ body.yakulingo-drag-active .global-drop-indicator {
 
                     const start = performance.now();
                     const timeoutMs = __TIMEOUT_MS__;
-                    const root = document.documentElement;
+                    const selector = "__ROOT_SELECTOR__";
 
-                    const isCssReady = () => {
+                    const isReady = () => {
                         try {
-                            const value = getComputedStyle(root).getPropertyValue('--md-sys-color-primary');
+                            const root = document.querySelector(selector);
+                            if (!root) return false;
+                            const value = getComputedStyle(document.documentElement).getPropertyValue('--md-sys-color-primary');
                             return Boolean(value && String(value).trim().length);
                         } catch (err) {
                             return false;
@@ -8910,7 +8962,7 @@ body.yakulingo-drag-active .global-drop-indicator {
                     };
 
                     const tick = () => {
-                        if (isCssReady()) {
+                        if (isReady()) {
                             requestAnimationFrame(() => requestAnimationFrame(() => resolve(true)));
                             return;
                         }
@@ -8924,18 +8976,69 @@ body.yakulingo-drag-active .global-drop-indicator {
                     tick();
                 });
             '''
+            selector = STARTUP_UI_READY_SELECTOR.replace('"', '\\"')
             try:
                 return await client.run_javascript(
-                    js_code.replace("__TIMEOUT_MS__", str(timeout_ms))
+                    js_code.replace("__TIMEOUT_MS__", str(timeout_ms)).replace("__ROOT_SELECTOR__", selector)
                 )
             except Exception as e:
-                logger.debug("Startup CSS readiness check failed: %s", e)
+                logger.debug("Startup UI readiness wait failed: %s", e)
                 return False
 
+        async def _maybe_render_startup_fallback(timeout_ms: int) -> None:
+            await asyncio.sleep(STARTUP_UI_READY_FALLBACK_GRACE_MS / 1000.0)
+            ready_after = await _check_ui_ready_once()
+            if ready_after:
+                yakulingo_app._startup_fallback_rendered = False
+                if yakulingo_app._startup_fallback_element is not None:
+                    try:
+                        with client:
+                            yakulingo_app._startup_fallback_element.classes(add='hidden')
+                    except Exception:
+                        pass
+                logger.debug(
+                    "[STARTUP] UI readiness recovered after timeout before fallback (selector=%s, timeout_ms=%d)",
+                    STARTUP_UI_READY_SELECTOR,
+                    timeout_ms,
+                )
+                return
+            if yakulingo_app._startup_fallback_element is None:
+                logger.debug(
+                    "[STARTUP] UI readiness timeout; fallback element missing (selector=%s, timeout_ms=%d)",
+                    STARTUP_UI_READY_SELECTOR,
+                    timeout_ms,
+                )
+                return
+            try:
+                with client:
+                    yakulingo_app._startup_fallback_element.classes(remove='hidden')
+            except Exception:
+                yakulingo_app._startup_fallback_element.classes(remove='hidden')
+            yakulingo_app._startup_fallback_rendered = True
+            logger.debug(
+                "[STARTUP] UI readiness timeout; fallback rendered (selector=%s, timeout_ms=%d)",
+                STARTUP_UI_READY_SELECTOR,
+                timeout_ms,
+            )
+
         if client_connected:
-            css_ready = await _wait_for_css_ready(2000)
-            if not css_ready:
-                logger.debug("Startup CSS readiness check timed out; revealing UI anyway")
+            ui_ready = await _wait_for_ui_ready(STARTUP_UI_READY_TIMEOUT_MS)
+            if ui_ready:
+                yakulingo_app._startup_fallback_rendered = False
+                if yakulingo_app._startup_fallback_element is not None:
+                    yakulingo_app._startup_fallback_element.classes(add='hidden')
+                logger.debug(
+                    "[STARTUP] UI readiness ready before timeout (selector=%s, timeout_ms=%d)",
+                    STARTUP_UI_READY_SELECTOR,
+                    STARTUP_UI_READY_TIMEOUT_MS,
+                )
+            else:
+                logger.debug(
+                    "[STARTUP] UI readiness timed out (selector=%s, timeout_ms=%d)",
+                    STARTUP_UI_READY_SELECTOR,
+                    STARTUP_UI_READY_TIMEOUT_MS,
+                )
+                asyncio.create_task(_maybe_render_startup_fallback(STARTUP_UI_READY_TIMEOUT_MS))
 
         # Reveal the UI and optionally fade out the startup overlay.
         main_container.classes(add='visible')
@@ -8990,9 +9093,23 @@ body.yakulingo-drag-active .global-drop-indicator {
                 except Exception as e:
                     logger.debug("Late client connection wait failed: %s", e)
                     return
-                css_ready = await _wait_for_css_ready(1500)
-                if not css_ready:
-                    logger.debug("Late CSS readiness check timed out; revealing UI anyway")
+                ui_ready = await _wait_for_ui_ready(1500)
+                if ui_ready:
+                    yakulingo_app._startup_fallback_rendered = False
+                    if yakulingo_app._startup_fallback_element is not None:
+                        yakulingo_app._startup_fallback_element.classes(add='hidden')
+                    logger.debug(
+                        "[STARTUP] Late UI readiness ready before timeout (selector=%s, timeout_ms=%d)",
+                        STARTUP_UI_READY_SELECTOR,
+                        1500,
+                    )
+                else:
+                    logger.debug(
+                        "[STARTUP] Late UI readiness timed out (selector=%s, timeout_ms=%d)",
+                        STARTUP_UI_READY_SELECTOR,
+                        1500,
+                    )
+                    asyncio.create_task(_maybe_render_startup_fallback(1500))
                 try:
                     with client:
                         await _finalize_startup_overlay()

@@ -1152,7 +1152,7 @@ class CopilotHandler:
         "Browser has been closed",
     )
 
-    def __init__(self):
+    def __init__(self, native_patch_applied: bool | None = None):
         self._playwright = None
         self._browser = None
         self._context = None
@@ -1192,6 +1192,11 @@ class CopilotHandler:
         # while connect() is still running.
         self._connect_inflight_count = 0
         self._connect_inflight_lock = threading.Lock()
+        if native_patch_applied is None:
+            logger.info("Native mode patch marker not provided; assuming not patched")
+            native_patch_applied = False
+        self._native_patch_applied = bool(native_patch_applied)
+        self._cached_browser_display_action = None
 
     @property
     def is_connected(self) -> bool:
@@ -1204,6 +1209,11 @@ class CopilotHandler:
         Use _is_page_valid() within Playwright thread for actual validation.
         """
         return self._connected
+
+    def set_native_patch_applied(self, applied: bool) -> None:
+        """Update whether the native window patch was applied."""
+        self._native_patch_applied = bool(applied)
+        logger.debug("Native mode patch marker set: %s", self._native_patch_applied)
 
     def _mark_connect_start(self) -> None:
         """Increment the in-flight connect counter (thread-safe)."""
@@ -3815,9 +3825,26 @@ class CopilotHandler:
             page: The Playwright page to bring to front
             reason: Reason for bringing window to foreground (for logging)
         """
+        action = self._get_browser_display_action()
+        if not self._native_patch_applied:
+            logger.warning(
+                "Native mode patch not applied; suppressing [%s] (reason=patch_not_applied, request=%s)",
+                ", ".join(["_bring_to_foreground_impl", "_position_edge_over_app"]),
+                reason,
+            )
+            return
+        if not action.foreground_allowed:
+            logger.info(
+                "Foreground suppressed by login overlay guard (source=%s, reason=%s, request=%s)",
+                action.guard_source,
+                action.guard_disable_reason,
+                reason,
+            )
+            return
+
         # Check browser display mode - skip for foreground mode
         # (browser is already visible, no need to bring to front)
-        mode = self._get_browser_display_mode()
+        mode = action.effective_mode
         edge_layout_mode = getattr(self, "_edge_layout_mode", None)
 
         if mode == "foreground" and edge_layout_mode is None:
@@ -3855,7 +3882,15 @@ class CopilotHandler:
         if sys.platform == "win32":
             positioned = False
             if edge_layout_mode in ("offscreen", "triple"):
-                positioned = self._position_edge_over_app()
+                if action.overlay_allowed:
+                    positioned = self._position_edge_over_app()
+                else:
+                    logger.info(
+                        "Overlay positioning suppressed by login overlay guard (source=%s, reason=%s, request=%s)",
+                        action.guard_source,
+                        action.guard_disable_reason,
+                        reason,
+                    )
             if not positioned:
                 self._bring_edge_window_to_front(page_title)
 
@@ -4471,35 +4506,39 @@ class CopilotHandler:
         except Exception:
             return None
 
-    def _get_browser_display_mode(self) -> str:
-        """Get browser display mode from cached settings.
-
-        Returns:
-            Browser display mode string ("foreground" or "minimized")
-        """
-        # Cache settings to avoid repeated disk I/O during startup
-        if not hasattr(self, '_cached_browser_display_mode'):
+    def _get_browser_display_action(self):
+        """Get the resolved browser display action from cached settings."""
+        if self._cached_browser_display_action is None:
             from yakulingo.config.settings import (
                 AppSettings,
                 get_default_settings_path,
-                resolve_browser_display_mode,
+                resolve_browser_display_action,
             )
 
             settings = AppSettings.load(get_default_settings_path())
             work_area = self._get_primary_work_area_size()
             screen_width = work_area[0] if work_area else None
-            effective_mode = resolve_browser_display_mode(settings.browser_display_mode, screen_width)
-            if effective_mode != settings.browser_display_mode and work_area:
+            action = resolve_browser_display_action(
+                settings.browser_display_mode,
+                screen_width,
+                settings.login_overlay_guard_resolved,
+            )
+            if action.effective_mode != settings.browser_display_mode and work_area:
                 logger.debug(
                     "Display mode adjusted (work area=%dx%d): %s -> %s",
                     work_area[0],
                     work_area[1],
                     settings.browser_display_mode,
-                    effective_mode,
+                    action.effective_mode,
                 )
-            self._cached_browser_display_mode = effective_mode
+            self._cached_browser_display_action = action
+            self._cached_browser_display_mode = action.effective_mode
 
-        return self._cached_browser_display_mode
+        return self._cached_browser_display_action
+
+    def _get_browser_display_mode(self) -> str:
+        """Get browser display mode from cached settings."""
+        return self._get_browser_display_action().effective_mode
 
     def _close_edge_gracefully(self, timeout: float = 0.5) -> bool:
         """Close Edge browser gracefully by sending WM_CLOSE message.

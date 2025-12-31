@@ -1904,12 +1904,12 @@ try {
     $StartMenuOpenPath = Join-Path $ProgramsPath "$AppName.lnk"
     $StartMenuOpen = $WshShell.CreateShortcut($StartMenuOpenPath)
     $StartMenuOpen.TargetPath = "powershell.exe"
-    $StartMenuOpen.Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$OpenUiScriptPath`""
+    $StartMenuOpen.Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$ResidentScriptPath`""
     $StartMenuOpen.WorkingDirectory = $SetupPath
     if (Test-Path $IconPath) {
         $StartMenuOpen.IconLocation = "$IconPath,0"
     }
-    $StartMenuOpen.Description = "YakuLingo (UIを開く)"
+    $StartMenuOpen.Description = "YakuLingo (常駐起動)"
     $StartMenuOpen.Save()
 
     $StartMenuExitPath = Join-Path $ProgramsPath "$AppName 終了.lnk"
@@ -1936,7 +1936,7 @@ try {
     $StartupShortcut.Description = "YakuLingo (常駐起動)"
     $StartupShortcut.Save()
     if (-not $GuiMode) {
-        Write-Host "      Start Menu: $StartMenuOpenPath" -ForegroundColor Gray
+        Write-Host "      Start Menu (Resident): $StartMenuOpenPath" -ForegroundColor Gray
         Write-Host "      Start Menu (Exit): $StartMenuExitPath" -ForegroundColor Gray
         Write-Host "      Startup: $StartupShortcutPath" -ForegroundColor Gray
         Write-Host "[OK] Shortcuts created" -ForegroundColor Green
@@ -2054,7 +2054,7 @@ try {
         }
 
         Write-Status -Message "Setup completed!" -Progress -Step "Step 4/4: Finalizing" -Percent 100
-        $successMsg = "セットアップが完了しました。`n`nログオン時にYakuLingoが自動で常駐します（UIを閉じても終了しません）。`n`n使い方:`n- 翻訳したい文字を選択して 同じウィンドウで Ctrl+C を短時間に2回`n  → YakuLingo のUIに結果が表示されます（必要な訳をコピー）`n- エクスプローラーでファイルを選択して 同じウィンドウで Ctrl+C を短時間に2回`n  → UIのファイルタブに結果が表示されます（必要な出力をダウンロード）`n- エクスプローラーでファイルを右クリック > 「YakuLingoで翻訳」`n  → 翻訳を開始します（Windows 11 は「その他のオプション」に表示）`n- UIを開く: スタートメニューの YakuLingo`n- UIを閉じる: 常駐は継続します（Copilot Edge は自動で画面外に移動します）`n- 終了する: スタートメニュー > YakuLingo 終了`n`nYakuLingo を常駐起動しました（準備中はUIが開きます）。"
+        $successMsg = "セットアップが完了しました。`n`nログオン時にYakuLingoが自動で常駐します（UIを閉じても終了しません）。`n`n使い方:`n- 翻訳したい文字を選択して 同じウィンドウで Ctrl+C を短時間に2回`n  → YakuLingo のUIに結果が表示されます（必要な訳をコピー）`n- エクスプローラーでファイルを選択して 同じウィンドウで Ctrl+C を短時間に2回`n  → UIのファイルタブに結果が表示されます（必要な出力をダウンロード）`n- エクスプローラーでファイルを右クリック > 「YakuLingoで翻訳」`n  → 翻訳を開始します（Windows 11 は「その他のオプション」に表示）`n- 常駐起動: スタートメニューの YakuLingo`n- UIを閉じる: 常駐は継続します（Copilot Edge は自動で画面外に移動します）`n- 終了する: スタートメニュー > YakuLingo 終了`n`nYakuLingo を常駐起動しました（準備中はUIが開きます）。"
         if ($script:GlossaryDistPath -or $script:TranslationRulesDistPath) {
             $successMsg += "`n`n既存ファイルは保持しました。新しい既定ファイルは以下に保存されています:"
             if ($script:GlossaryDistPath) {
@@ -2075,7 +2075,7 @@ try {
         Write-Host " YakuLingo will start automatically on logon (resident mode)." -ForegroundColor Cyan
         Write-Host " Trigger: Select text/files and press Ctrl+C twice quickly in the same window (result appears in UI; download file outputs from the UI)." -ForegroundColor Cyan
         Write-Host " Explorer: Right-click file > 'YakuLingoで翻訳' (Win11: Show more options)." -ForegroundColor Cyan
-        Write-Host " Open UI: Start Menu shortcut." -ForegroundColor Cyan
+        Write-Host " Resident start: Start Menu shortcut." -ForegroundColor Cyan
         Write-Host " Exit: Start Menu > YakuLingo 終了" -ForegroundColor Cyan
         if ($script:GlossaryDistPath -or $script:TranslationRulesDistPath) {
             Write-Host ""

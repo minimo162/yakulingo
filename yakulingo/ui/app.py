@@ -369,6 +369,8 @@ def _nicegui_open_window_patched(
                 window.hide()
         except Exception as e:
             logger.debug("Native window close handler failed: %s", e)
+        if _is_close_to_resident_enabled():
+            return True
         return False
 
     try:

@@ -1993,8 +1993,10 @@ class YakuLingoApp:
                             if self._streaming_preview_label is None:
                                 self._refresh_result_panel()
                                 self._refresh_tabs()
+                                self._scroll_result_panel_to_bottom(client)
                             if self._streaming_preview_label is not None:
                                 self._streaming_preview_label.set_text(partial_text)
+                                self._scroll_result_panel_to_bottom(client)
                     except Exception:
                         logger.debug(
                             "Hotkey translation [%s] streaming preview refresh failed",
@@ -2022,6 +2024,9 @@ class YakuLingoApp:
         self.state.text_result = result
         self.state.text_view_state = TextViewState.RESULT
         self._refresh_ui_after_hotkey_translation(trace_id)
+        client = self._get_active_client()
+        if client is not None:
+            self._scroll_result_panel_to_bottom(client)
 
         if result.error_message:
             logger.info("Hotkey translation [%s] failed: %s", trace_id, result.error_message)
@@ -4675,6 +4680,64 @@ class YakuLingoApp:
             # Debug: Log layout dimensions after refresh
             self._log_layout_dimensions()
 
+    def _scroll_result_panel_to_bottom(self, client: NiceGUIClient) -> None:
+        """Scroll the result panel to the bottom if it is already near the end."""
+        if client is None or self._shutdown_requested:
+            return
+        try:
+            if not getattr(client, "has_socket_connection", True):
+                return
+        except Exception:
+            pass
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return
+
+        js_code = r"""
+        (function() {
+            try {
+                const panel = document.querySelector('.result-panel');
+                if (!panel) return false;
+
+                const threshold = 48;
+                const maxScrollTop = Math.max(0, panel.scrollHeight - panel.clientHeight);
+                const distance = maxScrollTop - panel.scrollTop;
+                const isInitial = panel.dataset.yakulingoAutoScroll === undefined;
+                const shouldFollow = isInitial || distance <= threshold;
+                panel.dataset.yakulingoAutoScroll = shouldFollow ? 'true' : 'false';
+                if (!shouldFollow) return false;
+
+                const scrollNow = () => {
+                    panel.scrollTop = panel.scrollHeight;
+                };
+
+                const hidden = document.hidden || document.visibilityState !== 'visible';
+                if (hidden) {
+                    scrollNow();
+                    setTimeout(scrollNow, 120);
+                    return true;
+                }
+
+                let rafCalled = false;
+                requestAnimationFrame(() => requestAnimationFrame(() => {
+                    rafCalled = true;
+                    scrollNow();
+                }));
+                setTimeout(() => {
+                    if (!rafCalled) scrollNow();
+                }, 120);
+                return true;
+            } catch (err) {
+                return false;
+            }
+        })();
+        """
+        try:
+            asyncio.create_task(client.run_javascript(js_code))
+        except Exception:
+            logger.debug("Result panel auto-scroll scheduling failed", exc_info=True)
+
     def _batch_refresh(self, refresh_types: set[str]):
         """Batch refresh multiple UI components in a single operation.
 
@@ -6232,6 +6295,7 @@ class YakuLingoApp:
             # Only refresh result panel to minimize DOM updates and prevent flickering
             # Layout classes update will show result panel and hide input panel via CSS
             self._refresh_result_panel()
+            self._scroll_result_panel_to_bottom(client)
             self._refresh_tabs()  # Update tab disabled state
 
         from yakulingo.services.copilot_handler import TranslationCancelledError
@@ -6291,12 +6355,19 @@ class YakuLingoApp:
                     if not self.state.text_translating:
                         return
                     try:
+                        if not getattr(client, "has_socket_connection", True):
+                            return
+                    except Exception:
+                        pass
+                    try:
                         with client:
                             # Render streaming block on first chunk (captures label reference)
                             if self._streaming_preview_label is None:
                                 self._refresh_result_panel()
+                                self._scroll_result_panel_to_bottom(client)
                             if self._streaming_preview_label is not None:
                                 self._streaming_preview_label.set_text(partial_text)
+                                self._scroll_result_panel_to_bottom(client)
                     except Exception:
                         logger.debug("Streaming preview refresh failed", exc_info=True)
 
@@ -6361,6 +6432,7 @@ class YakuLingoApp:
                 self._notify_error(error_message)
             # Only refresh result panel (input panel is already in compact state)
             self._refresh_result_panel()
+            self._scroll_result_panel_to_bottom(client)
             logger.debug("[LAYOUT] Translation [%s] result panel refreshed", trace_id)
             # Re-enable translate button
             self._update_translate_button_state()

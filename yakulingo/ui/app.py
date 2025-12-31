@@ -3733,10 +3733,10 @@ class YakuLingoApp:
         ):
             with self._client_lock:
                 has_client = self._client is not None
-            if has_client:
-                logger.debug("Resident mode: client connected; skipping auto-hide")
-                return
-            logger.debug("Resident mode: skipping auto-show for UI window")
+            logger.debug(
+                "Resident mode: skipping auto-show for UI window (client_connected=%s)",
+                has_client,
+            )
             if sys.platform == "win32":
                 self._hide_resident_window_win32("startup")
             return
@@ -8103,9 +8103,10 @@ def run_app(
             return
         if getattr(yakulingo_app, "_shutdown_requested", False):
             return
-        if yakulingo_app._resident_mode and browser_opened:
-            if yakulingo_app._auto_open_cause not in (AutoOpenCause.HOTKEY, AutoOpenCause.LOGIN):
-                yakulingo_app._mark_manual_show("open_browser_window")
+        if yakulingo_app._resident_mode and (
+            yakulingo_app._auto_open_cause not in (AutoOpenCause.HOTKEY, AutoOpenCause.LOGIN)
+        ):
+            yakulingo_app._mark_manual_show("open_browser_window")
         if sys.platform == "win32":
             try:
                 if yakulingo_app._bring_window_to_front_win32():

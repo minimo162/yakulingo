@@ -9,6 +9,7 @@ invokes a callback with the payload.
 from __future__ import annotations
 
 import ctypes
+import hashlib
 import logging
 import sys
 import threading
@@ -81,6 +82,8 @@ else:
             settle_delay_sec: float = 0.005,
             cooldown_sec: float = 1.2,
             fast_partial_match_window_sec: float = 0.35,
+            same_payload_suppress_ms: float = 120.0,
+            recheck_settle_ms: float = 30.0,
         ) -> None:
             self._callback: Optional[Callable[[str], None]] = callback
             self._double_copy_window_sec = double_copy_window_sec
@@ -88,6 +91,8 @@ else:
             self._settle_delay_sec = settle_delay_sec
             self._cooldown_sec = cooldown_sec
             self._fast_partial_match_window_sec = fast_partial_match_window_sec
+            self._same_payload_suppress_sec = same_payload_suppress_ms / 1000.0
+            self._recheck_settle_sec = recheck_settle_ms / 1000.0
 
             self._lock = threading.Lock()
             self._stop_event = threading.Event()
@@ -95,9 +100,12 @@ else:
             self._running = False
 
             self._last_sequence: Optional[int] = None
+            self._last_processed_seq: Optional[int] = None
             self._last_payload: Optional[str] = None
             self._last_payload_normalized: Optional[str] = None
+            self._last_payload_hash: Optional[str] = None
             self._last_payload_time: Optional[float] = None
+            self._last_event_time: Optional[float] = None
             self._cooldown_until = 0.0
 
         @property
@@ -141,10 +149,18 @@ else:
 
         def _reset_state(self) -> None:
             self._last_sequence = _clipboard.get_clipboard_sequence_number_raw()
+            self._last_processed_seq = None
             self._last_payload = None
             self._last_payload_normalized = None
+            self._last_payload_hash = None
             self._last_payload_time = None
+            self._last_event_time = None
             self._cooldown_until = 0.0
+
+        @staticmethod
+        def _hash_payload(payload: str) -> str:
+            digest = hashlib.blake2b(payload.encode("utf-8"), digest_size=8)
+            return digest.hexdigest()
 
         def _clipboard_listener_loop(self) -> None:
             while not self._stop_event.is_set():
@@ -185,6 +201,9 @@ else:
                     logger.debug("Clipboard trigger read failed: %s", exc)
                     continue
 
+                seq_before = sequence
+                seq_after = _clipboard.get_clipboard_sequence_number_raw()
+
                 payload = None
                 if files:
                     payload = "\n".join(files)
@@ -201,6 +220,7 @@ else:
                     continue
 
                 normalized_payload = self._normalize_payload(payload)
+                payload_hash = self._hash_payload(payload)
                 logger.debug(
                     "Clipboard payload read (seq=%s, len=%d)",
                     sequence,
@@ -209,6 +229,7 @@ else:
 
                 last_payload = self._last_payload
                 last_payload_normalized = self._last_payload_normalized
+                last_payload_hash = self._last_payload_hash
                 last_time = self._last_payload_time
                 delta_sec = (now - last_time) if last_time is not None else None
                 exact_match = (
@@ -251,8 +272,113 @@ else:
                         except Exception as exc:
                             logger.debug("Clipboard trigger callback failed: %s", exc)
                     self._last_payload_time = now
+                    self._last_payload_hash = payload_hash
+                    self._last_event_time = now
+                    if seq_after is not None:
+                        self._last_processed_seq = seq_after
                     continue
 
-                self._last_payload = payload
-                self._last_payload_normalized = normalized_payload
+                updated_during_read = (
+                    seq_after is not None
+                    and seq_before is not None
+                    and seq_after != seq_before
+                )
+                recheck_done = False
+                payload_to_store = payload
+                normalized_to_store = normalized_payload
+                payload_hash_to_store = payload_hash
+                if (
+                    updated_during_read
+                    and seq_after != self._last_processed_seq
+                    and not recheck_done
+                ):
+                    if (
+                        last_payload_hash is not None
+                        and payload_hash == last_payload_hash
+                        and self._last_event_time is not None
+                        and (now - self._last_event_time) <= self._same_payload_suppress_sec
+                    ):
+                        pass
+                    else:
+                        if self._stop_event.wait(self._recheck_settle_sec):
+                            return
+                        if _clipboard.get_clipboard_sequence_number_raw() == seq_after:
+                            recheck_done = True
+                            try:
+                                re_text, re_files = _clipboard.get_clipboard_payload_with_retry(
+                                    log_fail=False
+                                )
+                            except Exception as exc:
+                                logger.debug("Clipboard trigger recheck read failed: %s", exc)
+                                re_text = None
+                                re_files = []
+                            re_payload = None
+                            if re_files:
+                                re_payload = "\n".join(re_files)
+                            elif re_text:
+                                re_payload = re_text
+                            if re_payload:
+                                re_normalized = self._normalize_payload(re_payload)
+                                re_payload_hash = self._hash_payload(re_payload)
+                                re_delta_sec = (
+                                    (now - last_time) if last_time is not None else None
+                                )
+                                re_exact_match = (
+                                    last_payload_normalized is not None
+                                    and re_normalized == last_payload_normalized
+                                    and last_time is not None
+                                    and re_delta_sec <= self._double_copy_window_sec
+                                )
+                                re_partial_match = False
+                                if (
+                                    not re_exact_match
+                                    and last_payload_normalized is not None
+                                    and last_time is not None
+                                    and re_delta_sec <= self._fast_partial_match_window_sec
+                                ):
+                                    re_shorter = re_normalized
+                                    re_longer = last_payload_normalized
+                                    if len(re_shorter) > len(re_longer):
+                                        re_shorter, re_longer = re_longer, re_shorter
+                                    if self._can_fast_partial_match(re_shorter, re_longer):
+                                        if "\n" in re_shorter or "\n" in re_longer:
+                                            if self._is_line_prefix(re_shorter, re_longer):
+                                                re_partial_match = True
+                                        elif re_longer.startswith(re_shorter):
+                                            re_partial_match = True
+                                re_is_match = re_exact_match or re_partial_match
+                                logger.debug(
+                                    "Clipboard double-copy recheck: match=%s, mode=%s",
+                                    re_is_match,
+                                    "partial"
+                                    if re_partial_match
+                                    else "exact" if re_exact_match else "none",
+                                )
+                                if re_is_match:
+                                    self._cooldown_until = now + self._cooldown_sec
+                                    callback = self._callback
+                                    if callback:
+                                        try:
+                                            callback(re_payload)
+                                        except Exception as exc:
+                                            logger.debug(
+                                                "Clipboard trigger recheck callback failed: %s",
+                                                exc,
+                                            )
+                                    self._last_payload_time = now
+                                    self._last_payload_hash = re_payload_hash
+                                    self._last_event_time = now
+                                    if seq_after is not None:
+                                        self._last_processed_seq = seq_after
+                                        self._last_sequence = seq_after
+                                    continue
+                                payload_to_store = re_payload
+                                normalized_to_store = re_normalized
+                                payload_hash_to_store = re_payload_hash
+
+                self._last_payload = payload_to_store
+                self._last_payload_normalized = normalized_to_store
+                self._last_payload_hash = payload_hash_to_store
                 self._last_payload_time = now
+                if seq_after is not None:
+                    self._last_processed_seq = seq_after

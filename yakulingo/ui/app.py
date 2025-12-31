@@ -398,7 +398,7 @@ def _nicegui_open_window_patched(
     window = webview.create_window(**window_kwargs)
     assert window is not None
     def _handle_window_closing(*_args, **_kwargs):
-        def _notify_ui_close() -> None:
+        def _notify_ui_close() -> bool:
             try:
                 import json as _json
                 import urllib.request as _urllib_request
@@ -415,18 +415,21 @@ def _nicegui_open_window_patched(
                 )
                 with _urllib_request.urlopen(req, timeout=0.5):
                     pass
+                return True
             except Exception as e:
                 logger.debug("Failed to notify UI close-to-resident: %s", e)
+                return False
 
-        try:
-            if sys.platform == "win32":
-                _hide_native_window_offscreen_win32(title)
-            if hasattr(window, "hide"):
-                window.hide()
-        except Exception as e:
-            logger.debug("Native window close handler failed: %s", e)
         if _is_close_to_resident_enabled():
-            _notify_ui_close()
+            if not _notify_ui_close():
+                return False
+            try:
+                if sys.platform == "win32":
+                    _hide_native_window_offscreen_win32(title)
+                if hasattr(window, "hide"):
+                    window.hide()
+            except Exception as e:
+                logger.debug("Native window close handler failed: %s", e)
             # Best-effort: cancel the close to keep the process alive.
             def _try_cancel(candidate) -> bool:
                 if candidate is None:
@@ -8728,6 +8731,8 @@ def run_app(
                     raise HTTPException(status_code=403, detail="forbidden")
                 resident_header = request.headers.get("X-YakuLingo-Resident")
                 if resident_header != "1":
+                    raise HTTPException(status_code=403, detail="forbidden")
+                if not _is_close_to_resident_enabled():
                     raise HTTPException(status_code=403, detail="forbidden")
             except HTTPException:
                 raise

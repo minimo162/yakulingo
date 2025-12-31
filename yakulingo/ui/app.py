@@ -370,6 +370,24 @@ def _nicegui_open_window_patched(
         except Exception as e:
             logger.debug("Native window close handler failed: %s", e)
         if _is_close_to_resident_enabled():
+            # Best-effort: cancel the close to keep the process alive.
+            for candidate in _args:
+                for attr in ("cancel", "Cancel"):
+                    if hasattr(candidate, attr):
+                        try:
+                            setattr(candidate, attr, True)
+                        except Exception:
+                            pass
+            for key in ("event", "args", "event_args"):
+                candidate = _kwargs.get(key)
+                if candidate is None:
+                    continue
+                for attr in ("cancel", "Cancel"):
+                    if hasattr(candidate, attr):
+                        try:
+                            setattr(candidate, attr, True)
+                        except Exception:
+                            pass
             return True
         return False
 

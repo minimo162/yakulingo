@@ -725,6 +725,8 @@ class YakuLingoApp:
         self._resident_login_required = False
         self._resident_show_requested = False
         self._manual_show_requested = False
+        self._login_auto_hide_pending = False
+        self._login_auto_hide_blocked = False
         self._auto_open_cause: AutoOpenCause | None = AutoOpenCause.STARTUP
         self._auto_open_cause_set_at: float | None = None
         self._auto_open_timeout_task: "asyncio.Task | None" = None
@@ -1229,6 +1231,7 @@ class YakuLingoApp:
             return
 
         self._resident_login_required = True
+        self._login_auto_hide_pending = True
 
         with self._client_lock:
             has_client_before = self._client is not None
@@ -3590,6 +3593,10 @@ class YakuLingoApp:
 
     def _mark_manual_show(self, reason: str) -> None:
         self._manual_show_requested = True
+        if self._resident_mode and (
+            self._resident_login_required or self._login_polling_active or self._login_auto_hide_pending
+        ):
+            self._login_auto_hide_blocked = True
         self._clear_auto_open_cause(f"manual:{reason}")
 
     def _set_layout_mode(self, mode: LayoutMode, reason: str) -> None:
@@ -4266,10 +4273,38 @@ class YakuLingoApp:
                     self.state.copilot_ready = False
                     self.state.connection_state = ConnectionState.CONNECTING
 
+                    auto_hide_candidates = (
+                        self._auto_open_cause in (AutoOpenCause.STARTUP, AutoOpenCause.LOGIN)
+                        or self._login_auto_hide_pending
+                    )
+                    manual_block = self._manual_show_requested or self._login_auto_hide_blocked
                     should_auto_hide = (
                         self._resident_mode
-                        and self._auto_open_cause in (AutoOpenCause.STARTUP, AutoOpenCause.LOGIN)
                         and bool(self._native_mode_enabled)
+                        and auto_hide_candidates
+                        and not manual_block
+                    )
+                    auto_hide_reasons: list[str] = []
+                    if self._auto_open_cause in (AutoOpenCause.STARTUP, AutoOpenCause.LOGIN):
+                        auto_hide_reasons.append(f"auto_open:{self._auto_open_cause.value}")
+                    if self._login_auto_hide_pending:
+                        auto_hide_reasons.append("login_pending")
+                    if manual_block:
+                        auto_hide_reasons.append("manual_block")
+                    if not self._resident_mode:
+                        auto_hide_reasons.append("not_resident")
+                    if not self._native_mode_enabled:
+                        auto_hide_reasons.append("native_disabled")
+                    logger.info(
+                        "Login auto-hide decision: hide=%s (reasons=%s, auto_open_cause=%s, "
+                        "auto_open_timeout=%s, manual_show=%s, hotkey=%s, login_pending=%s)",
+                        should_auto_hide,
+                        ",".join(auto_hide_reasons) or "none",
+                        self._auto_open_cause.value if self._auto_open_cause else "none",
+                        self._auto_open_timeout_task is not None,
+                        self._manual_show_requested,
+                        self._auto_open_cause == AutoOpenCause.HOTKEY or self._hotkey_translation_active,
+                        self._login_auto_hide_pending,
                     )
 
                     # Hide Edge window once login completes
@@ -4278,6 +4313,8 @@ class YakuLingoApp:
                         self._resident_show_requested = False
                         if sys.platform == "win32":
                             self._hide_resident_window_win32("login_complete")
+                    self._login_auto_hide_pending = False
+                    self._login_auto_hide_blocked = False
 
                     if self._client and not self._shutdown_requested:
                         with self._client:

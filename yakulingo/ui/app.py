@@ -689,6 +689,9 @@ class YakuLingoApp:
         self._login_auto_show = False
         self._startup_fallback_rendered = False
         self._startup_fallback_element = None
+        self._ui_ready_event = asyncio.Event()
+        self._ui_ready_client_id: int | None = None
+        self._ui_ready_retry_task: "asyncio.Task | None" = None
 
         # Clipboard trigger for double-copy translation.
         self._clipboard_trigger = None
@@ -1160,6 +1163,18 @@ class YakuLingoApp:
                     except Exception as e:
                         logger.debug("Resident UI restore attempt failed (%s): %s", reason, e)
                     await asyncio.sleep(0.2)
+
+        try:
+            ui_ready = await self._ensure_ui_ready_after_restore(
+                reason,
+                timeout_ms=1200,
+                retries=0,
+            )
+        except Exception as e:
+            logger.debug("Resident UI readiness check failed (%s): %s", reason, e)
+        else:
+            if not ui_ready:
+                self._schedule_ui_ready_retry(reason)
 
         return shown
 
@@ -3201,6 +3216,191 @@ class YakuLingoApp:
             _hide_native_window_offscreen_win32("YakuLingo")
         except Exception as e:
             logger.debug("Failed to hide resident window offscreen (%s): %s", reason, e)
+
+    def _get_active_client(self) -> NiceGUIClient | None:
+        with self._client_lock:
+            client = self._client
+        if client is None:
+            return None
+        if not getattr(client, "has_socket_connection", True):
+            return None
+        return client
+
+    async def _wait_for_client_connected(
+        self, client: NiceGUIClient, timeout_sec: float
+    ) -> bool:
+        try:
+            await asyncio.wait_for(asyncio.shield(client.connected()), timeout=timeout_sec)
+            return True
+        except asyncio.TimeoutError:
+            return False
+        except Exception:
+            return False
+
+    async def _check_ui_ready_once(self, client: NiceGUIClient) -> bool:
+        js_code = '''
+            try {
+                const selector = "__ROOT_SELECTOR__";
+                const root = document.querySelector(selector);
+                if (!root) return false;
+                const rootStyle = getComputedStyle(root);
+                if (rootStyle.display === 'none' || rootStyle.visibility === 'hidden') return false;
+                const hidden = document.hidden || document.visibilityState !== 'visible';
+                if (!hidden) {
+                    const rect = root.getBoundingClientRect();
+                    if (!rect || rect.width <= 0 || rect.height <= 0) return false;
+                }
+                const value = getComputedStyle(document.documentElement).getPropertyValue('--md-sys-color-primary');
+                return Boolean(value && String(value).trim().length);
+            } catch (err) {
+                return false;
+            }
+        '''
+        selector = STARTUP_UI_READY_SELECTOR.replace('"', '\\"')
+        try:
+            return await client.run_javascript(
+                js_code.replace("__ROOT_SELECTOR__", selector)
+            )
+        except Exception as e:
+            logger.debug("Startup UI readiness check failed: %s", e)
+            return False
+
+    async def _wait_for_ui_ready(self, client: NiceGUIClient, timeout_ms: int) -> bool:
+        js_code = '''
+            return await new Promise((resolve) => {
+                try {
+                    if (window._yakulingoUpdateCSSVariables) window._yakulingoUpdateCSSVariables();
+                } catch (err) {}
+
+                const start = performance.now();
+                const timeoutMs = __TIMEOUT_MS__;
+                const selector = "__ROOT_SELECTOR__";
+
+                const isReady = () => {
+                    try {
+                        const root = document.querySelector(selector);
+                        if (!root) return false;
+                        const rootStyle = getComputedStyle(root);
+                        if (rootStyle.display === 'none' || rootStyle.visibility === 'hidden') return false;
+                        const hidden = document.hidden || document.visibilityState !== 'visible';
+                        if (!hidden) {
+                            const rect = root.getBoundingClientRect();
+                            if (!rect || rect.width <= 0 || rect.height <= 0) return false;
+                        }
+                        const value = getComputedStyle(document.documentElement).getPropertyValue('--md-sys-color-primary');
+                        return Boolean(value && String(value).trim().length);
+                    } catch (err) {
+                        return false;
+                    }
+                };
+
+                let scheduled = false;
+                const scheduleNext = () => {
+                    if (scheduled) return;
+                    scheduled = true;
+                    const hidden = document.hidden || document.visibilityState !== 'visible';
+                    if (hidden) {
+                        setTimeout(tick, 50);
+                        return;
+                    }
+                    let rafCalled = false;
+                    requestAnimationFrame(() => requestAnimationFrame(() => {
+                        rafCalled = true;
+                        tick();
+                    }));
+                    setTimeout(() => {
+                        if (!rafCalled) tick();
+                    }, 120);
+                };
+
+                const tick = () => {
+                    scheduled = false;
+                    const hidden = document.hidden || document.visibilityState !== 'visible';
+                    if (isReady()) {
+                        if (hidden) {
+                            resolve(true);
+                        } else {
+                            requestAnimationFrame(() => requestAnimationFrame(() => resolve(true)));
+                        }
+                        return;
+                    }
+                    if (performance.now() - start > timeoutMs) {
+                        resolve(false);
+                        return;
+                    }
+                    scheduleNext();
+                };
+
+                tick();
+            });
+        '''
+        selector = STARTUP_UI_READY_SELECTOR.replace('"', '\\"')
+        try:
+            return await client.run_javascript(
+                js_code.replace("__TIMEOUT_MS__", str(timeout_ms)).replace("__ROOT_SELECTOR__", selector)
+            )
+        except Exception as e:
+            logger.debug("Startup UI readiness wait failed: %s", e)
+            return False
+
+    def _mark_ui_ready(self, client: NiceGUIClient) -> bool:
+        with self._client_lock:
+            if self._client is not client:
+                return False
+        if not getattr(client, "has_socket_connection", True):
+            return False
+        self._ui_ready_client_id = id(client)
+        try:
+            self._ui_ready_event.set()
+        except Exception:
+            pass
+        return True
+
+    def _clear_ui_ready(self) -> None:
+        self._ui_ready_client_id = None
+        task = self._ui_ready_retry_task
+        if task is not None and not task.done():
+            task.cancel()
+        self._ui_ready_retry_task = None
+        try:
+            self._ui_ready_event.clear()
+        except Exception:
+            pass
+
+    def _schedule_ui_ready_retry(self, reason: str) -> None:
+        task = self._ui_ready_retry_task
+        if task is not None and not task.done():
+            return
+        self._ui_ready_retry_task = asyncio.create_task(
+            self._ensure_ui_ready_after_restore(reason, timeout_ms=2000, retries=2, retry_delay=0.5)
+        )
+
+    async def _ensure_ui_ready_after_restore(
+        self,
+        reason: str,
+        timeout_ms: int = 1200,
+        retries: int = 0,
+        retry_delay: float = 0.35,
+        connected_timeout_sec: float = 0.75,
+    ) -> bool:
+        for attempt in range(retries + 1):
+            client = self._get_active_client()
+            if client is None:
+                if attempt < retries:
+                    await asyncio.sleep(retry_delay)
+                    continue
+                return False
+            if not await self._wait_for_client_connected(client, connected_timeout_sec):
+                if attempt < retries:
+                    await asyncio.sleep(retry_delay)
+                    continue
+                return False
+            ui_ready = await self._wait_for_ui_ready(client, timeout_ms)
+            if ui_ready and self._mark_ui_ready(client):
+                return True
+            if attempt < retries:
+                await asyncio.sleep(retry_delay)
+        return False
 
     async def _ensure_app_window_visible(self):
         """Ensure the app window is visible and in front after UI is ready.
@@ -8406,14 +8606,16 @@ def run_app(
         # Save client reference for async handlers (context.client not available in async tasks)
         with yakulingo_app._client_lock:
             yakulingo_app._client = client
+        yakulingo_app._clear_ui_ready()
 
         def _clear_cached_client_on_disconnect(_client: NiceGUIClient | None = None) -> None:
             # When the UI window is closed, keep the resident service alive but clear the cached
-        # client so the clipboard trigger can reopen the UI window on demand.
+            # client so the clipboard trigger can reopen the UI window on demand.
             nonlocal browser_opened
             with yakulingo_app._client_lock:
                 if yakulingo_app._client is client:
                     yakulingo_app._client = None
+            yakulingo_app._clear_ui_ready()
             yakulingo_app._resident_show_requested = False
             yakulingo_app._login_auto_show = False
             browser_opened = False
@@ -8918,76 +9120,9 @@ body.yakulingo-drag-active .global-drop-indicator {
 
         # Wait for styles and the root UI element to be applied before revealing the UI.
         # This prevents a brief flash of a partially-styled layout on slow machines.
-        async def _check_ui_ready_once() -> bool:
-            js_code = '''
-                try {
-                    const selector = "__ROOT_SELECTOR__";
-                    const root = document.querySelector(selector);
-                    if (!root) return false;
-                    const value = getComputedStyle(document.documentElement).getPropertyValue('--md-sys-color-primary');
-                    return Boolean(value && String(value).trim().length);
-                } catch (err) {
-                    return false;
-                }
-            '''
-            selector = STARTUP_UI_READY_SELECTOR.replace('"', '\\"')
-            try:
-                return await client.run_javascript(
-                    js_code.replace("__ROOT_SELECTOR__", selector)
-                )
-            except Exception as e:
-                logger.debug("Startup UI readiness check failed: %s", e)
-                return False
-
-        async def _wait_for_ui_ready(timeout_ms: int) -> bool:
-            js_code = '''
-                return await new Promise((resolve) => {
-                    try {
-                        if (window._yakulingoUpdateCSSVariables) window._yakulingoUpdateCSSVariables();
-                    } catch (err) {}
-
-                    const start = performance.now();
-                    const timeoutMs = __TIMEOUT_MS__;
-                    const selector = "__ROOT_SELECTOR__";
-
-                    const isReady = () => {
-                        try {
-                            const root = document.querySelector(selector);
-                            if (!root) return false;
-                            const value = getComputedStyle(document.documentElement).getPropertyValue('--md-sys-color-primary');
-                            return Boolean(value && String(value).trim().length);
-                        } catch (err) {
-                            return false;
-                        }
-                    };
-
-                    const tick = () => {
-                        if (isReady()) {
-                            requestAnimationFrame(() => requestAnimationFrame(() => resolve(true)));
-                            return;
-                        }
-                        if (performance.now() - start > timeoutMs) {
-                            resolve(false);
-                            return;
-                        }
-                        requestAnimationFrame(tick);
-                    };
-
-                    tick();
-                });
-            '''
-            selector = STARTUP_UI_READY_SELECTOR.replace('"', '\\"')
-            try:
-                return await client.run_javascript(
-                    js_code.replace("__TIMEOUT_MS__", str(timeout_ms)).replace("__ROOT_SELECTOR__", selector)
-                )
-            except Exception as e:
-                logger.debug("Startup UI readiness wait failed: %s", e)
-                return False
-
         async def _maybe_render_startup_fallback(timeout_ms: int) -> None:
             await asyncio.sleep(STARTUP_UI_READY_FALLBACK_GRACE_MS / 1000.0)
-            ready_after = await _check_ui_ready_once()
+            ready_after = await yakulingo_app._check_ui_ready_once(client)
             if ready_after:
                 yakulingo_app._startup_fallback_rendered = False
                 if yakulingo_app._startup_fallback_element is not None:
@@ -8996,6 +9131,7 @@ body.yakulingo-drag-active .global-drop-indicator {
                             yakulingo_app._startup_fallback_element.classes(add='hidden')
                     except Exception:
                         pass
+                yakulingo_app._mark_ui_ready(client)
                 logger.debug(
                     "[STARTUP] UI readiness recovered after timeout before fallback (selector=%s, timeout_ms=%d)",
                     STARTUP_UI_READY_SELECTOR,
@@ -9022,11 +9158,12 @@ body.yakulingo-drag-active .global-drop-indicator {
             )
 
         if client_connected:
-            ui_ready = await _wait_for_ui_ready(STARTUP_UI_READY_TIMEOUT_MS)
+            ui_ready = await yakulingo_app._wait_for_ui_ready(client, STARTUP_UI_READY_TIMEOUT_MS)
             if ui_ready:
                 yakulingo_app._startup_fallback_rendered = False
                 if yakulingo_app._startup_fallback_element is not None:
                     yakulingo_app._startup_fallback_element.classes(add='hidden')
+                yakulingo_app._mark_ui_ready(client)
                 logger.debug(
                     "[STARTUP] UI readiness ready before timeout (selector=%s, timeout_ms=%d)",
                     STARTUP_UI_READY_SELECTOR,
@@ -9093,11 +9230,12 @@ body.yakulingo-drag-active .global-drop-indicator {
                 except Exception as e:
                     logger.debug("Late client connection wait failed: %s", e)
                     return
-                ui_ready = await _wait_for_ui_ready(1500)
+                ui_ready = await yakulingo_app._wait_for_ui_ready(client, 1500)
                 if ui_ready:
                     yakulingo_app._startup_fallback_rendered = False
                     if yakulingo_app._startup_fallback_element is not None:
                         yakulingo_app._startup_fallback_element.classes(add='hidden')
+                    yakulingo_app._mark_ui_ready(client)
                     logger.debug(
                         "[STARTUP] Late UI readiness ready before timeout (selector=%s, timeout_ms=%d)",
                         STARTUP_UI_READY_SELECTOR,

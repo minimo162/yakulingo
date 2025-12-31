@@ -405,6 +405,16 @@ def _nicegui_activate_patched(
     def check_shutdown() -> None:
         while process.is_alive():
             time.sleep(0.1)
+        resident_mode = os.environ.get("YAKULINGO_NO_AUTO_OPEN", "").strip().lower() in (
+            "1", "true", "yes"
+        )
+        if resident_mode:
+            logger.info("Native UI process exited; resident mode keeps service alive")
+            try:
+                native.remove_queues()
+            except Exception:
+                pass
+            return
         Server.instance.should_exit = True
         while not core.app.is_stopped:
             time.sleep(0.1)

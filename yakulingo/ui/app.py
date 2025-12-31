@@ -408,8 +408,8 @@ def _nicegui_activate_patched(
         resident_mode = os.environ.get("YAKULINGO_NO_AUTO_OPEN", "").strip().lower() in (
             "1", "true", "yes"
         )
-        if resident_mode:
-            logger.info("Native UI process exited; resident mode keeps service alive")
+        if ALWAYS_CLOSE_TO_RESIDENT or resident_mode:
+            logger.info("Native UI process exited; keeping service alive (close-to-resident)")
             try:
                 native.remove_queues()
             except Exception:
@@ -518,6 +518,7 @@ RESIDENT_STARTUP_READY_TIMEOUT_SEC = 900  # Allow manual login during resident s
 RESIDENT_STARTUP_POLL_INTERVAL_SEC = 2
 RESIDENT_STARTUP_LAYOUT_RETRY_ATTEMPTS = 40
 RESIDENT_STARTUP_LAYOUT_RETRY_DELAY_SEC = 0.25
+ALWAYS_CLOSE_TO_RESIDENT = True  # Keep service alive when UI window is closed
 HOTKEY_MAX_FILE_COUNT = 10
 HOTKEY_SUPPORTED_FILE_SUFFIXES = {
     ".xlsx",
@@ -8952,6 +8953,7 @@ def run_app(
                 if yakulingo_app._client is client:
                     yakulingo_app._client = None
             yakulingo_app._clear_ui_ready()
+            yakulingo_app._resident_mode = True
             yakulingo_app._resident_show_requested = False
             yakulingo_app._manual_show_requested = False
             browser_opened = False

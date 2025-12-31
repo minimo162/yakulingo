@@ -1609,6 +1609,12 @@ function Invoke-Setup {
 `$appPy = Join-Path `$installDir 'app.py'
 `$port = 8765
 `$url = "http://127.0.0.1:`$port/"
+`$setupStatusUrl = "http://127.0.0.1:`$port/api/setup-status"
+`$layoutUrl = "http://127.0.0.1:`$port/api/window-layout"
+`$readyTimeoutSec = 1200
+`$pollIntervalSec = 2
+`$uiOpened = `$false
+`$sourceHwndValue = 0
 
 function Test-PortOpen([int]`$p) {
   try {
@@ -1621,55 +1627,116 @@ function Test-PortOpen([int]`$p) {
   } catch { return `$false }
 }
 
-if (-not (Test-PortOpen `$port)) {
-  if (Test-Path `$pythonw -PathType Leaf) {
-    Start-Process -FilePath `$pythonw -ArgumentList `$appPy -WorkingDirectory `$installDir -WindowStyle Hidden | Out-Null
-    `$deadline = (Get-Date).AddSeconds(15)
-    while ((Get-Date) -lt `$deadline -and -not (Test-PortOpen `$port)) { Start-Sleep -Milliseconds 200 }
-  }
-}
-
-`$layoutUrl = "http://127.0.0.1:`$port/api/window-layout"
-`$sourceHwndValue = 0
 try {
   Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class YakuLingoWin32 { [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow(); }'
   `$sourceHwnd = [YakuLingoWin32]::GetForegroundWindow()
   if (`$sourceHwnd -ne [IntPtr]::Zero) { `$sourceHwndValue = `$sourceHwnd.ToInt64() }
 } catch { }
 
-`$edge = `$null
-`$candidates = @(
-  'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-  'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'
-)
-foreach (`$p in `$candidates) {
-  if (Test-Path `$p -PathType Leaf) { `$edge = `$p; break }
+function Show-Warning([string]`$Message) {
+  try {
+    Add-Type -AssemblyName System.Windows.Forms
+    [System.Windows.Forms.MessageBox]::Show(
+      `$Message,
+      "YakuLingo",
+      [System.Windows.Forms.MessageBoxButtons]::OK,
+      [System.Windows.Forms.MessageBoxIcon]::Warning
+    ) | Out-Null
+  } catch { }
 }
 
-if (`$edge) {
-  `$profileDir = Join-Path `$env:LOCALAPPDATA 'YakuLingo\\AppWindowProfile'
-  New-Item -ItemType Directory -Force -Path `$profileDir | Out-Null
-  `$args = @(
-    "--app=`$url",
-    "--disable-features=Translate",
-    "--lang=ja",
-    "--user-data-dir=`$profileDir",
-    "--no-first-run",
-    "--no-default-browser-check",
-    "--disable-sync",
-    "--proxy-bypass-list=localhost;127.0.0.1",
-    "--disable-session-crashed-bubble",
-    "--hide-crash-restore-bubble"
+function Get-SetupStatus {
+  try {
+    return Invoke-RestMethod -Method Get -Uri `$setupStatusUrl -TimeoutSec 5
+  } catch {
+    return `$null
+  }
+}
+
+function Open-UiWindow {
+  if (`$script:uiOpened) { return }
+  `$edge = `$null
+  `$candidates = @(
+    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'
   )
-  Start-Process -FilePath `$edge -ArgumentList `$args | Out-Null
-} else {
-  Start-Process `$url | Out-Null
+  foreach (`$p in `$candidates) {
+    if (Test-Path `$p -PathType Leaf) { `$edge = `$p; break }
+  }
+
+  if (`$edge) {
+    `$profileDir = Join-Path `$env:LOCALAPPDATA 'YakuLingo\\AppWindowProfile'
+    New-Item -ItemType Directory -Force -Path `$profileDir | Out-Null
+    `$args = @(
+      "--app=`$url",
+      "--disable-features=Translate",
+      "--lang=ja",
+      "--user-data-dir=`$profileDir",
+      "--no-first-run",
+      "--no-default-browser-check",
+      "--disable-sync",
+      "--proxy-bypass-list=localhost;127.0.0.1",
+      "--disable-session-crashed-bubble",
+      "--hide-crash-restore-bubble"
+    )
+    Start-Process -FilePath `$edge -ArgumentList `$args | Out-Null
+  } else {
+    Start-Process `$url | Out-Null
+  }
+  `$script:uiOpened = `$true
 }
 
-try {
-  `$body = @{ source_hwnd = `$sourceHwndValue; edge_layout = "offscreen" } | ConvertTo-Json -Compress
-  Invoke-WebRequest -UseBasicParsing -Method Post -Uri `$layoutUrl -Body `$body -ContentType 'application/json' -TimeoutSec 2 | Out-Null
-} catch { }
+function Apply-WindowLayout {
+  try {
+    `$body = @{ source_hwnd = `$sourceHwndValue; edge_layout = "offscreen" } | ConvertTo-Json -Compress
+    Invoke-WebRequest -UseBasicParsing -Method Post -Uri `$layoutUrl -Body `$body -ContentType 'application/json' -TimeoutSec 2 | Out-Null
+  } catch { }
+}
+
+function Wait-ResidentReady {
+  param(
+    [int]`$TimeoutSec = 1200,
+    [int]`$PollIntervalSec = 2
+  )
+  `$deadline = (Get-Date).AddSeconds(`$TimeoutSec)
+  `$lastState = ""
+  while ((Get-Date) -lt `$deadline) {
+    `$status = Get-SetupStatus
+    if (`$status -and `$status.ready) { return `$true }
+    `$state = if (`$status -and `$status.state) { "`$(`$status.state)" } else { "starting" }
+    if (`$state -ne `$lastState) {
+      `$lastState = `$state
+    }
+    if (`$state -eq "login_required") {
+      Open-UiWindow
+    }
+    Start-Sleep -Seconds `$PollIntervalSec
+  }
+  return `$false
+}
+
+if (-not (Test-PortOpen `$port)) {
+  if (Test-Path `$pythonw -PathType Leaf) {
+    Start-Process -FilePath `$pythonw -ArgumentList `$appPy -WorkingDirectory `$installDir -WindowStyle Hidden | Out-Null
+    `$deadline = (Get-Date).AddSeconds(30)
+    while ((Get-Date) -lt `$deadline -and -not (Test-PortOpen `$port)) { Start-Sleep -Milliseconds 200 }
+  }
+}
+
+if (-not (Test-PortOpen `$port)) {
+  Show-Warning "YakuLingo の起動に失敗しました。しばらく待ってから再実行してください。"
+  exit 1
+}
+
+`$ready = Wait-ResidentReady -TimeoutSec `$readyTimeoutSec -PollIntervalSec `$pollIntervalSec
+if (-not `$ready) {
+  Open-UiWindow
+  Show-Warning "Copilot の準備が完了しませんでした。ログインを完了してから再実行してください。"
+} elseif (-not `$uiOpened) {
+  Open-UiWindow
+}
+
+Apply-WindowLayout
 "@
 
     $residentScript = @"

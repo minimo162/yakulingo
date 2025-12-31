@@ -398,6 +398,26 @@ def _nicegui_open_window_patched(
     window = webview.create_window(**window_kwargs)
     assert window is not None
     def _handle_window_closing(*_args, **_kwargs):
+        def _notify_ui_close() -> None:
+            try:
+                import json as _json
+                import urllib.request as _urllib_request
+
+                payload = _json.dumps({"reason": "window_close"}).encode("utf-8")
+                req = _urllib_request.Request(
+                    f"http://{host}:{port}/api/ui-close",
+                    data=payload,
+                    headers={
+                        "Content-Type": "application/json",
+                        "X-YakuLingo-Resident": "1",
+                    },
+                    method="POST",
+                )
+                with _urllib_request.urlopen(req, timeout=0.5):
+                    pass
+            except Exception as e:
+                logger.debug("Failed to notify UI close-to-resident: %s", e)
+
         try:
             if sys.platform == "win32":
                 _hide_native_window_offscreen_win32(title)
@@ -406,6 +426,7 @@ def _nicegui_open_window_patched(
         except Exception as e:
             logger.debug("Native window close handler failed: %s", e)
         if _is_close_to_resident_enabled():
+            _notify_ui_close()
             # Best-effort: cancel the close to keep the process alive.
             def _try_cancel(candidate) -> bool:
                 if candidate is None:
@@ -8696,6 +8717,30 @@ def run_app(
                 pass
 
             nicegui_app.shutdown()
+            return {"ok": True}
+
+        @nicegui_app.post('/api/ui-close')
+        async def ui_close_api(request: StarletteRequest):  # type: ignore[misc]
+            """Switch to resident mode when the UI window is closed (local machine only)."""
+            try:
+                client_host = getattr(getattr(request, "client", None), "host", None)
+                if client_host not in ("127.0.0.1", "::1"):
+                    raise HTTPException(status_code=403, detail="forbidden")
+                resident_header = request.headers.get("X-YakuLingo-Resident")
+                if resident_header != "1":
+                    raise HTTPException(status_code=403, detail="forbidden")
+            except HTTPException:
+                raise
+            except Exception:
+                raise HTTPException(status_code=403, detail="forbidden")
+
+            yakulingo_app._resident_mode = True
+            yakulingo_app._resident_show_requested = False
+            yakulingo_app._manual_show_requested = False
+            yakulingo_app._set_layout_mode(LayoutMode.OFFSCREEN, "ui_close")
+            if sys.platform == "win32":
+                yakulingo_app._hide_resident_window_win32("ui_close")
+
             return {"ok": True}
 
         @nicegui_app.post('/api/hotkey')

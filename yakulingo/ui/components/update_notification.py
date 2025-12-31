@@ -297,7 +297,7 @@ class UpdateNotification:
                 # アプリを終了（Windowsの場合はバッチファイルが処理を引き継ぐ）
                 from yakulingo.ui.utils import write_launcher_state
                 write_launcher_state("update_in_progress")
-                await self._shutdown_app(exit_code=0)
+                await self._shutdown_app(exit_code=20)
             else:
                 install_btn.enable()
                 install_btn.text = 'インストール'

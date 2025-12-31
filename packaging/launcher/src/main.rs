@@ -25,9 +25,11 @@ const APP_PORT: u16 = 8765;
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 const USER_EXIT_CODE: i32 = 10;
+const UPDATE_IN_PROGRESS_CODE: i32 = 20;
 const MAX_RESTARTS: u32 = 3;
 const RESTART_BACKOFF_BASE_SEC: u64 = 1;
 const RESTART_RESET_AFTER_SEC: u64 = 60;
+const LAUNCHER_STATE_TTL_SEC: u64 = 300;
 
 fn main() {
     if let Err(e) = run() {
@@ -102,7 +104,9 @@ fn run() -> Result<(), String> {
         let exit_code = status.code().unwrap_or(-1);
         let elapsed = start_time.elapsed();
 
-        if let Some(reason) = read_and_clear_launcher_state(&launcher_state_path) {
+        if let Some(reason) =
+            read_and_clear_launcher_state(&launcher_state_path, &log_path)
+        {
             log_event(
                 &log_path,
                 &format!("Launcher state detected ({}) - stopping restart", reason),
@@ -118,12 +122,12 @@ fn run() -> Result<(), String> {
             break;
         }
 
-        if exit_code == 0 {
-            log_event(&log_path, "UI exited (code 0) - restarting");
-            thread::sleep(Duration::from_secs(RESTART_BACKOFF_BASE_SEC));
-            restart_attempts = 0;
-            backoff = Duration::from_secs(RESTART_BACKOFF_BASE_SEC);
-            continue;
+        if exit_code == UPDATE_IN_PROGRESS_CODE {
+            log_event(
+                &log_path,
+                "Update in progress detected (exit code 20) - stopping restart",
+            );
+            break;
         }
 
         if elapsed > Duration::from_secs(RESTART_RESET_AFTER_SEC) {
@@ -270,21 +274,86 @@ fn get_launcher_state_path(base_dir: &PathBuf) -> Option<PathBuf> {
     Some(base_dir.join("launcher_state.json"))
 }
 
-fn read_and_clear_launcher_state(path: &Option<PathBuf>) -> Option<String> {
+fn read_and_clear_launcher_state(
+    path: &Option<PathBuf>,
+    log_path: &Option<PathBuf>,
+) -> Option<String> {
     let path = path.as_ref()?;
     if !path.exists() {
         return None;
     }
-    let content = fs::read_to_string(path).ok();
+    let content = match fs::read_to_string(path) {
+        Ok(value) => value,
+        Err(err) => {
+            log_event(
+                log_path,
+                &format!("Failed to read launcher state: {}", err),
+            );
+            return None;
+        }
+    };
+    let reason = if content.contains("update_in_progress") {
+        Some("update_in_progress")
+    } else if content.contains("user_exit") {
+        Some("user_exit")
+    } else {
+        None
+    };
+
+    let reason = match reason {
+        Some(value) => value,
+        None => {
+            log_event(log_path, "Unknown launcher state reason; clearing file");
+            let _ = fs::remove_file(path);
+            return None;
+        }
+    };
+
+    let now_secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_else(|_| Duration::from_secs(0))
+        .as_secs();
+    let ts_secs = match parse_launcher_state_ts(&content) {
+        Some(value) => value,
+        None => {
+            log_event(log_path, "Invalid launcher state timestamp; clearing file");
+            let _ = fs::remove_file(path);
+            return None;
+        }
+    };
+
+    if now_secs < ts_secs || now_secs - ts_secs > LAUNCHER_STATE_TTL_SEC {
+        log_event(log_path, "Stale launcher state detected; clearing file");
+        let _ = fs::remove_file(path);
+        return None;
+    }
+
     let _ = fs::remove_file(path);
-    let content = content?;
-    if content.contains("update_in_progress") {
-        return Some("update_in_progress".to_string());
+    Some(reason.to_string())
+}
+
+fn parse_launcher_state_ts(content: &str) -> Option<u64> {
+    let ts_idx = content.find("\"ts\"")?;
+    let after_key = &content[ts_idx + 4..];
+    let colon_idx = after_key.find(':')?;
+    let mut slice = after_key[colon_idx + 1..].trim_start();
+    let mut end = 0usize;
+    for ch in slice.chars() {
+        if ch.is_ascii_digit() || ch == '.' {
+            end += ch.len_utf8();
+        } else {
+            break;
+        }
     }
-    if content.contains("user_exit") {
-        return Some("user_exit".to_string());
+    if end == 0 {
+        return None;
     }
-    None
+    let num = &slice[..end];
+    let value: f64 = num.parse().ok()?;
+    if value.is_sign_negative() {
+        return None;
+    }
+    Some(value.floor() as u64)
 }
 
 /// Check if the application is already running by attempting TCP connection

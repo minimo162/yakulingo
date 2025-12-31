@@ -9080,9 +9080,13 @@ def run_app(
                 if yakulingo_app._client is client:
                     yakulingo_app._client = None
             yakulingo_app._clear_ui_ready()
-            keep_resident_on_close = (
-                bool(yakulingo_app._native_mode_enabled)
-                and _is_close_to_resident_enabled()
+            close_to_resident = _is_close_to_resident_enabled() or yakulingo_app._resident_mode
+            keep_resident_on_close = close_to_resident
+            logger.debug(
+                "UI disconnected: keep_resident=%s native=%s close_to_resident=%s",
+                keep_resident_on_close,
+                yakulingo_app._native_mode_enabled,
+                close_to_resident,
             )
             yakulingo_app._resident_mode = keep_resident_on_close
             yakulingo_app._resident_show_requested = False

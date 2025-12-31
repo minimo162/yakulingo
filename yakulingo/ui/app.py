@@ -15,6 +15,7 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from types import ModuleType
 from typing import Callable, Optional, TYPE_CHECKING
@@ -533,6 +534,43 @@ class ClipboardDebugSummary:
     preview: str
 
 
+class AutoOpenCause(Enum):
+    STARTUP = "startup"
+    LOGIN = "login"
+    HOTKEY = "hotkey"
+    MANUAL = "manual"
+
+
+class LayoutMode(Enum):
+    HIDDEN = "hidden"
+    MINIMIZED = "minimized"
+    OFFSCREEN = "offscreen"
+    RESTORING = "restoring"
+    FOREGROUND = "foreground"
+
+
+@dataclass(frozen=True)
+class VisibilityDecisionState:
+    auto_open_cause: AutoOpenCause | None
+    login_required: bool
+    auto_login_waiting: bool
+    hotkey_active: bool
+    manual_show_requested: bool
+    native_mode: bool
+
+
+def decide_visibility_target(state: VisibilityDecisionState) -> AutoOpenCause | None:
+    if state.hotkey_active:
+        return AutoOpenCause.HOTKEY
+    if state.manual_show_requested:
+        return AutoOpenCause.MANUAL
+    if state.login_required or state.auto_login_waiting:
+        return AutoOpenCause.LOGIN
+    if state.auto_open_cause == AutoOpenCause.STARTUP:
+        return AutoOpenCause.STARTUP
+    return None
+
+
 @dataclass
 class _EarlyConnectionResult:
     value: Optional[bool] = None
@@ -686,7 +724,12 @@ class YakuLingoApp:
         self._resident_mode = False
         self._resident_login_required = False
         self._resident_show_requested = False
-        self._login_auto_show = False
+        self._manual_show_requested = False
+        self._auto_open_cause: AutoOpenCause | None = AutoOpenCause.STARTUP
+        self._auto_open_cause_set_at: float | None = None
+        self._auto_open_timeout_task: "asyncio.Task | None" = None
+        self._layout_mode = LayoutMode.HIDDEN
+        self._edge_visibility_target: str | None = None
         self._startup_fallback_rendered = False
         self._startup_fallback_element = None
         self._ui_ready_event = asyncio.Event()
@@ -1149,19 +1192,19 @@ class YakuLingoApp:
 
         if sys.platform == "win32":
             try:
-                brought_to_front = await self._bring_window_to_front(position_edge=False)
-                shown = shown or brought_to_front
+                recovered = await asyncio.to_thread(self._recover_resident_window_win32, reason)
+                shown = shown or recovered
             except Exception as e:
-                logger.debug("Resident UI bring-to-front failed (%s): %s", reason, e)
+                logger.debug("Resident UI recovery failed (%s): %s", reason, e)
             if not shown and open_ui_callback is None:
                 for attempt in range(3):
                     try:
-                        restored = await asyncio.to_thread(self._restore_app_window_win32)
+                        restored = await asyncio.to_thread(self._recover_resident_window_win32, reason)
                         if restored:
                             shown = True
                             break
                     except Exception as e:
-                        logger.debug("Resident UI restore attempt failed (%s): %s", reason, e)
+                        logger.debug("Resident UI recovery attempt failed (%s): %s", reason, e)
                     await asyncio.sleep(0.2)
 
         try:
@@ -1176,6 +1219,9 @@ class YakuLingoApp:
             if not ui_ready:
                 self._schedule_ui_ready_retry(reason)
 
+        if ui_ready:
+            self._set_layout_mode(LayoutMode.FOREGROUND, f"ui_ready:{reason}")
+
         return shown
 
     async def _show_resident_login_prompt(self, reason: str) -> None:
@@ -1189,24 +1235,20 @@ class YakuLingoApp:
         auto_open_attempted = False
         native_mode_enabled = bool(self._native_mode_enabled)
         if not has_client_before:
-            self._resident_show_requested = True
             auto_open_attempted = (
                 native_mode_enabled
                 and (self._open_ui_window_callback is not None or sys.platform == "win32")
             )
-            self._login_auto_show = auto_open_attempted
-        else:
-            self._login_auto_show = False
+            if auto_open_attempted:
+                self._set_auto_open_cause(
+                    AutoOpenCause.LOGIN,
+                    reason=f"login_prompt:{reason}",
+                    timeout_sec=COPILOT_LOGIN_TIMEOUT,
+                )
 
         shown = await self._ensure_resident_ui_visible(reason)
         with self._client_lock:
             has_client_after = self._client is not None
-        if has_client_after and shown:
-            self._resident_show_requested = False
-        elif not has_client_after:
-            self._resident_show_requested = True
-        elif not shown:
-            self._resident_show_requested = True
 
         if self._copilot is not None:
             try:
@@ -1371,7 +1413,7 @@ class YakuLingoApp:
             source_hwnd: Foreground window handle at hotkey time (best-effort; Windows only)
         """
         if open_ui and self._resident_mode:
-            self._login_auto_show = False
+            self._set_auto_open_cause(AutoOpenCause.HOTKEY, reason="hotkey")
             self._resident_show_requested = True
 
         if not text:
@@ -2527,6 +2569,8 @@ class YakuLingoApp:
             win32_success = await asyncio.to_thread(self._bring_window_to_front_win32)
             logger.debug("Windows API bring_to_front result: %s", win32_success)
 
+        if win32_success:
+            self._set_layout_mode(LayoutMode.FOREGROUND, "bring_to_front")
         return win32_success
 
     def _apply_hotkey_work_priority_layout_win32(
@@ -3203,6 +3247,7 @@ class YakuLingoApp:
     def _hide_resident_window_win32(self, reason: str) -> None:
         if sys.platform != "win32":
             return
+        self._set_layout_mode(LayoutMode.OFFSCREEN, f"hide:{reason}")
         try:
             if nicegui_app and hasattr(nicegui_app, "native") and nicegui_app.native.main_window:
                 window = nicegui_app.native.main_window
@@ -3216,6 +3261,121 @@ class YakuLingoApp:
             _hide_native_window_offscreen_win32("YakuLingo")
         except Exception as e:
             logger.debug("Failed to hide resident window offscreen (%s): %s", reason, e)
+
+    def _recover_resident_window_win32(self, reason: str) -> bool:
+        """Recover the resident UI window without forcing foreground focus."""
+        if sys.platform != "win32":
+            return False
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.WinDLL('user32', use_last_error=True)
+
+            hwnd = self.copilot._find_yakulingo_window_handle(include_hidden=True) if self._copilot else None
+            if not hwnd:
+                hwnd = user32.FindWindowW(None, "YakuLingo")
+            if not hwnd:
+                logger.debug("YakuLingo window not found for recovery")
+                return False
+
+            SW_SHOW = 5
+            SW_RESTORE = 9
+            SWP_NOZORDER = 0x0004
+            SWP_NOACTIVATE = 0x0010
+            SWP_SHOWWINDOW = 0x0040
+            SWP_NOSIZE = 0x0001
+            SWP_NOMOVE = 0x0002
+
+            is_visible = user32.IsWindowVisible(hwnd) != 0
+            is_minimized = user32.IsIconic(hwnd) != 0
+
+            class RECT(ctypes.Structure):
+                _fields_ = [
+                    ("left", ctypes.c_long),
+                    ("top", ctypes.c_long),
+                    ("right", ctypes.c_long),
+                    ("bottom", ctypes.c_long),
+                ]
+
+            SM_XVIRTUALSCREEN = 76
+            SM_YVIRTUALSCREEN = 77
+            SM_CXVIRTUALSCREEN = 78
+            SM_CYVIRTUALSCREEN = 79
+
+            rect = RECT()
+            got_rect = bool(user32.GetWindowRect(hwnd, ctypes.byref(rect)))
+            rect_width = int(rect.right - rect.left)
+            rect_height = int(rect.bottom - rect.top)
+            if rect_width <= 0 or rect_height <= 0:
+                fallback_width, fallback_height = self._get_window_size_for_native_ops()
+                rect_width = max(rect_width, fallback_width)
+                rect_height = max(rect_height, fallback_height)
+
+            virtual_left = user32.GetSystemMetrics(SM_XVIRTUALSCREEN)
+            virtual_top = user32.GetSystemMetrics(SM_YVIRTUALSCREEN)
+            virtual_width = user32.GetSystemMetrics(SM_CXVIRTUALSCREEN)
+            virtual_height = user32.GetSystemMetrics(SM_CYVIRTUALSCREEN)
+            virtual_right = int(virtual_left + virtual_width)
+            virtual_bottom = int(virtual_top + virtual_height)
+
+            is_offscreen = False
+            if got_rect and virtual_width > 0 and virtual_height > 0:
+                margin = 40
+                is_offscreen = (
+                    rect.right < (virtual_left + margin)
+                    or rect.left > (virtual_right - margin)
+                    or rect.bottom < (virtual_top + margin)
+                    or rect.top > (virtual_bottom - margin)
+                )
+
+            self._set_layout_mode(LayoutMode.RESTORING, f"recover:{reason}")
+
+            # Recovery priority: hidden -> minimized -> offscreen.
+            if not is_visible:
+                user32.ShowWindow(hwnd, SW_SHOW)
+                user32.SetWindowPos(
+                    hwnd, None, 0, 0, 0, 0,
+                    SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_NOSIZE | SWP_NOMOVE
+                )
+                return True
+
+            if is_minimized:
+                user32.ShowWindow(hwnd, SW_RESTORE)
+                return True
+
+            if is_offscreen:
+                target_x = 0
+                target_y = 0
+                MONITOR_DEFAULTTONEAREST = 2
+                monitor = user32.MonitorFromWindow(wintypes.HWND(hwnd), MONITOR_DEFAULTTONEAREST)
+                if monitor:
+                    class MONITORINFO(ctypes.Structure):
+                        _fields_ = [
+                            ("cbSize", wintypes.DWORD),
+                            ("rcMonitor", RECT),
+                            ("rcWork", RECT),
+                            ("dwFlags", wintypes.DWORD),
+                        ]
+
+                    monitor_info = MONITORINFO()
+                    monitor_info.cbSize = ctypes.sizeof(MONITORINFO)
+                    if user32.GetMonitorInfoW(monitor, ctypes.byref(monitor_info)):
+                        work = monitor_info.rcWork
+                        work_width = int(work.right - work.left)
+                        work_height = int(work.bottom - work.top)
+                        if work_width > 0 and work_height > 0:
+                            target_x = int(work.left + max(0, (work_width - rect_width) // 2))
+                            target_y = int(work.top + max(0, (work_height - rect_height) // 2))
+                user32.SetWindowPos(
+                    hwnd, None, target_x, target_y, 0, 0,
+                    SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_NOSIZE
+                )
+                return True
+
+        except Exception as e:
+            logger.debug("Resident window recovery failed: %s", e)
+        return False
 
     def _get_active_client(self) -> NiceGUIClient | None:
         with self._client_lock:
@@ -3375,6 +3535,89 @@ class YakuLingoApp:
             self._ensure_ui_ready_after_restore(reason, timeout_ms=2000, retries=2, retry_delay=0.5)
         )
 
+    def _cancel_auto_open_timeout(self) -> None:
+        task = self._auto_open_timeout_task
+        if task is not None and not task.done():
+            task.cancel()
+        self._auto_open_timeout_task = None
+
+    def _clear_auto_open_cause(self, reason: str) -> None:
+        if self._auto_open_cause is None:
+            return
+        self._auto_open_cause = None
+        self._auto_open_cause_set_at = None
+        self._cancel_auto_open_timeout()
+        logger.debug("Auto-open cause cleared (%s)", reason)
+
+    def _schedule_auto_open_timeout(self, timeout_sec: float, reason: str) -> None:
+        """Schedule clearing auto_open_cause; timer ownership lives here."""
+        if timeout_sec <= 0:
+            return
+        self._cancel_auto_open_timeout()
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            logger.debug("Auto-open timeout skipped (no loop): %s", reason)
+            return
+
+        async def _clear_later() -> None:
+            try:
+                await asyncio.sleep(timeout_sec)
+                self._clear_auto_open_cause(f"timeout:{reason}")
+            except asyncio.CancelledError:
+                return
+
+        self._auto_open_timeout_task = loop.create_task(_clear_later())
+
+    def _set_auto_open_cause(
+        self,
+        cause: AutoOpenCause | None,
+        *,
+        reason: str,
+        timeout_sec: float | None = None,
+    ) -> None:
+        if cause is None:
+            self._clear_auto_open_cause(reason)
+            return
+        if cause == AutoOpenCause.HOTKEY:
+            self._cancel_auto_open_timeout()
+        if self._auto_open_cause != cause:
+            self._auto_open_cause = cause
+            self._auto_open_cause_set_at = time.time()
+            logger.debug("Auto-open cause set to %s (%s)", cause.value, reason)
+        if timeout_sec is not None:
+            self._schedule_auto_open_timeout(timeout_sec, reason)
+
+    def _mark_manual_show(self, reason: str) -> None:
+        self._manual_show_requested = True
+        self._clear_auto_open_cause(f"manual:{reason}")
+
+    def _set_layout_mode(self, mode: LayoutMode, reason: str) -> None:
+        if self._layout_mode == mode:
+            return
+        self._layout_mode = mode
+        logger.debug("Layout mode set to %s (%s)", mode.value, reason)
+
+    def _should_respect_edge_visibility_target(self) -> bool:
+        return self._layout_mode == LayoutMode.FOREGROUND
+
+    def _apply_edge_visibility_target(self, reason: str) -> None:
+        if not self._should_respect_edge_visibility_target():
+            return
+        target = self._edge_visibility_target
+        if not target:
+            return
+        copilot = getattr(self, "_copilot", None)
+        if copilot is None:
+            return
+        try:
+            if target == "minimized":
+                copilot.minimize_edge_window()
+            elif target == "foreground":
+                copilot.bring_to_foreground(reason=f"edge_visibility:{reason}")
+        except Exception as e:
+            logger.debug("Edge visibility target apply failed (%s): %s", reason, e)
+
     async def _ensure_ui_ready_after_restore(
         self,
         reason: str,
@@ -3408,7 +3651,10 @@ class YakuLingoApp:
         This is called after create_ui() to restore focus to the app window,
         as Edge startup may steal focus.
         """
-        auto_hide_allowed = True
+        auto_hide_allowed = self._auto_open_cause in (AutoOpenCause.STARTUP, AutoOpenCause.LOGIN)
+        login_required_guard = False
+        if self._auto_open_cause == AutoOpenCause.STARTUP and self._auto_open_timeout_task is None:
+            self._schedule_auto_open_timeout(STARTUP_SPLASH_TIMEOUT_SEC, "startup")
         if self._resident_mode:
             copilot = getattr(self, "_copilot", None)
             last_error = getattr(copilot, "last_connection_error", None) if copilot else None
@@ -3430,9 +3676,29 @@ class YakuLingoApp:
                 or self.state.connection_state == ConnectionState.LOGIN_REQUIRED
                 or last_error == login_required_error
             )
-            auto_hide_allowed = not login_required_guard
+            if login_required_guard:
+                auto_hide_allowed = False
 
-        if self._resident_mode and not self._resident_show_requested and auto_hide_allowed:
+        visibility_state = VisibilityDecisionState(
+            auto_open_cause=self._auto_open_cause,
+            login_required=login_required_guard if self._resident_mode else False,
+            auto_login_waiting=self._login_polling_active if self._resident_mode else False,
+            hotkey_active=self._hotkey_translation_active,
+            manual_show_requested=self._manual_show_requested,
+            native_mode=bool(self._native_mode_enabled),
+        )
+        visibility_target = decide_visibility_target(visibility_state)
+
+        if visibility_target == AutoOpenCause.MANUAL:
+            self._manual_show_requested = False
+            self._clear_auto_open_cause("manual_show")
+
+        if (
+            self._resident_mode
+            and not self._resident_show_requested
+            and auto_hide_allowed
+            and visibility_target in (AutoOpenCause.STARTUP, AutoOpenCause.LOGIN)
+        ):
             with self._client_lock:
                 has_client = self._client is not None
             if has_client:
@@ -3519,6 +3785,11 @@ class YakuLingoApp:
             except Exception as e:
                 logger.debug("Windows API restore failed: %s", e)
 
+        self._set_layout_mode(LayoutMode.FOREGROUND, "ensure_app_window_visible")
+        if self._settings:
+            self._edge_visibility_target = self._get_effective_browser_display_mode()
+            self._apply_edge_visibility_target("ensure_app_window_visible")
+
     def _restore_app_window_win32(self) -> bool:
         """Restore and bring app window to front using Windows API.
 
@@ -3530,6 +3801,7 @@ class YakuLingoApp:
             from ctypes import wintypes
 
             user32 = ctypes.WinDLL('user32', use_last_error=True)
+            self._set_layout_mode(LayoutMode.RESTORING, "restore_app_window")
 
             # Find YakuLingo window (include hidden windows during startup)
             hwnd = self.copilot._find_yakulingo_window_handle(include_hidden=True) if self._copilot else None
@@ -3569,6 +3841,7 @@ class YakuLingoApp:
 
             # Bring to front
             user32.SetForegroundWindow(hwnd)
+            self._set_layout_mode(LayoutMode.FOREGROUND, "restore_app_window")
             return True
 
         except Exception as e:
@@ -3995,7 +4268,7 @@ class YakuLingoApp:
 
                     should_auto_hide = (
                         self._resident_mode
-                        and self._login_auto_show
+                        and self._auto_open_cause in (AutoOpenCause.STARTUP, AutoOpenCause.LOGIN)
                         and bool(self._native_mode_enabled)
                     )
 
@@ -4029,7 +4302,7 @@ class YakuLingoApp:
         finally:
             self._login_polling_active = False
             self._login_polling_task = None
-            self._login_auto_show = False
+            self._clear_auto_open_cause("login_polling_end")
 
     async def _show_login_browser(self, reason: str = "ui_login_banner") -> None:
         """ログイン用にEdgeを前面表示する（UIボタン用）。"""
@@ -4115,9 +4388,11 @@ class YakuLingoApp:
                     self.state.connection_state = ConnectionState.CONNECTING
 
                     # Handle Edge window based on effective browser_display_mode
-                    if self._settings and self._get_effective_browser_display_mode() == "minimized":
-                        await asyncio.to_thread(self.copilot._minimize_edge_window, None)
-                        logger.debug("Edge minimized after reconnection")
+                    if self._settings:
+                        self._edge_visibility_target = self._get_effective_browser_display_mode()
+                        if self._should_respect_edge_visibility_target() and self._edge_visibility_target == "minimized":
+                            await asyncio.to_thread(self.copilot._minimize_edge_window, None)
+                            logger.debug("Edge minimized after reconnection")
                     # In foreground mode, do nothing (leave Edge as is)
 
                     if self._client:
@@ -5133,6 +5408,7 @@ class YakuLingoApp:
 
             if error == CopilotHandler.ERROR_EDGE_NOT_FOUND:
                 self.state.connection_state = ConnectionState.EDGE_NOT_RUNNING
+                self._clear_auto_open_cause("edge_not_running")
                 tooltip = 'Edgeが見つかりません: Edgeを起動してください'
                 with ui.element('div').classes('status-indicator error').props(
                     f'role="status" aria-live="polite" aria-label="{tooltip}"'
@@ -5146,6 +5422,7 @@ class YakuLingoApp:
             if (error in (CopilotHandler.ERROR_CONNECTION_FAILED, CopilotHandler.ERROR_NETWORK)
                     or (is_connected and copilot_state == CopilotConnectionState.ERROR)):
                 self.state.connection_state = ConnectionState.CONNECTION_FAILED
+                self._clear_auto_open_cause("edge_connection_failed")
                 tooltip = '接続に失敗: 再試行中...'
                 with ui.element('div').classes('status-indicator error').props(
                     f'role="status" aria-live="polite" aria-label="{tooltip}"'
@@ -7665,9 +7942,13 @@ def run_app(
             return
         if getattr(yakulingo_app, "_shutdown_requested", False):
             return
+        if yakulingo_app._resident_mode and browser_opened:
+            if yakulingo_app._auto_open_cause not in (AutoOpenCause.HOTKEY, AutoOpenCause.LOGIN):
+                yakulingo_app._mark_manual_show("open_browser_window")
         if sys.platform == "win32":
             try:
                 if yakulingo_app._bring_window_to_front_win32():
+                    yakulingo_app._set_layout_mode(LayoutMode.FOREGROUND, "open_browser_window")
                     return
             except Exception as e:
                 logger.debug("Failed to bring existing UI window to front: %s", e)
@@ -7682,6 +7963,7 @@ def run_app(
                     window.on_top = True
                     time.sleep(0.05)
                     window.on_top = False
+                    yakulingo_app._set_layout_mode(LayoutMode.FOREGROUND, "open_browser_window")
             except Exception as e:
                 logger.debug("Failed to show native UI window: %s", e)
             if sys.platform == "win32":
@@ -8617,7 +8899,7 @@ def run_app(
                     yakulingo_app._client = None
             yakulingo_app._clear_ui_ready()
             yakulingo_app._resident_show_requested = False
-            yakulingo_app._login_auto_show = False
+            yakulingo_app._manual_show_requested = False
             browser_opened = False
             yakulingo_app._history_list = None
             yakulingo_app._history_dialog = None

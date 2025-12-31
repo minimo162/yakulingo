@@ -193,6 +193,10 @@ def setup_logging():
     logger.info("Executable: %s", sys.executable)
     logger.info("CWD: %s", Path.cwd())
     logger.debug("sys.argv: %s", sys.argv)
+    launch_source = os.environ.get("YAKULINGO_LAUNCH_SOURCE") or "unknown"
+    no_auto_open = os.environ.get("YAKULINGO_NO_AUTO_OPEN")
+    logger.info("Launch source: %s", launch_source)
+    logger.info("YAKULINGO_NO_AUTO_OPEN=%s", no_auto_open if no_auto_open is not None else "(unset)")
 
     # Log file location information
     if file_handler:

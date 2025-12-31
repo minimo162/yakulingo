@@ -7618,6 +7618,13 @@ def run_app(
 
     os.environ.setdefault("YAKULINGO_NO_AUTO_OPEN", "1")
     resident_mode = os.environ.get("YAKULINGO_NO_AUTO_OPEN", "").strip().lower() in ("1", "true", "yes")
+    launch_source = os.environ.get("YAKULINGO_LAUNCH_SOURCE") or "unknown"
+    logger.info(
+        "Resident mode: %s (YAKULINGO_NO_AUTO_OPEN=%s, launch_source=%s)",
+        resident_mode,
+        os.environ.get("YAKULINGO_NO_AUTO_OPEN"),
+        launch_source,
+    )
 
     available_memory_gb = _get_available_memory_gb()
     # Early connect spins up Edge (and later Playwright).

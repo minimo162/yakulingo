@@ -319,10 +319,20 @@ fn launch_app(
     working_dir: &PathBuf,
     log_path: &Option<PathBuf>,
 ) -> Result<(), String> {
-    Command::new(python_exe)
+    let mut command = Command::new(python_exe);
+    command
         .arg(app_script)
         .current_dir(working_dir)
-        .creation_flags(CREATE_NO_WINDOW)
+        .creation_flags(CREATE_NO_WINDOW);
+
+    if env::var("YAKULINGO_NO_AUTO_OPEN").is_err() {
+        command.env("YAKULINGO_NO_AUTO_OPEN", "1");
+    }
+    if env::var("YAKULINGO_LAUNCH_SOURCE").is_err() {
+        command.env("YAKULINGO_LAUNCH_SOURCE", "launcher");
+    }
+
+    command
         .spawn()
         .map_err(|e| format!("Failed to start application: {}", e))?;
 

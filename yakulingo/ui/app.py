@@ -7855,6 +7855,16 @@ def run_app(
 
     os.environ.setdefault("YAKULINGO_NO_AUTO_OPEN", "1")
     resident_mode = os.environ.get("YAKULINGO_NO_AUTO_OPEN", "").strip().lower() in ("1", "true", "yes")
+    watchdog_enabled = os.environ.get("YAKULINGO_WATCHDOG", "").strip().lower() in (
+        "1", "true", "yes"
+    )
+    if watchdog_enabled and resident_mode:
+        logger.info(
+            "Watchdog mode: disabling resident close-to-resident behavior "
+            "(YAKULINGO_NO_AUTO_OPEN=%s).",
+            os.environ.get("YAKULINGO_NO_AUTO_OPEN"),
+        )
+        resident_mode = False
     launch_source = os.environ.get("YAKULINGO_LAUNCH_SOURCE") or "unknown"
     logger.info(
         "Resident mode: %s (YAKULINGO_NO_AUTO_OPEN=%s, launch_source=%s)",

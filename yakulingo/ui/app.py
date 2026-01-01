@@ -3635,6 +3635,16 @@ class YakuLingoApp:
             _hide_native_window_offscreen_win32("YakuLingo")
         except Exception as e:
             logger.debug("Failed to hide resident window offscreen (%s): %s", reason, e)
+        copilot = getattr(self, "_copilot", None)
+        if copilot is not None:
+            try:
+                threading.Thread(
+                    target=copilot.hide_edge_window,
+                    daemon=True,
+                    name="hide_copilot_edge_resident",
+                ).start()
+            except Exception as e:
+                logger.debug("Failed to hide Copilot Edge in resident mode (%s): %s", reason, e)
 
     def _recover_resident_window_win32(self, reason: str) -> bool:
         """Recover the resident UI window without forcing foreground focus."""
@@ -3935,7 +3945,10 @@ class YakuLingoApp:
         if copilot is not None and sys.platform == "win32":
             def _minimize_copilot_edge_window() -> None:
                 try:
-                    copilot.minimize_edge_window()
+                    if keep_resident_on_close:
+                        copilot.hide_edge_window()
+                    else:
+                        copilot.minimize_edge_window()
                 except Exception:
                     pass
 
@@ -9251,7 +9264,7 @@ def run_app(
     if not browser_favicon_path.exists():
         browser_favicon_path = icon_path
 
-    if sys.platform == "win32" and native:
+    if sys.platform == "win32" and (native or resident_mode):
         try:
             from yakulingo.ui.tray import TrayIcon
 

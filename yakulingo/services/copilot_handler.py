@@ -5489,6 +5489,27 @@ class CopilotHandler:
             logger.debug("Failed to minimize Edge window: %s", e)
             return False
 
+    def hide_edge_window(self) -> bool:
+        """Hide the Copilot Edge window from the taskbar (Windows only)."""
+        if sys.platform != "win32":
+            return False
+        try:
+            self.set_edge_layout_mode("offscreen")
+        except Exception:
+            pass
+        try:
+            if self._position_edge_offscreen():
+                return True
+        except Exception as e:
+            logger.debug("Failed to move Edge offscreen: %s", e)
+        try:
+            if self._set_edge_taskbar_visibility(False):
+                self._minimize_edge_window(None)
+                return True
+        except Exception as e:
+            logger.debug("Failed to hide Edge taskbar entry: %s", e)
+        return False
+
     def disconnect(self, keep_browser: bool = False) -> None:
         """Close browser connection and cleanup.
 

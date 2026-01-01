@@ -11210,7 +11210,7 @@ def run_app(
     # - easy_drag: Keep disabled; drag region is provided in the UI when frameless
     # - icon: Use YakuLingo icon for taskbar (instead of default Python icon)
     if native:
-        nicegui_app.native.window_args['background_color'] = '#FFFBFE'  # Match app background (styles.css --md-sys-color-surface)
+        nicegui_app.native.window_args['background_color'] = '#F1F4FA'  # Match app background (styles.css --md-sys-color-surface-container-low)
         nicegui_app.native.window_args['easy_drag'] = False
 
         # Start window hidden to prevent position flicker
@@ -11679,7 +11679,7 @@ def run_app(
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    background: var(--md-sys-color-surface, #FFFBFE);
+    background: var(--md-sys-color-surface-container-low, #F1F4FA);
     z-index: 9999;
     opacity: 1;
     transition: opacity 0.25s ease-out;
@@ -11699,7 +11699,7 @@ def run_app(
      width: 56px;
      height: 56px;
      border: 4px solid rgba(0, 0, 0, 0.08);
-     border-top-color: var(--md-sys-color-primary, #4355B9);
+     border-top-color: var(--md-sys-color-primary, #2B59FF);
      border-radius: 50%;
      animation: yakulingo-spin 0.9s linear infinite;
  }

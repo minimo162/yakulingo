@@ -1,71 +1,71 @@
 /* === M3 Design Tokens === */
 :root {
-    /* Primary - Brand indigo (M3 tonal palette) */
-    --md-sys-color-primary: #4355B9;
+    /* Primary - Expressive blue (M3 Expressive) */
+    --md-sys-color-primary: #2B59FF;
     --md-sys-color-on-primary: #FFFFFF;
-    --md-sys-color-primary-container: #DEE0FF;
-    --md-sys-color-on-primary-container: #00105C;
+    --md-sys-color-primary-container: #DDE5FF;
+    --md-sys-color-on-primary-container: #0B1C60;
 
     /* Secondary */
-    --md-sys-color-secondary: #5B5F6A;
+    --md-sys-color-secondary: #566070;
     --md-sys-color-on-secondary: #FFFFFF;
-    --md-sys-color-secondary-container: #E6E7EB;
-    --md-sys-color-on-secondary-container: #1F2328;
+    --md-sys-color-secondary-container: #E4E8F0;
+    --md-sys-color-on-secondary-container: #1E2430;
 
-    /* Tertiary */
-    --md-sys-color-tertiary: #006A6A;
+    /* Tertiary - Warm accent */
+    --md-sys-color-tertiary: #FF6B4A;
     --md-sys-color-on-tertiary: #FFFFFF;
-    --md-sys-color-tertiary-container: #CCE8E7;
-    --md-sys-color-on-tertiary-container: #002020;
+    --md-sys-color-tertiary-container: #FFE4DC;
+    --md-sys-color-on-tertiary-container: #5B1B0C;
 
-    /* Surface (business-neutral, single-color) */
-    --md-sys-color-surface: #FCFCFD;
-    --md-sys-color-surface-dim: #E3E4E8;
+    /* Surface (business-neutral with expressive tint) */
+    --md-sys-color-surface: #F7F8FB;
+    --md-sys-color-surface-dim: #E0E3EA;
     --md-sys-color-surface-bright: #FFFFFF;
     --md-sys-color-surface-container-lowest: #FFFFFF;
-    --md-sys-color-surface-container-low: #F5F6FA;
-    --md-sys-color-surface-container: #EEF0F5;
-    --md-sys-color-surface-container-high: #E7E9F0;
-    --md-sys-color-surface-container-highest: #E1E4EC;
-    --md-sys-color-on-surface: #1D1D1F;
-    --md-sys-color-on-surface-variant: #5A5A63;
-    --md-sys-color-outline: #7E7E87;
-    --md-sys-color-outline-variant: #D0D2DA;
+    --md-sys-color-surface-container-low: #F1F4FA;
+    --md-sys-color-surface-container: #EBEEF6;
+    --md-sys-color-surface-container-high: #E4E8F1;
+    --md-sys-color-surface-container-highest: #DDE2EC;
+    --md-sys-color-on-surface: #1A1F28;
+    --md-sys-color-on-surface-variant: #4A5361;
+    --md-sys-color-outline: #9AA3B2;
+    --md-sys-color-outline-variant: #CCD2DF;
     --md-sys-color-surface-tint: var(--md-sys-color-primary);
-    --md-sys-color-shadow: rgba(0, 0, 0, 0.22);
-    --md-sys-color-scrim: rgba(0, 0, 0, 0.32);
+    --md-sys-color-shadow: rgba(15, 18, 28, 0.22);
+    --md-sys-color-scrim: rgba(15, 18, 28, 0.36);
 
     /* Inverse (for snackbars, tooltips) */
-    --md-sys-color-inverse-surface: #2C2C2F;
-    --md-sys-color-inverse-on-surface: #F4F4F6;
-    --md-sys-color-inverse-primary: #BFC5FF;
+    --md-sys-color-inverse-surface: #212634;
+    --md-sys-color-inverse-on-surface: #F4F6FB;
+    --md-sys-color-inverse-primary: #AEBBFF;
 
     /* States (muted for professional appearance) */
-    --md-sys-color-error: #B3261E;
+    --md-sys-color-error: #C0332B;
     --md-sys-color-on-error: #FFFFFF;
-    --md-sys-color-error-container: #F9DEDC;
-    --md-sys-color-on-error-container: #410E0B;
+    --md-sys-color-error-container: #FBE0DE;
+    --md-sys-color-on-error-container: #4A0E0B;
 
     /* Success (business - subdued, higher contrast on white) */
-    --md-sys-color-success: #1B7A44;
+    --md-sys-color-success: #1F7A48;
     --md-sys-color-on-success: #FFFFFF;
-    --md-sys-color-success-container: #E8F5EE;
-    --md-sys-color-on-success-container: #0F5132;
+    --md-sys-color-success-container: #E1F4EA;
+    --md-sys-color-on-success-container: #134E31;
 
     /* Warning (business - subdued amber, higher contrast on white) */
-    --md-sys-color-warning: #9A5B00;
+    --md-sys-color-warning: #B26A00;
     --md-sys-color-on-warning: #FFFFFF;
-    --md-sys-color-warning-container: #FFF4D6;
-    --md-sys-color-on-warning-container: #5C3A00;
+    --md-sys-color-warning-container: #FFEAC6;
+    --md-sys-color-on-warning-container: #5B3500;
 
     /* Shape - M3 corner radius scale (m3.material.io/foundations/shape/shape-scale) */
     --md-sys-shape-corner-full: 9999px;
     /* Use clamp() so smaller windows stay sharp (less "bulky") */
-    --md-sys-shape-corner-3xl: clamp(20px, 1.6vw, 28px);   /* Extra-large surfaces (cards/dialogs) */
-    --md-sys-shape-corner-2xl: clamp(18px, 1.3vw, 24px);   /* Large surfaces */
-    --md-sys-shape-corner-xl: clamp(16px, 1.1vw, 20px);    /* Medium-large surfaces */
-    --md-sys-shape-corner-large: clamp(12px, 0.95vw, 16px); /* Large components */
-    --md-sys-shape-corner-medium: clamp(10px, 0.75vw, 12px); /* Medium components */
+    --md-sys-shape-corner-3xl: clamp(24px, 2.1vw, 32px);   /* Extra-large surfaces (cards/dialogs) */
+    --md-sys-shape-corner-2xl: clamp(20px, 1.7vw, 28px);   /* Large surfaces */
+    --md-sys-shape-corner-xl: clamp(16px, 1.3vw, 22px);    /* Medium-large surfaces */
+    --md-sys-shape-corner-large: clamp(12px, 1vw, 18px); /* Large components */
+    --md-sys-shape-corner-medium: clamp(10px, 0.85vw, 14px); /* Medium components */
     --md-sys-shape-corner-small: 8px;  /* Small components */
 
     /* M3 Button sizing tokens (responsive density: compact on smaller windows) */
@@ -101,21 +101,34 @@
     --md-sys-typescale-weight-bold: 700;      /* Headlines, brand */
 
     /* Motion - Smooth fluid easing (ヌメヌメとした流れるような動き) */
-    --md-sys-motion-easing-standard: cubic-bezier(0.4, 0, 0.2, 1);      /* M3標準、柔らかい減速 */
-    --md-sys-motion-easing-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);  /* バウンス効果 */
-    --md-sys-motion-easing-fluid: cubic-bezier(0.22, 0.61, 0.36, 1);    /* 流体的な動き */
-    --md-sys-motion-easing-smooth: cubic-bezier(0.25, 0.1, 0.25, 1);    /* なめらかな加減速 */
-    --md-sys-motion-easing-organic: cubic-bezier(0.4, 0, 0, 1);         /* 自然な動き */
-    --md-sys-motion-duration-instant: 100ms;   /* 瞬時のフィードバック */
-    --md-sys-motion-duration-short: 250ms;     /* 短い遷移 */
-    --md-sys-motion-duration-medium: 400ms;    /* 標準遷移 */
-    --md-sys-motion-duration-long: 600ms;      /* 長い遷移 */
-    --md-sys-motion-duration-emphasis: 800ms;  /* 強調遷移 */
+    --md-sys-motion-easing-standard: cubic-bezier(0.2, 0, 0, 1);
+    --md-sys-motion-easing-spring: cubic-bezier(0.2, 0.8, 0.2, 1.2);
+    --md-sys-motion-easing-fluid: cubic-bezier(0.22, 0.61, 0.36, 1);
+    --md-sys-motion-easing-smooth: cubic-bezier(0.25, 0.1, 0.25, 1);
+    --md-sys-motion-easing-organic: cubic-bezier(0.3, 0, 0, 1);
+    --md-sys-motion-duration-instant: 90ms;
+    --md-sys-motion-duration-short: 200ms;
+    --md-sys-motion-duration-medium: 340ms;
+    --md-sys-motion-duration-long: 520ms;
+    --md-sys-motion-duration-emphasis: 760ms;
 
-    /* Elevation - flat (avoid shadows to reduce visual noise) */
-    --md-sys-elevation-1: none;
-    --md-sys-elevation-2: none;
-    --md-sys-elevation-3: none;
+    /* Elevation - expressive but subtle */
+    --md-sys-elevation-1: 0 2px 6px rgba(15, 23, 42, 0.08);
+    --md-sys-elevation-2: 0 8px 20px rgba(15, 23, 42, 0.12);
+    --md-sys-elevation-3: 0 18px 40px rgba(15, 23, 42, 0.16);
+
+    /* Expressive accents */
+    --yl-gradient-primary: linear-gradient(135deg, #2B59FF 0%, #6A5CFF 55%, #FF6B4A 100%);
+    --yl-gradient-primary-soft: linear-gradient(135deg, rgba(43, 89, 255, 0.18) 0%, rgba(106, 92, 255, 0.14) 55%, rgba(255, 107, 74, 0.14) 100%);
+    --yl-gradient-progress: linear-gradient(90deg, #2B59FF 0%, #6A5CFF 55%, #FF6B4A 100%);
+    --yl-canvas-glow: radial-gradient(1200px 520px at 12% 5%, rgba(43, 89, 255, 0.1), transparent 60%),
+        radial-gradient(900px 420px at 85% 15%, rgba(255, 107, 74, 0.1), transparent 60%);
+    --yl-shadow-card: 0 18px 40px rgba(15, 23, 42, 0.1);
+    --yl-shadow-card-hover: 0 24px 60px rgba(15, 23, 42, 0.14);
+    --yl-shadow-cta: 0 18px 36px rgba(43, 89, 255, 0.28);
+    --yl-focus-ring: 0 0 0 3px rgba(43, 89, 255, 0.25);
+    --yl-font-body: 'BIZ UDPGothic', 'Yu Gothic UI', 'Hiragino Sans', 'Segoe UI Variable', 'Segoe UI', -apple-system, sans-serif;
+    --yl-font-display: 'BIZ UDPGothic', 'Yu Gothic UI', 'Hiragino Sans', 'Segoe UI Variable', 'Segoe UI', -apple-system, sans-serif;
 
     /* Card borders - keep minimal for a clean UI */
     --md-card-border: none;
@@ -163,9 +176,11 @@ body {
     /* BIZ UDPGothic: Windows 10+用、UIの上下中央揃えが正確 */
     /* Yu Gothic UI: Windows 8.1+用、UI最適化版 */
     /* Hiragino Sans: macOS用 */
-    font-family: 'BIZ UDPGothic', 'Yu Gothic UI', 'Hiragino Sans', 'Segoe UI', -apple-system, sans-serif;
-    /* Solid surface (no gradients/patterns) */
+    font-family: var(--yl-font-body);
     background-color: var(--md-sys-color-surface-container-low);
+    background-image: var(--yl-canvas-glow);
+    background-attachment: fixed;
+    background-repeat: no-repeat;
     color: var(--md-sys-color-on-surface);
     font-size: 1rem;  /* 16px - comfortable reading size */
     line-height: 1.6;
@@ -180,6 +195,8 @@ body {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     -webkit-app-region: no-drag !important;
+    position: relative;
+    isolation: isolate;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -257,14 +274,27 @@ body {
     position: fixed;
     left: 0;
     top: 0;
-    background: var(--md-sys-color-surface-container-lowest);
-    border-right: none;
+    background: var(--md-sys-color-surface-bright);
+    border-right: 1px solid var(--md-sys-color-outline-variant);
     display: flex;
     flex-direction: column;
     padding: 0.75rem;
     gap: 0.5rem;
     z-index: 100;
-    box-shadow: none;
+    box-shadow: 6px 0 20px rgba(15, 23, 42, 0.08);
+    overflow: hidden;
+}
+
+.sidebar::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 4px;
+    height: 100%;
+    background: var(--yl-gradient-primary);
+    opacity: 0.85;
+    pointer-events: none;
 }
 
 .sidebar-header {
@@ -283,6 +313,11 @@ body {
     padding: 0.5rem 0.25rem;
     gap: 0.5rem;
     align-items: center;
+}
+
+.sidebar-rail .sidebar::before {
+    width: 2px;
+    opacity: 0.6;
 }
 
 .sidebar-rail .sidebar-header {
@@ -452,11 +487,11 @@ body {
 /* Nani-style: white bg + thin border + soft shadow */
 .source-text-section {
     /* User message card (AI chat style) */
-    background-color: color-mix(in srgb, var(--md-sys-color-primary) 8%, var(--md-sys-color-surface));
+    background-color: color-mix(in srgb, var(--md-sys-color-primary) 10%, var(--md-sys-color-surface));
     /* Chat-bubble corner: user (right) */
     border-radius: var(--md-sys-shape-corner-xl) var(--md-sys-shape-corner-xl) 0.75rem var(--md-sys-shape-corner-xl);
-    border: none;
-    box-shadow: none;
+    border: 1px solid color-mix(in srgb, var(--md-sys-color-primary) 15%, transparent);
+    box-shadow: var(--md-sys-elevation-1);
     width: 100%;
     -webkit-user-select: text !important;
     user-select: text !important;
@@ -508,7 +543,7 @@ body {
 /* === Translation Status Section === */
 /* Nani-style: simple text with icon, no background */
 .translation-status-section {
-    padding: 0.5rem 0.25rem;
+    padding: 0.75rem 0.5rem;
     background-color: transparent;
     width: 100%;
 }
@@ -516,7 +551,8 @@ body {
 .translation-status-section .status-text {
     font-size: var(--md-sys-typescale-size-sm);
     color: var(--md-sys-color-on-surface);
-    font-weight: 500;
+    font-weight: 600;
+    letter-spacing: 0.01em;
 }
 
 .translation-status-section .text-success {
@@ -528,9 +564,9 @@ body {
     margin-top: 0.75rem;
     padding: 0.75rem 1rem;
     background-color: var(--md-sys-color-surface);
-    border: none;
+    border: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 65%, transparent);
     border-radius: var(--md-sys-shape-corner-medium);
-    box-shadow: none;
+    box-shadow: var(--md-sys-elevation-1);
     /* Let the preview grow with content; the outer result panel provides scrolling. */
     max-height: none;
     overflow: visible;
@@ -571,10 +607,11 @@ body {
 
 /* === Logo === */
 .app-logo {
-    font-size: var(--md-sys-typescale-size-lg);
-    font-weight: 700;  /* Bold for brand name */
+    font-family: var(--yl-font-display);
+    font-size: clamp(1.05rem, 1.2vw, 1.4rem);
+    font-weight: 800;  /* Bold for brand name */
     color: var(--md-sys-color-primary);
-    letter-spacing: -0.02em;
+    letter-spacing: -0.015em;
     white-space: nowrap;
     overflow: hidden;
     min-width: 0; /* allow shrinking to 0 in flex row */
@@ -604,13 +641,14 @@ body {
     width: 2.5rem;
     height: 2.5rem;
     border-radius: var(--md-sys-shape-corner-medium);
-    background: transparent;
+    background: var(--yl-gradient-primary-soft);
+    border: 1px solid color-mix(in srgb, var(--md-sys-color-primary) 35%, transparent);
     display: flex;
     align-items: center;
     justify-content: center;
     color: var(--md-sys-color-on-primary);
     cursor: pointer;
-    box-shadow: none;
+    box-shadow: var(--md-sys-elevation-1);
 }
 
 /* === Navigation Tabs (M3 Vertical Tabs) === */
@@ -642,9 +680,12 @@ body {
     width: 100%;
     /* M3 tab container color */
     background: transparent;
-    border-left: none;
+    border: 1px solid transparent;
     /* ヌメヌメとした滑らかな遷移 */
-    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-fluid);
+    transition: background-color var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-fluid),
+        border-color var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-fluid),
+        box-shadow var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-fluid),
+        transform var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-fluid);
     animation: slideInFromLeft var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-fluid) backwards;
     position: relative;
     cursor: pointer;
@@ -661,7 +702,8 @@ body {
     /* M3: State layer with on-surface at hover opacity */
     background: color-mix(in srgb, var(--md-sys-color-on-surface) calc(var(--md-sys-state-hover-opacity) * 100%), transparent);
     color: var(--md-sys-color-on-surface);
-    transform: none;
+    box-shadow: var(--md-sys-elevation-1);
+    transform: translateY(-1px);
 }
 
 /* M3 focus state */
@@ -677,6 +719,8 @@ body {
     background: var(--md-sys-color-primary-container);
     color: var(--md-sys-color-on-primary-container);
     font-weight: var(--md-sys-typescale-weight-semibold);
+    border-color: color-mix(in srgb, var(--md-sys-color-primary) 25%, transparent);
+    box-shadow: var(--md-sys-elevation-1);
 }
 
 .nav-item.active:hover {
@@ -712,7 +756,7 @@ body {
 
 .sidebar-section-title {
     font-size: var(--md-sys-typescale-size-xs);
-    font-weight: var(--md-sys-typescale-weight-semibold);
+    font-weight: 700;
     color: var(--md-sys-color-on-surface-variant);
     padding: 0 0.5rem;
 }
@@ -835,32 +879,36 @@ body {
     padding: 0.25rem 0.75rem;
     border-radius: var(--md-sys-shape-corner-full);
     font-size: var(--md-sys-typescale-size-xs);
-    font-weight: 500;
-    background: var(--md-sys-color-surface-container-low);
-    border: none;
+    font-weight: 600;
+    background: var(--md-sys-color-surface-container-high);
+    border: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 65%, transparent);
     color: var(--md-sys-color-on-surface-variant);
     margin-left: 0.5rem;
-    box-shadow: none;
+    box-shadow: var(--md-sys-elevation-1);
 }
 
 .status-indicator.connected {
     background: var(--md-sys-color-success-container);
     color: var(--md-sys-color-on-success-container);
+    border-color: color-mix(in srgb, var(--md-sys-color-success) 25%, transparent);
 }
 
 .status-indicator.connecting {
     background: color-mix(in srgb, var(--md-sys-color-primary) 10%, var(--md-sys-color-surface));
     color: var(--md-sys-color-primary);
+    border-color: color-mix(in srgb, var(--md-sys-color-primary) 25%, transparent);
 }
 
 .status-indicator.login-required {
     background: var(--md-sys-color-warning-container);
     color: var(--md-sys-color-on-warning-container);
+    border-color: color-mix(in srgb, var(--md-sys-color-warning) 25%, transparent);
 }
 
 .status-indicator.error {
     background: var(--md-sys-color-error-container);
     color: var(--md-sys-color-on-error-container);
+    border-color: color-mix(in srgb, var(--md-sys-color-error) 25%, transparent);
 }
 
 .status-dot {
@@ -895,16 +943,32 @@ body {
 
 /* === Main Card Container (Nani-style: white bg + thin border + soft shadow) === */
 .main-card {
-    background: var(--md-sys-color-surface-container-lowest);
+    background: var(--md-sys-color-surface);
     border-radius: var(--md-sys-shape-corner-3xl);
-    box-shadow: none;
-    border: var(--md-card-border);
+    border-top-left-radius: calc(var(--md-sys-shape-corner-3xl) + 6px);
+    box-shadow: var(--yl-shadow-card);
+    border: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 70%, transparent);
     overflow: hidden;
     animation: cardFloatIn var(--md-sys-motion-duration-long) var(--md-sys-motion-easing-fluid);
     position: relative;
     /* ヌメヌメとした滑らかな遷移 */
-    transition: all var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-fluid);
-    transform: none;
+    transition: box-shadow var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-fluid),
+        transform var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-fluid),
+        border-color var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard),
+        background-color var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+    transform: translateY(0);
+}
+
+.main-card::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 6px;
+    background: var(--yl-gradient-primary);
+    opacity: 0.85;
+    pointer-events: none;
 }
 
 .history-card {
@@ -934,14 +998,15 @@ body {
 
 /* カードホバー時の浮遊感 */
 .main-card:hover {
-    box-shadow: none;
-    border: var(--md-card-border-hover);
-    transform: none;
+    box-shadow: var(--yl-shadow-card-hover);
+    border-color: color-mix(in srgb, var(--md-sys-color-primary) 20%, var(--md-sys-color-outline-variant));
+    transform: translateY(-2px);
 }
 
 .main-card-inner {
-    background: transparent;
-    border-radius: calc(var(--md-sys-shape-corner-3xl) - 0.125rem);
+    background: var(--md-sys-color-surface);
+    border-radius: calc(var(--md-sys-shape-corner-3xl) - 0.25rem);
+    border: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 70%, transparent);
     /* ヌメヌメとした滑らかな遷移 */
     transition: all var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-fluid);
 }
@@ -950,19 +1015,20 @@ body {
 .main-card-inner:focus-within {
     outline: none;
     outline-offset: 0;
-    box-shadow: none;
-    transform: none;
+    box-shadow: var(--yl-focus-ring);
+    border-color: var(--md-sys-color-primary);
+    transform: translateY(-1px);
 }
 
 /* カードの浮遊登場アニメーション */
 @keyframes cardFloatIn {
     0% {
         opacity: 0;
-        transform: translateY(16px) scale(0.98);
+        transform: translateY(18px) scale(0.97);
     }
     60% {
         opacity: 1;
-        transform: translateY(-4px) scale(1.01);
+        transform: translateY(-6px) scale(1.02);
     }
     100% {
         opacity: 1;
@@ -973,10 +1039,10 @@ body {
 /* === M3 Text Field Container === */
 .text-box {
     background: var(--md-sys-color-surface);
-    border: none;
+    border: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 70%, transparent);
     border-radius: var(--md-sys-shape-corner-3xl);
     overflow: hidden;
-    box-shadow: none;
+    box-shadow: var(--md-sys-elevation-1);
     /* ヌメヌメとした滑らかな遷移 */
     transition: all var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-fluid);
     transform: none;
@@ -985,15 +1051,16 @@ body {
 .text-box:focus-within {
     outline: none;
     outline-offset: 0;
-    box-shadow: none;
-    transform: none;
+    box-shadow: var(--yl-focus-ring);
+    border-color: var(--md-sys-color-primary);
+    transform: translateY(-1px);
 }
 
 /* === Input Toolbar (M3 bottom app bar feel) === */
 .input-toolbar {
     /* Integrated with textarea (single surface) */
-    border-top: none;
-    background: var(--md-sys-color-surface-container-lowest);
+    border-top: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 70%, transparent);
+    background: color-mix(in srgb, var(--md-sys-color-surface-container-low) 92%, transparent);
     border-bottom-left-radius: 0;
     border-bottom-right-radius: 0;
     padding: clamp(0.625rem, 1.2vw, 0.75rem) clamp(0.75rem, 1.6vw, 1rem);
@@ -1010,6 +1077,7 @@ body {
     border-radius: var(--md-sys-shape-corner-large);
     border: 1px solid var(--md-sys-color-outline-variant);
     background: var(--md-sys-color-surface-container-low);
+    box-shadow: var(--md-sys-elevation-1);
 }
 
 .advanced-panel > summary {
@@ -1037,7 +1105,7 @@ body {
 
 .advanced-title {
     font-size: var(--md-sys-typescale-size-xs);
-    font-weight: var(--md-sys-typescale-weight-semibold);
+    font-weight: 700;
     color: var(--md-sys-color-on-surface);
 }
 
@@ -1054,6 +1122,7 @@ body {
     padding: 0.75rem;
     border-radius: var(--md-sys-shape-corner-medium);
     background: var(--md-sys-color-surface);
+    border: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 60%, transparent);
 }
 
 .advanced-label {
@@ -1068,7 +1137,8 @@ body {
     color: var(--md-sys-color-on-surface-variant);
     padding: 0.1rem 0.5rem;
     border-radius: var(--md-sys-shape-corner-full);
-    background: var(--md-sys-color-surface-container);
+    background: var(--md-sys-color-surface-container-high);
+    border: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 60%, transparent);
 }
 
 .char-count-inline.warn {
@@ -1110,20 +1180,24 @@ body {
     /* M3 standard transition */
     transition: background-color var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard),
                 border-color var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard),
+                box-shadow var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-fluid),
                 transform var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-fluid);
     transform: translateY(0);
+    box-shadow: none;
 }
 
 .btn-outline:hover:not(:disabled) {
     /* M3: State layer with on-primary color at hover opacity */
     background: color-mix(in srgb, var(--md-sys-color-primary) calc(var(--md-sys-state-hover-opacity) * 100%), transparent);
     border-color: var(--md-sys-color-outline);
+    box-shadow: var(--md-sys-elevation-1);
     transform: translateY(-1px);
 }
 
 .btn-outline:active:not(:disabled) {
     /* M3: State layer with on-primary color at pressed opacity */
     background: color-mix(in srgb, var(--md-sys-color-primary) calc(var(--md-sys-state-pressed-opacity) * 100%), transparent);
+    box-shadow: none;
     transform: translateY(0.5px) scale(0.99);
 }
 
@@ -1147,7 +1221,7 @@ body {
     height: var(--md-comp-button-height);
     min-height: var(--md-comp-button-height);
     padding: 0 var(--md-comp-button-padding-x);
-    background: var(--md-sys-color-primary);
+    background: var(--yl-gradient-primary);
     color: var(--md-sys-color-on-primary);
     border-radius: var(--md-sys-shape-corner-full);
     font-size: var(--md-sys-typescale-size-xs);
@@ -1157,11 +1231,12 @@ body {
     cursor: pointer;
     position: relative;
     /* M3 standard transition */
-    transition: background-color var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard),
-                transform var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-fluid);
-    /* M3: elevation level 0 for filled buttons */
-    box-shadow: none;
+    transition: transform var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-fluid),
+        box-shadow var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-fluid),
+        filter var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+    box-shadow: var(--yl-shadow-cta);
     transform: translateY(0);
+    overflow: hidden;
 }
 
 .btn-primary::before,
@@ -1169,27 +1244,28 @@ body {
     content: none;
 }
 
+.btn-primary::after,
+.translate-btn::after {
+    content: "";
+    position: absolute;
+    inset: 1px;
+    border-radius: inherit;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.35), transparent 45%);
+    opacity: 0.45;
+    pointer-events: none;
+}
+
 .btn-primary:hover:not(:disabled),
 .translate-btn:hover:not(:disabled) {
-    /* M3: State layer overlay on hover (on-primary at hover opacity) */
-    background: color-mix(
-        in srgb,
-        var(--md-sys-color-primary) calc(100% - var(--md-sys-state-hover-pct)),
-        var(--md-sys-color-on-primary) var(--md-sys-state-hover-pct)
-    );
-    box-shadow: none;
-    transform: translateY(-1px);
+    filter: brightness(1.03);
+    box-shadow: 0 22px 44px rgba(43, 89, 255, 0.32);
+    transform: translateY(-2px);
 }
 
 .btn-primary:active:not(:disabled),
 .translate-btn:active:not(:disabled) {
-    /* M3: State layer overlay on press (on-primary at pressed opacity) */
-    background: color-mix(
-        in srgb,
-        var(--md-sys-color-primary) calc(100% - var(--md-sys-state-pressed-pct)),
-        var(--md-sys-color-on-primary) var(--md-sys-state-pressed-pct)
-    );
-    box-shadow: none;
+    filter: brightness(0.98);
+    box-shadow: 0 10px 24px rgba(43, 89, 255, 0.2);
     transform: translateY(0.5px) scale(0.99);
 }
 
@@ -1272,6 +1348,7 @@ textarea:focus-visible {
     position: relative;
     /* M3 standard transition */
     transition: background-color var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard),
+                box-shadow var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-fluid),
                 transform var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-fluid);
     box-shadow: none;
     transform: translateY(0);
@@ -1288,7 +1365,7 @@ textarea:focus-visible {
         var(--md-sys-color-secondary-container) calc(100% - var(--md-sys-state-hover-pct)),
         var(--md-sys-color-on-secondary-container) var(--md-sys-state-hover-pct)
     );
-    box-shadow: none;
+    box-shadow: var(--md-sys-elevation-1);
     transform: translateY(-1px);
 }
 
@@ -1333,8 +1410,9 @@ textarea:focus-visible {
     cursor: pointer;
     /* M3 standard transition */
     transition: background-color var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard),
+                box-shadow var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-fluid),
                 transform var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-fluid);
-    box-shadow: none;
+    box-shadow: var(--md-sys-elevation-1);
     transform: translateY(0);
 }
 
@@ -1345,7 +1423,7 @@ textarea:focus-visible {
         var(--md-sys-color-surface-container) calc(100% - var(--md-sys-state-hover-pct)),
         var(--md-sys-color-primary) var(--md-sys-state-hover-pct)
     );
-    box-shadow: none;
+    box-shadow: var(--md-sys-elevation-2);
     transform: translateY(-1px);
 }
 
@@ -1356,7 +1434,7 @@ textarea:focus-visible {
         var(--md-sys-color-surface-container) calc(100% - var(--md-sys-state-pressed-pct)),
         var(--md-sys-color-primary) var(--md-sys-state-pressed-pct)
     );
-    box-shadow: none;
+    box-shadow: var(--md-sys-elevation-1);
     transform: translateY(0.5px) scale(0.99);
 }
 
@@ -1380,7 +1458,7 @@ textarea:focus-visible {
     max-width: none;
     align-self: stretch;
     box-sizing: border-box;
-    box-shadow: none;
+    box-shadow: var(--yl-shadow-cta);
 }
 
 .btn-primary.sidebar-primary-btn .q-btn__content {
@@ -1395,11 +1473,11 @@ textarea:focus-visible {
 }
 
 .btn-primary.sidebar-primary-btn:hover:not(:disabled) {
-    box-shadow: none;
+    box-shadow: 0 24px 50px rgba(43, 89, 255, 0.34);
 }
 
 .btn-primary.sidebar-primary-btn:active:not(:disabled) {
-    box-shadow: none;
+    box-shadow: 0 12px 26px rgba(43, 89, 255, 0.22);
 }
 
 /* === M3 Text Button === */
@@ -1442,7 +1520,7 @@ textarea:focus-visible {
 
 /* === Drop Zone (Nani-style: white bg + thin border + soft shadow) === */
 .drop-zone {
-    border: 1px dashed var(--md-sys-color-outline);
+    border: 2px dashed color-mix(in srgb, var(--md-sys-color-outline) 70%, transparent);
     border-radius: var(--md-sys-shape-corner-xl);
     /* Height matches text input panel for consistency */
     min-height: var(--input-min-height);
@@ -1456,9 +1534,9 @@ textarea:focus-visible {
     /* ヌメヌメとした滑らかな遷移 */
     transition: all var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-fluid);
     background: var(--md-sys-color-surface);
-    box-shadow: none;
+    box-shadow: var(--md-sys-elevation-1);
     position: relative;
-    transform: none;
+    transform: translateY(0);
 }
 
 /* Visual content layer - positioned for display, clicks pass through */
@@ -1585,21 +1663,22 @@ body.yakulingo-drag-active .global-drop-indicator {
 
 /* Nani-style: subtle hover - bg changes from main-100 to main-200 equivalent */
 .drop-zone:hover {
-    border-color: var(--md-sys-color-outline);
-    background: var(--md-sys-color-surface-container-low);
-    box-shadow: none;
-    transform: none;
+    border-color: var(--md-sys-color-primary);
+    background: color-mix(in srgb, var(--md-sys-color-primary-container) 30%, var(--md-sys-color-surface));
+    box-shadow: var(--md-sys-elevation-2);
+    transform: translateY(-2px);
 }
 
 /* Active drag-over state (slightly more prominent than hover) */
 .drop-zone.drag-over {
     border-color: var(--md-sys-color-primary);
     background: var(--md-sys-color-primary-container);
-    transform: none;
+    box-shadow: var(--yl-shadow-card-hover);
+    transform: translateY(-2px);
 }
 
 .drop-zone-icon {
-    font-size: 3rem;
+    font-size: 3.2rem;
     color: var(--md-sys-color-on-surface-variant);
     margin-bottom: 0.75rem;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-spring);
@@ -1611,21 +1690,23 @@ body.yakulingo-drag-active .global-drop-indicator {
 
 .drop-zone-text {
     font-size: var(--md-sys-typescale-size-lg);
-    font-weight: 500;
+    font-family: var(--yl-font-display);
+    font-weight: 700;
     color: var(--md-sys-color-on-surface);
     margin-bottom: 0.375rem;
 }
 
 .drop-zone-subtext {
     font-size: 1rem;
-    color: var(--md-sys-color-outline);
+    color: var(--md-sys-color-on-surface-variant);
     margin-bottom: 0.75rem;
 }
 
 .drop-zone-hint {
     font-size: var(--md-sys-typescale-size-xs);
     color: var(--md-sys-color-on-surface-variant);
-    background: var(--md-sys-color-surface-container);
+    background: var(--md-sys-color-surface-container-high);
+    border: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 70%, transparent);
     padding: 0.375rem 0.75rem;
     border-radius: var(--md-sys-shape-corner-small);
 }
@@ -1633,8 +1714,8 @@ body.yakulingo-drag-active .global-drop-indicator {
 /* === M3 Card (white bg + thin border + soft shadow) === */
 .file-card {
     background: var(--md-sys-color-surface);
-    border: var(--md-card-border);
-    box-shadow: none;
+    border: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 65%, transparent);
+    box-shadow: var(--md-sys-elevation-1);
     border-radius: var(--md-sys-shape-corner-large);
     padding: 1.25rem;
     animation: fadeIn var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard);
@@ -1642,13 +1723,14 @@ body.yakulingo-drag-active .global-drop-indicator {
 }
 
 .file-card.success {
-    background: var(--md-sys-color-success-container);
-    border-color: color-mix(in srgb, var(--md-sys-color-success) 20%, transparent);
+    background: color-mix(in srgb, var(--md-sys-color-success-container) 85%, var(--md-sys-color-surface));
+    border-color: color-mix(in srgb, var(--md-sys-color-success) 25%, transparent);
+    box-shadow: var(--md-sys-elevation-2);
 }
 
 /* === M3 Progress Indicator === */
 .progress-track {
-    height: 6px;
+    height: 8px;
     background: var(--md-sys-color-surface-container-high);
     border-radius: var(--md-sys-shape-corner-full);
     overflow: hidden;
@@ -1656,7 +1738,7 @@ body.yakulingo-drag-active .global-drop-indicator {
 
 .progress-bar {
     height: 100%;
-    background: var(--md-sys-color-primary);
+    background: var(--yl-gradient-progress);
     border-radius: var(--md-sys-shape-corner-full);
     transition: width var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard);
     position: relative;
@@ -1672,9 +1754,11 @@ body.yakulingo-drag-active .global-drop-indicator {
     display: inline-block;
     padding: 0.4375rem 0.875rem;
     background: var(--md-sys-color-surface-container-high);
+    border: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 60%, transparent);
     border-radius: var(--md-sys-shape-corner-full);
     font-size: var(--md-sys-typescale-size-xs);  /* 16px */
     color: var(--md-sys-color-on-surface-variant);
+    font-weight: 600;
 }
 
 .chip-primary {
@@ -1686,13 +1770,34 @@ body.yakulingo-drag-active .global-drop-indicator {
 .option-card {
     /* Assistant message card (AI chat style) */
     background: var(--md-sys-color-surface);
-    border: var(--md-card-border);
-    box-shadow: none;
+    border: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 65%, transparent);
+    box-shadow: var(--md-sys-elevation-1);
     /* Chat-bubble corner: assistant (left) */
     border-radius: var(--md-sys-shape-corner-xl) var(--md-sys-shape-corner-xl) var(--md-sys-shape-corner-xl) 0.75rem;
     padding: 1.25rem;
     -webkit-user-select: text !important;
     user-select: text !important;
+    position: relative;
+    transition: box-shadow var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard),
+        transform var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+}
+
+.option-card::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: var(--yl-gradient-primary);
+    opacity: 0.55;
+    border-top-left-radius: inherit;
+    border-top-right-radius: inherit;
+}
+
+.option-card:hover {
+    box-shadow: var(--md-sys-elevation-2);
+    transform: translateY(-1px);
 }
 
 .option-card-header {
@@ -1721,10 +1826,12 @@ body.yakulingo-drag-active .global-drop-indicator {
 .result-action-btn:hover {
     background: color-mix(in srgb, var(--md-sys-color-primary) calc(var(--md-sys-state-hover-opacity) * 100%), transparent) !important;
     color: var(--md-sys-color-primary) !important;
+    transform: translateY(-1px);
 }
 
 .result-action-btn:active {
     background: color-mix(in srgb, var(--md-sys-color-primary) calc(var(--md-sys-state-pressed-opacity) * 100%), transparent) !important;
+    transform: translateY(0);
 }
 
 .result-action-btn .q-icon {
@@ -1782,7 +1889,7 @@ body.yakulingo-drag-active .global-drop-indicator {
 
 .success-text {
     font-size: 1rem;
-    font-weight: 500;
+    font-weight: 600;
     color: var(--md-sys-color-on-success-container);
 }
 
@@ -1793,7 +1900,8 @@ body.yakulingo-drag-active .global-drop-indicator {
     width: 4rem;
     height: 4rem;
     border-radius: var(--md-sys-shape-corner-full);
-    background: var(--md-sys-color-success);
+    background: linear-gradient(135deg, #1F7A48 0%, #3CB371 100%);
+    box-shadow: 0 18px 36px rgba(31, 122, 72, 0.25);
     animation: scaleIn var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard);
 }
 
@@ -1855,11 +1963,11 @@ body.yakulingo-drag-active .global-drop-indicator {
 @keyframes fadeIn {
     0% {
         opacity: 0;
-        transform: translateY(8px) scale(0.98);
+        transform: translateY(12px) scale(0.97);
     }
     60% {
         opacity: 1;
-        transform: translateY(-2px) scale(1.005);
+        transform: translateY(-4px) scale(1.01);
     }
     100% {
         opacity: 1;
@@ -1870,14 +1978,14 @@ body.yakulingo-drag-active .global-drop-indicator {
 @keyframes fadeInSpring {
     0% {
         opacity: 0;
-        transform: translateY(12px) scale(0.96);
+        transform: translateY(16px) scale(0.95);
     }
     50% {
         opacity: 1;
-        transform: translateY(-4px) scale(1.02);
+        transform: translateY(-6px) scale(1.03);
     }
     75% {
-        transform: translateY(2px) scale(0.995);
+        transform: translateY(3px) scale(0.99);
     }
     100% {
         opacity: 1;
@@ -1959,6 +2067,18 @@ body.yakulingo-drag-active .global-drop-indicator {
     flex-direction: column !important;
 }
 
+.main-area:not(.file-mode) .main-card-inner .q-field__control {
+    background: var(--md-sys-color-surface);
+    border-radius: calc(var(--md-sys-shape-corner-3xl) - 0.5rem);
+    border: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 70%, transparent);
+    box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.06);
+}
+
+.main-area:not(.file-mode) .main-card-inner .q-field:focus-within .q-field__control {
+    border-color: var(--md-sys-color-primary);
+    box-shadow: var(--yl-focus-ring);
+}
+
 /* Target q-field__native which wraps the textarea */
 .main-area:not(.has-results) .input-panel .main-card-inner .q-field__native {
     display: flex !important;
@@ -2016,7 +2136,8 @@ body.yakulingo-drag-active .global-drop-indicator {
 
 .input-empty-title {
     font-size: var(--md-sys-typescale-size-lg);
-    font-weight: var(--md-sys-typescale-weight-semibold);
+    font-family: var(--yl-font-display);
+    font-weight: 700;
     color: var(--md-sys-color-on-surface);
 }
 
@@ -2115,6 +2236,10 @@ body.yakulingo-drag-active .global-drop-indicator {
     border-radius: 0;  /* 角丸を無効化（ガラス効果を防ぐ） */
     padding: 0;
     animation: none;
+}
+
+.main-area.file-mode .main-card::before {
+    display: none;
 }
 
 .main-area.file-mode .main-card:hover {
@@ -2420,15 +2545,16 @@ body.yakulingo-drag-active .global-drop-indicator {
 .style-btn-active {
     background: var(--md-sys-color-primary-container);
     color: var(--md-sys-color-on-primary-container);
+    box-shadow: var(--md-sys-elevation-1);
 }
 
 /* === →Japanese Translation Result Card === */
 .jp-result-card {
-    background: var(--md-sys-color-surface-container);
-    border: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 70%, transparent);
+    background: var(--md-sys-color-surface);
+    border: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 60%, transparent);
     border-radius: var(--md-sys-shape-corner-xl);
     padding: 1.5rem;
-    box-shadow: none;
+    box-shadow: var(--md-sys-elevation-1);
 }
 
 .jp-result-text {
@@ -2439,11 +2565,11 @@ body.yakulingo-drag-active .global-drop-indicator {
 
 /* === Explanation Card === */
 .explanation-card {
-    background: color-mix(in srgb, var(--md-sys-color-tertiary-container) 15%, var(--md-sys-color-surface-container) 85%);
-    border: none;
+    background: color-mix(in srgb, var(--md-sys-color-tertiary-container) 22%, var(--md-sys-color-surface) 78%);
+    border: 1px solid color-mix(in srgb, var(--md-sys-color-tertiary) 18%, transparent);
     border-radius: var(--md-sys-shape-corner-large);
     padding: 1.25rem;
-    box-shadow: none;
+    box-shadow: var(--md-sys-elevation-1);
 }
 
 /* === Nani-style Avatar and Status === */
@@ -2454,9 +2580,9 @@ body.yakulingo-drag-active .global-drop-indicator {
     margin: 0.5rem 0 0.25rem;
     padding: 0.5rem 0.625rem;
     border-radius: var(--md-sys-shape-corner-large);
-    background: var(--md-sys-color-surface);
-    border: none;
-    box-shadow: none;
+    background: var(--md-sys-color-surface-container-low);
+    border: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 70%, transparent);
+    box-shadow: var(--md-sys-elevation-1);
 }
 
 .avatar-container {
@@ -2468,8 +2594,9 @@ body.yakulingo-drag-active .global-drop-indicator {
     align-items: center;
     justify-content: center;
     border-radius: 12px;
-    background: var(--md-sys-color-primary-container);
-    box-shadow: none;
+    background: var(--yl-gradient-primary-soft);
+    border: 1px solid color-mix(in srgb, var(--md-sys-color-primary) 35%, transparent);
+    box-shadow: var(--md-sys-elevation-1);
 }
 
 .avatar-container .avatar-icon {
@@ -2513,10 +2640,30 @@ body.yakulingo-drag-active .global-drop-indicator {
     border-radius: var(--md-sys-shape-corner-2xl);
     position: relative;
     background: var(--md-sys-color-surface);
-    box-shadow: none;
-    border: var(--md-card-border);
+    box-shadow: var(--md-sys-elevation-1);
+    border: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 65%, transparent);
     width: 100%;
-    transition: background-color var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+    transition: background-color var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard),
+        box-shadow var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard),
+        transform var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+}
+
+.nani-result-card::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 5px;
+    background: var(--yl-gradient-primary);
+    opacity: 0.7;
+    border-top-left-radius: inherit;
+    border-top-right-radius: inherit;
+}
+
+.nani-result-card:hover {
+    box-shadow: var(--md-sys-elevation-2);
+    transform: translateY(-1px);
 }
 
 .nani-result-content {
@@ -2552,7 +2699,8 @@ body.yakulingo-drag-active .global-drop-indicator {
 /* === Nani-style Explanation === */
 /* Nani-style: bg-primary-bg-lighter - softer primary background */
 .nani-explanation {
-    background: var(--md-sys-color-primary-container);  /* primary-container - solid color for readability */
+    background: color-mix(in srgb, var(--md-sys-color-primary-container) 85%, var(--md-sys-color-surface));  /* primary-container - solid color for readability */
+    border: 1px solid color-mix(in srgb, var(--md-sys-color-primary) 18%, transparent);
     padding: 0.875rem;  /* 14px - matches Nani's p-3.5 */
     margin-top: 0.25rem;
     color: color-mix(in srgb, var(--md-sys-color-on-surface) 80%, transparent);  /* on-surface at 80% */
@@ -3424,7 +3572,8 @@ body.yakulingo-drag-active .global-drop-indicator {
 .elapsed-time-badge {
     font-size: var(--md-sys-typescale-size-xs);
     color: var(--md-sys-color-on-surface-variant);
-    background: var(--md-sys-color-surface-container);
+    background: color-mix(in srgb, var(--md-sys-color-surface-container-high) 85%, transparent);
+    border: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 70%, transparent);
     padding: 0.25rem 0.625rem;
     border-radius: var(--md-sys-shape-corner-full);
     font-weight: 500;
@@ -3494,8 +3643,8 @@ body.yakulingo-drag-active .global-drop-indicator {
     padding: 0.25rem 0.75rem !important;
     min-height: 32px !important;
     color: var(--md-sys-color-on-surface-variant) !important;
-    background: var(--md-sys-color-surface-container-low) !important;
-    border: none !important;
+    background: var(--md-sys-color-surface-container-high) !important;
+    border: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 60%, transparent) !important;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard) !important;
 }
 
@@ -3512,6 +3661,8 @@ body.yakulingo-drag-active .global-drop-indicator {
 .glossary-toggle-btn.active {
     background: var(--md-sys-color-primary-container) !important;
     color: var(--md-sys-color-on-primary-container) !important;
+    border-color: color-mix(in srgb, var(--md-sys-color-primary) 30%, transparent) !important;
+    box-shadow: var(--md-sys-elevation-1) !important;
 }
 
 .glossary-toggle-btn.active:hover {
@@ -3526,10 +3677,10 @@ body.yakulingo-drag-active .global-drop-indicator {
 /* === Translation Style Toggle (Compact segment buttons) === */
 .style-toggle {
     border-radius: var(--md-sys-shape-corner-full) !important;
-    background: var(--md-sys-color-surface-container-low) !important;
-    border: none !important;
+    background: var(--md-sys-color-surface-container-high) !important;
+    border: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 60%, transparent) !important;
     padding: 1px !important;
-    box-shadow: none !important;
+    box-shadow: var(--md-sys-elevation-1) !important;
 }
 
 .style-toggle .q-btn-group {
@@ -4045,15 +4196,15 @@ a:hover {
     padding: 0 1.5rem;
     font-size: 0.9375rem;
     border-radius: var(--md-sys-shape-corner-full);
-    box-shadow: none;
+    box-shadow: var(--yl-shadow-cta);
 }
 
 .main-area:not(.has-results) .input-panel .translate-btn:hover:not(:disabled) {
-    box-shadow: none;
+    box-shadow: 0 24px 50px rgba(43, 89, 255, 0.34);
 }
 
 .main-area:not(.has-results) .input-panel .translate-btn:active:not(:disabled) {
-    box-shadow: none;
+    box-shadow: 0 12px 26px rgba(43, 89, 255, 0.22);
 }
 
 .main-area:not(.has-results) .input-panel .settings-btn {
@@ -4092,6 +4243,8 @@ a:hover {
 /* === File Panel Translation Settings Card === */
 .file-settings-card {
     background-color: var(--md-sys-color-surface);
+    border: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 65%, transparent);
+    box-shadow: var(--md-sys-elevation-1);
     border-radius: var(--md-sys-shape-corner-large);
     padding: 1rem;
     margin-top: 1rem;
@@ -4326,7 +4479,8 @@ a:not(.q-btn):not(.q-item),
     gap: 0.375rem;
     padding: 0.25rem 0.75rem;
     border-radius: var(--md-sys-shape-corner-full);
-    background: var(--md-sys-color-surface-container);
+    background: var(--md-sys-color-surface-container-high);
+    border: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 65%, transparent);
     color: var(--md-sys-color-on-surface-variant);
     font-size: var(--md-sys-typescale-size-xs);
 }
@@ -4348,7 +4502,8 @@ a:not(.q-btn):not(.q-item),
     padding: 0.125rem;
     border-radius: var(--md-sys-shape-corner-full);
     border: 1px solid var(--md-sys-color-outline-variant);
-    background: var(--md-sys-color-surface);
+    background: var(--md-sys-color-surface-container-low);
+    box-shadow: var(--md-sys-elevation-1);
 }
 
 .direction-btn {
@@ -4368,7 +4523,7 @@ a:not(.q-btn):not(.q-item),
 
 .char-count-track {
     position: relative;
-    height: 6px;
+    height: 7px;
     border-radius: var(--md-sys-shape-corner-full);
     background: var(--md-sys-color-surface-container-high);
     overflow: hidden;
@@ -4379,6 +4534,7 @@ a:not(.q-btn):not(.q-item),
     width: 0%;
     border-radius: var(--md-sys-shape-corner-full);
     transition: width var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard);
+    background: var(--yl-gradient-progress);
 }
 
 .char-count-marker {
@@ -4494,7 +4650,8 @@ a:not(.q-btn):not(.q-item),
     padding: 0.5rem 0.75rem;
     border-radius: var(--md-sys-shape-corner-large);
     border: 1px solid var(--md-sys-color-outline-variant);
-    background: var(--md-sys-color-surface-container);
+    background: var(--md-sys-color-surface-container-high);
+    box-shadow: var(--md-sys-elevation-1);
 }
 
 .result-action-footer-inner {
@@ -4527,8 +4684,9 @@ a:not(.q-btn):not(.q-item),
     margin-top: 0.75rem;
     padding: 0.75rem 1rem;
     border-radius: var(--md-sys-shape-corner-large);
-    background: var(--md-sys-color-surface-container);
+    background: var(--md-sys-color-surface);
     border: 1px solid var(--md-sys-color-outline-variant);
+    box-shadow: var(--md-sys-elevation-1);
 }
 
 .precheck-grid {
@@ -4540,6 +4698,7 @@ a:not(.q-btn):not(.q-item),
 .precheck-item {
     font-size: var(--md-sys-typescale-size-xs);
     color: var(--md-sys-color-on-surface);
+    font-weight: 600;
 }
 
 .progress-meta-row {
@@ -4549,26 +4708,52 @@ a:not(.q-btn):not(.q-item),
 .phase-stepper {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.35rem;
+    gap: 0.4rem;
     margin-top: 0.5rem;
+    align-items: center;
 }
 
 .phase-step {
-    padding: 0.2rem 0.6rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.25rem 0.6rem;
     border-radius: var(--md-sys-shape-corner-full);
     background: var(--md-sys-color-surface-container-high);
     color: var(--md-sys-color-on-surface-variant);
     font-size: 0.75rem;
+    font-weight: 600;
+    border: 1px solid transparent;
+}
+
+.phase-step::before {
+    content: "";
+    width: 0.4rem;
+    height: 0.4rem;
+    border-radius: 50%;
+    background: var(--md-sys-color-outline);
 }
 
 .phase-step.active {
     background: var(--md-sys-color-primary-container);
     color: var(--md-sys-color-on-primary-container);
+    border-color: color-mix(in srgb, var(--md-sys-color-primary) 25%, transparent);
 }
 
 .phase-step.completed {
     background: var(--md-sys-color-success-container);
     color: var(--md-sys-color-on-success-container);
+    border-color: color-mix(in srgb, var(--md-sys-color-success) 25%, transparent);
+}
+
+.phase-step.active::before {
+    background: var(--md-sys-color-primary);
+    box-shadow: 0 0 0 4px rgba(43, 89, 255, 0.15);
+}
+
+.phase-step.completed::before {
+    background: var(--md-sys-color-success);
+    box-shadow: 0 0 0 4px rgba(31, 122, 72, 0.12);
 }
 
 .phase-label {
@@ -4581,6 +4766,7 @@ a:not(.q-btn):not(.q-item),
     border-radius: var(--md-sys-shape-corner-large);
     background: var(--md-sys-color-warning-container);
     border: 1px solid color-mix(in srgb, var(--md-sys-color-warning) 35%, transparent);
+    box-shadow: var(--md-sys-elevation-1);
 }
 
 .issue-location {
@@ -4731,8 +4917,10 @@ a:not(.q-btn):not(.q-item),
 .direction-chip,
 .style-chip,
 .override-chip {
-    padding: 0.2rem 0.6rem;
+    padding: 0.25rem 0.65rem;
     font-size: 0.7rem;
+    font-weight: 600;
+    border: 1px solid transparent;
 }
 
 .meta-chip,
@@ -4740,11 +4928,13 @@ a:not(.q-btn):not(.q-item),
 .style-chip {
     background: var(--md-sys-color-surface-container-high);
     color: var(--md-sys-color-on-surface-variant);
+    border-color: color-mix(in srgb, var(--md-sys-color-outline-variant) 65%, transparent);
 }
 
 .override-chip {
     background: var(--md-sys-color-warning-container);
     color: var(--md-sys-color-on-warning-container);
+    border-color: color-mix(in srgb, var(--md-sys-color-warning) 30%, transparent);
 }
 
 .file-meta-chips {
@@ -4935,6 +5125,7 @@ a:not(.q-btn):not(.q-item),
     border-radius: var(--md-sys-shape-corner-large);
     border: 1px solid var(--md-sys-color-outline-variant);
     background: var(--md-sys-color-surface-container);
+    box-shadow: var(--md-sys-elevation-1);
 }
 
 .queue-item {
@@ -4946,7 +5137,9 @@ a:not(.q-btn):not(.q-item),
     border: 1px solid transparent;
     background: var(--md-sys-color-surface);
     cursor: pointer;
-    transition: background var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+    transition: background var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard),
+        box-shadow var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard),
+        transform var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
 }
 
 .queue-item.drag-over {
@@ -4972,6 +5165,12 @@ a:not(.q-btn):not(.q-item),
 .queue-item.active {
     border-color: var(--md-sys-color-primary);
     background: color-mix(in srgb, var(--md-sys-color-primary) 6%, var(--md-sys-color-surface));
+    box-shadow: var(--md-sys-elevation-1);
+}
+
+.queue-item:hover {
+    box-shadow: var(--md-sys-elevation-1);
+    transform: translateY(-1px);
 }
 
 .queue-file-icon {
@@ -4994,6 +5193,8 @@ a:not(.q-btn):not(.q-item),
     background: var(--md-sys-color-surface-container-high);
     color: var(--md-sys-color-on-surface-variant);
     font-size: 0.65rem;
+    font-weight: 600;
+    border: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 65%, transparent);
 }
 
 .queue-status.running {
@@ -5027,7 +5228,7 @@ a:not(.q-btn):not(.q-item),
 .queue-progress-bar {
     height: 100%;
     border-radius: inherit;
-    background: var(--md-sys-color-primary);
+    background: var(--yl-gradient-progress);
 }
 
 .queue-progress-label {

@@ -174,6 +174,166 @@ def _get_windows_dpi_scale() -> float:
     return 1.0
 
 
+def _find_window_handle_by_title_win32(window_title: str) -> int | None:
+    if sys.platform != "win32":
+        return None
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        hwnd = user32.FindWindowW(None, window_title)
+        if hwnd:
+            return hwnd
+
+        EnumWindowsProc = ctypes.WINFUNCTYPE(
+            wintypes.BOOL, wintypes.HWND, wintypes.LPARAM
+        )
+        found_hwnd: dict[str, int | None] = {"value": None}
+
+        def _enum_windows(hwnd_enum, _):
+            length = user32.GetWindowTextLengthW(hwnd_enum)
+            if length <= 0:
+                return True
+            buffer = ctypes.create_unicode_buffer(length + 1)
+            user32.GetWindowTextW(hwnd_enum, buffer, length + 1)
+            title = buffer.value
+            if window_title in title:
+                found_hwnd["value"] = int(hwnd_enum)
+                return False
+            return True
+
+        user32.EnumWindows(EnumWindowsProc(_enum_windows), 0)
+        return found_hwnd["value"]
+    except Exception as e:
+        logger.debug("Failed to find window handle for title '%s': %s", window_title, e)
+        return None
+
+
+def _set_window_taskbar_visibility_win32(hwnd: int, visible: bool) -> bool:
+    if sys.platform != "win32":
+        return False
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        user32 = ctypes.WinDLL('user32', use_last_error=True)
+        GWL_EXSTYLE = -20
+        WS_EX_TOOLWINDOW = 0x00000080
+        WS_EX_APPWINDOW = 0x00040000
+        SWP_NOMOVE = 0x0002
+        SWP_NOSIZE = 0x0001
+        SWP_NOZORDER = 0x0004
+        SWP_NOACTIVATE = 0x0010
+        SWP_FRAMECHANGED = 0x0020
+
+        is_64 = ctypes.sizeof(ctypes.c_void_p) == ctypes.sizeof(ctypes.c_longlong)
+        if is_64:
+            GetWindowLongPtr = user32.GetWindowLongPtrW
+            SetWindowLongPtr = user32.SetWindowLongPtrW
+            GetWindowLongPtr.restype = ctypes.c_longlong
+            SetWindowLongPtr.restype = ctypes.c_longlong
+            set_style_type = ctypes.c_longlong
+        else:
+            GetWindowLongPtr = user32.GetWindowLongW
+            SetWindowLongPtr = user32.SetWindowLongW
+            GetWindowLongPtr.restype = ctypes.c_long
+            SetWindowLongPtr.restype = ctypes.c_long
+            set_style_type = ctypes.c_long
+
+        GetWindowLongPtr.argtypes = [wintypes.HWND, ctypes.c_int]
+        SetWindowLongPtr.argtypes = [wintypes.HWND, ctypes.c_int, set_style_type]
+
+        style = GetWindowLongPtr(wintypes.HWND(hwnd), GWL_EXSTYLE)
+        if visible:
+            new_style = (style | WS_EX_APPWINDOW) & ~WS_EX_TOOLWINDOW
+        else:
+            new_style = (style | WS_EX_TOOLWINDOW) & ~WS_EX_APPWINDOW
+
+        if new_style == style:
+            return True
+
+        SetWindowLongPtr(wintypes.HWND(hwnd), GWL_EXSTYLE, new_style)
+        user32.SetWindowPos(
+            wintypes.HWND(hwnd),
+            None,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+        )
+        return True
+    except Exception as e:
+        logger.debug("Failed to set taskbar visibility: %s", e)
+        return False
+
+
+def _set_window_icon_win32(hwnd: int, icon_path_str: str, *, log_prefix: str = "") -> bool:
+    if sys.platform != "win32":
+        return False
+    if not icon_path_str:
+        return False
+    try:
+        import ctypes
+
+        user32 = ctypes.WinDLL('user32', use_last_error=True)
+
+        WM_SETICON = 0x0080
+        ICON_SMALL = 0
+        ICON_BIG = 1
+        ICON_SMALL2 = 2
+        IMAGE_ICON = 1
+        LR_LOADFROMFILE = 0x0010
+        LR_DEFAULTSIZE = 0x0040
+
+        SM_CXICON = 11
+        SM_CYICON = 12
+        SM_CXSMICON = 49
+        SM_CYSMICON = 50
+
+        cx_small = user32.GetSystemMetrics(SM_CXSMICON) or 16
+        cy_small = user32.GetSystemMetrics(SM_CYSMICON) or 16
+        cx_big = user32.GetSystemMetrics(SM_CXICON) or 32
+        cy_big = user32.GetSystemMetrics(SM_CYICON) or 32
+
+        hicon_small = user32.LoadImageW(
+            None, icon_path_str, IMAGE_ICON,
+            cx_small, cy_small, LR_LOADFROMFILE
+        )
+        hicon_big = user32.LoadImageW(
+            None, icon_path_str, IMAGE_ICON,
+            256, 256, LR_LOADFROMFILE
+        ) or user32.LoadImageW(
+            None, icon_path_str, IMAGE_ICON,
+            cx_big, cy_big, LR_LOADFROMFILE
+        ) or user32.LoadImageW(
+            None, icon_path_str, IMAGE_ICON,
+            0, 0, LR_LOADFROMFILE | LR_DEFAULTSIZE
+        )
+
+        hicon_taskbar = hicon_big or hicon_small
+
+        if hicon_small:
+            user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL, hicon_small)
+        elif hicon_taskbar:
+            user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL, hicon_taskbar)
+
+        if hicon_taskbar:
+            user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG, hicon_taskbar)
+            user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL2, hicon_taskbar)
+
+        if hicon_small or hicon_taskbar:
+            prefix = f"{log_prefix} " if log_prefix else ""
+            logger.debug("%sWindow icon set successfully", prefix)
+            return True
+    except Exception as e:
+        prefix = f"{log_prefix} " if log_prefix else ""
+        logger.debug("%sFailed to set window icon: %s", prefix, e)
+        return False
+    return False
+
+
 def _hide_native_window_offscreen_win32(window_title: str) -> None:
     """Move the native window offscreen and hide it (Windows only)."""
     if sys.platform != "win32":
@@ -398,6 +558,16 @@ def _nicegui_open_window_patched(
     webview.settings.update(**settings_dict)
     window = webview.create_window(**window_kwargs)
     assert window is not None
+    if sys.platform == "win32":
+        try:
+            icon_value = window_kwargs.get("icon")
+            icon_path = str(icon_value) if icon_value else ""
+            hwnd = _find_window_handle_by_title_win32(title)
+            if hwnd and icon_path:
+                _set_window_icon_win32(hwnd, icon_path, log_prefix="[NATIVE_WINDOW]")
+        except Exception as e:
+            logger.debug("Failed to set native window icon: %s", e)
+
     def _handle_window_closing(*_args, **_kwargs):
         def _notify_ui_close() -> bool:
             try:
@@ -452,6 +622,9 @@ def _nicegui_open_window_patched(
                 return True
             try:
                 if sys.platform == "win32":
+                    hwnd = _find_window_handle_by_title_win32(title)
+                    if hwnd:
+                        _set_window_taskbar_visibility_win32(hwnd, False)
                     _hide_native_window_offscreen_win32(title)
                 if hasattr(window, "hide"):
                     window.hide()
@@ -3402,10 +3575,32 @@ class YakuLingoApp:
     # Section 2: Connection & Startup
     # =========================================================================
 
+    def _set_ui_taskbar_visibility_win32(self, visible: bool, reason: str) -> None:
+        if sys.platform != "win32":
+            return
+        hwnd = None
+        if self._copilot is not None:
+            try:
+                hwnd = self._copilot._find_yakulingo_window_handle(include_hidden=True)
+            except Exception:
+                hwnd = None
+        if not hwnd:
+            hwnd = _find_window_handle_by_title_win32("YakuLingo")
+        if not hwnd:
+            logger.debug("YakuLingo window not found for taskbar visibility (%s)", reason)
+            return
+        if _set_window_taskbar_visibility_win32(int(hwnd), visible):
+            logger.debug(
+                "YakuLingo taskbar visibility set to: %s (%s)",
+                "visible" if visible else "hidden",
+                reason,
+            )
+
     def _hide_resident_window_win32(self, reason: str) -> None:
         if sys.platform != "win32":
             return
         self._set_layout_mode(LayoutMode.OFFSCREEN, f"hide:{reason}")
+        self._set_ui_taskbar_visibility_win32(False, reason)
         try:
             if nicegui_app and hasattr(nicegui_app, "native") and nicegui_app.native.main_window:
                 window = nicegui_app.native.main_window
@@ -3436,6 +3631,8 @@ class YakuLingoApp:
             if not hwnd:
                 logger.debug("YakuLingo window not found for recovery")
                 return False
+
+            self._set_ui_taskbar_visibility_win32(True, f"recover:{reason}")
 
             SW_SHOW = 5
             SW_RESTORE = 9
@@ -3992,6 +4189,9 @@ class YakuLingoApp:
             except Exception as e:
                 logger.debug("Windows API restore failed: %s", e)
 
+        if sys.platform == "win32":
+            self._set_ui_taskbar_visibility_win32(True, "ensure_app_window_visible")
+
         self._set_layout_mode(LayoutMode.FOREGROUND, "ensure_app_window_visible")
         if self._settings:
             self._edge_visibility_target = self._get_effective_browser_display_mode()
@@ -4018,6 +4218,8 @@ class YakuLingoApp:
             if not hwnd:
                 logger.debug("YakuLingo window not found for restore")
                 return False
+
+            self._set_ui_taskbar_visibility_win32(True, "restore_app_window")
 
             # Window flag constants
             SW_RESTORE = 9
@@ -8301,6 +8503,7 @@ def run_app(
                         window.restore()
                     if hasattr(window, 'show'):
                         window.show()
+                    yakulingo_app._set_ui_taskbar_visibility_win32(True, "open_browser_window")
                     window.on_top = True
                     time.sleep(0.05)
                     window.on_top = False
@@ -9148,15 +9351,6 @@ def run_app(
             SWP_NOSIZE = 0x0001
             SWP_NOMOVE = 0x0002
 
-            # Icon setting constants
-            WM_SETICON = 0x0080
-            ICON_SMALL = 0
-            ICON_BIG = 1
-            ICON_SMALL2 = 2  # used by some shell components (taskbar/window list)
-            IMAGE_ICON = 1
-            LR_LOADFROMFILE = 0x0010
-            LR_DEFAULTSIZE = 0x0040
-
             # Use icon_path from outer scope (defined in run_app)
             icon_path_str = str(icon_path) if icon_path is not None and icon_path.exists() else None
 
@@ -9198,57 +9392,11 @@ def run_app(
                         logger.debug("[EARLY_POSITION] Window was visible at create, hiding before reposition")
                         is_visible = False
 
-                    # Set window icon using Win32 API (WM_SETICON)
-                    # This ensures taskbar shows YakuLingo icon instead of Python icon
                     if icon_path_str:
-                        try:
-                            SM_CXICON = 11
-                            SM_CYICON = 12
-                            SM_CXSMICON = 49
-                            SM_CYSMICON = 50
-
-                            cx_small = user32.GetSystemMetrics(SM_CXSMICON) or 16
-                            cy_small = user32.GetSystemMetrics(SM_CYSMICON) or 16
-                            cx_big = user32.GetSystemMetrics(SM_CXICON) or 32
-                            cy_big = user32.GetSystemMetrics(SM_CYICON) or 32
-
-                            hicon_small = user32.LoadImageW(
-                                None, icon_path_str, IMAGE_ICON,
-                                cx_small, cy_small, LR_LOADFROMFILE
-                            )
-
-                            # Prefer a large icon handle to avoid blurry upscaling on high-DPI taskbar sizes.
-                            # Windows will downscale as needed for the current UI scale.
-                            hicon_big = user32.LoadImageW(
-                                None, icon_path_str, IMAGE_ICON,
-                                256, 256, LR_LOADFROMFILE
-                            ) or user32.LoadImageW(
-                                None, icon_path_str, IMAGE_ICON,
-                                cx_big, cy_big, LR_LOADFROMFILE
-                            ) or user32.LoadImageW(
-                                None, icon_path_str, IMAGE_ICON,
-                                0, 0, LR_LOADFROMFILE | LR_DEFAULTSIZE
-                            )
-
-                            # Some shell components request ICON_SMALL2 (taskbar/window list),
-                            # so set it explicitly with a high-res handle when available.
-                            hicon_taskbar = hicon_big or hicon_small
-
-                            if hicon_small:
-                                user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL, hicon_small)
-                            elif hicon_taskbar:
-                                user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL, hicon_taskbar)
-
-                            if hicon_taskbar:
-                                user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG, hicon_taskbar)
-                                user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL2, hicon_taskbar)
-
-                            if hicon_small or hicon_taskbar:
-                                logger.debug("[EARLY_POSITION] Window icon set successfully")
-                        except Exception as e:
-                            logger.debug("[EARLY_POSITION] Failed to set window icon: %s", e)
+                        _set_window_icon_win32(hwnd, icon_path_str, log_prefix="[EARLY_POSITION]")
 
                     if resident_mode:
+                        _set_window_taskbar_visibility_win32(hwnd, False)
                         _hide_native_window_offscreen_win32("YakuLingo")
                         logger.debug("[EARLY_POSITION] Resident mode: window kept offscreen")
                         return

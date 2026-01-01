@@ -70,7 +70,7 @@ class TrayIcon:
         try:
             import urllib.request
 
-            url = f"http://{self._host}:{self._port}{path}"
+            url = f"http://{self._format_control_host()}:{self._port}{path}"
             request = urllib.request.Request(
                 url,
                 data=b"{}",
@@ -81,3 +81,11 @@ class TrayIcon:
                 pass
         except Exception as exc:
             logger.debug("Tray action failed (%s): %s", path, exc)
+
+    def _format_control_host(self) -> str:
+        host = (self._host or "").strip()
+        if host in ("", "0.0.0.0", "::"):
+            host = "127.0.0.1"
+        if ":" in host and not host.startswith("["):
+            host = f"[{host}]"
+        return host

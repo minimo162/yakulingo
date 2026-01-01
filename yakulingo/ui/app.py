@@ -421,6 +421,28 @@ def _nicegui_open_window_patched(
                 logger.debug("Failed to notify UI close-to-resident: %s", e)
                 return False
 
+        def _notify_ui_shutdown() -> bool:
+            try:
+                import json as _json
+                import urllib.request as _urllib_request
+
+                payload = _json.dumps({"reason": "window_close"}).encode("utf-8")
+                req = _urllib_request.Request(
+                    f"http://{host}:{port}/api/shutdown",
+                    data=payload,
+                    headers={
+                        "Content-Type": "application/json",
+                        "X-YakuLingo-Exit": "1",
+                    },
+                    method="POST",
+                )
+                with _urllib_request.urlopen(req, timeout=0.8):
+                    pass
+                return True
+            except Exception as e:
+                logger.debug("Failed to request shutdown: %s", e)
+                return False
+
         if _is_close_to_resident_enabled():
             if not _notify_ui_close():
                 logger.debug("UI close-to-resident notify failed; allowing window close")
@@ -453,6 +475,14 @@ def _nicegui_open_window_patched(
             for key in ("event", "args", "event_args"):
                 _try_cancel(_kwargs.get(key))
             return False
+        if _notify_ui_shutdown():
+            return True
+        try:
+            from yakulingo.ui.utils import write_launcher_state
+
+            write_launcher_state("user_exit")
+        except Exception as e:
+            logger.debug("Failed to write launcher state on close: %s", e)
         return True
 
     try:
@@ -8745,6 +8775,41 @@ def run_app(
                 pass
 
             nicegui_app.shutdown()
+            return {"ok": True}
+
+        @nicegui_app.post('/api/activate')
+        async def activate_api(request: StarletteRequest):  # type: ignore[misc]
+            """Bring the UI window to the foreground (local machine only)."""
+            try:
+                client_host = getattr(getattr(request, "client", None), "host", None)
+                if client_host not in ("127.0.0.1", "::1"):
+                    raise HTTPException(status_code=403, detail="forbidden")
+                activate_header = request.headers.get("X-YakuLingo-Activate")
+                if activate_header != "1":
+                    raise HTTPException(status_code=403, detail="forbidden")
+            except HTTPException:
+                raise
+            except Exception:
+                raise HTTPException(status_code=403, detail="forbidden")
+
+            def _activate_window() -> None:
+                callback = yakulingo_app._open_ui_window_callback
+                if callback is not None:
+                    try:
+                        callback()
+                        return
+                    except Exception:
+                        pass
+                if sys.platform == "win32":
+                    try:
+                        yakulingo_app._bring_window_to_front_win32()
+                    except Exception:
+                        pass
+
+            try:
+                await asyncio.to_thread(_activate_window)
+            except Exception as e:
+                logger.debug("Failed to activate UI window: %s", e)
             return {"ok": True}
 
         @nicegui_app.post('/api/ui-close')

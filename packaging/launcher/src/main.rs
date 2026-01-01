@@ -25,11 +25,13 @@ const APP_PORT: u16 = 8765;
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 const USER_EXIT_CODE: i32 = 10;
+const INSTANCE_ALREADY_RUNNING_CODE: i32 = 11;
 const UPDATE_IN_PROGRESS_CODE: i32 = 20;
 const MAX_RESTARTS: u32 = 3;
 const RESTART_BACKOFF_BASE_SEC: u64 = 1;
 const RESTART_RESET_AFTER_SEC: u64 = 60;
 const LAUNCHER_STATE_TTL_SEC: u64 = 300;
+const INSTANCE_MUTEX_NAME: &str = "Local\\YakuLingoSingleton";
 
 fn main() {
     if let Err(e) = run() {
@@ -53,12 +55,20 @@ fn run() -> Result<(), String> {
     );
 
     // Check if already running
-    if is_app_running(APP_PORT) {
+    let allow_multi_instance = env::var("YAKULINGO_ALLOW_MULTI_INSTANCE")
+        .map(|value| value == "1")
+        .unwrap_or(false);
+    let mutex_present = if allow_multi_instance {
+        false
+    } else {
+        is_instance_mutex_present()
+    };
+    if mutex_present || is_app_running(APP_PORT) {
         log_event(
             &log_path,
             "Application already running - focusing existing window",
         );
-        if !bring_window_to_front() {
+        if !bring_window_to_front() && !request_activate(APP_PORT) {
             show_info("YakuLingo is already running.");
         }
         return Ok(());
@@ -118,6 +128,14 @@ fn run() -> Result<(), String> {
             log_event(
                 &log_path,
                 "Explicit user exit detected (exit code 10) - stopping restart",
+            );
+            break;
+        }
+
+        if exit_code == INSTANCE_ALREADY_RUNNING_CODE {
+            log_event(
+                &log_path,
+                "Existing instance detected (exit code 11) - stopping restart",
             );
             break;
         }
@@ -234,6 +252,44 @@ fn bring_window_to_front() -> bool {
 #[cfg(not(windows))]
 fn bring_window_to_front() -> bool {
     false
+}
+
+#[cfg(windows)]
+fn is_instance_mutex_present() -> bool {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use winapi::shared::minwindef::FALSE;
+    use winapi::um::handleapi::CloseHandle;
+    use winapi::um::synchapi::OpenMutexW;
+    use winapi::um::winnt::SYNCHRONIZE;
+
+    let wide_name: Vec<u16> = OsStr::new(INSTANCE_MUTEX_NAME)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    unsafe {
+        let handle = OpenMutexW(SYNCHRONIZE, FALSE, wide_name.as_ptr());
+        if handle.is_null() {
+            return false;
+        }
+        CloseHandle(handle);
+    }
+    true
+}
+
+#[cfg(not(windows))]
+fn is_instance_mutex_present() -> bool {
+    false
+}
+
+fn request_activate(port: u16) -> bool {
+    let addr = format!("127.0.0.1:{}", port);
+    let mut stream = match TcpStream::connect_timeout(&addr.parse().unwrap(), Duration::from_millis(200)) {
+        Ok(value) => value,
+        Err(_) => return false,
+    };
+    let request = b"POST /api/activate HTTP/1.1\r\nHost: 127.0.0.1\r\nX-YakuLingo-Activate: 1\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+    stream.write_all(request).is_ok()
 }
 
 fn init_log_path(base_dir: &PathBuf) -> Option<PathBuf> {

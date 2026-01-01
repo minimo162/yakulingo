@@ -11,7 +11,7 @@ description = "Lightweight native launcher for YakuLingo"
 winres = "0.1"
 
 [target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3", features = ["winuser", "processthreadsapi", "shellapi", "winbase", "handleapi", "errhandlingapi"] }
+winapi = { version = "0.3", features = ["winuser", "processthreadsapi", "shellapi", "winbase", "handleapi", "errhandlingapi", "synchapi", "winnt"] }
 
 [profile.release]
 opt-level = "z"      # Optimize for size

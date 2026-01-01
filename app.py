@@ -373,7 +373,7 @@ def main():
 
     if not _ensure_single_instance():
         _try_focus_existing_window()
-        return
+        raise SystemExit(11)
 
     _t_start = time.perf_counter()
 

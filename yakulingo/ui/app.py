@@ -650,9 +650,25 @@ def _nicegui_open_window_patched(
                 return False
 
         if _is_close_to_resident_enabled():
-            notified = _notify_ui_close()
-            if not notified:
-                logger.debug("UI close-to-resident notify failed; keeping window hidden")
+            def _notify_ui_close_async() -> None:
+                import threading as _threading
+                import time as _time
+
+                def _run() -> None:
+                    for attempt in range(2):
+                        if _notify_ui_close():
+                            return
+                        if attempt == 0:
+                            _time.sleep(0.15)
+                    logger.debug("UI close-to-resident notify failed; keeping window hidden")
+
+                _threading.Thread(
+                    target=_run,
+                    daemon=True,
+                    name="notify_ui_close",
+                ).start()
+
+            _notify_ui_close_async()
             try:
                 if sys.platform == "win32":
                     hwnd = _find_window_handle_by_title_win32(title)
@@ -661,6 +677,8 @@ def _nicegui_open_window_patched(
                     _hide_native_window_offscreen_win32(title)
                 if hasattr(window, "hide"):
                     window.hide()
+                elif hasattr(window, "minimize"):
+                    window.minimize()
             except Exception as e:
                 logger.debug("Native window close handler failed: %s", e)
             # Best-effort: cancel the close to keep the process alive.
@@ -9131,6 +9149,7 @@ def run_app(
             yakulingo_app._resident_mode = True
             yakulingo_app._resident_show_requested = False
             yakulingo_app._manual_show_requested = False
+            yakulingo_app._clear_auto_open_cause("ui_close")
             yakulingo_app._set_layout_mode(LayoutMode.OFFSCREEN, "ui_close")
             if sys.platform == "win32":
                 yakulingo_app._hide_resident_window_win32("ui_close")

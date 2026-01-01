@@ -1029,6 +1029,7 @@ if TYPE_CHECKING:
 COPILOT_LOGIN_TIMEOUT = 300  # 5 minutes for login
 CLIENT_CONNECTED_TIMEOUT_SEC = 12  # Soft timeout for client.connected() before fallback
 STARTUP_SPLASH_TIMEOUT_SEC = 25  # Close external splash if startup stalls
+STARTUP_LOADING_DELAY_MS = 450  # Delay showing startup overlay to avoid flash
 STARTUP_UI_READY_TIMEOUT_MS = 2000  # Startup UI readiness timeout
 STARTUP_UI_READY_FALLBACK_GRACE_MS = 300  # Grace period before rendering fallback
 STARTUP_UI_READY_SELECTOR = '[data-yakulingo-root="true"]'
@@ -2600,7 +2601,7 @@ class YakuLingoApp:
                             if self._streaming_preview_label is None:
                                 self._refresh_result_panel()
                                 self._refresh_tabs()
-                                self._scroll_result_panel_to_bottom(client)
+                                self._scroll_result_panel_to_bottom(client, force_follow=True)
                             if self._streaming_preview_label is not None:
                                 self._streaming_preview_label.set_text(partial_text)
                                 self._scroll_result_panel_to_bottom(client)
@@ -5422,8 +5423,15 @@ class YakuLingoApp:
             # Debug: Log layout dimensions after refresh
             self._log_layout_dimensions()
 
-    def _scroll_result_panel_to_bottom(self, client: NiceGUIClient) -> None:
-        """Scroll the result panel to the bottom if it is already near the end."""
+    def _scroll_result_panel_to_bottom(
+        self,
+        client: NiceGUIClient,
+        force_follow: bool = False,
+    ) -> None:
+        """Scroll the result panel to the bottom if it is already near the end.
+
+        force_follow resets the auto-follow state (useful for new streaming output).
+        """
         if client is None or self._shutdown_requested:
             return
         try:
@@ -5436,56 +5444,69 @@ class YakuLingoApp:
         except RuntimeError:
             return
 
-        js_code = r"""
-        (function() {
-            try {
+        force_flag = "true" if force_follow else "false"
+        js_code = f"""
+        (function() {{
+            try {{
                 const panel = document.querySelector('.result-panel');
                 if (!panel) return false;
+                const forceFollow = {force_flag};
 
-                const threshold = 48;
-                const maxScrollTop = Math.max(0, panel.scrollHeight - panel.clientHeight);
-                const distance = maxScrollTop - panel.scrollTop;
-                const isInitial = panel.dataset.yakulingoAutoScroll === undefined;
-                const shouldFollow = isInitial || distance <= threshold;
-                panel.dataset.yakulingoAutoScroll = shouldFollow ? 'true' : 'false';
-                if (!shouldFollow) return false;
+                const attempt = (tries) => {{
+                    if (!panel || panel.clientHeight === 0) {{
+                        if (tries < 3) {{
+                            setTimeout(() => attempt(tries + 1), 60);
+                        }}
+                        return false;
+                    }}
 
-                const hidden = document.hidden || document.visibilityState !== 'visible';
-                const prefersReducedMotion = window.matchMedia
-                    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-                const useSmooth = !hidden && !prefersReducedMotion;
-                const scrollNow = (behavior) => {
-                    const target = panel.scrollHeight;
-                    if (panel.scrollTo) {
-                        try {
-                            panel.scrollTo({ top: target, behavior });
-                            return;
-                        } catch (err) {
-                            // fall back to immediate assignment
-                        }
-                    }
-                    panel.scrollTop = target;
-                };
+                    const threshold = 48;
+                    const maxScrollTop = Math.max(0, panel.scrollHeight - panel.clientHeight);
+                    const distance = maxScrollTop - panel.scrollTop;
+                    const isInitial = panel.dataset.yakulingoAutoScroll === undefined;
+                    const shouldFollow = forceFollow || isInitial || distance <= threshold;
+                    panel.dataset.yakulingoAutoScroll = shouldFollow ? 'true' : 'false';
+                    if (!shouldFollow) return false;
 
-                if (hidden) {
-                    scrollNow('auto');
-                    setTimeout(() => scrollNow('auto'), 120);
+                    const hidden = document.hidden || document.visibilityState !== 'visible';
+                    const prefersReducedMotion = window.matchMedia
+                        && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+                    const useSmooth = !hidden && !prefersReducedMotion;
+                    const scrollNow = (behavior) => {{
+                        const target = panel.scrollHeight;
+                        if (panel.scrollTo) {{
+                            try {{
+                                panel.scrollTo({{ top: target, behavior }});
+                                return;
+                            }} catch (err) {{
+                                // fall back to immediate assignment
+                            }}
+                        }}
+                        panel.scrollTop = target;
+                    }};
+
+                    if (hidden) {{
+                        scrollNow('auto');
+                        setTimeout(() => scrollNow('auto'), 120);
+                        return true;
+                    }}
+
+                    let rafCalled = false;
+                    requestAnimationFrame(() => requestAnimationFrame(() => {{
+                        rafCalled = true;
+                        scrollNow(useSmooth ? 'smooth' : 'auto');
+                    }}));
+                    setTimeout(() => {{
+                        if (!rafCalled) scrollNow(useSmooth ? 'smooth' : 'auto');
+                    }}, 120);
                     return true;
-                }
+                }};
 
-                let rafCalled = false;
-                requestAnimationFrame(() => requestAnimationFrame(() => {
-                    rafCalled = true;
-                    scrollNow(useSmooth ? 'smooth' : 'auto');
-                }));
-                setTimeout(() => {
-                    if (!rafCalled) scrollNow(useSmooth ? 'smooth' : 'auto');
-                }, 120);
-                return true;
-            } catch (err) {
+                return attempt(0);
+            }} catch (err) {{
                 return false;
-            }
-        })();
+            }}
+        }})();
         """
         existing = self._result_panel_scroll_handle
         if existing is not None and not existing.cancelled():
@@ -7090,7 +7111,7 @@ class YakuLingoApp:
             # Only refresh result panel to minimize DOM updates and prevent flickering
             # Layout classes update will show result panel and hide input panel via CSS
             self._refresh_result_panel()
-            self._scroll_result_panel_to_bottom(client)
+            self._scroll_result_panel_to_bottom(client, force_follow=True)
             self._refresh_tabs()  # Update tab disabled state
 
         from yakulingo.services.copilot_handler import TranslationCancelledError
@@ -7159,7 +7180,7 @@ class YakuLingoApp:
                             # Render streaming block on first chunk (captures label reference)
                             if self._streaming_preview_label is None:
                                 self._refresh_result_panel()
-                                self._scroll_result_panel_to_bottom(client)
+                                self._scroll_result_panel_to_bottom(client, force_follow=True)
                             if self._streaming_preview_label is not None:
                                 self._streaming_preview_label.set_text(partial_text)
                                 self._scroll_result_panel_to_bottom(client)
@@ -10323,13 +10344,31 @@ body.yakulingo-drag-active .global-drop-indicator {
 </script>''')
 
         # Show a startup loading overlay while the UI tree is being constructed.
-        # This avoids a brief flash of a partially-rendered UI on slow machines.
-        loading_screen = ui.element('div').classes('loading-screen')
+        # Delay its visibility to avoid a brief flash on fast startups.
+        loading_screen = ui.element('div').classes('loading-screen hidden')
         with loading_screen:
             ui.element('div').classes('loading-spinner').props('aria-hidden="true"')
             loading_title = ui.label('YakuLingo').classes('loading-title')
             fallback_message = ui.label('読み込みに時間がかかっています...').classes('startup-fallback hidden')
         yakulingo_app._startup_fallback_element = fallback_message
+
+        async def _maybe_show_startup_overlay() -> None:
+            await asyncio.sleep(STARTUP_LOADING_DELAY_MS / 1000.0)
+            if yakulingo_app._ui_ready_event.is_set():
+                return
+            try:
+                if not getattr(client, "has_socket_connection", True):
+                    return
+            except Exception:
+                pass
+            try:
+                with client:
+                    loading_screen.classes(remove='hidden')
+            except Exception:
+                try:
+                    loading_screen.classes(remove='hidden')
+                except Exception:
+                    pass
 
         # Wait for client connection (WebSocket ready)
         import time as _time_module
@@ -10350,7 +10389,10 @@ body.yakulingo-drag-active .global-drop-indicator {
         if not client_connected:
             loading_title.set_text('接続に時間がかかっています...')
 
-        # Yield once so the loading overlay is sent to the client before we start building the full UI.
+        if client_connected:
+            asyncio.create_task(_maybe_show_startup_overlay())
+
+        # Yield once so initial layout changes are flushed before we start building the full UI.
         await asyncio.sleep(0)
 
         # NOTE: PP-DocLayout-L initialization moved to on-demand (when user selects PDF)
@@ -10476,6 +10518,7 @@ body.yakulingo-drag-active .global-drop-indicator {
                 except Exception as e:
                     logger.debug("Late client connection wait failed: %s", e)
                     return
+                asyncio.create_task(_maybe_show_startup_overlay())
                 ui_ready = await yakulingo_app._wait_for_ui_ready(client, 1500)
                 if ui_ready:
                     yakulingo_app._startup_fallback_rendered = False

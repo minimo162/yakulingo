@@ -1070,6 +1070,9 @@ class CopilotHandler:
         '[class*="ChainOfThought__activitiesAccordion"]',
         '[id^="cot-"][id$="activity-panel"]',
     )
+    CHAIN_OF_THOUGHT_CARD_SELECTOR_COMBINED = ", ".join(CHAIN_OF_THOUGHT_CARD_SELECTORS)
+    CHAIN_OF_THOUGHT_EXPAND_BUTTON_SELECTOR_COMBINED = ", ".join(CHAIN_OF_THOUGHT_EXPAND_BUTTON_SELECTORS)
+    CHAIN_OF_THOUGHT_PANEL_SELECTOR_COMBINED = ", ".join(CHAIN_OF_THOUGHT_PANEL_SELECTORS)
 
     # GPT Mode switcher selectors
     # Used to ensure GPT-5.2 Think Deeper mode is selected for better translation quality
@@ -3249,7 +3252,7 @@ class CopilotHandler:
         PlaywrightError = error_types['Error']
 
         logger.info("Waiting for Copilot chat UI...")
-        input_selector = self.CHAT_INPUT_SELECTOR
+        input_selector = self.CHAT_INPUT_SELECTOR_EXTENDED
 
         # First, check if we're on a login page
         url = page.url
@@ -5088,9 +5091,21 @@ class CopilotHandler:
         logger.info("Edgeブラウザでログインしてください / Please log in to the Edge browser")
         logger.info("(キャンセルするにはアプリを閉じてください / Close the app to cancel)")
 
-        input_selector = self.CHAT_INPUT_SELECTOR
+        input_selector = self.CHAT_INPUT_SELECTOR_EXTENDED
         poll_interval = self.LOGIN_POLL_INTERVAL
         elapsed = 0.0
+
+        def _chat_input_ready(target_page) -> bool:
+            try:
+                input_elem = target_page.query_selector(self.CHAT_INPUT_SELECTOR_EXTENDED)
+            except Exception:
+                return False
+            if not input_elem:
+                return False
+            try:
+                return input_elem.is_visible()
+            except Exception:
+                return True
 
         def interruptible_sleep(duration: float) -> bool:
             """Sleep in small increments, checking for cancellation.
@@ -5113,6 +5128,19 @@ class CopilotHandler:
                 return False
 
             try:
+                try:
+                    chat_page = self._find_copilot_chat_page()
+                    if chat_page and chat_page != page:
+                        page = chat_page
+                        self._page = chat_page
+                except Exception:
+                    pass
+
+                if _chat_input_ready(page):
+                    logger.info("Login completed successfully")
+                    self._finalize_connected_state()
+                    return True
+
                 # Check for auth popup windows that may have opened
                 # (e.g., when user clicks "Continue" on auth dialog)
                 if self._context:
@@ -5145,7 +5173,7 @@ class CopilotHandler:
 
                 # Wait for any pending navigation to complete
                 try:
-                    page.wait_for_load_state('domcontentloaded', timeout=2000)
+                    page.wait_for_load_state('domcontentloaded', timeout=800)
                 except PlaywrightTimeoutError:
                     pass  # Continue even if timeout
 
@@ -5235,7 +5263,7 @@ class CopilotHandler:
 
                     # Try to find chat input
                     try:
-                        page.wait_for_selector(input_selector, timeout=3000, state='visible')
+                        page.wait_for_selector(input_selector, timeout=1000, state='visible')
                         logger.info("Login completed successfully")
                         # Finalize connection state
                         self._finalize_connected_state()
@@ -7834,6 +7862,79 @@ class CopilotHandler:
         logger.debug("[RESPONSE_TEXT] No response found from any selector")
         return "", False
 
+    def _get_latest_chain_of_thought_text_fast(self) -> str:
+        """Best-effort Chain-of-Thought extraction for streaming preview only."""
+        if not self._page:
+            return ""
+
+        error_types = _get_playwright_errors()
+        PlaywrightError = error_types['Error']
+
+        def _extract_latest_text(selectors: tuple[str, ...], combined: str) -> str:
+            try:
+                elements = self._page.query_selector_all(combined)
+            except PlaywrightError:
+                elements = []
+                for selector in selectors:
+                    try:
+                        elements.extend(self._page.query_selector_all(selector))
+                    except PlaywrightError:
+                        continue
+
+            if not elements:
+                return ""
+
+            for element in reversed(elements[-3:]):
+                text = ""
+                try:
+                    if element.is_visible():
+                        text = element.inner_text()
+                except Exception:
+                    pass
+
+                if not text or not text.strip():
+                    try:
+                        text = element.text_content() or ""
+                    except PlaywrightError:
+                        continue
+
+                if text and text.strip():
+                    return text.strip()
+
+            return ""
+
+        expand_text = _extract_latest_text(
+            self.CHAIN_OF_THOUGHT_EXPAND_BUTTON_SELECTORS,
+            self.CHAIN_OF_THOUGHT_EXPAND_BUTTON_SELECTOR_COMBINED,
+        )
+        panel_text = _extract_latest_text(
+            self.CHAIN_OF_THOUGHT_PANEL_SELECTORS,
+            self.CHAIN_OF_THOUGHT_PANEL_SELECTOR_COMBINED,
+        )
+        card_text = _extract_latest_text(
+            self.CHAIN_OF_THOUGHT_CARD_SELECTORS,
+            self.CHAIN_OF_THOUGHT_CARD_SELECTOR_COMBINED,
+        )
+
+        parts: list[str] = []
+        if expand_text:
+            parts.append(expand_text)
+        if panel_text:
+            parts.append(panel_text)
+        elif card_text:
+            parts.append(card_text)
+
+        if not parts:
+            return ""
+
+        deduped: list[str] = []
+        for text in parts:
+            if any(text == existing or text in existing or existing in text for existing in deduped):
+                continue
+            deduped.append(text)
+
+        return "\n".join(deduped)
+
     def _get_latest_response_text_fast(self) -> tuple[str, bool]:
         """Best-effort response text extraction for streaming while generating.
 
@@ -7893,6 +7994,18 @@ class CopilotHandler:
             except PlaywrightError:
                 return "", True
         return text.strip() if text else "", True
+
+    def _get_latest_streaming_text(self) -> tuple[str, bool]:
+        """Combine response text with Chain-of-Thought preview during streaming."""
+        response_text, response_found = self._get_latest_response_text_fast()
+        cot_text = self._get_latest_chain_of_thought_text_fast()
+
+        if cot_text:
+            if response_text:
+                return f"{cot_text}\n\n{response_text}", True
+            return cot_text, True
+
+        return response_text, response_found
 
     def _auto_scroll_to_latest_response(self) -> bool:
         """Keep the latest response visible in the Copilot chat pane (incl. Chain-of-Thought)."""
@@ -8174,11 +8287,11 @@ class CopilotHandler:
                     if on_chunk and (now - last_stream_extract_time) >= stream_extract_interval_generating:
                         last_stream_extract_time = now
                         try:
-                            current_text, found_response = self._get_latest_response_text_fast()
+                            current_text, found_stream = self._get_latest_streaming_text()
                         except Exception:
-                            current_text, found_response = "", False
+                            current_text, found_stream = "", False
 
-                        if found_response and current_text and current_text.strip() and current_text != last_text:
+                        if found_stream and current_text and current_text.strip() and current_text != last_text:
                             last_text = current_text
                             if not has_content:
                                 has_content = True

@@ -135,6 +135,8 @@ class TranslationProgress:
     # Phase tracking for detailed progress (optional, for backward compatibility)
     phase: Optional[TranslationPhase] = None
     phase_detail: Optional[str] = None  # e.g., "Page 3/10"
+    phase_current: Optional[int] = None  # Current count within the active phase
+    phase_total: Optional[int] = None  # Total count within the active phase
 
     def __post_init__(self):
         # Validate and normalize current value
@@ -240,6 +242,33 @@ class TranslationResult:
         if self.glossary_path and self.glossary_path.exists():
             files.append((self.glossary_path, "用語集CSV"))
         return files
+
+
+@dataclass
+class FileQueueItem:
+    """
+    File translation queue item used by the UI.
+    """
+    id: str
+    path: Path
+    file_info: Optional[FileInfo] = None
+    detected_language: Optional[str] = None
+    detected_reason: Optional[str] = None
+    output_language: str = "en"
+    output_language_overridden: bool = False
+    translation_style: str = "concise"
+    selected_sections: Optional[list[int]] = None
+    status: TranslationStatus = TranslationStatus.PENDING
+    progress: float = 0.0
+    status_label: str = ""
+    phase: Optional[TranslationPhase] = None
+    phase_detail: Optional[str] = None
+    phase_current: Optional[int] = None
+    phase_total: Optional[int] = None
+    phase_counts: dict[TranslationPhase, tuple[int, int]] = field(default_factory=dict)
+    eta_seconds: Optional[float] = None
+    result: Optional[TranslationResult] = None
+    error_message: str = ""
 
 
 @dataclass

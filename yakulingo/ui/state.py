@@ -10,7 +10,14 @@ from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 from enum import Enum
 
-from yakulingo.models.types import FileInfo, TextTranslationResult, HistoryEntry, TranslationResult
+from yakulingo.models.types import (
+    FileInfo,
+    TextTranslationResult,
+    HistoryEntry,
+    TranslationResult,
+    FileQueueItem,
+    TranslationPhase,
+)
 
 # Deferred imports for faster startup
 if TYPE_CHECKING:
@@ -83,6 +90,8 @@ class AppState:
     text_result: Optional[TextTranslationResult] = None
     text_translation_elapsed_time: Optional[float] = None  # Translation time in seconds
     text_streaming_preview: Optional[str] = None  # Partial streamed output during translation
+    text_compare_mode: str = "off"  # "off" | "style" | "source"
+    text_compare_base_style: str = "standard"
 
     # File tab state
     file_state: FileState = FileState.EMPTY
@@ -96,6 +105,9 @@ class AppState:
     translation_status: str = ""
     translation_phase: Optional["TranslationPhase"] = None
     translation_phase_detail: Optional[str] = None
+    translation_phase_current: Optional[int] = None
+    translation_phase_total: Optional[int] = None
+    translation_phase_counts: dict["TranslationPhase", tuple[int, int]] = field(default_factory=dict)
     translation_eta_seconds: Optional[float] = None
     output_file: Optional[Path] = None
     translation_result: Optional[TranslationResult] = None  # Full result with all output files
@@ -115,6 +127,16 @@ class AppState:
     history_drawer_open: bool = False
     max_history_entries: int = 50
     history_query: str = ""
+    history_filter_output_language: Optional[str] = None  # "en" or "jp"
+    history_filter_styles: set[str] = field(default_factory=set)
+    history_filter_has_reference: Optional[bool] = None
+    history_compare_enabled: bool = False
+
+    # File translation queue
+    file_queue: list[FileQueueItem] = field(default_factory=list)
+    file_queue_active_id: Optional[str] = None
+    file_queue_mode: str = "sequential"  # "sequential" | "parallel"
+    file_queue_running: bool = False
 
     # History database (lazy initialized on first access for faster startup)
     _history_db: Optional["HistoryDB"] = field(default=None, repr=False)
@@ -161,6 +183,8 @@ class AppState:
         self.text_result = None
         self.text_translation_elapsed_time = None
         self.text_streaming_preview = None
+        self.text_compare_mode = "off"
+        self.text_compare_base_style = "standard"
 
     def reset_file_state(self) -> None:
         """Reset file tab state"""
@@ -174,10 +198,16 @@ class AppState:
         self.translation_status = ""
         self.translation_phase = None
         self.translation_phase_detail = None
+        self.translation_phase_current = None
+        self.translation_phase_total = None
+        self.translation_phase_counts = {}
         self.translation_eta_seconds = None
         self.output_file = None
         self.translation_result = None
         self.error_message = ""
+        self.file_queue = []
+        self.file_queue_active_id = None
+        self.file_queue_running = False
 
     def can_translate(self) -> bool:
         """Check if translation is possible (requires Copilot ready)."""

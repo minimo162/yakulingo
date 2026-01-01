@@ -9,7 +9,7 @@ import csv
 import logging
 import threading
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from functools import lru_cache
 from itertools import islice
 from pathlib import Path
@@ -544,6 +544,8 @@ def scale_progress(progress: TranslationProgress, start: int, end: int, phase: T
         status=progress.status,
         phase=phase,
         phase_detail=phase_detail,
+        phase_current=progress.phase_current,
+        phase_total=progress.phase_total,
     )
 
 
@@ -698,9 +700,11 @@ class BatchTranslator:
         max_chars_per_batch: Optional[int] = None,
         request_timeout: Optional[int] = None,
         enable_cache: bool = True,
+        copilot_lock: Optional[threading.Lock] = None,
     ):
         self.copilot = copilot
         self.prompt_builder = prompt_builder
+        self._copilot_lock = copilot_lock
         # Thread-safe cancellation using Event instead of bool flag
         self._cancel_event = threading.Event()
 
@@ -836,10 +840,6 @@ class BatchTranslator:
             self._cancel_event.clear()  # Reset at start of new translation
         cancelled = False
 
-        # Set cancel callback on CopilotHandler for responsive cancellation
-        if _split_retry_depth == 0:
-            self.copilot.set_cancel_callback(lambda: self._cancel_event.is_set())
-
         batch_char_limit = _max_chars_per_batch or self.max_chars_per_batch
 
         # Phase 0: Skip formula blocks and non-translatable blocks (preserve original text)
@@ -967,6 +967,8 @@ class BatchTranslator:
                     current=i,
                     total=len(batches),
                     status=f"Batch {i + 1} of {len(batches)}",
+                    phase_current=i + 1,
+                    phase_total=len(batches),
                 ))
 
             unique_texts, original_to_unique_idx = batch_unique_data[i]
@@ -976,10 +978,16 @@ class BatchTranslator:
             # Skip clear wait for 2nd+ batches (we just finished getting a response)
             skip_clear_wait = (i > 0)
             try:
-                unique_translations = self.copilot.translate_sync(
-                    unique_texts, prompt, files_to_attach, skip_clear_wait,
-                    timeout=self.request_timeout
-                )
+                lock = self._copilot_lock or nullcontext()
+                with lock:
+                    self.copilot.set_cancel_callback(lambda: self._cancel_event.is_set())
+                    try:
+                        unique_translations = self.copilot.translate_sync(
+                            unique_texts, prompt, files_to_attach, skip_clear_wait,
+                            timeout=self.request_timeout
+                        )
+                    finally:
+                        self.copilot.set_cancel_callback(None)
             except TranslationCancelledError:
                 logger.info("Translation cancelled during batch %d/%d", i + 1, len(batches))
                 cancelled = True
@@ -1163,10 +1171,6 @@ class BatchTranslator:
         if result.has_issues:
             logger.warning("Translation completed with issues: %s", result.get_summary())
 
-        # Clear cancel callback to avoid holding reference
-        if _split_retry_depth == 0:
-            self.copilot.set_cancel_callback(None)
-
         # Memory management: warn if cache is large and clear if exceeds threshold
         if self._cache and _split_retry_depth == 0:
             stats = self._cache.stats
@@ -1254,6 +1258,7 @@ class TranslationService:
         copilot: CopilotHandler,
         config: AppSettings,
         prompts_dir: Optional[Path] = None,
+        copilot_lock: Optional[threading.Lock] = None,
     ):
         self.copilot = copilot
         self.config = config
@@ -1263,7 +1268,9 @@ class TranslationService:
             self.prompt_builder,
             max_chars_per_batch=config.max_chars_per_batch if config else None,
             request_timeout=config.request_timeout if config else None,
+            copilot_lock=copilot_lock,
         )
+        self._copilot_lock = copilot_lock
         # Thread-safe cancellation using Event instead of bool flag
         self._cancel_event = threading.Event()
         self._cancel_callback_depth = 0
@@ -1346,7 +1353,9 @@ class TranslationService:
         on_chunk: "Callable[[str], None] | None" = None,
     ) -> str:
         with self._cancel_callback_scope():
-            return self.copilot.translate_single(text, prompt, reference_files, on_chunk)
+            lock = self._copilot_lock or nullcontext()
+            with lock:
+                return self.copilot.translate_single(text, prompt, reference_files, on_chunk)
 
     def translate_text(
         self,
@@ -2494,6 +2503,8 @@ class TranslationService:
                 total=100,
                 status="Extracting text...",
                 phase=TranslationPhase.EXTRACTING,
+                phase_current=1,
+                phase_total=1,
             ))
 
         # Extract text blocks
@@ -2566,6 +2577,12 @@ class TranslationService:
                 total=100,
                 status="Applying translations...",
                 phase=TranslationPhase.APPLYING,
+                phase_current=1,
+                phase_total=(
+                    1
+                    + (1 if self.config and self.config.bilingual_output else 0)
+                    + (1 if self.config and self.config.export_glossary else 0)
+                ),
             ))
 
         # Generate output path (with _translated suffix)
@@ -2590,16 +2607,26 @@ class TranslationService:
                 f"翻訳件数の不一致: {batch_result.mismatched_batch_count}"
             )
 
+        apply_step = 1
+        apply_total = (
+            1
+            + (1 if self.config and self.config.bilingual_output else 0)
+            + (1 if self.config and self.config.export_glossary else 0)
+        )
+
         # Create bilingual output if enabled
         bilingual_path = None
         if self.config and self.config.bilingual_output:
             if on_progress:
+                apply_step += 1
                 on_progress(TranslationProgress(
                     current=92,
                     total=100,
                     status="Creating bilingual file...",
                     phase=TranslationPhase.APPLYING,
                     phase_detail="Interleaving original and translated content",
+                    phase_current=apply_step,
+                    phase_total=apply_total,
                 ))
 
             bilingual_path = self._create_bilingual_output(
@@ -2610,12 +2637,15 @@ class TranslationService:
         glossary_path = None
         if self.config and self.config.export_glossary:
             if on_progress:
+                apply_step += 1
                 on_progress(TranslationProgress(
                     current=97,
                     total=100,
                     status="Exporting glossary CSV...",
                     phase=TranslationPhase.APPLYING,
                     phase_detail="Creating translation pairs",
+                    phase_current=apply_step,
+                    phase_total=apply_total,
                 ))
 
             # Generate glossary output path
@@ -2691,15 +2721,19 @@ class TranslationService:
                     f"Processing PDF ({pages_for_progress}/{total_pages} pages selected)..."
                 )
                 phase_detail = f"0/{pages_for_progress} pages"
+                phase_total = pages_for_progress
             else:
                 status = f"Processing PDF ({total_pages} pages)..."
                 phase_detail = f"0/{total_pages} pages"
+                phase_total = total_pages
             on_progress(TranslationProgress(
                 current=0,
                 total=100,
                 status=status,
                 phase=TranslationPhase.EXTRACTING,
                 phase_detail=phase_detail,
+                phase_current=0,
+                phase_total=phase_total,
             ))
 
         all_blocks = []
@@ -2792,6 +2826,12 @@ class TranslationService:
                 total=100,
                 status="Applying translations to PDF...",
                 phase=TranslationPhase.APPLYING,
+                phase_current=1,
+                phase_total=(
+                    1
+                    + (1 if self.config and self.config.bilingual_output else 0)
+                    + (1 if self.config and self.config.export_glossary else 0)
+                ),
             ))
 
         output_path = self._generate_output_path(input_path)
@@ -2805,16 +2845,26 @@ class TranslationService:
             text_blocks=all_blocks,  # Pass extracted blocks for precise positioning
         )
 
+        apply_step = 1
+        apply_total = (
+            1
+            + (1 if self.config and self.config.bilingual_output else 0)
+            + (1 if self.config and self.config.export_glossary else 0)
+        )
+
         # Create bilingual PDF if enabled
         bilingual_path = None
         if self.config and self.config.bilingual_output:
             if on_progress:
+                apply_step += 1
                 on_progress(TranslationProgress(
                     current=95,
                     total=100,
                     status="Creating bilingual PDF...",
                     phase=TranslationPhase.APPLYING,
                     phase_detail="Interleaving original and translated pages",
+                    phase_current=apply_step,
+                    phase_total=apply_total,
                 ))
 
             # Generate bilingual output path with _bilingual suffix
@@ -2827,12 +2877,15 @@ class TranslationService:
         glossary_path = None
         if self.config and self.config.export_glossary:
             if on_progress:
+                apply_step += 1
                 on_progress(TranslationProgress(
                     current=97,
                     total=100,
                     status="Exporting glossary CSV...",
                     phase=TranslationPhase.APPLYING,
                     phase_detail="Creating translation pairs",
+                    phase_current=apply_step,
+                    phase_total=apply_total,
                 ))
 
             # Generate glossary output path
@@ -2895,6 +2948,8 @@ class TranslationService:
                 status=progress.status,
                 phase=TranslationPhase.EXTRACTING,
                 phase_detail=progress.phase_detail,
+                phase_current=progress.current,
+                phase_total=progress.total,
             ))
 
         return callback

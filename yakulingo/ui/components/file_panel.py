@@ -15,12 +15,20 @@ from types import SimpleNamespace
 from yakulingo.ui.state import AppState, FileState
 from yakulingo.ui.utils import (
     format_bytes,
+    open_file,
     show_in_folder,
     summarize_reference_files,
     temp_file_manager,
     trigger_file_download,
 )
-from yakulingo.models.types import FileInfo, FileType, SectionDetail, TranslationPhase, TranslationResult
+from yakulingo.models.types import (
+    FileInfo,
+    FileType,
+    SectionDetail,
+    TranslationPhase,
+    TranslationResult,
+    TranslationStatus,
+)
 
 # Paperclip/Attachment SVG icon (Material Design style)
 ATTACH_SVG: str = '''
@@ -29,6 +37,55 @@ ATTACH_SVG: str = '''
     <path d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5c0-1.38 1.12-2.5 2.5-2.5s2.5 1.12 2.5 2.5v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5c0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z"/>
 </svg>
 '''
+
+
+def _build_copy_js_handler(text: str) -> str:
+    payload = json.dumps(text)
+    return f"""(e) => {{
+        const text = {payload};
+        const target = e.currentTarget;
+        const flash = () => {{
+            if (!target) {{
+                return;
+            }}
+            target.classList.remove('copy-success');
+            void target.offsetWidth;
+            target.classList.add('copy-success');
+        }};
+        const fallbackCopy = () => {{
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.setAttribute('readonly', '');
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            textarea.style.left = '-9999px';
+            document.body.appendChild(textarea);
+            textarea.focus();
+            textarea.select();
+            try {{
+                document.execCommand('copy');
+            }} catch (err) {{
+            }}
+            document.body.removeChild(textarea);
+        }};
+        try {{
+            flash();
+            if (navigator.clipboard && navigator.clipboard.writeText) {{
+                navigator.clipboard.writeText(text).catch(() => {{
+                    fallbackCopy();
+                }});
+            }} else {{
+                fallbackCopy();
+            }}
+        }} catch (err) {{
+            fallbackCopy();
+        }}
+        emit(e);
+    }}"""
+
+
+def _attach_copy_handler(button, text: str, message: str) -> None:
+    button.on('click', lambda: ui.notify(message, type='positive'), js_handler=_build_copy_js_handler(text))
 
 
 SUPPORTED_FORMATS = ".xlsx,.xls,.docx,.pptx,.pdf,.txt,.msg"
@@ -58,8 +115,8 @@ FILE_TYPE_CLASSES = {
 
 
 async def _process_drop_result(
-    on_file_select: Callable[[Path], Union[None, Awaitable[None]]],
-    result: Optional[dict],
+    on_file_select: Callable[[list[Path]], Union[None, Awaitable[None]]],
+    result: Optional[object],
 ) -> bool:
     """Validate JS drop data and forward it to the Python callback."""
 
@@ -67,40 +124,56 @@ async def _process_drop_result(
         ui.notify('ファイルがドロップされませんでした', type='warning')
         return False
 
-    name = result.get('name') if isinstance(result, dict) else None
-    data = result.get('data') if isinstance(result, dict) else None
+    payloads: list[dict] = []
+    if isinstance(result, dict) and isinstance(result.get('files'), list):
+        payloads = [p for p in result.get('files', []) if isinstance(p, dict)]
+    elif isinstance(result, list):
+        payloads = [p for p in result if isinstance(p, dict)]
+    elif isinstance(result, dict):
+        payloads = [result]
 
-    if not name or not data:
+    if not payloads:
         ui.notify('ファイルの読み込みに失敗しました: 空のデータです', type='negative')
         return False
 
-    ext = Path(name).suffix.lower()
-    if ext in {'.doc', '.ppt'}:
-        ui.notify(
-            f'{ext} は古い形式のためサポートしていません（.docx / .pptx に変換してください）',
-            type='warning',
-        )
+    temp_paths: list[Path] = []
+    for payload in payloads:
+        name = payload.get('name')
+        data = payload.get('data')
+        if not name or data is None:
+            continue
+
+        ext = Path(name).suffix.lower()
+        if ext in {'.doc', '.ppt'}:
+            ui.notify(
+                f'{ext} は古い形式のためサポートしていません（.docx / .pptx に変換してください）',
+                type='warning',
+            )
+            continue
+
+        if ext not in SUPPORTED_EXTENSIONS:
+            ui.notify('サポートされていないファイル形式です', type='warning')
+            continue
+
+        try:
+            content = bytes(data)
+        except (TypeError, ValueError) as err:
+            ui.notify(f'ファイルの読み込みに失敗しました: {err}', type='negative')
+            continue
+
+        if len(content) > MAX_DROP_FILE_SIZE_BYTES:
+            ui.notify(
+                f'ファイルが大きいため翻訳できません（{MAX_DROP_FILE_SIZE_MB}MBまで）',
+                type='warning',
+            )
+            continue
+
+        temp_paths.append(temp_file_manager.create_temp_file(content, name))
+
+    if not temp_paths:
         return False
 
-    if ext not in SUPPORTED_EXTENSIONS:
-        ui.notify('サポートされていないファイル形式です', type='warning')
-        return False
-
-    try:
-        content = bytes(data)
-    except (TypeError, ValueError) as err:
-        ui.notify(f'ファイルの読み込みに失敗しました: {err}', type='negative')
-        return False
-
-    if len(content) > MAX_DROP_FILE_SIZE_BYTES:
-        ui.notify(
-            f'ファイルが大きいため翻訳できません（{MAX_DROP_FILE_SIZE_MB}MBまで）',
-            type='warning',
-        )
-        return False
-
-    temp_path = temp_file_manager.create_temp_file(content, name)
-    callback_result = on_file_select(temp_path)
+    callback_result = on_file_select(temp_paths)
     if asyncio.iscoroutine(callback_result):
         await callback_result
 
@@ -118,25 +191,30 @@ def _extract_drop_payload(event: Optional[events.GenericEventArguments]) -> Opti
     # the browser and websocket serializer. Be lenient and try common containers.
     if isinstance(args, dict):
         detail = args.get('detail') if 'detail' in args else None
-        if isinstance(detail, dict):
+        if isinstance(detail, (dict, list)):
             return detail
         return args
 
     if isinstance(args, (list, tuple)) and args:
         first = args[0]
         if isinstance(first, dict):
-            return first.get('detail', first)
+            detail = first.get('detail', first)
+            if isinstance(detail, (dict, list)):
+                return detail
+            return first
 
     if isinstance(args, SimpleNamespace):
         detail = getattr(args, 'detail', None)
-        if isinstance(detail, dict):
+        if isinstance(detail, (dict, list)):
             return detail
 
     if isinstance(args, str):
         try:
             parsed = json.loads(args)
             if isinstance(parsed, dict):
-                return parsed.get('detail', parsed)
+                detail = parsed.get('detail', parsed)
+                if isinstance(detail, (dict, list)):
+                    return detail
         except json.JSONDecodeError:
             pass
 
@@ -145,7 +223,7 @@ def _extract_drop_payload(event: Optional[events.GenericEventArguments]) -> Opti
 
 def create_file_panel(
     state: AppState,
-    on_file_select: Callable[[Path], Union[None, Awaitable[None]]],
+    on_file_select: Callable[[list[Path]], Union[None, Awaitable[None]]],
     on_translate: Callable[[], None],
     on_cancel: Callable[[], None],
     on_download: Callable[[], None],
@@ -168,6 +246,11 @@ def create_file_panel(
     on_glossary_toggle: Optional[Callable[[bool], None]] = None,
     on_edit_glossary: Optional[Callable[[], None]] = None,
     on_edit_translation_rules: Optional[Callable[[], None]] = None,
+    on_queue_select: Optional[Callable[[str], None]] = None,
+    on_queue_remove: Optional[Callable[[str], None]] = None,
+    on_queue_move: Optional[Callable[[str, int], None]] = None,
+    on_queue_clear: Optional[Callable[[], None]] = None,
+    on_queue_mode_change: Optional[Callable[[str], None]] = None,
 ):
     """File translation panel - Nani-inspired design"""
 
@@ -176,6 +259,17 @@ def create_file_panel(
         with ui.element('div').classes('main-card w-full'):
             # Content container
             with ui.element('div').classes('main-card-inner mx-1.5 mb-1.5 p-4'):
+                if state.file_queue:
+                    _queue_panel(
+                        state,
+                        on_queue_select,
+                        on_queue_remove,
+                        on_queue_move,
+                        on_cancel,
+                        on_queue_clear,
+                        on_queue_mode_change,
+                    )
+
                 if state.file_state == FileState.EMPTY:
                     _drop_zone(on_file_select)
 
@@ -217,40 +311,181 @@ def create_file_panel(
                         font_jp_to_en,
                         font_en_to_jp,
                     )
-                    with ui.row().classes('justify-center mt-4'):
-                        # Disable button while file info is loading
-                        btn_disabled = state.file_info is None
-                        btn_props = 'no-caps disable' if btn_disabled else 'no-caps'
-                        btn = ui.button(
-                            icon='translate',
-                            on_click=on_translate,
-                        ).classes('translate-btn').props(f'{btn_props} aria-label="翻訳する"')
-                        btn.tooltip('翻訳する')
+                    with ui.column().classes('items-center gap-2 mt-4'):
+                        _file_translate_meta_chips(state, translation_style)
+                        with ui.row().classes('justify-center'):
+                            # Disable button while file info is loading
+                            btn_disabled = state.file_info is None
+                            btn_props = 'no-caps disable' if btn_disabled else 'no-caps'
+                            btn = ui.button(
+                                icon='translate',
+                                on_click=on_translate,
+                            ).classes('translate-btn').props(
+                                f'{btn_props} aria-label="翻訳する" aria-keyshortcuts="Ctrl+Enter Meta+Enter"'
+                            )
+                            btn.tooltip('翻訳する')
 
                 elif state.file_state == FileState.TRANSLATING:
-                    _progress_card(
-                        state.file_info,
-                        state.translation_progress,
-                        state.translation_status,
-                        state.translation_phase,
-                        state.translation_phase_detail,
-                        state.translation_eta_seconds,
-                    )
+                    with ui.column().classes('items-center gap-2'):
+                        _file_translate_meta_chips(state, translation_style)
+                        _progress_card(
+                            state.file_info,
+                            state.translation_progress,
+                            state.translation_status,
+                            state.translation_phase,
+                            state.translation_phase_detail,
+                            state.translation_eta_seconds,
+                            state.translation_phase_counts,
+                            state.translation_phase_current,
+                            state.translation_phase_total,
+                        )
 
                 elif state.file_state == FileState.COMPLETE:
-                    _complete_card(
-                        translation_result,
-                        state.file_info,
-                        on_translate,
-                        on_reset,
-                        on_dismiss_issues,
-                    )
+                    with ui.column().classes('items-center gap-2'):
+                        _file_translate_meta_chips(state, translation_style)
+                        _complete_card(
+                            translation_result,
+                            state.file_info,
+                            on_translate,
+                            on_reset,
+                            on_dismiss_issues,
+                        )
 
                 elif state.file_state == FileState.ERROR:
                     _error_card(state.error_message)
                     with ui.row().classes('gap-3 mt-4 justify-center'):
                         ui.button('別のファイルを選択', on_click=on_reset).classes('btn-outline')
 
+
+def _file_translate_meta_chips(state: AppState, translation_style: str) -> None:
+    output_label = '英訳' if state.file_output_language == 'en' else '和訳'
+    style_label = STYLE_OPTIONS.get(translation_style, (translation_style, ""))[0]
+    with ui.row().classes('file-meta-chips items-center gap-2 flex-wrap justify-center'):
+        ui.label(output_label).classes('chip meta-chip')
+        if state.file_output_language == 'en':
+            ui.label(style_label).classes('chip meta-chip')
+        if state.file_output_language_overridden:
+            ui.label('手動').classes('chip meta-chip override-chip')
+        if state.reference_files:
+            ui.label(f'参照 {len(state.reference_files)}').classes('chip meta-chip')
+
+
+def _queue_panel(
+    state: AppState,
+    on_select: Optional[Callable[[str], None]],
+    on_remove: Optional[Callable[[str], None]],
+    on_move: Optional[Callable[[str, int], None]],
+    on_cancel: Optional[Callable[[], None]],
+    on_clear: Optional[Callable[[], None]],
+    on_mode_change: Optional[Callable[[str], None]],
+) -> None:
+    total = len(state.file_queue)
+    pending = len([i for i in state.file_queue if i.status == TranslationStatus.PENDING])
+    running = len([i for i in state.file_queue if i.status == TranslationStatus.PROCESSING])
+    done = len([i for i in state.file_queue if i.status == TranslationStatus.COMPLETED])
+    failed = len([i for i in state.file_queue if i.status == TranslationStatus.FAILED])
+    cancelled = len([i for i in state.file_queue if i.status == TranslationStatus.CANCELLED])
+
+    status_map = {
+        TranslationStatus.PENDING: ('待機', 'queue-status pending'),
+        TranslationStatus.PROCESSING: ('処理中', 'queue-status running'),
+        TranslationStatus.COMPLETED: ('完了', 'queue-status done'),
+        TranslationStatus.FAILED: ('失敗', 'queue-status failed'),
+        TranslationStatus.CANCELLED: ('キャンセル', 'queue-status cancelled'),
+    }
+
+    with ui.element('div').classes('queue-panel'):
+        with ui.row().classes('queue-header items-center justify-between gap-2 flex-wrap'):
+            with ui.row().classes('items-center gap-2 flex-wrap'):
+                ui.label(f'キュー {total} 件').classes('text-sm font-semibold')
+                if pending:
+                    ui.label(f'待機 {pending}').classes('chip meta-chip')
+                if running:
+                    ui.label(f'進行 {running}').classes('chip meta-chip')
+                if done:
+                    ui.label(f'完了 {done}').classes('chip meta-chip')
+                if failed:
+                    ui.label(f'失敗 {failed}').classes('chip meta-chip')
+                if cancelled:
+                    ui.label(f'中止 {cancelled}').classes('chip meta-chip')
+
+            with ui.row().classes('items-center gap-2'):
+                if on_mode_change:
+                    seq_classes = 'queue-mode-btn'
+                    par_classes = 'queue-mode-btn'
+                    if state.file_queue_mode == 'sequential':
+                        seq_classes += ' active'
+                    else:
+                        par_classes += ' active'
+                    ui.button(
+                        '順次',
+                        on_click=lambda: on_mode_change('sequential'),
+                    ).classes(seq_classes).props('flat no-caps size=sm')
+                    ui.button(
+                        '並列',
+                        on_click=lambda: on_mode_change('parallel'),
+                    ).classes(par_classes).props('flat no-caps size=sm')
+
+                if on_clear:
+                    clear_btn = ui.button(
+                        'クリア',
+                        icon='delete_sweep',
+                        on_click=on_clear,
+                    ).classes('btn-text').props('no-caps')
+                    if state.file_queue_running:
+                        clear_btn.props('disable')
+
+        with ui.column().classes('queue-list w-full gap-2'):
+            for idx, item in enumerate(state.file_queue):
+                item_status_label, status_class = status_map.get(
+                    item.status, ('待機', 'queue-status pending')
+                )
+                active_class = ' active' if item.id == state.file_queue_active_id else ''
+                with ui.element('div').classes(f'queue-item{active_class}') as row:
+                    if on_select:
+                        row.on('click', lambda i=item.id: on_select(i))
+
+                    icon = 'insert_drive_file'
+                    if item.file_info:
+                        icon = FILE_TYPE_ICONS.get(item.file_info.file_type, icon)
+
+                    ui.icon(icon).classes('queue-file-icon')
+                    with ui.column().classes('queue-item-body gap-1'):
+                        ui.label(item.path.name).classes('queue-file-name')
+                        with ui.row().classes('items-center gap-2 flex-wrap'):
+                            ui.label(item.status_label or item_status_label).classes(status_class)
+                            if item.progress and item.status == TranslationStatus.PROCESSING:
+                                ui.label(f'{int(item.progress * 100)}%').classes('queue-progress-label')
+                        if item.status == TranslationStatus.PROCESSING:
+                            with ui.element('div').classes('queue-progress-track'):
+                                ui.element('div').classes('queue-progress-bar').style(
+                                    f'width: {int(item.progress * 100)}%'
+                                )
+
+                    with ui.row().classes('queue-item-actions items-center gap-1'):
+                        if on_move and not state.file_queue_running and item.status == TranslationStatus.PENDING:
+                            up_btn = ui.button(icon='arrow_upward', on_click=lambda i=item.id: on_move(i, -1))
+                            up_btn.props('flat dense round size=xs @click.stop').classes('queue-action-btn')
+                            down_btn = ui.button(icon='arrow_downward', on_click=lambda i=item.id: on_move(i, 1))
+                            down_btn.props('flat dense round size=xs @click.stop').classes('queue-action-btn')
+                            if idx == 0:
+                                up_btn.props('disable')
+                            if idx == total - 1:
+                                down_btn.props('disable')
+
+                        if item.status == TranslationStatus.PROCESSING and on_cancel:
+                            cancel_btn = ui.button(
+                                icon='cancel',
+                                on_click=on_cancel,
+                            ).props('flat dense round size=xs @click.stop').classes('queue-action-btn')
+                            cancel_btn.tooltip('キャンセル')
+
+                        if item.status != TranslationStatus.PROCESSING and on_remove:
+                            remove_btn = ui.button(
+                                icon='close',
+                                on_click=lambda i=item.id: on_remove(i),
+                            ).props('flat dense round size=xs @click.stop').classes('queue-action-btn')
+                            remove_btn.tooltip('キューから削除')
 def _language_selector(state: AppState, on_change: Optional[Callable[[str], None]]):
     """Output language selector with auto-detection display"""
     detected = state.file_detected_language
@@ -311,6 +546,14 @@ def _format_eta(seconds: Optional[float]) -> str:
     hours = minutes // 60
     minutes = minutes % 60
     return f"{hours}時間{minutes}分"
+
+
+def _format_eta_range(seconds: Optional[float]) -> str:
+    if seconds is None:
+        return "--"
+    low = max(0, int(seconds * 0.7))
+    high = max(low + 1, int(seconds * 1.3))
+    return f"{_format_eta(low)}〜{_format_eta(high)}"
 
 
 def _get_section_label(file_info: Optional[FileInfo]) -> str:
@@ -495,18 +738,32 @@ def _precheck_card(
                 ui.label(f'推定: {eta_label}').classes('precheck-item')
 
             if summary["count"] > 0:
-                with ui.row().classes('ref-summary-row items-center flex-wrap gap-2'):
-                    ui.label(format_bytes(summary["total_bytes"])).classes('ref-chip')
-                    if summary["latest_mtime"]:
-                        updated = datetime.fromtimestamp(summary["latest_mtime"]).strftime('%m/%d %H:%M')
-                        ui.label(f'更新 {updated}').classes('ref-chip')
-                    status_label = 'OK' if summary["all_ok"] else 'NG'
-                    status_class = 'ref-chip status-ok' if summary["all_ok"] else 'ref-chip status-warn'
-                    ui.label(status_label).classes(status_class)
+                with ui.element('details').classes('ref-summary-details'):
+                    with ui.element('summary').classes('ref-summary-row items-center flex-wrap gap-2'):
+                        ui.label(format_bytes(summary["total_bytes"])).classes('ref-chip')
+                        if summary["latest_mtime"]:
+                            updated = datetime.fromtimestamp(summary["latest_mtime"]).strftime('%m/%d %H:%M')
+                            ui.label(f'更新 {updated}').classes('ref-chip')
+                        status_label = 'OK' if summary["all_ok"] else 'NG'
+                        status_class = 'ref-chip status-ok' if summary["all_ok"] else 'ref-chip status-warn'
+                        ui.label(status_label).classes(status_class)
+                        ui.icon('expand_more').classes('ref-summary-caret')
+
+                    with ui.column().classes('ref-detail-list'):
+                        for entry in summary["entries"]:
+                            status_class = 'ref-detail-row' if entry["exists"] else 'ref-detail-row missing'
+                            with ui.element('div').classes(status_class):
+                                ui.label(entry["name"]).classes('file-name')
+                                if entry["size_bytes"]:
+                                    ui.label(format_bytes(entry["size_bytes"])).classes('ref-meta')
+                                if entry["mtime"]:
+                                    updated = datetime.fromtimestamp(entry["mtime"]).strftime('%m/%d %H:%M')
+                                    ui.label(f'更新 {updated}').classes('ref-meta')
+                                ui.label('OK' if entry["exists"] else 'NG').classes('ref-file-status')
 
 
 
-def _drop_zone(on_file_select: Callable[[Path], Union[None, Awaitable[None]]]):
+def _drop_zone(on_file_select: Callable[[list[Path]], Union[None, Awaitable[None]]]):
     """Simple drop zone with managed temp files"""
 
     def handle_upload(e: events.UploadEventArguments):
@@ -535,7 +792,7 @@ def _drop_zone(on_file_select: Callable[[Path], Union[None, Awaitable[None]]]):
                 # Use temp file manager for automatic cleanup
                 temp_path = temp_file_manager.create_temp_file(content, name)
             # Support async callback (use create_task for async functions)
-            result = on_file_select(temp_path)
+            result = on_file_select([temp_path])
             if asyncio.iscoroutine(result):
                 asyncio.create_task(result)
         except (OSError, AttributeError) as err:
@@ -549,6 +806,7 @@ def _drop_zone(on_file_select: Callable[[Path], Union[None, Awaitable[None]]]):
 
     # Container with relative positioning for layering
     with ui.element('div').classes('drop-zone w-full') as container:
+        container.props('tabindex=0 role="button" aria-label="ファイルを選択"')
         # Visual content (pointer-events: none to let clicks pass through)
         with ui.column().classes('drop-zone-content items-center'):
             ui.icon('upload_file').classes('drop-zone-icon')
@@ -562,10 +820,20 @@ def _drop_zone(on_file_select: Callable[[Path], Union[None, Awaitable[None]]]):
             max_file_size=MAX_DROP_FILE_SIZE_BYTES,
             on_rejected=handle_upload_rejected,
             auto_upload=True,
-        ).classes('drop-zone-upload').props(f'accept="{SUPPORTED_FORMATS}"')
+        ).classes('drop-zone-upload').props(f'accept="{SUPPORTED_FORMATS}" multiple')
 
         # Make container click trigger the upload file dialog
         container.on('click', lambda: upload.run_method('pickFiles'))
+        container.on(
+            'keydown',
+            lambda: upload.run_method('pickFiles'),
+            js_handler='''(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    emit(e);
+                }
+            }''',
+        )
 
         # Handle drag & drop directly via HTML5 API (more reliable than Quasar's internal handling)
         # This is necessary because CSS hides Quasar's internal drop zone element
@@ -594,47 +862,52 @@ def _drop_zone(on_file_select: Callable[[Path], Union[None, Awaitable[None]]]):
             e.preventDefault();
             e.currentTarget.classList.remove("drag-over");
 
+            const files = [];
             const items = e.dataTransfer.items;
-            let file = null;
 
-            // Prefer the first file-type item to avoid grabbing non-file payloads (e.g., text/HTML)
             if (items && items.length) {
                 for (const item of items) {
                     if (item.kind === 'file') {
-                        file = item.getAsFile();
-                        if (file) break;
+                        const f = item.getAsFile();
+                        if (f) files.push(f);
                     }
                 }
             }
 
-            // Fallback to the files list when items are missing or contain no file entries
-            if (!file && e.dataTransfer.files && e.dataTransfer.files.length) {
-                file = e.dataTransfer.files[0];
+            if (!files.length && e.dataTransfer.files && e.dataTransfer.files.length) {
+                for (const f of e.dataTransfer.files) {
+                    files.push(f);
+                }
             }
 
-            if (!file) {
+            if (!files.length) {
                 e.currentTarget.dispatchEvent(new CustomEvent('file-ready'));
                 return;
             }
 
             const maxBytes = ''' + str(MAX_DROP_FILE_SIZE_BYTES) + ''';
-            if (file.size && file.size > maxBytes) {
-                // Let QUploader handle large files to avoid oversized websocket payloads.
-                window._droppedFileData = null;
-                return;
-            }
-
-            const reader = new FileReader();
-            reader.onload = (event) => {
-                const detail = {
-                    name: file.name,
-                    data: Array.from(new Uint8Array(event.target.result))
+            const readFile = (file) => new Promise((resolve) => {
+                if (file.size && file.size > maxBytes) {
+                    resolve(null);
+                    return;
+                }
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    resolve({
+                        name: file.name,
+                        data: Array.from(new Uint8Array(event.target.result))
+                    });
                 };
+                reader.onerror = () => resolve(null);
+                reader.readAsArrayBuffer(file);
+            });
+
+            Promise.all(files.map(readFile)).then((results) => {
+                const filtered = results.filter(Boolean);
+                const detail = filtered.length ? { files: filtered } : null;
                 window._droppedFileData = detail;
-                // Dispatch custom event to notify Python handler that file is ready
                 e.currentTarget.dispatchEvent(new CustomEvent('file-ready', { detail }));
-            };
-            reader.readAsArrayBuffer(file);
+            });
         }'''
         container.on('drop', js_handler=js_drop_handler)
         container.on('file-ready', handler=handle_file_ready)
@@ -694,6 +967,9 @@ def _progress_card(
     phase: Optional[TranslationPhase],
     phase_detail: Optional[str],
     eta_seconds: Optional[float],
+    phase_counts: Optional[dict[TranslationPhase, tuple[int, int]]],
+    phase_current: Optional[int],
+    phase_total: Optional[int],
 ):
     """Progress card with improved animation"""
     file_name = file_info.path.name if file_info else '翻訳中...'
@@ -710,14 +986,29 @@ def _progress_card(
             ui.label(status or '処理中...').classes('text-xs text-muted')
             ui.label(f'{int(progress * 100)}%').classes('text-xs font-medium')
 
-        _render_phase_stepper(phase, file_info)
+        _render_phase_stepper(phase, file_info, phase_counts)
+
+        phase_count_text = ""
+        if phase and phase_counts and phase in phase_counts:
+            current, total = phase_counts[phase]
+            phase_count_text = f'{current}/{total}'
+        elif phase_current is not None and phase_total is not None:
+            phase_count_text = f'{phase_current}/{phase_total}'
+
+        detail_text = phase_detail or ''
+        if phase_count_text:
+            detail_text = f'{detail_text} ・ {phase_count_text}' if detail_text else phase_count_text
 
         with ui.row().classes('progress-meta-row items-center justify-between'):
-            ui.label(phase_detail or '').classes('text-2xs text-muted')
-            ui.label(f'残り約 { _format_eta(eta_seconds)}').classes('text-2xs text-muted')
+            ui.label(detail_text).classes('text-2xs text-muted')
+            ui.label(f'残り約 {_format_eta_range(eta_seconds)}').classes('text-2xs text-muted')
 
 
-def _render_phase_stepper(current_phase: Optional[TranslationPhase], file_info: Optional[FileInfo]) -> None:
+def _render_phase_stepper(
+    current_phase: Optional[TranslationPhase],
+    file_info: Optional[FileInfo],
+    phase_counts: Optional[dict[TranslationPhase, tuple[int, int]]],
+) -> None:
     show_ocr = bool(file_info and file_info.file_type == FileType.PDF)
     steps = [
         (TranslationPhase.EXTRACTING, '抽出'),
@@ -740,7 +1031,11 @@ def _render_phase_stepper(current_phase: Optional[TranslationPhase], file_info: 
             elif current_idx == idx:
                 classes += ' active'
             with ui.element('div').classes(classes):
-                ui.label(label).classes('phase-label')
+                phase_label = label
+                if phase_counts and phase in phase_counts:
+                    current, total = phase_counts[phase]
+                    phase_label = f'{label} {current}/{total}'
+                ui.label(phase_label).classes('phase-label')
 
 
 def _complete_card(
@@ -762,13 +1057,13 @@ def _complete_card(
             if result and (result.issue_block_ids or result.mismatched_batch_count):
                 _issue_card(result, file_info, on_retry, on_dismiss_issues)
 
-            # Output files list with download buttons
+            # Output files list with quick actions
             if result and result.output_files:
                 with ui.column().classes('w-full gap-2 mt-2'):
                     for file_path, description in result.output_files:
                         _output_file_row(file_path, description)
 
-            if result and result.output_files:
+            if result and (result.output_files or on_retry or on_reset):
                 _file_action_footer(result, on_retry, on_reset)
 
 
@@ -855,10 +1150,20 @@ def _file_action_footer(
             with ui.row().classes('items-center gap-2 flex-wrap'):
                 if target_path and target_path.exists():
                     ui.button(
+                        '開く',
+                        icon='open_in_new',
+                        on_click=lambda p=target_path: open_file(p),
+                    ).classes('btn-text').props('no-caps')
+                    ui.button(
                         'フォルダを開く',
                         icon='folder_open',
                         on_click=lambda p=target_path: show_in_folder(p),
                     ).classes('btn-text').props('no-caps')
+                    copy_btn = ui.button(
+                        'パスをコピー',
+                        icon='content_copy',
+                    ).classes('btn-text').props('no-caps')
+                    _attach_copy_handler(copy_btn, str(target_path), 'パスをコピーしました')
                 if on_reset:
                     ui.button(
                         '別のファイル',
@@ -875,7 +1180,7 @@ def _file_action_footer(
 
 
 def _output_file_row(file_path: Path, description: str):
-    """Create a row for output file with download button"""
+    """Create a row for output file with quick actions"""
     # File icon based on extension
     ext = file_path.suffix.lower()
     icon_map = {
@@ -897,12 +1202,30 @@ def _output_file_row(file_path: Path, description: str):
                 ui.label(file_path.name).classes('text-sm font-medium truncate')
                 ui.label(description).classes('text-xs text-on-surface-variant')
 
-            # Download button
-            ui.button(
-                'ダウンロード',
-                icon='download',
-                on_click=lambda p=file_path: _download_file(p)
-            ).props('flat dense no-caps').classes('text-primary')
+            with ui.row().classes('output-file-actions items-center gap-1'):
+                open_btn = ui.button(
+                    icon='open_in_new',
+                    on_click=lambda p=file_path: open_file(p),
+                ).props('flat dense round size=sm aria-label="ファイルを開く"').classes(
+                    'output-file-action-btn'
+                )
+                open_btn.tooltip('開く')
+
+                copy_btn = ui.button(
+                    icon='content_copy',
+                ).props('flat dense round size=sm aria-label="パスをコピー"').classes(
+                    'output-file-action-btn'
+                )
+                copy_btn.tooltip('パスをコピー')
+                _attach_copy_handler(copy_btn, str(file_path), 'パスをコピーしました')
+
+                download_btn = ui.button(
+                    icon='download',
+                    on_click=lambda p=file_path: _download_file(p),
+                ).props('flat dense round size=sm aria-label="ダウンロード"').classes(
+                    'output-file-action-btn'
+                )
+                download_btn.tooltip('ダウンロード')
 
 
 def _download_file(file_path: Path):

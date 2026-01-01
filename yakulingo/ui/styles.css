@@ -4267,6 +4267,10 @@ a:not(.q-btn):not(.q-item),
 
 .ref-summary-row {
     margin-top: 0.25rem;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
 }
 
 .ref-chip {
@@ -4574,6 +4578,375 @@ a:not(.q-btn):not(.q-item),
 
 .history-item .history-text-container {
     max-width: calc(100% - 5rem);
+}
+
+/* === Translate Meta Chips & Actions === */
+.translate-actions {
+    align-items: flex-end;
+}
+
+.translate-meta-row {
+    justify-content: flex-end;
+}
+
+.meta-chip,
+.direction-chip,
+.style-chip,
+.override-chip {
+    padding: 0.2rem 0.6rem;
+    font-size: 0.7rem;
+}
+
+.meta-chip,
+.direction-chip,
+.style-chip {
+    background: var(--md-sys-color-surface-container-high);
+    color: var(--md-sys-color-on-surface-variant);
+}
+
+.override-chip {
+    background: var(--md-sys-color-warning-container);
+    color: var(--md-sys-color-on-warning-container);
+}
+
+.file-meta-chips {
+    margin-top: 0.25rem;
+}
+
+.char-split-hint {
+    font-size: 0.7rem;
+    color: var(--md-sys-color-on-surface-variant);
+}
+
+.char-split-hint.warn {
+    color: var(--md-sys-color-warning);
+}
+
+.char-split-hint.error {
+    color: var(--md-sys-color-error);
+}
+
+/* === Reference Summary Details === */
+.ref-summary-details {
+    margin-top: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: var(--md-sys-shape-corner-large);
+    border: 1px solid var(--md-sys-color-outline-variant);
+    background: var(--md-sys-color-surface-container);
+}
+
+.ref-summary-details summary {
+    list-style: none;
+    cursor: pointer;
+}
+
+.ref-summary-details summary::-webkit-details-marker {
+    display: none;
+}
+
+.ref-summary-caret {
+    transition: transform var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+}
+
+.ref-summary-details[open] .ref-summary-caret {
+    transform: rotate(180deg);
+}
+
+.ref-detail-list {
+    margin-top: 0.5rem;
+    display: grid;
+    gap: 0.35rem;
+}
+
+.ref-detail-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: var(--md-sys-shape-corner-medium);
+    background: var(--md-sys-color-surface);
+    border: 1px solid var(--md-sys-color-outline-variant);
+}
+
+.ref-detail-row.missing {
+    background: var(--md-sys-color-warning-container);
+    border-color: color-mix(in srgb, var(--md-sys-color-warning) 35%, var(--md-sys-color-outline-variant));
+}
+
+.ref-detail-row .file-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ref-meta {
+    font-size: 0.7rem;
+    color: var(--md-sys-color-on-surface-variant);
+}
+
+/* === Result Meta & Compare Controls === */
+.result-meta-row {
+    padding: 0.35rem 0.5rem;
+    border-radius: var(--md-sys-shape-corner-large);
+    border: 1px solid var(--md-sys-color-outline-variant);
+    background: var(--md-sys-color-surface-container);
+}
+
+.compare-toggle-row,
+.compare-base-row {
+    margin-top: 0.4rem;
+}
+
+.compare-label {
+    font-size: 0.75rem;
+    color: var(--md-sys-color-on-surface-variant);
+}
+
+.compare-btn,
+.compare-base-btn {
+    padding: 0.2rem 0.7rem;
+    border-radius: var(--md-sys-shape-corner-full);
+    background: var(--md-sys-color-surface-container-high);
+    color: var(--md-sys-color-on-surface-variant);
+}
+
+.compare-btn.active,
+.compare-base-btn.active {
+    background: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
+}
+
+.source-compare-panel {
+    margin-top: 0.75rem;
+    padding: 0.75rem;
+    border-radius: var(--md-sys-shape-corner-large);
+    border: 1px solid var(--md-sys-color-outline-variant);
+    background: var(--md-sys-color-surface-container);
+}
+
+.source-compare-grid {
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.source-compare-col {
+    flex: 1 1 260px;
+}
+
+.source-compare-text {
+    font-size: 0.85rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+/* === History Filters & Compare Dialog === */
+.history-filter-panel {
+    padding: 0.35rem 0.5rem;
+    border-radius: var(--md-sys-shape-corner-large);
+    border: 1px solid var(--md-sys-color-outline-variant);
+    background: var(--md-sys-color-surface-container);
+}
+
+.history-filter-chip {
+    padding: 0.15rem 0.6rem;
+    border-radius: var(--md-sys-shape-corner-full);
+    background: var(--md-sys-color-surface-container-high);
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: 0.7rem;
+}
+
+.history-filter-chip.active {
+    background: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
+}
+
+.history-compare-chip .q-icon {
+    font-size: 0.85rem;
+}
+
+.history-compare-card {
+    width: min(900px, 92vw);
+}
+
+.history-compare-grid {
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.history-compare-col {
+    flex: 1 1 280px;
+    padding: 0.75rem;
+    border-radius: var(--md-sys-shape-corner-large);
+    border: 1px solid var(--md-sys-color-outline-variant);
+    background: var(--md-sys-color-surface-container);
+}
+
+.history-compare-text {
+    font-size: 0.85rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+/* === File Queue Panel === */
+.queue-panel {
+    margin-bottom: 0.75rem;
+    padding: 0.75rem;
+    border-radius: var(--md-sys-shape-corner-large);
+    border: 1px solid var(--md-sys-color-outline-variant);
+    background: var(--md-sys-color-surface-container);
+}
+
+.queue-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem;
+    border-radius: var(--md-sys-shape-corner-medium);
+    border: 1px solid transparent;
+    background: var(--md-sys-color-surface);
+    cursor: pointer;
+    transition: background var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+}
+
+.queue-item.active {
+    border-color: var(--md-sys-color-primary);
+    background: color-mix(in srgb, var(--md-sys-color-primary) 6%, var(--md-sys-color-surface));
+}
+
+.queue-file-icon {
+    font-size: 1.2rem;
+    color: var(--md-sys-color-on-surface-variant);
+}
+
+.queue-file-name {
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--md-sys-color-on-surface);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.queue-status {
+    padding: 0.1rem 0.5rem;
+    border-radius: var(--md-sys-shape-corner-full);
+    background: var(--md-sys-color-surface-container-high);
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: 0.65rem;
+}
+
+.queue-status.running {
+    background: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
+}
+
+.queue-status.done {
+    background: var(--md-sys-color-success-container);
+    color: var(--md-sys-color-on-success-container);
+}
+
+.queue-status.failed {
+    background: var(--md-sys-color-error-container);
+    color: var(--md-sys-color-on-error-container);
+}
+
+.queue-status.cancelled {
+    background: var(--md-sys-color-warning-container);
+    color: var(--md-sys-color-on-warning-container);
+}
+
+.queue-progress-track {
+    width: 100%;
+    height: 4px;
+    border-radius: var(--md-sys-shape-corner-full);
+    background: var(--md-sys-color-surface-container-highest);
+    overflow: hidden;
+}
+
+.queue-progress-bar {
+    height: 100%;
+    border-radius: inherit;
+    background: var(--md-sys-color-primary);
+}
+
+.queue-progress-label {
+    font-size: 0.65rem;
+    color: var(--md-sys-color-on-surface-variant);
+}
+
+.queue-action-btn {
+    width: 24px !important;
+    height: 24px !important;
+    min-width: 24px !important;
+    min-height: 24px !important;
+    border-radius: var(--md-sys-shape-corner-full) !important;
+    padding: 0 !important;
+    color: var(--md-sys-color-on-surface-variant) !important;
+    background: transparent !important;
+}
+
+.queue-action-btn:hover {
+    background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent) !important;
+    color: var(--md-sys-color-primary) !important;
+}
+
+.queue-mode-btn {
+    padding: 0.25rem 0.75rem !important;
+    border-radius: var(--md-sys-shape-corner-full) !important;
+    background: var(--md-sys-color-surface-container-high) !important;
+    color: var(--md-sys-color-on-surface-variant) !important;
+}
+
+.queue-mode-btn.active {
+    background: var(--md-sys-color-secondary-container) !important;
+    color: var(--md-sys-color-on-secondary-container) !important;
+}
+
+/* === Status CTA Buttons === */
+.status-actions {
+    margin-top: 0.2rem;
+}
+
+.status-action-btn {
+    border-radius: var(--md-sys-shape-corner-full) !important;
+    padding: 0.2rem 0.75rem !important;
+    color: var(--md-sys-color-primary) !important;
+}
+
+.status-action-btn:hover {
+    background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent) !important;
+}
+
+.status-indicator.error .status-action-btn {
+    color: var(--md-sys-color-error) !important;
+}
+
+.status-indicator.error .status-action-btn:hover {
+    background: color-mix(in srgb, var(--md-sys-color-error) 12%, transparent) !important;
+}
+
+/* === Output File Actions === */
+.output-file-actions {
+    margin-left: auto;
+}
+
+.output-file-action-btn {
+    width: 28px !important;
+    height: 28px !important;
+    min-width: 28px !important;
+    min-height: 28px !important;
+    border-radius: var(--md-sys-shape-corner-full) !important;
+    padding: 0 !important;
+    color: var(--md-sys-color-on-surface-variant) !important;
+    background: transparent !important;
+}
+
+.output-file-action-btn:hover {
+    background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent) !important;
+    color: var(--md-sys-color-primary) !important;
 }
 
 /* === Layout Debugging (デバッグ用 - 削除可) === */

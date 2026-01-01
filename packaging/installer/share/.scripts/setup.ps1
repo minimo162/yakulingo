@@ -2006,7 +2006,7 @@ exit 0
         }
 
         Write-Status -Message "Setup completed!" -Progress -Step "Step 4/4: Finalizing" -Percent 100
-        $successMsg = "セットアップが完了しました。`n`nYakuLingo はログオン時に自動で常駐します（UIを閉じても終了しません）。`n`n使い方:`n- テキスト/ファイルを選択して Ctrl+C をすばやく2回 → UIに表示`n`n終了: スタートメニュー > YakuLingo 終了`n`nYakuLingo を常駐起動しました（準備中はUIが開きます）。"
+        $successMsg = "セットアップが完了しました。`n`n使い方ガイド（README.html）が自動で開きます。内容に沿って Copilot のログインと基本操作を確認してください。`n`nYakuLingo はログオン時に自動で常駐します（UIを閉じても終了しません）。`n`n終了: スタートメニュー > YakuLingo 終了`n`nYakuLingo を常駐起動しました（準備中はUIが開きます）。"
         if ($script:GlossaryDistPath -or $script:TranslationRulesDistPath) {
             $successMsg += "`n`n既存ファイルは保持しました。新しい既定ファイルは以下に保存されています:"
             if ($script:GlossaryDistPath) {
@@ -2026,8 +2026,7 @@ exit 0
         Write-Host ""
         Write-Host " Location: $SetupPath" -ForegroundColor White
         Write-Host " YakuLingo will start automatically on logon (resident mode)." -ForegroundColor Cyan
-        Write-Host " Trigger: Select text/files and press Ctrl+C twice quickly in the same window (result appears in UI; download file outputs from the UI)." -ForegroundColor Cyan
-        Write-Host " Resident start: Start Menu shortcut." -ForegroundColor Cyan
+        Write-Host " The usage guide (README.html) will open now. Follow it for Copilot login and basic usage." -ForegroundColor Cyan
         Write-Host " Exit: Start Menu > YakuLingo 終了" -ForegroundColor Cyan
         if ($script:GlossaryDistPath -or $script:TranslationRulesDistPath) {
             Write-Host ""

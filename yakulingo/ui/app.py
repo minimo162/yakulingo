@@ -590,6 +590,7 @@ def _nicegui_open_window_patched(
     window = webview.create_window(**window_kwargs)
     assert window is not None
     if sys.platform == "win32":
+        hwnd = None
         try:
             icon_value = window_kwargs.get("icon")
             icon_path = str(icon_value) if icon_value else ""
@@ -598,6 +599,20 @@ def _nicegui_open_window_patched(
                 _set_window_icon_win32(hwnd, icon_path, log_prefix="[NATIVE_WINDOW]")
         except Exception as e:
             logger.debug("Failed to set native window icon: %s", e)
+        resident_startup = os.environ.get("YAKULINGO_NO_AUTO_OPEN", "").strip().lower() in (
+            "1", "true", "yes"
+        )
+        if resident_startup:
+            try:
+                if hwnd is None:
+                    hwnd = _find_window_handle_by_title_win32(title)
+                if hwnd:
+                    _set_window_taskbar_visibility_win32(hwnd, False)
+                    _hide_native_window_offscreen_win32(title)
+                if hasattr(window, "hide"):
+                    window.hide()
+            except Exception as e:
+                logger.debug("Resident startup hide failed: %s", e)
 
     def _handle_window_closing(*_args, **_kwargs):
         def _notify_ui_close() -> bool:
@@ -8388,6 +8403,9 @@ def run_app(
     _t1 = time.perf_counter()
     yakulingo_app = create_app()
     yakulingo_app._resident_mode = resident_mode
+    if resident_mode:
+        yakulingo_app._clear_auto_open_cause("resident_startup")
+        yakulingo_app._set_layout_mode(LayoutMode.OFFSCREEN, "resident_startup")
     logger.info("[TIMING] create_app: %.2fs", time.perf_counter() - _t1)
 
     # Pass early-created CopilotHandler to avoid creating a new one

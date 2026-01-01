@@ -1651,7 +1651,6 @@ function Invoke-Setup {
     $OpenUiScriptPath = Join-Path $SetupPath "YakuLingo_OpenUI.ps1"
     $ResidentScriptPath = Join-Path $SetupPath "YakuLingo_Resident.ps1"
     $ExitScriptPath = Join-Path $SetupPath "YakuLingo_Exit.ps1"
-    $TranslateScriptPath = Join-Path $SetupPath "YakuLingo_Translate.ps1"
 
     $utf8NoBom = New-Object System.Text.UTF8Encoding $false
 
@@ -1867,71 +1866,9 @@ try {
 exit 0
 "@
 
-    $translateScript = @"
-`$ErrorActionPreference = 'SilentlyContinue'
-
-`$installDir = Split-Path -Parent `$MyInvocation.MyCommand.Definition
-`$pythonw = Join-Path `$installDir '.venv\\Scripts\\pythonw.exe'
-`$appPy = Join-Path `$installDir 'app.py'
-`$port = 8765
-`$apiUrl = "http://127.0.0.1:`$port/api/hotkey"
-
-function Test-PortOpen([int]`$p) {
-  try {
-    `$client = New-Object System.Net.Sockets.TcpClient
-    `$async = `$client.BeginConnect('127.0.0.1', `$p, `$null, `$null)
-    if (-not `$async.AsyncWaitHandle.WaitOne(200)) { return `$false }
-    `$client.EndConnect(`$async) | Out-Null
-    `$client.Close()
-    return `$true
-  } catch { return `$false }
-}
-
-# Normalize input paths from Explorer (may be quoted)
-`$paths = @()
-foreach (`$raw in `$args) {
-  if ([string]::IsNullOrWhiteSpace(`$raw)) { continue }
-  `$p = `$raw.Trim()
-  if ((`$p.StartsWith('"') -and `$p.EndsWith('"')) -or (`$p.StartsWith("'") -and `$p.EndsWith("'"))) {
-    if (`$p.Length -ge 2) { `$p = `$p.Substring(1, `$p.Length - 2) }
-  }
-  if (`$p) { `$paths += `$p }
-}
-if (-not `$paths -or `$paths.Count -eq 0) { exit 0 }
-
-`$payload = (`$paths -join "`n")
-
-# Ensure YakuLingo resident service is running
-if (-not (Test-PortOpen `$port)) {
-  if (Test-Path `$pythonw -PathType Leaf) {
-    Start-Process -FilePath `$pythonw -ArgumentList `$appPy -WorkingDirectory `$installDir -WindowStyle Hidden | Out-Null
-    `$deadline = (Get-Date).AddSeconds(15)
-    while ((Get-Date) -lt `$deadline -and -not (Test-PortOpen `$port)) { Start-Sleep -Milliseconds 200 }
-  }
-}
-
-try {
-  `$body = @{ payload = `$payload; open_ui = `$true } | ConvertTo-Json -Compress
-  Invoke-WebRequest -UseBasicParsing -Method Post -Uri `$apiUrl -Body `$body -ContentType 'application/json' -TimeoutSec 3 | Out-Null
-  exit 0
-} catch {
-  try {
-    Add-Type -AssemblyName System.Windows.Forms
-    [System.Windows.Forms.MessageBox]::Show(
-      "翻訳の実行に失敗しました。`n`nYakuLingo が起動しているか確認してください。",
-      "YakuLingo",
-      [System.Windows.Forms.MessageBoxButtons]::OK,
-      [System.Windows.Forms.MessageBoxIcon]::Error
-    ) | Out-Null
-  } catch { }
-  exit 1
-}
-"@
-
     [System.IO.File]::WriteAllText($OpenUiScriptPath, $openUiScript, $utf8NoBom)
     [System.IO.File]::WriteAllText($ResidentScriptPath, $residentScript, $utf8NoBom)
     [System.IO.File]::WriteAllText($ExitScriptPath, $exitScript, $utf8NoBom)
-    [System.IO.File]::WriteAllText($TranslateScriptPath, $translateScript, $utf8NoBom)
 
     # Common icon path
     $IconPath = Join-Path $SetupPath "yakulingo\ui\yakulingo.ico"
@@ -1997,48 +1934,6 @@ try {
         Write-Host "      Start Menu (Exit): $StartMenuExitPath" -ForegroundColor Gray
         Write-Host "      Startup: $StartupShortcutPath" -ForegroundColor Gray
         Write-Host "[OK] Shortcuts created" -ForegroundColor Green
-    }
-
-    # ============================================================
-    # Explorer context menu: "YakuLingoで翻訳"
-    # ============================================================
-    # Note: This appears under "Show more options" on Windows 11 (classic context menu).
-    try {
-        if (Test-Path $TranslateScriptPath -PathType Leaf) {
-            $contextExtensions = @(
-                ".xlsx",
-                ".xls",
-                ".docx",
-                ".doc",
-                ".pptx",
-                ".ppt",
-                ".pdf",
-                ".txt",
-                ".msg"
-            )
-            $menuLabel = "$AppNameで翻訳"
-            $commandValue = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$TranslateScriptPath`" `"%1`""
-
-            foreach ($ext in $contextExtensions) {
-                try {
-                    $menuKey = "HKCU:\Software\Classes\SystemFileAssociations\$ext\shell\YakuLingoTranslate"
-                    $cmdKey = Join-Path $menuKey "command"
-                    New-Item -Path $menuKey -Force | Out-Null
-                    New-ItemProperty -Path $menuKey -Name "MUIVerb" -Value $menuLabel -PropertyType String -Force | Out-Null
-                    New-ItemProperty -Path $menuKey -Name "MultiSelectModel" -Value "Player" -PropertyType String -Force | Out-Null
-                    if (Test-Path $IconPath) {
-                        New-ItemProperty -Path $menuKey -Name "Icon" -Value "$IconPath,0" -PropertyType String -Force | Out-Null
-                    }
-
-                    New-Item -Path $cmdKey -Force | Out-Null
-                    Set-ItemProperty -Path $cmdKey -Name "(default)" -Value $commandValue -Force | Out-Null
-                } catch {
-                    try { "Failed to register context menu for ${ext}: $($_.Exception.Message)" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
-                }
-            }
-        }
-    } catch {
-        try { "Context menu registration failed: $($_.Exception.Message)" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
     }
 
     # ============================================================
@@ -2111,7 +2006,7 @@ try {
         }
 
         Write-Status -Message "Setup completed!" -Progress -Step "Step 4/4: Finalizing" -Percent 100
-        $successMsg = "セットアップが完了しました。`n`nYakuLingo はログオン時に自動で常駐します（UIを閉じても終了しません）。`n`n使い方:`n- テキスト/ファイルを選択して Ctrl+C をすばやく2回 → UIに表示`n- 右クリック > 「YakuLingoで翻訳」でも開始`n`n終了: スタートメニュー > YakuLingo 終了`n`nYakuLingo を常駐起動しました（準備中はUIが開きます）。"
+        $successMsg = "セットアップが完了しました。`n`nYakuLingo はログオン時に自動で常駐します（UIを閉じても終了しません）。`n`n使い方:`n- テキスト/ファイルを選択して Ctrl+C をすばやく2回 → UIに表示`n`n終了: スタートメニュー > YakuLingo 終了`n`nYakuLingo を常駐起動しました（準備中はUIが開きます）。"
         if ($script:GlossaryDistPath -or $script:TranslationRulesDistPath) {
             $successMsg += "`n`n既存ファイルは保持しました。新しい既定ファイルは以下に保存されています:"
             if ($script:GlossaryDistPath) {
@@ -2132,7 +2027,6 @@ try {
         Write-Host " Location: $SetupPath" -ForegroundColor White
         Write-Host " YakuLingo will start automatically on logon (resident mode)." -ForegroundColor Cyan
         Write-Host " Trigger: Select text/files and press Ctrl+C twice quickly in the same window (result appears in UI; download file outputs from the UI)." -ForegroundColor Cyan
-        Write-Host " Explorer: Right-click file > 'YakuLingoで翻訳' (Win11: Show more options)." -ForegroundColor Cyan
         Write-Host " Resident start: Start Menu shortcut." -ForegroundColor Cyan
         Write-Host " Exit: Start Menu > YakuLingo 終了" -ForegroundColor Cyan
         if ($script:GlossaryDistPath -or $script:TranslationRulesDistPath) {

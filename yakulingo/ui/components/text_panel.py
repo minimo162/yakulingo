@@ -303,7 +303,7 @@ def _create_large_input_panel(
                             on_click=handle_translate_click,
                         ).classes('translate-btn').props('no-caps aria-label="翻訳する"')
                         btn.tooltip('翻訳する')
-                        if state.text_translating:
+                        if state.text_translating and not state.text_back_translating:
                             btn.props('loading disable')
                         elif not state.can_translate():
                             btn.props('disable')
@@ -316,7 +316,7 @@ def _create_large_input_panel(
 def create_text_result_panel(
     state: AppState,
     on_copy: Callable[[str], None],
-    on_back_translate: Optional[Callable[[str], None]] = None,
+    on_back_translate: Optional[Callable[[TranslationOption], None]] = None,
     on_retry: Optional[Callable[[], None]] = None,
     compare_mode: bool = False,
     on_streaming_preview_label_created: Optional[Callable[[ui.label], None]] = None,
@@ -355,10 +355,11 @@ def create_text_result_panel(
                         ui.label(ref_file.name).classes('file-name')
 
         # Translation status section
-        if state.text_translating:
+        if state.text_translating or state.text_back_translating:
             _render_translation_status(
                 state.text_detected_language,
                 translating=True,
+                back_translating=state.text_back_translating,
             )
         elif state.text_result and state.text_result.options:
             _render_translation_status(
@@ -385,6 +386,7 @@ def create_text_result_panel(
                     on_back_translate,
                     elapsed_time,
                     on_retry,
+                    actions_disabled=state.text_translating or state.text_back_translating,
                 )
             else:
                 # →English: Multiple style options
@@ -395,6 +397,7 @@ def create_text_result_panel(
                     elapsed_time,
                     on_retry,
                     compare_mode,
+                    actions_disabled=state.text_translating or state.text_back_translating,
                 )
         elif not state.text_translating:
             # Empty state - show placeholder (spinner already shown in translation status section)
@@ -423,12 +426,13 @@ def _render_translation_status(
     translating: bool = False,
     elapsed_time: Optional[float] = None,
     output_language: Optional[str] = None,
+    back_translating: bool = False,
 ):
     """
     Render translation status section.
 
     Shows:
-    - During translation: "英訳中..." or "和訳中..."
+    - During translation: "英訳中..." / "和訳中..." / "戻し訳中..."
     - After translation: "✓ 英訳しました" or "✓ 和訳しました" with elapsed time
     """
     # Determine translation direction
@@ -442,7 +446,9 @@ def _render_translation_status(
             with ui.row().classes('items-center gap-2'):
                 if translating:
                     ui.spinner('dots', size='sm').classes('text-primary')
-                    if detected_language:
+                    if back_translating:
+                        ui.label('戻し訳中...').classes('status-text')
+                    elif detected_language:
                         ui.label('英訳中...' if is_to_english else '和訳中...').classes('status-text')
                     else:
                         ui.label('翻訳中...').classes('status-text')
@@ -511,10 +517,11 @@ def _build_display_options(
 def _render_results_to_en(
     result: TextTranslationResult,
     on_copy: Callable[[str], None],
-    on_back_translate: Optional[Callable[[str], None]] = None,
+    on_back_translate: Optional[Callable[[TranslationOption], None]] = None,
     elapsed_time: Optional[float] = None,
     on_retry: Optional[Callable[[], None]] = None,
     compare_mode: bool = False,
+    actions_disabled: bool = False,
 ):
     """Render →English results: multiple style options"""
 
@@ -532,6 +539,7 @@ def _render_results_to_en(
                         is_last=(i == len(display_options) - 1),
                         index=i,
                         show_style_badge=compare_mode,
+                        actions_disabled=actions_disabled,
                     )
 
         # Retry button (optional)
@@ -548,9 +556,10 @@ def _render_results_to_en(
 def _render_results_to_jp(
     result: TextTranslationResult,
     on_copy: Callable[[str], None],
-    on_back_translate: Optional[Callable[[str], None]] = None,
+    on_back_translate: Optional[Callable[[TranslationOption], None]] = None,
     elapsed_time: Optional[float] = None,
     on_retry: Optional[Callable[[], None]] = None,
+    actions_disabled: bool = False,
 ):
     """Render →Japanese results: translations with detailed explanations"""
 
@@ -581,11 +590,13 @@ def _render_results_to_jp(
 
                                     # Back-translate button
                                     if on_back_translate:
-                                        ui.button(
+                                        back_btn = ui.button(
                                             '戻し訳',
                                             icon='g_translate',
-                                            on_click=lambda o=option: on_back_translate(o.text)
+                                            on_click=lambda o=option: on_back_translate(o),
                                         ).props('flat no-caps size=sm').classes('back-translate-btn').tooltip('精度チェック')
+                                        if actions_disabled or option.back_translation_in_progress:
+                                            back_btn.props('disable')
 
                             # Translation text
                             _render_translation_text(option.text)
@@ -594,6 +605,9 @@ def _render_results_to_jp(
                             if option.explanation:
                                 with ui.element('div').classes('nani-explanation'):
                                     _render_explanation(option.explanation)
+
+                            if on_back_translate:
+                                _render_back_translate_section(option)
 
         # Retry button (optional) - align position with →English
         if on_retry:
@@ -659,13 +673,52 @@ def _render_translation_text(text: str):
         label.style('white-space: pre-wrap;')
 
 
+def _render_back_translate_section(option: TranslationOption) -> None:
+    """Render inline back-translation results inside a translation card."""
+    has_result = bool(option.back_translation_text or option.back_translation_explanation)
+    has_error = bool(option.back_translation_error)
+    is_loading = option.back_translation_in_progress
+    should_open = is_loading or has_result or has_error
+
+    with ui.expansion(
+        '戻し訳結果',
+        icon='g_translate',
+        value=should_open,
+    ).classes('back-translate-expansion').props('dense'):
+        with ui.column().classes('w-full gap-2 back-translate-content'):
+            with ui.row().classes('items-center gap-2 back-translate-header'):
+                ui.label('戻し訳').classes('chip back-translate-chip')
+                if is_loading:
+                    ui.spinner('dots', size='sm').classes('text-primary')
+                    ui.label('戻し訳中...').classes('text-xs text-muted')
+                elif has_error:
+                    ui.icon('error').classes('text-error text-sm')
+                    ui.label(option.back_translation_error).classes('text-xs text-error')
+                elif has_result:
+                    ui.label('検証結果').classes('text-xs text-muted')
+                else:
+                    ui.label('戻し訳を実行するとここに表示されます').classes('text-xs text-muted')
+
+            if is_loading:
+                return
+            if has_error and not has_result:
+                return
+
+            if option.back_translation_text:
+                _render_translation_text(option.back_translation_text)
+            if option.back_translation_explanation:
+                with ui.element('div').classes('nani-explanation back-translate-explanation'):
+                    _render_explanation(option.back_translation_explanation)
+
+
 def _render_option_en(
     option: TranslationOption,
     on_copy: Callable[[str], None],
-    on_back_translate: Optional[Callable[[str], None]] = None,
+    on_back_translate: Optional[Callable[[TranslationOption], None]] = None,
     is_last: bool = False,
     index: int = 0,
     show_style_badge: bool = False,
+    actions_disabled: bool = False,
 ):
     """Render a single English translation option as a card"""
 
@@ -695,11 +748,13 @@ def _render_option_en(
 
                     # Back-translate button
                     if on_back_translate:
-                        ui.button(
+                        back_btn = ui.button(
                             '戻し訳',
                             icon='g_translate',
-                            on_click=lambda o=option: on_back_translate(o.text)
+                            on_click=lambda o=option: on_back_translate(o),
                         ).props('flat no-caps size=sm').classes('back-translate-btn').tooltip('精度チェック')
+                        if actions_disabled or option.back_translation_in_progress:
+                            back_btn.props('disable')
 
             # Translation text
             _render_translation_text(option.text)
@@ -708,3 +763,6 @@ def _render_option_en(
             if option.explanation:
                 with ui.element('div').classes('nani-explanation'):
                     _render_explanation(option.explanation)
+
+            if on_back_translate:
+                _render_back_translate_section(option)

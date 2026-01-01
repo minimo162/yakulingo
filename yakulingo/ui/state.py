@@ -76,6 +76,7 @@ class AppState:
     text_view_state: TextViewState = TextViewState.INPUT  # Current view state
     source_text: str = ""
     text_translating: bool = False
+    text_back_translating: bool = False
     text_detected_language: Optional[str] = None  # Copilot-detected source language
     text_result: Optional[TextTranslationResult] = None
     text_translation_elapsed_time: Optional[float] = None  # Translation time in seconds
@@ -146,6 +147,7 @@ class AppState:
         self.text_view_state = TextViewState.INPUT
         self.source_text = ""
         self.text_translating = False
+        self.text_back_translating = False
         self.text_detected_language = None
         self.text_result = None
         self.text_translation_elapsed_time = None
@@ -167,7 +169,12 @@ class AppState:
     def can_translate(self) -> bool:
         """Check if translation is possible (requires Copilot ready)."""
         if self.current_tab == Tab.TEXT:
-            return bool(self.source_text.strip()) and not self.text_translating and self.copilot_ready
+            return (
+                bool(self.source_text.strip())
+                and not self.text_translating
+                and not self.text_back_translating
+                and self.copilot_ready
+            )
         elif self.current_tab == Tab.FILE:
             return self.file_state == FileState.SELECTED and self.copilot_ready
         return False
@@ -175,7 +182,7 @@ class AppState:
     def is_translating(self) -> bool:
         """Check if translation is in progress"""
         if self.current_tab == Tab.TEXT:
-            return self.text_translating
+            return self.text_translating or self.text_back_translating
         elif self.current_tab == Tab.FILE:
             return self.file_state == FileState.TRANSLATING
         return False

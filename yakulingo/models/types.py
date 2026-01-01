@@ -164,6 +164,11 @@ class TranslationOption:
     explanation: str                 # Why this translation, usage context
     char_count: int = 0              # Character count
     style: Optional[str] = None      # Translation style: "standard", "concise", "minimal"
+    # Back-translation details (UI-only, optional)
+    back_translation_text: Optional[str] = None
+    back_translation_explanation: Optional[str] = None
+    back_translation_error: Optional[str] = None
+    back_translation_in_progress: bool = False
 
     def __post_init__(self):
         if self.char_count == 0:

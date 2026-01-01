@@ -3281,6 +3281,37 @@ body.yakulingo-drag-active .global-drop-indicator {
     margin-right: 0.25rem;
 }
 
+/* === Back-translate Inline Results === */
+.back-translate-expansion {
+    margin-top: 0.75rem;
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-medium);
+    background: var(--md-sys-color-surface-container);
+}
+
+.back-translate-expansion .q-item {
+    padding: 0.5rem 0.75rem;
+    min-height: auto;
+}
+
+.back-translate-expansion .q-expansion-item__content {
+    padding: 0.75rem;
+}
+
+.back-translate-chip {
+    background: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
+}
+
+.back-translate-content .option-text,
+.back-translate-content .translation-table table {
+    font-size: var(--md-sys-typescale-size-sm);
+}
+
+.back-translate-explanation {
+    margin-top: 0.5rem;
+}
+
 /* === Elapsed Time Badge === */
 .elapsed-time-badge {
     font-size: var(--md-sys-typescale-size-xs);

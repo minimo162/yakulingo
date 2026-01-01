@@ -5958,7 +5958,10 @@ class YakuLingoApp:
         if self._translate_button is None:
             return
 
-        if self.state.is_translating():
+        if self.state.text_back_translating:
+            # Back-translate: disable without showing the main translate spinner
+            self._translate_button.props(':loading=false disable')
+        elif self.state.is_translating():
             # Show loading spinner and disable
             self._translate_button.props('loading disable')
         elif not self.state.can_translate():
@@ -6892,6 +6895,7 @@ class YakuLingoApp:
             error_message: Error message if translation failed, None otherwise
         """
         self.state.text_translating = False
+        self.state.text_back_translating = False
         with client:
             if error_message == "翻訳がキャンセルされました":
                 ui.notify('キャンセルしました', type='info')
@@ -7279,8 +7283,10 @@ class YakuLingoApp:
             self.translation_service.cancel()
         ui.notify('キャンセル中...', type='info')
 
-    async def _back_translate(self, text: str):
+    async def _back_translate(self, option: TranslationOption):
         """Back-translate text to verify translation quality"""
+        if option.back_translation_in_progress:
+            return
         # Use async version that will attempt auto-reconnection if needed
         if not await self._ensure_connection_async():
             return
@@ -7294,7 +7300,13 @@ class YakuLingoApp:
                 logger.warning("Back translate aborted: no client connected")
                 return
 
+        option.back_translation_in_progress = True
+        option.back_translation_text = None
+        option.back_translation_explanation = None
+        option.back_translation_error = None
+
         self.state.text_translating = True
+        self.state.text_back_translating = True
         # Only refresh result panel and button (input panel is already in compact state)
         self._refresh_result_panel()
         self._update_translate_button_state()
@@ -7335,55 +7347,45 @@ class YakuLingoApp:
             prompt_path = get_default_prompts_dir() / "text_back_translate.txt"
             if not prompt_path.exists():
                 error_message = f"Missing prompt template: {prompt_path}"
-                self._on_text_translation_complete(client, error_message)
-                return
-
-            prompt = prompt_path.read_text(encoding="utf-8")
-            prompt = prompt.replace("{translation_rules}", translation_rules)
-            prompt = prompt.replace("{input_text}", text)
-            prompt = prompt.replace("{text}", text)  # Backward-compatible placeholder
-            prompt = prompt.replace("{reference_section}", reference_section)
-  
-            # Send to Copilot with reference files attached
-            if self.translation_service:
-                result = await asyncio.to_thread(
-                    self.translation_service._translate_single_with_cancel,
-                    text,
-                    prompt,
-                    reference_files if reference_files else None,
-                    None,
-                )
             else:
-                result = await asyncio.to_thread(
-                    lambda: self.copilot.translate_single(text, prompt, reference_files)
-                )
+                text = option.text
+                prompt = prompt_path.read_text(encoding="utf-8")
+                prompt = prompt.replace("{translation_rules}", translation_rules)
+                prompt = prompt.replace("{input_text}", text)
+                prompt = prompt.replace("{text}", text)  # Backward-compatible placeholder
+                prompt = prompt.replace("{reference_section}", reference_section)
 
-            # Parse result and add to options
-            if result:
-                from yakulingo.ui.utils import parse_translation_result
-                text_result, explanation = parse_translation_result(result)
-                new_option = TranslationOption(
-                    text=f"【戻し訳】{text_result}",
-                    explanation=explanation
-                )
-
-                if self.state.text_result:
-                    self.state.text_result.options.append(new_option)
-                else:
-                    # text_result is None here, use state.source_text directly
-                    fallback_source = self.state.source_text or ""
-                    self.state.text_result = TextTranslationResult(
-                        source_text=fallback_source,
-                        source_char_count=len(fallback_source),
-                        options=[new_option],
+                # Send to Copilot with reference files attached
+                if self.translation_service:
+                    result = await asyncio.to_thread(
+                        self.translation_service._translate_single_with_cancel,
+                        text,
+                        prompt,
+                        reference_files if reference_files else None,
+                        None,
                     )
-            else:
-                error_message = '戻し訳に失敗しました'
+                else:
+                    result = await asyncio.to_thread(
+                        lambda: self.copilot.translate_single(text, prompt, reference_files)
+                    )
+
+                # Parse result and store on the option
+                if result:
+                    from yakulingo.ui.utils import parse_translation_result
+                    text_result, explanation = parse_translation_result(result)
+                    option.back_translation_text = text_result
+                    option.back_translation_explanation = explanation
+                else:
+                    error_message = '戻し訳に失敗しました'
 
         except TranslationCancelledError:
             error_message = "翻訳がキャンセルされました"
         except Exception as e:
             error_message = str(e)
+        finally:
+            option.back_translation_in_progress = False
+            if error_message and not option.back_translation_text and not option.back_translation_explanation:
+                option.back_translation_error = error_message
 
         self._on_text_translation_complete(client, error_message)
 

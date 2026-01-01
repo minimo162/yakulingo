@@ -427,13 +427,16 @@ def _nicegui_open_window_patched(
                 import urllib.request as _urllib_request
 
                 payload = _json.dumps({"reason": "window_close"}).encode("utf-8")
+                headers = {
+                    "Content-Type": "application/json",
+                    "X-YakuLingo-Exit": "1",
+                }
+                if _is_watchdog_enabled():
+                    headers["X-YakuLingo-Restart"] = "1"
                 req = _urllib_request.Request(
                     f"http://{host}:{port}/api/shutdown",
                     data=payload,
-                    headers={
-                        "Content-Type": "application/json",
-                        "X-YakuLingo-Exit": "1",
-                    },
+                    headers=headers,
                     method="POST",
                 )
                 with _urllib_request.urlopen(req, timeout=0.8):
@@ -477,12 +480,13 @@ def _nicegui_open_window_patched(
             return False
         if _notify_ui_shutdown():
             return True
-        try:
-            from yakulingo.ui.utils import write_launcher_state
+        if not _is_watchdog_enabled():
+            try:
+                from yakulingo.ui.utils import write_launcher_state
 
-            write_launcher_state("user_exit")
-        except Exception as e:
-            logger.debug("Failed to write launcher state on close: %s", e)
+                write_launcher_state("user_exit")
+            except Exception as e:
+                logger.debug("Failed to write launcher state on close: %s", e)
         return True
 
     try:
@@ -632,11 +636,14 @@ RESIDENT_STARTUP_LAYOUT_RETRY_DELAY_SEC = 0.25
 ALWAYS_CLOSE_TO_RESIDENT = True  # Keep service alive when native UI window is closed
 
 
-def _is_close_to_resident_enabled() -> bool:
-    watchdog_enabled = os.environ.get("YAKULINGO_WATCHDOG", "").strip().lower() in (
+def _is_watchdog_enabled() -> bool:
+    return os.environ.get("YAKULINGO_WATCHDOG", "").strip().lower() in (
         "1", "true", "yes"
     )
-    if watchdog_enabled:
+
+
+def _is_close_to_resident_enabled() -> bool:
+    if _is_watchdog_enabled():
         return False
     resident_mode = os.environ.get("YAKULINGO_NO_AUTO_OPEN", "").strip().lower() in (
         "1", "true", "yes"
@@ -8753,9 +8760,12 @@ def run_app(
                 # If we cannot determine the client reliably, refuse the request.
                 raise HTTPException(status_code=403, detail="forbidden")
 
-            from yakulingo.ui.utils import write_launcher_state
-            write_launcher_state("user_exit")
-            logger.info("Shutdown requested via /api/shutdown")
+            allow_restart = request.headers.get("X-YakuLingo-Restart") == "1"
+            if not allow_restart:
+                from yakulingo.ui.utils import write_launcher_state
+
+                write_launcher_state("user_exit")
+            logger.info("Shutdown requested via /api/shutdown (restart=%s)", allow_restart)
 
             # Graceful shutdown (runs cleanup via on_shutdown). Some environments keep
             # background threads alive; force-exit after a short grace period.
@@ -8763,7 +8773,7 @@ def run_app(
                 import os as _os
                 import time as _time
                 _time.sleep(5.0)
-                _os._exit(10)
+                _os._exit(0 if allow_restart else 10)
 
             try:
                 threading.Thread(

@@ -422,7 +422,8 @@ def _nicegui_open_window_patched(
 
         if _is_close_to_resident_enabled():
             if not _notify_ui_close():
-                return False
+                logger.debug("UI close-to-resident notify failed; allowing window close")
+                return True
             try:
                 if sys.platform == "win32":
                     _hide_native_window_offscreen_win32(title)
@@ -1314,6 +1315,7 @@ class YakuLingoApp:
                         logger.debug("Resident UI recovery attempt failed (%s): %s", reason, e)
                     await asyncio.sleep(0.2)
 
+        ui_ready = False
         try:
             ui_ready = await self._ensure_ui_ready_after_restore(
                 reason,
@@ -1389,7 +1391,12 @@ class YakuLingoApp:
         try:
             if self._early_connection_event is not None and not self._early_connection_event.is_set():
                 try:
-                    await asyncio.to_thread(self._early_connection_event.wait)
+                    await asyncio.wait_for(
+                        asyncio.to_thread(self._early_connection_event.wait),
+                        timeout=20.0,
+                    )
+                except asyncio.TimeoutError:
+                    logger.debug("Resident warmup: early connection wait timed out")
                 except Exception as e:
                     logger.debug("Resident warmup: early connection wait failed: %s", e)
 

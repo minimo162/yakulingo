@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ja">
   <head>
     <meta charset="utf-8">
@@ -6,81 +6,187 @@
     <title>YakuLingo 使い方ガイド</title>
     <style>
       :root {
-        --bg: #f2f4fb;
-        --ink: #1b1f2a;
-        --muted: #4b5565;
-        --card: #ffffff;
-        --primary: #2b59ff;
-        --accent: #ff6b4a;
-        --border: #d6ddea;
-        --shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
-        --radius: 20px;
+        --ink: #0f172a;
+        --muted: #41506b;
+        --primary: #1c5cff;
+        --primary-deep: #1738b7;
+        --secondary: #ff7a45;
+        --accent: #22c985;
+        --surface: #ffffff;
+        --surface-alt: #f4f6ff;
+        --stroke: #d6deef;
+        --shadow-soft: 0 18px 42px rgba(15, 23, 42, 0.12);
+        --shadow-strong: 0 26px 60px rgba(15, 23, 42, 0.18);
+        --radius-xl: 28px;
+        --radius-lg: 20px;
+        --radius-md: 14px;
       }
 
       * {
         box-sizing: border-box;
       }
 
+      html {
+        scroll-behavior: smooth;
+      }
+
       body {
         margin: 0;
-        font-family: "BIZ UDPGothic", "Yu Gothic UI", "Hiragino Sans", "Segoe UI", sans-serif;
+        font-family: "BIZ UDPGothic", "Yu Gothic UI", "Meiryo", "Segoe UI", sans-serif;
         color: var(--ink);
         background:
-          radial-gradient(900px 420px at 8% -8%, rgba(43, 89, 255, 0.13), transparent 60%),
-          radial-gradient(760px 380px at 92% -4%, rgba(255, 107, 74, 0.12), transparent 60%),
-          var(--bg);
+          radial-gradient(700px 380px at 8% -8%, rgba(28, 92, 255, 0.2), transparent 60%),
+          radial-gradient(640px 360px at 92% 0%, rgba(255, 122, 69, 0.2), transparent 60%),
+          linear-gradient(180deg, #f6f7ff 0%, #eef2ff 45%, #f9fafb 100%);
         line-height: 1.7;
       }
 
       .page {
-        max-width: 980px;
+        max-width: 1040px;
         margin: 28px auto 80px;
-        padding: 0 20px;
+        padding: 0 22px;
       }
 
       .hero {
-        background: linear-gradient(135deg, rgba(43, 89, 255, 0.14), rgba(255, 107, 74, 0.16)), var(--card);
-        border: 1px solid var(--border);
-        border-radius: calc(var(--radius) + 6px);
-        padding: 28px;
-        box-shadow: var(--shadow);
+        position: relative;
+        overflow: hidden;
+        background: linear-gradient(135deg, rgba(28, 92, 255, 0.16), rgba(255, 122, 69, 0.18)), var(--surface);
+        border-radius: calc(var(--radius-xl) + 8px);
+        border: 1px solid rgba(28, 92, 255, 0.18);
+        padding: 32px;
+        box-shadow: var(--shadow-strong);
+        animation: rise 0.8s ease both;
+      }
+
+      .hero::before,
+      .hero::after {
+        content: "";
+        position: absolute;
+        border-radius: 50%;
+        filter: blur(0px);
+        opacity: 0.7;
+        z-index: 0;
+      }
+
+      .hero::before {
+        width: 280px;
+        height: 280px;
+        right: -90px;
+        top: -110px;
+        background: radial-gradient(circle at 30% 30%, rgba(255, 122, 69, 0.8), transparent 65%);
+        animation: float 16s ease-in-out infinite;
+      }
+
+      .hero::after {
+        width: 220px;
+        height: 220px;
+        left: -80px;
+        bottom: -110px;
+        background: radial-gradient(circle at 30% 30%, rgba(34, 201, 133, 0.7), transparent 70%);
+        animation: float 14s ease-in-out infinite reverse;
+      }
+
+      .hero-content {
+        position: relative;
+        z-index: 1;
       }
 
       .hero-tag {
         display: inline-flex;
         align-items: center;
-        gap: 8px;
-        padding: 6px 12px;
+        gap: 10px;
+        padding: 6px 14px;
         border-radius: 999px;
-        background: rgba(43, 89, 255, 0.12);
-        border: 1px solid rgba(43, 89, 255, 0.2);
+        background: rgba(28, 92, 255, 0.16);
+        border: 1px solid rgba(28, 92, 255, 0.25);
         font-weight: 700;
-        font-size: 0.8rem;
+        font-size: 0.82rem;
         letter-spacing: 0.02em;
       }
 
       .hero h1 {
-        margin: 12px 0 8px;
-        font-size: clamp(1.8rem, 2.6vw, 2.4rem);
+        margin: 14px 0 10px;
+        font-size: clamp(2rem, 3vw, 2.8rem);
+        letter-spacing: -0.01em;
       }
 
       .hero p {
         margin: 0;
         color: var(--muted);
+        font-size: 1.02rem;
+      }
+
+      .hero-cta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin: 20px 0 8px;
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 12px 20px;
+        border-radius: 999px;
+        border: 1px solid transparent;
+        font-weight: 700;
+        text-decoration: none;
+        transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+      }
+
+      .btn.primary {
+        background: linear-gradient(135deg, var(--primary), var(--secondary));
+        color: #ffffff;
+        box-shadow: 0 14px 24px rgba(28, 92, 255, 0.25);
+        animation: pulse 2.6s ease-in-out infinite;
+      }
+
+      .btn.primary:hover {
+        transform: translateY(-2px) scale(1.01);
+      }
+
+      .btn.ghost {
+        background: rgba(255, 255, 255, 0.8);
+        border-color: rgba(28, 92, 255, 0.25);
+        color: var(--primary-deep);
+      }
+
+      .btn.ghost:hover {
+        transform: translateY(-2px);
       }
 
       .hero-grid {
-        margin-top: 20px;
+        margin-top: 18px;
         display: grid;
         gap: 16px;
         grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       }
 
       .hero-card {
-        background: var(--card);
-        border-radius: 16px;
-        border: 1px solid var(--border);
-        padding: 16px;
+        background: var(--surface);
+        border-radius: var(--radius-lg);
+        border: 1px solid rgba(28, 92, 255, 0.15);
+        padding: 16px 16px 18px;
+        box-shadow: var(--shadow-soft);
+        position: relative;
+        overflow: hidden;
+      }
+
+      .hero-card::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        background: linear-gradient(120deg, rgba(28, 92, 255, 0.08), rgba(255, 122, 69, 0.06));
+        opacity: 0.7;
+        pointer-events: none;
+      }
+
+      .hero-card > * {
+        position: relative;
+        z-index: 1;
       }
 
       .hero-card strong {
@@ -88,10 +194,33 @@
         margin-bottom: 6px;
       }
 
+      .hero-card p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 14px;
+      }
+
+      .chip {
+        padding: 6px 12px;
+        border-radius: 999px;
+        background: rgba(28, 92, 255, 0.12);
+        border: 1px solid rgba(28, 92, 255, 0.22);
+        font-size: 0.85rem;
+        font-weight: 700;
+        color: var(--primary-deep);
+      }
+
       nav {
-        margin-top: 18px;
-        padding-top: 16px;
-        border-top: 1px solid var(--border);
+        margin-top: 20px;
+        padding-top: 18px;
+        border-top: 1px solid rgba(28, 92, 255, 0.2);
       }
 
       nav ul {
@@ -100,7 +229,7 @@
         margin: 0;
         display: flex;
         flex-wrap: wrap;
-        gap: 10px 16px;
+        gap: 10px 14px;
         align-items: center;
       }
 
@@ -110,59 +239,109 @@
       }
 
       nav a {
-        color: var(--primary);
+        color: var(--primary-deep);
         font-weight: 700;
         text-decoration: none;
         display: inline-flex;
         align-items: center;
         line-height: 1.2;
-        padding: 2px 0;
+        padding: 6px 12px;
+        border-radius: 999px;
+        border: 1px solid rgba(28, 92, 255, 0.18);
+        background: rgba(255, 255, 255, 0.7);
+        transition: transform 0.2s ease, background 0.2s ease;
       }
 
       nav a:hover {
-        text-decoration: underline;
+        transform: translateY(-1px);
+        background: rgba(28, 92, 255, 0.12);
       }
 
       section {
-        margin-top: 24px;
-        background: var(--card);
-        border: 1px solid var(--border);
-        border-radius: var(--radius);
-        padding: 22px 24px;
-        box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+        margin-top: 26px;
+        background: var(--surface);
+        border: 1px solid var(--stroke);
+        border-radius: var(--radius-xl);
+        padding: 26px 26px 24px;
+        box-shadow: var(--shadow-soft);
+        position: relative;
+        animation: rise 0.7s ease both;
+      }
+
+      section::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 24px;
+        right: 24px;
+        height: 4px;
+        border-radius: 999px;
+        background: linear-gradient(120deg, var(--primary), var(--secondary), var(--accent));
+      }
+
+      section:nth-of-type(2)::before {
+        background: linear-gradient(120deg, var(--secondary), var(--primary));
+      }
+
+      section:nth-of-type(3)::before {
+        background: linear-gradient(120deg, var(--accent), var(--primary));
+      }
+
+      section:nth-of-type(4)::before {
+        background: linear-gradient(120deg, var(--primary), var(--accent));
       }
 
       h2 {
         margin: 0 0 12px;
-        font-size: 1.3rem;
+        font-size: 1.4rem;
         scroll-margin-top: 32px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      h2 span {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 30px;
+        height: 30px;
+        border-radius: 10px;
+        background: rgba(28, 92, 255, 0.16);
+        color: var(--primary-deep);
+        font-size: 0.9rem;
+        font-weight: 700;
       }
 
       h3 {
-        margin: 16px 0 8px;
-        font-size: 1.05rem;
+        margin: 18px 0 8px;
+        font-size: 1.08rem;
       }
 
-      .note {
-        margin-top: 12px;
-        padding: 12px 14px;
-        background: rgba(43, 89, 255, 0.08);
-        border: 1px solid rgba(43, 89, 255, 0.2);
-        border-radius: 12px;
-        color: #1f3b5b;
+      p {
+        margin: 0 0 12px;
+        color: var(--muted);
       }
 
-      .grid {
-        display: grid;
-        gap: 14px;
-        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      section ul,
+      section ol {
+        margin: 0 0 0 18px;
       }
 
-      .card {
-        border-radius: 14px;
-        padding: 14px;
-        border: 1px solid var(--border);
-        background: #fbfcff;
+      section li + li {
+        margin-top: 8px;
+      }
+
+      kbd {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 2px 8px;
+        border-radius: 8px;
+        border: 1px solid var(--stroke);
+        background: #eef1fb;
+        font-family: "Consolas", "Courier New", monospace;
+        font-size: 0.9em;
       }
 
       .steps {
@@ -172,48 +351,81 @@
 
       .step {
         display: grid;
-        gap: 6px;
-        padding: 14px 16px;
-        border-radius: 14px;
-        border: 1px solid var(--border);
-        background: #fbfcff;
-        border-left: 4px solid var(--primary);
+        grid-template-columns: auto 1fr;
+        gap: 14px;
+        align-items: start;
+        padding: 14px;
+        border-radius: var(--radius-md);
+        border: 1px solid rgba(28, 92, 255, 0.12);
+        background: var(--surface-alt);
       }
 
-      .step strong {
-        font-size: 0.98rem;
-      }
-
-      kbd {
+      .step-number {
+        width: 34px;
+        height: 34px;
+        border-radius: 12px;
+        background: linear-gradient(135deg, rgba(28, 92, 255, 0.25), rgba(34, 201, 133, 0.25));
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        padding: 2px 8px;
-        border-radius: 8px;
-        border: 1px solid var(--border);
-        background: #f1f3f9;
-        font-family: "Consolas", "Courier New", monospace;
-        font-size: 0.9em;
+        font-weight: 800;
+        color: var(--primary-deep);
       }
 
-      ul, ol {
-        margin: 0 0 0 18px;
+      .step strong {
+        display: block;
+        margin-bottom: 4px;
       }
 
-      section li + li {
-        margin-top: 8px;
+      .flow {
+        display: grid;
+        gap: 12px;
       }
 
-      .pill {
-        display: inline-flex;
-        align-items: center;
-        padding: 4px 10px;
-        border-radius: 999px;
-        border: 1px solid rgba(43, 89, 255, 0.2);
-        background: rgba(43, 89, 255, 0.08);
-        font-size: 0.85rem;
-        font-weight: 700;
-        color: #1f3b5b;
+      .flow-card {
+        display: grid;
+        gap: 8px;
+        padding: 14px 16px;
+        border-radius: var(--radius-md);
+        background: #fbfcff;
+        border: 1px solid rgba(28, 92, 255, 0.12);
+      }
+
+      .note {
+        margin-top: 14px;
+        padding: 14px 16px;
+        border-radius: 14px;
+        background: rgba(28, 92, 255, 0.1);
+        border: 1px solid rgba(28, 92, 255, 0.2);
+        color: #1f3a66;
+      }
+
+      .grid {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      }
+
+      .card {
+        border-radius: var(--radius-md);
+        padding: 16px;
+        border: 1px solid rgba(28, 92, 255, 0.12);
+        background: #fbfcff;
+      }
+
+      .callout {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        padding: 16px;
+        border-radius: var(--radius-md);
+        background: linear-gradient(120deg, rgba(34, 201, 133, 0.12), rgba(255, 122, 69, 0.12));
+        border: 1px solid rgba(34, 201, 133, 0.2);
+        font-size: 0.95rem;
+      }
+
+      .callout strong {
+        color: #0f3c2f;
       }
 
       footer {
@@ -222,136 +434,287 @@
         color: var(--muted);
         font-size: 0.9rem;
       }
+
+      @keyframes float {
+        0%,
+        100% {
+          transform: translateY(0px);
+        }
+        50% {
+          transform: translateY(8px);
+        }
+      }
+
+      @keyframes pulse {
+        0%,
+        100% {
+          box-shadow: 0 14px 24px rgba(28, 92, 255, 0.25);
+        }
+        50% {
+          box-shadow: 0 20px 32px rgba(255, 122, 69, 0.3);
+        }
+      }
+
+      @keyframes rise {
+        from {
+          opacity: 0;
+          transform: translateY(12px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @media (max-width: 720px) {
+        .hero {
+          padding: 24px;
+        }
+
+        .hero-cta {
+          flex-direction: column;
+          align-items: stretch;
+        }
+
+        .btn {
+          width: 100%;
+        }
+
+        .step {
+          grid-template-columns: 1fr;
+        }
+
+        h2 {
+          font-size: 1.25rem;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        * {
+          animation-duration: 0.001ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.001ms !important;
+        }
+      }
     </style>
   </head>
   <body>
     <div class="page">
-      <header class="hero">
-        <div class="hero-tag">YakuLingo / 使い方ガイド</div>
-        <h1>翻訳を、作業の流れのままに。</h1>
-        <p>YakuLingo は常駐型の翻訳アプリです。テキストもファイルも、作業を止めずに翻訳できます。</p>
-        <div class="hero-grid">
-          <div class="hero-card">
-            <strong>覚える操作は1つだけ</strong>
-            同じウィンドウで <kbd>Ctrl</kbd> + <kbd>C</kbd> を素早く2回。
+      <header class="hero" id="top">
+        <div class="hero-content">
+          <div class="hero-tag">セットアップ完了 / YakuLingo 使い方ガイド</div>
+          <h1>翻訳を、仕事の流れのままに。</h1>
+          <p>YakuLingo は常駐型の翻訳アプリです。テキストもファイルも、作業を止めずに翻訳できます。</p>
+          <div class="hero-cta">
+            <a class="btn primary" href="#quickstart">最初の一歩を始める</a>
+            <a class="btn ghost" href="#flow">使い方の流れを見る</a>
           </div>
-          <div class="hero-card">
-            <strong>テキストもファイルも対応</strong>
-            Excel / Word / PowerPoint / PDF / TXT / MSG。
+          <div class="hero-grid">
+            <div class="hero-card">
+              <strong>覚える操作はひとつだけ</strong>
+              <p>同じウィンドウで <kbd>Ctrl</kbd> + <kbd>C</kbd> を素早く2回。</p>
+            </div>
+            <div class="hero-card">
+              <strong>テキストもファイルも対応</strong>
+              <p>Excel / Word / PowerPoint / PDF / TXT / MSG を翻訳できます。</p>
+            </div>
+            <div class="hero-card">
+              <strong>終了は明示的に</strong>
+              <p>UI を閉じても常駐。終了はスタートメニューの「YakuLingo 終了」から。</p>
+            </div>
           </div>
-          <div class="hero-card">
-            <strong>終了は明示的に</strong>
-            UIを閉じても常駐。終了はスタートメニューの「YakuLingo 終了」から。
+          <div class="chips">
+            <span class="chip">自動判定: 日本語→英語 / 英語→日本語</span>
+            <span class="chip">用語集・参考資料を添付可能</span>
+            <span class="chip">翻訳結果はローカルに出力</span>
           </div>
+          <nav>
+            <ul>
+              <li><a href="#quickstart">最初の一歩</a></li>
+              <li><a href="#flow">使い方の流れ</a></li>
+              <li><a href="#text">テキスト翻訳</a></li>
+              <li><a href="#file">ファイル翻訳</a></li>
+              <li><a href="#result">結果の受け取り</a></li>
+              <li><a href="#business">ビジネス運用</a></li>
+              <li><a href="#resident">常駐 / 終了</a></li>
+              <li><a href="#trouble">困ったとき</a></li>
+            </ul>
+          </nav>
         </div>
-        <nav>
-          <ul>
-            <li><a href="#quickstart">最初の一歩</a></li>
-            <li><a href="#text">テキスト翻訳</a></li>
-            <li><a href="#file">ファイル翻訳</a></li>
-            <li><a href="#result">結果の受け取り</a></li>
-            <li><a href="#resident">常駐/終了</a></li>
-            <li><a href="#trouble">困ったとき</a></li>
-          </ul>
-        </nav>
       </header>
 
-      <section>
-        <h2 id="quickstart">最初の一歩</h2>
+      <section id="quickstart">
+        <h2><span>01</span>最初の一歩</h2>
         <div class="steps">
           <div class="step">
-            <strong>1. セットアップ完了</strong>
-            インストール後、YakuLingo は自動で常駐します。
+            <div class="step-number">1</div>
+            <div>
+              <strong>Copilot にサインイン</strong>
+              <p>初回のみ、M365 Copilot のログインが必要です。案内に従ってログインしてください。</p>
+            </div>
           </div>
           <div class="step">
-            <strong>2. Copilot にログイン</strong>
-            初回は M365 Copilot のログインが必要です（案内が表示されたらログイン）。
+            <div class="step-number">2</div>
+            <div>
+              <strong>翻訳したい文章やファイルを選択</strong>
+              <p>アプリを切り替えず、いつもの作業画面のまま選択します。</p>
+            </div>
           </div>
           <div class="step">
-            <strong>3. 翻訳を開始</strong>
-            対象を選択して <kbd>Ctrl</kbd> + <kbd>C</kbd> を素早く2回。
+            <div class="step-number">3</div>
+            <div>
+              <strong><kbd>Ctrl</kbd> + <kbd>C</kbd> を素早く2回</strong>
+              <p>YakuLingo が翻訳を開始し、UI に結果が表示されます。</p>
+            </div>
           </div>
         </div>
         <div class="note">
-          <span class="pill">自動判定</span>
-          日本語なら英訳、英語なら和訳が自動で表示されます。
+          <strong>自動判定で迷わない。</strong> 日本語なら英訳、英語なら和訳。方向は自動で切り替わります。
         </div>
       </section>
 
-      <section>
-        <h2 id="text">テキスト翻訳</h2>
+      <section id="flow">
+        <h2><span>02</span>使い方の流れ</h2>
+        <div class="flow">
+          <div class="flow-card">
+            <strong>1. コピーで起動</strong>
+            <p>いつもの操作で翻訳を呼び出せるので、作業のテンポが崩れません。</p>
+          </div>
+          <div class="flow-card">
+            <strong>2. 翻訳結果を確認</strong>
+            <p>日本語→英語は 3 スタイル、英語→日本語は解説付きで表示されます。</p>
+          </div>
+          <div class="flow-card">
+            <strong>3. 必要なら再翻訳</strong>
+            <p>文調や用途に合わせて再翻訳や戻し訳で調整できます。</p>
+          </div>
+          <div class="flow-card">
+            <strong>4. 作業へすぐ戻る</strong>
+            <p>翻訳後は UI を閉じても常駐。次の翻訳にすぐ移れます。</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="text">
+        <h2><span>03</span>テキスト翻訳</h2>
+        <h3>基本操作</h3>
         <ol>
-          <li>翻訳したい文章を選択します。</li>
-          <li>同じウィンドウで <kbd>Ctrl</kbd> + <kbd>C</kbd> を素早く2回。</li>
-          <li>UIに翻訳結果が表示されます。必要に応じてコピーします。</li>
+          <li>翻訳したい文章を選択。</li>
+          <li>同じ画面で <kbd>Ctrl</kbd> + <kbd>C</kbd> を素早く2回。</li>
+          <li>UI に翻訳結果が表示されます。</li>
         </ol>
-        <div class="note">
-          日本語 → 英語は「標準 / 簡潔 / 最簡潔」を同時に表示。英語 → 日本語は解説付きで表示されます。
-        </div>
-      </section>
-
-      <section>
-        <h2 id="file">ファイル翻訳</h2>
-        <h3>開始方法</h3>
-        <ul>
-          <li>エクスプローラーでファイルを選択し、<kbd>Ctrl</kbd> + <kbd>C</kbd> を素早く2回。</li>
-        </ul>
-        <h3>対応ファイル</h3>
-        <ul>
-          <li>Excel / Word / PowerPoint / PDF / TXT / MSG</li>
-        </ul>
-      </section>
-
-      <section>
-        <h2 id="result">結果の受け取り</h2>
         <div class="grid">
           <div class="card">
-            <strong>進捗の確認</strong>
-            翻訳中は UI に進捗と状態が表示されます。
+            <strong>日本語 → 英語</strong>
+            <p>標準 / 簡潔 / 最簡潔の 3 スタイルを同時に表示します。</p>
           </div>
+          <div class="card">
+            <strong>英語 → 日本語</strong>
+            <p>翻訳＋解説をまとめて表示。背景理解まで一気に確認できます。</p>
+          </div>
+          <div class="card">
+            <strong>戻し訳で精度確認</strong>
+            <p>翻訳結果をワンクリックで逆方向に翻訳できます。</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="file">
+        <h2><span>04</span>ファイル翻訳</h2>
+        <h3>開始方法</h3>
+        <ul>
+          <li>エクスプローラーでファイルを選択。</li>
+          <li><kbd>Ctrl</kbd> + <kbd>C</kbd> を素早く2回。</li>
+          <li>YakuLingo のファイル翻訳パネルで進行状況を確認。</li>
+        </ul>
+        <h3>対応ファイル</h3>
+        <div class="chips">
+          <span class="chip">Excel</span>
+          <span class="chip">Word</span>
+          <span class="chip">PowerPoint</span>
+          <span class="chip">PDF</span>
+          <span class="chip">TXT</span>
+          <span class="chip">MSG</span>
+        </div>
+        <div class="note">
+          レイアウトや書式は可能な限り保持して翻訳します。フォントは翻訳方向に合わせて自動調整されます。
+        </div>
+      </section>
+
+      <section id="result">
+        <h2><span>05</span>結果の受け取り</h2>
+        <div class="grid">
           <div class="card">
             <strong>出力ファイル</strong>
-            完了後、翻訳済みファイルや対訳ファイルが一覧表示されます。
+            <p>翻訳済みファイル、対訳ファイル、用語集 CSV が一覧で表示されます。</p>
           </div>
           <div class="card">
-            <strong>参照ファイル</strong>
-            用語集やスタイルガイドを添付すると翻訳が安定します。
+            <strong>保存先の確認</strong>
+            <p>出力先フォルダーは UI から直接開けます。</p>
+          </div>
+          <div class="card">
+            <strong>履歴もローカル管理</strong>
+            <p>翻訳履歴は端末内に保存され、再確認が簡単です。</p>
           </div>
         </div>
       </section>
 
-      <section>
-        <h2 id="resident">常駐/終了</h2>
-        <ul>
-          <li>UIを閉じても常駐は継続します。</li>
-          <li>UIを開く: スタートメニュー &gt; YakuLingo。</li>
-          <li>終了する: スタートメニュー &gt; YakuLingo &gt; 「YakuLingo 終了」。</li>
-        </ul>
-        <div class="note">
-          常駐起動により、いつでもショートカットで翻訳できます。
+      <section id="business">
+        <h2><span>06</span>ビジネス運用にうれしいポイント</h2>
+        <div class="grid">
+          <div class="card">
+            <strong>参考ファイルで表現を統一</strong>
+            <p>用語集やスタイルガイドを添付して、チーム内の表記ルールを守れます。</p>
+          </div>
+          <div class="card">
+            <strong>自動言語判定</strong>
+            <p>翻訳方向を考える手間なし。作業スピードを落としません。</p>
+          </div>
+          <div class="card">
+            <strong>常駐でいつでも翻訳</strong>
+            <p>呼び出しはいつも同じ操作。新人メンバーでも迷いません。</p>
+          </div>
+        </div>
+        <div class="callout">
+          <strong>ポイント:</strong>
+          翻訳が途切れる場合は Copilot のログイン状態を確認してください。
         </div>
       </section>
 
-      <section>
-        <h2 id="trouble">困ったとき</h2>
+      <section id="resident">
+        <h2><span>07</span>常駐 / 終了</h2>
+        <ul>
+          <li>UI を閉じても翻訳は常駐で継続します。</li>
+          <li>UI を開く: スタートメニュー &gt; YakuLingo。</li>
+          <li>終了する: スタートメニュー &gt; YakuLingo &gt; 「YakuLingo 終了」。</li>
+        </ul>
+      </section>
+
+      <section id="trouble">
+        <h2><span>08</span>困ったとき</h2>
         <div class="grid">
           <div class="card">
             <strong>ショートカットが反応しない</strong>
-            必ず同じウィンドウで <kbd>Ctrl</kbd> + <kbd>C</kbd> を素早く2回押してください。
+            <p>同じウィンドウで <kbd>Ctrl</kbd> + <kbd>C</kbd> を素早く2回押してください。</p>
           </div>
           <div class="card">
             <strong>翻訳が始まらない</strong>
-            Copilot のログインが完了しているか確認してください。
+            <p>Copilot にログイン済みか確認し、UI の再起動を試してください。</p>
           </div>
           <div class="card">
-            <strong>UIが表示されない</strong>
-            スタートメニューから YakuLingo を起動して確認してください。
+            <strong>翻訳品質を上げたい</strong>
+            <p>用語集・スタイルガイドを添付して表現のゆらぎを減らします。</p>
           </div>
         </div>
       </section>
 
+      <section>
+        <h2><span>09</span>さっそく使ってみる</h2>
+        <p>翻訳したいテキストやファイルを選び、<kbd>Ctrl</kbd> + <kbd>C</kbd> を素早く2回。YakuLingo がすぐに動き出します。</p>
+      </section>
+
       <footer>
-        インストール先: <code>%LOCALAPPDATA%\YakuLingo</code>
+        YakuLingo - Always-on translation for professional workflows.
       </footer>
     </div>
   </body>

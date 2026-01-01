@@ -346,7 +346,7 @@ def _glossary_selector(
                         ui.button(
                             icon='close',
                             on_click=lambda idx=i: on_remove(idx)
-                        ).props('flat dense round size=xs aria-label="Remove reference file"').classes('remove-btn')
+                        ).props('flat round aria-label="Remove reference file"').classes('remove-btn')
 
 
 

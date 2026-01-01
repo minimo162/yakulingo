@@ -391,7 +391,7 @@ def create_standard_dialog(
                 with ui.row().classes('w-full justify-between items-center'):
                     ui.label(title).classes('text-base font-medium')
                     if show_close_button:
-                        ui.button(icon='close', on_click=dialog.close).props('flat dense round')
+                        ui.button(icon='close', on_click=dialog.close).props('flat round').classes('icon-btn')
 
     return dialog, content
 

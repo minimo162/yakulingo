@@ -149,7 +149,7 @@ class UpdateNotification:
                 ui.button(
                     icon='close',
                     on_click=dialog.close,
-                ).props('flat dense round')
+                ).props('flat round').classes('icon-btn')
 
             # 再セットアップ必要警告
             if info.requires_reinstall:

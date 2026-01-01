@@ -1602,6 +1602,17 @@ class YakuLingoApp:
 
         self._resident_login_required = True
         self._login_auto_hide_pending = True
+        allow_auto_open = (
+            self._resident_show_requested
+            or self._manual_show_requested
+            or self._hotkey_translation_active
+        )
+        if not allow_auto_open:
+            logger.info(
+                "Resident login required; UI auto-open suppressed (%s)",
+                reason,
+            )
+            return
 
         with self._client_lock:
             has_client_before = self._client is not None
@@ -4120,7 +4131,6 @@ class YakuLingoApp:
         This is called after create_ui() to restore focus to the app window,
         as Edge startup may steal focus.
         """
-        auto_hide_allowed = self._auto_open_cause in (AutoOpenCause.STARTUP, AutoOpenCause.LOGIN)
         login_required_guard = False
         if self._auto_open_cause == AutoOpenCause.STARTUP and self._auto_open_timeout_task is None:
             self._schedule_auto_open_timeout(STARTUP_SPLASH_TIMEOUT_SEC, "startup")
@@ -4165,13 +4175,13 @@ class YakuLingoApp:
         if (
             self._resident_mode
             and not self._resident_show_requested
-            and auto_hide_allowed
-            and visibility_target in (AutoOpenCause.STARTUP, AutoOpenCause.LOGIN)
+            and visibility_target in (None, AutoOpenCause.STARTUP, AutoOpenCause.LOGIN)
         ):
             with self._client_lock:
                 has_client = self._client is not None
             logger.debug(
-                "Resident mode: skipping auto-show for UI window (client_connected=%s)",
+                "Resident mode: keeping UI hidden (target=%s, client_connected=%s)",
+                visibility_target.value if visibility_target else "none",
                 has_client,
             )
             if sys.platform == "win32":

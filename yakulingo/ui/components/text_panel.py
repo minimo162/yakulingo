@@ -247,7 +247,7 @@ def _create_large_input_panel(
                                         ui.button(
                                             icon='close',
                                             on_click=lambda idx=i: on_remove_reference_file(idx)
-                                        ).props('flat dense round size=xs aria-label="Remove reference file"').classes('remove-btn')
+                                        ).props('flat round aria-label="Remove reference file"').classes('remove-btn')
 
                     with ui.row().classes('input-toolbar-right items-center gap-2'):
                         # Bundled glossary toggle chip

@@ -5513,11 +5513,20 @@ class YakuLingoApp:
                     }}
 
                     const threshold = 48;
-                    const maxScrollTop = Math.max(0, panel.scrollHeight - panel.clientHeight);
-                    const distance = maxScrollTop - panel.scrollTop;
-                    const isInitial = panel.dataset.yakulingoAutoScroll === undefined;
-                    const shouldFollow = forceFollow || isInitial || distance <= threshold;
-                    panel.dataset.yakulingoAutoScroll = shouldFollow ? 'true' : 'false';
+                    if (!panel.dataset.yakulingoScrollListener) {{
+                        panel.dataset.yakulingoScrollListener = 'true';
+                        panel.addEventListener('scroll', () => {{
+                            const maxScrollTop = Math.max(0, panel.scrollHeight - panel.clientHeight);
+                            const distance = maxScrollTop - panel.scrollTop;
+                            panel.dataset.yakulingoAutoScroll = distance <= threshold ? 'true' : 'false';
+                        }}, {{ passive: true }});
+                    }}
+
+                    if (forceFollow) {{
+                        panel.dataset.yakulingoAutoScroll = 'true';
+                    }}
+                    const autoFlag = panel.dataset.yakulingoAutoScroll;
+                    const shouldFollow = forceFollow || autoFlag !== 'false';
                     if (!shouldFollow) return false;
 
                     const hidden = document.hidden || document.visibilityState !== 'visible';

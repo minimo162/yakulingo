@@ -403,6 +403,37 @@ def _hide_native_window_offscreen_win32(window_title: str) -> None:
         logger.debug("Failed to hide native window offscreen: %s", e)
 
 
+def _get_offscreen_position_win32() -> tuple[int, int] | None:
+    if sys.platform != "win32":
+        return None
+    try:
+        import ctypes
+
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+
+        SM_XVIRTUALSCREEN = 76
+        SM_YVIRTUALSCREEN = 77
+        SM_CXVIRTUALSCREEN = 78
+        SM_CYVIRTUALSCREEN = 79
+
+        virtual_left = user32.GetSystemMetrics(SM_XVIRTUALSCREEN)
+        virtual_top = user32.GetSystemMetrics(SM_YVIRTUALSCREEN)
+        virtual_width = user32.GetSystemMetrics(SM_CXVIRTUALSCREEN)
+        virtual_height = user32.GetSystemMetrics(SM_CYVIRTUALSCREEN)
+        if virtual_width <= 0 or virtual_height <= 0:
+            virtual_left = 0
+            virtual_top = 0
+            virtual_width = 3840
+            virtual_height = 2160
+
+        offscreen_x = int(virtual_left + virtual_width + 100)
+        offscreen_y = int(virtual_top + 100)
+        return offscreen_x, offscreen_y
+    except Exception as e:
+        logger.debug("Failed to compute offscreen window position: %s", e)
+        return None
+
+
 def _scale_size(size: tuple[int, int], scale: float) -> tuple[int, int]:
     if scale <= 0:
         return size
@@ -9298,6 +9329,11 @@ def run_app(
         # Start window hidden to prevent position flicker
         # Window will be shown by _position_window_early_sync() after positioning
         nicegui_app.native.window_args['hidden'] = True
+        if resident_mode and sys.platform == "win32":
+            offscreen_pos = _get_offscreen_position_win32()
+            if offscreen_pos is not None:
+                nicegui_app.native.window_args['x'] = offscreen_pos[0]
+                nicegui_app.native.window_args['y'] = offscreen_pos[1]
 
         # Set pywebview window icon (may not affect taskbar, but helps title bar)
         if icon_path is not None and icon_path.exists():

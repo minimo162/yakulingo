@@ -547,7 +547,7 @@ def _nicegui_open_window_patched(
         time.sleep(0.1)
 
     window_kwargs = {
-        'url': f'http://{host}:{port}',
+        'url': _build_local_url(host, port),
         'title': title,
         'width': width,
         'height': height,
@@ -575,8 +575,9 @@ def _nicegui_open_window_patched(
                 import urllib.request as _urllib_request
 
                 payload = _json.dumps({"reason": "window_close"}).encode("utf-8")
+                url = _build_local_url(host, port, "/api/ui-close")
                 req = _urllib_request.Request(
-                    f"http://{host}:{port}/api/ui-close",
+                    url,
                     data=payload,
                     headers={
                         "Content-Type": "application/json",
@@ -597,6 +598,7 @@ def _nicegui_open_window_patched(
                 import urllib.request as _urllib_request
 
                 payload = _json.dumps({"reason": "window_close"}).encode("utf-8")
+                url = _build_local_url(host, port, "/api/shutdown")
                 headers = {
                     "Content-Type": "application/json",
                     "X-YakuLingo-Exit": "1",
@@ -604,7 +606,7 @@ def _nicegui_open_window_patched(
                 if _is_watchdog_enabled():
                     headers["X-YakuLingo-Restart"] = "1"
                 req = _urllib_request.Request(
-                    f"http://{host}:{port}/api/shutdown",
+                    url,
                     data=payload,
                     headers=headers,
                     method="POST",
@@ -617,9 +619,9 @@ def _nicegui_open_window_patched(
                 return False
 
         if _is_close_to_resident_enabled():
-            if not _notify_ui_close():
-                logger.debug("UI close-to-resident notify failed; allowing window close")
-                return True
+            notified = _notify_ui_close()
+            if not notified:
+                logger.debug("UI close-to-resident notify failed; keeping window hidden")
             try:
                 if sys.platform == "win32":
                     hwnd = _find_window_handle_by_title_win32(title)
@@ -820,6 +822,25 @@ def _is_close_to_resident_enabled() -> bool:
         "1", "true", "yes"
     )
     return ALWAYS_CLOSE_TO_RESIDENT or resident_mode
+
+
+def _format_control_host(host: str) -> str:
+    """Return a loopback-safe host for local control requests."""
+    normalized = (host or "").strip()
+    if normalized in ("", "0.0.0.0", "::"):
+        normalized = "127.0.0.1"
+    if ":" in normalized and not normalized.startswith("["):
+        normalized = f"[{normalized}]"
+    return normalized
+
+
+def _build_local_url(host: str, port: int, path: str = "") -> str:
+    normalized = _format_control_host(host)
+    if path and not path.startswith("/"):
+        path = f"/{path}"
+    return f"http://{normalized}:{port}{path}"
+
+
 HOTKEY_MAX_FILE_COUNT = 10
 HOTKEY_SUPPORTED_FILE_SUFFIXES = {
     ".xlsx",
@@ -8537,7 +8558,7 @@ def run_app(
 
         opened = False
         try:
-            url = f"http://{host}:{port}/"
+            url = _build_local_url(host, port, "/")
             native_window_size = yakulingo_app._native_window_size or yakulingo_app._window_size
             width, height = native_window_size
             if sys.platform == "win32":

@@ -1,6 +1,6 @@
 import pytest
 
-from yakulingo.ui.app import YakuLingoApp
+from yakulingo.ui.app import YakuLingoApp, _build_local_url, _format_control_host
 
 
 @pytest.mark.asyncio
@@ -35,3 +35,20 @@ def test_resident_disconnect_simulation_keeps_service_alive():
     assert app._history_list is None
     assert app._history_dialog is None
     assert app._history_dialog_list is None
+
+
+def test_format_control_host_loopback():
+    assert _format_control_host("") == "127.0.0.1"
+    assert _format_control_host("0.0.0.0") == "127.0.0.1"
+    assert _format_control_host("::") == "127.0.0.1"
+    assert _format_control_host("127.0.0.1") == "127.0.0.1"
+    assert _format_control_host("localhost") == "localhost"
+    assert _format_control_host("::1") == "[::1]"
+
+
+def test_build_local_url_normalizes_host():
+    assert (
+        _build_local_url("0.0.0.0", 8765, "/api/ui-close")
+        == "http://127.0.0.1:8765/api/ui-close"
+    )
+    assert _build_local_url("::1", 8765) == "http://[::1]:8765"

@@ -3482,6 +3482,50 @@ class CopilotHandler:
         'input[type="password"]',
     ]
 
+    LOGIN_PROMPT_INTERACTIVE_SELECTORS = [
+        # Microsoft login inputs and buttons
+        '#i0116',  # email
+        '#i0118',  # password
+        '#idSIButton9',  # next/yes
+        '#idBtn_Back',  # back/no
+        'input[name="loginfmt"]',
+        'input[name="passwd"]',
+        # MFA and verification inputs
+        'input[autocomplete="one-time-code"]',
+        'input[type="tel"]',
+        # Account selection tiles
+        '#tilesHolder .tile',
+        '#tilesHolder .table',
+        '#aadTile',
+        '#otherTile',
+        # Generic auth inputs
+        'input[type="email"]',
+        'input[type="password"]',
+        'input[type="text"]',
+        'input[name*="login"]',
+        'input[name*="user"]',
+        'input[name*="pass"]',
+        # Generic submit actions
+        'button[type="submit"]',
+        'input[type="submit"]',
+    ]
+
+    LOGIN_PROMPT_BUTTON_KEYWORDS = (
+        "sign in",
+        "log in",
+        "login",
+        "next",
+        "continue",
+        "verify",
+        "approve",
+        "use another account",
+        "stay signed in",
+        "submit",
+        "ok",
+        "yes",
+        "no",
+    )
+
     def _has_auth_dialog(self) -> bool:
         """Check if an authentication dialog or login form is visible on the current page.
 
@@ -3552,6 +3596,78 @@ class CopilotHandler:
             return False
         except PlaywrightError:
             return False
+
+    def _has_visible_login_prompt(self, page) -> bool:
+        """Return True if a visible, interactive login prompt is present."""
+        if not page:
+            return False
+
+        error_types = _get_playwright_errors()
+        PlaywrightError = error_types['Error']
+
+        def _is_interactive(element, require_enabled: bool = True) -> bool:
+            try:
+                if not element.is_visible():
+                    return False
+            except Exception:
+                return False
+            if require_enabled:
+                try:
+                    if not element.is_enabled():
+                        return False
+                except Exception:
+                    pass
+                try:
+                    aria_disabled = element.get_attribute("aria-disabled")
+                    if aria_disabled and aria_disabled.lower() == "true":
+                        return False
+                except Exception:
+                    pass
+            return True
+
+        try:
+            for selector in self.LOGIN_PROMPT_INTERACTIVE_SELECTORS:
+                try:
+                    elements = page.query_selector_all(selector)
+                except Exception:
+                    continue
+                for element in elements:
+                    if _is_interactive(element):
+                        return True
+        except PlaywrightError:
+            return False
+
+        try:
+            candidates = page.query_selector_all(
+                "button, input[type='button'], input[type='submit'], [role='button']"
+            )
+            for element in candidates:
+                if not _is_interactive(element, require_enabled=True):
+                    continue
+                label = ""
+                try:
+                    label = (element.inner_text() or "").strip()
+                except Exception:
+                    label = ""
+                if not label:
+                    try:
+                        label = (element.get_attribute("value") or "").strip()
+                    except Exception:
+                        label = ""
+                if not label:
+                    try:
+                        label = (element.get_attribute("aria-label") or "").strip()
+                    except Exception:
+                        label = ""
+                if not label:
+                    continue
+                label_lower = label.lower()
+                if any(keyword in label_lower for keyword in self.LOGIN_PROMPT_BUTTON_KEYWORDS):
+                    return True
+        except PlaywrightError:
+            return False
+
+        return False
 
     def _wait_for_auto_login_impl(self, max_wait: float = 15.0, poll_interval: float = 1.0) -> bool:
         """Wait for automatic login (Windows integrated auth, SSO, etc.) to complete.
@@ -5265,6 +5381,116 @@ class CopilotHandler:
                     pass
             return ConnectionState.ERROR
 
+    def _confirm_login_required_impl(self) -> bool:
+        """Return True only when a login UI is clearly visible."""
+        if self._login_cancelled:
+            return False
+
+        error_types = _get_playwright_errors()
+        PlaywrightError = error_types['Error']
+
+        page = self._page or self._get_active_copilot_page()
+        if not page:
+            return False
+
+        try:
+            if page.is_closed():
+                page = self._get_active_copilot_page()
+                if not page:
+                    return False
+                self._page = page
+        except PlaywrightError:
+            page = self._get_active_copilot_page()
+            if not page:
+                return False
+            self._page = page
+
+        def _safe_url(candidate) -> str:
+            try:
+                return candidate.evaluate("window.location.href")
+            except Exception:
+                return candidate.url
+
+        poll_interval = 0.7
+        max_wait = 4.2
+        stable_threshold = 3
+        elapsed = 0.0
+        stable_count = 0
+        last_url = None
+
+        login_page = False
+        auth_dialog = False
+        prompt_visible = False
+
+        while elapsed < max_wait:
+            if self._login_cancelled:
+                return False
+
+            try:
+                if page.is_closed():
+                    page = self._get_active_copilot_page()
+                    if not page:
+                        return False
+                    self._page = page
+            except PlaywrightError:
+                page = self._get_active_copilot_page()
+                if not page:
+                    return False
+                self._page = page
+
+            try:
+                current_url = _safe_url(page)
+            except PlaywrightError:
+                current_url = page.url if page else ""
+
+            try:
+                if page.query_selector(self.CHAT_INPUT_SELECTOR_EXTENDED):
+                    return False
+            except Exception:
+                pass
+
+            auth_dialog = False
+            try:
+                auth_dialog = self._has_auth_dialog()
+            except Exception:
+                auth_dialog = False
+
+            login_page = bool(current_url and _is_login_page(current_url))
+            if not login_page and not auth_dialog:
+                return False
+
+            if current_url and _is_auth_flow_page(current_url) and not auth_dialog:
+                return False
+
+            prompt_visible = False
+            try:
+                prompt_visible = self._has_visible_login_prompt(page)
+            except Exception:
+                prompt_visible = False
+
+            # Only confirm when an interactive prompt is visible; otherwise treat as auto-login.
+            if not prompt_visible:
+                stable_count = 0
+                last_url = current_url
+                time.sleep(poll_interval)
+                elapsed += poll_interval
+                continue
+
+            if last_url is not None:
+                if current_url == last_url:
+                    stable_count += 1
+                else:
+                    stable_count = 0
+            last_url = current_url
+
+            if stable_count >= stable_threshold:
+                return True
+
+            time.sleep(poll_interval)
+            elapsed += poll_interval
+
+        return False
+
     def _find_copilot_chat_page(self):
         """コンテキストからCopilot /chat ページを探す。
 
@@ -5434,6 +5660,30 @@ class CopilotHandler:
                 self.STATE_CHECK_BACKOFF_SECONDS,
             )
             return ConnectionState.LOADING
+
+    def confirm_login_required(self, timeout: int = 5) -> bool:
+        """Thread-safe check for a stable login-required state."""
+        if self.is_connecting:
+            return False
+        if is_playwright_preinit_in_progress():
+            logger.debug("confirm_login_required: Playwright pre-init in progress")
+            return False
+
+        now = time.monotonic()
+        if now < self._state_check_backoff_until:
+            remaining = self._state_check_backoff_until - now
+            logger.debug("confirm_login_required: backoff active (%.2fs remaining)", remaining)
+            return False
+
+        try:
+            return _playwright_executor.execute(self._confirm_login_required_impl, timeout=timeout)
+        except TimeoutError:
+            self._state_check_backoff_until = time.monotonic() + self.STATE_CHECK_BACKOFF_SECONDS
+            logger.debug(
+                "confirm_login_required: timed out, backing off for %.1fs",
+                self.STATE_CHECK_BACKOFF_SECONDS,
+            )
+            return False
 
     def wait_for_page_load(self, wait_seconds: float = 3.0) -> bool:
         """ページの読み込み完了を待機する（スレッドセーフ）。

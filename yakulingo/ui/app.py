@@ -1629,23 +1629,55 @@ class YakuLingoApp:
 
         return shown
 
-    async def _show_resident_login_prompt(self, reason: str) -> None:
+    async def _confirm_login_required_for_prompt(
+        self,
+        reason: str,
+        *,
+        attempts: int = 2,
+        delay_sec: float = 0.6,
+    ) -> bool:
+        copilot = getattr(self, "_copilot", None)
+        if copilot is None:
+            return False
+
+        confirmed = 0
+        for attempt in range(attempts):
+            if self._shutdown_requested:
+                return False
+            try:
+                is_required = await asyncio.to_thread(copilot.confirm_login_required, 6)
+            except Exception as e:
+                logger.debug("Login confirmation failed (%s): %s", reason, e)
+                is_required = False
+
+            if is_required:
+                confirmed += 1
+            else:
+                confirmed = 0
+
+            if confirmed >= 2:
+                return True
+            if attempt < attempts - 1:
+                await asyncio.sleep(delay_sec)
+
+        return False
+
+    async def _show_resident_login_prompt(self, reason: str, *, user_initiated: bool = False) -> None:
         if not self._resident_mode:
             return
 
         self._resident_login_required = True
+        if not user_initiated:
+            confirmed = await self._confirm_login_required_for_prompt(reason)
+            if not confirmed:
+                logger.info(
+                    "Resident login required not confirmed; UI auto-open suppressed (%s)",
+                    reason,
+                )
+                return
+
         self._login_auto_hide_pending = True
-        allow_auto_open = (
-            self._resident_show_requested
-            or self._manual_show_requested
-            or self._hotkey_translation_active
-        )
-        if not allow_auto_open:
-            logger.info(
-                "Resident login required; UI auto-open suppressed (%s)",
-                reason,
-            )
-            return
+        self._resident_show_requested = True
 
         with self._client_lock:
             has_client_before = self._client is not None
@@ -4857,7 +4889,7 @@ class YakuLingoApp:
             return
 
         if self._resident_mode:
-            await self._show_resident_login_prompt(reason)
+            await self._show_resident_login_prompt(reason, user_initiated=True)
         else:
             copilot = self._copilot
             if copilot is None:

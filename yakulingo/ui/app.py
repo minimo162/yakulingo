@@ -7927,6 +7927,7 @@ def run_app(
         )
 
     shutdown_event = threading.Event()
+    tray_icon = None
 
     # Playwright pre-initialization (parallel)
     # Early Edge startup: Start Edge browser BEFORE NiceGUI import
@@ -8484,6 +8485,11 @@ def run_app(
 
         cleanup_start = time_module.time()
         logger.info("Shutting down YakuLingo...")
+        if tray_icon is not None:
+            try:
+                tray_icon.stop()
+            except Exception:
+                pass
 
         # Close the app browser window early (browser mode).
         _close_browser_window_on_shutdown()
@@ -9021,6 +9027,15 @@ def run_app(
     if not browser_favicon_path.exists():
         browser_favicon_path = icon_path
 
+    if sys.platform == "win32" and native:
+        try:
+            from yakulingo.ui.tray import TrayIcon
+
+            tray_icon = TrayIcon(host=host, port=port, icon_path=icon_path)
+        except Exception as e:
+            logger.debug("Tray icon init failed: %s", e)
+            tray_icon = None
+
     # Optimize pywebview startup (native mode only)
     # - hidden: Start window hidden and show after positioning (prevents flicker)
     # - x, y: Pre-calculate window position for native mode
@@ -9285,6 +9300,8 @@ def run_app(
         # Start clipboard trigger immediately so clipboard translation works even without the UI.
         yakulingo_app.start_clipboard_trigger()
         yakulingo_app._start_resident_heartbeat()
+        if tray_icon is not None:
+            tray_icon.start()
 
         # Start Copilot connection early only in native mode; browser mode should remain silent
         # and connect on demand (clipboard/UI).

@@ -10,7 +10,7 @@ Use explicit imports like:
 from .state import AppState, Tab, FileState
 
 # Submodules that can be accessed via __getattr__ (for patching support)
-_SUBMODULES = {'app', 'styles', 'utils', 'state', 'components'}
+_SUBMODULES = {'app', 'styles', 'utils', 'state', 'components', 'tray'}
 
 
 def __getattr__(name: str):

@@ -1651,6 +1651,7 @@ function Invoke-Setup {
     $OpenUiScriptPath = Join-Path $SetupPath "YakuLingo_OpenUI.ps1"
     $ResidentScriptPath = Join-Path $SetupPath "YakuLingo_Resident.ps1"
     $ExitScriptPath = Join-Path $SetupPath "YakuLingo_Exit.ps1"
+    $UninstallScriptPath = Join-Path $SetupPath "YakuLingo_Uninstall.ps1"
 
     $utf8NoBom = New-Object System.Text.UTF8Encoding $false
 
@@ -1866,9 +1867,139 @@ try {
 exit 0
 "@
 
+    $uninstallScript = @"
+`$ErrorActionPreference = 'Stop'
+
+`$installDir = Split-Path -Parent `$MyInvocation.MyCommand.Definition
+try {
+  `$installDir = [System.IO.Path]::GetFullPath(`$installDir).TrimEnd('\')
+} catch {
+  Write-Host "Uninstall aborted: invalid install directory."
+  exit 1
+}
+
+function Test-SafeInstallDir([string]`$dir) {
+  if ([string]::IsNullOrWhiteSpace(`$dir)) { return `$false }
+  try { `$full = [System.IO.Path]::GetFullPath(`$dir).TrimEnd('\') } catch { return `$false }
+  `$root = [System.IO.Path]::GetPathRoot(`$full).TrimEnd('\')
+  if (`$full -eq `$root) { return `$false }
+
+  `$dangerous = @(
+    `$env:USERPROFILE,
+    `$env:LOCALAPPDATA,
+    `$env:APPDATA,
+    `$env:ProgramFiles,
+    `${env:ProgramFiles(x86)},
+    `$env:WINDIR
+  )
+  foreach (`$d in `$dangerous) {
+    if (-not `$d) { continue }
+    try {
+      `$dd = [System.IO.Path]::GetFullPath(`$d).TrimEnd('\')
+      if (`$full -eq `$dd) { return `$false }
+    } catch { }
+  }
+
+  `$installMarkers = @('YakuLingo.exe', 'YakuLingo_Resident.ps1', 'YakuLingo_OpenUI.ps1', 'YakuLingo_Exit.ps1')
+  `$appMarkers = @('app.py', 'yakulingo', 'config\\settings.template.json')
+  `$hasInstallMarker = `$false
+  foreach (`$m in `$installMarkers) {
+    if (Test-Path (Join-Path `$full `$m)) { `$hasInstallMarker = `$true; break }
+  }
+  `$hasAppMarker = `$false
+  foreach (`$m in `$appMarkers) {
+    if (Test-Path (Join-Path `$full `$m)) { `$hasAppMarker = `$true; break }
+  }
+  return (`$hasInstallMarker -and `$hasAppMarker)
+}
+
+if (-not (Test-SafeInstallDir `$installDir)) {
+  Write-Host "Uninstall aborted: directory does not look like a YakuLingo installation."
+  Write-Host `$installDir
+  exit 1
+}
+
+function Test-PortOpen([int]`$p) {
+  try {
+    `$client = New-Object System.Net.Sockets.TcpClient
+    `$async = `$client.BeginConnect('127.0.0.1', `$p, `$null, `$null)
+    if (-not `$async.AsyncWaitHandle.WaitOne(200)) { return `$false }
+    `$client.EndConnect(`$async) | Out-Null
+    `$client.Close()
+    return `$true
+  } catch { return `$false }
+}
+
+`$exitScript = Join-Path `$installDir 'YakuLingo_Exit.ps1'
+if (Test-Path `$exitScript) {
+  try {
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File "`$exitScript" | Out-Null
+  } catch { }
+}
+
+`$port = 8765
+`$deadline = (Get-Date).AddSeconds(10)
+while ((Get-Date) -lt `$deadline -and (Test-PortOpen `$port)) { Start-Sleep -Milliseconds 200 }
+
+if (Test-PortOpen `$port) {
+  try {
+    `$conn = Get-NetTCPConnection -LocalAddress 127.0.0.1 -LocalPort `$port -State Listen -ErrorAction Stop | Select-Object -First 1
+    if (`$conn -and `$conn.OwningProcess) {
+      Stop-Process -Id `$conn.OwningProcess -Force
+    }
+  } catch { }
+}
+
+`$programs = [Environment]::GetFolderPath('Programs')
+`$startup = [Environment]::GetFolderPath('Startup')
+`$startMenuDir = Join-Path `$programs 'YakuLingo'
+`$shortcutPaths = @(
+  (Join-Path `$programs 'YakuLingo.lnk'),
+  (Join-Path `$programs 'YakuLingo 終了.lnk'),
+  (Join-Path `$programs 'YakuLingo アンインストール.lnk'),
+  (Join-Path `$startup 'YakuLingo.lnk')
+)
+foreach (`$p in `$shortcutPaths) {
+  if (Test-Path `$p) {
+    try { Remove-Item -Path `$p -Force } catch { }
+  }
+}
+if (Test-Path `$startMenuDir) {
+  try { Remove-Item -Path `$startMenuDir -Recurse -Force } catch { }
+}
+
+`$cleanupScriptPath = Join-Path `$env:TEMP ("YakuLingo_uninstall_cleanup_{0}.ps1" -f ([guid]::NewGuid().ToString("N")))
+`$cleanupScript = @'
+param([string]`$TargetDir)
+Start-Sleep -Seconds 2
+if ([string]::IsNullOrWhiteSpace(`$TargetDir)) { exit 1 }
+try { `$full = [System.IO.Path]::GetFullPath(`$TargetDir).TrimEnd('\') } catch { exit 1 }
+`$root = [System.IO.Path]::GetPathRoot(`$full).TrimEnd('\')
+if (`$full -eq `$root) { exit 1 }
+`$installMarkers = @('YakuLingo.exe', 'YakuLingo_Resident.ps1', 'YakuLingo_OpenUI.ps1', 'YakuLingo_Exit.ps1')
+`$appMarkers = @('app.py', 'yakulingo', 'config\\settings.template.json')
+`$hasInstallMarker = `$false
+foreach (`$m in `$installMarkers) {
+  if (Test-Path (Join-Path `$full `$m)) { `$hasInstallMarker = `$true; break }
+}
+`$hasAppMarker = `$false
+foreach (`$m in `$appMarkers) {
+  if (Test-Path (Join-Path `$full `$m)) { `$hasAppMarker = `$true; break }
+}
+if (-not (`$hasInstallMarker -and `$hasAppMarker)) { exit 1 }
+try { Remove-Item -Path `$full -Recurse -Force } catch { }
+try { Remove-Item -Path `$MyInvocation.MyCommand.Definition -Force } catch { }
+'@
+
+[System.IO.File]::WriteAllText(`$cleanupScriptPath, `$cleanupScript, (New-Object System.Text.UTF8Encoding `$false))
+Start-Process -FilePath powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"`$cleanupScriptPath`" -TargetDir `"`$installDir`"" -WindowStyle Hidden
+exit 0
+"@
+
     [System.IO.File]::WriteAllText($OpenUiScriptPath, $openUiScript, $utf8NoBom)
     [System.IO.File]::WriteAllText($ResidentScriptPath, $residentScript, $utf8NoBom)
     [System.IO.File]::WriteAllText($ExitScriptPath, $exitScript, $utf8NoBom)
+    [System.IO.File]::WriteAllText($UninstallScriptPath, $uninstallScript, $utf8NoBom)
 
     # Common icon path
     $IconPath = Join-Path $SetupPath "yakulingo\ui\yakulingo.ico"
@@ -1917,6 +2048,17 @@ exit 0
     $StartMenuExit.Description = "YakuLingo を終了"
     $StartMenuExit.Save()
 
+    $StartMenuUninstallPath = Join-Path $ProgramsPath "$AppName アンインストール.lnk"
+    $StartMenuUninstall = $WshShell.CreateShortcut($StartMenuUninstallPath)
+    $StartMenuUninstall.TargetPath = "powershell.exe"
+    $StartMenuUninstall.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$UninstallScriptPath`""
+    $StartMenuUninstall.WorkingDirectory = $SetupPath
+    if (Test-Path $IconPath) {
+        $StartMenuUninstall.IconLocation = "$IconPath,0"
+    }
+    $StartMenuUninstall.Description = "YakuLingo をアンインストール"
+    $StartMenuUninstall.Save()
+
     # Startup shortcut (auto-start resident service on logon; no UI auto-open)
     $StartupPath = [Environment]::GetFolderPath("Startup")
     $StartupShortcutPath = Join-Path $StartupPath "$AppName.lnk"
@@ -1932,6 +2074,7 @@ exit 0
     if (-not $GuiMode) {
         Write-Host "      Start Menu (Resident): $StartMenuOpenPath" -ForegroundColor Gray
         Write-Host "      Start Menu (Exit): $StartMenuExitPath" -ForegroundColor Gray
+        Write-Host "      Start Menu (Uninstall): $StartMenuUninstallPath" -ForegroundColor Gray
         Write-Host "      Startup: $StartupShortcutPath" -ForegroundColor Gray
         Write-Host "[OK] Shortcuts created" -ForegroundColor Green
     }

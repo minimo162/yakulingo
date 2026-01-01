@@ -334,7 +334,7 @@ def _set_window_icon_win32(hwnd: int, icon_path_str: str, *, log_prefix: str = "
     return False
 
 
-def _hide_native_window_offscreen_win32(window_title: str) -> None:
+def _hide_native_window_offscreen_win32(window_title: str, *, smooth: bool = False) -> None:
     """Move the native window offscreen and hide it (Windows only)."""
     if sys.platform != "win32":
         return
@@ -371,6 +371,8 @@ def _hide_native_window_offscreen_win32(window_title: str) -> None:
         if not hwnd:
             return
 
+        is_visible = user32.IsWindowVisible(hwnd)
+
         SM_XVIRTUALSCREEN = 76
         SM_YVIRTUALSCREEN = 77
         SM_CXVIRTUALSCREEN = 78
@@ -392,6 +394,30 @@ def _hide_native_window_offscreen_win32(window_title: str) -> None:
         SWP_NOSIZE = 0x0001
         SWP_NOACTIVATE = 0x0010
         SW_HIDE = 0
+
+        if smooth and is_visible:
+            class RECT(ctypes.Structure):
+                _fields_ = [
+                    ("left", wintypes.LONG),
+                    ("top", wintypes.LONG),
+                    ("right", wintypes.LONG),
+                    ("bottom", wintypes.LONG),
+                ]
+
+            rect = RECT()
+            if user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+                start_x = int(rect.left)
+                start_y = int(rect.top)
+                steps = 10
+                delay_sec = 0.012
+                for step in range(1, steps + 1):
+                    x = start_x + int((offscreen_x - start_x) * step / steps)
+                    y = start_y + int((offscreen_y - start_y) * step / steps)
+                    user32.SetWindowPos(
+                        hwnd, None, x, y, 0, 0,
+                        SWP_NOZORDER | SWP_NOSIZE | SWP_NOACTIVATE,
+                    )
+                    time.sleep(delay_sec)
 
         user32.SetWindowPos(
             hwnd, None, offscreen_x, offscreen_y, 0, 0,
@@ -491,6 +517,16 @@ def _nicegui_open_window_patched(
                 logger.debug("Resolved native window icon for child process: %s", resolved)
     except Exception:
         pass
+
+    resident_startup = os.environ.get("YAKULINGO_NO_AUTO_OPEN", "").strip().lower() in (
+        "1", "true", "yes"
+    )
+    if resident_startup and sys.platform == "win32":
+        window_args.setdefault("hidden", True)
+        offscreen_pos = _get_offscreen_position_win32()
+        if offscreen_pos is not None:
+            window_args.setdefault("x", offscreen_pos[0])
+            window_args.setdefault("y", offscreen_pos[1])
 
     if sys.platform == "win32":
         try:
@@ -599,9 +635,6 @@ def _nicegui_open_window_patched(
                 _set_window_icon_win32(hwnd, icon_path, log_prefix="[NATIVE_WINDOW]")
         except Exception as e:
             logger.debug("Failed to set native window icon: %s", e)
-        resident_startup = os.environ.get("YAKULINGO_NO_AUTO_OPEN", "").strip().lower() in (
-            "1", "true", "yes"
-        )
         if resident_startup:
             try:
                 if hwnd is None:
@@ -689,7 +722,7 @@ def _nicegui_open_window_patched(
                     hwnd = _find_window_handle_by_title_win32(title)
                     if hwnd:
                         _set_window_taskbar_visibility_win32(hwnd, False)
-                    _hide_native_window_offscreen_win32(title)
+                    _hide_native_window_offscreen_win32(title, smooth=True)
                 if hasattr(window, "hide"):
                     window.hide()
                 elif hasattr(window, "minimize"):
@@ -1748,6 +1781,7 @@ class YakuLingoApp:
                     copilot.set_edge_layout_mode("offscreen")
                 except Exception:
                     pass
+            self._start_resident_taskbar_suppression_win32("warmup")
 
             if not copilot.is_connected:
                 try:
@@ -3752,6 +3786,45 @@ class YakuLingoApp:
                 ).start()
             except Exception as e:
                 logger.debug("Failed to hide Copilot Edge in resident mode (%s): %s", reason, e)
+
+    def _start_resident_taskbar_suppression_win32(
+        self,
+        reason: str,
+        *,
+        attempts: int = 20,
+        delay_sec: float = 0.25,
+    ) -> None:
+        if sys.platform != "win32" or not self._resident_mode:
+            return
+
+        def _worker() -> None:
+            for attempt in range(attempts):
+                if not self._resident_mode or self._resident_show_requested:
+                    return
+                with self._client_lock:
+                    if self._client is not None:
+                        return
+                self._set_ui_taskbar_visibility_win32(False, f"{reason}:{attempt}")
+                try:
+                    _hide_native_window_offscreen_win32("YakuLingo")
+                except Exception:
+                    pass
+                copilot = getattr(self, "_copilot", None)
+                if copilot is not None:
+                    try:
+                        copilot.hide_edge_window()
+                    except Exception:
+                        pass
+                time.sleep(delay_sec)
+
+        try:
+            threading.Thread(
+                target=_worker,
+                daemon=True,
+                name=f"resident_taskbar_suppress:{reason}",
+            ).start()
+        except Exception as e:
+            logger.debug("Failed to start resident taskbar suppression (%s): %s", reason, e)
 
     def _recover_resident_window_win32(self, reason: str) -> bool:
         """Recover the resident UI window without forcing foreground focus."""
@@ -9542,7 +9615,7 @@ def run_app(
                     is_visible = user32.IsWindowVisible(hwnd)
 
                     # First, check if window is minimized and restore it
-                    if user32.IsIconic(hwnd):
+                    if user32.IsIconic(hwnd) and not resident_mode:
                         user32.ShowWindow(hwnd, SW_RESTORE)
                         logger.debug("[EARLY_POSITION] Window was minimized, restored after %dms", waited_ms)
                         time.sleep(0.1)  # Brief wait for restore animation
@@ -9609,6 +9682,8 @@ def run_app(
         # Start clipboard trigger immediately so clipboard translation works even without the UI.
         yakulingo_app.start_clipboard_trigger()
         yakulingo_app._start_resident_heartbeat()
+        if resident_mode:
+            yakulingo_app._start_resident_taskbar_suppression_win32("startup")
         if tray_icon is not None:
             tray_icon.start()
 

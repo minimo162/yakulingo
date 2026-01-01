@@ -410,12 +410,16 @@ function Start-ResidentService {
         [string]$SetupPath,
         [string]$PythonwPath,
         [string]$AppPyPath,
+        [string]$LauncherPath,
         [int]$Port = 8765
     )
 
     try {
         if ([string]::IsNullOrWhiteSpace($SetupPath)) {
             $SetupPath = Join-Path $env:LOCALAPPDATA $script:AppName
+        }
+        if ([string]::IsNullOrWhiteSpace($LauncherPath)) {
+            $LauncherPath = Join-Path $SetupPath "YakuLingo.exe"
         }
         if ([string]::IsNullOrWhiteSpace($PythonwPath)) {
             $PythonwPath = Join-Path $SetupPath ".venv\Scripts\pythonw.exe"
@@ -424,7 +428,7 @@ function Start-ResidentService {
             $AppPyPath = Join-Path $SetupPath "app.py"
         }
         try {
-            "Start-ResidentService: SetupPath='$SetupPath' PythonwPath='$PythonwPath' AppPyPath='$AppPyPath'" | Out-File -FilePath $debugLog -Append -Encoding UTF8
+            "Start-ResidentService: SetupPath='$SetupPath' LauncherPath='$LauncherPath' PythonwPath='$PythonwPath' AppPyPath='$AppPyPath'" | Out-File -FilePath $debugLog -Append -Encoding UTF8
         } catch { }
 
         function Test-PortOpen([int]$p) {
@@ -441,19 +445,25 @@ function Start-ResidentService {
         }
 
         $portOpen = Test-PortOpen $Port
-        if (-not $portOpen -and (Test-Path $PythonwPath -PathType Leaf) -and (Test-Path $AppPyPath -PathType Leaf)) {
-            $previousNoOpen = $env:YAKULINGO_NO_AUTO_OPEN
-            $env:YAKULINGO_NO_AUTO_OPEN = "1"
-            try {
-                Start-Process -FilePath $PythonwPath `
-                    -ArgumentList @($AppPyPath) `
+        if (-not $portOpen) {
+            if (Test-Path $LauncherPath -PathType Leaf) {
+                Start-Process -FilePath $LauncherPath `
                     -WorkingDirectory $SetupPath `
                     -WindowStyle Hidden | Out-Null
-            } finally {
-                if ($null -eq $previousNoOpen) {
-                    Remove-Item Env:YAKULINGO_NO_AUTO_OPEN -ErrorAction SilentlyContinue
-                } else {
-                    $env:YAKULINGO_NO_AUTO_OPEN = $previousNoOpen
+            } elseif ((Test-Path $PythonwPath -PathType Leaf) -and (Test-Path $AppPyPath -PathType Leaf)) {
+                $previousNoOpen = $env:YAKULINGO_NO_AUTO_OPEN
+                $env:YAKULINGO_NO_AUTO_OPEN = "1"
+                try {
+                    Start-Process -FilePath $PythonwPath `
+                        -ArgumentList @($AppPyPath) `
+                        -WorkingDirectory $SetupPath `
+                        -WindowStyle Hidden | Out-Null
+                } finally {
+                    if ($null -eq $previousNoOpen) {
+                        Remove-Item Env:YAKULINGO_NO_AUTO_OPEN -ErrorAction SilentlyContinue
+                    } else {
+                        $env:YAKULINGO_NO_AUTO_OPEN = $previousNoOpen
+                    }
                 }
             }
 
@@ -1743,6 +1753,7 @@ Apply-WindowLayout
 `$ErrorActionPreference = 'SilentlyContinue'
 
 `$installDir = Split-Path -Parent `$MyInvocation.MyCommand.Definition
+`$launcher = Join-Path `$installDir 'YakuLingo.exe'
 `$pythonw = Join-Path `$installDir '.venv\\Scripts\\pythonw.exe'
 `$appPy = Join-Path `$installDir 'app.py'
 `$port = 8765
@@ -1759,7 +1770,9 @@ function Test-PortOpen([int]`$p) {
 }
 
 if (-not (Test-PortOpen `$port)) {
-  if ((Test-Path `$pythonw -PathType Leaf) -and (Test-Path `$appPy -PathType Leaf)) {
+  if (Test-Path `$launcher -PathType Leaf) {
+    Start-Process -FilePath `$launcher -WorkingDirectory `$installDir -WindowStyle Hidden | Out-Null
+  } elseif ((Test-Path `$pythonw -PathType Leaf) -and (Test-Path `$appPy -PathType Leaf)) {
     `$previousNoOpen = `$env:YAKULINGO_NO_AUTO_OPEN
     `$env:YAKULINGO_NO_AUTO_OPEN = "1"
     try {

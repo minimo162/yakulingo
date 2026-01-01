@@ -269,6 +269,67 @@ def _set_window_taskbar_visibility_win32(hwnd: int, visible: bool) -> bool:
         return False
 
 
+def _set_window_system_menu_visible_win32(hwnd: int, visible: bool) -> bool:
+    """Toggle the native system menu (close/min/max) visibility (Windows only)."""
+    if sys.platform != "win32":
+        return False
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        user32 = ctypes.WinDLL('user32', use_last_error=True)
+        GWL_STYLE = -16
+        WS_SYSMENU = 0x00080000
+        WS_MINIMIZEBOX = 0x00020000
+        WS_MAXIMIZEBOX = 0x00010000
+        SWP_NOMOVE = 0x0002
+        SWP_NOSIZE = 0x0001
+        SWP_NOZORDER = 0x0004
+        SWP_NOACTIVATE = 0x0010
+        SWP_FRAMECHANGED = 0x0020
+
+        is_64 = ctypes.sizeof(ctypes.c_void_p) == ctypes.sizeof(ctypes.c_longlong)
+        if is_64:
+            GetWindowLongPtr = user32.GetWindowLongPtrW
+            SetWindowLongPtr = user32.SetWindowLongPtrW
+            GetWindowLongPtr.restype = ctypes.c_longlong
+            SetWindowLongPtr.restype = ctypes.c_longlong
+            set_style_type = ctypes.c_longlong
+        else:
+            GetWindowLongPtr = user32.GetWindowLongW
+            SetWindowLongPtr = user32.SetWindowLongW
+            GetWindowLongPtr.restype = ctypes.c_long
+            SetWindowLongPtr.restype = ctypes.c_long
+            set_style_type = ctypes.c_long
+
+        GetWindowLongPtr.argtypes = [wintypes.HWND, ctypes.c_int]
+        SetWindowLongPtr.argtypes = [wintypes.HWND, ctypes.c_int, set_style_type]
+
+        style = GetWindowLongPtr(wintypes.HWND(hwnd), GWL_STYLE)
+        if visible:
+            new_style = style | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX
+        else:
+            new_style = style & ~(WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX)
+
+        if new_style == style:
+            return True
+
+        SetWindowLongPtr(wintypes.HWND(hwnd), GWL_STYLE, new_style)
+        user32.SetWindowPos(
+            wintypes.HWND(hwnd),
+            None,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+        )
+        return True
+    except Exception as e:
+        logger.debug("Failed to set system menu visibility: %s", e)
+        return False
+
+
 def _set_window_icon_win32(hwnd: int, icon_path_str: str, *, log_prefix: str = "") -> bool:
     if sys.platform != "win32":
         return False
@@ -334,7 +395,12 @@ def _set_window_icon_win32(hwnd: int, icon_path_str: str, *, log_prefix: str = "
     return False
 
 
-def _hide_native_window_offscreen_win32(window_title: str, *, smooth: bool = False) -> None:
+def _hide_native_window_offscreen_win32(
+    window_title: str | None,
+    *,
+    smooth: bool = False,
+    hwnd: int | None = None,
+) -> None:
     """Move the native window offscreen and hide it (Windows only)."""
     if sys.platform != "win32":
         return
@@ -344,32 +410,46 @@ def _hide_native_window_offscreen_win32(window_title: str, *, smooth: bool = Fal
 
         user32 = ctypes.WinDLL("user32", use_last_error=True)
 
-        hwnd = user32.FindWindowW(None, window_title)
-        matched_title = window_title
-        if not hwnd:
-            EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
-            found_hwnd = {"value": None, "title": None}
+        matched_title = window_title or ""
+        if hwnd is None:
+            if not window_title:
+                return
+            hwnd = user32.FindWindowW(None, window_title)
+            matched_title = window_title
+            if not hwnd:
+                EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+                found_hwnd = {"value": None, "title": None}
 
-            @EnumWindowsProc
-            def _enum_windows(hwnd_enum, _):
-                length = user32.GetWindowTextLengthW(hwnd_enum)
-                if length <= 0:
+                @EnumWindowsProc
+                def _enum_windows(hwnd_enum, _):
+                    length = user32.GetWindowTextLengthW(hwnd_enum)
+                    if length <= 0:
+                        return True
+                    buffer = ctypes.create_unicode_buffer(length + 1)
+                    user32.GetWindowTextW(hwnd_enum, buffer, length + 1)
+                    title = buffer.value
+                    if window_title in title:
+                        found_hwnd["value"] = hwnd_enum
+                        found_hwnd["title"] = title
+                        return False
                     return True
-                buffer = ctypes.create_unicode_buffer(length + 1)
-                user32.GetWindowTextW(hwnd_enum, buffer, length + 1)
-                title = buffer.value
-                if window_title in title:
-                    found_hwnd["value"] = hwnd_enum
-                    found_hwnd["title"] = title
-                    return False
-                return True
 
-            user32.EnumWindows(_enum_windows, 0)
-            hwnd = found_hwnd["value"]
-            matched_title = found_hwnd["title"] or window_title
+                user32.EnumWindows(_enum_windows, 0)
+                hwnd = found_hwnd["value"]
+                matched_title = found_hwnd["title"] or window_title
 
         if not hwnd:
             return
+
+        try:
+            if hasattr(hwnd, "ToInt32"):
+                hwnd = int(hwnd.ToInt32())
+            elif hasattr(hwnd, "value"):
+                hwnd = int(hwnd.value)
+            else:
+                hwnd = int(hwnd)
+        except Exception:
+            pass
 
         is_visible = user32.IsWindowVisible(hwnd)
 
@@ -633,6 +713,8 @@ def _nicegui_open_window_patched(
             hwnd = _find_window_handle_by_title_win32(title)
             if hwnd and icon_path:
                 _set_window_icon_win32(hwnd, icon_path, log_prefix="[NATIVE_WINDOW]")
+            if hwnd and _is_close_to_resident_enabled():
+                _set_window_system_menu_visible_win32(hwnd, False)
         except Exception as e:
             logger.debug("Failed to set native window icon: %s", e)
         if resident_startup:
@@ -647,30 +729,51 @@ def _nicegui_open_window_patched(
             except Exception as e:
                 logger.debug("Resident startup hide failed: %s", e)
 
+    close_to_resident_sent = Event()
+
+    def _get_native_hwnd() -> int | None:
+        if sys.platform != "win32":
+            return None
+        try:
+            native_window = getattr(window, "native", None)
+            if native_window is not None and hasattr(native_window, "Handle"):
+                handle = native_window.Handle
+                if hasattr(handle, "ToInt32"):
+                    return int(handle.ToInt32())
+                if hasattr(handle, "value"):
+                    return int(handle.value)
+                return int(handle)
+        except Exception:
+            return None
+        return None
+
+    def _notify_ui_close() -> bool:
+        if close_to_resident_sent.is_set():
+            return True
+        try:
+            import json as _json
+            import urllib.request as _urllib_request
+
+            payload = _json.dumps({"reason": "window_close"}).encode("utf-8")
+            url = _build_local_url(host, port, "/api/ui-close")
+            req = _urllib_request.Request(
+                url,
+                data=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "X-YakuLingo-Resident": "1",
+                },
+                method="POST",
+            )
+            with _urllib_request.urlopen(req, timeout=0.5):
+                pass
+            close_to_resident_sent.set()
+            return True
+        except Exception as e:
+            logger.debug("Failed to notify UI close-to-resident: %s", e)
+            return False
+
     def _handle_window_closing(*_args, **_kwargs):
-        def _notify_ui_close() -> bool:
-            try:
-                import json as _json
-                import urllib.request as _urllib_request
-
-                payload = _json.dumps({"reason": "window_close"}).encode("utf-8")
-                url = _build_local_url(host, port, "/api/ui-close")
-                req = _urllib_request.Request(
-                    url,
-                    data=payload,
-                    headers={
-                        "Content-Type": "application/json",
-                        "X-YakuLingo-Resident": "1",
-                    },
-                    method="POST",
-                )
-                with _urllib_request.urlopen(req, timeout=0.5):
-                    pass
-                return True
-            except Exception as e:
-                logger.debug("Failed to notify UI close-to-resident: %s", e)
-                return False
-
         def _notify_ui_shutdown() -> bool:
             try:
                 import json as _json
@@ -719,10 +822,15 @@ def _nicegui_open_window_patched(
             _notify_ui_close_async()
             try:
                 if sys.platform == "win32":
-                    hwnd = _find_window_handle_by_title_win32(title)
+                    hwnd = _get_native_hwnd()
                     if hwnd:
                         _set_window_taskbar_visibility_win32(hwnd, False)
-                    _hide_native_window_offscreen_win32(title, smooth=True)
+                        _hide_native_window_offscreen_win32(None, smooth=True, hwnd=hwnd)
+                    else:
+                        hwnd = _find_window_handle_by_title_win32(title)
+                        if hwnd:
+                            _set_window_taskbar_visibility_win32(hwnd, False)
+                        _hide_native_window_offscreen_win32(title, smooth=True)
                 if hasattr(window, "hide"):
                     window.hide()
                 elif hasattr(window, "minimize"):
@@ -761,12 +869,17 @@ def _nicegui_open_window_patched(
                 logger.debug("Failed to write launcher state on close: %s", e)
         return True
 
+    def _handle_window_closed(*_args, **_kwargs) -> None:
+        if _is_close_to_resident_enabled():
+            _notify_ui_close()
+
     try:
         if hasattr(window.events, "closing"):
             window.events.closing += _handle_window_closing
     except Exception as e:
         logger.debug("Failed to attach native close handler: %s", e)
     closed = Event()
+    window.events.closed += _handle_window_closed
     window.events.closed += closed.set
     _native_mode._start_window_method_executor(window, method_queue, response_queue, closed)
     webview.start(**start_args)
@@ -3787,6 +3900,16 @@ class YakuLingoApp:
             except Exception as e:
                 logger.debug("Failed to hide Copilot Edge in resident mode (%s): %s", reason, e)
 
+    def _enter_resident_mode(self, reason: str) -> None:
+        self._resident_mode = True
+        self._resident_show_requested = False
+        self._manual_show_requested = False
+        self._clear_auto_open_cause(reason)
+        if sys.platform == "win32":
+            self._hide_resident_window_win32(reason)
+        else:
+            self._set_layout_mode(LayoutMode.OFFSCREEN, reason)
+
     def _start_resident_taskbar_suppression_win32(
         self,
         reason: str,
@@ -5999,6 +6122,20 @@ class YakuLingoApp:
     # Section 4: UI Creation Methods
     # =========================================================================
 
+    def _create_resident_close_button(self) -> None:
+        if sys.platform != "win32":
+            return
+        if not self._native_mode_enabled or not _is_close_to_resident_enabled():
+            return
+
+        def on_click() -> None:
+            self._enter_resident_mode("ui_close_button")
+
+        with ui.element('div').classes('resident-close-button'):
+            ui.button(icon='close', on_click=on_click).props(
+                'flat round aria-label="ウィンドウを隠す"'
+            ).classes('icon-btn')
+
     def create_ui(self):
         """Create the UI - Nani-inspired 2-column layout"""
         # Lazy load CSS (2837 lines) - deferred until UI creation
@@ -6017,6 +6154,7 @@ class YakuLingoApp:
         ).props('accept=".csv,.txt,.pdf,.docx,.xlsx,.pptx,.md,.json"').classes('hidden')
 
         self._setup_global_file_drop()
+        self._create_resident_close_button()
 
         # Layout container: 2-column (sidebar + main content)
         with ui.element('div').classes('app-container'):
@@ -9269,13 +9407,7 @@ def run_app(
             except Exception:
                 raise HTTPException(status_code=403, detail="forbidden")
 
-            yakulingo_app._resident_mode = True
-            yakulingo_app._resident_show_requested = False
-            yakulingo_app._manual_show_requested = False
-            yakulingo_app._clear_auto_open_cause("ui_close")
-            yakulingo_app._set_layout_mode(LayoutMode.OFFSCREEN, "ui_close")
-            if sys.platform == "win32":
-                yakulingo_app._hide_resident_window_win32("ui_close")
+            yakulingo_app._enter_resident_mode("ui_close")
 
             return {"ok": True}
 

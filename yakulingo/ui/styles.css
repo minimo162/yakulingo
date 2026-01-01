@@ -561,7 +561,7 @@ body {
     width: 2.5rem;
     height: 2.5rem;
     border-radius: var(--md-sys-shape-corner-medium);
-    background: var(--md-sys-color-primary);
+    background: transparent;
     display: flex;
     align-items: center;
     justify-content: center;

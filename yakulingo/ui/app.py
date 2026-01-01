@@ -304,6 +304,7 @@ def _nicegui_open_window_patched(
     if sys.platform == "win32":
         try:
             import ctypes
+            from ctypes import wintypes
 
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("YakuLingo.App")
         except Exception:
@@ -9077,8 +9078,27 @@ def run_app(
             icon_path_str = str(icon_path) if icon_path is not None and icon_path.exists() else None
 
             while waited_ms < MAX_WAIT_MS:
-                # Find YakuLingo window by title
+                # Find YakuLingo window by title (exact match first, then fallback to partial match).
                 hwnd = user32.FindWindowW(None, "YakuLingo")
+                if not hwnd:
+                    EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+                    found = {"hwnd": None}
+
+                    @EnumWindowsProc
+                    def _enum_windows(hwnd_enum, _):
+                        length = user32.GetWindowTextLengthW(hwnd_enum)
+                        if length <= 0:
+                            return True
+                        buffer = ctypes.create_unicode_buffer(length + 1)
+                        user32.GetWindowTextW(hwnd_enum, buffer, length + 1)
+                        title = buffer.value
+                        if "YakuLingo" in title:
+                            found["hwnd"] = hwnd_enum
+                            return False
+                        return True
+
+                    user32.EnumWindows(_enum_windows, 0)
+                    hwnd = found["hwnd"]
                 if hwnd:
                     # Check if window is hidden (not visible) - this is expected due to hidden=True
                     is_visible = user32.IsWindowVisible(hwnd)

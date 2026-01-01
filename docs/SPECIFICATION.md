@@ -446,6 +446,7 @@ YakuLingoは「常駐＋ダブルコピー（Ctrl+Cを短時間に2回）」を�
 - Browser modeは通常のウィンドウ動作を維持し、close-to-residentは適用しない
 - 終了は明示的に実行する（インストーラが作成する `YakuLingo 終了` ショートカット）
   - ローカルAPI `POST /api/shutdown`（localhostのみ）で正常終了
+- Launcher (YakuLingo.exe) enables a watchdog; unexpected exits are restarted unless a shutdown state is written.
 
 ### 5.1.2 ダブルコピー（Ctrl+C x2）
 

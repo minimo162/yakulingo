@@ -188,6 +188,7 @@ YakuLingoを初めて使う際は、以下の手順でM365 Copilotにログイ�
 
 > **Note**: 初回起動時はEdgeが前面に表示されることがあります。ログイン完了後、翻訳を実行すると自動的に接続します。
 > **Note**: YakuLingoは常駐型です。UIを閉じてもバックグラウンドで動作し続けます（終了は明示的に実行）。
+> **Note**: The launcher (`YakuLingo.exe`) runs a watchdog and restarts the app after unexpected exits. Use the `YakuLingo 終了` shortcut or explicit shutdown to stop it.
 > **Note**: ブラウザモードではUIはブラウザ（Edgeのアプリウィンドウ等）として表示され、Copilotは通常のEdgeウィンドウとして表示されます。
 
 ## 使用方法

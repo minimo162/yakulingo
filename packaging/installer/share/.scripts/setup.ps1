@@ -92,6 +92,32 @@ $script:AppName = "YakuLingo"
 $script:SetupUiTitle = "Setup - $($script:AppName)"
 $script:SetupUiTitleError = "$($script:SetupUiTitle) - Error"
 
+# Open usage guide after setup completes
+function Open-UsageGuide {
+    $candidates = @()
+    if ($script:ShareDir) {
+        $candidates += (Join-Path $script:ShareDir "README.html")
+    }
+    if ($script:ScriptDir) {
+        $parentDir = Split-Path -Parent $script:ScriptDir
+        if ($parentDir) {
+            $candidates += (Join-Path $parentDir "README.html")
+        }
+        $candidates += (Join-Path $script:ScriptDir "README.html")
+    }
+    $readmePath = $candidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+    if ($readmePath) {
+        try {
+            Start-Process -FilePath $readmePath -ErrorAction Stop
+            try { "Opened README: $readmePath" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
+        } catch {
+            try { "Failed to open README: $($_.Exception.Message)" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
+        }
+    } else {
+        try { "README.html not found. Candidates: $($candidates -join '; ')" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
+    }
+}
+
 # Debug: Log resolved paths
 try {
     "ScriptDir: $($script:ScriptDir)" | Out-File -FilePath $debugLog -Append -Encoding UTF8
@@ -2096,6 +2122,7 @@ try {
             }
         }
         Show-Success $successMsg
+        Open-UsageGuide
     } else {
         Write-Host ""
         Write-Host "============================================================" -ForegroundColor Green
@@ -2134,6 +2161,7 @@ try {
         if (-not $residentReady) {
             throw "Copilotの準備が完了しませんでした。ログインを完了してから再実行してください。"
         }
+        Open-UsageGuide
     }
 }
 

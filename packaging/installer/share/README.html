@@ -3,16 +3,18 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>YakuLingo 配布ガイド</title>
+    <title>YakuLingo 使い方ガイド</title>
     <style>
       :root {
-        --bg: #f6f7fb;
+        --bg: #f2f4fb;
+        --ink: #1b1f2a;
+        --muted: #4b5565;
         --card: #ffffff;
-        --text: #1f2933;
-        --muted: #4b5968;
-        --accent: #2b6cb0;
-        --border: #e1e6eb;
-        --note: #eef6ff;
+        --primary: #2b59ff;
+        --accent: #ff6b4a;
+        --border: #d6ddea;
+        --shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+        --radius: 20px;
       }
 
       * {
@@ -21,38 +23,72 @@
 
       body {
         margin: 0;
-        background: var(--bg);
-        color: var(--text);
-        font-family: "BIZ UDPGothic", "Yu Gothic UI", "Segoe UI", sans-serif;
-        line-height: 1.6;
+        font-family: "BIZ UDPGothic", "Yu Gothic UI", "Hiragino Sans", "Segoe UI", sans-serif;
+        color: var(--ink);
+        background: radial-gradient(900px 400px at 10% -10%, rgba(43, 89, 255, 0.12), transparent 60%),
+          radial-gradient(720px 360px at 90% 0%, rgba(255, 107, 74, 0.12), transparent 60%),
+          var(--bg);
+        line-height: 1.7;
       }
 
-      .container {
-        max-width: 960px;
-        margin: 32px auto 64px;
+      .page {
+        max-width: 980px;
+        margin: 28px auto 80px;
         padding: 0 20px;
       }
 
-      header {
-        background: var(--card);
+      .hero {
+        background: linear-gradient(135deg, rgba(43, 89, 255, 0.14), rgba(255, 107, 74, 0.16)), var(--card);
         border: 1px solid var(--border);
-        border-radius: 16px;
-        padding: 24px;
-        box-shadow: 0 6px 16px rgba(16, 24, 40, 0.05);
+        border-radius: calc(var(--radius) + 6px);
+        padding: 28px;
+        box-shadow: var(--shadow);
       }
 
-      header h1 {
-        margin: 0 0 6px;
-        font-size: 28px;
+      .hero-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 12px;
+        border-radius: 999px;
+        background: rgba(43, 89, 255, 0.12);
+        border: 1px solid rgba(43, 89, 255, 0.2);
+        font-weight: 700;
+        font-size: 0.8rem;
+        letter-spacing: 0.02em;
       }
 
-      header p {
+      .hero h1 {
+        margin: 12px 0 8px;
+        font-size: clamp(1.8rem, 2.6vw, 2.4rem);
+      }
+
+      .hero p {
         margin: 0;
         color: var(--muted);
       }
 
+      .hero-grid {
+        margin-top: 20px;
+        display: grid;
+        gap: 16px;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      }
+
+      .hero-card {
+        background: var(--card);
+        border-radius: 16px;
+        border: 1px solid var(--border);
+        padding: 16px;
+      }
+
+      .hero-card strong {
+        display: block;
+        margin-bottom: 6px;
+      }
+
       nav {
-        margin-top: 16px;
+        margin-top: 18px;
         padding-top: 16px;
         border-top: 1px solid var(--border);
       }
@@ -63,13 +99,13 @@
         margin: 0;
         display: flex;
         flex-wrap: wrap;
-        gap: 12px 18px;
+        gap: 10px 16px;
       }
 
       nav a {
-        color: var(--accent);
+        color: var(--primary);
+        font-weight: 700;
         text-decoration: none;
-        font-weight: 600;
       }
 
       nav a:hover {
@@ -80,165 +116,182 @@
         margin-top: 24px;
         background: var(--card);
         border: 1px solid var(--border);
-        border-radius: 16px;
+        border-radius: var(--radius);
         padding: 22px 24px;
+        box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
       }
 
       h2 {
         margin: 0 0 12px;
-        font-size: 22px;
+        font-size: 1.3rem;
       }
 
       h3 {
         margin: 16px 0 8px;
-        font-size: 18px;
+        font-size: 1.05rem;
       }
 
       .note {
-        background: var(--note);
-        border: 1px solid #cfe3ff;
-        border-radius: 12px;
+        margin-top: 12px;
         padding: 12px 14px;
+        background: rgba(43, 89, 255, 0.08);
+        border: 1px solid rgba(43, 89, 255, 0.2);
+        border-radius: 12px;
         color: #1f3b5b;
       }
 
-      code {
-        background: #f1f3f7;
-        border-radius: 6px;
-        padding: 2px 6px;
+      .grid {
+        display: grid;
+        gap: 14px;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      }
+
+      .card {
+        border-radius: 14px;
+        padding: 14px;
+        border: 1px solid var(--border);
+        background: #fbfcff;
+      }
+
+      kbd {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 2px 8px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: #f1f3f9;
         font-family: "Consolas", "Courier New", monospace;
-        font-size: 0.95em;
+        font-size: 0.9em;
       }
 
-      pre {
-        background: #f1f3f7;
-        border-radius: 12px;
-        padding: 14px 16px;
-        overflow-x: auto;
-        margin: 12px 0;
-      }
-
-      pre code {
-        background: none;
-        padding: 0;
-      }
-
-      ol, ul {
-        margin: 0 0 0 20px;
-        padding: 0;
+      ul {
+        margin: 0 0 0 18px;
       }
 
       li + li {
         margin-top: 8px;
       }
 
-      .split {
-        display: grid;
-        gap: 16px;
-        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-      }
-
-      .card {
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        padding: 14px;
-        background: #fbfcff;
+      footer {
+        margin-top: 26px;
+        text-align: center;
+        color: var(--muted);
+        font-size: 0.9rem;
       }
     </style>
   </head>
   <body>
-    <div class="container">
-      <header>
-        <h1>YakuLingo 配布ガイド</h1>
-        <p>管理者向け：配布パッケージ作成・共有フォルダ展開手順</p>
+    <div class="page">
+      <header class="hero">
+        <div class="hero-tag">YakuLingo / 使い方ガイド</div>
+        <h1>翻訳を、いつでも即時に。</h1>
+        <p>YakuLingo は常駐型の翻訳アプリです。普段の作業を止めずに、テキストもファイルもすぐ翻訳できます。</p>
+        <div class="hero-grid">
+          <div class="hero-card">
+            <strong>クイック起動</strong>
+            同じウィンドウで <kbd>Ctrl</kbd> + <kbd>C</kbd> を素早く2回。
+          </div>
+          <div class="hero-card">
+            <strong>ファイル翻訳</strong>
+            右クリック &gt;「YakuLingoで翻訳」でも開始できます。
+          </div>
+          <div class="hero-card">
+            <strong>終了方法</strong>
+            UIを閉じても常駐。終了はスタートメニューの「YakuLingo 終了」から。
+          </div>
+        </div>
         <nav>
           <ul>
-            <li><a href="#folder-structure">フォルダ構成</a></li>
-            <li><a href="#user-instructions">ユーザー向け手順</a></li>
-            <li><a href="#updating">更新手順</a></li>
-            <li><a href="#requirements">要件</a></li>
-            <li><a href="#troubleshooting">トラブルシュート</a></li>
+            <li><a href="#quickstart">最初の一歩</a></li>
+            <li><a href="#text">テキスト翻訳</a></li>
+            <li><a href="#file">ファイル翻訳</a></li>
+            <li><a href="#resident">常駐/終了</a></li>
+            <li><a href="#trouble">困ったとき</a></li>
           </ul>
         </nav>
       </header>
 
-      <section id="folder-structure">
-        <h2>フォルダ構成</h2>
-        <p>共有フォルダに以下を配置してください。</p>
-        <pre><code>\\server\share\YakuLingo\
-  setup.vbs              &lt;-- 実行するファイル
-  YakuLingo_YYYYMMDD.zip &lt;-- 配布パッケージ
-  README.html            &lt;-- このガイド
-  .scripts\              &lt;-- 内部スクリプト（変更禁止）
-</code></pre>
-      </section>
-
-      <section id="user-instructions">
-        <h2>ユーザー向け手順</h2>
-        <ol>
-          <li><code>\\server\share\YakuLingo</code> を開く。</li>
-          <li><code>setup.vbs</code> をダブルクリック。</li>
-          <li>セットアップ完了まで待つ。</li>
-          <li>YakuLingo はログオン時に常駐起動（セットアップ完了直後にも起動）。</li>
-          <li>
-            翻訳の使い方:
-            <ul>
-              <li>テキスト: 同じウィンドウで <code>Ctrl+C</code> を短時間に2回 → UIに結果表示。</li>
-              <li>ファイル: エクスプローラーで同じウィンドウ内 <code>Ctrl+C</code> を短時間に2回 → Fileタブに結果表示。</li>
-              <li>ファイル（右クリック）: 対応ファイルを右クリック → 「YakuLingoで翻訳」（Windows 11 は「その他のオプション」内）。</li>
-            </ul>
-          </li>
-          <li>UIを開く: デスクトップ or スタートメニューのショートカット（UIを閉じても常駐は終了しません）。</li>
-          <li>終了: スタートメニュー &gt; YakuLingo &gt; 「YakuLingo 終了」。</li>
-        </ol>
-        <div class="note" style="margin-top: 14px;">
-          注: インストール先は <code>%LOCALAPPDATA%\YakuLingo</code>（OneDrive同期外）。
+      <section id="quickstart">
+        <h2>最初の一歩</h2>
+        <div class="grid">
+          <div class="card">
+            <strong>1. セットアップ完了</strong>
+            setup.ps1 実行後、アプリは自動で常駐します。
+          </div>
+          <div class="card">
+            <strong>2. Copilot にログイン</strong>
+            初回は M365 Copilot のログインが必要です（案内が表示されたらログイン）。
+          </div>
+          <div class="card">
+            <strong>3. 翻訳開始</strong>
+            テキストやファイルを選択して <kbd>Ctrl</kbd> + <kbd>C</kbd> を素早く2回。
+          </div>
+        </div>
+        <div class="note">
+          翻訳方向は自動判定です。日本語なら英訳、英語なら和訳が標準で表示されます。
         </div>
       </section>
 
-      <section id="updating">
-        <h2>更新手順</h2>
+      <section id="text">
+        <h2>テキスト翻訳</h2>
         <ol>
-          <li>開発環境で以下を実行:
-            <ul>
-              <li>必要に応じて <code>install_deps.bat</code>。</li>
-              <li><code>make_distribution.bat</code> を実行。</li>
-            </ul>
-          </li>
-          <li>新しい <code>YakuLingo_YYYYMMDD.zip</code> を共有フォルダへコピー。</li>
-          <li>古い ZIP は削除（setup.ps1 は最新ZIPを使用）。</li>
+          <li>翻訳したい文章を選択します。</li>
+          <li>同じウィンドウで <kbd>Ctrl</kbd> + <kbd>C</kbd> を素早く2回。</li>
+          <li>UIに翻訳結果が表示されます。必要に応じてコピーします。</li>
         </ol>
+        <div class="note">
+          日本語から英語は「標準/簡潔/最簡潔」を同時に表示。英語から日本語は解説付きで表示されます。
+        </div>
       </section>
 
-      <section id="requirements">
-        <h2>要件</h2>
-        <div class="split">
+      <section id="file">
+        <h2>ファイル翻訳</h2>
+        <h3>開始方法</h3>
+        <ul>
+          <li>エクスプローラーでファイルを選択し、<kbd>Ctrl</kbd> + <kbd>C</kbd> を素早く2回。</li>
+          <li>または右クリック &gt;「YakuLingoで翻訳」（Windows 11 は「その他のオプション」内）。</li>
+        </ul>
+        <h3>翻訳結果</h3>
+        <ul>
+          <li>進捗と完了ステータスが UI に表示されます。</li>
+          <li>完了後、翻訳済みファイルや対訳ファイルが一覧表示されます。</li>
+        </ul>
+      </section>
+
+      <section id="resident">
+        <h2>常駐/終了</h2>
+        <ul>
+          <li>UIを閉じても常駐は継続します。</li>
+          <li>UIを開く: スタートメニュー &gt; YakuLingo。</li>
+          <li>終了する: スタートメニュー &gt; YakuLingo &gt;「YakuLingo 終了」。</li>
+        </ul>
+        <div class="note">
+          常駐起動により、いつでもショートカットで翻訳できます。
+        </div>
+      </section>
+
+      <section id="trouble">
+        <h2>困ったとき</h2>
+        <div class="grid">
           <div class="card">
-            <strong>OS</strong>
-            <p>Windows 10/11</p>
+            <strong>翻訳が始まらない</strong>
+            Copilot のログインが完了しているか確認してください。
           </div>
           <div class="card">
-            <strong>PowerShell</strong>
-            <p>PowerShell 5.1+（Windows標準）</p>
+            <strong>UIが表示されない</strong>
+            スタートメニューから YakuLingo を起動して確認してください。
           </div>
           <div class="card">
-            <strong>権限</strong>
-            <p>共有フォルダへの読み取り権限</p>
+            <strong>ファイル翻訳で失敗する</strong>
+            ファイルが開かれていないか、サイズが大きすぎないか確認してください。
           </div>
         </div>
       </section>
 
-      <section id="troubleshooting">
-        <h2>トラブルシュート</h2>
-        <h3>スクリプト実行が無効</h3>
-        <p><code>setup.vbs</code> を実行してください（<code>.scripts\setup.ps1</code> を直接実行しない）。VBS が実行ポリシーを調整します。</p>
-
-        <h3>ZIP が見つからない</h3>
-        <p>同じフォルダに <code>YakuLingo*.zip</code> があるか確認してください。</p>
-
-        <h3>Access denied</h3>
-        <p>共有フォルダの読み取り権限を確認してください。</p>
-      </section>
+      <footer>
+        インストール先: <code>%LOCALAPPDATA%\YakuLingo</code>
+      </footer>
     </div>
   </body>
 </html>

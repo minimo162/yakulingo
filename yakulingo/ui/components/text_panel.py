@@ -7,15 +7,19 @@ Designed for Japanese users.
 """
 
 import asyncio
+import difflib
 import html
 import json
 import logging
+import re
+from datetime import datetime
+from pathlib import Path
 from typing import Callable, Optional
 
 from nicegui import ui
 
 from yakulingo.ui.state import AppState, TextViewState
-from yakulingo.ui.utils import format_markdown_text
+from yakulingo.ui.utils import format_markdown_text, format_bytes, summarize_reference_files
 from yakulingo.models.types import TranslationOption, TextTranslationResult
 
 logger = logging.getLogger(__name__)
@@ -77,6 +81,20 @@ def _create_copy_button(
     button = ui.button(icon='content_copy').props(
         f'flat dense round size=sm aria-label="{aria_label}"'
     ).classes(classes)
+    button.tooltip(tooltip)
+    button.on('click', lambda: on_copy(text), js_handler=_build_copy_js_handler(text))
+
+
+def _create_copy_action_button(
+    label: str,
+    text: str,
+    on_copy: Callable[[str], None],
+    *,
+    classes: str,
+    tooltip: str,
+    icon: str = 'content_copy',
+) -> None:
+    button = ui.button(label, icon=icon).props('flat no-caps size=sm').classes(classes)
     button.tooltip(tooltip)
     button.on('click', lambda: on_copy(text), js_handler=_build_copy_js_handler(text))
 
@@ -164,6 +182,19 @@ TEXT_STYLE_LABELS: dict[str, str] = {
 
 TEXT_STYLE_ORDER: tuple[str, str, str] = ('standard', 'concise', 'minimal')
 
+
+def _build_combined_translation_text(result: TextTranslationResult) -> str:
+    if not result.options:
+        return ""
+    if result.is_to_english:
+        parts = []
+        for option in result.options:
+            style_label = TEXT_STYLE_LABELS.get(option.style, option.style or "translation")
+            header = f'[{style_label}]'
+            parts.append(f'{header}\n{option.text}'.strip())
+        return "\n\n".join(parts)
+    return result.options[0].text
+
 # Paperclip/Attachment SVG icon with aria-label for accessibility (Material Design style, centered)
 ATTACH_SVG: str = '''
 <svg viewBox="0 0 24 24" fill="currentColor" role="img" aria-label="用語集を添付">
@@ -175,6 +206,7 @@ ATTACH_SVG: str = '''
 def create_text_input_panel(
     state: AppState,
     on_translate: Callable[[], None],
+    on_split_translate: Optional[Callable[[], None]] = None,
     on_source_change: Callable[[str], None],
     on_clear: Callable[[], None],
     on_open_file_picker: Optional[Callable[[], None]] = None,
@@ -182,6 +214,11 @@ def create_text_input_panel(
     on_remove_reference_file: Optional[Callable[[int], None]] = None,
     on_translate_button_created: Optional[Callable[[ui.button], None]] = None,
     use_bundled_glossary: bool = False,
+    effective_reference_files: Optional[list[Path]] = None,
+    text_char_limit: int = 5000,
+    batch_char_limit: int = 4000,
+    on_output_language_override: Optional[Callable[[Optional[str]], None]] = None,
+    on_input_metrics_created: Optional[Callable[[dict[str, object]], None]] = None,
     on_glossary_toggle: Optional[Callable[[bool], None]] = None,
     on_edit_glossary: Optional[Callable[[], None]] = None,
     on_edit_translation_rules: Optional[Callable[[], None]] = None,
@@ -192,11 +229,13 @@ def create_text_input_panel(
     Only shown in INPUT state (hidden via CSS in RESULT/TRANSLATING state).
     """
     _create_large_input_panel(
-        state, on_translate, on_source_change, on_clear,
+        state, on_translate, on_split_translate, on_source_change, on_clear,
         on_open_file_picker,
         on_attach_reference_file, on_remove_reference_file,
         on_translate_button_created,
-        use_bundled_glossary, on_glossary_toggle, on_edit_glossary,
+        use_bundled_glossary, effective_reference_files, text_char_limit, batch_char_limit,
+        on_output_language_override, on_input_metrics_created,
+        on_glossary_toggle, on_edit_glossary,
         on_edit_translation_rules, on_textarea_created,
     )
 
@@ -204,6 +243,7 @@ def create_text_input_panel(
 def _create_large_input_panel(
     state: AppState,
     on_translate: Callable[[], None],
+    on_split_translate: Optional[Callable[[], None]],
     on_source_change: Callable[[str], None],
     on_clear: Callable[[], None],
     on_open_file_picker: Optional[Callable[[], None]] = None,
@@ -211,6 +251,11 @@ def _create_large_input_panel(
     on_remove_reference_file: Optional[Callable[[int], None]] = None,
     on_translate_button_created: Optional[Callable[[ui.button], None]] = None,
     use_bundled_glossary: bool = False,
+    effective_reference_files: Optional[list[Path]] = None,
+    text_char_limit: int = 5000,
+    batch_char_limit: int = 4000,
+    on_output_language_override: Optional[Callable[[Optional[str]], None]] = None,
+    on_input_metrics_created: Optional[Callable[[dict[str, object]], None]] = None,
     on_glossary_toggle: Optional[Callable[[bool], None]] = None,
     on_edit_glossary: Optional[Callable[[], None]] = None,
     on_edit_translation_rules: Optional[Callable[[], None]] = None,
@@ -231,23 +276,92 @@ def _create_large_input_panel(
                 )
 
                 # Bottom controls
-                with ui.row().classes('input-toolbar justify-between items-center flex-wrap gap-y-2'):
-                    # Left side: character count and attached files
-                    with ui.row().classes('input-toolbar-left items-center gap-2 flex-1 min-w-0 flex-wrap'):
-                        # Character count
-                        if state.source_text:
-                            ui.label(f'{len(state.source_text)} 文字').classes('text-xs text-muted')
+                metrics_refs: dict[str, object] = {}
+                with ui.row().classes('input-toolbar justify-between items-start flex-wrap gap-y-3'):
+                    # Left side: detection, counts, and reference files
+                    with ui.column().classes('input-toolbar-left gap-2 flex-1 min-w-0'):
+                        with ui.row().classes('items-center gap-2 flex-wrap'):
+                            with ui.element('div').classes('detection-chip'):
+                                detection_label = ui.label(
+                                    f'検出: {state.text_detected_language or "未判定"}'
+                                ).classes('detection-label')
+                                detection_reason_label = ui.label(
+                                    ''
+                                ).classes('detection-reason')
+                            metrics_refs['detection_label'] = detection_label
+                            metrics_refs['detection_reason_label'] = detection_reason_label
 
-                        # Attached reference files indicator
-                        if state.reference_files:
-                            for i, ref_file in enumerate(state.reference_files):
-                                with ui.element('div').classes('attach-file-indicator'):
-                                    ui.label(ref_file.name).classes('file-name')
-                                    if on_remove_reference_file:
-                                        ui.button(
-                                            icon='close',
-                                            on_click=lambda idx=i: on_remove_reference_file(idx)
-                                        ).props('flat round aria-label="Remove reference file"').classes('remove-btn')
+                            if on_output_language_override:
+                                with ui.element('div').classes('direction-toggle'):
+                                    auto_btn = ui.button(
+                                        '自動',
+                                        on_click=lambda: on_output_language_override(None),
+                                    ).props('flat no-caps size=sm').classes(
+                                        f'direction-btn {"active" if state.text_output_language_override is None else ""}'
+                                    )
+                                    en_btn = ui.button(
+                                        '英訳',
+                                        on_click=lambda: on_output_language_override("en"),
+                                    ).props('flat no-caps size=sm').classes(
+                                        f'direction-btn {"active" if state.text_output_language_override == "en" else ""}'
+                                    )
+                                    jp_btn = ui.button(
+                                        '和訳',
+                                        on_click=lambda: on_output_language_override("jp"),
+                                    ).props('flat no-caps size=sm').classes(
+                                        f'direction-btn {"active" if state.text_output_language_override == "jp" else ""}'
+                                    )
+                                    metrics_refs['override_auto'] = auto_btn
+                                    metrics_refs['override_en'] = en_btn
+                                    metrics_refs['override_jp'] = jp_btn
+
+                        with ui.column().classes('char-count-group'):
+                            count_label = ui.label(
+                                f'{len(state.source_text):,} / {text_char_limit:,} 字'
+                            ).classes('char-count-label')
+                            with ui.element('div').classes('char-count-track'):
+                                count_bar = ui.element('div').classes('char-count-bar')
+                                if text_char_limit > 0:
+                                    marker_pos = min(batch_char_limit / text_char_limit, 1.0) * 100
+                                else:
+                                    marker_pos = 0.0
+                                ui.element('div').classes('char-count-marker').style(
+                                    f'left: {marker_pos:.1f}%'
+                                )
+                            count_hint = ui.label(
+                                f'推奨 {batch_char_limit:,} 字'
+                            ).classes('char-count-hint')
+                            metrics_refs['count_label'] = count_label
+                            metrics_refs['count_bar'] = count_bar
+                            metrics_refs['count_hint'] = count_hint
+
+                        summary = summarize_reference_files(effective_reference_files)
+                        if summary["count"] > 0:
+                            with ui.row().classes('ref-summary-row items-center flex-wrap gap-2'):
+                                ui.label(f'{summary["count"]} 件').classes('ref-chip')
+                                ui.label(format_bytes(summary["total_bytes"])).classes('ref-chip')
+                                if summary["latest_mtime"]:
+                                    updated = datetime.fromtimestamp(summary["latest_mtime"]).strftime('%m/%d %H:%M')
+                                    ui.label(f'更新 {updated}').classes('ref-chip')
+                                status_label = 'OK' if summary["all_ok"] else 'NG'
+                                status_class = 'ref-chip status-ok' if summary["all_ok"] else 'ref-chip status-warn'
+                                ui.label(status_label).classes(status_class)
+
+                        manual_summary = summarize_reference_files(state.reference_files)
+                        if manual_summary["entries"]:
+                            with ui.row().classes('ref-file-row items-center flex-wrap gap-2'):
+                                for i, entry in enumerate(manual_summary["entries"]):
+                                    status_class = 'ref-file-chip' if entry["exists"] else 'ref-file-chip missing'
+                                    with ui.element('div').classes(status_class):
+                                        ui.label(entry["name"]).classes('file-name')
+                                        ui.label('OK' if entry["exists"] else 'NG').classes(
+                                            'ref-file-status'
+                                        )
+                                        if on_remove_reference_file:
+                                            ui.button(
+                                                icon='close',
+                                                on_click=lambda idx=i: on_remove_reference_file(idx)
+                                            ).props('flat round aria-label="Remove reference file"').classes('remove-btn')
 
                     with ui.row().classes('input-toolbar-right items-center gap-2'):
                         # Bundled glossary toggle chip
@@ -311,6 +425,33 @@ def _create_large_input_panel(
                         # Provide button reference for dynamic state updates
                         if on_translate_button_created:
                             on_translate_button_created(btn)
+
+                split_panel = ui.element('div').classes('split-suggestion')
+                split_panel.set_visibility(False)
+                with split_panel:
+                    with ui.row().classes('items-center justify-between gap-2'):
+                        split_count = ui.label('').classes('split-count')
+                        if on_split_translate:
+                            def handle_split_translate():
+                                asyncio.create_task(on_split_translate())
+                            split_action = ui.button(
+                                '分割して翻訳',
+                                icon='call_split',
+                                on_click=handle_split_translate,
+                            ).props('flat no-caps size=sm').classes('split-action-btn')
+                        else:
+                            split_action = None
+                    split_preview = ui.label('').classes('split-preview')
+
+                metrics_refs['split_panel'] = split_panel
+                metrics_refs['split_count'] = split_count
+                metrics_refs['split_preview'] = split_preview
+                metrics_refs['split_action'] = split_action
+
+                ui.label('Ctrl/Cmd + Enter で翻訳').classes('shortcut-hint')
+
+                if on_input_metrics_created:
+                    on_input_metrics_created(metrics_refs)
 
 
 def create_text_result_panel(
@@ -402,6 +543,14 @@ def create_text_result_panel(
         elif not state.text_translating:
             # Empty state - show placeholder (spinner already shown in translation status section)
             _render_empty_result_state()
+
+        if state.text_result and state.text_result.options:
+            _render_result_action_footer(
+                state.text_result,
+                on_copy,
+                on_back_translate,
+                actions_disabled=state.text_translating or state.text_back_translating,
+            )
 
 
 def _render_source_text_section(source_text: str, on_copy: Callable[[str], None]):
@@ -530,8 +679,19 @@ def _render_results_to_en(
         with ui.element('div').classes('result-section w-full'):
             # Options list
             display_options = _build_display_options(result.options, compare_mode)
+            base_text = None
+            if compare_mode and display_options:
+                for option in display_options:
+                    if option.style == "standard":
+                        base_text = option.text
+                        break
+                if base_text is None:
+                    base_text = display_options[0].text
             with ui.column().classes('w-full gap-3'):
                 for i, option in enumerate(display_options):
+                    diff_base_text = None
+                    if compare_mode and base_text and option.text != base_text:
+                        diff_base_text = base_text
                     _render_option_en(
                         option,
                         on_copy,
@@ -539,6 +699,7 @@ def _render_results_to_en(
                         is_last=(i == len(display_options) - 1),
                         index=i,
                         show_style_badge=compare_mode,
+                        diff_base_text=diff_base_text,
                         actions_disabled=actions_disabled,
                     )
 
@@ -620,6 +781,61 @@ def _render_results_to_jp(
                 retry_btn.tooltip('もう一度翻訳する')
 
 
+def _render_result_action_footer(
+    result: TextTranslationResult,
+    on_copy: Callable[[str], None],
+    on_back_translate: Optional[Callable[[TranslationOption], None]] = None,
+    actions_disabled: bool = False,
+) -> None:
+    if not result.options:
+        return
+
+    combined_text = _build_combined_translation_text(result)
+
+    with ui.element('div').classes('result-action-footer'):
+        with ui.row().classes('items-center justify-between gap-2 result-action-footer-inner'):
+            with ui.row().classes('items-center gap-2 flex-wrap'):
+                if combined_text:
+                    _create_copy_action_button(
+                        '全コピー',
+                        combined_text,
+                        on_copy,
+                        classes='result-footer-btn',
+                        tooltip='翻訳結果をまとめてコピー',
+                    )
+
+                if result.is_to_english:
+                    options_by_style = {}
+                    for option in result.options:
+                        if option.style and option.style not in options_by_style:
+                            options_by_style[option.style] = option
+                    for style_key in TEXT_STYLE_ORDER:
+                        option = options_by_style.get(style_key)
+                        if not option:
+                            continue
+                        label = TEXT_STYLE_LABELS.get(style_key, style_key)
+                        _create_copy_action_button(
+                            f'{label}コピー',
+                            option.text,
+                            on_copy,
+                            classes='result-footer-btn',
+                            tooltip=f'{label}をコピー',
+                        )
+
+            if on_back_translate:
+                def handle_back_translate_all():
+                    for option in result.options:
+                        on_back_translate(option)
+
+                back_btn = ui.button(
+                    '戻し訳',
+                    icon='g_translate',
+                    on_click=handle_back_translate_all,
+                ).props('flat no-caps size=sm').classes('result-footer-btn')
+                if actions_disabled:
+                    back_btn.props('disable')
+
+
 def _render_explanation(explanation: str):
     """Render explanation text as HTML with bullet points"""
     lines = explanation.strip().split('\n')
@@ -650,7 +866,28 @@ def _render_explanation(explanation: str):
         ui.label(line)
 
 
-def _render_translation_text(text: str):
+def _tokenize_for_diff(text: str) -> list[str]:
+    return re.findall(r'\s+|[^\s]+', text)
+
+
+def _build_diff_html(base_text: str, target_text: str) -> str:
+    base_tokens = _tokenize_for_diff(base_text)
+    target_tokens = _tokenize_for_diff(target_text)
+    matcher = difflib.SequenceMatcher(a=base_tokens, b=target_tokens)
+    parts: list[str] = []
+    for opcode, _a0, _a1, b0, b1 in matcher.get_opcodes():
+        segment = ''.join(target_tokens[b0:b1])
+        if not segment:
+            continue
+        escaped = html.escape(segment)
+        if opcode == 'equal':
+            parts.append(escaped)
+        else:
+            parts.append(f'<span class="diff-added">{escaped}</span>')
+    return ''.join(parts).replace('\n', '<br>')
+
+
+def _render_translation_text(text: str, diff_base_text: Optional[str] = None):
     """Render translation text, showing tabular output as a table."""
     if '\t' in text:
         rows = text.splitlines()
@@ -666,6 +903,11 @@ def _render_translation_text(text: str):
             '</tbody></table></div>'
         )
         ui.html(html_content, sanitize=False).classes('option-text w-full')
+        return
+
+    if diff_base_text and diff_base_text.strip() and diff_base_text != text:
+        diff_html = _build_diff_html(diff_base_text, text)
+        ui.html(diff_html, sanitize=False).classes('option-text w-full diff-text')
         return
 
     label = ui.label(text).classes('option-text py-1 w-full')
@@ -718,6 +960,7 @@ def _render_option_en(
     is_last: bool = False,
     index: int = 0,
     show_style_badge: bool = False,
+    diff_base_text: Optional[str] = None,
     actions_disabled: bool = False,
 ):
     """Render a single English translation option as a card"""
@@ -757,7 +1000,7 @@ def _render_option_en(
                             back_btn.props('disable')
 
             # Translation text
-            _render_translation_text(option.text)
+            _render_translation_text(option.text, diff_base_text=diff_base_text)
 
             # Detailed explanation section (same style as JP)
             if option.explanation:

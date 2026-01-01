@@ -189,6 +189,7 @@ class TextTranslationResult:
     output_language: str = "en"              # "en" or "jp" - target language
     detected_language: Optional[str] = None  # Copilot-detected source language (e.g., "日本語", "英語", "中国語")
     error_message: Optional[str] = None
+    metadata: Optional[dict] = None          # Optional UI metadata (history, reference files, overrides)
 
     def __post_init__(self):
         if self.source_char_count == 0:
@@ -220,6 +221,10 @@ class TranslationResult:
     duration_seconds: float = 0.0
     error_message: Optional[str] = None
     warnings: list[str] = field(default_factory=list)
+    issue_block_ids: list[str] = field(default_factory=list)
+    issue_block_locations: list[str] = field(default_factory=list)
+    issue_section_counts: dict[int, int] = field(default_factory=dict)
+    mismatched_batch_count: int = 0
 
     @property
     def output_files(self) -> list[tuple[Path, str]]:

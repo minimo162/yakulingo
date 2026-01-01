@@ -78,6 +78,8 @@ class AppState:
     text_translating: bool = False
     text_back_translating: bool = False
     text_detected_language: Optional[str] = None  # Copilot-detected source language
+    text_detected_language_reason: Optional[str] = None  # Local detection reason for UI
+    text_output_language_override: Optional[str] = None  # "en" or "jp" when manually overridden
     text_result: Optional[TextTranslationResult] = None
     text_translation_elapsed_time: Optional[float] = None  # Translation time in seconds
     text_streaming_preview: Optional[str] = None  # Partial streamed output during translation
@@ -87,10 +89,14 @@ class AppState:
     selected_file: Optional[Path] = None
     file_info: Optional[FileInfo] = None
     file_detected_language: Optional[str] = None  # Auto-detected source language (e.g., "日本語", "英語")
+    file_detected_language_reason: Optional[str] = None  # Local detection reason for UI
     file_output_language: str = "en"  # "en" or "jp" - output language for file translation
     file_output_language_overridden: bool = False  # True when user manually selects output language
     translation_progress: float = 0.0
     translation_status: str = ""
+    translation_phase: Optional["TranslationPhase"] = None
+    translation_phase_detail: Optional[str] = None
+    translation_eta_seconds: Optional[float] = None
     output_file: Optional[Path] = None
     translation_result: Optional[TranslationResult] = None  # Full result with all output files
     error_message: str = ""
@@ -108,6 +114,7 @@ class AppState:
     history: list[HistoryEntry] = field(default_factory=list)
     history_drawer_open: bool = False
     max_history_entries: int = 50
+    history_query: str = ""
 
     # History database (lazy initialized on first access for faster startup)
     _history_db: Optional["HistoryDB"] = field(default=None, repr=False)
@@ -149,6 +156,8 @@ class AppState:
         self.text_translating = False
         self.text_back_translating = False
         self.text_detected_language = None
+        self.text_detected_language_reason = None
+        self.text_output_language_override = None
         self.text_result = None
         self.text_translation_elapsed_time = None
         self.text_streaming_preview = None
@@ -159,9 +168,13 @@ class AppState:
         self.selected_file = None
         self.file_info = None
         self.file_detected_language = None
+        self.file_detected_language_reason = None
         self.file_output_language_overridden = False
         self.translation_progress = 0.0
         self.translation_status = ""
+        self.translation_phase = None
+        self.translation_phase_detail = None
+        self.translation_eta_seconds = None
         self.output_file = None
         self.translation_result = None
         self.error_message = ""

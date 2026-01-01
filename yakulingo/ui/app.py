@@ -8,6 +8,7 @@ Japanese → English, Other → Japanese (auto-detected by AI).
 
 import atexit
 import asyncio
+import json
 import logging
 import os
 import sys
@@ -1001,7 +1002,14 @@ def _patch_nicegui_native_mode() -> None:
 
 # Fast imports - required at startup (lightweight modules only)
 from yakulingo.ui.state import AppState, Tab, FileState, ConnectionState, LayoutInitializationState
-from yakulingo.models.types import TranslationProgress, TranslationStatus, TextTranslationResult, TranslationOption, HistoryEntry
+from yakulingo.models.types import (
+    TranslationProgress,
+    TranslationStatus,
+    TextTranslationResult,
+    TranslationOption,
+    HistoryEntry,
+    TranslationPhase,
+)
 from yakulingo.config.settings import (
     AppSettings,
     get_default_settings_path,
@@ -1017,6 +1025,7 @@ if TYPE_CHECKING:
     from nicegui import Client as NiceGUIClient
     from nicegui.elements.button import Button as UiButton
     from nicegui.elements.dialog import Dialog as UiDialog
+    from nicegui.elements.input import Input as UiInput
     from nicegui.elements.label import Label as UiLabel
     from nicegui.elements.textarea import Textarea as UiTextarea
     from nicegui.elements.timer import Timer as UiTimer
@@ -1235,7 +1244,10 @@ class YakuLingoApp:
         self._history_list = None
         self._history_dialog: Optional[UiDialog] = None
         self._history_dialog_list = None
+        self._history_search_input: Optional[UiInput] = None
+        self._history_dialog_search_input: Optional[UiInput] = None
         self._main_area_element = None
+        self._text_input_metrics: Optional[dict[str, object]] = None
 
         # Auto-update
         self._update_notification: Optional["UpdateNotification"] = None
@@ -1332,6 +1344,11 @@ class YakuLingoApp:
         self._reference_upload = None
         self._global_drop_upload = None
         self._global_drop_indicator = None
+
+        # History pins (persisted locally)
+        self._history_pins_path = Path.home() / ".yakulingo" / "history_pins.json"
+        self._history_pins: set[str] = set()
+        self._load_history_pins()
 
     @property
     def copilot(self) -> "CopilotHandler":
@@ -2373,16 +2390,18 @@ class YakuLingoApp:
             self.state.translation_status = f"Translating... ({idx}/{total_files})"
             self._refresh_ui_after_hotkey_translation(trace_id)
             detected_language = "日本語"  # Default fallback
+            detected_reason = "default"
             try:
                 sample_text = await asyncio.to_thread(
                     self.translation_service.extract_detection_sample,
                     input_path,
                 )
                 if sample_text and sample_text.strip():
-                    detected_language = await asyncio.to_thread(
-                        self.translation_service.detect_language,
+                    detected_language, detected_reason = await asyncio.to_thread(
+                        self.translation_service.detect_language_with_reason,
                         sample_text,
                     )
+                    self.state.file_detected_language_reason = detected_reason
             except Exception as e:
                 logger.debug(
                     "Hotkey file translation [%s] language detection failed for %s: %s",
@@ -2556,6 +2575,7 @@ class YakuLingoApp:
 
         self.state.text_translating = True
         self.state.text_detected_language = None
+        self.state.text_detected_language_reason = None
         self.state.text_result = None
         self.state.text_translation_elapsed_time = None
         self._refresh_ui_after_hotkey_translation(trace_id)
@@ -2564,11 +2584,13 @@ class YakuLingoApp:
 
         start_time = time.monotonic()
         try:
-            detected_language = await asyncio.to_thread(
-                self.translation_service.detect_language,
+            detected_language, detected_reason = await asyncio.to_thread(
+                self.translation_service.detect_language_with_reason,
                 text,
             )
             self.state.text_detected_language = detected_language
+            self.state.text_detected_language_reason = detected_reason
+            effective_detected_language = self._resolve_effective_detected_language(detected_language)
 
             loop = asyncio.get_running_loop()
             last_preview_update = 0.0
@@ -2620,9 +2642,11 @@ class YakuLingoApp:
                 text,
                 reference_files,
                 None,
-                detected_language,
+                effective_detected_language,
                 on_chunk,
             )
+            if result:
+                result.detected_language = detected_language
         except Exception as e:
             logger.info("Hotkey translation [%s] failed: %s", trace_id, e)
             return
@@ -2689,6 +2713,7 @@ class YakuLingoApp:
         self.state.text_view_state = TextViewState.INPUT
         self.state.text_translating = True
         self.state.text_detected_language = None
+        self.state.text_detected_language_reason = None
         self.state.text_result = None
         self.state.text_translation_elapsed_time = None
         self.state.text_streaming_preview = None
@@ -2697,12 +2722,14 @@ class YakuLingoApp:
 
         start_time = time.monotonic()
         try:
-            detected_language = await asyncio.to_thread(
-                self.translation_service.detect_language,
+            detected_language, detected_reason = await asyncio.to_thread(
+                self.translation_service.detect_language_with_reason,
                 cells_to_translate[0][2],
             )
             self.state.text_detected_language = detected_language
-            output_language = "en" if detected_language == "日本語" else "jp"
+            self.state.text_detected_language_reason = detected_reason
+            effective_detected_language = self._resolve_effective_detected_language(detected_language)
+            output_language = "en" if effective_detected_language == "日本語" else "jp"
             reference_files = self._get_effective_reference_files()
 
             batches = self._split_cell_batches(unique_texts, self.settings.max_chars_per_batch)
@@ -2847,6 +2874,7 @@ class YakuLingoApp:
         # Update UI to show loading state
         self.state.text_translating = True
         self.state.text_detected_language = None
+        self.state.text_detected_language_reason = None
         self.state.text_result = None
         self.state.text_translation_elapsed_time = None
         with client:
@@ -2868,17 +2896,19 @@ class YakuLingoApp:
 
             # Detect language from the first non-empty cell
             sample_text = cells_to_translate[0][2]
-            detected_language = await asyncio.to_thread(
-                self.translation_service.detect_language,
+            detected_language, detected_reason = await asyncio.to_thread(
+                self.translation_service.detect_language_with_reason,
                 sample_text,
             )
 
             logger.debug("Translation [%s] detected language: %s", trace_id, detected_language)
             self.state.text_detected_language = detected_language
+            self.state.text_detected_language_reason = detected_reason
             with client:
                 self._refresh_result_panel()
 
-            output_language = "en" if detected_language == "日本語" else "jp"
+            effective_detected_language = self._resolve_effective_detected_language(detected_language)
+            output_language = "en" if effective_detected_language == "日本語" else "jp"
 
             reference_files = self._get_effective_reference_files()
 
@@ -5929,6 +5959,11 @@ class YakuLingoApp:
         """Store reference to translate button for dynamic state updates"""
         self._translate_button = button
 
+    def _on_text_input_metrics_created(self, refs: dict[str, object]) -> None:
+        """Store reference to text input metrics for live updates."""
+        self._text_input_metrics = refs
+        self._update_text_input_metrics()
+
     def _on_streaming_preview_label_created(self, label: UiLabel):
         """Store reference to streaming preview label for incremental updates."""
         self._streaming_preview_label = label
@@ -6431,19 +6466,30 @@ class YakuLingoApp:
             with ui.row().classes('items-center px-2 mb-2'):
                 ui.label('履歴').classes('font-semibold text-muted sidebar-section-title')
 
+            with ui.element('div').classes('history-search-container px-2 mb-2'):
+                with ui.element('div').classes('history-search-box'):
+                    ui.icon('search').classes('history-search-icon')
+                    search_input = ui.input(
+                        placeholder='検索',
+                        value=self.state.history_query,
+                        on_change=lambda e: self._set_history_query(e.value),
+                    ).props('dense borderless clearable').classes('history-search-input')
+                    self._history_search_input = search_input
+
             @ui.refreshable
             def history_list():
-                # Ensure history is loaded from database before displaying
-                self.state._ensure_history_db()
-
-                if not self.state.history:
+                entries = self._get_history_entries(MAX_HISTORY_DISPLAY)
+                if not entries:
+                    empty_label = '履歴がありません'
+                    if self.state.history_query:
+                        empty_label = '該当する履歴がありません'
                     with ui.column().classes('w-full flex-1 items-center justify-center py-8 opacity-50'):
                         ui.icon('history').classes('text-2xl')
-                        ui.label('履歴がありません').classes('text-xs mt-1')
+                        ui.label(empty_label).classes('text-xs mt-1')
                 else:
                     with ui.scroll_area().classes('history-scroll'):
                         with ui.column().classes('gap-1'):
-                            for entry in self.state.history[:MAX_HISTORY_DISPLAY]:
+                            for entry in entries:
                                 self._create_history_item(entry)
 
             self._history_list = history_list
@@ -6472,20 +6518,33 @@ class YakuLingoApp:
                         'flat round dense aria-label="閉じる"'
                     ).classes('icon-btn')
 
+                with ui.element('div').classes('history-search-container mt-2'):
+                    with ui.element('div').classes('history-search-box'):
+                        ui.icon('search').classes('history-search-icon')
+                        dialog_search = ui.input(
+                            placeholder='検索',
+                            value=self.state.history_query,
+                            on_change=lambda e: self._set_history_query(e.value),
+                        ).props('dense borderless clearable').classes('history-search-input')
+                        self._history_dialog_search_input = dialog_search
+
                 ui.separator().classes('opacity-20')
 
                 @ui.refreshable
                 def history_drawer_list():
-                    self.state._ensure_history_db()
-                    if not self.state.history:
+                    entries = self._get_history_entries(MAX_HISTORY_DRAWER_DISPLAY)
+                    if not entries:
+                        empty_label = '履歴がありません'
+                        if self.state.history_query:
+                            empty_label = '該当する履歴がありません'
                         with ui.column().classes('w-full flex-1 items-center justify-center py-10 opacity-60'):
                             ui.icon('history').classes('text-2xl')
-                            ui.label('履歴がありません').classes('text-xs mt-1')
+                            ui.label(empty_label).classes('text-xs mt-1')
                         return
 
                     with ui.scroll_area().classes('history-drawer-scroll'):
                         with ui.column().classes('gap-1'):
-                            for entry in self.state.history[:MAX_HISTORY_DRAWER_DISPLAY]:
+                            for entry in entries:
                                 self._create_history_item(entry, on_select=dialog.close)
 
                 self._history_dialog_list = history_drawer_list
@@ -6550,9 +6609,49 @@ class YakuLingoApp:
             ui.label(label).classes('flex-1')
         self._nav_buttons[tab] = btn
 
+    def _build_history_chips(self, entry: HistoryEntry) -> list[str]:
+        metadata = entry.result.metadata if isinstance(entry.result.metadata, dict) else {}
+        chips: list[str] = []
+
+        output_lang = entry.result.output_language or "en"
+        chips.append('英訳' if output_lang == "en" else '和訳')
+
+        override = metadata.get("output_language_override")
+        if override in {"en", "jp"}:
+            chips.append('固定')
+
+        if metadata.get("split_translation"):
+            chips.append('分割')
+
+        styles = metadata.get("styles") or []
+        if styles:
+            style_map = {
+                "standard": "標準",
+                "concise": "簡潔",
+                "minimal": "最簡潔",
+            }
+            if len(styles) == 1:
+                chips.append(style_map.get(styles[0], styles[0]))
+            else:
+                chips.append(f'{len(styles)}スタイル')
+
+        manual_names = metadata.get("manual_reference_names") or []
+        if isinstance(manual_names, list) and manual_names:
+            chips.append(f'参照{len(manual_names)}')
+
+        if metadata.get("use_bundled_glossary"):
+            chips.append('用語集')
+
+        return chips
+
     def _create_history_item(self, entry: HistoryEntry, on_select: Callable[[], None] | None = None):
         """Create a history item with hover menu."""
-        with ui.element('div').classes('history-item group') as item:
+        is_pinned = self._is_history_pinned(entry)
+        item_classes = 'history-item group'
+            if is_pinned:
+                item_classes += ' pinned'
+
+        with ui.element('div').classes(item_classes) as item:
             # Clickable area for loading entry
             def load_entry():
                 self._load_from_history(entry)
@@ -6567,10 +6666,19 @@ class YakuLingoApp:
             # Text content container with proper CSS classes
             with ui.column().classes('history-text-container gap-0.5'):
                 # Source text title
-                ui.label(entry.preview).classes('text-xs history-title')
+                with ui.row().classes('items-center gap-1 min-w-0'):
+                    if is_pinned:
+                        ui.icon('push_pin').classes('history-pin-indicator')
+                    ui.label(entry.preview).classes('text-xs history-title')
                 # Show first translation preview (CSS handles truncation with ellipsis)
                 if entry.result.options:
                     ui.label(entry.result.options[0].text).classes('text-2xs text-muted history-preview')
+
+                chips = self._build_history_chips(entry)
+                if chips:
+                    with ui.row().classes('history-meta-row items-center gap-1 flex-wrap'):
+                        for chip in chips:
+                            ui.label(chip).classes('history-chip')
 
             # Delete button (visible on hover via CSS)
             # Use @click.stop to prevent event propagation to parent item
@@ -6588,9 +6696,31 @@ class YakuLingoApp:
                 if remaining >= MAX_HISTORY_DISPLAY:
                     self._refresh_history()
 
-            ui.button(icon='close', on_click=delete_entry).props(
-                'flat dense round size=xs @click.stop'
-            ).classes('history-delete-btn')
+            with ui.row().classes('history-item-actions'):
+                pin_btn = ui.button(
+                    icon='push_pin',
+                    on_click=lambda: self._toggle_history_pin(entry),
+                ).props('flat dense round size=xs @click.stop').classes(
+                    f'history-action-btn history-pin-btn {"active" if is_pinned else ""}'
+                )
+                pin_btn.tooltip('ピンを外す' if is_pinned else 'ピン留め')
+
+                def handle_rerun():
+                    self._rerun_history_entry(entry)
+                    if on_select is not None:
+                        on_select()
+
+                rerun_btn = ui.button(
+                    icon='refresh',
+                    on_click=handle_rerun,
+                ).props('flat dense round size=xs @click.stop').classes('history-action-btn')
+                rerun_btn.tooltip('同じ設定で再翻訳')
+                if self.state.is_translating():
+                    rerun_btn.props('disable')
+
+                ui.button(icon='close', on_click=delete_entry).props(
+                    'flat dense round size=xs @click.stop'
+                ).classes('history-action-btn history-delete-btn')
 
     def _is_file_panel_active(self) -> bool:
         """Return True when file panel should be visible."""
@@ -6681,6 +6811,7 @@ class YakuLingoApp:
                     create_text_input_panel(
                         state=self.state,
                         on_translate=self._translate_text,
+                        on_split_translate=self._translate_text_in_chunks,
                         on_source_change=self._on_source_change,
                         on_clear=self._clear,
                         on_open_file_picker=self._open_translation_file_picker,
@@ -6688,6 +6819,11 @@ class YakuLingoApp:
                         on_remove_reference_file=self._remove_reference_file,
                         on_translate_button_created=self._on_translate_button_created,
                         use_bundled_glossary=self.settings.use_bundled_glossary,
+                        effective_reference_files=self._get_effective_reference_files(),
+                        text_char_limit=TEXT_TRANSLATION_CHAR_LIMIT,
+                        batch_char_limit=self.settings.max_chars_per_batch,
+                        on_output_language_override=self._set_text_output_language_override,
+                        on_input_metrics_created=self._on_text_input_metrics_created,
                         on_glossary_toggle=self._on_glossary_toggle,
                         on_edit_glossary=self._edit_glossary,
                         on_edit_translation_rules=self._edit_translation_rules,
@@ -6720,9 +6856,13 @@ class YakuLingoApp:
                                 on_attach_reference_file=self._attach_reference_file,
                                 on_remove_reference_file=self._remove_reference_file,
                                 reference_files=self.state.reference_files,
+                                effective_reference_files=self._get_effective_reference_files(),
                                 translation_style=self.settings.translation_style,
                                 translation_result=self.state.translation_result,
                                 use_bundled_glossary=self.settings.use_bundled_glossary,
+                                font_jp_to_en=self.settings.font_jp_to_en,
+                                font_en_to_jp=self.settings.font_en_to_jp,
+                                on_dismiss_issues=self._dismiss_file_issues,
                                 on_glossary_toggle=self._on_glossary_toggle,
                                 on_edit_glossary=self._edit_glossary,
                                 on_edit_translation_rules=self._edit_translation_rules,
@@ -6734,13 +6874,108 @@ class YakuLingoApp:
     def _on_source_change(self, text: str):
         """Handle source text change"""
         self.state.source_text = text
+        self._update_text_local_detection(text)
         # Update button state dynamically without full refresh
         self._update_translate_button_state()
+        self._update_text_input_metrics()
+
+    def _update_text_local_detection(self, text: str) -> None:
+        if not text.strip():
+            self.state.text_detected_language = None
+            self.state.text_detected_language_reason = None
+            return
+        try:
+            from yakulingo.services.translation_service import language_detector
+            detected_language, reason = language_detector.detect_local_with_reason(text)
+            self.state.text_detected_language = detected_language
+            self.state.text_detected_language_reason = reason
+        except Exception as e:
+            logger.debug("Local language detection failed: %s", e)
+            self.state.text_detected_language = None
+            self.state.text_detected_language_reason = None
+
+    def _update_text_input_metrics(self) -> None:
+        refs = self._text_input_metrics or {}
+        if not refs:
+            return
+
+        char_count = len(self.state.source_text)
+        text_limit = TEXT_TRANSLATION_CHAR_LIMIT
+        batch_limit = self.settings.max_chars_per_batch
+
+        count_label = refs.get("count_label")
+        if count_label:
+            count_label.set_text(f"{char_count:,} / {text_limit:,} 字")
+
+        count_hint = refs.get("count_hint")
+        if count_hint:
+            count_hint.set_text(f"推奨 {batch_limit:,} 字")
+
+        count_bar = refs.get("count_bar")
+        if count_bar:
+            ratio = 0.0 if text_limit <= 0 else min(char_count / text_limit, 1.0)
+            if char_count > text_limit:
+                bar_color = "var(--md-sys-color-error)"
+            elif char_count > batch_limit:
+                bar_color = "var(--md-sys-color-warning)"
+            else:
+                bar_color = "var(--md-sys-color-primary)"
+            count_bar.style(f"width: {ratio * 100:.1f}%; background: {bar_color};")
+
+        detection_label = refs.get("detection_label")
+        detection_reason_label = refs.get("detection_reason_label")
+        detected = self.state.text_detected_language or "未判定"
+        if detection_label:
+            detection_label.set_text(f"検出: {detected}")
+        if detection_reason_label:
+            detection_reason_label.set_text(self._format_detection_reason(self.state.text_detected_language_reason))
+
+        override = self.state.text_output_language_override
+        for key, expected in (("override_auto", None), ("override_en", "en"), ("override_jp", "jp")):
+            btn = refs.get(key)
+            if not btn:
+                continue
+            if override == expected:
+                btn.classes(add="active")
+            else:
+                btn.classes(remove="active")
+
+        split_panel = refs.get("split_panel")
+        split_preview = refs.get("split_preview")
+        split_count = refs.get("split_count")
+        split_action = refs.get("split_action")
+
+        if not split_panel:
+            return
+
+        if char_count > batch_limit:
+            split_panel.set_visibility(True)
+            chunks = self._split_text_for_translation(self.state.source_text, batch_limit)
+            if split_count:
+                split_count.set_text(f"{len(chunks)} 分割 / {batch_limit:,} 字上限")
+            if split_preview:
+                preview_lines = []
+                for idx, chunk in enumerate(chunks[:3]):
+                    snippet = chunk.replace("\n", " ").strip()
+                    if len(snippet) > 60:
+                        snippet = snippet[:60] + "…"
+                    preview_lines.append(f"[{idx + 1}] {snippet}")
+                if len(chunks) > 3:
+                    preview_lines.append(f"…他 {len(chunks) - 3} 件")
+                split_preview.set_text("\n".join(preview_lines))
+            if split_action:
+                split_action.set_visibility(True)
+        else:
+            split_panel.set_visibility(False)
+            if split_action:
+                split_action.set_visibility(False)
 
     def _clear(self):
         """Clear text fields"""
         self.state.source_text = ""
         self.state.text_result = None
+        self.state.text_detected_language = None
+        self.state.text_detected_language_reason = None
         self._refresh_content()
 
     def _on_glossary_toggle(self, enabled: bool):
@@ -6908,6 +7143,171 @@ class YakuLingoApp:
     # Section 6: Text Translation
     # =========================================================================
 
+    def _format_detection_reason(self, reason: Optional[str]) -> str:
+        mapping = {
+            "kana": "ひらがな/カタカナ",
+            "hangul": "ハングル検出",
+            "latin": "アルファベット優勢",
+            "cjk_unencodable": "漢字差分",
+            "cjk_fallback": "CJKのみ",
+            "empty": "未入力",
+            "default": "自動判定",
+            "copilot": "Copilot判定",
+        }
+        return mapping.get(reason or "", "自動判定")
+
+    def _format_eta_seconds(self, seconds: Optional[float]) -> str:
+        if seconds is None:
+            return "--"
+        total = max(0, int(seconds))
+        if total < 60:
+            return f"{total}秒"
+        minutes = total // 60
+        if minutes < 60:
+            return f"{minutes}分"
+        hours = minutes // 60
+        minutes = minutes % 60
+        return f"{hours}時間{minutes}分"
+
+    def _set_text_output_language_override(self, output_language: Optional[str]) -> None:
+        self.state.text_output_language_override = output_language
+        self._update_text_input_metrics()
+
+    def _resolve_effective_detected_language(self, detected_language: str) -> str:
+        override = self.state.text_output_language_override
+        if override == "en":
+            return "日本語"
+        if override == "jp":
+            return "英語"
+        return detected_language
+
+    def _split_text_for_translation(self, text: str, limit: int) -> list[str]:
+        if not text:
+            return []
+        if limit <= 0 or len(text) <= limit:
+            return [text]
+
+        normalized = text.replace("\r\n", "\n")
+        parts = [p for p in normalized.split("\n\n") if p.strip()]
+        chunks: list[str] = []
+        current: list[str] = []
+        current_len = 0
+
+        for part in parts:
+            part_len = len(part)
+            if part_len > limit:
+                if current:
+                    chunks.append("\n\n".join(current))
+                    current = []
+                    current_len = 0
+                for idx in range(0, part_len, limit):
+                    chunks.append(part[idx: idx + limit])
+                continue
+
+            add_len = part_len + (2 if current else 0)
+            if current_len + add_len <= limit:
+                current.append(part)
+                current_len += add_len
+            else:
+                if current:
+                    chunks.append("\n\n".join(current))
+                current = [part]
+                current_len = part_len
+
+        if current:
+            chunks.append("\n\n".join(current))
+
+        return chunks or [normalized]
+
+    def _merge_chunk_results(
+        self,
+        chunk_results: list[TextTranslationResult],
+        source_text: str,
+        detected_language: str,
+        effective_detected_language: str,
+    ) -> TextTranslationResult:
+        output_language = "en" if effective_detected_language == "日本語" else "jp"
+        error_messages = [res.error_message for res in chunk_results if res.error_message]
+        if error_messages:
+            return TextTranslationResult(
+                source_text=source_text,
+                source_char_count=len(source_text),
+                output_language=output_language,
+                detected_language=detected_language,
+                error_message=error_messages[0],
+            )
+
+        if output_language == "en":
+            options_by_style: dict[str, list[str]] = {}
+            explanations_by_style: dict[str, list[str]] = {}
+            for res in chunk_results:
+                if not res.options:
+                    return TextTranslationResult(
+                        source_text=source_text,
+                        source_char_count=len(source_text),
+                        output_language=output_language,
+                        detected_language=detected_language,
+                        error_message="翻訳結果が取得できませんでした",
+                    )
+                for option in res.options:
+                    style = option.style or DEFAULT_TEXT_STYLE
+                    options_by_style.setdefault(style, []).append(option.text)
+                    if option.explanation:
+                        explanations_by_style.setdefault(style, []).append(option.explanation)
+
+            style_order = ["standard", "concise", "minimal"]
+            combined_options: list[TranslationOption] = []
+            for style in style_order:
+                if style in options_by_style:
+                    combined_options.append(TranslationOption(
+                        text="\n\n".join(options_by_style[style]),
+                        explanation="\n\n".join(explanations_by_style.get(style, [])),
+                        style=style,
+                    ))
+
+            if not combined_options:
+                return TextTranslationResult(
+                    source_text=source_text,
+                    source_char_count=len(source_text),
+                    output_language=output_language,
+                    detected_language=detected_language,
+                    error_message="翻訳結果が取得できませんでした",
+                )
+
+            return TextTranslationResult(
+                source_text=source_text,
+                source_char_count=len(source_text),
+                output_language=output_language,
+                detected_language=detected_language,
+                options=combined_options,
+            )
+
+        texts: list[str] = []
+        explanations: list[str] = []
+        for res in chunk_results:
+            if not res.options:
+                continue
+            option = res.options[0]
+            texts.append(option.text)
+            if option.explanation:
+                explanations.append(option.explanation)
+
+        combined_text = "\n\n".join(texts)
+        combined_explanation = "\n\n".join(explanations)
+
+        return TextTranslationResult(
+            source_text=source_text,
+            source_char_count=len(source_text),
+            output_language=output_language,
+            detected_language=detected_language,
+            options=[
+                TranslationOption(
+                    text=combined_text,
+                    explanation=combined_explanation,
+                )
+            ],
+        )
+
     async def _attach_reference_file(self):
         """Open file picker directly to attach a reference file (glossary, style guide, etc.)"""
         # Use Quasar's pickFiles() method to open file picker directly (no dialog)
@@ -7013,8 +7413,8 @@ class YakuLingoApp:
             )
 
         # Detect language to determine output direction
-        detected_language = await asyncio.to_thread(
-            self.translation_service.detect_language,
+        detected_language, detected_reason = await asyncio.to_thread(
+            self.translation_service.detect_language_with_reason,
             text[:1000],  # Use first 1000 chars for detection
         )
         is_japanese = detected_language == "日本語"
@@ -7035,6 +7435,7 @@ class YakuLingoApp:
             # Set up file translation state
             self.state.selected_file = temp_path
             self.state.file_detected_language = detected_language
+            self.state.file_detected_language_reason = detected_reason
             self.state.file_output_language = output_language
             # Get file info asynchronously to avoid blocking UI
             self.state.file_info = await asyncio.to_thread(
@@ -7064,6 +7465,127 @@ class YakuLingoApp:
         finally:
             # Clean up temp file (after translation or on error)
             temp_path.unlink(missing_ok=True)
+
+    async def _translate_text_in_chunks(self):
+        """Translate text by splitting into multiple batches for large inputs."""
+        import time
+
+        if not await self._ensure_connection_async():
+            return
+        if self.translation_service:
+            self.translation_service.reset_cancel()
+
+        source_text = self.state.source_text
+        if not source_text.strip():
+            return
+
+        trace_id = self._active_translation_trace_id or f"text-split-{uuid.uuid4().hex[:8]}"
+        self._active_translation_trace_id = trace_id
+
+        reference_files = self._get_effective_reference_files()
+
+        with self._client_lock:
+            client = self._client
+            if not client:
+                logger.warning("Translation [%s] aborted: no client connected", trace_id)
+                self._active_translation_trace_id = None
+                return
+
+        self.state.text_translating = True
+        self.state.text_detected_language = None
+        self.state.text_detected_language_reason = None
+        self.state.text_result = None
+        self.state.text_translation_elapsed_time = None
+        self.state.text_streaming_preview = None
+        self._streaming_preview_label = None
+
+        with client:
+            self._refresh_result_panel()
+            self._scroll_result_panel_to_bottom(client, force_follow=True)
+            self._refresh_tabs()
+
+        error_message = None
+        result = None
+        try:
+            await asyncio.sleep(0)
+            start_time = time.monotonic()
+
+            detected_language, reason = await asyncio.to_thread(
+                self.translation_service.detect_language_with_reason,
+                source_text,
+            )
+            self.state.text_detected_language = detected_language
+            self.state.text_detected_language_reason = reason
+            effective_detected_language = self._resolve_effective_detected_language(detected_language)
+
+            with client:
+                self._refresh_result_panel()
+
+            await asyncio.sleep(0)
+
+            chunks = self._split_text_for_translation(
+                source_text, self.settings.max_chars_per_batch
+            )
+
+            def translate_chunks() -> TextTranslationResult:
+                from yakulingo.services.copilot_handler import TranslationCancelledError
+                chunk_results: list[TextTranslationResult] = []
+                for chunk in chunks:
+                    if self.translation_service and self.translation_service._cancel_event.is_set():
+                        raise TranslationCancelledError
+                    chunk_result = self.translation_service.translate_text_with_style_comparison(
+                        chunk,
+                        reference_files,
+                        None,
+                        effective_detected_language,
+                        None,
+                    )
+                    chunk_results.append(chunk_result)
+                return self._merge_chunk_results(
+                    chunk_results,
+                    source_text,
+                    detected_language,
+                    effective_detected_language,
+                )
+
+            result = await asyncio.to_thread(translate_chunks)
+            if result:
+                result.detected_language = detected_language
+
+            elapsed_time = time.monotonic() - start_time
+            self.state.text_translation_elapsed_time = elapsed_time
+
+            if result and result.options:
+                from yakulingo.ui.state import TextViewState
+                result.metadata = result.metadata or {}
+                result.metadata["split_translation"] = True
+                self.state.text_result = result
+                self.state.text_view_state = TextViewState.RESULT
+                self._add_to_history(result, source_text)
+                self.state.source_text = ""
+            else:
+                error_message = result.error_message if result else "Unknown error"
+
+        except Exception as e:
+            logger.exception("Split translation error [%s]: %s", trace_id, e)
+            error_message = str(e)
+
+        self.state.text_translating = False
+        self.state.text_detected_language = None
+        self.state.text_detected_language_reason = None
+        self.state.text_streaming_preview = None
+        self._streaming_preview_label = None
+
+        with client:
+            if error_message:
+                self._notify_error(error_message)
+            self._refresh_result_panel()
+            self._scroll_result_panel_to_bottom(client)
+            self._update_translate_button_state()
+            self._refresh_status()
+            self._refresh_tabs()
+
+        self._active_translation_trace_id = None
 
     async def _translate_text(self):
         """Translate text with 2-step process: language detection then translation."""
@@ -7140,8 +7662,8 @@ class YakuLingoApp:
             logger.info("[TIMING] Translation [%s] start_time set: %.3f (prep_time: %.3fs since button click)", trace_id, start_time, prep_time)
 
             # Step 1: Detect language using Copilot
-            detected_language = await asyncio.to_thread(
-                self.translation_service.detect_language,
+            detected_language, detected_reason = await asyncio.to_thread(
+                self.translation_service.detect_language_with_reason,
                 source_text,
             )
 
@@ -7150,6 +7672,8 @@ class YakuLingoApp:
 
             # Update UI with detected language
             self.state.text_detected_language = detected_language
+            self.state.text_detected_language_reason = detected_reason
+            effective_detected_language = self._resolve_effective_detected_language(detected_language)
             with client:
                 self._refresh_result_panel()  # Only refresh result panel
 
@@ -7204,9 +7728,11 @@ class YakuLingoApp:
                 source_text,
                 reference_files,
                 style_order,
-                detected_language,
+                effective_detected_language,
                 on_chunk,
             )
+            if result:
+                result.detected_language = detected_language
 
             # Calculate elapsed time
             end_time = time.monotonic()
@@ -7244,6 +7770,7 @@ class YakuLingoApp:
 
         self.state.text_translating = False
         self.state.text_detected_language = None
+        self.state.text_detected_language_reason = None
         self.state.text_streaming_preview = None
         self._streaming_preview_label = None
 
@@ -7810,6 +8337,7 @@ class YakuLingoApp:
             self.state.selected_file = file_path
             self.state.file_state = FileState.SELECTED
             self.state.file_detected_language = None  # Clear previous detection
+            self.state.file_detected_language_reason = None
             # New file selection: allow auto-detection to choose output language again
             self.state.file_output_language_overridden = False
             self.state.file_info = None  # Will be loaded async
@@ -7872,6 +8400,7 @@ class YakuLingoApp:
                 return
 
         detected_language = "日本語"  # Default fallback
+        detected_reason = "default"
 
         try:
             # Extract sample text from file (in thread to avoid blocking)
@@ -7886,8 +8415,8 @@ class YakuLingoApp:
 
             if sample_text and sample_text.strip():
                 # Detect language
-                detected_language = await asyncio.to_thread(
-                    self.translation_service.detect_language,
+                detected_language, detected_reason = await asyncio.to_thread(
+                    self.translation_service.detect_language_with_reason,
                     sample_text,
                 )
 
@@ -7905,6 +8434,7 @@ class YakuLingoApp:
 
         # Update state based on detection (or default)
         self.state.file_detected_language = detected_language
+        self.state.file_detected_language_reason = detected_reason
         is_japanese = detected_language == "日本語"
         if not self.state.file_output_language_overridden:
             self.state.file_output_language = "en" if is_japanese else "jp"
@@ -7982,6 +8512,9 @@ class YakuLingoApp:
         self.state.file_state = FileState.TRANSLATING
         self.state.translation_progress = 0.0
         self.state.translation_status = 'Starting...'
+        self.state.translation_phase = None
+        self.state.translation_phase_detail = None
+        self.state.translation_eta_seconds = None
         self.state.output_file = None  # Clear any previous output
         self._refresh_tabs()  # Disable tabs during translation
 
@@ -8001,6 +8534,9 @@ class YakuLingoApp:
                         with ui.row().classes('w-full justify-between'):
                             status_label = ui.label('開始中...').classes('text-xs text-muted')
                             progress_label = ui.label('0%').classes('text-xs font-medium text-primary')
+                        with ui.row().classes('w-full justify-between'):
+                            phase_label = ui.label('準備中...').classes('text-2xs text-muted')
+                            eta_label = ui.label('残り約 --').classes('text-2xs text-muted')
 
                     ui.button('キャンセル', on_click=lambda: self._cancel_and_close(progress_dialog)).props('flat').classes('self-end text-muted')
 
@@ -8014,7 +8550,21 @@ class YakuLingoApp:
 
         # Thread-safe progress state (updated from background thread, read by UI timer)
         progress_lock = threading.Lock()
-        progress_state = {'percentage': 0.0, 'status': '開始中...'}
+        progress_state = {
+            'percentage': 0.0,
+            'status': '開始中...',
+            'phase': None,
+            'phase_detail': None,
+            'eta_seconds': None,
+        }
+
+        phase_label_map = {
+            TranslationPhase.EXTRACTING: "抽出",
+            TranslationPhase.OCR: "OCR",
+            TranslationPhase.TRANSLATING: "翻訳",
+            TranslationPhase.APPLYING: "適用",
+            TranslationPhase.COMPLETE: "完了",
+        }
 
         def on_progress(p: TranslationProgress):
             # Only update state - UI will be updated by timer on main thread
@@ -8022,8 +8572,21 @@ class YakuLingoApp:
             with progress_lock:
                 progress_state['percentage'] = p.percentage
                 progress_state['status'] = p.status
+                progress_state['phase'] = p.phase
+                progress_state['phase_detail'] = p.phase_detail
+                if p.estimated_remaining is not None:
+                    progress_state['eta_seconds'] = p.estimated_remaining
+                elif p.percentage > 0:
+                    elapsed = time.monotonic() - start_time
+                    remaining = max(0.0, elapsed * (1 - p.percentage) / p.percentage)
+                    progress_state['eta_seconds'] = remaining
+                else:
+                    progress_state['eta_seconds'] = None
             self.state.translation_progress = p.percentage
             self.state.translation_status = p.status
+            self.state.translation_phase = p.phase
+            self.state.translation_phase_detail = p.phase_detail
+            self.state.translation_eta_seconds = progress_state['eta_seconds']
 
         def update_progress_ui():
             # Read progress state and update UI elements (runs on main thread via timer)
@@ -8032,9 +8595,17 @@ class YakuLingoApp:
                 with progress_lock:
                     pct = progress_state['percentage']
                     status = progress_state['status']
+                    phase = progress_state['phase']
+                    phase_detail = progress_state['phase_detail']
+                    eta_seconds = progress_state['eta_seconds']
                 progress_bar_inner.style(f'width: {int(pct * 100)}%')
                 progress_label.set_text(f'{int(pct * 100)}%')
                 status_label.set_text(status or '翻訳中...')
+                phase_text = phase_label_map.get(phase, "準備中")
+                if phase_detail:
+                    phase_text = f'{phase_text} ・ {phase_detail}'
+                phase_label.set_text(phase_text)
+                eta_label.set_text(f'残り約 {self._format_eta_seconds(eta_seconds)}')
             except Exception as e:
                 logger.debug("Progress UI update error (non-fatal): %s", e)
 
@@ -8138,6 +8709,17 @@ class YakuLingoApp:
             self._refresh_content()
             self._refresh_tabs()  # Re-enable tabs (translation finished)
 
+    def _dismiss_file_issues(self) -> None:
+        """Dismiss file translation issue indicators without re-running."""
+        result = self.state.translation_result
+        if not result:
+            return
+        result.issue_block_ids = []
+        result.issue_block_locations = []
+        result.issue_section_counts = {}
+        result.mismatched_batch_count = 0
+        self._refresh_content()
+
     def _reset_file_state_to_text(self):
         """Clear file state and return to text translation view."""
         self.state.reset_file_state()
@@ -8180,6 +8762,75 @@ class YakuLingoApp:
     # Section 8: Settings & History
     # =========================================================================
 
+    def _load_history_pins(self) -> None:
+        try:
+            if not self._history_pins_path.exists():
+                return
+            data = json.loads(self._history_pins_path.read_text(encoding="utf-8"))
+            if isinstance(data, list):
+                self._history_pins = {str(item) for item in data if item}
+        except Exception as e:
+            logger.debug("Failed to load history pins: %s", e)
+
+    def _save_history_pins(self) -> None:
+        try:
+            self._history_pins_path.parent.mkdir(parents=True, exist_ok=True)
+            payload = sorted(self._history_pins)
+            self._history_pins_path.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except Exception as e:
+            logger.debug("Failed to save history pins: %s", e)
+
+    def _toggle_history_pin(self, entry: HistoryEntry) -> None:
+        key = entry.timestamp
+        if key in self._history_pins:
+            self._history_pins.discard(key)
+        else:
+            self._history_pins.add(key)
+        self._save_history_pins()
+        self._refresh_history()
+
+    def _is_history_pinned(self, entry: HistoryEntry) -> bool:
+        return entry.timestamp in self._history_pins
+
+    def _set_history_query(self, query: str) -> None:
+        self.state.history_query = query.strip()
+        for ref in (self._history_search_input, self._history_dialog_search_input):
+            if ref is None:
+                continue
+            try:
+                ref.value = self.state.history_query
+            except Exception:
+                pass
+        self._refresh_history()
+
+    def _get_history_entries(self, limit: int) -> list[HistoryEntry]:
+        query = self.state.history_query.strip() if self.state.history_query else ""
+        self.state._ensure_history_db()
+        if query:
+            if self.state._history_db:
+                entries = self.state._history_db.search(query, limit=limit)
+            else:
+                entries = []
+        else:
+            entries = list(self.state.history)
+
+        if not entries:
+            return []
+
+        pinned = []
+        unpinned = []
+        for entry in entries:
+            if self._is_history_pinned(entry):
+                pinned.append(entry)
+            else:
+                unpinned.append(entry)
+
+        combined = pinned + unpinned
+        return combined[:limit]
+
     def _load_from_history(self, entry: HistoryEntry):
         """Load translation from history"""
         from yakulingo.ui.state import TextViewState
@@ -8192,6 +8843,39 @@ class YakuLingoApp:
         self._refresh_tabs()
         self._refresh_content()
 
+    def _rerun_history_entry(self, entry: HistoryEntry) -> None:
+        """Re-run translation using history metadata when available."""
+        if self.state.is_translating():
+            return
+
+        from yakulingo.ui.state import TextViewState
+
+        metadata = entry.result.metadata or {}
+        manual_paths = []
+        for path_text in metadata.get("manual_reference_paths", []):
+            try:
+                path = Path(path_text)
+                if path.exists():
+                    manual_paths.append(path)
+            except Exception:
+                continue
+
+        if "use_bundled_glossary" in metadata:
+            self.settings.use_bundled_glossary = bool(metadata.get("use_bundled_glossary"))
+            self.settings.save(self.settings_path)
+
+        self.state.reference_files = manual_paths
+        self.state.text_output_language_override = metadata.get("output_language_override")
+        self.state.source_text = entry.source_text
+        self.state.text_view_state = TextViewState.INPUT
+        self.state.current_tab = Tab.TEXT
+
+        self._refresh_tabs()
+        self._refresh_content()
+        self._update_text_input_metrics()
+
+        asyncio.create_task(self._translate_text())
+
     def _clear_history(self):
         """Clear all history"""
         self.state.clear_history()
@@ -8199,6 +8883,24 @@ class YakuLingoApp:
 
     def _add_to_history(self, result: TextTranslationResult, source_text: str):
         """Add translation result to history"""
+        styles = []
+        seen_styles = set()
+        for option in result.options:
+            style = option.style
+            if style and style not in seen_styles:
+                seen_styles.add(style)
+                styles.append(style)
+
+        metadata = dict(result.metadata or {})
+        metadata.update({
+            "manual_reference_paths": [str(p) for p in self.state.reference_files],
+            "manual_reference_names": [p.name for p in self.state.reference_files],
+            "use_bundled_glossary": self.settings.use_bundled_glossary,
+            "output_language_override": self.state.text_output_language_override,
+            "detected_language_reason": self.state.text_detected_language_reason,
+            "styles": styles,
+        })
+        result.metadata = metadata
         entry = HistoryEntry(
             source_text=source_text,
             result=result,

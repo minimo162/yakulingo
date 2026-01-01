@@ -328,6 +328,7 @@ class HistoryDB:
             'source_char_count': result.source_char_count,
             'output_language': result.output_language,
             'detected_language': result.detected_language,
+            'metadata': result.metadata,
             'options': [
                 {
                     'text': opt.text,
@@ -369,6 +370,7 @@ class HistoryDB:
             output_language=output_language,
             options=options,
             detected_language=detected_language,
+            metadata=data.get('metadata'),
             error_message=data.get('error_message'),
         )
 

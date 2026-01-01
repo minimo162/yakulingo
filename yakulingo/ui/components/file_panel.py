@@ -7,13 +7,20 @@ Simple, focused, warm.
 from nicegui import ui, events
 from typing import Any, Awaitable, Callable, List, Optional, Union
 from pathlib import Path
+from datetime import datetime
 import asyncio
 import json
 from types import SimpleNamespace
 
 from yakulingo.ui.state import AppState, FileState
-from yakulingo.ui.utils import temp_file_manager, trigger_file_download
-from yakulingo.models.types import FileInfo, FileType, SectionDetail, TranslationResult
+from yakulingo.ui.utils import (
+    format_bytes,
+    show_in_folder,
+    summarize_reference_files,
+    temp_file_manager,
+    trigger_file_download,
+)
+from yakulingo.models.types import FileInfo, FileType, SectionDetail, TranslationPhase, TranslationResult
 
 # Paperclip/Attachment SVG icon (Material Design style)
 ATTACH_SVG: str = '''
@@ -151,9 +158,13 @@ def create_file_panel(
     on_attach_reference_file: Optional[Callable[[], None]] = None,
     on_remove_reference_file: Optional[Callable[[int], None]] = None,
     reference_files: Optional[List[Path]] = None,
+    effective_reference_files: Optional[List[Path]] = None,
     translation_style: str = "concise",
     translation_result: Optional[TranslationResult] = None,
     use_bundled_glossary: bool = True,
+    font_jp_to_en: str = "Arial",
+    font_en_to_jp: str = "MS Pゴシック",
+    on_dismiss_issues: Optional[Callable[[], None]] = None,
     on_glossary_toggle: Optional[Callable[[bool], None]] = None,
     on_edit_glossary: Optional[Callable[[], None]] = None,
     on_edit_translation_rules: Optional[Callable[[], None]] = None,
@@ -199,6 +210,13 @@ def create_file_panel(
                                 on_section_select_all,
                                 on_section_clear,
                             )
+                    _precheck_card(
+                        state,
+                        translation_style,
+                        effective_reference_files,
+                        font_jp_to_en,
+                        font_en_to_jp,
+                    )
                     with ui.row().classes('justify-center mt-4'):
                         # Disable button while file info is loading
                         btn_disabled = state.file_info is None
@@ -210,10 +228,23 @@ def create_file_panel(
                         btn.tooltip('翻訳する')
 
                 elif state.file_state == FileState.TRANSLATING:
-                    _progress_card(state.file_info, state.translation_progress, state.translation_status)
+                    _progress_card(
+                        state.file_info,
+                        state.translation_progress,
+                        state.translation_status,
+                        state.translation_phase,
+                        state.translation_phase_detail,
+                        state.translation_eta_seconds,
+                    )
 
                 elif state.file_state == FileState.COMPLETE:
-                    _complete_card(translation_result)
+                    _complete_card(
+                        translation_result,
+                        state.file_info,
+                        on_translate,
+                        on_reset,
+                        on_dismiss_issues,
+                    )
 
                 elif state.file_state == FileState.ERROR:
                     _error_card(state.error_message)
@@ -252,6 +283,80 @@ def _language_selector(state: AppState, on_change: Optional[Callable[[str], None
                 ui.icon('arrow_forward').classes('text-sm mr-1')
                 ui.label('JP').classes('flag-icon font-bold')
                 ui.label('和訳')
+
+
+def _format_detection_reason(reason: Optional[str]) -> str:
+    mapping = {
+        "kana": "ひらがな/カタカナ",
+        "hangul": "ハングル検出",
+        "latin": "アルファベット優勢",
+        "cjk_unencodable": "漢字差分",
+        "cjk_fallback": "CJKのみ",
+        "empty": "未入力",
+        "default": "自動判定",
+        "copilot": "Copilot判定",
+    }
+    return mapping.get(reason or "", "自動判定")
+
+
+def _format_eta(seconds: Optional[float]) -> str:
+    if seconds is None:
+        return "--"
+    total = max(0, int(seconds))
+    if total < 60:
+        return f"{total}秒"
+    minutes = total // 60
+    if minutes < 60:
+        return f"{minutes}分"
+    hours = minutes // 60
+    minutes = minutes % 60
+    return f"{hours}時間{minutes}分"
+
+
+def _get_section_label(file_info: Optional[FileInfo]) -> str:
+    if not file_info:
+        return "セクション"
+    label_map = {
+        FileType.EXCEL: 'シート',
+        FileType.POWERPOINT: 'スライド',
+        FileType.PDF: 'ページ',
+        FileType.WORD: 'ページ',
+        FileType.EMAIL: 'セクション',
+        FileType.TEXT: 'セクション',
+    }
+    return label_map.get(file_info.file_type, 'セクション')
+
+
+def _estimate_translation_seconds(file_info: Optional[FileInfo], selected_count: int) -> Optional[float]:
+    if not file_info:
+        return None
+    unit_count = selected_count
+    if unit_count <= 0:
+        unit_count = (
+            file_info.page_count
+            or file_info.slide_count
+            or file_info.sheet_count
+            or 0
+        )
+
+    if file_info.file_type == FileType.PDF:
+        per_unit = 5.0
+    elif file_info.file_type == FileType.EXCEL:
+        per_unit = 4.0
+    elif file_info.file_type == FileType.POWERPOINT:
+        per_unit = 3.0
+    elif file_info.file_type == FileType.WORD:
+        per_unit = 2.5
+    else:
+        per_unit = 1.8
+
+    if unit_count > 0:
+        return per_unit * unit_count + 5.0
+
+    if file_info.size_bytes:
+        return max(5.0, file_info.size_bytes / 15000)
+
+    return None
 
 
 # Translation style options with labels and tooltips
@@ -347,6 +452,57 @@ def _glossary_selector(
                             icon='close',
                             on_click=lambda idx=i: on_remove(idx)
                         ).props('flat round aria-label="Remove reference file"').classes('remove-btn')
+
+
+def _precheck_card(
+    state: AppState,
+    translation_style: str,
+    effective_reference_files: Optional[List[Path]],
+    font_jp_to_en: str,
+    font_en_to_jp: str,
+) -> None:
+    if not state.file_info:
+        return
+
+    detected = state.file_detected_language or "未判定"
+    detected_reason = _format_detection_reason(state.file_detected_language_reason)
+    output_label = '英訳' if state.file_output_language == 'en' else '和訳'
+    section_label = _get_section_label(state.file_info)
+    selected_count = state.file_info.selected_section_count
+    total_sections = len(state.file_info.section_details) if state.file_info.section_details else selected_count
+    font_name = font_jp_to_en if state.file_output_language == 'en' else font_en_to_jp
+    eta_seconds = _estimate_translation_seconds(state.file_info, selected_count)
+    eta_label = _format_eta(eta_seconds)
+    style_label = STYLE_OPTIONS.get(translation_style, (translation_style, ""))[0]
+
+    summary = summarize_reference_files(effective_reference_files)
+
+    with ui.element('div').classes('file-precheck-card'):
+        with ui.column().classes('w-full gap-2'):
+            with ui.row().classes('items-center justify-between gap-2'):
+                ui.label('翻訳前チェック').classes('text-sm font-semibold')
+                if summary["count"] > 0:
+                    ui.label(f'参照 {summary["count"]} 件').classes('chip')
+
+            with ui.column().classes('precheck-grid gap-1'):
+                ui.label(f'検出: {detected}').classes('precheck-item')
+                ui.label(f'判定: {detected_reason}').classes('precheck-item text-muted')
+                ui.label(f'出力: {output_label}').classes('precheck-item')
+                if state.file_output_language == 'en':
+                    ui.label(f'スタイル: {style_label}').classes('precheck-item')
+                ui.label(f'フォント: {font_name}').classes('precheck-item')
+                ui.label(f'{section_label}: {selected_count}/{max(total_sections, 1)}').classes('precheck-item')
+                ui.label(f'推定: {eta_label}').classes('precheck-item')
+
+            if summary["count"] > 0:
+                with ui.row().classes('ref-summary-row items-center flex-wrap gap-2'):
+                    ui.label(format_bytes(summary["total_bytes"])).classes('ref-chip')
+                    if summary["latest_mtime"]:
+                        updated = datetime.fromtimestamp(summary["latest_mtime"]).strftime('%m/%d %H:%M')
+                        ui.label(f'更新 {updated}').classes('ref-chip')
+                    status_label = 'OK' if summary["all_ok"] else 'NG'
+                    status_class = 'ref-chip status-ok' if summary["all_ok"] else 'ref-chip status-warn'
+                    ui.label(status_label).classes(status_class)
 
 
 
@@ -531,13 +687,21 @@ def _file_loading_card(file_path: Optional[Path], on_remove: Callable[[], None])
             ui.button(icon='close', on_click=on_remove).props('flat dense round aria-label="Remove file"').classes('result-action-btn')
 
 
-def _progress_card(file_info: FileInfo, progress: float, status: str):
+def _progress_card(
+    file_info: Optional[FileInfo],
+    progress: float,
+    status: str,
+    phase: Optional[TranslationPhase],
+    phase_detail: Optional[str],
+    eta_seconds: Optional[float],
+):
     """Progress card with improved animation"""
+    file_name = file_info.path.name if file_info else '翻訳中...'
     with ui.card().classes('file-card w-full max-w-md'):
         with ui.row().classes('items-center gap-3 mb-3'):
             # Animated spinner
             ui.spinner('dots', size='md').classes('text-primary')
-            ui.label(file_info.path.name).classes('font-medium')
+            ui.label(file_name).classes('font-medium')
 
         with ui.element('div').classes('progress-track w-full'):
             ui.element('div').classes('progress-bar').style(f'width: {int(progress * 100)}%')
@@ -546,8 +710,46 @@ def _progress_card(file_info: FileInfo, progress: float, status: str):
             ui.label(status or '処理中...').classes('text-xs text-muted')
             ui.label(f'{int(progress * 100)}%').classes('text-xs font-medium')
 
+        _render_phase_stepper(phase, file_info)
 
-def _complete_card(result: Optional[TranslationResult]):
+        with ui.row().classes('progress-meta-row items-center justify-between'):
+            ui.label(phase_detail or '').classes('text-2xs text-muted')
+            ui.label(f'残り約 { _format_eta(eta_seconds)}').classes('text-2xs text-muted')
+
+
+def _render_phase_stepper(current_phase: Optional[TranslationPhase], file_info: Optional[FileInfo]) -> None:
+    show_ocr = bool(file_info and file_info.file_type == FileType.PDF)
+    steps = [
+        (TranslationPhase.EXTRACTING, '抽出'),
+        (TranslationPhase.OCR, 'OCR'),
+        (TranslationPhase.TRANSLATING, '翻訳'),
+        (TranslationPhase.APPLYING, '適用'),
+        (TranslationPhase.COMPLETE, '完了'),
+    ]
+    if not show_ocr:
+        steps = [step for step in steps if step[0] != TranslationPhase.OCR]
+
+    phase_index = {phase: idx for idx, (phase, _) in enumerate(steps)}
+    current_idx = phase_index.get(current_phase, -1)
+
+    with ui.element('div').classes('phase-stepper'):
+        for idx, (phase, label) in enumerate(steps):
+            classes = 'phase-step'
+            if current_idx > idx:
+                classes += ' completed'
+            elif current_idx == idx:
+                classes += ' active'
+            with ui.element('div').classes(classes):
+                ui.label(label).classes('phase-label')
+
+
+def _complete_card(
+    result: Optional[TranslationResult],
+    file_info: Optional[FileInfo],
+    on_retry: Optional[Callable[[], None]] = None,
+    on_reset: Optional[Callable[[], None]] = None,
+    on_dismiss_issues: Optional[Callable[[], None]] = None,
+):
     """Success card with output file list and download buttons"""
     with ui.card().classes('file-card success w-full max-w-md mx-auto'):
         with ui.column().classes('items-center gap-4 py-2 w-full'):
@@ -557,11 +759,119 @@ def _complete_card(result: Optional[TranslationResult]):
 
             ui.label('翻訳完了').classes('success-text')
 
+            if result and (result.issue_block_ids or result.mismatched_batch_count):
+                _issue_card(result, file_info, on_retry, on_dismiss_issues)
+
             # Output files list with download buttons
             if result and result.output_files:
                 with ui.column().classes('w-full gap-2 mt-2'):
                     for file_path, description in result.output_files:
                         _output_file_row(file_path, description)
+
+            if result and result.output_files:
+                _file_action_footer(result, on_retry, on_reset)
+
+
+def _get_section_name(file_info: Optional[FileInfo], section_idx: int) -> str:
+    section_label = _get_section_label(file_info)
+    if file_info and file_info.section_details:
+        for section in file_info.section_details:
+            if section.index == section_idx:
+                return section.name or f'{section_label} {section_idx + 1}'
+    return f'{section_label} {section_idx + 1}'
+
+
+def _issue_card(
+    result: TranslationResult,
+    file_info: Optional[FileInfo],
+    on_retry: Optional[Callable[[], None]] = None,
+    on_dismiss: Optional[Callable[[], None]] = None,
+) -> None:
+    issue_count = len(result.issue_block_ids)
+    mismatch_count = result.mismatched_batch_count
+    locations = result.issue_block_locations or []
+    section_counts = result.issue_section_counts or {}
+    if issue_count == 0 and mismatch_count == 0:
+        return
+
+    section_label = _get_section_label(file_info)
+    with ui.element('div').classes('file-issue-card'):
+        with ui.column().classes('w-full gap-2'):
+            with ui.row().classes('items-center gap-2'):
+                ui.icon('warning').classes('text-warning')
+                ui.label('翻訳に抜けがある可能性があります').classes('text-sm font-semibold')
+
+            with ui.column().classes('gap-1'):
+                if issue_count:
+                    ui.label(f'未翻訳: {issue_count} 件').classes('text-xs text-muted')
+                if mismatch_count:
+                    ui.label(f'バッチ不整合: {mismatch_count} 件').classes('text-xs text-muted')
+
+            if section_counts:
+                sorted_sections = sorted(section_counts.items(), key=lambda item: item[1], reverse=True)
+                with ui.column().classes('gap-0.5'):
+                    ui.label(f'{section_label}別').classes('text-2xs text-muted')
+                    for section_idx, count in sorted_sections[:3]:
+                        name = _get_section_name(file_info, section_idx)
+                        ui.label(f'{name}: {count} 件').classes('issue-location')
+                    if len(sorted_sections) > 3:
+                        ui.label(f'他 {len(sorted_sections) - 3} 件').classes('issue-location text-muted')
+
+            if locations:
+                with ui.column().classes('gap-0.5'):
+                    ui.label('位置 (抜粋)').classes('text-2xs text-muted')
+                    for location in locations[:3]:
+                        ui.label(location).classes('issue-location')
+                    if len(locations) > 3:
+                        ui.label(f'他 {len(locations) - 3} 件').classes('issue-location text-muted')
+
+            if on_retry or on_dismiss:
+                with ui.row().classes('issue-actions items-center gap-2'):
+                    if on_retry:
+                        ui.button(
+                            '再翻訳',
+                            icon='refresh',
+                            on_click=on_retry,
+                        ).classes('btn-outline').props('no-caps')
+                    if on_dismiss:
+                        ui.button(
+                            '表示しない',
+                            icon='visibility_off',
+                            on_click=on_dismiss,
+                        ).classes('btn-text').props('no-caps')
+
+
+def _file_action_footer(
+    result: TranslationResult,
+    on_retry: Optional[Callable[[], None]] = None,
+    on_reset: Optional[Callable[[], None]] = None,
+) -> None:
+    target_path = result.output_path
+    if not target_path and result.output_files:
+        target_path = result.output_files[0][0]
+
+    with ui.element('div').classes('file-action-footer'):
+        with ui.row().classes('items-center justify-between gap-2 flex-wrap file-action-footer-inner'):
+            with ui.row().classes('items-center gap-2 flex-wrap'):
+                if target_path and target_path.exists():
+                    ui.button(
+                        'フォルダを開く',
+                        icon='folder_open',
+                        on_click=lambda p=target_path: show_in_folder(p),
+                    ).classes('btn-text').props('no-caps')
+                if on_reset:
+                    ui.button(
+                        '別のファイル',
+                        icon='upload_file',
+                        on_click=on_reset,
+                    ).classes('btn-outline').props('no-caps')
+
+            if on_retry:
+                ui.button(
+                    '再翻訳',
+                    icon='refresh',
+                    on_click=on_retry,
+                ).classes('btn-tonal').props('no-caps')
 
 
 def _output_file_row(file_path: Path, description: str):

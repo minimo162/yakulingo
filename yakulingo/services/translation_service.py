@@ -403,6 +403,68 @@ class LanguageDetector:
         return "日本語"
 
 
+    def detect_local_with_reason(self, text: str) -> tuple[str, str]:
+        """Detect language locally and return a reason code for UI."""
+        if not text:
+            return "日本語", "empty"
+
+        sample = text[:self.MAX_ANALYSIS_LENGTH]
+
+        has_hiragana = False
+        has_katakana = False
+        has_hangul = False
+        has_cjk = False
+        cjk_count = 0
+        unencodable_cjk_count = 0
+        latin_count = 0
+        total_meaningful = 0
+
+        for char in sample:
+            if char.isspace() or self.is_punctuation(char):
+                continue
+
+            code = ord(char)
+            total_meaningful += 1
+
+            if self.is_hiragana(code):
+                has_hiragana = True
+            elif self.is_katakana(code):
+                has_katakana = True
+            elif self.is_hangul(code):
+                has_hangul = True
+            elif self.is_cjk_ideograph(code):
+                has_cjk = True
+                cjk_count += 1
+                if not self._is_encodable_in_shift_jisx0213(char):
+                    unencodable_cjk_count += 1
+            elif self.is_latin(code):
+                latin_count += 1
+
+            if has_hiragana or has_katakana:
+                return "日本語", "kana"
+            if has_hangul:
+                return "韓国語", "hangul"
+
+        if total_meaningful == 0:
+            return "日本語", "empty"
+
+        if (
+            has_cjk
+            and not (has_hiragana or has_katakana)
+            and cjk_count > 0
+            and unencodable_cjk_count >= self._MIN_UNENCODABLE_CJK_FOR_CHINESE
+        ):
+            return "中国語", "cjk_unencodable"
+
+        latin_ratio = latin_count / total_meaningful
+        if latin_ratio > 0.5:
+            return "英語", "latin"
+
+        if has_cjk:
+            return "日本語", "cjk_fallback"
+
+        return "日本語", "default"
+
 # Singleton instance for convenient access
 language_detector = LanguageDetector()
 
@@ -1416,6 +1478,15 @@ class TranslationService:
 
         return detected
 
+    def detect_language_with_reason(self, text: str) -> tuple[str, str]:
+        """Detect language and return (language, reason_code) for UI display."""
+        local_language, reason = language_detector.detect_local_with_reason(text)
+        if local_language:
+            logger.debug("Language detected locally: %s (%s)", local_language, reason)
+            return local_language, reason
+        detected = self.detect_language(text)
+        return detected, "copilot"
+
     def translate_text_with_options(
         self,
         text: str,
@@ -2265,30 +2336,49 @@ class TranslationService:
 
         filtered = []
         for block in blocks:
-            # Get section index from block metadata
-            # Different file types use different keys:
-            # - Generic: 'section_idx' (e.g., email paragraphs)
-            # - Excel: 'sheet_idx'
-            # - PowerPoint: 'slide_idx'
-            # - PDF: 'page_idx'
-            # - Word: 'page_idx' (when page mapping is available)
-            section_idx = None
-            metadata = block.metadata
-
-            if 'section_idx' in metadata:
-                section_idx = metadata['section_idx']
-            elif 'sheet_idx' in metadata:
-                section_idx = metadata['sheet_idx']
-            elif 'slide_idx' in metadata:
-                section_idx = metadata['slide_idx']
-            elif 'page_idx' in metadata:
-                section_idx = metadata['page_idx']
-
-            # Include block if section not tracked or section is selected
+            section_idx = self._get_block_section_index(block)
             if section_idx is None or section_idx in selected_sections:
                 filtered.append(block)
 
         return filtered
+
+    @staticmethod
+    def _get_block_section_index(block: TextBlock) -> Optional[int]:
+        metadata = block.metadata or {}
+        for key in ("section_idx", "sheet_idx", "slide_idx", "page_idx"):
+            value = metadata.get(key)
+            if isinstance(value, int):
+                return value
+        return None
+
+    def _summarize_batch_issues(
+        self,
+        blocks: list[TextBlock],
+        issue_ids: list[str],
+        limit: int = 24,
+    ) -> tuple[list[str], dict[int, int]]:
+        if not issue_ids:
+            return [], {}
+
+        issue_id_set = set(issue_ids)
+        issue_locations: list[str] = []
+        issue_section_counts: dict[int, int] = {}
+        seen_locations = set()
+
+        for block in blocks:
+            if block.id not in issue_id_set:
+                continue
+            if block.location and block.location not in seen_locations:
+                issue_locations.append(block.location)
+                seen_locations.add(block.location)
+            section_idx = self._get_block_section_index(block)
+            if section_idx is not None:
+                issue_section_counts[section_idx] = issue_section_counts.get(section_idx, 0) + 1
+
+        if limit and len(issue_locations) > limit:
+            issue_locations = issue_locations[:limit]
+
+        return issue_locations, issue_section_counts
 
     def translate_file(
         self,
@@ -2449,7 +2539,7 @@ class TranslationService:
                 # Scale batch progress to 10-90 range
                 on_progress(scale_progress(progress, 10, 90, TranslationPhase.TRANSLATING))
 
-        translations = self.batch_translator.translate_blocks(
+        batch_result = self.batch_translator.translate_blocks_with_result(
             blocks,
             reference_files,
             batch_progress,
@@ -2458,11 +2548,16 @@ class TranslationService:
         )
 
         # Check for cancellation (thread-safe)
-        if self._cancel_event.is_set():
+        if batch_result.cancelled or self._cancel_event.is_set():
             return TranslationResult(
                 status=TranslationStatus.CANCELLED,
                 duration_seconds=time.monotonic() - start_time,
             )
+
+        translations = batch_result.translations
+        issue_locations, issue_section_counts = self._summarize_batch_issues(
+            blocks, batch_result.untranslated_block_ids
+        )
 
         # Report progress
         if on_progress:
@@ -2486,6 +2581,14 @@ class TranslationService:
         )
 
         warnings = self._collect_processor_warnings(processor)
+        if batch_result.untranslated_block_ids:
+            warnings.append(
+                f"未翻訳ブロック: {len(batch_result.untranslated_block_ids)}"
+            )
+        if batch_result.mismatched_batch_count:
+            warnings.append(
+                f"翻訳件数の不一致: {batch_result.mismatched_batch_count}"
+            )
 
         # Create bilingual output if enabled
         bilingual_path = None
@@ -2539,6 +2642,10 @@ class TranslationService:
             blocks_total=total_blocks,
             duration_seconds=time.monotonic() - start_time,
             warnings=warnings if warnings else [],
+            issue_block_ids=batch_result.untranslated_block_ids,
+            issue_block_locations=issue_locations,
+            issue_section_counts=issue_section_counts,
+            mismatched_batch_count=batch_result.mismatched_batch_count,
         )
 
     def _translate_pdf_streaming(
@@ -2659,7 +2766,7 @@ class TranslationService:
                     phase_detail=f"Batch {progress.current}/{progress.total}"
                 ))
 
-        translations = self.batch_translator.translate_blocks(
+        batch_result = self.batch_translator.translate_blocks_with_result(
             all_blocks,
             reference_files,
             batch_progress,
@@ -2667,11 +2774,16 @@ class TranslationService:
             translation_style=translation_style,
         )
 
-        if self._cancel_event.is_set():
+        if batch_result.cancelled or self._cancel_event.is_set():
             return TranslationResult(
                 status=TranslationStatus.CANCELLED,
                 duration_seconds=time.monotonic() - start_time,
             )
+
+        translations = batch_result.translations
+        issue_locations, issue_section_counts = self._summarize_batch_issues(
+            all_blocks, batch_result.untranslated_block_ids
+        )
 
         # Phase 3: Apply translations (90-100%)
         if on_progress:
@@ -2740,6 +2852,14 @@ class TranslationService:
 
         # Collect warnings including OCR failures
         warnings = self._collect_processor_warnings(processor)
+        if batch_result.untranslated_block_ids:
+            warnings.append(
+                f"未翻訳ブロック: {len(batch_result.untranslated_block_ids)}"
+            )
+        if batch_result.mismatched_batch_count:
+            warnings.append(
+                f"翻訳件数の不一致: {batch_result.mismatched_batch_count}"
+            )
 
         return TranslationResult(
             status=TranslationStatus.COMPLETED,
@@ -2750,6 +2870,10 @@ class TranslationService:
             blocks_total=total_blocks,
             duration_seconds=time.monotonic() - start_time,
             warnings=warnings if warnings else [],
+            issue_block_ids=batch_result.untranslated_block_ids,
+            issue_block_locations=issue_locations,
+            issue_section_counts=issue_section_counts,
+            mismatched_batch_count=batch_result.mismatched_batch_count,
         )
 
     def _make_extraction_progress_callback(

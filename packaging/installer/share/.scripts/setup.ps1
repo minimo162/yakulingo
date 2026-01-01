@@ -313,18 +313,24 @@ if ($GuiMode) {
 
     function Show-Success {
         param([string]$Message)
-        Close-Progress
-
-        # 前面表示用の親フォームを作成
-        $ownerForm = New-Object System.Windows.Forms.Form
-        $ownerForm.TopMost = $true
-        $ownerForm.StartPosition = "CenterScreen"
-        $ownerForm.Width = 0
-        $ownerForm.Height = 0
-        $ownerForm.FormBorderStyle = "None"
-        $ownerForm.ShowInTaskbar = $false
-        $ownerForm.Show()
-        $ownerForm.Activate()
+        # 進捗表示を残したまま、完了メッセージの準備を行う
+        $ownerForm = $null
+        $createdOwner = $false
+        if ($script:progressForm -ne $null) {
+            $ownerForm = $script:progressForm
+        } else {
+            # 前面表示用の親フォームを作成
+            $ownerForm = New-Object System.Windows.Forms.Form
+            $ownerForm.TopMost = $true
+            $ownerForm.StartPosition = "CenterScreen"
+            $ownerForm.Width = 0
+            $ownerForm.Height = 0
+            $ownerForm.FormBorderStyle = "None"
+            $ownerForm.ShowInTaskbar = $false
+            $ownerForm.Show()
+            $ownerForm.Activate()
+            $createdOwner = $true
+        }
 
         [System.Windows.Forms.MessageBox]::Show(
             $ownerForm,
@@ -334,8 +340,11 @@ if ($GuiMode) {
             [System.Windows.Forms.MessageBoxIcon]::Information
         ) | Out-Null
 
-        $ownerForm.Close()
-        $ownerForm.Dispose()
+        if ($createdOwner) {
+            $ownerForm.Close()
+            $ownerForm.Dispose()
+        }
+        Close-Progress
     }
 }
 
@@ -2076,7 +2085,7 @@ try {
         }
 
         Write-Status -Message "Setup completed!" -Progress -Step "Step 4/4: Finalizing" -Percent 100
-        $successMsg = "セットアップが完了しました。`n`nログオン時にYakuLingoが自動で常駐します（UIを閉じても終了しません）。`n`n使い方:`n- 翻訳したい文字を選択して 同じウィンドウで Ctrl+C を短時間に2回`n  → YakuLingo のUIに結果が表示されます（必要な訳をコピー）`n- エクスプローラーでファイルを選択して 同じウィンドウで Ctrl+C を短時間に2回`n  → UIのファイルタブに結果が表示されます（必要な出力をダウンロード）`n- エクスプローラーでファイルを右クリック > 「YakuLingoで翻訳」`n  → 翻訳を開始します（Windows 11 は「その他のオプション」に表示）`n- 常駐起動: スタートメニューの YakuLingo`n- UIを閉じる: 常駐は継続します（Copilot Edge は自動で画面外に移動します）`n- 終了する: スタートメニュー > YakuLingo 終了`n`nYakuLingo を常駐起動しました（準備中はUIが開きます）。"
+        $successMsg = "セットアップが完了しました。`n`nYakuLingo はログオン時に自動で常駐します（UIを閉じても終了しません）。`n`n使い方:`n- テキスト/ファイルを選択して Ctrl+C をすばやく2回 → UIに表示`n- 右クリック > 「YakuLingoで翻訳」でも開始`n`n終了: スタートメニュー > YakuLingo 終了`n`nYakuLingo を常駐起動しました（準備中はUIが開きます）。"
         if ($script:GlossaryDistPath -or $script:TranslationRulesDistPath) {
             $successMsg += "`n`n既存ファイルは保持しました。新しい既定ファイルは以下に保存されています:"
             if ($script:GlossaryDistPath) {

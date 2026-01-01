@@ -116,12 +116,6 @@
         font-size: 1.02rem;
       }
 
-      .hero-note {
-        margin-top: 10px;
-        color: var(--muted);
-        font-size: 0.95rem;
-      }
-
       .hero-cta {
         display: flex;
         flex-wrap: wrap;
@@ -383,20 +377,6 @@
         margin-bottom: 4px;
       }
 
-      .flow {
-        display: grid;
-        gap: 12px;
-      }
-
-      .flow-card {
-        display: grid;
-        gap: 8px;
-        padding: 14px 16px;
-        border-radius: var(--radius-md);
-        background: #fbfcff;
-        border: 1px solid rgba(28, 92, 255, 0.12);
-      }
-
       .note {
         margin-top: 14px;
         padding: 14px 16px;
@@ -417,21 +397,6 @@
         padding: 16px;
         border: 1px solid rgba(28, 92, 255, 0.12);
         background: #fbfcff;
-      }
-
-      .callout {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
-        padding: 16px;
-        border-radius: var(--radius-md);
-        background: linear-gradient(120deg, rgba(34, 201, 133, 0.12), rgba(255, 122, 69, 0.12));
-        border: 1px solid rgba(34, 201, 133, 0.2);
-        font-size: 0.95rem;
-      }
-
-      .callout strong {
-        color: #0f3c2f;
       }
 
       footer {
@@ -510,39 +475,30 @@
         <div class="hero-content">
           <div class="hero-tag">セットアップ完了 / YakuLingo 使い方ガイド</div>
           <h1>翻訳を、仕事の流れのままに。</h1>
-          <p>YakuLingo は常駐型の翻訳アプリです。テキストもファイルも、作業を止めずに翻訳できます。</p>
-          <p class="hero-note">このガイドはセットアップ完了後に自動で開きます。Copilot のログインはセットアップ中に完了しているため、すぐに最初の翻訳へ進めます。</p>
+          <p>常駐で、コピー操作だけで翻訳。テキストもファイルも作業の流れを止めません。</p>
           <div class="hero-cta">
-            <a class="btn primary" href="#quickstart">最初の一歩を始める</a>
-            <a class="btn ghost" href="#flow">使い方の流れを見る</a>
+            <a class="btn primary" href="#quickstart">最初の一歩を確認する</a>
           </div>
           <div class="hero-grid">
             <div class="hero-card">
-              <strong>覚える操作はひとつだけ</strong>
-              <p>同じウィンドウで <kbd>Ctrl</kbd> + <kbd>C</kbd> を素早く2回。</p>
+              <strong>操作は Ctrl+C を2回</strong>
+              <p>同じウィンドウで素早く2回。</p>
             </div>
             <div class="hero-card">
-              <strong>テキストもファイルも対応</strong>
-              <p>Excel / Word / PowerPoint / PDF / TXT / MSG を翻訳できます。</p>
-            </div>
-            <div class="hero-card">
-              <strong>終了は明示的に</strong>
-              <p>UI を閉じても常駐。終了はスタートメニューの「YakuLingo 終了」から。</p>
+              <strong>終了はスタートメニュー</strong>
+              <p>UI を閉じても常駐。終了は「YakuLingo 終了」。</p>
             </div>
           </div>
           <div class="chips">
-            <span class="chip">自動判定: 日本語→英語 / 英語→日本語</span>
-            <span class="chip">用語集・参考資料を添付可能</span>
-            <span class="chip">翻訳結果はローカルに出力</span>
+            <span class="chip">自動判定: 日本語/英語</span>
+            <span class="chip">テキスト/ファイル対応</span>
           </div>
           <nav>
             <ul>
               <li><a href="#quickstart">最初の一歩</a></li>
-              <li><a href="#flow">使い方の流れ</a></li>
               <li><a href="#text">テキスト翻訳</a></li>
               <li><a href="#file">ファイル翻訳</a></li>
               <li><a href="#result">結果の受け取り</a></li>
-              <li><a href="#business">ビジネス運用</a></li>
               <li><a href="#resident">常駐 / 終了</a></li>
               <li><a href="#trouble">困ったとき</a></li>
             </ul>
@@ -556,83 +512,40 @@
           <div class="step">
             <div class="step-number">1</div>
             <div>
-              <strong>Copilot はログイン済み</strong>
-              <p>セットアップ中にログインは完了しています。万一ログイン画面が出た場合は、そのままサインインしてください。</p>
+              <strong>翻訳したい文章/ファイルを選択</strong>
+              <p>いつもの作業画面のまま選びます。</p>
             </div>
           </div>
           <div class="step">
             <div class="step-number">2</div>
             <div>
-              <strong>翻訳したい文章やファイルを選択</strong>
-              <p>アプリを切り替えず、いつもの作業画面のまま選択します。</p>
-            </div>
-          </div>
-          <div class="step">
-            <div class="step-number">3</div>
-            <div>
               <strong><kbd>Ctrl</kbd> + <kbd>C</kbd> を素早く2回</strong>
-              <p>YakuLingo が翻訳を開始し、UI に結果が表示されます。</p>
+              <p>翻訳が始まり、UI に結果が表示されます。</p>
             </div>
-          </div>
-        </div>
-        <div class="note">
-          <strong>自動判定で迷わない。</strong> 日本語なら英訳、英語なら和訳。方向は自動で切り替わります。
-        </div>
-      </section>
-
-      <section id="flow">
-        <h2><span>02</span>使い方の流れ</h2>
-        <div class="flow">
-          <div class="flow-card">
-            <strong>1. コピーで起動</strong>
-            <p>いつもの操作で翻訳を呼び出せるので、作業のテンポが崩れません。</p>
-          </div>
-          <div class="flow-card">
-            <strong>2. 翻訳結果を確認</strong>
-            <p>日本語→英語は 3 スタイル、英語→日本語は解説付きで表示されます。</p>
-          </div>
-          <div class="flow-card">
-            <strong>3. 必要なら再翻訳</strong>
-            <p>文調や用途に合わせて再翻訳や戻し訳で調整できます。</p>
-          </div>
-          <div class="flow-card">
-            <strong>4. 作業へすぐ戻る</strong>
-            <p>翻訳後は UI を閉じても常駐。次の翻訳にすぐ移れます。</p>
           </div>
         </div>
       </section>
 
       <section id="text">
-        <h2><span>03</span>テキスト翻訳</h2>
-        <h3>基本操作</h3>
-        <ol>
-          <li>翻訳したい文章を選択。</li>
-          <li>同じ画面で <kbd>Ctrl</kbd> + <kbd>C</kbd> を素早く2回。</li>
-          <li>UI に翻訳結果が表示されます。</li>
-        </ol>
+        <h2><span>02</span>テキスト翻訳</h2>
         <div class="grid">
           <div class="card">
             <strong>日本語 → 英語</strong>
-            <p>標準 / 簡潔 / 最簡潔の 3 スタイルを同時に表示します。</p>
+            <p>標準 / 簡潔 / 最簡潔を同時に表示。</p>
           </div>
           <div class="card">
             <strong>英語 → 日本語</strong>
-            <p>翻訳＋解説をまとめて表示。背景理解まで一気に確認できます。</p>
-          </div>
-          <div class="card">
-            <strong>戻し訳で精度確認</strong>
-            <p>翻訳結果をワンクリックで逆方向に翻訳できます。</p>
+            <p>翻訳＋解説をまとめて表示。</p>
           </div>
         </div>
       </section>
 
       <section id="file">
-        <h2><span>04</span>ファイル翻訳</h2>
+        <h2><span>03</span>ファイル翻訳</h2>
         <h3>開始方法</h3>
         <ul>
-          <li>エクスプローラーでファイルを選択。</li>
-          <li><kbd>Ctrl</kbd> + <kbd>C</kbd> を素早く2回。</li>
-          <li>YakuLingo のファイル翻訳パネルで進行状況を確認。</li>
+          <li>ファイルを選択して <kbd>Ctrl</kbd> + <kbd>C</kbd> を素早く2回。</li>
+          <li>進捗はファイル翻訳パネルで確認。</li>
         </ul>
         <h3>対応ファイル</h3>
         <div class="chips">
@@ -644,80 +557,45 @@
           <span class="chip">MSG</span>
         </div>
         <div class="note">
-          レイアウトや書式は可能な限り保持して翻訳します。フォントは翻訳方向に合わせて自動調整されます。
+          レイアウトは可能な限り維持。フォントは翻訳方向で自動調整。
         </div>
       </section>
 
       <section id="result">
-        <h2><span>05</span>結果の受け取り</h2>
+        <h2><span>04</span>結果の受け取り</h2>
         <div class="grid">
           <div class="card">
             <strong>出力ファイル</strong>
-            <p>翻訳済みファイル、対訳ファイル、用語集 CSV が一覧で表示されます。</p>
+            <p>翻訳済み/対訳/用語集 CSV を一覧表示。</p>
           </div>
           <div class="card">
             <strong>保存先の確認</strong>
-            <p>出力先フォルダーは UI から直接開けます。</p>
+            <p>出力フォルダーを UI から開けます。</p>
           </div>
-          <div class="card">
-            <strong>履歴もローカル管理</strong>
-            <p>翻訳履歴は端末内に保存され、再確認が簡単です。</p>
-          </div>
-        </div>
-      </section>
-
-      <section id="business">
-        <h2><span>06</span>ビジネス運用にうれしいポイント</h2>
-        <div class="grid">
-          <div class="card">
-            <strong>参考ファイルで表現を統一</strong>
-            <p>用語集やスタイルガイドを添付して、チーム内の表記ルールを守れます。</p>
-          </div>
-          <div class="card">
-            <strong>自動言語判定</strong>
-            <p>翻訳方向を考える手間なし。作業スピードを落としません。</p>
-          </div>
-          <div class="card">
-            <strong>常駐でいつでも翻訳</strong>
-            <p>呼び出しはいつも同じ操作。新人メンバーでも迷いません。</p>
-          </div>
-        </div>
-        <div class="callout">
-          <strong>ポイント:</strong>
-          翻訳が途切れる場合は Copilot のログイン状態を確認してください。
         </div>
       </section>
 
       <section id="resident">
-        <h2><span>07</span>常駐 / 終了</h2>
+        <h2><span>05</span>常駐 / 終了</h2>
         <ul>
-          <li>UI を閉じても翻訳は常駐で継続します。</li>
+          <li>UI を閉じても常駐で継続。</li>
           <li>UI を開く: スタートメニュー &gt; YakuLingo。</li>
           <li>終了する: スタートメニュー &gt; YakuLingo &gt; 「YakuLingo 終了」。</li>
         </ul>
       </section>
 
       <section id="trouble">
-        <h2><span>08</span>困ったとき</h2>
+        <h2><span>06</span>困ったとき</h2>
         <div class="grid">
           <div class="card">
             <strong>ショートカットが反応しない</strong>
-            <p>同じウィンドウで <kbd>Ctrl</kbd> + <kbd>C</kbd> を素早く2回押してください。</p>
+            <p>同じウィンドウで <kbd>Ctrl</kbd> + <kbd>C</kbd> を素早く2回。</p>
           </div>
           <div class="card">
             <strong>翻訳が始まらない</strong>
-            <p>Copilot にログイン済みか確認し、UI の再起動を試してください。</p>
-          </div>
-          <div class="card">
-            <strong>翻訳品質を上げたい</strong>
-            <p>用語集・スタイルガイドを添付して表現のゆらぎを減らします。</p>
+            <p>Copilot ログイン確認 → UI 再起動。</p>
           </div>
         </div>
-      </section>
-
-      <section>
-        <h2><span>09</span>さっそく使ってみる</h2>
-        <p>翻訳したいテキストやファイルを選び、<kbd>Ctrl</kbd> + <kbd>C</kbd> を素早く2回。YakuLingo がすぐに動き出します。</p>
       </section>
 
       <footer>

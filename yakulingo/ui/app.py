@@ -18,6 +18,7 @@ import re
 import sys
 import threading
 import time
+from datetime import datetime
 import uuid
 from dataclasses import dataclass
 from enum import Enum
@@ -6734,7 +6735,7 @@ class YakuLingoApp:
         chips: list[str] = []
 
         output_lang = entry.result.output_language or "en"
-        chips.append('英訳' if output_lang == "en" else '和訳')
+        chips.append('日本語→英語' if output_lang == "en" else '英語→日本語')
 
         override = metadata.get("output_language_override")
         if override in {"en", "jp"}:
@@ -6767,9 +6768,15 @@ class YakuLingoApp:
     def _create_history_item(self, entry: HistoryEntry, on_select: Callable[[], None] | None = None):
         """Create a history item with hover menu."""
         is_pinned = self._is_history_pinned(entry)
-        item_classes = 'history-item group'
+        item_classes = 'history-item group history-card'
         if is_pinned:
             item_classes += ' pinned'
+
+        timestamp_label = ""
+        try:
+            timestamp_label = datetime.fromisoformat(entry.timestamp).strftime('%m/%d %H:%M')
+        except ValueError:
+            timestamp_label = ""
 
         with ui.element('div').classes(item_classes) as item:
             def load_entry():
@@ -6790,13 +6797,16 @@ class YakuLingoApp:
                 }''',
             )
 
-            ui.icon('notes').classes('text-sm text-muted mt-0.5 flex-shrink-0')
+            with ui.column().classes('history-card-content gap-1'):
+                with ui.row().classes('history-card-header items-center gap-2'):
+                    ui.icon('notes').classes('history-item-icon')
+                    with ui.row().classes('items-center gap-1 min-w-0 flex-1'):
+                        if is_pinned:
+                            ui.icon('push_pin').classes('history-pin-indicator')
+                        ui.label(entry.preview).classes('text-xs history-title')
+                    if timestamp_label:
+                        ui.label(timestamp_label).classes('history-time')
 
-            with ui.column().classes('history-text-container gap-0.5'):
-                with ui.row().classes('items-center gap-1 min-w-0'):
-                    if is_pinned:
-                        ui.icon('push_pin').classes('history-pin-indicator')
-                    ui.label(entry.preview).classes('text-xs history-title')
                 if entry.result.options:
                     ui.label(entry.result.options[0].text).classes('text-2xs text-muted history-preview')
 
@@ -6825,7 +6835,7 @@ class YakuLingoApp:
                 if remaining >= MAX_HISTORY_DISPLAY:
                     self._refresh_history()
 
-            with ui.row().classes('history-item-actions'):
+            with ui.row().classes('history-action-row items-center gap-1 flex-wrap'):
                 pin_btn = ui.button(
                     icon='push_pin',
                     on_click=lambda: self._toggle_history_pin(entry),
@@ -6953,6 +6963,7 @@ class YakuLingoApp:
                         on_source_change=self._on_source_change,
                         on_clear=self._clear,
                         on_open_file_picker=self._open_translation_file_picker,
+                        on_paste_from_clipboard=self._paste_from_clipboard,
                         on_attach_reference_file=self._attach_reference_file,
                         on_remove_reference_file=self._remove_reference_file,
                         on_translate_button_created=self._on_translate_button_created,
@@ -7007,6 +7018,7 @@ class YakuLingoApp:
                                 on_queue_select=self._select_queue_item,
                                 on_queue_remove=self._remove_queue_item,
                                 on_queue_move=self._move_queue_item,
+                                on_queue_reorder=self._reorder_queue_item,
                                 on_queue_clear=self._clear_queue,
                                 on_queue_mode_change=self._set_queue_mode,
                             )
@@ -7021,6 +7033,37 @@ class YakuLingoApp:
         # Update button state dynamically without full refresh
         self._update_translate_button_state()
         self._update_text_input_metrics()
+
+    async def _paste_from_clipboard(self) -> None:
+        """Paste text from clipboard into the text input."""
+        with self._client_lock:
+            client = self._client
+        if not client:
+            return
+
+        try:
+            with client:
+                text = await ui.run_javascript('navigator.clipboard.readText()')
+        except Exception as exc:
+            logger.debug("Clipboard read failed: %s", exc)
+            with client:
+                ui.notify('クリップボードにアクセスできません', type='warning')
+            return
+
+        if not text:
+            with client:
+                ui.notify('クリップボードが空です', type='warning')
+            return
+
+        text = str(text)
+        with client:
+            if self._text_input_textarea is not None:
+                self._text_input_textarea.value = text
+                self._text_input_textarea.update()
+            self._on_source_change(text)
+
+        if self.state.can_translate():
+            await self._translate_text()
 
     def _update_text_local_detection(self, text: str) -> None:
         if not text.strip():
@@ -7059,6 +7102,15 @@ class YakuLingoApp:
         if batch_limit > 0:
             batch_count = max(1, math.ceil(char_count / batch_limit))
 
+        count_inline = refs.get("count_label_inline")
+        if count_inline:
+            count_inline.set_text(f"{char_count:,} / {text_limit:,}")
+            count_inline.classes(remove="warn error")
+            if char_count > text_limit:
+                count_inline.classes(add="error")
+            elif char_count > batch_limit:
+                count_inline.classes(add="warn")
+
         count_label = refs.get("count_label")
         if count_label:
             count_label.set_text(f"{char_count:,} / {text_limit:,} 字")
@@ -7084,10 +7136,10 @@ class YakuLingoApp:
             if char_count <= 0:
                 split_hint.set_text("")
             elif char_count > text_limit:
-                split_hint.set_text(f"{batch_count} バッチ（上限超過）")
+                split_hint.set_text("上限超過: ファイル翻訳に切り替え")
                 split_hint.classes(add="error")
             elif char_count > batch_limit:
-                split_hint.set_text(f"{batch_count} バッチ（分割必須）")
+                split_hint.set_text(f"{batch_count} バッチ / 分割推奨")
                 split_hint.classes(add="warn")
             else:
                 split_hint.set_text(f"{batch_count} バッチ")
@@ -7114,11 +7166,11 @@ class YakuLingoApp:
         direction_chip = refs.get("direction_chip")
         if direction_chip:
             if output_lang == "en":
-                direction_chip.set_text("英訳")
+                direction_chip.set_text("日本語→英語")
             elif output_lang == "jp":
-                direction_chip.set_text("和訳")
+                direction_chip.set_text("英語→日本語")
             else:
-                direction_chip.set_text("自動")
+                direction_chip.set_text("自動判定")
 
         style_chip = refs.get("style_chip")
         if style_chip:
@@ -7132,6 +7184,19 @@ class YakuLingoApp:
         override_chip = refs.get("override_chip")
         if override_chip:
             override_chip.set_visibility(self.state.text_output_language_override in {"en", "jp"})
+
+        ref_chip = refs.get("ref_chip")
+        if ref_chip:
+            labels = []
+            if self.settings.use_bundled_glossary:
+                labels.append("用語集")
+            if self.state.reference_files:
+                labels.append(f"参照 {len(self.state.reference_files)}")
+            if labels:
+                ref_chip.set_text(" / ".join(labels))
+                ref_chip.set_visibility(True)
+            else:
+                ref_chip.set_visibility(False)
 
         split_panel = refs.get("split_panel")
         split_preview = refs.get("split_preview")
@@ -7249,9 +7314,9 @@ class YakuLingoApp:
         return files if files else None
 
     def _copy_text(self, text: str):
-        """Show copy notification (clipboard write is handled client-side)."""
-        if text:
-            ui.notify('コピーしました', type='positive')
+        """No-op placeholder for copy callbacks (clipboard write is handled client-side)."""
+        if not text:
+            return
 
     # =========================================================================
     # Section 5: Error Handling Helpers
@@ -9038,6 +9103,20 @@ class YakuLingoApp:
             self.state.file_queue[target_idx],
             self.state.file_queue[idx],
         )
+        self._refresh_content()
+
+    def _reorder_queue_item(self, drag_id: str, drop_id: str) -> None:
+        if drag_id == drop_id:
+            return
+        indices = {item.id: idx for idx, item in enumerate(self.state.file_queue)}
+        drag_idx = indices.get(drag_id)
+        drop_idx = indices.get(drop_id)
+        if drag_idx is None or drop_idx is None:
+            return
+        item = self.state.file_queue.pop(drag_idx)
+        if drag_idx < drop_idx:
+            drop_idx -= 1
+        self.state.file_queue.insert(drop_idx, item)
         self._refresh_content()
 
     def _clear_queue(self) -> None:

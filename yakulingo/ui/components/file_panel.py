@@ -84,8 +84,22 @@ def _build_copy_js_handler(text: str) -> str:
     }}"""
 
 
+def _build_action_feedback_js_handler() -> str:
+    return """(e) => {
+        const target = e.currentTarget;
+        if (target) {
+            target.classList.remove('action-feedback');
+            void target.offsetWidth;
+            target.classList.add('action-feedback');
+        }
+        emit(e);
+    }"""
+
+
 def _attach_copy_handler(button, text: str, message: str) -> None:
-    button.on('click', lambda: ui.notify(message, type='positive'), js_handler=_build_copy_js_handler(text))
+    button.props('data-feedback="コピーしました"')
+    button.classes(add='feedback-anchor')
+    button.on('click', lambda: None, js_handler=_build_copy_js_handler(text))
 
 
 SUPPORTED_FORMATS = ".xlsx,.xls,.docx,.pptx,.pdf,.txt,.msg"
@@ -249,6 +263,7 @@ def create_file_panel(
     on_queue_select: Optional[Callable[[str], None]] = None,
     on_queue_remove: Optional[Callable[[str], None]] = None,
     on_queue_move: Optional[Callable[[str, int], None]] = None,
+    on_queue_reorder: Optional[Callable[[str, str], None]] = None,
     on_queue_clear: Optional[Callable[[], None]] = None,
     on_queue_mode_change: Optional[Callable[[str], None]] = None,
 ):
@@ -265,6 +280,7 @@ def create_file_panel(
                         on_queue_select,
                         on_queue_remove,
                         on_queue_move,
+                        on_queue_reorder,
                         on_cancel,
                         on_queue_clear,
                         on_queue_mode_change,
@@ -279,55 +295,78 @@ def create_file_panel(
                     else:
                         # Show loading state while file info is being loaded
                         _file_loading_card(state.selected_file, on_reset)
-                    # Translation settings card (white background container)
+                    # Basic settings card (language only)
                     with ui.element('div').classes('file-settings-card'):
-                        # Output language selector
                         _language_selector(state, on_language_change)
-                        # Translation style selector (only for English output)
-                        if state.file_output_language == 'en':
-                            _style_selector(translation_style, on_style_change)
-                        # Glossary + reference files
-                        _glossary_selector(
-                            use_bundled_glossary,
-                            on_glossary_toggle,
-                            on_edit_glossary,
-                            on_edit_translation_rules,
-                            reference_files,
-                            on_attach_reference_file,
-                            on_remove_reference_file,
-                        )
-                        # Section selector for partial translation
-                        if state.file_info and len(state.file_info.section_details) > 1:
-                            _section_selector(
-                                state.file_info,
-                                on_section_toggle,
-                                on_section_select_all,
-                                on_section_clear,
+
+                    has_manual_refs = bool(reference_files)
+                    has_glossary = bool(use_bundled_glossary)
+                    has_override = state.file_output_language_overridden
+                    has_sections = bool(state.file_info and len(state.file_info.section_details) > 1)
+                    style_label = STYLE_OPTIONS.get(translation_style, (translation_style, ""))[0]
+
+                    details = ui.element('details').classes('advanced-panel file-advanced-panel')
+                    if has_manual_refs or has_glossary or has_override or has_sections:
+                        details.props('open')
+
+                    with details:
+                        with ui.element('summary').classes('advanced-summary items-center'):
+                            ui.label('詳細設定').classes('advanced-title')
+                            with ui.row().classes('advanced-summary-chips items-center gap-2'):
+                                if state.file_output_language == 'en':
+                                    ui.label(style_label).classes('chip meta-chip')
+                                if has_glossary:
+                                    ui.label('用語集').classes('chip meta-chip')
+                                if has_manual_refs:
+                                    ui.label(f'参照 {len(reference_files)}').classes('chip meta-chip')
+                                if has_sections:
+                                    ui.label(f'セクション {len(state.file_info.section_details)}').classes('chip meta-chip')
+                                if has_override:
+                                    ui.label('手動').classes('chip meta-chip override-chip')
+
+                        with ui.column().classes('advanced-content gap-3'):
+                            if state.file_output_language == 'en':
+                                _style_selector(translation_style, on_style_change)
+                            _glossary_selector(
+                                use_bundled_glossary,
+                                on_glossary_toggle,
+                                on_edit_glossary,
+                                on_edit_translation_rules,
+                                reference_files,
+                                on_attach_reference_file,
+                                on_remove_reference_file,
                             )
-                    _precheck_card(
-                        state,
-                        translation_style,
-                        effective_reference_files,
-                        font_jp_to_en,
-                        font_en_to_jp,
-                    )
+                            if has_sections and state.file_info:
+                                _section_selector(
+                                    state.file_info,
+                                    on_section_toggle,
+                                    on_section_select_all,
+                                    on_section_clear,
+                                )
+                            _precheck_card(
+                                state,
+                                translation_style,
+                                effective_reference_files,
+                                font_jp_to_en,
+                                font_en_to_jp,
+                            )
                     with ui.column().classes('items-center gap-2 mt-4'):
-                        _file_translate_meta_chips(state, translation_style)
+                        _file_translate_meta_chips(state, translation_style, use_bundled_glossary)
                         with ui.row().classes('justify-center'):
                             # Disable button while file info is loading
                             btn_disabled = state.file_info is None
                             btn_props = 'no-caps disable' if btn_disabled else 'no-caps'
                             btn = ui.button(
                                 icon='translate',
-                                on_click=on_translate,
-                            ).classes('translate-btn').props(
-                                f'{btn_props} aria-label="翻訳する" aria-keyshortcuts="Ctrl+Enter Meta+Enter"'
+                            ).classes('translate-btn feedback-anchor').props(
+                                f'{btn_props} aria-label="翻訳する" aria-keyshortcuts="Ctrl+Enter Meta+Enter" data-feedback="翻訳を開始"'
                             )
+                            btn.on('click', on_translate, js_handler=_build_action_feedback_js_handler())
                             btn.tooltip('翻訳する')
 
                 elif state.file_state == FileState.TRANSLATING:
                     with ui.column().classes('items-center gap-2'):
-                        _file_translate_meta_chips(state, translation_style)
+                        _file_translate_meta_chips(state, translation_style, use_bundled_glossary)
                         _progress_card(
                             state.file_info,
                             state.translation_progress,
@@ -342,7 +381,7 @@ def create_file_panel(
 
                 elif state.file_state == FileState.COMPLETE:
                     with ui.column().classes('items-center gap-2'):
-                        _file_translate_meta_chips(state, translation_style)
+                        _file_translate_meta_chips(state, translation_style, use_bundled_glossary)
                         _complete_card(
                             translation_result,
                             state.file_info,
@@ -357,8 +396,12 @@ def create_file_panel(
                         ui.button('別のファイルを選択', on_click=on_reset).classes('btn-outline')
 
 
-def _file_translate_meta_chips(state: AppState, translation_style: str) -> None:
-    output_label = '英訳' if state.file_output_language == 'en' else '和訳'
+def _file_translate_meta_chips(
+    state: AppState,
+    translation_style: str,
+    use_bundled_glossary: bool = False,
+) -> None:
+    output_label = '日本語→英語' if state.file_output_language == 'en' else '英語→日本語'
     style_label = STYLE_OPTIONS.get(translation_style, (translation_style, ""))[0]
     with ui.row().classes('file-meta-chips items-center gap-2 flex-wrap justify-center'):
         ui.label(output_label).classes('chip meta-chip')
@@ -366,6 +409,8 @@ def _file_translate_meta_chips(state: AppState, translation_style: str) -> None:
             ui.label(style_label).classes('chip meta-chip')
         if state.file_output_language_overridden:
             ui.label('手動').classes('chip meta-chip override-chip')
+        if use_bundled_glossary:
+            ui.label('用語集').classes('chip meta-chip')
         if state.reference_files:
             ui.label(f'参照 {len(state.reference_files)}').classes('chip meta-chip')
 
@@ -375,6 +420,7 @@ def _queue_panel(
     on_select: Optional[Callable[[str], None]],
     on_remove: Optional[Callable[[str], None]],
     on_move: Optional[Callable[[str, int], None]],
+    on_reorder: Optional[Callable[[str, str], None]],
     on_cancel: Optional[Callable[[], None]],
     on_clear: Optional[Callable[[], None]],
     on_mode_change: Optional[Callable[[str], None]],
@@ -393,6 +439,17 @@ def _queue_panel(
         TranslationStatus.FAILED: ('失敗', 'queue-status failed'),
         TranslationStatus.CANCELLED: ('キャンセル', 'queue-status cancelled'),
     }
+
+    def handle_drop(event: Optional[events.GenericEventArguments]) -> None:
+        if not on_reorder or not event:
+            return
+        payload: object = getattr(event, 'args', None)
+        if not isinstance(payload, dict):
+            return
+        drag_id = payload.get("dragId")
+        drop_id = payload.get("dropId")
+        if drag_id and drop_id and drag_id != drop_id:
+            on_reorder(str(drag_id), str(drop_id))
 
     with ui.element('div').classes('queue-panel'):
         with ui.row().classes('queue-header items-center justify-between gap-2 flex-wrap'):
@@ -441,7 +498,49 @@ def _queue_panel(
                     item.status, ('待機', 'queue-status pending')
                 )
                 active_class = ' active' if item.id == state.file_queue_active_id else ''
+                can_reorder = bool(on_reorder) and not state.file_queue_running and item.status == TranslationStatus.PENDING
                 with ui.element('div').classes(f'queue-item{active_class}') as row:
+                    if can_reorder:
+                        row.props(f'draggable=true data-queue-id="{item.id}"')
+                        row.on(
+                            'dragstart',
+                            js_handler='''(e) => {
+                                e.dataTransfer.effectAllowed = "move";
+                                e.dataTransfer.setData("text/plain", e.currentTarget.dataset.queueId);
+                                e.currentTarget.classList.add("dragging");
+                            }''',
+                        )
+                        row.on(
+                            'dragend',
+                            js_handler='''(e) => {
+                                e.currentTarget.classList.remove("dragging");
+                            }''',
+                        )
+                        row.on(
+                            'dragover',
+                            js_handler='''(e) => {
+                                e.preventDefault();
+                                e.currentTarget.classList.add("drag-over");
+                            }''',
+                        )
+                        row.on(
+                            'dragleave',
+                            js_handler='''(e) => {
+                                e.currentTarget.classList.remove("drag-over");
+                            }''',
+                        )
+                        row.on(
+                            'drop',
+                            handle_drop,
+                            js_handler='''(e) => {
+                                e.preventDefault();
+                                e.currentTarget.classList.remove("drag-over");
+                                emit({
+                                    dragId: e.dataTransfer.getData("text/plain"),
+                                    dropId: e.currentTarget.dataset.queueId,
+                                });
+                            }''',
+                        )
                     if on_select:
                         row.on('click', lambda i=item.id: on_select(i))
 
@@ -449,6 +548,12 @@ def _queue_panel(
                     if item.file_info:
                         icon = FILE_TYPE_ICONS.get(item.file_info.file_type, icon)
 
+                    drag_classes = 'queue-drag-handle'
+                    if not can_reorder:
+                        drag_classes += ' disabled'
+                    drag_icon = ui.icon('drag_indicator').classes(drag_classes)
+                    if can_reorder:
+                        drag_icon.tooltip('ドラッグで並べ替え')
                     ui.icon(icon).classes('queue-file-icon')
                     with ui.column().classes('queue-item-body gap-1'):
                         ui.label(item.path.name).classes('queue-file-name')
@@ -493,8 +598,8 @@ def _language_selector(state: AppState, on_change: Optional[Callable[[str], None
     with ui.column().classes('w-full items-center mt-4 gap-2'):
         # Show detected language info or detecting status
         if detected:
-            output_label = '英訳' if state.file_output_language == 'en' else '和訳'
-            ui.label(f'{detected}を検出 → {output_label}します').classes('text-xs text-muted')
+            output_label = '英語' if state.file_output_language == 'en' else '日本語'
+            ui.label(f'検出: {detected} → 出力: {output_label}').classes('text-xs text-muted')
         else:
             ui.label('言語を検出中...').classes('text-xs text-muted')
 
@@ -664,7 +769,7 @@ def _glossary_selector(
                     icon='edit',
                     on_click=on_edit
                 ).props('flat dense round size=sm aria-label="Edit glossary"').classes('settings-btn')
-                edit_btn.tooltip('用語集をExcelで編集')
+                edit_btn.tooltip('用語集を編集')
 
         # Edit translation rules button
         if on_edit_translation_rules:
@@ -677,12 +782,13 @@ def _glossary_selector(
         # Reference file attachment button
         if on_attach:
             has_files = bool(reference_files)
-            attach_btn = ui.button(on_click=on_attach).classes(
-                f'attach-btn {"has-file" if has_files else ""}'
-            ).props('flat aria-label="Attach reference file"')
+            attach_btn = ui.button().classes(
+                f'attach-btn {"has-file" if has_files else ""} feedback-anchor'
+            ).props('flat aria-label="Attach reference file" data-feedback="参照ファイルを追加"')
             with attach_btn:
                 ui.html(ATTACH_SVG, sanitize=False)
-            attach_btn.tooltip('参照ファイルを添付' if not has_files else '参照ファイルを追加')
+            attach_btn.on('click', on_attach, js_handler=_build_action_feedback_js_handler())
+            attach_btn.tooltip('参照ファイルを追加')
 
     # Display attached files
     if reference_files:
@@ -709,7 +815,7 @@ def _precheck_card(
 
     detected = state.file_detected_language or "未判定"
     detected_reason = _format_detection_reason(state.file_detected_language_reason)
-    output_label = '英訳' if state.file_output_language == 'en' else '和訳'
+    output_label = '英語' if state.file_output_language == 'en' else '日本語'
     section_label = _get_section_label(state.file_info)
     selected_count = state.file_info.selected_section_count
     total_sections = len(state.file_info.section_details) if state.file_info.section_details else selected_count
@@ -813,6 +919,7 @@ def _drop_zone(on_file_select: Callable[[list[Path]], Union[None, Awaitable[None
             ui.label('翻訳するファイルをドロップ').classes('drop-zone-text')
             ui.label('または クリックして選択').classes('drop-zone-subtext')
             ui.label('Excel / Word / PowerPoint / PDF / TXT / MSG').classes('drop-zone-hint')
+            ui.label(f'最大 {MAX_DROP_FILE_SIZE_MB}MB').classes('drop-zone-hint')
 
         # Upload component for click selection
         upload = ui.upload(

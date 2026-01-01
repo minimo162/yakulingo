@@ -907,6 +907,31 @@ body {
     transform: none;
 }
 
+.history-card {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+    padding-right: 0.75rem;
+}
+
+.history-card-content {
+    width: 100%;
+}
+
+.history-card-header {
+    align-items: center;
+}
+
+.history-item-icon {
+    font-size: 1rem;
+    color: var(--md-sys-color-on-surface-variant);
+}
+
+.history-time {
+    font-size: 0.7rem;
+    color: var(--md-sys-color-on-surface-variant);
+}
+
 /* カードホバー時の浮遊感 */
 .main-card:hover {
     box-shadow: none;
@@ -977,6 +1002,87 @@ body {
 .input-toolbar-left,
 .input-toolbar-right {
     gap: 0.5rem;
+}
+
+.advanced-panel {
+    margin-top: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: var(--md-sys-shape-corner-large);
+    border: 1px solid var(--md-sys-color-outline-variant);
+    background: var(--md-sys-color-surface-container-low);
+}
+
+.advanced-panel > summary {
+    list-style: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.advanced-panel > summary::-webkit-details-marker {
+    display: none;
+}
+
+.advanced-panel > summary::after {
+    content: "▾";
+    font-size: 0.8rem;
+    color: var(--md-sys-color-on-surface-variant);
+}
+
+.advanced-panel[open] > summary::after {
+    content: "▴";
+}
+
+.advanced-title {
+    font-size: var(--md-sys-typescale-size-xs);
+    font-weight: var(--md-sys-typescale-weight-semibold);
+    color: var(--md-sys-color-on-surface);
+}
+
+.advanced-summary-chips {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.advanced-content {
+    margin-top: 0.75rem;
+}
+
+.advanced-section {
+    padding: 0.75rem;
+    border-radius: var(--md-sys-shape-corner-medium);
+    background: var(--md-sys-color-surface);
+}
+
+.advanced-label {
+    font-size: 0.75rem;
+    font-weight: var(--md-sys-typescale-weight-semibold);
+    color: var(--md-sys-color-on-surface-variant);
+    margin-bottom: 0.35rem;
+}
+
+.char-count-inline {
+    font-size: 0.75rem;
+    color: var(--md-sys-color-on-surface-variant);
+    padding: 0.1rem 0.5rem;
+    border-radius: var(--md-sys-shape-corner-full);
+    background: var(--md-sys-color-surface-container);
+}
+
+.char-count-inline.warn {
+    color: var(--md-sys-color-on-warning-container);
+    background: var(--md-sys-color-warning-container);
+}
+
+.char-count-inline.error {
+    color: var(--md-sys-color-on-error-container);
+    background: var(--md-sys-color-error-container);
+}
+
+.shortcut-hint.inline {
+    margin-top: 0.1rem;
 }
 
 
@@ -3487,10 +3593,38 @@ body.yakulingo-drag-active .global-drop-indicator {
     animation: copyPulse 400ms var(--md-sys-motion-easing-spring);
 }
 
+.feedback-anchor {
+    position: relative;
+}
+
+.copy-success[data-feedback]::after,
+.action-feedback[data-feedback]::after {
+    content: attr(data-feedback);
+    position: absolute;
+    top: -1.6rem;
+    right: 0;
+    padding: 0.15rem 0.5rem;
+    border-radius: var(--md-sys-shape-corner-full);
+    background: var(--md-sys-color-surface-container-high);
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: 0.7rem;
+    white-space: nowrap;
+    pointer-events: none;
+    box-shadow: none;
+    animation: feedbackPop 1.2s var(--md-sys-motion-easing-fluid) forwards;
+}
+
 @keyframes copyPulse {
     0% { transform: scale(1); }
     50% { transform: scale(1.2); color: var(--md-sys-color-success); }
     100% { transform: scale(1); }
+}
+
+@keyframes feedbackPop {
+    0% { opacity: 0; transform: translateY(4px); }
+    20% { opacity: 1; transform: translateY(0); }
+    80% { opacity: 1; transform: translateY(0); }
+    100% { opacity: 0; transform: translateY(-4px); }
 }
 
 /* === Skeleton Loading (Nani-inspired) === */
@@ -4538,6 +4672,10 @@ a:not(.q-btn):not(.q-item),
     transition: opacity var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
 }
 
+.history-action-row {
+    margin-top: 0.35rem;
+}
+
 .history-item:hover .history-item-actions {
     opacity: 1;
     pointer-events: auto;
@@ -4809,6 +4947,26 @@ a:not(.q-btn):not(.q-item),
     background: var(--md-sys-color-surface);
     cursor: pointer;
     transition: background var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+}
+
+.queue-item.drag-over {
+    border-color: var(--md-sys-color-primary);
+    background: color-mix(in srgb, var(--md-sys-color-primary) 6%, var(--md-sys-color-surface));
+}
+
+.queue-item.dragging {
+    opacity: 0.6;
+}
+
+.queue-drag-handle {
+    font-size: 1.1rem;
+    color: var(--md-sys-color-outline);
+    cursor: grab;
+}
+
+.queue-drag-handle.disabled {
+    opacity: 0.35;
+    cursor: default;
 }
 
 .queue-item.active {

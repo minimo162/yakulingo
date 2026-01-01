@@ -70,6 +70,18 @@ def _build_copy_js_handler(text: str) -> str:
     }}"""
 
 
+def _build_action_feedback_js_handler() -> str:
+    return """(e) => {
+        const target = e.currentTarget;
+        if (target) {
+            target.classList.remove('action-feedback');
+            void target.offsetWidth;
+            target.classList.add('action-feedback');
+        }
+        emit(e);
+    }"""
+
+
 def _create_copy_button(
     text: str,
     on_copy: Callable[[str], None],
@@ -79,8 +91,8 @@ def _create_copy_button(
     tooltip: str,
 ) -> None:
     button = ui.button(icon='content_copy').props(
-        f'flat dense round size=sm aria-label="{aria_label}"'
-    ).classes(classes)
+        f'flat dense round size=sm aria-label="{aria_label}" data-feedback="コピーしました"'
+    ).classes(f'{classes} feedback-anchor'.strip())
     button.tooltip(tooltip)
     button.on('click', lambda: on_copy(text), js_handler=_build_copy_js_handler(text))
 
@@ -94,7 +106,9 @@ def _create_copy_action_button(
     tooltip: str,
     icon: str = 'content_copy',
 ) -> None:
-    button = ui.button(label, icon=icon).props('flat no-caps size=sm').classes(classes)
+    button = ui.button(label, icon=icon).props(
+        'flat no-caps size=sm data-feedback="コピーしました"'
+    ).classes(f'{classes} feedback-anchor'.strip())
     button.tooltip(tooltip)
     button.on('click', lambda: on_copy(text), js_handler=_build_copy_js_handler(text))
 
@@ -269,6 +283,7 @@ def create_text_input_panel(
     on_source_change: Callable[[str], None],
     on_clear: Callable[[], None],
     on_open_file_picker: Optional[Callable[[], None]] = None,
+    on_paste_from_clipboard: Optional[Callable[[], None]] = None,
     on_attach_reference_file: Optional[Callable[[], None]] = None,
     on_remove_reference_file: Optional[Callable[[int], None]] = None,
     on_translate_button_created: Optional[Callable[[ui.button], None]] = None,
@@ -290,7 +305,7 @@ def create_text_input_panel(
     _create_large_input_panel(
         state, on_translate, on_split_translate, on_source_change, on_clear,
         on_open_file_picker,
-        on_attach_reference_file, on_remove_reference_file,
+        on_paste_from_clipboard, on_attach_reference_file, on_remove_reference_file,
         on_translate_button_created,
         use_bundled_glossary, effective_reference_files, text_char_limit, batch_char_limit,
         on_output_language_override, on_input_metrics_created,
@@ -306,6 +321,7 @@ def _create_large_input_panel(
     on_source_change: Callable[[str], None],
     on_clear: Callable[[], None],
     on_open_file_picker: Optional[Callable[[], None]] = None,
+    on_paste_from_clipboard: Optional[Callable[[], None]] = None,
     on_attach_reference_file: Optional[Callable[[], None]] = None,
     on_remove_reference_file: Optional[Callable[[int], None]] = None,
     on_translate_button_created: Optional[Callable[[ui.button], None]] = None,
@@ -337,7 +353,7 @@ def _create_large_input_panel(
                 # Bottom controls
                 metrics_refs: dict[str, object] = {}
                 with ui.row().classes('input-toolbar justify-between items-start flex-wrap gap-y-3'):
-                    # Left side: detection, counts, and reference files
+                    # Left side: detection and inline counts
                     with ui.column().classes('input-toolbar-left gap-2 flex-1 min-w-0'):
                         with ui.row().classes('items-center gap-2 flex-wrap'):
                             with ui.element('div').classes('detection-chip'):
@@ -350,7 +366,90 @@ def _create_large_input_panel(
                             metrics_refs['detection_label'] = detection_label
                             metrics_refs['detection_reason_label'] = detection_reason_label
 
-                            if on_output_language_override:
+                            count_inline = ui.label(
+                                f'{len(state.source_text):,} / {text_char_limit:,}'
+                            ).classes('char-count-inline')
+                            metrics_refs['count_label_inline'] = count_inline
+
+                    with ui.column().classes('input-toolbar-right items-center gap-2'):
+                        with ui.column().classes('translate-actions items-end gap-2'):
+                            with ui.row().classes('translate-meta-row items-center gap-2 flex-wrap justify-end'):
+                                direction_chip = ui.label('自動').classes('chip direction-chip')
+                                style_chip = ui.label('スタイル自動').classes('chip style-chip')
+                                override_chip = ui.label('手動').classes('chip override-chip')
+                                override_chip.set_visibility(False)
+                                ref_chip = ui.label('').classes('chip meta-chip ref-chip')
+                                ref_chip.set_visibility(False)
+                                metrics_refs['direction_chip'] = direction_chip
+                                metrics_refs['style_chip'] = style_chip
+                                metrics_refs['override_chip'] = override_chip
+                                metrics_refs['ref_chip'] = ref_chip
+
+                            with ui.row().classes('items-center gap-2'):
+                                if on_paste_from_clipboard:
+                                    def handle_paste_click():
+                                        result = on_paste_from_clipboard()
+                                        if asyncio.iscoroutine(result):
+                                            asyncio.create_task(result)
+                                    paste_btn = ui.button(
+                                        icon='content_paste',
+                                    ).props(
+                                        'flat dense round size=sm aria-label="貼り付けて翻訳" data-feedback="貼り付けて翻訳"'
+                                    ).classes('result-action-btn paste-btn feedback-anchor')
+                                    paste_btn.tooltip('クリップボードから翻訳')
+                                    paste_btn.on('click', handle_paste_click, js_handler=_build_action_feedback_js_handler())
+
+                                # Clear button
+                                if state.source_text:
+                                    ui.button(icon='close', on_click=on_clear).props(
+                                        'flat dense round size=sm aria-label="クリア"'
+                                    ).classes('result-action-btn')
+
+                                # Translate button
+                                def handle_translate_click():
+                                    logger.info("Translate button clicked")
+                                    asyncio.create_task(on_translate())
+
+                                btn = ui.button(
+                                    icon='translate',
+                                ).classes('translate-btn feedback-anchor').props(
+                                    'no-caps aria-label="翻訳する" aria-keyshortcuts="Ctrl+Enter Meta+Enter" data-feedback="翻訳を開始"'
+                                )
+                                btn.tooltip('翻訳する')
+                                btn.on('click', handle_translate_click, js_handler=_build_action_feedback_js_handler())
+                                if state.text_translating and not state.text_back_translating:
+                                    btn.props('loading disable')
+                                elif not state.can_translate():
+                                    btn.props('disable')
+
+                                # Provide button reference for dynamic state updates
+                                if on_translate_button_created:
+                                    on_translate_button_created(btn)
+
+                            ui.label('Ctrl/Cmd + Enter で翻訳').classes('shortcut-hint inline')
+
+                has_manual_refs = bool(state.reference_files)
+                has_override = state.text_output_language_override in {"en", "jp"}
+                has_glossary = bool(use_bundled_glossary)
+                details = ui.element('details').classes('advanced-panel')
+                if has_manual_refs or has_override or has_glossary:
+                    details.props('open')
+
+                with details:
+                    with ui.element('summary').classes('advanced-summary items-center'):
+                        ui.label('詳細設定').classes('advanced-title')
+                        with ui.row().classes('advanced-summary-chips items-center gap-2'):
+                            if has_glossary:
+                                ui.label('用語集').classes('chip meta-chip')
+                            if has_manual_refs:
+                                ui.label(f'参照 {len(state.reference_files)}').classes('chip meta-chip')
+                            if has_override:
+                                ui.label('手動').classes('chip meta-chip override-chip')
+
+                    with ui.column().classes('advanced-content gap-3'):
+                        if on_output_language_override:
+                            with ui.column().classes('advanced-section'):
+                                ui.label('翻訳方向').classes('advanced-label')
                                 with ui.element('div').classes('direction-toggle'):
                                     auto_btn = ui.button(
                                         '自動',
@@ -374,143 +473,115 @@ def _create_large_input_panel(
                                     metrics_refs['override_en'] = en_btn
                                     metrics_refs['override_jp'] = jp_btn
 
-                        with ui.column().classes('char-count-group'):
-                            count_label = ui.label(
-                                f'{len(state.source_text):,} / {text_char_limit:,} 字'
-                            ).classes('char-count-label')
-                            with ui.element('div').classes('char-count-track'):
-                                count_bar = ui.element('div').classes('char-count-bar')
-                                if text_char_limit > 0:
-                                    marker_pos = min(batch_char_limit / text_char_limit, 1.0) * 100
-                                else:
-                                    marker_pos = 0.0
-                                ui.element('div').classes('char-count-marker').style(
-                                    f'left: {marker_pos:.1f}%'
-                                )
-                            count_hint = ui.label(
-                                f'推奨 {batch_char_limit:,} 字'
-                            ).classes('char-count-hint')
-                            split_hint = ui.label('').classes('char-split-hint')
-                            metrics_refs['count_label'] = count_label
-                            metrics_refs['count_bar'] = count_bar
-                            metrics_refs['count_hint'] = count_hint
-                            metrics_refs['split_hint'] = split_hint
+                        with ui.column().classes('advanced-section'):
+                            ui.label('文字数').classes('advanced-label')
+                            with ui.column().classes('char-count-group'):
+                                count_label = ui.label(
+                                    f'{len(state.source_text):,} / {text_char_limit:,} 字'
+                                ).classes('char-count-label')
+                                with ui.element('div').classes('char-count-track'):
+                                    count_bar = ui.element('div').classes('char-count-bar')
+                                    if text_char_limit > 0:
+                                        marker_pos = min(batch_char_limit / text_char_limit, 1.0) * 100
+                                    else:
+                                        marker_pos = 0.0
+                                    ui.element('div').classes('char-count-marker').style(
+                                        f'left: {marker_pos:.1f}%'
+                                    )
+                                count_hint = ui.label(
+                                    f'推奨 {batch_char_limit:,} 字'
+                                ).classes('char-count-hint')
+                                split_hint = ui.label('').classes('char-split-hint')
+                                metrics_refs['count_label'] = count_label
+                                metrics_refs['count_bar'] = count_bar
+                                metrics_refs['count_hint'] = count_hint
+                                metrics_refs['split_hint'] = split_hint
 
-                        summary = summarize_reference_files(effective_reference_files)
-                        if summary["count"] > 0:
-                            with ui.element('details').classes('ref-summary-details'):
-                                with ui.element('summary').classes('ref-summary-row items-center flex-wrap gap-2'):
-                                    ui.label(f'{summary["count"]} 件').classes('ref-chip')
-                                    ui.label(format_bytes(summary["total_bytes"])).classes('ref-chip')
-                                    if summary["latest_mtime"]:
-                                        updated = datetime.fromtimestamp(summary["latest_mtime"]).strftime('%m/%d %H:%M')
-                                        ui.label(f'更新 {updated}').classes('ref-chip')
-                                    status_label = 'OK' if summary["all_ok"] else 'NG'
-                                    status_class = 'ref-chip status-ok' if summary["all_ok"] else 'ref-chip status-warn'
-                                    ui.label(status_label).classes(status_class)
-                                    ui.icon('expand_more').classes('ref-summary-caret')
+                        with ui.column().classes('advanced-section'):
+                            ui.label('参照ファイル').classes('advanced-label')
+                            with ui.row().classes('items-center gap-2 flex-wrap'):
+                                if on_glossary_toggle:
+                                    glossary_btn = ui.button(
+                                        '用語集',
+                                        icon='short_text',
+                                        on_click=lambda: on_glossary_toggle(not use_bundled_glossary)
+                                    ).props('flat no-caps size=sm').classes(
+                                        f'glossary-toggle-btn {"active" if use_bundled_glossary else ""}'
+                                    )
+                                    glossary_btn.tooltip('同梱の glossary.csv を使用' if not use_bundled_glossary else '用語集を使用中')
 
-                                with ui.column().classes('ref-detail-list'):
-                                    for entry in summary["entries"]:
-                                        status_class = 'ref-detail-row' if entry["exists"] else 'ref-detail-row missing'
+                                    # Edit glossary button (only shown when enabled)
+                                    if use_bundled_glossary and on_edit_glossary:
+                                        edit_btn = ui.button(
+                                            icon='edit',
+                                            on_click=on_edit_glossary
+                                        ).props('flat dense round size=sm aria-label="Edit glossary"').classes('settings-btn')
+                                        edit_btn.tooltip('用語集を編集')
+
+                                # Edit translation rules button
+                                if on_edit_translation_rules:
+                                    rules_btn = ui.button(
+                                        icon='rule',
+                                        on_click=on_edit_translation_rules
+                                    ).props('flat dense round size=sm aria-label="Edit translation rules"').classes('settings-btn')
+                                    rules_btn.tooltip('翻訳ルールを編集')
+
+                                # Reference file attachment button
+                                if on_attach_reference_file:
+                                    has_files = bool(state.reference_files)
+                                    attach_btn = ui.button().classes(
+                                        f'attach-btn {"has-file" if has_files else ""} feedback-anchor'
+                                    ).props('flat aria-label="Attach reference file" data-feedback="参照ファイルを追加"')
+                                    with attach_btn:
+                                        ui.html(ATTACH_SVG, sanitize=False)
+                                    attach_btn.on(
+                                        'click',
+                                        on_attach_reference_file,
+                                        js_handler=_build_action_feedback_js_handler(),
+                                    )
+                                    attach_btn.tooltip('参照ファイルを追加')
+
+                            summary = summarize_reference_files(effective_reference_files)
+                            if summary["count"] > 0:
+                                with ui.element('details').classes('ref-summary-details'):
+                                    with ui.element('summary').classes('ref-summary-row items-center flex-wrap gap-2'):
+                                        ui.label(f'{summary["count"]} 件').classes('ref-chip')
+                                        ui.label(format_bytes(summary["total_bytes"])).classes('ref-chip')
+                                        if summary["latest_mtime"]:
+                                            updated = datetime.fromtimestamp(summary["latest_mtime"]).strftime('%m/%d %H:%M')
+                                            ui.label(f'更新 {updated}').classes('ref-chip')
+                                        status_label = 'OK' if summary["all_ok"] else 'NG'
+                                        status_class = 'ref-chip status-ok' if summary["all_ok"] else 'ref-chip status-warn'
+                                        ui.label(status_label).classes(status_class)
+                                        ui.icon('expand_more').classes('ref-summary-caret')
+
+                                    with ui.column().classes('ref-detail-list'):
+                                        for entry in summary["entries"]:
+                                            status_class = 'ref-detail-row' if entry["exists"] else 'ref-detail-row missing'
+                                            with ui.element('div').classes(status_class):
+                                                ui.label(entry["name"]).classes('file-name')
+                                                if entry["size_bytes"]:
+                                                    ui.label(format_bytes(entry["size_bytes"])).classes('ref-meta')
+                                                if entry["mtime"]:
+                                                    updated = datetime.fromtimestamp(entry["mtime"]).strftime('%m/%d %H:%M')
+                                                    ui.label(f'更新 {updated}').classes('ref-meta')
+                                                ui.label('OK' if entry["exists"] else 'NG').classes('ref-file-status')
+
+                            manual_summary = summarize_reference_files(state.reference_files)
+                            if manual_summary["entries"]:
+                                with ui.row().classes('ref-file-row items-center flex-wrap gap-2'):
+                                    for i, entry in enumerate(manual_summary["entries"]):
+                                        status_class = 'ref-file-chip' if entry["exists"] else 'ref-file-chip missing'
                                         with ui.element('div').classes(status_class):
                                             ui.label(entry["name"]).classes('file-name')
-                                            if entry["size_bytes"]:
-                                                ui.label(format_bytes(entry["size_bytes"])).classes('ref-meta')
-                                            if entry["mtime"]:
-                                                updated = datetime.fromtimestamp(entry["mtime"]).strftime('%m/%d %H:%M')
-                                                ui.label(f'更新 {updated}').classes('ref-meta')
-                                            ui.label('OK' if entry["exists"] else 'NG').classes('ref-file-status')
-
-                        manual_summary = summarize_reference_files(state.reference_files)
-                        if manual_summary["entries"]:
-                            with ui.row().classes('ref-file-row items-center flex-wrap gap-2'):
-                                for i, entry in enumerate(manual_summary["entries"]):
-                                    status_class = 'ref-file-chip' if entry["exists"] else 'ref-file-chip missing'
-                                    with ui.element('div').classes(status_class):
-                                        ui.label(entry["name"]).classes('file-name')
-                                        ui.label('OK' if entry["exists"] else 'NG').classes(
-                                            'ref-file-status'
-                                        )
-                                        if on_remove_reference_file:
-                                            ui.button(
-                                                icon='close',
-                                                on_click=lambda idx=i: on_remove_reference_file(idx)
-                                            ).props('flat round aria-label="Remove reference file"').classes('remove-btn')
-
-                    with ui.row().classes('input-toolbar-right items-center gap-2'):
-                        # Bundled glossary toggle chip
-                        if on_glossary_toggle:
-                            glossary_btn = ui.button(
-                                '用語集',
-                                icon='short_text',
-                                on_click=lambda: on_glossary_toggle(not use_bundled_glossary)
-                            ).props('flat no-caps size=sm').classes(
-                                f'glossary-toggle-btn {"active" if use_bundled_glossary else ""}'
-                            )
-                            glossary_btn.tooltip('同梱の glossary.csv を使用' if not use_bundled_glossary else '用語集を使用中')
-
-                            # Edit glossary button (only shown when enabled)
-                            if use_bundled_glossary and on_edit_glossary:
-                                edit_btn = ui.button(
-                                    icon='edit',
-                                    on_click=on_edit_glossary
-                                ).props('flat dense round size=sm aria-label="Edit glossary"').classes('settings-btn')
-                                edit_btn.tooltip('用語集をExcelで編集')
-
-                        # Edit translation rules button
-                        if on_edit_translation_rules:
-                            rules_btn = ui.button(
-                                icon='rule',
-                                on_click=on_edit_translation_rules
-                            ).props('flat dense round size=sm aria-label="Edit translation rules"').classes('settings-btn')
-                            rules_btn.tooltip('翻訳ルールを編集')
-
-                        # Reference file attachment button
-                        if on_attach_reference_file:
-                            has_files = bool(state.reference_files)
-                            attach_btn = ui.button(
-                                on_click=on_attach_reference_file
-                            ).classes(f'attach-btn {"has-file" if has_files else ""}').props('flat aria-label="Attach reference file"')
-                            with attach_btn:
-                                ui.html(ATTACH_SVG, sanitize=False)
-                            attach_btn.tooltip('その他の参照ファイルを添付' if not has_files else '参照ファイルを追加')
-
-                        with ui.column().classes('translate-actions items-end gap-2'):
-                            with ui.row().classes('translate-meta-row items-center gap-2 flex-wrap justify-end'):
-                                direction_chip = ui.label('自動').classes('chip direction-chip')
-                                style_chip = ui.label('スタイル自動').classes('chip style-chip')
-                                override_chip = ui.label('手動').classes('chip override-chip')
-                                override_chip.set_visibility(False)
-                                metrics_refs['direction_chip'] = direction_chip
-                                metrics_refs['style_chip'] = style_chip
-                                metrics_refs['override_chip'] = override_chip
-
-                            with ui.row().classes('items-center gap-2'):
-                                # Clear button
-                                if state.source_text:
-                                    ui.button(icon='close', on_click=on_clear).props(
-                                        'flat dense round size=sm aria-label="クリア"'
-                                    ).classes('result-action-btn')
-
-                                # Translate button
-                                def handle_translate_click():
-                                    logger.info("Translate button clicked")
-                                    asyncio.create_task(on_translate())
-
-                                btn = ui.button(
-                                    icon='translate',
-                                    on_click=handle_translate_click,
-                                ).classes('translate-btn').props('no-caps aria-label="翻訳する" aria-keyshortcuts="Ctrl+Enter Meta+Enter"')
-                                btn.tooltip('翻訳する')
-                                if state.text_translating and not state.text_back_translating:
-                                    btn.props('loading disable')
-                                elif not state.can_translate():
-                                    btn.props('disable')
-
-                                # Provide button reference for dynamic state updates
-                                if on_translate_button_created:
-                                    on_translate_button_created(btn)
+                                            ui.label('OK' if entry["exists"] else 'NG').classes(
+                                                'ref-file-status'
+                                            )
+                                            if on_remove_reference_file:
+                                                ui.button(
+                                                    icon='close',
+                                                    on_click=lambda idx=i: on_remove_reference_file(idx)
+                                                ).props('flat round aria-label="Remove reference file"').classes('remove-btn')
 
                 split_panel = ui.element('div').classes('split-suggestion')
                 split_panel.set_visibility(False)
@@ -533,8 +604,6 @@ def _create_large_input_panel(
                 metrics_refs['split_count'] = split_count
                 metrics_refs['split_preview'] = split_preview
                 metrics_refs['split_action'] = split_action
-
-                ui.label('Ctrl/Cmd + Enter で翻訳').classes('shortcut-hint')
 
                 if on_input_metrics_created:
                     on_input_metrics_created(metrics_refs)
@@ -713,7 +782,7 @@ def _render_translation_status(
 def _render_result_meta(state: AppState, result: TextTranslationResult) -> None:
     if not result.options:
         return
-    output_label = '英訳' if result.output_language == 'en' else '和訳'
+    output_label = '日本語→英語' if result.output_language == 'en' else '英語→日本語'
     with ui.row().classes('result-meta-row items-center gap-2 flex-wrap'):
         ui.label(output_label).classes('chip meta-chip')
         if result.is_to_english:

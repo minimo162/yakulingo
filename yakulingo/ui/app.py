@@ -717,6 +717,30 @@ def _nicegui_open_window_patched(
                 _set_window_system_menu_visible_win32(hwnd, False)
         except Exception as e:
             logger.debug("Failed to set native window icon: %s", e)
+
+    if sys.platform == "win32" and _is_close_to_resident_enabled():
+        def _hide_system_menu_on_show(*_args, **_kwargs) -> None:
+            import threading as _threading
+            import time as _time
+
+            def _worker() -> None:
+                for attempt in range(5):
+                    hwnd = _get_native_hwnd() or _find_window_handle_by_title_win32(title)
+                    if hwnd and _set_window_system_menu_visible_win32(hwnd, False):
+                        return
+                    _time.sleep(0.15)
+                logger.debug("Failed to hide native system menu after show")
+
+            _threading.Thread(
+                target=_worker,
+                daemon=True,
+                name="hide_native_system_menu",
+            ).start()
+
+        try:
+            window.events.shown += _hide_system_menu_on_show
+        except Exception:
+            pass
         if resident_startup:
             try:
                 if hwnd is None:
@@ -6132,9 +6156,10 @@ class YakuLingoApp:
             self._enter_resident_mode("ui_close_button")
 
         with ui.element('div').classes('resident-close-button'):
-            ui.button(icon='close', on_click=on_click).props(
-                'flat round aria-label="ウィンドウを隠す"'
-            ).classes('icon-btn')
+            hide_btn = ui.button('隠す', icon='close', on_click=on_click).props(
+                'aria-label="ウィンドウを隠して常駐します"'
+            ).classes('btn-tonal resident-close-btn')
+            hide_btn.tooltip('ウィンドウを隠して常駐します')
 
     def create_ui(self):
         """Create the UI - Nani-inspired 2-column layout"""

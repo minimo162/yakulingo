@@ -213,6 +213,29 @@ body {
     z-index: 1200;
 }
 
+.resident-close-btn {
+    background: var(--md-sys-color-error-container) !important;
+    color: var(--md-sys-color-on-error-container) !important;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
+.resident-close-btn:hover:not(:disabled) {
+    background: color-mix(
+        in srgb,
+        var(--md-sys-color-error-container) calc(100% - var(--md-sys-state-hover-pct)),
+        var(--md-sys-color-on-error-container) var(--md-sys-state-hover-pct)
+    ) !important;
+}
+
+.resident-close-btn:active:not(:disabled) {
+    background: color-mix(
+        in srgb,
+        var(--md-sys-color-error-container) calc(100% - var(--md-sys-state-pressed-pct)),
+        var(--md-sys-color-on-error-container) var(--md-sys-state-pressed-pct)
+    ) !important;
+}
+
 /* === Sidebar Layout === */
 /* Nani-style: simple surface background, minimal shadow */
 .sidebar {

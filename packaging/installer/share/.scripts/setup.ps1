@@ -165,6 +165,7 @@ if ($GuiMode) {
 
     # Cancellation flag
     $script:cancelled = $false
+    $script:closingProgressForm = $false
 
     # Create progress form
     $script:progressForm = $null
@@ -192,7 +193,7 @@ if ($GuiMode) {
             # Handle form closing (X button) as cancel
             $script:progressForm.add_FormClosing({
                 param($sender, $e)
-                if (-not $script:cancelled) {
+                if (-not $script:closingProgressForm -and -not $script:cancelled) {
                     $script:cancelled = $true
                 }
             })
@@ -261,9 +262,14 @@ if ($GuiMode) {
 
     function Close-Progress {
         if ($script:progressForm -ne $null) {
-            $script:progressForm.Close()
-            $script:progressForm.Dispose()
-            $script:progressForm = $null
+            $script:closingProgressForm = $true
+            try {
+                $script:progressForm.Close()
+                $script:progressForm.Dispose()
+                $script:progressForm = $null
+            } finally {
+                $script:closingProgressForm = $false
+            }
         }
     }
 

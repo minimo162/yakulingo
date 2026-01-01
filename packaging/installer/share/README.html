@@ -25,8 +25,9 @@
         margin: 0;
         font-family: "BIZ UDPGothic", "Yu Gothic UI", "Hiragino Sans", "Segoe UI", sans-serif;
         color: var(--ink);
-        background: radial-gradient(900px 400px at 10% -10%, rgba(43, 89, 255, 0.12), transparent 60%),
-          radial-gradient(720px 360px at 90% 0%, rgba(255, 107, 74, 0.12), transparent 60%),
+        background:
+          radial-gradient(900px 420px at 8% -8%, rgba(43, 89, 255, 0.13), transparent 60%),
+          radial-gradient(760px 380px at 92% -4%, rgba(255, 107, 74, 0.12), transparent 60%),
           var(--bg);
         line-height: 1.7;
       }
@@ -100,12 +101,22 @@
         display: flex;
         flex-wrap: wrap;
         gap: 10px 16px;
+        align-items: center;
+      }
+
+      nav li {
+        display: flex;
+        align-items: center;
       }
 
       nav a {
         color: var(--primary);
         font-weight: 700;
         text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        line-height: 1.2;
+        padding: 2px 0;
       }
 
       nav a:hover {
@@ -124,6 +135,7 @@
       h2 {
         margin: 0 0 12px;
         font-size: 1.3rem;
+        scroll-margin-top: 32px;
       }
 
       h3 {
@@ -153,6 +165,25 @@
         background: #fbfcff;
       }
 
+      .steps {
+        display: grid;
+        gap: 12px;
+      }
+
+      .step {
+        display: grid;
+        gap: 6px;
+        padding: 14px 16px;
+        border-radius: 14px;
+        border: 1px solid var(--border);
+        background: #fbfcff;
+        border-left: 4px solid var(--primary);
+      }
+
+      .step strong {
+        font-size: 0.98rem;
+      }
+
       kbd {
         display: inline-flex;
         align-items: center;
@@ -165,12 +196,24 @@
         font-size: 0.9em;
       }
 
-      ul {
+      ul, ol {
         margin: 0 0 0 18px;
       }
 
-      li + li {
+      section li + li {
         margin-top: 8px;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        padding: 4px 10px;
+        border-radius: 999px;
+        border: 1px solid rgba(43, 89, 255, 0.2);
+        background: rgba(43, 89, 255, 0.08);
+        font-size: 0.85rem;
+        font-weight: 700;
+        color: #1f3b5b;
       }
 
       footer {
@@ -185,19 +228,19 @@
     <div class="page">
       <header class="hero">
         <div class="hero-tag">YakuLingo / 使い方ガイド</div>
-        <h1>翻訳を、いつでも即時に。</h1>
-        <p>YakuLingo は常駐型の翻訳アプリです。普段の作業を止めずに、テキストもファイルもすぐ翻訳できます。</p>
+        <h1>翻訳を、作業の流れのままに。</h1>
+        <p>YakuLingo は常駐型の翻訳アプリです。テキストもファイルも、作業を止めずに翻訳できます。</p>
         <div class="hero-grid">
           <div class="hero-card">
-            <strong>クイック起動</strong>
+            <strong>覚える操作は1つだけ</strong>
             同じウィンドウで <kbd>Ctrl</kbd> + <kbd>C</kbd> を素早く2回。
           </div>
           <div class="hero-card">
-            <strong>ファイル翻訳</strong>
-            ファイルを選択して <kbd>Ctrl</kbd> + <kbd>C</kbd> を素早く2回。
+            <strong>テキストもファイルも対応</strong>
+            Excel / Word / PowerPoint / PDF / TXT / MSG。
           </div>
           <div class="hero-card">
-            <strong>終了方法</strong>
+            <strong>終了は明示的に</strong>
             UIを閉じても常駐。終了はスタートメニューの「YakuLingo 終了」から。
           </div>
         </div>
@@ -206,73 +249,96 @@
             <li><a href="#quickstart">最初の一歩</a></li>
             <li><a href="#text">テキスト翻訳</a></li>
             <li><a href="#file">ファイル翻訳</a></li>
+            <li><a href="#result">結果の受け取り</a></li>
             <li><a href="#resident">常駐/終了</a></li>
             <li><a href="#trouble">困ったとき</a></li>
           </ul>
         </nav>
       </header>
 
-      <section id="quickstart">
-        <h2>最初の一歩</h2>
-        <div class="grid">
-          <div class="card">
+      <section>
+        <h2 id="quickstart">最初の一歩</h2>
+        <div class="steps">
+          <div class="step">
             <strong>1. セットアップ完了</strong>
-            setup.ps1 実行後、アプリは自動で常駐します。
+            インストール後、YakuLingo は自動で常駐します。
           </div>
-          <div class="card">
+          <div class="step">
             <strong>2. Copilot にログイン</strong>
             初回は M365 Copilot のログインが必要です（案内が表示されたらログイン）。
           </div>
-          <div class="card">
-            <strong>3. 翻訳開始</strong>
-            テキストやファイルを選択して <kbd>Ctrl</kbd> + <kbd>C</kbd> を素早く2回。
+          <div class="step">
+            <strong>3. 翻訳を開始</strong>
+            対象を選択して <kbd>Ctrl</kbd> + <kbd>C</kbd> を素早く2回。
           </div>
         </div>
         <div class="note">
-          翻訳方向は自動判定です。日本語なら英訳、英語なら和訳が標準で表示されます。
+          <span class="pill">自動判定</span>
+          日本語なら英訳、英語なら和訳が自動で表示されます。
         </div>
       </section>
 
-      <section id="text">
-        <h2>テキスト翻訳</h2>
+      <section>
+        <h2 id="text">テキスト翻訳</h2>
         <ol>
           <li>翻訳したい文章を選択します。</li>
           <li>同じウィンドウで <kbd>Ctrl</kbd> + <kbd>C</kbd> を素早く2回。</li>
           <li>UIに翻訳結果が表示されます。必要に応じてコピーします。</li>
         </ol>
         <div class="note">
-          日本語から英語は「標準/簡潔/最簡潔」を同時に表示。英語から日本語は解説付きで表示されます。
+          日本語 → 英語は「標準 / 簡潔 / 最簡潔」を同時に表示。英語 → 日本語は解説付きで表示されます。
         </div>
       </section>
 
-      <section id="file">
-        <h2>ファイル翻訳</h2>
+      <section>
+        <h2 id="file">ファイル翻訳</h2>
         <h3>開始方法</h3>
         <ul>
           <li>エクスプローラーでファイルを選択し、<kbd>Ctrl</kbd> + <kbd>C</kbd> を素早く2回。</li>
         </ul>
-        <h3>翻訳結果</h3>
+        <h3>対応ファイル</h3>
         <ul>
-          <li>進捗と完了ステータスが UI に表示されます。</li>
-          <li>完了後、翻訳済みファイルや対訳ファイルが一覧表示されます。</li>
+          <li>Excel / Word / PowerPoint / PDF / TXT / MSG</li>
         </ul>
       </section>
 
-      <section id="resident">
-        <h2>常駐/終了</h2>
+      <section>
+        <h2 id="result">結果の受け取り</h2>
+        <div class="grid">
+          <div class="card">
+            <strong>進捗の確認</strong>
+            翻訳中は UI に進捗と状態が表示されます。
+          </div>
+          <div class="card">
+            <strong>出力ファイル</strong>
+            完了後、翻訳済みファイルや対訳ファイルが一覧表示されます。
+          </div>
+          <div class="card">
+            <strong>参照ファイル</strong>
+            用語集やスタイルガイドを添付すると翻訳が安定します。
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2 id="resident">常駐/終了</h2>
         <ul>
           <li>UIを閉じても常駐は継続します。</li>
           <li>UIを開く: スタートメニュー &gt; YakuLingo。</li>
-          <li>終了する: スタートメニュー &gt; YakuLingo &gt;「YakuLingo 終了」。</li>
+          <li>終了する: スタートメニュー &gt; YakuLingo &gt; 「YakuLingo 終了」。</li>
         </ul>
         <div class="note">
           常駐起動により、いつでもショートカットで翻訳できます。
         </div>
       </section>
 
-      <section id="trouble">
-        <h2>困ったとき</h2>
+      <section>
+        <h2 id="trouble">困ったとき</h2>
         <div class="grid">
+          <div class="card">
+            <strong>ショートカットが反応しない</strong>
+            必ず同じウィンドウで <kbd>Ctrl</kbd> + <kbd>C</kbd> を素早く2回押してください。
+          </div>
           <div class="card">
             <strong>翻訳が始まらない</strong>
             Copilot のログインが完了しているか確認してください。
@@ -280,10 +346,6 @@
           <div class="card">
             <strong>UIが表示されない</strong>
             スタートメニューから YakuLingo を起動して確認してください。
-          </div>
-          <div class="card">
-            <strong>ファイル翻訳で失敗する</strong>
-            ファイルが開かれていないか、サイズが大きすぎないか確認してください。
           </div>
         </div>
       </section>

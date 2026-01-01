@@ -5124,24 +5124,36 @@ class YakuLingoApp:
                 panel.dataset.yakulingoAutoScroll = shouldFollow ? 'true' : 'false';
                 if (!shouldFollow) return false;
 
-                const scrollNow = () => {
-                    panel.scrollTop = panel.scrollHeight;
+                const hidden = document.hidden || document.visibilityState !== 'visible';
+                const prefersReducedMotion = window.matchMedia
+                    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+                const useSmooth = !hidden && !prefersReducedMotion;
+                const scrollNow = (behavior) => {
+                    const target = panel.scrollHeight;
+                    if (panel.scrollTo) {
+                        try {
+                            panel.scrollTo({ top: target, behavior });
+                            return;
+                        } catch (err) {
+                            // fall back to immediate assignment
+                        }
+                    }
+                    panel.scrollTop = target;
                 };
 
-                const hidden = document.hidden || document.visibilityState !== 'visible';
                 if (hidden) {
-                    scrollNow();
-                    setTimeout(scrollNow, 120);
+                    scrollNow('auto');
+                    setTimeout(() => scrollNow('auto'), 120);
                     return true;
                 }
 
                 let rafCalled = false;
                 requestAnimationFrame(() => requestAnimationFrame(() => {
                     rafCalled = true;
-                    scrollNow();
+                    scrollNow(useSmooth ? 'smooth' : 'auto');
                 }));
                 setTimeout(() => {
-                    if (!rafCalled) scrollNow();
+                    if (!rafCalled) scrollNow(useSmooth ? 'smooth' : 'auto');
                 }, 120);
                 return true;
             } catch (err) {

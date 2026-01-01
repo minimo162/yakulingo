@@ -82,6 +82,7 @@ else:
             settle_delay_sec: float = 0.005,
             cooldown_sec: float = 1.2,
             fast_partial_match_window_sec: float = 0.35,
+            fast_double_copy_min_gap_ms: float = 40.0,
             same_payload_suppress_ms: float = 120.0,
             recheck_settle_ms: float = 30.0,
         ) -> None:
@@ -91,6 +92,7 @@ else:
             self._settle_delay_sec = settle_delay_sec
             self._cooldown_sec = cooldown_sec
             self._fast_partial_match_window_sec = fast_partial_match_window_sec
+            self._fast_double_copy_min_gap_sec = fast_double_copy_min_gap_ms / 1000.0
             self._same_payload_suppress_sec = same_payload_suppress_ms / 1000.0
             self._recheck_settle_sec = recheck_settle_ms / 1000.0
 
@@ -213,6 +215,7 @@ else:
                             logger.debug("Clipboard trigger read failed: %s", exc)
                             continue
                         seq_after = _clipboard.get_clipboard_sequence_number_raw()
+                        read_time = time.monotonic()
 
                         payload = None
                         if files:
@@ -330,6 +333,14 @@ else:
                                         re_now = time.monotonic()
                                         re_normalized = self._normalize_payload(re_payload)
                                         re_payload_hash = self._hash_payload(re_normalized)
+                                        fast_double_copy_match = False
+                                        if read_time is not None:
+                                            fast_gap_sec = re_now - read_time
+                                            fast_double_copy_match = (
+                                                re_normalized == normalized_payload
+                                                and fast_gap_sec >= self._fast_double_copy_min_gap_sec
+                                                and fast_gap_sec <= self._fast_partial_match_window_sec
+                                            )
                                         suppress_recheck = (
                                             last_payload_hash is not None
                                             and re_payload_hash == last_payload_hash
@@ -368,13 +379,22 @@ else:
                                                             re_partial_match = True
                                                     elif re_longer.startswith(re_shorter):
                                                         re_partial_match = True
-                                            re_is_match = re_exact_match or re_partial_match
+                                            re_is_match = (
+                                                re_exact_match
+                                                or re_partial_match
+                                                or fast_double_copy_match
+                                            )
+                                            mode = "none"
+                                            if fast_double_copy_match:
+                                                mode = "fast"
+                                            elif re_partial_match:
+                                                mode = "partial"
+                                            elif re_exact_match:
+                                                mode = "exact"
                                             logger.debug(
                                                 "Clipboard double-copy recheck: match=%s, mode=%s",
                                                 re_is_match,
-                                                "partial"
-                                                if re_partial_match
-                                                else "exact" if re_exact_match else "none",
+                                                mode,
                                             )
                                             if re_is_match:
                                                 self._cooldown_until = re_now + self._cooldown_sec

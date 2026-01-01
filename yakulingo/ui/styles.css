@@ -179,6 +179,7 @@ body {
     overflow-x: hidden; /* Prevent horizontal scroll - min-width handles narrow windows */
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    -webkit-app-region: no-drag !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -215,6 +216,7 @@ body {
     z-index: 1100;
     background: transparent;
     cursor: move;
+    -webkit-app-region: drag !important;
 }
 
 .resident-close-button {

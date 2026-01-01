@@ -1316,6 +1316,8 @@ class YakuLingoApp:
             or copilot.last_connection_error == CopilotHandler.ERROR_LOGIN_REQUIRED
         )
         status["gpt_mode_set"] = bool(getattr(copilot, "is_gpt_mode_set", False))
+        if not status["ready"] and state == CopilotConnectionState.READY:
+            status["ready"] = True
         return status
 
     async def _ensure_resident_ui_visible(self, reason: str) -> bool:

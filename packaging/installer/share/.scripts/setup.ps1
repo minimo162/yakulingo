@@ -39,6 +39,9 @@ function Write-ErrorLog {
 }
 
 trap {
+    if ($script:cancelled) {
+        exit 2  # Exit code 2 = cancelled
+    }
     # Write error to debug log (more reliable than stderr capture)
     try {
         "=== ERROR: $(Get-Date) ===" | Out-File -FilePath $debugLog -Append -Encoding UTF8
@@ -2133,6 +2136,17 @@ if ($GuiMode) {
         Invoke-Setup
         exit 0
     } catch {
+        # Close progress dialog first
+        Close-Progress
+
+        # Don't show error dialog if cancelled by user
+        if ($script:cancelled) {
+            try {
+                "=== CANCELLED: $(Get-Date) ===" | Out-File -FilePath $debugLog -Append -Encoding UTF8
+            } catch { }
+            exit 2  # Exit code 2 = cancelled
+        }
+
         # Write error to debug log (catch block errors)
         try {
             "=== CATCH ERROR: $(Get-Date) ===" | Out-File -FilePath $debugLog -Append -Encoding UTF8
@@ -2140,14 +2154,6 @@ if ($GuiMode) {
             "ScriptStackTrace: $($_.ScriptStackTrace)" | Out-File -FilePath $debugLog -Append -Encoding UTF8
             "InvocationInfo: $($_.InvocationInfo.PositionMessage)" | Out-File -FilePath $debugLog -Append -Encoding UTF8
         } catch { }
-
-        # Close progress dialog first
-        Close-Progress
-
-        # Don't show error dialog if cancelled by user
-        if ($script:cancelled) {
-            exit 2  # Exit code 2 = cancelled
-        }
 
         Write-ErrorLog -ErrorRecord $_
         Show-Error $_.Exception.Message

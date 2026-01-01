@@ -89,6 +89,11 @@ command = "cmd.exe /c powershell.exe -ExecutionPolicy Bypass -File """ & psScrip
 ' Run and wait for completion (0 = hidden, True = wait)
 exitCode = objShell.Run(command, 0, True)
 
+If exitCode = 2 Then
+    ' Exit code 2 = cancelled by user
+    WScript.Quit 0
+End If
+
 If exitCode <> 0 Then
     Dim errorMessage, debugLogPath
     debugLogPath = objShell.Environment("Process")("TEMP") & "\YakuLingo_setup_debug.log"

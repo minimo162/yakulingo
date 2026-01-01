@@ -1273,6 +1273,7 @@ class YakuLingoApp:
         self._screen_size: tuple[int, int] | None = None
         # Native mode flag (pywebview vs browser app window)
         self._native_mode_enabled: bool | None = None
+        self._native_frameless: bool = False
 
         # Login polling state (prevents duplicate polling)
         self._login_polling_active = False
@@ -6191,6 +6192,11 @@ class YakuLingoApp:
         ui.add_head_html('<meta name="viewport" content="width=device-width, initial-scale=1.0">')
         ui.add_head_html(f'<style>{COMPLETE_CSS}</style>')
 
+        if self._native_frameless:
+            ui.element('div').classes('native-drag-region pywebview-drag-region').props(
+                'aria-hidden="true"'
+            )
+
         # Hidden file upload for direct file selection (no dialog needed)
         # Uses Quasar's pickFiles() method to open file picker directly
         self._reference_upload = ui.upload(
@@ -8748,7 +8754,9 @@ def run_app(
     _t2_webview = time.perf_counter()
     logger.info("[TIMING] webview.initialize: %.2fs", _t2_webview - _t2)
     logger.info("Native mode enabled: %s", native)
+    native_frameless = bool(native and sys.platform == "win32")
     yakulingo_app._native_mode_enabled = native
+    yakulingo_app._native_frameless = native_frameless
     patch_marker = _NICEGUI_NATIVE_PATCH_APPLIED or not native
     if _early_copilot is not None:
         _early_copilot.set_native_patch_applied(patch_marker)
@@ -9650,7 +9658,7 @@ def run_app(
     # - hidden: Start window hidden and show after positioning (prevents flicker)
     # - x, y: Pre-calculate window position for native mode
     # - background_color: Match app background to reduce visual flicker
-    # - easy_drag: Disable titlebar drag region (not needed, window has native titlebar)
+    # - easy_drag: Keep disabled; drag region is provided in the UI when frameless
     # - icon: Use YakuLingo icon for taskbar (instead of default Python icon)
     if native:
         nicegui_app.native.window_args['background_color'] = '#FFFBFE'  # Match app background (styles.css --md-sys-color-surface)
@@ -10594,7 +10602,7 @@ body.yakulingo-drag-active .global-drop-indicator {
         reload=False,
         native=native,
         window_size=run_window_size,
-        frameless=False,
+        frameless=native_frameless,
         show=False,  # Browser window is opened explicitly in on_startup
         reconnect_timeout=30.0,  # Increase from default 3s for stable WebSocket connection
         uvicorn_logging_level='warning',  # Reduce log output for faster startup

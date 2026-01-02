@@ -291,16 +291,21 @@ def create_file_panel(
             # Content container
             with ui.element('div').classes('main-card-inner mx-1.5 mb-1.5 p-4'):
                 if state.file_queue:
-                    _queue_panel(
-                        state,
-                        on_queue_select,
-                        on_queue_remove,
-                        on_queue_move,
-                        on_queue_reorder,
-                        on_cancel,
-                        on_queue_clear,
-                        on_queue_mode_change,
-                    )
+                    with ui.element('details').classes('advanced-panel file-queue-panel'):
+                        with ui.element('summary').classes('advanced-summary items-center'):
+                            ui.label('キュー').classes('advanced-title')
+                            with ui.row().classes('advanced-summary-chips items-center gap-2'):
+                                ui.label(f'{len(state.file_queue)} 件').classes('chip meta-chip')
+                        _queue_panel(
+                            state,
+                            on_queue_select,
+                            on_queue_remove,
+                            on_queue_move,
+                            on_queue_reorder,
+                            on_cancel,
+                            on_queue_clear,
+                            on_queue_mode_change,
+                        )
 
                 if state.file_state == FileState.EMPTY:
                     _drop_zone(state, on_file_select)
@@ -323,12 +328,10 @@ def create_file_panel(
                     output_label = '日本語→英語' if state.file_output_language == 'en' else '英語→日本語'
 
                     details = ui.element('details').classes('advanced-panel file-advanced-panel')
-                    if has_manual_refs or has_glossary or has_override or has_sections:
-                        details.props('open')
 
                     with details:
                         with ui.element('summary').classes('advanced-summary items-center'):
-                            ui.label('翻訳設定').classes('advanced-title')
+                            ui.label('詳細設定').classes('advanced-title')
                             with ui.row().classes('advanced-summary-chips items-center gap-2'):
                                 ui.label(output_label).classes('chip meta-chip')
                                 if state.file_output_language == 'en':
@@ -375,7 +378,7 @@ def create_file_panel(
                             btn_disabled = state.file_info is None
                             btn_props = 'no-caps disable' if btn_disabled else 'no-caps'
                             btn = ui.button(
-                                '翻訳',
+                                '翻訳する',
                                 icon='translate',
                             ).classes('translate-btn feedback-anchor').props(
                                 f'{btn_props} aria-label="翻訳する" aria-keyshortcuts="Ctrl+Enter Meta+Enter" data-feedback="翻訳を開始"'

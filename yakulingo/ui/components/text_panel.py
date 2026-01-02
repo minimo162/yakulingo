@@ -342,6 +342,7 @@ def _create_large_input_panel(
         with ui.element('div').classes('main-card w-full'):
             # Input container
             with ui.element('div').classes('main-card-inner'):
+                ui.label('自動で言語を判定して英訳/和訳します').classes('input-helper')
                 # Large textarea - no autogrow, fills available space via CSS flex
                 _create_textarea_with_keyhandler(
                     state=state,
@@ -403,7 +404,7 @@ def _create_large_input_panel(
                                     asyncio.create_task(on_translate())
 
                                 btn = ui.button(
-                                    '翻訳',
+                                    '翻訳する',
                                     icon='translate',
                                 ).classes('translate-btn feedback-anchor').props(
                                     'no-caps aria-label="翻訳する" aria-keyshortcuts="Ctrl+Enter Meta+Enter" data-feedback="翻訳を開始"'
@@ -425,12 +426,10 @@ def _create_large_input_panel(
                 has_override = state.text_output_language_override in {"en", "jp"}
                 has_glossary = bool(use_bundled_glossary)
                 details = ui.element('details').classes('advanced-panel')
-                if has_manual_refs or has_override or has_glossary:
-                    details.props('open')
 
                 with details:
                     with ui.element('summary').classes('advanced-summary items-center'):
-                        ui.label('翻訳設定').classes('advanced-title')
+                        ui.label('詳細設定').classes('advanced-title')
                         with ui.row().classes('advanced-summary-chips items-center gap-2'):
                             summary_direction_chip = ui.label('自動判定').classes('chip meta-chip')
                             summary_style_chip = ui.label('スタイル自動').classes('chip meta-chip')
@@ -646,12 +645,22 @@ def create_text_result_panel(
         if source_text_to_display:
             _render_source_text_section(source_text_to_display, on_copy)
 
-        # Attached reference files indicator (read-only display in result panel)
+        # Attached reference files indicator (collapsed by default)
         if state.reference_files:
-            with ui.row().classes('items-center gap-2 flex-wrap'):
-                for ref_file in state.reference_files:
-                    with ui.element('div').classes('attach-file-indicator'):
-                        ui.label(ref_file.name).classes('file-name')
+            summary = summarize_reference_files(state.reference_files)
+            with ui.element('details').classes('ref-summary-details'):
+                with ui.element('summary').classes('ref-summary-row items-center flex-wrap gap-2'):
+                    ui.label(f'参照ファイル {summary["count"]}').classes('ref-chip')
+                    ui.label(format_bytes(summary["total_bytes"])).classes('ref-chip')
+                    ui.icon('expand_more').classes('ref-summary-caret')
+                with ui.column().classes('ref-detail-list'):
+                    for entry in summary["entries"]:
+                        status_class = 'ref-detail-row' if entry["exists"] else 'ref-detail-row missing'
+                        with ui.element('div').classes(status_class):
+                            ui.label(entry["name"]).classes('file-name')
+                            if entry["size_bytes"]:
+                                ui.label(format_bytes(entry["size_bytes"])).classes('ref-meta')
+                            ui.label('OK' if entry["exists"] else 'NG').classes('ref-file-status')
 
         # Translation status section
         if state.text_translating or state.text_back_translating:
@@ -675,14 +684,13 @@ def create_text_result_panel(
                 if on_streaming_preview_label_created:
                     on_streaming_preview_label_created(label)
 
+        primary_option = None
+        secondary_options: list[TranslationOption] = []
+        display_options: list[TranslationOption] = []
+        actions_disabled = state.text_translating or state.text_back_translating
+
         if state.text_result and state.text_result.options:
             _render_result_meta(state, state.text_result)
-            _render_compare_controls(
-                state,
-                state.text_result,
-                on_compare_mode_change,
-                on_compare_base_style_change,
-            )
 
         # Results section - language-specific UI
         if state.text_result and state.text_result.options:
@@ -694,11 +702,11 @@ def create_text_result_panel(
                     on_back_translate,
                     elapsed_time,
                     on_retry,
-                    actions_disabled=state.text_translating or state.text_back_translating,
+                    actions_disabled=actions_disabled,
                 )
             else:
                 # →English: Multiple style options
-                _render_results_to_en(
+                primary_option, secondary_options, display_options = _render_results_to_en(
                     state.text_result,
                     on_copy,
                     on_back_translate,
@@ -706,22 +714,25 @@ def create_text_result_panel(
                     on_retry,
                     state.text_compare_mode,
                     state.text_compare_base_style,
-                    actions_disabled=state.text_translating or state.text_back_translating,
+                    actions_disabled=actions_disabled,
                 )
         elif not state.text_translating:
             # Empty state - show placeholder (spinner already shown in translation status section)
             _render_empty_result_state()
 
-        if state.text_compare_mode == "source" and state.text_result and state.text_result.options:
-            _render_source_compare_panel(state.text_result, state.text_compare_base_style)
-
         if state.text_result and state.text_result.options:
-            _render_result_action_footer(
+            _render_result_details(
+                state,
                 state.text_result,
                 on_copy,
                 on_back_translate,
                 on_edit,
-                actions_disabled=state.text_translating or state.text_back_translating,
+                on_compare_mode_change,
+                on_compare_base_style_change,
+                primary_option,
+                secondary_options,
+                display_options,
+                actions_disabled=actions_disabled,
             )
 
 
@@ -807,7 +818,9 @@ def _render_result_meta(state: AppState, result: TextTranslationResult) -> None:
     with ui.row().classes('result-meta-row items-center gap-2 flex-wrap'):
         ui.label(output_label).classes('chip meta-chip')
         if result.is_to_english:
-            ui.label('標準 / 簡潔 / 最簡潔').classes('chip meta-chip')
+            ui.label('標準').classes('chip meta-chip')
+            if len(result.options) > 1:
+                ui.label(f'他 {len(result.options) - 1} スタイル').classes('chip meta-chip')
         else:
             ui.label('解説付き').classes('chip meta-chip')
         if state.text_output_language_override in {"en", "jp"}:
@@ -877,6 +890,86 @@ def _render_source_compare_panel(result: TextTranslationResult, base_style: str)
                 ui.label('訳文（差分）').classes('text-xs text-muted')
                 ui.html(diff_html, sanitize=False).classes('source-compare-text diff-text')
 
+def _render_result_details(
+    state: AppState,
+    result: TextTranslationResult,
+    on_copy: Callable[[str], None],
+    on_back_translate: Optional[Callable[[TranslationOption, Optional[str]], None]],
+    on_edit: Optional[Callable[[], None]],
+    on_compare_mode_change: Optional[Callable[[str], None]],
+    on_compare_base_style_change: Optional[Callable[[str], None]],
+    primary_option: Optional[TranslationOption],
+    secondary_options: list[TranslationOption],
+    display_options: list[TranslationOption],
+    actions_disabled: bool = False,
+) -> None:
+    if not result.options:
+        return
+
+    has_secondary = result.is_to_english and bool(secondary_options)
+    details = ui.element('details').classes('advanced-panel result-advanced-panel')
+    if state.text_compare_mode != "off":
+        details.props('open')
+
+    with details:
+        with ui.element('summary').classes('advanced-summary items-center'):
+            ui.label('詳細').classes('advanced-title')
+            with ui.row().classes('advanced-summary-chips items-center gap-2'):
+                if has_secondary:
+                    ui.label(f'他のスタイル {len(secondary_options)}').classes('chip meta-chip')
+                if result.is_to_english:
+                    ui.label('比較').classes('chip meta-chip')
+                ui.label('コピー/編集').classes('chip meta-chip')
+
+        with ui.column().classes('advanced-content gap-3'):
+            _render_compare_controls(
+                state,
+                result,
+                on_compare_mode_change,
+                on_compare_base_style_change,
+            )
+
+            if has_secondary:
+                base_text = ""
+                if display_options:
+                    fallback_text = (
+                        primary_option.text if primary_option else display_options[0].text
+                    )
+                    base_text = _resolve_compare_base_text(
+                        display_options,
+                        state.text_compare_base_style,
+                        fallback_text,
+                    )
+
+                with ui.column().classes('result-alt-options w-full gap-3'):
+                    for option in secondary_options:
+                        diff_base_text = None
+                        if (
+                            state.text_compare_mode == "style"
+                            and base_text
+                            and option.text != base_text
+                        ):
+                            diff_base_text = base_text
+                        _render_option_en(
+                            option,
+                            on_copy,
+                            on_back_translate,
+                            show_style_badge=True,
+                            diff_base_text=diff_base_text,
+                            actions_disabled=actions_disabled,
+                        )
+
+            if state.text_compare_mode == "source":
+                _render_source_compare_panel(result, state.text_compare_base_style)
+
+            _render_result_action_footer(
+                result,
+                on_copy,
+                on_back_translate,
+                on_edit,
+                actions_disabled=actions_disabled,
+            )
+
 def _render_empty_result_state():
     """Render empty state placeholder for result panel"""
     with ui.element('div').classes('empty-result-state'):
@@ -931,6 +1024,37 @@ def _build_display_options(
     return ordered
 
 
+def _select_primary_option(options: list[TranslationOption]) -> Optional[TranslationOption]:
+    if not options:
+        return None
+    for option in options:
+        if option.style == "standard":
+            return option
+    return options[0]
+
+
+def _partition_style_options(
+    result: TextTranslationResult,
+) -> tuple[Optional[TranslationOption], list[TranslationOption], list[TranslationOption]]:
+    display_options = _build_display_options(result.options, True)
+    primary_option = _select_primary_option(display_options)
+    if not primary_option:
+        return None, [], display_options
+    secondary_options = [option for option in display_options if option is not primary_option]
+    return primary_option, secondary_options, display_options
+
+
+def _resolve_compare_base_text(
+    display_options: list[TranslationOption],
+    compare_base_style: str,
+    fallback_text: str,
+) -> str:
+    for option in display_options:
+        if option.style == compare_base_style:
+            return option.text
+    return fallback_text
+
+
 def _render_results_to_en(
     result: TextTranslationResult,
     on_copy: Callable[[str], None],
@@ -941,36 +1065,26 @@ def _render_results_to_en(
     compare_base_style: str = "standard",
     actions_disabled: bool = False,
 ):
-    """Render →English results: multiple style options"""
+    """Render →English results: primary style only (others in advanced)."""
+
+    primary_option, secondary_options, display_options = _partition_style_options(result)
+    if not primary_option:
+        return None, [], display_options
 
     # Translation results container
     with ui.element('div').classes('result-container'):
         with ui.element('div').classes('result-section w-full'):
-            # Options list
-            display_options = _build_display_options(result.options, True)
-            base_text = None
-            if compare_mode == "style" and display_options:
-                for option in display_options:
-                    if option.style == compare_base_style:
-                        base_text = option.text
-                        break
-                if base_text is None:
-                    base_text = display_options[0].text
             with ui.column().classes('w-full gap-3'):
-                for i, option in enumerate(display_options):
-                    diff_base_text = None
-                    if compare_mode == "style" and base_text and option.text != base_text:
-                        diff_base_text = base_text
-                    _render_option_en(
-                        option,
-                        on_copy,
-                        on_back_translate,
-                        is_last=(i == len(display_options) - 1),
-                        index=i,
-                        show_style_badge=(compare_mode == "style"),
-                        diff_base_text=diff_base_text,
-                        actions_disabled=actions_disabled,
-                    )
+                _render_option_en(
+                    primary_option,
+                    on_copy,
+                    on_back_translate,
+                    is_last=True,
+                    index=0,
+                    show_style_badge=False,
+                    diff_base_text=None,
+                    actions_disabled=actions_disabled,
+                )
 
         # Retry button (optional)
         if on_retry and result.options:
@@ -981,6 +1095,8 @@ def _render_results_to_en(
                     on_click=on_retry
                 ).props('flat no-caps size=sm').classes('retry-btn')
                 retry_btn.tooltip('もう一度翻訳する')
+
+    return primary_option, secondary_options, display_options
 
 
 def _render_results_to_jp(
@@ -1009,6 +1125,13 @@ def _render_results_to_jp(
                                     pass
 
                             with ui.row().classes('items-center option-card-actions'):
+                                _create_copy_button(
+                                    option.text,
+                                    on_copy,
+                                    classes='result-action-btn',
+                                    aria_label='訳文をコピー',
+                                    tooltip='訳文をコピー',
+                                )
                                 # Back-translate button
                                 if on_back_translate:
                                     back_btn = ui.button(
@@ -1359,6 +1482,13 @@ def _render_option_en(
                         ui.label(style_label).classes('chip')
 
                 with ui.row().classes('items-center option-card-actions'):
+                    _create_copy_button(
+                        option.text,
+                        on_copy,
+                        classes='result-action-btn',
+                        aria_label='訳文をコピー',
+                        tooltip='訳文をコピー',
+                    )
                     # Back-translate button
                     if on_back_translate:
                         back_btn = ui.button(

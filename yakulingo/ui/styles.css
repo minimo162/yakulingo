@@ -1020,6 +1020,12 @@ body {
     transform: translateY(-1px);
 }
 
+.input-helper {
+    font-size: 0.75rem;
+    color: var(--md-sys-color-on-surface-variant);
+    margin: 0.5rem 0 0.35rem;
+}
+
 /* カードの浮遊登場アニメーション */
 @keyframes cardFloatIn {
     0% {
@@ -1101,6 +1107,18 @@ body {
 
 .advanced-panel[open] > summary::after {
     content: "▴";
+}
+
+.result-advanced-panel {
+    margin-top: 0.5rem;
+}
+
+.result-alt-options {
+    padding-top: 0.25rem;
+}
+
+.file-queue-panel {
+    margin-bottom: 0.75rem;
 }
 
 .advanced-title {

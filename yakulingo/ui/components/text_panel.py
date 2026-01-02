@@ -612,7 +612,7 @@ def _create_large_input_panel(
 def create_text_result_panel(
     state: AppState,
     on_copy: Callable[[str], None],
-    on_back_translate: Optional[Callable[[TranslationOption], None]] = None,
+    on_back_translate: Optional[Callable[[TranslationOption, Optional[str]], None]] = None,
     on_retry: Optional[Callable[[], None]] = None,
     on_edit: Optional[Callable[[], None]] = None,
     compare_mode: bool = False,
@@ -934,7 +934,7 @@ def _build_display_options(
 def _render_results_to_en(
     result: TextTranslationResult,
     on_copy: Callable[[str], None],
-    on_back_translate: Optional[Callable[[TranslationOption], None]] = None,
+    on_back_translate: Optional[Callable[[TranslationOption, Optional[str]], None]] = None,
     elapsed_time: Optional[float] = None,
     on_retry: Optional[Callable[[], None]] = None,
     compare_mode: str = "off",
@@ -986,7 +986,7 @@ def _render_results_to_en(
 def _render_results_to_jp(
     result: TextTranslationResult,
     on_copy: Callable[[str], None],
-    on_back_translate: Optional[Callable[[TranslationOption], None]] = None,
+    on_back_translate: Optional[Callable[[TranslationOption, Optional[str]], None]] = None,
     elapsed_time: Optional[float] = None,
     on_retry: Optional[Callable[[], None]] = None,
     actions_disabled: bool = False,
@@ -1012,12 +1012,12 @@ def _render_results_to_jp(
                                 # Back-translate button
                                 if on_back_translate:
                                     back_btn = ui.button(
-                                            '戻し訳',
-                                            icon='g_translate',
-                                            on_click=lambda o=option: on_back_translate(o),
-                                        ).props('flat no-caps size=sm').classes('back-translate-btn').tooltip('精度チェック')
-                                        if actions_disabled or option.back_translation_in_progress:
-                                            back_btn.props('disable')
+                                        '戻し訳',
+                                        icon='g_translate',
+                                        on_click=lambda o=option: on_back_translate(o, None),
+                                    ).props('flat no-caps size=sm').classes('back-translate-btn').tooltip('精度チェック')
+                                    if actions_disabled or option.back_translation_in_progress:
+                                        back_btn.props('disable')
 
                             # Translation text
                             _render_translation_text(option.text)
@@ -1028,6 +1028,7 @@ def _render_results_to_jp(
                                     _render_explanation(option.explanation)
 
                             if on_back_translate:
+                                _render_back_translate_editor(option, on_back_translate, actions_disabled)
                                 _render_back_translate_section(option)
 
         # Retry button (optional) - align position with →English
@@ -1044,7 +1045,7 @@ def _render_results_to_jp(
 def _render_result_action_footer(
     result: TextTranslationResult,
     on_copy: Callable[[str], None],
-    on_back_translate: Optional[Callable[[TranslationOption], None]] = None,
+    on_back_translate: Optional[Callable[[TranslationOption, Optional[str]], None]] = None,
     on_edit: Optional[Callable[[], None]] = None,
     actions_disabled: bool = False,
 ) -> None:
@@ -1149,7 +1150,7 @@ def _render_result_action_footer(
                 if on_back_translate:
                     def handle_back_translate_all():
                         for option in result.options:
-                            on_back_translate(option)
+                            on_back_translate(option, None)
 
                     back_btn = ui.button(
                         '戻し訳',
@@ -1239,12 +1240,64 @@ def _render_translation_text(text: str, diff_base_text: Optional[str] = None):
         label.style('white-space: pre-wrap;')
 
 
+def _render_back_translate_editor(
+    option: TranslationOption,
+    on_back_translate: Optional[Callable[[TranslationOption, Optional[str]], None]],
+    actions_disabled: bool = False,
+) -> None:
+    """Render an inline editor for back-translation."""
+    if not on_back_translate:
+        return
+
+    initial_text = option.back_translation_input_text
+    if initial_text is None:
+        initial_text = option.text
+
+    should_open = option.back_translation_input_text is not None
+
+    with ui.expansion(
+        '編集して戻し訳',
+        icon='edit',
+        value=should_open,
+    ).classes('back-translate-editor').props('dense'):
+        with ui.column().classes('w-full gap-2 back-translate-editor-content'):
+            ui.label('訳文を整えてから戻し訳できます（訳文自体は変更されません）').classes('back-translate-note')
+            editor = ui.textarea(value=initial_text).classes('back-translate-input w-full').props('autogrow')
+
+            def handle_input(event) -> None:
+                option.back_translation_input_text = str(getattr(event, 'value', '') or '')
+
+            editor.on('input', handle_input)
+
+            def handle_edit_back_translate() -> None:
+                text_value = editor.value if editor.value is not None else ''
+                option.back_translation_input_text = text_value
+                result = on_back_translate(option, text_value)
+                if asyncio.iscoroutine(result):
+                    asyncio.create_task(result)
+
+            run_btn = ui.button(
+                '編集内容で戻し訳',
+                icon='g_translate',
+                on_click=handle_edit_back_translate,
+            ).props('flat no-caps size=sm').classes('back-translate-btn')
+            run_btn.tooltip('編集した訳文で戻し訳')
+            if actions_disabled or option.back_translation_in_progress:
+                run_btn.props('disable')
+
+
 def _render_back_translate_section(option: TranslationOption) -> None:
     """Render inline back-translation results inside a translation card."""
     has_result = bool(option.back_translation_text or option.back_translation_explanation)
     has_error = bool(option.back_translation_error)
     is_loading = option.back_translation_in_progress
     should_open = is_loading or has_result or has_error
+    source_text = option.back_translation_source_text
+    is_custom = bool(
+        source_text
+        and source_text.strip()
+        and source_text.strip() != option.text.strip()
+    )
 
     with ui.expansion(
         '戻し訳結果',
@@ -1254,6 +1307,8 @@ def _render_back_translate_section(option: TranslationOption) -> None:
         with ui.column().classes('w-full gap-2 back-translate-content'):
             with ui.row().classes('items-center gap-2 back-translate-header'):
                 ui.label('戻し訳').classes('chip back-translate-chip')
+                if is_custom:
+                    ui.label('編集版').classes('chip back-translate-chip edited')
                 if is_loading:
                     ui.spinner('dots', size='sm').classes('text-primary')
                     ui.label('戻し訳中...').classes('text-xs text-muted')
@@ -1280,7 +1335,7 @@ def _render_back_translate_section(option: TranslationOption) -> None:
 def _render_option_en(
     option: TranslationOption,
     on_copy: Callable[[str], None],
-    on_back_translate: Optional[Callable[[TranslationOption], None]] = None,
+    on_back_translate: Optional[Callable[[TranslationOption, Optional[str]], None]] = None,
     is_last: bool = False,
     index: int = 0,
     show_style_badge: bool = False,
@@ -1303,13 +1358,13 @@ def _render_option_en(
                         )
                         ui.label(style_label).classes('chip')
 
-                            with ui.row().classes('items-center option-card-actions'):
-                                # Back-translate button
-                                if on_back_translate:
-                                    back_btn = ui.button(
+                with ui.row().classes('items-center option-card-actions'):
+                    # Back-translate button
+                    if on_back_translate:
+                        back_btn = ui.button(
                             '戻し訳',
                             icon='g_translate',
-                            on_click=lambda o=option: on_back_translate(o),
+                            on_click=lambda o=option: on_back_translate(o, None),
                         ).props('flat no-caps size=sm').classes('back-translate-btn').tooltip('精度チェック')
                         if actions_disabled or option.back_translation_in_progress:
                             back_btn.props('disable')
@@ -1323,4 +1378,5 @@ def _render_option_en(
                     _render_explanation(option.explanation)
 
             if on_back_translate:
+                _render_back_translate_editor(option, on_back_translate, actions_disabled)
                 _render_back_translate_section(option)

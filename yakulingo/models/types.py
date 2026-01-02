@@ -167,6 +167,8 @@ class TranslationOption:
     char_count: int = 0              # Character count
     style: Optional[str] = None      # Translation style: "standard", "concise", "minimal"
     # Back-translation details (UI-only, optional)
+    back_translation_input_text: Optional[str] = None
+    back_translation_source_text: Optional[str] = None
     back_translation_text: Optional[str] = None
     back_translation_explanation: Optional[str] = None
     back_translation_error: Optional[str] = None

@@ -3575,6 +3575,41 @@ body.yakulingo-drag-active .global-drop-indicator {
     color: var(--md-sys-color-on-primary-container);
 }
 
+.back-translate-chip.edited {
+    background: var(--md-sys-color-warning-container);
+    color: var(--md-sys-color-on-warning-container);
+}
+
+.back-translate-editor {
+    margin-top: 0.5rem;
+    border: 1px dashed var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-medium);
+    background: var(--md-sys-color-surface);
+}
+
+.back-translate-editor .q-item {
+    padding: 0.5rem 0.75rem;
+    min-height: auto;
+}
+
+.back-translate-editor .q-expansion-item__content {
+    padding: 0.75rem;
+}
+
+.back-translate-note {
+    font-size: 0.75rem;
+    color: var(--md-sys-color-on-surface-variant);
+}
+
+.back-translate-input .q-field__control {
+    border-radius: var(--md-sys-shape-corner-medium);
+    background: var(--md-sys-color-surface-container);
+}
+
+.back-translate-input .q-field__native {
+    font-size: var(--md-sys-typescale-size-sm);
+}
+
 .back-translate-content .option-text,
 .back-translate-content .translation-table table {
     font-size: var(--md-sys-typescale-size-sm);

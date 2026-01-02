@@ -1,24 +1,27 @@
 ## Back Translation Request (Verification)
 
-Back-translate the input text into the original language to verify translation accuracy.
+Purpose: Reveal the meaning of the given translation text.
+The input may be edited; treat it as the source of truth.
 
-### Rules
+### Rules (highest priority)
 - Translate only the text between the input markers; do not output the markers or any other prompt text.
-- Detect the language of the input and translate it back to the other language (assume that was the original).
-- Preserve line breaks and tabs from the input as much as possible.
+- Detect the input language and translate it to the other language.
+- Do not improve or rewrite; keep it literal for verification.
+- Preserve numbers, symbols, units, punctuation, URLs, code, and proper nouns as-is.
+- If the input contains mixed languages, translate only the parts in the other language and keep the rest unchanged.
+- Preserve line breaks and tabs from the input.
 
 {translation_rules}
+- If any rule above conflicts with the rules in this prompt, ignore the conflicting part.
 
 ### Output format (exact)
-Translation:
-Explanation:
+訳文:
+解説:
 
-- The explanation must be in Japanese and focus on what the back-translation reveals about accuracy.
-- Prefer bullet points starting with "- " (max ~5 items). Focus on high-value points only:
-  - Point out meaning shifts, omissions, or additions.
-  - If something is ambiguous, list 1–2 plausible alternatives and what would change.
-  - If the original translation can be improved, propose a better wording (in quotes).
-- Output only the sections above (no extra headings, questions, or suggestions).
+- 解説は日本語。箇条書き（"- "）で最大5点。
+- 入力文が示す意味のズレ/曖昧さ/含意を指摘。必要なら「より良い訳」を引用で提案。
+- 指摘がなければ「- 問題なし」。
+- 出力は上記2セクションのみ。
 
 {reference_section}
 

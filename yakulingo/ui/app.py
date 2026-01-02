@@ -8097,7 +8097,7 @@ class YakuLingoApp:
             self.translation_service.cancel()
         ui.notify('キャンセル中...', type='info')
 
-    async def _back_translate(self, option: TranslationOption):
+    async def _back_translate(self, option: TranslationOption, text_override: Optional[str] = None):
         """Back-translate text to verify translation quality"""
         if option.back_translation_in_progress:
             return
@@ -8115,9 +8115,12 @@ class YakuLingoApp:
                 return
 
         option.back_translation_in_progress = True
+        option.back_translation_source_text = None
         option.back_translation_text = None
         option.back_translation_explanation = None
         option.back_translation_error = None
+        if text_override is not None:
+            option.back_translation_input_text = text_override
 
         self.state.text_translating = True
         self.state.text_back_translating = True
@@ -8162,35 +8165,40 @@ class YakuLingoApp:
             if not prompt_path.exists():
                 error_message = f"Missing prompt template: {prompt_path}"
             else:
-                text = option.text
+                text = text_override if text_override is not None else option.text
+                if not text.strip():
+                    error_message = "戻し訳用のテキストを入力してください"
+                else:
+                    option.back_translation_source_text = text
                 prompt = prompt_path.read_text(encoding="utf-8")
                 prompt = prompt.replace("{translation_rules}", translation_rules)
                 prompt = prompt.replace("{input_text}", text)
                 prompt = prompt.replace("{text}", text)  # Backward-compatible placeholder
                 prompt = prompt.replace("{reference_section}", reference_section)
 
-                # Send to Copilot with reference files attached
-                if self.translation_service:
-                    result = await asyncio.to_thread(
-                        self.translation_service._translate_single_with_cancel,
-                        text,
-                        prompt,
-                        reference_files if reference_files else None,
-                        None,
-                    )
-                else:
-                    result = await asyncio.to_thread(
-                        lambda: self.copilot.translate_single(text, prompt, reference_files)
-                    )
+                if not error_message:
+                    # Send to Copilot with reference files attached
+                    if self.translation_service:
+                        result = await asyncio.to_thread(
+                            self.translation_service._translate_single_with_cancel,
+                            text,
+                            prompt,
+                            reference_files if reference_files else None,
+                            None,
+                        )
+                    else:
+                        result = await asyncio.to_thread(
+                            lambda: self.copilot.translate_single(text, prompt, reference_files)
+                        )
 
-                # Parse result and store on the option
-                if result:
-                    from yakulingo.ui.utils import parse_translation_result
-                    text_result, explanation = parse_translation_result(result)
-                    option.back_translation_text = text_result
-                    option.back_translation_explanation = explanation
-                else:
-                    error_message = '戻し訳に失敗しました'
+                    # Parse result and store on the option
+                    if result:
+                        from yakulingo.ui.utils import parse_translation_result
+                        text_result, explanation = parse_translation_result(result)
+                        option.back_translation_text = text_result
+                        option.back_translation_explanation = explanation
+                    else:
+                        error_message = '戻し訳に失敗しました'
 
         except TranslationCancelledError:
             error_message = "翻訳がキャンセルされました"

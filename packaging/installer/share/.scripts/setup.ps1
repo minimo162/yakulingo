@@ -209,6 +209,19 @@ if ($GuiMode) {
         # If cancelled, do nothing
         if ($script:cancelled) { return }
 
+        if ($script:progressForm -ne $null) {
+            if ($script:progressForm.IsDisposed) {
+                $script:progressForm = $null
+            } else {
+                if (-not $script:progressForm.Visible) {
+                    $script:progressForm.Show()
+                }
+                if ($script:progressForm.WindowState -eq "Minimized") {
+                    $script:progressForm.WindowState = "Normal"
+                }
+            }
+        }
+
         if ($script:progressForm -eq $null) {
             $script:progressForm = New-Object System.Windows.Forms.Form
             $script:progressForm.Text = $Title
@@ -522,6 +535,9 @@ function Start-ResidentService {
             $deadline = (Get-Date).AddSeconds(30)
             while ((Get-Date) -lt $deadline -and -not (Test-PortOpen $Port)) {
                 Start-Sleep -Milliseconds 200
+                if ($GuiMode) {
+                    [System.Windows.Forms.Application]::DoEvents()
+                }
             }
         }
 
@@ -551,6 +567,9 @@ function Wait-ResidentReady {
     $lastState = ""
 
     while ((Get-Date) -lt $deadline) {
+        if ($GuiMode) {
+            [System.Windows.Forms.Application]::DoEvents()
+        }
         if ($GuiMode -and $script:cancelled) {
             throw "セットアップがキャンセルされました。"
         }

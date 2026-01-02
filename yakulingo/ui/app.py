@@ -4188,10 +4188,9 @@ class YakuLingoApp:
         '''
         selector = STARTUP_UI_READY_SELECTOR.replace('"', '\\"')
         try:
-            return await asyncio.wait_for(
-                client.run_javascript(js_code.replace("__ROOT_SELECTOR__", selector)),
-                timeout=1.5,
-            )
+            async def _run_js() -> bool:
+                return await client.run_javascript(js_code.replace("__ROOT_SELECTOR__", selector))
+            return await asyncio.wait_for(_run_js(), timeout=1.5)
         except asyncio.TimeoutError:
             logger.debug("Startup UI readiness check timed out")
             return False
@@ -4273,12 +4272,11 @@ class YakuLingoApp:
         selector = STARTUP_UI_READY_SELECTOR.replace('"', '\\"')
         try:
             timeout_sec = max(1.0, (timeout_ms / 1000.0) + 0.5)
-            return await asyncio.wait_for(
-                client.run_javascript(
+            async def _run_js() -> bool:
+                return await client.run_javascript(
                     js_code.replace("__TIMEOUT_MS__", str(timeout_ms)).replace("__ROOT_SELECTOR__", selector)
-                ),
-                timeout=timeout_sec,
-            )
+                )
+            return await asyncio.wait_for(_run_js(), timeout=timeout_sec)
         except asyncio.TimeoutError:
             logger.debug("Startup UI readiness wait timed out")
             return False

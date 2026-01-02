@@ -6411,7 +6411,7 @@ class YakuLingoApp:
         self._create_resident_close_button()
 
         # Layout container: 2-column (sidebar + main content)
-        with ui.element('div').classes('app-container'):
+        with ui.element('div').classes('app-container pywebview-nodrag'):
             # Left Sidebar (tabs + history)
             with ui.column().classes('sidebar'):
                 self._create_sidebar()

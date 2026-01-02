@@ -240,6 +240,10 @@ body {
     -webkit-app-region: drag !important;
 }
 
+.pywebview-nodrag {
+    -webkit-app-region: no-drag !important;
+}
+
 .resident-close-button {
     position: fixed;
     top: 12px;

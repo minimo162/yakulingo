@@ -765,21 +765,6 @@ def _render_translation_status(
     else:
         is_to_english = detected_language == "日本語"
 
-    output_label = None
-    if output_language == "en":
-        output_label = "英語"
-    elif output_language == "jp":
-        output_label = "日本語"
-    elif detected_language:
-        output_label = "英語" if detected_language == "日本語" else "日本語"
-
-    detected_label = detected_language or "未判定"
-    mapping_label = ""
-    if output_label:
-        mapping_label = f"検出: {detected_label} → 出力: {output_label}"
-    elif detected_language:
-        mapping_label = f"検出: {detected_label}"
-
     with ui.element('div').classes('translation-status-section'):
         with ui.element('div').classes('avatar-status-row'):
             with ui.column().classes('gap-0 status-text'):
@@ -800,22 +785,23 @@ def _render_translation_status(
                             ui.label(f'{elapsed_time:.1f}秒').classes('elapsed-time-badge')
                 if back_translating:
                     ui.label('逆翻訳: 逆方向で確認').classes('status-subtext')
-                elif mapping_label:
-                    ui.label(mapping_label).classes('status-subtext')
 
 
 def _render_result_meta(state: AppState, result: TextTranslationResult) -> None:
     if not result.options:
         return
-    output_label = '日本語→英語' if result.output_language == 'en' else '英語→日本語'
+    chips: list[tuple[str, str]] = []
+    if not result.is_to_english:
+        chips.append(('解説付き', 'chip meta-chip'))
+    if state.text_output_language_override in {"en", "jp"}:
+        chips.append(('手動指定', 'chip meta-chip override-chip'))
+    if state.reference_files:
+        chips.append((f'参照ファイル {len(state.reference_files)}', 'chip meta-chip'))
+    if not chips:
+        return
     with ui.row().classes('result-meta-row items-center gap-2 flex-wrap'):
-        ui.label(output_label).classes('chip meta-chip')
-        if not result.is_to_english:
-            ui.label('解説付き').classes('chip meta-chip')
-        if state.text_output_language_override in {"en", "jp"}:
-            ui.label('手動指定').classes('chip meta-chip override-chip')
-        if state.reference_files:
-            ui.label(f'参照ファイル {len(state.reference_files)}').classes('chip meta-chip')
+        for label, classes in chips:
+            ui.label(label).classes(classes)
 
 
 def _render_compare_controls(

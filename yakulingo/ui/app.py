@@ -1755,10 +1755,14 @@ class YakuLingoApp:
             "ready": self._resident_startup_ready,
             "active": self._resident_startup_active,
         }
+        ui_connected = self._get_active_client() is not None
+        status["ui_connected"] = ui_connected
+        status["ui_ready"] = bool(ui_connected and self._ui_ready_event.is_set())
         if self._resident_startup_started_at is not None:
             status["elapsed_sec"] = max(0.0, time.time() - self._resident_startup_started_at)
         if self._resident_startup_error:
             status["error"] = self._resident_startup_error
+            status["ready"] = False
 
         copilot = getattr(self, "_copilot", None)
         if copilot is None:
@@ -1780,7 +1784,7 @@ class YakuLingoApp:
             or copilot.last_connection_error == CopilotHandler.ERROR_LOGIN_REQUIRED
         )
         status["gpt_mode_set"] = bool(getattr(copilot, "is_gpt_mode_set", False))
-        if not status["ready"] and state == CopilotConnectionState.READY:
+        if not status["ready"] and not status.get("error") and state == CopilotConnectionState.READY:
             status["ready"] = True
         return status
 
@@ -4162,6 +4166,8 @@ class YakuLingoApp:
             return False
 
     async def _check_ui_ready_once(self, client: NiceGUIClient) -> bool:
+        if not getattr(client, "has_socket_connection", True):
+            return False
         js_code = '''
             try {
                 const selector = "__ROOT_SELECTOR__";
@@ -4182,14 +4188,20 @@ class YakuLingoApp:
         '''
         selector = STARTUP_UI_READY_SELECTOR.replace('"', '\\"')
         try:
-            return await client.run_javascript(
-                js_code.replace("__ROOT_SELECTOR__", selector)
+            return await asyncio.wait_for(
+                client.run_javascript(js_code.replace("__ROOT_SELECTOR__", selector)),
+                timeout=1.5,
             )
+        except asyncio.TimeoutError:
+            logger.debug("Startup UI readiness check timed out")
+            return False
         except Exception as e:
             logger.debug("Startup UI readiness check failed: %s", e)
             return False
 
     async def _wait_for_ui_ready(self, client: NiceGUIClient, timeout_ms: int) -> bool:
+        if not getattr(client, "has_socket_connection", True):
+            return False
         js_code = '''
             return await new Promise((resolve) => {
                 try {
@@ -4260,9 +4272,16 @@ class YakuLingoApp:
         '''
         selector = STARTUP_UI_READY_SELECTOR.replace('"', '\\"')
         try:
-            return await client.run_javascript(
-                js_code.replace("__TIMEOUT_MS__", str(timeout_ms)).replace("__ROOT_SELECTOR__", selector)
+            timeout_sec = max(1.0, (timeout_ms / 1000.0) + 0.5)
+            return await asyncio.wait_for(
+                client.run_javascript(
+                    js_code.replace("__TIMEOUT_MS__", str(timeout_ms)).replace("__ROOT_SELECTOR__", selector)
+                ),
+                timeout=timeout_sec,
             )
+        except asyncio.TimeoutError:
+            logger.debug("Startup UI readiness wait timed out")
+            return False
         except Exception as e:
             logger.debug("Startup UI readiness wait failed: %s", e)
             return False

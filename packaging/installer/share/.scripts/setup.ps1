@@ -225,6 +225,9 @@ if ($GuiMode) {
                 if (-not $script:closingProgressForm -and -not $script:cancelled) {
                     $script:cancelled = $true
                 }
+                if (-not $script:closingProgressForm) {
+                    $e.Cancel = $true
+                }
             })
 
             # Step label (e.g., "Step 2/3")
@@ -569,6 +572,9 @@ function Wait-ResidentReady {
         $loginRequired = $false
         $gptReady = $true
         $active = $false
+        $uiConnected = $false
+        $uiReady = $true
+        $hasError = $false
         if ($status) {
             $ready = [bool]$status.ready
             if ($status.PSObject.Properties.Name -contains "login_required") {
@@ -580,17 +586,31 @@ function Wait-ResidentReady {
             if ($status.PSObject.Properties.Name -contains "active") {
                 $active = [bool]$status.active
             }
+            if ($status.PSObject.Properties.Name -contains "ui_connected") {
+                $uiConnected = [bool]$status.ui_connected
+            }
+            if ($status.PSObject.Properties.Name -contains "ui_ready") {
+                $uiReady = [bool]$status.ui_ready
+            }
+            if ($status.PSObject.Properties.Name -contains "error") {
+                $hasError = -not [string]::IsNullOrEmpty([string]$status.error)
+            }
         }
         if ($state -eq "login_required") {
             $loginRequired = $true
         }
-        if ($ready -and $gptReady -and -not $loginRequired -and -not $active) {
+        $uiOk = (-not $uiConnected) -or $uiReady
+        if ($ready -and $gptReady -and -not $loginRequired -and -not $active -and -not $hasError -and $uiOk) {
             return $true
         }
 
         $message = "Copilotの準備中です..."
-        if ($loginRequired) {
+        if ($hasError) {
+            $message = "YakuLingoの起動状態を確認中です..."
+        } elseif ($loginRequired) {
             $message = "Copilotにログインしてください（右側の画面）..."
+        } elseif ($uiConnected -and -not $uiReady) {
+            $message = "UIを準備中です..."
         } elseif ($state -eq "loading") {
             $message = "Copilotを読み込み中です..."
         } elseif ($state -eq "ready" -and -not $gptReady) {

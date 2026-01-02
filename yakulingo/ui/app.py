@@ -9352,6 +9352,7 @@ class YakuLingoApp:
         self.state.translation_eta_seconds = None
         self.state.output_file = None  # Clear any previous output
         self._refresh_tabs()  # Disable tabs during translation
+        self._start_file_panel_refresh_timer()
 
         queue_item = None
         if self.state.file_queue:
@@ -9533,6 +9534,7 @@ class YakuLingoApp:
                     progress_timer.cancel()
                 except Exception:
                     pass
+        self._stop_file_panel_refresh_timer()
 
         # Restore client context for UI operations
         with client:

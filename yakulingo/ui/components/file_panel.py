@@ -1,4 +1,4 @@
-# yakulingo/ui/components/file_panel.py
+﻿# yakulingo/ui/components/file_panel.py
 """
 File translation panel - Nani-inspired clean design.
 Simple, focused, warm.
@@ -19,7 +19,6 @@ from yakulingo.ui.utils import (
     show_in_folder,
     summarize_reference_files,
     temp_file_manager,
-    trigger_file_download,
 )
 from yakulingo.models.types import (
     FileInfo,
@@ -408,9 +407,6 @@ def create_file_panel(
                         _complete_card(
                             translation_result,
                             state.file_info,
-                            on_translate,
-                            on_reset,
-                            on_dismiss_issues,
                         )
 
                 elif state.file_state == FileState.ERROR:
@@ -1238,11 +1234,8 @@ def _render_phase_stepper(
 def _complete_card(
     result: Optional[TranslationResult],
     file_info: Optional[FileInfo],
-    on_retry: Optional[Callable[[], None]] = None,
-    on_reset: Optional[Callable[[], None]] = None,
-    on_dismiss_issues: Optional[Callable[[], None]] = None,
 ):
-    """Success card with output file list and download buttons"""
+    """Success card with output file list and open actions"""
     with ui.card().classes('file-card success w-full max-w-md mx-auto'):
         with ui.column().classes('items-center gap-4 py-2 w-full'):
             # Animated checkmark
@@ -1252,16 +1245,16 @@ def _complete_card(
             ui.label('翻訳完了').classes('success-text')
 
             if result and (result.issue_block_ids or result.mismatched_batch_count):
-                _issue_card(result, file_info, on_retry, on_dismiss_issues)
+                _issue_card(result, file_info)
 
-            # Output files list with quick actions
+            # Output files list
             if result and result.output_files:
                 with ui.column().classes('w-full gap-2 mt-2'):
                     for file_path, description in result.output_files:
                         _output_file_row(file_path, description)
 
-            if result and (result.output_files or on_retry or on_reset):
-                _file_action_footer(result, on_retry, on_reset)
+            if result:
+                _file_action_footer(result)
 
 
 def _get_section_name(file_info: Optional[FileInfo], section_idx: int) -> str:
@@ -1276,8 +1269,6 @@ def _get_section_name(file_info: Optional[FileInfo], section_idx: int) -> str:
 def _issue_card(
     result: TranslationResult,
     file_info: Optional[FileInfo],
-    on_retry: Optional[Callable[[], None]] = None,
-    on_dismiss: Optional[Callable[[], None]] = None,
 ) -> None:
     issue_count = len(result.issue_block_ids)
     mismatch_count = result.mismatched_batch_count
@@ -1317,70 +1308,33 @@ def _issue_card(
                     if len(locations) > 3:
                         ui.label(f'他 {len(locations) - 3} 件').classes('issue-location text-muted')
 
-            if on_retry or on_dismiss:
-                with ui.row().classes('issue-actions items-center gap-2'):
-                    if on_retry:
-                        ui.button(
-                            '再翻訳',
-                            icon='refresh',
-                            on_click=on_retry,
-                        ).classes('btn-outline').props('no-caps')
-                    if on_dismiss:
-                        ui.button(
-                            '表示しない',
-                            icon='visibility_off',
-                            on_click=on_dismiss,
-                        ).classes('btn-text').props('no-caps')
-
 
 def _file_action_footer(
     result: TranslationResult,
-    on_retry: Optional[Callable[[], None]] = None,
-    on_reset: Optional[Callable[[], None]] = None,
 ) -> None:
     target_path = result.output_path
     if not target_path and result.output_files:
         target_path = result.output_files[0][0]
 
+    if not target_path or not target_path.exists():
+        return
+
     with ui.element('div').classes('file-action-footer'):
         with ui.column().classes('w-full gap-1'):
-            if target_path:
-                ui.label(f'保存先: {target_path.parent}').classes('file-output-path')
-            with ui.row().classes('items-center justify-between gap-2 flex-wrap file-action-footer-inner'):
-                with ui.row().classes('items-center gap-2 flex-wrap'):
-                    if target_path and target_path.exists():
-                        ui.button(
-                            '開く',
-                            icon='open_in_new',
-                            on_click=lambda p=target_path: open_file(p),
-                        ).classes('btn-text').props('no-caps')
-                        ui.button(
-                            'フォルダを開く',
-                            icon='folder_open',
-                            on_click=lambda p=target_path: show_in_folder(p),
-                        ).classes('btn-text').props('no-caps')
-                        copy_btn = ui.button(
-                            'パスをコピー',
-                            icon='content_copy',
-                        ).classes('btn-text').props('no-caps')
-                        _attach_copy_handler(copy_btn, str(target_path), 'パスをコピーしました')
-                    if on_reset:
-                        ui.button(
-                            '別のファイル',
-                            icon='upload_file',
-                            on_click=on_reset,
-                        ).classes('btn-outline').props('no-caps')
-
-                if on_retry:
-                    ui.button(
-                        '再翻訳',
-                        icon='refresh',
-                        on_click=on_retry,
-                    ).classes('btn-tonal').props('no-caps')
+            ui.label(f'出力先: {target_path.parent}').classes('file-output-path')
+            with ui.row().classes('items-center gap-2 flex-wrap justify-center file-action-footer-inner'):
+                ui.button(
+                    '開く',
+                    on_click=lambda p=target_path: open_file(p),
+                ).classes('btn-primary').props('no-caps')
+                ui.button(
+                    'フォルダを開く',
+                    on_click=lambda p=target_path: show_in_folder(p),
+                ).classes('btn-primary').props('no-caps')
 
 
 def _output_file_row(file_path: Path, description: str):
-    """Create a row for output file with quick actions"""
+    """Create a row for output file."""
     # File icon based on extension
     ext = file_path.suffix.lower()
     icon_map = {
@@ -1401,36 +1355,6 @@ def _output_file_row(file_path: Path, description: str):
             with ui.column().classes('flex-grow gap-0 min-w-0'):
                 ui.label(file_path.name).classes('text-sm font-medium truncate')
                 ui.label(description).classes('text-xs text-on-surface-variant')
-
-            with ui.row().classes('output-file-actions items-center gap-1'):
-                open_btn = ui.button(
-                    icon='open_in_new',
-                    on_click=lambda p=file_path: open_file(p),
-                ).props('flat dense round size=sm aria-label="ファイルを開く"').classes(
-                    'output-file-action-btn'
-                )
-                open_btn.tooltip('開く')
-
-                copy_btn = ui.button(
-                    icon='content_copy',
-                ).props('flat dense round size=sm aria-label="パスをコピー"').classes(
-                    'output-file-action-btn'
-                )
-                copy_btn.tooltip('パスをコピー')
-                _attach_copy_handler(copy_btn, str(file_path), 'パスをコピーしました')
-
-                download_btn = ui.button(
-                    icon='download',
-                    on_click=lambda p=file_path: _download_file(p),
-                ).props('flat dense round size=sm aria-label="ダウンロード"').classes(
-                    'output-file-action-btn'
-                )
-                download_btn.tooltip('ダウンロード')
-
-
-def _download_file(file_path: Path):
-    """Trigger browser download for the generated file."""
-    trigger_file_download(file_path)
 
 
 def _error_card(error_message: str):
@@ -1525,3 +1449,4 @@ def _section_selector(
                     ).props('dense')
                     checkboxes_by_index[section.index] = checkbox
                     ui.label(section.name).classes('flex-1 text-sm')
+

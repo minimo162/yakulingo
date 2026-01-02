@@ -8892,7 +8892,11 @@ class YakuLingoApp:
             if not item.output_language_overridden:
                 item.output_language = "en" if detected_language == "日本語" else "jp"
 
-        if item.id == self.state.file_queue_active_id:
+        should_update_state = (
+            item.id == self.state.file_queue_active_id
+            or (self.state.selected_file is not None and item.path == self.state.selected_file)
+        )
+        if should_update_state:
             self.state.file_detected_language = detected_language
             self.state.file_detected_language_reason = detected_reason
             if not self.state.file_output_language_overridden:

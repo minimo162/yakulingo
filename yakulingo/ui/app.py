@@ -7813,19 +7813,60 @@ class YakuLingoApp:
             chunks = self._split_text_for_translation(
                 source_text, self.settings.max_chars_per_batch
             )
+            total_chunks = len(chunks)
+            loop = asyncio.get_running_loop()
+            last_preview_update = 0.0
+            preview_update_interval_seconds = 0.12
+            current_chunk_index = 0
+
+            def on_chunk(partial_text: str) -> None:
+                nonlocal last_preview_update, current_chunk_index
+                if total_chunks > 1 and current_chunk_index > 0:
+                    preview_text = f"[{current_chunk_index}/{total_chunks}] {partial_text}"
+                else:
+                    preview_text = partial_text
+                self.state.text_streaming_preview = preview_text
+                now = time.monotonic()
+                if now - last_preview_update < preview_update_interval_seconds:
+                    return
+                last_preview_update = now
+
+                def update_streaming_preview(text_to_show: str = preview_text) -> None:
+                    if not self.state.text_translating:
+                        return
+                    try:
+                        if not getattr(client, "has_socket_connection", True):
+                            return
+                    except Exception:
+                        pass
+                    try:
+                        with client:
+                            # Render streaming block on first chunk (captures label reference)
+                            if self._streaming_preview_label is None:
+                                self._refresh_result_panel()
+                                self._scroll_result_panel_to_bottom(client, force_follow=True)
+                            if self._streaming_preview_label is not None:
+                                self._streaming_preview_label.set_text(text_to_show)
+                                self._scroll_result_panel_to_bottom(client)
+                    except Exception:
+                        logger.debug("Split translation streaming preview refresh failed", exc_info=True)
+
+                loop.call_soon_threadsafe(update_streaming_preview)
 
             def translate_chunks() -> TextTranslationResult:
                 from yakulingo.services.copilot_handler import TranslationCancelledError
                 chunk_results: list[TextTranslationResult] = []
-                for chunk in chunks:
+                nonlocal current_chunk_index
+                for idx, chunk in enumerate(chunks, start=1):
                     if self.translation_service and self.translation_service._cancel_event.is_set():
                         raise TranslationCancelledError
+                    current_chunk_index = idx
                     chunk_result = self.translation_service.translate_text_with_style_comparison(
                         chunk,
                         reference_files,
                         None,
                         effective_detected_language,
-                        None,
+                        on_chunk,
                     )
                     chunk_results.append(chunk_result)
                 return self._merge_chunk_results(

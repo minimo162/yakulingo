@@ -1052,6 +1052,7 @@ MAX_HISTORY_DISPLAY = 20  # Maximum history items to display in sidebar
 MAX_HISTORY_DRAWER_DISPLAY = 100  # Maximum history items to show in history drawer
 MIN_AVAILABLE_MEMORY_GB_FOR_EARLY_CONNECT = 0.5  # Skip early Copilot init only on very low memory
 TEXT_TRANSLATION_CHAR_LIMIT = 5000  # Max chars for text translation (clipboard trigger, Ctrl+Enter)
+FILE_LANGUAGE_DETECTION_TIMEOUT_SEC = 8.0  # Avoid hanging file-language detection
 DEFAULT_TEXT_STYLE = "concise"
 RESIDENT_HEARTBEAT_INTERVAL_SEC = 300  # Update startup.log even when UI is closed
 RESIDENT_STARTUP_READY_TIMEOUT_SEC = 900  # Allow manual login during resident startup
@@ -2431,17 +2432,31 @@ class YakuLingoApp:
             self._refresh_ui_after_hotkey_translation(trace_id)
             detected_language = "日本語"  # Default fallback
             detected_reason = "default"
+            timeout_sec = FILE_LANGUAGE_DETECTION_TIMEOUT_SEC
             try:
-                sample_text = await asyncio.to_thread(
-                    self.translation_service.extract_detection_sample,
-                    input_path,
+                sample_text = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        self.translation_service.extract_detection_sample,
+                        input_path,
+                    ),
+                    timeout=timeout_sec,
                 )
                 if sample_text and sample_text.strip():
-                    detected_language, detected_reason = await asyncio.to_thread(
-                        self.translation_service.detect_language_with_reason,
-                        sample_text,
+                    detected_language, detected_reason = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            self.translation_service.detect_language_with_reason,
+                            sample_text,
+                        ),
+                        timeout=timeout_sec,
                     )
                     self.state.file_detected_language_reason = detected_reason
+            except asyncio.TimeoutError:
+                logger.debug(
+                    "Hotkey file translation [%s] language detection timed out after %.1fs for %s",
+                    trace_id,
+                    timeout_sec,
+                    input_path,
+                )
             except Exception as e:
                 logger.debug(
                     "Hotkey file translation [%s] language detection failed for %s: %s",
@@ -8813,17 +8828,31 @@ class YakuLingoApp:
 
         detected_language = "日本語"
         detected_reason = "default"
+        timeout_sec = FILE_LANGUAGE_DETECTION_TIMEOUT_SEC
 
         try:
-            sample_text = await asyncio.to_thread(
-                self.translation_service.extract_detection_sample,
-                item.path,
+            sample_text = await asyncio.wait_for(
+                asyncio.to_thread(
+                    self.translation_service.extract_detection_sample,
+                    item.path,
+                ),
+                timeout=timeout_sec,
             )
             if sample_text and sample_text.strip():
-                detected_language, detected_reason = await asyncio.to_thread(
-                    self.translation_service.detect_language_with_reason,
-                    sample_text,
+                detected_language, detected_reason = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        self.translation_service.detect_language_with_reason,
+                        sample_text,
+                    ),
+                    timeout=timeout_sec,
                 )
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Language detection timed out after %.1fs for %s, using default: %s",
+                timeout_sec,
+                item.path,
+                detected_language,
+            )
         except Exception as e:
             logger.warning("Language detection failed: %s, using default: %s", e, detected_language)
 

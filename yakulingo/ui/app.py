@@ -748,6 +748,24 @@ def _nicegui_open_window_patched(
         except Exception:
             pass
         if resident_startup:
+            def _hide_window_on_show(*_args, **_kwargs) -> None:
+                try:
+                    target_hwnd = hwnd or _find_window_handle_by_title_win32(title)
+                    if target_hwnd:
+                        _set_window_taskbar_visibility_win32(target_hwnd, False)
+                        _hide_native_window_offscreen_win32(title, hwnd=target_hwnd)
+                    if hasattr(window, "hide"):
+                        window.hide()
+                    elif hasattr(window, "minimize"):
+                        window.minimize()
+                except Exception as e:
+                    logger.debug("Resident startup show-hide failed: %s", e)
+
+            try:
+                window.events.shown += _hide_window_on_show
+            except Exception:
+                pass
+        if resident_startup:
             try:
                 if hwnd is None:
                     hwnd = _find_window_handle_by_title_win32(title)
@@ -11318,11 +11336,32 @@ def run_app(
     if not browser_favicon_path.exists():
         browser_favicon_path = icon_path
 
+    def _get_tray_status_text() -> str:
+        try:
+            state = yakulingo_app.state
+        except Exception:
+            return "Copilot: Unknown"
+        connection_state = getattr(state, "connection_state", None)
+        if connection_state == ConnectionState.CONNECTED:
+            return "Copilot: Connected"
+        if connection_state == ConnectionState.LOGIN_REQUIRED:
+            return "Copilot: Login required"
+        if connection_state == ConnectionState.EDGE_NOT_RUNNING:
+            return "Copilot: Edge not running"
+        if connection_state == ConnectionState.CONNECTION_FAILED:
+            return "Copilot: Connection failed"
+        return "Copilot: Connecting"
+
     if sys.platform == "win32" and (native or resident_mode):
         try:
             from yakulingo.ui.tray import TrayIcon
 
-            tray_icon = TrayIcon(host=host, port=port, icon_path=icon_path)
+            tray_icon = TrayIcon(
+                host=host,
+                port=port,
+                icon_path=icon_path,
+                status_provider=_get_tray_status_text,
+            )
         except Exception as e:
             logger.debug("Tray icon init failed: %s", e)
             tray_icon = None

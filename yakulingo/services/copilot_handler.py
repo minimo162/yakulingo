@@ -1890,6 +1890,7 @@ class CopilotHandler:
                 startupinfo=startupinfo,
                 creationflags=creationflags,
             )
+            self._start_edge_taskbar_suppression()
 
             # Wait for Edge to start
             for i in range(self.EDGE_STARTUP_MAX_ATTEMPTS):
@@ -1912,6 +1913,37 @@ class CopilotHandler:
             logger.error("Edge startup failed: %s", e)
             self.last_connection_error = self.ERROR_EDGE_NOT_FOUND
             return False
+
+    def _start_edge_taskbar_suppression(self) -> None:
+        """Hide Edge taskbar entry quickly during startup (Windows only)."""
+        if sys.platform != "win32":
+            return
+
+        try:
+            display_mode = self._get_browser_display_mode()
+        except Exception:
+            display_mode = "minimized"
+        edge_layout_mode = getattr(self, "_edge_layout_mode", None)
+        if display_mode == "foreground" and edge_layout_mode not in ("offscreen", "triple"):
+            return
+
+        def _worker() -> None:
+            max_attempts = 20
+            for _ in range(max_attempts):
+                if self._set_edge_taskbar_visibility(False):
+                    if edge_layout_mode == "offscreen":
+                        try:
+                            self._position_edge_offscreen()
+                        except Exception:
+                            pass
+                    return
+                time.sleep(0.2)
+
+        threading.Thread(
+            target=_worker,
+            daemon=True,
+            name="edge_taskbar_suppress",
+        ).start()
 
     def _mark_playwright_unresponsive(self, error: Exception | str) -> None:
         message = str(error)

@@ -6781,12 +6781,13 @@ class YakuLingoApp:
                     icon='history',
                     on_click=self._open_history_dialog,
                 ).classes('icon-btn icon-btn-tonal history-rail-btn').props(history_props).tooltip('履歴')
+                browser_props = 'flat round aria-label="ブラウザを表示"'
+                if self.state.is_translating():
+                    browser_props += ' disable'
                 ui.button(
                     icon='open_in_new',
                     on_click=lambda: asyncio.create_task(self._show_copilot_browser()),
-                ).classes('icon-btn icon-btn-tonal browser-rail-btn').props(
-                    'flat round aria-label="ブラウザを表示"'
-                ).tooltip('ブラウザを表示')
+                ).classes('icon-btn icon-btn-tonal browser-rail-btn').props(browser_props).tooltip('ブラウザを表示')
 
         self._tabs_container = actions_container
         actions_container()
@@ -11292,10 +11293,16 @@ def run_app(
             except Exception:
                 raise HTTPException(status_code=403, detail="forbidden")
 
+            if yakulingo_app._resident_mode:
+                yakulingo_app._resident_show_requested = True
+                yakulingo_app._mark_manual_show("activate_api")
+                try:
+                    await yakulingo_app._ensure_resident_ui_visible("activate_api")
+                except Exception as e:
+                    logger.debug("Failed to restore resident UI window: %s", e)
+                return {"ok": True}
+
             def _activate_window() -> None:
-                if yakulingo_app._resident_mode:
-                    yakulingo_app._resident_show_requested = True
-                    yakulingo_app._mark_manual_show("activate_api")
                 callback = yakulingo_app._open_ui_window_callback
                 if callback is not None:
                     try:

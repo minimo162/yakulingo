@@ -98,6 +98,18 @@ def _relaunch_with_pythonw_if_needed() -> None:
         return
 
 
+def _set_app_usermodelid_early() -> None:
+    """Set AppUserModelID early to avoid default Python taskbar icon (Windows only)."""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("YakuLingo.App")
+    except Exception:
+        return
+
+
 def setup_logging():
     """Configure logging to console and file for debugging.
 
@@ -369,6 +381,7 @@ def main():
     import os
     import time
 
+    _set_app_usermodelid_early()
     _relaunch_with_pythonw_if_needed()
 
     if not _ensure_single_instance():

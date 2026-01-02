@@ -2267,20 +2267,37 @@ class YakuLingoApp:
                 return
 
             # UI mode: show the captured text and run the normal pipeline.
-            # Set source text (length check is done in _translate_text)
-            self.state.source_text = text
-
-            # Switch to text tab if not already
             from yakulingo.ui.state import Tab, TextViewState
+
+            was_file_panel = self._is_file_panel_active()
+            self.state.source_text = text
             self.state.current_tab = Tab.TEXT
             self.state.text_view_state = TextViewState.INPUT
+            self.state.text_result = None
+            self.state.text_translation_elapsed_time = None
+            self.state.text_streaming_preview = None
+            self.state.text_detected_language = None
+            self.state.text_detected_language_reason = None
+            self._streaming_preview_label = None
 
-            # Refresh UI to show the text
+            needs_full_refresh = (
+                was_file_panel
+                or self._text_input_textarea is None
+                or self._translate_button is None
+            )
             with client:
-                self._refresh_content()
+                if needs_full_refresh:
+                    self._refresh_content()
+                if self._text_input_textarea is not None:
+                    self._text_input_textarea.value = text
+                    self._text_input_textarea.update()
+                self._on_source_change(text)
+                if not needs_full_refresh:
+                    self._update_layout_classes()
+                self._refresh_tabs()
 
             # Small delay to let UI update
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.05)
 
             # Final check before triggering translation
             if self.state.text_translating:
@@ -6430,10 +6447,11 @@ class YakuLingoApp:
                             ui.label('翻訳できます（GPTモード未設定）').classes('text-2xs opacity-80')
                     with ui.row().classes('status-actions items-center gap-2 mt-1'):
                         ui.button(
-                            'ブラウザを表示',
                             icon='open_in_new',
                             on_click=lambda: asyncio.create_task(self._show_copilot_browser()),
-                        ).classes('status-action-btn').props('flat no-caps size=sm')
+                        ).classes('status-action-btn').props(
+                            'flat round size=sm aria-label="ブラウザを表示"'
+                        ).tooltip('ブラウザを表示')
                 status_indicator.tooltip(tooltip)
                 return
 
@@ -6512,10 +6530,11 @@ class YakuLingoApp:
                                 on_click=lambda: asyncio.create_task(self._reconnect()),
                             ).classes('status-action-btn').props('flat no-caps size=sm')
                             ui.button(
-                                'ブラウザを表示',
                                 icon='open_in_new',
                                 on_click=lambda: asyncio.create_task(self._show_copilot_browser()),
-                            ).classes('status-action-btn').props('flat no-caps size=sm')
+                            ).classes('status-action-btn').props(
+                                'flat round size=sm aria-label="ブラウザを表示"'
+                            ).tooltip('ブラウザを表示')
                 status_indicator.tooltip(tooltip)
                 return
 

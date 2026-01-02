@@ -370,7 +370,11 @@ def _create_large_input_panel(
         with ui.element('div').classes('main-card w-full'):
             # Input container
             with ui.element('div').classes('main-card-inner'):
-                ui.label('自動で言語を判定して英訳/和訳します').classes('input-helper')
+                with ui.element('div').classes('input-hero'):
+                    ui.label('テキスト翻訳').classes('input-hero-title')
+                    ui.label('自動で言語を判定して英訳/和訳します').classes(
+                        'input-helper input-hero-subtitle'
+                    )
                 # Large textarea - no autogrow, fills available space via CSS flex
                 _create_textarea_with_keyhandler(
                     state=state,
@@ -433,7 +437,7 @@ def _create_large_input_panel(
                                 btn = ui.button(
                                     '翻訳する',
                                     icon='translate',
-                                ).classes('translate-btn feedback-anchor').props(
+                                ).classes('translate-btn feedback-anchor cta-breathe').props(
                                     'no-caps aria-label="翻訳する" aria-keyshortcuts="Ctrl+Enter Meta+Enter" data-feedback="翻訳を開始"'
                                 )
                                 btn.tooltip('翻訳する')
@@ -689,20 +693,29 @@ def create_text_result_panel(
                                 ui.label(format_bytes(entry["size_bytes"])).classes('ref-meta')
                             ui.label('OK' if entry["exists"] else 'NG').classes('ref-file-status')
 
-        # Translation status section
-        if state.text_translating or state.text_back_translating:
-            _render_translation_status(
-                state.text_detected_language,
-                translating=True,
-                back_translating=state.text_back_translating,
-            )
-        elif state.text_result and state.text_result.options:
-            _render_translation_status(
-                state.text_result.detected_language,
-                translating=False,
-                elapsed_time=elapsed_time,
-                output_language=state.text_result.output_language,
-            )
+        # Translation status + meta hero
+        has_status = (
+            state.text_translating
+            or state.text_back_translating
+            or (state.text_result and state.text_result.options)
+        )
+        if has_status:
+            with ui.element('div').classes('result-hero'):
+                if state.text_translating or state.text_back_translating:
+                    _render_translation_status(
+                        state.text_detected_language,
+                        translating=True,
+                        back_translating=state.text_back_translating,
+                    )
+                elif state.text_result and state.text_result.options:
+                    _render_translation_status(
+                        state.text_result.detected_language,
+                        translating=False,
+                        elapsed_time=elapsed_time,
+                        output_language=state.text_result.output_language,
+                    )
+                if state.text_result and state.text_result.options:
+                    _render_result_meta(state, state.text_result)
 
         # Streaming preview (partial output while Copilot is generating)
         if state.text_translating and state.text_streaming_preview:
@@ -716,8 +729,7 @@ def create_text_result_panel(
         display_options: list[TranslationOption] = []
         actions_disabled = state.text_translating or state.text_back_translating
 
-        if state.text_result and state.text_result.options:
-            _render_result_meta(state, state.text_result)
+        # Result meta is rendered in the hero block above.
 
         # Results section - language-specific UI
         if state.text_result and state.text_result.options:
@@ -755,7 +767,7 @@ def _render_source_text_section(source_text: str, on_copy: Callable[[str], None]
     with ui.element('div').classes('source-text-section'):
         with ui.row().classes('items-start justify-between gap-2'):
             with ui.column().classes('flex-1 gap-1'):
-                ui.label('原文').classes('text-xs text-muted font-medium')
+                ui.label('原文').classes('source-text-title')
                 ui.label(source_text).classes('source-text-content')
 
 
@@ -794,27 +806,28 @@ def _render_translation_status(
     elif detected_language:
         mapping_label = f"検出: {detected_label}"
 
-    with ui.element('div').classes('avatar-status-row'):
-        with ui.column().classes('gap-0 status-text'):
-            with ui.row().classes('items-center gap-2'):
-                if translating:
-                    ui.spinner('dots', size='sm').classes('text-primary')
-                    if back_translating:
-                        ui.label('戻し訳中...').classes('status-text')
-                    elif detected_language:
-                        ui.label('英訳中...' if is_to_english else '和訳中...').classes('status-text')
+    with ui.element('div').classes('translation-status-section'):
+        with ui.element('div').classes('avatar-status-row'):
+            with ui.column().classes('gap-0 status-text'):
+                with ui.row().classes('items-center gap-2'):
+                    if translating:
+                        ui.spinner('dots', size='sm').classes('text-primary')
+                        if back_translating:
+                            ui.label('戻し訳中...').classes('status-text')
+                        elif detected_language:
+                            ui.label('英訳中...' if is_to_english else '和訳中...').classes('status-text')
+                        else:
+                            ui.label('翻訳中...').classes('status-text')
                     else:
-                        ui.label('翻訳中...').classes('status-text')
-                else:
-                    ui.icon('check_circle').classes('text-lg text-success')
-                    ui.label('英訳しました' if is_to_english else '和訳しました').classes('status-text')
+                        ui.icon('check_circle').classes('text-lg text-success')
+                        ui.label('英訳しました' if is_to_english else '和訳しました').classes('status-text')
 
-                    if elapsed_time:
-                        ui.label(f'{elapsed_time:.1f}秒').classes('elapsed-time-badge')
-            if back_translating:
-                ui.label('戻し訳: 逆方向で確認').classes('status-subtext')
-            elif mapping_label:
-                ui.label(mapping_label).classes('status-subtext')
+                        if elapsed_time:
+                            ui.label(f'{elapsed_time:.1f}秒').classes('elapsed-time-badge')
+                if back_translating:
+                    ui.label('戻し訳: 逆方向で確認').classes('status-subtext')
+                elif mapping_label:
+                    ui.label(mapping_label).classes('status-subtext')
 
 
 def _render_result_meta(state: AppState, result: TextTranslationResult) -> None:
@@ -1455,7 +1468,8 @@ def _render_option_en(
 ):
     """Render a single English translation option as a card"""
 
-    with ui.card().classes('option-card w-full'):
+    style_class = f' style-{option.style}' if option.style else ''
+    with ui.card().classes(f'option-card w-full{style_class}'):
         with ui.column().classes('w-full gap-2'):
             # Header: style badge (left) + actions (right)
             with ui.row().classes('w-full items-center justify-between gap-2 option-card-header'):
@@ -1467,7 +1481,7 @@ def _render_option_en(
                             if option.style in TEXT_STYLE_ORDER
                             else style_base
                         )
-                        ui.label(style_label).classes('chip')
+                        ui.label(style_label).classes('chip style-chip')
 
                 if on_back_translate and show_back_translate_button:
                     with ui.row().classes('items-center option-card-actions'):

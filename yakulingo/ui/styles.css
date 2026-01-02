@@ -1657,7 +1657,8 @@ body.yakulingo-drag-active .global-drop-indicator {
 .drop-zone-icon,
 .drop-zone-text,
 .drop-zone-subtext,
-.drop-zone-hint {
+.drop-zone-hint,
+.drop-zone-error {
     pointer-events: none;
 }
 
@@ -1709,6 +1710,16 @@ body.yakulingo-drag-active .global-drop-indicator {
     border: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 70%, transparent);
     padding: 0.375rem 0.75rem;
     border-radius: var(--md-sys-shape-corner-small);
+}
+
+.drop-zone-error {
+    font-size: 0.75rem;
+    color: var(--md-sys-color-error);
+    background: color-mix(in srgb, var(--md-sys-color-error-container) 70%, transparent);
+    border: 1px solid color-mix(in srgb, var(--md-sys-color-error) 30%, transparent);
+    padding: 0.35rem 0.6rem;
+    border-radius: var(--md-sys-shape-corner-small);
+    margin-top: 0.4rem;
 }
 
 /* === M3 Card (white bg + thin border + soft shadow) === */
@@ -2613,6 +2624,11 @@ body.yakulingo-drag-active .global-drop-indicator {
     font-size: var(--md-sys-typescale-size-sm);
     color: var(--md-sys-color-on-surface);
     font-weight: 500;
+}
+
+.status-subtext {
+    font-size: 0.75rem;
+    color: var(--md-sys-color-on-surface-variant);
 }
 
 .result-container {
@@ -4475,8 +4491,9 @@ a:not(.q-btn):not(.q-item),
 /* === UX Enhancements (Text/File/History) === */
 .detection-chip {
     display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.125rem;
     padding: 0.25rem 0.75rem;
     border-radius: var(--md-sys-shape-corner-full);
     background: var(--md-sys-color-surface-container-high);
@@ -4490,6 +4507,12 @@ a:not(.q-btn):not(.q-item),
 }
 
 .detection-reason {
+    font-size: 0.75rem;
+    color: var(--md-sys-color-on-surface-variant);
+    opacity: 0.85;
+}
+
+.detection-output {
     font-size: 0.75rem;
     color: var(--md-sys-color-on-surface-variant);
     opacity: 0.85;
@@ -4788,6 +4811,12 @@ a:not(.q-btn):not(.q-item),
     width: 100%;
 }
 
+.file-output-path {
+    font-size: 0.75rem;
+    color: var(--md-sys-color-on-surface-variant);
+    word-break: break-all;
+}
+
 .history-search-container {
     width: 100%;
 }
@@ -4939,6 +4968,15 @@ a:not(.q-btn):not(.q-item),
 
 .file-meta-chips {
     margin-top: 0.25rem;
+}
+
+.file-meta-summary {
+    width: 100%;
+}
+
+.file-meta-subtext {
+    font-size: 0.75rem;
+    color: var(--md-sys-color-on-surface-variant);
 }
 
 .char-split-hint {
@@ -5160,6 +5198,12 @@ a:not(.q-btn):not(.q-item),
 .queue-drag-handle.disabled {
     opacity: 0.35;
     cursor: default;
+}
+
+.queue-hint {
+    font-size: 0.7rem;
+    color: var(--md-sys-color-on-surface-variant);
+    margin: 0.1rem 0 0.35rem 0.25rem;
 }
 
 .queue-item.active {

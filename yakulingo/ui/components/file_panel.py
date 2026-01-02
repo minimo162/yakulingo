@@ -131,11 +131,16 @@ FILE_TYPE_CLASSES = {
 async def _process_drop_result(
     on_file_select: Callable[[list[Path]], Union[None, Awaitable[None]]],
     result: Optional[object],
+    on_error: Optional[Callable[[str], None]] = None,
+    on_success: Optional[Callable[[], None]] = None,
 ) -> bool:
     """Validate JS drop data and forward it to the Python callback."""
 
     if not result:
-        ui.notify('ファイルがドロップされませんでした', type='warning')
+        message = 'ファイルがドロップされませんでした'
+        ui.notify(message, type='warning')
+        if on_error:
+            on_error(message)
         return False
 
     payloads: list[dict] = []
@@ -147,10 +152,14 @@ async def _process_drop_result(
         payloads = [result]
 
     if not payloads:
-        ui.notify('ファイルの読み込みに失敗しました: 空のデータです', type='negative')
+        message = 'ファイルの読み込みに失敗しました: 空のデータです'
+        ui.notify(message, type='negative')
+        if on_error:
+            on_error(message)
         return False
 
     temp_paths: list[Path] = []
+    errors: list[str] = []
     for payload in payloads:
         name = payload.get('name')
         data = payload.get('data')
@@ -159,33 +168,40 @@ async def _process_drop_result(
 
         ext = Path(name).suffix.lower()
         if ext in {'.doc', '.ppt'}:
-            ui.notify(
-                f'{ext} は古い形式のためサポートしていません（.docx / .pptx に変換してください）',
-                type='warning',
-            )
+            message = f'{ext} は古い形式のためサポートしていません（.docx / .pptx に変換してください）'
+            ui.notify(message, type='warning')
+            errors.append(message)
             continue
 
         if ext not in SUPPORTED_EXTENSIONS:
-            ui.notify('サポートされていないファイル形式です', type='warning')
+            message = 'サポートされていないファイル形式です'
+            ui.notify(message, type='warning')
+            errors.append(message)
             continue
 
         try:
             content = bytes(data)
         except (TypeError, ValueError) as err:
-            ui.notify(f'ファイルの読み込みに失敗しました: {err}', type='negative')
+            message = f'ファイルの読み込みに失敗しました: {err}'
+            ui.notify(message, type='negative')
+            errors.append(message)
             continue
 
         if len(content) > MAX_DROP_FILE_SIZE_BYTES:
-            ui.notify(
-                f'ファイルが大きいため翻訳できません（{MAX_DROP_FILE_SIZE_MB}MBまで）',
-                type='warning',
-            )
+            message = f'ファイルが大きいため翻訳できません（{MAX_DROP_FILE_SIZE_MB}MBまで）'
+            ui.notify(message, type='warning')
+            errors.append(message)
             continue
 
         temp_paths.append(temp_file_manager.create_temp_file(content, name))
 
     if not temp_paths:
+        if errors and on_error:
+            on_error(errors[0])
         return False
+
+    if on_success:
+        on_success()
 
     callback_result = on_file_select(temp_paths)
     if asyncio.iscoroutine(callback_result):
@@ -287,7 +303,7 @@ def create_file_panel(
                     )
 
                 if state.file_state == FileState.EMPTY:
-                    _drop_zone(on_file_select)
+                    _drop_zone(state, on_file_select)
 
                 elif state.file_state == FileState.SELECTED:
                     if state.file_info:
@@ -304,6 +320,7 @@ def create_file_panel(
                     has_override = state.file_output_language_overridden
                     has_sections = bool(state.file_info and len(state.file_info.section_details) > 1)
                     style_label = STYLE_OPTIONS.get(translation_style, (translation_style, ""))[0]
+                    output_label = '日本語→英語' if state.file_output_language == 'en' else '英語→日本語'
 
                     details = ui.element('details').classes('advanced-panel file-advanced-panel')
                     if has_manual_refs or has_glossary or has_override or has_sections:
@@ -311,18 +328,19 @@ def create_file_panel(
 
                     with details:
                         with ui.element('summary').classes('advanced-summary items-center'):
-                            ui.label('詳細設定').classes('advanced-title')
+                            ui.label('翻訳設定').classes('advanced-title')
                             with ui.row().classes('advanced-summary-chips items-center gap-2'):
+                                ui.label(output_label).classes('chip meta-chip')
                                 if state.file_output_language == 'en':
                                     ui.label(style_label).classes('chip meta-chip')
                                 if has_glossary:
                                     ui.label('用語集').classes('chip meta-chip')
                                 if has_manual_refs:
-                                    ui.label(f'参照 {len(reference_files)}').classes('chip meta-chip')
+                                    ui.label(f'参照ファイル {len(reference_files)}').classes('chip meta-chip')
                                 if has_sections:
                                     ui.label(f'セクション {len(state.file_info.section_details)}').classes('chip meta-chip')
                                 if has_override:
-                                    ui.label('手動').classes('chip meta-chip override-chip')
+                                    ui.label('手動指定').classes('chip meta-chip override-chip')
 
                         with ui.column().classes('advanced-content gap-3'):
                             if state.file_output_language == 'en':
@@ -357,6 +375,7 @@ def create_file_panel(
                             btn_disabled = state.file_info is None
                             btn_props = 'no-caps disable' if btn_disabled else 'no-caps'
                             btn = ui.button(
+                                '翻訳',
                                 icon='translate',
                             ).classes('translate-btn feedback-anchor').props(
                                 f'{btn_props} aria-label="翻訳する" aria-keyshortcuts="Ctrl+Enter Meta+Enter" data-feedback="翻訳を開始"'
@@ -402,17 +421,25 @@ def _file_translate_meta_chips(
     use_bundled_glossary: bool = False,
 ) -> None:
     output_label = '日本語→英語' if state.file_output_language == 'en' else '英語→日本語'
+    output_language_label = '英語' if state.file_output_language == 'en' else '日本語'
     style_label = STYLE_OPTIONS.get(translation_style, (translation_style, ""))[0]
-    with ui.row().classes('file-meta-chips items-center gap-2 flex-wrap justify-center'):
-        ui.label(output_label).classes('chip meta-chip')
-        if state.file_output_language == 'en':
-            ui.label(style_label).classes('chip meta-chip')
-        if state.file_output_language_overridden:
-            ui.label('手動').classes('chip meta-chip override-chip')
-        if use_bundled_glossary:
-            ui.label('用語集').classes('chip meta-chip')
-        if state.reference_files:
-            ui.label(f'参照 {len(state.reference_files)}').classes('chip meta-chip')
+    with ui.column().classes('file-meta-summary items-center gap-1'):
+        with ui.row().classes('file-meta-chips items-center gap-2 flex-wrap justify-center'):
+            ui.label(output_label).classes('chip meta-chip')
+            if state.file_output_language == 'en':
+                ui.label(style_label).classes('chip meta-chip')
+            if state.file_output_language_overridden:
+                ui.label('手動指定').classes('chip meta-chip override-chip')
+            if use_bundled_glossary:
+                ui.label('用語集').classes('chip meta-chip')
+            if state.reference_files:
+                ui.label(f'参照ファイル {len(state.reference_files)}').classes('chip meta-chip')
+        if state.file_detected_language:
+            ui.label(
+                f'検出: {state.file_detected_language} → 出力: {output_language_label}'
+            ).classes('file-meta-subtext')
+        else:
+            ui.label('言語を検出中...').classes('file-meta-subtext')
 
 
 def _queue_panel(
@@ -492,6 +519,10 @@ def _queue_panel(
                     if state.file_queue_running:
                         clear_btn.props('disable')
 
+        if on_reorder:
+            hint_text = '処理中は並べ替えできません' if state.file_queue_running else 'ドラッグで並べ替え'
+            ui.label(hint_text).classes('queue-hint')
+
         with ui.column().classes('queue-list w-full gap-2'):
             for idx, item in enumerate(state.file_queue):
                 item_status_label, status_class = status_map.get(
@@ -554,6 +585,8 @@ def _queue_panel(
                     drag_icon = ui.icon('drag_indicator').classes(drag_classes)
                     if can_reorder:
                         drag_icon.tooltip('ドラッグで並べ替え')
+                    else:
+                        drag_icon.tooltip('待機中のファイルのみ並べ替えできます')
                     ui.icon(icon).classes('queue-file-icon')
                     with ui.column().classes('queue-item-body gap-1'):
                         ui.label(item.path.name).classes('queue-file-name')
@@ -715,6 +748,20 @@ STYLE_OPTIONS = {
 }
 
 
+def _get_recommended_style(file_info: Optional[FileInfo]) -> Optional[str]:
+    if not file_info:
+        return None
+    style_map = {
+        FileType.EXCEL: 'concise',
+        FileType.POWERPOINT: 'concise',
+        FileType.WORD: 'standard',
+        FileType.PDF: 'standard',
+        FileType.TEXT: 'standard',
+        FileType.EMAIL: 'standard',
+    }
+    return style_map.get(file_info.file_type)
+
+
 def _style_selector(current_style: str, on_change: Optional[Callable[[str], None]]):
     """Translation style selector - segmented button style for English output"""
     with ui.row().classes('w-full justify-center mt-3'):
@@ -732,8 +779,8 @@ def _style_selector(current_style: str, on_change: Optional[Callable[[str], None
                 if current_style == style_key:
                     style_classes += ' style-btn-active'
 
-                display_label = f'{label} ({style_key})'
-                display_tooltip = f'{tooltip} ({style_key})'
+                display_label = label
+                display_tooltip = tooltip
                 btn = ui.button(
                     display_label,
                     on_click=lambda k=style_key: on_change and on_change(k)
@@ -768,7 +815,7 @@ def _glossary_selector(
                 edit_btn = ui.button(
                     icon='edit',
                     on_click=on_edit
-                ).props('flat dense round size=sm aria-label="Edit glossary"').classes('settings-btn')
+                ).props('flat dense round size=sm aria-label="用語集を編集"').classes('settings-btn')
                 edit_btn.tooltip('用語集を編集')
 
         # Edit translation rules button
@@ -776,7 +823,7 @@ def _glossary_selector(
             rules_btn = ui.button(
                 icon='rule',
                 on_click=on_edit_translation_rules
-            ).props('flat dense round size=sm aria-label="Edit translation rules"').classes('settings-btn')
+            ).props('flat dense round size=sm aria-label="翻訳ルールを編集"').classes('settings-btn')
             rules_btn.tooltip('翻訳ルールを編集')
 
         # Reference file attachment button
@@ -784,7 +831,7 @@ def _glossary_selector(
             has_files = bool(reference_files)
             attach_btn = ui.button().classes(
                 f'attach-btn {"has-file" if has_files else ""} feedback-anchor'
-            ).props('flat aria-label="Attach reference file" data-feedback="参照ファイルを追加"')
+            ).props('flat aria-label="参照ファイルを追加" data-feedback="参照ファイルを追加"')
             with attach_btn:
                 ui.html(ATTACH_SVG, sanitize=False)
             attach_btn.on('click', on_attach, js_handler=_build_action_feedback_js_handler())
@@ -800,7 +847,7 @@ def _glossary_selector(
                         ui.button(
                             icon='close',
                             on_click=lambda idx=i: on_remove(idx)
-                        ).props('flat round aria-label="Remove reference file"').classes('remove-btn')
+                        ).props('flat round aria-label="参照ファイルを削除"').classes('remove-btn')
 
 
 def _precheck_card(
@@ -831,7 +878,7 @@ def _precheck_card(
             with ui.row().classes('items-center justify-between gap-2'):
                 ui.label('翻訳前チェック').classes('text-sm font-semibold')
                 if summary["count"] > 0:
-                    ui.label(f'参照 {summary["count"]} 件').classes('chip')
+                    ui.label(f'参照ファイル {summary["count"]} 件').classes('chip')
 
             with ui.column().classes('precheck-grid gap-1'):
                 ui.label(f'検出: {detected}').classes('precheck-item')
@@ -839,6 +886,15 @@ def _precheck_card(
                 ui.label(f'出力: {output_label}').classes('precheck-item')
                 if state.file_output_language == 'en':
                     ui.label(f'スタイル: {style_label}').classes('precheck-item')
+                    recommended = _get_recommended_style(state.file_info)
+                    if recommended:
+                        recommended_label, recommended_hint = STYLE_OPTIONS.get(recommended, (recommended, ""))
+                        if recommended == translation_style:
+                            ui.label(f'推奨: {recommended_label}').classes('precheck-item')
+                        else:
+                            ui.label(
+                                f'推奨: {recommended_label}（{recommended_hint}）'
+                            ).classes('precheck-item')
                 ui.label(f'フォント: {font_name}').classes('precheck-item')
                 ui.label(f'{section_label}: {selected_count}/{max(total_sections, 1)}').classes('precheck-item')
                 ui.label(f'推定: {eta_label}').classes('precheck-item')
@@ -869,8 +925,22 @@ def _precheck_card(
 
 
 
-def _drop_zone(on_file_select: Callable[[list[Path]], Union[None, Awaitable[None]]]):
+def _drop_zone(
+    state: AppState,
+    on_file_select: Callable[[list[Path]], Union[None, Awaitable[None]]],
+):
     """Simple drop zone with managed temp files"""
+    error_label = None
+
+    def set_drop_error(message: Optional[str]) -> None:
+        state.file_drop_error = message
+        if error_label is None:
+            return
+        if message:
+            error_label.set_text(message)
+            error_label.set_visibility(True)
+        else:
+            error_label.set_visibility(False)
 
     def handle_upload(e: events.UploadEventArguments):
         try:
@@ -901,14 +971,16 @@ def _drop_zone(on_file_select: Callable[[list[Path]], Union[None, Awaitable[None
             result = on_file_select([temp_path])
             if asyncio.iscoroutine(result):
                 asyncio.create_task(result)
+            set_drop_error(None)
         except (OSError, AttributeError) as err:
-            ui.notify(f'ファイルの読み込みに失敗しました: {err}', type='negative')
+            message = f'ファイルの読み込みに失敗しました: {err}'
+            ui.notify(message, type='negative')
+            set_drop_error(message)
 
     def handle_upload_rejected(_event=None):
-        ui.notify(
-            f'ファイルが大きいため翻訳できません（{MAX_DROP_FILE_SIZE_MB}MBまで）',
-            type='warning',
-        )
+        message = f'ファイルが大きいため翻訳できません（{MAX_DROP_FILE_SIZE_MB}MBまで）'
+        ui.notify(message, type='warning')
+        set_drop_error(message)
 
     # Container with relative positioning for layering
     with ui.element('div').classes('drop-zone w-full') as container:
@@ -920,6 +992,8 @@ def _drop_zone(on_file_select: Callable[[list[Path]], Union[None, Awaitable[None
             ui.label('または クリックして選択').classes('drop-zone-subtext')
             ui.label('Excel / Word / PowerPoint / PDF / TXT / MSG').classes('drop-zone-hint')
             ui.label(f'最大 {MAX_DROP_FILE_SIZE_MB}MB').classes('drop-zone-hint')
+            error_label = ui.label(state.file_drop_error or '').classes('drop-zone-error')
+            error_label.set_visibility(bool(state.file_drop_error))
 
         # Upload component for click selection
         upload = ui.upload(
@@ -951,9 +1025,16 @@ def _drop_zone(on_file_select: Callable[[list[Path]], Union[None, Awaitable[None
                 result = _extract_drop_payload(event)
                 if result is None:
                     result = await ui.run_javascript('window._droppedFileData ?? null')
-                await _process_drop_result(on_file_select, result)
+                await _process_drop_result(
+                    on_file_select,
+                    result,
+                    on_error=set_drop_error,
+                    on_success=lambda: set_drop_error(None),
+                )
             except Exception as err:
-                ui.notify(f'ファイルの読み込みに失敗しました: {err}', type='negative')
+                message = f'ファイルの読み込みに失敗しました: {err}'
+                ui.notify(message, type='negative')
+                set_drop_error(message)
             finally:
                 # Avoid stale data if any branch exits early
                 await ui.run_javascript('window._droppedFileData = null')
@@ -1253,37 +1334,40 @@ def _file_action_footer(
         target_path = result.output_files[0][0]
 
     with ui.element('div').classes('file-action-footer'):
-        with ui.row().classes('items-center justify-between gap-2 flex-wrap file-action-footer-inner'):
-            with ui.row().classes('items-center gap-2 flex-wrap'):
-                if target_path and target_path.exists():
-                    ui.button(
-                        '開く',
-                        icon='open_in_new',
-                        on_click=lambda p=target_path: open_file(p),
-                    ).classes('btn-text').props('no-caps')
-                    ui.button(
-                        'フォルダを開く',
-                        icon='folder_open',
-                        on_click=lambda p=target_path: show_in_folder(p),
-                    ).classes('btn-text').props('no-caps')
-                    copy_btn = ui.button(
-                        'パスをコピー',
-                        icon='content_copy',
-                    ).classes('btn-text').props('no-caps')
-                    _attach_copy_handler(copy_btn, str(target_path), 'パスをコピーしました')
-                if on_reset:
-                    ui.button(
-                        '別のファイル',
-                        icon='upload_file',
-                        on_click=on_reset,
-                    ).classes('btn-outline').props('no-caps')
+        with ui.column().classes('w-full gap-1'):
+            if target_path:
+                ui.label(f'保存先: {target_path.parent}').classes('file-output-path')
+            with ui.row().classes('items-center justify-between gap-2 flex-wrap file-action-footer-inner'):
+                with ui.row().classes('items-center gap-2 flex-wrap'):
+                    if target_path and target_path.exists():
+                        ui.button(
+                            '開く',
+                            icon='open_in_new',
+                            on_click=lambda p=target_path: open_file(p),
+                        ).classes('btn-text').props('no-caps')
+                        ui.button(
+                            'フォルダを開く',
+                            icon='folder_open',
+                            on_click=lambda p=target_path: show_in_folder(p),
+                        ).classes('btn-text').props('no-caps')
+                        copy_btn = ui.button(
+                            'パスをコピー',
+                            icon='content_copy',
+                        ).classes('btn-text').props('no-caps')
+                        _attach_copy_handler(copy_btn, str(target_path), 'パスをコピーしました')
+                    if on_reset:
+                        ui.button(
+                            '別のファイル',
+                            icon='upload_file',
+                            on_click=on_reset,
+                        ).classes('btn-outline').props('no-caps')
 
-            if on_retry:
-                ui.button(
-                    '再翻訳',
-                    icon='refresh',
-                    on_click=on_retry,
-                ).classes('btn-tonal').props('no-caps')
+                if on_retry:
+                    ui.button(
+                        '再翻訳',
+                        icon='refresh',
+                        on_click=on_retry,
+                    ).classes('btn-tonal').props('no-caps')
 
 
 def _output_file_row(file_path: Path, description: str):

@@ -363,8 +363,12 @@ def _create_large_input_panel(
                                 detection_reason_label = ui.label(
                                     ''
                                 ).classes('detection-reason')
+                                detection_output_label = ui.label(
+                                    ''
+                                ).classes('detection-output')
                             metrics_refs['detection_label'] = detection_label
                             metrics_refs['detection_reason_label'] = detection_reason_label
+                            metrics_refs['detection_output_label'] = detection_output_label
 
                             count_inline = ui.label(
                                 f'{len(state.source_text):,} / {text_char_limit:,}'
@@ -373,18 +377,6 @@ def _create_large_input_panel(
 
                     with ui.column().classes('input-toolbar-right items-center gap-2'):
                         with ui.column().classes('translate-actions items-end gap-2'):
-                            with ui.row().classes('translate-meta-row items-center gap-2 flex-wrap justify-end'):
-                                direction_chip = ui.label('自動').classes('chip direction-chip')
-                                style_chip = ui.label('スタイル自動').classes('chip style-chip')
-                                override_chip = ui.label('手動').classes('chip override-chip')
-                                override_chip.set_visibility(False)
-                                ref_chip = ui.label('').classes('chip meta-chip ref-chip')
-                                ref_chip.set_visibility(False)
-                                metrics_refs['direction_chip'] = direction_chip
-                                metrics_refs['style_chip'] = style_chip
-                                metrics_refs['override_chip'] = override_chip
-                                metrics_refs['ref_chip'] = ref_chip
-
                             with ui.row().classes('items-center gap-2'):
                                 if on_paste_from_clipboard:
                                     def handle_paste_click():
@@ -411,6 +403,7 @@ def _create_large_input_panel(
                                     asyncio.create_task(on_translate())
 
                                 btn = ui.button(
+                                    '翻訳',
                                     icon='translate',
                                 ).classes('translate-btn feedback-anchor').props(
                                     'no-caps aria-label="翻訳する" aria-keyshortcuts="Ctrl+Enter Meta+Enter" data-feedback="翻訳を開始"'
@@ -437,14 +430,21 @@ def _create_large_input_panel(
 
                 with details:
                     with ui.element('summary').classes('advanced-summary items-center'):
-                        ui.label('詳細設定').classes('advanced-title')
+                        ui.label('翻訳設定').classes('advanced-title')
                         with ui.row().classes('advanced-summary-chips items-center gap-2'):
+                            summary_direction_chip = ui.label('自動判定').classes('chip meta-chip')
+                            summary_style_chip = ui.label('スタイル自動').classes('chip meta-chip')
+                            summary_override_chip = ui.label('手動指定').classes('chip meta-chip override-chip')
+                            summary_override_chip.set_visibility(False)
+                            metrics_refs['summary_direction_chip'] = summary_direction_chip
+                            metrics_refs['summary_style_chip'] = summary_style_chip
+                            metrics_refs['summary_override_chip'] = summary_override_chip
                             if has_glossary:
                                 ui.label('用語集').classes('chip meta-chip')
                             if has_manual_refs:
-                                ui.label(f'参照 {len(state.reference_files)}').classes('chip meta-chip')
+                                ui.label(f'参照ファイル {len(state.reference_files)}').classes('chip meta-chip')
                             if has_override:
-                                ui.label('手動').classes('chip meta-chip override-chip')
+                                summary_override_chip.set_visibility(True)
 
                     with ui.column().classes('advanced-content gap-3'):
                         if on_output_language_override:
@@ -515,7 +515,7 @@ def _create_large_input_panel(
                                         edit_btn = ui.button(
                                             icon='edit',
                                             on_click=on_edit_glossary
-                                        ).props('flat dense round size=sm aria-label="Edit glossary"').classes('settings-btn')
+                                        ).props('flat dense round size=sm aria-label="用語集を編集"').classes('settings-btn')
                                         edit_btn.tooltip('用語集を編集')
 
                                 # Edit translation rules button
@@ -523,7 +523,7 @@ def _create_large_input_panel(
                                     rules_btn = ui.button(
                                         icon='rule',
                                         on_click=on_edit_translation_rules
-                                    ).props('flat dense round size=sm aria-label="Edit translation rules"').classes('settings-btn')
+                                    ).props('flat dense round size=sm aria-label="翻訳ルールを編集"').classes('settings-btn')
                                     rules_btn.tooltip('翻訳ルールを編集')
 
                                 # Reference file attachment button
@@ -531,7 +531,7 @@ def _create_large_input_panel(
                                     has_files = bool(state.reference_files)
                                     attach_btn = ui.button().classes(
                                         f'attach-btn {"has-file" if has_files else ""} feedback-anchor'
-                                    ).props('flat aria-label="Attach reference file" data-feedback="参照ファイルを追加"')
+                                    ).props('flat aria-label="参照ファイルを追加" data-feedback="参照ファイルを追加"')
                                     with attach_btn:
                                         ui.html(ATTACH_SVG, sanitize=False)
                                     attach_btn.on(
@@ -581,7 +581,7 @@ def _create_large_input_panel(
                                                 ui.button(
                                                     icon='close',
                                                     on_click=lambda idx=i: on_remove_reference_file(idx)
-                                                ).props('flat round aria-label="Remove reference file"').classes('remove-btn')
+                                                ).props('flat round aria-label="参照ファイルを削除"').classes('remove-btn')
 
                 split_panel = ui.element('div').classes('split-suggestion')
                 split_panel.set_visibility(False)
@@ -614,6 +614,7 @@ def create_text_result_panel(
     on_copy: Callable[[str], None],
     on_back_translate: Optional[Callable[[TranslationOption], None]] = None,
     on_retry: Optional[Callable[[], None]] = None,
+    on_edit: Optional[Callable[[], None]] = None,
     compare_mode: bool = False,
     on_compare_mode_change: Optional[Callable[[str], None]] = None,
     on_compare_base_style_change: Optional[Callable[[str], None]] = None,
@@ -719,6 +720,7 @@ def create_text_result_panel(
                 state.text_result,
                 on_copy,
                 on_back_translate,
+                on_edit,
                 actions_disabled=state.text_translating or state.text_back_translating,
             )
 
@@ -760,6 +762,21 @@ def _render_translation_status(
     else:
         is_to_english = detected_language == "日本語"
 
+    output_label = None
+    if output_language == "en":
+        output_label = "英語"
+    elif output_language == "jp":
+        output_label = "日本語"
+    elif detected_language:
+        output_label = "英語" if detected_language == "日本語" else "日本語"
+
+    detected_label = detected_language or "未判定"
+    mapping_label = ""
+    if output_label:
+        mapping_label = f"検出: {detected_label} → 出力: {output_label}"
+    elif detected_language:
+        mapping_label = f"検出: {detected_label}"
+
     with ui.element('div').classes('avatar-status-row'):
         with ui.column().classes('gap-0 status-text'):
             with ui.row().classes('items-center gap-2'):
@@ -777,6 +794,10 @@ def _render_translation_status(
 
                     if elapsed_time:
                         ui.label(f'{elapsed_time:.1f}秒').classes('elapsed-time-badge')
+            if back_translating:
+                ui.label('戻し訳: 逆方向で確認').classes('status-subtext')
+            elif mapping_label:
+                ui.label(mapping_label).classes('status-subtext')
 
 
 def _render_result_meta(state: AppState, result: TextTranslationResult) -> None:
@@ -790,9 +811,9 @@ def _render_result_meta(state: AppState, result: TextTranslationResult) -> None:
         else:
             ui.label('解説付き').classes('chip meta-chip')
         if state.text_output_language_override in {"en", "jp"}:
-            ui.label('手動').classes('chip meta-chip override-chip')
+            ui.label('手動指定').classes('chip meta-chip override-chip')
         if state.reference_files:
-            ui.label(f'参照 {len(state.reference_files)}').classes('chip meta-chip')
+            ui.label(f'参照ファイル {len(state.reference_files)}').classes('chip meta-chip')
 
 
 def _render_compare_controls(
@@ -1024,6 +1045,7 @@ def _render_result_action_footer(
     result: TextTranslationResult,
     on_copy: Callable[[str], None],
     on_back_translate: Optional[Callable[[TranslationOption], None]] = None,
+    on_edit: Optional[Callable[[], None]] = None,
     actions_disabled: bool = False,
 ) -> None:
     if not result.options:
@@ -1113,18 +1135,29 @@ def _render_result_action_footer(
                             tooltip='解説を含めてコピー',
                         )
 
-            if on_back_translate:
-                def handle_back_translate_all():
-                    for option in result.options:
-                        on_back_translate(option)
+            with ui.row().classes('items-center gap-2 flex-wrap'):
+                if on_edit:
+                    edit_btn = ui.button(
+                        '編集して再翻訳',
+                        icon='edit',
+                        on_click=on_edit,
+                    ).props('flat no-caps size=sm').classes('result-footer-btn')
+                    edit_btn.tooltip('原文を編集して再翻訳')
+                    if actions_disabled:
+                        edit_btn.props('disable')
 
-                back_btn = ui.button(
-                    '戻し訳',
-                    icon='g_translate',
-                    on_click=handle_back_translate_all,
-                ).props('flat no-caps size=sm').classes('result-footer-btn')
-                if actions_disabled:
-                    back_btn.props('disable')
+                if on_back_translate:
+                    def handle_back_translate_all():
+                        for option in result.options:
+                            on_back_translate(option)
+
+                    back_btn = ui.button(
+                        '戻し訳',
+                        icon='g_translate',
+                        on_click=handle_back_translate_all,
+                    ).props('flat no-caps size=sm').classes('result-footer-btn')
+                    if actions_disabled:
+                        back_btn.props('disable')
 
 
 def _render_explanation(explanation: str):

@@ -6950,6 +6950,7 @@ class YakuLingoApp:
                 on_copy=self._copy_text,
                 on_back_translate=self._back_translate,
                 on_retry=self._retry_translation,
+                on_edit=self._edit_translation,
                 compare_mode=True,
                 on_compare_mode_change=self._set_text_compare_mode,
                 on_compare_base_style_change=self._set_text_compare_base_style,
@@ -7155,11 +7156,13 @@ class YakuLingoApp:
 
         detection_label = refs.get("detection_label")
         detection_reason_label = refs.get("detection_reason_label")
+        detection_output_label = refs.get("detection_output_label")
         detected = self.state.text_detected_language or "未判定"
         if detection_label:
             detection_label.set_text(f"検出: {detected}")
         if detection_reason_label:
-            detection_reason_label.set_text(self._format_detection_reason(self.state.text_detected_language_reason))
+            reason = self._format_detection_reason(self.state.text_detected_language_reason)
+            detection_reason_label.set_text(f"判定: {reason}" if reason else "")
 
         override = self.state.text_output_language_override
         for key, expected in (("override_auto", None), ("override_en", "en"), ("override_jp", "jp")):
@@ -7172,40 +7175,35 @@ class YakuLingoApp:
                 btn.classes(remove="active")
 
         output_lang = self._resolve_text_output_language()
-        direction_chip = refs.get("direction_chip")
-        if direction_chip:
+        output_label = "自動判定"
+        if output_lang == "en":
+            output_label = "英語"
+        elif output_lang == "jp":
+            output_label = "日本語"
+        if detection_output_label:
+            detection_output_label.set_text(f"出力: {output_label}")
+
+        summary_direction_chip = refs.get("summary_direction_chip")
+        if summary_direction_chip:
             if output_lang == "en":
-                direction_chip.set_text("日本語→英語")
+                summary_direction_chip.set_text("日本語→英語")
             elif output_lang == "jp":
-                direction_chip.set_text("英語→日本語")
+                summary_direction_chip.set_text("英語→日本語")
             else:
-                direction_chip.set_text("自動判定")
+                summary_direction_chip.set_text("自動判定")
 
-        style_chip = refs.get("style_chip")
-        if style_chip:
+        summary_style_chip = refs.get("summary_style_chip")
+        if summary_style_chip:
             if output_lang == "en":
-                style_chip.set_text("標準 / 簡潔 / 最簡潔")
+                summary_style_chip.set_text("標準 / 簡潔 / 最簡潔")
             elif output_lang == "jp":
-                style_chip.set_text("解説付き")
+                summary_style_chip.set_text("解説付き")
             else:
-                style_chip.set_text("スタイル自動")
+                summary_style_chip.set_text("スタイル自動")
 
-        override_chip = refs.get("override_chip")
-        if override_chip:
-            override_chip.set_visibility(self.state.text_output_language_override in {"en", "jp"})
-
-        ref_chip = refs.get("ref_chip")
-        if ref_chip:
-            labels = []
-            if self.settings.use_bundled_glossary:
-                labels.append("用語集")
-            if self.state.reference_files:
-                labels.append(f"参照 {len(self.state.reference_files)}")
-            if labels:
-                ref_chip.set_text(" / ".join(labels))
-                ref_chip.set_visibility(True)
-            else:
-                ref_chip.set_visibility(False)
+        summary_override_chip = refs.get("summary_override_chip")
+        if summary_override_chip:
+            summary_override_chip.set_visibility(self.state.text_output_language_override in {"en", "jp"})
 
         split_panel = refs.get("split_panel")
         split_preview = refs.get("split_preview")
@@ -7665,6 +7663,14 @@ class YakuLingoApp:
         self.state.text_result = None
         self.state.text_translation_elapsed_time = None
         await self._translate_text()
+
+    def _edit_translation(self) -> None:
+        """Return to the input view to edit the source text."""
+        from yakulingo.ui.state import TextViewState
+
+        self.state.text_view_state = TextViewState.INPUT
+        self._refresh_content()
+        self._focus_text_input()
 
     async def _translate_long_text_as_file(self, text: str):
         """Translate long text using file translation mode.
@@ -8793,6 +8799,7 @@ class YakuLingoApp:
 
         self.state.current_tab = Tab.FILE
         self.settings.last_tab = Tab.FILE.value
+        self.state.file_drop_error = None
 
         paths = file_path if isinstance(file_path, list) else [file_path]
         new_items = await self._add_files_to_queue(paths)

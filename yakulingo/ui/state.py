@@ -112,6 +112,7 @@ class AppState:
     output_file: Optional[Path] = None
     translation_result: Optional[TranslationResult] = None  # Full result with all output files
     error_message: str = ""
+    file_drop_error: Optional[str] = None
 
     # Reference files
     reference_files: list[Path] = field(default_factory=list)
@@ -205,6 +206,7 @@ class AppState:
         self.output_file = None
         self.translation_result = None
         self.error_message = ""
+        self.file_drop_error = None
         self.file_queue = []
         self.file_queue_active_id = None
         self.file_queue_running = False

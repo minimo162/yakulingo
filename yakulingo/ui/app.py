@@ -6584,6 +6584,12 @@ class YakuLingoApp:
                     icon='history',
                     on_click=self._open_history_dialog,
                 ).classes('icon-btn icon-btn-tonal history-rail-btn').props(history_props).tooltip('履歴')
+                ui.button(
+                    icon='open_in_new',
+                    on_click=lambda: asyncio.create_task(self._show_copilot_browser()),
+                ).classes('icon-btn icon-btn-tonal browser-rail-btn').props(
+                    'flat round aria-label="ブラウザを表示"'
+                ).tooltip('ブラウザを表示')
 
         self._tabs_container = actions_container
         actions_container()

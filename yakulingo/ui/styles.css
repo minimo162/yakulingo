@@ -370,6 +370,14 @@ body {
     display: grid;
 }
 
+.browser-rail-btn {
+    display: none;
+}
+
+.sidebar-rail .browser-rail-btn {
+    display: grid;
+}
+
 .sidebar-rail .sidebar-primary-btn {
     width: var(--md-comp-touch-target-size);
     min-width: var(--md-comp-touch-target-size);

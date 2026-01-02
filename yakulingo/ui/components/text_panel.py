@@ -463,11 +463,9 @@ def _create_large_input_panel(
                         ui.label('詳細設定').classes('advanced-title')
                         with ui.row().classes('advanced-summary-chips items-center gap-2'):
                             summary_direction_chip = ui.label('自動判定').classes('chip meta-chip')
-                            summary_style_chip = ui.label('スタイル自動').classes('chip meta-chip')
                             summary_override_chip = ui.label('手動指定').classes('chip meta-chip override-chip')
                             summary_override_chip.set_visibility(False)
                             metrics_refs['summary_direction_chip'] = summary_direction_chip
-                            metrics_refs['summary_style_chip'] = summary_style_chip
                             metrics_refs['summary_override_chip'] = summary_override_chip
                             if has_glossary:
                                 ui.label('用語集').classes('chip meta-chip')
@@ -502,30 +500,6 @@ def _create_large_input_panel(
                                     metrics_refs['override_auto'] = auto_btn
                                     metrics_refs['override_en'] = en_btn
                                     metrics_refs['override_jp'] = jp_btn
-
-                        with ui.column().classes('advanced-section'):
-                            ui.label('文字数').classes('advanced-label')
-                            with ui.column().classes('char-count-group'):
-                                count_label = ui.label(
-                                    f'{len(state.source_text):,} / {text_char_limit:,} 字'
-                                ).classes('char-count-label')
-                                with ui.element('div').classes('char-count-track'):
-                                    count_bar = ui.element('div').classes('char-count-bar')
-                                    if text_char_limit > 0:
-                                        marker_pos = min(batch_char_limit / text_char_limit, 1.0) * 100
-                                    else:
-                                        marker_pos = 0.0
-                                    ui.element('div').classes('char-count-marker').style(
-                                        f'left: {marker_pos:.1f}%'
-                                    )
-                                count_hint = ui.label(
-                                    f'推奨 {batch_char_limit:,} 字'
-                                ).classes('char-count-hint')
-                                split_hint = ui.label('').classes('char-split-hint')
-                                metrics_refs['count_label'] = count_label
-                                metrics_refs['count_bar'] = count_bar
-                                metrics_refs['count_hint'] = count_hint
-                                metrics_refs['split_hint'] = split_hint
 
                         with ui.column().classes('advanced-section'):
                             ui.label('参照ファイル').classes('advanced-label')

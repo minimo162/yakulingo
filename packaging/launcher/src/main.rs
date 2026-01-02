@@ -11,7 +11,7 @@
 use std::env;
 use std::fs;
 use std::fs::OpenOptions;
-use std::io::{Read, Write};
+use std::io::{ErrorKind, Read, Write};
 use std::net::TcpStream;
 use std::path::PathBuf;
 use std::process::{Child, Command};
@@ -32,6 +32,13 @@ const RESTART_BACKOFF_BASE_SEC: u64 = 1;
 const RESTART_RESET_AFTER_SEC: u64 = 60;
 const LAUNCHER_STATE_TTL_SEC: u64 = 300;
 const INSTANCE_MUTEX_NAME: &str = "Local\\YakuLingoSingleton";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AppStatus {
+    NotRunning,
+    Running,
+    PortInUse,
+}
 
 fn main() {
     if let Err(e) = run() {
@@ -63,7 +70,8 @@ fn run() -> Result<(), String> {
     } else {
         is_instance_mutex_present()
     };
-    if mutex_present || is_app_running(APP_PORT) {
+    let app_status = check_app_status(APP_PORT);
+    if mutex_present || app_status == AppStatus::Running {
         log_event(
             &log_path,
             "Application already running - focusing existing window",
@@ -73,10 +81,13 @@ fn run() -> Result<(), String> {
         }
         return Ok(());
     }
-
-    // Find Python directory in .uv-python
-    let python_dir = find_python_dir(&base_dir)?;
-    log_event(&log_path, &format!("Using Python dir: {:?}", python_dir));
+    if app_status == AppStatus::PortInUse {
+        log_event(&log_path, "Port 8765 is in use by another application");
+        return Err(
+            "Port 8765 is already in use.\n\nPlease close the other application and try again."
+                .to_string(),
+        );
+    }
 
     // Check venv exists
     let venv_dir = base_dir.join(".venv");
@@ -88,6 +99,10 @@ fn run() -> Result<(), String> {
         log_event(&log_path, ".venv not found - aborting");
         return Err(".venv not found.\n\nPlease reinstall the application.".to_string());
     }
+
+    // Find Python directory in .uv-python (or pyvenv.cfg home)
+    let python_dir = find_python_dir(&base_dir, &venv_dir, &log_path)?;
+    log_event(&log_path, &format!("Using Python dir: {:?}", python_dir));
 
     // Fix pyvenv.cfg for portability
     fix_pyvenv_cfg(&venv_dir, &python_dir)?;
@@ -323,9 +338,23 @@ fn log_event(log_path: &Option<PathBuf>, message: &str) {
     }
 }
 
+fn get_home_dir() -> Option<PathBuf> {
+    if cfg!(windows) {
+        if let Ok(profile) = env::var("USERPROFILE") {
+            return Some(PathBuf::from(profile));
+        }
+        let drive = env::var("HOMEDRIVE").ok();
+        let path = env::var("HOMEPATH").ok();
+        if let (Some(drive), Some(path)) = (drive, path) {
+            return Some(PathBuf::from(format!("{}{}", drive, path)));
+        }
+    }
+    env::var("HOME").ok().map(PathBuf::from)
+}
+
 fn get_launcher_state_path(base_dir: &PathBuf) -> Option<PathBuf> {
-    if let Ok(home) = env::var("USERPROFILE").or_else(|_| env::var("HOME")) {
-        return Some(PathBuf::from(home).join(".yakulingo").join("launcher_state.json"));
+    if let Some(home) = get_home_dir() {
+        return Some(home.join(".yakulingo").join("launcher_state.json"));
     }
     Some(base_dir.join("launcher_state.json"))
 }
@@ -412,17 +441,127 @@ fn parse_launcher_state_ts(content: &str) -> Option<u64> {
     Some(value.floor() as u64)
 }
 
-/// Check if the application is already running by attempting TCP connection
-fn is_app_running(port: u16) -> bool {
+/// Check if the application is already running by probing a local API endpoint.
+fn check_app_status(port: u16) -> AppStatus {
     let addr = format!("127.0.0.1:{}", port);
-    // Reduced timeout from 500ms to 100ms for faster startup when app isn't running
-    TcpStream::connect_timeout(&addr.parse().unwrap(), Duration::from_millis(100)).is_ok()
+    let mut stream = match TcpStream::connect_timeout(&addr.parse().unwrap(), Duration::from_millis(150)) {
+        Ok(value) => value,
+        Err(_) => return AppStatus::NotRunning,
+    };
+
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(200)));
+    let _ = stream.set_write_timeout(Some(Duration::from_millis(200)));
+
+    let request =
+        b"GET /api/setup-status HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n";
+    if stream.write_all(request).is_err() {
+        return AppStatus::PortInUse;
+    }
+
+    let mut response = String::new();
+    let mut buffer = [0u8; 512];
+    loop {
+        match stream.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(read) => {
+                response.push_str(&String::from_utf8_lossy(&buffer[..read]));
+                if response.len() >= 4096 {
+                    break;
+                }
+            }
+            Err(err) if err.kind() == ErrorKind::WouldBlock || err.kind() == ErrorKind::TimedOut => {
+                break;
+            }
+            Err(_) => break,
+        }
+    }
+
+    if response.is_empty() {
+        return AppStatus::PortInUse;
+    }
+    if is_yakulingo_setup_response(&response) {
+        AppStatus::Running
+    } else {
+        AppStatus::PortInUse
+    }
 }
 
-/// Find Python directory in .uv-python (cpython-*)
-fn find_python_dir(base_dir: &PathBuf) -> Result<PathBuf, String> {
-    let uv_python_dir = base_dir.join(".uv-python");
+fn is_yakulingo_setup_response(response: &str) -> bool {
+    let status_line = response.lines().next().unwrap_or("");
+    if !status_line.contains(" 200 ") {
+        return false;
+    }
 
+    let body = if let Some((_, body)) = response.split_once("\r\n\r\n") {
+        body
+    } else if let Some((_, body)) = response.split_once("\n\n") {
+        body
+    } else {
+        ""
+    };
+
+    body.contains("\"ready\"") || body.contains("\"active\"")
+}
+
+fn read_pyvenv_home(venv_dir: &PathBuf) -> Option<PathBuf> {
+    let cfg_path = venv_dir.join("pyvenv.cfg");
+    if !cfg_path.exists() {
+        return None;
+    }
+    let content = fs::read_to_string(&cfg_path).ok()?;
+    for line in content.lines() {
+        let lower = line.trim_start().to_lowercase();
+        if lower.starts_with("home") {
+            if let Some(pos) = line.find('=') {
+                let value = line[pos + 1..].trim();
+                if !value.is_empty() {
+                    return Some(PathBuf::from(value));
+                }
+            }
+        }
+    }
+    None
+}
+
+fn parse_cpython_version(name: &str) -> Option<(u32, u32, u32)> {
+    if !name.starts_with("cpython-") {
+        return None;
+    }
+    let tail = &name["cpython-".len()..];
+    let version_part = tail.split('-').next()?;
+    let mut iter = version_part.split('.');
+    let major: u32 = iter.next()?.parse().ok()?;
+    let minor: u32 = iter.next().unwrap_or("0").parse().ok()?;
+    let patch: u32 = iter.next().unwrap_or("0").parse().ok()?;
+    Some((major, minor, patch))
+}
+
+/// Find Python directory in .uv-python (cpython-*) or pyvenv.cfg home.
+fn find_python_dir(
+    base_dir: &PathBuf,
+    venv_dir: &PathBuf,
+    log_path: &Option<PathBuf>,
+) -> Result<PathBuf, String> {
+    if let Some(home) = read_pyvenv_home(venv_dir) {
+        let resolved = if home.is_absolute() {
+            home
+        } else {
+            base_dir.join(home)
+        };
+        if resolved.exists() {
+            log_event(
+                log_path,
+                &format!("Using pyvenv.cfg home for Python dir: {:?}", resolved),
+            );
+            return Ok(resolved);
+        }
+        log_event(
+            log_path,
+            &format!("pyvenv.cfg home not found: {:?}", resolved),
+        );
+    }
+
+    let uv_python_dir = base_dir.join(".uv-python");
     if !uv_python_dir.exists() {
         return Err(
             "Python not found in .uv-python directory.\n\nPlease reinstall the application."
@@ -433,18 +572,55 @@ fn find_python_dir(base_dir: &PathBuf) -> Result<PathBuf, String> {
     let entries = fs::read_dir(&uv_python_dir)
         .map_err(|e| format!("Failed to read .uv-python directory: {}", e))?;
 
+    let mut candidates: Vec<(PathBuf, Option<(u32, u32, u32)>, Option<SystemTime>, String)> =
+        Vec::new();
     for entry in entries.flatten() {
-        let name = entry.file_name();
-        let name_str = name.to_string_lossy();
-        if name_str.starts_with("cpython-") && entry.path().is_dir() {
-            return Ok(entry.path());
+        let name = entry.file_name().to_string_lossy().to_string();
+        let path = entry.path();
+        if name.starts_with("cpython-") && path.is_dir() {
+            let version = parse_cpython_version(&name);
+            let modified = fs::metadata(&path).and_then(|meta| meta.modified()).ok();
+            candidates.push((path, version, modified, name));
         }
     }
 
-    Err(
-        "Python not found in .uv-python directory.\n\nPlease reinstall the application."
-            .to_string(),
-    )
+    if candidates.is_empty() {
+        return Err(
+            "Python not found in .uv-python directory.\n\nPlease reinstall the application."
+                .to_string(),
+        );
+    }
+
+    candidates.sort_by(|a, b| {
+        let (_, version_a, modified_a, name_a) = a;
+        let (_, version_b, modified_b, name_b) = b;
+        match (version_a, version_b) {
+            (Some(va), Some(vb)) => vb.cmp(va),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => std::cmp::Ordering::Equal,
+        }
+        .then_with(|| match (modified_a, modified_b) {
+            (Some(ma), Some(mb)) => mb.cmp(ma),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => std::cmp::Ordering::Equal,
+        })
+        .then_with(|| name_b.cmp(name_a))
+    });
+
+    let selected = candidates[0].0.clone();
+    if candidates.len() > 1 {
+        log_event(
+            log_path,
+            &format!(
+                "Multiple Python dirs found in .uv-python; selected {:?}",
+                selected
+            ),
+        );
+    }
+
+    Ok(selected)
 }
 
 /// Fix pyvenv.cfg home path for portability (only if needed)
@@ -455,41 +631,34 @@ fn fix_pyvenv_cfg(venv_dir: &PathBuf, python_dir: &PathBuf) -> Result<(), String
         return Ok(()); // Skip if not exists
     }
 
-    // Read existing config
-    let mut current_content = String::new();
-    let mut version_line = String::new();
-    let mut current_home = String::new();
+    let current_content =
+        fs::read_to_string(&cfg_path).map_err(|e| format!("Failed to read pyvenv.cfg: {}", e))?;
+    let expected_home = python_dir.display().to_string();
 
-    if let Ok(mut file) = fs::File::open(&cfg_path) {
-        if file.read_to_string(&mut current_content).is_ok() {
-            for line in current_content.lines() {
-                let lower = line.to_lowercase();
-                if lower.starts_with("version") {
-                    version_line = line.to_string();
-                } else if lower.starts_with("home") {
-                    // Extract current home path
-                    if let Some(pos) = line.find('=') {
-                        current_home = line[pos + 1..].trim().to_string();
-                    }
-                }
-            }
+    let mut lines: Vec<String> = Vec::new();
+    let mut found_home = false;
+    for line in current_content.lines() {
+        let lower = line.trim_start().to_lowercase();
+        if lower.starts_with("home") {
+            lines.push(format!("home = {}", expected_home));
+            found_home = true;
+        } else {
+            lines.push(line.to_string());
         }
     }
 
-    // Check if home path is already correct
-    let expected_home = python_dir.display().to_string();
-    if current_home == expected_home {
-        return Ok(()); // Already correct, skip rewrite
+    if !found_home {
+        lines.insert(0, format!("home = {}", expected_home));
     }
 
-    // Write new config with correct home path
-    let mut new_content = format!(
-        "home = {}\ninclude-system-site-packages = false\n",
-        expected_home
-    );
-    if !version_line.is_empty() {
-        new_content.push_str(&version_line);
-        new_content.push('\n');
+    let line_ending = if current_content.contains("\r\n") { "\r\n" } else { "\n" };
+    let mut new_content = lines.join(line_ending);
+    if current_content.ends_with(line_ending) {
+        new_content.push_str(line_ending);
+    }
+
+    if new_content == current_content {
+        return Ok(());
     }
 
     fs::write(&cfg_path, new_content).map_err(|e| format!("Failed to write pyvenv.cfg: {}", e))?;
@@ -504,7 +673,9 @@ fn setup_environment(base_dir: &PathBuf, venv_dir: &PathBuf, python_dir: &PathBu
 
     // PLAYWRIGHT_BROWSERS_PATH
     let playwright_path = base_dir.join(".playwright-browsers");
-    env::set_var("PLAYWRIGHT_BROWSERS_PATH", &playwright_path);
+    if env::var("PLAYWRIGHT_BROWSERS_PATH").is_err() && playwright_path.exists() {
+        env::set_var("PLAYWRIGHT_BROWSERS_PATH", &playwright_path);
+    }
 
     // pywebview web engine (avoid runtime installation dialog)
     env::set_var("PYWEBVIEW_GUI", "edgechromium");
@@ -552,7 +723,9 @@ fn launch_app(
     if env::var("YAKULINGO_LAUNCH_SOURCE").is_err() {
         command.env("YAKULINGO_LAUNCH_SOURCE", "launcher");
     }
-    command.env("YAKULINGO_WATCHDOG", "1");
+    if env::var("YAKULINGO_WATCHDOG").is_err() {
+        command.env("YAKULINGO_WATCHDOG", "1");
+    }
 
     let child = command
         .spawn()
@@ -614,7 +787,9 @@ fn launch_app(
     if env::var("YAKULINGO_LAUNCH_SOURCE").is_err() {
         command.env("YAKULINGO_LAUNCH_SOURCE", "launcher");
     }
-    command.env("YAKULINGO_WATCHDOG", "1");
+    if env::var("YAKULINGO_WATCHDOG").is_err() {
+        command.env("YAKULINGO_WATCHDOG", "1");
+    }
 
     command
         .spawn()

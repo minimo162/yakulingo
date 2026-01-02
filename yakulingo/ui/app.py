@@ -6647,38 +6647,6 @@ class YakuLingoApp:
                     lambda: self._toggle_history_filter_output_language('jp'),
                 )
 
-            style_map = {
-                "standard": "標準",
-                "concise": "簡潔",
-                "minimal": "最簡潔",
-            }
-            with ui.row().classes('history-filter-row items-center gap-1 flex-wrap'):
-                for style_key, label in style_map.items():
-                    add_chip(
-                        label,
-                        style_key in self.state.history_filter_styles,
-                        lambda key=style_key: self._toggle_history_filter_style(key),
-                    )
-
-            with ui.row().classes('history-filter-row items-center gap-1 flex-wrap'):
-                add_chip(
-                    '参照あり',
-                    self.state.history_filter_has_reference is True,
-                    lambda: self._set_history_filter_reference(True),
-                )
-                add_chip(
-                    '参照なし',
-                    self.state.history_filter_has_reference is False,
-                    lambda: self._set_history_filter_reference(False),
-                )
-                add_chip(
-                    '比較',
-                    self.state.history_compare_enabled,
-                    self._toggle_history_compare,
-                    icon='compare_arrows',
-                    tooltip='現在の入力と比較',
-                    extra_classes='history-compare-chip',
-                )
 
     def _ensure_history_dialog(self) -> None:
         """Create the history drawer (dialog) used in sidebar rail mode."""
@@ -6801,37 +6769,10 @@ class YakuLingoApp:
         self._nav_buttons[tab] = btn
 
     def _build_history_chips(self, entry: HistoryEntry) -> list[str]:
-        metadata = entry.result.metadata if isinstance(entry.result.metadata, dict) else {}
         chips: list[str] = []
 
         output_lang = entry.result.output_language or "en"
         chips.append('日本語→英語' if output_lang == "en" else '英語→日本語')
-
-        override = metadata.get("output_language_override")
-        if override in {"en", "jp"}:
-            chips.append('固定')
-
-        if metadata.get("split_translation"):
-            chips.append('分割')
-
-        styles = metadata.get("styles") or []
-        if styles:
-            style_map = {
-                "standard": "標準",
-                "concise": "簡潔",
-                "minimal": "最簡潔",
-            }
-            if len(styles) == 1:
-                chips.append(style_map.get(styles[0], styles[0]))
-            else:
-                chips.append(f'{len(styles)}スタイル')
-
-        manual_names = metadata.get("manual_reference_names") or []
-        if isinstance(manual_names, list) and manual_names:
-            chips.append(f'参照{len(manual_names)}')
-
-        if metadata.get("use_bundled_glossary"):
-            chips.append('用語集')
 
         return chips
 
@@ -6881,13 +6822,6 @@ class YakuLingoApp:
                     ui.label(entry.result.options[0].text).classes('text-2xs text-muted history-preview')
 
                 chips = self._build_history_chips(entry)
-                current_text = self.state.source_text.strip()
-                if self.state.history_compare_enabled and current_text:
-                    ratio = difflib.SequenceMatcher(a=current_text, b=entry.source_text).ratio()
-                    if ratio >= 0.999:
-                        chips.append('一致')
-                    else:
-                        chips.append(f'類似{int(ratio * 100)}%')
 
                 if chips:
                     with ui.row().classes('history-meta-row items-center gap-1 flex-wrap'):
@@ -9740,24 +9674,6 @@ class YakuLingoApp:
             if self.state.history_filter_output_language and output_lang != self.state.history_filter_output_language:
                 continue
 
-            metadata = entry.result.metadata if isinstance(entry.result.metadata, dict) else {}
-            styles = metadata.get("styles") or []
-            if not styles:
-                for option in entry.result.options:
-                    if option.style:
-                        styles.append(option.style)
-
-            if self.state.history_filter_styles:
-                if not any(style in self.state.history_filter_styles for style in styles):
-                    continue
-
-            if self.state.history_filter_has_reference is not None:
-                has_manual = bool(metadata.get("manual_reference_names"))
-                has_glossary = bool(metadata.get("use_bundled_glossary"))
-                has_reference = has_manual or has_glossary
-                if has_reference != self.state.history_filter_has_reference:
-                    continue
-
             filtered_entries.append(entry)
 
         entries = filtered_entries
@@ -9842,21 +9758,23 @@ class YakuLingoApp:
         from yakulingo.ui.state import TextViewState
 
         metadata = entry.result.metadata or {}
-        manual_paths = []
-        for path_text in metadata.get("manual_reference_paths", []):
-            try:
-                path = Path(path_text)
-                if path.exists():
-                    manual_paths.append(path)
-            except Exception:
-                continue
+        if "manual_reference_paths" in metadata:
+            manual_paths = []
+            for path_text in metadata.get("manual_reference_paths", []):
+                try:
+                    path = Path(path_text)
+                    if path.exists():
+                        manual_paths.append(path)
+                except Exception:
+                    continue
+            self.state.reference_files = manual_paths
 
         if "use_bundled_glossary" in metadata:
             self.settings.use_bundled_glossary = bool(metadata.get("use_bundled_glossary"))
             self.settings.save(self.settings_path)
 
-        self.state.reference_files = manual_paths
-        self.state.text_output_language_override = metadata.get("output_language_override")
+        if "output_language_override" in metadata:
+            self.state.text_output_language_override = metadata.get("output_language_override")
         self.state.source_text = entry.source_text
         self.state.text_view_state = TextViewState.INPUT
         self.state.current_tab = Tab.TEXT
@@ -9874,24 +9792,7 @@ class YakuLingoApp:
 
     def _add_to_history(self, result: TextTranslationResult, source_text: str):
         """Add translation result to history"""
-        styles = []
-        seen_styles = set()
-        for option in result.options:
-            style = option.style
-            if style and style not in seen_styles:
-                seen_styles.add(style)
-                styles.append(style)
-
-        metadata = dict(result.metadata or {})
-        metadata.update({
-            "manual_reference_paths": [str(p) for p in self.state.reference_files],
-            "manual_reference_names": [p.name for p in self.state.reference_files],
-            "use_bundled_glossary": self.settings.use_bundled_glossary,
-            "output_language_override": self.state.text_output_language_override,
-            "detected_language_reason": self.state.text_detected_language_reason,
-            "styles": styles,
-        })
-        result.metadata = metadata
+        result.metadata = None
         entry = HistoryEntry(
             source_text=source_text,
             result=result,

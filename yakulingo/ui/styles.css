@@ -886,6 +886,12 @@ body {
     color: var(--md-sys-color-on-surface-variant);
     margin-left: 0.5rem;
     box-shadow: var(--md-sys-elevation-1);
+    max-width: 100%;
+}
+
+.status-indicator > .nicegui-column {
+    flex: 1 1 auto;
+    min-width: 0;
 }
 
 .status-indicator.connected {
@@ -2222,20 +2228,18 @@ body.yakulingo-drag-active .global-drop-indicator {
     overflow: hidden;
 }
 
-/* Result mode (has-results): 2-column layout (sidebar + result panel centered)
-   Input panel is hidden - user clicks "テキスト翻訳" tab to start new translation */
-
-/* Input panel remains available in result mode */
+/* Result mode (has-results): result panel only (sidebar + result panel centered)
+   Input panel is hidden - use the text tab to start a new translation */
 .main-area.has-results .input-panel {
-    display: flex;
-    visibility: visible;
-    width: var(--input-panel-width-compact);
-    min-width: var(--input-panel-width-compact);
-    max-width: var(--input-panel-width-compact);
-    padding: 1rem;
-    border-right: 1px solid var(--md-sys-color-outline-variant);
-    background: var(--md-sys-color-surface-container-low);
-    overflow-y: auto;
+    display: none !important;
+    visibility: hidden;
+    width: 0;
+    min-width: 0;
+    max-width: 0;
+    padding: 0;
+    border: none;
+    background: transparent;
+    overflow: hidden;
 }
 
 .main-area.has-results .input-panel > .nicegui-column {
@@ -5406,6 +5410,9 @@ a:not(.q-btn):not(.q-item),
 /* === Status CTA Buttons === */
 .status-actions {
     margin-top: 0.2rem;
+    width: 100%;
+    flex-wrap: wrap;
+    row-gap: 0.25rem;
 }
 
 .status-action-btn {

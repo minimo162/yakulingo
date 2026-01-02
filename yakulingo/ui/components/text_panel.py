@@ -748,37 +748,15 @@ def create_text_result_panel(
             # Empty state - show placeholder (spinner already shown in translation status section)
             _render_empty_result_state()
 
-        if state.text_result and state.text_result.options:
-            _render_result_details(
-                state,
-                state.text_result,
-                on_copy,
-                on_back_translate,
-                on_edit,
-                on_compare_mode_change,
-                on_compare_base_style_change,
-                primary_option,
-                secondary_options,
-                display_options,
-                actions_disabled=actions_disabled,
-            )
 
 
 def _render_source_text_section(source_text: str, on_copy: Callable[[str], None]):
-    """Render source text section at the top of result panel with copy button"""
+    """Render source text section at the top of result panel."""
     with ui.element('div').classes('source-text-section'):
         with ui.row().classes('items-start justify-between gap-2'):
             with ui.column().classes('flex-1 gap-1'):
                 ui.label('原文').classes('text-xs text-muted font-medium')
                 ui.label(source_text).classes('source-text-content')
-            # Copy button
-            _create_copy_button(
-                source_text,
-                on_copy,
-                classes='source-copy-btn',
-                aria_label='原文をコピー',
-                tooltip='原文をコピー',
-            )
 
 
 def _render_translation_status(
@@ -1134,16 +1112,8 @@ def _render_results_to_jp(
                                 with ui.row().classes('items-center gap-2 min-w-0'):
                                     pass
 
-                            with ui.row().classes('items-center option-card-actions'):
-                                _create_copy_button(
-                                    option.text,
-                                    on_copy,
-                                    classes='result-action-btn',
-                                    aria_label='訳文をコピー',
-                                    tooltip='訳文をコピー',
-                                )
-                                # Back-translate button
-                                if on_back_translate and show_back_translate_button:
+                            if on_back_translate and show_back_translate_button:
+                                with ui.row().classes('items-center option-card-actions'):
                                     back_btn = ui.button(
                                         '戻し訳',
                                         icon='g_translate',
@@ -1168,7 +1138,7 @@ def _render_results_to_jp(
                             )
                             if on_back_translate:
                                 _render_back_translate_editor(option, on_back_translate, actions_disabled)
-                                if show_back_translate_button or has_back_translate:
+                                if has_back_translate:
                                     _render_back_translate_section(option)
 
         # Retry button (optional) - align position with →English
@@ -1431,6 +1401,8 @@ def _render_back_translate_section(option: TranslationOption) -> None:
     has_result = bool(option.back_translation_text or option.back_translation_explanation)
     has_error = bool(option.back_translation_error)
     is_loading = option.back_translation_in_progress
+    if not (has_result or has_error or is_loading):
+        return
     should_open = is_loading or has_result or has_error
     source_text = option.back_translation_source_text
     is_custom = bool(
@@ -1457,8 +1429,6 @@ def _render_back_translate_section(option: TranslationOption) -> None:
                     ui.label(option.back_translation_error).classes('text-xs text-error')
                 elif has_result:
                     ui.label('検証結果').classes('text-xs text-muted')
-                else:
-                    ui.label('戻し訳を実行するとここに表示されます').classes('text-xs text-muted')
 
             if is_loading:
                 return
@@ -1499,16 +1469,8 @@ def _render_option_en(
                         )
                         ui.label(style_label).classes('chip')
 
-                with ui.row().classes('items-center option-card-actions'):
-                    _create_copy_button(
-                        option.text,
-                        on_copy,
-                        classes='result-action-btn',
-                        aria_label='訳文をコピー',
-                        tooltip='訳文をコピー',
-                    )
-                    # Back-translate button
-                    if on_back_translate and show_back_translate_button:
+                if on_back_translate and show_back_translate_button:
+                    with ui.row().classes('items-center option-card-actions'):
                         back_btn = ui.button(
                             '戻し訳',
                             icon='g_translate',
@@ -1533,5 +1495,5 @@ def _render_option_en(
             )
             if on_back_translate:
                 _render_back_translate_editor(option, on_back_translate, actions_disabled)
-                if show_back_translate_button or has_back_translate:
+                if has_back_translate:
                     _render_back_translate_section(option)

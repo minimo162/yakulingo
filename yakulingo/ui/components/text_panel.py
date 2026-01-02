@@ -12,7 +12,6 @@ import html
 import json
 import logging
 import re
-from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -388,28 +387,14 @@ def _create_large_input_panel(
                                 if on_translate_button_created:
                                     on_translate_button_created(btn)
 
-                has_manual_refs = bool(state.reference_files)
-                has_override = state.text_output_language_override in {"en", "jp"}
-                has_glossary = bool(use_bundled_glossary)
-                details = ui.element('details').classes('advanced-panel')
+                reference_files = effective_reference_files if effective_reference_files is not None else state.reference_files
+                manual_index_by_key = {
+                    str(path).casefold(): idx for idx, path in enumerate(state.reference_files or [])
+                }
+                settings_panel = ui.element('div').classes('advanced-panel')
 
-                with details:
-                    with ui.element('summary').classes('advanced-summary items-center'):
-                        ui.label('詳細設定').classes('advanced-title')
-                        with ui.row().classes('advanced-summary-chips items-center gap-2'):
-                            summary_direction_chip = ui.label('自動判定').classes('chip meta-chip')
-                            summary_override_chip = ui.label('手動指定').classes('chip meta-chip override-chip')
-                            summary_override_chip.set_visibility(False)
-                            metrics_refs['summary_direction_chip'] = summary_direction_chip
-                            metrics_refs['summary_override_chip'] = summary_override_chip
-                            if has_glossary:
-                                ui.label('用語集').classes('chip meta-chip')
-                            if has_manual_refs:
-                                ui.label(f'参照ファイル {len(state.reference_files)}').classes('chip meta-chip')
-                            if has_override:
-                                summary_override_chip.set_visibility(True)
-
-                    with ui.column().classes('advanced-content gap-3'):
+                with settings_panel:
+                    with ui.column().classes('gap-3'):
                         if on_output_language_override:
                             with ui.column().classes('advanced-section'):
                                 ui.label('翻訳方向').classes('advanced-label')
@@ -480,46 +465,18 @@ def _create_large_input_panel(
                                     )
                                     attach_btn.tooltip('参照ファイルを追加')
 
-                            summary = summarize_reference_files(effective_reference_files)
-                            if summary["count"] > 0:
-                                with ui.element('details').classes('ref-summary-details'):
-                                    with ui.element('summary').classes('ref-summary-row items-center flex-wrap gap-2'):
-                                        ui.label(f'{summary["count"]} 件').classes('ref-chip')
-                                        ui.label(format_bytes(summary["total_bytes"])).classes('ref-chip')
-                                        if summary["latest_mtime"]:
-                                            updated = datetime.fromtimestamp(summary["latest_mtime"]).strftime('%m/%d %H:%M')
-                                            ui.label(f'更新 {updated}').classes('ref-chip')
-                                        status_label = 'OK' if summary["all_ok"] else 'NG'
-                                        status_class = 'ref-chip status-ok' if summary["all_ok"] else 'ref-chip status-warn'
-                                        ui.label(status_label).classes(status_class)
-                                        ui.icon('expand_more').classes('ref-summary-caret')
-
-                                    with ui.column().classes('ref-detail-list'):
-                                        for entry in summary["entries"]:
-                                            status_class = 'ref-detail-row' if entry["exists"] else 'ref-detail-row missing'
-                                            with ui.element('div').classes(status_class):
-                                                ui.label(entry["name"]).classes('file-name')
-                                                if entry["size_bytes"]:
-                                                    ui.label(format_bytes(entry["size_bytes"])).classes('ref-meta')
-                                                if entry["mtime"]:
-                                                    updated = datetime.fromtimestamp(entry["mtime"]).strftime('%m/%d %H:%M')
-                                                    ui.label(f'更新 {updated}').classes('ref-meta')
-                                                ui.label('OK' if entry["exists"] else 'NG').classes('ref-file-status')
-
-                            manual_summary = summarize_reference_files(state.reference_files)
-                            if manual_summary["entries"]:
+                            summary = summarize_reference_files(reference_files)
+                            if summary["entries"]:
                                 with ui.row().classes('ref-file-row items-center flex-wrap gap-2'):
-                                    for i, entry in enumerate(manual_summary["entries"]):
+                                    for entry in summary["entries"]:
                                         status_class = 'ref-file-chip' if entry["exists"] else 'ref-file-chip missing'
                                         with ui.element('div').classes(status_class):
                                             ui.label(entry["name"]).classes('file-name')
-                                            ui.label('OK' if entry["exists"] else 'NG').classes(
-                                                'ref-file-status'
-                                            )
-                                            if on_remove_reference_file:
+                                            manual_idx = manual_index_by_key.get(str(entry["path"]).casefold())
+                                            if manual_idx is not None and on_remove_reference_file:
                                                 ui.button(
                                                     icon='close',
-                                                    on_click=lambda idx=i: on_remove_reference_file(idx)
+                                                    on_click=lambda idx=manual_idx: on_remove_reference_file(idx)
                                                 ).props('flat round aria-label="参照ファイルを削除"').classes('remove-btn')
 
                 split_panel = ui.element('div').classes('split-suggestion')

@@ -6275,6 +6275,70 @@ class YakuLingoApp:
         """Store reference to file progress elements for incremental updates."""
         self._file_progress_elements = refs or None
 
+    def _update_file_progress_elements(self) -> None:
+        if self._shutdown_requested:
+            return
+        refs = self._file_progress_elements
+        if not refs:
+            return
+
+        with self._client_lock:
+            client = self._client
+        if client is None:
+            return
+        try:
+            if not getattr(client, "has_socket_connection", True):
+                return
+        except Exception:
+            return
+
+        file_info = self.state.file_info
+        file_name = None
+        if file_info and file_info.path:
+            file_name = file_info.path.name
+        elif self.state.selected_file:
+            file_name = self.state.selected_file.name
+
+        pct = self.state.translation_progress or 0.0
+        status = self.state.translation_status
+        phase = self.state.translation_phase
+        phase_detail = self.state.translation_phase_detail
+        phase_current = self.state.translation_phase_current
+        phase_total = self.state.translation_phase_total
+        phase_counts = self.state.translation_phase_counts or {}
+        eta_seconds = self.state.translation_eta_seconds
+
+        detail_text = self._format_file_progress_detail(
+            phase_detail,
+            phase,
+            phase_counts,
+            phase_current,
+            phase_total,
+        )
+
+        try:
+            with client:
+                file_name_label = refs.get("file_name")
+                if file_name_label and file_name:
+                    file_name_label.set_text(file_name)
+                progress_bar = refs.get("progress_bar")
+                if progress_bar:
+                    progress_bar.style(f'width: {int(pct * 100)}%')
+                progress_label = refs.get("progress_label")
+                if progress_label:
+                    progress_label.set_text(f'{int(pct * 100)}%')
+                status_label = refs.get("status_label")
+                if status_label:
+                    status_label.set_text(status or "処理中...")
+                detail_label = refs.get("detail_label")
+                if detail_label is not None:
+                    detail_label.set_text(detail_text)
+                eta_label = refs.get("eta_label")
+                if eta_label is not None:
+                    eta_label.set_text(f'残り約 {self._format_eta_range_seconds(eta_seconds)}')
+        except Exception as e:
+            logger.debug("File progress UI update failed: %s", e)
+
     def _on_streaming_preview_label_created(self, label: UiLabel):
         """Store reference to streaming preview label for incremental updates."""
         self._streaming_preview_label = label
@@ -9071,7 +9135,7 @@ class YakuLingoApp:
                 except Exception:
                     pass
             with client:
-                self._file_panel_refresh_timer = ui.timer(0.5, self._refresh_content)
+                self._file_panel_refresh_timer = ui.timer(0.2, self._update_file_progress_elements)
 
     def _stop_file_panel_refresh_timer(self) -> None:
         with self._timer_lock:
@@ -9148,7 +9212,14 @@ class YakuLingoApp:
         self.state.file_state = FileState.TRANSLATING
         self.state.translation_result = None
         self.state.error_message = ""
-        self._refresh_tabs()
+        with self._client_lock:
+            client = self._client
+        if client:
+            with client:
+                self._refresh_content()
+                self._refresh_tabs()
+        else:
+            self._refresh_tabs()
         self._start_file_panel_refresh_timer()
 
         try:
@@ -9439,7 +9510,7 @@ class YakuLingoApp:
         self._refresh_content()
 
     async def _translate_file(self):
-        """Translate file with progress dialog"""
+        """Translate file with inline progress."""
         import time
 
         if self.state.file_queue and len(self.state.file_queue) > 1:
@@ -9505,7 +9576,9 @@ class YakuLingoApp:
         self.state.translation_phase_counts = {}
         self.state.translation_eta_seconds = None
         self.state.output_file = None  # Clear any previous output
-        self._refresh_tabs()  # Disable tabs during translation
+        with client:
+            self._refresh_content()
+            self._refresh_tabs()
         self._start_file_panel_refresh_timer()
 
         queue_item = None
@@ -9520,77 +9593,28 @@ class YakuLingoApp:
                 queue_item.progress = 0.0
                 queue_item.phase_counts = {}
 
-        # Progress dialog (persistent to prevent accidental close by clicking outside)
-        # Must use client context for UI creation in async handlers
-        with client:
-            with ui.dialog().props('persistent') as progress_dialog, ui.card().classes('w-80'):
-                with ui.column().classes('w-full gap-4 p-5'):
-                    with ui.row().classes('items-center gap-3'):
-                        ui.spinner('dots', size='md').classes('text-primary')
-                        ui.label('翻訳中...').classes('text-base font-semibold')
-
-                    with ui.column().classes('w-full gap-2'):
-                        # Custom progress bar matching file_panel style
-                        with ui.element('div').classes('progress-track w-full'):
-                            progress_bar_inner = ui.element('div').classes('progress-bar').style('width: 0%')
-                        with ui.row().classes('w-full justify-between'):
-                            status_label = ui.label('開始中...').classes('text-xs text-muted')
-                            progress_label = ui.label('0%').classes('text-xs font-medium text-primary')
-                        with ui.row().classes('w-full justify-between'):
-                            phase_label = ui.label('準備中...').classes('text-2xs text-muted')
-                            eta_label = ui.label('残り約 --').classes('text-2xs text-muted')
-
-                    ui.button('キャンセル', on_click=lambda: self._cancel_and_close(progress_dialog)).props('flat').classes('self-end text-muted')
-
-            progress_dialog.open()
-
-        # Yield control to allow UI to render the dialog before starting
+        # Yield control to allow UI to render before starting
         await asyncio.sleep(0)
 
-        # Track translation time from user's perspective (after dialog is shown)
+        # Track translation time from user's perspective (after UI update is sent)
         start_time = time.monotonic()
 
-        # Thread-safe progress state (updated from background thread, read by UI timer)
-        progress_lock = threading.Lock()
-        progress_state = {
-            'percentage': 0.0,
-            'status': '開始中...',
-            'phase': None,
-            'phase_detail': None,
-            'eta_seconds': None,
-        }
-
-        phase_label_map = {
-            TranslationPhase.EXTRACTING: "抽出",
-            TranslationPhase.OCR: "OCR",
-            TranslationPhase.TRANSLATING: "翻訳",
-            TranslationPhase.APPLYING: "適用",
-            TranslationPhase.COMPLETE: "完了",
-        }
-
         def on_progress(p: TranslationProgress):
-            # Only update state - UI will be updated by timer on main thread
-            # This avoids WebSocket connection issues from direct UI updates in background thread
-            with progress_lock:
-                progress_state['percentage'] = p.percentage
-                progress_state['status'] = p.status
-                progress_state['phase'] = p.phase
-                progress_state['phase_detail'] = p.phase_detail
-                if p.estimated_remaining is not None:
-                    progress_state['eta_seconds'] = p.estimated_remaining
-                elif p.percentage > 0:
-                    elapsed = time.monotonic() - start_time
-                    remaining = max(0.0, elapsed * (1 - p.percentage) / p.percentage)
-                    progress_state['eta_seconds'] = remaining
-                else:
-                    progress_state['eta_seconds'] = None
+            if p.estimated_remaining is not None:
+                eta_seconds = p.estimated_remaining
+            elif p.percentage > 0:
+                elapsed = time.monotonic() - start_time
+                eta_seconds = max(0.0, elapsed * (1 - p.percentage) / p.percentage)
+            else:
+                eta_seconds = None
+
             self.state.translation_progress = p.percentage
             self.state.translation_status = p.status
             self.state.translation_phase = p.phase
             self.state.translation_phase_detail = p.phase_detail
             self.state.translation_phase_current = p.phase_current
             self.state.translation_phase_total = p.phase_total
-            self.state.translation_eta_seconds = progress_state['eta_seconds']
+            self.state.translation_eta_seconds = eta_seconds
             if p.phase and p.phase_current is not None and p.phase_total is not None:
                 self.state.translation_phase_counts[p.phase] = (p.phase_current, p.phase_total)
 
@@ -9602,44 +9626,9 @@ class YakuLingoApp:
                     queue_item.phase_detail = p.phase_detail
                     queue_item.phase_current = p.phase_current
                     queue_item.phase_total = p.phase_total
-                    queue_item.eta_seconds = progress_state['eta_seconds']
+                    queue_item.eta_seconds = eta_seconds
                     if p.phase and p.phase_current is not None and p.phase_total is not None:
                         queue_item.phase_counts[p.phase] = (p.phase_current, p.phase_total)
-
-        def update_progress_ui():
-            # Read progress state and update UI elements (runs on main thread via timer)
-            # Wrapped in try-except to prevent timer exceptions from destabilizing NiceGUI
-            try:
-                with progress_lock:
-                    pct = progress_state['percentage']
-                    status = progress_state['status']
-                    phase = progress_state['phase']
-                    phase_detail = progress_state['phase_detail']
-                    eta_seconds = progress_state['eta_seconds']
-                progress_bar_inner.style(f'width: {int(pct * 100)}%')
-                progress_label.set_text(f'{int(pct * 100)}%')
-                status_label.set_text(status or '翻訳中...')
-                phase_text = phase_label_map.get(phase, "準備中")
-                if phase_detail:
-                    phase_text = f'{phase_text} ・ {phase_detail}'
-                phase_label.set_text(phase_text)
-                eta_label.set_text(f'残り約 {self._format_eta_seconds(eta_seconds)}')
-            except Exception as e:
-                logger.debug("Progress UI update error (non-fatal): %s", e)
-
-        # Start UI update timer (0.1s interval) - updates progress UI on main thread
-        # Protected by _timer_lock to prevent orphaned timers on concurrent translations
-        PROGRESS_UI_TIMER_INTERVAL = 0.1  # seconds
-        with self._timer_lock:
-            # Cancel any existing progress timer before creating new one
-            if self._active_progress_timer:
-                try:
-                    self._active_progress_timer.cancel()
-                except Exception:
-                    pass  # Timer may already be cancelled
-            with client:
-                progress_timer = ui.timer(PROGRESS_UI_TIMER_INTERVAL, update_progress_ui)
-            self._active_progress_timer = progress_timer
 
         error_message = None
         result = None
@@ -9674,30 +9663,10 @@ class YakuLingoApp:
             self.state.output_file = None
             error_message = str(e)
 
-        # Cancel progress timer with lock protection (same pattern as text translation)
-        with self._timer_lock:
-            if self._active_progress_timer is progress_timer:
-                try:
-                    progress_timer.cancel()
-                except Exception:
-                    pass
-                self._active_progress_timer = None
-            elif progress_timer:
-                # Timer was replaced by concurrent translation, still cancel our local reference
-                try:
-                    progress_timer.cancel()
-                except Exception:
-                    pass
         self._stop_file_panel_refresh_timer()
 
         # Restore client context for UI operations
         with client:
-            # Close progress dialog
-            try:
-                progress_dialog.close()
-            except Exception as e:
-                logger.debug("Failed to close progress dialog: %s", e)
-
             # Calculate elapsed time from user's perspective
             elapsed_time = time.monotonic() - start_time
 
@@ -9768,21 +9737,6 @@ class YakuLingoApp:
         self.state.reset_file_state()
         self.state.current_tab = Tab.TEXT
         self.settings.last_tab = Tab.TEXT.value
-
-    def _cancel_and_close(self, dialog):
-        """Cancel translation and close dialog"""
-        if self.state.file_queue_running:
-            self._cancel_queue()
-            dialog.close()
-            self._refresh_content()
-            self._refresh_tabs()
-            return
-        if self.translation_service:
-            self.translation_service.cancel()
-        dialog.close()
-        self._reset_file_state_to_text()
-        self._refresh_content()
-        self._refresh_tabs()  # Re-enable tabs (translation cancelled)
 
     def _cancel(self):
         """Cancel file translation"""

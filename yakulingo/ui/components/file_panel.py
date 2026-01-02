@@ -405,6 +405,9 @@ def create_file_panel(
                             state.translation_phase_total,
                             on_progress_elements_created=on_progress_elements_created,
                         )
+                        if on_cancel:
+                            with ui.row().classes('justify-center w-full'):
+                                ui.button('キャンセル', on_click=on_cancel).classes('btn-text').props('no-caps')
 
                 elif state.file_state == FileState.COMPLETE:
                     with ui.column().classes('items-center gap-2'):

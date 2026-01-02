@@ -333,18 +333,30 @@ if ($GuiMode) {
 
     function Show-Error {
         param([string]$Message)
-        Close-Progress
-
-        # 前面表示用の親フォームを作成
-        $ownerForm = New-Object System.Windows.Forms.Form
-        $ownerForm.TopMost = $true
-        $ownerForm.StartPosition = "CenterScreen"
-        $ownerForm.Width = 0
-        $ownerForm.Height = 0
-        $ownerForm.FormBorderStyle = "None"
-        $ownerForm.ShowInTaskbar = $false
-        $ownerForm.Show()
-        $ownerForm.Activate()
+        $ownerForm = $null
+        $createdOwner = $false
+        if ($script:progressForm -ne $null -and -not $script:progressForm.IsDisposed) {
+            $ownerForm = $script:progressForm
+            if (-not $ownerForm.Visible) {
+                $ownerForm.Show()
+            }
+            if ($ownerForm.WindowState -eq "Minimized") {
+                $ownerForm.WindowState = "Normal"
+            }
+            $ownerForm.Refresh()
+        } else {
+            # 前面表示用の親フォームを作成
+            $ownerForm = New-Object System.Windows.Forms.Form
+            $ownerForm.TopMost = $true
+            $ownerForm.StartPosition = "CenterScreen"
+            $ownerForm.Width = 0
+            $ownerForm.Height = 0
+            $ownerForm.FormBorderStyle = "None"
+            $ownerForm.ShowInTaskbar = $false
+            $ownerForm.Show()
+            $ownerForm.Activate()
+            $createdOwner = $true
+        }
 
         [System.Windows.Forms.MessageBox]::Show(
             $ownerForm,
@@ -354,8 +366,11 @@ if ($GuiMode) {
             [System.Windows.Forms.MessageBoxIcon]::Error
         ) | Out-Null
 
-        $ownerForm.Close()
-        $ownerForm.Dispose()
+        if ($createdOwner) {
+            $ownerForm.Close()
+            $ownerForm.Dispose()
+        }
+        Close-Progress
     }
 
     function Show-Success {
@@ -363,8 +378,15 @@ if ($GuiMode) {
         # 進捗表示を残したまま、完了メッセージの準備を行う
         $ownerForm = $null
         $createdOwner = $false
-        if ($script:progressForm -ne $null) {
+        if ($script:progressForm -ne $null -and -not $script:progressForm.IsDisposed) {
             $ownerForm = $script:progressForm
+            if (-not $ownerForm.Visible) {
+                $ownerForm.Show()
+            }
+            if ($ownerForm.WindowState -eq "Minimized") {
+                $ownerForm.WindowState = "Normal"
+            }
+            $ownerForm.Refresh()
         } else {
             # 前面表示用の親フォームを作成
             $ownerForm = New-Object System.Windows.Forms.Form

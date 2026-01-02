@@ -279,9 +279,9 @@ ATTACH_SVG: str = '''
 def create_text_input_panel(
     state: AppState,
     on_translate: Callable[[], None],
-    on_split_translate: Optional[Callable[[], None]] = None,
     on_source_change: Callable[[str], None],
     on_clear: Callable[[], None],
+    on_split_translate: Optional[Callable[[], None]] = None,
     on_open_file_picker: Optional[Callable[[], None]] = None,
     on_paste_from_clipboard: Optional[Callable[[], None]] = None,
     on_attach_reference_file: Optional[Callable[[], None]] = None,

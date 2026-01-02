@@ -2466,6 +2466,11 @@ class YakuLingoApp:
                 )
 
             output_language = "en" if detected_language == "日本語" else "jp"
+            self.state.file_detected_language = detected_language
+            self.state.file_detected_language_reason = detected_reason
+            if not self.state.file_output_language_overridden:
+                self.state.file_output_language = output_language
+            self._refresh_ui_after_hotkey_translation(trace_id)
 
             logger.info(
                 "Hotkey file translation [%s] translating %s -> %s",

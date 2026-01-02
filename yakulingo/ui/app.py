@@ -2019,12 +2019,19 @@ class YakuLingoApp:
         finally:
             self._resident_startup_active = False
 
-    def _on_hotkey_triggered(self, text: str, source_hwnd: int | None = None):
+    def _on_hotkey_triggered(
+        self,
+        text: str,
+        source_hwnd: int | None = None,
+        *,
+        bring_ui_to_front: bool = False,
+    ):
         """Handle hotkey trigger - set text and translate in main app.
 
         Args:
             text: Clipboard payload (text or newline-joined file paths)
             source_hwnd: Foreground window handle at hotkey time (best-effort; Windows only)
+            bring_ui_to_front: If True, bring the UI window to the foreground when possible.
         """
         is_empty = not text
         if is_empty:
@@ -2047,7 +2054,13 @@ class YakuLingoApp:
         try:
             # Use background_tasks to safely schedule async work from another thread
             from nicegui import background_tasks
-            background_tasks.create(self._handle_hotkey_text(text, source_hwnd=source_hwnd))
+            background_tasks.create(
+                self._handle_hotkey_text(
+                    text,
+                    source_hwnd=source_hwnd,
+                    bring_ui_to_front=bring_ui_to_front,
+                )
+            )
         except Exception as e:
             logger.error(f"Failed to schedule hotkey handler: {e}")
 
@@ -2064,7 +2077,7 @@ class YakuLingoApp:
                     source_hwnd = int(hwnd)
             except Exception:
                 source_hwnd = None
-        self._on_hotkey_triggered(text, source_hwnd=source_hwnd)
+        self._on_hotkey_triggered(text, source_hwnd=source_hwnd, bring_ui_to_front=True)
 
     async def _handle_hotkey_text(
         self,
@@ -2072,6 +2085,7 @@ class YakuLingoApp:
         open_ui: bool = True,
         *,
         source_hwnd: int | None = None,
+        bring_ui_to_front: bool = False,
     ):
         """Handle hotkey text in the main event loop.
 
@@ -2079,6 +2093,7 @@ class YakuLingoApp:
             text: Clipboard payload (text or newline-joined file paths)
             open_ui: If True, open UI window when translating headlessly.
             source_hwnd: Foreground window handle at hotkey time (best-effort; Windows only)
+            bring_ui_to_front: If True, prefer foregrounding the UI window.
         """
         if open_ui and self._resident_mode:
             self._set_auto_open_cause(AutoOpenCause.HOTKEY, reason="hotkey")
@@ -2136,6 +2151,7 @@ class YakuLingoApp:
             self._log_hotkey_debug_info(trace_id, summary)
 
             preserve_edge = open_ui and source_hwnd is None
+            focus_source = not bring_ui_to_front
             edge_layout_mode = "offscreen"
             layout_result: bool | None = None
             if sys.platform == "win32" and open_ui:
@@ -2152,6 +2168,7 @@ class YakuLingoApp:
                         self._apply_hotkey_work_priority_layout_win32,
                         layout_source_hwnd,
                         edge_layout=edge_layout_mode,
+                        focus_source=focus_source,
                     )
                 except Exception as e:
                     logger.debug("Failed to apply hotkey work-priority window layout: %s", e)
@@ -2178,6 +2195,7 @@ class YakuLingoApp:
                             self._client = None
                     client = None
 
+            should_bring_to_front = bring_ui_to_front or (open_ui and source_hwnd is None)
             if client is not None:
                 if sys.platform == "win32":
                     if layout_result is False:
@@ -2186,8 +2204,8 @@ class YakuLingoApp:
                             if self._client is client:
                                 self._client = None
                         client = None
-                    elif open_ui and source_hwnd is None:
-                        if not layout_result:
+                    elif should_bring_to_front:
+                        if bring_ui_to_front or not layout_result:
                             try:
                                 brought_to_front = await self._bring_window_to_front(
                                     position_edge=not preserve_edge
@@ -2236,6 +2254,7 @@ class YakuLingoApp:
                                     self._retry_hotkey_layout_win32,
                                     layout_source_hwnd,
                                     edge_layout=edge_layout_mode,
+                                    focus_source=focus_source,
                                 )
                             )
                         except Exception as e:
@@ -3300,6 +3319,7 @@ class YakuLingoApp:
         source_hwnd: int | None,
         *,
         edge_layout: str = "auto",
+        focus_source: bool = True,
     ) -> bool:
         """Tile source window left and YakuLingo UI right for hotkey translations.
 
@@ -3743,14 +3763,14 @@ class YakuLingoApp:
                         ctypes.get_last_error(),
                     )
 
-            # Keep focus on the resolved source window when available (including clipboard triggers).
-            # If we still do not have a valid source, bring YakuLingo to foreground.
+            # Keep focus on the resolved source window unless the caller prefers UI foreground.
+            # If we do not have a valid source, bring YakuLingo to foreground.
             ASFW_ANY = -1
             try:
                 user32.AllowSetForegroundWindow(ASFW_ANY)
             except Exception:
                 pass
-            if _is_valid_window(source_hwnd) and source_hwnd != yakulingo_hwnd:
+            if focus_source and _is_valid_window(source_hwnd) and source_hwnd != yakulingo_hwnd:
                 try:
                     user32.SetForegroundWindow(wintypes.HWND(source_hwnd))
                 except Exception:
@@ -3772,6 +3792,7 @@ class YakuLingoApp:
         source_hwnd: int | None,
         *,
         edge_layout: str = "auto",
+        focus_source: bool = True,
         attempts: int = 20,
         delay_sec: float = 0.15,
     ) -> None:
@@ -3783,7 +3804,11 @@ class YakuLingoApp:
         for _ in range(attempts):
             if self._shutdown_requested:
                 return
-            if self._apply_hotkey_work_priority_layout_win32(source_hwnd, edge_layout=edge_layout):
+            if self._apply_hotkey_work_priority_layout_win32(
+                source_hwnd,
+                edge_layout=edge_layout,
+                focus_source=focus_source,
+            ):
                 return
             time_module.sleep(delay_sec)
         logger.debug("Hotkey layout retry exhausted (attempts=%d)", attempts)

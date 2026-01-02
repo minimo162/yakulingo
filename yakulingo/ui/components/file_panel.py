@@ -385,7 +385,7 @@ def create_file_panel(
                                 '翻訳する',
                                 icon='translate',
                             ).classes('translate-btn feedback-anchor cta-breathe').props(
-                                f'{btn_props} aria-label="翻訳する" aria-keyshortcuts="Ctrl+Enter Meta+Enter" data-feedback="翻訳を開始"'
+                                f'{btn_props} aria-label="翻訳する" data-feedback="翻訳を開始"'
                             )
                             btn.on('click', on_translate, js_handler=_build_action_feedback_js_handler())
                             btn.tooltip('翻訳する')

@@ -113,10 +113,9 @@ def _create_copy_action_button(
     button.on('click', lambda: on_copy(text), js_handler=_build_copy_js_handler(text))
 
 
-def _create_textarea_with_keyhandler(
+def _create_textarea(
     state: AppState,
     on_source_change: Callable[[str], None],
-    on_translate: Callable[[], None],
     placeholder: str = '翻訳したい文章を入力してください',
     value: Optional[str] = None,
     extra_classes: str = '',
@@ -124,24 +123,7 @@ def _create_textarea_with_keyhandler(
     style: Optional[str] = None,
     on_textarea_created: Optional[Callable[[ui.textarea], None]] = None,
 ) -> ui.textarea:
-    """Create a textarea with Ctrl/Cmd+Enter handler for translation.
-
-    This helper function reduces code duplication across different panel states.
-
-    Args:
-        state: Application state for checking translation status
-        on_source_change: Callback for text changes
-        on_translate: Callback for translation trigger
-        placeholder: Textarea placeholder text
-        value: Initial value (defaults to state.source_text)
-        extra_classes: Additional CSS classes
-        autogrow: Whether textarea should auto-grow
-        style: Optional inline style
-        on_textarea_created: Callback with textarea reference for focus management
-
-    Returns:
-        The created textarea element
-    """
+    """Create a textarea for translation input."""
     if value is None:
         value = state.source_text
 
@@ -159,27 +141,6 @@ def _create_textarea_with_keyhandler(
 
     if style:
         textarea.style(style)
-
-    # Handle Ctrl/Cmd+Enter in textarea with NiceGUI 3.0+ js_handler
-    # Prevent default browser behavior (newline insertion) when Ctrl/Cmd+Enter is pressed
-    async def handle_keydown(e):
-        # can_translate() already checks text_translating internally
-        if state.can_translate():
-            try:
-                await on_translate()
-            except Exception as ex:
-                logger.exception("Ctrl+Enter translation error: %s", ex)
-
-    textarea.on(
-        'keydown',
-        handle_keydown,
-        js_handler='''(e) => {
-            if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-                e.preventDefault();
-                emit(e);
-            }
-        }'''
-    )
 
     # Provide textarea reference for focus management
     if on_textarea_created:
@@ -283,7 +244,6 @@ def create_text_input_panel(
     on_clear: Callable[[], None],
     on_split_translate: Optional[Callable[[], None]] = None,
     on_open_file_picker: Optional[Callable[[], None]] = None,
-    on_paste_from_clipboard: Optional[Callable[[], None]] = None,
     on_attach_reference_file: Optional[Callable[[], None]] = None,
     on_remove_reference_file: Optional[Callable[[int], None]] = None,
     on_translate_button_created: Optional[Callable[[ui.button], None]] = None,
@@ -305,7 +265,7 @@ def create_text_input_panel(
     _create_large_input_panel(
         state, on_translate, on_split_translate, on_source_change, on_clear,
         on_open_file_picker,
-        on_paste_from_clipboard, on_attach_reference_file, on_remove_reference_file,
+        on_attach_reference_file, on_remove_reference_file,
         on_translate_button_created,
         use_bundled_glossary, effective_reference_files, text_char_limit, batch_char_limit,
         on_output_language_override, on_input_metrics_created,
@@ -321,7 +281,6 @@ def _create_large_input_panel(
     on_source_change: Callable[[str], None],
     on_clear: Callable[[], None],
     on_open_file_picker: Optional[Callable[[], None]] = None,
-    on_paste_from_clipboard: Optional[Callable[[], None]] = None,
     on_attach_reference_file: Optional[Callable[[], None]] = None,
     on_remove_reference_file: Optional[Callable[[int], None]] = None,
     on_translate_button_created: Optional[Callable[[ui.button], None]] = None,
@@ -376,30 +335,21 @@ def _create_large_input_panel(
                         'input-helper input-hero-subtitle'
                     )
                 # Large textarea - no autogrow, fills available space via CSS flex
-                _create_textarea_with_keyhandler(
+                _create_textarea(
                     state=state,
                     on_source_change=on_source_change,
-                    on_translate=on_translate,
                     on_textarea_created=on_textarea_created,
                 )
 
                 # Bottom controls
                 with ui.row().classes('input-toolbar justify-between items-start flex-wrap gap-y-3'):
-                    # Left side: detection and inline counts
+                    # Left side: output and inline counts
                     with ui.column().classes('input-toolbar-left gap-2 flex-1 min-w-0'):
                         with ui.row().classes('items-center gap-2 flex-wrap'):
                             with ui.element('div').classes('detection-chip'):
-                                detection_label = ui.label(
-                                    f'検出: {state.text_detected_language or "未判定"}'
-                                ).classes('detection-label')
-                                detection_reason_label = ui.label(
-                                    ''
-                                ).classes('detection-reason')
                                 detection_output_label = ui.label(
                                     ''
                                 ).classes('detection-output')
-                            metrics_refs['detection_label'] = detection_label
-                            metrics_refs['detection_reason_label'] = detection_reason_label
                             metrics_refs['detection_output_label'] = detection_output_label
 
                             count_inline = ui.label(
@@ -410,19 +360,6 @@ def _create_large_input_panel(
                     with ui.column().classes('input-toolbar-right items-center gap-2'):
                         with ui.column().classes('translate-actions items-end gap-2'):
                             with ui.row().classes('items-center gap-2'):
-                                if on_paste_from_clipboard:
-                                    def handle_paste_click():
-                                        result = on_paste_from_clipboard()
-                                        if asyncio.iscoroutine(result):
-                                            asyncio.create_task(result)
-                                    paste_btn = ui.button(
-                                        icon='content_paste',
-                                    ).props(
-                                        'flat dense round size=sm aria-label="貼り付けて翻訳" data-feedback="貼り付けて翻訳"'
-                                    ).classes('result-action-btn paste-btn feedback-anchor')
-                                    paste_btn.tooltip('クリップボードから翻訳')
-                                    paste_btn.on('click', handle_paste_click, js_handler=_build_action_feedback_js_handler())
-
                                 # Clear button
                                 if state.source_text:
                                     ui.button(icon='close', on_click=on_clear).props(
@@ -438,7 +375,7 @@ def _create_large_input_panel(
                                     '翻訳を実行',
                                     icon='translate',
                                 ).classes('translate-btn feedback-anchor cta-breathe').props(
-                                    'no-caps aria-label="翻訳を実行" aria-keyshortcuts="Ctrl+Enter Meta+Enter" data-feedback="翻訳を実行"'
+                                    'no-caps aria-label="翻訳を実行" data-feedback="翻訳を実行"'
                                 )
                                 btn.tooltip('翻訳を実行')
                                 btn.on('click', handle_translate_click, js_handler=_build_action_feedback_js_handler())
@@ -450,8 +387,6 @@ def _create_large_input_panel(
                                 # Provide button reference for dynamic state updates
                                 if on_translate_button_created:
                                     on_translate_button_created(btn)
-
-                            ui.label('Ctrl/Cmd + Enter で実行').classes('shortcut-hint inline')
 
                 has_manual_refs = bool(state.reference_files)
                 has_override = state.text_output_language_override in {"en", "jp"}

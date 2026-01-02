@@ -1069,7 +1069,7 @@ STARTUP_UI_READY_SELECTOR = '[data-yakulingo-root="true"]'
 MAX_HISTORY_DISPLAY = 20  # Maximum history items to display in sidebar
 MAX_HISTORY_DRAWER_DISPLAY = 100  # Maximum history items to show in history drawer
 MIN_AVAILABLE_MEMORY_GB_FOR_EARLY_CONNECT = 0.5  # Skip early Copilot init only on very low memory
-TEXT_TRANSLATION_CHAR_LIMIT = 5000  # Max chars for text translation (clipboard trigger, Ctrl+Enter)
+TEXT_TRANSLATION_CHAR_LIMIT = 5000  # Max chars for text translation (clipboard trigger)
 FILE_LANGUAGE_DETECTION_TIMEOUT_SEC = 8.0  # Avoid hanging file-language detection
 DEFAULT_TEXT_STYLE = "concise"
 RESIDENT_HEARTBEAT_INTERVAL_SEC = 300  # Update startup.log even when UI is closed
@@ -7191,7 +7191,6 @@ class YakuLingoApp:
                         on_source_change=self._on_source_change,
                         on_clear=self._clear,
                         on_open_file_picker=self._open_translation_file_picker,
-                        on_paste_from_clipboard=self._paste_from_clipboard,
                         on_attach_reference_file=self._attach_reference_file,
                         on_remove_reference_file=self._remove_reference_file,
                         on_translate_button_created=self._on_translate_button_created,
@@ -7262,37 +7261,6 @@ class YakuLingoApp:
         # Update button state dynamically without full refresh
         self._update_translate_button_state()
         self._update_text_input_metrics()
-
-    async def _paste_from_clipboard(self) -> None:
-        """Paste text from clipboard into the text input."""
-        with self._client_lock:
-            client = self._client
-        if not client:
-            return
-
-        try:
-            with client:
-                text = await ui.run_javascript('navigator.clipboard.readText()')
-        except Exception as exc:
-            logger.debug("Clipboard read failed: %s", exc)
-            with client:
-                ui.notify('クリップボードにアクセスできません', type='warning')
-            return
-
-        if not text:
-            with client:
-                ui.notify('クリップボードが空です', type='warning')
-            return
-
-        text = str(text)
-        with client:
-            if self._text_input_textarea is not None:
-                self._text_input_textarea.value = text
-                self._text_input_textarea.update()
-            self._on_source_change(text)
-
-        if self.state.can_translate():
-            await self._translate_text()
 
     def _update_text_local_detection(self, text: str) -> None:
         if not text.strip():
@@ -7386,15 +7354,7 @@ class YakuLingoApp:
             else:
                 split_hint.set_text(f"{batch_count} バッチ")
 
-        detection_label = refs.get("detection_label")
-        detection_reason_label = refs.get("detection_reason_label")
         detection_output_label = refs.get("detection_output_label")
-        detected = self.state.text_detected_language or "未判定"
-        if detection_label:
-            detection_label.set_text(f"検出: {detected}")
-        if detection_reason_label:
-            reason = self._format_detection_reason(self.state.text_detected_language_reason)
-            detection_reason_label.set_text(f"判定: {reason}" if reason else "")
 
         override = self.state.text_output_language_override
         for key, expected in (("override_auto", None), ("override_en", "en"), ("override_jp", "jp")):

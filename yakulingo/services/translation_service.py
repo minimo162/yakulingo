@@ -1558,7 +1558,7 @@ class TranslationService:
                     files_to_attach = None
 
                 self.prompt_builder.reload_translation_rules()
-                translation_rules = self.prompt_builder.get_translation_rules()
+                translation_rules = self.prompt_builder.get_translation_rules(output_language)
 
                 prompt = template.replace("{translation_rules}", translation_rules)
                 prompt = prompt.replace("{reference_section}", reference_section)
@@ -1642,7 +1642,7 @@ class TranslationService:
             # Apply all placeholder replacements
             # Reload translation rules to pick up any user edits
             self.prompt_builder.reload_translation_rules()
-            translation_rules = self.prompt_builder.get_translation_rules()
+            translation_rules = self.prompt_builder.get_translation_rules(output_language)
 
             prompt = template.replace("{translation_rules}", translation_rules)
             prompt = prompt.replace("{reference_section}", reference_section)
@@ -1776,7 +1776,7 @@ class TranslationService:
                         files_to_attach = None
 
                     self.prompt_builder.reload_translation_rules()
-                    translation_rules = self.prompt_builder.get_translation_rules()
+                    translation_rules = self.prompt_builder.get_translation_rules(output_language)
 
                     prompt = template.replace("{translation_rules}", translation_rules)
                     prompt = prompt.replace("{reference_section}", reference_section)
@@ -2017,8 +2017,13 @@ class TranslationService:
 
             # Build prompt with full context (original text + translation)
             # Reload translation rules to pick up any user edits
+            output_language = "en"
+            if source_text:
+                output_language = "en" if self.detect_language(source_text) == "日本語" else "jp"
+            elif text:
+                output_language = "jp" if self.detect_language(text) == "日本語" else "en"
             self.prompt_builder.reload_translation_rules()
-            translation_rules = self.prompt_builder.get_translation_rules()
+            translation_rules = self.prompt_builder.get_translation_rules(output_language)
             reference_section = self.prompt_builder.build_reference_section(reference_files) if reference_files else ""
 
             prompt = template.replace("{translation_rules}", translation_rules)
@@ -2092,8 +2097,13 @@ class TranslationService:
 
             # Build prompt
             # Reload translation rules to pick up any user edits
+            output_language = "en"
+            if source_text:
+                output_language = "en" if self.detect_language(source_text) == "日本語" else "jp"
+            elif current_translation:
+                output_language = "jp" if self.detect_language(current_translation) == "日本語" else "en"
             self.prompt_builder.reload_translation_rules()
-            translation_rules = self.prompt_builder.get_translation_rules()
+            translation_rules = self.prompt_builder.get_translation_rules(output_language)
             reference_section = self.prompt_builder.build_reference_section(reference_files) if reference_files else ""
 
             prompt = template.replace("{translation_rules}", translation_rules)

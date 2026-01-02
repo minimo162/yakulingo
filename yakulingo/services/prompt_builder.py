@@ -3,21 +3,29 @@
 Builds translation prompts for YakuLingo.
 
 Prompt file structure:
-- translation_rules.txt: Common translation rules (numeric notation, symbol conversion)
+- translation_rules.txt: Translation rules with optional [COMMON]/[TO_EN]/[TO_JP] sections
 - file_translate_to_en_{style}.txt: File translation → English (standard/concise/minimal)
 - file_translate_to_jp.txt: File translation → Japanese
 - text_translate_to_en_compare.txt: Text translation → English (standard/concise/minimal in one response)
 - text_translate_to_jp.txt: Text translation → Japanese (with explanation)
 - adjust_*.txt: Adjustment prompts (shorter, longer, custom)
 
-Common translation rules are loaded from translation_rules.txt and injected into
-each prompt template via the {translation_rules} placeholder.
+Translation rules are loaded from translation_rules.txt and injected into
+each prompt template via the {translation_rules} placeholder. When sections
+are present, only the relevant rules for the output language are inserted.
 """
 
 import re
 from pathlib import Path
 from typing import Optional, Sequence
 
+
+_RULE_SECTION_PATTERN = re.compile(r'^\s*\[(COMMON|TO_EN|TO_JP)\]\s*$', re.IGNORECASE)
+_RULE_SECTION_KEYS = {
+    "COMMON": "common",
+    "TO_EN": "en",
+    "TO_JP": "jp",
+}
 
 # 参考ファイル参照の指示文（ファイル添付時のみ挿入）
 REFERENCE_INSTRUCTION = """
@@ -28,44 +36,37 @@ REFERENCE_INSTRUCTION = """
 
 # 用語集埋め込み時の指示文（プロンプト内に用語集を含める場合）
 # 共通翻訳ルール（translation_rules.txt が存在しない場合のデフォルト）
-DEFAULT_TRANSLATION_RULES = """### 数値表記ルール（日本語 → 英語）
+DEFAULT_TRANSLATION_RULES = """## 翻訳ルール（Translation Rules）
 
-重要: 数字は絶対に変換しない。単位のみを置き換える。
+[COMMON]
+- 原文の改行・タブ・段落構造を維持する
+- 箇条書き・表形式を崩さない
+- 数字の桁/カンマは変更しない
 
-| 日本語 | 英語 | 変換例 |
-|--------|------|--------|
-| 億 | oku | 4,500億円 → 4,500 oku yen |
-| 千 | k | 12,000 → 12k |
-| ▲ (マイナス) | () | ▲50 → (50) |
-| 前年比 | YoY | 前年比10%増 → 10% YoY increase |
-| 前期比 | QoQ | 前期比5%減 → 5% QoQ decrease |
-| 年平均成長率 | CAGR | 年平均成長率3% → CAGR 3% |
+[TO_EN]
+- 記号禁止: > < >=/≥/≧ <=/≤/≦ ~ → ↑ ↓ は使わず言葉で表現する
+  - >: more than / exceeding / over
+  - <: less than / under / below
+  - >=: or more / at least
+  - <=: or less / at most
+  - ~: approximately / about
+  - →: leads to / results in / which enhances
+  - ↑: increased / up / higher
+  - ↓: decreased / down / lower
+- 数値/単位:
+  - 兆/億→oku (1兆=10,000億=10,000 oku; X兆Y億→(X*10,000+Y) oku)
+  - 千→k
+  - ▲→() （負数は数値のみ括弧）
+  - YoY/QoQ/CAGR を使用
+  - billion/trillion には変換しない
+- 月名は略語: Jan., Feb., Mar., Apr., May, Jun., Jul., Aug., Sep., Oct., Nov., Dec.
+- 「+」は追加の意味のみ。比較は "higher than" などで表現する
 
-注意:
-- 「4,500億円」は必ず「4,500 oku yen」に翻訳する
-- 「450 billion」や「4.5 trillion」には絶対に変換しない
-- 数字の桁は絶対に変えない（4,500は4,500のまま）
-
-### 記号変換ルール（英訳時）
-
-以下の記号は英語圏でビジネス文書に不適切です。必ず英語で表現してください。
-
-禁止記号と置き換え:
-- ↑ → increased, up, higher（使用禁止）
-- ↓ → decreased, down, lower（使用禁止）
-- ~ → approximately, about, around（使用禁止）
-- → → leads to, results in, becomes（使用禁止）
-- > → greater than, more than, exceeds（使用禁止）
-- < → less than, below, under（使用禁止）
-- = → equals, is, amounts to（使用禁止）
-- ※ → Note:, *（使用禁止）
-
-例:
-- 「3か月以上」→ "3 months or more"（× > 3 months）
-- 「売上↑」→ "Sales increased"（× Sales ↑）
-- 「約100万円」→ "approximately 1 million yen"（× ~1 million yen）
-
-許可される記号: & % / + # @
+[TO_JP]
+- 数値/単位:
+  - oku→億 (22,385 oku→2兆2,385億)
+  - k→千または000
+  - ()→▲
 """
 
 # Fallback template for → English (used when translate_to_en.txt doesn't exist)
@@ -343,7 +344,7 @@ class PromptBuilder:
     Reference files are attached to Copilot, not embedded in prompt.
 
     Supports style-specific prompts for English output (standard/concise/minimal).
-    Common translation rules are loaded from translation_rules.txt.
+    Translation rules are loaded from translation_rules.txt.
     """
 
     def __init__(self, prompts_dir: Optional[Path] = None):
@@ -356,24 +357,59 @@ class PromptBuilder:
         self._text_compare_template: Optional[str] = None
         # Clipboard translation templates (single style)
         self._text_clipboard_templates: dict[str, str] = {}
-        # Common translation rules cache
-        self._translation_rules: str = ""
+        # Translation rules cache (raw + parsed sections)
+        self._translation_rules_raw: str = ""
+        self._translation_rules_sections: dict[str, str] = {}
+        self._translation_rules_has_sections: bool = False
         self._load_templates()
 
     def _load_translation_rules(self) -> str:
-        """Load common translation rules from translation_rules.txt."""
+        """Load translation rules from translation_rules.txt."""
+        rules_text = DEFAULT_TRANSLATION_RULES
         if self.prompts_dir:
             rules_file = self.prompts_dir / "translation_rules.txt"
             if rules_file.exists():
-                return rules_file.read_text(encoding='utf-8')
-        return DEFAULT_TRANSLATION_RULES
+                rules_text = rules_file.read_text(encoding='utf-8')
+
+        self._translation_rules_raw = rules_text
+        sections, has_sections = self._parse_translation_rules_sections(rules_text)
+        self._translation_rules_sections = sections
+        self._translation_rules_has_sections = has_sections
+        return rules_text
+
+    def _parse_translation_rules_sections(self, rules_text: str) -> tuple[dict[str, str], bool]:
+        """Parse optional [COMMON]/[TO_EN]/[TO_JP] sections from rules text."""
+        sections = {"common": "", "en": "", "jp": ""}
+        seen_tag = False
+        current_key: Optional[str] = None
+        unsectioned_lines: list[str] = []
+
+        for line in rules_text.splitlines():
+            match = _RULE_SECTION_PATTERN.match(line)
+            if match:
+                seen_tag = True
+                current_key = _RULE_SECTION_KEYS.get(match.group(1).upper())
+                continue
+
+            if seen_tag:
+                if current_key:
+                    sections[current_key] += line + "\n"
+            else:
+                unsectioned_lines.append(line)
+
+        if not seen_tag:
+            return {"common": "\n".join(unsectioned_lines).strip(), "en": "", "jp": ""}, False
+
+        for key in sections:
+            sections[key] = sections[key].strip()
+        return sections, True
 
     def _load_templates(self) -> None:
         """Load prompt templates from files or use defaults"""
         styles = ["standard", "concise", "minimal"]
 
         # Load common translation rules
-        self._translation_rules = self._load_translation_rules()
+        self._load_translation_rules()
         self._text_compare_template = DEFAULT_TEXT_TO_EN_COMPARE_TEMPLATE
         self._text_clipboard_templates = {
             "en": DEFAULT_TEXT_TO_EN_CLIPBOARD_TEMPLATE,
@@ -440,13 +476,38 @@ class PromptBuilder:
                 "jp": DEFAULT_TEXT_TO_JP_CLIPBOARD_TEMPLATE,
             }
 
-    def get_translation_rules(self) -> str:
-        """Get the common translation rules.
+    def get_translation_rules(self, output_language: Optional[str] = None) -> str:
+        """Get translation rules for the given output language.
+
+        Args:
+            output_language: "en", "jp", or "common". None returns all sections
+                             for backward compatibility.
 
         Returns:
             Translation rules content string
         """
-        return self._translation_rules
+        if not self._translation_rules_raw:
+            self._load_translation_rules()
+
+        if not self._translation_rules_has_sections:
+            return self._translation_rules_raw.strip()
+
+        if output_language == "common":
+            return self._translation_rules_sections.get("common", "")
+
+        if output_language in {"en", "jp"}:
+            parts = [
+                self._translation_rules_sections.get("common", ""),
+                self._translation_rules_sections.get(output_language, ""),
+            ]
+            return "\n\n".join([part for part in parts if part])
+
+        parts = [
+            self._translation_rules_sections.get("common", ""),
+            self._translation_rules_sections.get("en", ""),
+            self._translation_rules_sections.get("jp", ""),
+        ]
+        return "\n\n".join([part for part in parts if part])
 
     def get_translation_rules_path(self) -> Optional[Path]:
         """Get the path to translation_rules.txt file.
@@ -463,7 +524,7 @@ class PromptBuilder:
 
         Call this after user edits the translation_rules.txt file.
         """
-        self._translation_rules = self._load_translation_rules()
+        self._load_translation_rules()
 
     def _get_template(self, output_language: str = "en", translation_style: str = "concise") -> str:
         """Get appropriate template based on output language and style."""
@@ -514,23 +575,32 @@ class PromptBuilder:
             return self._text_clipboard_templates[output_language]
         return self._text_clipboard_templates.get("en", DEFAULT_TEXT_TO_EN_CLIPBOARD_TEMPLATE)
 
-    def _apply_placeholders(self, template: str, reference_section: str, input_text: str, translation_style: str = "concise") -> str:
+    def _apply_placeholders(
+        self,
+        template: str,
+        reference_section: str,
+        input_text: str,
+        output_language: str = "en",
+        translation_style: str = "concise",
+    ) -> str:
         """Apply all placeholder replacements to a template.
 
         Args:
             template: Prompt template string
             reference_section: Reference section content
             input_text: Input text to translate
+            output_language: "en", "jp", or "common"
             translation_style: Translation style name
 
         Returns:
             Template with all placeholders replaced
         """
         # Always reload translation rules from file to pick up user edits
-        self._translation_rules = self._load_translation_rules()
+        self._load_translation_rules()
+        translation_rules = self.get_translation_rules(output_language)
 
         # Replace placeholders
-        prompt = template.replace("{translation_rules}", self._translation_rules)
+        prompt = template.replace("{translation_rules}", translation_rules)
         prompt = prompt.replace("{reference_section}", reference_section)
         prompt = prompt.replace("{input_text}", input_text)
         # Remove old style placeholder if present (for backwards compatibility)
@@ -568,7 +638,13 @@ class PromptBuilder:
         # Get appropriate template based on language and style
         template = self._get_template(output_language, translation_style)
 
-        return self._apply_placeholders(template, reference_section, input_text, translation_style)
+        return self._apply_placeholders(
+            template,
+            reference_section,
+            input_text,
+            output_language,
+            translation_style,
+        )
 
     def build_batch(
         self,

@@ -3104,7 +3104,7 @@ class YakuLingoApp:
 
         # Apply placeholders
         prompt_builder.reload_translation_rules()
-        translation_rules = prompt_builder.get_translation_rules()
+        translation_rules = prompt_builder.get_translation_rules(output_language)
 
         prompt = template.replace("{translation_rules}", translation_rules)
         prompt = prompt.replace("{reference_section}", reference_section)
@@ -8148,15 +8148,13 @@ class YakuLingoApp:
             try:
                 if self.translation_service:
                     self.translation_service.prompt_builder.reload_translation_rules()
-                    translation_rules = self.translation_service.prompt_builder.get_translation_rules()
+                    translation_rules = self.translation_service.prompt_builder.get_translation_rules("common")
                 else:
-                    from yakulingo.services.prompt_builder import DEFAULT_TRANSLATION_RULES
+                    from yakulingo.services.prompt_builder import PromptBuilder
 
-                    rules_path = get_default_prompts_dir() / "translation_rules.txt"
-                    if rules_path.exists():
-                        translation_rules = rules_path.read_text(encoding="utf-8")
-                    else:
-                        translation_rules = DEFAULT_TRANSLATION_RULES
+                    prompt_builder = PromptBuilder(prompts_dir=get_default_prompts_dir())
+                    prompt_builder.reload_translation_rules()
+                    translation_rules = prompt_builder.get_translation_rules("common")
             except Exception:
                 translation_rules = ""
   

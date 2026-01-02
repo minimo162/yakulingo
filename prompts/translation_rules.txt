@@ -1,137 +1,34 @@
 ## 翻訳ルール（Translation Rules）
 
-このファイルは、翻訳時に適用される共通ルールです。
-設定画面から編集できます。
+このファイルは翻訳時に適用されるルールです。
+方向別に注入されるため、必要なセクションだけがプロンプトに入ります。
 
----
+[COMMON]
+- 原文の改行・タブ・段落構造を維持する
+- 箇条書き・表形式を崩さない
+- 数字の桁/カンマは変更しない
 
-## ★★★ 記号変換ルール（英訳時）- 最優先 ★★★
+[TO_EN]
+- 記号禁止: > < >=/≥/≧ <=/≤/≦ ~ → ↑ ↓ は使わず言葉で表現する
+  - >: more than / exceeding / over
+  - <: less than / under / below
+  - >=: or more / at least
+  - <=: or less / at most
+  - ~: approximately / about
+  - →: leads to / results in / which enhances
+  - ↑: increased / up / higher
+  - ↓: decreased / down / lower
+- 数値/単位:
+  - 兆/億→oku (1兆=10,000億=10,000 oku; X兆Y億→(X*10,000+Y) oku)
+  - 千→k
+  - ▲→() （負数は数値のみ括弧）
+  - YoY/QoQ/CAGR を使用
+  - billion/trillion には変換しない
+- 月名は略語: Jan., Feb., Mar., Apr., May, Jun., Jul., Aug., Sep., Oct., Nov., Dec.
+- 「+」は追加の意味のみ。比較は "higher than" などで表現する
 
-**【絶対禁止】** 以下の記号は英訳に**一切使用してはいけません**。
-この規則は他のすべての規則より優先されます。簡潔さのために記号を使うことは禁止です。
-
-### 禁止記号と必須の代替表現
-
-| 禁止記号 | 必ずこう書く |
-|----------|--------------|
-| > | more than, exceeding, over |
-| < | less than, under, below |
-| → | leads to, results in, which enhances |
-| ↑ | increased, up, higher |
-| ↓ | decreased, down, lower |
-| ~ | approximately, about |
-| ≧ ≥ | or more, at least |
-| ≦ ≤ | or less, at most |
-
-### 禁止パターンの具体例
-
-**以下の表現は絶対に使用禁止です：**
-
-| ✗ 禁止（使ってはいけない） | ✓ 正解（必ずこう書く） |
-|---------------------------|----------------------|
-| >3 months | more than 3 months, exceeding 3 months |
-| >4 yrs | more than 4 years |
-| deposits >3 months | deposits exceeding 3 months |
-| term >4 yrs | term of more than 4 years |
-| avg remaining >4 yrs | average remaining term exceeding 4 years |
-| +3k vs prior | 3k higher than prior outlook |
-| staggered repayment → stronger stability | staggered repayment, which enhances stability |
-
-### 比較表現の正しい書き方
-
-| 日本語 | ✓ 正解 | ✗ 禁止 |
-|--------|--------|--------|
-| 3か月超 | more than 3 months / exceeding 3 months | >3 months |
-| 4年超 | more than 4 years / exceeding 4 years | >4 yrs |
-| 3か月以上 | 3 months or more | ≥3 months, >3 months |
-| 100万円未満 | less than 1 million yen | <1 million |
-| 前回見通し比+3千台 | 3k units higher than prior outlook | +3k vs prior |
-
-### 許可される記号
-- % (パーセント)
-- & (and)
-- / (per, または)
-- # (番号)
-- @ (アットマーク)
-
-**注意**: 「+」は「追加」の意味では使えますが、「比較・増減」の意味では使用禁止です。
-- ✓ OK: "added +2 features" （機能追加）
-- ✗ NG: "+3k vs prior" （比較）→ "3k higher than prior"
-
----
-
-### 数値表記ルール（日本語 → 英語）
-
-**最重要**: 兆・億は全て「oku」に統一する。1兆 = 10,000億として計算する。
-
-| 日本語 | 英語 | 変換例 |
-|--------|------|--------|
-| 兆 | oku（×10,000） | 2兆円 → 20,000 oku yen |
-| 億 | oku | 4,500億円 → 4,500 oku yen |
-| 千 | k | 12,000 → 12k |
-| ▲ (マイナス) | () | ▲50 → (50)、▲1,500億円 → (1,500) oku yen |
-| 前年比 | YoY | 前年比10%増 → 10% YoY increase |
-| 前期比 | QoQ | 前期比5%減 → 5% QoQ decrease |
-| 年平均成長率 | CAGR | 年平均成長率3% → CAGR 3% |
-
-**兆→oku変換ルール**:
-- 1兆 = 10,000億 = 10,000 oku
-- 「X兆Y億」→「(X×10,000 + Y) oku」
-- 例: 2兆2,385億 = 2×10,000 + 2,385 = 22,385 oku
-
-**正しい変換例**:
-- 「2兆2,385億円」→「22,385 oku yen」（✓ 正解）
-- 「2兆2,385億円」→「2,238.5 oku yen」（✗ 禁止 - 計算が間違っている）
-- 「1,554億円」→「1,554 oku yen」（✓ 正解）
-- 「1,554億円」→「155.4 oku yen」（✗ 禁止 - カンマが小数点に変換されている）
-- 「539億円」→「539 oku yen」（✓ 正解）
-- 「539億円」→「53.9 oku yen」（✗ 禁止 - 数字が変換されている）
-
-**負数（▲マイナス）の変換例**:
-- 「▲1,500億円」→「(1,500) oku yen」（✓ 正解 - 数値のみ括弧で囲む）
-- 「▲1,500億円」→「(1,500 oku yen)」（✗ 禁止 - 単位まで括弧に入れない）
-- 「▲200億円」→「(200) oku yen」（✓ 正解）
-
-**絶対禁止事項**:
-1. 日本語のカンマを小数点と解釈してはいけない（1,554 ≠ 155.4）
-2. billion, trillion などの西洋単位への変換は禁止
-
----
-
-### 月の略語ルール（日本語 → 英語）
-
-月名は略語を使用する。
-
-| 日本語 | ✓ OK | ✗ NG |
-|--------|------|------|
-| 1月 | Jan. | January |
-| 2月 | Feb. | February |
-| 3月 | Mar. | March |
-| 4月 | Apr. | April |
-| 5月 | May | May（変更なし） |
-| 6月 | Jun. | June |
-| 7月 | Jul. | July |
-| 8月 | Aug. | August |
-| 9月 | Sep. | September |
-| 10月 | Oct. | October |
-| 11月 | Nov. | November |
-| 12月 | Dec. | December |
-
----
-
-### 数値表記ルール（英語 → 日本語）
-
-| 英語 | 日本語 | 変換例 |
-|------|--------|--------|
-| oku | 億 | 4,500 oku → 4,500億、22,385 oku → 2兆2,385億 |
-| k | 千または000 | 12k → 12,000 |
-| () | ▲ | (50) → ▲50 |
-
----
-
-### 構造保持ルール
-
-- 原文の改行・タブ・段落構造をそのまま維持する
-- 箇条書きの形式を保持する（番号付き箇条書きはインデントして同一項目内に収める）
-- 表形式のレイアウトを崩さない
-- 番号付きリスト形式の出力では、各項目の2行目以降を1つ以上の空白/タブでインデントし、同一項目内の改行として出力する
+[TO_JP]
+- 数値/単位:
+  - oku→億 (22,385 oku→2兆2,385億)
+  - k→千または000
+  - ()→▲

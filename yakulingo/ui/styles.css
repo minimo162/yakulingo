@@ -1183,6 +1183,38 @@ body {
     gap: 0.5rem;
 }
 
+.main-area:not(.file-mode) .input-panel .main-card {
+    border: none;
+}
+
+.main-area:not(.file-mode) .input-panel .input-hero {
+    border-bottom: none;
+    border-left: none;
+}
+
+.main-area:not(.file-mode) .input-panel .input-toolbar {
+    border-top: none;
+}
+
+.main-area:not(.file-mode) .input-panel .input-compact-summary {
+    border: none;
+}
+
+.main-area:not(.file-mode) .input-panel .advanced-panel {
+    border: none;
+    box-shadow: none;
+}
+
+.main-area:not(.file-mode) .input-panel .advanced-section {
+    border: none;
+}
+
+.main-area:not(.file-mode) .input-panel .detection-chip,
+.main-area:not(.file-mode) .input-panel .direction-toggle,
+.main-area:not(.file-mode) .input-panel .char-count-inline {
+    border: none;
+}
+
 .advanced-panel {
     margin-top: 0.75rem;
     padding: 0.5rem 0.75rem;

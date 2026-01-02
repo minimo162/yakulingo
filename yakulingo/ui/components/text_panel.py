@@ -1,4 +1,4 @@
-# yakulingo/ui/components/text_panel.py
+﻿# yakulingo/ui/components/text_panel.py
 """
 Text translation panel with language-specific UI.
 - Japanese → English: Multiple style options shown together
@@ -934,7 +934,6 @@ def _render_result_details(
     if not result.options:
         return
 
-    has_secondary = result.is_to_english and bool(secondary_options)
     details = ui.element('details').classes('advanced-panel result-advanced-panel')
     if state.text_compare_mode != "off":
         details.props('open')
@@ -943,8 +942,6 @@ def _render_result_details(
         with ui.element('summary').classes('advanced-summary items-center'):
             ui.label('詳細').classes('advanced-title')
             with ui.row().classes('advanced-summary-chips items-center gap-2'):
-                if has_secondary:
-                    ui.label(f'他のスタイル {len(secondary_options)}').classes('chip meta-chip')
                 if result.is_to_english:
                     ui.label('比較').classes('chip meta-chip')
                 ui.label('コピー/編集').classes('chip meta-chip')
@@ -956,36 +953,6 @@ def _render_result_details(
                 on_compare_mode_change,
                 on_compare_base_style_change,
             )
-
-            if has_secondary:
-                base_text = ""
-                if display_options:
-                    fallback_text = (
-                        primary_option.text if primary_option else display_options[0].text
-                    )
-                    base_text = _resolve_compare_base_text(
-                        display_options,
-                        state.text_compare_base_style,
-                        fallback_text,
-                    )
-
-                with ui.column().classes('result-alt-options w-full gap-3'):
-                    for option in secondary_options:
-                        diff_base_text = None
-                        if (
-                            state.text_compare_mode == "style"
-                            and base_text
-                            and option.text != base_text
-                        ):
-                            diff_base_text = base_text
-                        _render_option_en(
-                            option,
-                            on_copy,
-                            on_back_translate,
-                            show_style_badge=True,
-                            diff_base_text=diff_base_text,
-                            actions_disabled=actions_disabled,
-                        )
 
             if state.text_compare_mode == "source":
                 _render_source_compare_panel(result, state.text_compare_base_style)
@@ -1093,27 +1060,40 @@ def _render_results_to_en(
     compare_base_style: str = "standard",
     actions_disabled: bool = False,
 ):
-    """Render →English results: primary style only (others in advanced)."""
+    """Render →English results: always show all styles."""
 
     primary_option, secondary_options, display_options = _partition_style_options(result)
-    if not primary_option:
+    if not display_options:
         return None, [], display_options
+
+    base_text = ""
+    if compare_mode == "style":
+        fallback_text = primary_option.text if primary_option else display_options[0].text
+        base_text = _resolve_compare_base_text(display_options, compare_base_style, fallback_text)
 
     # Translation results container
     with ui.element('div').classes('result-container'):
         with ui.element('div').classes('result-section w-full'):
             with ui.column().classes('w-full gap-3'):
-                _render_option_en(
-                    primary_option,
-                    on_copy,
-                    on_back_translate,
-                    is_last=True,
-                    index=0,
-                    show_style_badge=False,
-                    diff_base_text=None,
-                    show_back_translate_button=False,
-                    actions_disabled=actions_disabled,
-                )
+                for index, option in enumerate(display_options):
+                    diff_base_text = None
+                    if (
+                        compare_mode == "style"
+                        and base_text
+                        and option.text != base_text
+                    ):
+                        diff_base_text = base_text
+                    _render_option_en(
+                        option,
+                        on_copy,
+                        on_back_translate,
+                        is_last=index == len(display_options) - 1,
+                        index=index,
+                        show_style_badge=True,
+                        diff_base_text=diff_base_text,
+                        show_back_translate_button=True,
+                        actions_disabled=actions_disabled,
+                    )
 
         # Retry button (optional)
         if on_retry and result.options:

@@ -973,6 +973,26 @@ class CopilotHandler:
     EDGE_OFFSCREEN_GAP = 10
 
     # =========================================================================
+    # Edge Error Page Detection / Recovery
+    # =========================================================================
+    EDGE_ERROR_URL_PREFIXES = (
+        "chrome-error://",
+        "edge-error://",
+    )
+    EDGE_ERROR_TITLE_KEYWORDS = (
+        "このページには問題があります",
+        "このページで問題が発生しました",
+        "Aw, Snap",
+        "This page has a problem",
+    )
+    EDGE_ERROR_BODY_KEYWORDS = (
+        "このページには問題があります",
+        "Aw, Snap",
+    )
+    EDGE_ERROR_RELOAD_TIMEOUT_MS = 8000  # 8 seconds for reload recovery
+    EDGE_ERROR_RECOVERY_COOLDOWN_SEC = 15.0  # Avoid rapid reload loops
+
+    # =========================================================================
     # UI Selectors - Centralized for easier maintenance when Copilot UI changes
     # =========================================================================
 
@@ -1191,6 +1211,7 @@ class CopilotHandler:
         self._playwright_unresponsive = False
         self._playwright_unresponsive_reason: Optional[str] = None
         self._state_check_backoff_until = 0.0
+        self._edge_error_last_recover_at = 0.0
         # Track concurrent connect attempts (ref-count) to avoid UI state checks
         # while connect() is still running.
         self._connect_inflight_count = 0
@@ -1900,6 +1921,109 @@ class CopilotHandler:
             self._playwright_unresponsive = True
             self._playwright_unresponsive_reason = message
 
+    def _is_edge_error_url(self, url: str) -> bool:
+        if not url:
+            return False
+        url_lower = url.lower()
+        return any(url_lower.startswith(prefix) for prefix in self.EDGE_ERROR_URL_PREFIXES)
+
+    def _looks_like_edge_error_page(self, page, *, fast_only: bool = True) -> bool:
+        if not page:
+            return False
+        try:
+            if page.is_closed():
+                return False
+        except Exception:
+            return False
+
+        url = ""
+        try:
+            url = page.url or ""
+        except Exception:
+            url = ""
+
+        if self._is_edge_error_url(url):
+            return True
+
+        try:
+            title = page.title() or ""
+        except Exception:
+            title = ""
+
+        if title and any(keyword in title for keyword in self.EDGE_ERROR_TITLE_KEYWORDS):
+            return True
+
+        if fast_only:
+            return False
+
+        try:
+            for keyword in self.EDGE_ERROR_BODY_KEYWORDS:
+                selector = f'text="{keyword}"'
+                if page.query_selector(selector):
+                    return True
+        except Exception:
+            pass
+
+        return False
+
+    def _edge_error_recovery_allowed(self, *, force: bool = False) -> bool:
+        now = time.monotonic()
+        if not force and (now - self._edge_error_last_recover_at < self.EDGE_ERROR_RECOVERY_COOLDOWN_SEC):
+            return False
+        self._edge_error_last_recover_at = now
+        return True
+
+    def _trigger_edge_reload(self, page, reason: str) -> bool:
+        if not page:
+            return False
+        if not self._edge_error_recovery_allowed():
+            return False
+        try:
+            page.evaluate("location.reload()")
+            logger.info("Triggered Edge reload (%s)", reason)
+            return True
+        except Exception as e:
+            logger.debug("Failed to trigger Edge reload (%s): %s", reason, e)
+            return False
+
+    def _recover_from_edge_error_page(self, page, reason: str, *, force: bool = False) -> bool:
+        if not page:
+            return False
+        if not self._looks_like_edge_error_page(page, fast_only=False):
+            return False
+        if not self._edge_error_recovery_allowed(force=force):
+            logger.debug("Edge error recovery skipped (cooldown): %s", reason)
+            return False
+
+        error_types = _get_playwright_errors()
+        PlaywrightTimeoutError = error_types['TimeoutError']
+        PlaywrightError = error_types['Error']
+
+        logger.warning("Edge error page detected; attempting reload (%s)", reason)
+        try:
+            page.reload(wait_until='domcontentloaded', timeout=self.EDGE_ERROR_RELOAD_TIMEOUT_MS)
+        except (PlaywrightTimeoutError, PlaywrightError) as e:
+            logger.debug("Edge reload timed out or failed (%s): %s", reason, e)
+        except Exception as e:
+            logger.debug("Edge reload failed (%s): %s", reason, e)
+
+        if self._looks_like_edge_error_page(page, fast_only=True):
+            try:
+                page.goto(self.COPILOT_URL, wait_until='domcontentloaded', timeout=self.EDGE_ERROR_RELOAD_TIMEOUT_MS)
+            except (PlaywrightTimeoutError, PlaywrightError) as e:
+                logger.debug("Edge recovery navigation failed (%s): %s", reason, e)
+            except Exception as e:
+                logger.debug("Edge recovery navigation error (%s): %s", reason, e)
+
+        if self._looks_like_edge_error_page(page, fast_only=True):
+            logger.warning("Edge error recovery did not clear the page (%s)", reason)
+            self.last_connection_error = self.ERROR_CONNECTION_FAILED
+            return False
+
+        self.last_connection_error = self.ERROR_NONE
+        logger.info("Edge error page recovered (%s)", reason)
+        return True
+
     def _is_page_valid(self) -> bool:
         """Check if the current page reference is still valid and usable.
 
@@ -1923,6 +2047,10 @@ class CopilotHandler:
             if _is_login_page(url):
                 logger.debug("Page validity check: on login page (%s)", url[:50] if url else "empty")
                 self.last_connection_error = self.ERROR_LOGIN_REQUIRED
+                return False
+
+            if self._looks_like_edge_error_page(self._page, fast_only=True):
+                logger.warning("Page validity check: Edge error page detected")
                 return False
 
             # Check 2: URL is still a Copilot page (user didn't navigate away)
@@ -2513,6 +2641,17 @@ class CopilotHandler:
 
         try:
             url = self._page.url
+
+            if self._looks_like_edge_error_page(self._page, fast_only=True):
+                recovered = self._recover_from_edge_error_page(
+                    self._page,
+                    reason="ensure_copilot_page",
+                    force=True,
+                )
+                if not recovered and self._looks_like_edge_error_page(self._page, fast_only=True):
+                    self.last_connection_error = self.ERROR_CONNECTION_FAILED
+                    return False
+                url = self._page.url
 
             # Check if login is required
             if _is_login_page(url) or self._has_auth_dialog():
@@ -3256,6 +3395,16 @@ class CopilotHandler:
 
         # First, check if we're on a login page
         url = page.url
+        if self._looks_like_edge_error_page(page, fast_only=True):
+            recovered = self._recover_from_edge_error_page(
+                page,
+                reason="wait_for_chat_ready: start",
+                force=True,
+            )
+            if not recovered and self._looks_like_edge_error_page(page, fast_only=True):
+                self.last_connection_error = self.ERROR_CONNECTION_FAILED
+                return False
+            url = page.url
         if _is_login_page(url):
             logger.warning("Redirected to login page: %s", url[:50])
             self.last_connection_error = self.ERROR_LOGIN_REQUIRED
@@ -3340,6 +3489,17 @@ class CopilotHandler:
                     if wait_for_login:
                         self._bring_to_foreground_impl(page, reason="wait_for_chat_ready: early auth dialog detection")
                         return self._wait_for_login_completion(page)
+                    return False
+
+                if self._looks_like_edge_error_page(page, fast_only=True):
+                    recovered = self._recover_from_edge_error_page(
+                        page,
+                        reason=f"wait_for_chat_ready: step {step + 1}",
+                        force=True,
+                    )
+                    if recovered:
+                        continue
+                    self.last_connection_error = self.ERROR_CONNECTION_FAILED
                     return False
 
                 # Ensure Edge is minimized if it came to foreground during wait
@@ -5354,6 +5514,12 @@ class CopilotHandler:
             except Exception:
                 current_url = page.url
             logger.info("Checking Copilot state: URL=%s", current_url[:80])
+
+            if self._looks_like_edge_error_page(page, fast_only=True):
+                if self._trigger_edge_reload(page, reason="check_copilot_state"):
+                    return ConnectionState.LOADING
+                self.last_connection_error = self.ERROR_CONNECTION_FAILED
+                return ConnectionState.ERROR
 
             # Copilotドメインにいて、かつ /chat パスにいる場合 → ログイン完了
             # URL例: https://m365.cloud.microsoft/chat/?auth=2
@@ -8939,6 +9105,13 @@ class CopilotHandler:
         error_types = _get_playwright_errors()
         PlaywrightError = error_types['Error']
         PlaywrightTimeoutError = error_types['TimeoutError']
+
+        if self._page and self._looks_like_edge_error_page(self._page, fast_only=True):
+            self._recover_from_edge_error_page(
+                self._page,
+                reason="start_new_chat",
+                force=True,
+            )
 
         # Ensure we have a valid page reference
         if not self._page or not self._is_page_valid():

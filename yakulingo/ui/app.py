@@ -5214,6 +5214,39 @@ class YakuLingoApp:
             if not self._login_polling_active and self._login_polling_task is None:
                 self._login_polling_task = asyncio.create_task(self._wait_for_login_completion())
 
+    async def _show_copilot_browser(self, reason: str = "ui_manual_show") -> None:
+        """CopilotのEdge画面を前面表示する（手動表示用）。"""
+        if self._shutdown_requested:
+            return
+
+        copilot = self._copilot
+        if copilot is None:
+            if self._client:
+                with self._client:
+                    ui.notify(
+                        'Copilotが起動していません。再接続してください。',
+                        type='warning',
+                        position='top',
+                        timeout=4000,
+                    )
+            return
+
+        try:
+            await asyncio.to_thread(
+                copilot.bring_to_foreground,
+                reason=f"manual_show: {reason}",
+            )
+        except Exception as e:
+            logger.debug("Failed to bring Edge to foreground: %s", e)
+            if self._client:
+                with self._client:
+                    ui.notify(
+                        'Edgeを前面表示できませんでした。',
+                        type='warning',
+                        position='top',
+                        timeout=4000,
+                    )
+
     async def _reconnect(self, max_retries: int = 3, show_progress: bool = True):
         """再接続を試みる（UIボタン用、リトライ付き）。
 
@@ -6395,6 +6428,12 @@ class YakuLingoApp:
                             ui.label('翻訳できます').classes('text-2xs opacity-80')
                         else:
                             ui.label('翻訳できます（GPTモード未設定）').classes('text-2xs opacity-80')
+                    with ui.row().classes('status-actions items-center gap-2 mt-1'):
+                        ui.button(
+                            'ブラウザを表示',
+                            icon='open_in_new',
+                            on_click=lambda: asyncio.create_task(self._show_copilot_browser()),
+                        ).classes('status-action-btn').props('flat no-caps size=sm')
                 status_indicator.tooltip(tooltip)
                 return
 
@@ -6471,6 +6510,11 @@ class YakuLingoApp:
                                 '再接続',
                                 icon='refresh',
                                 on_click=lambda: asyncio.create_task(self._reconnect()),
+                            ).classes('status-action-btn').props('flat no-caps size=sm')
+                            ui.button(
+                                'ブラウザを表示',
+                                icon='open_in_new',
+                                on_click=lambda: asyncio.create_task(self._show_copilot_browser()),
                             ).classes('status-action-btn').props('flat no-caps size=sm')
                 status_indicator.tooltip(tooltip)
                 return

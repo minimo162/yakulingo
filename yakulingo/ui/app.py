@@ -11694,9 +11694,38 @@ def run_app(
     const COMPACT_HEIGHT_THRESHOLD = 820;
     const RAIL_SIDEBAR_WIDTH = 80;
 
+    let lastWindowWidth = 0;
+    let lastWindowHeight = 0;
+
+    function resolveViewportSize() {
+        let width = window.innerWidth || 0;
+        let height = window.innerHeight || 0;
+
+        if (!width || !height) {
+            const doc = document.documentElement;
+            width = width || (doc ? doc.clientWidth : 0);
+            height = height || (doc ? doc.clientHeight : 0);
+        }
+
+        if (!width || !height) {
+            width = lastWindowWidth;
+            height = lastWindowHeight;
+        }
+
+        if (width > 0) lastWindowWidth = width;
+        if (height > 0) lastWindowHeight = height;
+
+        return { width, height };
+    }
+
     function updateCSSVariables() {
-        const windowWidth = window.innerWidth;
-        const windowHeight = window.innerHeight;
+        const viewport = resolveViewportSize();
+        const windowWidth = viewport.width;
+        const windowHeight = viewport.height;
+        if (!windowWidth || !windowHeight) {
+            // Avoid clobbering CSS vars when the window is hidden (0x0).
+            return;
+        }
 
         // Fixed base font size (no dynamic scaling)
         const baseFontSize = BASE_FONT_SIZE;

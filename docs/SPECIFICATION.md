@@ -189,12 +189,13 @@ YakuLingo/
 │   ├── conftest.py
 │   └── test_*.py
 │
-├── prompts/                        # 翻訳プロンプト（14ファイル）
-│   ├── translation_rules.txt       # 共通翻訳ルール
+├── prompts/                        # 翻訳プロンプト（15ファイル）
+│   ├── translation_rules.txt       # 共通/方向別翻訳ルール
 │   ├── file_translate_to_en_{standard|concise|minimal}.txt  # ファイル翻訳（日→英）
 │   ├── file_translate_to_jp.txt    # ファイル翻訳用（英→日）
 │   ├── text_translate_to_en_compare.txt  # テキスト翻訳（日→英、3スタイル比較）
 │   ├── text_translate_to_jp.txt    # テキスト翻訳用（英→日、解説付き/共通ルール挿入）
+│   ├── text_back_translate.txt     # 戻し訳用（編集可能）
 │   ├── adjust_custom.txt           # カスタムリクエスト
 │   ├── text_alternatives.txt       # フォローアップ: 他の言い方
 │   ├── text_review_en.txt          # フォローアップ: 英文をチェック
@@ -234,6 +235,7 @@ class FileType(Enum):
     POWERPOINT = "powerpoint"
     PDF = "pdf"
     TEXT = "text"
+    EMAIL = "email"
 
 class TranslationStatus(Enum):
     PENDING = "pending"
@@ -297,6 +299,8 @@ class TranslationProgress:
     status: str
     phase: TranslationPhase = TranslationPhase.TRANSLATING
     phase_detail: str = ""        # 詳細（例: "Page 3/10", "Batch 2/5"）
+    phase_current: Optional[int] = None
+    phase_total: Optional[int] = None
     percentage: float = 0.0
     estimated_remaining: Optional[int] = None
 
@@ -306,6 +310,13 @@ class TranslationOption:
     text: str                        # 翻訳テキスト
     explanation: str                 # 使用文脈・説明
     char_count: int = 0
+    style: Optional[str] = None      # "standard" | "concise" | "minimal"
+    back_translation_input_text: Optional[str] = None
+    back_translation_source_text: Optional[str] = None
+    back_translation_text: Optional[str] = None
+    back_translation_explanation: Optional[str] = None
+    back_translation_error: Optional[str] = None
+    back_translation_in_progress: bool = False
 
 @dataclass
 class TextTranslationResult:
@@ -314,7 +325,9 @@ class TextTranslationResult:
     source_char_count: int
     options: list[TranslationOption]
     output_language: str = "en"      # "en" or "jp" - 自動検出された出力言語
+    detected_language: Optional[str] = None
     error_message: Optional[str] = None
+    metadata: Optional[dict] = None
 
 @dataclass
 class TranslationResult:
@@ -332,6 +345,29 @@ class TranslationResult:
     @property
     def output_files(self) -> list[tuple[Path, str]]:
         """全出力ファイルのリスト [(path, description), ...]"""
+
+@dataclass
+class FileQueueItem:
+    """ファイル翻訳キュー項目（UI用）"""
+    id: str
+    path: Path
+    file_info: Optional[FileInfo] = None
+    detected_language: Optional[str] = None
+    detected_reason: Optional[str] = None
+    output_language: str = "en"
+    output_language_overridden: bool = False
+    translation_style: str = "concise"
+    selected_sections: Optional[list[int]] = None
+    status: TranslationStatus = TranslationStatus.PENDING
+    progress: float = 0.0
+    status_label: str = ""
+    phase: Optional[TranslationPhase] = None
+    phase_detail: Optional[str] = None
+    phase_current: Optional[int] = None
+    phase_total: Optional[int] = None
+    eta_seconds: Optional[float] = None
+    result: Optional[TranslationResult] = None
+    error_message: str = ""
 
 @dataclass
 class HistoryEntry:
@@ -385,34 +421,74 @@ class TextViewState(Enum):
     INPUT = "input"    # 大きな入力エリア（2カラム幅）
     RESULT = "result"  # コンパクト入力 + 結果パネル
 
+class ConnectionState(Enum):
+    CONNECTING = "connecting"
+    CONNECTED = "connected"
+    LOGIN_REQUIRED = "login_required"
+    EDGE_NOT_RUNNING = "edge_not_running"
+    CONNECTION_FAILED = "connection_failed"
+
 @dataclass
 class AppState:
+    # Current tab
+    current_tab: Tab = Tab.TEXT
+
     # テキストタブ
-    source_text: str = ""
-    text_result: Optional[TextTranslationResult] = None
-    text_translating: bool = False
     text_view_state: TextViewState = TextViewState.INPUT
+    source_text: str = ""
+    text_translating: bool = False
+    text_back_translating: bool = False
+    text_detected_language: Optional[str] = None
+    text_detected_language_reason: Optional[str] = None
+    text_output_language_override: Optional[str] = None
+    text_result: Optional[TextTranslationResult] = None
     text_translation_elapsed_time: Optional[float] = None
+    text_streaming_preview: Optional[str] = None
+    text_compare_mode: str = "off"
+    text_compare_base_style: str = "standard"
 
     # ファイルタブ
     file_state: FileState = FileState.EMPTY
     selected_file: Optional[Path] = None
     file_info: Optional[FileInfo] = None
+    file_detected_language: Optional[str] = None
+    file_detected_language_reason: Optional[str] = None
     file_output_language: str = "en"  # or "jp"
+    file_output_language_overridden: bool = False
     translation_progress: float = 0.0
     translation_status: str = ""
+    translation_phase: Optional[TranslationPhase] = None
+    translation_phase_detail: Optional[str] = None
+    translation_phase_current: Optional[int] = None
+    translation_phase_total: Optional[int] = None
+    translation_eta_seconds: Optional[float] = None
     output_file: Optional[Path] = None
+    translation_result: Optional[TranslationResult] = None
     error_message: str = ""
+    file_drop_error: Optional[str] = None
 
     # 参照ファイル
     reference_files: List[Path] = field(default_factory=list)
 
     # Copilot接続
     copilot_ready: bool = False
+    copilot_error: str = ""
+    connection_state: ConnectionState = ConnectionState.CONNECTING
 
     # 翻訳履歴（SQLiteバック）
     history: list[HistoryEntry] = field(default_factory=list)
     history_drawer_open: bool = False
+    history_query: str = ""
+    history_filter_output_language: Optional[str] = None
+    history_filter_styles: set[str] = field(default_factory=set)
+    history_filter_has_reference: Optional[bool] = None
+    history_compare_enabled: bool = False
+
+    # ファイル翻訳キュー
+    file_queue: list[FileQueueItem] = field(default_factory=list)
+    file_queue_active_id: Optional[str] = None
+    file_queue_mode: str = "sequential"
+    file_queue_running: bool = False
 
     # メソッド
     def can_translate(self) -> bool: ...
@@ -537,6 +613,22 @@ NiceGUIの`await client.connected()`パターンを使用して、クライア�
 **結果パネルの自動スクロール:**
 - ストリーミング中の追記で最下部へ自動スクロール
 - 連続チャンク更新はデバウンスしてスクロール頻度を抑制
+- ユーザーが手動スクロールで離脱した場合は追従しない（新規ストリーミング開始時に追従をリセット）
+
+**比較モード:**
+- 「比較」トグルで 通常 / スタイル比較 / 原文比較 を切り替え
+- スタイル比較時は基準スタイルを指定し、差分をハイライト表示
+- 原文比較は原文と訳文の差分を左右並列で表示
+
+**分割翻訳（Split Translation）:**
+- 入力がバッチ上限を超える場合、分割パネルを表示
+- 「分割して翻訳」で複数バッチに分割し、結果を統合
+- ストリーミングプレビューに `[現在/合計]` を付与して進行を可視化
+
+**戻し訳（Back-translation）:**
+- 各訳文に「戻し訳」「編集して戻し訳」を表示
+- 編集内容は訳文自体を変更せず、戻し訳のみで使用
+- 結果は展開セクションに表示（編集版はタグで識別）
 
 **日本語入力時（英訳）:**
 - 結果カード: 3スタイルの訳文（標準 (standard) / 簡潔 (concise) / 最簡潔 (minimal)）を縦並び表示
@@ -555,6 +647,12 @@ NiceGUIの`await client.connected()`パターンを使用して、クライア�
 | Auto-grow | No（高さは固定し、内容はスクロール） |
 | Padding | `--textarea-padding-block` / `--textarea-padding-inline` |
 | Toolbar | テキスト入力と一体化（単一カード、ディバイダなし） |
+
+### 5.4.1 翻訳履歴
+
+- 履歴はドロワー/ダイアログから参照
+- フィルタ: 出力言語 / スタイル / 参照ファイル有無
+- 比較: 現在の入力と履歴の差分を左右並列で表示
 
 ### 5.5 File Tab
 
@@ -604,6 +702,14 @@ NiceGUIの`await client.connected()`パターンを使用して、クライア�
 │  └─────────────────────────────────────────────────────────────┘│
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+### 5.5.1 ファイルキュー（複数ファイル）
+
+- 複数ファイルを追加するとキューを表示
+- ステータス: 待機 / 処理中 / 完了 / 失敗 / キャンセル
+- 処理モード: 順次 / 並列（切り替え可能）
+- 待機中の項目はドラッグで並べ替え、上下移動ボタンで調整
+- 実行中の項目はキャンセル可能
 
 ### 5.6 出力ファイル命名
 
@@ -1166,9 +1272,19 @@ Reference Files
 
 - 英訳/和訳とも「ビジネス文書向け」を明記
 - 既にターゲット言語の場合はそのまま出力
-- `{translation_rules}` を両方向に挿入し、数値・記号ルールを統一
+- `{translation_rules}` は出力言語に応じて [COMMON] + [TO_EN]/[TO_JP] を注入
 - 出力は「訳文」「解説」のみ。解説は日本語で簡潔に、見出し・ラベルなし
 - 禁止事項は英訳/和訳で共通（質問・提案・指示の繰り返し・訳文と解説以外）
+- 戻し訳は `prompts/text_back_translate.txt` を使用（編集した訳文にも対応）
+
+### 9.5 翻訳ルール（translation_rules.txt）
+
+- セクション構成: `[COMMON]` / `[TO_EN]` / `[TO_JP]`
+- 出力言語に応じて必要なセクションのみを注入
+  - 英訳: COMMON + TO_EN
+  - 和訳: COMMON + TO_JP
+- セクションが存在しない場合は全文を共通ルールとして扱う
+- 編集後は `PromptBuilder.reload_translation_rules()` で再読込
 
 ---
 
@@ -1615,6 +1731,22 @@ python -c "import time; t=time.time(); from yakulingo.ui import run_app; print(f
 ---
 
 ## 変更履歴
+
+### 2.20 (2026-01)
+- テキスト翻訳
+  - 分割翻訳のストリーミングプレビュー（バッチ進行を表示）
+  - 比較モード追加（スタイル比較 / 原文比較）
+- 戻し訳
+  - 「編集して戻し訳」フロー追加（編集内容は訳文に反映しない）
+  - 戻し訳結果をカード内で展開表示
+- 翻訳ルール
+  - `translation_rules.txt` を [COMMON] / [TO_EN] / [TO_JP] に分割
+  - 出力言語に応じて必要なセクションのみ注入
+- UI改善
+  - ストリーミングの自動スクロール追従を調整
+  - ファイルキュー（順次/並列、並べ替え）と履歴フィルタ/比較を強化
+- 配布
+  - アンインストール用ショートカット/スクリプトを追加
 
 ### 2.19 (2025-12)
 - PDF翻訳バグ修正

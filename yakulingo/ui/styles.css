@@ -138,6 +138,7 @@
        These defaults are only visible until JS executes (typically < 100ms). */
     --sidebar-width: 240px;
     --input-panel-width: 400px;
+    --input-panel-width-compact: 320px;
     /* Unified content width for both input and result panels (600-900px range) */
     --content-width: 800px;
     --input-min-height: calc(9 * 1.5 * 1.125rem + 1.6rem);  /* 9 lines (line-height 1.5) + padding */
@@ -1111,6 +1112,33 @@ body {
 
 .result-advanced-panel {
     margin-top: 0.5rem;
+}
+
+.input-collapsible {
+    margin-top: 0;
+}
+
+.input-collapsible > summary {
+    align-items: flex-start;
+    gap: 0.5rem;
+}
+
+.input-summary-text {
+    font-size: 0.75rem;
+    color: var(--md-sys-color-on-surface-variant);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    max-width: 100%;
+}
+
+.input-compact-summary {
+    padding: 0.5rem 0.75rem;
+    border-radius: var(--md-sys-shape-corner-large);
+    border: 1px solid var(--md-sys-color-outline-variant);
+    background: var(--md-sys-color-surface-container-low);
+    box-shadow: var(--md-sys-elevation-1);
 }
 
 .result-alt-options {
@@ -2197,13 +2225,27 @@ body.yakulingo-drag-active .global-drop-indicator {
 /* Result mode (has-results): 2-column layout (sidebar + result panel centered)
    Input panel is hidden - user clicks "テキスト翻訳" tab to start new translation */
 
-/* Hide input panel in result mode */
+/* Input panel remains available in result mode */
 .main-area.has-results .input-panel {
-    display: none !important;
-    visibility: hidden;
-    width: 0;
-    height: 0;
-    overflow: hidden;
+    display: flex;
+    visibility: visible;
+    width: var(--input-panel-width-compact);
+    min-width: var(--input-panel-width-compact);
+    max-width: var(--input-panel-width-compact);
+    padding: 1rem;
+    border-right: 1px solid var(--md-sys-color-outline-variant);
+    background: var(--md-sys-color-surface-container-low);
+    overflow-y: auto;
+}
+
+.main-area.has-results .input-panel > .nicegui-column {
+    width: 100%;
+    align-items: stretch;
+    justify-content: flex-start;
+}
+
+.main-area.has-results .input-panel .main-card-inner textarea {
+    max-height: 240px;
 }
 
 /* Result panel takes full width and centers content */

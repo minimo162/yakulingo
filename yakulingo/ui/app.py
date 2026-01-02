@@ -7138,6 +7138,19 @@ class YakuLingoApp:
             elif char_count > batch_limit:
                 count_inline.classes(add="warn")
 
+        summary_count_label = refs.get("summary_count_label")
+        if summary_count_label:
+            summary_count_label.set_text(f"{char_count:,} 文字")
+
+        summary_preview_label = refs.get("summary_preview_label")
+        if summary_preview_label:
+            snippet = re.sub(r"\s+", " ", self.state.source_text or "").strip()
+            if not snippet:
+                snippet = "入力は空です"
+            elif len(snippet) > 60:
+                snippet = f"{snippet[:60]}..."
+            summary_preview_label.set_text(snippet)
+
         count_label = refs.get("count_label")
         if count_label:
             count_label.set_text(f"{char_count:,} / {text_limit:,} 字")
@@ -7199,6 +7212,15 @@ class YakuLingoApp:
             output_label = "日本語"
         if detection_output_label:
             detection_output_label.set_text(f"出力: {output_label}")
+
+        summary_direction_label = refs.get("summary_direction_label")
+        if summary_direction_label:
+            if output_lang == "en":
+                summary_direction_label.set_text("日本語→英訳")
+            elif output_lang == "jp":
+                summary_direction_label.set_text("英語→和訳")
+            else:
+                summary_direction_label.set_text("自動判定")
 
         summary_direction_chip = refs.get("summary_direction_chip")
         if summary_direction_chip:

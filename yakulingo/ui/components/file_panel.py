@@ -316,9 +316,6 @@ def create_file_panel(
                     else:
                         # Show loading state while file info is being loaded
                         _file_loading_card(state.selected_file, on_reset)
-                    # Basic settings card (language only)
-                    with ui.element('div').classes('file-settings-card'):
-                        _language_selector(state, on_language_change)
 
                     has_manual_refs = bool(reference_files)
                     has_glossary = bool(use_bundled_glossary)
@@ -346,6 +343,10 @@ def create_file_panel(
                                     ui.label('手動指定').classes('chip meta-chip override-chip')
 
                         with ui.column().classes('advanced-content gap-3'):
+                            if on_language_change:
+                                with ui.column().classes('advanced-section'):
+                                    ui.label('翻訳方向').classes('advanced-label')
+                                    _language_selector(state, on_language_change, compact=True)
                             if state.file_output_language == 'en':
                                 _style_selector(translation_style, on_style_change)
                             _glossary_selector(
@@ -627,11 +628,16 @@ def _queue_panel(
                                 on_click=lambda i=item.id: on_remove(i),
                             ).props('flat dense round size=xs @click.stop').classes('queue-action-btn')
                             remove_btn.tooltip('キューから削除')
-def _language_selector(state: AppState, on_change: Optional[Callable[[str], None]]):
+def _language_selector(
+    state: AppState,
+    on_change: Optional[Callable[[str], None]],
+    compact: bool = False,
+):
     """Output language selector with auto-detection display"""
     detected = state.file_detected_language
 
-    with ui.column().classes('w-full items-center mt-4 gap-2'):
+    margin_class = 'mt-4' if not compact else 'mt-2'
+    with ui.column().classes(f'w-full items-center {margin_class} gap-2'):
         # Show detected language info or detecting status
         if detected:
             output_label = '英語' if state.file_output_language == 'en' else '日本語'

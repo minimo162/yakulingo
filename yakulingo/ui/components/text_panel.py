@@ -300,7 +300,7 @@ def create_text_input_panel(
 ):
     """
     Text input panel for 2-column layout.
-    Only shown in INPUT state (hidden via CSS in RESULT/TRANSLATING state).
+    Always shown; collapses into a compact summary when results are visible.
     """
     _create_large_input_panel(
         state, on_translate, on_split_translate, on_source_change, on_clear,
@@ -336,8 +336,36 @@ def _create_large_input_panel(
     on_edit_translation_rules: Optional[Callable[[], None]] = None,
     on_textarea_created: Optional[Callable[[ui.textarea], None]] = None,
 ):
-    """Large input panel for INPUT state - spans 2 columns"""
+    """Large input panel that becomes compact when results are visible."""
+    is_compact = state.text_view_state == TextViewState.RESULT or state.text_translating
+    metrics_refs: dict[str, object] = {}
+
+    def summarize_source(text: str, max_len: int = 60) -> str:
+        snippet = re.sub(r'\s+', ' ', text).strip()
+        if not snippet:
+            return '入力は空です'
+        if len(snippet) > max_len:
+            return f'{snippet[:max_len]}...'
+        return snippet
+
     with ui.column().classes('flex-1 w-full gap-4'):
+        if is_compact:
+            with ui.element('div').classes('input-compact-summary'):
+                with ui.row().classes('items-start justify-between gap-2'):
+                    with ui.column().classes('gap-1 min-w-0'):
+                        ui.label('入力').classes('advanced-title')
+                        summary_preview = ui.label(
+                            summarize_source(state.source_text)
+                        ).classes('input-summary-text')
+                        metrics_refs['summary_preview_label'] = summary_preview
+                    with ui.row().classes('items-center gap-2'):
+                        summary_count = ui.label(
+                            f'{len(state.source_text):,} 文字'
+                        ).classes('chip meta-chip')
+                        summary_direction = ui.label('自動判定').classes('chip meta-chip')
+                        metrics_refs['summary_count_label'] = summary_count
+                        metrics_refs['summary_direction_label'] = summary_direction
+
         # Main card container - centered and larger
         with ui.element('div').classes('main-card w-full'):
             # Input container
@@ -352,7 +380,6 @@ def _create_large_input_panel(
                 )
 
                 # Bottom controls
-                metrics_refs: dict[str, object] = {}
                 with ui.row().classes('input-toolbar justify-between items-start flex-wrap gap-y-3'):
                     # Left side: detection and inline counts
                     with ui.column().classes('input-toolbar-left gap-2 flex-1 min-w-0'):
@@ -702,6 +729,7 @@ def create_text_result_panel(
                     on_back_translate,
                     elapsed_time,
                     on_retry,
+                    show_back_translate_button=False,
                     actions_disabled=actions_disabled,
                 )
             else:
@@ -1083,6 +1111,7 @@ def _render_results_to_en(
                     index=0,
                     show_style_badge=False,
                     diff_base_text=None,
+                    show_back_translate_button=False,
                     actions_disabled=actions_disabled,
                 )
 
@@ -1105,6 +1134,7 @@ def _render_results_to_jp(
     on_back_translate: Optional[Callable[[TranslationOption, Optional[str]], None]] = None,
     elapsed_time: Optional[float] = None,
     on_retry: Optional[Callable[[], None]] = None,
+    show_back_translate_button: bool = True,
     actions_disabled: bool = False,
 ):
     """Render →Japanese results: translations with detailed explanations"""
@@ -1133,7 +1163,7 @@ def _render_results_to_jp(
                                     tooltip='訳文をコピー',
                                 )
                                 # Back-translate button
-                                if on_back_translate:
+                                if on_back_translate and show_back_translate_button:
                                     back_btn = ui.button(
                                         '戻し訳',
                                         icon='g_translate',
@@ -1150,9 +1180,16 @@ def _render_results_to_jp(
                                 with ui.element('div').classes('nani-explanation'):
                                     _render_explanation(option.explanation)
 
+                            has_back_translate = bool(
+                                option.back_translation_text
+                                or option.back_translation_explanation
+                                or option.back_translation_error
+                                or option.back_translation_in_progress
+                            )
                             if on_back_translate:
                                 _render_back_translate_editor(option, on_back_translate, actions_disabled)
-                                _render_back_translate_section(option)
+                                if show_back_translate_button or has_back_translate:
+                                    _render_back_translate_section(option)
 
         # Retry button (optional) - align position with →English
         if on_retry:
@@ -1463,6 +1500,7 @@ def _render_option_en(
     index: int = 0,
     show_style_badge: bool = False,
     diff_base_text: Optional[str] = None,
+    show_back_translate_button: bool = True,
     actions_disabled: bool = False,
 ):
     """Render a single English translation option as a card"""
@@ -1490,7 +1528,7 @@ def _render_option_en(
                         tooltip='訳文をコピー',
                     )
                     # Back-translate button
-                    if on_back_translate:
+                    if on_back_translate and show_back_translate_button:
                         back_btn = ui.button(
                             '戻し訳',
                             icon='g_translate',
@@ -1507,6 +1545,13 @@ def _render_option_en(
                 with ui.element('div').classes('nani-explanation'):
                     _render_explanation(option.explanation)
 
+            has_back_translate = bool(
+                option.back_translation_text
+                or option.back_translation_explanation
+                or option.back_translation_error
+                or option.back_translation_in_progress
+            )
             if on_back_translate:
                 _render_back_translate_editor(option, on_back_translate, actions_disabled)
-                _render_back_translate_section(option)
+                if show_back_translate_button or has_back_translate:
+                    _render_back_translate_section(option)

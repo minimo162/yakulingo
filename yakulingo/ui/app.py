@@ -10770,6 +10770,8 @@ def run_app(
             return
         if getattr(yakulingo_app, "_shutdown_requested", False):
             return
+        if yakulingo_app._resident_mode:
+            yakulingo_app._resident_show_requested = True
         if yakulingo_app._resident_mode and (
             yakulingo_app._auto_open_cause not in (AutoOpenCause.HOTKEY, AutoOpenCause.LOGIN)
         ):
@@ -11291,6 +11293,9 @@ def run_app(
                 raise HTTPException(status_code=403, detail="forbidden")
 
             def _activate_window() -> None:
+                if yakulingo_app._resident_mode:
+                    yakulingo_app._resident_show_requested = True
+                    yakulingo_app._mark_manual_show("activate_api")
                 callback = yakulingo_app._open_ui_window_callback
                 if callback is not None:
                     try:

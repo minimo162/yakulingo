@@ -6,17 +6,21 @@
     <title>YakuLingo 使い方ガイド</title>
     <style>
       :root {
-        --ink: #0f172a;
-        --muted: #41506b;
-        --primary: #1c5cff;
-        --primary-deep: #1738b7;
-        --secondary: #ff7a45;
-        --accent: #22c985;
-        --surface: #ffffff;
-        --surface-alt: #f4f6ff;
-        --stroke: #d6deef;
-        --shadow-soft: 0 18px 42px rgba(15, 23, 42, 0.12);
-        --shadow-strong: 0 26px 60px rgba(15, 23, 42, 0.18);
+        --md-primary: #1E4BB8;
+        --md-on-primary: #FFFFFF;
+        --md-primary-container: #DDE6FF;
+        --md-on-primary-container: #0B1A3A;
+        --md-secondary: #0F6B6E;
+        --md-secondary-container: #D2F2F0;
+        --md-on-secondary-container: #123B3C;
+        --md-surface: #F8F9FB;
+        --md-surface-bright: #FFFFFF;
+        --md-surface-container: #ECEFF6;
+        --md-outline: #C9D1DD;
+        --md-on-surface: #1D1F23;
+        --md-on-surface-variant: #545B66;
+        --shadow-soft: 0 14px 32px rgba(12, 16, 24, 0.12);
+        --shadow-strong: 0 22px 52px rgba(12, 16, 24, 0.16);
         --radius-xl: 28px;
         --radius-lg: 20px;
         --radius-md: 14px;
@@ -33,11 +37,8 @@
       body {
         margin: 0;
         font-family: "BIZ UDPGothic", "Yu Gothic UI", "Meiryo", "Segoe UI", sans-serif;
-        color: var(--ink);
-        background:
-          radial-gradient(700px 380px at 8% -8%, rgba(28, 92, 255, 0.2), transparent 60%),
-          radial-gradient(640px 360px at 92% 0%, rgba(255, 122, 69, 0.2), transparent 60%),
-          linear-gradient(180deg, #f6f7ff 0%, #eef2ff 45%, #f9fafb 100%);
+        color: var(--md-on-surface);
+        background: var(--md-surface);
         line-height: 1.7;
       }
 
@@ -50,40 +51,13 @@
       .hero {
         position: relative;
         overflow: hidden;
-        background: linear-gradient(135deg, rgba(28, 92, 255, 0.16), rgba(255, 122, 69, 0.18)), var(--surface);
+        background: var(--md-surface-bright);
         border-radius: calc(var(--radius-xl) + 8px);
-        border: 1px solid rgba(28, 92, 255, 0.18);
+        border: 1px solid var(--md-outline);
+        border-left: 6px solid var(--md-primary);
         padding: 32px;
         box-shadow: var(--shadow-strong);
-        animation: rise 0.8s ease both;
-      }
-
-      .hero::before,
-      .hero::after {
-        content: "";
-        position: absolute;
-        border-radius: 50%;
-        filter: blur(0px);
-        opacity: 0.7;
-        z-index: 0;
-      }
-
-      .hero::before {
-        width: 280px;
-        height: 280px;
-        right: -90px;
-        top: -110px;
-        background: radial-gradient(circle at 30% 30%, rgba(255, 122, 69, 0.8), transparent 65%);
-        animation: float 16s ease-in-out infinite;
-      }
-
-      .hero::after {
-        width: 220px;
-        height: 220px;
-        left: -80px;
-        bottom: -110px;
-        background: radial-gradient(circle at 30% 30%, rgba(34, 201, 133, 0.7), transparent 70%);
-        animation: float 14s ease-in-out infinite reverse;
+        animation: rise 0.7s ease both;
       }
 
       .hero-content {
@@ -97,11 +71,12 @@
         gap: 10px;
         padding: 6px 14px;
         border-radius: 999px;
-        background: rgba(28, 92, 255, 0.16);
-        border: 1px solid rgba(28, 92, 255, 0.25);
+        background: var(--md-primary-container);
+        border: 1px solid color-mix(in srgb, var(--md-primary) 35%, transparent);
         font-weight: 700;
         font-size: 0.82rem;
         letter-spacing: 0.02em;
+        color: var(--md-on-primary-container);
       }
 
       .hero h1 {
@@ -112,49 +87,8 @@
 
       .hero p {
         margin: 0;
-        color: var(--muted);
+        color: var(--md-on-surface-variant);
         font-size: 1.02rem;
-      }
-
-      .hero-cta {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 12px;
-        margin: 20px 0 8px;
-      }
-
-      .btn {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        gap: 8px;
-        padding: 12px 20px;
-        border-radius: 999px;
-        border: 1px solid transparent;
-        font-weight: 700;
-        text-decoration: none;
-        transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
-      }
-
-      .btn.primary {
-        background: linear-gradient(135deg, var(--primary), var(--secondary));
-        color: #ffffff;
-        box-shadow: 0 14px 24px rgba(28, 92, 255, 0.25);
-        animation: pulse 2.6s ease-in-out infinite;
-      }
-
-      .btn.primary:hover {
-        transform: translateY(-2px) scale(1.01);
-      }
-
-      .btn.ghost {
-        background: rgba(255, 255, 255, 0.8);
-        border-color: rgba(28, 92, 255, 0.25);
-        color: var(--primary-deep);
-      }
-
-      .btn.ghost:hover {
-        transform: translateY(-2px);
       }
 
       .hero-grid {
@@ -165,28 +99,16 @@
       }
 
       .hero-card {
-        background: var(--surface);
+        background: var(--md-surface-bright);
         border-radius: var(--radius-lg);
-        border: 1px solid rgba(28, 92, 255, 0.15);
+        border: 1px solid var(--md-outline);
         padding: 16px 16px 18px;
         box-shadow: var(--shadow-soft);
-        position: relative;
-        overflow: hidden;
+        border-left: 4px solid var(--md-primary);
       }
 
-      .hero-card::after {
-        content: "";
-        position: absolute;
-        inset: 0;
-        border-radius: inherit;
-        background: linear-gradient(120deg, rgba(28, 92, 255, 0.08), rgba(255, 122, 69, 0.06));
-        opacity: 0.7;
-        pointer-events: none;
-      }
-
-      .hero-card > * {
-        position: relative;
-        z-index: 1;
+      .hero-card:nth-child(2) {
+        border-left-color: var(--md-secondary);
       }
 
       .hero-card strong {
@@ -196,7 +118,7 @@
 
       .hero-card p {
         margin: 0;
-        color: var(--muted);
+        color: var(--md-on-surface-variant);
         font-size: 0.95rem;
       }
 
@@ -210,17 +132,17 @@
       .chip {
         padding: 6px 12px;
         border-radius: 999px;
-        background: rgba(28, 92, 255, 0.12);
-        border: 1px solid rgba(28, 92, 255, 0.22);
+        background: var(--md-surface-container);
+        border: 1px solid var(--md-outline);
         font-size: 0.85rem;
         font-weight: 700;
-        color: var(--primary-deep);
+        color: var(--md-on-surface);
       }
 
       nav {
         margin-top: 20px;
         padding-top: 18px;
-        border-top: 1px solid rgba(28, 92, 255, 0.2);
+        border-top: 1px solid var(--md-outline);
       }
 
       nav ul {
@@ -239,7 +161,7 @@
       }
 
       nav a {
-        color: var(--primary-deep);
+        color: var(--md-on-surface);
         font-weight: 700;
         text-decoration: none;
         display: inline-flex;
@@ -247,25 +169,28 @@
         line-height: 1.2;
         padding: 6px 12px;
         border-radius: 999px;
-        border: 1px solid rgba(28, 92, 255, 0.18);
-        background: rgba(255, 255, 255, 0.7);
-        transition: transform 0.2s ease, background 0.2s ease;
+        border: 1px solid var(--md-outline);
+        background: var(--md-surface-container);
+        transition: transform 0.2s ease, background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
       }
 
       nav a:hover {
         transform: translateY(-1px);
-        background: rgba(28, 92, 255, 0.12);
+        background: var(--md-primary-container);
+        color: var(--md-on-primary-container);
+        border-color: color-mix(in srgb, var(--md-primary) 40%, var(--md-outline));
       }
 
       section {
         margin-top: 26px;
-        background: var(--surface);
-        border: 1px solid var(--stroke);
+        background: var(--md-surface-bright);
+        border: 1px solid var(--md-outline);
         border-radius: var(--radius-xl);
         padding: 26px 26px 24px;
         box-shadow: var(--shadow-soft);
         position: relative;
-        animation: rise 0.7s ease both;
+        animation: rise 0.6s ease both;
+        --section-accent: var(--md-primary);
       }
 
       section::before {
@@ -276,19 +201,15 @@
         right: 24px;
         height: 4px;
         border-radius: 999px;
-        background: linear-gradient(120deg, var(--primary), var(--secondary), var(--accent));
+        background: var(--section-accent);
       }
 
-      section:nth-of-type(2)::before {
-        background: linear-gradient(120deg, var(--secondary), var(--primary));
+      section#file {
+        --section-accent: var(--md-secondary);
       }
 
-      section:nth-of-type(3)::before {
-        background: linear-gradient(120deg, var(--accent), var(--primary));
-      }
-
-      section:nth-of-type(4)::before {
-        background: linear-gradient(120deg, var(--primary), var(--accent));
+      section#resident {
+        --section-accent: color-mix(in srgb, var(--md-primary) 65%, var(--md-on-surface));
       }
 
       h2 {
@@ -307,8 +228,8 @@
         width: 30px;
         height: 30px;
         border-radius: 10px;
-        background: rgba(28, 92, 255, 0.16);
-        color: var(--primary-deep);
+        background: var(--md-primary-container);
+        color: var(--md-on-primary-container);
         font-size: 0.9rem;
         font-weight: 700;
       }
@@ -320,7 +241,7 @@
 
       p {
         margin: 0 0 12px;
-        color: var(--muted);
+        color: var(--md-on-surface-variant);
       }
 
       section ul,
@@ -338,8 +259,8 @@
         justify-content: center;
         padding: 2px 8px;
         border-radius: 8px;
-        border: 1px solid var(--stroke);
-        background: #eef1fb;
+        border: 1px solid var(--md-outline);
+        background: var(--md-surface-container);
         font-family: "Consolas", "Courier New", monospace;
         font-size: 0.9em;
       }
@@ -348,9 +269,9 @@
         margin-top: 14px;
         padding: 14px 16px;
         border-radius: 14px;
-        background: rgba(28, 92, 255, 0.1);
-        border: 1px solid rgba(28, 92, 255, 0.2);
-        color: #1f3a66;
+        background: var(--md-primary-container);
+        border: 1px solid color-mix(in srgb, var(--md-primary) 30%, var(--md-outline));
+        color: var(--md-on-primary-container);
       }
 
       .grid {
@@ -362,35 +283,15 @@
       .card {
         border-radius: var(--radius-md);
         padding: 16px;
-        border: 1px solid rgba(28, 92, 255, 0.12);
-        background: #fbfcff;
+        border: 1px solid var(--md-outline);
+        background: var(--md-surface);
       }
 
       footer {
         margin-top: 26px;
         text-align: center;
-        color: var(--muted);
+        color: var(--md-on-surface-variant);
         font-size: 0.9rem;
-      }
-
-      @keyframes float {
-        0%,
-        100% {
-          transform: translateY(0px);
-        }
-        50% {
-          transform: translateY(8px);
-        }
-      }
-
-      @keyframes pulse {
-        0%,
-        100% {
-          box-shadow: 0 14px 24px rgba(28, 92, 255, 0.25);
-        }
-        50% {
-          box-shadow: 0 20px 32px rgba(255, 122, 69, 0.3);
-        }
       }
 
       @keyframes rise {
@@ -407,15 +308,6 @@
       @media (max-width: 720px) {
         .hero {
           padding: 24px;
-        }
-
-        .hero-cta {
-          flex-direction: column;
-          align-items: stretch;
-        }
-
-        .btn {
-          width: 100%;
         }
 
         h2 {
@@ -436,22 +328,23 @@
     <div class="page">
       <header class="hero" id="top">
         <div class="hero-content">
-          <div class="hero-tag">セットアップ完了 / YakuLingo 使い方ガイド</div>
-          <h1>翻訳を、仕事の流れのままに。</h1>
-          <p>常駐で、コピー操作だけで翻訳。テキストもファイルも作業の流れを止めません。</p>
+          <div class="hero-tag">セットアップ完了 / 運用ガイド</div>
+          <h1>業務フローを止めない翻訳支援。</h1>
+          <p>常駐でテキスト/ファイル翻訳を提供し、コピー操作だけで迅速に翻訳できます。</p>
           <div class="hero-grid">
             <div class="hero-card">
-              <strong>操作は Ctrl+C を2回</strong>
-              <p>同じウィンドウで素早く2回。</p>
+              <strong>操作は Ctrl+C を2回連続で実行</strong>
+              <p>選択後、同じウィンドウで連続実行してください。</p>
             </div>
             <div class="hero-card">
-              <strong>終了はスタートメニュー</strong>
-              <p>UI を閉じても常駐。終了は「YakuLingo 終了」。</p>
+              <strong>終了はスタートメニューから実施</strong>
+              <p>UI を閉じても常駐します。終了はメニューから実行します。</p>
             </div>
           </div>
           <div class="chips">
             <span class="chip">自動判定: 日本語/英語</span>
             <span class="chip">テキスト/ファイル対応</span>
+            <span class="chip">常駐運用</span>
           </div>
           <nav>
             <ul>
@@ -465,24 +358,24 @@
 
       <section id="text">
         <h2><span>01</span>テキスト翻訳</h2>
-        <p>翻訳したい文章を選び、<kbd>Ctrl</kbd> + <kbd>C</kbd> を素早く2回。</p>
+        <p>翻訳したい文章を選び、<kbd>Ctrl</kbd> + <kbd>C</kbd> を2回連続で実行してください。</p>
         <div class="grid">
           <div class="card">
             <strong>日本語 → 英語</strong>
-            <p>標準 / 簡潔 / 最簡潔を同時に表示。</p>
+            <p>標準 / 簡潔 / 最簡潔を並列表示します。</p>
           </div>
           <div class="card">
             <strong>英語 → 日本語</strong>
-            <p>翻訳＋解説をまとめて表示。</p>
+            <p>翻訳と解説を併記して表示します。</p>
           </div>
         </div>
       </section>
 
       <section id="file">
         <h2><span>02</span>ファイル翻訳</h2>
-        <p>ファイルを選択して <kbd>Ctrl</kbd> + <kbd>C</kbd> を素早く2回。</p>
+        <p>翻訳するファイルを選択し、<kbd>Ctrl</kbd> + <kbd>C</kbd> を2回連続で実行してください。</p>
         <ul>
-          <li>進捗はファイル翻訳パネルで確認。</li>
+          <li>進捗はファイル翻訳パネルで確認できます。</li>
         </ul>
         <div class="chips">
           <span class="chip">Excel</span>
@@ -493,14 +386,14 @@
           <span class="chip">MSG</span>
         </div>
         <div class="note">
-          レイアウトは可能な限り維持。フォントは翻訳方向で自動調整。
+          レイアウトは可能な限り維持し、フォントは翻訳方向で自動調整します。
         </div>
       </section>
 
       <section id="resident">
         <h2><span>03</span>常駐 / 終了</h2>
         <ul>
-          <li>UI を閉じても翻訳は常駐で継続。</li>
+          <li>UI を閉じても翻訳は常駐で継続します。</li>
           <li>PC 再起動後は自動で常駐起動します。</li>
           <li>UI を開く: スタートメニュー &gt; YakuLingo。</li>
           <li>終了する: スタートメニュー &gt; YakuLingo &gt; 「YakuLingo 終了」。</li>
@@ -509,7 +402,7 @@
       </section>
 
       <footer>
-        YakuLingo - Always-on translation for professional workflows.
+        YakuLingo — 企業利用を想定した常駐翻訳。
       </footer>
     </div>
   </body>

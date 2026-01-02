@@ -121,8 +121,7 @@
     --yl-gradient-primary: linear-gradient(135deg, #1E4BB8 0%, #0F6B6E 52%, #B25C00 100%);
     --yl-gradient-primary-soft: linear-gradient(135deg, rgba(30, 75, 184, 0.18) 0%, rgba(15, 107, 110, 0.12) 52%, rgba(178, 92, 0, 0.12) 100%);
     --yl-gradient-progress: linear-gradient(90deg, #1E4BB8 0%, #0F6B6E 52%, #B25C00 100%);
-    --yl-canvas-glow: radial-gradient(1100px 520px at 12% 6%, rgba(30, 75, 184, 0.1), transparent 60%),
-        radial-gradient(860px 420px at 86% 14%, rgba(178, 92, 0, 0.1), transparent 60%);
+    --yl-canvas-glow: none;
     --yl-shadow-card: 0 20px 48px rgba(15, 23, 42, 0.12);
     --yl-shadow-card-hover: 0 30px 70px rgba(15, 23, 42, 0.16);
     --yl-shadow-cta: 0 20px 40px rgba(30, 75, 184, 0.32);
@@ -524,19 +523,6 @@ body {
     pointer-events: none;
 }
 
-.source-text-section::after {
-    content: "";
-    position: absolute;
-    right: -60px;
-    bottom: -60px;
-    width: 160px;
-    height: 160px;
-    border-radius: var(--md-sys-shape-corner-full);
-    background: color-mix(in srgb, var(--yl-hero-accent) 12%, transparent);
-    opacity: 0.55;
-    pointer-events: none;
-}
-
 .source-text-section > .nicegui-row {
     background-color: transparent;
     border-radius: calc(var(--md-sys-shape-corner-xl) - 1px);
@@ -603,32 +589,6 @@ body {
     box-shadow: var(--md-sys-elevation-2);
     position: relative;
     overflow: hidden;
-}
-
-.result-hero::before {
-    content: "";
-    position: absolute;
-    width: 200px;
-    height: 200px;
-    left: -110px;
-    top: -110px;
-    background: color-mix(in srgb, var(--yl-hero-accent) 18%, transparent);
-    border-radius: var(--md-sys-shape-corner-full);
-    opacity: 0.75;
-    pointer-events: none;
-}
-
-.result-hero::after {
-    content: "";
-    position: absolute;
-    width: 220px;
-    height: 220px;
-    right: -130px;
-    bottom: -130px;
-    background: color-mix(in srgb, var(--yl-hero-warm) 12%, transparent);
-    border-radius: var(--md-sys-shape-corner-full);
-    opacity: 0.6;
-    pointer-events: none;
 }
 
 .result-hero > * {
@@ -1080,20 +1040,6 @@ body {
     z-index: 1;
 }
 
-.main-card::after {
-    content: "";
-    position: absolute;
-    width: 240px;
-    height: 240px;
-    top: -130px;
-    right: -130px;
-    background: color-mix(in srgb, var(--yl-hero-accent) 14%, transparent);
-    border-radius: var(--md-sys-shape-corner-full);
-    opacity: 0.55;
-    pointer-events: none;
-    z-index: 0;
-}
-
 .history-card {
     flex-direction: column;
     align-items: stretch;
@@ -1153,35 +1099,10 @@ body {
 .input-hero {
     padding: 1rem 1.25rem 0.75rem;
     border-bottom: 1px solid color-mix(in srgb, var(--md-sys-color-primary) 20%, var(--md-sys-color-outline-variant));
+    border-left: 4px solid color-mix(in srgb, var(--md-sys-color-primary) 35%, transparent);
     background: var(--yl-hero-surface);
     position: relative;
     overflow: hidden;
-}
-
-.input-hero::before {
-    content: "";
-    position: absolute;
-    width: 200px;
-    height: 200px;
-    left: -100px;
-    top: -100px;
-    background: color-mix(in srgb, var(--yl-hero-accent) 16%, transparent);
-    border-radius: var(--md-sys-shape-corner-full);
-    opacity: 0.75;
-    pointer-events: none;
-}
-
-.input-hero::after {
-    content: "";
-    position: absolute;
-    right: -90px;
-    bottom: -110px;
-    width: 200px;
-    height: 200px;
-    border-radius: var(--md-sys-shape-corner-full);
-    background: color-mix(in srgb, var(--yl-hero-warm) 12%, transparent);
-    opacity: 0.5;
-    pointer-events: none;
 }
 
 .input-hero > * {
@@ -2083,20 +2004,6 @@ body.yakulingo-drag-active .global-drop-indicator {
     z-index: 0;
 }
 
-.option-card::after {
-    content: "";
-    position: absolute;
-    right: -55px;
-    top: -55px;
-    width: 140px;
-    height: 140px;
-    border-radius: var(--md-sys-shape-corner-full);
-    background: color-mix(in srgb, var(--yl-option-accent) 12%, transparent);
-    opacity: 0.55;
-    pointer-events: none;
-    z-index: 0;
-}
-
 .option-card > * {
     position: relative;
     z-index: 1;
@@ -2107,22 +2014,11 @@ body.yakulingo-drag-active .global-drop-indicator {
 }
 
 .option-card.style-concise {
-    --yl-option-accent: var(--md-sys-color-tertiary);
-}
-
-.option-card.style-minimal {
     --yl-option-accent: var(--md-sys-color-secondary);
 }
 
-.option-card.primary-option {
-    background: color-mix(in srgb, var(--md-sys-color-primary-container) 24%, var(--md-sys-color-surface));
-    border-color: color-mix(in srgb, var(--md-sys-color-primary) 40%, var(--md-sys-color-outline-variant));
-    box-shadow: var(--md-sys-elevation-2);
-}
-
-.option-card.primary-option::before {
-    height: 10px;
-    opacity: 1;
+.option-card.style-minimal {
+    --yl-option-accent: var(--md-sys-color-outline);
 }
 
 .option-card:hover {
@@ -2135,18 +2031,10 @@ body.yakulingo-drag-active .global-drop-indicator {
 }
 
 .option-card .style-chip {
-    background: color-mix(in srgb, var(--yl-option-accent) 16%, var(--md-sys-color-surface));
-    border-color: color-mix(in srgb, var(--yl-option-accent) 35%, transparent);
+    background: color-mix(in srgb, var(--yl-option-accent) 12%, var(--md-sys-color-surface));
+    border-color: color-mix(in srgb, var(--yl-option-accent) 28%, transparent);
     color: var(--md-sys-color-on-surface);
     font-weight: 700;
-}
-
-.recommend-chip {
-    background: var(--md-sys-color-primary);
-    color: var(--md-sys-color-on-primary);
-    border-color: var(--md-sys-color-primary);
-    font-weight: 700;
-    letter-spacing: 0.02em;
 }
 
 .option-card-actions {
@@ -3952,36 +3840,6 @@ body.yakulingo-drag-active .global-drop-indicator {
 .back-translate-chip.edited {
     background: var(--md-sys-color-warning-container);
     color: var(--md-sys-color-on-warning-container);
-}
-
-.back-translate-editor {
-    margin-top: 0.5rem;
-    border: 1px dashed var(--md-sys-color-outline-variant);
-    border-radius: var(--md-sys-shape-corner-medium);
-    background: var(--md-sys-color-surface);
-}
-
-.back-translate-editor .q-item {
-    padding: 0.5rem 0.75rem;
-    min-height: auto;
-}
-
-.back-translate-editor .q-expansion-item__content {
-    padding: 0.75rem;
-}
-
-.back-translate-note {
-    font-size: 0.75rem;
-    color: var(--md-sys-color-on-surface-variant);
-}
-
-.back-translate-input .q-field__control {
-    border-radius: var(--md-sys-shape-corner-medium);
-    background: var(--md-sys-color-surface-container);
-}
-
-.back-translate-input .q-field__native {
-    font-size: var(--md-sys-typescale-size-sm);
 }
 
 .back-translate-content .option-text,

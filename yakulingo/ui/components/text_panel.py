@@ -810,11 +810,7 @@ def _render_result_meta(state: AppState, result: TextTranslationResult) -> None:
     output_label = '日本語→英語' if result.output_language == 'en' else '英語→日本語'
     with ui.row().classes('result-meta-row items-center gap-2 flex-wrap'):
         ui.label(output_label).classes('chip meta-chip')
-        if result.is_to_english:
-            ui.label('標準').classes('chip meta-chip')
-            if len(result.options) > 1:
-                ui.label(f'他 {len(result.options) - 1} スタイル').classes('chip meta-chip')
-        else:
+        if not result.is_to_english:
             ui.label('解説付き').classes('chip meta-chip')
         if state.text_output_language_override in {"en", "jp"}:
             ui.label('手動指定').classes('chip meta-chip override-chip')
@@ -1060,16 +1056,6 @@ def _render_results_to_en(
                         actions_disabled=actions_disabled,
                     )
 
-        # Retry button (optional)
-        if on_retry and result.options:
-            with ui.element('div').classes('suggestion-hint-row'):
-                retry_btn = ui.button(
-                    '再実行',
-                    icon='refresh',
-                    on_click=on_retry
-                ).props('flat no-caps size=sm').classes('retry-btn')
-                retry_btn.tooltip('同じ条件で再実行')
-
     return primary_option, secondary_options, display_options
 
 
@@ -1093,8 +1079,7 @@ def _render_results_to_jp(
             with ui.column().classes('w-full gap-3'):
                 for index, option in enumerate(result.options):
                     stagger_class = f' stagger-{min(index + 1, 4)}'
-                    primary_class = ' primary-option' if index == 0 else ''
-                    with ui.card().classes(f'option-card w-full result-card{primary_class}{stagger_class}'):
+                    with ui.card().classes(f'option-card w-full result-card{stagger_class}'):
                         with ui.column().classes('w-full gap-2'):
                             # Header: actions (right)
                             with ui.row().classes('w-full items-center justify-between gap-2 option-card-header'):
@@ -1125,20 +1110,8 @@ def _render_results_to_jp(
                                 or option.back_translation_error
                                 or option.back_translation_in_progress
                             )
-                            if on_back_translate:
-                                _render_back_translate_editor(option, on_back_translate, actions_disabled)
-                                if has_back_translate:
-                                    _render_back_translate_section(option)
-
-        # Retry button (optional) - align position with →English
-        if on_retry:
-            with ui.element('div').classes('suggestion-hint-row'):
-                retry_btn = ui.button(
-                    '再実行',
-                    icon='refresh',
-                    on_click=on_retry
-                ).props('flat no-caps size=sm').classes('retry-btn')
-                retry_btn.tooltip('同じ条件で再実行')
+                            if has_back_translate:
+                                _render_back_translate_section(option)
 
 
 def _render_result_action_footer(
@@ -1339,52 +1312,6 @@ def _render_translation_text(text: str, diff_base_text: Optional[str] = None):
         label.style('white-space: pre-wrap;')
 
 
-def _render_back_translate_editor(
-    option: TranslationOption,
-    on_back_translate: Optional[Callable[[TranslationOption, Optional[str]], None]],
-    actions_disabled: bool = False,
-) -> None:
-    """Render an inline editor for back-translation."""
-    if not on_back_translate:
-        return
-
-    initial_text = option.back_translation_input_text
-    if initial_text is None:
-        initial_text = option.text
-
-    should_open = option.back_translation_input_text is not None
-
-    with ui.expansion(
-        '編集して逆翻訳',
-        icon='edit',
-        value=should_open,
-    ).classes('back-translate-editor').props('dense'):
-        with ui.column().classes('w-full gap-2 back-translate-editor-content'):
-            ui.label('訳文を整えてから逆翻訳できます（訳文自体は変更されません）').classes('back-translate-note')
-            editor = ui.textarea(value=initial_text).classes('back-translate-input w-full').props('autogrow')
-
-            def handle_input(event) -> None:
-                option.back_translation_input_text = str(getattr(event, 'value', '') or '')
-
-            editor.on('input', handle_input)
-
-            def handle_edit_back_translate() -> None:
-                text_value = editor.value if editor.value is not None else ''
-                option.back_translation_input_text = text_value
-                result = on_back_translate(option, text_value)
-                if asyncio.iscoroutine(result):
-                    asyncio.create_task(result)
-
-            run_btn = ui.button(
-                '編集内容で逆翻訳',
-                icon='g_translate',
-                on_click=handle_edit_back_translate,
-            ).props('flat no-caps size=sm').classes('back-translate-btn')
-            run_btn.tooltip('編集した訳文で逆翻訳')
-            if actions_disabled or option.back_translation_in_progress:
-                run_btn.props('disable')
-
-
 def _render_back_translate_section(option: TranslationOption) -> None:
     """Render inline back-translation results inside a translation card."""
     has_result = bool(option.back_translation_text or option.back_translation_explanation)
@@ -1445,9 +1372,8 @@ def _render_option_en(
     """Render a single English translation option as a card"""
 
     style_class = f' style-{option.style}' if option.style else ''
-    primary_class = ' primary-option' if option.style == "standard" else ''
     stagger_class = f' stagger-{min(index + 1, 4)}'
-    with ui.card().classes(f'option-card w-full result-card{style_class}{primary_class}{stagger_class}'):
+    with ui.card().classes(f'option-card w-full result-card{style_class}{stagger_class}'):
         with ui.column().classes('w-full gap-2'):
             # Header: style badge (left) + actions (right)
             with ui.row().classes('w-full items-center justify-between gap-2 option-card-header'):
@@ -1460,9 +1386,6 @@ def _render_option_en(
                             else style_base
                         )
                         ui.label(style_label).classes('chip style-chip')
-                        if option.style == "standard":
-                            ui.label('推奨').classes('chip recommend-chip')
-
                 if on_back_translate and show_back_translate_button:
                     with ui.row().classes('items-center option-card-actions'):
                         back_btn = ui.button(
@@ -1487,7 +1410,5 @@ def _render_option_en(
                 or option.back_translation_error
                 or option.back_translation_in_progress
             )
-            if on_back_translate:
-                _render_back_translate_editor(option, on_back_translate, actions_disabled)
-                if has_back_translate:
-                    _render_back_translate_section(option)
+            if has_back_translate:
+                _render_back_translate_section(option)

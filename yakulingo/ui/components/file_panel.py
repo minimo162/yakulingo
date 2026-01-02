@@ -275,6 +275,7 @@ def create_file_panel(
     on_glossary_toggle: Optional[Callable[[bool], None]] = None,
     on_edit_glossary: Optional[Callable[[], None]] = None,
     on_edit_translation_rules: Optional[Callable[[], None]] = None,
+    on_progress_elements_created: Optional[Callable[[Optional[dict[str, object]]], None]] = None,
     on_queue_select: Optional[Callable[[str], None]] = None,
     on_queue_remove: Optional[Callable[[str], None]] = None,
     on_queue_move: Optional[Callable[[str, int], None]] = None,
@@ -283,6 +284,9 @@ def create_file_panel(
     on_queue_mode_change: Optional[Callable[[str], None]] = None,
 ):
     """File translation panel - Nani-inspired design"""
+
+    if on_progress_elements_created:
+        on_progress_elements_created(None)
 
     with ui.column().classes('flex-1 items-center justify-center w-full animate-in gap-5'):
         # Main card container (Nani-style)
@@ -399,6 +403,7 @@ def create_file_panel(
                             state.translation_phase_counts,
                             state.translation_phase_current,
                             state.translation_phase_total,
+                            on_progress_elements_created=on_progress_elements_created,
                         )
 
                 elif state.file_state == FileState.COMPLETE:
@@ -1163,6 +1168,7 @@ def _progress_card(
     phase_counts: Optional[dict[TranslationPhase, tuple[int, int]]],
     phase_current: Optional[int],
     phase_total: Optional[int],
+    on_progress_elements_created: Optional[Callable[[dict[str, object]], None]] = None,
 ):
     """Progress card with improved animation"""
     file_name = file_info.path.name if file_info else '翻訳中...'
@@ -1170,14 +1176,16 @@ def _progress_card(
         with ui.row().classes('items-center gap-3 mb-3'):
             # Animated spinner
             ui.spinner('dots', size='md').classes('text-primary')
-            ui.label(file_name).classes('font-medium')
+            file_name_label = ui.label(file_name).classes('font-medium')
 
         with ui.element('div').classes('progress-track w-full'):
-            ui.element('div').classes('progress-bar').style(f'width: {int(progress * 100)}%')
+            progress_bar = ui.element('div').classes('progress-bar').style(
+                f'width: {int(progress * 100)}%'
+            )
 
         with ui.row().classes('justify-between w-full mt-2'):
-            ui.label(status or '処理中...').classes('text-xs text-muted')
-            ui.label(f'{int(progress * 100)}%').classes('text-xs font-medium')
+            status_label = ui.label(status or '処理中...').classes('text-xs text-muted')
+            progress_label = ui.label(f'{int(progress * 100)}%').classes('text-xs font-medium')
 
         _render_phase_stepper(phase, file_info, phase_counts)
 
@@ -1193,8 +1201,18 @@ def _progress_card(
             detail_text = f'{detail_text} ・ {phase_count_text}' if detail_text else phase_count_text
 
         with ui.row().classes('progress-meta-row items-center justify-between'):
-            ui.label(detail_text).classes('text-2xs text-muted')
-            ui.label(f'残り約 {_format_eta_range(eta_seconds)}').classes('text-2xs text-muted')
+            detail_label = ui.label(detail_text).classes('text-2xs text-muted')
+            eta_label = ui.label(f'残り約 {_format_eta_range(eta_seconds)}').classes('text-2xs text-muted')
+
+        if on_progress_elements_created:
+            on_progress_elements_created({
+                "file_name": file_name_label,
+                "progress_bar": progress_bar,
+                "progress_label": progress_label,
+                "status_label": status_label,
+                "detail_label": detail_label,
+                "eta_label": eta_label,
+            })
 
 
 def _render_phase_stepper(

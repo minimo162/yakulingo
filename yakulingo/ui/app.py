@@ -1275,6 +1275,7 @@ class YakuLingoApp:
         self._history_dialog_search_input: Optional[UiInput] = None
         self._main_area_element = None
         self._text_input_metrics: Optional[dict[str, object]] = None
+        self._file_progress_elements: Optional[dict[str, object]] = None
 
         # Auto-update
         self._update_notification: Optional["UpdateNotification"] = None
@@ -2451,10 +2452,134 @@ class YakuLingoApp:
         self.state.file_state = FileState.TRANSLATING
         self.state.translation_progress = 0.0
         self.state.translation_status = f"Starting... (1/{total_files})"
+        self.state.translation_phase = None
+        self.state.translation_phase_detail = None
+        self.state.translation_phase_current = None
+        self.state.translation_phase_total = None
+        self.state.translation_phase_counts = {}
+        self.state.translation_eta_seconds = None
         self.state.output_file = None
         self.state.translation_result = None
         self.state.error_message = ""
         self._refresh_ui_after_hotkey_translation(trace_id)
+
+        loop = asyncio.get_running_loop()
+        progress_lock = threading.Lock()
+        progress_state = {
+            "percentage": 0.0,
+            "status": self.state.translation_status,
+            "phase": None,
+            "phase_detail": None,
+            "phase_current": None,
+            "phase_total": None,
+            "phase_counts": {},
+            "eta_seconds": None,
+            "file_name": first_path.name,
+        }
+        last_ui_update = 0.0
+        UI_UPDATE_INTERVAL = 0.2
+        file_start_time = time.monotonic()
+
+        def update_progress_ui() -> None:
+            if self._shutdown_requested:
+                return
+            with self._client_lock:
+                client = self._client
+            if client is None:
+                return
+            try:
+                if not getattr(client, "has_socket_connection", True):
+                    return
+            except Exception:
+                return
+            refs = self._file_progress_elements
+            if not refs:
+                return
+            with progress_lock:
+                pct = progress_state["percentage"]
+                status = progress_state["status"]
+                phase = progress_state["phase"]
+                phase_detail = progress_state["phase_detail"]
+                phase_current = progress_state["phase_current"]
+                phase_total = progress_state["phase_total"]
+                phase_counts = dict(progress_state["phase_counts"])
+                eta_seconds = progress_state["eta_seconds"]
+                file_name = progress_state["file_name"]
+            detail_text = self._format_file_progress_detail(
+                phase_detail,
+                phase,
+                phase_counts,
+                phase_current,
+                phase_total,
+            )
+            try:
+                with client:
+                    file_name_label = refs.get("file_name")
+                    if file_name_label and file_name:
+                        file_name_label.set_text(file_name)
+                    progress_bar = refs.get("progress_bar")
+                    if progress_bar:
+                        progress_bar.style(f'width: {int(pct * 100)}%')
+                    progress_label = refs.get("progress_label")
+                    if progress_label:
+                        progress_label.set_text(f'{int(pct * 100)}%')
+                    status_label = refs.get("status_label")
+                    if status_label:
+                        status_label.set_text(status or "処理中...")
+                    detail_label = refs.get("detail_label")
+                    if detail_label is not None:
+                        detail_label.set_text(detail_text)
+                    eta_label = refs.get("eta_label")
+                    if eta_label is not None:
+                        eta_label.set_text(
+                            f"残り約 {self._format_eta_range_seconds(eta_seconds)}"
+                        )
+            except Exception as e:
+                logger.debug("Hotkey file progress UI update failed: %s", e)
+
+        def schedule_progress_ui_update(force: bool = False) -> None:
+            nonlocal last_ui_update
+            now = time.monotonic()
+            with progress_lock:
+                if not force and now - last_ui_update < UI_UPDATE_INTERVAL:
+                    return
+                last_ui_update = now
+            loop.call_soon_threadsafe(update_progress_ui)
+
+        def on_progress(p: TranslationProgress) -> None:
+            nonlocal file_start_time
+            if self._shutdown_requested:
+                return
+            if p.estimated_remaining is not None:
+                eta_seconds = p.estimated_remaining
+            elif p.percentage > 0:
+                elapsed = time.monotonic() - file_start_time
+                eta_seconds = max(0.0, elapsed * (1 - p.percentage) / p.percentage)
+            else:
+                eta_seconds = None
+
+            with progress_lock:
+                progress_state["percentage"] = p.percentage
+                progress_state["status"] = p.status
+                progress_state["phase"] = p.phase
+                progress_state["phase_detail"] = p.phase_detail
+                progress_state["phase_current"] = p.phase_current
+                progress_state["phase_total"] = p.phase_total
+                if p.phase and p.phase_current is not None and p.phase_total is not None:
+                    progress_state["phase_counts"][p.phase] = (p.phase_current, p.phase_total)
+                progress_state["eta_seconds"] = eta_seconds
+
+            self.state.translation_progress = p.percentage
+            self.state.translation_status = p.status
+            self.state.translation_phase = p.phase
+            self.state.translation_phase_detail = p.phase_detail
+            self.state.translation_phase_current = p.phase_current
+            self.state.translation_phase_total = p.phase_total
+            self.state.translation_eta_seconds = eta_seconds
+            if p.phase and p.phase_current is not None and p.phase_total is not None:
+                self.state.translation_phase_counts[p.phase] = (p.phase_current, p.phase_total)
+
+            schedule_progress_ui_update()
 
         start_time = time.monotonic()
         output_files: list[tuple[Path, str]] = []
@@ -2464,8 +2589,26 @@ class YakuLingoApp:
         for idx, input_path in enumerate(file_paths, start=1):
             self.state.selected_file = input_path
             self.state.file_info = minimal_file_info(input_path)
-            self.state.translation_progress = (idx - 1) / max(total_files, 1)
+            self.state.translation_progress = 0.0
             self.state.translation_status = f"Translating... ({idx}/{total_files})"
+            self.state.translation_phase = None
+            self.state.translation_phase_detail = None
+            self.state.translation_phase_current = None
+            self.state.translation_phase_total = None
+            self.state.translation_phase_counts = {}
+            self.state.translation_eta_seconds = None
+            with progress_lock:
+                progress_state["file_name"] = input_path.name
+                progress_state["percentage"] = 0.0
+                progress_state["status"] = self.state.translation_status
+                progress_state["phase"] = None
+                progress_state["phase_detail"] = None
+                progress_state["phase_current"] = None
+                progress_state["phase_total"] = None
+                progress_state["phase_counts"] = {}
+                progress_state["eta_seconds"] = None
+            file_start_time = time.monotonic()
+            schedule_progress_ui_update(force=True)
             self._refresh_ui_after_hotkey_translation(trace_id)
             detected_language = "日本語"  # Default fallback
             detected_reason = "default"
@@ -2521,7 +2664,7 @@ class YakuLingoApp:
                     self.translation_service.translate_file,
                     input_path,
                     reference_files,
-                    None,
+                    on_progress,
                     output_language,
                     translation_style,
                     None,
@@ -6128,6 +6271,10 @@ class YakuLingoApp:
         self._text_input_metrics = refs
         self._update_text_input_metrics()
 
+    def _on_file_progress_elements_created(self, refs: Optional[dict[str, object]]) -> None:
+        """Store reference to file progress elements for incremental updates."""
+        self._file_progress_elements = refs or None
+
     def _on_streaming_preview_label_created(self, label: UiLabel):
         """Store reference to streaming preview label for incremental updates."""
         self._streaming_preview_label = label
@@ -7095,6 +7242,7 @@ class YakuLingoApp:
                                 on_glossary_toggle=self._on_glossary_toggle,
                                 on_edit_glossary=self._edit_glossary,
                                 on_edit_translation_rules=self._edit_translation_rules,
+                                on_progress_elements_created=self._on_file_progress_elements_created,
                                 on_queue_select=self._select_queue_item,
                                 on_queue_remove=self._remove_queue_item,
                                 on_queue_move=self._move_queue_item,
@@ -7539,6 +7687,33 @@ class YakuLingoApp:
         hours = minutes // 60
         minutes = minutes % 60
         return f"{hours}時間{minutes}分"
+
+    def _format_eta_range_seconds(self, seconds: Optional[float]) -> str:
+        if seconds is None:
+            return "--"
+        low = max(0, int(seconds * 0.7))
+        high = max(low + 1, int(seconds * 1.3))
+        return f"{self._format_eta_seconds(low)}?{self._format_eta_seconds(high)}"
+
+    def _format_file_progress_detail(
+        self,
+        phase_detail: Optional[str],
+        phase: Optional[TranslationPhase],
+        phase_counts: dict[TranslationPhase, tuple[int, int]],
+        phase_current: Optional[int],
+        phase_total: Optional[int],
+    ) -> str:
+        phase_count_text = ""
+        if phase and phase in phase_counts:
+            current, total = phase_counts[phase]
+            phase_count_text = f"{current}/{total}"
+        elif phase_current is not None and phase_total is not None:
+            phase_count_text = f"{phase_current}/{phase_total}"
+
+        detail_text = phase_detail or ""
+        if phase_count_text:
+            detail_text = f"{detail_text} ・ {phase_count_text}" if detail_text else phase_count_text
+        return detail_text
 
     def _set_text_output_language_override(self, output_language: Optional[str]) -> None:
         self.state.text_output_language_override = output_language

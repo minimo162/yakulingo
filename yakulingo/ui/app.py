@@ -6445,13 +6445,6 @@ class YakuLingoApp:
                             ui.label('翻訳できます').classes('text-2xs opacity-80')
                         else:
                             ui.label('翻訳できます（GPTモード未設定）').classes('text-2xs opacity-80')
-                    with ui.row().classes('status-actions items-center gap-2 mt-1'):
-                        ui.button(
-                            icon='open_in_new',
-                            on_click=lambda: asyncio.create_task(self._show_copilot_browser()),
-                        ).classes('status-action-btn').props(
-                            'flat round size=sm aria-label="ブラウザを表示"'
-                        ).tooltip('ブラウザを表示')
                 status_indicator.tooltip(tooltip)
                 return
 
@@ -6529,12 +6522,6 @@ class YakuLingoApp:
                                 icon='refresh',
                                 on_click=lambda: asyncio.create_task(self._reconnect()),
                             ).classes('status-action-btn').props('flat no-caps size=sm')
-                            ui.button(
-                                icon='open_in_new',
-                                on_click=lambda: asyncio.create_task(self._show_copilot_browser()),
-                            ).classes('status-action-btn').props(
-                                'flat round size=sm aria-label="ブラウザを表示"'
-                            ).tooltip('ブラウザを表示')
                 status_indicator.tooltip(tooltip)
                 return
 

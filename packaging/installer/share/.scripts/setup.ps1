@@ -195,6 +195,7 @@ if ($GuiMode) {
     # Cancellation flag
     $script:cancelled = $false
     $script:closingProgressForm = $false
+    $script:holdProgressOpen = $false
 
     # Create progress form
     $script:progressForm = $null
@@ -311,6 +312,9 @@ if ($GuiMode) {
     }
 
     function Close-Progress {
+        if ($script:holdProgressOpen) {
+            return
+        }
         if ($script:progressForm -ne $null) {
             $script:closingProgressForm = $true
             try {
@@ -376,42 +380,47 @@ if ($GuiMode) {
     function Show-Success {
         param([string]$Message)
         # 進捗表示を残したまま、完了メッセージの準備を行う
+        $script:holdProgressOpen = $true
         $ownerForm = $null
         $createdOwner = $false
-        if ($script:progressForm -ne $null -and -not $script:progressForm.IsDisposed) {
-            $ownerForm = $script:progressForm
-            if (-not $ownerForm.Visible) {
+        try {
+            if ($script:progressForm -ne $null -and -not $script:progressForm.IsDisposed) {
+                $ownerForm = $script:progressForm
+                if (-not $ownerForm.Visible) {
+                    $ownerForm.Show()
+                }
+                if ($ownerForm.WindowState -eq "Minimized") {
+                    $ownerForm.WindowState = "Normal"
+                }
+                $ownerForm.Activate()
+                $ownerForm.Refresh()
+            } else {
+                # 前面表示用の親フォームを作成
+                $ownerForm = New-Object System.Windows.Forms.Form
+                $ownerForm.TopMost = $true
+                $ownerForm.StartPosition = "CenterScreen"
+                $ownerForm.Width = 0
+                $ownerForm.Height = 0
+                $ownerForm.FormBorderStyle = "None"
+                $ownerForm.ShowInTaskbar = $false
                 $ownerForm.Show()
+                $ownerForm.Activate()
+                $createdOwner = $true
             }
-            if ($ownerForm.WindowState -eq "Minimized") {
-                $ownerForm.WindowState = "Normal"
+
+            [System.Windows.Forms.MessageBox]::Show(
+                $ownerForm,
+                $Message,
+                $script:SetupUiTitle,
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Information
+            ) | Out-Null
+        } finally {
+            if ($createdOwner -and $ownerForm) {
+                $ownerForm.Close()
+                $ownerForm.Dispose()
             }
-            $ownerForm.Refresh()
-        } else {
-            # 前面表示用の親フォームを作成
-            $ownerForm = New-Object System.Windows.Forms.Form
-            $ownerForm.TopMost = $true
-            $ownerForm.StartPosition = "CenterScreen"
-            $ownerForm.Width = 0
-            $ownerForm.Height = 0
-            $ownerForm.FormBorderStyle = "None"
-            $ownerForm.ShowInTaskbar = $false
-            $ownerForm.Show()
-            $ownerForm.Activate()
-            $createdOwner = $true
-        }
-
-        [System.Windows.Forms.MessageBox]::Show(
-            $ownerForm,
-            $Message,
-            $script:SetupUiTitle,
-            [System.Windows.Forms.MessageBoxButtons]::OK,
-            [System.Windows.Forms.MessageBoxIcon]::Information
-        ) | Out-Null
-
-        if ($createdOwner) {
-            $ownerForm.Close()
-            $ownerForm.Dispose()
+            $script:holdProgressOpen = $false
         }
         Close-Progress
     }

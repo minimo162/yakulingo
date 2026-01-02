@@ -12089,6 +12089,7 @@ body.yakulingo-drag-active .global-drop-indicator {
         main_container.classes(add='visible')
 
         on_ready_called = False
+        startup_overlay_finalized = False
 
         def _run_on_ready() -> None:
             nonlocal on_ready_called
@@ -12109,10 +12110,24 @@ body.yakulingo-drag-active .global-drop-indicator {
                 with client:
                     loading_screen.delete()
             except Exception:
-                pass
+                try:
+                    loading_screen.delete()
+                except Exception:
+                    pass
 
         async def _finalize_startup_overlay() -> None:
-            loading_screen.classes(add='fade-out')
+            nonlocal startup_overlay_finalized
+            if startup_overlay_finalized:
+                return
+            startup_overlay_finalized = True
+            try:
+                with client:
+                    loading_screen.classes(add='fade-out')
+            except Exception:
+                try:
+                    loading_screen.classes(add='fade-out')
+                except Exception:
+                    pass
             asyncio.create_task(_remove_startup_overlay())
             _run_on_ready()
 
@@ -12123,10 +12138,22 @@ body.yakulingo-drag-active .global-drop-indicator {
             if on_ready_called:
                 return
             logger.warning(
-                "Startup splash timeout after %.1fs; keeping in-app overlay visible",
+                "Startup splash timeout after %.1fs; forcing on_ready callback",
                 STARTUP_SPLASH_TIMEOUT_SEC,
             )
             _run_on_ready()
+
+        async def _startup_overlay_timeout() -> None:
+            await asyncio.sleep(STARTUP_SPLASH_TIMEOUT_SEC)
+            if startup_overlay_finalized:
+                return
+            logger.warning(
+                "Startup overlay timeout after %.1fs; forcing UI reveal",
+                STARTUP_SPLASH_TIMEOUT_SEC,
+            )
+            await _finalize_startup_overlay()
+
+        asyncio.create_task(_startup_overlay_timeout())
 
         if client_connected:
             await asyncio.sleep(0)

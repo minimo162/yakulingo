@@ -278,7 +278,12 @@ if ($GuiMode) {
                 $script:stepLabel.Text = $Step
             }
             $script:progressLabel.Text = $Status
-            if ($Percent -ge 0) {
+            if ($Percent -lt 0) {
+                if ($script:progressBar.Style -ne "Marquee") {
+                    $script:progressBar.Style = "Marquee"
+                    $script:progressBar.MarqueeAnimationSpeed = 30
+                }
+            } else {
                 if ($script:progressBar.Style -ne "Continuous") {
                     $script:progressBar.Style = "Continuous"
                 }
@@ -554,24 +559,45 @@ function Wait-ResidentReady {
             $status = $null
         }
 
-        if ($status -and $status.ready) {
-            return $true
-        }
-
         $state = if ($status -and $status.state) { "$($status.state)" } else { "starting" }
         if ($state -ne $lastState) {
             $lastState = $state
             try { "Wait-ResidentReady: state=$state" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
         }
 
-        $message = "Copilotの準備中です..."
+        $ready = $false
+        $loginRequired = $false
+        $gptReady = $true
+        $active = $false
+        if ($status) {
+            $ready = [bool]$status.ready
+            if ($status.PSObject.Properties.Name -contains "login_required") {
+                $loginRequired = [bool]$status.login_required
+            }
+            if ($status.PSObject.Properties.Name -contains "gpt_mode_set") {
+                $gptReady = [bool]$status.gpt_mode_set
+            }
+            if ($status.PSObject.Properties.Name -contains "active") {
+                $active = [bool]$status.active
+            }
+        }
         if ($state -eq "login_required") {
+            $loginRequired = $true
+        }
+        if ($ready -and $gptReady -and -not $loginRequired -and -not $active) {
+            return $true
+        }
+
+        $message = "Copilotの準備中です..."
+        if ($loginRequired) {
             $message = "Copilotにログインしてください（右側の画面）..."
         } elseif ($state -eq "loading") {
             $message = "Copilotを読み込み中です..."
+        } elseif ($state -eq "ready" -and -not $gptReady) {
+            $message = "Copilotを初期化中です..."
         }
 
-        Write-Status -Message $message -Progress -Step "Step 4/4: Finalizing" -Percent 95
+        Write-Status -Message $message -Progress -Step "Step 4/4: Finalizing" -Percent -1
         Start-Sleep -Seconds 2
     }
 
@@ -955,7 +981,7 @@ function Invoke-Setup {
         if ($pythonProcesses) {
             # Try to shut down the resident service gracefully via local API before failing.
             # This reduces friction when users forgot to run "YakuLingo 終了" before updating.
-            Write-Status -Message "Closing running YakuLingo..." -Progress -Step "Preflight: Closing YakuLingo" -Percent 1
+            Write-Status -Message "Closing running YakuLingo..." -Progress -Step "Step 1/4: Preparing" -Percent 1
             try {
                 "Invoke-Setup: Detected running python process under '$expectedSetupPath'." | Out-File -FilePath $debugLog -Append -Encoding UTF8
             } catch { }
@@ -986,7 +1012,7 @@ function Invoke-Setup {
                 $elapsedSeconds = [int]((Get-Date) - $waitStart).TotalSeconds
                 if ($elapsedSeconds -ne $lastStatusSecond) {
                     $lastStatusSecond = $elapsedSeconds
-                    Write-Status -Message "Waiting for YakuLingo to exit... (${elapsedSeconds}s)" -Progress -Step "Preflight: Closing YakuLingo" -Percent 1
+                    Write-Status -Message "Waiting for YakuLingo to exit... (${elapsedSeconds}s)" -Progress -Step "Step 1/4: Preparing" -Percent 1
                 }
 
                 $pythonProcesses = Get-Process -Name "python*" -ErrorAction SilentlyContinue | Where-Object {
@@ -1023,7 +1049,7 @@ function Invoke-Setup {
                 # Last resort: if the service doesn't exit, forcibly stop processes under the install dir.
                 if (-not $forceKillAttempted -and $elapsedSeconds -ge 12) {
                     $forceKillAttempted = $true
-                    Write-Status -Message "Force closing YakuLingo..." -Progress -Step "Preflight: Closing YakuLingo" -Percent 1
+                    Write-Status -Message "Force closing YakuLingo..." -Progress -Step "Step 1/4: Preparing" -Percent 1
                     try {
                         $processesToStop = Get-Process -ErrorAction SilentlyContinue | Where-Object {
                             try {
@@ -1103,7 +1129,7 @@ function Invoke-Setup {
         "Invoke-Setup: SetupPath resolved to '$SetupPath'" | Out-File -FilePath $debugLog -Append -Encoding UTF8
     } catch { }
 
-    Write-Status -Message "Cleaning up old cache..." -Progress -Step "Preflight: Cleaning cache" -Percent 3
+    Write-Status -Message "Cleaning up old cache..." -Progress -Step "Step 1/4: Preparing" -Percent 3
     Cleanup-OldTempCaches
 
     # ============================================================
@@ -2149,9 +2175,9 @@ exit 0
         }
 
         Write-Status -Message "Setup completed!" -Progress -Step "Step 4/4: Finalizing" -Percent 100
-        $successMsg = "セットアップが完了しました。`n`n使い方ガイド（README.html）が自動で開きます。Copilot のログインはセットアップ中に完了しているため、ガイドで基本操作を確認してください。`n`nYakuLingo はログオン時に自動で常駐します（UIを閉じても終了しません）。`n`n終了: スタートメニュー > YakuLingo 終了`n`nYakuLingo を常駐起動しました（準備中はUIが開きます）。"
+        $successMsg = "セットアップが完了しました。`n`n使い方ガイド（README.html）を開きます。"
         if ($script:GlossaryDistPath -or $script:TranslationRulesDistPath) {
-            $successMsg += "`n`n既存ファイルは保持しました。新しい既定ファイルは以下に保存されています:"
+            $successMsg += "`n`n既存ファイルは保持しました。新しい既定ファイル:"
             if ($script:GlossaryDistPath) {
                 $successMsg += "`n- $script:GlossaryDistPath"
             }

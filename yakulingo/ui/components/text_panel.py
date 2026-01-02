@@ -372,7 +372,7 @@ def _create_large_input_panel(
             with ui.element('div').classes('main-card-inner'):
                 with ui.element('div').classes('input-hero'):
                     ui.label('テキスト翻訳').classes('input-hero-title')
-                    ui.label('自動で言語を判定して英訳/和訳します').classes(
+                    ui.label('自動で言語を判定し、英訳/和訳を実行します').classes(
                         'input-helper input-hero-subtitle'
                     )
                 # Large textarea - no autogrow, fills available space via CSS flex
@@ -435,12 +435,12 @@ def _create_large_input_panel(
                                     asyncio.create_task(on_translate())
 
                                 btn = ui.button(
-                                    '翻訳する',
+                                    '翻訳を実行',
                                     icon='translate',
                                 ).classes('translate-btn feedback-anchor cta-breathe').props(
-                                    'no-caps aria-label="翻訳する" aria-keyshortcuts="Ctrl+Enter Meta+Enter" data-feedback="翻訳を開始"'
+                                    'no-caps aria-label="翻訳を実行" aria-keyshortcuts="Ctrl+Enter Meta+Enter" data-feedback="翻訳を実行"'
                                 )
-                                btn.tooltip('翻訳する')
+                                btn.tooltip('翻訳を実行')
                                 btn.on('click', handle_translate_click, js_handler=_build_action_feedback_js_handler())
                                 if state.text_translating and not state.text_back_translating:
                                     btn.props('loading disable')
@@ -451,7 +451,7 @@ def _create_large_input_panel(
                                 if on_translate_button_created:
                                     on_translate_button_created(btn)
 
-                            ui.label('Ctrl/Cmd + Enter で翻訳').classes('shortcut-hint inline')
+                            ui.label('Ctrl/Cmd + Enter で実行').classes('shortcut-hint inline')
 
                 has_manual_refs = bool(state.reference_files)
                 has_override = state.text_output_language_override in {"en", "jp"}
@@ -756,8 +756,8 @@ def _render_translation_status(
     Render translation status section.
 
     Shows:
-    - During translation: "英訳中..." / "和訳中..." / "戻し訳中..."
-    - After translation: "✓ 英訳しました" or "✓ 和訳しました" with elapsed time
+    - During translation: "英訳を実行中" / "和訳を実行中" / "逆翻訳を実行中"
+    - After translation: "英訳が完了しました" or "和訳が完了しました" with elapsed time
     """
     # Determine translation direction
     if output_language:
@@ -787,19 +787,19 @@ def _render_translation_status(
                     if translating:
                         ui.spinner('dots', size='sm').classes('text-primary')
                         if back_translating:
-                            ui.label('戻し訳中...').classes('status-text')
+                            ui.label('逆翻訳を実行中').classes('status-text')
                         elif detected_language:
-                            ui.label('英訳中...' if is_to_english else '和訳中...').classes('status-text')
+                            ui.label('英訳を実行中' if is_to_english else '和訳を実行中').classes('status-text')
                         else:
-                            ui.label('翻訳中...').classes('status-text')
+                            ui.label('翻訳を実行中').classes('status-text')
                     else:
                         ui.icon('check_circle').classes('text-lg text-success')
-                        ui.label('英訳しました' if is_to_english else '和訳しました').classes('status-text')
+                        ui.label('英訳が完了しました' if is_to_english else '和訳が完了しました').classes('status-text')
 
                         if elapsed_time:
                             ui.label(f'{elapsed_time:.1f}秒').classes('elapsed-time-badge')
                 if back_translating:
-                    ui.label('戻し訳: 逆方向で確認').classes('status-subtext')
+                    ui.label('逆翻訳: 逆方向で確認').classes('status-subtext')
                 elif mapping_label:
                     ui.label(mapping_label).classes('status-subtext')
 
@@ -953,13 +953,13 @@ def _render_loading(detected_language: Optional[str] = None):
             with ui.row().classes('items-center gap-2'):
                 if detected_language is None:
                     # Still detecting language
-                    ui.label('翻訳中...').classes('message')
+                    ui.label('翻訳を実行中').classes('message')
                 elif detected_language == "日本語":
                     # Japanese → English
-                    ui.label('英訳中...').classes('message')
+                    ui.label('英訳を実行中').classes('message')
                 else:
                     # Other → Japanese
-                    ui.label('和訳中...').classes('message')
+                    ui.label('和訳を実行中').classes('message')
 
 
 def _build_display_options(
@@ -1064,11 +1064,11 @@ def _render_results_to_en(
         if on_retry and result.options:
             with ui.element('div').classes('suggestion-hint-row'):
                 retry_btn = ui.button(
-                    '再翻訳',
+                    '再実行',
                     icon='refresh',
                     on_click=on_retry
                 ).props('flat no-caps size=sm').classes('retry-btn')
-                retry_btn.tooltip('もう一度翻訳する')
+                retry_btn.tooltip('同じ条件で再実行')
 
     return primary_option, secondary_options, display_options
 
@@ -1091,8 +1091,10 @@ def _render_results_to_jp(
     with ui.element('div').classes('result-container'):
         with ui.element('div').classes('result-section w-full'):
             with ui.column().classes('w-full gap-3'):
-                for option in result.options:
-                    with ui.card().classes('option-card w-full'):
+                for index, option in enumerate(result.options):
+                    stagger_class = f' stagger-{min(index + 1, 4)}'
+                    primary_class = ' primary-option' if index == 0 else ''
+                    with ui.card().classes(f'option-card w-full result-card{primary_class}{stagger_class}'):
                         with ui.column().classes('w-full gap-2'):
                             # Header: actions (right)
                             with ui.row().classes('w-full items-center justify-between gap-2 option-card-header'):
@@ -1102,10 +1104,10 @@ def _render_results_to_jp(
                             if on_back_translate and show_back_translate_button:
                                 with ui.row().classes('items-center option-card-actions'):
                                     back_btn = ui.button(
-                                        '戻し訳',
+                                        '逆翻訳',
                                         icon='g_translate',
                                         on_click=lambda o=option: on_back_translate(o, None),
-                                    ).props('flat no-caps size=sm').classes('back-translate-btn').tooltip('精度チェック')
+                                    ).props('flat no-caps size=sm').classes('back-translate-btn').tooltip('精度確認')
                                     if actions_disabled or option.back_translation_in_progress:
                                         back_btn.props('disable')
 
@@ -1132,11 +1134,11 @@ def _render_results_to_jp(
         if on_retry:
             with ui.element('div').classes('suggestion-hint-row'):
                 retry_btn = ui.button(
-                    '再翻訳',
+                    '再実行',
                     icon='refresh',
                     on_click=on_retry
                 ).props('flat no-caps size=sm').classes('retry-btn')
-                retry_btn.tooltip('もう一度翻訳する')
+                retry_btn.tooltip('同じ条件で再実行')
 
 
 def _render_result_action_footer(
@@ -1236,11 +1238,11 @@ def _render_result_action_footer(
             with ui.row().classes('items-center gap-2 flex-wrap'):
                 if on_edit:
                     edit_btn = ui.button(
-                        '編集して再翻訳',
+                        '編集して再実行',
                         icon='edit',
                         on_click=on_edit,
                     ).props('flat no-caps size=sm').classes('result-footer-btn')
-                    edit_btn.tooltip('原文を編集して再翻訳')
+                    edit_btn.tooltip('原文を編集して再実行')
                     if actions_disabled:
                         edit_btn.props('disable')
 
@@ -1250,7 +1252,7 @@ def _render_result_action_footer(
                             on_back_translate(option, None)
 
                     back_btn = ui.button(
-                        '戻し訳',
+                        '逆翻訳',
                         icon='g_translate',
                         on_click=handle_back_translate_all,
                     ).props('flat no-caps size=sm').classes('result-footer-btn')
@@ -1353,12 +1355,12 @@ def _render_back_translate_editor(
     should_open = option.back_translation_input_text is not None
 
     with ui.expansion(
-        '編集して戻し訳',
+        '編集して逆翻訳',
         icon='edit',
         value=should_open,
     ).classes('back-translate-editor').props('dense'):
         with ui.column().classes('w-full gap-2 back-translate-editor-content'):
-            ui.label('訳文を整えてから戻し訳できます（訳文自体は変更されません）').classes('back-translate-note')
+            ui.label('訳文を整えてから逆翻訳できます（訳文自体は変更されません）').classes('back-translate-note')
             editor = ui.textarea(value=initial_text).classes('back-translate-input w-full').props('autogrow')
 
             def handle_input(event) -> None:
@@ -1374,11 +1376,11 @@ def _render_back_translate_editor(
                     asyncio.create_task(result)
 
             run_btn = ui.button(
-                '編集内容で戻し訳',
+                '編集内容で逆翻訳',
                 icon='g_translate',
                 on_click=handle_edit_back_translate,
             ).props('flat no-caps size=sm').classes('back-translate-btn')
-            run_btn.tooltip('編集した訳文で戻し訳')
+            run_btn.tooltip('編集した訳文で逆翻訳')
             if actions_disabled or option.back_translation_in_progress:
                 run_btn.props('disable')
 
@@ -1399,18 +1401,18 @@ def _render_back_translate_section(option: TranslationOption) -> None:
     )
 
     with ui.expansion(
-        '戻し訳結果',
+        '逆翻訳結果',
         icon='g_translate',
         value=should_open,
     ).classes('back-translate-expansion').props('dense'):
         with ui.column().classes('w-full gap-2 back-translate-content'):
             with ui.row().classes('items-center gap-2 back-translate-header'):
-                ui.label('戻し訳').classes('chip back-translate-chip')
+                ui.label('逆翻訳').classes('chip back-translate-chip')
                 if is_custom:
                     ui.label('編集版').classes('chip back-translate-chip edited')
                 if is_loading:
                     ui.spinner('dots', size='sm').classes('text-primary')
-                    ui.label('戻し訳中...').classes('text-xs text-muted')
+                    ui.label('逆翻訳を実行中').classes('text-xs text-muted')
                 elif has_error:
                     ui.icon('error').classes('text-error text-sm')
                     ui.label(option.back_translation_error).classes('text-xs text-error')
@@ -1443,7 +1445,9 @@ def _render_option_en(
     """Render a single English translation option as a card"""
 
     style_class = f' style-{option.style}' if option.style else ''
-    with ui.card().classes(f'option-card w-full{style_class}'):
+    primary_class = ' primary-option' if option.style == "standard" else ''
+    stagger_class = f' stagger-{min(index + 1, 4)}'
+    with ui.card().classes(f'option-card w-full result-card{style_class}{primary_class}{stagger_class}'):
         with ui.column().classes('w-full gap-2'):
             # Header: style badge (left) + actions (right)
             with ui.row().classes('w-full items-center justify-between gap-2 option-card-header'):
@@ -1456,14 +1460,16 @@ def _render_option_en(
                             else style_base
                         )
                         ui.label(style_label).classes('chip style-chip')
+                        if option.style == "standard":
+                            ui.label('推奨').classes('chip recommend-chip')
 
                 if on_back_translate and show_back_translate_button:
                     with ui.row().classes('items-center option-card-actions'):
                         back_btn = ui.button(
-                            '戻し訳',
+                            '逆翻訳',
                             icon='g_translate',
                             on_click=lambda o=option: on_back_translate(o, None),
-                        ).props('flat no-caps size=sm').classes('back-translate-btn').tooltip('精度チェック')
+                        ).props('flat no-caps size=sm').classes('back-translate-btn').tooltip('精度確認')
                         if actions_disabled or option.back_translation_in_progress:
                             back_btn.props('disable')
 

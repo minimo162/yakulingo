@@ -12339,6 +12339,32 @@ body.yakulingo-drag-active .global-drop-indicator {
  });
  </script>''')
 
+        if native:
+            ui.add_head_html('''<script>
+(() => {
+  const selector = '.pywebview-nodrag';
+  const install = () => {
+    const container = document.querySelector(selector);
+    if (!container || container.dataset.yakulingoDragGuard === 'true') {
+      return;
+    }
+    container.dataset.yakulingoDragGuard = 'true';
+    container.addEventListener('mousedown', (event) => {
+      if (event.button !== 0) {
+        return;
+      }
+      event.stopPropagation();
+    });
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', install);
+  } else {
+    install();
+  }
+})();
+ </script>''')
+
         # Global file drop handler (browser mode):
         # 1) Prevent Edge from navigating to file:// on drop
         # 2) Upload dropped file via fetch() to the local server (/api/global-drop)

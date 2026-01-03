@@ -13,6 +13,7 @@ os.environ.setdefault('NO_PROXY', 'localhost,127.0.0.1')
 os.environ.setdefault('no_proxy', 'localhost,127.0.0.1')
 
 import logging
+import shutil
 import sys
 from pathlib import Path
 
@@ -27,6 +28,28 @@ sys.path.insert(0, str(project_root))
 bundled_playwright_browsers_dir = project_root / ".playwright-browsers"
 if bundled_playwright_browsers_dir.exists():
     os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(bundled_playwright_browsers_dir))
+
+_PYCACHE_PREFIX_DEFAULT = Path.home() / ".yakulingo" / "pycache"
+_PYCACHE_PREFIX = Path(os.environ.get("PYTHONPYCACHEPREFIX", _PYCACHE_PREFIX_DEFAULT))
+_PYCACHE_PREFIX_SET_BY_APP = "PYTHONPYCACHEPREFIX" not in os.environ
+if _PYCACHE_PREFIX_SET_BY_APP:
+    os.environ["PYTHONPYCACHEPREFIX"] = str(_PYCACHE_PREFIX)
+
+
+def _cleanup_pycache_prefix() -> None:
+    """Remove cached bytecode under the dedicated prefix (if using app default)."""
+    if not _PYCACHE_PREFIX_SET_BY_APP:
+        return
+    try:
+        prefix = _PYCACHE_PREFIX.resolve()
+        default_prefix = _PYCACHE_PREFIX_DEFAULT.resolve()
+        if prefix != default_prefix and not prefix.is_relative_to(default_prefix):
+            return
+        shutil.rmtree(prefix)
+    except FileNotFoundError:
+        return
+    except Exception as e:
+        logging.getLogger(__name__).debug("Failed to clear pycache prefix %s: %s", _PYCACHE_PREFIX, e)
 
 
 def _hide_console_window_if_needed() -> None:
@@ -400,6 +423,7 @@ def main():
 
     global _global_log_handlers
     _global_log_handlers = setup_logging()  # Keep reference to prevent garbage collection
+    _cleanup_pycache_prefix()
 
     logger = logging.getLogger(__name__)
     logger.info("[TIMING] main() setup: %.2fs", time.perf_counter() - _t_start)

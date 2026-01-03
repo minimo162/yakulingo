@@ -808,6 +808,7 @@ def pre_initialize_playwright():
 
         # Start initialization in a separate thread that uses the executor
         # This allows pre_initialize_playwright() to return immediately
+        result_state: str | None = None
         try:
             init_thread = threading.Thread(
                 target=_pre_init_thread_wrapper,
@@ -3167,6 +3168,7 @@ class CopilotHandler:
 
         candidates = self._get_gpt_mode_target_candidates()
 
+        result_state: str | None = None
         try:
             start_time = time.monotonic()
             wait_timeout_ms = (
@@ -3199,11 +3201,14 @@ class CopilotHandler:
                         fallback = self._switch_gpt_mode_via_overflow_menu(wait_timeout_ms=min(wait_timeout_ms, 3000))
                         if fallback.get('success'):
                             self._gpt_mode_set = True
-                            return "set"
+                            result_state = "set"
+                            return result_state
                         if fallback.get('error') == 'target_not_found':
                             self._warn_if_think_deeper_only(fallback.get('available'))
-                            return "target_not_found"
-                    return "not_ready"
+                            result_state = "target_not_found"
+                            return result_state
+                    result_state = "not_ready"
+                    return result_state
 
             if not current_mode:
                 logger.debug("GPT mode text is empty or selector changed")
@@ -3213,20 +3218,25 @@ class CopilotHandler:
                 )
                 if switch_result.get('success'):
                     self._gpt_mode_set = True
-                    return "set"
+                    result_state = "set"
+                    return result_state
                 if switch_result.get('error') == 'target_not_found':
                     self._warn_if_think_deeper_only(switch_result.get('available'))
-                    return "target_not_found"
+                    result_state = "target_not_found"
+                    return result_state
                 if switch_result.get('error') == 'main_button_not_found':
                     if allow_overflow_fallback:
                         fallback = self._switch_gpt_mode_via_overflow_menu(wait_timeout_ms=min(wait_timeout_ms, 3000))
                         if fallback.get('success'):
                             self._gpt_mode_set = True
-                            return "set"
+                            result_state = "set"
+                            return result_state
                         if fallback.get('error') == 'target_not_found':
                             self._warn_if_think_deeper_only(fallback.get('available'))
-                            return "target_not_found"
-                return "not_ready"
+                            result_state = "target_not_found"
+                            return result_state
+                result_state = "not_ready"
+                return result_state
 
             logger.debug("Current GPT mode: %s", current_mode)
 
@@ -3234,7 +3244,8 @@ class CopilotHandler:
             if self._is_gpt_mode_target(current_mode):
                 logger.debug("GPT mode is already '%s'", current_mode)
                 self._gpt_mode_set = True
-                return "already"
+                result_state = "already"
+                return result_state
 
             # Need to switch mode
             target_label = self._get_gpt_mode_target_candidates()[0]
@@ -3250,34 +3261,45 @@ class CopilotHandler:
                 logger.info("Successfully switched GPT mode to '%s' (%.2fs)",
                            switch_result.get('newMode', target_label), elapsed)
                 self._gpt_mode_set = True
-                return "set"
+                result_state = "set"
+                return result_state
             elif switch_result.get('error') == 'target_not_found':
                 self._warn_if_think_deeper_only(switch_result.get('available'))
                 logger.warning("Target GPT mode not found. Available: %s",
                               switch_result.get('available', []))
                 self._close_menu_safely()
-                return "target_not_found"
+                result_state = "target_not_found"
+                return result_state
             elif switch_result.get('error') == 'main_button_not_found':
                 if allow_overflow_fallback:
                     fallback = self._switch_gpt_mode_via_overflow_menu(wait_timeout_ms=min(wait_timeout_ms, 3000))
                     if fallback.get('success'):
                         self._gpt_mode_set = True
-                        return "set"
+                        result_state = "set"
+                        return result_state
                     if fallback.get('error') == 'target_not_found':
                         self._warn_if_think_deeper_only(fallback.get('available'))
-                        return "target_not_found"
+                        result_state = "target_not_found"
+                        return result_state
                 self._close_menu_safely()
-                return "not_ready"
+                result_state = "not_ready"
+                return result_state
             else:
                 logger.warning("GPT mode switch failed: %s (%.2fs)",
                               switch_result.get('error', 'unknown'), elapsed)
                 self._close_menu_safely()
-                return "failed"
+                result_state = "failed"
+                return result_state
 
         except Exception as e:
             logger.warning("Failed to check/switch GPT mode: %s", e)
             # Don't block translation on GPT mode errors - user can manually switch
-            return "error"
+            result_state = "error"
+            return result_state
+        finally:
+            # If no return occurred above, emit a warning for unexpected fallthrough.
+            if result_state is None:
+                logger.warning("GPT mode switch ended without result (current_mode=%s)", current_mode)
 
     def _maximize_edge_window_for_gpt(self) -> bool:
         """Ensure the Edge window uses a full-size layout before GPT mode switching."""
@@ -3321,13 +3343,10 @@ class CopilotHandler:
                     v_height,
                     SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW,
                 )
-                if success:
-                    logger.debug("Edge resized off-screen for GPT mode: %sx%s", v_width, v_height)
                 return bool(success)
 
             SW_MAXIMIZE = 3
             user32.ShowWindow(edge_hwnd, SW_MAXIMIZE)
-            logger.debug("Edge window maximized for GPT mode")
             return True
         except Exception as e:
             logger.debug("Failed to maximize Edge window for GPT mode: %s", e)

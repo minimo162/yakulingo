@@ -96,7 +96,8 @@ else:
                 return text, files
             if attempt < CLIPBOARD_RETRY_COUNT - 1:
                 time.sleep(CLIPBOARD_RETRY_DELAY_SEC)
-                logger.debug("Clipboard retry %d/%d", attempt + 1, CLIPBOARD_RETRY_COUNT)
+                if log_fail:
+                    logger.debug("Clipboard retry %d/%d", attempt + 1, CLIPBOARD_RETRY_COUNT)
         if log_fail:
             formats = _get_clipboard_format_summary()
             owner = _describe_clipboard_owner()
@@ -136,13 +137,15 @@ else:
             has_unicode = bool(_user32.IsClipboardFormatAvailable(CF_UNICODETEXT))
             has_ansi = bool(_user32.IsClipboardFormatAvailable(CF_TEXT))
             if not has_unicode and not has_ansi:
-                logger.debug("No unicode/ansi text in clipboard")
+                if log_fail:
+                    logger.debug("No unicode/ansi text in clipboard")
                 return None
 
             handle = _user32.GetClipboardData(CF_UNICODETEXT if has_unicode else CF_TEXT)
             if not handle:
                 error_code = ctypes.get_last_error()
-                logger.debug("GetClipboardData returned null (error: %s)", error_code)
+                if log_fail:
+                    logger.debug("GetClipboardData returned null (error: %s)", error_code)
                 return None
 
             ptr = _kernel32.GlobalLock(handle)
@@ -154,7 +157,8 @@ else:
             try:
                 size = _kernel32.GlobalSize(handle)
                 if size == 0:
-                    logger.debug("GlobalSize returned 0")
+                    if log_fail:
+                        logger.debug("GlobalSize returned 0")
                     return None
 
                 if has_unicode:
@@ -210,7 +214,8 @@ else:
             h_drop = _user32.GetClipboardData(CF_HDROP)
             if not h_drop:
                 error_code = ctypes.get_last_error()
-                logger.debug("GetClipboardData(CF_HDROP) returned null (error: %s)", error_code)
+                if log_fail:
+                    logger.debug("GetClipboardData(CF_HDROP) returned null (error: %s)", error_code)
                 return []
 
             count = int(_shell32.DragQueryFileW(h_drop, 0xFFFFFFFF, None, 0))

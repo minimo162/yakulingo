@@ -518,10 +518,13 @@ class AppState:
 YakuLingoは「常駐＋ダブルコピー（Ctrl+Cを短時間に2回）」を前提として動作します。
 
 - 起動時はUIを自動表示せず、バックグラウンドでNiceGUIサーバーが常駐する
+- 常駐中はタスクバー表示を抑制し、UI表示時に復帰する（Windows）
 - Native modeではウィンドウを閉じてもサービスは終了しない（close-to-resident）
 - Browser modeは通常のウィンドウ動作を維持し、close-to-residentは適用しない
 - 終了は明示的に実行する（インストーラが作成する `YakuLingo 終了` ショートカット）
   - ローカルAPI `POST /api/shutdown`（localhostのみ）で正常終了
+- セットアップ/ランチャー向けに起動状態を公開する
+  - ローカルAPI `GET /api/setup-status`（localhostのみ）
 - Launcher (YakuLingo.exe) enables a watchdog; unexpected exits are restarted unless a shutdown state is written.
 
 ### 5.1.2 ダブルコピー（Ctrl+C x2）
@@ -534,11 +537,25 @@ Windows のクリップボード更新を監視し、同一ウィンドウで 1.
   - クリップボード内容に応じて分岐
     - `CF_UNICODETEXT`（テキスト）: テキスト翻訳 → UIに表示（必要な訳をコピー）
     - `CF_HDROP`（ファイル）: ファイル翻訳 → 出力ファイルはUIに表示（ダウンロード）
+- ホットキー実行時のウィンドウレイアウト（Windows）
+  - 作業中ウィンドウを左、YakuLingoを右に並べる（フォーカスは作業ウィンドウ優先）
+  - Edgeは状況に応じて三分割/オフスクリーンに切り替える
 - ファイル翻訳（ホットキー）の制約
   - 対応拡張子: `.xlsx` `.xls` `.docx` `.doc` `.pptx` `.ppt` `.pdf` `.txt` `.msg`
   - 一度に処理するファイル数: 最大10
 - 補足（統合）
   - ローカルAPI `POST /api/hotkey`（localhostのみ）で同じ翻訳パイプラインを起動できる
+  - ローカルAPI `POST /api/window-layout`（localhostのみ）
+    - payload: `source_hwnd`（元ウィンドウのHWND）, `edge_layout`（auto/offscreen/triple）
+
+### 5.1.3 接続ステータスインジケータ
+
+サイドバー上部にCopilotの準備状況を表示する。
+
+- 状態: 準備中 / 準備完了 / ログインが必要 / Edgeが見つかりません / 接続に失敗
+- アクション: ログインを開く / Edgeを起動 / 再接続
+- 状態確認は短いタイムアウト＋キャッシュでUI固着を防ぐ
+- ローディング中や確認失敗時は自動リフレッシュを実行
 
 ### 5.2 全体レイアウト
 
@@ -1463,8 +1480,9 @@ YakuLingo.exe    # Rust製ネイティブランチャー
 6. ローディングスクリーンを即座に表示（await client.connected()後にUI構築）
 7. NiceGUIサーバー起動（port=8765, reconnect_timeout=30.0）
 8. Copilot接続開始（バックグラウンド、PlaywrightThreadExecutorで専用スレッド実行）
-9. 自動更新チェック（バックグラウンド）
-10. 接続完了後、翻訳機能が有効化
+9. 常駐起動時はCopilot/GPTモードのウォームアップと起動状態監視を開始（/api/setup-status）
+10. 自動更新チェック（バックグラウンド）
+11. 接続完了後、翻訳機能が有効化
 ```
 
 **起動最適化ポイント:**
@@ -1472,6 +1490,7 @@ YakuLingo.exe    # Rust製ネイティブランチャー
 - `show=False`でブラウザ自動起動を抑制（ネイティブモードはpywebviewウィンドウを使用）
 - ローディング画面を先行表示し、体感起動速度を向上
 - ブラウザモード時はEdgeを`--app=`で起動し、タスクバーで`YakuLingo (UI)`として識別しやすくする
+- Copilot状態確認は短いタイムアウト＋キャッシュでUI固着を防ぐ（起動直後のみタイムアウトを延長）
 
 ### 12.4 システム要件
 

@@ -2,6 +2,10 @@
 
 This document provides essential context for AI assistants working with the YakuLingo codebase.
 
+## Language Requirement
+
+- 以降の回答は日本語で行うこと。
+
 ## Project Overview
 
 **YakuLingo** (訳リンゴ) is a bidirectional Japanese/English translation application that leverages M365 Copilot as its translation engine. It supports both text and file translation (Excel, Word, PowerPoint, PDF, TXT) while preserving document formatting and layout.

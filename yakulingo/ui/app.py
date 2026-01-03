@@ -204,6 +204,9 @@ def _find_window_handle_by_title_win32(window_title: str) -> int | None:
             buffer = ctypes.create_unicode_buffer(length + 1)
             user32.GetWindowTextW(hwnd_enum, buffer, length + 1)
             title = buffer.value
+            if "YakuLingo" in window_title and title.startswith("Setup - YakuLingo"):
+                # Avoid grabbing the installer progress dialog window.
+                return True
             if window_title in title:
                 found_hwnd["value"] = int(hwnd_enum)
                 return False
@@ -434,6 +437,8 @@ def _hide_native_window_offscreen_win32(
                     buffer = ctypes.create_unicode_buffer(length + 1)
                     user32.GetWindowTextW(hwnd_enum, buffer, length + 1)
                     title = buffer.value
+                    if "YakuLingo" in window_title and title.startswith("Setup - YakuLingo"):
+                        return True
                     if window_title in title:
                         found_hwnd["value"] = hwnd_enum
                         found_hwnd["title"] = title

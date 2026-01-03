@@ -1856,8 +1856,7 @@ class YakuLingoApp:
 
         shown = False
         open_ui_callback = self._open_ui_window_callback
-        with self._client_lock:
-            has_client = self._client is not None
+        has_client = self._get_active_client() is not None
 
         if open_ui_callback is not None and not has_client:
             try:
@@ -10478,14 +10477,16 @@ def _check_native_mode_and_get_webview(
         )
         return (False, None)
 
-    if fast_path:
+    backend = getattr(webview, 'guilib', None)
+    if fast_path and backend is not None:
         return (True, webview)
 
     # pywebview resolves the available GUI backend lazily when `initialize()` is called.
     # Triggering the initialization here prevents false negatives where `webview.guilib`
     # remains ``None`` prior to the first window creation (notably on Windows).
     try:
-        backend = getattr(webview, 'guilib', None) or webview.initialize()
+        if backend is None:
+            backend = webview.initialize()
     except Exception as e:  # pragma: no cover - defensive import guard
         logger.warning(
             "Native mode requested but pywebview could not initialize a GUI backend: %s; "

@@ -194,6 +194,31 @@ $script:Use7Zip = [bool]$script:SevenZip
 if ($GuiMode) {
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
+    $script:win32Loaded = $false
+    if (-not ("YakuLingoWin32" -as [type])) {
+        try {
+            Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class YakuLingoWin32 {
+    [DllImport("user32.dll")]
+    public static extern bool SetForegroundWindow(IntPtr hWnd);
+    [DllImport("user32.dll")]
+    public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+    [DllImport("user32.dll")]
+    public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+}
+'@ | Out-Null
+        } catch { }
+    }
+    if ("YakuLingoWin32" -as [type]) {
+        $script:win32Loaded = $true
+    }
+    $script:HWND_TOPMOST = [IntPtr](-1)
+    $script:SWP_NOSIZE = 0x0001
+    $script:SWP_NOMOVE = 0x0002
+    $script:SWP_SHOWWINDOW = 0x0040
+    $script:SW_SHOWNORMAL = 1
 
     # Cancellation flag
     $script:cancelled = $false
@@ -207,6 +232,56 @@ if ($GuiMode) {
     $script:stepLabel = $null
     $script:cancelButton = $null
 
+    function Ensure-FormOnScreen {
+        param([System.Windows.Forms.Form]$Form)
+        if ($null -eq $Form -or $Form.IsDisposed) { return }
+        $bounds = $Form.Bounds
+        $onScreen = $false
+        foreach ($screen in [System.Windows.Forms.Screen]::AllScreens) {
+            $area = $screen.WorkingArea
+            if ($bounds.Left -ge $area.Left -and $bounds.Right -le $area.Right -and
+                $bounds.Top -ge $area.Top -and $bounds.Bottom -le $area.Bottom) {
+                $onScreen = $true
+                break
+            }
+        }
+        if (-not $onScreen) {
+            $workingArea = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+            $x = $workingArea.Left + [Math]::Max(0, ($workingArea.Width - $bounds.Width) / 2)
+            $y = $workingArea.Top + [Math]::Max(0, ($workingArea.Height - $bounds.Height) / 2)
+            $Form.StartPosition = "Manual"
+            $Form.Location = New-Object System.Drawing.Point([int]$x, [int]$y)
+        }
+    }
+
+    function Bring-FormToFront {
+        param([System.Windows.Forms.Form]$Form)
+        if ($null -eq $Form -or $Form.IsDisposed) { return }
+        if (-not $Form.Visible) {
+            $Form.Show()
+        }
+        if ($Form.WindowState -eq "Minimized") {
+            $Form.WindowState = "Normal"
+        }
+        Ensure-FormOnScreen -Form $Form
+        $Form.TopMost = $true
+        $Form.BringToFront()
+        $Form.Activate()
+        $Form.Focus()
+        if ($script:win32Loaded) {
+            try {
+                [YakuLingoWin32]::ShowWindow($Form.Handle, $script:SW_SHOWNORMAL) | Out-Null
+                [YakuLingoWin32]::SetWindowPos(
+                    $Form.Handle,
+                    $script:HWND_TOPMOST,
+                    0, 0, 0, 0,
+                    $script:SWP_NOMOVE -bor $script:SWP_NOSIZE -bor $script:SWP_SHOWWINDOW
+                ) | Out-Null
+                [YakuLingoWin32]::SetForegroundWindow($Form.Handle) | Out-Null
+            } catch { }
+        }
+    }
+
     function Show-Progress {
         param([string]$Title, [string]$Status, [int]$Percent = -1, [string]$Step = "")
 
@@ -217,14 +292,7 @@ if ($GuiMode) {
             if ($script:progressForm.IsDisposed) {
                 $script:progressForm = $null
             } else {
-                if (-not $script:progressForm.Visible) {
-                    $script:progressForm.Show()
-                }
-                if ($script:progressForm.WindowState -eq "Minimized") {
-                    $script:progressForm.WindowState = "Normal"
-                }
-                $script:progressForm.TopMost = $true
-                $script:progressForm.BringToFront()
+                Bring-FormToFront -Form $script:progressForm
             }
         }
 
@@ -294,7 +362,7 @@ if ($GuiMode) {
             $script:progressForm.Controls.Add($script:cancelButton)
 
             $script:progressForm.Show()
-            $script:progressForm.BringToFront()
+            Bring-FormToFront -Form $script:progressForm
             $script:progressForm.Refresh()
         } else {
             if ($Step -ne "") {
@@ -347,13 +415,7 @@ if ($GuiMode) {
         $createdOwner = $false
         if ($script:progressForm -ne $null -and -not $script:progressForm.IsDisposed) {
             $ownerForm = $script:progressForm
-            if (-not $ownerForm.Visible) {
-                $ownerForm.Show()
-            }
-            if ($ownerForm.WindowState -eq "Minimized") {
-                $ownerForm.WindowState = "Normal"
-            }
-            $ownerForm.Refresh()
+            Bring-FormToFront -Form $ownerForm
         } else {
             # 前面表示用の親フォームを作成
             $ownerForm = New-Object System.Windows.Forms.Form
@@ -364,7 +426,7 @@ if ($GuiMode) {
             $ownerForm.FormBorderStyle = "None"
             $ownerForm.ShowInTaskbar = $false
             $ownerForm.Show()
-            $ownerForm.Activate()
+            Bring-FormToFront -Form $ownerForm
             $createdOwner = $true
         }
 
@@ -392,14 +454,7 @@ if ($GuiMode) {
         try {
             if ($script:progressForm -ne $null -and -not $script:progressForm.IsDisposed) {
                 $ownerForm = $script:progressForm
-                if (-not $ownerForm.Visible) {
-                    $ownerForm.Show()
-                }
-                if ($ownerForm.WindowState -eq "Minimized") {
-                    $ownerForm.WindowState = "Normal"
-                }
-                $ownerForm.Activate()
-                $ownerForm.Refresh()
+                Bring-FormToFront -Form $ownerForm
             } else {
                 # 前面表示用の親フォームを作成
                 $ownerForm = New-Object System.Windows.Forms.Form
@@ -410,7 +465,7 @@ if ($GuiMode) {
                 $ownerForm.FormBorderStyle = "None"
                 $ownerForm.ShowInTaskbar = $false
                 $ownerForm.Show()
-                $ownerForm.Activate()
+                Bring-FormToFront -Form $ownerForm
                 $createdOwner = $true
             }
 

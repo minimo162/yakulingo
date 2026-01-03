@@ -5386,7 +5386,7 @@ class CopilotHandler:
                     logger.debug("Detached from foreground thread")
 
             reason_text = (reason or "").lower()
-            should_flash = ("login" in reason_text) or ("ログイン" in reason_text)
+            should_flash = False
             if should_flash:
                 # 9. Flash taskbar icon to get user attention (login only)
                 # FLASHW_ALL = 3, FLASHW_TIMERNOFG = 12

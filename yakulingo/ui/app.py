@@ -6785,6 +6785,29 @@ class YakuLingoApp:
         # Viewport for proper scaling on all displays
         ui.add_head_html('<meta name="viewport" content="width=device-width, initial-scale=1.0">')
         ui.add_head_html(f'<style>{COMPLETE_CSS}</style>')
+        ui.add_head_html(
+            """
+            <script>
+            (function() {
+              function blockMove() {
+                try {
+                  if (!window.pywebview || !window.pywebview._jsApiCallback) return;
+                  const original = window.pywebview._jsApiCallback;
+                  if (original.__yakulingoMoveBlock) return;
+                  window.pywebview._jsApiCallback = function (funcName, params, id) {
+                    if (funcName === 'pywebviewMoveWindow') return;
+                    return original.call(this, funcName, params, id);
+                  };
+                  window.pywebview._jsApiCallback.__yakulingoMoveBlock = true;
+                } catch (e) {}
+              }
+
+              window.addEventListener('pywebviewready', blockMove);
+              blockMove();
+            })();
+            </script>
+            """
+        )
 
         if self._native_frameless:
             ui.element('div').classes('native-drag-region pywebview-drag-region').props(

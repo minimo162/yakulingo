@@ -1108,6 +1108,8 @@ STARTUP_LOADING_DELAY_MS = 0  # Show startup overlay immediately to avoid white 
 STARTUP_UI_READY_TIMEOUT_MS = 2000  # Startup UI readiness timeout
 STARTUP_UI_READY_FALLBACK_GRACE_MS = 300  # Grace period before rendering fallback
 STARTUP_UI_READY_SELECTOR = '[data-yakulingo-root="true"]'
+STARTUP_COPILOT_STATE_TIMEOUT_SEC = 6  # Longer timeout shortly after launch
+STARTUP_COPILOT_STATE_WINDOW_SEC = 60  # Apply longer timeout for first 60s
 MAX_HISTORY_DISPLAY = 20  # Maximum history items to display in sidebar
 MAX_HISTORY_DRAWER_DISPLAY = 100  # Maximum history items to show in history drawer
 MIN_AVAILABLE_MEMORY_GB_FOR_EARLY_CONNECT = 0.5  # Skip early Copilot init only on very low memory
@@ -1286,6 +1288,7 @@ class YakuLingoApp:
         self.state = AppState()
         self.settings_path = get_default_settings_path()
         self._settings: Optional[AppSettings] = None  # Lazy-loaded for faster startup
+        self._app_start_time = time.monotonic()
 
         # Lazy-loaded heavy components for faster startup
         self._copilot: Optional["CopilotHandler"] = None
@@ -3847,6 +3850,10 @@ class YakuLingoApp:
                     )
                     target_width = max(target_width, min_target_width)
                     ui_width = work_width - gap - target_width
+                    desired_ui_width = max(int(work_width * ui_ratio), min_ui_width)
+                    if ui_width < desired_ui_width:
+                        target_width = max(work_width - gap - desired_ui_width, min_target_width)
+                        ui_width = work_width - gap - target_width
                     if ui_width < min_ui_width:
                         is_source_left_snapped = False
                 if not is_source_left_snapped:
@@ -3884,6 +3891,22 @@ class YakuLingoApp:
             app_y = target_y
             edge_x = int(app_x + ui_width + gap) if use_triple_layout else None
             edge_y = target_y
+
+            try:
+                ui_ratio_actual = ui_width / work_width if work_width else 0.0
+            except Exception:
+                ui_ratio_actual = 0.0
+            logger.info(
+                "Hotkey layout dims: work=%dx%d gap=%d target=%d ui=%d (ui_ratio=%.2f) triple=%s edge=%s",
+                work_width,
+                work_height,
+                gap,
+                target_width,
+                ui_width,
+                ui_ratio_actual,
+                use_triple_layout,
+                "on" if (use_triple_layout and edge_width) else "off",
+            )
 
             SW_RESTORE = 9
             SW_SHOW = 5
@@ -7080,7 +7103,11 @@ class YakuLingoApp:
                     copilot_state = self._last_copilot_state
                 else:
                     try:
-                        copilot_state = copilot.check_copilot_state(timeout=2)
+                        timeout_seconds = 2
+                        if (self._app_start_time
+                                and (now - self._app_start_time) < STARTUP_COPILOT_STATE_WINDOW_SEC):
+                            timeout_seconds = STARTUP_COPILOT_STATE_TIMEOUT_SEC
+                        copilot_state = copilot.check_copilot_state(timeout=timeout_seconds)
                         self._last_copilot_state = copilot_state
                         self._last_copilot_state_at = now
                         self._last_copilot_state_error = error

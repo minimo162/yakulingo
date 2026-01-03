@@ -4501,7 +4501,7 @@ class CopilotHandler:
                         reason,
                     )
             if not positioned:
-                self._bring_edge_window_to_front(page_title)
+                self._bring_edge_window_to_front(page_title, reason=reason)
 
         logger.info("Browser window brought to foreground for: %s", reason)
 
@@ -5084,7 +5084,7 @@ class CopilotHandler:
                     force_full_window=True,
                 )
             else:
-                self._bring_edge_window_to_front(page_title)
+                self._bring_edge_window_to_front(page_title, reason=reason)
         else:  # "minimized" (default)
             self._minimize_edge_window(page_title)
 
@@ -5211,7 +5211,12 @@ class CopilotHandler:
             logger.debug("Failed to close Edge gracefully: %s", e)
             return False
 
-    def _bring_edge_window_to_front(self, page_title: str = None) -> bool:
+    def _bring_edge_window_to_front(
+        self,
+        page_title: str = None,
+        *,
+        reason: str | None = None,
+    ) -> bool:
         """Bring Edge browser window to foreground using Windows API.
 
         Uses multiple approaches to ensure window activation:
@@ -5380,24 +5385,29 @@ class CopilotHandler:
                     user32.AttachThreadInput(current_thread_id, foreground_thread_id, False)
                     logger.debug("Detached from foreground thread")
 
-            # 9. Flash taskbar icon to get user attention
-            # FLASHW_ALL = 3, FLASHW_TIMERNOFG = 12
-            class FLASHWINFO(ctypes.Structure):
-                _fields_ = [
-                    ("cbSize", wintypes.UINT),
-                    ("hwnd", wintypes.HWND),
-                    ("dwFlags", wintypes.DWORD),
-                    ("uCount", wintypes.UINT),
-                    ("dwTimeout", wintypes.DWORD),
-                ]
+            reason_text = (reason or "").lower()
+            should_flash = ("login" in reason_text) or ("ログイン" in reason_text)
+            if should_flash:
+                # 9. Flash taskbar icon to get user attention (login only)
+                # FLASHW_ALL = 3, FLASHW_TIMERNOFG = 12
+                class FLASHWINFO(ctypes.Structure):
+                    _fields_ = [
+                        ("cbSize", wintypes.UINT),
+                        ("hwnd", wintypes.HWND),
+                        ("dwFlags", wintypes.DWORD),
+                        ("uCount", wintypes.UINT),
+                        ("dwTimeout", wintypes.DWORD),
+                    ]
 
-            fwi = FLASHWINFO()
-            fwi.cbSize = ctypes.sizeof(FLASHWINFO)
-            fwi.hwnd = edge_hwnd
-            fwi.dwFlags = 3 | 12  # FLASHW_ALL | FLASHW_TIMERNOFG
-            fwi.uCount = 5
-            fwi.dwTimeout = 0
-            user32.FlashWindowEx(ctypes.byref(fwi))
+                fwi = FLASHWINFO()
+                fwi.cbSize = ctypes.sizeof(FLASHWINFO)
+                fwi.hwnd = edge_hwnd
+                fwi.dwFlags = 3 | 12  # FLASHW_ALL | FLASHW_TIMERNOFG
+                fwi.uCount = 5
+                fwi.dwTimeout = 0
+                user32.FlashWindowEx(ctypes.byref(fwi))
+            else:
+                logger.debug("Skipping taskbar flash (reason=%s)", reason)
 
             logger.debug("Edge window brought to foreground via Windows API")
             return True

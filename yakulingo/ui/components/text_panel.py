@@ -329,21 +329,12 @@ def _create_large_input_panel(
             # Input container
             with ui.element('div').classes('main-card-inner'):
                 with ui.element('div').classes('input-hero'):
-                    ui.label('テキスト翻訳').classes('input-hero-title')
-                    ui.label('自動で言語を判定し、英訳/和訳を実行します').classes(
-                        'input-helper input-hero-subtitle'
-                    )
-                # Large textarea - no autogrow, fills available space via CSS flex
-                _create_textarea(
-                    state=state,
-                    on_source_change=on_source_change,
-                    on_textarea_created=on_textarea_created,
-                )
-
-                # Bottom controls
-                with ui.row().classes('input-toolbar justify-between items-start flex-wrap gap-y-3'):
-                    # Left side: output and inline counts
-                    with ui.column().classes('input-toolbar-left gap-2 flex-1 min-w-0'):
+                    with ui.row().classes('items-start justify-between gap-3 flex-wrap'):
+                        with ui.column().classes('gap-1 min-w-0'):
+                            ui.label('テキスト翻訳').classes('input-hero-title')
+                            ui.label('自動で言語を判定し、英訳/和訳を実行します').classes(
+                                'input-helper input-hero-subtitle'
+                            )
                         with ui.row().classes('items-center gap-2 flex-wrap'):
                             with ui.element('div').classes('detection-chip'):
                                 detection_output_label = ui.label(
@@ -355,6 +346,108 @@ def _create_large_input_panel(
                                 f'{len(state.source_text):,} / {text_char_limit:,}'
                             ).classes('char-count-inline')
                             metrics_refs['count_label_inline'] = count_inline
+                # Large textarea - no autogrow, fills available space via CSS flex
+                _create_textarea(
+                    state=state,
+                    on_source_change=on_source_change,
+                    on_textarea_created=on_textarea_created,
+                )
+
+                # Bottom controls
+                with ui.row().classes('input-toolbar justify-between items-start flex-wrap gap-y-3'):
+                    # Left side: direction + reference files
+                    with ui.column().classes('input-toolbar-left gap-2 flex-1 min-w-0'):
+                        reference_files = effective_reference_files if effective_reference_files is not None else state.reference_files
+                        manual_index_by_key = {
+                            str(path).casefold(): idx for idx, path in enumerate(state.reference_files or [])
+                        }
+                        settings_panel = ui.element('div').classes('advanced-panel')
+
+                        with settings_panel:
+                            with ui.column().classes('gap-3'):
+                                if on_output_language_override:
+                                    with ui.column().classes('advanced-section'):
+                                        ui.label('翻訳方向').classes('advanced-label')
+                                        with ui.element('div').classes('direction-toggle'):
+                                            auto_btn = ui.button(
+                                                '自動',
+                                                on_click=lambda: on_output_language_override(None),
+                                            ).props('flat no-caps size=sm').classes(
+                                                f'direction-btn {"active" if state.text_output_language_override is None else ""}'
+                                            )
+                                            en_btn = ui.button(
+                                                '英訳',
+                                                on_click=lambda: on_output_language_override("en"),
+                                            ).props('flat no-caps size=sm').classes(
+                                                f'direction-btn {"active" if state.text_output_language_override == "en" else ""}'
+                                            )
+                                            jp_btn = ui.button(
+                                                '和訳',
+                                                on_click=lambda: on_output_language_override("jp"),
+                                            ).props('flat no-caps size=sm').classes(
+                                                f'direction-btn {"active" if state.text_output_language_override == "jp" else ""}'
+                                            )
+                                            metrics_refs['override_auto'] = auto_btn
+                                            metrics_refs['override_en'] = en_btn
+                                            metrics_refs['override_jp'] = jp_btn
+
+                                with ui.column().classes('advanced-section'):
+                                    ui.label('参照ファイル').classes('advanced-label')
+                                    with ui.row().classes('items-center gap-2 flex-wrap'):
+                                        if on_glossary_toggle:
+                                            glossary_btn = ui.button(
+                                                '用語集',
+                                                icon='short_text',
+                                                on_click=lambda: on_glossary_toggle(not use_bundled_glossary)
+                                            ).props('flat no-caps size=sm').classes(
+                                                f'glossary-toggle-btn {"active" if use_bundled_glossary else ""}'
+                                            )
+                                            glossary_btn.tooltip('同梱の glossary.csv を使用' if not use_bundled_glossary else '用語集を使用中')
+
+                                            # Edit glossary button (only shown when enabled)
+                                            if use_bundled_glossary and on_edit_glossary:
+                                                edit_btn = ui.button(
+                                                    icon='edit',
+                                                    on_click=on_edit_glossary
+                                                ).props('flat dense round size=sm aria-label="用語集を編集"').classes('settings-btn')
+                                                edit_btn.tooltip('用語集を編集')
+
+                                        # Edit translation rules button
+                                        if on_edit_translation_rules:
+                                            rules_btn = ui.button(
+                                                icon='rule',
+                                                on_click=on_edit_translation_rules
+                                            ).props('flat dense round size=sm aria-label="翻訳ルールを編集"').classes('settings-btn')
+                                            rules_btn.tooltip('翻訳ルールを編集')
+
+                                        # Reference file attachment button
+                                        if on_attach_reference_file:
+                                            has_files = bool(state.reference_files)
+                                            attach_btn = ui.button().classes(
+                                                f'attach-btn {"has-file" if has_files else ""} feedback-anchor'
+                                            ).props('flat aria-label="参照ファイルを追加" data-feedback="参照ファイルを追加"')
+                                            with attach_btn:
+                                                ui.html(ATTACH_SVG, sanitize=False)
+                                            attach_btn.on(
+                                                'click',
+                                                on_attach_reference_file,
+                                                js_handler=_build_action_feedback_js_handler(),
+                                            )
+                                            attach_btn.tooltip('参照ファイルを追加')
+
+                                    summary = summarize_reference_files(reference_files)
+                                    if summary["entries"]:
+                                        with ui.row().classes('ref-file-row items-center flex-wrap gap-2'):
+                                            for entry in summary["entries"]:
+                                                status_class = 'ref-file-chip' if entry["exists"] else 'ref-file-chip missing'
+                                                with ui.element('div').classes(status_class):
+                                                    ui.label(entry["name"]).classes('file-name')
+                                                    manual_idx = manual_index_by_key.get(str(entry["path"]).casefold())
+                                                    if manual_idx is not None and on_remove_reference_file:
+                                                        ui.button(
+                                                            icon='close',
+                                                            on_click=lambda idx=manual_idx: on_remove_reference_file(idx)
+                                                        ).props('flat round aria-label="参照ファイルを削除"').classes('remove-btn')
 
                     with ui.column().classes('input-toolbar-right items-center gap-2'):
                         with ui.column().classes('translate-actions items-end gap-2'):
@@ -386,98 +479,6 @@ def _create_large_input_panel(
                                 # Provide button reference for dynamic state updates
                                 if on_translate_button_created:
                                     on_translate_button_created(btn)
-
-                reference_files = effective_reference_files if effective_reference_files is not None else state.reference_files
-                manual_index_by_key = {
-                    str(path).casefold(): idx for idx, path in enumerate(state.reference_files or [])
-                }
-                settings_panel = ui.element('div').classes('advanced-panel')
-
-                with settings_panel:
-                    with ui.column().classes('gap-3'):
-                        if on_output_language_override:
-                            with ui.column().classes('advanced-section'):
-                                ui.label('翻訳方向').classes('advanced-label')
-                                with ui.element('div').classes('direction-toggle'):
-                                    auto_btn = ui.button(
-                                        '自動',
-                                        on_click=lambda: on_output_language_override(None),
-                                    ).props('flat no-caps size=sm').classes(
-                                        f'direction-btn {"active" if state.text_output_language_override is None else ""}'
-                                    )
-                                    en_btn = ui.button(
-                                        '英訳',
-                                        on_click=lambda: on_output_language_override("en"),
-                                    ).props('flat no-caps size=sm').classes(
-                                        f'direction-btn {"active" if state.text_output_language_override == "en" else ""}'
-                                    )
-                                    jp_btn = ui.button(
-                                        '和訳',
-                                        on_click=lambda: on_output_language_override("jp"),
-                                    ).props('flat no-caps size=sm').classes(
-                                        f'direction-btn {"active" if state.text_output_language_override == "jp" else ""}'
-                                    )
-                                    metrics_refs['override_auto'] = auto_btn
-                                    metrics_refs['override_en'] = en_btn
-                                    metrics_refs['override_jp'] = jp_btn
-
-                        with ui.column().classes('advanced-section'):
-                            ui.label('参照ファイル').classes('advanced-label')
-                            with ui.row().classes('items-center gap-2 flex-wrap'):
-                                if on_glossary_toggle:
-                                    glossary_btn = ui.button(
-                                        '用語集',
-                                        icon='short_text',
-                                        on_click=lambda: on_glossary_toggle(not use_bundled_glossary)
-                                    ).props('flat no-caps size=sm').classes(
-                                        f'glossary-toggle-btn {"active" if use_bundled_glossary else ""}'
-                                    )
-                                    glossary_btn.tooltip('同梱の glossary.csv を使用' if not use_bundled_glossary else '用語集を使用中')
-
-                                    # Edit glossary button (only shown when enabled)
-                                    if use_bundled_glossary and on_edit_glossary:
-                                        edit_btn = ui.button(
-                                            icon='edit',
-                                            on_click=on_edit_glossary
-                                        ).props('flat dense round size=sm aria-label="用語集を編集"').classes('settings-btn')
-                                        edit_btn.tooltip('用語集を編集')
-
-                                # Edit translation rules button
-                                if on_edit_translation_rules:
-                                    rules_btn = ui.button(
-                                        icon='rule',
-                                        on_click=on_edit_translation_rules
-                                    ).props('flat dense round size=sm aria-label="翻訳ルールを編集"').classes('settings-btn')
-                                    rules_btn.tooltip('翻訳ルールを編集')
-
-                                # Reference file attachment button
-                                if on_attach_reference_file:
-                                    has_files = bool(state.reference_files)
-                                    attach_btn = ui.button().classes(
-                                        f'attach-btn {"has-file" if has_files else ""} feedback-anchor'
-                                    ).props('flat aria-label="参照ファイルを追加" data-feedback="参照ファイルを追加"')
-                                    with attach_btn:
-                                        ui.html(ATTACH_SVG, sanitize=False)
-                                    attach_btn.on(
-                                        'click',
-                                        on_attach_reference_file,
-                                        js_handler=_build_action_feedback_js_handler(),
-                                    )
-                                    attach_btn.tooltip('参照ファイルを追加')
-
-                            summary = summarize_reference_files(reference_files)
-                            if summary["entries"]:
-                                with ui.row().classes('ref-file-row items-center flex-wrap gap-2'):
-                                    for entry in summary["entries"]:
-                                        status_class = 'ref-file-chip' if entry["exists"] else 'ref-file-chip missing'
-                                        with ui.element('div').classes(status_class):
-                                            ui.label(entry["name"]).classes('file-name')
-                                            manual_idx = manual_index_by_key.get(str(entry["path"]).casefold())
-                                            if manual_idx is not None and on_remove_reference_file:
-                                                ui.button(
-                                                    icon='close',
-                                                    on_click=lambda idx=manual_idx: on_remove_reference_file(idx)
-                                                ).props('flat round aria-label="参照ファイルを削除"').classes('remove-btn')
 
                 split_panel = ui.element('div').classes('split-suggestion')
                 split_panel.set_visibility(False)

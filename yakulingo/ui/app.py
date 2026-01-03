@@ -2226,6 +2226,7 @@ class YakuLingoApp:
 
         trace_id = f"hotkey-{uuid.uuid4().hex[:8]}"
         self._active_translation_trace_id = trace_id
+        open_ui_requested = False
         try:
             if source_hwnd:
                 self._last_hotkey_source_hwnd = source_hwnd
@@ -2244,6 +2245,18 @@ class YakuLingoApp:
 
             summary = summarize_clipboard_text(text)
             self._log_hotkey_debug_info(trace_id, summary)
+
+            # Trigger UI open early to reduce hotkey display latency.
+            if open_ui:
+                early_client = self._get_active_client()
+                if self._resident_mode or early_client is None:
+                    open_ui_callback = self._open_ui_window_callback
+                    if open_ui_callback is not None:
+                        try:
+                            asyncio.create_task(asyncio.to_thread(open_ui_callback))
+                            open_ui_requested = True
+                        except Exception as e:
+                            logger.debug("Failed to request UI open for hotkey (early): %s", e)
 
             preserve_edge = open_ui and source_hwnd is None
             focus_source = not bring_ui_to_front
@@ -2337,7 +2350,7 @@ class YakuLingoApp:
 
             if open_ui and not client:
                 open_ui_callback = self._open_ui_window_callback
-                if open_ui_callback is not None:
+                if open_ui_callback is not None and not open_ui_requested:
                     try:
                         asyncio.create_task(asyncio.to_thread(open_ui_callback))
                     except Exception as e:
@@ -2365,6 +2378,15 @@ class YakuLingoApp:
                                 asyncio.create_task(_bring_ui_to_front_later())
                             except Exception as e:
                                 logger.debug("Failed to schedule UI foreground for hotkey: %s", e)
+
+            # If GPT mode setup is still running, wait briefly before starting translation.
+            copilot = getattr(self, "_copilot", None)
+            if copilot is not None and not copilot.is_gpt_mode_set:
+                try:
+                    logger.info("Hotkey translation waiting for GPT mode setup")
+                    await asyncio.to_thread(copilot.wait_for_gpt_mode_setup, 25.0)
+                except Exception as e:
+                    logger.debug("Hotkey GPT mode wait failed: %s", e)
 
             is_path_selection, file_paths = self._extract_hotkey_file_paths(text)
             if is_path_selection:

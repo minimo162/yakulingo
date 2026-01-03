@@ -1137,6 +1137,8 @@ class CopilotHandler:
     RESPONSE_POLL_INITIAL = 0.1  # Initial interval while waiting for response to start
     RESPONSE_POLL_ACTIVE = 0.1  # Interval after text is detected
     RESPONSE_POLL_STABLE = 0.03  # Interval during stability checking (fastest)
+    # Guard against stop button selectors getting stuck while response text is stable.
+    STOP_BUTTON_STALE_SECONDS = 20.0
 
     # Page validity check during polling (detect login expiration)
     PAGE_VALIDITY_CHECK_INTERVAL = 5.0  # Check page validity every 5 seconds
@@ -8390,6 +8392,7 @@ class CopilotHandler:
             polling_start_time = time.monotonic()
             timeout_float = float(timeout)
             last_text = ""
+            last_text_change_time = response_start_time
             stable_count = 0
             has_content = False  # Track if we've seen any content
             poll_iteration = 0
@@ -8472,9 +8475,9 @@ class CopilotHandler:
                 stop_button_visible = stop_button and stop_button.is_visible()
                 if stop_button_visible:
                     stop_button_ever_seen = True
+                    now = time.monotonic()
                     # Still generating, reset stability counter and wait
                     stable_count = 0
-                    now = time.monotonic()
                     if now - last_scroll_time >= scroll_interval_generating:
                         self._auto_scroll_to_latest_response()
                         last_scroll_time = now
@@ -8491,6 +8494,7 @@ class CopilotHandler:
 
                         if found_stream and current_text and current_text.strip() and current_text != last_text:
                             last_text = current_text
+                            last_text_change_time = now
                             if not has_content:
                                 has_content = True
                                 first_content_time = first_content_time or time.monotonic()
@@ -8504,6 +8508,15 @@ class CopilotHandler:
                                     len(current_text),
                                 )
                                 streaming_logged = True
+                    if has_content and last_text and (now - last_text_change_time) >= self.STOP_BUTTON_STALE_SECONDS:
+                        stable_text, stable_found = self._get_latest_response_text()
+                        if stable_found and stable_text and stable_text.strip():
+                            logger.warning(
+                                "[POLLING] Stop button still visible but response stable for %.1fs; returning.",
+                                now - last_text_change_time,
+                            )
+                            self._auto_scroll_to_latest_response()
+                            return stable_text
 
                     poll_interval = self.RESPONSE_POLL_INITIAL
                     # Log every 1 second
@@ -8585,6 +8598,7 @@ class CopilotHandler:
                         else:
                             stable_count = 0
                             last_text = current_text
+                            last_text_change_time = time.monotonic()
                             # Content is still growing, use active interval
                             poll_interval = self.RESPONSE_POLL_ACTIVE
                             now = time.monotonic()

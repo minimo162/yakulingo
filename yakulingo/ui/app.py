@@ -2127,6 +2127,7 @@ class YakuLingoApp:
     def _on_clipboard_triggered(self, text: str) -> None:
         """Handle clipboard double-copy trigger."""
         source_hwnd: int | None = None
+        bring_ui_to_front = True
         if sys.platform == "win32":
             try:
                 import ctypes
@@ -2137,7 +2138,24 @@ class YakuLingoApp:
                     source_hwnd = int(hwnd)
             except Exception:
                 source_hwnd = None
-        self._on_hotkey_triggered(text, source_hwnd=source_hwnd, bring_ui_to_front=True)
+            if source_hwnd:
+                yakulingo_hwnd: int | None = None
+                copilot = getattr(self, "_copilot", None)
+                if copilot is not None:
+                    try:
+                        yakulingo_hwnd = copilot._find_yakulingo_window_handle(include_hidden=True)
+                    except Exception:
+                        yakulingo_hwnd = None
+                if not yakulingo_hwnd:
+                    yakulingo_hwnd = _find_window_handle_by_title_win32("YakuLingo")
+                if yakulingo_hwnd and source_hwnd == int(yakulingo_hwnd):
+                    bring_ui_to_front = False
+                    logger.debug("Clipboard trigger source is YakuLingo; skipping bring-to-front")
+        self._on_hotkey_triggered(
+            text,
+            source_hwnd=source_hwnd,
+            bring_ui_to_front=bring_ui_to_front,
+        )
 
     async def _handle_hotkey_text(
         self,

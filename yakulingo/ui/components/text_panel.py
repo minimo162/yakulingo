@@ -684,8 +684,6 @@ def _render_result_meta(state: AppState, result: TextTranslationResult) -> None:
     if not result.options:
         return
     chips: list[tuple[str, str]] = []
-    if not result.is_to_english:
-        chips.append(('解説付き', 'chip meta-chip'))
     if state.text_output_language_override in {"en", "jp"}:
         chips.append(('手動指定', 'chip meta-chip override-chip'))
     if state.reference_files:

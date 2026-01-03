@@ -1018,13 +1018,13 @@ class CopilotHandler:
     # Indicates Copilot is processing - used to verify send was successful
     STOP_BUTTON_SELECTORS = (
         '.fai-SendButton__stopBackground',
-        'button[aria-label*="Stop"]',
-        'button[aria-label*="停止"]',
         '[data-testid="stopGeneratingButton"]',
-        'button[aria-label*="Cancel"]',
-        'button[aria-label*="キャンセル"]',
-        '.stop-button',
-        '[data-testid="stop-button"]',
+        '.fai-SendButton button[aria-label*="Stop"]',
+        '.fai-SendButton button[aria-label*="停止"]',
+        '.fai-SendButton button[aria-label*="Cancel"]',
+        '.fai-SendButton button[aria-label*="キャンセル"]',
+        '.fai-SendButton .stop-button',
+        '.fai-SendButton [data-testid="stop-button"]',
     )
     STOP_BUTTON_SELECTOR_COMBINED = ", ".join(STOP_BUTTON_SELECTORS)
 
@@ -1181,6 +1181,7 @@ class CopilotHandler:
     RETRY_BACKOFF_MAX = 16.0  # Maximum backoff time in seconds
     RETRY_JITTER_MAX = 1.0    # Random jitter to avoid thundering herd
     STATE_CHECK_BACKOFF_SECONDS = 2.0  # Brief pause after state check timeouts
+    STATE_CHECK_READY_GRACE_SECONDS = 30.0  # Use cached READY briefly on timeout
     _PLAYWRIGHT_UNRESPONSIVE_MARKERS = (
         "Connection closed while reading from the driver",
         "Target page, context or browser has been closed",
@@ -1228,6 +1229,8 @@ class CopilotHandler:
         # while connect() is still running.
         self._connect_inflight_count = 0
         self._connect_inflight_lock = threading.Lock()
+        self._last_state: str | None = None
+        self._last_state_time: float | None = None
         if native_patch_applied is None:
             logger.info("Native mode patch marker not provided; assuming not patched")
             native_patch_applied = False
@@ -1263,6 +1266,24 @@ class CopilotHandler:
                 self._connect_inflight_count -= 1
             else:
                 self._connect_inflight_count = 0
+
+    def _record_state(self, state: str) -> str:
+        self._last_state = state
+        self._last_state_time = time.monotonic()
+        return state
+
+    def _get_recent_ready_state(self) -> str | None:
+        last_state = self._last_state
+        last_time = self._last_state_time
+        if last_state != ConnectionState.READY:
+            return None
+        if last_time is None:
+            return None
+        if (time.monotonic() - last_time) > self.STATE_CHECK_READY_GRACE_SECONDS:
+            return None
+        if not self._connected:
+            return None
+        return last_state
 
     @property
     def is_connecting(self) -> bool:
@@ -5740,7 +5761,7 @@ class CopilotHandler:
         # Early exit if login wait was cancelled (e.g., during shutdown)
         if self._login_cancelled:
             logger.debug("check_copilot_state: cancelled, returning ERROR")
-            return ConnectionState.ERROR
+            return self._record_state(ConnectionState.ERROR)
 
         error_types = _get_playwright_errors()
         PlaywrightError = error_types['Error']
@@ -5755,7 +5776,7 @@ class CopilotHandler:
                 logger.info("Retrieved active Copilot page from context")
             else:
                 logger.info("No active page available")
-                return ConnectionState.ERROR
+                return self._record_state(ConnectionState.ERROR)
 
         try:
             # ページが有効か確認（is_closed()で判定）
@@ -5767,7 +5788,7 @@ class CopilotHandler:
                     logger.info("Retrieved new active Copilot page")
                 else:
                     logger.info("No active page available after page closed")
-                    return ConnectionState.ERROR
+                    return self._record_state(ConnectionState.ERROR)
 
             # 現在のURLを確認
             # page.urlはキャッシュされた値を返すことがあるため、
@@ -5780,9 +5801,9 @@ class CopilotHandler:
 
             if self._looks_like_edge_error_page(page, fast_only=True):
                 if self._trigger_edge_reload(page, reason="check_copilot_state"):
-                    return ConnectionState.LOADING
+                    return self._record_state(ConnectionState.LOADING)
                 self.last_connection_error = self.ERROR_CONNECTION_FAILED
-                return ConnectionState.ERROR
+                return self._record_state(ConnectionState.ERROR)
 
             # Copilotドメインにいて、かつ /chat パスにいる場合 → ログイン完了
             # URL例: https://m365.cloud.microsoft/chat/?auth=2
@@ -5791,11 +5812,11 @@ class CopilotHandler:
                 try:
                     if page.query_selector(self.CHAT_INPUT_SELECTOR_EXTENDED):
                         logger.info("On Copilot chat page - ready")
-                        return ConnectionState.READY
+                        return self._record_state(ConnectionState.READY)
                 except Exception:
                     pass
                 logger.info("On Copilot /chat but UI not ready yet - loading")
-                return ConnectionState.LOADING
+                return self._record_state(ConnectionState.LOADING)
 
             # 現在のページが /chat でない場合、他のページも確認
             # ログイン後に別タブでCopilotが開かれることがある
@@ -5803,21 +5824,21 @@ class CopilotHandler:
             if chat_page:
                 self._page = chat_page
                 logger.info("Found Copilot chat page in another tab")
-                return ConnectionState.READY
+                return self._record_state(ConnectionState.READY)
 
             # ログインページにいる場合
             if _is_login_page(current_url):
                 logger.info("On login page - login required")
-                return ConnectionState.LOGIN_REQUIRED
+                return self._record_state(ConnectionState.LOGIN_REQUIRED)
 
             # Copilotドメインでない場合（リダイレクト中の可能性）
             if not _is_copilot_url(current_url):
                 logger.info("Not on Copilot domain - login required")
-                return ConnectionState.LOGIN_REQUIRED
+                return self._record_state(ConnectionState.LOGIN_REQUIRED)
 
             # Copilotドメインだが /chat 以外（/landing, /home 等）→ まだリダイレクト中
             logger.info("On Copilot domain but not /chat path - waiting for redirect")
-            return ConnectionState.LOGIN_REQUIRED
+            return self._record_state(ConnectionState.LOGIN_REQUIRED)
 
         except PlaywrightError as e:
             logger.info("Error checking Copilot state: %s", e)
@@ -5833,10 +5854,10 @@ class CopilotHandler:
                         current_url = page.url
                     logger.info("Retry with new page: URL=%s", current_url[:80])
                     if "/chat" in current_url and _is_copilot_url(current_url):
-                        return ConnectionState.READY
+                        return self._record_state(ConnectionState.READY)
                 except PlaywrightError:
                     pass
-            return ConnectionState.ERROR
+            return self._record_state(ConnectionState.ERROR)
 
     def _confirm_login_required_impl(self) -> bool:
         """Return True only when a login UI is clearly visible."""
@@ -6097,15 +6118,24 @@ class CopilotHandler:
         # NOTE: The `timeout` argument is treated as the maximum wait time for the Playwright
         # thread operation (not the internal logic timeout).
         if self.is_connecting:
+            cached_ready = self._get_recent_ready_state()
+            if cached_ready:
+                return cached_ready
             return ConnectionState.LOADING
         if is_playwright_preinit_in_progress():
             logger.debug("check_copilot_state: Playwright pre-init in progress")
+            cached_ready = self._get_recent_ready_state()
+            if cached_ready:
+                return cached_ready
             return ConnectionState.LOADING
 
         now = time.monotonic()
         if now < self._state_check_backoff_until:
             remaining = self._state_check_backoff_until - now
             logger.debug("check_copilot_state: backoff active (%.2fs remaining)", remaining)
+            cached_ready = self._get_recent_ready_state()
+            if cached_ready:
+                return cached_ready
             return ConnectionState.LOADING
 
         try:
@@ -6116,6 +6146,9 @@ class CopilotHandler:
                 "check_copilot_state: timed out, backing off for %.1fs",
                 self.STATE_CHECK_BACKOFF_SECONDS,
             )
+            cached_ready = self._get_recent_ready_state()
+            if cached_ready:
+                return cached_ready
             return ConnectionState.LOADING
 
     def confirm_login_required(self, timeout: int = 5) -> bool:
@@ -6769,7 +6802,7 @@ class CopilotHandler:
         # Add buffer for operations within translate_single_impl
         executor_timeout = timeout + self.EXECUTOR_TIMEOUT_BUFFER_SECONDS
         return _playwright_executor.execute(
-            self._translate_single_impl, text, prompt, reference_files, on_chunk,
+            self._translate_single_impl, text, prompt, reference_files, on_chunk, timeout,
             timeout=executor_timeout
         )
 
@@ -6779,6 +6812,7 @@ class CopilotHandler:
         prompt: str,
         reference_files: Optional[list[Path]] = None,
         on_chunk: "Callable[[str], None] | None" = None,
+        timeout: int = None,
         max_retries: int = 2,
     ) -> str:
         """Implementation of translate_single that runs in the Playwright thread.
@@ -6892,7 +6926,9 @@ class CopilotHandler:
 
             # Get response and return raw (no parsing - preserves 訳文/解説 format)
             response_start = time.monotonic()
+            response_timeout = timeout if timeout is not None else self.DEFAULT_RESPONSE_TIMEOUT
             result = self._get_response(
+                timeout=response_timeout,
                 on_chunk=on_chunk,
                 stop_button_seen_during_send=stop_button_seen
             )
@@ -7927,7 +7963,7 @@ class CopilotHandler:
                                 phrase in input_text_preview for phrase in PROCESSING_PHRASES
                             )
 
-                            if stop_btn_visible:
+                            if stop_btn_visible and (input_cleared or input_shows_processing):
                                 send_verified = True
                                 verify_reason = "JS confirmed (stop button visible)"
                                 stop_button_seen_during_send = True
@@ -7989,11 +8025,16 @@ class CopilotHandler:
                         try:
                             stop_btn = self._page.query_selector(self.STOP_BUTTON_SELECTOR_COMBINED)
                             if stop_btn and stop_btn.is_visible():
-                                send_verified = True
-                                verify_reason = "stop button visible"
-                                stop_button_seen_during_send = True
-                                logger.debug("[SEND_VERIFY] Stop button found at poll iteration %d", poll_iteration)
-                                break
+                                if not remaining_text or any(phrase in remaining_text for phrase in PROCESSING_PHRASES):
+                                    send_verified = True
+                                    verify_reason = "stop button visible"
+                                    stop_button_seen_during_send = True
+                                    logger.debug("[SEND_VERIFY] Stop button found at poll iteration %d", poll_iteration)
+                                    break
+                                logger.debug(
+                                    "[SEND_VERIFY] Stop button visible but input still has text; waiting... (len=%d)",
+                                    len(remaining_text),
+                                )
                         except Exception:
                             pass
 

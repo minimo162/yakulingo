@@ -90,8 +90,8 @@ else:
         *, log_fail: bool = True
     ) -> tuple[Optional[str], list[str]]:
         for attempt in range(CLIPBOARD_RETRY_COUNT):
-            text = _get_clipboard_text()
-            files = _get_clipboard_file_paths()
+            text = _get_clipboard_text(log_fail=log_fail)
+            files = _get_clipboard_file_paths(log_fail=log_fail)
             if text is not None or files:
                 return text, files
             if attempt < CLIPBOARD_RETRY_COUNT - 1:
@@ -107,7 +107,7 @@ else:
             )
         return None, []
 
-    def _get_clipboard_text() -> Optional[str]:
+    def _get_clipboard_text(*, log_fail: bool = True) -> Optional[str]:
         _user32.OpenClipboard.argtypes = [ctypes.wintypes.HWND]
         _user32.OpenClipboard.restype = ctypes.wintypes.BOOL
         _user32.CloseClipboard.argtypes = []
@@ -126,7 +126,10 @@ else:
 
         if not _user32.OpenClipboard(None):
             error_code = ctypes.get_last_error()
-            _log_clipboard_open_failure(error_code, "text")
+            if log_fail:
+                _log_clipboard_open_failure(error_code, "text")
+            else:
+                logger.debug("Failed to open clipboard (text, error: %s)", error_code)
             return None
 
         try:
@@ -174,7 +177,7 @@ else:
         finally:
             _user32.CloseClipboard()
 
-    def _get_clipboard_file_paths() -> list[str]:
+    def _get_clipboard_file_paths(*, log_fail: bool = True) -> list[str]:
         _user32.OpenClipboard.argtypes = [ctypes.wintypes.HWND]
         _user32.OpenClipboard.restype = ctypes.wintypes.BOOL
         _user32.CloseClipboard.argtypes = []
@@ -194,7 +197,10 @@ else:
 
         if not _user32.OpenClipboard(None):
             error_code = ctypes.get_last_error()
-            _log_clipboard_open_failure(error_code, "files")
+            if log_fail:
+                _log_clipboard_open_failure(error_code, "files")
+            else:
+                logger.debug("Failed to open clipboard (files, error: %s)", error_code)
             return []
 
         try:

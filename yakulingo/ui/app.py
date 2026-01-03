@@ -1379,6 +1379,11 @@ class YakuLingoApp:
         self._gpt_mode_setup_task: "asyncio.Task | None" = None
         # Connection status auto-refresh (avoids stale "準備中..." UI after transient timeouts)
         self._status_auto_refresh_task: "asyncio.Task | None" = None
+        # Copilot state cache to throttle frequent UI status polling.
+        self._last_copilot_state: Optional[str] = None
+        self._last_copilot_state_at: float | None = None
+        self._last_copilot_state_error: Optional[str] = None
+        self._last_copilot_state_connected: Optional[bool] = None
         # Result panel auto-scroll debounce (avoid scheduling a task for every stream chunk)
         self._result_panel_scroll_task: "asyncio.Task | None" = None
         self._result_panel_scroll_handle: "asyncio.Handle | None" = None
@@ -7011,15 +7016,37 @@ class YakuLingoApp:
             if copilot.is_connecting:
                 copilot_state = CopilotConnectionState.LOADING
             else:
-                try:
-                    copilot_state = copilot.check_copilot_state(timeout=2)
-                except TimeoutError:
-                    state_check_failed = True
-                    copilot_state = None
-                except Exception as e:
-                    state_check_failed = True
-                    logger.debug("Failed to check Copilot state for UI: %s", e)
-                    copilot_state = None
+                import time as _time_module
+
+                now = _time_module.monotonic()
+                cache_valid = (
+                    self._last_copilot_state_at is not None
+                    and (now - self._last_copilot_state_at) < 0.6
+                    and self._last_copilot_state_error == error
+                    and self._last_copilot_state_connected == is_connected
+                )
+                if cache_valid:
+                    copilot_state = self._last_copilot_state
+                else:
+                    try:
+                        copilot_state = copilot.check_copilot_state(timeout=2)
+                        self._last_copilot_state = copilot_state
+                        self._last_copilot_state_at = now
+                        self._last_copilot_state_error = error
+                        self._last_copilot_state_connected = is_connected
+                    except TimeoutError:
+                        state_check_failed = True
+                        copilot_state = None
+                    except Exception as e:
+                        state_check_failed = True
+                        logger.debug("Failed to check Copilot state for UI: %s", e)
+                        copilot_state = None
+                    finally:
+                        if state_check_failed:
+                            self._last_copilot_state = None
+                            self._last_copilot_state_at = now
+                            self._last_copilot_state_error = error
+                            self._last_copilot_state_connected = is_connected
 
             if copilot_state == CopilotConnectionState.READY:
                 self.state.copilot_ready = True

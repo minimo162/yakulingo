@@ -654,11 +654,8 @@ def _nicegui_open_window_patched(
             webview_util._yakulingo_easy_drag_patch = True
     except Exception as err:
         logger.debug("Failed to patch pywebview easy_drag: %s", err)
-    try:
-        webview.settings['DRAG_REGION_SELECTOR'] = '.native-drag-region'
-        webview.settings['DRAG_REGION_DIRECT_TARGET_ONLY'] = True
-    except Exception as err:
-        logger.debug("Failed to update pywebview drag region settings: %s", err)
+      settings_dict.setdefault('DRAG_REGION_SELECTOR', '.native-drag-region')
+      settings_dict.setdefault('DRAG_REGION_DIRECT_TARGET_ONLY', True)
 
     try:
         from webview.platforms.edgechromium import EdgeChrome
@@ -11750,12 +11747,15 @@ def run_app(
     # - background_color: Match app background to reduce visual flicker
     # - easy_drag: Keep disabled; drag region is provided in the UI when frameless
     # - icon: Use YakuLingo icon for taskbar (instead of default Python icon)
-    if native:
-        nicegui_app.native.window_args['background_color'] = '#F1F4FA'  # Match app background (styles.css --md-sys-color-surface-container-low)
-        nicegui_app.native.window_args['easy_drag'] = False
-        nicegui_app.native.window_args['text_select'] = True
+      if native:
+          nicegui_app.native.window_args['background_color'] = '#F1F4FA'  # Match app background (styles.css --md-sys-color-surface-container-low)
+          nicegui_app.native.window_args['easy_drag'] = False
+          nicegui_app.native.window_args['text_select'] = True
+          # Restrict window dragging to the dedicated drag strip only.
+          nicegui_app.native.settings['DRAG_REGION_SELECTOR'] = '.native-drag-region'
+          nicegui_app.native.settings['DRAG_REGION_DIRECT_TARGET_ONLY'] = True
 
-        # Start window hidden to prevent position flicker
+          # Start window hidden to prevent position flicker
         # Window will be shown by _position_window_early_sync() after positioning
         nicegui_app.native.window_args['hidden'] = True
         if resident_mode and sys.platform == "win32":

@@ -100,6 +100,29 @@ function Open-PostSetupUi {
         $SetupPath = Join-Path $env:LOCALAPPDATA $script:AppName
     }
 
+    $port = 8765
+    $setupStatusUrl = "http://127.0.0.1:$port/api/setup-status"
+    $activateUrl = "http://127.0.0.1:$port/api/activate"
+    $uiConnected = $false
+
+    try {
+        $status = Invoke-RestMethod -Method Get -Uri $setupStatusUrl -TimeoutSec 2
+        if ($status -and ($status.PSObject.Properties.Name -contains "ui_connected")) {
+            $uiConnected = [bool]$status.ui_connected
+        }
+    } catch { }
+
+    if ($uiConnected) {
+        try {
+            Invoke-WebRequest -UseBasicParsing -Method Post -Uri $activateUrl -TimeoutSec 2 `
+                -Headers @{ "X-YakuLingo-Activate" = "1" } | Out-Null
+            try { "UI already connected; sent activate request." | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
+        } catch {
+            try { "Activate UI failed: $($_.Exception.Message)" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
+        }
+        return
+    }
+
     $openUiPath = Join-Path $SetupPath "YakuLingo_OpenUI.ps1"
     if (Test-Path $openUiPath) {
         try {
@@ -565,8 +588,6 @@ function Preserve-UserFile {
 function Start-ResidentService {
     param(
         [string]$SetupPath,
-        [string]$PythonwPath,
-        [string]$AppPyPath,
         [string]$LauncherPath,
         [int]$Port = 8765
     )
@@ -578,14 +599,8 @@ function Start-ResidentService {
         if ([string]::IsNullOrWhiteSpace($LauncherPath)) {
             $LauncherPath = Join-Path $SetupPath "YakuLingo.exe"
         }
-        if ([string]::IsNullOrWhiteSpace($PythonwPath)) {
-            $PythonwPath = Join-Path $SetupPath ".venv\Scripts\pythonw.exe"
-        }
-        if ([string]::IsNullOrWhiteSpace($AppPyPath)) {
-            $AppPyPath = Join-Path $SetupPath "app.py"
-        }
         try {
-            "Start-ResidentService: SetupPath='$SetupPath' LauncherPath='$LauncherPath' PythonwPath='$PythonwPath' AppPyPath='$AppPyPath'" | Out-File -FilePath $debugLog -Append -Encoding UTF8
+            "Start-ResidentService: SetupPath='$SetupPath' LauncherPath='$LauncherPath'" | Out-File -FilePath $debugLog -Append -Encoding UTF8
         } catch { }
 
         function Test-PortOpen([int]$p) {
@@ -607,21 +622,12 @@ function Start-ResidentService {
                 Start-Process -FilePath $LauncherPath `
                     -WorkingDirectory $SetupPath `
                     -WindowStyle Hidden | Out-Null
-            } elseif ((Test-Path $PythonwPath -PathType Leaf) -and (Test-Path $AppPyPath -PathType Leaf)) {
-                $previousNoOpen = $env:YAKULINGO_NO_AUTO_OPEN
-                $env:YAKULINGO_NO_AUTO_OPEN = "1"
-                try {
-                    Start-Process -FilePath $PythonwPath `
-                        -ArgumentList @($AppPyPath) `
-                        -WorkingDirectory $SetupPath `
-                        -WindowStyle Hidden | Out-Null
-                } finally {
-                    if ($null -eq $previousNoOpen) {
-                        Remove-Item Env:YAKULINGO_NO_AUTO_OPEN -ErrorAction SilentlyContinue
-                    } else {
-                        $env:YAKULINGO_NO_AUTO_OPEN = $previousNoOpen
-                    }
+            } else {
+                try { "Start-ResidentService: Launcher not found at '$LauncherPath'." | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
+                if (-not $GuiMode) {
+                    Write-Host "[WARN] YakuLingo.exe not found: $LauncherPath" -ForegroundColor Yellow
                 }
+                return $false
             }
 
             $deadline = (Get-Date).AddSeconds(30)
@@ -1816,8 +1822,7 @@ function Invoke-Setup {
 `$ErrorActionPreference = 'Stop'
 
 `$installDir = Split-Path -Parent `$MyInvocation.MyCommand.Definition
-`$pythonw = Join-Path `$installDir '.venv\\Scripts\\pythonw.exe'
-`$appPy = Join-Path `$installDir 'app.py'
+`$launcher = Join-Path `$installDir 'YakuLingo.exe'
 `$port = 8765
 `$url = "http://127.0.0.1:`$port/"
 `$setupStatusUrl = "http://127.0.0.1:`$port/api/setup-status"
@@ -1927,10 +1932,13 @@ function Wait-ResidentReady {
 }
 
 if (-not (Test-PortOpen `$port)) {
-  if (Test-Path `$pythonw -PathType Leaf) {
-    Start-Process -FilePath `$pythonw -ArgumentList `$appPy -WorkingDirectory `$installDir -WindowStyle Hidden | Out-Null
+  if (Test-Path `$launcher -PathType Leaf) {
+    Start-Process -FilePath `$launcher -WorkingDirectory `$installDir -WindowStyle Hidden | Out-Null
     `$deadline = (Get-Date).AddSeconds(30)
     while ((Get-Date) -lt `$deadline -and -not (Test-PortOpen `$port)) { Start-Sleep -Milliseconds 200 }
+  } else {
+    Show-Warning "YakuLingo.exe が見つかりません。再インストールしてください。"
+    exit 1
   }
 }
 
@@ -1955,8 +1963,6 @@ Apply-WindowLayout
 
 `$installDir = Split-Path -Parent `$MyInvocation.MyCommand.Definition
 `$launcher = Join-Path `$installDir 'YakuLingo.exe'
-`$pythonw = Join-Path `$installDir '.venv\\Scripts\\pythonw.exe'
-`$appPy = Join-Path `$installDir 'app.py'
 `$port = 8765
 
 function Test-PortOpen([int]`$p) {
@@ -1973,21 +1979,6 @@ function Test-PortOpen([int]`$p) {
 if (-not (Test-PortOpen `$port)) {
   if (Test-Path `$launcher -PathType Leaf) {
     Start-Process -FilePath `$launcher -WorkingDirectory `$installDir -WindowStyle Hidden | Out-Null
-  } elseif ((Test-Path `$pythonw -PathType Leaf) -and (Test-Path `$appPy -PathType Leaf)) {
-    `$previousNoOpen = `$env:YAKULINGO_NO_AUTO_OPEN
-    `$env:YAKULINGO_NO_AUTO_OPEN = "1"
-    try {
-      Start-Process -FilePath `$pythonw -ArgumentList `$appPy -WorkingDirectory `$installDir -WindowStyle Hidden | Out-Null
-    } finally {
-      if (`$null -eq `$previousNoOpen) {
-        Remove-Item Env:YAKULINGO_NO_AUTO_OPEN -ErrorAction SilentlyContinue
-      } else {
-        `$env:YAKULINGO_NO_AUTO_OPEN = `$previousNoOpen
-      }
-    }
-
-    `$deadline = (Get-Date).AddSeconds(30)
-    while ((Get-Date) -lt `$deadline -and -not (Test-PortOpen `$port)) { Start-Sleep -Milliseconds 200 }
   }
 }
 "@
@@ -2296,7 +2287,7 @@ exit 0
         }
         Write-Status -Message "Starting YakuLingo (resident mode)..." -Progress -Step "Step 4/4: Finalizing" -Percent 95
         # Start YakuLingo immediately in resident mode (no UI auto-open).
-        $residentStarted = Start-ResidentService -SetupPath $SetupPath -PythonwPath $PythonwPath -AppPyPath $AppPyPath
+        $residentStarted = Start-ResidentService -SetupPath $SetupPath
         if (-not $residentStarted) {
             throw "YakuLingoの起動に失敗しました。"
         }
@@ -2306,7 +2297,7 @@ exit 0
         }
 
         Write-Status -Message "Setup completed!" -Progress -Step "Step 4/4: Finalizing" -Percent 100
-        $successMsg = "セットアップが完了しました。`n`nYakuLingo の画面を開きます。"
+        $successMsg = "セットアップが完了しました。`n`nYakuLingo を常駐起動しました。必要に応じてスタートメニューから画面を開いてください。"
         if ($script:GlossaryDistPath -or $script:TranslationRulesDistPath) {
             $successMsg += "`n`n既存ファイルは保持しました。新しい既定ファイル:"
             if ($script:GlossaryDistPath) {
@@ -2317,7 +2308,6 @@ exit 0
             }
         }
         Show-Success $successMsg
-        Open-PostSetupUi -SetupPath $SetupPath
     } else {
         Write-Host ""
         Write-Host "============================================================" -ForegroundColor Green
@@ -2326,7 +2316,7 @@ exit 0
         Write-Host ""
         Write-Host " Location: $SetupPath" -ForegroundColor White
         Write-Host " YakuLingo will start automatically on logon (resident mode)." -ForegroundColor Cyan
-        Write-Host " The YakuLingo UI will open now. Copilot login has completed during setup; you're ready to use the app." -ForegroundColor Cyan
+        Write-Host " Copilot login has completed during setup; open the UI from the Start Menu when needed." -ForegroundColor Cyan
         Write-Host " Exit: Start Menu > YakuLingo 終了" -ForegroundColor Cyan
         if ($script:GlossaryDistPath -or $script:TranslationRulesDistPath) {
             Write-Host ""
@@ -2346,7 +2336,7 @@ exit 0
 
         Write-Host "[INFO] Starting YakuLingo (resident mode)..." -ForegroundColor Gray
         # Start YakuLingo immediately in resident mode (no UI auto-open).
-        $residentStarted = Start-ResidentService -SetupPath $SetupPath -PythonwPath $PythonwPath -AppPyPath $AppPyPath
+        $residentStarted = Start-ResidentService -SetupPath $SetupPath
         if (-not $residentStarted) {
             throw "YakuLingoの起動に失敗しました。"
         }
@@ -2354,7 +2344,6 @@ exit 0
         if (-not $residentReady) {
             throw "Copilotの準備が完了しませんでした。ログインを完了してから再実行してください。"
         }
-        Open-PostSetupUi -SetupPath $SetupPath
     }
 }
 

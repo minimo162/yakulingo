@@ -608,11 +608,12 @@ def _nicegui_open_window_patched(
         "1", "true", "yes"
     )
     if resident_startup and sys.platform == "win32":
-        window_args.setdefault("hidden", True)
+        # Force hidden/offscreen to prevent brief focus steal during resident startup.
+        window_args["hidden"] = True
         offscreen_pos = _get_offscreen_position_win32()
         if offscreen_pos is not None:
-            window_args.setdefault("x", offscreen_pos[0])
-            window_args.setdefault("y", offscreen_pos[1])
+            window_args["x"] = offscreen_pos[0]
+            window_args["y"] = offscreen_pos[1]
 
     if sys.platform == "win32":
         try:

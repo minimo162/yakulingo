@@ -637,6 +637,28 @@ def _nicegui_open_window_patched(
     with warnings.catch_warnings():
         warnings.filterwarnings('ignore', category=DeprecationWarning)
         import webview
+    try:
+        from webview import util as webview_util
+
+        if not getattr(webview_util, "_yakulingo_easy_drag_patch", False):
+            original_load_js_files = webview_util.load_js_files
+
+            def load_js_files_patched(window, platform):
+                try:
+                    window.easy_drag = False
+                except Exception:
+                    pass
+                return original_load_js_files(window, platform)
+
+            webview_util.load_js_files = load_js_files_patched
+            webview_util._yakulingo_easy_drag_patch = True
+    except Exception as err:
+        logger.debug("Failed to patch pywebview easy_drag: %s", err)
+    try:
+        webview.settings['DRAG_REGION_SELECTOR'] = '.native-drag-region'
+        webview.settings['DRAG_REGION_DIRECT_TARGET_ONLY'] = True
+    except Exception as err:
+        logger.debug("Failed to update pywebview drag region settings: %s", err)
 
     try:
         from webview.platforms.edgechromium import EdgeChrome
@@ -6785,30 +6807,6 @@ class YakuLingoApp:
         # Viewport for proper scaling on all displays
         ui.add_head_html('<meta name="viewport" content="width=device-width, initial-scale=1.0">')
         ui.add_head_html(f'<style>{COMPLETE_CSS}</style>')
-        ui.add_head_html(
-            """
-            <script>
-            (function() {
-              function blockMove() {
-                try {
-                  if (!window.pywebview || !window.pywebview._jsApiCallback) return;
-                  const original = window.pywebview._jsApiCallback;
-                  if (original.__yakulingoMoveBlock) return;
-                  window.pywebview._jsApiCallback = function (funcName, params, id) {
-                    if (funcName === 'pywebviewMoveWindow') return;
-                    return original.call(this, funcName, params, id);
-                  };
-                  window.pywebview._jsApiCallback.__yakulingoMoveBlock = true;
-                } catch (e) {}
-              }
-
-              window.addEventListener('pywebviewready', blockMove);
-              blockMove();
-            })();
-            </script>
-            """
-        )
-
         if self._native_frameless:
             ui.element('div').classes('native-drag-region pywebview-drag-region').props(
                 'aria-hidden="true"'

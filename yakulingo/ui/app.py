@@ -654,8 +654,8 @@ def _nicegui_open_window_patched(
             webview_util._yakulingo_easy_drag_patch = True
     except Exception as err:
         logger.debug("Failed to patch pywebview easy_drag: %s", err)
-      settings_dict.setdefault('DRAG_REGION_SELECTOR', '.native-drag-region')
-      settings_dict.setdefault('DRAG_REGION_DIRECT_TARGET_ONLY', True)
+    settings_dict.setdefault('DRAG_REGION_SELECTOR', '.native-drag-region')
+    settings_dict.setdefault('DRAG_REGION_DIRECT_TARGET_ONLY', True)
 
     try:
         from webview.platforms.edgechromium import EdgeChrome
@@ -10574,6 +10574,18 @@ def run_app(
         os.environ.get("YAKULINGO_NO_AUTO_OPEN"),
         launch_source,
     )
+    resident_ui_mode = os.environ.get("YAKULINGO_RESIDENT_UI_MODE", "").strip().lower()
+    if resident_mode:
+        use_native_in_resident = resident_ui_mode in ("native", "1", "true", "yes")
+        if native and not use_native_in_resident:
+            logger.info(
+                "Resident startup: forcing browser UI mode to avoid native window flash"
+            )
+            native = False
+
+    quiet_startup = resident_mode and os.environ.get("YAKULINGO_QUIET_STARTUP", "1").strip().lower() in (
+        "1", "true", "yes"
+    )
 
     available_memory_gb = _get_available_memory_gb()
     # Early connect spins up Edge (and later Playwright).
@@ -10589,6 +10601,10 @@ def run_app(
             available_memory_gb,
             MIN_AVAILABLE_MEMORY_GB_FOR_EARLY_CONNECT,
         )
+    if quiet_startup and (allow_early_connect or allow_playwright_preinit):
+        allow_early_connect = False
+        allow_playwright_preinit = False
+        logger.info("Quiet startup: skipping early Edge/Playwright warmup")
 
     shutdown_event = threading.Event()
     tray_icon = None
@@ -11747,15 +11763,15 @@ def run_app(
     # - background_color: Match app background to reduce visual flicker
     # - easy_drag: Keep disabled; drag region is provided in the UI when frameless
     # - icon: Use YakuLingo icon for taskbar (instead of default Python icon)
-      if native:
-          nicegui_app.native.window_args['background_color'] = '#F1F4FA'  # Match app background (styles.css --md-sys-color-surface-container-low)
-          nicegui_app.native.window_args['easy_drag'] = False
-          nicegui_app.native.window_args['text_select'] = True
-          # Restrict window dragging to the dedicated drag strip only.
-          nicegui_app.native.settings['DRAG_REGION_SELECTOR'] = '.native-drag-region'
-          nicegui_app.native.settings['DRAG_REGION_DIRECT_TARGET_ONLY'] = True
+    if native:
+        nicegui_app.native.window_args['background_color'] = '#F1F4FA'  # Match app background (styles.css --md-sys-color-surface-container-low)
+        nicegui_app.native.window_args['easy_drag'] = False
+        nicegui_app.native.window_args['text_select'] = True
+        # Restrict window dragging to the dedicated drag strip only.
+        nicegui_app.native.settings['DRAG_REGION_SELECTOR'] = '.native-drag-region'
+        nicegui_app.native.settings['DRAG_REGION_DIRECT_TARGET_ONLY'] = True
 
-          # Start window hidden to prevent position flicker
+        # Start window hidden to prevent position flicker
         # Window will be shown by _position_window_early_sync() after positioning
         nicegui_app.native.window_args['hidden'] = True
         if resident_mode and sys.platform == "win32":

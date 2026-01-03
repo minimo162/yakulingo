@@ -1104,7 +1104,7 @@ if TYPE_CHECKING:
 COPILOT_LOGIN_TIMEOUT = 300  # 5 minutes for login
 CLIENT_CONNECTED_TIMEOUT_SEC = 12  # Soft timeout for client.connected() before fallback
 STARTUP_SPLASH_TIMEOUT_SEC = 25  # Close external splash if startup stalls
-STARTUP_LOADING_DELAY_MS = 450  # Delay showing startup overlay to avoid flash
+STARTUP_LOADING_DELAY_MS = 0  # Show startup overlay immediately to avoid white flash
 STARTUP_UI_READY_TIMEOUT_MS = 2000  # Startup UI readiness timeout
 STARTUP_UI_READY_FALLBACK_GRACE_MS = 300  # Grace period before rendering fallback
 STARTUP_UI_READY_SELECTOR = '[data-yakulingo-root="true"]'
@@ -2203,6 +2203,15 @@ class YakuLingoApp:
                         if brought_to_front and self._resident_mode:
                             self._resident_show_requested = False
             return
+
+        # If GPT mode setup is still running, wait briefly before starting hotkey translation.
+        copilot = getattr(self, "_copilot", None)
+        if copilot is not None and not copilot.is_gpt_mode_set:
+            try:
+                logger.info("Hotkey translation waiting for GPT mode setup")
+                await asyncio.to_thread(copilot.wait_for_gpt_mode_setup, 25.0)
+            except Exception as e:
+                logger.debug("Hotkey GPT mode wait failed: %s", e)
 
         # Double-check: Skip if translation started while we were waiting
         if self.state.text_translating:
@@ -3771,6 +3780,15 @@ class YakuLingoApp:
             if work_width <= 0 or work_height <= 0:
                 return True
 
+            def _get_window_rect(hwnd_value: int) -> RECT | None:
+                try:
+                    rect = RECT()
+                    if not user32.GetWindowRect(wintypes.HWND(hwnd_value), ctypes.byref(rect)):
+                        return None
+                    return rect
+                except Exception:
+                    return None
+
             # Layout constants (logical px); scale when process is DPI-aware.
             gap = 10
             min_ui_width = 580
@@ -3783,6 +3801,22 @@ class YakuLingoApp:
                 gap = int(round(gap * dpi_scale))
                 min_ui_width = int(round(min_ui_width * dpi_scale))
                 min_target_width = int(round(min_target_width * dpi_scale))
+
+            snap_tolerance = max(int(round(12 * dpi_scale)), 12)
+            source_rect = _get_window_rect(source_hwnd)
+            source_left = source_rect.left if source_rect else None
+            source_right = source_rect.right if source_rect else None
+            source_width = (
+                max(0, int(source_right - source_left))
+                if source_left is not None and source_right is not None
+                else None
+            )
+            is_source_left_snapped = (
+                source_rect is not None
+                and abs(int(source_left) - int(work_area.left)) <= snap_tolerance
+                and source_width is not None
+                and source_width >= min_target_width
+            )
 
             edge_width: int | None = None
             if use_triple_layout:
@@ -3806,9 +3840,19 @@ class YakuLingoApp:
                 move_edge_offscreen = True
 
             if not use_triple_layout:
-                ui_width = max(int(work_width * ui_ratio), min_ui_width)
-                ui_width = min(ui_width, max(work_width - gap - min_target_width, 0))
-                target_width = work_width - gap - ui_width
+                if is_source_left_snapped:
+                    target_width = min(
+                        source_width,
+                        max(work_width - gap - min_ui_width, 0),
+                    )
+                    target_width = max(target_width, min_target_width)
+                    ui_width = work_width - gap - target_width
+                    if ui_width < min_ui_width:
+                        is_source_left_snapped = False
+                if not is_source_left_snapped:
+                    ui_width = max(int(work_width * ui_ratio), min_ui_width)
+                    ui_width = min(ui_width, max(work_width - gap - min_target_width, 0))
+                    target_width = work_width - gap - ui_width
                 if target_width < min_target_width:
                     ui_width = max(work_width - gap - min_target_width, 0)
                     ui_width = max(ui_width, min_ui_width)
@@ -4323,6 +4367,8 @@ class YakuLingoApp:
                 prefix, suffix = reason.rsplit(":", 1)
                 if suffix.isdigit():
                     reason_for_log = prefix
+            if reason_for_log in ("startup", "launcher_pre_run", "warmup"):
+                reason_for_log = "startup"
             last_time = self._last_taskbar_visibility_not_found_time
             last_reason = self._last_taskbar_visibility_not_found_reason
             if last_time is None or (now - last_time) >= 2.0 or reason_for_log != last_reason:
@@ -10755,10 +10801,8 @@ def run_app(
             available_memory_gb,
             MIN_AVAILABLE_MEMORY_GB_FOR_EARLY_CONNECT,
         )
-    if quiet_startup and (allow_early_connect or allow_playwright_preinit):
-        allow_early_connect = False
-        allow_playwright_preinit = False
-        logger.info("Quiet startup: skipping early Edge/Playwright warmup")
+    if quiet_startup and allow_early_connect:
+        logger.info("Quiet startup: keeping early Edge warmup for faster hotkeys")
 
     shutdown_event = threading.Event()
     tray_icon = None
@@ -10836,6 +10880,11 @@ def run_app(
                     )
                     if _early_connection_result_ref is not None:
                         _early_connection_result_ref.value = result
+                    if result:
+                        try:
+                            _early_copilot.wait_for_gpt_mode_setup(25.0)
+                        except Exception as e:
+                            logger.debug("Early GPT mode setup failed: %s", e)
                     logger.info("[TIMING] Early Copilot connect (background): %.2fs, success=%s",
                                time.perf_counter() - _t_early, result)
                 except Exception as e:
@@ -12410,6 +12459,9 @@ def run_app(
         # This runs before create_ui() which loads COMPLETE_CSS
         ui.add_head_html('''<style>
 /* Loading screen styles (needed before main CSS loads) */
+html, body {
+    background: #FCFCFD;
+}
 .loading-screen {
     position: fixed;
     top: 0;
@@ -12436,10 +12488,10 @@ def run_app(
      color: var(--md-sys-color-on-surface, #1C1B1F);
      letter-spacing: 0.02em;
  }
- .loading-spinner {
-     width: 56px;
-     height: 56px;
-     border: 4px solid rgba(0, 0, 0, 0.08);
+.loading-spinner {
+    width: 56px;
+    height: 56px;
+    border: 4px solid rgba(0, 0, 0, 0.08);
      border-top-color: var(--md-sys-color-primary, #2B59FF);
      border-radius: 50%;
      animation: yakulingo-spin 0.9s linear infinite;
@@ -12449,9 +12501,31 @@ def run_app(
          animation: none;
      }
  }
- @keyframes yakulingo-spin {
-     to { transform: rotate(360deg); }
- }
+@keyframes yakulingo-spin {
+    to { transform: rotate(360deg); }
+}
+#yakulingo-preboot {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: #FCFCFD;
+    color: #1D1D1F;
+    font-size: 1rem;
+    letter-spacing: 0.02em;
+}
+#yakulingo-preboot .preboot-spinner {
+    width: 44px;
+    height: 44px;
+    border: 3px solid rgba(0, 0, 0, 0.08);
+    border-top-color: var(--md-sys-color-primary, #2B59FF);
+    border-radius: 50%;
+    animation: yakulingo-spin 0.9s linear infinite;
+    margin-bottom: 12px;
+}
 /* Main app fade-in animation */
  .main-app-container {
      width: 100%;
@@ -12511,10 +12585,28 @@ html.yakulingo-drag-active .global-drop-indicator {
 
         # JavaScript to detect font loading and show icons
         ui.add_head_html('''<script>
- document.fonts.ready.then(function() {
-     document.documentElement.classList.add('fonts-ready');
- });
- </script>''')
+document.fonts.ready.then(function() {
+    document.documentElement.classList.add('fonts-ready');
+});
+</script>''')
+
+        ui.add_head_html('''<script>
+(() => {
+  if (document.getElementById('yakulingo-preboot')) return;
+  const show = () => {
+    if (document.getElementById('yakulingo-preboot')) return;
+    const container = document.createElement('div');
+    container.id = 'yakulingo-preboot';
+    container.innerHTML = '<div class="preboot-spinner" aria-hidden="true"></div><div>YakuLingo を起動しています...</div>';
+    document.body.appendChild(container);
+  };
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', show);
+  } else {
+    show();
+  }
+})();
+</script>''')
 
         if native:
             ui.add_head_html('''<script>
@@ -12851,6 +12943,10 @@ html.yakulingo-drag-active .global-drop-indicator {
             try:
                 with client:
                     loading_screen.classes(add='fade-out')
+                    await client.run_javascript(
+                        "const preboot=document.getElementById('yakulingo-preboot');"
+                        "if(preboot){preboot.remove();}"
+                    )
             except Exception:
                 try:
                     loading_screen.classes(add='fade-out')

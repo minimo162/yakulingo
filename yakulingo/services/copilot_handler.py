@@ -1142,6 +1142,8 @@ class CopilotHandler:
     GPT_MODE_BUTTON_WAIT_FAST_MS = 4000  # Per-attempt timeout (4s)
     # Retry delays between short attempts (seconds).
     GPT_MODE_RETRY_DELAYS = (0.5, 1.0, 2.0)
+    # Wait for Playwright pre-initialization to complete before translations (seconds).
+    PLAYWRIGHT_INIT_WAIT_SECONDS = 120.0
     # Dynamic polling intervals for faster response detection
     # OPTIMIZED: Reduced intervals for quicker response detection (0.15s -> 0.1s)
     RESPONSE_POLL_INITIAL = 0.1  # Initial interval while waiting for response to start
@@ -2195,6 +2197,16 @@ class CopilotHandler:
         if self._connected and self._is_page_valid():
             return True
         if self._connected:
+            recovered = False
+            if self._page is not None:
+                logger.info("Existing connection looks stale; waiting for chat UI before reconnect")
+                try:
+                    recovered = self._wait_for_chat_ready(self._page, wait_for_login=False)
+                except Exception as e:
+                    logger.debug("Soft recovery for stale connection failed: %s", e)
+            if recovered and self._is_page_valid():
+                logger.info("Recovered existing connection without restart")
+                return True
             logger.info("Existing connection is stale, reconnecting...")
             self._cleanup_on_error()
 
@@ -6625,6 +6637,11 @@ class CopilotHandler:
         # Execute all Playwright operations in the dedicated thread
         # This avoids greenlet thread-switching errors when called from asyncio.to_thread
         # Add buffer for start_new_chat and send_message operations
+        if is_playwright_preinit_in_progress():
+            logger.info(
+                "Playwright pre-init in progress; deferring translate_sync until ready"
+            )
+            wait_for_playwright_init(timeout=self.PLAYWRIGHT_INIT_WAIT_SECONDS)
         executor_timeout = timeout + self.EXECUTOR_TIMEOUT_BUFFER_SECONDS
         return _playwright_executor.execute(
             self._translate_sync_impl, texts, prompt, reference_files, skip_clear_wait, timeout,
@@ -6858,6 +6875,11 @@ class CopilotHandler:
         if timeout is None:
             timeout = self.DEFAULT_RESPONSE_TIMEOUT
         # Add buffer for operations within translate_single_impl
+        if is_playwright_preinit_in_progress():
+            logger.info(
+                "Playwright pre-init in progress; deferring translate_single until ready"
+            )
+            wait_for_playwright_init(timeout=self.PLAYWRIGHT_INIT_WAIT_SECONDS)
         executor_timeout = timeout + self.EXECUTOR_TIMEOUT_BUFFER_SECONDS
         return _playwright_executor.execute(
             self._translate_single_impl, text, prompt, reference_files, on_chunk, timeout,

@@ -614,6 +614,9 @@ def _nicegui_open_window_patched(
         if offscreen_pos is not None:
             window_args["x"] = offscreen_pos[0]
             window_args["y"] = offscreen_pos[1]
+    # Ensure native text selection works and avoid global easy-drag behavior.
+    window_args["easy_drag"] = False
+    window_args.setdefault("text_select", True)
 
     if sys.platform == "win32":
         try:
@@ -11725,6 +11728,7 @@ def run_app(
     if native:
         nicegui_app.native.window_args['background_color'] = '#F1F4FA'  # Match app background (styles.css --md-sys-color-surface-container-low)
         nicegui_app.native.window_args['easy_drag'] = False
+        nicegui_app.native.window_args['text_select'] = True
 
         # Start window hidden to prevent position flicker
         # Window will be shown by _position_window_early_sync() after positioning

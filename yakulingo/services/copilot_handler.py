@@ -3111,6 +3111,56 @@ class CopilotHandler:
         except Exception as e:
             logger.debug("GPT mode menu snapshot failed (%s): %s", label, e)
 
+    def _try_click_gpt_mode_candidate(self, candidates: tuple[str, ...]) -> dict[str, object]:
+        if not self._page:
+            return {"success": False, "error": "no_page"}
+        try:
+            payload = {"candidates": list(candidates)}
+            result = self._page.evaluate(
+                '''(payload) => {
+                    const selectors = [
+                        '[role="menuitem"]',
+                        '[role="option"]',
+                        'button[role="menuitem"]',
+                        'button',
+                    ];
+                    const menus = Array.from(document.querySelectorAll('[role="menu"], [role="listbox"]'));
+                    const elements = [];
+                    for (const menu of menus) {
+                        for (const selector of selectors) {
+                            elements.push(...menu.querySelectorAll(selector));
+                        }
+                    }
+                    const visible = elements.filter(el => {
+                        const style = window.getComputedStyle(el);
+                        if (!style) return false;
+                        if (style.display === 'none' || style.visibility === 'hidden') return false;
+                        const rect = el.getBoundingClientRect();
+                        return rect.width > 0 && rect.height > 0;
+                    });
+                    const texts = visible
+                        .map(el => (el.textContent || el.getAttribute('aria-label') || '').trim())
+                        .filter(t => t);
+                    for (const candidate of (payload.candidates || [])) {
+                        const match = visible.find(el => {
+                            const text = (el.textContent || el.getAttribute('aria-label') || '').trim();
+                            return text && text.includes(candidate);
+                        });
+                        if (match) {
+                            match.click();
+                            return { clicked: true, label: candidate, texts };
+                        }
+                    }
+                    return { clicked: false, texts };
+                }''',
+                payload,
+            ) or {}
+            if result.get("clicked"):
+                return {"success": True, "newMode": result.get("label"), "available": result.get("texts", [])}
+            return {"success": False, "error": "target_not_found", "available": result.get("texts", [])}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
     def _find_gpt_mode_switcher_selector(self) -> str | None:
         if not self._page:
             return None
@@ -3449,23 +3499,27 @@ class CopilotHandler:
                         if target_clicked:
                             break
                     if not target_clicked:
-                        available = []
-                        try:
-                            available = self._page.evaluate('''(itemSelector) => {
-                                const items = Array.from(document.querySelectorAll(itemSelector));
-                                return items
-                                    .filter(el => {
-                                        const style = window.getComputedStyle(el);
-                                        if (!style) return false;
-                                        if (style.display === 'none' || style.visibility === 'hidden') return false;
-                                        const rect = el.getBoundingClientRect();
-                                        return rect.width > 0 && rect.height > 0;
-                                    })
-                                    .map(el => (el.textContent || '').trim())
-                                    .filter(t => t);
-                            }''', self.GPT_MODE_MENU_ITEM_SELECTOR) or []
-                        except Exception:
-                            available = []
+                        fallback_click = self._try_click_gpt_mode_candidate(candidates)
+                        if fallback_click.get("success"):
+                            return {"success": True, "newMode": fallback_click.get("newMode") or target_label}
+                        available = fallback_click.get("available") or []
+                        if not available:
+                            try:
+                                available = self._page.evaluate('''(itemSelector) => {
+                                    const items = Array.from(document.querySelectorAll(itemSelector));
+                                    return items
+                                        .filter(el => {
+                                            const style = window.getComputedStyle(el);
+                                            if (!style) return false;
+                                            if (style.display === 'none' || style.visibility === 'hidden') return false;
+                                            const rect = el.getBoundingClientRect();
+                                            return rect.width > 0 && rect.height > 0;
+                                        })
+                                        .map(el => (el.textContent || '').trim())
+                                        .filter(t => t);
+                                }''', self.GPT_MODE_MENU_ITEM_SELECTOR) or []
+                            except Exception:
+                                available = []
                         return {"success": False, "error": "target_not_found", "available": available}
                 except PlaywrightTimeoutError:
                     return {"success": False, "error": "timeout"}
@@ -3589,23 +3643,27 @@ class CopilotHandler:
                 if target_clicked:
                     break
             if not target_clicked:
-                available = []
-                try:
-                    available = self._page.evaluate('''(itemSelector) => {
-                        const items = Array.from(document.querySelectorAll(itemSelector));
-                        return items
-                            .filter(el => {
-                                const style = window.getComputedStyle(el);
-                                if (!style) return false;
-                                if (style.display === 'none' || style.visibility === 'hidden') return false;
-                                const rect = el.getBoundingClientRect();
-                                return rect.width > 0 && rect.height > 0;
-                            })
-                            .map(el => (el.textContent || '').trim())
-                            .filter(t => t);
-                    }''', self.GPT_MODE_MENU_ITEM_SELECTOR) or []
-                except Exception:
-                    available = []
+                fallback_click = self._try_click_gpt_mode_candidate(candidates)
+                if fallback_click.get("success"):
+                    return {"success": True, "newMode": fallback_click.get("newMode") or target_label}
+                available = fallback_click.get("available") or []
+                if not available:
+                    try:
+                        available = self._page.evaluate('''(itemSelector) => {
+                            const items = Array.from(document.querySelectorAll(itemSelector));
+                            return items
+                                .filter(el => {
+                                    const style = window.getComputedStyle(el);
+                                    if (!style) return false;
+                                    if (style.display === 'none' || style.visibility === 'hidden') return false;
+                                    const rect = el.getBoundingClientRect();
+                                    return rect.width > 0 && rect.height > 0;
+                                })
+                                .map(el => (el.textContent || '').trim())
+                                .filter(t => t);
+                        }''', self.GPT_MODE_MENU_ITEM_SELECTOR) or []
+                    except Exception:
+                        available = []
                 return {"success": False, "error": "target_not_found", "available": available}
 
             # Best-effort confirmation (may be hidden in compact layouts)

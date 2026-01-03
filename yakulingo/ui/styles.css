@@ -240,7 +240,8 @@ body {
     -webkit-app-region: drag !important;
 }
 
-.pywebview-nodrag {
+.pywebview-nodrag,
+.pywebview-nodrag * {
     -webkit-app-region: no-drag !important;
 }
 

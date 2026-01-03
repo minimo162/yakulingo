@@ -34,9 +34,25 @@ class _FakeApiDim:
 
 
 class _FakeApi:
-    def __init__(self, rows_count: int | None, cols_count: int | None, *, raises: bool = False) -> None:
+    def __init__(
+        self,
+        rows_count: int | None,
+        cols_count: int | None,
+        *,
+        raises: bool = False,
+        address: str | None = None,
+        address_raises: bool = False,
+    ) -> None:
         self.Rows = _FakeApiDim(rows_count, raises=raises)
         self.Columns = _FakeApiDim(cols_count, raises=raises)
+        self._address = address
+        self._address_raises = address_raises
+
+    @property
+    def Address(self) -> str | None:  # noqa: N802 (Excel API style)
+        if self._address_raises:
+            raise RuntimeError("Address unavailable")
+        return self._address
 
 
 class _FakeOptionsResult:
@@ -58,13 +74,31 @@ class _FakeUsedRange:
         api_rows_count: int | None = None,
         api_cols_count: int | None = None,
         api_raises: bool = False,
+        address: str | None = None,
+        address_raises: bool = False,
+        api_address: str | None = None,
+        api_address_raises: bool = False,
     ) -> None:
         self.value = value
         self._options_value = options_value
         self._options_raises = options_raises
         self.rows = _FakeDim(rows_count, raises=rows_raises)
         self.columns = _FakeDim(cols_count, raises=cols_raises)
-        self.api = _FakeApi(api_rows_count, api_cols_count, raises=api_raises)
+        self._address = address
+        self._address_raises = address_raises
+        self.api = _FakeApi(
+            api_rows_count,
+            api_cols_count,
+            raises=api_raises,
+            address=api_address,
+            address_raises=api_address_raises,
+        )
+
+    @property
+    def address(self) -> str | None:
+        if self._address_raises:
+            raise RuntimeError("address unavailable")
+        return self._address
 
     def options(self, ndim: int = 2):  # noqa: ANN001
         if self._options_raises:
@@ -124,3 +158,30 @@ def test_read_used_range_values_2d_scalar() -> None:
     used_range = _FakeUsedRange(value="x", options_raises=True, api_raises=True, rows_raises=True, cols_raises=True)
     assert processor._read_used_range_values_2d(used_range) == [["x"]]  # noqa: SLF001
 
+
+@pytest.mark.unit
+def test_read_used_range_values_2d_fallback_address_single_row() -> None:
+    processor = ExcelProcessor()
+    used_range = _FakeUsedRange(
+        value=[1, 2, 3],
+        options_raises=True,
+        rows_raises=True,
+        cols_raises=True,
+        api_raises=True,
+        address="$A$1:$C$1",
+    )
+    assert processor._read_used_range_values_2d(used_range) == [[1, 2, 3]]  # noqa: SLF001
+
+
+@pytest.mark.unit
+def test_read_used_range_values_2d_fallback_address_single_column() -> None:
+    processor = ExcelProcessor()
+    used_range = _FakeUsedRange(
+        value=[1, 2, 3],
+        options_raises=True,
+        rows_raises=True,
+        cols_raises=True,
+        api_raises=True,
+        address="Sheet1!$B$2:$B$4",
+    )
+    assert processor._read_used_range_values_2d(used_range) == [[1], [2], [3]]  # noqa: SLF001

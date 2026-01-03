@@ -2950,6 +2950,7 @@ class YakuLingoApp:
         normalized = text.replace("\r\n", "\n")
         rows = normalized.split("\n")
         cells_2d: list[list[str]] = [row.split("\t") for row in rows]
+        cells_2d = self._normalize_tabular_rows(cells_2d)
 
         cells_to_translate: list[tuple[int, int, str]] = []
         for row_idx, row in enumerate(cells_2d):
@@ -3014,13 +3015,14 @@ class YakuLingoApp:
             translation_by_text: dict[str, str] = {}
             explanation_by_text: dict[str, str] = {}
             for idx, cell_text in enumerate(unique_texts):
-                translation_by_text[cell_text] = translations[idx] if idx < len(translations) else ""
+                raw_translation = translations[idx] if idx < len(translations) else ""
+                translation_by_text[cell_text] = self._sanitize_tabular_cell(raw_translation)
                 explanation_by_text[cell_text] = explanations[idx] if idx < len(explanations) else ""
 
             translated_2d = [row[:] for row in cells_2d]
             for row_idx, col_idx, cell_text in cells_to_translate:
                 translated_value = translation_by_text.get(cell_text) or cells_2d[row_idx][col_idx]
-                translated_2d[row_idx][col_idx] = translated_value
+                translated_2d[row_idx][col_idx] = self._sanitize_tabular_cell(translated_value)
 
             translated_rows = ["\t".join(row) for row in translated_2d]
             translated_text = "\n".join(translated_rows)
@@ -3088,6 +3090,7 @@ class YakuLingoApp:
         cells_2d: list[list[str]] = []
         for row in rows:
             cells_2d.append(row.split("\t"))
+        cells_2d = self._normalize_tabular_rows(cells_2d)
 
         # Find non-empty cells that need translation
         cells_to_translate: list[tuple[int, int, str]] = []  # (row, col, text)
@@ -3197,7 +3200,8 @@ class YakuLingoApp:
                 translation_by_text: dict[str, str] = {}
                 explanation_by_text: dict[str, str] = {}
                 for idx, cell_text in enumerate(cell_texts):
-                    translation_by_text[cell_text] = translations[idx] if idx < len(translations) else ""
+                    raw_translation = translations[idx] if idx < len(translations) else ""
+                    translation_by_text[cell_text] = self._sanitize_tabular_cell(raw_translation)
                     explanation_by_text[cell_text] = explanations[idx] if idx < len(explanations) else ""
 
                 missing_translations = [
@@ -3215,7 +3219,7 @@ class YakuLingoApp:
                     translated_value = translation_by_text.get(cell_text)
                     if not translated_value:
                         translated_value = cells_2d[row_idx][col_idx]
-                    translated_2d[row_idx][col_idx] = translated_value
+                    translated_2d[row_idx][col_idx] = self._sanitize_tabular_cell(translated_value)
 
                 # Reconstruct tab-separated text
                 translated_rows = ["\t".join(row) for row in translated_2d]
@@ -3272,6 +3276,28 @@ class YakuLingoApp:
             self._refresh_tabs()
 
         self._active_translation_trace_id = None
+
+    @staticmethod
+    def _normalize_tabular_rows(rows: list[list[str]]) -> list[list[str]]:
+        if not rows:
+            return rows
+        max_cols = max(len(row) for row in rows)
+        if max_cols <= 0:
+            return rows
+        for row in rows:
+            if len(row) < max_cols:
+                row.extend([""] * (max_cols - len(row)))
+        return rows
+
+    @staticmethod
+    def _sanitize_tabular_cell(value: str | None) -> str:
+        if value is None:
+            return ""
+        if not isinstance(value, str):
+            value = str(value)
+        if "\t" not in value and "\n" not in value and "\r" not in value:
+            return value
+        return value.replace("\r\n", " ").replace("\r", " ").replace("\n", " ").replace("\t", " ")
 
     def _split_cell_batches(self, cells: list[str], max_chars: int) -> list[list[str]]:
         """Split cell texts into batches that stay within the char limit."""

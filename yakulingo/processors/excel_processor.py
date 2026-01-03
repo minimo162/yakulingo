@@ -1182,6 +1182,36 @@ class ExcelProcessor(FileProcessor):
                     row_count = None
                     col_count = None
 
+            if row_count is None or col_count is None:
+                addr = None
+                try:
+                    addr = used_range.address
+                except Exception:
+                    try:
+                        addr = used_range.api.Address
+                    except Exception:
+                        addr = None
+                if addr:
+                    addr = addr.replace('$', '')
+                    if '!' in addr:
+                        addr = addr.split('!')[-1]
+                    try:
+                        if ':' in addr:
+                            start_addr, end_addr = addr.split(':', 1)
+                        else:
+                            start_addr = addr
+                            end_addr = addr
+                        start_col_letters, start_row_str = coordinate_from_string(start_addr)
+                        end_col_letters, end_row_str = coordinate_from_string(end_addr)
+                        row_count = int(end_row_str) - int(start_row_str) + 1
+                        col_count = (
+                            column_index_from_string(end_col_letters)
+                            - column_index_from_string(start_col_letters)
+                            + 1
+                        )
+                    except Exception:
+                        pass
+
             if row_count == 1 and col_count != 1:
                 return [list(values)]
             if col_count == 1 and row_count != 1:

@@ -86,6 +86,7 @@ _RE_TRAILING_ATTACHMENT_LABEL = re.compile(
     r'\s*\[[^\]]+?\|\s*(?:excel|word|powerpoint|pdf|csv|text|txt|file)\s*\]\s*$',
     re.IGNORECASE,
 )
+_RE_ITEM_ID_MARKER = re.compile(r'^\s*\[\[ID:\d+\]\]\s*')
 
 def _sanitize_output_stem(name: str) -> str:
     """Sanitize a filename stem for cross-platform safety.
@@ -738,6 +739,7 @@ class BatchTranslator:
         cleaned = _strip_input_markers(text)
         cleaned = _strip_trailing_attachment_links(cleaned)
         if cleaned:
+            cleaned = _RE_ITEM_ID_MARKER.sub('', cleaned)
             cleaned = _RE_TRAILING_FILENAME.sub('', cleaned).strip()
         return cleaned
 
@@ -763,6 +765,7 @@ class BatchTranslator:
         on_progress: Optional[ProgressCallback] = None,
         output_language: str = "en",
         translation_style: str = "concise",
+        include_item_ids: bool = False,
     ) -> dict[str, str]:
         """
         Translate blocks in batches.
@@ -773,6 +776,7 @@ class BatchTranslator:
             on_progress: Progress callback
             output_language: "en" for English, "jp" for Japanese
             translation_style: "standard", "concise", or "minimal" (default: "concise")
+            include_item_ids: Include stable [[ID:n]] markers in batch prompts
 
         Returns:
             Mapping of block_id -> translated_text
@@ -786,7 +790,12 @@ class BatchTranslator:
             translate_blocks_with_result() instead.
         """
         result = self.translate_blocks_with_result(
-            blocks, reference_files, on_progress, output_language, translation_style
+            blocks,
+            reference_files,
+            on_progress,
+            output_language,
+            translation_style,
+            include_item_ids=include_item_ids,
         )
         # Raise exception if cancelled to prevent partial results from being applied
         if result.cancelled:
@@ -802,6 +811,7 @@ class BatchTranslator:
         on_progress: Optional[ProgressCallback] = None,
         output_language: str = "en",
         translation_style: str = "concise",
+        include_item_ids: bool = False,
         _max_chars_per_batch: Optional[int] = None,
         _split_retry_depth: int = 0,
     ) -> 'BatchTranslationResult':
@@ -814,6 +824,7 @@ class BatchTranslator:
             on_progress: Progress callback
             output_language: "en" for English, "jp" for Japanese
             translation_style: "standard", "concise", or "minimal" (default: "concise")
+            include_item_ids: Include stable [[ID:n]] markers in batch prompts
 
         Returns:
             BatchTranslationResult with translations and error details.
@@ -942,7 +953,11 @@ class BatchTranslator:
         # This eliminates prompt construction time from the translation loop
         def build_prompt(unique_texts: list[str]) -> str:
             return self.prompt_builder.build_batch(
-                unique_texts, has_refs, output_language, translation_style
+                unique_texts,
+                has_refs,
+                output_language,
+                translation_style,
+                include_item_ids=include_item_ids,
             )
 
         # Use parallel prompt construction for multiple batches
@@ -2560,12 +2575,15 @@ class TranslationService:
                 # Scale batch progress to 10-90 range
                 on_progress(scale_progress(progress, 10, 90, TranslationPhase.TRANSLATING))
 
+        # Excel cells often contain numbered lines; keep stable IDs to avoid list parsing drift.
+        include_item_ids = processor.file_type == FileType.EXCEL
         batch_result = self.batch_translator.translate_blocks_with_result(
             blocks,
             reference_files,
             batch_progress,
             output_language=output_language,
             translation_style=translation_style,
+            include_item_ids=include_item_ids,
         )
 
         # Check for cancellation (thread-safe)

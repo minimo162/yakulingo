@@ -37,6 +37,7 @@ _RE_BATCH_ITEM = re.compile(
     r'^([ \t\u3000]*)(\d+)\.[ \t\u3000]*(.*?)(?=\r?\n[ \t\u3000]*\d+\.|\Z)',
     re.MULTILINE | re.DOTALL,
 )
+_RE_BATCH_ITEM_ID = re.compile(r'\[\[ID:(\d+)\]\]')
 
 # Known Copilot error response patterns that indicate we should retry with a new chat
 # These are system messages that don't represent actual translation results
@@ -8882,6 +8883,41 @@ class CopilotHandler:
         except (PlaywrightError, AttributeError):
             return False
 
+    def _parse_batch_result_by_id(self, result: str, expected_count: int) -> list[str] | None:
+        """Parse batch output using [[ID:n]] markers when present."""
+        if expected_count <= 0 or "[[ID:" not in result:
+            return None
+        matches = list(_RE_BATCH_ITEM_ID.finditer(result))
+        if not matches:
+            return None
+
+        translations = [""] * expected_count
+        seen_any = False
+
+        for idx, match in enumerate(matches):
+            try:
+                item_id = int(match.group(1))
+            except ValueError:
+                continue
+            if item_id < 1 or item_id > expected_count:
+                continue
+
+            start = match.end()
+            end = matches[idx + 1].start() if idx + 1 < len(matches) else len(result)
+            content = result[start:end].strip()
+            content = re.sub(r'^(?:[-:])\s+', '', content)
+
+            if translations[item_id - 1]:
+                if content:
+                    translations[item_id - 1] = f"{translations[item_id - 1]}\n{content}".strip()
+            else:
+                translations[item_id - 1] = content
+            seen_any = True
+
+        if not seen_any:
+            return None
+        return translations
+
     def _parse_batch_result(self, result: str, expected_count: int) -> list[str]:
         """Parse batch translation result back to list.
 
@@ -8905,6 +8941,9 @@ class CopilotHandler:
         Would correctly parse as 2 items, not 4, because "   1." and "   2." are
         at a deeper indentation level than "1." and "2.".
         """
+        id_parsed = self._parse_batch_result_by_id(result, expected_count)
+        if id_parsed is not None:
+            return id_parsed
         # Normalize indentation: remove common leading whitespace from all lines
         # This handles cases where Copilot returns responses with uniform indentation
         # (e.g., "   1. Hello\n   2. World" becomes "1. Hello\n2. World")

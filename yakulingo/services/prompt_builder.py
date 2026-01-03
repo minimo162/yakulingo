@@ -33,6 +33,11 @@ REFERENCE_INSTRUCTION = """
 添付の参考ファイル（用語集、参考資料等）を参照し、翻訳に活用してください。
 用語集がある場合は、記載されている用語は必ずその訳語を使用してください。
 """
+ID_MARKER_INSTRUCTION = """
+### Item ID markers (critical)
+- Each item begins with [[ID:n]]. Do not remove or alter this marker.
+- Keep the marker at the start of the item.
+"""
 
 # 用語集埋め込み時の指示文（プロンプト内に用語集を含める場合）
 # 共通翻訳ルール（translation_rules.txt が存在しない場合のデフォルト）
@@ -609,12 +614,23 @@ class PromptBuilder:
 
         return prompt
 
+    def _insert_extra_instruction(self, prompt: str, extra_instruction: str) -> str:
+        """Insert extra instruction before the input marker if present."""
+        marker = "===INPUT_TEXT==="
+        extra_instruction = extra_instruction.strip()
+        if not extra_instruction:
+            return prompt
+        if marker in prompt:
+            return prompt.replace(marker, f"{extra_instruction}\n{marker}", 1)
+        return f"{extra_instruction}\n{prompt}"
+
     def build(
         self,
         input_text: str,
         has_reference_files: bool = False,
         output_language: str = "en",
         translation_style: str = "concise",
+        extra_instruction: Optional[str] = None,
     ) -> str:
         """
         Build complete prompt with input text.
@@ -625,6 +641,7 @@ class PromptBuilder:
             output_language: "en" or "jp" (default: "en")
             translation_style: "standard", "concise", or "minimal" (default: "concise")
                               Only affects English output
+            extra_instruction: Optional instruction inserted before input markers
 
         Returns:
             Complete prompt string
@@ -638,13 +655,16 @@ class PromptBuilder:
         # Get appropriate template based on language and style
         template = self._get_template(output_language, translation_style)
 
-        return self._apply_placeholders(
+        prompt = self._apply_placeholders(
             template,
             reference_section,
             input_text,
             output_language,
             translation_style,
         )
+        if extra_instruction:
+            prompt = self._insert_extra_instruction(prompt, extra_instruction)
+        return prompt
 
     def build_batch(
         self,
@@ -652,6 +672,7 @@ class PromptBuilder:
         has_reference_files: bool = False,
         output_language: str = "en",
         translation_style: str = "concise",
+        include_item_ids: bool = False,
     ) -> str:
         """
         Build prompt for batch translation.
@@ -662,16 +683,28 @@ class PromptBuilder:
             output_language: "en" or "jp" (default: "en")
             translation_style: "standard", "concise", or "minimal" (default: "concise")
                               Only affects English output
+            include_item_ids: Prepend [[ID:n]] marker for stable parsing
 
         Returns:
             Complete prompt with numbered input
         """
+        extra_instruction = None
+        if include_item_ids:
+            extra_instruction = ID_MARKER_INSTRUCTION
+            texts = [f"[[ID:{i + 1}]] {text}" for i, text in enumerate(texts)]
+
         # Format as numbered list
         numbered_input = "\n".join(
             f"{i+1}. {text}" for i, text in enumerate(texts)
         )
 
-        return self.build(numbered_input, has_reference_files, output_language, translation_style)
+        return self.build(
+            numbered_input,
+            has_reference_files,
+            output_language,
+            translation_style,
+            extra_instruction=extra_instruction,
+        )
 
     def build_reference_section(
         self,
@@ -722,3 +755,4 @@ class PromptBuilder:
             translations.append("")
 
         return translations[:expected_count]
+

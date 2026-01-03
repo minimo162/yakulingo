@@ -12163,6 +12163,61 @@ def run_app(
                         logger.debug("[EARLY_POSITION] Resident mode: window kept offscreen")
                         return
 
+                    # Pre-position the window to the right half before showing it.
+                    try:
+                        class MONITORINFO(ctypes.Structure):
+                            _fields_ = [
+                                ("cbSize", wintypes.DWORD),
+                                ("rcMonitor", RECT),
+                                ("rcWork", RECT),
+                                ("dwFlags", wintypes.DWORD),
+                            ]
+
+                        MONITOR_DEFAULTTONEAREST = 2
+                        monitor = user32.MonitorFromWindow(
+                            wintypes.HWND(hwnd), MONITOR_DEFAULTTONEAREST
+                        )
+                        target_x = None
+                        target_y = None
+                        target_width = None
+                        target_height = None
+                        if monitor:
+                            monitor_info = MONITORINFO()
+                            monitor_info.cbSize = ctypes.sizeof(MONITORINFO)
+                            if user32.GetMonitorInfoW(monitor, ctypes.byref(monitor_info)):
+                                work = monitor_info.rcWork
+                                work_width = int(work.right - work.left)
+                                work_height = int(work.bottom - work.top)
+                                if work_width > 0 and work_height > 0:
+                                    min_ui_width = 580
+                                    dpi_scale = _get_windows_dpi_scale()
+                                    dpi_awareness = _get_process_dpi_awareness()
+                                    if dpi_awareness in (1, 2) and dpi_scale != 1.0:
+                                        min_ui_width = int(round(min_ui_width * dpi_scale))
+                                    ui_width = max(int(work_width * 0.5), min_ui_width)
+                                    ui_width = min(ui_width, work_width)
+                                    target_width = ui_width
+                                    target_height = work_height
+                                    target_x = int(work.right - ui_width)
+                                    target_y = int(work.top)
+                        if (
+                            target_x is not None
+                            and target_y is not None
+                            and target_width is not None
+                            and target_height is not None
+                        ):
+                            user32.SetWindowPos(
+                                hwnd,
+                                None,
+                                target_x,
+                                target_y,
+                                target_width,
+                                target_height,
+                                SWP_NOZORDER | SWP_NOACTIVATE,
+                            )
+                    except Exception:
+                        pass
+
                     if not is_visible:
                         user32.ShowWindow(hwnd, SW_SHOW)
                         logger.debug("[EARLY_POSITION] Window shown after %dms", waited_ms)

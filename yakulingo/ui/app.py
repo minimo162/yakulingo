@@ -2319,6 +2319,14 @@ class YakuLingoApp:
                             )
                         except Exception as e:
                             logger.debug("Failed to schedule hotkey layout retry: %s", e)
+                        if bring_ui_to_front:
+                            async def _bring_ui_to_front_later() -> None:
+                                await asyncio.sleep(0.25)
+                                await asyncio.to_thread(self._bring_window_to_front_win32)
+                            try:
+                                asyncio.create_task(_bring_ui_to_front_later())
+                            except Exception as e:
+                                logger.debug("Failed to schedule UI foreground for hotkey: %s", e)
 
             is_path_selection, file_paths = self._extract_hotkey_file_paths(text)
             if is_path_selection:

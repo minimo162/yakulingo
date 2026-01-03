@@ -118,6 +118,7 @@ def write_launcher_state(reason: str) -> None:
     if not reason:
         return
     try:
+        os.environ["YAKULINGO_SHUTDOWN_REQUESTED"] = "1"
         path = get_launcher_state_path()
         path.parent.mkdir(parents=True, exist_ok=True)
         payload = {"reason": reason, "ts": time.time()}

@@ -712,6 +712,25 @@ def _nicegui_open_window_patched(
     webview.settings.update(**settings_dict)
     window = webview.create_window(**window_kwargs)
     assert window is not None
+    if resident_startup:
+        try:
+            if hasattr(window, "hide"):
+                window.hide()
+            elif hasattr(window, "minimize"):
+                window.minimize()
+        except Exception:
+            pass
+        if sys.platform == "win32":
+            try:
+                for _ in range(10):
+                    hwnd = _find_window_handle_by_title_win32(title)
+                    if hwnd:
+                        _set_window_taskbar_visibility_win32(hwnd, False)
+                        _hide_native_window_offscreen_win32(title, hwnd=hwnd)
+                        break
+                    time.sleep(0.05)
+            except Exception:
+                pass
     if sys.platform == "win32":
         hwnd = None
         try:
@@ -11246,6 +11265,7 @@ def run_app(
                 # If we cannot determine the client reliably, refuse the request.
                 raise HTTPException(status_code=403, detail="forbidden")
 
+            os.environ["YAKULINGO_SHUTDOWN_REQUESTED"] = "1"
             allow_restart = request.headers.get("X-YakuLingo-Restart") == "1"
             if not allow_restart:
                 from yakulingo.ui.utils import write_launcher_state

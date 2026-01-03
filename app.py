@@ -450,6 +450,9 @@ def main():
         # Normal exit
         pass
     except Exception as e:
+        if os.environ.get("YAKULINGO_SHUTDOWN_REQUESTED") == "1":
+            logger.info("Shutdown requested; skipping abnormal exit dialog: %s", e)
+            return
         logger.exception("Application crashed: %s", e)
         log_path = Path.home() / ".yakulingo" / "logs" / "startup.log"
         _show_startup_error(

@@ -10723,6 +10723,13 @@ def run_app(
     if resident_mode:
         yakulingo_app._clear_auto_open_cause("resident_startup")
         yakulingo_app._set_layout_mode(LayoutMode.OFFSCREEN, "resident_startup")
+    if resident_mode and sys.platform == "win32" and launch_source == "launcher":
+        # Pre-start suppression to avoid a brief window flash before on_startup runs.
+        yakulingo_app._start_resident_taskbar_suppression_win32(
+            "launcher_pre_run",
+            attempts=30,
+            delay_sec=0.1,
+        )
     logger.info("[TIMING] create_app: %.2fs", time.perf_counter() - _t1)
 
     # Pass early-created CopilotHandler to avoid creating a new one

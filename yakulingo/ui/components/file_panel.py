@@ -1000,7 +1000,7 @@ def _progress_card(
             status_label = ui.label(status or '処理中...').classes('text-xs text-muted')
             progress_label = ui.label(f'{int(progress * 100)}%').classes('text-xs font-medium')
 
-        _render_phase_stepper(phase, file_info, phase_counts)
+        phase_steps = _render_phase_stepper(phase, file_info, phase_counts)
 
         phase_count_text = ""
         if phase and phase_counts and phase in phase_counts:
@@ -1025,6 +1025,7 @@ def _progress_card(
                 "status_label": status_label,
                 "detail_label": detail_label,
                 "eta_label": eta_label,
+                "phase_steps": phase_steps,
             })
 
 
@@ -1032,7 +1033,7 @@ def _render_phase_stepper(
     current_phase: Optional[TranslationPhase],
     file_info: Optional[FileInfo],
     phase_counts: Optional[dict[TranslationPhase, tuple[int, int]]],
-) -> None:
+) -> list[dict[str, object]]:
     show_ocr = bool(file_info and file_info.file_type == FileType.PDF)
     steps = [
         (TranslationPhase.EXTRACTING, '抽出'),
@@ -1047,6 +1048,7 @@ def _render_phase_stepper(
     phase_index = {phase: idx for idx, (phase, _) in enumerate(steps)}
     current_idx = phase_index.get(current_phase, -1)
 
+    step_refs: list[dict[str, object]] = []
     with ui.element('div').classes('phase-stepper'):
         for idx, (phase, label) in enumerate(steps):
             classes = 'phase-step'
@@ -1054,12 +1056,19 @@ def _render_phase_stepper(
                 classes += ' completed'
             elif current_idx == idx:
                 classes += ' active'
-            with ui.element('div').classes(classes):
+            with ui.element('div').classes(classes) as step_element:
                 phase_label = label
                 if phase_counts and phase in phase_counts:
                     current, total = phase_counts[phase]
                     phase_label = f'{label} {current}/{total}'
-                ui.label(phase_label).classes('phase-label')
+                label_element = ui.label(phase_label).classes('phase-label')
+            step_refs.append({
+                "phase": phase,
+                "element": step_element,
+                "label": label_element,
+                "base_label": label,
+            })
+    return step_refs
 
 
 def _complete_card(

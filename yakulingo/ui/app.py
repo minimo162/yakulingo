@@ -2499,6 +2499,7 @@ class YakuLingoApp:
         last_ui_update = 0.0
         UI_UPDATE_INTERVAL = 0.2
         file_start_time = time.monotonic()
+        eta_estimator = self._make_eta_estimator(start_time=file_start_time)
 
         def update_progress_ui() -> None:
             if self._shutdown_requested:
@@ -2549,6 +2550,13 @@ class YakuLingoApp:
                     detail_label = refs.get("detail_label")
                     if detail_label is not None:
                         detail_label.set_text(detail_text)
+                    self._update_phase_stepper_elements(
+                        refs.get("phase_steps"),
+                        phase,
+                        phase_counts,
+                        phase_current,
+                        phase_total,
+                    )
                     eta_label = refs.get("eta_label")
                     if eta_label is not None:
                         eta_label.set_text(
@@ -2567,16 +2575,9 @@ class YakuLingoApp:
             loop.call_soon_threadsafe(update_progress_ui)
 
         def on_progress(p: TranslationProgress) -> None:
-            nonlocal file_start_time
             if self._shutdown_requested:
                 return
-            if p.estimated_remaining is not None:
-                eta_seconds = p.estimated_remaining
-            elif p.percentage > 0:
-                elapsed = time.monotonic() - file_start_time
-                eta_seconds = max(0.0, elapsed * (1 - p.percentage) / p.percentage)
-            else:
-                eta_seconds = None
+            eta_seconds = eta_estimator(p)
 
             with progress_lock:
                 progress_state["percentage"] = p.percentage
@@ -2628,6 +2629,7 @@ class YakuLingoApp:
                 progress_state["phase_counts"] = {}
                 progress_state["eta_seconds"] = None
             file_start_time = time.monotonic()
+            eta_estimator = self._make_eta_estimator(start_time=file_start_time)
             schedule_progress_ui_update(force=True)
             self._refresh_ui_after_hotkey_translation(trace_id)
             detected_language = "日本語"  # Default fallback
@@ -6378,6 +6380,46 @@ class YakuLingoApp:
         """Store reference to file progress elements for incremental updates."""
         self._file_progress_elements = refs or None
 
+    def _update_phase_stepper_elements(
+        self,
+        phase_steps: Optional[list[dict[str, object]]],
+        current_phase: Optional[TranslationPhase],
+        phase_counts: dict[TranslationPhase, tuple[int, int]],
+        phase_current: Optional[int],
+        phase_total: Optional[int],
+    ) -> None:
+        if not phase_steps:
+            return
+
+        phase_index = {step.get("phase"): idx for idx, step in enumerate(phase_steps)}
+        current_idx = phase_index.get(current_phase, -1)
+
+        for idx, step in enumerate(phase_steps):
+            step_phase = step.get("phase")
+            element = step.get("element")
+            label = step.get("label")
+            base_label = step.get("base_label", "")
+
+            if element:
+                element.classes(remove='active completed')
+                if current_idx > idx:
+                    element.classes(add='completed')
+                elif current_idx == idx:
+                    element.classes(add='active')
+
+            count = None
+            if step_phase in phase_counts:
+                count = phase_counts[step_phase]
+            elif step_phase == current_phase and phase_current is not None and phase_total is not None:
+                count = (phase_current, phase_total)
+
+            label_text = base_label
+            if count:
+                label_text = f"{base_label} {count[0]}/{count[1]}"
+
+            if label:
+                label.set_text(label_text)
+
     def _update_file_progress_elements(self) -> None:
         if self._shutdown_requested:
             return
@@ -6436,6 +6478,13 @@ class YakuLingoApp:
                 detail_label = refs.get("detail_label")
                 if detail_label is not None:
                     detail_label.set_text(detail_text)
+                self._update_phase_stepper_elements(
+                    refs.get("phase_steps"),
+                    phase,
+                    phase_counts,
+                    phase_current,
+                    phase_total,
+                )
                 eta_label = refs.get("eta_label")
                 if eta_label is not None:
                     eta_label.set_text(f'残り約 {self._format_eta_range_seconds(eta_seconds)}')
@@ -7792,6 +7841,79 @@ class YakuLingoApp:
             "copilot": "Copilot判定",
         }
         return mapping.get(reason or "", "自動判定")
+
+    def _make_eta_estimator(
+        self,
+        *,
+        start_time: Optional[float] = None,
+        min_elapsed: float = 5.0,
+        min_progress: float = 0.02,
+        smoothing: float = 0.35,
+    ) -> Callable[[TranslationProgress], Optional[float]]:
+        start = start_time if start_time is not None else time.monotonic()
+        last_time = start
+        last_progress = 0.0
+        last_phase: Optional[TranslationPhase] = None
+        smoothed_rate: Optional[float] = None
+        last_eta: Optional[float] = None
+
+        def estimate(progress: TranslationProgress) -> Optional[float]:
+            nonlocal last_time, last_progress, last_phase, smoothed_rate, last_eta
+
+            current = max(0.0, min(1.0, progress.percentage))
+            now = time.monotonic()
+
+            if progress.estimated_remaining is not None:
+                last_phase = progress.phase
+                last_time = now
+                last_progress = current
+                smoothed_rate = None
+                if progress.estimated_remaining <= 0:
+                    last_eta = None
+                else:
+                    last_eta = float(progress.estimated_remaining)
+                return last_eta
+
+            if progress.phase != last_phase:
+                last_phase = progress.phase
+                last_time = now
+                last_progress = current
+                smoothed_rate = None
+                last_eta = None
+                return None
+
+            if current < last_progress:
+                last_time = now
+                last_progress = current
+                smoothed_rate = None
+                last_eta = None
+                return None
+
+            delta_progress = current - last_progress
+            delta_time = now - last_time
+            if delta_progress <= 0 or delta_time <= 0:
+                return last_eta if (now - start) >= min_elapsed else None
+
+            instant_rate = delta_progress / delta_time
+            if smoothed_rate is None:
+                smoothed_rate = instant_rate
+            else:
+                smoothed_rate = smoothing * instant_rate + (1 - smoothing) * smoothed_rate
+
+            last_time = now
+            last_progress = current
+
+            if (now - start) < min_elapsed or current < min_progress or smoothed_rate <= 0:
+                return None
+
+            eta = (1 - current) / smoothed_rate
+            if math.isnan(eta) or math.isinf(eta) or eta < 0:
+                return last_eta
+
+            last_eta = eta
+            return eta
+
+        return estimate
 
     def _format_eta_seconds(self, seconds: Optional[float]) -> str:
         if seconds is None:
@@ -9441,12 +9563,10 @@ class YakuLingoApp:
         translation_style = item.translation_style
 
         start_time = time.monotonic()
+        eta_estimator = self._make_eta_estimator(start_time=start_time)
 
         def on_progress(p: TranslationProgress) -> None:
-            eta_seconds = p.estimated_remaining
-            if eta_seconds is None and p.percentage > 0:
-                elapsed = time.monotonic() - start_time
-                eta_seconds = max(0.0, elapsed * (1 - p.percentage) / p.percentage)
+            eta_seconds = eta_estimator(p)
 
             with self._file_queue_state_lock:
                 item.progress = p.percentage
@@ -9698,15 +9818,10 @@ class YakuLingoApp:
 
         # Track translation time from user's perspective (after UI update is sent)
         start_time = time.monotonic()
+        eta_estimator = self._make_eta_estimator(start_time=start_time)
 
         def on_progress(p: TranslationProgress):
-            if p.estimated_remaining is not None:
-                eta_seconds = p.estimated_remaining
-            elif p.percentage > 0:
-                elapsed = time.monotonic() - start_time
-                eta_seconds = max(0.0, elapsed * (1 - p.percentage) / p.percentage)
-            else:
-                eta_seconds = None
+            eta_seconds = eta_estimator(p)
 
             self.state.translation_progress = p.percentage
             self.state.translation_status = p.status

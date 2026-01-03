@@ -2212,15 +2212,6 @@ class YakuLingoApp:
                             self._resident_show_requested = False
             return
 
-        # If GPT mode setup is still running, wait briefly before starting hotkey translation.
-        copilot = getattr(self, "_copilot", None)
-        if copilot is not None and not copilot.is_gpt_mode_set:
-            try:
-                logger.info("Hotkey translation waiting for GPT mode setup")
-                await asyncio.to_thread(copilot.wait_for_gpt_mode_setup, 25.0)
-            except Exception as e:
-                logger.debug("Hotkey GPT mode wait failed: %s", e)
-
         # Double-check: Skip if translation started while we were waiting
         if self.state.text_translating:
             logger.debug("Hotkey handler skipped - text translation already in progress")
@@ -2299,7 +2290,7 @@ class YakuLingoApp:
                             self._client = None
                     client = None
 
-            should_bring_to_front = bring_ui_to_front or (open_ui and source_hwnd is None)
+            should_bring_to_front = bring_ui_to_front or (open_ui and layout_source_hwnd is None)
             if client is not None:
                 if sys.platform == "win32":
                     if layout_result is False:

@@ -92,29 +92,32 @@ $script:AppName = "YakuLingo"
 $script:SetupUiTitle = "Setup - $($script:AppName)"
 $script:SetupUiTitleError = "$($script:SetupUiTitle) - Error"
 
-# Open usage guide after setup completes
-function Open-UsageGuide {
-    $candidates = @()
-    if ($script:ShareDir) {
-        $candidates += (Join-Path $script:ShareDir "README.html")
+# Open UI after setup completes
+function Open-PostSetupUi {
+    param([string]$SetupPath)
+
+    if ([string]::IsNullOrWhiteSpace($SetupPath)) {
+        $SetupPath = Join-Path $env:LOCALAPPDATA $script:AppName
     }
-    if ($script:ScriptDir) {
-        $parentDir = Split-Path -Parent $script:ScriptDir
-        if ($parentDir) {
-            $candidates += (Join-Path $parentDir "README.html")
-        }
-        $candidates += (Join-Path $script:ScriptDir "README.html")
-    }
-    $readmePath = $candidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
-    if ($readmePath) {
+
+    $openUiPath = Join-Path $SetupPath "YakuLingo_OpenUI.ps1"
+    if (Test-Path $openUiPath) {
         try {
-            Start-Process -FilePath $readmePath -ErrorAction Stop
-            try { "Opened README: $readmePath" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
+            $argList = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $openUiPath)
+            Start-Process -FilePath "powershell.exe" -ArgumentList $argList -WindowStyle Hidden | Out-Null
+            try { "Opened UI: $openUiPath" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
         } catch {
-            try { "Failed to open README: $($_.Exception.Message)" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
+            try { "Failed to open UI: $($_.Exception.Message)" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
         }
-    } else {
-        try { "README.html not found. Candidates: $($candidates -join '; ')" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
+        return
+    }
+
+    $fallbackUrl = "http://127.0.0.1:8765/"
+    try {
+        Start-Process -FilePath $fallbackUrl | Out-Null
+        try { "Opened UI fallback URL: $fallbackUrl" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
+    } catch {
+        try { "Failed to open UI fallback URL: $($_.Exception.Message)" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
     }
 }
 
@@ -220,6 +223,8 @@ if ($GuiMode) {
                 if ($script:progressForm.WindowState -eq "Minimized") {
                     $script:progressForm.WindowState = "Normal"
                 }
+                $script:progressForm.TopMost = $true
+                $script:progressForm.BringToFront()
             }
         }
 
@@ -289,6 +294,7 @@ if ($GuiMode) {
             $script:progressForm.Controls.Add($script:cancelButton)
 
             $script:progressForm.Show()
+            $script:progressForm.BringToFront()
             $script:progressForm.Refresh()
         } else {
             if ($Step -ne "") {
@@ -2245,7 +2251,7 @@ exit 0
         }
 
         Write-Status -Message "Setup completed!" -Progress -Step "Step 4/4: Finalizing" -Percent 100
-        $successMsg = "セットアップが完了しました。`n`n使い方ガイド（README.html）を開きます。"
+        $successMsg = "セットアップが完了しました。`n`nYakuLingo の画面を開きます。"
         if ($script:GlossaryDistPath -or $script:TranslationRulesDistPath) {
             $successMsg += "`n`n既存ファイルは保持しました。新しい既定ファイル:"
             if ($script:GlossaryDistPath) {
@@ -2256,7 +2262,7 @@ exit 0
             }
         }
         Show-Success $successMsg
-        Open-UsageGuide
+        Open-PostSetupUi -SetupPath $SetupPath
     } else {
         Write-Host ""
         Write-Host "============================================================" -ForegroundColor Green
@@ -2265,7 +2271,7 @@ exit 0
         Write-Host ""
         Write-Host " Location: $SetupPath" -ForegroundColor White
         Write-Host " YakuLingo will start automatically on logon (resident mode)." -ForegroundColor Cyan
-        Write-Host " The usage guide (README.html) will open now. Copilot login has completed during setup; follow the guide for basic usage." -ForegroundColor Cyan
+        Write-Host " The YakuLingo UI will open now. Copilot login has completed during setup; you're ready to use the app." -ForegroundColor Cyan
         Write-Host " Exit: Start Menu > YakuLingo 終了" -ForegroundColor Cyan
         if ($script:GlossaryDistPath -or $script:TranslationRulesDistPath) {
             Write-Host ""
@@ -2293,7 +2299,7 @@ exit 0
         if (-not $residentReady) {
             throw "Copilotの準備が完了しませんでした。ログインを完了してから再実行してください。"
         }
-        Open-UsageGuide
+        Open-PostSetupUi -SetupPath $SetupPath
     }
 }
 

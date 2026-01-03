@@ -3163,6 +3163,8 @@ class CopilotHandler:
             logger.debug("No page available for GPT mode check")
             return "not_ready"
 
+        self._maximize_edge_window_for_gpt()
+
         candidates = self._get_gpt_mode_target_candidates()
 
         try:
@@ -3276,6 +3278,60 @@ class CopilotHandler:
             logger.warning("Failed to check/switch GPT mode: %s", e)
             # Don't block translation on GPT mode errors - user can manually switch
             return "error"
+
+    def _maximize_edge_window_for_gpt(self) -> bool:
+        """Ensure the Edge window uses a full-size layout before GPT mode switching."""
+        if sys.platform != "win32":
+            return False
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.WinDLL('user32', use_last_error=True)
+            edge_hwnd = self._find_edge_window_handle()
+            if not edge_hwnd:
+                return False
+
+            if user32.IsIconic(edge_hwnd):
+                SW_RESTORE = 9
+                user32.ShowWindow(edge_hwnd, SW_RESTORE)
+
+            edge_layout_mode = getattr(self, "_edge_layout_mode", None)
+            if edge_layout_mode == "offscreen":
+                SM_XVIRTUALSCREEN = 76
+                SM_YVIRTUALSCREEN = 77
+                SM_CXVIRTUALSCREEN = 78
+                SM_CYVIRTUALSCREEN = 79
+                v_left = int(user32.GetSystemMetrics(SM_XVIRTUALSCREEN))
+                v_top = int(user32.GetSystemMetrics(SM_YVIRTUALSCREEN))
+                v_width = int(user32.GetSystemMetrics(SM_CXVIRTUALSCREEN))
+                v_height = int(user32.GetSystemMetrics(SM_CYVIRTUALSCREEN))
+                gap = max(self.EDGE_OFFSCREEN_GAP, 10)
+                offscreen_x = v_left + v_width + gap + 200
+                offscreen_y = v_top
+                SWP_NOZORDER = 0x0004
+                SWP_NOACTIVATE = 0x0010
+                SWP_SHOWWINDOW = 0x0040
+                success = user32.SetWindowPos(
+                    edge_hwnd,
+                    None,
+                    offscreen_x,
+                    offscreen_y,
+                    v_width,
+                    v_height,
+                    SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW,
+                )
+                if success:
+                    logger.debug("Edge resized off-screen for GPT mode: %sx%s", v_width, v_height)
+                return bool(success)
+
+            SW_MAXIMIZE = 3
+            user32.ShowWindow(edge_hwnd, SW_MAXIMIZE)
+            logger.debug("Edge window maximized for GPT mode")
+            return True
+        except Exception as e:
+            logger.debug("Failed to maximize Edge window for GPT mode: %s", e)
+            return False
 
     def _switch_gpt_mode_via_switcher_menu(
         self,

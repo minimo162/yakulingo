@@ -5712,6 +5712,9 @@ class YakuLingoApp:
         if not self._header_status:
             return
 
+        active_client = self._get_active_client()
+        has_client = active_client is not None
+
         def _refresh_login_banner(context: str, has_client: bool) -> None:
             if not self._login_banner:
                 return
@@ -5722,16 +5725,16 @@ class YakuLingoApp:
         try:
             # Fast path: we are already in a valid client context.
             self._header_status.refresh()
-            _refresh_login_banner("direct", self._client is not None)
+            _refresh_login_banner("direct", has_client)
             return
         except Exception as e:
             # When called from async/background tasks, NiceGUI context may not be set.
             # Retry with the saved client context.
-            if self._client is None:
+            if active_client is None:
                 logger.debug("Status refresh failed (no client): %s", e)
                 return
             try:
-                with self._client:
+                with active_client:
                     self._header_status.refresh()
                     _refresh_login_banner("with_client", True)
             except Exception as e2:
@@ -5742,16 +5745,17 @@ class YakuLingoApp:
         if self._translate_button is None:
             return
 
+        active_client = self._get_active_client()
         try:
             # Fast path: already in a valid client context.
             self._update_translate_button_state()
             return
         except Exception as e:
-            if self._client is None:
+            if active_client is None:
                 logger.debug("Translate button refresh failed (no client): %s", e)
                 return
             try:
-                with self._client:
+                with active_client:
                     self._update_translate_button_state()
             except Exception as e2:
                 logger.debug("Translate button refresh with saved client failed: %s", e2)
@@ -5765,7 +5769,7 @@ class YakuLingoApp:
         """
         if self._shutdown_requested:
             return
-        if self._header_status is None or self._client is None:
+        if self._header_status is None or self._get_active_client() is None:
             return
         if self.state.copilot_ready or self.state.connection_state != ConnectionState.CONNECTING:
             return
@@ -12576,6 +12580,17 @@ body.yakulingo-drag-active .global-drop-indicator {
         with main_container:
             yakulingo_app.create_ui()
         logger.info("[TIMING] create_ui(): %.2fs", _time_module.perf_counter() - _t_ui)
+
+        if client_connected:
+            try:
+                with client:
+                    yakulingo_app._refresh_status()
+                    yakulingo_app._refresh_translate_button_state()
+                    yakulingo_app._start_status_auto_refresh("client_connected")
+            except Exception:
+                yakulingo_app._refresh_status()
+                yakulingo_app._refresh_translate_button_state()
+                yakulingo_app._start_status_auto_refresh("client_connected")
 
         # Wait for styles and the root UI element to be applied before revealing the UI.
         # This prevents a brief flash of a partially-styled layout on slow machines.

@@ -2899,7 +2899,7 @@ class YakuLingoApp:
         self._refresh_ui_after_hotkey_translation(trace_id)
         client = self._get_active_client()
         if client is not None:
-            self._scroll_result_panel_to_bottom(client)
+            self._scroll_result_panel_to_top(client)
 
         if result.error_message:
             logger.info("Hotkey translation [%s] failed: %s", trace_id, result.error_message)
@@ -5849,6 +5849,89 @@ class YakuLingoApp:
             0.05, self._start_result_panel_scroll_task, client, js_code
         )
 
+    def _scroll_result_panel_to_top(self, client: NiceGUIClient) -> None:
+        """Scroll the result panel to the top and disable auto-follow."""
+        if client is None or self._shutdown_requested:
+            return
+        try:
+            if not getattr(client, "has_socket_connection", True):
+                return
+        except Exception:
+            pass
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+
+        existing = self._result_panel_scroll_handle
+        if existing is not None and not existing.cancelled():
+            existing.cancel()
+        self._result_panel_scroll_handle = None
+        if self._result_panel_scroll_task is not None and not self._result_panel_scroll_task.done():
+            try:
+                self._result_panel_scroll_task.cancel()
+            except Exception:
+                pass
+            self._result_panel_scroll_task = None
+
+        js_code = """
+        (function() {
+            try {
+                const panel = document.querySelector('.result-panel');
+                if (!panel) return false;
+
+                const attempt = (tries) => {
+                    if (!panel || panel.clientHeight === 0) {
+                        if (tries < 3) {
+                            setTimeout(() => attempt(tries + 1), 60);
+                        }
+                        return false;
+                    }
+
+                    panel.dataset.yakulingoAutoScroll = 'false';
+                    const hidden = document.hidden || document.visibilityState !== 'visible';
+                    const prefersReducedMotion = window.matchMedia
+                        && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+                    const useSmooth = !hidden && !prefersReducedMotion;
+                    const scrollNow = (behavior) => {
+                        if (panel.scrollTo) {
+                            try {
+                                panel.scrollTo({ top: 0, behavior });
+                                return;
+                            } catch (err) {
+                                // fall back to immediate assignment
+                            }
+                        }
+                        panel.scrollTop = 0;
+                    };
+
+                    if (hidden) {
+                        scrollNow('auto');
+                        setTimeout(() => scrollNow('auto'), 120);
+                        return true;
+                    }
+
+                    let rafCalled = false;
+                    requestAnimationFrame(() => requestAnimationFrame(() => {
+                        rafCalled = true;
+                        scrollNow(useSmooth ? 'smooth' : 'auto');
+                    }));
+                    setTimeout(() => {
+                        if (!rafCalled) scrollNow(useSmooth ? 'smooth' : 'auto');
+                    }, 120);
+                    return true;
+                };
+
+                return attempt(0);
+            } catch (err) {
+                return false;
+            }
+        })();
+        """
+        self._result_panel_scroll_handle = loop.call_later(
+            0.05, self._start_result_panel_scroll_task, client, js_code
+        )
+
     def _start_result_panel_scroll_task(self, client: NiceGUIClient, js_code: str) -> None:
         self._result_panel_scroll_handle = None
         if self._shutdown_requested:
@@ -8200,7 +8283,7 @@ class YakuLingoApp:
             if error_message:
                 self._notify_error(error_message)
             self._refresh_result_panel()
-            self._scroll_result_panel_to_bottom(client)
+            self._scroll_result_panel_to_top(client)
             self._update_translate_button_state()
             self._refresh_status()
             self._refresh_tabs()
@@ -8405,7 +8488,7 @@ class YakuLingoApp:
                 self._notify_error(error_message)
             # Only refresh result panel (input panel is already in compact state)
             self._refresh_result_panel()
-            self._scroll_result_panel_to_bottom(client)
+            self._scroll_result_panel_to_top(client)
             logger.debug("[LAYOUT] Translation [%s] result panel refreshed", trace_id)
             # Re-enable translate button
             self._update_translate_button_state()

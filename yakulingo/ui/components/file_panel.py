@@ -7,17 +7,14 @@ Simple, focused, warm.
 from nicegui import ui, events
 from typing import Any, Awaitable, Callable, List, Optional, Union
 from pathlib import Path
-from datetime import datetime
 import asyncio
 import json
 from types import SimpleNamespace
 
 from yakulingo.ui.state import AppState, FileState
 from yakulingo.ui.utils import (
-    format_bytes,
     open_file,
     show_in_folder,
-    summarize_reference_files,
     temp_file_manager,
 )
 from yakulingo.models.types import (
@@ -157,6 +154,10 @@ async def _process_drop_result(
             on_error(message)
         return False
 
+    if len(payloads) > 1:
+        ui.notify('複数ファイルは同時に翻訳できません。最初の1件のみ処理します', type='warning')
+        payloads = payloads[:1]
+
     temp_paths: list[Path] = []
     errors: list[str] = []
     for payload in payloads:
@@ -265,23 +266,13 @@ def create_file_panel(
     on_attach_reference_file: Optional[Callable[[], None]] = None,
     on_remove_reference_file: Optional[Callable[[int], None]] = None,
     reference_files: Optional[List[Path]] = None,
-    effective_reference_files: Optional[List[Path]] = None,
     translation_style: str = "concise",
     translation_result: Optional[TranslationResult] = None,
     use_bundled_glossary: bool = True,
-    font_jp_to_en: str = "Arial",
-    font_en_to_jp: str = "MS Pゴシック",
-    on_dismiss_issues: Optional[Callable[[], None]] = None,
     on_glossary_toggle: Optional[Callable[[bool], None]] = None,
     on_edit_glossary: Optional[Callable[[], None]] = None,
     on_edit_translation_rules: Optional[Callable[[], None]] = None,
     on_progress_elements_created: Optional[Callable[[Optional[dict[str, object]]], None]] = None,
-    on_queue_select: Optional[Callable[[str], None]] = None,
-    on_queue_remove: Optional[Callable[[str], None]] = None,
-    on_queue_move: Optional[Callable[[str, int], None]] = None,
-    on_queue_reorder: Optional[Callable[[str, str], None]] = None,
-    on_queue_clear: Optional[Callable[[], None]] = None,
-    on_queue_mode_change: Optional[Callable[[str], None]] = None,
 ):
     """File translation panel - Nani-inspired design"""
 
@@ -293,23 +284,6 @@ def create_file_panel(
         with ui.element('div').classes('main-card w-full'):
             # Content container
             with ui.element('div').classes('main-card-inner mx-1.5 mb-1.5 p-4'):
-                if state.file_queue:
-                    with ui.element('details').classes('advanced-panel file-queue-panel'):
-                        with ui.element('summary').classes('advanced-summary items-center'):
-                            ui.label('キュー').classes('advanced-title')
-                            with ui.row().classes('advanced-summary-chips items-center gap-2'):
-                                ui.label(f'{len(state.file_queue)} 件').classes('chip meta-chip')
-                        _queue_panel(
-                            state,
-                            on_queue_select,
-                            on_queue_remove,
-                            on_queue_move,
-                            on_queue_reorder,
-                            on_cancel,
-                            on_queue_clear,
-                            on_queue_mode_change,
-                        )
-
                 if state.file_state == FileState.EMPTY:
                     _drop_zone(state, on_file_select)
 
@@ -320,31 +294,11 @@ def create_file_panel(
                         # Show loading state while file info is being loaded
                         _file_loading_card(state.selected_file, on_reset)
 
-                    has_manual_refs = bool(reference_files)
-                    has_glossary = bool(use_bundled_glossary)
-                    has_override = state.file_output_language_overridden
                     has_sections = bool(state.file_info and len(state.file_info.section_details) > 1)
-                    style_label = STYLE_OPTIONS.get(translation_style, (translation_style, ""))[0]
-                    output_label = '日本語→英語' if state.file_output_language == 'en' else '英語→日本語'
 
-                    details = ui.element('details').classes('advanced-panel file-advanced-panel')
+                    settings_panel = ui.element('div').classes('advanced-panel file-advanced-panel')
 
-                    with details:
-                        with ui.element('summary').classes('advanced-summary items-center'):
-                            ui.label('詳細設定').classes('advanced-title')
-                            with ui.row().classes('advanced-summary-chips items-center gap-2'):
-                                ui.label(output_label).classes('chip meta-chip')
-                                if state.file_output_language == 'en':
-                                    ui.label(style_label).classes('chip meta-chip')
-                                if has_glossary:
-                                    ui.label('用語集').classes('chip meta-chip')
-                                if has_manual_refs:
-                                    ui.label(f'参照ファイル {len(reference_files)}').classes('chip meta-chip')
-                                if has_sections:
-                                    ui.label(f'セクション {len(state.file_info.section_details)}').classes('chip meta-chip')
-                                if has_override:
-                                    ui.label('手動指定').classes('chip meta-chip override-chip')
-
+                    with settings_panel:
                         with ui.column().classes('advanced-content gap-3'):
                             if on_language_change:
                                 with ui.column().classes('advanced-section'):
@@ -368,13 +322,6 @@ def create_file_panel(
                                     on_section_select_all,
                                     on_section_clear,
                                 )
-                            _precheck_card(
-                                state,
-                                translation_style,
-                                effective_reference_files,
-                                font_jp_to_en,
-                                font_en_to_jp,
-                            )
                     with ui.column().classes('items-center gap-2 mt-4'):
                         _file_translate_meta_chips(state, translation_style, use_bundled_glossary)
                         with ui.row().classes('justify-center'):
@@ -671,20 +618,6 @@ def _language_selector(
                 ui.label('和訳')
 
 
-def _format_detection_reason(reason: Optional[str]) -> str:
-    mapping = {
-        "kana": "ひらがな/カタカナ",
-        "hangul": "ハングル検出",
-        "latin": "アルファベット優勢",
-        "cjk_unencodable": "漢字差分",
-        "cjk_fallback": "CJKのみ",
-        "empty": "未入力",
-        "default": "自動判定",
-        "copilot": "Copilot判定",
-    }
-    return mapping.get(reason or "", "自動判定")
-
-
 def _format_eta(seconds: Optional[float]) -> str:
     if seconds is None:
         return "--"
@@ -721,58 +654,12 @@ def _get_section_label(file_info: Optional[FileInfo]) -> str:
     return label_map.get(file_info.file_type, 'セクション')
 
 
-def _estimate_translation_seconds(file_info: Optional[FileInfo], selected_count: int) -> Optional[float]:
-    if not file_info:
-        return None
-    unit_count = selected_count
-    if unit_count <= 0:
-        unit_count = (
-            file_info.page_count
-            or file_info.slide_count
-            or file_info.sheet_count
-            or 0
-        )
-
-    if file_info.file_type == FileType.PDF:
-        per_unit = 5.0
-    elif file_info.file_type == FileType.EXCEL:
-        per_unit = 4.0
-    elif file_info.file_type == FileType.POWERPOINT:
-        per_unit = 3.0
-    elif file_info.file_type == FileType.WORD:
-        per_unit = 2.5
-    else:
-        per_unit = 1.8
-
-    if unit_count > 0:
-        return per_unit * unit_count + 5.0
-
-    if file_info.size_bytes:
-        return max(5.0, file_info.size_bytes / 15000)
-
-    return None
-
-
 # Translation style options with labels and tooltips
 STYLE_OPTIONS = {
     'standard': ('標準', '本文・説明文向け'),
     'concise': ('簡潔', '箇条書き・表向け'),
     'minimal': ('最簡潔', '見出し・件名向け'),
 }
-
-
-def _get_recommended_style(file_info: Optional[FileInfo]) -> Optional[str]:
-    if not file_info:
-        return None
-    style_map = {
-        FileType.EXCEL: 'concise',
-        FileType.POWERPOINT: 'concise',
-        FileType.WORD: 'standard',
-        FileType.PDF: 'standard',
-        FileType.TEXT: 'standard',
-        FileType.EMAIL: 'standard',
-    }
-    return style_map.get(file_info.file_type)
 
 
 def _style_selector(current_style: str, on_change: Optional[Callable[[str], None]]):
@@ -863,81 +750,6 @@ def _glossary_selector(
                         ).props('flat round aria-label="参照ファイルを削除"').classes('remove-btn')
 
 
-def _precheck_card(
-    state: AppState,
-    translation_style: str,
-    effective_reference_files: Optional[List[Path]],
-    font_jp_to_en: str,
-    font_en_to_jp: str,
-) -> None:
-    if not state.file_info:
-        return
-
-    detected = state.file_detected_language or "未判定"
-    detected_reason = _format_detection_reason(state.file_detected_language_reason)
-    output_label = '英語' if state.file_output_language == 'en' else '日本語'
-    section_label = _get_section_label(state.file_info)
-    selected_count = state.file_info.selected_section_count
-    total_sections = len(state.file_info.section_details) if state.file_info.section_details else selected_count
-    font_name = font_jp_to_en if state.file_output_language == 'en' else font_en_to_jp
-    eta_seconds = _estimate_translation_seconds(state.file_info, selected_count)
-    eta_label = _format_eta(eta_seconds)
-    style_label = STYLE_OPTIONS.get(translation_style, (translation_style, ""))[0]
-
-    summary = summarize_reference_files(effective_reference_files)
-
-    with ui.element('div').classes('file-precheck-card'):
-        with ui.column().classes('w-full gap-2'):
-            with ui.row().classes('items-center justify-between gap-2'):
-                ui.label('翻訳前チェック').classes('text-sm font-semibold')
-                if summary["count"] > 0:
-                    ui.label(f'参照ファイル {summary["count"]} 件').classes('chip')
-
-            with ui.column().classes('precheck-grid gap-1'):
-                ui.label(f'検出: {detected}').classes('precheck-item')
-                ui.label(f'判定: {detected_reason}').classes('precheck-item text-muted')
-                ui.label(f'出力: {output_label}').classes('precheck-item')
-                if state.file_output_language == 'en':
-                    ui.label(f'スタイル: {style_label}').classes('precheck-item')
-                    recommended = _get_recommended_style(state.file_info)
-                    if recommended:
-                        recommended_label, recommended_hint = STYLE_OPTIONS.get(recommended, (recommended, ""))
-                        if recommended == translation_style:
-                            ui.label(f'推奨: {recommended_label}').classes('precheck-item')
-                        else:
-                            ui.label(
-                                f'推奨: {recommended_label}（{recommended_hint}）'
-                            ).classes('precheck-item')
-                ui.label(f'フォント: {font_name}').classes('precheck-item')
-                ui.label(f'{section_label}: {selected_count}/{max(total_sections, 1)}').classes('precheck-item')
-                ui.label(f'推定: {eta_label}').classes('precheck-item')
-
-            if summary["count"] > 0:
-                with ui.element('details').classes('ref-summary-details'):
-                    with ui.element('summary').classes('ref-summary-row items-center flex-wrap gap-2'):
-                        ui.label(format_bytes(summary["total_bytes"])).classes('ref-chip')
-                        if summary["latest_mtime"]:
-                            updated = datetime.fromtimestamp(summary["latest_mtime"]).strftime('%m/%d %H:%M')
-                            ui.label(f'更新 {updated}').classes('ref-chip')
-                        status_label = 'OK' if summary["all_ok"] else 'NG'
-                        status_class = 'ref-chip status-ok' if summary["all_ok"] else 'ref-chip status-warn'
-                        ui.label(status_label).classes(status_class)
-                        ui.icon('expand_more').classes('ref-summary-caret')
-
-                    with ui.column().classes('ref-detail-list'):
-                        for entry in summary["entries"]:
-                            status_class = 'ref-detail-row' if entry["exists"] else 'ref-detail-row missing'
-                            with ui.element('div').classes(status_class):
-                                ui.label(entry["name"]).classes('file-name')
-                                if entry["size_bytes"]:
-                                    ui.label(format_bytes(entry["size_bytes"])).classes('ref-meta')
-                                if entry["mtime"]:
-                                    updated = datetime.fromtimestamp(entry["mtime"]).strftime('%m/%d %H:%M')
-                                    ui.label(f'更新 {updated}').classes('ref-meta')
-                                ui.label('OK' if entry["exists"] else 'NG').classes('ref-file-status')
-
-
-
 def _drop_zone(
     state: AppState,
     on_file_select: Callable[[list[Path]], Union[None, Awaitable[None]]],
@@ -1014,7 +826,7 @@ def _drop_zone(
             max_file_size=MAX_DROP_FILE_SIZE_BYTES,
             on_rejected=handle_upload_rejected,
             auto_upload=True,
-        ).classes('drop-zone-upload').props(f'accept="{SUPPORTED_FORMATS}" multiple')
+        ).classes('drop-zone-upload').props(f'accept="{SUPPORTED_FORMATS}"')
 
         # Make container click trigger the upload file dialog
         container.on('click', lambda: upload.run_method('pickFiles'))

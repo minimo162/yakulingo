@@ -7380,23 +7380,13 @@ class YakuLingoApp:
                                 on_attach_reference_file=self._attach_reference_file,
                                 on_remove_reference_file=self._remove_reference_file,
                                 reference_files=self.state.reference_files,
-                                effective_reference_files=self._get_effective_reference_files(),
                                 translation_style=self.settings.translation_style,
                                 translation_result=self.state.translation_result,
                                 use_bundled_glossary=self.settings.use_bundled_glossary,
-                                font_jp_to_en=self.settings.font_jp_to_en,
-                                font_en_to_jp=self.settings.font_en_to_jp,
-                                on_dismiss_issues=self._dismiss_file_issues,
                                 on_glossary_toggle=self._on_glossary_toggle,
                                 on_edit_glossary=self._edit_glossary,
                                 on_edit_translation_rules=self._edit_translation_rules,
                                 on_progress_elements_created=self._on_file_progress_elements_created,
-                                on_queue_select=self._select_queue_item,
-                                on_queue_remove=self._remove_queue_item,
-                                on_queue_move=self._move_queue_item,
-                                on_queue_reorder=self._reorder_queue_item,
-                                on_queue_clear=self._clear_queue,
-                                on_queue_mode_change=self._set_queue_mode,
                             )
 
         self._main_content = main_content
@@ -9243,7 +9233,18 @@ class YakuLingoApp:
         self.state.file_drop_error = None
 
         paths = file_path if isinstance(file_path, list) else [file_path]
-        new_items = await self._add_files_to_queue(paths)
+        paths = [path for path in paths if path]
+        if not paths:
+            return
+        if len(paths) > 1 and client:
+            with client:
+                ui.notify('複数ファイルは同時に翻訳できません。最初の1件のみ選択します', type='warning')
+
+        self.state.file_queue = []
+        self.state.file_queue_active_id = None
+        self.state.file_queue_running = False
+
+        new_items = await self._add_files_to_queue([paths[0]])
         if not new_items:
             return
 
@@ -9596,10 +9597,6 @@ class YakuLingoApp:
     async def _translate_file(self):
         """Translate file with inline progress."""
         import time
-
-        if self.state.file_queue and len(self.state.file_queue) > 1:
-            await self._start_queue_translation()
-            return
 
         if not self.state.selected_file:
             return

@@ -305,16 +305,20 @@ def create_file_panel(
                                     ui.label('翻訳方向').classes('advanced-label')
                                     _language_selector(state, on_language_change, compact=True)
                             if state.file_output_language == 'en':
-                                _style_selector(translation_style, on_style_change)
-                            _glossary_selector(
-                                use_bundled_glossary,
-                                on_glossary_toggle,
-                                on_edit_glossary,
-                                on_edit_translation_rules,
-                                reference_files,
-                                on_attach_reference_file,
-                                on_remove_reference_file,
-                            )
+                                with ui.column().classes('advanced-section'):
+                                    ui.label('翻訳スタイル').classes('advanced-label')
+                                    _style_selector(translation_style, on_style_change)
+                            with ui.column().classes('advanced-section'):
+                                ui.label('参照ファイル').classes('advanced-label')
+                                _glossary_selector(
+                                    use_bundled_glossary,
+                                    on_glossary_toggle,
+                                    on_edit_glossary,
+                                    on_edit_translation_rules,
+                                    reference_files,
+                                    on_attach_reference_file,
+                                    on_remove_reference_file,
+                                )
                             if has_sections and state.file_info:
                                 _section_selector(
                                     state.file_info,
@@ -389,12 +393,6 @@ def _file_translate_meta_chips(
                 ui.label('用語集').classes('chip meta-chip')
             if state.reference_files:
                 ui.label(f'参照ファイル {len(state.reference_files)}').classes('chip meta-chip')
-        if state.file_detected_language:
-            ui.label(
-                f'検出: {state.file_detected_language} → 出力: {output_language_label}'
-            ).classes('file-meta-subtext')
-        else:
-            ui.label('言語を検出中...').classes('file-meta-subtext')
 
 
 def _queue_panel(
@@ -664,7 +662,7 @@ STYLE_OPTIONS = {
 
 def _style_selector(current_style: str, on_change: Optional[Callable[[str], None]]):
     """Translation style selector - segmented button style for English output"""
-    with ui.row().classes('w-full justify-center mt-3'):
+    with ui.row().classes('w-full justify-center'):
         with ui.element('div').classes('style-selector'):
             for i, (style_key, (label, tooltip)) in enumerate(STYLE_OPTIONS.items()):
                 # Determine button position class
@@ -698,7 +696,7 @@ def _glossary_selector(
     on_remove: Optional[Callable[[int], None]] = None,
 ):
     """Glossary toggle + reference file attachment row (simplified)."""
-    with ui.row().classes('w-full justify-center mt-3 items-center gap-2 flex-wrap'):
+    with ui.row().classes('w-full justify-center items-center gap-2 flex-wrap'):
         # Glossary toggle button
         if on_toggle:
             glossary_btn = ui.button(

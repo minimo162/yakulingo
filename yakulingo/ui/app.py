@@ -13045,6 +13045,15 @@ document.fonts.ready.then(function() {
                         await _finalize_startup_overlay()
                 except Exception:
                     await _finalize_startup_overlay()
+                try:
+                    with client:
+                        yakulingo_app._refresh_status()
+                        yakulingo_app._refresh_translate_button_state()
+                        yakulingo_app._start_status_auto_refresh("late_client_connected")
+                except Exception:
+                    yakulingo_app._refresh_status()
+                    yakulingo_app._refresh_translate_button_state()
+                    yakulingo_app._start_status_auto_refresh("late_client_connected")
 
             asyncio.create_task(_wait_for_late_connection())
             asyncio.create_task(_splash_timeout())

@@ -1347,6 +1347,10 @@ class YakuLingoApp:
         # Copilot access lock (used for queue parallelism safety)
         self._copilot_lock = threading.Lock()
 
+        # Throttle noisy taskbar visibility logs when window handle is missing
+        self._last_taskbar_visibility_not_found_time: Optional[float] = None
+        self._last_taskbar_visibility_not_found_reason: Optional[str] = None
+
         # File translation queue management
         self._file_queue_cancel_requested = False
         self._file_queue_workers: list[asyncio.Task] = []
@@ -4308,7 +4312,16 @@ class YakuLingoApp:
         if not hwnd:
             hwnd = _find_window_handle_by_title_win32("YakuLingo")
         if not hwnd:
-            logger.debug("YakuLingo window not found for taskbar visibility (%s)", reason)
+            now = time.monotonic()
+            last_time = self._last_taskbar_visibility_not_found_time
+            last_reason = self._last_taskbar_visibility_not_found_reason
+            if last_time is None or (now - last_time) >= 2.0 or reason != last_reason:
+                logger.debug(
+                    "YakuLingo window not found for taskbar visibility (%s)",
+                    reason,
+                )
+                self._last_taskbar_visibility_not_found_time = now
+                self._last_taskbar_visibility_not_found_reason = reason
             return
         if _set_window_taskbar_visibility_win32(int(hwnd), visible):
             logger.debug(

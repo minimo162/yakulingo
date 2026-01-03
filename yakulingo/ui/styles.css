@@ -1813,7 +1813,8 @@ textarea:focus-visible {
     pointer-events: none !important;
 }
 
-body.global-drop-active .global-drop-upload {
+body.global-drop-active .global-drop-upload,
+html.global-drop-active .global-drop-upload {
     pointer-events: auto !important;
 }
 
@@ -1835,7 +1836,9 @@ body.global-drop-active .global-drop-upload {
 }
 
 body.global-drop-active .global-drop-indicator,
-body.yakulingo-drag-active .global-drop-indicator {
+html.global-drop-active .global-drop-indicator,
+body.yakulingo-drag-active .global-drop-indicator,
+html.yakulingo-drag-active .global-drop-indicator {
     opacity: 1;
     transform: translateY(0);
 }

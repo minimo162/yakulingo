@@ -6594,6 +6594,7 @@ class YakuLingoApp:
             return
         self.state.reset_text_state()
         self.state.reset_file_state()
+        self._reset_global_drop_upload()
         self.state.current_tab = Tab.TEXT
         self.settings.last_tab = Tab.TEXT.value
         self._batch_refresh({'tabs', 'content'})
@@ -6656,16 +6657,24 @@ class YakuLingoApp:
 
            let dragDepth = 0;
 
-           const activate = () => {
-             if (document.body) {
-      document.body.classList.add('global-drop-active');
-    }
-  };
+           const setDragClass = (active) => {
+             const targets = [document.body, document.documentElement];
+             for (const target of targets) {
+               if (!target) continue;
+               if (active) {
+                 target.classList.add('global-drop-active');
+               } else {
+                 target.classList.remove('global-drop-active');
+               }
+             }
+           };
 
-  const deactivate = () => {
-    if (document.body) {
-      document.body.classList.remove('global-drop-active');
-    }
+           const activate = () => {
+             setDragClass(true);
+           };
+
+           const deactivate = () => {
+             setDragClass(false);
            };
 
    const handleDragEnter = (e) => {
@@ -6722,8 +6731,21 @@ class YakuLingoApp:
          </script>'''
         ui.add_head_html(script)
 
+    def _reset_global_drop_upload(self) -> None:
+        upload = self._global_drop_upload
+        if not upload:
+            return
+        if getattr(upload, "is_deleted", False):
+            self._global_drop_upload = None
+            return
+        try:
+            upload.reset()
+        except Exception as err:
+            logger.debug("Failed to reset global drop uploader: %s", err)
+
     async def _handle_global_upload(self, e):
         if self.state.is_translating():
+            self._reset_global_drop_upload()
             return
 
         from yakulingo.ui.utils import temp_file_manager
@@ -6774,6 +6796,8 @@ class YakuLingoApp:
         except Exception as err:
             logger.exception("Global file drop handling failed: %s", err)
             ui.notify(f'ファイルの読み込みに失敗しました: {err}', type='negative')
+        finally:
+            self._reset_global_drop_upload()
 
     def _handle_global_upload_rejected(self, _event=None):
         if self.state.is_translating():
@@ -10004,6 +10028,7 @@ class YakuLingoApp:
     def _reset_file_state_to_text(self):
         """Clear file state and return to text translation view."""
         self.state.reset_file_state()
+        self._reset_global_drop_upload()
         self.state.current_tab = Tab.TEXT
         self.settings.last_tab = Tab.TEXT.value
 
@@ -10032,8 +10057,12 @@ class YakuLingoApp:
 
     def _reset(self):
         """Reset file state"""
-        self._reset_file_state_to_text()
+        self.state.reset_file_state()
+        self._reset_global_drop_upload()
+        self.state.current_tab = Tab.FILE
+        self.settings.last_tab = Tab.FILE.value
         self._refresh_content()
+        self._refresh_tabs()
 
     # =========================================================================
     # Section 8: Settings & History
@@ -12336,7 +12365,8 @@ def run_app(
     opacity: 0 !important;
     pointer-events: none !important;
 }
-body.global-drop-active .global-drop-upload {
+body.global-drop-active .global-drop-upload,
+html.global-drop-active .global-drop-upload {
     pointer-events: auto !important;
 }
 .global-drop-indicator {
@@ -12351,7 +12381,9 @@ body.global-drop-active .global-drop-upload {
     visibility: hidden;
 }
 body.global-drop-active .global-drop-indicator,
-body.yakulingo-drag-active .global-drop-indicator {
+html.global-drop-active .global-drop-indicator,
+body.yakulingo-drag-active .global-drop-indicator,
+html.yakulingo-drag-active .global-drop-indicator {
     opacity: 1;
     visibility: visible;
 }
@@ -12403,16 +12435,26 @@ body.yakulingo-drag-active .global-drop-indicator {
 
   let dragDepth = 0;
 
-  const activateVisual = () => {
+  const setDragActive = (active) => {
     try {
-      if (document.body) document.body.classList.add('yakulingo-drag-active');
+      const targets = [document.body, document.documentElement];
+      for (const target of targets) {
+        if (!target) continue;
+        if (active) {
+          target.classList.add('yakulingo-drag-active');
+        } else {
+          target.classList.remove('yakulingo-drag-active');
+        }
+      }
     } catch (err) {}
   };
 
+  const activateVisual = () => {
+    setDragActive(true);
+  };
+
   const deactivateVisual = () => {
-    try {
-      if (document.body) document.body.classList.remove('yakulingo-drag-active');
-    } catch (err) {}
+    setDragActive(false);
   };
 
   const uploadFile = async (file) => {

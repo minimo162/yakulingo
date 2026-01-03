@@ -2323,6 +2323,7 @@ class YakuLingoApp:
                             async def _bring_ui_to_front_later() -> None:
                                 for _ in range(12):
                                     await asyncio.sleep(0.25)
+                                    await asyncio.to_thread(self._restore_app_window_win32)
                                     if await asyncio.to_thread(self._bring_window_to_front_win32):
                                         break
                             try:
@@ -3620,6 +3621,13 @@ class YakuLingoApp:
             if not yakulingo_hwnd:
                 return False
 
+            SW_RESTORE = 9
+            SW_SHOW = 5
+            if user32.IsIconic(wintypes.HWND(yakulingo_hwnd)):
+                user32.ShowWindow(wintypes.HWND(yakulingo_hwnd), SW_RESTORE)
+            if not user32.IsWindowVisible(wintypes.HWND(yakulingo_hwnd)):
+                user32.ShowWindow(wintypes.HWND(yakulingo_hwnd), SW_SHOW)
+
             def _is_valid_window(hwnd_value: int | None) -> bool:
                 if not hwnd_value:
                     return False
@@ -4082,8 +4090,17 @@ class YakuLingoApp:
             user32 = ctypes.windll.user32
 
             # Find YakuLingo window by title (exact match first)
-            hwnd = user32.FindWindowW(None, "YakuLingo")
-            matched_title = "YakuLingo"
+            hwnd = None
+            matched_title = None
+            copilot = getattr(self, "_copilot", None)
+            if copilot is not None:
+                try:
+                    hwnd = copilot._find_yakulingo_window_handle(include_hidden=True)
+                except Exception:
+                    hwnd = None
+            if not hwnd:
+                hwnd = user32.FindWindowW(None, "YakuLingo")
+                matched_title = "YakuLingo"
 
             # Fallback: enumerate windows to find a partial match (useful if the
             # host window modifies the title, e.g., "YakuLingo - Chrome")
@@ -4118,6 +4135,15 @@ class YakuLingoApp:
                 user32.EnumWindows(_enum_windows, 0)
                 hwnd = found_hwnd['value']
                 matched_title = found_hwnd['title']
+            elif matched_title is None:
+                try:
+                    length = user32.GetWindowTextLengthW(hwnd)
+                    if length > 0:
+                        buffer = ctypes.create_unicode_buffer(length + 1)
+                        user32.GetWindowTextW(hwnd, buffer, length + 1)
+                        matched_title = buffer.value
+                except Exception:
+                    matched_title = None
 
             if not hwnd:
                 logger.debug("YakuLingo window not found by title (exact or partial)")
@@ -4205,6 +4231,21 @@ class YakuLingoApp:
             ASFW_ANY = -1
             user32.AllowSetForegroundWindow(ASFW_ANY)
 
+            # Attach to foreground thread to bypass foreground restrictions (best-effort)
+            attached = False
+            fg_thread = None
+            this_thread = None
+            try:
+                foreground = user32.GetForegroundWindow()
+                if foreground:
+                    fg_thread = user32.GetWindowThreadProcessId(foreground, None)
+                    this_thread = user32.GetCurrentThreadId()
+                    if fg_thread and this_thread and fg_thread != this_thread:
+                        if user32.AttachThreadInput(fg_thread, this_thread, True):
+                            attached = True
+            except Exception:
+                attached = False
+
             # Temporarily set as topmost to ensure visibility
             user32.SetWindowPos(
                 hwnd, HWND_TOPMOST, 0, 0, 0, 0,
@@ -4219,6 +4260,12 @@ class YakuLingoApp:
                 hwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
                 SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
             )
+
+            if attached:
+                try:
+                    user32.AttachThreadInput(fg_thread, this_thread, False)
+                except Exception:
+                    pass
 
             logger.debug("YakuLingo window brought to front via Windows API")
             return True

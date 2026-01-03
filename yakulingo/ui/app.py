@@ -2321,8 +2321,10 @@ class YakuLingoApp:
                             logger.debug("Failed to schedule hotkey layout retry: %s", e)
                         if bring_ui_to_front:
                             async def _bring_ui_to_front_later() -> None:
-                                await asyncio.sleep(0.25)
-                                await asyncio.to_thread(self._bring_window_to_front_win32)
+                                for _ in range(12):
+                                    await asyncio.sleep(0.25)
+                                    if await asyncio.to_thread(self._bring_window_to_front_win32):
+                                        break
                             try:
                                 asyncio.create_task(_bring_ui_to_front_later())
                             except Exception as e:

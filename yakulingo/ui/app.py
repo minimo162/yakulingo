@@ -4745,7 +4745,10 @@ class YakuLingoApp:
             if target == "minimized":
                 copilot.minimize_edge_window()
             elif target == "foreground":
-                copilot.bring_to_foreground(reason=f"edge_visibility:{reason}")
+                copilot.bring_to_foreground(
+                    reason=f"edge_visibility:{reason}",
+                    force_full_window=True,
+                )
         except Exception as e:
             logger.debug("Edge visibility target apply failed (%s): %s", reason, e)
 
@@ -5531,6 +5534,7 @@ class YakuLingoApp:
             await asyncio.to_thread(
                 copilot.bring_to_foreground,
                 reason=f"manual_show: {reason}",
+                force_full_window=True,
             )
         except Exception as e:
             logger.debug("Failed to bring Edge to foreground: %s", e)

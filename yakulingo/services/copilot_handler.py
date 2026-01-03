@@ -2905,7 +2905,8 @@ class CopilotHandler:
                 except Exception:
                     pass
             try:
-                self._ensure_gpt_mode_impl(None)
+                # Avoid long blocking waits during translation; use the fast timeout.
+                self._ensure_gpt_mode_impl(self.GPT_MODE_BUTTON_WAIT_FAST_MS)
             except Exception as e:
                 logger.debug("Failed to set GPT mode (blocking): %s", e)
             finally:
@@ -4125,7 +4126,12 @@ class CopilotHandler:
             logger.debug("Failed to check Edge window off-screen state: %s", e)
             return False
 
-    def _bring_to_foreground_impl(self, page, reason: str = "login required") -> None:
+    def _bring_to_foreground_impl(
+        self,
+        page,
+        reason: str = "login required",
+        force_full_window: bool = False,
+    ) -> None:
         """Bring browser window to foreground (internal implementation).
 
         Uses multiple methods to ensure the window is brought to front:
@@ -4162,7 +4168,7 @@ class CopilotHandler:
         edge_layout_mode = getattr(self, "_edge_layout_mode", None)
 
         if mode == "foreground" and edge_layout_mode is None:
-            if not self._is_edge_window_offscreen():
+            if not force_full_window and not self._is_edge_window_offscreen():
                 logger.debug("Skipping bring_to_foreground in %s mode (already visible): %s", mode, reason)
                 return
             logger.info("Edge window is off-screen in foreground mode; restoring to visible area")
@@ -4195,7 +4201,7 @@ class CopilotHandler:
         # Method 2: Windows API to force window to foreground
         if sys.platform == "win32":
             positioned = False
-            if edge_layout_mode in ("offscreen", "triple"):
+            if not force_full_window and edge_layout_mode in ("offscreen", "triple"):
                 if action.overlay_allowed:
                     positioned = self._position_edge_over_app()
                 else:
@@ -4782,7 +4788,14 @@ class CopilotHandler:
             return
 
         if mode == "foreground":
-            self._bring_edge_to_foreground_impl(page_title, reason="foreground display mode")
+            if self._page:
+                self._bring_to_foreground_impl(
+                    self._page,
+                    reason="foreground display mode",
+                    force_full_window=True,
+                )
+            else:
+                self._bring_edge_window_to_front(page_title)
         else:  # "minimized" (default)
             self._minimize_edge_window(page_title)
 
@@ -4997,8 +5010,25 @@ class CopilotHandler:
                     screen_width = work_area.right - work_area.left
                     screen_height = work_area.bottom - work_area.top
 
+                    SM_XVIRTUALSCREEN = 76
+                    SM_YVIRTUALSCREEN = 77
+                    SM_CXVIRTUALSCREEN = 78
+                    SM_CYVIRTUALSCREEN = 79
+                    v_left = int(user32.GetSystemMetrics(SM_XVIRTUALSCREEN))
+                    v_top = int(user32.GetSystemMetrics(SM_YVIRTUALSCREEN))
+                    v_width = int(user32.GetSystemMetrics(SM_CXVIRTUALSCREEN))
+                    v_height = int(user32.GetSystemMetrics(SM_CYVIRTUALSCREEN))
+                    v_right = v_left + v_width
+                    v_bottom = v_top + v_height
+
                     # Check if window is off-screen or too small
-                    is_off_screen = current_x < -10000 or current_y < -10000
+                    offscreen_by_bounds = (
+                        rect.right <= v_left
+                        or rect.left >= v_right
+                        or rect.bottom <= v_top
+                        or rect.top >= v_bottom
+                    )
+                    is_off_screen = offscreen_by_bounds or current_x < -10000 or current_y < -10000
                     is_too_small = current_width < self.MIN_EDGE_WINDOW_WIDTH or current_height < self.MIN_EDGE_WINDOW_HEIGHT
 
                     if is_off_screen or is_too_small:
@@ -5930,7 +5960,11 @@ class CopilotHandler:
         """
         return _playwright_executor.execute(self._wait_for_page_load_impl, wait_seconds)
 
-    def bring_to_foreground(self, reason: str = "external request") -> None:
+    def bring_to_foreground(
+        self,
+        reason: str = "external request",
+        force_full_window: bool = False,
+    ) -> None:
         """Edgeウィンドウを前面に表示"""
         if not self._page:
             logger.debug("Skipping bring_to_foreground: no page available")
@@ -5938,7 +5972,12 @@ class CopilotHandler:
 
         try:
             # Execute in Playwright thread to avoid cross-thread access issues
-            _playwright_executor.execute(self._bring_to_foreground_impl, self._page, reason)
+            _playwright_executor.execute(
+                self._bring_to_foreground_impl,
+                self._page,
+                reason,
+                force_full_window,
+            )
         except Exception as e:
             logger.debug("Failed to bring window to foreground: %s", e)
 

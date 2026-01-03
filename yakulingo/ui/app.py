@@ -4318,15 +4318,20 @@ class YakuLingoApp:
             hwnd = _find_window_handle_by_title_win32("YakuLingo")
         if not hwnd:
             now = time.monotonic()
+            reason_for_log = reason
+            if ":" in reason:
+                prefix, suffix = reason.rsplit(":", 1)
+                if suffix.isdigit():
+                    reason_for_log = prefix
             last_time = self._last_taskbar_visibility_not_found_time
             last_reason = self._last_taskbar_visibility_not_found_reason
-            if last_time is None or (now - last_time) >= 2.0 or reason != last_reason:
+            if last_time is None or (now - last_time) >= 2.0 or reason_for_log != last_reason:
                 logger.debug(
                     "YakuLingo window not found for taskbar visibility (%s)",
-                    reason,
+                    reason_for_log,
                 )
                 self._last_taskbar_visibility_not_found_time = now
-                self._last_taskbar_visibility_not_found_reason = reason
+                self._last_taskbar_visibility_not_found_reason = reason_for_log
             return
         if _set_window_taskbar_visibility_win32(int(hwnd), visible):
             logger.debug(

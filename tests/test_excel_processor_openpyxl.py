@@ -75,6 +75,8 @@ def test_celltranslator_translates_year_fragments() -> None:
     assert translator.should_translate("6\u5E74", "en") is True
     assert translator.should_translate("\uFF16\u5E74", "en") is True
     assert translator.should_translate("12\u6708", "en") is True
+    assert translator.should_translate("2025-12-25", "en") is True
+    assert translator.should_translate("12/25/2025", "jp") is True
 
 
 @pytest.mark.unit
@@ -87,7 +89,7 @@ def test_excelprocessor_openpyxl_extract_and_apply(monkeypatch: pytest.MonkeyPat
 
     processor = ExcelProcessor()
 
-    # JP→EN extraction should pick up only cells containing Japanese/CJK text (and skip formulas/numbers/etc.)
+    # JP→EN extraction should pick up Japanese/CJK text and date-like strings.
     blocks_en = list(processor.extract_text_blocks(src, output_language="en"))
     ids_en = {b.id for b in blocks_en}
     assert ids_en == {
@@ -95,6 +97,7 @@ def test_excelprocessor_openpyxl_extract_and_apply(monkeypatch: pytest.MonkeyPat
         "Sheet1_A2",
         "Sheet1_A4",
         "Sheet1_D2",
+        "Sheet1_E1",
         "Sheet1_I1",
         "Sheet1_J1",
         "Sheet1_K1",
@@ -113,6 +116,7 @@ def test_excelprocessor_openpyxl_extract_and_apply(monkeypatch: pytest.MonkeyPat
     assert isinstance(ws_en["C1"].value, str) and ws_en["C1"].value.startswith("=")  # formula preserved
     assert ws_en["O1"].value == "\uFFE51,234"  # currency preserved (skipped)
     assert ws_en["D2"].value.startswith("EN_")
+    assert ws_en["E1"].value.startswith("EN_")
     assert ws_en["A1"].font.name == "Arial"  # default JP→EN output font
     wb_en.close()
 
@@ -123,6 +127,7 @@ def test_excelprocessor_openpyxl_extract_and_apply(monkeypatch: pytest.MonkeyPat
         "Sheet1_B2",
         "Sheet1_C2",
         "Sheet1_D1",
+        "Sheet1_E1",
         "Sheet1_I1",
         "Sheet1_J1",
         "Sheet1_L1",
@@ -137,6 +142,7 @@ def test_excelprocessor_openpyxl_extract_and_apply(monkeypatch: pytest.MonkeyPat
     ws_jp = wb_jp["Sheet1"]
     assert ws_jp["B2"].value == "JP_Hello"
     assert ws_jp["D1"].value == "JP_USA"
+    assert ws_jp["E1"].value == "JP_2025-12-25"
     assert ws_jp["A1"].value == "\u3053\u3093\u306b\u3061\u306f"  # Japanese left untouched
     assert ws_jp["O1"].value == "\uFFE51,234"  # currency preserved (skipped)
     wb_jp.close()

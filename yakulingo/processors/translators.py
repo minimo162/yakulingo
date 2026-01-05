@@ -8,6 +8,20 @@ ParagraphTranslator: For body paragraphs
 import re
 
 
+_DATE_SEPARATOR_PATTERN = r"[-/.\uFF0D\uFF0F\uFF0E]"
+_DATE_LIKE_PATTERNS = (
+    re.compile(rf"^\d{{4}}{_DATE_SEPARATOR_PATTERN}\d{{1,2}}{_DATE_SEPARATOR_PATTERN}\d{{1,2}}$"),
+    re.compile(rf"^\d{{1,2}}{_DATE_SEPARATOR_PATTERN}\d{{1,2}}{_DATE_SEPARATOR_PATTERN}\d{{4}}$"),
+)
+
+
+def _is_date_like(text: str) -> bool:
+    for pattern in _DATE_LIKE_PATTERNS:
+        if pattern.match(text):
+            return True
+    return False
+
+
 class CellTranslator:
     """
     Unified cell translation logic for Excel/Word/PowerPoint tables.
@@ -20,8 +34,6 @@ class CellTranslator:
         # 例: "35,555", "△1,731,269", "35,555 1,731,269 △1,731,269"
         # (?=.*\d) で少なくとも1つの数字を含むことを要求
         r'^(?=.*\d)[\d\s\.,\-\+\(\)\/\%▲△▼▽●○■□〇※]+$',
-        r'^\d{4}[-/]\d{1,2}[-/]\d{1,2}$',    # 日付 (YYYY-MM-DD)
-        r'^\d{1,2}[-/]\d{1,2}[-/]\d{4}$',    # 日付 (DD/MM/YYYY)
         r'^[\w\.\-]+@[\w\.\-]+\.\w+$',        # メールアドレス
         r'^https?://\S+$',                    # URL
         r'^[A-Z]{2,5}[-_]?\d+$',              # コード (ABC-123)
@@ -74,8 +86,7 @@ class CellTranslator:
 
         Skip conditions:
         - Empty or whitespace only
-        - Numbers only (with formatting characters)
-        - Date patterns
+        - Numbers only (with formatting characters, except date-like strings)
         - Email addresses
         - URLs
         - Product/Document codes
@@ -92,6 +103,9 @@ class CellTranslator:
         text = text.strip()
         if not text:
             return False
+
+        if _is_date_like(text):
+            return True
 
         # Check against skip patterns first (fast rejection)
         for regex in self._skip_regex:
@@ -231,7 +245,7 @@ class ParagraphTranslator:
 
         Skip conditions:
         - Empty or whitespace only
-        - Numbers only (with formatting characters)
+        - Numbers only (with formatting characters, except date-like strings)
         - URLs
         - Email addresses
         - For JP→EN (output_language="en"): Skip text without Japanese characters
@@ -247,6 +261,9 @@ class ParagraphTranslator:
         text = text.strip()
         if not text:
             return False
+
+        if _is_date_like(text):
+            return True
 
         # Check against skip patterns first (fast rejection)
         for regex in self._skip_regex:

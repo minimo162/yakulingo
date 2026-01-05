@@ -29,11 +29,19 @@ bundled_playwright_browsers_dir = project_root / ".playwright-browsers"
 if bundled_playwright_browsers_dir.exists():
     os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(bundled_playwright_browsers_dir))
 
+_sys_pycache_prefix = getattr(sys, "pycache_prefix", None)
 _PYCACHE_PREFIX_DEFAULT = Path.home() / ".yakulingo" / "pycache"
-_PYCACHE_PREFIX = Path(os.environ.get("PYTHONPYCACHEPREFIX", _PYCACHE_PREFIX_DEFAULT))
-_PYCACHE_PREFIX_SET_BY_APP = "PYTHONPYCACHEPREFIX" not in os.environ
+_PYCACHE_PREFIX = Path(os.environ.get(
+    "PYTHONPYCACHEPREFIX",
+    _sys_pycache_prefix or _PYCACHE_PREFIX_DEFAULT,
+))
+_PYCACHE_PREFIX_SET_BY_APP = "PYTHONPYCACHEPREFIX" not in os.environ and not _sys_pycache_prefix
 if _PYCACHE_PREFIX_SET_BY_APP:
     os.environ["PYTHONPYCACHEPREFIX"] = str(_PYCACHE_PREFIX)
+    try:
+        sys.pycache_prefix = str(_PYCACHE_PREFIX)
+    except Exception:
+        pass
 
 
 def _cleanup_pycache_prefix() -> None:

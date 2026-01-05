@@ -766,7 +766,13 @@ function Test-IsUnderPath {
     try {
         $normalizedPath = [System.IO.Path]::GetFullPath($Path).TrimEnd('\')
         $normalizedRoot = [System.IO.Path]::GetFullPath($Root).TrimEnd('\')
-        return $normalizedPath.StartsWith($normalizedRoot, [System.StringComparison]::OrdinalIgnoreCase)
+
+        if ($normalizedPath.Equals($normalizedRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+            return $true
+        }
+
+        $rootWithSep = $normalizedRoot + "\"
+        return $normalizedPath.StartsWith($rootWithSep, [System.StringComparison]::OrdinalIgnoreCase)
     } catch {
         return $false
     }
@@ -784,7 +790,12 @@ function Resolve-SetupPath {
     try {
         $resolvedPath = (Resolve-Path -Path $targetPath -ErrorAction Stop).ProviderPath
     } catch {
-        # Path does not exist yet; keep original
+        # Path does not exist yet; normalize to full path
+        try {
+            $resolvedPath = [System.IO.Path]::GetFullPath($targetPath)
+        } catch {
+            $resolvedPath = $targetPath
+        }
     }
 
     # Debug: Log the resolved path
@@ -848,10 +859,10 @@ function Resolve-SetupPath {
 
     # Debug: Log successful completion
     try {
-        "Resolve-SetupPath: Returning targetPath='$targetPath'" | Out-File -FilePath $debugLog -Append -Encoding UTF8
+        "Resolve-SetupPath: Returning resolvedPath='$resolvedPath'" | Out-File -FilePath $debugLog -Append -Encoding UTF8
     } catch { }
 
-    return $targetPath
+    return $resolvedPath
 }
 
 function Cleanup-OldTempCaches {
@@ -864,10 +875,20 @@ function Cleanup-OldTempCaches {
 
     # Remove stale setup/backup temp folders from previous runs.
     $patterns = @("YakuLingo_Setup_*", "YakuLingo_Backup_*")
+    $staleThreshold = (Get-Date).AddHours(-6)
     foreach ($pattern in $patterns) {
         try {
             $dirs = Get-ChildItem -Path $TempRoot -Directory -Filter $pattern -ErrorAction SilentlyContinue
             foreach ($dir in $dirs) {
+                $isStale = $false
+                try {
+                    $isStale = ($dir.CreationTime -lt $staleThreshold -and $dir.LastWriteTime -lt $staleThreshold)
+                } catch {
+                    $isStale = $false
+                }
+                if (-not $isStale) {
+                    continue
+                }
                 try {
                     Remove-Item -Path $dir.FullName -Recurse -Force -ErrorAction SilentlyContinue
                 } catch { }
@@ -972,7 +993,7 @@ function Cleanup-Directory {
     if (Test-Path $Path) {
         # Safety check: only delete if path is in TEMP and has YakuLingo_ prefix
         $leafName = Split-Path -Leaf $Path
-        if ($Path.StartsWith($env:TEMP, [System.StringComparison]::OrdinalIgnoreCase) -and $leafName.StartsWith("YakuLingo_")) {
+        if ((Test-IsUnderPath -Path $Path -Root $env:TEMP) -and $leafName.StartsWith("YakuLingo_")) {
             & cmd /c "rd /s /q `"$Path`" 2>nul"
         }
     }
@@ -1107,7 +1128,7 @@ function Invoke-Setup {
             try {
                 $processPath = $_.Path
                 if ($processPath) {
-                    $processPath.StartsWith($expectedSetupPath, [System.StringComparison]::OrdinalIgnoreCase)
+                    Test-IsUnderPath -Path $processPath -Root $expectedSetupPath
                 } else {
                     $false
                 }
@@ -1156,7 +1177,7 @@ function Invoke-Setup {
                     try {
                         $processPath = $_.Path
                         if ($processPath) {
-                            $processPath.StartsWith($expectedSetupPath, [System.StringComparison]::OrdinalIgnoreCase)
+                            Test-IsUnderPath -Path $processPath -Root $expectedSetupPath
                         } else {
                             $false
                         }
@@ -1192,7 +1213,7 @@ function Invoke-Setup {
                             try {
                                 $processPath = $_.Path
                                 if ($processPath) {
-                                    $processPath.StartsWith($expectedSetupPath, [System.StringComparison]::OrdinalIgnoreCase)
+                                    Test-IsUnderPath -Path $processPath -Root $expectedSetupPath
                                 } else {
                                     $false
                                 }
@@ -1217,7 +1238,7 @@ function Invoke-Setup {
                 try {
                     $processPath = $_.Path
                     if ($processPath) {
-                        $processPath.StartsWith($expectedSetupPath, [System.StringComparison]::OrdinalIgnoreCase)
+                        Test-IsUnderPath -Path $processPath -Root $expectedSetupPath
                     } else {
                         $false
                     }
@@ -1778,7 +1799,7 @@ function Invoke-Setup {
     # Clean up backup directory (with safety check)
     if (Test-Path $BackupDir) {
         $backupLeafName = Split-Path -Leaf $BackupDir
-        if ($BackupDir.StartsWith($env:TEMP, [System.StringComparison]::OrdinalIgnoreCase) -and $backupLeafName.StartsWith("YakuLingo_")) {
+        if ((Test-IsUnderPath -Path $BackupDir -Root $env:TEMP) -and $backupLeafName.StartsWith("YakuLingo_")) {
             & cmd /c "rd /s /q `"$BackupDir`" 2>nul"
         }
     }

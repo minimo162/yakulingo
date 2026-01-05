@@ -186,13 +186,21 @@ def setup_logging():
         datefmt='%H:%M:%S'
     ))
 
+    def _safe_console_warning(message: str) -> None:
+        if not console_stream:
+            return
+        try:
+            print(message, file=console_stream)
+        except Exception:
+            pass
+
     # Try to create log directory
     file_handler = None
     try:
         logs_dir.mkdir(parents=True, exist_ok=True)
     except OSError as e:
         # Fall back to console-only logging if log directory cannot be created
-        print(f"[WARNING] Failed to create log directory {logs_dir}: {e}", file=sys.stderr)
+        _safe_console_warning(f"[WARNING] Failed to create log directory {logs_dir}: {e}")
         logs_dir = None
 
     # Try to create file handler
@@ -218,7 +226,7 @@ def setup_logging():
                 datefmt='%Y-%m-%d %H:%M:%S'
             ))
         except OSError as e:
-            print(f"[WARNING] Failed to create log file {log_file_path}: {e}", file=sys.stderr)
+            _safe_console_warning(f"[WARNING] Failed to create log file {log_file_path}: {e}")
             file_handler = None
 
     # Configure root logger

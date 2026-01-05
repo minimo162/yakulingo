@@ -219,6 +219,24 @@ def _find_window_handle_by_title_win32(window_title: str) -> int | None:
         return None
 
 
+def _coerce_hwnd_win32(raw_hwnd: object | None) -> int | None:
+    if sys.platform != "win32" or raw_hwnd is None:
+        return None
+    try:
+        if hasattr(raw_hwnd, "ToInt64"):
+            raw_hwnd = raw_hwnd.ToInt64()
+        elif hasattr(raw_hwnd, "ToInt32"):
+            raw_hwnd = raw_hwnd.ToInt32()
+        elif hasattr(raw_hwnd, "value"):
+            raw_hwnd = raw_hwnd.value
+        hwnd = int(raw_hwnd)
+        if hwnd == 0:
+            return None
+        return hwnd
+    except Exception:
+        return None
+
+
 def _set_window_taskbar_visibility_win32(hwnd: int, visible: bool) -> bool:
     if sys.platform != "win32":
         return False
@@ -452,15 +470,9 @@ def _hide_native_window_offscreen_win32(
         if not hwnd:
             return
 
-        try:
-            if hasattr(hwnd, "ToInt32"):
-                hwnd = int(hwnd.ToInt32())
-            elif hasattr(hwnd, "value"):
-                hwnd = int(hwnd.value)
-            else:
-                hwnd = int(hwnd)
-        except Exception:
-            pass
+        hwnd = _coerce_hwnd_win32(hwnd)
+        if not hwnd:
+            return
 
         is_visible = user32.IsWindowVisible(hwnd)
 
@@ -749,13 +761,22 @@ def _nicegui_open_window_patched(
             pass
         if sys.platform == "win32":
             try:
-                for _ in range(10):
-                    hwnd = _find_window_handle_by_title_win32(title)
-                    if hwnd:
-                        _set_window_taskbar_visibility_win32(hwnd, False)
-                        _hide_native_window_offscreen_win32(title, hwnd=hwnd)
-                        break
-                    time.sleep(0.05)
+                hwnd = None
+                native_window = getattr(window, "native", None)
+                if native_window is not None and hasattr(native_window, "Handle"):
+                    hwnd = _coerce_hwnd_win32(native_window.Handle)
+                if hwnd:
+                    _set_window_taskbar_visibility_win32(hwnd, False)
+                    _hide_native_window_offscreen_win32(title, hwnd=hwnd)
+                else:
+                    deadline = time.perf_counter() + 0.5
+                    while time.perf_counter() < deadline:
+                        hwnd = _find_window_handle_by_title_win32(title)
+                        if hwnd:
+                            _set_window_taskbar_visibility_win32(hwnd, False)
+                            _hide_native_window_offscreen_win32(title, hwnd=hwnd)
+                            break
+                        time.sleep(0.01)
             except Exception:
                 pass
     if sys.platform == "win32":
@@ -832,12 +853,7 @@ def _nicegui_open_window_patched(
         try:
             native_window = getattr(window, "native", None)
             if native_window is not None and hasattr(native_window, "Handle"):
-                handle = native_window.Handle
-                if hasattr(handle, "ToInt32"):
-                    return int(handle.ToInt32())
-                if hasattr(handle, "value"):
-                    return int(handle.value)
-                return int(handle)
+                return _coerce_hwnd_win32(native_window.Handle)
         except Exception:
             return None
         return None
@@ -11012,12 +11028,13 @@ def run_app(
     if resident_mode:
         yakulingo_app._clear_auto_open_cause("resident_startup")
         yakulingo_app._set_layout_mode(LayoutMode.OFFSCREEN, "resident_startup")
-    if resident_mode and sys.platform == "win32" and launch_source == "launcher":
-        # Pre-start suppression to avoid a brief window flash before on_startup runs.
+    if resident_mode and sys.platform == "win32":
+        # Pre-start suppression to avoid a brief taskbar flash before on_startup runs.
+        pre_run_reason = "launcher_pre_run" if launch_source == "launcher" else "startup"
         yakulingo_app._start_resident_taskbar_suppression_win32(
-            "launcher_pre_run",
-            attempts=30,
-            delay_sec=0.1,
+            pre_run_reason,
+            attempts=40,
+            delay_sec=0.05,
         )
     logger.info("[TIMING] create_app: %.2fs", time.perf_counter() - _t1)
 

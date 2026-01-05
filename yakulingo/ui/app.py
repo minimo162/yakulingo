@@ -8497,7 +8497,7 @@ class YakuLingoApp:
             return "--"
         low = max(0, int(seconds * 0.7))
         high = max(low + 1, int(seconds * 1.3))
-        return f"{self._format_eta_seconds(low)}?{self._format_eta_seconds(high)}"
+        return f"{self._format_eta_seconds(low)}〜{self._format_eta_seconds(high)}"
 
     def _format_file_progress_detail(
         self,

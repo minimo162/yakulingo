@@ -2972,6 +2972,8 @@ class YakuLingoApp:
                 self._refresh_content()
                 self._update_translate_button_state()
                 self._refresh_tabs()
+                self._refresh_status()
+                self._start_status_auto_refresh("hotkey_refresh")
         except Exception as e:
             logger.debug("Hotkey translation [%s] UI refresh failed: %s", trace_id, e)
 

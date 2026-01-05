@@ -8340,14 +8340,26 @@ class YakuLingoApp:
         if not self._ensure_translation_service():
             return False
 
+        copilot = self.copilot
+        edge_window_open = True
+        if copilot.is_connected:
+            try:
+                edge_window_open = copilot.is_edge_window_open()
+            except Exception as e:
+                logger.debug("Failed to check Edge window state: %s", e)
+                edge_window_open = True
+            if not edge_window_open:
+                logger.info("Copilot Edge window was closed; forcing reconnect")
+                self.state.copilot_ready = False
+
         # Check if already connected
-        if self.state.copilot_ready and self.copilot.is_connected:
+        if self.state.copilot_ready and copilot.is_connected and edge_window_open:
             return True
 
         # If we are connected but "not ready", it is often because GPT mode is still
         # switching (Playwright thread busy) and the status UI has not updated yet.
         # Avoid triggering reconnect loops; wait for GPT mode setup to complete first.
-        if self._copilot and self.copilot.is_connected:
+        if copilot.is_connected and edge_window_open:
             if self._is_gpt_mode_setup_in_progress():
                 try:
                     await asyncio.wait_for(self._gpt_mode_setup_task, timeout=30.0)  # type: ignore[arg-type]

@@ -1336,6 +1336,9 @@ class CopilotHandler:
         """Return True if the Edge window for Copilot is currently open."""
         if sys.platform != "win32":
             return self.is_edge_process_alive()
+        # Without a tracked PID, window enumeration can't reliably determine visibility.
+        if self.edge_process is None and not self._edge_pid:
+            return self.is_edge_process_alive()
         try:
             return self._find_edge_window_handle() is not None
         except Exception:

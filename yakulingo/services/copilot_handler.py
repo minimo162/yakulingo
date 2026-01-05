@@ -800,8 +800,15 @@ def pre_initialize_playwright():
     """
     global _pre_init_error, _pre_init_started
     with _pre_init_lock:
-        if _pre_init_started or _pre_initialized_playwright is not None or _pre_init_event.is_set():
-            return  # Already initialized or in progress
+        if _pre_init_started and not _pre_init_event.is_set():
+            return  # Already in progress
+        if _pre_initialized_playwright is not None:
+            return  # Already initialized
+        if _pre_init_event.is_set():
+            if _pre_init_error is None:
+                return  # Previous init completed successfully
+            # Previous init failed; allow retry by clearing the event.
+            _pre_init_event.clear()
 
         _pre_init_error = None
         _pre_init_started = True

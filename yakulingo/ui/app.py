@@ -180,6 +180,18 @@ def _get_windows_dpi_scale() -> float:
     return 1.0
 
 
+def _is_yakulingo_window_title(title: str) -> bool:
+    if not title:
+        return False
+    if title == "YakuLingo":
+        return True
+    if not title.startswith("YakuLingo"):
+        return False
+    if len(title) <= len("YakuLingo"):
+        return False
+    return title[len("YakuLingo")].isspace()
+
+
 def _find_window_handle_by_title_win32(window_title: str) -> int | None:
     if sys.platform != "win32":
         return None
@@ -206,6 +218,11 @@ def _find_window_handle_by_title_win32(window_title: str) -> int | None:
             title = buffer.value
             if "YakuLingo" in window_title and title.startswith("Setup - YakuLingo"):
                 # Avoid grabbing the installer progress dialog window.
+                return True
+            if window_title.startswith("YakuLingo"):
+                if _is_yakulingo_window_title(title):
+                    found_hwnd["value"] = int(hwnd_enum)
+                    return False
                 return True
             if window_title in title:
                 found_hwnd["value"] = int(hwnd_enum)
@@ -3924,7 +3941,7 @@ class YakuLingoApp:
                         return True
                     buffer = ctypes.create_unicode_buffer(length + 1)
                     user32.GetWindowTextW(hwnd_enum, buffer, length + 1)
-                    if "YakuLingo" in buffer.value:
+                    if _is_yakulingo_window_title(buffer.value):
                         found_hwnd["value"] = int(hwnd_enum)
                         return False
                     return True
@@ -4498,7 +4515,7 @@ class YakuLingoApp:
                         except Exception:
                             pass
                         return True
-                    if "YakuLingo" in title:
+                    if _is_yakulingo_window_title(title):
                         found_hwnd['value'] = hwnd_enum
                         found_hwnd['title'] = title
                         return False  # stop enumeration
@@ -11676,7 +11693,7 @@ def run_app(
                 title = ctypes.create_unicode_buffer(title_length + 1)
                 user32.GetWindowTextW(hwnd, title, title_length + 1)
                 window_title = title.value
-                if window_title.startswith("YakuLingo"):
+                if _is_yakulingo_window_title(window_title):
                     user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
                 return True
 
@@ -12431,7 +12448,7 @@ def run_app(
                         buffer = ctypes.create_unicode_buffer(length + 1)
                         user32.GetWindowTextW(hwnd_enum, buffer, length + 1)
                         title = buffer.value
-                        if "YakuLingo" in title:
+                        if _is_yakulingo_window_title(title):
                             found["hwnd"] = hwnd_enum
                             return False
                         return True

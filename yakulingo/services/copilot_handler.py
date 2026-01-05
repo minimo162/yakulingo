@@ -4600,6 +4600,18 @@ class CopilotHandler:
             logger.debug("Failed to locate Edge window handle: %s", e)
             return None
 
+    @staticmethod
+    def _is_yakulingo_window_title(title: str) -> bool:
+        if not title:
+            return False
+        if title == "YakuLingo":
+            return True
+        if not title.startswith("YakuLingo"):
+            return False
+        if len(title) <= len("YakuLingo"):
+            return False
+        return title[len("YakuLingo")].isspace()
+
     def _find_yakulingo_window_handle(self, include_hidden: bool = False):
         """Locate the YakuLingo app window handle using Win32 APIs.
 
@@ -4641,8 +4653,8 @@ class CopilotHandler:
                 user32.GetWindowTextW(hwnd, title, title_length)
                 window_title = title.value
 
-                # Match "YakuLingo" exactly or as prefix (pywebview may add suffix)
-                if window_title == "YakuLingo" or window_title.startswith("YakuLingo"):
+                # Match "YakuLingo" with a clean boundary to avoid IDE windows.
+                if self._is_yakulingo_window_title(window_title):
                     logger.debug("Found YakuLingo window: %s (include_hidden=%s)", window_title, include_hidden)
                     found_hwnd = hwnd
                     return False

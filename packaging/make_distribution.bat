@@ -73,10 +73,11 @@ call :ShowProgress 0 "Preparing..."
 :: Check required files
 echo        Checking required files...
 set "MISSING="
-for %%f in (.venv .uv-python .playwright-browsers app.py yakulingo YakuLingo.exe prompts) do (
+for %%f in (.venv .uv-python .playwright-browsers app.py yakulingo YakuLingo.exe prompts config) do (
     if not exist "%%f" set "MISSING=!MISSING! %%f"
 )
 if not exist ".venv\pyvenv.cfg" set "MISSING=!MISSING! .venv\pyvenv.cfg"
+if not exist "config\settings.template.json" set "MISSING=!MISSING! config\settings.template.json"
 if not exist "packaging\installer\share\setup.vbs" set "MISSING=!MISSING! packaging\installer\share\setup.vbs"
 if not exist "packaging\installer\share\.scripts\setup.ps1" set "MISSING=!MISSING! packaging\installer\share\.scripts\setup.ps1"
 if not exist "packaging\installer\share\README.html" set "MISSING=!MISSING! packaging\installer\share\README.html"
@@ -245,7 +246,13 @@ call :ShowProgress 2 "Creating ZIP and finalizing..."
 echo        Creating ZIP archive...
 pushd dist_temp\YakuLingo
 "%SEVENZIP%" a -tzip -mx=1 -mmt=on -bsp1 "..\..\%SHARE_DIR%\%DIST_ZIP%" * >nul
+set "ZIP_RC=!errorlevel!"
 popd
+if not "%ZIP_RC%"=="0" (
+    echo        [ERROR] 7-Zip failed with exit code: %ZIP_RC%
+    pause
+    exit /b 1
+)
 
 :: Copy installer files and cleanup in parallel
 echo        Copying installer files...
@@ -274,7 +281,14 @@ for /f %%e in ('powershell -NoProfile -Command "$e=([DateTime]::Now.Ticks-%START
 
 call :ShowProgress 3 "Complete!"
 
-if exist "%SHARE_DIR%\%DIST_ZIP%" (
+set "ZIP_PATH=%SHARE_DIR%\%DIST_ZIP%"
+if exist "%ZIP_PATH%" (
+    for %%A in ("%ZIP_PATH%") do set "ZIP_SIZE=%%~zA"
+    if "!ZIP_SIZE!"=="0" (
+        echo [ERROR] ZIP file is empty: %ZIP_PATH%
+        pause
+        exit /b 1
+    )
     echo.
     echo ============================================================
     echo [SUCCESS] Distribution package created!
@@ -284,7 +298,7 @@ if exist "%SHARE_DIR%\%DIST_ZIP%" (
     echo     - %DIST_ZIP%
     echo     - README.html
     echo.
-    for %%A in ("%SHARE_DIR%\%DIST_ZIP%") do echo   Size: %%~zA bytes
+    for %%A in ("%ZIP_PATH%") do echo   Size: %%~zA bytes
     echo   Time: %ELAPSED_TIME%
     echo.
     echo Deploy the contents of "%SHARE_DIR%" to your network share.

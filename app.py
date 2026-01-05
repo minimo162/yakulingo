@@ -172,8 +172,14 @@ def setup_logging():
     logs_dir = Path.home() / ".yakulingo" / "logs"
     log_file_path = logs_dir / "startup.log"
 
-    # Create console handler first (always works)
-    console_handler = logging.StreamHandler(sys.stderr)
+    # Create console handler first (pythonw may have sys.stderr=None)
+    console_stream = sys.stderr or getattr(sys, "__stderr__", None)
+    if console_stream is None:
+        try:
+            console_stream = open(os.devnull, "w")
+        except OSError:
+            console_stream = None
+    console_handler = logging.StreamHandler(console_stream) if console_stream else logging.NullHandler()
     console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(logging.Formatter(
         '%(asctime)s [%(levelname)s] %(name)s: %(message)s',

@@ -82,7 +82,7 @@ else:
             settle_delay_sec: float = 0.005,
             cooldown_sec: float = 1.2,
             fast_partial_match_window_sec: float = 0.35,
-            fast_double_copy_min_gap_ms: float = 30.0,
+            fast_double_copy_min_gap_ms: float = 10.0,
             same_payload_suppress_ms: float = 120.0,
             recheck_settle_ms: float = 30.0,
         ) -> None:

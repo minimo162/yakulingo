@@ -296,6 +296,38 @@ def _set_window_taskbar_visibility_win32(hwnd: int, visible: bool) -> bool:
         return False
 
 
+def _stop_window_taskbar_flash_win32(hwnd: int, *, reason: str = "") -> None:
+    """Stop any taskbar flash for the given window handle (Windows only)."""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+
+        class FLASHWINFO(ctypes.Structure):
+            _fields_ = [
+                ("cbSize", wintypes.UINT),
+                ("hwnd", wintypes.HWND),
+                ("dwFlags", wintypes.DWORD),
+                ("uCount", wintypes.UINT),
+                ("dwTimeout", wintypes.DWORD),
+            ]
+
+        fwi = FLASHWINFO()
+        fwi.cbSize = ctypes.sizeof(FLASHWINFO)
+        fwi.hwnd = wintypes.HWND(hwnd)
+        fwi.dwFlags = 0  # FLASHW_STOP
+        fwi.uCount = 0
+        fwi.dwTimeout = 0
+        user32.FlashWindowEx(ctypes.byref(fwi))
+        if reason:
+            logger.debug("Stopped taskbar flash: %s", reason)
+    except Exception as e:
+        logger.debug("Failed to stop taskbar flash: %s", e)
+
+
 def _set_window_system_menu_visible_win32(hwnd: int, visible: bool) -> bool:
     """Toggle the native system menu (close/min/max) visibility (Windows only)."""
     if sys.platform != "win32":
@@ -4366,6 +4398,9 @@ class YakuLingoApp:
                 except Exception:
                     pass
 
+            if yakulingo_hwnd:
+                _stop_window_taskbar_flash_win32(int(yakulingo_hwnd), reason="hotkey_layout")
+
             return True
 
         except Exception as e:
@@ -4603,6 +4638,10 @@ class YakuLingoApp:
                     user32.AttachThreadInput(fg_thread, this_thread, False)
                 except Exception:
                     pass
+
+            resolved_hwnd = _coerce_hwnd_win32(hwnd)
+            if resolved_hwnd:
+                _stop_window_taskbar_flash_win32(resolved_hwnd, reason="bring_to_front")
 
             logger.debug("YakuLingo window brought to front via Windows API")
             return True
@@ -5385,6 +5424,9 @@ class YakuLingoApp:
 
             # Bring to front
             user32.SetForegroundWindow(hwnd)
+            resolved_hwnd = _coerce_hwnd_win32(hwnd)
+            if resolved_hwnd:
+                _stop_window_taskbar_flash_win32(resolved_hwnd, reason="restore_app_window")
             self._set_layout_mode(LayoutMode.FOREGROUND, "restore_app_window")
             return True
 

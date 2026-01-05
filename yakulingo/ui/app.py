@@ -1360,6 +1360,9 @@ class YakuLingoApp:
         self._active_translation_trace_id: Optional[str] = None
         self._hotkey_translation_active: bool = False
         self._last_hotkey_source_hwnd: Optional[int] = None
+        self._pending_ui_window_lock = threading.Lock()
+        self._pending_ui_window_rect: tuple[int, int, int, int] | None = None
+        self._pending_ui_window_rect_at: float | None = None
 
         # Timer lock for progress timer management (prevents orphaned timers)
         self._timer_lock = threading.Lock()
@@ -2268,6 +2271,10 @@ class YakuLingoApp:
                 if self._resident_mode or early_client is None:
                     open_ui_callback = self._open_ui_window_callback
                     if open_ui_callback is not None:
+                        if sys.platform == "win32":
+                            rect = self._compute_hotkey_ui_rect_win32(layout_source_hwnd)
+                            if rect:
+                                self._set_pending_ui_window_rect(rect, reason="hotkey")
                         try:
                             asyncio.create_task(asyncio.to_thread(open_ui_callback))
                             open_ui_requested = True
@@ -2367,6 +2374,10 @@ class YakuLingoApp:
             if open_ui and not client:
                 open_ui_callback = self._open_ui_window_callback
                 if open_ui_callback is not None and not open_ui_requested:
+                    if sys.platform == "win32":
+                        rect = self._compute_hotkey_ui_rect_win32(layout_source_hwnd)
+                        if rect:
+                            self._set_pending_ui_window_rect(rect, reason="hotkey_retry")
                     try:
                         asyncio.create_task(asyncio.to_thread(open_ui_callback))
                     except Exception as e:
@@ -3627,6 +3638,204 @@ class YakuLingoApp:
         if win32_success:
             self._set_layout_mode(LayoutMode.FOREGROUND, "bring_to_front")
         return win32_success
+
+    def _set_pending_ui_window_rect(
+        self,
+        rect: tuple[int, int, int, int] | None,
+        *,
+        reason: str,
+    ) -> None:
+        with self._pending_ui_window_lock:
+            if rect is None:
+                self._pending_ui_window_rect = None
+                self._pending_ui_window_rect_at = None
+                return
+            self._pending_ui_window_rect = rect
+            self._pending_ui_window_rect_at = time.monotonic()
+        logger.debug(
+            "Pending UI window rect set (%s): x=%d y=%d w=%d h=%d",
+            reason,
+            rect[0],
+            rect[1],
+            rect[2],
+            rect[3],
+        )
+
+    def _consume_pending_ui_window_rect(
+        self,
+        *,
+        max_age_sec: float = 3.0,
+    ) -> tuple[int, int, int, int] | None:
+        with self._pending_ui_window_lock:
+            rect = self._pending_ui_window_rect
+            rect_at = self._pending_ui_window_rect_at
+            self._pending_ui_window_rect = None
+            self._pending_ui_window_rect_at = None
+        if rect is None or rect_at is None:
+            return None
+        if (time.monotonic() - rect_at) > max_age_sec:
+            return None
+        return rect
+
+    def _compute_hotkey_ui_rect_win32(
+        self,
+        source_hwnd: int | None,
+    ) -> tuple[int, int, int, int] | None:
+        if sys.platform != "win32":
+            return None
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.WinDLL("user32", use_last_error=True)
+
+            def _is_valid_window(hwnd_value: int | None) -> bool:
+                if not hwnd_value:
+                    return False
+                try:
+                    return bool(user32.IsWindow(wintypes.HWND(hwnd_value)))
+                except Exception:
+                    return False
+
+            resolved_source_hwnd = source_hwnd
+            if not _is_valid_window(resolved_source_hwnd):
+                cached_hwnd = self._last_hotkey_source_hwnd
+                if _is_valid_window(cached_hwnd):
+                    resolved_source_hwnd = cached_hwnd
+                else:
+                    try:
+                        foreground = user32.GetForegroundWindow()
+                    except Exception:
+                        foreground = None
+                    if foreground:
+                        candidate = int(foreground)
+                        if _is_valid_window(candidate):
+                            resolved_source_hwnd = candidate
+
+            class RECT(ctypes.Structure):
+                _fields_ = [
+                    ("left", ctypes.c_long),
+                    ("top", ctypes.c_long),
+                    ("right", ctypes.c_long),
+                    ("bottom", ctypes.c_long),
+                ]
+
+            class MONITORINFO(ctypes.Structure):
+                _fields_ = [
+                    ("cbSize", wintypes.DWORD),
+                    ("rcMonitor", RECT),
+                    ("rcWork", RECT),
+                    ("dwFlags", wintypes.DWORD),
+                ]
+
+            MONITOR_DEFAULTTONEAREST = 2
+            monitor = None
+            if resolved_source_hwnd:
+                monitor = user32.MonitorFromWindow(
+                    wintypes.HWND(resolved_source_hwnd),
+                    MONITOR_DEFAULTTONEAREST,
+                )
+            if not monitor:
+                try:
+                    point = wintypes.POINT()
+                    if user32.GetCursorPos(ctypes.byref(point)):
+                        monitor = user32.MonitorFromPoint(point, MONITOR_DEFAULTTONEAREST)
+                except Exception:
+                    monitor = None
+            if not monitor:
+                return None
+
+            monitor_info = MONITORINFO()
+            monitor_info.cbSize = ctypes.sizeof(MONITORINFO)
+            if not user32.GetMonitorInfoW(monitor, ctypes.byref(monitor_info)):
+                return None
+
+            work_area = monitor_info.rcWork
+            work_width = int(work_area.right - work_area.left)
+            work_height = int(work_area.bottom - work_area.top)
+            if work_width <= 0 or work_height <= 0:
+                return None
+
+            gap = 10
+            min_ui_width = 580
+            min_target_width = 580
+            ui_ratio = 0.5
+
+            dpi_scale = _get_windows_dpi_scale()
+            dpi_awareness = _get_process_dpi_awareness()
+            if dpi_awareness in (1, 2) and dpi_scale != 1.0:
+                gap = int(round(gap * dpi_scale))
+                min_ui_width = int(round(min_ui_width * dpi_scale))
+                min_target_width = int(round(min_target_width * dpi_scale))
+
+            snap_tolerance = max(int(round(12 * dpi_scale)), 12)
+
+            def _get_window_rect(hwnd_value: int) -> RECT | None:
+                try:
+                    rect = RECT()
+                    if not user32.GetWindowRect(wintypes.HWND(hwnd_value), ctypes.byref(rect)):
+                        return None
+                    return rect
+                except Exception:
+                    return None
+
+            source_rect = (
+                _get_window_rect(resolved_source_hwnd)
+                if resolved_source_hwnd
+                else None
+            )
+            source_left = source_rect.left if source_rect else None
+            source_right = source_rect.right if source_rect else None
+            source_width = (
+                max(0, int(source_right - source_left))
+                if source_left is not None and source_right is not None
+                else None
+            )
+            is_source_left_snapped = (
+                source_rect is not None
+                and abs(int(source_left) - int(work_area.left)) <= snap_tolerance
+                and source_width is not None
+                and source_width >= min_target_width
+            )
+
+            if is_source_left_snapped:
+                target_width = min(
+                    source_width,
+                    max(work_width - gap - min_ui_width, 0),
+                )
+                target_width = max(target_width, min_target_width)
+                ui_width = work_width - gap - target_width
+                desired_ui_width = max(int(work_width * ui_ratio), min_ui_width)
+                if ui_width < desired_ui_width:
+                    target_width = max(work_width - gap - desired_ui_width, min_target_width)
+                    ui_width = work_width - gap - target_width
+                if ui_width < min_ui_width:
+                    is_source_left_snapped = False
+
+            if not is_source_left_snapped:
+                ui_width = max(int(work_width * ui_ratio), min_ui_width)
+                ui_width = min(ui_width, max(work_width - gap - min_target_width, 0))
+                target_width = work_width - gap - ui_width
+
+            if target_width < min_target_width:
+                ui_width = max(work_width - gap - min_target_width, 0)
+                ui_width = max(ui_width, min_ui_width)
+                target_width = work_width - gap - ui_width
+
+            if ui_width <= 0 or target_width <= 0:
+                if work_width > gap:
+                    ui_width = max(int(work_width * 0.45), 1)
+                    target_width = max(work_width - gap - ui_width, 1)
+
+            if ui_width <= 0 or target_width <= 0:
+                return None
+
+            app_x = int(work_area.left + target_width + gap)
+            app_y = int(work_area.top)
+            return (app_x, app_y, int(ui_width), int(work_height))
+        except Exception as e:
+            logger.debug("Failed to compute hotkey UI rect: %s", e)
+            return None
 
     def _apply_hotkey_work_priority_layout_win32(
         self,
@@ -7122,7 +7331,15 @@ class YakuLingoApp:
             copilot_state: str | None = None
             state_check_failed = False
             if copilot.is_connecting:
-                copilot_state = CopilotConnectionState.LOADING
+                cached_ready = None
+                try:
+                    cached_ready = copilot._get_recent_ready_state()
+                except Exception:
+                    cached_ready = None
+                if cached_ready == CopilotConnectionState.READY:
+                    copilot_state = cached_ready
+                else:
+                    copilot_state = CopilotConnectionState.LOADING
             else:
                 import time as _time_module
 
@@ -11297,6 +11514,15 @@ def run_app(
             url = _build_local_url(host, port, "/")
             native_window_size = yakulingo_app._native_window_size or yakulingo_app._window_size
             width, height = native_window_size
+            pending_rect = None
+            if sys.platform == "win32":
+                pending_rect = yakulingo_app._consume_pending_ui_window_rect(max_age_sec=3.0)
+                if pending_rect:
+                    pending_x, pending_y, pending_w, pending_h = pending_rect
+                    if pending_w > 0 and pending_h > 0:
+                        width, height = pending_w, pending_h
+                    else:
+                        pending_rect = None
             if sys.platform == "win32":
                 edge_exe = _find_edge_exe_for_browser_open()
                 if edge_exe:
@@ -11323,6 +11549,8 @@ def run_app(
                         "--disable-session-crashed-bubble",
                         "--hide-crash-restore-bubble",
                     ]
+                    if pending_rect:
+                        args.append(f"--window-position={pending_x},{pending_y}")
                     try:
                         import subprocess
 

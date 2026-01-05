@@ -589,7 +589,8 @@ function Start-ResidentService {
     param(
         [string]$SetupPath,
         [string]$LauncherPath,
-        [int]$Port = 8765
+        [int]$Port = 8765,
+        [int]$StartupTimeoutSec = 120
     )
 
     try {
@@ -630,7 +631,7 @@ function Start-ResidentService {
                 return $false
             }
 
-            $deadline = (Get-Date).AddSeconds(30)
+            $deadline = (Get-Date).AddSeconds($StartupTimeoutSec)
             while ((Get-Date) -lt $deadline -and -not (Test-PortOpen $Port)) {
                 Start-Sleep -Milliseconds 200
                 if ($GuiMode) {
@@ -2289,7 +2290,18 @@ exit 0
         $appKey = "HKCU:\Software\YakuLingo"
         if (Test-Path $appKey) {
             Remove-ItemProperty -Path $appKey -Name "SetupPath" -ErrorAction SilentlyContinue
-            $props = (Get-ItemProperty -Path $appKey -ErrorAction SilentlyContinue | Get-Member -MemberType NoteProperty).Count
+            $props = 0
+            $appKeyProps = $null
+            try {
+                $appKeyProps = Get-ItemProperty -Path $appKey -ErrorAction SilentlyContinue
+            } catch { }
+            if ($appKeyProps) {
+                try {
+                    $props = ($appKeyProps | Get-Member -MemberType NoteProperty -ErrorAction SilentlyContinue).Count
+                } catch {
+                    $props = 0
+                }
+            }
             if ($props -eq 0) {
                 Remove-Item -Path $appKey -Recurse -Force
             }

@@ -74,7 +74,7 @@ def test_celltranslator_translates_year_fragments() -> None:
 
     assert translator.should_translate("6\u5E74", "en") is True
     assert translator.should_translate("\uFF16\u5E74", "en") is True
-    assert translator.should_translate("12\u6708", "en") is False
+    assert translator.should_translate("12\u6708", "en") is True
 
 
 @pytest.mark.unit
@@ -94,6 +94,7 @@ def test_excelprocessor_openpyxl_extract_and_apply(monkeypatch: pytest.MonkeyPat
         "Sheet1_A1",
         "Sheet1_A2",
         "Sheet1_A4",
+        "Sheet1_D2",
         "Sheet1_I1",
         "Sheet1_J1",
         "Sheet1_K1",
@@ -111,7 +112,7 @@ def test_excelprocessor_openpyxl_extract_and_apply(monkeypatch: pytest.MonkeyPat
     assert ws_en["B1"].value == "35,555"
     assert isinstance(ws_en["C1"].value, str) and ws_en["C1"].value.startswith("=")  # formula preserved
     assert ws_en["O1"].value == "\uFFE51,234"  # currency preserved (skipped)
-    assert ws_en["D2"].value == "12\u6708"  # date-like JP kept (skipped)
+    assert ws_en["D2"].value.startswith("EN_")
     assert ws_en["A1"].font.name == "Arial"  # default JP→EN output font
     wb_en.close()
 

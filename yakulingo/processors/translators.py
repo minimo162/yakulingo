@@ -27,7 +27,7 @@ class CellTranslator:
         r'^[A-Z]{2,5}[-_]?\d+$',              # コード (ABC-123)
         r'^[\d\s%]+$',                        # パーセント付き数値
         '^[\u00A5\uFFE5\u0024\uFF04\u20AC\u00A3\uFFE1]\\s*[\\d,\\.]+$',  # 通貨記号付き数値（半角/全角）
-        r'^\d+[年月日時分秒]$',                 # 日本語日時（完全マッチのみ）
+        r'^\d+[月日時分秒]$',                   # 日本語日時（完全マッチのみ）
     ]
 
     # Class-level compiled regex patterns (shared across all instances)

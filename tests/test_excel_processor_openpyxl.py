@@ -69,6 +69,15 @@ def test_celltranslator_skips_fullwidth_currency_symbols() -> None:
 
 
 @pytest.mark.unit
+def test_celltranslator_translates_year_fragments() -> None:
+    translator = CellTranslator()
+
+    assert translator.should_translate("6\u5E74", "en") is True
+    assert translator.should_translate("\uFF16\u5E74", "en") is True
+    assert translator.should_translate("12\u6708", "en") is False
+
+
+@pytest.mark.unit
 def test_excelprocessor_openpyxl_extract_and_apply(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     # Force openpyxl fallback to avoid requiring Microsoft Excel in test environments.
     monkeypatch.setattr(excel_processor_module, "_can_use_xlwings", lambda: False)
@@ -130,4 +139,3 @@ def test_excelprocessor_openpyxl_extract_and_apply(monkeypatch: pytest.MonkeyPat
     assert ws_jp["A1"].value == "\u3053\u3093\u306b\u3061\u306f"  # Japanese left untouched
     assert ws_jp["O1"].value == "\uFFE51,234"  # currency preserved (skipped)
     wb_jp.close()
-

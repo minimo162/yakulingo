@@ -9,8 +9,24 @@ Entry point for the NiceGUI-based translation application.
 # IMPORTANT: Set proxy bypass BEFORE any imports that might cache proxy settings
 # This is critical for corporate environments where proxies intercept localhost connections
 import os
-os.environ.setdefault('NO_PROXY', 'localhost,127.0.0.1')
-os.environ.setdefault('no_proxy', 'localhost,127.0.0.1')
+
+_LOCALHOST_NO_PROXY = "localhost,127.0.0.1"
+
+
+def _ensure_no_proxy(env_key: str) -> None:
+    current = os.environ.get(env_key)
+    if not current:
+        os.environ[env_key] = _LOCALHOST_NO_PROXY
+        return
+    parts = [part.strip() for part in current.replace(";", ",").split(",") if part.strip()]
+    missing = [host for host in ("localhost", "127.0.0.1") if host not in parts]
+    if not missing:
+        return
+    os.environ[env_key] = ",".join(parts + missing)
+
+
+_ensure_no_proxy("NO_PROXY")
+_ensure_no_proxy("no_proxy")
 
 import logging
 import shutil

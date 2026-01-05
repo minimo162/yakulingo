@@ -200,6 +200,12 @@ else:
 
                         now = time.monotonic()
                         if now < self._cooldown_until:
+                            wait_sec = min(
+                                max(self._poll_interval_sec, 0.001),
+                                self._cooldown_until - now,
+                            )
+                            if self._stop_event.wait(wait_sec):
+                                return
                             continue
 
                         try:
@@ -284,6 +290,8 @@ else:
                                     callback(payload)
                                 except Exception as exc:
                                     logger.debug("Clipboard trigger callback failed: %s", exc)
+                            self._last_payload = payload
+                            self._last_payload_normalized = normalized_payload
                             self._last_payload_time = now
                             self._last_payload_hash = payload_hash
                             self._last_event_time = now
@@ -407,6 +415,8 @@ else:
                                                             "Clipboard trigger recheck callback failed: %s",
                                                             exc,
                                                         )
+                                                self._last_payload = re_payload
+                                                self._last_payload_normalized = re_normalized
                                                 self._last_payload_time = re_now
                                                 self._last_payload_hash = re_payload_hash
                                                 self._last_event_time = re_now

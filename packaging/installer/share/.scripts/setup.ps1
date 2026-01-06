@@ -1842,6 +1842,7 @@ function Invoke-Setup {
     $UninstallScriptPath = Join-Path $SetupPath "YakuLingo_Uninstall.ps1"
 
     $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+    $utf8WithBom = New-Object System.Text.UTF8Encoding $true
 
     $openUiScript = @"
 `$ErrorActionPreference = 'Stop'

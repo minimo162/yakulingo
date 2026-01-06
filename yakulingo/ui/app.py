@@ -7392,6 +7392,9 @@ class YakuLingoApp:
             self._reset_global_drop_upload()
             return
 
+        with self._client_lock:
+            client = self._client
+
         from yakulingo.ui.utils import temp_file_manager
 
         try:
@@ -7434,12 +7437,15 @@ class YakuLingoApp:
                 uploaded_path,
                 size_bytes,
             )
-            if name:
-                ui.notify(f'ファイルを受け取りました: {name}', type='info')
+            if name and client:
+                with client:
+                    ui.notify(f'ファイルを受け取りました: {name}', type='info')
             await self._select_file(uploaded_path)
         except Exception as err:
             logger.exception("Global file drop handling failed: %s", err)
-            ui.notify(f'ファイルの読み込みに失敗しました: {err}', type='negative')
+            if client:
+                with client:
+                    ui.notify(f'ファイルの読み込みに失敗しました: {err}', type='negative')
         finally:
             self._reset_global_drop_upload()
 
@@ -8556,12 +8562,14 @@ class YakuLingoApp:
 
         # Check if login is in progress (don't interfere)
         if self._login_polling_active:
-            ui.notify(
-                'ログイン完了を待っています...',
-                type='info',
-                position='bottom-right',
-                timeout=2000
-            )
+            if self._client:
+                with self._client:
+                    ui.notify(
+                        'ログイン完了を待っています...',
+                        type='info',
+                        position='bottom-right',
+                        timeout=2000
+                    )
             return False
 
         # Not connected - try to reconnect automatically
@@ -8879,6 +8887,9 @@ class YakuLingoApp:
         """Handle file upload from the hidden upload component."""
         from yakulingo.ui.utils import temp_file_manager
 
+        with self._client_lock:
+            client = self._client
+
         try:
             uploaded_path = None
             # NiceGUI 3.3+ uses e.file with FileUpload object
@@ -8914,12 +8925,16 @@ class YakuLingoApp:
             # Add to reference files
             self.state.reference_files.append(uploaded_path)
             logger.info("Reference file added: %s, total: %d", name, len(self.state.reference_files))
-            ui.notify(f'参照ファイルを追加しました: {name}', type='positive')
-            # Refresh UI to show attached file indicator
-            self._refresh_content()
-            self._focus_text_input()
+            if client:
+                with client:
+                    ui.notify(f'参照ファイルを追加しました: {name}', type='positive')
+                    # Refresh UI to show attached file indicator
+                    self._refresh_content()
+                    self._focus_text_input()
         except (OSError, AttributeError) as err:
-            ui.notify(f'ファイルの読み込みに失敗しました: {err}', type='negative')
+            if client:
+                with client:
+                    ui.notify(f'ファイルの読み込みに失敗しました: {err}', type='negative')
 
     def _remove_reference_file(self, index: int):
         """Remove a reference file by index"""
@@ -9440,10 +9455,11 @@ class YakuLingoApp:
 
         self.state.text_translating = True
         self.state.text_back_translating = True
-        # Only refresh result panel and button (input panel is already in compact state)
-        self._refresh_result_panel()
-        self._update_translate_button_state()
-        self._refresh_tabs()  # Disable tabs during translation
+        with client:
+            # Only refresh result panel and button (input panel is already in compact state)
+            self._refresh_result_panel()
+            self._update_translate_button_state()
+            self._refresh_tabs()  # Disable tabs during translation
 
         error_message = None
         try:

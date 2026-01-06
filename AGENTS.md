@@ -118,14 +118,13 @@ YakuLingo/
 ├── tests/                         # Test suite (33 test files)
 │   ├── conftest.py                # Shared fixtures and mocks
 │   └── test_*.py                  # Unit tests for each module
-├── prompts/                       # Translation prompt templates (16 files, all in Japanese)
+├── prompts/                       # Translation prompt templates (15 files, all in Japanese)
 │   ├── translation_rules.txt      # 共通翻訳ルール（数値表記・記号変換ルール）- UI編集可、翻訳時自動再読込
 │   ├── file_translate_to_en_{standard|concise|minimal}.txt  # File translation (JP→EN)
 │   ├── file_translate_to_jp.txt   # File translation (EN→JP)
 │   ├── text_translate_to_en_compare.txt  # Text translation (JP→EN, 3-style comparison)
-│   ├── text_translate_to_en_clipboard.txt # Clipboard translation (JP→EN)
 │   ├── text_translate_to_jp.txt   # Text translation (EN→JP, with explanation)
-│   ├── text_translate_to_jp_clipboard.txt # Clipboard translation (EN→JP)
+│   ├── text_back_translate.txt    # Back-translation (round-trip verification)
 │   ├── adjust_custom.txt          # (Reserved) Custom request template
 │   ├── text_alternatives.txt      # Follow-up: alternative expressions
 │   ├── text_review_en.txt         # Follow-up: review English (英文をチェック)
@@ -1305,9 +1304,8 @@ PYTHON_PIDS=$(pgrep -f "{app_dir}/.venv" 2>/dev/null)
 | `file_translate_to_en_{style}.txt` | ファイル翻訳（JP→EN、style: standard/concise/minimal） |
 | `file_translate_to_jp.txt` | ファイル翻訳（EN→JP） |
 | `text_translate_to_en_compare.txt` | テキスト翻訳（JP→EN、3スタイル比較） |
-| `text_translate_to_en_clipboard.txt` | クリップボード翻訳（JP→EN） |
 | `text_translate_to_jp.txt` | テキスト翻訳（EN→JP、解説付き） |
-| `text_translate_to_jp_clipboard.txt` | クリップボード翻訳（EN→JP） |
+| `text_back_translate.txt` | 戻し訳（逆翻訳） |
 | `text_*.txt` | フォローアップ翻訳（alternatives, review, summarize等） |
 
 **プレースホルダー:**

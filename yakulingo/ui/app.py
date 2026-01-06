@@ -183,18 +183,13 @@ def _get_windows_dpi_scale() -> float:
 def _is_yakulingo_window_title(title: str) -> bool:
     if not title:
         return False
-    normalized = title.strip()
-    if not normalized:
-        return False
-    lower = normalized.lower()
-    prefix = "yakulingo"
-    if lower == prefix:
+    if title == "YakuLingo":
         return True
-    if not lower.startswith(prefix):
+    if not title.startswith("YakuLingo"):
         return False
-    if len(lower) <= len(prefix):
+    if len(title) <= len("YakuLingo"):
         return False
-    return lower[len(prefix)].isspace()
+    return title[len("YakuLingo")].isspace()
 
 
 def _find_window_handle_by_title_win32(window_title: str) -> int | None:
@@ -1297,16 +1292,6 @@ class _EarlyConnectionResult:
     value: Optional[bool] = None
 
 
-@dataclass(frozen=True)
-class WindowMatch:
-    hwnd: int
-    title: str
-    class_name: str
-    pid: int | None
-    score: int
-    reason: str
-
-
 @dataclass
 class HotkeyFileOutputSummary:
     """Output file list for multi-file clipboard-triggered translations (downloaded via UI)."""
@@ -1506,16 +1491,6 @@ class YakuLingoApp:
         # Clipboard trigger for double-copy translation.
         self._clipboard_trigger = None
         self._open_ui_window_callback: Callable[[], None] | None = None
-        self._browser_ui_profile_dir: Path | None = None
-        self._browser_ui_pid: int | None = None
-        self._browser_ui_suppress_event = threading.Event()
-        self._browser_ui_suppress_until: float | None = None
-        self._pending_ui_open_reason: str | None = None
-        self._pending_ui_open_trace_id: str | None = None
-        self._pending_ui_open_user_initiated = False
-        self._foreground_retry_task: "asyncio.Task | None" = None
-        self._foreground_retry_trace_id: str | None = None
-        self._foreground_retry_thread: threading.Thread | None = None
 
         # PP-DocLayout-L initialization state (on-demand for PDF)
         self._layout_init_state = LayoutInitializationState.NOT_INITIALIZED
@@ -1607,137 +1582,6 @@ class YakuLingoApp:
             return self._native_window_size
         return self._window_size
 
-    def _log_timing(
-        self,
-        label: str,
-        *,
-        trace_id: str | None = None,
-        start_time: float | None = None,
-        level: int = logging.INFO,
-    ) -> None:
-        now = time.monotonic()
-        tag = trace_id or self._active_translation_trace_id or "none"
-        if start_time is None:
-            logger.log(level, "[TIMING][hotkey=%s][mono=%.3f] %s", tag, now, label)
-            return
-        logger.log(
-            level,
-            "[TIMING][hotkey=%s][mono=%.3f][+%.3f] %s",
-            tag,
-            now,
-            now - start_time,
-            label,
-        )
-
-    def _set_pending_ui_open_context(
-        self,
-        reason: str,
-        *,
-        user_initiated: bool,
-        trace_id: str | None = None,
-    ) -> None:
-        self._pending_ui_open_reason = reason
-        self._pending_ui_open_user_initiated = user_initiated
-        self._pending_ui_open_trace_id = trace_id or self._active_translation_trace_id
-
-    def _consume_pending_ui_open_context(self) -> tuple[str | None, bool, str | None]:
-        reason = self._pending_ui_open_reason
-        user_initiated = self._pending_ui_open_user_initiated
-        trace_id = self._pending_ui_open_trace_id
-        self._pending_ui_open_reason = None
-        self._pending_ui_open_user_initiated = False
-        self._pending_ui_open_trace_id = None
-        return reason, user_initiated, trace_id
-
-    def _clear_browser_ui_suppression(self, reason: str) -> None:
-        if not self._browser_ui_suppress_event.is_set():
-            return
-        self._browser_ui_suppress_event.clear()
-        self._browser_ui_suppress_until = None
-        logger.debug("Browser UI suppression cleared (%s)", reason)
-
-    def _schedule_foreground_retry(
-        self,
-        reason: str,
-        *,
-        trace_id: str | None = None,
-        user_initiated: bool = False,
-        attempts: int = 4,
-        delay_sec: float = 0.15,
-        backoff: float = 1.6,
-    ) -> None:
-        if sys.platform != "win32":
-            return
-        existing_task = self._foreground_retry_task
-        if existing_task is not None and not existing_task.done():
-            if trace_id and self._foreground_retry_trace_id == trace_id:
-                return
-        existing_thread = self._foreground_retry_thread
-        if existing_thread is not None and existing_thread.is_alive():
-            if trace_id and self._foreground_retry_trace_id == trace_id:
-                return
-
-        self._foreground_retry_trace_id = trace_id
-
-        async def _retry() -> None:
-            current_delay = delay_sec
-            self._log_timing(f"foreground_retry_start:{reason}", trace_id=trace_id)
-            for _ in range(attempts):
-                if self._shutdown_requested:
-                    return
-                try:
-                    success = await asyncio.to_thread(
-                        self._bring_window_to_front_win32,
-                        user_initiated=user_initiated,
-                        trace_id=trace_id,
-                    )
-                except Exception:
-                    success = False
-                if success:
-                    self._log_timing(f"foreground_retry_success:{reason}", trace_id=trace_id)
-                    return
-                await asyncio.sleep(current_delay)
-                current_delay *= backoff
-
-        def _retry_sync() -> None:
-            current_delay = delay_sec
-            self._log_timing(f"foreground_retry_start:{reason}", trace_id=trace_id)
-            for _ in range(attempts):
-                if self._shutdown_requested:
-                    return
-                try:
-                    success = self._bring_window_to_front_win32(
-                        user_initiated=user_initiated,
-                        trace_id=trace_id,
-                    )
-                except Exception:
-                    success = False
-                if success:
-                    self._log_timing(f"foreground_retry_success:{reason}", trace_id=trace_id)
-                    return
-                time.sleep(current_delay)
-                current_delay *= backoff
-
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = None
-
-        if loop is None:
-            try:
-                thread = threading.Thread(
-                    target=_retry_sync,
-                    daemon=True,
-                    name=f"foreground_retry:{reason}",
-                )
-                self._foreground_retry_thread = thread
-                thread.start()
-            except Exception:
-                logger.debug("Foreground retry thread spawn failed: %s", reason)
-            return
-
-        self._foreground_retry_task = loop.create_task(_retry())
-
     def start_clipboard_trigger(self):
         """Start the clipboard double-copy trigger."""
         import sys
@@ -1822,11 +1666,13 @@ class YakuLingoApp:
             except Exception:
                 dwmapi = None
 
-            match = self._find_app_window_match_win32(
-                include_hidden=True,
-                allow_titleless=True,
-            )
-            yakulingo_hwnd = match.hwnd if match else None
+            yakulingo_hwnd = None
+            try:
+                yakulingo_hwnd = copilot._find_yakulingo_window_handle(include_hidden=True)
+            except Exception:
+                yakulingo_hwnd = None
+            if not yakulingo_hwnd:
+                yakulingo_hwnd = user32.FindWindowW(None, "YakuLingo")
 
             edge_hwnd = None
             try:
@@ -2099,11 +1945,6 @@ class YakuLingoApp:
 
         if open_ui_callback is not None and not has_client:
             try:
-                self._set_pending_ui_open_context(
-                    f"resident_show:{reason}",
-                    user_initiated=False,
-                    trace_id=self._active_translation_trace_id,
-                )
                 await asyncio.to_thread(open_ui_callback)
                 shown = True
             except Exception as e:
@@ -2383,11 +2224,15 @@ class YakuLingoApp:
             except Exception:
                 source_hwnd = None
             if source_hwnd:
-                match = self._find_app_window_match_win32(
-                    include_hidden=True,
-                    allow_titleless=True,
-                )
-                yakulingo_hwnd = match.hwnd if match else None
+                yakulingo_hwnd: int | None = None
+                copilot = getattr(self, "_copilot", None)
+                if copilot is not None:
+                    try:
+                        yakulingo_hwnd = copilot._find_yakulingo_window_handle(include_hidden=True)
+                    except Exception:
+                        yakulingo_hwnd = None
+                if not yakulingo_hwnd:
+                    yakulingo_hwnd = _find_window_handle_by_title_win32("YakuLingo")
                 if yakulingo_hwnd and source_hwnd == int(yakulingo_hwnd):
                     bring_ui_to_front = False
                     logger.debug("Clipboard trigger source is YakuLingo; skipping bring-to-front")
@@ -2413,8 +2258,6 @@ class YakuLingoApp:
             source_hwnd: Foreground window handle at hotkey time (best-effort; Windows only)
             bring_ui_to_front: If True, prefer foregrounding the UI window.
         """
-        hotkey_started_at = time.monotonic()
-        trace_id = f"hotkey-{uuid.uuid4().hex[:8]}"
         if open_ui and self._resident_mode:
             self._set_auto_open_cause(AutoOpenCause.HOTKEY, reason="hotkey")
             self._resident_show_requested = True
@@ -2424,26 +2267,12 @@ class YakuLingoApp:
                 open_ui_callback = self._open_ui_window_callback
                 if open_ui_callback is not None:
                     try:
-                        self._set_pending_ui_open_context(
-                            "hotkey_empty",
-                            user_initiated=True,
-                            trace_id=trace_id,
-                        )
-                        self._log_timing(
-                            "hotkey_ui_open_request:empty",
-                            trace_id=trace_id,
-                            start_time=hotkey_started_at,
-                        )
                         await asyncio.to_thread(open_ui_callback)
                     except Exception as e:
                         logger.debug("Failed to request UI open for hotkey: %s", e)
                 else:
                     try:
-                        brought_to_front = await self._bring_window_to_front(
-                            position_edge=True,
-                            user_initiated=True,
-                            trace_id=trace_id,
-                        )
+                        brought_to_front = await self._bring_window_to_front(position_edge=True)
                     except Exception as e:
                         logger.debug("Failed to bring window to front for hotkey: %s", e)
                     else:
@@ -2463,8 +2292,8 @@ class YakuLingoApp:
             return
         self._hotkey_translation_active = True
 
+        trace_id = f"hotkey-{uuid.uuid4().hex[:8]}"
         self._active_translation_trace_id = trace_id
-        self._log_timing("hotkey_handler_start", trace_id=trace_id)
         open_ui_requested = False
         try:
             if source_hwnd:
@@ -2496,16 +2325,6 @@ class YakuLingoApp:
                             if rect:
                                 self._set_pending_ui_window_rect(rect, reason="hotkey")
                         try:
-                            self._set_pending_ui_open_context(
-                                "hotkey_early",
-                                user_initiated=True,
-                                trace_id=trace_id,
-                            )
-                            self._log_timing(
-                                "hotkey_ui_open_request:early",
-                                trace_id=trace_id,
-                                start_time=hotkey_started_at,
-                            )
                             asyncio.create_task(asyncio.to_thread(open_ui_callback))
                             open_ui_requested = True
                         except Exception as e:
@@ -2569,9 +2388,7 @@ class YakuLingoApp:
                         if bring_ui_to_front or not layout_result:
                             try:
                                 brought_to_front = await self._bring_window_to_front(
-                                    position_edge=not preserve_edge,
-                                    user_initiated=True,
-                                    trace_id=trace_id,
+                                    position_edge=not preserve_edge
                                 )
                             except Exception as e:
                                 logger.debug("Failed to bring window to front for hotkey: %s", e)
@@ -2587,9 +2404,7 @@ class YakuLingoApp:
                 else:
                     try:
                         brought_to_front = await self._bring_window_to_front(
-                            position_edge=not preserve_edge,
-                            user_initiated=True,
-                            trace_id=trace_id,
+                            position_edge=not preserve_edge
                         )
                     except Exception as e:
                         logger.debug("Failed to bring window to front for hotkey: %s", e)
@@ -2613,16 +2428,6 @@ class YakuLingoApp:
                         if rect:
                             self._set_pending_ui_window_rect(rect, reason="hotkey_retry")
                     try:
-                        self._set_pending_ui_open_context(
-                            "hotkey_retry",
-                            user_initiated=True,
-                            trace_id=trace_id,
-                        )
-                        self._log_timing(
-                            "hotkey_ui_open_request:retry",
-                            trace_id=trace_id,
-                            start_time=hotkey_started_at,
-                        )
                         asyncio.create_task(asyncio.to_thread(open_ui_callback))
                     except Exception as e:
                         logger.debug("Failed to request UI open for hotkey: %s", e)
@@ -2639,13 +2444,16 @@ class YakuLingoApp:
                         except Exception as e:
                             logger.debug("Failed to schedule hotkey layout retry: %s", e)
                         if bring_ui_to_front:
-                            self._schedule_foreground_retry(
-                                "hotkey_late_foreground",
-                                trace_id=trace_id,
-                                user_initiated=True,
-                                attempts=6,
-                                delay_sec=0.2,
-                            )
+                            async def _bring_ui_to_front_later() -> None:
+                                for _ in range(12):
+                                    await asyncio.sleep(0.25)
+                                    await asyncio.to_thread(self._restore_app_window_win32)
+                                    if await asyncio.to_thread(self._bring_window_to_front_win32):
+                                        break
+                            try:
+                                asyncio.create_task(_bring_ui_to_front_later())
+                            except Exception as e:
+                                logger.debug("Failed to schedule UI foreground for hotkey: %s", e)
 
             # If GPT mode setup is still running, wait briefly before starting translation.
             copilot = getattr(self, "_copilot", None)
@@ -3284,13 +3092,7 @@ class YakuLingoApp:
             time.monotonic() - start_time,
         )
 
-    async def _bring_window_to_front(
-        self,
-        *,
-        position_edge: bool = True,
-        user_initiated: bool = False,
-        trace_id: str | None = None,
-    ) -> bool:
+    async def _bring_window_to_front(self, *, position_edge: bool = True) -> bool:
         """Bring the app window to front.
 
         Uses multiple methods to ensure the window is brought to front:
@@ -3316,11 +3118,7 @@ class YakuLingoApp:
         # Method 2: Windows API (more reliable for hotkey activation)
         win32_success = True
         if sys.platform == 'win32':
-            win32_success = await asyncio.to_thread(
-                self._bring_window_to_front_win32,
-                user_initiated=user_initiated,
-                trace_id=trace_id,
-            )
+            win32_success = await asyncio.to_thread(self._bring_window_to_front_win32)
             logger.debug("Windows API bring_to_front result: %s", win32_success)
 
         if win32_success:
@@ -3556,11 +3354,37 @@ class YakuLingoApp:
                 dwmapi = None
 
             # Resolve YakuLingo window handle first (used to detect stale UI client).
-            match = self._find_app_window_match_win32(
-                include_hidden=True,
-                allow_titleless=True,
-            )
-            yakulingo_hwnd = match.hwnd if match else None
+            yakulingo_hwnd: int | None = None
+            copilot = getattr(self, "_copilot", None)
+            if copilot is not None:
+                try:
+                    yakulingo_hwnd = copilot._find_yakulingo_window_handle(include_hidden=True)
+                except Exception:
+                    yakulingo_hwnd = None
+
+            if not yakulingo_hwnd:
+                hwnd = user32.FindWindowW(None, "YakuLingo")
+                if hwnd:
+                    yakulingo_hwnd = int(hwnd)
+
+            if not yakulingo_hwnd:
+                EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+                found_hwnd: dict[str, int | None] = {"value": None}
+
+                @EnumWindowsProc
+                def _enum_windows(hwnd_enum, _):
+                    length = user32.GetWindowTextLengthW(hwnd_enum)
+                    if length <= 0:
+                        return True
+                    buffer = ctypes.create_unicode_buffer(length + 1)
+                    user32.GetWindowTextW(hwnd_enum, buffer, length + 1)
+                    if _is_yakulingo_window_title(buffer.value):
+                        found_hwnd["value"] = int(hwnd_enum)
+                        return False
+                    return True
+
+                user32.EnumWindows(_enum_windows, 0)
+                yakulingo_hwnd = found_hwnd["value"]
 
             if not yakulingo_hwnd:
                 return False
@@ -4063,218 +3887,18 @@ class YakuLingoApp:
             time_module.sleep(delay_sec)
         logger.debug("Hotkey layout retry exhausted (attempts=%d)", attempts)
 
-    def _find_app_window_match_win32(
-        self,
-        *,
-        include_hidden: bool = False,
-        allow_titleless: bool = False,
-    ) -> WindowMatch | None:
-        if sys.platform != "win32":
-            return None
-        try:
-            import ctypes
-            from ctypes import wintypes
-
-            user32 = ctypes.WinDLL("user32", use_last_error=True)
-            EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
-            chrome_classes = {"Chrome_WidgetWin_0", "Chrome_WidgetWin_1"}
-            profile_dir = self._browser_ui_profile_dir
-            profile_cmp = (
-                str(profile_dir).replace("\\", "/").lower()
-                if profile_dir is not None
-                else None
-            )
-            browser_pid = self._browser_ui_pid
-            native_mode = self._native_mode_enabled
-            psutil = None
-            try:
-                import psutil as _psutil
-                psutil = _psutil
-            except Exception:
-                psutil = None
-
-            process_cache: dict[int, tuple[str, str]] = {}
-
-            def _get_process_info(pid: int | None) -> tuple[str, str]:
-                if pid is None or pid <= 0 or psutil is None:
-                    return "", ""
-                cached = process_cache.get(pid)
-                if cached is not None:
-                    return cached
-                name = ""
-                cmdline = ""
-                try:
-                    proc = psutil.Process(pid)
-                    name = (proc.name() or "").lower()
-                    cmdline = " ".join(proc.cmdline() or []).replace("\\", "/").lower()
-                except Exception:
-                    name = ""
-                    cmdline = ""
-                process_cache[pid] = (name, cmdline)
-                return name, cmdline
-
-            candidates: list[WindowMatch] = []
-
-            @EnumWindowsProc
-            def _enum_windows(hwnd_enum, _):
-                if not include_hidden and not user32.IsWindowVisible(hwnd_enum):
-                    return True
-
-                title_length = user32.GetWindowTextLengthW(hwnd_enum)
-                title = ""
-                if title_length > 0:
-                    buffer = ctypes.create_unicode_buffer(title_length + 1)
-                    user32.GetWindowTextW(hwnd_enum, buffer, title_length + 1)
-                    title = buffer.value
-                title_lower = title.lower()
-                if "playwright\\driver\\node.exe" in title_lower:
-                    try:
-                        if user32.IsWindowVisible(hwnd_enum):
-                            user32.ShowWindow(hwnd_enum, 0)
-                            logger.debug("Hidden Playwright driver window: %s", title)
-                    except Exception:
-                        pass
-                    return True
-                if title_lower.startswith("setup - yakulingo"):
-                    return True
-
-                class_buffer = ctypes.create_unicode_buffer(256)
-                class_name = ""
-                try:
-                    user32.GetClassNameW(hwnd_enum, class_buffer, 256)
-                    class_name = class_buffer.value or ""
-                except Exception:
-                    class_name = ""
-
-                pid_value = wintypes.DWORD()
-                user32.GetWindowThreadProcessId(hwnd_enum, ctypes.byref(pid_value))
-                pid = int(pid_value.value) if pid_value.value else None
-
-                match_title = bool(title and _is_yakulingo_window_title(title))
-                match_pid = bool(pid is not None and browser_pid is not None and pid == browser_pid)
-                process_name, cmdline = _get_process_info(pid)
-                is_edge_app = (
-                    process_name == "msedge.exe"
-                    and ("--app=" in cmdline or "--app-id=" in cmdline)
-                )
-                if native_mode and is_edge_app:
-                    return True
-                match_profile = bool(profile_cmp and cmdline and profile_cmp in cmdline)
-
-                if not (match_title or match_pid or match_profile):
-                    if not allow_titleless:
-                        return True
-                    if not (match_pid or match_profile):
-                        return True
-
-                score = 0
-                reasons: list[str] = []
-                if match_profile:
-                    score += 90
-                    reasons.append("profile")
-                if match_pid:
-                    score += 70
-                    reasons.append("pid")
-                if match_title:
-                    score += 80
-                    reasons.append("title")
-                    if title == "YakuLingo":
-                        score += 5
-                        reasons.append("exact")
-                if class_name in chrome_classes:
-                    score += 10
-                    reasons.append("class")
-                if process_name in ("msedge.exe", "yakulingo.exe", "python.exe", "pythonw.exe"):
-                    score += 5
-                    reasons.append("proc")
-                if user32.IsWindowVisible(hwnd_enum):
-                    score += 2
-                    reasons.append("visible")
-                if native_mode is False and class_name:
-                    if class_name not in chrome_classes:
-                        score -= 5
-                        reasons.append("class_mismatch")
-
-                candidates.append(
-                    WindowMatch(
-                        hwnd=int(hwnd_enum),
-                        title=title,
-                        class_name=class_name,
-                        pid=pid,
-                        score=score,
-                        reason=",".join(reasons),
-                    )
-                )
-                return True
-
-            user32.EnumWindows(_enum_windows, 0)
-            if not candidates:
-                return None
-            best = max(candidates, key=lambda item: item.score)
-            if len(candidates) > 1:
-                logger.debug(
-                    "Multiple app window candidates found; selected hwnd=%s score=%d reason=%s",
-                    best.hwnd,
-                    best.score,
-                    best.reason,
-                )
-            return best
-        except Exception as e:
-            logger.debug("Failed to enumerate app window candidates: %s", e)
-            return None
-
-    def _find_app_window_handle_win32(
-        self,
-        *,
-        include_hidden: bool = False,
-        allow_titleless: bool = False,
-    ) -> int | None:
-        match = self._find_app_window_match_win32(
-            include_hidden=include_hidden,
-            allow_titleless=allow_titleless,
-        )
-        return match.hwnd if match else None
-
-    def _is_window_foreground_win32(self, hwnd: int) -> bool:
-        if sys.platform != "win32":
-            return False
-        try:
-            import ctypes
-
-            user32 = ctypes.WinDLL("user32", use_last_error=True)
-            foreground = user32.GetForegroundWindow()
-            if not foreground:
-                return False
-            return int(foreground) == int(hwnd)
-        except Exception:
-            return False
-
-    def _suppress_app_window_win32(self, hwnd: int, reason: str) -> None:
-        if sys.platform != "win32":
-            return
-        try:
-            _set_window_taskbar_visibility_win32(int(hwnd), False)
-            _hide_native_window_offscreen_win32(None, hwnd=int(hwnd))
-            self._set_layout_mode(LayoutMode.OFFSCREEN, f"silent:{reason}")
-        except Exception as e:
-            logger.debug("Failed to suppress app window (%s): %s", reason, e)
-
-    def _bring_window_to_front_win32(
-        self,
-        *,
-        user_initiated: bool = False,
-        trace_id: str | None = None,
-        hwnd: int | None = None,
-    ) -> bool:
+    def _bring_window_to_front_win32(self) -> bool:
         """Bring YakuLingo window to front using Windows API.
 
         Uses multiple techniques to ensure window activation:
-        1. Resolve window via title/class/PID hints
-        2. Restore/Show and reposition if offscreen
-        3. SetForegroundWindow + fallback calls
+        1. Find window by title "YakuLingo"
+        2. Temporarily set as topmost (HWND_TOPMOST)
+        3. SetForegroundWindow with workarounds for Windows restrictions
         4. Reset to normal (HWND_NOTOPMOST)
+
+        Returns:
+            True if window was successfully brought to front
         """
-        t0 = time.monotonic()
         try:
             import ctypes
             from ctypes import wintypes
@@ -4282,42 +3906,76 @@ class YakuLingoApp:
             # Windows API constants
             SW_RESTORE = 9
             SW_SHOW = 5
-            SW_SHOWNORMAL = 1
             HWND_TOPMOST = -1
             HWND_NOTOPMOST = -2
             SWP_NOMOVE = 0x0002
             SWP_NOSIZE = 0x0001
             SWP_NOZORDER = 0x0004
             SWP_SHOWWINDOW = 0x0040
-            SWP_NOACTIVATE = 0x0010
-            ASFW_ANY = -1
 
             user32 = ctypes.windll.user32
 
-            match = None
-            if hwnd is None:
-                match = self._find_app_window_match_win32(
-                    include_hidden=True,
-                    allow_titleless=True,
-                )
-                if match:
-                    hwnd = match.hwnd
+            # Find YakuLingo window by title (exact match first)
+            hwnd = None
+            matched_title = None
+            copilot = getattr(self, "_copilot", None)
+            if copilot is not None:
+                try:
+                    hwnd = copilot._find_yakulingo_window_handle(include_hidden=True)
+                except Exception:
+                    hwnd = None
             if not hwnd:
-                logger.debug("YakuLingo window not found by title/class/pid")
+                hwnd = user32.FindWindowW(None, "YakuLingo")
+                matched_title = "YakuLingo"
+
+            # Fallback: enumerate windows to find a partial match (useful if the
+            # host window modifies the title, e.g., "YakuLingo - Chrome")
+            if not hwnd:
+                EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+                found_hwnd = {'value': None, 'title': None}
+
+                @EnumWindowsProc
+                def _enum_windows(hwnd_enum, _):
+                    length = user32.GetWindowTextLengthW(hwnd_enum)
+                    if length == 0:
+                        return True
+                    buffer = ctypes.create_unicode_buffer(length + 1)
+                    user32.GetWindowTextW(hwnd_enum, buffer, length + 1)
+                    title = buffer.value
+                    title_lower = title.lower()
+                    if "playwright\\driver\\node.exe" in title_lower:
+                        try:
+                            if user32.IsWindowVisible(hwnd_enum):
+                                SW_HIDE = 0
+                                user32.ShowWindow(hwnd_enum, SW_HIDE)
+                                logger.debug("Hidden Playwright driver window: %s", title)
+                        except Exception:
+                            pass
+                        return True
+                    if _is_yakulingo_window_title(title):
+                        found_hwnd['value'] = hwnd_enum
+                        found_hwnd['title'] = title
+                        return False  # stop enumeration
+                    return True
+
+                user32.EnumWindows(_enum_windows, 0)
+                hwnd = found_hwnd['value']
+                matched_title = found_hwnd['title']
+            elif matched_title is None:
+                try:
+                    length = user32.GetWindowTextLengthW(hwnd)
+                    if length > 0:
+                        buffer = ctypes.create_unicode_buffer(length + 1)
+                        user32.GetWindowTextW(hwnd, buffer, length + 1)
+                        matched_title = buffer.value
+                except Exception:
+                    matched_title = None
+
+            if not hwnd:
+                logger.debug("YakuLingo window not found by title (exact or partial)")
                 return False
 
-            matched_title = match.title if match else None
-            matched_class = match.class_name if match else None
-            matched_pid = match.pid if match else None
-            matched_reason = match.reason if match else None
-            logger.debug(
-                "Found YakuLingo window handle=%s title=%s class=%s pid=%s reason=%s",
-                hwnd,
-                matched_title,
-                matched_class,
-                matched_pid,
-                matched_reason,
-            )
+            logger.debug("Found YakuLingo window handle=%s title=%s", hwnd, matched_title)
 
             class RECT(ctypes.Structure):
                 _fields_ = [
@@ -4344,156 +4002,106 @@ class YakuLingoApp:
             user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(RECT)]
             user32.GetWindowRect.restype = ctypes.wintypes.BOOL
 
-            hwnd_value = wintypes.HWND(hwnd)
+            rect = RECT()
+            got_rect = bool(user32.GetWindowRect(hwnd, ctypes.byref(rect)))
+            rect_width = int(rect.right - rect.left)
+            rect_height = int(rect.bottom - rect.top)
+            if rect_width <= 0 or rect_height <= 0:
+                fallback_width, fallback_height = self._get_window_size_for_native_ops()
+                rect_width = max(rect_width, fallback_width)
+                rect_height = max(rect_height, fallback_height)
 
-            def _ensure_visible() -> None:
-                rect = RECT()
-                got_rect = bool(user32.GetWindowRect(hwnd_value, ctypes.byref(rect)))
-                rect_width = int(rect.right - rect.left)
-                rect_height = int(rect.bottom - rect.top)
-                if rect_width <= 0 or rect_height <= 0:
-                    fallback_width, fallback_height = self._get_window_size_for_native_ops()
-                    rect_width = max(rect_width, fallback_width)
-                    rect_height = max(rect_height, fallback_height)
+            virtual_left = user32.GetSystemMetrics(SM_XVIRTUALSCREEN)
+            virtual_top = user32.GetSystemMetrics(SM_YVIRTUALSCREEN)
+            virtual_width = user32.GetSystemMetrics(SM_CXVIRTUALSCREEN)
+            virtual_height = user32.GetSystemMetrics(SM_CYVIRTUALSCREEN)
+            virtual_right = int(virtual_left + virtual_width)
+            virtual_bottom = int(virtual_top + virtual_height)
 
-                virtual_left = user32.GetSystemMetrics(SM_XVIRTUALSCREEN)
-                virtual_top = user32.GetSystemMetrics(SM_YVIRTUALSCREEN)
-                virtual_width = user32.GetSystemMetrics(SM_CXVIRTUALSCREEN)
-                virtual_height = user32.GetSystemMetrics(SM_CYVIRTUALSCREEN)
-                virtual_right = int(virtual_left + virtual_width)
-                virtual_bottom = int(virtual_top + virtual_height)
+            is_visible = user32.IsWindowVisible(hwnd) != 0
+            is_offscreen = False
+            if got_rect and virtual_width > 0 and virtual_height > 0:
+                margin = 40
+                is_offscreen = (
+                    rect.right < (virtual_left + margin)
+                    or rect.left > (virtual_right - margin)
+                    or rect.bottom < (virtual_top + margin)
+                    or rect.top > (virtual_bottom - margin)
+                )
 
-                is_visible = user32.IsWindowVisible(hwnd_value) != 0
-                is_offscreen = False
-                if got_rect and virtual_width > 0 and virtual_height > 0:
-                    margin = 40
-                    is_offscreen = (
-                        rect.right < (virtual_left + margin)
-                        or rect.left > (virtual_right - margin)
-                        or rect.bottom < (virtual_top + margin)
-                        or rect.top > (virtual_bottom - margin)
-                    )
+            if not is_visible or is_offscreen:
+                target_x = 0
+                target_y = 0
+                monitor = user32.MonitorFromWindow(wintypes.HWND(hwnd), MONITOR_DEFAULTTONEAREST)
+                if monitor:
+                    monitor_info = MONITORINFO()
+                    monitor_info.cbSize = ctypes.sizeof(MONITORINFO)
+                    if user32.GetMonitorInfoW(monitor, ctypes.byref(monitor_info)):
+                        work = monitor_info.rcWork
+                        work_width = int(work.right - work.left)
+                        work_height = int(work.bottom - work.top)
+                        if work_width > 0 and work_height > 0:
+                            target_x = int(work.left + max(0, (work_width - rect_width) // 2))
+                            target_y = int(work.top + max(0, (work_height - rect_height) // 2))
+                user32.SetWindowPos(
+                    hwnd, None, target_x, target_y, 0, 0,
+                    SWP_NOZORDER | SWP_NOSIZE | SWP_SHOWWINDOW
+                )
 
-                if not is_visible or is_offscreen:
-                    target_x = 0
-                    target_y = 0
-                    monitor = user32.MonitorFromWindow(hwnd_value, MONITOR_DEFAULTTONEAREST)
-                    if monitor:
-                        monitor_info = MONITORINFO()
-                        monitor_info.cbSize = ctypes.sizeof(MONITORINFO)
-                        if user32.GetMonitorInfoW(monitor, ctypes.byref(monitor_info)):
-                            work = monitor_info.rcWork
-                            work_width = int(work.right - work.left)
-                            work_height = int(work.bottom - work.top)
-                            if work_width > 0 and work_height > 0:
-                                target_x = int(work.left + max(0, (work_width - rect_width) // 2))
-                                target_y = int(work.top + max(0, (work_height - rect_height) // 2))
-                    user32.SetWindowPos(
-                        hwnd_value,
-                        None,
-                        target_x,
-                        target_y,
-                        0,
-                        0,
-                        SWP_NOZORDER | SWP_NOSIZE | SWP_SHOWWINDOW,
-                    )
+            # Check if window is minimized and restore it
+            if user32.IsIconic(hwnd):
+                user32.ShowWindow(hwnd, SW_RESTORE)
 
-                if user32.IsIconic(hwnd_value):
-                    user32.ShowWindow(hwnd_value, SW_RESTORE)
-                if not user32.IsWindowVisible(hwnd_value):
-                    user32.ShowWindow(hwnd_value, SW_SHOW)
-                    try:
-                        user32.ShowWindowAsync(hwnd_value, SW_SHOWNORMAL)
-                    except Exception:
-                        pass
+            # Allow any process to set foreground window
+            # This is important when called from hotkey handler
+            ASFW_ANY = -1
+            user32.AllowSetForegroundWindow(ASFW_ANY)
 
-            def _attempt_foreground(allow_thread_attach: bool) -> bool:
-                _ensure_visible()
-
+            # Attach to foreground thread to bypass foreground restrictions (best-effort)
+            attached = False
+            fg_thread = None
+            this_thread = None
+            try:
+                foreground = user32.GetForegroundWindow()
+                if foreground:
+                    fg_thread = user32.GetWindowThreadProcessId(foreground, None)
+                    this_thread = user32.GetCurrentThreadId()
+                    if fg_thread and this_thread and fg_thread != this_thread:
+                        if user32.AttachThreadInput(fg_thread, this_thread, True):
+                            attached = True
+            except Exception:
                 attached = False
-                fg_thread = None
-                this_thread = None
-                if allow_thread_attach:
-                    try:
-                        user32.AllowSetForegroundWindow(ASFW_ANY)
-                    except Exception:
-                        pass
-                    try:
-                        foreground = user32.GetForegroundWindow()
-                        if foreground:
-                            fg_thread = user32.GetWindowThreadProcessId(foreground, None)
-                            this_thread = user32.GetCurrentThreadId()
-                            if fg_thread and this_thread and fg_thread != this_thread:
-                                if user32.AttachThreadInput(fg_thread, this_thread, True):
-                                    attached = True
-                    except Exception:
-                        attached = False
 
-                user32.SetWindowPos(
-                    hwnd_value,
-                    HWND_TOPMOST,
-                    0,
-                    0,
-                    0,
-                    0,
-                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
-                )
-                user32.SetForegroundWindow(hwnd_value)
+            # Temporarily set as topmost to ensure visibility
+            user32.SetWindowPos(
+                hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
+            )
+
+            # Set as foreground window
+            user32.SetForegroundWindow(hwnd)
+
+            # Reset to non-topmost (so other windows can go on top later)
+            user32.SetWindowPos(
+                hwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
+            )
+
+            if attached:
                 try:
-                    user32.BringWindowToTop(hwnd_value)
+                    user32.AttachThreadInput(fg_thread, this_thread, False)
                 except Exception:
                     pass
-                try:
-                    user32.SwitchToThisWindow(hwnd_value, True)
-                except Exception:
-                    pass
-                user32.SetWindowPos(
-                    hwnd_value,
-                    HWND_NOTOPMOST,
-                    0,
-                    0,
-                    0,
-                    0,
-                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
-                )
 
-                if attached:
-                    try:
-                        user32.AttachThreadInput(fg_thread, this_thread, False)
-                    except Exception:
-                        pass
+            resolved_hwnd = _coerce_hwnd_win32(hwnd)
+            if resolved_hwnd:
+                _stop_window_taskbar_flash_win32(resolved_hwnd, reason="bring_to_front")
 
-                if not self._is_window_foreground_win32(int(hwnd)):
-                    return False
-                resolved_hwnd = _coerce_hwnd_win32(int(hwnd))
-                if resolved_hwnd:
-                    _stop_window_taskbar_flash_win32(resolved_hwnd, reason="bring_to_front")
-                return True
-
-            if _attempt_foreground(allow_thread_attach=user_initiated):
-                self._log_timing("bring_to_front_win32:success", trace_id=trace_id, start_time=t0)
-                logger.debug("YakuLingo window brought to front via Windows API")
-                return True
-
-            if not user_initiated:
-                self._log_timing("bring_to_front_win32:failed", trace_id=trace_id, start_time=t0)
-                return False
-
-            for delay_sec in (0.08, 0.18, 0.35):
-                time.sleep(delay_sec)
-                if _attempt_foreground(allow_thread_attach=False):
-                    self._log_timing(
-                        "bring_to_front_win32:retry_success",
-                        trace_id=trace_id,
-                        start_time=t0,
-                    )
-                    return True
-
-            self._log_timing("bring_to_front_win32:retry_failed", trace_id=trace_id, start_time=t0)
-            return False
+            logger.debug("YakuLingo window brought to front via Windows API")
+            return True
 
         except Exception as e:
-            logger.debug("Windows API bring_to_front failed: %s", e)
+            logger.debug(f"Windows API bring_to_front failed: {e}")
             return False
 
     # =========================================================================
@@ -4503,11 +4111,14 @@ class YakuLingoApp:
     def _set_ui_taskbar_visibility_win32(self, visible: bool, reason: str) -> None:
         if sys.platform != "win32":
             return
-        match = self._find_app_window_match_win32(
-            include_hidden=True,
-            allow_titleless=True,
-        )
-        hwnd = match.hwnd if match else None
+        hwnd = None
+        if self._copilot is not None:
+            try:
+                hwnd = self._copilot._find_yakulingo_window_handle(include_hidden=True)
+            except Exception:
+                hwnd = None
+        if not hwnd:
+            hwnd = _find_window_handle_by_title_win32("YakuLingo")
         if not hwnd:
             now = time.monotonic()
             reason_for_log = reason
@@ -4622,11 +4233,9 @@ class YakuLingoApp:
 
             user32 = ctypes.WinDLL('user32', use_last_error=True)
 
-            match = self._find_app_window_match_win32(
-                include_hidden=True,
-                allow_titleless=True,
-            )
-            hwnd = match.hwnd if match else None
+            hwnd = self.copilot._find_yakulingo_window_handle(include_hidden=True) if self._copilot else None
+            if not hwnd:
+                hwnd = user32.FindWindowW(None, "YakuLingo")
             if not hwnd:
                 logger.debug("YakuLingo window not found for recovery")
                 return False
@@ -5132,7 +4741,6 @@ class YakuLingoApp:
                 self._hide_resident_window_win32("startup")
             return
         self._resident_show_requested = False
-        self._clear_browser_ui_suppression("ensure_app_window_visible")
 
         # Small delay to ensure pywebview window is fully initialized
         await asyncio.sleep(0.5)
@@ -5158,11 +4766,16 @@ class YakuLingoApp:
                     if not user32.IsWindow(wintypes.HWND(source_hwnd)):
                         source_hwnd = None
                     else:
-                        match = self._find_app_window_match_win32(
-                            include_hidden=True,
-                            allow_titleless=True,
-                        )
-                        yakulingo_hwnd = match.hwnd if match else None
+                        yakulingo_hwnd = None
+                        if self._copilot:
+                            try:
+                                yakulingo_hwnd = self._copilot._find_yakulingo_window_handle(
+                                    include_hidden=True
+                                )
+                            except Exception:
+                                yakulingo_hwnd = None
+                        if not yakulingo_hwnd:
+                            yakulingo_hwnd = user32.FindWindowW(None, "YakuLingo")
                         if yakulingo_hwnd and source_hwnd == int(yakulingo_hwnd):
                             source_hwnd = None
                 except Exception:
@@ -5200,11 +4813,7 @@ class YakuLingoApp:
         if sys.platform == 'win32':
             # Additional Windows API fallback to bring app to front
             try:
-                await asyncio.to_thread(
-                    self._restore_app_window_win32,
-                    user_initiated=False,
-                    trace_id=self._active_translation_trace_id,
-                )
+                await asyncio.to_thread(self._restore_app_window_win32)
             except Exception as e:
                 logger.debug("Windows API restore failed: %s", e)
 
@@ -5216,14 +4825,12 @@ class YakuLingoApp:
             self._edge_visibility_target = self._get_effective_browser_display_mode()
             self._apply_edge_visibility_target("ensure_app_window_visible")
 
-    def _restore_app_window_win32(
-        self,
-        *,
-        trace_id: str | None = None,
-        user_initiated: bool = False,
-    ) -> bool:
-        """Restore and bring app window to front using Windows API."""
-        t0 = time.monotonic()
+    def _restore_app_window_win32(self) -> bool:
+        """Restore and bring app window to front using Windows API.
+
+        This function ensures the app window is visible and in the foreground,
+        handling both minimized and hidden window states.
+        """
         try:
             import ctypes
             from ctypes import wintypes
@@ -5231,17 +4838,18 @@ class YakuLingoApp:
             user32 = ctypes.WinDLL('user32', use_last_error=True)
             self._set_layout_mode(LayoutMode.RESTORING, "restore_app_window")
 
-            match = self._find_app_window_match_win32(
-                include_hidden=True,
-                allow_titleless=True,
-            )
-            if match is None:
+            # Find YakuLingo window (include hidden windows during startup)
+            hwnd = self.copilot._find_yakulingo_window_handle(include_hidden=True) if self._copilot else None
+            if not hwnd:
+                # Try finding by title directly (FindWindowW doesn't check visibility)
+                hwnd = user32.FindWindowW(None, "YakuLingo")
+            if not hwnd:
                 logger.debug("YakuLingo window not found for restore")
                 return False
-            hwnd = wintypes.HWND(match.hwnd)
 
             self._set_ui_taskbar_visibility_win32(True, "restore_app_window")
 
+            # Window flag constants
             SW_RESTORE = 9
             SW_SHOW = 5
             SWP_NOZORDER = 0x0004
@@ -5250,27 +4858,32 @@ class YakuLingoApp:
             SWP_NOSIZE = 0x0001
             SWP_NOMOVE = 0x0002
 
-            if user32.IsIconic(hwnd):
+            # Check if window is minimized
+            is_minimized = user32.IsIconic(hwnd)
+            if is_minimized:
+                # Restore minimized window
                 user32.ShowWindow(hwnd, SW_RESTORE)
+                logger.debug("Restored minimized YakuLingo window")
+
+            # Check if window is not visible (hidden) and show it
             if not user32.IsWindowVisible(hwnd):
                 user32.ShowWindow(hwnd, SW_SHOW)
+                logger.debug("Showed hidden YakuLingo window")
 
+            # Ensure window is visible using SetWindowPos with SWP_SHOWWINDOW
             user32.SetWindowPos(
                 hwnd, None, 0, 0, 0, 0,
-                SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_NOSIZE | SWP_NOMOVE,
+                SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_NOSIZE | SWP_NOMOVE
             )
 
-            success = self._bring_window_to_front_win32(
-                user_initiated=user_initiated,
-                trace_id=trace_id,
-                hwnd=int(match.hwnd),
-            )
-            if success:
-                self._set_layout_mode(LayoutMode.FOREGROUND, "restore_app_window")
-                self._log_timing("restore_app_window_win32:success", trace_id=trace_id, start_time=t0)
-            else:
-                self._log_timing("restore_app_window_win32:failed", trace_id=trace_id, start_time=t0)
-            return success
+            # Bring to front
+            user32.SetForegroundWindow(hwnd)
+            resolved_hwnd = _coerce_hwnd_win32(hwnd)
+            if resolved_hwnd:
+                _stop_window_taskbar_flash_win32(resolved_hwnd, reason="restore_app_window")
+            self._set_layout_mode(LayoutMode.FOREGROUND, "restore_app_window")
+            return True
+
         except Exception as e:
             logger.debug("Failed to restore app window: %s", e)
             return False
@@ -10936,7 +10549,6 @@ def run_app(
         return
 
     os.environ.setdefault("YAKULINGO_NO_AUTO_OPEN", "1")
-    os.environ.setdefault("YAKULINGO_BROWSER_PREWARM", "1")
     resident_mode = os.environ.get("YAKULINGO_NO_AUTO_OPEN", "").strip().lower() in ("1", "true", "yes")
     watchdog_enabled = os.environ.get("YAKULINGO_WATCHDOG", "").strip().lower() in (
         "1", "true", "yes"
@@ -11205,20 +10817,6 @@ def run_app(
     native_frameless = bool(native and sys.platform == "win32")
     yakulingo_app._native_mode_enabled = native
     yakulingo_app._native_frameless = native_frameless
-    browser_prewarm_env = os.environ.get("YAKULINGO_BROWSER_PREWARM")
-    browser_prewarm = (
-        resident_mode
-        and not native
-        and browser_prewarm_env is not None
-        and browser_prewarm_env.strip().lower() in ("1", "true", "yes")
-    )
-    if resident_mode and not native and browser_prewarm_env is None:
-        logger.info(
-            "Resident startup: browser UI prewarm disabled by default "
-            "(set YAKULINGO_BROWSER_PREWARM=1 to enable)"
-        )
-    if browser_prewarm:
-        logger.info("Resident startup: browser UI prewarm enabled (silent)")
     patch_marker = _NICEGUI_NATIVE_PATCH_APPLIED or not native
     if _early_copilot is not None:
         _early_copilot.set_native_patch_applied(patch_marker)
@@ -11357,46 +10955,7 @@ def run_app(
                 return path
         return None
 
-    def _start_browser_suppression(
-        reason: str,
-        *,
-        duration_sec: float = 2.0,
-        trace_id: str | None = None,
-    ) -> None:
-        if sys.platform != "win32":
-            return
-        yakulingo_app._browser_ui_suppress_until = time.monotonic() + duration_sec
-        yakulingo_app._browser_ui_suppress_event.set()
-        yakulingo_app._log_timing(f"browser_ui_suppress_start:{reason}", trace_id=trace_id)
-
-        def _worker() -> None:
-            deadline = yakulingo_app._browser_ui_suppress_until
-            while not shutdown_event.is_set():
-                if not yakulingo_app._browser_ui_suppress_event.is_set():
-                    return
-                if yakulingo_app._resident_show_requested:
-                    break
-                if deadline is not None and time.monotonic() >= deadline:
-                    break
-                match = yakulingo_app._find_app_window_match_win32(
-                    include_hidden=True,
-                    allow_titleless=True,
-                )
-                if match:
-                    yakulingo_app._suppress_app_window_win32(match.hwnd, reason)
-                time.sleep(0.05)
-            yakulingo_app._browser_ui_suppress_event.clear()
-
-        try:
-            threading.Thread(
-                target=_worker,
-                daemon=True,
-                name=f"browser_ui_suppress:{reason}",
-            ).start()
-        except Exception as e:
-            logger.debug("Failed to start browser UI suppression: %s", e)
-
-    def _open_browser_window(*, silent: bool = False) -> None:
+    def _open_browser_window() -> None:
         nonlocal browser_opened
         nonlocal browser_opened_at
         nonlocal browser_pid, browser_profile_dir
@@ -11405,33 +10964,20 @@ def run_app(
             return
         if getattr(yakulingo_app, "_shutdown_requested", False):
             return
-
-        pending_reason, pending_user_initiated, pending_trace_id = (
-            yakulingo_app._consume_pending_ui_open_context()
-        )
-        reason = pending_reason or ("browser_prewarm" if silent else "open_browser_window")
-        trace_id = pending_trace_id
-        user_initiated = False if silent else bool(pending_user_initiated)
-        open_started_at = time.monotonic()
-
-        if silent and native:
-            return
-
-        if not silent:
-            yakulingo_app._clear_browser_ui_suppression(reason)
-            if yakulingo_app._resident_mode:
-                yakulingo_app._resident_show_requested = True
-            if yakulingo_app._resident_mode and (
-                yakulingo_app._auto_open_cause not in (AutoOpenCause.HOTKEY, AutoOpenCause.LOGIN)
-            ):
-                yakulingo_app._mark_manual_show("open_browser_window")
-            yakulingo_app._log_timing("open_browser_window:start", trace_id=trace_id)
-        else:
-            yakulingo_app._log_timing("open_browser_window:silent_start", trace_id=trace_id)
-
+        if yakulingo_app._resident_mode:
+            yakulingo_app._resident_show_requested = True
+        if yakulingo_app._resident_mode and (
+            yakulingo_app._auto_open_cause not in (AutoOpenCause.HOTKEY, AutoOpenCause.LOGIN)
+        ):
+            yakulingo_app._mark_manual_show("open_browser_window")
+        if sys.platform == "win32":
+            try:
+                if yakulingo_app._bring_window_to_front_win32():
+                    yakulingo_app._set_layout_mode(LayoutMode.FOREGROUND, "open_browser_window")
+                    return
+            except Exception as e:
+                logger.debug("Failed to bring existing UI window to front: %s", e)
         if native:
-            if silent:
-                return
             try:
                 if nicegui_app and hasattr(nicegui_app, 'native') and nicegui_app.native.main_window:
                     window = nicegui_app.native.main_window
@@ -11448,65 +10994,20 @@ def run_app(
                 logger.debug("Failed to show native UI window: %s", e)
             if sys.platform == "win32":
                 try:
-                    yakulingo_app._restore_app_window_win32(
-                        user_initiated=user_initiated,
-                        trace_id=trace_id,
-                    )
+                    yakulingo_app._restore_app_window_win32()
                 except Exception as e:
                     logger.debug("Failed to restore native UI window: %s", e)
             return
 
-        existing_match = None
-        if sys.platform == "win32":
-            existing_match = yakulingo_app._find_app_window_match_win32(
-                include_hidden=True,
-                allow_titleless=True,
-            )
-
-        if existing_match:
-            with browser_open_lock:
-                browser_opened = True
-                if browser_opened_at is None:
-                    browser_opened_at = time.monotonic()
-            if existing_match.pid:
-                yakulingo_app._browser_ui_pid = existing_match.pid
-                browser_pid = existing_match.pid
-            if silent:
-                _start_browser_suppression(reason, trace_id=trace_id)
-                return
-            try:
-                if sys.platform == "win32":
-                    if yakulingo_app._bring_window_to_front_win32(
-                        user_initiated=user_initiated,
-                        trace_id=trace_id,
-                        hwnd=existing_match.hwnd,
-                    ):
-                        yakulingo_app._set_layout_mode(LayoutMode.FOREGROUND, "open_browser_window")
-                        return
-            except Exception as e:
-                logger.debug("Failed to bring existing UI window to front: %s", e)
-            yakulingo_app._schedule_foreground_retry(
-                "open_browser_window",
-                trace_id=trace_id,
-                user_initiated=user_initiated,
-            )
-            return
-
-        if silent and sys.platform != "win32":
-            return
-
         with browser_open_lock:
             if browser_open_in_progress:
-                if not silent:
-                    yakulingo_app._schedule_foreground_retry(
-                        "open_browser_window_in_progress",
-                        trace_id=trace_id,
-                        user_initiated=user_initiated,
-                        attempts=8,
-                        delay_sec=0.2,
-                    )
                 return
             if browser_opened:
+                try:
+                    if sys.platform == "win32" and yakulingo_app._bring_window_to_front_win32():
+                        return
+                except Exception:
+                    pass
                 now = time.monotonic()
                 if browser_opened_at is not None and (now - browser_opened_at) < 5.0:
                     return
@@ -11522,7 +11023,7 @@ def run_app(
             native_window_size = yakulingo_app._native_window_size or yakulingo_app._window_size
             width, height = native_window_size
             pending_rect = None
-            if sys.platform == "win32" and not silent:
+            if sys.platform == "win32":
                 pending_rect = yakulingo_app._consume_pending_ui_window_rect(max_age_sec=3.0)
                 if pending_rect:
                     pending_x, pending_y, pending_w, pending_h = pending_rect
@@ -11539,7 +11040,6 @@ def run_app(
                         browser_profile_dir.mkdir(parents=True, exist_ok=True)
                     except Exception:
                         browser_profile_dir = None
-                    yakulingo_app._browser_ui_profile_dir = browser_profile_dir
                     args = [
                         edge_exe,
                         f"--app={url}",
@@ -11557,11 +11057,7 @@ def run_app(
                         "--disable-session-crashed-bubble",
                         "--hide-crash-restore-bubble",
                     ]
-                    if silent:
-                        offscreen = _get_offscreen_position_win32()
-                        if offscreen:
-                            args.append(f"--window-position={offscreen[0]},{offscreen[1]}")
-                    elif pending_rect:
+                    if pending_rect:
                         args.append(f"--window-position={pending_x},{pending_y}")
                     try:
                         import subprocess
@@ -11575,51 +11071,32 @@ def run_app(
                             creationflags=subprocess.CREATE_NO_WINDOW,
                         )
                         browser_pid = proc.pid
-                        yakulingo_app._browser_ui_pid = browser_pid
                         opened = True
                         logger.info("Opened browser app window: %s", url)
-                        yakulingo_app._log_timing(
-                            "open_browser_window:opened",
-                            trace_id=trace_id,
-                            start_time=open_started_at,
-                        )
-                        if silent:
-                            _start_browser_suppression(reason, trace_id=trace_id)
-                        else:
-                            try:
-                                def _bring_browser_window_foreground() -> None:
-                                    for _ in range(8):
-                                        if shutdown_event.is_set():
-                                            return
-                                        time.sleep(0.2)
-                                        if yakulingo_app._bring_window_to_front_win32(
-                                            user_initiated=user_initiated,
-                                            trace_id=trace_id,
-                                        ):
-                                            return
-                                threading.Thread(
-                                    target=_bring_browser_window_foreground,
-                                    daemon=True,
-                                    name="bring_browser_ui_foreground",
-                                ).start()
-                            except Exception:
-                                pass
+                        try:
+                            def _bring_browser_window_foreground() -> None:
+                                for _ in range(8):
+                                    if shutdown_event.is_set():
+                                        return
+                                    time.sleep(0.2)
+                                    if yakulingo_app._bring_window_to_front_win32():
+                                        return
+                            threading.Thread(
+                                target=_bring_browser_window_foreground,
+                                daemon=True,
+                                name="bring_browser_ui_foreground",
+                            ).start()
+                        except Exception:
+                            pass
                         return
                     except Exception as e:
                         logger.debug("Failed to open Edge with window size: %s", e)
 
-            if silent:
-                return
             try:
                 import webbrowser
                 webbrowser.open(url)
                 opened = True
                 logger.info("Opened browser via default handler: %s", url)
-                yakulingo_app._log_timing(
-                    "open_browser_window:opened",
-                    trace_id=trace_id,
-                    start_time=open_started_at,
-                )
             except Exception as e:
                 logger.debug("Failed to open browser: %s", e)
         finally:
@@ -11628,8 +11105,6 @@ def run_app(
                 if not opened:
                     browser_opened = False
                     browser_opened_at = None
-                    yakulingo_app._browser_ui_pid = None
-                    yakulingo_app._browser_ui_profile_dir = None
 
     yakulingo_app._open_ui_window_callback = _open_browser_window
 
@@ -12036,19 +11511,13 @@ def run_app(
                 callback = yakulingo_app._open_ui_window_callback
                 if callback is not None:
                     try:
-                        yakulingo_app._set_pending_ui_open_context(
-                            "activate_api",
-                            user_initiated=True,
-                        )
                         callback()
                         return
                     except Exception:
                         pass
                 if sys.platform == "win32":
                     try:
-                        yakulingo_app._bring_window_to_front_win32(
-                            user_initiated=True,
-                        )
+                        yakulingo_app._bring_window_to_front_win32()
                     except Exception:
                         pass
 
@@ -12581,23 +12050,9 @@ def run_app(
 
         if not native:
             if resident_mode:
-                if browser_prewarm:
-                    try:
-                        yakulingo_app._set_pending_ui_open_context(
-                            "startup_silent_prewarm",
-                            user_initiated=False,
-                        )
-                        asyncio.create_task(asyncio.to_thread(_open_browser_window, silent=True))
-                        logger.info("Resident startup: prewarming browser UI (silent)")
-                    except Exception as e:
-                        logger.debug("Failed to prewarm browser UI: %s", e)
                 asyncio.create_task(yakulingo_app._warmup_resident_gpt_mode())
             else:
                 try:
-                    yakulingo_app._set_pending_ui_open_context(
-                        "startup_auto_open",
-                        user_initiated=False,
-                    )
                     asyncio.create_task(asyncio.to_thread(_open_browser_window))
                     logger.info("Auto-opening UI window (browser mode)")
                 except Exception as e:
@@ -12616,13 +12071,7 @@ def run_app(
             nonlocal browser_opened
             def _clear_browser_state() -> None:
                 nonlocal browser_opened
-                nonlocal browser_opened_at
-                nonlocal browser_pid, browser_profile_dir
                 browser_opened = False
-                browser_opened_at = None
-                browser_pid = None
-                yakulingo_app._browser_ui_pid = None
-                yakulingo_app._clear_browser_ui_suppression("ui_disconnect")
 
             yakulingo_app._handle_ui_disconnect(
                 client,

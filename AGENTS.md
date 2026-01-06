@@ -4,7 +4,8 @@ This document provides essential context for AI assistants working with the Yaku
 
 ## Language Requirement
 
-- 以降の回答は日本語で行うこと。
+- 以降の回答は日本語で行うこと（ユーザーとAIのやりとり全体）。
+- コミットメッセージは日本語で書くこと（変更理由が伝わる短文）。
 
 ## Project Overview
 
@@ -3028,5 +3029,21 @@ Based on recent commits:
 - Main development happens on feature branches
 - Testing branches: `claude/testing-*`
 - Feature branches: `claude/claude-md-*`
-- Commit messages: descriptive, focus on "why" not "what"
+- Commit messages: 日本語で "why" を優先（descriptive, focus on "why" not "what"）
 - Lock file (`uv.lock`) included for reproducible dependency resolution
+
+### 事故防止（未コミット変更の保護）
+
+AIが作業する際は、未コミットの変更が失われないように次を厳守すること：
+
+- 作業開始時に必ず作業用ブランチを作成する（例: `git switch -c wip/<topic>`）
+- 作業開始直後に `git status -sb` と `git diff` で差分を把握する（想定外の差分がある場合は、まず退避点を作る）
+- 破壊的/巻き戻し系操作（`git reset --hard` / `git checkout|switch` / `git restore` / `git clean` / `git rebase` / `git stash pop` 等）の前に、必ず退避点を作る
+  - 推奨: WIPコミット（`git add <paths>` → `git commit -m "WIP: ..."`）
+  - 代替: stash（未追跡も含める） `git stash push -u -m "wip"`（戻す: `git stash pop`）
+- 未追跡ファイル（`git status` の `??`）は勝手に追加・削除しない（`git add -A` / `git clean` を安易に使わない）
+- コミット前は `git diff --staged` で最終確認し、コミットするのはユーザーから明示的に依頼がある場合のみ
+- 事故が起きた場合の復旧手順（優先順）:
+  - `git stash list`（退避が残っていないか）
+  - `git reflog`（HEAD移動/消えたコミットの復元）
+  - IDEのローカル履歴（VS Code/JetBrains等）も併用

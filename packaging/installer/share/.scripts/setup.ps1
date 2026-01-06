@@ -1017,7 +1017,9 @@ function Update-PyVenvConfig {
 
     # pyvenv.cfg is read by Python with encoding='utf-8' (no BOM).
     # Use UTF-8 without BOM here to support non-ASCII install paths while avoiding a BOM that would break parsing.
-    $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+    # NOTE: Windows PowerShell 5.1 treats BOM-less UTF-8 scripts as ANSI (ACP).
+    # Helper scripts contain Japanese strings (e.g., shortcut names), so write them as UTF-8 with BOM.
+    $utf8WithBom = New-Object System.Text.UTF8Encoding $true
 
     try {
         $pyvenvLines = [System.IO.File]::ReadAllLines($pyvenvPath, $utf8NoBom)
@@ -2196,10 +2198,10 @@ Start-Process -FilePath powershell.exe -ArgumentList "-NoProfile -ExecutionPolic
 exit 0
 "@
 
-    [System.IO.File]::WriteAllText($OpenUiScriptPath, $openUiScript, $utf8NoBom)
-    [System.IO.File]::WriteAllText($ResidentScriptPath, $residentScript, $utf8NoBom)
-    [System.IO.File]::WriteAllText($ExitScriptPath, $exitScript, $utf8NoBom)
-    [System.IO.File]::WriteAllText($UninstallScriptPath, $uninstallScript, $utf8NoBom)
+    [System.IO.File]::WriteAllText($OpenUiScriptPath, $openUiScript, $utf8WithBom)
+    [System.IO.File]::WriteAllText($ResidentScriptPath, $residentScript, $utf8WithBom)
+    [System.IO.File]::WriteAllText($ExitScriptPath, $exitScript, $utf8WithBom)
+    [System.IO.File]::WriteAllText($UninstallScriptPath, $uninstallScript, $utf8WithBom)
 
     # Common icon path
     $IconPath = Join-Path $SetupPath "yakulingo\ui\yakulingo.ico"

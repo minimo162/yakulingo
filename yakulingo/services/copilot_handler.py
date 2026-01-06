@@ -1106,7 +1106,8 @@ class CopilotHandler:
     CHAIN_OF_THOUGHT_PANEL_SELECTOR_COMBINED = ", ".join(CHAIN_OF_THOUGHT_PANEL_SELECTORS)
 
     # GPT Mode switcher selectors
-    # Used to ensure GPT-5.2 Think Deeper mode is selected for better translation quality
+    # Used to ensure a deterministic GPT-5.2 mode is selected.
+    # NOTE: "Think Deeper" is preferred for translation quality.
     # Flow: 1. Click #gptModeSwitcher -> 2. Hover "More" (role=button) -> 3. Click target (role=menuitem)
     GPT_MODE_SWITCHER_SELECTORS = (
         '#gptModeSwitcher',
@@ -1133,9 +1134,13 @@ class CopilotHandler:
         '[data-automation-id="moreButton"]',
     )
     GPT_MODE_OVERFLOW_MENU_BUTTON_SELECTOR = ", ".join(GPT_MODE_OVERFLOW_MENU_BUTTON_SELECTORS)
-    # IMPORTANT: "Think Deeper" is a different mode; do NOT fall back to it.
-    # Only "GPT-5.2 Think Deeper" is accepted.
-    GPT_MODE_TARGETS = ('GPT-5.2 Think Deeper',)
+    # IMPORTANT: "Think Deeper" (without GPT-5.2) is a different mode; do NOT fall back to it.
+    # Prefer GPT-5.2 Think Deeper (quality) and fall back to Quick Response when needed.
+    GPT_MODE_TARGETS = (
+        "GPT-5.2 Think Deeper",
+        "GPT-5.2 クイック応答",
+        "GPT-5.2 Quick Response",
+    )
     GPT_MODE_TARGET = GPT_MODE_TARGETS[0]
     GPT_MODE_MORE_TEXTS = ('More', 'その他')
     # OPTIMIZED: Reduced menu wait to minimum (just enough for React to update)
@@ -1917,12 +1922,13 @@ class CopilotHandler:
             # Configure window position based on display mode
             if display_mode == "minimized":
                 edge_args.extend([
+                    "--no-startup-window",
                     "--start-minimized",
                     "--window-position=-32000,-32000",
                     f"--window-size={self.MIN_EDGE_WINDOW_WIDTH},{self.MIN_EDGE_WINDOW_HEIGHT}",
                 ])
                 logger.debug(
-                    "Starting Edge in minimized mode (off-screen) at %dx%d",
+                    "Starting Edge in minimized mode (off-screen/no-startup-window) at %dx%d",
                     self.MIN_EDGE_WINDOW_WIDTH,
                     self.MIN_EDGE_WINDOW_HEIGHT,
                 )
@@ -2933,7 +2939,7 @@ class CopilotHandler:
         self._schedule_gpt_mode_retry(delay)
 
     def ensure_gpt_mode(self) -> None:
-        """Thread-safe wrapper to set GPT-5.2 Think Deeper mode.
+        """Thread-safe wrapper to set GPT mode (GPT-5.2; Think Deeper preferred).
 
         Called from UI layer (app.py) after initial connection.
         Should only be called once per session to respect user's manual changes.
@@ -5555,6 +5561,10 @@ class CopilotHandler:
 
             # When minimizing, hide from taskbar to avoid a separate Edge entry while running in background.
             self._set_edge_taskbar_visibility(False)
+
+            if not user32.IsWindowVisible(edge_hwnd):
+                logger.debug("Edge window is hidden, skipping minimization")
+                return True
 
             # Check if already minimized - skip all processing if so
             # This prevents unnecessary window operations that could cause flicker

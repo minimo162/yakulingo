@@ -1975,16 +1975,27 @@ class CopilotHandler:
             return
 
         def _worker() -> None:
-            max_attempts = 20
-            for _ in range(max_attempts):
-                if self._set_edge_taskbar_visibility(False):
-                    if edge_layout_mode == "offscreen":
+            max_attempts = 60
+            delay_sec = 0.05
+            first_success_at: int | None = None
+            positioned_offscreen = False
+
+            for attempt in range(max_attempts):
+                succeeded = self._set_edge_taskbar_visibility(False)
+                if succeeded and first_success_at is None:
+                    first_success_at = attempt
+                    if edge_layout_mode == "offscreen" and not positioned_offscreen:
                         try:
                             self._position_edge_offscreen()
+                            positioned_offscreen = True
                         except Exception:
                             pass
+
+                # Keep applying for a short time after first success to catch late-spawned windows
+                if first_success_at is not None and (attempt - first_success_at) >= 20:
                     return
-                time.sleep(0.2)
+
+                time.sleep(delay_sec)
 
         threading.Thread(
             target=_worker,
@@ -4565,14 +4576,16 @@ class CopilotHandler:
 
             exact_match_hwnd = None
             fallback_hwnd = None
+            fallback_any_hwnd = None
 
             def enum_windows_callback(hwnd, lparam):
-                nonlocal exact_match_hwnd, fallback_hwnd
+                nonlocal exact_match_hwnd, fallback_hwnd, fallback_any_hwnd
 
                 class_name = ctypes.create_unicode_buffer(256)
                 user32.GetClassNameW(hwnd, class_name, 256)
 
-                if class_name.value != "Chrome_WidgetWin_1":
+                class_value = class_name.value or ""
+                if not class_value.startswith("Chrome_WidgetWin_"):
                     return True
 
                 title_length = user32.GetWindowTextLengthW(hwnd) + 1
@@ -4589,18 +4602,24 @@ class CopilotHandler:
                 if target_pids:
                     window_pid = wintypes.DWORD()
                     user32.GetWindowThreadProcessId(hwnd, ctypes.byref(window_pid))
-                    if window_pid.value in target_pids and fallback_hwnd is None:
-                        # Log only once per session to avoid repeated log spam during polling
-                        if not getattr(self, '_edge_window_log_shown', False):
-                            logger.debug("Found Edge window by process tree: %s (pid=%d)",
-                                         window_title[:60], window_pid.value)
-                            self._edge_window_log_shown = True
-                        fallback_hwnd = hwnd
+                    if window_pid.value in target_pids:
+                        if class_value == "Chrome_WidgetWin_1" and fallback_hwnd is None:
+                            # Log only once per session to avoid repeated log spam during polling
+                            if not getattr(self, '_edge_window_log_shown', False):
+                                logger.debug(
+                                    "Found Edge window by process tree: %s (pid=%d)",
+                                    window_title[:60],
+                                    window_pid.value,
+                                )
+                                self._edge_window_log_shown = True
+                            fallback_hwnd = hwnd
+                        elif fallback_any_hwnd is None:
+                            fallback_any_hwnd = hwnd
 
                 return True
 
             user32.EnumWindows(EnumWindowsProc(enum_windows_callback), 0)
-            return exact_match_hwnd or fallback_hwnd
+            return exact_match_hwnd or fallback_hwnd or fallback_any_hwnd
         except Exception as e:
             logger.debug("Failed to locate Edge window handle: %s", e)
             return None
@@ -4972,9 +4991,52 @@ class CopilotHandler:
             from ctypes import wintypes
 
             user32 = ctypes.WinDLL('user32', use_last_error=True)
-            edge_hwnd = self._find_edge_window_handle()
-            if not edge_hwnd:
-                return False
+            target_pids: set[int] = set()
+            root_pid: int | None = None
+            if self.edge_process is not None and getattr(self.edge_process, "pid", None):
+                root_pid = int(self.edge_process.pid)
+            elif self._edge_pid:
+                root_pid = int(self._edge_pid)
+
+            if root_pid is not None:
+                target_pids.add(root_pid)
+                try:
+                    import psutil
+
+                    parent = psutil.Process(root_pid)
+                    for child in parent.children(recursive=True):
+                        if isinstance(child.pid, int):
+                            target_pids.add(child.pid)
+                except Exception:
+                    pass
+
+            edge_hwnds: list[int] = []
+            if target_pids:
+                EnumWindowsProc = ctypes.WINFUNCTYPE(
+                    wintypes.BOOL, wintypes.HWND, wintypes.LPARAM
+                )
+
+                def enum_windows_callback(hwnd, lparam):
+                    class_name = ctypes.create_unicode_buffer(256)
+                    user32.GetClassNameW(hwnd, class_name, 256)
+                    class_value = class_name.value or ""
+                    if not class_value.startswith("Chrome_WidgetWin_"):
+                        return True
+
+                    window_pid = wintypes.DWORD()
+                    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(window_pid))
+                    if window_pid.value in target_pids:
+                        edge_hwnds.append(int(hwnd))
+
+                    return True
+
+                user32.EnumWindows(EnumWindowsProc(enum_windows_callback), 0)
+
+            if not edge_hwnds:
+                edge_hwnd = self._find_edge_window_handle()
+                if not edge_hwnd:
+                    return False
+                edge_hwnds = [int(edge_hwnd)]
 
             GWL_EXSTYLE = -20
             WS_EX_TOOLWINDOW = 0x00000080
@@ -5002,27 +5064,31 @@ class CopilotHandler:
             GetWindowLongPtr.argtypes = [wintypes.HWND, ctypes.c_int]
             SetWindowLongPtr.argtypes = [wintypes.HWND, ctypes.c_int, set_style_type]
 
-            style = GetWindowLongPtr(wintypes.HWND(edge_hwnd), GWL_EXSTYLE)
-            if visible:
-                new_style = (style | WS_EX_APPWINDOW) & ~WS_EX_TOOLWINDOW
-            else:
-                new_style = (style | WS_EX_TOOLWINDOW) & ~WS_EX_APPWINDOW
+            any_success = False
+            for edge_hwnd in edge_hwnds:
+                hwnd = wintypes.HWND(edge_hwnd)
+                style = GetWindowLongPtr(hwnd, GWL_EXSTYLE)
+                if visible:
+                    new_style = (style | WS_EX_APPWINDOW) & ~WS_EX_TOOLWINDOW
+                else:
+                    new_style = (style | WS_EX_TOOLWINDOW) & ~WS_EX_APPWINDOW
 
-            if new_style == style:
-                return True
+                if new_style != style:
+                    SetWindowLongPtr(hwnd, GWL_EXSTYLE, new_style)
+                    user32.SetWindowPos(
+                        hwnd,
+                        None,
+                        0,
+                        0,
+                        0,
+                        0,
+                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+                    )
+                any_success = True
 
-            SetWindowLongPtr(wintypes.HWND(edge_hwnd), GWL_EXSTYLE, new_style)
-            user32.SetWindowPos(
-                wintypes.HWND(edge_hwnd),
-                None,
-                0,
-                0,
-                0,
-                0,
-                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
-            )
-            logger.debug("Edge taskbar visibility set to: %s", "visible" if visible else "hidden")
-            return True
+            if any_success:
+                logger.debug("Edge taskbar visibility set to: %s", "visible" if visible else "hidden")
+            return any_success
         except Exception as e:
             logger.debug("Failed to set Edge taskbar visibility: %s", e)
             return False
@@ -5443,12 +5509,12 @@ class CopilotHandler:
     def _minimize_edge_window(self, page_title: str = None, max_retries: int = 5) -> bool:
         """Minimize Edge window to return it to the background after login.
 
-        Note: We only use SW_MINIMIZE (not SW_HIDE) to keep the window in
-        the taskbar. SW_HIDE causes issues with Edge's multi-process
-        architecture where the window may be restored by another process.
+        Note: We only use SW_MINIMIZE (not SW_HIDE). SW_HIDE causes issues with
+        Edge's multi-process architecture where the window may be restored by
+        another process.
 
-        We save the window placement before minimizing to ensure proper
-        restoration when the user clicks the taskbar icon.
+        We avoid SW_HIDE for stability and rely on taskbar-style suppression
+        (WS_EX_TOOLWINDOW) when running in background.
 
         Args:
             page_title: The current page title for exact matching
@@ -5482,8 +5548,8 @@ class CopilotHandler:
                 logger.warning("Edge window not found for minimization after %d attempts", max_retries)
                 return False
 
-            if getattr(self, "_edge_layout_mode", None) == "offscreen":
-                self._set_edge_taskbar_visibility(False)
+            # When minimizing, hide from taskbar to avoid a separate Edge entry while running in background.
+            self._set_edge_taskbar_visibility(False)
 
             # Check if already minimized - skip all processing if so
             # This prevents unnecessary window operations that could cause flicker

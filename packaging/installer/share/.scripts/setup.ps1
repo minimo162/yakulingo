@@ -1019,6 +1019,7 @@ function Update-PyVenvConfig {
     # Use UTF-8 without BOM here to support non-ASCII install paths while avoiding a BOM that would break parsing.
     # NOTE: Windows PowerShell 5.1 treats BOM-less UTF-8 scripts as ANSI (ACP).
     # Helper scripts contain Japanese strings (e.g., shortcut names), so write them as UTF-8 with BOM.
+    $utf8NoBom = New-Object System.Text.UTF8Encoding $false
     $utf8WithBom = New-Object System.Text.UTF8Encoding $true
 
     try {

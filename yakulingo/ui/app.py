@@ -630,13 +630,19 @@ def _ensure_nicegui_version() -> None:
     Must be called after NiceGUI is imported (inside run_app()).
     """
     version_str = getattr(nicegui, '__version__', '')
-    try:
-        version_parts = tuple(int(part) for part in version_str.split('.')[:3])
-    except ValueError:
+    match = re.match(r'^(\d+)(?:\.(\d+))?(?:\.(\d+))?', version_str)
+    if not match:
         logger.warning(
             "Unable to parse NiceGUI version '%s'; proceeding without check", version_str
         )
         return
+
+    major_str, minor_str, patch_str = match.groups()
+    version_parts = (
+        int(major_str),
+        int(minor_str or 0),
+        int(patch_str or 0),
+    )
 
     if version_parts < MIN_NICEGUI_VERSION:
         raise RuntimeError(
@@ -5435,8 +5441,6 @@ class YakuLingoApp:
                 or self.state.connection_state == ConnectionState.LOGIN_REQUIRED
                 or last_error == login_required_error
             )
-            if login_required_guard:
-                auto_hide_allowed = False
 
         visibility_state = VisibilityDecisionState(
             auto_open_cause=self._auto_open_cause,

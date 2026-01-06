@@ -85,6 +85,7 @@ else:
             fast_double_copy_min_gap_ms: float = 10.0,
             same_payload_suppress_ms: float = 120.0,
             recheck_settle_ms: float = 30.0,
+            double_copy_min_gap_ms: float = 120.0,
         ) -> None:
             self._callback: Optional[Callable[[str], None]] = callback
             self._double_copy_window_sec = double_copy_window_sec
@@ -92,7 +93,11 @@ else:
             self._settle_delay_sec = settle_delay_sec
             self._cooldown_sec = cooldown_sec
             self._fast_partial_match_window_sec = fast_partial_match_window_sec
-            self._fast_double_copy_min_gap_sec = fast_double_copy_min_gap_ms / 1000.0
+            self._double_copy_min_gap_sec = max(double_copy_min_gap_ms / 1000.0, 0.0)
+            self._fast_double_copy_min_gap_sec = max(
+                fast_double_copy_min_gap_ms / 1000.0,
+                self._double_copy_min_gap_sec,
+            )
             self._same_payload_suppress_sec = same_payload_suppress_ms / 1000.0
             self._recheck_settle_sec = recheck_settle_ms / 1000.0
 
@@ -251,11 +256,14 @@ else:
                         last_payload_hash = self._last_payload_hash
                         last_time = self._last_payload_time
                         delta_sec = (now - last_time) if last_time is not None else None
+                        # Ignore rapid consecutive updates from a single copy operation.
+                        min_gap_sec = self._double_copy_min_gap_sec
                         exact_match = (
                             last_payload_normalized is not None
                             and normalized_payload == last_payload_normalized
                             and last_time is not None
                             and delta_sec <= self._double_copy_window_sec
+                            and delta_sec >= min_gap_sec
                         )
                         partial_match = False
                         if (
@@ -263,6 +271,7 @@ else:
                             and last_payload_normalized is not None
                             and last_time is not None
                             and delta_sec <= self._fast_partial_match_window_sec
+                            and delta_sec >= min_gap_sec
                         ):
                             shorter = normalized_payload
                             longer = last_payload_normalized
@@ -360,11 +369,16 @@ else:
                                             re_delta_sec = (
                                                 (re_now - last_time) if last_time is not None else None
                                             )
+                                            re_gap_ok = (
+                                                re_delta_sec is not None
+                                                and re_delta_sec >= min_gap_sec
+                                            )
                                             re_exact_match = (
                                                 last_payload_normalized is not None
                                                 and re_normalized == last_payload_normalized
                                                 and last_time is not None
                                                 and re_delta_sec <= self._double_copy_window_sec
+                                                and re_gap_ok
                                             )
                                             re_partial_match = False
                                             if (
@@ -372,6 +386,7 @@ else:
                                                 and last_payload_normalized is not None
                                                 and last_time is not None
                                                 and re_delta_sec <= self._fast_partial_match_window_sec
+                                                and re_gap_ok
                                             ):
                                                 re_shorter = re_normalized
                                                 re_longer = last_payload_normalized

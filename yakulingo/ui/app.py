@@ -1139,6 +1139,7 @@ def _patch_nicegui_native_mode() -> None:
 from yakulingo.ui.state import AppState, Tab, FileState, ConnectionState, LayoutInitializationState
 from yakulingo.models.types import (
     TranslationProgress,
+    TranslationResult,
     TranslationStatus,
     TextTranslationResult,
     TranslationOption,
@@ -11697,6 +11698,8 @@ def run_app(
             return
 
         with browser_open_lock:
+            if shutdown_event.is_set() or getattr(yakulingo_app, "_shutdown_requested", False):
+                return
             if browser_open_in_progress:
                 return
             if browser_opened:
@@ -11761,6 +11764,8 @@ def run_app(
                         import subprocess
 
                         local_cwd = os.environ.get("SYSTEMROOT", r"C:\Windows")
+                        if shutdown_event.is_set() or getattr(yakulingo_app, "_shutdown_requested", False):
+                            return
                         proc = subprocess.Popen(
                             args,
                             stdout=subprocess.DEVNULL,
@@ -11792,6 +11797,8 @@ def run_app(
 
             try:
                 import webbrowser
+                if shutdown_event.is_set() or getattr(yakulingo_app, "_shutdown_requested", False):
+                    return
                 webbrowser.open(url)
                 opened = True
                 logger.info("Opened browser via default handler: %s", url)
@@ -12540,8 +12547,12 @@ def run_app(
         if sys.platform != 'win32':
             return
 
+        if shutdown_event.is_set() or getattr(yakulingo_app, "_shutdown_requested", False):
+            return
+
         try:
             import ctypes
+            from ctypes import wintypes
 
             user32 = ctypes.WinDLL('user32', use_last_error=True)
 
@@ -12581,6 +12592,8 @@ def run_app(
             icon_path_str = str(icon_path) if icon_path is not None and icon_path.exists() else None
 
             while waited_ms < MAX_WAIT_MS:
+                if shutdown_event.is_set() or getattr(yakulingo_app, "_shutdown_requested", False):
+                    return
                 # Find YakuLingo window by title (exact match first, then fallback to partial match).
                 hwnd = user32.FindWindowW(None, "YakuLingo")
                 if not hwnd:
@@ -12682,6 +12695,13 @@ def run_app(
                     except Exception:
                         pass
 
+                    if shutdown_event.is_set() or getattr(yakulingo_app, "_shutdown_requested", False):
+                        try:
+                            user32.ShowWindow(hwnd, SW_HIDE)
+                        except Exception:
+                            pass
+                        return
+
                     if not is_visible:
                         user32.ShowWindow(hwnd, SW_SHOW)
                         logger.debug("[EARLY_POSITION] Window shown after %dms", waited_ms)
@@ -12714,6 +12734,8 @@ def run_app(
 
     def _start_early_positioning_thread():
         nonlocal early_position_started
+        if shutdown_event.is_set() or getattr(yakulingo_app, "_shutdown_requested", False):
+            return
         if early_position_started:
             return
         early_position_started = True

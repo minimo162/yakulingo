@@ -1225,6 +1225,7 @@ def _build_local_url(host: str, port: int, path: str = "") -> str:
 
 
 HOTKEY_MAX_FILE_COUNT = 10
+HOTKEY_BACKGROUND_TRANSLATION_TIMEOUT_SEC = 7200.0
 HOTKEY_SUPPORTED_FILE_SUFFIXES = {
     ".xlsx",
     ".xls",
@@ -1297,6 +1298,45 @@ class HotkeyFileOutputSummary:
     """Output file list for multi-file clipboard-triggered translations (downloaded via UI)."""
 
     output_files: list[tuple[Path, str]]
+
+
+class _HotkeyBackgroundUpdateBuffer:
+    """Thread-safe buffer for background hotkey translation state updates."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._pending: dict[str, object] = {}
+        self._done_event = threading.Event()
+        self.error: str | None = None
+
+    @property
+    def done_event(self) -> threading.Event:
+        return self._done_event
+
+    def publish(self, update: dict[str, object]) -> None:
+        if not update:
+            return
+        with self._lock:
+            for key, value in update.items():
+                if isinstance(value, dict):
+                    existing = self._pending.get(key)
+                    if isinstance(existing, dict):
+                        existing.update(value)
+                        continue
+                self._pending[key] = value
+
+    def drain(self) -> dict[str, object]:
+        with self._lock:
+            if not self._pending:
+                return {}
+            drained = self._pending
+            self._pending = {}
+            return drained
+
+    def mark_done(self, error: str | None = None) -> None:
+        if error:
+            self.error = error
+        self._done_event.set()
 
 
 def summarize_clipboard_text(text: str, max_preview: int = 200) -> ClipboardDebugSummary:
@@ -2295,7 +2335,10 @@ class YakuLingoApp:
         trace_id = f"hotkey-{uuid.uuid4().hex[:8]}"
         self._active_translation_trace_id = trace_id
         open_ui_requested = False
-        hotkey_background_done: threading.Event | None = None
+        hotkey_background: _HotkeyBackgroundUpdateBuffer | None = None
+        hotkey_background_apply_lock = threading.Lock()
+        hotkey_background_apply_scheduled = False
+        hotkey_background_abandoned = False
         try:
             if source_hwnd:
                 self._last_hotkey_source_hwnd = source_hwnd
@@ -2320,9 +2363,96 @@ class YakuLingoApp:
                 self._get_active_client() is None or not self._ui_ready_event.is_set()
             )
 
+            loop = asyncio.get_running_loop()
+
+            def _apply_hotkey_background_updates() -> None:
+                buffer = hotkey_background
+                if buffer is None:
+                    return
+                updates = buffer.drain()
+                if not updates:
+                    return
+                if hotkey_background_abandoned:
+                    return
+
+                state_update = updates.get("state")
+                if isinstance(state_update, dict):
+                    for key, value in state_update.items():
+                        try:
+                            setattr(self.state, key, value)
+                        except Exception as e:
+                            logger.debug(
+                                "Hotkey translation [%s] failed to apply state %s: %s",
+                                trace_id,
+                                key,
+                                e,
+                            )
+
+                app_update = updates.get("app")
+                if isinstance(app_update, dict):
+                    for key, value in app_update.items():
+                        try:
+                            setattr(self, key, value)
+                        except Exception as e:
+                            logger.debug(
+                                "Hotkey translation [%s] failed to apply app %s: %s",
+                                trace_id,
+                                key,
+                                e,
+                            )
+
+                force_refresh = bool(updates.get("force_refresh"))
+                refresh = bool(updates.get("refresh"))
+                scroll_to_top = bool(updates.get("scroll_to_top"))
+
+                if force_refresh:
+                    self._refresh_ui_after_hotkey_translation(trace_id)
+                elif refresh:
+                    if self.state.current_tab == Tab.FILE and self.state.file_state == FileState.TRANSLATING:
+                        if self._file_progress_elements:
+                            self._update_file_progress_elements()
+                        else:
+                            self._refresh_ui_after_hotkey_translation(trace_id)
+                    else:
+                        self._refresh_ui_after_hotkey_translation(trace_id)
+
+                if scroll_to_top:
+                    client = self._get_active_client()
+                    if client is not None:
+                        self._scroll_result_panel_to_top(client)
+
+            def _schedule_hotkey_background_apply() -> None:
+                nonlocal hotkey_background_apply_scheduled
+                if hotkey_background_abandoned:
+                    return
+                with hotkey_background_apply_lock:
+                    if hotkey_background_apply_scheduled:
+                        return
+                    hotkey_background_apply_scheduled = True
+
+                def _apply_wrapper() -> None:
+                    nonlocal hotkey_background_apply_scheduled
+                    with hotkey_background_apply_lock:
+                        hotkey_background_apply_scheduled = False
+                    try:
+                        _apply_hotkey_background_updates()
+                    except Exception as e:
+                        logger.debug("Hotkey translation [%s] background apply failed: %s", trace_id, e)
+
+                try:
+                    loop.call_soon_threadsafe(_apply_wrapper)
+                except Exception as e:
+                    with hotkey_background_apply_lock:
+                        hotkey_background_apply_scheduled = False
+                    logger.debug(
+                        "Hotkey translation [%s] failed to schedule background apply: %s",
+                        trace_id,
+                        e,
+                    )
+
             def _maybe_start_background_translation() -> None:
-                nonlocal hotkey_background_done
-                if hotkey_background_done is not None:
+                nonlocal hotkey_background
+                if hotkey_background is not None:
                     return
                 if not should_background_translate:
                     return
@@ -2334,7 +2464,8 @@ class YakuLingoApp:
                 if translation_service is None:
                     return
 
-                done_event = threading.Event()
+                buffer = _HotkeyBackgroundUpdateBuffer()
+                hotkey_background = buffer
 
                 def _run_translation() -> None:
                     try:
@@ -2354,22 +2485,40 @@ class YakuLingoApp:
                                 logger.debug("Hotkey GPT mode wait failed: %s", e)
 
                         if is_path_selection:
-                            self._translate_files_hotkey_background_sync(file_paths, trace_id)
+                            self._translate_files_hotkey_background_sync(
+                                file_paths,
+                                trace_id,
+                                buffer,
+                                _schedule_hotkey_background_apply,
+                            )
                         else:
-                            self._translate_text_hotkey_background_sync(text, trace_id)
+                            self._translate_text_hotkey_background_sync(
+                                text,
+                                trace_id,
+                                buffer,
+                                _schedule_hotkey_background_apply,
+                            )
                     except Exception as e:
                         logger.debug(
                             "Hotkey translation [%s] background thread failed: %s", trace_id, e
                         )
+                        try:
+                            buffer.mark_done(error=str(e))
+                        except Exception:
+                            pass
                     finally:
-                        done_event.set()
+                        try:
+                            buffer.mark_done()
+                        except Exception:
+                            pass
+                        _schedule_hotkey_background_apply()
 
                 threading.Thread(
                     target=_run_translation,
                     daemon=True,
                     name=f"hotkey_translate_{trace_id}",
                 ).start()
-                hotkey_background_done = done_event
+                _schedule_hotkey_background_apply()
 
             # Trigger UI open early to reduce hotkey display latency.
             if open_ui:
@@ -2456,11 +2605,18 @@ class YakuLingoApp:
                                 if brought_to_front and self._resident_mode:
                                     self._resident_show_requested = False
                                 if not brought_to_front:
-                                    logger.debug("Hotkey UI client exists but UI window not found; using headless mode")
-                                    with self._client_lock:
-                                        if self._client is client:
-                                            self._client = None
-                                    client = None
+                                    if not self._is_ui_window_present_win32():
+                                        logger.debug(
+                                            "Hotkey UI client exists but UI window not found; using headless mode"
+                                        )
+                                        with self._client_lock:
+                                            if self._client is client:
+                                                self._client = None
+                                        client = None
+                                    else:
+                                        logger.debug(
+                                            "Failed to bring UI window to front; continuing without foreground"
+                                        )
                 else:
                     try:
                         brought_to_front = await self._bring_window_to_front(
@@ -2474,11 +2630,18 @@ class YakuLingoApp:
                         # If the UI window no longer exists (e.g., browser window was closed),
                         # clear the cached client and fall back to headless translation.
                         if sys.platform == "win32" and not brought_to_front:
-                            logger.debug("Hotkey UI client exists but UI window not found; using headless mode")
-                            with self._client_lock:
-                                if self._client is client:
-                                    self._client = None
-                            client = None
+                            if not self._is_ui_window_present_win32():
+                                logger.debug(
+                                    "Hotkey UI client exists but UI window not found; using headless mode"
+                                )
+                                with self._client_lock:
+                                    if self._client is client:
+                                        self._client = None
+                                client = None
+                            else:
+                                logger.debug(
+                                    "Failed to bring UI window to front; continuing without foreground"
+                                )
 
             if open_ui and not client:
                 open_ui_callback = self._open_ui_window_callback
@@ -2515,8 +2678,49 @@ class YakuLingoApp:
                             except Exception as e:
                                 logger.debug("Failed to schedule UI foreground for hotkey: %s", e)
 
-            if hotkey_background_done is not None:
-                await asyncio.to_thread(hotkey_background_done.wait)
+            if hotkey_background is not None:
+                completed = await asyncio.to_thread(
+                    hotkey_background.done_event.wait,
+                    HOTKEY_BACKGROUND_TRANSLATION_TIMEOUT_SEC,
+                )
+                _apply_hotkey_background_updates()
+                if not completed:
+                    hotkey_background_abandoned = True
+                    try:
+                        if self.translation_service is not None:
+                            self.translation_service.cancel()
+                    except Exception as e:
+                        logger.debug("Hotkey translation [%s] cancel failed: %s", trace_id, e)
+
+                    timeout_message = (
+                        f"Hotkey translation timed out after {HOTKEY_BACKGROUND_TRANSLATION_TIMEOUT_SEC:.0f}s"
+                    )
+                    logger.warning("Hotkey translation [%s] timed out", trace_id)
+                    if is_path_selection:
+                        if file_paths:
+                            self.state.current_tab = Tab.FILE
+                            self.state.selected_file = file_paths[0]
+                        self.state.file_state = FileState.ERROR
+                        self.state.translation_progress = 0.0
+                        self.state.translation_status = ""
+                        self.state.translation_result = None
+                        self.state.output_file = None
+                        self.state.error_message = timeout_message
+                    else:
+                        from yakulingo.models.types import TextTranslationResult
+                        from yakulingo.ui.state import TextViewState
+
+                        self.state.current_tab = Tab.TEXT
+                        self.state.source_text = text
+                        self.state.text_translating = False
+                        self.state.text_translation_elapsed_time = None
+                        self.state.text_result = TextTranslationResult(
+                            source_text=text,
+                            source_char_count=len(text),
+                            error_message=timeout_message,
+                        )
+                        self.state.text_view_state = TextViewState.RESULT
+                    self._refresh_ui_after_hotkey_translation(trace_id)
                 return
 
             # If GPT mode setup is still running, wait briefly before starting translation.
@@ -2637,7 +2841,13 @@ class YakuLingoApp:
 
         return True, supported
 
-    def _translate_files_hotkey_background_sync(self, file_paths: list[Path], trace_id: str) -> None:
+    def _translate_files_hotkey_background_sync(
+        self,
+        file_paths: list[Path],
+        trace_id: str,
+        buffer: _HotkeyBackgroundUpdateBuffer,
+        schedule_apply: Callable[[], None],
+    ) -> None:
         """Translate hotkey file(s) without depending on the asyncio event loop.
 
         This is used to keep translation progressing while the UI is still rendering.
@@ -2646,12 +2856,17 @@ class YakuLingoApp:
 
         translation_service = self.translation_service
         if translation_service is None:
+            buffer.publish(
+                {
+                    "state": {
+                        "file_state": FileState.ERROR,
+                        "error_message": "Translation service is not available.",
+                    },
+                    "force_refresh": True,
+                }
+            )
+            schedule_apply()
             return
-
-        try:
-            translation_service.reset_cancel()
-        except Exception:
-            pass
 
         reference_files = self._get_effective_reference_files()
         translation_style = self.settings.translation_style
@@ -2688,50 +2903,66 @@ class YakuLingoApp:
         if total_files <= 0:
             return
 
+        last_apply_at = 0.0
+        APPLY_INTERVAL_SEC = 0.2
+
+        def maybe_apply(force: bool = False) -> None:
+            nonlocal last_apply_at
+            now = time.monotonic()
+            if force or (now - last_apply_at) >= APPLY_INTERVAL_SEC:
+                last_apply_at = now
+                schedule_apply()
+
         first_path = file_paths[0]
-        self.state.current_tab = Tab.FILE
-        self.state.selected_file = first_path
-        self.state.file_info = minimal_file_info(first_path)
-        self.state.file_state = FileState.TRANSLATING
-        self.state.translation_progress = 0.0
-        self.state.translation_status = f"Starting... (1/{total_files})"
-        self.state.translation_phase = None
-        self.state.translation_phase_detail = None
-        self.state.translation_phase_current = None
-        self.state.translation_phase_total = None
-        self.state.translation_phase_counts = {}
-        self.state.translation_eta_seconds = None
-        self.state.output_file = None
-        self.state.translation_result = None
-        self.state.error_message = ""
-        self._schedule_hotkey_ui_refresh(trace_id)
+        buffer.publish(
+            {
+                "state": {
+                    "current_tab": Tab.FILE,
+                    "selected_file": first_path,
+                    "file_info": minimal_file_info(first_path),
+                    "file_state": FileState.TRANSLATING,
+                    "translation_progress": 0.0,
+                    "translation_status": f"Starting... (1/{total_files})",
+                    "translation_phase": None,
+                    "translation_phase_detail": None,
+                    "translation_phase_current": None,
+                    "translation_phase_total": None,
+                    "translation_phase_counts": {},
+                    "translation_eta_seconds": None,
+                    "output_file": None,
+                    "translation_result": None,
+                    "error_message": "",
+                },
+                "force_refresh": True,
+            }
+        )
+        maybe_apply(force=True)
 
         start_time = time.monotonic()
         output_files: list[tuple[Path, str]] = []
         completed_results = []
         error_messages: list[str] = []
 
-        last_refresh_at = 0.0
-
-        def maybe_refresh(force: bool = False) -> None:
-            nonlocal last_refresh_at
-            now = time.monotonic()
-            if force or (now - last_refresh_at) >= 0.5:
-                last_refresh_at = now
-                self._schedule_hotkey_ui_refresh(trace_id)
-
         for idx, input_path in enumerate(file_paths, start=1):
-            self.state.selected_file = input_path
-            self.state.file_info = minimal_file_info(input_path)
-            self.state.translation_progress = 0.0
-            self.state.translation_status = f"Translating... ({idx}/{total_files})"
-            self.state.translation_phase = None
-            self.state.translation_phase_detail = None
-            self.state.translation_phase_current = None
-            self.state.translation_phase_total = None
-            self.state.translation_phase_counts = {}
-            self.state.translation_eta_seconds = None
-            maybe_refresh(force=True)
+            phase_counts = {}
+            buffer.publish(
+                {
+                    "state": {
+                        "selected_file": input_path,
+                        "file_info": minimal_file_info(input_path),
+                        "translation_progress": 0.0,
+                        "translation_status": f"Translating... ({idx}/{total_files})",
+                        "translation_phase": None,
+                        "translation_phase_detail": None,
+                        "translation_phase_current": None,
+                        "translation_phase_total": None,
+                        "translation_phase_counts": {},
+                        "translation_eta_seconds": None,
+                    },
+                    "refresh": True,
+                }
+            )
+            maybe_apply(force=True)
 
             detected_language = "日本語"
             detected_reason = "default"
@@ -2750,25 +2981,37 @@ class YakuLingoApp:
                 )
 
             output_language = "en" if detected_language == "日本語" else "jp"
-            self.state.file_detected_language = detected_language
-            self.state.file_detected_language_reason = detected_reason
-            if not self.state.file_output_language_overridden:
-                self.state.file_output_language = output_language
-            maybe_refresh(force=True)
+            file_output_language_overridden = bool(getattr(self.state, "file_output_language_overridden", False))
+            state_update: dict[str, object] = {
+                "file_detected_language": detected_language,
+                "file_detected_language_reason": detected_reason,
+            }
+            if not file_output_language_overridden:
+                state_update["file_output_language"] = output_language
+            buffer.publish({"state": state_update, "refresh": True})
+            maybe_apply(force=True)
 
             def on_progress(p) -> None:
-                self.state.translation_progress = p.percentage
-                self.state.translation_status = p.status
-                self.state.translation_phase = p.phase
-                self.state.translation_phase_detail = p.phase_detail
-                self.state.translation_phase_current = p.phase_current
-                self.state.translation_phase_total = p.phase_total
-                self.state.translation_eta_seconds = None
+                update: dict[str, object] = {
+                    "translation_progress": p.percentage,
+                    "translation_status": p.status,
+                    "translation_phase": p.phase,
+                    "translation_phase_detail": p.phase_detail,
+                    "translation_phase_current": p.phase_current,
+                    "translation_phase_total": p.phase_total,
+                    "translation_eta_seconds": None,
+                }
                 if p.phase and p.phase_current is not None and p.phase_total is not None:
-                    self.state.translation_phase_counts[p.phase] = (p.phase_current, p.phase_total)
-                maybe_refresh()
+                    phase_counts[p.phase] = (p.phase_current, p.phase_total)
+                    update["translation_phase_counts"] = dict(phase_counts)
+                buffer.publish({"state": update, "refresh": True})
+                maybe_apply()
 
             try:
+                try:
+                    translation_service.reset_cancel()
+                except Exception:
+                    pass
                 result = translation_service.translate_file(
                     input_path,
                     reference_files,
@@ -2791,33 +3034,45 @@ class YakuLingoApp:
             completed_results.append(result)
             for out_path, desc in result.output_files:
                 output_files.append((out_path, f"{input_path.name}: {desc}"))
-            maybe_refresh(force=True)
+            buffer.publish({"refresh": True})
+            maybe_apply(force=True)
 
         if not output_files:
-            self.state.file_state = FileState.ERROR
-            self.state.translation_progress = 0.0
-            self.state.translation_status = ""
-            self.state.output_file = None
-            self.state.translation_result = None
-            self.state.error_message = (
-                "\n".join(error_messages[:3]) if error_messages else "No output files were generated."
+            buffer.publish(
+                {
+                    "state": {
+                        "file_state": FileState.ERROR,
+                        "translation_progress": 0.0,
+                        "translation_status": "",
+                        "output_file": None,
+                        "translation_result": None,
+                        "error_message": (
+                            "\n".join(error_messages[:3])
+                            if error_messages
+                            else "No output files were generated."
+                        ),
+                    },
+                    "force_refresh": True,
+                }
             )
-            self._schedule_hotkey_ui_refresh(trace_id)
+            maybe_apply(force=True)
             return
 
-        self.state.translation_progress = 1.0
-        self.state.translation_status = "Completed"
-        self.state.file_state = FileState.COMPLETE
-
+        final_state: dict[str, object] = {
+            "translation_progress": 1.0,
+            "translation_status": "Completed",
+            "file_state": FileState.COMPLETE,
+        }
         if len(file_paths) == 1 and len(completed_results) == 1:
             single = completed_results[0]
-            self.state.translation_result = single
-            self.state.output_file = single.output_path
+            final_state["translation_result"] = single
+            final_state["output_file"] = single.output_path
         else:
-            self.state.translation_result = HotkeyFileOutputSummary(output_files=output_files)
-            self.state.output_file = output_files[0][0] if output_files else None
+            final_state["translation_result"] = HotkeyFileOutputSummary(output_files=output_files)
+            final_state["output_file"] = output_files[0][0] if output_files else None
 
-        self._schedule_hotkey_ui_refresh(trace_id)
+        buffer.publish({"state": final_state, "force_refresh": True})
+        maybe_apply(force=True)
         logger.info(
             "Hotkey file translation [%s] completed %d file(s) in %.2fs (background)",
             trace_id,
@@ -3190,27 +3445,6 @@ class YakuLingoApp:
         except Exception as e:
             logger.debug("Hotkey translation [%s] clipboard copy failed: %s", trace_id, e)
 
-    def _schedule_hotkey_ui_refresh(self, trace_id: str, *, scroll_to_top: bool = False) -> None:
-        """Schedule a best-effort UI refresh (thread-safe)."""
-        try:
-            from nicegui import background_tasks
-        except Exception:
-            return
-
-        async def _refresh() -> None:
-            self._refresh_ui_after_hotkey_translation(trace_id)
-            if not scroll_to_top:
-                return
-            client = self._get_active_client()
-            if client is None:
-                return
-            self._scroll_result_panel_to_top(client)
-
-        try:
-            background_tasks.create(_refresh())
-        except Exception as e:
-            logger.debug("Hotkey translation [%s] failed to schedule UI refresh: %s", trace_id, e)
-
     def _refresh_ui_after_hotkey_translation(self, trace_id: str) -> None:
         """Refresh UI for a hotkey translation when a client is connected.
 
@@ -3238,21 +3472,44 @@ class YakuLingoApp:
         except Exception as e:
             logger.debug("Hotkey translation [%s] UI refresh failed: %s", trace_id, e)
 
-    def _translate_text_hotkey_background_sync(self, text: str, trace_id: str) -> None:
+    def _translate_text_hotkey_background_sync(
+        self,
+        text: str,
+        trace_id: str,
+        buffer: _HotkeyBackgroundUpdateBuffer,
+        schedule_apply: Callable[[], None],
+    ) -> None:
         """Translate hotkey text without depending on the asyncio event loop."""
         import time
 
         translation_service = self.translation_service
         if translation_service is None:
+            buffer.publish(
+                {
+                    "state": {
+                        "text_translating": False,
+                    },
+                    "force_refresh": True,
+                }
+            )
+            schedule_apply()
             return
 
         from yakulingo.ui.state import Tab, TextViewState
 
-        self.state.source_text = text
-        self.state.current_tab = Tab.TEXT
-        self.state.text_view_state = TextViewState.INPUT
-        self.state.text_streaming_preview = None
-        self._streaming_preview_label = None
+        buffer.publish(
+            {
+                "state": {
+                    "source_text": text,
+                    "current_tab": Tab.TEXT,
+                    "text_view_state": TextViewState.INPUT,
+                    "text_streaming_preview": None,
+                },
+                "app": {"_streaming_preview_label": None},
+                "force_refresh": True,
+            }
+        )
+        schedule_apply()
 
         if len(text) > TEXT_TRANSLATION_CHAR_LIMIT:
             logger.info(
@@ -3263,19 +3520,34 @@ class YakuLingoApp:
             )
             return
 
-        self.state.text_translating = True
-        self.state.text_detected_language = None
-        self.state.text_detected_language_reason = None
-        self.state.text_result = None
-        self.state.text_translation_elapsed_time = None
-        self._schedule_hotkey_ui_refresh(trace_id)
+        buffer.publish(
+            {
+                "state": {
+                    "text_translating": True,
+                    "text_detected_language": None,
+                    "text_detected_language_reason": None,
+                    "text_result": None,
+                    "text_translation_elapsed_time": None,
+                },
+                "force_refresh": True,
+            }
+        )
+        schedule_apply()
 
         reference_files = self._get_effective_reference_files()
         start_time = time.monotonic()
         try:
             detected_language, detected_reason = translation_service.detect_language_with_reason(text)
-            self.state.text_detected_language = detected_language
-            self.state.text_detected_language_reason = detected_reason
+            buffer.publish(
+                {
+                    "state": {
+                        "text_detected_language": detected_language,
+                        "text_detected_language_reason": detected_reason,
+                    },
+                    "refresh": True,
+                }
+            )
+            schedule_apply()
             effective_detected_language = self._resolve_effective_detected_language(detected_language)
 
             result = translation_service.translate_text_with_style_comparison(
@@ -3287,14 +3559,49 @@ class YakuLingoApp:
             )
             if result:
                 result.detected_language = detected_language
-            self.state.text_translation_elapsed_time = time.monotonic() - start_time
-            self.state.text_result = result
-            self.state.text_view_state = TextViewState.RESULT
+            buffer.publish(
+                {
+                    "state": {
+                        "text_translation_elapsed_time": time.monotonic() - start_time,
+                        "text_result": result,
+                        "text_view_state": TextViewState.RESULT,
+                    },
+                    "force_refresh": True,
+                    "scroll_to_top": True,
+                }
+            )
+            schedule_apply()
         except Exception as e:
+            from yakulingo.models.types import TextTranslationResult
+
             logger.info("Hotkey translation [%s] failed: %s", trace_id, e)
+            buffer.publish(
+                {
+                    "state": {
+                        "text_translation_elapsed_time": time.monotonic() - start_time,
+                        "text_result": TextTranslationResult(
+                            source_text=text,
+                            source_char_count=len(text),
+                            error_message=str(e),
+                        ),
+                        "text_view_state": TextViewState.RESULT,
+                    },
+                    "force_refresh": True,
+                    "scroll_to_top": True,
+                }
+            )
+            schedule_apply()
         finally:
-            self.state.text_translating = False
-            self._schedule_hotkey_ui_refresh(trace_id, scroll_to_top=True)
+            buffer.publish(
+                {
+                    "state": {
+                        "text_translating": False,
+                    },
+                    "force_refresh": True,
+                    "scroll_to_top": True,
+                }
+            )
+            schedule_apply()
 
     async def _translate_text_headless(self, text: str, trace_id: str) -> None:
         """Translate hotkey text without requiring a UI client (resident mode)."""
@@ -4217,6 +4524,23 @@ class YakuLingoApp:
             time_module.sleep(delay_sec)
         logger.debug("Hotkey layout retry exhausted (attempts=%d)", attempts)
 
+    def _is_ui_window_present_win32(self, *, include_hidden: bool = True) -> bool:
+        """Return True if a YakuLingo UI window exists (Windows only)."""
+        if sys.platform != "win32":
+            return False
+        try:
+            copilot = getattr(self, "_copilot", None)
+            if copilot is not None:
+                try:
+                    hwnd = copilot._find_yakulingo_window_handle(include_hidden=include_hidden)
+                except Exception:
+                    hwnd = None
+                if hwnd:
+                    return True
+            return _find_window_handle_by_title_win32("YakuLingo") is not None
+        except Exception:
+            return False
+
     def _bring_window_to_front_win32(self) -> bool:
         """Bring YakuLingo window to front using Windows API.
 
@@ -4232,6 +4556,7 @@ class YakuLingoApp:
         try:
             import ctypes
             from ctypes import wintypes
+            import time as time_module
 
             # Windows API constants
             SW_RESTORE = 9
@@ -4402,32 +4727,74 @@ class YakuLingoApp:
             except Exception:
                 attached = False
 
-            # Temporarily set as topmost to ensure visibility
-            user32.SetWindowPos(
-                hwnd, HWND_TOPMOST, 0, 0, 0, 0,
-                SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
-            )
+            foreground_ok = False
+            foreground_hwnd = None
+            foreground_title = None
 
-            # Set as foreground window
-            user32.SetForegroundWindow(hwnd)
+            try:
+                # Temporarily set as topmost to ensure visibility
+                user32.SetWindowPos(
+                    hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
+                )
 
-            # Reset to non-topmost (so other windows can go on top later)
-            user32.SetWindowPos(
-                hwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
-                SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
-            )
-
-            if attached:
+                # Set as foreground window (best-effort; may be blocked by Windows)
+                user32.SetForegroundWindow(hwnd)
                 try:
-                    user32.AttachThreadInput(fg_thread, this_thread, False)
+                    user32.BringWindowToTop(hwnd)
                 except Exception:
                     pass
+
+                # Reset to non-topmost (so other windows can go on top later)
+                user32.SetWindowPos(
+                    hwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
+                )
+
+                # Verify foreground state (retry briefly; helps when focus handoff is slow)
+                for _ in range(6):
+                    foreground_hwnd = user32.GetForegroundWindow()
+                    if foreground_hwnd and int(foreground_hwnd) == int(hwnd):
+                        foreground_ok = True
+                        break
+                    try:
+                        user32.SetForegroundWindow(hwnd)
+                        user32.BringWindowToTop(hwnd)
+                    except Exception:
+                        pass
+                    time_module.sleep(0.05)
+
+                if not foreground_ok and foreground_hwnd:
+                    try:
+                        length = user32.GetWindowTextLengthW(foreground_hwnd)
+                        if length > 0:
+                            buffer = ctypes.create_unicode_buffer(length + 1)
+                            user32.GetWindowTextW(foreground_hwnd, buffer, length + 1)
+                            foreground_title = buffer.value
+                    except Exception:
+                        foreground_title = None
+            finally:
+                if attached:
+                    try:
+                        user32.AttachThreadInput(fg_thread, this_thread, False)
+                    except Exception:
+                        pass
+
+            if not foreground_ok:
+                logger.debug(
+                    "Windows API bring_to_front did not foreground the window (target=%s title=%s, foreground=%s title=%s)",
+                    hwnd,
+                    matched_title,
+                    foreground_hwnd,
+                    foreground_title,
+                )
+                return False
 
             resolved_hwnd = _coerce_hwnd_win32(hwnd)
             if resolved_hwnd:
                 _stop_window_taskbar_flash_win32(resolved_hwnd, reason="bring_to_front")
 
-            logger.debug("YakuLingo window brought to front via Windows API")
+            logger.debug("YakuLingo window foregrounded via Windows API")
             return True
 
         except Exception as e:
@@ -11334,7 +11701,8 @@ def run_app(
                 return
             if browser_opened:
                 try:
-                    if sys.platform == "win32" and yakulingo_app._bring_window_to_front_win32():
+                    if sys.platform == "win32" and yakulingo_app._is_ui_window_present_win32(include_hidden=True):
+                        yakulingo_app._bring_window_to_front_win32()
                         return
                 except Exception:
                     pass

@@ -617,7 +617,7 @@ def _open_window_patched(..., window_args, settings_dict, start_args):
 ### Translation Logic
 - **CellTranslator**: For Excel cells - skips numbers, dates, URLs, emails, codes
 - **ParagraphTranslator**: For Word/PPT paragraphs - less restrictive filtering
-- **Character limit**: Max 4,000 chars per batch (reduced for reliability)
+- **Character limit**: Default max 1,000 chars per batch (`max_chars_per_batch`, configurable)
 
 ### Font Mapping Rules
 ```python
@@ -649,10 +649,10 @@ def _open_window_patched(..., window_args, settings_dict, start_args):
 **config/settings.template.json** (デフォルト値、開発者管理):
 ```json
 {
-  "reference_files": ["glossary.csv"],
+  "reference_files": [],
   "output_directory": null,
   "last_tab": "text",
-  "max_chars_per_batch": 4000,
+  "max_chars_per_batch": 1000,
   "request_timeout": 600,
   "max_retries": 3,
   "bilingual_output": false,
@@ -667,6 +667,10 @@ def _open_window_patched(..., window_args, settings_dict, start_args):
   "ocr_dpi": 300,
   "ocr_device": "auto",
   "browser_display_mode": "minimized",
+  "login_overlay_guard": {
+    "enabled": false,
+    "remove_after_version": null
+  },
   "auto_update_enabled": true,
   "auto_update_check_interval": 0,
   "github_repo_owner": "minimo162",
@@ -681,7 +685,10 @@ def _open_window_patched(..., window_args, settings_dict, start_args):
   "translation_style": "concise",
   "font_jp_to_en": "Arial",
   "font_en_to_jp": "MS Pゴシック",
+  "font_size_adjustment_jp_to_en": 0.0,
   "bilingual_output": false,
+  "export_glossary": false,
+  "use_bundled_glossary": true,
   "browser_display_mode": "minimized",
   "last_tab": "text"
 }
@@ -704,17 +711,19 @@ def _open_window_patched(..., window_args, settings_dict, start_args):
   - `true`: 同梱用語集をファイルとして添付（デフォルト、用語集が増えても対応可能）
   - **適用範囲**: 全翻訳パス（テキスト翻訳、ファイル翻訳、戻し訳、フォローアップ翻訳）
 
-**プロンプト文字数計算（Copilot無料版8,000文字制限）**:
+**プロンプト文字数の目安（Copilot無料版 8,000文字制限）**:
 
-| 項目 | 文字数 | 説明 |
-|------|--------|------|
-| プロンプトテンプレート | ~553 | file_translate_to_en_concise.txt |
-| 用語集（glossary.csv） | ~1,160 | 126行、UTF-8（2,015バイト） |
-| バッチ翻訳テキスト | 最大4,000 | max_chars_per_batch設定 |
-| **合計** | **~5,765** | 8,000文字制限に対し約2,235文字の余裕 |
+- 参照ファイル（`glossary.csv` 等）は添付する方式で、プロンプト本文には埋め込みません（PromptBuilderの設計）。
+- プロンプト本文 ≒ テンプレート + 翻訳ルール + 入力テキスト（バッチ） + 付随ラベル（概算）。
 
-- 用語集が約2倍に増えても8,000文字制限内に収まる
-- UTF-8では日本語1文字=3バイト（バイト数÷約1.74=文字数の目安）
+| 項目 | 文字数（目安） | 説明 |
+|------|----------------|------|
+| プロンプトテンプレート | ~1,161 | file_translate_to_en_concise.txt |
+| 翻訳ルール | ~805 | translation_rules.txt |
+| バッチ翻訳テキスト | 最大1,000 | max_chars_per_batch（デフォルト） |
+| **合計（概算）** | **~2,966** | 8,000文字制限に対し余裕あり |
+
+> Note: テンプレート/ルールを編集すると文字数は変動します。
 
 **フォント設定**:
 - `font_jp_to_en`: 英訳時の出力フォント（全ファイル形式共通）
@@ -1039,7 +1048,7 @@ M365 Copilot has different input limits based on license:
 The application handles long text via file translation:
 - Text translation limited to 5,000 characters (TEXT_TRANSLATION_CHAR_LIMIT)
 - Texts exceeding limit automatically switch to file translation mode
-- File translation uses batch processing with max 4,000 chars per batch
+- File translation uses batch processing with default max 1,000 chars per batch (`max_chars_per_batch`)
 - This ensures compatibility with both Free and Paid Copilot users
 
 ### Browser Automation Reliability
@@ -2833,7 +2842,7 @@ Based on recent commits:
   - **Card width alignment**: 翻訳結果カードの横幅を原文カードと統一
   - **Hover effect removal**: 翻訳結果カード全体のホバー効果を削除
 - **Batch Translation Settings**:
-  - **max_chars_per_batch**: 7000 → 4000 に縮小（信頼性向上）
+  - **max_chars_per_batch**: 7000 → 1000 に縮小（信頼性向上）
   - **request_timeout**: 120秒 → 600秒（10分）に延長（大規模翻訳対応）
 - **Excel COM Improvements**:
   - **Pre-cleanup**: Excel COM接続の事前クリーンアップを追加

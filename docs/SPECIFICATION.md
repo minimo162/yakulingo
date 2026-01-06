@@ -1,7 +1,7 @@
 # YakuLingo - 技術仕様書
 
 > **Version**: 0.0.1
-> **Date**: 2025-12-13
+> **Date**: 2026-01-06
 > **App Name**: YakuLingo (訳リンゴ)
 
 ---
@@ -207,7 +207,7 @@ YakuLingo/
 ├── config/
 │   └── settings.template.json      # 設定テンプレート
 │
-├── glossary.csv                    # デフォルト参照ファイル（用語集）
+├── glossary.csv                    # 同梱用語集（既定）
 │
 ├── packaging/                      # 配布・ビルド関連
 │   ├── installer/                  # ネットワーク共有インストーラ
@@ -1347,7 +1347,7 @@ class HistoryDB:
 | アプリ設定（ユーザー） | `config/user_settings.json` |
 | アプリ設定（デフォルト） | `config/settings.template.json` |
 | 翻訳履歴 | `~/.yakulingo/history.db` |
-| 参照ファイル | `glossary.csv`（デフォルト） |
+| 同梱用語集 | `glossary.csv`（既定） |
 
 ---
 
@@ -1448,6 +1448,9 @@ class AppSettings:
     # NOTE: browser_display_mode applies to Copilot Edge.
     # In browser mode (default), the UI itself is Edge --app and window sync is disabled.
     browser_display_mode: str = "minimized"   # "minimized", "foreground" (side_panel deprecated)
+
+    # Login overlay guard (通常は無効)
+    login_overlay_guard: dict[str, object] = {"enabled": False, "remove_after_version": None}
 
     # Auto Update
     auto_update_enabled: bool = True
@@ -1843,7 +1846,7 @@ python -c "import time; t=time.time(); from yakulingo.ui import run_app; print(f
 - 自動ログイン検出を改善し、不要なブラウザ前面表示を防止
 - PP-DocLayout-L起動時の事前初期化でPlaywright競合を回避
 - 翻訳結果カードUIを英訳・和訳で統一
-- バッチサイズ縮小（7000→4000文字）で信頼性向上
+- バッチサイズ縮小（max_chars_per_batch）で信頼性向上
 - request_timeout延長（120秒→600秒）で大規模翻訳対応
 - Excel COM接続の事前クリーンアップ追加
 

@@ -22,13 +22,14 @@
 
 ```bat
 REM Rust をインストール後 (https://rustup.rs/)
+REM packaging/launcher ディレクトリで実行
 build.bat
 ```
 
 ### 方法3: 手動コンパイル
 
 ```bat
-cd launcher
+cd packaging\launcher
 cargo build --release
 copy target\release\yakulingo-launcher.exe YakuLingo.exe
 ```

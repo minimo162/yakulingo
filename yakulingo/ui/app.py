@@ -6042,7 +6042,10 @@ class YakuLingoApp:
                     browser_auto_hide = (
                         not native_mode_enabled
                         and sys.platform == "win32"
-                        and self._login_auto_hide_pending
+                        and (
+                            self._login_auto_hide_pending
+                            or self._auto_open_cause == AutoOpenCause.LOGIN
+                        )
                     )
                     should_auto_hide = (
                         self._resident_mode

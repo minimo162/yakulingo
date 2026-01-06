@@ -114,7 +114,7 @@ async def test_resident_login_prompt_user_initiated_blocks_auto_hide(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_resident_login_completion_auto_hides_browser_ui_when_auto_opened(monkeypatch):
+async def test_resident_login_completion_auto_hides_browser_ui_with_auto_open_cause_only(monkeypatch):
     if sys.platform != "win32":
         pytest.skip("Windows-only resident UI auto-hide behavior")
 
@@ -144,7 +144,7 @@ async def test_resident_login_completion_auto_hides_browser_ui_when_auto_opened(
     app = YakuLingoApp()
     app._resident_mode = True
     app._native_mode_enabled = False
-    app._login_auto_hide_pending = True
+    app._login_auto_hide_pending = False
     app._auto_open_cause = AutoOpenCause.LOGIN
     app._copilot = DummyCopilot()
 

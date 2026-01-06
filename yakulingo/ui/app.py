@@ -12672,7 +12672,7 @@ document.fonts.ready.then(function() {
             loading_title.set_text('接続に時間がかかっています...')
 
         if client_connected:
-            asyncio.create_task(_maybe_show_startup_overlay())
+            await _maybe_show_startup_overlay()
 
         # Yield once so initial layout changes are flushed before we start building the full UI.
         await asyncio.sleep(0)

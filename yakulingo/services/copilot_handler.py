@@ -2550,8 +2550,13 @@ class CopilotHandler:
                     logger.debug("Skipping playwright.stop() due to unresponsive Playwright")
                 else:
                     self._playwright.stop()
-                # Clear the pre-initialized Playwright global if this was the same instance
-                clear_pre_initialized_playwright()
+                    # Only clear the cached pre-initialized Playwright when we actually stop it.
+                    # If we skip stop() (to avoid hangs on closed driver connections), the
+                    # underlying Playwright sync dispatcher loop may still be running in this
+                    # thread. Clearing the cache would then force a new sync_playwright().start()
+                    # in the same thread, which fails with:
+                    # "Playwright Sync API inside the asyncio loop".
+                    clear_pre_initialized_playwright()
 
         # Terminate Edge browser process if we started it and a connection
         # error occurred. Otherwise, the remote debugging port remains

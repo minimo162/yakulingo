@@ -38,6 +38,8 @@ _RE_BATCH_ITEM = re.compile(
     re.MULTILINE | re.DOTALL,
 )
 _RE_BATCH_ITEM_ID = re.compile(r'\[\[ID:(\d+)\]\]')
+# Only supports "n." numbering by design (aligned with prompt instructions).
+_RE_NUMBERED_ID_LINE = re.compile(r'(?m)^([ \t\u3000]*)\d+\.\s*(\[\[ID:\d+\]\])')
 
 # Known Copilot error response patterns that indicate we should retry with a new chat
 # These are system messages that don't represent actual translation results
@@ -6650,6 +6652,7 @@ class CopilotHandler:
         reference_files: Optional[list[Path]] = None,
         skip_clear_wait: bool = False,
         timeout: int = 600,
+        include_item_ids: bool = False,
     ) -> list[str]:
         """
         Synchronous version of translate for non-async contexts.
@@ -6662,6 +6665,7 @@ class CopilotHandler:
             reference_files: Optional list of reference files to attach
             skip_clear_wait: Skip response clear verification (for 2nd+ batches)
             timeout: Response timeout in seconds (default 600 = 10 minutes)
+            include_item_ids: Use [[ID:n]] markers for stable parsing when enabled
 
         Returns:
             List of translated strings parsed from Copilot's response
@@ -6677,6 +6681,7 @@ class CopilotHandler:
         executor_timeout = timeout + self.EXECUTOR_TIMEOUT_BUFFER_SECONDS
         return _playwright_executor.execute(
             self._translate_sync_impl, texts, prompt, reference_files, skip_clear_wait, timeout,
+            include_item_ids,
             timeout=executor_timeout
         )
 
@@ -6687,6 +6692,7 @@ class CopilotHandler:
         reference_files: Optional[list[Path]] = None,
         skip_clear_wait: bool = False,
         timeout: int = 300,
+        include_item_ids: bool = False,
         max_retries: int = 2,
     ) -> list[str]:
         """
@@ -6699,6 +6705,7 @@ class CopilotHandler:
             skip_clear_wait: Skip response clear verification (for 2nd+ batches
                            where we just finished getting a response)
             timeout: Response timeout in seconds
+            include_item_ids: Use [[ID:n]] markers for stable parsing when enabled
             max_retries: Number of retries on Copilot error responses
         """
         # Call _connect_impl directly since we're already in the Playwright thread
@@ -6878,7 +6885,11 @@ class CopilotHandler:
             # Removing this prevents the browser from stealing focus after file translation.
 
             # Parse batch result
-            return self._parse_batch_result(result, len(texts))
+            return self._parse_batch_result(
+                result,
+                len(texts),
+                include_item_ids=include_item_ids,
+            )
 
         # Should not reach here, but return empty list as fallback
         return [""] * len(texts)
@@ -9271,6 +9282,12 @@ class CopilotHandler:
         except (PlaywrightError, AttributeError):
             return False
 
+    def _normalize_numbered_id_lines(self, result: str) -> str:
+        """Normalize lines like '1. [[ID:1]]' to '[[ID:1]]' for ID parsing."""
+        if not result or "[[ID:" not in result:
+            return result
+        return _RE_NUMBERED_ID_LINE.sub(r'\1\2', result)
+
     def _parse_batch_result_by_id(self, result: str, expected_count: int) -> list[str] | None:
         """Parse batch output using [[ID:n]] markers when present."""
         if expected_count <= 0 or "[[ID:" not in result:
@@ -9306,7 +9323,12 @@ class CopilotHandler:
             return None
         return translations
 
-    def _parse_batch_result(self, result: str, expected_count: int) -> list[str]:
+    def _parse_batch_result(
+        self,
+        result: str,
+        expected_count: int,
+        include_item_ids: bool = False,
+    ) -> list[str]:
         """Parse batch translation result back to list.
 
         Handles multiline translations where each numbered item may span multiple lines.
@@ -9329,14 +9351,19 @@ class CopilotHandler:
         Would correctly parse as 2 items, not 4, because "   1." and "   2." are
         at a deeper indentation level than "1." and "2.".
         """
-        id_parsed = self._parse_batch_result_by_id(result, expected_count)
-        if id_parsed is not None:
-            return id_parsed
+        normalized_result = result
+        if include_item_ids:
+            normalized_result = self._normalize_numbered_id_lines(result)
+            id_parsed = self._parse_batch_result_by_id(normalized_result, expected_count)
+            if id_parsed is not None:
+                return id_parsed
+            # ID parsing failed; fall back to the original text to preserve numbering cues.
+            normalized_result = result
         # Normalize indentation: remove common leading whitespace from all lines
         # This handles cases where Copilot returns responses with uniform indentation
         # (e.g., "   1. Hello\n   2. World" becomes "1. Hello\n2. World")
         # Important: Split BEFORE strip() to preserve relative indentation
-        lines = result.split('\n')
+        lines = normalized_result.split('\n')
 
         # Remove empty lines at start and end, but preserve internal empty lines
         while lines and not lines[0].strip():

@@ -999,7 +999,8 @@ class BatchTranslator:
                     try:
                         unique_translations = self.copilot.translate_sync(
                             unique_texts, prompt, files_to_attach, skip_clear_wait,
-                            timeout=self.request_timeout
+                            timeout=self.request_timeout,
+                            include_item_ids=include_item_ids,
                         )
                     finally:
                         self.copilot.set_cancel_callback(None)

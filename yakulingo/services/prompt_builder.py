@@ -35,8 +35,9 @@ REFERENCE_INSTRUCTION = """
 """
 ID_MARKER_INSTRUCTION = """
 ### Item ID markers (critical)
-- Each item begins with [[ID:n]]. Do not remove or alter this marker.
-- Keep the marker at the start of the item.
+- Each item must start with "<number>. [[ID:n]]" (example: "1. [[ID:1]] ...").
+- Do not remove or alter the marker.
+- Do not move the marker to another position or line.
 """
 
 # 用語集埋め込み時の指示文（プロンプト内に用語集を含める場合）

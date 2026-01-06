@@ -5178,14 +5178,15 @@ class CopilotHandler:
             return
 
         if mode == "foreground":
+            foreground_reason = "foreground display mode"
             if self._page:
                 self._bring_to_foreground_impl(
                     self._page,
-                    reason="foreground display mode",
+                    reason=foreground_reason,
                     force_full_window=True,
                 )
             else:
-                self._bring_edge_window_to_front(page_title, reason=reason)
+                self._bring_edge_window_to_front(page_title, reason=foreground_reason)
         else:  # "minimized" (default)
             self._minimize_edge_window(page_title)
 

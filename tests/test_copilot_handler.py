@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 from yakulingo.services.copilot_handler import CopilotHandler
 
 
@@ -52,3 +54,19 @@ def test_parse_batch_result_id_fallback_uses_numbering_order():
     parsed = handler._parse_batch_result(result, 2, include_item_ids=True)
 
     assert parsed == ["[[ID:4]] First item", "[[ID:3]] Second item"]
+
+
+def test_apply_browser_display_mode_foreground_without_page():
+    handler = CopilotHandler()
+    handler._edge_layout_mode = None
+    handler._page = None
+
+    with patch.object(handler, "_get_browser_display_mode", return_value="foreground"), \
+        patch.object(handler, "_bring_edge_window_to_front") as mock_bring, \
+        patch.object(handler, "_bring_to_foreground_impl") as mock_foreground:
+        handler._apply_browser_display_mode("Copilot")
+
+    mock_foreground.assert_not_called()
+    mock_bring.assert_called_once()
+    _, kwargs = mock_bring.call_args
+    assert kwargs.get("reason") == "foreground display mode"

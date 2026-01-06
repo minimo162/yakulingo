@@ -2102,24 +2102,26 @@ class YakuLingoApp:
                 )
                 return
 
-        self._login_auto_hide_pending = True
-        self._resident_show_requested = True
-
         with self._client_lock:
             has_client_before = self._client is not None
-        auto_open_attempted = False
-        native_mode_enabled = bool(self._native_mode_enabled)
-        if not has_client_before:
-            auto_open_attempted = (
-                native_mode_enabled
-                and (self._open_ui_window_callback is not None or sys.platform == "win32")
+
+        ui_visible_before = self._layout_mode == LayoutMode.FOREGROUND
+        auto_open_ui = (
+            (not user_initiated)
+            and (not ui_visible_before or not has_client_before)
+            and (self._open_ui_window_callback is not None or sys.platform == "win32")
+        )
+        self._login_auto_hide_pending = auto_open_ui
+        if user_initiated:
+            self._login_auto_hide_blocked = True
+        self._resident_show_requested = True
+
+        if auto_open_ui:
+            self._set_auto_open_cause(
+                AutoOpenCause.LOGIN,
+                reason=f"login_prompt:{reason}",
+                timeout_sec=COPILOT_LOGIN_TIMEOUT,
             )
-            if auto_open_attempted:
-                self._set_auto_open_cause(
-                    AutoOpenCause.LOGIN,
-                    reason=f"login_prompt:{reason}",
-                    timeout_sec=COPILOT_LOGIN_TIMEOUT,
-                )
 
         shown = await self._ensure_resident_ui_visible(reason)
         with self._client_lock:
@@ -2775,7 +2777,7 @@ class YakuLingoApp:
                 return
 
             # UI mode: show the captured text and run the normal pipeline.
-            from yakulingo.ui.state import Tab, TextViewState
+            from yakulingo.ui.state import TextViewState
 
             was_file_panel = self._is_file_panel_active()
             self.state.source_text = text
@@ -6036,11 +6038,17 @@ class YakuLingoApp:
                         or self._login_auto_hide_pending
                     )
                     manual_block = self._manual_show_requested or self._login_auto_hide_blocked
+                    native_mode_enabled = bool(self._native_mode_enabled)
+                    browser_auto_hide = (
+                        not native_mode_enabled
+                        and sys.platform == "win32"
+                        and self._login_auto_hide_pending
+                    )
                     should_auto_hide = (
                         self._resident_mode
-                        and bool(self._native_mode_enabled)
                         and auto_hide_candidates
                         and not manual_block
+                        and (native_mode_enabled or browser_auto_hide)
                     )
                     auto_hide_reasons: list[str] = []
                     if self._auto_open_cause in (AutoOpenCause.STARTUP, AutoOpenCause.LOGIN):
@@ -6051,8 +6059,10 @@ class YakuLingoApp:
                         auto_hide_reasons.append("manual_block")
                     if not self._resident_mode:
                         auto_hide_reasons.append("not_resident")
-                    if not self._native_mode_enabled:
+                    if not native_mode_enabled and not browser_auto_hide:
                         auto_hide_reasons.append("native_disabled")
+                    if browser_auto_hide:
+                        auto_hide_reasons.append("browser_auto_hide")
                     logger.info(
                         "Login auto-hide decision: hide=%s (reasons=%s, auto_open_cause=%s, "
                         "auto_open_timeout=%s, manual_show=%s, hotkey=%s, login_pending=%s)",

@@ -2007,6 +2007,32 @@ if (-not (Test-PortOpen `$port)) {
 
     $exitScript = @"
 `$ErrorActionPreference = 'SilentlyContinue'
+`$installDir = Split-Path -Parent `$MyInvocation.MyCommand.Definition
+function Stop-ProcessesInDir([string]`$dir) {
+  if ([string]::IsNullOrWhiteSpace(`$dir)) { return }
+  try { `$fullDir = [System.IO.Path]::GetFullPath(`$dir).TrimEnd('\') } catch { return }
+  `$prefix = `$fullDir + '\'
+  try {
+    `$cim = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue
+    foreach (`$p in `$cim) {
+      `$exe = `$p.ExecutablePath
+      if (-not `$exe) { continue }
+      if (-not `$exe.StartsWith(`$prefix, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
+      try { Stop-Process -Id `$p.ProcessId -Force -ErrorAction SilentlyContinue } catch { }
+    }
+  } catch {
+    # Fallback: Get-Process path is not always available, but try anyway.
+    try {
+      foreach (`$p in (Get-Process -ErrorAction SilentlyContinue)) {
+        try {
+          if (`$p.Path -and `$p.Path.StartsWith(`$prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+            Stop-Process -Id `$p.Id -Force -ErrorAction SilentlyContinue
+          }
+        } catch { }
+      }
+    } catch { }
+  }
+}
 `$port = 8765
 `$shutdownUrl = "http://127.0.0.1:`$port/api/shutdown"
 
@@ -2015,25 +2041,9 @@ try {
   exit 0
 } catch { }
 
-# Fallback: kill the process listening on the UI port
-try {
-  `$conn = Get-NetTCPConnection -LocalAddress 127.0.0.1 -LocalPort `$port -State Listen -ErrorAction Stop | Select-Object -First 1
-  if (`$conn -and `$conn.OwningProcess) {
-    Stop-Process -Id `$conn.OwningProcess -Force
-    exit 0
-  }
-} catch { }
-
-try {
-  `$line = (& netstat -ano | Select-String ":`$port" | Select-String "LISTENING" | Select-Object -First 1).Line
-  if (`$line) {
-    `$pid = (`$line -split '\s+')[-1]
-    if (`$pid -match '^\d+$') {
-      Stop-Process -Id ([int]`$pid) -Force
-      exit 0
-    }
-  }
-} catch { }
+# Fallback: stop only processes launched from this install directory.
+# (Do not kill unrelated apps that happen to use port 8765.)
+Stop-ProcessesInDir `$installDir
 exit 0
 "@
 
@@ -2100,6 +2110,31 @@ function Test-PortOpen([int]`$p) {
   } catch { return `$false }
 }
 
+function Stop-ProcessesInDir([string]`$dir) {
+  if ([string]::IsNullOrWhiteSpace(`$dir)) { return }
+  try { `$fullDir = [System.IO.Path]::GetFullPath(`$dir).TrimEnd('\') } catch { return }
+  `$prefix = `$fullDir + '\'
+  try {
+    `$cim = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue
+    foreach (`$p in `$cim) {
+      `$exe = `$p.ExecutablePath
+      if (-not `$exe) { continue }
+      if (-not `$exe.StartsWith(`$prefix, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
+      try { Stop-Process -Id `$p.ProcessId -Force -ErrorAction SilentlyContinue } catch { }
+    }
+  } catch {
+    try {
+      foreach (`$p in (Get-Process -ErrorAction SilentlyContinue)) {
+        try {
+          if (`$p.Path -and `$p.Path.StartsWith(`$prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+            Stop-Process -Id `$p.Id -Force -ErrorAction SilentlyContinue
+          }
+        } catch { }
+      }
+    } catch { }
+  }
+}
+
 `$exitScript = Join-Path `$installDir 'YakuLingo_Exit.ps1'
 if (Test-Path `$exitScript) {
   try {
@@ -2111,14 +2146,9 @@ if (Test-Path `$exitScript) {
 `$deadline = (Get-Date).AddSeconds(10)
 while ((Get-Date) -lt `$deadline -and (Test-PortOpen `$port)) { Start-Sleep -Milliseconds 200 }
 
-if (Test-PortOpen `$port) {
-  try {
-    `$conn = Get-NetTCPConnection -LocalAddress 127.0.0.1 -LocalPort `$port -State Listen -ErrorAction Stop | Select-Object -First 1
-    if (`$conn -and `$conn.OwningProcess) {
-      Stop-Process -Id `$conn.OwningProcess -Force
-    }
-  } catch { }
-}
+# Final fallback: stop only processes launched from this install directory.
+# (Do not kill unrelated apps that happen to use port 8765.)
+Stop-ProcessesInDir `$installDir
 
 `$programs = [Environment]::GetFolderPath('Programs')
 `$startup = [Environment]::GetFolderPath('Startup')

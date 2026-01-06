@@ -6408,6 +6408,21 @@ class YakuLingoApp:
             except Exception as e2:
                 logger.debug("Translate button refresh with saved client failed: %s", e2)
 
+    def _run_in_ui_context(self, action: Callable[[], None], label: str) -> None:
+        """Run UI updates safely, retrying with the saved client context when needed."""
+        active_client = self._get_active_client()
+        try:
+            action()
+        except Exception as e:
+            if active_client is None:
+                logger.debug("%s failed (no client): %s", label, e)
+                return
+            try:
+                with active_client:
+                    action()
+            except Exception as e2:
+                logger.debug("%s with saved client failed: %s", label, e2)
+
     def _start_status_auto_refresh(self, reason: str = "") -> None:
         """Retry status refresh briefly to avoid a stuck '準備中...' indicator.
 
@@ -6461,17 +6476,23 @@ class YakuLingoApp:
 
     def _refresh_content(self):
         """Refresh main content area and update layout classes"""
-        self._update_layout_classes()
-        if self._main_content:
-            self._main_content.refresh()
+        def _apply() -> None:
+            self._update_layout_classes()
+            if self._main_content:
+                self._main_content.refresh()
+
+        self._run_in_ui_context(_apply, "Content refresh")
 
     def _refresh_result_panel(self):
         """Refresh only the result panel (avoids input panel flicker)"""
-        self._update_layout_classes()
-        if self._result_panel:
-            self._result_panel.refresh()
-            # Debug: Log layout dimensions after refresh
-            self._log_layout_dimensions()
+        def _apply() -> None:
+            self._update_layout_classes()
+            if self._result_panel:
+                self._result_panel.refresh()
+                # Debug: Log layout dimensions after refresh
+                self._log_layout_dimensions()
+
+        self._run_in_ui_context(_apply, "Result panel refresh")
 
     def _scroll_result_panel_to_bottom(
         self,
@@ -7034,41 +7055,47 @@ class YakuLingoApp:
 
     def _refresh_tabs(self):
         """Update tab buttons in place to avoid sidebar redraw flicker."""
-        if self._tabs_container:
-            current_translating = self.state.is_translating()
-            if self._sidebar_action_translating != current_translating:
-                self._sidebar_action_translating = current_translating
-                self._tabs_container.refresh()
+        def _apply() -> None:
+            if self._tabs_container:
+                current_translating = self.state.is_translating()
+                if self._sidebar_action_translating != current_translating:
+                    self._sidebar_action_translating = current_translating
+                    self._tabs_container.refresh()
 
-        if not self._nav_buttons:
-            return
+            if not self._nav_buttons:
+                return
 
-        for tab, btn in self._nav_buttons.items():
-            is_active = self.state.current_tab == tab
-            disabled = self.state.is_translating()
+            for tab, btn in self._nav_buttons.items():
+                is_active = self.state.current_tab == tab
+                disabled = self.state.is_translating()
 
-            btn.classes(remove='active disabled')
-            if is_active:
-                btn.classes(add='active')
-            if disabled:
-                btn.classes(add='disabled')
+                btn.classes(remove='active disabled')
+                if is_active:
+                    btn.classes(add='active')
+                if disabled:
+                    btn.classes(add='disabled')
 
-            btn.props(f'aria-selected="{str(is_active).lower()}"')
-            if disabled:
-                btn.props('aria-disabled="true" disable')
-            else:
-                btn.props('aria-disabled="false" :disable=false')
+                btn.props(f'aria-selected="{str(is_active).lower()}"')
+                if disabled:
+                    btn.props('aria-disabled="true" disable')
+                else:
+                    btn.props('aria-disabled="false" :disable=false')
+
+        self._run_in_ui_context(_apply, "Tab refresh")
 
     def _refresh_history(self):
         """Refresh history list"""
-        if self._history_list:
-            self._history_list.refresh()
-        if self._history_dialog_list:
-            self._history_dialog_list.refresh()
-        if self._history_filters:
-            self._history_filters.refresh()
-        if self._history_dialog_filters:
-            self._history_dialog_filters.refresh()
+        def _apply() -> None:
+            if self._history_list:
+                self._history_list.refresh()
+            if self._history_dialog_list:
+                self._history_dialog_list.refresh()
+            if self._history_filters:
+                self._history_filters.refresh()
+            if self._history_dialog_filters:
+                self._history_dialog_filters.refresh()
+
+        self._run_in_ui_context(_apply, "History refresh")
 
     def _on_translate_button_created(self, button: UiButton):
         """Store reference to translate button for dynamic state updates"""

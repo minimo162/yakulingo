@@ -10,6 +10,7 @@ import atexit
 import asyncio
 import difflib
 import html
+import inspect
 import json
 import logging
 import math
@@ -1223,6 +1224,32 @@ def _build_local_url(host: str, port: int, path: str = "") -> str:
     if path and not path.startswith("/"):
         path = f"/{path}"
     return f"http://{normalized}:{port}{path}"
+
+
+def _create_logged_task(coro, *, name: str) -> asyncio.Task:
+    task = asyncio.create_task(coro, name=name)
+
+    def _done_callback(done_task: asyncio.Task) -> None:
+        if done_task.cancelled():
+            return
+        try:
+            error = done_task.exception()
+        except asyncio.CancelledError:
+            return
+        except Exception as e:
+            logger.debug("Background task exception retrieval failed (%s): %s", name, e)
+            return
+        if error is None:
+            return
+        logger.error(
+            "Background task failed (%s): %s",
+            name,
+            error,
+            exc_info=(type(error), error, error.__traceback__),
+        )
+
+    task.add_done_callback(_done_callback)
+    return task
 
 
 HOTKEY_MAX_FILE_COUNT = 10
@@ -10206,23 +10233,61 @@ class YakuLingoApp:
             queue.put_nowait(item)
 
         async def worker() -> None:
-            service = TranslationService(
-                self.copilot, self.settings, get_default_prompts_dir(), copilot_lock=self._copilot_lock
-            )
+            try:
+                service = TranslationService(
+                    self.copilot,
+                    self.settings,
+                    get_default_prompts_dir(),
+                    copilot_lock=self._copilot_lock,
+                )
+            except Exception as e:
+                # If worker setup fails, drain the queue to avoid deadlocking queue.join().
+                error_message = str(e) or repr(e)
+                logger.error(
+                    "Failed to initialize TranslationService for parallel queue: %s",
+                    error_message,
+                )
+                while True:
+                    try:
+                        item = queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        return
+                    try:
+                        with self._file_queue_state_lock:
+                            if item.status == TranslationStatus.PENDING:
+                                item.status = TranslationStatus.FAILED
+                                item.status_label = "失敗"
+                                item.error_message = error_message
+                        if item.id == self.state.file_queue_active_id:
+                            self._sync_state_from_queue_item(item)
+                    finally:
+                        queue.task_done()
             while True:
                 try:
                     item = queue.get_nowait()
                 except asyncio.QueueEmpty:
                     return
-                if self._file_queue_cancel_requested:
-                    with self._file_queue_state_lock:
-                        if item.status == TranslationStatus.PENDING:
-                            item.status = TranslationStatus.CANCELLED
-                            item.status_label = "キャンセル"
+                try:
+                    if self._file_queue_cancel_requested:
+                        with self._file_queue_state_lock:
+                            if item.status == TranslationStatus.PENDING:
+                                item.status = TranslationStatus.CANCELLED
+                                item.status_label = "キャンセル"
+                        continue
+                    try:
+                        await self._translate_queue_item(item, service)
+                    except Exception as e:
+                        # Defensive: prevent queue.join() deadlock and surface the failure in the UI.
+                        error_message = str(e) or repr(e)
+                        logger.debug("Parallel queue worker failed: %s", error_message)
+                        with self._file_queue_state_lock:
+                            item.status = TranslationStatus.FAILED
+                            item.status_label = "失敗"
+                            item.error_message = error_message
+                        if item.id == self.state.file_queue_active_id:
+                            self._sync_state_from_queue_item(item)
+                finally:
                     queue.task_done()
-                    continue
-                await self._translate_queue_item(item, service)
-                queue.task_done()
 
         worker_count = 2
         self._file_queue_workers = [asyncio.create_task(worker()) for _ in range(worker_count)]
@@ -10389,7 +10454,35 @@ class YakuLingoApp:
             self.state.translation_result = None
             self.state.output_file = None
             self.state.file_state = FileState.ERROR
-            self.state.error_message = "翻訳結果がありません"
+            failed_items = [
+                item
+                for item in self.state.file_queue
+                if item.status == TranslationStatus.FAILED
+            ]
+            cancelled_items = [
+                item
+                for item in self.state.file_queue
+                if item.status == TranslationStatus.CANCELLED
+            ]
+
+            if failed_items:
+                first_error = next(
+                    (item.error_message for item in failed_items if item.error_message),
+                    "",
+                )
+                if first_error:
+                    if len(failed_items) == 1:
+                        self.state.error_message = first_error
+                    else:
+                        self.state.error_message = f"{len(failed_items)}件の翻訳に失敗しました: {first_error}"
+                else:
+                    self.state.error_message = f"{len(failed_items)}件の翻訳に失敗しました"
+            elif completed_items:
+                self.state.error_message = "翻訳は完了しましたが出力ファイルが見つかりません"
+            elif cancelled_items or self._file_queue_cancel_requested:
+                self.state.error_message = "翻訳をキャンセルしました"
+            else:
+                self.state.error_message = "翻訳結果がありません"
 
         self.state.file_queue_running = False
         self._refresh_tabs()
@@ -12092,7 +12185,9 @@ def run_app(
                 try:
                     close = getattr(uploaded, "close", None)
                     if callable(close):
-                        await close()
+                        close_result = close()
+                        if inspect.isawaitable(close_result):
+                            await close_result
                 except Exception:
                     pass
 
@@ -12102,7 +12197,10 @@ def run_app(
                 size_bytes,
                 uploaded_path,
             )
-            asyncio.create_task(yakulingo_app._select_file(uploaded_path))
+            _create_logged_task(
+                yakulingo_app._select_file(uploaded_path),
+                name="global_drop_select_file",
+            )
             return {"ok": True, "filename": filename, "size_bytes": size_bytes}
 
         @nicegui_app.post('/api/pdf-prepare')
@@ -12133,7 +12231,10 @@ def run_app(
                 return {"ok": True, "available": False}
 
             if yakulingo_app._layout_init_state == LayoutInitializationState.NOT_INITIALIZED:
-                asyncio.create_task(yakulingo_app._ensure_layout_initialized())
+                _create_logged_task(
+                    yakulingo_app._ensure_layout_initialized(),
+                    name="pdf_prepare_layout_init",
+                )
                 # Yield so the task can flip state to INITIALIZING before we respond.
                 await asyncio.sleep(0)
 

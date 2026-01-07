@@ -20,6 +20,25 @@ logger = logging.getLogger(__name__)
 
 _IS_WINDOWS = hasattr(ctypes, "WinDLL") and sys.platform == "win32"
 
+def _select_rechecked_payload_time(
+    *,
+    event_time: float,
+    recheck_time: float,
+    initial_normalized: str,
+    rechecked_normalized: str,
+) -> float:
+    """Choose the timestamp to associate with a rechecked clipboard payload.
+
+    The clipboard can update while we are reading it (multi-format copies, clipboard managers, etc.).
+    If we store the later recheck timestamp even when the payload is effectively the same, the
+    recorded time can drift forward by the recheck delay and make very fast double-copy sequences
+    fail the minimum-gap check.
+    """
+
+    if initial_normalized == rechecked_normalized:
+        return event_time
+    return recheck_time
+
 
 if not _IS_WINDOWS:
     class ClipboardTrigger:
@@ -77,7 +96,7 @@ else:
             self,
             callback: Callable[[str], None],
             *,
-            double_copy_window_sec: float = 1.6,
+            double_copy_window_sec: float = 2.5,
             poll_interval_sec: float = 0.005,
             settle_delay_sec: float = 0.005,
             cooldown_sec: float = 1.2,
@@ -442,7 +461,12 @@ else:
                                         payload_to_store = re_payload
                                         normalized_to_store = re_normalized
                                         payload_hash_to_store = re_payload_hash
-                                        store_time = re_now
+                                        store_time = _select_rechecked_payload_time(
+                                            event_time=now,
+                                            recheck_time=re_now,
+                                            initial_normalized=normalized_payload,
+                                            rechecked_normalized=re_normalized,
+                                        )
 
                         self._last_payload = payload_to_store
                         self._last_payload_normalized = normalized_to_store

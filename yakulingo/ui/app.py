@@ -4820,9 +4820,9 @@ class YakuLingoApp:
                 foreground = user32.GetForegroundWindow()
                 if foreground:
                     fg_thread = user32.GetWindowThreadProcessId(foreground, None)
-                    this_thread = user32.GetCurrentThreadId()
+                    this_thread = ctypes.windll.kernel32.GetCurrentThreadId()
                     if fg_thread and this_thread and fg_thread != this_thread:
-                        if user32.AttachThreadInput(fg_thread, this_thread, True):
+                        if user32.AttachThreadInput(this_thread, fg_thread, True):
                             attached = True
             except Exception:
                 attached = False
@@ -4876,7 +4876,7 @@ class YakuLingoApp:
             finally:
                 if attached:
                     try:
-                        user32.AttachThreadInput(fg_thread, this_thread, False)
+                        user32.AttachThreadInput(this_thread, fg_thread, False)
                     except Exception:
                         pass
 

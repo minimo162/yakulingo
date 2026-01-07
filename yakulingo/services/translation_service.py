@@ -1361,6 +1361,24 @@ class TranslationService:
                 if self._cancel_callback_depth == 0:
                     self.copilot.set_cancel_callback(None)
 
+    @contextmanager
+    def _ui_window_sync_scope(self, reason: str):
+        """翻訳中のみ、EdgeウィンドウをUIの背面に同期表示する（対応環境のみ）。"""
+        copilot = getattr(self, "copilot", None)
+        scope_factory = getattr(copilot, "ui_window_sync_scope", None) if copilot is not None else None
+        if scope_factory is None:
+            yield
+            return
+
+        try:
+            scope = scope_factory(reason=reason)
+        except Exception:
+            yield
+            return
+
+        with scope:
+            yield
+
     def _translate_single_with_cancel(
         self,
         text: str,
@@ -1368,10 +1386,11 @@ class TranslationService:
         reference_files: Optional[list[Path]] = None,
         on_chunk: "Callable[[str], None] | None" = None,
     ) -> str:
-        with self._cancel_callback_scope():
-            lock = self._copilot_lock or nullcontext()
-            with lock:
-                return self.copilot.translate_single(text, prompt, reference_files, on_chunk)
+        with self._ui_window_sync_scope("translate_single"):
+            with self._cancel_callback_scope():
+                lock = self._copilot_lock or nullcontext()
+                with lock:
+                    return self.copilot.translate_single(text, prompt, reference_files, on_chunk)
 
     def translate_text(
         self,
@@ -1860,21 +1879,22 @@ class TranslationService:
         options: list[TranslationOption] = []
         last_error: Optional[str] = combined_error
 
-        for style in style_list:
-            result = self.translate_text_with_options(
-                text,
-                reference_files,
-                style,
-                detected_language,
-                on_chunk,
-            )
-            if result.options:
-                for option in result.options:
-                    if option.style is None:
-                        option.style = style
-                options.extend(result.options)
-            else:
-                last_error = result.error_message or last_error
+        with self._ui_window_sync_scope("translate_text_with_style_comparison"):
+            for style in style_list:
+                result = self.translate_text_with_options(
+                    text,
+                    reference_files,
+                    style,
+                    detected_language,
+                    on_chunk,
+                )
+                if result.options:
+                    for option in result.options:
+                        if option.style is None:
+                            option.style = style
+                    options.extend(result.options)
+                else:
+                    last_error = result.error_message or last_error
 
         if options:
             return TextTranslationResult(
@@ -2453,7 +2473,21 @@ class TranslationService:
 
             # Use streaming processing for PDF files
             if input_path.suffix.lower() == '.pdf':
-                return self._translate_pdf_streaming(
+                with self._ui_window_sync_scope(f"translate_file:{input_path.name}"):
+                    return self._translate_pdf_streaming(
+                        input_path,
+                        processor,
+                        reference_files,
+                        on_progress,
+                        output_language,
+                        start_time,
+                        translation_style,
+                        selected_sections,
+                    )
+
+            # Standard processing for other file types
+            with self._ui_window_sync_scope(f"translate_file:{input_path.name}"):
+                return self._translate_file_standard(
                     input_path,
                     processor,
                     reference_files,
@@ -2463,18 +2497,6 @@ class TranslationService:
                     translation_style,
                     selected_sections,
                 )
-
-            # Standard processing for other file types
-            return self._translate_file_standard(
-                input_path,
-                processor,
-                reference_files,
-                on_progress,
-                output_language,
-                start_time,
-                translation_style,
-                selected_sections,
-            )
 
         except MemoryError as e:
             # CRITICAL: Memory exhausted - provide clear error message

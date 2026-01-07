@@ -20,7 +20,8 @@ import threading
 import queue as thread_queue
 import shutil
 from pathlib import Path
-from typing import Optional, Callable
+from typing import Optional, Callable, Iterator
+from contextlib import contextmanager
 
 # Module logger
 logger = logging.getLogger(__name__)
@@ -1000,6 +1001,11 @@ class CopilotHandler:
     EDGE_OFFSCREEN_GAP = 10
 
     # =========================================================================
+    # Edge <-> UI Window Synchronization (Windows)
+    # =========================================================================
+    UI_WINDOW_SYNC_INTERVAL_SECONDS = 0.25
+
+    # =========================================================================
     # Edge Error Page Detection / Recovery
     # =========================================================================
     EDGE_ERROR_URL_PREFIXES = (
@@ -1268,6 +1274,10 @@ class CopilotHandler:
             native_patch_applied = False
         self._native_patch_applied = bool(native_patch_applied)
         self._cached_browser_display_action = None
+        self._ui_window_sync_lock = threading.Lock()
+        self._ui_window_sync_refcount = 0
+        self._ui_window_sync_stop_event: threading.Event | None = None
+        self._ui_window_sync_thread: threading.Thread | None = None
 
     @property
     def is_connected(self) -> bool:
@@ -5009,6 +5019,144 @@ class CopilotHandler:
             logger.debug("Failed to position Edge over YakuLingo: %s", e)
             return False
 
+    def _position_edge_behind_yakulingo_window(
+        self,
+        *,
+        edge_hwnd: int,
+        yakulingo_hwnd: int,
+        target_rect: tuple[int, int, int, int] | None = None,
+    ) -> bool:
+        """Position Edge behind the YakuLingo window (same size/position)."""
+        if sys.platform != "win32":
+            return False
+
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.WinDLL('user32', use_last_error=True)
+            try:
+                dwmapi = ctypes.WinDLL('dwmapi', use_last_error=True)
+            except Exception:
+                dwmapi = None
+
+            self._set_edge_taskbar_visibility(False)
+
+            class RECT(ctypes.Structure):
+                _fields_ = [
+                    ("left", wintypes.LONG),
+                    ("top", wintypes.LONG),
+                    ("right", wintypes.LONG),
+                    ("bottom", wintypes.LONG),
+                ]
+
+            def _get_frame_rect(hwnd_value: int):
+                if not dwmapi:
+                    return None
+                try:
+                    rect = RECT()
+                    DWMWA_EXTENDED_FRAME_BOUNDS = 9
+                    if dwmapi.DwmGetWindowAttribute(
+                        wintypes.HWND(hwnd_value),
+                        DWMWA_EXTENDED_FRAME_BOUNDS,
+                        ctypes.byref(rect),
+                        ctypes.sizeof(rect),
+                    ) == 0:
+                        return rect
+                except Exception:
+                    return None
+                return None
+
+            def _get_window_rect(hwnd_value: int):
+                rect = RECT()
+                if not user32.GetWindowRect(wintypes.HWND(hwnd_value), ctypes.byref(rect)):
+                    return None
+                return rect
+
+            def _get_frame_margins(hwnd_value: int) -> tuple[int, int, int, int]:
+                outer = _get_window_rect(hwnd_value)
+                if outer is None:
+                    return (0, 0, 0, 0)
+                frame = _get_frame_rect(hwnd_value)
+                if frame is None:
+                    return (0, 0, 0, 0)
+                left = max(0, int(frame.left - outer.left))
+                top = max(0, int(frame.top - outer.top))
+                right = max(0, int(outer.right - frame.right))
+                bottom = max(0, int(outer.bottom - frame.bottom))
+                return (left, top, right, bottom)
+
+            def _set_window_pos_with_frame_adjust(
+                hwnd_value: int,
+                x: int,
+                y: int,
+                width: int,
+                height: int,
+                insert_after: wintypes.HWND,
+                flags: int,
+            ) -> bool:
+                left, top, right, bottom = _get_frame_margins(hwnd_value)
+                adj_x = x - left
+                adj_y = y - top
+                adj_width = width + left + right
+                adj_height = height + top + bottom
+                if adj_width <= 0 or adj_height <= 0:
+                    adj_x = x
+                    adj_y = y
+                    adj_width = width
+                    adj_height = height
+                return bool(
+                    user32.SetWindowPos(
+                        wintypes.HWND(hwnd_value),
+                        insert_after,
+                        adj_x,
+                        adj_y,
+                        adj_width,
+                        adj_height,
+                        flags,
+                    )
+                )
+
+            if target_rect is None:
+                rect_obj = _get_frame_rect(yakulingo_hwnd)
+                if rect_obj is None:
+                    rect_obj = _get_window_rect(yakulingo_hwnd)
+                if rect_obj is None:
+                    return False
+                target_rect = (
+                    int(rect_obj.left),
+                    int(rect_obj.top),
+                    int(rect_obj.right),
+                    int(rect_obj.bottom),
+                )
+
+            target_width = int(target_rect[2] - target_rect[0])
+            target_height = int(target_rect[3] - target_rect[1])
+            if target_width <= 0 or target_height <= 0:
+                return False
+
+            SW_RESTORE = 9
+            SW_SHOW = 5
+            if user32.IsIconic(wintypes.HWND(edge_hwnd)):
+                user32.ShowWindow(wintypes.HWND(edge_hwnd), SW_RESTORE)
+            else:
+                user32.ShowWindow(wintypes.HWND(edge_hwnd), SW_SHOW)
+
+            SWP_NOACTIVATE = 0x0010
+            SWP_SHOWWINDOW = 0x0040
+            return _set_window_pos_with_frame_adjust(
+                edge_hwnd,
+                int(target_rect[0]),
+                int(target_rect[1]),
+                target_width,
+                target_height,
+                wintypes.HWND(yakulingo_hwnd),
+                SWP_NOACTIVATE | SWP_SHOWWINDOW,
+            )
+        except Exception as e:
+            logger.debug("Failed to position Edge behind YakuLingo: %s", e)
+            return False
+
     def _set_edge_taskbar_visibility(self, visible: bool) -> bool:
         """Toggle Edge window visibility in the taskbar (Windows only)."""
         if sys.platform != "win32":
@@ -6460,6 +6608,224 @@ class CopilotHandler:
         except Exception as e:
             logger.debug("Failed to hide Edge taskbar entry: %s", e)
         return False
+
+    @contextmanager
+    def ui_window_sync_scope(self, reason: str = "translation") -> Iterator[None]:
+        """Keep Edge visible behind the YakuLingo UI while this scope is active."""
+        self._start_ui_window_sync(reason)
+        try:
+            yield
+        finally:
+            self._stop_ui_window_sync(reason)
+
+    def _start_ui_window_sync(self, reason: str) -> None:
+        if sys.platform != "win32":
+            return
+        with self._ui_window_sync_lock:
+            self._ui_window_sync_refcount += 1
+            if self._ui_window_sync_refcount != 1:
+                return
+            stop_event = threading.Event()
+            self._ui_window_sync_stop_event = stop_event
+            thread = threading.Thread(
+                target=self._ui_window_sync_worker,
+                args=(stop_event,),
+                daemon=True,
+                name="copilot_ui_window_sync",
+            )
+            self._ui_window_sync_thread = thread
+            thread.start()
+        logger.debug("Copilot UI window sync started (%s)", reason)
+
+    def _stop_ui_window_sync(self, reason: str) -> None:
+        if sys.platform != "win32":
+            return
+        thread: threading.Thread | None = None
+        stop_event: threading.Event | None = None
+        with self._ui_window_sync_lock:
+            if self._ui_window_sync_refcount <= 0:
+                self._ui_window_sync_refcount = 0
+                return
+            self._ui_window_sync_refcount -= 1
+            if self._ui_window_sync_refcount != 0:
+                return
+            stop_event = self._ui_window_sync_stop_event
+            thread = self._ui_window_sync_thread
+            self._ui_window_sync_stop_event = None
+            self._ui_window_sync_thread = None
+
+        if stop_event is not None:
+            stop_event.set()
+        if (
+            thread is not None
+            and thread.is_alive()
+            and threading.current_thread() is not thread
+        ):
+            thread.join(timeout=1.0)
+        logger.debug("Copilot UI window sync stopped (%s)", reason)
+
+    def _ui_window_sync_worker(self, stop_event: threading.Event) -> None:
+        """Sync Edge window behind the UI (Windows only)."""
+        if sys.platform != "win32":
+            return
+
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.WinDLL("user32", use_last_error=True)
+            try:
+                dwmapi = ctypes.WinDLL("dwmapi", use_last_error=True)
+            except Exception:
+                dwmapi = None
+        except Exception:
+            return
+
+        interval = max(float(getattr(self, "UI_WINDOW_SYNC_INTERVAL_SECONDS", 0.25)), 0.05)
+
+        cached_edge_hwnd: int | None = None
+        cached_ui_hwnd: int | None = None
+        last_target_visible: bool | None = None
+        last_target_rect: tuple[int, int, int, int] | None = None
+
+        class RECT(ctypes.Structure):
+            _fields_ = [
+                ("left", wintypes.LONG),
+                ("top", wintypes.LONG),
+                ("right", wintypes.LONG),
+                ("bottom", wintypes.LONG),
+            ]
+
+        def _is_valid_window(hwnd_value: int | None) -> bool:
+            if not hwnd_value:
+                return False
+            try:
+                return bool(user32.IsWindow(wintypes.HWND(hwnd_value)))
+            except Exception:
+                return False
+
+        def _get_frame_rect(hwnd_value: int) -> RECT | None:
+            if not dwmapi:
+                return None
+            try:
+                rect = RECT()
+                DWMWA_EXTENDED_FRAME_BOUNDS = 9
+                result = dwmapi.DwmGetWindowAttribute(
+                    wintypes.HWND(hwnd_value),
+                    DWMWA_EXTENDED_FRAME_BOUNDS,
+                    ctypes.byref(rect),
+                    ctypes.sizeof(rect),
+                )
+                if result == 0:
+                    return rect
+            except Exception:
+                return None
+            return None
+
+        def _get_window_rect(hwnd_value: int) -> RECT | None:
+            try:
+                rect = RECT()
+                if not user32.GetWindowRect(wintypes.HWND(hwnd_value), ctypes.byref(rect)):
+                    return None
+                return rect
+            except Exception:
+                return None
+
+        def _get_target_rect(hwnd_value: int) -> tuple[int, int, int, int] | None:
+            rect = _get_frame_rect(hwnd_value)
+            if rect is None:
+                rect = _get_window_rect(hwnd_value)
+            if rect is None:
+                return None
+            left = int(rect.left)
+            top = int(rect.top)
+            right = int(rect.right)
+            bottom = int(rect.bottom)
+            if right - left <= 0 or bottom - top <= 0:
+                return None
+            return (left, top, right, bottom)
+
+        def _is_edge_foreground(hwnd_value: int) -> bool:
+            try:
+                fg = user32.GetForegroundWindow()
+                return bool(fg) and int(fg) == int(hwnd_value)
+            except Exception:
+                return False
+
+        while not stop_event.is_set():
+            try:
+                if not _is_valid_window(cached_edge_hwnd):
+                    try:
+                        edge_hwnd = self._find_edge_window_handle()
+                    except Exception:
+                        edge_hwnd = None
+                    cached_edge_hwnd = int(edge_hwnd) if edge_hwnd else None
+
+                if not _is_valid_window(cached_ui_hwnd):
+                    try:
+                        ui_hwnd = self._find_yakulingo_window_handle(include_hidden=True)
+                    except Exception:
+                        ui_hwnd = None
+                    cached_ui_hwnd = int(ui_hwnd) if ui_hwnd else None
+
+                if not cached_edge_hwnd:
+                    stop_event.wait(interval)
+                    continue
+
+                ui_visible = False
+                target_rect: tuple[int, int, int, int] | None = None
+                if cached_ui_hwnd and _is_valid_window(cached_ui_hwnd):
+                    try:
+                        is_visible = bool(user32.IsWindowVisible(wintypes.HWND(cached_ui_hwnd)))
+                        is_minimized = bool(user32.IsIconic(wintypes.HWND(cached_ui_hwnd)))
+                        ui_visible = is_visible and not is_minimized
+                    except Exception:
+                        ui_visible = False
+                    if ui_visible:
+                        target_rect = _get_target_rect(cached_ui_hwnd)
+                        if target_rect is None:
+                            ui_visible = False
+
+                if _is_edge_foreground(cached_edge_hwnd):
+                    last_target_visible = ui_visible
+                    if ui_visible and target_rect is not None:
+                        last_target_rect = target_rect
+                    stop_event.wait(interval)
+                    continue
+
+                if not ui_visible:
+                    if last_target_visible is not False:
+                        try:
+                            if not self._position_edge_offscreen():
+                                self._minimize_edge_window(None)
+                        except Exception:
+                            pass
+                    last_target_visible = False
+                    last_target_rect = None
+                    stop_event.wait(interval)
+                    continue
+
+                if last_target_visible is True and last_target_rect == target_rect:
+                    stop_event.wait(interval)
+                    continue
+
+                if target_rect is None or cached_ui_hwnd is None:
+                    stop_event.wait(interval)
+                    continue
+
+                positioned = self._position_edge_behind_yakulingo_window(
+                    edge_hwnd=cached_edge_hwnd,
+                    yakulingo_hwnd=cached_ui_hwnd,
+                    target_rect=target_rect,
+                )
+                if positioned:
+                    last_target_visible = True
+                    last_target_rect = target_rect
+
+            except Exception:
+                pass
+
+            stop_event.wait(interval)
 
     def disconnect(self, keep_browser: bool = False) -> None:
         """Close browser connection and cleanup.

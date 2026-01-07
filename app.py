@@ -284,6 +284,64 @@ def setup_logging():
 # Tuple of (console_handler, file_handler)
 _global_log_handlers = None
 _single_instance_mutex = None
+_fault_log_handle = None
+
+
+def _setup_crash_handlers() -> None:
+    """Enable crash diagnostics for long-running stability."""
+    global _fault_log_handle
+
+    logger = logging.getLogger(__name__)
+
+    # 1) Native-level crashes (e.g., access violation in C extensions)
+    try:
+        import faulthandler
+
+        logs_dir = Path.home() / ".yakulingo" / "logs"
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        fault_path = logs_dir / "fault.log"
+        _fault_log_handle = open(fault_path, "a", encoding="utf-8")
+        faulthandler.enable(file=_fault_log_handle, all_threads=True)
+        logger.info("Fault log: %s", fault_path)
+    except Exception as e:
+        logger.debug("Failed to enable faulthandler: %s", e)
+
+    # 2) Unhandled exceptions in background threads
+    try:
+        import threading
+
+        def _thread_excepthook(args: "threading.ExceptHookArgs") -> None:
+            logger.error(
+                "Unhandled exception in thread %s: %s",
+                getattr(args.thread, "name", "<unknown>"),
+                args.exc_value,
+                exc_info=(args.exc_type, args.exc_value, args.exc_traceback),
+            )
+
+        threading.excepthook = _thread_excepthook
+    except Exception as e:
+        logger.debug("Failed to set threading.excepthook: %s", e)
+
+    # 3) Fallback for unhandled exceptions in main thread
+    try:
+        import sys as _sys
+
+        def _sys_excepthook(exc_type, exc, tb) -> None:
+            logger.critical(
+                "Unhandled exception: %s",
+                exc,
+                exc_info=(exc_type, exc, tb),
+            )
+            try:
+                if _fault_log_handle is not None:
+                    _fault_log_handle.flush()
+            except Exception:
+                pass
+            _sys.__excepthook__(exc_type, exc, tb)
+
+        _sys.excepthook = _sys_excepthook
+    except Exception as e:
+        logger.debug("Failed to set sys.excepthook: %s", e)
 
 
 def _try_focus_existing_window() -> None:
@@ -461,6 +519,7 @@ def main():
 
     global _global_log_handlers
     _global_log_handlers = setup_logging()  # Keep reference to prevent garbage collection
+    _setup_crash_handlers()
     _cleanup_pycache_prefix()
 
     logger = logging.getLogger(__name__)

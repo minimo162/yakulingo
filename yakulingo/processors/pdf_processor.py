@@ -5200,14 +5200,38 @@ class PdfProcessor(FileProcessor):
                     # Special case: very short CJK text should not be split
                     # Examples: "代 表 者" with spaces → "代", "表", "者" should be joined
                     # Single CJK characters are clearly incomplete and should continue.
-                    if should_start_new and not is_strong_boundary and sstk and sstk[-1]:
+                    if should_start_new and sstk and sstk[-1]:
                         prev_text_check = sstk[-1].rstrip()
                         # Check if text is 1-2 CJK characters only (excluding spaces)
                         if prev_text_check and len(prev_text_check) <= 2:
                             if all(_is_cjk_char(c) for c in prev_text_check):
-                                should_start_new = False
-                                line_break = True
-                                new_paragraph = False
+                                # Join only when this looks like letterspacing (same visual line)
+                                # or vertical writing (same X, adjacent Y). Do NOT join across
+                                # unrelated form fields (e.g., "東" -> "コード番号") which are
+                                # often separated by line breaks and column resets.
+                                if char_text and _is_cjk_char(char_text) and has_prev:
+                                    y_diff = abs(char_y0 - prev_y0)
+                                    x_diff = abs(char_x0 - prev_x0)
+                                    x_gap = char_x0 - prev_x1
+                                    y_line_thresh = max(
+                                        (prev_char_size or DEFAULT_FONT_SIZE) * 0.3,
+                                        SAME_LINE_Y_THRESHOLD,
+                                    )
+                                    same_visual_line = y_diff <= y_line_thresh
+                                    max_letter_spacing = max(40.0, (prev_char_size or DEFAULT_FONT_SIZE) * 4.0)
+                                    is_letter_spaced = same_visual_line and 0.0 <= x_gap <= max_letter_spacing
+                                    vertical_stack = (
+                                        y_line_thresh < y_diff <= SAME_PARA_Y_THRESHOLD
+                                        and x_diff <= max(1.0, (prev_char_size or DEFAULT_FONT_SIZE) * 0.6)
+                                    )
+                                    if is_letter_spaced:
+                                        should_start_new = False
+                                        line_break = False
+                                        new_paragraph = False
+                                    elif vertical_stack and not is_strong_boundary:
+                                        should_start_new = False
+                                        line_break = True
+                                        new_paragraph = False
 
                     # Only apply sentence-end check for weak boundaries (line wrapping)
                     if not is_strong_boundary and sstk and pstk:
@@ -5282,7 +5306,13 @@ class PdfProcessor(FileProcessor):
                             )
                             latin_dominant = has_latin_alpha and not has_cjk
 
-                            should_join = is_continuation or (latin_dominant and not is_sentence_end)
+                            next_is_cjk = bool(char_text and _is_cjk_char(char_text))
+                            # Avoid joining a Latin-dominant line with a CJK-starting next line.
+                            # This pattern is common in Japanese financial forms where a value
+                            # line (URLs, dates, numbers) is followed by a new field label.
+                            should_join = is_continuation or (
+                                latin_dominant and not is_sentence_end and not next_is_cjk
+                            )
                             if should_join:
                                 # Previous paragraph doesn't end with sentence-ending punctuation
                                 # or ends with a continuation indicator

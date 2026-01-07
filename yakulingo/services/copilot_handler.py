@@ -2248,21 +2248,47 @@ class CopilotHandler:
         logger.debug("[THREAD] _connect_impl running in thread %s", threading.current_thread().ident)
 
         # Check if existing connection is still valid
+        force_restart_for_window = False
         if self._connected and self._is_page_valid():
-            return True
-        if self._connected:
-            recovered = False
-            if self._page is not None:
-                logger.info("Existing connection looks stale; waiting for chat UI before reconnect")
+            if sys.platform == "win32" and self._is_ui_window_sync_active():
                 try:
-                    recovered = self._wait_for_chat_ready(self._page, wait_for_login=False)
-                except Exception as e:
-                    logger.debug("Soft recovery for stale connection failed: %s", e)
-            if recovered and self._is_page_valid():
-                logger.info("Recovered existing connection without restart")
+                    if not self.is_edge_window_open():
+                        force_restart_for_window = True
+                        logger.info(
+                            "Edgeウィンドウが閉じられているため再接続します（UI同期中）"
+                        )
+                    else:
+                        return True
+                except Exception:
+                    return True
+            else:
                 return True
-            logger.info("Existing connection is stale, reconnecting...")
-            self._cleanup_on_error()
+        if self._connected:
+            if (
+                not force_restart_for_window
+                and sys.platform == "win32"
+                and self._is_ui_window_sync_active()
+            ):
+                try:
+                    if not self.is_edge_window_open():
+                        force_restart_for_window = True
+                except Exception:
+                    pass
+            if force_restart_for_window:
+                self._cleanup_on_error()
+            else:
+                recovered = False
+                if self._page is not None:
+                    logger.info("Existing connection looks stale; waiting for chat UI before reconnect")
+                    try:
+                        recovered = self._wait_for_chat_ready(self._page, wait_for_login=False)
+                    except Exception as e:
+                        logger.debug("Soft recovery for stale connection failed: %s", e)
+                if recovered and self._is_page_valid():
+                    logger.info("Recovered existing connection without restart")
+                    return True
+                logger.info("Existing connection is stale, reconnecting...")
+                self._cleanup_on_error()
 
         # Set proxy bypass for localhost (helps in corporate environments)
         os.environ.setdefault('NO_PROXY', 'localhost,127.0.0.1')
@@ -2308,7 +2334,9 @@ class CopilotHandler:
                     self.cdp_port,
                 )
 
-            need_start_edge = port_status == "free"
+            need_start_edge = port_status == "free" or (
+                force_restart_for_window and port_status == "ours"
+            )
 
             # Try to use pre-initialized Playwright (started before NiceGUI import)
             # Wait up to 30s for initialization to complete (may be running in parallel)

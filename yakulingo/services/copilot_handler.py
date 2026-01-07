@@ -6604,35 +6604,139 @@ class CopilotHandler:
         return _playwright_executor.execute(self._wait_for_page_load_impl, wait_seconds)
 
     def wait_for_prompt_ready(self, timeout_seconds: float = 30.0) -> bool:
-        """Copilotの入力欄が送信可能になるまで待機する（スレッドセーフ）。"""
+        """Copilotの入力欄が利用可能になるまで待機する（スレッドセーフ）。"""
         if timeout_seconds <= 0:
             return False
         if not self.is_connected:
             return False
 
-        timeout_sec = int(max(1.0, float(timeout_seconds)))
-        # Give the executor a small margin to avoid false timeouts due to scheduling overhead.
-        executor_timeout = max(timeout_sec + 5, 10)
-        try:
-            return bool(
-                _playwright_executor.execute(
-                    self._wait_for_prompt_ready_impl,
-                    timeout_sec,
-                    timeout=executor_timeout,
+        timeout_sec = float(timeout_seconds)
+        deadline = time.monotonic() + timeout_sec
+        stable_required_sec = 0.4
+        poll_interval_sec = 0.8
+
+        ready_since: float | None = None
+
+        while time.monotonic() < deadline:
+            if not self.is_connected or self._login_cancelled:
+                return False
+
+            remaining = max(0.0, deadline - time.monotonic())
+            check_timeout = min(5.0, max(2.0, remaining))
+
+            try:
+                ready_now = bool(
+                    _playwright_executor.execute(
+                        self._check_prompt_ready_now_impl,
+                        timeout=check_timeout,
+                    )
                 )
-            )
-        except TimeoutError:
-            return False
-        except Exception as e:
-            logger.debug("wait_for_prompt_ready failed: %s", e)
-            return False
+            except TimeoutError:
+                ready_now = False
+            except Exception as e:
+                logger.debug("wait_for_prompt_ready check failed: %s", e)
+                ready_now = False
+
+            now = time.monotonic()
+            if ready_now:
+                if ready_since is None:
+                    ready_since = now
+                elif now - ready_since >= stable_required_sec:
+                    return True
+            else:
+                ready_since = None
+
+            # Sleep outside the Playwright thread so we don't block other operations.
+            time.sleep(min(poll_interval_sec, max(0.05, deadline - now)))
+
+        return False
 
     def _wait_for_prompt_ready_impl(self, timeout: int = 30) -> bool:
-        """Playwrightスレッド内で、送信可能状態を待機する（内部実装）。"""
+        """Playwrightスレッド内で、入力欄が利用可能かを確認する（内部実装）。"""
+        _ = timeout  # kept for backward compatibility
         try:
-            return self._wait_for_attachment_ready(timeout=max(int(timeout), 1))
+            return self._check_prompt_ready_now_impl()
         except Exception:
             return False
+
+    def _check_prompt_ready_now_impl(self) -> bool:
+        """Playwrightスレッド内で、入力欄が利用可能かを軽量に判定する。"""
+        error_types = _get_playwright_errors()
+        PlaywrightError = error_types['Error']
+
+        page = self._page or self._get_active_copilot_page()
+        if not page:
+            return False
+
+        try:
+            if page.is_closed():
+                page = self._get_active_copilot_page()
+                if not page:
+                    return False
+                self._page = page
+        except PlaywrightError:
+            page = self._get_active_copilot_page()
+            if not page:
+                return False
+            self._page = page
+
+        try:
+            result = page.evaluate(
+                '''() => {
+                    const input = document.querySelector(
+                        '#m365-chat-editor-target-element, [data-lexical-editor="true"]'
+                    );
+                    const inputReady = !!input && (
+                        input.isContentEditable ||
+                        input.getAttribute('contenteditable') === 'true'
+                    );
+
+                    const sendBtn = document.querySelector(
+                        '.fai-SendButton, button[type="submit"], [data-testid="sendButton"], button[aria-label*="送信"], button[aria-label*="Send"]'
+                    );
+                    const sendPresent = !!sendBtn && sendBtn.offsetParent !== null;
+
+                    const attachmentSelectors = [
+                        '[data-testid*="attachment"]',
+                        '.fai-AttachmentChip',
+                        '[class*="attachment"]',
+                        '[class*="file-chip"]',
+                    ];
+                    const attachmentElems = attachmentSelectors.flatMap(
+                        sel => Array.from(document.querySelectorAll(sel))
+                    );
+                    const hasAttachments = attachmentElems.length > 0;
+
+                    const busySelector = [
+                        '[aria-busy="true"]',
+                        '[data-status*="upload"]',
+                        '[data-status*="loading"]',
+                        '[class*="spinner"]',
+                        '[class*="loading"]',
+                    ].join(',');
+
+                    const attachmentBusy = hasAttachments && attachmentElems.some(el => {
+                        if (busySelector && el.matches(busySelector)) return true;
+                        return !!(busySelector && el.querySelector(busySelector));
+                    });
+
+                    return {
+                        inputReady,
+                        sendPresent,
+                        hasAttachments,
+                        attachmentBusy,
+                    };
+                }'''
+            ) or {}
+        except Exception:
+            return False
+
+        input_ready = bool(result.get("inputReady"))
+        send_present = bool(result.get("sendPresent"))
+        has_attachments = bool(result.get("hasAttachments"))
+        attachment_busy = bool(result.get("attachmentBusy"))
+
+        return input_ready and send_present and (not has_attachments or not attachment_busy)
 
     def bring_to_foreground(
         self,
@@ -9826,7 +9930,9 @@ class CopilotHandler:
                 const stateKey = '__yakulingoAttachReadyState';
                 const now = performance.now();
 
-                const sendBtn = document.querySelector('.fai-SendButton, button[type="submit"], [data-testid="sendButton"]');
+                const sendBtn = document.querySelector(
+                    '.fai-SendButton, button[type="submit"], [data-testid="sendButton"], button[aria-label*="送信"], button[aria-label*="Send"]'
+                );
                 const btnStyle = sendBtn ? window.getComputedStyle(sendBtn) : null;
                 const sendReady = sendBtn &&
                     !sendBtn.disabled &&
@@ -9834,8 +9940,13 @@ class CopilotHandler:
                     (!btnStyle || (btnStyle.pointerEvents !== 'none' && btnStyle.visibility !== 'hidden')) &&
                     sendBtn.offsetParent !== null;
 
-                const input = document.querySelector('#m365-chat-editor-target-element');
-                const inputReady = !!input && input.isContentEditable;
+                const input = document.querySelector(
+                    '#m365-chat-editor-target-element, [data-lexical-editor="true"]'
+                );
+                const inputReady = !!input && (
+                    input.isContentEditable ||
+                    input.getAttribute('contenteditable') === 'true'
+                );
 
                 const attachmentSelectors = [
                     '[data-testid*="attachment"]',

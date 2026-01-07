@@ -6683,18 +6683,50 @@ class CopilotHandler:
         try:
             result = page.evaluate(
                 '''() => {
-                    const input = document.querySelector(
-                        '#m365-chat-editor-target-element, [data-lexical-editor="true"]'
-                    );
-                    const inputReady = !!input && (
-                        input.isContentEditable ||
-                        input.getAttribute('contenteditable') === 'true'
-                    );
+                    const isVisible = (el) => {
+                        if (!el) return false;
+                        const style = window.getComputedStyle(el);
+                        if (!style) return false;
+                        if (style.display === 'none' || style.visibility === 'hidden') return false;
+                        const rect = el.getBoundingClientRect();
+                        return !!rect && rect.width > 0 && rect.height > 0;
+                    };
 
-                    const sendBtn = document.querySelector(
-                        '.fai-SendButton, button[type="submit"], [data-testid="sendButton"], button[aria-label*="送信"], button[aria-label*="Send"]'
-                    );
-                    const sendPresent = !!sendBtn && sendBtn.offsetParent !== null;
+                    const findChatInput = () => {
+                        const direct = document.querySelector(
+                            '[data-lexical-editor="true"][contenteditable="true"], ' +
+                            '[data-lexical-editor="true"][contenteditable="plaintext-only"]'
+                        );
+                        if (direct && isVisible(direct)) return direct;
+
+                        const container = document.querySelector('#m365-chat-editor-target-element');
+                        if (container) {
+                            const inside = container.querySelector(
+                                '[data-lexical-editor="true"][contenteditable="true"], ' +
+                                '[data-lexical-editor="true"][contenteditable="plaintext-only"], ' +
+                                '[role="textbox"][contenteditable="true"], ' +
+                                '[role="textbox"][contenteditable="plaintext-only"], ' +
+                                '[contenteditable="true"], ' +
+                                '[contenteditable="plaintext-only"]'
+                            );
+                            if (inside && isVisible(inside)) return inside;
+                            if ((container.isContentEditable || container.getAttribute('contenteditable') === 'true')
+                                && isVisible(container)) {
+                                return container;
+                            }
+                        }
+
+                        const textbox = document.querySelector(
+                            '[role="textbox"][contenteditable="true"], ' +
+                            '[role="textbox"][contenteditable="plaintext-only"]'
+                        );
+                        if (textbox && isVisible(textbox)) return textbox;
+
+                        return null;
+                    };
+
+                    const input = findChatInput();
+                    const inputReady = !!input;
 
                     const attachmentSelectors = [
                         '[data-testid*="attachment"]',
@@ -6722,7 +6754,6 @@ class CopilotHandler:
 
                     return {
                         inputReady,
-                        sendPresent,
                         hasAttachments,
                         attachmentBusy,
                     };
@@ -6732,11 +6763,10 @@ class CopilotHandler:
             return False
 
         input_ready = bool(result.get("inputReady"))
-        send_present = bool(result.get("sendPresent"))
         has_attachments = bool(result.get("hasAttachments"))
         attachment_busy = bool(result.get("attachmentBusy"))
 
-        return input_ready and send_present and (not has_attachments or not attachment_busy)
+        return input_ready and (not has_attachments or not attachment_busy)
 
     def bring_to_foreground(
         self,

@@ -7,7 +7,9 @@ Designed for Japanese users.
 """
 
 import asyncio
+from dataclasses import dataclass
 import difflib
+from functools import lru_cache
 import html
 import json
 import logging
@@ -909,6 +911,8 @@ def _render_results_to_en(
         fallback_text = primary_option.text if primary_option else display_options[0].text
         base_text = _resolve_compare_base_text(display_options, compare_base_style, fallback_text)
 
+    table_hint = _build_tabular_text_hint(result.source_text)
+
     # Translation results container
     with ui.element('div').classes('result-container'):
         with ui.element('div').classes('result-section w-full'):
@@ -931,6 +935,7 @@ def _render_results_to_en(
                         diff_base_text=diff_base_text,
                         show_back_translate_button=True,
                         actions_disabled=actions_disabled,
+                        table_hint=table_hint,
                     )
 
     return primary_option, secondary_options, display_options
@@ -949,6 +954,8 @@ def _render_results_to_jp(
 
     if not result.options:
         return
+
+    table_hint = _build_tabular_text_hint(result.source_text)
 
     # Translation results container (same structure as English)
     with ui.element('div').classes('result-container'):
@@ -980,7 +987,7 @@ def _render_results_to_jp(
                                             back_btn.props('disable')
 
                             # Translation text
-                            _render_translation_text(option.text)
+                            _render_translation_text(option.text, table_hint=table_hint)
 
                             # Detailed explanation section (same as English)
                             if option.explanation:
@@ -1167,22 +1174,201 @@ def _build_diff_html(base_text: str, target_text: str) -> str:
     return ''.join(parts).replace('\n', '<br>')
 
 
-def _render_translation_text(text: str, diff_base_text: Optional[str] = None):
+@dataclass(frozen=True)
+class _TabularTextHint:
+    columns: int
+    rows: int
+    first_cell_newlines: list[int]
+    last_cell_newlines: list[int]
+
+
+def _build_tabular_text_hint(source_text: str) -> Optional[_TabularTextHint]:
+    """Build a best-effort hint from the source clipboard text (Excel copies use CRLF for rows)."""
+    if not source_text or '\t' not in source_text:
+        return None
+    if '\r\n' not in source_text:
+        return None
+
+    raw_rows = source_text.rstrip('\r\n').split('\r\n')
+    if not raw_rows:
+        return None
+
+    split_rows: list[list[str]] = [row.split('\t') for row in raw_rows]
+    columns = max((len(cells) for cells in split_rows), default=0)
+    if columns < 2:
+        return None
+
+    first_cell_newlines: list[int] = []
+    last_cell_newlines: list[int] = []
+    for cells in split_rows:
+        first = cells[0] if cells else ''
+        last = cells[columns - 1] if len(cells) > (columns - 1) else ''
+        first_norm = first.replace('\r\n', '\n').replace('\r', '\n')
+        last_norm = last.replace('\r\n', '\n').replace('\r', '\n')
+        first_cell_newlines.append(first_norm.count('\n'))
+        last_cell_newlines.append(last_norm.count('\n'))
+
+    return _TabularTextHint(
+        columns=columns,
+        rows=len(split_rows),
+        first_cell_newlines=first_cell_newlines,
+        last_cell_newlines=last_cell_newlines,
+    )
+
+
+def _parse_tabular_text_rows(
+    text: str,
+    *,
+    hint: Optional[_TabularTextHint] = None,
+) -> Optional[list[list[str]]]:
+    if not text or '\t' not in text:
+        return None
+
+    normalized = text.replace('\r\n', '\n').replace('\r', '\n').rstrip('\n')
+    lines = normalized.split('\n')
+    if not lines:
+        return None
+
+    tab_counts = [line.count('\t') for line in lines]
+
+    def _renderable(rows: list[list[str]]) -> bool:
+        if not rows:
+            return False
+        if any(len(row) != len(rows[0]) for row in rows):
+            return False
+        return len(rows[0]) >= 2
+
+    def _split_rows_by_newlines(rows_text: list[str]) -> list[list[str]]:
+        rows: list[list[str]] = []
+        for row_text in rows_text:
+            rows.append(row_text.split('\t'))
+        return rows
+
+    if hint is not None:
+        expected_columns = hint.columns
+        expected_rows = hint.rows
+        expected_tabs_per_row = expected_columns - 1
+        if expected_tabs_per_row <= 0 or expected_rows <= 0:
+            return None
+        if sum(tab_counts) != expected_rows * expected_tabs_per_row:
+            return None
+
+        lead_expect = hint.first_cell_newlines
+        trail_expect = hint.last_cell_newlines
+        line_count = len(lines)
+        INF = 10**9
+
+        def group_cost(start: int, end: int, row_index: int) -> int:
+            leading = 0
+            while start + leading <= end and tab_counts[start + leading] == 0:
+                leading += 1
+            trailing = 0
+            while end - trailing >= start and tab_counts[end - trailing] == 0:
+                trailing += 1
+
+            expected_leading = lead_expect[row_index] if row_index < len(lead_expect) else 0
+            expected_trailing = trail_expect[row_index] if row_index < len(trail_expect) else 0
+
+            # Prefer matching the source structure, but be tolerant on the last row.
+            if row_index == expected_rows - 1:
+                expected_trailing = trailing
+
+            return abs(leading - expected_leading) * 3 + abs(trailing - expected_trailing) * 2
+
+        @lru_cache(maxsize=None)
+        def solve(pos: int, row_index: int) -> tuple[int, Optional[int]]:
+            if row_index >= expected_rows:
+                return (0, None) if pos >= line_count else (INF, None)
+            best = (INF, None)
+            tab_sum = 0
+            for end in range(pos, line_count):
+                tab_sum += tab_counts[end]
+                if tab_sum > expected_tabs_per_row:
+                    break
+                if tab_sum == expected_tabs_per_row:
+                    next_cost, _ = solve(end + 1, row_index + 1)
+                    if next_cost >= INF:
+                        continue
+                    cost = group_cost(pos, end, row_index) + next_cost
+                    if cost < best[0]:
+                        best = (cost, end)
+            return best
+
+        pos = 0
+        parsed: list[list[str]] = []
+        for row_index in range(expected_rows):
+            _, end = solve(pos, row_index)
+            if end is None:
+                return None
+            row_text = '\n'.join(lines[pos: end + 1])
+            cells = row_text.split('\t')
+            if len(cells) != expected_columns:
+                return None
+            parsed.append(cells)
+            pos = end + 1
+
+        if pos != len(lines):
+            return None
+        return parsed if _renderable(parsed) else None
+
+    # Fallback (no reliable hint): keep original structure if possible.
+    expected_tabs_per_row = max(tab_counts) if tab_counts else 0
+    if expected_tabs_per_row <= 0:
+        return None
+
+    rows_text: list[str] = []
+    idx = 0
+    while idx < len(lines):
+        buffer_lines: list[str] = []
+        buffer_tabs = 0
+
+        while idx < len(lines) and buffer_tabs < expected_tabs_per_row:
+            buffer_lines.append(lines[idx])
+            buffer_tabs += tab_counts[idx]
+            idx += 1
+
+        if buffer_tabs == 0 and not buffer_lines:
+            break
+        if buffer_tabs != expected_tabs_per_row:
+            return None
+
+        while idx < len(lines) and tab_counts[idx] == 0:
+            buffer_lines.append(lines[idx])
+            idx += 1
+
+        rows_text.append('\n'.join(buffer_lines))
+
+    parsed = _split_rows_by_newlines(rows_text)
+    return parsed if _renderable(parsed) else None
+
+
+def _render_translation_text(
+    text: str,
+    diff_base_text: Optional[str] = None,
+    *,
+    table_hint: Optional[_TabularTextHint] = None,
+):
     """Render translation text, showing tabular output as a table."""
     if '\t' in text:
-        rows = text.splitlines()
-        table_rows = []
-        for row in rows:
-            cols = row.split('\t')
-            cells = ''.join(f'<td>{html.escape(col)}</td>' for col in cols)
-            table_rows.append(f'<tr>{cells}</tr>')
-        html_content = (
-            '<div class="translation-table">'
-            '<table><tbody>'
-            f'{"".join(table_rows)}'
-            '</tbody></table></div>'
-        )
-        ui.html(html_content, sanitize=False).classes('option-text w-full')
+        parsed = _parse_tabular_text_rows(text, hint=table_hint)
+        if parsed:
+            def escape_cell(value: str) -> str:
+                return html.escape(value).replace('\n', '<br>')
+
+            table_rows = []
+            for row in parsed:
+                cells = ''.join(f'<td>{escape_cell(col)}</td>' for col in row)
+                table_rows.append(f'<tr>{cells}</tr>')
+            html_content = (
+                '<div class="translation-table">'
+                '<table><tbody>'
+                f'{"".join(table_rows)}'
+                '</tbody></table></div>'
+            )
+            ui.html(html_content, sanitize=False).classes('option-text w-full')
+        else:
+            label = ui.label(text).classes('option-text py-1 w-full')
+            label.style('white-space: pre-wrap;')
         return
 
     if diff_base_text and diff_base_text.strip() and diff_base_text != text:
@@ -1251,6 +1437,7 @@ def _render_option_en(
     diff_base_text: Optional[str] = None,
     show_back_translate_button: bool = True,
     actions_disabled: bool = False,
+    table_hint: Optional[_TabularTextHint] = None,
 ):
     """Render a single English translation option as a card"""
 
@@ -1292,7 +1479,11 @@ def _render_option_en(
                             back_btn.props('disable')
 
             # Translation text
-            _render_translation_text(option.text, diff_base_text=diff_base_text)
+            _render_translation_text(
+                option.text,
+                diff_base_text=diff_base_text,
+                table_hint=table_hint,
+            )
 
             # Detailed explanation section (same style as JP)
             if option.explanation:

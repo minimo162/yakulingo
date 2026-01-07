@@ -2764,7 +2764,7 @@ class CopilotHandler:
             logger.debug("Quick login check failed: %s", e)
             return True  # Don't block on check failures
 
-    def _ensure_copilot_page(self) -> bool:
+    def _ensure_copilot_page(self, *, bring_to_foreground_on_login: bool = True) -> bool:
         """Ensure we are on a Copilot page before translation.
 
         This is a lightweight check that verifies the page URL is on Copilot.
@@ -2797,7 +2797,11 @@ class CopilotHandler:
             if _is_login_page(url) or self._has_auth_dialog():
                 logger.warning("Login required - not on Copilot page")
                 self.last_connection_error = self.ERROR_LOGIN_REQUIRED
-                self._bring_to_foreground_impl(self._page, reason="ensure_copilot_page: login required")
+                if bring_to_foreground_on_login:
+                    self._bring_to_foreground_impl(
+                        self._page,
+                        reason="ensure_copilot_page: login required",
+                    )
                 return False
 
             # If already on Copilot, we're good
@@ -2814,7 +2818,11 @@ class CopilotHandler:
                 if _is_login_page(url):
                     logger.warning("Redirected to login page after navigation")
                     self.last_connection_error = self.ERROR_LOGIN_REQUIRED
-                    self._bring_to_foreground_impl(self._page, reason="ensure_copilot_page: login after nav")
+                    if bring_to_foreground_on_login:
+                        self._bring_to_foreground_impl(
+                            self._page,
+                            reason="ensure_copilot_page: login after nav",
+                        )
                     return False
                 return True
             except Exception as e:
@@ -3305,8 +3313,32 @@ class CopilotHandler:
         """
         logger.debug("[THREAD] _ensure_gpt_mode_impl running in thread %s", threading.current_thread().ident)
 
+        error_types = _get_playwright_errors()
+        PlaywrightError = error_types['Error']
+
+        page = self._page
+        if not page:
+            page = self._get_active_copilot_page()
+            if page:
+                self._page = page
+        else:
+            try:
+                if page.is_closed():
+                    page = self._get_active_copilot_page()
+                    if page:
+                        self._page = page
+            except PlaywrightError:
+                page = self._get_active_copilot_page()
+                if page:
+                    self._page = page
+
         if not self._page:
             logger.debug("No page available for GPT mode check")
+            return "not_ready"
+
+        # Ensure we are on a usable Copilot page before trying to locate the GPT switcher.
+        # GPT mode setup is an internal/background operation, so do not steal focus when login is required.
+        if not self._ensure_copilot_page(bring_to_foreground_on_login=False):
             return "not_ready"
 
         self._maximize_edge_window_for_gpt()

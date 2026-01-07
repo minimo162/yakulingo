@@ -4,8 +4,8 @@ import sys
 from pathlib import Path
 
 
-# Ensure the project root is importable when running `pytest` via its entrypoint
-# (e.g., `uv run --extra test pytest`), where `sys.path[0]` may not be the repo root.
+# `uv run --extra test pytest` では `sys.path[0]` がリポジトリルートにならない場合があるため、
+# `yakulingo` を確実に import できるようにプロジェクトルートを追加する。
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))

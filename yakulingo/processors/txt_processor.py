@@ -83,6 +83,7 @@ class TxtProcessor(FileProcessor):
                             text=chunk,
                             location=f"段落 {para_index + 1} (部分 {chunk_index + 1})",
                             metadata={
+                                'section_idx': para_index,
                                 'paragraph_index': para_index,
                                 'chunk_index': chunk_index,
                                 'is_chunked': True,
@@ -95,6 +96,7 @@ class TxtProcessor(FileProcessor):
                         text=paragraph,
                         location=f"段落 {para_index + 1}",
                         metadata={
+                            'section_idx': para_index,
                             'paragraph_index': para_index,
                             'is_chunked': False,
                         }

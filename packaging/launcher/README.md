@@ -8,6 +8,13 @@
 - **コンソールなし**: 黒い窓が一切表示されない
 - **多重起動防止**: TCP でポートチェック
 - **ポータブル対応**: pyvenv.cfg のパスを自動修正
+- **watchdog**: 予期せぬ終了時は自動再起動（最大3回、短時間の連続終了は抑制）
+
+## 動作仕様
+
+- **既に起動中の場合**: 既存プロセスを検出してUIを前面化（`/api/activate`）
+- **完全終了**: スタートメニューの `YakuLingo 終了` を使用（watchdog再起動を抑止する状態ファイルを書き込み）
+- **ログ**: `%LOCALAPPDATA%\YakuLingo\logs\launcher.log`（作成できない場合は `./logs/launcher.log`）
 
 ## ビルド方法
 
@@ -47,7 +54,7 @@ YakuLingo/
 ├── app.py
 ├── .venv/
 │   └── Scripts/
-│       └── pythonw.exe
+│       └── python.exe
 ├── .uv-python/
 │   └── cpython-3.xx-windows-x86_64/
 └── .playwright-browsers/

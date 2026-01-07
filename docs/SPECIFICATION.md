@@ -1,7 +1,7 @@
 # YakuLingo - 技術仕様書
 
 > **Version**: 0.0.1
-> **Date**: 2026-01-06
+> **Date**: 2026-01-07
 > **App Name**: YakuLingo (訳リンゴ)
 
 ---
@@ -534,14 +534,17 @@ Windows のクリップボード更新を監視し、同一ウィンドウで 2.
 - 実装概要
   - クリップボードのシーケンス番号をポーリングして更新を検知
   - 同一ウィンドウの連続コピーを検出したら、クリップボード内容を取得
+  - 改行コード差（CRLF/LF）や末尾改行は正規化して判定
+  - 高速操作向けに、短時間（~0.35秒）では先頭一致（行単位）も一致扱いにする場合がある（誤検知抑制条件あり）
+  - 誤検知抑制のため、極端に短い間隔の更新は無視し、トリガー後は短いクールダウンを設ける
   - クリップボード内容に応じてテキスト翻訳/ファイル翻訳を選択
     - `CF_UNICODETEXT`（テキスト）: 通常のテキスト翻訳ルートで処理（3スタイル/ストリーミング）→ UIに表示
     - `CF_HDROP`（ファイル）: ファイル翻訳 → 出力ファイルはUIに表示（ダウンロード）
 - ホットキー実行時のウィンドウレイアウト（Windows）
   - 作業中ウィンドウを左、YakuLingoを右に並べる（フォーカスは作業ウィンドウ優先）
-  - Edgeは状況に応じて三分割/オフスクリーンに切り替える
+  - Edgeは状況に応じてオフスクリーン/背面同期を切り替える（翻訳中はUI背面に同期表示してフォーカスを奪わない）
 - ファイル翻訳（ホットキー）の制約
-  - 対応拡張子: `.xlsx` `.xls` `.docx` `.doc` `.pptx` `.ppt` `.pdf` `.txt` `.msg`
+  - 対応拡張子: `.xlsx` `.xls` `.docx` `.pptx` `.pdf` `.txt` `.msg`
   - 一度に処理するファイル数: 最大10
 - 補足（統合）
   - ローカルAPI `POST /api/hotkey`（localhostのみ）で同じ翻訳パイプラインを起動できる
@@ -1445,8 +1448,8 @@ class AppSettings:
     ocr_device: str = "auto"             # "auto", "cpu", "cuda"
 
     # Browser Display Mode
-    # NOTE: browser_display_mode applies to Copilot Edge.
-    # In browser mode (default), the UI itself is Edge --app and window sync is disabled.
+    # NOTE: browser_display_mode applies to Copilot Edge (UIには影響しない)
+    # Windowsでは翻訳中のみ、安定性のためCopilot用EdgeをUI背面に同期表示する場合がある。
     browser_display_mode: str = "minimized"   # "minimized", "foreground" (side_panel deprecated)
 
     # Login overlay guard (通常は無効)
@@ -1753,6 +1756,17 @@ python -c "import time; t=time.time(); from yakulingo.ui import run_app; print(f
 ---
 
 ## 変更履歴
+
+### 2.21 (2026-01)
+- 常駐/ホットキー
+  - ダブルコピー（Ctrl+C x2）検出の安定性を改善（誤検知抑制、再読込、部分一致）
+- Copilot/Edge
+  - 翻訳中はCopilot用EdgeをUI背面に同期表示（フォーカスを奪わない）
+  - Copilotエラー時もキャンセル操作で復帰できるよう改善
+- UI/ログ
+  - 翻訳時のUI前面化を安定化
+  - 背景タスク例外のログ出力と終了処理を改善
+  - NiceGUI周りのコンテキスト/バージョン判定を堅牢化
 
 ### 2.20 (2026-01)
 - テキスト翻訳

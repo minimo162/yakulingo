@@ -191,13 +191,14 @@ YakuLingoを初めて使う際は、以下の手順でM365 Copilotにログイ�
 
 ### 2. YakuLingoの起動
 1. `uv run python app.py` を実行
-2. UIを開く（http://127.0.0.1:8765/）または同じウィンドウで `Ctrl + C` を短時間に2回で翻訳を実行
+2. UIを開く（http://127.0.0.1:8765/）または同じウィンドウで `Ctrl + C` を短時間（目安: 2.5秒以内）に2回で翻訳を実行
 3. ログイン画面が表示された場合は、Edgeウィンドウでログインを完了（翻訳時に接続します）
 
-> **Note**: 初回起動時はEdgeが前面に表示されることがあります。ログイン完了後、翻訳を実行すると自動的に接続します。
+> **Note**: 初回起動やログインが必要な場合は、Copilot用Edgeが前面に表示されることがあります（ログインのため）。
+> **Note**: 翻訳中は、Copilot用EdgeがUIの背面に表示されることがあります（フォーカスは奪いません）。
 > **Note**: YakuLingoは常駐型です。UIを閉じてもバックグラウンドで動作し続けます（終了は明示的に実行）。
 > **Note**: 常駐中はタスクバーに表示されない場合があります。UIはスタートメニューまたは Ctrl+C x2 で開きます。
-> **Note**: The launcher (`YakuLingo.exe`) runs a watchdog and restarts the app after unexpected exits. Use the `YakuLingo 終了` shortcut or explicit shutdown to stop it.
+> **Note**: ランチャー（`YakuLingo.exe`）はwatchdogで予期せぬ終了時に自動再起動します。完全に停止したい場合は `YakuLingo 終了` を実行してください。
 > **Note**: ブラウザモードではUIはブラウザ（Edgeのアプリウィンドウ等）として表示され、Copilotは通常のEdgeウィンドウとして表示されます。
 
 ## 使用方法
@@ -400,13 +401,18 @@ YakuLingoを初めて使う際は、以下の手順でM365 Copilotにログイ�
 **確認事項**:
 1. Microsoft Edgeがインストールされているか確認
 2. [m365.cloud.microsoft/chat](https://m365.cloud.microsoft/chat) にブラウザでアクセスしてログインできるか確認
-3. YakuLingoを一度終了してから、他のEdgeウィンドウをすべて閉じる（接続の競合を避けるため）
+3. YakuLingoを一度終了（配布版は `YakuLingo 終了`）してから、他のEdgeウィンドウをすべて閉じる（接続の競合を避けるため）
 
 **Edgeプロセスの完全終了方法**:
 1. `Ctrl + Shift + Esc` でタスクマネージャーを開く
 2. 「Microsoft Edge」を探して右クリック → 「タスクの終了」
 3. バックグラウンドで動作している場合は「詳細」タブから `msedge.exe` をすべて終了
 4. YakuLingoを再起動
+
+### 翻訳が止まる／エラーから復帰したい
+
+- 翻訳中は「キャンセル」ボタンで中断できます（Copilot側エラー時も復帰できます）
+- 復帰しない場合は `YakuLingo 終了` で一度停止してから再起動してください
 
 ### ファイル翻訳が失敗する
 

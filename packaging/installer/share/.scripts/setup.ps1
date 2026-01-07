@@ -659,7 +659,7 @@ function Start-ResidentService {
 function Wait-ResidentReady {
     param(
         [int]$Port = 8765,
-        [int]$TimeoutSec = 1200,
+        [int]$TimeoutSec = 3600,
         [string]$SetupPath = "",
         [string]$LauncherPath = "",
         [int]$MaxRestart = 1
@@ -710,6 +710,9 @@ function Wait-ResidentReady {
     $lastState = ""
     $invalidStatusSince = $null
     $restartCount = 0
+    $loginUiRequested = $false
+    $loginUiRequestedAt = $null
+    $loginPromptReady = $false
 
     while ((Get-Date) -lt $deadline) {
         if ($GuiMode) {
@@ -777,6 +780,29 @@ function Wait-ResidentReady {
         if ($state -eq "login_required") {
             $loginRequired = $true
         }
+
+        # Login required: open the UI as soon as possible so the user can sign in.
+        if ($loginRequired -and -not $loginUiRequested) {
+            $loginUiRequested = $true
+            $loginUiRequestedAt = Get-Date
+            try {
+                Open-PostSetupUi -SetupPath $SetupPath
+                try { "Wait-ResidentReady: Requested UI open for login_required." | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
+            } catch {
+                try { "Wait-ResidentReady: UI open request failed: $($_.Exception.Message)" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
+            }
+        }
+
+        # Prompt only after the UI is likely visible (ui_connected), with a small fallback grace period.
+        if ($loginRequired -and -not $loginPromptReady) {
+            if ($uiConnected) {
+                $loginPromptReady = $true
+                try { Open-PostSetupUi -SetupPath $SetupPath } catch { } # activate if possible
+            } elseif ($loginUiRequestedAt -and (((Get-Date) - $loginUiRequestedAt).TotalSeconds -ge 15)) {
+                $loginPromptReady = $true
+            }
+        }
+
         $uiOk = (-not $uiConnected) -or $uiReady
         if ($ready -and $gptReady -and $promptReady -and -not $loginRequired -and -not $active -and -not $hasError -and $uiOk) {
             return $true
@@ -851,7 +877,7 @@ function Wait-ResidentReady {
 
         $message = "Copilotの準備中です..."
         if ($loginRequired) {
-            $message = "Copilotにログインしてください（右側の画面）..."
+            $message = if ($loginPromptReady) { "Copilotにログインしてください（表示された画面）..." } else { "Copilot のログイン画面を表示しています..." }
         } elseif ($uiConnected -and -not $uiReady) {
             $message = "UIを準備中です..."
         } elseif ($state -eq "loading") {
@@ -2568,7 +2594,7 @@ objShell.Run command, 0, False
         if (-not $residentStarted) {
             throw "YakuLingoの起動に失敗しました。"
         }
-        $residentReady = Wait-ResidentReady -Port 8765 -TimeoutSec 1200 -SetupPath $SetupPath
+        $residentReady = Wait-ResidentReady -Port 8765 -TimeoutSec 3600 -SetupPath $SetupPath
         if (-not $residentReady) {
             $reason = $script:ResidentReadyLastError
             if ($reason -eq "port_in_use_or_unresponsive") {
@@ -2632,7 +2658,7 @@ objShell.Run command, 0, False
         if (-not $residentStarted) {
             throw "YakuLingoの起動に失敗しました。"
         }
-        $residentReady = Wait-ResidentReady -Port 8765 -TimeoutSec 1200 -SetupPath $SetupPath
+        $residentReady = Wait-ResidentReady -Port 8765 -TimeoutSec 3600 -SetupPath $SetupPath
         if (-not $residentReady) {
             $reason = $script:ResidentReadyLastError
             if ($reason -eq "port_in_use_or_unresponsive") {

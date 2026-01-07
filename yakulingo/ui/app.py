@@ -1193,6 +1193,7 @@ MAX_HISTORY_DRAWER_DISPLAY = 100  # Maximum history items to show in history dra
 MIN_AVAILABLE_MEMORY_GB_FOR_EARLY_CONNECT = 0.5  # Skip early Copilot init only on very low memory
 TEXT_TRANSLATION_CHAR_LIMIT = 5000  # Max chars for text translation (clipboard trigger)
 FILE_LANGUAGE_DETECTION_TIMEOUT_SEC = 8.0  # Avoid hanging file-language detection
+FILE_TRANSLATION_UI_VISIBILITY_HOLD_SEC = 600.0  # 翻訳完了直後のUI自動非表示を抑止
 DEFAULT_TEXT_STYLE = "concise"
 RESIDENT_HEARTBEAT_INTERVAL_SEC = 300  # Update startup.log even when UI is closed
 RESIDENT_STARTUP_READY_TIMEOUT_SEC = 900  # Allow manual login during resident startup
@@ -1557,6 +1558,7 @@ class YakuLingoApp:
         self._resident_login_required = False
         self._resident_show_requested = False
         self._manual_show_requested = False
+        self._ui_visibility_hold_until: float | None = None
         self._login_auto_hide_pending = False
         self._login_auto_hide_blocked = False
         self._auto_open_cause: AutoOpenCause | None = AutoOpenCause.STARTUP
@@ -3138,6 +3140,10 @@ class YakuLingoApp:
             maybe_apply(force=True)
 
         if not output_files:
+            self._hold_ui_visibility(
+                seconds=FILE_TRANSLATION_UI_VISIBILITY_HOLD_SEC,
+                reason=f"hotkey_file_translation:{trace_id}:background_error",
+            )
             buffer.publish(
                 {
                     "state": {
@@ -3173,6 +3179,10 @@ class YakuLingoApp:
 
         buffer.publish({"state": final_state, "force_refresh": True})
         maybe_apply(force=True)
+        self._hold_ui_visibility(
+            seconds=FILE_TRANSLATION_UI_VISIBILITY_HOLD_SEC,
+            reason=f"hotkey_file_translation:{trace_id}:background_complete",
+        )
         logger.info(
             "Hotkey file translation [%s] completed %d file(s) in %.2fs (background)",
             trace_id,
@@ -3482,6 +3492,10 @@ class YakuLingoApp:
             self.state.error_message = (
                 "\n".join(error_messages[:3]) if error_messages else "No output files were generated."
             )
+            self._hold_ui_visibility(
+                seconds=FILE_TRANSLATION_UI_VISIBILITY_HOLD_SEC,
+                reason=f"hotkey_file_translation:{trace_id}:error",
+            )
             self._refresh_ui_after_hotkey_translation(trace_id)
             return
 
@@ -3497,6 +3511,10 @@ class YakuLingoApp:
             self.state.translation_result = HotkeyFileOutputSummary(output_files=output_files)
             self.state.output_file = output_files[0][0] if output_files else None
 
+        self._hold_ui_visibility(
+            seconds=FILE_TRANSLATION_UI_VISIBILITY_HOLD_SEC,
+            reason=f"hotkey_file_translation:{trace_id}:complete",
+        )
         self._refresh_ui_after_hotkey_translation(trace_id)
         logger.info(
             "Hotkey file translation [%s] completed %d file(s) in %.2fs (download via UI)",
@@ -5490,6 +5508,12 @@ class YakuLingoApp:
             self._login_auto_hide_blocked = True
         self._clear_auto_open_cause(f"manual:{reason}")
 
+    def _hold_ui_visibility(self, *, seconds: float, reason: str) -> None:
+        if seconds <= 0:
+            return
+        self._ui_visibility_hold_until = time.monotonic() + seconds
+        logger.debug("UI visibility hold set: %.1fs (%s)", seconds, reason)
+
     def _set_layout_mode(self, mode: LayoutMode, reason: str) -> None:
         if self._layout_mode == mode:
             return
@@ -5586,6 +5610,16 @@ class YakuLingoApp:
             native_mode=bool(self._native_mode_enabled),
         )
         visibility_target = decide_visibility_target(visibility_state)
+        translation_active = bool(
+            self.state.text_translating
+            or self.state.file_state == FileState.TRANSLATING
+            or self.state.file_queue_running
+            or self._hotkey_translation_active
+        )
+        hold_active = bool(
+            self._ui_visibility_hold_until is not None
+            and time.monotonic() < self._ui_visibility_hold_until
+        )
 
         if visibility_target == AutoOpenCause.MANUAL:
             self._manual_show_requested = False
@@ -5595,6 +5629,8 @@ class YakuLingoApp:
             self._resident_mode
             and not self._resident_show_requested
             and visibility_target in (None, AutoOpenCause.STARTUP, AutoOpenCause.LOGIN)
+            and not translation_active
+            and not hold_active
         ):
             with self._client_lock:
                 has_client = self._client is not None
@@ -10983,6 +11019,8 @@ class YakuLingoApp:
         with client:
             # Calculate elapsed time from user's perspective
             elapsed_time = time.monotonic() - start_time
+            if error_message or (result and result.status != TranslationStatus.CANCELLED):
+                self._hold_ui_visibility(seconds=FILE_TRANSLATION_UI_VISIBILITY_HOLD_SEC, reason="file_translation")
 
             if error_message:
                 self._notify_error(error_message)
@@ -11049,6 +11087,7 @@ class YakuLingoApp:
     def _reset_file_state_to_text(self):
         """Clear file state and return to text translation view."""
         self.state.reset_file_state()
+        self._ui_visibility_hold_until = None
         self._reset_global_drop_upload()
         self.state.current_tab = Tab.TEXT
         self.settings.last_tab = Tab.TEXT.value
@@ -11062,6 +11101,7 @@ class YakuLingoApp:
         if self.translation_service:
             self.translation_service.cancel()
         self._stop_file_panel_refresh_timer()
+        self._ui_visibility_hold_until = None
         self._reset_file_state_to_text()
         self._refresh_content()
         self._refresh_tabs()  # Re-enable tabs (translation cancelled)
@@ -11079,6 +11119,7 @@ class YakuLingoApp:
     def _reset(self):
         """Reset file state"""
         self.state.reset_file_state()
+        self._ui_visibility_hold_until = None
         self._reset_global_drop_upload()
         self.state.current_tab = Tab.FILE
         self.settings.last_tab = Tab.FILE.value

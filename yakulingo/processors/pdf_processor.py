@@ -3788,6 +3788,22 @@ class PdfProcessor(FileProcessor):
         # Early detection of scanned PDFs (check first few pages)
         self._check_scanned_pdf(file_path, selected_pages)
 
+        # If PP-DocLayout-L is unavailable, use a PyMuPDF-only fallback that
+        # preserves multi-column/table structure better than Y-only heuristics.
+        if not is_layout_available():
+            self._layout_fallback_used = True
+            logger.warning(
+                "PP-DocLayout-L is not available. Falling back to PyMuPDF text segmentation. "
+                "Install with: pip install -r requirements_pdf.txt"
+            )
+            yield from self._extract_pymupdf_fallback_streaming(
+                file_path,
+                total_pages,
+                on_progress,
+                selected_pages=selected_pages,
+            )
+            return
+
         # Use hybrid mode: pdfminer text + PP-DocLayout-L layout (no OCR)
         extract_kwargs = {}
         if selected_pages is not None:
@@ -3802,6 +3818,253 @@ class PdfProcessor(FileProcessor):
             dpi,
             **extract_kwargs,
         )
+
+    def _extract_pymupdf_fallback_streaming(
+        self,
+        file_path: Path,
+        total_pages: int,
+        on_progress: Optional[ProgressCallback],
+        *,
+        selected_pages: Optional[set[int]] = None,
+    ) -> Iterator[tuple[list[TextBlock], Optional[list[TranslationCell]]]]:
+        """
+        Extract TextBlocks using PyMuPDF when PP-DocLayout-L is unavailable.
+
+        This fallback focuses on preserving table/multi-column structure by
+        segmenting at (block_no, line_no) boundaries and splitting further by
+        large X gaps between words (cell-like segmentation).
+        """
+        from collections import defaultdict
+
+        pymupdf = _get_pymupdf()
+        pages_processed = 0
+        pages_to_process = len(selected_pages) if selected_pages is not None else total_pages
+        if pages_to_process == 0:
+            return
+
+        with pymupdf.open(file_path) as doc:
+            for page_idx, page in enumerate(doc):
+                if selected_pages is not None and page_idx not in selected_pages:
+                    continue
+
+                if self._cancel_requested:
+                    logger.info(
+                        "PyMuPDF fallback extraction cancelled at page %d/%d",
+                        pages_processed + 1,
+                        pages_to_process,
+                    )
+                    return
+
+                pages_processed += 1
+                page_num = page_idx + 1
+                page_height = page.rect.height
+
+                if on_progress:
+                    status = (
+                        f"Extracting text page {page_num} "
+                        f"({pages_processed}/{pages_to_process})..."
+                    )
+                    on_progress(TranslationProgress(
+                        current=pages_processed,
+                        total=pages_to_process,
+                        status=status,
+                        phase=TranslationPhase.EXTRACTING,
+                        phase_detail=f"Page {page_num}",
+                    ))
+
+                try:
+                    text_dict = page.get_text("dict")
+                    words = page.get_text("words")
+                except (RuntimeError, ValueError, OSError) as e:
+                    logger.error("PyMuPDF fallback extraction failed for page %d: %s", page_num, e)
+                    self._record_failed_page(page_num, f"PyMuPDF extraction error: {e}")
+                    yield [], None
+                    continue
+
+                words_by_line: dict[tuple[int, int], list[tuple]] = defaultdict(list)
+                for word in words:
+                    try:
+                        x0, y0, x1, y1, text, block_no, line_no, _word_no = word
+                    except ValueError:
+                        continue
+                    words_by_line[(int(block_no), int(line_no))].append(word)
+
+                segments: list[tuple[tuple[float, float, float, float], Paragraph, str, bool]] = []
+
+                for (block_no, line_no), line_words in words_by_line.items():
+                    line_words_sorted = sorted(line_words, key=lambda w: w[0])
+
+                    span_size = DEFAULT_FONT_SIZE
+                    span_origin = None
+                    try:
+                        block = text_dict.get("blocks", [])[block_no]
+                        line = block.get("lines", [])[line_no]
+                        spans = line.get("spans", [])
+                        if spans:
+                            span = spans[0]
+                            span_size = float(span.get("size") or span_size)
+                            span_origin = span.get("origin")
+                    except (IndexError, KeyError, TypeError, ValueError):
+                        pass
+
+                    gap_threshold = max(12.0, span_size * 1.8)
+                    current_segment: list[tuple] = []
+                    prev_x1 = None
+
+                    def _flush_segment(segment_words: list[tuple]) -> None:
+                        if not segment_words:
+                            return
+                        texts = [w[4] for w in segment_words if isinstance(w[4], str)]
+                        segment_text = " ".join(t for t in texts if t).strip()
+                        if not segment_text:
+                            return
+
+                        seg_x0 = min(float(w[0]) for w in segment_words)
+                        seg_y0 = min(float(w[1]) for w in segment_words)
+                        seg_x1 = max(float(w[2]) for w in segment_words)
+                        seg_y1 = max(float(w[3]) for w in segment_words)
+
+                        try:
+                            pdf_x0, pdf_y0, pdf_x1, pdf_y1 = convert_to_pdf_coordinates(
+                                [seg_x0, seg_y0, seg_x1, seg_y1],
+                                page_height,
+                            )
+                        except Exception:
+                            return
+
+                        baseline_y = pdf_y0
+                        if (
+                            span_origin
+                            and isinstance(span_origin, (list, tuple))
+                            and len(span_origin) >= 2
+                        ):
+                            try:
+                                baseline_y = page_height - float(span_origin[1])
+                            except (TypeError, ValueError):
+                                baseline_y = pdf_y0
+
+                        para = Paragraph(
+                            y=baseline_y,
+                            x=pdf_x0,
+                            x0=pdf_x0,
+                            x1=pdf_x1,
+                            y0=pdf_y0,
+                            y1=pdf_y1,
+                            size=max(MIN_FONT_SIZE, min(span_size, MAX_FONT_SIZE)),
+                            brk=False,
+                            layout_class=LAYOUT_BACKGROUND,
+                        )
+
+                        skip_translation = not self.should_translate(segment_text)
+                        segments.append(((pdf_x0, pdf_y0, pdf_x1, pdf_y1), para, segment_text, skip_translation))
+
+                    for word in line_words_sorted:
+                        x0 = float(word[0])
+                        x1 = float(word[2])
+                        if prev_x1 is not None and (x0 - prev_x1) > gap_threshold and current_segment:
+                            _flush_segment(current_segment)
+                            current_segment = []
+                        current_segment.append(word)
+                        prev_x1 = x1
+                    _flush_segment(current_segment)
+
+                # If no words were returned (rare), fall back to dict blocks as-is.
+                if not segments:
+                    try:
+                        for block in text_dict.get("blocks", []):
+                            if block.get("type") != 0:
+                                continue
+                            for line in block.get("lines", []):
+                                spans = line.get("spans", [])
+                                if not spans:
+                                    continue
+                                span = spans[0]
+                                raw_text = span.get("text") or ""
+                                raw_text = raw_text.strip()
+                                if not raw_text:
+                                    continue
+                                bbox_img = span.get("bbox") or line.get("bbox")
+                                if not (bbox_img and len(bbox_img) == 4):
+                                    continue
+                                try:
+                                    pdf_x0, pdf_y0, pdf_x1, pdf_y1 = convert_to_pdf_coordinates(
+                                        [bbox_img[0], bbox_img[1], bbox_img[2], bbox_img[3]],
+                                        page_height,
+                                    )
+                                except Exception:
+                                    continue
+                                span_size = float(span.get("size") or DEFAULT_FONT_SIZE)
+                                baseline_y = pdf_y0
+                                origin = span.get("origin")
+                                if origin and isinstance(origin, (list, tuple)) and len(origin) >= 2:
+                                    try:
+                                        baseline_y = page_height - float(origin[1])
+                                    except (TypeError, ValueError):
+                                        baseline_y = pdf_y0
+                                para = Paragraph(
+                                    y=baseline_y,
+                                    x=pdf_x0,
+                                    x0=pdf_x0,
+                                    x1=pdf_x1,
+                                    y0=pdf_y0,
+                                    y1=pdf_y1,
+                                    size=max(MIN_FONT_SIZE, min(span_size, MAX_FONT_SIZE)),
+                                    brk=False,
+                                    layout_class=LAYOUT_BACKGROUND,
+                                )
+                                skip_translation = not self.should_translate(raw_text)
+                                segments.append(((pdf_x0, pdf_y0, pdf_x1, pdf_y1), para, raw_text, skip_translation))
+                    except Exception as e:
+                        logger.error("PyMuPDF dict fallback failed for page %d: %s", page_num, e)
+
+                # Sort in reading order (top-to-bottom, then left-to-right)
+                segments.sort(key=lambda item: (-item[0][3], item[0][0]))
+
+                blocks: list[TextBlock] = []
+                formula_texts: list[str] = []
+                for block_idx, (bbox_pdf, para, text, skip_translation) in enumerate(segments):
+                    x0, y0, x1, y1 = bbox_pdf
+                    block_is_vertical = is_vertical_text(x1 - x0, y1 - y0)
+                    blocks.append(TextBlock(
+                        id=f"page_{page_idx}_block_{block_idx}",
+                        text=text,
+                        location=f"Page {page_num}",
+                        metadata={
+                            "type": "text_block",
+                            "page_idx": page_idx,
+                            "block": block_idx,
+                            "bbox": bbox_pdf,
+                            "font_name": None,
+                            "font_size": para.size,
+                            "is_formula": False,
+                            "original_line_count": 1,
+                            "paragraph": para,
+                            "formula_vars": [],
+                            "formula_texts": formula_texts,
+                            "has_formulas": False,
+                            "layout_class": para.layout_class,
+                            "role": None,
+                            "skip_translation": skip_translation,
+                            "is_toc_entry": False,
+                            "toc_page_number": None,
+                            "toc_leader": None,
+                            "toc_original_text": None,
+                            "expandable_width": x1 - x0,
+                            "expandable_left": 0.0,
+                            "expandable_right": 0.0,
+                            "expandable_top": 0.0,
+                            "expandable_bottom": 0.0,
+                            "is_vertical": block_is_vertical,
+                        },
+                    ))
+
+                logger.info(
+                    "PyMuPDF fallback extraction page %d: blocks=%d, skipped_non_translate=%d",
+                    page_num,
+                    len(blocks),
+                    sum(1 for b in blocks if b.metadata and b.metadata.get("skip_translation")),
+                )
+                yield blocks, None
 
     def _extract_hybrid_streaming(
         self,

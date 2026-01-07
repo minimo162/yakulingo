@@ -7727,6 +7727,9 @@ class CopilotHandler:
             return False
 
         logger.debug("Input element found, setting text via JS...")
+        # Cache readiness early so UI state checks can return READY even while the
+        # Playwright thread is busy with translation (avoids stuck "準備中..." on first run).
+        self._record_state(ConnectionState.READY)
         fill_start = time.monotonic()
         fill_success = False
         fill_method = None  # Track which method succeeded

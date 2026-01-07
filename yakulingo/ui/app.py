@@ -1179,7 +1179,7 @@ if TYPE_CHECKING:
 
 
 # App constants
-COPILOT_LOGIN_TIMEOUT = 300  # 5 minutes for login
+COPILOT_LOGIN_TIMEOUT = 3600  # 60 minutes for login
 CLIENT_CONNECTED_TIMEOUT_SEC = 12  # Soft timeout for client.connected() before fallback
 STARTUP_SPLASH_TIMEOUT_SEC = 25  # Close external splash if startup stalls
 STARTUP_LOADING_DELAY_MS = 0  # Show startup overlay immediately to avoid white flash
@@ -1196,7 +1196,7 @@ FILE_LANGUAGE_DETECTION_TIMEOUT_SEC = 8.0  # Avoid hanging file-language detecti
 FILE_TRANSLATION_UI_VISIBILITY_HOLD_SEC = 600.0  # 翻訳完了直後のUI自動非表示を抑止
 DEFAULT_TEXT_STYLE = "concise"
 RESIDENT_HEARTBEAT_INTERVAL_SEC = 300  # Update startup.log even when UI is closed
-RESIDENT_STARTUP_READY_TIMEOUT_SEC = 900  # Allow manual login during resident startup
+RESIDENT_STARTUP_READY_TIMEOUT_SEC = 3600  # Allow manual login during resident startup
 RESIDENT_STARTUP_PROMPT_READY_TIMEOUT_SEC = 300  # Wait for Copilot input/send readiness after connect
 RESIDENT_STARTUP_POLL_INTERVAL_SEC = 2
 RESIDENT_STARTUP_LAYOUT_RETRY_ATTEMPTS = 40
@@ -2119,7 +2119,7 @@ class YakuLingoApp:
 
         self._resident_login_required = True
         if not user_initiated:
-            confirmed = await self._confirm_login_required_for_prompt(reason)
+            confirmed = True if reason == "startup" else await self._confirm_login_required_for_prompt(reason)
             if not confirmed:
                 logger.info(
                     "Resident login required not confirmed; UI auto-open suppressed (%s)",
@@ -6305,7 +6305,7 @@ class YakuLingoApp:
 
         self._login_polling_active = True
         polling_interval = 2  # 秒（より迅速に状態変化を検出）
-        max_wait_time = 300   # 5分
+        max_wait_time = COPILOT_LOGIN_TIMEOUT
         elapsed = 0
 
         logger.info("Starting login completion polling (interval %ds, max %ds)", polling_interval, max_wait_time)

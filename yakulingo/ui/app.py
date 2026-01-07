@@ -2477,6 +2477,38 @@ class YakuLingoApp:
                 force_refresh = bool(updates.get("force_refresh"))
                 refresh = bool(updates.get("refresh"))
                 scroll_to_top = bool(updates.get("scroll_to_top"))
+                streaming = bool(updates.get("streaming"))
+
+                if (
+                    streaming
+                    and self.state.text_translating
+                    and self.state.text_streaming_preview
+                    and not self._shutdown_requested
+                ):
+                    client = self._get_active_client()
+                    if client is not None:
+                        try:
+                            if not getattr(client, "has_socket_connection", True):
+                                client = None
+                        except Exception:
+                            pass
+                    if client is not None:
+                        try:
+                            with client:
+                                # Render streaming block on first chunk (captures label reference)
+                                if self._streaming_preview_label is None:
+                                    self._refresh_result_panel()
+                                    self._refresh_tabs()
+                                    self._scroll_result_panel_to_bottom(client, force_follow=True)
+                                if self._streaming_preview_label is not None:
+                                    self._streaming_preview_label.set_text(self.state.text_streaming_preview)
+                                    self._scroll_result_panel_to_bottom(client)
+                        except Exception:
+                            logger.debug(
+                                "Hotkey translation [%s] streaming preview refresh failed",
+                                trace_id,
+                                exc_info=True,
+                            )
 
                 if force_refresh:
                     self._refresh_ui_after_hotkey_translation(trace_id)
@@ -3670,12 +3702,31 @@ class YakuLingoApp:
             schedule_apply()
             effective_detected_language = self._resolve_effective_detected_language(detected_language)
 
+            last_preview_update = 0.0
+            preview_update_interval_seconds = 0.12
+
+            def on_chunk(partial_text: str) -> None:
+                nonlocal last_preview_update
+                buffer.publish(
+                    {
+                        "state": {
+                            "text_streaming_preview": partial_text,
+                        }
+                    }
+                )
+                now = time.monotonic()
+                if now - last_preview_update < preview_update_interval_seconds:
+                    return
+                last_preview_update = now
+                buffer.publish({"streaming": True})
+                schedule_apply()
+
             result = translation_service.translate_text_with_style_comparison(
                 text,
                 reference_files,
                 None,
                 effective_detected_language,
-                None,
+                on_chunk,
             )
             if result:
                 result.detected_language = detected_language

@@ -2,9 +2,15 @@
 Translate the Japanese text into English in three styles: standard, concise, minimal.
 
 ### Rules
+- IMPORTANT: In each section, the "Translation:" content must be written in English only.
+  - Do NOT include Japanese scripts (hiragana/katakana/kanji) or Japanese punctuation (、。) in any Translation.
+  - If any Japanese appears in a Translation, rewrite it until it contains no Japanese characters.
+- IMPORTANT: The "Explanation:" content must be written in Japanese only.
 - Translate only the text between the input markers; do not output markers or any other prompt text.
 - If the input is already English, keep it as is.
 - Preserve line breaks and tabs from the input as much as possible.
+- If the source contains Japanese-only tokens (e.g., names, company types, place names), translate or romanize them; do not leave them in Japanese script.
+- For Japanese-specific units/suffixes, render them in English-friendly notation without Japanese characters (e.g., 円→yen, 万円→man yen; follow {translation_rules} for 兆/億→oku, 千→k, etc.).
 
 ### Style rules
 [standard]

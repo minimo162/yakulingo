@@ -3368,7 +3368,9 @@ class YakuLingoApp:
             self.state.translation_phase_total = p.phase_total
             self.state.translation_eta_seconds = eta_seconds
             if p.phase and p.phase_current is not None and p.phase_total is not None:
-                self.state.translation_phase_counts[p.phase] = (p.phase_current, p.phase_total)
+                phase_counts = dict(self.state.translation_phase_counts or {})
+                phase_counts[p.phase] = (p.phase_current, p.phase_total)
+                self.state.translation_phase_counts = phase_counts
 
             schedule_progress_ui_update()
 
@@ -7389,7 +7391,7 @@ class YakuLingoApp:
         phase_detail = self.state.translation_phase_detail
         phase_current = self.state.translation_phase_current
         phase_total = self.state.translation_phase_total
-        phase_counts = self.state.translation_phase_counts or {}
+        phase_counts = dict(self.state.translation_phase_counts or {})
         eta_seconds = self.state.translation_eta_seconds
 
         detail_text = self._format_file_progress_detail(
@@ -10966,7 +10968,9 @@ class YakuLingoApp:
             self.state.translation_phase_total = p.phase_total
             self.state.translation_eta_seconds = eta_seconds
             if p.phase and p.phase_current is not None and p.phase_total is not None:
-                self.state.translation_phase_counts[p.phase] = (p.phase_current, p.phase_total)
+                phase_counts = dict(self.state.translation_phase_counts or {})
+                phase_counts[p.phase] = (p.phase_current, p.phase_total)
+                self.state.translation_phase_counts = phase_counts
 
             if queue_item:
                 with self._file_queue_state_lock:
@@ -14190,6 +14194,6 @@ document.fonts.ready.then(function() {
         window_size=run_window_size,
         frameless=native_frameless,
         show=False,  # Browser window is opened explicitly in on_startup
-        reconnect_timeout=30.0,  # Increase from default 3s for stable WebSocket connection
+        reconnect_timeout=300.0,  # 長時間処理中でもWebSocket切断を避ける
         uvicorn_logging_level='warning',  # Reduce log output for faster startup
     )

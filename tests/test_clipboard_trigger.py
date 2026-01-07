@@ -37,6 +37,14 @@ def test_clipboard_trigger_default_window_is_extended():
     assert sig.parameters["double_copy_window_sec"].default == 2.5
 
 
+@pytest.mark.skipif(not _IS_WINDOWS, reason="Windows-only ClipboardTrigger defaults")
+def test_clipboard_trigger_default_empty_recheck_window_is_extended():
+    from yakulingo.services.clipboard_trigger import ClipboardTrigger
+
+    sig = inspect.signature(ClipboardTrigger.__init__)
+    assert sig.parameters["empty_payload_recheck_window_sec"].default == 2.5
+
+
 @pytest.mark.skipif(not _IS_WINDOWS, reason="Windows-only ClipboardTrigger min-gap behavior")
 def test_clipboard_trigger_detects_fast_double_copy(monkeypatch):
     import yakulingo.services.clipboard_trigger as clipboard_trigger

@@ -104,7 +104,7 @@ else:
             same_payload_suppress_ms: float = 120.0,
             recheck_settle_ms: float = 30.0,
             double_copy_min_gap_ms: float = 20.0,
-            empty_payload_recheck_window_sec: float = 0.6,
+            empty_payload_recheck_window_sec: float = 2.5,
             empty_payload_recheck_interval_sec: float = 0.05,
         ) -> None:
             self._callback: Optional[Callable[[str], None]] = callback

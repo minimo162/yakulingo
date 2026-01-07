@@ -689,6 +689,7 @@ function Wait-ResidentReady {
         $ready = $false
         $loginRequired = $false
         $gptReady = $true
+        $promptReady = $true
         $active = $false
         $uiConnected = $false
         $uiReady = $true
@@ -700,6 +701,9 @@ function Wait-ResidentReady {
             }
             if ($status.PSObject.Properties.Name -contains "gpt_mode_set") {
                 $gptReady = [bool]$status.gpt_mode_set
+            }
+            if ($status.PSObject.Properties.Name -contains "prompt_ready") {
+                $promptReady = [bool]$status.prompt_ready
             }
             if ($status.PSObject.Properties.Name -contains "active") {
                 $active = [bool]$status.active
@@ -718,7 +722,7 @@ function Wait-ResidentReady {
             $loginRequired = $true
         }
         $uiOk = (-not $uiConnected) -or $uiReady
-        if ($ready -and $gptReady -and -not $loginRequired -and -not $active -and -not $hasError -and $uiOk) {
+        if ($ready -and $gptReady -and $promptReady -and -not $loginRequired -and -not $active -and -not $hasError -and $uiOk) {
             return $true
         }
 
@@ -733,6 +737,8 @@ function Wait-ResidentReady {
             $message = "Copilotを読み込み中です..."
         } elseif ($state -eq "ready" -and -not $gptReady) {
             $message = "Copilotを初期化中です..."
+        } elseif ($state -eq "ready" -and $gptReady -and -not $promptReady) {
+            $message = "Copilotの入力欄を準備中です..."
         }
 
         Write-Status -Message $message -Progress -Step "Step 4/4: Finalizing" -Percent -1

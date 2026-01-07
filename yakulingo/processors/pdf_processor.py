@@ -2895,6 +2895,7 @@ class PdfProcessor(FileProcessor):
                                 original_line_count += 1
 
                     try:
+                        clip_opened = False
                         # Get box dimensions
                         # TextBlock bbox: PDF coordinates (y0=bottom, y1=top)
                         # PyMuPDF bbox: page coordinates (y0=top, y1=bottom)
@@ -3486,6 +3487,65 @@ class PdfProcessor(FileProcessor):
                                     line_height = new_line_height
                                     lines = new_lines
 
+                        # EN→JP (和訳)は文字数が増えやすく、単一行の枠内に収まらずに
+                        # 罫線やセル塗りを覆って「消えたように見える」ことがあるため、
+                        # 必要時のみフォントサイズを縮小して枠内への収まりを優先する。
+                        if (
+                            direction == "en_to_jp"
+                            and not is_preserved_original
+                            and translated
+                            and lines
+                        ):
+                            required_height = len(lines) * font_size * line_height
+                            if required_height > box_height + 0.1:
+                                try:
+                                    min_setting = float(getattr(settings, "font_size_min", MIN_FONT_SIZE) or MIN_FONT_SIZE)
+                                except (TypeError, ValueError):
+                                    min_setting = MIN_FONT_SIZE
+                                min_setting = max(MIN_FONT_SIZE, min_setting)
+
+                                max_iterations = 20
+                                new_font_size = font_size
+                                new_line_height = line_height
+                                new_lines = lines
+                                for _ in range(max_iterations):
+                                    if required_height <= box_height + 0.1:
+                                        break
+                                    if new_font_size <= min_setting + 0.01:
+                                        break
+
+                                    scale = box_height / max(0.001, required_height)
+                                    candidate = max(min_setting, new_font_size * scale)
+                                    if candidate >= new_font_size - 0.01:
+                                        candidate = max(min_setting, new_font_size - 0.5)
+                                    new_font_size = candidate
+
+                                    new_line_height = calculate_line_height_with_font(
+                                        translated,
+                                        box_width,
+                                        box_height,
+                                        new_font_size,
+                                        font_id,
+                                        font_registry,
+                                        target_lang,
+                                        is_table_cell=is_table_cell,
+                                        allow_wrap=True,
+                                    )
+                                    new_lines = split_text_into_lines_with_font(
+                                        translated, box_width, new_font_size, font_id, font_registry
+                                    )
+                                    required_height = len(new_lines) * new_font_size * new_line_height
+
+                                if new_font_size < font_size - 0.01:
+                                    logger.debug(
+                                        "[Layout] Block %s (en_to_jp): shrink font %.1f -> %.1f (lines=%d -> %d, height=%.1f)",
+                                        block_id, font_size, new_font_size,
+                                        len(lines), len(new_lines), box_height
+                                    )
+                                    font_size = new_font_size
+                                    line_height = new_line_height
+                                    lines = new_lines
+
                         # PDFMathTranslate compliant: Font size is generally FIXED
                         # We preserve the original font size and only adjust line height.
                         # This ensures consistent, readable text across the document.
@@ -3573,6 +3633,20 @@ class PdfProcessor(FileProcessor):
                         # Drawing white backgrounds would cover table cell colors
                         # and other visual elements, which is not desired.
 
+                        clip_region = (
+                            direction == "en_to_jp"
+                            and not is_preserved_original
+                            and translated
+                            and lines
+                            and (len(lines) * font_size * line_height > box_height + 0.1)
+                        )
+                        if clip_region:
+                            replacer.begin_clipped_region(
+                                box_pdf[0], box_pdf[1], box_pdf[2], box_pdf[3],
+                                margin=0.5,
+                            )
+                            clip_opened = True
+
                         # Generate text operators for each line
                         for line_idx, line_text in enumerate(lines):
                             if not line_text.strip():
@@ -3602,12 +3676,19 @@ class PdfProcessor(FileProcessor):
                             op = op_gen.gen_op_txt(font_id, font_size, x, y, hex_text)
                             replacer.add_text_operator(op, font_id)
 
+                        if clip_opened:
+                            replacer.end_clipped_region()
+                            clip_opened = False
+
                         # Track success count
                         # (preserved blocks are counted earlier and not in this loop)
                         result['success'] += 1
 
                     except RuntimeError as e:
                         # PyMuPDF internal errors (e.g., corrupted page, invalid font)
+                        if clip_opened:
+                            replacer.end_clipped_region()
+                            clip_opened = False
                         logger.warning(
                             "Block '%s' failed (RuntimeError - PyMuPDF internal): %s",
                             block_id, e
@@ -3616,6 +3697,9 @@ class PdfProcessor(FileProcessor):
                         continue
                     except ValueError as e:
                         # Invalid values (e.g., bad coordinates, invalid font size)
+                        if clip_opened:
+                            replacer.end_clipped_region()
+                            clip_opened = False
                         logger.warning(
                             "Block '%s' failed (ValueError - invalid data): %s",
                             block_id, e
@@ -3624,6 +3708,9 @@ class PdfProcessor(FileProcessor):
                         continue
                     except TypeError as e:
                         # Type mismatches (e.g., None where string expected)
+                        if clip_opened:
+                            replacer.end_clipped_region()
+                            clip_opened = False
                         logger.warning(
                             "Block '%s' failed (TypeError - type mismatch): %s",
                             block_id, e
@@ -3632,6 +3719,9 @@ class PdfProcessor(FileProcessor):
                         continue
                     except KeyError as e:
                         # Missing keys (e.g., font_id not in registry)
+                        if clip_opened:
+                            replacer.end_clipped_region()
+                            clip_opened = False
                         logger.warning(
                             "Block '%s' failed (KeyError - missing key): %s",
                             block_id, e
@@ -3640,6 +3730,9 @@ class PdfProcessor(FileProcessor):
                         continue
                     except IndexError as e:
                         # Index out of bounds (e.g., invalid block reference)
+                        if clip_opened:
+                            replacer.end_clipped_region()
+                            clip_opened = False
                         logger.warning(
                             "Block '%s' failed (IndexError - out of bounds): %s",
                             block_id, e
@@ -3648,6 +3741,9 @@ class PdfProcessor(FileProcessor):
                         continue
                     except AttributeError as e:
                         # Missing attributes (e.g., TextBlock missing expected field)
+                        if clip_opened:
+                            replacer.end_clipped_region()
+                            clip_opened = False
                         logger.warning(
                             "Block '%s' failed (AttributeError - missing attribute): %s",
                             block_id, e
@@ -3656,6 +3752,9 @@ class PdfProcessor(FileProcessor):
                         continue
                     except OSError as e:
                         # File/font access errors
+                        if clip_opened:
+                            replacer.end_clipped_region()
+                            clip_opened = False
                         logger.warning(
                             "Block '%s' failed (OSError - file/font access): %s",
                             block_id, e

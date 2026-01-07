@@ -1505,6 +1505,54 @@ class ContentStreamReplacer:
 
         return self
 
+    def begin_clipped_region(
+        self,
+        x0: float,
+        y0: float,
+        x1: float,
+        y1: float,
+        margin: float = 0.5,
+    ) -> 'ContentStreamReplacer':
+        """
+        Begin a clipped drawing region (q ... W n).
+
+        This is used to prevent translated text from painting over table borders
+        or cell background colors when the translated text does not fully fit
+        inside the target bounding box.
+        """
+        if self._in_text_block:
+            self.end_text()
+
+        # Normalize coordinates
+        if x0 > x1:
+            x0, x1 = x1, x0
+        if y0 > y1:
+            y0, y1 = y1, y0
+
+        # Apply margin (expand slightly to avoid cutting glyph edges)
+        if margin:
+            x0 -= margin
+            y0 -= margin
+            x1 += margin
+            y1 += margin
+
+        width = x1 - x0
+        height = y1 - y0
+        if width <= 0 or height <= 0:
+            return self
+
+        # q: save graphics state, re: rectangle, W n: set clipping path
+        op = f"q {x0:f} {y0:f} {width:f} {height:f} re W n "
+        self.operators.append(op)
+        return self
+
+    def end_clipped_region(self) -> 'ContentStreamReplacer':
+        """End a clipped drawing region (Q)."""
+        if self._in_text_block:
+            self.end_text()
+        self.operators.append("Q ")
+        return self
+
     def build(self) -> bytes:
         """Build content stream as bytes (new text operators only)."""
         if self._in_text_block:

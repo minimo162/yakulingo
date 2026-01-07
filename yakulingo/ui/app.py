@@ -2934,16 +2934,41 @@ class YakuLingoApp:
                 or self._text_input_textarea is None
                 or self._translate_button is None
             )
-            with client:
-                if needs_full_refresh:
-                    self._refresh_content()
-                if self._text_input_textarea is not None:
-                    self._text_input_textarea.value = text
-                    self._text_input_textarea.update()
-                self._on_source_change(text)
-                if not needs_full_refresh:
-                    self._update_layout_classes()
-                self._refresh_tabs()
+            if not needs_full_refresh:
+                def _is_element_attached(element: object | None) -> bool:
+                    if element is None:
+                        return False
+                    try:
+                        element_client = element.client  # type: ignore[attr-defined]
+                    except Exception:
+                        return False
+                    return element_client is client
+
+                if not _is_element_attached(self._text_input_textarea):
+                    self._text_input_textarea = None
+                    needs_full_refresh = True
+                if not _is_element_attached(self._translate_button):
+                    self._translate_button = None
+                    needs_full_refresh = True
+
+            try:
+                with client:
+                    if needs_full_refresh:
+                        self._refresh_content()
+                    if not needs_full_refresh and self._text_input_textarea is not None:
+                        self._text_input_textarea.value = text
+                        self._text_input_textarea.update()
+                    self._on_source_change(text)
+                    if not needs_full_refresh:
+                        self._update_layout_classes()
+                    self._refresh_tabs()
+            except RuntimeError as e:
+                logger.debug("Hotkey UI update failed; falling back to headless mode: %s", e)
+                with self._client_lock:
+                    if self._client is client:
+                        self._client = None
+                await self._translate_text_headless(text, trace_id)
+                return
 
             # Small delay to let UI update
             await asyncio.sleep(0.05)
@@ -5519,6 +5544,10 @@ class YakuLingoApp:
             if self._client is client:
                 self._client = None
         self._clear_ui_ready()
+        try:
+            self._stop_file_panel_refresh_timer()
+        except Exception:
+            pass
         close_to_resident = _is_close_to_resident_enabled() or self._resident_mode
         keep_resident_on_close = close_to_resident
         logger.debug(
@@ -5532,6 +5561,18 @@ class YakuLingoApp:
         self._manual_show_requested = False
         if clear_browser_state is not None:
             clear_browser_state()
+        self._header_status = None
+        self._login_banner = None
+        self._main_content = None
+        self._result_panel = None
+        self._tabs_container = None
+        self._nav_buttons = {}
+        self._main_area_element = None
+        self._text_input_metrics = None
+        self._file_progress_elements = None
+        self._translate_button = None
+        self._text_input_textarea = None
+        self._streaming_preview_label = None
         self._history_list = None
         self._history_dialog = None
         self._history_dialog_list = None

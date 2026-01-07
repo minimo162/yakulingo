@@ -26,6 +26,9 @@ if not _IS_WINDOWS:
     def should_ignore_self_clipboard(now: float, sequence: Optional[int]) -> bool:
         raise OSError("clipboard_utils is only available on Windows platforms.")
 
+    def get_clipboard_payload_once(*, log_fail: bool = True) -> tuple[Optional[str], list[str]]:
+        raise OSError("clipboard_utils is only available on Windows platforms.")
+
     def get_clipboard_payload_with_retry(
         *, log_fail: bool = True
     ) -> tuple[Optional[str], list[str]]:
@@ -86,12 +89,16 @@ else:
             return False
         return True
 
+    def get_clipboard_payload_once(*, log_fail: bool = True) -> tuple[Optional[str], list[str]]:
+        text = _get_clipboard_text(log_fail=log_fail)
+        files = _get_clipboard_file_paths(log_fail=log_fail)
+        return text, files
+
     def get_clipboard_payload_with_retry(
         *, log_fail: bool = True
     ) -> tuple[Optional[str], list[str]]:
         for attempt in range(CLIPBOARD_RETRY_COUNT):
-            text = _get_clipboard_text(log_fail=log_fail)
-            files = _get_clipboard_file_paths(log_fail=log_fail)
+            text, files = get_clipboard_payload_once(log_fail=log_fail)
             if text is not None or files:
                 return text, files
             if attempt < CLIPBOARD_RETRY_COUNT - 1:

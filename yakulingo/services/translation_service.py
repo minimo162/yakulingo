@@ -1773,7 +1773,8 @@ class TranslationService:
 
             prompt = template.replace("{translation_rules}", translation_rules)
             prompt = prompt.replace("{reference_section}", reference_section)
-            prompt = prompt.replace("{input_text}", text)
+            prompt_input_text = self.prompt_builder.normalize_input_text(text, output_language)
+            prompt = prompt.replace("{input_text}", prompt_input_text)
             # Replace style placeholder for English translation
             if output_language == "en":
                 prompt = prompt.replace("{style}", style)

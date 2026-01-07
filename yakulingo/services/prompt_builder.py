@@ -16,6 +16,7 @@ are present, only the relevant rules for the output language are inserted.
 """
 
 import re
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 from typing import Optional, Sequence
 
@@ -26,6 +27,73 @@ _RULE_SECTION_KEYS = {
     "TO_EN": "en",
     "TO_JP": "jp",
 }
+
+_NUMBER_WITH_OPTIONAL_COMMAS_PATTERN = r"(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?"
+_RE_YEN_BILLION = re.compile(
+    rf"(?i)(?P<sign1>[+-])?\s*(?P<currency>[¥￥])\s*(?P<sign2>[+-])?\s*(?P<number>{_NUMBER_WITH_OPTIONAL_COMMAS_PATTERN})\s*(?P<unit>billion|bn)\b(?:\s*yen\b)?"
+)
+_YEN_AMOUNT_MULTIPLIER_BILLION = Decimal("1000000000")
+_YEN_UNIT_CHOU = 1_000_000_000_000
+_YEN_UNIT_OKU = 100_000_000
+_YEN_UNIT_MAN = 10_000
+
+
+def _format_japanese_yen_amount(yen_amount: Decimal) -> str:
+    sign_prefix = "-" if yen_amount < 0 else ""
+    yen_amount = abs(yen_amount)
+    try:
+        yen_total = int(yen_amount.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    except (InvalidOperation, ValueError):
+        return f"{sign_prefix}0円"
+
+    chou = yen_total // _YEN_UNIT_CHOU
+    yen_total %= _YEN_UNIT_CHOU
+    oku = yen_total // _YEN_UNIT_OKU
+    yen_total %= _YEN_UNIT_OKU
+    man = yen_total // _YEN_UNIT_MAN
+    yen = yen_total % _YEN_UNIT_MAN
+
+    parts: list[str] = []
+    if chou:
+        parts.append(f"{chou}兆")
+    if oku:
+        parts.append(f"{oku:,}億")
+    if man:
+        if yen:
+            parts.append(f"{man:,}万")
+        else:
+            parts.append(f"{man:,}万円")
+    if yen:
+        parts.append(f"{yen:,}円")
+
+    if not parts:
+        parts.append("0円")
+    elif not parts[-1].endswith("円"):
+        parts[-1] = f"{parts[-1]}円"
+
+    return f"{sign_prefix}{''.join(parts)}"
+
+
+def _normalize_yen_billion_expressions_to_japanese(text: str) -> str:
+    if not text:
+        return text
+
+    def repl(match: re.Match[str]) -> str:
+        sign1 = match.group("sign1") or ""
+        sign2 = match.group("sign2") or ""
+        sign = sign1 or sign2
+        try:
+            amount_billion = Decimal(match.group("number").replace(",", ""))
+        except InvalidOperation:
+            return match.group(0)
+
+        if sign == "-":
+            amount_billion = -amount_billion
+
+        yen_amount = amount_billion * _YEN_AMOUNT_MULTIPLIER_BILLION
+        return _format_japanese_yen_amount(yen_amount)
+
+    return _RE_YEN_BILLION.sub(repl, text)
 
 # 参考ファイル参照の指示文（ファイル添付時のみ挿入）
 REFERENCE_INSTRUCTION = """
@@ -293,6 +361,15 @@ class PromptBuilder:
         self._translation_rules_has_sections: bool = False
         self._load_templates()
 
+    @staticmethod
+    def normalize_input_text(input_text: str, output_language: str) -> str:
+        if output_language != "jp" or not input_text:
+            return input_text
+        lowered = input_text.lower()
+        if ("billion" not in lowered and "bn" not in lowered) or ("¥" not in input_text and "￥" not in input_text):
+            return input_text
+        return _normalize_yen_billion_expressions_to_japanese(input_text)
+
     def _load_translation_rules(self) -> str:
         """Load translation rules from translation_rules.txt."""
         rules_text = DEFAULT_TRANSLATION_RULES
@@ -507,6 +584,7 @@ class PromptBuilder:
         # Always reload translation rules from file to pick up user edits
         self._load_translation_rules()
         translation_rules = self.get_translation_rules(output_language)
+        input_text = self.normalize_input_text(input_text, output_language)
 
         # Replace placeholders
         prompt = template.replace("{translation_rules}", translation_rules)

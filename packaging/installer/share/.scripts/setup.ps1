@@ -1987,7 +1987,7 @@ function Invoke-Setup {
 `$url = "http://127.0.0.1:`$port/"
 `$setupStatusUrl = "http://127.0.0.1:`$port/api/setup-status"
 `$layoutUrl = "http://127.0.0.1:`$port/api/window-layout"
-`$readyTimeoutSec = 1200
+`$readyTimeoutSec = 3600
 `$pollIntervalSec = 2
 `$uiOpened = `$false
 `$sourceHwndValue = 0
@@ -2071,7 +2071,7 @@ function Apply-WindowLayout {
 
 function Wait-ResidentReady {
   param(
-    [int]`$TimeoutSec = 1200,
+    [int]`$TimeoutSec = 3600,
     [int]`$PollIntervalSec = 2
   )
   `$deadline = (Get-Date).AddSeconds(`$TimeoutSec)
@@ -2080,10 +2080,16 @@ function Wait-ResidentReady {
     `$status = Get-SetupStatus
     if (`$status -and `$status.ready) { return `$true }
     `$state = if (`$status -and `$status.state) { "`$(`$status.state)" } else { "starting" }
+    `$loginRequired = `$false
+    try {
+      if (`$status -and (`$status.PSObject.Properties.Name -contains "login_required")) {
+        `$loginRequired = [bool]`$status.login_required
+      }
+    } catch { }
     if (`$state -ne `$lastState) {
       `$lastState = `$state
     }
-    if (`$state -eq "login_required") {
+    if (`$state -eq "login_required" -or `$loginRequired) {
       Open-UiWindow
     }
     Start-Sleep -Seconds `$PollIntervalSec
@@ -2107,6 +2113,8 @@ if (-not (Test-PortOpen `$port)) {
   exit 1
 }
 
+Open-UiWindow
+
 `$ready = Wait-ResidentReady -TimeoutSec `$readyTimeoutSec -PollIntervalSec `$pollIntervalSec
 if (-not `$ready) {
   Open-UiWindow
@@ -2115,7 +2123,9 @@ if (-not `$ready) {
   Open-UiWindow
 }
 
-Apply-WindowLayout
+if (`$ready) {
+  Apply-WindowLayout
+}
 "@
 
     $residentScript = @"

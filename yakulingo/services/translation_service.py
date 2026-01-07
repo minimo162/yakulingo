@@ -1088,6 +1088,7 @@ class BatchTranslator:
                         on_progress=None,
                         output_language=output_language,
                         translation_style=translation_style,
+                        include_item_ids=include_item_ids,
                         _max_chars_per_batch=reduced_limit,
                         _split_retry_depth=_split_retry_depth + 1,
                     )
@@ -1216,6 +1217,7 @@ class BatchTranslator:
                     on_progress=None,
                     output_language=output_language,
                     translation_style=translation_style,
+                    include_item_ids=include_item_ids,
                     _max_chars_per_batch=retry_char_limit,
                     _split_retry_depth=_split_retry_depth + 1,
                 )

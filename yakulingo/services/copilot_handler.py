@@ -1149,22 +1149,29 @@ class CopilotHandler:
         '[role="menuitem"]:has-text("{text}"):visible',
         '[role="option"]:has-text("{text}"):visible',
     )
-    # "More" button has role="button" with aria-haspopup="menu".
-    GPT_MODE_MORE_MENU_BUTTON_SELECTOR = '[role="button"][aria-haspopup="menu"]'
+    # "More" / "Show more" entry has shifted across Copilot UI versions.
+    # It may appear as a submenu button (role=button/aria-haspopup) or as a plain menu item (role=menuitem/option).
+    GPT_MODE_MORE_MENU_BUTTON_SELECTOR = ':is([role="button"][aria-haspopup="menu"], [role="menuitem"][aria-haspopup="menu"], [role="option"][aria-haspopup="menu"], [role="menuitem"], [role="option"], button)'
     GPT_MODE_OVERFLOW_MENU_BUTTON_SELECTORS = (
         '#moreButton',
         '[data-automation-id="moreButton"]',
     )
     GPT_MODE_OVERFLOW_MENU_BUTTON_SELECTOR = ", ".join(GPT_MODE_OVERFLOW_MENU_BUTTON_SELECTORS)
-    # IMPORTANT: "Think Deeper" (without GPT-5.2) is a different mode; do NOT fall back to it.
-    # Prefer GPT-5.2 Think Deeper (quality) and fall back to Quick Response when needed.
+    # Prefer GPT-5.2 Think Deeper (quality).
+    # Some Copilot UIs omit the "GPT-5.2" prefix and show only "Think Deeper"/"クイック応答".
+    # In that case, allow those as a best-effort fallback to keep hotkey translation working.
     GPT_MODE_TARGETS = (
         "GPT-5.2 Think Deeper",
         "GPT-5.2 クイック応答",
         "GPT-5.2 Quick Response",
     )
+    GPT_MODE_FALLBACK_TARGETS = (
+        "Think Deeper",
+        "クイック応答",
+        "Quick Response",
+    )
     GPT_MODE_TARGET = GPT_MODE_TARGETS[0]
-    GPT_MODE_MORE_TEXTS = ('More', 'その他')
+    GPT_MODE_MORE_TEXTS = ('More', 'その他', 'さらに表示')
     # OPTIMIZED: Reduced menu wait to minimum (just enough for React to update)
     GPT_MODE_MENU_WAIT = 0.05  # Wait for menu to open/close (50ms)
     GPT_MODE_MORE_HOVER_WAIT = 0.6  # Wait for submenu to render after hover
@@ -3154,11 +3161,14 @@ class CopilotHandler:
     def _get_gpt_mode_target_candidates(self) -> tuple[str, ...]:
         return tuple(candidate for candidate in self.GPT_MODE_TARGETS if candidate)
 
+    def _get_gpt_mode_fallback_candidates(self) -> tuple[str, ...]:
+        return tuple(candidate for candidate in self.GPT_MODE_FALLBACK_TARGETS if candidate)
+
     def _is_gpt_mode_target(self, current_mode: str | None) -> bool:
         if not current_mode:
             return False
         current_lower = current_mode.lower()
-        for candidate in self._get_gpt_mode_target_candidates():
+        for candidate in (*self._get_gpt_mode_target_candidates(), *self._get_gpt_mode_fallback_candidates()):
             if candidate.lower() in current_lower:
                 return True
         return False
@@ -3167,10 +3177,10 @@ class CopilotHandler:
         if not available:
             return
         has_think_deeper = any("Think Deeper" in item for item in available)
-        has_gpt52 = any("GPT-5.2 Think Deeper" in item for item in available)
+        has_gpt52 = any("GPT-5.2" in item for item in available)
         if has_think_deeper and not has_gpt52:
             logger.warning(
-                "Found 'Think Deeper' in GPT mode list, but it is not GPT-5.2 Think Deeper; skipping."
+                "GPT-5.2 modes are not visible in the GPT mode list; using best-effort fallback when available."
             )
 
     def _log_gpt_mode_menu_snapshot(self, label: str, candidates: tuple[str, ...]) -> None:
@@ -3599,12 +3609,13 @@ class CopilotHandler:
             self._log_gpt_mode_menu_snapshot("switcher:menu_opened", candidates)
 
             more_trigger = None
+            per_label_timeout = min(wait_timeout_ms, 800)
             for label in self.GPT_MODE_MORE_TEXTS:
                 candidate = menu.locator(
                     f'{self.GPT_MODE_MORE_MENU_BUTTON_SELECTOR}:has-text("{label}")'
                 ).first
                 try:
-                    candidate.wait_for(state='visible', timeout=wait_timeout_ms)
+                    candidate.wait_for(state='visible', timeout=per_label_timeout)
                     more_trigger = candidate
                     break
                 except PlaywrightTimeoutError:
@@ -3658,6 +3669,13 @@ class CopilotHandler:
                                 }''', self.GPT_MODE_MENU_ITEM_SELECTOR) or []
                             except Exception:
                                 available = []
+
+                        fallback_mode_click = self._try_click_gpt_mode_candidate(fallback_candidates)
+                        if fallback_mode_click.get("success"):
+                            self._warn_if_think_deeper_only(fallback_mode_click.get("available"))
+                            return {"success": True, "newMode": fallback_mode_click.get("newMode")}
+
+                        self._warn_if_think_deeper_only(available)
                         return {"success": False, "error": "target_not_found", "available": available}
                 except PlaywrightTimeoutError:
                     return {"success": False, "error": "timeout"}
@@ -3688,9 +3706,18 @@ class CopilotHandler:
                     new_mode = self._get_gpt_mode_switcher_label(switcher_selector)
                     return {"success": True, "newMode": new_mode or target_label or self.GPT_MODE_TARGET}
 
-                # No "More" submenu and target not visible; treat as not-ready.
+                # No "More" submenu and target not visible; try fallback labels and stop retrying.
                 self._log_gpt_mode_menu_snapshot("switcher:more_missing", candidates)
-                return {"success": False, "error": "more_button_not_found"}
+
+                fallback_mode_click = self._try_click_gpt_mode_candidate(fallback_candidates)
+                if fallback_mode_click.get("success"):
+                    self._warn_if_think_deeper_only(fallback_mode_click.get("available"))
+                    new_mode = self._get_gpt_mode_switcher_label(switcher_selector)
+                    return {"success": True, "newMode": new_mode or fallback_mode_click.get("newMode")}
+
+                available = fallback_mode_click.get("available") or []
+                self._warn_if_think_deeper_only(available)
+                return {"success": False, "error": "target_not_found", "available": available}
 
             new_mode = self._get_gpt_mode_switcher_label(switcher_selector)
             return {"success": True, "newMode": new_mode or target_label or self.GPT_MODE_TARGET}
@@ -3716,6 +3743,8 @@ class CopilotHandler:
 
         error_types = _get_playwright_errors()
         PlaywrightTimeoutError = error_types['TimeoutError']
+        candidates = self._get_gpt_mode_target_candidates()
+        fallback_candidates = self._get_gpt_mode_fallback_candidates()
 
         try:
             try:
@@ -3743,18 +3772,26 @@ class CopilotHandler:
             menu = self._page.locator(self.GPT_MODE_MENU_VISIBLE_SELECTOR).last
             self._log_gpt_mode_menu_snapshot("overflow:menu_opened", candidates)
             more_trigger = None
+            per_label_timeout = min(wait_timeout_ms, 800)
             for label in self.GPT_MODE_MORE_TEXTS:
                 candidate = menu.locator(
                     f'{self.GPT_MODE_MORE_MENU_BUTTON_SELECTOR}:has-text("{label}")'
                 ).first
                 try:
-                    candidate.wait_for(state='visible', timeout=wait_timeout_ms)
+                    candidate.wait_for(state='visible', timeout=per_label_timeout)
                     more_trigger = candidate
                     break
                 except PlaywrightTimeoutError:
                     continue
             if not more_trigger:
-                return {"success": False, "error": "more_button_not_found"}
+                fallback_mode_click = self._try_click_gpt_mode_candidate(fallback_candidates)
+                if fallback_mode_click.get("success"):
+                    self._warn_if_think_deeper_only(fallback_mode_click.get("available"))
+                    return {"success": True, "newMode": fallback_mode_click.get("newMode")}
+
+                available = fallback_mode_click.get("available") or []
+                self._warn_if_think_deeper_only(available)
+                return {"success": False, "error": "target_not_found", "available": available}
 
             more_trigger.hover()
             self._log_gpt_mode_menu_snapshot("overflow:more_hovered", candidates)
@@ -3802,6 +3839,13 @@ class CopilotHandler:
                         }''', self.GPT_MODE_MENU_ITEM_SELECTOR) or []
                     except Exception:
                         available = []
+
+                fallback_mode_click = self._try_click_gpt_mode_candidate(fallback_candidates)
+                if fallback_mode_click.get("success"):
+                    self._warn_if_think_deeper_only(fallback_mode_click.get("available"))
+                    return {"success": True, "newMode": fallback_mode_click.get("newMode")}
+
+                self._warn_if_think_deeper_only(available)
                 return {"success": False, "error": "target_not_found", "available": available}
 
             # Best-effort confirmation (may be hidden in compact layouts)

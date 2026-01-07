@@ -2196,7 +2196,8 @@ try { Remove-Item -Path `$MyInvocation.MyCommand.Definition -Force } catch { }
 '@
 
 [System.IO.File]::WriteAllText(`$cleanupScriptPath, `$cleanupScript, (New-Object System.Text.UTF8Encoding `$false))
-Start-Process -FilePath powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"`$cleanupScriptPath`" -TargetDir `"`$installDir`"" -WindowStyle Hidden
+`$argString = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "{0}" -TargetDir "{1}"' -f `$cleanupScriptPath, `$installDir
+Start-Process -FilePath powershell.exe -ArgumentList `$argString -WindowStyle Hidden
 exit 0
 "@
 

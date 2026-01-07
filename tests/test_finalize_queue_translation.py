@@ -1,14 +1,11 @@
 from pathlib import Path
 
-import pytest
-
 from yakulingo.models.types import FileQueueItem, TranslationResult, TranslationStatus
 from yakulingo.ui.app import YakuLingoApp
 from yakulingo.ui.state import FileState
 
 
-@pytest.mark.asyncio
-async def test_finalize_queue_translation_surfaces_first_error(monkeypatch, tmp_path: Path):
+def test_finalize_queue_translation_surfaces_first_error(monkeypatch, tmp_path: Path):
     app = YakuLingoApp()
     monkeypatch.setattr(app, "_refresh_tabs", lambda: None)
     monkeypatch.setattr(app, "_refresh_content", lambda: None)
@@ -22,14 +19,13 @@ async def test_finalize_queue_translation_surfaces_first_error(monkeypatch, tmp_
     )
     app.state.file_queue = [item]
 
-    await app._finalize_queue_translation()
+    app._finalize_queue_translation()
 
     assert app.state.file_state == FileState.ERROR
     assert app.state.error_message == "boom"
 
 
-@pytest.mark.asyncio
-async def test_finalize_queue_translation_reports_cancel(monkeypatch, tmp_path: Path):
+def test_finalize_queue_translation_reports_cancel(monkeypatch, tmp_path: Path):
     app = YakuLingoApp()
     monkeypatch.setattr(app, "_refresh_tabs", lambda: None)
     monkeypatch.setattr(app, "_refresh_content", lambda: None)
@@ -42,14 +38,13 @@ async def test_finalize_queue_translation_reports_cancel(monkeypatch, tmp_path: 
     )
     app.state.file_queue = [item]
 
-    await app._finalize_queue_translation()
+    app._finalize_queue_translation()
 
     assert app.state.file_state == FileState.ERROR
     assert app.state.error_message == "翻訳をキャンセルしました"
 
 
-@pytest.mark.asyncio
-async def test_finalize_queue_translation_reports_missing_output(monkeypatch, tmp_path: Path):
+def test_finalize_queue_translation_reports_missing_output(monkeypatch, tmp_path: Path):
     app = YakuLingoApp()
     monkeypatch.setattr(app, "_refresh_tabs", lambda: None)
     monkeypatch.setattr(app, "_refresh_content", lambda: None)
@@ -67,8 +62,7 @@ async def test_finalize_queue_translation_reports_missing_output(monkeypatch, tm
     )
     app.state.file_queue = [item]
 
-    await app._finalize_queue_translation()
+    app._finalize_queue_translation()
 
     assert app.state.file_state == FileState.ERROR
     assert app.state.error_message == "翻訳は完了しましたが出力ファイルが見つかりません"
-

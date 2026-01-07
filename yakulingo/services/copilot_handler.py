@@ -470,7 +470,13 @@ class PlaywrightThreadExecutor:
             except thread_queue.Empty:
                 continue
 
-    def execute(self, func, *args, timeout=120):
+    def execute(
+        self,
+        func,
+        *args,
+        timeout=120,
+        cancel_check: Optional[Callable[[], bool]] = None,
+    ):
         """
         Execute a function in the Playwright thread and wait for result.
 
@@ -514,8 +520,18 @@ class PlaywrightThreadExecutor:
 
         self._request_queue.put((func, args, result_event))
 
-        if not result_event['done'].wait(timeout=timeout):
-            raise TimeoutError(f"Playwright operation timed out after {timeout} seconds")
+        start_time = time.monotonic()
+        timeout_float = float(timeout)
+        poll_interval = 0.1
+        while True:
+            if result_event['done'].wait(timeout=poll_interval):
+                break
+
+            if cancel_check is not None and cancel_check():
+                raise TranslationCancelledError("Translation cancelled by user")
+
+            if time.monotonic() - start_time >= timeout_float:
+                raise TimeoutError(f"Playwright operation timed out after {timeout} seconds")
 
         if result_event['error'] is not None:
             raise result_event['error']
@@ -6764,7 +6780,8 @@ class CopilotHandler:
         return _playwright_executor.execute(
             self._translate_sync_impl, texts, prompt, reference_files, skip_clear_wait, timeout,
             include_item_ids,
-            timeout=executor_timeout
+            timeout=executor_timeout,
+            cancel_check=self._is_cancelled,
         )
 
     def _translate_sync_impl(
@@ -7008,7 +7025,8 @@ class CopilotHandler:
         executor_timeout = timeout + self.EXECUTOR_TIMEOUT_BUFFER_SECONDS
         return _playwright_executor.execute(
             self._translate_single_impl, text, prompt, reference_files, on_chunk, timeout,
-            timeout=executor_timeout
+            timeout=executor_timeout,
+            cancel_check=self._is_cancelled,
         )
 
     def _translate_single_impl(

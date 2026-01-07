@@ -10313,6 +10313,7 @@ class YakuLingoApp:
         self.state.file_state = FileState.TRANSLATING
         self.state.translation_result = None
         self.state.error_message = ""
+        self._file_queue_task = asyncio.current_task()
         with self._client_lock:
             client = self._client
         if client:
@@ -10328,8 +10329,17 @@ class YakuLingoApp:
                 await self._run_queue_parallel()
             else:
                 await self._run_queue_sequential()
+        except asyncio.CancelledError:
+            task = asyncio.current_task()
+            if task is not None:
+                try:
+                    task.uncancel()
+                except Exception:
+                    pass
+            self._file_queue_cancel_requested = True
         finally:
-            await self._finalize_queue_translation()
+            self._file_queue_task = None
+            self._finalize_queue_translation()
 
     async def _run_queue_sequential(self) -> None:
         if not self.translation_service:
@@ -10542,12 +10552,12 @@ class YakuLingoApp:
         if item.id == self.state.file_queue_active_id:
             self._sync_state_from_queue_item(item)
 
-    async def _finalize_queue_translation(self) -> None:
+    def _finalize_queue_translation(self) -> None:
         self._stop_file_panel_refresh_timer()
 
         if self._file_queue_cancel_requested:
             for item in self.state.file_queue:
-                if item.status == TranslationStatus.PENDING:
+                if item.status in (TranslationStatus.PENDING, TranslationStatus.PROCESSING):
                     item.status = TranslationStatus.CANCELLED
                     item.status_label = "キャンセル"
 
@@ -10615,6 +10625,18 @@ class YakuLingoApp:
                 service.cancel()
             except Exception:
                 pass
+        for task in list(self._file_queue_workers):
+            if not task.done():
+                task.cancel()
+        if self._file_queue_task is not None and not self._file_queue_task.done():
+            self._file_queue_task.cancel()
+
+        with self._file_queue_state_lock:
+            for item in self.state.file_queue:
+                if item.status == TranslationStatus.PROCESSING:
+                    item.status = TranslationStatus.CANCELLED
+                    item.status_label = "キャンセル"
+                    item.error_message = item.error_message or ""
 
     def _select_queue_item(self, item_id: str) -> None:
         self._set_active_queue_item(item_id)
@@ -10899,11 +10921,11 @@ class YakuLingoApp:
         """Cancel file translation"""
         if self.state.file_queue_running:
             self._cancel_queue()
-            self._refresh_content()
-            self._refresh_tabs()
+            self._finalize_queue_translation()
             return
         if self.translation_service:
             self.translation_service.cancel()
+        self._stop_file_panel_refresh_timer()
         self._reset_file_state_to_text()
         self._refresh_content()
         self._refresh_tabs()  # Re-enable tabs (translation cancelled)

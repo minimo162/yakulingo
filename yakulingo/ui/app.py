@@ -1691,8 +1691,9 @@ class YakuLingoApp:
         existing = self._resident_heartbeat_task
         if existing is not None and not existing.done():
             return
-        self._resident_heartbeat_task = asyncio.create_task(
-            self._resident_heartbeat_loop(interval_sec)
+        self._resident_heartbeat_task = _create_logged_task(
+            self._resident_heartbeat_loop(interval_sec),
+            name="resident_heartbeat",
         )
 
     async def _resident_heartbeat_loop(self, interval_sec: float) -> None:
@@ -2567,7 +2568,10 @@ class YakuLingoApp:
                             if rect:
                                 self._set_pending_ui_window_rect(rect, reason="hotkey")
                         try:
-                            asyncio.create_task(asyncio.to_thread(open_ui_callback))
+                            _create_logged_task(
+                                asyncio.to_thread(open_ui_callback),
+                                name="hotkey_open_ui_early",
+                            )
                             open_ui_requested = True
                         except Exception as e:
                             logger.debug("Failed to request UI open for hotkey (early): %s", e)
@@ -2687,18 +2691,22 @@ class YakuLingoApp:
                         if rect:
                             self._set_pending_ui_window_rect(rect, reason="hotkey_retry")
                     try:
-                        asyncio.create_task(asyncio.to_thread(open_ui_callback))
+                        _create_logged_task(
+                            asyncio.to_thread(open_ui_callback),
+                            name="hotkey_open_ui",
+                        )
                     except Exception as e:
                         logger.debug("Failed to request UI open for hotkey: %s", e)
                     if sys.platform == "win32":
                         try:
-                            asyncio.create_task(
+                            _create_logged_task(
                                 asyncio.to_thread(
                                     self._retry_hotkey_layout_win32,
                                     layout_source_hwnd,
                                     edge_layout=edge_layout_mode,
                                     focus_source=focus_source,
-                                )
+                                ),
+                                name="hotkey_layout_retry",
                             )
                         except Exception as e:
                             logger.debug("Failed to schedule hotkey layout retry: %s", e)
@@ -2710,7 +2718,10 @@ class YakuLingoApp:
                                     if await asyncio.to_thread(self._bring_window_to_front_win32):
                                         break
                             try:
-                                asyncio.create_task(_bring_ui_to_front_later())
+                                _create_logged_task(
+                                    _bring_ui_to_front_later(),
+                                    name="hotkey_bring_ui_front",
+                                )
                             except Exception as e:
                                 logger.debug("Failed to schedule UI foreground for hotkey: %s", e)
 
@@ -5290,8 +5301,9 @@ class YakuLingoApp:
         task = self._ui_ready_retry_task
         if task is not None and not task.done():
             return
-        self._ui_ready_retry_task = asyncio.create_task(
-            self._ensure_ui_ready_after_restore(reason, timeout_ms=2000, retries=2, retry_delay=0.5)
+        self._ui_ready_retry_task = _create_logged_task(
+            self._ensure_ui_ready_after_restore(reason, timeout_ms=2000, retries=2, retry_delay=0.5),
+            name=f"ui_ready_retry:{reason}",
         )
 
     def _cancel_auto_open_timeout(self) -> None:
@@ -5326,7 +5338,10 @@ class YakuLingoApp:
             except asyncio.CancelledError:
                 return
 
-        self._auto_open_timeout_task = loop.create_task(_clear_later())
+        self._auto_open_timeout_task = _create_logged_task(
+            _clear_later(),
+            name=f"auto_open_timeout:{reason}",
+        )
 
     def _set_auto_open_cause(
         self,
@@ -5728,7 +5743,10 @@ class YakuLingoApp:
                                         return
                                     await self._on_browser_ready(bring_to_front=False)
 
-                                asyncio.create_task(_finalize_after_early_connect())
+                                _create_logged_task(
+                                    _finalize_after_early_connect(),
+                                    name="finalize_after_early_connect",
+                                )
                         except asyncio.CancelledError:
                             logger.debug("Early connection task was cancelled")
                         except Exception as e:
@@ -5875,14 +5893,20 @@ class YakuLingoApp:
         if self.copilot.last_connection_error == CopilotHandler.ERROR_LOGIN_REQUIRED:
             await self._show_resident_login_prompt("polling")
             if not self._login_polling_active:
-                self._login_polling_task = asyncio.create_task(self._wait_for_login_completion())
+                self._login_polling_task = _create_logged_task(
+                    self._wait_for_login_completion(),
+                    name="login_polling",
+                )
 
     def _ensure_copilot_window_monitor(self) -> None:
         """Start background monitor to exit when the Copilot window is closed."""
         if self._copilot_window_monitor_task is not None:
             if not self._copilot_window_monitor_task.done():
                 return
-        self._copilot_window_monitor_task = asyncio.create_task(self._monitor_copilot_window())
+        self._copilot_window_monitor_task = _create_logged_task(
+            self._monitor_copilot_window(),
+            name="copilot_window_monitor",
+        )
 
     async def _monitor_copilot_window(self) -> None:
         """Watch for the Edge Copilot window closing and shut down the app."""
@@ -5961,7 +5985,10 @@ class YakuLingoApp:
             self._refresh_translate_button_state()
             self._start_status_auto_refresh("browser_ready_later")
 
-        asyncio.create_task(_refresh_status_later())
+        _create_logged_task(
+            _refresh_status_later(),
+            name="refresh_status_later",
+        )
 
     async def _wait_for_login_completion(self):
         """ログイン完了をバックグラウンドでポーリング待機。
@@ -6155,7 +6182,10 @@ class YakuLingoApp:
         if self.state.connection_state == ConnectionState.LOGIN_REQUIRED:
             await self._start_login_polling_if_needed()
             if not self._login_polling_active and self._login_polling_task is None:
-                self._login_polling_task = asyncio.create_task(self._wait_for_login_completion())
+                self._login_polling_task = _create_logged_task(
+                    self._wait_for_login_completion(),
+                    name="login_polling",
+                )
 
     async def _show_copilot_browser(self, reason: str = "ui_manual_show") -> None:
         """CopilotのEdge画面を前面表示する（手動表示用）。"""
@@ -6292,8 +6322,9 @@ class YakuLingoApp:
                                 )
                         # Start login completion polling in background
                         if not self._login_polling_active and not self._shutdown_requested:
-                            self._login_polling_task = asyncio.create_task(
-                                self._wait_for_login_completion()
+                            self._login_polling_task = _create_logged_task(
+                                self._wait_for_login_completion(),
+                                name="login_polling",
                             )
                         # Return False but don't retry - user needs to login
                         return False
@@ -6447,7 +6478,10 @@ class YakuLingoApp:
             return
 
         logger.debug("Starting status auto-refresh: %s", reason)
-        self._status_auto_refresh_task = asyncio.create_task(self._status_auto_refresh_loop())
+        self._status_auto_refresh_task = _create_logged_task(
+            self._status_auto_refresh_loop(),
+            name=f"status_auto_refresh:{reason or 'default'}",
+        )
 
     async def _status_auto_refresh_loop(self) -> None:
         """Auto-refresh status a few times until it stabilizes (ready/error)."""
@@ -6697,7 +6731,10 @@ class YakuLingoApp:
                 logger.debug("Result panel auto-scroll failed", exc_info=True)
 
         try:
-            self._result_panel_scroll_task = asyncio.create_task(_run_scroll())
+            self._result_panel_scroll_task = _create_logged_task(
+                _run_scroll(),
+                name="result_panel_scroll",
+            )
         except Exception:
             logger.debug("Result panel auto-scroll scheduling failed", exc_info=True)
 
@@ -7685,7 +7722,10 @@ class YakuLingoApp:
                             ui.button(
                                 'ログインを開く',
                                 icon='login',
-                                on_click=lambda: asyncio.create_task(self._show_login_browser()),
+                                on_click=lambda: _create_logged_task(
+                                    self._show_login_browser(),
+                                    name="show_login_browser",
+                                ),
                             ).classes('status-action-btn').props('flat no-caps size=sm')
                 status_indicator.tooltip(tooltip)
                 return
@@ -7718,7 +7758,10 @@ class YakuLingoApp:
                             ui.button(
                                 'Edgeを起動',
                                 icon='open_in_new',
-                                on_click=lambda: asyncio.create_task(self._reconnect()),
+                                on_click=lambda: _create_logged_task(
+                                    self._reconnect(),
+                                    name="reconnect",
+                                ),
                             ).classes('status-action-btn').props('flat no-caps size=sm')
                 status_indicator.tooltip(tooltip)
                 return
@@ -7739,7 +7782,10 @@ class YakuLingoApp:
                             ui.button(
                                 '再接続',
                                 icon='refresh',
-                                on_click=lambda: asyncio.create_task(self._reconnect()),
+                                on_click=lambda: _create_logged_task(
+                                    self._reconnect(),
+                                    name="reconnect",
+                                ),
                             ).classes('status-action-btn').props('flat no-caps size=sm')
                 status_indicator.tooltip(tooltip)
                 return
@@ -7795,7 +7841,10 @@ class YakuLingoApp:
                     browser_props += ' disable'
                 ui.button(
                     icon='open_in_new',
-                    on_click=lambda: asyncio.create_task(self._show_copilot_browser()),
+                    on_click=lambda: _create_logged_task(
+                        self._show_copilot_browser(),
+                        name="show_copilot_browser",
+                    ),
                 ).classes('icon-btn icon-btn-tonal browser-rail-btn').props(browser_props).tooltip('ブラウザを表示')
 
         self._tabs_container = actions_container
@@ -8160,11 +8209,17 @@ class YakuLingoApp:
                     with ui.row().classes('items-center gap-2 shrink-0'):
                         ui.button(
                             'Edgeを前面表示',
-                            on_click=lambda: asyncio.create_task(self._show_login_browser()),
+                            on_click=lambda: _create_logged_task(
+                                self._show_login_browser(),
+                                name="show_login_browser",
+                            ),
                         ).classes('btn-outline').props('no-caps')
                         ui.button(
                             '再接続',
-                            on_click=lambda: asyncio.create_task(self._reconnect()),
+                            on_click=lambda: _create_logged_task(
+                                self._reconnect(),
+                                name="reconnect",
+                            ),
                         ).classes('btn-text').props('no-caps')
 
         self._login_banner = login_banner
@@ -10062,7 +10117,10 @@ class YakuLingoApp:
                 self._refresh_content()
 
         for item in new_items:
-            asyncio.create_task(self._load_queue_item_info(item))
+            _create_logged_task(
+                self._load_queue_item_info(item),
+                name=f"load_queue_item_info:{item.id}",
+            )
 
         return new_items
 
@@ -10095,7 +10153,10 @@ class YakuLingoApp:
                 with client:
                     self._refresh_content()
 
-        asyncio.create_task(self._detect_file_language_for_item(item))
+        _create_logged_task(
+            self._detect_file_language_for_item(item),
+            name=f"detect_file_language:{item.id}",
+        )
 
     async def _detect_file_language_for_item(self, item: FileQueueItem) -> None:
         if not self.translation_service:
@@ -10154,9 +10215,8 @@ class YakuLingoApp:
                     self._refresh_content()
 
     def _start_file_panel_refresh_timer(self) -> None:
-        with self._client_lock:
-            client = self._client
-        if not client:
+        client = self._get_active_client()
+        if client is None:
             return
         with self._timer_lock:
             if self._file_panel_refresh_timer:
@@ -11069,7 +11129,10 @@ class YakuLingoApp:
         self._refresh_content()
         self._update_text_input_metrics()
 
-        asyncio.create_task(self._translate_text())
+        _create_logged_task(
+            self._translate_text(),
+            name="translate_text",
+        )
 
     def _clear_history(self):
         """Clear all history"""
@@ -12070,6 +12133,39 @@ def run_app(
                 pass
             logger.debug("[TIMING] Cancel: progress_timer: %.3fs", time_module.time() - t0)
 
+        if yakulingo_app._file_panel_refresh_timer is not None:
+            t0 = time_module.time()
+            try:
+                yakulingo_app._stop_file_panel_refresh_timer()
+            except Exception:
+                pass
+            logger.debug("[TIMING] Cancel: file_panel_refresh_timer: %.3fs", time_module.time() - t0)
+
+        if yakulingo_app._result_panel_scroll_handle is not None:
+            t0 = time_module.time()
+            try:
+                yakulingo_app._result_panel_scroll_handle.cancel()
+            except Exception:
+                pass
+            yakulingo_app._result_panel_scroll_handle = None
+            logger.debug("[TIMING] Cancel: result_panel_scroll_handle: %.3fs", time_module.time() - t0)
+
+        if yakulingo_app._result_panel_scroll_task is not None:
+            t0 = time_module.time()
+            try:
+                yakulingo_app._result_panel_scroll_task.cancel()
+            except Exception:
+                pass
+            logger.debug("[TIMING] Cancel: result_panel_scroll_task: %.3fs", time_module.time() - t0)
+
+        if yakulingo_app._ui_ready_retry_task is not None:
+            t0 = time_module.time()
+            try:
+                yakulingo_app._ui_ready_retry_task.cancel()
+            except Exception:
+                pass
+            logger.debug("[TIMING] Cancel: ui_ready_retry_task: %.3fs", time_module.time() - t0)
+
         if yakulingo_app._login_polling_task is not None:
             t0 = time_module.time()
             try:
@@ -12077,6 +12173,38 @@ def run_app(
             except Exception:
                 pass
             logger.debug("[TIMING] Cancel: login_polling_task: %.3fs", time_module.time() - t0)
+
+        if yakulingo_app._copilot_window_monitor_task is not None:
+            t0 = time_module.time()
+            try:
+                yakulingo_app._copilot_window_monitor_task.cancel()
+            except Exception:
+                pass
+            logger.debug("[TIMING] Cancel: copilot_window_monitor_task: %.3fs", time_module.time() - t0)
+
+        if yakulingo_app._auto_open_timeout_task is not None:
+            t0 = time_module.time()
+            try:
+                yakulingo_app._auto_open_timeout_task.cancel()
+            except Exception:
+                pass
+            logger.debug("[TIMING] Cancel: auto_open_timeout_task: %.3fs", time_module.time() - t0)
+
+        if yakulingo_app._gpt_mode_setup_task is not None:
+            t0 = time_module.time()
+            try:
+                yakulingo_app._gpt_mode_setup_task.cancel()
+            except Exception:
+                pass
+            logger.debug("[TIMING] Cancel: gpt_mode_setup_task: %.3fs", time_module.time() - t0)
+
+        if yakulingo_app._early_connection_task is not None:
+            t0 = time_module.time()
+            try:
+                yakulingo_app._early_connection_task.cancel()
+            except Exception:
+                pass
+            logger.debug("[TIMING] Cancel: early_connection_task: %.3fs", time_module.time() - t0)
 
         if yakulingo_app._status_auto_refresh_task is not None:
             t0 = time_module.time()
@@ -12101,6 +12229,23 @@ def run_app(
             except Exception:
                 pass
             logger.debug("[TIMING] Cancel: translation_service: %.3fs", time_module.time() - t0)
+
+        t0 = time_module.time()
+        try:
+            yakulingo_app._cancel_queue()
+        except Exception:
+            pass
+        logger.debug("[TIMING] Cancel: file_queue: %.3fs", time_module.time() - t0)
+
+        if yakulingo_app._file_queue_workers:
+            t0 = time_module.time()
+            for worker_task in list(yakulingo_app._file_queue_workers):
+                try:
+                    worker_task.cancel()
+                except Exception:
+                    pass
+            yakulingo_app._file_queue_workers = []
+            logger.debug("[TIMING] Cancel: file_queue_workers: %.3fs", time_module.time() - t0)
 
         logger.debug("[TIMING] Cancel operations: %.2fs", time_module.time() - step_start)
 
@@ -12141,6 +12286,15 @@ def run_app(
         yakulingo_app._copilot = None
         yakulingo_app.translation_service = None
         yakulingo_app._login_polling_task = None
+        yakulingo_app._status_auto_refresh_task = None
+        yakulingo_app._resident_heartbeat_task = None
+        yakulingo_app._ui_ready_retry_task = None
+        yakulingo_app._copilot_window_monitor_task = None
+        yakulingo_app._auto_open_timeout_task = None
+        yakulingo_app._gpt_mode_setup_task = None
+        yakulingo_app._early_connection_task = None
+        yakulingo_app._result_panel_scroll_task = None
+        yakulingo_app._result_panel_scroll_handle = None
 
         logger.info("[TIMING] cleanup total: %.2fs", time_module.time() - cleanup_start)
 
@@ -12576,12 +12730,13 @@ def run_app(
 
             if layout_result is False and sys.platform == "win32":
                 try:
-                    asyncio.create_task(
+                    _create_logged_task(
                         asyncio.to_thread(
                             yakulingo_app._retry_hotkey_layout_win32,
                             source_hwnd,
                             edge_layout=layout_value,
-                        )
+                        ),
+                        name="api_layout_retry",
                     )
                 except Exception as err:
                     logger.debug("Failed to schedule layout retry: %s", err)
@@ -12923,7 +13078,10 @@ def run_app(
             yakulingo_app._early_connection_task = asyncio.create_task(_early_connect_copilot())
             if resident_mode:
                 # Resident setup uses native mode; warm up Copilot so setup.ps1 can detect readiness.
-                asyncio.create_task(yakulingo_app._warmup_resident_gpt_mode())
+                _create_logged_task(
+                    yakulingo_app._warmup_resident_gpt_mode(),
+                    name="warmup_resident_gpt_mode",
+                )
 
         # Start early window positioning - moves window before UI is rendered
         if native and sys.platform == 'win32':
@@ -12931,10 +13089,16 @@ def run_app(
 
         if not native:
             if resident_mode:
-                asyncio.create_task(yakulingo_app._warmup_resident_gpt_mode())
+                _create_logged_task(
+                    yakulingo_app._warmup_resident_gpt_mode(),
+                    name="warmup_resident_gpt_mode",
+                )
             else:
                 try:
-                    asyncio.create_task(asyncio.to_thread(_open_browser_window))
+                    _create_logged_task(
+                        asyncio.to_thread(_open_browser_window),
+                        name="open_browser_window",
+                    )
                     logger.info("Auto-opening UI window (browser mode)")
                 except Exception as e:
                     logger.debug("Failed to auto-open UI window: %s", e)
@@ -13761,12 +13925,21 @@ document.fonts.ready.then(function() {
             asyncio.create_task(_splash_timeout())
 
         # Apply early connection result or start new connection
-        asyncio.create_task(yakulingo_app._apply_early_connection_or_connect())
-        asyncio.create_task(yakulingo_app.check_for_updates())
+        _create_logged_task(
+            yakulingo_app._apply_early_connection_or_connect(),
+            name="apply_early_connection_or_connect",
+        )
+        _create_logged_task(
+            yakulingo_app.check_for_updates(),
+            name="check_for_updates",
+        )
 
         # Ensure app window is visible and in front after UI is ready
         # Edge startup (early connection) may steal focus, so we restore it here
-        asyncio.create_task(yakulingo_app._ensure_app_window_visible())
+        _create_logged_task(
+            yakulingo_app._ensure_app_window_visible(),
+            name="ensure_app_window_visible",
+        )
 
         _t_ui_displayed = _time_module.perf_counter()
         elapsed_from_start = _t_ui_displayed - _t0

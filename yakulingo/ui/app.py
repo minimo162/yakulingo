@@ -6154,7 +6154,12 @@ class YakuLingoApp:
                 )
 
     def _ensure_copilot_window_monitor(self) -> None:
-        """Start background monitor to exit when the Copilot window is closed."""
+        """Start background monitor to detect Copilot window closure.
+
+        Note: The Copilot Edge window can close (crash/update/user action) while the UI is still
+        open. Shutting down the whole app makes long-running use fragile, so we treat it as a
+        recoverable disconnect and let the user reconnect when needed.
+        """
         if self._copilot_window_monitor_task is not None:
             if not self._copilot_window_monitor_task.done():
                 return
@@ -6164,7 +6169,7 @@ class YakuLingoApp:
         )
 
     async def _monitor_copilot_window(self) -> None:
-        """Watch for the Edge Copilot window closing and shut down the app."""
+        """Watch for the Edge Copilot window closing and mark Copilot as disconnected."""
         missing_checks = 0
         while not self._shutdown_requested:
             await asyncio.sleep(1.0)
@@ -6186,10 +6191,52 @@ class YakuLingoApp:
             missing_checks += 1
             if missing_checks < 3:
                 continue
-            logger.info("Copilot window closed; shutting down app")
-            if nicegui_app is not None:
-                nicegui_app.shutdown()
-            return
+            copilot = self._copilot
+            if copilot is None:
+                return
+
+            missing_checks = 0
+            self._copilot_window_seen = False
+
+            logger.warning("Copilot Edge window closed; marking as disconnected (service stays alive)")
+            self.state.copilot_ready = False
+            self.state.connection_state = ConnectionState.EDGE_NOT_RUNNING
+
+            try:
+                from yakulingo.services.copilot_handler import CopilotHandler
+
+                copilot.last_connection_error = CopilotHandler.ERROR_EDGE_NOT_FOUND
+            except Exception:
+                pass
+
+            def _disconnect_safely() -> None:
+                try:
+                    with self._copilot_lock:
+                        copilot.disconnect(keep_browser=False)
+                except Exception as e:
+                    logger.debug("Copilot disconnect after window close failed: %s", e)
+
+            try:
+                await asyncio.to_thread(_disconnect_safely)
+            except Exception as e:
+                logger.debug("Copilot disconnect thread failed: %s", e)
+
+            with self._client_lock:
+                client = self._client
+            if client is not None:
+                try:
+                    if getattr(client, "has_socket_connection", True):
+                        with client:
+                            ui.notify(
+                                "Copilot のブラウザが閉じました。必要に応じて再接続してください。",
+                                type="warning",
+                                position="bottom-right",
+                                timeout=5000,
+                            )
+                            self._batch_refresh({"status"})
+                except Exception as e:
+                    logger.debug("Copilot window closed notification failed: %s", e)
+            continue
 
     async def _on_browser_ready(self, bring_to_front: bool = False):
         """Called when browser connection is ready. Optionally brings app to front."""
@@ -8883,6 +8930,7 @@ class YakuLingoApp:
 
         # Check if already connected
         if self.state.copilot_ready and copilot.is_connected and edge_window_open:
+            self._ensure_copilot_window_monitor()
             return True
 
         # If we are connected but "not ready", it is often because GPT mode is still
@@ -8906,6 +8954,7 @@ class YakuLingoApp:
                 await self._ensure_gpt_mode_setup()
 
             if self.state.copilot_ready and self.copilot.is_connected:
+                self._ensure_copilot_window_monitor()
                 return True
 
         # Check if login is in progress (don't interfere)
@@ -13139,6 +13188,8 @@ def run_app(
                     early_result_ref.value if early_result_ref is not None else None
                 )
                 logger.info("[TIMING] Early Edge connection already completed (thread)")
+                if yakulingo_app._early_connection_result:
+                    yakulingo_app._ensure_copilot_window_monitor()
                 return
             if early_thread is not None and early_thread.is_alive():
                 logger.info("[TIMING] Early Edge connection still in progress")
@@ -13148,6 +13199,7 @@ def run_app(
             if yakulingo_app.copilot.is_connected:
                 yakulingo_app._early_connection_result = True
                 logger.info("[TIMING] Early Edge connection already completed")
+                yakulingo_app._ensure_copilot_window_monitor()
                 return
 
             # Fallback: start connection now
@@ -13160,6 +13212,8 @@ def run_app(
             )
             yakulingo_app._early_connection_result = result
             logger.info("[TIMING] Copilot connection completed: %s", result)
+            if result:
+                yakulingo_app._ensure_copilot_window_monitor()
         except Exception as e:
             logger.debug("Copilot connection failed: %s", e)
             yakulingo_app._early_connection_result = False

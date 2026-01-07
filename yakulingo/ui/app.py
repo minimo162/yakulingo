@@ -12164,6 +12164,26 @@ def run_app(
                     time.sleep(0.05)
                     window.on_top = False
                     yakulingo_app._set_layout_mode(LayoutMode.FOREGROUND, "open_browser_window")
+                    # Native mode can keep the window handle alive while the WebSocket client
+                    # is disconnected (e.g., close-to-resident). In that case, force a reload
+                    # so NiceGUI creates a fresh client and UI updates resume.
+                    if yakulingo_app._get_active_client() is None:
+                        try:
+                            yakulingo_app._clear_ui_ready()
+                        except Exception:
+                            pass
+                        ui_url = None
+                        try:
+                            ui_url = _build_local_url(host, port, "/")
+                        except Exception:
+                            ui_url = None
+                        try:
+                            if hasattr(window, 'evaluate_js'):
+                                window.evaluate_js('location.reload()')
+                            elif ui_url and hasattr(window, 'load_url'):
+                                window.load_url(ui_url)
+                        except Exception as e:
+                            logger.debug("Failed to reload native UI window: %s", e)
             except Exception as e:
                 logger.debug("Failed to show native UI window: %s", e)
             if sys.platform == "win32":

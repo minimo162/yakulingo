@@ -5544,6 +5544,13 @@ class YakuLingoApp:
         # Small delay to ensure pywebview window is fully initialized
         await asyncio.sleep(0.5)
 
+        if self._resident_mode and login_required_guard:
+            logger.debug("Login required: skipping UI foreground sync (ensure_app_window_visible)")
+            if sys.platform == "win32":
+                self._set_ui_taskbar_visibility_win32(True, "ensure_app_window_visible:login_required")
+            self._set_layout_mode(LayoutMode.FOREGROUND, "ensure_app_window_visible:login_required")
+            return
+
         if sys.platform == 'win32':
             hotkey_layout_active = False
             source_hwnd = None

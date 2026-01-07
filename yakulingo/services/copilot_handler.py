@@ -6815,6 +6815,26 @@ class CopilotHandler:
             except Exception:
                 return False
 
+        SM_XVIRTUALSCREEN = 76
+        SM_YVIRTUALSCREEN = 77
+        SM_CXVIRTUALSCREEN = 78
+        SM_CYVIRTUALSCREEN = 79
+
+        def _get_virtual_screen_rect() -> tuple[int, int, int, int] | None:
+            try:
+                left = int(user32.GetSystemMetrics(SM_XVIRTUALSCREEN))
+                top = int(user32.GetSystemMetrics(SM_YVIRTUALSCREEN))
+                width = int(user32.GetSystemMetrics(SM_CXVIRTUALSCREEN))
+                height = int(user32.GetSystemMetrics(SM_CYVIRTUALSCREEN))
+            except Exception:
+                return None
+            if width <= 0 or height <= 0:
+                return None
+            return (left, top, left + width, top + height)
+
+        def _rects_intersect(a: tuple[int, int, int, int], b: tuple[int, int, int, int]) -> bool:
+            return not (a[2] <= b[0] or a[0] >= b[2] or a[3] <= b[1] or a[1] >= b[3])
+
         while not stop_event.is_set():
             try:
                 if not _is_valid_window(cached_edge_hwnd):
@@ -6884,6 +6904,14 @@ class CopilotHandler:
                         edge_is_visible = bool(user32.IsWindowVisible(wintypes.HWND(cached_edge_hwnd)))
                         if edge_is_minimized or not edge_is_visible:
                             should_position = True
+                        else:
+                            edge_rect = _get_target_rect(cached_edge_hwnd)
+                            virtual_rect = _get_virtual_screen_rect()
+                            if edge_rect is None or (
+                                virtual_rect is not None and not _rects_intersect(edge_rect, virtual_rect)
+                            ):
+                                # Edge is open but fully off-screen (e.g., hotkey layout moved it away).
+                                should_position = True
                     except Exception:
                         should_position = True
 

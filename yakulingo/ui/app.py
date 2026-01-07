@@ -2437,6 +2437,7 @@ class YakuLingoApp:
         hotkey_background_apply_lock = threading.Lock()
         hotkey_background_apply_scheduled = False
         hotkey_background_abandoned = False
+        temp_input_paths: list[Path] = []
         try:
             if source_hwnd:
                 self._last_hotkey_source_hwnd = source_hwnd
@@ -2457,6 +2458,34 @@ class YakuLingoApp:
             self._log_hotkey_debug_info(trace_id, summary)
 
             is_path_selection, file_paths = self._extract_hotkey_file_paths(text)
+            if not is_path_selection and len(text) > TEXT_TRANSLATION_CHAR_LIMIT:
+                import tempfile
+
+                try:
+                    with tempfile.NamedTemporaryFile(
+                        mode="w",
+                        suffix=".txt",
+                        delete=False,
+                        encoding="utf-8",
+                        prefix="yakulingo_clipboard_",
+                    ) as temp_file:
+                        temp_file.write(text)
+                        temp_path = Path(temp_file.name)
+                    temp_input_paths.append(temp_path)
+                    is_path_selection = True
+                    file_paths = [temp_path]
+                    logger.info(
+                        "Hotkey translation [%s] long clipboard text (%d chars); translating as file: %s",
+                        trace_id,
+                        len(text),
+                        temp_path,
+                    )
+                except Exception as e:
+                    logger.debug(
+                        "Hotkey translation [%s] failed to create temp file for long text: %s",
+                        trace_id,
+                        e,
+                    )
             should_background_translate = (
                 self._get_active_client() is None or not self._ui_ready_event.is_set()
             )
@@ -2942,6 +2971,13 @@ class YakuLingoApp:
                     self._pending_hotkey_request = None
             except Exception:
                 pending = None
+
+            for temp_path in temp_input_paths:
+                try:
+                    temp_path.unlink(missing_ok=True)
+                except Exception:
+                    pass
+
             if pending is not None:
                 import time
 

@@ -4690,6 +4690,10 @@ class YakuLingoApp:
                 except Exception:
                     pass
 
+            if source_hwnd and source_hwnd != yakulingo_hwnd:
+                _stop_window_taskbar_flash_win32(int(source_hwnd), reason="hotkey_layout_source")
+            if edge_hwnd:
+                _stop_window_taskbar_flash_win32(int(edge_hwnd), reason="hotkey_layout_edge")
             if yakulingo_hwnd:
                 _stop_window_taskbar_flash_win32(int(yakulingo_hwnd), reason="hotkey_layout")
 

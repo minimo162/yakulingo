@@ -1840,9 +1840,13 @@ function Invoke-Setup {
     $ResidentScriptPath = Join-Path $SetupPath "YakuLingo_Resident.ps1"
     $ExitScriptPath = Join-Path $SetupPath "YakuLingo_Exit.ps1"
     $UninstallScriptPath = Join-Path $SetupPath "YakuLingo_Uninstall.ps1"
+    $ResidentVbsPath = Join-Path $SetupPath "YakuLingo_Resident.vbs"
+    $ExitVbsPath = Join-Path $SetupPath "YakuLingo_Exit.vbs"
+    $UninstallVbsPath = Join-Path $SetupPath "YakuLingo_Uninstall.vbs"
 
     $utf8NoBom = New-Object System.Text.UTF8Encoding $false
     $utf8WithBom = New-Object System.Text.UTF8Encoding $true
+    $asciiEncoding = [System.Text.Encoding]::ASCII
 
     $openUiScript = @"
 `$ErrorActionPreference = 'Stop'
@@ -2201,10 +2205,51 @@ Start-Process -FilePath powershell.exe -ArgumentList `$argString -WindowStyle Hi
 exit 0
 "@
 
+    # VBS wrappers: run helper PowerShell scripts without showing a console window.
+    # (PowerShell shortcuts can still flash a console even with -WindowStyle Hidden.)
+    $residentVbs = @'
+Option Explicit
+Dim objShell, objFSO, scriptDir, psScript, command
+Set objShell = CreateObject("WScript.Shell")
+Set objFSO = CreateObject("Scripting.FileSystemObject")
+scriptDir = objFSO.GetParentFolderName(WScript.ScriptFullName)
+objShell.CurrentDirectory = scriptDir
+psScript = scriptDir & "\YakuLingo_Resident.ps1"
+command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File """ & psScript & """"
+objShell.Run command, 0, False
+'@
+
+    $exitVbs = @'
+Option Explicit
+Dim objShell, objFSO, scriptDir, psScript, command
+Set objShell = CreateObject("WScript.Shell")
+Set objFSO = CreateObject("Scripting.FileSystemObject")
+scriptDir = objFSO.GetParentFolderName(WScript.ScriptFullName)
+objShell.CurrentDirectory = scriptDir
+psScript = scriptDir & "\YakuLingo_Exit.ps1"
+command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File """ & psScript & """"
+objShell.Run command, 0, False
+'@
+
+    $uninstallVbs = @'
+Option Explicit
+Dim objShell, objFSO, scriptDir, psScript, command
+Set objShell = CreateObject("WScript.Shell")
+Set objFSO = CreateObject("Scripting.FileSystemObject")
+scriptDir = objFSO.GetParentFolderName(WScript.ScriptFullName)
+objShell.CurrentDirectory = scriptDir
+psScript = scriptDir & "\YakuLingo_Uninstall.ps1"
+command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File """ & psScript & """"
+objShell.Run command, 0, False
+'@
+
     [System.IO.File]::WriteAllText($OpenUiScriptPath, $openUiScript, $utf8WithBom)
     [System.IO.File]::WriteAllText($ResidentScriptPath, $residentScript, $utf8WithBom)
     [System.IO.File]::WriteAllText($ExitScriptPath, $exitScript, $utf8WithBom)
     [System.IO.File]::WriteAllText($UninstallScriptPath, $uninstallScript, $utf8WithBom)
+    [System.IO.File]::WriteAllText($ResidentVbsPath, $residentVbs, $asciiEncoding)
+    [System.IO.File]::WriteAllText($ExitVbsPath, $exitVbs, $asciiEncoding)
+    [System.IO.File]::WriteAllText($UninstallVbsPath, $uninstallVbs, $asciiEncoding)
 
     # Common icon path
     $IconPath = Join-Path $SetupPath "yakulingo\ui\yakulingo.ico"
@@ -2233,8 +2278,8 @@ exit 0
 
     $StartMenuOpenPath = Join-Path $ProgramsPath "$AppName.lnk"
     $StartMenuOpen = $WshShell.CreateShortcut($StartMenuOpenPath)
-    $StartMenuOpen.TargetPath = "powershell.exe"
-    $StartMenuOpen.Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$ResidentScriptPath`""
+    $StartMenuOpen.TargetPath = "wscript.exe"
+    $StartMenuOpen.Arguments = "`"$ResidentVbsPath`""
     $StartMenuOpen.WorkingDirectory = $SetupPath
     if (Test-Path $IconPath) {
         $StartMenuOpen.IconLocation = "$IconPath,0"
@@ -2244,8 +2289,8 @@ exit 0
 
     $StartMenuExitPath = Join-Path $ProgramsPath "$AppName 終了.lnk"
     $StartMenuExit = $WshShell.CreateShortcut($StartMenuExitPath)
-    $StartMenuExit.TargetPath = "powershell.exe"
-    $StartMenuExit.Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$ExitScriptPath`""
+    $StartMenuExit.TargetPath = "wscript.exe"
+    $StartMenuExit.Arguments = "`"$ExitVbsPath`""
     $StartMenuExit.WorkingDirectory = $SetupPath
     if (Test-Path $IconPath) {
         $StartMenuExit.IconLocation = "$IconPath,0"
@@ -2255,8 +2300,8 @@ exit 0
 
     $StartMenuUninstallPath = Join-Path $ProgramsPath "$AppName アンインストール.lnk"
     $StartMenuUninstall = $WshShell.CreateShortcut($StartMenuUninstallPath)
-    $StartMenuUninstall.TargetPath = "powershell.exe"
-    $StartMenuUninstall.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$UninstallScriptPath`""
+    $StartMenuUninstall.TargetPath = "wscript.exe"
+    $StartMenuUninstall.Arguments = "`"$UninstallVbsPath`""
     $StartMenuUninstall.WorkingDirectory = $SetupPath
     if (Test-Path $IconPath) {
         $StartMenuUninstall.IconLocation = "$IconPath,0"
@@ -2268,8 +2313,8 @@ exit 0
     $StartupPath = [Environment]::GetFolderPath("Startup")
     $StartupShortcutPath = Join-Path $StartupPath "$AppName.lnk"
     $StartupShortcut = $WshShell.CreateShortcut($StartupShortcutPath)
-    $StartupShortcut.TargetPath = "powershell.exe"
-    $StartupShortcut.Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$ResidentScriptPath`""
+    $StartupShortcut.TargetPath = "wscript.exe"
+    $StartupShortcut.Arguments = "`"$ResidentVbsPath`""
     $StartupShortcut.WorkingDirectory = $SetupPath
     if (Test-Path $IconPath) {
         $StartupShortcut.IconLocation = "$IconPath,0"

@@ -1577,6 +1577,7 @@ class YakuLingoApp:
         self._open_ui_window_callback: Callable[[], None] | None = None
         self._pending_hotkey_request: _PendingHotkeyRequest | None = None
         self._pending_hotkey_lock = threading.Lock()
+        self._pending_hotkey_ui_refresh_trace_id: str | None = None
 
         # PP-DocLayout-L initialization state (on-demand for PDF)
         self._layout_init_state = LayoutInitializationState.NOT_INITIALIZED
@@ -3605,15 +3606,10 @@ class YakuLingoApp:
         """
         if self._shutdown_requested:
             return
-        with self._client_lock:
-            client = self._client
-        if client is None:
+        client = self._get_active_client()
+        if client is None or self._main_content is None:
+            self._pending_hotkey_ui_refresh_trace_id = trace_id
             return
-        try:
-            if not getattr(client, "has_socket_connection", True):
-                return
-        except Exception:
-            pass
         try:
             with client:
                 self._refresh_content()
@@ -3621,8 +3617,18 @@ class YakuLingoApp:
                 self._refresh_tabs()
                 self._refresh_status()
                 self._start_status_auto_refresh("hotkey_refresh")
+            self._pending_hotkey_ui_refresh_trace_id = None
         except Exception as e:
             logger.debug("Hotkey translation [%s] UI refresh failed: %s", trace_id, e)
+            self._pending_hotkey_ui_refresh_trace_id = trace_id
+
+    def _apply_pending_hotkey_ui_refresh(self) -> None:
+        """Apply a deferred UI refresh for hotkey translations once UI is available."""
+        trace_id = self._pending_hotkey_ui_refresh_trace_id
+        if not trace_id:
+            return
+        self._pending_hotkey_ui_refresh_trace_id = None
+        self._refresh_ui_after_hotkey_translation(trace_id)
 
     def _translate_text_hotkey_background_sync(
         self,
@@ -13994,6 +14000,7 @@ document.fonts.ready.then(function() {
         with main_container:
             yakulingo_app.create_ui()
         logger.info("[TIMING] create_ui(): %.2fs", _time_module.perf_counter() - _t_ui)
+        yakulingo_app._apply_pending_hotkey_ui_refresh()
 
         if client_connected:
             try:

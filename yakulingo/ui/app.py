@@ -4641,6 +4641,73 @@ class YakuLingoApp:
         except Exception:
             return False
 
+    def _is_ui_window_visible_win32(self) -> bool:
+        """Return True if a YakuLingo UI window is visible on-screen (Windows only)."""
+        if sys.platform != "win32":
+            return False
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.WinDLL("user32", use_last_error=True)
+
+            hwnd = None
+            copilot = getattr(self, "_copilot", None)
+            if copilot is not None:
+                try:
+                    hwnd = copilot._find_yakulingo_window_handle(include_hidden=True)
+                except Exception:
+                    hwnd = None
+            if not hwnd:
+                hwnd = _find_window_handle_by_title_win32("YakuLingo")
+            if not hwnd:
+                return False
+
+            resolved_hwnd = _coerce_hwnd_win32(hwnd)
+            if not resolved_hwnd:
+                return False
+
+            if user32.IsWindowVisible(wintypes.HWND(resolved_hwnd)) == 0:
+                return False
+            if user32.IsIconic(wintypes.HWND(resolved_hwnd)) != 0:
+                return False
+
+            class RECT(ctypes.Structure):
+                _fields_ = [
+                    ("left", ctypes.c_long),
+                    ("top", ctypes.c_long),
+                    ("right", ctypes.c_long),
+                    ("bottom", ctypes.c_long),
+                ]
+
+            rect = RECT()
+            if user32.GetWindowRect(wintypes.HWND(resolved_hwnd), ctypes.byref(rect)) == 0:
+                return True
+
+            SM_XVIRTUALSCREEN = 76
+            SM_YVIRTUALSCREEN = 77
+            SM_CXVIRTUALSCREEN = 78
+            SM_CYVIRTUALSCREEN = 79
+            virtual_left = user32.GetSystemMetrics(SM_XVIRTUALSCREEN)
+            virtual_top = user32.GetSystemMetrics(SM_YVIRTUALSCREEN)
+            virtual_width = user32.GetSystemMetrics(SM_CXVIRTUALSCREEN)
+            virtual_height = user32.GetSystemMetrics(SM_CYVIRTUALSCREEN)
+            if virtual_width <= 0 or virtual_height <= 0:
+                return True
+
+            virtual_right = int(virtual_left + virtual_width)
+            virtual_bottom = int(virtual_top + virtual_height)
+            margin = 40
+            offscreen = (
+                rect.right < (virtual_left + margin)
+                or rect.left > (virtual_right - margin)
+                or rect.bottom < (virtual_top + margin)
+                or rect.top > (virtual_bottom - margin)
+            )
+            return not offscreen
+        except Exception:
+            return False
+
     def _bring_window_to_front_win32(self) -> bool:
         """Bring YakuLingo window to front using Windows API.
 
@@ -5531,6 +5598,15 @@ class YakuLingoApp:
         ):
             with self._client_lock:
                 has_client = self._client is not None
+            if sys.platform == "win32" and self._is_ui_window_visible_win32():
+                logger.debug(
+                    "Resident mode: UI window already visible; skipping auto-hide (target=%s, client_connected=%s)",
+                    visibility_target.value if visibility_target else "none",
+                    has_client,
+                )
+                self._set_ui_taskbar_visibility_win32(True, "ensure_app_window_visible:already_visible")
+                self._set_layout_mode(LayoutMode.FOREGROUND, "ensure_app_window_visible:already_visible")
+                return
             logger.debug(
                 "Resident mode: keeping UI hidden (target=%s, client_connected=%s)",
                 visibility_target.value if visibility_target else "none",

@@ -37,6 +37,83 @@ def test_clipboard_trigger_default_window_is_extended():
     assert sig.parameters["double_copy_window_sec"].default == 2.5
 
 
+@pytest.mark.skipif(not _IS_WINDOWS, reason="Windows-only ClipboardTrigger min-gap behavior")
+def test_clipboard_trigger_detects_fast_double_copy(monkeypatch):
+    import yakulingo.services.clipboard_trigger as clipboard_trigger
+    from yakulingo.services.clipboard_trigger import ClipboardTrigger
+
+    fired: list[str] = []
+    trigger = ClipboardTrigger(
+        fired.append,
+        poll_interval_sec=0.0,
+        settle_delay_sec=0.0,
+        recheck_settle_ms=0.0,
+    )
+    trigger._last_sequence = 0
+
+    # Each clipboard update results in 4 sequence reads in the main loop:
+    # - initial check, settle check, seq_before, seq_after
+    sequences = [
+        1,
+        1,
+        1,
+        1,  # first copy: "A"
+        2,
+        2,
+        2,
+        2,  # second copy: "A" (fast) -> must fire
+    ]
+    payloads: list[tuple[str | None, list[str]]] = [
+        ("A", []),
+        ("A", []),
+    ]
+    # time.monotonic is called twice per update (now + read_time).
+    monotonic_values = [
+        0.00,
+        0.00,
+        0.025,
+        0.025,
+    ]
+
+    def get_sequence() -> int | None:
+        if sequences:
+            return sequences.pop(0)
+        trigger._stop_event.set()
+        return None
+
+    def get_payload_with_retry(*, log_fail: bool = True) -> tuple[str | None, list[str]]:
+        _ = log_fail
+        if payloads:
+            return payloads.pop(0)
+        return None, []
+
+    def monotonic() -> float:
+        if monotonic_values:
+            return monotonic_values.pop(0)
+        return 999.0
+
+    monkeypatch.setattr(
+        clipboard_trigger._clipboard,
+        "get_clipboard_sequence_number_raw",
+        get_sequence,
+    )
+    monkeypatch.setattr(
+        clipboard_trigger._clipboard,
+        "get_clipboard_payload_with_retry",
+        get_payload_with_retry,
+    )
+    monkeypatch.setattr(
+        clipboard_trigger._clipboard,
+        "should_ignore_self_clipboard",
+        lambda *_args, **_kwargs: False,
+    )
+    monkeypatch.setattr(clipboard_trigger.time, "monotonic", monotonic)
+
+    trigger._clipboard_listener_loop()
+
+    assert fired == ["A"]
+
+
 @pytest.mark.skipif(not _IS_WINDOWS, reason="Windows-only ClipboardTrigger loop behavior")
 def test_clipboard_trigger_allows_new_payload_during_cooldown(monkeypatch):
     import yakulingo.services.clipboard_trigger as clipboard_trigger

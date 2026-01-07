@@ -2548,6 +2548,9 @@ class CopilotHandler:
         from contextlib import suppress
 
         self._connected = False
+        # The Copilot page/session may have been recreated during a failed connect.
+        # Reset GPT mode tracking so the next successful connection can re-apply it.
+        self.reset_gpt_mode_state()
         skip_playwright_shutdown = self._playwright_unresponsive
         if skip_playwright_shutdown:
             if self._playwright_unresponsive_reason:
@@ -7214,6 +7217,8 @@ class CopilotHandler:
         from contextlib import suppress
 
         self._connected = False
+        # Ensure a subsequent reconnect attempts GPT mode setup again.
+        self.reset_gpt_mode_state()
 
         # Note: about:blank navigation removed for performance optimization (~1s saved)
         # --disable-session-crashed-bubble flag should suppress "Restore pages" dialog

@@ -1373,9 +1373,13 @@ class CopilotHandler:
         if self.edge_process is None and not self._edge_pid:
             return self.is_edge_process_alive()
         try:
-            return self._find_edge_window_handle() is not None
+            if self._find_edge_window_handle() is not None:
+                return True
         except Exception:
-            return self.is_edge_process_alive()
+            pass
+        # Edge can temporarily hide/offscreen the window (or window enumeration can fail),
+        # so fall back to the process/port-based liveness check to avoid false negatives.
+        return self.is_edge_process_alive()
 
     def set_hotkey_layout_active(self, active: bool, *, preserve_edge: bool = False) -> None:
         """Track whether a hotkey layout is active."""

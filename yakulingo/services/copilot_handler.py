@@ -5323,12 +5323,57 @@ class CopilotHandler:
         except Exception:
             return False
 
+    def _is_ui_window_sync_active(self) -> bool:
+        try:
+            with self._ui_window_sync_lock:
+                return self._ui_window_sync_refcount > 0
+        except Exception:
+            return False
+
+    def _position_edge_behind_yakulingo_if_ui_visible(self) -> bool:
+        """Best-effort: position Edge behind the YakuLingo UI window (Windows only)."""
+        if sys.platform != "win32":
+            return False
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.WinDLL("user32", use_last_error=True)
+
+            yakulingo_hwnd = self._find_yakulingo_window_handle(include_hidden=True)
+            if not yakulingo_hwnd:
+                return False
+
+            try:
+                is_visible = bool(user32.IsWindowVisible(wintypes.HWND(yakulingo_hwnd)))
+                is_minimized = bool(user32.IsIconic(wintypes.HWND(yakulingo_hwnd)))
+            except Exception:
+                return False
+
+            if not is_visible or is_minimized:
+                return False
+
+            edge_hwnd = self._find_edge_window_handle()
+            if not edge_hwnd:
+                return False
+
+            return self._position_edge_behind_yakulingo_window(
+                edge_hwnd=int(edge_hwnd),
+                yakulingo_hwnd=int(yakulingo_hwnd),
+            )
+        except Exception:
+            return False
+
     def _apply_browser_display_mode(self, page_title: str = None) -> None:
         """Apply browser display mode based on settings.
 
         Args:
             page_title: The current page title for exact matching
         """
+        if self._is_ui_window_sync_active():
+            if self._position_edge_behind_yakulingo_if_ui_visible():
+                return
+
         # Use cached settings if available
         mode = self._get_browser_display_mode()
         edge_layout_mode = getattr(self, "_edge_layout_mode", None)
@@ -5770,6 +5815,10 @@ class CopilotHandler:
         - "foreground": Keep Edge in foreground (no action needed)
         """
         if sys.platform == "win32":
+            if self._is_ui_window_sync_active():
+                if self._position_edge_behind_yakulingo_if_ui_visible():
+                    logger.debug("UI window sync active: keeping Edge behind YakuLingo")
+                    return
             mode = self._get_browser_display_mode()
             edge_layout_mode = getattr(self, "_edge_layout_mode", None)
             if edge_layout_mode == "offscreen":

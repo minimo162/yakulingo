@@ -104,7 +104,7 @@ else:
             fast_double_copy_min_gap_ms: float = 10.0,
             same_payload_suppress_ms: float = 120.0,
             recheck_settle_ms: float = 30.0,
-            double_copy_min_gap_ms: float = 50.0,
+            double_copy_min_gap_ms: float = 35.0,
         ) -> None:
             self._callback: Optional[Callable[[str], None]] = callback
             self._double_copy_window_sec = double_copy_window_sec

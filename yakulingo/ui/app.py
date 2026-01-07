@@ -1334,6 +1334,14 @@ class HotkeyFileOutputSummary:
     output_files: list[tuple[Path, str]]
 
 
+@dataclass(frozen=True)
+class _PendingHotkeyRequest:
+    text: str
+    source_hwnd: int | None
+    bring_ui_to_front: bool
+    queued_at: float
+
+
 class _HotkeyBackgroundUpdateBuffer:
     """Thread-safe buffer for background hotkey translation state updates."""
 
@@ -1565,6 +1573,8 @@ class YakuLingoApp:
         # Clipboard trigger for double-copy translation.
         self._clipboard_trigger = None
         self._open_ui_window_callback: Callable[[], None] | None = None
+        self._pending_hotkey_request: _PendingHotkeyRequest | None = None
+        self._pending_hotkey_lock = threading.Lock()
 
         # PP-DocLayout-L initialization state (on-demand for PDF)
         self._layout_init_state = LayoutInitializationState.NOT_INITIALIZED
@@ -2261,14 +2271,38 @@ class YakuLingoApp:
 
         # Skip if already translating (text or file), unless we only need to open the UI.
         if not is_empty:
+            def _queue_pending(reason: str) -> None:
+                import time
+
+                with self._pending_hotkey_lock:
+                    self._pending_hotkey_request = _PendingHotkeyRequest(
+                        text=text,
+                        source_hwnd=source_hwnd,
+                        bring_ui_to_front=bring_ui_to_front,
+                        queued_at=time.monotonic(),
+                    )
+                logger.debug("Hotkey queued - %s", reason)
+                try:
+                    from nicegui import background_tasks
+
+                    background_tasks.create(
+                        self._handle_hotkey_text(
+                            "",
+                            source_hwnd=source_hwnd,
+                            bring_ui_to_front=bring_ui_to_front,
+                        )
+                    )
+                except Exception:
+                    pass
+
             if self.state.text_translating:
-                logger.debug("Hotkey ignored - text translation in progress")
+                _queue_pending("text translation in progress")
                 return
             if self.state.file_state == FileState.TRANSLATING:
-                logger.debug("Hotkey ignored - file translation in progress")
+                _queue_pending("file translation in progress")
                 return
             if getattr(self, "_hotkey_translation_active", False):
-                logger.debug("Hotkey ignored - hotkey translation in progress")
+                _queue_pending("hotkey translation in progress")
                 return
 
         # Schedule UI update on NiceGUI's event loop
@@ -2842,6 +2876,25 @@ class YakuLingoApp:
             self._hotkey_translation_active = False
             if self._active_translation_trace_id == trace_id:
                 self._active_translation_trace_id = None
+            pending: _PendingHotkeyRequest | None = None
+            try:
+                with self._pending_hotkey_lock:
+                    pending = self._pending_hotkey_request
+                    self._pending_hotkey_request = None
+            except Exception:
+                pending = None
+            if pending is not None:
+                import time
+
+                logger.debug(
+                    "Hotkey draining queued request (queued_for=%.2fs)",
+                    time.monotonic() - pending.queued_at,
+                )
+                self._on_hotkey_triggered(
+                    pending.text,
+                    source_hwnd=pending.source_hwnd,
+                    bring_ui_to_front=pending.bring_ui_to_front,
+                )
 
     def _extract_hotkey_file_paths(self, text: str) -> tuple[bool, list[Path]]:
         """Detect whether the hotkey payload represents a file selection.

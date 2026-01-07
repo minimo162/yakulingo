@@ -716,6 +716,24 @@ class BatchTranslator:
         # Translation cache for avoiding re-translation of identical text
         self._cache = TranslationCache() if enable_cache else None
 
+    @contextmanager
+    def _ui_window_sync_scope(self, reason: str):
+        """翻訳中だけEdgeをUIの背面に表示する（Windowsのみ・利用可能な場合）。"""
+        copilot = getattr(self, "copilot", None)
+        scope_factory = getattr(copilot, "ui_window_sync_scope", None) if copilot is not None else None
+        if scope_factory is None:
+            yield
+            return
+
+        try:
+            scope = scope_factory(reason=reason)
+        except Exception:
+            yield
+            return
+
+        with scope:
+            yield
+
     def cancel(self) -> None:
         """Request cancellation of batch translation (thread-safe)."""
         self._cancel_event.set()
@@ -997,11 +1015,15 @@ class BatchTranslator:
                 with lock:
                     self.copilot.set_cancel_callback(lambda: self._cancel_event.is_set())
                     try:
-                        unique_translations = self.copilot.translate_sync(
-                            unique_texts, prompt, files_to_attach, skip_clear_wait,
-                            timeout=self.request_timeout,
-                            include_item_ids=include_item_ids,
-                        )
+                        with self._ui_window_sync_scope("translate_blocks_with_result"):
+                            unique_translations = self.copilot.translate_sync(
+                                unique_texts,
+                                prompt,
+                                files_to_attach,
+                                skip_clear_wait,
+                                timeout=self.request_timeout,
+                                include_item_ids=include_item_ids,
+                            )
                     finally:
                         self.copilot.set_cancel_callback(None)
             except TranslationCancelledError:

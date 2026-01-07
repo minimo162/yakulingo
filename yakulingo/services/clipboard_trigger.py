@@ -134,6 +134,7 @@ else:
             self._last_payload_time: Optional[float] = None
             self._last_event_time: Optional[float] = None
             self._cooldown_until = 0.0
+            self._cooldown_payload_hash: Optional[str] = None
 
         @property
         def is_running(self) -> bool:
@@ -191,6 +192,7 @@ else:
             self._last_payload_time = None
             self._last_event_time = None
             self._cooldown_until = 0.0
+            self._cooldown_payload_hash = None
 
         @staticmethod
         def _hash_payload(payload: str) -> str:
@@ -224,14 +226,6 @@ else:
                             self._last_sequence = sequence
 
                         now = time.monotonic()
-                        if now < self._cooldown_until:
-                            wait_sec = min(
-                                max(self._poll_interval_sec, 0.001),
-                                self._cooldown_until - now,
-                            )
-                            if self._stop_event.wait(wait_sec):
-                                return
-                            continue
 
                         try:
                             if _clipboard.should_ignore_self_clipboard(now, sequence):
@@ -312,9 +306,15 @@ else:
                             self._double_copy_window_sec,
                         )
                         if is_match:
+                            suppress_due_to_cooldown = (
+                                now < self._cooldown_until
+                                and self._cooldown_payload_hash is not None
+                                and payload_hash == self._cooldown_payload_hash
+                            )
                             self._cooldown_until = now + self._cooldown_sec
+                            self._cooldown_payload_hash = payload_hash
                             callback = self._callback
-                            if callback:
+                            if callback and not suppress_due_to_cooldown:
                                 try:
                                     callback(payload)
                                 except Exception as exc:
@@ -441,9 +441,15 @@ else:
                                                 mode,
                                             )
                                             if re_is_match:
+                                                suppress_due_to_cooldown = (
+                                                    re_now < self._cooldown_until
+                                                    and self._cooldown_payload_hash is not None
+                                                    and re_payload_hash == self._cooldown_payload_hash
+                                                )
                                                 self._cooldown_until = re_now + self._cooldown_sec
+                                                self._cooldown_payload_hash = re_payload_hash
                                                 callback = self._callback
-                                                if callback:
+                                                if callback and not suppress_due_to_cooldown:
                                                     try:
                                                         callback(re_payload)
                                                     except Exception as exc:
@@ -469,6 +475,9 @@ else:
                                             initial_normalized=normalized_payload,
                                             rechecked_normalized=re_normalized,
                                         )
+
+                        if last_time is not None and (store_time - last_time) < min_gap_sec:
+                            store_time = last_time
 
                         self._last_payload = payload_to_store
                         self._last_payload_normalized = normalized_to_store

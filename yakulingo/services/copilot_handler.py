@@ -5816,8 +5816,22 @@ class CopilotHandler:
         """
         if sys.platform == "win32":
             if self._is_ui_window_sync_active():
-                if self._position_edge_behind_yakulingo_if_ui_visible():
-                    logger.debug("UI window sync active: keeping Edge behind YakuLingo")
+                ui_visible = False
+                try:
+                    import ctypes
+                    from ctypes import wintypes
+
+                    user32 = ctypes.WinDLL("user32", use_last_error=True)
+                    yakulingo_hwnd = self._find_yakulingo_window_handle(include_hidden=True)
+                    if yakulingo_hwnd:
+                        is_visible = bool(user32.IsWindowVisible(wintypes.HWND(yakulingo_hwnd)))
+                        is_minimized = bool(user32.IsIconic(wintypes.HWND(yakulingo_hwnd)))
+                        ui_visible = is_visible and not is_minimized
+                except Exception:
+                    ui_visible = False
+
+                if ui_visible:
+                    logger.debug("UI window sync active: skipping Edge minimization while UI visible")
                     return
             mode = self._get_browser_display_mode()
             edge_layout_mode = getattr(self, "_edge_layout_mode", None)
@@ -6734,8 +6748,9 @@ class CopilotHandler:
 
         cached_edge_hwnd: int | None = None
         cached_ui_hwnd: int | None = None
-        last_target_visible: bool | None = None
-        last_target_rect: tuple[int, int, int, int] | None = None
+        last_ui_visible: bool | None = None
+        anchored_rect: tuple[int, int, int, int] | None = None
+        anchored_edge_hwnd: int | None = None
 
         class RECT(ctypes.Structure):
             _fields_ = [
@@ -6835,26 +6850,22 @@ class CopilotHandler:
                         if target_rect is None:
                             ui_visible = False
 
-                if _is_edge_foreground(cached_edge_hwnd):
-                    last_target_visible = ui_visible
-                    if ui_visible and target_rect is not None:
-                        last_target_rect = target_rect
-                    stop_event.wait(interval)
-                    continue
-
                 if not ui_visible:
-                    if last_target_visible is not False:
+                    if last_ui_visible is not False:
                         try:
                             if not self._position_edge_offscreen():
                                 self._minimize_edge_window(None)
                         except Exception:
                             pass
-                    last_target_visible = False
-                    last_target_rect = None
+                    last_ui_visible = False
+                    anchored_rect = None
+                    anchored_edge_hwnd = None
                     stop_event.wait(interval)
                     continue
 
-                if last_target_visible is True and last_target_rect == target_rect:
+                last_ui_visible = True
+
+                if _is_edge_foreground(cached_edge_hwnd):
                     stop_event.wait(interval)
                     continue
 
@@ -6862,14 +6873,30 @@ class CopilotHandler:
                     stop_event.wait(interval)
                     continue
 
-                positioned = self._position_edge_behind_yakulingo_window(
-                    edge_hwnd=cached_edge_hwnd,
-                    yakulingo_hwnd=cached_ui_hwnd,
-                    target_rect=target_rect,
-                )
-                if positioned:
-                    last_target_visible = True
-                    last_target_rect = target_rect
+                should_position = False
+                if anchored_rect is None:
+                    should_position = True
+                if anchored_edge_hwnd is None or anchored_edge_hwnd != cached_edge_hwnd:
+                    should_position = True
+
+                if not should_position:
+                    try:
+                        edge_is_minimized = bool(user32.IsIconic(wintypes.HWND(cached_edge_hwnd)))
+                        edge_is_visible = bool(user32.IsWindowVisible(wintypes.HWND(cached_edge_hwnd)))
+                        if edge_is_minimized or not edge_is_visible:
+                            should_position = True
+                    except Exception:
+                        should_position = True
+
+                if should_position:
+                    positioned = self._position_edge_behind_yakulingo_window(
+                        edge_hwnd=cached_edge_hwnd,
+                        yakulingo_hwnd=cached_ui_hwnd,
+                        target_rect=target_rect,
+                    )
+                    if positioned:
+                        anchored_rect = target_rect
+                        anchored_edge_hwnd = cached_edge_hwnd
 
             except Exception:
                 pass

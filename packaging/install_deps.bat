@@ -308,10 +308,37 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
     "& '.venv\Scripts\python.exe' -W ignore -c $script 2>$null;" ^
     "exit $LASTEXITCODE"
 set PADDLE_ERROR=!errorlevel!
+
 if !PADDLE_ERROR! neq 0 (
-    echo [WARNING] paddlepaddle verification failed or not installed.
-    echo [INFO] PDF layout analysis may not be available.
-    echo [INFO] You can still try running YakuLingo - it will work for non-PDF files.
+    echo [WARNING] paddlepaddle verification failed. Attempting to reinstall paddlepaddle/paddleocr...
+
+    if "!SKIP_SSL!"=="1" (
+        uv.exe sync !UV_SYNC_PYTHON_ARG! --native-tls --extra ocr --reinstall-package paddlepaddle --reinstall-package paddleocr --allow-insecure-host pypi.org --allow-insecure-host files.pythonhosted.org
+    ) else (
+        uv.exe sync !UV_SYNC_PYTHON_ARG! --native-tls --extra ocr --reinstall-package paddlepaddle --reinstall-package paddleocr
+    )
+    if errorlevel 1 (
+        echo [ERROR] Failed to reinstall paddlepaddle/paddleocr.
+        echo [INFO] Please check your network connection and try again.
+        pause
+        exit /b 1
+    )
+
+    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+        "$script = 'import warnings; warnings.filterwarnings(''ignore''); import paddle; print(''[OK] paddlepaddle version:'', paddle.__version__)';" ^
+        "& '.venv\Scripts\python.exe' -W ignore -c $script 2>$null;" ^
+        "exit $LASTEXITCODE"
+    set PADDLE_ERROR=!errorlevel!
+)
+
+if !PADDLE_ERROR! neq 0 (
+    echo [ERROR] paddlepaddle is not available in the virtual environment.
+    echo [INFO] PDF layout analysis requires paddlepaddle/paddleocr.
+    echo [INFO] Retry this installer, or run: uv sync --extra ocr
+    pause
+    exit /b 1
+) else (
+    echo [DONE] paddlepaddle verified.
 )
 
 :: ============================================================

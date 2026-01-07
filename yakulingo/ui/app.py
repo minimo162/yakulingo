@@ -12072,6 +12072,14 @@ def run_app(
                                 for _ in range(8):
                                     if shutdown_event.is_set():
                                         return
+                                    try:
+                                        if getattr(yakulingo_app, "_resident_mode", False) and (
+                                            getattr(yakulingo_app, "_resident_login_required", False)
+                                            or getattr(yakulingo_app, "_login_polling_active", False)
+                                        ):
+                                            return
+                                    except Exception:
+                                        pass
                                     time.sleep(0.2)
                                     if yakulingo_app._bring_window_to_front_win32():
                                         return

@@ -10,7 +10,7 @@ Translate the Japanese text into English in three styles: standard, concise, min
 - If the input is already English, keep it as is.
 - Preserve line breaks and tabs from the input as much as possible.
 - If the source contains Japanese-only tokens (e.g., names, company types, place names), translate or romanize them; do not leave them in Japanese script.
-- For Japanese-specific units/suffixes, render them in English-friendly notation without Japanese characters (e.g., 円→yen, 万円→man yen; follow {translation_rules} for 兆/億→oku, 千→k, etc.).
+- For Japanese-specific units/suffixes, render them in English-friendly notation without Japanese characters (e.g., 円→yen, 万円→k yen; follow {translation_rules} for 兆/億→oku, 万→k, 千→k, etc.).
 
 ### Style rules
 [standard]

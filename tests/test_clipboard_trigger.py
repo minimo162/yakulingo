@@ -127,3 +127,96 @@ def test_clipboard_trigger_allows_new_payload_during_cooldown(monkeypatch):
 
     assert fired == ["A", "B"]
 
+
+@pytest.mark.skipif(not _IS_WINDOWS, reason="Windows-only ClipboardTrigger pending payload behavior")
+def test_clipboard_trigger_rechecks_empty_payload_until_available(monkeypatch):
+    import yakulingo.services.clipboard_trigger as clipboard_trigger
+    from yakulingo.services.clipboard_trigger import ClipboardTrigger
+
+    fired: list[str] = []
+    trigger = ClipboardTrigger(
+        fired.append,
+        poll_interval_sec=0.0,
+        settle_delay_sec=0.0,
+        recheck_settle_ms=0.0,
+        empty_payload_recheck_window_sec=1.0,
+        empty_payload_recheck_interval_sec=0.05,
+    )
+    trigger._last_sequence = 0
+
+    sequences = [
+        1,
+        1,
+        1,
+        1,  # first copy: payload not ready
+        1,
+        1,
+        1,  # pending read for seq=1 (payload becomes available)
+        2,
+        2,
+        2,
+        2,  # second copy: same payload -> fire
+    ]
+    payloads_retry: list[tuple[str | None, list[str]]] = [
+        (None, []),
+        ("A", []),
+    ]
+    payloads_once: list[tuple[str | None, list[str]]] = [
+        ("A", []),
+    ]
+    monotonic_values = [
+        0.00,
+        0.00,  # now/read_time for seq=1
+        0.10,  # pending check time (>= interval)
+        0.20,
+        0.20,  # now/read_time for seq=2
+    ]
+
+    def get_sequence() -> int | None:
+        if sequences:
+            return sequences.pop(0)
+        trigger._stop_event.set()
+        return None
+
+    def get_payload_with_retry(*, log_fail: bool = True) -> tuple[str | None, list[str]]:
+        _ = log_fail
+        if payloads_retry:
+            return payloads_retry.pop(0)
+        return None, []
+
+    def get_payload_once(*, log_fail: bool = True) -> tuple[str | None, list[str]]:
+        _ = log_fail
+        if payloads_once:
+            return payloads_once.pop(0)
+        return None, []
+
+    def monotonic() -> float:
+        if monotonic_values:
+            return monotonic_values.pop(0)
+        return 999.0
+
+    monkeypatch.setattr(
+        clipboard_trigger._clipboard,
+        "get_clipboard_sequence_number_raw",
+        get_sequence,
+    )
+    monkeypatch.setattr(
+        clipboard_trigger._clipboard,
+        "get_clipboard_payload_with_retry",
+        get_payload_with_retry,
+    )
+    monkeypatch.setattr(
+        clipboard_trigger._clipboard,
+        "get_clipboard_payload_once",
+        get_payload_once,
+    )
+    monkeypatch.setattr(
+        clipboard_trigger._clipboard,
+        "should_ignore_self_clipboard",
+        lambda *_args, **_kwargs: False,
+    )
+    monkeypatch.setattr(clipboard_trigger.time, "monotonic", monotonic)
+
+    trigger._clipboard_listener_loop()
+
+    assert fired == ["A"]

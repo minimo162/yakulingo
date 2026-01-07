@@ -69,9 +69,7 @@ else:
         @staticmethod
         def _normalize_payload(payload: str) -> str:
             normalized = payload.replace("\r\n", "\n").replace("\r", "\n")
-            if normalized.endswith("\n"):
-                normalized = normalized.rstrip("\n")
-            return normalized
+            return normalized.rstrip()
 
         @staticmethod
         def _can_fast_partial_match(shorter: str, longer: str) -> bool:
@@ -106,6 +104,8 @@ else:
             same_payload_suppress_ms: float = 120.0,
             recheck_settle_ms: float = 30.0,
             double_copy_min_gap_ms: float = 35.0,
+            empty_payload_recheck_window_sec: float = 0.6,
+            empty_payload_recheck_interval_sec: float = 0.05,
         ) -> None:
             self._callback: Optional[Callable[[str], None]] = callback
             self._double_copy_window_sec = double_copy_window_sec
@@ -120,6 +120,8 @@ else:
             )
             self._same_payload_suppress_sec = same_payload_suppress_ms / 1000.0
             self._recheck_settle_sec = recheck_settle_ms / 1000.0
+            self._empty_payload_recheck_window_sec = max(empty_payload_recheck_window_sec, 0.0)
+            self._empty_payload_recheck_interval_sec = max(empty_payload_recheck_interval_sec, 0.0)
 
             self._lock = threading.Lock()
             self._stop_event = threading.Event()
@@ -135,6 +137,11 @@ else:
             self._last_event_time: Optional[float] = None
             self._cooldown_until = 0.0
             self._cooldown_payload_hash: Optional[str] = None
+
+            self._pending_sequence: Optional[int] = None
+            self._pending_event_time: Optional[float] = None
+            self._pending_deadline: Optional[float] = None
+            self._pending_next_attempt: Optional[float] = None
 
         @property
         def is_running(self) -> bool:
@@ -193,6 +200,10 @@ else:
             self._last_event_time = None
             self._cooldown_until = 0.0
             self._cooldown_payload_hash = None
+            self._pending_sequence = None
+            self._pending_event_time = None
+            self._pending_deadline = None
+            self._pending_next_attempt = None
 
         @staticmethod
         def _hash_payload(payload: str) -> str:
@@ -210,10 +221,134 @@ else:
                             continue
 
                         if sequence == self._last_sequence:
+                            if (
+                                self._pending_sequence is not None
+                                and sequence == self._pending_sequence
+                                and self._pending_deadline is not None
+                                and self._pending_next_attempt is not None
+                            ):
+                                now = time.monotonic()
+                                if now >= self._pending_deadline:
+                                    self._pending_sequence = None
+                                    self._pending_event_time = None
+                                    self._pending_deadline = None
+                                    self._pending_next_attempt = None
+                                    self._stop_event.wait(self._poll_interval_sec)
+                                    continue
+                                if now >= self._pending_next_attempt:
+                                    self._pending_next_attempt = now + self._empty_payload_recheck_interval_sec
+                                    try:
+                                        if _clipboard.should_ignore_self_clipboard(now, sequence):
+                                            self._pending_sequence = None
+                                            self._pending_event_time = None
+                                            self._pending_deadline = None
+                                            self._pending_next_attempt = None
+                                            self._stop_event.wait(self._poll_interval_sec)
+                                            continue
+                                    except Exception:
+                                        pass
+
+                                    seq_before = _clipboard.get_clipboard_sequence_number_raw()
+                                    try:
+                                        text, files = _clipboard.get_clipboard_payload_once(log_fail=False)
+                                    except Exception as exc:
+                                        logger.debug("Clipboard trigger pending read failed: %s", exc)
+                                        self._stop_event.wait(self._poll_interval_sec)
+                                        continue
+                                    seq_after = _clipboard.get_clipboard_sequence_number_raw()
+
+                                    payload = None
+                                    if files:
+                                        payload = "\n".join(files)
+                                    elif text:
+                                        payload = text
+
+                                    if payload:
+                                        event_time = self._pending_event_time or now
+                                        self._pending_sequence = None
+                                        self._pending_event_time = None
+                                        self._pending_deadline = None
+                                        self._pending_next_attempt = None
+
+                                        normalized_payload = self._normalize_payload(payload)
+                                        payload_hash = self._hash_payload(normalized_payload)
+
+                                        last_payload_normalized = self._last_payload_normalized
+                                        last_payload_hash = self._last_payload_hash
+                                        last_time = self._last_payload_time
+                                        delta_sec = (
+                                            (event_time - last_time) if last_time is not None else None
+                                        )
+                                        min_gap_sec = self._double_copy_min_gap_sec
+                                        exact_match = (
+                                            last_payload_normalized is not None
+                                            and normalized_payload == last_payload_normalized
+                                            and last_time is not None
+                                            and delta_sec is not None
+                                            and delta_sec <= self._double_copy_window_sec
+                                            and delta_sec >= min_gap_sec
+                                        )
+                                        partial_match = False
+                                        if (
+                                            not exact_match
+                                            and last_payload_normalized is not None
+                                            and last_time is not None
+                                            and delta_sec is not None
+                                            and delta_sec <= self._fast_partial_match_window_sec
+                                            and delta_sec >= min_gap_sec
+                                        ):
+                                            shorter = normalized_payload
+                                            longer = last_payload_normalized
+                                            if len(shorter) > len(longer):
+                                                shorter, longer = longer, shorter
+                                            if self._can_fast_partial_match(shorter, longer):
+                                                if "\n" in shorter or "\n" in longer:
+                                                    if self._is_line_prefix(shorter, longer):
+                                                        partial_match = True
+                                                elif longer.startswith(shorter):
+                                                    partial_match = True
+                                        is_match = exact_match or partial_match
+
+                                        if is_match:
+                                            suppress_due_to_cooldown = (
+                                                event_time < self._cooldown_until
+                                                and self._cooldown_payload_hash is not None
+                                                and payload_hash == self._cooldown_payload_hash
+                                            )
+                                            self._cooldown_until = event_time + self._cooldown_sec
+                                            self._cooldown_payload_hash = payload_hash
+                                            callback = self._callback
+                                            if callback and not suppress_due_to_cooldown:
+                                                try:
+                                                    callback(payload)
+                                                except Exception as exc:
+                                                    logger.debug(
+                                                        "Clipboard trigger pending callback failed: %s",
+                                                        exc,
+                                                    )
+
+                                        store_time = event_time
+                                        if last_time is not None and (store_time - last_time) < min_gap_sec:
+                                            store_time = last_time
+
+                                        self._last_payload = payload
+                                        self._last_payload_normalized = normalized_payload
+                                        self._last_payload_hash = payload_hash
+                                        self._last_payload_time = store_time
+                                        self._last_event_time = event_time
+                                        if seq_after is not None:
+                                            self._last_processed_seq = seq_after
+                                            self._last_sequence = seq_after
+                                        continue
+
                             self._stop_event.wait(self._poll_interval_sec)
                             continue
 
                         self._last_sequence = sequence
+                        self._pending_sequence = None
+                        self._pending_event_time = None
+                        self._pending_deadline = None
+                        self._pending_next_attempt = None
                         logger.debug("Clipboard sequence changed: seq=%s", sequence)
                         # Collapse rapid consecutive updates (e.g., multiple clipboard formats).
                         for _ in range(2):
@@ -255,6 +390,15 @@ else:
                                 "yes" if text else "no",
                                 len(files),
                             )
+                            if self._empty_payload_recheck_window_sec > 0:
+                                self._pending_sequence = sequence
+                                self._pending_event_time = now
+                                self._pending_deadline = (
+                                    read_time + self._empty_payload_recheck_window_sec
+                                )
+                                self._pending_next_attempt = (
+                                    read_time + self._empty_payload_recheck_interval_sec
+                                )
                             continue
 
                         normalized_payload = self._normalize_payload(payload)

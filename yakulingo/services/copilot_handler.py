@@ -1948,13 +1948,12 @@ class CopilotHandler:
             # Configure window position based on display mode
             if display_mode == "minimized":
                 edge_args.extend([
-                    "--no-startup-window",
                     "--start-minimized",
                     "--window-position=-32000,-32000",
                     f"--window-size={self.MIN_EDGE_WINDOW_WIDTH},{self.MIN_EDGE_WINDOW_HEIGHT}",
                 ])
                 logger.debug(
-                    "Starting Edge in minimized mode (off-screen/no-startup-window) at %dx%d",
+                    "Starting Edge in minimized mode (off-screen/start-minimized) at %dx%d",
                     self.MIN_EDGE_WINDOW_WIDTH,
                     self.MIN_EDGE_WINDOW_HEIGHT,
                 )

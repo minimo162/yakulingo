@@ -1197,6 +1197,7 @@ FILE_TRANSLATION_UI_VISIBILITY_HOLD_SEC = 600.0  # 翻訳完了直後のUI自動
 DEFAULT_TEXT_STYLE = "concise"
 RESIDENT_HEARTBEAT_INTERVAL_SEC = 300  # Update startup.log even when UI is closed
 RESIDENT_STARTUP_READY_TIMEOUT_SEC = 900  # Allow manual login during resident startup
+RESIDENT_STARTUP_PROMPT_READY_TIMEOUT_SEC = 300  # Wait for Copilot input/send readiness after connect
 RESIDENT_STARTUP_POLL_INTERVAL_SEC = 2
 RESIDENT_STARTUP_LAYOUT_RETRY_ATTEMPTS = 40
 RESIDENT_STARTUP_LAYOUT_RETRY_DELAY_SEC = 0.25
@@ -1552,6 +1553,7 @@ class YakuLingoApp:
         self._resident_heartbeat_task: "asyncio.Task | None" = None
         self._resident_startup_active = False
         self._resident_startup_ready = False
+        self._resident_startup_prompt_ready = False
         self._resident_startup_started_at: float | None = None
         self._resident_startup_error: str | None = None
         self._resident_mode = False
@@ -1989,10 +1991,15 @@ class YakuLingoApp:
         status: dict[str, object] = {
             "ready": self._resident_startup_ready,
             "active": self._resident_startup_active,
+            "prompt_ready": self._resident_startup_prompt_ready,
         }
         ui_connected = self._get_active_client() is not None
         status["ui_connected"] = ui_connected
         status["ui_ready"] = bool(ui_connected and self._ui_ready_event.is_set())
+        status["clipboard_trigger_running"] = bool(
+            self._clipboard_trigger is not None and getattr(self._clipboard_trigger, "is_running", False)
+        )
+        status["translation_service_ready"] = self.translation_service is not None
         if self._resident_startup_started_at is not None:
             status["elapsed_sec"] = max(0.0, time.time() - self._resident_startup_started_at)
         if self._resident_startup_error:
@@ -2019,8 +2026,6 @@ class YakuLingoApp:
             or copilot.last_connection_error == CopilotHandler.ERROR_LOGIN_REQUIRED
         )
         status["gpt_mode_set"] = bool(getattr(copilot, "is_gpt_mode_set", False))
-        if not status["ready"] and not status.get("error") and state == CopilotConnectionState.READY:
-            status["ready"] = True
         return status
 
     async def _ensure_resident_ui_visible(self, reason: str) -> bool:
@@ -2172,10 +2177,15 @@ class YakuLingoApp:
 
         self._resident_startup_active = True
         self._resident_startup_ready = False
+        self._resident_startup_prompt_ready = False
         self._resident_startup_error = None
         self._resident_startup_started_at = time.time()
 
         try:
+            if not self._ensure_translation_service():
+                self._resident_startup_error = "translation_service_init_failed"
+                return
+
             if self._early_connection_event is not None and not self._early_connection_event.is_set():
                 try:
                     await asyncio.wait_for(
@@ -2243,6 +2253,20 @@ class YakuLingoApp:
                     await asyncio.to_thread(copilot._position_edge_offscreen)
                 except Exception as e:
                     logger.debug("Resident warmup: Edge offscreen move failed: %s", e)
+
+            prompt_ready = False
+            try:
+                prompt_ready = await asyncio.to_thread(
+                    copilot.wait_for_prompt_ready,
+                    RESIDENT_STARTUP_PROMPT_READY_TIMEOUT_SEC,
+                )
+            except Exception as e:
+                logger.debug("Resident warmup: prompt readiness check failed: %s", e)
+
+            if not prompt_ready:
+                self._resident_startup_error = "prompt_timeout"
+                return
+            self._resident_startup_prompt_ready = True
 
             self._resident_startup_ready = True
             self.state.copilot_ready = True

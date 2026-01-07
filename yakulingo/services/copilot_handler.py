@@ -6603,6 +6603,37 @@ class CopilotHandler:
         """
         return _playwright_executor.execute(self._wait_for_page_load_impl, wait_seconds)
 
+    def wait_for_prompt_ready(self, timeout_seconds: float = 30.0) -> bool:
+        """Copilotの入力欄が送信可能になるまで待機する（スレッドセーフ）。"""
+        if timeout_seconds <= 0:
+            return False
+        if not self.is_connected:
+            return False
+
+        timeout_sec = int(max(1.0, float(timeout_seconds)))
+        # Give the executor a small margin to avoid false timeouts due to scheduling overhead.
+        executor_timeout = max(timeout_sec + 5, 10)
+        try:
+            return bool(
+                _playwright_executor.execute(
+                    self._wait_for_prompt_ready_impl,
+                    timeout_sec,
+                    timeout=executor_timeout,
+                )
+            )
+        except TimeoutError:
+            return False
+        except Exception as e:
+            logger.debug("wait_for_prompt_ready failed: %s", e)
+            return False
+
+    def _wait_for_prompt_ready_impl(self, timeout: int = 30) -> bool:
+        """Playwrightスレッド内で、送信可能状態を待機する（内部実装）。"""
+        try:
+            return self._wait_for_attachment_ready(timeout=max(int(timeout), 1))
+        except Exception:
+            return False
+
     def bring_to_foreground(
         self,
         reason: str = "external request",

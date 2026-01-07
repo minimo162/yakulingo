@@ -6460,13 +6460,20 @@ class YakuLingoApp:
             return
 
         try:
-            await asyncio.to_thread(
-                copilot.bring_to_foreground,
-                reason=f"manual_show: {reason}",
-                force_full_window=True,
+            shown = await asyncio.to_thread(
+                copilot.show_copilot_browser,
+                reason,
             )
+            if not shown and self._client:
+                with self._client:
+                    ui.notify(
+                        'Edgeを前面表示できませんでした。',
+                        type='warning',
+                        position='top',
+                        timeout=4000,
+                    )
         except Exception as e:
-            logger.debug("Failed to bring Edge to foreground: %s", e)
+            logger.debug("Failed to show Copilot browser: %s", e)
             if self._client:
                 with self._client:
                     ui.notify(

@@ -6824,6 +6824,135 @@ class CopilotHandler:
         except Exception as e:
             logger.debug("Failed to bring window to foreground: %s", e)
 
+    def show_copilot_browser(self, reason: str = "manual_show") -> bool:
+        """CopilotのEdge画面をユーザー向けに前面表示する（白画面/別タブ対策込み）。"""
+        try:
+            return bool(
+                _playwright_executor.execute(
+                    self._show_copilot_browser_impl,
+                    reason,
+                )
+            )
+        except Exception as e:
+            logger.debug("Failed to show Copilot browser: %s", e)
+            return False
+
+    def _show_copilot_browser_impl(self, reason: str = "manual_show") -> bool:
+        """Playwrightスレッド内で、ユーザーが操作できるページを優先して表示する。"""
+        error_types = _get_playwright_errors()
+        PlaywrightError = error_types['Error']
+        PlaywrightTimeoutError = error_types['TimeoutError']
+
+        if not self._context and not self._page:
+            logger.debug("show_copilot_browser: no context/page available")
+            return False
+
+        def _safe_page_url(page) -> str:
+            try:
+                return page.url or ""
+            except Exception:
+                return ""
+
+        def _is_open(page) -> bool:
+            if not page:
+                return False
+            try:
+                return not page.is_closed()
+            except Exception:
+                return False
+
+        def _wait_about_blank(page) -> str:
+            url = _safe_page_url(page)
+            if url != "about:blank":
+                return url
+            try:
+                page.wait_for_load_state('domcontentloaded', timeout=3000)
+            except Exception:
+                pass
+            return _safe_page_url(page)
+
+        chosen_page = None
+
+        # 1) If an auth/login popup exists, show it first so the user can sign in.
+        if self._context:
+            try:
+                for candidate in self._context.pages:
+                    if not _is_open(candidate):
+                        continue
+                    url = _wait_about_blank(candidate)
+                    if _is_login_page(url) or _is_auth_flow_page(url):
+                        chosen_page = candidate
+                        break
+            except PlaywrightError:
+                pass
+
+        # 2) Prefer an actual Copilot chat page.
+        if chosen_page is None:
+            try:
+                chat_page = self._find_copilot_chat_page()
+                if _is_open(chat_page):
+                    chosen_page = chat_page
+            except Exception:
+                chosen_page = None
+
+        # 3) Fallback to any active Copilot-related page.
+        if chosen_page is None:
+            try:
+                active_page = self._get_active_copilot_page()
+                if _is_open(active_page):
+                    chosen_page = active_page
+            except Exception:
+                chosen_page = None
+
+        if chosen_page is None:
+            chosen_page = self._page
+
+        if not _is_open(chosen_page):
+            chosen_page = self._get_active_copilot_page()
+            if not _is_open(chosen_page):
+                logger.debug("show_copilot_browser: no usable page found")
+                return False
+
+        self._page = chosen_page
+
+        # If the current page looks broken (Edge error/about:blank/other tab), try to recover to Copilot.
+        url = _wait_about_blank(chosen_page)
+        if self._looks_like_edge_error_page(chosen_page, fast_only=True):
+            self._recover_from_edge_error_page(chosen_page, reason="manual_show", force=True)
+            url = _safe_page_url(chosen_page)
+
+        if (not _is_copilot_url(url)) and (not _is_login_page(url)) and (not _is_auth_flow_page(url)):
+            try:
+                chosen_page.goto(self.COPILOT_URL, wait_until='domcontentloaded', timeout=self.PAGE_GOTO_TIMEOUT_MS)
+                url = _safe_page_url(chosen_page)
+            except (PlaywrightTimeoutError, PlaywrightError) as e:
+                logger.debug("show_copilot_browser: navigation to Copilot failed: %s", e)
+
+        # Bring the window to foreground for the user (force full window).
+        self._bring_to_foreground_impl(
+            chosen_page,
+            reason=f"manual_show: {reason}",
+            force_full_window=True,
+        )
+
+        # If we are on Copilot but the chat UI is still missing, try a single reload to avoid a persistent white screen.
+        url = _safe_page_url(chosen_page)
+        if _is_copilot_url(url) and "/chat" in url:
+            try:
+                chosen_page.wait_for_selector(self.CHAT_INPUT_SELECTOR_EXTENDED, timeout=4000, state='visible')
+                return True
+            except PlaywrightTimeoutError:
+                try:
+                    chosen_page.reload(wait_until='domcontentloaded', timeout=self.EDGE_ERROR_RELOAD_TIMEOUT_MS)
+                except Exception:
+                    pass
+                try:
+                    chosen_page.wait_for_selector(self.CHAT_INPUT_SELECTOR_EXTENDED, timeout=4000, state='visible')
+                except Exception:
+                    pass
+
+        return True
+
     def send_to_background(self) -> None:
         """Hide/minimize the Edge window after login is complete."""
         if not self._page:

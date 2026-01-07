@@ -4642,7 +4642,7 @@ class YakuLingoApp:
             return False
 
     def _is_ui_window_visible_win32(self) -> bool:
-        """Return True if a YakuLingo UI window is visible on-screen (Windows only)."""
+        """Return True if a YakuLingo UI window is visible (or minimized) on-screen (Windows only)."""
         if sys.platform != "win32":
             return False
         try:
@@ -4670,7 +4670,7 @@ class YakuLingoApp:
             if user32.IsWindowVisible(wintypes.HWND(resolved_hwnd)) == 0:
                 return False
             if user32.IsIconic(wintypes.HWND(resolved_hwnd)) != 0:
-                return False
+                return True
 
             class RECT(ctypes.Structure):
                 _fields_ = [

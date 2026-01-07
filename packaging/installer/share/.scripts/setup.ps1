@@ -2107,6 +2107,13 @@ if (-not (Test-SafeInstallDir `$installDir)) {
   exit 1
 }
 
+`$safeWorkingDir = `$env:TEMP
+if (-not `$safeWorkingDir -or -not (Test-Path `$safeWorkingDir)) { `$safeWorkingDir = `$env:SystemRoot }
+if (-not `$safeWorkingDir -or -not (Test-Path `$safeWorkingDir)) { `$safeWorkingDir = [System.IO.Path]::GetPathRoot(`$installDir) }
+if (`$safeWorkingDir -and (Test-Path `$safeWorkingDir)) {
+  try { Set-Location -Path `$safeWorkingDir } catch { }
+}
+
 function Test-PortOpen([int]`$p) {
   try {
     `$client = New-Object System.Net.Sockets.TcpClient
@@ -2184,6 +2191,14 @@ if ([string]::IsNullOrWhiteSpace(`$TargetDir)) { exit 1 }
 try { `$full = [System.IO.Path]::GetFullPath(`$TargetDir).TrimEnd('\') } catch { exit 1 }
 `$root = [System.IO.Path]::GetPathRoot(`$full).TrimEnd('\')
 if (`$full -eq `$root) { exit 1 }
+
+try {
+  `$safeWorkingDir = `$env:TEMP
+  if (-not `$safeWorkingDir -or -not (Test-Path `$safeWorkingDir)) { `$safeWorkingDir = `$env:SystemRoot }
+  if (-not `$safeWorkingDir -or -not (Test-Path `$safeWorkingDir)) { `$safeWorkingDir = `$root + '\' }
+  if (`$safeWorkingDir -and (Test-Path `$safeWorkingDir)) { Set-Location -Path `$safeWorkingDir }
+} catch { }
+
 `$installMarkers = @('YakuLingo.exe', 'YakuLingo_Resident.ps1', 'YakuLingo_OpenUI.ps1', 'YakuLingo_Exit.ps1')
 `$appMarkers = @('app.py', 'yakulingo', 'config\\settings.template.json')
 `$hasInstallMarker = `$false
@@ -2201,7 +2216,7 @@ try { Remove-Item -Path `$MyInvocation.MyCommand.Definition -Force } catch { }
 
 [System.IO.File]::WriteAllText(`$cleanupScriptPath, `$cleanupScript, (New-Object System.Text.UTF8Encoding `$false))
 `$argString = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "{0}" -TargetDir "{1}"' -f `$cleanupScriptPath, `$installDir
-Start-Process -FilePath powershell.exe -ArgumentList `$argString -WindowStyle Hidden
+Start-Process -FilePath powershell.exe -ArgumentList `$argString -WindowStyle Hidden -WorkingDirectory `$safeWorkingDir
 exit 0
 "@
 
@@ -2233,11 +2248,16 @@ objShell.Run command, 0, False
 
     $uninstallVbs = @'
 Option Explicit
-Dim objShell, objFSO, scriptDir, psScript, command
+Dim objShell, objFSO, scriptDir, psScript, command, safeCwd
 Set objShell = CreateObject("WScript.Shell")
 Set objFSO = CreateObject("Scripting.FileSystemObject")
 scriptDir = objFSO.GetParentFolderName(WScript.ScriptFullName)
-objShell.CurrentDirectory = scriptDir
+safeCwd = objShell.ExpandEnvironmentStrings("%TEMP%")
+If safeCwd <> "" Then
+    objShell.CurrentDirectory = safeCwd
+Else
+    objShell.CurrentDirectory = scriptDir
+End If
 psScript = scriptDir & "\YakuLingo_Uninstall.ps1"
 command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File """ & psScript & """"
 objShell.Run command, 0, False
@@ -2302,7 +2322,11 @@ objShell.Run command, 0, False
     $StartMenuUninstall = $WshShell.CreateShortcut($StartMenuUninstallPath)
     $StartMenuUninstall.TargetPath = "wscript.exe"
     $StartMenuUninstall.Arguments = "`"$UninstallVbsPath`""
-    $StartMenuUninstall.WorkingDirectory = $SetupPath
+    if ($env:TEMP) {
+        $StartMenuUninstall.WorkingDirectory = $env:TEMP
+    } else {
+        $StartMenuUninstall.WorkingDirectory = $SetupPath
+    }
     if (Test-Path $IconPath) {
         $StartMenuUninstall.IconLocation = "$IconPath,0"
     }

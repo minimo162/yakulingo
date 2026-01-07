@@ -35,9 +35,11 @@ REFERENCE_INSTRUCTION = """
 """
 ID_MARKER_INSTRUCTION = """
 ### Item ID markers (critical)
-- Each item must start with "<number>. [[ID:n]]" (example: "1. [[ID:1]] ...").
-- Do not remove or alter the marker.
-- Do not move the marker to another position or line.
+- Each output item must start with "<number>. [[ID:n]]" (example: "1. [[ID:1]] ...").
+- Output must include every ID from 1 to N exactly once (no omissions, no extras).
+- Do not remove, change, or relocate the marker; keep it on the same line as the item number.
+- If you cannot translate an item, copy the original text after the marker (do not leave it empty).
+- Do not output other prompt markers (e.g., "===INPUT_TEXT===" / "===END_INPUT_TEXT===").
 """
 
 # 用語集埋め込み時の指示文（プロンプト内に用語集を含める場合）
@@ -655,4 +657,3 @@ class PromptBuilder:
             translations.append("")
 
         return translations[:expected_count]
-

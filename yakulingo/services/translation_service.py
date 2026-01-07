@@ -88,6 +88,50 @@ _RE_TRAILING_ATTACHMENT_LABEL = re.compile(
 )
 _RE_ITEM_ID_MARKER = re.compile(r'^\s*\[\[ID:\d+\]\]\s*')
 
+_RE_JP_KANA = re.compile(r'[\u3040-\u309F\u30A0-\u30FF\uFF65-\uFF9F]')
+_RE_CJK_IDEOGRAPH = re.compile(r'[\u3400-\u4DBF\u4E00-\u9FFF]')
+_RE_LATIN_ALPHA = re.compile(r'[A-Za-z]')
+
+
+def _looks_untranslated_to_en(text: str) -> bool:
+    """Return True when the 'English' translation looks mostly Japanese."""
+    text = text.strip()
+    if not text:
+        return False
+
+    kana_count = len(_RE_JP_KANA.findall(text))
+    cjk_count = len(_RE_CJK_IDEOGRAPH.findall(text))
+    latin_count = len(_RE_LATIN_ALPHA.findall(text))
+    jp_total = kana_count + cjk_count
+
+    if jp_total == 0:
+        return False
+    if latin_count == 0:
+        return True
+
+    total_letters = jp_total + latin_count
+    jp_ratio = jp_total / total_letters if total_letters else 0.0
+
+    if kana_count >= 1 and jp_total >= 5 and jp_ratio >= 0.05:
+        return True
+    if jp_total >= 20 and jp_ratio >= 0.25:
+        return True
+    if jp_total >= 50 and jp_ratio >= 0.15:
+        return True
+    return False
+
+
+def _insert_extra_instruction(prompt: str, extra_instruction: str) -> str:
+    """Insert extra instruction before the input marker if present."""
+    marker = "===INPUT_TEXT==="
+    extra_instruction = extra_instruction.strip()
+    if not extra_instruction:
+        return prompt
+    if marker in prompt:
+        return prompt.replace(marker, f"{extra_instruction}\n{marker}", 1)
+    return f"{extra_instruction}\n{prompt}"
+
+
 def _sanitize_output_stem(name: str) -> str:
     """Sanitize a filename stem for cross-platform safety.
 
@@ -1617,56 +1661,80 @@ class TranslationService:
                 self.prompt_builder.reload_translation_rules()
                 translation_rules = self.prompt_builder.get_translation_rules(output_language)
 
-                prompt = template.replace("{translation_rules}", translation_rules)
-                prompt = prompt.replace("{reference_section}", reference_section)
-                prompt = prompt.replace("{input_text}", text)
+                def build_compare_prompt(extra_instruction: Optional[str] = None) -> str:
+                    prompt = template.replace("{translation_rules}", translation_rules)
+                    prompt = prompt.replace("{reference_section}", reference_section)
+                    prompt = prompt.replace("{input_text}", text)
+                    if extra_instruction:
+                        prompt = _insert_extra_instruction(prompt, extra_instruction)
+                    return prompt
 
+                def parse_compare_result(raw_result: str) -> Optional[TextTranslationResult]:
+                    parsed_options = self._parse_style_comparison_result(raw_result)
+                    if parsed_options:
+                        options_by_style: dict[str, TranslationOption] = {}
+                        for option in parsed_options:
+                            if option.style and option.style not in options_by_style:
+                                options_by_style[option.style] = option
+                        selected = options_by_style.get(style) or parsed_options[0]
+                        return TextTranslationResult(
+                            source_text=text,
+                            source_char_count=len(text),
+                            options=[selected],
+                            output_language=output_language,
+                            detected_language=detected_language,
+                        )
+
+                    parsed_single = self._parse_single_translation_result(raw_result)
+                    if parsed_single:
+                        option = parsed_single[0]
+                        option.style = style
+                        return TextTranslationResult(
+                            source_text=text,
+                            source_char_count=len(text),
+                            options=[option],
+                            output_language=output_language,
+                            detected_language=detected_language,
+                        )
+
+                    if raw_result.strip():
+                        return TextTranslationResult(
+                            source_text=text,
+                            source_char_count=len(text),
+                            options=[TranslationOption(
+                                text=raw_result.strip(),
+                                explanation="翻訳結果です",
+                                style=style,
+                            )],
+                            output_language=output_language,
+                            detected_language=detected_language,
+                        )
+
+                    return None
+
+                prompt = build_compare_prompt()
                 logger.debug(
                     "Sending text to Copilot (compare fallback, streaming=%s, refs=%d)",
                     bool(on_chunk),
                     len(files_to_attach) if files_to_attach else 0,
                 )
                 raw_result = self._translate_single_with_cancel(text, prompt, files_to_attach, on_chunk)
-                parsed_options = self._parse_style_comparison_result(raw_result)
+                result = parse_compare_result(raw_result)
 
-                if parsed_options:
-                    options_by_style = {}
-                    for option in parsed_options:
-                        if option.style and option.style not in options_by_style:
-                            options_by_style[option.style] = option
-                    selected = options_by_style.get(style) or parsed_options[0]
-                    return TextTranslationResult(
-                        source_text=text,
-                        source_char_count=len(text),
-                        options=[selected],
-                        output_language=output_language,
-                        detected_language=detected_language,
+                if result and result.options and _looks_untranslated_to_en(result.options[0].text):
+                    retry_prompt = build_compare_prompt(
+                        "CRITICAL: Rewrite all Translation sections in English only (no Japanese scripts or Japanese punctuation). "
+                        "Keep Explanation in Japanese and keep the exact output format."
                     )
+                    retry_raw = self._translate_single_with_cancel(text, retry_prompt, files_to_attach, None)
+                    retry_result = parse_compare_result(retry_raw)
+                    if retry_result and retry_result.options and not _looks_untranslated_to_en(retry_result.options[0].text):
+                        return retry_result
+                    if retry_result:
+                        return retry_result
 
-                parsed_single = self._parse_single_translation_result(raw_result)
-                if parsed_single:
-                    option = parsed_single[0]
-                    option.style = style
-                    return TextTranslationResult(
-                        source_text=text,
-                        source_char_count=len(text),
-                        options=[option],
-                        output_language=output_language,
-                        detected_language=detected_language,
-                    )
-
-                if raw_result.strip():
-                    return TextTranslationResult(
-                        source_text=text,
-                        source_char_count=len(text),
-                        options=[TranslationOption(
-                            text=raw_result.strip(),
-                            explanation="翻訳結果です",
-                            style=style,
-                        )],
-                        output_language=output_language,
-                        detected_language=detected_language,
-                    )
+                if result:
+                    return result
 
                 logger.warning("Empty response received from Copilot")
                 return TextTranslationResult(
@@ -1835,9 +1903,15 @@ class TranslationService:
                     self.prompt_builder.reload_translation_rules()
                     translation_rules = self.prompt_builder.get_translation_rules(output_language)
 
-                    prompt = template.replace("{translation_rules}", translation_rules)
-                    prompt = prompt.replace("{reference_section}", reference_section)
-                    prompt = prompt.replace("{input_text}", text)
+                    def build_compare_prompt(extra_instruction: Optional[str] = None) -> str:
+                        prompt = template.replace("{translation_rules}", translation_rules)
+                        prompt = prompt.replace("{reference_section}", reference_section)
+                        prompt = prompt.replace("{input_text}", text)
+                        if extra_instruction:
+                            prompt = _insert_extra_instruction(prompt, extra_instruction)
+                        return prompt
+
+                    prompt = build_compare_prompt()
 
                     logger.debug(
                         "Sending text to Copilot for style comparison (refs=%d)",
@@ -1845,11 +1919,51 @@ class TranslationService:
                     )
                     raw_result = self._translate_single_with_cancel(text, prompt, files_to_attach, on_chunk)
                     parsed_options = self._parse_style_comparison_result(raw_result)
+                    if parsed_options and any(_looks_untranslated_to_en(option.text) for option in parsed_options):
+                        retry_prompt = build_compare_prompt(
+                            "CRITICAL: Rewrite all Translation sections in English only (no Japanese scripts or Japanese punctuation). "
+                            "Keep Explanation in Japanese and keep the exact output format."
+                        )
+                        retry_raw_result = self._translate_single_with_cancel(text, retry_prompt, files_to_attach, None)
+                        retry_parsed_options = self._parse_style_comparison_result(retry_raw_result)
+                        if retry_parsed_options:
+                            parsed_options = retry_parsed_options
+                            raw_result = retry_raw_result
 
                     if not parsed_options:
                         parsed_single = self._parse_single_translation_result(raw_result)
                         if parsed_single:
                             option = parsed_single[0]
+                            if _looks_untranslated_to_en(option.text):
+                                retry_prompt = build_compare_prompt(
+                                    "CRITICAL: Rewrite all Translation sections in English only (no Japanese scripts or Japanese punctuation). "
+                                    "Keep Explanation in Japanese and keep the exact output format."
+                                )
+                                retry_raw_result = self._translate_single_with_cancel(text, retry_prompt, files_to_attach, None)
+                                retry_parsed_options = self._parse_style_comparison_result(retry_raw_result)
+                                if retry_parsed_options:
+                                    base_options: dict[str, TranslationOption] = {}
+                                    for retry_option in retry_parsed_options:
+                                        if retry_option.style and retry_option.style not in base_options:
+                                            base_options[retry_option.style] = retry_option
+
+                                    missing_styles = [s for s in style_list if s not in base_options]
+                                    if missing_styles:
+                                        logger.warning("Style comparison missing styles: %s", ", ".join(missing_styles))
+
+                                    ordered_options = [base_options[s] for s in style_list if s in base_options]
+                                    if ordered_options:
+                                        return TextTranslationResult(
+                                            source_text=text,
+                                            source_char_count=len(text),
+                                            options=ordered_options,
+                                            output_language=output_language,
+                                            detected_language=detected_language,
+                                        )
+
+                                retry_single = self._parse_single_translation_result(retry_raw_result)
+                                if retry_single:
+                                    option = retry_single[0]
                             option.style = DEFAULT_TEXT_STYLE
                             return TextTranslationResult(
                                 source_text=text,

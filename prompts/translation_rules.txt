@@ -20,6 +20,7 @@
   - ↓: decreased / down / lower
 - 数値/単位:
   - 兆/億→oku (1兆=10,000億=10,000 oku; X兆Y億→(X*10,000+Y) oku)
+  - 万→k (1万=10k; 22万円→220k yen)
   - 千→k
   - ▲→() （負数は数値のみ括弧）
   - YoY/QoQ/CAGR を使用

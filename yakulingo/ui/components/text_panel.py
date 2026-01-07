@@ -970,8 +970,16 @@ def _render_results_to_jp(
                                 with ui.row().classes('items-center gap-2 min-w-0'):
                                     pass
                                 with ui.row().classes('items-center option-card-actions'):
+                                    copy_text = option.text
+                                    if table_hint is not None:
+                                        excel_copy = _format_tabular_text_for_excel_paste(
+                                            copy_text,
+                                            hint=table_hint,
+                                        )
+                                        if excel_copy:
+                                            copy_text = excel_copy
                                     _create_copy_button(
-                                        option.text,
+                                        copy_text,
                                         on_copy,
                                         classes='result-action-btn',
                                         aria_label='訳文をコピー',
@@ -1013,6 +1021,8 @@ def _render_result_action_footer(
 ) -> None:
     if not result.options:
         return
+
+    table_hint = _build_tabular_text_hint(result.source_text)
 
     with ui.element('div').classes('result-action-footer'):
         with ui.row().classes('items-center justify-between gap-2 result-action-footer-inner'):
@@ -1063,6 +1073,10 @@ def _render_result_action_footer(
                         include_headers=False,
                         include_explanation=False,
                     )
+                    if plain_text and table_hint is not None:
+                        excel_copy = _format_tabular_text_for_excel_paste(plain_text, hint=table_hint)
+                        if excel_copy:
+                            plain_text = excel_copy
                     header_text = _build_copy_payload(
                         result,
                         include_headers=True,
@@ -1186,10 +1200,11 @@ def _build_tabular_text_hint(source_text: str) -> Optional[_TabularTextHint]:
     """Build a best-effort hint from the source clipboard text (Excel copies use CRLF for rows)."""
     if not source_text or '\t' not in source_text:
         return None
-    if '\r\n' not in source_text:
-        return None
-
-    raw_rows = source_text.rstrip('\r\n').split('\r\n')
+    if '\r\n' in source_text:
+        raw_rows = source_text.rstrip('\r\n').split('\r\n')
+    else:
+        normalized = source_text.replace('\r', '\n')
+        raw_rows = normalized.rstrip('\n').split('\n') if '\n' in normalized else [source_text]
     if not raw_rows:
         return None
 
@@ -1214,6 +1229,27 @@ def _build_tabular_text_hint(source_text: str) -> Optional[_TabularTextHint]:
         first_cell_newlines=first_cell_newlines,
         last_cell_newlines=last_cell_newlines,
     )
+
+
+def _format_tabular_text_for_excel_paste(
+    text: str,
+    *,
+    hint: Optional[_TabularTextHint] = None,
+) -> Optional[str]:
+    """Return an Excel-friendly TSV payload (CRLF rows, quoted multiline cells) when possible."""
+    parsed = _parse_tabular_text_rows(text, hint=hint)
+    if not parsed:
+        return None
+
+    def escape_cell(value: str) -> str:
+        normalized = value.replace('\r\n', '\n').replace('\r', '\n')
+        needs_quote = '\t' in normalized or '\n' in normalized or '"' in normalized
+        if '"' in normalized:
+            normalized = normalized.replace('"', '""')
+        return f'"{normalized}"' if needs_quote else normalized
+
+    rendered_rows = ['\t'.join(escape_cell(cell) for cell in row) for row in parsed]
+    return '\r\n'.join(rendered_rows)
 
 
 def _parse_tabular_text_rows(
@@ -1462,8 +1498,13 @@ def _render_option_en(
                         style_label_for_copy = TEXT_STYLE_LABELS.get(option.style, option.style)
                         if style_label_for_copy:
                             copy_suffix = f'（{style_label_for_copy}）'
+                    copy_text = option.text
+                    if table_hint is not None:
+                        excel_copy = _format_tabular_text_for_excel_paste(copy_text, hint=table_hint)
+                        if excel_copy:
+                            copy_text = excel_copy
                     _create_copy_button(
-                        option.text,
+                        copy_text,
                         on_copy,
                         classes='result-action-btn',
                         aria_label=f'訳文をコピー{copy_suffix}',

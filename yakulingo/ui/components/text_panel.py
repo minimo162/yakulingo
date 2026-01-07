@@ -962,16 +962,22 @@ def _render_results_to_jp(
                             with ui.row().classes('w-full items-center justify-between gap-2 option-card-header'):
                                 with ui.row().classes('items-center gap-2 min-w-0'):
                                     pass
-
-                            if on_back_translate and show_back_translate_button:
                                 with ui.row().classes('items-center option-card-actions'):
-                                    back_btn = ui.button(
-                                        '逆翻訳',
-                                        icon='g_translate',
-                                        on_click=lambda o=option: on_back_translate(o, None),
-                                    ).props('flat no-caps size=sm').classes('back-translate-btn').tooltip('精度確認')
-                                    if actions_disabled or option.back_translation_in_progress:
-                                        back_btn.props('disable')
+                                    _create_copy_button(
+                                        option.text,
+                                        on_copy,
+                                        classes='result-action-btn',
+                                        aria_label='訳文をコピー',
+                                        tooltip='訳文をコピー',
+                                    )
+                                    if on_back_translate and show_back_translate_button:
+                                        back_btn = ui.button(
+                                            '逆翻訳',
+                                            icon='g_translate',
+                                            on_click=lambda o=option: on_back_translate(o, None),
+                                        ).props('flat no-caps size=sm').classes('back-translate-btn').tooltip('精度確認')
+                                        if actions_disabled or option.back_translation_in_progress:
+                                            back_btn.props('disable')
 
                             # Translation text
                             _render_translation_text(option.text)
@@ -1263,8 +1269,20 @@ def _render_option_en(
                             else style_base
                         )
                         ui.label(style_label).classes('chip style-chip')
-                if on_back_translate and show_back_translate_button:
-                    with ui.row().classes('items-center option-card-actions'):
+                with ui.row().classes('items-center option-card-actions'):
+                    copy_suffix = ''
+                    if option.style:
+                        style_label_for_copy = TEXT_STYLE_LABELS.get(option.style, option.style)
+                        if style_label_for_copy:
+                            copy_suffix = f'（{style_label_for_copy}）'
+                    _create_copy_button(
+                        option.text,
+                        on_copy,
+                        classes='result-action-btn',
+                        aria_label=f'訳文をコピー{copy_suffix}',
+                        tooltip=f'訳文をコピー{copy_suffix}',
+                    )
+                    if on_back_translate and show_back_translate_button:
                         back_btn = ui.button(
                             '逆翻訳',
                             icon='g_translate',

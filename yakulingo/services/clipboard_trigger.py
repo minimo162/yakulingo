@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 _IS_WINDOWS = hasattr(ctypes, "WinDLL") and sys.platform == "win32"
 
+
 def _select_rechecked_payload_time(
     *,
     event_time: float,
@@ -325,6 +326,7 @@ else:
                             self._last_event_time = now
                             if seq_after is not None:
                                 self._last_processed_seq = seq_after
+                                self._last_sequence = seq_after
                             continue
 
                         updated_during_read = (
@@ -474,6 +476,7 @@ else:
                         self._last_payload_time = store_time
                         if seq_after is not None:
                             self._last_processed_seq = seq_after
+                            self._last_sequence = seq_after
                     except Exception as exc:
                         logger.exception("Clipboard trigger iteration failed: %s", exc)
                         try:

@@ -659,11 +659,57 @@ function Start-ResidentService {
 function Wait-ResidentReady {
     param(
         [int]$Port = 8765,
-        [int]$TimeoutSec = 1200
+        [int]$TimeoutSec = 1200,
+        [string]$SetupPath = "",
+        [string]$LauncherPath = "",
+        [int]$MaxRestart = 1
     )
+
+    # Expose last known state/error to callers
+    $script:ResidentReadyLastState = $null
+    $script:ResidentReadyLastError = $null
+
+    function Test-PortOpen([int]$p) {
+        try {
+            $client = New-Object System.Net.Sockets.TcpClient
+            $async = $client.BeginConnect('127.0.0.1', $p, $null, $null)
+            if (-not $async.AsyncWaitHandle.WaitOne(200)) { return $false }
+            $client.EndConnect($async) | Out-Null
+            $client.Close()
+            return $true
+        } catch {
+            return $false
+        }
+    }
+
+    function Get-ResidentSetupStatus([int]$p) {
+        $uri = "http://127.0.0.1:$p/api/setup-status"
+        try {
+            $result = Invoke-RestMethod -Method Get -Uri $uri -TimeoutSec 5
+        } catch {
+            return $null
+        }
+
+        if (-not $result) { return $null }
+
+        # Ensure the response is from YakuLingo (other services may occupy the port).
+        $names = $null
+        try {
+            $names = $result.PSObject.Properties.Name
+        } catch {
+            return $null
+        }
+        if (-not ($names -contains "ready" -and $names -contains "active")) {
+            return $null
+        }
+
+        return $result
+    }
 
     $deadline = (Get-Date).AddSeconds($TimeoutSec)
     $lastState = ""
+    $invalidStatusSince = $null
+    $restartCount = 0
 
     while ((Get-Date) -lt $deadline) {
         if ($GuiMode) {
@@ -673,16 +719,24 @@ function Wait-ResidentReady {
             throw "セットアップがキャンセルされました。"
         }
 
-        $status = $null
-        try {
-            $status = Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:$Port/api/setup-status" -TimeoutSec 5
-        } catch {
-            $status = $null
+        $portOpen = Test-PortOpen $Port
+        $status = Get-ResidentSetupStatus $Port
+        if ($portOpen -and -not $status) {
+            if (-not $invalidStatusSince) {
+                $invalidStatusSince = Get-Date
+            } elseif (((Get-Date) - $invalidStatusSince).TotalSeconds -ge 30) {
+                $script:ResidentReadyLastError = "port_in_use_or_unresponsive"
+                try { "Wait-ResidentReady: Port $Port open but /api/setup-status invalid for 30s." | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
+                return $false
+            }
+        } else {
+            $invalidStatusSince = $null
         }
 
         $state = if ($status -and $status.state) { "$($status.state)" } else { "starting" }
         if ($state -ne $lastState) {
             $lastState = $state
+            $script:ResidentReadyLastState = $state
             try { "Wait-ResidentReady: state=$state" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
         }
 
@@ -694,6 +748,7 @@ function Wait-ResidentReady {
         $uiConnected = $false
         $uiReady = $true
         $hasError = $false
+        $errorText = $null
         if ($status) {
             $ready = [bool]$status.ready
             if ($status.PSObject.Properties.Name -contains "login_required") {
@@ -715,7 +770,8 @@ function Wait-ResidentReady {
                 $uiReady = [bool]$status.ui_ready
             }
             if ($status.PSObject.Properties.Name -contains "error") {
-                $hasError = -not [string]::IsNullOrEmpty([string]$status.error)
+                $errorText = [string]$status.error
+                $hasError = -not [string]::IsNullOrEmpty($errorText)
             }
         }
         if ($state -eq "login_required") {
@@ -726,10 +782,75 @@ function Wait-ResidentReady {
             return $true
         }
 
-        $message = "Copilotの準備中です..."
         if ($hasError) {
-            $message = "YakuLingoの起動状態を確認中です..."
-        } elseif ($loginRequired) {
+            $script:ResidentReadyLastError = $errorText
+            try { "Wait-ResidentReady: error=$errorText (state=$state)" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
+
+            # The resident warmup stops after a timeout; restart once so the user doesn't get stuck.
+            $restartable = ($errorText -eq "timeout" -or $errorText -eq "prompt_timeout")
+            if ($restartable -and ($restartCount -lt $MaxRestart)) {
+                $restartCount++
+                Write-Status -Message "Copilotの準備がタイムアウトしました。YakuLingo を再起動して再試行します... ($restartCount/$MaxRestart)" -Progress -Step "Step 4/4: Finalizing" -Percent -1
+
+                # Resolve paths for restart
+                if ([string]::IsNullOrWhiteSpace($SetupPath)) {
+                    $SetupPath = Join-Path $env:LOCALAPPDATA $script:AppName
+                }
+                if ([string]::IsNullOrWhiteSpace($LauncherPath)) {
+                    $LauncherPath = Join-Path $SetupPath "YakuLingo.exe"
+                }
+
+                # Request graceful shutdown with restart hint (launcher watchdog restarts automatically).
+                $shutdownUrl = "http://127.0.0.1:$Port/api/shutdown"
+                try {
+                    Invoke-WebRequest -UseBasicParsing -Method Post -Uri $shutdownUrl -TimeoutSec 8 -Headers @{ "X-YakuLingo-Exit" = "1"; "X-YakuLingo-Restart" = "1" } | Out-Null
+                    try { "Wait-ResidentReady: Requested restart via $shutdownUrl" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
+                } catch {
+                    try { "Wait-ResidentReady: Restart request failed: $($_.Exception.Message)" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
+                }
+
+                # Wait for port to cycle.
+                $closeDeadline = (Get-Date).AddSeconds(30)
+                while ((Get-Date) -lt $closeDeadline -and (Test-PortOpen $Port)) {
+                    Start-Sleep -Milliseconds 200
+                    if ($GuiMode) { [System.Windows.Forms.Application]::DoEvents() }
+                }
+                $openDeadline = (Get-Date).AddSeconds(60)
+                while ((Get-Date) -lt $openDeadline -and -not (Test-PortOpen $Port)) {
+                    Start-Sleep -Milliseconds 200
+                    if ($GuiMode) { [System.Windows.Forms.Application]::DoEvents() }
+                }
+
+                if (-not (Test-PortOpen $Port)) {
+                    $started = Start-ResidentService -SetupPath $SetupPath -LauncherPath $LauncherPath -Port $Port -StartupTimeoutSec 120
+                    if (-not $started) {
+                        $script:ResidentReadyLastError = "restart_failed"
+                        return $false
+                    }
+                }
+
+                # Clear error/state tracking after restart and continue waiting.
+                $invalidStatusSince = $null
+                $lastState = ""
+                $script:ResidentReadyLastState = $null
+                $script:ResidentReadyLastError = $null
+                Start-Sleep -Seconds 2
+                continue
+            }
+
+            $message = "YakuLingo の起動中にエラーが発生しました: $errorText"
+            switch ($errorText) {
+                "translation_service_init_failed" { $message = "翻訳サービスの初期化に失敗しました。ログを確認してください..." }
+                "timeout" { $message = "Copilot の準備がタイムアウトしました。ログインを完了してから再実行してください..." }
+                "prompt_timeout" { $message = "Copilot の入力欄の準備がタイムアウトしました。しばらく待ってから再実行してください..." }
+            }
+
+            Write-Status -Message $message -Progress -Step "Step 4/4: Finalizing" -Percent -1
+            return $false
+        }
+
+        $message = "Copilotの準備中です..."
+        if ($loginRequired) {
             $message = "Copilotにログインしてください（右側の画面）..."
         } elseif ($uiConnected -and -not $uiReady) {
             $message = "UIを準備中です..."
@@ -745,6 +866,9 @@ function Wait-ResidentReady {
         Start-Sleep -Seconds 2
     }
 
+    if (-not $script:ResidentReadyLastError) {
+        $script:ResidentReadyLastError = "timeout_waiting_ready"
+    }
     return $false
 }
 
@@ -2434,9 +2558,24 @@ objShell.Run command, 0, False
         if (-not $residentStarted) {
             throw "YakuLingoの起動に失敗しました。"
         }
-        $residentReady = Wait-ResidentReady -Port 8765 -TimeoutSec 1200
+        $residentReady = Wait-ResidentReady -Port 8765 -TimeoutSec 1200 -SetupPath $SetupPath
         if (-not $residentReady) {
-            throw "Copilotの準備が完了しませんでした。ログインを完了してから再実行してください。"
+            $reason = $script:ResidentReadyLastError
+            if ($reason -eq "port_in_use_or_unresponsive") {
+                throw "ポート 8765 が他のアプリで使用されているか、YakuLingo が応答していません。YakuLingo を終了してから再実行してください。"
+            } elseif ($reason -eq "translation_service_init_failed") {
+                throw "翻訳サービスの初期化に失敗しました。インストールをやり直すか、ログを確認してください。"
+            } elseif ($reason -eq "prompt_timeout") {
+                throw "Copilot の入力欄の準備がタイムアウトしました。しばらく待ってから再実行してください。"
+            } elseif ($reason -eq "timeout") {
+                throw "Copilot の準備がタイムアウトしました。ログインを完了してから再実行してください。"
+            } elseif ($reason -eq "restart_failed") {
+                throw "YakuLingo の再起動に失敗しました。しばらく待ってから再実行してください。"
+            } elseif ($reason) {
+                throw "Copilotの準備が完了しませんでした。（原因: $reason）ログインを完了してから再実行してください。"
+            } else {
+                throw "Copilotの準備が完了しませんでした。ログインを完了してから再実行してください。"
+            }
         }
 
         Write-Status -Message "Setup completed!" -Progress -Step "Step 4/4: Finalizing" -Percent 100
@@ -2483,9 +2622,24 @@ objShell.Run command, 0, False
         if (-not $residentStarted) {
             throw "YakuLingoの起動に失敗しました。"
         }
-        $residentReady = Wait-ResidentReady -Port 8765 -TimeoutSec 1200
+        $residentReady = Wait-ResidentReady -Port 8765 -TimeoutSec 1200 -SetupPath $SetupPath
         if (-not $residentReady) {
-            throw "Copilotの準備が完了しませんでした。ログインを完了してから再実行してください。"
+            $reason = $script:ResidentReadyLastError
+            if ($reason -eq "port_in_use_or_unresponsive") {
+                throw "ポート 8765 が他のアプリで使用されているか、YakuLingo が応答していません。YakuLingo を終了してから再実行してください。"
+            } elseif ($reason -eq "translation_service_init_failed") {
+                throw "翻訳サービスの初期化に失敗しました。インストールをやり直すか、ログを確認してください。"
+            } elseif ($reason -eq "prompt_timeout") {
+                throw "Copilot の入力欄の準備がタイムアウトしました。しばらく待ってから再実行してください。"
+            } elseif ($reason -eq "timeout") {
+                throw "Copilot の準備がタイムアウトしました。ログインを完了してから再実行してください。"
+            } elseif ($reason -eq "restart_failed") {
+                throw "YakuLingo の再起動に失敗しました。しばらく待ってから再実行してください。"
+            } elseif ($reason) {
+                throw "Copilotの準備が完了しませんでした。（原因: $reason）ログインを完了してから再実行してください。"
+            } else {
+                throw "Copilotの準備が完了しませんでした。ログインを完了してから再実行してください。"
+            }
         }
     }
 }

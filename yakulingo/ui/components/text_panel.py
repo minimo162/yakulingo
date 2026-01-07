@@ -971,13 +971,12 @@ def _render_results_to_jp(
                                     pass
                                 with ui.row().classes('items-center option-card-actions'):
                                     copy_text = option.text
-                                    if table_hint is not None:
-                                        excel_copy = _format_tabular_text_for_excel_paste(
-                                            copy_text,
-                                            hint=table_hint,
-                                        )
-                                        if excel_copy:
-                                            copy_text = excel_copy
+                                    excel_copy = _format_tabular_text_for_excel_paste(
+                                        copy_text,
+                                        hint=table_hint,
+                                    )
+                                    if excel_copy:
+                                        copy_text = excel_copy
                                     _create_copy_button(
                                         copy_text,
                                         on_copy,
@@ -1073,7 +1072,7 @@ def _render_result_action_footer(
                         include_headers=False,
                         include_explanation=False,
                     )
-                    if plain_text and table_hint is not None:
+                    if plain_text:
                         excel_copy = _format_tabular_text_for_excel_paste(plain_text, hint=table_hint)
                         if excel_copy:
                             plain_text = excel_copy
@@ -1499,10 +1498,9 @@ def _render_option_en(
                         if style_label_for_copy:
                             copy_suffix = f'（{style_label_for_copy}）'
                     copy_text = option.text
-                    if table_hint is not None:
-                        excel_copy = _format_tabular_text_for_excel_paste(copy_text, hint=table_hint)
-                        if excel_copy:
-                            copy_text = excel_copy
+                    excel_copy = _format_tabular_text_for_excel_paste(copy_text, hint=table_hint)
+                    if excel_copy:
+                        copy_text = excel_copy
                     _create_copy_button(
                         copy_text,
                         on_copy,

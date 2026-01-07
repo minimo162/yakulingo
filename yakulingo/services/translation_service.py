@@ -2995,6 +2995,7 @@ class TranslationService:
             batch_progress,
             output_language=output_language,
             translation_style=translation_style,
+            include_item_ids=True,
         )
 
         if batch_result.cancelled or self._cancel_event.is_set():

@@ -334,7 +334,7 @@ if !PADDLE_ERROR! neq 0 (
 if !PADDLE_ERROR! neq 0 (
     echo [ERROR] paddlepaddle is not available in the virtual environment.
     echo [INFO] PDF layout analysis requires paddlepaddle/paddleocr.
-    echo [INFO] Retry this installer, or run: uv sync --extra ocr
+    echo [INFO] Retry this installer, or run: uv.exe sync --extra ocr
     pause
     exit /b 1
 ) else (

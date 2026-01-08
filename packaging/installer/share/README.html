@@ -328,15 +328,21 @@
     <div class="page">
       <header class="hero" id="top">
         <div class="hero-content">
-          <div class="hero-tag">セットアップ完了 / 運用ガイド</div>
-          <h1>コピーだけで使える翻訳支援。</h1>
-          <p>常駐でテキスト/ファイル翻訳を提供し、コピーだけで翻訳できます。</p>
+          <div class="hero-tag">セットアップ完了 / クイックガイド</div>
+          <h1>Ctrl+C を2回で翻訳。</h1>
+          <p>Microsoft 365 Copilot を翻訳エンジンとして利用する、常駐型の翻訳支援ツールです。</p>
           <div class="hero-grid">
             <div class="hero-card">
-              <strong>操作は Ctrl+C を2回連続で実行</strong>
+              <strong>テキストもファイルも Ctrl+C を2回</strong>
+              <p>同一ウィンドウで短時間（約2.5秒）に2回コピーすると翻訳を開始します。</p>
             </div>
             <div class="hero-card">
-              <strong>UI を閉じても常駐します。</strong>
+              <strong>英訳/和訳は自動判定</strong>
+              <p>日本語 → 英語（3スタイル）/ それ以外 → 日本語（解説つき）。</p>
+            </div>
+            <div class="hero-card">
+              <strong>初回のみ：Copilot にログイン</strong>
+              <p>状態表示が「ログインが必要」の場合、UIからログインを開いてください。</p>
             </div>
           </div>
           <nav>
@@ -351,7 +357,7 @@
 
       <section id="text">
         <h2><span>01</span>テキスト翻訳</h2>
-        <p>文章を選択して <kbd>Ctrl</kbd> + <kbd>C</kbd> を2回連続で実行してください。</p>
+        <p>文章を選択して <kbd>Ctrl</kbd> + <kbd>C</kbd> を短時間に2回連続で実行してください。</p>
         <div class="grid">
           <div class="card">
             <strong>日本語 → 英語</strong>
@@ -366,8 +372,9 @@
 
       <section id="file">
         <h2><span>02</span>ファイル翻訳</h2>
-        <p>ファイルを選択して <kbd>Ctrl</kbd> + <kbd>C</kbd> を2回連続で実行してください。</p>
+        <p>エクスプローラーでファイルを選択して <kbd>Ctrl</kbd> + <kbd>C</kbd> を短時間に2回連続で実行してください（最大10件）。</p>
         <ul>
+          <li>File タブからドラッグ＆ドロップ/参照で選択して翻訳することもできます。</li>
           <li>進捗はファイル翻訳パネルで確認できます。</li>
         </ul>
         <div class="chips">
@@ -379,24 +386,27 @@
           <span class="chip">MSG</span>
         </div>
         <div class="note">
-          レイアウトは可能な限り維持し、フォントは翻訳方向で自動調整します。
+          レイアウトは可能な限り維持し、フォントは翻訳方向で自動調整します（英訳: Arial / 和訳: MS Pゴシック）。
         </div>
       </section>
 
       <section id="resident">
         <h2><span>03</span>常駐 / 終了</h2>
         <ul>
-          <li>UI を閉じても常駐します。</li>
+          <li>UI を閉じても常駐します（終了は「YakuLingo 終了」を使用）。</li>
           <li>PC 再起動後も自動で常駐起動します。</li>
-          <li>UI は Ctrl+C を2回で自動表示されます。</li>
-          <li>常駐を起動: スタートメニュー &gt; YakuLingo。</li>
+          <li>翻訳開始（UI表示）: Ctrl+C を2回（テキスト/ファイルを自動判別）。</li>
+          <li>常駐を起動: スタートメニュー &gt; YakuLingo（常駐起動）。</li>
           <li>終了: スタートメニュー &gt; YakuLingo 終了。</li>
           <li>アンインストール: スタートメニュー &gt; YakuLingo アンインストール。</li>
         </ul>
+        <div class="note">
+          翻訳中は Edge（Copilot）が背後で起動/最小化されることがあります。初回はログインが必要です。
+        </div>
       </section>
 
       <footer>
-        YakuLingo - 常駐翻訳ツール。
+        YakuLingo - 常駐翻訳ツール（Microsoft 365 Copilot）。
       </footer>
     </div>
   </body>

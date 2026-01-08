@@ -150,6 +150,14 @@ for %%f in ("YakuLingo.exe" "app.py" ".python-version" "glossary.csv" "glossary_
     if exist "%%~f" copy /y "%%~f" "%DIST_DIR%\" >nul
 )
 
+:: Include README.html inside the ZIP (not alongside it)
+copy /y "packaging\installer\share\README.html" "%DIST_DIR%\README.html" >nul
+if errorlevel 1 (
+    echo        [ERROR] Failed to copy README.html into dist folder.
+    pause
+    exit /b 1
+)
+
 :: ============================================================
 :: Step 2: Copy folders (parallel robocopy via PowerShell jobs)
 :: ============================================================
@@ -257,7 +265,6 @@ if not "%ZIP_RC%"=="0" (
 :: Copy installer files and cleanup in parallel
 echo        Copying installer files...
 copy /y "packaging\installer\share\setup.vbs" "%SHARE_DIR%\" >nul
-copy /y "packaging\installer\share\README.html" "%SHARE_DIR%\" >nul
 xcopy /E /I /Q /Y "packaging\installer\share\.scripts" "%SHARE_DIR%\.scripts" >nul
 
 :: Move log to share_package before cleanup
@@ -295,8 +302,7 @@ if exist "%ZIP_PATH%" (
     echo.
     echo   Folder: %SHARE_DIR%\
     echo     - setup.vbs    ^<-- Users run this
-    echo     - %DIST_ZIP%
-    echo     - README.html
+    echo     - %DIST_ZIP%   ^<-- contains README.html
     echo.
     for %%A in ("%ZIP_PATH%") do echo   Size: %%~zA bytes
     echo   Time: %ELAPSED_TIME%

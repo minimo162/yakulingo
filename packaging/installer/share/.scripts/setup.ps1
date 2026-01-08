@@ -144,6 +144,28 @@ function Open-PostSetupUi {
     }
 }
 
+# Open README.html after setup completes
+function Open-PostSetupReadme {
+    param([string]$SetupPath)
+
+    if ([string]::IsNullOrWhiteSpace($SetupPath)) {
+        $SetupPath = Join-Path $env:LOCALAPPDATA $script:AppName
+    }
+
+    $readmePath = Join-Path $SetupPath "README.html"
+    if (-not (Test-Path $readmePath)) {
+        try { "README.html not found: $readmePath" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
+        return
+    }
+
+    try {
+        Start-Process -FilePath $readmePath | Out-Null
+        try { "Opened README: $readmePath" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
+    } catch {
+        try { "Failed to open README: $($_.Exception.Message)" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
+    }
+}
+
 # Debug: Log resolved paths
 try {
     "ScriptDir: $($script:ScriptDir)" | Out-File -FilePath $debugLog -Append -Encoding UTF8
@@ -2626,6 +2648,7 @@ objShell.Run command, 0, False
             }
         }
         Show-Success $successMsg
+        try { Open-PostSetupReadme -SetupPath $SetupPath } catch { }
     } else {
         Write-Host ""
         Write-Host "============================================================" -ForegroundColor Green

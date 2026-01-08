@@ -63,6 +63,7 @@ else:
     _VK_MENU = 0x12
     _VK_CONTROL = 0x11
     _VK_C = 0x43
+    _VK_ESCAPE = 0x1B
     _KEYEVENTF_KEYUP = 0x0002
     _KEYSTATE_DOWN_MASK = 0x8000
 
@@ -80,6 +81,29 @@ else:
             ("time", wintypes.DWORD),
             ("pt", _Point),
         ]
+
+    def _send_escape() -> None:
+        _user32.keybd_event.argtypes = [wintypes.BYTE, wintypes.BYTE, wintypes.DWORD, _ULONG_PTR]
+        _user32.keybd_event.restype = None
+        try:
+            _user32.keybd_event(_VK_ESCAPE, 0, 0, 0)
+            _user32.keybd_event(_VK_ESCAPE, 0, _KEYEVENTF_KEYUP, 0)
+        except Exception as e:
+            logger.debug("Failed to send Escape: %s", e)
+
+    def _maybe_reset_source_copy_mode(source_hwnd: int | None) -> None:
+        """Best-effort: cancel source app's copy mode (e.g., Excel marching ants) after Ctrl+C."""
+        if not source_hwnd:
+            return
+        try:
+            _user32.GetForegroundWindow.argtypes = []
+            _user32.GetForegroundWindow.restype = wintypes.HWND
+            current = _user32.GetForegroundWindow()
+            if not current or int(current) != int(source_hwnd):
+                return
+        except Exception:
+            return
+        _send_escape()
 
 
     def _send_ctrl_c() -> None:
@@ -119,11 +143,13 @@ else:
             copy_delay_sec: float = 0.06,
             copy_wait_sec: float = 0.35,
             copy_poll_interval_sec: float = 0.01,
+            reset_copy_mode: bool = True,
         ) -> None:
             self._callback: Optional[_Callback] = callback
             self._copy_delay_sec = max(copy_delay_sec, 0.0)
             self._copy_wait_sec = max(copy_wait_sec, 0.0)
             self._copy_poll_interval_sec = max(copy_poll_interval_sec, 0.001)
+            self._reset_copy_mode = bool(reset_copy_mode)
 
             self._lock = threading.Lock()
             self._thread: Optional[threading.Thread] = None
@@ -180,7 +206,7 @@ else:
                 self._thread = None
                 self._thread_id = None
 
-        def _capture_clipboard_payload(self) -> str:
+        def _capture_clipboard_payload(self, source_hwnd: int | None) -> str:
             try:
                 seq_before = _clipboard.get_clipboard_sequence_number_raw()
             except Exception:
@@ -206,6 +232,9 @@ else:
             except Exception as e:
                 logger.debug("Failed to read clipboard payload after hotkey: %s", e)
                 text, files = None, []
+
+            if self._reset_copy_mode:
+                _maybe_reset_source_copy_mode(source_hwnd)
 
             if files:
                 return "\n".join(files)
@@ -265,7 +294,7 @@ else:
                     except Exception:
                         source_hwnd = None
 
-                    payload = self._capture_clipboard_payload()
+                    payload = self._capture_clipboard_payload(source_hwnd)
                     with self._lock:
                         callback = self._callback
                     if callback is None:

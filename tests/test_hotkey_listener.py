@@ -74,3 +74,33 @@ def test_send_ctrl_c_sends_ctrl_c_when_ctrl_not_down(monkeypatch):
         (hotkey_listener._VK_CONTROL, 0, hotkey_listener._KEYEVENTF_KEYUP, 0),
     ]
 
+
+def test_maybe_reset_source_copy_mode_sends_escape_when_foreground_matches(monkeypatch):
+    keybd_event = _DummyFn()
+    get_foreground_window = lambda: 123  # noqa: E731
+    dummy_user32 = SimpleNamespace(
+        keybd_event=keybd_event,
+        GetForegroundWindow=get_foreground_window,
+    )
+    monkeypatch.setattr(hotkey_listener, "_user32", dummy_user32)
+
+    hotkey_listener._maybe_reset_source_copy_mode(123)
+
+    assert keybd_event.calls == [
+        (hotkey_listener._VK_ESCAPE, 0, 0, 0),
+        (hotkey_listener._VK_ESCAPE, 0, hotkey_listener._KEYEVENTF_KEYUP, 0),
+    ]
+
+
+def test_maybe_reset_source_copy_mode_skips_when_foreground_differs(monkeypatch):
+    keybd_event = _DummyFn()
+    get_foreground_window = lambda: 456  # noqa: E731
+    dummy_user32 = SimpleNamespace(
+        keybd_event=keybd_event,
+        GetForegroundWindow=get_foreground_window,
+    )
+    monkeypatch.setattr(hotkey_listener, "_user32", dummy_user32)
+
+    hotkey_listener._maybe_reset_source_copy_mode(123)
+
+    assert keybd_event.calls == []

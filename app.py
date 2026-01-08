@@ -61,7 +61,13 @@ if _PYCACHE_PREFIX_SET_BY_APP:
 
 
 def _cleanup_pycache_prefix() -> None:
-    """Remove cached bytecode under the dedicated prefix (if using app default)."""
+    """Remove cached bytecode under the dedicated prefix (if using app default).
+
+    NOTE:
+        毎回削除すると起動時に大量の再コンパイルが発生し、特にWindows環境では
+        セキュリティソフトのリアルタイムスキャンと相まって起動が大幅に遅くなります。
+        通常運用では削除せず、必要なときだけ明示的に実行してください。
+    """
     if not _PYCACHE_PREFIX_SET_BY_APP:
         return
     try:
@@ -520,7 +526,8 @@ def main():
     global _global_log_handlers
     _global_log_handlers = setup_logging()  # Keep reference to prevent garbage collection
     _setup_crash_handlers()
-    _cleanup_pycache_prefix()
+    if os.environ.get("YAKULINGO_CLEAR_PYCACHE") == "1":
+        _cleanup_pycache_prefix()
 
     logger = logging.getLogger(__name__)
     logger.info("[TIMING] main() setup: %.2fs", time.perf_counter() - _t_start)

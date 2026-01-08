@@ -12715,6 +12715,69 @@ def run_app(
     except Exception as e:
         logger.debug("FastAPI upload API unavailable; global drop upload disabled: %s", e)
     else:
+        @nicegui_app.post('/api/clipboard')
+        async def clipboard_api(request: StarletteRequest):  # type: ignore[misc]
+            """OSクリップボードへテキストを書き込む（ローカルPCのみ）。"""
+            try:
+                client_host = getattr(getattr(request, "client", None), "host", None)
+                if client_host not in ("127.0.0.1", "::1"):
+                    raise HTTPException(status_code=403, detail="forbidden")
+            except HTTPException:
+                raise
+            except Exception:
+                raise HTTPException(status_code=403, detail="forbidden")
+
+            # Mitigate CSRF-from-browser to localhost: reject non-local Origin/Referer.
+            origin = None
+            referer = None
+            try:
+                origin = request.headers.get("origin")
+                referer = request.headers.get("referer")
+            except Exception:
+                origin = None
+                referer = None
+
+            def _is_local_web_origin(value: str | None) -> bool:
+                if not value:
+                    return True
+                lower = value.lower()
+                return (
+                    lower.startswith("http://127.0.0.1")
+                    or lower.startswith("http://localhost")
+                    or lower.startswith("https://127.0.0.1")
+                    or lower.startswith("https://localhost")
+                )
+
+            if not _is_local_web_origin(origin) or not _is_local_web_origin(referer):
+                raise HTTPException(status_code=403, detail="forbidden")
+
+            try:
+                data = await request.json()
+            except Exception as err:
+                raise HTTPException(status_code=400, detail="invalid json") from err
+
+            text = data.get("text", "")
+            if not isinstance(text, str) or not text:
+                raise HTTPException(status_code=400, detail="text is required")
+            if len(text) > 200_000:
+                raise HTTPException(status_code=413, detail="text is too long")
+
+            if sys.platform != "win32":
+                raise HTTPException(status_code=400, detail="unsupported platform")
+
+            try:
+                from yakulingo.services.clipboard_utils import set_clipboard_text
+
+                ok = set_clipboard_text(text)
+            except Exception as err:
+                logger.debug("Failed to set clipboard via /api/clipboard: %s", err)
+                raise HTTPException(status_code=500, detail="failed") from err
+
+            if not ok:
+                raise HTTPException(status_code=500, detail="failed")
+
+            return {"ok": True, "length": len(text)}
+
         @nicegui_app.post('/api/global-drop')
         async def global_drop_upload(request: StarletteRequest):  # type: ignore[misc]
             from yakulingo.ui.components.file_panel import (
@@ -14041,6 +14104,123 @@ document.fonts.ready.then(function() {
   };
 
   registerTargets();
+})();
+</script>''')
+
+        # Clipboard bridge:
+        # Some WebView/Edge app configurations don't allow Ctrl+C / navigator.clipboard reliably.
+        # Provide a best-effort fallback that writes to the Windows clipboard via a local API.
+        ui.add_head_html('''<script>
+(() => {
+  if (window._yakulingoClipboardBridgeInstalled) {
+    return;
+  }
+  window._yakulingoClipboardBridgeInstalled = true;
+
+  const postClipboard = async (text) => {
+    try {
+      const resp = await fetch('/api/clipboard', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      return resp.ok;
+    } catch (err) {
+      return false;
+    }
+  };
+
+  const fallbackCopy = (text) => {
+    const textarea = document.createElement('textarea');
+    textarea.value = String(text || '');
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    textarea.style.left = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    let ok = false;
+    try {
+      ok = document.execCommand('copy');
+    } catch (err) {
+      ok = false;
+    }
+    document.body.removeChild(textarea);
+    return ok;
+  };
+
+  window._yakulingoCopyText = async (text) => {
+    const value = String(text || '');
+    if (!value) {
+      return false;
+    }
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(value);
+        return true;
+      }
+    } catch (err) {}
+    if (fallbackCopy(value)) {
+      return true;
+    }
+    return await postClipboard(value);
+  };
+
+  const getSelectedText = () => {
+    try {
+      const selection = window.getSelection ? window.getSelection().toString() : '';
+      if (selection) {
+        return selection;
+      }
+    } catch (err) {}
+
+    try {
+      const active = document.activeElement;
+      if (!active) {
+        return '';
+      }
+      const tag = String(active.tagName || '').toUpperCase();
+      if (tag !== 'TEXTAREA' && tag !== 'INPUT') {
+        return '';
+      }
+      const input = active;
+      const start = input.selectionStart;
+      const end = input.selectionEnd;
+      if (typeof start === 'number' && typeof end === 'number' && end > start) {
+        return String(input.value || '').slice(start, end);
+      }
+    } catch (err) {}
+    return '';
+  };
+
+  const maybeCopySelection = () => {
+    const text = getSelectedText();
+    if (!text) {
+      return;
+    }
+    try {
+      window._yakulingoCopyText(text);
+    } catch (err) {}
+  };
+
+  document.addEventListener('keydown', (e) => {
+    try {
+      if (!e) return;
+      if (e.altKey) return;
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const key = String(e.key || '').toLowerCase();
+      if (key !== 'c') return;
+      maybeCopySelection();
+    } catch (err) {}
+  }, true);
+
+  // Also handle context-menu copy (best effort).
+  document.addEventListener('copy', (_e) => {
+    try {
+      maybeCopySelection();
+    } catch (err) {}
+  }, true);
 })();
 </script>''')
 

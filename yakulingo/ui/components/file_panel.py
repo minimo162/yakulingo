@@ -58,23 +58,52 @@ def _build_copy_js_handler(text: str) -> str:
             document.body.appendChild(textarea);
             textarea.focus();
             textarea.select();
+            let ok = false;
             try {{
-                document.execCommand('copy');
+                ok = document.execCommand('copy');
             }} catch (err) {{
+                ok = false;
             }}
             document.body.removeChild(textarea);
+            return ok;
+        }};
+        const serverCopy = async () => {{
+            try {{
+                const resp = await fetch('/api/clipboard', {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{ text }}),
+                }});
+                return resp.ok;
+            }} catch (err) {{
+                return false;
+            }}
+        }};
+        const doCopy = async () => {{
+            try {{
+                if (window._yakulingoCopyText) {{
+                    const ok = await window._yakulingoCopyText(text);
+                    if (ok) {{
+                        return true;
+                    }}
+                }}
+            }} catch (err) {{}}
+            try {{
+                if (navigator.clipboard && navigator.clipboard.writeText) {{
+                    await navigator.clipboard.writeText(text);
+                    return true;
+                }}
+            }} catch (err) {{}}
+            if (fallbackCopy()) {{
+                return true;
+            }}
+            return await serverCopy();
         }};
         try {{
             flash();
-            if (navigator.clipboard && navigator.clipboard.writeText) {{
-                navigator.clipboard.writeText(text).catch(() => {{
-                    fallbackCopy();
-                }});
-            }} else {{
-                fallbackCopy();
-            }}
+            doCopy().finally(() => emit(e));
+            return;
         }} catch (err) {{
-            fallbackCopy();
         }}
         emit(e);
     }}"""
@@ -1289,4 +1318,3 @@ def _section_selector(
                     ).props('dense')
                     checkboxes_by_index[section.index] = checkbox
                     ui.label(section.name).classes('flex-1 text-sm')
-

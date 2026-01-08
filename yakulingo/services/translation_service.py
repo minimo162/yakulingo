@@ -91,6 +91,7 @@ _RE_ITEM_ID_MARKER = re.compile(r'^\s*\[\[ID:\d+\]\]\s*')
 _RE_JP_KANA = re.compile(r'[\u3040-\u309F\u30A0-\u30FF\uFF65-\uFF9F]')
 _RE_CJK_IDEOGRAPH = re.compile(r'[\u3400-\u4DBF\u4E00-\u9FFF]')
 _RE_LATIN_ALPHA = re.compile(r'[A-Za-z]')
+_RE_HANGUL = re.compile(r'[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F]')
 
 
 def _looks_untranslated_to_en(text: str) -> bool:
@@ -737,6 +738,11 @@ class BatchTranslator:
     _SPLIT_RETRY_LIMIT = 2
     _MIN_SPLIT_BATCH_CHARS = 300
     _UNTRANSLATED_RETRY_MAX_CHARS = 800
+    _EN_NO_HANGUL_INSTRUCTION = """### Language constraint (critical)
+- Output must be English only.
+- Do NOT output Korean (Hangul) characters.
+- If the input contains non-English fragments (e.g., Japanese/Korean), translate only those fragments into English.
+"""
 
     def __init__(
         self,
@@ -814,6 +820,8 @@ class BatchTranslator:
         translated = translated.strip()
         if not original or not translated:
             return False
+        if _RE_HANGUL.search(translated):
+            return True
         if not language_detector.is_japanese(original):
             return False
         if original == translated:
@@ -1139,10 +1147,15 @@ class BatchTranslator:
                         unique_translations = unique_translations[:len(unique_texts)]
 
             cleaned_unique_translations = []
+            hangul_indices: list[int] = []
             for idx, translated_text in enumerate(unique_translations):
                 cleaned_text = self._clean_batch_translation(translated_text)
                 if not cleaned_text or not cleaned_text.strip():
                     cleaned_unique_translations.append("")
+                    continue
+                if output_language == "en" and _RE_HANGUL.search(cleaned_text):
+                    hangul_indices.append(idx)
+                    cleaned_unique_translations.append(cleaned_text)
                     continue
                 if self._should_retry_translation(unique_texts[idx], cleaned_text, output_language):
                     preview = unique_texts[idx][:50].replace("\n", " ")
@@ -1150,6 +1163,71 @@ class BatchTranslator:
                     cleaned_unique_translations.append("")
                     continue
                 cleaned_unique_translations.append(cleaned_text)
+
+            if hangul_indices and output_language == "en" and not self._cancel_event.is_set():
+                repair_texts = [unique_texts[idx] for idx in hangul_indices]
+                repair_prompt = self.prompt_builder.build_batch(
+                    repair_texts,
+                    has_reference_files=has_refs,
+                    output_language=output_language,
+                    translation_style=translation_style,
+                    include_item_ids=include_item_ids,
+                )
+                repair_prompt = _insert_extra_instruction(
+                    repair_prompt,
+                    self._EN_NO_HANGUL_INSTRUCTION,
+                )
+                logger.warning(
+                    "Batch %d: Hangul detected in %d English translations; retrying with stricter prompt",
+                    i + 1,
+                    len(hangul_indices),
+                )
+                try:
+                    lock = self._copilot_lock or nullcontext()
+                    with lock:
+                        self.copilot.set_cancel_callback(lambda: self._cancel_event.is_set())
+                        try:
+                            with self._ui_window_sync_scope("translate_blocks_with_result_hangul_retry"):
+                                repair_translations = self.copilot.translate_sync(
+                                    repair_texts,
+                                    repair_prompt,
+                                    files_to_attach,
+                                    True,
+                                    timeout=self.request_timeout,
+                                    include_item_ids=include_item_ids,
+                                )
+                        finally:
+                            self.copilot.set_cancel_callback(None)
+                except TranslationCancelledError:
+                    logger.info("Translation cancelled during batch %d/%d", i + 1, len(batches))
+                    cancelled = True
+                    break
+
+                if len(repair_translations) != len(repair_texts):
+                    logger.warning(
+                        "Batch %d: Hangul retry count mismatch: expected %d, got %d; using fallbacks where needed",
+                        i + 1,
+                        len(repair_texts),
+                        len(repair_translations),
+                    )
+                    if len(repair_translations) < len(repair_texts):
+                        repair_translations = repair_translations + ([""] * (len(repair_texts) - len(repair_translations)))
+                    else:
+                        repair_translations = repair_translations[:len(repair_texts)]
+
+                for repair_pos, repaired_text in enumerate(repair_translations):
+                    original_idx = hangul_indices[repair_pos]
+                    cleaned_repair = self._clean_batch_translation(repaired_text)
+                    if not cleaned_repair or not cleaned_repair.strip() or _RE_HANGUL.search(cleaned_repair):
+                        preview = unique_texts[original_idx][:50].replace("\n", " ")
+                        logger.warning(
+                            "Batch %d: Hangul retry failed for text '%s'; using fallback/retry flow",
+                            i + 1,
+                            preview,
+                        )
+                        cleaned_unique_translations[original_idx] = ""
+                    else:
+                        cleaned_unique_translations[original_idx] = cleaned_repair
 
             # Detect empty translations (Copilot may return empty strings for some items)
             empty_translation_indices = [

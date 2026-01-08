@@ -10,7 +10,8 @@ Translate the input text into minimal English suitable for headings, subject lin
   - Do NOT add a new number on subsequent lines.
   - Indent continuation lines with at least one space or tab.
 - Translate only the text between the input markers; do not output the markers or any other prompt text.
-- If the input is already English, keep it as is.
+- Output must be English only. Do NOT output Korean (Hangul) characters.
+- If the input is already English, keep it as is (but translate any non-English fragments into English).
 - Do NOT output explanations, Markdown, or any extra text.
 
 ### Style rules (minimal)

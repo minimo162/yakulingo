@@ -181,16 +181,20 @@ def _get_windows_dpi_scale() -> float:
     return 1.0
 
 
-def _is_yakulingo_window_title(title: str) -> bool:
-    if not title:
+def _is_window_title_with_boundary(title: str, base_title: str) -> bool:
+    if not title or not base_title:
         return False
-    if title == "YakuLingo":
+    if title == base_title:
         return True
-    if not title.startswith("YakuLingo"):
+    if not title.startswith(base_title):
         return False
-    if len(title) <= len("YakuLingo"):
+    if len(title) <= len(base_title):
         return False
-    return title[len("YakuLingo")].isspace()
+    return title[len(base_title)].isspace()
+
+
+def _is_yakulingo_window_title(title: str) -> bool:
+    return _is_window_title_with_boundary(title, "YakuLingo")
 
 
 def _find_window_handle_by_title_win32(window_title: str) -> int | None:
@@ -221,7 +225,7 @@ def _find_window_handle_by_title_win32(window_title: str) -> int | None:
                 # Avoid grabbing the installer progress dialog window.
                 return True
             if window_title.startswith("YakuLingo"):
-                if _is_yakulingo_window_title(title):
+                if _is_window_title_with_boundary(title, window_title):
                     found_hwnd["value"] = int(hwnd_enum)
                     return False
                 return True
@@ -1756,13 +1760,7 @@ class YakuLingoApp:
             except Exception:
                 dwmapi = None
 
-            yakulingo_hwnd = None
-            try:
-                yakulingo_hwnd = copilot._find_yakulingo_window_handle(include_hidden=True)
-            except Exception:
-                yakulingo_hwnd = None
-            if not yakulingo_hwnd:
-                yakulingo_hwnd = user32.FindWindowW(None, "YakuLingo")
+            yakulingo_hwnd = self._find_ui_window_handle_win32(include_hidden=True)
 
             edge_hwnd = None
             try:
@@ -2362,15 +2360,7 @@ class YakuLingoApp:
             except Exception:
                 source_hwnd = None
             if source_hwnd:
-                yakulingo_hwnd: int | None = None
-                copilot = getattr(self, "_copilot", None)
-                if copilot is not None:
-                    try:
-                        yakulingo_hwnd = copilot._find_yakulingo_window_handle(include_hidden=True)
-                    except Exception:
-                        yakulingo_hwnd = None
-                if not yakulingo_hwnd:
-                    yakulingo_hwnd = _find_window_handle_by_title_win32("YakuLingo")
+                yakulingo_hwnd = self._find_ui_window_handle_win32(include_hidden=True)
                 if yakulingo_hwnd and source_hwnd == int(yakulingo_hwnd):
                     bring_ui_to_front = False
                     logger.debug("Clipboard trigger source is YakuLingo; skipping bring-to-front")
@@ -4253,37 +4243,7 @@ class YakuLingoApp:
                 dwmapi = None
 
             # Resolve YakuLingo window handle first (used to detect stale UI client).
-            yakulingo_hwnd: int | None = None
-            copilot = getattr(self, "_copilot", None)
-            if copilot is not None:
-                try:
-                    yakulingo_hwnd = copilot._find_yakulingo_window_handle(include_hidden=True)
-                except Exception:
-                    yakulingo_hwnd = None
-
-            if not yakulingo_hwnd:
-                hwnd = user32.FindWindowW(None, "YakuLingo")
-                if hwnd:
-                    yakulingo_hwnd = int(hwnd)
-
-            if not yakulingo_hwnd:
-                EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
-                found_hwnd: dict[str, int | None] = {"value": None}
-
-                @EnumWindowsProc
-                def _enum_windows(hwnd_enum, _):
-                    length = user32.GetWindowTextLengthW(hwnd_enum)
-                    if length <= 0:
-                        return True
-                    buffer = ctypes.create_unicode_buffer(length + 1)
-                    user32.GetWindowTextW(hwnd_enum, buffer, length + 1)
-                    if _is_yakulingo_window_title(buffer.value):
-                        found_hwnd["value"] = int(hwnd_enum)
-                        return False
-                    return True
-
-                user32.EnumWindows(_enum_windows, 0)
-                yakulingo_hwnd = found_hwnd["value"]
+            yakulingo_hwnd = self._find_ui_window_handle_win32(include_hidden=True)
 
             if not yakulingo_hwnd:
                 return False
@@ -4790,20 +4750,41 @@ class YakuLingoApp:
             time_module.sleep(delay_sec)
         logger.debug("Hotkey layout retry exhausted (attempts=%d)", attempts)
 
+    def _get_ui_window_title(self) -> str:
+        native_mode = self._native_mode_enabled
+        if native_mode is None:
+            return "YakuLingo"
+        return "YakuLingo" if native_mode else "YakuLingo (UI)"
+
+    def _find_ui_window_handle_win32(self, *, include_hidden: bool = True) -> int | None:
+        """Return HWND for the current UI window title (Windows only)."""
+        if sys.platform != "win32":
+            return None
+        hwnd = _find_window_handle_by_title_win32(self._get_ui_window_title())
+        if not hwnd:
+            return None
+        resolved = _coerce_hwnd_win32(hwnd)
+        if not resolved:
+            return None
+        if include_hidden:
+            return resolved
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.WinDLL("user32", use_last_error=True)
+            if user32.IsWindowVisible(wintypes.HWND(resolved)) == 0:
+                return None
+        except Exception:
+            pass
+        return resolved
+
     def _is_ui_window_present_win32(self, *, include_hidden: bool = True) -> bool:
         """Return True if a YakuLingo UI window exists (Windows only)."""
         if sys.platform != "win32":
             return False
         try:
-            copilot = getattr(self, "_copilot", None)
-            if copilot is not None:
-                try:
-                    hwnd = copilot._find_yakulingo_window_handle(include_hidden=include_hidden)
-                except Exception:
-                    hwnd = None
-                if hwnd:
-                    return True
-            return _find_window_handle_by_title_win32("YakuLingo") is not None
+            return self._find_ui_window_handle_win32(include_hidden=include_hidden) is not None
         except Exception:
             return False
 
@@ -4817,15 +4798,7 @@ class YakuLingoApp:
 
             user32 = ctypes.WinDLL("user32", use_last_error=True)
 
-            hwnd = None
-            copilot = getattr(self, "_copilot", None)
-            if copilot is not None:
-                try:
-                    hwnd = copilot._find_yakulingo_window_handle(include_hidden=True)
-                except Exception:
-                    hwnd = None
-            if not hwnd:
-                hwnd = _find_window_handle_by_title_win32("YakuLingo")
+            hwnd = self._find_ui_window_handle_win32(include_hidden=True)
             if not hwnd:
                 return False
 
@@ -4903,18 +4876,11 @@ class YakuLingoApp:
 
             user32 = ctypes.windll.user32
 
+            target_title = self._get_ui_window_title()
+
             # Find YakuLingo window by title (exact match first)
-            hwnd = None
-            matched_title = None
-            copilot = getattr(self, "_copilot", None)
-            if copilot is not None:
-                try:
-                    hwnd = copilot._find_yakulingo_window_handle(include_hidden=True)
-                except Exception:
-                    hwnd = None
-            if not hwnd:
-                hwnd = user32.FindWindowW(None, "YakuLingo")
-                matched_title = "YakuLingo"
+            hwnd = user32.FindWindowW(None, target_title)
+            matched_title = target_title if hwnd else None
 
             # Fallback: enumerate windows to find a partial match (useful if the
             # host window modifies the title, e.g., "YakuLingo - Chrome")
@@ -4940,7 +4906,9 @@ class YakuLingoApp:
                         except Exception:
                             pass
                         return True
-                    if _is_yakulingo_window_title(title):
+                    if "YakuLingo" in target_title and title.startswith("Setup - YakuLingo"):
+                        return True
+                    if _is_window_title_with_boundary(title, target_title):
                         found_hwnd['value'] = hwnd_enum
                         found_hwnd['title'] = title
                         return False  # stop enumeration
@@ -4960,7 +4928,7 @@ class YakuLingoApp:
                     matched_title = None
 
             if not hwnd:
-                logger.debug("YakuLingo window not found by title (exact or partial)")
+                logger.debug("YakuLingo window not found by title (expected=%s)", target_title)
                 return False
 
             logger.debug("Found YakuLingo window handle=%s title=%s", hwnd, matched_title)
@@ -5141,14 +5109,7 @@ class YakuLingoApp:
     def _set_ui_taskbar_visibility_win32(self, visible: bool, reason: str) -> None:
         if sys.platform != "win32":
             return
-        hwnd = None
-        if self._copilot is not None:
-            try:
-                hwnd = self._copilot._find_yakulingo_window_handle(include_hidden=True)
-            except Exception:
-                hwnd = None
-        if not hwnd:
-            hwnd = _find_window_handle_by_title_win32("YakuLingo")
+        hwnd = self._find_ui_window_handle_win32(include_hidden=True)
         if not hwnd:
             now = time.monotonic()
             reason_for_log = reason
@@ -5263,9 +5224,7 @@ class YakuLingoApp:
 
             user32 = ctypes.WinDLL('user32', use_last_error=True)
 
-            hwnd = self.copilot._find_yakulingo_window_handle(include_hidden=True) if self._copilot else None
-            if not hwnd:
-                hwnd = user32.FindWindowW(None, "YakuLingo")
+            hwnd = self._find_ui_window_handle_win32(include_hidden=True)
             if not hwnd:
                 logger.debug("YakuLingo window not found for recovery")
                 return False
@@ -5848,16 +5807,7 @@ class YakuLingoApp:
                     if not user32.IsWindow(wintypes.HWND(source_hwnd)):
                         source_hwnd = None
                     else:
-                        yakulingo_hwnd = None
-                        if self._copilot:
-                            try:
-                                yakulingo_hwnd = self._copilot._find_yakulingo_window_handle(
-                                    include_hidden=True
-                                )
-                            except Exception:
-                                yakulingo_hwnd = None
-                        if not yakulingo_hwnd:
-                            yakulingo_hwnd = user32.FindWindowW(None, "YakuLingo")
+                        yakulingo_hwnd = self._find_ui_window_handle_win32(include_hidden=True)
                         if yakulingo_hwnd and source_hwnd == int(yakulingo_hwnd):
                             source_hwnd = None
                 except Exception:
@@ -5921,10 +5871,7 @@ class YakuLingoApp:
             self._set_layout_mode(LayoutMode.RESTORING, "restore_app_window")
 
             # Find YakuLingo window (include hidden windows during startup)
-            hwnd = self.copilot._find_yakulingo_window_handle(include_hidden=True) if self._copilot else None
-            if not hwnd:
-                # Try finding by title directly (FindWindowW doesn't check visibility)
-                hwnd = user32.FindWindowW(None, "YakuLingo")
+            hwnd = self._find_ui_window_handle_win32(include_hidden=True)
             if not hwnd:
                 logger.debug("YakuLingo window not found for restore")
                 return False
@@ -12512,7 +12459,7 @@ def run_app(
                 title = ctypes.create_unicode_buffer(title_length + 1)
                 user32.GetWindowTextW(hwnd, title, title_length + 1)
                 window_title = title.value
-                if _is_yakulingo_window_title(window_title):
+                if _is_window_title_with_boundary(window_title, "YakuLingo (UI)"):
                     user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
                 return True
 

@@ -78,9 +78,16 @@ def test_send_ctrl_c_sends_ctrl_c_when_ctrl_not_down(monkeypatch):
 def test_maybe_reset_source_copy_mode_sends_escape_when_foreground_matches(monkeypatch):
     keybd_event = _DummyFn()
     get_foreground_window = lambda: 123  # noqa: E731
+    get_async_key_state = _DummyFn(
+        returns={
+            hotkey_listener._VK_MENU: 0,
+            hotkey_listener._VK_CONTROL: 0,
+        }
+    )
     dummy_user32 = SimpleNamespace(
         keybd_event=keybd_event,
         GetForegroundWindow=get_foreground_window,
+        GetAsyncKeyState=get_async_key_state,
     )
     monkeypatch.setattr(hotkey_listener, "_user32", dummy_user32)
 
@@ -100,6 +107,28 @@ def test_maybe_reset_source_copy_mode_skips_when_foreground_differs(monkeypatch)
         GetForegroundWindow=get_foreground_window,
     )
     monkeypatch.setattr(hotkey_listener, "_user32", dummy_user32)
+
+    hotkey_listener._maybe_reset_source_copy_mode(123)
+
+    assert keybd_event.calls == []
+
+
+def test_maybe_reset_source_copy_mode_skips_when_ctrl_down(monkeypatch):
+    keybd_event = _DummyFn()
+    get_foreground_window = lambda: 123  # noqa: E731
+    get_async_key_state = _DummyFn(
+        returns={
+            hotkey_listener._VK_MENU: 0,
+            hotkey_listener._VK_CONTROL: hotkey_listener._KEYSTATE_DOWN_MASK,
+        }
+    )
+    dummy_user32 = SimpleNamespace(
+        keybd_event=keybd_event,
+        GetForegroundWindow=get_foreground_window,
+        GetAsyncKeyState=get_async_key_state,
+    )
+    monkeypatch.setattr(hotkey_listener, "_user32", dummy_user32)
+    monkeypatch.setattr(hotkey_listener, "_RESET_COPY_MODE_WAIT_FOR_MODIFIERS_SEC", 0.0)
 
     hotkey_listener._maybe_reset_source_copy_mode(123)
 

@@ -66,6 +66,8 @@ else:
     _VK_ESCAPE = 0x1B
     _KEYEVENTF_KEYUP = 0x0002
     _KEYSTATE_DOWN_MASK = 0x8000
+    _RESET_COPY_MODE_WAIT_FOR_MODIFIERS_SEC = 0.2
+    _RESET_COPY_MODE_POLL_INTERVAL_SEC = 0.01
 
 
     class _Point(ctypes.Structure):
@@ -103,6 +105,40 @@ else:
                 return
         except Exception:
             return
+
+        # Ctrl+Alt+J を押した直後は Ctrl が押下状態のまま残っていることがあり、
+        # その状態で Escape を送ると Ctrl+Esc (= Winキー相当) として解釈されて
+        # スタートメニューが開くことがある。修飾キーが離れるまで少し待つ。
+        try:
+            _user32.GetAsyncKeyState.argtypes = [ctypes.c_int]
+            _user32.GetAsyncKeyState.restype = wintypes.SHORT
+            wait_sec = float(_RESET_COPY_MODE_WAIT_FOR_MODIFIERS_SEC)
+            poll_sec = max(float(_RESET_COPY_MODE_POLL_INTERVAL_SEC), 0.001)
+
+            def _modifiers_down() -> bool:
+                ctrl_down = bool(_user32.GetAsyncKeyState(_VK_CONTROL) & _KEYSTATE_DOWN_MASK)
+                alt_down = bool(_user32.GetAsyncKeyState(_VK_MENU) & _KEYSTATE_DOWN_MASK)
+                return ctrl_down or alt_down
+
+            if _modifiers_down():
+                if wait_sec <= 0:
+                    return
+                deadline = time.monotonic() + wait_sec
+                while time.monotonic() < deadline and _modifiers_down():
+                    time.sleep(poll_sec)
+                if _modifiers_down():
+                    return
+        except Exception:
+            return
+
+        # 待機中にフォアグラウンドが変わった場合は誤爆防止のため送らない。
+        try:
+            current = _user32.GetForegroundWindow()
+            if not current or int(current) != int(source_hwnd):
+                return
+        except Exception:
+            return
+
         _send_escape()
 
 

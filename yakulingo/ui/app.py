@@ -4248,6 +4248,8 @@ class YakuLingoApp:
             if not yakulingo_hwnd:
                 return False
 
+            copilot = getattr(self, "_copilot", None)
+
             SW_RESTORE = 9
             SW_SHOW = 5
             if user32.IsIconic(wintypes.HWND(yakulingo_hwnd)):

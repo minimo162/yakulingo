@@ -8,8 +8,6 @@ Japanese → English, Other → Japanese (auto-detected by AI).
 
 import atexit
 import asyncio
-import difflib
-import html
 import inspect
 import json
 import logging
@@ -8533,26 +8531,6 @@ class YakuLingoApp:
                 )
                 pin_btn.tooltip('ピンを外す' if is_pinned else 'ピン留め')
 
-                if self.state.source_text.strip():
-                    compare_btn = ui.button(
-                        icon='compare_arrows',
-                        on_click=lambda: self._open_history_compare_dialog(entry),
-                    ).props('flat dense round size=xs @click.stop').classes('history-action-btn')
-                    compare_btn.tooltip('現在の入力と比較')
-
-                def handle_rerun():
-                    self._rerun_history_entry(entry)
-                    if on_select is not None:
-                        on_select()
-
-                rerun_btn = ui.button(
-                    icon='refresh',
-                    on_click=handle_rerun,
-                ).props('flat dense round size=xs @click.stop').classes('history-action-btn')
-                rerun_btn.tooltip('同じ設定で再翻訳')
-                if self.state.is_translating():
-                    rerun_btn.props('disable')
-
                 ui.button(icon='close', on_click=delete_entry).props(
                     'flat dense round size=xs @click.stop'
                 ).classes('history-action-btn history-delete-btn')
@@ -11431,10 +11409,6 @@ class YakuLingoApp:
             self.state.history_filter_has_reference = value
         self._refresh_history()
 
-    def _toggle_history_compare(self) -> None:
-        self.state.history_compare_enabled = not self.state.history_compare_enabled
-        self._refresh_history()
-
     def _get_history_entries(self, limit: int) -> list[HistoryEntry]:
         query = self.state.history_query.strip() if self.state.history_query else ""
         self.state._ensure_history_db()
@@ -11470,55 +11444,6 @@ class YakuLingoApp:
         combined = pinned + unpinned
         return combined[:limit]
 
-    def _tokenize_for_diff(self, text: str) -> list[str]:
-        return re.findall(r'\s+|[^\s]+', text)
-
-    def _build_diff_html(self, base_text: str, target_text: str) -> str:
-        base_tokens = self._tokenize_for_diff(base_text)
-        target_tokens = self._tokenize_for_diff(target_text)
-        matcher = difflib.SequenceMatcher(a=base_tokens, b=target_tokens)
-        parts: list[str] = []
-        for opcode, _a0, _a1, b0, b1 in matcher.get_opcodes():
-            segment = ''.join(target_tokens[b0:b1])
-            if not segment:
-                continue
-            escaped = html.escape(segment)
-            if opcode == 'equal':
-                parts.append(escaped)
-            else:
-                parts.append(f'<span class="diff-added">{escaped}</span>')
-        return ''.join(parts).replace('\n', '<br>')
-
-    def _open_history_compare_dialog(self, entry: HistoryEntry) -> None:
-        current_text = self.state.source_text
-        if not current_text:
-            ui.notify('比較する入力テキストがありません', type='warning')
-            return
-
-        diff_html = self._build_diff_html(current_text, entry.source_text)
-
-        dialog = ui.dialog()
-        with dialog, ui.card().classes('history-compare-card'):
-            with ui.column().classes('w-full gap-4'):
-                ui.label('現在の入力 vs 履歴原文').classes('text-sm font-semibold')
-                with ui.row().classes('history-compare-grid'):
-                    with ui.column().classes('history-compare-col'):
-                        ui.label('現在の入力').classes('text-xs text-muted')
-                        ui.label(current_text).classes('history-compare-text')
-                    with ui.column().classes('history-compare-col'):
-                        ui.label('履歴原文（差分）').classes('text-xs text-muted')
-                        ui.html(diff_html, sanitize=False).classes('history-compare-text diff-text')
-
-                with ui.row().classes('items-center justify-end gap-2'):
-                    ui.button(
-                        'この履歴を読み込み',
-                        icon='history',
-                        on_click=lambda: (self._load_from_history(entry), dialog.close()),
-                    ).classes('btn-outline').props('no-caps')
-                    ui.button('閉じる', on_click=dialog.close).classes('btn-text').props('no-caps')
-
-        dialog.open()
-
     def _load_from_history(self, entry: HistoryEntry):
         """Load translation from history"""
         from yakulingo.ui.state import TextViewState
@@ -11530,44 +11455,6 @@ class YakuLingoApp:
 
         self._refresh_tabs()
         self._refresh_content()
-
-    def _rerun_history_entry(self, entry: HistoryEntry) -> None:
-        """Re-run translation using history metadata when available."""
-        if self.state.is_translating():
-            return
-
-        from yakulingo.ui.state import TextViewState
-
-        metadata = entry.result.metadata or {}
-        if "manual_reference_paths" in metadata:
-            manual_paths = []
-            for path_text in metadata.get("manual_reference_paths", []):
-                try:
-                    path = Path(path_text)
-                    if path.exists():
-                        manual_paths.append(path)
-                except Exception:
-                    continue
-            self.state.reference_files = manual_paths
-
-        if "use_bundled_glossary" in metadata:
-            self.settings.use_bundled_glossary = bool(metadata.get("use_bundled_glossary"))
-            self.settings.save(self.settings_path)
-
-        if "output_language_override" in metadata:
-            self.state.text_output_language_override = metadata.get("output_language_override")
-        self.state.source_text = entry.source_text
-        self.state.text_view_state = TextViewState.INPUT
-        self.state.current_tab = Tab.TEXT
-
-        self._refresh_tabs()
-        self._refresh_content()
-        self._update_text_input_metrics()
-
-        _create_logged_task(
-            self._translate_text(),
-            name="translate_text",
-        )
 
     def _clear_history(self):
         """Clear all history"""

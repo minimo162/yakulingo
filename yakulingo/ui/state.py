@@ -131,7 +131,6 @@ class AppState:
     history_filter_output_language: Optional[str] = None  # "en" or "jp"
     history_filter_styles: set[str] = field(default_factory=set)
     history_filter_has_reference: Optional[bool] = None
-    history_compare_enabled: bool = False
 
     # File translation queue
     file_queue: list[FileQueueItem] = field(default_factory=list)

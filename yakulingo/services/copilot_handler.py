@@ -1259,6 +1259,9 @@ class CopilotHandler:
         # Keep Edge off-screen by default to avoid accidental interaction.
         self._edge_layout_mode: str | None = "offscreen"
         self._edge_restore_rect: tuple[int, int, int, int] | None = None
+        # When Edge is intentionally shown to the user, ensure it appears in the taskbar
+        # (and stop the startup suppression thread from hiding it).
+        self._edge_taskbar_force_visible: bool = False
         # GPT mode flag: only set mode once per session to respect user's manual changes
         # Set to True after successful mode switch in _ensure_gpt_mode_impl
         self._gpt_mode_set = False
@@ -2023,6 +2026,8 @@ class CopilotHandler:
             positioned_offscreen = False
 
             for attempt in range(max_attempts):
+                if getattr(self, "_edge_taskbar_force_visible", False):
+                    return
                 succeeded = self._set_edge_taskbar_visibility(False)
                 if succeeded and first_success_at is None:
                     first_success_at = attempt
@@ -4621,6 +4626,11 @@ class CopilotHandler:
             )
             return
 
+        # If we are explicitly showing Edge to the user, ensure it has a taskbar entry.
+        if sys.platform == "win32":
+            self._edge_taskbar_force_visible = True
+            self._set_edge_taskbar_visibility(True)
+
         # Check browser display mode - skip for foreground mode
         # (browser is already visible, no need to bring to front)
         mode = action.effective_mode
@@ -4673,6 +4683,8 @@ class CopilotHandler:
             if not positioned:
                 self._bring_edge_window_to_front(page_title, reason=reason)
 
+        if sys.platform == "win32":
+            self._set_edge_taskbar_visibility(True)
         logger.info("Browser window brought to foreground for: %s", reason)
 
     def _find_edge_window_handle(self, page_title: str = None):
@@ -5006,7 +5018,8 @@ class CopilotHandler:
             yakulingo_hwnd = self._find_yakulingo_window_handle(include_hidden=True)
             if not edge_hwnd or not yakulingo_hwnd:
                 return False
-            self._set_edge_taskbar_visibility(False)
+            self._edge_taskbar_force_visible = True
+            self._set_edge_taskbar_visibility(True)
 
             class RECT(ctypes.Structure):
                 _fields_ = [
@@ -5668,8 +5681,8 @@ class CopilotHandler:
             if not edge_hwnd:
                 logger.debug("Edge window not found via EnumWindows")
                 return False
-            if getattr(self, "_edge_layout_mode", None) == "offscreen":
-                self._set_edge_taskbar_visibility(False)
+            self._edge_taskbar_force_visible = True
+            self._set_edge_taskbar_visibility(True)
 
             SW_SHOW = 5
             SW_RESTORE = 9
@@ -5941,7 +5954,17 @@ class CopilotHandler:
                     ui_visible = False
 
                 if ui_visible:
-                    logger.debug("UI window sync active: skipping Edge minimization while UI visible")
+                    try:
+                        positioned = self._position_edge_behind_yakulingo_if_ui_visible()
+                    except Exception:
+                        positioned = False
+
+                    if positioned:
+                        logger.debug("UI window sync active: Edge positioned behind UI (skipping minimization)")
+                    else:
+                        # Fallback: minimize to ensure the login UI doesn't remain visible.
+                        self._minimize_edge_window(None)
+                        logger.debug("UI window sync active: Edge minimization fallback (positioning failed)")
                     return
             mode = self._get_browser_display_mode()
             edge_layout_mode = getattr(self, "_edge_layout_mode", None)

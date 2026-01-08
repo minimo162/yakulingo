@@ -14192,15 +14192,15 @@ document.fonts.ready.then(function() {
     if (!value) {
       return false;
     }
+    if (fallbackCopy(value)) {
+      return true;
+    }
     try {
       if (navigator.clipboard && navigator.clipboard.writeText) {
         await navigator.clipboard.writeText(value);
         return true;
       }
     } catch (err) {}
-    if (fallbackCopy(value)) {
-      return true;
-    }
     return await postClipboard(value);
   };
 

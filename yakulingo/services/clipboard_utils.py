@@ -380,33 +380,40 @@ else:
             _kernel32.GlobalUnlock(h_mem)
 
         success = False
-        if not _user32.OpenClipboard(None):
-            error_code = ctypes.get_last_error()
-            logger.warning("Failed to open clipboard (error: %s)", error_code)
-            _kernel32.GlobalFree(h_mem)
-            return False
+        for attempt in range(CLIPBOARD_RETRY_COUNT):
+            if attempt:
+                time.sleep(CLIPBOARD_RETRY_DELAY_SEC)
 
-        try:
-            if not _user32.EmptyClipboard():
+            if not _user32.OpenClipboard(None):
                 error_code = ctypes.get_last_error()
-                logger.warning("Failed to empty clipboard (error: %s)", error_code)
-                _kernel32.GlobalFree(h_mem)
-                return False
+                if attempt >= CLIPBOARD_RETRY_COUNT - 1:
+                    _log_clipboard_open_failure(error_code, "set_text")
+                continue
 
-            result = _user32.SetClipboardData(CF_UNICODETEXT, h_mem)
-            if not result:
-                error_code = ctypes.get_last_error()
-                logger.warning("Failed to set clipboard data (error: %s)", error_code)
-                _kernel32.GlobalFree(h_mem)
-                return False
+            try:
+                if not _user32.EmptyClipboard():
+                    error_code = ctypes.get_last_error()
+                    if attempt >= CLIPBOARD_RETRY_COUNT - 1:
+                        logger.warning("Failed to empty clipboard (error: %s)", error_code)
+                    continue
 
-            logger.debug("Successfully set clipboard text (len=%d)", len(text))
-            success = True
-            return True
-        finally:
-            _user32.CloseClipboard()
-            if success:
-                _note_self_clipboard_set()
+                result = _user32.SetClipboardData(CF_UNICODETEXT, h_mem)
+                if not result:
+                    error_code = ctypes.get_last_error()
+                    if attempt >= CLIPBOARD_RETRY_COUNT - 1:
+                        logger.warning("Failed to set clipboard data (error: %s)", error_code)
+                    continue
+
+                logger.debug("Successfully set clipboard text (len=%d)", len(text))
+                success = True
+                return True
+            finally:
+                _user32.CloseClipboard()
+                if success:
+                    _note_self_clipboard_set()
+
+        _kernel32.GlobalFree(h_mem)
+        return False
 
     DROPEFFECT_COPY = 1
 

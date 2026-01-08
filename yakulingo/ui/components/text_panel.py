@@ -28,16 +28,28 @@ logger = logging.getLogger(__name__)
 
 def _build_copy_js_handler(text: str) -> str:
     payload = json.dumps(text)
-    return f"""(e) => {{
+    return f"""async (e) => {{
         const text = {payload};
         const target = e.currentTarget;
-        const flash = () => {{
+        const flash = (message) => {{
             if (!target) {{
                 return;
+            }}
+            if (message) {{
+                try {{
+                    target.setAttribute('data-feedback', message);
+                }} catch (err) {{}}
             }}
             target.classList.remove('copy-success');
             void target.offsetWidth;
             target.classList.add('copy-success');
+            if (message && message !== 'コピーしました') {{
+                setTimeout(() => {{
+                    try {{
+                        target.setAttribute('data-feedback', 'コピーしました');
+                    }} catch (err) {{}}
+                }}, 1300);
+            }}
         }};
         const fallbackCopy = () => {{
             const textarea = document.createElement('textarea');
@@ -71,6 +83,9 @@ def _build_copy_js_handler(text: str) -> str:
             }}
         }};
         const doCopy = async () => {{
+            if (fallbackCopy()) {{
+                return true;
+            }}
             try {{
                 if (window._yakulingoCopyText) {{
                     const ok = await window._yakulingoCopyText(text);
@@ -85,18 +100,15 @@ def _build_copy_js_handler(text: str) -> str:
                     return true;
                 }}
             }} catch (err) {{}}
-            if (fallbackCopy()) {{
-                return true;
-            }}
             return await serverCopy();
         }};
         try {{
-            flash();
-            doCopy().finally(() => emit(e));
+            const ok = await doCopy();
+            flash(ok ? 'コピーしました' : 'コピーできませんでした');
             return;
         }} catch (err) {{
         }}
-        emit(e);
+        flash('コピーできませんでした');
     }}"""
 
 

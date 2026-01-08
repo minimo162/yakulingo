@@ -1849,8 +1849,8 @@ class YakuLingoApp:
                 return False
 
             gap = 10
-            min_ui_width = 580
-            min_edge_width = 580
+            min_ui_width = 1
+            min_edge_width = 1
 
             dpi_scale = _get_windows_dpi_scale()
             dpi_awareness = _get_process_dpi_awareness()
@@ -4189,8 +4189,8 @@ class YakuLingoApp:
                 return None
 
             gap = 10
-            min_ui_width = 580
-            min_target_width = 580
+            min_ui_width = 1
+            min_target_width = 1
             ui_ratio = 0.5
 
             dpi_scale = _get_windows_dpi_scale()
@@ -4441,8 +4441,8 @@ class YakuLingoApp:
 
             # Layout constants (logical px); scale when process is DPI-aware.
             gap = 10
-            min_ui_width = 580
-            min_target_width = 580
+            min_ui_width = 1
+            min_target_width = 1
             ui_ratio = 0.5  # 1:1 split between source app and YakuLingo UI
 
             dpi_scale = _get_windows_dpi_scale()
@@ -13456,7 +13456,7 @@ def run_app(
                                 work_width = int(work.right - work.left)
                                 work_height = int(work.bottom - work.top)
                                 if work_width > 0 and work_height > 0:
-                                    min_ui_width = 580
+                                    min_ui_width = 1
                                     dpi_scale = _get_windows_dpi_scale()
                                     dpi_awareness = _get_process_dpi_awareness()
                                     if dpi_awareness in (1, 2) and dpi_scale != 1.0:

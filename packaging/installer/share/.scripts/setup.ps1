@@ -1733,11 +1733,21 @@ function Invoke-Setup {
                 "=== Extraction completed: $(Get-Date) ===" | Out-File -FilePath $extractLogPath -Append -Encoding UTF8
             } catch { }
 
-            if ($exitCode -ne 0) {
+            # 7-Zip exit codes:
+            #   0 = No error
+            #   1 = Warning (non-fatal; extraction often succeeds)
+            #   2+ = Fatal error
+            # Treat exit code 1 as warning and continue; critical files are verified after extraction.
+            if ($exitCode -ge 2) {
                 if (-not $GuiMode) {
                     Write-Host "      [ERROR] 7-Zip failed. See log: $extractLogPath" -ForegroundColor Red
                 }
                 throw "Failed to extract ZIP file.`n`nFile: $ZipFileName`nExit code: $exitCode`n`nSee log: $extractLogPath"
+            } elseif ($exitCode -eq 1) {
+                try { "[WARNING] 7-Zip returned exit code 1 (warning). Continuing." | Out-File -FilePath $extractLogPath -Append -Encoding UTF8 } catch { }
+                if (-not $GuiMode) {
+                    Write-Host "      [WARNING] 7-Zip returned exit code 1 (warning). Continuing..." -ForegroundColor Yellow
+                }
             }
 
             if (-not $GuiMode) {
@@ -1818,48 +1828,47 @@ function Invoke-Setup {
     Write-Status -Message "Files extracted" -Progress -Step "Step 3/4: Extracting" -Percent 80
 
     # Verify extracted files and log
-    try {
-        "=== Verification: $(Get-Date) ===" | Out-File -FilePath $extractLogPath -Append -Encoding UTF8
-        $criticalFiles = @(
-            "YakuLingo.exe",
-            "app.py",
-            "yakulingo\__init__.py",
-            "yakulingo\ui\app.py",
-            "yakulingo\ui\styles.css",
-            "yakulingo\ui\components\text_panel.py",
-            "yakulingo\ui\components\file_panel.py",
-            ".venv\pyvenv.cfg"
-        )
-        $missingFiles = @()
-        foreach ($file in $criticalFiles) {
-            $fullPath = Join-Path $SetupPath $file
-            $exists = Test-Path $fullPath
-            "$file : $(if ($exists) { 'OK' } else { 'MISSING' })" | Out-File -FilePath $extractLogPath -Append -Encoding UTF8
-            if (-not $exists) {
-                $missingFiles += $file
-            }
-        }
+    $criticalFiles = @(
+        "YakuLingo.exe",
+        "app.py",
+        "yakulingo\__init__.py",
+        "yakulingo\ui\app.py",
+        "yakulingo\ui\styles.css",
+        "yakulingo\ui\components\text_panel.py",
+        "yakulingo\ui\components\file_panel.py",
+        ".venv\pyvenv.cfg"
+    )
+    $missingFiles = @()
+    try { "=== Verification: $(Get-Date) ===" | Out-File -FilePath $extractLogPath -Append -Encoding UTF8 } catch { }
 
-        # Log UI file timestamps for debugging
-        "=== UI File Timestamps ===" | Out-File -FilePath $extractLogPath -Append -Encoding UTF8
-        $uiDir = Join-Path $SetupPath "yakulingo\ui"
-        if (Test-Path $uiDir) {
-            Get-ChildItem -Path $uiDir -File | ForEach-Object {
-                "$($_.Name) : $($_.LastWriteTime)" | Out-File -FilePath $extractLogPath -Append -Encoding UTF8
-            }
+    foreach ($file in $criticalFiles) {
+        $fullPath = Join-Path $SetupPath $file
+        $exists = Test-Path $fullPath
+        try { "$file : $(if ($exists) { 'OK' } else { 'MISSING' })" | Out-File -FilePath $extractLogPath -Append -Encoding UTF8 } catch { }
+        if (-not $exists) {
+            $missingFiles += $file
         }
+    }
 
-        if ($missingFiles.Count -gt 0) {
-            if (-not $GuiMode) {
-                Write-Host "      [WARNING] Missing files after extraction:" -ForegroundColor Yellow
-                foreach ($f in $missingFiles) {
-                    Write-Host "        - $f" -ForegroundColor Yellow
-                }
-                Write-Host "      See log: $extractLogPath" -ForegroundColor Yellow
-            }
+    # Log UI file timestamps for debugging
+    try { "=== UI File Timestamps ===" | Out-File -FilePath $extractLogPath -Append -Encoding UTF8 } catch { }
+    $uiDir = Join-Path $SetupPath "yakulingo\ui"
+    if (Test-Path $uiDir) {
+        Get-ChildItem -Path $uiDir -File -ErrorAction SilentlyContinue | ForEach-Object {
+            try { "$($_.Name) : $($_.LastWriteTime)" | Out-File -FilePath $extractLogPath -Append -Encoding UTF8 } catch { }
         }
-    } catch {
-        # Ignore verification errors
+    }
+
+    if ($missingFiles.Count -gt 0) {
+        if (-not $GuiMode) {
+            Write-Host "      [ERROR] Missing critical files after extraction:" -ForegroundColor Red
+            foreach ($f in $missingFiles) {
+                Write-Host "        - $f" -ForegroundColor Red
+            }
+            Write-Host "      See log: $extractLogPath" -ForegroundColor Red
+        }
+        $missingText = ($missingFiles | ForEach-Object { " - $_" }) -join "`n"
+        throw "Missing critical files after extraction:`n$missingText`n`nSee log: $extractLogPath"
     }
 
     # Clean up updates folder to prevent stale files from affecting the app

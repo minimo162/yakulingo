@@ -60,9 +60,11 @@ else:
     _VK_J = 0x4A
 
     # Copy simulation
+    _VK_MENU = 0x12
     _VK_CONTROL = 0x11
     _VK_C = 0x43
     _KEYEVENTF_KEYUP = 0x0002
+    _KEYSTATE_DOWN_MASK = 0x8000
 
 
     class _Point(ctypes.Structure):
@@ -83,11 +85,26 @@ else:
     def _send_ctrl_c() -> None:
         _user32.keybd_event.argtypes = [wintypes.BYTE, wintypes.BYTE, wintypes.DWORD, _ULONG_PTR]
         _user32.keybd_event.restype = None
+        _user32.GetAsyncKeyState.argtypes = [ctypes.c_int]
+        _user32.GetAsyncKeyState.restype = wintypes.SHORT
         try:
-            _user32.keybd_event(_VK_CONTROL, 0, 0, 0)
-            _user32.keybd_event(_VK_C, 0, 0, 0)
-            _user32.keybd_event(_VK_C, 0, _KEYEVENTF_KEYUP, 0)
-            _user32.keybd_event(_VK_CONTROL, 0, _KEYEVENTF_KEYUP, 0)
+            # Ctrl+Alt+J のホットキー押下中は Alt が押下状態のままコールバックが走ることがある。
+            # そのまま Ctrl+C を送ると Ctrl+Alt+C になりコピーに失敗するため、必要に応じて Alt を解除する。
+            alt_down = bool(_user32.GetAsyncKeyState(_VK_MENU) & _KEYSTATE_DOWN_MASK)
+            ctrl_down = bool(_user32.GetAsyncKeyState(_VK_CONTROL) & _KEYSTATE_DOWN_MASK)
+
+            if alt_down:
+                _user32.keybd_event(_VK_MENU, 0, _KEYEVENTF_KEYUP, 0)
+
+            if ctrl_down:
+                # Ctrl が押下済みなら C のみ送る（Ctrl の状態を不用意に壊さない）
+                _user32.keybd_event(_VK_C, 0, 0, 0)
+                _user32.keybd_event(_VK_C, 0, _KEYEVENTF_KEYUP, 0)
+            else:
+                _user32.keybd_event(_VK_CONTROL, 0, 0, 0)
+                _user32.keybd_event(_VK_C, 0, 0, 0)
+                _user32.keybd_event(_VK_C, 0, _KEYEVENTF_KEYUP, 0)
+                _user32.keybd_event(_VK_CONTROL, 0, _KEYEVENTF_KEYUP, 0)
         except Exception as e:
             logger.debug("Failed to send Ctrl+C: %s", e)
 

@@ -9943,6 +9943,9 @@ class YakuLingoApp:
 
         self.state.text_translating = True
         self.state.text_back_translating = True
+        # Clear previous streaming output so back-translation streaming starts clean
+        self.state.text_streaming_preview = " "
+        self._streaming_preview_label = None
         with client:
             # Only refresh result panel and button (input panel is already in compact state)
             self._refresh_result_panel()
@@ -9953,8 +9956,42 @@ class YakuLingoApp:
         try:
             from yakulingo.services.copilot_handler import TranslationCancelledError
 
+            import time
+
             # Yield control to event loop before starting blocking operation
             await asyncio.sleep(0)
+
+            # Streaming preview: update partial output as Copilot generates back-translation.
+            loop = asyncio.get_running_loop()
+            last_preview_update = 0.0
+            preview_update_interval_seconds = 0.12
+
+            def on_chunk(partial_text: str) -> None:
+                nonlocal last_preview_update
+                self.state.text_streaming_preview = partial_text
+                now = time.monotonic()
+                if now - last_preview_update < preview_update_interval_seconds:
+                    return
+                last_preview_update = now
+
+                def update_streaming_preview() -> None:
+                    if not self.state.text_translating:
+                        return
+                    try:
+                        if not getattr(client, "has_socket_connection", True):
+                            return
+                    except Exception:
+                        pass
+                    try:
+                        with client:
+                            if self._streaming_preview_label is None:
+                                self._refresh_result_panel()
+                            if self._streaming_preview_label is not None:
+                                self._streaming_preview_label.set_text(partial_text)
+                    except Exception:
+                        logger.debug("Back-translate streaming preview refresh failed", exc_info=True)
+
+                loop.call_soon_threadsafe(update_streaming_preview)
 
             reference_files = self._get_effective_reference_files()
             reference_section = ""
@@ -10002,11 +10039,11 @@ class YakuLingoApp:
                             text,
                             prompt,
                             reference_files if reference_files else None,
-                            None,
+                            on_chunk,
                         )
                     else:
                         result = await asyncio.to_thread(
-                            lambda: self.copilot.translate_single(text, prompt, reference_files)
+                            lambda: self.copilot.translate_single(text, prompt, reference_files, on_chunk)
                         )
 
                     # Parse result and store on the option

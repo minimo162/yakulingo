@@ -1375,6 +1375,24 @@ class CopilotHandler:
 
         return False
 
+    def _is_edge_window_hung_win32(self, edge_hwnd: int | None = None) -> bool:
+        if sys.platform != "win32":
+            return False
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.WinDLL("user32", use_last_error=True)
+            resolved_hwnd = edge_hwnd or self._find_edge_window_handle()
+            if not resolved_hwnd:
+                return False
+            try:
+                return bool(user32.IsHungAppWindow(wintypes.HWND(int(resolved_hwnd))))
+            except Exception:
+                return False
+        except Exception:
+            return False
+
     def is_edge_window_open(self) -> bool:
         """Return True if the Edge window for Copilot is currently open."""
         if sys.platform != "win32":
@@ -1383,7 +1401,11 @@ class CopilotHandler:
         if self.edge_process is None and not self._edge_pid:
             return self.is_edge_process_alive()
         try:
-            if self._find_edge_window_handle() is not None:
+            edge_hwnd = self._find_edge_window_handle()
+            if edge_hwnd is not None:
+                if self._is_edge_window_hung_win32(int(edge_hwnd)):
+                    logger.warning("Edge window appears hung; treating as closed for recovery")
+                    return False
                 return True
         except Exception:
             pass
@@ -1406,8 +1428,10 @@ class CopilotHandler:
         normalized = mode.strip().lower() if isinstance(mode, str) else None
         if normalized not in ("offscreen", "triple"):
             normalized = None
-        if normalized != getattr(self, "_edge_layout_mode", None):
-            self._edge_restore_rect = None
+        current = getattr(self, "_edge_layout_mode", None)
+        if normalized == current:
+            return
+        self._edge_restore_rect = None
         self._edge_layout_mode = normalized
         logger.debug("Edge layout override: %s", normalized)
 
@@ -1520,6 +1544,9 @@ class CopilotHandler:
         """
         port_status = self._get_cdp_port_status()
         if port_status == "ours":
+            if self._is_edge_window_hung_win32():
+                logger.warning("Detected hung Edge window on CDP port %d; restarting dedicated Edge", self.cdp_port)
+                return self._start_translator_edge()
             logger.debug("Edge already running on port %d", self.cdp_port)
             return True
         if port_status != "free":
@@ -4831,6 +4858,16 @@ class CopilotHandler:
                 if not include_hidden and not user32.IsWindowVisible(hwnd):
                     return True
 
+                # Avoid matching File Explorer windows like "YakuLingo - エクスプローラー".
+                try:
+                    class_name = ctypes.create_unicode_buffer(256)
+                    user32.GetClassNameW(hwnd, class_name, 256)
+                    class_value = class_name.value or ""
+                    if class_value in ("CabinetWClass", "ExploreWClass"):
+                        return True
+                except Exception:
+                    pass
+
                 title_length = user32.GetWindowTextLengthW(hwnd) + 1
                 title = ctypes.create_unicode_buffer(title_length)
                 user32.GetWindowTextW(hwnd, title, title_length)
@@ -4868,6 +4905,15 @@ class CopilotHandler:
             edge_hwnd = self._find_edge_window_handle()
             if not edge_hwnd:
                 return False
+
+            # If the window is already off-screen (or minimized), avoid restoring/resizing it.
+            # This keeps resident-mode suppression idempotent and prevents window thrashing.
+            try:
+                if self._is_edge_window_offscreen():
+                    self._set_edge_taskbar_visibility(False)
+                    return True
+            except Exception:
+                pass
             self._set_edge_taskbar_visibility(False)
 
             class RECT(ctypes.Structure):
@@ -5363,6 +5409,7 @@ class CopilotHandler:
             SetWindowLongPtr.argtypes = [wintypes.HWND, ctypes.c_int, set_style_type]
 
             any_success = False
+            changed_any = False
             for edge_hwnd in edge_hwnds:
                 hwnd = wintypes.HWND(edge_hwnd)
                 style = GetWindowLongPtr(hwnd, GWL_EXSTYLE)
@@ -5382,9 +5429,10 @@ class CopilotHandler:
                         0,
                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
                     )
+                    changed_any = True
                 any_success = True
 
-            if any_success:
+            if changed_any:
                 logger.debug("Edge taskbar visibility set to: %s", "visible" if visible else "hidden")
             return any_success
         except Exception as e:

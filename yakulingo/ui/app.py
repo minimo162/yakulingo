@@ -215,6 +215,16 @@ def _find_window_handle_by_title_win32(window_title: str) -> int | None:
         found_hwnd: dict[str, int | None] = {"value": None}
 
         def _enum_windows(hwnd_enum, _):
+            if window_title.startswith("YakuLingo"):
+                # Avoid matching File Explorer windows like "YakuLingo - エクスプローラー".
+                try:
+                    class_name = ctypes.create_unicode_buffer(256)
+                    user32.GetClassNameW(hwnd_enum, class_name, 256)
+                    class_value = class_name.value or ""
+                    if class_value in ("CabinetWClass", "ExploreWClass"):
+                        return True
+                except Exception:
+                    pass
             length = user32.GetWindowTextLengthW(hwnd_enum)
             if length <= 0:
                 return True
@@ -1514,6 +1524,10 @@ class YakuLingoApp:
         # Throttle noisy taskbar visibility logs when window handle is missing
         self._last_taskbar_visibility_not_found_time: Optional[float] = None
         self._last_taskbar_visibility_not_found_reason: Optional[str] = None
+
+        # Resident-mode taskbar suppression thread (avoid duplicate workers)
+        self._resident_taskbar_suppression_lock = threading.Lock()
+        self._resident_taskbar_suppression_thread: threading.Thread | None = None
 
         # File translation queue management
         self._file_queue_cancel_requested = False
@@ -5253,11 +5267,17 @@ class YakuLingoApp:
                 time.sleep(delay_sec)
 
         try:
-            threading.Thread(
+            thread = threading.Thread(
                 target=_worker,
                 daemon=True,
                 name=f"resident_taskbar_suppress:{reason}",
-            ).start()
+            )
+            with self._resident_taskbar_suppression_lock:
+                existing = self._resident_taskbar_suppression_thread
+                if existing is not None and existing.is_alive():
+                    return
+                self._resident_taskbar_suppression_thread = thread
+            thread.start()
         except Exception as e:
             logger.debug("Failed to start resident taskbar suppression (%s): %s", reason, e)
 

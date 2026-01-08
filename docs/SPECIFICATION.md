@@ -98,7 +98,7 @@ M365 Copilotを翻訳エンジンとして使用し、テキストとドキュ�
 │  │                        Presentation Layer                         │  │
 │  │                     (NiceGUI + pywebview)                         │  │
 │  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐   │  │
-│  │  │  Text Tab   │  │  File Tab   │  │  Update Notification    │   │  │
+│  │  │  Text Panel │  │  File Panel │  │  Update Notification    │   │  │
 │  │  └─────────────┘  └─────────────┘  └─────────────────────────┘   │  │
 │  └───────────────────────────────────────────────────────────────────┘  │
 │                                    │                                    │
@@ -447,7 +447,7 @@ class AppState:
     text_compare_mode: str = "off"
     text_compare_base_style: str = "standard"
 
-    # ファイルタブ
+    # ファイル翻訳
     file_state: FileState = FileState.EMPTY
     selected_file: Optional[Path] = None
     file_info: Optional[FileInfo] = None
@@ -566,11 +566,11 @@ Windows のクリップボード更新を監視し、同一ウィンドウで 2.
 ┌─────────────────────────────────────────────────────────────────┐
 │  🍎 YakuLingo                              [Update Available]    │
 ├─────────────────────────────────────────────────────────────────┤
-│  [ Text ]  [ File ]                                   TAB BAR    │
+│  Sidebar (Text/File 自動切替)                         SIDEBAR    │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │                        CONTENT AREA                             │
-│                      (Tab-specific UI)                          │
+│                (Text/File translation panels)                   │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -592,7 +592,7 @@ Windows のクリップボード更新を監視し、同一ウィンドウで 2.
 
 NiceGUIの`await client.connected()`パターンを使用して、クライアント接続後にメインUIをレンダリング。
 
-### 5.4 Text Tab
+### 5.4 Text Panel
 
 **統一UI構造（英訳・和訳共通）:**
 ```
@@ -674,7 +674,7 @@ NiceGUIの`await client.connected()`パターンを使用して、クライア�
 - フィルタ: 出力言語 / スタイル / 参照ファイル有無
 - 比較: 現在の入力と履歴の差分を左右並列で表示
 
-### 5.5 File Tab
+### 5.5 File Panel
 
 **State: Empty**
 ```

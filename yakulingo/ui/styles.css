@@ -1810,11 +1810,13 @@ textarea:focus-visible {
     inset: 0 !important;
     z-index: 2000 !important;
     opacity: 0 !important;
+    display: none !important;
     pointer-events: none !important;
 }
 
 body.global-drop-active .global-drop-upload,
 html.global-drop-active .global-drop-upload {
+    display: block !important;
     pointer-events: auto !important;
 }
 

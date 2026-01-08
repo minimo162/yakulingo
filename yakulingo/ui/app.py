@@ -8958,9 +8958,27 @@ class YakuLingoApp:
         return files if files else None
 
     def _copy_text(self, text: str):
-        """No-op placeholder for copy callbacks (clipboard write is handled client-side)."""
+        """テキストをOSのクリップボードへコピー（ベストエフォート）。
+
+        Edgeの`--app`起動やpywebview環境では、ブラウザ側のクリップボードAPIが
+        状況によって失敗することがあるため、UI側のJSコピーに加えてサーバ側でも
+        Windowsクリップボードへ書き込みを試みます。
+        """
         if not text:
             return
+        if sys.platform != "win32":
+            return
+        try:
+            from yakulingo.services.clipboard_utils import set_clipboard_text
+        except Exception as e:
+            logger.debug("Clipboard utils unavailable: %s", e)
+            return
+        try:
+            ok = set_clipboard_text(text)
+            if not ok:
+                logger.debug("Failed to set clipboard text via clipboard_utils")
+        except Exception as e:
+            logger.debug("Clipboard set failed: %s", e)
 
     # =========================================================================
     # Section 5: Error Handling Helpers

@@ -3133,6 +3133,13 @@ class PdfProcessor(FileProcessor):
                             )
 
                         initial_font_size = max(MIN_FONT_SIZE, min(initial_font_size, MAX_FONT_SIZE))
+                        min_setting = MIN_FONT_SIZE
+                        if settings is not None:
+                            try:
+                                min_setting = float(getattr(settings, 'font_size_min', MIN_FONT_SIZE) or MIN_FONT_SIZE)
+                            except (TypeError, ValueError):
+                                min_setting = MIN_FONT_SIZE
+                        min_setting = max(MIN_FONT_SIZE, min_setting)
 
                         # Apply optional global font size adjustment (JP->EN tends to expand).
                         # Keep aligned with PDFMathTranslate: font size stays at source size
@@ -3140,8 +3147,6 @@ class PdfProcessor(FileProcessor):
                         if settings and direction == "jp_to_en":
                             try:
                                 size_adjust = float(getattr(settings, 'font_size_adjustment_jp_to_en', 0.0) or 0.0)
-                                min_setting = float(getattr(settings, 'font_size_min', 6.0) or 6.0)
-                                min_setting = max(MIN_FONT_SIZE, min_setting)
                                 if size_adjust != 0.0:
                                     adjusted = initial_font_size + size_adjust
                                     initial_font_size = max(
@@ -3149,6 +3154,50 @@ class PdfProcessor(FileProcessor):
                                         min(adjusted, MAX_FONT_SIZE),
                                     )
                             except (TypeError, ValueError):
+                                pass
+
+                        # Table/form layout: prefer keeping single-line rows by shrinking font
+                        # to fit the cell width when translating JP->EN. This avoids excessive
+                        # wrapping which can cause overlaps in dense financial PDFs.
+                        force_clip_width = False
+                        if (
+                            direction == "jp_to_en"
+                            and is_table_cell
+                            and not is_preserved_original
+                            and translated
+                            and not block_is_vertical
+                            and box_width > 0
+                            and page_width > 0
+                            and original_line_count <= 1
+                            and box_width <= page_width * 0.7
+                        ):
+                            try:
+                                width_target = max(0.0, box_width - 1.0)
+                                if width_target > 0:
+                                    raw_lines = translated.split("\n")
+                                    raw_line_widths = [
+                                        _get_token_width(line, font_id, initial_font_size, font_registry)
+                                        for line in raw_lines
+                                        if line.strip()
+                                    ]
+                                    max_line_width = max(raw_line_widths) if raw_line_widths else 0.0
+                                    if max_line_width > width_target + 0.1:
+                                        scale = width_target / max_line_width
+                                        candidate = max(min_setting, initial_font_size * scale)
+                                        if candidate < initial_font_size - 0.01:
+                                            initial_font_size = candidate
+                                        # If it still overflows at the minimum size, clip instead of painting over neighbors.
+                                        max_line_width = max(
+                                            (
+                                                _get_token_width(line, font_id, initial_font_size, font_registry)
+                                                for line in raw_lines
+                                                if line.strip()
+                                            ),
+                                            default=0.0,
+                                        )
+                                        if max_line_width > box_width + 0.1 and initial_font_size <= min_setting + 0.01:
+                                            force_clip_width = True
+                            except Exception:
                                 pass
 
                         # PDFMathTranslate compliant wrapping rule:
@@ -3444,7 +3493,7 @@ class PdfProcessor(FileProcessor):
                         if is_table_cell and translated and lines:
                             required_height = len(lines) * font_size * line_height
                             if required_height > box_height + 0.1:
-                                min_table_font_size = MIN_FONT_SIZE
+                                min_table_font_size = min_setting
                                 max_iterations = 20
                                 new_font_size = font_size
                                 new_line_height = line_height
@@ -3480,6 +3529,61 @@ class PdfProcessor(FileProcessor):
                                 if new_font_size < font_size - 0.01:
                                     logger.debug(
                                         "[Layout] Table cell %s: shrink font %.1f -> %.1f (lines=%d -> %d, height=%.1f)",
+                                        block_id, font_size, new_font_size,
+                                        len(lines), len(new_lines), box_height
+                                    )
+                                    font_size = new_font_size
+                                    line_height = new_line_height
+                                    lines = new_lines
+
+                        # JP→EN (英訳) は文字数が増えることが多く、PP-DocLayout-L がない場合は
+                        # 小さな枠（フォーム/ヘッダ領域）で縦方向に溢れて隣接要素と重なりやすい。
+                        # そのため、原文が単一行だったブロックに限り、必要時のみ枠内優先で縮小する。
+                        if (
+                            direction == "jp_to_en"
+                            and not is_table_cell
+                            and not is_preserved_original
+                            and translated
+                            and lines
+                            and original_line_count <= 1
+                        ):
+                            required_height = len(lines) * font_size * line_height
+                            if required_height > box_height + 0.1:
+                                max_iterations = 20
+                                new_font_size = font_size
+                                new_line_height = line_height
+                                new_lines = lines
+                                for _ in range(max_iterations):
+                                    if required_height <= box_height + 0.1:
+                                        break
+                                    if new_font_size <= min_setting + 0.01:
+                                        break
+
+                                    scale = box_height / max(0.001, required_height)
+                                    candidate = max(min_setting, new_font_size * scale)
+                                    if candidate >= new_font_size - 0.01:
+                                        candidate = max(min_setting, new_font_size - 0.5)
+                                    new_font_size = candidate
+
+                                    new_line_height = calculate_line_height_with_font(
+                                        translated,
+                                        box_width,
+                                        box_height,
+                                        new_font_size,
+                                        font_id,
+                                        font_registry,
+                                        target_lang,
+                                        is_table_cell=False,
+                                        allow_wrap=True,
+                                    )
+                                    new_lines = split_text_into_lines_with_font(
+                                        translated, box_width, new_font_size, font_id, font_registry
+                                    )
+                                    required_height = len(new_lines) * new_font_size * new_line_height
+
+                                if new_font_size < font_size - 0.01:
+                                    logger.debug(
+                                        "[Layout] Block %s (jp_to_en): shrink font %.1f -> %.1f (lines=%d -> %d, height=%.1f)",
                                         block_id, font_size, new_font_size,
                                         len(lines), len(new_lines), box_height
                                     )
@@ -3633,12 +3737,47 @@ class PdfProcessor(FileProcessor):
                         # Drawing white backgrounds would cover table cell colors
                         # and other visual elements, which is not desired.
 
+                        required_height = len(lines) * font_size * line_height if lines else 0.0
+                        max_line_width = 0.0
+                        if box_width > 0 and translated and lines:
+                            try:
+                                max_line_width = max(
+                                    (
+                                        _get_token_width(line, font_id, font_size, font_registry)
+                                        for line in lines
+                                        if line.strip()
+                                    ),
+                                    default=0.0,
+                                )
+                            except Exception:
+                                max_line_width = 0.0
+
                         clip_region = (
-                            direction == "en_to_jp"
-                            and not is_preserved_original
+                            not is_preserved_original
                             and translated
                             and lines
-                            and (len(lines) * font_size * line_height > box_height + 0.1)
+                            and (
+                                (
+                                    direction == "en_to_jp"
+                                    and (required_height > box_height + 0.1)
+                                )
+                                or (
+                                    is_table_cell
+                                    and (
+                                        force_clip_width
+                                        or (required_height > box_height + 0.1)
+                                        or (box_width > 0 and max_line_width > box_width + 0.5)
+                                    )
+                                )
+                                or (
+                                    direction == "jp_to_en"
+                                    and original_line_count <= 1
+                                    and (
+                                        (required_height > box_height + 0.1)
+                                        or (box_width > 0 and max_line_width > box_width + 0.5)
+                                    )
+                                )
+                            )
                         )
                         if clip_region:
                             replacer.begin_clipped_region(
@@ -3989,6 +4128,7 @@ class PdfProcessor(FileProcessor):
                     words_by_line[(int(block_no), int(line_no))].append(word)
 
                 segments: list[tuple[tuple[float, float, float, float], Paragraph, str, bool]] = []
+                table_cell_counter = 0
 
                 for (block_no, line_no), line_words in words_by_line.items():
                     line_words_sorted = sorted(line_words, key=lambda w: w[0])
@@ -4009,6 +4149,8 @@ class PdfProcessor(FileProcessor):
                     gap_threshold = max(12.0, span_size * 1.8)
                     current_segment: list[tuple] = []
                     prev_x1 = None
+
+                    line_segments: list[tuple[tuple[float, float, float, float], Paragraph, str, bool]] = []
 
                     def _flush_segment(segment_words: list[tuple]) -> None:
                         if not segment_words:
@@ -4055,7 +4197,7 @@ class PdfProcessor(FileProcessor):
                         )
 
                         skip_translation = not self.should_translate(segment_text)
-                        segments.append(((pdf_x0, pdf_y0, pdf_x1, pdf_y1), para, segment_text, skip_translation))
+                        line_segments.append(((pdf_x0, pdf_y0, pdf_x1, pdf_y1), para, segment_text, skip_translation))
 
                     for word in line_words_sorted:
                         x0 = float(word[0])
@@ -4066,6 +4208,17 @@ class PdfProcessor(FileProcessor):
                         current_segment.append(word)
                         prev_x1 = x1
                     _flush_segment(current_segment)
+
+                    # Heuristic table cell detection:
+                    # When a single PyMuPDF line is split into multiple segments by large X gaps,
+                    # it is usually a table/form layout (multi-column). Mark these as table cells
+                    # so rendering uses table-specific wrapping/shrinking behavior.
+                    if len(line_segments) > 1:
+                        for _, para, _, _ in line_segments:
+                            table_cell_counter += 1
+                            para.layout_class = LAYOUT_TABLE_BASE + table_cell_counter
+
+                    segments.extend(line_segments)
 
                 # If no words were returned (rare), fall back to dict blocks as-is.
                 if not segments:
@@ -4157,12 +4310,119 @@ class PdfProcessor(FileProcessor):
                         },
                     ))
 
+                # Secondary table/form detection in fallback mode:
+                # Many financial PDFs use form-like rows where each field is its own block,
+                # so (block_no, line_no) segmentation won't expose multi-segment lines.
+                # Detect rows with multiple blocks sharing the same vertical band and mark
+                # narrow blocks as table cells to enable table-specific fitting (wrapping + font shrink).
+                try:
+                    page_width = page.rect.width
+                    # More permissive than strict table widths, but avoids classifying
+                    # full-width paragraphs as table cells.
+                    narrow_width_threshold = page_width * 0.5
+                    # Stricter than the adjacent-block heuristic to avoid over-classification.
+                    y_overlap_threshold = 0.6
+
+                    block_geoms: list[tuple[TextBlock, float, float, float, float, float, float]] = []
+                    for tb in blocks:
+                        meta = tb.metadata
+                        if not meta:
+                            continue
+                        bbox = meta.get("bbox")
+                        if not bbox or len(bbox) < 4:
+                            continue
+                        x0, y0, x1, y1 = (float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3]))
+                        width = x1 - x0
+                        height = y1 - y0
+                        if width <= 0 or height <= 0:
+                            continue
+                        block_geoms.append((tb, x0, y0, x1, y1, width, height))
+
+                    for tb, x0, y0, x1, y1, width, height in block_geoms:
+                        meta = tb.metadata
+                        if not meta:
+                            continue
+                        if int(meta.get("layout_class") or 0) >= LAYOUT_TABLE_BASE:
+                            continue
+
+                        # Detect form/table rows by finding a neighbor block in the same vertical band
+                        # with little horizontal overlap (side-by-side columns).
+                        neighbors: list[float] = []
+                        for _other, ox0, oy0, ox1, oy1, ow, oh in block_geoms:
+                            if _other.id == tb.id:
+                                continue
+                            inter_y = min(y1, oy1) - max(y0, oy0)
+                            if inter_y <= 0:
+                                continue
+                            if inter_y < min(height, oh) * y_overlap_threshold:
+                                continue
+                            inter_x = min(x1, ox1) - max(x0, ox0)
+                            overlap_ratio = 0.0
+                            if inter_x > 0:
+                                overlap_ratio = inter_x / max(1e-6, min(width, ow))
+                            neighbors.append(overlap_ratio)
+
+                        disjoint_neighbors = sum(1 for r in neighbors if r < 0.2)
+                        is_table_like = disjoint_neighbors >= 1 and width <= narrow_width_threshold
+                        if not is_table_like:
+                            continue
+
+                        table_cell_counter += 1
+                        new_layout_class = LAYOUT_TABLE_BASE + table_cell_counter
+                        meta["layout_class"] = new_layout_class
+                        para = meta.get("paragraph")
+                        if para is not None:
+                            try:
+                                para.layout_class = new_layout_class
+                            except Exception:
+                                pass
+                except Exception as e:
+                    logger.debug("Fallback table cell detection failed for page %d: %s", page_num, e)
+
                 logger.info(
                     "PyMuPDF fallback extraction page %d: blocks=%d, skipped_non_translate=%d",
                     page_num,
                     len(blocks),
                     sum(1 for b in blocks if b.metadata and b.metadata.get("skip_translation")),
                 )
+
+                # Provide expandable margins even in fallback mode.
+                # Without PP-DocLayout-L, expandable_* defaults to 0 and translated text
+                # tends to over-wrap and overlap adjacent content. We approximate safe
+                # expansion ranges from nearby TextBlocks on the page.
+                try:
+                    from .pdf_layout import calculate_page_margins
+
+                    page_width = page.rect.width
+                    page_margins = calculate_page_margins(blocks, page_width, page_height)
+                    for tb in blocks:
+                        meta = tb.metadata
+                        if not meta:
+                            continue
+                        bbox = meta.get("bbox")
+                        if not bbox or len(bbox) < 4:
+                            continue
+                        x0, y0, x1, y1 = (float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3]))
+                        max_left, max_right, max_bottom, max_top = find_adjacent_textblock_boundaries(
+                            tb.id,
+                            (x0, y0, x1, y1),
+                            blocks,
+                            page_width,
+                            page_height,
+                            page_margins=page_margins,
+                        )
+                        expandable_left = max(0.0, x0 - max_left)
+                        expandable_right = max(0.0, max_right - x1)
+                        expandable_bottom = max(0.0, y0 - max_bottom)
+                        expandable_top = max(0.0, max_top - y1)
+                        meta["expandable_left"] = expandable_left
+                        meta["expandable_right"] = expandable_right
+                        meta["expandable_bottom"] = expandable_bottom
+                        meta["expandable_top"] = expandable_top
+                        meta["expandable_width"] = (x1 - x0) + expandable_left + expandable_right
+                except Exception as e:
+                    logger.debug("Failed to calculate fallback expandable margins for page %d: %s", page_num, e)
+
                 yield blocks, None
 
     def _extract_hybrid_streaming(

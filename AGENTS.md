@@ -2508,8 +2508,8 @@ Based on recent commits:
   - **Quantity units exclusion**: `is_japanese_continuation_line()`に数量単位（円万億千台個件名社年月日回本枚％%）を非継続行として追加。テーブルセルの結合を防止
   - **Opening bracket protection**: 強い境界でも開き括弧（(（「『【〔〈《｛［）で終わる場合は分割しない。「百万円(」のような分割を防止
   - **Short CJK text protection**: 強い境界でも1-2文字のCJKテキストは分割しない。スペース入りテキスト（「代 表 者」等）の分割を防止
-- **Global Hotkey Removal (2025-12)**:
-  - **Ctrl+Alt+J removed**: ダブルコピー（Ctrl+C x2）に統一
+- **Global Hotkey (2026-01)**:
+  - **Ctrl+Alt+J enabled**: ダブルコピー（Ctrl+C x2）を廃止し、ホットキー起動に統一
 - **Session Persistence Improvements (2024-12)**:
   - **auth=2 parameter removal**: COPILOT_URLから?auth=2パラメータを削除。M365は?authパラメータがなくても既存セッションの認証タイプを自動検出
   - **storage_state.json removed**: EdgeProfileのCookiesがセッション保持を担うため、storage_state.json関連のコードを削除（-93行）
@@ -2710,8 +2710,8 @@ Based on recent commits:
   - **2-column layout**: 3カラム（サイドバー+入力パネル+結果パネル）から2カラム（サイドバー+結果パネル）に簡素化
   - **CSS visibility toggle**: 翻訳結果表示時は入力パネルをCSSで非表示にし、結果パネルを中央配置
   - **Tab-based navigation**: 新しい翻訳は「テキスト翻訳」タブをクリックしてINPUT状態に戻す
-- **Double-copy UI Hint Removal (2025-12)**:
-  - **Clean UI**: ダブルコピー（Ctrl+C x2）は維持しつつ、UIのヒント行/キーキャップ表示を廃止
+- **Hotkey UI Hint Removal (2025-12)**:
+  - **Clean UI**: ホットキー（Ctrl+Alt+J）を提供しつつ、UIのヒント行/キーキャップ表示を廃止
 - **File Panel UI (2024-12)**:
   - **Simplified completion**: ファイル翻訳完了画面から「新しいファイルを翻訳」ボタンを削除
 - **Copilot Submission Reliability (2024-12)**:
@@ -2961,8 +2961,8 @@ Based on recent commits:
     - 1600px screen → 795px app + 10px gap + 795px browser
   - **Sidebar ratio**: `SIDEBAR_RATIO = 280 / 1800` (~16%), `MIN_SIDEBAR_WIDTH = 280px`
   - **Content width**: 横幅制限撤廃（`--content-width`による制限を削除、メインエリアいっぱいに表示）
-- **Double-copy trigger (Ctrl+C x2)**:
-  - **Quick translation**: Select text in any app, press Ctrl+C twice quickly to translate
+- **Global hotkey trigger (Ctrl+Alt+J)**:
+  - **Quick translation**: Select text/file in any app, press Ctrl+Alt+J to translate
   - **Character limit**: 5,000 chars max for text translation
   - **Auto file translation**: Texts exceeding limit automatically switch to file translation mode (saves as .txt, translates via batch processing)
   - **SendInput API**: Uses modern Windows API for reliable Ctrl+C simulation
@@ -2977,8 +2977,8 @@ Based on recent commits:
   - **Race condition handling**: Discards detection result if user selects different file during detection
   - **Manual override**: Language toggle buttons allow manual selection after auto-detection
   - **UI feedback**: Shows detected language (e.g., "日本語を検出 → 英訳します")
-- **Double-copy UI Hint**:
-  - **No on-screen hint**: UIには表示せず、ダブルコピーの操作として提供（画面を静かに保つ）
+- **Hotkey UI Hint**:
+  - **No on-screen hint**: UIには表示せず、ホットキーの操作として提供（画面を静かに保つ）
 - **setup.ps1 Robustness & Reliability**:
   - **Running process detection**: YakuLingo実行中の再インストール試行を検出してエラー表示
   - **Python process detection**: YakuLingoインストールディレクトリで実行中のPythonプロセスも検出

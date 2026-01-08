@@ -1578,8 +1578,10 @@ class YakuLingoApp:
         self._ui_ready_client_id: int | None = None
         self._ui_ready_retry_task: "asyncio.Task | None" = None
 
-        # Clipboard trigger for double-copy translation.
+        # Clipboard trigger for double-copy translation (deprecated; no longer started by default).
         self._clipboard_trigger = None
+        # Global hotkey listener for clipboard translation (Windows).
+        self._hotkey_listener = None
         self._open_ui_window_callback: Callable[[], None] | None = None
         self._pending_hotkey_request: _PendingHotkeyRequest | None = None
         self._pending_hotkey_lock = threading.Lock()
@@ -1706,6 +1708,37 @@ class YakuLingoApp:
                 logger.debug("Error stopping clipboard trigger: %s", e)
             self._clipboard_trigger = None
 
+    def start_hotkey_listener(self):
+        """Start the global hotkey listener (Ctrl+Alt+J)."""
+        import sys
+        if sys.platform != "win32":
+            logger.info("Hotkey listener only available on Windows")
+            return
+
+        try:
+            from yakulingo.services.hotkey_listener import HotkeyListener
+
+            if self._hotkey_listener is None:
+                self._hotkey_listener = HotkeyListener(self._on_global_hotkey_triggered)
+            else:
+                self._hotkey_listener.set_callback(self._on_global_hotkey_triggered)
+
+            if not self._hotkey_listener.is_running:
+                self._hotkey_listener.start()
+            else:
+                logger.info("Hotkey listener already running (Ctrl+Alt+J)")
+        except Exception as e:
+            logger.error("Failed to start hotkey listener: %s", e)
+
+    def stop_hotkey_listener(self):
+        """Stop the global hotkey listener."""
+        if self._hotkey_listener:
+            try:
+                self._hotkey_listener.stop()
+            except Exception as e:
+                logger.debug("Error stopping hotkey listener: %s", e)
+            self._hotkey_listener = None
+
     def _start_resident_heartbeat(self, interval_sec: float = RESIDENT_HEARTBEAT_INTERVAL_SEC) -> None:
         existing = self._resident_heartbeat_task
         if existing is not None and not existing.done():
@@ -1724,14 +1757,12 @@ class YakuLingoApp:
                     logger.debug("Resident heartbeat: running (no UI client)")
                 if sys.platform == "win32":
                     try:
-                        manager = self._clipboard_trigger
+                        manager = self._hotkey_listener
                         if manager is None or not manager.is_running:
-                            logger.warning(
-                                "Resident heartbeat detected clipboard trigger stopped; restarting"
-                            )
-                            self.start_clipboard_trigger()
+                            logger.warning("Resident heartbeat detected hotkey listener stopped; restarting")
+                            self.start_hotkey_listener()
                     except Exception as e:
-                        logger.debug("Resident heartbeat clipboard check failed: %s", e)
+                        logger.debug("Resident heartbeat hotkey listener check failed: %s", e)
                 await asyncio.sleep(interval_sec)
         except asyncio.CancelledError:
             pass
@@ -1994,8 +2025,8 @@ class YakuLingoApp:
         ui_connected = self._get_active_client() is not None
         status["ui_connected"] = ui_connected
         status["ui_ready"] = bool(ui_connected and self._ui_ready_event.is_set())
-        status["clipboard_trigger_running"] = bool(
-            self._clipboard_trigger is not None and getattr(self._clipboard_trigger, "is_running", False)
+        status["hotkey_listener_running"] = bool(
+            self._hotkey_listener is not None and getattr(self._hotkey_listener, "is_running", False)
         )
         status["translation_service_ready"] = self.translation_service is not None
         if self._resident_startup_started_at is not None:
@@ -2331,7 +2362,7 @@ class YakuLingoApp:
                 return
 
         # Schedule UI update on NiceGUI's event loop
-        # This is called from the clipboard trigger background thread.
+        # This is called from the hotkey listener background thread.
         try:
             # Use background_tasks to safely schedule async work from another thread
             from nicegui import background_tasks
@@ -2344,6 +2375,20 @@ class YakuLingoApp:
             )
         except Exception as e:
             logger.error(f"Failed to schedule hotkey handler: {e}")
+
+    def _on_global_hotkey_triggered(self, text: str, source_hwnd: int | None) -> None:
+        """Handle global hotkey trigger (Ctrl+Alt+J)."""
+        bring_ui_to_front = True
+        if sys.platform == "win32" and source_hwnd:
+            yakulingo_hwnd = self._find_ui_window_handle_win32(include_hidden=True)
+            if yakulingo_hwnd and source_hwnd == int(yakulingo_hwnd):
+                bring_ui_to_front = False
+                logger.debug("Hotkey trigger source is YakuLingo; skipping bring-to-front")
+        self._on_hotkey_triggered(
+            text,
+            source_hwnd=source_hwnd,
+            bring_ui_to_front=bring_ui_to_front,
+        )
 
     def _on_clipboard_triggered(self, text: str) -> None:
         """Handle clipboard double-copy trigger."""
@@ -12647,10 +12692,11 @@ def run_app(
 
         logger.debug("[TIMING] Cancel operations: %.2fs", time_module.time() - step_start)
 
-        # Stop clipboard trigger (quick, just stops the watcher)
+        # Stop hotkey listener / clipboard trigger (quick)
         step_start = time_module.time()
+        yakulingo_app.stop_hotkey_listener()
         yakulingo_app.stop_clipboard_trigger()
-        logger.debug("[TIMING] Clipboard trigger stop: %.2fs", time_module.time() - step_start)
+        logger.debug("[TIMING] Hotkey/clipboard stop: %.2fs", time_module.time() - step_start)
 
         # Force disconnect from Copilot (the main time-consuming step)
         step_start = time_module.time()
@@ -12725,7 +12771,7 @@ def run_app(
     atexit.register(cleanup)
 
     # NOTE: We intentionally keep the server running even when all UI clients disconnect.
-    # YakuLingo is designed to run as a resident background service (clipboard trigger).
+    # YakuLingo is designed to run as a resident background service (hotkey listener).
 
     # Serve styles.css as static file for browser caching (faster subsequent loads)
     ui_dir = Path(__file__).parent
@@ -13467,8 +13513,8 @@ def run_app(
     @nicegui_app.on_startup
     async def on_startup():
         """Called when NiceGUI server starts (before clients connect)."""
-        # Start clipboard trigger immediately so clipboard translation works even without the UI.
-        yakulingo_app.start_clipboard_trigger()
+        # Start hotkey listener immediately so hotkey translation works even without the UI.
+        yakulingo_app.start_hotkey_listener()
         yakulingo_app._start_resident_heartbeat()
         if resident_mode:
             yakulingo_app._start_resident_taskbar_suppression_win32("startup")

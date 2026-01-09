@@ -133,3 +133,15 @@ def test_maybe_reset_source_copy_mode_skips_when_ctrl_down(monkeypatch):
     hotkey_listener._maybe_reset_source_copy_mode(123)
 
     assert keybd_event.calls == []
+
+
+def test_maybe_reset_source_copy_mode_excel_does_not_require_foreground(monkeypatch):
+    called: list[int] = []
+    monkeypatch.setattr(hotkey_listener, "_is_excel_window", lambda hwnd: True)
+    monkeypatch.setattr(hotkey_listener, "_reset_excel_copy_mode_best_effort", lambda hwnd: called.append(int(hwnd)))
+    dummy_user32 = SimpleNamespace(GetForegroundWindow=lambda: 456)
+    monkeypatch.setattr(hotkey_listener, "_user32", dummy_user32)
+
+    hotkey_listener._maybe_reset_source_copy_mode(123)
+
+    assert called == [123]

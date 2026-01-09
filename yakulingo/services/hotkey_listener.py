@@ -70,6 +70,9 @@ else:
     _KEYSTATE_DOWN_MASK = 0x8000
     _RESET_COPY_MODE_WAIT_FOR_MODIFIERS_SEC = 0.2
     _RESET_COPY_MODE_POLL_INTERVAL_SEC = 0.01
+    _RESET_COPY_MODE_ESC_RETRY_COUNT = 3
+    _RESET_COPY_MODE_ESC_RETRY_INTERVAL_SEC = 0.03
+    _EXCEL_TOP_LEVEL_WINDOW_CLASSES = ("XLMAIN",)
 
 
     class _Point(ctypes.Structure):
@@ -85,6 +88,88 @@ else:
             ("time", wintypes.DWORD),
             ("pt", _Point),
         ]
+
+    class _GuiThreadInfo(ctypes.Structure):
+        _fields_ = [
+            ("cbSize", wintypes.DWORD),
+            ("flags", wintypes.DWORD),
+            ("hwndActive", wintypes.HWND),
+            ("hwndFocus", wintypes.HWND),
+            ("hwndCapture", wintypes.HWND),
+            ("hwndMenuOwner", wintypes.HWND),
+            ("hwndMoveSize", wintypes.HWND),
+            ("hwndCaret", wintypes.HWND),
+            ("rcCaret", wintypes.RECT),
+        ]
+
+    def _get_window_class_name(target_hwnd: int) -> str | None:
+        if not target_hwnd:
+            return None
+        try:
+            _user32.GetClassNameW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+            _user32.GetClassNameW.restype = ctypes.c_int
+            buf = ctypes.create_unicode_buffer(256)
+            length = int(_user32.GetClassNameW(wintypes.HWND(int(target_hwnd)), buf, len(buf)))
+            if length <= 0:
+                return None
+            return str(buf.value)
+        except Exception:
+            return None
+
+    def _is_excel_window(target_hwnd: int) -> bool:
+        """Return True if the hwnd looks like an Excel top-level window (best-effort)."""
+        class_name = _get_window_class_name(int(target_hwnd))
+        if not class_name:
+            return False
+        return class_name.upper() in _EXCEL_TOP_LEVEL_WINDOW_CLASSES
+
+    def _get_focus_hwnd_for_window(target_hwnd: int) -> int | None:
+        """Return the current focus hwnd of the target window's thread (best-effort)."""
+        if not target_hwnd:
+            return None
+        try:
+            _user32.GetWindowThreadProcessId.argtypes = [
+                wintypes.HWND,
+                ctypes.POINTER(wintypes.DWORD),
+            ]
+            _user32.GetWindowThreadProcessId.restype = wintypes.DWORD
+            _user32.GetGUIThreadInfo.argtypes = [wintypes.DWORD, ctypes.POINTER(_GuiThreadInfo)]
+            _user32.GetGUIThreadInfo.restype = wintypes.BOOL
+
+            pid = wintypes.DWORD()
+            tid = int(_user32.GetWindowThreadProcessId(wintypes.HWND(int(target_hwnd)), ctypes.byref(pid)))
+            if not tid:
+                return None
+
+            info = _GuiThreadInfo()
+            info.cbSize = ctypes.sizeof(_GuiThreadInfo)
+            if not _user32.GetGUIThreadInfo(wintypes.DWORD(tid), ctypes.byref(info)):
+                return None
+
+            if info.hwndFocus:
+                return int(info.hwndFocus)
+            if info.hwndActive:
+                return int(info.hwndActive)
+            return None
+        except Exception:
+            return None
+
+    def _escape_target_hwnds_for_source(source_hwnd: int) -> list[int]:
+        """Return candidate hwnds to receive Escape (focus-first, best-effort)."""
+        if not source_hwnd:
+            return []
+        targets: list[int] = []
+        focus_hwnd = _get_focus_hwnd_for_window(int(source_hwnd))
+        if focus_hwnd and focus_hwnd != int(source_hwnd):
+            targets.append(int(focus_hwnd))
+        targets.append(int(source_hwnd))
+        seen: set[int] = set()
+        unique_targets: list[int] = []
+        for hwnd in targets:
+            if hwnd and hwnd not in seen:
+                seen.add(hwnd)
+                unique_targets.append(hwnd)
+        return unique_targets
 
     def _send_escape() -> None:
         _user32.keybd_event.argtypes = [wintypes.BYTE, wintypes.BYTE, wintypes.DWORD, _ULONG_PTR]
@@ -139,9 +224,58 @@ else:
             logger.debug("Failed to PostMessage Escape: %s", e)
             return False
 
+    def _post_escape_to_source_hwnd(source_hwnd: int) -> bool:
+        ok = False
+        for hwnd in _escape_target_hwnds_for_source(int(source_hwnd)):
+            ok = _post_escape_to_hwnd(hwnd) or ok
+        return ok
+
+    def _try_cancel_excel_copy_mode_via_com() -> bool:
+        """Best-effort: Excel.Application.CutCopyMode = False without creating a new instance."""
+        try:
+            import pythoncom  # type: ignore
+        except Exception:
+            return False
+
+        com_initialized = False
+        try:
+            pythoncom.CoInitialize()
+            com_initialized = True
+            excel = pythoncom.GetActiveObject("Excel.Application")
+            if excel is None:
+                return False
+            try:
+                excel.CutCopyMode = False
+            except Exception:
+                excel.Application.CutCopyMode = False
+            return True
+        except Exception:
+            return False
+        finally:
+            if com_initialized:
+                try:
+                    pythoncom.CoUninitialize()
+                except Exception:
+                    pass
+
+    def _reset_excel_copy_mode_best_effort(source_hwnd: int) -> None:
+        """Excel: reliably clear the post-copy state (marching ants)."""
+        if _try_cancel_excel_copy_mode_via_com():
+            return
+        attempts = max(int(_RESET_COPY_MODE_ESC_RETRY_COUNT), 1)
+        interval_sec = max(float(_RESET_COPY_MODE_ESC_RETRY_INTERVAL_SEC), 0.0)
+        for attempt in range(attempts):
+            _post_escape_to_source_hwnd(int(source_hwnd))
+            if attempt + 1 < attempts and interval_sec:
+                time.sleep(interval_sec)
+
     def _maybe_reset_source_copy_mode(source_hwnd: int | None) -> None:
         """Best-effort: cancel source app's copy mode (e.g., Excel marching ants) after Ctrl+C."""
         if not source_hwnd:
+            return
+
+        if _is_excel_window(int(source_hwnd)):
+            _reset_excel_copy_mode_best_effort(int(source_hwnd))
             return
         try:
             _user32.GetForegroundWindow.argtypes = []
@@ -183,7 +317,7 @@ else:
             return
 
         # Prefer targeted Escape to avoid Start Menu side effects even if modifiers are still down.
-        if _post_escape_to_hwnd(int(source_hwnd)):
+        if _post_escape_to_source_hwnd(int(source_hwnd)):
             return
         try:
             if not _modifiers_down():

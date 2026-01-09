@@ -2773,7 +2773,19 @@ class TranslationService:
             ))
 
         # Extract text blocks
-        blocks = list(processor.extract_text_blocks(input_path, output_language))
+        #
+        # Excel: selected_sections が指定されている場合は、抽出段階から対象シートのみ処理する。
+        # (従来は全シート抽出→後段でフィルタしており、抽出時間が無駄に伸びるケースがあった)
+        if selected_sections is not None and processor.file_type == FileType.EXCEL:
+            blocks = list(
+                processor.extract_text_blocks(
+                    input_path,
+                    output_language,
+                    selected_sections=selected_sections,
+                )
+            )
+        else:
+            blocks = list(processor.extract_text_blocks(input_path, output_language))
 
         # Filter blocks by selected sections if specified
         if selected_sections is not None:

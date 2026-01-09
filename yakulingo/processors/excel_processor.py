@@ -1242,13 +1242,17 @@ class ExcelProcessor(FileProcessor):
             return None
 
     def extract_text_blocks(
-        self, file_path: Path, output_language: str = "en"
+        self,
+        file_path: Path,
+        output_language: str = "en",
+        selected_sections: Optional[list[int]] = None,
     ) -> Iterator[TextBlock]:
         """Extract text from cells, shapes, and charts
 
         Args:
             file_path: Path to the Excel file
             output_language: "en" for JP→EN, "jp" for EN→JP translation
+            selected_sections: 処理対象のシート index (0-based)。None の場合は全シート。
         """
         # Clear warnings and caches at start of extraction
         self.clear_warnings()
@@ -1261,7 +1265,9 @@ class ExcelProcessor(FileProcessor):
 
         if _can_use_xlwings():
             self._using_openpyxl_fallback = False
-            yield from self._extract_text_blocks_xlwings(file_path, xw, output_language)
+            yield from self._extract_text_blocks_xlwings(
+                file_path, xw, output_language, selected_sections
+            )
         else:
             # Add warning for openpyxl fallback mode
             self._using_openpyxl_fallback = True
@@ -1274,7 +1280,9 @@ class ExcelProcessor(FileProcessor):
                 "xlwings/Excel not available, falling back to openpyxl. "
                 "Shapes and charts will not be translated."
             )
-            yield from self._extract_text_blocks_openpyxl(file_path, output_language)
+            yield from self._extract_text_blocks_openpyxl(
+                file_path, output_language, selected_sections
+            )
 
     def _read_used_range_values_2d(self, used_range):
         """Read an xlwings range value as a 2D sequence.
@@ -1351,7 +1359,11 @@ class ExcelProcessor(FileProcessor):
         return values
 
     def _extract_text_blocks_xlwings(
-        self, file_path: Path, xw, output_language: str = "en"
+        self,
+        file_path: Path,
+        xw,
+        output_language: str = "en",
+        selected_sections: Optional[list[int]] = None,
     ) -> Iterator[TextBlock]:
         """Extract text using xlwings
 
@@ -1394,6 +1406,7 @@ class ExcelProcessor(FileProcessor):
         """
         import time as _time
         blocks: list[TextBlock] = []
+        selected_set = set(selected_sections) if selected_sections is not None else None
 
         with com_initialized():
             _t_start = _time.perf_counter()
@@ -1409,6 +1422,8 @@ class ExcelProcessor(FileProcessor):
                 try:
                     _t_sheets_start = _time.perf_counter()
                     for sheet_idx, sheet in enumerate(wb.sheets):
+                        if selected_set is not None and sheet_idx not in selected_set:
+                            continue
                         sheet_name = sheet.name
 
                         # === Cells (bulk read optimization) ===
@@ -1700,7 +1715,10 @@ class ExcelProcessor(FileProcessor):
         yield from blocks
 
     def _extract_text_blocks_openpyxl(
-        self, file_path: Path, output_language: str = "en"
+        self,
+        file_path: Path,
+        output_language: str = "en",
+        selected_sections: Optional[list[int]] = None,
     ) -> Iterator[TextBlock]:
         """Extract text using openpyxl (fallback - cells only)
 
@@ -1733,9 +1751,12 @@ class ExcelProcessor(FileProcessor):
         # Limited to _COLUMN_LETTER_CACHE_SIZE entries to prevent memory bloat on very wide sheets
         # (Excel max is 16,384 columns, but typically only a fraction are used)
         column_letter_cache: dict[int, str] = {}
+        selected_set = set(selected_sections) if selected_sections is not None else None
 
         try:
             for sheet_idx, sheet_name in enumerate(wb.sheetnames):
+                if selected_set is not None and sheet_idx not in selected_set:
+                    continue
                 sheet = wb[sheet_name]
 
                 # Limit iteration to the used range for the sheet to avoid scanning
@@ -2404,7 +2425,9 @@ class ExcelProcessor(FileProcessor):
         def _iter_font_target_chunks(
             targets: list[tuple[str, int, list[tuple[int, str, str]], str]],
             max_items: int = 200,
-            max_chars: int = 6000,
+            # Excel's Range("A1,A2,...") string argument fails around ~255 characters
+            # (0x800A03EC / -2146827284). Keep a safe margin.
+            max_chars: int = 250,
         ):
             chunk: list[tuple[str, int, list[tuple[int, str, str]], str]] = []
             current_chars = 0

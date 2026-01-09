@@ -1185,6 +1185,7 @@ if TYPE_CHECKING:
     from nicegui.elements.label import Label as UiLabel
     from nicegui.elements.textarea import Textarea as UiTextarea
     from nicegui.elements.timer import Timer as UiTimer
+    from nicegui.timer import Timer as NiceGUITimer
     from yakulingo.services.copilot_handler import CopilotHandler
     from yakulingo.services.translation_service import TranslationService
     from yakulingo.ui.components.update_notification import UpdateNotification
@@ -1514,7 +1515,7 @@ class YakuLingoApp:
 
         # File translation progress timer management (prevents orphaned timers)
         self._active_progress_timer: Optional[UiTimer] = None
-        self._file_panel_refresh_timer: Optional[UiTimer] = None
+        self._file_panel_refresh_timer: Optional[UiTimer | NiceGUITimer] = None
 
         # Copilot access lock (used for queue parallelism safety)
         self._copilot_lock = threading.Lock()
@@ -10926,7 +10927,8 @@ class YakuLingoApp:
                     self._refresh_content()
 
     def _start_file_panel_refresh_timer(self) -> None:
-        client = self._get_active_client()
+        with self._client_lock:
+            client = self._client
         if client is None:
             return
         with self._timer_lock:
@@ -10935,8 +10937,12 @@ class YakuLingoApp:
                     self._file_panel_refresh_timer.cancel()
                 except Exception:
                     pass
-            with client:
-                self._file_panel_refresh_timer = ui.timer(0.2, self._update_file_progress_elements)
+            timer_factory = getattr(nicegui_app, "timer", None) if nicegui_app is not None else None
+            if timer_factory is None:
+                with client:
+                    self._file_panel_refresh_timer = ui.timer(0.2, self._update_file_progress_elements)
+            else:
+                self._file_panel_refresh_timer = timer_factory(0.2, self._update_file_progress_elements)
 
     def _stop_file_panel_refresh_timer(self) -> None:
         with self._timer_lock:

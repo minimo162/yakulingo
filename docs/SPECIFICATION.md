@@ -521,7 +521,7 @@ YakuLingoは「常駐＋ホットキー（Ctrl+Alt+J）」を前提として動�
 - 常駐中はタスクバー表示を抑制し、UI表示時に復帰する（Windows）
 - Native modeではウィンドウを閉じてもサービスは終了しない（close-to-resident）
 - Browser modeは通常のウィンドウ動作を維持し、close-to-residentは適用しない
-- 終了は明示的に実行する（インストーラが作成する `YakuLingo 終了` ショートカット）
+- 終了は明示的に実行する（タスクトレイの `Exit` など）
   - ローカルAPI `POST /api/shutdown`（localhostのみ）で正常終了
 - セットアップ/ランチャー向けに起動状態を公開する
   - ローカルAPI `GET /api/setup-status`（localhostのみ）

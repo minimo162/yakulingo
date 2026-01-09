@@ -2020,8 +2020,8 @@ function Invoke-Setup {
     # Create helper scripts in install directory (resident / UI opener / exit).
     # These keep the UX simple:
     # - YakuLingo runs as a resident background service (hotkey enabled)
-    # - UI is opened on demand
-    # - Exit is explicit via shortcut
+    # - UI is opened on demand (Ctrl+Alt+J / tray menu)
+    # - Exit is explicit (tray menu / uninstall script)
 
     $OpenUiScriptPath = Join-Path $SetupPath "YakuLingo_OpenUI.ps1"
     $ResidentScriptPath = Join-Path $SetupPath "YakuLingo_Resident.ps1"
@@ -2482,7 +2482,9 @@ objShell.Run command, 0, False
         }
     }
 
-    # Start Menu shortcuts (per-user, no subfolder)
+    # Start Menu shortcuts (per-user)
+    # - Remove legacy shortcuts: "YakuLingo", "YakuLingo 終了"
+    # - Keep only: "YakuLingo アンインストール"
     $ProgramsPath = [Environment]::GetFolderPath("Programs")
     $StartMenuDir = Join-Path $ProgramsPath $AppName
     if (Test-Path $StartMenuDir) {
@@ -2494,26 +2496,21 @@ objShell.Run command, 0, False
     }
 
     $StartMenuOpenPath = Join-Path $ProgramsPath "$AppName.lnk"
-    $StartMenuOpen = $WshShell.CreateShortcut($StartMenuOpenPath)
-    $StartMenuOpen.TargetPath = "wscript.exe"
-    $StartMenuOpen.Arguments = "`"$ResidentVbsPath`""
-    $StartMenuOpen.WorkingDirectory = $SetupPath
-    if (Test-Path $IconPath) {
-        $StartMenuOpen.IconLocation = "$IconPath,0"
+    if (Test-Path $StartMenuOpenPath) {
+        try {
+            Remove-Item -Path $StartMenuOpenPath -Force -ErrorAction Stop
+        } catch {
+            try { "Failed to remove Start Menu shortcut (Open): $($_.Exception.Message)" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
+        }
     }
-    $StartMenuOpen.Description = "YakuLingo (常駐起動)"
-    $StartMenuOpen.Save()
-
     $StartMenuExitPath = Join-Path $ProgramsPath "$AppName 終了.lnk"
-    $StartMenuExit = $WshShell.CreateShortcut($StartMenuExitPath)
-    $StartMenuExit.TargetPath = "wscript.exe"
-    $StartMenuExit.Arguments = "`"$ExitVbsPath`""
-    $StartMenuExit.WorkingDirectory = $SetupPath
-    if (Test-Path $IconPath) {
-        $StartMenuExit.IconLocation = "$IconPath,0"
+    if (Test-Path $StartMenuExitPath) {
+        try {
+            Remove-Item -Path $StartMenuExitPath -Force -ErrorAction Stop
+        } catch {
+            try { "Failed to remove Start Menu shortcut (Exit): $($_.Exception.Message)" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
+        }
     }
-    $StartMenuExit.Description = "YakuLingo を終了"
-    $StartMenuExit.Save()
 
     $StartMenuUninstallPath = Join-Path $ProgramsPath "$AppName アンインストール.lnk"
     $StartMenuUninstall = $WshShell.CreateShortcut($StartMenuUninstallPath)
@@ -2543,8 +2540,6 @@ objShell.Run command, 0, False
     $StartupShortcut.Description = "YakuLingo (常駐起動)"
     $StartupShortcut.Save()
     if (-not $GuiMode) {
-        Write-Host "      Start Menu (Resident): $StartMenuOpenPath" -ForegroundColor Gray
-        Write-Host "      Start Menu (Exit): $StartMenuExitPath" -ForegroundColor Gray
         Write-Host "      Start Menu (Uninstall): $StartMenuUninstallPath" -ForegroundColor Gray
         Write-Host "      Startup: $StartupShortcutPath" -ForegroundColor Gray
         Write-Host "[OK] Shortcuts created" -ForegroundColor Green
@@ -2646,7 +2641,7 @@ objShell.Run command, 0, False
         }
 
         Write-Status -Message "Setup completed!" -Progress -Step "Step 4/4: Finalizing" -Percent 100
-        $successMsg = "セットアップが完了しました。`n`nYakuLingo を常駐起動しました。必要に応じてスタートメニューから画面を開いてください。"
+        $successMsg = "セットアップが完了しました。`n`nYakuLingo を常駐起動しました。必要に応じて Ctrl+Alt+J（またはタスクトレイのアイコン）で画面を開いてください。"
         if ($script:GlossaryDistPath -or $script:TranslationRulesDistPath) {
             $successMsg += "`n`n既存ファイルは保持しました。新しい既定ファイル:"
             if ($script:GlossaryDistPath) {
@@ -2666,8 +2661,8 @@ objShell.Run command, 0, False
         Write-Host ""
         Write-Host " Location: $SetupPath" -ForegroundColor White
         Write-Host " YakuLingo will start automatically on logon (resident mode)." -ForegroundColor Cyan
-        Write-Host " Copilot login has completed during setup; open the UI from the Start Menu when needed." -ForegroundColor Cyan
-        Write-Host " Exit: Start Menu > YakuLingo 終了" -ForegroundColor Cyan
+        Write-Host " Copilot login has completed during setup; open the UI with Ctrl+Alt+J when needed." -ForegroundColor Cyan
+        Write-Host " Exit: Tray icon menu > Exit" -ForegroundColor Cyan
         if ($script:GlossaryDistPath -or $script:TranslationRulesDistPath) {
             Write-Host ""
             Write-Host " Existing files preserved. New defaults saved to:" -ForegroundColor Yellow

@@ -13,7 +13,7 @@
 ## 動作仕様
 
 - **既に起動中の場合**: 既存プロセスを検出してUIを前面化（`/api/activate`）
-- **完全終了**: スタートメニューの `YakuLingo 終了` を使用（watchdog再起動を抑止する状態ファイルを書き込み）
+- **完全終了**: タスクトレイのアイコンメニュー `Exit` を使用（watchdog再起動を抑止する状態ファイルを書き込み）
 - **ログ**: `%LOCALAPPDATA%\YakuLingo\logs\launcher.log`（作成できない場合は `./logs/launcher.log`）
 
 ## ビルド方法

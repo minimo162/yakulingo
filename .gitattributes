@@ -3,6 +3,7 @@
 *.bat binary
 
 # Other text files use LF (standard for cross-platform)
+.gitignore text eol=lf
 /.gitattributes text eol=lf
 *.py text eol=lf
 *.md text eol=lf
@@ -11,3 +12,4 @@
 *.lock text eol=lf
 *.css text eol=lf
 *.txt text eol=lf
+*.html text eol=lf

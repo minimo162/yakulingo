@@ -91,12 +91,12 @@ echo [DEBUG] Proxy config done, USE_PROXY=[!USE_PROXY!], SKIP_SSL=[!SKIP_SSL!]
 :: Step 1: Download uv
 :: ============================================================
 if exist "uv.exe" (
-    echo [1/6] SKIP - uv.exe already exists.
+    echo [1/7] SKIP - uv.exe already exists.
     goto :uv_done
 )
 
 echo.
-echo [1/6] Downloading uv...
+echo [1/7] Downloading uv...
 
 if not "!USE_PROXY!"=="1" goto :uv_download_direct
 
@@ -144,7 +144,7 @@ echo [DONE] uv downloaded.
 :: Step 2: Install Python
 :: ============================================================
 echo.
-echo [2/6] Installing Python...
+echo [2/7] Installing Python...
 
 :: Check if Python is already installed via uv
 uv.exe python find !VENV_PYTHON_SPEC! >nul 2>&1
@@ -236,7 +236,7 @@ echo [DONE] Python installed.
 :: Step 3: Install dependencies
 :: ============================================================
 echo.
-echo [3/6] Installing dependencies...
+echo [3/7] Installing dependencies...
 call :ensure_yakulingo_closed
 if errorlevel 1 exit /b 1
 
@@ -285,7 +285,7 @@ echo [DONE] Dependencies installed.
 :: Step 4: Install Playwright browser
 :: ============================================================
 echo.
-echo [4/6] Installing Playwright browser...
+echo [4/7] Installing Playwright browser...
 
 :: Use .venv Python directly to avoid uv run recreating the venv
 .venv\Scripts\python.exe -m playwright install chromium
@@ -300,7 +300,7 @@ echo [DONE] Playwright browser installed.
 :: Step 5: Verify paddlepaddle/paddleocr installation
 :: ============================================================
 echo.
-echo [5/6] Verifying paddlepaddle/paddleocr installation...
+echo [5/7] Verifying paddlepaddle/paddleocr installation...
 
 :: Check if venv python exists
 if not exist ".venv\Scripts\python.exe" (
@@ -361,7 +361,7 @@ exit /b 1
 :: Step 6: Pre-compile Python bytecode for faster first launch
 :: ============================================================
 echo.
-echo [6/6] Pre-compiling Python bytecode...
+echo [6/7] Pre-compiling Python bytecode...
 echo [INFO] This may take 3-5 minutes...
 
 :: Compile all site-packages in parallel (-j 0 = use all CPUs)
@@ -403,6 +403,93 @@ if !OCR_ERROR! neq 0 (
     echo [INFO] You can try running YakuLingo anyway - models will be downloaded on first PDF translation.
 )
 echo [DONE] Pre-compilation complete.
+
+:: ============================================================
+:: Step 7: Download Local AI runtime (llama.cpp + model)
+:: ============================================================
+echo.
+echo [7/7] Installing Local AI runtime (llama.cpp + model)...
+echo [INFO] This step downloads large files (model may be a few GB).
+
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+    "$ErrorActionPreference = 'Stop';" ^
+    "$ProgressPreference = 'SilentlyContinue';" ^
+    "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch { };" ^
+    "$useProxy = ($env:USE_PROXY -eq '1');" ^
+    "if ($useProxy) {" ^
+    "  $proxy = 'http://' + $env:PROXY_SERVER;" ^
+    "  $secPwd = ConvertTo-SecureString $env:PROXY_PASS -AsPlainText -Force;" ^
+    "  $cred = New-Object System.Management.Automation.PSCredential ($env:PROXY_USER, $secPwd);" ^
+    "} else { $proxy = $null; $cred = $null };" ^
+    "function Invoke-Json($url) { if ($useProxy) { Invoke-RestMethod -Uri $url -Headers @{ 'User-Agent'='YakuLingo-Installer' } -Proxy $proxy -ProxyCredential $cred } else { Invoke-RestMethod -Uri $url -Headers @{ 'User-Agent'='YakuLingo-Installer' } } }" ^
+    "function Invoke-Download($url, $outFile, $timeoutSec) { if ($useProxy) { Invoke-WebRequest -Uri $url -OutFile $outFile -UseBasicParsing -Proxy $proxy -ProxyCredential $cred -TimeoutSec $timeoutSec } else { Invoke-WebRequest -Uri $url -OutFile $outFile -UseBasicParsing -TimeoutSec $timeoutSec } }" ^
+    "$root = (Get-Location).Path;" ^
+    "$localAiDir = Join-Path $root 'local_ai';" ^
+    "$llamaDir = Join-Path $localAiDir 'llama_cpp';" ^
+    "$llamaAvx2Dir = Join-Path $llamaDir 'avx2';" ^
+    "$modelsDir = Join-Path $localAiDir 'models';" ^
+    "New-Item -ItemType Directory -Force -Path $localAiDir, $llamaDir, $llamaAvx2Dir, $modelsDir | Out-Null;" ^
+    "" ^
+    "$modelRepo = 'Qwen/Qwen3-VL-4B-Instruct-GGUF';" ^
+    "$modelFile = 'Qwen3VL-4B-Instruct-Q4_K_M.gguf';" ^
+    "$modelUrl = \"https://huggingface.co/$modelRepo/resolve/main/$modelFile\";" ^
+    "$modelPath = Join-Path $modelsDir $modelFile;" ^
+    "$licenseUrl = 'https://www.apache.org/licenses/LICENSE-2.0.txt';" ^
+    "$readmeUrl = \"https://huggingface.co/$modelRepo/resolve/main/README.md\";" ^
+    "" ^
+    "$llamaRepo = 'ggerganov/llama.cpp';" ^
+    "$release = Invoke-Json \"https://api.github.com/repos/$llamaRepo/releases/latest\";" ^
+    "$tag = $release.tag_name;" ^
+    "$asset = $release.assets | Where-Object { $_.name -match 'bin-win-cpu-x64\\.zip$' } | Select-Object -First 1;" ^
+    "if (-not $asset) { throw 'llama.cpp Windows CPU(x64) binary not found in release assets.' };" ^
+    "$llamaZipUrl = $asset.browser_download_url;" ^
+    "$llamaZipName = $asset.name;" ^
+    "$llamaZipPath = Join-Path $llamaDir $llamaZipName;" ^
+    "$llamaLicenseOut = Join-Path $llamaDir 'LICENSE';" ^
+    "$llamaLicenseUrl = \"https://raw.githubusercontent.com/$llamaRepo/$tag/LICENSE\";" ^
+    "" ^
+    "$serverExePath = Join-Path $llamaAvx2Dir 'llama-server.exe';" ^
+    "if (-not (Test-Path $serverExePath)) {" ^
+    "  Write-Host \"[INFO] Downloading llama.cpp ($tag): $llamaZipName\";" ^
+    "  Invoke-Download $llamaZipUrl $llamaZipPath 600;" ^
+    "  $tmp = Join-Path $llamaDir '_tmp_extract';" ^
+    "  if (Test-Path $tmp) { Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue };" ^
+    "  Expand-Archive -Path $llamaZipPath -DestinationPath $tmp -Force;" ^
+    "  $found = Get-ChildItem -Path $tmp -Recurse -Filter 'llama-server.exe' | Select-Object -First 1;" ^
+    "  if (-not $found) { throw 'llama-server.exe not found in ZIP.' };" ^
+    "  $srcDir = $found.DirectoryName;" ^
+    "  if (Test-Path $llamaAvx2Dir) { Remove-Item $llamaAvx2Dir -Recurse -Force -ErrorAction SilentlyContinue };" ^
+    "  New-Item -ItemType Directory -Force -Path $llamaAvx2Dir | Out-Null;" ^
+    "  Copy-Item -Path (Join-Path $srcDir '*') -Destination $llamaAvx2Dir -Recurse -Force;" ^
+    "  Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue;" ^
+    "  Remove-Item $llamaZipPath -Force -ErrorAction SilentlyContinue;" ^
+    "}" ^
+    "Invoke-Download $llamaLicenseUrl $llamaLicenseOut 60;" ^
+    "" ^
+    "if (-not (Test-Path $modelPath)) {" ^
+    "  Write-Host \"[INFO] Downloading model: $modelRepo/$modelFile\";" ^
+    "  Invoke-Download $modelUrl $modelPath 1800;" ^
+    "} else { Write-Host \"[INFO] Model already exists: $modelFile\" };" ^
+    "Invoke-Download $licenseUrl (Join-Path $modelsDir 'LICENSE') 120;" ^
+    "Invoke-Download $readmeUrl (Join-Path $modelsDir 'README.md') 120;" ^
+    "" ^
+    "$manifestPath = Join-Path $localAiDir 'manifest.json';" ^
+    "$modelHash = $null; $serverHash = $null;" ^
+    "if (Test-Path $modelPath) { $modelHash = (Get-FileHash -Algorithm SHA256 -Path $modelPath).Hash };" ^
+    "if (Test-Path $serverExePath) { $serverHash = (Get-FileHash -Algorithm SHA256 -Path $serverExePath).Hash };" ^
+    "$manifest = [ordered]@{" ^
+    "  generated_at = (Get-Date).ToString('o');" ^
+    "  llama_cpp = [ordered]@{ repo = $llamaRepo; release_tag = $tag; asset_name = $llamaZipName; download_url = $llamaZipUrl; server_exe_sha256 = $serverHash };" ^
+    "  model = [ordered]@{ repo = $modelRepo; file = $modelFile; download_url = $modelUrl; sha256 = $modelHash };" ^
+    "};" ^
+    "$manifest | ConvertTo-Json -Depth 6 | Set-Content -Path $manifestPath -Encoding UTF8;" ^
+    "Write-Host '[DONE] Local AI runtime is ready.'"
+if errorlevel 1 (
+    echo [ERROR] Failed to install Local AI runtime.
+    echo [INFO] You can retry this installer, or manually place files under local_ai\ (llama_cpp + models).
+    pause
+    exit /b 1
+)
 
 echo.
 echo ============================================================

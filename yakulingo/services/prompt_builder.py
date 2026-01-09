@@ -655,6 +655,7 @@ class PromptBuilder:
         output_language: str = "en",
         translation_style: str = "concise",
         include_item_ids: bool = False,
+        reference_files: Optional[Sequence[Path]] = None,
     ) -> str:
         """
         Build prompt for batch translation.
@@ -666,10 +667,12 @@ class PromptBuilder:
             translation_style: "standard", "concise", or "minimal" (default: "concise")
                               Only affects English output
             include_item_ids: Prepend [[ID:n]] marker for stable parsing
+            reference_files: Optional reference files (Local AI embeds content; Copilot ignores)
 
         Returns:
             Complete prompt with numbered input
         """
+        _ = reference_files
         extra_instruction = None
         if include_item_ids:
             extra_instruction = ID_MARKER_INSTRUCTION

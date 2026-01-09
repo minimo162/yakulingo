@@ -14,6 +14,7 @@ YakuLingoはネットワーク共有フォルダからのワンクリックセ�
 - `.venv` (Python 仮想環境)
 - `.uv-python` (Python 本体)
 - `.playwright-browsers` (ブラウザ)
+- `local_ai` (ローカルAI: llama.cpp `llama-server` + モデル + LICENSE/manifest)
 
 ### 実行
 
@@ -114,6 +115,7 @@ setup.vbs はクリーンインストールを行い、環境フォルダも上�
 - `.venv` (Python 仮想環境)
 - `.uv-python` (Python 本体)
 - `.playwright-browsers` (ブラウザ)
+- `local_ai`（ローカルAIランタイム。配布ZIPに同梱され、クリーンインストールでは上書きされます）
 
 > **Note**: GitHub Releases 経由の自動更新では環境フォルダは保持されます。
 
@@ -130,6 +132,7 @@ setup.vbs はクリーンインストールを行い、環境フォルダも上�
 
 - 自動更新ではなく setup.vbs の再実行を案内
 - 共有フォルダの最新パッケージで再インストール
+  - 例: `.venv` / `.uv-python` / `.playwright-browsers` / `local_ai` の更新が必要な場合（自動更新では更新されない）
 
 ## データ保存場所
 
@@ -138,6 +141,8 @@ setup.vbs はクリーンインストールを行い、環境フォルダも上�
 | アプリ設定（ユーザー） | `%LOCALAPPDATA%\YakuLingo\config\user_settings.json` | 保持 |
 | アプリ設定（デフォルト） | `%LOCALAPPDATA%\YakuLingo\config\settings.template.json` | 上書き |
 | 翻訳履歴 | `%USERPROFILE%\.yakulingo\history.db` | 保持 |
+| ローカルAI状態 | `%USERPROFILE%\.yakulingo\local_ai_server.json` | 保持 |
+| ローカルAIログ | `%USERPROFILE%\.yakulingo\logs\local_ai_server.log` | 保持 |
 | 用語集 | `%LOCALAPPDATA%\YakuLingo\glossary.csv` | 保持/差分は `.dist` |
 
 ## アンインストール
@@ -177,3 +182,4 @@ powershell -ExecutionPolicy Bypass -File ".scripts\setup.ps1"
 | PowerShell | 5.1 以上 |
 | ネットワーク | 共有フォルダへのアクセス |
 | 自動更新 | GitHub へのアクセス（任意） |
+| ローカルAI | `local_ai/` 同梱（現状はAVX2版。AVX2非対応PCではCopilot利用、またはgeneric版同梱が必要） |

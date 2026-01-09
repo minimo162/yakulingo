@@ -49,6 +49,19 @@ USER_SETTINGS_KEYS = {
     "browser_display_mode",
     # UI状態（自動保存）
     "last_tab",
+    # 翻訳バックエンド（Copilot / Local AI）
+    "translation_backend",
+    # Local AI（高度設定）
+    "local_ai_model_path",
+    "local_ai_server_dir",
+    "local_ai_host",
+    "local_ai_port_base",
+    "local_ai_port_max",
+    "local_ai_ctx_size",
+    "local_ai_threads",
+    "local_ai_temperature",
+    "local_ai_max_tokens",
+    "local_ai_max_chars_per_batch",
 }
 
 DEFAULT_MAX_CHARS_PER_BATCH = 4000
@@ -289,6 +302,8 @@ class AppSettings:
 
     # UI
     last_tab: str = "text"
+    # Translation backend ("copilot" or "local")
+    translation_backend: str = "copilot"
     # NOTE: window_width/window_height は廃止。ウィンドウサイズは
     # _detect_display_settings() で論理解像度から動的に計算される。
 
@@ -296,6 +311,19 @@ class AppSettings:
     max_chars_per_batch: int = DEFAULT_MAX_CHARS_PER_BATCH  # Max characters per batch (Copilot input safety)
     request_timeout: int = 600          # Seconds (10 minutes - allows for large translations)
     max_retries: int = 3
+
+    # Local AI (llama.cpp llama-server) - M1 minimal settings
+    # NOTE: Host is forced to 127.0.0.1 for security (no external exposure).
+    local_ai_model_path: str = "local_ai/models/Qwen3VL-4B-Instruct-Q4_K_M.gguf"
+    local_ai_server_dir: str = "local_ai/llama_cpp"
+    local_ai_host: str = "127.0.0.1"
+    local_ai_port_base: int = 4891
+    local_ai_port_max: int = 4900
+    local_ai_ctx_size: int = 4096
+    local_ai_threads: int = 0  # 0=auto
+    local_ai_temperature: float = 0.2
+    local_ai_max_tokens: Optional[int] = None
+    local_ai_max_chars_per_batch: int = 1000
 
     # File Translation Options (共通オプション)
     bilingual_output: bool = False      # 対訳出力（原文と翻訳を交互に配置）
@@ -467,6 +495,84 @@ class AppSettings:
                 DEFAULT_MAX_CHARS_PER_BATCH,
             )
             self.max_chars_per_batch = DEFAULT_MAX_CHARS_PER_BATCH
+
+        # Translation backend
+        if self.translation_backend not in ("copilot", "local"):
+            logger.warning(
+                "translation_backend invalid (%s), resetting to 'copilot'",
+                self.translation_backend,
+            )
+            self.translation_backend = "copilot"
+
+        # Local AI security: always bind to localhost
+        if self.local_ai_host != "127.0.0.1":
+            logger.warning(
+                "local_ai_host must be 127.0.0.1 (got %s); forcing localhost for security",
+                self.local_ai_host,
+            )
+            self.local_ai_host = "127.0.0.1"
+
+        # Local AI port range constraints
+        if self.local_ai_port_base < 1024 or self.local_ai_port_base > 65535:
+            logger.warning(
+                "local_ai_port_base out of range (%d), resetting to 4891",
+                self.local_ai_port_base,
+            )
+            self.local_ai_port_base = 4891
+        if self.local_ai_port_max < 1024 or self.local_ai_port_max > 65535:
+            logger.warning(
+                "local_ai_port_max out of range (%d), resetting to %d",
+                self.local_ai_port_max,
+                min(65535, self.local_ai_port_base + 9),
+            )
+            self.local_ai_port_max = min(65535, self.local_ai_port_base + 9)
+        if self.local_ai_port_max < self.local_ai_port_base:
+            suggested = min(65535, self.local_ai_port_base + 9)
+            logger.warning(
+                "local_ai_port_max must be >= local_ai_port_base (%d < %d), resetting to %d",
+                self.local_ai_port_max,
+                self.local_ai_port_base,
+                suggested,
+            )
+            self.local_ai_port_max = suggested
+
+        # Local AI misc numeric constraints
+        if self.local_ai_threads < 0:
+            logger.warning(
+                "local_ai_threads must be >=0 (%d), resetting to 0",
+                self.local_ai_threads,
+            )
+            self.local_ai_threads = 0
+        if self.local_ai_max_tokens is not None and self.local_ai_max_tokens < 1:
+            logger.warning(
+                "local_ai_max_tokens must be positive (%d), resetting to None",
+                self.local_ai_max_tokens,
+            )
+            self.local_ai_max_tokens = None
+
+        # Local AI ctx size constraints (conservative)
+        if self.local_ai_ctx_size < 512:
+            logger.warning(
+                "local_ai_ctx_size too small (%d), resetting to 4096",
+                self.local_ai_ctx_size,
+            )
+            self.local_ai_ctx_size = 4096
+
+        # Local AI batch size constraints
+        if self.local_ai_max_chars_per_batch < 100:
+            logger.warning(
+                "local_ai_max_chars_per_batch too small (%d), resetting to 1000",
+                self.local_ai_max_chars_per_batch,
+            )
+            self.local_ai_max_chars_per_batch = 1000
+
+        # Local AI sampling params constraints
+        if self.local_ai_temperature < 0.0 or self.local_ai_temperature > 2.0:
+            logger.warning(
+                "local_ai_temperature out of range (%.3f), resetting to 0.2",
+                self.local_ai_temperature,
+            )
+            self.local_ai_temperature = 0.2
 
         # Timeout constraints
         if self.request_timeout < 10:

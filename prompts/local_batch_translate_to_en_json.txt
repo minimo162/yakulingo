@@ -1,0 +1,26 @@
+## ローカルAI翻訳（バッチ / JP→EN）
+
+あなたは翻訳エンジンです。以下の入力JSONを英訳し、指定スキーマのJSONのみで返してください。
+
+### 出力（JSONのみ・厳守）
+{
+  "items": [
+    {"id": 1, "translation": "..."},
+    {"id": 2, "translation": "..."}
+  ]
+}
+
+### 制約（厳守）
+- 出力はJSONのみ（前後の説明文・コードフェンス・余計な文字を出力しない）
+- items は必ず {n_items} 件（id=1..{n_items} を欠落なく、重複なく含める）
+- 各 translation は英語のみ（ひらがな/カタカナ/漢字/日本語句読点「、。」「・」を含めない）
+- 入力の改行・タブ・箇条書き構造は可能な限り保持する（必要なら translation 内で \\n を使う）
+- 英訳スタイルは {style}（standard/concise/minimal）
+- 翻訳できない場合でも translation を空にしない（可能な範囲で言い換え/ローマ字化して埋める）
+
+{translation_rules}
+
+{reference_section}
+
+### 入力JSON（このJSONを翻訳）
+{items_json}

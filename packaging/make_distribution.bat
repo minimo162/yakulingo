@@ -73,7 +73,7 @@ call :ShowProgress 0 "Preparing..."
 :: Check required files
 echo        Checking required files...
 set "MISSING="
-for %%f in (.venv .uv-python .playwright-browsers app.py yakulingo YakuLingo.exe prompts config) do (
+for %%f in (.venv .uv-python .playwright-browsers app.py yakulingo YakuLingo.exe prompts config local_ai) do (
     if not exist "%%f" set "MISSING=!MISSING! %%f"
 )
 if not exist ".venv\pyvenv.cfg" set "MISSING=!MISSING! .venv\pyvenv.cfg"
@@ -166,7 +166,7 @@ if errorlevel 1 (
 :: ============================================================
 call :ShowProgress 1 "Copying folders..."
 
-echo        Copying .venv, .uv-python, .playwright-browsers, yakulingo, prompts, config...
+echo        Copying .venv, .uv-python, .playwright-browsers, yakulingo, prompts, config, local_ai...
 
 :: Copy folders using robocopy
 :: Exit codes: 0=no change, 1=copied, 2-7=warnings, 8+=errors
@@ -195,7 +195,7 @@ for %%f in (.venv .uv-python .playwright-browsers) do (
         )
     )
 )
-for %%f in (yakulingo prompts config) do (
+for %%f in (yakulingo prompts config local_ai) do (
     if exist "%%f" (
         echo        Copying %%f...
         echo ============================================================ >> "%ROBOCOPY_LOG%"

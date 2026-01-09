@@ -7,7 +7,7 @@ Use explicit imports like:
 """
 
 # Fast imports - state classes (no heavy dependencies)
-from .state import AppState, Tab, FileState
+from .state import AppState, Tab, FileState, TranslationBackend, LocalAIState
 
 # Submodules that can be accessed via __getattr__ (for patching support)
 _SUBMODULES = {'app', 'styles', 'utils', 'state', 'components', 'tray'}
@@ -25,4 +25,6 @@ __all__ = [
     'AppState',
     'Tab',
     'FileState',
+    'TranslationBackend',
+    'LocalAIState',
 ]

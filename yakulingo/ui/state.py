@@ -33,6 +33,20 @@ class Tab(Enum):
     FILE = "file"
 
 
+class TranslationBackend(Enum):
+    """Translation backend selection"""
+    COPILOT = "copilot"
+    LOCAL = "local"
+
+
+class LocalAIState(Enum):
+    """Local AI (llama-server) readiness states for UI"""
+    NOT_INSTALLED = "not_installed"  # exe/model not found
+    STARTING = "starting"
+    READY = "ready"
+    ERROR = "error"
+
+
 class FileState(Enum):
     """File tab states"""
     EMPTY = "empty"
@@ -78,6 +92,8 @@ class AppState:
     """
     # Current tab
     current_tab: Tab = Tab.TEXT
+    # Backend selection (persisted in settings)
+    translation_backend: TranslationBackend = TranslationBackend.COPILOT
 
     # Text tab state
     text_view_state: TextViewState = TextViewState.INPUT  # Current view state
@@ -122,6 +138,14 @@ class AppState:
     copilot_ready: bool = False
     copilot_error: str = ""
     connection_state: ConnectionState = ConnectionState.CONNECTING  # Current connection state for UI
+
+    # Local AI connection / readiness (llama.cpp llama-server)
+    local_ai_state: LocalAIState = LocalAIState.NOT_INSTALLED
+    local_ai_error: str = ""
+    local_ai_host: Optional[str] = None
+    local_ai_port: Optional[int] = None
+    local_ai_model: Optional[str] = None
+    local_ai_server_variant: Optional[str] = None
 
     # Translation history (in-memory cache, backed by SQLite)
     history: list[HistoryEntry] = field(default_factory=list)
@@ -211,16 +235,21 @@ class AppState:
         self.file_queue_running = False
 
     def can_translate(self) -> bool:
-        """Check if translation is possible (requires Copilot ready)."""
+        """Check if translation is possible (requires selected backend ready)."""
+        backend_ready = (
+            self.copilot_ready
+            if self.translation_backend == TranslationBackend.COPILOT
+            else self.local_ai_state == LocalAIState.READY
+        )
         if self.current_tab == Tab.TEXT:
             return (
                 bool(self.source_text.strip())
                 and not self.text_translating
                 and not self.text_back_translating
-                and self.copilot_ready
+                and backend_ready
             )
         elif self.current_tab == Tab.FILE:
-            return self.file_state == FileState.SELECTED and self.copilot_ready
+            return self.file_state == FileState.SELECTED and backend_ready
         return False
 
     def is_translating(self) -> bool:

@@ -1155,7 +1155,15 @@ def _patch_nicegui_native_mode() -> None:
 
 
 # Fast imports - required at startup (lightweight modules only)
-from yakulingo.ui.state import AppState, Tab, FileState, ConnectionState, LayoutInitializationState
+from yakulingo.ui.state import (
+    AppState,
+    Tab,
+    FileState,
+    ConnectionState,
+    LayoutInitializationState,
+    TranslationBackend,
+    LocalAIState,
+)
 from yakulingo.models.types import (
     TranslationProgress,
     TranslationResult,
@@ -1556,6 +1564,8 @@ class YakuLingoApp:
         self._gpt_mode_setup_task: "asyncio.Task | None" = None
         # Connection status auto-refresh (avoids stale "準備中..." UI after transient timeouts)
         self._status_auto_refresh_task: "asyncio.Task | None" = None
+        # Local AI startup/ensure task (avoid duplicate ensure_ready calls)
+        self._local_ai_ensure_task: "asyncio.Task | None" = None
         # Copilot state cache to throttle frequent UI status polling.
         self._last_copilot_state: Optional[str] = None
         self._last_copilot_state_at: float | None = None
@@ -1668,6 +1678,11 @@ class YakuLingoApp:
             logger.info("[TIMING] AppSettings.load: %.2fs", time.perf_counter() - start)
             # Always start in text mode; file panel opens on drag & drop.
             self.state.current_tab = Tab.TEXT
+            self.state.translation_backend = (
+                TranslationBackend.LOCAL
+                if getattr(self._settings, "translation_backend", "copilot") == "local"
+                else TranslationBackend.COPILOT
+            )
         return self._settings
 
     @settings.setter
@@ -6322,6 +6337,11 @@ class YakuLingoApp:
         if not self._ensure_translation_service():
             return
 
+        # If Local AI is selected, do not start/continue Copilot connection automatically.
+        if self.state.translation_backend == TranslationBackend.LOCAL:
+            await self._ensure_local_ai_ready_async()
+            return
+
         # Wait for early connection task if it exists
         if self._early_connection_task is not None:
             try:
@@ -8224,6 +8244,7 @@ class YakuLingoApp:
         """Create the UI - Nani-inspired 2-column layout"""
         # Lazy load CSS (2837 lines) - deferred until UI creation
         from yakulingo.ui.styles import COMPLETE_CSS
+        _ = self.settings  # Ensure settings are loaded for backend/status UI
 
         # Viewport for proper scaling on all displays
         ui.add_head_html('<meta name="viewport" content="width=device-width, initial-scale=1.0">')
@@ -8255,6 +8276,16 @@ class YakuLingoApp:
             with self._main_area_element:
                 self._create_main_content()
 
+        # Auto start Local AI when selected (UX: backend toggle should become ready without a manual click)
+        if self.state.translation_backend == TranslationBackend.LOCAL:
+            try:
+                self._local_ai_ensure_task = _create_logged_task(
+                    self._ensure_local_ai_ready_async(),
+                    name="local_ai_auto_ensure",
+                )
+            except RuntimeError:
+                pass
+
     def _create_sidebar(self):
         """Create left sidebar with logo, nav, and history"""
         # Logo section
@@ -8272,6 +8303,102 @@ class YakuLingoApp:
         # Status indicator (Copilot readiness: user can start translation safely)
         @ui.refreshable
         def header_status():
+            # Backend selector (Copilot / Local AI)
+            disabled = self.state.is_translating()
+            btn_props = 'flat no-caps dense disable' if disabled else 'flat no-caps dense'
+            with ui.row().classes('w-full justify-center'):
+                with ui.element('div').classes('style-selector'):
+                    copilot_classes = 'style-btn style-btn-left'
+                    local_classes = 'style-btn style-btn-right'
+                    if self.state.translation_backend == TranslationBackend.COPILOT:
+                        copilot_classes += ' style-btn-active'
+                    else:
+                        local_classes += ' style-btn-active'
+
+                    ui.button(
+                        'Copilot',
+                        on_click=lambda: self._set_translation_backend(TranslationBackend.COPILOT),
+                    ).classes(copilot_classes).props(btn_props).tooltip('M365 Copilot（Edge）で翻訳')
+
+                    ui.button(
+                        'ローカルAI',
+                        on_click=lambda: self._set_translation_backend(TranslationBackend.LOCAL),
+                    ).classes(local_classes).props(btn_props).tooltip('llama-server（127.0.0.1）で翻訳')
+
+            # Local AI status
+            if self.state.translation_backend == TranslationBackend.LOCAL:
+                local_state = self.state.local_ai_state
+                if local_state == LocalAIState.READY:
+                    host = self.state.local_ai_host or "127.0.0.1"
+                    port = self.state.local_ai_port or 0
+                    model = self.state.local_ai_model or ""
+                    variant = self.state.local_ai_server_variant or ""
+                    addr = f"{host}:{port}"
+                    addr_with_variant = f"{addr} ({variant})" if variant else addr
+                    tooltip = f"ローカルAI: 準備完了 ({addr_with_variant}) {model}".strip()
+                    with ui.element('div').classes('status-indicator ready').props(
+                        f'role="status" aria-live="polite" aria-label="{tooltip}"'
+                    ) as status_indicator:
+                        ui.element('div').classes('status-dot ready').props('aria-hidden="true"')
+                        with ui.column().classes('gap-0'):
+                            ui.label('準備完了').classes('text-xs')
+                            ui.label(addr_with_variant).classes('text-2xs opacity-80')
+                    status_indicator.tooltip(tooltip)
+                    return
+
+                if local_state == LocalAIState.STARTING:
+                    tooltip = '準備中: ローカルAIを起動しています'
+                    with ui.element('div').classes('status-indicator connecting').props(
+                        f'role="status" aria-live="polite" aria-label="{tooltip}"'
+                    ) as status_indicator:
+                        ui.element('div').classes('status-dot connecting').props('aria-hidden="true"')
+                        with ui.column().classes('gap-0'):
+                            ui.label('準備中...').classes('text-xs')
+                            ui.label('ローカルAIを起動しています').classes('text-2xs opacity-80')
+                    status_indicator.tooltip(tooltip)
+                    return
+
+                if local_state == LocalAIState.NOT_INSTALLED:
+                    tooltip = self.state.local_ai_error or 'ローカルAIが見つかりません'
+                    with ui.element('div').classes('status-indicator error').props(
+                        f'role="status" aria-live="polite" aria-label="{tooltip}"'
+                    ) as status_indicator:
+                        ui.element('div').classes('status-dot error').props('aria-hidden="true"')
+                        with ui.column().classes('gap-0'):
+                            ui.label('未インストール').classes('text-xs')
+                            ui.label('install_deps.bat を実行してください').classes('text-2xs opacity-80')
+                            with ui.row().classes('status-actions items-center gap-2 mt-1'):
+                                ui.button(
+                                    '再試行',
+                                    icon='refresh',
+                                    on_click=lambda: _create_logged_task(
+                                        self._ensure_local_ai_ready_async(),
+                                        name="local_ai_retry",
+                                    ),
+                                ).classes('status-action-btn').props('flat no-caps size=sm')
+                    status_indicator.tooltip(tooltip)
+                    return
+
+                tooltip = self.state.local_ai_error or 'ローカルAIでエラーが発生しました'
+                with ui.element('div').classes('status-indicator error').props(
+                    f'role="status" aria-live="polite" aria-label="{tooltip}"'
+                ) as status_indicator:
+                    ui.element('div').classes('status-dot error').props('aria-hidden="true"')
+                    with ui.column().classes('gap-0'):
+                        ui.label('エラー').classes('text-xs')
+                        ui.label((tooltip[:40] + '…') if len(tooltip) > 40 else tooltip).classes('text-2xs opacity-80')
+                        with ui.row().classes('status-actions items-center gap-2 mt-1'):
+                            ui.button(
+                                '再試行',
+                                icon='refresh',
+                                on_click=lambda: _create_logged_task(
+                                    self._ensure_local_ai_ready_async(),
+                                    name="local_ai_retry",
+                                ),
+                            ).classes('status-action-btn').props('flat no-caps size=sm')
+                status_indicator.tooltip(tooltip)
+                return
+
             # Keep Copilot lazy-loaded for startup performance (don't create it just for UI).
             copilot = self._copilot
             if not copilot:
@@ -8916,7 +9043,11 @@ class YakuLingoApp:
                         use_bundled_glossary=self.settings.use_bundled_glossary,
                         effective_reference_files=self._get_effective_reference_files(),
                         text_char_limit=TEXT_TRANSLATION_CHAR_LIMIT,
-                        batch_char_limit=self.settings.max_chars_per_batch,
+                        batch_char_limit=(
+                            self.settings.local_ai_max_chars_per_batch
+                            if self.state.translation_backend == TranslationBackend.LOCAL
+                            else self.settings.max_chars_per_batch
+                        ),
                         on_output_language_override=self._set_text_output_language_override,
                         on_input_metrics_created=self._on_text_input_metrics_created,
                         on_glossary_toggle=self._on_glossary_toggle,
@@ -9003,7 +9134,11 @@ class YakuLingoApp:
 
         char_count = len(self.state.source_text)
         text_limit = TEXT_TRANSLATION_CHAR_LIMIT
-        batch_limit = self.settings.max_chars_per_batch
+        batch_limit = (
+            self.settings.local_ai_max_chars_per_batch
+            if self.state.translation_backend == TranslationBackend.LOCAL
+            else self.settings.max_chars_per_batch
+        )
         batch_count = 0
         if batch_limit > 0:
             batch_count = max(1, math.ceil(char_count / batch_limit))
@@ -9267,6 +9402,110 @@ class YakuLingoApp:
             return False
         return True
 
+    def _set_translation_backend(self, backend: TranslationBackend) -> None:
+        """Switch translation backend (Copilot / Local AI) and persist to user settings."""
+        if backend == self.state.translation_backend:
+            return
+        if self.state.is_translating():
+            client = self._get_active_client()
+            if client:
+                with client:
+                    ui.notify('翻訳中はバックエンドを切り替えできません', type='warning')
+            return
+
+        self.state.translation_backend = backend
+        try:
+            self.settings.translation_backend = backend.value
+            self.settings.save(self.settings_path)
+        except Exception as e:
+            logger.warning("Failed to save translation_backend: %s", e)
+
+        client = self._get_active_client()
+        if client:
+            with client:
+                self._batch_refresh({'status', 'button', 'tabs'})
+
+        if backend == TranslationBackend.LOCAL:
+            self.state.local_ai_state = LocalAIState.STARTING
+            self.state.local_ai_error = ""
+            self._local_ai_ensure_task = _create_logged_task(
+                self._ensure_local_ai_ready_async(),
+                name="local_ai_ensure",
+            )
+        else:
+            _create_logged_task(
+                self._ensure_connection_async(),
+                name="ensure_connection",
+            )
+
+    async def _ensure_local_ai_ready_async(self) -> bool:
+        """Ensure local llama-server is ready (non-streaming, localhost only)."""
+        existing = self._local_ai_ensure_task
+        if existing and not existing.done() and asyncio.current_task() is not existing:
+            try:
+                await existing
+            except Exception:
+                pass
+            return self.state.local_ai_state == LocalAIState.READY
+
+        self.state.local_ai_state = LocalAIState.STARTING
+        self.state.local_ai_error = ""
+        client = self._get_active_client()
+        if client:
+            with client:
+                if self._header_status:
+                    self._header_status.refresh()
+
+        try:
+            from yakulingo.services.local_llama_server import (
+                LocalAIError,
+                LocalAINotInstalledError,
+                get_local_llama_server_manager,
+            )
+
+            manager = get_local_llama_server_manager()
+            runtime = await asyncio.to_thread(manager.ensure_ready, self.settings)
+        except LocalAINotInstalledError as e:
+            self.state.local_ai_state = LocalAIState.NOT_INSTALLED
+            self.state.local_ai_error = str(e)
+            client = self._get_active_client()
+            if client:
+                with client:
+                    if self._header_status:
+                        self._header_status.refresh()
+            return False
+        except LocalAIError as e:
+            self.state.local_ai_state = LocalAIState.ERROR
+            self.state.local_ai_error = str(e)
+            client = self._get_active_client()
+            if client:
+                with client:
+                    if self._header_status:
+                        self._header_status.refresh()
+            return False
+        except Exception as e:
+            self.state.local_ai_state = LocalAIState.ERROR
+            self.state.local_ai_error = str(e)
+            client = self._get_active_client()
+            if client:
+                with client:
+                    if self._header_status:
+                        self._header_status.refresh()
+            return False
+
+        self.state.local_ai_state = LocalAIState.READY
+        self.state.local_ai_host = runtime.host
+        self.state.local_ai_port = runtime.port
+        self.state.local_ai_model = runtime.model_id or runtime.model_path.name
+        self.state.local_ai_server_variant = runtime.server_variant
+        self.state.local_ai_error = ""
+        client = self._get_active_client()
+        if client:
+            with client:
+                if self._header_status:
+                    self._header_status.refresh()
+        return True
+
     async def _ensure_connection_async(self) -> bool:
         """Check connection and attempt reconnection if not connected.
 
@@ -9279,6 +9518,9 @@ class YakuLingoApp:
         # First ensure translation service is initialized
         if not self._ensure_translation_service():
             return False
+
+        if self.state.translation_backend == TranslationBackend.LOCAL:
+            return await self._ensure_local_ai_ready_async()
 
         copilot = self.copilot
         edge_window_open = True
@@ -9345,6 +9587,52 @@ class YakuLingoApp:
         """
         ui.notify(f'エラー: {message}', type='negative')
 
+    def _notify_reference_warnings(self, result: TextTranslationResult) -> None:
+        metadata = result.metadata
+        if not isinstance(metadata, dict):
+            return
+        warnings = metadata.get("reference_warnings")
+        if not isinstance(warnings, list):
+            return
+        messages: list[str] = []
+        seen: set[str] = set()
+        for item in warnings:
+            if not isinstance(item, str):
+                continue
+            item = item.strip()
+            if not item or item in seen:
+                continue
+            seen.add(item)
+            messages.append(item)
+
+        if not messages:
+            return
+
+        if len(messages) == 1:
+            ui.notify(messages[0], type='warning')
+        else:
+            ui.notify(f"{messages[0]}（他{len(messages) - 1}件）", type='warning')
+
+    def _notify_warning_summary(self, warnings: list[str]) -> None:
+        messages: list[str] = []
+        seen: set[str] = set()
+        for item in warnings:
+            if not isinstance(item, str):
+                continue
+            item = item.strip()
+            if not item or item in seen:
+                continue
+            seen.add(item)
+            messages.append(item)
+
+        if not messages:
+            return
+
+        if len(messages) == 1:
+            ui.notify(messages[0], type='warning')
+        else:
+            ui.notify(f"{messages[0]}（他{len(messages) - 1}件）", type='warning')
+
     def _on_text_translation_complete(self, client, error_message: Optional[str] = None):
         """Handle text translation completion with UI updates.
 
@@ -9359,6 +9647,8 @@ class YakuLingoApp:
                 ui.notify('キャンセルしました', type='info')
             elif error_message:
                 self._notify_error(error_message)
+            elif self.state.text_result:
+                self._notify_reference_warnings(self.state.text_result)
             # Batch refresh: result panel, button state, status, and tabs in one operation
             self._batch_refresh({'result', 'button', 'status', 'tabs'})
 
@@ -9560,6 +9850,40 @@ class YakuLingoApp:
                 error_message=error_messages[0],
             )
 
+        merged_metadata: dict | None = None
+        merged_reference_warnings: list[str] = []
+        seen_warnings: set[str] = set()
+        reference_truncated = False
+        for res in chunk_results:
+            meta = res.metadata
+            if not isinstance(meta, dict):
+                continue
+            if merged_metadata is None:
+                merged_metadata = {}
+
+            raw_warnings = meta.get("reference_warnings")
+            if isinstance(raw_warnings, list):
+                for item in raw_warnings:
+                    if isinstance(item, str) and item and item not in seen_warnings:
+                        seen_warnings.add(item)
+                        merged_reference_warnings.append(item)
+
+            if meta.get("reference_truncated") is True:
+                reference_truncated = True
+
+            # Keep the first value for other keys (stable/low-noise).
+            for key, value in meta.items():
+                if key in ("reference_warnings", "reference_truncated"):
+                    continue
+                if key not in merged_metadata:
+                    merged_metadata[key] = value
+
+        if merged_metadata is not None:
+            if merged_reference_warnings:
+                merged_metadata["reference_warnings"] = merged_reference_warnings
+            if reference_truncated:
+                merged_metadata["reference_truncated"] = True
+
         if output_language == "en":
             options_by_style: dict[str, list[str]] = {}
             explanations_by_style: dict[str, list[str]] = {}
@@ -9603,6 +9927,7 @@ class YakuLingoApp:
                 output_language=output_language,
                 detected_language=detected_language,
                 options=combined_options,
+                metadata=merged_metadata,
             )
 
         texts: list[str] = []
@@ -9629,6 +9954,7 @@ class YakuLingoApp:
                     explanation=combined_explanation,
                 )
             ],
+            metadata=merged_metadata,
         )
 
     async def _attach_reference_file(self):
@@ -9861,9 +10187,12 @@ class YakuLingoApp:
 
             await asyncio.sleep(0)
 
-            chunks = self._split_text_for_translation(
-                source_text, self.settings.max_chars_per_batch
+            batch_limit = (
+                self.settings.local_ai_max_chars_per_batch
+                if self.state.translation_backend == TranslationBackend.LOCAL
+                else self.settings.max_chars_per_batch
             )
+            chunks = self._split_text_for_translation(source_text, batch_limit)
             total_chunks = len(chunks)
             loop = asyncio.get_running_loop()
             last_preview_update = 0.0
@@ -9958,6 +10287,8 @@ class YakuLingoApp:
         with client:
             if error_message:
                 self._notify_error(error_message)
+            elif self.state.text_result:
+                self._notify_reference_warnings(self.state.text_result)
             self._refresh_result_panel()
             self._scroll_result_panel_to_top(client)
             self._update_translate_button_state()
@@ -11587,6 +11918,8 @@ class YakuLingoApp:
                             queue_item.status_label = "完了"
                             queue_item.progress = 1.0
                             queue_item.result = result
+                    if result.warnings:
+                        self._notify_warning_summary(result.warnings)
                     # Show completion dialog with all output files
                     from yakulingo.ui.utils import create_completion_dialog
                     create_completion_dialog(
@@ -12947,6 +13280,15 @@ def run_app(
             except Exception as e:
                 logger.debug("Error disconnecting Copilot: %s", e)
 
+        # Stop local llama-server if it is ours (safe check inside manager).
+        step_start = time_module.time()
+        try:
+            from yakulingo.services.local_llama_server import get_local_llama_server_manager
+            get_local_llama_server_manager().stop(timeout_s=5.0)
+        except Exception as e:
+            logger.debug("Error stopping local llama-server: %s", e)
+        logger.debug("[TIMING] Local AI stop: %.2fs", time_module.time() - step_start)
+
         # Close database connections (quick)
         step_start = time_module.time()
         try:
@@ -12971,6 +13313,7 @@ def run_app(
         yakulingo_app.translation_service = None
         yakulingo_app._login_polling_task = None
         yakulingo_app._status_auto_refresh_task = None
+        yakulingo_app._local_ai_ensure_task = None
         yakulingo_app._resident_heartbeat_task = None
         yakulingo_app._ui_ready_retry_task = None
         yakulingo_app._copilot_window_monitor_task = None
@@ -13864,6 +14207,14 @@ def run_app(
     @nicegui_app.on_startup
     async def on_startup():
         """Called when NiceGUI server starts (before clients connect)."""
+        # Load settings early so we can respect the persisted backend selection.
+        # If Local AI is selected, avoid starting Edge/Copilot automatically.
+        startup_backend = "copilot"
+        try:
+            startup_backend = getattr(yakulingo_app.settings, "translation_backend", "copilot") or "copilot"
+        except Exception:
+            startup_backend = "copilot"
+
         # Start hotkey listener immediately so hotkey translation works even without the UI.
         yakulingo_app.start_hotkey_listener()
         yakulingo_app._start_resident_heartbeat()
@@ -13874,7 +14225,7 @@ def run_app(
 
         # Start Copilot connection early only in native mode; browser mode should remain silent
         # and connect on demand (clipboard/UI).
-        if native:
+        if native and startup_backend != "local":
             yakulingo_app._early_connection_task = asyncio.create_task(_early_connect_copilot())
             if resident_mode:
                 # Resident setup uses native mode; warm up Copilot so setup.ps1 can detect readiness.
@@ -13889,10 +14240,11 @@ def run_app(
 
         if not native:
             if resident_mode:
-                _create_logged_task(
-                    yakulingo_app._warmup_resident_gpt_mode(),
-                    name="warmup_resident_gpt_mode",
-                )
+                if startup_backend != "local":
+                    _create_logged_task(
+                        yakulingo_app._warmup_resident_gpt_mode(),
+                        name="warmup_resident_gpt_mode",
+                    )
             else:
                 try:
                     _create_logged_task(

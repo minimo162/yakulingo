@@ -29,7 +29,7 @@
 ### 1.1 システム目的
 
 YakuLingoは、日本語と英語の双方向翻訳を提供するデスクトップアプリケーション。
-M365 Copilotを翻訳エンジンとして使用し、テキストとドキュメントファイルの翻訳をサポート。
+翻訳エンジンは **M365 Copilot**（Playwright + Edge）または **ローカルAI**（llama.cpp `llama-server` 常駐・OpenAI互換HTTP）を使用し、UIで切り替え可能。ローカルAIは `127.0.0.1` 固定（外部公開しない）。
 
 ### 1.2 主要機能
 
@@ -41,6 +41,7 @@ M365 Copilotを翻訳エンジンとして使用し、テキストとドキュ�
 | **Bilingual Output** | 原文と訳文を並べた対訳ファイルを自動生成 |
 | **Glossary Export** | 翻訳ペアをCSVで出力（用語管理に活用） |
 | **Reference Files** | 用語集・スタイルガイド・参考資料による一貫した翻訳（同梱glossaryの使用ON/OFF切替可） |
+| **Backend Toggle** | Copilot / ローカルAI（llama.cpp）をUIで切替（ローカルAIはEdge不要） |
 | **Translation History** | 過去の翻訳をローカルに保存・検索 |
 | **Auto Update** | GitHub Releases経由で自動更新 |
 
@@ -78,7 +79,7 @@ M365 Copilotを翻訳エンジンとして使用し、テキストとドキュ�
 |-------|------------|
 | UI | NiceGUI (browser mode, default) / pywebview (optional native; disabled in distribution) (Material Design 3 / Expressive) |
 | Backend | FastAPI (via NiceGUI) |
-| Translation | M365 Copilot (Playwright + Edge) |
+| Translation | M365 Copilot (Playwright + Edge) / Local AI (llama.cpp llama-server, OpenAI-compatible HTTP) |
 | File Processing | openpyxl, python-docx, python-pptx, PyMuPDF |
 | Storage | SQLite (translation history) |
 | Auto Update | GitHub Releases API |
@@ -113,11 +114,11 @@ M365 Copilotを翻訳エンジンとして使用し、テキストとドキュ�
 │  └───────────────────────────────────────────────────────────────────┘  │
 │          │                         │                         │          │
 │          ▼                         ▼                         ▼          │
-│  ┌───────────────┐     ┌─────────────────────┐     ┌───────────────┐    │
-│  │ CopilotHandler│     │   File Processors   │     │   HistoryDB   │    │
-│  │ (Edge+        │     │ Excel/Word/PPT/PDF │     │   (SQLite)    │    │
-│  │  Playwright)  │     │ + TXT              │     │               │    │
-│  └───────────────┘     └─────────────────────┘     └───────────────┘    │
+│  ┌───────────────────────────────┐     ┌─────────────────────┐     ┌───────────────┐    │
+│  │ Translation Backends          │     │   File Processors   │     │   HistoryDB   │    │
+│  │ - CopilotHandler (Edge+PW)    │     │ Excel/Word/PPT/PDF │     │   (SQLite)    │    │
+│  │ - Local AI (llama-server HTTP)│     │ + TXT              │     │               │    │
+│  └───────────────────────────────┘     └─────────────────────┘     └───────────────┘    │
 │                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
@@ -128,7 +129,7 @@ M365 Copilotを翻訳エンジンとして使用し、テキストとドキュ�
 |-------|----------------|
 | **Presentation** | NiceGUI + pywebviewによるUI、状態表示 |
 | **Service** | 翻訳処理の制御、バッチ処理、自動更新 |
-| **CopilotHandler** | Edge起動、Playwright接続、メッセージ送受信 |
+| **Translation Backend** | CopilotHandler（Edge+Playwright）/ Local AI（llama.cpp llama-server, 127.0.0.1） |
 | **File Processors** | ファイル解析、テキスト抽出、翻訳適用 |
 | **Storage** | 翻訳履歴の永続化（SQLite） |
 | **Config** | 設定読み込み/保存、参照ファイル管理 |
@@ -143,6 +144,10 @@ YakuLingo/
 ├── pyproject.toml
 ├── uv.lock                         # 依存関係ロックファイル
 ├── requirements.txt
+│
+├── local_ai/                       # ローカルAIランタイム（gitignore、配布ZIPに同梱）
+│   ├── llama_cpp/                  # llama.cpp配布物（LICENSE/manifest含む）
+│   └── models/                     # モデル（LICENSE/README含む）
 │
 ├── yakulingo/                      # メインパッケージ
 │   ├── __init__.py
@@ -161,6 +166,9 @@ YakuLingo/
 │   ├── services/                   # Service Layer
 │   │   ├── translation_service.py  # TranslationService
 │   │   ├── copilot_handler.py      # CopilotHandler
+│   │   ├── local_llama_server.py   # ローカルAI（llama-server）常駐管理
+│   │   ├── local_ai_client.py      # ローカルAI HTTPクライアント（OpenAI互換）
+│   │   ├── local_ai_prompt_builder.py  # ローカルAI用PromptBuilder（JSON出力固定）
 │   │   ├── prompt_builder.py       # PromptBuilder
 │   │   └── updater.py              # 自動更新サービス
 │   │
@@ -185,12 +193,17 @@ YakuLingo/
 │   └── config/
 │       └── settings.py             # AppSettings
 │
-├── tests/                          # テストスイート（33ファイル）
+├── tests/                          # テストスイート
 │   ├── conftest.py
 │   └── test_*.py
 │
-├── prompts/                        # 翻訳プロンプト（15ファイル）
+├── prompts/                        # 翻訳プロンプト（Copilot/ローカルAI）
 │   ├── translation_rules.txt       # 共通/方向別翻訳ルール
+│   ├── local_text_translate_to_en_3style_json.txt   # ローカルAI（JP→EN 3style / JSON）
+│   ├── local_text_translate_to_en_single_json.txt   # ローカルAI（JP→EN 単発 / JSON）
+│   ├── local_text_translate_to_jp_json.txt          # ローカルAI（EN→JP / JSON）
+│   ├── local_batch_translate_to_en_json.txt         # ローカルAI（バッチ JP→EN / JSON）
+│   ├── local_batch_translate_to_jp_json.txt         # ローカルAI（バッチ EN→JP / JSON）
 │   ├── file_translate_to_en_{standard|concise|minimal}.txt  # ファイル翻訳（日→英）
 │   ├── file_translate_to_jp.txt    # ファイル翻訳用（英→日）
 │   ├── text_translate_to_en_compare.txt  # テキスト翻訳（日→英、3スタイル比較）
@@ -410,6 +423,16 @@ class Tab(Enum):
     TEXT = "text"
     FILE = "file"
 
+class TranslationBackend(Enum):
+    COPILOT = "copilot"
+    LOCAL = "local"
+
+class LocalAIState(Enum):
+    NOT_INSTALLED = "not_installed"  # exe/model not found
+    STARTING = "starting"
+    READY = "ready"
+    ERROR = "error"
+
 class FileState(Enum):
     EMPTY = "empty"
     SELECTED = "selected"
@@ -432,6 +455,8 @@ class ConnectionState(Enum):
 class AppState:
     # Current tab
     current_tab: Tab = Tab.TEXT
+    # Backend selection (persisted in settings)
+    translation_backend: TranslationBackend = TranslationBackend.COPILOT
 
     # テキストタブ
     text_view_state: TextViewState = TextViewState.INPUT
@@ -474,6 +499,14 @@ class AppState:
     copilot_ready: bool = False
     copilot_error: str = ""
     connection_state: ConnectionState = ConnectionState.CONNECTING
+
+    # Local AI connection / readiness (llama.cpp llama-server)
+    local_ai_state: LocalAIState = LocalAIState.NOT_INSTALLED
+    local_ai_error: str = ""
+    local_ai_host: Optional[str] = None
+    local_ai_port: Optional[int] = None
+    local_ai_model: Optional[str] = None
+    local_ai_server_variant: Optional[str] = None
 
     # 翻訳履歴（SQLiteバック）
     history: list[HistoryEntry] = field(default_factory=list)
@@ -551,12 +584,13 @@ Windows のグローバルホットキー（Ctrl+Alt+J）を登録し、押下�
 
 ### 5.1.3 接続ステータスインジケータ
 
-サイドバー上部にCopilotの準備状況を表示する。
+ヘッダーのステータス領域に **翻訳バックエンド（Copilot / ローカルAI）** のセグメントと、選択中バックエンドの準備状況を表示する。
 
-- 状態: 準備中 / 準備完了 / ログインが必要 / Edgeが見つかりません / 接続に失敗
-- アクション: ログインを開く / Edgeを起動 / 再接続
+- バックエンド切替は翻訳中はdisable（同時翻訳/混線防止）
+- Copilot状態: 準備中 / 準備完了 / ログインが必要 / Edgeが見つかりません / 接続に失敗
+- ローカルAI状態: 未インストール（exe/model不足） / 起動中 / 準備完了 / エラー（AVX2非対応、ポート枯渇、起動失敗等）
 - 状態確認は短いタイムアウト＋キャッシュでUI固着を防ぐ
-- ローディング中や確認失敗時は自動リフレッシュを実行
+- 起動時は設定の `translation_backend` を尊重し、ローカルAI選択時はCopilot/Edgeの自動起動を抑制（必要時のみ接続）
 
 ### 5.2 全体レイアウト
 
@@ -896,9 +930,27 @@ class CopilotHandler:
 - 単一ブロックが上限を超える場合は単独バッチとして処理（警告ログ）
 - Copilotの応答が「分割要求」と判定された場合、`max_chars_per_batch` を段階的に縮小してリトライ（上限回数あり）
 
+### 6.1.1 Local AI（llama.cpp llama-server）
+
+ローカルAIバックエンドは `llama.cpp` の `llama-server` を常駐させ、OpenAI互換HTTP API（`/v1/chat/completions`）経由で呼び出す（M1: 非ストリーミング）。
+
+- サーバは `127.0.0.1` のみ（外部公開しない）
+- ポートは `local_ai_port_base..local_ai_port_max`（既定: 4891-4900）
+- `~/.yakulingo/local_ai_server.json` に状態を保存し、起動時は **再利用→探索** の順で判定
+  - 再利用条件: `/v1/models` が応答、モデル/実行ファイル/プロセスが一致
+  - 一致しない/確認できない場合は **killしない**（他プロセス事故防止）
+  - 書き込みは atomic write（tmp→replace）で破損耐性を確保
+  - 記録例: `host`, `port`, `pid`, `pid_create_time`, `server_exe_path_resolved`, `server_variant`, `model_path_resolved`, `model_size`, `model_mtime`, `started_at`, `last_ok_at`, `app_version`
+- 再利用不可なら `local_ai_port_base` から順に事前bindで空きを探索（`...port_max` まで）
+- ログは `~/.yakulingo/logs/local_ai_server.log`
+- 同梱構成（例）: `local_ai/llama_cpp/{avx2|generic}` と `local_ai/models/*.gguf`（LICENSE/README/manifest 同梱）
+- AVX2自動選択（2ビルド同梱時）: AVX2版を先に試行し、違法命令（Illegal Instruction）で落ちた場合は generic へフォールバック（結果は状態ファイルに記録）
+
 ### 6.2 TranslationService
 
 翻訳処理の中心クラス。
+Copilot/ローカルAIの差分は `AppSettings.translation_backend` で切り替え、内部ではクライアントとプロンプトビルダーを抽象化して扱う。
+ローカルAIはリクエストを直列化する（`copilot_lock` を概念上 backend_lock として再利用）。
 
 ```python
 class TranslationService:
@@ -956,6 +1008,11 @@ class BatchTranslator:
         3. 結果をマージ
         """
 ```
+
+**ローカルAI（M1）の追加方針:**
+- バッチ翻訳はID付きJSONを正規ルートとし、ズレ（件数不一致）を最優先で潰す
+- JSONパースはコードフェンス除去/ノイズ除去/軽微修復（安全範囲）＋フォールバック抽出（`[[ID:n]]` / 番号行）
+- プロンプトが長すぎる場合は `local_ai_max_chars_per_batch` を自動縮小して再試行（`LOCAL_PROMPT_TOO_LONG`）
 
 ---
 
@@ -1244,6 +1301,8 @@ class PromptBuilder:
         """
 ```
 
+> **Note**: ローカルAIでは Copilot用テンプレートとは分離し、`LocalPromptBuilder` が `prompts/local_*.txt` を読み込む（JSON出力固定・参照は本文埋め込み）。
+
 **並列プロンプト構築（3バッチ以上）:**
 ```python
 if len(batches) >= 3:
@@ -1304,6 +1363,30 @@ Reference Files
 - セクションが存在しない場合は全文を共通ルールとして扱う
 - 編集後は `PromptBuilder.reload_translation_rules()` で再読込
 
+### 9.6 ローカルAIプロンプト（JSON固定）
+
+ローカルAIは Copilot用テンプレートと分離し、**JSONのみ**を返すテンプレートを使用する（バッチのズレ対策を最優先）。
+
+- テキスト
+  - `prompts/local_text_translate_to_en_3style_json.txt`（JP→EN: standard/concise/minimal を1リクエストで返す）
+  - `prompts/local_text_translate_to_en_single_json.txt`（JP→EN: 単発、style指定）
+  - `prompts/local_text_translate_to_jp_json.txt`（EN→JP: translation + explanation）
+- バッチ
+  - `prompts/local_batch_translate_to_en_json.txt`（JP→EN）
+  - `prompts/local_batch_translate_to_jp_json.txt`（EN→JP）
+  - 入力: `{"items":[{"id":1,"text":"..."}, ...]}`
+  - 出力: `{"items":[{"id":1,"translation":"..."}, ...]}`
+
+**JSONパース（M1）**
+- コードフェンス除去、先頭/末尾ノイズ除去（最初の `{`/`[` から最後の `}`/`]` のみ切り出し）
+- `json.loads` 失敗時は安全な範囲で軽微修復（例: 末尾カンマ除去）→ それでも失敗したらフォールバック抽出
+  - バッチ: `[[ID:n]]` ブロック抽出 → 番号行抽出
+
+**参照ファイル（M1）**
+- Copilot: 添付で渡す（対応形式はUIに従う）
+- ローカルAI: 本文に埋め込み（対応: `csv/txt/md/json`）
+  - 合計上限: 4,000文字 / 1ファイル上限: 2,000文字（超過は切り捨てて警告）
+
 ---
 
 ## 10. ストレージ
@@ -1348,6 +1431,9 @@ class HistoryDB:
 | アプリ設定（ユーザー） | `config/user_settings.json` |
 | アプリ設定（デフォルト） | `config/settings.template.json` |
 | 翻訳履歴 | `~/.yakulingo/history.db` |
+| ログ | `~/.yakulingo/logs/startup.log` |
+| ローカルAI状態 | `~/.yakulingo/local_ai_server.json` |
+| ローカルAIログ | `~/.yakulingo/logs/local_ai_server.log` |
 | 同梱用語集 | `glossary.csv`（既定） |
 
 ---
@@ -1421,6 +1507,21 @@ class AppSettings:
     last_tab: str = "text"
     # NOTE: window_width/window_height は廃止（表示領域から動的に計算）
 
+    # Translation Backend (Copilot / Local AI)
+    translation_backend: str = "copilot"  # "copilot" | "local"
+
+    # Local AI (llama.cpp llama-server)
+    local_ai_model_path: str = "local_ai/models/Qwen3VL-4B-Instruct-Q4_K_M.gguf"
+    local_ai_server_dir: str = "local_ai/llama_cpp"
+    local_ai_host: str = "127.0.0.1"  # security: forced to localhost
+    local_ai_port_base: int = 4891
+    local_ai_port_max: int = 4900
+    local_ai_ctx_size: int = 4096
+    local_ai_threads: int = 0  # 0=auto
+    local_ai_temperature: float = 0.2
+    local_ai_max_tokens: Optional[int] = None
+    local_ai_max_chars_per_batch: int = 1000
+
     # Advanced
     max_chars_per_batch: int = 1000      # 文字数上限（Copilot入力の安全値）
     request_timeout: int = 600           # 10分（大規模翻訳対応）
@@ -1463,6 +1564,8 @@ class AppSettings:
 
 **設定ファイル:** `config/settings.template.json`（デフォルト） / `config/user_settings.json`（ユーザー設定）
 
+**ローカルAIのパス解決:** `local_ai_model_path` / `local_ai_server_dir` が相対パスの場合、**アプリ配置ディレクトリ基準**で解決する（CWD依存排除）。
+
 ### 12.2 起動方法
 
 ```bash
@@ -1483,10 +1586,12 @@ YakuLingo.exe    # Rust製ネイティブランチャー
 5. browser mode: Edge --appでUI起動 / native mode: pywebviewでネイティブウィンドウを起動
 6. ローディングスクリーンを即座に表示（await client.connected()後にUI構築）
 7. NiceGUIサーバー起動（port=8765, reconnect_timeout=30.0）
-8. Copilot接続開始（バックグラウンド、PlaywrightThreadExecutorで専用スレッド実行）
-9. 常駐起動時はCopilot/GPTモードのウォームアップと起動状態監視を開始（/api/setup-status）
+8. 設定 `translation_backend` に応じてバックエンド初期化
+   - Copilot選択時: Copilot接続開始（バックグラウンド、PlaywrightThreadExecutorで専用スレッド実行）
+   - ローカルAI選択時: Copilot/Edgeの自動起動を抑制（ローカルAIは選択時/初回翻訳時に起動）
+9. 常駐起動時はCopilot選択時のみ、GPTモードのウォームアップと起動状態監視を開始（/api/setup-status）
 10. 自動更新チェック（バックグラウンド）
-11. 接続完了後、翻訳機能が有効化
+11. 選択バックエンドが準備完了後、翻訳機能が有効化
 ```
 
 **起動最適化ポイント:**
@@ -1502,8 +1607,9 @@ YakuLingo.exe    # Rust製ネイティブランチャー
 |------|------|
 | OS | Windows 10/11 |
 | Python | 3.11+ |
-| Browser | Microsoft Edge |
-| M365 | Copilot アクセス権 |
+| Browser | Microsoft Edge（Copilot利用時） |
+| M365 | Copilot アクセス権（Copilot利用時） |
+| Local AI | `llama-server` + モデル（配布ZIPに同梱。AVX2版のみの場合はAVX2必須） |
 
 ### 12.5 依存パッケージ
 
@@ -1540,6 +1646,7 @@ pytest-asyncio>=0.23.0
 ### 12.7 配布
 
 ネットワーク共有からのワンクリックインストール対応。
+配布ZIPには `local_ai/`（llama.cpp `llama-server` + モデル + LICENSE/README/manifest）を同梱し、追加ダウンロード無しでローカルAI翻訳が動作することを前提とする。
 
 ```bash
 # 配布パッケージ作成

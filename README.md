@@ -3,7 +3,7 @@
 ## 回答言語
 本リポジトリでの回答は日本語で行ってください。
 
-日本語と英語の双方向翻訳アプリケーション。M365 Copilotでテキストもファイルもワンクリック翻訳。
+日本語と英語の双方向翻訳アプリケーション。翻訳バックエンドは **M365 Copilot** と **ローカルAI（llama.cpp）** をUIで切り替えでき、テキストもファイルもワンクリック翻訳します（ローカルAIは `127.0.0.1` 固定・外部公開しません）。
 
 ## 目次
 - [特徴](#特徴)
@@ -35,7 +35,8 @@ YakuLingoが提供する主な機能一覧です。
 - **ホットキー起動**: `Ctrl + Alt + J` で選択中のテキスト/ファイルを翻訳開始（UIに結果を表示）
 - **フォント自動調整**: 翻訳方向に合わせて最適なフォントを選択
 - **翻訳履歴**: ローカル保存＆検索に対応
-- **接続ステータス表示**: 準備中/準備完了/ログイン必要/接続失敗を表示
+- **バックエンド切替**: ヘッダーで Copilot / ローカルAI をトグル（翻訳中は切替不可）
+- **接続/準備状況表示**: バックエンド別に準備中/準備完了/未インストール/エラー等を表示
 - **自動更新**: GitHub Releases から最新バージョンを取得
 
 ## 言語自動検出
@@ -87,10 +88,13 @@ PDF翻訳はPP-DocLayout-L（PaddleOCR）によるレイアウト解析を使用
 |------|------|
 | OS | Windows 10/11 |
 | Python | 3.11以上（[公式サイト](https://www.python.org/downloads/)からインストール、配布版 `setup.vbs` は同梱のため不要） |
-| ブラウザ | Microsoft Edge |
-| M365 Copilot | 有料ライセンス または [無料版](https://m365.cloud.microsoft/chat) へのアクセス |
+| ブラウザ | Microsoft Edge（Copilot利用時） |
+| M365 Copilot | 有料ライセンス または [無料版](https://m365.cloud.microsoft/chat) へのアクセス（Copilot利用時） |
+| ローカルAI | `local_ai/`（llama.cpp `llama-server` + モデル）※現在の同梱はAVX2版 |
 
-> **M365 Copilotについて**: YakuLingoはM365 Copilotを翻訳エンジンとして使用します。[m365.cloud.microsoft/chat](https://m365.cloud.microsoft/chat) にアクセスしてログインできることを事前に確認してください。
+> **翻訳バックエンドについて**:
+> - **Copilot**: [m365.cloud.microsoft/chat](https://m365.cloud.microsoft/chat) にアクセスしてログインできることを事前に確認してください。
+> - **ローカルAI**: `packaging/install_deps.bat`（または配布ZIP）で `local_ai/` が配置されていれば、Edgeなしで翻訳できます（サーバは `127.0.0.1` 固定）。
 
 ## インストールと起動
 
@@ -141,6 +145,7 @@ Do you need to use a proxy server?
 4. Playwrightブラウザ（Chromium）のインストール
 5. PaddleOCR（PDF翻訳用）のインストールと検証
 6. 起動高速化のためのバイトコードプリコンパイル
+7. ローカルAIランタイム（llama.cpp + モデル）のダウンロード（大容量）
 
 セットアップ完了後、`YakuLingo.exe` をダブルクリックして起動します（常駐起動します。UIは必要に応じて http://127.0.0.1:8765/ を開きます）。
 
@@ -181,21 +186,26 @@ uv run python app.py
 
 ## 初回セットアップ
 
-YakuLingoを初めて使う際は、以下の手順でM365 Copilotにログインしてください。
+YakuLingoを初めて使う際は、利用する翻訳バックエンドに応じて準備します（UIヘッダーで `Copilot / ローカルAI` を切り替え）。
 
-### 1. Copilotログインの確認
+### 1. Copilotを使う場合（ログイン確認）
 1. Microsoft Edgeを開く
 2. [m365.cloud.microsoft/chat](https://m365.cloud.microsoft/chat) にアクセス
 3. 会社アカウントまたはMicrosoftアカウントでログイン
 4. チャット画面が表示されることを確認
 
-### 2. YakuLingoの起動
+### 2. ローカルAIを使う場合（インストール確認）
+1. `local_ai/` が存在することを確認（`packaging/install_deps.bat` を実行済み、または配布ZIPに同梱）
+2. UIヘッダーで **ローカルAI** を選択 → 「準備完了」になるまで待機
+3. エラー時はメッセージに従って対処（例: AVX2非対応のPCではローカルAIが利用できません。Copilotに切り替えるか、generic版の同梱が必要です）
+
+### 3. YakuLingoの起動
 1. `uv run python app.py` を実行
 2. UIを開く（http://127.0.0.1:8765/）または `Ctrl + Alt + J` で翻訳を実行（テキスト/ファイルを自動判別）
-3. ログイン画面が表示された場合は、Edgeウィンドウでログインを完了（翻訳時に接続します）
+3. Copilot利用時にログイン画面が表示された場合は、Edgeウィンドウでログインを完了（翻訳時に接続します）
 
-> **Note**: 初回起動やログインが必要な場合は、Copilot用Edgeが前面に表示されることがあります（ログインのため）。
-> **Note**: 翻訳中は、Copilot用EdgeがUIの背面に表示されることがあります（フォーカスは奪いません）。
+> **Note**: Copilot利用時、初回起動やログインが必要な場合はCopilot用Edgeが前面に表示されることがあります（ログインのため）。
+> **Note**: Copilot利用時、翻訳中はCopilot用EdgeがUIの背面に表示されることがあります（フォーカスは奪いません）。
 > **Note**: YakuLingoは常駐型です。UIを閉じてもバックグラウンドで動作し続けます（終了は明示的に実行）。
 > **Note**: 常駐中はタスクバーに表示されない場合があります。UIはデスクトップの `YakuLingo`、`Ctrl + Alt + J`（またはタスクトレイのアイコンメニュー > `Open`）で開きます。
 > **Note**: ランチャー（`YakuLingo.exe`）はwatchdogで予期せぬ終了時に自動再起動します。完全に停止したい場合はタスクトレイのアイコンメニュー > `Exit` を実行してください。
@@ -272,9 +282,20 @@ YakuLingoを初めて使う際は、以下の手順でM365 Copilotにログイ�
   "reference_files": [],
   "output_directory": null,
   "last_tab": "text",
+  "translation_backend": "copilot",
   "max_chars_per_batch": 1000,
   "request_timeout": 600,
   "max_retries": 3,
+  "local_ai_model_path": "local_ai/models/Qwen3VL-4B-Instruct-Q4_K_M.gguf",
+  "local_ai_server_dir": "local_ai/llama_cpp",
+  "local_ai_host": "127.0.0.1",
+  "local_ai_port_base": 4891,
+  "local_ai_port_max": 4900,
+  "local_ai_ctx_size": 4096,
+  "local_ai_threads": 0,
+  "local_ai_temperature": 0.2,
+  "local_ai_max_tokens": null,
+  "local_ai_max_chars_per_batch": 1000,
   "bilingual_output": false,
   "export_glossary": false,
   "translation_style": "concise",
@@ -303,6 +324,7 @@ YakuLingoを初めて使う際は、以下の手順でM365 Copilotにログイ�
 
 ```json
 {
+  "translation_backend": "copilot",
   "translation_style": "concise",
   "font_jp_to_en": "Arial",
   "font_en_to_jp": "MS Pゴシック",
@@ -319,6 +341,7 @@ YakuLingoを初めて使う際は、以下の手順でM365 Copilotにログイ�
 
 | 設定 | 説明 | デフォルト |
 |------|------|----------|
+| `translation_backend` | 翻訳バックエンド（`copilot` / `local`） | "copilot" |
 | `translation_style` | ファイル翻訳のスタイル | "concise" |
 | `bilingual_output` | 対訳ファイルを生成 | false |
 | `export_glossary` | 用語集CSVを生成 | false |
@@ -349,12 +372,23 @@ YakuLingoを初めて使う際は、以下の手順でM365 Copilotにログイ�
 | `ocr_batch_size` | PDF処理のバッチページ数 | 5 |
 | `ocr_dpi` | PDF処理の解像度 | 300 |
 | `max_chars_per_batch` | Copilot送信1回あたりの最大文字数 | 1000 |
+| `local_ai_model_path` | ローカルAIモデル（.gguf）のパス | `local_ai/models/Qwen3VL-4B-Instruct-Q4_K_M.gguf` |
+| `local_ai_server_dir` | ローカルAIサーバ（llama-server）のディレクトリ | `local_ai/llama_cpp` |
+| `local_ai_port_base` | ローカルAIのポート探索開始 | 4891 |
+| `local_ai_port_max` | ローカルAIのポート探索上限 | 4900 |
+| `local_ai_ctx_size` | ローカルAIのcontext size | 4096 |
+| `local_ai_threads` | ローカルAIのスレッド数（0=auto） | 0 |
+| `local_ai_max_chars_per_batch` | ローカルAI送信1回あたりの最大文字数 | 1000 |
 | `request_timeout` | 翻訳リクエストのタイムアウト（秒） | 600 |
+| `local_ai_temperature` | ローカルAIの温度（翻訳向けに低め） | 0.2 |
+| `local_ai_max_tokens` | ローカルAIの最大生成トークン（nullで無制限） | null |
 | `login_overlay_guard` | ログイン表示のガード（通常は無効） | enabled=false |
 | `auto_update_enabled` | 起動時の自動更新チェック | true |
 | `auto_update_check_interval` | 自動更新チェック間隔（秒、0=起動毎） | 0 |
 
 > **Note**: `ocr_*` 設定はPDF処理（レイアウト解析）に使用されます。設定名は互換性のため維持しています。
+> **Note**: ローカルAI関連のパス（`local_ai_model_path`, `local_ai_server_dir`）は、相対パスの場合 **アプリ配置ディレクトリ基準** で解決します（CWD基準ではありません）。
+> **Note**: `local_ai_host` は安全のため `127.0.0.1` に強制されます。
 
 ### 参照ファイル
 
@@ -364,7 +398,8 @@ YakuLingoを初めて使う際は、以下の手順でM365 Copilotにログイ�
 1. **テキスト翻訳**: 入力欄下部の 📎 ボタンをクリックしてファイルを選択
 2. **ファイル翻訳**: ファイル選択後、「参照ファイル」エリアにドラッグ＆ドロップ
 
-**対応形式**: CSV, TXT, PDF, Word, Excel, PowerPoint, Markdown, JSON
+**対応形式（Copilot）**: CSV, TXT, PDF, Word, Excel, PowerPoint, Markdown, JSON<br>
+**対応形式（ローカルAI / M1）**: CSV, TXT, Markdown, JSON（本文埋め込み。上限: 合計4,000文字 / 1ファイル2,000文字。超過は切り捨て＋警告）
 
 **デフォルト (glossary.csv)**:
 ```csv
@@ -406,6 +441,13 @@ YakuLingoを初めて使う際は、以下の手順でM365 Copilotにログイ�
 3. バックグラウンドで動作している場合は「詳細」タブから `msedge.exe` をすべて終了
 4. YakuLingoを再起動
 
+### ローカルAIが使えない（未インストール/起動失敗）
+
+- UIヘッダーで **ローカルAI** を選択した時に「見つかりません」: `local_ai/`（`llama_cpp` と `models`）があるか確認し、無ければ `packaging/install_deps.bat` を実行
+- 「AVX2非対応」: 現状の同梱がAVX2版の場合、Copilotに切り替えるか、generic版 `llama-server` の同梱が必要です
+- 「空きポートが見つかりませんでした（4891-4900）」: 他プロセスが使用中の可能性があるため、`local_ai_port_base` / `local_ai_port_max` を変更するか、競合プロセスを停止
+- 詳細: `~/.yakulingo/logs/local_ai_server.log` と `~/.yakulingo/local_ai_server.json` を確認
+
 ### 翻訳が止まる／エラーから復帰したい
 
 - 翻訳中は「キャンセル」ボタンで中断できます（Copilot側エラー時も復帰できます）
@@ -418,11 +460,13 @@ YakuLingoを初めて使う際は、以下の手順でM365 Copilotにログイ�
 - 対応形式（.xlsx, .docx, .pptx, .pdf, .txt）か確認
 - Excel/Word/PowerPointファイルが他のアプリで開かれていないか確認
 
-### 参照ファイルのアップロード待ちで止まる
+### 参照ファイルのアップロード待ちで止まる（Copilotのみ）
 
 - 参照ファイル（glossary / 参考資料）を添付した場合、送信可能状態が一定時間安定するまで待機してから送信します
 - 「添付処理が完了しませんでした…」が出る場合は、Edge側でアップロード完了を確認して再試行
 - 通信が不安定な場合はファイルサイズを減らすか、参照ファイル数を減らしてください
+
+> **Note**: ローカルAIは参照ファイルを本文に埋め込む方式のため、アップロード待ちは発生しません（対応形式/上限は「設定 > 参照ファイル」を参照）。
 
 ### 翻訳結果が期待と異なる
 
@@ -478,6 +522,7 @@ YakuLingo/
 ├── packaging/                # 配布・ビルド関連
 │   ├── launcher/             # ネイティブランチャー（Rust製）
 │   └── installer/            # ネットワーク共有インストーラ
+├── local_ai/                 # ローカルAIランタイム（gitignore、配布ZIPに同梱）
 ├── tests/                    # テストスイート
 ├── prompts/                  # 翻訳プロンプト
 ├── config/settings.template.json  # 設定テンプレート
@@ -489,7 +534,7 @@ YakuLingo/
 | カテゴリ | 技術 |
 |---------|------|
 | UI | NiceGUI + pywebview (Material Design 3 / Expressive) |
-| 翻訳エンジン | M365 Copilot (Playwright) |
+| 翻訳エンジン | M365 Copilot (Playwright) / ローカルAI（llama.cpp `llama-server`・OpenAI互換API） |
 | Excel処理 | xlwings (Windows/macOS) / openpyxl (フォールバック) |
 | Word処理 | python-docx |
 | PowerPoint処理 | python-pptx |
@@ -504,8 +549,11 @@ YakuLingo/
 | 設定ファイル | `config/user_settings.json`（ユーザー設定） / `config/settings.template.json`（デフォルト） |
 | 翻訳履歴 | `~/.yakulingo/history.db` |
 | ログファイル | `~/.yakulingo/logs/startup.log` |
+| ローカルAI状態 | `~/.yakulingo/local_ai_server.json` |
+| ローカルAIログ | `~/.yakulingo/logs/local_ai_server.log` |
 | 同梱用語集 | `glossary.csv`（既定） |
 
 ## ライセンス
 
 MIT License
+（配布物にローカルAIを同梱する場合、`local_ai/llama_cpp/LICENSE`（llama.cpp）および `local_ai/models/LICENSE`（モデル）のライセンスも同梱されます）

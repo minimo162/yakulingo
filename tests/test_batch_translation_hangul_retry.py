@@ -15,7 +15,9 @@ class DummyPromptBuilder:
         output_language: str = "en",
         translation_style: str = "concise",
         include_item_ids: bool = False,
+        reference_files: list[Path] | None = None,
     ) -> str:
+        _ = has_reference_files, output_language, translation_style, include_item_ids, reference_files
         joined = "\n".join(texts)
         return f"PROMPT\n===INPUT_TEXT===\n{joined}\n===END_INPUT_TEXT===\n"
 
@@ -70,4 +72,3 @@ def test_batch_translator_retries_when_hangul_appears_in_en_output() -> None:
     assert "대응" not in result.translations["b1"]
     assert result.translations["b1"].startswith("R&I annual review response")
     assert "Do NOT output Korean (Hangul) characters." in str(copilot.calls[1]["prompt"])
-

@@ -32,6 +32,9 @@ MANIFEST
 *.manifest
 *.spec
 
+# Local AI runtime (downloaded binaries/models)
+local_ai/
+
 # Installer logs
 pip-log.txt
 pip-delete-this-directory.txt

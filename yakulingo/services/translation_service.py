@@ -1024,10 +1024,11 @@ class BatchTranslator:
         def build_prompt(unique_texts: list[str]) -> str:
             return self.prompt_builder.build_batch(
                 unique_texts,
-                has_refs,
-                output_language,
-                translation_style,
+                has_reference_files=has_refs,
+                output_language=output_language,
+                translation_style=translation_style,
                 include_item_ids=include_item_ids,
+                reference_files=reference_files,
             )
 
         # Use parallel prompt construction for multiple batches
@@ -1082,6 +1083,38 @@ class BatchTranslator:
                 logger.info("Translation cancelled during batch %d/%d", i + 1, len(batches))
                 cancelled = True
                 break
+            except RuntimeError as e:
+                message = str(e)
+                if (
+                    "LOCAL_PROMPT_TOO_LONG" in message
+                    and _split_retry_depth < self._SPLIT_RETRY_LIMIT
+                    and batch_char_limit > self._MIN_SPLIT_BATCH_CHARS
+                ):
+                    reduced_limit = max(self._MIN_SPLIT_BATCH_CHARS, batch_char_limit // 2)
+                    logger.warning(
+                        "Local AI prompt too long for batch %d; retrying with max_chars_per_batch=%d (%s)",
+                        i + 1,
+                        reduced_limit,
+                        message[:120],
+                    )
+                    retry_result = self.translate_blocks_with_result(
+                        batch,
+                        reference_files=reference_files,
+                        on_progress=None,
+                        output_language=output_language,
+                        translation_style=translation_style,
+                        include_item_ids=include_item_ids,
+                        _max_chars_per_batch=reduced_limit,
+                        _split_retry_depth=_split_retry_depth + 1,
+                    )
+                    translations.update(retry_result.translations)
+                    untranslated_block_ids.extend(retry_result.untranslated_block_ids)
+                    mismatched_batch_count += retry_result.mismatched_batch_count
+                    if retry_result.cancelled:
+                        cancelled = True
+                        break
+                    continue
+                raise
 
             if self._looks_like_split_request(unique_translations):
                 if _split_retry_depth < self._SPLIT_RETRY_LIMIT and batch_char_limit > self._MIN_SPLIT_BATCH_CHARS:
@@ -1172,6 +1205,7 @@ class BatchTranslator:
                     output_language=output_language,
                     translation_style=translation_style,
                     include_item_ids=include_item_ids,
+                    reference_files=reference_files,
                 )
                 repair_prompt = _insert_extra_instruction(
                     repair_prompt,
@@ -1432,6 +1466,10 @@ class TranslationService:
             request_timeout=config.request_timeout if config else None,
             copilot_lock=copilot_lock,
         )
+        self._local_init_lock = threading.Lock()
+        self._local_client = None
+        self._local_prompt_builder = None
+        self._local_batch_translator = None
         self._copilot_lock = copilot_lock
         # Thread-safe cancellation using Event instead of bool flag
         self._cancel_event = threading.Event()
@@ -1475,6 +1513,50 @@ class TranslationService:
                     }
         return self._processors
 
+    def _use_local_backend(self) -> bool:
+        try:
+            return bool(self.config and getattr(self.config, "translation_backend", "copilot") == "local")
+        except Exception:
+            return False
+
+    def _ensure_local_backend(self) -> None:
+        if self._local_client is not None and self._local_prompt_builder is not None and self._local_batch_translator is not None:
+            return
+        with self._local_init_lock:
+            if self._local_client is None:
+                from yakulingo.services.local_ai_client import LocalAIClient
+
+                self._local_client = LocalAIClient(self.config)
+            if self._local_prompt_builder is None:
+                from yakulingo.services.local_ai_prompt_builder import LocalPromptBuilder
+
+                self._local_prompt_builder = LocalPromptBuilder(
+                    self.prompt_builder.prompts_dir,
+                    base_prompt_builder=self.prompt_builder,
+                    settings=self.config,
+                )
+            if self._local_batch_translator is None:
+                max_chars = getattr(self.config, "local_ai_max_chars_per_batch", BatchTranslator.DEFAULT_MAX_CHARS_PER_BATCH)
+                self._local_batch_translator = BatchTranslator(
+                    self._local_client,
+                    self._local_prompt_builder,
+                    max_chars_per_batch=max_chars,
+                    request_timeout=self.config.request_timeout if self.config else None,
+                    copilot_lock=self._copilot_lock,
+                )
+
+    def _get_active_client(self):
+        if self._use_local_backend():
+            self._ensure_local_backend()
+            return self._local_client
+        return self.copilot
+
+    def _get_active_batch_translator(self) -> BatchTranslator:
+        if self._use_local_backend():
+            self._ensure_local_backend()
+            return self._local_batch_translator
+        return self.batch_translator
+
     def clear_translation_cache(self) -> None:
         """
         Clear translation cache (PDFMathTranslate compliant).
@@ -1482,6 +1564,8 @@ class TranslationService:
         Delegates to BatchTranslator's TranslationCache.
         """
         self.batch_translator.clear_cache()
+        if self._local_batch_translator is not None:
+            self._local_batch_translator.clear_cache()
         logger.debug("Translation cache cleared")
 
     def get_cache_stats(self) -> Optional[dict]:
@@ -1491,21 +1575,26 @@ class TranslationService:
         Returns:
             Dictionary with 'size', 'hits', 'misses', 'hit_rate' or None if cache disabled
         """
-        return self.batch_translator.get_cache_stats()
+        return self._get_active_batch_translator().get_cache_stats()
 
     @contextmanager
     def _cancel_callback_scope(self):
+        client = self._get_active_client()
+        set_cb = getattr(client, "set_cancel_callback", None)
+        if not callable(set_cb):
+            yield
+            return
         with self._cancel_callback_lock:
             self._cancel_callback_depth += 1
             if self._cancel_callback_depth == 1:
-                self.copilot.set_cancel_callback(lambda: self._cancel_event.is_set())
+                set_cb(lambda: self._cancel_event.is_set())
         try:
             yield
         finally:
             with self._cancel_callback_lock:
                 self._cancel_callback_depth = max(0, self._cancel_callback_depth - 1)
                 if self._cancel_callback_depth == 0:
-                    self.copilot.set_cancel_callback(None)
+                    set_cb(None)
 
     @contextmanager
     def _ui_window_sync_scope(self, reason: str):
@@ -1532,11 +1621,13 @@ class TranslationService:
         reference_files: Optional[list[Path]] = None,
         on_chunk: "Callable[[str], None] | None" = None,
     ) -> str:
-        with self._ui_window_sync_scope("translate_single"):
+        client = self._get_active_client()
+        ui_scope = nullcontext() if self._use_local_backend() else self._ui_window_sync_scope("translate_single")
+        with ui_scope:
             with self._cancel_callback_scope():
                 lock = self._copilot_lock or nullcontext()
                 with lock:
-                    return self.copilot.translate_single(text, prompt, reference_files, on_chunk)
+                    return client.translate_single(text, prompt, reference_files, on_chunk)
 
     def translate_text(
         self,
@@ -1603,7 +1694,7 @@ class TranslationService:
 
     def detect_language(self, text: str) -> str:
         """
-        Detect the language of the input text using local detection.
+        入力テキストの言語をローカル判定します（Copilotは使用しません）。
 
         Priority:
         1. Hiragana/Katakana present → "日本語"
@@ -1621,61 +1712,218 @@ class TranslationService:
         Returns:
             Detected language name (e.g., "日本語", "英語", "韓国語")
         """
-        # Try local detection first (fast path)
-        local_result = language_detector.detect_local(text)
-        if local_result:
-            logger.debug("Language detected locally: %s", local_result)
-            return local_result
-
-        # Need Copilot for CJK-only text (Chinese/Japanese ambiguity)
-        logger.debug("Local detection inconclusive, using Copilot")
-
-        # Load detection prompt
-        prompt = None
-        if self.prompt_builder.prompts_dir:
-            prompt_path = self.prompt_builder.prompts_dir / "detect_language.txt"
-            if prompt_path.exists():
-                template = prompt_path.read_text(encoding='utf-8')
-                prompt = template.replace("{input_text}", text)
-
-        if prompt is None:
-            # Fallback prompt
-            prompt = f"この文は何語で書かれていますか？言語名のみで答えてください。\n\n入力: {text}"
-
-        # Get language detection from Copilot (no reference files, no char limit)
-        result = self._translate_single_with_cancel(text, prompt, None, None)
-
-        # Clean up the result (remove extra whitespace, punctuation)
-        detected = result.strip().rstrip('。.、,')
-
-        # Check for empty or invalid response - fallback to local detection
-        # Valid language names are typically short (< 20 chars)
-        if not detected or len(detected) > 20:
-            logger.warning(
-                "Copilot language detection failed or returned invalid response, "
-                "falling back to local detection. Response: %s",
-                detected[:100] if detected else "(empty)"
-            )
-            return "日本語" if language_detector.is_japanese(text) else "英語"
-
-        # Normalize common variations
-        if detected in ("Japanese", "japanese"):
-            detected = "日本語"
-        elif detected in ("English", "english"):
-            detected = "英語"
-        elif detected in ("Chinese", "chinese", "Simplified Chinese", "Traditional Chinese"):
-            detected = "中国語"
-
+        detected = language_detector.detect_local(text)
+        logger.debug("Language detected locally: %s", detected)
         return detected
 
     def detect_language_with_reason(self, text: str) -> tuple[str, str]:
         """Detect language and return (language, reason_code) for UI display."""
-        local_language, reason = language_detector.detect_local_with_reason(text)
-        if local_language:
-            logger.debug("Language detected locally: %s (%s)", local_language, reason)
-            return local_language, reason
-        detected = self.detect_language(text)
-        return detected, "copilot"
+        detected, reason = language_detector.detect_local_with_reason(text)
+        logger.debug("Language detected locally: %s (%s)", detected, reason)
+        return detected, reason
+
+    def _translate_text_with_options_local(
+        self,
+        *,
+        text: str,
+        reference_files: Optional[list[Path]],
+        style: str,
+        detected_language: str,
+        output_language: str,
+    ) -> TextTranslationResult:
+        self._ensure_local_backend()
+        from yakulingo.services.local_ai_client import parse_text_single_translation
+        from yakulingo.services.local_llama_server import LocalAIError
+
+        local_builder = self._local_prompt_builder
+        if local_builder is None:
+            return TextTranslationResult(
+                source_text=text,
+                source_char_count=len(text),
+                output_language=output_language,
+                detected_language=detected_language,
+                error_message="ローカルAIの初期化に失敗しました",
+            )
+
+        embedded_ref = local_builder.build_reference_embed(reference_files)
+        metadata: dict = {"backend": "local"}
+        if embedded_ref.warnings:
+            metadata["reference_warnings"] = embedded_ref.warnings
+        if embedded_ref.truncated:
+            metadata["reference_truncated"] = True
+
+        try:
+            if output_language == "en":
+                prompt = local_builder.build_text_to_en_single(
+                    text,
+                    style=style,
+                    reference_files=reference_files,
+                    detected_language=detected_language,
+                )
+                raw = self._translate_single_with_cancel(text, prompt, None, None)
+                translation, explanation = parse_text_single_translation(raw)
+                if not translation:
+                    return TextTranslationResult(
+                        source_text=text,
+                        source_char_count=len(text),
+                        output_language=output_language,
+                        detected_language=detected_language,
+                        error_message="ローカルAIの応答(JSON)を解析できませんでした",
+                        metadata=metadata,
+                    )
+                return TextTranslationResult(
+                    source_text=text,
+                    source_char_count=len(text),
+                    options=[TranslationOption(text=translation, explanation=explanation or "", style=style)],
+                    output_language=output_language,
+                    detected_language=detected_language,
+                    metadata=metadata,
+                )
+
+            prompt = local_builder.build_text_to_jp(
+                text,
+                reference_files=reference_files,
+                detected_language=detected_language,
+            )
+            raw = self._translate_single_with_cancel(text, prompt, None, None)
+            translation, explanation = parse_text_single_translation(raw)
+            if not translation:
+                return TextTranslationResult(
+                    source_text=text,
+                    source_char_count=len(text),
+                    output_language=output_language,
+                    detected_language=detected_language,
+                    error_message="ローカルAIの応答(JSON)を解析できませんでした",
+                    metadata=metadata,
+                )
+            return TextTranslationResult(
+                source_text=text,
+                source_char_count=len(text),
+                options=[TranslationOption(text=translation, explanation=explanation or "")],
+                output_language=output_language,
+                detected_language=detected_language,
+                metadata=metadata,
+            )
+        except LocalAIError as e:
+            return TextTranslationResult(
+                source_text=text,
+                source_char_count=len(text),
+                output_language=output_language,
+                detected_language=detected_language,
+                error_message=str(e),
+                metadata=metadata,
+            )
+
+    def _translate_text_with_style_comparison_local(
+        self,
+        *,
+        text: str,
+        reference_files: Optional[list[Path]],
+        styles: list[str],
+        detected_language: str,
+        on_chunk: "Callable[[str], None] | None" = None,
+    ) -> TextTranslationResult:
+        _ = on_chunk
+        self._ensure_local_backend()
+        from yakulingo.services.local_ai_client import parse_text_single_translation, parse_text_to_en_3style
+        from yakulingo.services.local_llama_server import LocalAIError
+
+        local_builder = self._local_prompt_builder
+        if local_builder is None:
+            return TextTranslationResult(
+                source_text=text,
+                source_char_count=len(text),
+                output_language="en",
+                detected_language=detected_language,
+                error_message="ローカルAIの初期化に失敗しました",
+            )
+
+        embedded_ref = local_builder.build_reference_embed(reference_files)
+        metadata: dict = {"backend": "local"}
+        if embedded_ref.warnings:
+            metadata["reference_warnings"] = embedded_ref.warnings
+        if embedded_ref.truncated:
+            metadata["reference_truncated"] = True
+
+        style_list = [s for s in styles if s in TEXT_STYLE_ORDER]
+        seen = set()
+        style_list = [s for s in style_list if not (s in seen or seen.add(s))]
+        if not style_list:
+            style_list = list(TEXT_STYLE_ORDER)
+
+        by_style: dict[str, tuple[str, str]] = {}
+        wants_combined = set(style_list) == set(TEXT_STYLE_ORDER) and len(style_list) > 1
+        try:
+            if wants_combined:
+                prompt = local_builder.build_text_to_en_3style(
+                    text,
+                    reference_files=reference_files,
+                    detected_language=detected_language,
+                )
+                raw = self._translate_single_with_cancel(text, prompt, None, None)
+                by_style = parse_text_to_en_3style(raw)
+
+            options: list[TranslationOption] = []
+            missing: list[str] = []
+            for style in style_list:
+                if style in by_style:
+                    translation, explanation = by_style[style]
+                    options.append(
+                        TranslationOption(
+                            text=translation,
+                            explanation=explanation or "",
+                            style=style,
+                        )
+                    )
+                else:
+                    missing.append(style)
+
+            for style in missing:
+                prompt = local_builder.build_text_to_en_single(
+                    text,
+                    style=style,
+                    reference_files=reference_files,
+                    detected_language=detected_language,
+                )
+                raw = self._translate_single_with_cancel(text, prompt, None, None)
+                translation, explanation = parse_text_single_translation(raw)
+                if translation:
+                    options.append(
+                        TranslationOption(
+                            text=translation,
+                            explanation=explanation or "",
+                            style=style,
+                        )
+                    )
+
+            if options:
+                options.sort(key=lambda opt: TEXT_STYLE_ORDER.index(opt.style or DEFAULT_TEXT_STYLE))
+                return TextTranslationResult(
+                    source_text=text,
+                    source_char_count=len(text),
+                    options=options,
+                    output_language="en",
+                    detected_language=detected_language,
+                    metadata=metadata,
+                )
+
+            return TextTranslationResult(
+                source_text=text,
+                source_char_count=len(text),
+                output_language="en",
+                detected_language=detected_language,
+                error_message="ローカルAIの応答(JSON)を解析できませんでした",
+                metadata=metadata,
+            )
+        except LocalAIError as e:
+            return TextTranslationResult(
+                source_text=text,
+                source_char_count=len(text),
+                output_language="en",
+                detected_language=detected_language,
+                error_message=str(e),
+                metadata=metadata,
+            )
 
     def translate_text_with_options(
         self,
@@ -1704,7 +1952,7 @@ class TranslationService:
         detected_language: Optional[str] = None
         self._cancel_event.clear()
         try:
-            # Use pre-detected language or detect using Copilot
+            # 事前判定があればそれを使用、なければローカル判定する（Copilotは使用しない）
             if pre_detected_language:
                 detected_language = pre_detected_language
                 logger.info("Using pre-detected language: %s", detected_language)
@@ -1719,6 +1967,15 @@ class TranslationService:
             # Determine style (default to DEFAULT_TEXT_STYLE)
             if style is None:
                 style = DEFAULT_TEXT_STYLE
+
+            if self._use_local_backend():
+                return self._translate_text_with_options_local(
+                    text=text,
+                    reference_files=reference_files,
+                    style=style,
+                    detected_language=detected_language,
+                    output_language=output_language,
+                )
 
             if output_language == "en":
                 template = self.prompt_builder.get_text_compare_template()
@@ -1964,6 +2221,15 @@ class TranslationService:
         style_list = list(styles) if styles else list(TEXT_STYLE_ORDER)
         seen = set()
         style_list = [s for s in style_list if not (s in seen or seen.add(s))]
+
+        if self._use_local_backend():
+            return self._translate_text_with_style_comparison_local(
+                text=text,
+                reference_files=reference_files,
+                styles=style_list,
+                detected_language=detected_language,
+                on_chunk=on_chunk,
+            )
 
         combined_error: Optional[str] = None
         wants_combined = set(style_list) == set(TEXT_STYLE_ORDER) and len(style_list) > 1
@@ -2829,7 +3095,8 @@ class TranslationService:
 
         # Excel cells often contain numbered lines; keep stable IDs to avoid list parsing drift.
         include_item_ids = processor.file_type == FileType.EXCEL
-        batch_result = self.batch_translator.translate_blocks_with_result(
+        batch_translator = self._get_active_batch_translator()
+        batch_result = batch_translator.translate_blocks_with_result(
             blocks,
             reference_files,
             batch_progress,
@@ -2878,6 +3145,11 @@ class TranslationService:
         )
 
         warnings = self._collect_processor_warnings(processor)
+        if self._use_local_backend() and reference_files:
+            self._ensure_local_backend()
+            if self._local_prompt_builder is not None:
+                embedded_ref = self._local_prompt_builder.build_reference_embed(reference_files)
+                warnings.extend(embedded_ref.warnings)
         if batch_result.untranslated_block_ids:
             warnings.append(
                 f"未翻訳ブロック: {len(batch_result.untranslated_block_ids)}"
@@ -3080,7 +3352,8 @@ class TranslationService:
                     phase_detail=f"Batch {progress.current}/{progress.total}"
                 ))
 
-        batch_result = self.batch_translator.translate_blocks_with_result(
+        batch_translator = self._get_active_batch_translator()
+        batch_result = batch_translator.translate_blocks_with_result(
             all_blocks,
             reference_files,
             batch_progress,
@@ -3186,6 +3459,11 @@ class TranslationService:
 
         # Collect warnings including OCR failures
         warnings = self._collect_processor_warnings(processor)
+        if self._use_local_backend() and reference_files:
+            self._ensure_local_backend()
+            if self._local_prompt_builder is not None:
+                embedded_ref = self._local_prompt_builder.build_reference_embed(reference_files)
+                warnings.extend(embedded_ref.warnings)
         if batch_result.untranslated_block_ids:
             warnings.append(
                 f"未翻訳ブロック: {len(batch_result.untranslated_block_ids)}"
@@ -3411,6 +3689,8 @@ class TranslationService:
         """Request cancellation of current operation (thread-safe)"""
         self._cancel_event.set()
         self.batch_translator.cancel()
+        if self._local_batch_translator is not None:
+            self._local_batch_translator.cancel()
 
         # Also cancel PDF processor if it's running OCR
         # Use _processors (not processors property) to avoid lazy initialization on shutdown
@@ -3423,6 +3703,8 @@ class TranslationService:
         """Reset cancellation flags (thread-safe)."""
         self._cancel_event.clear()
         self.batch_translator.reset_cancel()
+        if self._local_batch_translator is not None:
+            self._local_batch_translator.reset_cancel()
 
         # Reset PDF processor cancellation flag if already initialized
         # Use _processors (not processors property) to avoid lazy initialization.

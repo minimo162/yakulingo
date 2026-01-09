@@ -1044,6 +1044,10 @@ class CopilotHandler:
     DEFAULT_CDP_PORT = 9333  # Dedicated port for translator
     EDGE_STARTUP_MAX_ATTEMPTS = 80  # Maximum iterations to wait for Edge startup
     EDGE_STARTUP_CHECK_INTERVAL = 0.25  # Seconds between startup checks (total: 20 seconds)
+    # Edge taskbar suppression during startup can fail on cold boots where the window
+    # is created late or Edge recreates the top-level window after initialization.
+    # Keep re-applying for a while to ensure the taskbar entry stays hidden.
+    EDGE_TASKBAR_SUPPRESSION_MAX_SECONDS = 60.0
 
     # Response detection settings
     # OPTIMIZED: Reduced stable count from 3 to 2 for faster response detection
@@ -1353,6 +1357,8 @@ class CopilotHandler:
         # When Edge is intentionally shown to the user, ensure it appears in the taskbar
         # (and stop the startup suppression thread from hiding it).
         self._edge_taskbar_force_visible: bool = False
+        self._edge_taskbar_suppression_lock = threading.Lock()
+        self._edge_taskbar_suppression_thread: threading.Thread | None = None
         # GPT mode flag: only set mode once per session to respect user's manual changes
         # Set to True after successful mode switch in _ensure_gpt_mode_impl
         self._gpt_mode_set = False
@@ -1639,6 +1645,8 @@ class CopilotHandler:
                 logger.warning("Detected hung Edge window on CDP port %d; restarting dedicated Edge", self.cdp_port)
                 return self._start_translator_edge()
             logger.debug("Edge already running on port %d", self.cdp_port)
+            # Ensure the already-running dedicated Edge instance stays hidden from the taskbar.
+            self._start_edge_taskbar_suppression()
             return True
         if port_status != "free":
             logger.warning(
@@ -2125,7 +2133,12 @@ class CopilotHandler:
             return False
 
     def _start_edge_taskbar_suppression(self) -> None:
-        """Hide Edge taskbar entry quickly during startup (Windows only)."""
+        """Hide Edge taskbar entry quickly during startup (Windows only).
+
+        Edge can create its first top-level window late (especially after cold boots),
+        and it can also recreate the window during initialization. We therefore keep
+        re-applying the taskbar-hiding style for a short period.
+        """
         if sys.platform != "win32":
             return
 
@@ -2138,35 +2151,60 @@ class CopilotHandler:
             return
 
         def _worker() -> None:
-            max_attempts = 60
-            delay_sec = 0.05
-            first_success_at: int | None = None
-            positioned_offscreen = False
+            start_at = time.monotonic()
+            max_seconds = float(getattr(self, "EDGE_TASKBAR_SUPPRESSION_MAX_SECONDS", 60.0))
+            deadline = start_at + max_seconds
 
-            for attempt in range(max_attempts):
+            positioned_offscreen = False
+            last_offscreen_attempt_at: float | None = None
+
+            while time.monotonic() < deadline:
                 if getattr(self, "_edge_taskbar_force_visible", False):
                     return
+
                 succeeded = self._set_edge_taskbar_visibility(False)
-                if succeeded and first_success_at is None:
-                    first_success_at = attempt
-                    if edge_layout_mode == "offscreen" and not positioned_offscreen:
+                now = time.monotonic()
+
+                if edge_layout_mode == "offscreen" and succeeded and not positioned_offscreen:
+                    # Avoid hammering window repositioning while Edge is still initializing.
+                    should_try_position = (
+                        last_offscreen_attempt_at is None
+                        or (now - last_offscreen_attempt_at) >= 1.0
+                    )
+                    if should_try_position:
+                        last_offscreen_attempt_at = now
                         try:
-                            self._position_edge_offscreen()
-                            positioned_offscreen = True
+                            positioned_offscreen = bool(self._position_edge_offscreen())
                         except Exception:
-                            pass
+                            positioned_offscreen = False
 
-                # Keep applying for a short time after first success to catch late-spawned windows
-                if first_success_at is not None and (attempt - first_success_at) >= 20:
-                    return
-
+                elapsed = now - start_at
+                if elapsed < 3.0:
+                    delay_sec = 0.05
+                elif elapsed < 15.0:
+                    delay_sec = 0.2
+                else:
+                    delay_sec = 1.0
                 time.sleep(delay_sec)
 
-        threading.Thread(
-            target=_worker,
-            daemon=True,
-            name="edge_taskbar_suppress",
-        ).start()
+        try:
+            with self._edge_taskbar_suppression_lock:
+                thread = self._edge_taskbar_suppression_thread
+                if thread is not None and thread.is_alive():
+                    return
+                thread = threading.Thread(
+                    target=_worker,
+                    daemon=True,
+                    name="edge_taskbar_suppress",
+                )
+                self._edge_taskbar_suppression_thread = thread
+                thread.start()
+        except Exception:
+            threading.Thread(
+                target=_worker,
+                daemon=True,
+                name="edge_taskbar_suppress",
+            ).start()
 
     def _mark_playwright_unresponsive(self, error: Exception | str) -> None:
         message = str(error)
@@ -2532,6 +2570,9 @@ class CopilotHandler:
                 # Edge already running (possibly started early in parallel thread)
                 # Skip Edge startup, just initialize Playwright if needed
                 logger.info("[TIMING] Edge already running (early startup succeeded), skipping Edge startup")
+                # Re-apply taskbar suppression here as well. On cold boots, Edge may recreate
+                # the window after our initial suppression attempt, causing a brief taskbar entry.
+                self._start_edge_taskbar_suppression()
 
                 # Ensure profile_dir is set even when connecting to existing Edge
                 if not self.profile_dir:

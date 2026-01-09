@@ -85,7 +85,7 @@ class TrayIcon:
             logger.debug("Tray icon stop failed: %s", exc)
 
     def _on_open(self, _icon, _item) -> None:
-        self._post_local("/api/activate", {"X-YakuLingo-Activate": "1"}, timeout=0.5)
+        self._post_local("/api/open-text", {"X-YakuLingo-Open": "1"}, timeout=0.7)
 
     def _on_hide(self, _icon, _item) -> None:
         self._post_local("/api/ui-close", {"X-YakuLingo-Resident": "1"}, timeout=0.5)

@@ -60,7 +60,7 @@ share_package/            # 共有フォルダ用パッケージ
 2. `setup.vbs` をダブルクリック
 3. セットアップ完了まで待機
 4. 完了後、YakuLingo が常駐起動
-5. UI を開く: `Ctrl + Alt + J`（またはタスクトレイのアイコンメニュー > `Open`）
+5. UI を開く: デスクトップの `YakuLingo`（または `Ctrl + Alt + J` / タスクトレイのアイコンメニュー > `Open`）
 6. 終了する: タスクトレイのアイコンメニュー > `Exit`
 7. アンインストール: スタートメニュー > `YakuLingo アンインストール`
 
@@ -74,6 +74,8 @@ share_package/            # 共有フォルダ用パッケージ
 
 - スタートメニュー
   - `YakuLingo アンインストール`
+- デスクトップ
+  - `YakuLingo` (UIを開く)
 - スタートアップ
   - `YakuLingo` (ログオン時に常駐起動)
 - インストール先に生成される補助スクリプト
@@ -82,7 +84,7 @@ share_package/            # 共有フォルダ用パッケージ
   - `YakuLingo_Exit.ps1`
   - `YakuLingo_Uninstall.ps1`
 
-> **Note**: デスクトップショートカットは作成しません（既存のものは削除）。
+> **Note**: デスクトップに `YakuLingo` ショートカットを作成します（UIを開く用）。
 
 ## setup.ps1 の処理概要
 

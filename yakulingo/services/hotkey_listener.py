@@ -253,6 +253,7 @@ else:
 
             _send_ctrl_c()
 
+            seq_now = None
             deadline = time.monotonic() + self._copy_wait_sec
             while time.monotonic() < deadline:
                 try:
@@ -262,6 +263,13 @@ else:
                 if seq_before is None or seq_now is None or seq_now != seq_before:
                     break
                 time.sleep(self._copy_poll_interval_sec)
+
+            # If the clipboard did not change after sending Ctrl+C, treat it as "no selection".
+            # This avoids translating stale clipboard content when nothing is selected.
+            if seq_before is not None and seq_now is not None and seq_now == seq_before:
+                if self._reset_copy_mode:
+                    _maybe_reset_source_copy_mode(source_hwnd)
+                return ""
 
             try:
                 text, files = _clipboard.get_clipboard_payload_with_retry(log_fail=False)

@@ -102,7 +102,7 @@ function Open-PostSetupUi {
 
     $port = 8765
     $setupStatusUrl = "http://127.0.0.1:$port/api/setup-status"
-    $activateUrl = "http://127.0.0.1:$port/api/activate"
+    $openTextUrl = "http://127.0.0.1:$port/api/open-text"
     $uiConnected = $false
 
     try {
@@ -114,11 +114,11 @@ function Open-PostSetupUi {
 
     if ($uiConnected) {
         try {
-            Invoke-WebRequest -UseBasicParsing -Method Post -Uri $activateUrl -TimeoutSec 2 `
-                -Headers @{ "X-YakuLingo-Activate" = "1" } | Out-Null
-            try { "UI already connected; sent activate request." | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
+            Invoke-WebRequest -UseBasicParsing -Method Post -Uri $openTextUrl -TimeoutSec 2 `
+                -Headers @{ "X-YakuLingo-Open" = "1" } | Out-Null
+            try { "UI already connected; sent open-text request." | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
         } catch {
-            try { "Activate UI failed: $($_.Exception.Message)" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
+            try { "Open-text UI failed: $($_.Exception.Message)" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
         }
         return
     }
@@ -2027,6 +2027,7 @@ function Invoke-Setup {
     $ResidentScriptPath = Join-Path $SetupPath "YakuLingo_Resident.ps1"
     $ExitScriptPath = Join-Path $SetupPath "YakuLingo_Exit.ps1"
     $UninstallScriptPath = Join-Path $SetupPath "YakuLingo_Uninstall.ps1"
+    $OpenUiVbsPath = Join-Path $SetupPath "YakuLingo_OpenUI.vbs"
     $ResidentVbsPath = Join-Path $SetupPath "YakuLingo_Resident.vbs"
     $ExitVbsPath = Join-Path $SetupPath "YakuLingo_Exit.vbs"
     $UninstallVbsPath = Join-Path $SetupPath "YakuLingo_Uninstall.vbs"
@@ -2044,6 +2045,7 @@ function Invoke-Setup {
 `$url = "http://127.0.0.1:`$port/"
 `$setupStatusUrl = "http://127.0.0.1:`$port/api/setup-status"
 `$layoutUrl = "http://127.0.0.1:`$port/api/window-layout"
+`$openTextUrl = "http://127.0.0.1:`$port/api/open-text"
 `$readyTimeoutSec = 3600
 `$pollIntervalSec = 2
 `$uiOpened = `$false
@@ -2088,34 +2090,7 @@ function Get-SetupStatus {
 
 function Open-UiWindow {
   if (`$script:uiOpened) { return }
-  `$edge = `$null
-  `$candidates = @(
-    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'
-  )
-  foreach (`$p in `$candidates) {
-    if (Test-Path `$p -PathType Leaf) { `$edge = `$p; break }
-  }
-
-  if (`$edge) {
-    `$profileDir = Join-Path `$env:LOCALAPPDATA 'YakuLingo\\AppWindowProfile'
-    New-Item -ItemType Directory -Force -Path `$profileDir | Out-Null
-    `$args = @(
-      "--app=`$url",
-      "--disable-features=Translate",
-      "--lang=ja",
-      "--user-data-dir=`$profileDir",
-      "--no-first-run",
-      "--no-default-browser-check",
-      "--disable-sync",
-      "--proxy-bypass-list=localhost;127.0.0.1",
-      "--disable-session-crashed-bubble",
-      "--hide-crash-restore-bubble"
-    )
-    Start-Process -FilePath `$edge -ArgumentList `$args | Out-Null
-  } else {
-    Start-Process `$url | Out-Null
-  }
+  Request-OpenText
   `$script:uiOpened = `$true
 }
 
@@ -2123,6 +2098,13 @@ function Apply-WindowLayout {
   try {
     `$body = @{ source_hwnd = `$sourceHwndValue; edge_layout = "offscreen" } | ConvertTo-Json -Compress
     Invoke-WebRequest -UseBasicParsing -Method Post -Uri `$layoutUrl -Body `$body -ContentType 'application/json' -TimeoutSec 2 | Out-Null
+  } catch { }
+}
+
+function Request-OpenText {
+  try {
+    `$body = @{ source_hwnd = `$sourceHwndValue } | ConvertTo-Json -Compress
+    Invoke-WebRequest -UseBasicParsing -Method Post -Uri `$openTextUrl -Headers @{ "X-YakuLingo-Open" = "1" } -Body `$body -ContentType 'application/json' -TimeoutSec 2 | Out-Null
   } catch { }
 }
 
@@ -2171,6 +2153,7 @@ if (-not (Test-PortOpen `$port)) {
 }
 
 Open-UiWindow
+Request-OpenText
 
 `$ready = Wait-ResidentReady -TimeoutSec `$readyTimeoutSec -PollIntervalSec `$pollIntervalSec
 if (-not `$ready) {
@@ -2182,6 +2165,7 @@ if (-not `$ready) {
 
 if (`$ready) {
   Apply-WindowLayout
+  Request-OpenText
 }
 "@
 
@@ -2364,11 +2348,13 @@ Stop-ProcessesInDir `$installDir
 
 `$programs = [Environment]::GetFolderPath('Programs')
 `$startup = [Environment]::GetFolderPath('Startup')
+`$desktop = [Environment]::GetFolderPath('Desktop')
 `$startMenuDir = Join-Path `$programs 'YakuLingo'
 `$shortcutPaths = @(
   (Join-Path `$programs 'YakuLingo.lnk'),
   (Join-Path `$programs 'YakuLingo 終了.lnk'),
   (Join-Path `$programs 'YakuLingo アンインストール.lnk'),
+  (Join-Path `$desktop 'YakuLingo.lnk'),
   (Join-Path `$startup 'YakuLingo.lnk')
 )
 foreach (`$p in `$shortcutPaths) {
@@ -2419,6 +2405,18 @@ exit 0
 
     # VBS wrappers: run helper PowerShell scripts without showing a console window.
     # (PowerShell shortcuts can still flash a console even with -WindowStyle Hidden.)
+    $openUiVbs = @'
+Option Explicit
+Dim objShell, objFSO, scriptDir, psScript, command
+Set objShell = CreateObject("WScript.Shell")
+Set objFSO = CreateObject("Scripting.FileSystemObject")
+scriptDir = objFSO.GetParentFolderName(WScript.ScriptFullName)
+objShell.CurrentDirectory = scriptDir
+psScript = scriptDir & "\YakuLingo_OpenUI.ps1"
+command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File """ & psScript & """"
+objShell.Run command, 0, False
+'@
+
     $residentVbs = @'
 Option Explicit
 Dim objShell, objFSO, scriptDir, psScript, command
@@ -2464,6 +2462,7 @@ objShell.Run command, 0, False
     [System.IO.File]::WriteAllText($ResidentScriptPath, $residentScript, $utf8WithBom)
     [System.IO.File]::WriteAllText($ExitScriptPath, $exitScript, $utf8WithBom)
     [System.IO.File]::WriteAllText($UninstallScriptPath, $uninstallScript, $utf8WithBom)
+    [System.IO.File]::WriteAllText($OpenUiVbsPath, $openUiVbs, $asciiEncoding)
     [System.IO.File]::WriteAllText($ResidentVbsPath, $residentVbs, $asciiEncoding)
     [System.IO.File]::WriteAllText($ExitVbsPath, $exitVbs, $asciiEncoding)
     [System.IO.File]::WriteAllText($UninstallVbsPath, $uninstallVbs, $asciiEncoding)
@@ -2471,15 +2470,21 @@ objShell.Run command, 0, False
     # Common icon path
     $IconPath = Join-Path $SetupPath "yakulingo\ui\yakulingo.ico"
 
-    # Desktop shortcut: remove if present (Start Menu only)
+    # Desktop shortcut: open UI (new translation)
     $DesktopPath = [Environment]::GetFolderPath("Desktop")
     $DesktopShortcutPath = Join-Path $DesktopPath "$AppName.lnk"
-    if (Test-Path $DesktopShortcutPath) {
-        try {
-            Remove-Item -Path $DesktopShortcutPath -Force -ErrorAction Stop
-        } catch {
-            try { "Failed to remove desktop shortcut: $($_.Exception.Message)" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
+    try {
+        $DesktopShortcut = $WshShell.CreateShortcut($DesktopShortcutPath)
+        $DesktopShortcut.TargetPath = "wscript.exe"
+        $DesktopShortcut.Arguments = "`"$OpenUiVbsPath`""
+        $DesktopShortcut.WorkingDirectory = $SetupPath
+        if (Test-Path $IconPath) {
+            $DesktopShortcut.IconLocation = "$IconPath,0"
         }
+        $DesktopShortcut.Description = "YakuLingo (新規翻訳)"
+        $DesktopShortcut.Save()
+    } catch {
+        try { "Failed to create desktop shortcut: $($_.Exception.Message)" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
     }
 
     # Start Menu shortcuts (per-user)
@@ -2540,6 +2545,7 @@ objShell.Run command, 0, False
     $StartupShortcut.Description = "YakuLingo (常駐起動)"
     $StartupShortcut.Save()
     if (-not $GuiMode) {
+        Write-Host "      Desktop: $DesktopShortcutPath" -ForegroundColor Gray
         Write-Host "      Start Menu (Uninstall): $StartMenuUninstallPath" -ForegroundColor Gray
         Write-Host "      Startup: $StartupShortcutPath" -ForegroundColor Gray
         Write-Host "[OK] Shortcuts created" -ForegroundColor Green
@@ -2641,7 +2647,7 @@ objShell.Run command, 0, False
         }
 
         Write-Status -Message "Setup completed!" -Progress -Step "Step 4/4: Finalizing" -Percent 100
-        $successMsg = "セットアップが完了しました。`n`nYakuLingo を常駐起動しました。必要に応じて Ctrl+Alt+J（またはタスクトレイのアイコン）で画面を開いてください。"
+        $successMsg = "セットアップが完了しました。`n`nYakuLingo を常駐起動しました。必要に応じてデスクトップの YakuLingo（または Ctrl+Alt+J / タスクトレイの Open）で画面を開いてください。"
         if ($script:GlossaryDistPath -or $script:TranslationRulesDistPath) {
             $successMsg += "`n`n既存ファイルは保持しました。新しい既定ファイル:"
             if ($script:GlossaryDistPath) {
@@ -2661,7 +2667,7 @@ objShell.Run command, 0, False
         Write-Host ""
         Write-Host " Location: $SetupPath" -ForegroundColor White
         Write-Host " YakuLingo will start automatically on logon (resident mode)." -ForegroundColor Cyan
-        Write-Host " Copilot login has completed during setup; open the UI with Ctrl+Alt+J when needed." -ForegroundColor Cyan
+        Write-Host " Copilot login has completed during setup; open the UI from the Desktop shortcut or Ctrl+Alt+J when needed." -ForegroundColor Cyan
         Write-Host " Exit: Tray icon menu > Exit" -ForegroundColor Cyan
         if ($script:GlossaryDistPath -or $script:TranslationRulesDistPath) {
             Write-Host ""

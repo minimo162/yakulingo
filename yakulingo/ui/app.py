@@ -2078,11 +2078,19 @@ class YakuLingoApp:
         has_client = self._get_active_client() is not None
 
         if open_ui_callback is not None and not has_client:
-            try:
-                await asyncio.to_thread(open_ui_callback)
+            # Avoid spawning duplicate UI windows while the existing one is still connecting.
+            if sys.platform == "win32" and self._is_ui_window_present_win32(include_hidden=True):
+                try:
+                    await asyncio.to_thread(self._bring_window_to_front_win32)
+                except Exception as e:
+                    logger.debug("Resident UI foreground failed (%s): %s", reason, e)
                 shown = True
-            except Exception as e:
-                logger.debug("Resident UI open failed (%s): %s", reason, e)
+            else:
+                try:
+                    await asyncio.to_thread(open_ui_callback)
+                    shown = True
+                except Exception as e:
+                    logger.debug("Resident UI open failed (%s): %s", reason, e)
         elif open_ui_callback is None and not has_client:
             logger.debug("Resident UI open callback missing (%s); using Win32 fallback", reason)
 
@@ -2333,9 +2341,9 @@ class YakuLingoApp:
             source_hwnd: Foreground window handle at hotkey time (best-effort; Windows only)
             bring_ui_to_front: If True, bring the UI window to the foreground when possible.
         """
-        is_empty = not text
+        is_empty = (not text) or (not text.strip())
         if is_empty:
-            logger.debug("Hotkey triggered with empty clipboard; opening UI only")
+            logger.debug("Hotkey triggered without selection; opening UI only")
 
         # Skip if already translating (text or file), unless we only need to open the UI.
         if not is_empty:
@@ -2427,6 +2435,69 @@ class YakuLingoApp:
             bring_ui_to_front=bring_ui_to_front,
         )
 
+    async def _open_text_input_ui(
+        self,
+        *,
+        reason: str,
+        source_hwnd: int | None = None,
+        bring_ui_to_front: bool = True,
+    ) -> None:
+        """Open the UI in a fresh text-translation INPUT state (best-effort)."""
+        show_text_tab = self.state.file_state != FileState.TRANSLATING
+        if show_text_tab:
+            if not (
+                self.state.text_translating
+                or self.state.text_back_translating
+                or getattr(self, "_hotkey_translation_active", False)
+            ):
+                self.state.reset_text_state()
+            self.state.current_tab = Tab.TEXT
+            if self._settings is not None:
+                try:
+                    self._settings.last_tab = Tab.TEXT.value
+                except Exception:
+                    pass
+            self._batch_refresh({"tabs", "content"})
+
+        rect = None
+        if sys.platform == "win32":
+            try:
+                rect = self._compute_open_text_ui_rect_win32(source_hwnd)
+            except Exception:
+                rect = None
+            if rect:
+                self._set_pending_ui_window_rect(rect, reason=f"open_text:{reason}")
+
+        if self._resident_mode:
+            self._mark_manual_show(f"open_text:{reason}")
+            self._resident_show_requested = True
+            try:
+                await self._ensure_resident_ui_visible(f"open_text:{reason}")
+            except Exception as e:
+                logger.debug("Failed to ensure resident UI visible (%s): %s", reason, e)
+        else:
+            if bring_ui_to_front:
+                try:
+                    await self._bring_window_to_front(position_edge=True)
+                except Exception as e:
+                    logger.debug("Failed to bring window to front (%s): %s", reason, e)
+
+        if rect and sys.platform == "win32":
+            try:
+                await asyncio.to_thread(
+                    self._move_ui_window_to_rect_win32,
+                    rect,
+                    activate=bring_ui_to_front,
+                )
+            except Exception as e:
+                logger.debug("Failed to move UI window (%s): %s", reason, e)
+
+        if show_text_tab:
+            try:
+                self._focus_text_input()
+            except Exception:
+                pass
+
     async def _handle_hotkey_text(
         self,
         text: str,
@@ -2443,27 +2514,18 @@ class YakuLingoApp:
             source_hwnd: Foreground window handle at hotkey time (best-effort; Windows only)
             bring_ui_to_front: If True, prefer foregrounding the UI window.
         """
+        if not text or not text.strip():
+            if open_ui:
+                await self._open_text_input_ui(
+                    reason="hotkey_empty",
+                    source_hwnd=source_hwnd,
+                    bring_ui_to_front=bring_ui_to_front,
+                )
+            return
+
         if open_ui and self._resident_mode:
             self._set_auto_open_cause(AutoOpenCause.HOTKEY, reason="hotkey")
             self._resident_show_requested = True
-
-        if not text:
-            if open_ui:
-                open_ui_callback = self._open_ui_window_callback
-                if open_ui_callback is not None:
-                    try:
-                        await asyncio.to_thread(open_ui_callback)
-                    except Exception as e:
-                        logger.debug("Failed to request UI open for hotkey: %s", e)
-                else:
-                    try:
-                        brought_to_front = await self._bring_window_to_front(position_edge=True)
-                    except Exception as e:
-                        logger.debug("Failed to bring window to front for hotkey: %s", e)
-                    else:
-                        if brought_to_front and self._resident_mode:
-                            self._resident_show_requested = False
-            return
 
         # Double-check: Skip if translation started while we were waiting
         if self.state.text_translating:
@@ -4268,6 +4330,216 @@ class YakuLingoApp:
         except Exception as e:
             logger.debug("Failed to compute hotkey UI rect: %s", e)
             return None
+
+    def _compute_open_text_ui_rect_win32(
+        self,
+        source_hwnd: int | None,
+    ) -> tuple[int, int, int, int] | None:
+        """Compute a right-half UI rect for manual UI opens (Windows only).
+
+        When source_hwnd is provided, reuse the hotkey layout heuristic. Otherwise, compute the
+        right half based on the cursor monitor to avoid using taskbar/tray windows as "source".
+        """
+        if sys.platform != "win32":
+            return None
+        if source_hwnd:
+            rect = self._compute_hotkey_ui_rect_win32(source_hwnd)
+            if rect:
+                return rect
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.WinDLL("user32", use_last_error=True)
+
+            class RECT(ctypes.Structure):
+                _fields_ = [
+                    ("left", ctypes.c_long),
+                    ("top", ctypes.c_long),
+                    ("right", ctypes.c_long),
+                    ("bottom", ctypes.c_long),
+                ]
+
+            class MONITORINFO(ctypes.Structure):
+                _fields_ = [
+                    ("cbSize", wintypes.DWORD),
+                    ("rcMonitor", RECT),
+                    ("rcWork", RECT),
+                    ("dwFlags", wintypes.DWORD),
+                ]
+
+            MONITOR_DEFAULTTONEAREST = 2
+            monitor = None
+            try:
+                point = wintypes.POINT()
+                if user32.GetCursorPos(ctypes.byref(point)):
+                    monitor = user32.MonitorFromPoint(point, MONITOR_DEFAULTTONEAREST)
+            except Exception:
+                monitor = None
+            if not monitor:
+                try:
+                    foreground = user32.GetForegroundWindow()
+                    if foreground:
+                        monitor = user32.MonitorFromWindow(foreground, MONITOR_DEFAULTTONEAREST)
+                except Exception:
+                    monitor = None
+            if not monitor:
+                return None
+
+            monitor_info = MONITORINFO()
+            monitor_info.cbSize = ctypes.sizeof(MONITORINFO)
+            if not user32.GetMonitorInfoW(monitor, ctypes.byref(monitor_info)):
+                return None
+
+            work_area = monitor_info.rcWork
+            work_width = int(work_area.right - work_area.left)
+            work_height = int(work_area.bottom - work_area.top)
+            if work_width <= 0 or work_height <= 0:
+                return None
+
+            gap = 10
+            min_ui_width = 1
+            ui_ratio = 0.5
+
+            dpi_scale = _get_windows_dpi_scale()
+            dpi_awareness = _get_process_dpi_awareness()
+            if dpi_awareness in (1, 2) and dpi_scale != 1.0:
+                gap = int(round(gap * dpi_scale))
+                min_ui_width = int(round(min_ui_width * dpi_scale))
+
+            ui_width = max(int(work_width * ui_ratio), min_ui_width)
+            ui_width = min(ui_width, work_width)
+            target_width = max(work_width - gap - ui_width, 0)
+
+            if target_width > 0:
+                app_x = int(work_area.left + target_width + gap)
+            else:
+                app_x = int(work_area.right - ui_width)
+            app_y = int(work_area.top)
+            return (app_x, app_y, int(ui_width), int(work_height))
+        except Exception as e:
+            logger.debug("Failed to compute open-text UI rect: %s", e)
+            return None
+
+    def _move_ui_window_to_rect_win32(
+        self,
+        rect: tuple[int, int, int, int],
+        *,
+        activate: bool = True,
+    ) -> bool:
+        """Move (and optionally activate) the UI window to a target rect (Windows only)."""
+        if sys.platform != "win32":
+            return False
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            x, y, width, height = rect
+            if width <= 0 or height <= 0:
+                return False
+
+            user32 = ctypes.WinDLL("user32", use_last_error=True)
+            dwmapi = None
+            try:
+                dwmapi = ctypes.WinDLL("dwmapi", use_last_error=True)
+            except Exception:
+                dwmapi = None
+
+            hwnd = self._find_ui_window_handle_win32(include_hidden=True)
+            if not hwnd:
+                return False
+            resolved_hwnd = _coerce_hwnd_win32(hwnd) or int(hwnd)
+
+            SW_RESTORE = 9
+            SW_SHOW = 5
+            try:
+                if user32.IsIconic(wintypes.HWND(resolved_hwnd)) or user32.IsZoomed(wintypes.HWND(resolved_hwnd)):
+                    user32.ShowWindow(wintypes.HWND(resolved_hwnd), SW_RESTORE)
+                else:
+                    user32.ShowWindow(wintypes.HWND(resolved_hwnd), SW_SHOW)
+            except Exception:
+                pass
+
+            class RECT(ctypes.Structure):
+                _fields_ = [
+                    ("left", ctypes.c_long),
+                    ("top", ctypes.c_long),
+                    ("right", ctypes.c_long),
+                    ("bottom", ctypes.c_long),
+                ]
+
+            DWMWA_EXTENDED_FRAME_BOUNDS = 9
+
+            def _get_frame_margins(hwnd_value: int) -> tuple[int, int, int, int]:
+                if dwmapi is None:
+                    return (0, 0, 0, 0)
+                try:
+                    outer = RECT()
+                    if not user32.GetWindowRect(wintypes.HWND(hwnd_value), ctypes.byref(outer)):
+                        return (0, 0, 0, 0)
+                    extended = RECT()
+                    if dwmapi.DwmGetWindowAttribute(
+                        wintypes.HWND(hwnd_value),
+                        DWMWA_EXTENDED_FRAME_BOUNDS,
+                        ctypes.byref(extended),
+                        ctypes.sizeof(extended),
+                    ) != 0:
+                        return (0, 0, 0, 0)
+                    left = max(0, int(extended.left - outer.left))
+                    top = max(0, int(extended.top - outer.top))
+                    right = max(0, int(outer.right - extended.right))
+                    bottom = max(0, int(outer.bottom - extended.bottom))
+                    return (left, top, right, bottom)
+                except Exception:
+                    return (0, 0, 0, 0)
+
+            left, top, right, bottom = _get_frame_margins(resolved_hwnd)
+            adj_x = int(x - left)
+            adj_y = int(y - top)
+            adj_w = int(width + left + right)
+            adj_h = int(height + top + bottom)
+            if adj_w <= 0 or adj_h <= 0:
+                adj_x = int(x)
+                adj_y = int(y)
+                adj_w = int(width)
+                adj_h = int(height)
+
+            SWP_NOZORDER = 0x0004
+            SWP_NOACTIVATE = 0x0010
+            SWP_SHOWWINDOW = 0x0040
+            flags = SWP_NOZORDER | SWP_SHOWWINDOW
+            if not activate:
+                flags |= SWP_NOACTIVATE
+
+            result = bool(
+                user32.SetWindowPos(
+                    wintypes.HWND(resolved_hwnd),
+                    None,
+                    adj_x,
+                    adj_y,
+                    adj_w,
+                    adj_h,
+                    flags,
+                )
+            )
+            if activate:
+                ASFW_ANY = -1
+                try:
+                    user32.AllowSetForegroundWindow(ASFW_ANY)
+                except Exception:
+                    pass
+                try:
+                    user32.SetForegroundWindow(wintypes.HWND(resolved_hwnd))
+                except Exception:
+                    pass
+                try:
+                    user32.BringWindowToTop(wintypes.HWND(resolved_hwnd))
+                except Exception:
+                    pass
+            return result
+        except Exception as e:
+            logger.debug("Failed to move UI window to rect: %s", e)
+            return False
 
     def _apply_hotkey_work_priority_layout_win32(
         self,
@@ -13014,6 +13286,52 @@ def run_app(
                 await asyncio.to_thread(_activate_window)
             except Exception as e:
                 logger.debug("Failed to activate UI window: %s", e)
+            return {"ok": True}
+
+        @nicegui_app.post('/api/open-text')
+        async def open_text_api(request: StarletteRequest):  # type: ignore[misc]
+            """Open the UI in a fresh text-translation INPUT state (local machine only)."""
+            try:
+                client_host = getattr(getattr(request, "client", None), "host", None)
+                if client_host not in ("127.0.0.1", "::1"):
+                    raise HTTPException(status_code=403, detail="forbidden")
+                open_header = request.headers.get("X-YakuLingo-Open")
+                if open_header != "1":
+                    raise HTTPException(status_code=403, detail="forbidden")
+            except HTTPException:
+                raise
+            except Exception:
+                raise HTTPException(status_code=403, detail="forbidden")
+
+            source_hwnd: int | None = None
+            try:
+                data = await request.json()
+            except Exception:
+                data = None
+            if isinstance(data, dict):
+                raw_hwnd = data.get("source_hwnd")
+                if isinstance(raw_hwnd, str):
+                    try:
+                        source_hwnd = int(raw_hwnd, 0)
+                    except Exception:
+                        source_hwnd = None
+                elif isinstance(raw_hwnd, (int, float)):
+                    try:
+                        source_hwnd = int(raw_hwnd)
+                    except Exception:
+                        source_hwnd = None
+            if source_hwnd == 0:
+                source_hwnd = None
+
+            try:
+                await yakulingo_app._open_text_input_ui(
+                    reason="open_text_api",
+                    source_hwnd=source_hwnd,
+                    bring_ui_to_front=True,
+                )
+            except Exception as e:
+                logger.debug("Failed to open text UI: %s", e)
+
             return {"ok": True}
 
         @nicegui_app.post('/api/ui-close')

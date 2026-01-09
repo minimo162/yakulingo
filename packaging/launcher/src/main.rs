@@ -205,9 +205,25 @@ fn bring_window_to_front() -> bool {
     use winapi::shared::minwindef::{BOOL, LPARAM};
     use winapi::shared::windef::HWND;
     use winapi::um::winuser::{
-        EnumWindows, GetForegroundWindow, GetWindowTextLengthW, GetWindowTextW, IsIconic,
-        SetForegroundWindow, ShowWindow, SW_RESTORE, SW_SHOW,
+        EnumWindows, GetClassNameW, GetForegroundWindow, GetWindowTextLengthW, GetWindowTextW,
+        IsIconic, SetForegroundWindow, ShowWindow, SW_RESTORE, SW_SHOW,
     };
+
+    fn is_window_title_with_boundary(title: &str, base_title: &str) -> bool {
+        if title.is_empty() || base_title.is_empty() {
+            return false;
+        }
+        if title == base_title {
+            return true;
+        }
+        match title.strip_prefix(base_title) {
+            Some(rest) => match rest.chars().next() {
+                Some(ch) => ch.is_whitespace(),
+                None => false,
+            },
+            None => false,
+        }
+    }
 
     #[derive(Default)]
     struct WindowSearch {
@@ -217,7 +233,7 @@ fn bring_window_to_front() -> bool {
     unsafe extern "system" fn enum_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
         let search = &mut *(lparam as *mut WindowSearch);
 
-        // Skip invisible windows
+        // Skip windows with no title
         if GetWindowTextLengthW(hwnd) == 0 {
             return 1; // TRUE to continue
         }
@@ -232,7 +248,24 @@ fn bring_window_to_front() -> bool {
         buffer.truncate(read_len as usize);
         let title = OsString::from_wide(&buffer).to_string_lossy().to_string();
 
-        if title.contains("YakuLingo") {
+        if title.starts_with("Setup - YakuLingo") {
+            return 1;
+        }
+
+        // Avoid matching File Explorer windows like "YakuLingo - エクスプローラー".
+        let mut class_buf = [0u16; 256];
+        let class_len = GetClassNameW(hwnd, class_buf.as_mut_ptr(), class_buf.len() as i32);
+        if class_len > 0 {
+            let class_name = OsString::from_wide(&class_buf[..class_len as usize])
+                .to_string_lossy()
+                .to_string();
+            if class_name == "CabinetWClass" || class_name == "ExploreWClass" {
+                return 1;
+            }
+        }
+
+        // Avoid matching unrelated windows like "YakuLingo.html ...".
+        if is_window_title_with_boundary(&title, "YakuLingo") {
             search.handle = Some(hwnd);
             return 0; // FALSE to stop enumeration
         }

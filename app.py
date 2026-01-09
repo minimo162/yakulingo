@@ -360,13 +360,34 @@ def _try_focus_existing_window() -> None:
 
         user32 = ctypes.WinDLL("user32", use_last_error=True)
 
+        def _is_window_title_with_boundary(title: str, base_title: str) -> bool:
+            if not title or not base_title:
+                return False
+            if title == base_title:
+                return True
+            if not title.startswith(base_title):
+                return False
+            if len(title) <= len(base_title):
+                return False
+            return title[len(base_title)].isspace()
+
         hwnd = user32.FindWindowW(None, "YakuLingo")
+        if not hwnd:
+            hwnd = user32.FindWindowW(None, "YakuLingo (UI)")
 
         if not hwnd:
             EnumWindowsProc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
             found_hwnd: list[int] = []
 
             def enum_proc(hwnd_enum, _lparam):
+                try:
+                    # Avoid matching File Explorer windows like "YakuLingo - エクスプローラー".
+                    class_buf = ctypes.create_unicode_buffer(256)
+                    if user32.GetClassNameW(hwnd_enum, class_buf, 256):
+                        if class_buf.value in ("CabinetWClass", "ExploreWClass"):
+                            return True
+                except Exception:
+                    pass
                 length = user32.GetWindowTextLengthW(hwnd_enum)
                 if length <= 0:
                     return True
@@ -374,7 +395,9 @@ def _try_focus_existing_window() -> None:
                 if user32.GetWindowTextW(hwnd_enum, buffer, length + 1) == 0:
                     return True
                 title = buffer.value
-                if "YakuLingo" in title:
+                if title.startswith("Setup - YakuLingo"):
+                    return True
+                if _is_window_title_with_boundary(title, "YakuLingo"):
                     found_hwnd.append(hwnd_enum)
                     return False
                 return True

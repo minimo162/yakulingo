@@ -287,10 +287,10 @@ if errorlevel 1 (
 echo [DONE] Playwright browser installed.
 
 :: ============================================================
-:: Step 5: Verify paddlepaddle installation
+:: Step 5: Verify paddlepaddle/paddleocr installation
 :: ============================================================
 echo.
-echo [5/6] Verifying paddlepaddle installation...
+echo [5/6] Verifying paddlepaddle/paddleocr installation...
 
 :: Check if venv python exists
 if not exist ".venv\Scripts\python.exe" (
@@ -302,15 +302,15 @@ if not exist ".venv\Scripts\python.exe" (
 )
 
 echo [INFO] This may take a moment...
-:: Use PowerShell to run paddle check (avoids batch quoting issues)
+:: Use PowerShell to run dependency check (avoids batch quoting issues)
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-    "$script = 'import warnings; warnings.filterwarnings(''ignore''); import paddle; print(''[OK] paddlepaddle version:'', paddle.__version__)';" ^
+    "$script = 'import warnings; warnings.filterwarnings(''ignore''); import paddle; import paddleocr; print(''[OK] paddlepaddle version:'', paddle.__version__); print(''[OK] paddleocr version:'', getattr(paddleocr, ''__version__'', ''(unknown)''))';" ^
     "& '.venv\Scripts\python.exe' -W ignore -c $script 2>$null;" ^
     "exit $LASTEXITCODE"
-set PADDLE_ERROR=!errorlevel!
+set OCR_DEPS_ERROR=!errorlevel!
 
-if !PADDLE_ERROR! neq 0 (
-    echo [WARNING] paddlepaddle verification failed. Attempting to reinstall paddlepaddle/paddleocr...
+if !OCR_DEPS_ERROR! neq 0 (
+    echo [WARNING] paddlepaddle/paddleocr verification failed. Attempting to reinstall paddlepaddle/paddleocr...
 
     if "!SKIP_SSL!"=="1" (
         uv.exe sync !UV_SYNC_PYTHON_ARG! --native-tls --extra ocr --reinstall-package paddlepaddle --reinstall-package paddleocr --allow-insecure-host pypi.org --allow-insecure-host files.pythonhosted.org
@@ -325,20 +325,20 @@ if !PADDLE_ERROR! neq 0 (
     )
 
     powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-        "$script = 'import warnings; warnings.filterwarnings(''ignore''); import paddle; print(''[OK] paddlepaddle version:'', paddle.__version__)';" ^
+        "$script = 'import warnings; warnings.filterwarnings(''ignore''); import paddle; import paddleocr; print(''[OK] paddlepaddle version:'', paddle.__version__); print(''[OK] paddleocr version:'', getattr(paddleocr, ''__version__'', ''(unknown)''))';" ^
         "& '.venv\Scripts\python.exe' -W ignore -c $script 2>$null;" ^
         "exit $LASTEXITCODE"
-    set PADDLE_ERROR=!errorlevel!
+    set OCR_DEPS_ERROR=!errorlevel!
 )
 
-if !PADDLE_ERROR! neq 0 (
-    echo [ERROR] paddlepaddle is not available in the virtual environment.
-    echo [INFO] PDF layout analysis requires paddlepaddle/paddleocr.
+if !OCR_DEPS_ERROR! neq 0 (
+    echo [ERROR] paddlepaddle/paddleocr is not available in the virtual environment.
+    echo [INFO] PDF layout analysis (PP-DocLayout-L) requires paddlepaddle/paddleocr.
     echo [INFO] Retry this installer, or run: uv.exe sync --extra ocr
     pause
     exit /b 1
 ) else (
-    echo [DONE] paddlepaddle verified.
+    echo [DONE] paddlepaddle/paddleocr verified.
 )
 
 :: ============================================================

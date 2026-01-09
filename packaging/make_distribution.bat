@@ -77,6 +77,9 @@ for %%f in (.venv .uv-python .playwright-browsers app.py yakulingo YakuLingo.exe
     if not exist "%%f" set "MISSING=!MISSING! %%f"
 )
 if not exist ".venv\pyvenv.cfg" set "MISSING=!MISSING! .venv\pyvenv.cfg"
+:: Ensure PDF layout analysis dependencies are bundled (PP-DocLayout-L via PaddleOCR)
+if not exist ".venv\Lib\site-packages\paddle" set "MISSING=!MISSING! .venv\Lib\site-packages\paddle(paddlepaddle)"
+if not exist ".venv\Lib\site-packages\paddleocr" set "MISSING=!MISSING! .venv\Lib\site-packages\paddleocr"
 if not exist "config\settings.template.json" set "MISSING=!MISSING! config\settings.template.json"
 if not exist "packaging\installer\share\setup.vbs" set "MISSING=!MISSING! packaging\installer\share\setup.vbs"
 if not exist "packaging\installer\share\.scripts\setup.ps1" set "MISSING=!MISSING! packaging\installer\share\.scripts\setup.ps1"

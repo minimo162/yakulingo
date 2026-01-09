@@ -54,6 +54,8 @@ else:
     # Hotkey constants
     _WM_HOTKEY = 0x0312
     _WM_QUIT = 0x0012
+    _WM_KEYDOWN = 0x0100
+    _WM_KEYUP = 0x0101
     _MOD_ALT = 0x0001
     _MOD_CONTROL = 0x0002
     _MOD_NOREPEAT = 0x4000
@@ -93,6 +95,50 @@ else:
         except Exception as e:
             logger.debug("Failed to send Escape: %s", e)
 
+    def _post_escape_to_hwnd(target_hwnd: int) -> bool:
+        """Send Escape to a specific window without generating global key input.
+
+        This avoids Ctrl+Esc (Start Menu) side effects when modifiers are still down
+        right after the global hotkey is triggered.
+        """
+        if not target_hwnd:
+            return False
+        try:
+            _user32.PostMessageW.argtypes = [
+                wintypes.HWND,
+                wintypes.UINT,
+                wintypes.WPARAM,
+                wintypes.LPARAM,
+            ]
+            _user32.PostMessageW.restype = wintypes.BOOL
+            _user32.MapVirtualKeyW.argtypes = [wintypes.UINT, wintypes.UINT]
+            _user32.MapVirtualKeyW.restype = wintypes.UINT
+
+            scan_code = int(_user32.MapVirtualKeyW(_VK_ESCAPE, 0)) & 0xFF
+            lparam_down = 1 | (scan_code << 16)
+            lparam_up = lparam_down | 0xC0000000
+
+            ok_down = bool(
+                _user32.PostMessageW(
+                    wintypes.HWND(int(target_hwnd)),
+                    _WM_KEYDOWN,
+                    wintypes.WPARAM(_VK_ESCAPE),
+                    wintypes.LPARAM(lparam_down),
+                )
+            )
+            ok_up = bool(
+                _user32.PostMessageW(
+                    wintypes.HWND(int(target_hwnd)),
+                    _WM_KEYUP,
+                    wintypes.WPARAM(_VK_ESCAPE),
+                    wintypes.LPARAM(lparam_up),
+                )
+            )
+            return ok_down and ok_up
+        except Exception as e:
+            logger.debug("Failed to PostMessage Escape: %s", e)
+            return False
+
     def _maybe_reset_source_copy_mode(source_hwnd: int | None) -> None:
         """Best-effort: cancel source app's copy mode (e.g., Excel marching ants) after Ctrl+C."""
         if not source_hwnd:
@@ -121,13 +167,10 @@ else:
                 return ctrl_down or alt_down
 
             if _modifiers_down():
-                if wait_sec <= 0:
-                    return
-                deadline = time.monotonic() + wait_sec
-                while time.monotonic() < deadline and _modifiers_down():
-                    time.sleep(poll_sec)
-                if _modifiers_down():
-                    return
+                if wait_sec > 0:
+                    deadline = time.monotonic() + wait_sec
+                    while time.monotonic() < deadline and _modifiers_down():
+                        time.sleep(poll_sec)
         except Exception:
             return
 
@@ -139,7 +182,14 @@ else:
         except Exception:
             return
 
-        _send_escape()
+        # Prefer targeted Escape to avoid Start Menu side effects even if modifiers are still down.
+        if _post_escape_to_hwnd(int(source_hwnd)):
+            return
+        try:
+            if not _modifiers_down():
+                _send_escape()
+        except Exception:
+            return
 
 
     def _send_ctrl_c() -> None:

@@ -13780,12 +13780,14 @@ def run_app(
                                 work_width = int(work.right - work.left)
                                 work_height = int(work.bottom - work.top)
                                 if work_width > 0 and work_height > 0:
+                                    gap = 10 if work_width < 1600 else 0
                                     min_ui_width = 1
                                     dpi_scale = _get_windows_dpi_scale()
                                     dpi_awareness = _get_process_dpi_awareness()
                                     if dpi_awareness in (1, 2) and dpi_scale != 1.0:
+                                        gap = int(round(gap * dpi_scale))
                                         min_ui_width = int(round(min_ui_width * dpi_scale))
-                                    ui_width = max(int(work_width * 0.5), min_ui_width)
+                                    ui_width = max(int(work_width * 0.5) - gap, min_ui_width)
                                     ui_width = min(ui_width, work_width)
                                     target_width = ui_width
                                     target_height = work_height

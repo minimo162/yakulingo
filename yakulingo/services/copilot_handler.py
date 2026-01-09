@@ -1085,9 +1085,14 @@ class CopilotHandler:
     # =========================================================================
     # Edge Window Settings - Minimum size when bringing window to foreground
     # =========================================================================
-    # Some environments show Edge in very small windows; ensure usable size
+    # Some environments show Edge in very small windows; ensure usable size.
+    # Note: Do not use these values as "window is unusable" thresholds; low-resolution
+    # displays and right-half tiling can legitimately be smaller than 1024x768.
     MIN_EDGE_WINDOW_WIDTH = 1024   # Minimum width in pixels
     MIN_EDGE_WINDOW_HEIGHT = 768   # Minimum height in pixels
+    # Treat windows smaller than this as broken/unusable (sanity check only).
+    EDGE_WINDOW_SANITY_MIN_WIDTH = 320
+    EDGE_WINDOW_SANITY_MIN_HEIGHT = 240
 
     # =========================================================================
     # Edge Off-screen Placement Settings
@@ -4738,7 +4743,7 @@ class CopilotHandler:
             if width <= 0 or height <= 0:
                 return True
 
-            if width < self.MIN_EDGE_WINDOW_WIDTH or height < self.MIN_EDGE_WINDOW_HEIGHT:
+            if width < self.EDGE_WINDOW_SANITY_MIN_WIDTH or height < self.EDGE_WINDOW_SANITY_MIN_HEIGHT:
                 return True
 
             SM_XVIRTUALSCREEN = 76
@@ -4844,7 +4849,7 @@ class CopilotHandler:
         # Method 2: Windows API to force window to foreground
         if sys.platform == "win32":
             positioned = False
-            if not force_full_window and edge_layout_mode in ("offscreen", "triple"):
+            if edge_layout_mode in ("offscreen", "triple") or force_full_window:
                 if action.overlay_allowed:
                     positioned = self._position_edge_over_app()
                 else:
@@ -5907,6 +5912,7 @@ class CopilotHandler:
                     logger.debug("Attached to foreground thread %d", foreground_thread_id)
 
             try:
+                reason_text = (reason or "").lower()
                 # 1. Check if window is minimized
                 is_minimized = user32.IsIconic(edge_hwnd)
                 if is_minimized:
@@ -5954,15 +5960,31 @@ class CopilotHandler:
                         or rect.top >= v_bottom
                     )
                     is_off_screen = offscreen_by_bounds or current_x < -10000 or current_y < -10000
-                    is_too_small = current_width < self.MIN_EDGE_WINDOW_WIDTH or current_height < self.MIN_EDGE_WINDOW_HEIGHT
+                    is_too_small = (
+                        current_width < self.EDGE_WINDOW_SANITY_MIN_WIDTH
+                        or current_height < self.EDGE_WINDOW_SANITY_MIN_HEIGHT
+                    )
 
                     if is_off_screen or is_too_small:
-                        new_width = max(current_width, self.MIN_EDGE_WINDOW_WIDTH)
-                        new_height = max(current_height, self.MIN_EDGE_WINDOW_HEIGHT)
+                        # Manual show should match the app window's layout (right half).
+                        should_right_half = "manual_show" in reason_text
+                        if should_right_half:
+                            new_width = max(int(screen_width * 0.5), self.EDGE_WINDOW_SANITY_MIN_WIDTH)
+                            new_width = min(new_width, screen_width)
+                            new_height = max(screen_height, self.EDGE_WINDOW_SANITY_MIN_HEIGHT)
+                            new_height = min(new_height, screen_height)
+                            new_x = int(work_area.right - new_width)
+                            new_y = int(work_area.top)
+                        else:
+                            new_width = current_width
+                            new_height = current_height
+                            if is_too_small:
+                                new_width = max(current_width, min(self.MIN_EDGE_WINDOW_WIDTH, screen_width))
+                                new_height = max(current_height, min(self.MIN_EDGE_WINDOW_HEIGHT, screen_height))
 
-                        # Center the window on screen work area
-                        new_x = work_area.left + (screen_width - new_width) // 2
-                        new_y = work_area.top + (screen_height - new_height) // 2
+                            # Center the window on screen work area
+                            new_x = work_area.left + (screen_width - new_width) // 2
+                            new_y = work_area.top + (screen_height - new_height) // 2
 
                         # Ensure window stays within screen bounds
                         new_x = max(work_area.left, min(new_x, work_area.right - new_width))
@@ -5978,7 +6000,7 @@ class CopilotHandler:
                         if is_off_screen:
                             logger.info("Pre-positioned Edge window from off-screen (%d,%d) to (%d,%d)",
                                         current_x, current_y, new_x, new_y)
-                        if is_too_small:
+                        if is_too_small and not should_right_half:
                             logger.info("Pre-adjusted Edge window size from %dx%d to %dx%d",
                                         current_width, current_height, new_width, new_height)
 
@@ -6016,7 +6038,6 @@ class CopilotHandler:
                     user32.AttachThreadInput(current_thread_id, foreground_thread_id, False)
                     logger.debug("Detached from foreground thread")
 
-            reason_text = (reason or "").lower()
             should_flash = False
             if should_flash:
                 # 9. Flash taskbar icon to get user attention (login only)

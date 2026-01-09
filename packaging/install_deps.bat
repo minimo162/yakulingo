@@ -237,16 +237,26 @@ echo [DONE] Python installed.
 :: ============================================================
 echo.
 echo [3/6] Installing dependencies...
-if defined VENV_PYTHON_PATH (
-    uv.exe venv -c -p "!VENV_PYTHON_PATH!" --native-tls
-) else (
-    uv.exe venv -c -p !VENV_PYTHON_SPEC! --native-tls
-)
-if errorlevel 1 (
-    echo [ERROR] Failed to create virtual environment.
-    pause
-    exit /b 1
-)
+call :ensure_yakulingo_closed
+if errorlevel 1 exit /b 1
+
+if not exist ".venv" goto :skip_clean_venv
+echo [INFO] Cleaning existing .venv...
+set CLEAN_VENV_RETRY=0
+:clean_venv_retry
+rmdir /s /q ".venv" >nul 2>&1
+if not exist ".venv" goto :skip_clean_venv
+set /a CLEAN_VENV_RETRY+=1
+if !CLEAN_VENV_RETRY! geq 6 goto :clean_venv_failed
+timeout /t 1 /nobreak >nul
+goto :clean_venv_retry
+
+:clean_venv_failed
+echo [ERROR] Failed to clean .venv (it may be in use).
+echo [INFO] Please close YakuLingo and retry.
+pause
+exit /b 1
+:skip_clean_venv
 
 echo [INFO] Installing packages (including paddlepaddle ~500MB-1GB)...
 echo [INFO] This may take 5-15 minutes depending on network speed...
@@ -307,39 +317,45 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
     "$script = 'import warnings; warnings.filterwarnings(''ignore''); import paddle; import paddleocr; print(''[OK] paddlepaddle version:'', paddle.__version__); print(''[OK] paddleocr version:'', getattr(paddleocr, ''__version__'', ''(unknown)''))';" ^
     "& '.venv\Scripts\python.exe' -W ignore -c $script 2>$null;" ^
     "exit $LASTEXITCODE"
-set OCR_DEPS_ERROR=!errorlevel!
+set "OCR_DEPS_ERROR=%ERRORLEVEL%"
 
-if !OCR_DEPS_ERROR! neq 0 (
-    echo [WARNING] paddlepaddle/paddleocr verification failed. Attempting to reinstall paddlepaddle/paddleocr...
+if not "%OCR_DEPS_ERROR%"=="0" goto :reinstall_ocr_deps
+goto :verify_ocr_deps_done
 
-    if "!SKIP_SSL!"=="1" (
-        uv.exe sync !UV_SYNC_PYTHON_ARG! --native-tls --extra ocr --reinstall-package paddlepaddle --reinstall-package paddleocr --allow-insecure-host pypi.org --allow-insecure-host files.pythonhosted.org
-    ) else (
-        uv.exe sync !UV_SYNC_PYTHON_ARG! --native-tls --extra ocr --reinstall-package paddlepaddle --reinstall-package paddleocr
-    )
-    if errorlevel 1 (
-        echo [ERROR] Failed to reinstall paddlepaddle/paddleocr.
-        echo [INFO] Please check your network connection and try again.
-        pause
-        exit /b 1
-    )
+:reinstall_ocr_deps
+echo [WARNING] paddlepaddle/paddleocr verification failed. Attempting to reinstall paddlepaddle/paddleocr...
 
-    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-        "$script = 'import warnings; warnings.filterwarnings(''ignore''); import paddle; import paddleocr; print(''[OK] paddlepaddle version:'', paddle.__version__); print(''[OK] paddleocr version:'', getattr(paddleocr, ''__version__'', ''(unknown)''))';" ^
-        "& '.venv\Scripts\python.exe' -W ignore -c $script 2>$null;" ^
-        "exit $LASTEXITCODE"
-    set OCR_DEPS_ERROR=!errorlevel!
+if "!SKIP_SSL!"=="1" (
+    uv.exe sync !UV_SYNC_PYTHON_ARG! --native-tls --extra ocr --reinstall-package paddlepaddle --reinstall-package paddleocr --allow-insecure-host pypi.org --allow-insecure-host files.pythonhosted.org
+) else (
+    uv.exe sync !UV_SYNC_PYTHON_ARG! --native-tls --extra ocr --reinstall-package paddlepaddle --reinstall-package paddleocr
 )
-
-if !OCR_DEPS_ERROR! neq 0 (
-    echo [ERROR] paddlepaddle/paddleocr is not available in the virtual environment.
-    echo [INFO] PDF layout analysis (PP-DocLayout-L) requires paddlepaddle/paddleocr.
-    echo [INFO] Retry this installer, or run: uv.exe sync --extra ocr
+if errorlevel 1 (
+    echo [ERROR] Failed to reinstall paddlepaddle/paddleocr.
+    echo [INFO] Please check your network connection and try again.
     pause
     exit /b 1
-) else (
-    echo [DONE] paddlepaddle/paddleocr verified.
 )
+
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+    "$script = 'import warnings; warnings.filterwarnings(''ignore''); import paddle; import paddleocr; print(''[OK] paddlepaddle version:'', paddle.__version__); print(''[OK] paddleocr version:'', getattr(paddleocr, ''__version__'', ''(unknown)''))';" ^
+    "& '.venv\Scripts\python.exe' -W ignore -c $script 2>$null;" ^
+    "exit $LASTEXITCODE"
+set "OCR_DEPS_ERROR=%ERRORLEVEL%"
+
+:verify_ocr_deps_done
+if not "%OCR_DEPS_ERROR%"=="0" goto :verify_ocr_deps_failed
+echo [DONE] paddlepaddle/paddleocr verified.
+goto :verify_ocr_deps_exit
+
+:verify_ocr_deps_failed
+echo [ERROR] paddlepaddle/paddleocr is not available in the virtual environment.
+echo [INFO] PDF layout analysis (PP-DocLayout-L) requires paddlepaddle/paddleocr.
+echo [INFO] Retry this installer, or run: uv.exe sync --extra ocr
+pause
+exit /b 1
+
+:verify_ocr_deps_exit
 
 :: ============================================================
 :: Step 6: Pre-compile Python bytecode for faster first launch
@@ -402,7 +418,25 @@ exit /b 0
 :: Function: Ensure YakuLingo is not running
 :: ============================================================
 :ensure_yakulingo_closed
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference = 'SilentlyContinue'; $root = [System.IO.Path]::GetFullPath('%ROOT_DIR%'); $installRoot = Join-Path $env:LOCALAPPDATA 'YakuLingo'; $pathsToCheck = @($root, $installRoot) | Where-Object { $_ -and (Test-Path $_) }; $yakuProc = Get-Process -Name 'YakuLingo' -ErrorAction SilentlyContinue; $pyProcs = Get-Process -Name 'python','pythonw' -ErrorAction SilentlyContinue | Where-Object { try { $p = $_.Path } catch { return $false }; if (-not $p) { return $false }; foreach ($dir in $pathsToCheck) { if ($p.StartsWith($dir, [System.StringComparison]::OrdinalIgnoreCase)) { return $true } }; return $false }; if (-not $yakuProc -and -not $pyProcs) { exit 0 }; Write-Host '[INFO] Closing running YakuLingo...'; $shutdownUrl = 'http://127.0.0.1:8765/api/shutdown'; $shutdownRequested = $false; try { Invoke-WebRequest -UseBasicParsing -Method Post -Uri $shutdownUrl -TimeoutSec 8 -Headers @{ 'X-YakuLingo-Exit' = '1' } | Out-Null; $shutdownRequested = $true } catch { }; $waitStart = Get-Date; $deadline = $waitStart.AddSeconds(30); $forceKillAttempted = $false; while ((Get-Date) -lt $deadline) { $pyProcs = Get-Process -Name 'python','pythonw' -ErrorAction SilentlyContinue | Where-Object { try { $p = $_.Path } catch { return $false }; if (-not $p) { return $false }; foreach ($dir in $pathsToCheck) { if ($p.StartsWith($dir, [System.StringComparison]::OrdinalIgnoreCase)) { return $true } }; return $false }; $yakuProc = Get-Process -Name 'YakuLingo' -ErrorAction SilentlyContinue; if (-not $yakuProc -and -not $pyProcs) { exit 0 }; $elapsed = [int]((Get-Date) - $waitStart).TotalSeconds; if (-not $shutdownRequested -and $elapsed -ge 5) { try { Invoke-WebRequest -UseBasicParsing -Method Post -Uri $shutdownUrl -TimeoutSec 5 -Headers @{ 'X-YakuLingo-Exit' = '1' } | Out-Null; $shutdownRequested = $true } catch { } }; if (-not $forceKillAttempted -and $elapsed -ge 12) { $forceKillAttempted = $true; $targets = @(); if ($yakuProc) { $targets += $yakuProc }; if ($pyProcs) { $targets += $pyProcs }; if ($targets) { $targets | Stop-Process -Force -ErrorAction SilentlyContinue } }; Start-Sleep -Milliseconds 250 }; Write-Host '[ERROR] YakuLingo is still running. Please close it and retry.'; exit 1"
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+    "$ErrorActionPreference = 'SilentlyContinue';" ^
+    "$root = [System.IO.Path]::GetFullPath('%ROOT_DIR%');" ^
+    "$installRoot = Join-Path $env:LOCALAPPDATA 'YakuLingo';" ^
+    "$pathsToCheck = @($root, $installRoot) | Where-Object { $_ -and (Test-Path $_) };" ^
+    "function Get-YakuPythonProcs { $targets = @(); foreach ($p in (Get-CimInstance Win32_Process | Where-Object { $_.Name -in @('python.exe','pythonw.exe') })) { $exe = $p.ExecutablePath; $cmd = $p.CommandLine; $cwd = $p.WorkingDirectory; $match = $false; foreach ($dir in $pathsToCheck) { if (-not $dir) { continue }; if (($exe -and $exe.StartsWith($dir, [System.StringComparison]::OrdinalIgnoreCase)) -or ($cwd -and $cwd.StartsWith($dir, [System.StringComparison]::OrdinalIgnoreCase)) -or ($cmd -and $cmd.IndexOf($dir, [System.StringComparison]::OrdinalIgnoreCase) -ge 0)) { $match = $true; break } }; if ($match) { $proc = Get-Process -Id $p.ProcessId -ErrorAction SilentlyContinue; if ($proc) { $targets += $proc } } }; return $targets };" ^
+    "$yakuProc = Get-Process -Name 'YakuLingo' -ErrorAction SilentlyContinue;" ^
+    "$pyProcs = Get-YakuPythonProcs;" ^
+    "if (-not $yakuProc -and (-not $pyProcs -or $pyProcs.Count -eq 0)) { exit 0 };" ^
+    "Write-Host '[INFO] Closing running YakuLingo...';" ^
+    "$shutdownUrl = 'http://127.0.0.1:8765/api/shutdown';" ^
+    "$shutdownRequested = $false;" ^
+    "try { Invoke-WebRequest -UseBasicParsing -Method Post -Uri $shutdownUrl -TimeoutSec 8 -Headers @{ 'X-YakuLingo-Exit' = '1' } | Out-Null; $shutdownRequested = $true } catch { };" ^
+    "$waitStart = Get-Date;" ^
+    "$deadline = $waitStart.AddSeconds(30);" ^
+    "$forceKillAttempted = $false;" ^
+    "while ((Get-Date) -lt $deadline) { $pyProcs = Get-YakuPythonProcs; $yakuProc = Get-Process -Name 'YakuLingo' -ErrorAction SilentlyContinue; if (-not $yakuProc -and (-not $pyProcs -or $pyProcs.Count -eq 0)) { exit 0 }; $elapsed = [int]((Get-Date) - $waitStart).TotalSeconds; if (-not $shutdownRequested -and $elapsed -ge 5) { try { Invoke-WebRequest -UseBasicParsing -Method Post -Uri $shutdownUrl -TimeoutSec 5 -Headers @{ 'X-YakuLingo-Exit' = '1' } | Out-Null; $shutdownRequested = $true } catch { } }; if (-not $forceKillAttempted -and $elapsed -ge 12) { $forceKillAttempted = $true; $targets = @(); if ($yakuProc) { $targets += $yakuProc }; if ($pyProcs) { $targets += $pyProcs }; if ($targets) { $targets | Stop-Process -Force -ErrorAction SilentlyContinue } }; Start-Sleep -Milliseconds 250 };" ^
+    "Write-Host '[ERROR] YakuLingo is still running. Please close it and retry.';" ^
+    "exit 1"
 if errorlevel 1 (
     echo [ERROR] YakuLingo is still running. Please close it and retry.
     pause

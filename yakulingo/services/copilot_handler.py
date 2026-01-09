@@ -2117,8 +2117,23 @@ class CopilotHandler:
                     logger.info("Edge started successfully")
                     # Mark that we started this browser (for cleanup on app exit)
                     self._browser_started_by_us = True
-                    # Store PID separately so we can kill it even if edge_process becomes None
-                    self._edge_pid = self.edge_process.pid
+                    # Store Edge PID separately so we can target window/taskbar operations even if
+                    # the original Popen handle points to a short-lived launcher process.
+                    try:
+                        listening_pids = self._get_listening_pids(self.cdp_port)
+                        profile_dir = self.profile_dir or self._get_profile_dir_path()
+                        profile_hint = str(profile_dir)
+                        detected_pid: int | None = None
+                        for pid in listening_pids:
+                            proc_info = self._inspect_process_for_cdp(pid, profile_hint)
+                            if proc_info.get("is_ours"):
+                                detected_pid = int(pid)
+                                break
+                        if detected_pid is None and listening_pids:
+                            detected_pid = int(listening_pids[0])
+                        self._edge_pid = detected_pid or int(self.edge_process.pid)
+                    except Exception:
+                        self._edge_pid = int(self.edge_process.pid)
                     # Note: Browser display mode is applied in _finalize_connected_state()
                     # after Copilot page is ready, so that YakuLingo window wait and
                     # Copilot preparation can proceed in parallel
@@ -4869,27 +4884,28 @@ class CopilotHandler:
                 wintypes.BOOL, wintypes.HWND, wintypes.LPARAM
             )
 
-            # Get parent PID and all child PIDs for process tree matching
-            target_pids = set()
-            if self.edge_process:
-                target_pids.add(self.edge_process.pid)
-                # Get child process PIDs using psutil
+            # Get parent PID and all child PIDs for process tree matching.
+            # NOTE: Edge may spawn a launcher process which exits early; keep both the Popen PID
+            # and the CDP-detected PID in scope to avoid losing the ability to find the window.
+            target_pids: set[int] = set()
+            root_pids: list[int] = []
+            if self.edge_process and getattr(self.edge_process, "pid", None):
+                root_pids.append(int(self.edge_process.pid))
+            if self._edge_pid:
+                root_pids.append(int(self._edge_pid))
+
+            for root_pid in root_pids:
+                target_pids.add(root_pid)
                 try:
                     import psutil
-                    parent = psutil.Process(self.edge_process.pid)
+
+                    parent = psutil.Process(root_pid)
                     for child in parent.children(recursive=True):
-                        target_pids.add(child.pid)
+                        pid = getattr(child, "pid", None)
+                        if isinstance(pid, int):
+                            target_pids.add(pid)
                 except Exception:
                     # psutil may fail if process already terminated
-                    pass
-            elif self._edge_pid:
-                target_pids.add(self._edge_pid)
-                try:
-                    import psutil
-                    parent = psutil.Process(self._edge_pid)
-                    for child in parent.children(recursive=True):
-                        target_pids.add(child.pid)
-                except Exception:
                     pass
 
             exact_match_hwnd = None
@@ -5468,21 +5484,22 @@ class CopilotHandler:
 
             user32 = ctypes.WinDLL('user32', use_last_error=True)
             target_pids: set[int] = set()
-            root_pid: int | None = None
+            root_pids: list[int] = []
             if self.edge_process is not None and getattr(self.edge_process, "pid", None):
-                root_pid = int(self.edge_process.pid)
-            elif self._edge_pid:
-                root_pid = int(self._edge_pid)
+                root_pids.append(int(self.edge_process.pid))
+            if self._edge_pid:
+                root_pids.append(int(self._edge_pid))
 
-            if root_pid is not None:
+            for root_pid in root_pids:
                 target_pids.add(root_pid)
                 try:
                     import psutil
 
                     parent = psutil.Process(root_pid)
                     for child in parent.children(recursive=True):
-                        if isinstance(child.pid, int):
-                            target_pids.add(child.pid)
+                        pid = getattr(child, "pid", None)
+                        if isinstance(pid, int):
+                            target_pids.add(pid)
                 except Exception:
                     pass
 

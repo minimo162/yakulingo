@@ -790,6 +790,9 @@ class ExcelProcessor(FileProcessor):
         # Merged cells cache: sheet_name -> {merge_address: (row1, col1, row2, col2)}
         # Built once per sheet during apply_translations to avoid repeated COM calls
         self._merged_cells_cache: dict[str, dict[str, tuple[int, int, int, int]]] = {}
+        # XLSX worksheet XML cache for fast merged-cell detection (avoids slow COM scans on merge-heavy sheets)
+        self._xlsx_sheet_xml_paths: dict[str, str] = {}
+        self._xlsx_sheet_xml_paths_source: Optional[Path] = None
 
     def clear_warnings(self) -> None:
         """Clear accumulated warnings."""
@@ -803,6 +806,73 @@ class ExcelProcessor(FileProcessor):
     def clear_merged_cells_cache(self) -> None:
         """Clear merged cells cache."""
         self._merged_cells_cache.clear()
+        self._xlsx_sheet_xml_paths.clear()
+        self._xlsx_sheet_xml_paths_source = None
+
+    def _get_xlsx_sheet_xml_paths(self, file_path: Path) -> dict[str, str]:
+        """Return a mapping from sheet name to worksheet XML path inside an XLSX ZIP."""
+        if self._xlsx_sheet_xml_paths_source == file_path:
+            return self._xlsx_sheet_xml_paths
+
+        sheet_to_file: dict[str, str] = {}
+
+        try:
+            with zipfile.ZipFile(file_path, 'r') as xlsx:
+                sheet_names: dict[str, str] = {}  # rId -> sheet_name
+                sheet_order: list[str] = []  # ordered list of rIds
+
+                try:
+                    with xlsx.open('xl/workbook.xml') as workbook_xml:
+                        for _event, elem in ET.iterparse(workbook_xml, events=['end']):
+                            if elem.tag.endswith('}sheet') or elem.tag == 'sheet':
+                                sheet_name = elem.get('name', '')
+                                rid = None
+                                for attr_name, attr_value in elem.attrib.items():
+                                    if attr_name.endswith('}id') or attr_name == 'id':
+                                        rid = attr_value
+                                        break
+                                if rid and sheet_name:
+                                    sheet_names[rid] = sheet_name
+                                    sheet_order.append(rid)
+                                elem.clear()
+                except KeyError:
+                    self._xlsx_sheet_xml_paths_source = file_path
+                    self._xlsx_sheet_xml_paths = sheet_to_file
+                    return sheet_to_file
+
+                rid_to_file: dict[str, str] = {}
+                try:
+                    with xlsx.open('xl/_rels/workbook.xml.rels') as rels_xml:
+                        for _event, elem in ET.iterparse(rels_xml, events=['end']):
+                            if elem.tag.endswith('}Relationship') or elem.tag == 'Relationship':
+                                rid = elem.get('Id', '')
+                                target = elem.get('Target', '')
+                                if rid and target:
+                                    target = target.lstrip('/')
+                                    if target.startswith('xl/'):
+                                        rid_to_file[rid] = target
+                                    else:
+                                        rid_to_file[rid] = f"xl/{target}"
+                                elem.clear()
+                except KeyError:
+                    rid_to_file = {}
+
+                for i, rid in enumerate(sheet_order, 1):
+                    sheet_name = sheet_names.get(rid)
+                    if not sheet_name:
+                        continue
+                    sheet_file = rid_to_file.get(rid) or f"xl/worksheets/sheet{i}.xml"
+                    sheet_to_file[sheet_name] = sheet_file
+        except (zipfile.BadZipFile, ET.ParseError) as e:
+            logger.debug("Failed to parse XLSX sheet XML paths: %s", e)
+            sheet_to_file = {}
+        except Exception as e:
+            logger.debug("Failed to parse XLSX sheet XML paths: %s", e)
+            sheet_to_file = {}
+
+        self._xlsx_sheet_xml_paths_source = file_path
+        self._xlsx_sheet_xml_paths = sheet_to_file
+        return sheet_to_file
 
     def _get_merged_cells_map(self, sheet) -> dict[str, tuple[int, int, int, int]]:
         """Get merged cells map for a sheet, building cache if needed.
@@ -824,13 +894,6 @@ class ExcelProcessor(FileProcessor):
         merged_cells: dict[str, tuple[int, int, int, int]] = {}
 
         try:
-            app = sheet.book.app
-
-            # Clear FindFormat and set to search for merged cells
-            app.api.FindFormat.Clear()
-            app.api.FindFormat.MergeCells = True
-
-            # Search within used range only
             used_range = sheet.used_range
             if used_range is None:
                 self._merged_cells_cache[sheet_name] = merged_cells
@@ -847,6 +910,58 @@ class ExcelProcessor(FileProcessor):
                     return merged_cells
             except Exception:
                 pass
+
+            # XLSX fast path: parse merged cells directly from the worksheet XML.
+            # This is significantly faster than COM FindFormat scans on merge-heavy sheets.
+            workbook_path = None
+            try:
+                workbook_fullname = getattr(getattr(sheet, "book", None), "fullname", None)
+                if workbook_fullname:
+                    workbook_path = Path(workbook_fullname)
+            except Exception:
+                workbook_path = None
+
+            if workbook_path and workbook_path.suffix.lower() == ".xlsx" and workbook_path.exists():
+                sheet_xml_paths = self._get_xlsx_sheet_xml_paths(workbook_path)
+                sheet_xml_path = sheet_xml_paths.get(sheet_name)
+                if sheet_xml_path:
+                    t0 = time.perf_counter()
+                    try:
+                        with zipfile.ZipFile(workbook_path, 'r') as xlsx:
+                            with xlsx.open(sheet_xml_path) as sheet_xml:
+                                for _event, elem in ET.iterparse(sheet_xml, events=['end']):
+                                    if elem.tag.endswith('}mergeCell') or elem.tag == 'mergeCell':
+                                        ref = elem.get('ref')
+                                        if ref:
+                                            try:
+                                                min_col, min_row, max_col, max_row = range_boundaries(ref)
+                                                merged_cells[ref] = (min_row, min_col, max_row, max_col)
+                                            except Exception:
+                                                pass
+                                    elem.clear()
+
+                        logger.debug(
+                            "Built merged cells map for sheet '%s' via XLSX parse: %d merged areas (%.2fs)",
+                            sheet_name, len(merged_cells), time.perf_counter() - t0,
+                        )
+                        self._merged_cells_cache[sheet_name] = merged_cells
+                        return merged_cells
+                    except (zipfile.BadZipFile, KeyError, ET.ParseError) as e:
+                        logger.debug(
+                            "XLSX merged-cell parse failed for sheet '%s' (falling back to COM scan): %s",
+                            sheet_name, e,
+                        )
+                    except Exception as e:
+                        logger.debug(
+                            "XLSX merged-cell parse failed for sheet '%s' (falling back to COM scan): %s",
+                            sheet_name, e,
+                        )
+
+            app = sheet.book.app
+
+            # Clear FindFormat and set to search for merged cells
+            app.api.FindFormat.Clear()
+            app.api.FindFormat.MergeCells = True
 
             # Find first merged cell
             # LookAt=2 is xlPart, SearchFormat=True enables format-based search
@@ -2523,7 +2638,7 @@ class ExcelProcessor(FileProcessor):
             (written_as_range, range_obj)
 
             - written_as_range: True if written as a multi-cell range write.
-            - range_obj: xlwings Range used for the write (may be reused for font apply).
+            - range_obj: 互換性のために残している戻り値（現在は常に None）。
         """
         try:
             if len(cells) == 1:
@@ -2536,9 +2651,9 @@ class ExcelProcessor(FileProcessor):
                         "Translation truncated for cell %s_%s: %d -> %d chars",
                         sheet_name, cell_ref, len(text), len(final_text)
                     )
-                cell_range = sheet.range(row, col)
-                cell_range.value = final_text
-                return False, cell_range
+                # Use Excel COM Value2 directly (faster than xlwings .value for many small writes)
+                sheet.api.Cells(row, col).Value2 = final_text
+                return False, None
             else:
                 # Multiple contiguous cells - batch write
                 values = []
@@ -2551,9 +2666,10 @@ class ExcelProcessor(FileProcessor):
                             sheet_name, cell_ref, len(text), len(final_text)
                         )
                     values.append(final_text)
-                rng = sheet.range((row, start_col), (row, end_col))
-                rng.value = values
-                return True, rng
+                # Use Excel COM Value2 directly (faster and avoids unnecessary conversions)
+                rng = sheet.api.Range(sheet.api.Cells(row, start_col), sheet.api.Cells(row, end_col))
+                rng.Value2 = values
+                return True, None
         except Exception as e:
             logger.warning(
                 "Error writing values to row %d cols %d-%d in '%s': %s",
@@ -2566,15 +2682,15 @@ class ExcelProcessor(FileProcessor):
                     if text and len(text) > EXCEL_CELL_CHAR_LIMIT:
                         final_text = text[:EXCEL_CELL_CHAR_LIMIT - 3] + "..."
                     try:
-                        sheet.range(row, col).value = final_text
+                        sheet.api.Cells(row, col).Value2 = final_text
                     except Exception as write_e:
                         # Merged cells: Excel may reject writes to non-top-left cells.
                         # Attempt to write to the merge area's top-left instead.
                         try:
-                            cell = sheet.range(row, col)
-                            if getattr(cell.api, "MergeCells", False):
-                                merge_area = cell.api.MergeArea
-                                sheet.range(merge_area.Row, merge_area.Column).value = final_text
+                            cell = sheet.api.Cells(row, col)
+                            if getattr(cell, "MergeCells", False):
+                                merge_area = cell.MergeArea
+                                sheet.api.Cells(merge_area.Row, merge_area.Column).Value2 = final_text
                             else:
                                 raise write_e
                         except Exception:
@@ -2606,7 +2722,7 @@ class ExcelProcessor(FileProcessor):
             (written_as_range, range_obj)
 
             - written_as_range: True if written as a multi-cell range write.
-            - range_obj: xlwings Range used for the write (may be reused for font apply).
+            - range_obj: 互換性のために残している戻り値（現在は常に None）。
         """
         try:
             if len(cells) == 1:
@@ -2618,9 +2734,9 @@ class ExcelProcessor(FileProcessor):
                         "Translation truncated for cell %s_%s: %d -> %d chars",
                         sheet_name, cell_ref, len(text), len(final_text)
                     )
-                cell_range = sheet.range(row, col)
-                cell_range.value = final_text
-                return False, cell_range
+                # Use Excel COM Value2 directly (faster than xlwings .value for many small writes)
+                sheet.api.Cells(row, col).Value2 = final_text
+                return False, None
 
             values: list[list[str]] = []
             for row, text, cell_ref in cells:
@@ -2633,9 +2749,9 @@ class ExcelProcessor(FileProcessor):
                     )
                 values.append([final_text])
 
-            rng = sheet.range((start_row, col), (end_row, col))
-            rng.value = values
-            return True, rng
+            rng = sheet.api.Range(sheet.api.Cells(start_row, col), sheet.api.Cells(end_row, col))
+            rng.Value2 = values
+            return True, None
         except Exception as e:
             logger.warning(
                 "Error writing values to col %d rows %d-%d in '%s': %s",
@@ -2647,13 +2763,13 @@ class ExcelProcessor(FileProcessor):
                     if text and len(text) > EXCEL_CELL_CHAR_LIMIT:
                         final_text = text[:EXCEL_CELL_CHAR_LIMIT - 3] + "..."
                     try:
-                        sheet.range(row, col).value = final_text
+                        sheet.api.Cells(row, col).Value2 = final_text
                     except Exception as write_e:
                         try:
-                            cell = sheet.range(row, col)
-                            if getattr(cell.api, "MergeCells", False):
-                                merge_area = cell.api.MergeArea
-                                sheet.range(merge_area.Row, merge_area.Column).value = final_text
+                            cell = sheet.api.Cells(row, col)
+                            if getattr(cell, "MergeCells", False):
+                                merge_area = cell.MergeArea
+                                sheet.api.Cells(merge_area.Row, merge_area.Column).Value2 = final_text
                             else:
                                 raise write_e
                         except Exception:

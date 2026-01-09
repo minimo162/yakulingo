@@ -1424,28 +1424,7 @@ def _render_translation_text(
     *,
     table_hint: Optional[_TabularTextHint] = None,
 ):
-    """Render translation text, showing tabular output as a table."""
-    if '\t' in text:
-        parsed = _parse_tabular_text_rows(text, hint=table_hint)
-        if parsed:
-            def escape_cell(value: str) -> str:
-                return html.escape(value).replace('\n', '<br>')
-
-            table_rows = []
-            for row in parsed:
-                cells = ''.join(f'<td>{escape_cell(col)}</td>' for col in row)
-                table_rows.append(f'<tr>{cells}</tr>')
-            html_content = (
-                '<div class="translation-table">'
-                '<table><tbody>'
-                f'{"".join(table_rows)}'
-                '</tbody></table></div>'
-            )
-            ui.html(html_content, sanitize=False).classes('option-text w-full')
-        else:
-            label = ui.label(text).classes('option-text py-1 w-full')
-            label.style('white-space: pre-wrap;')
-        return
+    """Render translation text (always as normal text)."""
 
     if diff_base_text and diff_base_text.strip() and diff_base_text != text:
         diff_html = _build_diff_html(diff_base_text, text)
@@ -1453,7 +1432,7 @@ def _render_translation_text(
         return
 
     label = ui.label(text).classes('option-text py-1 w-full')
-    if '\n' in text:
+    if '\n' in text or '\t' in text:
         label.style('white-space: pre-wrap;')
 
 

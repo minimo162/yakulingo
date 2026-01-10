@@ -948,6 +948,13 @@ class CopilotHandler:
 - 同梱構成（例）: `local_ai/llama_cpp/{avx2|generic}` と `local_ai/models/*.gguf`（LICENSE/README/manifest 同梱）
 - AVX2自動選択（2ビルド同梱時）: AVX2版を先に試行し、違法命令（Illegal Instruction）で落ちた場合は generic へフォールバック（結果は状態ファイルに記録）
 
+**ローカルAI計測（task-00基準）:**
+- warm を主指標、cold は参考
+- 入力: `tools/bench_local_ai_input.txt`（400〜800字程度 / style=concise）
+- 参照: `glossary.csv` ON / OFF
+- ベンチ: `uv run python tools/bench_local_ai.py --mode warm`（既定 `--max-tokens 512`）
+- cold 参考: `uv run python tools/bench_local_ai.py --mode cold --with-glossary`
+
 ### 6.2 TranslationService
 
 翻訳処理の中心クラス。

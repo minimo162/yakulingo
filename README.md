@@ -296,6 +296,8 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
   "local_ai_threads": 0,
   "local_ai_temperature": 0.2,
   "local_ai_max_tokens": null,
+  "local_ai_batch_size": 512,
+  "local_ai_ubatch_size": 128,
   "local_ai_max_chars_per_batch": 1000,
   "bilingual_output": false,
   "export_glossary": false,
@@ -383,6 +385,8 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 | `request_timeout` | 翻訳リクエストのタイムアウト（秒） | 600 |
 | `local_ai_temperature` | ローカルAIの温度（翻訳向けに低め） | 0.2 |
 | `local_ai_max_tokens` | ローカルAIの最大生成トークン（nullで無制限） | null |
+| `local_ai_batch_size` | ローカルAIのバッチサイズ（対応フラグがある場合のみ使用、nullで無効） | 512 |
+| `local_ai_ubatch_size` | ローカルAIのマイクロバッチサイズ（対応フラグがある場合のみ使用、nullで無効） | 128 |
 | `login_overlay_guard` | ログイン表示のガード（通常は無効） | enabled=false |
 | `auto_update_enabled` | 起動時の自動更新チェック | true |
 | `auto_update_check_interval` | 自動更新チェック間隔（秒、0=起動毎） | 0 |

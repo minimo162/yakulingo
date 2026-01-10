@@ -61,6 +61,8 @@ USER_SETTINGS_KEYS = {
     "local_ai_threads",
     "local_ai_temperature",
     "local_ai_max_tokens",
+    "local_ai_batch_size",
+    "local_ai_ubatch_size",
     "local_ai_max_chars_per_batch",
 }
 
@@ -323,6 +325,8 @@ class AppSettings:
     local_ai_threads: int = 0  # 0=auto
     local_ai_temperature: float = 0.2
     local_ai_max_tokens: Optional[int] = None
+    local_ai_batch_size: Optional[int] = 512
+    local_ai_ubatch_size: Optional[int] = 128
     local_ai_max_chars_per_batch: int = 1000
 
     # File Translation Options (共通オプション)
@@ -557,6 +561,44 @@ class AppSettings:
                 self.local_ai_ctx_size,
             )
             self.local_ai_ctx_size = 4096
+
+        # Local AI batch sizing (safety clamps)
+        if self.local_ai_batch_size is not None:
+            if self.local_ai_batch_size < 1:
+                logger.warning(
+                    "local_ai_batch_size must be positive (%d), resetting to None",
+                    self.local_ai_batch_size,
+                )
+                self.local_ai_batch_size = None
+            elif self.local_ai_batch_size > self.local_ai_ctx_size:
+                logger.warning(
+                    "local_ai_batch_size too large (%d), resetting to %d",
+                    self.local_ai_batch_size,
+                    self.local_ai_ctx_size,
+                )
+                self.local_ai_batch_size = self.local_ai_ctx_size
+
+        if self.local_ai_ubatch_size is not None:
+            if self.local_ai_ubatch_size < 1:
+                logger.warning(
+                    "local_ai_ubatch_size must be positive (%d), resetting to None",
+                    self.local_ai_ubatch_size,
+                )
+                self.local_ai_ubatch_size = None
+            elif self.local_ai_batch_size is not None and self.local_ai_ubatch_size > self.local_ai_batch_size:
+                logger.warning(
+                    "local_ai_ubatch_size too large (%d), resetting to %d",
+                    self.local_ai_ubatch_size,
+                    self.local_ai_batch_size,
+                )
+                self.local_ai_ubatch_size = self.local_ai_batch_size
+            elif self.local_ai_ubatch_size > self.local_ai_ctx_size:
+                logger.warning(
+                    "local_ai_ubatch_size too large (%d), resetting to %d",
+                    self.local_ai_ubatch_size,
+                    self.local_ai_ctx_size,
+                )
+                self.local_ai_ubatch_size = self.local_ai_ctx_size
 
         # Local AI batch size constraints
         if self.local_ai_max_chars_per_batch < 100:

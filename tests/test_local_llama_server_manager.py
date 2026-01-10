@@ -188,3 +188,101 @@ def test_ensure_ready_falls_back_to_bundled_server_dir_when_custom_invalid(
 
     assert runtime.server_exe_path == exe_path
     assert seen_dirs == [tmp_path / "custom" / "invalid", bundled_dir]
+
+
+def test_build_server_args_adds_batch_flags_when_available(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager = lls.LocalLlamaServerManager()
+    server_exe_path = tmp_path / "llama-server.exe"
+    server_exe_path.write_bytes(b"exe")
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"model")
+
+    help_text = "\n".join(
+        [
+            "-m, --model",
+            "--ctx-size",
+            "--threads",
+            "--temp",
+            "--n-predict",
+            "--batch-size",
+            "--ubatch-size",
+        ]
+    )
+
+    class DummyCompleted:
+        def __init__(self, stdout: str) -> None:
+            self.stdout = stdout
+
+    def fake_run(*args, **kwargs):
+        return DummyCompleted(help_text)
+
+    monkeypatch.setattr(lls.subprocess, "run", fake_run)
+
+    settings = AppSettings(
+        local_ai_batch_size=512,
+        local_ai_ubatch_size=128,
+    )
+    settings._validate()
+
+    args = manager._build_server_args(
+        server_exe_path=server_exe_path,
+        model_path=model_path,
+        host="127.0.0.1",
+        port=4891,
+        settings=settings,
+    )
+
+    assert "--batch-size" in args
+    assert args[args.index("--batch-size") + 1] == "512"
+    assert "--ubatch-size" in args
+    assert args[args.index("--ubatch-size") + 1] == "128"
+
+
+def test_build_server_args_skips_batch_flags_without_help(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager = lls.LocalLlamaServerManager()
+    server_exe_path = tmp_path / "llama-server.exe"
+    server_exe_path.write_bytes(b"exe")
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"model")
+
+    help_text = "\n".join(
+        [
+            "-m, --model",
+            "--ctx-size",
+            "--threads",
+            "--temp",
+            "--n-predict",
+        ]
+    )
+
+    class DummyCompleted:
+        def __init__(self, stdout: str) -> None:
+            self.stdout = stdout
+
+    def fake_run(*args, **kwargs):
+        return DummyCompleted(help_text)
+
+    monkeypatch.setattr(lls.subprocess, "run", fake_run)
+
+    settings = AppSettings(
+        local_ai_batch_size=512,
+        local_ai_ubatch_size=128,
+    )
+    settings._validate()
+
+    args = manager._build_server_args(
+        server_exe_path=server_exe_path,
+        model_path=model_path,
+        host="127.0.0.1",
+        port=4891,
+        settings=settings,
+    )
+
+    assert "--batch-size" not in args
+    assert "-b" not in args
+    assert "--ubatch-size" not in args
+    assert "-ub" not in args

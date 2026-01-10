@@ -746,6 +746,20 @@ class LocalLlamaServerManager:
             elif help_text and has_short("-n"):
                 args += ["-n", str(int(settings.local_ai_max_tokens))]
 
+        batch_size = settings.local_ai_batch_size
+        if help_text and batch_size is not None and batch_size > 0:
+            if has_long("--batch-size"):
+                args += ["--batch-size", str(int(batch_size))]
+            elif has_short("-b"):
+                args += ["-b", str(int(batch_size))]
+
+        ubatch_size = settings.local_ai_ubatch_size
+        if help_text and ubatch_size is not None and ubatch_size > 0:
+            if has_long("--ubatch-size"):
+                args += ["--ubatch-size", str(int(ubatch_size))]
+            elif has_short("-ub"):
+                args += ["-ub", str(int(ubatch_size))]
+
         return args
 
     def _write_state(self, path: Path, state: dict) -> None:

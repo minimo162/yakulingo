@@ -15,6 +15,8 @@
   "local_ai_threads": 0,
   "local_ai_temperature": 0.2,
   "local_ai_max_tokens": null,
+  "local_ai_batch_size": 512,
+  "local_ai_ubatch_size": 128,
   "local_ai_max_chars_per_batch": 1000,
   "bilingual_output": false,
   "export_glossary": false,

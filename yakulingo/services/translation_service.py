@@ -203,21 +203,84 @@ def _extract_first_translation_from_json(buffer: str) -> Optional[str]:
     return value or None
 
 
+def _extract_json_value_for_key(
+    buffer: str,
+    key: str,
+    *,
+    start: int = 0,
+    end: Optional[int] = None,
+) -> Optional[str]:
+    token = f'"{key}"'
+    segment = buffer[start:end] if end is not None else buffer[start:]
+    key_idx = segment.find(token)
+    if key_idx == -1:
+        return None
+    colon_idx = segment.find(":", key_idx + len(token))
+    if colon_idx == -1:
+        return None
+    quote_idx = segment.find('"', colon_idx + 1)
+    if quote_idx == -1:
+        return None
+    value, _ = _extract_json_string_partial(segment, quote_idx + 1)
+    return value or None
+
+
+def _extract_options_preview(buffer: str) -> Optional[str]:
+    if '"options"' not in buffer:
+        return None
+    positions: list[tuple[int, str]] = []
+    for style in TEXT_STYLE_ORDER:
+        idx = buffer.find(f'"style":"{style}"')
+        if idx != -1:
+            positions.append((idx, style))
+    if not positions:
+        return None
+    positions.sort()
+    lines: list[str] = []
+    for i, (idx, style) in enumerate(positions):
+        next_idx = positions[i + 1][0] if i + 1 < len(positions) else None
+        translation = _extract_json_value_for_key(buffer, "translation", start=idx, end=next_idx)
+        explanation = _extract_json_value_for_key(buffer, "explanation", start=idx, end=next_idx)
+        if not translation and not explanation:
+            continue
+        if translation:
+            lines.append(f"[{style}] {translation}")
+        else:
+            lines.append(f"[{style}]")
+        if explanation:
+            lines.append(f"- {explanation}")
+    preview = "\n".join(lines).strip()
+    return preview or None
+
+
 def _wrap_local_streaming_on_chunk(
     on_chunk: Optional[Callable[[str], None]],
 ) -> Optional[Callable[[str], None]]:
     if on_chunk is None:
         return None
-    buffer: list[str] = []
     last_emitted = [""]
+    last_raw = [""]
 
     def _handle(delta: str) -> None:
         if not delta:
             return
-        buffer.append(delta)
-        candidate = _extract_first_translation_from_json("".join(buffer))
-        if not candidate:
-            return
+        if delta.startswith(last_raw[0]):
+            raw = delta
+        else:
+            raw = last_raw[0] + delta
+        last_raw[0] = raw
+
+        candidate = _extract_options_preview(raw)
+        if candidate is None:
+            translation = _extract_first_translation_from_json(raw)
+            if not translation:
+                return
+            explanation = _extract_json_value_for_key(raw, "explanation")
+            if explanation:
+                candidate = f"{translation}\n{explanation}"
+            else:
+                candidate = translation
+
         if candidate == last_emitted[0] or len(candidate) < len(last_emitted[0]):
             return
         last_emitted[0] = candidate

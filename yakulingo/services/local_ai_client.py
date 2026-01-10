@@ -603,8 +603,8 @@ class LocalAIClient:
                     model_id = candidate
             delta = _parse_openai_stream_delta(obj)
             if delta:
-                on_chunk(delta)
                 pieces.append(delta)
+                on_chunk("".join(pieces))
                 if self._should_cancel():
                     raise TranslationCancelledError("Translation cancelled by user")
             return None

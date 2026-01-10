@@ -24,7 +24,7 @@ def test_local_ai_streaming_parses_sse_and_collects_chunks() -> None:
     content, model_id = client._consume_sse_stream(iter(chunks), on_chunk)
 
     assert content == "Hello"
-    assert received == ["Hel", "lo"]
+    assert received == ["Hel", "Hello"]
     assert model_id is None
 
 
@@ -42,10 +42,11 @@ def test_local_streaming_wrap_extracts_translation_incrementally() -> None:
     for delta in deltas:
         handler(delta)
 
-    assert received == ["He", "Hello"]
+    assert received[0] == "He"
+    assert received[1] == "Hello"
+    assert "Hello" in received[-1]
 
 
-@pytest.mark.xfail(reason="TODO: make streaming callback cumulative for UI")
 def test_local_ai_streaming_on_chunk_is_cumulative() -> None:
     client = LocalAIClient(settings=AppSettings())
     received: list[str] = []

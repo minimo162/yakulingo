@@ -395,6 +395,27 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 > **Note**: ローカルAI関連のパス（`local_ai_model_path`, `local_ai_server_dir`）は、相対パスの場合 **アプリ配置ディレクトリ基準** で解決します（CWD基準ではありません）。
 > **Note**: `local_ai_host` は安全のため `127.0.0.1` に強制されます。
 
+### ローカルAI速度計測（ベンチ）
+
+**計測条件（固定）**
+- 入力: `tools/bench_local_ai_input.txt`（410文字、用語集ヒット語を含む）
+- 方向: JP→EN / style=concise
+- 参照: `glossary.csv` の ON / OFF を両方計測
+- 指標: warm（主指標）/ cold（参考）
+- 生成上限: `--max-tokens 512`（ベンチの既定値）
+
+**実行例**
+```bash
+uv run python tools/bench_local_ai.py --mode warm --with-glossary
+uv run python tools/bench_local_ai.py --mode warm
+uv run python tools/bench_local_ai.py --mode cold --with-glossary
+```
+- `--mode cold` はローカルAIサーバを停止してから実行するため、他の翻訳が動いていないときに行う
+- 出力の `translation_seconds` を記録（`warm` を主指標）
+
+**ログで確認する場合**
+- `~/.yakulingo/logs/startup.log` の `[TIMING] LocalAI ...` でも確認可能
+
 ### 参照ファイル
 
 翻訳時に参照ファイルを添付することで、一貫性のある翻訳が可能です。

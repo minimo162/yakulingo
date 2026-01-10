@@ -36,8 +36,6 @@ if platform.system() == "Windows":
     import winreg
     try:
         import sspi
-        import sspicon
-        import win32security
         HAS_PYWIN32 = True
     except ImportError:
         HAS_PYWIN32 = False
@@ -897,7 +895,7 @@ class AutoUpdater:
         files_to_update_ps = ", ".join([f'"{f}"' for f in self.SOURCE_FILES])
 
         # VBSスクリプト（PowerShellを起動するラッパー）
-        vbs_content = f'''' ============================================================
+        vbs_content = '''' ============================================================
 ' YakuLingo Update Script (GUI Version)
 ' ============================================================
 

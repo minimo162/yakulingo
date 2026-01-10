@@ -1,10 +1,10 @@
 # yakulingo/ui/app.py
-from __future__ import annotations
-
 """
 YakuLingo - Nani-inspired sidebar layout with bidirectional translation.
 Japanese → English, Other → Japanese (auto-detected by AI).
 """
+
+from __future__ import annotations
 
 import atexit
 import asyncio
@@ -706,7 +706,6 @@ def _nicegui_open_window_patched(
     if sys.platform == "win32":
         try:
             import ctypes
-            from ctypes import wintypes
 
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("YakuLingo.App")
         except Exception:
@@ -1155,7 +1154,7 @@ def _patch_nicegui_native_mode() -> None:
 
 
 # Fast imports - required at startup (lightweight modules only)
-from yakulingo.ui.state import (
+from yakulingo.ui.state import (  # noqa: E402
     AppState,
     Tab,
     FileState,
@@ -1164,7 +1163,7 @@ from yakulingo.ui.state import (
     TranslationBackend,
     LocalAIState,
 )
-from yakulingo.models.types import (
+from yakulingo.models.types import (  # noqa: E402
     TranslationProgress,
     TranslationResult,
     TranslationStatus,
@@ -1174,7 +1173,7 @@ from yakulingo.models.types import (
     TranslationPhase,
     FileQueueItem,
 )
-from yakulingo.config.settings import (
+from yakulingo.config.settings import (  # noqa: E402
     AppSettings,
     get_default_settings_path,
     get_default_prompts_dir,
@@ -2216,9 +2215,7 @@ class YakuLingoApp:
                 timeout_sec=COPILOT_LOGIN_TIMEOUT,
             )
 
-        shown = await self._ensure_resident_ui_visible(reason)
-        with self._client_lock:
-            has_client_after = self._client is not None
+        await self._ensure_resident_ui_visible(reason)
 
         if self._copilot is not None:
             try:
@@ -5216,7 +5213,6 @@ class YakuLingoApp:
 
             # Windows API constants
             SW_RESTORE = 9
-            SW_SHOW = 5
             HWND_TOPMOST = -1
             HWND_NOTOPMOST = -2
             SWP_NOMOVE = 0x0002
@@ -5943,7 +5939,7 @@ class YakuLingoApp:
             return
         self._cancel_auto_open_timeout()
         try:
-            loop = asyncio.get_running_loop()
+            asyncio.get_running_loop()
         except RuntimeError:
             logger.debug("Auto-open timeout skipped (no loop): %s", reason)
             return
@@ -6221,7 +6217,6 @@ class YakuLingoApp:
         """
         try:
             import ctypes
-            from ctypes import wintypes
 
             user32 = ctypes.WinDLL('user32', use_last_error=True)
             self._set_layout_mode(LayoutMode.RESTORING, "restore_app_window")
@@ -12516,9 +12511,6 @@ def run_app(
 
     os.environ.setdefault("YAKULINGO_NO_AUTO_OPEN", "1")
     resident_mode = os.environ.get("YAKULINGO_NO_AUTO_OPEN", "").strip().lower() in ("1", "true", "yes")
-    watchdog_enabled = os.environ.get("YAKULINGO_WATCHDOG", "").strip().lower() in (
-        "1", "true", "yes"
-    )
     launch_source = os.environ.get("YAKULINGO_LAUNCH_SOURCE") or "unknown"
     logger.info(
         "Resident mode: %s (YAKULINGO_NO_AUTO_OPEN=%s, launch_source=%s)",

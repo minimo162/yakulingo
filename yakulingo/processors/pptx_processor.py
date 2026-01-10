@@ -10,13 +10,13 @@ from pptx import Presentation
 from pptx.enum.shapes import MSO_SHAPE_TYPE
 from pptx.util import Pt
 
+from .translators import CellTranslator, ParagraphTranslator
+from .font_manager import FontManager
+from yakulingo.models.types import TextBlock, FileInfo, FileType, SectionDetail
 from .base import FileProcessor
 
 # Module logger
 logger = logging.getLogger(__name__)
-from .translators import CellTranslator, ParagraphTranslator
-from .font_manager import FontManager
-from yakulingo.models.types import TextBlock, FileInfo, FileType, SectionDetail
 
 
 class PptxProcessor(FileProcessor):
@@ -439,8 +439,6 @@ class PptxProcessor(FileProcessor):
             dict with original_slides, translated_slides, total_slides counts
         """
         import shutil
-        import zipfile
-        import tempfile
         from xml.etree import ElementTree as ET
 
         # Copy original file to output

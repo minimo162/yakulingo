@@ -20,6 +20,7 @@ from typing import Optional, Callable, Set, Iterator
 from unittest.mock import Mock
 
 from nicegui import ui
+from yakulingo.models.types import TranslationResult
 
 # Module logger
 logger = logging.getLogger(__name__)
@@ -936,7 +937,7 @@ def trigger_file_download(file_path: Path) -> bool:
 
 
 def create_completion_dialog(
-    result: 'TranslationResult',
+    result: TranslationResult,
     duration_seconds: float,
     on_close: Optional[Callable[[], None]] = None,
 ) -> 'ui.dialog':

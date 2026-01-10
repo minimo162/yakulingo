@@ -176,9 +176,6 @@ class MsgProcessor(FileProcessor):
         """Get file metadata for UI display."""
         content = self._get_cached_content(file_path)
 
-        # Get basic info
-        subject = content.get('subject') or "(\u4ef6\u540d\u306a\u3057)"
-
         # Count body paragraphs for section details
         body = content.get('body', '')
         paragraphs = self._split_body_into_paragraphs(body)

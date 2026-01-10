@@ -23,13 +23,16 @@ def main():
     import multiprocessing
     multiprocessing.freeze_support()
 
-    from nicegui import ui, app as nicegui_app, Client
+    from nicegui import ui, Client
     from yakulingo.ui.styles import COMPLETE_CSS
     from yakulingo.ui.app import _detect_display_settings
 
     # ディスプレイ設定を検出
     window_size, panel_sizes = _detect_display_settings()
     sidebar_width, input_panel_width, content_width = panel_sizes
+    display_mode = "minimized"
+    result_content_width = content_width
+    input_panel_max_width = input_panel_width
 
     print("=" * 60)
     print("YakuLingo レイアウト診断")
@@ -56,7 +59,7 @@ def main():
         </style>''')
 
         # 2カラムレイアウトを再現（実際のアプリと同じ構造）
-        with ui.element('div').classes('app-container').style('position: absolute; top: 0; left: 0; right: 0; bottom: 0;') as app_container:
+        with ui.element('div').classes('app-container').style('position: absolute; top: 0; left: 0; right: 0; bottom: 0;'):
             # サイドバー
             with ui.element('div').classes('sidebar'):
                 with ui.element('div').classes('sidebar-header'):
@@ -64,12 +67,12 @@ def main():
                 ui.label('診断モード').classes('text-xs p-2')
 
             # メインエリア（結果なし = 2カラムモード）
-            with ui.element('div').classes('main-area') as main_area:
-                with ui.column().classes('input-panel') as input_panel:
-                    with ui.column().classes('flex-1 w-full gap-4') as inner_column:
-                        with ui.element('div').classes('main-card w-full') as main_card:
-                            with ui.element('div').classes('main-card-inner') as main_card_inner:
-                                textarea = ui.textarea(
+            with ui.element('div').classes('main-area'):
+                with ui.column().classes('input-panel'):
+                    with ui.column().classes('flex-1 w-full gap-4'):
+                        with ui.element('div').classes('main-card w-full'):
+                            with ui.element('div').classes('main-card-inner'):
+                                ui.textarea(
                                     placeholder='好きな言語で入力…',
                                 ).classes('w-full p-4').props('borderless autogrow').style('min-height: var(--input-min-height)')
 

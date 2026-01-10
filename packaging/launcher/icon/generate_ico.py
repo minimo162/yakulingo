@@ -24,8 +24,6 @@ def save_ico_with_png(images: list, output_path: Path) -> None:
         images: List of PIL.Image objects (RGBA mode), sorted by size descending
         output_path: Output ICO file path
     """
-    from PIL import Image
-
     num_images = len(images)
 
     # Prepare PNG data for each image

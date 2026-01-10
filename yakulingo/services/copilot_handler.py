@@ -15,7 +15,6 @@ import sys
 import time
 import socket
 import subprocess
-import asyncio
 import threading
 import queue as thread_queue
 import shutil
@@ -925,7 +924,6 @@ def pre_initialize_playwright():
 
         # Start initialization in a separate thread that uses the executor
         # This allows pre_initialize_playwright() to return immediately
-        result_state: str | None = None
         try:
             init_thread = threading.Thread(
                 target=_pre_init_thread_wrapper,
@@ -2310,7 +2308,6 @@ class CopilotHandler:
 
         error_types = _get_playwright_errors()
         PlaywrightTimeoutError = error_types['TimeoutError']
-        candidates = self._get_gpt_mode_target_candidates()
         PlaywrightError = error_types['Error']
 
         logger.warning("Edge error page detected; attempting reload (%s)", reason)
@@ -2850,10 +2847,6 @@ class CopilotHandler:
         if not self._browser:
             logger.error("Cannot get context: browser is not connected")
             return None
-
-        error_types = _get_playwright_errors()
-        PlaywrightError = error_types['Error']
-        PlaywrightTimeoutError = error_types['TimeoutError']
 
         contexts = self._browser.contexts
         if contexts:
@@ -3569,8 +3562,6 @@ class CopilotHandler:
 
         self._maximize_edge_window_for_gpt()
 
-        candidates = self._get_gpt_mode_target_candidates()
-
         result_state: str | None = None
         try:
             start_time = time.monotonic()
@@ -3710,7 +3701,6 @@ class CopilotHandler:
             return False
         try:
             import ctypes
-            from ctypes import wintypes
 
             user32 = ctypes.WinDLL('user32', use_last_error=True)
             edge_hwnd = self._find_edge_window_handle()
@@ -3773,6 +3763,7 @@ class CopilotHandler:
         error_types = _get_playwright_errors()
         PlaywrightTimeoutError = error_types['TimeoutError']
         candidates = self._get_gpt_mode_target_candidates()
+        fallback_candidates = self._get_gpt_mode_fallback_candidates()
 
         try:
             if switcher_selector is None:
@@ -5815,7 +5806,6 @@ class CopilotHandler:
 
         try:
             import ctypes
-            from ctypes import wintypes
 
             user32 = ctypes.WinDLL('user32', use_last_error=True)
             WM_CLOSE = 0x0010
@@ -5925,7 +5915,6 @@ class CopilotHandler:
                 SWP_NOZORDER = 0x0004
 
                 rect = wintypes.RECT()
-                repositioned = False
                 if user32.GetWindowRect(edge_hwnd, ctypes.byref(rect)):
                     current_x = rect.left
                     current_y = rect.top
@@ -5996,7 +5985,6 @@ class CopilotHandler:
                             new_x, new_y, new_width, new_height,
                             SWP_NOACTIVATE | SWP_NOZORDER
                         )
-                        repositioned = True
                         if is_off_screen:
                             logger.info("Pre-positioned Edge window from off-screen (%d,%d) to (%d,%d)",
                                         current_x, current_y, new_x, new_y)
@@ -8174,10 +8162,8 @@ class CopilotHandler:
             bool(on_chunk),
             len(reference_files) if reference_files else 0,
         )
-        total_start = time.monotonic()
 
         # Call _connect_impl directly since we're already in the Playwright thread
-        connect_start = time.monotonic()
         if not self._connect_with_tracking():
             # Provide specific error message based on connection error type
             if self.last_connection_error == self.ERROR_LOGIN_REQUIRED:
@@ -8480,7 +8466,6 @@ class CopilotHandler:
         PlaywrightTimeoutError = error_types['TimeoutError']
 
         logger.info("Sending message to Copilot (length: %d chars)", len(message))
-        send_msg_start = time.monotonic()
 
         # Ensure we have a valid page reference
         if not self._page or not self._is_page_valid():
@@ -8667,7 +8652,6 @@ class CopilotHandler:
 
                 # Send via Enter key (most reliable for minimized windows)
                 MAX_SEND_RETRIES = 3
-                send_success = False
                 stop_button_seen_during_send = False  # Track if stop button was detected
 
                 # Always try Enter first; click is fallback if Enter doesn't send.
@@ -9072,7 +9056,6 @@ class CopilotHandler:
                                            pre_click_state.get('stopBtnVisible'), pre_click_state.get('inputCleared'))
                                 stop_button_seen_during_send = pre_click_state.get('stopBtnVisible', False)
                                 send_method = "Enter key (verified by pre-click check)"
-                                send_success = True
                                 break  # Exit retry loop
 
                             # Log elapsed time since send ready
@@ -9185,7 +9168,6 @@ class CopilotHandler:
                                            pre_click_state.get('stopBtnVisible'), pre_click_state.get('inputCleared'))
                                 stop_button_seen_during_send = pre_click_state.get('stopBtnVisible', False)
                                 send_method = "Enter key (verified by pre-click check)"
-                                send_success = True
                                 break  # Exit retry loop
 
                             send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
@@ -9391,7 +9373,6 @@ class CopilotHandler:
                         elapsed = time.monotonic() - verify_start
                         logger.info("[SEND] Message sent (attempt %d, %s, verified in %.2fs)",
                                     send_attempt + 1, verify_reason, elapsed)
-                        send_success = True
                         # Wait for Copilot's internal state to stabilize before proceeding
                         # This prevents "応答を処理中です" message from DOM operations during response generation
                         time.sleep(0.3)
@@ -9460,7 +9441,6 @@ class CopilotHandler:
                                 elapsed = time.monotonic() - late_verify_start
                                 logger.info("[SEND] Message sent (attempt %d, %s, verified in %.2fs)",
                                             send_attempt + 1, late_reason, elapsed)
-                                send_success = True
                                 time.sleep(0.3)
                                 break
 
@@ -10003,7 +9983,6 @@ class CopilotHandler:
         """
         error_types = _get_playwright_errors()
         PlaywrightError = error_types['Error']
-        PlaywrightTimeoutError = error_types['TimeoutError']
 
         streaming_logged = False  # Avoid spamming logs for every tiny delta
         response_start_time = time.monotonic()
@@ -10399,7 +10378,7 @@ class CopilotHandler:
             # Common patterns: file name displayed, attachment indicator, etc.
             file_name = file_path.name
             file_indicators = [
-                f'[data-testid*="attachment"]',
+                '[data-testid*="attachment"]',
                 f'[aria-label*="{file_name}"]',
                 '.fai-AttachmentChip',
                 '[class*="attachment"]',
@@ -10835,7 +10814,6 @@ class CopilotHandler:
         """
         error_types = _get_playwright_errors()
         PlaywrightError = error_types['Error']
-        PlaywrightTimeoutError = error_types['TimeoutError']
 
         if self._page and self._looks_like_edge_error_page(self._page, fast_only=True):
             self._recover_from_edge_error_page(

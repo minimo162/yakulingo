@@ -1239,7 +1239,6 @@ class FontRegistry:
             PDFDocument = pdfminer['PDFDocument']
             PDFPage = pdfminer['PDFPage']
             PDFResourceManager = pdfminer['PDFResourceManager']
-            PDFSyntaxError = pdfminer['PDFSyntaxError']
 
             with open(pdf_path, 'rb') as f:
                 parser = PDFParser(f)

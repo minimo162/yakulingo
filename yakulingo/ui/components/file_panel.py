@@ -20,7 +20,6 @@ from yakulingo.ui.utils import (
 from yakulingo.models.types import (
     FileInfo,
     FileType,
-    SectionDetail,
     TranslationPhase,
     TranslationResult,
     TranslationStatus,
@@ -421,7 +420,6 @@ def _file_translate_meta_chips(
     use_bundled_glossary: bool = False,
 ) -> None:
     output_label = '日本語→英語' if state.file_output_language == 'en' else '英語→日本語'
-    output_language_label = '英語' if state.file_output_language == 'en' else '日本語'
     style_label = STYLE_OPTIONS.get(translation_style, (translation_style, ""))[0]
     with ui.column().classes('file-meta-summary items-center gap-1'):
         with ui.row().classes('file-meta-chips items-center gap-2 flex-wrap justify-center'):
@@ -1267,7 +1265,7 @@ def _section_selector(
     section_label = section_type_labels.get(file_info.file_type, 'セクション')
 
     with ui.expansion(
-        f'翻訳範囲を指定',
+        '翻訳範囲を指定',
         icon='tune',
     ).classes('section-selector w-full mt-3'):
         # Selection summary

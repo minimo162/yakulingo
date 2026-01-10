@@ -23,12 +23,10 @@ Module Structure (PDFMathTranslate compliant):
 import logging
 import re
 import threading
+from collections import OrderedDict
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator, Optional
-
-# Module logger
-logger = logging.getLogger(__name__)
 
 from .base import FileProcessor
 from yakulingo.models.types import (
@@ -37,14 +35,14 @@ from yakulingo.models.types import (
 )
 
 # Import from split modules (re-export for backward compatibility)
-from .pdf_font_manager import (
+from .pdf_font_manager import (  # noqa: F401
     FontType, FontInfo, FontRegistry,
     get_font_path_by_name, get_font_path_for_lang,
     FONT_NAME_TO_FILES, FONT_FILES,
     _get_pymupdf, _get_pdfminer,
     _get_system_font_dirs, _find_font_file,  # For tests
 )
-from .pdf_operators import (
+from .pdf_operators import (  # noqa: F401
     PdfOperatorGenerator, ContentStreamParser, ContentStreamReplacer,
 )
 
@@ -52,35 +50,26 @@ from .pdf_operators import (
 from .pdf_converter import (
     # Data classes
     Paragraph, FormulaVar, TranslationCell,
-    PdfCoord, ImageCoord,  # Coordinate type safety
     # Constants
     LANG_LINEHEIGHT_MAP, DEFAULT_LINE_HEIGHT,
     DEFAULT_FONT_SIZE, MIN_FONT_SIZE, MAX_FONT_SIZE,
-    SUBSCRIPT_SUPERSCRIPT_THRESHOLD,
-    MIN_LINE_HEIGHT, LINE_HEIGHT_COMPRESSION_STEP, MAX_LINES_FOR_SINGLE_LINE_BLOCK,
+    MIN_LINE_HEIGHT, LINE_HEIGHT_COMPRESSION_STEP,
     TABLE_MIN_LINE_HEIGHT,  # More aggressive compression for table cells
-    DEFAULT_VFONT_PATTERN, FORMULA_UNICODE_CATEGORIES,
     SAME_LINE_Y_THRESHOLD, SAME_PARA_Y_THRESHOLD,
     WORD_SPACE_X_THRESHOLD, LINE_BREAK_X_THRESHOLD,
     # Functions
     get_pdf_converter_ex_class,
-    vflag, restore_formula_placeholders, extract_formula_vars_from_metadata,
+    vflag, restore_formula_placeholders,
     extract_formula_vars_for_block,
-    is_subscript_superscript, detect_text_style,
-    detect_paragraph_boundary, classify_char_type,
+    detect_paragraph_boundary,
     create_paragraph_from_char, create_formula_var_from_chars,
     # Line joining functions (yomitoku reference)
-    get_line_join_separator, is_line_end_hyphenated, _is_cjk_char, _is_latin_char,
+    get_line_join_separator, is_line_end_hyphenated, _is_latin_char,
     is_japanese_continuation_line,  # For intelligent paragraph boundary detection
     is_toc_line_ending,  # For TOC pattern detection (leader + page number)
     # Sentence end characters for paragraph boundary detection
     SENTENCE_END_CHARS_JA, SENTENCE_END_CHARS_EN, QUANTITY_UNITS_JA,
-    # Coordinate conversion utilities (PDFMathTranslate compliant)
-    pdf_to_image_coord, image_to_pdf_coord,
-    pdf_bbox_to_image_bbox, image_bbox_to_pdf_bbox,
     get_layout_class_at_pdf_coord,
-    # Classes
-    FormulaManager,
     # Regex patterns (for internal use)
     _RE_FORMULA_PLACEHOLDER,
 )
@@ -89,35 +78,26 @@ from .pdf_converter import (
 from .pdf_layout import (
     # Constants
     LAYOUT_ABANDON, LAYOUT_BACKGROUND, LAYOUT_PARAGRAPH_BASE, LAYOUT_TABLE_BASE,
-    LAYOUT_PAGE_NUMBER, LAYOUT_TRANSLATE_LABELS, LAYOUT_SKIP_LABELS, LAYOUT_PRESERVE_LABELS,
-    # yomitoku-style constants
-    NOISE_MIN_SIZE_PX, HEADER_FOOTER_RATIO, ELEMENT_OVERLAP_THRESHOLD,
-    ELEMENT_CONTAINMENT_THRESHOLD, ELEMENT_INTERSECTION_THRESHOLD,
-    IMAGE_WARNING_SIZE_PX,
+    LAYOUT_PAGE_NUMBER,
     # Classes
-    LayoutArray, ReadingDirection,
+    LayoutArray,
     # Functions
-    is_layout_available, get_device, get_layout_model,
-    prewarm_layout_model, clear_analyzer_cache,
-    analyze_layout, analyze_layout_batch,
-    create_layout_array_from_pp_doclayout, create_layout_array_from_yomitoku,
-    get_layout_class_at_point, is_same_region, should_abandon_region,
-    map_pp_doclayout_label_to_role, prepare_translation_cells,
-    calculate_expandable_width, calculate_expandable_margins, calculate_expandable_vertical_margins,
+    is_layout_available, get_device, clear_analyzer_cache,
+    analyze_layout_batch,
+    create_layout_array_from_pp_doclayout,
+    map_pp_doclayout_label_to_role,
+    calculate_expandable_margins, calculate_expandable_vertical_margins,
     detect_table_cells_for_tables,
-    apply_reading_order_to_layout, analyze_all_table_structures,
-    estimate_reading_order,
+    analyze_all_table_structures,
     # yomitoku-style additions
-    detect_reading_direction, estimate_reading_order_auto,
     apply_reading_order_to_layout_auto,
     # yomitoku-style noise/header/footer detection
-    is_noise_element, filter_noise_elements,
-    detect_header_footer_by_position, mark_header_footer_in_layout,
-    detect_reading_direction_by_area, estimate_reading_order_by_area,
-    calc_overlap_ratio, is_element_contained,
-    is_intersected_horizontal, is_intersected_vertical,
-    _get_numpy, _get_paddleocr, _get_torch,
+    mark_header_footer_in_layout,
+    _get_numpy,
 )
+
+# Module logger
+logger = logging.getLogger(__name__)
 
 
 # =============================================================================
@@ -235,7 +215,7 @@ def _get_pypdfium2():
     return _pypdfium2
 
 
-# NOTE: _get_numpy, _get_paddleocr, _get_torch are imported from pdf_layout.py
+# NOTE: _get_numpy is imported from pdf_layout.py
 # NOTE: PDFConverterEx, constants, data classes are imported from pdf_converter.py
 
 # Font size estimation constants (used locally in this module)
@@ -355,10 +335,6 @@ def estimate_text_alignment(
     # Calculate margins
     left_margin = text_x0 - box_x0
     right_margin = box_x1 - text_x1
-
-    # Normalize margins to box width for comparison
-    left_ratio = left_margin / box_width if box_width > 0 else 0
-    right_ratio = right_margin / box_width if box_width > 0 else 0
 
     # Check for center alignment first
     # If both margins are similar (within tolerance), it's center-aligned
@@ -844,9 +820,8 @@ def calculate_optimal_batch_size(
     return optimal_batch_size
 
 
-# NOTE: Paragraph, FormulaVar, TranslationCell, vflag, restore_formula_placeholders,
-# extract_formula_vars_from_metadata, is_subscript_superscript, detect_text_style,
-# FormulaManager are all imported from pdf_converter.py
+# NOTE: Paragraph, FormulaVar, TranslationCell, vflag, restore_formula_placeholders
+# are imported from pdf_converter.py
 
 # =============================================================================
 # Coordinate System Documentation
@@ -1643,7 +1618,6 @@ def extract_font_info_from_pdf(
     if cache_key in _font_info_cache:
         return _font_info_cache[cache_key]
 
-    pymupdf = _get_pymupdf()
     font_info: dict[int, list[dict]] = {}
 
     # Scale factor from PDF coordinates (72 DPI) to OCR coordinates
@@ -1770,13 +1744,11 @@ class ScannedPdfError(Exception):
 
 # Font info cache (keyed by (pdf_path, dpi)) - avoids repeated PDF parsing
 # Uses OrderedDict for LRU-style eviction when max size is exceeded
-from collections import OrderedDict
 _font_info_cache: OrderedDict[tuple[str, int], dict[int, list[dict]]] = OrderedDict()
 _font_info_cache_lock = threading.Lock()
 _FONT_INFO_CACHE_MAX_SIZE = 5  # Maximum number of PDFs to cache
 
-# NOTE: _analyzer_cache, LAYOUT_TRANSLATE_LABELS, LAYOUT_SKIP_LABELS
-# are imported from pdf_layout.py
+# NOTE: analyzer cache helpers are imported from pdf_layout.py
 
 
 def get_total_pages(pdf_path: str) -> int:
@@ -1847,7 +1819,7 @@ def iterate_pdf_pages(
         Uses a context manager to ensure PDF is closed even if generator
         is not fully consumed.
     """
-    np = _get_numpy()
+    _get_numpy()
 
     with _open_pdf_document(pdf_path) as pdf:
         total_pages = len(pdf)
@@ -1875,7 +1847,7 @@ def load_pdf_as_images(pdf_path: str, dpi: int = DEFAULT_OCR_DPI) -> list:
     For large PDFs (10+ pages), use iterate_pdf_pages() instead
     for better memory efficiency through batch processing.
     """
-    np = _get_numpy()
+    _get_numpy()
     images = []
 
     with _open_pdf_document(pdf_path) as pdf:
@@ -1900,11 +1872,10 @@ def load_pdf_as_images(pdf_path: str, dpi: int = DEFAULT_OCR_DPI) -> list:
     return images
 
 
-# NOTE: is_layout_available, get_device, get_layout_model, prewarm_layout_model,
-# clear_analyzer_cache, analyze_layout, analyze_layout_batch are imported from pdf_layout.py
+# NOTE: is_layout_available, get_device, clear_analyzer_cache, analyze_layout_batch
+# are imported from pdf_layout.py
 
-# NOTE: LayoutArray, create_layout_array_from_pp_doclayout, get_layout_class_at_point,
-# is_same_region, should_abandon_region, prepare_translation_cells,
+# NOTE: LayoutArray, create_layout_array_from_pp_doclayout,
 # map_pp_doclayout_label_to_role are imported from pdf_layout.py
 
 # Backward compatibility alias (also available from pdf_layout.py)
@@ -1967,24 +1938,6 @@ class PdfProcessor(FileProcessor):
         if self._output_language == "en" and _RE_JP_DATE_FRAGMENT.match(stripped):
             return True
         return self._cell_translator.should_translate(stripped, self._output_language)
-
-    @property
-    def failed_pages(self) -> list[int]:
-        """Get list of page numbers that failed during extraction or translation.
-
-        Returns:
-            List of 1-indexed page numbers that encountered errors.
-        """
-        return list(self._failed_pages)
-
-    @property
-    def failed_page_reasons(self) -> dict[int, str]:
-        """Get reasons for page failures.
-
-        Returns:
-            Dictionary mapping page numbers to error reasons.
-        """
-        return dict(self._failed_page_reasons)
 
     def clear_failed_pages(self) -> None:
         """Clear the failed pages list. Call before starting a new extraction."""
@@ -2972,8 +2925,6 @@ class PdfProcessor(FileProcessor):
                         # Store original box coordinates and dimensions for reference
                         original_box_x0 = pdf_x1
                         original_box_x1 = pdf_x2
-                        original_box_y0 = pdf_y0
-                        original_box_y1 = pdf_y1
                         original_box_width = box_width
                         original_box_height = box_height
 
@@ -4805,7 +4756,7 @@ class PdfProcessor(FileProcessor):
             - page_height: Page height in PDF points
             - page_width: Page width in PDF points
         """
-        np = _get_numpy()
+        _get_numpy()
 
         with _open_pdf_document(str(file_path)) as pdf:
             pdf_page_count = len(pdf)

@@ -19,6 +19,7 @@ import logging
 import os
 import threading
 import importlib.util
+from enum import Enum
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any, Optional
@@ -695,8 +696,6 @@ def detect_table_cells(
             )
             _table_cell_detection_warning_logged = True
         return []
-
-    np = _get_numpy()
 
     # Extract table region from image
     x0, y0, x1, y1 = [int(c) for c in table_box]
@@ -1556,12 +1555,6 @@ def _find_right_boundary(
     else:
         return right_boundary
 
-    # Convert current block's Y range to image coordinates
-    # PDF: y0 is bottom, y1 is top
-    # Image: y increases downward
-    img_y_top = (page_height - y1) * scale
-    img_y_bottom = (page_height - y0) * scale
-
     # Search through paragraphs for adjacent blocks
     for para_id, para_info in layout.paragraphs.items():
         para_box = para_info.get('box', [])
@@ -1573,7 +1566,6 @@ def _find_right_boundary(
 
         # Convert para_box to PDF coordinates for comparison
         pdf_para_x0 = para_x0 / scale if scale > 0 else para_x0
-        pdf_para_x1 = para_x1 / scale if scale > 0 else para_x1
         pdf_para_y0 = page_height - (para_y1 / scale) if scale > 0 else para_y1
         pdf_para_y1 = page_height - (para_y0 / scale) if scale > 0 else para_y0
 
@@ -1953,7 +1945,6 @@ def _find_top_boundary(
         pdf_para_x0 = para_x0 / scale if scale > 0 else para_x0
         pdf_para_x1 = para_x1 / scale if scale > 0 else para_x1
         pdf_para_y0 = page_height - (para_y1 / scale) if scale > 0 else para_y1
-        pdf_para_y1 = page_height - (para_y0 / scale) if scale > 0 else para_y0
 
         # Skip if this is the same block
         if abs(pdf_para_x0 - x0) < 5 and abs(pdf_para_y0 - y0) < 5:
@@ -1989,7 +1980,6 @@ def _find_top_boundary(
         pdf_table_x0 = table_x0 / scale if scale > 0 else table_x0
         pdf_table_x1 = table_x1 / scale if scale > 0 else table_x1
         pdf_table_y0 = page_height - (table_y1 / scale) if scale > 0 else table_y1
-        pdf_table_y1 = page_height - (table_y0 / scale) if scale > 0 else table_y0
 
         # Skip if same block
         if abs(pdf_table_x0 - x0) < 5 and abs(pdf_table_y0 - y0) < 5:
@@ -2333,7 +2323,6 @@ def calculate_all_expandable_widths(
 # - Distance metric for start node selection
 # - Intermediate element detection for accurate edge creation
 
-from enum import Enum
 
 
 class ReadingDirection(Enum):
@@ -2766,8 +2755,7 @@ def _topological_sort_with_priority(
     max_x = max(bbox[2] for _, bbox in elements)
     max_y = max(bbox[3] for _, bbox in elements)
 
-    # Create element lookup and calculate distance metrics (yomitoku-style)
-    elem_lookup = {elem_id: bbox for elem_id, bbox in elements}
+    # Calculate distance metrics (yomitoku-style)
     elem_distance = {}
     for elem_id, bbox in elements:
         elem_distance[elem_id] = _calculate_distance_metric(
@@ -3071,8 +3059,7 @@ def _priority_dfs(
     max_x = max(bbox[2] for _, bbox in elements)
     max_y = max(bbox[3] for _, bbox in elements)
 
-    # Element lookup and distance metrics
-    elem_lookup = {elem_id: bbox for elem_id, bbox in elements}
+    # Distance metrics
     elem_distance = {}
     for elem_id, bbox in elements:
         elem_distance[elem_id] = _calculate_distance_metric(

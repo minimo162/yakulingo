@@ -9,7 +9,7 @@ import socket
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterable, Optional, Sequence
+from typing import Callable, Iterable, Optional
 
 from yakulingo.config.settings import AppSettings
 from yakulingo.services.local_llama_server import (

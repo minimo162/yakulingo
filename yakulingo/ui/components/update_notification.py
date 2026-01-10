@@ -5,7 +5,7 @@
 
 import asyncio
 from datetime import datetime
-from typing import Optional, Callable, TYPE_CHECKING
+from typing import Optional
 
 from nicegui import ui, Client
 

@@ -13,7 +13,6 @@ import sys
 import threading
 import time
 import zipfile
-from functools import lru_cache
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator, Optional
@@ -453,7 +452,6 @@ def _create_excel_app_with_retry(xw, max_retries: int = _EXCEL_RETRY_COUNT, retr
     Raises:
         Exception: If all retry attempts fail
     """
-    pywintypes = _get_pywintypes()
     last_error = None
 
     # Pre-emptive cleanup before first attempt to avoid COM server errors
@@ -621,14 +619,14 @@ def _ensure_unique_sheet_name(name: str, existing_names: set[str]) -> str:
 # =============================================================================
 # openpyxl fallback
 # =============================================================================
-import openpyxl
-from openpyxl.utils.cell import (
+import openpyxl  # noqa: E402
+from openpyxl.utils.cell import (  # noqa: E402
     column_index_from_string,
     coordinate_from_string,
     get_column_letter,
     range_boundaries,
 )
-from openpyxl.styles import Font
+from openpyxl.styles import Font  # noqa: E402
 
 
 def _detect_formula_cells_via_zipfile(file_path: Path) -> set[tuple[str, int, int]]:
@@ -715,11 +713,9 @@ def _detect_formula_cells_via_zipfile(file_path: Path) -> set[tuple[str, int, in
 
                 try:
                     with xlsx.open(sheet_file) as sheet_xml:
-                        current_row = 0
                         for event, elem in ET.iterparse(sheet_xml, events=['end']):
                             # Row element: <row r="1">
                             if elem.tag.endswith('}row') or elem.tag == 'row':
-                                current_row = int(elem.get('r', 0))
                                 elem.clear()
                             # Cell element: <c r="A1"><f>SUM(B1:B10)</f><v>100</v></c>
                             elif elem.tag.endswith('}c') or elem.tag == 'c':
@@ -1200,7 +1196,6 @@ class ExcelProcessor(FileProcessor):
                     ns = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
                     si_tag = f'{{{ns}}}si'
                     t_tag = f'{{{ns}}}t'
-                    r_tag = f'{{{ns}}}r'
 
                     # Track current <si> element's text parts
                     current_parts = []
@@ -3310,8 +3305,6 @@ class ExcelProcessor(FileProcessor):
         Note: This fallback does not preserve shapes, charts, or images.
         Use xlwings version for full content preservation.
         """
-        from copy import copy
-
         keep_vba = original_path.suffix.lower() == ".xlsm"
         original_wb = openpyxl.load_workbook(original_path, keep_vba=keep_vba)
         translated_wb = openpyxl.load_workbook(translated_path, keep_vba=keep_vba)

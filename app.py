@@ -6,6 +6,8 @@ YakuLingo - Text + File Translation Application
 Entry point for the NiceGUI-based translation application.
 """
 
+# ruff: noqa: E402
+
 # IMPORTANT: Set proxy bypass BEFORE any imports that might cache proxy settings
 # This is critical for corporate environments where proxies intercept localhost connections
 import os

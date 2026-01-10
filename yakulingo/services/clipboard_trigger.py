@@ -409,7 +409,6 @@ else:
                             len(payload),
                         )
 
-                        last_payload = self._last_payload
                         last_payload_normalized = self._last_payload_normalized
                         last_payload_hash = self._last_payload_hash
                         last_time = self._last_payload_time

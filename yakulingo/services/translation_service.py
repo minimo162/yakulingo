@@ -5,6 +5,8 @@ Coordinates between UI, Copilot, and file processors.
 Bidirectional translation: Japanese → English, Other → Japanese (auto-detected).
 """
 
+# ruff: noqa: E402
+
 import csv
 import logging
 import threading
@@ -13,7 +15,7 @@ from contextlib import contextmanager, nullcontext
 from functools import lru_cache
 from itertools import islice
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, Optional, TYPE_CHECKING
 from zipfile import BadZipFile
 import unicodedata
 
@@ -658,9 +660,8 @@ def detect_language_local(text: str) -> Optional[str]:
     return language_detector.detect_local(text)
 
 
-from typing import TYPE_CHECKING
-
 from yakulingo.models.types import (
+    BatchTranslationResult,
     TranslationStatus,
     TranslationProgress,
     TranslationPhase,
@@ -681,11 +682,7 @@ from yakulingo.services.prompt_builder import (
 )
 from yakulingo.processors.base import FileProcessor
 
-# Lazy-loaded processors for faster startup
 if TYPE_CHECKING:
-    from yakulingo.processors.excel_processor import ExcelProcessor
-    from yakulingo.processors.word_processor import WordProcessor
-    from yakulingo.processors.pptx_processor import PptxProcessor
     from yakulingo.processors.pdf_processor import PdfProcessor
 
 
@@ -1005,7 +1002,7 @@ class BatchTranslator:
         include_item_ids: bool = False,
         _max_chars_per_batch: Optional[int] = None,
         _split_retry_depth: int = 0,
-    ) -> 'BatchTranslationResult':
+    ) -> BatchTranslationResult:
         """
         Translate blocks in batches with detailed result information.
 
@@ -3137,7 +3134,7 @@ class TranslationService:
                     selected_sections,
                 )
 
-        except MemoryError as e:
+        except MemoryError:
             # CRITICAL: Memory exhausted - provide clear error message
             logger.critical(
                 "CRITICAL: Out of memory during file translation. "

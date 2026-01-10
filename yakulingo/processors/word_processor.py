@@ -18,13 +18,13 @@ from xml.etree import ElementTree as ET
 from docx import Document
 from docx.shared import Pt
 
+from .translators import CellTranslator, ParagraphTranslator
+from .font_manager import FontManager
+from yakulingo.models.types import TextBlock, FileInfo, FileType, SectionDetail
 from .base import FileProcessor
 
 # Module logger
 logger = logging.getLogger(__name__)
-from .translators import CellTranslator, ParagraphTranslator
-from .font_manager import FontManager
-from yakulingo.models.types import TextBlock, FileInfo, FileType, SectionDetail
 
 
 # =============================================================================

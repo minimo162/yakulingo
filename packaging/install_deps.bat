@@ -411,85 +411,39 @@ echo.
 echo [7/7] Installing Local AI runtime (llama.cpp + model)...
 echo [INFO] This step downloads large files (model may be a few GB).
 
-powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-    "$ErrorActionPreference = 'Stop';" ^
-    "$ProgressPreference = 'SilentlyContinue';" ^
-    "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch { };" ^
-    "$useProxy = ($env:USE_PROXY -eq '1');" ^
-    "if ($useProxy) {" ^
-    "  $proxy = 'http://' + $env:PROXY_SERVER;" ^
-    "  $secPwd = ConvertTo-SecureString $env:PROXY_PASS -AsPlainText -Force;" ^
-    "  $cred = New-Object System.Management.Automation.PSCredential ($env:PROXY_USER, $secPwd);" ^
-    "} else { $proxy = $null; $cred = $null };" ^
-    "function Invoke-Json($url) { if ($useProxy) { Invoke-RestMethod -Uri $url -Headers @{ 'User-Agent'='YakuLingo-Installer' } -Proxy $proxy -ProxyCredential $cred } else { Invoke-RestMethod -Uri $url -Headers @{ 'User-Agent'='YakuLingo-Installer' } } }" ^
-    "function Invoke-Download($url, $outFile, $timeoutSec) { if ($useProxy) { Invoke-WebRequest -Uri $url -OutFile $outFile -UseBasicParsing -Proxy $proxy -ProxyCredential $cred -TimeoutSec $timeoutSec } else { Invoke-WebRequest -Uri $url -OutFile $outFile -UseBasicParsing -TimeoutSec $timeoutSec } }" ^
-    "$root = (Get-Location).Path;" ^
-    "$localAiDir = Join-Path $root 'local_ai';" ^
-    "$llamaDir = Join-Path $localAiDir 'llama_cpp';" ^
-    "$llamaAvx2Dir = Join-Path $llamaDir 'avx2';" ^
-    "$modelsDir = Join-Path $localAiDir 'models';" ^
-    "New-Item -ItemType Directory -Force -Path $localAiDir, $llamaDir, $llamaAvx2Dir, $modelsDir | Out-Null;" ^
-    "" ^
-    "$modelRepo = 'Qwen/Qwen3-VL-4B-Instruct-GGUF';" ^
-    "$modelFile = 'Qwen3VL-4B-Instruct-Q4_K_M.gguf';" ^
-    "$modelUrl = \"https://huggingface.co/$modelRepo/resolve/main/$modelFile\";" ^
-    "$modelPath = Join-Path $modelsDir $modelFile;" ^
-    "$licenseUrl = 'https://www.apache.org/licenses/LICENSE-2.0.txt';" ^
-    "$readmeUrl = \"https://huggingface.co/$modelRepo/resolve/main/README.md\";" ^
-    "" ^
-    "$llamaRepo = 'ggerganov/llama.cpp';" ^
-    "$release = Invoke-Json \"https://api.github.com/repos/$llamaRepo/releases/latest\";" ^
-    "$tag = $release.tag_name;" ^
-    "$asset = $release.assets | Where-Object { $_.name -match 'bin-win-cpu-x64\\.zip$' } | Select-Object -First 1;" ^
-    "if (-not $asset) { throw 'llama.cpp Windows CPU(x64) binary not found in release assets.' };" ^
-    "$llamaZipUrl = $asset.browser_download_url;" ^
-    "$llamaZipName = $asset.name;" ^
-    "$llamaZipPath = Join-Path $llamaDir $llamaZipName;" ^
-    "$llamaLicenseOut = Join-Path $llamaDir 'LICENSE';" ^
-    "$llamaLicenseUrl = \"https://raw.githubusercontent.com/$llamaRepo/$tag/LICENSE\";" ^
-    "" ^
-    "$serverExePath = Join-Path $llamaAvx2Dir 'llama-server.exe';" ^
-    "if (-not (Test-Path $serverExePath)) {" ^
-    "  Write-Host \"[INFO] Downloading llama.cpp ($tag): $llamaZipName\";" ^
-    "  Invoke-Download $llamaZipUrl $llamaZipPath 600;" ^
-    "  $tmp = Join-Path $llamaDir '_tmp_extract';" ^
-    "  if (Test-Path $tmp) { Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue };" ^
-    "  Expand-Archive -Path $llamaZipPath -DestinationPath $tmp -Force;" ^
-    "  $found = Get-ChildItem -Path $tmp -Recurse -Filter 'llama-server.exe' | Select-Object -First 1;" ^
-    "  if (-not $found) { throw 'llama-server.exe not found in ZIP.' };" ^
-    "  $srcDir = $found.DirectoryName;" ^
-    "  if (Test-Path $llamaAvx2Dir) { Remove-Item $llamaAvx2Dir -Recurse -Force -ErrorAction SilentlyContinue };" ^
-    "  New-Item -ItemType Directory -Force -Path $llamaAvx2Dir | Out-Null;" ^
-    "  Copy-Item -Path (Join-Path $srcDir '*') -Destination $llamaAvx2Dir -Recurse -Force;" ^
-    "  Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue;" ^
-    "  Remove-Item $llamaZipPath -Force -ErrorAction SilentlyContinue;" ^
-    "}" ^
-    "Invoke-Download $llamaLicenseUrl $llamaLicenseOut 60;" ^
-    "" ^
-    "if (-not (Test-Path $modelPath)) {" ^
-    "  Write-Host \"[INFO] Downloading model: $modelRepo/$modelFile\";" ^
-    "  Invoke-Download $modelUrl $modelPath 1800;" ^
-    "} else { Write-Host \"[INFO] Model already exists: $modelFile\" };" ^
-    "Invoke-Download $licenseUrl (Join-Path $modelsDir 'LICENSE') 120;" ^
-    "Invoke-Download $readmeUrl (Join-Path $modelsDir 'README.md') 120;" ^
-    "" ^
-    "$manifestPath = Join-Path $localAiDir 'manifest.json';" ^
-    "$modelHash = $null; $serverHash = $null;" ^
-    "if (Test-Path $modelPath) { $modelHash = (Get-FileHash -Algorithm SHA256 -Path $modelPath).Hash };" ^
-    "if (Test-Path $serverExePath) { $serverHash = (Get-FileHash -Algorithm SHA256 -Path $serverExePath).Hash };" ^
-    "$manifest = [ordered]@{" ^
-    "  generated_at = (Get-Date).ToString('o');" ^
-    "  llama_cpp = [ordered]@{ repo = $llamaRepo; release_tag = $tag; asset_name = $llamaZipName; download_url = $llamaZipUrl; server_exe_sha256 = $serverHash };" ^
-    "  model = [ordered]@{ repo = $modelRepo; file = $modelFile; download_url = $modelUrl; sha256 = $modelHash };" ^
-    "};" ^
-    "$manifest | ConvertTo-Json -Depth 6 | Set-Content -Path $manifestPath -Encoding UTF8;" ^
-    "Write-Host '[DONE] Local AI runtime is ready.'"
+echo.
+echo Do you want to install Local AI runtime now?
+echo   [1] Yes - Download llama.cpp + model (recommended for Local AI)
+echo   [2] Yes - Download llama.cpp only (skip model download)
+echo   [3] No  - Skip this step
+echo.
+set /p LOCAL_AI_CHOICE="Enter choice (1, 2, or 3) [1]: "
+if not defined LOCAL_AI_CHOICE set "LOCAL_AI_CHOICE=1"
+if not "!LOCAL_AI_CHOICE!"=="1" if not "!LOCAL_AI_CHOICE!"=="2" if not "!LOCAL_AI_CHOICE!"=="3" set "LOCAL_AI_CHOICE=1"
+
+if "!LOCAL_AI_CHOICE!"=="3" (
+    echo [7/7] SKIP - Local AI runtime installation skipped.
+    goto :local_ai_done
+)
+
+set "LOCAL_AI_SKIP_MODEL=0"
+if "!LOCAL_AI_CHOICE!"=="2" set "LOCAL_AI_SKIP_MODEL=1"
+
+powershell -NoProfile -ExecutionPolicy Bypass -File "packaging\install_local_ai.ps1"
 if errorlevel 1 (
     echo [ERROR] Failed to install Local AI runtime.
-    echo [INFO] You can retry this installer, or manually place files under local_ai\ (llama_cpp + models).
-    pause
-    exit /b 1
+    echo [INFO] Local AI is optional. Copilot translation will still work.
+    echo [INFO] You can retry this installer later, or manually place files under local_ai\ (llama_cpp + models).
+    echo.
+    choice /c YN /n /m "Continue setup without Local AI? (Y/N): "
+    if errorlevel 2 (
+        echo [INFO] Aborted by user.
+        pause
+        exit /b 1
+    )
 )
+
+:local_ai_done
 
 echo.
 echo ============================================================

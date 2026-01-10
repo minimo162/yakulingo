@@ -10533,6 +10533,44 @@ class YakuLingoApp:
             self.translation_service.cancel()
         ui.notify('キャンセル中...', type='info')
 
+    def _build_reference_section_for_backend(
+        self,
+        reference_files: Optional[list[Path]],
+        *,
+        input_text: str = "",
+    ) -> tuple[str, list[str], bool]:
+        """Build reference section for Copilot/Local backends with warnings."""
+        if not reference_files:
+            return "", [], False
+
+        translation_service = self.translation_service
+        use_local = False
+        if translation_service and translation_service.config:
+            use_local = getattr(translation_service.config, "translation_backend", "copilot") == "local"
+        elif self.state.translation_backend == TranslationBackend.LOCAL:
+            use_local = True
+
+        if use_local and translation_service:
+            try:
+                translation_service._ensure_local_backend()
+            except Exception:
+                logger.debug("Local prompt builder init failed for reference embed", exc_info=True)
+            local_builder = getattr(translation_service, "_local_prompt_builder", None)
+            if local_builder is not None:
+                embedded_ref = local_builder.build_reference_embed(reference_files, input_text=input_text)
+                warnings = list(embedded_ref.warnings)
+                if embedded_ref.truncated and not warnings:
+                    warnings = ["参照ファイルを一部省略しました"]
+                return embedded_ref.text or "", warnings, embedded_ref.truncated
+
+        if translation_service:
+            return translation_service.prompt_builder.build_reference_section(reference_files), [], False
+
+        from yakulingo.services.prompt_builder import REFERENCE_INSTRUCTION
+
+        return REFERENCE_INSTRUCTION, [], False
+
+
     async def _back_translate(self, option: TranslationOption, text_override: Optional[str] = None):
         """Back-translate text to verify translation quality"""
         if option.back_translation_in_progress:
@@ -10612,11 +10650,7 @@ class YakuLingoApp:
 
             reference_files = self._get_effective_reference_files()
             reference_section = ""
-            if reference_files and self.translation_service:
-                reference_section = self.translation_service.prompt_builder.build_reference_section(reference_files)
-            elif reference_files:
-                from yakulingo.services.prompt_builder import REFERENCE_INSTRUCTION
-                reference_section = REFERENCE_INSTRUCTION
+            reference_warnings: list[str] = []
 
             translation_rules = ""
             try:
@@ -10642,6 +10676,10 @@ class YakuLingoApp:
                     error_message = "戻し訳用のテキストを入力してください"
                 else:
                     option.back_translation_source_text = text
+                    reference_section, reference_warnings, _ = self._build_reference_section_for_backend(
+                        reference_files,
+                        input_text=text,
+                    )
                 prompt = prompt_path.read_text(encoding="utf-8")
                 prompt = prompt.replace("{translation_rules}", translation_rules)
                 prompt = prompt.replace("{input_text}", text)
@@ -10669,6 +10707,12 @@ class YakuLingoApp:
                         text_result, explanation = parse_translation_result(result)
                         option.back_translation_text = text_result
                         option.back_translation_explanation = explanation
+                        if reference_warnings:
+                            try:
+                                with client:
+                                    self._notify_warning_summary(reference_warnings)
+                            except Exception:
+                                logger.debug("Failed to notify reference warnings", exc_info=True)
                     else:
                         error_message = '戻し訳に失敗しました'
 
@@ -10705,14 +10749,11 @@ class YakuLingoApp:
         """
         prompts_dir = get_default_prompts_dir()
 
-        reference_section = ""
-        if reference_files and self.translation_service:
-            reference_section = self.translation_service.prompt_builder.build_reference_section(reference_files)
-        elif reference_files:
-            # Fallback in unlikely case translation_service is not ready
-            from yakulingo.services.prompt_builder import REFERENCE_INSTRUCTION
-
-            reference_section = REFERENCE_INSTRUCTION
+        context_text = "\n".join(part for part in (source_text, translation, content) if part)
+        reference_section, _, _ = self._build_reference_section_for_backend(
+            reference_files,
+            input_text=context_text,
+        )
 
         # Prompt file mapping and fallback templates
         prompt_configs = {

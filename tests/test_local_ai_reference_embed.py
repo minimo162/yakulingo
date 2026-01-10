@@ -1,7 +1,12 @@
 from __future__ import annotations
 
-import pytest
 from pathlib import Path
+
+from unittest.mock import Mock
+
+from yakulingo.services.translation_service import TranslationService
+from yakulingo.ui.app import YakuLingoApp
+from yakulingo.ui.state import TranslationBackend
 
 from yakulingo.config.settings import AppSettings
 from yakulingo.services.local_ai_prompt_builder import LocalPromptBuilder
@@ -111,5 +116,26 @@ def test_local_reference_embed_truncates_total_limit(tmp_path: Path) -> None:
     assert any("合計上限 4000 文字" in w for w in embedded.warnings)
 
 
-def test_local_followup_reference_embed_pending() -> None:
-    pytest.xfail("TODO: local follow-up/back-translate should embed references")
+def test_local_followup_reference_embed_includes_local_reference(tmp_path: Path) -> None:
+    settings = AppSettings()
+    settings.translation_backend = "local"
+    app = YakuLingoApp()
+    app.translation_service = TranslationService(
+        Mock(),
+        settings,
+        prompts_dir=Path(__file__).resolve().parents[1] / "prompts",
+    )
+    app.state.translation_backend = TranslationBackend.LOCAL
+
+    ref_path = tmp_path / "ref.txt"
+    ref_path.write_text("Reference content", encoding="utf-8")
+
+    prompt = app._build_follow_up_prompt(
+        "review",
+        source_text="source",
+        translation="translation",
+        reference_files=[ref_path],
+    )
+    assert prompt is not None
+    assert "[REFERENCE:file=ref.txt]" in prompt
+    assert "Reference content" in prompt

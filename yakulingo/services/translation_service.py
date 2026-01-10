@@ -1857,7 +1857,7 @@ class TranslationService:
         on_chunk: "Callable[[str], None] | None" = None,
     ) -> TextTranslationResult:
         self._ensure_local_backend()
-        from yakulingo.services.local_ai_client import parse_text_single_translation
+        from yakulingo.services.local_ai_client import is_truncated_json, parse_text_single_translation
         from yakulingo.services.local_llama_server import LocalAIError
 
         local_builder = self._local_prompt_builder
@@ -1889,12 +1889,18 @@ class TranslationService:
                 raw = self._translate_single_with_cancel(text, prompt, None, stream_handler)
                 translation, explanation = parse_text_single_translation(raw)
                 if not translation:
+                    error_message = "ローカルAIの応答(JSON)を解析できませんでした"
+                    if is_truncated_json(raw):
+                        error_message = (
+                            "ローカルAIの応答が途中で終了しました（JSONが閉じていません）。\n"
+                            "max_tokens / ctx_size を見直してください。"
+                        )
                     return TextTranslationResult(
                         source_text=text,
                         source_char_count=len(text),
                         output_language=output_language,
                         detected_language=detected_language,
-                        error_message="ローカルAIの応答(JSON)を解析できませんでした",
+                        error_message=error_message,
                         metadata=metadata,
                     )
                 return TextTranslationResult(
@@ -1915,12 +1921,18 @@ class TranslationService:
             raw = self._translate_single_with_cancel(text, prompt, None, stream_handler)
             translation, explanation = parse_text_single_translation(raw)
             if not translation:
+                error_message = "ローカルAIの応答(JSON)を解析できませんでした"
+                if is_truncated_json(raw):
+                    error_message = (
+                        "ローカルAIの応答が途中で終了しました（JSONが閉じていません）。\n"
+                        "max_tokens / ctx_size を見直してください。"
+                    )
                 return TextTranslationResult(
                     source_text=text,
                     source_char_count=len(text),
                     output_language=output_language,
                     detected_language=detected_language,
-                    error_message="ローカルAIの応答(JSON)を解析できませんでした",
+                    error_message=error_message,
                     metadata=metadata,
                 )
             return TextTranslationResult(
@@ -1951,7 +1963,11 @@ class TranslationService:
         on_chunk: "Callable[[str], None] | None" = None,
     ) -> TextTranslationResult:
         self._ensure_local_backend()
-        from yakulingo.services.local_ai_client import parse_text_single_translation, parse_text_to_en_3style
+        from yakulingo.services.local_ai_client import (
+            is_truncated_json,
+            parse_text_single_translation,
+            parse_text_to_en_3style,
+        )
         from yakulingo.services.local_llama_server import LocalAIError
 
         local_builder = self._local_prompt_builder
@@ -1978,6 +1994,7 @@ class TranslationService:
             style_list = list(TEXT_STYLE_ORDER)
 
         by_style: dict[str, tuple[str, str]] = {}
+        truncated_detected = False
         wants_combined = set(style_list) == set(TEXT_STYLE_ORDER) and len(style_list) > 1
         try:
             if wants_combined:
@@ -1989,6 +2006,8 @@ class TranslationService:
                 stream_handler = _wrap_local_streaming_on_chunk(on_chunk)
                 raw = self._translate_single_with_cancel(text, prompt, None, stream_handler)
                 by_style = parse_text_to_en_3style(raw)
+                if not by_style and is_truncated_json(raw):
+                    truncated_detected = True
 
             options: list[TranslationOption] = []
             missing: list[str] = []
@@ -2023,6 +2042,8 @@ class TranslationService:
                             style=style,
                         )
                     )
+                elif is_truncated_json(raw):
+                    truncated_detected = True
 
             if options:
                 options.sort(key=lambda opt: TEXT_STYLE_ORDER.index(opt.style or DEFAULT_TEXT_STYLE))
@@ -2035,12 +2056,18 @@ class TranslationService:
                     metadata=metadata,
                 )
 
+            error_message = "ローカルAIの応答(JSON)を解析できませんでした"
+            if truncated_detected:
+                error_message = (
+                    "ローカルAIの応答が途中で終了しました（JSONが閉じていません）。\n"
+                    "max_tokens / ctx_size を見直してください。"
+                )
             return TextTranslationResult(
                 source_text=text,
                 source_char_count=len(text),
                 output_language="en",
                 detected_language=detected_language,
-                error_message="ローカルAIの応答(JSON)を解析できませんでした",
+                error_message=error_message,
                 metadata=metadata,
             )
         except LocalAIError as e:

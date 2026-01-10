@@ -80,6 +80,54 @@ def loads_json_loose(text: str) -> Optional[object]:
     return None
 
 
+def is_truncated_json(text: str) -> bool:
+    cleaned = _strip_code_fences(text).strip()
+    if not cleaned:
+        return False
+
+    start_candidates = [idx for idx in (cleaned.find("{"), cleaned.find("[")) if idx != -1]
+    if not start_candidates:
+        return False
+
+    start = min(start_candidates)
+    segment = cleaned[start:]
+    stack: list[str] = []
+    in_string = False
+    escape = False
+
+    for ch in segment:
+        if escape:
+            escape = False
+            continue
+        if ch == "\\":
+            if in_string:
+                escape = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == "{":
+            stack.append("{")
+        elif ch == "[":
+            stack.append("[")
+        elif ch == "}":
+            if stack and stack[-1] == "{":
+                stack.pop()
+            else:
+                return False
+        elif ch == "]":
+            if stack and stack[-1] == "[":
+                stack.pop()
+            else:
+                return False
+
+    if in_string:
+        return True
+    return bool(stack)
+
+
 def _parse_openai_chat_content(payload: dict) -> str:
     choices = payload.get("choices")
     if not isinstance(choices, list) or not choices:
@@ -189,6 +237,12 @@ def parse_batch_translations(raw_content: str, expected_count: int) -> list[str]
     fallback = _parse_batch_items_fallback(raw_content, expected_count)
     if fallback is not None:
         return fallback
+
+    if is_truncated_json(raw_content):
+        raise RuntimeError(
+            "ローカルAIの応答が途中で終了しました（JSONが閉じていません）。\n"
+            "max_tokens / ctx_size を見直してください。"
+        )
 
     raise RuntimeError("ローカルAIの応答(JSON)を解析できませんでした")
 

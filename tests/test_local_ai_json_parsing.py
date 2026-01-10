@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from yakulingo.services.local_ai_client import (
+    is_truncated_json,
     loads_json_loose,
     parse_batch_translations,
     parse_text_single_translation,
@@ -64,3 +65,17 @@ def test_parse_text_single_translation_reads_json() -> None:
     translation, explanation = parse_text_single_translation(raw)
     assert translation == "こんにちは"
     assert explanation == "説明"
+
+
+def test_is_truncated_json_detects_missing_closure() -> None:
+    raw = """{"translation":"A","explanation":"B"""
+    assert is_truncated_json(raw) is True
+
+
+def test_is_truncated_json_false_for_complete_json() -> None:
+    raw = """{"translation":"A","explanation":"B"}"""
+    assert is_truncated_json(raw) is False
+
+
+def test_is_truncated_json_false_for_non_json() -> None:
+    assert is_truncated_json("not json") is False

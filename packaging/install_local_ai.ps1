@@ -161,8 +161,8 @@ try {
         return $childFull
     }
 
-    $defaultModelRepo = 'unsloth/GLM-4.6V-Flash-GGUF'
-    $defaultModelFile = 'GLM-4.6V-Flash-IQ4_XS.gguf'
+    $defaultModelRepo = 'bartowski/mistralai_Ministral-3-14B-Instruct-2512-GGUF'
+    $defaultModelFile = 'mistralai_Ministral-3-14B-Instruct-2512-IQ3_XXS.gguf'
     $manifestModelRepo = $null
     $manifestModelFile = $null
     if ($existingManifest -and $existingManifest.model) {

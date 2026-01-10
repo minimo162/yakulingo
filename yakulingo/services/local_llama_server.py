@@ -114,7 +114,13 @@ def _is_port_free(host: str, port: int) -> bool:
             return False
 
 
-def _http_get_json(host: str, port: int, path: str, timeout_s: float) -> Optional[dict]:
+def _http_get_json_with_status(
+    host: str,
+    port: int,
+    path: str,
+    timeout_s: float,
+) -> tuple[Optional[dict], Optional[int], Optional[str]]:
+    import urllib.error
     import urllib.request
 
     url = f"http://{host}:{port}{path}"
@@ -122,19 +128,37 @@ def _http_get_json(host: str, port: int, path: str, timeout_s: float) -> Optiona
     try:
         with urllib.request.urlopen(req, timeout=timeout_s) as resp:
             raw = resp.read()
-        return json.loads(raw.decode("utf-8"))
-    except Exception:
-        return None
+            status_code = resp.getcode()
+        try:
+            payload = json.loads(raw.decode("utf-8"))
+        except Exception:
+            return None, status_code, "invalid json"
+        return payload, status_code, None
+    except urllib.error.HTTPError as e:
+        return None, e.code, f"HTTP {e.code}"
+    except Exception as e:
+        return None, None, str(e)
+
+
+def _http_get_json(host: str, port: int, path: str, timeout_s: float) -> Optional[dict]:
+    payload, _, _ = _http_get_json_with_status(host, port, path, timeout_s)
+    return payload
+
+
+def _probe_openai_models(host: str, port: int, timeout_s: float = 0.8) -> tuple[Optional[dict], Optional[str]]:
+    models, status, error = _http_get_json_with_status(host, port, "/v1/models", timeout_s=timeout_s)
+    if isinstance(models, dict) and models.get("object") == "list" and isinstance(models.get("data"), list):
+        return models, None
+    if status is not None:
+        return None, f"HTTP {status}"
+    if error:
+        return None, error
+    return None, "invalid response"
 
 
 def _is_openai_compatible_server(host: str, port: int, timeout_s: float = 0.8) -> bool:
-    models = _http_get_json(host, port, "/v1/models", timeout_s=timeout_s)
-    if not models or not isinstance(models, dict):
-        return False
-    if models.get("object") != "list":
-        return False
-    data = models.get("data")
-    return isinstance(data, list)
+    models, _ = _probe_openai_models(host, port, timeout_s=timeout_s)
+    return models is not None
 
 
 def _extract_first_model_id(models_payload: dict) -> Optional[str]:
@@ -545,9 +569,6 @@ class LocalLlamaServerManager:
         if not isinstance(pid, int) or pid <= 0:
             return None
 
-        if not _is_openai_compatible_server(expected_host, port, timeout_s=0.7):
-            return None
-
         exe_path = state.get("server_exe_path_resolved")
         model_path = state.get("model_path_resolved")
         model_size = state.get("model_size")
@@ -594,8 +615,22 @@ class LocalLlamaServerManager:
                 return None
         if expected_model_norm not in cmdline.replace("\\", "/").lower():
             return None
-
-        models_payload = _http_get_json(expected_host, port, "/v1/models", timeout_s=0.7) or {}
+        # Short grace period to reuse a warming server before starting a new one.
+        ready, last_error, models_payload = self._wait_ready(
+            expected_host,
+            port,
+            None,
+            timeout_s=4.0,
+        )
+        if not ready:
+            if last_error:
+                logger.debug(
+                    "Local AI reuse probe failed (host=%s port=%d): %s",
+                    expected_host,
+                    port,
+                    last_error,
+                )
+            return None
         model_id = _extract_first_model_id(models_payload) if isinstance(models_payload, dict) else None
 
         return LocalAIServerRuntime(
@@ -647,18 +682,25 @@ class LocalLlamaServerManager:
         except OSError as e:
             log_fp.close()
             self._process_log_fp = None
-            raise LocalAIServerStartError(f"llama-server の起動に失敗しました: {e}") from e
+            raise LocalAIServerStartError(
+                f"llama-server の起動に失敗しました: {e}。詳細は {log_path} を確認してください。"
+            ) from e
 
         self._process = proc
 
-        ready = self._wait_ready(host, port, proc, timeout_s=120.0)
+        ready, last_error, models_payload = self._wait_ready(host, port, proc, timeout_s=120.0)
         if not ready:
             rc = proc.poll()
+            if rc is not None:
+                raise LocalAIServerStartError(
+                    f"llama-server の起動に失敗しました（終了コード={rc}）。詳細は {log_path} を確認してください。"
+                )
+            reason = f"準備確認エラー: {last_error}" if last_error else "準備確認エラー"
             raise LocalAIServerStartError(
-                f"llama-server の起動に失敗しました（終了コード={rc}）。詳細は {log_path} を確認してください。"
+                f"llama-server の起動がタイムアウトしました。{reason}。詳細は {log_path} を確認してください。"
             )
 
-        models_payload = _http_get_json(host, port, "/v1/models", timeout_s=1.0) or {}
+        models_payload = models_payload or {}
         model_id = _extract_first_model_id(models_payload) if isinstance(models_payload, dict) else None
 
         return LocalAIServerRuntime(
@@ -671,16 +713,36 @@ class LocalLlamaServerManager:
             model_path=model_path,
         )
 
-    def _wait_ready(self, host: str, port: int, proc: subprocess.Popen, *, timeout_s: float) -> bool:
+    def _wait_ready(
+        self,
+        host: str,
+        port: int,
+        proc: Optional[subprocess.Popen] = None,
+        *,
+        timeout_s: float,
+    ) -> tuple[bool, Optional[str], Optional[dict]]:
         deadline = time.monotonic() + timeout_s
+        last_error: Optional[str] = None
         while time.monotonic() < deadline:
-            rc = proc.poll()
-            if rc is not None:
-                return False
-            if _is_openai_compatible_server(host, port, timeout_s=0.8):
-                return True
-            time.sleep(0.25)
-        return False
+            if proc is not None:
+                rc = proc.poll()
+                if rc is not None:
+                    return False, f"process exited ({rc})", None
+            models_payload, error = _probe_openai_models(host, port, timeout_s=0.8)
+            if models_payload is not None:
+                return True, None, models_payload
+            last_error = error
+            delay = 0.25
+            if error:
+                lowered = error.lower()
+                if "http 503" in lowered:
+                    delay = 0.7
+                elif "http 429" in lowered:
+                    delay = 1.0
+                elif "timed out" in lowered or "timeout" in lowered:
+                    delay = 0.5
+            time.sleep(delay)
+        return False, last_error, None
 
     def _build_server_args(
         self,

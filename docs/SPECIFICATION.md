@@ -933,7 +933,7 @@ class CopilotHandler:
 
 ### 6.1.1 Local AI（llama.cpp llama-server）
 
-ローカルAIバックエンドは `llama.cpp` の `llama-server` を常駐させ、OpenAI互換HTTP API（`/v1/chat/completions`）経由で呼び出す（M1: 非ストリーミング）。
+ローカルAIバックエンドは `llama.cpp` の `llama-server` を常駐させ、OpenAI互換HTTP API（`/v1/chat/completions`）経由で呼び出す（SSEストリーミング対応）。
 
 - サーバは `127.0.0.1` のみ（外部公開しない）
 - ポートは `local_ai_port_base..local_ai_port_max`（既定: 4891-4900）

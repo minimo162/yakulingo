@@ -8307,13 +8307,13 @@ class YakuLingoApp:
             disabled = self.state.is_translating()
             btn_props = 'flat no-caps dense disable' if disabled else 'flat no-caps dense'
             with ui.row().classes('w-full justify-center'):
-                with ui.element('div').classes('style-selector'):
-                    copilot_classes = 'style-btn style-btn-left'
-                    local_classes = 'style-btn style-btn-right'
+                with ui.element('div').classes('segmented-btn-container'):
+                    copilot_classes = 'segmented-btn'
+                    local_classes = 'segmented-btn'
                     if self.state.translation_backend == TranslationBackend.COPILOT:
-                        copilot_classes += ' style-btn-active'
+                        copilot_classes += ' segmented-btn-selected'
                     else:
-                        local_classes += ' style-btn-active'
+                        local_classes += ' segmented-btn-selected'
 
                     ui.button(
                         'Copilot',

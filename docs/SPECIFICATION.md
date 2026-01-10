@@ -1520,6 +1520,7 @@ class AppSettings:
 
     # Translation Backend (Copilot / Local AI)
     translation_backend: str = "copilot"  # "copilot" | "local"
+    copilot_enabled: bool = True          # Copilot UI/接続を無効化するスイッチ
 
     # Local AI (llama.cpp llama-server)
     local_ai_model_path: str = "local_ai/models/shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf"
@@ -1574,6 +1575,8 @@ class AppSettings:
     github_repo_name: str = "yakulingo"
     last_update_check: Optional[str] = None
 ```
+
+- `copilot_enabled`: false の場合は Copilot UI を非表示にし、`translation_backend` は local に強制。
 
 **設定ファイル:** `config/settings.template.json`（デフォルト） / `config/user_settings.json`（ユーザー設定）
 

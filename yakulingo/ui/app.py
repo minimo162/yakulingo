@@ -1678,9 +1678,12 @@ class YakuLingoApp:
             logger.info("[TIMING] AppSettings.load: %.2fs", time.perf_counter() - start)
             # Always start in text mode; file panel opens on drag & drop.
             self.state.current_tab = Tab.TEXT
+            backend_value = getattr(self._settings, "translation_backend", "copilot")
+            if not getattr(self._settings, "copilot_enabled", True):
+                backend_value = "local"
             self.state.translation_backend = (
                 TranslationBackend.LOCAL
-                if getattr(self._settings, "translation_backend", "copilot") == "local"
+                if backend_value == "local"
                 else TranslationBackend.COPILOT
             )
         return self._settings
@@ -8304,21 +8307,25 @@ class YakuLingoApp:
         @ui.refreshable
         def header_status():
             # Backend selector (Copilot / Local AI)
+            copilot_enabled = getattr(self.settings, "copilot_enabled", True)
             disabled = self.state.is_translating()
             btn_props = 'flat no-caps dense disable' if disabled else 'flat no-caps dense'
             with ui.row().classes('w-full justify-center'):
                 with ui.element('div').classes('segmented-btn-container'):
-                    copilot_classes = 'segmented-btn'
                     local_classes = 'segmented-btn'
-                    if self.state.translation_backend == TranslationBackend.COPILOT:
-                        copilot_classes += ' segmented-btn-selected'
-                    else:
+                    selected_backend = self.state.translation_backend
+                    if not copilot_enabled and selected_backend == TranslationBackend.COPILOT:
+                        selected_backend = TranslationBackend.LOCAL
+                    if selected_backend == TranslationBackend.LOCAL:
                         local_classes += ' segmented-btn-selected'
-
-                    ui.button(
-                        'Copilot',
-                        on_click=lambda: self._set_translation_backend(TranslationBackend.COPILOT),
-                    ).classes(copilot_classes).props(btn_props).tooltip('M365 Copilot（Edge）で翻訳')
+                    if copilot_enabled:
+                        copilot_classes = 'segmented-btn'
+                        if selected_backend == TranslationBackend.COPILOT:
+                            copilot_classes += ' segmented-btn-selected'
+                        ui.button(
+                            'Copilot',
+                            on_click=lambda: self._set_translation_backend(TranslationBackend.COPILOT),
+                        ).classes(copilot_classes).props(btn_props).tooltip('M365 Copilot（Edge）で翻訳')
 
                     ui.button(
                         'ローカルAI',
@@ -9404,6 +9411,9 @@ class YakuLingoApp:
 
     def _set_translation_backend(self, backend: TranslationBackend) -> None:
         """Switch translation backend (Copilot / Local AI) and persist to user settings."""
+        if backend == TranslationBackend.COPILOT and not getattr(self.settings, "copilot_enabled", True):
+            logger.info("Copilot backend disabled by settings; ignoring switch")
+            return
         if backend == self.state.translation_backend:
             return
         if self.state.is_translating():

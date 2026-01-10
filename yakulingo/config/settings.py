@@ -51,6 +51,7 @@ USER_SETTINGS_KEYS = {
     "last_tab",
     # 翻訳バックエンド（Copilot / Local AI）
     "translation_backend",
+    "copilot_enabled",
     # Local AI（高度設定）
     "local_ai_model_path",
     "local_ai_server_dir",
@@ -306,6 +307,8 @@ class AppSettings:
     last_tab: str = "text"
     # Translation backend ("copilot" or "local")
     translation_backend: str = "copilot"
+    # Copilot availability (feature flag)
+    copilot_enabled: bool = True
     # NOTE: window_width/window_height は廃止。ウィンドウサイズは
     # _detect_display_settings() で論理解像度から動的に計算される。
 
@@ -507,6 +510,15 @@ class AppSettings:
                 self.translation_backend,
             )
             self.translation_backend = "copilot"
+        if not isinstance(self.copilot_enabled, bool):
+            logger.warning(
+                "copilot_enabled invalid (%s), resetting to True",
+                type(self.copilot_enabled).__name__,
+            )
+            self.copilot_enabled = True
+        if not self.copilot_enabled and self.translation_backend == "copilot":
+            logger.info("copilot_enabled is false; forcing translation_backend to 'local'")
+            self.translation_backend = "local"
 
         # Local AI security: always bind to localhost
         if self.local_ai_host != "127.0.0.1":

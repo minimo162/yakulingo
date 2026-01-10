@@ -3,6 +3,7 @@
   "output_directory": null,
   "last_tab": "text",
   "translation_backend": "local",
+  "copilot_enabled": true,
   "max_chars_per_batch": 1000,
   "request_timeout": 600,
   "max_retries": 3,

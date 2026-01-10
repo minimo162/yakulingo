@@ -68,14 +68,14 @@ def _resolve_icon_path(preferred_dir: Path | None = None) -> Path | None:
 
 
 def _get_primary_monitor_size() -> tuple[int, int] | None:
-    if sys.platform != 'win32':
+    if sys.platform != "win32":
         return None
 
     try:
         import ctypes
         from ctypes import wintypes
 
-        user32 = ctypes.WinDLL('user32', use_last_error=True)
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
 
         class RECT(ctypes.Structure):
             _fields_ = [
@@ -109,7 +109,9 @@ def _get_primary_monitor_size() -> tuple[int, int] | None:
                     size = (width, height)
                     if info.dwFlags & MONITORINFOF_PRIMARY:
                         primary_size = size
-                    if largest_size is None or (width * height) > (largest_size[0] * largest_size[1]):
+                    if largest_size is None or (width * height) > (
+                        largest_size[0] * largest_size[1]
+                    ):
                         largest_size = size
             return True
 
@@ -133,13 +135,13 @@ def _get_primary_monitor_size() -> tuple[int, int] | None:
 
 def _get_process_dpi_awareness() -> int | None:
     """Return process DPI awareness on Windows (0=unaware, 1=system, 2=per-monitor)."""
-    if sys.platform != 'win32':
+    if sys.platform != "win32":
         return None
     try:
         import ctypes
 
         awareness = ctypes.c_int()
-        shcore = ctypes.WinDLL('shcore', use_last_error=True)
+        shcore = ctypes.WinDLL("shcore", use_last_error=True)
         if shcore.GetProcessDpiAwareness(None, ctypes.byref(awareness)) == 0:
             return awareness.value
     except Exception:
@@ -149,13 +151,13 @@ def _get_process_dpi_awareness() -> int | None:
 
 def _get_windows_dpi_scale() -> float:
     """Return Windows DPI scale (1.0 at 100%)."""
-    if sys.platform != 'win32':
+    if sys.platform != "win32":
         return 1.0
     try:
         import ctypes
 
-        user32 = ctypes.WinDLL('user32', use_last_error=True)
-        get_dpi = getattr(user32, 'GetDpiForSystem', None)
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        get_dpi = getattr(user32, "GetDpiForSystem", None)
         if get_dpi:
             dpi = int(get_dpi())
             if dpi > 0:
@@ -165,8 +167,8 @@ def _get_windows_dpi_scale() -> float:
     try:
         import ctypes
 
-        user32 = ctypes.WinDLL('user32', use_last_error=True)
-        gdi32 = ctypes.WinDLL('gdi32', use_last_error=True)
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        gdi32 = ctypes.WinDLL("gdi32", use_last_error=True)
         LOGPIXELSX = 88
         hdc = user32.GetDC(0)
         if hdc:
@@ -274,7 +276,7 @@ def _set_window_taskbar_visibility_win32(hwnd: int, visible: bool) -> bool:
         import ctypes
         from ctypes import wintypes
 
-        user32 = ctypes.WinDLL('user32', use_last_error=True)
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
         GWL_EXSTYLE = -20
         WS_EX_TOOLWINDOW = 0x00000080
         WS_EX_APPWINDOW = 0x00040000
@@ -366,7 +368,7 @@ def _set_window_system_menu_visible_win32(hwnd: int, visible: bool) -> bool:
         import ctypes
         from ctypes import wintypes
 
-        user32 = ctypes.WinDLL('user32', use_last_error=True)
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
         GWL_STYLE = -16
         WS_SYSMENU = 0x00080000
         WS_MINIMIZEBOX = 0x00020000
@@ -419,7 +421,9 @@ def _set_window_system_menu_visible_win32(hwnd: int, visible: bool) -> bool:
         return False
 
 
-def _set_window_icon_win32(hwnd: int, icon_path_str: str, *, log_prefix: str = "") -> bool:
+def _set_window_icon_win32(
+    hwnd: int, icon_path_str: str, *, log_prefix: str = ""
+) -> bool:
     if sys.platform != "win32":
         return False
     if not icon_path_str:
@@ -427,7 +431,7 @@ def _set_window_icon_win32(hwnd: int, icon_path_str: str, *, log_prefix: str = "
     try:
         import ctypes
 
-        user32 = ctypes.WinDLL('user32', use_last_error=True)
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
 
         WM_SETICON = 0x0080
         ICON_SMALL = 0
@@ -448,18 +452,18 @@ def _set_window_icon_win32(hwnd: int, icon_path_str: str, *, log_prefix: str = "
         cy_big = user32.GetSystemMetrics(SM_CYICON) or 32
 
         hicon_small = user32.LoadImageW(
-            None, icon_path_str, IMAGE_ICON,
-            cx_small, cy_small, LR_LOADFROMFILE
+            None, icon_path_str, IMAGE_ICON, cx_small, cy_small, LR_LOADFROMFILE
         )
-        hicon_big = user32.LoadImageW(
-            None, icon_path_str, IMAGE_ICON,
-            256, 256, LR_LOADFROMFILE
-        ) or user32.LoadImageW(
-            None, icon_path_str, IMAGE_ICON,
-            cx_big, cy_big, LR_LOADFROMFILE
-        ) or user32.LoadImageW(
-            None, icon_path_str, IMAGE_ICON,
-            0, 0, LR_LOADFROMFILE | LR_DEFAULTSIZE
+        hicon_big = (
+            user32.LoadImageW(
+                None, icon_path_str, IMAGE_ICON, 256, 256, LR_LOADFROMFILE
+            )
+            or user32.LoadImageW(
+                None, icon_path_str, IMAGE_ICON, cx_big, cy_big, LR_LOADFROMFILE
+            )
+            or user32.LoadImageW(
+                None, icon_path_str, IMAGE_ICON, 0, 0, LR_LOADFROMFILE | LR_DEFAULTSIZE
+            )
         )
 
         hicon_taskbar = hicon_big or hicon_small
@@ -506,7 +510,9 @@ def _hide_native_window_offscreen_win32(
             hwnd = user32.FindWindowW(None, window_title)
             matched_title = window_title
             if not hwnd:
-                EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+                EnumWindowsProc = ctypes.WINFUNCTYPE(
+                    ctypes.c_bool, wintypes.HWND, wintypes.LPARAM
+                )
                 found_hwnd = {"value": None, "title": None}
 
                 @EnumWindowsProc
@@ -517,7 +523,9 @@ def _hide_native_window_offscreen_win32(
                     buffer = ctypes.create_unicode_buffer(length + 1)
                     user32.GetWindowTextW(hwnd_enum, buffer, length + 1)
                     title = buffer.value
-                    if "YakuLingo" in window_title and title.startswith("Setup - YakuLingo"):
+                    if "YakuLingo" in window_title and title.startswith(
+                        "Setup - YakuLingo"
+                    ):
                         return True
                     if window_title in title:
                         found_hwnd["value"] = hwnd_enum
@@ -561,6 +569,7 @@ def _hide_native_window_offscreen_win32(
         SW_HIDE = 0
 
         if smooth and is_visible:
+
             class RECT(ctypes.Structure):
                 _fields_ = [
                     ("left", wintypes.LONG),
@@ -579,17 +588,29 @@ def _hide_native_window_offscreen_win32(
                     x = start_x + int((offscreen_x - start_x) * step / steps)
                     y = start_y + int((offscreen_y - start_y) * step / steps)
                     user32.SetWindowPos(
-                        hwnd, None, x, y, 0, 0,
+                        hwnd,
+                        None,
+                        x,
+                        y,
+                        0,
+                        0,
                         SWP_NOZORDER | SWP_NOSIZE | SWP_NOACTIVATE,
                     )
                     time.sleep(delay_sec)
 
         user32.SetWindowPos(
-            hwnd, None, offscreen_x, offscreen_y, 0, 0,
-            SWP_NOZORDER | SWP_NOSIZE | SWP_NOACTIVATE
+            hwnd,
+            None,
+            offscreen_x,
+            offscreen_y,
+            0,
+            0,
+            SWP_NOZORDER | SWP_NOSIZE | SWP_NOACTIVATE,
         )
         user32.ShowWindow(hwnd, SW_HIDE)
-        logger.debug("Native window hidden offscreen: %s (title=%s)", hwnd, matched_title)
+        logger.debug(
+            "Native window hidden offscreen: %s (title=%s)", hwnd, matched_title
+        )
     except Exception as e:
         logger.debug("Failed to hide native window offscreen: %s", e)
 
@@ -641,11 +662,12 @@ def _ensure_nicegui_version() -> None:
 
     Must be called after NiceGUI is imported (inside run_app()).
     """
-    version_str = getattr(nicegui, '__version__', '')
-    match = re.match(r'^(\d+)(?:\.(\d+))?(?:\.(\d+))?', version_str)
+    version_str = getattr(nicegui, "__version__", "")
+    match = re.match(r"^(\d+)(?:\.(\d+))?(?:\.(\d+))?", version_str)
     if not match:
         logger.warning(
-            "Unable to parse NiceGUI version '%s'; proceeding without check", version_str
+            "Unable to parse NiceGUI version '%s'; proceeding without check",
+            version_str,
         )
         return
 
@@ -685,12 +707,16 @@ def _nicegui_open_window_patched(
             resolved = _resolve_icon_path()
             if resolved is not None:
                 window_args["icon"] = str(resolved)
-                logger.debug("Resolved native window icon for child process: %s", resolved)
+                logger.debug(
+                    "Resolved native window icon for child process: %s", resolved
+                )
     except Exception:
         pass
 
     resident_startup = os.environ.get("YAKULINGO_NO_AUTO_OPEN", "").strip().lower() in (
-        "1", "true", "yes"
+        "1",
+        "true",
+        "yes",
     )
     if resident_startup and sys.platform == "win32":
         # Force hidden/offscreen to prevent brief focus steal during resident startup.
@@ -707,7 +733,9 @@ def _nicegui_open_window_patched(
         try:
             import ctypes
 
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("YakuLingo.App")
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+                "YakuLingo.App"
+            )
         except Exception:
             pass
 
@@ -719,7 +747,7 @@ def _nicegui_open_window_patched(
     from nicegui.native import native_mode as _native_mode
 
     with warnings.catch_warnings():
-        warnings.filterwarnings('ignore', category=DeprecationWarning)
+        warnings.filterwarnings("ignore", category=DeprecationWarning)
         import webview
     try:
         from webview import util as webview_util
@@ -738,65 +766,74 @@ def _nicegui_open_window_patched(
             webview_util._yakulingo_easy_drag_patch = True
     except Exception as err:
         logger.debug("Failed to patch pywebview easy_drag: %s", err)
-    settings_dict.setdefault('DRAG_REGION_SELECTOR', '.native-drag-region')
-    settings_dict.setdefault('DRAG_REGION_DIRECT_TARGET_ONLY', True)
+    settings_dict.setdefault("DRAG_REGION_SELECTOR", ".native-drag-region")
+    settings_dict.setdefault("DRAG_REGION_DIRECT_TARGET_ONLY", True)
 
     try:
         from webview.platforms.edgechromium import EdgeChrome
     except Exception:
         EdgeChrome = None
 
-    if EdgeChrome and not getattr(EdgeChrome, '_yakulingo_allow_external_drop', False):
+    if EdgeChrome and not getattr(EdgeChrome, "_yakulingo_allow_external_drop", False):
         original_on_webview_ready = EdgeChrome.on_webview_ready
 
         def on_webview_ready_patched(self, sender, args):
             original_on_webview_ready(self, sender, args)
             try:
-                controller = getattr(self.webview, 'CoreWebView2Controller', None)
-                if controller is not None and hasattr(controller, 'AllowExternalDrop'):
+                controller = getattr(self.webview, "CoreWebView2Controller", None)
+                if controller is not None and hasattr(controller, "AllowExternalDrop"):
                     controller.AllowExternalDrop = True
             except Exception as err:
                 logger.debug("AllowExternalDrop patch failed: %s", err)
             try:
-                core = getattr(self.webview, 'CoreWebView2', None)
-                if core is not None and hasattr(core, 'add_NavigationStarting'):
-                    if not getattr(self, '_yakulingo_block_file_navigation', False):
+                core = getattr(self.webview, "CoreWebView2", None)
+                if core is not None and hasattr(core, "add_NavigationStarting"):
+                    if not getattr(self, "_yakulingo_block_file_navigation", False):
+
                         def navigation_starting_handler(_sender, event_args):
                             try:
-                                uri = getattr(event_args, 'Uri', '') or ''
-                                if str(uri).lower().startswith('file:'):
-                                    setattr(event_args, 'Cancel', True)
+                                uri = getattr(event_args, "Uri", "") or ""
+                                if str(uri).lower().startswith("file:"):
+                                    setattr(event_args, "Cancel", True)
                             except Exception:
                                 pass
 
                         core.add_NavigationStarting(navigation_starting_handler)
                         self._yakulingo_block_file_navigation = True
-                        self._yakulingo_navigation_starting_handler = navigation_starting_handler
-                if core is not None and hasattr(core, 'Settings'):
-                    settings = getattr(core, 'Settings', None)
+                        self._yakulingo_navigation_starting_handler = (
+                            navigation_starting_handler
+                        )
+                if core is not None and hasattr(core, "Settings"):
+                    settings = getattr(core, "Settings", None)
                     try:
                         if settings is not None:
-                            for attr in ('AreDefaultDropHandlingEnabled', 'AreDefaultDropHandlersEnabled'):
+                            for attr in (
+                                "AreDefaultDropHandlingEnabled",
+                                "AreDefaultDropHandlersEnabled",
+                            ):
                                 if hasattr(settings, attr):
                                     setattr(settings, attr, False)
                     except Exception:
                         pass
-                if core is not None and hasattr(core, 'add_NewWindowRequested'):
-                    if not getattr(self, '_yakulingo_block_file_new_window', False):
+                if core is not None and hasattr(core, "add_NewWindowRequested"):
+                    if not getattr(self, "_yakulingo_block_file_new_window", False):
+
                         def new_window_requested_handler(_sender, event_args):
                             try:
-                                uri = getattr(event_args, 'Uri', '') or ''
-                                if str(uri).lower().startswith('file:'):
-                                    if hasattr(event_args, 'Handled'):
-                                        setattr(event_args, 'Handled', True)
-                                    if hasattr(event_args, 'Cancel'):
-                                        setattr(event_args, 'Cancel', True)
+                                uri = getattr(event_args, "Uri", "") or ""
+                                if str(uri).lower().startswith("file:"):
+                                    if hasattr(event_args, "Handled"):
+                                        setattr(event_args, "Handled", True)
+                                    if hasattr(event_args, "Cancel"):
+                                        setattr(event_args, "Cancel", True)
                             except Exception:
                                 pass
 
                         core.add_NewWindowRequested(new_window_requested_handler)
                         self._yakulingo_block_file_new_window = True
-                        self._yakulingo_new_window_requested_handler = new_window_requested_handler
+                        self._yakulingo_new_window_requested_handler = (
+                            new_window_requested_handler
+                        )
             except Exception as err:
                 logger.debug("NavigationStarting patch failed: %s", err)
 
@@ -807,12 +844,12 @@ def _nicegui_open_window_patched(
         time.sleep(0.1)
 
     window_kwargs = {
-        'url': _build_local_url(host, port),
-        'title': title,
-        'width': width,
-        'height': height,
-        'fullscreen': fullscreen,
-        'frameless': frameless,
+        "url": _build_local_url(host, port),
+        "title": title,
+        "width": width,
+        "height": height,
+        "fullscreen": fullscreen,
+        "frameless": frameless,
         **window_args,
     }
     webview.settings.update(**settings_dict)
@@ -860,13 +897,16 @@ def _nicegui_open_window_patched(
             logger.debug("Failed to set native window icon: %s", e)
 
     if sys.platform == "win32" and _is_close_to_resident_enabled():
+
         def _hide_system_menu_on_show(*_args, **_kwargs) -> None:
             import threading as _threading
             import time as _time
 
             def _worker() -> None:
                 for attempt in range(5):
-                    hwnd = _get_native_hwnd() or _find_window_handle_by_title_win32(title)
+                    hwnd = _get_native_hwnd() or _find_window_handle_by_title_win32(
+                        title
+                    )
                     if hwnd and _set_window_system_menu_visible_win32(hwnd, False):
                         return
                     _time.sleep(0.15)
@@ -883,6 +923,7 @@ def _nicegui_open_window_patched(
         except Exception:
             pass
         if resident_startup:
+
             def _hide_window_on_show(*_args, **_kwargs) -> None:
                 try:
                     target_hwnd = hwnd or _find_window_handle_by_title_win32(title)
@@ -979,6 +1020,7 @@ def _nicegui_open_window_patched(
                 return False
 
         if _is_close_to_resident_enabled():
+
             def _notify_ui_close_async() -> None:
                 import threading as _threading
                 import time as _time
@@ -989,7 +1031,9 @@ def _nicegui_open_window_patched(
                             return
                         if attempt == 0:
                             _time.sleep(0.15)
-                    logger.debug("UI close-to-resident notify failed; keeping window hidden")
+                    logger.debug(
+                        "UI close-to-resident notify failed; keeping window hidden"
+                    )
 
                 _threading.Thread(
                     target=_run,
@@ -1003,7 +1047,9 @@ def _nicegui_open_window_patched(
                     hwnd = _get_native_hwnd()
                     if hwnd:
                         _set_window_taskbar_visibility_win32(hwnd, False)
-                        _hide_native_window_offscreen_win32(None, smooth=True, hwnd=hwnd)
+                        _hide_native_window_offscreen_win32(
+                            None, smooth=True, hwnd=hwnd
+                        )
                     else:
                         hwnd = _find_window_handle_by_title_win32(title)
                         if hwnd:
@@ -1015,6 +1061,7 @@ def _nicegui_open_window_patched(
                     window.minimize()
             except Exception as e:
                 logger.debug("Native window close handler failed: %s", e)
+
             # Best-effort: cancel the close to keep the process alive.
             def _try_cancel(candidate) -> bool:
                 if candidate is None:
@@ -1059,7 +1106,9 @@ def _nicegui_open_window_patched(
     closed = Event()
     window.events.closed += _handle_window_closed
     window.events.closed += closed.set
-    _native_mode._start_window_method_executor(window, method_queue, response_queue, closed)
+    _native_mode._start_window_method_executor(
+        window, method_queue, response_queue, closed
+    )
     webview.start(**start_args)
 
 
@@ -1087,7 +1136,9 @@ def _nicegui_activate_patched(
         while process.is_alive():
             time.sleep(0.1)
         if _is_close_to_resident_enabled():
-            logger.info("Native UI process exited; keeping service alive (close-to-resident)")
+            logger.info(
+                "Native UI process exited; keeping service alive (close-to-resident)"
+            )
             try:
                 native.remove_queues()
             except Exception:
@@ -1099,9 +1150,11 @@ def _nicegui_activate_patched(
         _thread.interrupt_main()
         native.remove_queues()
 
-    if not optional_features.has('webview'):
-        logger.error('Native mode is not supported in this configuration.\n'
-                     'Please run "pip install pywebview" to use it.')
+    if not optional_features.has("webview"):
+        logger.error(
+            "Native mode is not supported in this configuration.\n"
+            'Please run "pip install pywebview" to use it.'
+        )
         sys.exit(1)
 
     mp.freeze_support()
@@ -1112,9 +1165,18 @@ def _nicegui_activate_patched(
     start_args = dict(core.app.native.start_args)
 
     args = (
-        host, port, title, width, height, fullscreen, frameless,
-        native.method_queue, native.response_queue,
-        window_args, settings_dict, start_args,
+        host,
+        port,
+        title,
+        width,
+        height,
+        fullscreen,
+        frameless,
+        native.method_queue,
+        native.response_queue,
+        window_args,
+        settings_dict,
+        start_args,
     )
     process = mp.Process(target=_nicegui_open_window_patched, args=args, daemon=True)
     process.start()
@@ -1210,14 +1272,18 @@ STARTUP_COPILOT_STATE_TIMEOUT_SEC = 6  # Longer timeout shortly after launch
 STARTUP_COPILOT_STATE_WINDOW_SEC = 60  # Apply longer timeout for first 60s
 MAX_HISTORY_DISPLAY = 20  # Maximum history items to display in sidebar
 MAX_HISTORY_DRAWER_DISPLAY = 100  # Maximum history items to show in history drawer
-MIN_AVAILABLE_MEMORY_GB_FOR_EARLY_CONNECT = 0.5  # Skip early Copilot init only on very low memory
+MIN_AVAILABLE_MEMORY_GB_FOR_EARLY_CONNECT = (
+    0.5  # Skip early Copilot init only on very low memory
+)
 TEXT_TRANSLATION_CHAR_LIMIT = 5000  # Max chars for text translation (clipboard trigger)
 FILE_LANGUAGE_DETECTION_TIMEOUT_SEC = 8.0  # Avoid hanging file-language detection
 FILE_TRANSLATION_UI_VISIBILITY_HOLD_SEC = 600.0  # 翻訳完了直後のUI自動非表示を抑止
 DEFAULT_TEXT_STYLE = "concise"
 RESIDENT_HEARTBEAT_INTERVAL_SEC = 300  # Update startup.log even when UI is closed
 RESIDENT_STARTUP_READY_TIMEOUT_SEC = 3600  # Allow manual login during resident startup
-RESIDENT_STARTUP_PROMPT_READY_TIMEOUT_SEC = 300  # Wait for Copilot input/send readiness after connect
+RESIDENT_STARTUP_PROMPT_READY_TIMEOUT_SEC = (
+    300  # Wait for Copilot input/send readiness after connect
+)
 RESIDENT_STARTUP_POLL_INTERVAL_SEC = 2
 RESIDENT_STARTUP_LAYOUT_RETRY_ATTEMPTS = 40
 RESIDENT_STARTUP_LAYOUT_RETRY_DELAY_SEC = 0.25
@@ -1226,13 +1292,17 @@ ALWAYS_CLOSE_TO_RESIDENT = True  # Keep service alive when native UI window is c
 
 def _is_watchdog_enabled() -> bool:
     return os.environ.get("YAKULINGO_WATCHDOG", "").strip().lower() in (
-        "1", "true", "yes"
+        "1",
+        "true",
+        "yes",
     )
 
 
 def _is_close_to_resident_enabled() -> bool:
     resident_mode = os.environ.get("YAKULINGO_NO_AUTO_OPEN", "").strip().lower() in (
-        "1", "true", "yes"
+        "1",
+        "true",
+        "yes",
     )
     return ALWAYS_CLOSE_TO_RESIDENT or resident_mode
 
@@ -1403,7 +1473,9 @@ class _HotkeyBackgroundUpdateBuffer:
         self._done_event.set()
 
 
-def summarize_clipboard_text(text: str, max_preview: int = 200) -> ClipboardDebugSummary:
+def summarize_clipboard_text(
+    text: str, max_preview: int = 200
+) -> ClipboardDebugSummary:
     """Create a concise summary of clipboard text for debugging.
 
     Args:
@@ -1470,7 +1542,7 @@ class YakuLingoApp:
 
         # Cache base directory and glossary path (avoid recalculation)
         self._base_dir = Path(__file__).parent.parent.parent
-        self._glossary_path = self._base_dir / 'glossary.csv'
+        self._glossary_path = self._base_dir / "glossary.csv"
 
         # Window sizing state (logical vs native/DPI-scaled)
         self._native_window_size: tuple[int, int] | None = None
@@ -1616,7 +1688,9 @@ class YakuLingoApp:
         # Early Copilot connection (started before UI, result applied after)
         self._early_connection_task: "asyncio.Task | None" = None
         self._early_connection_result: Optional[bool] = None
-        self._early_connect_thread: "threading.Thread | None" = None  # Background Edge startup
+        self._early_connect_thread: "threading.Thread | None" = (
+            None  # Background Edge startup
+        )
         self._early_connection_event: "threading.Event | None" = None
         self._early_connection_result_ref: "_EarlyConnectionResult | None" = None
 
@@ -1638,6 +1712,7 @@ class YakuLingoApp:
         """Lazy-load CopilotHandler for faster startup."""
         if self._copilot is None:
             from yakulingo.services.copilot_handler import CopilotHandler
+
             native_mode_enabled = bool(self._native_mode_enabled)
             patch_marker = _NICEGUI_NATIVE_PATCH_APPLIED or not native_mode_enabled
             self._copilot = CopilotHandler(native_patch_applied=patch_marker)
@@ -1653,14 +1728,20 @@ class YakuLingoApp:
             from yakulingo.services.translation_service import TranslationService
 
             self.translation_service = TranslationService(
-                self.copilot, self.settings, get_default_prompts_dir(), copilot_lock=self._copilot_lock
+                self.copilot,
+                self.settings,
+                get_default_prompts_dir(),
+                copilot_lock=self._copilot_lock,
             )
             return True
-        except Exception as e:  # pragma: no cover - defensive guard for unexpected init errors
+        except (
+            Exception
+        ) as e:  # pragma: no cover - defensive guard for unexpected init errors
             logger.error("Failed to initialize translation service: %s", e)
             try:
                 from yakulingo.ui.utils import _safe_notify
-                _safe_notify('翻訳サービスの初期化に失敗しました', type='negative')
+
+                _safe_notify("翻訳サービスの初期化に失敗しました", type="negative")
             except Exception:
                 pass
             return False
@@ -1673,7 +1754,9 @@ class YakuLingoApp:
 
             start = time.perf_counter()
             self._settings = AppSettings.load(self.settings_path)
-            self.state.reference_files = self._settings.get_reference_file_paths(self._base_dir)
+            self.state.reference_files = self._settings.get_reference_file_paths(
+                self._base_dir
+            )
             logger.info("[TIMING] AppSettings.load: %.2fs", time.perf_counter() - start)
             # Always start in text mode; file panel opens on drag & drop.
             self.state.current_tab = Tab.TEXT
@@ -1696,7 +1779,9 @@ class YakuLingoApp:
     def _get_effective_browser_display_mode(self) -> str:
         """Resolve browser display mode for current screen size."""
         screen_width = self._screen_size[0] if self._screen_size else None
-        return resolve_browser_display_mode(self.settings.browser_display_mode, screen_width)
+        return resolve_browser_display_mode(
+            self.settings.browser_display_mode, screen_width
+        )
 
     def _get_window_size_for_native_ops(self) -> tuple[int, int]:
         """Return window size in the coordinate space used by Win32 APIs."""
@@ -1710,7 +1795,8 @@ class YakuLingoApp:
     def start_clipboard_trigger(self):
         """Start the clipboard double-copy trigger."""
         import sys
-        if sys.platform != 'win32':
+
+        if sys.platform != "win32":
             logger.info("Clipboard trigger only available on Windows")
             return
 
@@ -1741,6 +1827,7 @@ class YakuLingoApp:
     def start_hotkey_listener(self):
         """Start the global hotkey listener (Ctrl+Alt+J)."""
         import sys
+
         if sys.platform != "win32":
             logger.info("Hotkey listener only available on Windows")
             return
@@ -1769,7 +1856,9 @@ class YakuLingoApp:
                 logger.debug("Error stopping hotkey listener: %s", e)
             self._hotkey_listener = None
 
-    def _start_resident_heartbeat(self, interval_sec: float = RESIDENT_HEARTBEAT_INTERVAL_SEC) -> None:
+    def _start_resident_heartbeat(
+        self, interval_sec: float = RESIDENT_HEARTBEAT_INTERVAL_SEC
+    ) -> None:
         existing = self._resident_heartbeat_task
         if existing is not None and not existing.done():
             return
@@ -1789,16 +1878,23 @@ class YakuLingoApp:
                     try:
                         manager = self._hotkey_listener
                         if manager is None or not manager.is_running:
-                            logger.warning("Resident heartbeat detected hotkey listener stopped; restarting")
+                            logger.warning(
+                                "Resident heartbeat detected hotkey listener stopped; restarting"
+                            )
                             self.start_hotkey_listener()
                     except Exception as e:
-                        logger.debug("Resident heartbeat hotkey listener check failed: %s", e)
+                        logger.debug(
+                            "Resident heartbeat hotkey listener check failed: %s", e
+                        )
                 await asyncio.sleep(interval_sec)
         except asyncio.CancelledError:
             pass
         finally:
             current_task = asyncio.current_task()
-            if current_task is not None and self._resident_heartbeat_task is current_task:
+            if (
+                current_task is not None
+                and self._resident_heartbeat_task is current_task
+            ):
                 self._resident_heartbeat_task = None
 
     def _apply_resident_startup_layout_win32(self) -> bool:
@@ -1849,9 +1945,13 @@ class YakuLingoApp:
                 ]
 
             MONITOR_DEFAULTTONEAREST = 2
-            monitor = user32.MonitorFromWindow(wintypes.HWND(yakulingo_hwnd), MONITOR_DEFAULTTONEAREST)
+            monitor = user32.MonitorFromWindow(
+                wintypes.HWND(yakulingo_hwnd), MONITOR_DEFAULTTONEAREST
+            )
             if not monitor:
-                monitor = user32.MonitorFromWindow(wintypes.HWND(edge_hwnd), MONITOR_DEFAULTTONEAREST)
+                monitor = user32.MonitorFromWindow(
+                    wintypes.HWND(edge_hwnd), MONITOR_DEFAULTTONEAREST
+                )
                 if not monitor:
                     return False
 
@@ -1902,7 +2002,9 @@ class YakuLingoApp:
 
             def _restore_window(hwnd_value: int) -> None:
                 try:
-                    if user32.IsIconic(wintypes.HWND(hwnd_value)) or user32.IsZoomed(wintypes.HWND(hwnd_value)):
+                    if user32.IsIconic(wintypes.HWND(hwnd_value)) or user32.IsZoomed(
+                        wintypes.HWND(hwnd_value)
+                    ):
                         user32.ShowWindow(wintypes.HWND(hwnd_value), SW_RESTORE)
                     else:
                         user32.ShowWindow(wintypes.HWND(hwnd_value), SW_SHOW)
@@ -1918,12 +2020,15 @@ class YakuLingoApp:
                 try:
                     rect = RECT()
                     DWMWA_EXTENDED_FRAME_BOUNDS = 9
-                    if dwmapi.DwmGetWindowAttribute(
-                        wintypes.HWND(hwnd_value),
-                        DWMWA_EXTENDED_FRAME_BOUNDS,
-                        ctypes.byref(rect),
-                        ctypes.sizeof(rect),
-                    ) == 0:
+                    if (
+                        dwmapi.DwmGetWindowAttribute(
+                            wintypes.HWND(hwnd_value),
+                            DWMWA_EXTENDED_FRAME_BOUNDS,
+                            ctypes.byref(rect),
+                            ctypes.sizeof(rect),
+                        )
+                        == 0
+                    ):
                         return rect
                 except Exception:
                     return None
@@ -1931,7 +2036,9 @@ class YakuLingoApp:
 
             def _get_window_rect(hwnd_value):
                 rect = RECT()
-                if not user32.GetWindowRect(wintypes.HWND(hwnd_value), ctypes.byref(rect)):
+                if not user32.GetWindowRect(
+                    wintypes.HWND(hwnd_value), ctypes.byref(rect)
+                ):
                     return None
                 return rect
 
@@ -2026,9 +2133,13 @@ class YakuLingoApp:
                 return
             time_module.sleep(delay_sec)
 
-    async def _wait_for_copilot_ready(self, timeout_sec: int = RESIDENT_STARTUP_READY_TIMEOUT_SEC) -> bool:
+    async def _wait_for_copilot_ready(
+        self, timeout_sec: int = RESIDENT_STARTUP_READY_TIMEOUT_SEC
+    ) -> bool:
         """Wait for Copilot to become ready (login may require user interaction)."""
-        from yakulingo.services.copilot_handler import ConnectionState as CopilotConnectionState
+        from yakulingo.services.copilot_handler import (
+            ConnectionState as CopilotConnectionState,
+        )
 
         deadline = time.time() + timeout_sec
         while time.time() < deadline and not self._shutdown_requested:
@@ -2056,11 +2167,14 @@ class YakuLingoApp:
         status["ui_connected"] = ui_connected
         status["ui_ready"] = bool(ui_connected and self._ui_ready_event.is_set())
         status["hotkey_listener_running"] = bool(
-            self._hotkey_listener is not None and getattr(self._hotkey_listener, "is_running", False)
+            self._hotkey_listener is not None
+            and getattr(self._hotkey_listener, "is_running", False)
         )
         status["translation_service_ready"] = self.translation_service is not None
         if self._resident_startup_started_at is not None:
-            status["elapsed_sec"] = max(0.0, time.time() - self._resident_startup_started_at)
+            status["elapsed_sec"] = max(
+                0.0, time.time() - self._resident_startup_started_at
+            )
         if self._resident_startup_error:
             status["error"] = self._resident_startup_error
             status["ready"] = False
@@ -2070,7 +2184,9 @@ class YakuLingoApp:
             status["state"] = "not_initialized"
             return status
 
-        from yakulingo.services.copilot_handler import ConnectionState as CopilotConnectionState
+        from yakulingo.services.copilot_handler import (
+            ConnectionState as CopilotConnectionState,
+        )
         from yakulingo.services.copilot_handler import CopilotHandler
 
         try:
@@ -2097,7 +2213,9 @@ class YakuLingoApp:
 
         if open_ui_callback is not None and not has_client:
             # Avoid spawning duplicate UI windows while the existing one is still connecting.
-            if sys.platform == "win32" and self._is_ui_window_present_win32(include_hidden=True):
+            if sys.platform == "win32" and self._is_ui_window_present_win32(
+                include_hidden=True
+            ):
                 try:
                     await asyncio.to_thread(self._bring_window_to_front_win32)
                 except Exception as e:
@@ -2110,23 +2228,31 @@ class YakuLingoApp:
                 except Exception as e:
                     logger.debug("Resident UI open failed (%s): %s", reason, e)
         elif open_ui_callback is None and not has_client:
-            logger.debug("Resident UI open callback missing (%s); using Win32 fallback", reason)
+            logger.debug(
+                "Resident UI open callback missing (%s); using Win32 fallback", reason
+            )
 
         if sys.platform == "win32":
             try:
-                recovered = await asyncio.to_thread(self._recover_resident_window_win32, reason)
+                recovered = await asyncio.to_thread(
+                    self._recover_resident_window_win32, reason
+                )
                 shown = shown or recovered
             except Exception as e:
                 logger.debug("Resident UI recovery failed (%s): %s", reason, e)
             if not shown and open_ui_callback is None:
                 for attempt in range(3):
                     try:
-                        restored = await asyncio.to_thread(self._recover_resident_window_win32, reason)
+                        restored = await asyncio.to_thread(
+                            self._recover_resident_window_win32, reason
+                        )
                         if restored:
                             shown = True
                             break
                     except Exception as e:
-                        logger.debug("Resident UI recovery attempt failed (%s): %s", reason, e)
+                        logger.debug(
+                            "Resident UI recovery attempt failed (%s): %s", reason, e
+                        )
                     await asyncio.sleep(0.2)
 
         ui_ready = False
@@ -2180,13 +2306,19 @@ class YakuLingoApp:
 
         return False
 
-    async def _show_resident_login_prompt(self, reason: str, *, user_initiated: bool = False) -> None:
+    async def _show_resident_login_prompt(
+        self, reason: str, *, user_initiated: bool = False
+    ) -> None:
         if not self._resident_mode:
             return
 
         self._resident_login_required = True
         if not user_initiated:
-            confirmed = True if reason == "startup" else await self._confirm_login_required_for_prompt(reason)
+            confirmed = (
+                True
+                if reason == "startup"
+                else await self._confirm_login_required_for_prompt(reason)
+            )
             if not confirmed:
                 logger.info(
                     "Resident login required not confirmed; UI auto-open suppressed (%s)",
@@ -2224,7 +2356,9 @@ class YakuLingoApp:
                     reason=f"resident login required: {reason}",
                 )
             except Exception as e:
-                logger.debug("Resident login Edge foreground failed (%s): %s", reason, e)
+                logger.debug(
+                    "Resident login Edge foreground failed (%s): %s", reason, e
+                )
 
         if sys.platform == "win32":
             try:
@@ -2251,7 +2385,10 @@ class YakuLingoApp:
                 self._resident_startup_error = "translation_service_init_failed"
                 return
 
-            if self._early_connection_event is not None and not self._early_connection_event.is_set():
+            if (
+                self._early_connection_event is not None
+                and not self._early_connection_event.is_set()
+            ):
                 try:
                     await asyncio.wait_for(
                         asyncio.to_thread(self._early_connection_event.wait),
@@ -2262,7 +2399,10 @@ class YakuLingoApp:
                 except Exception as e:
                     logger.debug("Resident warmup: early connection wait failed: %s", e)
 
-            if self._early_connection_result is None and self._early_connection_result_ref is not None:
+            if (
+                self._early_connection_result is None
+                and self._early_connection_result_ref is not None
+            ):
                 self._early_connection_result = self._early_connection_result_ref.value
 
             copilot = self.copilot
@@ -2287,6 +2427,7 @@ class YakuLingoApp:
                     return
 
             from yakulingo.services.copilot_handler import CopilotHandler
+
             login_required = (
                 not copilot.is_connected
                 and copilot.last_connection_error == CopilotHandler.ERROR_LOGIN_REQUIRED
@@ -2363,6 +2504,7 @@ class YakuLingoApp:
 
         # Skip if already translating (text or file), unless we only need to open the UI.
         if not is_empty:
+
             def _queue_pending(reason: str) -> None:
                 import time
 
@@ -2402,6 +2544,7 @@ class YakuLingoApp:
         try:
             # Use background_tasks to safely schedule async work from another thread
             from nicegui import background_tasks
+
             background_tasks.create(
                 self._handle_hotkey_text(
                     text,
@@ -2419,7 +2562,9 @@ class YakuLingoApp:
             yakulingo_hwnd = self._find_ui_window_handle_win32(include_hidden=True)
             if yakulingo_hwnd and source_hwnd == int(yakulingo_hwnd):
                 bring_ui_to_front = False
-                logger.debug("Hotkey trigger source is YakuLingo; skipping bring-to-front")
+                logger.debug(
+                    "Hotkey trigger source is YakuLingo; skipping bring-to-front"
+                )
         self._on_hotkey_triggered(
             text,
             source_hwnd=source_hwnd,
@@ -2444,7 +2589,9 @@ class YakuLingoApp:
                 yakulingo_hwnd = self._find_ui_window_handle_win32(include_hidden=True)
                 if yakulingo_hwnd and source_hwnd == int(yakulingo_hwnd):
                     bring_ui_to_front = False
-                    logger.debug("Clipboard trigger source is YakuLingo; skipping bring-to-front")
+                    logger.debug(
+                        "Clipboard trigger source is YakuLingo; skipping bring-to-front"
+                    )
         self._on_hotkey_triggered(
             text,
             source_hwnd=source_hwnd,
@@ -2545,13 +2692,19 @@ class YakuLingoApp:
 
         # Double-check: Skip if translation started while we were waiting
         if self.state.text_translating:
-            logger.debug("Hotkey handler skipped - text translation already in progress")
+            logger.debug(
+                "Hotkey handler skipped - text translation already in progress"
+            )
             return
         if self.state.file_state == FileState.TRANSLATING:
-            logger.debug("Hotkey handler skipped - file translation already in progress")
+            logger.debug(
+                "Hotkey handler skipped - file translation already in progress"
+            )
             return
         if self._hotkey_translation_active:
-            logger.debug("Hotkey handler skipped - hotkey translation already in progress")
+            logger.debug(
+                "Hotkey handler skipped - hotkey translation already in progress"
+            )
             return
         self._hotkey_translation_active = True
 
@@ -2678,9 +2831,13 @@ class YakuLingoApp:
                                 if self._streaming_preview_label is None:
                                     self._refresh_result_panel()
                                     self._refresh_tabs()
-                                    self._scroll_result_panel_to_bottom(client, force_follow=True)
+                                    self._scroll_result_panel_to_bottom(
+                                        client, force_follow=True
+                                    )
                                 if self._streaming_preview_label is not None:
-                                    self._streaming_preview_label.set_text(self.state.text_streaming_preview)
+                                    self._streaming_preview_label.set_text(
+                                        self.state.text_streaming_preview
+                                    )
                                     self._scroll_result_panel_to_bottom(client)
                         except Exception:
                             logger.debug(
@@ -2692,7 +2849,10 @@ class YakuLingoApp:
                 if force_refresh:
                     self._refresh_ui_after_hotkey_translation(trace_id)
                 elif refresh:
-                    if self.state.current_tab == Tab.FILE and self.state.file_state == FileState.TRANSLATING:
+                    if (
+                        self.state.current_tab == Tab.FILE
+                        and self.state.file_state == FileState.TRANSLATING
+                    ):
                         if self._file_progress_elements:
                             self._update_file_progress_elements()
                         else:
@@ -2721,7 +2881,11 @@ class YakuLingoApp:
                     try:
                         _apply_hotkey_background_updates()
                     except Exception as e:
-                        logger.debug("Hotkey translation [%s] background apply failed: %s", trace_id, e)
+                        logger.debug(
+                            "Hotkey translation [%s] background apply failed: %s",
+                            trace_id,
+                            e,
+                        )
 
                 try:
                     loop.call_soon_threadsafe(_apply_wrapper)
@@ -2763,7 +2927,9 @@ class YakuLingoApp:
                         copilot = getattr(self, "_copilot", None)
                         if copilot is not None and not copilot.is_gpt_mode_set:
                             try:
-                                logger.info("Hotkey translation waiting for GPT mode setup")
+                                logger.info(
+                                    "Hotkey translation waiting for GPT mode setup"
+                                )
                                 copilot.wait_for_gpt_mode_setup(25.0)
                             except Exception as e:
                                 logger.debug("Hotkey GPT mode wait failed: %s", e)
@@ -2784,7 +2950,9 @@ class YakuLingoApp:
                             )
                     except Exception as e:
                         logger.debug(
-                            "Hotkey translation [%s] background thread failed: %s", trace_id, e
+                            "Hotkey translation [%s] background thread failed: %s",
+                            trace_id,
+                            e,
                         )
                         try:
                             buffer.mark_done(error=str(e))
@@ -2811,7 +2979,9 @@ class YakuLingoApp:
                     open_ui_callback = self._open_ui_window_callback
                     if open_ui_callback is not None:
                         if sys.platform == "win32":
-                            rect = self._compute_hotkey_ui_rect_win32(layout_source_hwnd)
+                            rect = self._compute_hotkey_ui_rect_win32(
+                                layout_source_hwnd
+                            )
                             if rect:
                                 self._set_pending_ui_window_rect(rect, reason="hotkey")
                         try:
@@ -2821,7 +2991,9 @@ class YakuLingoApp:
                             )
                             open_ui_requested = True
                         except Exception as e:
-                            logger.debug("Failed to request UI open for hotkey (early): %s", e)
+                            logger.debug(
+                                "Failed to request UI open for hotkey (early): %s", e
+                            )
 
             preserve_edge = open_ui and source_hwnd is None
             focus_source = not bring_ui_to_front
@@ -2829,7 +3001,9 @@ class YakuLingoApp:
             layout_result: bool | None = None
             if sys.platform == "win32" and open_ui:
                 try:
-                    self.copilot.set_hotkey_layout_active(True, preserve_edge=preserve_edge)
+                    self.copilot.set_hotkey_layout_active(
+                        True, preserve_edge=preserve_edge
+                    )
                 except Exception as e:
                     logger.debug("Failed to set hotkey layout active: %s", e)
                 try:
@@ -2845,10 +3019,14 @@ class YakuLingoApp:
                         focus_source=focus_source,
                     )
                 except Exception as e:
-                    logger.debug("Failed to apply hotkey work-priority window layout: %s", e)
+                    logger.debug(
+                        "Failed to apply hotkey work-priority window layout: %s", e
+                    )
                 else:
                     if layout_result is False:
-                        logger.debug("Hotkey UI layout requested but UI window not found")
+                        logger.debug(
+                            "Hotkey UI layout requested but UI window not found"
+                        )
             else:
                 _maybe_start_background_translation()
 
@@ -2861,21 +3039,29 @@ class YakuLingoApp:
                 # NiceGUI Client object can remain referenced after the browser window is closed.
                 # Ensure the cached client still has an active WebSocket connection before using it.
                 try:
-                    has_socket_connection = bool(getattr(client, "has_socket_connection", True))
+                    has_socket_connection = bool(
+                        getattr(client, "has_socket_connection", True)
+                    )
                 except Exception:
                     has_socket_connection = True
                 if not has_socket_connection:
-                    logger.debug("Hotkey UI client cached but disconnected; using headless mode")
+                    logger.debug(
+                        "Hotkey UI client cached but disconnected; using headless mode"
+                    )
                     with self._client_lock:
                         if self._client is client:
                             self._client = None
                     client = None
 
-            should_bring_to_front = bring_ui_to_front or (open_ui and layout_source_hwnd is None)
+            should_bring_to_front = bring_ui_to_front or (
+                open_ui and layout_source_hwnd is None
+            )
             if client is not None:
                 if sys.platform == "win32":
                     if layout_result is False:
-                        logger.debug("Hotkey UI client exists but UI window not found; using headless mode")
+                        logger.debug(
+                            "Hotkey UI client exists but UI window not found; using headless mode"
+                        )
                         with self._client_lock:
                             if self._client is client:
                                 self._client = None
@@ -2887,7 +3073,9 @@ class YakuLingoApp:
                                     position_edge=not preserve_edge
                                 )
                             except Exception as e:
-                                logger.debug("Failed to bring window to front for hotkey: %s", e)
+                                logger.debug(
+                                    "Failed to bring window to front for hotkey: %s", e
+                                )
                             else:
                                 if brought_to_front and self._resident_mode:
                                     self._resident_show_requested = False
@@ -2910,7 +3098,9 @@ class YakuLingoApp:
                             position_edge=not preserve_edge
                         )
                     except Exception as e:
-                        logger.debug("Failed to bring window to front for hotkey: %s", e)
+                        logger.debug(
+                            "Failed to bring window to front for hotkey: %s", e
+                        )
                     else:
                         if brought_to_front and self._resident_mode:
                             self._resident_show_requested = False
@@ -2936,7 +3126,9 @@ class YakuLingoApp:
                     if sys.platform == "win32":
                         rect = self._compute_hotkey_ui_rect_win32(layout_source_hwnd)
                         if rect:
-                            self._set_pending_ui_window_rect(rect, reason="hotkey_retry")
+                            self._set_pending_ui_window_rect(
+                                rect, reason="hotkey_retry"
+                            )
                     try:
                         _create_logged_task(
                             asyncio.to_thread(open_ui_callback),
@@ -2956,21 +3148,31 @@ class YakuLingoApp:
                                 name="hotkey_layout_retry",
                             )
                         except Exception as e:
-                            logger.debug("Failed to schedule hotkey layout retry: %s", e)
+                            logger.debug(
+                                "Failed to schedule hotkey layout retry: %s", e
+                            )
                         if bring_ui_to_front:
+
                             async def _bring_ui_to_front_later() -> None:
                                 for _ in range(12):
                                     await asyncio.sleep(0.25)
-                                    await asyncio.to_thread(self._restore_app_window_win32)
-                                    if await asyncio.to_thread(self._bring_window_to_front_win32):
+                                    await asyncio.to_thread(
+                                        self._restore_app_window_win32
+                                    )
+                                    if await asyncio.to_thread(
+                                        self._bring_window_to_front_win32
+                                    ):
                                         break
+
                             try:
                                 _create_logged_task(
                                     _bring_ui_to_front_later(),
                                     name="hotkey_bring_ui_front",
                                 )
                             except Exception as e:
-                                logger.debug("Failed to schedule UI foreground for hotkey: %s", e)
+                                logger.debug(
+                                    "Failed to schedule UI foreground for hotkey: %s", e
+                                )
 
             if hotkey_background is not None:
                 completed = await asyncio.to_thread(
@@ -2984,11 +3186,11 @@ class YakuLingoApp:
                         if self.translation_service is not None:
                             self.translation_service.cancel()
                     except Exception as e:
-                        logger.debug("Hotkey translation [%s] cancel failed: %s", trace_id, e)
+                        logger.debug(
+                            "Hotkey translation [%s] cancel failed: %s", trace_id, e
+                        )
 
-                    timeout_message = (
-                        f"Hotkey translation timed out after {HOTKEY_BACKGROUND_TRANSLATION_TIMEOUT_SEC:.0f}s"
-                    )
+                    timeout_message = f"Hotkey translation timed out after {HOTKEY_BACKGROUND_TRANSLATION_TIMEOUT_SEC:.0f}s"
                     logger.warning("Hotkey translation [%s] timed out", trace_id)
                     if is_path_selection:
                         if file_paths:
@@ -3060,6 +3262,7 @@ class YakuLingoApp:
                 or self._translate_button is None
             )
             if not needs_full_refresh:
+
                 def _is_element_attached(element: object | None) -> bool:
                     if element is None:
                         return False
@@ -3088,7 +3291,9 @@ class YakuLingoApp:
                         self._update_layout_classes()
                     self._refresh_tabs()
             except RuntimeError as e:
-                logger.debug("Hotkey UI update failed; falling back to headless mode: %s", e)
+                logger.debug(
+                    "Hotkey UI update failed; falling back to headless mode: %s", e
+                )
                 with self._client_lock:
                     if self._client is client:
                         self._client = None
@@ -3100,7 +3305,9 @@ class YakuLingoApp:
 
             # Final check before triggering translation
             if self.state.text_translating:
-                logger.debug("Hotkey handler skipped - translation started during UI update")
+                logger.debug(
+                    "Hotkey handler skipped - translation started during UI update"
+                )
                 return
 
             # Trigger translation
@@ -3154,7 +3361,9 @@ class YakuLingoApp:
             item = raw.strip()
             if not item:
                 continue
-            if (item.startswith('"') and item.endswith('"')) or (item.startswith("'") and item.endswith("'")):
+            if (item.startswith('"') and item.endswith('"')) or (
+                item.startswith("'") and item.endswith("'")
+            ):
                 item = item[1:-1].strip()
             candidates.append(item)
 
@@ -3314,8 +3523,8 @@ class YakuLingoApp:
             try:
                 sample_text = translation_service.extract_detection_sample(input_path)
                 if sample_text and sample_text.strip():
-                    detected_language, detected_reason = translation_service.detect_language_with_reason(
-                        sample_text
+                    detected_language, detected_reason = (
+                        translation_service.detect_language_with_reason(sample_text)
                     )
             except Exception as e:
                 logger.debug(
@@ -3326,7 +3535,9 @@ class YakuLingoApp:
                 )
 
             output_language = "en" if detected_language == "日本語" else "jp"
-            file_output_language_overridden = bool(getattr(self.state, "file_output_language_overridden", False))
+            file_output_language_overridden = bool(
+                getattr(self.state, "file_output_language_overridden", False)
+            )
             state_update: dict[str, object] = {
                 "file_detected_language": detected_language,
                 "file_detected_language_reason": detected_reason,
@@ -3346,7 +3557,11 @@ class YakuLingoApp:
                     "translation_phase_total": p.phase_total,
                     "translation_eta_seconds": None,
                 }
-                if p.phase and p.phase_current is not None and p.phase_total is not None:
+                if (
+                    p.phase
+                    and p.phase_current is not None
+                    and p.phase_total is not None
+                ):
                     phase_counts[p.phase] = (p.phase_current, p.phase_total)
                     update["translation_phase_counts"] = dict(phase_counts)
                 buffer.publish({"state": update, "refresh": True})
@@ -3367,13 +3582,18 @@ class YakuLingoApp:
                 )
             except Exception as e:
                 logger.exception(
-                    "Hotkey file translation [%s] failed for %s: %s", trace_id, input_path, e
+                    "Hotkey file translation [%s] failed for %s: %s",
+                    trace_id,
+                    input_path,
+                    e,
                 )
                 error_messages.append(f"{input_path.name}: {e}")
                 continue
 
             if result.status != TranslationStatus.COMPLETED:
-                error_messages.append(f"{input_path.name}: {result.error_message or 'failed'}")
+                error_messages.append(
+                    f"{input_path.name}: {result.error_message or 'failed'}"
+                )
                 continue
 
             completed_results.append(result)
@@ -3417,7 +3637,9 @@ class YakuLingoApp:
             final_state["translation_result"] = single
             final_state["output_file"] = single.output_path
         else:
-            final_state["translation_result"] = HotkeyFileOutputSummary(output_files=output_files)
+            final_state["translation_result"] = HotkeyFileOutputSummary(
+                output_files=output_files
+            )
             final_state["output_file"] = output_files[0][0] if output_files else None
 
         buffer.publish({"state": final_state, "force_refresh": True})
@@ -3433,7 +3655,9 @@ class YakuLingoApp:
             time.monotonic() - start_time,
         )
 
-    async def _translate_files_headless(self, file_paths: list[Path], trace_id: str) -> None:
+    async def _translate_files_headless(
+        self, file_paths: list[Path], trace_id: str
+    ) -> None:
         """Translate file(s) captured via hotkey and show outputs in the UI."""
 
         import time
@@ -3553,10 +3777,10 @@ class YakuLingoApp:
                         file_name_label.set_text(file_name)
                     progress_bar = refs.get("progress_bar")
                     if progress_bar:
-                        progress_bar.style(f'width: {int(pct * 100)}%')
+                        progress_bar.style(f"width: {int(pct * 100)}%")
                     progress_label = refs.get("progress_label")
                     if progress_label:
-                        progress_label.set_text(f'{int(pct * 100)}%')
+                        progress_label.set_text(f"{int(pct * 100)}%")
                     status_label = refs.get("status_label")
                     if status_label:
                         status_label.set_text(status or "処理中...")
@@ -3599,8 +3823,15 @@ class YakuLingoApp:
                 progress_state["phase_detail"] = p.phase_detail
                 progress_state["phase_current"] = p.phase_current
                 progress_state["phase_total"] = p.phase_total
-                if p.phase and p.phase_current is not None and p.phase_total is not None:
-                    progress_state["phase_counts"][p.phase] = (p.phase_current, p.phase_total)
+                if (
+                    p.phase
+                    and p.phase_current is not None
+                    and p.phase_total is not None
+                ):
+                    progress_state["phase_counts"][p.phase] = (
+                        p.phase_current,
+                        p.phase_total,
+                    )
                 progress_state["eta_seconds"] = eta_seconds
 
             self.state.translation_progress = p.percentage
@@ -3708,7 +3939,10 @@ class YakuLingoApp:
                 )
             except Exception as e:
                 logger.exception(
-                    "Hotkey file translation [%s] failed for %s: %s", trace_id, input_path, e
+                    "Hotkey file translation [%s] failed for %s: %s",
+                    trace_id,
+                    input_path,
+                    e,
                 )
                 error_messages.append(f"{input_path.name}: {e}")
                 continue
@@ -3720,7 +3954,9 @@ class YakuLingoApp:
                     input_path,
                     result.error_message,
                 )
-                error_messages.append(f"{input_path.name}: {result.error_message or 'failed'}")
+                error_messages.append(
+                    f"{input_path.name}: {result.error_message or 'failed'}"
+                )
                 continue
 
             completed_results.append(result)
@@ -3728,14 +3964,18 @@ class YakuLingoApp:
                 output_files.append((out_path, f"{input_path.name}: {desc}"))
 
         if not output_files:
-            logger.info("Hotkey file translation [%s] produced no output files", trace_id)
+            logger.info(
+                "Hotkey file translation [%s] produced no output files", trace_id
+            )
             self.state.file_state = FileState.ERROR
             self.state.translation_progress = 0.0
             self.state.translation_status = ""
             self.state.output_file = None
             self.state.translation_result = None
             self.state.error_message = (
-                "\n".join(error_messages[:3]) if error_messages else "No output files were generated."
+                "\n".join(error_messages[:3])
+                if error_messages
+                else "No output files were generated."
             )
             self._hold_ui_visibility(
                 seconds=FILE_TRANSLATION_UI_VISIBILITY_HOLD_SEC,
@@ -3753,7 +3993,9 @@ class YakuLingoApp:
             self.state.translation_result = single
             self.state.output_file = single.output_path
         else:
-            self.state.translation_result = HotkeyFileOutputSummary(output_files=output_files)
+            self.state.translation_result = HotkeyFileOutputSummary(
+                output_files=output_files
+            )
             self.state.output_file = output_files[0][0] if output_files else None
 
         self._hold_ui_visibility(
@@ -3768,7 +4010,9 @@ class YakuLingoApp:
             time.monotonic() - start_time,
         )
 
-    def _log_hotkey_debug_info(self, trace_id: str, summary: ClipboardDebugSummary) -> None:
+    def _log_hotkey_debug_info(
+        self, trace_id: str, summary: ClipboardDebugSummary
+    ) -> None:
         """Log structured debug info for clipboard-triggered translations."""
 
         logger.info(
@@ -3782,7 +4026,9 @@ class YakuLingoApp:
         )
 
         if summary.preview:
-            logger.debug("Hotkey translation [%s] preview: %s", trace_id, summary.preview)
+            logger.debug(
+                "Hotkey translation [%s] preview: %s", trace_id, summary.preview
+            )
 
     def _copy_hotkey_result_to_clipboard(self, trace_id: str) -> None:
         """Copy the latest hotkey translation result to clipboard (best-effort)."""
@@ -3801,12 +4047,17 @@ class YakuLingoApp:
                         break
 
             from yakulingo.services.clipboard_utils import set_clipboard_text
+
             if set_clipboard_text(chosen.text):
                 logger.info("Hotkey translation [%s] copied to clipboard", trace_id)
             else:
-                logger.warning("Hotkey translation [%s] failed to copy to clipboard", trace_id)
+                logger.warning(
+                    "Hotkey translation [%s] failed to copy to clipboard", trace_id
+                )
         except Exception as e:
-            logger.debug("Hotkey translation [%s] clipboard copy failed: %s", trace_id, e)
+            logger.debug(
+                "Hotkey translation [%s] clipboard copy failed: %s", trace_id, e
+            )
 
     def _refresh_ui_after_hotkey_translation(self, trace_id: str) -> None:
         """Refresh UI for a hotkey translation when a client is connected.
@@ -3905,7 +4156,9 @@ class YakuLingoApp:
         reference_files = self._get_effective_reference_files()
         start_time = time.monotonic()
         try:
-            detected_language, detected_reason = translation_service.detect_language_with_reason(text)
+            detected_language, detected_reason = (
+                translation_service.detect_language_with_reason(text)
+            )
             buffer.publish(
                 {
                     "state": {
@@ -3916,7 +4169,9 @@ class YakuLingoApp:
                 }
             )
             schedule_apply()
-            effective_detected_language = self._resolve_effective_detected_language(detected_language)
+            effective_detected_language = self._resolve_effective_detected_language(
+                detected_language
+            )
 
             last_preview_update = 0.0
             preview_update_interval_seconds = 0.12
@@ -4032,7 +4287,9 @@ class YakuLingoApp:
             )
             self.state.text_detected_language = detected_language
             self.state.text_detected_language_reason = detected_reason
-            effective_detected_language = self._resolve_effective_detected_language(detected_language)
+            effective_detected_language = self._resolve_effective_detected_language(
+                detected_language
+            )
 
             loop = asyncio.get_running_loop()
             last_preview_update = 0.0
@@ -4066,7 +4323,9 @@ class YakuLingoApp:
                             if self._streaming_preview_label is None:
                                 self._refresh_result_panel()
                                 self._refresh_tabs()
-                                self._scroll_result_panel_to_bottom(client, force_follow=True)
+                                self._scroll_result_panel_to_bottom(
+                                    client, force_follow=True
+                                )
                             if self._streaming_preview_label is not None:
                                 self._streaming_preview_label.set_text(partial_text)
                                 self._scroll_result_panel_to_bottom(client)
@@ -4104,7 +4363,9 @@ class YakuLingoApp:
             self._scroll_result_panel_to_top(client)
 
         if result.error_message:
-            logger.info("Hotkey translation [%s] failed: %s", trace_id, result.error_message)
+            logger.info(
+                "Hotkey translation [%s] failed: %s", trace_id, result.error_message
+            )
             return
         if not result.options:
             logger.info("Hotkey translation [%s] produced no options", trace_id)
@@ -4125,12 +4386,18 @@ class YakuLingoApp:
         """
         import sys
 
-        logger.debug("Attempting to bring app window to front (platform=%s)", sys.platform)
+        logger.debug(
+            "Attempting to bring app window to front (platform=%s)", sys.platform
+        )
 
         # Method 1: pywebview's on_top property
         try:
             # Use global nicegui_app (already imported in _lazy_import_nicegui)
-            if nicegui_app and hasattr(nicegui_app, 'native') and nicegui_app.native.main_window:
+            if (
+                nicegui_app
+                and hasattr(nicegui_app, "native")
+                and nicegui_app.native.main_window
+            ):
                 window = nicegui_app.native.main_window
                 window.on_top = True
                 await asyncio.sleep(0.05)
@@ -4141,7 +4408,7 @@ class YakuLingoApp:
 
         # Method 2: Windows API (more reliable for hotkey activation)
         win32_success = True
-        if sys.platform == 'win32':
+        if sys.platform == "win32":
             win32_success = await asyncio.to_thread(self._bring_window_to_front_win32)
             logger.debug("Windows API bring_to_front result: %s", win32_success)
 
@@ -4249,7 +4516,9 @@ class YakuLingoApp:
                 try:
                     point = wintypes.POINT()
                     if user32.GetCursorPos(ctypes.byref(point)):
-                        monitor = user32.MonitorFromPoint(point, MONITOR_DEFAULTTONEAREST)
+                        monitor = user32.MonitorFromPoint(
+                            point, MONITOR_DEFAULTTONEAREST
+                        )
                 except Exception:
                     monitor = None
             if not monitor:
@@ -4283,16 +4552,16 @@ class YakuLingoApp:
             def _get_window_rect(hwnd_value: int) -> RECT | None:
                 try:
                     rect = RECT()
-                    if not user32.GetWindowRect(wintypes.HWND(hwnd_value), ctypes.byref(rect)):
+                    if not user32.GetWindowRect(
+                        wintypes.HWND(hwnd_value), ctypes.byref(rect)
+                    ):
                         return None
                     return rect
                 except Exception:
                     return None
 
             source_rect = (
-                _get_window_rect(resolved_source_hwnd)
-                if resolved_source_hwnd
-                else None
+                _get_window_rect(resolved_source_hwnd) if resolved_source_hwnd else None
             )
             source_left = source_rect.left if source_rect else None
             source_right = source_rect.right if source_rect else None
@@ -4317,7 +4586,9 @@ class YakuLingoApp:
                 ui_width = work_width - gap - target_width
                 desired_ui_width = max(int(work_width * ui_ratio), min_ui_width)
                 if ui_width < desired_ui_width:
-                    target_width = max(work_width - gap - desired_ui_width, min_target_width)
+                    target_width = max(
+                        work_width - gap - desired_ui_width, min_target_width
+                    )
                     ui_width = work_width - gap - target_width
                 if ui_width < min_ui_width:
                     is_source_left_snapped = False
@@ -4396,7 +4667,9 @@ class YakuLingoApp:
                 try:
                     foreground = user32.GetForegroundWindow()
                     if foreground:
-                        monitor = user32.MonitorFromWindow(foreground, MONITOR_DEFAULTTONEAREST)
+                        monitor = user32.MonitorFromWindow(
+                            foreground, MONITOR_DEFAULTTONEAREST
+                        )
                 except Exception:
                     monitor = None
             if not monitor:
@@ -4469,7 +4742,9 @@ class YakuLingoApp:
             SW_RESTORE = 9
             SW_SHOW = 5
             try:
-                if user32.IsIconic(wintypes.HWND(resolved_hwnd)) or user32.IsZoomed(wintypes.HWND(resolved_hwnd)):
+                if user32.IsIconic(wintypes.HWND(resolved_hwnd)) or user32.IsZoomed(
+                    wintypes.HWND(resolved_hwnd)
+                ):
                     user32.ShowWindow(wintypes.HWND(resolved_hwnd), SW_RESTORE)
                 else:
                     user32.ShowWindow(wintypes.HWND(resolved_hwnd), SW_SHOW)
@@ -4491,15 +4766,20 @@ class YakuLingoApp:
                     return (0, 0, 0, 0)
                 try:
                     outer = RECT()
-                    if not user32.GetWindowRect(wintypes.HWND(hwnd_value), ctypes.byref(outer)):
+                    if not user32.GetWindowRect(
+                        wintypes.HWND(hwnd_value), ctypes.byref(outer)
+                    ):
                         return (0, 0, 0, 0)
                     extended = RECT()
-                    if dwmapi.DwmGetWindowAttribute(
-                        wintypes.HWND(hwnd_value),
-                        DWMWA_EXTENDED_FRAME_BOUNDS,
-                        ctypes.byref(extended),
-                        ctypes.sizeof(extended),
-                    ) != 0:
+                    if (
+                        dwmapi.DwmGetWindowAttribute(
+                            wintypes.HWND(hwnd_value),
+                            DWMWA_EXTENDED_FRAME_BOUNDS,
+                            ctypes.byref(extended),
+                            ctypes.sizeof(extended),
+                        )
+                        != 0
+                    ):
                         return (0, 0, 0, 0)
                     left = max(0, int(extended.left - outer.left))
                     top = max(0, int(extended.top - outer.top))
@@ -4660,10 +4940,14 @@ class YakuLingoApp:
             edge_layout_mode = (edge_layout or "auto").strip().lower()
             if edge_layout_mode not in ("auto", "offscreen", "triple"):
                 edge_layout_mode = "auto"
-            if edge_layout_mode == "auto" and getattr(copilot, "_edge_layout_mode", None) == "offscreen":
+            if (
+                edge_layout_mode == "auto"
+                and getattr(copilot, "_edge_layout_mode", None) == "offscreen"
+            ):
                 edge_layout_mode = "offscreen"
             if copilot is not None and (
-                edge_layout_mode in ("offscreen", "triple") or original_source_hwnd is None
+                edge_layout_mode in ("offscreen", "triple")
+                or original_source_hwnd is None
             ):
                 try:
                     edge_hwnd = copilot._find_edge_window_handle()
@@ -4675,7 +4959,9 @@ class YakuLingoApp:
                 if edge_hwnd is not None:
                     use_triple_layout = True
                 else:
-                    logger.debug("Hotkey layout: Edge window not found; falling back to 1:1 layout")
+                    logger.debug(
+                        "Hotkey layout: Edge window not found; falling back to 1:1 layout"
+                    )
             elif edge_layout_mode == "offscreen":
                 if edge_hwnd is not None:
                     move_edge_offscreen = True
@@ -4701,9 +4987,13 @@ class YakuLingoApp:
                 ]
 
             MONITOR_DEFAULTTONEAREST = 2
-            monitor = user32.MonitorFromWindow(wintypes.HWND(source_hwnd), MONITOR_DEFAULTTONEAREST)
+            monitor = user32.MonitorFromWindow(
+                wintypes.HWND(source_hwnd), MONITOR_DEFAULTTONEAREST
+            )
             if not monitor:
-                monitor = user32.MonitorFromWindow(wintypes.HWND(yakulingo_hwnd), MONITOR_DEFAULTTONEAREST)
+                monitor = user32.MonitorFromWindow(
+                    wintypes.HWND(yakulingo_hwnd), MONITOR_DEFAULTTONEAREST
+                )
                 if not monitor:
                     return True
 
@@ -4721,7 +5011,9 @@ class YakuLingoApp:
             def _get_window_rect(hwnd_value: int) -> RECT | None:
                 try:
                     rect = RECT()
-                    if not user32.GetWindowRect(wintypes.HWND(hwnd_value), ctypes.byref(rect)):
+                    if not user32.GetWindowRect(
+                        wintypes.HWND(hwnd_value), ctypes.byref(rect)
+                    ):
                         return None
                     return rect
                 except Exception:
@@ -4774,7 +5066,11 @@ class YakuLingoApp:
                     edge_width = available_width - target_width - ui_width
                     if edge_width <= 0 or target_width <= 0 or ui_width <= 0:
                         use_triple_layout = False
-            if not use_triple_layout and edge_layout_mode == "triple" and edge_hwnd is not None:
+            if (
+                not use_triple_layout
+                and edge_layout_mode == "triple"
+                and edge_hwnd is not None
+            ):
                 move_edge_offscreen = True
 
             if not use_triple_layout:
@@ -4787,13 +5083,17 @@ class YakuLingoApp:
                     ui_width = work_width - gap - target_width
                     desired_ui_width = max(int(work_width * ui_ratio), min_ui_width)
                     if ui_width < desired_ui_width:
-                        target_width = max(work_width - gap - desired_ui_width, min_target_width)
+                        target_width = max(
+                            work_width - gap - desired_ui_width, min_target_width
+                        )
                         ui_width = work_width - gap - target_width
                     if ui_width < min_ui_width:
                         is_source_left_snapped = False
                 if not is_source_left_snapped:
                     ui_width = max(int(work_width * ui_ratio), min_ui_width)
-                    ui_width = min(ui_width, max(work_width - gap - min_target_width, 0))
+                    ui_width = min(
+                        ui_width, max(work_width - gap - min_target_width, 0)
+                    )
                     target_width = work_width - gap - ui_width
                 if target_width < min_target_width:
                     ui_width = max(work_width - gap - min_target_width, 0)
@@ -4812,7 +5112,12 @@ class YakuLingoApp:
                         gap,
                     )
                     return True
-            elif edge_width is None or target_width <= 0 or ui_width <= 0 or edge_width <= 0:
+            elif (
+                edge_width is None
+                or target_width <= 0
+                or ui_width <= 0
+                or edge_width <= 0
+            ):
                 logger.debug(
                     "Hotkey layout skipped: invalid triple layout (width=%d, gap=%d)",
                     work_width,
@@ -4876,7 +5181,9 @@ class YakuLingoApp:
 
             def _restore_window(hwnd_to_restore: int) -> None:
                 try:
-                    if user32.IsIconic(wintypes.HWND(hwnd_to_restore)) or user32.IsZoomed(wintypes.HWND(hwnd_to_restore)):
+                    if user32.IsIconic(
+                        wintypes.HWND(hwnd_to_restore)
+                    ) or user32.IsZoomed(wintypes.HWND(hwnd_to_restore)):
                         user32.ShowWindow(wintypes.HWND(hwnd_to_restore), SW_RESTORE)
                     else:
                         user32.ShowWindow(wintypes.HWND(hwnd_to_restore), SW_SHOW)
@@ -4893,7 +5200,9 @@ class YakuLingoApp:
                     return (0, 0, 0, 0)
                 try:
                     outer = RECT()
-                    if not user32.GetWindowRect(wintypes.HWND(hwnd_value), ctypes.byref(outer)):
+                    if not user32.GetWindowRect(
+                        wintypes.HWND(hwnd_value), ctypes.byref(outer)
+                    ):
                         return (0, 0, 0, 0)
                     extended = RECT()
                     result = dwm_get_window_attribute(
@@ -4915,7 +5224,9 @@ class YakuLingoApp:
             def _get_window_size(hwnd_value: int) -> tuple[int, int] | None:
                 try:
                     rect = RECT()
-                    if not user32.GetWindowRect(wintypes.HWND(hwnd_value), ctypes.byref(rect)):
+                    if not user32.GetWindowRect(
+                        wintypes.HWND(hwnd_value), ctypes.byref(rect)
+                    ):
                         return None
                     width = max(0, int(rect.right - rect.left))
                     height = max(0, int(rect.bottom - rect.top))
@@ -5004,7 +5315,12 @@ class YakuLingoApp:
                     ctypes.get_last_error(),
                 )
 
-            if use_triple_layout and edge_hwnd and edge_width is not None and edge_x is not None:
+            if (
+                use_triple_layout
+                and edge_hwnd
+                and edge_width is not None
+                and edge_x is not None
+            ):
                 result_edge = _set_window_pos_with_frame_adjust(
                     edge_hwnd,
                     edge_x,
@@ -5047,7 +5363,11 @@ class YakuLingoApp:
                 user32.AllowSetForegroundWindow(ASFW_ANY)
             except Exception:
                 pass
-            if focus_source and _is_valid_window(source_hwnd) and source_hwnd != yakulingo_hwnd:
+            if (
+                focus_source
+                and _is_valid_window(source_hwnd)
+                and source_hwnd != yakulingo_hwnd
+            ):
                 try:
                     user32.SetForegroundWindow(wintypes.HWND(source_hwnd))
                 except Exception:
@@ -5059,11 +5379,17 @@ class YakuLingoApp:
                     pass
 
             if source_hwnd and source_hwnd != yakulingo_hwnd:
-                _stop_window_taskbar_flash_win32(int(source_hwnd), reason="hotkey_layout_source")
+                _stop_window_taskbar_flash_win32(
+                    int(source_hwnd), reason="hotkey_layout_source"
+                )
             if edge_hwnd:
-                _stop_window_taskbar_flash_win32(int(edge_hwnd), reason="hotkey_layout_edge")
+                _stop_window_taskbar_flash_win32(
+                    int(edge_hwnd), reason="hotkey_layout_edge"
+                )
             if yakulingo_hwnd:
-                _stop_window_taskbar_flash_win32(int(yakulingo_hwnd), reason="hotkey_layout")
+                _stop_window_taskbar_flash_win32(
+                    int(yakulingo_hwnd), reason="hotkey_layout"
+                )
 
             return True
 
@@ -5103,7 +5429,9 @@ class YakuLingoApp:
             return "YakuLingo"
         return "YakuLingo" if native_mode else "YakuLingo (UI)"
 
-    def _find_ui_window_handle_win32(self, *, include_hidden: bool = True) -> int | None:
+    def _find_ui_window_handle_win32(
+        self, *, include_hidden: bool = True
+    ) -> int | None:
         """Return HWND for the current UI window title (Windows only)."""
         if sys.platform != "win32":
             return None
@@ -5131,7 +5459,10 @@ class YakuLingoApp:
         if sys.platform != "win32":
             return False
         try:
-            return self._find_ui_window_handle_win32(include_hidden=include_hidden) is not None
+            return (
+                self._find_ui_window_handle_win32(include_hidden=include_hidden)
+                is not None
+            )
         except Exception:
             return False
 
@@ -5167,7 +5498,10 @@ class YakuLingoApp:
                 ]
 
             rect = RECT()
-            if user32.GetWindowRect(wintypes.HWND(resolved_hwnd), ctypes.byref(rect)) == 0:
+            if (
+                user32.GetWindowRect(wintypes.HWND(resolved_hwnd), ctypes.byref(rect))
+                == 0
+            ):
                 return True
 
             SM_XVIRTUALSCREEN = 76
@@ -5231,8 +5565,10 @@ class YakuLingoApp:
             # Fallback: enumerate windows to find a partial match (useful if the
             # host window modifies the title, e.g., "YakuLingo - Chrome")
             if not hwnd:
-                EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
-                found_hwnd = {'value': None, 'title': None}
+                EnumWindowsProc = ctypes.WINFUNCTYPE(
+                    ctypes.c_bool, wintypes.HWND, wintypes.LPARAM
+                )
+                found_hwnd = {"value": None, "title": None}
 
                 @EnumWindowsProc
                 def _enum_windows(hwnd_enum, _):
@@ -5248,21 +5584,25 @@ class YakuLingoApp:
                             if user32.IsWindowVisible(hwnd_enum):
                                 SW_HIDE = 0
                                 user32.ShowWindow(hwnd_enum, SW_HIDE)
-                                logger.debug("Hidden Playwright driver window: %s", title)
+                                logger.debug(
+                                    "Hidden Playwright driver window: %s", title
+                                )
                         except Exception:
                             pass
                         return True
-                    if "YakuLingo" in target_title and title.startswith("Setup - YakuLingo"):
+                    if "YakuLingo" in target_title and title.startswith(
+                        "Setup - YakuLingo"
+                    ):
                         return True
                     if _is_window_title_with_boundary(title, target_title):
-                        found_hwnd['value'] = hwnd_enum
-                        found_hwnd['title'] = title
+                        found_hwnd["value"] = hwnd_enum
+                        found_hwnd["title"] = title
                         return False  # stop enumeration
                     return True
 
                 user32.EnumWindows(_enum_windows, 0)
-                hwnd = found_hwnd['value']
-                matched_title = found_hwnd['title']
+                hwnd = found_hwnd["value"]
+                matched_title = found_hwnd["title"]
             elif matched_title is None:
                 try:
                     length = user32.GetWindowTextLengthW(hwnd)
@@ -5274,10 +5614,14 @@ class YakuLingoApp:
                     matched_title = None
 
             if not hwnd:
-                logger.debug("YakuLingo window not found by title (expected=%s)", target_title)
+                logger.debug(
+                    "YakuLingo window not found by title (expected=%s)", target_title
+                )
                 return False
 
-            logger.debug("Found YakuLingo window handle=%s title=%s", hwnd, matched_title)
+            logger.debug(
+                "Found YakuLingo window handle=%s title=%s", hwnd, matched_title
+            )
 
             class RECT(ctypes.Structure):
                 _fields_ = [
@@ -5334,7 +5678,9 @@ class YakuLingoApp:
             if not is_visible or is_offscreen:
                 target_x = 0
                 target_y = 0
-                monitor = user32.MonitorFromWindow(wintypes.HWND(hwnd), MONITOR_DEFAULTTONEAREST)
+                monitor = user32.MonitorFromWindow(
+                    wintypes.HWND(hwnd), MONITOR_DEFAULTTONEAREST
+                )
                 if monitor:
                     monitor_info = MONITORINFO()
                     monitor_info.cbSize = ctypes.sizeof(MONITORINFO)
@@ -5343,11 +5689,20 @@ class YakuLingoApp:
                         work_width = int(work.right - work.left)
                         work_height = int(work.bottom - work.top)
                         if work_width > 0 and work_height > 0:
-                            target_x = int(work.left + max(0, (work_width - rect_width) // 2))
-                            target_y = int(work.top + max(0, (work_height - rect_height) // 2))
+                            target_x = int(
+                                work.left + max(0, (work_width - rect_width) // 2)
+                            )
+                            target_y = int(
+                                work.top + max(0, (work_height - rect_height) // 2)
+                            )
                 user32.SetWindowPos(
-                    hwnd, None, target_x, target_y, 0, 0,
-                    SWP_NOZORDER | SWP_NOSIZE | SWP_SHOWWINDOW
+                    hwnd,
+                    None,
+                    target_x,
+                    target_y,
+                    0,
+                    0,
+                    SWP_NOZORDER | SWP_NOSIZE | SWP_SHOWWINDOW,
                 )
 
             # Check if window is minimized and restore it
@@ -5381,8 +5736,13 @@ class YakuLingoApp:
             try:
                 # Temporarily set as topmost to ensure visibility
                 user32.SetWindowPos(
-                    hwnd, HWND_TOPMOST, 0, 0, 0, 0,
-                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
+                    hwnd,
+                    HWND_TOPMOST,
+                    0,
+                    0,
+                    0,
+                    0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
                 )
 
                 # Set as foreground window (best-effort; may be blocked by Windows)
@@ -5394,8 +5754,13 @@ class YakuLingoApp:
 
                 # Reset to non-topmost (so other windows can go on top later)
                 user32.SetWindowPos(
-                    hwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
-                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
+                    hwnd,
+                    HWND_NOTOPMOST,
+                    0,
+                    0,
+                    0,
+                    0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
                 )
 
                 # Verify foreground state (retry briefly; helps when focus handoff is slow)
@@ -5467,7 +5832,11 @@ class YakuLingoApp:
                 reason_for_log = "startup"
             last_time = self._last_taskbar_visibility_not_found_time
             last_reason = self._last_taskbar_visibility_not_found_reason
-            if last_time is None or (now - last_time) >= 2.0 or reason_for_log != last_reason:
+            if (
+                last_time is None
+                or (now - last_time) >= 2.0
+                or reason_for_log != last_reason
+            ):
                 logger.debug(
                     "YakuLingo window not found for taskbar visibility (%s)",
                     reason_for_log,
@@ -5488,14 +5857,20 @@ class YakuLingoApp:
         self._set_layout_mode(LayoutMode.OFFSCREEN, f"hide:{reason}")
         self._set_ui_taskbar_visibility_win32(False, reason)
         try:
-            if nicegui_app and hasattr(nicegui_app, "native") and nicegui_app.native.main_window:
+            if (
+                nicegui_app
+                and hasattr(nicegui_app, "native")
+                and nicegui_app.native.main_window
+            ):
                 window = nicegui_app.native.main_window
                 if hasattr(window, "hide"):
                     window.hide()
                 elif hasattr(window, "minimize"):
                     window.minimize()
         except Exception as e:
-            logger.debug("Failed to hide resident window via pywebview (%s): %s", reason, e)
+            logger.debug(
+                "Failed to hide resident window via pywebview (%s): %s", reason, e
+            )
         try:
             _hide_native_window_offscreen_win32("YakuLingo")
         except Exception as e:
@@ -5509,7 +5884,9 @@ class YakuLingoApp:
                     name="hide_copilot_edge_resident",
                 ).start()
             except Exception as e:
-                logger.debug("Failed to hide Copilot Edge in resident mode (%s): %s", reason, e)
+                logger.debug(
+                    "Failed to hide Copilot Edge in resident mode (%s): %s", reason, e
+                )
 
     def _enter_resident_mode(self, reason: str) -> None:
         self._resident_mode = True
@@ -5564,7 +5941,9 @@ class YakuLingoApp:
                 self._resident_taskbar_suppression_thread = thread
             thread.start()
         except Exception as e:
-            logger.debug("Failed to start resident taskbar suppression (%s): %s", reason, e)
+            logger.debug(
+                "Failed to start resident taskbar suppression (%s): %s", reason, e
+            )
 
     def _recover_resident_window_win32(self, reason: str) -> bool:
         """Recover the resident UI window without forcing foreground focus."""
@@ -5574,7 +5953,7 @@ class YakuLingoApp:
             import ctypes
             from ctypes import wintypes
 
-            user32 = ctypes.WinDLL('user32', use_last_error=True)
+            user32 = ctypes.WinDLL("user32", use_last_error=True)
 
             hwnd = self._find_ui_window_handle_win32(include_hidden=True)
             if not hwnd:
@@ -5639,8 +6018,17 @@ class YakuLingoApp:
             if not is_visible:
                 user32.ShowWindow(hwnd, SW_SHOW)
                 user32.SetWindowPos(
-                    hwnd, None, 0, 0, 0, 0,
-                    SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_NOSIZE | SWP_NOMOVE
+                    hwnd,
+                    None,
+                    0,
+                    0,
+                    0,
+                    0,
+                    SWP_NOZORDER
+                    | SWP_NOACTIVATE
+                    | SWP_SHOWWINDOW
+                    | SWP_NOSIZE
+                    | SWP_NOMOVE,
                 )
                 return True
 
@@ -5652,8 +6040,11 @@ class YakuLingoApp:
                 target_x = 0
                 target_y = 0
                 MONITOR_DEFAULTTONEAREST = 2
-                monitor = user32.MonitorFromWindow(wintypes.HWND(hwnd), MONITOR_DEFAULTTONEAREST)
+                monitor = user32.MonitorFromWindow(
+                    wintypes.HWND(hwnd), MONITOR_DEFAULTTONEAREST
+                )
                 if monitor:
+
                     class MONITORINFO(ctypes.Structure):
                         _fields_ = [
                             ("cbSize", wintypes.DWORD),
@@ -5669,11 +6060,20 @@ class YakuLingoApp:
                         work_width = int(work.right - work.left)
                         work_height = int(work.bottom - work.top)
                         if work_width > 0 and work_height > 0:
-                            target_x = int(work.left + max(0, (work_width - rect_width) // 2))
-                            target_y = int(work.top + max(0, (work_height - rect_height) // 2))
+                            target_x = int(
+                                work.left + max(0, (work_width - rect_width) // 2)
+                            )
+                            target_y = int(
+                                work.top + max(0, (work_height - rect_height) // 2)
+                            )
                 user32.SetWindowPos(
-                    hwnd, None, target_x, target_y, 0, 0,
-                    SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_NOSIZE
+                    hwnd,
+                    None,
+                    target_x,
+                    target_y,
+                    0,
+                    0,
+                    SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_NOSIZE,
                 )
                 return True
 
@@ -5694,7 +6094,9 @@ class YakuLingoApp:
         self, client: NiceGUIClient, timeout_sec: float
     ) -> bool:
         try:
-            await asyncio.wait_for(asyncio.shield(client.connected()), timeout=timeout_sec)
+            await asyncio.wait_for(
+                asyncio.shield(client.connected()), timeout=timeout_sec
+            )
             return True
         except asyncio.TimeoutError:
             return False
@@ -5704,7 +6106,7 @@ class YakuLingoApp:
     async def _check_ui_ready_once(self, client: NiceGUIClient) -> bool:
         if not getattr(client, "has_socket_connection", True):
             return False
-        js_code = '''
+        js_code = """
             try {
                 const selector = "__ROOT_SELECTOR__";
                 const root = document.querySelector(selector);
@@ -5721,11 +6123,15 @@ class YakuLingoApp:
             } catch (err) {
                 return false;
             }
-        '''
+        """
         selector = STARTUP_UI_READY_SELECTOR.replace('"', '\\"')
         try:
+
             async def _run_js() -> bool:
-                return await client.run_javascript(js_code.replace("__ROOT_SELECTOR__", selector))
+                return await client.run_javascript(
+                    js_code.replace("__ROOT_SELECTOR__", selector)
+                )
+
             return await asyncio.wait_for(_run_js(), timeout=1.5)
         except asyncio.TimeoutError:
             logger.debug("Startup UI readiness check timed out")
@@ -5737,7 +6143,7 @@ class YakuLingoApp:
     async def _wait_for_ui_ready(self, client: NiceGUIClient, timeout_ms: int) -> bool:
         if not getattr(client, "has_socket_connection", True):
             return False
-        js_code = '''
+        js_code = """
             return await new Promise((resolve) => {
                 try {
                     if (window._yakulingoUpdateCSSVariables) window._yakulingoUpdateCSSVariables();
@@ -5804,14 +6210,18 @@ class YakuLingoApp:
 
                 tick();
             });
-        '''
+        """
         selector = STARTUP_UI_READY_SELECTOR.replace('"', '\\"')
         try:
             timeout_sec = max(1.0, (timeout_ms / 1000.0) + 0.5)
+
             async def _run_js() -> bool:
                 return await client.run_javascript(
-                    js_code.replace("__TIMEOUT_MS__", str(timeout_ms)).replace("__ROOT_SELECTOR__", selector)
+                    js_code.replace("__TIMEOUT_MS__", str(timeout_ms)).replace(
+                        "__ROOT_SELECTOR__", selector
+                    )
                 )
+
             return await asyncio.wait_for(_run_js(), timeout=timeout_sec)
         except asyncio.TimeoutError:
             logger.debug("Startup UI readiness wait timed out")
@@ -5892,6 +6302,7 @@ class YakuLingoApp:
 
         copilot = getattr(self, "_copilot", None)
         if copilot is not None and sys.platform == "win32":
+
             def _minimize_copilot_edge_window() -> None:
                 try:
                     if keep_resident_on_close:
@@ -5915,7 +6326,9 @@ class YakuLingoApp:
         if task is not None and not task.done():
             return
         self._ui_ready_retry_task = _create_logged_task(
-            self._ensure_ui_ready_after_restore(reason, timeout_ms=2000, retries=2, retry_delay=0.5),
+            self._ensure_ui_ready_after_restore(
+                reason, timeout_ms=2000, retries=2, retry_delay=0.5
+            ),
             name=f"ui_ready_retry:{reason}",
         )
 
@@ -5978,7 +6391,9 @@ class YakuLingoApp:
     def _mark_manual_show(self, reason: str) -> None:
         self._manual_show_requested = True
         if self._resident_mode and (
-            self._resident_login_required or self._login_polling_active or self._login_auto_hide_pending
+            self._resident_login_required
+            or self._login_polling_active
+            or self._login_auto_hide_pending
         ):
             self._login_auto_hide_blocked = True
         self._clear_auto_open_cause(f"manual:{reason}")
@@ -6052,14 +6467,20 @@ class YakuLingoApp:
         as Edge startup may steal focus.
         """
         login_required_guard = False
-        if self._auto_open_cause == AutoOpenCause.STARTUP and self._auto_open_timeout_task is None:
+        if (
+            self._auto_open_cause == AutoOpenCause.STARTUP
+            and self._auto_open_timeout_task is None
+        ):
             self._schedule_auto_open_timeout(STARTUP_SPLASH_TIMEOUT_SEC, "startup")
         if self._resident_mode:
             copilot = getattr(self, "_copilot", None)
-            last_error = getattr(copilot, "last_connection_error", None) if copilot else None
+            last_error = (
+                getattr(copilot, "last_connection_error", None) if copilot else None
+            )
             login_required_error = "login_required"
             try:
                 from yakulingo.services.copilot_handler import CopilotHandler
+
                 login_required_error = CopilotHandler.ERROR_LOGIN_REQUIRED
             except Exception:
                 pass
@@ -6079,7 +6500,9 @@ class YakuLingoApp:
         visibility_state = VisibilityDecisionState(
             auto_open_cause=self._auto_open_cause,
             login_required=login_required_guard if self._resident_mode else False,
-            auto_login_waiting=self._login_polling_active if self._resident_mode else False,
+            auto_login_waiting=self._login_polling_active
+            if self._resident_mode
+            else False,
             hotkey_active=self._hotkey_translation_active,
             manual_show_requested=self._manual_show_requested,
             native_mode=bool(self._native_mode_enabled),
@@ -6115,8 +6538,12 @@ class YakuLingoApp:
                     visibility_target.value if visibility_target else "none",
                     has_client,
                 )
-                self._set_ui_taskbar_visibility_win32(True, "ensure_app_window_visible:already_visible")
-                self._set_layout_mode(LayoutMode.FOREGROUND, "ensure_app_window_visible:already_visible")
+                self._set_ui_taskbar_visibility_win32(
+                    True, "ensure_app_window_visible:already_visible"
+                )
+                self._set_layout_mode(
+                    LayoutMode.FOREGROUND, "ensure_app_window_visible:already_visible"
+                )
                 return
             logger.debug(
                 "Resident mode: keeping UI hidden (target=%s, client_connected=%s)",
@@ -6132,20 +6559,28 @@ class YakuLingoApp:
         await asyncio.sleep(0.5)
 
         if self._resident_mode and login_required_guard:
-            logger.debug("Login required: skipping UI foreground sync (ensure_app_window_visible)")
+            logger.debug(
+                "Login required: skipping UI foreground sync (ensure_app_window_visible)"
+            )
             if sys.platform == "win32":
-                self._set_ui_taskbar_visibility_win32(True, "ensure_app_window_visible:login_required")
-            self._set_layout_mode(LayoutMode.FOREGROUND, "ensure_app_window_visible:login_required")
+                self._set_ui_taskbar_visibility_win32(
+                    True, "ensure_app_window_visible:login_required"
+                )
+            self._set_layout_mode(
+                LayoutMode.FOREGROUND, "ensure_app_window_visible:login_required"
+            )
             return
 
-        if sys.platform == 'win32':
+        if sys.platform == "win32":
             hotkey_layout_active = False
             source_hwnd = None
             try:
                 source_hwnd = self._last_hotkey_source_hwnd
                 if self._hotkey_translation_active:
                     hotkey_layout_active = True
-                elif self._copilot and getattr(self._copilot, "_hotkey_layout_active", False):
+                elif self._copilot and getattr(
+                    self._copilot, "_hotkey_layout_active", False
+                ):
                     hotkey_layout_active = True
             except Exception:
                 hotkey_layout_active = False
@@ -6159,7 +6594,9 @@ class YakuLingoApp:
                     if not user32.IsWindow(wintypes.HWND(source_hwnd)):
                         source_hwnd = None
                     else:
-                        yakulingo_hwnd = self._find_ui_window_handle_win32(include_hidden=True)
+                        yakulingo_hwnd = self._find_ui_window_handle_win32(
+                            include_hidden=True
+                        )
                         if yakulingo_hwnd and source_hwnd == int(yakulingo_hwnd):
                             source_hwnd = None
                 except Exception:
@@ -6181,10 +6618,14 @@ class YakuLingoApp:
 
         try:
             # Use pywebview's on_top toggle to bring window to front
-            if nicegui_app and hasattr(nicegui_app, 'native') and nicegui_app.native.main_window:
+            if (
+                nicegui_app
+                and hasattr(nicegui_app, "native")
+                and nicegui_app.native.main_window
+            ):
                 window = nicegui_app.native.main_window
                 # First ensure window is not minimized (restore if needed)
-                if hasattr(window, 'restore'):
+                if hasattr(window, "restore"):
                     window.restore()
                 # Toggle on_top to force window to front
                 window.on_top = True
@@ -6194,7 +6635,7 @@ class YakuLingoApp:
         except (AttributeError, RuntimeError) as e:
             logger.debug("Failed to bring app window to front: %s", e)
 
-        if sys.platform == 'win32':
+        if sys.platform == "win32":
             # Additional Windows API fallback to bring app to front
             try:
                 await asyncio.to_thread(self._restore_app_window_win32)
@@ -6218,7 +6659,7 @@ class YakuLingoApp:
         try:
             import ctypes
 
-            user32 = ctypes.WinDLL('user32', use_last_error=True)
+            user32 = ctypes.WinDLL("user32", use_last_error=True)
             self._set_layout_mode(LayoutMode.RESTORING, "restore_app_window")
 
             # Find YakuLingo window (include hidden windows during startup)
@@ -6252,15 +6693,26 @@ class YakuLingoApp:
 
             # Ensure window is visible using SetWindowPos with SWP_SHOWWINDOW
             user32.SetWindowPos(
-                hwnd, None, 0, 0, 0, 0,
-                SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_NOSIZE | SWP_NOMOVE
+                hwnd,
+                None,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOZORDER
+                | SWP_NOACTIVATE
+                | SWP_SHOWWINDOW
+                | SWP_NOSIZE
+                | SWP_NOMOVE,
             )
 
             # Bring to front
             user32.SetForegroundWindow(hwnd)
             resolved_hwnd = _coerce_hwnd_win32(hwnd)
             if resolved_hwnd:
-                _stop_window_taskbar_flash_win32(resolved_hwnd, reason="restore_app_window")
+                _stop_window_taskbar_flash_win32(
+                    resolved_hwnd, reason="restore_app_window"
+                )
             self._set_layout_mode(LayoutMode.FOREGROUND, "restore_app_window")
             return True
 
@@ -6293,7 +6745,9 @@ class YakuLingoApp:
         # Wait for Edge connection result from parallel startup
         try:
             loop = asyncio.get_running_loop()
-            success = await loop.run_in_executor(None, edge_future.result, 60)  # 60s timeout
+            success = await loop.run_in_executor(
+                None, edge_future.result, 60
+            )  # 60s timeout
 
             if success:
                 # Keep "準備中..." until GPT mode switching is finished.
@@ -6329,6 +6783,7 @@ class YakuLingoApp:
         If successful, it applies the result to UI. Otherwise, falls back to normal connection.
         """
         import time as _time_module
+
         _t_start = _time_module.perf_counter()
 
         # Initialize TranslationService immediately (doesn't need connection)
@@ -6348,33 +6803,41 @@ class YakuLingoApp:
                 # and Copilot UI ready check 5+ seconds (total ~25-30 seconds on first run)
                 # Use asyncio.shield to prevent task cancellation on timeout
                 await asyncio.wait_for(
-                    asyncio.shield(self._early_connection_task),
-                    timeout=30.0
+                    asyncio.shield(self._early_connection_task), timeout=30.0
                 )
             except asyncio.TimeoutError:
                 # Task is still running (shield prevented cancellation)
                 # Check if result was set by the task
                 if self._early_connection_result is not None:
-                    logger.debug("Timeout but result already set: %s",
-                               self._early_connection_result)
+                    logger.debug(
+                        "Timeout but result already set: %s",
+                        self._early_connection_result,
+                    )
                 else:
                     # Task still running - set up background completion handler
-                    logger.debug("Early connection still in progress after timeout, "
-                               "setting up background handler")
+                    logger.debug(
+                        "Early connection still in progress after timeout, "
+                        "setting up background handler"
+                    )
                     self._early_connection_result = None
 
                     # Add callback to update UI when task completes in background
                     def _on_early_connection_complete(task: "asyncio.Task"):
                         try:
                             result = task.result()
-                            logger.info("Early connection completed in background: %s", result)
+                            logger.info(
+                                "Early connection completed in background: %s", result
+                            )
                             if result:
+
                                 async def _finalize_after_early_connect() -> None:
                                     if self._shutdown_requested:
                                         return
                                     # Keep "準備中..." until GPT mode switching is finished.
                                     self.state.copilot_ready = False
-                                    self.state.connection_state = ConnectionState.CONNECTING
+                                    self.state.connection_state = (
+                                        ConnectionState.CONNECTING
+                                    )
                                     self._refresh_status()
 
                                     await self._ensure_gpt_mode_setup()
@@ -6389,9 +6852,13 @@ class YakuLingoApp:
                         except asyncio.CancelledError:
                             logger.debug("Early connection task was cancelled")
                         except Exception as e:
-                            logger.debug("Early connection task failed in background: %s", e)
+                            logger.debug(
+                                "Early connection task failed in background: %s", e
+                            )
 
-                    self._early_connection_task.add_done_callback(_on_early_connection_complete)
+                    self._early_connection_task.add_done_callback(
+                        _on_early_connection_complete
+                    )
             except asyncio.CancelledError:
                 # Task itself was cancelled (not by wait_for timeout)
                 logger.debug("Early connection task cancelled")
@@ -6402,24 +6869,37 @@ class YakuLingoApp:
 
         # If early connection thread finished, capture its result; if still running, wait here.
         if self._early_connection_result is None:
-            if self._early_connection_event is not None and self._early_connection_event.is_set():
+            if (
+                self._early_connection_event is not None
+                and self._early_connection_event.is_set()
+            ):
                 if self._early_connection_result_ref is not None:
-                    self._early_connection_result = self._early_connection_result_ref.value
-            elif (self._early_connect_thread is not None
-                  and self._early_connect_thread.is_alive()
-                  and self._early_connection_event is not None):
-                logger.info("Early connection still in progress (thread alive), waiting for completion")
+                    self._early_connection_result = (
+                        self._early_connection_result_ref.value
+                    )
+            elif (
+                self._early_connect_thread is not None
+                and self._early_connect_thread.is_alive()
+                and self._early_connection_event is not None
+            ):
+                logger.info(
+                    "Early connection still in progress (thread alive), waiting for completion"
+                )
                 self.state.connection_state = ConnectionState.CONNECTING
                 self._refresh_status()
                 await asyncio.to_thread(self._early_connection_event.wait)
                 if self._early_connection_result_ref is not None:
-                    self._early_connection_result = self._early_connection_result_ref.value
+                    self._early_connection_result = (
+                        self._early_connection_result_ref.value
+                    )
 
         # Check early connection result
         if self._early_connection_result is True:
             # Early connection succeeded - just update UI
-            logger.info("[TIMING] Using early connection result (saved %.2fs)",
-                       _time_module.perf_counter() - _t_start)
+            logger.info(
+                "[TIMING] Using early connection result (saved %.2fs)",
+                _time_module.perf_counter() - _t_start,
+            )
             # Keep "準備中..." until GPT mode switching is finished.
             self.state.copilot_ready = False
             self.state.connection_state = ConnectionState.CONNECTING
@@ -6430,11 +6910,15 @@ class YakuLingoApp:
             # Early connection failed - update UI and check if login needed
             self._refresh_status()
             await self._start_login_polling_if_needed()
-        elif (self._early_connection_task is not None
-              and not self._early_connection_task.done()):
+        elif (
+            self._early_connection_task is not None
+            and not self._early_connection_task.done()
+        ):
             # Early connection still in progress - keep "connecting" state
             # UI will be updated by the background callback when complete
-            logger.info("Early connection still in progress, waiting for background completion")
+            logger.info(
+                "Early connection still in progress, waiting for background completion"
+            )
             self.state.connection_state = ConnectionState.CONNECTING
             self._refresh_status()
         else:
@@ -6443,7 +6927,10 @@ class YakuLingoApp:
             await self.start_edge_and_connect()
 
     def _is_gpt_mode_setup_in_progress(self) -> bool:
-        return self._gpt_mode_setup_task is not None and not self._gpt_mode_setup_task.done()
+        return (
+            self._gpt_mode_setup_task is not None
+            and not self._gpt_mode_setup_task.done()
+        )
 
     async def _ensure_gpt_mode_setup(self) -> None:
         """Ensure GPT mode setup has finished (set or attempts exhausted)."""
@@ -6529,6 +7016,7 @@ class YakuLingoApp:
         if self._shutdown_requested:
             return
         from yakulingo.services.copilot_handler import CopilotHandler
+
         if self.copilot.last_connection_error == CopilotHandler.ERROR_LOGIN_REQUIRED:
             await self._show_resident_login_prompt("polling")
             if not self._login_polling_active:
@@ -6582,7 +7070,9 @@ class YakuLingoApp:
             missing_checks = 0
             self._copilot_window_seen = False
 
-            logger.warning("Copilot Edge window closed; marking as disconnected (service stays alive)")
+            logger.warning(
+                "Copilot Edge window closed; marking as disconnected (service stays alive)"
+            )
             self.state.copilot_ready = False
             self.state.connection_state = ConnectionState.EDGE_NOT_RUNNING
 
@@ -6631,7 +7121,11 @@ class YakuLingoApp:
             # Bring app window to front using pywebview (native mode)
             try:
                 # Use global nicegui_app (already imported in _lazy_import_nicegui)
-                if nicegui_app and hasattr(nicegui_app, 'native') and nicegui_app.native.main_window:
+                if (
+                    nicegui_app
+                    and hasattr(nicegui_app, "native")
+                    and nicegui_app.native.main_window
+                ):
                     # pywebview window methods
                     window = nicegui_app.native.main_window
                     # Activate window (bring to front)
@@ -6643,10 +7137,13 @@ class YakuLingoApp:
 
         if self._resident_mode:
             copilot = getattr(self, "_copilot", None)
-            last_error = getattr(copilot, "last_connection_error", None) if copilot else None
+            last_error = (
+                getattr(copilot, "last_connection_error", None) if copilot else None
+            )
             login_required_error = "login_required"
             try:
                 from yakulingo.services.copilot_handler import CopilotHandler
+
                 login_required_error = CopilotHandler.ERROR_LOGIN_REQUIRED
             except Exception:
                 pass
@@ -6683,8 +7180,11 @@ class YakuLingoApp:
         ログイン完了を検出したら、自動でアプリを前面に戻して通知する。
         """
         if self._login_polling_active or self._shutdown_requested:
-            logger.debug("Login polling skipped: active=%s, shutdown=%s",
-                        self._login_polling_active, self._shutdown_requested)
+            logger.debug(
+                "Login polling skipped: active=%s, shutdown=%s",
+                self._login_polling_active,
+                self._shutdown_requested,
+            )
             return
 
         self._login_polling_active = True
@@ -6692,10 +7192,16 @@ class YakuLingoApp:
         max_wait_time = COPILOT_LOGIN_TIMEOUT
         elapsed = 0
 
-        logger.info("Starting login completion polling (interval %ds, max %ds)", polling_interval, max_wait_time)
+        logger.info(
+            "Starting login completion polling (interval %ds, max %ds)",
+            polling_interval,
+            max_wait_time,
+        )
 
         try:
-            from yakulingo.services.copilot_handler import ConnectionState as CopilotConnectionState
+            from yakulingo.services.copilot_handler import (
+                ConnectionState as CopilotConnectionState,
+            )
 
             consecutive_errors = 0
             max_consecutive_errors = 3  # 連続エラー3回でポーリング終了
@@ -6711,7 +7217,8 @@ class YakuLingoApp:
 
                 # 状態確認（タイムアウト5秒でセレクタを検索）
                 state = await asyncio.to_thread(
-                    self.copilot.check_copilot_state, 5  # 5秒タイムアウト
+                    self.copilot.check_copilot_state,
+                    5,  # 5秒タイムアウト
                 )
 
                 # ブラウザ/ページがクローズされた場合は早期終了
@@ -6721,7 +7228,7 @@ class YakuLingoApp:
                         logger.info(
                             "Login polling stopped: browser/page closed "
                             "(%d consecutive errors)",
-                            consecutive_errors
+                            consecutive_errors,
                         )
                         return
                 else:
@@ -6751,10 +7258,13 @@ class YakuLingoApp:
                     self.state.connection_state = ConnectionState.CONNECTING
 
                     auto_hide_candidates = (
-                        self._auto_open_cause in (AutoOpenCause.STARTUP, AutoOpenCause.LOGIN)
+                        self._auto_open_cause
+                        in (AutoOpenCause.STARTUP, AutoOpenCause.LOGIN)
                         or self._login_auto_hide_pending
                     )
-                    manual_block = self._manual_show_requested or self._login_auto_hide_blocked
+                    manual_block = (
+                        self._manual_show_requested or self._login_auto_hide_blocked
+                    )
                     native_mode_enabled = bool(self._native_mode_enabled)
                     browser_auto_hide = (
                         not native_mode_enabled
@@ -6771,8 +7281,13 @@ class YakuLingoApp:
                         and (native_mode_enabled or browser_auto_hide)
                     )
                     auto_hide_reasons: list[str] = []
-                    if self._auto_open_cause in (AutoOpenCause.STARTUP, AutoOpenCause.LOGIN):
-                        auto_hide_reasons.append(f"auto_open:{self._auto_open_cause.value}")
+                    if self._auto_open_cause in (
+                        AutoOpenCause.STARTUP,
+                        AutoOpenCause.LOGIN,
+                    ):
+                        auto_hide_reasons.append(
+                            f"auto_open:{self._auto_open_cause.value}"
+                        )
                     if self._login_auto_hide_pending:
                         auto_hide_reasons.append("login_pending")
                     if manual_block:
@@ -6788,10 +7303,13 @@ class YakuLingoApp:
                         "auto_open_timeout=%s, manual_show=%s, hotkey=%s, login_pending=%s)",
                         should_auto_hide,
                         ",".join(auto_hide_reasons) or "none",
-                        self._auto_open_cause.value if self._auto_open_cause else "none",
+                        self._auto_open_cause.value
+                        if self._auto_open_cause
+                        else "none",
                         self._auto_open_timeout_task is not None,
                         self._manual_show_requested,
-                        self._auto_open_cause == AutoOpenCause.HOTKEY or self._hotkey_translation_active,
+                        self._auto_open_cause == AutoOpenCause.HOTKEY
+                        or self._hotkey_translation_active,
                         self._login_auto_hide_pending,
                     )
 
@@ -6814,7 +7332,9 @@ class YakuLingoApp:
                     await self._ensure_gpt_mode_setup()
 
                     if not self._shutdown_requested:
-                        await self._on_browser_ready(bring_to_front=not should_auto_hide)
+                        await self._on_browser_ready(
+                            bring_to_front=not should_auto_hide
+                        )
                     return
 
             # タイムアウト（翻訳ボタン押下時に再試行される）
@@ -6842,9 +7362,9 @@ class YakuLingoApp:
                 if self._client:
                     with self._client:
                         ui.notify(
-                            'Copilotが起動していません。再接続してください。',
-                            type='warning',
-                            position='top',
+                            "Copilotが起動していません。再接続してください。",
+                            type="warning",
+                            position="top",
                             timeout=4000,
                         )
                 return
@@ -6859,9 +7379,9 @@ class YakuLingoApp:
                 if self._client:
                     with self._client:
                         ui.notify(
-                            'Edgeを前面表示できませんでした。',
-                            type='warning',
-                            position='top',
+                            "Edgeを前面表示できませんでした。",
+                            type="warning",
+                            position="top",
                             timeout=4000,
                         )
 
@@ -6883,9 +7403,9 @@ class YakuLingoApp:
             if self._client:
                 with self._client:
                     ui.notify(
-                        'Copilotが起動していません。再接続してください。',
-                        type='warning',
-                        position='top',
+                        "Copilotが起動していません。再接続してください。",
+                        type="warning",
+                        position="top",
                         timeout=4000,
                     )
             return
@@ -6898,9 +7418,9 @@ class YakuLingoApp:
             if not shown and self._client:
                 with self._client:
                     ui.notify(
-                        'Edgeを前面表示できませんでした。',
-                        type='warning',
-                        position='top',
+                        "Edgeを前面表示できませんでした。",
+                        type="warning",
+                        position="top",
                         timeout=4000,
                     )
         except Exception as e:
@@ -6908,9 +7428,9 @@ class YakuLingoApp:
             if self._client:
                 with self._client:
                     ui.notify(
-                        'Edgeを前面表示できませんでした。',
-                        type='warning',
-                        position='top',
+                        "Edgeを前面表示できませんでした。",
+                        type="warning",
+                        position="top",
                         timeout=4000,
                     )
 
@@ -6938,10 +7458,10 @@ class YakuLingoApp:
             if show_progress and self._client:
                 with self._client:
                     ui.notify(
-                        f'再接続中... ({attempt + 1}/{max_retries})',
-                        type='info',
-                        position='bottom-right',
-                        timeout=2000
+                        f"再接続中... ({attempt + 1}/{max_retries})",
+                        type="info",
+                        position="bottom-right",
+                        timeout=2000,
                     )
 
             try:
@@ -6951,16 +7471,27 @@ class YakuLingoApp:
                 )
 
                 if connected:
-                    logger.info("Copilot reconnected successfully (attempt %d/%d)", attempt + 1, max_retries)
+                    logger.info(
+                        "Copilot reconnected successfully (attempt %d/%d)",
+                        attempt + 1,
+                        max_retries,
+                    )
                     # Keep "準備中..." until GPT mode switching is finished.
                     self.state.copilot_ready = False
                     self.state.connection_state = ConnectionState.CONNECTING
 
                     # Handle Edge window based on effective browser_display_mode
                     if self._settings:
-                        self._edge_visibility_target = self._get_effective_browser_display_mode()
-                        if self._should_respect_edge_visibility_target() and self._edge_visibility_target == "minimized":
-                            await asyncio.to_thread(self.copilot._minimize_edge_window, None)
+                        self._edge_visibility_target = (
+                            self._get_effective_browser_display_mode()
+                        )
+                        if (
+                            self._should_respect_edge_visibility_target()
+                            and self._edge_visibility_target == "minimized"
+                        ):
+                            await asyncio.to_thread(
+                                self.copilot._minimize_edge_window, None
+                            )
                             logger.debug("Edge minimized after reconnection")
                     # In foreground mode, do nothing (leave Edge as is)
 
@@ -6975,17 +7506,22 @@ class YakuLingoApp:
                             self._refresh_status()
                             if show_progress:
                                 ui.notify(
-                                    '再接続しました',
-                                    type='positive',
-                                    position='bottom-right',
-                                    timeout=2000
+                                    "再接続しました",
+                                    type="positive",
+                                    position="bottom-right",
+                                    timeout=2000,
                                 )
                     await self._on_browser_ready(bring_to_front=False)
                     return True
                 else:
                     # Check if login is required
-                    if self.copilot.last_connection_error == CopilotHandler.ERROR_LOGIN_REQUIRED:
-                        logger.info("Reconnect: login required, starting login polling...")
+                    if (
+                        self.copilot.last_connection_error
+                        == CopilotHandler.ERROR_LOGIN_REQUIRED
+                    ):
+                        logger.info(
+                            "Reconnect: login required, starting login polling..."
+                        )
                         self.state.connection_state = ConnectionState.LOGIN_REQUIRED
                         self.state.copilot_ready = False
 
@@ -6998,23 +7534,28 @@ class YakuLingoApp:
                                 await asyncio.to_thread(
                                     self.copilot._bring_to_foreground_impl,
                                     self.copilot._page,
-                                    "reconnect: login required"
+                                    "reconnect: login required",
                                 )
                                 logger.info("Browser brought to foreground for login")
                             except Exception as e:
-                                logger.warning("Failed to bring browser to foreground: %s", e)
+                                logger.warning(
+                                    "Failed to bring browser to foreground: %s", e
+                                )
 
                         if self._client:
                             with self._client:
                                 self._refresh_status()
                                 ui.notify(
-                                    'Copilotへのログインが必要です。ブラウザでログインしてください。',
-                                    type='warning',
-                                    position='top',
-                                    timeout=10000
+                                    "Copilotへのログインが必要です。ブラウザでログインしてください。",
+                                    type="warning",
+                                    position="top",
+                                    timeout=10000,
                                 )
                         # Start login completion polling in background
-                        if not self._login_polling_active and not self._shutdown_requested:
+                        if (
+                            not self._login_polling_active
+                            and not self._shutdown_requested
+                        ):
                             self._login_polling_task = _create_logged_task(
                                 self._wait_for_login_completion(),
                                 name="login_polling",
@@ -7022,14 +7563,20 @@ class YakuLingoApp:
                         # Return False but don't retry - user needs to login
                         return False
 
-                    logger.warning("Reconnect returned False (attempt %d/%d)", attempt + 1, max_retries)
+                    logger.warning(
+                        "Reconnect returned False (attempt %d/%d)",
+                        attempt + 1,
+                        max_retries,
+                    )
 
             except Exception as e:
-                logger.warning("Reconnect attempt %d/%d failed: %s", attempt + 1, max_retries, e)
+                logger.warning(
+                    "Reconnect attempt %d/%d failed: %s", attempt + 1, max_retries, e
+                )
 
             # Exponential backoff before retry (except for last attempt)
             if attempt < max_retries - 1:
-                wait_time = 2 ** attempt  # 1s, 2s, 4s
+                wait_time = 2**attempt  # 1s, 2s, 4s
                 logger.debug("Waiting %ds before retry...", wait_time)
                 await asyncio.sleep(wait_time)
 
@@ -7042,10 +7589,10 @@ class YakuLingoApp:
                 self._refresh_status()
                 if show_progress:
                     ui.notify(
-                        '再接続に失敗しました。しばらく待ってから再試行してください。',
-                        type='negative',
-                        position='bottom-right',
-                        timeout=5000
+                        "再接続に失敗しました。しばらく待ってから再試行してください。",
+                        type="negative",
+                        position="bottom-right",
+                        timeout=5000,
                     )
         return False
 
@@ -7055,7 +7602,9 @@ class YakuLingoApp:
 
         try:
             # Lazy import for faster startup
-            from yakulingo.ui.components.update_notification import check_updates_on_startup
+            from yakulingo.ui.components.update_notification import (
+                check_updates_on_startup,
+            )
 
             # clientを渡してasyncコンテキストでのUI操作を可能にする
             notification = await check_updates_on_startup(self.settings, self._client)
@@ -7090,9 +7639,17 @@ class YakuLingoApp:
         def _refresh_login_banner(context: str, has_client: bool) -> None:
             if not self._login_banner:
                 return
-            logger.debug("Login banner refresh attempt (client=%s, context=%s)", has_client, context)
+            logger.debug(
+                "Login banner refresh attempt (client=%s, context=%s)",
+                has_client,
+                context,
+            )
             self._login_banner.refresh()
-            logger.debug("Login banner refresh completed (client=%s, context=%s)", has_client, context)
+            logger.debug(
+                "Login banner refresh completed (client=%s, context=%s)",
+                has_client,
+                context,
+            )
 
         try:
             # Fast path: we are already in a valid client context.
@@ -7130,7 +7687,9 @@ class YakuLingoApp:
                 with active_client:
                     self._update_translate_button_state()
             except Exception as e2:
-                logger.debug("Translate button refresh with saved client failed: %s", e2)
+                logger.debug(
+                    "Translate button refresh with saved client failed: %s", e2
+                )
 
     def _run_in_ui_context(self, action: Callable[[], None], label: str) -> None:
         """Run UI updates safely, retrying with the saved client context when needed."""
@@ -7158,7 +7717,10 @@ class YakuLingoApp:
             return
         if self._header_status is None or self._get_active_client() is None:
             return
-        if self.state.copilot_ready or self.state.connection_state != ConnectionState.CONNECTING:
+        if (
+            self.state.copilot_ready
+            or self.state.connection_state != ConnectionState.CONNECTING
+        ):
             return
 
         existing = self._status_auto_refresh_task
@@ -7198,11 +7760,15 @@ class YakuLingoApp:
                 self._refresh_status()
                 self._refresh_translate_button_state()
         finally:
-            if current_task is not None and self._status_auto_refresh_task is current_task:
+            if (
+                current_task is not None
+                and self._status_auto_refresh_task is current_task
+            ):
                 self._status_auto_refresh_task = None
 
     def _refresh_content(self):
         """Refresh main content area and update layout classes"""
+
         def _apply() -> None:
             self._update_layout_classes()
             if self._main_content:
@@ -7212,6 +7778,7 @@ class YakuLingoApp:
 
     def _refresh_result_panel(self):
         """Refresh only the result panel (avoids input panel flicker)"""
+
         def _apply() -> None:
             self._update_layout_classes()
             if self._result_panel:
@@ -7340,7 +7907,10 @@ class YakuLingoApp:
         if existing is not None and not existing.cancelled():
             existing.cancel()
         self._result_panel_scroll_handle = None
-        if self._result_panel_scroll_task is not None and not self._result_panel_scroll_task.done():
+        if (
+            self._result_panel_scroll_task is not None
+            and not self._result_panel_scroll_task.done()
+        ):
             try:
                 self._result_panel_scroll_task.cancel()
             except Exception:
@@ -7405,11 +7975,16 @@ class YakuLingoApp:
             0.05, self._start_result_panel_scroll_task, client, js_code
         )
 
-    def _start_result_panel_scroll_task(self, client: NiceGUIClient, js_code: str) -> None:
+    def _start_result_panel_scroll_task(
+        self, client: NiceGUIClient, js_code: str
+    ) -> None:
         self._result_panel_scroll_handle = None
         if self._shutdown_requested:
             return
-        if self._result_panel_scroll_task is not None and not self._result_panel_scroll_task.done():
+        if (
+            self._result_panel_scroll_task is not None
+            and not self._result_panel_scroll_task.done()
+        ):
             return
 
         async def _run_scroll() -> None:
@@ -7446,29 +8021,29 @@ class YakuLingoApp:
                 - 'tabs': Refresh tab buttons
         """
         # Layout update is needed for result/content refreshes
-        if 'result' in refresh_types or 'content' in refresh_types:
+        if "result" in refresh_types or "content" in refresh_types:
             self._update_layout_classes()
 
         # Perform refreshes in order of dependency
-        if 'content' in refresh_types:
+        if "content" in refresh_types:
             if self._main_content:
                 self._main_content.refresh()
-        elif 'result' in refresh_types:
+        elif "result" in refresh_types:
             if self._result_panel:
                 self._result_panel.refresh()
 
-        if 'status' in refresh_types:
+        if "status" in refresh_types:
             if self._header_status:
                 self._header_status.refresh()
 
-        if 'button' in refresh_types:
+        if "button" in refresh_types:
             self._update_translate_button_state()
 
-        if 'history' in refresh_types:
+        if "history" in refresh_types:
             if self._history_list:
                 self._history_list.refresh()
 
-        if 'tabs' in refresh_types:
+        if "tabs" in refresh_types:
             self._refresh_tabs()
 
     def _update_layout_classes(self):
@@ -7481,26 +8056,36 @@ class YakuLingoApp:
             # Debug logging for layout state changes
             logger.debug(
                 "[LAYOUT] _update_layout_classes: is_file_mode=%s, has_results=%s, text_translating=%s, text_result=%s",
-                is_file_mode, has_results, self.state.text_translating, bool(self.state.text_result)
+                is_file_mode,
+                has_results,
+                self.state.text_translating,
+                bool(self.state.text_result),
             )
 
             # Toggle file-mode class
             if is_file_mode:
-                self._main_area_element.classes(add='file-mode', remove='has-results')
-                logger.debug("[LAYOUT] Applied classes: file-mode (removed has-results)")
+                self._main_area_element.classes(add="file-mode", remove="has-results")
+                logger.debug(
+                    "[LAYOUT] Applied classes: file-mode (removed has-results)"
+                )
             else:
-                self._main_area_element.classes(remove='file-mode')
+                self._main_area_element.classes(remove="file-mode")
                 # Toggle has-results class (only in text mode)
                 if has_results:
-                    self._main_area_element.classes(add='has-results')
+                    self._main_area_element.classes(add="has-results")
                     logger.debug("[LAYOUT] Applied classes: has-results")
                 else:
-                    self._main_area_element.classes(remove='has-results')
+                    self._main_area_element.classes(remove="has-results")
                     logger.debug("[LAYOUT] Removed classes: has-results")
 
     def _log_layout_dimensions(self):
         """Log layout container dimensions for debugging via JavaScript"""
-        if os.environ.get("YAKULINGO_LAYOUT_DEBUG", "").lower() not in ("1", "true", "yes", "on"):
+        if os.environ.get("YAKULINGO_LAYOUT_DEBUG", "").lower() not in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        ):
             return
 
         # JavaScript to collect and log layout dimensions
@@ -7754,37 +8339,80 @@ class YakuLingoApp:
         try:
             client = self._client
             if client:
+
                 async def log_layout():
                     try:
                         with client:
                             result = await client.run_javascript(js_code)
                         if result:
                             # Window and document info
-                            logger.debug("[LAYOUT_DEBUG] window: %s", result.get('window'))
-                            logger.debug("[LAYOUT_DEBUG] niceguiContent: %s", result.get('niceguiContent'))
-                            logger.debug("[LAYOUT_DEBUG] mainAppContainer: %s", result.get('mainAppContainer'))
-                            logger.debug("[LAYOUT_DEBUG] appContainer: %s", result.get('appContainer'))
-                            logger.debug("[LAYOUT_DEBUG] sidebar: %s", result.get('sidebar'))
-                            logger.debug("[LAYOUT_DEBUG] mainArea: %s", result.get('mainArea'))
+                            logger.debug(
+                                "[LAYOUT_DEBUG] window: %s", result.get("window")
+                            )
+                            logger.debug(
+                                "[LAYOUT_DEBUG] niceguiContent: %s",
+                                result.get("niceguiContent"),
+                            )
+                            logger.debug(
+                                "[LAYOUT_DEBUG] mainAppContainer: %s",
+                                result.get("mainAppContainer"),
+                            )
+                            logger.debug(
+                                "[LAYOUT_DEBUG] appContainer: %s",
+                                result.get("appContainer"),
+                            )
+                            logger.debug(
+                                "[LAYOUT_DEBUG] sidebar: %s", result.get("sidebar")
+                            )
+                            logger.debug(
+                                "[LAYOUT_DEBUG] mainArea: %s", result.get("mainArea")
+                            )
                             # Input panel detailed info (for margin debugging)
-                            logger.debug("[LAYOUT_DEBUG] inputPanel: %s", result.get('inputPanel'))
-                            logger.debug("[LAYOUT_DEBUG] inputPanelColumn: %s", result.get('inputPanelColumn'))
-                            logger.debug("[LAYOUT_DEBUG] mainCard: %s", result.get('mainCard'))
+                            logger.debug(
+                                "[LAYOUT_DEBUG] inputPanel: %s",
+                                result.get("inputPanel"),
+                            )
+                            logger.debug(
+                                "[LAYOUT_DEBUG] inputPanelColumn: %s",
+                                result.get("inputPanelColumn"),
+                            )
+                            logger.debug(
+                                "[LAYOUT_DEBUG] mainCard: %s", result.get("mainCard")
+                            )
                             # Result panel info
-                            logger.debug("[LAYOUT_DEBUG] resultPanel: %s", result.get('resultPanel'))
-                            logger.debug("[LAYOUT_DEBUG] resultPanelNiceguiColumn: %s", result.get('resultPanelNiceguiColumn'))
-                            logger.debug("[LAYOUT_DEBUG] innerColumn: %s", result.get('innerColumn'))
+                            logger.debug(
+                                "[LAYOUT_DEBUG] resultPanel: %s",
+                                result.get("resultPanel"),
+                            )
+                            logger.debug(
+                                "[LAYOUT_DEBUG] resultPanelNiceguiColumn: %s",
+                                result.get("resultPanelNiceguiColumn"),
+                            )
+                            logger.debug(
+                                "[LAYOUT_DEBUG] innerColumn: %s",
+                                result.get("innerColumn"),
+                            )
                             # Overflow status
-                            logger.debug("[LAYOUT_DEBUG] hasHorizontalOverflow: %s", result.get('hasHorizontalOverflow'))
-                            logger.debug("[LAYOUT_DEBUG] hasVerticalOverflow: %s", result.get('hasVerticalOverflow'))
+                            logger.debug(
+                                "[LAYOUT_DEBUG] hasHorizontalOverflow: %s",
+                                result.get("hasHorizontalOverflow"),
+                            )
+                            logger.debug(
+                                "[LAYOUT_DEBUG] hasVerticalOverflow: %s",
+                                result.get("hasVerticalOverflow"),
+                            )
                     except Exception as inner_e:
-                        logger.warning("[LAYOUT] JavaScript execution failed: %s", inner_e)
+                        logger.warning(
+                            "[LAYOUT] JavaScript execution failed: %s", inner_e
+                        )
+
                 asyncio.create_task(log_layout())
         except Exception as e:
             logger.warning("[LAYOUT] Failed to log layout dimensions: %s", e)
 
     def _refresh_tabs(self):
         """Update tab buttons in place to avoid sidebar redraw flicker."""
+
         def _apply() -> None:
             if self._tabs_container:
                 current_translating = self.state.is_translating()
@@ -7799,11 +8427,11 @@ class YakuLingoApp:
                 is_active = self.state.current_tab == tab
                 disabled = self.state.is_translating()
 
-                btn.classes(remove='active disabled')
+                btn.classes(remove="active disabled")
                 if is_active:
-                    btn.classes(add='active')
+                    btn.classes(add="active")
                 if disabled:
-                    btn.classes(add='disabled')
+                    btn.classes(add="disabled")
 
                 btn.props(f'aria-selected="{str(is_active).lower()}"')
                 if disabled:
@@ -7815,6 +8443,7 @@ class YakuLingoApp:
 
     def _refresh_history(self):
         """Refresh history list"""
+
         def _apply() -> None:
             if self._history_list:
                 self._history_list.refresh()
@@ -7836,7 +8465,9 @@ class YakuLingoApp:
         self._text_input_metrics = refs
         self._update_text_input_metrics()
 
-    def _on_file_progress_elements_created(self, refs: Optional[dict[str, object]]) -> None:
+    def _on_file_progress_elements_created(
+        self, refs: Optional[dict[str, object]]
+    ) -> None:
         """Store reference to file progress elements for incremental updates."""
         self._file_progress_elements = refs or None
 
@@ -7861,16 +8492,20 @@ class YakuLingoApp:
             base_label = step.get("base_label", "")
 
             if element:
-                element.classes(remove='active completed')
+                element.classes(remove="active completed")
                 if current_idx > idx:
-                    element.classes(add='completed')
+                    element.classes(add="completed")
                 elif current_idx == idx:
-                    element.classes(add='active')
+                    element.classes(add="active")
 
             count = None
             if step_phase in phase_counts:
                 count = phase_counts[step_phase]
-            elif step_phase == current_phase and phase_current is not None and phase_total is not None:
+            elif (
+                step_phase == current_phase
+                and phase_current is not None
+                and phase_total is not None
+            ):
                 count = (phase_current, phase_total)
 
             label_text = base_label
@@ -7928,10 +8563,10 @@ class YakuLingoApp:
                     file_name_label.set_text(file_name)
                 progress_bar = refs.get("progress_bar")
                 if progress_bar:
-                    progress_bar.style(f'width: {int(pct * 100)}%')
+                    progress_bar.style(f"width: {int(pct * 100)}%")
                 progress_label = refs.get("progress_label")
                 if progress_label:
-                    progress_label.set_text(f'{int(pct * 100)}%')
+                    progress_label.set_text(f"{int(pct * 100)}%")
                 status_label = refs.get("status_label")
                 if status_label:
                     status_label.set_text(status or "処理中...")
@@ -7947,7 +8582,9 @@ class YakuLingoApp:
                 )
                 eta_label = refs.get("eta_label")
                 if eta_label is not None:
-                    eta_label.set_text(f'残り約 {self._format_eta_range_seconds(eta_seconds)}')
+                    eta_label.set_text(
+                        f"残り約 {self._format_eta_range_seconds(eta_seconds)}"
+                    )
         except Exception as e:
             logger.debug("File progress UI update failed: %s", e)
 
@@ -7964,7 +8601,7 @@ class YakuLingoApp:
         """
         self._text_input_textarea = textarea
         # Set initial focus after UI is ready
-        textarea.run_method('focus')
+        textarea.run_method("focus")
 
     def _focus_text_input(self):
         """Set focus to the text input textarea.
@@ -7973,7 +8610,7 @@ class YakuLingoApp:
         to the text translation panel.
         """
         if self._text_input_textarea is not None:
-            self._text_input_textarea.run_method('focus')
+            self._text_input_textarea.run_method("focus")
 
     def _update_translate_button_state(self):
         """Update translate button enabled/disabled/loading state based on current state"""
@@ -7982,16 +8619,16 @@ class YakuLingoApp:
 
         if self.state.text_back_translating:
             # Back-translate: disable without showing the main translate spinner
-            self._translate_button.props(':loading=false disable')
+            self._translate_button.props(":loading=false disable")
         elif self.state.is_translating():
             # Show loading spinner and disable
-            self._translate_button.props('loading disable')
+            self._translate_button.props("loading disable")
         elif not self.state.can_translate():
             # Disable but no loading (no text entered)
-            self._translate_button.props(':loading=false disable')
+            self._translate_button.props(":loading=false disable")
         else:
             # Enable the button
-            self._translate_button.props(':loading=false :disable=false')
+            self._translate_button.props(":loading=false :disable=false")
 
     def _start_new_translation(self):
         """Reset both text and file state and return to text translation."""
@@ -8002,28 +8639,41 @@ class YakuLingoApp:
         self._reset_global_drop_upload()
         self.state.current_tab = Tab.TEXT
         self.settings.last_tab = Tab.TEXT.value
-        self._batch_refresh({'tabs', 'content'})
+        self._batch_refresh({"tabs", "content"})
 
     def _setup_global_file_drop(self):
-        from yakulingo.ui.components.file_panel import MAX_DROP_FILE_SIZE_BYTES, SUPPORTED_FORMATS
+        from yakulingo.ui.components.file_panel import (
+            MAX_DROP_FILE_SIZE_BYTES,
+            SUPPORTED_FORMATS,
+        )
 
         if self._global_drop_upload is None:
-            self._global_drop_upload = ui.upload(
-                on_upload=self._handle_global_upload,
-                on_rejected=self._handle_global_upload_rejected,
-                auto_upload=True,
-                max_files=1,
-                max_file_size=MAX_DROP_FILE_SIZE_BYTES,
-            ).classes('global-drop-upload drop-zone-upload').props(f'accept="{SUPPORTED_FORMATS}"')
+            self._global_drop_upload = (
+                ui.upload(
+                    on_upload=self._handle_global_upload,
+                    on_rejected=self._handle_global_upload_rejected,
+                    auto_upload=True,
+                    max_files=1,
+                    max_file_size=MAX_DROP_FILE_SIZE_BYTES,
+                )
+                .classes("global-drop-upload drop-zone-upload")
+                .props(f'accept="{SUPPORTED_FORMATS}"')
+            )
 
         if self._global_drop_indicator is None:
-            self._global_drop_indicator = ui.element('div').classes('global-drop-indicator').props('aria-hidden="true"')
+            self._global_drop_indicator = (
+                ui.element("div")
+                .classes("global-drop-indicator")
+                .props('aria-hidden="true"')
+            )
             with self._global_drop_indicator:
-                with ui.row().classes('global-drop-indicator-label items-center'):
-                    ui.icon('upload_file').classes('global-drop-indicator-icon')
-                    ui.label('ファイルをドロップで翻訳').classes('global-drop-indicator-text')
+                with ui.row().classes("global-drop-indicator-label items-center"):
+                    ui.icon("upload_file").classes("global-drop-indicator-icon")
+                    ui.label("ファイルをドロップで翻訳").classes(
+                        "global-drop-indicator-text"
+                    )
 
-        script = '''<script>
+        script = """<script>
          (() => {
            if (window._yakulingoGlobalFileDropInstalled) {
              return;
@@ -8133,7 +8783,7 @@ class YakuLingoApp:
 
   registerTargets();
 })();
-         </script>'''
+         </script>"""
         ui.add_head_html(script)
 
     def _reset_global_drop_upload(self) -> None:
@@ -8162,18 +8812,18 @@ class YakuLingoApp:
             uploaded_path = None
             content = None
             name = None
-            if hasattr(e, 'file'):
+            if hasattr(e, "file"):
                 file_obj = e.file
                 name = file_obj.name
-                if hasattr(file_obj, '_path'):
+                if hasattr(file_obj, "_path"):
                     uploaded_path = temp_file_manager.create_temp_file_from_path(
                         Path(file_obj._path),
                         name,
                     )
-                elif hasattr(file_obj, '_data'):
+                elif hasattr(file_obj, "_data"):
                     content = file_obj._data
                     uploaded_path = temp_file_manager.create_temp_file(content, name)
-                elif hasattr(file_obj, 'read'):
+                elif hasattr(file_obj, "read"):
                     content = await file_obj.read()
                     uploaded_path = temp_file_manager.create_temp_file(content, name)
                 else:
@@ -8200,13 +8850,15 @@ class YakuLingoApp:
             )
             if name and client:
                 with client:
-                    ui.notify(f'ファイルを受け取りました: {name}', type='info')
+                    ui.notify(f"ファイルを受け取りました: {name}", type="info")
             await self._select_file(uploaded_path)
         except Exception as err:
             logger.exception("Global file drop handling failed: %s", err)
             if client:
                 with client:
-                    ui.notify(f'ファイルの読み込みに失敗しました: {err}', type='negative')
+                    ui.notify(
+                        f"ファイルの読み込みに失敗しました: {err}", type="negative"
+                    )
         finally:
             self._reset_global_drop_upload()
 
@@ -8216,9 +8868,10 @@ class YakuLingoApp:
         from yakulingo.ui.components.file_panel import MAX_DROP_FILE_SIZE_MB
 
         ui.notify(
-            f'ファイルが大きすぎます（最大{MAX_DROP_FILE_SIZE_MB}MBまで）',
-            type='warning',
+            f"ファイルが大きすぎます（最大{MAX_DROP_FILE_SIZE_MB}MBまで）",
+            type="warning",
         )
+
     # =========================================================================
     # Section 4: UI Creation Methods
     # =========================================================================
@@ -8232,45 +8885,56 @@ class YakuLingoApp:
         def on_click() -> None:
             self._enter_resident_mode("ui_close_button")
 
-        with ui.element('div').classes('resident-close-button'):
-            hide_btn = ui.button('隠す', icon='close', on_click=on_click).props(
-                'aria-label="ウィンドウを隠して常駐します"'
-            ).classes('btn-tonal resident-close-btn')
-            hide_btn.tooltip('ウィンドウを隠して常駐します')
+        with ui.element("div").classes("resident-close-button"):
+            hide_btn = (
+                ui.button("隠す", icon="close", on_click=on_click)
+                .props('aria-label="ウィンドウを隠して常駐します"')
+                .classes("btn-tonal resident-close-btn")
+            )
+            hide_btn.tooltip("ウィンドウを隠して常駐します")
 
     def create_ui(self):
         """Create the UI - Nani-inspired 2-column layout"""
         # Lazy load CSS (2837 lines) - deferred until UI creation
         from yakulingo.ui.styles import COMPLETE_CSS
+
         _ = self.settings  # Ensure settings are loaded for backend/status UI
 
         # Viewport for proper scaling on all displays
-        ui.add_head_html('<meta name="viewport" content="width=device-width, initial-scale=1.0">')
-        ui.add_head_html(f'<style>{COMPLETE_CSS}</style>')
+        ui.add_head_html(
+            '<meta name="viewport" content="width=device-width, initial-scale=1.0">'
+        )
+        ui.add_head_html(f"<style>{COMPLETE_CSS}</style>")
         if self._native_frameless:
-            ui.element('div').classes('native-drag-region pywebview-drag-region').props(
+            ui.element("div").classes("native-drag-region pywebview-drag-region").props(
                 'aria-hidden="true"'
             )
 
         # Hidden file upload for direct file selection (no dialog needed)
         # Uses Quasar's pickFiles() method to open file picker directly
-        self._reference_upload = ui.upload(
-            on_upload=self._handle_reference_upload,
-            auto_upload=True,
-            max_files=1,
-        ).props('accept=".csv,.txt,.pdf,.docx,.xlsx,.pptx,.md,.json"').classes('hidden')
+        self._reference_upload = (
+            ui.upload(
+                on_upload=self._handle_reference_upload,
+                auto_upload=True,
+                max_files=1,
+            )
+            .props('accept=".csv,.txt,.pdf,.docx,.xlsx,.pptx,.md,.json"')
+            .classes("hidden")
+        )
 
         self._setup_global_file_drop()
         self._create_resident_close_button()
 
         # Layout container: 2-column (sidebar + main content)
-        with ui.element('div').classes('app-container pywebview-nodrag'):
+        with ui.element("div").classes("app-container pywebview-nodrag"):
             # Left Sidebar (tabs + history)
-            with ui.column().classes('sidebar'):
+            with ui.column().classes("sidebar"):
                 self._create_sidebar()
 
             # Main area (input panel + result panel) with dynamic classes
-            self._main_area_element = ui.element('div').classes(self._get_main_area_classes())
+            self._main_area_element = ui.element("div").classes(
+                self._get_main_area_classes()
+            )
             with self._main_area_element:
                 self._create_main_content()
 
@@ -8287,16 +8951,24 @@ class YakuLingoApp:
     def _create_sidebar(self):
         """Create left sidebar with logo, nav, and history"""
         # Logo section
-        with ui.row().classes('sidebar-header items-center gap-3'):
+        with ui.row().classes("sidebar-header items-center gap-3"):
+
             def on_logo_click():
                 self._start_new_translation()
 
-            with ui.element('div').classes('app-logo-icon').props('role="button" aria-label="新規翻訳"') as logo_icon:
-                ui.html('<svg viewBox="0 0 64 64" width="18" height="18" aria-hidden="true"><circle cx="32" cy="38" r="20" fill="#E53935" /><rect x="30" y="10" width="4" height="12" rx="2" fill="#8D6E63" /><path d="M34 12 C42 4 54 6 56 18 C46 20 38 18 34 12 Z" fill="#43A047" /></svg>', sanitize=False)
+            with (
+                ui.element("div")
+                .classes("app-logo-icon")
+                .props('role="button" aria-label="新規翻訳"') as logo_icon
+            ):
+                ui.html(
+                    '<svg viewBox="0 0 64 64" width="18" height="18" aria-hidden="true"><circle cx="32" cy="38" r="20" fill="#E53935" /><rect x="30" y="10" width="4" height="12" rx="2" fill="#8D6E63" /><path d="M34 12 C42 4 54 6 56 18 C46 20 38 18 34 12 Z" fill="#43A047" /></svg>',
+                    sanitize=False,
+                )
 
-            logo_icon.on('click', on_logo_click)
-            logo_icon.tooltip('YakuLingo')
-            ui.label('YakuLingo').classes('app-logo app-logo-hidden')
+            logo_icon.on("click", on_logo_click)
+            logo_icon.tooltip("YakuLingo")
+            ui.label("YakuLingo").classes("app-logo app-logo-hidden")
 
         # Status indicator (Copilot readiness: user can start translation safely)
         @ui.refreshable
@@ -8304,28 +8976,41 @@ class YakuLingoApp:
             # Backend selector (Copilot / Local AI)
             copilot_enabled = getattr(self.settings, "copilot_enabled", True)
             disabled = self.state.is_translating()
-            btn_props = 'flat no-caps dense disable' if disabled else 'flat no-caps dense'
-            with ui.row().classes('w-full justify-center'):
-                with ui.element('div').classes('segmented-btn-container'):
-                    local_classes = 'segmented-btn'
+            btn_props = (
+                "flat no-caps dense disable" if disabled else "flat no-caps dense"
+            )
+            with ui.row().classes("w-full justify-center"):
+                with ui.element("div").classes("segmented-btn-container"):
+                    local_classes = "segmented-btn"
                     selected_backend = self.state.translation_backend
-                    if not copilot_enabled and selected_backend == TranslationBackend.COPILOT:
+                    if (
+                        not copilot_enabled
+                        and selected_backend == TranslationBackend.COPILOT
+                    ):
                         selected_backend = TranslationBackend.LOCAL
                     if selected_backend == TranslationBackend.LOCAL:
-                        local_classes += ' segmented-btn-selected'
+                        local_classes += " segmented-btn-selected"
                     if copilot_enabled:
-                        copilot_classes = 'segmented-btn'
+                        copilot_classes = "segmented-btn"
                         if selected_backend == TranslationBackend.COPILOT:
-                            copilot_classes += ' segmented-btn-selected'
+                            copilot_classes += " segmented-btn-selected"
                         ui.button(
-                            'Copilot',
-                            on_click=lambda: self._set_translation_backend(TranslationBackend.COPILOT),
-                        ).classes(copilot_classes).props(btn_props).tooltip('M365 Copilot（Edge）で翻訳')
+                            "Copilot",
+                            on_click=lambda: self._set_translation_backend(
+                                TranslationBackend.COPILOT
+                            ),
+                        ).classes(copilot_classes).props(btn_props).tooltip(
+                            "M365 Copilot（Edge）で翻訳"
+                        )
 
                     ui.button(
-                        'ローカルAI',
-                        on_click=lambda: self._set_translation_backend(TranslationBackend.LOCAL),
-                    ).classes(local_classes).props(btn_props).tooltip('llama-server（127.0.0.1）で翻訳')
+                        "ローカルAI",
+                        on_click=lambda: self._set_translation_backend(
+                            TranslationBackend.LOCAL
+                        ),
+                    ).classes(local_classes).props(btn_props).tooltip(
+                        "llama-server（127.0.0.1）で翻訳"
+                    )
 
             # Local AI status
             if self.state.translation_backend == TranslationBackend.LOCAL:
@@ -8337,67 +9022,105 @@ class YakuLingoApp:
                     variant = self.state.local_ai_server_variant or ""
                     addr = f"{host}:{port}"
                     addr_with_variant = f"{addr} ({variant})" if variant else addr
-                    tooltip = f"ローカルAI: 準備完了 ({addr_with_variant}) {model}".strip()
-                    with ui.element('div').classes('status-indicator ready').props(
-                        f'role="status" aria-live="polite" aria-label="{tooltip}"'
-                    ) as status_indicator:
-                        ui.element('div').classes('status-dot ready').props('aria-hidden="true"')
-                        with ui.column().classes('gap-0'):
-                            ui.label('準備完了').classes('text-xs')
-                            ui.label(addr_with_variant).classes('text-2xs opacity-80')
+                    tooltip = (
+                        f"ローカルAI: 準備完了 ({addr_with_variant}) {model}".strip()
+                    )
+                    with (
+                        ui.element("div")
+                        .classes("status-indicator ready")
+                        .props(
+                            f'role="status" aria-live="polite" aria-label="{tooltip}"'
+                        ) as status_indicator
+                    ):
+                        ui.element("div").classes("status-dot ready").props(
+                            'aria-hidden="true"'
+                        )
+                        with ui.column().classes("gap-0"):
+                            ui.label("準備完了").classes("text-xs")
+                            ui.label(addr_with_variant).classes("text-2xs opacity-80")
                     status_indicator.tooltip(tooltip)
                     return
 
                 if local_state == LocalAIState.STARTING:
-                    tooltip = '準備中: ローカルAIを起動しています'
-                    with ui.element('div').classes('status-indicator connecting').props(
-                        f'role="status" aria-live="polite" aria-label="{tooltip}"'
-                    ) as status_indicator:
-                        ui.element('div').classes('status-dot connecting').props('aria-hidden="true"')
-                        with ui.column().classes('gap-0'):
-                            ui.label('準備中...').classes('text-xs')
-                            ui.label('ローカルAIを起動しています').classes('text-2xs opacity-80')
+                    tooltip = "準備中: ローカルAIを起動しています"
+                    with (
+                        ui.element("div")
+                        .classes("status-indicator connecting")
+                        .props(
+                            f'role="status" aria-live="polite" aria-label="{tooltip}"'
+                        ) as status_indicator
+                    ):
+                        ui.element("div").classes("status-dot connecting").props(
+                            'aria-hidden="true"'
+                        )
+                        with ui.column().classes("gap-0"):
+                            ui.label("準備中...").classes("text-xs")
+                            ui.label("ローカルAIを起動しています").classes(
+                                "text-2xs opacity-80"
+                            )
                     status_indicator.tooltip(tooltip)
                     return
 
                 if local_state == LocalAIState.NOT_INSTALLED:
-                    tooltip = self.state.local_ai_error or 'ローカルAIが見つかりません'
-                    with ui.element('div').classes('status-indicator error').props(
-                        f'role="status" aria-live="polite" aria-label="{tooltip}"'
-                    ) as status_indicator:
-                        ui.element('div').classes('status-dot error').props('aria-hidden="true"')
-                        with ui.column().classes('gap-0'):
-                            ui.label('未インストール').classes('text-xs')
-                            ui.label('install_deps.bat を実行してください').classes('text-2xs opacity-80')
-                            with ui.row().classes('status-actions items-center gap-2 mt-1'):
+                    tooltip = self.state.local_ai_error or "ローカルAIが見つかりません"
+                    with (
+                        ui.element("div")
+                        .classes("status-indicator error")
+                        .props(
+                            f'role="status" aria-live="polite" aria-label="{tooltip}"'
+                        ) as status_indicator
+                    ):
+                        ui.element("div").classes("status-dot error").props(
+                            'aria-hidden="true"'
+                        )
+                        with ui.column().classes("gap-0"):
+                            ui.label("未インストール").classes("text-xs")
+                            ui.label("install_deps.bat を実行してください").classes(
+                                "text-2xs opacity-80"
+                            )
+                            with ui.row().classes(
+                                "status-actions items-center gap-2 mt-1"
+                            ):
                                 ui.button(
-                                    '再試行',
-                                    icon='refresh',
+                                    "再試行",
+                                    icon="refresh",
                                     on_click=lambda: _create_logged_task(
                                         self._ensure_local_ai_ready_async(),
                                         name="local_ai_retry",
                                     ),
-                                ).classes('status-action-btn').props('flat no-caps size=sm')
+                                ).classes("status-action-btn").props(
+                                    "flat no-caps size=sm"
+                                )
                     status_indicator.tooltip(tooltip)
                     return
 
-                tooltip = self.state.local_ai_error or 'ローカルAIでエラーが発生しました'
-                with ui.element('div').classes('status-indicator error').props(
-                    f'role="status" aria-live="polite" aria-label="{tooltip}"'
-                ) as status_indicator:
-                    ui.element('div').classes('status-dot error').props('aria-hidden="true"')
-                    with ui.column().classes('gap-0'):
-                        ui.label('エラー').classes('text-xs')
-                        ui.label((tooltip[:40] + '…') if len(tooltip) > 40 else tooltip).classes('text-2xs opacity-80')
-                        with ui.row().classes('status-actions items-center gap-2 mt-1'):
+                tooltip = (
+                    self.state.local_ai_error or "ローカルAIでエラーが発生しました"
+                )
+                with (
+                    ui.element("div")
+                    .classes("status-indicator error")
+                    .props(
+                        f'role="status" aria-live="polite" aria-label="{tooltip}"'
+                    ) as status_indicator
+                ):
+                    ui.element("div").classes("status-dot error").props(
+                        'aria-hidden="true"'
+                    )
+                    with ui.column().classes("gap-0"):
+                        ui.label("エラー").classes("text-xs")
+                        ui.label(
+                            (tooltip[:40] + "…") if len(tooltip) > 40 else tooltip
+                        ).classes("text-2xs opacity-80")
+                        with ui.row().classes("status-actions items-center gap-2 mt-1"):
                             ui.button(
-                                '再試行',
-                                icon='refresh',
+                                "再試行",
+                                icon="refresh",
                                 on_click=lambda: _create_logged_task(
                                     self._ensure_local_ai_ready_async(),
                                     name="local_ai_retry",
                                 ),
-                            ).classes('status-action-btn').props('flat no-caps size=sm')
+                            ).classes("status-action-btn").props("flat no-caps size=sm")
                 status_indicator.tooltip(tooltip)
                 return
 
@@ -8406,37 +9129,57 @@ class YakuLingoApp:
             if not copilot:
                 self.state.copilot_ready = False
                 self.state.connection_state = ConnectionState.CONNECTING
-                tooltip = '準備中: 翻訳の準備をしています'
-                with ui.element('div').classes('status-indicator connecting').props(
-                    f'role="status" aria-live="polite" aria-label="{tooltip}"'
-                ) as status_indicator:
-                    ui.element('div').classes('status-dot connecting').props('aria-hidden="true"')
-                    with ui.column().classes('gap-0'):
-                        ui.label('準備中...').classes('text-xs')
-                        ui.label('翻訳の準備をしています').classes('text-2xs opacity-80')
+                tooltip = "準備中: 翻訳の準備をしています"
+                with (
+                    ui.element("div")
+                    .classes("status-indicator connecting")
+                    .props(
+                        f'role="status" aria-live="polite" aria-label="{tooltip}"'
+                    ) as status_indicator
+                ):
+                    ui.element("div").classes("status-dot connecting").props(
+                        'aria-hidden="true"'
+                    )
+                    with ui.column().classes("gap-0"):
+                        ui.label("準備中...").classes("text-xs")
+                        ui.label("翻訳の準備をしています").classes(
+                            "text-2xs opacity-80"
+                        )
                 status_indicator.tooltip(tooltip)
                 return
 
             # Check real page state (URL + chat input) to avoid showing "ready" while login/session expired.
             from yakulingo.services.copilot_handler import CopilotHandler
-            from yakulingo.services.copilot_handler import ConnectionState as CopilotConnectionState
+            from yakulingo.services.copilot_handler import (
+                ConnectionState as CopilotConnectionState,
+            )
 
             error = copilot.last_connection_error or ""
-            is_connected = copilot.is_connected  # cached flag; validated by check_copilot_state below
+            is_connected = (
+                copilot.is_connected
+            )  # cached flag; validated by check_copilot_state below
 
             # While GPT mode is switching, avoid calling check_copilot_state with a short timeout.
             # The Playwright thread is busy and status checks can time out, leaving the UI stuck.
             if self._is_gpt_mode_setup_in_progress():
                 self.state.copilot_ready = False
                 self.state.connection_state = ConnectionState.CONNECTING
-                tooltip = '準備中: GPTモードを切り替えています'
-                with ui.element('div').classes('status-indicator connecting').props(
-                    f'role="status" aria-live="polite" aria-label="{tooltip}"'
-                ) as status_indicator:
-                    ui.element('div').classes('status-dot connecting').props('aria-hidden="true"')
-                    with ui.column().classes('gap-0'):
-                        ui.label('準備中...').classes('text-xs')
-                        ui.label('GPTモードを切り替えています').classes('text-2xs opacity-80')
+                tooltip = "準備中: GPTモードを切り替えています"
+                with (
+                    ui.element("div")
+                    .classes("status-indicator connecting")
+                    .props(
+                        f'role="status" aria-live="polite" aria-label="{tooltip}"'
+                    ) as status_indicator
+                ):
+                    ui.element("div").classes("status-dot connecting").props(
+                        'aria-hidden="true"'
+                    )
+                    with ui.column().classes("gap-0"):
+                        ui.label("準備中...").classes("text-xs")
+                        ui.label("GPTモードを切り替えています").classes(
+                            "text-2xs opacity-80"
+                        )
                 status_indicator.tooltip(tooltip)
                 return
 
@@ -8467,10 +9210,15 @@ class YakuLingoApp:
                 else:
                     try:
                         timeout_seconds = 2
-                        if (self._app_start_time
-                                and (now - self._app_start_time) < STARTUP_COPILOT_STATE_WINDOW_SEC):
+                        if (
+                            self._app_start_time
+                            and (now - self._app_start_time)
+                            < STARTUP_COPILOT_STATE_WINDOW_SEC
+                        ):
                             timeout_seconds = STARTUP_COPILOT_STATE_TIMEOUT_SEC
-                        copilot_state = copilot.check_copilot_state(timeout=timeout_seconds)
+                        copilot_state = copilot.check_copilot_state(
+                            timeout=timeout_seconds
+                        )
                         self._last_copilot_state = copilot_state
                         self._last_copilot_state_at = now
                         self._last_copilot_state_error = error
@@ -8492,58 +9240,82 @@ class YakuLingoApp:
             if copilot_state == CopilotConnectionState.READY:
                 self.state.copilot_ready = True
                 self.state.connection_state = ConnectionState.CONNECTED
-                tooltip = '準備完了: 翻訳できます'
+                tooltip = "準備完了: 翻訳できます"
                 if not copilot.is_gpt_mode_set:
-                    tooltip = '準備完了: 翻訳できます（GPTモード未設定）'
-                with ui.element('div').classes('status-indicator connected').props(
-                    f'role="status" aria-live="polite" aria-label="{tooltip}"'
-                ) as status_indicator:
-                    ui.element('div').classes('status-dot connected').props('aria-hidden="true"')
-                    with ui.column().classes('gap-0'):
-                        ui.label('準備完了').classes('text-xs')
+                    tooltip = "準備完了: 翻訳できます（GPTモード未設定）"
+                with (
+                    ui.element("div")
+                    .classes("status-indicator connected")
+                    .props(
+                        f'role="status" aria-live="polite" aria-label="{tooltip}"'
+                    ) as status_indicator
+                ):
+                    ui.element("div").classes("status-dot connected").props(
+                        'aria-hidden="true"'
+                    )
+                    with ui.column().classes("gap-0"):
+                        ui.label("準備完了").classes("text-xs")
                         if copilot.is_gpt_mode_set:
-                            ui.label('翻訳できます').classes('text-2xs opacity-80')
+                            ui.label("翻訳できます").classes("text-2xs opacity-80")
                         else:
-                            ui.label('翻訳できます（GPTモード未設定）').classes('text-2xs opacity-80')
+                            ui.label("翻訳できます（GPTモード未設定）").classes(
+                                "text-2xs opacity-80"
+                            )
                 status_indicator.tooltip(tooltip)
                 return
 
             # Not ready (yet) from here.
             self.state.copilot_ready = False
 
-            if (error == CopilotHandler.ERROR_LOGIN_REQUIRED
-                    or copilot_state == CopilotConnectionState.LOGIN_REQUIRED):
+            if (
+                error == CopilotHandler.ERROR_LOGIN_REQUIRED
+                or copilot_state == CopilotConnectionState.LOGIN_REQUIRED
+            ):
                 self.state.connection_state = ConnectionState.LOGIN_REQUIRED
-                tooltip = 'ログインが必要: ログイン後に翻訳できます'
-                with ui.element('div').classes('status-indicator login-required').props(
-                    f'role="status" aria-live="polite" aria-label="{tooltip}"'
-                ) as status_indicator:
-                    ui.element('div').classes('status-dot login-required').props('aria-hidden="true"')
-                    with ui.column().classes('gap-0'):
-                        ui.label('ログインが必要').classes('text-xs')
-                        ui.label('ログイン後に翻訳できます').classes('text-2xs opacity-80')
-                        with ui.row().classes('status-actions items-center gap-2 mt-1'):
+                tooltip = "ログインが必要: ログイン後に翻訳できます"
+                with (
+                    ui.element("div")
+                    .classes("status-indicator login-required")
+                    .props(
+                        f'role="status" aria-live="polite" aria-label="{tooltip}"'
+                    ) as status_indicator
+                ):
+                    ui.element("div").classes("status-dot login-required").props(
+                        'aria-hidden="true"'
+                    )
+                    with ui.column().classes("gap-0"):
+                        ui.label("ログインが必要").classes("text-xs")
+                        ui.label("ログイン後に翻訳できます").classes(
+                            "text-2xs opacity-80"
+                        )
+                        with ui.row().classes("status-actions items-center gap-2 mt-1"):
                             ui.button(
-                                'ログインを開く',
-                                icon='login',
+                                "ログインを開く",
+                                icon="login",
                                 on_click=lambda: _create_logged_task(
                                     self._show_login_browser(),
                                     name="show_login_browser",
                                 ),
-                            ).classes('status-action-btn').props('flat no-caps size=sm')
+                            ).classes("status-action-btn").props("flat no-caps size=sm")
                 status_indicator.tooltip(tooltip)
                 return
 
             if copilot_state == CopilotConnectionState.LOADING:
                 self.state.connection_state = ConnectionState.CONNECTING
-                tooltip = '準備中: Copilotを読み込み中'
-                with ui.element('div').classes('status-indicator connecting').props(
-                    f'role="status" aria-live="polite" aria-label="{tooltip}"'
-                ) as status_indicator:
-                    ui.element('div').classes('status-dot connecting').props('aria-hidden="true"')
-                    with ui.column().classes('gap-0'):
-                        ui.label('準備中...').classes('text-xs')
-                        ui.label('Copilotを読み込み中').classes('text-2xs opacity-80')
+                tooltip = "準備中: Copilotを読み込み中"
+                with (
+                    ui.element("div")
+                    .classes("status-indicator connecting")
+                    .props(
+                        f'role="status" aria-live="polite" aria-label="{tooltip}"'
+                    ) as status_indicator
+                ):
+                    ui.element("div").classes("status-dot connecting").props(
+                        'aria-hidden="true"'
+                    )
+                    with ui.column().classes("gap-0"):
+                        ui.label("準備中...").classes("text-xs")
+                        ui.label("Copilotを読み込み中").classes("text-2xs opacity-80")
                 status_indicator.tooltip(tooltip)
                 self._start_status_auto_refresh("copilot_loading")
                 return
@@ -8551,59 +9323,79 @@ class YakuLingoApp:
             if error == CopilotHandler.ERROR_EDGE_NOT_FOUND:
                 self.state.connection_state = ConnectionState.EDGE_NOT_RUNNING
                 self._clear_auto_open_cause("edge_not_running")
-                tooltip = 'Edgeが見つかりません: Edgeを起動してください'
-                with ui.element('div').classes('status-indicator error').props(
-                    f'role="status" aria-live="polite" aria-label="{tooltip}"'
-                ) as status_indicator:
-                    ui.element('div').classes('status-dot error').props('aria-hidden="true"')
-                    with ui.column().classes('gap-0'):
-                        ui.label('Edgeが見つかりません').classes('text-xs')
-                        with ui.row().classes('status-actions items-center gap-2 mt-1'):
+                tooltip = "Edgeが見つかりません: Edgeを起動してください"
+                with (
+                    ui.element("div")
+                    .classes("status-indicator error")
+                    .props(
+                        f'role="status" aria-live="polite" aria-label="{tooltip}"'
+                    ) as status_indicator
+                ):
+                    ui.element("div").classes("status-dot error").props(
+                        'aria-hidden="true"'
+                    )
+                    with ui.column().classes("gap-0"):
+                        ui.label("Edgeが見つかりません").classes("text-xs")
+                        with ui.row().classes("status-actions items-center gap-2 mt-1"):
                             ui.button(
-                                'Edgeを起動',
-                                icon='open_in_new',
+                                "Edgeを起動",
+                                icon="open_in_new",
                                 on_click=lambda: _create_logged_task(
                                     self._reconnect(),
                                     name="reconnect",
                                 ),
-                            ).classes('status-action-btn').props('flat no-caps size=sm')
+                            ).classes("status-action-btn").props("flat no-caps size=sm")
                 status_indicator.tooltip(tooltip)
                 return
 
-            if (error in (CopilotHandler.ERROR_CONNECTION_FAILED, CopilotHandler.ERROR_NETWORK)
-                    or (is_connected and copilot_state == CopilotConnectionState.ERROR)):
+            if error in (
+                CopilotHandler.ERROR_CONNECTION_FAILED,
+                CopilotHandler.ERROR_NETWORK,
+            ) or (is_connected and copilot_state == CopilotConnectionState.ERROR):
                 self.state.connection_state = ConnectionState.CONNECTION_FAILED
                 self._clear_auto_open_cause("edge_connection_failed")
-                tooltip = '接続に失敗: 再試行中...'
-                with ui.element('div').classes('status-indicator error').props(
-                    f'role="status" aria-live="polite" aria-label="{tooltip}"'
-                ) as status_indicator:
-                    ui.element('div').classes('status-dot error').props('aria-hidden="true"')
-                    with ui.column().classes('gap-0'):
-                        ui.label('接続に失敗').classes('text-xs')
-                        ui.label('再試行中...').classes('text-2xs opacity-80')
-                        with ui.row().classes('status-actions items-center gap-2 mt-1'):
+                tooltip = "接続に失敗: 再試行中..."
+                with (
+                    ui.element("div")
+                    .classes("status-indicator error")
+                    .props(
+                        f'role="status" aria-live="polite" aria-label="{tooltip}"'
+                    ) as status_indicator
+                ):
+                    ui.element("div").classes("status-dot error").props(
+                        'aria-hidden="true"'
+                    )
+                    with ui.column().classes("gap-0"):
+                        ui.label("接続に失敗").classes("text-xs")
+                        ui.label("再試行中...").classes("text-2xs opacity-80")
+                        with ui.row().classes("status-actions items-center gap-2 mt-1"):
                             ui.button(
-                                '再接続',
-                                icon='refresh',
+                                "再接続",
+                                icon="refresh",
                                 on_click=lambda: _create_logged_task(
                                     self._reconnect(),
                                     name="reconnect",
                                 ),
-                            ).classes('status-action-btn').props('flat no-caps size=sm')
+                            ).classes("status-action-btn").props("flat no-caps size=sm")
                 status_indicator.tooltip(tooltip)
                 return
 
             # Default: still preparing / connecting.
             self.state.connection_state = ConnectionState.CONNECTING
-            tooltip = '準備中: 翻訳の準備をしています'
-            with ui.element('div').classes('status-indicator connecting').props(
-                f'role="status" aria-live="polite" aria-label="{tooltip}"'
-            ) as status_indicator:
-                ui.element('div').classes('status-dot connecting').props('aria-hidden="true"')
-                with ui.column().classes('gap-0'):
-                    ui.label('準備中...').classes('text-xs')
-                    ui.label('翻訳の準備をしています').classes('text-2xs opacity-80')
+            tooltip = "準備中: 翻訳の準備をしています"
+            with (
+                ui.element("div")
+                .classes("status-indicator connecting")
+                .props(
+                    f'role="status" aria-live="polite" aria-label="{tooltip}"'
+                ) as status_indicator
+            ):
+                ui.element("div").classes("status-dot connecting").props(
+                    'aria-hidden="true"'
+                )
+                with ui.column().classes("gap-0"):
+                    ui.label("準備中...").classes("text-xs")
+                    ui.label("翻訳の準備をしています").classes("text-2xs opacity-80")
             status_indicator.tooltip(tooltip)
             if state_check_failed:
                 self._start_status_auto_refresh("copilot_state_check_failed")
@@ -8614,64 +9406,75 @@ class YakuLingoApp:
         # Primary action + hint
         @ui.refreshable
         def actions_container():
-            with ui.column().classes('sidebar-nav gap-2'):
+            with ui.column().classes("sidebar-nav gap-2"):
                 if self.state.text_translating:
                     ui.button(
-                        icon='close',
+                        icon="close",
                         on_click=self._cancel_text_translation,
-                    ).classes('btn-primary w-full sidebar-primary-btn').props(
+                    ).classes("btn-primary w-full sidebar-primary-btn").props(
                         'no-caps aria-label="キャンセル"'
-                    ).tooltip('キャンセル')
+                    ).tooltip("キャンセル")
                 else:
                     disabled = self.state.is_translating()
-                    btn_props = 'no-caps disable' if disabled else 'no-caps'
+                    btn_props = "no-caps disable" if disabled else "no-caps"
                     ui.button(
-                        icon='add',
+                        icon="add",
                         on_click=self._start_new_translation,
-                    ).classes('btn-primary w-full sidebar-primary-btn').props(
+                    ).classes("btn-primary w-full sidebar-primary-btn").props(
                         f'{btn_props} aria-label="新規翻訳"'
-                    ).tooltip('新規翻訳')
+                    ).tooltip("新規翻訳")
 
                 # Compact sidebar (rail) uses an icon-only history button; hidden by CSS in normal mode.
                 history_props = 'flat round aria-label="履歴"'
                 if self.state.is_translating():
-                    history_props += ' disable'
+                    history_props += " disable"
                 ui.button(
-                    icon='history',
+                    icon="history",
                     on_click=self._open_history_dialog,
-                ).classes('icon-btn icon-btn-tonal history-rail-btn').props(history_props).tooltip('履歴')
+                ).classes("icon-btn icon-btn-tonal history-rail-btn").props(
+                    history_props
+                ).tooltip("履歴")
                 browser_props = 'flat round aria-label="ブラウザを表示"'
                 if self.state.is_translating():
-                    browser_props += ' disable'
+                    browser_props += " disable"
                 ui.button(
-                    icon='open_in_new',
+                    icon="open_in_new",
                     on_click=lambda: _create_logged_task(
                         self._show_copilot_browser(),
                         name="show_copilot_browser",
                     ),
-                ).classes('icon-btn icon-btn-tonal browser-rail-btn').props(browser_props).tooltip('ブラウザを表示')
+                ).classes("icon-btn icon-btn-tonal browser-rail-btn").props(
+                    browser_props
+                ).tooltip("ブラウザを表示")
 
         self._tabs_container = actions_container
         actions_container()
 
-        ui.separator().classes('my-2 opacity-30')
+        ui.separator().classes("my-2 opacity-30")
 
         # History section
-        with ui.column().classes('sidebar-history flex-1'):
-            with ui.row().classes('items-center px-2 mb-2'):
-                ui.label('履歴').classes('font-semibold text-muted sidebar-section-title')
+        with ui.column().classes("sidebar-history flex-1"):
+            with ui.row().classes("items-center px-2 mb-2"):
+                ui.label("履歴").classes(
+                    "font-semibold text-muted sidebar-section-title"
+                )
 
-            with ui.element('div').classes('history-search-container px-2 mb-2'):
-                with ui.element('div').classes('history-search-box'):
-                    ui.icon('search').classes('history-search-icon')
-                    search_input = ui.input(
-                        placeholder='検索',
-                        value=self.state.history_query,
-                        on_change=lambda e: self._set_history_query(e.value),
-                    ).props('dense borderless clearable').classes('history-search-input')
+            with ui.element("div").classes("history-search-container px-2 mb-2"):
+                with ui.element("div").classes("history-search-box"):
+                    ui.icon("search").classes("history-search-icon")
+                    search_input = (
+                        ui.input(
+                            placeholder="検索",
+                            value=self.state.history_query,
+                            on_change=lambda e: self._set_history_query(e.value),
+                        )
+                        .props("dense borderless clearable")
+                        .classes("history-search-input")
+                    )
                     self._history_search_input = search_input
 
-            with ui.element('div').classes('history-filter-container px-2 mb-2'):
+            with ui.element("div").classes("history-filter-container px-2 mb-2"):
+
                 @ui.refreshable
                 def history_filters():
                     self._render_history_filters_contents()
@@ -8683,15 +9486,17 @@ class YakuLingoApp:
             def history_list():
                 entries = self._get_history_entries(MAX_HISTORY_DISPLAY)
                 if not entries:
-                    empty_label = '履歴がありません'
+                    empty_label = "履歴がありません"
                     if self.state.history_query:
-                        empty_label = '該当する履歴がありません'
-                    with ui.column().classes('w-full flex-1 items-center justify-center py-8 opacity-50'):
-                        ui.icon('history').classes('text-2xl')
-                        ui.label(empty_label).classes('text-xs mt-1')
+                        empty_label = "該当する履歴がありません"
+                    with ui.column().classes(
+                        "w-full flex-1 items-center justify-center py-8 opacity-50"
+                    ):
+                        ui.icon("history").classes("text-2xl")
+                        ui.label(empty_label).classes("text-xs mt-1")
                 else:
-                    with ui.scroll_area().classes('history-scroll'):
-                        with ui.column().classes('gap-1'):
+                    with ui.scroll_area().classes("history-scroll"):
+                        with ui.column().classes("gap-1"):
                             for entry in entries:
                                 self._create_history_item(entry)
 
@@ -8715,23 +9520,26 @@ class YakuLingoApp:
                 classes = f"{classes} {extra_classes}"
             if active:
                 classes += " active"
-            btn = ui.button(label, icon=icon, on_click=on_click).props('flat no-caps size=sm').classes(classes)
+            btn = (
+                ui.button(label, icon=icon, on_click=on_click)
+                .props("flat no-caps size=sm")
+                .classes(classes)
+            )
             if tooltip:
                 btn.tooltip(tooltip)
 
-        with ui.column().classes('history-filter-panel gap-1'):
-            with ui.row().classes('history-filter-row items-center gap-1 flex-wrap'):
+        with ui.column().classes("history-filter-panel gap-1"):
+            with ui.row().classes("history-filter-row items-center gap-1 flex-wrap"):
                 add_chip(
-                    '英訳',
-                    self.state.history_filter_output_language == 'en',
-                    lambda: self._toggle_history_filter_output_language('en'),
+                    "英訳",
+                    self.state.history_filter_output_language == "en",
+                    lambda: self._toggle_history_filter_output_language("en"),
                 )
                 add_chip(
-                    '和訳',
-                    self.state.history_filter_output_language == 'jp',
-                    lambda: self._toggle_history_filter_output_language('jp'),
+                    "和訳",
+                    self.state.history_filter_output_language == "jp",
+                    lambda: self._toggle_history_filter_output_language("jp"),
                 )
-
 
     def _ensure_history_dialog(self) -> None:
         """Create the history drawer (dialog) used in sidebar rail mode."""
@@ -8746,25 +9554,30 @@ class YakuLingoApp:
             self._history_dialog_list = None
 
         with ui.dialog() as dialog:
-            dialog.props('position=right')
-            with ui.card().classes('history-drawer-card'):
-                with ui.row().classes('items-center justify-between'):
-                    ui.label('履歴').classes('text-lg font-semibold')
-                    ui.button(icon='close', on_click=dialog.close).props(
+            dialog.props("position=right")
+            with ui.card().classes("history-drawer-card"):
+                with ui.row().classes("items-center justify-between"):
+                    ui.label("履歴").classes("text-lg font-semibold")
+                    ui.button(icon="close", on_click=dialog.close).props(
                         'flat round dense aria-label="閉じる"'
-                    ).classes('icon-btn')
+                    ).classes("icon-btn")
 
-                with ui.element('div').classes('history-search-container mt-2'):
-                    with ui.element('div').classes('history-search-box'):
-                        ui.icon('search').classes('history-search-icon')
-                        dialog_search = ui.input(
-                            placeholder='検索',
-                            value=self.state.history_query,
-                            on_change=lambda e: self._set_history_query(e.value),
-                        ).props('dense borderless clearable').classes('history-search-input')
+                with ui.element("div").classes("history-search-container mt-2"):
+                    with ui.element("div").classes("history-search-box"):
+                        ui.icon("search").classes("history-search-icon")
+                        dialog_search = (
+                            ui.input(
+                                placeholder="検索",
+                                value=self.state.history_query,
+                                on_change=lambda e: self._set_history_query(e.value),
+                            )
+                            .props("dense borderless clearable")
+                            .classes("history-search-input")
+                        )
                         self._history_dialog_search_input = dialog_search
 
-                with ui.element('div').classes('history-filter-container mt-2'):
+                with ui.element("div").classes("history-filter-container mt-2"):
+
                     @ui.refreshable
                     def history_dialog_filters():
                         self._render_history_filters_contents()
@@ -8772,22 +9585,24 @@ class YakuLingoApp:
                     self._history_dialog_filters = history_dialog_filters
                     history_dialog_filters()
 
-                ui.separator().classes('opacity-20')
+                ui.separator().classes("opacity-20")
 
                 @ui.refreshable
                 def history_drawer_list():
                     entries = self._get_history_entries(MAX_HISTORY_DRAWER_DISPLAY)
                     if not entries:
-                        empty_label = '履歴がありません'
+                        empty_label = "履歴がありません"
                         if self.state.history_query:
-                            empty_label = '該当する履歴がありません'
-                        with ui.column().classes('w-full flex-1 items-center justify-center py-10 opacity-60'):
-                            ui.icon('history').classes('text-2xl')
-                            ui.label(empty_label).classes('text-xs mt-1')
+                            empty_label = "該当する履歴がありません"
+                        with ui.column().classes(
+                            "w-full flex-1 items-center justify-center py-10 opacity-60"
+                        ):
+                            ui.icon("history").classes("text-2xl")
+                            ui.label(empty_label).classes("text-xs mt-1")
                         return
 
-                    with ui.scroll_area().classes('history-drawer-scroll'):
-                        with ui.column().classes('gap-1'):
+                    with ui.scroll_area().classes("history-drawer-scroll"):
+                        with ui.column().classes("gap-1"):
                             for entry in entries:
                                 self._create_history_item(entry, on_select=dialog.close)
 
@@ -8817,11 +9632,11 @@ class YakuLingoApp:
         """
         is_active = self.state.current_tab == tab
         disabled = self.state.is_translating()
-        classes = 'nav-item'
+        classes = "nav-item"
         if is_active:
-            classes += ' active'
+            classes += " active"
         if disabled:
-            classes += ' disabled'
+            classes += " disabled"
 
         def on_click():
             if self.state.is_translating():
@@ -8848,70 +9663,83 @@ class YakuLingoApp:
         if disabled:
             aria_props += ' aria-disabled="true"'
 
-        with ui.button(on_click=on_click).props(f'flat no-caps align=left {aria_props}').classes(classes) as btn:
-            ui.icon(icon).classes('text-lg')
-            ui.label(label).classes('flex-1')
+        with (
+            ui.button(on_click=on_click)
+            .props(f"flat no-caps align=left {aria_props}")
+            .classes(classes) as btn
+        ):
+            ui.icon(icon).classes("text-lg")
+            ui.label(label).classes("flex-1")
         self._nav_buttons[tab] = btn
 
     def _build_history_chips(self, entry: HistoryEntry) -> list[str]:
         chips: list[str] = []
 
         output_lang = entry.result.output_language or "en"
-        chips.append('日本語→英語' if output_lang == "en" else '英語→日本語')
+        chips.append("日本語→英語" if output_lang == "en" else "英語→日本語")
 
         return chips
 
-    def _create_history_item(self, entry: HistoryEntry, on_select: Callable[[], None] | None = None):
+    def _create_history_item(
+        self, entry: HistoryEntry, on_select: Callable[[], None] | None = None
+    ):
         """Create a history item with hover menu."""
         is_pinned = self._is_history_pinned(entry)
-        item_classes = 'history-item group history-card'
+        item_classes = "history-item group history-card"
         if is_pinned:
-            item_classes += ' pinned'
+            item_classes += " pinned"
 
         timestamp_label = ""
         try:
-            timestamp_label = datetime.fromisoformat(entry.timestamp).strftime('%m/%d %H:%M')
+            timestamp_label = datetime.fromisoformat(entry.timestamp).strftime(
+                "%m/%d %H:%M"
+            )
         except ValueError:
             timestamp_label = ""
 
-        with ui.element('div').classes(item_classes) as item:
+        with ui.element("div").classes(item_classes) as item:
+
             def load_entry():
                 self._load_from_history(entry)
                 if on_select is not None:
                     on_select()
 
-            item.on('click', load_entry)
+            item.on("click", load_entry)
             item.props('tabindex=0 role="button"')
             item.on(
-                'keydown',
+                "keydown",
                 load_entry,
-                js_handler='''(e) => {
+                js_handler="""(e) => {
                     if (e.key === "Enter" || e.key === " ") {
                         e.preventDefault();
                         emit(e);
                     }
-                }''',
+                }""",
             )
 
-            with ui.column().classes('history-card-content gap-1'):
-                with ui.row().classes('history-card-header items-center gap-2'):
-                    ui.icon('notes').classes('history-item-icon')
-                    with ui.row().classes('items-center gap-1 min-w-0 flex-1'):
+            with ui.column().classes("history-card-content gap-1"):
+                with ui.row().classes("history-card-header items-center gap-2"):
+                    ui.icon("notes").classes("history-item-icon")
+                    with ui.row().classes("items-center gap-1 min-w-0 flex-1"):
                         if is_pinned:
-                            ui.icon('push_pin').classes('history-pin-indicator')
-                        ui.label(entry.preview).classes('text-xs history-title')
+                            ui.icon("push_pin").classes("history-pin-indicator")
+                        ui.label(entry.preview).classes("text-xs history-title")
                     if timestamp_label:
-                        ui.label(timestamp_label).classes('history-time')
+                        ui.label(timestamp_label).classes("history-time")
 
                 if entry.result.options:
-                    ui.label(entry.result.options[0].text).classes('text-2xs text-muted history-preview')
+                    ui.label(entry.result.options[0].text).classes(
+                        "text-2xs text-muted history-preview"
+                    )
 
                 chips = self._build_history_chips(entry)
 
                 if chips:
-                    with ui.row().classes('history-meta-row items-center gap-1 flex-wrap'):
+                    with ui.row().classes(
+                        "history-meta-row items-center gap-1 flex-wrap"
+                    ):
                         for chip in chips:
-                            ui.label(chip).classes('history-chip')
+                            ui.label(chip).classes("history-chip")
 
             def delete_entry(item_element=item):
                 self.state.delete_history_entry(entry)
@@ -8924,18 +9752,22 @@ class YakuLingoApp:
                 if remaining >= MAX_HISTORY_DISPLAY:
                     self._refresh_history()
 
-            with ui.row().classes('history-action-row items-center gap-1 flex-wrap'):
-                pin_btn = ui.button(
-                    icon='push_pin',
-                    on_click=lambda: self._toggle_history_pin(entry),
-                ).props('flat dense round size=xs @click.stop').classes(
-                    f'history-action-btn history-pin-btn {"active" if is_pinned else ""}'
+            with ui.row().classes("history-action-row items-center gap-1 flex-wrap"):
+                pin_btn = (
+                    ui.button(
+                        icon="push_pin",
+                        on_click=lambda: self._toggle_history_pin(entry),
+                    )
+                    .props("flat dense round size=xs @click.stop")
+                    .classes(
+                        f"history-action-btn history-pin-btn {'active' if is_pinned else ''}"
+                    )
                 )
-                pin_btn.tooltip('ピンを外す' if is_pinned else 'ピン留め')
+                pin_btn.tooltip("ピンを外す" if is_pinned else "ピン留め")
 
-                ui.button(icon='close', on_click=delete_entry).props(
-                    'flat dense round size=xs @click.stop'
-                ).classes('history-action-btn history-delete-btn')
+                ui.button(icon="close", on_click=delete_entry).props(
+                    "flat dense round size=xs @click.stop"
+                ).classes("history-action-btn history-delete-btn")
 
     def _is_file_panel_active(self) -> bool:
         """Return True when file panel should be visible."""
@@ -8944,29 +9776,39 @@ class YakuLingoApp:
     def _get_main_area_classes(self) -> str:
         """Get dynamic CSS classes for main-area based on current state."""
         from yakulingo.ui.state import TextViewState
-        classes = ['main-area']
+
+        classes = ["main-area"]
 
         if self._is_file_panel_active():
-            classes.append('file-mode')
-        elif self.state.text_view_state == TextViewState.RESULT or self.state.text_translating:
+            classes.append("file-mode")
+        elif (
+            self.state.text_view_state == TextViewState.RESULT
+            or self.state.text_translating
+        ):
             # Show results panel in RESULT view state or when translating
-            classes.append('has-results')
+            classes.append("has-results")
 
-        return ' '.join(classes)
+        return " ".join(classes)
 
     def _create_main_content(self):
         """Create main content area with dynamic column layout."""
         # Lazy import UI components for faster startup
-        from yakulingo.ui.components.text_panel import create_text_input_panel, create_text_result_panel
+        from yakulingo.ui.components.text_panel import (
+            create_text_input_panel,
+            create_text_result_panel,
+        )
         from yakulingo.ui.components.file_panel import create_file_panel
 
         @ui.refreshable
         def login_banner():
             copilot = self._copilot
-            last_error = getattr(copilot, "last_connection_error", None) if copilot else None
+            last_error = (
+                getattr(copilot, "last_connection_error", None) if copilot else None
+            )
             login_required_error = "login_required"
             try:
                 from yakulingo.services.copilot_handler import CopilotHandler
+
                 login_required_error = CopilotHandler.ERROR_LOGIN_REQUIRED
             except Exception:
                 pass
@@ -8979,32 +9821,32 @@ class YakuLingoApp:
             ):
                 return
 
-            with ui.element('div').classes('w-full warning-box mb-3'):
-                with ui.row().classes('items-start justify-between gap-3 w-full'):
-                    with ui.row().classes('items-start gap-2 flex-1'):
-                        ui.icon('warning').classes('text-warning text-lg mt-0.5')
-                        with ui.column().classes('gap-0.5'):
-                            ui.label('Copilotへのログインが必要です').classes(
-                                'text-sm font-semibold text-on-warning-container'
+            with ui.element("div").classes("w-full warning-box mb-3"):
+                with ui.row().classes("items-start justify-between gap-3 w-full"):
+                    with ui.row().classes("items-start gap-2 flex-1"):
+                        ui.icon("warning").classes("text-warning text-lg mt-0.5")
+                        with ui.column().classes("gap-0.5"):
+                            ui.label("Copilotへのログインが必要です").classes(
+                                "text-sm font-semibold text-on-warning-container"
                             )
-                            ui.label('ブラウザでログインしてください。ログイン後に翻訳できます。').classes(
-                                'text-xs text-on-warning-container opacity-80'
-                            )
-                    with ui.row().classes('items-center gap-2 shrink-0'):
+                            ui.label(
+                                "ブラウザでログインしてください。ログイン後に翻訳できます。"
+                            ).classes("text-xs text-on-warning-container opacity-80")
+                    with ui.row().classes("items-center gap-2 shrink-0"):
                         ui.button(
-                            'Edgeを前面表示',
+                            "Edgeを前面表示",
                             on_click=lambda: _create_logged_task(
                                 self._show_login_browser(),
                                 name="show_login_browser",
                             ),
-                        ).classes('btn-outline').props('no-caps')
+                        ).classes("btn-outline").props("no-caps")
                         ui.button(
-                            '再接続',
+                            "再接続",
                             on_click=lambda: _create_logged_task(
                                 self._reconnect(),
                                 name="reconnect",
                             ),
-                        ).classes('btn-text').props('no-caps')
+                        ).classes("btn-text").props("no-caps")
 
         self._login_banner = login_banner
 
@@ -9030,7 +9872,7 @@ class YakuLingoApp:
             if not self._is_file_panel_active():
                 # 2-column layout for text translation
                 # Input panel (shown in INPUT state, hidden in RESULT state via CSS)
-                with ui.column().classes('input-panel'):
+                with ui.column().classes("input-panel"):
                     login_banner()
                     create_text_input_panel(
                         state=self.state,
@@ -9047,7 +9889,8 @@ class YakuLingoApp:
                         text_char_limit=TEXT_TRANSLATION_CHAR_LIMIT,
                         batch_char_limit=(
                             self.settings.local_ai_max_chars_per_batch
-                            if self.state.translation_backend == TranslationBackend.LOCAL
+                            if self.state.translation_backend
+                            == TranslationBackend.LOCAL
                             else self.settings.max_chars_per_batch
                         ),
                         on_output_language_override=self._set_text_output_language_override,
@@ -9059,15 +9902,15 @@ class YakuLingoApp:
                     )
 
                 # Result panel (right column - shown when has results)
-                with ui.column().classes('result-panel'):
+                with ui.column().classes("result-panel"):
                     login_banner()
                     result_panel_content()
             else:
                 # File panel: 2-column layout (sidebar + centered file panel)
                 # Use input-panel class with scroll_area for reliable scrolling
-                with ui.column().classes('input-panel file-panel-container'):
-                    with ui.scroll_area().classes('file-panel-scroll'):
-                        with ui.column().classes('w-full max-w-2xl mx-auto py-8'):
+                with ui.column().classes("input-panel file-panel-container"):
+                    with ui.scroll_area().classes("file-panel-scroll"):
+                        with ui.column().classes("w-full max-w-2xl mx-auto py-8"):
                             login_banner()
                             create_file_panel(
                                 state=self.state,
@@ -9111,6 +9954,7 @@ class YakuLingoApp:
             return
         try:
             from yakulingo.services.translation_service import language_detector
+
             detected_language, reason = language_detector.detect_local_with_reason(text)
             self.state.text_detected_language = detected_language
             self.state.text_detected_language_reason = reason
@@ -9203,7 +10047,11 @@ class YakuLingoApp:
         detection_output_label = refs.get("detection_output_label")
 
         override = self.state.text_output_language_override
-        for key, expected in (("override_auto", None), ("override_en", "en"), ("override_jp", "jp")):
+        for key, expected in (
+            ("override_auto", None),
+            ("override_en", "en"),
+            ("override_jp", "jp"),
+        ):
             btn = refs.get(key)
             if not btn:
                 continue
@@ -9250,7 +10098,9 @@ class YakuLingoApp:
 
         summary_override_chip = refs.get("summary_override_chip")
         if summary_override_chip:
-            summary_override_chip.set_visibility(self.state.text_output_language_override in {"en", "jp"})
+            summary_override_chip.set_visibility(
+                self.state.text_output_language_override in {"en", "jp"}
+            )
 
         split_panel = refs.get("split_panel")
         split_preview = refs.get("split_preview")
@@ -9262,7 +10112,9 @@ class YakuLingoApp:
 
         if char_count > batch_limit:
             split_panel.set_visibility(True)
-            chunks = self._split_text_for_translation(self.state.source_text, batch_limit)
+            chunks = self._split_text_for_translation(
+                self.state.source_text, batch_limit
+            )
             if split_count:
                 split_count.set_text(f"{len(chunks)} 分割 / {batch_limit:,} 字上限")
             if split_preview:
@@ -9316,15 +10168,15 @@ class YakuLingoApp:
 
         # Check if glossary file exists
         if not self._glossary_path.exists():
-            ui.notify('用語集が見つかりません', type='warning')
+            ui.notify("用語集が見つかりません", type="warning")
             return
 
         # Open the file
         open_file(self._glossary_path)
         ui.notify(
-            '用語集を開きました。編集後は保存してから翻訳してください',
-            type='info',
-            timeout=5000
+            "用語集を開きました。編集後は保存してから翻訳してください",
+            type="info",
+            timeout=5000,
         )
 
         # Cooldown: prevent rapid re-clicking by refreshing UI
@@ -9339,15 +10191,15 @@ class YakuLingoApp:
 
         # Check if file exists
         if not rules_path.exists():
-            ui.notify('翻訳ルールファイルが見つかりません', type='warning')
+            ui.notify("翻訳ルールファイルが見つかりません", type="warning")
             return
 
         # Open the file
         open_file(rules_path)
         ui.notify(
-            '翻訳ルールを開きました。編集後は保存してから翻訳してください',
-            type='info',
-            timeout=5000
+            "翻訳ルールを開きました。編集後は保存してから翻訳してください",
+            type="info",
+            timeout=5000,
         )
 
         # Cooldown: prevent rapid re-clicking
@@ -9406,7 +10258,9 @@ class YakuLingoApp:
 
     def _set_translation_backend(self, backend: TranslationBackend) -> None:
         """Switch translation backend (Copilot / Local AI) and persist to user settings."""
-        if backend == TranslationBackend.COPILOT and not getattr(self.settings, "copilot_enabled", True):
+        if backend == TranslationBackend.COPILOT and not getattr(
+            self.settings, "copilot_enabled", True
+        ):
             logger.info("Copilot backend disabled by settings; ignoring switch")
             return
         if backend == self.state.translation_backend:
@@ -9415,7 +10269,9 @@ class YakuLingoApp:
             client = self._get_active_client()
             if client:
                 with client:
-                    ui.notify('翻訳中はバックエンドを切り替えできません', type='warning')
+                    ui.notify(
+                        "翻訳中はバックエンドを切り替えできません", type="warning"
+                    )
             return
 
         self.state.translation_backend = backend
@@ -9428,7 +10284,7 @@ class YakuLingoApp:
         client = self._get_active_client()
         if client:
             with client:
-                self._batch_refresh({'status', 'button', 'tabs'})
+                self._batch_refresh({"status", "button", "tabs"})
 
         if backend == TranslationBackend.LOCAL:
             self.state.local_ai_state = LocalAIState.STARTING
@@ -9568,10 +10424,10 @@ class YakuLingoApp:
                     if self._client:
                         with self._client:
                             ui.notify(
-                                '準備中です（GPTモード切替中）...',
-                                type='info',
-                                position='bottom-right',
-                                timeout=2000
+                                "準備中です（GPTモード切替中）...",
+                                type="info",
+                                position="bottom-right",
+                                timeout=2000,
                             )
                     return False
             else:
@@ -9586,10 +10442,10 @@ class YakuLingoApp:
             if self._client:
                 with self._client:
                     ui.notify(
-                        'ログイン完了を待っています...',
-                        type='info',
-                        position='bottom-right',
-                        timeout=2000
+                        "ログイン完了を待っています...",
+                        type="info",
+                        position="bottom-right",
+                        timeout=2000,
                     )
             return False
 
@@ -9603,7 +10459,7 @@ class YakuLingoApp:
         Args:
             message: Error message to display
         """
-        ui.notify(f'エラー: {message}', type='negative')
+        ui.notify(f"エラー: {message}", type="negative")
 
     def _notify_reference_warnings(self, result: TextTranslationResult) -> None:
         metadata = result.metadata
@@ -9627,9 +10483,9 @@ class YakuLingoApp:
             return
 
         if len(messages) == 1:
-            ui.notify(messages[0], type='warning')
+            ui.notify(messages[0], type="warning")
         else:
-            ui.notify(f"{messages[0]}（他{len(messages) - 1}件）", type='warning')
+            ui.notify(f"{messages[0]}（他{len(messages) - 1}件）", type="warning")
 
     def _notify_warning_summary(self, warnings: list[str]) -> None:
         messages: list[str] = []
@@ -9647,11 +10503,13 @@ class YakuLingoApp:
             return
 
         if len(messages) == 1:
-            ui.notify(messages[0], type='warning')
+            ui.notify(messages[0], type="warning")
         else:
-            ui.notify(f"{messages[0]}（他{len(messages) - 1}件）", type='warning')
+            ui.notify(f"{messages[0]}（他{len(messages) - 1}件）", type="warning")
 
-    def _on_text_translation_complete(self, client, error_message: Optional[str] = None):
+    def _on_text_translation_complete(
+        self, client, error_message: Optional[str] = None
+    ):
         """Handle text translation completion with UI updates.
 
         Args:
@@ -9662,13 +10520,13 @@ class YakuLingoApp:
         self.state.text_back_translating = False
         with client:
             if error_message == "翻訳がキャンセルされました":
-                ui.notify('キャンセルしました', type='info')
+                ui.notify("キャンセルしました", type="info")
             elif error_message:
                 self._notify_error(error_message)
             elif self.state.text_result:
                 self._notify_reference_warnings(self.state.text_result)
             # Batch refresh: result panel, button state, status, and tabs in one operation
-            self._batch_refresh({'result', 'button', 'status', 'tabs'})
+            self._batch_refresh({"result", "button", "status", "tabs"})
 
     # =========================================================================
     # Section 6: Text Translation
@@ -9743,12 +10601,18 @@ class YakuLingoApp:
             if smoothed_rate is None:
                 smoothed_rate = instant_rate
             else:
-                smoothed_rate = smoothing * instant_rate + (1 - smoothing) * smoothed_rate
+                smoothed_rate = (
+                    smoothing * instant_rate + (1 - smoothing) * smoothed_rate
+                )
 
             last_time = now
             last_progress = current
 
-            if (now - start) < min_elapsed or current < min_progress or smoothed_rate <= 0:
+            if (
+                (now - start) < min_elapsed
+                or current < min_progress
+                or smoothed_rate <= 0
+            ):
                 return None
 
             eta = (1 - current) / smoothed_rate
@@ -9797,10 +10661,16 @@ class YakuLingoApp:
 
         detail_text = phase_detail or ""
         if phase_count_text:
-            detail_text = f"{detail_text} ・ {phase_count_text}" if detail_text else phase_count_text
+            detail_text = (
+                f"{detail_text} ・ {phase_count_text}"
+                if detail_text
+                else phase_count_text
+            )
         return detail_text
 
-    def _set_text_output_language_override(self, output_language: Optional[str]) -> None:
+    def _set_text_output_language_override(
+        self, output_language: Optional[str]
+    ) -> None:
         self.state.text_output_language_override = output_language
         self._update_text_input_metrics()
 
@@ -9832,7 +10702,7 @@ class YakuLingoApp:
                     current = []
                     current_len = 0
                 for idx in range(0, part_len, limit):
-                    chunks.append(part[idx: idx + limit])
+                    chunks.append(part[idx : idx + limit])
                 continue
 
             add_len = part_len + (2 if current else 0)
@@ -9858,7 +10728,9 @@ class YakuLingoApp:
         effective_detected_language: str,
     ) -> TextTranslationResult:
         output_language = "en" if effective_detected_language == "日本語" else "jp"
-        error_messages = [res.error_message for res in chunk_results if res.error_message]
+        error_messages = [
+            res.error_message for res in chunk_results if res.error_message
+        ]
         if error_messages:
             return TextTranslationResult(
                 source_text=source_text,
@@ -9918,17 +10790,23 @@ class YakuLingoApp:
                     style = option.style or DEFAULT_TEXT_STYLE
                     options_by_style.setdefault(style, []).append(option.text)
                     if option.explanation:
-                        explanations_by_style.setdefault(style, []).append(option.explanation)
+                        explanations_by_style.setdefault(style, []).append(
+                            option.explanation
+                        )
 
             style_order = ["standard", "concise", "minimal"]
             combined_options: list[TranslationOption] = []
             for style in style_order:
                 if style in options_by_style:
-                    combined_options.append(TranslationOption(
-                        text="\n\n".join(options_by_style[style]),
-                        explanation="\n\n".join(explanations_by_style.get(style, [])),
-                        style=style,
-                    ))
+                    combined_options.append(
+                        TranslationOption(
+                            text="\n\n".join(options_by_style[style]),
+                            explanation="\n\n".join(
+                                explanations_by_style.get(style, [])
+                            ),
+                            style=style,
+                        )
+                    )
 
             if not combined_options:
                 return TextTranslationResult(
@@ -9979,14 +10857,14 @@ class YakuLingoApp:
         """Open file picker directly to attach a reference file (glossary, style guide, etc.)"""
         # Use Quasar's pickFiles() method to open file picker directly (no dialog)
         if self._reference_upload:
-            self._reference_upload.run_method('pickFiles')
+            self._reference_upload.run_method("pickFiles")
 
     def _open_translation_file_picker(self) -> None:
         """Open file picker for file translation (same handler as drag & drop)."""
         if self.state.is_translating():
             return
         if self._global_drop_upload:
-            self._global_drop_upload.run_method('pickFiles')
+            self._global_drop_upload.run_method("pickFiles")
 
     async def _handle_reference_upload(self, e):
         """Handle file upload from the hidden upload component."""
@@ -9998,21 +10876,21 @@ class YakuLingoApp:
         try:
             uploaded_path = None
             # NiceGUI 3.3+ uses e.file with FileUpload object
-            if hasattr(e, 'file'):
+            if hasattr(e, "file"):
                 # NiceGUI 3.x: SmallFileUpload has _data, LargeFileUpload has _path
                 file_obj = e.file
                 name = file_obj.name
-                if hasattr(file_obj, '_path'):
+                if hasattr(file_obj, "_path"):
                     # LargeFileUpload: file is saved to temp directory
                     uploaded_path = temp_file_manager.create_temp_file_from_path(
                         Path(file_obj._path),
                         name,
                     )
-                elif hasattr(file_obj, '_data'):
+                elif hasattr(file_obj, "_data"):
                     # SmallFileUpload: data is in memory
                     content = file_obj._data
                     uploaded_path = temp_file_manager.create_temp_file(content, name)
-                elif hasattr(file_obj, 'read'):
+                elif hasattr(file_obj, "read"):
                     # Fallback: use async read() method
                     content = await file_obj.read()
                     uploaded_path = temp_file_manager.create_temp_file(content, name)
@@ -10029,23 +10907,29 @@ class YakuLingoApp:
                 uploaded_path = temp_file_manager.create_temp_file(content, name)
             # Add to reference files
             self.state.reference_files.append(uploaded_path)
-            logger.info("Reference file added: %s, total: %d", name, len(self.state.reference_files))
+            logger.info(
+                "Reference file added: %s, total: %d",
+                name,
+                len(self.state.reference_files),
+            )
             if client:
                 with client:
-                    ui.notify(f'参照ファイルを追加しました: {name}', type='positive')
+                    ui.notify(f"参照ファイルを追加しました: {name}", type="positive")
                     # Refresh UI to show attached file indicator
                     self._refresh_content()
                     self._focus_text_input()
         except (OSError, AttributeError) as err:
             if client:
                 with client:
-                    ui.notify(f'ファイルの読み込みに失敗しました: {err}', type='negative')
+                    ui.notify(
+                        f"ファイルの読み込みに失敗しました: {err}", type="negative"
+                    )
 
     def _remove_reference_file(self, index: int):
         """Remove a reference file by index"""
         if 0 <= index < len(self.state.reference_files):
             removed = self.state.reference_files.pop(index)
-            ui.notify(f'削除しました: {removed.name}', type='info')
+            ui.notify(f"削除しました: {removed.name}", type="info")
             self._refresh_content()
 
     async def _retry_translation(self):
@@ -10088,9 +10972,9 @@ class YakuLingoApp:
         # Notify user (inside client context for proper UI update)
         with client:
             ui.notify(
-                f'テキストが長いため（{len(text):,}文字）、ファイル翻訳で処理します',
-                type='info',
-                position='top',
+                f"テキストが長いため（{len(text):,}文字）、ファイル翻訳で処理します",
+                type="info",
+                position="top",
                 timeout=3000,
             )
 
@@ -10104,11 +10988,11 @@ class YakuLingoApp:
 
         # Create temporary file
         with tempfile.NamedTemporaryFile(
-            mode='w',
-            suffix='.txt',
+            mode="w",
+            suffix=".txt",
             delete=False,
-            encoding='utf-8',
-            prefix='yakulingo_',
+            encoding="utf-8",
+            prefix="yakulingo_",
         ) as f:
             f.write(text)
             temp_path = Path(f.name)
@@ -10121,7 +11005,7 @@ class YakuLingoApp:
             self.state.file_output_language = output_language
             # Get file info asynchronously to avoid blocking UI
             self.state.file_info = await asyncio.to_thread(
-                self.translation_service.processors['.txt'].get_file_info, temp_path
+                self.translation_service.processors[".txt"].get_file_info, temp_path
             )
             self.state.source_text = ""  # Clear text input
 
@@ -10142,7 +11026,7 @@ class YakuLingoApp:
         except Exception as e:
             logger.exception("Long text translation error: %s", e)
             with client:
-                ui.notify(f'エラー: {e}', type='negative')
+                ui.notify(f"エラー: {e}", type="negative")
 
         finally:
             # Clean up temp file (after translation or on error)
@@ -10161,7 +11045,9 @@ class YakuLingoApp:
         if not source_text.strip():
             return
 
-        trace_id = self._active_translation_trace_id or f"text-split-{uuid.uuid4().hex[:8]}"
+        trace_id = (
+            self._active_translation_trace_id or f"text-split-{uuid.uuid4().hex[:8]}"
+        )
         self._active_translation_trace_id = trace_id
 
         reference_files = self._get_effective_reference_files()
@@ -10169,7 +11055,9 @@ class YakuLingoApp:
         with self._client_lock:
             client = self._client
             if not client:
-                logger.warning("Translation [%s] aborted: no client connected", trace_id)
+                logger.warning(
+                    "Translation [%s] aborted: no client connected", trace_id
+                )
                 self._active_translation_trace_id = None
                 return
 
@@ -10198,7 +11086,9 @@ class YakuLingoApp:
             )
             self.state.text_detected_language = detected_language
             self.state.text_detected_language_reason = reason
-            effective_detected_language = self._resolve_effective_detected_language(detected_language)
+            effective_detected_language = self._resolve_effective_detected_language(
+                detected_language
+            )
 
             with client:
                 self._refresh_result_panel()
@@ -10220,7 +11110,9 @@ class YakuLingoApp:
             def on_chunk(partial_text: str) -> None:
                 nonlocal last_preview_update, current_chunk_index
                 if total_chunks > 1 and current_chunk_index > 0:
-                    preview_text = f"[{current_chunk_index}/{total_chunks}] {partial_text}"
+                    preview_text = (
+                        f"[{current_chunk_index}/{total_chunks}] {partial_text}"
+                    )
                 else:
                     preview_text = partial_text
                 self.state.text_streaming_preview = preview_text
@@ -10242,29 +11134,40 @@ class YakuLingoApp:
                             # Render streaming block on first chunk (captures label reference)
                             if self._streaming_preview_label is None:
                                 self._refresh_result_panel()
-                                self._scroll_result_panel_to_bottom(client, force_follow=True)
+                                self._scroll_result_panel_to_bottom(
+                                    client, force_follow=True
+                                )
                             if self._streaming_preview_label is not None:
                                 self._streaming_preview_label.set_text(text_to_show)
                                 self._scroll_result_panel_to_bottom(client)
                     except Exception:
-                        logger.debug("Split translation streaming preview refresh failed", exc_info=True)
+                        logger.debug(
+                            "Split translation streaming preview refresh failed",
+                            exc_info=True,
+                        )
 
                 loop.call_soon_threadsafe(update_streaming_preview)
 
             def translate_chunks() -> TextTranslationResult:
                 from yakulingo.services.copilot_handler import TranslationCancelledError
+
                 chunk_results: list[TextTranslationResult] = []
                 nonlocal current_chunk_index
                 for idx, chunk in enumerate(chunks, start=1):
-                    if self.translation_service and self.translation_service._cancel_event.is_set():
+                    if (
+                        self.translation_service
+                        and self.translation_service._cancel_event.is_set()
+                    ):
                         raise TranslationCancelledError
                     current_chunk_index = idx
-                    chunk_result = self.translation_service.translate_text_with_style_comparison(
-                        chunk,
-                        reference_files,
-                        None,
-                        effective_detected_language,
-                        on_chunk,
+                    chunk_result = (
+                        self.translation_service.translate_text_with_style_comparison(
+                            chunk,
+                            reference_files,
+                            None,
+                            effective_detected_language,
+                            on_chunk,
+                        )
                     )
                     chunk_results.append(chunk_result)
                 return self._merge_chunk_results(
@@ -10283,6 +11186,7 @@ class YakuLingoApp:
 
             if result and result.options:
                 from yakulingo.ui.state import TextViewState
+
                 result.metadata = result.metadata or {}
                 result.metadata["split_translation"] = True
                 self.state.text_result = result
@@ -10332,7 +11236,12 @@ class YakuLingoApp:
 
         trace_id = self._active_translation_trace_id or f"text-{uuid.uuid4().hex[:8]}"
         self._active_translation_trace_id = trace_id
-        logger.info("[TIMING] Translation [%s] button clicked at: %.3f (chars=%d)", trace_id, button_click_time, len(source_text))
+        logger.info(
+            "[TIMING] Translation [%s] button clicked at: %.3f (chars=%d)",
+            trace_id,
+            button_click_time,
+            len(source_text),
+        )
 
         # Check text length limit - switch to file translation for long text
         if len(source_text) > TEXT_TRANSLATION_CHAR_LIMIT:
@@ -10356,7 +11265,9 @@ class YakuLingoApp:
         with self._client_lock:
             client = self._client
             if not client:
-                logger.warning("Translation [%s] aborted: no client connected", trace_id)
+                logger.warning(
+                    "Translation [%s] aborted: no client connected", trace_id
+                )
                 self._active_translation_trace_id = None
                 return
 
@@ -10387,7 +11298,12 @@ class YakuLingoApp:
             # This should match when the user sees the loading spinner
             start_time = time.monotonic()
             prep_time = start_time - button_click_time
-            logger.info("[TIMING] Translation [%s] start_time set: %.3f (prep_time: %.3fs since button click)", trace_id, start_time, prep_time)
+            logger.info(
+                "[TIMING] Translation [%s] start_time set: %.3f (prep_time: %.3fs since button click)",
+                trace_id,
+                start_time,
+                prep_time,
+            )
 
             # Step 1: Detect language using Copilot
             detected_language, detected_reason = await asyncio.to_thread(
@@ -10396,25 +11312,37 @@ class YakuLingoApp:
             )
 
             lang_detect_elapsed = time.monotonic() - start_time
-            logger.info("[TIMING] Translation [%s] language detected in %.3fs: %s", trace_id, lang_detect_elapsed, detected_language)
+            logger.info(
+                "[TIMING] Translation [%s] language detected in %.3fs: %s",
+                trace_id,
+                lang_detect_elapsed,
+                detected_language,
+            )
 
             # Update UI with detected language
             self.state.text_detected_language = detected_language
             self.state.text_detected_language_reason = detected_reason
-            effective_detected_language = self._resolve_effective_detected_language(detected_language)
+            effective_detected_language = self._resolve_effective_detected_language(
+                detected_language
+            )
             with client:
                 self._refresh_result_panel()  # Only refresh result panel
 
             # Yield control again before translation
             await asyncio.sleep(0)
-            if self.translation_service and self.translation_service._cancel_event.is_set():
+            if (
+                self.translation_service
+                and self.translation_service._cancel_event.is_set()
+            ):
                 raise TranslationCancelledError
 
             # Step 2: Translate with pre-detected language (skip detection in translate_text_with_options)
-            style_order = ['standard', 'concise', 'minimal']
+            style_order = ["standard", "concise", "minimal"]
             current_style = DEFAULT_TEXT_STYLE
             if current_style in style_order:
-                style_order = [s for s in style_order if s != current_style] + [current_style]
+                style_order = [s for s in style_order if s != current_style] + [
+                    current_style
+                ]
 
             # Streaming preview (AI chat style): update result panel with partial output as it arrives.
             loop = asyncio.get_running_loop()
@@ -10442,7 +11370,9 @@ class YakuLingoApp:
                             # Render streaming block on first chunk (captures label reference)
                             if self._streaming_preview_label is None:
                                 self._refresh_result_panel()
-                                self._scroll_result_panel_to_bottom(client, force_follow=True)
+                                self._scroll_result_panel_to_bottom(
+                                    client, force_follow=True
+                                )
                             if self._streaming_preview_label is not None:
                                 self._streaming_preview_label.set_text(partial_text)
                                 self._scroll_result_panel_to_bottom(client)
@@ -10465,11 +11395,20 @@ class YakuLingoApp:
             # Calculate elapsed time
             end_time = time.monotonic()
             elapsed_time = end_time - start_time
-            logger.info("[TIMING] Translation [%s] end_time: %.3f, elapsed_time: %.3fs", trace_id, end_time, elapsed_time)
+            logger.info(
+                "[TIMING] Translation [%s] end_time: %.3f, elapsed_time: %.3fs",
+                trace_id,
+                end_time,
+                elapsed_time,
+            )
             self.state.text_translation_elapsed_time = elapsed_time
-            logger.info("[TIMING] Translation [%s] state.text_translation_elapsed_time set to: %.3fs", trace_id, self.state.text_translation_elapsed_time)
+            logger.info(
+                "[TIMING] Translation [%s] state.text_translation_elapsed_time set to: %.3fs",
+                trace_id,
+                self.state.text_translation_elapsed_time,
+            )
 
-            if hasattr(result, 'status'):
+            if hasattr(result, "status"):
                 status_value = result.status.value
             else:
                 status_value = "success" if result and result.options else "failed"
@@ -10482,12 +11421,15 @@ class YakuLingoApp:
 
             if result and result.options:
                 from yakulingo.ui.state import TextViewState
+
                 self.state.text_result = result
                 self.state.text_view_state = TextViewState.RESULT
-                self._add_to_history(result, source_text)  # Save original source before clearing
+                self._add_to_history(
+                    result, source_text
+                )  # Save original source before clearing
                 self.state.source_text = ""  # Clear input for new translations
             else:
-                error_message = result.error_message if result else 'Unknown error'
+                error_message = result.error_message if result else "Unknown error"
 
         except TranslationCancelledError:
             logger.info("Translation [%s] cancelled by user", trace_id)
@@ -10504,11 +11446,15 @@ class YakuLingoApp:
 
         # Restore client context for UI operations after asyncio.to_thread
         ui_refresh_start = time.monotonic()
-        logger.debug("[LAYOUT] Translation [%s] starting UI refresh (text_result=%s, text_translating=%s)",
-                     trace_id, bool(self.state.text_result), self.state.text_translating)
+        logger.debug(
+            "[LAYOUT] Translation [%s] starting UI refresh (text_result=%s, text_translating=%s)",
+            trace_id,
+            bool(self.state.text_result),
+            self.state.text_translating,
+        )
         with client:
             if error_message == "翻訳がキャンセルされました":
-                ui.notify('キャンセルしました', type='info')
+                ui.notify("キャンセルしました", type="info")
             elif error_message:
                 self._notify_error(error_message)
             # Only refresh result panel (input panel is already in compact state)
@@ -10523,12 +11469,18 @@ class YakuLingoApp:
             self._refresh_tabs()
         ui_refresh_elapsed = time.monotonic() - ui_refresh_start
         total_from_button_click = time.monotonic() - button_click_time
-        logger.info("[TIMING] Translation [%s] UI refresh completed in %.3fs", trace_id, ui_refresh_elapsed)
-        logger.info("[TIMING] Translation [%s] SUMMARY: displayed=%.1fs, total_from_button=%.3fs, diff=%.3fs",
-                    trace_id,
-                    self.state.text_translation_elapsed_time or 0,
-                    total_from_button_click,
-                    total_from_button_click - (self.state.text_translation_elapsed_time or 0))
+        logger.info(
+            "[TIMING] Translation [%s] UI refresh completed in %.3fs",
+            trace_id,
+            ui_refresh_elapsed,
+        )
+        logger.info(
+            "[TIMING] Translation [%s] SUMMARY: displayed=%.1fs, total_from_button=%.3fs, diff=%.3fs",
+            trace_id,
+            self.state.text_translation_elapsed_time or 0,
+            total_from_button_click,
+            total_from_button_click - (self.state.text_translation_elapsed_time or 0),
+        )
 
         self._active_translation_trace_id = None
 
@@ -10536,7 +11488,7 @@ class YakuLingoApp:
         """Request cancellation of the current text translation."""
         if self.translation_service:
             self.translation_service.cancel()
-        ui.notify('キャンセル中...', type='info')
+        ui.notify("キャンセル中...", type="info")
 
     def _build_reference_section_for_backend(
         self,
@@ -10551,7 +11503,10 @@ class YakuLingoApp:
         translation_service = self.translation_service
         use_local = False
         if translation_service and translation_service.config:
-            use_local = getattr(translation_service.config, "translation_backend", "copilot") == "local"
+            use_local = (
+                getattr(translation_service.config, "translation_backend", "copilot")
+                == "local"
+            )
         elif self.state.translation_backend == TranslationBackend.LOCAL:
             use_local = True
 
@@ -10559,24 +11514,36 @@ class YakuLingoApp:
             try:
                 translation_service._ensure_local_backend()
             except Exception:
-                logger.debug("Local prompt builder init failed for reference embed", exc_info=True)
+                logger.debug(
+                    "Local prompt builder init failed for reference embed",
+                    exc_info=True,
+                )
             local_builder = getattr(translation_service, "_local_prompt_builder", None)
             if local_builder is not None:
-                embedded_ref = local_builder.build_reference_embed(reference_files, input_text=input_text)
+                embedded_ref = local_builder.build_reference_embed(
+                    reference_files, input_text=input_text
+                )
                 warnings = list(embedded_ref.warnings)
                 if embedded_ref.truncated and not warnings:
                     warnings = ["参照ファイルを一部省略しました"]
                 return embedded_ref.text or "", warnings, embedded_ref.truncated
 
         if translation_service:
-            return translation_service.prompt_builder.build_reference_section(reference_files), [], False
+            return (
+                translation_service.prompt_builder.build_reference_section(
+                    reference_files
+                ),
+                [],
+                False,
+            )
 
         from yakulingo.services.prompt_builder import REFERENCE_INSTRUCTION
 
         return REFERENCE_INSTRUCTION, [], False
 
-
-    async def _back_translate(self, option: TranslationOption, text_override: Optional[str] = None):
+    async def _back_translate(
+        self, option: TranslationOption, text_override: Optional[str] = None
+    ):
         """Back-translate text to verify translation quality"""
         if option.back_translation_in_progress:
             return
@@ -10649,7 +11616,10 @@ class YakuLingoApp:
                             if self._streaming_preview_label is not None:
                                 self._streaming_preview_label.set_text(partial_text)
                     except Exception:
-                        logger.debug("Back-translate streaming preview refresh failed", exc_info=True)
+                        logger.debug(
+                            "Back-translate streaming preview refresh failed",
+                            exc_info=True,
+                        )
 
                 loop.call_soon_threadsafe(update_streaming_preview)
 
@@ -10661,16 +11631,22 @@ class YakuLingoApp:
             try:
                 if self.translation_service:
                     self.translation_service.prompt_builder.reload_translation_rules()
-                    translation_rules = self.translation_service.prompt_builder.get_translation_rules("common")
+                    translation_rules = (
+                        self.translation_service.prompt_builder.get_translation_rules(
+                            "common"
+                        )
+                    )
                 else:
                     from yakulingo.services.prompt_builder import PromptBuilder
 
-                    prompt_builder = PromptBuilder(prompts_dir=get_default_prompts_dir())
+                    prompt_builder = PromptBuilder(
+                        prompts_dir=get_default_prompts_dir()
+                    )
                     prompt_builder.reload_translation_rules()
                     translation_rules = prompt_builder.get_translation_rules("common")
             except Exception:
                 translation_rules = ""
-  
+
             # Build back-translation prompt from prompts/text_back_translate.txt
             prompt_path = get_default_prompts_dir() / "text_back_translate.txt"
             if not prompt_path.exists():
@@ -10681,14 +11657,18 @@ class YakuLingoApp:
                     error_message = "戻し訳用のテキストを入力してください"
                 else:
                     option.back_translation_source_text = text
-                    reference_section, reference_warnings, _ = self._build_reference_section_for_backend(
-                        reference_files,
-                        input_text=text,
+                    reference_section, reference_warnings, _ = (
+                        self._build_reference_section_for_backend(
+                            reference_files,
+                            input_text=text,
+                        )
                     )
                 prompt = prompt_path.read_text(encoding="utf-8")
                 prompt = prompt.replace("{translation_rules}", translation_rules)
                 prompt = prompt.replace("{input_text}", text)
-                prompt = prompt.replace("{text}", text)  # Backward-compatible placeholder
+                prompt = prompt.replace(
+                    "{text}", text
+                )  # Backward-compatible placeholder
                 prompt = prompt.replace("{reference_section}", reference_section)
 
                 if not error_message:
@@ -10703,12 +11683,15 @@ class YakuLingoApp:
                         )
                     else:
                         result = await asyncio.to_thread(
-                            lambda: self.copilot.translate_single(text, prompt, reference_files, on_chunk)
+                            lambda: self.copilot.translate_single(
+                                text, prompt, reference_files, on_chunk
+                            )
                         )
 
                     # Parse result and store on the option
                     if result:
                         from yakulingo.ui.utils import parse_translation_result
+
                         text_result, explanation = parse_translation_result(result)
                         option.back_translation_text = text_result
                         option.back_translation_explanation = explanation
@@ -10717,9 +11700,11 @@ class YakuLingoApp:
                                 with client:
                                     self._notify_warning_summary(reference_warnings)
                             except Exception:
-                                logger.debug("Failed to notify reference warnings", exc_info=True)
+                                logger.debug(
+                                    "Failed to notify reference warnings", exc_info=True
+                                )
                     else:
-                        error_message = '戻し訳に失敗しました'
+                        error_message = "戻し訳に失敗しました"
 
         except TranslationCancelledError:
             error_message = "翻訳がキャンセルされました"
@@ -10727,7 +11712,11 @@ class YakuLingoApp:
             error_message = str(e)
         finally:
             option.back_translation_in_progress = False
-            if error_message and not option.back_translation_text and not option.back_translation_explanation:
+            if (
+                error_message
+                and not option.back_translation_text
+                and not option.back_translation_explanation
+            ):
                 option.back_translation_error = error_message
 
         self._on_text_translation_complete(client, error_message)
@@ -10754,7 +11743,9 @@ class YakuLingoApp:
         """
         prompts_dir = get_default_prompts_dir()
 
-        context_text = "\n".join(part for part in (source_text, translation, content) if part)
+        context_text = "\n".join(
+            part for part in (source_text, translation, content) if part
+        )
         reference_section, _, _ = self._build_reference_section_for_backend(
             reference_files,
             input_text=context_text,
@@ -10762,9 +11753,9 @@ class YakuLingoApp:
 
         # Prompt file mapping and fallback templates
         prompt_configs = {
-            'review': {
-                'file': 'text_review_en.txt',
-                'fallback': f"""以下の英文をレビューしてください。
+            "review": {
+                "file": "text_review_en.txt",
+                "fallback": f"""以下の英文をレビューしてください。
 
 原文:
 {source_text}
@@ -10781,14 +11772,14 @@ class YakuLingoApp:
 出力形式:
 訳文: （レビュー結果のサマリー）
 解説: （詳細な分析と改善提案）""",
-                'replacements': {
-                    '{input_text}': source_text,
-                    '{translation}': translation,
-                }
+                "replacements": {
+                    "{input_text}": source_text,
+                    "{translation}": translation,
+                },
             },
-            'question': {
-                'file': 'text_question.txt',
-                'fallback': f"""以下の翻訳について質問に答えてください。
+            "question": {
+                "file": "text_question.txt",
+                "fallback": f"""以下の翻訳について質問に答えてください。
 
 原文:
 {source_text}
@@ -10802,15 +11793,15 @@ class YakuLingoApp:
 出力形式:
 訳文: （質問への回答の要約）
 解説: （詳細な説明）""",
-                'replacements': {
-                    '{input_text}': source_text,
-                    '{translation}': translation,
-                    '{question}': content,
-                }
+                "replacements": {
+                    "{input_text}": source_text,
+                    "{translation}": translation,
+                    "{question}": content,
+                },
             },
-            'reply': {
-                'file': 'text_reply_email.txt',
-                'fallback': f"""以下の原文に対する返信を作成してください。
+            "reply": {
+                "file": "text_reply_email.txt",
+                "fallback": f"""以下の原文に対する返信を作成してください。
 
 原文:
 {source_text}
@@ -10833,15 +11824,15 @@ class YakuLingoApp:
 出力形式:
 訳文: （作成した返信文）
 解説: （この返信のポイントと使用場面の説明）""",
-                'replacements': {
-                    '{input_text}': source_text,
-                    '{translation}': translation,
-                    '{reply_intent}': content,
-                }
+                "replacements": {
+                    "{input_text}": source_text,
+                    "{translation}": translation,
+                    "{reply_intent}": content,
+                },
             },
-            'summarize': {
-                'file': 'text_summarize.txt',
-                'fallback': f"""以下の英文の要点を箇条書きで抽出してください。
+            "summarize": {
+                "file": "text_summarize.txt",
+                "fallback": f"""以下の英文の要点を箇条書きで抽出してください。
 
 原文:
 {source_text}
@@ -10861,14 +11852,14 @@ class YakuLingoApp:
 - （要点1）
 - （要点2）
 - （要点3）""",
-                'replacements': {
-                    '{input_text}': source_text,
-                    '{translation}': translation,
-                }
+                "replacements": {
+                    "{input_text}": source_text,
+                    "{translation}": translation,
+                },
             },
-            'check_my_english': {
-                'file': 'text_check_my_english.txt',
-                'fallback': f"""以下のユーザーが修正した英文をチェックしてください。
+            "check_my_english": {
+                "file": "text_check_my_english.txt",
+                "fallback": f"""以下のユーザーが修正した英文をチェックしてください。
 
 参照訳（AI翻訳ベース）:
 {translation}
@@ -10884,10 +11875,10 @@ class YakuLingoApp:
 出力形式:
 訳文: （問題なければ「問題ありません。そのまま使えます。」、問題あれば修正版）
 解説: （簡潔なフィードバック）""",
-                'replacements': {
-                    '{reference_translation}': translation,
-                    '{user_english}': content,
-                }
+                "replacements": {
+                    "{reference_translation}": translation,
+                    "{user_english}": content,
+                },
             },
         }
 
@@ -10895,15 +11886,15 @@ class YakuLingoApp:
             return None
 
         config = prompt_configs[action_type]
-        prompt_file = prompts_dir / config['file']
+        prompt_file = prompts_dir / config["file"]
 
         if prompt_file.exists():
-            prompt = prompt_file.read_text(encoding='utf-8')
-            for placeholder, value in config['replacements'].items():
+            prompt = prompt_file.read_text(encoding="utf-8")
+            for placeholder, value in config["replacements"].items():
                 prompt = prompt.replace(placeholder, value)
             return prompt.replace("{reference_section}", reference_section)
         else:
-            prompt = config['fallback']
+            prompt = config["fallback"]
             return prompt.replace("{reference_section}", reference_section)
 
     # =========================================================================
@@ -10949,7 +11940,7 @@ class YakuLingoApp:
     def _on_font_name_change(self, font_name: str):
         """Handle font name change (unified for all file types)"""
         # Determine which setting to update based on current output language
-        if self.state.file_output_language == 'en':
+        if self.state.file_output_language == "en":
             self.settings.font_jp_to_en = font_name
         else:
             self.settings.font_en_to_jp = font_name
@@ -10970,7 +11961,9 @@ class YakuLingoApp:
         self.state.set_all_sections_selected(False)
         # Don't refresh; it would close the expansion panel. The file panel updates in-place.
 
-    async def _ensure_layout_initialized(self, wait_timeout_seconds: float = 120.0) -> bool:
+    async def _ensure_layout_initialized(
+        self, wait_timeout_seconds: float = 120.0
+    ) -> bool:
         """
         Ensure PP-DocLayout-L is initialized before PDF processing.
 
@@ -10994,7 +11987,9 @@ class YakuLingoApp:
         with self._layout_init_lock:
             if self._layout_init_state == LayoutInitializationState.INITIALIZING:
                 # Wait for the other initialization to complete
-                logger.debug("PP-DocLayout-L initialization already in progress, waiting...")
+                logger.debug(
+                    "PP-DocLayout-L initialization already in progress, waiting..."
+                )
                 # Release lock and wait (should_initialize remains False)
             elif self._layout_init_state == LayoutInitializationState.INITIALIZED:
                 return True
@@ -11032,8 +12027,12 @@ class YakuLingoApp:
             # This avoids requiring re-login after PP-DocLayout-L initialization
             was_connected = self.copilot.is_connected
             if was_connected:
-                logger.info("Disconnecting Copilot before PP-DocLayout-L initialization...")
-                await asyncio.to_thread(lambda: self.copilot.disconnect(keep_browser=True))
+                logger.info(
+                    "Disconnecting Copilot before PP-DocLayout-L initialization..."
+                )
+                await asyncio.to_thread(
+                    lambda: self.copilot.disconnect(keep_browser=True)
+                )
 
             # Step 2: Initialize PP-DocLayout-L and pre-initialize Playwright in parallel
             # This saves ~1.5s by starting Playwright initialization during model loading
@@ -11063,21 +12062,29 @@ class YakuLingoApp:
                 if not was_connected:
                     return
                 try:
+
                     def _pre_initialize_playwright_in_thread() -> None:
-                        from yakulingo.services.copilot_handler import pre_initialize_playwright
+                        from yakulingo.services.copilot_handler import (
+                            pre_initialize_playwright,
+                        )
+
                         pre_initialize_playwright()
 
                     await asyncio.to_thread(_pre_initialize_playwright_in_thread)
                     logger.debug("Playwright pre-initialized during layout init")
                 except Exception as e:
-                    logger.debug("Playwright pre-init failed (will retry on reconnect): %s", e)
+                    logger.debug(
+                        "Playwright pre-init failed (will retry on reconnect): %s", e
+                    )
 
             # Run layout init and Playwright pre-init in parallel
             await asyncio.gather(_init_layout(), _prewarm_playwright())
 
             # Step 3: Reconnect Copilot (uses pre-initialized Playwright if available)
             if was_connected:
-                logger.info("Reconnecting Copilot after PP-DocLayout-L initialization...")
+                logger.info(
+                    "Reconnecting Copilot after PP-DocLayout-L initialization..."
+                )
                 await self._reconnect(max_retries=3, show_progress=False)
 
             return True
@@ -11089,11 +12096,13 @@ class YakuLingoApp:
 
     def _create_layout_init_dialog(self) -> UiDialog:
         """Create a dialog showing PP-DocLayout-L initialization progress."""
-        dialog = ui.dialog().props('persistent')
-        with dialog, ui.card().classes('items-center p-8'):
-            ui.spinner('dots', size='3em', color='primary')
-            ui.label('PDF翻訳機能を準備中...').classes('text-lg mt-4')
-            ui.label('（初回は時間がかかる場合があります）').classes('text-sm text-gray-500 mt-1')
+        dialog = ui.dialog().props("persistent")
+        with dialog, ui.card().classes("items-center p-8"):
+            ui.spinner("dots", size="3em", color="primary")
+            ui.label("PDF翻訳機能を準備中...").classes("text-lg mt-4")
+            ui.label("（初回は時間がかかる場合があります）").classes(
+                "text-sm text-gray-500 mt-1"
+            )
         return dialog
 
     def _get_queue_item(self, item_id: str) -> Optional[FileQueueItem]:
@@ -11102,7 +12111,9 @@ class YakuLingoApp:
                 return item
         return None
 
-    def _sync_state_from_queue_item(self, item: FileQueueItem, *, update_progress: bool = True) -> None:
+    def _sync_state_from_queue_item(
+        self, item: FileQueueItem, *, update_progress: bool = True
+    ) -> None:
         self.state.selected_file = item.path
         self.state.file_info = item.file_info
         self.state.file_detected_language = item.detected_language
@@ -11125,7 +12136,9 @@ class YakuLingoApp:
             self.state.output_file = None
         self.state.error_message = item.error_message
 
-    def _set_active_queue_item(self, item_id: str, *, refresh: bool = True, update_progress: bool = True) -> None:
+    def _set_active_queue_item(
+        self, item_id: str, *, refresh: bool = True, update_progress: bool = True
+    ) -> None:
         item = self._get_queue_item(item_id)
         if not item:
             return
@@ -11176,7 +12189,7 @@ class YakuLingoApp:
                 )
                 if client:
                     with client:
-                        ui.notify(message, type='warning')
+                        ui.notify(message, type="warning")
                 continue
 
             if str(file_path) in existing_paths:
@@ -11187,15 +12200,17 @@ class YakuLingoApp:
             except OSError as err:
                 if client:
                     with client:
-                        ui.notify(f'ファイルの読み込みに失敗しました: {err}', type='negative')
+                        ui.notify(
+                            f"ファイルの読み込みに失敗しました: {err}", type="negative"
+                        )
                 continue
 
             if file_size > MAX_DROP_FILE_SIZE_BYTES:
                 if client:
                     with client:
                         ui.notify(
-                            f'ファイルが大きいため翻訳できません（{MAX_DROP_FILE_SIZE_MB}MBまで）',
-                            type='warning',
+                            f"ファイルが大きいため翻訳できません（{MAX_DROP_FILE_SIZE_MB}MBまで）",
+                            type="warning",
                         )
                 continue
 
@@ -11295,7 +12310,9 @@ class YakuLingoApp:
                 detected_language,
             )
         except Exception as e:
-            logger.warning("Language detection failed: %s, using default: %s", e, detected_language)
+            logger.warning(
+                "Language detection failed: %s, using default: %s", e, detected_language
+            )
 
         with self._file_queue_state_lock:
             item.detected_language = detected_language
@@ -11303,9 +12320,9 @@ class YakuLingoApp:
             if not item.output_language_overridden:
                 item.output_language = "en" if detected_language == "日本語" else "jp"
 
-        should_update_state = (
-            item.id == self.state.file_queue_active_id
-            or (self.state.selected_file is not None and item.path == self.state.selected_file)
+        should_update_state = item.id == self.state.file_queue_active_id or (
+            self.state.selected_file is not None
+            and item.path == self.state.selected_file
         )
         if should_update_state:
             self.state.file_detected_language = detected_language
@@ -11327,12 +12344,18 @@ class YakuLingoApp:
                     self._file_panel_refresh_timer.cancel()
                 except Exception:
                     pass
-            timer_factory = getattr(nicegui_app, "timer", None) if nicegui_app is not None else None
+            timer_factory = (
+                getattr(nicegui_app, "timer", None) if nicegui_app is not None else None
+            )
             if timer_factory is None:
                 with client:
-                    self._file_panel_refresh_timer = ui.timer(0.2, self._update_file_progress_elements)
+                    self._file_panel_refresh_timer = ui.timer(
+                        0.2, self._update_file_progress_elements
+                    )
             else:
-                self._file_panel_refresh_timer = timer_factory(0.2, self._update_file_progress_elements)
+                self._file_panel_refresh_timer = timer_factory(
+                    0.2, self._update_file_progress_elements
+                )
 
     def _stop_file_panel_refresh_timer(self) -> None:
         with self._timer_lock:
@@ -11361,7 +12384,10 @@ class YakuLingoApp:
             return
         if len(paths) > 1 and client:
             with client:
-                ui.notify('複数ファイルは同時に翻訳できません。最初の1件のみ選択します', type='warning')
+                ui.notify(
+                    "複数ファイルは同時に翻訳できません。最初の1件のみ選択します",
+                    type="warning",
+                )
 
         self.state.file_queue = []
         self.state.file_queue_active_id = None
@@ -11372,10 +12398,11 @@ class YakuLingoApp:
             return
 
         for item in new_items:
-            if item.path.suffix.lower() != '.pdf':
+            if item.path.suffix.lower() != ".pdf":
                 continue
             try:
                 import importlib.util as _importlib_util
+
                 layout_available = (
                     _importlib_util.find_spec("paddle") is not None
                     and _importlib_util.find_spec("paddleocr") is not None
@@ -11386,10 +12413,10 @@ class YakuLingoApp:
             if not layout_available and client:
                 with client:
                     ui.notify(
-                        'PDF翻訳: レイアウト解析(PP-DocLayout-L)が未インストールのため、'
-                        '段落検出精度が低下する可能性があります',
-                        type='warning',
-                        position='top',
+                        "PDF翻訳: レイアウト解析(PP-DocLayout-L)が未インストールのため、"
+                        "段落検出精度が低下する可能性があります",
+                        type="warning",
+                        position="top",
                         timeout=8000,
                     )
 
@@ -11401,7 +12428,11 @@ class YakuLingoApp:
                 return
 
     def _queue_pending_items(self) -> list[FileQueueItem]:
-        return [item for item in self.state.file_queue if item.status == TranslationStatus.PENDING]
+        return [
+            item
+            for item in self.state.file_queue
+            if item.status == TranslationStatus.PENDING
+        ]
 
     async def _start_queue_translation(self) -> None:
         if self.state.file_queue_running:
@@ -11527,12 +12558,16 @@ class YakuLingoApp:
                     queue.task_done()
 
         worker_count = 2
-        self._file_queue_workers = [asyncio.create_task(worker()) for _ in range(worker_count)]
+        self._file_queue_workers = [
+            asyncio.create_task(worker()) for _ in range(worker_count)
+        ]
         await queue.join()
         await asyncio.gather(*self._file_queue_workers, return_exceptions=True)
         self._file_queue_workers = []
 
-    async def _translate_queue_item(self, item: FileQueueItem, service: "TranslationService") -> None:
+    async def _translate_queue_item(
+        self, item: FileQueueItem, service: "TranslationService"
+    ) -> None:
         if not item.path.exists():
             with self._file_queue_state_lock:
                 item.status = TranslationStatus.FAILED
@@ -11566,9 +12601,10 @@ class YakuLingoApp:
             item.phase_counts = {}
             item.eta_seconds = None
 
-        if item.path.suffix.lower() == '.pdf':
+        if item.path.suffix.lower() == ".pdf":
             try:
                 import importlib.util as _importlib_util
+
                 layout_available = (
                     _importlib_util.find_spec("paddle") is not None
                     and _importlib_util.find_spec("paddleocr") is not None
@@ -11606,7 +12642,11 @@ class YakuLingoApp:
                 item.phase_current = p.phase_current
                 item.phase_total = p.phase_total
                 item.eta_seconds = eta_seconds
-                if p.phase and p.phase_current is not None and p.phase_total is not None:
+                if (
+                    p.phase
+                    and p.phase_current is not None
+                    and p.phase_total is not None
+                ):
                     item.phase_counts[p.phase] = (p.phase_current, p.phase_total)
 
             if item.id == self.state.file_queue_active_id:
@@ -11664,12 +12704,19 @@ class YakuLingoApp:
 
         if self._file_queue_cancel_requested:
             for item in self.state.file_queue:
-                if item.status in (TranslationStatus.PENDING, TranslationStatus.PROCESSING):
+                if item.status in (
+                    TranslationStatus.PENDING,
+                    TranslationStatus.PROCESSING,
+                ):
                     item.status = TranslationStatus.CANCELLED
                     item.status_label = "キャンセル"
 
         output_files: list[tuple[Path, str]] = []
-        completed_items = [item for item in self.state.file_queue if item.status == TranslationStatus.COMPLETED]
+        completed_items = [
+            item
+            for item in self.state.file_queue
+            if item.status == TranslationStatus.COMPLETED
+        ]
         for item in completed_items:
             if not item.result:
                 continue
@@ -11680,10 +12727,14 @@ class YakuLingoApp:
             if len(completed_items) == 1:
                 self.state.translation_result = completed_items[0].result
                 self.state.output_file = (
-                    completed_items[0].result.output_path if completed_items[0].result else None
+                    completed_items[0].result.output_path
+                    if completed_items[0].result
+                    else None
                 )
             else:
-                self.state.translation_result = HotkeyFileOutputSummary(output_files=output_files)
+                self.state.translation_result = HotkeyFileOutputSummary(
+                    output_files=output_files
+                )
                 self.state.output_file = output_files[0][0]
             self.state.file_state = FileState.COMPLETE
             self.state.error_message = ""
@@ -11711,11 +12762,17 @@ class YakuLingoApp:
                     if len(failed_items) == 1:
                         self.state.error_message = first_error
                     else:
-                        self.state.error_message = f"{len(failed_items)}件の翻訳に失敗しました: {first_error}"
+                        self.state.error_message = (
+                            f"{len(failed_items)}件の翻訳に失敗しました: {first_error}"
+                        )
                 else:
-                    self.state.error_message = f"{len(failed_items)}件の翻訳に失敗しました"
+                    self.state.error_message = (
+                        f"{len(failed_items)}件の翻訳に失敗しました"
+                    )
             elif completed_items:
-                self.state.error_message = "翻訳は完了しましたが出力ファイルが見つかりません"
+                self.state.error_message = (
+                    "翻訳は完了しましたが出力ファイルが見つかりません"
+                )
             elif cancelled_items or self._file_queue_cancel_requested:
                 self.state.error_message = "翻訳をキャンセルしました"
             else:
@@ -11824,9 +12881,10 @@ class YakuLingoApp:
         # For PDF translation, ensure PP-DocLayout-L is ready (if installed).
         # This is intentionally done here (not at upload/select time) so uploads stay fast.
         init_dialog = None
-        if self.state.selected_file.suffix.lower() == '.pdf':
+        if self.state.selected_file.suffix.lower() == ".pdf":
             try:
                 import importlib.util as _importlib_util
+
                 layout_available = (
                     _importlib_util.find_spec("paddle") is not None
                     and _importlib_util.find_spec("paddleocr") is not None
@@ -11858,7 +12916,7 @@ class YakuLingoApp:
 
         self.state.file_state = FileState.TRANSLATING
         self.state.translation_progress = 0.0
-        self.state.translation_status = 'Starting...'
+        self.state.translation_status = "Starting..."
         self.state.translation_phase = None
         self.state.translation_phase_detail = None
         self.state.translation_phase_current = None
@@ -11914,8 +12972,15 @@ class YakuLingoApp:
                     queue_item.phase_current = p.phase_current
                     queue_item.phase_total = p.phase_total
                     queue_item.eta_seconds = eta_seconds
-                    if p.phase and p.phase_current is not None and p.phase_total is not None:
-                        queue_item.phase_counts[p.phase] = (p.phase_current, p.phase_total)
+                    if (
+                        p.phase
+                        and p.phase_current is not None
+                        and p.phase_total is not None
+                    ):
+                        queue_item.phase_counts[p.phase] = (
+                            p.phase_current,
+                            p.phase_total,
+                        )
 
         error_message = None
         result = None
@@ -11956,8 +13021,13 @@ class YakuLingoApp:
         with client:
             # Calculate elapsed time from user's perspective
             elapsed_time = time.monotonic() - start_time
-            if error_message or (result and result.status != TranslationStatus.CANCELLED):
-                self._hold_ui_visibility(seconds=FILE_TRANSLATION_UI_VISIBILITY_HOLD_SEC, reason="file_translation")
+            if error_message or (
+                result and result.status != TranslationStatus.CANCELLED
+            ):
+                self._hold_ui_visibility(
+                    seconds=FILE_TRANSLATION_UI_VISIBILITY_HOLD_SEC,
+                    reason="file_translation",
+                )
 
             if error_message:
                 self._notify_error(error_message)
@@ -11981,6 +13051,7 @@ class YakuLingoApp:
                         self._notify_warning_summary(result.warnings)
                     # Show completion dialog with all output files
                     from yakulingo.ui.utils import create_completion_dialog
+
                     create_completion_dialog(
                         result=result,
                         duration_seconds=elapsed_time,
@@ -11996,9 +13067,9 @@ class YakuLingoApp:
                         self.state.output_file = None
                     else:
                         self._reset_file_state_to_text()
-                    ui.notify('キャンセルしました', type='info')
+                    ui.notify("キャンセルしました", type="info")
                 else:
-                    self.state.error_message = result.error_message or 'エラー'
+                    self.state.error_message = result.error_message or "エラー"
                     self.state.file_state = FileState.ERROR
                     self.state.output_file = None
                     self.state.translation_result = None
@@ -12006,8 +13077,10 @@ class YakuLingoApp:
                         with self._file_queue_state_lock:
                             queue_item.status = TranslationStatus.FAILED
                             queue_item.status_label = "失敗"
-                            queue_item.error_message = result.error_message or "翻訳に失敗しました"
-                    ui.notify('失敗しました', type='negative')
+                            queue_item.error_message = (
+                                result.error_message or "翻訳に失敗しました"
+                            )
+                    ui.notify("失敗しました", type="negative")
 
             self._refresh_content()
             self._refresh_tabs()  # Re-enable tabs (translation finished)
@@ -12048,7 +13121,7 @@ class YakuLingoApp:
     def _download(self):
         """Download translated file"""
         if not self.state.output_file:
-            ui.notify('ダウンロードするファイルが見つかりません', type='negative')
+            ui.notify("ダウンロードするファイルが見つかりません", type="negative")
             return
 
         from yakulingo.ui.utils import trigger_file_download
@@ -12151,7 +13224,10 @@ class YakuLingoApp:
         filtered_entries: list[HistoryEntry] = []
         for entry in entries:
             output_lang = entry.result.output_language or "en"
-            if self.state.history_filter_output_language and output_lang != self.state.history_filter_output_language:
+            if (
+                self.state.history_filter_output_language
+                and output_lang != self.state.history_filter_output_language
+            ):
                 continue
 
             filtered_entries.append(entry)
@@ -12172,6 +13248,7 @@ class YakuLingoApp:
     def _load_from_history(self, entry: HistoryEntry):
         """Load translation from history"""
         from yakulingo.ui.state import TextViewState
+
         # Show result but keep input empty for new translations
         self.state.source_text = ""
         self.state.text_result = entry.result
@@ -12245,9 +13322,11 @@ def _detect_display_settings(
     # Minimum sizes to prevent layout breaking on smaller screens
     # These are absolute minimums - below this, UI elements may overlap
     # Note: These values are in logical pixels, not physical pixels
-    MIN_WINDOW_WIDTH = 900    # Lowered from 1400 to avoid over-shrinking at ~1k width
-    MIN_WINDOW_HEIGHT = 650   # Lowered from 850 to maintain ~76% ratio on smaller screens
-    MIN_SIDEBAR_WIDTH = 240   # Baseline sidebar width for normal windows
+    MIN_WINDOW_WIDTH = 900  # Lowered from 1400 to avoid over-shrinking at ~1k width
+    MIN_WINDOW_HEIGHT = (
+        650  # Lowered from 850 to maintain ~76% ratio on smaller screens
+    )
+    MIN_SIDEBAR_WIDTH = 240  # Baseline sidebar width for normal windows
     MIN_SIDEBAR_WIDTH_COMPACT = 180
     MIN_INPUT_PANEL_WIDTH = 320  # Lowered from 380 for smaller screens
     # Clamp sidebar on ultra-wide single-window mode to avoid wasting space.
@@ -12272,17 +13351,23 @@ def _detect_display_settings(
         # Single panel: use full work area width
         window_width = screen_width
         max_window_height = screen_height  # Use full work area height
-        window_height = min(max(int(screen_height * HEIGHT_RATIO), MIN_WINDOW_HEIGHT), max_window_height)
+        window_height = min(
+            max(int(screen_height * HEIGHT_RATIO), MIN_WINDOW_HEIGHT), max_window_height
+        )
 
         # For smaller windows, use ratio-based panel sizes instead of fixed minimums
         if window_width < MIN_WINDOW_WIDTH:
             # Small screen: ratio-based sizes with a smaller safety minimum for usability.
-            sidebar_width = max(int(window_width * SIDEBAR_RATIO), MIN_SIDEBAR_WIDTH_COMPACT)
+            sidebar_width = max(
+                int(window_width * SIDEBAR_RATIO), MIN_SIDEBAR_WIDTH_COMPACT
+            )
             input_panel_width = int(window_width * INPUT_PANEL_RATIO)
         else:
             # Normal screen: apply minimums
             sidebar_width = max(int(window_width * SIDEBAR_RATIO), MIN_SIDEBAR_WIDTH)
-            input_panel_width = max(int(window_width * INPUT_PANEL_RATIO), MIN_INPUT_PANEL_WIDTH)
+            input_panel_width = max(
+                int(window_width * INPUT_PANEL_RATIO), MIN_INPUT_PANEL_WIDTH
+            )
         sidebar_width = min(sidebar_width, MAX_SIDEBAR_WIDTH, window_width)
 
         # Calculate unified content width for both input and result panels
@@ -12297,9 +13382,13 @@ def _detect_display_settings(
             main_area_width,
         )
 
-        return ((window_width, window_height), (sidebar_width, input_panel_width, content_width))
+        return (
+            (window_width, window_height),
+            (sidebar_width, input_panel_width, content_width),
+        )
 
     import time as _time
+
     _t_func_start = _time.perf_counter()
 
     # Default based on 1920x1080 screen
@@ -12315,8 +13404,11 @@ def _detect_display_settings(
         )
         logger.info(
             "Window %dx%d, sidebar %dpx, input panel %dpx, content %dpx",
-            window_size[0], window_size[1],
-            panel_sizes[0], panel_sizes[1], panel_sizes[2]
+            window_size[0],
+            window_size[1],
+            panel_sizes[0],
+            panel_sizes[1],
+            panel_sizes[2],
         )
         return (window_size, panel_sizes)
 
@@ -12326,8 +13418,12 @@ def _detect_display_settings(
         try:
             _t_import = _time.perf_counter()
             import webview as webview_import
+
             webview = webview_import
-            logger.debug("[DISPLAY_DETECT] import webview: %.3fs", _time.perf_counter() - _t_import)
+            logger.debug(
+                "[DISPLAY_DETECT] import webview: %.3fs",
+                _time.perf_counter() - _t_import,
+            )
         except ImportError:
             logger.debug("pywebview not available, using default")
             return (default_window, default_panels)
@@ -12338,7 +13434,10 @@ def _detect_display_settings(
         # Access screens property - this may trigger pywebview initialization
         _t_screens = _time.perf_counter()
         screens = webview.screens
-        logger.debug("[DISPLAY_DETECT] webview.screens access: %.3fs", _time.perf_counter() - _t_screens)
+        logger.debug(
+            "[DISPLAY_DETECT] webview.screens access: %.3fs",
+            _time.perf_counter() - _t_screens,
+        )
 
         if not screens:
             logger.debug("No screens detected via pywebview, using default")
@@ -12350,7 +13449,11 @@ def _detect_display_settings(
         for i, screen in enumerate(screens):
             logger.info(
                 "Screen %d: %dx%d at (%d, %d)",
-                i, screen.width, screen.height, screen.x, screen.y
+                i,
+                screen.width,
+                screen.height,
+                screen.x,
+                screen.y,
             )
 
         # Find the largest screen by resolution
@@ -12362,26 +13465,38 @@ def _detect_display_settings(
 
         logger.info(
             "Display detection: %d monitor(s), largest screen=%dx%d",
-            len(screens), logical_width, logical_height
+            len(screens),
+            logical_width,
+            logical_height,
         )
 
         # Calculate window and panel sizes based on logical screen resolution
         _t_calc = _time.perf_counter()
         window_size, panel_sizes = calculate_sizes(logical_width, logical_height)
-        logger.debug("[DISPLAY_DETECT] calculate_sizes: %.3fs", _time.perf_counter() - _t_calc)
+        logger.debug(
+            "[DISPLAY_DETECT] calculate_sizes: %.3fs", _time.perf_counter() - _t_calc
+        )
 
         logger.info(
             "Window %dx%d, sidebar %dpx, input panel %dpx, content %dpx",
-            window_size[0], window_size[1],
-            panel_sizes[0], panel_sizes[1], panel_sizes[2]
+            window_size[0],
+            window_size[1],
+            panel_sizes[0],
+            panel_sizes[1],
+            panel_sizes[2],
         )
 
-        logger.debug("[DISPLAY_DETECT] Total: %.3fs", _time.perf_counter() - _t_func_start)
+        logger.debug(
+            "[DISPLAY_DETECT] Total: %.3fs", _time.perf_counter() - _t_func_start
+        )
         return (window_size, panel_sizes)
 
     except Exception as e:
         logger.warning("Failed to detect display: %s, using default", e)
-        logger.debug("[DISPLAY_DETECT] Total (with error): %.3fs", _time.perf_counter() - _t_func_start)
+        logger.debug(
+            "[DISPLAY_DETECT] Total (with error): %.3fs",
+            _time.perf_counter() - _t_func_start,
+        )
         return (default_window, default_panels)
 
 
@@ -12406,8 +13521,8 @@ def _check_native_mode_and_get_webview(
     import sys
 
     # Linux containers often lack a display server; avoid pywebview crashes
-    if sys.platform.startswith('linux') and not (
-        os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY')
+    if sys.platform.startswith("linux") and not (
+        os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")
     ):
         logger.warning(
             "Native mode requested but no display detected (DISPLAY / WAYLAND_DISPLAY); "
@@ -12419,11 +13534,12 @@ def _check_native_mode_and_get_webview(
         import webview  # type: ignore
     except Exception as e:  # pragma: no cover - defensive import guard
         logger.warning(
-            "Native mode requested but pywebview is unavailable: %s; starting in browser mode.", e
+            "Native mode requested but pywebview is unavailable: %s; starting in browser mode.",
+            e,
         )
         return (False, None)
 
-    backend = getattr(webview, 'guilib', None)
+    backend = getattr(webview, "guilib", None)
     if fast_path and backend is not None:
         return (True, webview)
 
@@ -12473,7 +13589,7 @@ def _get_available_memory_gb() -> float | None:
             status = MEMORYSTATUSEX()
             status.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
             if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
-                return status.ullAvailPhys / (1024 ** 3)
+                return status.ullAvailPhys / (1024**3)
         except Exception:
             return None
 
@@ -12482,11 +13598,11 @@ def _get_available_memory_gb() -> float | None:
     except Exception:
         return None
 
-    return psutil.virtual_memory().available / (1024 ** 3)
+    return psutil.virtual_memory().available / (1024**3)
 
 
 def run_app(
-    host: str = '127.0.0.1',
+    host: str = "127.0.0.1",
     port: int = 8765,
     native: bool = True,
     on_ready: callable = None,
@@ -12506,11 +13622,15 @@ def run_app(
     # in the child process. NiceGUI's ui.run() checks for this and returns early, but by then
     # we've already done setup (logging, create_app, atexit.register) which causes confusing
     # "Shutting down YakuLingo..." log messages. Early return here to avoid this.
-    if multiprocessing.current_process().name != 'MainProcess':
+    if multiprocessing.current_process().name != "MainProcess":
         return
 
     os.environ.setdefault("YAKULINGO_NO_AUTO_OPEN", "1")
-    resident_mode = os.environ.get("YAKULINGO_NO_AUTO_OPEN", "").strip().lower() in ("1", "true", "yes")
+    resident_mode = os.environ.get("YAKULINGO_NO_AUTO_OPEN", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
     launch_source = os.environ.get("YAKULINGO_LAUNCH_SOURCE") or "unknown"
     logger.info(
         "Resident mode: %s (YAKULINGO_NO_AUTO_OPEN=%s, launch_source=%s)",
@@ -12527,9 +13647,9 @@ def run_app(
             )
             native = False
 
-    quiet_startup = resident_mode and os.environ.get("YAKULINGO_QUIET_STARTUP", "1").strip().lower() in (
-        "1", "true", "yes"
-    )
+    quiet_startup = resident_mode and os.environ.get(
+        "YAKULINGO_QUIET_STARTUP", "1"
+    ).strip().lower() in ("1", "true", "yes")
 
     available_memory_gb = _get_available_memory_gb()
     # Early connect spins up Edge (and later Playwright).
@@ -12537,7 +13657,10 @@ def run_app(
     allow_early_connect = True
     # Playwright pre-initialization does not open a window, so it's safe in browser mode.
     allow_playwright_preinit = True
-    if available_memory_gb is not None and available_memory_gb <= MIN_AVAILABLE_MEMORY_GB_FOR_EARLY_CONNECT:
+    if (
+        available_memory_gb is not None
+        and available_memory_gb <= MIN_AVAILABLE_MEMORY_GB_FOR_EARLY_CONNECT
+    ):
         allow_early_connect = False
         allow_playwright_preinit = False
         logger.info(
@@ -12570,6 +13693,7 @@ def run_app(
             #   dramatically slow down NiceGUI import when run in parallel (AV scan).
             #   We therefore start Playwright initialization AFTER NiceGUI import.
             from yakulingo.services.copilot_handler import CopilotHandler
+
             patch_marker = _NICEGUI_NATIVE_PATCH_APPLIED or not native
             _early_copilot = CopilotHandler(native_patch_applied=patch_marker)
             _early_connection_event = threading.Event()
@@ -12584,8 +13708,11 @@ def run_app(
                         return
                     _t_edge = time.perf_counter()
                     result = _early_copilot.start_edge()
-                    logger.info("[TIMING] Early Edge startup (parallel): %.2fs, success=%s",
-                               time.perf_counter() - _t_edge, result)
+                    logger.info(
+                        "[TIMING] Early Edge startup (parallel): %.2fs, success=%s",
+                        time.perf_counter() - _t_edge,
+                        result,
+                    )
                 except Exception as e:
                     logger.debug("Early Edge startup failed: %s", e)
 
@@ -12593,7 +13720,9 @@ def run_app(
                 target=_start_edge_early, daemon=True, name="early_edge"
             )
             _early_edge_thread.start()
-            logger.info("[TIMING] Started early Edge startup (parallel with NiceGUI import)")
+            logger.info(
+                "[TIMING] Started early Edge startup (parallel with NiceGUI import)"
+            )
 
             # Start Copilot connection in background thread
             # NOTE: Actual thread start is deferred until after NiceGUI import to avoid
@@ -12620,7 +13749,7 @@ def run_app(
                     # Window positioning will be done after YakuLingo window is created
                     result = _early_copilot.connect(
                         bring_to_foreground_on_login=False,
-                        defer_window_positioning=True
+                        defer_window_positioning=True,
                     )
                     if _early_connection_result_ref is not None:
                         _early_connection_result_ref.value = result
@@ -12629,8 +13758,11 @@ def run_app(
                             _early_copilot.wait_for_gpt_mode_setup(25.0)
                         except Exception as e:
                             logger.debug("Early GPT mode setup failed: %s", e)
-                    logger.info("[TIMING] Early Copilot connect (background): %.2fs, success=%s",
-                               time.perf_counter() - _t_early, result)
+                    logger.info(
+                        "[TIMING] Early Copilot connect (background): %.2fs, success=%s",
+                        time.perf_counter() - _t_early,
+                        result,
+                    )
                 except Exception as e:
                     logger.debug("Early Copilot connection failed: %s", e)
                     if _early_connection_result_ref is not None:
@@ -12648,18 +13780,25 @@ def run_app(
     global nicegui, ui, nicegui_app, nicegui_Client
     _t_nicegui_import = time.perf_counter()
     import nicegui as _nicegui
+
     _t1 = time.perf_counter()
     logger.debug("[TIMING] import nicegui: %.2fs", _t1 - _t_nicegui_import)
     from nicegui import ui as _ui
+
     _t2 = time.perf_counter()
     logger.debug("[TIMING] from nicegui import ui: %.2fs", _t2 - _t1)
     from nicegui import app as _nicegui_app, Client as _nicegui_Client
-    logger.debug("[TIMING] from nicegui import app, Client: %.2fs", time.perf_counter() - _t2)
+
+    logger.debug(
+        "[TIMING] from nicegui import app, Client: %.2fs", time.perf_counter() - _t2
+    )
     nicegui = _nicegui
     ui = _ui
     nicegui_app = _nicegui_app
     nicegui_Client = _nicegui_Client
-    logger.info("[TIMING] NiceGUI import total: %.2fs", time.perf_counter() - _t_nicegui_import)
+    logger.info(
+        "[TIMING] NiceGUI import total: %.2fs", time.perf_counter() - _t_nicegui_import
+    )
 
     # Start Playwright initialization + Copilot connection AFTER NiceGUI import to reduce
     # Windows startup I/O contention (antivirus scanning).
@@ -12674,7 +13813,11 @@ def run_app(
             except Exception as e:
                 logger.debug("Playwright pre-initialization failed: %s", e)
 
-    if allow_early_connect and _early_copilot is not None and _early_connect_fn is not None:
+    if (
+        allow_early_connect
+        and _early_copilot is not None
+        and _early_connect_fn is not None
+    ):
         try:
             _early_connect_thread = threading.Thread(
                 target=_early_connect_fn, daemon=True, name="early_connect"
@@ -12697,10 +13840,13 @@ def run_app(
 
     # Set Windows AppUserModelID for correct taskbar icon
     # Without this, Windows uses the default Python icon instead of YakuLingo icon
-    if sys.platform == 'win32':
+    if sys.platform == "win32":
         try:
             import ctypes
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('YakuLingo.App')
+
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+                "YakuLingo.App"
+            )
         except Exception as e:
             logger.debug("Failed to set AppUserModelID: %s", e)
 
@@ -12713,7 +13859,9 @@ def run_app(
         yakulingo_app._set_layout_mode(LayoutMode.OFFSCREEN, "resident_startup")
     if resident_mode and sys.platform == "win32":
         # Pre-start suppression to avoid a brief taskbar flash before on_startup runs.
-        pre_run_reason = "launcher_pre_run" if launch_source == "launcher" else "startup"
+        pre_run_reason = (
+            "launcher_pre_run" if launch_source == "launcher" else "startup"
+        )
         yakulingo_app._start_resident_taskbar_suppression_win32(
             pre_run_reason,
             attempts=40,
@@ -12743,12 +13891,17 @@ def run_app(
     yakulingo_app._screen_size = logical_screen_size
     yakulingo_app._dpi_scale = dpi_scale
     yakulingo_app._window_size_is_logical = window_size_is_logical
-    requested_display_mode = AppSettings.load(get_default_settings_path()).browser_display_mode
+    requested_display_mode = AppSettings.load(
+        get_default_settings_path()
+    ).browser_display_mode
     effective_display_mode = resolve_browser_display_mode(
         requested_display_mode,
         logical_screen_size[0] if logical_screen_size else None,
     )
-    if logical_screen_size is not None and effective_display_mode != requested_display_mode:
+    if (
+        logical_screen_size is not None
+        and effective_display_mode != requested_display_mode
+    ):
         logger.info(
             "Display mode adjusted (work area=%dx%d): %s -> %s",
             logical_screen_size[0],
@@ -12765,9 +13918,7 @@ def run_app(
         dpi_awareness_after if dpi_awareness_after is not None else dpi_awareness_before
     )
     use_native_scale = (
-        window_size_is_logical
-        and dpi_scale != 1.0
-        and dpi_awareness_current in (1, 2)
+        window_size_is_logical and dpi_scale != 1.0 and dpi_awareness_current in (1, 2)
     )
     _t2_webview = time.perf_counter()
     logger.info("[TIMING] webview.initialize: %.2fs", _t2_webview - _t2)
@@ -12790,7 +13941,9 @@ def run_app(
         native_window_size = window_size
         if window_size_is_logical and dpi_scale != 1.0:
             native_window_size = _scale_size(window_size, dpi_scale)
-        yakulingo_app._panel_sizes = panel_sizes  # (sidebar_width, input_panel_width, content_width)
+        yakulingo_app._panel_sizes = (
+            panel_sizes  # (sidebar_width, input_panel_width, content_width)
+        )
         yakulingo_app._window_size = window_size
         yakulingo_app._native_window_size = native_window_size
         run_window_size = native_window_size if use_native_scale else window_size
@@ -12804,13 +13957,19 @@ def run_app(
             yakulingo_app._panel_sizes = panel_sizes
         else:
             window_size = (1800, 1100)  # Default size for browser mode
-            yakulingo_app._panel_sizes = (250, 400, 850)  # Default panel sizes (sidebar, input, content)
+            yakulingo_app._panel_sizes = (
+                250,
+                400,
+                850,
+            )  # Default panel sizes (sidebar, input, content)
         yakulingo_app._window_size = window_size
         if window_size_is_logical and dpi_scale != 1.0:
             yakulingo_app._native_window_size = _scale_size(window_size, dpi_scale)
         else:
             yakulingo_app._native_window_size = window_size
-        run_window_size = None  # Passing a size would re-enable native mode inside NiceGUI
+        run_window_size = (
+            None  # Passing a size would re-enable native mode inside NiceGUI
+        )
     logger.info("[TIMING] display_settings (total): %.2fs", time.perf_counter() - _t2)
 
     # NOTE: PP-DocLayout-L pre-initialization moved to @ui.page('/') handler
@@ -12861,15 +14020,17 @@ def run_app(
 
         profile_cmp = str(profile_dir).replace("\\", "/").lower()
         pids: set[int] = set()
-        for proc in psutil.process_iter(['pid', 'name', 'exe', 'cmdline']):
+        for proc in psutil.process_iter(["pid", "name", "exe", "cmdline"]):
             try:
-                name = (proc.info.get('name') or '').lower()
-                exe = (proc.info.get('exe') or '').lower()
-                if 'msedge' not in name and 'msedge' not in exe:
+                name = (proc.info.get("name") or "").lower()
+                exe = (proc.info.get("exe") or "").lower()
+                if "msedge" not in name and "msedge" not in exe:
                     continue
-                cmdline = " ".join(proc.info.get('cmdline') or []).replace("\\", "/").lower()
+                cmdline = (
+                    " ".join(proc.info.get("cmdline") or []).replace("\\", "/").lower()
+                )
                 if profile_cmp in cmdline:
-                    pid = proc.info.get('pid')
+                    pid = proc.info.get("pid")
                     if isinstance(pid, int):
                         pids.add(pid)
             except (psutil.NoSuchProcess, psutil.AccessDenied):
@@ -12925,29 +14086,40 @@ def run_app(
         if yakulingo_app._resident_mode:
             yakulingo_app._resident_show_requested = True
         if yakulingo_app._resident_mode and (
-            yakulingo_app._auto_open_cause not in (AutoOpenCause.HOTKEY, AutoOpenCause.LOGIN)
+            yakulingo_app._auto_open_cause
+            not in (AutoOpenCause.HOTKEY, AutoOpenCause.LOGIN)
         ):
             yakulingo_app._mark_manual_show("open_browser_window")
         if sys.platform == "win32":
             try:
                 if yakulingo_app._bring_window_to_front_win32():
-                    yakulingo_app._set_layout_mode(LayoutMode.FOREGROUND, "open_browser_window")
+                    yakulingo_app._set_layout_mode(
+                        LayoutMode.FOREGROUND, "open_browser_window"
+                    )
                     return
             except Exception as e:
                 logger.debug("Failed to bring existing UI window to front: %s", e)
         if native:
             try:
-                if nicegui_app and hasattr(nicegui_app, 'native') and nicegui_app.native.main_window:
+                if (
+                    nicegui_app
+                    and hasattr(nicegui_app, "native")
+                    and nicegui_app.native.main_window
+                ):
                     window = nicegui_app.native.main_window
-                    if hasattr(window, 'restore'):
+                    if hasattr(window, "restore"):
                         window.restore()
-                    if hasattr(window, 'show'):
+                    if hasattr(window, "show"):
                         window.show()
-                    yakulingo_app._set_ui_taskbar_visibility_win32(True, "open_browser_window")
+                    yakulingo_app._set_ui_taskbar_visibility_win32(
+                        True, "open_browser_window"
+                    )
                     window.on_top = True
                     time.sleep(0.05)
                     window.on_top = False
-                    yakulingo_app._set_layout_mode(LayoutMode.FOREGROUND, "open_browser_window")
+                    yakulingo_app._set_layout_mode(
+                        LayoutMode.FOREGROUND, "open_browser_window"
+                    )
                     # Native mode can keep the window handle alive while the WebSocket client
                     # is disconnected (e.g., close-to-resident). In that case, force a reload
                     # so NiceGUI creates a fresh client and UI updates resume.
@@ -12962,9 +14134,9 @@ def run_app(
                         except Exception:
                             ui_url = None
                         try:
-                            if hasattr(window, 'evaluate_js'):
-                                window.evaluate_js('location.reload()')
-                            elif ui_url and hasattr(window, 'load_url'):
+                            if hasattr(window, "evaluate_js"):
+                                window.evaluate_js("location.reload()")
+                            elif ui_url and hasattr(window, "load_url"):
                                 window.load_url(ui_url)
                         except Exception as e:
                             logger.debug("Failed to reload native UI window: %s", e)
@@ -12978,13 +14150,20 @@ def run_app(
             return
 
         with browser_open_lock:
-            if shutdown_event.is_set() or getattr(yakulingo_app, "_shutdown_requested", False):
+            if shutdown_event.is_set() or getattr(
+                yakulingo_app, "_shutdown_requested", False
+            ):
                 return
             if browser_open_in_progress:
                 return
             if browser_opened:
                 try:
-                    if sys.platform == "win32" and yakulingo_app._is_ui_window_present_win32(include_hidden=True):
+                    if (
+                        sys.platform == "win32"
+                        and yakulingo_app._is_ui_window_present_win32(
+                            include_hidden=True
+                        )
+                    ):
                         yakulingo_app._bring_window_to_front_win32()
                         return
                 except Exception:
@@ -13001,11 +14180,15 @@ def run_app(
         opened = False
         try:
             url = _build_local_url(host, port, "/")
-            native_window_size = yakulingo_app._native_window_size or yakulingo_app._window_size
+            native_window_size = (
+                yakulingo_app._native_window_size or yakulingo_app._window_size
+            )
             width, height = native_window_size
             pending_rect = None
             if sys.platform == "win32":
-                pending_rect = yakulingo_app._consume_pending_ui_window_rect(max_age_sec=3.0)
+                pending_rect = yakulingo_app._consume_pending_ui_window_rect(
+                    max_age_sec=3.0
+                )
                 if pending_rect:
                     pending_x, pending_y, pending_w, pending_h = pending_rect
                     if pending_w > 0 and pending_h > 0:
@@ -13030,7 +14213,11 @@ def run_app(
                         "--lang=ja",
                         # Use a dedicated profile to ensure the spawned Edge instance is isolated and
                         # can be terminated reliably on app exit (avoid reusing user's main Edge).
-                        *( [f"--user-data-dir={browser_profile_dir}"] if browser_profile_dir is not None else [] ),
+                        *(
+                            [f"--user-data-dir={browser_profile_dir}"]
+                            if browser_profile_dir is not None
+                            else []
+                        ),
                         "--no-first-run",
                         "--no-default-browser-check",
                         "--disable-sync",
@@ -13044,7 +14231,9 @@ def run_app(
                         import subprocess
 
                         local_cwd = os.environ.get("SYSTEMROOT", r"C:\Windows")
-                        if shutdown_event.is_set() or getattr(yakulingo_app, "_shutdown_requested", False):
+                        if shutdown_event.is_set() or getattr(
+                            yakulingo_app, "_shutdown_requested", False
+                        ):
                             return
                         proc = subprocess.Popen(
                             args,
@@ -13057,14 +14246,25 @@ def run_app(
                         opened = True
                         logger.info("Opened browser app window: %s", url)
                         try:
+
                             def _bring_browser_window_foreground() -> None:
                                 for _ in range(8):
                                     if shutdown_event.is_set():
                                         return
                                     try:
-                                        if getattr(yakulingo_app, "_resident_mode", False) and (
-                                            getattr(yakulingo_app, "_resident_login_required", False)
-                                            or getattr(yakulingo_app, "_login_polling_active", False)
+                                        if getattr(
+                                            yakulingo_app, "_resident_mode", False
+                                        ) and (
+                                            getattr(
+                                                yakulingo_app,
+                                                "_resident_login_required",
+                                                False,
+                                            )
+                                            or getattr(
+                                                yakulingo_app,
+                                                "_login_polling_active",
+                                                False,
+                                            )
                                         ):
                                             return
                                     except Exception:
@@ -13072,6 +14272,7 @@ def run_app(
                                     time.sleep(0.2)
                                     if yakulingo_app._bring_window_to_front_win32():
                                         return
+
                             threading.Thread(
                                 target=_bring_browser_window_foreground,
                                 daemon=True,
@@ -13085,7 +14286,10 @@ def run_app(
 
             try:
                 import webbrowser
-                if shutdown_event.is_set() or getattr(yakulingo_app, "_shutdown_requested", False):
+
+                if shutdown_event.is_set() or getattr(
+                    yakulingo_app, "_shutdown_requested", False
+                ):
                     return
                 webbrowser.open(url)
                 opened = True
@@ -13110,7 +14314,7 @@ def run_app(
             import ctypes
             from ctypes import wintypes
 
-            user32 = ctypes.WinDLL('user32', use_last_error=True)
+            user32 = ctypes.WinDLL("user32", use_last_error=True)
             WM_CLOSE = 0x0010
 
             EnumWindowsProc = ctypes.WINFUNCTYPE(
@@ -13124,7 +14328,10 @@ def run_app(
                     class_name = ctypes.create_unicode_buffer(256)
                     if user32.GetClassNameW(hwnd, class_name, 256) == 0:
                         return True
-                    if class_name.value not in ("Chrome_WidgetWin_0", "Chrome_WidgetWin_1"):
+                    if class_name.value not in (
+                        "Chrome_WidgetWin_0",
+                        "Chrome_WidgetWin_1",
+                    ):
                         return True
                 except Exception:
                     return True
@@ -13148,13 +14355,16 @@ def run_app(
         # or if Edge is stuck during startup.
         try:
             import time as _time
+
             _time.sleep(0.2)
         except Exception:
             pass
 
         if browser_profile_dir is not None:
             if _kill_edge_processes_by_profile_dir(browser_profile_dir):
-                logger.debug("Terminated UI Edge (profile dir match): %s", browser_profile_dir)
+                logger.debug(
+                    "Terminated UI Edge (profile dir match): %s", browser_profile_dir
+                )
         elif browser_pid is not None:
             if _kill_process_tree(browser_pid):
                 logger.debug("Terminated UI Edge (PID): %s", browser_pid)
@@ -13203,7 +14413,9 @@ def run_app(
                 yakulingo_app._active_progress_timer = None
             except Exception:
                 pass
-            logger.debug("[TIMING] Cancel: progress_timer: %.3fs", time_module.time() - t0)
+            logger.debug(
+                "[TIMING] Cancel: progress_timer: %.3fs", time_module.time() - t0
+            )
 
         if yakulingo_app._file_panel_refresh_timer is not None:
             t0 = time_module.time()
@@ -13211,7 +14423,10 @@ def run_app(
                 yakulingo_app._stop_file_panel_refresh_timer()
             except Exception:
                 pass
-            logger.debug("[TIMING] Cancel: file_panel_refresh_timer: %.3fs", time_module.time() - t0)
+            logger.debug(
+                "[TIMING] Cancel: file_panel_refresh_timer: %.3fs",
+                time_module.time() - t0,
+            )
 
         if yakulingo_app._result_panel_scroll_handle is not None:
             t0 = time_module.time()
@@ -13220,7 +14435,10 @@ def run_app(
             except Exception:
                 pass
             yakulingo_app._result_panel_scroll_handle = None
-            logger.debug("[TIMING] Cancel: result_panel_scroll_handle: %.3fs", time_module.time() - t0)
+            logger.debug(
+                "[TIMING] Cancel: result_panel_scroll_handle: %.3fs",
+                time_module.time() - t0,
+            )
 
         if yakulingo_app._result_panel_scroll_task is not None:
             t0 = time_module.time()
@@ -13228,7 +14446,10 @@ def run_app(
                 yakulingo_app._result_panel_scroll_task.cancel()
             except Exception:
                 pass
-            logger.debug("[TIMING] Cancel: result_panel_scroll_task: %.3fs", time_module.time() - t0)
+            logger.debug(
+                "[TIMING] Cancel: result_panel_scroll_task: %.3fs",
+                time_module.time() - t0,
+            )
 
         if yakulingo_app._ui_ready_retry_task is not None:
             t0 = time_module.time()
@@ -13236,7 +14457,9 @@ def run_app(
                 yakulingo_app._ui_ready_retry_task.cancel()
             except Exception:
                 pass
-            logger.debug("[TIMING] Cancel: ui_ready_retry_task: %.3fs", time_module.time() - t0)
+            logger.debug(
+                "[TIMING] Cancel: ui_ready_retry_task: %.3fs", time_module.time() - t0
+            )
 
         if yakulingo_app._login_polling_task is not None:
             t0 = time_module.time()
@@ -13244,7 +14467,9 @@ def run_app(
                 yakulingo_app._login_polling_task.cancel()
             except Exception:
                 pass
-            logger.debug("[TIMING] Cancel: login_polling_task: %.3fs", time_module.time() - t0)
+            logger.debug(
+                "[TIMING] Cancel: login_polling_task: %.3fs", time_module.time() - t0
+            )
 
         if yakulingo_app._copilot_window_monitor_task is not None:
             t0 = time_module.time()
@@ -13252,7 +14477,10 @@ def run_app(
                 yakulingo_app._copilot_window_monitor_task.cancel()
             except Exception:
                 pass
-            logger.debug("[TIMING] Cancel: copilot_window_monitor_task: %.3fs", time_module.time() - t0)
+            logger.debug(
+                "[TIMING] Cancel: copilot_window_monitor_task: %.3fs",
+                time_module.time() - t0,
+            )
 
         if yakulingo_app._auto_open_timeout_task is not None:
             t0 = time_module.time()
@@ -13260,7 +14488,10 @@ def run_app(
                 yakulingo_app._auto_open_timeout_task.cancel()
             except Exception:
                 pass
-            logger.debug("[TIMING] Cancel: auto_open_timeout_task: %.3fs", time_module.time() - t0)
+            logger.debug(
+                "[TIMING] Cancel: auto_open_timeout_task: %.3fs",
+                time_module.time() - t0,
+            )
 
         if yakulingo_app._gpt_mode_setup_task is not None:
             t0 = time_module.time()
@@ -13268,7 +14499,9 @@ def run_app(
                 yakulingo_app._gpt_mode_setup_task.cancel()
             except Exception:
                 pass
-            logger.debug("[TIMING] Cancel: gpt_mode_setup_task: %.3fs", time_module.time() - t0)
+            logger.debug(
+                "[TIMING] Cancel: gpt_mode_setup_task: %.3fs", time_module.time() - t0
+            )
 
         if yakulingo_app._early_connection_task is not None:
             t0 = time_module.time()
@@ -13276,7 +14509,9 @@ def run_app(
                 yakulingo_app._early_connection_task.cancel()
             except Exception:
                 pass
-            logger.debug("[TIMING] Cancel: early_connection_task: %.3fs", time_module.time() - t0)
+            logger.debug(
+                "[TIMING] Cancel: early_connection_task: %.3fs", time_module.time() - t0
+            )
 
         if yakulingo_app._status_auto_refresh_task is not None:
             t0 = time_module.time()
@@ -13284,7 +14519,10 @@ def run_app(
                 yakulingo_app._status_auto_refresh_task.cancel()
             except Exception:
                 pass
-            logger.debug("[TIMING] Cancel: status_auto_refresh_task: %.3fs", time_module.time() - t0)
+            logger.debug(
+                "[TIMING] Cancel: status_auto_refresh_task: %.3fs",
+                time_module.time() - t0,
+            )
 
         if yakulingo_app._resident_heartbeat_task is not None:
             t0 = time_module.time()
@@ -13292,7 +14530,10 @@ def run_app(
                 yakulingo_app._resident_heartbeat_task.cancel()
             except Exception:
                 pass
-            logger.debug("[TIMING] Cancel: resident_heartbeat_task: %.3fs", time_module.time() - t0)
+            logger.debug(
+                "[TIMING] Cancel: resident_heartbeat_task: %.3fs",
+                time_module.time() - t0,
+            )
 
         if yakulingo_app.translation_service is not None:
             t0 = time_module.time()
@@ -13300,7 +14541,9 @@ def run_app(
                 yakulingo_app.translation_service.cancel()
             except Exception:
                 pass
-            logger.debug("[TIMING] Cancel: translation_service: %.3fs", time_module.time() - t0)
+            logger.debug(
+                "[TIMING] Cancel: translation_service: %.3fs", time_module.time() - t0
+            )
 
         t0 = time_module.time()
         try:
@@ -13317,29 +14560,41 @@ def run_app(
                 except Exception:
                     pass
             yakulingo_app._file_queue_workers = []
-            logger.debug("[TIMING] Cancel: file_queue_workers: %.3fs", time_module.time() - t0)
+            logger.debug(
+                "[TIMING] Cancel: file_queue_workers: %.3fs", time_module.time() - t0
+            )
 
-        logger.debug("[TIMING] Cancel operations: %.2fs", time_module.time() - step_start)
+        logger.debug(
+            "[TIMING] Cancel operations: %.2fs", time_module.time() - step_start
+        )
 
         # Stop hotkey listener / clipboard trigger (quick)
         step_start = time_module.time()
         yakulingo_app.stop_hotkey_listener()
         yakulingo_app.stop_clipboard_trigger()
-        logger.debug("[TIMING] Hotkey/clipboard stop: %.2fs", time_module.time() - step_start)
+        logger.debug(
+            "[TIMING] Hotkey/clipboard stop: %.2fs", time_module.time() - step_start
+        )
 
         # Force disconnect from Copilot (the main time-consuming step)
         step_start = time_module.time()
         if yakulingo_app._copilot is not None:
             try:
                 yakulingo_app._copilot.force_disconnect()
-                logger.debug("[TIMING] Copilot disconnected: %.2fs", time_module.time() - step_start)
+                logger.debug(
+                    "[TIMING] Copilot disconnected: %.2fs",
+                    time_module.time() - step_start,
+                )
             except Exception as e:
                 logger.debug("Error disconnecting Copilot: %s", e)
 
         # Stop local llama-server if it is ours (safe check inside manager).
         step_start = time_module.time()
         try:
-            from yakulingo.services.local_llama_server import get_local_llama_server_manager
+            from yakulingo.services.local_llama_server import (
+                get_local_llama_server_manager,
+            )
+
             get_local_llama_server_manager().stop(timeout_s=5.0)
         except Exception as e:
             logger.debug("Error stopping local llama-server: %s", e)
@@ -13357,6 +14612,7 @@ def run_app(
         step_start = time_module.time()
         try:
             from yakulingo.processors.pdf_layout import clear_analyzer_cache
+
             clear_analyzer_cache()
         except ImportError:
             pass
@@ -13386,7 +14642,7 @@ def run_app(
     # and are harmless but produce confusing error messages (shown as "Exception ignored")
 
     # Handle "Exception ignored" messages (unraisable exceptions)
-    _original_unraisablehook = getattr(sys, 'unraisablehook', None)
+    _original_unraisablehook = getattr(sys, "unraisablehook", None)
 
     def _shutdown_unraisablehook(unraisable):
         # Ignore KeyboardInterrupt during shutdown (WeakSet cleanup noise)
@@ -13398,8 +14654,11 @@ def run_app(
         else:
             # Fallback: print to stderr (default behavior)
             import traceback
+
             print(f"Exception ignored in: {unraisable.object}", file=sys.stderr)
-            traceback.print_exception(unraisable.exc_type, unraisable.exc_value, unraisable.exc_tb)
+            traceback.print_exception(
+                unraisable.exc_type, unraisable.exc_value, unraisable.exc_tb
+            )
 
     sys.unraisablehook = _shutdown_unraisablehook
 
@@ -13414,7 +14673,7 @@ def run_app(
 
     # Serve styles.css as static file for browser caching (faster subsequent loads)
     ui_dir = Path(__file__).parent
-    nicegui_app.add_static_files('/static', ui_dir)
+    nicegui_app.add_static_files("/static", ui_dir)
 
     # Global drag&drop upload API (browser mode)
     # In some Edge builds, dropping a file on the page will not reach Quasar's uploader.
@@ -13427,9 +14686,12 @@ def run_app(
     try:
         from fastapi import HTTPException
     except Exception as e:
-        logger.debug("FastAPI upload API unavailable; global drop upload disabled: %s", e)
+        logger.debug(
+            "FastAPI upload API unavailable; global drop upload disabled: %s", e
+        )
     else:
-        @nicegui_app.post('/api/clipboard')
+
+        @nicegui_app.post("/api/clipboard")
         async def clipboard_api(request: StarletteRequest):  # type: ignore[misc]
             """OSクリップボードへテキストを書き込む（ローカルPCのみ）。"""
             try:
@@ -13492,7 +14754,7 @@ def run_app(
 
             return {"ok": True, "length": len(text)}
 
-        @nicegui_app.post('/api/global-drop')
+        @nicegui_app.post("/api/global-drop")
         async def global_drop_upload(request: StarletteRequest):  # type: ignore[misc]
             from yakulingo.ui.components.file_panel import (
                 MAX_DROP_FILE_SIZE_BYTES,
@@ -13504,16 +14766,27 @@ def run_app(
             try:
                 form = await request.form()
             except Exception as err:
-                logger.exception("Global drop API: failed to parse multipart form: %s", err)
-                raise HTTPException(status_code=400, detail="アップロードを読み取れませんでした") from err
+                logger.exception(
+                    "Global drop API: failed to parse multipart form: %s", err
+                )
+                raise HTTPException(
+                    status_code=400, detail="アップロードを読み取れませんでした"
+                ) from err
             uploaded = form.get("file")
-            if uploaded is None or not hasattr(uploaded, "filename") or not hasattr(uploaded, "read"):
+            if (
+                uploaded is None
+                or not hasattr(uploaded, "filename")
+                or not hasattr(uploaded, "read")
+            ):
                 raise HTTPException(status_code=400, detail="file is required")
 
             filename = getattr(uploaded, "filename", None) or "unnamed_file"
             ext = Path(filename).suffix.lower()
             if ext not in SUPPORTED_EXTENSIONS:
-                raise HTTPException(status_code=400, detail=f"Unsupported file type: {ext or '(no extension)'}")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Unsupported file type: {ext or '(no extension)'}",
+                )
 
             # Stream directly to disk with a hard limit (avoids loading large files into memory).
             size_bytes = 0
@@ -13563,10 +14836,11 @@ def run_app(
             )
             return {"ok": True, "filename": filename, "size_bytes": size_bytes}
 
-        @nicegui_app.post('/api/pdf-prepare')
+        @nicegui_app.post("/api/pdf-prepare")
         async def pdf_prepare(_: StarletteRequest):  # type: ignore[misc]
             """Initialize PP-DocLayout-L before uploading/processing a PDF (browser mode UX)."""
             import time as _time_module
+
             _t0 = _time_module.perf_counter()
 
             # Fast path: already initialized or failed (PDF works with degraded quality).
@@ -13574,7 +14848,11 @@ def run_app(
                 LayoutInitializationState.INITIALIZED,
                 LayoutInitializationState.FAILED,
             ):
-                return {"ok": True, "available": True, "status": yakulingo_app._layout_init_state.value}
+                return {
+                    "ok": True,
+                    "available": True,
+                    "status": yakulingo_app._layout_init_state.value,
+                }
 
             # NOTE: Keep this endpoint non-blocking. Initialization can take a long time
             # on first run (large imports), and blocking here delays drag&drop uploads.
@@ -13590,7 +14868,10 @@ def run_app(
             ):
                 return {"ok": True, "available": False}
 
-            if yakulingo_app._layout_init_state == LayoutInitializationState.NOT_INITIALIZED:
+            if (
+                yakulingo_app._layout_init_state
+                == LayoutInitializationState.NOT_INITIALIZED
+            ):
                 _create_logged_task(
                     yakulingo_app._ensure_layout_initialized(),
                     name="pdf_prepare_layout_init",
@@ -13598,14 +14879,17 @@ def run_app(
                 # Yield so the task can flip state to INITIALIZING before we respond.
                 await asyncio.sleep(0)
 
-            logger.debug("[TIMING] /api/pdf-prepare scheduled: %.3fs", _time_module.perf_counter() - _t0)
+            logger.debug(
+                "[TIMING] /api/pdf-prepare scheduled: %.3fs",
+                _time_module.perf_counter() - _t0,
+            )
             return {
                 "ok": True,
                 "available": True,
                 "status": yakulingo_app._layout_init_state.value,
             }
 
-        @nicegui_app.post('/api/shutdown')
+        @nicegui_app.post("/api/shutdown")
         async def shutdown_api(request: StarletteRequest):  # type: ignore[misc]
             """Shut down the resident YakuLingo service (local machine only)."""
             try:
@@ -13627,13 +14911,16 @@ def run_app(
                 from yakulingo.ui.utils import write_launcher_state
 
                 write_launcher_state("user_exit")
-            logger.info("Shutdown requested via /api/shutdown (restart=%s)", allow_restart)
+            logger.info(
+                "Shutdown requested via /api/shutdown (restart=%s)", allow_restart
+            )
 
             # Graceful shutdown (runs cleanup via on_shutdown). Some environments keep
             # background threads alive; force-exit after a short grace period.
             def _force_exit_after_grace() -> None:
                 import os as _os
                 import time as _time
+
                 _time.sleep(5.0)
                 _os._exit(0 if allow_restart else 10)
 
@@ -13649,7 +14936,7 @@ def run_app(
             nicegui_app.shutdown()
             return {"ok": True}
 
-        @nicegui_app.post('/api/activate')
+        @nicegui_app.post("/api/activate")
         async def activate_api(request: StarletteRequest):  # type: ignore[misc]
             """Bring the UI window to the foreground (local machine only)."""
             try:
@@ -13693,7 +14980,7 @@ def run_app(
                 logger.debug("Failed to activate UI window: %s", e)
             return {"ok": True}
 
-        @nicegui_app.post('/api/open-text')
+        @nicegui_app.post("/api/open-text")
         async def open_text_api(request: StarletteRequest):  # type: ignore[misc]
             """Open the UI in a fresh text-translation INPUT state (local machine only)."""
             try:
@@ -13739,7 +15026,7 @@ def run_app(
 
             return {"ok": True}
 
-        @nicegui_app.post('/api/ui-close')
+        @nicegui_app.post("/api/ui-close")
         async def ui_close_api(request: StarletteRequest):  # type: ignore[misc]
             """Switch to resident mode when the UI window is closed (local machine only)."""
             try:
@@ -13760,7 +15047,7 @@ def run_app(
 
             return {"ok": True}
 
-        @nicegui_app.post('/api/hotkey')
+        @nicegui_app.post("/api/hotkey")
         async def hotkey_api(request: StarletteRequest):  # type: ignore[misc]
             """Trigger clipboard translation via API (local machine only)."""
             try:
@@ -13819,7 +15106,7 @@ def run_app(
 
             return {"ok": True}
 
-        @nicegui_app.get('/api/setup-status')
+        @nicegui_app.get("/api/setup-status")
         async def setup_status_api(request: StarletteRequest):  # type: ignore[misc]
             """Expose resident startup readiness for setup scripts (local machine only)."""
             try:
@@ -13833,7 +15120,7 @@ def run_app(
 
             return await yakulingo_app._get_resident_startup_status()
 
-        @nicegui_app.post('/api/window-layout')
+        @nicegui_app.post("/api/window-layout")
         async def window_layout_api(request: StarletteRequest):  # type: ignore[misc]
             """Apply work-priority window layout (local machine only)."""
             try:
@@ -13904,7 +15191,11 @@ def run_app(
                 layout_value = "auto"
                 edge_layout_mode = None
 
-            if edge_layout_mode is not None and sys.platform == "win32" and yakulingo_app._copilot is not None:
+            if (
+                edge_layout_mode is not None
+                and sys.platform == "win32"
+                and yakulingo_app._copilot is not None
+            ):
                 try:
                     yakulingo_app.copilot.set_edge_layout_mode(edge_layout_mode)
                 except Exception as err:
@@ -13937,7 +15228,7 @@ def run_app(
 
     # Icon path for native window (pywebview) and browser favicon.
     icon_path = _resolve_icon_path(ui_dir)
-    browser_favicon_path = ui_dir / 'yakulingo_favicon.svg'
+    browser_favicon_path = ui_dir / "yakulingo_favicon.svg"
     if not browser_favicon_path.exists():
         browser_favicon_path = icon_path
 
@@ -13990,25 +15281,27 @@ def run_app(
     # - easy_drag: Keep disabled; drag region is provided in the UI when frameless
     # - icon: Use YakuLingo icon for taskbar (instead of default Python icon)
     if native:
-        nicegui_app.native.window_args['background_color'] = '#F1F4FA'  # Match app background (styles.css --md-sys-color-surface-container-low)
-        nicegui_app.native.window_args['easy_drag'] = False
-        nicegui_app.native.window_args['text_select'] = True
+        nicegui_app.native.window_args["background_color"] = (
+            "#F1F4FA"  # Match app background (styles.css --md-sys-color-surface-container-low)
+        )
+        nicegui_app.native.window_args["easy_drag"] = False
+        nicegui_app.native.window_args["text_select"] = True
         # Restrict window dragging to the dedicated drag strip only.
-        nicegui_app.native.settings['DRAG_REGION_SELECTOR'] = '.native-drag-region'
-        nicegui_app.native.settings['DRAG_REGION_DIRECT_TARGET_ONLY'] = True
+        nicegui_app.native.settings["DRAG_REGION_SELECTOR"] = ".native-drag-region"
+        nicegui_app.native.settings["DRAG_REGION_DIRECT_TARGET_ONLY"] = True
 
         # Start window hidden to prevent position flicker
         # Window will be shown by _position_window_early_sync() after positioning
-        nicegui_app.native.window_args['hidden'] = True
+        nicegui_app.native.window_args["hidden"] = True
         if resident_mode and sys.platform == "win32":
             offscreen_pos = _get_offscreen_position_win32()
             if offscreen_pos is not None:
-                nicegui_app.native.window_args['x'] = offscreen_pos[0]
-                nicegui_app.native.window_args['y'] = offscreen_pos[1]
+                nicegui_app.native.window_args["x"] = offscreen_pos[0]
+                nicegui_app.native.window_args["y"] = offscreen_pos[1]
 
         # Set pywebview window icon (may not affect taskbar, but helps title bar)
         if icon_path is not None and icon_path.exists():
-            nicegui_app.native.window_args['icon'] = str(icon_path)
+            nicegui_app.native.window_args["icon"] = str(icon_path)
 
     # Early Copilot connection: Wait for background thread or start new connection
     # Edge+Copilot connection was started before NiceGUI import (see run_app above)
@@ -14016,9 +15309,11 @@ def run_app(
         """Wait for early connection or start new one if needed."""
         try:
             # Check if early connect thread was started before NiceGUI import
-            early_thread = getattr(yakulingo_app, '_early_connect_thread', None)
-            early_event = getattr(yakulingo_app, '_early_connection_event', None)
-            early_result_ref = getattr(yakulingo_app, '_early_connection_result_ref', None)
+            early_thread = getattr(yakulingo_app, "_early_connect_thread", None)
+            early_event = getattr(yakulingo_app, "_early_connection_event", None)
+            early_result_ref = getattr(
+                yakulingo_app, "_early_connection_result_ref", None
+            )
             if early_event is not None and early_event.is_set():
                 yakulingo_app._early_connection_result = (
                     early_result_ref.value if early_result_ref is not None else None
@@ -14044,7 +15339,7 @@ def run_app(
             result = await asyncio.to_thread(
                 yakulingo_app.copilot.connect,
                 bring_to_foreground_on_login=not resident_mode,
-                defer_window_positioning=True
+                defer_window_positioning=True,
             )
             yakulingo_app._early_connection_result = result
             logger.info("[TIMING] Copilot connection completed: %s", result)
@@ -14069,17 +15364,19 @@ def run_app(
         - This function positions the window while hidden, then shows it
         - This eliminates the visual flicker of window moving after appearing
         """
-        if sys.platform != 'win32':
+        if sys.platform != "win32":
             return
 
-        if shutdown_event.is_set() or getattr(yakulingo_app, "_shutdown_requested", False):
+        if shutdown_event.is_set() or getattr(
+            yakulingo_app, "_shutdown_requested", False
+        ):
             return
 
         try:
             import ctypes
             from ctypes import wintypes
 
-            user32 = ctypes.WinDLL('user32', use_last_error=True)
+            user32 = ctypes.WinDLL("user32", use_last_error=True)
 
             # Poll for YakuLingo window with progressive interval
             # Progressive polling: start fast, then slow down to reduce CPU usage
@@ -14089,8 +15386,8 @@ def run_app(
             # Total max wait: 15s (余裕を持って設定、NiceGUI+pywebview起動は約8秒)
             MAX_WAIT_MS = 15000
             POLL_INTERVALS = [
-                (1000, 50),    # First 1s: 50ms interval (quick detection)
-                (3000, 100),   # 1-3s: 100ms interval
+                (1000, 50),  # First 1s: 50ms interval (quick detection)
+                (3000, 100),  # 1-3s: 100ms interval
                 (15000, 200),  # 3-15s: 200ms interval (CPU-friendly)
             ]
             waited_ms = 0
@@ -14114,15 +15411,21 @@ def run_app(
             SWP_NOMOVE = 0x0002
 
             # Use icon_path from outer scope (defined in run_app)
-            icon_path_str = str(icon_path) if icon_path is not None and icon_path.exists() else None
+            icon_path_str = (
+                str(icon_path) if icon_path is not None and icon_path.exists() else None
+            )
 
             while waited_ms < MAX_WAIT_MS:
-                if shutdown_event.is_set() or getattr(yakulingo_app, "_shutdown_requested", False):
+                if shutdown_event.is_set() or getattr(
+                    yakulingo_app, "_shutdown_requested", False
+                ):
                     return
                 # Find YakuLingo window by title (exact match first, then fallback to partial match).
                 hwnd = user32.FindWindowW(None, "YakuLingo")
                 if not hwnd:
-                    EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+                    EnumWindowsProc = ctypes.WINFUNCTYPE(
+                        ctypes.c_bool, wintypes.HWND, wintypes.LPARAM
+                    )
                     found = {"hwnd": None}
 
                     @EnumWindowsProc
@@ -14147,26 +15450,36 @@ def run_app(
                     # First, check if window is minimized and restore it
                     if user32.IsIconic(hwnd) and not resident_mode:
                         user32.ShowWindow(hwnd, SW_RESTORE)
-                        logger.debug("[EARLY_POSITION] Window was minimized, restored after %dms", waited_ms)
+                        logger.debug(
+                            "[EARLY_POSITION] Window was minimized, restored after %dms",
+                            waited_ms,
+                        )
                         time.sleep(0.1)  # Brief wait for restore animation
 
                     # If the window is visible despite hidden=True, hide it before moving
                     if is_visible:
                         user32.ShowWindow(hwnd, SW_HIDE)
-                        logger.debug("[EARLY_POSITION] Window was visible at create, hiding before reposition")
+                        logger.debug(
+                            "[EARLY_POSITION] Window was visible at create, hiding before reposition"
+                        )
                         is_visible = False
 
                     if icon_path_str:
-                        _set_window_icon_win32(hwnd, icon_path_str, log_prefix="[EARLY_POSITION]")
+                        _set_window_icon_win32(
+                            hwnd, icon_path_str, log_prefix="[EARLY_POSITION]"
+                        )
 
                     if resident_mode:
                         _set_window_taskbar_visibility_win32(hwnd, False)
                         _hide_native_window_offscreen_win32("YakuLingo")
-                        logger.debug("[EARLY_POSITION] Resident mode: window kept offscreen")
+                        logger.debug(
+                            "[EARLY_POSITION] Resident mode: window kept offscreen"
+                        )
                         return
 
                     # Pre-position the window to the right half before showing it.
                     try:
+
                         class MONITORINFO(ctypes.Structure):
                             _fields_ = [
                                 ("cbSize", wintypes.DWORD),
@@ -14186,7 +15499,9 @@ def run_app(
                         if monitor:
                             monitor_info = MONITORINFO()
                             monitor_info.cbSize = ctypes.sizeof(MONITORINFO)
-                            if user32.GetMonitorInfoW(monitor, ctypes.byref(monitor_info)):
+                            if user32.GetMonitorInfoW(
+                                monitor, ctypes.byref(monitor_info)
+                            ):
                                 work = monitor_info.rcWork
                                 work_width = int(work.right - work.left)
                                 work_height = int(work.bottom - work.top)
@@ -14197,8 +15512,12 @@ def run_app(
                                     dpi_awareness = _get_process_dpi_awareness()
                                     if dpi_awareness in (1, 2) and dpi_scale != 1.0:
                                         gap = int(round(gap * dpi_scale))
-                                        min_ui_width = int(round(min_ui_width * dpi_scale))
-                                    ui_width = max(int(work_width * 0.5) - gap, min_ui_width)
+                                        min_ui_width = int(
+                                            round(min_ui_width * dpi_scale)
+                                        )
+                                    ui_width = max(
+                                        int(work_width * 0.5) - gap, min_ui_width
+                                    )
                                     ui_width = min(ui_width, work_width)
                                     target_width = ui_width
                                     target_height = work_height
@@ -14222,7 +15541,9 @@ def run_app(
                     except Exception:
                         pass
 
-                    if shutdown_event.is_set() or getattr(yakulingo_app, "_shutdown_requested", False):
+                    if shutdown_event.is_set() or getattr(
+                        yakulingo_app, "_shutdown_requested", False
+                    ):
                         try:
                             user32.ShowWindow(hwnd, SW_HIDE)
                         except Exception:
@@ -14231,17 +15552,33 @@ def run_app(
 
                     if not is_visible:
                         user32.ShowWindow(hwnd, SW_SHOW)
-                        logger.debug("[EARLY_POSITION] Window shown after %dms", waited_ms)
+                        logger.debug(
+                            "[EARLY_POSITION] Window shown after %dms", waited_ms
+                        )
                     else:
                         user32.SetWindowPos(
-                            hwnd, None, 0, 0, 0, 0,
-                            SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_NOSIZE | SWP_NOMOVE
+                            hwnd,
+                            None,
+                            0,
+                            0,
+                            0,
+                            0,
+                            SWP_NOZORDER
+                            | SWP_NOACTIVATE
+                            | SWP_SHOWWINDOW
+                            | SWP_NOSIZE
+                            | SWP_NOMOVE,
                         )
-                        logger.debug("[EARLY_POSITION] Window visibility ensured after %dms", waited_ms)
+                        logger.debug(
+                            "[EARLY_POSITION] Window visibility ensured after %dms",
+                            waited_ms,
+                        )
                     return
 
                 # Determine current poll interval based on elapsed time
-                current_interval = POLL_INTERVALS[-1][1]  # Default to last (slowest) interval
+                current_interval = POLL_INTERVALS[-1][
+                    1
+                ]  # Default to last (slowest) interval
                 for threshold_ms, interval_ms in POLL_INTERVALS:
                     if waited_ms < threshold_ms:
                         current_interval = interval_ms
@@ -14261,15 +15598,15 @@ def run_app(
 
     def _start_early_positioning_thread():
         nonlocal early_position_started
-        if shutdown_event.is_set() or getattr(yakulingo_app, "_shutdown_requested", False):
+        if shutdown_event.is_set() or getattr(
+            yakulingo_app, "_shutdown_requested", False
+        ):
             return
         if early_position_started:
             return
         early_position_started = True
         threading.Thread(
-            target=_position_window_early_sync,
-            daemon=True,
-            name="early_position"
+            target=_position_window_early_sync, daemon=True, name="early_position"
         ).start()
 
     @nicegui_app.on_startup
@@ -14279,7 +15616,10 @@ def run_app(
         # If Local AI is selected, avoid starting Edge/Copilot automatically.
         startup_backend = "copilot"
         try:
-            startup_backend = getattr(yakulingo_app.settings, "translation_backend", "copilot") or "copilot"
+            startup_backend = (
+                getattr(yakulingo_app.settings, "translation_backend", "copilot")
+                or "copilot"
+            )
         except Exception:
             startup_backend = "copilot"
 
@@ -14296,7 +15636,9 @@ def run_app(
         # Start Copilot connection early only in native mode; browser mode should remain silent
         # and connect on demand (clipboard/UI).
         if native and startup_backend != "local":
-            yakulingo_app._early_connection_task = asyncio.create_task(_early_connect_copilot())
+            yakulingo_app._early_connection_task = asyncio.create_task(
+                _early_connect_copilot()
+            )
             if resident_mode:
                 # Resident setup uses native mode; warm up Copilot so setup.ps1 can detect readiness.
                 _create_logged_task(
@@ -14305,7 +15647,7 @@ def run_app(
                 )
 
         # Start early window positioning - moves window before UI is rendered
-        if native and sys.platform == 'win32':
+        if native and sys.platform == "win32":
             _start_early_positioning_thread()
 
         if not native:
@@ -14325,17 +15667,20 @@ def run_app(
                 except Exception as e:
                     logger.debug("Failed to auto-open UI window: %s", e)
 
-    @ui.page('/')
+    @ui.page("/")
     async def main_page(client: NiceGUIClient):
         # Save client reference for async handlers (context.client not available in async tasks)
         with yakulingo_app._client_lock:
             yakulingo_app._client = client
         yakulingo_app._clear_ui_ready()
 
-        def _clear_cached_client_on_disconnect(_client: NiceGUIClient | None = None) -> None:
+        def _clear_cached_client_on_disconnect(
+            _client: NiceGUIClient | None = None,
+        ) -> None:
             # When the UI window is closed in native close-to-resident mode, keep the service
             # alive but clear the cached client so the clipboard trigger can reopen on demand.
             nonlocal browser_opened
+
             def _clear_browser_state() -> None:
                 nonlocal browser_opened
                 browser_opened = False
@@ -14357,7 +15702,7 @@ def run_app(
         # mis-detecting the UI as English and showing a "Translate this page?" dialog.
         ui.add_head_html('<meta http-equiv="Content-Language" content="ja">')
         ui.add_head_html('<meta name="google" content="notranslate">')
-        ui.add_head_html('''<script>
+        ui.add_head_html("""<script>
  (() => {
    try {
      const root = document.documentElement;
@@ -14367,12 +15712,18 @@ def run_app(
      root.classList.add('sidebar-rail');
    } catch (err) {}
  })();
- </script>''')
+ </script>""")
 
         # Provide an explicit SVG favicon for browser mode (Edge --app taskbar icon can look
         # blurry when it falls back to a low-resolution ICO entry).
-        if not native and browser_favicon_path != icon_path and browser_favicon_path.exists():
-            ui.add_head_html('<link rel="icon" href="/static/yakulingo_favicon.svg" type="image/svg+xml">')
+        if (
+            not native
+            and browser_favicon_path != icon_path
+            and browser_favicon_path.exists()
+        ):
+            ui.add_head_html(
+                '<link rel="icon" href="/static/yakulingo_favicon.svg" type="image/svg+xml">'
+            )
 
         # Set dynamic panel sizes as CSS variables (calculated from monitor resolution)
         sidebar_width, input_panel_width, content_width = yakulingo_app._panel_sizes
@@ -14407,19 +15758,23 @@ def run_app(
                 main_area_width,
             )
 
-        textarea_lines = TEXTAREA_LINES_COMPACT if is_compact_layout else TEXTAREA_LINES_DEFAULT
-        textarea_font_ratio = TEXTAREA_FONT_RATIO_COMPACT if is_compact_layout else TEXTAREA_FONT_RATIO
+        textarea_lines = (
+            TEXTAREA_LINES_COMPACT if is_compact_layout else TEXTAREA_LINES_DEFAULT
+        )
+        textarea_font_ratio = (
+            TEXTAREA_FONT_RATIO_COMPACT if is_compact_layout else TEXTAREA_FONT_RATIO
+        )
         textarea_font_size = base_font_size * textarea_font_ratio
         input_min_height = int(
-            textarea_lines * TEXTAREA_LINE_HEIGHT * textarea_font_size +
-            TEXTAREA_PADDING_RATIO * textarea_font_size
+            textarea_lines * TEXTAREA_LINE_HEIGHT * textarea_font_size
+            + TEXTAREA_PADDING_RATIO * textarea_font_size
         )
 
         # Calculate input max-height based on content width to maintain consistent aspect ratio
         # Aspect ratio 4:3 (height = width * 0.75) for balanced appearance across resolutions
         input_max_height = min(int(content_width * 0.75), int(window_height * 0.55))
 
-        ui.add_head_html(f'''<style>
+        ui.add_head_html(f"""<style>
  :root {{
      --base-font-size: {base_font_size}px;
      --sidebar-width: {sidebar_width}px;
@@ -14429,11 +15784,11 @@ def run_app(
      --input-min-height: {input_min_height}px;
      --input-max-height: {input_max_height}px;
  }}
- </style>''')
+ </style>""")
 
         # Add JavaScript for dynamic resize handling
         # This updates CSS variables when the window is resized
-        ui.add_head_html('''<script>
+        ui.add_head_html("""<script>
  (function() {
     // Constants matching Python calculation (from _detect_display_settings)
     const BASE_FONT_SIZE = 16;  // Fixed font size (no dynamic scaling)
@@ -14573,11 +15928,11 @@ def run_app(
     // for a different resolution (e.g., browser mode or multi-monitor setups).
     updateCSSVariables();
  })();
- </script>''')
+ </script>""")
 
         # Add early CSS for loading screen and font loading handling
         # This runs before create_ui() which loads COMPLETE_CSS
-        ui.add_head_html('''<style>
+        ui.add_head_html("""<style>
 /* Loading screen styles (needed before main CSS loads) */
 html, body {
     background: #FCFCFD;
@@ -14701,16 +16056,16 @@ html.yakulingo-drag-active .global-drop-indicator {
     opacity: 1;
     visibility: visible;
 }
-</style>''')
+</style>""")
 
         # JavaScript to detect font loading and show icons
-        ui.add_head_html('''<script>
+        ui.add_head_html("""<script>
 document.fonts.ready.then(function() {
     document.documentElement.classList.add('fonts-ready');
 });
-</script>''')
+</script>""")
 
-        ui.add_head_html('''<script>
+        ui.add_head_html("""<script>
 (() => {
   if (document.getElementById('yakulingo-preboot')) return;
   const show = () => {
@@ -14726,10 +16081,10 @@ document.fonts.ready.then(function() {
     show();
   }
 })();
-</script>''')
+</script>""")
 
         if native:
-            ui.add_head_html('''<script>
+            ui.add_head_html("""<script>
 (() => {
   const selector = '.pywebview-nodrag';
   const install = () => {
@@ -14752,13 +16107,13 @@ document.fonts.ready.then(function() {
     install();
   }
 })();
- </script>''')
+ </script>""")
 
         # Global file drop handler (browser mode):
         # 1) Prevent Edge from navigating to file:// on drop
         # 2) Upload dropped file via fetch() to the local server (/api/global-drop)
         #    (more reliable than relying on Quasar's uploader across Edge builds).
-        ui.add_head_html('''<script>
+        ui.add_head_html("""<script>
 (() => {
   if (window._yakulingoGlobalDropFetchInstalled) {
     return;
@@ -14890,12 +16245,12 @@ document.fonts.ready.then(function() {
 
   registerTargets();
 })();
-</script>''')
+</script>""")
 
         # Clipboard bridge:
         # Some WebView/Edge app configurations don't allow Ctrl+C / navigator.clipboard reliably.
         # Provide a best-effort fallback that writes to the Windows clipboard via a local API.
-        ui.add_head_html('''<script>
+        ui.add_head_html("""<script>
 (() => {
   if (window._yakulingoClipboardBridgeInstalled) {
     return;
@@ -15007,15 +16362,17 @@ document.fonts.ready.then(function() {
     } catch (err) {}
   }, true);
 })();
-</script>''')
+</script>""")
 
         # Show a startup loading overlay while the UI tree is being constructed.
         # Delay its visibility to avoid a brief flash on fast startups.
-        loading_screen = ui.element('div').classes('loading-screen hidden')
+        loading_screen = ui.element("div").classes("loading-screen hidden")
         with loading_screen:
-            ui.element('div').classes('loading-spinner').props('aria-hidden="true"')
-            loading_title = ui.label('YakuLingo').classes('loading-title')
-            fallback_message = ui.label('読み込みに時間がかかっています...').classes('startup-fallback hidden')
+            ui.element("div").classes("loading-spinner").props('aria-hidden="true"')
+            loading_title = ui.label("YakuLingo").classes("loading-title")
+            fallback_message = ui.label("読み込みに時間がかかっています...").classes(
+                "startup-fallback hidden"
+            )
         yakulingo_app._startup_fallback_element = fallback_message
 
         async def _maybe_show_startup_overlay() -> None:
@@ -15029,15 +16386,16 @@ document.fonts.ready.then(function() {
                 pass
             try:
                 with client:
-                    loading_screen.classes(remove='hidden')
+                    loading_screen.classes(remove="hidden")
             except Exception:
                 try:
-                    loading_screen.classes(remove='hidden')
+                    loading_screen.classes(remove="hidden")
                 except Exception:
                     pass
 
         # Wait for client connection (WebSocket ready)
         import time as _time_module
+
         _t_conn = _time_module.perf_counter()
         client_connected = False
         try:
@@ -15046,14 +16404,17 @@ document.fonts.ready.then(function() {
                 timeout=CLIENT_CONNECTED_TIMEOUT_SEC,
             )
             client_connected = True
-            logger.info("[TIMING] client.connected(): %.2fs", _time_module.perf_counter() - _t_conn)
+            logger.info(
+                "[TIMING] client.connected(): %.2fs",
+                _time_module.perf_counter() - _t_conn,
+            )
         except asyncio.TimeoutError:
             logger.warning(
                 "client.connected() timed out after %.1fs; skipping startup JS",
                 CLIENT_CONNECTED_TIMEOUT_SEC,
             )
         if not client_connected:
-            loading_title.set_text('接続に時間がかかっています...')
+            loading_title.set_text("接続に時間がかかっています...")
 
         if client_connected:
             await _maybe_show_startup_overlay()
@@ -15067,7 +16428,11 @@ document.fonts.ready.then(function() {
 
         # Create main UI (kept hidden until construction completes)
         _t_ui = _time_module.perf_counter()
-        main_container = ui.element('div').classes('main-app-container').props('data-yakulingo-root="true"')
+        main_container = (
+            ui.element("div")
+            .classes("main-app-container")
+            .props('data-yakulingo-root="true"')
+        )
         with main_container:
             yakulingo_app.create_ui()
         logger.info("[TIMING] create_ui(): %.2fs", _time_module.perf_counter() - _t_ui)
@@ -15094,7 +16459,9 @@ document.fonts.ready.then(function() {
                 if yakulingo_app._startup_fallback_element is not None:
                     try:
                         with client:
-                            yakulingo_app._startup_fallback_element.classes(add='hidden')
+                            yakulingo_app._startup_fallback_element.classes(
+                                add="hidden"
+                            )
                     except Exception:
                         pass
                 yakulingo_app._mark_ui_ready(client)
@@ -15113,9 +16480,9 @@ document.fonts.ready.then(function() {
                 return
             try:
                 with client:
-                    yakulingo_app._startup_fallback_element.classes(remove='hidden')
+                    yakulingo_app._startup_fallback_element.classes(remove="hidden")
             except Exception:
-                yakulingo_app._startup_fallback_element.classes(remove='hidden')
+                yakulingo_app._startup_fallback_element.classes(remove="hidden")
             yakulingo_app._startup_fallback_rendered = True
             logger.debug(
                 "[STARTUP] UI readiness timeout; fallback rendered (selector=%s, timeout_ms=%d)",
@@ -15124,11 +16491,13 @@ document.fonts.ready.then(function() {
             )
 
         if client_connected:
-            ui_ready = await yakulingo_app._wait_for_ui_ready(client, STARTUP_UI_READY_TIMEOUT_MS)
+            ui_ready = await yakulingo_app._wait_for_ui_ready(
+                client, STARTUP_UI_READY_TIMEOUT_MS
+            )
             if ui_ready:
                 yakulingo_app._startup_fallback_rendered = False
                 if yakulingo_app._startup_fallback_element is not None:
-                    yakulingo_app._startup_fallback_element.classes(add='hidden')
+                    yakulingo_app._startup_fallback_element.classes(add="hidden")
                 yakulingo_app._mark_ui_ready(client)
                 logger.debug(
                     "[STARTUP] UI readiness ready before timeout (selector=%s, timeout_ms=%d)",
@@ -15141,10 +16510,12 @@ document.fonts.ready.then(function() {
                     STARTUP_UI_READY_SELECTOR,
                     STARTUP_UI_READY_TIMEOUT_MS,
                 )
-                asyncio.create_task(_maybe_render_startup_fallback(STARTUP_UI_READY_TIMEOUT_MS))
+                asyncio.create_task(
+                    _maybe_render_startup_fallback(STARTUP_UI_READY_TIMEOUT_MS)
+                )
 
         # Reveal the UI and optionally fade out the startup overlay.
-        main_container.classes(add='visible')
+        main_container.classes(add="visible")
 
         on_ready_called = False
         startup_overlay_finalized = False
@@ -15180,14 +16551,14 @@ document.fonts.ready.then(function() {
             startup_overlay_finalized = True
             try:
                 with client:
-                    loading_screen.classes(add='fade-out')
+                    loading_screen.classes(add="fade-out")
                     await client.run_javascript(
                         "const preboot=document.getElementById('yakulingo-preboot');"
                         "if(preboot){preboot.remove();}"
                     )
             except Exception:
                 try:
-                    loading_screen.classes(add='fade-out')
+                    loading_screen.classes(add="fade-out")
                 except Exception:
                     pass
             asyncio.create_task(_remove_startup_overlay())
@@ -15221,6 +16592,7 @@ document.fonts.ready.then(function() {
             await asyncio.sleep(0)
             await _finalize_startup_overlay()
         else:
+
             async def _wait_for_late_connection() -> None:
                 try:
                     await client.connected()
@@ -15232,7 +16604,7 @@ document.fonts.ready.then(function() {
                 if ui_ready:
                     yakulingo_app._startup_fallback_rendered = False
                     if yakulingo_app._startup_fallback_element is not None:
-                        yakulingo_app._startup_fallback_element.classes(add='hidden')
+                        yakulingo_app._startup_fallback_element.classes(add="hidden")
                     yakulingo_app._mark_ui_ready(client)
                     logger.debug(
                         "[STARTUP] Late UI readiness ready before timeout (selector=%s, timeout_ms=%d)",
@@ -15255,7 +16627,9 @@ document.fonts.ready.then(function() {
                     with client:
                         yakulingo_app._refresh_status()
                         yakulingo_app._refresh_translate_button_state()
-                        yakulingo_app._start_status_auto_refresh("late_client_connected")
+                        yakulingo_app._start_status_auto_refresh(
+                            "late_client_connected"
+                        )
                 except Exception:
                     yakulingo_app._refresh_status()
                     yakulingo_app._refresh_translate_button_state()
@@ -15294,13 +16668,14 @@ document.fonts.ready.then(function() {
         async def log_layout_after_delay():
             await asyncio.sleep(0.5)  # Wait for DOM to be fully rendered
             yakulingo_app._log_layout_dimensions()
+
         if client_connected:
             asyncio.create_task(log_layout_after_delay())
 
     # window_size is already determined at the start of run_app()
     logger.info("[TIMING] Before ui.run(): %.2fs", time.perf_counter() - _t0)
 
-    if native and sys.platform == 'win32':
+    if native and sys.platform == "win32":
         _start_early_positioning_thread()
 
     # NOTE: Window positioning strategy to eliminate visual flicker:
@@ -15324,5 +16699,5 @@ document.fonts.ready.then(function() {
         frameless=native_frameless,
         show=False,  # Browser window is opened explicitly in on_startup
         reconnect_timeout=300.0,  # 長時間処理中でもWebSocket切断を避ける
-        uvicorn_logging_level='warning',  # Reduce log output for faster startup
+        uvicorn_logging_level="warning",  # Reduce log output for faster startup
     )

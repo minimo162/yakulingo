@@ -70,7 +70,9 @@ USER_SETTINGS_KEYS = {
 DEFAULT_MAX_CHARS_PER_BATCH = 4000
 
 
-def resolve_browser_display_mode(requested_mode: str, screen_width: Optional[int]) -> str:
+def resolve_browser_display_mode(
+    requested_mode: str, screen_width: Optional[int]
+) -> str:
     """Resolve browser display mode (side_panel is no longer supported)."""
     if requested_mode == "foreground":
         return "foreground"
@@ -120,7 +122,9 @@ def _parse_env_bool(var_name: str, raw_value: Optional[str]) -> Optional[bool]:
         return True
     if value in ("0", "false", "no", "off"):
         return False
-    _warn_env_once(var_name, f"Env {var_name} has invalid value '{raw_value}'; treating as unset")
+    _warn_env_once(
+        var_name, f"Env {var_name} has invalid value '{raw_value}'; treating as unset"
+    )
     return None
 
 
@@ -134,7 +138,10 @@ def _parse_env_version(var_name: str, raw_value: Optional[str]) -> Optional[Vers
     try:
         return Version(value)
     except InvalidVersion:
-        _warn_env_once(var_name, f"Env {var_name} has invalid version '{raw_value}'; treating as unset")
+        _warn_env_once(
+            var_name,
+            f"Env {var_name} has invalid version '{raw_value}'; treating as unset",
+        )
         return None
 
 
@@ -142,12 +149,18 @@ def _parse_version_value(raw_value: object, field_name: str) -> Optional[Version
     if raw_value is None:
         return None
     if not isinstance(raw_value, str):
-        logger.warning("Login overlay guard %s must be a string, got %s", field_name, type(raw_value).__name__)
+        logger.warning(
+            "Login overlay guard %s must be a string, got %s",
+            field_name,
+            type(raw_value).__name__,
+        )
         return None
     try:
         return Version(raw_value)
     except InvalidVersion:
-        logger.warning("Login overlay guard %s has invalid version '%s'", field_name, raw_value)
+        logger.warning(
+            "Login overlay guard %s has invalid version '%s'", field_name, raw_value
+        )
         return None
 
 
@@ -187,8 +200,12 @@ def resolve_login_overlay_guard(
         )
 
     env_enabled_raw = os.environ.get("YAKULINGO_LOGIN_OVERLAY_GUARD_ENABLED")
-    env_remove_raw = os.environ.get("YAKULINGO_LOGIN_OVERLAY_GUARD_REMOVE_AFTER_VERSION")
-    env_enabled = _parse_env_bool("YAKULINGO_LOGIN_OVERLAY_GUARD_ENABLED", env_enabled_raw)
+    env_remove_raw = os.environ.get(
+        "YAKULINGO_LOGIN_OVERLAY_GUARD_REMOVE_AFTER_VERSION"
+    )
+    env_enabled = _parse_env_bool(
+        "YAKULINGO_LOGIN_OVERLAY_GUARD_ENABLED", env_enabled_raw
+    )
     env_remove_after = _parse_env_version(
         "YAKULINGO_LOGIN_OVERLAY_GUARD_REMOVE_AFTER_VERSION",
         env_remove_raw,
@@ -206,7 +223,9 @@ def resolve_login_overlay_guard(
     use_env = env_enabled is not None or env_remove_after is not None
     resolved_source = source
     enabled = config_enabled
-    remove_after_version = _parse_version_value(config_remove_after_version, "remove_after_version")
+    remove_after_version = _parse_version_value(
+        config_remove_after_version, "remove_after_version"
+    )
     if use_env:
         resolved_source = "env"
         enabled = bool(env_enabled) if env_enabled is not None else False
@@ -236,7 +255,9 @@ def resolve_login_overlay_guard(
     resolved = LoginOverlayGuardResolved(
         enabled=enabled,
         source=resolved_source,
-        remove_after_version=str(remove_after_version) if remove_after_version else None,
+        remove_after_version=str(remove_after_version)
+        if remove_after_version
+        else None,
         current_version=str(current_version) if current_version else None,
         expired=expired,
         disable_reason=disable_reason,
@@ -313,8 +334,10 @@ class AppSettings:
     # _detect_display_settings() で論理解像度から動的に計算される。
 
     # Advanced
-    max_chars_per_batch: int = DEFAULT_MAX_CHARS_PER_BATCH  # Max characters per batch (Copilot input safety)
-    request_timeout: int = 600          # Seconds (10 minutes - allows for large translations)
+    max_chars_per_batch: int = (
+        DEFAULT_MAX_CHARS_PER_BATCH  # Max characters per batch (Copilot input safety)
+    )
+    request_timeout: int = 600  # Seconds (10 minutes - allows for large translations)
     max_retries: int = 3
 
     # Local AI (llama.cpp llama-server) - M1 minimal settings
@@ -333,12 +356,16 @@ class AppSettings:
     local_ai_max_chars_per_batch: int = 1000
 
     # File Translation Options (共通オプション)
-    bilingual_output: bool = False      # 対訳出力（原文と翻訳を交互に配置）
-    export_glossary: bool = False       # 対訳CSV出力（glossaryとして再利用可能）
-    translation_style: str = "concise"  # ファイル翻訳の英訳スタイル: "standard", "concise", "minimal"
+    bilingual_output: bool = False  # 対訳出力（原文と翻訳を交互に配置）
+    export_glossary: bool = False  # 対訳CSV出力（glossaryとして再利用可能）
+    translation_style: str = (
+        "concise"  # ファイル翻訳の英訳スタイル: "standard", "concise", "minimal"
+    )
 
     # Text Translation Options
-    use_bundled_glossary: bool = True        # 同梱の glossary.csv を使用するか（デフォルトでオン）
+    use_bundled_glossary: bool = (
+        True  # 同梱の glossary.csv を使用するか（デフォルトでオン）
+    )
 
     # Font Settings (ファイル翻訳用 - 全形式共通)
     # フォントサイズ調整（JP→EN時）: 0で調整なし、負値で縮小
@@ -346,13 +373,13 @@ class AppSettings:
     font_size_min: float = 8.0  # pt (最小フォントサイズ)
 
     # 出力フォント（言語方向のみで決定、元フォント種別は無視）
-    font_jp_to_en: str = "Arial"           # 英訳時の出力フォント
-    font_en_to_jp: str = "MS Pゴシック"    # 和訳時の出力フォント
+    font_jp_to_en: str = "Arial"  # 英訳時の出力フォント
+    font_en_to_jp: str = "MS Pゴシック"  # 和訳時の出力フォント
 
     # PDF Layout Options (PP-DocLayout-L)
-    ocr_batch_size: int = 5             # ページ/バッチ（メモリ使用量とのトレードオフ）
-    ocr_dpi: int = 300                  # レイアウト解析解像度（高いほど精度向上、処理時間増加）
-    ocr_device: str = "auto"            # "auto", "cpu", "cuda"
+    ocr_batch_size: int = 5  # ページ/バッチ（メモリ使用量とのトレードオフ）
+    ocr_dpi: int = 300  # レイアウト解析解像度（高いほど精度向上、処理時間増加）
+    ocr_device: str = "auto"  # "auto", "cpu", "cuda"
 
     # Browser Display Mode (翻訳時のEdgeブラウザ表示方法)
     # "minimized": 最小化して非表示
@@ -364,11 +391,11 @@ class AppSettings:
     )
 
     # Auto Update
-    auto_update_enabled: bool = True            # 起動時に自動チェック
-    auto_update_check_interval: int = 0         # チェック間隔（秒）: 0 = 起動毎
-    github_repo_owner: str = "minimo162"        # GitHubリポジトリオーナー
-    github_repo_name: str = "yakulingo"         # GitHubリポジトリ名
-    last_update_check: Optional[str] = None     # 最後のチェック日時（ISO形式）
+    auto_update_enabled: bool = True  # 起動時に自動チェック
+    auto_update_check_interval: int = 0  # チェック間隔（秒）: 0 = 起動毎
+    github_repo_owner: str = "minimo162"  # GitHubリポジトリオーナー
+    github_repo_name: str = "yakulingo"  # GitHubリポジトリ名
+    last_update_check: Optional[str] = None  # 最後のチェック日時（ISO形式）
 
     _login_overlay_guard_resolved: Optional[LoginOverlayGuardResolved] = field(
         default=None, init=False, repr=False, compare=False
@@ -403,15 +430,24 @@ class AppSettings:
         cache_key = str(path.resolve())
 
         # Get current file modification times
-        template_mtime = template_path.stat().st_mtime if template_path.exists() else 0.0
-        user_mtime = user_settings_path.stat().st_mtime if user_settings_path.exists() else 0.0
+        template_mtime = (
+            template_path.stat().st_mtime if template_path.exists() else 0.0
+        )
+        user_mtime = (
+            user_settings_path.stat().st_mtime if user_settings_path.exists() else 0.0
+        )
 
         # Check cache
         if use_cache:
             with _settings_cache_lock:
                 if cache_key in _settings_cache:
-                    cached_template_mtime, cached_user_mtime, cached_settings = _settings_cache[cache_key]
-                    if cached_template_mtime == template_mtime and cached_user_mtime == user_mtime:
+                    cached_template_mtime, cached_user_mtime, cached_settings = (
+                        _settings_cache[cache_key]
+                    )
+                    if (
+                        cached_template_mtime == template_mtime
+                        and cached_user_mtime == user_mtime
+                    ):
                         logger.debug("Using cached settings for: %s", path)
                         return cached_settings
 
@@ -422,7 +458,7 @@ class AppSettings:
         # 1. Load from template (developer defaults)
         if template_path.exists():
             try:
-                with open(template_path, 'r', encoding='utf-8-sig') as f:
+                with open(template_path, "r", encoding="utf-8-sig") as f:
                     data = json.load(f)
                     if "login_overlay_guard" in data:
                         guard_source = "template"
@@ -433,7 +469,7 @@ class AppSettings:
         # 2. Override with user settings
         if user_settings_path.exists():
             try:
-                with open(user_settings_path, 'r', encoding='utf-8-sig') as f:
+                with open(user_settings_path, "r", encoding="utf-8-sig") as f:
                     user_data = json.load(f)
                     # Only apply known user settings keys
                     for key in USER_SETTINGS_KEYS:
@@ -450,17 +486,17 @@ class AppSettings:
         # Users will start with fresh defaults from template.
 
         # Clean up deprecated fields
-        data.pop('last_direction', None)
-        data.pop('window_width', None)
-        data.pop('window_height', None)
-        data.pop('pdf_bilingual_output', None)
-        data.pop('pdf_export_glossary', None)
-        data.pop('font_jp_to_en_mincho', None)
-        data.pop('font_jp_to_en_gothic', None)
-        data.pop('font_en_to_jp_serif', None)
-        data.pop('font_en_to_jp_sans', None)
-        data.pop('pdf_font_ja', None)
-        data.pop('pdf_font_en', None)
+        data.pop("last_direction", None)
+        data.pop("window_width", None)
+        data.pop("window_height", None)
+        data.pop("pdf_bilingual_output", None)
+        data.pop("pdf_export_glossary", None)
+        data.pop("font_jp_to_en_mincho", None)
+        data.pop("font_jp_to_en_gothic", None)
+        data.pop("font_en_to_jp_serif", None)
+        data.pop("font_en_to_jp_sans", None)
+        data.pop("pdf_font_ja", None)
+        data.pop("pdf_font_en", None)
 
         # Filter to only known fields
         known_fields = {f.name for f in cls.__dataclass_fields__.values()}
@@ -488,10 +524,14 @@ class AppSettings:
         """
         # Font size constraints
         if self.font_size_min < 1.0:
-            logger.warning("font_size_min too small (%.1f), resetting to 8.0", self.font_size_min)
+            logger.warning(
+                "font_size_min too small (%.1f), resetting to 8.0", self.font_size_min
+            )
             self.font_size_min = 8.0
         elif self.font_size_min > 72.0:
-            logger.warning("font_size_min too large (%.1f), resetting to 8.0", self.font_size_min)
+            logger.warning(
+                "font_size_min too large (%.1f), resetting to 8.0", self.font_size_min
+            )
             self.font_size_min = 8.0
 
         # Batch size constraints
@@ -517,7 +557,9 @@ class AppSettings:
             )
             self.copilot_enabled = True
         if not self.copilot_enabled and self.translation_backend == "copilot":
-            logger.info("copilot_enabled is false; forcing translation_backend to 'local'")
+            logger.info(
+                "copilot_enabled is false; forcing translation_backend to 'local'"
+            )
             self.translation_backend = "local"
 
         # Local AI security: always bind to localhost
@@ -597,7 +639,10 @@ class AppSettings:
                     self.local_ai_ubatch_size,
                 )
                 self.local_ai_ubatch_size = None
-            elif self.local_ai_batch_size is not None and self.local_ai_ubatch_size > self.local_ai_batch_size:
+            elif (
+                self.local_ai_batch_size is not None
+                and self.local_ai_ubatch_size > self.local_ai_batch_size
+            ):
                 logger.warning(
                     "local_ai_ubatch_size too large (%d), resetting to %d",
                     self.local_ai_ubatch_size,
@@ -630,10 +675,14 @@ class AppSettings:
 
         # Timeout constraints
         if self.request_timeout < 10:
-            logger.warning("request_timeout too small (%d), resetting to 600", self.request_timeout)
+            logger.warning(
+                "request_timeout too small (%d), resetting to 600", self.request_timeout
+            )
             self.request_timeout = 600
         elif self.request_timeout > 1800:
-            logger.warning("request_timeout too large (%d), resetting to 600", self.request_timeout)
+            logger.warning(
+                "request_timeout too large (%d), resetting to 600", self.request_timeout
+            )
             self.request_timeout = 600
 
         # OCR settings
@@ -676,15 +725,19 @@ class AppSettings:
             if hasattr(self, key):
                 data[key] = getattr(self, key)
 
-        with open(user_settings_path, 'w', encoding='utf-8') as f:
+        with open(user_settings_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
 
         logger.debug("Saved user settings to: %s", user_settings_path)
 
         # Update cache with new modification times
         cache_key = str(path.resolve())
-        template_mtime = template_path.stat().st_mtime if template_path.exists() else 0.0
-        user_mtime = user_settings_path.stat().st_mtime if user_settings_path.exists() else 0.0
+        template_mtime = (
+            template_path.stat().st_mtime if template_path.exists() else 0.0
+        )
+        user_mtime = (
+            user_settings_path.stat().st_mtime if user_settings_path.exists() else 0.0
+        )
         with _settings_cache_lock:
             _settings_cache[cache_key] = (template_mtime, user_mtime, self)
 

@@ -35,13 +35,17 @@ def test_find_free_port_scans_in_order(monkeypatch: pytest.MonkeyPatch) -> None:
     assert seen == [4891, 4892]
 
 
-def test_find_free_port_returns_none_when_exhausted(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_find_free_port_returns_none_when_exhausted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     manager = lls.LocalLlamaServerManager()
     monkeypatch.setattr(lls, "_is_port_free", lambda host, port: False)
     assert manager._find_free_port("127.0.0.1", 4891, 4893) is None
 
 
-def test_ensure_ready_calls_reuse_before_scanning_ports(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ensure_ready_calls_reuse_before_scanning_ports(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     model_path = tmp_path / "model.gguf"
     model_path.write_bytes(b"dummy")
 
@@ -58,8 +62,16 @@ def test_ensure_ready_calls_reuse_before_scanning_ports(tmp_path: Path, monkeypa
     )
 
     manager = lls.LocalLlamaServerManager()
-    monkeypatch.setattr(lls.LocalLlamaServerManager, "get_state_path", staticmethod(lambda: tmp_path / "state.json"))
-    monkeypatch.setattr(lls.LocalLlamaServerManager, "get_log_path", staticmethod(lambda: tmp_path / "local_ai_server.log"))
+    monkeypatch.setattr(
+        lls.LocalLlamaServerManager,
+        "get_state_path",
+        staticmethod(lambda: tmp_path / "state.json"),
+    )
+    monkeypatch.setattr(
+        lls.LocalLlamaServerManager,
+        "get_log_path",
+        staticmethod(lambda: tmp_path / "local_ai_server.log"),
+    )
 
     calls: list[str] = []
 
@@ -96,7 +108,9 @@ def test_ensure_ready_calls_reuse_before_scanning_ports(tmp_path: Path, monkeypa
     assert calls == ["reuse", "find_port", "start"]
 
 
-def test_ensure_ready_does_not_scan_ports_when_reuse_succeeds(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ensure_ready_does_not_scan_ports_when_reuse_succeeds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     model_path = tmp_path / "model.gguf"
     model_path.write_bytes(b"dummy")
 
@@ -113,7 +127,11 @@ def test_ensure_ready_does_not_scan_ports_when_reuse_succeeds(tmp_path: Path, mo
     )
 
     manager = lls.LocalLlamaServerManager()
-    monkeypatch.setattr(lls.LocalLlamaServerManager, "get_state_path", staticmethod(lambda: tmp_path / "state.json"))
+    monkeypatch.setattr(
+        lls.LocalLlamaServerManager,
+        "get_state_path",
+        staticmethod(lambda: tmp_path / "state.json"),
+    )
 
     reuse_runtime = lls.LocalAIServerRuntime(
         host="127.0.0.1",
@@ -126,8 +144,18 @@ def test_ensure_ready_does_not_scan_ports_when_reuse_succeeds(tmp_path: Path, mo
     )
 
     monkeypatch.setattr(manager, "_try_reuse", lambda state, **kwargs: reuse_runtime)
-    monkeypatch.setattr(manager, "_find_free_port", lambda host, port_base, port_max: (_ for _ in ()).throw(AssertionError("port scan should not run")))
-    monkeypatch.setattr(manager, "_start_new_server", lambda **kwargs: (_ for _ in ()).throw(AssertionError("start should not run")))
+    monkeypatch.setattr(
+        manager,
+        "_find_free_port",
+        lambda host, port_base, port_max: (_ for _ in ()).throw(
+            AssertionError("port scan should not run")
+        ),
+    )
+    monkeypatch.setattr(
+        manager,
+        "_start_new_server",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("start should not run")),
+    )
 
     assert manager.ensure_ready(settings) == reuse_runtime
 
@@ -139,8 +167,16 @@ def test_ensure_ready_falls_back_to_bundled_server_dir_when_custom_invalid(
     model_path.write_bytes(b"dummy")
 
     monkeypatch.setattr(lls, "_app_base_dir", lambda: tmp_path)
-    monkeypatch.setattr(lls.LocalLlamaServerManager, "get_state_path", staticmethod(lambda: tmp_path / "state.json"))
-    monkeypatch.setattr(lls.LocalLlamaServerManager, "get_log_path", staticmethod(lambda: tmp_path / "local_ai_server.log"))
+    monkeypatch.setattr(
+        lls.LocalLlamaServerManager,
+        "get_state_path",
+        staticmethod(lambda: tmp_path / "state.json"),
+    )
+    monkeypatch.setattr(
+        lls.LocalLlamaServerManager,
+        "get_log_path",
+        staticmethod(lambda: tmp_path / "local_ai_server.log"),
+    )
 
     bundled_dir = tmp_path / "local_ai" / "llama_cpp"
     exe_path = bundled_dir / "generic" / "llama-server.exe"
@@ -181,7 +217,9 @@ def test_ensure_ready_falls_back_to_bundled_server_dir_when_custom_invalid(
 
     monkeypatch.setattr(manager, "_resolve_server_exe", fake_resolve_server_exe)
     monkeypatch.setattr(manager, "_try_reuse", lambda state, **kwargs: None)
-    monkeypatch.setattr(manager, "_find_free_port", lambda host, port_base, port_max: port_base)
+    monkeypatch.setattr(
+        manager, "_find_free_port", lambda host, port_base, port_max: port_base
+    )
     monkeypatch.setattr(manager, "_start_new_server", fake_start_new_server)
 
     runtime = manager.ensure_ready(settings)

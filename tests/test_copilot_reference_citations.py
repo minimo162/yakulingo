@@ -31,4 +31,3 @@ def test_strip_reference_citations_handles_filename_with_extension() -> None:
         _strip_reference_citations("添付glossary.csv\n", [Path("glossary.csv")])
         == "添付"
     )
-

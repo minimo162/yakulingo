@@ -100,7 +100,13 @@ class FileProcessor(ABC):
         text = text.strip()
         if not text:
             return False
-        if text.replace('.', '').replace(',', '').replace('-', '').replace(' ', '').isdigit():
+        if (
+            text.replace(".", "")
+            .replace(",", "")
+            .replace("-", "")
+            .replace(" ", "")
+            .isdigit()
+        ):
             return False
         return True
 

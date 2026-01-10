@@ -31,8 +31,8 @@ logger = logging.getLogger(__name__)
 # Used as last resort when system fonts are not found
 # Note: These are Base-14 fonts and do NOT support CJK characters
 PYMUPDF_BUILTIN_FONTS = {
-    "en": "helv",   # Helvetica - for English text
-    "ja": "helv",   # No CJK support, but better than invisible text
+    "en": "helv",  # Helvetica - for English text
+    "ja": "helv",  # No CJK support, but better than invisible text
     "zh-CN": "helv",
     "ko": "helv",
 }
@@ -57,6 +57,7 @@ def _get_pymupdf():
     global _pymupdf
     if _pymupdf is None:
         import pymupdf
+
         _pymupdf = pymupdf
     return _pymupdf
 
@@ -85,26 +86,26 @@ def _get_pdfminer():
         # Suppress pdfminer FontBBox warnings
         # These occur when PDF fonts lack FontBBox in descriptor (common in older PDFs)
         # The warnings are non-critical and clutter logs unnecessarily
-        logging.getLogger('pdfminer.pdffont').setLevel(logging.ERROR)
+        logging.getLogger("pdfminer.pdffont").setLevel(logging.ERROR)
 
         _pdfminer = {
-            'PDFCIDFont': PDFCIDFont,
-            'PDFUnicodeNotDefined': PDFUnicodeNotDefined,
-            'PDFPage': PDFPage,
-            'PDFParser': PDFParser,
-            'PDFDocument': PDFDocument,
-            'PDFSyntaxError': PDFSyntaxError,
-            'PDFResourceManager': PDFResourceManager,
-            'PDFPageInterpreter': PDFPageInterpreter,
-            'PDFConverter': PDFConverter,
-            'LTChar': LTChar,
-            'LTPage': LTPage,
-            'LTFigure': LTFigure,
-            'LAParams': LAParams,
-            'apply_matrix_pt': apply_matrix_pt,
-            'PSLiteral': PSLiteral,
-            'PDFObjRef': PDFObjRef,
-            'resolve1': resolve1,
+            "PDFCIDFont": PDFCIDFont,
+            "PDFUnicodeNotDefined": PDFUnicodeNotDefined,
+            "PDFPage": PDFPage,
+            "PDFParser": PDFParser,
+            "PDFDocument": PDFDocument,
+            "PDFSyntaxError": PDFSyntaxError,
+            "PDFResourceManager": PDFResourceManager,
+            "PDFPageInterpreter": PDFPageInterpreter,
+            "PDFConverter": PDFConverter,
+            "LTChar": LTChar,
+            "LTPage": LTPage,
+            "LTFigure": LTFigure,
+            "LAParams": LAParams,
+            "apply_matrix_pt": apply_matrix_pt,
+            "PSLiteral": PSLiteral,
+            "PDFObjRef": PDFObjRef,
+            "resolve1": resolve1,
         }
     return _pdfminer
 
@@ -295,31 +296,50 @@ FONT_FILES = {
     "ja": {
         "primary": [
             # Windows fonts (correct file names)
-            "msgothic.ttc", "MSGOTHIC.TTC",  # Contains MS ゴシック, MS Pゴシック, MS UI Gothic
-            "msmincho.ttc", "MSMINCHO.TTC",  # Contains MS 明朝, MS P明朝
-            "meiryo.ttc", "MEIRYO.TTC",      # メイリオ
-            "YuGothM.ttc", "YuGothR.ttc",    # 游ゴシック
+            "msgothic.ttc",
+            "MSGOTHIC.TTC",  # Contains MS ゴシック, MS Pゴシック, MS UI Gothic
+            "msmincho.ttc",
+            "MSMINCHO.TTC",  # Contains MS 明朝, MS P明朝
+            "meiryo.ttc",
+            "MEIRYO.TTC",  # メイリオ
+            "YuGothM.ttc",
+            "YuGothR.ttc",  # 游ゴシック
             # Linux/cross-platform fonts (IPA fonts)
-            "ipag.ttf", "IPAGothic.ttf", "ipaexg.ttf",  # IPAゴシック
-            "ipagp.ttf", "IPAPGothic.ttf",  # IPAPゴシック
-            "ipam.ttf", "IPAMincho.ttf", "ipaexm.ttf",  # IPA明朝
+            "ipag.ttf",
+            "IPAGothic.ttf",
+            "ipaexg.ttf",  # IPAゴシック
+            "ipagp.ttf",
+            "IPAPGothic.ttf",  # IPAPゴシック
+            "ipam.ttf",
+            "IPAMincho.ttf",
+            "ipaexm.ttf",  # IPA明朝
             "fonts-japanese-gothic.ttf",  # Debian/Ubuntu symlink
             # Noto fonts (cross-platform)
-            "NotoSansJP-Regular.ttf", "NotoSerifJP-Regular.ttf",
-            "NotoSansCJK-Regular.ttc", "NotoSerifCJK-Regular.ttc",
+            "NotoSansJP-Regular.ttf",
+            "NotoSerifJP-Regular.ttf",
+            "NotoSansCJK-Regular.ttc",
+            "NotoSerifCJK-Regular.ttc",
         ],
         "fallback": [
             # WenQuanYi (can display Japanese kanji)
-            "wqy-zenhei.ttc", "WenQuanYi Zen Hei.ttf",
-            "NotoSansJP-Regular.otf", "NotoSerifJP-Regular.otf",
+            "wqy-zenhei.ttc",
+            "WenQuanYi Zen Hei.ttf",
+            "NotoSansJP-Regular.otf",
+            "NotoSerifJP-Regular.otf",
         ],
     },
     "en": {
         "primary": [
             # Windows fonts (include uppercase variants for case-sensitive systems)
-            "arial.ttf", "Arial.ttf", "ARIAL.TTF",  # Arial
-            "calibri.ttf", "Calibri.ttf", "CALIBRI.TTF",
-            "segoeui.ttf", "Segoe UI.ttf", "SEGOEUI.TTF",
+            "arial.ttf",
+            "Arial.ttf",
+            "ARIAL.TTF",  # Arial
+            "calibri.ttf",
+            "Calibri.ttf",
+            "CALIBRI.TTF",
+            "segoeui.ttf",
+            "Segoe UI.ttf",
+            "SEGOEUI.TTF",
             # Linux/cross-platform fonts
             "DejaVuSans.ttf",  # Common on Linux
             "LiberationSans-Regular.ttf",  # Free alternative to Arial
@@ -328,7 +348,10 @@ FONT_FILES = {
             "NotoSans-Regular.ttf",
         ],
         "fallback": [
-            "times.ttf", "Times.ttf", "TIMES.TTF", "Times New Roman.ttf",
+            "times.ttf",
+            "Times.ttf",
+            "TIMES.TTF",
+            "Times New Roman.ttf",
             "DejaVuSerif.ttf",
             "LiberationSerif-Regular.ttf",
             "FreeSerif.ttf",
@@ -337,17 +360,22 @@ FONT_FILES = {
     },
     "zh-CN": {
         "primary": [
-            "simsun.ttc", "SimSun.ttf",
-            "wqy-zenhei.ttc", "WenQuanYi Zen Hei.ttf",  # Linux
-            "NotoSansSC-Regular.ttf", "NotoSerifSC-Regular.ttf",
+            "simsun.ttc",
+            "SimSun.ttf",
+            "wqy-zenhei.ttc",
+            "WenQuanYi Zen Hei.ttf",  # Linux
+            "NotoSansSC-Regular.ttf",
+            "NotoSerifSC-Regular.ttf",
             "NotoSansCJK-Regular.ttc",
         ],
         "fallback": ["msyh.ttc", "Microsoft YaHei.ttf", "NotoSansSC-Regular.otf"],
     },
     "ko": {
         "primary": [
-            "malgun.ttf", "Malgun Gothic.ttf",
-            "NotoSansKR-Regular.ttf", "NotoSerifKR-Regular.ttf",
+            "malgun.ttf",
+            "Malgun Gothic.ttf",
+            "NotoSansKR-Regular.ttf",
+            "NotoSerifKR-Regular.ttf",
             "NotoSansCJK-Regular.ttc",
         ],
         "fallback": ["batang.ttc", "Batang.ttf", "NotoSansKR-Regular.otf"],
@@ -396,9 +424,10 @@ class FontType(Enum):
     - CID: Existing PDF CID fonts (composite fonts) -> use ord(c) as 4-digit hex
     - SIMPLE: Existing PDF simple fonts (Type1, TrueType) -> use ord(c) as 2-digit hex
     """
+
     EMBEDDED = "embedded"  # Newly embedded font -> has_glyph(ord(c))
-    CID = "cid"           # Existing CID font -> ord(c) 4-digit hex
-    SIMPLE = "simple"     # Existing simple font -> ord(c) 2-digit hex
+    CID = "cid"  # Existing CID font -> ord(c) 4-digit hex
+    SIMPLE = "simple"  # Existing simple font -> ord(c) 2-digit hex
 
 
 # =============================================================================
@@ -411,12 +440,13 @@ class FontInfo:
 
     PDFMathTranslate high_level.py:187-203 compliant.
     """
-    font_id: str           # PDF internal ID (F1, F2, ...)
-    family: str            # Font family name (display)
-    path: Optional[str]    # Font file path
+
+    font_id: str  # PDF internal ID (F1, F2, ...)
+    family: str  # Font family name (display)
+    path: Optional[str]  # Font file path
     fallback: Optional[str]  # Fallback path (PyMuPDF built-in font name)
-    encoding: str          # "cid" or "simple"
-    is_cjk: bool           # Is CJK font
+    encoding: str  # "cid" or "simple"
+    is_cjk: bool  # Is CJK font
     font_type: FontType = FontType.EMBEDDED  # Font type for encoding selection
     # Cache for file existence check (avoids repeated filesystem lookups)
     _file_exists_cache: Optional[bool] = None
@@ -454,11 +484,13 @@ class FontInfo:
         # Check file existence (with caching)
         if self._file_exists_cache is None:
             try:
-                object.__setattr__(self, '_file_exists_cache', os.path.isfile(self.path))
+                object.__setattr__(
+                    self, "_file_exists_cache", os.path.isfile(self.path)
+                )
             except (OSError, TypeError):
                 # OSError: permission denied, path too long, etc.
                 # TypeError: path is not a valid string
-                object.__setattr__(self, '_file_exists_cache', False)
+                object.__setattr__(self, "_file_exists_cache", False)
 
         return self._file_exists_cache
 
@@ -579,7 +611,8 @@ class FontRegistry:
                     "Using PyMuPDF built-in font '%s'. "
                     "Note: Built-in fonts do NOT support CJK characters. "
                     "Install a font for this language for proper rendering.",
-                    lang, builtin_fallback
+                    lang,
+                    builtin_fallback,
                 )
 
         font_info = FontInfo(
@@ -606,7 +639,11 @@ class FontRegistry:
             else:
                 # Use built-in font as fallback
                 self._font_objects[font_id] = pymupdf.Font(builtin_fallback)
-                logger.debug("Created Font object for %s using built-in: %s", font_id, builtin_fallback)
+                logger.debug(
+                    "Created Font object for %s using built-in: %s",
+                    font_id,
+                    builtin_fallback,
+                )
         except (RuntimeError, ValueError, OSError, FileNotFoundError) as e:
             # RuntimeError: PyMuPDF internal errors
             # ValueError: Invalid font file format
@@ -616,7 +653,9 @@ class FontRegistry:
         except Exception as e:
             # Catch PyMuPDF-specific exceptions (mupdf.FzErrorSystem, etc.)
             # These don't inherit from standard exception types
-            logger.warning("Failed to create Font object for %s (PyMuPDF error): %s", font_id, e)
+            logger.warning(
+                "Failed to create Font object for %s (PyMuPDF error): %s", font_id, e
+            )
 
         return font_id
 
@@ -667,7 +706,8 @@ class FontRegistry:
         if existing_cid_font and self._check_font_coverage(existing_cid_font, text):
             logger.debug(
                 "Font selection: using existing CID font '%s' for text (len=%d)",
-                existing_cid_font, len(text)
+                existing_cid_font,
+                len(text),
             )
             return existing_cid_font
 
@@ -675,7 +715,10 @@ class FontRegistry:
         font_id = self._get_font_id_for_lang(dominant_lang)
         logger.debug(
             "Font selection: lang='%s' -> font_id='%s' for text (len=%d, preview='%s')",
-            dominant_lang, font_id, len(text), text[:50] + '...' if len(text) > 50 else text
+            dominant_lang,
+            font_id,
+            len(text),
+            text[:50] + "..." if len(text) > 50 else text,
         )
         return font_id
 
@@ -726,7 +769,9 @@ class FontRegistry:
             # These are NOT available in Arial/most Latin fonts
             elif 0x2460 <= code <= 0x24FF:  # Enclosed Alphanumerics (①-⑳, Ⓐ-Ⓩ, etc.)
                 special_count += 1
-            elif 0x3200 <= code <= 0x32FF:  # Enclosed CJK Letters and Months (㈱㈲㈳ etc.)
+            elif (
+                0x3200 <= code <= 0x32FF
+            ):  # Enclosed CJK Letters and Months (㈱㈲㈳ etc.)
                 special_count += 1
             elif 0x3000 <= code <= 0x303F:  # CJK Symbols and Punctuation (・、。etc.)
                 special_count += 1
@@ -792,7 +837,7 @@ class FontRegistry:
             try:
                 # Try to get character width - if it fails, char may not be covered
                 # pdfminer get_width() takes CID (or Unicode code point for simple fonts)
-                if hasattr(pdfminer_font, 'get_width'):
+                if hasattr(pdfminer_font, "get_width"):
                     # Use Unicode code point as CID (works for Identity-H encoded fonts)
                     cid = ord(char)
                     width = pdfminer_font.get_width(cid)
@@ -806,7 +851,9 @@ class FontRegistry:
         if uncovered_count > len(sample_chars) * 0.1:
             logger.debug(
                 "Font %s rejected: %d/%d sampled characters may not be covered",
-                font_id, uncovered_count, len(sample_chars)
+                font_id,
+                uncovered_count,
+                len(sample_chars),
             )
             return False
 
@@ -826,7 +873,9 @@ class FontRegistry:
         """
         # Check cache (None = not checked, "" = no CID font)
         if self._existing_cid_font_cache is not None:
-            return self._existing_cid_font_cache if self._existing_cid_font_cache else None
+            return (
+                self._existing_cid_font_cache if self._existing_cid_font_cache else None
+            )
 
         # Search for existing CID font
         for key, font_info in self.fonts.items():
@@ -898,13 +947,15 @@ class FontRegistry:
                 # - Matches PDFMathTranslate behavior
                 if idx is not None and idx != 0:
                     glyph_idx = idx
-                elif idx == 0 and char not in ('\0', '\x00', ' ', '\t', '\n', '\r'):
+                elif idx == 0 and char not in ("\0", "\x00", " ", "\t", "\n", "\r"):
                     # Character mapped to .notdef - this will be invisible!
                     # Don't log for control characters/whitespace
                     logger.debug(
                         "Character '%s' (U+%04X) mapped to .notdef glyph in font '%s'. "
                         "This character will be invisible in the PDF.",
-                        char, ord(char), font_id
+                        char,
+                        ord(char),
+                        font_id,
                     )
             except (RuntimeError, ValueError, TypeError) as e:
                 # RuntimeError: PyMuPDF internal errors
@@ -924,7 +975,7 @@ class FontRegistry:
                 logger.warning(
                     "Font object missing for '%s'. Text will render as .notdef (invisible). "
                     "Check font embedding in embed_fonts() or install required fonts.",
-                    font_id
+                    font_id,
                 )
 
         # Cache the result with LRU eviction (thread-safe)
@@ -975,7 +1026,9 @@ class FontRegistry:
                 # RuntimeError: PyMuPDF internal errors
                 # ValueError: Invalid character code
                 # TypeError: Invalid argument type
-                logger.debug("Error getting char width from PyMuPDF for '%s': %s", char, e)
+                logger.debug(
+                    "Error getting char width from PyMuPDF for '%s': %s", char, e
+                )
 
         # Try pdfminer font object (for existing PDF fonts)
         if normalized_width is None:
@@ -996,7 +1049,9 @@ class FontRegistry:
 
         return normalized_width * font_size
 
-    def _get_pdfminer_char_width(self, pdfminer_font: Any, char: str) -> Optional[float]:
+    def _get_pdfminer_char_width(
+        self, pdfminer_font: Any, char: str
+    ) -> Optional[float]:
         """
         Get normalized character width from a pdfminer font object.
 
@@ -1014,14 +1069,14 @@ class FontRegistry:
             cid = ord(char)
 
             # Try char_width method (available on most pdfminer fonts)
-            if hasattr(pdfminer_font, 'char_width'):
+            if hasattr(pdfminer_font, "char_width"):
                 width = pdfminer_font.char_width(cid)
                 if width and width > 0:
                     # pdfminer widths are in 1/1000 units, normalize to 0.0-1.0
                     return width / 1000.0
 
             # Try get_width for default width
-            if hasattr(pdfminer_font, 'get_width'):
+            if hasattr(pdfminer_font, "get_width"):
                 width = pdfminer_font.get_width()
                 if width and width > 0:
                     return width / 1000.0
@@ -1050,20 +1105,24 @@ class FontRegistry:
         code = ord(char)
 
         # Half-width characters -> 0.5
-        if (0x0020 <= code <= 0x007F or  # Basic Latin
-            0x0080 <= code <= 0x00FF or  # Latin-1 Supplement
-            0xFF61 <= code <= 0xFF9F):   # Halfwidth Katakana
+        if (
+            0x0020 <= code <= 0x007F  # Basic Latin
+            or 0x0080 <= code <= 0x00FF  # Latin-1 Supplement
+            or 0xFF61 <= code <= 0xFF9F
+        ):  # Halfwidth Katakana
             return 0.5
 
         # Full-width characters -> 1.0
-        if (0x3040 <= code <= 0x309F or  # Hiragana
-            0x30A0 <= code <= 0x30FF or  # Katakana
-            0x4E00 <= code <= 0x9FFF or  # CJK Unified Ideographs
-            0x3400 <= code <= 0x4DBF or  # CJK Extension A
-            0xFF00 <= code <= 0xFF60 or  # Fullwidth Forms (before halfwidth)
-            0xFFA0 <= code <= 0xFFEF or  # Fullwidth Forms (after halfwidth)
-            0xAC00 <= code <= 0xD7AF or  # Hangul Syllables
-            0x3000 <= code <= 0x303F):   # CJK Symbols and Punctuation
+        if (
+            0x3040 <= code <= 0x309F  # Hiragana
+            or 0x30A0 <= code <= 0x30FF  # Katakana
+            or 0x4E00 <= code <= 0x9FFF  # CJK Unified Ideographs
+            or 0x3400 <= code <= 0x4DBF  # CJK Extension A
+            or 0xFF00 <= code <= 0xFF60  # Fullwidth Forms (before halfwidth)
+            or 0xFFA0 <= code <= 0xFFEF  # Fullwidth Forms (after halfwidth)
+            or 0xAC00 <= code <= 0xD7AF  # Hangul Syllables
+            or 0x3000 <= code <= 0x303F
+        ):  # CJK Symbols and Punctuation
             return 1.0
 
         # Other characters: treat as full-width if in CJK range
@@ -1115,7 +1174,8 @@ class FontRegistry:
             if lang.startswith("_existing_"):
                 logger.debug(
                     "Skipping existing font: id=%s, lang=%s (already in PDF)",
-                    font_info.font_id, lang
+                    font_info.font_id,
+                    lang,
                 )
                 continue
 
@@ -1141,7 +1201,9 @@ class FontRegistry:
                 if fallback_path:
                     logger.warning(
                         "Font '%s' not found, using fallback: %s (tried: %s)",
-                        font_info.font_id, fallback_path, fallback_tried
+                        font_info.font_id,
+                        fallback_path,
+                        fallback_tried,
                     )
                     font_path = fallback_path
                     # Update FontInfo with fallback path
@@ -1154,7 +1216,10 @@ class FontRegistry:
                         "No system font available for '%s' (lang=%s, tried: %s). "
                         "Using PyMuPDF built-in font '%s'. "
                         "Note: Built-in fonts do NOT support CJK characters.",
-                        font_info.font_id, lang, fallback_tried, builtin_font
+                        font_info.font_id,
+                        lang,
+                        fallback_tried,
+                        builtin_font,
                     )
                     # Use built-in font (no font_path needed)
                     font_path = None
@@ -1171,7 +1236,9 @@ class FontRegistry:
                     )
                 else:
                     # Use PyMuPDF built-in font (no file needed)
-                    builtin_font = font_info.fallback or PYMUPDF_BUILTIN_FONTS.get(lang, "helv")
+                    builtin_font = font_info.fallback or PYMUPDF_BUILTIN_FONTS.get(
+                        lang, "helv"
+                    )
                     xref = first_page.insert_font(
                         fontname=font_info.font_id,
                         fontbuffer=pymupdf.Font(builtin_font).buffer,
@@ -1184,12 +1251,22 @@ class FontRegistry:
                 if font_info.font_id not in self._font_objects:
                     try:
                         if font_path:
-                            self._font_objects[font_info.font_id] = pymupdf.Font(fontfile=font_path)
+                            self._font_objects[font_info.font_id] = pymupdf.Font(
+                                fontfile=font_path
+                            )
                         else:
                             # Use built-in font
-                            builtin_font = font_info.fallback or PYMUPDF_BUILTIN_FONTS.get(lang, "helv")
-                            self._font_objects[font_info.font_id] = pymupdf.Font(builtin_font)
-                        logger.debug("Created Font object in embed_fonts for %s", font_info.font_id)
+                            builtin_font = (
+                                font_info.fallback
+                                or PYMUPDF_BUILTIN_FONTS.get(lang, "helv")
+                            )
+                            self._font_objects[font_info.font_id] = pymupdf.Font(
+                                builtin_font
+                            )
+                        logger.debug(
+                            "Created Font object in embed_fonts for %s",
+                            font_info.font_id,
+                        )
                     except (RuntimeError, ValueError, OSError, FileNotFoundError) as e:
                         # RuntimeError: PyMuPDF internal errors
                         # ValueError: Invalid font file
@@ -1198,7 +1275,8 @@ class FontRegistry:
                         logger.warning(
                             "Failed to create Font object for '%s': %s. "
                             "Text rendering may fail.",
-                            font_info.font_id, e
+                            font_info.font_id,
+                            e,
                         )
                         failed_fonts.append(font_info.font_id)
                     except Exception as e:
@@ -1206,19 +1284,26 @@ class FontRegistry:
                         logger.warning(
                             "Failed to create Font object for '%s' (PyMuPDF error): %s. "
                             "Text rendering may fail.",
-                            font_info.font_id, e
+                            font_info.font_id,
+                            e,
                         )
                         failed_fonts.append(font_info.font_id)
 
                 logger.debug(
                     "Embedded font: id=%s, lang=%s, encoding=Identity-H (UTF-16BE), "
                     "family=%s, path=%s, xref=%s",
-                    font_info.font_id, lang, font_info.family, font_path, xref
+                    font_info.font_id,
+                    lang,
+                    font_info.family,
+                    font_path,
+                    xref,
                 )
             except (RuntimeError, ValueError, OSError, IOError) as e:
                 logger.warning(
                     "Failed to embed font '%s' from '%s': %s",
-                    font_info.font_id, font_path, e
+                    font_info.font_id,
+                    font_path,
+                    e,
                 )
                 failed_fonts.append(font_info.font_id)
 
@@ -1235,40 +1320,50 @@ class FontRegistry:
         """
         try:
             pdfminer = _get_pdfminer()
-            PDFParser = pdfminer['PDFParser']
-            PDFDocument = pdfminer['PDFDocument']
-            PDFPage = pdfminer['PDFPage']
-            PDFResourceManager = pdfminer['PDFResourceManager']
+            PDFParser = pdfminer["PDFParser"]
+            PDFDocument = pdfminer["PDFDocument"]
+            PDFPage = pdfminer["PDFPage"]
+            PDFResourceManager = pdfminer["PDFResourceManager"]
 
-            with open(pdf_path, 'rb') as f:
+            with open(pdf_path, "rb") as f:
                 parser = PDFParser(f)
                 document = PDFDocument(parser)
                 rsrcmgr = PDFResourceManager()
-                resolve1 = pdfminer['resolve1']
+                resolve1 = pdfminer["resolve1"]
 
                 for page in PDFPage.create_pages(document):
-                    if page.resources and 'Font' in page.resources:
-                        fonts = page.resources['Font']
+                    if page.resources and "Font" in page.resources:
+                        fonts = page.resources["Font"]
                         # Resolve indirect reference if needed (PDFObjRef -> dict)
                         # This is required when Font resource is an indirect object
                         fonts = resolve1(fonts)
                         if fonts and isinstance(fonts, dict):
                             for font_name, font_ref in fonts.items():
                                 try:
-                                    font_obj = rsrcmgr.get_font(font_ref, page.resources)
+                                    font_obj = rsrcmgr.get_font(
+                                        font_ref, page.resources
+                                    )
                                     self.fontmap[font_name] = font_obj
                                     logger.debug(
                                         "Loaded font from PDF: %s -> %s",
-                                        font_name, type(font_obj).__name__
+                                        font_name,
+                                        type(font_obj).__name__,
                                     )
-                                except (RuntimeError, ValueError, KeyError, TypeError) as e:
+                                except (
+                                    RuntimeError,
+                                    ValueError,
+                                    KeyError,
+                                    TypeError,
+                                ) as e:
                                     # Detailed logging for font loading failures
                                     # This helps diagnose issues with specific fonts
                                     logger.warning(
                                         "Font load failed for '%s': %s (type=%s). "
                                         "This font may not be usable for text embedding. "
                                         "PDF may still be readable with fallback fonts.",
-                                        font_name, e, type(e).__name__
+                                        font_name,
+                                        e,
+                                        type(e).__name__,
                                     )
                                     # Store None to indicate font is unavailable but was referenced
                                     self.fontmap[font_name] = None
@@ -1279,7 +1374,8 @@ class FontRegistry:
             if failed_count > 0:
                 logger.info(
                     "Loaded %d fonts from PDF fontmap (%d failed to load)",
-                    loaded_count, failed_count
+                    loaded_count,
+                    failed_count,
                 )
             else:
                 logger.debug("Loaded %d fonts from PDF fontmap", loaded_count)
@@ -1288,38 +1384,41 @@ class FontRegistry:
             logger.warning(
                 "pdfminer RuntimeError while loading fontmap: %s. "
                 "This may indicate a malformed PDF or incompatible font format.",
-                e
+                e,
             )
         except ValueError as e:
             logger.warning(
                 "pdfminer ValueError while loading fontmap: %s. "
                 "The PDF may contain invalid font data.",
-                e
+                e,
             )
         except (OSError, IOError) as e:
             logger.warning(
                 "File access error while loading fontmap: %s. "
                 "Check if the file exists and is readable.",
-                e
+                e,
             )
         except Exception as e:
             # Catch PDFSyntaxError and other pdfminer exceptions dynamically
             # (cannot import at module level due to lazy loading)
             pdfminer = _get_pdfminer()
-            if isinstance(e, pdfminer.get('PDFSyntaxError', type(None))):
+            if isinstance(e, pdfminer.get("PDFSyntaxError", type(None))):
                 logger.warning(
                     "Invalid PDF file (syntax error): %s. "
                     "The PDF may be corrupted or use unsupported features.",
-                    e
+                    e,
                 )
             else:
                 logger.warning(
                     "Unexpected error loading fontmap from PDF: %s (type=%s). "
                     "Please report this issue with a sample PDF.",
-                    e, type(e).__name__
+                    e,
+                    type(e).__name__,
                 )
 
-    def register_existing_font(self, font_name: str, pdfminer_font: Any) -> Optional[str]:
+    def register_existing_font(
+        self, font_name: str, pdfminer_font: Any
+    ) -> Optional[str]:
         """
         Register an existing PDF font (from fontmap).
 
@@ -1337,7 +1436,7 @@ class FontRegistry:
             logger.warning(
                 "Cannot register font '%s': pdfminer font object is None. "
                 "This font was likely corrupted or uses an unsupported format.",
-                font_name
+                font_name,
             )
             return None
 
@@ -1351,7 +1450,7 @@ class FontRegistry:
 
         # Determine font type using pdfminer
         pdfminer = _get_pdfminer()
-        PDFCIDFont = pdfminer['PDFCIDFont']
+        PDFCIDFont = pdfminer["PDFCIDFont"]
 
         if isinstance(pdfminer_font, PDFCIDFont):
             font_type = FontType.CID
@@ -1386,7 +1485,9 @@ class FontRegistry:
 
         logger.debug(
             "Registered existing font: id=%s, name=%s, type=%s",
-            font_id, font_name, font_type.value
+            font_id,
+            font_name,
+            font_type.value,
         )
 
         return font_id

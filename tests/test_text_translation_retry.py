@@ -48,7 +48,9 @@ class SequencedCopilotHandler:
         return response
 
 
-def test_translate_text_with_style_comparison_retries_when_standard_is_japanese() -> None:
+def test_translate_text_with_style_comparison_retries_when_standard_is_japanese() -> (
+    None
+):
     first = """[standard]
 Translation:
 一方、この人事部長の会社の初任給は22万円だ。業界平均と比べて決して低くない。
@@ -95,11 +97,17 @@ Explanation:
 
     assert copilot.translate_single_calls == 2
     assert result.output_language == "en"
-    assert [option.style for option in result.options] == ["standard", "concise", "minimal"]
+    assert [option.style for option in result.options] == [
+        "standard",
+        "concise",
+        "minimal",
+    ]
     assert all(not _RE_JP_CHARS.search(option.text) for option in result.options)
 
 
-def test_translate_text_with_options_retries_when_selected_translation_is_japanese() -> None:
+def test_translate_text_with_options_retries_when_selected_translation_is_japanese() -> (
+    None
+):
     first = """[standard]
 Translation:
 一方、この人事部長の会社の初任給は22万円だ。業界平均と比べて決して低くない。
@@ -149,4 +157,3 @@ Explanation:
     assert result.output_language == "en"
     assert result.options[0].style == "standard"
     assert not _RE_JP_CHARS.search(result.options[0].text)
-

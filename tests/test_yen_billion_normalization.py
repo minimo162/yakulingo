@@ -60,7 +60,9 @@ def test_prompt_builder_normalizes_yen_bn_expression_for_jp() -> None:
 
 def test_translate_text_with_options_includes_normalized_amount_in_prompt() -> None:
     copilot = RecordingCopilotHandler("Translation:\nテスト\nExplanation:\n- テスト")
-    service = TranslationService(copilot=copilot, config=AppSettings(), prompts_dir=Path("prompts"))
+    service = TranslationService(
+        copilot=copilot, config=AppSettings(), prompts_dir=Path("prompts")
+    )
 
     result = service.translate_text_with_options(
         "Revenue was ¥2,238.5billion in FY2024.",
@@ -71,7 +73,9 @@ def test_translate_text_with_options_includes_normalized_amount_in_prompt() -> N
     assert copilot.last_prompt is not None
     assert "2兆2,385億円" in copilot.last_prompt
 
-    input_start = copilot.last_prompt.index("===INPUT_TEXT===") + len("===INPUT_TEXT===")
+    input_start = copilot.last_prompt.index("===INPUT_TEXT===") + len(
+        "===INPUT_TEXT==="
+    )
     input_end = copilot.last_prompt.index("===END_INPUT_TEXT===")
     prompt_input = copilot.last_prompt[input_start:input_end]
     assert "2兆2,385億円" in prompt_input

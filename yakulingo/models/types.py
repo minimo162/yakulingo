@@ -11,6 +11,7 @@ from typing import Optional, Callable
 
 class FileType(Enum):
     """Supported file types"""
+
     EXCEL = "excel"
     WORD = "word"
     POWERPOINT = "powerpoint"
@@ -21,6 +22,7 @@ class FileType(Enum):
 
 class TranslationStatus(Enum):
     """Translation job status"""
+
     PENDING = "pending"
     PROCESSING = "processing"
     COMPLETED = "completed"
@@ -34,9 +36,10 @@ class SectionDetail:
     Details about a section (sheet/page/slide) for partial translation.
     Used to display selection UI and filter translation scope.
     """
-    index: int                       # 0-based index
-    name: str                        # Display name (e.g., "Sheet1", "Page 1", "Slide 1")
-    selected: bool = True            # Whether to include in translation
+
+    index: int  # 0-based index
+    name: str  # Display name (e.g., "Sheet1", "Page 1", "Slide 1")
+    selected: bool = True  # Whether to include in translation
 
 
 @dataclass
@@ -44,9 +47,10 @@ class TextBlock:
     """
     A translatable text unit extracted from a file.
     """
-    id: str                          # Unique identifier (e.g., "sheet1_A1")
-    text: str                        # Original text content
-    location: str                    # Human-readable location
+
+    id: str  # Unique identifier (e.g., "sheet1_A1")
+    text: str  # Original text content
+    location: str  # Human-readable location
     metadata: dict = field(default_factory=dict)  # Processor-specific data
 
     def __hash__(self):
@@ -58,14 +62,15 @@ class FileInfo:
     """
     File metadata for UI display.
     """
+
     path: Path
     file_type: FileType
     size_bytes: int
 
     # Type-specific info
-    sheet_count: Optional[int] = None      # Excel
-    page_count: Optional[int] = None       # Word, PDF
-    slide_count: Optional[int] = None      # PowerPoint
+    sheet_count: Optional[int] = None  # Excel
+    page_count: Optional[int] = None  # Word, PDF
+    slide_count: Optional[int] = None  # PowerPoint
 
     # Section details for partial translation
     section_details: list[SectionDetail] = field(default_factory=list)
@@ -108,10 +113,11 @@ class FileInfo:
 
 class TranslationPhase(Enum):
     """Translation process phases for detailed progress tracking"""
-    EXTRACTING = "extracting"    # Extracting text from file
-    OCR = "ocr"                  # OCR processing (PDF with yomitoku)
+
+    EXTRACTING = "extracting"  # Extracting text from file
+    OCR = "ocr"  # OCR processing (PDF with yomitoku)
     TRANSLATING = "translating"  # Sending to Copilot for translation
-    APPLYING = "applying"        # Applying translations to output file
+    APPLYING = "applying"  # Applying translations to output file
     COMPLETE = "complete"
 
 
@@ -127,10 +133,11 @@ class TranslationProgress:
 
     The `phase` and `phase_detail` fields provide granular progress info.
     """
-    current: int                     # Current item (block/page/sheet)
-    total: int                       # Total items
-    status: str                      # Status message
-    percentage: float = 0.0          # 0.0 - 1.0
+
+    current: int  # Current item (block/page/sheet)
+    total: int  # Total items
+    status: str  # Status message
+    percentage: float = 0.0  # 0.0 - 1.0
     estimated_remaining: Optional[int] = None  # Seconds
     # Phase tracking for detailed progress (optional, for backward compatibility)
     phase: Optional[TranslationPhase] = None
@@ -162,10 +169,11 @@ class TranslationOption:
     A single translation option with text and explanation.
     Used for text translation with multiple alternatives.
     """
-    text: str                        # Translated text
-    explanation: str                 # Why this translation, usage context
-    char_count: int = 0              # Character count
-    style: Optional[str] = None      # Translation style: "standard", "concise", "minimal"
+
+    text: str  # Translated text
+    explanation: str  # Why this translation, usage context
+    char_count: int = 0  # Character count
+    style: Optional[str] = None  # Translation style: "standard", "concise", "minimal"
     # Back-translation details (UI-only, optional)
     back_translation_input_text: Optional[str] = None
     back_translation_source_text: Optional[str] = None
@@ -187,13 +195,18 @@ class TextTranslationResult:
     - Japanese input → English output
     - Other input → Japanese output
     """
-    source_text: str                         # Original text
-    source_char_count: int                   # Original character count
+
+    source_text: str  # Original text
+    source_char_count: int  # Original character count
     options: list[TranslationOption] = field(default_factory=list)
-    output_language: str = "en"              # "en" or "jp" - target language
-    detected_language: Optional[str] = None  # Copilot-detected source language (e.g., "日本語", "英語", "中国語")
+    output_language: str = "en"  # "en" or "jp" - target language
+    detected_language: Optional[str] = (
+        None  # Copilot-detected source language (e.g., "日本語", "英語", "中国語")
+    )
     error_message: Optional[str] = None
-    metadata: Optional[dict] = None          # Optional UI metadata (history, reference files, overrides)
+    metadata: Optional[dict] = (
+        None  # Optional UI metadata (history, reference files, overrides)
+    )
 
     def __post_init__(self):
         if self.source_char_count == 0:
@@ -215,11 +228,12 @@ class TranslationResult:
     """
     Result of a translation operation (for file translation).
     """
+
     status: TranslationStatus
-    output_path: Optional[Path] = None       # Main translated file
-    bilingual_path: Optional[Path] = None    # Bilingual output file (if enabled)
-    glossary_path: Optional[Path] = None     # Glossary CSV file (if enabled)
-    output_text: Optional[str] = None        # For text translation (legacy)
+    output_path: Optional[Path] = None  # Main translated file
+    bilingual_path: Optional[Path] = None  # Bilingual output file (if enabled)
+    glossary_path: Optional[Path] = None  # Glossary CSV file (if enabled)
+    output_text: Optional[str] = None  # For text translation (legacy)
     blocks_translated: int = 0
     blocks_total: int = 0
     duration_seconds: float = 0.0
@@ -251,6 +265,7 @@ class FileQueueItem:
     """
     File translation queue item used by the UI.
     """
+
     id: str
     path: Path
     file_info: Optional[FileInfo] = None
@@ -279,13 +294,15 @@ class HistoryEntry:
     A single translation history entry.
     Language direction is auto-detected, so we just store source and result.
     """
-    source_text: str                         # Original text
-    result: TextTranslationResult            # Translation result
-    timestamp: str = ""                      # ISO format timestamp
+
+    source_text: str  # Original text
+    result: TextTranslationResult  # Translation result
+    timestamp: str = ""  # ISO format timestamp
 
     def __post_init__(self):
         if not self.timestamp:
             from datetime import datetime
+
             self.timestamp = datetime.now().isoformat()
 
     @property
@@ -305,6 +322,7 @@ class BatchTranslationResult:
     Provides visibility into which blocks were successfully translated
     and which had issues (e.g., count mismatch from Copilot response).
     """
+
     translations: dict = field(default_factory=dict)  # block_id -> translated_text
     untranslated_block_ids: list = field(default_factory=list)  # Block IDs that failed
     mismatched_batch_count: int = 0  # Number of batches with count mismatch

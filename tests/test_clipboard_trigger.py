@@ -2,7 +2,10 @@ import inspect
 
 import pytest
 
-from yakulingo.services.clipboard_trigger import _IS_WINDOWS, _select_rechecked_payload_time
+from yakulingo.services.clipboard_trigger import (
+    _IS_WINDOWS,
+    _select_rechecked_payload_time,
+)
 
 
 def test_select_rechecked_payload_time_uses_event_time_when_payload_same():
@@ -45,7 +48,9 @@ def test_clipboard_trigger_default_empty_recheck_window_is_extended():
     assert sig.parameters["empty_payload_recheck_window_sec"].default == 2.5
 
 
-@pytest.mark.skipif(not _IS_WINDOWS, reason="Windows-only ClipboardTrigger min-gap behavior")
+@pytest.mark.skipif(
+    not _IS_WINDOWS, reason="Windows-only ClipboardTrigger min-gap behavior"
+)
 def test_clipboard_trigger_detects_fast_double_copy(monkeypatch):
     import yakulingo.services.clipboard_trigger as clipboard_trigger
     from yakulingo.services.clipboard_trigger import ClipboardTrigger
@@ -89,7 +94,9 @@ def test_clipboard_trigger_detects_fast_double_copy(monkeypatch):
         trigger._stop_event.set()
         return None
 
-    def get_payload_with_retry(*, log_fail: bool = True) -> tuple[str | None, list[str]]:
+    def get_payload_with_retry(
+        *, log_fail: bool = True
+    ) -> tuple[str | None, list[str]]:
         _ = log_fail
         if payloads:
             return payloads.pop(0)
@@ -122,7 +129,9 @@ def test_clipboard_trigger_detects_fast_double_copy(monkeypatch):
     assert fired == ["A"]
 
 
-@pytest.mark.skipif(not _IS_WINDOWS, reason="Windows-only ClipboardTrigger loop behavior")
+@pytest.mark.skipif(
+    not _IS_WINDOWS, reason="Windows-only ClipboardTrigger loop behavior"
+)
 def test_clipboard_trigger_allows_new_payload_during_cooldown(monkeypatch):
     import yakulingo.services.clipboard_trigger as clipboard_trigger
     from yakulingo.services.clipboard_trigger import ClipboardTrigger
@@ -180,7 +189,9 @@ def test_clipboard_trigger_allows_new_payload_during_cooldown(monkeypatch):
         trigger._stop_event.set()
         return None
 
-    def get_payload_with_retry(*, log_fail: bool = True) -> tuple[str | None, list[str]]:
+    def get_payload_with_retry(
+        *, log_fail: bool = True
+    ) -> tuple[str | None, list[str]]:
         _ = log_fail
         if payloads:
             return payloads.pop(0)
@@ -213,7 +224,9 @@ def test_clipboard_trigger_allows_new_payload_during_cooldown(monkeypatch):
     assert fired == ["A", "B"]
 
 
-@pytest.mark.skipif(not _IS_WINDOWS, reason="Windows-only ClipboardTrigger pending payload behavior")
+@pytest.mark.skipif(
+    not _IS_WINDOWS, reason="Windows-only ClipboardTrigger pending payload behavior"
+)
 def test_clipboard_trigger_rechecks_empty_payload_until_available(monkeypatch):
     import yakulingo.services.clipboard_trigger as clipboard_trigger
     from yakulingo.services.clipboard_trigger import ClipboardTrigger
@@ -263,7 +276,9 @@ def test_clipboard_trigger_rechecks_empty_payload_until_available(monkeypatch):
         trigger._stop_event.set()
         return None
 
-    def get_payload_with_retry(*, log_fail: bool = True) -> tuple[str | None, list[str]]:
+    def get_payload_with_retry(
+        *, log_fail: bool = True
+    ) -> tuple[str | None, list[str]]:
         _ = log_fail
         if payloads_retry:
             return payloads_retry.pop(0)

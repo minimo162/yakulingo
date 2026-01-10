@@ -88,8 +88,12 @@ def test_local_prompt_includes_translation_rules_for_short_text() -> None:
 def test_local_reference_embed_filters_bundled_glossary(tmp_path: Path) -> None:
     builder = _make_builder()
     glossary_path = tmp_path / "glossary.csv"
-    glossary_path.write_text("営業利益,Operating Profit\n売上高,Revenue\n", encoding="utf-8")
-    embedded = builder.build_reference_embed([glossary_path], input_text="営業利益が増加")
+    glossary_path.write_text(
+        "営業利益,Operating Profit\n売上高,Revenue\n", encoding="utf-8"
+    )
+    embedded = builder.build_reference_embed(
+        [glossary_path], input_text="営業利益が増加"
+    )
     assert "営業利益,Operating Profit" in embedded.text
     assert "売上高,Revenue" not in embedded.text
 
@@ -111,12 +115,16 @@ def test_local_reference_embed_truncates_total_limit(tmp_path: Path) -> None:
     path_a.write_text("A" * 2000, encoding="utf-8")
     path_b.write_text("B" * 2000, encoding="utf-8")
     path_c.write_text("C" * 10, encoding="utf-8")
-    embedded = builder.build_reference_embed([path_a, path_b, path_c], input_text="sample")
+    embedded = builder.build_reference_embed(
+        [path_a, path_b, path_c], input_text="sample"
+    )
     assert embedded.truncated is True
     assert any("合計上限 4000 文字" in w for w in embedded.warnings)
 
 
-def test_local_followup_reference_embed_includes_local_reference(tmp_path: Path) -> None:
+def test_local_followup_reference_embed_includes_local_reference(
+    tmp_path: Path,
+) -> None:
     settings = AppSettings()
     settings.translation_backend = "local"
     app = YakuLingoApp()

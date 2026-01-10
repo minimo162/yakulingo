@@ -10,8 +10,12 @@ import re
 
 _DATE_SEPARATOR_PATTERN = r"[-/.\uFF0D\uFF0F\uFF0E]"
 _DATE_LIKE_PATTERNS = (
-    re.compile(rf"^\d{{4}}{_DATE_SEPARATOR_PATTERN}\d{{1,2}}{_DATE_SEPARATOR_PATTERN}\d{{1,2}}$"),
-    re.compile(rf"^\d{{1,2}}{_DATE_SEPARATOR_PATTERN}\d{{1,2}}{_DATE_SEPARATOR_PATTERN}\d{{4}}$"),
+    re.compile(
+        rf"^\d{{4}}{_DATE_SEPARATOR_PATTERN}\d{{1,2}}{_DATE_SEPARATOR_PATTERN}\d{{1,2}}$"
+    ),
+    re.compile(
+        rf"^\d{{1,2}}{_DATE_SEPARATOR_PATTERN}\d{{1,2}}{_DATE_SEPARATOR_PATTERN}\d{{4}}$"
+    ),
 )
 
 
@@ -33,12 +37,12 @@ class CellTranslator:
         # 数値と記号の組み合わせ（▲△▼▽●○■□〇※など）
         # 例: "35,555", "△1,731,269", "35,555 1,731,269 △1,731,269"
         # (?=.*\d) で少なくとも1つの数字を含むことを要求
-        r'^(?=.*\d)[\d\s\.,\-\+\(\)\/\%▲△▼▽●○■□〇※]+$',
-        r'^[\w\.\-]+@[\w\.\-]+\.\w+$',        # メールアドレス
-        r'^https?://\S+$',                    # URL
-        r'^[A-Z]{2,5}[-_]?\d+$',              # コード (ABC-123)
-        r'^[\d\s%]+$',                        # パーセント付き数値
-        '^[\u00A5\uFFE5\u0024\uFF04\u20AC\u00A3\uFFE1]\\s*[\\d,\\.]+$',  # 通貨記号付き数値（半角/全角）
+        r"^(?=.*\d)[\d\s\.,\-\+\(\)\/\%▲△▼▽●○■□〇※]+$",
+        r"^[\w\.\-]+@[\w\.\-]+\.\w+$",  # メールアドレス
+        r"^https?://\S+$",  # URL
+        r"^[A-Z]{2,5}[-_]?\d+$",  # コード (ABC-123)
+        r"^[\d\s%]+$",  # パーセント付き数値
+        "^[\u00a5\uffe5\u0024\uff04\u20ac\u00a3\uffe1]\\s*[\\d,\\.]+$",  # 通貨記号付き数値（半角/全角）
     ]
 
     # Class-level compiled regex patterns (shared across all instances)
@@ -52,21 +56,21 @@ class CellTranslator:
     # - CJK Kanji (U+4E00-U+9FFF): 漢字
     # - Japanese document symbols: ▲(U+25B2), △(U+25B3), 〇(U+3007), ※(U+203B)
     _japanese_pattern = re.compile(
-        r'[\u3040-\u309F\u30A0-\u30FF\uFF65-\uFF9F\u4E00-\u9FFF\u25B2\u25B3\u3007\u203B]'
+        r"[\u3040-\u309F\u30A0-\u30FF\uFF65-\uFF9F\u4E00-\u9FFF\u25B2\u25B3\u3007\u203B]"
     )
 
     # Pre-compiled regex for CID notation detection
     # CID notation (e.g., "(cid:12345)") is used by pdfminer when font encoding
     # cannot be resolved. This typically indicates Japanese PDF content with
     # embedded fonts that don't have Unicode mappings.
-    _cid_pattern = re.compile(r'\(cid:\d+\)')
+    _cid_pattern = re.compile(r"\(cid:\d+\)")
 
     # Pre-compiled regex for kana detection (hiragana/katakana only, excludes kanji)
     # Includes both full-width and half-width forms
-    _kana_pattern = re.compile(r'[\u3040-\u309F\u30A0-\u30FF\uFF65-\uFF9F]')
+    _kana_pattern = re.compile(r"[\u3040-\u309F\u30A0-\u30FF\uFF65-\uFF9F]")
 
     # Pre-compiled regex for alphabetic detection (A-Z, a-z)
-    _alphabetic_pattern = re.compile(r'[A-Za-z]')
+    _alphabetic_pattern = re.compile(r"[A-Za-z]")
 
     @classmethod
     def _get_skip_regex(cls):
@@ -195,9 +199,9 @@ class ParagraphTranslator:
         # 数値と記号の組み合わせ（▲△▼▽●○■□〇※など）
         # 例: "35,555", "△1,731,269", "35,555 1,731,269 △1,731,269"
         # (?=.*\d) で少なくとも1つの数字を含むことを要求
-        r'^(?=.*\d)[\d\s\.,\-\+\(\)\/\%▲△▼▽●○■□〇※]+$',
-        r'^https?://\S+$',                    # URL
-        r'^[\w\.\-]+@[\w\.\-]+\.\w+$',        # メールアドレス
+        r"^(?=.*\d)[\d\s\.,\-\+\(\)\/\%▲△▼▽●○■□〇※]+$",
+        r"^https?://\S+$",  # URL
+        r"^[\w\.\-]+@[\w\.\-]+\.\w+$",  # メールアドレス
     ]
 
     # Class-level compiled regex patterns (shared across all instances)
@@ -211,21 +215,21 @@ class ParagraphTranslator:
     # - CJK Kanji (U+4E00-U+9FFF): 漢字
     # - Japanese document symbols: ▲(U+25B2), △(U+25B3), 〇(U+3007), ※(U+203B)
     _japanese_pattern = re.compile(
-        r'[\u3040-\u309F\u30A0-\u30FF\uFF65-\uFF9F\u4E00-\u9FFF\u25B2\u25B3\u3007\u203B]'
+        r"[\u3040-\u309F\u30A0-\u30FF\uFF65-\uFF9F\u4E00-\u9FFF\u25B2\u25B3\u3007\u203B]"
     )
 
     # Pre-compiled regex for CID notation detection
     # CID notation (e.g., "(cid:12345)") is used by pdfminer when font encoding
     # cannot be resolved. This typically indicates Japanese PDF content with
     # embedded fonts that don't have Unicode mappings.
-    _cid_pattern = re.compile(r'\(cid:\d+\)')
+    _cid_pattern = re.compile(r"\(cid:\d+\)")
 
     # Pre-compiled regex for kana detection (hiragana/katakana only, excludes kanji)
     # Includes both full-width and half-width forms
-    _kana_pattern = re.compile(r'[\u3040-\u309F\u30A0-\u30FF\uFF65-\uFF9F]')
+    _kana_pattern = re.compile(r"[\u3040-\u309F\u30A0-\u30FF\uFF65-\uFF9F]")
 
     # Pre-compiled regex for alphabetic detection (A-Z, a-z)
-    _alphabetic_pattern = re.compile(r'[A-Za-z]')
+    _alphabetic_pattern = re.compile(r"[A-Za-z]")
 
     @classmethod
     def _get_skip_regex(cls):
@@ -341,12 +345,12 @@ class ParagraphTranslator:
         - XML Element objects (falls back to itertext)
         """
         # First try the standard .text attribute
-        if hasattr(paragraph, 'text'):
+        if hasattr(paragraph, "text"):
             return paragraph.text
 
         # For XML Elements, use itertext() to get all text content
-        if hasattr(paragraph, 'itertext'):
-            return ''.join(paragraph.itertext())
+        if hasattr(paragraph, "itertext"):
+            return "".join(paragraph.itertext())
 
         # Last resort: try string conversion
         return str(paragraph) if paragraph else ""
@@ -361,11 +365,11 @@ class ParagraphTranslator:
         3. Paragraph style (Heading 1, Body, etc.) is preserved
         4. First run's basic formatting is preserved
         """
-        if hasattr(paragraph, 'runs') and paragraph.runs:
+        if hasattr(paragraph, "runs") and paragraph.runs:
             # Keep first run's formatting, clear others
             paragraph.runs[0].text = translated_text
             for run in paragraph.runs[1:]:
                 run.text = ""
-        elif hasattr(paragraph, 'add_run'):
+        elif hasattr(paragraph, "add_run"):
             # No runs - add text via a new run (paragraph.text is read-only in docx/pptx)
             paragraph.add_run().text = translated_text

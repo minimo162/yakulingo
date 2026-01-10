@@ -30,25 +30,27 @@ class TxtProcessor(FileProcessor):
 
     @property
     def supported_extensions(self) -> list[str]:
-        return ['.txt']
+        return [".txt"]
 
     def get_file_info(self, file_path: Path) -> FileInfo:
         """Get file metadata for UI display."""
-        content = file_path.read_text(encoding='utf-8')
+        content = file_path.read_text(encoding="utf-8")
 
         # Count paragraphs (separated by blank lines)
-        paragraphs = [p.strip() for p in content.split('\n\n') if p.strip()]
+        paragraphs = [p.strip() for p in content.split("\n\n") if p.strip()]
         paragraph_count = len(paragraphs)
 
         # Create section details (one section per paragraph group)
         section_details = []
         if paragraph_count > 1:
             for i in range(paragraph_count):
-                section_details.append(SectionDetail(
-                    index=i,
-                    name=f"段落 {i + 1}",
-                    selected=True,
-                ))
+                section_details.append(
+                    SectionDetail(
+                        index=i,
+                        name=f"段落 {i + 1}",
+                        selected=True,
+                    )
+                )
 
         return FileInfo(
             path=file_path,
@@ -67,10 +69,10 @@ class TxtProcessor(FileProcessor):
         Splits by paragraphs (double newlines) and further splits
         long paragraphs into smaller chunks.
         """
-        content = file_path.read_text(encoding='utf-8')
+        content = file_path.read_text(encoding="utf-8")
 
         # Split by paragraphs (blank lines)
-        paragraphs = [p.strip() for p in content.split('\n\n') if p.strip()]
+        paragraphs = [p.strip() for p in content.split("\n\n") if p.strip()]
 
         for para_index, paragraph in enumerate(paragraphs):
             # Split long paragraphs into chunks
@@ -83,11 +85,11 @@ class TxtProcessor(FileProcessor):
                             text=chunk,
                             location=f"段落 {para_index + 1} (部分 {chunk_index + 1})",
                             metadata={
-                                'section_idx': para_index,
-                                'paragraph_index': para_index,
-                                'chunk_index': chunk_index,
-                                'is_chunked': True,
-                            }
+                                "section_idx": para_index,
+                                "paragraph_index": para_index,
+                                "chunk_index": chunk_index,
+                                "is_chunked": True,
+                            },
                         )
             else:
                 if self.should_translate(paragraph):
@@ -96,10 +98,10 @@ class TxtProcessor(FileProcessor):
                         text=paragraph,
                         location=f"段落 {para_index + 1}",
                         metadata={
-                            'section_idx': para_index,
-                            'paragraph_index': para_index,
-                            'is_chunked': False,
-                        }
+                            "section_idx": para_index,
+                            "paragraph_index": para_index,
+                            "is_chunked": False,
+                        },
                     )
 
     def _split_into_chunks(self, text: str, max_chars: int) -> list[str]:
@@ -107,7 +109,7 @@ class TxtProcessor(FileProcessor):
         import re
 
         # Split by sentence-ending punctuation (keep delimiter with preceding text)
-        sentences = re.split(r'(?<=[。！？.!?\n])', text)
+        sentences = re.split(r"(?<=[。！？.!?\n])", text)
         # Filter out empty strings
         sentences = [s for s in sentences if s]
 
@@ -153,15 +155,16 @@ class TxtProcessor(FileProcessor):
         Note: selected_sections and text_blocks are accepted for API consistency
         but not used for text files (plain text doesn't have sections).
         """
-        content = input_path.read_text(encoding='utf-8')
-        paragraphs = [p.strip() for p in content.split('\n\n') if p.strip()]
+        content = input_path.read_text(encoding="utf-8")
+        paragraphs = [p.strip() for p in content.split("\n\n") if p.strip()]
 
         translated_paragraphs = []
 
         for para_index, paragraph in enumerate(paragraphs):
             # Check if this paragraph was chunked
             chunked_ids = [
-                block_id for block_id in translations.keys()
+                block_id
+                for block_id in translations.keys()
                 if block_id.startswith(f"para_{para_index}_chunk_")
             ]
 
@@ -174,7 +177,7 @@ class TxtProcessor(FileProcessor):
                     chunk_id = f"para_{para_index}_chunk_{chunk_index}"
                     chunk_texts.append(translations.get(chunk_id, chunk))
 
-                translated_paragraphs.append(''.join(chunk_texts))
+                translated_paragraphs.append("".join(chunk_texts))
             else:
                 # Single block paragraph
                 block_id = f"para_{para_index}"
@@ -185,8 +188,8 @@ class TxtProcessor(FileProcessor):
                     translated_paragraphs.append(paragraph)
 
         # Write output
-        output_content = '\n\n'.join(translated_paragraphs)
-        output_path.write_text(output_content, encoding='utf-8')
+        output_content = "\n\n".join(translated_paragraphs)
+        output_path.write_text(output_content, encoding="utf-8")
 
         logger.info("TXT translation applied: %s -> %s", input_path, output_path)
         return None
@@ -200,11 +203,15 @@ class TxtProcessor(FileProcessor):
         """
         Create bilingual document with original and translated text interleaved.
         """
-        original_content = original_path.read_text(encoding='utf-8')
-        translated_content = translated_path.read_text(encoding='utf-8')
+        original_content = original_path.read_text(encoding="utf-8")
+        translated_content = translated_path.read_text(encoding="utf-8")
 
-        original_paragraphs = [p.strip() for p in original_content.split('\n\n') if p.strip()]
-        translated_paragraphs = [p.strip() for p in translated_content.split('\n\n') if p.strip()]
+        original_paragraphs = [
+            p.strip() for p in original_content.split("\n\n") if p.strip()
+        ]
+        translated_paragraphs = [
+            p.strip() for p in translated_content.split("\n\n") if p.strip()
+        ]
 
         bilingual_parts = []
         for i, (orig, trans) in enumerate(
@@ -212,8 +219,8 @@ class TxtProcessor(FileProcessor):
         ):
             bilingual_parts.append(f"【原文】\n{orig}\n\n【訳文】\n{trans}")
 
-        separator = '\n\n' + '─' * 40 + '\n\n'
-        output_path.write_text(separator.join(bilingual_parts), encoding='utf-8')
+        separator = "\n\n" + "─" * 40 + "\n\n"
+        output_path.write_text(separator.join(bilingual_parts), encoding="utf-8")
         logger.info("Bilingual TXT created: %s", output_path)
 
     def export_glossary_csv(
@@ -225,9 +232,9 @@ class TxtProcessor(FileProcessor):
         """Export source/translation pairs as CSV."""
         import csv
 
-        with output_path.open('w', encoding='utf-8-sig', newline='') as f:
+        with output_path.open("w", encoding="utf-8-sig", newline="") as f:
             writer = csv.writer(f)
-            writer.writerow(['原文', '訳文'])
+            writer.writerow(["原文", "訳文"])
             for block_id, translated in translations.items():
                 if block_id in original_texts:
                     writer.writerow([original_texts[block_id], translated])

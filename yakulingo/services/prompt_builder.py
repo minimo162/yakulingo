@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Optional, Sequence
 
 
-_RULE_SECTION_PATTERN = re.compile(r'^\s*\[(COMMON|TO_EN|TO_JP)\]\s*$', re.IGNORECASE)
+_RULE_SECTION_PATTERN = re.compile(r"^\s*\[(COMMON|TO_EN|TO_JP)\]\s*$", re.IGNORECASE)
 _RULE_SECTION_KEYS = {
     "COMMON": "common",
     "TO_EN": "en",
@@ -94,6 +94,7 @@ def _normalize_yen_billion_expressions_to_japanese(text: str) -> str:
         return _format_japanese_yen_amount(yen_amount)
 
     return _RE_YEN_BILLION.sub(repl, text)
+
 
 # 参考ファイル参照の指示文（ファイル添付時のみ挿入）
 REFERENCE_INSTRUCTION = """
@@ -366,7 +367,9 @@ class PromptBuilder:
         if output_language != "jp" or not input_text:
             return input_text
         lowered = input_text.lower()
-        if ("billion" not in lowered and "bn" not in lowered) or ("¥" not in input_text and "￥" not in input_text):
+        if ("billion" not in lowered and "bn" not in lowered) or (
+            "¥" not in input_text and "￥" not in input_text
+        ):
             return input_text
         return _normalize_yen_billion_expressions_to_japanese(input_text)
 
@@ -376,7 +379,7 @@ class PromptBuilder:
         if self.prompts_dir:
             rules_file = self.prompts_dir / "translation_rules.txt"
             if rules_file.exists():
-                rules_text = rules_file.read_text(encoding='utf-8')
+                rules_text = rules_file.read_text(encoding="utf-8")
 
         self._translation_rules_raw = rules_text
         sections, has_sections = self._parse_translation_rules_sections(rules_text)
@@ -384,7 +387,9 @@ class PromptBuilder:
         self._translation_rules_has_sections = has_sections
         return rules_text
 
-    def _parse_translation_rules_sections(self, rules_text: str) -> tuple[dict[str, str], bool]:
+    def _parse_translation_rules_sections(
+        self, rules_text: str
+    ) -> tuple[dict[str, str], bool]:
         """Parse optional [COMMON]/[TO_EN]/[TO_JP] sections from rules text."""
         sections = {"common": "", "en": "", "jp": ""}
         seen_tag = False
@@ -405,7 +410,11 @@ class PromptBuilder:
                 unsectioned_lines.append(line)
 
         if not seen_tag:
-            return {"common": "\n".join(unsectioned_lines).strip(), "en": "", "jp": ""}, False
+            return {
+                "common": "\n".join(unsectioned_lines).strip(),
+                "en": "",
+                "jp": "",
+            }, False
 
         for key in sections:
             sections[key] = sections[key].strip()
@@ -425,19 +434,23 @@ class PromptBuilder:
                 # File translation to English
                 to_en_prompt = self.prompts_dir / f"file_translate_to_en_{style}.txt"
                 if to_en_prompt.exists():
-                    self._templates[("en", style)] = to_en_prompt.read_text(encoding='utf-8')
+                    self._templates[("en", style)] = to_en_prompt.read_text(
+                        encoding="utf-8"
+                    )
                 else:
                     # Fallback to old single file if exists
                     old_prompt = self.prompts_dir / "file_translate_to_en.txt"
                     if old_prompt.exists():
-                        self._templates[("en", style)] = old_prompt.read_text(encoding='utf-8')
+                        self._templates[("en", style)] = old_prompt.read_text(
+                            encoding="utf-8"
+                        )
                     else:
                         self._templates[("en", style)] = DEFAULT_TO_EN_TEMPLATE
 
             # Japanese template (no style variations)
             to_jp_prompt = self.prompts_dir / "file_translate_to_jp.txt"
             if to_jp_prompt.exists():
-                jp_template = to_jp_prompt.read_text(encoding='utf-8')
+                jp_template = to_jp_prompt.read_text(encoding="utf-8")
             else:
                 jp_template = DEFAULT_TO_JP_TEMPLATE
 
@@ -449,7 +462,7 @@ class PromptBuilder:
             # Text translation to Japanese (no style variations)
             text_to_jp = self.prompts_dir / "text_translate_to_jp.txt"
             if text_to_jp.exists():
-                jp_text_template = text_to_jp.read_text(encoding='utf-8')
+                jp_text_template = text_to_jp.read_text(encoding="utf-8")
             else:
                 jp_text_template = DEFAULT_TEXT_TO_JP_TEMPLATE
 
@@ -458,7 +471,7 @@ class PromptBuilder:
 
             text_compare = self.prompts_dir / "text_translate_to_en_compare.txt"
             if text_compare.exists():
-                self._text_compare_template = text_compare.read_text(encoding='utf-8')
+                self._text_compare_template = text_compare.read_text(encoding="utf-8")
 
         else:
             # Use defaults
@@ -518,7 +531,9 @@ class PromptBuilder:
         """
         self._load_translation_rules()
 
-    def _get_template(self, output_language: str = "en", translation_style: str = "concise") -> str:
+    def _get_template(
+        self, output_language: str = "en", translation_style: str = "concise"
+    ) -> str:
         """Get appropriate template based on output language and style."""
         key = (output_language, translation_style)
         if key in self._templates:
@@ -530,9 +545,15 @@ class PromptBuilder:
             return self._templates[fallback_key]
 
         # Ultimate fallback
-        return DEFAULT_TO_EN_TEMPLATE if output_language == "en" else DEFAULT_TO_JP_TEMPLATE
+        return (
+            DEFAULT_TO_EN_TEMPLATE
+            if output_language == "en"
+            else DEFAULT_TO_JP_TEMPLATE
+        )
 
-    def get_text_template(self, output_language: str = "en", translation_style: str = "concise") -> Optional[str]:
+    def get_text_template(
+        self, output_language: str = "en", translation_style: str = "concise"
+    ) -> Optional[str]:
         """Get cached text translation template.
 
         Args:
@@ -679,9 +700,7 @@ class PromptBuilder:
             texts = [f"[[ID:{i + 1}]] {text}" for i, text in enumerate(texts)]
 
         # Format as numbered list
-        numbered_input = "\n".join(
-            f"{i+1}. {text}" for i, text in enumerate(texts)
-        )
+        numbered_input = "\n".join(f"{i + 1}. {text}" for i, text in enumerate(texts))
 
         return self.build(
             numbered_input,
@@ -718,7 +737,7 @@ class PromptBuilder:
         Returns:
             List of translated texts
         """
-        lines = result.strip().split('\n')
+        lines = result.strip().split("\n")
         translations = []
 
         for line in lines:
@@ -727,7 +746,7 @@ class PromptBuilder:
                 continue
 
             # Remove numbering prefix (e.g., "1. ", "2. ")
-            match = re.match(r'^\d+\.\s*(.+)$', line)
+            match = re.match(r"^\d+\.\s*(.+)$", line)
             if match:
                 text = match.group(1)
             else:

@@ -25,12 +25,17 @@ import re
 logger = logging.getLogger(__name__)
 
 DEFAULT_TEXT_STYLE = "concise"
-TEXT_STYLE_ORDER: tuple[str, str, str] = ('standard', 'concise', 'minimal')
+TEXT_STYLE_ORDER: tuple[str, str, str] = ("standard", "concise", "minimal")
 
 # Pre-compiled regex patterns for performance
 # Support both half-width (:) and full-width (：) colons, and markdown bold (**訳文:**)
-_RE_MULTI_OPTION = re.compile(r'\[(\d+)\]\s*\**訳文\**[:：]\s*(.+?)\s*\**解説\**[:：]\s*(.+?)(?=\[\d+\]|$)', re.DOTALL)
-_RE_STYLE_SECTION = re.compile(r'^\s*\[\s*(standard|concise|minimal)\s*\]\s*$', re.IGNORECASE | re.MULTILINE)
+_RE_MULTI_OPTION = re.compile(
+    r"\[(\d+)\]\s*\**訳文\**[:：]\s*(.+?)\s*\**解説\**[:：]\s*(.+?)(?=\[\d+\]|$)",
+    re.DOTALL,
+)
+_RE_STYLE_SECTION = re.compile(
+    r"^\s*\[\s*(standard|concise|minimal)\s*\]\s*$", re.IGNORECASE | re.MULTILINE
+)
 
 # Translation text pattern - supports multiple formats:
 # - Japanese: 訳文 (colon optional), 翻訳 (colon REQUIRED to avoid "翻訳してください" match)
@@ -38,14 +43,14 @@ _RE_STYLE_SECTION = re.compile(r'^\s*\[\s*(standard|concise|minimal)\s*\]\s*$', 
 # - English: Translation, Translated (colon REQUIRED to avoid false matches)
 # - Formats: "訳文:", "**訳文:**", "[訳文]", "### 訳文:", "> 訳文:", "Translation:"
 _RE_TRANSLATION_TEXT = re.compile(
-    r'[#>*\s-]*[\[\(]?\**(?:'
-    r'訳文[:：]?'  # 訳文 - colon optional
-    r'|翻訳[:：]'  # 翻訳 - colon REQUIRED (avoid "翻訳してください" match)
-    r'|(?:Translation|Translated)[:：]'  # English labels - colon REQUIRED
-    r')\**[\]\)]?\s*'
-    r'(.+?)'
+    r"[#>*\s-]*[\[\(]?\**(?:"
+    r"訳文[:：]?"  # 訳文 - colon optional
+    r"|翻訳[:：]"  # 翻訳 - colon REQUIRED (avoid "翻訳してください" match)
+    r"|(?:Translation|Translated)[:：]"  # English labels - colon REQUIRED
+    r")\**[\]\)]?\s*"
+    r"(.+?)"
     # Lookahead: 解説 must be at line start (after \n) to avoid "解説付き" false match
-    r'(?=\n[#>*\s-]*[\[\(]?\**(?:解説|説明|Explanation|Notes?|Commentary)\**[\]\)]?[:：]?\s*|$)',
+    r"(?=\n[#>*\s-]*[\[\(]?\**(?:解説|説明|Explanation|Notes?|Commentary)\**[\]\)]?[:：]?\s*|$)",
     re.DOTALL | re.IGNORECASE,
 )
 
@@ -54,13 +59,13 @@ _RE_TRANSLATION_TEXT = re.compile(
 # - English: Explanation, Notes, Note, Commentary (colon optional for flexibility)
 # NOTE: Must be at line start (after ^ or \n) to avoid "解説付き" false match
 _RE_EXPLANATION = re.compile(
-    r'(?:^|\n)[#>*\s-]*[\[\(]?\**(?:解説|説明|Explanation|Notes?|Commentary)\**[\]\)]?[:：]?\s*(.+)',
+    r"(?:^|\n)[#>*\s-]*[\[\(]?\**(?:解説|説明|Explanation|Notes?|Commentary)\**[\]\)]?[:：]?\s*(.+)",
     re.DOTALL | re.IGNORECASE,
 )
-_RE_MARKDOWN_SEPARATOR = re.compile(r'\n?\s*[\*\-]{3,}\s*$')
+_RE_MARKDOWN_SEPARATOR = re.compile(r"\n?\s*[\*\-]{3,}\s*$")
 _RE_FILENAME_FORBIDDEN = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
 _RE_INPUT_MARKER_LINE = re.compile(
-    r'^\s*(?:###\s*INPUT\b.*|<<<INPUT_TEXT>>>|<<<END_INPUT_TEXT>>>|===INPUT_TEXT===|===END_INPUT_TEXT===)\s*$',
+    r"^\s*(?:###\s*INPUT\b.*|<<<INPUT_TEXT>>>|<<<END_INPUT_TEXT>>>|===INPUT_TEXT===|===END_INPUT_TEXT===)\s*$",
     re.IGNORECASE,
 )
 
@@ -68,7 +73,7 @@ _RE_INPUT_MARKER_LINE = re.compile(
 # These labels come from prompt template output format examples (e.g., "訳文: 英語翻訳")
 # When Copilot follows the format literally, these labels appear at the start of the translation
 _RE_TRANSLATION_LABEL = re.compile(
-    r'^(?:英語翻訳|日本語翻訳|English\s*Translation|Japanese\s*Translation)\s*',
+    r"^(?:英語翻訳|日本語翻訳|English\s*Translation|Japanese\s*Translation)\s*",
     re.IGNORECASE,
 )
 
@@ -76,24 +81,24 @@ _RE_TRANSLATION_LABEL = re.compile(
 # Copilot sometimes appends the attached file name (e.g., "glossary", "glossary.csv") to the response
 # This pattern matches common reference file names at the end of the explanation
 _RE_TRAILING_FILENAME = re.compile(
-    r'[\s。．.、,]*(glossary(?:_old)?|translation_rules|abbreviations|用語集|略語集)(?:\.[a-z]{2,4})?\s*$',
+    r"[\s。．.、,]*(glossary(?:_old)?|translation_rules|abbreviations|用語集|略語集)(?:\.[a-z]{2,4})?\s*$",
     re.IGNORECASE,
 )
 
 _RE_TRAILING_ATTACHMENT_LINK = re.compile(
-    r'\s*\[[^\]]+?\|\s*(?:excel|word|powerpoint|pdf|csv|text|txt|file)\s*\]\([^)]+\)\s*$',
+    r"\s*\[[^\]]+?\|\s*(?:excel|word|powerpoint|pdf|csv|text|txt|file)\s*\]\([^)]+\)\s*$",
     re.IGNORECASE,
 )
 _RE_TRAILING_ATTACHMENT_LABEL = re.compile(
-    r'\s*\[[^\]]+?\|\s*(?:excel|word|powerpoint|pdf|csv|text|txt|file)\s*\]\s*$',
+    r"\s*\[[^\]]+?\|\s*(?:excel|word|powerpoint|pdf|csv|text|txt|file)\s*\]\s*$",
     re.IGNORECASE,
 )
-_RE_ITEM_ID_MARKER = re.compile(r'^\s*\[\[ID:\d+\]\]\s*')
+_RE_ITEM_ID_MARKER = re.compile(r"^\s*\[\[ID:\d+\]\]\s*")
 
-_RE_JP_KANA = re.compile(r'[\u3040-\u309F\u30A0-\u30FF\uFF65-\uFF9F]')
-_RE_CJK_IDEOGRAPH = re.compile(r'[\u3400-\u4DBF\u4E00-\u9FFF]')
-_RE_LATIN_ALPHA = re.compile(r'[A-Za-z]')
-_RE_HANGUL = re.compile(r'[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F]')
+_RE_JP_KANA = re.compile(r"[\u3040-\u309F\u30A0-\u30FF\uFF65-\uFF9F]")
+_RE_CJK_IDEOGRAPH = re.compile(r"[\u3400-\u4DBF\u4E00-\u9FFF]")
+_RE_LATIN_ALPHA = re.compile(r"[A-Za-z]")
+_RE_HANGUL = re.compile(r"[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F]")
 
 
 def _looks_untranslated_to_en(text: str) -> bool:
@@ -143,16 +148,18 @@ def _sanitize_output_stem(name: str) -> str:
     Returns a fallback name when the result would be empty.
     """
 
-    sanitized = _RE_FILENAME_FORBIDDEN.sub('_', unicodedata.normalize('NFC', name))
+    sanitized = _RE_FILENAME_FORBIDDEN.sub("_", unicodedata.normalize("NFC", name))
     sanitized = sanitized.strip()
-    return sanitized or 'translated_file'
+    return sanitized or "translated_file"
 
 
 def _strip_input_markers(text: str) -> str:
     """Remove input marker lines accidentally echoed by Copilot."""
     if not text:
         return text
-    lines = [line for line in text.splitlines() if not _RE_INPUT_MARKER_LINE.match(line)]
+    lines = [
+        line for line in text.splitlines() if not _RE_INPUT_MARKER_LINE.match(line)
+    ]
     return "\n".join(lines).strip()
 
 
@@ -162,11 +169,11 @@ def _strip_trailing_attachment_links(text: str) -> str:
         return text
     cleaned = text.strip()
     while True:
-        updated = _RE_TRAILING_ATTACHMENT_LINK.sub('', cleaned)
+        updated = _RE_TRAILING_ATTACHMENT_LINK.sub("", cleaned)
         if updated == cleaned:
             break
         cleaned = updated.strip()
-    cleaned = _RE_TRAILING_ATTACHMENT_LABEL.sub('', cleaned).strip()
+    cleaned = _RE_TRAILING_ATTACHMENT_LABEL.sub("", cleaned).strip()
     return cleaned
 
 
@@ -241,8 +248,12 @@ def _extract_options_preview(buffer: str) -> Optional[str]:
     lines: list[str] = []
     for i, (idx, style) in enumerate(positions):
         next_idx = positions[i + 1][0] if i + 1 < len(positions) else None
-        translation = _extract_json_value_for_key(buffer, "translation", start=idx, end=next_idx)
-        explanation = _extract_json_value_for_key(buffer, "explanation", start=idx, end=next_idx)
+        translation = _extract_json_value_for_key(
+            buffer, "translation", start=idx, end=next_idx
+        )
+        explanation = _extract_json_value_for_key(
+            buffer, "explanation", start=idx, end=next_idx
+        )
         if not translation and not explanation:
             continue
         if translation:
@@ -295,6 +306,7 @@ def _wrap_local_streaming_on_chunk(
 # Language Detection
 # =============================================================================
 
+
 class LanguageDetector:
     """
     Language detection with hybrid local/Copilot approach.
@@ -321,13 +333,13 @@ class LanguageDetector:
     # Each tuple: (min_chars, jp_threshold, non_jp_threshold)
     # More aggressive at early stages, more accurate with more samples
     EARLY_EXIT_STAGES = (
-        (20, 0.85, 0.05),   # 20 chars: 85%+ → definitely Japanese, <5% → definitely not
-        (35, 0.70, 0.08),   # 35 chars: 70%+ → likely Japanese, <8% → likely not
-        (50, 0.60, 0.10),   # 50 chars: 60%+ → probably Japanese, <10% → probably not
+        (20, 0.85, 0.05),  # 20 chars: 85%+ → definitely Japanese, <5% → definitely not
+        (35, 0.70, 0.08),  # 35 chars: 70%+ → likely Japanese, <8% → likely not
+        (50, 0.60, 0.10),  # 50 chars: 60%+ → probably Japanese, <10% → probably not
     )
 
     # Japanese-specific punctuation (not used in Chinese)
-    _JAPANESE_PUNCTUATION = frozenset('、・「」『』')
+    _JAPANESE_PUNCTUATION = frozenset("、・「」『』")
 
     # Chinese detection heuristic (no extra data):
     # Approximate "Japanese-usable character set" with shift_jisx0213.
@@ -354,11 +366,13 @@ class LanguageDetector:
     @staticmethod
     def is_japanese_char(code: int) -> bool:
         """Check if a Unicode code point is a Japanese character."""
-        return (0x3040 <= code <= 0x309F or  # Hiragana
-                0x30A0 <= code <= 0x30FF or  # Katakana
-                0x4E00 <= code <= 0x9FFF or  # CJK Kanji
-                0x31F0 <= code <= 0x31FF or  # Katakana extensions
-                0xFF65 <= code <= 0xFF9F)    # Halfwidth Katakana
+        return (
+            0x3040 <= code <= 0x309F  # Hiragana
+            or 0x30A0 <= code <= 0x30FF  # Katakana
+            or 0x4E00 <= code <= 0x9FFF  # CJK Kanji
+            or 0x31F0 <= code <= 0x31FF  # Katakana extensions
+            or 0xFF65 <= code <= 0xFF9F
+        )  # Halfwidth Katakana
 
     @staticmethod
     def is_hiragana(code: int) -> bool:
@@ -368,9 +382,11 @@ class LanguageDetector:
     @staticmethod
     def is_katakana(code: int) -> bool:
         """Check if a Unicode code point is Katakana (including extensions)."""
-        return (0x30A0 <= code <= 0x30FF or  # Katakana
-                0x31F0 <= code <= 0x31FF or  # Katakana extensions
-                0xFF65 <= code <= 0xFF9F)    # Halfwidth Katakana
+        return (
+            0x30A0 <= code <= 0x30FF  # Katakana
+            or 0x31F0 <= code <= 0x31FF  # Katakana extensions
+            or 0xFF65 <= code <= 0xFF9F
+        )  # Halfwidth Katakana
 
     @staticmethod
     def is_cjk_ideograph(code: int) -> bool:
@@ -380,22 +396,26 @@ class LanguageDetector:
     @staticmethod
     def is_hangul(code: int) -> bool:
         """Check if a Unicode code point is Korean Hangul."""
-        return (0xAC00 <= code <= 0xD7AF or  # Hangul Syllables
-                0x1100 <= code <= 0x11FF or  # Hangul Jamo
-                0x3130 <= code <= 0x318F)    # Hangul Compatibility Jamo
+        return (
+            0xAC00 <= code <= 0xD7AF  # Hangul Syllables
+            or 0x1100 <= code <= 0x11FF  # Hangul Jamo
+            or 0x3130 <= code <= 0x318F
+        )  # Hangul Compatibility Jamo
 
     @staticmethod
     def is_latin(code: int) -> bool:
         """Check if a Unicode code point is Latin alphabet."""
-        return (0x0041 <= code <= 0x005A or  # A-Z
-                0x0061 <= code <= 0x007A or  # a-z
-                0x00C0 <= code <= 0x024F)    # Latin Extended (accented chars)
+        return (
+            0x0041 <= code <= 0x005A  # A-Z
+            or 0x0061 <= code <= 0x007A  # a-z
+            or 0x00C0 <= code <= 0x024F
+        )  # Latin Extended (accented chars)
 
     @staticmethod
     def is_punctuation(char: str) -> bool:
         """Check if char is punctuation (optimized with category prefix)."""
         cat = unicodedata.category(char)
-        return cat[0] == 'P'  # All punctuation categories start with 'P'
+        return cat[0] == "P"  # All punctuation categories start with 'P'
 
     @classmethod
     def has_japanese_punctuation(cls, text: str) -> bool:
@@ -440,14 +460,20 @@ class LanguageDetector:
 
         # Early exit for very short text: check all chars directly
         if text_len < self.MIN_TEXT_LENGTH_FOR_SAMPLING:
-            meaningful_chars = [c for c in text if not c.isspace() and not self.is_punctuation(c)]
+            meaningful_chars = [
+                c for c in text if not c.isspace() and not self.is_punctuation(c)
+            ]
             if not meaningful_chars:
                 return False
             jp_count = sum(1 for c in meaningful_chars if self.is_japanese_char(ord(c)))
             return (jp_count / len(meaningful_chars)) >= threshold
 
         # For longer text, sample the first portion
-        sample_text = text[:self.MAX_ANALYSIS_LENGTH] if text_len > self.MAX_ANALYSIS_LENGTH else text
+        sample_text = (
+            text[: self.MAX_ANALYSIS_LENGTH]
+            if text_len > self.MAX_ANALYSIS_LENGTH
+            else text
+        )
 
         japanese_count = 0
         total_chars = 0
@@ -507,7 +533,7 @@ class LanguageDetector:
             return "日本語"  # Default for empty text
 
         # Sample text for analysis
-        sample = text[:self.MAX_ANALYSIS_LENGTH]
+        sample = text[: self.MAX_ANALYSIS_LENGTH]
 
         has_hiragana = False
         has_katakana = False
@@ -571,13 +597,12 @@ class LanguageDetector:
         # Other cases → assume Japanese as default
         return "日本語"
 
-
     def detect_local_with_reason(self, text: str) -> tuple[str, str]:
         """Detect language locally and return a reason code for UI."""
         if not text:
             return "日本語", "empty"
 
-        sample = text[:self.MAX_ANALYSIS_LENGTH]
+        sample = text[: self.MAX_ANALYSIS_LENGTH]
 
         has_hiragana = False
         has_katakana = False
@@ -634,6 +659,7 @@ class LanguageDetector:
 
         return "日本語", "default"
 
+
 # Singleton instance for convenient access
 language_detector = LanguageDetector()
 
@@ -641,6 +667,7 @@ language_detector = LanguageDetector()
 # =============================================================================
 # Backward Compatibility Functions
 # =============================================================================
+
 
 def is_japanese_text(text: str, threshold: float = 0.3) -> bool:
     """Detect if text is primarily Japanese.
@@ -686,7 +713,13 @@ if TYPE_CHECKING:
     from yakulingo.processors.pdf_processor import PdfProcessor
 
 
-def scale_progress(progress: TranslationProgress, start: int, end: int, phase: TranslationPhase, phase_detail: Optional[str] = None) -> TranslationProgress:
+def scale_progress(
+    progress: TranslationProgress,
+    start: int,
+    end: int,
+    phase: TranslationPhase,
+    phase_detail: Optional[str] = None,
+) -> TranslationProgress:
     """
     Scale batch progress percentage to a target range.
 
@@ -748,6 +781,7 @@ class TranslationCache:
         """
         from collections import OrderedDict
         import threading
+
         self._cache: OrderedDict[str, str] = OrderedDict()
         self._max_size = max_size if max_size is not None else self.DEFAULT_MAX_SIZE
         self._hits = 0
@@ -791,21 +825,27 @@ class TranslationCache:
         if self._max_size <= 0:
             return
 
-        entry_bytes = len(text.encode('utf-8')) + len(translation.encode('utf-8'))
+        entry_bytes = len(text.encode("utf-8")) + len(translation.encode("utf-8"))
 
         with self._lock:
             if text in self._cache:
                 # Update existing entry and move to end
                 old_translation = self._cache[text]
-                old_bytes = len(text.encode('utf-8')) + len(old_translation.encode('utf-8'))
+                old_bytes = len(text.encode("utf-8")) + len(
+                    old_translation.encode("utf-8")
+                )
                 self._total_bytes -= old_bytes
                 self._cache.move_to_end(text)
             elif len(self._cache) >= self._max_size:
                 # Evict oldest (least recently used) entry
                 oldest_key, oldest_val = self._cache.popitem(last=False)
-                evicted_bytes = len(oldest_key.encode('utf-8')) + len(oldest_val.encode('utf-8'))
+                evicted_bytes = len(oldest_key.encode("utf-8")) + len(
+                    oldest_val.encode("utf-8")
+                )
                 self._total_bytes -= evicted_bytes
-                logger.debug("LRU eviction: removed oldest entry (freed %d bytes)", evicted_bytes)
+                logger.debug(
+                    "LRU eviction: removed oldest entry (freed %d bytes)", evicted_bytes
+                )
 
             self._cache[text] = translation
             self._total_bytes += entry_bytes
@@ -842,7 +882,7 @@ class BatchTranslator:
     """
 
     # Default values (used when settings not provided)
-    DEFAULT_MAX_CHARS_PER_BATCH = 1000   # Characters per batch (Copilot input safety)
+    DEFAULT_MAX_CHARS_PER_BATCH = 1000  # Characters per batch (Copilot input safety)
     DEFAULT_REQUEST_TIMEOUT = 600  # Default timeout for Copilot response (10 minutes)
     _SPLIT_REQUEST_MARKERS = (
         "入力テキスト量が非常に多いため",
@@ -878,7 +918,9 @@ class BatchTranslator:
         self._cancel_event = threading.Event()
 
         # Use provided values or defaults
-        self.max_chars_per_batch = max_chars_per_batch or self.DEFAULT_MAX_CHARS_PER_BATCH
+        self.max_chars_per_batch = (
+            max_chars_per_batch or self.DEFAULT_MAX_CHARS_PER_BATCH
+        )
         self.request_timeout = request_timeout or self.DEFAULT_REQUEST_TIMEOUT
 
         # Translation cache for avoiding re-translation of identical text
@@ -888,7 +930,11 @@ class BatchTranslator:
     def _ui_window_sync_scope(self, reason: str):
         """翻訳中だけEdgeをUIの背面に表示する（Windowsのみ・利用可能な場合）。"""
         copilot = getattr(self, "copilot", None)
-        scope_factory = getattr(copilot, "ui_window_sync_scope", None) if copilot is not None else None
+        scope_factory = (
+            getattr(copilot, "ui_window_sync_scope", None)
+            if copilot is not None
+            else None
+        )
         if scope_factory is None:
             yield
             return
@@ -925,11 +971,13 @@ class BatchTranslator:
         cleaned = _strip_input_markers(text)
         cleaned = _strip_trailing_attachment_links(cleaned)
         if cleaned:
-            cleaned = _RE_ITEM_ID_MARKER.sub('', cleaned)
-            cleaned = _RE_TRAILING_FILENAME.sub('', cleaned).strip()
+            cleaned = _RE_ITEM_ID_MARKER.sub("", cleaned)
+            cleaned = _RE_TRAILING_FILENAME.sub("", cleaned).strip()
         return cleaned
 
-    def _should_retry_translation(self, original: str, translated: str, output_language: str) -> bool:
+    def _should_retry_translation(
+        self, original: str, translated: str, output_language: str
+    ) -> bool:
         if output_language != "en":
             return False
         if not original or not translated:
@@ -1048,11 +1096,11 @@ class BatchTranslator:
 
         for block in blocks:
             # Check if block is marked as formula (PDF processor)
-            if block.metadata and block.metadata.get('is_formula'):
+            if block.metadata and block.metadata.get("is_formula"):
                 translations[block.id] = block.text  # Keep original
                 formula_skipped += 1
             # Check if block is marked for skip_translation (PDF processor: numbers, dates, etc.)
-            elif block.metadata and block.metadata.get('skip_translation'):
+            elif block.metadata and block.metadata.get("skip_translation"):
                 # Don't add to translations - apply_translations will handle preservation
                 skip_translation_count += 1
             else:
@@ -1060,13 +1108,12 @@ class BatchTranslator:
 
         if formula_skipped > 0:
             logger.debug(
-                "Skipped %d formula blocks (preserved original text)",
-                formula_skipped
+                "Skipped %d formula blocks (preserved original text)", formula_skipped
             )
         if skip_translation_count > 0:
             logger.debug(
                 "Skipped %d non-translatable blocks (will preserve original in apply_translations)",
-                skip_translation_count
+                skip_translation_count,
             )
 
         # Phase 1: Check cache for already-translated blocks
@@ -1085,8 +1132,11 @@ class BatchTranslator:
         if cache_hits > 0:
             logger.debug(
                 "Cache hits: %d/%d blocks (%.1f%%)",
-                cache_hits, len(translatable_blocks),
-                cache_hits / len(translatable_blocks) * 100 if translatable_blocks else 0
+                cache_hits,
+                len(translatable_blocks),
+                cache_hits / len(translatable_blocks) * 100
+                if translatable_blocks
+                else 0,
             )
 
         # If all blocks were cached, return early
@@ -1133,8 +1183,9 @@ class BatchTranslator:
         if total_unique < total_original:
             logger.info(
                 "Batch deduplication: %d unique texts from %d original (%.1f%% reduction)",
-                total_unique, total_original,
-                (1 - total_unique / total_original) * 100
+                total_unique,
+                total_original,
+                (1 - total_unique / total_original) * 100,
             )
 
         # Pre-build all prompts before translation loop for efficiency
@@ -1162,29 +1213,35 @@ class BatchTranslator:
         for i, batch in enumerate(batches):
             # Check for cancellation between batches (thread-safe)
             if self._cancel_event.is_set():
-                logger.info("Batch translation cancelled at batch %d/%d", i + 1, len(batches))
+                logger.info(
+                    "Batch translation cancelled at batch %d/%d", i + 1, len(batches)
+                )
                 cancelled = True
                 break
 
             if on_progress:
-                on_progress(TranslationProgress(
-                    current=i,
-                    total=len(batches),
-                    status=f"Batch {i + 1} of {len(batches)}",
-                    phase_current=i + 1,
-                    phase_total=len(batches),
-                ))
+                on_progress(
+                    TranslationProgress(
+                        current=i,
+                        total=len(batches),
+                        status=f"Batch {i + 1} of {len(batches)}",
+                        phase_current=i + 1,
+                        phase_total=len(batches),
+                    )
+                )
 
             unique_texts, original_to_unique_idx = batch_unique_data[i]
             prompt = prompts[i]  # Use pre-built prompt
 
             # Translate unique texts only
             # Skip clear wait for 2nd+ batches (we just finished getting a response)
-            skip_clear_wait = (i > 0)
+            skip_clear_wait = i > 0
             try:
                 lock = self._copilot_lock or nullcontext()
                 with lock:
-                    self.copilot.set_cancel_callback(lambda: self._cancel_event.is_set())
+                    self.copilot.set_cancel_callback(
+                        lambda: self._cancel_event.is_set()
+                    )
                     try:
                         with self._ui_window_sync_scope("translate_blocks_with_result"):
                             unique_translations = self.copilot.translate_sync(
@@ -1198,7 +1255,9 @@ class BatchTranslator:
                     finally:
                         self.copilot.set_cancel_callback(None)
             except TranslationCancelledError:
-                logger.info("Translation cancelled during batch %d/%d", i + 1, len(batches))
+                logger.info(
+                    "Translation cancelled during batch %d/%d", i + 1, len(batches)
+                )
                 cancelled = True
                 break
             except RuntimeError as e:
@@ -1208,7 +1267,9 @@ class BatchTranslator:
                     and _split_retry_depth < self._SPLIT_RETRY_LIMIT
                     and batch_char_limit > self._MIN_SPLIT_BATCH_CHARS
                 ):
-                    reduced_limit = max(self._MIN_SPLIT_BATCH_CHARS, batch_char_limit // 2)
+                    reduced_limit = max(
+                        self._MIN_SPLIT_BATCH_CHARS, batch_char_limit // 2
+                    )
                     logger.warning(
                         "Local AI prompt too long for batch %d; retrying with max_chars_per_batch=%d (%s)",
                         i + 1,
@@ -1235,11 +1296,17 @@ class BatchTranslator:
                 raise
 
             if self._looks_like_split_request(unique_translations):
-                if _split_retry_depth < self._SPLIT_RETRY_LIMIT and batch_char_limit > self._MIN_SPLIT_BATCH_CHARS:
-                    reduced_limit = max(self._MIN_SPLIT_BATCH_CHARS, batch_char_limit // 2)
+                if (
+                    _split_retry_depth < self._SPLIT_RETRY_LIMIT
+                    and batch_char_limit > self._MIN_SPLIT_BATCH_CHARS
+                ):
+                    reduced_limit = max(
+                        self._MIN_SPLIT_BATCH_CHARS, batch_char_limit // 2
+                    )
                     logger.warning(
                         "Copilot requested split for batch %d; retrying with max_chars_per_batch=%d",
-                        i + 1, reduced_limit
+                        i + 1,
+                        reduced_limit,
                     )
                     retry_result = self.translate_blocks_with_result(
                         batch,
@@ -1261,7 +1328,7 @@ class BatchTranslator:
 
                 logger.warning(
                     "Copilot split request persisted; using original text for batch %d",
-                    i + 1
+                    i + 1,
                 )
                 unique_translations = [""] * len(unique_texts)
 
@@ -1274,17 +1341,34 @@ class BatchTranslator:
                 logger.warning(
                     "Translation count mismatch in batch %d: expected %d unique, got %d (missing %d, extra %d). "
                     "Affected texts will use original content as fallback.",
-                    i + 1, len(unique_texts), len(unique_translations), missing_count, extra_count
+                    i + 1,
+                    len(unique_texts),
+                    len(unique_translations),
+                    missing_count,
+                    extra_count,
                 )
 
                 if missing_count:
                     # Log which unique texts are missing translations (first 3 for brevity)
-                    missing_indices = list(range(len(unique_translations), len(unique_texts)))
+                    missing_indices = list(
+                        range(len(unique_translations), len(unique_texts))
+                    )
                     for miss_idx in missing_indices[:3]:
-                        original_text = unique_texts[miss_idx][:50] + "..." if len(unique_texts[miss_idx]) > 50 else unique_texts[miss_idx]
-                        logger.warning("  Missing translation for unique_idx %d: '%s'", miss_idx, original_text)
+                        original_text = (
+                            unique_texts[miss_idx][:50] + "..."
+                            if len(unique_texts[miss_idx]) > 50
+                            else unique_texts[miss_idx]
+                        )
+                        logger.warning(
+                            "  Missing translation for unique_idx %d: '%s'",
+                            miss_idx,
+                            original_text,
+                        )
                     if len(missing_indices) > 3:
-                        logger.warning("  ... and %d more missing translations", len(missing_indices) - 3)
+                        logger.warning(
+                            "  ... and %d more missing translations",
+                            len(missing_indices) - 3,
+                        )
 
                     # Pad missing translations to maintain index mapping.
                     unique_translations = unique_translations + ([""] * missing_count)
@@ -1295,7 +1379,7 @@ class BatchTranslator:
                     if _split_retry_depth > 0:
                         unique_translations = [""] * len(unique_texts)
                     else:
-                        unique_translations = unique_translations[:len(unique_texts)]
+                        unique_translations = unique_translations[: len(unique_texts)]
 
             cleaned_unique_translations = []
             hangul_indices: list[int] = []
@@ -1308,14 +1392,20 @@ class BatchTranslator:
                     hangul_indices.append(idx)
                     cleaned_unique_translations.append(cleaned_text)
                     continue
-                if self._should_retry_translation(unique_texts[idx], cleaned_text, output_language):
+                if self._should_retry_translation(
+                    unique_texts[idx], cleaned_text, output_language
+                ):
                     preview = unique_texts[idx][:50].replace("\n", " ")
                     logger.debug("Scheduling retry for JP->EN text: '%s'", preview)
                     cleaned_unique_translations.append("")
                     continue
                 cleaned_unique_translations.append(cleaned_text)
 
-            if hangul_indices and output_language == "en" and not self._cancel_event.is_set():
+            if (
+                hangul_indices
+                and output_language == "en"
+                and not self._cancel_event.is_set()
+            ):
                 repair_texts = [unique_texts[idx] for idx in hangul_indices]
                 repair_prompt = self.prompt_builder.build_batch(
                     repair_texts,
@@ -1337,9 +1427,13 @@ class BatchTranslator:
                 try:
                     lock = self._copilot_lock or nullcontext()
                     with lock:
-                        self.copilot.set_cancel_callback(lambda: self._cancel_event.is_set())
+                        self.copilot.set_cancel_callback(
+                            lambda: self._cancel_event.is_set()
+                        )
                         try:
-                            with self._ui_window_sync_scope("translate_blocks_with_result_hangul_retry"):
+                            with self._ui_window_sync_scope(
+                                "translate_blocks_with_result_hangul_retry"
+                            ):
                                 repair_translations = self.copilot.translate_sync(
                                     repair_texts,
                                     repair_prompt,
@@ -1351,7 +1445,9 @@ class BatchTranslator:
                         finally:
                             self.copilot.set_cancel_callback(None)
                 except TranslationCancelledError:
-                    logger.info("Translation cancelled during batch %d/%d", i + 1, len(batches))
+                    logger.info(
+                        "Translation cancelled during batch %d/%d", i + 1, len(batches)
+                    )
                     cancelled = True
                     break
 
@@ -1363,14 +1459,20 @@ class BatchTranslator:
                         len(repair_translations),
                     )
                     if len(repair_translations) < len(repair_texts):
-                        repair_translations = repair_translations + ([""] * (len(repair_texts) - len(repair_translations)))
+                        repair_translations = repair_translations + (
+                            [""] * (len(repair_texts) - len(repair_translations))
+                        )
                     else:
-                        repair_translations = repair_translations[:len(repair_texts)]
+                        repair_translations = repair_translations[: len(repair_texts)]
 
                 for repair_pos, repaired_text in enumerate(repair_translations):
                     original_idx = hangul_indices[repair_pos]
                     cleaned_repair = self._clean_batch_translation(repaired_text)
-                    if not cleaned_repair or not cleaned_repair.strip() or _RE_HANGUL.search(cleaned_repair):
+                    if (
+                        not cleaned_repair
+                        or not cleaned_repair.strip()
+                        or _RE_HANGUL.search(cleaned_repair)
+                    ):
                         preview = unique_texts[original_idx][:50].replace("\n", " ")
                         logger.warning(
                             "Batch %d: Hangul retry failed for text '%s'; using fallback/retry flow",
@@ -1383,15 +1485,18 @@ class BatchTranslator:
 
             # Detect empty translations (Copilot may return empty strings for some items)
             empty_translation_indices = [
-                idx for idx, trans in enumerate(cleaned_unique_translations)
+                idx
+                for idx, trans in enumerate(cleaned_unique_translations)
                 if not trans or not trans.strip()
             ]
             if empty_translation_indices:
                 logger.warning(
                     "Batch %d: %d empty translations detected at indices %s",
-                    i + 1, len(empty_translation_indices),
-                    empty_translation_indices[:5] if len(empty_translation_indices) > 5
-                    else empty_translation_indices
+                    i + 1,
+                    len(empty_translation_indices),
+                    empty_translation_indices[:5]
+                    if len(empty_translation_indices) > 5
+                    else empty_translation_indices,
                 )
 
             # Process results, expanding unique translations to all original blocks
@@ -1405,7 +1510,7 @@ class BatchTranslator:
                     if not translated_text or not translated_text.strip():
                         logger.warning(
                             "Block '%s' received empty translation, using original text as fallback",
-                            block.id
+                            block.id,
                         )
                         translated_text = block.text
                         untranslated_block_ids.append(block.id)
@@ -1414,21 +1519,33 @@ class BatchTranslator:
                     translations[block.id] = translated_text
 
                     # Cache the translation for future use (only if not a fallback)
-                    if self._cache and not is_fallback and translated_text and translated_text.strip():
+                    if (
+                        self._cache
+                        and not is_fallback
+                        and translated_text
+                        and translated_text.strip()
+                    ):
                         self._cache.set(block.text, translated_text)
                 else:
                     # Mark untranslated blocks with original text
                     untranslated_block_ids.append(block.id)
                     logger.warning(
                         "Block '%s' was not translated (unique_idx %d >= translation count %d)",
-                        block.id, unique_idx, len(cleaned_unique_translations)
+                        block.id,
+                        unique_idx,
+                        len(cleaned_unique_translations),
                     )
                     translations[block.id] = block.text
 
         # Retry missing translations once with smaller batches.
         # Skip when we already observed count mismatches: the response mapping is unreliable,
         # and retrying risks overwriting the "use original text" fallbacks.
-        if untranslated_block_ids and not cancelled and _split_retry_depth == 0 and mismatched_batch_count == 0:
+        if (
+            untranslated_block_ids
+            and not cancelled
+            and _split_retry_depth == 0
+            and mismatched_batch_count == 0
+        ):
             retry_ids = set(untranslated_block_ids)
             retry_blocks = [block for block in blocks if block.id in retry_ids]
             if retry_blocks and not self._cancel_event.is_set():
@@ -1463,7 +1580,8 @@ class BatchTranslator:
                         if translated_text and translated_text.strip():
                             translations[block.id] = translated_text
                     untranslated_block_ids = [
-                        block_id for block_id in untranslated_block_ids
+                        block_id
+                        for block_id in untranslated_block_ids
                         if block_id in retry_untranslated
                     ]
 
@@ -1483,7 +1601,9 @@ class BatchTranslator:
 
         # Log summary if there were issues
         if result.has_issues:
-            logger.warning("Translation completed with issues: %s", result.get_summary())
+            logger.warning(
+                "Translation completed with issues: %s", result.get_summary()
+            )
 
         # Memory management: warn if cache is large and clear if exceeds threshold
         if self._cache and _split_retry_depth == 0:
@@ -1494,7 +1614,7 @@ class BatchTranslator:
                 logger.warning(
                     "Translation cache memory usage is high: %.1f MB. "
                     "Consider calling clear_cache() after large translations.",
-                    memory_kb / 1024
+                    memory_kb / 1024,
                 )
 
         return result
@@ -1540,7 +1660,9 @@ class BatchTranslator:
                 logger.warning(
                     "Block '%s' exceeds max_chars_per_batch (%d > %d). "
                     "Will be processed as a single-item batch.",
-                    block.id, block_size, char_limit
+                    block.id,
+                    block_size,
+                    char_limit,
                 )
                 batches.append([block])
                 continue
@@ -1622,26 +1744,33 @@ class TranslationService:
                     # Note: Legacy formats (.doc, .ppt) are not supported
                     # Only Office Open XML formats are supported for Word/PowerPoint
                     self._processors = {
-                        '.xlsx': ExcelProcessor(),
-                        '.xls': ExcelProcessor(),
-                        '.xlsm': ExcelProcessor(),
-                        '.csv': CsvProcessor(),
-                        '.docx': WordProcessor(),
-                        '.pptx': PptxProcessor(),
-                        '.pdf': PdfProcessor(),
-                        '.txt': TxtProcessor(),
-                        '.msg': MsgProcessor(),
+                        ".xlsx": ExcelProcessor(),
+                        ".xls": ExcelProcessor(),
+                        ".xlsm": ExcelProcessor(),
+                        ".csv": CsvProcessor(),
+                        ".docx": WordProcessor(),
+                        ".pptx": PptxProcessor(),
+                        ".pdf": PdfProcessor(),
+                        ".txt": TxtProcessor(),
+                        ".msg": MsgProcessor(),
                     }
         return self._processors
 
     def _use_local_backend(self) -> bool:
         try:
-            return bool(self.config and getattr(self.config, "translation_backend", "copilot") == "local")
+            return bool(
+                self.config
+                and getattr(self.config, "translation_backend", "copilot") == "local"
+            )
         except Exception:
             return False
 
     def _ensure_local_backend(self) -> None:
-        if self._local_client is not None and self._local_prompt_builder is not None and self._local_batch_translator is not None:
+        if (
+            self._local_client is not None
+            and self._local_prompt_builder is not None
+            and self._local_batch_translator is not None
+        ):
             return
         with self._local_init_lock:
             if self._local_client is None:
@@ -1649,7 +1778,9 @@ class TranslationService:
 
                 self._local_client = LocalAIClient(self.config)
             if self._local_prompt_builder is None:
-                from yakulingo.services.local_ai_prompt_builder import LocalPromptBuilder
+                from yakulingo.services.local_ai_prompt_builder import (
+                    LocalPromptBuilder,
+                )
 
                 self._local_prompt_builder = LocalPromptBuilder(
                     self.prompt_builder.prompts_dir,
@@ -1657,12 +1788,18 @@ class TranslationService:
                     settings=self.config,
                 )
             if self._local_batch_translator is None:
-                max_chars = getattr(self.config, "local_ai_max_chars_per_batch", BatchTranslator.DEFAULT_MAX_CHARS_PER_BATCH)
+                max_chars = getattr(
+                    self.config,
+                    "local_ai_max_chars_per_batch",
+                    BatchTranslator.DEFAULT_MAX_CHARS_PER_BATCH,
+                )
                 self._local_batch_translator = BatchTranslator(
                     self._local_client,
                     self._local_prompt_builder,
                     max_chars_per_batch=max_chars,
-                    request_timeout=self.config.request_timeout if self.config else None,
+                    request_timeout=self.config.request_timeout
+                    if self.config
+                    else None,
                     copilot_lock=self._copilot_lock,
                 )
 
@@ -1721,7 +1858,11 @@ class TranslationService:
     def _ui_window_sync_scope(self, reason: str):
         """翻訳中のみ、EdgeウィンドウをUIの背面に同期表示する（対応環境のみ）。"""
         copilot = getattr(self, "copilot", None)
-        scope_factory = getattr(copilot, "ui_window_sync_scope", None) if copilot is not None else None
+        scope_factory = (
+            getattr(copilot, "ui_window_sync_scope", None)
+            if copilot is not None
+            else None
+        )
         if scope_factory is None:
             yield
             return
@@ -1743,12 +1884,18 @@ class TranslationService:
         on_chunk: "Callable[[str], None] | None" = None,
     ) -> str:
         client = self._get_active_client()
-        ui_scope = nullcontext() if self._use_local_backend() else self._ui_window_sync_scope("translate_single")
+        ui_scope = (
+            nullcontext()
+            if self._use_local_backend()
+            else self._ui_window_sync_scope("translate_single")
+        )
         with ui_scope:
             with self._cancel_callback_scope():
                 lock = self._copilot_lock or nullcontext()
                 with lock:
-                    return client.translate_single(text, prompt, reference_files, on_chunk)
+                    return client.translate_single(
+                        text, prompt, reference_files, on_chunk
+                    )
 
     def translate_text(
         self,
@@ -1780,7 +1927,9 @@ class TranslationService:
             prompt = self.prompt_builder.build(text, has_refs, output_language="en")
 
             # Translate
-            result = self._translate_single_with_cancel(text, prompt, reference_files, on_chunk)
+            result = self._translate_single_with_cancel(
+                text, prompt, reference_files, on_chunk
+            )
 
             return TranslationResult(
                 status=TranslationStatus.COMPLETED,
@@ -1854,7 +2003,10 @@ class TranslationService:
         on_chunk: "Callable[[str], None] | None" = None,
     ) -> TextTranslationResult:
         self._ensure_local_backend()
-        from yakulingo.services.local_ai_client import is_truncated_json, parse_text_single_translation
+        from yakulingo.services.local_ai_client import (
+            is_truncated_json,
+            parse_text_single_translation,
+        )
         from yakulingo.services.local_llama_server import LocalAIError
 
         local_builder = self._local_prompt_builder
@@ -1867,7 +2019,9 @@ class TranslationService:
                 error_message="ローカルAIの初期化に失敗しました",
             )
 
-        embedded_ref = local_builder.build_reference_embed(reference_files, input_text=text)
+        embedded_ref = local_builder.build_reference_embed(
+            reference_files, input_text=text
+        )
         metadata: dict = {"backend": "local"}
         if embedded_ref.warnings:
             metadata["reference_warnings"] = embedded_ref.warnings
@@ -1883,7 +2037,9 @@ class TranslationService:
                     detected_language=detected_language,
                 )
                 stream_handler = _wrap_local_streaming_on_chunk(on_chunk)
-                raw = self._translate_single_with_cancel(text, prompt, None, stream_handler)
+                raw = self._translate_single_with_cancel(
+                    text, prompt, None, stream_handler
+                )
                 translation, explanation = parse_text_single_translation(raw)
                 if not translation:
                     error_message = "ローカルAIの応答(JSON)を解析できませんでした"
@@ -1903,7 +2059,11 @@ class TranslationService:
                 return TextTranslationResult(
                     source_text=text,
                     source_char_count=len(text),
-                    options=[TranslationOption(text=translation, explanation=explanation or "", style=style)],
+                    options=[
+                        TranslationOption(
+                            text=translation, explanation=explanation or "", style=style
+                        )
+                    ],
                     output_language=output_language,
                     detected_language=detected_language,
                     metadata=metadata,
@@ -1935,7 +2095,9 @@ class TranslationService:
             return TextTranslationResult(
                 source_text=text,
                 source_char_count=len(text),
-                options=[TranslationOption(text=translation, explanation=explanation or "")],
+                options=[
+                    TranslationOption(text=translation, explanation=explanation or "")
+                ],
                 output_language=output_language,
                 detected_language=detected_language,
                 metadata=metadata,
@@ -1977,7 +2139,9 @@ class TranslationService:
                 error_message="ローカルAIの初期化に失敗しました",
             )
 
-        embedded_ref = local_builder.build_reference_embed(reference_files, input_text=text)
+        embedded_ref = local_builder.build_reference_embed(
+            reference_files, input_text=text
+        )
         metadata: dict = {"backend": "local"}
         if embedded_ref.warnings:
             metadata["reference_warnings"] = embedded_ref.warnings
@@ -1992,7 +2156,9 @@ class TranslationService:
 
         by_style: dict[str, tuple[str, str]] = {}
         truncated_detected = False
-        wants_combined = set(style_list) == set(TEXT_STYLE_ORDER) and len(style_list) > 1
+        wants_combined = (
+            set(style_list) == set(TEXT_STYLE_ORDER) and len(style_list) > 1
+        )
         try:
             if wants_combined:
                 prompt = local_builder.build_text_to_en_3style(
@@ -2001,7 +2167,9 @@ class TranslationService:
                     detected_language=detected_language,
                 )
                 stream_handler = _wrap_local_streaming_on_chunk(on_chunk)
-                raw = self._translate_single_with_cancel(text, prompt, None, stream_handler)
+                raw = self._translate_single_with_cancel(
+                    text, prompt, None, stream_handler
+                )
                 by_style = parse_text_to_en_3style(raw)
                 if not by_style and is_truncated_json(raw):
                     truncated_detected = True
@@ -2029,7 +2197,9 @@ class TranslationService:
                     detected_language=detected_language,
                 )
                 stream_handler = _wrap_local_streaming_on_chunk(on_chunk)
-                raw = self._translate_single_with_cancel(text, prompt, None, stream_handler)
+                raw = self._translate_single_with_cancel(
+                    text, prompt, None, stream_handler
+                )
                 translation, explanation = parse_text_single_translation(raw)
                 if translation:
                     options.append(
@@ -2043,7 +2213,11 @@ class TranslationService:
                     truncated_detected = True
 
             if options:
-                options.sort(key=lambda opt: TEXT_STYLE_ORDER.index(opt.style or DEFAULT_TEXT_STYLE))
+                options.sort(
+                    key=lambda opt: TEXT_STYLE_ORDER.index(
+                        opt.style or DEFAULT_TEXT_STYLE
+                    )
+                )
                 return TextTranslationResult(
                     source_text=text,
                     source_char_count=len(text),
@@ -2149,9 +2323,13 @@ class TranslationService:
                     files_to_attach = None
 
                 self.prompt_builder.reload_translation_rules()
-                translation_rules = self.prompt_builder.get_translation_rules(output_language)
+                translation_rules = self.prompt_builder.get_translation_rules(
+                    output_language
+                )
 
-                def build_compare_prompt(extra_instruction: Optional[str] = None) -> str:
+                def build_compare_prompt(
+                    extra_instruction: Optional[str] = None,
+                ) -> str:
                     prompt = template.replace("{translation_rules}", translation_rules)
                     prompt = prompt.replace("{reference_section}", reference_section)
                     prompt = prompt.replace("{input_text}", text)
@@ -2159,7 +2337,9 @@ class TranslationService:
                         prompt = _insert_extra_instruction(prompt, extra_instruction)
                     return prompt
 
-                def parse_compare_result(raw_result: str) -> Optional[TextTranslationResult]:
+                def parse_compare_result(
+                    raw_result: str,
+                ) -> Optional[TextTranslationResult]:
                     parsed_options = self._parse_style_comparison_result(raw_result)
                     if parsed_options:
                         options_by_style: dict[str, TranslationOption] = {}
@@ -2191,11 +2371,13 @@ class TranslationService:
                         return TextTranslationResult(
                             source_text=text,
                             source_char_count=len(text),
-                            options=[TranslationOption(
-                                text=raw_result.strip(),
-                                explanation="翻訳結果です",
-                                style=style,
-                            )],
+                            options=[
+                                TranslationOption(
+                                    text=raw_result.strip(),
+                                    explanation="翻訳結果です",
+                                    style=style,
+                                )
+                            ],
                             output_language=output_language,
                             detected_language=detected_language,
                         )
@@ -2208,17 +2390,29 @@ class TranslationService:
                     bool(on_chunk),
                     len(files_to_attach) if files_to_attach else 0,
                 )
-                raw_result = self._translate_single_with_cancel(text, prompt, files_to_attach, on_chunk)
+                raw_result = self._translate_single_with_cancel(
+                    text, prompt, files_to_attach, on_chunk
+                )
                 result = parse_compare_result(raw_result)
 
-                if result and result.options and _looks_untranslated_to_en(result.options[0].text):
+                if (
+                    result
+                    and result.options
+                    and _looks_untranslated_to_en(result.options[0].text)
+                ):
                     retry_prompt = build_compare_prompt(
                         "CRITICAL: Rewrite all Translation sections in English only (no Japanese scripts or Japanese punctuation). "
                         "Keep Explanation in Japanese and keep the exact output format."
                     )
-                    retry_raw = self._translate_single_with_cancel(text, retry_prompt, files_to_attach, None)
+                    retry_raw = self._translate_single_with_cancel(
+                        text, retry_prompt, files_to_attach, None
+                    )
                     retry_result = parse_compare_result(retry_raw)
-                    if retry_result and retry_result.options and not _looks_untranslated_to_en(retry_result.options[0].text):
+                    if (
+                        retry_result
+                        and retry_result.options
+                        and not _looks_untranslated_to_en(retry_result.options[0].text)
+                    ):
                         return retry_result
                     if retry_result:
                         return retry_result
@@ -2257,11 +2451,15 @@ class TranslationService:
             # Apply all placeholder replacements
             # Reload translation rules to pick up any user edits
             self.prompt_builder.reload_translation_rules()
-            translation_rules = self.prompt_builder.get_translation_rules(output_language)
+            translation_rules = self.prompt_builder.get_translation_rules(
+                output_language
+            )
 
             prompt = template.replace("{translation_rules}", translation_rules)
             prompt = prompt.replace("{reference_section}", reference_section)
-            prompt_input_text = self.prompt_builder.normalize_input_text(text, output_language)
+            prompt_input_text = self.prompt_builder.normalize_input_text(
+                text, output_language
+            )
             prompt = prompt.replace("{input_text}", prompt_input_text)
             # Replace style placeholder for English translation
             if output_language == "en":
@@ -2273,7 +2471,9 @@ class TranslationService:
                 bool(on_chunk),
                 len(files_to_attach) if files_to_attach else 0,
             )
-            raw_result = self._translate_single_with_cancel(text, prompt, files_to_attach, on_chunk)
+            raw_result = self._translate_single_with_cancel(
+                text, prompt, files_to_attach, on_chunk
+            )
 
             # Parse the result - always single option now
             options = self._parse_single_translation_result(raw_result)
@@ -2295,11 +2495,13 @@ class TranslationService:
                 return TextTranslationResult(
                     source_text=text,
                     source_char_count=len(text),
-                    options=[TranslationOption(
-                        text=raw_result.strip(),
-                        explanation="翻訳結果です",
-                        style=style,
-                    )],
+                    options=[
+                        TranslationOption(
+                            text=raw_result.strip(),
+                            explanation="翻訳結果です",
+                            style=style,
+                        )
+                    ],
                     output_language=output_language,
                     detected_language=detected_language,
                 )
@@ -2385,7 +2587,9 @@ class TranslationService:
             )
 
         combined_error: Optional[str] = None
-        wants_combined = set(style_list) == set(TEXT_STYLE_ORDER) and len(style_list) > 1
+        wants_combined = (
+            set(style_list) == set(TEXT_STYLE_ORDER) and len(style_list) > 1
+        )
 
         if wants_combined:
             template = self.prompt_builder.get_text_compare_template()
@@ -2401,14 +2605,24 @@ class TranslationService:
                         files_to_attach = None
 
                     self.prompt_builder.reload_translation_rules()
-                    translation_rules = self.prompt_builder.get_translation_rules(output_language)
+                    translation_rules = self.prompt_builder.get_translation_rules(
+                        output_language
+                    )
 
-                    def build_compare_prompt(extra_instruction: Optional[str] = None) -> str:
-                        prompt = template.replace("{translation_rules}", translation_rules)
-                        prompt = prompt.replace("{reference_section}", reference_section)
+                    def build_compare_prompt(
+                        extra_instruction: Optional[str] = None,
+                    ) -> str:
+                        prompt = template.replace(
+                            "{translation_rules}", translation_rules
+                        )
+                        prompt = prompt.replace(
+                            "{reference_section}", reference_section
+                        )
                         prompt = prompt.replace("{input_text}", text)
                         if extra_instruction:
-                            prompt = _insert_extra_instruction(prompt, extra_instruction)
+                            prompt = _insert_extra_instruction(
+                                prompt, extra_instruction
+                            )
                         return prompt
 
                     prompt = build_compare_prompt()
@@ -2417,21 +2631,32 @@ class TranslationService:
                         "Sending text to Copilot for style comparison (refs=%d)",
                         len(files_to_attach) if files_to_attach else 0,
                     )
-                    raw_result = self._translate_single_with_cancel(text, prompt, files_to_attach, on_chunk)
+                    raw_result = self._translate_single_with_cancel(
+                        text, prompt, files_to_attach, on_chunk
+                    )
                     parsed_options = self._parse_style_comparison_result(raw_result)
-                    if parsed_options and any(_looks_untranslated_to_en(option.text) for option in parsed_options):
+                    if parsed_options and any(
+                        _looks_untranslated_to_en(option.text)
+                        for option in parsed_options
+                    ):
                         retry_prompt = build_compare_prompt(
                             "CRITICAL: Rewrite all Translation sections in English only (no Japanese scripts or Japanese punctuation). "
                             "Keep Explanation in Japanese and keep the exact output format."
                         )
-                        retry_raw_result = self._translate_single_with_cancel(text, retry_prompt, files_to_attach, None)
-                        retry_parsed_options = self._parse_style_comparison_result(retry_raw_result)
+                        retry_raw_result = self._translate_single_with_cancel(
+                            text, retry_prompt, files_to_attach, None
+                        )
+                        retry_parsed_options = self._parse_style_comparison_result(
+                            retry_raw_result
+                        )
                         if retry_parsed_options:
                             parsed_options = retry_parsed_options
                             raw_result = retry_raw_result
 
                     if not parsed_options:
-                        parsed_single = self._parse_single_translation_result(raw_result)
+                        parsed_single = self._parse_single_translation_result(
+                            raw_result
+                        )
                         if parsed_single:
                             option = parsed_single[0]
                             if _looks_untranslated_to_en(option.text):
@@ -2439,19 +2664,39 @@ class TranslationService:
                                     "CRITICAL: Rewrite all Translation sections in English only (no Japanese scripts or Japanese punctuation). "
                                     "Keep Explanation in Japanese and keep the exact output format."
                                 )
-                                retry_raw_result = self._translate_single_with_cancel(text, retry_prompt, files_to_attach, None)
-                                retry_parsed_options = self._parse_style_comparison_result(retry_raw_result)
+                                retry_raw_result = self._translate_single_with_cancel(
+                                    text, retry_prompt, files_to_attach, None
+                                )
+                                retry_parsed_options = (
+                                    self._parse_style_comparison_result(
+                                        retry_raw_result
+                                    )
+                                )
                                 if retry_parsed_options:
                                     base_options: dict[str, TranslationOption] = {}
                                     for retry_option in retry_parsed_options:
-                                        if retry_option.style and retry_option.style not in base_options:
-                                            base_options[retry_option.style] = retry_option
+                                        if (
+                                            retry_option.style
+                                            and retry_option.style not in base_options
+                                        ):
+                                            base_options[retry_option.style] = (
+                                                retry_option
+                                            )
 
-                                    missing_styles = [s for s in style_list if s not in base_options]
+                                    missing_styles = [
+                                        s for s in style_list if s not in base_options
+                                    ]
                                     if missing_styles:
-                                        logger.warning("Style comparison missing styles: %s", ", ".join(missing_styles))
+                                        logger.warning(
+                                            "Style comparison missing styles: %s",
+                                            ", ".join(missing_styles),
+                                        )
 
-                                    ordered_options = [base_options[s] for s in style_list if s in base_options]
+                                    ordered_options = [
+                                        base_options[s]
+                                        for s in style_list
+                                        if s in base_options
+                                    ]
                                     if ordered_options:
                                         return TextTranslationResult(
                                             source_text=text,
@@ -2461,7 +2706,9 @@ class TranslationService:
                                             detected_language=detected_language,
                                         )
 
-                                retry_single = self._parse_single_translation_result(retry_raw_result)
+                                retry_single = self._parse_single_translation_result(
+                                    retry_raw_result
+                                )
                                 if retry_single:
                                     option = retry_single[0]
                             option.style = DEFAULT_TEXT_STYLE
@@ -2472,18 +2719,27 @@ class TranslationService:
                                 output_language=output_language,
                                 detected_language=detected_language,
                             )
-                        combined_error = combined_error or "Failed to parse style comparison result"
+                        combined_error = (
+                            combined_error or "Failed to parse style comparison result"
+                        )
                     else:
                         base_options: dict[str, TranslationOption] = {}
                         for option in parsed_options:
                             if option.style and option.style not in base_options:
                                 base_options[option.style] = option
 
-                        missing_styles = [s for s in style_list if s not in base_options]
+                        missing_styles = [
+                            s for s in style_list if s not in base_options
+                        ]
                         if missing_styles:
-                            logger.warning("Style comparison missing styles: %s", ", ".join(missing_styles))
+                            logger.warning(
+                                "Style comparison missing styles: %s",
+                                ", ".join(missing_styles),
+                            )
 
-                        ordered_options = [base_options[s] for s in style_list if s in base_options]
+                        ordered_options = [
+                            base_options[s] for s in style_list if s in base_options
+                        ]
                         if ordered_options:
                             return TextTranslationResult(
                                 source_text=text,
@@ -2493,7 +2749,9 @@ class TranslationService:
                                 detected_language=detected_language,
                             )
 
-                        combined_error = combined_error or "Failed to parse style comparison result"
+                        combined_error = (
+                            combined_error or "Failed to parse style comparison result"
+                        )
                 except TranslationCancelledError:
                     logger.info("Style comparison translation cancelled")
                     return TextTranslationResult(
@@ -2549,7 +2807,9 @@ class TranslationService:
             error_message=last_error or "Unknown error",
         )
 
-    def extract_detection_sample(self, file_path: Path, max_blocks: int = 5) -> Optional[str]:
+    def extract_detection_sample(
+        self, file_path: Path, max_blocks: int = 5
+    ) -> Optional[str]:
         """Extract a lightweight text sample for language detection.
 
         Uses fast extraction methods that parse XML/binary directly from archives,
@@ -2566,28 +2826,39 @@ class TranslationService:
         processor = self._get_processor(file_path)
 
         # Try fast extraction path for all file types
-        if hasattr(processor, 'extract_sample_text_fast'):
+        if hasattr(processor, "extract_sample_text_fast"):
             sample = processor.extract_sample_text_fast(file_path)
             if sample:
                 logger.debug(
                     "%s language detection: fast extraction returned %d chars",
-                    processor.file_type.value, len(sample)
+                    processor.file_type.value,
+                    len(sample),
                 )
                 return sample
             # Fallback to standard extraction if fast path fails
             logger.debug(
                 "%s language detection: fast path returned None, falling back to standard extraction",
-                processor.file_type.value
+                processor.file_type.value,
             )
 
         # Standard extraction fallback (for .xls, .doc, .ppt legacy formats or when fast path fails)
         # Use islice to stop extraction early after max_blocks (avoids loading entire document)
         # First pass: JP→EN extraction (default)
-        blocks = list(islice(processor.extract_text_blocks(file_path, output_language="en"), max_blocks))
+        blocks = list(
+            islice(
+                processor.extract_text_blocks(file_path, output_language="en"),
+                max_blocks,
+            )
+        )
 
         # Retry with EN→JP extraction to capture English/Chinese-only files
         if not blocks:
-            blocks = list(islice(processor.extract_text_blocks(file_path, output_language="jp"), max_blocks))
+            blocks = list(
+                islice(
+                    processor.extract_text_blocks(file_path, output_language="jp"),
+                    max_blocks,
+                )
+            )
 
         if not blocks:
             return None
@@ -2620,7 +2891,7 @@ class TranslationService:
             TranslationOption with adjusted text, or None on failure (including at style limit)
         """
         # Style order: minimal < concise < standard
-        STYLE_ORDER = ['minimal', 'concise', 'standard']
+        STYLE_ORDER = ["minimal", "concise", "standard"]
         self._cancel_event.clear()
 
         try:
@@ -2629,7 +2900,7 @@ class TranslationService:
                 current_style = DEFAULT_TEXT_STYLE
 
             # Handle style-based adjustments (relative change)
-            if adjust_type == 'shorter' and source_text:
+            if adjust_type == "shorter" and source_text:
                 # Get one step shorter style
                 try:
                     current_idx = STYLE_ORDER.index(current_style)
@@ -2640,12 +2911,14 @@ class TranslationService:
                     logger.info("Already at minimal style, cannot go shorter")
                     return None
                 new_style = STYLE_ORDER[current_idx - 1]
-                result = self.translate_text_with_options(source_text, reference_files, style=new_style)
+                result = self.translate_text_with_options(
+                    source_text, reference_files, style=new_style
+                )
                 if result.options:
                     return result.options[0]
                 return None
 
-            if adjust_type == 'detailed' and source_text:
+            if adjust_type == "detailed" and source_text:
                 # Get one step more detailed style
                 try:
                     current_idx = STYLE_ORDER.index(current_style)
@@ -2656,21 +2929,29 @@ class TranslationService:
                     logger.info("Already at standard style, cannot go more detailed")
                     return None
                 new_style = STYLE_ORDER[current_idx + 1]
-                result = self.translate_text_with_options(source_text, reference_files, style=new_style)
+                result = self.translate_text_with_options(
+                    source_text, reference_files, style=new_style
+                )
                 if result.options:
                     return result.options[0]
                 return None
 
-            if adjust_type == 'alternatives' and source_text:
+            if adjust_type == "alternatives" and source_text:
                 # Get alternative in same style
-                return self._get_alternative_translation(text, source_text, current_style, reference_files)
+                return self._get_alternative_translation(
+                    text, source_text, current_style, reference_files
+                )
 
             # Custom instructions - use adjust_custom.txt with full context
             prompt_file = "adjust_custom.txt"
-            prompt_path = self.prompt_builder.prompts_dir / prompt_file if self.prompt_builder.prompts_dir else None
+            prompt_path = (
+                self.prompt_builder.prompts_dir / prompt_file
+                if self.prompt_builder.prompts_dir
+                else None
+            )
 
             if prompt_path and prompt_path.exists():
-                template = prompt_path.read_text(encoding='utf-8')
+                template = prompt_path.read_text(encoding="utf-8")
             else:
                 # Simple fallback with full context
                 template = """以下のリクエストに対応してください。
@@ -2691,12 +2972,22 @@ class TranslationService:
             # Reload translation rules to pick up any user edits
             output_language = "en"
             if source_text:
-                output_language = "en" if self.detect_language(source_text) == "日本語" else "jp"
+                output_language = (
+                    "en" if self.detect_language(source_text) == "日本語" else "jp"
+                )
             elif text:
-                output_language = "jp" if self.detect_language(text) == "日本語" else "en"
+                output_language = (
+                    "jp" if self.detect_language(text) == "日本語" else "en"
+                )
             self.prompt_builder.reload_translation_rules()
-            translation_rules = self.prompt_builder.get_translation_rules(output_language)
-            reference_section = self.prompt_builder.build_reference_section(reference_files) if reference_files else ""
+            translation_rules = self.prompt_builder.get_translation_rules(
+                output_language
+            )
+            reference_section = (
+                self.prompt_builder.build_reference_section(reference_files)
+                if reference_files
+                else ""
+            )
 
             prompt = template.replace("{translation_rules}", translation_rules)
             prompt = prompt.replace("{reference_section}", reference_section)
@@ -2705,7 +2996,9 @@ class TranslationService:
             prompt = prompt.replace("{input_text}", text)
 
             # Get adjusted translation
-            raw_result = self._translate_single_with_cancel(text, prompt, reference_files)
+            raw_result = self._translate_single_with_cancel(
+                text, prompt, reference_files
+            )
 
             # Parse the result
             option = self._parse_single_option_result(raw_result)
@@ -2744,16 +3037,18 @@ class TranslationService:
         """
         try:
             # Use provided style or fallback to DEFAULT_TEXT_STYLE
-            style = current_style if current_style else (
-                DEFAULT_TEXT_STYLE
-            )
+            style = current_style if current_style else (DEFAULT_TEXT_STYLE)
 
             # Load alternatives prompt
             prompt_file = "text_alternatives.txt"
-            prompt_path = self.prompt_builder.prompts_dir / prompt_file if self.prompt_builder.prompts_dir else None
+            prompt_path = (
+                self.prompt_builder.prompts_dir / prompt_file
+                if self.prompt_builder.prompts_dir
+                else None
+            )
 
             if prompt_path and prompt_path.exists():
-                template = prompt_path.read_text(encoding='utf-8')
+                template = prompt_path.read_text(encoding="utf-8")
             else:
                 # Fallback template
                 template = """以下の翻訳に対して、同じスタイルで別の言い方を提案してください。
@@ -2771,12 +3066,24 @@ class TranslationService:
             # Reload translation rules to pick up any user edits
             output_language = "en"
             if source_text:
-                output_language = "en" if self.detect_language(source_text) == "日本語" else "jp"
+                output_language = (
+                    "en" if self.detect_language(source_text) == "日本語" else "jp"
+                )
             elif current_translation:
-                output_language = "jp" if self.detect_language(current_translation) == "日本語" else "en"
+                output_language = (
+                    "jp"
+                    if self.detect_language(current_translation) == "日本語"
+                    else "en"
+                )
             self.prompt_builder.reload_translation_rules()
-            translation_rules = self.prompt_builder.get_translation_rules(output_language)
-            reference_section = self.prompt_builder.build_reference_section(reference_files) if reference_files else ""
+            translation_rules = self.prompt_builder.get_translation_rules(
+                output_language
+            )
+            reference_section = (
+                self.prompt_builder.build_reference_section(reference_files)
+                if reference_files
+                else ""
+            )
 
             prompt = template.replace("{translation_rules}", translation_rules)
             prompt = prompt.replace("{reference_section}", reference_section)
@@ -2785,7 +3092,9 @@ class TranslationService:
             prompt = prompt.replace("{style}", style)
 
             # Get alternative translation
-            raw_result = self._translate_single_with_cancel(source_text, prompt, reference_files)
+            raw_result = self._translate_single_with_cancel(
+                source_text, prompt, reference_files
+            )
 
             # Parse the result and set style
             option = self._parse_single_option_result(raw_result)
@@ -2817,14 +3126,18 @@ class TranslationService:
             text = _strip_input_markers(text)
             explanation = _strip_input_markers(explanation)
             if text:
-                options.append(TranslationOption(
-                    text=text,
-                    explanation=explanation,
-                ))
+                options.append(
+                    TranslationOption(
+                        text=text,
+                        explanation=explanation,
+                    )
+                )
 
         return options
 
-    def _parse_style_comparison_result(self, raw_result: str) -> list[TranslationOption]:
+    def _parse_style_comparison_result(
+        self, raw_result: str
+    ) -> list[TranslationOption]:
         """Parse style comparison result with [standard]/[concise]/[minimal] sections."""
         options: list[TranslationOption] = []
         matches = list(_RE_STYLE_SECTION.finditer(raw_result))
@@ -2834,7 +3147,11 @@ class TranslationService:
         for index, match in enumerate(matches):
             style = match.group(1).lower()
             start = match.end()
-            end = matches[index + 1].start() if index + 1 < len(matches) else len(raw_result)
+            end = (
+                matches[index + 1].start()
+                if index + 1 < len(matches)
+                else len(raw_result)
+            )
             section = raw_result[start:end].strip()
             if not section:
                 continue
@@ -2849,12 +3166,19 @@ class TranslationService:
 
         return options
 
-    def _parse_single_translation_result(self, raw_result: str) -> list[TranslationOption]:
+    def _parse_single_translation_result(
+        self, raw_result: str
+    ) -> list[TranslationOption]:
         """Parse single translation result from Copilot (for →jp translation)."""
         raw_result = _strip_input_markers(raw_result)
         # Show full raw result for debugging (truncate at 1000 chars)
-        logger.debug("Parsing translation result (full, max 1000 chars): %s", raw_result[:1000] if raw_result else "(empty)")
-        logger.debug("Raw result length: %d chars", len(raw_result) if raw_result else 0)
+        logger.debug(
+            "Parsing translation result (full, max 1000 chars): %s",
+            raw_result[:1000] if raw_result else "(empty)",
+        )
+        logger.debug(
+            "Raw result length: %d chars", len(raw_result) if raw_result else 0
+        )
 
         text = ""
         explanation = ""
@@ -2863,15 +3187,19 @@ class TranslationService:
         text_match = _RE_TRANSLATION_TEXT.search(raw_result)
         explanation_match = _RE_EXPLANATION.search(raw_result)
 
-        logger.debug("text_match: %s, explanation_match: %s", bool(text_match), bool(explanation_match))
+        logger.debug(
+            "text_match: %s, explanation_match: %s",
+            bool(text_match),
+            bool(explanation_match),
+        )
 
         if text_match:
             text = text_match.group(1).strip()
             # Remove markdown separators (*** or ---) from text
-            text = _RE_MARKDOWN_SEPARATOR.sub('', text).strip()
+            text = _RE_MARKDOWN_SEPARATOR.sub("", text).strip()
             # Remove translation label prefixes (e.g., "英語翻訳", "日本語翻訳")
             # These appear when Copilot follows the prompt template format literally
-            text = _RE_TRANSLATION_LABEL.sub('', text).strip()
+            text = _RE_TRANSLATION_LABEL.sub("", text).strip()
 
         if explanation_match:
             explanation = explanation_match.group(1).strip()
@@ -2881,10 +3209,21 @@ class TranslationService:
         if text and not explanation:
             logger.debug("Trying fallback split for explanation...")
             explanation_delimiters = [
-                '解説:', '解説：', '**解説:**', '**解説**:', '**解説**：',
-                '説明:', '説明：', '**説明:**', '**説明**:',
-                'Explanation:', '**Explanation:**',
-                'Notes:', '**Notes:**', 'Note:', '**Note:**',
+                "解説:",
+                "解説：",
+                "**解説:**",
+                "**解説**:",
+                "**解説**：",
+                "説明:",
+                "説明：",
+                "**説明:**",
+                "**説明**:",
+                "Explanation:",
+                "**Explanation:**",
+                "Notes:",
+                "**Notes:**",
+                "Note:",
+                "**Note:**",
             ]
             raw_lower = raw_result.lower()
             for delimiter in explanation_delimiters:
@@ -2893,22 +3232,36 @@ class TranslationService:
                     # Find the actual position case-insensitively
                     idx = raw_lower.find(delimiter.lower())
                     if idx >= 0:
-                        explanation = raw_result[idx + len(delimiter):].strip()
-                        logger.debug("Fallback split by '%s' found explanation (length: %d)", delimiter, len(explanation))
+                        explanation = raw_result[idx + len(delimiter) :].strip()
+                        logger.debug(
+                            "Fallback split by '%s' found explanation (length: %d)",
+                            delimiter,
+                            len(explanation),
+                        )
                         break
 
         # Another fallback: if no "訳文:" found, try simple split
         if not text:
             logger.debug("Text not found, trying alternative parsing...")
             explanation_delimiters = [
-                '解説:', '解説：', '**解説:**', '**解説**:',
-                '説明:', '説明：',
-                'Explanation:', 'Notes:',
+                "解説:",
+                "解説：",
+                "**解説:**",
+                "**解説**:",
+                "説明:",
+                "説明：",
+                "Explanation:",
+                "Notes:",
             ]
             translation_prefixes = [
-                '訳文:', '訳文：', '**訳文:**', '**訳文**:',
-                '翻訳:', '翻訳：',
-                'Translation:', '**Translation:**',
+                "訳文:",
+                "訳文：",
+                "**訳文:**",
+                "**訳文**:",
+                "翻訳:",
+                "翻訳：",
+                "Translation:",
+                "**Translation:**",
             ]
             raw_lower = raw_result.lower()
             for delimiter in explanation_delimiters:
@@ -2920,24 +3273,24 @@ class TranslationService:
                         text_part_lower = text_part.lower()
                         for prefix in translation_prefixes:
                             if text_part_lower.startswith(prefix.lower()):
-                                text_part = text_part[len(prefix):].strip()
+                                text_part = text_part[len(prefix) :].strip()
                                 break
                         text = text_part
-                        explanation = raw_result[idx + len(delimiter):].strip()
+                        explanation = raw_result[idx + len(delimiter) :].strip()
                         logger.debug("Fallback split found text and explanation")
                         break
 
         # Final fallback: use first line as text, rest as explanation
         if not text:
             logger.debug("Using final fallback parsing")
-            lines = raw_result.strip().split('\n')
+            lines = raw_result.strip().split("\n")
             if lines:
                 text = lines[0].strip()
-                explanation = '\n'.join(lines[1:]).strip() if len(lines) > 1 else ""
+                explanation = "\n".join(lines[1:]).strip() if len(lines) > 1 else ""
 
         # Remove translation label prefixes for all paths (regex, fallback, final fallback)
         if text:
-            text = _RE_TRANSLATION_LABEL.sub('', text).strip()
+            text = _RE_TRANSLATION_LABEL.sub("", text).strip()
 
         text = _strip_input_markers(text)
         explanation = _strip_input_markers(explanation)
@@ -2945,21 +3298,31 @@ class TranslationService:
         # Remove trailing attached filename from explanation
         # Copilot sometimes appends the reference file name (e.g., "glossary") to the response
         if explanation:
-            explanation = _RE_TRAILING_FILENAME.sub('', explanation).strip()
+            explanation = _RE_TRAILING_FILENAME.sub("", explanation).strip()
 
         # Set default explanation if still empty
         if not explanation:
             explanation = "翻訳結果です"
 
-        logger.debug("Final parsed text (length: %d): %s", len(text), text[:200] if text else "(empty)")
-        logger.debug("Final parsed explanation (length: %d): %s", len(explanation), explanation[:200] if explanation else "(empty)")
+        logger.debug(
+            "Final parsed text (length: %d): %s",
+            len(text),
+            text[:200] if text else "(empty)",
+        )
+        logger.debug(
+            "Final parsed explanation (length: %d): %s",
+            len(explanation),
+            explanation[:200] if explanation else "(empty)",
+        )
 
         if text:
             return [TranslationOption(text=text, explanation=explanation)]
 
         return []
 
-    def _parse_single_option_result(self, raw_result: str) -> Optional[TranslationOption]:
+    def _parse_single_option_result(
+        self, raw_result: str
+    ) -> Optional[TranslationOption]:
         """Parse single option result from adjustment."""
         text = ""
         explanation = ""
@@ -2977,7 +3340,13 @@ class TranslationService:
 
         # Fallback: split by "解説" if regex didn't capture explanation
         if text and not explanation:
-            for delimiter in ['解説:', '解説：', '**解説:**', '**解説**:', '**解説**：']:
+            for delimiter in [
+                "解説:",
+                "解説：",
+                "**解説:**",
+                "**解説**:",
+                "**解説**：",
+            ]:
                 if delimiter in raw_result:
                     parts = raw_result.split(delimiter, 1)
                     if len(parts) > 1:
@@ -2990,14 +3359,14 @@ class TranslationService:
 
         # Remove translation label prefixes (e.g., "英語翻訳", "日本語翻訳")
         if text:
-            text = _RE_TRANSLATION_LABEL.sub('', text).strip()
+            text = _RE_TRANSLATION_LABEL.sub("", text).strip()
 
         text = _strip_input_markers(text)
         explanation = _strip_input_markers(explanation)
 
         # Remove trailing attached filename from explanation
         if explanation:
-            explanation = _RE_TRAILING_FILENAME.sub('', explanation).strip()
+            explanation = _RE_TRAILING_FILENAME.sub("", explanation).strip()
 
         if not explanation:
             explanation = "調整後の翻訳です"
@@ -3064,7 +3433,9 @@ class TranslationService:
                 seen_locations.add(block.location)
             section_idx = self._get_block_section_index(block)
             if section_idx is not None:
-                issue_section_counts[section_idx] = issue_section_counts.get(section_idx, 0) + 1
+                issue_section_counts[section_idx] = (
+                    issue_section_counts.get(section_idx, 0) + 1
+                )
 
         if limit and len(issue_locations) > limit:
             issue_locations = issue_locations[:limit]
@@ -3099,8 +3470,8 @@ class TranslationService:
         self._cancel_event.clear()  # Reset cancellation at start
 
         # Reset PDF processor cancellation flag if applicable
-        pdf_processor = self.processors.get('.pdf')
-        if pdf_processor and hasattr(pdf_processor, 'reset_cancel'):
+        pdf_processor = self.processors.get(".pdf")
+        if pdf_processor and hasattr(pdf_processor, "reset_cancel"):
             pdf_processor.reset_cancel()
 
         try:
@@ -3108,7 +3479,7 @@ class TranslationService:
             processor = self._get_processor(input_path)
 
             # Use streaming processing for PDF files
-            if input_path.suffix.lower() == '.pdf':
+            if input_path.suffix.lower() == ".pdf":
                 with self._ui_window_sync_scope(f"translate_file:{input_path.name}"):
                     return self._translate_pdf_streaming(
                         input_path,
@@ -3182,14 +3553,16 @@ class TranslationService:
         """Standard translation flow for non-PDF files."""
         # Report progress
         if on_progress:
-            on_progress(TranslationProgress(
-                current=0,
-                total=100,
-                status="Extracting text...",
-                phase=TranslationPhase.EXTRACTING,
-                phase_current=1,
-                phase_total=1,
-            ))
+            on_progress(
+                TranslationProgress(
+                    current=0,
+                    total=100,
+                    status="Extracting text...",
+                    phase=TranslationPhase.EXTRACTING,
+                    phase_current=1,
+                    phase_total=1,
+                )
+            )
 
         # Extract text blocks
         #
@@ -3233,18 +3606,22 @@ class TranslationService:
 
         # Report progress
         if on_progress:
-            on_progress(TranslationProgress(
-                current=10,
-                total=100,
-                status=f"Translating {total_blocks} blocks...",
-                phase=TranslationPhase.TRANSLATING,
-            ))
+            on_progress(
+                TranslationProgress(
+                    current=10,
+                    total=100,
+                    status=f"Translating {total_blocks} blocks...",
+                    phase=TranslationPhase.TRANSLATING,
+                )
+            )
 
         # Translate blocks
         def batch_progress(progress: TranslationProgress):
             if on_progress:
                 # Scale batch progress to 10-90 range
-                on_progress(scale_progress(progress, 10, 90, TranslationPhase.TRANSLATING))
+                on_progress(
+                    scale_progress(progress, 10, 90, TranslationPhase.TRANSLATING)
+                )
 
         # Excel cells often contain numbered lines; keep stable IDs to avoid list parsing drift.
         include_item_ids = processor.file_type == FileType.EXCEL
@@ -3272,18 +3649,20 @@ class TranslationService:
 
         # Report progress
         if on_progress:
-            on_progress(TranslationProgress(
-                current=90,
-                total=100,
-                status="Applying translations...",
-                phase=TranslationPhase.APPLYING,
-                phase_current=1,
-                phase_total=(
-                    1
-                    + (1 if self.config and self.config.bilingual_output else 0)
-                    + (1 if self.config and self.config.export_glossary else 0)
-                ),
-            ))
+            on_progress(
+                TranslationProgress(
+                    current=90,
+                    total=100,
+                    status="Applying translations...",
+                    phase=TranslationPhase.APPLYING,
+                    phase_current=1,
+                    phase_total=(
+                        1
+                        + (1 if self.config and self.config.bilingual_output else 0)
+                        + (1 if self.config and self.config.export_glossary else 0)
+                    ),
+                )
+            )
 
         # Generate output path (with _translated suffix)
         output_path = self._generate_output_path(input_path)
@@ -3292,7 +3671,11 @@ class TranslationService:
         # Convert output_language to direction for font mapping
         direction = "jp_to_en" if output_language == "en" else "en_to_jp"
         processor.apply_translations(
-            input_path, output_path, translations, direction, self.config,
+            input_path,
+            output_path,
+            translations,
+            direction,
+            self.config,
             selected_sections=selected_sections,
             text_blocks=blocks,  # Pass extracted blocks for precise positioning
         )
@@ -3301,16 +3684,16 @@ class TranslationService:
         if self._use_local_backend() and reference_files:
             self._ensure_local_backend()
             if self._local_prompt_builder is not None:
-                embedded_ref = self._local_prompt_builder.build_reference_embed(reference_files)
+                embedded_ref = self._local_prompt_builder.build_reference_embed(
+                    reference_files
+                )
                 warnings.extend(embedded_ref.warnings)
         if batch_result.untranslated_block_ids:
             warnings.append(
                 f"未翻訳ブロック: {len(batch_result.untranslated_block_ids)}"
             )
         if batch_result.mismatched_batch_count:
-            warnings.append(
-                f"翻訳件数の不一致: {batch_result.mismatched_batch_count}"
-            )
+            warnings.append(f"翻訳件数の不一致: {batch_result.mismatched_batch_count}")
 
         apply_step = 1
         apply_total = (
@@ -3324,15 +3707,17 @@ class TranslationService:
         if self.config and self.config.bilingual_output:
             if on_progress:
                 apply_step += 1
-                on_progress(TranslationProgress(
-                    current=92,
-                    total=100,
-                    status="Creating bilingual file...",
-                    phase=TranslationPhase.APPLYING,
-                    phase_detail="Interleaving original and translated content",
-                    phase_current=apply_step,
-                    phase_total=apply_total,
-                ))
+                on_progress(
+                    TranslationProgress(
+                        current=92,
+                        total=100,
+                        status="Creating bilingual file...",
+                        phase=TranslationPhase.APPLYING,
+                        phase_detail="Interleaving original and translated content",
+                        phase_current=apply_step,
+                        phase_total=apply_total,
+                    )
+                )
 
             bilingual_path = self._create_bilingual_output(
                 input_path, output_path, processor
@@ -3343,30 +3728,34 @@ class TranslationService:
         if self.config and self.config.export_glossary:
             if on_progress:
                 apply_step += 1
-                on_progress(TranslationProgress(
-                    current=97,
-                    total=100,
-                    status="Exporting glossary CSV...",
-                    phase=TranslationPhase.APPLYING,
-                    phase_detail="Creating translation pairs",
-                    phase_current=apply_step,
-                    phase_total=apply_total,
-                ))
+                on_progress(
+                    TranslationProgress(
+                        current=97,
+                        total=100,
+                        status="Exporting glossary CSV...",
+                        phase=TranslationPhase.APPLYING,
+                        phase_detail="Creating translation pairs",
+                        phase_current=apply_step,
+                        phase_total=apply_total,
+                    )
+                )
 
             # Generate glossary output path
             glossary_path = output_path.parent / (
-                output_path.stem.replace('_translated', '') + '_glossary.csv'
+                output_path.stem.replace("_translated", "") + "_glossary.csv"
             )
             self._export_glossary_csv(blocks, translations, glossary_path)
 
         # Report complete
         if on_progress:
-            on_progress(TranslationProgress(
-                current=100,
-                total=100,
-                status="Complete",
-                phase=TranslationPhase.COMPLETE,
-            ))
+            on_progress(
+                TranslationProgress(
+                    current=100,
+                    total=100,
+                    status="Complete",
+                    phase=TranslationPhase.COMPLETE,
+                )
+            )
 
         return TranslationResult(
             status=TranslationStatus.COMPLETED,
@@ -3413,33 +3802,36 @@ class TranslationService:
         pages_for_progress = total_pages
 
         if selected_sections is not None:
-            selected_page_indices = sorted({
-                idx for idx in selected_sections
-                if isinstance(idx, int) and 0 <= idx < total_pages
-            })
+            selected_page_indices = sorted(
+                {
+                    idx
+                    for idx in selected_sections
+                    if isinstance(idx, int) and 0 <= idx < total_pages
+                }
+            )
             selected_pages = [idx + 1 for idx in selected_page_indices]
             pages_for_progress = len(selected_page_indices)
 
         if on_progress:
             if selected_page_indices is not None:
-                status = (
-                    f"Processing PDF ({pages_for_progress}/{total_pages} pages selected)..."
-                )
+                status = f"Processing PDF ({pages_for_progress}/{total_pages} pages selected)..."
                 phase_detail = f"0/{pages_for_progress} pages"
                 phase_total = pages_for_progress
             else:
                 status = f"Processing PDF ({total_pages} pages)..."
                 phase_detail = f"0/{total_pages} pages"
                 phase_total = total_pages
-            on_progress(TranslationProgress(
-                current=0,
-                total=100,
-                status=status,
-                phase=TranslationPhase.EXTRACTING,
-                phase_detail=phase_detail,
-                phase_current=0,
-                phase_total=phase_total,
-            ))
+            on_progress(
+                TranslationProgress(
+                    current=0,
+                    total=100,
+                    status=status,
+                    phase=TranslationPhase.EXTRACTING,
+                    phase_detail=phase_detail,
+                    phase_current=0,
+                    phase_total=phase_total,
+                )
+            )
 
         all_blocks = []
         pages_processed = 0
@@ -3453,7 +3845,9 @@ class TranslationService:
         # PDFMathTranslate compliant: page_cells is always None (TranslationCell removed)
         for page_blocks, _ in processor.extract_text_blocks_streaming(
             input_path,
-            on_progress=self._make_extraction_progress_callback(on_progress, pages_for_progress),
+            on_progress=self._make_extraction_progress_callback(
+                on_progress, pages_for_progress
+            ),
             device=device,
             batch_size=batch_size,
             dpi=dpi,
@@ -3490,20 +3884,27 @@ class TranslationService:
 
         # Phase 2: Translate blocks (40-90%)
         if on_progress:
-            on_progress(TranslationProgress(
-                current=40,
-                total=100,
-                status=f"Translating {total_blocks} blocks...",
-                phase=TranslationPhase.TRANSLATING,
-            ))
+            on_progress(
+                TranslationProgress(
+                    current=40,
+                    total=100,
+                    status=f"Translating {total_blocks} blocks...",
+                    phase=TranslationPhase.TRANSLATING,
+                )
+            )
 
         def batch_progress(progress: TranslationProgress):
             if on_progress:
                 # Scale to 40-90% range
-                on_progress(scale_progress(
-                    progress, 40, 90, TranslationPhase.TRANSLATING,
-                    phase_detail=f"Batch {progress.current}/{progress.total}"
-                ))
+                on_progress(
+                    scale_progress(
+                        progress,
+                        40,
+                        90,
+                        TranslationPhase.TRANSLATING,
+                        phase_detail=f"Batch {progress.current}/{progress.total}",
+                    )
+                )
 
         batch_translator = self._get_active_batch_translator()
         batch_result = batch_translator.translate_blocks_with_result(
@@ -3528,18 +3929,20 @@ class TranslationService:
 
         # Phase 3: Apply translations (90-100%)
         if on_progress:
-            on_progress(TranslationProgress(
-                current=90,
-                total=100,
-                status="Applying translations to PDF...",
-                phase=TranslationPhase.APPLYING,
-                phase_current=1,
-                phase_total=(
-                    1
-                    + (1 if self.config and self.config.bilingual_output else 0)
-                    + (1 if self.config and self.config.export_glossary else 0)
-                ),
-            ))
+            on_progress(
+                TranslationProgress(
+                    current=90,
+                    total=100,
+                    status="Applying translations to PDF...",
+                    phase=TranslationPhase.APPLYING,
+                    phase_current=1,
+                    phase_total=(
+                        1
+                        + (1 if self.config and self.config.bilingual_output else 0)
+                        + (1 if self.config and self.config.export_glossary else 0)
+                    ),
+                )
+            )
 
         output_path = self._generate_output_path(input_path)
         direction = "jp_to_en" if output_language == "en" else "en_to_jp"
@@ -3547,7 +3950,11 @@ class TranslationService:
         # PDFMathTranslate compliant: Pass text_blocks directly to apply_translations
         # TextBlock contains PDF coordinates from pdfminer extraction - no DPI scaling needed
         processor.apply_translations(
-            input_path, output_path, translations, direction, self.config,
+            input_path,
+            output_path,
+            translations,
+            direction,
+            self.config,
             pages=selected_pages,
             text_blocks=all_blocks,  # Pass extracted blocks for precise positioning
         )
@@ -3564,19 +3971,21 @@ class TranslationService:
         if self.config and self.config.bilingual_output:
             if on_progress:
                 apply_step += 1
-                on_progress(TranslationProgress(
-                    current=95,
-                    total=100,
-                    status="Creating bilingual PDF...",
-                    phase=TranslationPhase.APPLYING,
-                    phase_detail="Interleaving original and translated pages",
-                    phase_current=apply_step,
-                    phase_total=apply_total,
-                ))
+                on_progress(
+                    TranslationProgress(
+                        current=95,
+                        total=100,
+                        status="Creating bilingual PDF...",
+                        phase=TranslationPhase.APPLYING,
+                        phase_detail="Interleaving original and translated pages",
+                        phase_current=apply_step,
+                        phase_total=apply_total,
+                    )
+                )
 
             # Generate bilingual output path with _bilingual suffix
             bilingual_path = output_path.parent / (
-                output_path.stem.replace('_translated', '') + '_bilingual.pdf'
+                output_path.stem.replace("_translated", "") + "_bilingual.pdf"
             )
             processor.create_bilingual_pdf(input_path, output_path, bilingual_path)
 
@@ -3585,46 +3994,50 @@ class TranslationService:
         if self.config and self.config.export_glossary:
             if on_progress:
                 apply_step += 1
-                on_progress(TranslationProgress(
-                    current=97,
-                    total=100,
-                    status="Exporting glossary CSV...",
-                    phase=TranslationPhase.APPLYING,
-                    phase_detail="Creating translation pairs",
-                    phase_current=apply_step,
-                    phase_total=apply_total,
-                ))
+                on_progress(
+                    TranslationProgress(
+                        current=97,
+                        total=100,
+                        status="Exporting glossary CSV...",
+                        phase=TranslationPhase.APPLYING,
+                        phase_detail="Creating translation pairs",
+                        phase_current=apply_step,
+                        phase_total=apply_total,
+                    )
+                )
 
             # Generate glossary output path
             glossary_path = output_path.parent / (
-                output_path.stem.replace('_translated', '') + '_glossary.csv'
+                output_path.stem.replace("_translated", "") + "_glossary.csv"
             )
             # PDFMathTranslate compliant: Use TextBlocks for glossary export
             self._export_glossary_csv(all_blocks, translations, glossary_path)
 
         if on_progress:
-            on_progress(TranslationProgress(
-                current=100,
-                total=100,
-                status="Complete",
-                phase=TranslationPhase.COMPLETE,
-            ))
+            on_progress(
+                TranslationProgress(
+                    current=100,
+                    total=100,
+                    status="Complete",
+                    phase=TranslationPhase.COMPLETE,
+                )
+            )
 
         # Collect warnings including OCR failures
         warnings = self._collect_processor_warnings(processor)
         if self._use_local_backend() and reference_files:
             self._ensure_local_backend()
             if self._local_prompt_builder is not None:
-                embedded_ref = self._local_prompt_builder.build_reference_embed(reference_files)
+                embedded_ref = self._local_prompt_builder.build_reference_embed(
+                    reference_files
+                )
                 warnings.extend(embedded_ref.warnings)
         if batch_result.untranslated_block_ids:
             warnings.append(
                 f"未翻訳ブロック: {len(batch_result.untranslated_block_ids)}"
             )
         if batch_result.mismatched_batch_count:
-            warnings.append(
-                f"翻訳件数の不一致: {batch_result.mismatched_batch_count}"
-            )
+            warnings.append(f"翻訳件数の不一致: {batch_result.mismatched_batch_count}")
 
         return TranslationResult(
             status=TranslationStatus.COMPLETED,
@@ -3654,15 +4067,17 @@ class TranslationService:
             # Scale page progress to 0-40% range
             page_percentage = progress.current / max(progress.total, 1)
             scaled = int(page_percentage * 40)
-            on_progress(TranslationProgress(
-                current=scaled,
-                total=100,
-                status=progress.status,
-                phase=TranslationPhase.EXTRACTING,
-                phase_detail=progress.phase_detail,
-                phase_current=progress.current,
-                phase_total=progress.total,
-            ))
+            on_progress(
+                TranslationProgress(
+                    current=scaled,
+                    total=100,
+                    status=progress.status,
+                    phase=TranslationPhase.EXTRACTING,
+                    phase_detail=progress.phase_detail,
+                    phase_current=progress.current,
+                    phase_total=progress.total,
+                )
+            )
 
         return callback
 
@@ -3672,19 +4087,19 @@ class TranslationService:
 
         # Check for processor-level warnings (ExcelProcessor, etc.)
         # Use getattr with default to handle mock objects in tests
-        processor_warnings = getattr(processor, 'warnings', None)
+        processor_warnings = getattr(processor, "warnings", None)
         if processor_warnings and isinstance(processor_warnings, list):
             warnings.extend(processor_warnings)
 
         # Check for PP-DocLayout-L fallback (PDF processor only)
-        if getattr(processor, '_layout_fallback_used', False):
+        if getattr(processor, "_layout_fallback_used", False):
             warnings.append(
                 "レイアウト解析(PP-DocLayout-L)が未インストールのため、段落検出精度が低下している可能性があります"
             )
 
-        if hasattr(processor, 'failed_pages') and processor.failed_pages:
+        if hasattr(processor, "failed_pages") and processor.failed_pages:
             failed_pages = processor.failed_pages
-            reasons = getattr(processor, 'failed_page_reasons', {}) or {}
+            reasons = getattr(processor, "failed_page_reasons", {}) or {}
 
             if len(failed_pages) == 1:
                 page = failed_pages[0]
@@ -3731,9 +4146,9 @@ class TranslationService:
         """
         try:
             pair_count = 0
-            with open(output_path, 'w', encoding='utf-8-sig', newline='') as f:
+            with open(output_path, "w", encoding="utf-8-sig", newline="") as f:
                 writer = csv.writer(f)
-                writer.writerow(['original', 'translated'])
+                writer.writerow(["original", "translated"])
 
                 for block in blocks:
                     if block.id in translations:
@@ -3777,40 +4192,40 @@ class TranslationService:
 
         # Generate bilingual output path
         bilingual_path = translated_path.parent / (
-            translated_path.stem.replace('_translated', '') + '_bilingual' + ext
+            translated_path.stem.replace("_translated", "") + "_bilingual" + ext
         )
 
         try:
-            if ext in ('.xlsx', '.xls'):
+            if ext in (".xlsx", ".xls"):
                 # Excel: interleaved sheets
-                if hasattr(processor, 'create_bilingual_workbook'):
+                if hasattr(processor, "create_bilingual_workbook"):
                     processor.create_bilingual_workbook(
                         input_path, translated_path, bilingual_path
                     )
                     logger.info("Created bilingual Excel: %s", bilingual_path)
                     return bilingual_path
 
-            elif ext == '.docx':
+            elif ext == ".docx":
                 # Word: interleaved pages
-                if hasattr(processor, 'create_bilingual_document'):
+                if hasattr(processor, "create_bilingual_document"):
                     processor.create_bilingual_document(
                         input_path, translated_path, bilingual_path
                     )
                     logger.info("Created bilingual Word document: %s", bilingual_path)
                     return bilingual_path
 
-            elif ext == '.pptx':
+            elif ext == ".pptx":
                 # PowerPoint: interleaved slides
-                if hasattr(processor, 'create_bilingual_presentation'):
+                if hasattr(processor, "create_bilingual_presentation"):
                     processor.create_bilingual_presentation(
                         input_path, translated_path, bilingual_path
                     )
                     logger.info("Created bilingual PowerPoint: %s", bilingual_path)
                     return bilingual_path
 
-            elif ext == '.txt':
+            elif ext == ".txt":
                 # Text: interleaved paragraphs with separators
-                if hasattr(processor, 'create_bilingual_document'):
+                if hasattr(processor, "create_bilingual_document"):
                     processor.create_bilingual_document(
                         input_path, translated_path, bilingual_path
                     )
@@ -3818,16 +4233,13 @@ class TranslationService:
                     return bilingual_path
 
             else:
-                logger.warning(
-                    "Bilingual output not supported for file type: %s", ext
-                )
+                logger.warning("Bilingual output not supported for file type: %s", ext)
                 return None
 
         except Exception as e:
             # Catch all exceptions for graceful error handling
             logger.error(
-                "Failed to create bilingual output for %s: %s",
-                input_path.name, e
+                "Failed to create bilingual output for %s: %s", input_path.name, e
             )
             return None
 
@@ -3848,8 +4260,8 @@ class TranslationService:
         # Also cancel PDF processor if it's running OCR
         # Use _processors (not processors property) to avoid lazy initialization on shutdown
         if self._processors is not None:
-            pdf_processor = self._processors.get('.pdf')
-            if pdf_processor and hasattr(pdf_processor, 'cancel'):
+            pdf_processor = self._processors.get(".pdf")
+            if pdf_processor and hasattr(pdf_processor, "cancel"):
                 pdf_processor.cancel()
 
     def reset_cancel(self) -> None:
@@ -3862,8 +4274,8 @@ class TranslationService:
         # Reset PDF processor cancellation flag if already initialized
         # Use _processors (not processors property) to avoid lazy initialization.
         if self._processors is not None:
-            pdf_processor = self._processors.get('.pdf')
-            if pdf_processor and hasattr(pdf_processor, 'reset_cancel'):
+            pdf_processor = self._processors.get(".pdf")
+            if pdf_processor and hasattr(pdf_processor, "reset_cancel"):
                 pdf_processor.reset_cancel()
 
     def _get_processor(self, file_path: Path) -> FileProcessor:
@@ -3906,11 +4318,13 @@ class TranslationService:
 
         # Fallback: use timestamp if too many files exist
         import time
+
         timestamp = int(time.monotonic())
         output_path = output_dir / f"{stem}{suffix}_{timestamp}{ext}"
         logger.warning(
             "Could not find available filename after %d attempts, using timestamp: %s",
-            max_attempts, output_path.name
+            max_attempts,
+            output_path.name,
         )
         return output_path
 

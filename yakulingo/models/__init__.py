@@ -19,16 +19,16 @@ from .types import (
 )
 
 __all__ = [
-    'FileType',
-    'TranslationStatus',
-    'TranslationPhase',
-    'SectionDetail',
-    'TextBlock',
-    'FileInfo',
-    'TranslationProgress',
-    'TranslationResult',
-    'TranslationOption',
-    'TextTranslationResult',
-    'HistoryEntry',
-    'ProgressCallback',
+    "FileType",
+    "TranslationStatus",
+    "TranslationPhase",
+    "SectionDetail",
+    "TextBlock",
+    "FileInfo",
+    "TranslationProgress",
+    "TranslationResult",
+    "TranslationOption",
+    "TextTranslationResult",
+    "HistoryEntry",
+    "ProgressCallback",
 ]

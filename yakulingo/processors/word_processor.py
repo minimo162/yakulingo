@@ -32,12 +32,12 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 # XML namespaces used in Word documents
 WORD_NS = {
-    'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
-    'wp': 'http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing',
-    'wps': 'http://schemas.microsoft.com/office/word/2010/wordprocessingShape',
-    'a': 'http://schemas.openxmlformats.org/drawingml/2006/main',
-    'mc': 'http://schemas.openxmlformats.org/markup-compatibility/2006',
-    'v': 'urn:schemas-microsoft-com:vml',
+    "w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+    "wp": "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing",
+    "wps": "http://schemas.microsoft.com/office/word/2010/wordprocessingShape",
+    "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
+    "mc": "http://schemas.openxmlformats.org/markup-compatibility/2006",
+    "v": "urn:schemas-microsoft-com:vml",
 }
 
 # =============================================================================
@@ -63,6 +63,7 @@ def _get_pythoncom():
     if _pythoncom is None and sys.platform == "win32":
         try:
             import pythoncom
+
             _pythoncom = pythoncom
         except ImportError:
             logger.debug("pythoncom not available")
@@ -84,17 +85,21 @@ def _com_initialized():
             try:
                 hr = pythoncom.CoInitializeEx(pythoncom.COINIT_APARTMENTTHREADED)
                 # S_OK (0)=newly initialized, S_FALSE (1)=already initialized
-                initialized = (hr == 0 or hr is None)
+                initialized = hr == 0 or hr is None
                 logger.debug(
                     "Word COM initialized (STA) thread=%s hr=%s will_uninit=%s",
-                    thread_id, hr, initialized,
+                    thread_id,
+                    hr,
+                    initialized,
                 )
             except Exception:
                 hr = pythoncom.CoInitialize()
-                initialized = (hr == 0 or hr is None)
+                initialized = hr == 0 or hr is None
                 logger.debug(
                     "Word COM initialized (fallback) thread=%s hr=%s will_uninit=%s",
-                    thread_id, hr, initialized,
+                    thread_id,
+                    hr,
+                    initialized,
                 )
         except Exception as e:
             logger.debug("Word COM initialization skipped: %s", e)
@@ -111,7 +116,9 @@ def _com_initialized():
                 logger.debug("Word COM uninitialization failed: %s", e)
 
 
-def _try_get_word_page_data_via_com(file_path: Path) -> tuple[Optional[int], dict[str, int]]:
+def _try_get_word_page_data_via_com(
+    file_path: Path,
+) -> tuple[Optional[int], dict[str, int]]:
     """
     Get page count and block_id -> page_idx mapping via Microsoft Word COM.
 
@@ -178,7 +185,9 @@ def _try_get_word_page_data_via_com(file_path: Path) -> tuple[Optional[int], dic
                         pass
 
                     try:
-                        page_num = int(para.Range.Information(_WD_ACTIVE_END_PAGE_NUMBER))
+                        page_num = int(
+                            para.Range.Information(_WD_ACTIVE_END_PAGE_NUMBER)
+                        )
                     except Exception:
                         page_num = 1
                     page_map[f"para_{para_idx}"] = max(0, page_num - 1)
@@ -214,11 +223,15 @@ def _try_get_word_page_data_via_com(file_path: Path) -> tuple[Optional[int], dic
                                 continue
 
                             try:
-                                page_num = int(cell.Range.Information(_WD_ACTIVE_END_PAGE_NUMBER))
+                                page_num = int(
+                                    cell.Range.Information(_WD_ACTIVE_END_PAGE_NUMBER)
+                                )
                             except Exception:
                                 page_num = 1
 
-                            page_map[f"table_{table_idx}_r{row - 1}_c{col - 1}"] = max(0, page_num - 1)
+                            page_map[f"table_{table_idx}_r{row - 1}_c{col - 1}"] = max(
+                                0, page_num - 1
+                            )
 
                     table_idx += 1
             except Exception as e:
@@ -249,7 +262,11 @@ def _try_get_word_page_data_via_com(file_path: Path) -> tuple[Optional[int], dic
                         continue
 
                     try:
-                        page_num = int((anchor or shape.Anchor).Information(_WD_ACTIVE_END_PAGE_NUMBER))
+                        page_num = int(
+                            (anchor or shape.Anchor).Information(
+                                _WD_ACTIVE_END_PAGE_NUMBER
+                            )
+                        )
                     except Exception:
                         page_num = 1
 
@@ -322,16 +339,16 @@ def _extract_text_from_txbx_content(txbx_content) -> str:
         return ""
 
     text_parts = []
-    for p in txbx_content.findall('.//w:p', WORD_NS):
+    for p in txbx_content.findall(".//w:p", WORD_NS):
         para_text = []
-        for t in p.findall('.//w:t', WORD_NS):
+        for t in p.findall(".//w:t", WORD_NS):
             if t.text:
                 para_text.append(t.text)
         if para_text:
-            text_parts.append(''.join(para_text))
+            text_parts.append("".join(para_text))
 
     if text_parts:
-        return '\n'.join(text_parts).strip()
+        return "\n".join(text_parts).strip()
     return ""
 
 
@@ -351,36 +368,40 @@ def _extract_textboxes_from_docx(file_path: Path) -> list[dict]:
     textboxes = []
 
     try:
-        with zipfile.ZipFile(file_path, 'r') as zf:
+        with zipfile.ZipFile(file_path, "r") as zf:
             # Read main document
-            if 'word/document.xml' not in zf.namelist():
+            if "word/document.xml" not in zf.namelist():
                 return textboxes
 
-            xml_content = zf.read('word/document.xml')
+            xml_content = zf.read("word/document.xml")
             root = ET.fromstring(xml_content)
 
             textbox_index = 0
 
             # Method 1: Modern Word textboxes (wps:txbx)
-            for txbx in root.findall('.//wps:txbx', WORD_NS):
-                txbx_content = txbx.find('.//w:txbxContent', WORD_NS)
+            for txbx in root.findall(".//wps:txbx", WORD_NS):
+                txbx_content = txbx.find(".//w:txbxContent", WORD_NS)
                 full_text = _extract_text_from_txbx_content(txbx_content)
                 if full_text:
-                    textboxes.append({
-                        'textbox_index': textbox_index,
-                        'text': full_text,
-                    })
+                    textboxes.append(
+                        {
+                            "textbox_index": textbox_index,
+                            "text": full_text,
+                        }
+                    )
                     textbox_index += 1
 
             # Method 2: Legacy VML textboxes (v:textbox)
-            for textbox in root.findall('.//v:textbox', WORD_NS):
-                txbx_content = textbox.find('.//w:txbxContent', WORD_NS)
+            for textbox in root.findall(".//v:textbox", WORD_NS):
+                txbx_content = textbox.find(".//w:txbxContent", WORD_NS)
                 full_text = _extract_text_from_txbx_content(txbx_content)
                 if full_text:
-                    textboxes.append({
-                        'textbox_index': textbox_index,
-                        'text': full_text,
-                    })
+                    textboxes.append(
+                        {
+                            "textbox_index": textbox_index,
+                            "text": full_text,
+                        }
+                    )
                     textbox_index += 1
 
     except (zipfile.BadZipFile, ET.ParseError):
@@ -402,8 +423,7 @@ def _apply_textbox_translations_to_docx(
     """
     # Filter textbox translations
     textbox_translations = {
-        k: v for k, v in translations.items()
-        if k.startswith('textbox_')
+        k: v for k, v in translations.items() if k.startswith("textbox_")
     }
 
     if not textbox_translations:
@@ -412,7 +432,7 @@ def _apply_textbox_translations_to_docx(
     # Parse textbox IDs
     textbox_map = {}  # textbox_index -> translated_text
     for block_id, translated in textbox_translations.items():
-        match = re.match(r'textbox_(\d+)', block_id)
+        match = re.match(r"textbox_(\d+)", block_id)
         if match:
             tb_idx = int(match.group(1))
             textbox_map[tb_idx] = translated
@@ -422,16 +442,16 @@ def _apply_textbox_translations_to_docx(
 
     # Create a temporary copy to work with
     with tempfile.TemporaryDirectory() as temp_dir:
-        temp_docx = Path(temp_dir) / 'temp.docx'
+        temp_docx = Path(temp_dir) / "temp.docx"
         shutil.copy(output_path, temp_docx)
 
         try:
-            with zipfile.ZipFile(temp_docx, 'r') as zf_in:
-                with zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED) as zf_out:
+            with zipfile.ZipFile(temp_docx, "r") as zf_in:
+                with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zf_out:
                     for item in zf_in.namelist():
                         content = zf_in.read(item)
 
-                        if item == 'word/document.xml':
+                        if item == "word/document.xml":
                             content = _modify_docx_textboxes(content, textbox_map)
 
                         zf_out.writestr(item, content)
@@ -450,20 +470,22 @@ def _modify_docx_textboxes(xml_content: bytes, translations: dict[int, str]) -> 
         textbox_index = 0
 
         # Process modern textboxes (wps:txbx)
-        for txbx in root.findall('.//wps:txbx', WORD_NS):
-            txbxContent = txbx.find('.//w:txbxContent', WORD_NS)
+        for txbx in root.findall(".//wps:txbx", WORD_NS):
+            txbxContent = txbx.find(".//w:txbxContent", WORD_NS)
             if txbxContent is not None:
                 # Check if has text
                 has_text = any(
-                    t.text for p in txbxContent.findall('.//w:p', WORD_NS)
-                    for t in p.findall('.//w:t', WORD_NS) if t.text
+                    t.text
+                    for p in txbxContent.findall(".//w:p", WORD_NS)
+                    for t in p.findall(".//w:t", WORD_NS)
+                    if t.text
                 )
 
                 if has_text and textbox_index in translations:
                     # Apply translation to first text element, clear others
                     first_t = None
-                    for p in txbxContent.findall('.//w:p', WORD_NS):
-                        for t in p.findall('.//w:t', WORD_NS):
+                    for p in txbxContent.findall(".//w:p", WORD_NS):
+                        for t in p.findall(".//w:t", WORD_NS):
                             if first_t is None:
                                 first_t = t
                                 t.text = translations[textbox_index]
@@ -474,18 +496,20 @@ def _modify_docx_textboxes(xml_content: bytes, translations: dict[int, str]) -> 
                     textbox_index += 1
 
         # Process legacy VML textboxes
-        for textbox in root.findall('.//v:textbox', WORD_NS):
-            txbxContent = textbox.find('.//w:txbxContent', WORD_NS)
+        for textbox in root.findall(".//v:textbox", WORD_NS):
+            txbxContent = textbox.find(".//w:txbxContent", WORD_NS)
             if txbxContent is not None:
                 has_text = any(
-                    t.text for p in txbxContent.findall('.//w:p', WORD_NS)
-                    for t in p.findall('.//w:t', WORD_NS) if t.text
+                    t.text
+                    for p in txbxContent.findall(".//w:p", WORD_NS)
+                    for t in p.findall(".//w:t", WORD_NS)
+                    if t.text
                 )
 
                 if has_text and textbox_index in translations:
                     first_t = None
-                    for p in txbxContent.findall('.//w:p', WORD_NS):
-                        for t in p.findall('.//w:t', WORD_NS):
+                    for p in txbxContent.findall(".//w:p", WORD_NS):
+                        for t in p.findall(".//w:t", WORD_NS):
                             if first_t is None:
                                 first_t = t
                                 t.text = translations[textbox_index]
@@ -495,7 +519,7 @@ def _modify_docx_textboxes(xml_content: bytes, translations: dict[int, str]) -> 
                 if has_text:
                     textbox_index += 1
 
-        return ET.tostring(root, encoding='unicode').encode('utf-8')
+        return ET.tostring(root, encoding="unicode").encode("utf-8")
 
     except ET.ParseError:
         return xml_content
@@ -532,7 +556,7 @@ class WordProcessor(FileProcessor):
     def supported_extensions(self) -> list[str]:
         # Note: .doc (legacy format) is not supported by python-docx
         # Only .docx (Office Open XML) is supported
-        return ['.docx']
+        return [".docx"]
 
     def get_file_info(self, file_path: Path) -> FileInfo:
         """Get Word file info (page count via Word COM when available)."""
@@ -594,19 +618,19 @@ class WordProcessor(FileProcessor):
             texts = []
             total_chars = 0
 
-            with zipfile.ZipFile(file_path, 'r') as zf:
-                if 'word/document.xml' not in zf.namelist():
+            with zipfile.ZipFile(file_path, "r") as zf:
+                if "word/document.xml" not in zf.namelist():
                     logger.debug("No document.xml found in docx")
                     return None
 
                 # Use iterparse for streaming XML parsing (avoids loading entire XML into memory)
                 # This is critical for large Word files where document.xml can be huge
-                with zf.open('word/document.xml') as xml_file:
+                with zf.open("word/document.xml") as xml_file:
                     # Word namespace
-                    ns = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
-                    t_tag = f'{{{ns}}}t'
+                    ns = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+                    t_tag = f"{{{ns}}}t"
 
-                    for event, elem in ET.iterparse(xml_file, events=('end',)):
+                    for event, elem in ET.iterparse(xml_file, events=("end",)):
                         if elem.tag == t_tag and elem.text:
                             text = elem.text.strip()
                             if text and len(text) > 1:  # Skip single chars
@@ -618,10 +642,11 @@ class WordProcessor(FileProcessor):
                         elem.clear()
 
             if texts:
-                result = ' '.join(texts)[:max_chars]
+                result = " ".join(texts)[:max_chars]
                 logger.debug(
                     "Word fast sample extraction: %d chars from %d text runs",
-                    len(result), len(texts)
+                    len(result),
+                    len(texts),
                 )
                 return result
 
@@ -653,7 +678,9 @@ class WordProcessor(FileProcessor):
         try:
             # === Body Paragraphs ===
             for idx, para in enumerate(doc.paragraphs):
-                if para.text and self.para_translator.should_translate(para.text, output_language):
+                if para.text and self.para_translator.should_translate(
+                    para.text, output_language
+                ):
                     # Get font info from first run
                     font_name = None
                     font_size = 11.0
@@ -678,13 +705,13 @@ class WordProcessor(FileProcessor):
                         text=para.text,
                         location=f"Paragraph {idx + 1}",
                         metadata={
-                            'type': 'paragraph',
-                            'index': idx,
-                            'style': para.style.name if para.style else None,
-                            'font_name': font_name,
-                            'font_size': font_size,
-                            **({'page_idx': page_idx} if page_idx is not None else {}),
-                        }
+                            "type": "paragraph",
+                            "index": idx,
+                            "style": para.style.name if para.style else None,
+                            "font_name": font_name,
+                            "font_size": font_size,
+                            **({"page_idx": page_idx} if page_idx is not None else {}),
+                        },
                     )
 
             # === Tables (Excel-compatible) ===
@@ -700,7 +727,9 @@ class WordProcessor(FileProcessor):
                         processed_cells.add(cell_key)
 
                         cell_text = cell.text
-                        if cell_text and self.cell_translator.should_translate(cell_text, output_language):
+                        if cell_text and self.cell_translator.should_translate(
+                            cell_text, output_language
+                        ):
                             # Get font info from first paragraph's first run
                             font_name = None
                             font_size = 11.0
@@ -719,24 +748,28 @@ class WordProcessor(FileProcessor):
                                 text=cell_text,
                                 location=f"Table {table_idx + 1}, Row {row_idx + 1}, Cell {cell_idx + 1}",
                                 metadata={
-                                    'type': 'table_cell',
-                                    'table': table_idx,
-                                    'row': row_idx,
-                                    'col': cell_idx,
-                                    'font_name': font_name,
-                                    'font_size': font_size,
-                                    **({'page_idx': page_idx} if page_idx is not None else {}),
-                                }
+                                    "type": "table_cell",
+                                    "table": table_idx,
+                                    "row": row_idx,
+                                    "col": cell_idx,
+                                    "font_name": font_name,
+                                    "font_size": font_size,
+                                    **(
+                                        {"page_idx": page_idx}
+                                        if page_idx is not None
+                                        else {}
+                                    ),
+                                },
                             )
 
             # Note: Headers/Footers are excluded from translation
 
             # === TextBoxes (via XML parsing, docx only) ===
-            if str(file_path).lower().endswith('.docx'):
+            if str(file_path).lower().endswith(".docx"):
                 textboxes = _extract_textboxes_from_docx(file_path)
                 for tb in textboxes:
-                    text = tb['text']
-                    tb_idx = tb['textbox_index']
+                    text = tb["text"]
+                    tb_idx = tb["textbox_index"]
 
                     if self.para_translator.should_translate(text, output_language):
                         block_id = f"textbox_{tb_idx}"
@@ -746,10 +779,14 @@ class WordProcessor(FileProcessor):
                             text=text,
                             location=f"TextBox {tb_idx + 1}",
                             metadata={
-                                'type': 'textbox',
-                                'textbox': tb_idx,
-                                **({'page_idx': page_idx} if page_idx is not None else {}),
-                            }
+                                "type": "textbox",
+                                "textbox": tb_idx,
+                                **(
+                                    {"page_idx": page_idx}
+                                    if page_idx is not None
+                                    else {}
+                                ),
+                            },
                         )
         finally:
             # python-docx doesn't have close(), but we can help GC by deleting the reference
@@ -798,7 +835,7 @@ class WordProcessor(FileProcessor):
                                 self._apply_to_paragraph(
                                     cell.paragraphs[0],
                                     translations[block_id],
-                                    font_manager
+                                    font_manager,
                                 )
                                 # Clear remaining paragraphs if any
                                 for para in cell.paragraphs[1:]:
@@ -814,10 +851,12 @@ class WordProcessor(FileProcessor):
 
         # Apply TextBox translations via XML manipulation (python-docx doesn't support this)
         # Only for .docx files
-        if str(input_path).lower().endswith('.docx'):
+        if str(input_path).lower().endswith(".docx"):
             _apply_textbox_translations_to_docx(output_path, translations)
 
-    def _apply_to_paragraph(self, para, translated_text: str, font_manager: FontManager) -> None:
+    def _apply_to_paragraph(
+        self, para, translated_text: str, font_manager: FontManager
+    ) -> None:
         """
         Apply translation to paragraph, preserving paragraph style.
 
@@ -836,8 +875,7 @@ class WordProcessor(FileProcessor):
 
             # Get new font settings
             new_font_name, new_font_size = font_manager.select_font(
-                original_font_name,
-                original_font_size
+                original_font_name, original_font_size
             )
 
             # Apply translation
@@ -894,7 +932,7 @@ class WordProcessor(FileProcessor):
             # Add page break
             page_break_para = original_doc.add_paragraph()
             run = page_break_para.add_run()
-            run._r.append(OxmlElement('w:br', {qn('w:type'): 'page'}))
+            run._r.append(OxmlElement("w:br", {qn("w:type"): "page"}))
 
             # Add translation header
             header_para = original_doc.add_paragraph()
@@ -922,7 +960,9 @@ class WordProcessor(FileProcessor):
             # Copy translated tables
             for table in translated_doc.tables:
                 # Add table to original doc
-                new_table = original_doc.add_table(rows=len(table.rows), cols=len(table.columns))
+                new_table = original_doc.add_table(
+                    rows=len(table.rows), cols=len(table.columns)
+                )
                 new_table.style = table.style
 
                 for row_idx, row in enumerate(table.rows):
@@ -940,9 +980,9 @@ class WordProcessor(FileProcessor):
             original_doc.save(output_path)
 
             return {
-                'original_paragraphs': original_count,
-                'translated_paragraphs': translated_count,
-                'total_paragraphs': original_count + translated_count,
+                "original_paragraphs": original_count,
+                "translated_paragraphs": translated_count,
+                "total_paragraphs": original_count + translated_count,
             }
         finally:
             # python-docx doesn't have close(), but we can help GC by deleting the references

@@ -16,8 +16,8 @@ def test_local_ai_streaming_parses_sse_and_collects_chunks() -> None:
         received.append(text)
 
     chunks = [
-        b"data: {\"choices\":[{\"delta\":{\"content\":\"Hel\"}}]}\n\n",
-        b"data: {\"choices\":[{\"delta\":{\"content\":\"lo\"}}]}\n\n",
+        b'data: {"choices":[{"delta":{"content":"Hel"}}]}\n\n',
+        b'data: {"choices":[{"delta":{"content":"lo"}}]}\n\n',
         b"data: [DONE]\n\n",
     ]
 
@@ -35,7 +35,7 @@ def test_local_streaming_wrap_extracts_translation_incrementally() -> None:
 
     deltas = [
         '{"translation":"He',
-        'llo',
+        "llo",
         '","explanation":"exp',
         'lanation"}',
     ]
@@ -55,8 +55,8 @@ def test_local_ai_streaming_on_chunk_is_cumulative() -> None:
         received.append(text)
 
     chunks = [
-        b"data: {\"choices\":[{\"delta\":{\"content\":\"Hel\"}}]}\n\n",
-        b"data: {\"choices\":[{\"delta\":{\"content\":\"lo\"}}]}\n\n",
+        b'data: {"choices":[{"delta":{"content":"Hel"}}]}\n\n',
+        b'data: {"choices":[{"delta":{"content":"lo"}}]}\n\n',
         b"data: [DONE]\n\n",
     ]
 
@@ -80,8 +80,8 @@ def test_local_ai_streaming_cancelled_mid_stream() -> None:
     client.set_cancel_callback(cancel_cb)
 
     chunks = [
-        b"data: {\"choices\":[{\"delta\":{\"content\":\"A\"}}]}\n\n",
-        b"data: {\"choices\":[{\"delta\":{\"content\":\"B\"}}]}\n\n",
+        b'data: {"choices":[{"delta":{"content":"A"}}]}\n\n',
+        b'data: {"choices":[{"delta":{"content":"B"}}]}\n\n',
     ]
 
     with pytest.raises(TranslationCancelledError):

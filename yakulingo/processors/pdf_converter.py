@@ -92,18 +92,20 @@ _RE_FORMULA_PLACEHOLDER = re.compile(r"[\{\(\[]\s*v([\d\s]+)\s*[\}\)\]]", re.IGN
 # Paragraph boundary detection thresholds (PDFMathTranslate compliant)
 # NOTE: These are DEFAULT values. Use calculate_dynamic_thresholds() for
 # page-size and font-size adaptive thresholds.
-SAME_LINE_Y_THRESHOLD = 3.0       # Characters within 3pt are on same line
-SAME_PARA_Y_THRESHOLD = 20.0      # Lines within 20pt are in same paragraph
-WORD_SPACE_X_THRESHOLD = 1.0      # Gap > 1pt between chars inserts space (PDFMathTranslate: x0 > x1 + 1)
-LINE_BREAK_X_THRESHOLD = 1.0      # child.x1 < xt.x0 indicates line break
+SAME_LINE_Y_THRESHOLD = 3.0  # Characters within 3pt are on same line
+SAME_PARA_Y_THRESHOLD = 20.0  # Lines within 20pt are in same paragraph
+WORD_SPACE_X_THRESHOLD = (
+    1.0  # Gap > 1pt between chars inserts space (PDFMathTranslate: x0 > x1 + 1)
+)
+LINE_BREAK_X_THRESHOLD = 1.0  # child.x1 < xt.x0 indicates line break
 # Multi-column detection: large X jump (>100pt) suggests column change
 COLUMN_JUMP_X_THRESHOLD = 100.0
 
 # Table cell detection thresholds
 # X gap between table cells - smaller than column threshold but significant
-TABLE_CELL_X_THRESHOLD = 15.0   # Gap > 15pt between chars suggests new cell
+TABLE_CELL_X_THRESHOLD = 15.0  # Gap > 15pt between chars suggests new cell
 # Y gap for table row detection - more sensitive than paragraph threshold
-TABLE_ROW_Y_THRESHOLD = 5.0     # Y diff > 5pt in table suggests new row
+TABLE_ROW_Y_THRESHOLD = 5.0  # Y diff > 5pt in table suggests new row
 
 # TOC (Table of Contents) line detection threshold
 # When X position resets by more than this value AND Y changes,
@@ -113,9 +115,9 @@ TOC_LINE_X_RESET_THRESHOLD = 80.0  # X reset > 80pt suggests new TOC entry
 
 # Dynamic threshold calculation constants
 # For multi-column detection, threshold as fraction of page width
-COLUMN_THRESHOLD_RATIO = 0.2      # 20% of page width
+COLUMN_THRESHOLD_RATIO = 0.2  # 20% of page width
 # Minimum column threshold to handle very narrow pages
-MIN_COLUMN_THRESHOLD = 50.0       # 50pt minimum
+MIN_COLUMN_THRESHOLD = 50.0  # 50pt minimum
 
 # =============================================================================
 # Line Joining Constants (yomitoku reference)
@@ -125,13 +127,13 @@ MIN_COLUMN_THRESHOLD = 50.0       # 50pt minimum
 
 # Sentence-ending punctuation marks that indicate natural line breaks
 # These characters suggest the line is a complete sentence and should preserve the break
-SENTENCE_END_CHARS_JA = frozenset('。！？…‥）」』】｝〕〉》）＞]＞')
-SENTENCE_END_CHARS_EN = frozenset('.!?;:')
+SENTENCE_END_CHARS_JA = frozenset("。！？…‥）」』】｝〕〉》）＞]＞")
+SENTENCE_END_CHARS_EN = frozenset(".!?;:")
 
 # Quantity units that typically END a phrase (not continuation)
 # Common in financial documents: △971億円, 5,000万円, 100台, etc.
 # When text ends with these characters, treat as a complete unit and allow paragraph break.
-QUANTITY_UNITS_JA = frozenset('円万億千台個件名社年月日回本枚％%')
+QUANTITY_UNITS_JA = frozenset("円万億千台個件名社年月日回本枚％%")
 
 # Japanese particles and suffixes that indicate line continuation (yomitoku reference)
 # When text ends with these characters, it's likely a continuation to the next line.
@@ -146,34 +148,71 @@ QUANTITY_UNITS_JA = frozenset('円万億千台個件名社年月日回本枚％%
 # - Commas and continuation marks: 、,
 JAPANESE_CONTINUATION_CHARS = frozenset(
     # Case particles (格助詞)
-    'がをにでとへの'
+    "がをにでとへの"
     # Binding particles (係助詞) - は、も indicate topic, often continue
-    'はも'
+    "はも"
     # Conjunctive particles (接続助詞) - indicate clause continuation
-    'てば'
+    "てば"
     # Commas indicate continuation
-    '、,'
+    "、,"
 )
 
 # Multi-character continuation patterns (ending with these suggest continuation)
 # These are checked as suffixes (e.g., text.endswith(pattern))
 JAPANESE_CONTINUATION_SUFFIXES = (
     # Conjunctive particles (接続助詞)
-    'から', 'まで', 'より', 'ので', 'けど', 'けれど', 'けれども',
-    'ながら', 'たら', 'なら', 'のに', 'ても', 'でも',
+    "から",
+    "まで",
+    "より",
+    "ので",
+    "けど",
+    "けれど",
+    "けれども",
+    "ながら",
+    "たら",
+    "なら",
+    "のに",
+    "ても",
+    "でも",
     # Adverbial particles (副助詞)
-    'だけ', 'ほど', 'くらい', 'ばかり', 'など', 'なんか', 'なんて',
+    "だけ",
+    "ほど",
+    "くらい",
+    "ばかり",
+    "など",
+    "なんか",
+    "なんて",
     # Other continuation indicators
-    'こと', 'もの', 'ところ', 'ため', 'とき', 'ため', '場合', '際',
+    "こと",
+    "もの",
+    "ところ",
+    "ため",
+    "とき",
+    "ため",
+    "場合",
+    "際",
     # Te-form and conjunctive forms (verb endings that continue)
-    'して', 'され', 'であ', 'であり', 'でき', 'おり', 'あり',
+    "して",
+    "され",
+    "であ",
+    "であり",
+    "でき",
+    "おり",
+    "あり",
     # Copula and auxiliary forms that continue
-    'です', 'ます', 'である', 'となり', 'とし', 'につ', 'にお',
+    "です",
+    "ます",
+    "である",
+    "となり",
+    "とし",
+    "につ",
+    "にお",
 )
 
 # Characters that indicate a word is split across lines (hyphenation)
 # When a line ends with these, the next line continues the same word
-HYPHEN_CHARS = frozenset('-‐‑‒–—−')
+HYPHEN_CHARS = frozenset("-‐‑‒–—−")
+
 
 # Japanese characters that should NOT have space when joining lines
 # Hiragana, Katakana, CJK Ideographs, Full-width punctuation
@@ -227,6 +266,7 @@ def _is_latin_char(char: str) -> bool:
 # Data Classes (PDFMathTranslate compliant)
 # =============================================================================
 
+
 @dataclass
 class Paragraph:
     """
@@ -250,6 +290,7 @@ class Paragraph:
             - 2+: Paragraph index
             - 1000+: Table cell index (LAYOUT_TABLE_BASE)
     """
+
     y: float
     x: float
     x0: float
@@ -276,6 +317,7 @@ class FormulaVar:
         font_name: Font name used for formula
         font_size: Font size
     """
+
     chars: list = field(default_factory=list)
     text: str = ""
     bbox: Optional[tuple] = None
@@ -304,28 +346,30 @@ class TranslationCell:
     - Table span information for merged cells
     - Order for reading sequence
     """
-    address: str           # P{page}_{order} or T{page}_{table}_{row}_{col}
-    text: str              # Original text
-    box: list[float]       # [x1, y1, x2, y2]
+
+    address: str  # P{page}_{order} or T{page}_{table}_{row}_{col}
+    text: str  # Original text
+    box: list[float]  # [x1, y1, x2, y2]
     direction: str = "horizontal"
-    role: str = "text"     # text, table_cell, caption, page_header, page_footer
+    role: str = "text"  # text, table_cell, caption, page_header, page_footer
     page_num: int = 1
-    order: int = 0         # Reading order (from PP-DocLayout-L)
+    order: int = 0  # Reading order (from PP-DocLayout-L)
     # Confidence scores (from PP-DocLayout-L detection)
     rec_score: Optional[float] = None  # Recognition confidence (0.0-1.0)
     det_score: Optional[float] = None  # Detection confidence (0.0-1.0)
     # Table cell span info
-    row_span: int = 1      # Number of rows this cell spans
-    col_span: int = 1      # Number of columns this cell spans
+    row_span: int = 1  # Number of rows this cell spans
+    col_span: int = 1  # Number of columns this cell spans
 
     def __post_init__(self):
         """Emit deprecation warning on instantiation."""
         import warnings
+
         warnings.warn(
             "TranslationCell is deprecated. Use TextBlock instead. "
             "See TextBlock in yakulingo.models.types for the replacement.",
             DeprecationWarning,
-            stacklevel=3
+            stacklevel=3,
         )
 
 
@@ -351,11 +395,11 @@ def get_pdf_converter_ex_class():
         return _PDFConverterEx
 
     pdfminer = _get_pdfminer()
-    PDFConverter = pdfminer['PDFConverter']
-    LTChar = pdfminer['LTChar']
-    LTPage = pdfminer['LTPage']
-    PDFUnicodeNotDefined = pdfminer['PDFUnicodeNotDefined']
-    apply_matrix_pt = pdfminer['apply_matrix_pt']
+    PDFConverter = pdfminer["PDFConverter"]
+    LTChar = pdfminer["LTChar"]
+    LTPage = pdfminer["LTPage"]
+    PDFUnicodeNotDefined = pdfminer["PDFUnicodeNotDefined"]
+    apply_matrix_pt = pdfminer["apply_matrix_pt"]
 
     class PDFConverterEx(PDFConverter):
         """
@@ -386,8 +430,9 @@ def get_pdf_converter_ex_class():
             self.pages.append(self.cur_item)
             self._page_count += 1
 
-        def render_char(self, matrix, font, fontsize, scaling, rise, cid, ncs,
-                        graphicstate):
+        def render_char(
+            self, matrix, font, fontsize, scaling, rise, cid, ncs, graphicstate
+        ):
             """
             Render a character and preserve CID information.
 
@@ -400,8 +445,18 @@ def get_pdf_converter_ex_class():
                 text = ""
             textwidth = font.char_width(cid)
             textdisp = font.char_disp(cid)
-            item = LTChar(matrix, font, fontsize, scaling, rise, text,
-                          textwidth, textdisp, ncs, graphicstate)
+            item = LTChar(
+                matrix,
+                font,
+                fontsize,
+                scaling,
+                rise,
+                text,
+                textwidth,
+                textdisp,
+                ncs,
+                graphicstate,
+            )
             self.cur_item.add(item)
             # PDFMathTranslate hack: preserve original character encoding
             item.cid = cid
@@ -415,6 +470,7 @@ def get_pdf_converter_ex_class():
 # =============================================================================
 # Formula Protection (PDFMathTranslate compatible)
 # =============================================================================
+
 
 def vflag(font: str, char: str, vfont: str = None, vchar: str = None) -> bool:
     """
@@ -434,7 +490,7 @@ def vflag(font: str, char: str, vfont: str = None, vchar: str = None) -> bool:
     # Handle bytes font names
     if isinstance(font, bytes):
         try:
-            font = font.decode('utf-8')
+            font = font.decode("utf-8")
         except UnicodeDecodeError:
             font = ""
 
@@ -480,7 +536,11 @@ def vflag(font: str, char: str, vfont: str = None, vchar: str = None) -> bool:
             # Exclude Japanese modifier letters (長音符・踊り字) from formula detection
             # These have category 'Lm' but are common text characters, not formulas:
             # U+3005 (々), U+309D-309E (ゝゞ), U+30FC-30FE (ーヽヾ)
-            if char_code == 0x3005 or 0x309D <= char_code <= 0x309E or 0x30FC <= char_code <= 0x30FE:
+            if (
+                char_code == 0x3005
+                or 0x309D <= char_code <= 0x309E
+                or 0x30FC <= char_code <= 0x30FE
+            ):
                 return False
 
             # Exclude common arithmetic operators from formula detection
@@ -567,10 +627,12 @@ def extract_formula_vars_from_metadata(metadata: dict) -> list[FormulaVar]:
     Returns:
         List of FormulaVar objects, or empty list if none
     """
-    return metadata.get('formula_vars', [])
+    return metadata.get("formula_vars", [])
 
 
-def extract_formula_vars_for_block(text: str, var: list[FormulaVar]) -> list[FormulaVar]:
+def extract_formula_vars_for_block(
+    text: str, var: list[FormulaVar]
+) -> list[FormulaVar]:
     """
     Extract FormulaVar objects referenced by placeholders in text.
 
@@ -606,10 +668,11 @@ def extract_formula_vars_for_block(text: str, var: list[FormulaVar]) -> list[For
 # Text Style Detection (PDFMathTranslate compliant)
 # =============================================================================
 
+
 def is_subscript_superscript(
     char_size: float,
     base_size: float,
-    threshold: float = SUBSCRIPT_SUPERSCRIPT_THRESHOLD
+    threshold: float = SUBSCRIPT_SUPERSCRIPT_THRESHOLD,
 ) -> bool:
     """
     Check if a character is subscript or superscript based on font size.
@@ -668,6 +731,7 @@ def detect_text_style(
 # FormulaManager Class (PDFMathTranslate converter.py:175-181 compatible)
 # =============================================================================
 
+
 class FormulaManager:
     """
     Manages formula protection and restoration.
@@ -677,10 +741,10 @@ class FormulaManager:
     """
 
     def __init__(self):
-        self.var: list[str] = []        # Protected formulas
-        self.varl: list[list] = []      # Formula lines
-        self.varf: list[float] = []     # Y offsets
-        self.vlen: list[float] = []     # Widths
+        self.var: list[str] = []  # Protected formulas
+        self.varl: list[list] = []  # Formula lines
+        self.varf: list[float] = []  # Y offsets
+        self.vlen: list[float] = []  # Widths
         self._formula_count = 0
 
     def protect(self, text: str) -> str:
@@ -696,9 +760,9 @@ class FormulaManager:
             Text with formulas replaced by {v0}, {v1}, etc.
         """
         patterns = [
-            (r'\$\$([^$]+)\$\$', True),   # Display math
-            (r'\$([^$]+)\$', True),        # Inline math
-            (r'\\[a-zA-Z]+\{[^}]*\}', True),  # LaTeX commands
+            (r"\$\$([^$]+)\$\$", True),  # Display math
+            (r"\$([^$]+)\$", True),  # Inline math
+            (r"\\[a-zA-Z]+\{[^}]*\}", True),  # LaTeX commands
         ]
 
         result = text
@@ -709,7 +773,7 @@ class FormulaManager:
                 placeholder = f"{{v{self._formula_count}}}"
                 self.var.append(formula)
                 self._formula_count += 1
-                result = result[:match.start()] + placeholder + result[match.end():]
+                result = result[: match.start()] + placeholder + result[match.end() :]
 
         return result
 
@@ -725,6 +789,7 @@ class FormulaManager:
         Returns:
             Text with formulas restored
         """
+
         def replacer(match):
             vid = int(match.group(1).replace(" ", ""))
             if 0 <= vid < len(self.var):
@@ -745,6 +810,7 @@ class FormulaManager:
 # =============================================================================
 # Paragraph Grouping Functions (PDFMathTranslate compliant)
 # =============================================================================
+
 
 def calculate_dynamic_thresholds(
     page_width: float,
@@ -783,13 +849,14 @@ def calculate_dynamic_thresholds(
         logger.warning(
             "Invalid page dimensions (width=%.1f, height=%.1f). "
             "Using default thresholds.",
-            page_width, page_height
+            page_width,
+            page_height,
         )
         return {
-            'y_line': SAME_LINE_Y_THRESHOLD,
-            'y_para': SAME_PARA_Y_THRESHOLD,
-            'x_column': MIN_COLUMN_THRESHOLD,
-            'font_size': DEFAULT_FONT_SIZE,
+            "y_line": SAME_LINE_Y_THRESHOLD,
+            "y_para": SAME_PARA_Y_THRESHOLD,
+            "x_column": MIN_COLUMN_THRESHOLD,
+            "font_size": DEFAULT_FONT_SIZE,
         }
 
     font_size = avg_font_size or DEFAULT_FONT_SIZE
@@ -802,17 +869,15 @@ def calculate_dynamic_thresholds(
 
     # X threshold for column detection: scale with page width
     # Use 20% of page width, minimum 50pt
-    x_column = max(
-        MIN_COLUMN_THRESHOLD,
-        page_width * COLUMN_THRESHOLD_RATIO
-    )
+    x_column = max(MIN_COLUMN_THRESHOLD, page_width * COLUMN_THRESHOLD_RATIO)
 
     return {
-        'y_line': y_line,
-        'y_para': y_para,
-        'x_column': x_column,
-        'font_size': font_size,
+        "y_line": y_line,
+        "y_para": y_para,
+        "x_column": x_column,
+        "font_size": font_size,
     }
+
 
 def detect_paragraph_boundary(
     char_x0: float,
@@ -860,17 +925,21 @@ def detect_paragraph_boundary(
 
     new_paragraph = False
     line_break = False
-    is_strong_boundary = False  # True if boundary should not be overridden by sentence-end check
+    is_strong_boundary = (
+        False  # True if boundary should not be overridden by sentence-end check
+    )
 
     # Use dynamic thresholds if provided, otherwise use defaults
-    y_line_thresh = thresholds['y_line'] if thresholds else SAME_LINE_Y_THRESHOLD
-    y_para_thresh = thresholds['y_para'] if thresholds else SAME_PARA_Y_THRESHOLD
-    x_column_thresh = thresholds['x_column'] if thresholds else COLUMN_JUMP_X_THRESHOLD
+    y_line_thresh = thresholds["y_line"] if thresholds else SAME_LINE_Y_THRESHOLD
+    y_para_thresh = thresholds["y_para"] if thresholds else SAME_PARA_Y_THRESHOLD
+    x_column_thresh = thresholds["x_column"] if thresholds else COLUMN_JUMP_X_THRESHOLD
 
     # Check if both characters are in table region
     is_table_region = (
-        char_cls is not None and prev_cls is not None and
-        char_cls >= LAYOUT_TABLE_BASE and prev_cls >= LAYOUT_TABLE_BASE
+        char_cls is not None
+        and prev_cls is not None
+        and char_cls >= LAYOUT_TABLE_BASE
+        and prev_cls >= LAYOUT_TABLE_BASE
     )
 
     if use_layout and prev_cls is not None:
@@ -889,8 +958,8 @@ def detect_paragraph_boundary(
                 # - Table -> Table (different IDs) = NOT strong
                 LAYOUT_PARAGRAPH_BASE = 2
                 both_paragraph = (
-                    LAYOUT_PARAGRAPH_BASE <= char_cls < LAYOUT_TABLE_BASE and
-                    LAYOUT_PARAGRAPH_BASE <= prev_cls < LAYOUT_TABLE_BASE
+                    LAYOUT_PARAGRAPH_BASE <= char_cls < LAYOUT_TABLE_BASE
+                    and LAYOUT_PARAGRAPH_BASE <= prev_cls < LAYOUT_TABLE_BASE
                 )
                 both_table = (
                     char_cls >= LAYOUT_TABLE_BASE and prev_cls >= LAYOUT_TABLE_BASE
@@ -926,13 +995,17 @@ def detect_paragraph_boundary(
                         # Large X gap in table = new cell = new paragraph
                         new_paragraph = True
                         is_strong_boundary = True  # Table cell boundary is strong
-                    elif (prev_x1 - char_x0) > x_column_thresh and y_diff <= TABLE_ROW_Y_THRESHOLD:
+                    elif (
+                        prev_x1 - char_x0
+                    ) > x_column_thresh and y_diff <= TABLE_ROW_Y_THRESHOLD:
                         # PP-DocLayout-L reading order can jump from a right-side cell back to a
                         # left-side cell on the same row. In that case, x_gap becomes negative and
                         # the standard "gap" heuristic fails, causing distant cells to be merged
                         # into a single paragraph (e.g., table headers).
                         new_paragraph = True
-                        is_strong_boundary = True  # Column reset within table row is strong
+                        is_strong_boundary = (
+                            True  # Column reset within table row is strong
+                        )
                     elif y_diff > TABLE_ROW_Y_THRESHOLD:
                         # Y movement in table = new row = new paragraph
                         new_paragraph = True
@@ -952,7 +1025,9 @@ def detect_paragraph_boundary(
                 # that should be treated as separate paragraphs
                 if prev_x1 is not None:
                     x_gap = char_x0 - prev_x1
-                    x_reset = prev_x1 - char_x0  # How much X moved back (positive = left)
+                    x_reset = (
+                        prev_x1 - char_x0
+                    )  # How much X moved back (positive = left)
 
                     # Use TABLE_CELL_X_THRESHOLD for non-table regions as well
                     # to properly split form fields (e.g., "上場会社名" and "マツダ株式会社")
@@ -960,7 +1035,9 @@ def detect_paragraph_boundary(
                         # Large X gap suggests new field/column = new paragraph
                         new_paragraph = True
                         is_strong_boundary = True  # Large X gap is strong
-                    elif y_diff > y_line_thresh and x_reset > TOC_LINE_X_RESET_THRESHOLD:
+                    elif (
+                        y_diff > y_line_thresh and x_reset > TOC_LINE_X_RESET_THRESHOLD
+                    ):
                         # TOC-like pattern: Y changed (new line) AND X reset significantly
                         # However, this pattern is too common in normal paragraphs where
                         # lines wrap back to the left margin. Do NOT mark as strong boundary
@@ -1006,7 +1083,9 @@ def detect_paragraph_boundary(
         elif x_diff > x_column_thresh:
             # Large X jump suggests column change in multi-column layout
             # Combined with Y going back up indicates new column
-            if char_y0 > prev_y0:  # char is above prev (PDF coords: higher Y = higher on page)
+            if (
+                char_y0 > prev_y0
+            ):  # char is above prev (PDF coords: higher Y = higher on page)
                 new_paragraph = True
                 is_strong_boundary = True  # Column change is strong
             else:
@@ -1048,6 +1127,7 @@ def classify_char_type(fontname: str, char_text: str) -> bool:
 # =============================================================================
 # Line Joining Logic (yomitoku reference)
 # =============================================================================
+
 
 def get_line_join_separator(
     prev_text: str,
@@ -1111,7 +1191,7 @@ def get_line_join_separator(
         return " "
 
     # Case 6: Space or punctuation at end - no additional space needed
-    if last_char in ' \t\n':
+    if last_char in " \t\n":
         return ""
 
     # Default: add space for safety (English-like behavior)
@@ -1154,7 +1234,7 @@ def is_line_end_hyphenated(text: str) -> bool:
 
 
 # Characters used as TOC leaders (dots/dashes connecting item to page number)
-TOC_LEADER_CHARS = frozenset('…‥・．.·')
+TOC_LEADER_CHARS = frozenset("…‥・．.·")
 
 
 def is_toc_line_ending(text: str) -> bool:
@@ -1195,7 +1275,7 @@ def is_toc_line_ending(text: str) -> bool:
     # Check if ends with digit(s) - page number
     # Find the rightmost non-digit position
     i = len(stripped) - 1
-    while i >= 0 and (stripped[i].isdigit() or stripped[i] in ' \u3000'):
+    while i >= 0 and (stripped[i].isdigit() or stripped[i] in " \u3000"):
         i -= 1
 
     if i < 0 or i == len(stripped) - 1:
@@ -1210,7 +1290,7 @@ def is_toc_line_ending(text: str) -> bool:
         if char in TOC_LEADER_CHARS:
             leader_found = True
             break
-        elif char in ' \u3000':
+        elif char in " \u3000":
             # Skip spaces between leader and page number
             i -= 1
             continue
@@ -1276,7 +1356,7 @@ def is_japanese_continuation_line(text: str) -> bool:
     # - "(株)" but this won't cause issues because paragraph boundary detection
     #   requires Y/X coordinate changes first
     # Both half-width and full-width closing brackets are checked
-    CLOSING_BRACKETS = frozenset(')）]］')
+    CLOSING_BRACKETS = frozenset(")）]］")
     if last_char in CLOSING_BRACKETS:
         return False
 
@@ -1295,7 +1375,7 @@ def is_japanese_continuation_line(text: str) -> bool:
             return True
 
     # Sentence-final particles typically indicate the end of an utterance even without punctuation.
-    if last_char in {'ね', 'よ', 'か'}:
+    if last_char in {"ね", "よ", "か"}:
         return False
 
     # Final heuristic: Japanese wrapped lines often end with hiragana (e.g., verb/adjective endings)
@@ -1342,7 +1422,7 @@ def create_paragraph_from_char(char, brk: bool, layout_class: int = 1) -> Paragr
         - char.y1: Top edge of character (includes ascender)
         - Origin: Bottom-left of page, Y increases upward
     """
-    char_size = char.size if hasattr(char, 'size') else DEFAULT_FONT_SIZE
+    char_size = char.size if hasattr(char, "size") else DEFAULT_FONT_SIZE
     # PDFMathTranslate compliant: use char.y0 as the initial y coordinate
     # This ensures Paragraph.y == Paragraph.y0, which is always within box bounds
     return Paragraph(
@@ -1378,8 +1458,8 @@ def create_formula_var_from_chars(chars: list) -> FormulaVar:
     y1 = max(c.y1 for c in chars)
 
     first_char = chars[0]
-    font_name = first_char.fontname if hasattr(first_char, 'fontname') else None
-    font_size = first_char.size if hasattr(first_char, 'size') else DEFAULT_FONT_SIZE
+    font_name = first_char.fontname if hasattr(first_char, "fontname") else None
+    font_size = first_char.size if hasattr(first_char, "size") else DEFAULT_FONT_SIZE
 
     return FormulaVar(
         chars=chars,
@@ -1424,6 +1504,7 @@ MIN_PAGE_DIMENSION = 1.0  # Minimum valid page dimension
 #
 # =============================================================================
 
+
 @dataclass
 class PdfCoord:
     """
@@ -1432,6 +1513,7 @@ class PdfCoord:
     This class provides type safety for PDF coordinates to prevent
     accidental mixing with image coordinates.
     """
+
     x: float
     y: float
 
@@ -1444,6 +1526,7 @@ class ImageCoord:
     This class provides type safety for image coordinates used by
     PP-DocLayout-L and other image processing libraries.
     """
+
     x: float
     y: float
 
@@ -1477,7 +1560,9 @@ def pdf_to_image_coord(
     # PDFMathTranslate compliant: Validate inputs to prevent invalid conversions
     # Check for NaN/infinity before numeric comparisons (NaN comparisons always False)
     if math.isnan(page_height) or math.isinf(page_height):
-        raise ValueError(f"Invalid page_height: {page_height}. Must be a finite number.")
+        raise ValueError(
+            f"Invalid page_height: {page_height}. Must be a finite number."
+        )
     if math.isnan(scale) or math.isinf(scale):
         raise ValueError(f"Invalid scale: {scale}. Must be a finite number.")
     if page_height <= 0:
@@ -1517,7 +1602,9 @@ def image_to_pdf_coord(
     # PDFMathTranslate compliant: Validate inputs to prevent invalid conversions
     # Check for NaN/infinity before numeric comparisons (NaN comparisons always False)
     if math.isnan(page_height) or math.isinf(page_height):
-        raise ValueError(f"Invalid page_height: {page_height}. Must be a finite number.")
+        raise ValueError(
+            f"Invalid page_height: {page_height}. Must be a finite number."
+        )
     if math.isnan(scale) or math.isinf(scale):
         raise ValueError(f"Invalid scale: {scale}. Must be a finite number.")
     if page_height <= 0:
@@ -1555,7 +1642,9 @@ def safe_page_height(page_height: float) -> float:
 
     logger.warning(
         "Invalid page_height: %.2f (< %.1f). Using default A4 height: %.1f",
-        page_height, MIN_PAGE_DIMENSION, DEFAULT_PAGE_HEIGHT
+        page_height,
+        MIN_PAGE_DIMENSION,
+        DEFAULT_PAGE_HEIGHT,
     )
     return DEFAULT_PAGE_HEIGHT
 
@@ -1579,8 +1668,7 @@ def safe_scale(scale: float) -> float:
         return scale
 
     logger.warning(
-        "Invalid scale: %.2f (must be positive). Using default scale: 1.0",
-        scale
+        "Invalid scale: %.2f (must be positive). Using default scale: 1.0", scale
     )
     return 1.0
 
@@ -1699,7 +1787,8 @@ def get_layout_class_at_pdf_coord(
         logger.warning(
             "Invalid parameters for layout lookup: page_height=%s, scale=%s. "
             "Returning BACKGROUND.",
-            page_height, scale
+            page_height,
+            scale,
         )
         return LAYOUT_BACKGROUND
 

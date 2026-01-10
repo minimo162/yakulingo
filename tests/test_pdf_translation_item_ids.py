@@ -18,7 +18,14 @@ class RecordingPromptBuilder:
         include_item_ids: bool = False,
         reference_files: list[Path] | None = None,
     ) -> str:
-        _ = texts, has_reference_files, output_language, translation_style, include_item_ids, reference_files
+        _ = (
+            texts,
+            has_reference_files,
+            output_language,
+            translation_style,
+            include_item_ids,
+            reference_files,
+        )
         return "PROMPT"
 
 

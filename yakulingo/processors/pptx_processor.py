@@ -48,7 +48,7 @@ class PptxProcessor(FileProcessor):
     def supported_extensions(self) -> list[str]:
         # Note: .ppt (legacy format) is not supported by python-pptx
         # Only .pptx (Office Open XML) is supported
-        return ['.pptx']
+        return [".pptx"]
 
     def get_file_info(self, file_path: Path) -> FileInfo:
         """Get PowerPoint file info (fast: slide count only, no text scanning)"""
@@ -99,16 +99,19 @@ class PptxProcessor(FileProcessor):
 
             # PowerPoint namespaces
             ns = {
-                'a': 'http://schemas.openxmlformats.org/drawingml/2006/main',
-                'p': 'http://schemas.openxmlformats.org/presentationml/2006/main',
+                "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
+                "p": "http://schemas.openxmlformats.org/presentationml/2006/main",
             }
 
-            with zipfile.ZipFile(file_path, 'r') as zf:
+            with zipfile.ZipFile(file_path, "r") as zf:
                 # Get list of slide files
-                slide_files = sorted([
-                    name for name in zf.namelist()
-                    if name.startswith('ppt/slides/slide') and name.endswith('.xml')
-                ])
+                slide_files = sorted(
+                    [
+                        name
+                        for name in zf.namelist()
+                        if name.startswith("ppt/slides/slide") and name.endswith(".xml")
+                    ]
+                )
 
                 for slide_file in slide_files[:max_slides]:
                     if total_chars >= max_chars:
@@ -118,7 +121,7 @@ class PptxProcessor(FileProcessor):
                     root = ET.fromstring(xml_content)
 
                     # Extract text from <a:t> elements (text runs in shapes)
-                    for t_elem in root.findall('.//a:t', ns):
+                    for t_elem in root.findall(".//a:t", ns):
                         if t_elem.text:
                             text = t_elem.text.strip()
                             if text and len(text) > 1:  # Skip single chars
@@ -128,10 +131,11 @@ class PptxProcessor(FileProcessor):
                                     break
 
             if texts:
-                result = ' '.join(texts)[:max_chars]
+                result = " ".join(texts)[:max_chars]
                 logger.debug(
                     "PPTX fast sample extraction: %d chars from %d text runs",
-                    len(result), len(texts)
+                    len(result),
+                    len(texts),
                 )
                 return result
 
@@ -153,7 +157,7 @@ class PptxProcessor(FileProcessor):
         prs = Presentation(file_path)
         try:
             for slide_idx, slide in enumerate(prs.slides):
-                counters = {'shape': 0, 'table': 0}
+                counters = {"shape": 0, "table": 0}
 
                 for shape in slide.shapes:
                     yield from self._extract_shape_text_blocks(
@@ -167,16 +171,18 @@ class PptxProcessor(FileProcessor):
                 if slide.has_notes_slide and slide.notes_slide.notes_text_frame:
                     notes_frame = slide.notes_slide.notes_text_frame
                     for para_idx, para in enumerate(notes_frame.paragraphs):
-                        if para.text and self.para_translator.should_translate(para.text, output_language):
+                        if para.text and self.para_translator.should_translate(
+                            para.text, output_language
+                        ):
                             yield TextBlock(
                                 id=f"s{slide_idx}_notes_{para_idx}",
                                 text=para.text,
                                 location=f"Slide {slide_idx + 1}, Notes",
                                 metadata={
-                                    'type': 'notes',
-                                    'slide_idx': slide_idx,
-                                    'para': para_idx,
-                                }
+                                    "type": "notes",
+                                    "slide_idx": slide_idx,
+                                    "para": para_idx,
+                                },
                             )
         finally:
             # python-pptx doesn't have close(), but we can help GC by deleting the reference
@@ -204,14 +210,16 @@ class PptxProcessor(FileProcessor):
             font_manager = FontManager(direction, settings)
 
             # Convert selected_sections to a set for O(1) lookup
-            selected_set = set(selected_sections) if selected_sections is not None else None
+            selected_set = (
+                set(selected_sections) if selected_sections is not None else None
+            )
 
             for slide_idx, slide in enumerate(prs.slides):
                 # Skip slides not in selected_sections (if specified)
                 if selected_set is not None and slide_idx not in selected_set:
                     continue
 
-                counters = {'shape': 0, 'table': 0}
+                counters = {"shape": 0, "table": 0}
 
                 for shape in slide.shapes:
                     self._apply_translations_to_shape(
@@ -228,7 +236,9 @@ class PptxProcessor(FileProcessor):
                     for para_idx, para in enumerate(notes_frame.paragraphs):
                         block_id = f"s{slide_idx}_notes_{para_idx}"
                         if block_id in translations:
-                            self._apply_to_paragraph(para, translations[block_id], font_manager)
+                            self._apply_to_paragraph(
+                                para, translations[block_id], font_manager
+                            )
 
             prs.save(output_path)
         finally:
@@ -246,7 +256,9 @@ class PptxProcessor(FileProcessor):
         # === Text Shapes ===
         if shape.has_text_frame:
             for para_idx, para in enumerate(shape.text_frame.paragraphs):
-                if para.text and self.para_translator.should_translate(para.text, output_language):
+                if para.text and self.para_translator.should_translate(
+                    para.text, output_language
+                ):
                     # Get font info from first run
                     font_name = None
                     font_size = 18.0  # default for PPT
@@ -268,15 +280,15 @@ class PptxProcessor(FileProcessor):
                         text=para.text,
                         location=f"Slide {slide_idx + 1}, Shape {counters['shape'] + 1}",
                         metadata={
-                            'type': 'shape',
-                            'slide_idx': slide_idx,
-                            'shape': counters['shape'],
-                            'para': para_idx,
-                            'font_name': font_name,
-                            'font_size': font_size,
-                        }
+                            "type": "shape",
+                            "slide_idx": slide_idx,
+                            "shape": counters["shape"],
+                            "para": para_idx,
+                            "font_name": font_name,
+                            "font_size": font_size,
+                        },
                     )
-            counters['shape'] += 1
+            counters["shape"] += 1
 
         # === Tables (Excel-compatible) ===
         if shape.has_table:
@@ -284,7 +296,9 @@ class PptxProcessor(FileProcessor):
             for row_idx, row in enumerate(table.rows):
                 for cell_idx, cell in enumerate(row.cells):
                     cell_text = cell.text_frame.text if cell.text_frame else ""
-                    if cell_text and self.cell_translator.should_translate(cell_text, output_language):
+                    if cell_text and self.cell_translator.should_translate(
+                        cell_text, output_language
+                    ):
                         # Get font info
                         font_name = None
                         font_size = 14.0
@@ -302,16 +316,16 @@ class PptxProcessor(FileProcessor):
                             text=cell_text,
                             location=f"Slide {slide_idx + 1}, Table {counters['table'] + 1}, Row {row_idx + 1}, Cell {cell_idx + 1}",
                             metadata={
-                                'type': 'table_cell',
-                                'slide_idx': slide_idx,
-                                'table': counters['table'],
-                                'row': row_idx,
-                                'col': cell_idx,
-                                'font_name': font_name,
-                                'font_size': font_size,
-                            }
+                                "type": "table_cell",
+                                "slide_idx": slide_idx,
+                                "table": counters["table"],
+                                "row": row_idx,
+                                "col": cell_idx,
+                                "font_name": font_name,
+                                "font_size": font_size,
+                            },
                         )
-            counters['table'] += 1
+            counters["table"] += 1
 
         # === Grouped shapes ===
         if shape.shape_type == MSO_SHAPE_TYPE.GROUP:
@@ -338,14 +352,16 @@ class PptxProcessor(FileProcessor):
                 block_id = f"s{slide_idx}_sh{counters['shape']}_p{para_idx}"
                 if block_id in translations:
                     self._apply_to_paragraph(para, translations[block_id], font_manager)
-            counters['shape'] += 1
+            counters["shape"] += 1
 
         # === Apply to tables ===
         if shape.has_table:
             table = shape.table
             for row_idx, row in enumerate(table.rows):
                 for cell_idx, cell in enumerate(row.cells):
-                    block_id = f"s{slide_idx}_tbl{counters['table']}_r{row_idx}_c{cell_idx}"
+                    block_id = (
+                        f"s{slide_idx}_tbl{counters['table']}_r{row_idx}_c{cell_idx}"
+                    )
                     if block_id in translations:
                         text_frame = cell.text_frame
                         if text_frame:
@@ -356,16 +372,14 @@ class PptxProcessor(FileProcessor):
                                 target_para = text_frame.add_paragraph()
 
                             self._apply_to_paragraph(
-                                target_para,
-                                translations[block_id],
-                                font_manager
+                                target_para, translations[block_id], font_manager
                             )
 
                             # Remove additional paragraphs entirely to avoid
                             # trailing blank lines when reading cell.text
                             for para in paragraphs[1:]:
                                 text_frame._element.remove(para._p)
-            counters['table'] += 1
+            counters["table"] += 1
 
         # === Grouped shapes ===
         if shape.shape_type == MSO_SHAPE_TYPE.GROUP:
@@ -378,7 +392,9 @@ class PptxProcessor(FileProcessor):
                     font_manager,
                 )
 
-    def _apply_to_paragraph(self, para, translated_text: str, font_manager: FontManager) -> None:
+    def _apply_to_paragraph(
+        self, para, translated_text: str, font_manager: FontManager
+    ) -> None:
         """
         Apply translation to paragraph, preserving paragraph style.
 
@@ -396,8 +412,7 @@ class PptxProcessor(FileProcessor):
 
             # Get new font settings
             new_font_name, new_font_size = font_manager.select_font(
-                original_font_name,
-                original_font_size
+                original_font_name, original_font_size
             )
 
             # Apply translation
@@ -459,9 +474,7 @@ class PptxProcessor(FileProcessor):
 
         # Create a combined presentation using XML manipulation
         try:
-            self._merge_presentations_xml(
-                output_path, translated_path, output_path
-            )
+            self._merge_presentations_xml(output_path, translated_path, output_path)
         except (OSError, ValueError, KeyError, ET.ParseError) as e:
             logger.warning("XML merge failed, using simple append: %s", e)
             # Fallback: Just return the original file
@@ -475,9 +488,9 @@ class PptxProcessor(FileProcessor):
             del result_prs
 
         return {
-            'original_slides': original_slides,
-            'translated_slides': translated_slides,
-            'total_slides': total_slides,
+            "original_slides": original_slides,
+            "translated_slides": translated_slides,
+            "total_slides": total_slides,
         }
 
     def _merge_presentations_xml(
@@ -498,9 +511,9 @@ class PptxProcessor(FileProcessor):
 
         # PowerPoint XML namespaces
         PPTX_NS = {
-            'a': 'http://schemas.openxmlformats.org/drawingml/2006/main',
-            'r': 'http://schemas.openxmlformats.org/officeDocument/2006/relationships',
-            'p': 'http://schemas.openxmlformats.org/presentationml/2006/main',
+            "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
+            "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+            "p": "http://schemas.openxmlformats.org/presentationml/2006/main",
         }
 
         # Register namespaces
@@ -511,103 +524,113 @@ class PptxProcessor(FileProcessor):
             tmpdir = Path(tmpdir)
 
             # Extract base pptx
-            base_dir = tmpdir / 'base'
-            with zipfile.ZipFile(base_path, 'r') as zf:
+            base_dir = tmpdir / "base"
+            with zipfile.ZipFile(base_path, "r") as zf:
                 zf.extractall(base_dir)
 
             # Extract append pptx
-            append_dir = tmpdir / 'append'
-            with zipfile.ZipFile(append_path, 'r') as zf:
+            append_dir = tmpdir / "append"
+            with zipfile.ZipFile(append_path, "r") as zf:
                 zf.extractall(append_dir)
 
             # Get the number of slides in base
-            base_slides_dir = base_dir / 'ppt' / 'slides'
-            base_slide_count = len(list(base_slides_dir.glob('slide*.xml')))
+            base_slides_dir = base_dir / "ppt" / "slides"
+            base_slide_count = len(list(base_slides_dir.glob("slide*.xml")))
 
             # Copy slides from append to base
-            append_slides_dir = append_dir / 'ppt' / 'slides'
-            append_rels_dir = append_dir / 'ppt' / 'slides' / '_rels'
+            append_slides_dir = append_dir / "ppt" / "slides"
+            append_rels_dir = append_dir / "ppt" / "slides" / "_rels"
 
-            for i, slide_file in enumerate(sorted(append_slides_dir.glob('slide*.xml'))):
+            for i, slide_file in enumerate(
+                sorted(append_slides_dir.glob("slide*.xml"))
+            ):
                 new_slide_num = base_slide_count + i + 1
-                new_slide_name = f'slide{new_slide_num}.xml'
+                new_slide_name = f"slide{new_slide_num}.xml"
 
                 # Copy slide XML
                 shutil.copy2(slide_file, base_slides_dir / new_slide_name)
 
                 # Copy slide relationships if exist
-                rels_file = append_rels_dir / f'{slide_file.name}.rels'
+                rels_file = append_rels_dir / f"{slide_file.name}.rels"
                 if rels_file.exists():
-                    base_rels_dir = base_slides_dir / '_rels'
+                    base_rels_dir = base_slides_dir / "_rels"
                     base_rels_dir.mkdir(exist_ok=True)
-                    shutil.copy2(rels_file, base_rels_dir / f'{new_slide_name}.rels')
+                    shutil.copy2(rels_file, base_rels_dir / f"{new_slide_name}.rels")
 
             # Update presentation.xml to include new slides
-            pres_xml_path = base_dir / 'ppt' / 'presentation.xml'
+            pres_xml_path = base_dir / "ppt" / "presentation.xml"
             tree = ET.parse(pres_xml_path)
             root = tree.getroot()
 
             # Find sldIdLst element
-            ns = {'p': 'http://schemas.openxmlformats.org/presentationml/2006/main'}
-            sld_id_lst = root.find('.//p:sldIdLst', ns)
+            ns = {"p": "http://schemas.openxmlformats.org/presentationml/2006/main"}
+            sld_id_lst = root.find(".//p:sldIdLst", ns)
 
             if sld_id_lst is not None:
                 # Get max id
                 max_id = 256  # Default starting id
-                for sld_id in sld_id_lst.findall('p:sldId', ns):
-                    id_val = int(sld_id.get('id', '256'))
+                for sld_id in sld_id_lst.findall("p:sldId", ns):
+                    id_val = int(sld_id.get("id", "256"))
                     max_id = max(max_id, id_val)
 
                 # Add new slide entries
-                append_slide_count = len(list(append_slides_dir.glob('slide*.xml')))
+                append_slide_count = len(list(append_slides_dir.glob("slide*.xml")))
                 for i in range(append_slide_count):
                     new_id = max_id + i + 1
-                    new_rid = f'rId{base_slide_count + i + 100}'  # Offset to avoid collision
-                    new_sld_id = ET.SubElement(sld_id_lst, f'{{{ns["p"]}}}sldId')
-                    new_sld_id.set('id', str(new_id))
-                    new_sld_id.set(f'{{{PPTX_NS["r"]}}}id', new_rid)
+                    new_rid = (
+                        f"rId{base_slide_count + i + 100}"  # Offset to avoid collision
+                    )
+                    new_sld_id = ET.SubElement(sld_id_lst, f"{{{ns['p']}}}sldId")
+                    new_sld_id.set("id", str(new_id))
+                    new_sld_id.set(f"{{{PPTX_NS['r']}}}id", new_rid)
 
-            tree.write(pres_xml_path, xml_declaration=True, encoding='UTF-8')
+            tree.write(pres_xml_path, xml_declaration=True, encoding="UTF-8")
 
             # Update presentation.xml.rels to include relationships for new slides
-            pres_rels_path = base_dir / 'ppt' / '_rels' / 'presentation.xml.rels'
-            rels_ns = 'http://schemas.openxmlformats.org/package/2006/relationships'
-            ET.register_namespace('', rels_ns)
+            pres_rels_path = base_dir / "ppt" / "_rels" / "presentation.xml.rels"
+            rels_ns = "http://schemas.openxmlformats.org/package/2006/relationships"
+            ET.register_namespace("", rels_ns)
 
             if pres_rels_path.exists():
                 rels_tree = ET.parse(pres_rels_path)
                 rels_root = rels_tree.getroot()
 
                 # Add new relationships for slides
-                append_slide_count = len(list(append_slides_dir.glob('slide*.xml')))
+                append_slide_count = len(list(append_slides_dir.glob("slide*.xml")))
                 for i in range(append_slide_count):
                     new_slide_num = base_slide_count + i + 1
-                    new_rid = f'rId{base_slide_count + i + 100}'  # Same offset as above
-                    rel_elem = ET.SubElement(rels_root, f'{{{rels_ns}}}Relationship')
-                    rel_elem.set('Id', new_rid)
-                    rel_elem.set('Type', 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide')
-                    rel_elem.set('Target', f'slides/slide{new_slide_num}.xml')
+                    new_rid = f"rId{base_slide_count + i + 100}"  # Same offset as above
+                    rel_elem = ET.SubElement(rels_root, f"{{{rels_ns}}}Relationship")
+                    rel_elem.set("Id", new_rid)
+                    rel_elem.set(
+                        "Type",
+                        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide",
+                    )
+                    rel_elem.set("Target", f"slides/slide{new_slide_num}.xml")
 
-                rels_tree.write(pres_rels_path, xml_declaration=True, encoding='UTF-8')
+                rels_tree.write(pres_rels_path, xml_declaration=True, encoding="UTF-8")
 
             # Update Content_Types
-            content_types_path = base_dir / '[Content_Types].xml'
+            content_types_path = base_dir / "[Content_Types].xml"
             ct_tree = ET.parse(content_types_path)
             ct_root = ct_tree.getroot()
 
-            ct_ns = 'http://schemas.openxmlformats.org/package/2006/content-types'
-            append_slide_count = len(list(append_slides_dir.glob('slide*.xml')))
+            ct_ns = "http://schemas.openxmlformats.org/package/2006/content-types"
+            append_slide_count = len(list(append_slides_dir.glob("slide*.xml")))
             for i in range(append_slide_count):
                 new_slide_num = base_slide_count + i + 1
-                override = ET.SubElement(ct_root, f'{{{ct_ns}}}Override')
-                override.set('PartName', f'/ppt/slides/slide{new_slide_num}.xml')
-                override.set('ContentType', 'application/vnd.openxmlformats-officedocument.presentationml.slide+xml')
+                override = ET.SubElement(ct_root, f"{{{ct_ns}}}Override")
+                override.set("PartName", f"/ppt/slides/slide{new_slide_num}.xml")
+                override.set(
+                    "ContentType",
+                    "application/vnd.openxmlformats-officedocument.presentationml.slide+xml",
+                )
 
-            ct_tree.write(content_types_path, xml_declaration=True, encoding='UTF-8')
+            ct_tree.write(content_types_path, xml_declaration=True, encoding="UTF-8")
 
             # Repack the pptx
-            with zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED) as zf:
-                for file_path in base_dir.rglob('*'):
+            with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                for file_path in base_dir.rglob("*"):
                     if file_path.is_file():
                         arcname = file_path.relative_to(base_dir)
                         zf.write(file_path, arcname)

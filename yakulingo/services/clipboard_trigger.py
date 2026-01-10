@@ -42,6 +42,7 @@ def _select_rechecked_payload_time(
 
 
 if not _IS_WINDOWS:
+
     class ClipboardTrigger:
         """Placeholder that prevents Windows-only clipboard code from loading."""
 
@@ -52,7 +53,9 @@ if not _IS_WINDOWS:
         def is_running(self) -> bool:
             return False
 
-        def set_callback(self, callback: Callable[[str], None]) -> None:  # pragma: no cover
+        def set_callback(
+            self, callback: Callable[[str], None]
+        ) -> None:  # pragma: no cover
             _ = callback
 
         def start(self) -> None:  # pragma: no cover
@@ -120,8 +123,12 @@ else:
             )
             self._same_payload_suppress_sec = same_payload_suppress_ms / 1000.0
             self._recheck_settle_sec = recheck_settle_ms / 1000.0
-            self._empty_payload_recheck_window_sec = max(empty_payload_recheck_window_sec, 0.0)
-            self._empty_payload_recheck_interval_sec = max(empty_payload_recheck_interval_sec, 0.0)
+            self._empty_payload_recheck_window_sec = max(
+                empty_payload_recheck_window_sec, 0.0
+            )
+            self._empty_payload_recheck_interval_sec = max(
+                empty_payload_recheck_interval_sec, 0.0
+            )
 
             self._lock = threading.Lock()
             self._stop_event = threading.Event()
@@ -236,26 +243,43 @@ else:
                                     self._stop_event.wait(self._poll_interval_sec)
                                     continue
                                 if now >= self._pending_next_attempt:
-                                    self._pending_next_attempt = now + self._empty_payload_recheck_interval_sec
+                                    self._pending_next_attempt = (
+                                        now + self._empty_payload_recheck_interval_sec
+                                    )
                                     try:
-                                        if _clipboard.should_ignore_self_clipboard(now, sequence):
+                                        if _clipboard.should_ignore_self_clipboard(
+                                            now, sequence
+                                        ):
                                             self._pending_sequence = None
                                             self._pending_event_time = None
                                             self._pending_deadline = None
                                             self._pending_next_attempt = None
-                                            self._stop_event.wait(self._poll_interval_sec)
+                                            self._stop_event.wait(
+                                                self._poll_interval_sec
+                                            )
                                             continue
                                     except Exception:
                                         pass
 
-                                    seq_before = _clipboard.get_clipboard_sequence_number_raw()
+                                    seq_before = (
+                                        _clipboard.get_clipboard_sequence_number_raw()
+                                    )
                                     try:
-                                        text, files = _clipboard.get_clipboard_payload_once(log_fail=False)
+                                        text, files = (
+                                            _clipboard.get_clipboard_payload_once(
+                                                log_fail=False
+                                            )
+                                        )
                                     except Exception as exc:
-                                        logger.debug("Clipboard trigger pending read failed: %s", exc)
+                                        logger.debug(
+                                            "Clipboard trigger pending read failed: %s",
+                                            exc,
+                                        )
                                         self._stop_event.wait(self._poll_interval_sec)
                                         continue
-                                    seq_after = _clipboard.get_clipboard_sequence_number_raw()
+                                    seq_after = (
+                                        _clipboard.get_clipboard_sequence_number_raw()
+                                    )
 
                                     payload = None
                                     if files:
@@ -270,22 +294,32 @@ else:
                                         self._pending_deadline = None
                                         self._pending_next_attempt = None
 
-                                        normalized_payload = self._normalize_payload(payload)
-                                        payload_hash = self._hash_payload(normalized_payload)
+                                        normalized_payload = self._normalize_payload(
+                                            payload
+                                        )
+                                        payload_hash = self._hash_payload(
+                                            normalized_payload
+                                        )
 
-                                        last_payload_normalized = self._last_payload_normalized
+                                        last_payload_normalized = (
+                                            self._last_payload_normalized
+                                        )
                                         last_payload_hash = self._last_payload_hash
                                         last_time = self._last_payload_time
                                         delta_sec = (
-                                            (event_time - last_time) if last_time is not None else None
+                                            (event_time - last_time)
+                                            if last_time is not None
+                                            else None
                                         )
                                         min_gap_sec = self._double_copy_min_gap_sec
                                         exact_match = (
                                             last_payload_normalized is not None
-                                            and normalized_payload == last_payload_normalized
+                                            and normalized_payload
+                                            == last_payload_normalized
                                             and last_time is not None
                                             and delta_sec is not None
-                                            and delta_sec <= self._double_copy_window_sec
+                                            and delta_sec
+                                            <= self._double_copy_window_sec
                                             and delta_sec >= min_gap_sec
                                         )
                                         partial_match = False
@@ -294,16 +328,21 @@ else:
                                             and last_payload_normalized is not None
                                             and last_time is not None
                                             and delta_sec is not None
-                                            and delta_sec <= self._fast_partial_match_window_sec
+                                            and delta_sec
+                                            <= self._fast_partial_match_window_sec
                                             and delta_sec >= min_gap_sec
                                         ):
                                             shorter = normalized_payload
                                             longer = last_payload_normalized
                                             if len(shorter) > len(longer):
                                                 shorter, longer = longer, shorter
-                                            if self._can_fast_partial_match(shorter, longer):
+                                            if self._can_fast_partial_match(
+                                                shorter, longer
+                                            ):
                                                 if "\n" in shorter or "\n" in longer:
-                                                    if self._is_line_prefix(shorter, longer):
+                                                    if self._is_line_prefix(
+                                                        shorter, longer
+                                                    ):
                                                         partial_match = True
                                                 elif longer.startswith(shorter):
                                                     partial_match = True
@@ -312,13 +351,20 @@ else:
                                         if is_match:
                                             suppress_due_to_cooldown = (
                                                 event_time < self._cooldown_until
-                                                and self._cooldown_payload_hash is not None
-                                                and payload_hash == self._cooldown_payload_hash
+                                                and self._cooldown_payload_hash
+                                                is not None
+                                                and payload_hash
+                                                == self._cooldown_payload_hash
                                             )
-                                            self._cooldown_until = event_time + self._cooldown_sec
+                                            self._cooldown_until = (
+                                                event_time + self._cooldown_sec
+                                            )
                                             self._cooldown_payload_hash = payload_hash
                                             callback = self._callback
-                                            if callback and not suppress_due_to_cooldown:
+                                            if (
+                                                callback
+                                                and not suppress_due_to_cooldown
+                                            ):
                                                 try:
                                                     callback(payload)
                                                 except Exception as exc:
@@ -328,11 +374,16 @@ else:
                                                     )
 
                                         store_time = event_time
-                                        if last_time is not None and (store_time - last_time) < min_gap_sec:
+                                        if (
+                                            last_time is not None
+                                            and (store_time - last_time) < min_gap_sec
+                                        ):
                                             store_time = last_time
 
                                         self._last_payload = payload
-                                        self._last_payload_normalized = normalized_payload
+                                        self._last_payload_normalized = (
+                                            normalized_payload
+                                        )
                                         self._last_payload_hash = payload_hash
                                         self._last_payload_time = store_time
                                         self._last_event_time = event_time
@@ -354,7 +405,9 @@ else:
                         for _ in range(2):
                             if self._stop_event.wait(self._settle_delay_sec):
                                 return
-                            settled_sequence = _clipboard.get_clipboard_sequence_number_raw()
+                            settled_sequence = (
+                                _clipboard.get_clipboard_sequence_number_raw()
+                            )
                             if settled_sequence is None or settled_sequence == sequence:
                                 break
                             sequence = settled_sequence
@@ -370,7 +423,9 @@ else:
 
                         seq_before = _clipboard.get_clipboard_sequence_number_raw()
                         try:
-                            text, files = _clipboard.get_clipboard_payload_with_retry(log_fail=False)
+                            text, files = _clipboard.get_clipboard_payload_with_retry(
+                                log_fail=False
+                            )
                         except Exception as exc:
                             logger.debug("Clipboard trigger read failed: %s", exc)
                             continue
@@ -444,7 +499,11 @@ else:
                         logger.debug(
                             "Clipboard double-copy check: match=%s, mode=%s, delta=%.3fs, window=%.3fs",
                             is_match,
-                            "partial" if partial_match else "exact" if exact_match else "none",
+                            "partial"
+                            if partial_match
+                            else "exact"
+                            if exact_match
+                            else "none",
                             delta_sec if delta_sec is not None else -1.0,
                             self._double_copy_window_sec,
                         )
@@ -461,7 +520,9 @@ else:
                                 try:
                                     callback(payload)
                                 except Exception as exc:
-                                    logger.debug("Clipboard trigger callback failed: %s", exc)
+                                    logger.debug(
+                                        "Clipboard trigger callback failed: %s", exc
+                                    )
                             self._last_payload = payload
                             self._last_payload_normalized = normalized_payload
                             self._last_payload_time = now
@@ -487,7 +548,10 @@ else:
                         ):
                             if self._stop_event.wait(self._recheck_settle_sec):
                                 return
-                            if _clipboard.get_clipboard_sequence_number_raw() == seq_after:
+                            if (
+                                _clipboard.get_clipboard_sequence_number_raw()
+                                == seq_after
+                            ):
                                 skip_recheck = False
                                 try:
                                     if _clipboard.should_ignore_self_clipboard(
@@ -498,11 +562,16 @@ else:
                                     pass
                                 if not skip_recheck:
                                     try:
-                                        re_text, re_files = _clipboard.get_clipboard_payload_with_retry(
-                                            log_fail=False
+                                        re_text, re_files = (
+                                            _clipboard.get_clipboard_payload_with_retry(
+                                                log_fail=False
+                                            )
                                         )
                                     except Exception as exc:
-                                        logger.debug("Clipboard trigger recheck read failed: %s", exc)
+                                        logger.debug(
+                                            "Clipboard trigger recheck read failed: %s",
+                                            exc,
+                                        )
                                         re_text = None
                                         re_files = []
                                     re_payload = None
@@ -512,15 +581,21 @@ else:
                                         re_payload = re_text
                                     if re_payload:
                                         re_now = time.monotonic()
-                                        re_normalized = self._normalize_payload(re_payload)
-                                        re_payload_hash = self._hash_payload(re_normalized)
+                                        re_normalized = self._normalize_payload(
+                                            re_payload
+                                        )
+                                        re_payload_hash = self._hash_payload(
+                                            re_normalized
+                                        )
                                         fast_double_copy_match = False
                                         if read_time is not None:
                                             fast_gap_sec = re_now - read_time
                                             fast_double_copy_match = (
                                                 re_normalized == normalized_payload
-                                                and fast_gap_sec >= self._fast_double_copy_min_gap_sec
-                                                and fast_gap_sec <= self._fast_partial_match_window_sec
+                                                and fast_gap_sec
+                                                >= self._fast_double_copy_min_gap_sec
+                                                and fast_gap_sec
+                                                <= self._fast_partial_match_window_sec
                                             )
                                         suppress_recheck = (
                                             last_payload_hash is not None
@@ -531,7 +606,9 @@ else:
                                         )
                                         if not suppress_recheck:
                                             re_delta_sec = (
-                                                (re_now - last_time) if last_time is not None else None
+                                                (re_now - last_time)
+                                                if last_time is not None
+                                                else None
                                             )
                                             re_gap_ok = (
                                                 re_delta_sec is not None
@@ -539,9 +616,11 @@ else:
                                             )
                                             re_exact_match = (
                                                 last_payload_normalized is not None
-                                                and re_normalized == last_payload_normalized
+                                                and re_normalized
+                                                == last_payload_normalized
                                                 and last_time is not None
-                                                and re_delta_sec <= self._double_copy_window_sec
+                                                and re_delta_sec
+                                                <= self._double_copy_window_sec
                                                 and re_gap_ok
                                             )
                                             re_partial_match = False
@@ -549,22 +628,31 @@ else:
                                                 not re_exact_match
                                                 and last_payload_normalized is not None
                                                 and last_time is not None
-                                                and re_delta_sec <= self._fast_partial_match_window_sec
+                                                and re_delta_sec
+                                                <= self._fast_partial_match_window_sec
                                                 and re_gap_ok
                                             ):
                                                 re_shorter = re_normalized
                                                 re_longer = last_payload_normalized
                                                 if len(re_shorter) > len(re_longer):
-                                                    re_shorter, re_longer = re_longer, re_shorter
+                                                    re_shorter, re_longer = (
+                                                        re_longer,
+                                                        re_shorter,
+                                                    )
                                                 if self._can_fast_partial_match(
                                                     re_shorter, re_longer
                                                 ):
-                                                    if "\n" in re_shorter or "\n" in re_longer:
+                                                    if (
+                                                        "\n" in re_shorter
+                                                        or "\n" in re_longer
+                                                    ):
                                                         if self._is_line_prefix(
                                                             re_shorter, re_longer
                                                         ):
                                                             re_partial_match = True
-                                                    elif re_longer.startswith(re_shorter):
+                                                    elif re_longer.startswith(
+                                                        re_shorter
+                                                    ):
                                                         re_partial_match = True
                                             re_is_match = (
                                                 re_exact_match
@@ -586,13 +674,22 @@ else:
                                             if re_is_match:
                                                 suppress_due_to_cooldown = (
                                                     re_now < self._cooldown_until
-                                                    and self._cooldown_payload_hash is not None
-                                                    and re_payload_hash == self._cooldown_payload_hash
+                                                    and self._cooldown_payload_hash
+                                                    is not None
+                                                    and re_payload_hash
+                                                    == self._cooldown_payload_hash
                                                 )
-                                                self._cooldown_until = re_now + self._cooldown_sec
-                                                self._cooldown_payload_hash = re_payload_hash
+                                                self._cooldown_until = (
+                                                    re_now + self._cooldown_sec
+                                                )
+                                                self._cooldown_payload_hash = (
+                                                    re_payload_hash
+                                                )
                                                 callback = self._callback
-                                                if callback and not suppress_due_to_cooldown:
+                                                if (
+                                                    callback
+                                                    and not suppress_due_to_cooldown
+                                                ):
                                                     try:
                                                         callback(re_payload)
                                                     except Exception as exc:
@@ -601,9 +698,13 @@ else:
                                                             exc,
                                                         )
                                                 self._last_payload = re_payload
-                                                self._last_payload_normalized = re_normalized
+                                                self._last_payload_normalized = (
+                                                    re_normalized
+                                                )
                                                 self._last_payload_time = re_now
-                                                self._last_payload_hash = re_payload_hash
+                                                self._last_payload_hash = (
+                                                    re_payload_hash
+                                                )
                                                 self._last_event_time = re_now
                                                 if seq_after is not None:
                                                     self._last_processed_seq = seq_after
@@ -619,7 +720,10 @@ else:
                                             rechecked_normalized=re_normalized,
                                         )
 
-                        if last_time is not None and (store_time - last_time) < min_gap_sec:
+                        if (
+                            last_time is not None
+                            and (store_time - last_time) < min_gap_sec
+                        ):
                             store_time = last_time
 
                         self._last_payload = payload_to_store

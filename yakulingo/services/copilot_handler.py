@@ -34,12 +34,12 @@ logger = logging.getLogger(__name__)
 # Important: do not allow newlines right after the period, otherwise blank
 # items like "3." would consume the next item (e.g., "4. text").
 _RE_BATCH_ITEM = re.compile(
-    r'^([ \t\u3000]*)(\d+)\.[ \t\u3000]*(.*?)(?=\r?\n[ \t\u3000]*\d+\.|\Z)',
+    r"^([ \t\u3000]*)(\d+)\.[ \t\u3000]*(.*?)(?=\r?\n[ \t\u3000]*\d+\.|\Z)",
     re.MULTILINE | re.DOTALL,
 )
-_RE_BATCH_ITEM_ID = re.compile(r'\[\[ID:(\d+)\]\]')
+_RE_BATCH_ITEM_ID = re.compile(r"\[\[ID:(\d+)\]\]")
 # Only supports "n." numbering by design (aligned with prompt instructions).
-_RE_NUMBERED_ID_LINE = re.compile(r'(?m)^([ \t\u3000]*)\d+\.\s*(\[\[ID:\d+\]\])')
+_RE_NUMBERED_ID_LINE = re.compile(r"(?m)^([ \t\u3000]*)\d+\.\s*(\[\[ID:\d+\]\])")
 
 # Known Copilot error response patterns that indicate we should retry with a new chat
 # These are system messages that don't represent actual translation results
@@ -116,6 +116,7 @@ AUTH_FLOW_PATTERNS = [
 
 class TranslationCancelledError(Exception):
     """Raised when translation is cancelled by user."""
+
     pass
 
 
@@ -156,12 +157,16 @@ class PlaywrightManager:
                         Error as PlaywrightError,
                     )
                     from playwright.async_api import async_playwright
-                    self._playwright_types = {'Page': Page, 'BrowserContext': BrowserContext}
+
+                    self._playwright_types = {
+                        "Page": Page,
+                        "BrowserContext": BrowserContext,
+                    }
                     self._sync_playwright = sync_playwright
                     self._async_playwright = async_playwright
                     self._error_types = {
-                        'TimeoutError': PlaywrightTimeoutError,
-                        'Error': PlaywrightError,
+                        "TimeoutError": PlaywrightTimeoutError,
+                        "Error": PlaywrightError,
                     }
                     self._initialized = True
 
@@ -208,7 +213,7 @@ def _get_process_dpi_awareness() -> int | None:
         import ctypes
 
         awareness = ctypes.c_int()
-        shcore = ctypes.WinDLL('shcore', use_last_error=True)
+        shcore = ctypes.WinDLL("shcore", use_last_error=True)
         if shcore.GetProcessDpiAwareness(None, ctypes.byref(awareness)) == 0:
             return awareness.value
     except Exception:
@@ -223,8 +228,8 @@ def _get_windows_dpi_scale() -> float:
     try:
         import ctypes
 
-        user32 = ctypes.WinDLL('user32', use_last_error=True)
-        get_dpi = getattr(user32, 'GetDpiForSystem', None)
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        get_dpi = getattr(user32, "GetDpiForSystem", None)
         if get_dpi:
             dpi = int(get_dpi())
             if dpi > 0:
@@ -234,8 +239,8 @@ def _get_windows_dpi_scale() -> float:
     try:
         import ctypes
 
-        user32 = ctypes.WinDLL('user32', use_last_error=True)
-        gdi32 = ctypes.WinDLL('gdi32', use_last_error=True)
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        gdi32 = ctypes.WinDLL("gdi32", use_last_error=True)
         LOGPIXELSX = 88
         hdc = user32.GetDC(0)
         if hdc:
@@ -416,10 +421,11 @@ def _is_copilot_url(url: str) -> bool:
 
 class ConnectionState:
     """Connection state constants"""
-    READY = 'ready'              # チャットUI表示済み、使用可能
-    LOGIN_REQUIRED = 'login_required'  # ログインが必要
-    LOADING = 'loading'          # 読み込み中
-    ERROR = 'error'              # エラー
+
+    READY = "ready"  # チャットUI表示済み、使用可能
+    LOGIN_REQUIRED = "login_required"  # ログインが必要
+    LOADING = "loading"  # 読み込み中
+    ERROR = "error"  # エラー
 
 
 class PlaywrightThreadExecutor:
@@ -462,10 +468,14 @@ class PlaywrightThreadExecutor:
             if self._shutdown_flag:
                 raise RuntimeError("Executor has been shutdown and cannot be restarted")
             if self._thread is not None and self._thread.is_alive():
-                logger.debug("[THREAD] Executor thread already alive: %s", self._thread.ident)
+                logger.debug(
+                    "[THREAD] Executor thread already alive: %s", self._thread.ident
+                )
                 return
-            logger.debug("[THREAD] Creating new executor thread (old thread: %s)",
-                        self._thread.ident if self._thread else None)
+            logger.debug(
+                "[THREAD] Creating new executor thread (old thread: %s)",
+                self._thread.ident if self._thread else None,
+            )
             self._running = True
             self._thread = threading.Thread(target=self._worker, daemon=True)
             self._thread.start()
@@ -506,8 +516,8 @@ class PlaywrightThreadExecutor:
                 item = self._request_queue.get_nowait()
                 if item[0] is not None:
                     _, _, result_event = item
-                    result_event['error'] = TimeoutError("Executor shutdown")
-                    result_event['done'].set()
+                    result_event["error"] = TimeoutError("Executor shutdown")
+                    result_event["done"].set()
                     cleared_count += 1
             except thread_queue.Empty:
                 break
@@ -522,7 +532,9 @@ class PlaywrightThreadExecutor:
             self._thread.join(timeout=1)
             if self._thread.is_alive():
                 # This is not critical - daemon thread will be terminated on process exit
-                logger.debug("Playwright worker thread still running, will be terminated on exit")
+                logger.debug(
+                    "Playwright worker thread still running, will be terminated on exit"
+                )
 
     def _worker(self):
         """Worker thread that processes Playwright operations.
@@ -532,7 +544,10 @@ class PlaywrightThreadExecutor:
             The _shutdown_flag is checked after getting an item from the queue
             to handle the case where shutdown() is called while waiting.
         """
-        logger.debug("[THREAD] Executor worker thread started: %s", threading.current_thread().ident)
+        logger.debug(
+            "[THREAD] Executor worker thread started: %s",
+            threading.current_thread().ident,
+        )
         while self._running and not self._shutdown_flag:
             try:
                 item = self._request_queue.get(timeout=1)
@@ -542,22 +557,28 @@ class PlaywrightThreadExecutor:
                 # Check shutdown flag after getting item (may have been set while waiting)
                 if self._shutdown_flag:
                     _, _, result_event = item
-                    result_event['error'] = TimeoutError("Executor shutdown during processing")
-                    result_event['done'].set()
+                    result_event["error"] = TimeoutError(
+                        "Executor shutdown during processing"
+                    )
+                    result_event["done"].set()
                     break
 
                 func, args, result_event = item
-                func_name = func.__name__ if hasattr(func, '__name__') else str(func)
-                logger.debug("[THREAD] Worker executing %s in thread %s", func_name, threading.current_thread().ident)
+                func_name = func.__name__ if hasattr(func, "__name__") else str(func)
+                logger.debug(
+                    "[THREAD] Worker executing %s in thread %s",
+                    func_name,
+                    threading.current_thread().ident,
+                )
                 try:
                     result = func(*args)
-                    result_event['result'] = result
-                    result_event['error'] = None
+                    result_event["result"] = result
+                    result_event["error"] = None
                 except Exception as e:
-                    result_event['result'] = None
-                    result_event['error'] = e
+                    result_event["result"] = None
+                    result_event["error"] = e
                 finally:
-                    result_event['done'].set()
+                    result_event["done"].set()
             except thread_queue.Empty:
                 continue
 
@@ -585,9 +606,14 @@ class PlaywrightThreadExecutor:
             TimeoutError if the operation times out
         """
         # If called from the worker thread, execute directly to avoid deadlock.
-        if self._thread is not None and threading.current_thread().ident == self._thread.ident:
-            logger.debug("[THREAD] execute() called from worker thread; running inline: %s",
-                         func.__name__ if hasattr(func, '__name__') else func)
+        if (
+            self._thread is not None
+            and threading.current_thread().ident == self._thread.ident
+        ):
+            logger.debug(
+                "[THREAD] execute() called from worker thread; running inline: %s",
+                func.__name__ if hasattr(func, "__name__") else func,
+            )
             return func(*args)
 
         # Check shutdown flag before starting
@@ -595,14 +621,17 @@ class PlaywrightThreadExecutor:
             raise RuntimeError("Executor is shutting down")
 
         self.start()  # Ensure thread is running
-        logger.debug("[THREAD] execute() called from thread %s for func %s, worker thread: %s",
-                    threading.current_thread().ident, func.__name__ if hasattr(func, '__name__') else func,
-                    self._thread.ident if self._thread else None)
+        logger.debug(
+            "[THREAD] execute() called from thread %s for func %s, worker thread: %s",
+            threading.current_thread().ident,
+            func.__name__ if hasattr(func, "__name__") else func,
+            self._thread.ident if self._thread else None,
+        )
 
         result_event = {
-            'done': threading.Event(),
-            'result': None,
-            'error': None,
+            "done": threading.Event(),
+            "result": None,
+            "error": None,
         }
 
         # Double-check after starting (shutdown may have occurred)
@@ -615,19 +644,21 @@ class PlaywrightThreadExecutor:
         timeout_float = float(timeout)
         poll_interval = 0.1
         while True:
-            if result_event['done'].wait(timeout=poll_interval):
+            if result_event["done"].wait(timeout=poll_interval):
                 break
 
             if cancel_check is not None and cancel_check():
                 raise TranslationCancelledError("Translation cancelled by user")
 
             if time.monotonic() - start_time >= timeout_float:
-                raise TimeoutError(f"Playwright operation timed out after {timeout} seconds")
+                raise TimeoutError(
+                    f"Playwright operation timed out after {timeout} seconds"
+                )
 
-        if result_event['error'] is not None:
-            raise result_event['error']
+        if result_event["error"] is not None:
+            raise result_event["error"]
 
-        return result_event['result']
+        return result_event["result"]
 
 
 # Global singleton instance for Playwright thread execution
@@ -664,15 +695,19 @@ def _log_playwright_init_details(phase: str, include_paths: bool = False) -> flo
         - Other phases only log memory info for minimal overhead (~1ms vs ~1.5s)
     """
     import time as _time
+
     t_start = _time.perf_counter()
 
     try:
         import psutil
+
         # Memory info only (fast, ~1ms)
         memory = psutil.virtual_memory()
         logger.debug(
             "[PLAYWRIGHT_INIT] %s: Memory=%.1f%% (available=%.1fGB)",
-            phase, memory.percent, memory.available / (1024**3)
+            phase,
+            memory.percent,
+            memory.available / (1024**3),
         )
 
         # Log Playwright paths only when requested (first call)
@@ -683,19 +718,26 @@ def _log_playwright_init_details(phase: str, include_paths: bool = False) -> flo
         # This is the only phase where we need to confirm the process is running
         if phase == "after_start":
             node_procs = []
-            for proc in psutil.process_iter(['pid', 'name']):
+            for proc in psutil.process_iter(["pid", "name"]):
                 try:
-                    name = proc.info['name'].lower() if proc.info['name'] else ''
-                    if 'node' in name:
-                        node_procs.append(f"{proc.info['name']}(pid={proc.info['pid']})")
+                    name = proc.info["name"].lower() if proc.info["name"] else ""
+                    if "node" in name:
+                        node_procs.append(
+                            f"{proc.info['name']}(pid={proc.info['pid']})"
+                        )
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     pass
 
             if node_procs:
-                logger.debug("[PLAYWRIGHT_INIT] %s: Existing Node.js processes: %s",
-                            phase, ', '.join(node_procs[:5]))
+                logger.debug(
+                    "[PLAYWRIGHT_INIT] %s: Existing Node.js processes: %s",
+                    phase,
+                    ", ".join(node_procs[:5]),
+                )
     except ImportError:
-        logger.debug("[PLAYWRIGHT_INIT] %s: psutil not available for detailed logging", phase)
+        logger.debug(
+            "[PLAYWRIGHT_INIT] %s: psutil not available for detailed logging", phase
+        )
     except Exception as e:
         logger.debug("[PLAYWRIGHT_INIT] %s: Failed to get system info: %s", phase, e)
 
@@ -705,14 +747,20 @@ def _log_playwright_init_details(phase: str, include_paths: bool = False) -> flo
 def _log_playwright_paths() -> None:
     """Log Playwright installation paths for debugging slow initialization."""
     try:
-        deep_scan = os.environ.get("YAKULINGO_PLAYWRIGHT_PATH_DEEP_SCAN", "").lower() in ("1", "true", "yes", "on")
+        deep_scan = os.environ.get(
+            "YAKULINGO_PLAYWRIGHT_PATH_DEEP_SCAN", ""
+        ).lower() in ("1", "true", "yes", "on")
 
         browsers_path_env_raw = os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "").strip()
         if browsers_path_env_raw:
             if browsers_path_env_raw == "0":
-                logger.debug("[PLAYWRIGHT_INIT] PLAYWRIGHT_BROWSERS_PATH=0 (special value)")
+                logger.debug(
+                    "[PLAYWRIGHT_INIT] PLAYWRIGHT_BROWSERS_PATH=0 (special value)"
+                )
             else:
-                resolved_env_path = _resolve_playwright_browsers_path(browsers_path_env_raw)
+                resolved_env_path = _resolve_playwright_browsers_path(
+                    browsers_path_env_raw
+                )
                 logger.debug(
                     "[PLAYWRIGHT_INIT] PLAYWRIGHT_BROWSERS_PATH=%s (resolved=%s)",
                     browsers_path_env_raw,
@@ -812,9 +860,13 @@ def _log_playwright_browsers_path(path: Path, label: str, deep_scan: bool) -> No
                 driver_package_str = ""
             if driver_package_str:
                 driver_package_path = Path(driver_package_str)
-                node_exe = driver_package_path.parent / ("node.exe" if sys.platform == "win32" else "node")
+                node_exe = driver_package_path.parent / (
+                    "node.exe" if sys.platform == "win32" else "node"
+                )
                 if node_exe.exists():
-                    logger.debug("[PLAYWRIGHT_INIT] Driver node (%s): %s", label, node_exe)
+                    logger.debug(
+                        "[PLAYWRIGHT_INIT] Driver node (%s): %s", label, node_exe
+                    )
 
 
 def _pre_init_playwright_impl():
@@ -822,28 +874,42 @@ def _pre_init_playwright_impl():
     global _pre_initialized_playwright, _pre_init_error, _pre_init_thread_id
     try:
         import time as _time
+
         _t_start = _time.perf_counter()
         current_thread_id = threading.current_thread().ident
-        logger.debug("[THREAD] pre_init_playwright_impl running in thread %s", current_thread_id)
+        logger.debug(
+            "[THREAD] pre_init_playwright_impl running in thread %s", current_thread_id
+        )
 
         # Log system state before initialization (include paths for debugging)
         log_time = _log_playwright_init_details("before_init", include_paths=True)
-        logger.debug("[TIMING] pre_init system_info: %.2fs (cumulative: %.2fs)",
-                    log_time, _time.perf_counter() - _t_start)
+        logger.debug(
+            "[TIMING] pre_init system_info: %.2fs (cumulative: %.2fs)",
+            log_time,
+            _time.perf_counter() - _t_start,
+        )
 
         # Step 1: Import Playwright (may trigger antivirus scan)
         _t_step = _time.perf_counter()
         _, sync_playwright = _get_playwright()
         step_time = _time.perf_counter() - _t_step
         cumulative = _time.perf_counter() - _t_start
-        logger.debug("[TIMING] pre_init _get_playwright(): %.2fs (cumulative: %.2fs)", step_time, cumulative)
+        logger.debug(
+            "[TIMING] pre_init _get_playwright(): %.2fs (cumulative: %.2fs)",
+            step_time,
+            cumulative,
+        )
 
         # Step 2: Create Playwright context manager
         _t_step = _time.perf_counter()
         pw_context = sync_playwright()
         step_time = _time.perf_counter() - _t_step
         cumulative = _time.perf_counter() - _t_start
-        logger.debug("[TIMING] pre_init sync_playwright(): %.2fs (cumulative: %.2fs)", step_time, cumulative)
+        logger.debug(
+            "[TIMING] pre_init sync_playwright(): %.2fs (cumulative: %.2fs)",
+            step_time,
+            cumulative,
+        )
 
         # Log memory state before Node.js server startup
         _log_playwright_init_details("before_start")
@@ -854,15 +920,22 @@ def _pre_init_playwright_impl():
         _pre_initialized_playwright = pw_context.start()
         step_time = _time.perf_counter() - _t_step
         cumulative = _time.perf_counter() - _t_start
-        logger.debug("[TIMING] pre_init .start(): %.2fs (cumulative: %.2fs)", step_time, cumulative)
+        logger.debug(
+            "[TIMING] pre_init .start(): %.2fs (cumulative: %.2fs)",
+            step_time,
+            cumulative,
+        )
 
         # Log after start() completes (includes Node.js process verification)
         _log_playwright_init_details("after_start")
 
         _pre_init_thread_id = current_thread_id  # Record thread ID for validation
         total_time = _time.perf_counter() - _t_start
-        logger.info("[TIMING] Playwright pre-initialization completed in thread %s: %.2fs",
-                    current_thread_id, total_time)
+        logger.info(
+            "[TIMING] Playwright pre-initialization completed in thread %s: %.2fs",
+            current_thread_id,
+            total_time,
+        )
 
         # Warn if initialization took too long (with detailed breakdown)
         if total_time > 5.0:
@@ -871,7 +944,12 @@ def _pre_init_playwright_impl():
                 "[PLAYWRIGHT_INIT] Slow initialization detected (%.2fs). "
                 "Check antivirus exclusions for: %s",
                 total_time,
-                browsers_path_hint or ("%LOCALAPPDATA%\\ms-playwright" if sys.platform == "win32" else "~/.cache/ms-playwright"),
+                browsers_path_hint
+                or (
+                    "%LOCALAPPDATA%\\ms-playwright"
+                    if sys.platform == "win32"
+                    else "~/.cache/ms-playwright"
+                ),
             )
 
         return True
@@ -926,12 +1004,12 @@ def pre_initialize_playwright():
         # This allows pre_initialize_playwright() to return immediately
         try:
             init_thread = threading.Thread(
-                target=_pre_init_thread_wrapper,
-                daemon=True,
-                name="playwright-preinit"
+                target=_pre_init_thread_wrapper, daemon=True, name="playwright-preinit"
             )
             init_thread.start()
-            logger.info("[TIMING] Playwright pre-initialization started (background thread)")
+            logger.info(
+                "[TIMING] Playwright pre-initialization started (background thread)"
+            )
         except Exception as e:
             logger.warning("Failed to start Playwright pre-initialization: %s", e)
             _pre_init_error = e
@@ -961,7 +1039,9 @@ def get_pre_initialized_playwright(timeout: float = 30.0):
         # because its greenlet context is bound to the original thread
         current_executor_thread = _playwright_executor._thread
         if current_executor_thread is None:
-            logger.debug("[THREAD] get_pre_initialized_playwright: executor thread not started yet")
+            logger.debug(
+                "[THREAD] get_pre_initialized_playwright: executor thread not started yet"
+            )
             return _pre_initialized_playwright
 
         current_thread_id = current_executor_thread.ident
@@ -969,13 +1049,17 @@ def get_pre_initialized_playwright(timeout: float = 30.0):
             logger.warning(
                 "[THREAD] Executor thread changed! Playwright initialized in thread %s, "
                 "current executor thread %s. Discarding pre-initialized instance.",
-                _pre_init_thread_id, current_thread_id
+                _pre_init_thread_id,
+                current_thread_id,
             )
             # Clear the stale instance
             clear_pre_initialized_playwright()
             return None
 
-        logger.debug("[THREAD] get_pre_initialized_playwright: thread match OK (%s)", current_thread_id)
+        logger.debug(
+            "[THREAD] get_pre_initialized_playwright: thread match OK (%s)",
+            current_thread_id,
+        )
         return _pre_initialized_playwright
     return None
 
@@ -989,7 +1073,11 @@ def clear_pre_initialized_playwright():
     Also resets _pre_init_event to allow re-initialization (e.g., after disconnect
     during PP-DocLayout-L initialization).
     """
-    global _pre_initialized_playwright, _pre_init_error, _pre_init_thread_id, _pre_init_started
+    global \
+        _pre_initialized_playwright, \
+        _pre_init_error, \
+        _pre_init_thread_id, \
+        _pre_init_started
     with _pre_init_lock:
         _pre_initialized_playwright = None
         _pre_init_error = None
@@ -1013,6 +1101,7 @@ def wait_for_playwright_init(timeout: float = 30.0) -> bool:
         True if initialization completed (success or failure), False if timeout
     """
     import time as _time
+
     if not _pre_init_started:
         return False
     _t_start = _time.perf_counter()
@@ -1020,9 +1109,13 @@ def wait_for_playwright_init(timeout: float = 30.0) -> bool:
     elapsed = _time.perf_counter() - _t_start
     if result:
         if _pre_init_error is not None:
-            logger.debug("[TIMING] Playwright init wait completed (with error): %.2fs", elapsed)
+            logger.debug(
+                "[TIMING] Playwright init wait completed (with error): %.2fs", elapsed
+            )
         else:
-            logger.debug("[TIMING] Playwright init wait completed (success): %.2fs", elapsed)
+            logger.debug(
+                "[TIMING] Playwright init wait completed (success): %.2fs", elapsed
+            )
     else:
         logger.warning("[TIMING] Playwright init wait timed out after %.2fs", elapsed)
     return result
@@ -1041,7 +1134,9 @@ class CopilotHandler:
     # Configuration constants
     DEFAULT_CDP_PORT = 9333  # Dedicated port for translator
     EDGE_STARTUP_MAX_ATTEMPTS = 80  # Maximum iterations to wait for Edge startup
-    EDGE_STARTUP_CHECK_INTERVAL = 0.25  # Seconds between startup checks (total: 20 seconds)
+    EDGE_STARTUP_CHECK_INTERVAL = (
+        0.25  # Seconds between startup checks (total: 20 seconds)
+    )
     # Edge taskbar suppression during startup can fail on cold boots where the window
     # is created late or Edge recreates the top-level window after initialization.
     # Keep re-applying for a while to ensure the taskbar entry stays hidden.
@@ -1050,35 +1145,45 @@ class CopilotHandler:
     # Response detection settings
     # OPTIMIZED: Reduced stable count from 3 to 2 for faster response detection
     # Stop button visibility check ensures response is complete before stability counting
-    RESPONSE_STABLE_COUNT = 2  # Number of stable checks before considering response complete
-    DEFAULT_RESPONSE_TIMEOUT = 600  # Default timeout for response in seconds (10 minutes)
+    RESPONSE_STABLE_COUNT = (
+        2  # Number of stable checks before considering response complete
+    )
+    DEFAULT_RESPONSE_TIMEOUT = (
+        600  # Default timeout for response in seconds (10 minutes)
+    )
     # When stop button is never detected (possible stale selector), use higher stable count
     # Reduced from 5 to 3 for faster response on short translations
-    STALE_SELECTOR_STABLE_COUNT = 3  # Extra stability checks when stop button not detected
+    STALE_SELECTOR_STABLE_COUNT = (
+        3  # Extra stability checks when stop button not detected
+    )
 
     # =========================================================================
     # Timeout Settings - Centralized for consistency across operations
     # =========================================================================
     # Page navigation timeouts (milliseconds) - for Playwright page.goto()
-    PAGE_GOTO_TIMEOUT_MS = 30000        # 30 seconds for initial page load
+    PAGE_GOTO_TIMEOUT_MS = 30000  # 30 seconds for initial page load
     PAGE_LOAD_STATE_TIMEOUT_MS = 10000  # 10 seconds for load state checks
-    PAGE_NETWORK_IDLE_TIMEOUT_MS = 5000 # 5 seconds for network idle checks
+    PAGE_NETWORK_IDLE_TIMEOUT_MS = 5000  # 5 seconds for network idle checks
 
     # Selector wait timeouts (milliseconds) - for Playwright wait_for_selector()
-    SELECTOR_CHAT_INPUT_FIRST_STEP_TIMEOUT_MS = 1000  # 1 second for first step (fast path for logged-in users)
-    SELECTOR_CHAT_INPUT_STEP_TIMEOUT_MS = 2000  # 2 seconds per subsequent step for early login detection
-    SELECTOR_CHAT_INPUT_MAX_STEPS = 7        # Max steps (1s + 2s*6 = 13s total)
-    SELECTOR_RESPONSE_TIMEOUT_MS = 10000     # 10 seconds for response element to appear
-    SELECTOR_LOGIN_CHECK_TIMEOUT_MS = 2000   # 2 seconds for login state checks
-    SELECTOR_QUICK_CHECK_TIMEOUT_MS = 500    # 0.5 seconds for instant checks
+    SELECTOR_CHAT_INPUT_FIRST_STEP_TIMEOUT_MS = (
+        1000  # 1 second for first step (fast path for logged-in users)
+    )
+    SELECTOR_CHAT_INPUT_STEP_TIMEOUT_MS = (
+        2000  # 2 seconds per subsequent step for early login detection
+    )
+    SELECTOR_CHAT_INPUT_MAX_STEPS = 7  # Max steps (1s + 2s*6 = 13s total)
+    SELECTOR_RESPONSE_TIMEOUT_MS = 10000  # 10 seconds for response element to appear
+    SELECTOR_LOGIN_CHECK_TIMEOUT_MS = 2000  # 2 seconds for login state checks
+    SELECTOR_QUICK_CHECK_TIMEOUT_MS = 500  # 0.5 seconds for instant checks
 
     # Login/connection timeouts (seconds)
-    LOGIN_WAIT_TIMEOUT_SECONDS = 300     # 5 minutes to wait for user login
-    AUTO_LOGIN_TIMEOUT_SECONDS = 15      # 15 seconds for auto-login to complete
+    LOGIN_WAIT_TIMEOUT_SECONDS = 300  # 5 minutes to wait for user login
+    AUTO_LOGIN_TIMEOUT_SECONDS = 15  # 15 seconds for auto-login to complete
 
     # Thread/IPC timeouts (seconds)
-    THREAD_JOIN_TIMEOUT_SECONDS = 5      # 5 seconds for thread cleanup
-    EXECUTOR_TIMEOUT_BUFFER_SECONDS = 60 # Extra time for executor vs response timeout
+    THREAD_JOIN_TIMEOUT_SECONDS = 5  # 5 seconds for thread cleanup
+    EXECUTOR_TIMEOUT_BUFFER_SECONDS = 60  # Extra time for executor vs response timeout
 
     # =========================================================================
     # Edge Window Settings - Minimum size when bringing window to foreground
@@ -1086,8 +1191,8 @@ class CopilotHandler:
     # Some environments show Edge in very small windows; ensure usable size.
     # Note: Do not use these values as "window is unusable" thresholds; low-resolution
     # displays and right-half tiling can legitimately be smaller than 1024x768.
-    MIN_EDGE_WINDOW_WIDTH = 1024   # Minimum width in pixels
-    MIN_EDGE_WINDOW_HEIGHT = 768   # Minimum height in pixels
+    MIN_EDGE_WINDOW_WIDTH = 1024  # Minimum width in pixels
+    MIN_EDGE_WINDOW_HEIGHT = 768  # Minimum height in pixels
     # Treat windows smaller than this as broken/unusable (sanity check only).
     EDGE_WINDOW_SANITY_MIN_WIDTH = 320
     EDGE_WINDOW_SANITY_MIN_HEIGHT = 240
@@ -1128,31 +1233,33 @@ class CopilotHandler:
     # =========================================================================
 
     # Chat input field selectors
-    CHAT_INPUT_SELECTOR = '#m365-chat-editor-target-element, [data-lexical-editor="true"]'
+    CHAT_INPUT_SELECTOR = (
+        '#m365-chat-editor-target-element, [data-lexical-editor="true"]'
+    )
     CHAT_INPUT_SELECTOR_EXTENDED = '#m365-chat-editor-target-element, [data-lexical-editor="true"], [contenteditable="true"]'
 
     # Send button selectors - Multiple fallbacks for UI changes
     # Note: Copilot may change the UI, so we include various patterns
     SEND_BUTTON_SELECTOR = (
-        '.fai-SendButton:not([disabled]), '
+        ".fai-SendButton:not([disabled]), "
         'button[type="submit"]:not([disabled]), '
         'button[aria-label*="送信"]:not([disabled]), '
         'button[aria-label*="Send"]:not([disabled]), '
         '[data-testid="sendButton"]:not([disabled]), '
-        'button.send-button:not([disabled])'
+        "button.send-button:not([disabled])"
     )
     SEND_BUTTON_ANY = '.fai-SendButton, button[type="submit"], button[aria-label*="送信"], button[aria-label*="Send"]'
 
     # Stop button selectors (for cancelling generation)
     # Indicates Copilot is processing - used to verify send was successful
     STOP_BUTTON_SELECTORS = (
-        '.fai-SendButton__stopBackground',
+        ".fai-SendButton__stopBackground",
         '[data-testid="stopGeneratingButton"]',
         '.fai-SendButton button[aria-label*="Stop"]',
         '.fai-SendButton button[aria-label*="停止"]',
         '.fai-SendButton button[aria-label*="Cancel"]',
         '.fai-SendButton button[aria-label*="キャンセル"]',
-        '.fai-SendButton .stop-button',
+        ".fai-SendButton .stop-button",
         '.fai-SendButton [data-testid="stop-button"]',
     )
     STOP_BUTTON_SELECTOR_COMBINED = ", ".join(STOP_BUTTON_SELECTORS)
@@ -1169,10 +1276,18 @@ class CopilotHandler:
     # Auth dialog keywords (Japanese and English)
     AUTH_DIALOG_KEYWORDS = (
         # Japanese
-        "認証", "ログイン", "サインイン", "パスワード",
+        "認証",
+        "ログイン",
+        "サインイン",
+        "パスワード",
         # English
-        "authentication", "login", "sign in", "sign-in", "password",
-        "verify", "credential",
+        "authentication",
+        "login",
+        "sign in",
+        "sign-in",
+        "password",
+        "verify",
+        "credential",
     )
 
     # Copilot response selectors (fallback for DOM changes)
@@ -1185,11 +1300,11 @@ class CopilotHandler:
         'div[data-message-author-role="assistant"]',
         # Additional patterns for newer Copilot UI
         '[data-testid="response-content"]',
-        '.message-content',
-        '.assistant-message',
+        ".message-content",
+        ".assistant-message",
         '[role="article"][data-message-author-role="assistant"]',
-        '.fai-Response',
-        '.chat-message-assistant',
+        ".fai-Response",
+        ".chat-message-assistant",
     )
     RESPONSE_SELECTOR_COMBINED = ", ".join(RESPONSE_SELECTORS)
     # Streaming preview selectors (avoid broad containers used for final parsing).
@@ -1206,31 +1321,35 @@ class CopilotHandler:
     # NOTE: Do not include these in RESPONSE_SELECTORS because RESPONSE_SELECTORS are also
     # used for extracting the final answer text.
     CHAIN_OF_THOUGHT_CARD_SELECTORS = (
-        '.fai-ChainOfThought__card',
+        ".fai-ChainOfThought__card",
         '[class*="ChainOfThought__card"]',
     )
     CHAIN_OF_THOUGHT_EXPAND_BUTTON_SELECTORS = (
-        '.fai-ChainOfThought__expandButton',
+        ".fai-ChainOfThought__expandButton",
         '[class*="ChainOfThought__expandButton"]',
         '[id^="cot-"][id$="expand-button"]',
     )
     CHAIN_OF_THOUGHT_PANEL_SELECTORS = (
-        '.fai-ChainOfThought__activitiesPanel',
+        ".fai-ChainOfThought__activitiesPanel",
         '[class*="ChainOfThought__activitiesPanel"]',
-        '.fai-ChainOfThought__activitiesAccordion',
+        ".fai-ChainOfThought__activitiesAccordion",
         '[class*="ChainOfThought__activitiesAccordion"]',
         '[id^="cot-"][id$="activity-panel"]',
     )
     CHAIN_OF_THOUGHT_CARD_SELECTOR_COMBINED = ", ".join(CHAIN_OF_THOUGHT_CARD_SELECTORS)
-    CHAIN_OF_THOUGHT_EXPAND_BUTTON_SELECTOR_COMBINED = ", ".join(CHAIN_OF_THOUGHT_EXPAND_BUTTON_SELECTORS)
-    CHAIN_OF_THOUGHT_PANEL_SELECTOR_COMBINED = ", ".join(CHAIN_OF_THOUGHT_PANEL_SELECTORS)
+    CHAIN_OF_THOUGHT_EXPAND_BUTTON_SELECTOR_COMBINED = ", ".join(
+        CHAIN_OF_THOUGHT_EXPAND_BUTTON_SELECTORS
+    )
+    CHAIN_OF_THOUGHT_PANEL_SELECTOR_COMBINED = ", ".join(
+        CHAIN_OF_THOUGHT_PANEL_SELECTORS
+    )
 
     # GPT Mode switcher selectors
     # Used to ensure a deterministic GPT-5.2 mode is selected.
     # NOTE: "Think Deeper" is preferred for translation quality.
     # Flow: 1. Click #gptModeSwitcher -> 2. Hover "More" (role=button) -> 3. Click target (role=menuitem)
     GPT_MODE_SWITCHER_SELECTORS = (
-        '#gptModeSwitcher',
+        "#gptModeSwitcher",
         '[data-testid="gptModeSwitcher"]',
         '[data-testid="modelSwitcher"]',
         '[data-testid="model-switcher"]',
@@ -1239,7 +1358,7 @@ class CopilotHandler:
         'button[aria-label*="モデル"]',
         'button[aria-label*="GPT"]',
     )
-    GPT_MODE_SWITCHER_SELECTOR = '#gptModeSwitcher'
+    GPT_MODE_SWITCHER_SELECTOR = "#gptModeSwitcher"
     GPT_MODE_MENU_SELECTOR = '[role="menu"], [role="listbox"]'
     GPT_MODE_MENU_VISIBLE_SELECTOR = '[role="menu"]:visible, [role="listbox"]:visible'
     GPT_MODE_MENU_ITEM_SELECTOR = '[role="menuitem"], [role="option"]'
@@ -1251,10 +1370,12 @@ class CopilotHandler:
     # It may appear as a submenu button (role=button/aria-haspopup) or as a plain menu item (role=menuitem/option).
     GPT_MODE_MORE_MENU_BUTTON_SELECTOR = ':is([role="button"][aria-haspopup="menu"], [role="menuitem"][aria-haspopup="menu"], [role="option"][aria-haspopup="menu"], [role="menuitem"], [role="option"], button)'
     GPT_MODE_OVERFLOW_MENU_BUTTON_SELECTORS = (
-        '#moreButton',
+        "#moreButton",
         '[data-automation-id="moreButton"]',
     )
-    GPT_MODE_OVERFLOW_MENU_BUTTON_SELECTOR = ", ".join(GPT_MODE_OVERFLOW_MENU_BUTTON_SELECTORS)
+    GPT_MODE_OVERFLOW_MENU_BUTTON_SELECTOR = ", ".join(
+        GPT_MODE_OVERFLOW_MENU_BUTTON_SELECTORS
+    )
     # Prefer GPT-5.2 Think Deeper (quality).
     # Some Copilot UIs omit the "GPT-5.2" prefix and show only "Think Deeper"/"クイック応答".
     # In that case, allow those as a best-effort fallback to keep hotkey translation working.
@@ -1269,7 +1390,7 @@ class CopilotHandler:
         "Quick Response",
     )
     GPT_MODE_TARGET = GPT_MODE_TARGETS[0]
-    GPT_MODE_MORE_TEXTS = ('More', 'その他', 'さらに表示')
+    GPT_MODE_MORE_TEXTS = ("More", "その他", "さらに表示")
     # OPTIMIZED: Reduced menu wait to minimum (just enough for React to update)
     GPT_MODE_MENU_WAIT = 0.05  # Wait for menu to open/close (50ms)
     GPT_MODE_MORE_HOVER_WAIT = 0.6  # Wait for submenu to render after hover
@@ -1303,10 +1424,10 @@ class CopilotHandler:
     # URL patterns for Copilot detection (login complete check)
     # These domains indicate we are on a Copilot page
     COPILOT_URL_PATTERNS = (
-        'm365.cloud.microsoft',
-        'copilot.microsoft.com',
-        'microsoft365.com/chat',
-        'bing.com/chat',
+        "m365.cloud.microsoft",
+        "copilot.microsoft.com",
+        "microsoft365.com/chat",
+        "bing.com/chat",
     )
 
     # Connection error types for detailed user feedback
@@ -1322,7 +1443,7 @@ class CopilotHandler:
     # Rate limiting / retry settings
     RETRY_BACKOFF_BASE = 2.0  # Base for exponential backoff (2^attempt seconds)
     RETRY_BACKOFF_MAX = 16.0  # Maximum backoff time in seconds
-    RETRY_JITTER_MAX = 1.0    # Random jitter to avoid thundering herd
+    RETRY_JITTER_MAX = 1.0  # Random jitter to avoid thundering herd
     STATE_CHECK_BACKOFF_SECONDS = 2.0  # Brief pause after state check timeouts
     STATE_CHECK_READY_GRACE_SECONDS = 30.0  # Use cached READY briefly on timeout
     _PLAYWRIGHT_UNRESPONSIVE_MARKERS = (
@@ -1451,7 +1572,9 @@ class CopilotHandler:
         """Run _connect_impl with connect-inflight tracking."""
         self._mark_connect_start()
         try:
-            return self._connect_impl(bring_to_foreground_on_login, defer_window_positioning)
+            return self._connect_impl(
+                bring_to_foreground_on_login, defer_window_positioning
+            )
         finally:
             self._mark_connect_end()
 
@@ -1466,6 +1589,7 @@ class CopilotHandler:
         if self._edge_pid:
             try:
                 import psutil
+
                 return psutil.pid_exists(self._edge_pid)
             except Exception:
                 pass
@@ -1504,7 +1628,9 @@ class CopilotHandler:
             edge_hwnd = self._find_edge_window_handle()
             if edge_hwnd is not None:
                 if self._is_edge_window_hung_win32(int(edge_hwnd)):
-                    logger.warning("Edge window appears hung; treating as closed for recovery")
+                    logger.warning(
+                        "Edge window appears hung; treating as closed for recovery"
+                    )
                     return False
                 return True
         except Exception:
@@ -1513,7 +1639,9 @@ class CopilotHandler:
         # so fall back to the process/port-based liveness check to avoid false negatives.
         return self.is_edge_process_alive()
 
-    def set_hotkey_layout_active(self, active: bool, *, preserve_edge: bool = False) -> None:
+    def set_hotkey_layout_active(
+        self, active: bool, *, preserve_edge: bool = False
+    ) -> None:
         """Track whether a hotkey layout is active."""
         self._hotkey_layout_active = active
         self._hotkey_preserve_edge = preserve_edge if active else False
@@ -1545,16 +1673,17 @@ class CopilotHandler:
             attempt: Current attempt number (0-indexed)
             max_retries: Maximum number of retries for logging
         """
-        backoff_time = min(
-            self.RETRY_BACKOFF_BASE ** attempt,
-            self.RETRY_BACKOFF_MAX
-        )
+        backoff_time = min(self.RETRY_BACKOFF_BASE**attempt, self.RETRY_BACKOFF_MAX)
         # Add jitter to avoid thundering herd
         jitter = random.uniform(0, self.RETRY_JITTER_MAX)
         wait_time = backoff_time + jitter
         logger.info(
             "Retrying in %.1f seconds (attempt %d/%d, backoff=%.1f, jitter=%.2f)",
-            wait_time, attempt + 1, max_retries + 1, backoff_time, jitter
+            wait_time,
+            attempt + 1,
+            max_retries + 1,
+            backoff_time,
+            jitter,
         )
         time.sleep(wait_time)
 
@@ -1603,7 +1732,14 @@ class CopilotHandler:
         elif sys.platform == "darwin":
             candidates = [
                 "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-                str(Path.home() / "Applications" / "Microsoft Edge.app" / "Contents" / "MacOS" / "Microsoft Edge"),
+                str(
+                    Path.home()
+                    / "Applications"
+                    / "Microsoft Edge.app"
+                    / "Contents"
+                    / "MacOS"
+                    / "Microsoft Edge"
+                ),
             ]
         else:
             # Linux / WSL: check common executable names and install locations
@@ -1611,10 +1747,12 @@ class CopilotHandler:
                 which_path = shutil.which(binary)
                 if which_path:
                     candidates.append(which_path)
-            candidates.extend([
-                "/usr/bin/microsoft-edge",
-                "/opt/microsoft/msedge/msedge",
-            ])
+            candidates.extend(
+                [
+                    "/usr/bin/microsoft-edge",
+                    "/opt/microsoft/msedge/msedge",
+                ]
+            )
 
         for path in candidates:
             logger.debug("Checking Edge executable at %s", path)
@@ -1622,7 +1760,11 @@ class CopilotHandler:
                 logger.info("Using Edge executable: %s", path)
                 return path
 
-        logger.debug("No Edge executable found (platform=%s, candidates=%d)", sys.platform, len(candidates))
+        logger.debug(
+            "No Edge executable found (platform=%s, candidates=%d)",
+            sys.platform,
+            len(candidates),
+        )
         return None
 
     def _get_profile_dir_path(self) -> Path:
@@ -1645,7 +1787,10 @@ class CopilotHandler:
         port_status = self._get_cdp_port_status()
         if port_status == "ours":
             if self._is_edge_window_hung_win32():
-                logger.warning("Detected hung Edge window on CDP port %d; restarting dedicated Edge", self.cdp_port)
+                logger.warning(
+                    "Detected hung Edge window on CDP port %d; restarting dedicated Edge",
+                    self.cdp_port,
+                )
                 return self._start_translator_edge()
             logger.debug("Edge already running on port %d", self.cdp_port)
             # Ensure the already-running dedicated Edge instance stays hidden from the taskbar.
@@ -1670,7 +1815,7 @@ class CopilotHandler:
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(0.5)  # Reduced from 1s (localhost is fast)
-            result = sock.connect_ex(('127.0.0.1', self.cdp_port))
+            result = sock.connect_ex(("127.0.0.1", self.cdp_port))
             return result == 0
         except (socket.error, OSError):
             return False
@@ -1690,8 +1835,13 @@ class CopilotHandler:
             local_cwd = os.environ.get("SYSTEMROOT", r"C:\Windows")
             result = subprocess.run(
                 [netstat_path, "-ano"],
-                capture_output=True, text=True, timeout=5, cwd=local_cwd,
-                creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
+                capture_output=True,
+                text=True,
+                timeout=5,
+                cwd=local_cwd,
+                creationflags=subprocess.CREATE_NO_WINDOW
+                if sys.platform == "win32"
+                else 0,
             )
             pids: list[int] = []
             for line in result.stdout.splitlines():
@@ -1706,7 +1856,9 @@ class CopilotHandler:
             logger.warning("Failed to get listening PIDs on port %d: %s", port, e)
             return []
 
-    def _inspect_process_for_cdp(self, pid: int, profile_hint: Optional[str]) -> dict[str, object]:
+    def _inspect_process_for_cdp(
+        self, pid: int, profile_hint: Optional[str]
+    ) -> dict[str, object]:
         """Inspect a PID for Edge/CDP ownership (best-effort)."""
         info = {
             "pid": pid,
@@ -1758,9 +1910,13 @@ class CopilotHandler:
         profile_dir = self.profile_dir or self._get_profile_dir_path()
         profile_hint = str(profile_dir)
         processes = [self._inspect_process_for_cdp(pid, profile_hint) for pid in pids]
-        inspected = any(proc_info["name"] or proc_info["cmdline"] for proc_info in processes)
+        inspected = any(
+            proc_info["name"] or proc_info["cmdline"] for proc_info in processes
+        )
 
-        our_proc = next((proc_info for proc_info in processes if proc_info["is_ours"]), None)
+        our_proc = next(
+            (proc_info for proc_info in processes if proc_info["is_ours"]), None
+        )
         if our_proc is not None:
             # Mark as ours so shutdown will also terminate an existing dedicated Edge
             # instance (e.g., leftover from a previous run or early-started Edge).
@@ -1807,8 +1963,12 @@ class CopilotHandler:
                 if proc_info["is_ours"]:
                     subprocess.run(
                         [taskkill_path, "/F", "/T", "/PID", str(pid)],
-                        capture_output=True, timeout=5, cwd=local_cwd,
-                        creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
+                        capture_output=True,
+                        timeout=5,
+                        cwd=local_cwd,
+                        creationflags=subprocess.CREATE_NO_WINDOW
+                        if sys.platform == "win32"
+                        else 0,
                     )
                     time.sleep(0.5)  # Reduced from 1s
                     return True
@@ -1823,7 +1983,9 @@ class CopilotHandler:
             logger.warning("Failed to kill existing Edge: %s", e)
             return False
 
-    def _kill_edge_processes_by_profile_and_port(self, profile_dir: Path, port: int) -> bool:
+    def _kill_edge_processes_by_profile_and_port(
+        self, profile_dir: Path, port: int
+    ) -> bool:
         """Kill Edge processes matching our dedicated profile + CDP port (Windows only).
 
         This is a last-resort cleanup path for shutdown races where we may lose the
@@ -1842,15 +2004,17 @@ class CopilotHandler:
         port_flag = f"--remote-debugging-port={port}"
 
         pids: set[int] = set()
-        for proc in psutil.process_iter(['pid', 'name', 'exe', 'cmdline']):
+        for proc in psutil.process_iter(["pid", "name", "exe", "cmdline"]):
             try:
-                name = (proc.info.get('name') or '').lower()
-                exe = (proc.info.get('exe') or '').lower()
-                if 'msedge' not in name and 'msedge' not in exe:
+                name = (proc.info.get("name") or "").lower()
+                exe = (proc.info.get("exe") or "").lower()
+                if "msedge" not in name and "msedge" not in exe:
                     continue
-                cmdline = " ".join(proc.info.get('cmdline') or []).replace("\\", "/").lower()
+                cmdline = (
+                    " ".join(proc.info.get("cmdline") or []).replace("\\", "/").lower()
+                )
                 if port_flag in cmdline and profile_cmp in cmdline:
-                    pid = proc.info.get('pid')
+                    pid = proc.info.get("pid")
                     if isinstance(pid, int):
                         pids.add(pid)
             except (psutil.NoSuchProcess, psutil.AccessDenied):
@@ -1902,7 +2066,9 @@ class CopilotHandler:
             logger.debug("Failed to spawn taskkill for PID %s: %s", pid, e)
             return False
 
-    def _kill_edge_processes_by_profile_and_port_async(self, profile_dir: Path, port: int) -> bool:
+    def _kill_edge_processes_by_profile_and_port_async(
+        self, profile_dir: Path, port: int
+    ) -> bool:
         """Spawn taskkill for Edge processes matching our dedicated profile + CDP port (Windows only)."""
         if sys.platform != "win32":
             return False
@@ -1915,15 +2081,17 @@ class CopilotHandler:
         port_flag = f"--remote-debugging-port={port}"
 
         pids: set[int] = set()
-        for proc in psutil.process_iter(['pid', 'name', 'exe', 'cmdline']):
+        for proc in psutil.process_iter(["pid", "name", "exe", "cmdline"]):
             try:
-                name = (proc.info.get('name') or '').lower()
-                exe = (proc.info.get('exe') or '').lower()
-                if 'msedge' not in name and 'msedge' not in exe:
+                name = (proc.info.get("name") or "").lower()
+                exe = (proc.info.get("exe") or "").lower()
+                if "msedge" not in name and "msedge" not in exe:
                     continue
-                cmdline = " ".join(proc.info.get('cmdline') or []).replace("\\", "/").lower()
+                cmdline = (
+                    " ".join(proc.info.get("cmdline") or []).replace("\\", "/").lower()
+                )
                 if port_flag in cmdline and profile_cmp in cmdline:
-                    pid = proc.info.get('pid')
+                    pid = proc.info.get("pid")
                     if isinstance(pid, int):
                         pids.add(pid)
             except (psutil.NoSuchProcess, psutil.AccessDenied):
@@ -1976,8 +2144,10 @@ class CopilotHandler:
             # OPTIMIZED: Reduced timeout from 2s to 1s for faster shutdown
             result = subprocess.run(
                 [taskkill_path, "/F", "/T", "/PID", str(pid)],
-                capture_output=True, timeout=1, cwd=local_cwd,
-                creationflags=subprocess.CREATE_NO_WINDOW
+                capture_output=True,
+                timeout=1,
+                cwd=local_cwd,
+                creationflags=subprocess.CREATE_NO_WINDOW,
             )
             # taskkill returns 0 on success, 128 if process not found
             if result.returncode == 0:
@@ -2090,11 +2260,13 @@ class CopilotHandler:
 
             # Configure window position based on display mode
             if display_mode == "minimized":
-                edge_args.extend([
-                    "--start-minimized",
-                    "--window-position=-32000,-32000",
-                    f"--window-size={self.MIN_EDGE_WINDOW_WIDTH},{self.MIN_EDGE_WINDOW_HEIGHT}",
-                ])
+                edge_args.extend(
+                    [
+                        "--start-minimized",
+                        "--window-position=-32000,-32000",
+                        f"--window-size={self.MIN_EDGE_WINDOW_WIDTH},{self.MIN_EDGE_WINDOW_HEIGHT}",
+                    ]
+                )
                 logger.debug(
                     "Starting Edge in minimized mode (off-screen/start-minimized) at %dx%d",
                     self.MIN_EDGE_WINDOW_WIDTH,
@@ -2165,12 +2337,17 @@ class CopilotHandler:
         except Exception:
             display_mode = "minimized"
         edge_layout_mode = getattr(self, "_edge_layout_mode", None)
-        if display_mode == "foreground" and edge_layout_mode not in ("offscreen", "triple"):
+        if display_mode == "foreground" and edge_layout_mode not in (
+            "offscreen",
+            "triple",
+        ):
             return
 
         def _worker() -> None:
             start_at = time.monotonic()
-            max_seconds = float(getattr(self, "EDGE_TASKBAR_SUPPRESSION_MAX_SECONDS", 60.0))
+            max_seconds = float(
+                getattr(self, "EDGE_TASKBAR_SUPPRESSION_MAX_SECONDS", 60.0)
+            )
             deadline = start_at + max_seconds
 
             positioned_offscreen = False
@@ -2183,7 +2360,11 @@ class CopilotHandler:
                 succeeded = self._set_edge_taskbar_visibility(False)
                 now = time.monotonic()
 
-                if edge_layout_mode == "offscreen" and succeeded and not positioned_offscreen:
+                if (
+                    edge_layout_mode == "offscreen"
+                    and succeeded
+                    and not positioned_offscreen
+                ):
                     # Avoid hammering window repositioning while Edge is still initializing.
                     should_try_position = (
                         last_offscreen_attempt_at is None
@@ -2228,7 +2409,9 @@ class CopilotHandler:
         message = str(error)
         if any(marker in message for marker in self._PLAYWRIGHT_UNRESPONSIVE_MARKERS):
             if not self._playwright_unresponsive:
-                logger.warning("Playwright connection appears closed; skipping graceful shutdown")
+                logger.warning(
+                    "Playwright connection appears closed; skipping graceful shutdown"
+                )
             self._playwright_unresponsive = True
             self._playwright_unresponsive_reason = message
 
@@ -2236,7 +2419,9 @@ class CopilotHandler:
         if not url:
             return False
         url_lower = url.lower()
-        return any(url_lower.startswith(prefix) for prefix in self.EDGE_ERROR_URL_PREFIXES)
+        return any(
+            url_lower.startswith(prefix) for prefix in self.EDGE_ERROR_URL_PREFIXES
+        )
 
     def _looks_like_edge_error_page(self, page, *, fast_only: bool = True) -> bool:
         if not page:
@@ -2261,7 +2446,9 @@ class CopilotHandler:
         except Exception:
             title = ""
 
-        if title and any(keyword in title for keyword in self.EDGE_ERROR_TITLE_KEYWORDS):
+        if title and any(
+            keyword in title for keyword in self.EDGE_ERROR_TITLE_KEYWORDS
+        ):
             return True
 
         if fast_only:
@@ -2279,7 +2466,10 @@ class CopilotHandler:
 
     def _edge_error_recovery_allowed(self, *, force: bool = False) -> bool:
         now = time.monotonic()
-        if not force and (now - self._edge_error_last_recover_at < self.EDGE_ERROR_RECOVERY_COOLDOWN_SEC):
+        if not force and (
+            now - self._edge_error_last_recover_at
+            < self.EDGE_ERROR_RECOVERY_COOLDOWN_SEC
+        ):
             return False
         self._edge_error_last_recover_at = now
         return True
@@ -2297,7 +2487,9 @@ class CopilotHandler:
             logger.debug("Failed to trigger Edge reload (%s): %s", reason, e)
             return False
 
-    def _recover_from_edge_error_page(self, page, reason: str, *, force: bool = False) -> bool:
+    def _recover_from_edge_error_page(
+        self, page, reason: str, *, force: bool = False
+    ) -> bool:
         if not page:
             return False
         if not self._looks_like_edge_error_page(page, fast_only=False):
@@ -2307,12 +2499,14 @@ class CopilotHandler:
             return False
 
         error_types = _get_playwright_errors()
-        PlaywrightTimeoutError = error_types['TimeoutError']
-        PlaywrightError = error_types['Error']
+        PlaywrightTimeoutError = error_types["TimeoutError"]
+        PlaywrightError = error_types["Error"]
 
         logger.warning("Edge error page detected; attempting reload (%s)", reason)
         try:
-            page.reload(wait_until='domcontentloaded', timeout=self.EDGE_ERROR_RELOAD_TIMEOUT_MS)
+            page.reload(
+                wait_until="domcontentloaded", timeout=self.EDGE_ERROR_RELOAD_TIMEOUT_MS
+            )
         except (PlaywrightTimeoutError, PlaywrightError) as e:
             logger.debug("Edge reload timed out or failed (%s): %s", reason, e)
         except Exception as e:
@@ -2320,7 +2514,11 @@ class CopilotHandler:
 
         if self._looks_like_edge_error_page(page, fast_only=True):
             try:
-                page.goto(self.COPILOT_URL, wait_until='domcontentloaded', timeout=self.EDGE_ERROR_RELOAD_TIMEOUT_MS)
+                page.goto(
+                    self.COPILOT_URL,
+                    wait_until="domcontentloaded",
+                    timeout=self.EDGE_ERROR_RELOAD_TIMEOUT_MS,
+                )
             except (PlaywrightTimeoutError, PlaywrightError) as e:
                 logger.debug("Edge recovery navigation failed (%s): %s", reason, e)
             except Exception as e:
@@ -2350,13 +2548,16 @@ class CopilotHandler:
             return False
 
         error_types = _get_playwright_errors()
-        PlaywrightError = error_types['Error']
+        PlaywrightError = error_types["Error"]
 
         try:
             # Check 1: Not on login page
             url = self._page.url
             if _is_login_page(url):
-                logger.debug("Page validity check: on login page (%s)", url[:50] if url else "empty")
+                logger.debug(
+                    "Page validity check: on login page (%s)",
+                    url[:50] if url else "empty",
+                )
                 self.last_connection_error = self.ERROR_LOGIN_REQUIRED
                 return False
 
@@ -2366,7 +2567,10 @@ class CopilotHandler:
 
             # Check 2: URL is still a Copilot page (user didn't navigate away)
             if not _is_copilot_url(url):
-                logger.debug("Page validity check: URL is not Copilot (%s)", url[:50] if url else "empty")
+                logger.debug(
+                    "Page validity check: URL is not Copilot (%s)",
+                    url[:50] if url else "empty",
+                )
                 return False
 
             # Check 3: Chat input element exists (verifies login state)
@@ -2376,7 +2580,9 @@ class CopilotHandler:
             if input_elem:
                 return True
             else:
-                logger.debug("Page validity check: chat input not found (may need login)")
+                logger.debug(
+                    "Page validity check: chat input not found (may need login)"
+                )
                 return False
 
         except PlaywrightError as e:
@@ -2388,8 +2594,11 @@ class CopilotHandler:
             logger.debug("Page validity check failed (other): %s", e)
             return False
 
-    def connect(self, bring_to_foreground_on_login: bool = True,
-                defer_window_positioning: bool = False) -> bool:
+    def connect(
+        self,
+        bring_to_foreground_on_login: bool = True,
+        defer_window_positioning: bool = False,
+    ) -> bool:
         """
         Connect to Copilot browser via Playwright.
         Does NOT check login state - that is done lazily on first translation.
@@ -2406,19 +2615,27 @@ class CopilotHandler:
         Returns:
             True if browser connection established
         """
-        logger.info("connect() called - delegating to Playwright thread "
-                    "(bring_to_foreground_on_login=%s, defer_window_positioning=%s)",
-                    bring_to_foreground_on_login, defer_window_positioning)
+        logger.info(
+            "connect() called - delegating to Playwright thread "
+            "(bring_to_foreground_on_login=%s, defer_window_positioning=%s)",
+            bring_to_foreground_on_login,
+            defer_window_positioning,
+        )
         self._mark_connect_start()
         try:
             return _playwright_executor.execute(
-                self._connect_impl, bring_to_foreground_on_login, defer_window_positioning
+                self._connect_impl,
+                bring_to_foreground_on_login,
+                defer_window_positioning,
             )
         finally:
             self._mark_connect_end()
 
-    def _connect_impl(self, bring_to_foreground_on_login: bool = True,
-                      defer_window_positioning: bool = False) -> bool:
+    def _connect_impl(
+        self,
+        bring_to_foreground_on_login: bool = True,
+        defer_window_positioning: bool = False,
+    ) -> bool:
         """Implementation of connect() that runs in Playwright thread.
 
         Connection flow:
@@ -2434,7 +2651,10 @@ class CopilotHandler:
                 manual login is required. Set to False for background reconnection.
             defer_window_positioning: Deprecated; retained for call compatibility.
         """
-        logger.debug("[THREAD] _connect_impl running in thread %s", threading.current_thread().ident)
+        logger.debug(
+            "[THREAD] _connect_impl running in thread %s",
+            threading.current_thread().ident,
+        )
 
         # Check if existing connection is still valid
         force_restart_for_window = False
@@ -2468,9 +2688,13 @@ class CopilotHandler:
             else:
                 recovered = False
                 if self._page is not None:
-                    logger.info("Existing connection looks stale; waiting for chat UI before reconnect")
+                    logger.info(
+                        "Existing connection looks stale; waiting for chat UI before reconnect"
+                    )
                     try:
-                        recovered = self._wait_for_chat_ready(self._page, wait_for_login=False)
+                        recovered = self._wait_for_chat_ready(
+                            self._page, wait_for_login=False
+                        )
                     except Exception as e:
                         logger.debug("Soft recovery for stale connection failed: %s", e)
                 if recovered and self._is_page_valid():
@@ -2480,8 +2704,8 @@ class CopilotHandler:
                 self._cleanup_on_error()
 
         # Set proxy bypass for localhost (helps in corporate environments)
-        os.environ.setdefault('NO_PROXY', 'localhost,127.0.0.1')
-        os.environ.setdefault('no_proxy', 'localhost,127.0.0.1')
+        os.environ.setdefault("NO_PROXY", "localhost,127.0.0.1")
+        os.environ.setdefault("no_proxy", "localhost,127.0.0.1")
 
         # Optional: enable Playwright debug logging via env var (kept off by default).
         # Example: set YAKULINGO_PLAYWRIGHT_DEBUG=pw:api
@@ -2491,8 +2715,8 @@ class CopilotHandler:
 
         try:
             error_types = _get_playwright_errors()
-            PlaywrightError = error_types['Error']
-            PlaywrightTimeoutError = error_types['TimeoutError']
+            PlaywrightError = error_types["Error"]
+            PlaywrightTimeoutError = error_types["TimeoutError"]
         except (ImportError, ModuleNotFoundError) as e:
             logger.error("Playwright is not available: %s", e)
             self.last_connection_error = self.ERROR_CONNECTION_FAILED
@@ -2534,7 +2758,10 @@ class CopilotHandler:
             if pre_init_pw is not None:
                 self._playwright = pre_init_pw
                 pw_wait_time = _time.perf_counter() - _t_pw_start
-                logger.info("[TIMING] Using pre-initialized Playwright (waited %.2fs)", pw_wait_time)
+                logger.info(
+                    "[TIMING] Using pre-initialized Playwright (waited %.2fs)",
+                    pw_wait_time,
+                )
             else:
                 pre_init_pw = None  # Will initialize below
 
@@ -2548,7 +2775,9 @@ class CopilotHandler:
                     return self._start_translator_edge()
 
                 # Submit Edge startup to background thread
-                with ThreadPoolExecutor(max_workers=1, thread_name_prefix="edge_start") as executor:
+                with ThreadPoolExecutor(
+                    max_workers=1, thread_name_prefix="edge_start"
+                ) as executor:
                     edge_future = executor.submit(_start_edge_background)
 
                     # Initialize Playwright if not pre-initialized
@@ -2557,17 +2786,24 @@ class CopilotHandler:
                         pre_init_pw = get_pre_initialized_playwright(timeout=30.0)
                         if pre_init_pw is not None:
                             self._playwright = pre_init_pw
-                            logger.info("[TIMING] Using pre-initialized Playwright (waited): %.2fs",
-                                       _time.perf_counter() - _t_pw_start)
+                            logger.info(
+                                "[TIMING] Using pre-initialized Playwright (waited): %.2fs",
+                                _time.perf_counter() - _t_pw_start,
+                            )
                         else:
                             # Fallback: initialize Playwright now
                             logger.info("Connecting to browser...")
                             _, sync_playwright = _get_playwright()
-                            logger.debug("[TIMING] _get_playwright(): %.2fs", _time.perf_counter() - _t_pw_start)
+                            logger.debug(
+                                "[TIMING] _get_playwright(): %.2fs",
+                                _time.perf_counter() - _t_pw_start,
+                            )
                             _t_pw_init = _time.perf_counter()
                             self._playwright = sync_playwright().start()
-                            logger.debug("[TIMING] sync_playwright().start() (parallel with Edge): %.2fs",
-                                         _time.perf_counter() - _t_pw_init)
+                            logger.debug(
+                                "[TIMING] sync_playwright().start() (parallel with Edge): %.2fs",
+                                _time.perf_counter() - _t_pw_init,
+                            )
 
                     # Wait for Edge startup to complete
                     edge_started = edge_future.result()
@@ -2581,12 +2817,16 @@ class CopilotHandler:
                             self._playwright = None
                         return False
 
-                logger.debug("[TIMING] Parallel Edge+Playwright init: %.2fs",
-                             _time.perf_counter() - _t_parallel_start)
+                logger.debug(
+                    "[TIMING] Parallel Edge+Playwright init: %.2fs",
+                    _time.perf_counter() - _t_parallel_start,
+                )
             else:
                 # Edge already running (possibly started early in parallel thread)
                 # Skip Edge startup, just initialize Playwright if needed
-                logger.info("[TIMING] Edge already running (early startup succeeded), skipping Edge startup")
+                logger.info(
+                    "[TIMING] Edge already running (early startup succeeded), skipping Edge startup"
+                )
                 # Re-apply taskbar suppression here as well. On cold boots, Edge may recreate
                 # the window after our initial suppression attempt, causing a brief taskbar entry.
                 self._start_edge_taskbar_suppression()
@@ -2595,23 +2835,33 @@ class CopilotHandler:
                 if not self.profile_dir:
                     self.profile_dir = self._get_profile_dir_path()
                     self.profile_dir.mkdir(parents=True, exist_ok=True)
-                    logger.debug("Set profile_dir for existing Edge: %s", self.profile_dir)
+                    logger.debug(
+                        "Set profile_dir for existing Edge: %s", self.profile_dir
+                    )
 
                 if self._playwright is None:
                     # Wait for pre-initialization if in progress (may take 15-20s on slow systems)
                     pre_init_pw = get_pre_initialized_playwright(timeout=30.0)
                     if pre_init_pw is not None:
                         self._playwright = pre_init_pw
-                        logger.info("[TIMING] Using pre-initialized Playwright (waited): %.2fs",
-                                   _time.perf_counter() - _t_pw_start)
+                        logger.info(
+                            "[TIMING] Using pre-initialized Playwright (waited): %.2fs",
+                            _time.perf_counter() - _t_pw_start,
+                        )
                     else:
                         # Fallback: initialize Playwright now
                         logger.info("Connecting to browser...")
                         _, sync_playwright = _get_playwright()
-                        logger.debug("[TIMING] _get_playwright(): %.2fs", _time.perf_counter() - _t_pw_start)
+                        logger.debug(
+                            "[TIMING] _get_playwright(): %.2fs",
+                            _time.perf_counter() - _t_pw_start,
+                        )
                         _t_pw_init = _time.perf_counter()
                         self._playwright = sync_playwright().start()
-                        logger.debug("[TIMING] sync_playwright().start(): %.2fs", _time.perf_counter() - _t_pw_init)
+                        logger.debug(
+                            "[TIMING] sync_playwright().start(): %.2fs",
+                            _time.perf_counter() - _t_pw_init,
+                        )
 
             # Debug: Check EdgeProfile directory contents for login persistence
             self._log_profile_directory_status()
@@ -2638,7 +2888,10 @@ class CopilotHandler:
                         if cdp_attempt < max_cdp_retries - 1:
                             logger.debug(
                                 "CDP connection attempt %d/%d failed (retrying in %.1fs): %s",
-                                cdp_attempt + 1, max_cdp_retries, cdp_retry_interval, error_msg[:100]
+                                cdp_attempt + 1,
+                                max_cdp_retries,
+                                cdp_retry_interval,
+                                error_msg[:100],
                             )
                             _time.sleep(cdp_retry_interval)
                             cdp_retry_interval *= 1.5  # Exponential backoff
@@ -2649,12 +2902,17 @@ class CopilotHandler:
             if last_cdp_error is not None:
                 raise last_cdp_error
 
-            logger.debug("[TIMING] connect_over_cdp(): %.2fs", _time.perf_counter() - _t_cdp)
+            logger.debug(
+                "[TIMING] connect_over_cdp(): %.2fs", _time.perf_counter() - _t_cdp
+            )
 
             # Step 3: Get or create context
             _t_ctx = _time.perf_counter()
             self._context = self._get_or_create_context()
-            logger.debug("[TIMING] _get_or_create_context(): %.2fs", _time.perf_counter() - _t_ctx)
+            logger.debug(
+                "[TIMING] _get_or_create_context(): %.2fs",
+                _time.perf_counter() - _t_ctx,
+            )
             if not self._context:
                 logger.error("Failed to get or create browser context")
                 self.last_connection_error = self.ERROR_CONNECTION_FAILED
@@ -2665,7 +2923,10 @@ class CopilotHandler:
             _t_page = _time.perf_counter()
             previous_page = self._page
             self._page = self._get_or_create_copilot_page()
-            logger.debug("[TIMING] _get_or_create_copilot_page(): %.2fs", _time.perf_counter() - _t_page)
+            logger.debug(
+                "[TIMING] _get_or_create_copilot_page(): %.2fs",
+                _time.perf_counter() - _t_page,
+            )
             if not self._page:
                 logger.error("Failed to get or create Copilot page")
                 self.last_connection_error = self.ERROR_CONNECTION_FAILED
@@ -2685,7 +2946,9 @@ class CopilotHandler:
             # This saves ~3-5 seconds on startup while still detecting login requirements.
             _t_login = _time.perf_counter()
             login_ok = self._quick_login_check(self._page)
-            logger.debug("[TIMING] _quick_login_check(): %.2fs", _time.perf_counter() - _t_login)
+            logger.debug(
+                "[TIMING] _quick_login_check(): %.2fs", _time.perf_counter() - _t_login
+            )
             if not login_ok:
                 # Keep Edge/Playwright alive when login is required so the UI can
                 # poll for completion while the user signs in.
@@ -2695,7 +2958,9 @@ class CopilotHandler:
                         # This monitors URL changes to detect if auto-login is in progress,
                         # and only returns False if the login page becomes stable (no redirects).
                         # 60 seconds allows time for MFA approval on mobile devices.
-                        if self._wait_for_auto_login_impl(max_wait=60.0, poll_interval=1.0):
+                        if self._wait_for_auto_login_impl(
+                            max_wait=60.0, poll_interval=1.0
+                        ):
                             logger.info("Auto-login completed successfully")
                             self._finalize_connected_state(defer_window_positioning)
                             return True
@@ -2705,17 +2970,25 @@ class CopilotHandler:
                         if _is_login_page(url) or self._has_auth_dialog():
                             if bring_to_foreground_on_login:
                                 logger.info("Manual login required; showing browser")
-                                self._bring_to_foreground_impl(self._page, reason="connect: manual login required")
+                                self._bring_to_foreground_impl(
+                                    self._page, reason="connect: manual login required"
+                                )
                             else:
-                                logger.info("Manual login required; skipping browser foreground (background reconnect)")
+                                logger.info(
+                                    "Manual login required; skipping browser foreground (background reconnect)"
+                                )
                         else:
                             # Not on login page - treat as connection failure (slow load, etc.)
-                            logger.info("Chat UI not ready but not on login page; treating as slow load")
+                            logger.info(
+                                "Chat UI not ready but not on login page; treating as slow load"
+                            )
                             self.last_connection_error = self.ERROR_CONNECTION_FAILED
                     except Exception:
                         logger.debug("Failed to check login state", exc_info=True)
                     if self.last_connection_error == self.ERROR_LOGIN_REQUIRED:
-                        logger.info("Login required; preserving browser session for user sign-in")
+                        logger.info(
+                            "Login required; preserving browser session for user sign-in"
+                        )
                     return False
 
                 self._cleanup_on_error()
@@ -2723,7 +2996,10 @@ class CopilotHandler:
 
             self._finalize_connected_state(defer_window_positioning)
             current_url = self._page.url if self._page else "unknown"
-            logger.info("Copilot connection established (URL: %s)", current_url[:80] if current_url else "empty")
+            logger.info(
+                "Copilot connection established (URL: %s)",
+                current_url[:80] if current_url else "empty",
+            )
             return True
 
         except (PlaywrightError, PlaywrightTimeoutError) as e:
@@ -2794,14 +3070,18 @@ class CopilotHandler:
         with suppress(Exception):
             if self._browser:
                 if skip_playwright_shutdown:
-                    logger.debug("Skipping browser.close() due to unresponsive Playwright")
+                    logger.debug(
+                        "Skipping browser.close() due to unresponsive Playwright"
+                    )
                 else:
                     self._browser.close()
 
         with suppress(Exception):
             if self._playwright:
                 if skip_playwright_shutdown:
-                    logger.debug("Skipping playwright.stop() due to unresponsive Playwright")
+                    logger.debug(
+                        "Skipping playwright.stop() due to unresponsive Playwright"
+                    )
                 else:
                     self._playwright.stop()
                     # Only clear the cached pre-initialized Playwright when we actually stop it.
@@ -2856,21 +3136,31 @@ class CopilotHandler:
         # CDP接続では通常contextが存在するはず
         # disconnect(keep_browser=True)後の再接続では、CDP接続確立に時間がかかる場合がある
         # リトライを増やして既存セッションを確実に取得する
-        logger.warning("No existing context found, waiting for CDP connection to stabilize...")
+        logger.warning(
+            "No existing context found, waiting for CDP connection to stabilize..."
+        )
         for attempt in range(self.CONTEXT_RETRY_COUNT):
             time.sleep(self.CONTEXT_RETRY_INTERVAL)
             contexts = self._browser.contexts
             if contexts:
-                logger.info("Found context after %d retries (%.1fs)",
-                           attempt + 1, (attempt + 1) * self.CONTEXT_RETRY_INTERVAL)
+                logger.info(
+                    "Found context after %d retries (%.1fs)",
+                    attempt + 1,
+                    (attempt + 1) * self.CONTEXT_RETRY_INTERVAL,
+                )
                 return contexts[0]
-            logger.debug("Context retry %d/%d - still empty",
-                        attempt + 1, self.CONTEXT_RETRY_COUNT)
+            logger.debug(
+                "Context retry %d/%d - still empty",
+                attempt + 1,
+                self.CONTEXT_RETRY_COUNT,
+            )
 
         # フォールバック: 新規context作成（EdgeProfileのCookiesでセッション保持）
         # 注意: 新規contextはセッションクッキーを持たないため、ログインが必要になる可能性が高い
-        logger.warning("Creating new context after %d retries - login will likely be required",
-                      self.CONTEXT_RETRY_COUNT)
+        logger.warning(
+            "Creating new context after %d retries - login will likely be required",
+            self.CONTEXT_RETRY_COUNT,
+        )
         return self._browser.new_context()
 
     def _get_or_create_copilot_page(self):
@@ -2880,8 +3170,8 @@ class CopilotHandler:
             Copilot page ready for use
         """
         error_types = _get_playwright_errors()
-        PlaywrightError = error_types['Error']
-        PlaywrightTimeoutError = error_types['TimeoutError']
+        PlaywrightError = error_types["Error"]
+        PlaywrightTimeoutError = error_types["TimeoutError"]
 
         # Check browser display mode - skip minimize for foreground mode
         should_minimize = self._get_browser_display_mode() != "foreground"
@@ -2899,15 +3189,23 @@ class CopilotHandler:
                 # This handles the case where the session has expired during
                 # PP-DocLayout-L initialization
                 if _is_login_page(url):
-                    logger.info("Existing Copilot page is on login page, navigating to Copilot...")
+                    logger.info(
+                        "Existing Copilot page is on login page, navigating to Copilot..."
+                    )
                     # Minimize before navigation to prevent flash during redirect
                     # (only in minimized mode)
                     if should_minimize:
                         self._minimize_edge_window(None)
                     try:
-                        page.goto(self.COPILOT_URL, wait_until='commit', timeout=self.PAGE_GOTO_TIMEOUT_MS)
+                        page.goto(
+                            self.COPILOT_URL,
+                            wait_until="commit",
+                            timeout=self.PAGE_GOTO_TIMEOUT_MS,
+                        )
                     except (PlaywrightTimeoutError, PlaywrightError) as nav_err:
-                        logger.warning("Failed to navigate to Copilot from login page: %s", nav_err)
+                        logger.warning(
+                            "Failed to navigate to Copilot from login page: %s", nav_err
+                        )
                 # Minimize Edge when returning existing page (only in minimized mode)
                 # Playwright reconnection may bring Edge to foreground
                 if should_minimize:
@@ -2929,7 +3227,9 @@ class CopilotHandler:
 
         # Navigate with 'commit' (fastest - just wait for first response)
         logger.info("Navigating to Copilot...")
-        copilot_page.goto(self.COPILOT_URL, wait_until='commit', timeout=self.PAGE_GOTO_TIMEOUT_MS)
+        copilot_page.goto(
+            self.COPILOT_URL, wait_until="commit", timeout=self.PAGE_GOTO_TIMEOUT_MS
+        )
 
         # Minimize browser after navigation to prevent it from staying in foreground
         # during login redirect. (only in minimized mode)
@@ -2980,7 +3280,9 @@ class CopilotHandler:
             logger.debug("Quick login check failed: %s", e)
             return True  # Don't block on check failures
 
-    def _ensure_copilot_page(self, *, bring_to_foreground_on_login: bool = True) -> bool:
+    def _ensure_copilot_page(
+        self, *, bring_to_foreground_on_login: bool = True
+    ) -> bool:
         """Ensure we are on a Copilot page before translation.
 
         This is a lightweight check that verifies the page URL is on Copilot.
@@ -3004,7 +3306,9 @@ class CopilotHandler:
                     reason="ensure_copilot_page",
                     force=True,
                 )
-                if not recovered and self._looks_like_edge_error_page(self._page, fast_only=True):
+                if not recovered and self._looks_like_edge_error_page(
+                    self._page, fast_only=True
+                ):
                     self.last_connection_error = self.ERROR_CONNECTION_FAILED
                     return False
                 url = self._page.url
@@ -3028,7 +3332,11 @@ class CopilotHandler:
             # User navigated away - try to go back to Copilot
             logger.info("Not on Copilot page (%s), navigating back...", url[:50])
             try:
-                self._page.goto(self.COPILOT_URL, wait_until='domcontentloaded', timeout=self.PAGE_GOTO_TIMEOUT_MS)
+                self._page.goto(
+                    self.COPILOT_URL,
+                    wait_until="domcontentloaded",
+                    timeout=self.PAGE_GOTO_TIMEOUT_MS,
+                )
                 # Check again after navigation
                 url = self._page.url
                 if _is_login_page(url):
@@ -3059,7 +3367,9 @@ class CopilotHandler:
         """Return True if GPT mode was confirmed/set in this session."""
         return self._gpt_mode_set
 
-    def wait_for_gpt_mode_setup(self, timeout_seconds: float = 20.0, poll_interval: float = 0.1) -> bool:
+    def wait_for_gpt_mode_setup(
+        self, timeout_seconds: float = 20.0, poll_interval: float = 0.1
+    ) -> bool:
         """Block until GPT mode setup finishes (set or attempts exhausted).
 
         This is intended for the UI layer to wait until GPT mode switching is finished
@@ -3097,7 +3407,9 @@ class CopilotHandler:
             return self._gpt_mode_set
 
         # No attempt is running; perform a single blocking attempt with the remaining timeout.
-        wait_timeout_ms = int(max(0.1, min(timeout_seconds, self.GPT_MODE_BUTTON_WAIT_MS / 1000.0)) * 1000)
+        wait_timeout_ms = int(
+            max(0.1, min(timeout_seconds, self.GPT_MODE_BUTTON_WAIT_MS / 1000.0)) * 1000
+        )
         timer = None
         with self._gpt_mode_retry_lock:
             timer = self._gpt_mode_retry_timer
@@ -3159,8 +3471,7 @@ class CopilotHandler:
 
         try:
             result = _playwright_executor.execute(
-                self._ensure_gpt_mode_impl,
-                self.GPT_MODE_BUTTON_WAIT_FAST_MS
+                self._ensure_gpt_mode_impl, self.GPT_MODE_BUTTON_WAIT_FAST_MS
             )
         except RuntimeError as e:
             logger.debug("GPT mode retry aborted: %s", e)
@@ -3216,7 +3527,8 @@ class CopilotHandler:
         try:
             in_playwright_thread = (
                 _playwright_executor._thread is not None
-                and threading.current_thread().ident == _playwright_executor._thread.ident
+                and threading.current_thread().ident
+                == _playwright_executor._thread.ident
             )
         except Exception:
             in_playwright_thread = False
@@ -3256,8 +3568,7 @@ class CopilotHandler:
 
         try:
             result = _playwright_executor.execute(
-                self._ensure_gpt_mode_impl,
-                self.GPT_MODE_BUTTON_WAIT_FAST_MS
+                self._ensure_gpt_mode_impl, self.GPT_MODE_BUTTON_WAIT_FAST_MS
             )
         except Exception as e:
             logger.debug("Failed to set GPT mode: %s", e)
@@ -3303,7 +3614,8 @@ class CopilotHandler:
         try:
             in_playwright_thread = (
                 _playwright_executor._thread is not None
-                and threading.current_thread().ident == _playwright_executor._thread.ident
+                and threading.current_thread().ident
+                == _playwright_executor._thread.ident
             )
         except Exception:
             in_playwright_thread = False
@@ -3339,13 +3651,18 @@ class CopilotHandler:
         return tuple(candidate for candidate in self.GPT_MODE_TARGETS if candidate)
 
     def _get_gpt_mode_fallback_candidates(self) -> tuple[str, ...]:
-        return tuple(candidate for candidate in self.GPT_MODE_FALLBACK_TARGETS if candidate)
+        return tuple(
+            candidate for candidate in self.GPT_MODE_FALLBACK_TARGETS if candidate
+        )
 
     def _is_gpt_mode_target(self, current_mode: str | None) -> bool:
         if not current_mode:
             return False
         current_lower = current_mode.lower()
-        for candidate in (*self._get_gpt_mode_target_candidates(), *self._get_gpt_mode_fallback_candidates()):
+        for candidate in (
+            *self._get_gpt_mode_target_candidates(),
+            *self._get_gpt_mode_fallback_candidates(),
+        ):
             if candidate.lower() in current_lower:
                 return True
         return False
@@ -3360,12 +3677,15 @@ class CopilotHandler:
                 "GPT-5.2 modes are not visible in the GPT mode list; using best-effort fallback when available."
             )
 
-    def _log_gpt_mode_menu_snapshot(self, label: str, candidates: tuple[str, ...]) -> None:
+    def _log_gpt_mode_menu_snapshot(
+        self, label: str, candidates: tuple[str, ...]
+    ) -> None:
         if not self._page:
             return
         try:
-            snapshot = self._page.evaluate(
-                '''(payload) => {
+            snapshot = (
+                self._page.evaluate(
+                    """(payload) => {
                     const menuSelector = payload.menuSelector;
                     const itemSelector = payload.itemSelector;
                     const targets = payload.targets || [];
@@ -3392,13 +3712,15 @@ class CopilotHandler:
                         containsTarget,
                         menuPreview,
                     };
-                }''',
-                {
-                    "menuSelector": self.GPT_MODE_MENU_SELECTOR,
-                    "itemSelector": self.GPT_MODE_MENU_ITEM_SELECTOR,
-                    "targets": list(candidates),
-                },
-            ) or {}
+                }""",
+                    {
+                        "menuSelector": self.GPT_MODE_MENU_SELECTOR,
+                        "itemSelector": self.GPT_MODE_MENU_ITEM_SELECTOR,
+                        "targets": list(candidates),
+                    },
+                )
+                or {}
+            )
             logger.info(
                 "[GPT_MODE_MENU] %s menuFound=%s items=%s visible=%s containsTarget=%s preview='%s' texts=%s",
                 label,
@@ -3412,13 +3734,16 @@ class CopilotHandler:
         except Exception as e:
             logger.debug("GPT mode menu snapshot failed (%s): %s", label, e)
 
-    def _try_click_gpt_mode_candidate(self, candidates: tuple[str, ...]) -> dict[str, object]:
+    def _try_click_gpt_mode_candidate(
+        self, candidates: tuple[str, ...]
+    ) -> dict[str, object]:
         if not self._page:
             return {"success": False, "error": "no_page"}
         try:
             payload = {"candidates": list(candidates)}
-            result = self._page.evaluate(
-                '''(payload) => {
+            result = (
+                self._page.evaluate(
+                    """(payload) => {
                     const selectors = [
                         '[role="menuitem"]',
                         '[role="option"]',
@@ -3453,12 +3778,22 @@ class CopilotHandler:
                         }
                     }
                     return { clicked: false, texts };
-                }''',
-                payload,
-            ) or {}
+                }""",
+                    payload,
+                )
+                or {}
+            )
             if result.get("clicked"):
-                return {"success": True, "newMode": result.get("label"), "available": result.get("texts", [])}
-            return {"success": False, "error": "target_not_found", "available": result.get("texts", [])}
+                return {
+                    "success": True,
+                    "newMode": result.get("label"),
+                    "available": result.get("texts", []),
+                }
+            return {
+                "success": False,
+                "error": "target_not_found",
+                "available": result.get("texts", []),
+            }
         except Exception as e:
             return {"success": False, "error": str(e)}
 
@@ -3467,7 +3802,7 @@ class CopilotHandler:
             return None
         try:
             return self._page.evaluate(
-                '''(selectors) => {
+                """(selectors) => {
                     const isVisible = (el) => {
                         if (!el) return false;
                         const style = window.getComputedStyle(el);
@@ -3483,7 +3818,7 @@ class CopilotHandler:
                         }
                     }
                     return null;
-                }''',
+                }""",
                 list(self.GPT_MODE_SWITCHER_SELECTORS),
             )
         except Exception:
@@ -3507,14 +3842,14 @@ class CopilotHandler:
             return None
         try:
             return self._page.evaluate(
-                '''(selector) => {
+                """(selector) => {
                     const el = document.querySelector(selector);
                     if (!el) return null;
                     const text = (el.textContent || '').trim();
                     const aria = (el.getAttribute('aria-label') || '').trim();
                     const title = (el.getAttribute('title') || '').trim();
                     return text || aria || title || null;
-                }''',
+                }""",
                 selector,
             )
         except Exception:
@@ -3530,10 +3865,13 @@ class CopilotHandler:
         Returns:
             Status string: "set", "already", "not_ready", "target_not_found", "failed", or "error".
         """
-        logger.debug("[THREAD] _ensure_gpt_mode_impl running in thread %s", threading.current_thread().ident)
+        logger.debug(
+            "[THREAD] _ensure_gpt_mode_impl running in thread %s",
+            threading.current_thread().ident,
+        )
 
         error_types = _get_playwright_errors()
-        PlaywrightError = error_types['Error']
+        PlaywrightError = error_types["Error"]
 
         page = self._page
         if not page:
@@ -3581,24 +3919,32 @@ class CopilotHandler:
 
             if current_mode and switcher_selector:
                 elapsed = time.monotonic() - start_time
-                logger.debug("[TIMING] GPT mode button found immediately (%.3fs)", elapsed)
+                logger.debug(
+                    "[TIMING] GPT mode button found immediately (%.3fs)", elapsed
+                )
             else:
-                switcher_selector = self._wait_for_gpt_mode_switcher_selector(wait_timeout_ms)
+                switcher_selector = self._wait_for_gpt_mode_switcher_selector(
+                    wait_timeout_ms
+                )
                 if switcher_selector:
                     elapsed = time.monotonic() - start_time
-                    logger.debug("[TIMING] GPT mode button found after wait (%.3fs)", elapsed)
+                    logger.debug(
+                        "[TIMING] GPT mode button found after wait (%.3fs)", elapsed
+                    )
                     current_mode = self._get_gpt_mode_switcher_label(switcher_selector)
                 else:
                     elapsed = time.monotonic() - start_time
                     logger.debug("GPT mode button did not appear after %.2fs", elapsed)
                     if allow_overflow_fallback:
-                        fallback = self._switch_gpt_mode_via_overflow_menu(wait_timeout_ms=min(wait_timeout_ms, 3000))
-                        if fallback.get('success'):
+                        fallback = self._switch_gpt_mode_via_overflow_menu(
+                            wait_timeout_ms=min(wait_timeout_ms, 3000)
+                        )
+                        if fallback.get("success"):
                             self._gpt_mode_set = True
                             result_state = "set"
                             return result_state
-                        if fallback.get('error') == 'target_not_found':
-                            self._warn_if_think_deeper_only(fallback.get('available'))
+                        if fallback.get("error") == "target_not_found":
+                            self._warn_if_think_deeper_only(fallback.get("available"))
                             result_state = "target_not_found"
                             return result_state
                     result_state = "not_ready"
@@ -3610,23 +3956,25 @@ class CopilotHandler:
                     wait_timeout_ms=min(wait_timeout_ms, 3000),
                     switcher_selector=switcher_selector,
                 )
-                if switch_result.get('success'):
+                if switch_result.get("success"):
                     self._gpt_mode_set = True
                     result_state = "set"
                     return result_state
-                if switch_result.get('error') == 'target_not_found':
-                    self._warn_if_think_deeper_only(switch_result.get('available'))
+                if switch_result.get("error") == "target_not_found":
+                    self._warn_if_think_deeper_only(switch_result.get("available"))
                     result_state = "target_not_found"
                     return result_state
-                if switch_result.get('error') == 'main_button_not_found':
+                if switch_result.get("error") == "main_button_not_found":
                     if allow_overflow_fallback:
-                        fallback = self._switch_gpt_mode_via_overflow_menu(wait_timeout_ms=min(wait_timeout_ms, 3000))
-                        if fallback.get('success'):
+                        fallback = self._switch_gpt_mode_via_overflow_menu(
+                            wait_timeout_ms=min(wait_timeout_ms, 3000)
+                        )
+                        if fallback.get("success"):
                             self._gpt_mode_set = True
                             result_state = "set"
                             return result_state
-                        if fallback.get('error') == 'target_not_found':
-                            self._warn_if_think_deeper_only(fallback.get('available'))
+                        if fallback.get("error") == "target_not_found":
+                            self._warn_if_think_deeper_only(fallback.get("available"))
                             result_state = "target_not_found"
                             return result_state
                 result_state = "not_ready"
@@ -3643,7 +3991,9 @@ class CopilotHandler:
 
             # Need to switch mode
             target_label = self._get_gpt_mode_target_candidates()[0]
-            logger.info("Switching GPT mode from '%s' to '%s'...", current_mode, target_label)
+            logger.info(
+                "Switching GPT mode from '%s' to '%s'...", current_mode, target_label
+            )
 
             switch_result = self._switch_gpt_mode_via_switcher_menu(
                 wait_timeout_ms=min(wait_timeout_ms, 3000),
@@ -3651,36 +4001,46 @@ class CopilotHandler:
             )
 
             elapsed = time.monotonic() - start_time
-            if switch_result.get('success'):
-                logger.info("Successfully switched GPT mode to '%s' (%.2fs)",
-                           switch_result.get('newMode', target_label), elapsed)
+            if switch_result.get("success"):
+                logger.info(
+                    "Successfully switched GPT mode to '%s' (%.2fs)",
+                    switch_result.get("newMode", target_label),
+                    elapsed,
+                )
                 self._gpt_mode_set = True
                 result_state = "set"
                 return result_state
-            elif switch_result.get('error') == 'target_not_found':
-                self._warn_if_think_deeper_only(switch_result.get('available'))
-                logger.warning("Target GPT mode not found. Available: %s",
-                              switch_result.get('available', []))
+            elif switch_result.get("error") == "target_not_found":
+                self._warn_if_think_deeper_only(switch_result.get("available"))
+                logger.warning(
+                    "Target GPT mode not found. Available: %s",
+                    switch_result.get("available", []),
+                )
                 self._close_menu_safely()
                 result_state = "target_not_found"
                 return result_state
-            elif switch_result.get('error') == 'main_button_not_found':
+            elif switch_result.get("error") == "main_button_not_found":
                 if allow_overflow_fallback:
-                    fallback = self._switch_gpt_mode_via_overflow_menu(wait_timeout_ms=min(wait_timeout_ms, 3000))
-                    if fallback.get('success'):
+                    fallback = self._switch_gpt_mode_via_overflow_menu(
+                        wait_timeout_ms=min(wait_timeout_ms, 3000)
+                    )
+                    if fallback.get("success"):
                         self._gpt_mode_set = True
                         result_state = "set"
                         return result_state
-                    if fallback.get('error') == 'target_not_found':
-                        self._warn_if_think_deeper_only(fallback.get('available'))
+                    if fallback.get("error") == "target_not_found":
+                        self._warn_if_think_deeper_only(fallback.get("available"))
                         result_state = "target_not_found"
                         return result_state
                 self._close_menu_safely()
                 result_state = "not_ready"
                 return result_state
             else:
-                logger.warning("GPT mode switch failed: %s (%.2fs)",
-                              switch_result.get('error', 'unknown'), elapsed)
+                logger.warning(
+                    "GPT mode switch failed: %s (%.2fs)",
+                    switch_result.get("error", "unknown"),
+                    elapsed,
+                )
                 self._close_menu_safely()
                 result_state = "failed"
                 return result_state
@@ -3693,7 +4053,10 @@ class CopilotHandler:
         finally:
             # If no return occurred above, emit a warning for unexpected fallthrough.
             if result_state is None:
-                logger.warning("GPT mode switch ended without result (current_mode=%s)", current_mode)
+                logger.warning(
+                    "GPT mode switch ended without result (current_mode=%s)",
+                    current_mode,
+                )
 
     def _maximize_edge_window_for_gpt(self) -> bool:
         """Ensure the Edge window uses a full-size layout before GPT mode switching."""
@@ -3702,7 +4065,7 @@ class CopilotHandler:
         try:
             import ctypes
 
-            user32 = ctypes.WinDLL('user32', use_last_error=True)
+            user32 = ctypes.WinDLL("user32", use_last_error=True)
             edge_hwnd = self._find_edge_window_handle()
             if not edge_hwnd:
                 return False
@@ -3761,24 +4124,28 @@ class CopilotHandler:
             return {"success": False, "error": "no_page"}
 
         error_types = _get_playwright_errors()
-        PlaywrightTimeoutError = error_types['TimeoutError']
+        PlaywrightTimeoutError = error_types["TimeoutError"]
         candidates = self._get_gpt_mode_target_candidates()
         fallback_candidates = self._get_gpt_mode_fallback_candidates()
 
         try:
             if switcher_selector is None:
-                switcher_selector = self._wait_for_gpt_mode_switcher_selector(wait_timeout_ms)
+                switcher_selector = self._wait_for_gpt_mode_switcher_selector(
+                    wait_timeout_ms
+                )
             if not switcher_selector:
                 return {"success": False, "error": "main_button_not_found"}
 
             main_btn = self._page.locator(switcher_selector).first
             try:
-                main_btn.wait_for(state='visible', timeout=wait_timeout_ms)
+                main_btn.wait_for(state="visible", timeout=wait_timeout_ms)
             except PlaywrightTimeoutError:
                 return {"success": False, "error": "main_button_not_found"}
 
             main_btn.click()
-            self._page.wait_for_selector(self.GPT_MODE_MENU_SELECTOR, state='visible', timeout=wait_timeout_ms)
+            self._page.wait_for_selector(
+                self.GPT_MODE_MENU_SELECTOR, state="visible", timeout=wait_timeout_ms
+            )
 
             menu = self._page.locator(self.GPT_MODE_MENU_VISIBLE_SELECTOR).last
             self._log_gpt_mode_menu_snapshot("switcher:menu_opened", candidates)
@@ -3790,7 +4157,7 @@ class CopilotHandler:
                     f'{self.GPT_MODE_MORE_MENU_BUTTON_SELECTOR}:has-text("{label}")'
                 ).first
                 try:
-                    candidate.wait_for(state='visible', timeout=per_label_timeout)
+                    candidate.wait_for(state="visible", timeout=per_label_timeout)
                     more_trigger = candidate
                     break
                 except PlaywrightTimeoutError:
@@ -3811,7 +4178,7 @@ class CopilotHandler:
                             try:
                                 self._page.wait_for_selector(
                                     target_selector,
-                                    state='visible',
+                                    state="visible",
                                     timeout=per_candidate_timeout,
                                 )
                                 self._page.locator(target_selector).first.click()
@@ -3825,11 +4192,17 @@ class CopilotHandler:
                     if not target_clicked:
                         fallback_click = self._try_click_gpt_mode_candidate(candidates)
                         if fallback_click.get("success"):
-                            return {"success": True, "newMode": fallback_click.get("newMode") or target_label}
+                            return {
+                                "success": True,
+                                "newMode": fallback_click.get("newMode")
+                                or target_label,
+                            }
                         available = fallback_click.get("available") or []
                         if not available:
                             try:
-                                available = self._page.evaluate('''(itemSelector) => {
+                                available = (
+                                    self._page.evaluate(
+                                        """(itemSelector) => {
                                     const items = Array.from(document.querySelectorAll(itemSelector));
                                     return items
                                         .filter(el => {
@@ -3841,17 +4214,32 @@ class CopilotHandler:
                                         })
                                         .map(el => (el.textContent || '').trim())
                                         .filter(t => t);
-                                }''', self.GPT_MODE_MENU_ITEM_SELECTOR) or []
+                                }""",
+                                        self.GPT_MODE_MENU_ITEM_SELECTOR,
+                                    )
+                                    or []
+                                )
                             except Exception:
                                 available = []
 
-                        fallback_mode_click = self._try_click_gpt_mode_candidate(fallback_candidates)
+                        fallback_mode_click = self._try_click_gpt_mode_candidate(
+                            fallback_candidates
+                        )
                         if fallback_mode_click.get("success"):
-                            self._warn_if_think_deeper_only(fallback_mode_click.get("available"))
-                            return {"success": True, "newMode": fallback_mode_click.get("newMode")}
+                            self._warn_if_think_deeper_only(
+                                fallback_mode_click.get("available")
+                            )
+                            return {
+                                "success": True,
+                                "newMode": fallback_mode_click.get("newMode"),
+                            }
 
                         self._warn_if_think_deeper_only(available)
-                        return {"success": False, "error": "target_not_found", "available": available}
+                        return {
+                            "success": False,
+                            "error": "target_not_found",
+                            "available": available,
+                        }
                 except PlaywrightTimeoutError:
                     return {"success": False, "error": "timeout"}
             else:
@@ -3865,7 +4253,7 @@ class CopilotHandler:
                         try:
                             self._page.wait_for_selector(
                                 target_selector,
-                                state='visible',
+                                state="visible",
                                 timeout=per_candidate_timeout,
                             )
                             self._page.locator(target_selector).first.click()
@@ -3879,23 +4267,40 @@ class CopilotHandler:
 
                 if target_clicked:
                     new_mode = self._get_gpt_mode_switcher_label(switcher_selector)
-                    return {"success": True, "newMode": new_mode or target_label or self.GPT_MODE_TARGET}
+                    return {
+                        "success": True,
+                        "newMode": new_mode or target_label or self.GPT_MODE_TARGET,
+                    }
 
                 # No "More" submenu and target not visible; try fallback labels and stop retrying.
                 self._log_gpt_mode_menu_snapshot("switcher:more_missing", candidates)
 
-                fallback_mode_click = self._try_click_gpt_mode_candidate(fallback_candidates)
+                fallback_mode_click = self._try_click_gpt_mode_candidate(
+                    fallback_candidates
+                )
                 if fallback_mode_click.get("success"):
-                    self._warn_if_think_deeper_only(fallback_mode_click.get("available"))
+                    self._warn_if_think_deeper_only(
+                        fallback_mode_click.get("available")
+                    )
                     new_mode = self._get_gpt_mode_switcher_label(switcher_selector)
-                    return {"success": True, "newMode": new_mode or fallback_mode_click.get("newMode")}
+                    return {
+                        "success": True,
+                        "newMode": new_mode or fallback_mode_click.get("newMode"),
+                    }
 
                 available = fallback_mode_click.get("available") or []
                 self._warn_if_think_deeper_only(available)
-                return {"success": False, "error": "target_not_found", "available": available}
+                return {
+                    "success": False,
+                    "error": "target_not_found",
+                    "available": available,
+                }
 
             new_mode = self._get_gpt_mode_switcher_label(switcher_selector)
-            return {"success": True, "newMode": new_mode or target_label or self.GPT_MODE_TARGET}
+            return {
+                "success": True,
+                "newMode": new_mode or target_label or self.GPT_MODE_TARGET,
+            }
 
         except PlaywrightTimeoutError:
             return {"success": False, "error": "timeout"}
@@ -3904,7 +4309,9 @@ class CopilotHandler:
         finally:
             self._close_menu_safely()
 
-    def _switch_gpt_mode_via_overflow_menu(self, wait_timeout_ms: int = 2500) -> dict[str, object]:
+    def _switch_gpt_mode_via_overflow_menu(
+        self, wait_timeout_ms: int = 2500
+    ) -> dict[str, object]:
         """Fallback for compact Copilot layouts where #gptModeSwitcher is hidden.
 
         Some responsive variants hide the GPT mode switcher behind an overflow menu:
@@ -3917,7 +4324,7 @@ class CopilotHandler:
             return {"success": False, "error": "no_page"}
 
         error_types = _get_playwright_errors()
-        PlaywrightTimeoutError = error_types['TimeoutError']
+        PlaywrightTimeoutError = error_types["TimeoutError"]
         candidates = self._get_gpt_mode_target_candidates()
         fallback_candidates = self._get_gpt_mode_fallback_candidates()
 
@@ -3925,7 +4332,7 @@ class CopilotHandler:
             try:
                 self._page.wait_for_selector(
                     self.GPT_MODE_OVERFLOW_MENU_BUTTON_SELECTOR,
-                    state='visible',
+                    state="visible",
                     timeout=wait_timeout_ms,
                 )
             except PlaywrightTimeoutError:
@@ -3941,7 +4348,9 @@ class CopilotHandler:
 
             # Open the overflow menu
             more_button.click()
-            self._page.wait_for_selector(self.GPT_MODE_MENU_SELECTOR, state='visible', timeout=wait_timeout_ms)
+            self._page.wait_for_selector(
+                self.GPT_MODE_MENU_SELECTOR, state="visible", timeout=wait_timeout_ms
+            )
 
             # Hover the "More" submenu trigger
             menu = self._page.locator(self.GPT_MODE_MENU_VISIBLE_SELECTOR).last
@@ -3953,20 +4362,31 @@ class CopilotHandler:
                     f'{self.GPT_MODE_MORE_MENU_BUTTON_SELECTOR}:has-text("{label}")'
                 ).first
                 try:
-                    candidate.wait_for(state='visible', timeout=per_label_timeout)
+                    candidate.wait_for(state="visible", timeout=per_label_timeout)
                     more_trigger = candidate
                     break
                 except PlaywrightTimeoutError:
                     continue
             if not more_trigger:
-                fallback_mode_click = self._try_click_gpt_mode_candidate(fallback_candidates)
+                fallback_mode_click = self._try_click_gpt_mode_candidate(
+                    fallback_candidates
+                )
                 if fallback_mode_click.get("success"):
-                    self._warn_if_think_deeper_only(fallback_mode_click.get("available"))
-                    return {"success": True, "newMode": fallback_mode_click.get("newMode")}
+                    self._warn_if_think_deeper_only(
+                        fallback_mode_click.get("available")
+                    )
+                    return {
+                        "success": True,
+                        "newMode": fallback_mode_click.get("newMode"),
+                    }
 
                 available = fallback_mode_click.get("available") or []
                 self._warn_if_think_deeper_only(available)
-                return {"success": False, "error": "target_not_found", "available": available}
+                return {
+                    "success": False,
+                    "error": "target_not_found",
+                    "available": available,
+                }
 
             more_trigger.hover()
             self._log_gpt_mode_menu_snapshot("overflow:more_hovered", candidates)
@@ -3981,7 +4401,7 @@ class CopilotHandler:
                     try:
                         self._page.wait_for_selector(
                             target_selector,
-                            state='visible',
+                            state="visible",
                             timeout=per_candidate_timeout,
                         )
                         self._page.locator(target_selector).first.click()
@@ -3995,11 +4415,16 @@ class CopilotHandler:
             if not target_clicked:
                 fallback_click = self._try_click_gpt_mode_candidate(candidates)
                 if fallback_click.get("success"):
-                    return {"success": True, "newMode": fallback_click.get("newMode") or target_label}
+                    return {
+                        "success": True,
+                        "newMode": fallback_click.get("newMode") or target_label,
+                    }
                 available = fallback_click.get("available") or []
                 if not available:
                     try:
-                        available = self._page.evaluate('''(itemSelector) => {
+                        available = (
+                            self._page.evaluate(
+                                """(itemSelector) => {
                             const items = Array.from(document.querySelectorAll(itemSelector));
                             return items
                                 .filter(el => {
@@ -4011,22 +4436,40 @@ class CopilotHandler:
                                 })
                                 .map(el => (el.textContent || '').trim())
                                 .filter(t => t);
-                        }''', self.GPT_MODE_MENU_ITEM_SELECTOR) or []
+                        }""",
+                                self.GPT_MODE_MENU_ITEM_SELECTOR,
+                            )
+                            or []
+                        )
                     except Exception:
                         available = []
 
-                fallback_mode_click = self._try_click_gpt_mode_candidate(fallback_candidates)
+                fallback_mode_click = self._try_click_gpt_mode_candidate(
+                    fallback_candidates
+                )
                 if fallback_mode_click.get("success"):
-                    self._warn_if_think_deeper_only(fallback_mode_click.get("available"))
-                    return {"success": True, "newMode": fallback_mode_click.get("newMode")}
+                    self._warn_if_think_deeper_only(
+                        fallback_mode_click.get("available")
+                    )
+                    return {
+                        "success": True,
+                        "newMode": fallback_mode_click.get("newMode"),
+                    }
 
                 self._warn_if_think_deeper_only(available)
-                return {"success": False, "error": "target_not_found", "available": available}
+                return {
+                    "success": False,
+                    "error": "target_not_found",
+                    "available": available,
+                }
 
             # Best-effort confirmation (may be hidden in compact layouts)
             new_mode = self._get_gpt_mode_switcher_label()
 
-            return {"success": True, "newMode": new_mode or target_label or self.GPT_MODE_TARGET}
+            return {
+                "success": True,
+                "newMode": new_mode or target_label or self.GPT_MODE_TARGET,
+            }
 
         except PlaywrightTimeoutError:
             return {"success": False, "error": "timeout"}
@@ -4039,7 +4482,7 @@ class CopilotHandler:
         """Close any open menu by pressing Escape."""
         try:
             if self._page:
-                self._page.keyboard.press('Escape')
+                self._page.keyboard.press("Escape")
         except Exception as esc_err:
             logger.debug("Failed to press Escape: %s", esc_err)
 
@@ -4057,8 +4500,8 @@ class CopilotHandler:
             True if chat is ready, False if login required and not completed
         """
         error_types = _get_playwright_errors()
-        PlaywrightTimeoutError = error_types['TimeoutError']
-        PlaywrightError = error_types['Error']
+        PlaywrightTimeoutError = error_types["TimeoutError"]
+        PlaywrightError = error_types["Error"]
 
         logger.info("Waiting for Copilot chat UI...")
         input_selector = self.CHAT_INPUT_SELECTOR_EXTENDED
@@ -4081,47 +4524,63 @@ class CopilotHandler:
 
             if wait_for_login:
                 # Bring browser to foreground so user can complete login
-                self._bring_to_foreground_impl(page, reason="wait_for_chat_ready: redirected to login page")
+                self._bring_to_foreground_impl(
+                    page, reason="wait_for_chat_ready: redirected to login page"
+                )
                 return self._wait_for_login_completion(page)
             return False
 
         # If we're on Copilot but still on landing or another interim page, wait for chat
         # Use shorter timeouts for faster startup (3s instead of 5-10s)
-        if _is_copilot_url(url) and any(path in url for path in ("/landing", "/landingv2")):
-            logger.info("Detected Copilot landing page, waiting for redirect to /chat...")
+        if _is_copilot_url(url) and any(
+            path in url for path in ("/landing", "/landingv2")
+        ):
+            logger.info(
+                "Detected Copilot landing page, waiting for redirect to /chat..."
+            )
             try:
-                page.wait_for_load_state('networkidle', timeout=3000)
+                page.wait_for_load_state("networkidle", timeout=3000)
             except PlaywrightTimeoutError:
                 pass
             url = page.url
             if any(path in url for path in ("/landing", "/landingv2")):
                 logger.debug("Still on landing page after wait, navigating to chat...")
                 try:
-                    page.goto(self.COPILOT_URL, wait_until='domcontentloaded', timeout=15000)
-                    page.wait_for_load_state('domcontentloaded', timeout=5000)
+                    page.goto(
+                        self.COPILOT_URL, wait_until="domcontentloaded", timeout=15000
+                    )
+                    page.wait_for_load_state("domcontentloaded", timeout=5000)
                 except (PlaywrightTimeoutError, PlaywrightError) as nav_err:
-                    logger.warning("Failed to navigate to chat from landing: %s", nav_err)
+                    logger.warning(
+                        "Failed to navigate to chat from landing: %s", nav_err
+                    )
         elif _is_copilot_url(url) and "/chat" not in url:
             # Check if we're on an auth flow intermediate page - do NOT navigate
             if _is_auth_flow_page(url):
-                logger.info("On auth flow page (%s), waiting for auth to complete...", url[:60])
+                logger.info(
+                    "On auth flow page (%s), waiting for auth to complete...", url[:60]
+                )
                 # Wait for auth flow to complete naturally
                 try:
-                    page.wait_for_load_state('networkidle', timeout=5000)
+                    page.wait_for_load_state("networkidle", timeout=5000)
                 except PlaywrightTimeoutError:
                     pass
             elif self._has_auth_dialog():
                 # Auth dialog present - do NOT navigate, wait for user to complete auth
-                logger.info("Auth dialog detected on Copilot page, waiting for auth to complete...")
+                logger.info(
+                    "Auth dialog detected on Copilot page, waiting for auth to complete..."
+                )
                 try:
-                    page.wait_for_load_state('networkidle', timeout=5000)
+                    page.wait_for_load_state("networkidle", timeout=5000)
                 except PlaywrightTimeoutError:
                     pass
             else:
                 logger.info("On Copilot domain but not /chat, navigating...")
                 try:
-                    page.goto(self.COPILOT_URL, wait_until='domcontentloaded', timeout=15000)
-                    page.wait_for_load_state('domcontentloaded', timeout=5000)
+                    page.goto(
+                        self.COPILOT_URL, wait_until="domcontentloaded", timeout=15000
+                    )
+                    page.wait_for_load_state("domcontentloaded", timeout=5000)
                 except (PlaywrightTimeoutError, PlaywrightError) as nav_err:
                     logger.warning("Navigation to chat failed: %s", nav_err)
 
@@ -4131,13 +4590,14 @@ class CopilotHandler:
         chat_input_found = False
         for step in range(self.SELECTOR_CHAT_INPUT_MAX_STEPS):
             # First step: 1 second (fast path), subsequent steps: 2 seconds
-            step_timeout = (self.SELECTOR_CHAT_INPUT_FIRST_STEP_TIMEOUT_MS
-                           if step == 0 else self.SELECTOR_CHAT_INPUT_STEP_TIMEOUT_MS)
+            step_timeout = (
+                self.SELECTOR_CHAT_INPUT_FIRST_STEP_TIMEOUT_MS
+                if step == 0
+                else self.SELECTOR_CHAT_INPUT_STEP_TIMEOUT_MS
+            )
             try:
                 page.wait_for_selector(
-                    input_selector,
-                    timeout=step_timeout,
-                    state='visible'
+                    input_selector, timeout=step_timeout, state="visible"
                 )
                 chat_input_found = True
                 break
@@ -4145,19 +4605,30 @@ class CopilotHandler:
                 # Early login detection: check if we're on a login page
                 current_url = page.url
                 if _is_login_page(current_url):
-                    logger.info("Early login detection: login page detected at step %d", step + 1)
+                    logger.info(
+                        "Early login detection: login page detected at step %d",
+                        step + 1,
+                    )
                     self.last_connection_error = self.ERROR_LOGIN_REQUIRED
                     if wait_for_login:
-                        self._bring_to_foreground_impl(page, reason="wait_for_chat_ready: early login detection")
+                        self._bring_to_foreground_impl(
+                            page, reason="wait_for_chat_ready: early login detection"
+                        )
                         return self._wait_for_login_completion(page)
                     return False
 
                 # Check for authentication dialog
                 if self._has_auth_dialog():
-                    logger.info("Early login detection: auth dialog detected at step %d", step + 1)
+                    logger.info(
+                        "Early login detection: auth dialog detected at step %d",
+                        step + 1,
+                    )
                     self.last_connection_error = self.ERROR_LOGIN_REQUIRED
                     if wait_for_login:
-                        self._bring_to_foreground_impl(page, reason="wait_for_chat_ready: early auth dialog detection")
+                        self._bring_to_foreground_impl(
+                            page,
+                            reason="wait_for_chat_ready: early auth dialog detection",
+                        )
                         return self._wait_for_login_completion(page)
                     return False
 
@@ -4177,7 +4648,11 @@ class CopilotHandler:
                 if not wait_for_login:
                     self._ensure_edge_minimized()
 
-                logger.debug("Chat input not found at step %d/%d, continuing...", step + 1, self.SELECTOR_CHAT_INPUT_MAX_STEPS)
+                logger.debug(
+                    "Chat input not found at step %d/%d, continuing...",
+                    step + 1,
+                    self.SELECTOR_CHAT_INPUT_MAX_STEPS,
+                )
 
         if chat_input_found:
             # Check for authentication dialog that may block input
@@ -4185,17 +4660,25 @@ class CopilotHandler:
             if auth_dialog:
                 dialog_text = auth_dialog.inner_text().strip().lower()
                 if any(kw.lower() in dialog_text for kw in self.AUTH_DIALOG_KEYWORDS):
-                    logger.warning("Authentication dialog detected during connect: %s", dialog_text)
+                    logger.warning(
+                        "Authentication dialog detected during connect: %s", dialog_text
+                    )
                     self.last_connection_error = self.ERROR_LOGIN_REQUIRED
 
                     if wait_for_login:
                         # Bring browser to foreground so user can see the dialog
-                        self._bring_to_foreground_impl(page, reason=f"wait_for_chat_ready: auth dialog detected ({dialog_text})")
+                        self._bring_to_foreground_impl(
+                            page,
+                            reason=f"wait_for_chat_ready: auth dialog detected ({dialog_text})",
+                        )
                         return self._wait_for_login_completion(page)
                     return False
 
             current_url = page.url
-            logger.info("Copilot chat UI ready (URL: %s)", current_url[:80] if current_url else "empty")
+            logger.info(
+                "Copilot chat UI ready (URL: %s)",
+                current_url[:80] if current_url else "empty",
+            )
             time.sleep(0.1)  # Brief wait for session initialization (reduced from 0.2s)
             return True
 
@@ -4208,46 +4691,63 @@ class CopilotHandler:
 
             if wait_for_login:
                 # Bring browser to foreground so user can complete login
-                self._bring_to_foreground_impl(page, reason="wait_for_chat_ready: timeout + login page detected")
+                self._bring_to_foreground_impl(
+                    page, reason="wait_for_chat_ready: timeout + login page detected"
+                )
                 return self._wait_for_login_completion(page)
             return False
 
         # On Copilot domain but not yet on chat page, wait for proper navigation
         if _is_copilot_url(url):
-            logger.info("Copilot page still loading, waiting for /chat before continuing...")
+            logger.info(
+                "Copilot page still loading, waiting for /chat before continuing..."
+            )
             try:
-                page.wait_for_load_state('networkidle', timeout=5000)
+                page.wait_for_load_state("networkidle", timeout=5000)
             except PlaywrightTimeoutError:
                 pass
             if any(path in url for path in ("/landing", "/landingv2")):
                 logger.debug("Still on landing page, deferring chat UI lookup")
                 self.last_connection_error = self.ERROR_CONNECTION_FAILED
                 if not wait_for_login:
-                    logger.info("Background connect: skipping login wait while Copilot redirects")
+                    logger.info(
+                        "Background connect: skipping login wait while Copilot redirects"
+                    )
                     return False
                 return self._wait_for_login_completion(page)
             if "/chat" not in url:
                 # Do not interrupt auth redirects/callbacks by forcing navigation.
                 if _is_auth_flow_page(url):
-                    logger.info("Auth flow page detected (%s); skipping forced navigation to /chat", url[:80])
+                    logger.info(
+                        "Auth flow page detected (%s); skipping forced navigation to /chat",
+                        url[:80],
+                    )
                     self.last_connection_error = self.ERROR_LOGIN_REQUIRED
                     if not wait_for_login:
                         return False
                     return self._wait_for_login_completion(page)
                 # Also check for auth dialog before navigating
                 if self._has_auth_dialog():
-                    logger.info("Auth dialog detected; skipping forced navigation to /chat")
+                    logger.info(
+                        "Auth dialog detected; skipping forced navigation to /chat"
+                    )
                     self.last_connection_error = self.ERROR_LOGIN_REQUIRED
                     if not wait_for_login:
                         return False
                     return self._wait_for_login_completion(page)
                 try:
-                    page.goto(self.COPILOT_URL, wait_until='domcontentloaded', timeout=30000)
+                    page.goto(
+                        self.COPILOT_URL, wait_until="domcontentloaded", timeout=30000
+                    )
                 except (PlaywrightTimeoutError, PlaywrightError) as nav_err:
-                    logger.warning("Failed to navigate to chat during wait: %s", nav_err)
+                    logger.warning(
+                        "Failed to navigate to chat during wait: %s", nav_err
+                    )
             self.last_connection_error = self.ERROR_CONNECTION_FAILED
             if not wait_for_login:
-                logger.info("Background connect: chat UI not ready; deferring login prompt")
+                logger.info(
+                    "Background connect: chat UI not ready; deferring login prompt"
+                )
                 return False
             return self._wait_for_login_completion(page)
 
@@ -4256,39 +4756,69 @@ class CopilotHandler:
 
         if wait_for_login:
             # Bring browser to foreground so user can complete login
-            self._bring_to_foreground_impl(page, reason="wait_for_chat_ready: chat input not found (timeout)")
+            self._bring_to_foreground_impl(
+                page, reason="wait_for_chat_ready: chat input not found (timeout)"
+            )
             return self._wait_for_login_completion(page)
         return False
 
     # Authentication keywords for multi-language support
     AUTH_KEYWORDS = (
         # Japanese
-        "認証", "ログイン", "サインイン", "パスワード", "資格情報",
+        "認証",
+        "ログイン",
+        "サインイン",
+        "パスワード",
+        "資格情報",
         # English
-        "Sign in", "Log in", "Login", "Password", "Credentials", "Authentication",
-        "Enter your password", "Enter your email", "Verify your identity", "Approve sign in",
+        "Sign in",
+        "Log in",
+        "Login",
+        "Password",
+        "Credentials",
+        "Authentication",
+        "Enter your password",
+        "Enter your email",
+        "Verify your identity",
+        "Approve sign in",
         # Chinese (Simplified & Traditional)
-        "登录", "登錄", "密码", "密碼", "验证", "驗證", "身份验证", "身份驗證",
+        "登录",
+        "登錄",
+        "密码",
+        "密碼",
+        "验证",
+        "驗證",
+        "身份验证",
+        "身份驗證",
         # Korean
-        "로그인", "비밀번호", "인증",
+        "로그인",
+        "비밀번호",
+        "인증",
         # French
-        "Connexion", "Se connecter", "Mot de passe",
+        "Connexion",
+        "Se connecter",
+        "Mot de passe",
         # German
-        "Anmelden", "Kennwort", "Passwort",
+        "Anmelden",
+        "Kennwort",
+        "Passwort",
         # Spanish
-        "Iniciar sesión", "Contraseña",
+        "Iniciar sesión",
+        "Contraseña",
         # Portuguese
-        "Entrar", "Senha",
+        "Entrar",
+        "Senha",
         # Italian
-        "Accedi", "Password",
+        "Accedi",
+        "Password",
     )
 
     # Overlay dialog selectors - checked even on Copilot pages
     # These detect authentication dialogs that appear as overlays on any page
     AUTH_OVERLAY_DIALOG_SELECTORS = [
         # Fluent UI dialogs
-        '.fui-DialogTitle',
-        '.fui-DialogBody',
+        ".fui-DialogTitle",
+        ".fui-DialogBody",
         '[role="dialog"] h2',
         '[role="dialog"][aria-modal="true"]',
         '[role="alertdialog"]',
@@ -4298,17 +4828,17 @@ class CopilotHandler:
     # NOTE: These are only checked on login pages to avoid false positives on Copilot UI
     AUTH_DIALOG_SELECTORS = [
         # Microsoft login page elements (specific to login.microsoftonline.com)
-        '.login-paginated-page',
-        '#loginHeader',
-        '.login-title',
-        '#displayName',
+        ".login-paginated-page",
+        "#loginHeader",
+        ".login-title",
+        "#displayName",
         # ADFS and custom IdP
-        '#userNameInput',
-        '#passwordInput',
+        "#userNameInput",
+        "#passwordInput",
         # MFA screens
-        '.mfa-notice',
-        '#idDiv_SAOTCC_Title',
-        '.verificationCodeInput',
+        ".mfa-notice",
+        "#idDiv_SAOTCC_Title",
+        ".verificationCodeInput",
         # Generic auth forms - only match explicit login/auth actions
         'form[action*="login"]',
         'form[action*="auth"]',
@@ -4317,20 +4847,20 @@ class CopilotHandler:
 
     LOGIN_PROMPT_INTERACTIVE_SELECTORS = [
         # Microsoft login inputs and buttons
-        '#i0116',  # email
-        '#i0118',  # password
-        '#idSIButton9',  # next/yes
-        '#idBtn_Back',  # back/no
+        "#i0116",  # email
+        "#i0118",  # password
+        "#idSIButton9",  # next/yes
+        "#idBtn_Back",  # back/no
         'input[name="loginfmt"]',
         'input[name="passwd"]',
         # MFA and verification inputs
         'input[autocomplete="one-time-code"]',
         'input[type="tel"]',
         # Account selection tiles
-        '#tilesHolder .tile',
-        '#tilesHolder .table',
-        '#aadTile',
-        '#otherTile',
+        "#tilesHolder .tile",
+        "#tilesHolder .table",
+        "#aadTile",
+        "#otherTile",
         # Generic auth inputs
         'input[type="email"]',
         'input[type="password"]',
@@ -4376,11 +4906,13 @@ class CopilotHandler:
             return False
 
         error_types = _get_playwright_errors()
-        PlaywrightError = error_types['Error']
+        PlaywrightError = error_types["Error"]
 
         try:
             current_url = self._page.url
-            is_on_copilot = _is_copilot_url(current_url) and not _is_login_page(current_url)
+            is_on_copilot = _is_copilot_url(current_url) and not _is_login_page(
+                current_url
+            )
 
             # Always check for overlay dialogs (authentication dialogs can appear on any page)
             for selector in self.AUTH_OVERLAY_DIALOG_SELECTORS:
@@ -4388,15 +4920,25 @@ class CopilotHandler:
                 if element:
                     try:
                         element_text = element.inner_text().strip()
-                        if element_text and any(keyword.lower() in element_text.lower() for keyword in self.AUTH_KEYWORDS):
-                            logger.info("Authentication overlay dialog detected: selector=%s, text=%s", selector, element_text[:50])
+                        if element_text and any(
+                            keyword.lower() in element_text.lower()
+                            for keyword in self.AUTH_KEYWORDS
+                        ):
+                            logger.info(
+                                "Authentication overlay dialog detected: selector=%s, text=%s",
+                                selector,
+                                element_text[:50],
+                            )
                             return True
                     except Exception:
                         pass  # Element may not support inner_text
 
             # Skip login page selectors on Copilot pages to avoid false positives
             if is_on_copilot:
-                logger.debug("Skipping login page selectors on Copilot page: %s", current_url[:50])
+                logger.debug(
+                    "Skipping login page selectors on Copilot page: %s",
+                    current_url[:50],
+                )
                 return False
 
             # Check login page elements with extended selectors (only on non-Copilot pages)
@@ -4406,21 +4948,31 @@ class CopilotHandler:
                     # For text-containing elements, check for auth keywords
                     try:
                         element_text = element.inner_text().strip()
-                        if element_text and any(keyword.lower() in element_text.lower() for keyword in self.AUTH_KEYWORDS):
-                            logger.debug("Authentication element detected: selector=%s, text=%s", selector, element_text[:50])
+                        if element_text and any(
+                            keyword.lower() in element_text.lower()
+                            for keyword in self.AUTH_KEYWORDS
+                        ):
+                            logger.debug(
+                                "Authentication element detected: selector=%s, text=%s",
+                                selector,
+                                element_text[:50],
+                            )
                             return True
                     except Exception:
                         pass  # Element may not support inner_text (e.g., input)
 
                     # For input[type="password"], presence alone indicates auth page
-                    if 'password' in selector:
+                    if "password" in selector:
                         logger.debug("Password input detected: %s", selector)
                         return True
 
             # Check page title for auth keywords
             try:
                 page_title = self._page.title()
-                if page_title and any(keyword.lower() in page_title.lower() for keyword in self.AUTH_KEYWORDS):
+                if page_title and any(
+                    keyword.lower() in page_title.lower()
+                    for keyword in self.AUTH_KEYWORDS
+                ):
                     logger.debug("Authentication page title detected: %s", page_title)
                     return True
             except Exception:
@@ -4436,7 +4988,7 @@ class CopilotHandler:
             return False
 
         error_types = _get_playwright_errors()
-        PlaywrightError = error_types['Error']
+        PlaywrightError = error_types["Error"]
 
         def _is_interactive(element, require_enabled: bool = True) -> bool:
             try:
@@ -4495,14 +5047,19 @@ class CopilotHandler:
                 if not label:
                     continue
                 label_lower = label.lower()
-                if any(keyword in label_lower for keyword in self.LOGIN_PROMPT_BUTTON_KEYWORDS):
+                if any(
+                    keyword in label_lower
+                    for keyword in self.LOGIN_PROMPT_BUTTON_KEYWORDS
+                ):
                     return True
         except PlaywrightError:
             return False
 
         return False
 
-    def _wait_for_auto_login_impl(self, max_wait: float = 15.0, poll_interval: float = 1.0) -> bool:
+    def _wait_for_auto_login_impl(
+        self, max_wait: float = 15.0, poll_interval: float = 1.0
+    ) -> bool:
         """Wait for automatic login (Windows integrated auth, SSO, etc.) to complete.
 
         This method monitors the login process and distinguishes between:
@@ -4522,8 +5079,8 @@ class CopilotHandler:
             return False
 
         error_types = _get_playwright_errors()
-        PlaywrightError = error_types['Error']
-        PlaywrightTimeoutError = error_types['TimeoutError']
+        PlaywrightError = error_types["Error"]
+        PlaywrightTimeoutError = error_types["TimeoutError"]
 
         # Check browser display mode - only minimize in "minimized" mode
         should_minimize = self._get_browser_display_mode() == "minimized"
@@ -4532,7 +5089,9 @@ class CopilotHandler:
         last_url = None
         stable_count = 0  # Counter for how many consecutive checks show no URL change
         # Increased from 2 to 4 to avoid false positives during network delays
-        STABLE_THRESHOLD = 4  # If URL doesn't change for this many checks (4s), consider it stable
+        STABLE_THRESHOLD = (
+            4  # If URL doesn't change for this many checks (4s), consider it stable
+        )
 
         logger.info("Waiting for auto-login to complete (max %.1fs)...", max_wait)
 
@@ -4546,8 +5105,12 @@ class CopilotHandler:
                 # Check if chat UI is now available
                 input_selector = self.CHAT_INPUT_SELECTOR
                 try:
-                    self._page.wait_for_selector(input_selector, timeout=500, state='visible')
-                    logger.info("Auto-login completed - chat UI is ready (%.1fs)", elapsed)
+                    self._page.wait_for_selector(
+                        input_selector, timeout=500, state="visible"
+                    )
+                    logger.info(
+                        "Auto-login completed - chat UI is ready (%.1fs)", elapsed
+                    )
                     # Ensure window is minimized before returning (only in minimized mode)
                     if should_minimize:
                         self._minimize_edge_window(None)
@@ -4565,7 +5128,7 @@ class CopilotHandler:
                     if _is_auth_flow_page(current_url):
                         logger.debug(
                             "Auto-login: on auth flow page (%s), waiting for completion...",
-                            current_url[:60]
+                            current_url[:60],
                         )
                         # Don't navigate, just wait for auth to complete
                         time.sleep(poll_interval)
@@ -4584,31 +5147,46 @@ class CopilotHandler:
                             if self._has_auth_dialog():
                                 logger.debug(
                                     "Auto-login: auth dialog detected, skipping navigation (%s)",
-                                    current_url[:60]
+                                    current_url[:60],
                                 )
                             else:
                                 logger.debug(
                                     "Auto-login: on Copilot domain but not /chat (%s), URL stable, navigating...",
-                                    current_url[:60]
+                                    current_url[:60],
                                 )
                                 try:
-                                    self._page.goto(self.COPILOT_URL, wait_until='commit', timeout=30000)
+                                    self._page.goto(
+                                        self.COPILOT_URL,
+                                        wait_until="commit",
+                                        timeout=30000,
+                                    )
                                     time.sleep(1.0)  # Brief wait for page load
                                     # Re-check URL after navigation
                                     current_url = self._page.url
                                     stable_count = 0  # Reset after navigation
-                                except (PlaywrightTimeoutError, PlaywrightError) as nav_err:
-                                    logger.debug("Failed to navigate to chat: %s", nav_err)
+                                except (
+                                    PlaywrightTimeoutError,
+                                    PlaywrightError,
+                                ) as nav_err:
+                                    logger.debug(
+                                        "Failed to navigate to chat: %s", nav_err
+                                    )
                         else:
                             logger.debug(
                                 "Auto-login: on Copilot domain but not /chat (%s), waiting for redirect to complete (stable_count=%d)...",
-                                current_url[:60], stable_count
+                                current_url[:60],
+                                stable_count,
                             )
 
                     # Give a bit more time for chat UI to appear after redirect
                     try:
-                        self._page.wait_for_selector(input_selector, timeout=2000, state='visible')
-                        logger.info("Auto-login completed after redirect - chat UI ready (%.1fs)", elapsed)
+                        self._page.wait_for_selector(
+                            input_selector, timeout=2000, state="visible"
+                        )
+                        logger.info(
+                            "Auto-login completed after redirect - chat UI ready (%.1fs)",
+                            elapsed,
+                        )
                         # Ensure window is minimized before returning (only in minimized mode)
                         if should_minimize:
                             self._minimize_edge_window(None)
@@ -4625,7 +5203,7 @@ class CopilotHandler:
                             if _is_login_page(current_url) or self._has_auth_dialog():
                                 logger.info(
                                     "Auto-login not progressing - URL stable on login page (%.1fs)",
-                                    elapsed
+                                    elapsed,
                                 )
                                 return False  # Manual login required
                             elif not _is_copilot_url(current_url):
@@ -4635,22 +5213,37 @@ class CopilotHandler:
                                 if _is_auth_flow_page(current_url):
                                     logger.debug(
                                         "Auto-login: auth flow detected in URL (%s), waiting...",
-                                        current_url[:60]
+                                        current_url[:60],
                                     )
                                 else:
                                     # Navigate to Copilot to get things moving
                                     logger.info(
                                         "URL stable on non-Copilot page (%s), navigating to Copilot...",
-                                        current_url[:60]
+                                        current_url[:60],
                                     )
                                     try:
-                                        self._page.goto(self.COPILOT_URL, wait_until='commit', timeout=30000)
-                                        stable_count = 0  # Reset counter after navigation
-                                    except (PlaywrightTimeoutError, PlaywrightError) as nav_err:
-                                        logger.debug("Failed to navigate to Copilot: %s", nav_err)
+                                        self._page.goto(
+                                            self.COPILOT_URL,
+                                            wait_until="commit",
+                                            timeout=30000,
+                                        )
+                                        stable_count = (
+                                            0  # Reset counter after navigation
+                                        )
+                                    except (
+                                        PlaywrightTimeoutError,
+                                        PlaywrightError,
+                                    ) as nav_err:
+                                        logger.debug(
+                                            "Failed to navigate to Copilot: %s", nav_err
+                                        )
                     else:
                         # URL changed - auto-login is progressing
-                        logger.debug("Auto-login progressing: %s -> %s", last_url[:50], current_url[:50])
+                        logger.debug(
+                            "Auto-login progressing: %s -> %s",
+                            last_url[:50],
+                            current_url[:50],
+                        )
                         stable_count = 0
                         # Re-minimize after redirect - Edge may steal focus during redirects
                         # (only in minimized mode)
@@ -4671,12 +5264,19 @@ class CopilotHandler:
             except PlaywrightError as e:
                 # Temporary errors during page transitions are common
                 # Only fail after multiple consecutive errors
-                consecutive_errors = getattr(self, '_auto_login_error_count', 0) + 1
+                consecutive_errors = getattr(self, "_auto_login_error_count", 0) + 1
                 self._auto_login_error_count = consecutive_errors
-                logger.debug("Error during auto-login wait (attempt %d): %s", consecutive_errors, e)
+                logger.debug(
+                    "Error during auto-login wait (attempt %d): %s",
+                    consecutive_errors,
+                    e,
+                )
 
                 if consecutive_errors >= 3:
-                    logger.warning("Auto-login failed after %d consecutive errors", consecutive_errors)
+                    logger.warning(
+                        "Auto-login failed after %d consecutive errors",
+                        consecutive_errors,
+                    )
                     self._auto_login_error_count = 0
                     return False
 
@@ -4692,19 +5292,25 @@ class CopilotHandler:
         try:
             current_url = self._page.url
             if _is_login_page(current_url) or self._has_auth_dialog():
-                logger.info("Auto-login timeout - still on login page after %.1fs", max_wait)
+                logger.info(
+                    "Auto-login timeout - still on login page after %.1fs", max_wait
+                )
                 return False
             # Not on login page, give one more chance to check chat UI
             input_selector = self.CHAT_INPUT_SELECTOR
             try:
-                self._page.wait_for_selector(input_selector, timeout=2000, state='visible')
+                self._page.wait_for_selector(
+                    input_selector, timeout=2000, state="visible"
+                )
                 logger.info("Auto-login completed at timeout - chat UI ready")
                 # Ensure window is minimized before returning (only in minimized mode)
                 if should_minimize:
                     self._minimize_edge_window(None)
                 return True
             except PlaywrightTimeoutError:
-                logger.info("Auto-login timeout - chat UI not ready after %.1fs", max_wait)
+                logger.info(
+                    "Auto-login timeout - chat UI not ready after %.1fs", max_wait
+                )
                 return False
         except PlaywrightError:
             return False
@@ -4717,7 +5323,7 @@ class CopilotHandler:
             import ctypes
             from ctypes import wintypes
 
-            user32 = ctypes.WinDLL('user32', use_last_error=True)
+            user32 = ctypes.WinDLL("user32", use_last_error=True)
             edge_hwnd = self._find_edge_window_handle(page_title)
             if not edge_hwnd:
                 return False
@@ -4734,7 +5340,10 @@ class CopilotHandler:
             if width <= 0 or height <= 0:
                 return True
 
-            if width < self.EDGE_WINDOW_SANITY_MIN_WIDTH or height < self.EDGE_WINDOW_SANITY_MIN_HEIGHT:
+            if (
+                width < self.EDGE_WINDOW_SANITY_MIN_WIDTH
+                or height < self.EDGE_WINDOW_SANITY_MIN_HEIGHT
+            ):
                 return True
 
             SM_XVIRTUALSCREEN = 76
@@ -4808,19 +5417,29 @@ class CopilotHandler:
 
         if mode == "foreground" and edge_layout_mode is None:
             if not force_full_window and not self._is_edge_window_offscreen():
-                logger.debug("Skipping bring_to_foreground in %s mode (already visible): %s", mode, reason)
+                logger.debug(
+                    "Skipping bring_to_foreground in %s mode (already visible): %s",
+                    mode,
+                    reason,
+                )
                 return
-            logger.info("Edge window is off-screen in foreground mode; restoring to visible area")
+            logger.info(
+                "Edge window is off-screen in foreground mode; restoring to visible area"
+            )
 
         error_types = _get_playwright_errors()
-        PlaywrightError = error_types['Error']
+        PlaywrightError = error_types["Error"]
 
         # Log the reason for bringing browser to foreground
         try:
             current_url = page.url if page else "N/A"
         except Exception:
             current_url = "unknown"
-        logger.info(">>> Bringing browser to foreground: reason='%s', url=%s", reason, current_url[:80] if current_url else "N/A")
+        logger.info(
+            ">>> Bringing browser to foreground: reason='%s', url=%s",
+            reason,
+            current_url[:80] if current_url else "N/A",
+        )
 
         # Get page title for window identification
         page_title = None
@@ -4874,7 +5493,7 @@ class CopilotHandler:
             import ctypes
             from ctypes import wintypes
 
-            user32 = ctypes.WinDLL('user32', use_last_error=True)
+            user32 = ctypes.WinDLL("user32", use_last_error=True)
 
             EnumWindowsProc = ctypes.WINFUNCTYPE(
                 wintypes.BOOL, wintypes.HWND, wintypes.LPARAM
@@ -4933,9 +5552,12 @@ class CopilotHandler:
                     window_pid = wintypes.DWORD()
                     user32.GetWindowThreadProcessId(hwnd, ctypes.byref(window_pid))
                     if window_pid.value in target_pids:
-                        if class_value == "Chrome_WidgetWin_1" and fallback_hwnd is None:
+                        if (
+                            class_value == "Chrome_WidgetWin_1"
+                            and fallback_hwnd is None
+                        ):
                             # Log only once per session to avoid repeated log spam during polling
-                            if not getattr(self, '_edge_window_log_shown', False):
+                            if not getattr(self, "_edge_window_log_shown", False):
                                 logger.debug(
                                     "Found Edge window by process tree: %s (pid=%d)",
                                     window_title[:60],
@@ -4984,7 +5606,7 @@ class CopilotHandler:
             import ctypes
             from ctypes import wintypes
 
-            user32 = ctypes.WinDLL('user32', use_last_error=True)
+            user32 = ctypes.WinDLL("user32", use_last_error=True)
 
             EnumWindowsProc = ctypes.WINFUNCTYPE(
                 wintypes.BOOL, wintypes.HWND, wintypes.LPARAM
@@ -5019,7 +5641,11 @@ class CopilotHandler:
 
                 # Match "YakuLingo" with a clean boundary to avoid IDE windows.
                 if self._is_yakulingo_window_title(window_title):
-                    logger.debug("Found YakuLingo window: %s (include_hidden=%s)", window_title, include_hidden)
+                    logger.debug(
+                        "Found YakuLingo window: %s (include_hidden=%s)",
+                        window_title,
+                        include_hidden,
+                    )
                     found_hwnd = hwnd
                     return False
 
@@ -5040,9 +5666,9 @@ class CopilotHandler:
             import ctypes
             from ctypes import wintypes
 
-            user32 = ctypes.WinDLL('user32', use_last_error=True)
+            user32 = ctypes.WinDLL("user32", use_last_error=True)
             try:
-                dwmapi = ctypes.WinDLL('dwmapi', use_last_error=True)
+                dwmapi = ctypes.WinDLL("dwmapi", use_last_error=True)
             except Exception:
                 dwmapi = None
 
@@ -5074,12 +5700,15 @@ class CopilotHandler:
                 try:
                     rect = RECT()
                     DWMWA_EXTENDED_FRAME_BOUNDS = 9
-                    if dwmapi.DwmGetWindowAttribute(
-                        hwnd,
-                        DWMWA_EXTENDED_FRAME_BOUNDS,
-                        ctypes.byref(rect),
-                        ctypes.sizeof(rect),
-                    ) == 0:
+                    if (
+                        dwmapi.DwmGetWindowAttribute(
+                            hwnd,
+                            DWMWA_EXTENDED_FRAME_BOUNDS,
+                            ctypes.byref(rect),
+                            ctypes.sizeof(rect),
+                        )
+                        == 0
+                    ):
                         return rect
                 except Exception:
                     return None
@@ -5104,7 +5733,9 @@ class CopilotHandler:
                 bottom = max(0, outer.bottom - frame.bottom)
                 return (left, top, right, bottom)
 
-            def _set_window_pos_with_frame_adjust(hwnd, x, y, width, height, insert_after, flags):
+            def _set_window_pos_with_frame_adjust(
+                hwnd, x, y, width, height, insert_after, flags
+            ):
                 left, top, right, bottom = _get_frame_margins(hwnd)
                 adj_x = x - left
                 adj_y = y - top
@@ -5198,9 +5829,9 @@ class CopilotHandler:
             import ctypes
             from ctypes import wintypes
 
-            user32 = ctypes.WinDLL('user32', use_last_error=True)
+            user32 = ctypes.WinDLL("user32", use_last_error=True)
             try:
-                dwmapi = ctypes.WinDLL('dwmapi', use_last_error=True)
+                dwmapi = ctypes.WinDLL("dwmapi", use_last_error=True)
             except Exception:
                 dwmapi = None
 
@@ -5225,12 +5856,15 @@ class CopilotHandler:
                 try:
                     rect = RECT()
                     DWMWA_EXTENDED_FRAME_BOUNDS = 9
-                    if dwmapi.DwmGetWindowAttribute(
-                        hwnd,
-                        DWMWA_EXTENDED_FRAME_BOUNDS,
-                        ctypes.byref(rect),
-                        ctypes.sizeof(rect),
-                    ) == 0:
+                    if (
+                        dwmapi.DwmGetWindowAttribute(
+                            hwnd,
+                            DWMWA_EXTENDED_FRAME_BOUNDS,
+                            ctypes.byref(rect),
+                            ctypes.sizeof(rect),
+                        )
+                        == 0
+                    ):
                         return rect
                 except Exception:
                     return None
@@ -5255,7 +5889,9 @@ class CopilotHandler:
                 bottom = max(0, outer.bottom - frame.bottom)
                 return (left, top, right, bottom)
 
-            def _set_window_pos_with_frame_adjust(hwnd, x, y, width, height, insert_after, flags):
+            def _set_window_pos_with_frame_adjust(
+                hwnd, x, y, width, height, insert_after, flags
+            ):
                 left, top, right, bottom = _get_frame_margins(hwnd)
                 adj_x = x - left
                 adj_y = y - top
@@ -5347,9 +5983,9 @@ class CopilotHandler:
             import ctypes
             from ctypes import wintypes
 
-            user32 = ctypes.WinDLL('user32', use_last_error=True)
+            user32 = ctypes.WinDLL("user32", use_last_error=True)
             try:
-                dwmapi = ctypes.WinDLL('dwmapi', use_last_error=True)
+                dwmapi = ctypes.WinDLL("dwmapi", use_last_error=True)
             except Exception:
                 dwmapi = None
 
@@ -5369,12 +6005,15 @@ class CopilotHandler:
                 try:
                     rect = RECT()
                     DWMWA_EXTENDED_FRAME_BOUNDS = 9
-                    if dwmapi.DwmGetWindowAttribute(
-                        wintypes.HWND(hwnd_value),
-                        DWMWA_EXTENDED_FRAME_BOUNDS,
-                        ctypes.byref(rect),
-                        ctypes.sizeof(rect),
-                    ) == 0:
+                    if (
+                        dwmapi.DwmGetWindowAttribute(
+                            wintypes.HWND(hwnd_value),
+                            DWMWA_EXTENDED_FRAME_BOUNDS,
+                            ctypes.byref(rect),
+                            ctypes.sizeof(rect),
+                        )
+                        == 0
+                    ):
                         return rect
                 except Exception:
                     return None
@@ -5382,7 +6021,9 @@ class CopilotHandler:
 
             def _get_window_rect(hwnd_value: int):
                 rect = RECT()
-                if not user32.GetWindowRect(wintypes.HWND(hwnd_value), ctypes.byref(rect)):
+                if not user32.GetWindowRect(
+                    wintypes.HWND(hwnd_value), ctypes.byref(rect)
+                ):
                     return None
                 return rect
 
@@ -5478,10 +6119,12 @@ class CopilotHandler:
             import ctypes
             from ctypes import wintypes
 
-            user32 = ctypes.WinDLL('user32', use_last_error=True)
+            user32 = ctypes.WinDLL("user32", use_last_error=True)
             target_pids: set[int] = set()
             root_pids: list[int] = []
-            if self.edge_process is not None and getattr(self.edge_process, "pid", None):
+            if self.edge_process is not None and getattr(
+                self.edge_process, "pid", None
+            ):
                 root_pids.append(int(self.edge_process.pid))
             if self._edge_pid:
                 root_pids.append(int(self._edge_pid))
@@ -5572,13 +6215,20 @@ class CopilotHandler:
                         0,
                         0,
                         0,
-                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+                        SWP_NOMOVE
+                        | SWP_NOSIZE
+                        | SWP_NOZORDER
+                        | SWP_NOACTIVATE
+                        | SWP_FRAMECHANGED,
                     )
                     changed_any = True
                 any_success = True
 
             if changed_any:
-                logger.debug("Edge taskbar visibility set to: %s", "visible" if visible else "hidden")
+                logger.debug(
+                    "Edge taskbar visibility set to: %s",
+                    "visible" if visible else "hidden",
+                )
             return any_success
         except Exception as e:
             logger.debug("Failed to set Edge taskbar visibility: %s", e)
@@ -5592,7 +6242,7 @@ class CopilotHandler:
             import ctypes
             from ctypes import wintypes
 
-            user32 = ctypes.WinDLL('user32', use_last_error=True)
+            user32 = ctypes.WinDLL("user32", use_last_error=True)
             edge_hwnd = self._find_edge_window_handle()
             if not edge_hwnd:
                 return
@@ -5613,7 +6263,7 @@ class CopilotHandler:
             import ctypes
             from ctypes import wintypes
 
-            user32 = ctypes.WinDLL('user32', use_last_error=True)
+            user32 = ctypes.WinDLL("user32", use_last_error=True)
             edge_hwnd = self._find_edge_window_handle()
             if not edge_hwnd:
                 return False
@@ -5723,7 +6373,7 @@ class CopilotHandler:
             import ctypes
             from ctypes import wintypes
 
-            user32 = ctypes.WinDLL('user32', use_last_error=True)
+            user32 = ctypes.WinDLL("user32", use_last_error=True)
 
             class RECT(ctypes.Structure):
                 _fields_ = [
@@ -5807,7 +6457,7 @@ class CopilotHandler:
         try:
             import ctypes
 
-            user32 = ctypes.WinDLL('user32', use_last_error=True)
+            user32 = ctypes.WinDLL("user32", use_last_error=True)
             WM_CLOSE = 0x0010
 
             # Find the Edge window handle
@@ -5822,7 +6472,9 @@ class CopilotHandler:
                 logger.debug("PostMessageW failed for WM_CLOSE")
                 return False
 
-            logger.debug("Sent WM_CLOSE to Edge window, waiting for graceful shutdown...")
+            logger.debug(
+                "Sent WM_CLOSE to Edge window, waiting for graceful shutdown..."
+            )
 
             # Wait for the process to terminate
             try:
@@ -5866,7 +6518,7 @@ class CopilotHandler:
             import ctypes
             from ctypes import wintypes
 
-            user32 = ctypes.WinDLL('user32', use_last_error=True)
+            user32 = ctypes.WinDLL("user32", use_last_error=True)
 
             edge_hwnd = self._find_edge_window_handle(page_title)
 
@@ -5891,15 +6543,21 @@ class CopilotHandler:
 
             # Get current foreground window's thread
             foreground_hwnd = user32.GetForegroundWindow()
-            foreground_thread_id = user32.GetWindowThreadProcessId(foreground_hwnd, None)
+            foreground_thread_id = user32.GetWindowThreadProcessId(
+                foreground_hwnd, None
+            )
             current_thread_id = ctypes.windll.kernel32.GetCurrentThreadId()
 
             # Attach to the foreground thread to gain focus permission
             attached = False
             if foreground_thread_id != current_thread_id:
-                attached = user32.AttachThreadInput(current_thread_id, foreground_thread_id, True)
+                attached = user32.AttachThreadInput(
+                    current_thread_id, foreground_thread_id, True
+                )
                 if attached:
-                    logger.debug("Attached to foreground thread %d", foreground_thread_id)
+                    logger.debug(
+                        "Attached to foreground thread %d", foreground_thread_id
+                    )
 
             try:
                 reason_text = (reason or "").lower()
@@ -5920,13 +6578,20 @@ class CopilotHandler:
                     current_y = rect.top
                     current_width = rect.right - rect.left
                     current_height = rect.bottom - rect.top
-                    logger.debug("Current Edge window: pos=(%d,%d), size=%dx%d",
-                                 current_x, current_y, current_width, current_height)
+                    logger.debug(
+                        "Current Edge window: pos=(%d,%d), size=%dx%d",
+                        current_x,
+                        current_y,
+                        current_width,
+                        current_height,
+                    )
 
                     # Get screen work area (excludes taskbar) for proper positioning
                     work_area = wintypes.RECT()
                     SPI_GETWORKAREA = 0x0030
-                    user32.SystemParametersInfoW(SPI_GETWORKAREA, 0, ctypes.byref(work_area), 0)
+                    user32.SystemParametersInfoW(
+                        SPI_GETWORKAREA, 0, ctypes.byref(work_area), 0
+                    )
                     screen_width = work_area.right - work_area.left
                     screen_height = work_area.bottom - work_area.top
 
@@ -5948,7 +6613,9 @@ class CopilotHandler:
                         or rect.bottom <= v_top
                         or rect.top >= v_bottom
                     )
-                    is_off_screen = offscreen_by_bounds or current_x < -10000 or current_y < -10000
+                    is_off_screen = (
+                        offscreen_by_bounds or current_x < -10000 or current_y < -10000
+                    )
                     is_too_small = (
                         current_width < self.EDGE_WINDOW_SANITY_MIN_WIDTH
                         or current_height < self.EDGE_WINDOW_SANITY_MIN_HEIGHT
@@ -5958,9 +6625,14 @@ class CopilotHandler:
                         # Manual show should match the app window's layout (right half).
                         should_right_half = "manual_show" in reason_text
                         if should_right_half:
-                            new_width = max(int(screen_width * 0.5), self.EDGE_WINDOW_SANITY_MIN_WIDTH)
+                            new_width = max(
+                                int(screen_width * 0.5),
+                                self.EDGE_WINDOW_SANITY_MIN_WIDTH,
+                            )
                             new_width = min(new_width, screen_width)
-                            new_height = max(screen_height, self.EDGE_WINDOW_SANITY_MIN_HEIGHT)
+                            new_height = max(
+                                screen_height, self.EDGE_WINDOW_SANITY_MIN_HEIGHT
+                            )
                             new_height = min(new_height, screen_height)
                             new_x = int(work_area.right - new_width)
                             new_y = int(work_area.top)
@@ -5968,29 +6640,53 @@ class CopilotHandler:
                             new_width = current_width
                             new_height = current_height
                             if is_too_small:
-                                new_width = max(current_width, min(self.MIN_EDGE_WINDOW_WIDTH, screen_width))
-                                new_height = max(current_height, min(self.MIN_EDGE_WINDOW_HEIGHT, screen_height))
+                                new_width = max(
+                                    current_width,
+                                    min(self.MIN_EDGE_WINDOW_WIDTH, screen_width),
+                                )
+                                new_height = max(
+                                    current_height,
+                                    min(self.MIN_EDGE_WINDOW_HEIGHT, screen_height),
+                                )
 
                             # Center the window on screen work area
                             new_x = work_area.left + (screen_width - new_width) // 2
                             new_y = work_area.top + (screen_height - new_height) // 2
 
                         # Ensure window stays within screen bounds
-                        new_x = max(work_area.left, min(new_x, work_area.right - new_width))
-                        new_y = max(work_area.top, min(new_y, work_area.bottom - new_height))
+                        new_x = max(
+                            work_area.left, min(new_x, work_area.right - new_width)
+                        )
+                        new_y = max(
+                            work_area.top, min(new_y, work_area.bottom - new_height)
+                        )
 
                         # Reposition window BEFORE showing (SWP_NOACTIVATE to avoid flash)
                         user32.SetWindowPos(
-                            edge_hwnd, 0,
-                            new_x, new_y, new_width, new_height,
-                            SWP_NOACTIVATE | SWP_NOZORDER
+                            edge_hwnd,
+                            0,
+                            new_x,
+                            new_y,
+                            new_width,
+                            new_height,
+                            SWP_NOACTIVATE | SWP_NOZORDER,
                         )
                         if is_off_screen:
-                            logger.info("Pre-positioned Edge window from off-screen (%d,%d) to (%d,%d)",
-                                        current_x, current_y, new_x, new_y)
+                            logger.info(
+                                "Pre-positioned Edge window from off-screen (%d,%d) to (%d,%d)",
+                                current_x,
+                                current_y,
+                                new_x,
+                                new_y,
+                            )
                         if is_too_small and not should_right_half:
-                            logger.info("Pre-adjusted Edge window size from %dx%d to %dx%d",
-                                        current_width, current_height, new_width, new_height)
+                            logger.info(
+                                "Pre-adjusted Edge window size from %dx%d to %dx%d",
+                                current_width,
+                                current_height,
+                                new_width,
+                                new_height,
+                            )
 
                 # 3. Now show and restore window (at correct position)
                 user32.ShowWindow(edge_hwnd, SW_RESTORE if is_minimized else SW_SHOW)
@@ -6001,16 +6697,24 @@ class CopilotHandler:
 
                 # 5. Use SetWindowPos with HWND_TOPMOST to bring to front
                 user32.SetWindowPos(
-                    edge_hwnd, HWND_TOPMOST,
-                    0, 0, 0, 0,
-                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
+                    edge_hwnd,
+                    HWND_TOPMOST,
+                    0,
+                    0,
+                    0,
+                    0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
                 )
 
                 # 6. Remove topmost flag to allow other windows on top later
                 user32.SetWindowPos(
-                    edge_hwnd, HWND_NOTOPMOST,
-                    0, 0, 0, 0,
-                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
+                    edge_hwnd,
+                    HWND_NOTOPMOST,
+                    0,
+                    0,
+                    0,
+                    0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
                 )
 
                 # 7. Set foreground window
@@ -6023,7 +6727,9 @@ class CopilotHandler:
             finally:
                 # Detach from the foreground thread
                 if attached:
-                    user32.AttachThreadInput(current_thread_id, foreground_thread_id, False)
+                    user32.AttachThreadInput(
+                        current_thread_id, foreground_thread_id, False
+                    )
                     logger.debug("Detached from foreground thread")
 
             should_flash = False
@@ -6053,10 +6759,14 @@ class CopilotHandler:
             return True
 
         except Exception as e:
-            logger.debug("Failed to bring Edge window to foreground via Windows API: %s", e)
+            logger.debug(
+                "Failed to bring Edge window to foreground via Windows API: %s", e
+            )
             return False
 
-    def _minimize_edge_window(self, page_title: str = None, max_retries: int = 5) -> bool:
+    def _minimize_edge_window(
+        self, page_title: str = None, max_retries: int = 5
+    ) -> bool:
         """Minimize Edge window to return it to the background after login.
 
         Note: We only use SW_MINIMIZE (not SW_HIDE). SW_HIDE causes issues with
@@ -6079,7 +6789,7 @@ class CopilotHandler:
         try:
             import ctypes
 
-            user32 = ctypes.WinDLL('user32', use_last_error=True)
+            user32 = ctypes.WinDLL("user32", use_last_error=True)
 
             # Retry logic with exponential backoff: Edge window may not be ready immediately
             # Wait times: 0.3s, 0.6s, 1.2s, 2.4s (total ~4.5s max wait)
@@ -6089,13 +6799,20 @@ class CopilotHandler:
                 if edge_hwnd:
                     break
                 if attempt < max_retries - 1:
-                    wait_time = 0.3 * (2 ** attempt)  # Exponential backoff
-                    logger.debug("Edge window not found (attempt %d/%d), retrying in %.1fs...",
-                                 attempt + 1, max_retries, wait_time)
+                    wait_time = 0.3 * (2**attempt)  # Exponential backoff
+                    logger.debug(
+                        "Edge window not found (attempt %d/%d), retrying in %.1fs...",
+                        attempt + 1,
+                        max_retries,
+                        wait_time,
+                    )
                     time.sleep(wait_time)
 
             if not edge_hwnd:
-                logger.warning("Edge window not found for minimization after %d attempts", max_retries)
+                logger.warning(
+                    "Edge window not found for minimization after %d attempts",
+                    max_retries,
+                )
                 return False
 
             # When minimizing, hide from taskbar to avoid a separate Edge entry while running in background.
@@ -6151,26 +6868,38 @@ class CopilotHandler:
                     from ctypes import wintypes
 
                     user32 = ctypes.WinDLL("user32", use_last_error=True)
-                    yakulingo_hwnd = self._find_yakulingo_window_handle(include_hidden=True)
+                    yakulingo_hwnd = self._find_yakulingo_window_handle(
+                        include_hidden=True
+                    )
                     if yakulingo_hwnd:
-                        is_visible = bool(user32.IsWindowVisible(wintypes.HWND(yakulingo_hwnd)))
-                        is_minimized = bool(user32.IsIconic(wintypes.HWND(yakulingo_hwnd)))
+                        is_visible = bool(
+                            user32.IsWindowVisible(wintypes.HWND(yakulingo_hwnd))
+                        )
+                        is_minimized = bool(
+                            user32.IsIconic(wintypes.HWND(yakulingo_hwnd))
+                        )
                         ui_visible = is_visible and not is_minimized
                 except Exception:
                     ui_visible = False
 
                 if ui_visible:
                     try:
-                        positioned = self._position_edge_behind_yakulingo_if_ui_visible()
+                        positioned = (
+                            self._position_edge_behind_yakulingo_if_ui_visible()
+                        )
                     except Exception:
                         positioned = False
 
                     if positioned:
-                        logger.debug("UI window sync active: Edge positioned behind UI (skipping minimization)")
+                        logger.debug(
+                            "UI window sync active: Edge positioned behind UI (skipping minimization)"
+                        )
                     else:
                         # Fallback: minimize to ensure the login UI doesn't remain visible.
                         self._minimize_edge_window(None)
-                        logger.debug("UI window sync active: Edge minimization fallback (positioning failed)")
+                        logger.debug(
+                            "UI window sync active: Edge minimization fallback (positioning failed)"
+                        )
                     return
             mode = self._get_browser_display_mode()
             edge_layout_mode = getattr(self, "_edge_layout_mode", None)
@@ -6207,7 +6936,7 @@ class CopilotHandler:
             import ctypes
             from ctypes import wintypes
 
-            user32 = ctypes.WinDLL('user32', use_last_error=True)
+            user32 = ctypes.WinDLL("user32", use_last_error=True)
 
             # Get foreground window
             foreground_hwnd = user32.GetForegroundWindow()
@@ -6277,15 +7006,19 @@ class CopilotHandler:
             True if login completed successfully
         """
         error_types = _get_playwright_errors()
-        PlaywrightError = error_types['Error']
-        PlaywrightTimeoutError = error_types['TimeoutError']
+        PlaywrightError = error_types["Error"]
+        PlaywrightTimeoutError = error_types["TimeoutError"]
 
         # Reset cancellation flag at start of wait
         self._login_cancelled = False
 
         logger.info("Waiting for login completion (timeout: %ds)...", timeout)
-        logger.info("Edgeブラウザでログインしてください / Please log in to the Edge browser")
-        logger.info("(キャンセルするにはアプリを閉じてください / Close the app to cancel)")
+        logger.info(
+            "Edgeブラウザでログインしてください / Please log in to the Edge browser"
+        )
+        logger.info(
+            "(キャンセルするにはアプリを閉じてください / Close the app to cancel)"
+        )
 
         input_selector = self.CHAT_INPUT_SELECTOR_EXTENDED
         poll_interval = self.LOGIN_POLL_INTERVAL
@@ -6293,7 +7026,9 @@ class CopilotHandler:
 
         def _chat_input_ready(target_page) -> bool:
             try:
-                input_elem = target_page.query_selector(self.CHAT_INPUT_SELECTOR_EXTENDED)
+                input_elem = target_page.query_selector(
+                    self.CHAT_INPUT_SELECTOR_EXTENDED
+                )
             except Exception:
                 return False
             if not input_elem:
@@ -6351,12 +7086,17 @@ class CopilotHandler:
                                 if popup_url == "about:blank":
                                     # Wait a moment for the popup to navigate
                                     try:
-                                        popup_page.wait_for_load_state('domcontentloaded', timeout=3000)
+                                        popup_page.wait_for_load_state(
+                                            "domcontentloaded", timeout=3000
+                                        )
                                         popup_url = popup_page.url
                                     except PlaywrightTimeoutError:
                                         pass
                                 if _is_login_page(popup_url):
-                                    logger.info("Login wait: detected auth popup window (%s)", popup_url[:60])
+                                    logger.info(
+                                        "Login wait: detected auth popup window (%s)",
+                                        popup_url[:60],
+                                    )
                                     # Bring popup to foreground for user to complete auth
                                     try:
                                         popup_page.bring_to_front()
@@ -6369,13 +7109,15 @@ class CopilotHandler:
 
                 # Wait for any pending navigation to complete
                 try:
-                    page.wait_for_load_state('domcontentloaded', timeout=800)
+                    page.wait_for_load_state("domcontentloaded", timeout=800)
                 except PlaywrightTimeoutError:
                     pass  # Continue even if timeout
 
                 # Check if still on login page
                 url = page.url
-                logger.debug("Login wait: current URL = %s (elapsed: %.1fs)", url[:80], elapsed)
+                logger.debug(
+                    "Login wait: current URL = %s (elapsed: %.1fs)", url[:80], elapsed
+                )
 
                 if _is_login_page(url):
                     # Still on login page, wait and retry
@@ -6387,15 +7129,19 @@ class CopilotHandler:
 
                 # Check if we're back on Copilot with chat input
                 if _is_copilot_url(url):
-                    logger.debug("Login wait: detected m365 domain, checking for chat UI...")
+                    logger.debug(
+                        "Login wait: detected m365 domain, checking for chat UI..."
+                    )
 
                     # Check if we're on landing page - wait for JS-based auto-redirect
                     # OAuth2 login redirects to /landing or /landingv2, which should auto-redirect to /chat
                     if any(path in url for path in ("/landing", "/landingv2")):
-                        logger.debug("Login wait: on landing page, waiting for auto-redirect...")
+                        logger.debug(
+                            "Login wait: on landing page, waiting for auto-redirect..."
+                        )
                         # Wait for page load and JS execution that handles auto-redirect
                         try:
-                            page.wait_for_load_state('networkidle', timeout=5000)
+                            page.wait_for_load_state("networkidle", timeout=5000)
                         except PlaywrightTimeoutError:
                             pass  # Continue even if timeout
                         # Brief wait for JS redirect to occur
@@ -6407,23 +7153,33 @@ class CopilotHandler:
                         if "/landing" in new_url:
                             # Still on landing page after waiting - JS redirect didn't happen
                             # This can occur when Playwright blocks some JS or network requests
-                            logger.info("Login wait: auto-redirect didn't occur, navigating to chat manually...")
+                            logger.info(
+                                "Login wait: auto-redirect didn't occur, navigating to chat manually..."
+                            )
                             try:
-                                page.goto(self.COPILOT_URL, wait_until='commit', timeout=30000)
+                                page.goto(
+                                    self.COPILOT_URL, wait_until="commit", timeout=30000
+                                )
                                 if not interruptible_sleep(self.LOGIN_REDIRECT_WAIT):
-                                    logger.info("Login wait cancelled during navigation")
+                                    logger.info(
+                                        "Login wait cancelled during navigation"
+                                    )
                                     return False
                             except (PlaywrightTimeoutError, PlaywrightError) as nav_err:
-                                logger.warning("Failed to navigate to chat: %s", nav_err)
+                                logger.warning(
+                                    "Failed to navigate to chat: %s", nav_err
+                                )
                         continue  # Re-check URL and chat input
 
                     # On Copilot domain but not yet on chat path - ensure navigation completes
                     if "/chat" not in url:
                         # Avoid interrupting auth redirects/callbacks that temporarily live on the Copilot domain.
                         if _is_auth_flow_page(url):
-                            logger.debug("Login wait: on auth flow page, waiting for redirect to complete...")
+                            logger.debug(
+                                "Login wait: on auth flow page, waiting for redirect to complete..."
+                            )
                             try:
-                                page.wait_for_load_state('networkidle', timeout=10000)
+                                page.wait_for_load_state("networkidle", timeout=10000)
                             except PlaywrightTimeoutError:
                                 pass
                             if not interruptible_sleep(poll_interval):
@@ -6433,9 +7189,11 @@ class CopilotHandler:
                             continue
                         # Also check for auth dialog before navigating
                         if self._has_auth_dialog():
-                            logger.debug("Login wait: auth dialog detected, waiting for auth to complete...")
+                            logger.debug(
+                                "Login wait: auth dialog detected, waiting for auth to complete..."
+                            )
                             try:
-                                page.wait_for_load_state('networkidle', timeout=10000)
+                                page.wait_for_load_state("networkidle", timeout=10000)
                             except PlaywrightTimeoutError:
                                 pass
                             if not interruptible_sleep(poll_interval):
@@ -6443,11 +7201,19 @@ class CopilotHandler:
                                 return False
                             elapsed += poll_interval
                             continue
-                        logger.debug("Login wait: Copilot domain but not /chat, navigating...")
+                        logger.debug(
+                            "Login wait: Copilot domain but not /chat, navigating..."
+                        )
                         try:
-                            page.goto(self.COPILOT_URL, wait_until='domcontentloaded', timeout=30000)
+                            page.goto(
+                                self.COPILOT_URL,
+                                wait_until="domcontentloaded",
+                                timeout=30000,
+                            )
                             if not interruptible_sleep(self.LOGIN_REDIRECT_WAIT):
-                                logger.info("Login wait cancelled during chat navigation")
+                                logger.info(
+                                    "Login wait cancelled during chat navigation"
+                                )
                                 return False
                         except (PlaywrightTimeoutError, PlaywrightError) as nav_err:
                             logger.warning("Failed to navigate to chat: %s", nav_err)
@@ -6459,14 +7225,18 @@ class CopilotHandler:
 
                     # Try to find chat input
                     try:
-                        page.wait_for_selector(input_selector, timeout=1000, state='visible')
+                        page.wait_for_selector(
+                            input_selector, timeout=1000, state="visible"
+                        )
                         logger.info("Login completed successfully")
                         # Finalize connection state
                         self._finalize_connected_state()
                         return True
                     except PlaywrightTimeoutError:
                         # Chat input not visible yet, might still be loading
-                        logger.debug("Login wait: chat input not found yet, retrying...")
+                        logger.debug(
+                            "Login wait: chat input not found yet, retrying..."
+                        )
                         pass
                 else:
                     logger.debug("Login wait: URL is not login page nor m365 domain")
@@ -6483,7 +7253,9 @@ class CopilotHandler:
                     return False
                 elapsed += poll_interval
 
-        logger.warning("Login timeout - user did not complete login within %ds", timeout)
+        logger.warning(
+            "Login timeout - user did not complete login within %ds", timeout
+        )
         return False
 
     def _check_copilot_state(self, timeout: int = 5) -> str:
@@ -6516,7 +7288,7 @@ class CopilotHandler:
             return self._record_state(ConnectionState.ERROR)
 
         error_types = _get_playwright_errors()
-        PlaywrightError = error_types['Error']
+        PlaywrightError = error_types["Error"]
 
         # ページの有効性を確認し、必要に応じて再取得
         page = self._page
@@ -6533,7 +7305,9 @@ class CopilotHandler:
         try:
             # ページが有効か確認（is_closed()で判定）
             if page.is_closed():
-                logger.info("Page is closed, attempting to get active page from context")
+                logger.info(
+                    "Page is closed, attempting to get active page from context"
+                )
                 page = self._get_active_copilot_page()
                 if page:
                     self._page = page
@@ -6617,7 +7391,7 @@ class CopilotHandler:
             return False
 
         error_types = _get_playwright_errors()
-        PlaywrightError = error_types['Error']
+        PlaywrightError = error_types["Error"]
 
         page = self._page or self._get_active_copilot_page()
         if not page:
@@ -6734,7 +7508,7 @@ class CopilotHandler:
             return None
 
         error_types = _get_playwright_errors()
-        PlaywrightError = error_types['Error']
+        PlaywrightError = error_types["Error"]
 
         try:
             pages = self._context.pages
@@ -6771,7 +7545,7 @@ class CopilotHandler:
             return None
 
         error_types = _get_playwright_errors()
-        PlaywrightError = error_types['Error']
+        PlaywrightError = error_types["Error"]
 
         try:
             pages = self._context.pages
@@ -6815,8 +7589,8 @@ class CopilotHandler:
             False: エラー発生
         """
         error_types = _get_playwright_errors()
-        PlaywrightTimeoutError = error_types['TimeoutError']
-        PlaywrightError = error_types['Error']
+        PlaywrightTimeoutError = error_types["TimeoutError"]
+        PlaywrightError = error_types["Error"]
 
         page = self._page
         if not page:
@@ -6833,27 +7607,36 @@ class CopilotHandler:
                 if page:
                     self._page = page
                 else:
-                    logger.warning("wait_for_page_load: page closed and no replacement found")
+                    logger.warning(
+                        "wait_for_page_load: page closed and no replacement found"
+                    )
                     return False
 
             # Do not report success while still on a login or auth flow page.
             url = page.url
             if _is_login_page(url) or _is_auth_flow_page(url):
-                logger.info("wait_for_page_load: still in login/auth flow (URL=%s)", url[:80] if url else "empty")
+                logger.info(
+                    "wait_for_page_load: still in login/auth flow (URL=%s)",
+                    url[:80] if url else "empty",
+                )
                 return False
 
             # DOMの読み込み完了を待機
             logger.info("Waiting for DOM content loaded...")
             try:
-                page.wait_for_load_state('domcontentloaded', timeout=5000)
+                page.wait_for_load_state("domcontentloaded", timeout=5000)
             except PlaywrightTimeoutError:
                 pass  # タイムアウトしても続行
 
             # Wait for the chat input to become available; fixed sleep alone is flaky right after login.
             try:
-                page.wait_for_selector(self.CHAT_INPUT_SELECTOR_EXTENDED, timeout=30000, state='visible')
+                page.wait_for_selector(
+                    self.CHAT_INPUT_SELECTOR_EXTENDED, timeout=30000, state="visible"
+                )
             except PlaywrightTimeoutError:
-                logger.info("wait_for_page_load: chat input not visible yet, continuing with fixed wait")
+                logger.info(
+                    "wait_for_page_load: chat input not visible yet, continuing with fixed wait"
+                )
 
             # 追加の固定時間待機（ページの初期化処理が完了するのを待つ）
             logger.info("Waiting %.1f seconds for page initialization...", wait_seconds)
@@ -6884,16 +7667,22 @@ class CopilotHandler:
         now = time.monotonic()
         if now < self._state_check_backoff_until:
             remaining = self._state_check_backoff_until - now
-            logger.debug("check_copilot_state: backoff active (%.2fs remaining)", remaining)
+            logger.debug(
+                "check_copilot_state: backoff active (%.2fs remaining)", remaining
+            )
             cached_ready = self._get_recent_ready_state()
             if cached_ready:
                 return cached_ready
             return ConnectionState.LOADING
 
         try:
-            return _playwright_executor.execute(self._check_copilot_state, timeout, timeout=timeout)
+            return _playwright_executor.execute(
+                self._check_copilot_state, timeout, timeout=timeout
+            )
         except TimeoutError:
-            self._state_check_backoff_until = time.monotonic() + self.STATE_CHECK_BACKOFF_SECONDS
+            self._state_check_backoff_until = (
+                time.monotonic() + self.STATE_CHECK_BACKOFF_SECONDS
+            )
             logger.debug(
                 "check_copilot_state: timed out, backing off for %.1fs",
                 self.STATE_CHECK_BACKOFF_SECONDS,
@@ -6914,13 +7703,19 @@ class CopilotHandler:
         now = time.monotonic()
         if now < self._state_check_backoff_until:
             remaining = self._state_check_backoff_until - now
-            logger.debug("confirm_login_required: backoff active (%.2fs remaining)", remaining)
+            logger.debug(
+                "confirm_login_required: backoff active (%.2fs remaining)", remaining
+            )
             return False
 
         try:
-            return _playwright_executor.execute(self._confirm_login_required_impl, timeout=timeout)
+            return _playwright_executor.execute(
+                self._confirm_login_required_impl, timeout=timeout
+            )
         except TimeoutError:
-            self._state_check_backoff_until = time.monotonic() + self.STATE_CHECK_BACKOFF_SECONDS
+            self._state_check_backoff_until = (
+                time.monotonic() + self.STATE_CHECK_BACKOFF_SECONDS
+            )
             logger.debug(
                 "confirm_login_required: timed out, backing off for %.1fs",
                 self.STATE_CHECK_BACKOFF_SECONDS,
@@ -7002,7 +7797,7 @@ class CopilotHandler:
     def _check_prompt_ready_now_impl(self) -> bool:
         """Playwrightスレッド内で、入力欄が利用可能かを軽量に判定する。"""
         error_types = _get_playwright_errors()
-        PlaywrightError = error_types['Error']
+        PlaywrightError = error_types["Error"]
 
         page = self._page or self._get_active_copilot_page()
         if not page:
@@ -7021,8 +7816,9 @@ class CopilotHandler:
             self._page = page
 
         try:
-            result = page.evaluate(
-                '''() => {
+            result = (
+                page.evaluate(
+                    """() => {
                     const isVisible = (el) => {
                         if (!el) return false;
                         const style = window.getComputedStyle(el);
@@ -7097,8 +7893,10 @@ class CopilotHandler:
                         hasAttachments,
                         attachmentBusy,
                     };
-                }'''
-            ) or {}
+                }"""
+                )
+                or {}
+            )
         except Exception:
             return False
 
@@ -7145,8 +7943,8 @@ class CopilotHandler:
     def _show_copilot_browser_impl(self, reason: str = "manual_show") -> bool:
         """Playwrightスレッド内で、ユーザーが操作できるページを優先して表示する。"""
         error_types = _get_playwright_errors()
-        PlaywrightError = error_types['Error']
-        PlaywrightTimeoutError = error_types['TimeoutError']
+        PlaywrightError = error_types["Error"]
+        PlaywrightTimeoutError = error_types["TimeoutError"]
 
         if not self._context and not self._page:
             logger.debug("show_copilot_browser: no context/page available")
@@ -7171,7 +7969,7 @@ class CopilotHandler:
             if url != "about:blank":
                 return url
             try:
-                page.wait_for_load_state('domcontentloaded', timeout=3000)
+                page.wait_for_load_state("domcontentloaded", timeout=3000)
             except Exception:
                 pass
             return _safe_page_url(page)
@@ -7223,15 +8021,27 @@ class CopilotHandler:
         # If the current page looks broken (Edge error/about:blank/other tab), try to recover to Copilot.
         url = _wait_about_blank(chosen_page)
         if self._looks_like_edge_error_page(chosen_page, fast_only=True):
-            self._recover_from_edge_error_page(chosen_page, reason="manual_show", force=True)
+            self._recover_from_edge_error_page(
+                chosen_page, reason="manual_show", force=True
+            )
             url = _safe_page_url(chosen_page)
 
-        if (not _is_copilot_url(url)) and (not _is_login_page(url)) and (not _is_auth_flow_page(url)):
+        if (
+            (not _is_copilot_url(url))
+            and (not _is_login_page(url))
+            and (not _is_auth_flow_page(url))
+        ):
             try:
-                chosen_page.goto(self.COPILOT_URL, wait_until='domcontentloaded', timeout=self.PAGE_GOTO_TIMEOUT_MS)
+                chosen_page.goto(
+                    self.COPILOT_URL,
+                    wait_until="domcontentloaded",
+                    timeout=self.PAGE_GOTO_TIMEOUT_MS,
+                )
                 url = _safe_page_url(chosen_page)
             except (PlaywrightTimeoutError, PlaywrightError) as e:
-                logger.debug("show_copilot_browser: navigation to Copilot failed: %s", e)
+                logger.debug(
+                    "show_copilot_browser: navigation to Copilot failed: %s", e
+                )
 
         # Bring the window to foreground for the user (force full window).
         self._bring_to_foreground_impl(
@@ -7244,15 +8054,22 @@ class CopilotHandler:
         url = _safe_page_url(chosen_page)
         if _is_copilot_url(url) and "/chat" in url:
             try:
-                chosen_page.wait_for_selector(self.CHAT_INPUT_SELECTOR_EXTENDED, timeout=4000, state='visible')
+                chosen_page.wait_for_selector(
+                    self.CHAT_INPUT_SELECTOR_EXTENDED, timeout=4000, state="visible"
+                )
                 return True
             except PlaywrightTimeoutError:
                 try:
-                    chosen_page.reload(wait_until='domcontentloaded', timeout=self.EDGE_ERROR_RELOAD_TIMEOUT_MS)
+                    chosen_page.reload(
+                        wait_until="domcontentloaded",
+                        timeout=self.EDGE_ERROR_RELOAD_TIMEOUT_MS,
+                    )
                 except Exception:
                     pass
                 try:
-                    chosen_page.wait_for_selector(self.CHAT_INPUT_SELECTOR_EXTENDED, timeout=4000, state='visible')
+                    chosen_page.wait_for_selector(
+                        self.CHAT_INPUT_SELECTOR_EXTENDED, timeout=4000, state="visible"
+                    )
                 except Exception:
                     pass
 
@@ -7377,7 +8194,9 @@ class CopilotHandler:
         except Exception:
             return
 
-        interval = max(float(getattr(self, "UI_WINDOW_SYNC_INTERVAL_SECONDS", 0.25)), 0.05)
+        interval = max(
+            float(getattr(self, "UI_WINDOW_SYNC_INTERVAL_SECONDS", 0.25)), 0.05
+        )
 
         cached_edge_hwnd: int | None = None
         cached_ui_hwnd: int | None = None
@@ -7422,7 +8241,9 @@ class CopilotHandler:
         def _get_window_rect(hwnd_value: int) -> RECT | None:
             try:
                 rect = RECT()
-                if not user32.GetWindowRect(wintypes.HWND(hwnd_value), ctypes.byref(rect)):
+                if not user32.GetWindowRect(
+                    wintypes.HWND(hwnd_value), ctypes.byref(rect)
+                ):
                     return None
                 return rect
             except Exception:
@@ -7466,7 +8287,9 @@ class CopilotHandler:
                 return None
             return (left, top, left + width, top + height)
 
-        def _rects_intersect(a: tuple[int, int, int, int], b: tuple[int, int, int, int]) -> bool:
+        def _rects_intersect(
+            a: tuple[int, int, int, int], b: tuple[int, int, int, int]
+        ) -> bool:
             return not (a[2] <= b[0] or a[0] >= b[2] or a[3] <= b[1] or a[1] >= b[3])
 
         while not stop_event.is_set():
@@ -7480,7 +8303,9 @@ class CopilotHandler:
 
                 if not _is_valid_window(cached_ui_hwnd):
                     try:
-                        ui_hwnd = self._find_yakulingo_window_handle(include_hidden=True)
+                        ui_hwnd = self._find_yakulingo_window_handle(
+                            include_hidden=True
+                        )
                     except Exception:
                         ui_hwnd = None
                     cached_ui_hwnd = int(ui_hwnd) if ui_hwnd else None
@@ -7493,8 +8318,12 @@ class CopilotHandler:
                 target_rect: tuple[int, int, int, int] | None = None
                 if cached_ui_hwnd and _is_valid_window(cached_ui_hwnd):
                     try:
-                        is_visible = bool(user32.IsWindowVisible(wintypes.HWND(cached_ui_hwnd)))
-                        is_minimized = bool(user32.IsIconic(wintypes.HWND(cached_ui_hwnd)))
+                        is_visible = bool(
+                            user32.IsWindowVisible(wintypes.HWND(cached_ui_hwnd))
+                        )
+                        is_minimized = bool(
+                            user32.IsIconic(wintypes.HWND(cached_ui_hwnd))
+                        )
                         ui_visible = is_visible and not is_minimized
                     except Exception:
                         ui_visible = False
@@ -7534,15 +8363,20 @@ class CopilotHandler:
 
                 if not should_position:
                     try:
-                        edge_is_minimized = bool(user32.IsIconic(wintypes.HWND(cached_edge_hwnd)))
-                        edge_is_visible = bool(user32.IsWindowVisible(wintypes.HWND(cached_edge_hwnd)))
+                        edge_is_minimized = bool(
+                            user32.IsIconic(wintypes.HWND(cached_edge_hwnd))
+                        )
+                        edge_is_visible = bool(
+                            user32.IsWindowVisible(wintypes.HWND(cached_edge_hwnd))
+                        )
                         if edge_is_minimized or not edge_is_visible:
                             should_position = True
                         else:
                             edge_rect = _get_target_rect(cached_edge_hwnd)
                             virtual_rect = _get_virtual_screen_rect()
                             if edge_rect is None or (
-                                virtual_rect is not None and not _rects_intersect(edge_rect, virtual_rect)
+                                virtual_rect is not None
+                                and not _rects_intersect(edge_rect, virtual_rect)
                             ):
                                 # Edge is open but fully off-screen (e.g., hotkey layout moved it away).
                                 should_position = True
@@ -7601,7 +8435,9 @@ class CopilotHandler:
         # First, shutdown the executor to release any pending operations
         executor_start = time.monotonic()
         _playwright_executor.shutdown()
-        logger.debug("[TIMING] executor.shutdown: %.2fs", time.monotonic() - executor_start)
+        logger.debug(
+            "[TIMING] executor.shutdown: %.2fs", time.monotonic() - executor_start
+        )
 
         # Note: We don't call self._playwright.stop() here because:
         # 1. Playwright operations must run in the same greenlet where it was initialized
@@ -7616,7 +8452,11 @@ class CopilotHandler:
         # have no other evidence.
         port_status: str | None = None
         with suppress(Exception):
-            if self.edge_process is None and self._edge_pid is None and not self._browser_started_by_us:
+            if (
+                self.edge_process is None
+                and self._edge_pid is None
+                and not self._browser_started_by_us
+            ):
                 port_status = self._get_cdp_port_status()
 
         # Terminate Edge browser process directly (don't wait for Playwright).
@@ -7651,12 +8491,17 @@ class CopilotHandler:
                 with suppress(Exception):
                     if sys.platform == "win32":
                         profile_dir = self.profile_dir or self._get_profile_dir_path()
-                        if self._kill_edge_processes_by_profile_and_port_async(profile_dir, self.cdp_port):
+                        if self._kill_edge_processes_by_profile_and_port_async(
+                            profile_dir, self.cdp_port
+                        ):
                             spawned_any = True
 
             if spawned_any:
                 logger.info("Requested Edge termination (shutdown, async)")
-            logger.debug("[TIMING] kill_process_tree request: %.2fs", time.monotonic() - taskkill_start)
+            logger.debug(
+                "[TIMING] kill_process_tree request: %.2fs",
+                time.monotonic() - taskkill_start,
+            )
 
         # Clear references (Playwright cleanup may fail but that's OK during shutdown)
         self._browser = None
@@ -7667,7 +8512,9 @@ class CopilotHandler:
         self._edge_pid = None
         self._browser_started_by_us = False
 
-        logger.info("[TIMING] force_disconnect total: %.2fs", time.monotonic() - shutdown_start)
+        logger.info(
+            "[TIMING] force_disconnect total: %.2fs", time.monotonic() - shutdown_start
+        )
 
     def _disconnect_impl(self, keep_browser: bool = False) -> None:
         """Implementation of disconnect that runs in the Playwright thread.
@@ -7728,7 +8575,9 @@ class CopilotHandler:
                     pid_to_kill = self.edge_process.pid
                 elif self._edge_pid:
                     pid_to_kill = self._edge_pid
-                    logger.debug("Using saved _edge_pid %s (edge_process is None)", pid_to_kill)
+                    logger.debug(
+                        "Using saved _edge_pid %s (edge_process is None)", pid_to_kill
+                    )
 
                 with suppress(Exception):
                     if pid_to_kill:
@@ -7739,7 +8588,9 @@ class CopilotHandler:
                                 time.sleep(0.1)
                             if not self._is_port_in_use():
                                 browser_terminated = True
-                                logger.info("Edge browser terminated (via process tree kill)")
+                                logger.info(
+                                    "Edge browser terminated (via process tree kill)"
+                                )
                             else:
                                 logger.debug(
                                     "CDP port %d still in use after killing PID %s; falling back to port termination",
@@ -7778,7 +8629,9 @@ class CopilotHandler:
             if not browser_terminated and sys.platform == "win32":
                 with suppress(Exception):
                     profile_dir = self.profile_dir or self._get_profile_dir_path()
-                    if self._kill_edge_processes_by_profile_and_port(profile_dir, self.cdp_port):
+                    if self._kill_edge_processes_by_profile_and_port(
+                        profile_dir, self.cdp_port
+                    ):
                         browser_terminated = True
                         logger.info("Edge browser terminated (via profile scan)")
 
@@ -7815,7 +8668,10 @@ class CopilotHandler:
             default_dir = self.profile_dir / "Default"
             if default_dir.exists():
                 default_contents = list(default_dir.iterdir())
-                logger.debug("Default profile contents: %s", [c.name for c in default_contents[:30]])
+                logger.debug(
+                    "Default profile contents: %s",
+                    [c.name for c in default_contents[:30]],
+                )
 
                 from datetime import datetime
 
@@ -7828,22 +8684,38 @@ class CopilotHandler:
                 if cookies_file.exists():
                     size = cookies_file.stat().st_size
                     mtime = cookies_file.stat().st_mtime
-                    mtime_str = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M:%S')
-                    logger.info("Cookies file exists: size=%d bytes, modified=%s", size, mtime_str)
+                    mtime_str = datetime.fromtimestamp(mtime).strftime(
+                        "%Y-%m-%d %H:%M:%S"
+                    )
+                    logger.info(
+                        "Cookies file exists: size=%d bytes, modified=%s",
+                        size,
+                        mtime_str,
+                    )
                     cookies_found = True
 
                 if network_cookies.exists():
                     size = network_cookies.stat().st_size
                     mtime = network_cookies.stat().st_mtime
-                    mtime_str = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M:%S')
-                    logger.info("Network/Cookies file exists: size=%d bytes, modified=%s", size, mtime_str)
+                    mtime_str = datetime.fromtimestamp(mtime).strftime(
+                        "%Y-%m-%d %H:%M:%S"
+                    )
+                    logger.info(
+                        "Network/Cookies file exists: size=%d bytes, modified=%s",
+                        size,
+                        mtime_str,
+                    )
                     cookies_found = True
 
                 if not cookies_found:
-                    logger.warning("Cookies file NOT found (neither Default/Cookies nor Network/Cookies)")
+                    logger.warning(
+                        "Cookies file NOT found (neither Default/Cookies nor Network/Cookies)"
+                    )
 
             else:
-                logger.warning("Default profile directory NOT found - this may cause login issues!")
+                logger.warning(
+                    "Default profile directory NOT found - this may cause login issues!"
+                )
 
         except (OSError, PermissionError) as e:
             logger.warning("Error checking profile directory: %s", e)
@@ -7883,7 +8755,12 @@ class CopilotHandler:
             wait_for_playwright_init(timeout=self.PLAYWRIGHT_INIT_WAIT_SECONDS)
         executor_timeout = timeout + self.EXECUTOR_TIMEOUT_BUFFER_SECONDS
         return _playwright_executor.execute(
-            self._translate_sync_impl, texts, prompt, reference_files, skip_clear_wait, timeout,
+            self._translate_sync_impl,
+            texts,
+            prompt,
+            reference_files,
+            skip_clear_wait,
+            timeout,
             include_item_ids,
             timeout=executor_timeout,
             cancel_check=self._is_cancelled,
@@ -7917,13 +8794,19 @@ class CopilotHandler:
         if not self._connect_with_tracking():
             # Provide specific error message based on connection error type
             if self.last_connection_error == self.ERROR_LOGIN_REQUIRED:
-                raise RuntimeError("Copilotへのログインが必要です。Edgeブラウザでログインしてください。")
-            raise RuntimeError("ブラウザに接続できませんでした。Edgeが起動しているか確認してください。")
+                raise RuntimeError(
+                    "Copilotへのログインが必要です。Edgeブラウザでログインしてください。"
+                )
+            raise RuntimeError(
+                "ブラウザに接続できませんでした。Edgeが起動しているか確認してください。"
+            )
 
         # Ensure we are on Copilot page (lightweight URL check, no input field wait)
         if not self._ensure_copilot_page():
             if self.last_connection_error == self.ERROR_LOGIN_REQUIRED:
-                raise RuntimeError("Copilotへのログインが必要です。Edgeブラウザでログインしてください。")
+                raise RuntimeError(
+                    "Copilotへのログインが必要です。Edgeブラウザでログインしてください。"
+                )
             raise RuntimeError("Copilotページにアクセスできませんでした。")
 
         # GPT mode is required for translation; fail fast if we cannot set it.
@@ -7949,7 +8832,7 @@ class CopilotHandler:
             # safely proceed to send_message immediately while click executes async
             self.start_new_chat(
                 skip_clear_wait=skip_clear_wait if attempt == 0 else True,
-                click_only=True
+                click_only=True,
             )
 
             # Minimize browser after start_new_chat to prevent window flash
@@ -7968,21 +8851,30 @@ class CopilotHandler:
                         # Check for cancellation after each file attachment
                         if self._is_cancelled():
                             logger.info("Translation cancelled during file attachment")
-                            raise TranslationCancelledError("Translation cancelled by user")
+                            raise TranslationCancelledError(
+                                "Translation cancelled by user"
+                            )
 
             prefill_ok = False
             prefill_start = time.monotonic()
             try:
                 prefill_ok = self._prefill_message(prompt)
             finally:
-                logger.info("[TIMING] prefill_message: %.2fs", time.monotonic() - prefill_start)
+                logger.info(
+                    "[TIMING] prefill_message: %.2fs", time.monotonic() - prefill_start
+                )
 
             if reference_files:
                 wait_start = time.monotonic()
                 attach_ready = self._wait_for_attachment_ready()
-                logger.info("[TIMING] wait_for_attachment_ready: %.2fs", time.monotonic() - wait_start)
+                logger.info(
+                    "[TIMING] wait_for_attachment_ready: %.2fs",
+                    time.monotonic() - wait_start,
+                )
                 if not attach_ready:
-                    raise RuntimeError("添付処理が完了しませんでした。アップロード完了を待ってから再試行してください。")
+                    raise RuntimeError(
+                        "添付処理が完了しませんでした。アップロード完了を待ってから再試行してください。"
+                    )
 
             # Send the prompt
             stop_button_seen = self._send_message(
@@ -8001,8 +8893,7 @@ class CopilotHandler:
 
             # Get response
             result = self._get_response(
-                timeout=timeout,
-                stop_button_seen_during_send=stop_button_seen
+                timeout=timeout, stop_button_seen_during_send=stop_button_seen
             )
 
             # Check for error conditions: Copilot error response patterns OR empty response
@@ -8013,13 +8904,16 @@ class CopilotHandler:
                 if is_error_response:
                     logger.warning(
                         "Copilot returned error response (attempt %d/%d): %s",
-                        attempt + 1, max_retries + 1, result[:100]
+                        attempt + 1,
+                        max_retries + 1,
+                        result[:100],
                     )
                 else:
                     logger.warning(
                         "Copilot returned empty response (attempt %d/%d). "
                         "This may indicate a timeout or temporary Copilot issue.",
-                        attempt + 1, max_retries + 1
+                        attempt + 1,
+                        max_retries + 1,
                     )
 
                 page_invalid = self._page and not self._is_page_valid()
@@ -8032,8 +8926,13 @@ class CopilotHandler:
 
                         if needs_login:
                             # Only show browser when login is actually needed
-                            self._bring_to_foreground_impl(self._page, reason=f"translate_sync retry {attempt+1}: login required")
-                            logger.info("Login page or auth dialog detected - browser brought to foreground")
+                            self._bring_to_foreground_impl(
+                                self._page,
+                                reason=f"translate_sync retry {attempt + 1}: login required",
+                            )
+                            logger.info(
+                                "Login page or auth dialog detected - browser brought to foreground"
+                            )
 
                             # Wait a bit for user to see the browser
                             time.sleep(2)
@@ -8041,7 +8940,9 @@ class CopilotHandler:
                             # Re-check connection state
                             if not self._is_page_valid():
                                 logger.info("Page became invalid, waiting for login...")
-                                if self._wait_for_login_completion(self._page, timeout=60):
+                                if self._wait_for_login_completion(
+                                    self._page, timeout=60
+                                ):
                                     logger.info("Login completed, retrying translation")
                                     continue
                                 else:
@@ -8049,14 +8950,17 @@ class CopilotHandler:
                                     # This gives user more time if they're in the middle of logging in
                                     logger.warning(
                                         "Login wait timed out (attempt %d/%d), continuing retry loop...",
-                                        attempt + 1, max_retries + 1
+                                        attempt + 1,
+                                        max_retries + 1,
                                     )
                                     # Apply backoff and continue to next retry
                                     self._apply_retry_backoff(attempt, max_retries)
                                     continue
                         else:
                             # Not a login issue - retry without showing browser
-                            logger.debug("Page invalid but not login page; retrying silently")
+                            logger.debug(
+                                "Page invalid but not login page; retrying silently"
+                            )
 
                     # Apply exponential backoff before retry
                     self._apply_retry_backoff(attempt, max_retries)
@@ -8066,7 +8970,10 @@ class CopilotHandler:
                     if self._page and page_invalid:
                         url = self._page.url
                         if _is_login_page(url) or self._has_auth_dialog():
-                            self._bring_to_foreground_impl(self._page, reason="translate_sync final retry: login required")
+                            self._bring_to_foreground_impl(
+                                self._page,
+                                reason="translate_sync final retry: login required",
+                            )
 
                     if is_empty_response:
                         raise RuntimeError(
@@ -8131,7 +9038,12 @@ class CopilotHandler:
             wait_for_playwright_init(timeout=self.PLAYWRIGHT_INIT_WAIT_SECONDS)
         executor_timeout = timeout + self.EXECUTOR_TIMEOUT_BUFFER_SECONDS
         return _playwright_executor.execute(
-            self._translate_single_impl, text, prompt, reference_files, on_chunk, timeout,
+            self._translate_single_impl,
+            text,
+            prompt,
+            reference_files,
+            on_chunk,
+            timeout,
             timeout=executor_timeout,
             cancel_check=self._is_cancelled,
         )
@@ -8167,13 +9079,19 @@ class CopilotHandler:
         if not self._connect_with_tracking():
             # Provide specific error message based on connection error type
             if self.last_connection_error == self.ERROR_LOGIN_REQUIRED:
-                raise RuntimeError("Copilotへのログインが必要です。Edgeブラウザでログインしてください。")
-            raise RuntimeError("ブラウザに接続できませんでした。Edgeが起動しているか確認してください。")
+                raise RuntimeError(
+                    "Copilotへのログインが必要です。Edgeブラウザでログインしてください。"
+                )
+            raise RuntimeError(
+                "ブラウザに接続できませんでした。Edgeが起動しているか確認してください。"
+            )
 
         # Ensure we are on Copilot page (lightweight URL check, no input field wait)
         if not self._ensure_copilot_page():
             if self.last_connection_error == self.ERROR_LOGIN_REQUIRED:
-                raise RuntimeError("Copilotへのログインが必要です。Edgeブラウザでログインしてください。")
+                raise RuntimeError(
+                    "Copilotへのログインが必要です。Edgeブラウザでログインしてください。"
+                )
             raise RuntimeError("Copilotページにアクセスできませんでした。")
 
         # GPT mode is required for translation; fail fast if we cannot set it.
@@ -8190,7 +9108,9 @@ class CopilotHandler:
         for attempt in range(max_retries + 1):
             # Check for cancellation at the start of each attempt
             if self._is_cancelled():
-                logger.info("Translation cancelled before attempt %d (single)", attempt + 1)
+                logger.info(
+                    "Translation cancelled before attempt %d (single)", attempt + 1
+                )
                 raise TranslationCancelledError("Translation cancelled by user")
 
             # Start a new chat to clear previous context
@@ -8199,7 +9119,10 @@ class CopilotHandler:
             # safely proceed to send_message immediately while click executes async
             new_chat_start = time.monotonic()
             self.start_new_chat(click_only=True)
-            logger.info("[TIMING] start_new_chat (click_only): %.2fs", time.monotonic() - new_chat_start)
+            logger.info(
+                "[TIMING] start_new_chat (click_only): %.2fs",
+                time.monotonic() - new_chat_start,
+            )
 
             # Minimize browser after start_new_chat to prevent window flash
             self._send_to_background_impl(self._page)
@@ -8217,23 +9140,38 @@ class CopilotHandler:
                         self._attach_file(file_path, wait_for_ready=False)
                         # Check for cancellation after each file attachment
                         if self._is_cancelled():
-                            logger.info("Translation cancelled during file attachment (single)")
-                            raise TranslationCancelledError("Translation cancelled by user")
-                logger.info("[TIMING] attach_files (%d files): %.2fs", len(reference_files), time.monotonic() - attach_start)
+                            logger.info(
+                                "Translation cancelled during file attachment (single)"
+                            )
+                            raise TranslationCancelledError(
+                                "Translation cancelled by user"
+                            )
+                logger.info(
+                    "[TIMING] attach_files (%d files): %.2fs",
+                    len(reference_files),
+                    time.monotonic() - attach_start,
+                )
 
             prefill_ok = False
             prefill_start = time.monotonic()
             try:
                 prefill_ok = self._prefill_message(prompt)
             finally:
-                logger.info("[TIMING] prefill_message: %.2fs", time.monotonic() - prefill_start)
+                logger.info(
+                    "[TIMING] prefill_message: %.2fs", time.monotonic() - prefill_start
+                )
 
             if reference_files:
                 wait_start = time.monotonic()
                 attach_ready = self._wait_for_attachment_ready()
-                logger.info("[TIMING] wait_for_attachment_ready: %.2fs", time.monotonic() - wait_start)
+                logger.info(
+                    "[TIMING] wait_for_attachment_ready: %.2fs",
+                    time.monotonic() - wait_start,
+                )
                 if not attach_ready:
-                    raise RuntimeError("添付処理が完了しませんでした。アップロード完了を待ってから再試行してください。")
+                    raise RuntimeError(
+                        "添付処理が完了しませんでした。アップロード完了を待ってから再試行してください。"
+                    )
 
             # Send the prompt
             send_start = time.monotonic()
@@ -8254,16 +9192,21 @@ class CopilotHandler:
 
             # Get response and return raw (no parsing - preserves 訳文/解説 format)
             response_start = time.monotonic()
-            response_timeout = timeout if timeout is not None else self.DEFAULT_RESPONSE_TIMEOUT
+            response_timeout = (
+                timeout if timeout is not None else self.DEFAULT_RESPONSE_TIMEOUT
+            )
             result = self._get_response(
                 timeout=response_timeout,
                 on_chunk=on_chunk,
-                stop_button_seen_during_send=stop_button_seen
+                stop_button_seen_during_send=stop_button_seen,
             )
-            logger.info("[TIMING] _get_response: %.2fs", time.monotonic() - response_start)
+            logger.info(
+                "[TIMING] _get_response: %.2fs", time.monotonic() - response_start
+            )
 
             logger.debug(
-                "translate_single received response (length=%d)", len(result) if result else 0
+                "translate_single received response (length=%d)",
+                len(result) if result else 0,
             )
 
             # Check for error conditions: Copilot error response patterns OR empty response
@@ -8274,13 +9217,16 @@ class CopilotHandler:
                 if is_error_response:
                     logger.warning(
                         "Copilot returned error response (attempt %d/%d): %s",
-                        attempt + 1, max_retries + 1, result[:100]
+                        attempt + 1,
+                        max_retries + 1,
+                        result[:100],
                     )
                 else:
                     logger.warning(
                         "Copilot returned empty response (attempt %d/%d). "
                         "This may indicate a timeout or temporary Copilot issue.",
-                        attempt + 1, max_retries + 1
+                        attempt + 1,
+                        max_retries + 1,
                     )
 
                 page_invalid = self._page and not self._is_page_valid()
@@ -8293,8 +9239,13 @@ class CopilotHandler:
 
                         if needs_login:
                             # Only show browser when login is actually needed
-                            self._bring_to_foreground_impl(self._page, reason=f"translate_single retry {attempt+1}: login required")
-                            logger.info("Login page or auth dialog detected - browser brought to foreground")
+                            self._bring_to_foreground_impl(
+                                self._page,
+                                reason=f"translate_single retry {attempt + 1}: login required",
+                            )
+                            logger.info(
+                                "Login page or auth dialog detected - browser brought to foreground"
+                            )
 
                             # Wait a bit for user to see the browser and potentially complete auth
                             time.sleep(2)
@@ -8302,7 +9253,9 @@ class CopilotHandler:
                             # Re-check connection state
                             if not self._is_page_valid():
                                 logger.info("Page became invalid, waiting for login...")
-                                if self._wait_for_login_completion(self._page, timeout=60):
+                                if self._wait_for_login_completion(
+                                    self._page, timeout=60
+                                ):
                                     logger.info("Login completed, retrying translation")
                                     continue
                                 else:
@@ -8310,14 +9263,17 @@ class CopilotHandler:
                                     # This gives user more time if they're in the middle of logging in
                                     logger.warning(
                                         "Login wait timed out (attempt %d/%d), continuing retry loop...",
-                                        attempt + 1, max_retries + 1
+                                        attempt + 1,
+                                        max_retries + 1,
                                     )
                                     # Apply backoff and continue to next retry
                                     self._apply_retry_backoff(attempt, max_retries)
                                     continue
                         else:
                             # Not a login issue - retry without showing browser
-                            logger.debug("Page invalid but not login page; retrying silently")
+                            logger.debug(
+                                "Page invalid but not login page; retrying silently"
+                            )
 
                     # Apply exponential backoff before retry
                     self._apply_retry_backoff(attempt, max_retries)
@@ -8327,7 +9283,10 @@ class CopilotHandler:
                     if self._page and page_invalid:
                         url = self._page.url
                         if _is_login_page(url) or self._has_auth_dialog():
-                            self._bring_to_foreground_impl(self._page, reason="translate_single final retry: login required")
+                            self._bring_to_foreground_impl(
+                                self._page,
+                                reason="translate_single final retry: login required",
+                            )
 
                     if is_empty_response:
                         raise RuntimeError(
@@ -8343,7 +9302,9 @@ class CopilotHandler:
             try:
                 self._send_to_background_impl(self._page)
             except Exception:
-                logger.debug("Failed to return browser to background after single translation")
+                logger.debug(
+                    "Failed to return browser to background after single translation"
+                )
 
             # Note: We no longer call start_new_chat() here after translation completion.
             # The next translation will call start_new_chat() at the beginning anyway.
@@ -8360,7 +9321,9 @@ class CopilotHandler:
         if not self._page:
             return False
 
-        input_elem = input_elem or self._page.query_selector(self.CHAT_INPUT_SELECTOR_EXTENDED)
+        input_elem = input_elem or self._page.query_selector(
+            self.CHAT_INPUT_SELECTOR_EXTENDED
+        )
         if not input_elem:
             return False
 
@@ -8381,12 +9344,15 @@ class CopilotHandler:
             t1 = time.monotonic()
             # Dispatch input event to ensure React detects the change
             # Note: change event removed for optimization - input event is sufficient for React
-            input_elem.evaluate('el => el.dispatchEvent(new Event("input", { bubbles: true }))')
+            input_elem.evaluate(
+                'el => el.dispatchEvent(new Event("input", { bubbles: true }))'
+            )
             t2 = time.monotonic()
             # OPTIMIZED: Removed inner_text() verification (~0.11s savings)
             # Post-send verification catches empty input cases
-            logger.debug("[FILL_DETAIL] fill=%.3fs, dispatchEvent=%.3fs",
-                         t1 - t0, t2 - t1)
+            logger.debug(
+                "[FILL_DETAIL] fill=%.3fs, dispatchEvent=%.3fs", t1 - t0, t2 - t1
+            )
             fill_success = True
             fill_method = 1
         except Exception as e:
@@ -8398,20 +9364,29 @@ class CopilotHandler:
             # Log Method 1 failure with details for debugging selector issues
             elem_info = ""
             try:
-                elem_info = input_elem.evaluate('el => ({ tag: el.tagName, id: el.id, class: el.className, editable: el.contentEditable })')
+                elem_info = input_elem.evaluate(
+                    "el => ({ tag: el.tagName, id: el.id, class: el.className, editable: el.contentEditable })"
+                )
             except Exception:
                 elem_info = "(could not get element info)"
-            logger.warning("Method 1 (fill) failed: %s | Element: %s | URL: %s",
-                           method1_error, elem_info, self._page.url[:80] if self._page else "no page")
+            logger.warning(
+                "Method 1 (fill) failed: %s | Element: %s | URL: %s",
+                method1_error,
+                elem_info,
+                self._page.url[:80] if self._page else "no page",
+            )
             logger.info("Falling back to Method 2 (execCommand insertText)...")
             try:
-                input_elem.evaluate('el => { el.focus(); el.click(); }')
+                input_elem.evaluate("el => { el.focus(); el.click(); }")
                 time.sleep(0.05)
                 input_elem.press("Control+a")
                 time.sleep(0.05)
-                fill_success = self._page.evaluate('''(text) => {
+                fill_success = self._page.evaluate(
+                    """(text) => {
                     return document.execCommand('insertText', false, text);
-                }''', message)
+                }""",
+                    message,
+                )
                 if fill_success:
                     content = input_elem.inner_text()
                     fill_success = len(content.strip()) > 0
@@ -8424,12 +9399,14 @@ class CopilotHandler:
         # Method 3: Click and type line by line (slowest, last resort)
         # Note: type() interprets \n as Enter key, so we use Shift+Enter for line breaks
         if not fill_success:
-            logger.warning("Method 2 failed, falling back to Method 3 (type line by line) - this may be slow for long text")
+            logger.warning(
+                "Method 2 failed, falling back to Method 3 (type line by line) - this may be slow for long text"
+            )
             try:
-                input_elem.evaluate('el => { el.focus(); el.click(); }')
+                input_elem.evaluate("el => { el.focus(); el.click(); }")
                 input_elem.press("Control+a")
                 time.sleep(0.05)
-                lines = message.split('\n')
+                lines = message.split("\n")
                 for i, line in enumerate(lines):
                     if line:
                         input_elem.type(line, delay=0)
@@ -8450,11 +9427,18 @@ class CopilotHandler:
             3: "type line by line",
         }
         method_name = method_names.get(fill_method, "unknown")
-        logger.info("[TIMING] js_set_text (Method %s: %s): %.2fs", fill_method, method_name, time.monotonic() - fill_start)
+        logger.info(
+            "[TIMING] js_set_text (Method %s: %s): %.2fs",
+            fill_method,
+            method_name,
+            time.monotonic() - fill_start,
+        )
 
         return fill_success
 
-    def _send_message(self, message: str, prefilled: bool = False, prefer_click: bool = False) -> bool:
+    def _send_message(
+        self, message: str, prefilled: bool = False, prefer_click: bool = False
+    ) -> bool:
         """Send message to Copilot (sync)
 
         Returns:
@@ -8462,8 +9446,8 @@ class CopilotHandler:
             False otherwise (input cleared or response appeared without stop button)
         """
         error_types = _get_playwright_errors()
-        PlaywrightError = error_types['Error']
-        PlaywrightTimeoutError = error_types['TimeoutError']
+        PlaywrightError = error_types["Error"]
+        PlaywrightTimeoutError = error_types["TimeoutError"]
 
         logger.info("Sending message to Copilot (length: %d chars)", len(message))
 
@@ -8474,7 +9458,9 @@ class CopilotHandler:
                 self._page = self._get_active_copilot_page()
                 if not self._page:
                     logger.error("Could not recover page reference in _send_message")
-                    raise RuntimeError("Copilotページが見つかりません。再接続してください。")
+                    raise RuntimeError(
+                        "Copilotページが見つかりません。再接続してください。"
+                    )
                 logger.info("Recovered page reference in _send_message")
             except PlaywrightError as e:
                 logger.error("Error recovering page in _send_message: %s", e)
@@ -8488,7 +9474,9 @@ class CopilotHandler:
             dialog_text_lower = dialog_text.lower()
             if any(kw.lower() in dialog_text_lower for kw in self.AUTH_DIALOG_KEYWORDS):
                 logger.warning("Authentication dialog detected: %s", dialog_text)
-                raise RuntimeError(f"Edgeブラウザで認証が必要です。ダイアログを確認してください: {dialog_text}")
+                raise RuntimeError(
+                    f"Edgeブラウザで認証が必要です。ダイアログを確認してください: {dialog_text}"
+                )
 
         try:
             # Find input area
@@ -8509,8 +9497,12 @@ class CopilotHandler:
                 if not prefilled:
                     fill_success = self._prefill_message(message, input_elem=input_elem)
                     if not fill_success:
-                        logger.warning("Input field is empty after fill - Copilot may need attention")
-                        raise RuntimeError("Copilotに入力できませんでした。Edgeブラウザを確認してください。")
+                        logger.warning(
+                            "Input field is empty after fill - Copilot may need attention"
+                        )
+                        raise RuntimeError(
+                            "Copilotに入力できませんでした。Edgeブラウザを確認してください。"
+                        )
 
                 if prefer_click:
                     enter_wait_start = time.monotonic()
@@ -8520,7 +9512,9 @@ class CopilotHandler:
                         time.monotonic() - enter_wait_start,
                     )
                     if not enter_ready:
-                        logger.warning("[SEND_PREP] Enter not ready after wait; proceeding anyway")
+                        logger.warning(
+                            "[SEND_PREP] Enter not ready after wait; proceeding anyway"
+                        )
 
                 # Note: No sleep needed here - button loop below handles React state stabilization
 
@@ -8532,7 +9526,7 @@ class CopilotHandler:
                 try:
                     selector_literal = json.dumps(self.SEND_BUTTON_SELECTOR)
                     self._page.wait_for_function(
-                        f'''() => {{
+                        f"""() => {{
                             const btn = document.querySelector({selector_literal});
                             if (!btn) return false;
                             const rect = btn.getBoundingClientRect();
@@ -8543,25 +9537,32 @@ class CopilotHandler:
                                 style.pointerEvents !== 'none';
                             const inViewport = rect.y >= 0 && rect.y < window.innerHeight;
                             return visible && enabled && inViewport;
-                        }}''',
-                        timeout=2000
+                        }}""",
+                        timeout=2000,
                     )
                     btn_ready = True
                     send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
-                    logger.debug("[SEND_PREP] Button ready via wait_for_function (%.2fs)",
-                                time.monotonic() - send_button_start)
+                    logger.debug(
+                        "[SEND_PREP] Button ready via wait_for_function (%.2fs)",
+                        time.monotonic() - send_button_start,
+                    )
                 except Exception as e:
-                    logger.debug("[SEND_PREP] wait_for_function did not confirm button readiness: %s", e)
+                    logger.debug(
+                        "[SEND_PREP] wait_for_function did not confirm button readiness: %s",
+                        e,
+                    )
 
                 if not btn_ready:
-                    for wait_iter in range(10):  # Max 1 second (10 * 0.1s) - optimized from 20
+                    for wait_iter in range(
+                        10
+                    ):  # Max 1 second (10 * 0.1s) - optimized from 20
                         iter_start = time.monotonic()
                         send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
                         query_time = time.monotonic() - iter_start
                         if send_btn:
                             try:
                                 eval_start = time.monotonic()
-                                btn_state = send_btn.evaluate('''el => {
+                                btn_state = send_btn.evaluate("""el => {
                                     const rect = el.getBoundingClientRect();
                                     const style = window.getComputedStyle(el);
                                     return {
@@ -8572,37 +9573,57 @@ class CopilotHandler:
                                         visibility: style.visibility,
                                         inViewport: rect.y >= 0 && rect.y < window.innerHeight
                                     };
-                                }''')
+                                }""")
                                 eval_time = time.monotonic() - eval_start
 
                                 if wait_iter == 0:
-                                    logger.debug("[SEND_PREP] Initial button state: %s (query=%.3fs, eval=%.3fs)",
-                                                btn_state, query_time, eval_time)
+                                    logger.debug(
+                                        "[SEND_PREP] Initial button state: %s (query=%.3fs, eval=%.3fs)",
+                                        btn_state,
+                                        query_time,
+                                        eval_time,
+                                    )
 
                                 # Check if button is ready (visible and in viewport)
-                                if (btn_state['rect']['y'] >= 0 and
-                                    not btn_state['disabled'] and
-                                    btn_state['ariaDisabled'] != 'true' and
-                                    btn_state['display'] != 'none' and
-                                    btn_state['visibility'] != 'hidden'):
+                                if (
+                                    btn_state["rect"]["y"] >= 0
+                                    and not btn_state["disabled"]
+                                    and btn_state["ariaDisabled"] != "true"
+                                    and btn_state["display"] != "none"
+                                    and btn_state["visibility"] != "hidden"
+                                ):
                                     btn_ready = True
                                     if wait_iter > 0:
-                                        logger.debug("[SEND_PREP] Button ready after %d iterations (%.2fs): %s",
-                                                    wait_iter, time.monotonic() - send_button_start, btn_state)
+                                        logger.debug(
+                                            "[SEND_PREP] Button ready after %d iterations (%.2fs): %s",
+                                            wait_iter,
+                                            time.monotonic() - send_button_start,
+                                            btn_state,
+                                        )
                                     break
                                 elif wait_iter == 0:
-                                    logger.debug("[SEND_PREP] Button not ready yet (y=%.1f, disabled=%s), waiting...",
-                                                btn_state['rect']['y'], btn_state['disabled'])
+                                    logger.debug(
+                                        "[SEND_PREP] Button not ready yet (y=%.1f, disabled=%s), waiting...",
+                                        btn_state["rect"]["y"],
+                                        btn_state["disabled"],
+                                    )
                             except Exception as e:
-                                logger.debug("[SEND_PREP] Could not get button state: %s", e)
+                                logger.debug(
+                                    "[SEND_PREP] Could not get button state: %s", e
+                                )
 
                         time.sleep(0.1)
 
                 send_button_wait = time.monotonic() - send_button_start
                 if not btn_ready:
-                    logger.warning("[SEND_PREP] Button may not be ready after %.2fs, proceeding anyway", send_button_wait)
+                    logger.warning(
+                        "[SEND_PREP] Button may not be ready after %.2fs, proceeding anyway",
+                        send_button_wait,
+                    )
                 else:
-                    logger.debug("[SEND_PREP] Button ready after %.2fs", send_button_wait)
+                    logger.debug(
+                        "[SEND_PREP] Button ready after %.2fs", send_button_wait
+                    )
 
                 # Track when we're ready to send (for timing analysis)
                 send_ready_time = time.monotonic()
@@ -8611,7 +9632,7 @@ class CopilotHandler:
                 # First attempt often fails because UI needs time to settle after text input
                 warmup_start = time.monotonic()
                 try:
-                    warmup_result = self._page.evaluate('''() => {
+                    warmup_result = self._page.evaluate("""() => {
                         const input = document.querySelector('#m365-chat-editor-target-element');
                         const sendBtn = document.querySelector('.fai-SendButton');
 
@@ -8637,22 +9658,31 @@ class CopilotHandler:
                         }
 
                         return result;
-                    }''')
+                    }""")
                     warmup_eval_time = time.monotonic() - warmup_start
-                    logger.debug("[SEND_WARMUP] Result: %s (eval=%.3fs)", warmup_result, warmup_eval_time)
+                    logger.debug(
+                        "[SEND_WARMUP] Result: %s (eval=%.3fs)",
+                        warmup_result,
+                        warmup_eval_time,
+                    )
 
                     # Wait for UI to stabilize after scroll
                     # Reduced from 0.05s - scrollIntoView with 'instant' needs minimal wait
                     time.sleep(0.02)
-                    logger.debug("[SEND_WARMUP] Total: %.3fs (eval=%.3fs, sleep=0.020s)",
-                                time.monotonic() - warmup_start, warmup_eval_time)
+                    logger.debug(
+                        "[SEND_WARMUP] Total: %.3fs (eval=%.3fs, sleep=0.020s)",
+                        time.monotonic() - warmup_start,
+                        warmup_eval_time,
+                    )
 
                 except Exception as warmup_err:
                     logger.debug("[SEND_WARMUP] Failed: %s", warmup_err)
 
                 # Send via Enter key (most reliable for minimized windows)
                 MAX_SEND_RETRIES = 3
-                stop_button_seen_during_send = False  # Track if stop button was detected
+                stop_button_seen_during_send = (
+                    False  # Track if stop button was detected
+                )
 
                 # Always try Enter first; click is fallback if Enter doesn't send.
                 attempt_modes = ["enter", "click", "force"]
@@ -8662,7 +9692,7 @@ class CopilotHandler:
 
                     # Debug: Log environment state before each attempt
                     try:
-                        pre_attempt_state = self._page.evaluate('''() => {
+                        pre_attempt_state = self._page.evaluate("""() => {
                             const input = document.querySelector('#m365-chat-editor-target-element');
                             const sendBtn = document.querySelector('.fai-SendButton');
                             const stopBtn = document.querySelector('.fai-SendButton__stopBackground');
@@ -8706,20 +9736,31 @@ class CopilotHandler:
                                 // Response elements
                                 responseCount: document.querySelectorAll('[data-message-author-role="assistant"]').length
                             };
-                        }''')
-                        logger.info("[SEND_DEBUG] Attempt %d PRE-STATE: %s", send_attempt + 1, pre_attempt_state)
+                        }""")
+                        logger.info(
+                            "[SEND_DEBUG] Attempt %d PRE-STATE: %s",
+                            send_attempt + 1,
+                            pre_attempt_state,
+                        )
                     except Exception as state_err:
-                        logger.debug("[SEND_DEBUG] Could not get pre-attempt state: %s", state_err)
+                        logger.debug(
+                            "[SEND_DEBUG] Could not get pre-attempt state: %s",
+                            state_err,
+                        )
 
                     try:
                         if attempt_mode == "enter":
                             # First attempt: Enter key with robust focus management
                             # This works reliably even when window is minimized
                             elapsed_since_ready = time.monotonic() - send_ready_time
-                            logger.info("[SEND_DETAILED] Attempt %d starting (mode=enter, %.2fs since send_ready)",
-                                        send_attempt + 1, elapsed_since_ready)
+                            logger.info(
+                                "[SEND_DETAILED] Attempt %d starting (mode=enter, %.2fs since send_ready)",
+                                send_attempt + 1,
+                                elapsed_since_ready,
+                            )
 
-                            focus_result = self._page.evaluate('''(inputSelector) => {
+                            focus_result = self._page.evaluate(
+                                """(inputSelector) => {
                                 const input = document.querySelector(inputSelector);
                                 if (!input) return { success: false, error: 'input not found' };
 
@@ -8754,11 +9795,15 @@ class CopilotHandler:
                                 result.activeElementTag = document.activeElement?.tagName;
                                 result.activeElementId = document.activeElement?.id;
                                 return result;
-                            }''', input_selector)
+                            }""",
+                                input_selector,
+                            )
                             logger.debug("[SEND] Focus result: %s", focus_result)
 
-                            if not focus_result.get('finalFocus'):
-                                logger.warning("[SEND] Could not focus input, trying Playwright focus")
+                            if not focus_result.get("finalFocus"):
+                                logger.warning(
+                                    "[SEND] Could not focus input, trying Playwright focus"
+                                )
                                 input_elem.focus()
 
                             # Scroll send button into view before pressing Enter
@@ -8766,7 +9811,7 @@ class CopilotHandler:
                             # may require the button to be in a "ready" state
                             # Use block: 'nearest' to avoid negative Y positions in small viewports
                             try:
-                                scroll_result = self._page.evaluate('''() => {
+                                scroll_result = self._page.evaluate("""() => {
                                     const sendBtn = document.querySelector('.fai-SendButton');
                                     if (sendBtn) {
                                         // Use 'nearest' to get optimal position in small viewports
@@ -8775,15 +9820,22 @@ class CopilotHandler:
                                         return { scrolled: true, btnY: Math.round(rect.y) };
                                     }
                                     return { scrolled: false };
-                                }''')
-                                logger.debug("[SEND] Button scroll before Enter: %s", scroll_result)
+                                }""")
+                                logger.debug(
+                                    "[SEND] Button scroll before Enter: %s",
+                                    scroll_result,
+                                )
                             except Exception as scroll_err:
-                                logger.debug("[SEND] Button scroll failed: %s", scroll_err)
+                                logger.debug(
+                                    "[SEND] Button scroll failed: %s", scroll_err
+                                )
 
-                            time.sleep(0.20)  # Wait for UI to settle after scroll (increased: Enter key needs React UI to be ready after file attachment)
+                            time.sleep(
+                                0.20
+                            )  # Wait for UI to settle after scroll (increased: Enter key needs React UI to be ready after file attachment)
 
                             # Detailed debug: Check UI readiness before sending
-                            pre_send_state = self._page.evaluate('''() => {
+                            pre_send_state = self._page.evaluate("""() => {
                                 const input = document.querySelector('#m365-chat-editor-target-element');
                                 const sendBtn = document.querySelector('.fai-SendButton');
                                 const stopBtn = document.querySelector('.fai-SendButton__stopBackground');
@@ -8823,14 +9875,17 @@ class CopilotHandler:
                                         id: document.activeElement?.id
                                     }
                                 };
-                            }''')
-                            logger.info("[SEND_DETAILED] Pre-send state: %s", pre_send_state)
+                            }""")
+                            logger.info(
+                                "[SEND_DETAILED] Pre-send state: %s", pre_send_state
+                            )
 
                             # Try multiple send methods in sequence with timing
                             send_start = time.monotonic()
 
                             # Method 1: JS keydown + keypress + keyup (complete key cycle)
-                            enter_result = self._page.evaluate('''(inputSelector) => {
+                            enter_result = self._page.evaluate(
+                                """(inputSelector) => {
                                 const input = document.querySelector(inputSelector);
                                 if (!input) return { success: false, error: 'input not found' };
 
@@ -8896,14 +9951,18 @@ class CopilotHandler:
                                 results.stopBtnAfterEvents = !!document.querySelector('.fai-SendButton__stopBackground');
 
                                 return results;
-                            }''', input_selector)
-                            logger.info("[SEND_DETAILED] JS key events result: %s", enter_result)
+                            }""",
+                                input_selector,
+                            )
+                            logger.info(
+                                "[SEND_DETAILED] JS key events result: %s", enter_result
+                            )
 
                             # Brief wait before checking state
                             time.sleep(0.02)
 
                             # Check immediate state after JS events
-                            post_js_state = self._page.evaluate('''() => {
+                            post_js_state = self._page.evaluate("""() => {
                                 const input = document.querySelector('#m365-chat-editor-target-element');
                                 const stopBtn = document.querySelector('.fai-SendButton__stopBackground');
                                 return {
@@ -8911,20 +9970,27 @@ class CopilotHandler:
                                     stopBtnVisible: !!stopBtn,
                                     timestamp: Date.now()
                                 };
-                            }''')
-                            logger.debug("[SEND_DETAILED] After JS events: %s", post_js_state)
+                            }""")
+                            logger.debug(
+                                "[SEND_DETAILED] After JS events: %s", post_js_state
+                            )
 
                             # Check if JS events already triggered send
                             # Priority: input cleared is the most reliable indicator
                             # Stop button visibility is secondary (selectors may be stale)
-                            input_cleared = post_js_state.get('textLength', -1) == 0
-                            stop_btn_visible = post_js_state.get('stopBtnVisible', False)
+                            input_cleared = post_js_state.get("textLength", -1) == 0
+                            stop_btn_visible = post_js_state.get(
+                                "stopBtnVisible", False
+                            )
                             js_send_succeeded = input_cleared or stop_btn_visible
 
                             if js_send_succeeded:
                                 # JS events worked - skip Playwright Enter to avoid sending empty message
-                                logger.debug("[SEND] JS events succeeded (inputCleared=%s, stopBtn=%s), skipping Playwright Enter",
-                                           input_cleared, stop_btn_visible)
+                                logger.debug(
+                                    "[SEND] JS events succeeded (inputCleared=%s, stopBtn=%s), skipping Playwright Enter",
+                                    input_cleared,
+                                    stop_btn_visible,
+                                )
                                 send_method = "Enter key (JS events only)"
                                 if stop_btn_visible:
                                     stop_button_seen_during_send = True
@@ -8941,7 +10007,7 @@ class CopilotHandler:
 
                                 # Brief wait before checking state
                                 time.sleep(0.02)
-                                post_pw_state = self._page.evaluate('''() => {
+                                post_pw_state = self._page.evaluate("""() => {
                                     const input = document.querySelector('#m365-chat-editor-target-element');
                                     const stopBtn = document.querySelector('.fai-SendButton__stopBackground');
                                     return {
@@ -8949,27 +10015,40 @@ class CopilotHandler:
                                         stopBtnVisible: !!stopBtn,
                                         timestamp: Date.now()
                                     };
-                                }''')
-                                logger.debug("[SEND_DETAILED] After Playwright Enter (%.3fs): %s", pw_time, post_pw_state)
+                                }""")
+                                logger.debug(
+                                    "[SEND_DETAILED] After Playwright Enter (%.3fs): %s",
+                                    pw_time,
+                                    post_pw_state,
+                                )
                                 send_method = "Enter key (JS events + Playwright)"
                                 # Track stop button for later use
-                                if post_pw_state.get('stopBtnVisible', False):
+                                if post_pw_state.get("stopBtnVisible", False):
                                     stop_button_seen_during_send = True
                                 # If Enter didn't trigger send, try click fallback immediately to avoid retry delay
-                                if (post_pw_state.get('textLength', -1) > 0 and
-                                        not post_pw_state.get('stopBtnVisible', False)):
-                                    pre_click_state = self._page.evaluate('''() => {
+                                if post_pw_state.get(
+                                    "textLength", -1
+                                ) > 0 and not post_pw_state.get(
+                                    "stopBtnVisible", False
+                                ):
+                                    pre_click_state = self._page.evaluate("""() => {
                                         const input = document.querySelector('#m365-chat-editor-target-element');
                                         const stopBtn = document.querySelector('.fai-SendButton__stopBackground');
                                         return {
                                             inputCleared: input ? input.innerText.trim().length === 0 : false,
                                             stopBtnVisible: !!stopBtn
                                         };
-                                    }''')
-                                    if not pre_click_state.get('stopBtnVisible', False) and not pre_click_state.get('inputCleared', False):
-                                        send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
+                                    }""")
+                                    if not pre_click_state.get(
+                                        "stopBtnVisible", False
+                                    ) and not pre_click_state.get(
+                                        "inputCleared", False
+                                    ):
+                                        send_btn = self._page.query_selector(
+                                            self.SEND_BUTTON_SELECTOR
+                                        )
                                         if send_btn:
-                                            click_result = send_btn.evaluate('''el => {
+                                            click_result = send_btn.evaluate("""el => {
                                                 const result = {
                                                     events: [],
                                                     textLengthBefore: null,
@@ -9028,10 +10107,17 @@ class CopilotHandler:
                                                 result.stopBtnAfter = !!document.querySelector('.fai-SendButton__stopBackground');
 
                                                 return result;
-                                            }''')
-                                            logger.info("[SEND_DETAILED] JS click result (enter fallback): %s", click_result)
-                                            send_method = "Enter key + JS click fallback"
-                                            if click_result.get('stopBtnAfterSynthetic') or click_result.get('stopBtnAfter'):
+                                            }""")
+                                            logger.info(
+                                                "[SEND_DETAILED] JS click result (enter fallback): %s",
+                                                click_result,
+                                            )
+                                            send_method = (
+                                                "Enter key + JS click fallback"
+                                            )
+                                            if click_result.get(
+                                                "stopBtnAfterSynthetic"
+                                            ) or click_result.get("stopBtnAfter"):
                                                 stop_button_seen_during_send = True
 
                         elif attempt_mode == "click":
@@ -9041,31 +10127,43 @@ class CopilotHandler:
                             # CRITICAL: Check if Copilot is already generating before clicking button
                             # If stop button is visible or input is cleared, first attempt succeeded
                             # Clicking the button now would trigger "stop generation" instead of "send"
-                            pre_click_state = self._page.evaluate('''() => {
+                            pre_click_state = self._page.evaluate("""() => {
                                 const input = document.querySelector('#m365-chat-editor-target-element');
                                 const stopBtn = document.querySelector('.fai-SendButton__stopBackground');
                                 return {
                                     inputCleared: input ? input.innerText.trim().length === 0 : false,
                                     stopBtnVisible: !!stopBtn
                                 };
-                            }''')
+                            }""")
 
-                            if pre_click_state.get('stopBtnVisible', False) or pre_click_state.get('inputCleared', False):
+                            if pre_click_state.get(
+                                "stopBtnVisible", False
+                            ) or pre_click_state.get("inputCleared", False):
                                 # First attempt already succeeded - skip button click to avoid stopping generation
-                                logger.info("[SEND] Skipping attempt 2: generation already started (stopBtn=%s, inputCleared=%s)",
-                                           pre_click_state.get('stopBtnVisible'), pre_click_state.get('inputCleared'))
-                                stop_button_seen_during_send = pre_click_state.get('stopBtnVisible', False)
+                                logger.info(
+                                    "[SEND] Skipping attempt 2: generation already started (stopBtn=%s, inputCleared=%s)",
+                                    pre_click_state.get("stopBtnVisible"),
+                                    pre_click_state.get("inputCleared"),
+                                )
+                                stop_button_seen_during_send = pre_click_state.get(
+                                    "stopBtnVisible", False
+                                )
                                 send_method = "Enter key (verified by pre-click check)"
                                 break  # Exit retry loop
 
                             # Log elapsed time since send ready
                             elapsed_since_ready = time.monotonic() - send_ready_time
-                            logger.info("[SEND_DETAILED] Attempt %d starting (mode=click, %.2fs since send_ready)",
-                                        send_attempt + 1, elapsed_since_ready)
+                            logger.info(
+                                "[SEND_DETAILED] Attempt %d starting (mode=click, %.2fs since send_ready)",
+                                send_attempt + 1,
+                                elapsed_since_ready,
+                            )
 
-                            send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
+                            send_btn = self._page.query_selector(
+                                self.SEND_BUTTON_SELECTOR
+                            )
                             if send_btn:
-                                click_result = send_btn.evaluate('''el => {
+                                click_result = send_btn.evaluate("""el => {
                                     const result = {
                                         events: [],
                                         textLengthBefore: null,
@@ -9132,8 +10230,10 @@ class CopilotHandler:
                                     result.stopBtnAfter = !!document.querySelector('.fai-SendButton__stopBackground');
 
                                     return result;
-                                }''')
-                                logger.info("[SEND_DETAILED] JS click result: %s", click_result)
+                                }""")
+                                logger.info(
+                                    "[SEND_DETAILED] JS click result: %s", click_result
+                                )
                                 send_method = "JS click (multi-event)"
                             else:
                                 # Fallback to Enter key if button not found
@@ -9153,36 +10253,47 @@ class CopilotHandler:
                             # Force click attempt: Playwright click with force (scrolls element into view)
 
                             # CRITICAL: Check if Copilot is already generating before clicking button
-                            pre_click_state = self._page.evaluate('''() => {
+                            pre_click_state = self._page.evaluate("""() => {
                                 const input = document.querySelector('#m365-chat-editor-target-element');
                                 const stopBtn = document.querySelector('.fai-SendButton__stopBackground');
                                 return {
                                     inputCleared: input ? input.innerText.trim().length === 0 : false,
                                     stopBtnVisible: !!stopBtn
                                 };
-                            }''')
+                            }""")
 
-                            if pre_click_state.get('stopBtnVisible', False) or pre_click_state.get('inputCleared', False):
+                            if pre_click_state.get(
+                                "stopBtnVisible", False
+                            ) or pre_click_state.get("inputCleared", False):
                                 # Previous attempt already succeeded - skip button click
-                                logger.info("[SEND] Skipping attempt 3: generation already started (stopBtn=%s, inputCleared=%s)",
-                                           pre_click_state.get('stopBtnVisible'), pre_click_state.get('inputCleared'))
-                                stop_button_seen_during_send = pre_click_state.get('stopBtnVisible', False)
+                                logger.info(
+                                    "[SEND] Skipping attempt 3: generation already started (stopBtn=%s, inputCleared=%s)",
+                                    pre_click_state.get("stopBtnVisible"),
+                                    pre_click_state.get("inputCleared"),
+                                )
+                                stop_button_seen_during_send = pre_click_state.get(
+                                    "stopBtnVisible", False
+                                )
                                 send_method = "Enter key (verified by pre-click check)"
                                 break  # Exit retry loop
 
-                            send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
+                            send_btn = self._page.query_selector(
+                                self.SEND_BUTTON_SELECTOR
+                            )
                             if send_btn:
                                 try:
-                                    btn_info = send_btn.evaluate('''el => ({
+                                    btn_info = send_btn.evaluate("""el => ({
                                         tag: el.tagName,
                                         disabled: el.disabled,
                                         ariaDisabled: el.getAttribute('aria-disabled'),
                                         visible: el.offsetParent !== null,
                                         rect: el.getBoundingClientRect()
-                                    })''')
+                                    })""")
                                     logger.debug("[SEND] Button info: %s", btn_info)
                                 except Exception as info_err:
-                                    logger.debug("[SEND] Could not get button info: %s", info_err)
+                                    logger.debug(
+                                        "[SEND] Could not get button info: %s", info_err
+                                    )
                                 send_btn.click(force=True)
                                 send_method = "Playwright click (force)"
                             else:
@@ -9198,10 +10309,16 @@ class CopilotHandler:
                                         raise
                                 send_method = "Enter key (final fallback)"
 
-                        logger.debug("[SEND] Sent via %s (attempt %d)", send_method, send_attempt + 1)
+                        logger.debug(
+                            "[SEND] Sent via %s (attempt %d)",
+                            send_method,
+                            send_attempt + 1,
+                        )
 
                     except Exception as send_err:
-                        logger.debug("[SEND] Method failed: %s, trying Enter key", send_err)
+                        logger.debug(
+                            "[SEND] Method failed: %s, trying Enter key", send_err
+                        )
                         try:
                             input_elem.focus()
                             time.sleep(0.05)
@@ -9214,16 +10331,22 @@ class CopilotHandler:
                                     raise
                             send_method = "Enter key (exception fallback)"
                         except Exception as enter_err:
-                            logger.warning("[SEND] Enter key also failed: %s", enter_err)
+                            logger.warning(
+                                "[SEND] Enter key also failed: %s", enter_err
+                            )
                             send_method = "failed"
-                        logger.debug("[SEND] Sent via %s (attempt %d)", send_method, send_attempt + 1)
+                        logger.debug(
+                            "[SEND] Sent via %s (attempt %d)",
+                            send_method,
+                            send_attempt + 1,
+                        )
 
                     # Small delay to let Copilot's JavaScript process the click event
                     time.sleep(0.1)  # Increased from 0.05s for reliability
 
                     # Debug: Log environment state after send attempt
                     try:
-                        post_attempt_state = self._page.evaluate('''() => {
+                        post_attempt_state = self._page.evaluate("""() => {
                             const input = document.querySelector('#m365-chat-editor-target-element');
                             const sendBtn = document.querySelector('.fai-SendButton');
                             const stopBtn = document.querySelector('.fai-SendButton__stopBackground');
@@ -9263,15 +10386,26 @@ class CopilotHandler:
                                 // Response elements
                                 responseCount: document.querySelectorAll('[data-message-author-role="assistant"]').length
                             };
-                        }''')
-                        logger.info("[SEND_DEBUG] Attempt %d POST-STATE: %s", send_attempt + 1, post_attempt_state)
+                        }""")
+                        logger.info(
+                            "[SEND_DEBUG] Attempt %d POST-STATE: %s",
+                            send_attempt + 1,
+                            post_attempt_state,
+                        )
                     except Exception as state_err:
-                        logger.debug("[SEND_DEBUG] Could not get post-attempt state: %s", state_err)
+                        logger.debug(
+                            "[SEND_DEBUG] Could not get post-attempt state: %s",
+                            state_err,
+                        )
 
                     # Optimized send verification: focus on input cleared (fastest signal)
                     # Stop button rendering is delayed, but input clears immediately on successful send
-                    SEND_VERIFY_POLL_INTERVAL = 0.03  # Fast polling for input clear check
-                    SEND_VERIFY_POLL_MAX = 0.8  # Reduced: input clears quickly if send succeeded
+                    SEND_VERIFY_POLL_INTERVAL = (
+                        0.03  # Fast polling for input clear check
+                    )
+                    SEND_VERIFY_POLL_MAX = (
+                        0.8  # Reduced: input clears quickly if send succeeded
+                    )
 
                     verify_start = time.monotonic()
                     send_verified = False
@@ -9280,38 +10414,70 @@ class CopilotHandler:
                     # Method 0: Early verification from POST-STATE (fastest path)
                     # If JS already confirmed stop button or input cleared, skip slow Playwright waits
                     # Processing message phrases that indicate Copilot is generating a response
-                    PROCESSING_PHRASES = ("応答を処理中", "Processing", "処理中", "お待ち")
+                    PROCESSING_PHRASES = (
+                        "応答を処理中",
+                        "Processing",
+                        "処理中",
+                        "お待ち",
+                    )
                     try:
                         if post_attempt_state:
-                            input_cleared = post_attempt_state.get('inputTextLength', -1) == 0
-                            input_text_preview = post_attempt_state.get('inputTextPreview', '')
-                            stop_btn_visible = post_attempt_state.get('stopBtnVisible', False)
-                            stop_btn_exists = post_attempt_state.get('stopBtnExists', False)
+                            input_cleared = (
+                                post_attempt_state.get("inputTextLength", -1) == 0
+                            )
+                            input_text_preview = post_attempt_state.get(
+                                "inputTextPreview", ""
+                            )
+                            stop_btn_visible = post_attempt_state.get(
+                                "stopBtnVisible", False
+                            )
+                            stop_btn_exists = post_attempt_state.get(
+                                "stopBtnExists", False
+                            )
                             # Check if input shows processing message
                             input_shows_processing = any(
-                                phrase in input_text_preview for phrase in PROCESSING_PHRASES
+                                phrase in input_text_preview
+                                for phrase in PROCESSING_PHRASES
                             )
 
-                            if stop_btn_visible and (input_cleared or input_shows_processing):
+                            if stop_btn_visible and (
+                                input_cleared or input_shows_processing
+                            ):
                                 send_verified = True
                                 verify_reason = "JS confirmed (stop button visible)"
                                 stop_button_seen_during_send = True
-                                logger.debug("[SEND_VERIFY] Early verification: stop button visible in POST-STATE")
+                                logger.debug(
+                                    "[SEND_VERIFY] Early verification: stop button visible in POST-STATE"
+                                )
                             elif input_shows_processing:
                                 send_verified = True
-                                verify_reason = "JS confirmed (processing message in input)"
-                                logger.debug("[SEND_VERIFY] Early verification: processing message detected: %s", input_text_preview)
+                                verify_reason = (
+                                    "JS confirmed (processing message in input)"
+                                )
+                                logger.debug(
+                                    "[SEND_VERIFY] Early verification: processing message detected: %s",
+                                    input_text_preview,
+                                )
                             elif input_cleared and stop_btn_exists:
                                 send_verified = True
-                                verify_reason = "JS confirmed (input cleared + stop button exists)"
+                                verify_reason = (
+                                    "JS confirmed (input cleared + stop button exists)"
+                                )
                                 stop_button_seen_during_send = True
-                                logger.debug("[SEND_VERIFY] Early verification: input cleared and stop button exists")
+                                logger.debug(
+                                    "[SEND_VERIFY] Early verification: input cleared and stop button exists"
+                                )
                             elif input_cleared:
                                 send_verified = True
                                 verify_reason = "JS confirmed (input cleared)"
-                                logger.debug("[SEND_VERIFY] Early verification: input cleared")
+                                logger.debug(
+                                    "[SEND_VERIFY] Early verification: input cleared"
+                                )
                     except Exception as early_err:
-                        logger.debug("[SEND_VERIFY] Early verification check failed: %s", early_err)
+                        logger.debug(
+                            "[SEND_VERIFY] Early verification check failed: %s",
+                            early_err,
+                        )
 
                     # Method 1: Skip slow wait_for_selector for stop button
                     # Stop button rendering is delayed, but input clears immediately on successful send
@@ -9321,29 +10487,53 @@ class CopilotHandler:
                     # Input clears immediately on successful send; stop button rendering is delayed
                     poll_iteration = 0
                     poll_start = time.monotonic()
-                    while not send_verified and (time.monotonic() - poll_start) < SEND_VERIFY_POLL_MAX:
+                    while (
+                        not send_verified
+                        and (time.monotonic() - poll_start) < SEND_VERIFY_POLL_MAX
+                    ):
                         poll_iteration += 1
 
                         # Primary check: input cleared (fastest signal of successful send)
                         try:
                             current_input = self._page.query_selector(input_selector)
-                            remaining_text = current_input.inner_text().strip() if current_input else ""
+                            remaining_text = (
+                                current_input.inner_text().strip()
+                                if current_input
+                                else ""
+                            )
                             if not remaining_text:
                                 send_verified = True
                                 verify_reason = "input cleared"
-                                logger.debug("[SEND_VERIFY] Input cleared at poll iteration %d", poll_iteration)
+                                logger.debug(
+                                    "[SEND_VERIFY] Input cleared at poll iteration %d",
+                                    poll_iteration,
+                                )
                                 break
                             # Check if Copilot is processing (shows "応答を処理中です" or similar)
-                            elif any(phrase in remaining_text for phrase in (
-                                "応答を処理中", "Processing", "処理中", "お待ち"
-                            )):
+                            elif any(
+                                phrase in remaining_text
+                                for phrase in (
+                                    "応答を処理中",
+                                    "Processing",
+                                    "処理中",
+                                    "お待ち",
+                                )
+                            ):
                                 send_verified = True
                                 verify_reason = "input shows processing message"
-                                logger.debug("[SEND_VERIFY] Processing message detected: %s", remaining_text[:50])
+                                logger.debug(
+                                    "[SEND_VERIFY] Processing message detected: %s",
+                                    remaining_text[:50],
+                                )
                                 break
                             elif poll_iteration == 1:
-                                logger.debug("[SEND_VERIFY] Input still has text (len=%d): %s...",
-                                            len(remaining_text), remaining_text[:50] if len(remaining_text) > 50 else remaining_text)
+                                logger.debug(
+                                    "[SEND_VERIFY] Input still has text (len=%d): %s...",
+                                    len(remaining_text),
+                                    remaining_text[:50]
+                                    if len(remaining_text) > 50
+                                    else remaining_text,
+                                )
                         except Exception as e:
                             send_verified = True
                             verify_reason = "input check failed (assuming sent)"
@@ -9352,13 +10542,21 @@ class CopilotHandler:
 
                         # Secondary check: stop button visible (backup, can be slow to render)
                         try:
-                            stop_btn = self._page.query_selector(self.STOP_BUTTON_SELECTOR_COMBINED)
+                            stop_btn = self._page.query_selector(
+                                self.STOP_BUTTON_SELECTOR_COMBINED
+                            )
                             if stop_btn and stop_btn.is_visible():
-                                if not remaining_text or any(phrase in remaining_text for phrase in PROCESSING_PHRASES):
+                                if not remaining_text or any(
+                                    phrase in remaining_text
+                                    for phrase in PROCESSING_PHRASES
+                                ):
                                     send_verified = True
                                     verify_reason = "stop button visible"
                                     stop_button_seen_during_send = True
-                                    logger.debug("[SEND_VERIFY] Stop button found at poll iteration %d", poll_iteration)
+                                    logger.debug(
+                                        "[SEND_VERIFY] Stop button found at poll iteration %d",
+                                        poll_iteration,
+                                    )
                                     break
                                 logger.debug(
                                     "[SEND_VERIFY] Stop button visible but input still has text; waiting... (len=%d)",
@@ -9371,8 +10569,12 @@ class CopilotHandler:
 
                     if send_verified:
                         elapsed = time.monotonic() - verify_start
-                        logger.info("[SEND] Message sent (attempt %d, %s, verified in %.2fs)",
-                                    send_attempt + 1, verify_reason, elapsed)
+                        logger.info(
+                            "[SEND] Message sent (attempt %d, %s, verified in %.2fs)",
+                            send_attempt + 1,
+                            verify_reason,
+                            elapsed,
+                        )
                         # Wait for Copilot's internal state to stabilize before proceeding
                         # This prevents "応答を処理中です" message from DOM operations during response generation
                         time.sleep(0.3)
@@ -9380,16 +10582,18 @@ class CopilotHandler:
                     else:
                         # Debug: Dump page state for troubleshooting
                         try:
-                            page_state = self._page.evaluate('''() => ({
+                            page_state = self._page.evaluate("""() => ({
                                 url: location.href,
                                 inputExists: !!document.querySelector('#m365-chat-editor-target-element'),
                                 sendBtnExists: !!document.querySelector('.fai-SendButton'),
                                 stopBtnExists: !!document.querySelector('.fai-SendButton__stopBackground'),
                                 responseDivs: document.querySelectorAll('[data-message-author-role="assistant"]').length
-                            })''')
+                            })""")
                             logger.debug("[SEND_VERIFY] Page state: %s", page_state)
                         except Exception as state_err:
-                            logger.debug("[SEND_VERIFY] Could not get page state: %s", state_err)
+                            logger.debug(
+                                "[SEND_VERIFY] Could not get page state: %s", state_err
+                            )
 
                         # Update input_elem for next retry attempt
                         try:
@@ -9399,7 +10603,10 @@ class CopilotHandler:
                         except Exception:
                             pass
 
-                        if attempt_mode == "enter" and send_attempt < MAX_SEND_RETRIES - 1:
+                        if (
+                            attempt_mode == "enter"
+                            and send_attempt < MAX_SEND_RETRIES - 1
+                        ):
                             # Give Enter a chance to register before retrying to avoid double-send.
                             late_verify_start = time.monotonic()
                             late_verified = False
@@ -9407,29 +10614,50 @@ class CopilotHandler:
                             LATE_VERIFY_MAX = 1.5
                             LATE_VERIFY_INTERVAL = 0.05
 
-                            while not late_verified and (time.monotonic() - late_verify_start) < LATE_VERIFY_MAX:
+                            while (
+                                not late_verified
+                                and (time.monotonic() - late_verify_start)
+                                < LATE_VERIFY_MAX
+                            ):
                                 try:
-                                    current_input = self._page.query_selector(input_selector)
-                                    remaining_text = current_input.inner_text().strip() if current_input else ""
+                                    current_input = self._page.query_selector(
+                                        input_selector
+                                    )
+                                    remaining_text = (
+                                        current_input.inner_text().strip()
+                                        if current_input
+                                        else ""
+                                    )
                                     if not remaining_text:
                                         late_verified = True
                                         late_reason = "late verify (input cleared)"
                                         break
-                                    if any(phrase in remaining_text for phrase in PROCESSING_PHRASES):
+                                    if any(
+                                        phrase in remaining_text
+                                        for phrase in PROCESSING_PHRASES
+                                    ):
                                         late_verified = True
-                                        late_reason = "late verify (processing message in input)"
+                                        late_reason = (
+                                            "late verify (processing message in input)"
+                                        )
                                         break
                                 except Exception as e:
                                     late_verified = True
                                     late_reason = "late verify (input check failed)"
-                                    logger.debug("[SEND_VERIFY] Late input check failed: %s", e)
+                                    logger.debug(
+                                        "[SEND_VERIFY] Late input check failed: %s", e
+                                    )
                                     break
 
                                 try:
-                                    stop_btn = self._page.query_selector(self.STOP_BUTTON_SELECTOR_COMBINED)
+                                    stop_btn = self._page.query_selector(
+                                        self.STOP_BUTTON_SELECTOR_COMBINED
+                                    )
                                     if stop_btn and stop_btn.is_visible():
                                         late_verified = True
-                                        late_reason = "late verify (stop button visible)"
+                                        late_reason = (
+                                            "late verify (stop button visible)"
+                                        )
                                         stop_button_seen_during_send = True
                                         break
                                 except Exception:
@@ -9439,8 +10667,12 @@ class CopilotHandler:
 
                             if late_verified:
                                 elapsed = time.monotonic() - late_verify_start
-                                logger.info("[SEND] Message sent (attempt %d, %s, verified in %.2fs)",
-                                            send_attempt + 1, late_reason, elapsed)
+                                logger.info(
+                                    "[SEND] Message sent (attempt %d, %s, verified in %.2fs)",
+                                    send_attempt + 1,
+                                    late_reason,
+                                    elapsed,
+                                )
                                 time.sleep(0.3)
                                 break
 
@@ -9448,13 +10680,15 @@ class CopilotHandler:
                             elapsed = time.monotonic() - verify_start
                             logger.warning(
                                 "[SEND] Not verified after %.1fs (attempt %d/%d), retrying...",
-                                elapsed, send_attempt + 1, MAX_SEND_RETRIES
+                                elapsed,
+                                send_attempt + 1,
+                                MAX_SEND_RETRIES,
                             )
                         else:
                             # All attempts failed
                             logger.warning(
                                 "[SEND] Not verified after %d attempts",
-                                MAX_SEND_RETRIES
+                                MAX_SEND_RETRIES,
                             )
             else:
                 logger.error("Input element not found!")
@@ -9601,7 +10835,7 @@ class CopilotHandler:
             return "", False
 
         error_types = _get_playwright_errors()
-        PlaywrightError = error_types['Error']
+        PlaywrightError = error_types["Error"]
 
         for selector in self.RESPONSE_SELECTORS:
             try:
@@ -9614,25 +10848,37 @@ class CopilotHandler:
                 logger.debug("[RESPONSE_TEXT] No elements for selector: %s", selector)
                 continue
 
-            logger.debug("[RESPONSE_TEXT] Found %d elements for selector: %s", len(elements), selector)
+            logger.debug(
+                "[RESPONSE_TEXT] Found %d elements for selector: %s",
+                len(elements),
+                selector,
+            )
             for element in reversed(elements):
                 try:
                     # Use JavaScript evaluation to get text with list numbers preserved
                     text = element.evaluate(self._JS_GET_TEXT_WITH_LIST_NUMBERS)
                 except PlaywrightError as e:
-                    logger.debug("[RESPONSE_TEXT] Failed to evaluate element (%s): %s", selector, e)
+                    logger.debug(
+                        "[RESPONSE_TEXT] Failed to evaluate element (%s): %s",
+                        selector,
+                        e,
+                    )
                     # Fallback to inner_text if evaluate fails
                     try:
                         text = element.inner_text()
                     except PlaywrightError:
                         continue
 
-                logger.debug("[RESPONSE_TEXT] Got text (len=%d) from selector: %s", len(text) if text else 0, selector)
+                logger.debug(
+                    "[RESPONSE_TEXT] Got text (len=%d) from selector: %s",
+                    len(text) if text else 0,
+                    selector,
+                )
                 return text or "", True
 
         # Debug: Dump page structure to help identify new selectors
         try:
-            page_debug = self._page.evaluate('''() => {
+            page_debug = self._page.evaluate("""() => {
                 const info = {
                     url: location.href,
                     title: document.title,
@@ -9659,7 +10905,7 @@ class CopilotHandler:
                     });
                 }
                 return info;
-            }''')
+            }""")
             logger.debug("[RESPONSE_TEXT] Page debug info: %s", page_debug)
         except Exception as dump_err:
             logger.debug("[RESPONSE_TEXT] Could not dump page info: %s", dump_err)
@@ -9672,7 +10918,7 @@ class CopilotHandler:
             return ""
 
         error_types = _get_playwright_errors()
-        PlaywrightError = error_types['Error']
+        PlaywrightError = error_types["Error"]
 
         def _extract_latest_text(selectors: tuple[str, ...], combined: str) -> str:
             try:
@@ -9733,7 +10979,10 @@ class CopilotHandler:
 
         deduped: list[str] = []
         for text in parts:
-            if any(text == existing or text in existing or existing in text for existing in deduped):
+            if any(
+                text == existing or text in existing or existing in text
+                for existing in deduped
+            ):
                 continue
             deduped.append(text)
 
@@ -9754,10 +11003,12 @@ class CopilotHandler:
             return "", False
 
         error_types = _get_playwright_errors()
-        PlaywrightError = error_types['Error']
+        PlaywrightError = error_types["Error"]
 
         try:
-            elements = self._page.query_selector_all(self.STREAMING_RESPONSE_SELECTOR_COMBINED)
+            elements = self._page.query_selector_all(
+                self.STREAMING_RESPONSE_SELECTOR_COMBINED
+            )
         except PlaywrightError:
             # Fallback: try individual selectors (keeps this method resilient to CSS engine quirks).
             elements = []
@@ -9817,6 +11068,7 @@ class CopilotHandler:
             return False
 
         try:
+
             def _scroll_from_element(elem) -> bool:
                 if not elem:
                     return False
@@ -9825,7 +11077,8 @@ class CopilotHandler:
                 except Exception:
                     pass
                 try:
-                    return bool(elem.evaluate('''(el) => {
+                    return bool(
+                        elem.evaluate("""(el) => {
                         const isScrollable = (node) => {
                             if (!node || node.nodeType !== Node.ELEMENT_NODE) return false;
                             const style = window.getComputedStyle(node);
@@ -9873,7 +11126,8 @@ class CopilotHandler:
                         }
 
                         return false;
-                    }'''))
+                    }""")
+                    )
                 except Exception:
                     return False
 
@@ -9906,26 +11160,35 @@ class CopilotHandler:
             scrolled_chat = _scroll_latest_for_selectors(self.RESPONSE_SELECTORS)
             if not scrolled_chat:
                 # During generation, Copilot may render the Chain-of-Thought card before the reply body.
-                scrolled_chat = _scroll_latest_for_selectors(self.CHAIN_OF_THOUGHT_CARD_SELECTORS)
+                scrolled_chat = _scroll_latest_for_selectors(
+                    self.CHAIN_OF_THOUGHT_CARD_SELECTORS
+                )
             if not scrolled_chat:
                 # Some UI variants render only the Chain-of-Thought expand button (no card wrapper).
-                scrolled_chat = _scroll_latest_for_selectors(self.CHAIN_OF_THOUGHT_EXPAND_BUTTON_SELECTORS)
+                scrolled_chat = _scroll_latest_for_selectors(
+                    self.CHAIN_OF_THOUGHT_EXPAND_BUTTON_SELECTORS
+                )
 
             # 2) Chain-of-Thought panels can be internally scrollable; keep them at the latest item too.
-            scrolled_cot = _scroll_latest_for_selectors(self.CHAIN_OF_THOUGHT_PANEL_SELECTORS)
+            scrolled_cot = _scroll_latest_for_selectors(
+                self.CHAIN_OF_THOUGHT_PANEL_SELECTORS
+            )
 
             if scrolled_chat or scrolled_cot:
                 return True
 
             try:
-                input_elem = self._page.query_selector(self.CHAT_INPUT_SELECTOR_EXTENDED)
+                input_elem = self._page.query_selector(
+                    self.CHAT_INPUT_SELECTOR_EXTENDED
+                )
             except Exception:
                 input_elem = None
 
             if input_elem and _scroll_from_element(input_elem):
                 return True
 
-            return bool(self._page.evaluate('''() => {
+            return bool(
+                self._page.evaluate("""() => {
                 const elements = document.querySelectorAll('div, section, main, article');
                 let best = null;
                 let bestOverflow = 0;
@@ -9956,7 +11219,8 @@ class CopilotHandler:
                 }
 
                 return false;
-            }'''))
+            }""")
+            )
         except Exception as e:
             logger.debug("[AUTO_SCROLL] Failed to scroll chat: %s", e)
             return False
@@ -9982,7 +11246,7 @@ class CopilotHandler:
                 disappeared quickly for short translations).
         """
         error_types = _get_playwright_errors()
-        PlaywrightError = error_types['Error']
+        PlaywrightError = error_types["Error"]
 
         streaming_logged = False  # Avoid spamming logs for every tiny delta
         response_start_time = time.monotonic()
@@ -10009,16 +11273,24 @@ class CopilotHandler:
             stop_button_ever_seen = stop_button_seen_during_send
             stop_button_warning_logged = False  # Avoid repeated warnings
             response_element_seen = False  # Track if response element has appeared
-            response_element_first_seen_time = None  # Track when response element first appeared
+            response_element_first_seen_time = (
+                None  # Track when response element first appeared
+            )
             # Initialize to past time so first iteration always checks page validity
-            last_page_validity_check = time.monotonic() - self.PAGE_VALIDITY_CHECK_INTERVAL
+            last_page_validity_check = (
+                time.monotonic() - self.PAGE_VALIDITY_CHECK_INTERVAL
+            )
             # Cache the working stop button selector for faster subsequent checks
             cached_stop_selector = None
 
             current_url = self._page.url if self._page else "unknown"
             # Ensure current_url is a string before slicing (for test mocks)
             url_str = str(current_url) if current_url else "empty"
-            logger.info("[POLLING] Starting response polling (timeout=%.0fs, URL: %s)", timeout_float, url_str[:80])
+            logger.info(
+                "[POLLING] Starting response polling (timeout=%.0fs, URL: %s)",
+                timeout_float,
+                url_str[:80],
+            )
 
             while (time.monotonic() - polling_start_time) < timeout_float:
                 poll_iteration += 1
@@ -10030,7 +11302,10 @@ class CopilotHandler:
                 # Periodically check if page is still valid (detect login expiration)
                 # This prevents 120-second freeze when login session expires
                 current_time = time.monotonic()
-                if current_time - last_page_validity_check >= self.PAGE_VALIDITY_CHECK_INTERVAL:
+                if (
+                    current_time - last_page_validity_check
+                    >= self.PAGE_VALIDITY_CHECK_INTERVAL
+                ):
                     last_page_validity_check = current_time
                     if not self._is_page_valid():
                         logger.warning(
@@ -10072,7 +11347,9 @@ class CopilotHandler:
                                 cached_stop_selector = stop_sel
                                 break
                         except Exception as e:
-                            logger.debug("Stop button selector failed (%s): %s", stop_sel, e)
+                            logger.debug(
+                                "Stop button selector failed (%s): %s", stop_sel, e
+                            )
                             continue
 
                 stop_button_visible = stop_button and stop_button.is_visible()
@@ -10088,19 +11365,32 @@ class CopilotHandler:
                     # Streaming preview: best-effort extraction while generating.
                     # Keep this lightweight and throttled; the final answer is still captured
                     # after generation completes.
-                    if on_chunk and (now - last_stream_extract_time) >= stream_extract_interval_generating:
+                    if (
+                        on_chunk
+                        and (now - last_stream_extract_time)
+                        >= stream_extract_interval_generating
+                    ):
                         last_stream_extract_time = now
                         try:
-                            current_text, found_stream = self._get_latest_streaming_text()
+                            current_text, found_stream = (
+                                self._get_latest_streaming_text()
+                            )
                         except Exception:
                             current_text, found_stream = "", False
 
-                        if found_stream and current_text and current_text.strip() and current_text != last_text:
+                        if (
+                            found_stream
+                            and current_text
+                            and current_text.strip()
+                            and current_text != last_text
+                        ):
                             last_text = current_text
                             last_text_change_time = now
                             if not has_content:
                                 has_content = True
-                                first_content_time = first_content_time or time.monotonic()
+                                first_content_time = (
+                                    first_content_time or time.monotonic()
+                                )
                             try:
                                 on_chunk(current_text)
                             except Exception as e:
@@ -10111,7 +11401,12 @@ class CopilotHandler:
                                     len(current_text),
                                 )
                                 streaming_logged = True
-                    if has_content and last_text and (now - last_text_change_time) >= self.STOP_BUTTON_STALE_SECONDS:
+                    if (
+                        has_content
+                        and last_text
+                        and (now - last_text_change_time)
+                        >= self.STOP_BUTTON_STALE_SECONDS
+                    ):
                         stable_text, stable_found = self._get_latest_response_text()
                         if stable_found and stable_text and stable_text.strip():
                             logger.warning(
@@ -10124,9 +11419,15 @@ class CopilotHandler:
                     poll_interval = self.RESPONSE_POLL_INITIAL
                     # Log every 1 second
                     if time.monotonic() - last_log_time >= 1.0:
-                        remaining = timeout_float - (time.monotonic() - polling_start_time)
-                        logger.info("[POLLING] iter=%d stop_button visible (%s), waiting... (remaining=%.1fs)",
-                                   poll_iteration, stop_button_selector, remaining)
+                        remaining = timeout_float - (
+                            time.monotonic() - polling_start_time
+                        )
+                        logger.info(
+                            "[POLLING] iter=%d stop_button visible (%s), waiting... (remaining=%.1fs)",
+                            poll_iteration,
+                            stop_button_selector,
+                            remaining,
+                        )
                         last_log_time = time.monotonic()
                     time.sleep(poll_interval)
                     continue
@@ -10138,38 +11439,53 @@ class CopilotHandler:
                     quick_text, quick_found = self._get_latest_response_text()
                     if quick_found and quick_text and quick_text == last_text:
                         # Text is stable - return immediately (stop button confirms completion)
-                        logger.info("[TIMING] response_stabilized: %.2fs (early termination: stop button disappeared, text stable)",
-                                   time.monotonic() - response_start_time)
+                        logger.info(
+                            "[TIMING] response_stabilized: %.2fs (early termination: stop button disappeared, text stable)",
+                            time.monotonic() - response_start_time,
+                        )
                         self._auto_scroll_to_latest_response()
                         return quick_text
 
                 # Warn if stop button was never found (possible selector change)
-                if has_content and not stop_button_ever_seen and not stop_button_warning_logged:
-                    logger.warning("[POLLING] Stop button never detected - selectors may need update: %s. "
-                                   "Using higher stability threshold (%d instead of %d).",
-                                   self.STOP_BUTTON_SELECTORS,
-                                   self.STALE_SELECTOR_STABLE_COUNT,
-                                   self.RESPONSE_STABLE_COUNT)
+                if (
+                    has_content
+                    and not stop_button_ever_seen
+                    and not stop_button_warning_logged
+                ):
+                    logger.warning(
+                        "[POLLING] Stop button never detected - selectors may need update: %s. "
+                        "Using higher stability threshold (%d instead of %d).",
+                        self.STOP_BUTTON_SELECTORS,
+                        self.STALE_SELECTOR_STABLE_COUNT,
+                        self.RESPONSE_STABLE_COUNT,
+                    )
                     stop_button_warning_logged = True
 
                 # Use higher stable count threshold if stop button was never seen
                 # This provides extra safety when selectors may be stale
                 required_stable_count = (
-                    self.STALE_SELECTOR_STABLE_COUNT if (has_content and not stop_button_ever_seen)
+                    self.STALE_SELECTOR_STABLE_COUNT
+                    if (has_content and not stop_button_ever_seen)
                     else self.RESPONSE_STABLE_COUNT
                 )
 
                 current_text, found_response = self._get_latest_response_text()
                 text_len = len(current_text) if current_text else 0
-                text_preview = (current_text[:50] + "...") if current_text and len(current_text) > 50 else current_text
+                text_preview = (
+                    (current_text[:50] + "...")
+                    if current_text and len(current_text) > 50
+                    else current_text
+                )
 
                 if found_response:
                     # Track when response element first appears
                     if not response_element_seen:
                         response_element_seen = True
                         response_element_first_seen_time = time.monotonic()
-                        logger.info("[TIMING] response_element_detected: %.2fs",
-                                   response_element_first_seen_time - response_start_time)
+                        logger.info(
+                            "[TIMING] response_element_detected: %.2fs",
+                            response_element_first_seen_time - response_start_time,
+                        )
                         now = time.monotonic()
                         if now - last_scroll_time >= scroll_interval_active:
                             self._auto_scroll_to_latest_response()
@@ -10180,23 +11496,38 @@ class CopilotHandler:
                     if current_text and current_text.strip():
                         if not has_content:
                             first_content_time = time.monotonic()
-                            logger.info("[TIMING] first_content_received: %.2fs", first_content_time - response_start_time)
+                            logger.info(
+                                "[TIMING] first_content_received: %.2fs",
+                                first_content_time - response_start_time,
+                            )
                         has_content = True
                         if current_text == last_text:
                             stable_count += 1
                             if stable_count >= required_stable_count:
-                                logger.info("[TIMING] response_stabilized: %.2fs (content generation: %.2fs, stable_threshold=%d)",
-                                           time.monotonic() - response_start_time,
-                                           time.monotonic() - first_content_time if first_content_time else 0,
-                                           required_stable_count)
+                                logger.info(
+                                    "[TIMING] response_stabilized: %.2fs (content generation: %.2fs, stable_threshold=%d)",
+                                    time.monotonic() - response_start_time,
+                                    time.monotonic() - first_content_time
+                                    if first_content_time
+                                    else 0,
+                                    required_stable_count,
+                                )
                                 return current_text
                             # Use fastest interval during stability checking
                             poll_interval = self.RESPONSE_POLL_STABLE
                             # Log stability check progress
                             if time.monotonic() - last_log_time >= 1.0:
-                                remaining = timeout_float - (time.monotonic() - polling_start_time)
-                                logger.info("[POLLING] iter=%d stable_count=%d/%d, text_len=%d (remaining=%.1fs)",
-                                           poll_iteration, stable_count, required_stable_count, text_len, remaining)
+                                remaining = timeout_float - (
+                                    time.monotonic() - polling_start_time
+                                )
+                                logger.info(
+                                    "[POLLING] iter=%d stable_count=%d/%d, text_len=%d (remaining=%.1fs)",
+                                    poll_iteration,
+                                    stable_count,
+                                    required_stable_count,
+                                    text_len,
+                                    remaining,
+                                )
                                 last_log_time = time.monotonic()
                         else:
                             stable_count = 0
@@ -10210,9 +11541,16 @@ class CopilotHandler:
                                 last_scroll_time = now
                             # Log content growth every 1 second
                             if time.monotonic() - last_log_time >= 1.0:
-                                remaining = timeout_float - (time.monotonic() - polling_start_time)
-                                logger.info("[POLLING] iter=%d content growing, text_len=%d, preview='%s' (remaining=%.1fs)",
-                                           poll_iteration, text_len, text_preview, remaining)
+                                remaining = timeout_float - (
+                                    time.monotonic() - polling_start_time
+                                )
+                                logger.info(
+                                    "[POLLING] iter=%d content growing, text_len=%d, preview='%s' (remaining=%.1fs)",
+                                    poll_iteration,
+                                    text_len,
+                                    text_preview,
+                                    remaining,
+                                )
                                 last_log_time = time.monotonic()
                             # Notify streaming callback with partial text
                             if on_chunk:
@@ -10232,9 +11570,14 @@ class CopilotHandler:
                         poll_interval = self.RESPONSE_POLL_INITIAL
                         # Log empty response state
                         if time.monotonic() - last_log_time >= 1.0:
-                            remaining = timeout_float - (time.monotonic() - polling_start_time)
-                            logger.info("[POLLING] iter=%d found_response=True but text empty (remaining=%.1fs)",
-                                       poll_iteration, remaining)
+                            remaining = timeout_float - (
+                                time.monotonic() - polling_start_time
+                            )
+                            logger.info(
+                                "[POLLING] iter=%d found_response=True but text empty (remaining=%.1fs)",
+                                poll_iteration,
+                                remaining,
+                            )
                             last_log_time = time.monotonic()
                 else:
                     # No response element yet, use initial interval
@@ -10242,24 +11585,38 @@ class CopilotHandler:
                     # Log no response state with URL check
                     if time.monotonic() - last_log_time >= 1.0:
                         current_url = self._page.url if self._page else "unknown"
-                        remaining = timeout_float - (time.monotonic() - polling_start_time)
-                        logger.info("[POLLING] iter=%d no response element found (remaining=%.1fs, URL: %s)",
-                                   poll_iteration, remaining, current_url[:80] if current_url else "empty")
+                        remaining = timeout_float - (
+                            time.monotonic() - polling_start_time
+                        )
+                        logger.info(
+                            "[POLLING] iter=%d no response element found (remaining=%.1fs, URL: %s)",
+                            poll_iteration,
+                            remaining,
+                            current_url[:80] if current_url else "empty",
+                        )
                         last_log_time = time.monotonic()
                         # Warn about potential selector issues after significant wait
                         if poll_iteration > 20 and not has_content:
-                            logger.warning("[POLLING] Response selectors may need update: %s",
-                                          self.RESPONSE_SELECTORS[:2])  # Log first 2 selectors
+                            logger.warning(
+                                "[POLLING] Response selectors may need update: %s",
+                                self.RESPONSE_SELECTORS[:2],
+                            )  # Log first 2 selectors
 
                 time.sleep(poll_interval)
 
             # Log detailed info on timeout for debugging
-            logger.warning("[POLLING] Timeout reached after %d iterations, returning last_text (len=%d)",
-                          poll_iteration, len(last_text))
+            logger.warning(
+                "[POLLING] Timeout reached after %d iterations, returning last_text (len=%d)",
+                poll_iteration,
+                len(last_text),
+            )
             if not has_content:
-                logger.error("[POLLING] No content received - possible selector issues. "
-                            "Response selectors: %s, Stop button selectors: %s",
-                            self.RESPONSE_SELECTORS, self.STOP_BUTTON_SELECTORS)
+                logger.error(
+                    "[POLLING] No content received - possible selector issues. "
+                    "Response selectors: %s, Stop button selectors: %s",
+                    self.RESPONSE_SELECTORS,
+                    self.STOP_BUTTON_SELECTORS,
+                )
             return last_text
 
         except PlaywrightError as e:
@@ -10286,8 +11643,8 @@ class CopilotHandler:
 
         # Get Playwright error types for specific exception handling
         error_types = _get_playwright_errors()
-        PlaywrightError = error_types['Error']
-        PlaywrightTimeoutError = error_types['TimeoutError']
+        PlaywrightError = error_types["Error"]
+        PlaywrightTimeoutError = error_types["TimeoutError"]
 
         # Ensure we have a valid page reference
         if not self._page or not self._is_page_valid():
@@ -10322,16 +11679,20 @@ class CopilotHandler:
 
             if plus_btn:
                 # Use JS click to avoid bringing browser to front
-                plus_btn.evaluate('el => el.click()')
+                plus_btn.evaluate("el => el.click()")
 
                 # Wait for menu to appear (instead of fixed sleep)
                 menu_selector = 'div[role="menu"], div[role="menuitem"]'
                 try:
-                    self._page.wait_for_selector(menu_selector, timeout=3000, state='visible')
+                    self._page.wait_for_selector(
+                        menu_selector, timeout=3000, state="visible"
+                    )
                 except (PlaywrightTimeoutError, PlaywrightError):
                     # Menu didn't appear, retry click
-                    plus_btn.evaluate('el => el.click()')
-                    self._page.wait_for_selector(menu_selector, timeout=3000, state='visible')
+                    plus_btn.evaluate("el => el.click()")
+                    self._page.wait_for_selector(
+                        menu_selector, timeout=3000, state="visible"
+                    )
 
                 # Step 2: Click the upload menu item (use JS click to avoid bringing browser to front)
                 with self._page.expect_file_chooser() as fc_info:
@@ -10340,10 +11701,12 @@ class CopilotHandler:
                         'div[role="menuitem"]:has-text("Upload")'
                     )
                     if upload_item:
-                        upload_item.evaluate('el => el.click()')
+                        upload_item.evaluate("el => el.click()")
                     else:
-                        menuitem = self._page.get_by_role("menuitem", name="画像とファイルのアップロード")
-                        menuitem.evaluate('el => el.click()')
+                        menuitem = self._page.get_by_role(
+                            "menuitem", name="画像とファイルのアップロード"
+                        )
+                        menuitem.evaluate("el => el.click()")
 
                 file_chooser = fc_info.value
                 file_chooser.set_files(str(file_path))
@@ -10352,7 +11715,9 @@ class CopilotHandler:
                     self._wait_for_file_attached(file_path)
                 return True
 
-            logger.warning("Could not find attachment mechanism for file: %s", file_path)
+            logger.warning(
+                "Could not find attachment mechanism for file: %s", file_path
+            )
             return False
 
         except (PlaywrightError, PlaywrightTimeoutError, OSError) as e:
@@ -10371,7 +11736,7 @@ class CopilotHandler:
             True if file attachment was confirmed
         """
         error_types = _get_playwright_errors()
-        PlaywrightError = error_types['Error']
+        PlaywrightError = error_types["Error"]
 
         try:
             # Look for file chip/preview that appears after attachment
@@ -10380,7 +11745,7 @@ class CopilotHandler:
             file_indicators = [
                 '[data-testid*="attachment"]',
                 f'[aria-label*="{file_name}"]',
-                '.fai-AttachmentChip',
+                ".fai-AttachmentChip",
                 '[class*="attachment"]',
                 '[class*="file-chip"]',
             ]
@@ -10410,18 +11775,19 @@ class CopilotHandler:
         uploading or being indexed by Copilot.
         """
         error_types = _get_playwright_errors()
-        PlaywrightError = error_types['Error']
-        PlaywrightTimeoutError = error_types['TimeoutError']
+        PlaywrightError = error_types["Error"]
+        PlaywrightTimeoutError = error_types["TimeoutError"]
 
         try:
             try:
-                self._page.evaluate('''() => {
+                self._page.evaluate("""() => {
                     try { delete window.__yakulingoAttachReadyState; } catch (e) {}
-                }''')
+                }""")
             except (PlaywrightError, AttributeError):
                 pass
 
-            self._page.wait_for_function('''() => {
+            self._page.wait_for_function(
+                """() => {
                 const stableRequiredMs = 400;
                 const stateKey = '__yakulingoAttachReadyState';
                 const now = performance.now();
@@ -10485,7 +11851,10 @@ class CopilotHandler:
                 window[stateKey] = state;
 
                 return readyNow && state.readySince !== null && (now - state.readySince) >= stableRequiredMs;
-            }''', timeout=timeout * 1000, polling=100)
+            }""",
+                timeout=timeout * 1000,
+                polling=100,
+            )
             return True
         except PlaywrightTimeoutError:
             return False
@@ -10496,9 +11865,11 @@ class CopilotHandler:
         """Normalize lines like '1. [[ID:1]]' to '[[ID:1]]' for ID parsing."""
         if not result or "[[ID:" not in result:
             return result
-        return _RE_NUMBERED_ID_LINE.sub(r'\1\2', result)
+        return _RE_NUMBERED_ID_LINE.sub(r"\1\2", result)
 
-    def _parse_batch_result_by_id(self, result: str, expected_count: int) -> list[str] | None:
+    def _parse_batch_result_by_id(
+        self, result: str, expected_count: int
+    ) -> list[str] | None:
         """Parse batch output using [[ID:n]] markers when present."""
         if expected_count <= 0 or "[[ID:" not in result:
             return None
@@ -10520,11 +11891,13 @@ class CopilotHandler:
             start = match.end()
             end = matches[idx + 1].start() if idx + 1 < len(matches) else len(result)
             content = result[start:end].strip()
-            content = re.sub(r'^(?:[-:])\s+', '', content)
+            content = re.sub(r"^(?:[-:])\s+", "", content)
 
             if translations[item_id - 1]:
                 if content:
-                    translations[item_id - 1] = f"{translations[item_id - 1]}\n{content}".strip()
+                    translations[item_id - 1] = (
+                        f"{translations[item_id - 1]}\n{content}".strip()
+                    )
             else:
                 translations[item_id - 1] = content
             seen_any = True
@@ -10564,7 +11937,9 @@ class CopilotHandler:
         normalized_result = result
         if include_item_ids:
             normalized_result = self._normalize_numbered_id_lines(result)
-            id_parsed = self._parse_batch_result_by_id(normalized_result, expected_count)
+            id_parsed = self._parse_batch_result_by_id(
+                normalized_result, expected_count
+            )
             if id_parsed is not None:
                 return id_parsed
             # ID parsing failed; fall back to the original text to preserve numbering cues.
@@ -10573,7 +11948,7 @@ class CopilotHandler:
         # This handles cases where Copilot returns responses with uniform indentation
         # (e.g., "   1. Hello\n   2. World" becomes "1. Hello\n2. World")
         # Important: Split BEFORE strip() to preserve relative indentation
-        lines = normalized_result.split('\n')
+        lines = normalized_result.split("\n")
 
         # Remove empty lines at start and end, but preserve internal empty lines
         while lines and not lines[0].strip():
@@ -10583,17 +11958,20 @@ class CopilotHandler:
 
         if lines:
             # Find minimum indentation (only spaces/tabs, not empty lines)
-            min_leading = float('inf')
+            min_leading = float("inf")
             for line in lines:
                 stripped = line.lstrip()
                 if stripped:  # Skip empty lines
                     leading = len(line) - len(stripped)
                     min_leading = min(min_leading, leading)
-            if min_leading == float('inf'):
+            if min_leading == float("inf"):
                 min_leading = 0
             # Remove common indentation from each line
-            lines = [line[min_leading:] if len(line) >= min_leading else line.lstrip() for line in lines]
-        result_text = '\n'.join(lines)
+            lines = [
+                line[min_leading:] if len(line) >= min_leading else line.lstrip()
+                for line in lines
+            ]
+        result_text = "\n".join(lines)
         translations: list[str] = []
         numbered_items: list[tuple[int, str]] = []
 
@@ -10603,7 +11981,8 @@ class CopilotHandler:
 
         if matches:
             all_numbered_items = [
-                (int(num), content.strip()) for indent, num, content in matches
+                (int(num), content.strip())
+                for indent, num, content in matches
                 if int(num) >= 1
             ]
             all_numbered_items.sort(key=lambda x: x[0])
@@ -10614,7 +11993,7 @@ class CopilotHandler:
             def effective_indent(indent: str) -> int:
                 # Count only actual indentation characters (spaces and tabs)
                 # Strip newlines and other control characters
-                return len(indent.replace('\n', '').replace('\r', ''))
+                return len(indent.replace("\n", "").replace("\r", ""))
 
             # Use the minimum indentation as the baseline, with a small tolerance
             # for inconsistent whitespace across top-level items.
@@ -10642,10 +12021,13 @@ class CopilotHandler:
                     continue
                 if num_int < 1:
                     continue
-                candidate_items.append((effective_indent(indent), num_int, content.strip()))
+                candidate_items.append(
+                    (effective_indent(indent), num_int, content.strip())
+                )
 
             numbered_items = [
-                (num_int, content) for indent_level, num_int, content in candidate_items
+                (num_int, content)
+                for indent_level, num_int, content in candidate_items
                 if indent_level <= allowed_indent
             ]
             numbered_items.sort(key=lambda x: x[0])
@@ -10654,7 +12036,9 @@ class CopilotHandler:
             # indentation (still excludes deeply nested lists inside a translation item).
             if expected_count > 0 and numbered_items:
                 expected_numbers = set(range(1, expected_count + 1))
-                found_numbers = {num for num, _ in numbered_items if num in expected_numbers}
+                found_numbers = {
+                    num for num, _ in numbered_items if num in expected_numbers
+                }
                 missing_numbers = expected_numbers - found_numbers
 
                 if missing_numbers:
@@ -10662,7 +12046,8 @@ class CopilotHandler:
                     extra_candidates = [
                         (indent_level, num_int, content)
                         for indent_level, num_int, content in candidate_items
-                        if allowed_indent < indent_level <= max_extra_indent and num_int in missing_numbers
+                        if allowed_indent < indent_level <= max_extra_indent
+                        and num_int in missing_numbers
                     ]
                     extra_candidates.sort(key=lambda x: (x[0], x[1]))
                     for _, num_int, content in extra_candidates:
@@ -10679,7 +12064,7 @@ class CopilotHandler:
                 logger.warning(
                     "No valid numbered items (1+) found after filtering. "
                     "Response preview (first 300 chars): %s",
-                    result_text[:300].replace('\n', '\\n'),
+                    result_text[:300].replace("\n", "\\n"),
                 )
                 matches = None  # Force fallback
 
@@ -10688,8 +12073,14 @@ class CopilotHandler:
             # Heuristic: Copilot may output numbered lines inside a single item
             # (e.g., email bodies with blank lines). If so, regroup by blank
             # numbered lines to recover paragraph structure.
-            if expected_count > 1 and all_numbered_items and len(all_numbered_items) > expected_count:
-                has_empty_items = any(not content.strip() for _, content in all_numbered_items)
+            if (
+                expected_count > 1
+                and all_numbered_items
+                and len(all_numbered_items) > expected_count
+            ):
+                has_empty_items = any(
+                    not content.strip() for _, content in all_numbered_items
+                )
                 if has_empty_items:
                     grouped_items: list[str] = []
                     current_lines: list[str] = []
@@ -10728,7 +12119,7 @@ class CopilotHandler:
                 if len(missing_numbers) > expected_count * 0.5:
                     logger.warning(
                         "Many missing numbers. Response preview (first 500 chars): %s",
-                        result_text[:500].replace('\n', '\\n'),
+                        result_text[:500].replace("\n", "\\n"),
                     )
 
             # Build translations list with correct index mapping
@@ -10743,9 +12134,13 @@ class CopilotHandler:
 
             # If extra numbered items exist beyond expected_count, append them to
             # the last expected item to avoid dropping content (e.g., multi-line emails).
-            extra_items = [content for num, content in numbered_items if num > expected_count]
+            extra_items = [
+                content for num, content in numbered_items if num > expected_count
+            ]
             if extra_items and expected_count > 0:
-                extra_numbers = [num for num, _ in numbered_items if num > expected_count]
+                extra_numbers = [
+                    num for num, _ in numbered_items if num > expected_count
+                ]
                 logger.warning(
                     "Extra translation numbers detected: %s (expected 1-%d). "
                     "Appending extras to item %d.",
@@ -10779,7 +12174,9 @@ class CopilotHandler:
                 if not lines:
                     translations = [""] * expected_count
                 else:
-                    non_empty_indices = [i for i, line in enumerate(lines) if line.strip()]
+                    non_empty_indices = [
+                        i for i, line in enumerate(lines) if line.strip()
+                    ]
                     translations = []
                     last_index = -1
 
@@ -10791,7 +12188,9 @@ class CopilotHandler:
                         else:
                             translations.append("")
 
-                    remainder_lines = lines[last_index + 1:] if last_index + 1 < len(lines) else []
+                    remainder_lines = (
+                        lines[last_index + 1 :] if last_index + 1 < len(lines) else []
+                    )
                     remainder = "\n".join(remainder_lines).strip()
                     translations.append(remainder)
 
@@ -10801,7 +12200,9 @@ class CopilotHandler:
 
         return translations[:expected_count]
 
-    def start_new_chat(self, skip_clear_wait: bool = False, click_only: bool = False) -> None:
+    def start_new_chat(
+        self, skip_clear_wait: bool = False, click_only: bool = False
+    ) -> None:
         """Start a new chat session and verify previous responses are cleared.
 
         Args:
@@ -10813,7 +12214,7 @@ class CopilotHandler:
                        Useful for parallelizing with prompt input.
         """
         error_types = _get_playwright_errors()
-        PlaywrightError = error_types['Error']
+        PlaywrightError = error_types["Error"]
 
         if self._page and self._looks_like_edge_error_page(self._page, fast_only=True):
             self._recover_from_edge_error_page(
@@ -10824,7 +12225,9 @@ class CopilotHandler:
 
         # Ensure we have a valid page reference
         if not self._page or not self._is_page_valid():
-            logger.warning("Page is invalid at start_new_chat, attempting to recover...")
+            logger.warning(
+                "Page is invalid at start_new_chat, attempting to recover..."
+            )
             try:
                 self._page = self._get_active_copilot_page()
                 if not self._page:
@@ -10840,12 +12243,17 @@ class CopilotHandler:
             # 実際のCopilot HTML: <button id="new-chat-button" data-testid="newChatButton" aria-label="新しいチャット">
             query_start = time.monotonic()
             new_chat_btn = self._page.query_selector(self.NEW_CHAT_BUTTON_SELECTOR)
-            logger.info("[TIMING] new_chat: query_selector: %.2fs", time.monotonic() - query_start)
+            logger.info(
+                "[TIMING] new_chat: query_selector: %.2fs",
+                time.monotonic() - query_start,
+            )
             if new_chat_btn:
                 # Pre-warm: scroll button into view and brief settle time
                 # This helps browser prepare the element for click, reducing click latency
                 try:
-                    new_chat_btn.evaluate('el => el.scrollIntoView({behavior: "instant", block: "center"})')
+                    new_chat_btn.evaluate(
+                        'el => el.scrollIntoView({behavior: "instant", block: "center"})'
+                    )
                     time.sleep(0.01)  # 10ms for browser to settle (optimized from 30ms)
                 except Exception:
                     pass  # Non-critical - proceed with click
@@ -10857,36 +12265,55 @@ class CopilotHandler:
                     # This returns immediately while click executes in background
                     # Safe because: input field is not reset by new chat button click
                     try:
-                        new_chat_btn.evaluate('el => setTimeout(() => el.click(), 0)')
+                        new_chat_btn.evaluate("el => setTimeout(() => el.click(), 0)")
                         click_dispatched = True
-                        logger.info("[TIMING] new_chat: async click dispatched: %.2fs", time.monotonic() - click_start)
-                        logger.info("[TIMING] start_new_chat total (click_only): %.2fs", time.monotonic() - new_chat_total_start)
+                        logger.info(
+                            "[TIMING] new_chat: async click dispatched: %.2fs",
+                            time.monotonic() - click_start,
+                        )
+                        logger.info(
+                            "[TIMING] start_new_chat total (click_only): %.2fs",
+                            time.monotonic() - new_chat_total_start,
+                        )
                     except Exception as e:
-                        logger.warning("Async new chat click failed; falling back to sync click: %s", e)
+                        logger.warning(
+                            "Async new chat click failed; falling back to sync click: %s",
+                            e,
+                        )
 
                 if click_only and click_dispatched:
                     return  # Return immediately, skip all wait operations
 
                 # Use JavaScript click to avoid Playwright's actionability checks
                 # which can block for 30s on slow page loads
-                new_chat_btn.evaluate('el => el.click()')
+                new_chat_btn.evaluate("el => el.click()")
                 click_time = time.monotonic() - click_start
                 # Log warning if click takes unexpectedly long (should be <100ms)
                 if click_time > 0.1:
-                    logger.warning("[TIMING] new_chat: click took %.3fs (expected <0.1s) - browser may be slow",
-                                  click_time)
+                    logger.warning(
+                        "[TIMING] new_chat: click took %.3fs (expected <0.1s) - browser may be slow",
+                        click_time,
+                    )
                 logger.info("[TIMING] new_chat: click: %.2fs", click_time)
             else:
-                logger.warning("New chat button not found - chat context may not be cleared")
+                logger.warning(
+                    "New chat button not found - chat context may not be cleared"
+                )
 
             # Verify that previous responses are cleared (can be skipped for 2nd+ batches)
             # OPTIMIZED: Reduced timeout from 1.0s to 0.5s for faster new chat start
             if not skip_clear_wait:
                 clear_start = time.monotonic()
                 self._wait_for_responses_cleared(timeout=0.5)
-                logger.info("[TIMING] new_chat: _wait_for_responses_cleared: %.2fs", time.monotonic() - clear_start)
+                logger.info(
+                    "[TIMING] new_chat: _wait_for_responses_cleared: %.2fs",
+                    time.monotonic() - clear_start,
+                )
 
-            logger.info("[TIMING] start_new_chat total: %.2fs", time.monotonic() - new_chat_total_start)
+            logger.info(
+                "[TIMING] start_new_chat total: %.2fs",
+                time.monotonic() - new_chat_total_start,
+            )
         except (PlaywrightError, AttributeError) as e:
             logger.debug("start_new_chat failed: %s", e)
 
@@ -10925,7 +12352,7 @@ class CopilotHandler:
         if len(response_elements) > 0:
             logger.warning(
                 "New chat may not have cleared properly: %d response elements still present",
-                len(response_elements)
+                len(response_elements),
             )
             return False
 

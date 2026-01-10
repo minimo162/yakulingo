@@ -30,45 +30,72 @@ from typing import Any, Iterator, Optional
 
 from .base import FileProcessor
 from yakulingo.models.types import (
-    TextBlock, FileInfo, FileType, TranslationProgress, TranslationPhase, ProgressCallback,
+    TextBlock,
+    FileInfo,
+    FileType,
+    TranslationProgress,
+    TranslationPhase,
+    ProgressCallback,
     SectionDetail,
 )
 
 # Import from split modules (re-export for backward compatibility)
 from .pdf_font_manager import (  # noqa: F401
-    FontType, FontInfo, FontRegistry,
-    get_font_path_by_name, get_font_path_for_lang,
-    FONT_NAME_TO_FILES, FONT_FILES,
-    _get_pymupdf, _get_pdfminer,
-    _get_system_font_dirs, _find_font_file,  # For tests
+    FontType,
+    FontInfo,
+    FontRegistry,
+    get_font_path_by_name,
+    get_font_path_for_lang,
+    FONT_NAME_TO_FILES,
+    FONT_FILES,
+    _get_pymupdf,
+    _get_pdfminer,
+    _get_system_font_dirs,
+    _find_font_file,  # For tests
 )
 from .pdf_operators import (  # noqa: F401
-    PdfOperatorGenerator, ContentStreamParser, ContentStreamReplacer,
+    PdfOperatorGenerator,
+    ContentStreamParser,
+    ContentStreamReplacer,
 )
 
 # Import from pdf_converter.py (PDFMathTranslate compliant)
 from .pdf_converter import (
     # Data classes
-    Paragraph, FormulaVar, TranslationCell,
+    Paragraph,
+    FormulaVar,
+    TranslationCell,
     # Constants
-    LANG_LINEHEIGHT_MAP, DEFAULT_LINE_HEIGHT,
-    DEFAULT_FONT_SIZE, MIN_FONT_SIZE, MAX_FONT_SIZE,
-    MIN_LINE_HEIGHT, LINE_HEIGHT_COMPRESSION_STEP,
+    LANG_LINEHEIGHT_MAP,
+    DEFAULT_LINE_HEIGHT,
+    DEFAULT_FONT_SIZE,
+    MIN_FONT_SIZE,
+    MAX_FONT_SIZE,
+    MIN_LINE_HEIGHT,
+    LINE_HEIGHT_COMPRESSION_STEP,
     TABLE_MIN_LINE_HEIGHT,  # More aggressive compression for table cells
-    SAME_LINE_Y_THRESHOLD, SAME_PARA_Y_THRESHOLD,
-    WORD_SPACE_X_THRESHOLD, LINE_BREAK_X_THRESHOLD,
+    SAME_LINE_Y_THRESHOLD,
+    SAME_PARA_Y_THRESHOLD,
+    WORD_SPACE_X_THRESHOLD,
+    LINE_BREAK_X_THRESHOLD,
     # Functions
     get_pdf_converter_ex_class,
-    vflag, restore_formula_placeholders,
+    vflag,
+    restore_formula_placeholders,
     extract_formula_vars_for_block,
     detect_paragraph_boundary,
-    create_paragraph_from_char, create_formula_var_from_chars,
+    create_paragraph_from_char,
+    create_formula_var_from_chars,
     # Line joining functions (yomitoku reference)
-    get_line_join_separator, is_line_end_hyphenated, _is_latin_char,
+    get_line_join_separator,
+    is_line_end_hyphenated,
+    _is_latin_char,
     is_japanese_continuation_line,  # For intelligent paragraph boundary detection
     is_toc_line_ending,  # For TOC pattern detection (leader + page number)
     # Sentence end characters for paragraph boundary detection
-    SENTENCE_END_CHARS_JA, SENTENCE_END_CHARS_EN, QUANTITY_UNITS_JA,
+    SENTENCE_END_CHARS_JA,
+    SENTENCE_END_CHARS_EN,
+    QUANTITY_UNITS_JA,
     get_layout_class_at_pdf_coord,
     # Regex patterns (for internal use)
     _RE_FORMULA_PLACEHOLDER,
@@ -77,16 +104,22 @@ from .pdf_converter import (
 # Import from pdf_layout.py (PDFMathTranslate compliant)
 from .pdf_layout import (
     # Constants
-    LAYOUT_ABANDON, LAYOUT_BACKGROUND, LAYOUT_PARAGRAPH_BASE, LAYOUT_TABLE_BASE,
+    LAYOUT_ABANDON,
+    LAYOUT_BACKGROUND,
+    LAYOUT_PARAGRAPH_BASE,
+    LAYOUT_TABLE_BASE,
     LAYOUT_PAGE_NUMBER,
     # Classes
     LayoutArray,
     # Functions
-    is_layout_available, get_device, clear_analyzer_cache,
+    is_layout_available,
+    get_device,
+    clear_analyzer_cache,
     analyze_layout_batch,
     create_layout_array_from_pp_doclayout,
     map_pp_doclayout_label_to_role,
-    calculate_expandable_margins, calculate_expandable_vertical_margins,
+    calculate_expandable_margins,
+    calculate_expandable_vertical_margins,
     detect_table_cells_for_tables,
     analyze_all_table_structures,
     # yomitoku-style additions
@@ -111,11 +144,22 @@ _pypdfium2 = None
 
 # Common leader characters used in table-of-contents lines.
 # We keep this local to avoid depending on mojibake-prone literals elsewhere.
-_TOC_LEADER_CHARS = frozenset({
-    ".", "．", "…", "‥", "⋯",
-    "・", "･", "·", "∙", "⋅",
-    "•", "‧",
-})
+_TOC_LEADER_CHARS = frozenset(
+    {
+        ".",
+        "．",
+        "…",
+        "‥",
+        "⋯",
+        "・",
+        "･",
+        "·",
+        "∙",
+        "⋅",
+        "•",
+        "‧",
+    }
+)
 
 _RE_TABLE_ROW_LABEL_PREFIX = re.compile(
     r"^\s*[\d,]+(?:\.\d+)?\s*\S{0,3}\s+(?=[\u2460-\u2473])"
@@ -172,7 +216,9 @@ def _split_toc_title_and_page(text: str) -> tuple[str, str, str] | None:
     return title, leader, page_number
 
 
-def _restore_formula_placeholders_from_texts(translated_text: str, formula_texts: list[str]) -> str:
+def _restore_formula_placeholders_from_texts(
+    translated_text: str, formula_texts: list[str]
+) -> str:
     """Restore {vN} placeholders using a page-level list of formula texts."""
     if not translated_text or not formula_texts:
         return translated_text
@@ -207,6 +253,7 @@ def _get_pypdfium2():
     if _pypdfium2 is None:
         try:
             import pypdfium2 as pdfium
+
             _pypdfium2 = pdfium
         except ImportError:
             raise ImportError(
@@ -219,9 +266,11 @@ def _get_pypdfium2():
 # NOTE: PDFConverterEx, constants, data classes are imported from pdf_converter.py
 
 # Font size estimation constants (used locally in this module)
-FONT_SIZE_HEIGHT_RATIO = 0.8       # Max font size as ratio of box height
-FONT_SIZE_LINE_HEIGHT_ESTIMATE = 14.0  # Estimated line height for chars_per_line calculation
-FONT_SIZE_WIDTH_FACTOR = 1.8      # Width-based font size adjustment factor
+FONT_SIZE_HEIGHT_RATIO = 0.8  # Max font size as ratio of box height
+FONT_SIZE_LINE_HEIGHT_ESTIMATE = (
+    14.0  # Estimated line height for chars_per_line calculation
+)
+FONT_SIZE_WIDTH_FACTOR = 1.8  # Width-based font size adjustment factor
 
 # Memory estimation constants for high-DPI processing
 # A4 at 300 DPI ≈ 2480x3508 px × 3 channels ≈ 26MB per page
@@ -230,34 +279,38 @@ MEMORY_AVAILABLE_RATIO = 0.5  # Use at most 50% of available memory
 MEMORY_WARNING_THRESHOLD_MB = 1024  # Warn if estimated usage exceeds 1GB
 
 # Layout analysis defaults (used before class definition and in dynamic batch calculation)
-DEFAULT_OCR_BATCH_SIZE = 5   # Pages per batch
-DEFAULT_OCR_DPI = 300        # Default DPI for precision
+DEFAULT_OCR_BATCH_SIZE = 5  # Pages per batch
+DEFAULT_OCR_DPI = 300  # Default DPI for precision
 
 # Pre-compiled regex patterns for performance (local patterns)
 _RE_PARAGRAPH_ADDRESS = re.compile(r"P(\d+)_")
 _RE_TABLE_ADDRESS = re.compile(r"T(\d+)_")
-_NEGATIVE_MARKERS = "\u25B2\u25B3\u25BC\u25BD"
+_NEGATIVE_MARKERS = "\u25b2\u25b3\u25bc\u25bd"
 _RE_NEGATIVE_NUMBER = re.compile(
     rf"([{re.escape(_NEGATIVE_MARKERS)}])\s*([0-9][0-9,\.]*)([%\uFF05]?)"
 )
 _RE_NEGATIVE_MARKER_ONLY = re.compile(rf"[{re.escape(_NEGATIVE_MARKERS)}]")
-_RE_XOBJECT_ENTRY = re.compile(r'/([^\s/<>[\]()]+)\s+(\d+)\s+0\s+R')
-_HYPHEN_TRANSLATION = str.maketrans({
-    "\u2010": "-",  # hyphen
-    "\u2011": "-",  # non-breaking hyphen
-    "\u2012": "-",  # figure dash
-    "\u2013": "-",  # en dash
-    "\u2014": "-",  # em dash
-    "\u2212": "-",  # minus sign
-    "\uFE63": "-",  # small hyphen-minus
-    "\uFF0D": "-",  # fullwidth hyphen-minus
-})
+_RE_XOBJECT_ENTRY = re.compile(r"/([^\s/<>[\]()]+)\s+(\d+)\s+0\s+R")
+_HYPHEN_TRANSLATION = str.maketrans(
+    {
+        "\u2010": "-",  # hyphen
+        "\u2011": "-",  # non-breaking hyphen
+        "\u2012": "-",  # figure dash
+        "\u2013": "-",  # en dash
+        "\u2014": "-",  # em dash
+        "\u2212": "-",  # minus sign
+        "\ufe63": "-",  # small hyphen-minus
+        "\uff0d": "-",  # fullwidth hyphen-minus
+    }
+)
 
 # Text alignment detection constants
 ALIGNMENT_TOLERANCE = 5.0  # Tolerance in points for alignment detection
 
 # Vertical text detection constants
-VERTICAL_TEXT_ASPECT_RATIO = 2.0  # height/width > 2.0 suggests vertical text (yomitoku: thresh_aspect=2)
+VERTICAL_TEXT_ASPECT_RATIO = (
+    2.0  # height/width > 2.0 suggests vertical text (yomitoku: thresh_aspect=2)
+)
 
 # Box expansion constants
 # MAX_EXPANSION_RATIO limits how much a text box can expand relative to original size.
@@ -274,6 +327,7 @@ OVERWRAP_MIN_LINES = 2
 
 class TextAlignment:
     """Text alignment types for horizontal text."""
+
     LEFT = "left"
     RIGHT = "right"
     CENTER = "center"
@@ -281,6 +335,7 @@ class TextAlignment:
 
 class VerticalAlignment:
     """Text alignment types for vertical text."""
+
     TOP = "top"
     BOTTOM = "bottom"
     CENTER = "center"
@@ -454,8 +509,7 @@ def calculate_expanded_box(
     elif alignment == TextAlignment.CENTER:
         # Center-aligned: expand both directions equally
         half_expansion = min(
-            min(expandable_left, expandable_right),
-            max_additional_width / 2
+            min(expandable_left, expandable_right), max_additional_width / 2
         )
         return box_x0 - half_expansion, box_x1 + half_expansion
 
@@ -561,8 +615,7 @@ def calculate_expanded_box_vertical(
     elif alignment == VerticalAlignment.CENTER:
         # Center-aligned: expand both directions equally
         half_expansion = min(
-            min(expandable_top, expandable_bottom),
-            max_additional_height / 2
+            min(expandable_top, expandable_bottom), max_additional_height / 2
         )
         return box_y0 - half_expansion, box_y1 + half_expansion
 
@@ -581,7 +634,7 @@ ADJACENT_BLOCK_Y_OVERLAP_THRESHOLD = 0.3
 def find_adjacent_textblock_boundaries(
     current_block_id: str,
     current_bbox: tuple[float, float, float, float],
-    page_blocks: list['TextBlock'],
+    page_blocks: list["TextBlock"],
     page_width: float,
     page_height: float,
     page_margin: float = 20.0,
@@ -612,10 +665,10 @@ def find_adjacent_textblock_boundaries(
 
     # Initialize with page boundaries (prefer explicit margins if provided)
     if page_margins:
-        max_left = page_margins.get('left', page_margin)
-        max_right = page_width - page_margins.get('right', page_margin)
-        max_bottom = page_margins.get('bottom', page_margin)
-        max_top = page_height - page_margins.get('top', page_margin)
+        max_left = page_margins.get("left", page_margin)
+        max_right = page_width - page_margins.get("right", page_margin)
+        max_bottom = page_margins.get("bottom", page_margin)
+        max_top = page_height - page_margins.get("top", page_margin)
     else:
         max_left = page_margin
         max_right = page_width - page_margin
@@ -628,7 +681,7 @@ def find_adjacent_textblock_boundaries(
             continue
 
         # Get block bbox from metadata
-        block_bbox = block.metadata.get('bbox')
+        block_bbox = block.metadata.get("bbox")
         if not block_bbox or len(block_bbox) < 4:
             continue
 
@@ -733,6 +786,7 @@ def check_memory_for_pdf_processing(
     available_mb = None
     try:
         import psutil
+
         mem = psutil.virtual_memory()
         available_mb = mem.available / (1024 * 1024)
     except ImportError:
@@ -744,7 +798,7 @@ def check_memory_for_pdf_processing(
     if not is_safe:
         msg = (
             f"PDF processing may require ~{estimated_mb:.0f}MB but only "
-            f"{available_mb:.0f}MB available (using {MEMORY_AVAILABLE_RATIO*100:.0f}% threshold). "
+            f"{available_mb:.0f}MB available (using {MEMORY_AVAILABLE_RATIO * 100:.0f}% threshold). "
             f"Consider reducing DPI from {dpi} or processing fewer pages."
         )
         if warn_only:
@@ -755,7 +809,9 @@ def check_memory_for_pdf_processing(
         logger.info(
             "PDF processing will use ~%.0fMB (%.0fMB available). "
             "Consider reducing DPI=%d for large PDFs.",
-            estimated_mb, available_mb, dpi
+            estimated_mb,
+            available_mb,
+            dpi,
         )
 
     return (is_safe, estimated_mb, available_mb)
@@ -794,6 +850,7 @@ def calculate_optimal_batch_size(
     # Try to get available memory
     try:
         import psutil
+
         available_mb = psutil.virtual_memory().available / (1024 * 1024)
     except ImportError:
         logger.debug("psutil not available, using default batch size")
@@ -814,7 +871,10 @@ def calculate_optimal_batch_size(
         logger.info(
             "Dynamic batch size: %d (default: %d, available memory: %.0fMB, "
             "estimated per page: %.1fMB)",
-            optimal_batch_size, default_batch_size, available_mb, estimated_mb_per_page
+            optimal_batch_size,
+            default_batch_size,
+            available_mb,
+            estimated_mb_per_page,
         )
 
     return optimal_batch_size
@@ -822,6 +882,7 @@ def calculate_optimal_batch_size(
 
 # NOTE: Paragraph, FormulaVar, TranslationCell, vflag, restore_formula_placeholders
 # are imported from pdf_converter.py
+
 
 # =============================================================================
 # Coordinate System Documentation
@@ -1053,11 +1114,11 @@ def calculate_text_position(
 def calculate_char_width(char: str, font_size: float, is_cjk: bool) -> float:
     """Calculate character width."""
     is_fullwidth = (
-        is_cjk or
-        '\u3040' <= char <= '\u309F' or  # Hiragana
-        '\u30A0' <= char <= '\u30FF' or  # Katakana
-        '\u4E00' <= char <= '\u9FFF' or  # Kanji
-        '\uFF00' <= char <= '\uFFEF'     # Fullwidth forms
+        is_cjk
+        or "\u3040" <= char <= "\u309f"  # Hiragana
+        or "\u30a0" <= char <= "\u30ff"  # Katakana
+        or "\u4e00" <= char <= "\u9fff"  # Kanji
+        or "\uff00" <= char <= "\uffef"  # Fullwidth forms
     )
 
     if is_fullwidth:
@@ -1086,8 +1147,8 @@ def split_text_into_lines(
     current_width = 0.0
 
     for char in text:
-        if char == '\n':
-            lines.append(''.join(current_line_chars))
+        if char == "\n":
+            lines.append("".join(current_line_chars))
             current_line_chars = []
             current_width = 0.0
             continue
@@ -1095,7 +1156,7 @@ def split_text_into_lines(
         char_width = calculate_char_width(char, font_size, is_cjk)
 
         if current_width + char_width > box_width and current_line_chars:
-            lines.append(''.join(current_line_chars))
+            lines.append("".join(current_line_chars))
             current_line_chars = [char]
             current_width = char_width
         else:
@@ -1103,7 +1164,7 @@ def split_text_into_lines(
             current_width += char_width
 
     if current_line_chars:
-        lines.append(''.join(current_line_chars))
+        lines.append("".join(current_line_chars))
 
     return lines
 
@@ -1115,12 +1176,12 @@ def _is_cjk_char(char: str) -> bool:
     code = ord(char[0])
     # CJK Unified Ideographs and extensions
     return (
-        (0x4E00 <= code <= 0x9FFF) or  # CJK Unified Ideographs
-        (0x3400 <= code <= 0x4DBF) or  # CJK Unified Ideographs Extension A
-        (0x3040 <= code <= 0x309F) or  # Hiragana
-        (0x30A0 <= code <= 0x30FF) or  # Katakana
-        (0xFF65 <= code <= 0xFF9F) or  # Half-width Katakana
-        (0xAC00 <= code <= 0xD7AF)     # Hangul Syllables
+        (0x4E00 <= code <= 0x9FFF)  # CJK Unified Ideographs
+        or (0x3400 <= code <= 0x4DBF)  # CJK Unified Ideographs Extension A
+        or (0x3040 <= code <= 0x309F)  # Hiragana
+        or (0x30A0 <= code <= 0x30FF)  # Katakana
+        or (0xFF65 <= code <= 0xFF9F)  # Half-width Katakana
+        or (0xAC00 <= code <= 0xD7AF)  # Hangul Syllables
     )
 
 
@@ -1146,24 +1207,24 @@ def _tokenize_for_line_wrap(text: str) -> list[str]:
     while i < len(text):
         char = text[i]
 
-        if char == '\n':
+        if char == "\n":
             # Newline is always a separate token
             if current_token:
-                tokens.append(''.join(current_token))
+                tokens.append("".join(current_token))
                 current_token = []
-            tokens.append('\n')
+            tokens.append("\n")
             i += 1
         elif _is_cjk_char(char):
             # CJK characters are individual tokens
             if current_token:
-                tokens.append(''.join(current_token))
+                tokens.append("".join(current_token))
                 current_token = []
             tokens.append(char)
             i += 1
-        elif char == ' ':
+        elif char == " ":
             # Space belongs to the preceding word (for proper line breaks)
             current_token.append(char)
-            tokens.append(''.join(current_token))
+            tokens.append("".join(current_token))
             current_token = []
             i += 1
         else:
@@ -1172,7 +1233,7 @@ def _tokenize_for_line_wrap(text: str) -> list[str]:
             i += 1
 
     if current_token:
-        tokens.append(''.join(current_token))
+        tokens.append("".join(current_token))
 
     return tokens
 
@@ -1181,7 +1242,7 @@ def _get_token_width(
     token: str,
     font_id: str,
     font_size: float,
-    font_registry: 'FontRegistry',
+    font_registry: "FontRegistry",
 ) -> float:
     """Calculate the width of a token."""
     width = 0.0
@@ -1195,7 +1256,7 @@ def split_text_into_lines_with_font(
     box_width: float,
     font_size: float,
     font_id: str,
-    font_registry: 'FontRegistry',
+    font_registry: "FontRegistry",
 ) -> list[str]:
     """
     Split text into lines using actual font metrics.
@@ -1231,9 +1292,9 @@ def split_text_into_lines_with_font(
     current_width = 0.0
 
     for token in tokens:
-        if token == '\n':
+        if token == "\n":
             # Explicit newline
-            lines.append(''.join(current_line_tokens))
+            lines.append("".join(current_line_tokens))
             current_line_tokens = []
             current_width = 0.0
             continue
@@ -1253,7 +1314,7 @@ def split_text_into_lines_with_font(
             for char in token:
                 char_width = font_registry.get_char_width(font_id, char, font_size)
                 if char_width_sum + char_width > box_width and chars_added:
-                    lines.append(''.join(chars_added))
+                    lines.append("".join(chars_added))
                     chars_added = [char]
                     char_width_sum = char_width
                 else:
@@ -1264,15 +1325,21 @@ def split_text_into_lines_with_font(
                 current_width = char_width_sum
         else:
             # Token doesn't fit - start new line
-            line_text = ''.join(current_line_tokens).rstrip(' ')  # Remove trailing space
+            line_text = "".join(current_line_tokens).rstrip(
+                " "
+            )  # Remove trailing space
             lines.append(line_text)
             # Start new line with current token (strip leading space if any)
-            token_stripped = token.lstrip(' ')
+            token_stripped = token.lstrip(" ")
             current_line_tokens = [token_stripped] if token_stripped else []
-            current_width = _get_token_width(token_stripped, font_id, font_size, font_registry) if token_stripped else 0.0
+            current_width = (
+                _get_token_width(token_stripped, font_id, font_size, font_registry)
+                if token_stripped
+                else 0.0
+            )
 
     if current_line_tokens:
-        lines.append(''.join(current_line_tokens))
+        lines.append("".join(current_line_tokens))
 
     return lines
 
@@ -1283,7 +1350,7 @@ def calculate_adjusted_font_size(
     box_height: float,
     initial_font_size: float,
     font_id: str,
-    font_registry: 'FontRegistry',
+    font_registry: "FontRegistry",
     line_height: float = 1.2,
     min_font_size: float = MIN_FONT_SIZE,
     *,
@@ -1323,7 +1390,7 @@ def calculate_adjusted_font_size(
         )
     else:
         # Preserve explicit newlines but do not auto-wrap (PDFMathTranslate brk=False behavior)
-        lines = text.split('\n') if text else []
+        lines = text.split("\n") if text else []
 
     # PDFMathTranslate approach: no font size shrinking
     # This ensures consistent font sizes across all blocks in the document
@@ -1352,7 +1419,9 @@ def calculate_line_height(
     lines_needed = max(1, len(translated_text) / chars_per_line)
 
     # Dynamic compression with iteration limit to prevent infinite loop
-    max_iterations = int((line_height - MIN_LINE_HEIGHT) / LINE_HEIGHT_COMPRESSION_STEP) + 1
+    max_iterations = (
+        int((line_height - MIN_LINE_HEIGHT) / LINE_HEIGHT_COMPRESSION_STEP) + 1
+    )
     iteration = 0
 
     while (
@@ -1372,7 +1441,7 @@ def calculate_line_height_with_font(
     box_height: float,
     font_size: float,
     font_id: str,
-    font_registry: 'FontRegistry',
+    font_registry: "FontRegistry",
     lang_out: str,
     is_table_cell: bool = False,
     *,
@@ -1410,14 +1479,16 @@ def calculate_line_height_with_font(
         )
     else:
         # Preserve explicit newlines but do not auto-wrap (PDFMathTranslate brk=False behavior)
-        lines = translated_text.split('\n') if translated_text else []
+        lines = translated_text.split("\n") if translated_text else []
     lines_needed = len(lines)
 
     # Use tighter minimum line height for table cells
     min_line_height = TABLE_MIN_LINE_HEIGHT if is_table_cell else MIN_LINE_HEIGHT
 
     # Dynamic compression until text fits
-    max_iterations = int((line_height - min_line_height) / LINE_HEIGHT_COMPRESSION_STEP) + 1
+    max_iterations = (
+        int((line_height - min_line_height) / LINE_HEIGHT_COMPRESSION_STEP) + 1
+    )
     iteration = 0
 
     while (
@@ -1431,7 +1502,10 @@ def calculate_line_height_with_font(
     if iteration > 0:
         logger.debug(
             "Line height compressed to %.2f after %d iterations for %d lines (table_cell=%s)",
-            line_height, iteration, lines_needed, is_table_cell
+            line_height,
+            iteration,
+            lines_needed,
+            is_table_cell,
         )
 
     return max(line_height, min_line_height)
@@ -1512,7 +1586,7 @@ def estimate_font_size_from_box_height(
     # Use a conservative estimate
     if original_text:
         # Check if text has explicit line breaks
-        explicit_lines = original_text.count('\n') + 1
+        explicit_lines = original_text.count("\n") + 1
 
         if explicit_lines > 1:
             # Use explicit line count
@@ -1527,7 +1601,9 @@ def estimate_font_size_from_box_height(
 
             # Start with assuming single line
             estimated_font_size = height / line_height_factor
-            chars_per_line = width / (estimated_font_size * 0.6) if estimated_font_size > 0 else 10
+            chars_per_line = (
+                width / (estimated_font_size * 0.6) if estimated_font_size > 0 else 10
+            )
             line_count = max(1, len(original_text) / max(1, chars_per_line))
 
             # Limit line count to reasonable range
@@ -1555,7 +1631,9 @@ def _is_address_on_page(address: str, page_num: int) -> bool:
     return False
 
 
-def _boxes_overlap(box1: list[float], box2: list[float], threshold: float = 0.3) -> bool:
+def _boxes_overlap(
+    box1: list[float], box2: list[float], threshold: float = 0.3
+) -> bool:
     """
     Check if two boxes overlap significantly.
 
@@ -1655,11 +1733,13 @@ def extract_font_info_from_pdf(
                     bbox[3] * scale,
                 ]
 
-                page_font_info.append({
-                    'bbox': scaled_bbox,
-                    'font_size': font_size,
-                    'font_name': font_name,
-                })
+                page_font_info.append(
+                    {
+                        "bbox": scaled_bbox,
+                        "font_size": font_size,
+                        "font_name": font_name,
+                    }
+                )
 
             font_info[page_num] = page_font_info
 
@@ -1705,7 +1785,7 @@ def find_matching_font_size(
     best_overlap = 0.0
 
     for info in page_font_info:
-        pdf_box = info['bbox']
+        pdf_box = info["bbox"]
         if _boxes_overlap(cell_box, pdf_box, threshold=0.2):
             # Calculate overlap area
             x_left = max(cell_box[0], pdf_box[0])
@@ -1716,7 +1796,7 @@ def find_matching_font_size(
 
             if overlap > best_overlap:
                 best_overlap = overlap
-                best_match = info['font_size']
+                best_match = info["font_size"]
 
     return best_match if best_match is not None else default_size
 
@@ -1731,7 +1811,10 @@ SCAN_CHECK_PAGES = 3
 class ScannedPdfError(Exception):
     """Exception raised when a scanned PDF (no embedded text) is detected."""
 
-    def __init__(self, message: str = "スキャンPDFは翻訳できません（テキストが埋め込まれていません）"):
+    def __init__(
+        self,
+        message: str = "スキャンPDFは翻訳できません（テキストが埋め込まれていません）",
+    ):
         self.message = message
         super().__init__(self.message)
 
@@ -1858,7 +1941,7 @@ def load_pdf_as_images(pdf_path: str, dpi: int = DEFAULT_OCR_DPI) -> list:
             logger.warning(
                 "Loading %d pages into memory. "
                 "Consider using iterate_pdf_pages() for better memory efficiency.",
-                page_count
+                page_count,
             )
 
         for page_idx in range(page_count):
@@ -1906,7 +1989,7 @@ class PdfProcessor(FileProcessor):
 
     # Estimated OCR time per page (seconds) - for progress estimation
     CPU_OCR_TIME_PER_PAGE = 30  # CPU is slow
-    GPU_OCR_TIME_PER_PAGE = 3   # GPU is much faster
+    GPU_OCR_TIME_PER_PAGE = 3  # GPU is much faster
 
     def __init__(self):
         """Initialize PDF processor with cancellation support."""
@@ -1917,6 +2000,7 @@ class PdfProcessor(FileProcessor):
         self._layout_fallback_used = False  # True if PP-DocLayout-L was unavailable
         # Use CellTranslator for consistent language-based filtering
         from .translators import CellTranslator
+
         self._cell_translator = CellTranslator()
 
     def should_translate(self, text: str) -> bool:
@@ -1973,17 +2057,17 @@ class PdfProcessor(FileProcessor):
         if selected_pages is not None and not selected_pages:
             return
         pdfminer = _get_pdfminer()
-        PDFPage = pdfminer['PDFPage']
-        PDFParser = pdfminer['PDFParser']
-        PDFDocument = pdfminer['PDFDocument']
-        PDFResourceManager = pdfminer['PDFResourceManager']
-        PDFPageInterpreter = pdfminer['PDFPageInterpreter']
-        LTChar = pdfminer['LTChar']
-        LTFigure = pdfminer['LTFigure']
+        PDFPage = pdfminer["PDFPage"]
+        PDFParser = pdfminer["PDFParser"]
+        PDFDocument = pdfminer["PDFDocument"]
+        PDFResourceManager = pdfminer["PDFResourceManager"]
+        PDFPageInterpreter = pdfminer["PDFPageInterpreter"]
+        LTChar = pdfminer["LTChar"]
+        LTFigure = pdfminer["LTFigure"]
         PDFConverterEx = get_pdf_converter_ex_class()
 
         try:
-            with open(file_path, 'rb') as f:
+            with open(file_path, "rb") as f:
                 parser = PDFParser(f)
                 try:
                     document = PDFDocument(parser)
@@ -1995,7 +2079,7 @@ class PdfProcessor(FileProcessor):
                     logger.warning(
                         "Failed to parse PDF document for scan check: %s. "
                         "Assuming PDF has embedded text.",
-                        e
+                        e,
                     )
                     return  # Assume not scanned if we can't check
 
@@ -2023,7 +2107,8 @@ class PdfProcessor(FileProcessor):
                         # Page processing may fail for corrupted pages
                         logger.debug(
                             "Scanned PDF check: page %d processing failed: %s",
-                            page_idx + 1, e
+                            page_idx + 1,
+                            e,
                         )
                         continue
 
@@ -2039,7 +2124,7 @@ class PdfProcessor(FileProcessor):
                         elif isinstance(obj, LTFigure):
                             for child in obj:
                                 count_chars(child)
-                        elif hasattr(obj, '__iter__'):
+                        elif hasattr(obj, "__iter__"):
                             for child in obj:
                                 count_chars(child)
 
@@ -2050,13 +2135,14 @@ class PdfProcessor(FileProcessor):
                         pages_without_text += 1
                         logger.debug(
                             "Scanned PDF check: page %d has no embedded text",
-                            page_idx + 1
+                            page_idx + 1,
                         )
                     else:
                         # Found a page with text - not a scanned PDF
                         logger.debug(
                             "Scanned PDF check: page %d has %d characters - PDF has embedded text",
-                            page_idx + 1, char_count
+                            page_idx + 1,
+                            char_count,
                         )
                         return
 
@@ -2066,7 +2152,7 @@ class PdfProcessor(FileProcessor):
                 if pages_checked > 0 and pages_without_text == pages_checked:
                     logger.warning(
                         "Scanned PDF detected: first %d pages have no embedded text",
-                        pages_checked
+                        pages_checked,
                     )
                     raise ScannedPdfError()
 
@@ -2075,7 +2161,7 @@ class PdfProcessor(FileProcessor):
             logger.warning(
                 "Failed to open PDF file for scan check: %s. "
                 "Assuming PDF has embedded text.",
-                e
+                e,
             )
             return
 
@@ -2105,7 +2191,7 @@ class PdfProcessor(FileProcessor):
 
     @property
     def supported_extensions(self) -> list[str]:
-        return ['.pdf']
+        return [".pdf"]
 
     def get_file_info(self, file_path: Path) -> FileInfo:
         """Get PDF file info (fast: page count only, no text scanning)."""
@@ -2232,9 +2318,14 @@ class PdfProcessor(FileProcessor):
             - 'failed_fonts': List of fonts that failed to embed
         """
         return self.apply_translations_low_level(
-            input_path, output_path, translations,
-            direction=direction, settings=settings, pages=pages,
-            formula_vars_map=formula_vars_map, text_blocks=text_blocks,
+            input_path,
+            output_path,
+            translations,
+            direction=direction,
+            settings=settings,
+            pages=pages,
+            formula_vars_map=formula_vars_map,
+            text_blocks=text_blocks,
         )
 
     def apply_translations_with_cells(
@@ -2276,8 +2367,12 @@ class PdfProcessor(FileProcessor):
                 "Use apply_translations() with text_blocks parameter instead."
             )
         return self.apply_translations_low_level(
-            input_path, output_path, translations,
-            direction=direction, settings=settings, pages=pages,
+            input_path,
+            output_path,
+            translations,
+            direction=direction,
+            settings=settings,
+            pages=pages,
             text_blocks=text_blocks,
         )
 
@@ -2360,7 +2455,9 @@ class PdfProcessor(FileProcessor):
                     continue
             return entries
 
-        def _replace_xobject_entries(dict_str: str, replacements: dict[str, int]) -> str:
+        def _replace_xobject_entries(
+            dict_str: str, replacements: dict[str, int]
+        ) -> str:
             if not replacements:
                 return dict_str
 
@@ -2476,12 +2573,12 @@ class PdfProcessor(FileProcessor):
             return new_xref
 
         result = {
-            'total': len(translations),
-            'success': 0,
-            'preserved': 0,  # Non-translatable blocks preserved with original text
-            'failed': [],
-            'failed_fonts': [],
-            'failed_pages': [],
+            "total": len(translations),
+            "success": 0,
+            "preserved": 0,  # Non-translatable blocks preserved with original text
+            "failed": [],
+            "failed_fonts": [],
+            "failed_pages": [],
         }
 
         # Clear failed pages from previous runs
@@ -2491,8 +2588,8 @@ class PdfProcessor(FileProcessor):
             target_lang = "en" if direction == "jp_to_en" else "ja"
 
             # Initialize font registry with settings (unified font settings)
-            font_ja = getattr(settings, 'font_en_to_jp', None) if settings else None
-            font_en = getattr(settings, 'font_jp_to_en', None) if settings else None
+            font_ja = getattr(settings, "font_en_to_jp", None) if settings else None
+            font_en = getattr(settings, "font_jp_to_en", None) if settings else None
             font_registry = FontRegistry(font_ja=font_ja, font_en=font_en)
 
             # PDFMathTranslate compliant: Load existing fonts from PDF
@@ -2506,7 +2603,7 @@ class PdfProcessor(FileProcessor):
             logger.debug(
                 "Loaded %d existing fonts from PDF: %s",
                 len(font_registry.fontmap),
-                list(font_registry.fontmap.keys())[:5]  # Show first 5
+                list(font_registry.fontmap.keys())[:5],  # Show first 5
             )
 
             # Register fallback fonts (only used if existing fonts lack glyphs)
@@ -2515,7 +2612,7 @@ class PdfProcessor(FileProcessor):
 
             # Embed fallback fonts into document
             failed_fonts = font_registry.embed_fonts(doc)
-            result['failed_fonts'] = failed_fonts
+            result["failed_fonts"] = failed_fonts
 
             # PDFMathTranslate compliant: Warn about font embedding failures
             # Text using failed fonts will render as .notdef (invisible)
@@ -2528,11 +2625,12 @@ class PdfProcessor(FileProcessor):
                     "1) Install MS fonts on Linux: apt install fonts-noto-cjk "
                     "2) Check font_jp_to_en/font_en_to_jp settings "
                     "3) Ensure font files exist at configured paths",
-                    len(failed_fonts), ", ".join(failed_fonts)
+                    len(failed_fonts),
+                    ", ".join(failed_fonts),
                 )
                 # Store detailed failure info for UI display
-                result['font_embedding_critical'] = True
-                result['font_embedding_message'] = (
+                result["font_embedding_critical"] = True
+                result["font_embedding_message"] = (
                     f"フォント埋め込みに失敗しました: {', '.join(failed_fonts)}。"
                     f"翻訳テキストが表示されない可能性があります。"
                 )
@@ -2549,11 +2647,13 @@ class PdfProcessor(FileProcessor):
             # entirely to keep unselected pages intact. Filtering shared
             # XObjects would remove text from pages we are not rewriting.
             if is_full_document:
-                doc_replacer = ContentStreamReplacer(doc, font_registry, preserve_graphics=True)
+                doc_replacer = ContentStreamReplacer(
+                    doc, font_registry, preserve_graphics=True
+                )
                 doc_filtered_count = doc_replacer.filter_all_document_xobjects()
                 logger.info(
                     "Document-wide XObject filtering: filtered %d Form XObjects",
-                    doc_filtered_count
+                    doc_filtered_count,
                 )
             else:
                 logger.info(
@@ -2564,7 +2664,9 @@ class PdfProcessor(FileProcessor):
             # PDFMathTranslate compliant: Build TextBlock lookup map
             # TextBlock contains PDF coordinates (origin at bottom-left)
             # No DPI scaling needed - coordinates are already in PDF points
-            block_map = {block.id: block for block in text_blocks} if text_blocks else {}
+            block_map = (
+                {block.id: block for block in text_blocks} if text_blocks else {}
+            )
 
             # DEBUG: Log block_map and translations info for troubleshooting
             logger.info(
@@ -2591,10 +2693,7 @@ class PdfProcessor(FileProcessor):
 
                 # Validate page geometry (PDFMathTranslate compliant)
                 if not page.rect:
-                    logger.warning(
-                        "Page %d has no rect attribute, skipping",
-                        page_num
-                    )
+                    logger.warning("Page %d has no rect attribute, skipping", page_num)
                     self._record_failed_page(page_num, "Page has no rect attribute")
                     continue
                 page_height = page.rect.height
@@ -2602,9 +2701,12 @@ class PdfProcessor(FileProcessor):
                 if page_height <= 0:
                     logger.warning(
                         "Page %d has invalid height: %.2f, skipping",
-                        page_num, page_height
+                        page_num,
+                        page_height,
                     )
-                    self._record_failed_page(page_num, f"Invalid page height: {page_height}")
+                    self._record_failed_page(
+                        page_num, f"Invalid page height: {page_height}"
+                    )
                     continue
 
                 # Build list of blocks to process for this page
@@ -2619,8 +2721,9 @@ class PdfProcessor(FileProcessor):
                 page_textblocks: list[TextBlock] = []
                 if text_blocks:
                     page_textblocks = [
-                        tb for tb in text_blocks
-                        if tb.id.startswith(page_prefix) and tb.metadata.get('bbox')
+                        tb
+                        for tb in text_blocks
+                        if tb.id.startswith(page_prefix) and tb.metadata.get("bbox")
                     ]
 
                 # Fallback: Get block info using PyMuPDF (if no text_blocks provided)
@@ -2643,7 +2746,7 @@ class PdfProcessor(FileProcessor):
 
                         if not text_block.metadata:
                             continue
-                        bbox = text_block.metadata.get('bbox')
+                        bbox = text_block.metadata.get("bbox")
                         if not bbox or len(bbox) < 4:
                             continue
 
@@ -2655,11 +2758,17 @@ class PdfProcessor(FileProcessor):
                         else:
                             # Block not in translations (skip_translation, etc.)
                             # Preserve original text
-                            toc_original = text_block.metadata.get('toc_original_text')
-                            text_to_render = toc_original if isinstance(toc_original, str) and toc_original else text_block.text
+                            toc_original = text_block.metadata.get("toc_original_text")
+                            text_to_render = (
+                                toc_original
+                                if isinstance(toc_original, str) and toc_original
+                                else text_block.text
+                            )
                             is_preserved = True
 
-                        blocks_to_process.append((block_id, text_to_render, is_preserved))
+                        blocks_to_process.append(
+                            (block_id, text_to_render, is_preserved)
+                        )
                 else:
                     # Fallback: translated blocks only (PyMuPDF IDs)
                     for block_id, translated in translations.items():
@@ -2694,37 +2803,49 @@ class PdfProcessor(FileProcessor):
                 # Calculate page margins from original text blocks
                 # This allows box expansion to respect the original document's layout
                 from .pdf_layout import calculate_page_margins
-                page_blocks_for_margin = [
-                    block_map[block_id]
-                    for block_id, _, _ in blocks_to_process
-                    if block_id in block_map
-                ] if block_map else []
+
+                page_blocks_for_margin = (
+                    [
+                        block_map[block_id]
+                        for block_id, _, _ in blocks_to_process
+                        if block_id in block_map
+                    ]
+                    if block_map
+                    else []
+                )
                 page_margins = calculate_page_margins(
                     page_blocks_for_margin, page_width, page_height
                 )
-                page_left_margin = page_margins.get('left', 0.0)
-                page_right_margin = page_margins.get('right', 0.0)
-                page_top_margin = page_margins.get('top', 0.0)
-                page_bottom_margin = page_margins.get('bottom', 0.0)
+                page_left_margin = page_margins.get("left", 0.0)
+                page_right_margin = page_margins.get("right", 0.0)
+                page_top_margin = page_margins.get("top", 0.0)
+                page_bottom_margin = page_margins.get("bottom", 0.0)
                 logger.debug(
                     "Page %d: detected margins left=%.1f right=%.1f top=%.1f bottom=%.1f "
                     "(will not expand beyond)",
-                    page_num, page_left_margin, page_right_margin,
-                    page_top_margin, page_bottom_margin
+                    page_num,
+                    page_left_margin,
+                    page_right_margin,
+                    page_top_margin,
+                    page_bottom_margin,
                 )
 
                 # Create content stream replacer for this page
                 # PDFMathTranslate compliant: Remove ALL text from page
                 # Selective mode (target_bboxes) doesn't filter Form XObjects,
                 # causing original text inside tables/graphics to remain visible.
-                replacer = ContentStreamReplacer(doc, font_registry, preserve_graphics=True)
+                replacer = ContentStreamReplacer(
+                    doc, font_registry, preserve_graphics=True
+                )
                 skip_xobject_filtering = True
                 if not is_full_document:
                     replacements: dict[str, int] = {}
                     try:
                         page_xobjects = page.get_xobjects()
                     except (RuntimeError, ValueError, OSError) as e:
-                        logger.debug("Failed to read page XObjects for page %d: %s", page_num, e)
+                        logger.debug(
+                            "Failed to read page XObjects for page %d: %s", page_num, e
+                        )
                         page_xobjects = []
 
                     for xobj in page_xobjects:
@@ -2753,17 +2874,20 @@ class PdfProcessor(FileProcessor):
                         target_bboxes=None,  # Remove all text (PDFMathTranslate compliant)
                         # Skip per-page XObject filtering unless we rewired to page-local clones.
                         skip_xobject_filtering=skip_xobject_filtering,
-                        allowed_xrefs=cloned_xref_values if not is_full_document else None,
+                        allowed_xrefs=cloned_xref_values
+                        if not is_full_document
+                        else None,
                     )
                     logger.info(
                         "Page %d: removing all text for translation (blocks=%d)",
-                        page_num, len(blocks_to_process)
+                        page_num,
+                        len(blocks_to_process),
                     )
                 except MemoryError as e:
                     logger.critical(
                         "CRITICAL: Out of memory while parsing page %d content stream. "
                         "Aborting PDF translation.",
-                        page_num
+                        page_num,
                     )
                     self._record_failed_page(page_num, f"MemoryError: {e}")
                     try:
@@ -2775,13 +2899,23 @@ class PdfProcessor(FileProcessor):
                         f"Try reducing DPI or processing fewer pages."
                     ) from e
                 except (RuntimeError, ValueError, TypeError, KeyError) as e:
-                    logger.error("Failed to parse page %d content stream: %s", page_num, e)
-                    self._record_failed_page(page_num, f"Content stream parse error: {e}")
+                    logger.error(
+                        "Failed to parse page %d content stream: %s", page_num, e
+                    )
+                    self._record_failed_page(
+                        page_num, f"Content stream parse error: {e}"
+                    )
                     continue
 
                 # Process all blocks for this page
-                for block_id, text_to_render, is_preserved_original in blocks_to_process:
-                    translated = text_to_render  # Use consistent variable name for existing code
+                for (
+                    block_id,
+                    text_to_render,
+                    is_preserved_original,
+                ) in blocks_to_process:
+                    translated = (
+                        text_to_render  # Use consistent variable name for existing code
+                    )
                     translated = _normalize_negative_markers(translated, target_lang)
 
                     # PDFMathTranslate compliant: Get coordinates from TextBlock
@@ -2791,12 +2925,14 @@ class PdfProcessor(FileProcessor):
                             continue
                         # Validate metadata exists
                         if not text_block.metadata:
-                            logger.warning("TextBlock %s has no metadata, skipping", block_id)
+                            logger.warning(
+                                "TextBlock %s has no metadata, skipping", block_id
+                            )
                             continue
 
                         # Restore formula placeholders using page-level formula texts.
                         # This prevents {vN} tokens from leaking into the rendered PDF.
-                        formula_texts = text_block.metadata.get('formula_texts')
+                        formula_texts = text_block.metadata.get("formula_texts")
                         if (
                             isinstance(formula_texts, list)
                             and formula_texts
@@ -2809,19 +2945,22 @@ class PdfProcessor(FileProcessor):
 
                         # TextBlock bbox is already in PDF coordinates (origin at bottom-left)
                         # Format: (x0, y0, x1, y1) where y0 < y1
-                        bbox = text_block.metadata.get('bbox')
+                        bbox = text_block.metadata.get("bbox")
                         if not bbox or len(bbox) < 4:
                             logger.warning(
                                 "TextBlock %s has invalid bbox: %s, skipping",
-                                block_id, bbox
+                                block_id,
+                                bbox,
                             )
                             continue
                         # PDF coordinates: x0=left, y0=bottom, x1=right, y1=top
                         x1, y1, x2, y2 = bbox[0], bbox[1], bbox[2], bbox[3]
                         original_text = text_block.text
                         # Get font size from Paragraph metadata (with safe attribute access)
-                        paragraph = text_block.metadata.get('paragraph')
-                        stored_font_size = getattr(paragraph, 'size', None) if paragraph else None
+                        paragraph = text_block.metadata.get("paragraph")
+                        stored_font_size = (
+                            getattr(paragraph, "size", None) if paragraph else None
+                        )
                     else:
                         # Fallback: PyMuPDF block extraction
                         block = pymupdf_blocks_dict.get(block_id)
@@ -2868,7 +3007,9 @@ class PdfProcessor(FileProcessor):
                                     "(expected y0 < y1 for PDF coordinates). "
                                     "This may indicate a coordinate system mismatch. "
                                     "Converting from image coordinates to PDF coordinates.",
-                                    block_id, y1, y2
+                                    block_id,
+                                    y1,
+                                    y2,
                                 )
                                 # Convert from image coordinates (y increases downward)
                                 # to PDF coordinates (y increases upward)
@@ -2883,11 +3024,15 @@ class PdfProcessor(FileProcessor):
 
                             # Get original_line_count from TextBlock metadata (calculated during extraction)
                             # This is critical for proper box_width expansion to prevent layout breakage
-                            original_line_count = text_block.metadata.get('original_line_count', 1)
+                            original_line_count = text_block.metadata.get(
+                                "original_line_count", 1
+                            )
 
                             # Get layout_class for table detection (PDFMathTranslate compliant)
                             # Table cells (layout_class >= 1000) should NOT expand box_width
-                            layout_class = text_block.metadata.get('layout_class', LAYOUT_BACKGROUND)
+                            layout_class = text_block.metadata.get(
+                                "layout_class", LAYOUT_BACKGROUND
+                            )
                             is_table_cell = layout_class >= LAYOUT_TABLE_BASE
 
                             # Fallback: Estimate from box_height and font_size only when needed.
@@ -2900,16 +3045,21 @@ class PdfProcessor(FileProcessor):
                                 and (
                                     is_table_cell
                                     or paragraph is None
-                                    or bool(getattr(paragraph, 'brk', False))
+                                    or bool(getattr(paragraph, "brk", False))
                                 )
                             ):
-                                estimated_lines = box_height / (stored_font_size * DEFAULT_LINE_HEIGHT)
+                                estimated_lines = box_height / (
+                                    stored_font_size * DEFAULT_LINE_HEIGHT
+                                )
                                 original_line_count = max(1, round(estimated_lines))
                                 if original_line_count > 1:
                                     logger.debug(
                                         "Estimated original_line_count=%d for block %s "
                                         "(box_height=%.1f, font_size=%.1f)",
-                                        original_line_count, block_id, box_height, stored_font_size
+                                        original_line_count,
+                                        block_id,
+                                        box_height,
+                                        stored_font_size,
                                     )
                         else:
                             # PyMuPDF: convert to PDF coordinates (y-axis inversion)
@@ -2929,28 +3079,72 @@ class PdfProcessor(FileProcessor):
                         original_box_height = box_height
 
                         # Check if this is vertical text
-                        block_is_vertical = text_block.metadata.get('is_vertical', False) if text_blocks else False
+                        block_is_vertical = (
+                            text_block.metadata.get("is_vertical", False)
+                            if text_blocks
+                            else False
+                        )
 
                         # Get text position info for alignment detection
-                        text_x = getattr(paragraph, 'x', pdf_x1) if paragraph else pdf_x1
-                        text_x0 = getattr(paragraph, 'x0', pdf_x1) if paragraph else pdf_x1
-                        text_x1 = getattr(paragraph, 'x1', pdf_x2) if paragraph else pdf_x2
-                        text_y0 = getattr(paragraph, 'y0', pdf_y0) if paragraph else pdf_y0
-                        text_y1 = getattr(paragraph, 'y1', pdf_y1) if paragraph else pdf_y1
+                        text_x = (
+                            getattr(paragraph, "x", pdf_x1) if paragraph else pdf_x1
+                        )
+                        text_x0 = (
+                            getattr(paragraph, "x0", pdf_x1) if paragraph else pdf_x1
+                        )
+                        text_x1 = (
+                            getattr(paragraph, "x1", pdf_x2) if paragraph else pdf_x2
+                        )
+                        text_y0 = (
+                            getattr(paragraph, "y0", pdf_y0) if paragraph else pdf_y0
+                        )
+                        text_y1 = (
+                            getattr(paragraph, "y1", pdf_y1) if paragraph else pdf_y1
+                        )
 
                         # Get expandable margins from TextBlock metadata
-                        expandable_left = text_block.metadata.get('expandable_left', 0.0) if text_blocks else 0.0
-                        expandable_right = text_block.metadata.get('expandable_right', 0.0) if text_blocks else 0.0
-                        expandable_top = text_block.metadata.get('expandable_top', 0.0) if text_blocks else 0.0
-                        expandable_bottom = text_block.metadata.get('expandable_bottom', 0.0) if text_blocks else 0.0
+                        expandable_left = (
+                            text_block.metadata.get("expandable_left", 0.0)
+                            if text_blocks
+                            else 0.0
+                        )
+                        expandable_right = (
+                            text_block.metadata.get("expandable_right", 0.0)
+                            if text_blocks
+                            else 0.0
+                        )
+                        expandable_top = (
+                            text_block.metadata.get("expandable_top", 0.0)
+                            if text_blocks
+                            else 0.0
+                        )
+                        expandable_bottom = (
+                            text_block.metadata.get("expandable_bottom", 0.0)
+                            if text_blocks
+                            else 0.0
+                        )
 
                         # Legacy support: If only expandable_width is available, use it for right expansion
                         # Skip this for table cells to avoid expanding across columns.
-                        if expandable_left == 0.0 and expandable_right == 0.0 and not is_table_cell:
-                            expandable_width = text_block.metadata.get('expandable_width', box_width) if text_blocks else box_width
-                            expandable_right = max(0, expandable_width - original_box_width)
+                        if (
+                            expandable_left == 0.0
+                            and expandable_right == 0.0
+                            and not is_table_cell
+                        ):
+                            expandable_width = (
+                                text_block.metadata.get("expandable_width", box_width)
+                                if text_blocks
+                                else box_width
+                            )
+                            expandable_right = max(
+                                0, expandable_width - original_box_width
+                            )
                             # Estimate left expansion from page margin
-                            expandable_left = max(0, pdf_x1 - page_left_margin) if page_left_margin > 0 else 0
+                            expandable_left = (
+                                max(0, pdf_x1 - page_left_margin)
+                                if page_left_margin > 0
+                                else 0
+                            )
 
                         # Cap horizontal expandable margins at page margins
                         max_x = page_width - page_right_margin
@@ -2974,10 +3168,16 @@ class PdfProcessor(FileProcessor):
                         # This provides runtime detection independent of PP-DocLayout-L results
                         if page_textblocks and len(page_textblocks) > 1:
                             current_bbox = (pdf_x1, pdf_y0, pdf_x2, pdf_y1)
-                            adj_left, adj_right, adj_bottom, adj_top = find_adjacent_textblock_boundaries(
-                                block_id, current_bbox, page_textblocks,
-                                page_width, page_height, page_left_margin,
-                                page_margins=page_margins
+                            adj_left, adj_right, adj_bottom, adj_top = (
+                                find_adjacent_textblock_boundaries(
+                                    block_id,
+                                    current_bbox,
+                                    page_textblocks,
+                                    page_width,
+                                    page_height,
+                                    page_left_margin,
+                                    page_margins=page_margins,
+                                )
                             )
 
                             # Further limit expansion based on adjacent TextBlocks
@@ -2999,16 +3199,17 @@ class PdfProcessor(FileProcessor):
                         if block_is_vertical:
                             # Vertical text: estimate vertical alignment and expand vertically
                             vertical_alignment = estimate_vertical_alignment(
-                                text_y0, text_y1,
-                                pdf_y0, pdf_y1
+                                text_y0, text_y1, pdf_y0, pdf_y1
                             )
 
                             # Calculate vertically expanded box based on vertical alignment
                             new_y0, new_y1 = calculate_expanded_box_vertical(
-                                pdf_y0, pdf_y1,
-                                expandable_top, expandable_bottom,
+                                pdf_y0,
+                                pdf_y1,
+                                expandable_top,
+                                expandable_bottom,
                                 vertical_alignment,
-                                MAX_EXPANSION_RATIO
+                                MAX_EXPANSION_RATIO,
                             )
 
                             # Apply vertical expansion if any
@@ -3018,8 +3219,14 @@ class PdfProcessor(FileProcessor):
                                     logger.debug(
                                         "Block %s (vertical): expanding box from [%.1f, %.1f] to [%.1f, %.1f] "
                                         "(v_alignment=%s, is_table=%s, ratio=%.2f)",
-                                        block_id, pdf_y0, pdf_y1, new_y0, new_y1,
-                                        vertical_alignment, is_table_cell, new_height / original_box_height
+                                        block_id,
+                                        pdf_y0,
+                                        pdf_y1,
+                                        new_y0,
+                                        new_y1,
+                                        vertical_alignment,
+                                        is_table_cell,
+                                        new_height / original_box_height,
                                     )
                                     # Update box coordinates and height
                                     pdf_y0 = new_y0
@@ -3029,16 +3236,17 @@ class PdfProcessor(FileProcessor):
                         else:
                             # Horizontal text: estimate horizontal alignment and expand horizontally
                             alignment = estimate_text_alignment(
-                                text_x, text_x0, text_x1,
-                                pdf_x1, pdf_x2
+                                text_x, text_x0, text_x1, pdf_x1, pdf_x2
                             )
 
                             # Calculate horizontally expanded box based on alignment
                             new_x0, new_x1 = calculate_expanded_box(
-                                pdf_x1, pdf_x2,
-                                expandable_left, expandable_right,
+                                pdf_x1,
+                                pdf_x2,
+                                expandable_left,
+                                expandable_right,
                                 alignment,
-                                MAX_EXPANSION_RATIO
+                                MAX_EXPANSION_RATIO,
                             )
 
                             # Apply horizontal expansion if any
@@ -3048,8 +3256,14 @@ class PdfProcessor(FileProcessor):
                                     logger.debug(
                                         "Block %s: expanding box from [%.1f, %.1f] to [%.1f, %.1f] "
                                         "(alignment=%s, is_table=%s, ratio=%.2f)",
-                                        block_id, pdf_x1, pdf_x2, new_x0, new_x1,
-                                        alignment, is_table_cell, new_width / original_box_width
+                                        block_id,
+                                        pdf_x1,
+                                        pdf_x2,
+                                        new_x0,
+                                        new_x1,
+                                        alignment,
+                                        is_table_cell,
+                                        new_width / original_box_width,
                                     )
                                     # Update box coordinates and width
                                     pdf_x1 = new_x0
@@ -3062,19 +3276,24 @@ class PdfProcessor(FileProcessor):
                         # text operators from original content stream, preserving graphics.
 
                         # Select font based on text content
-                        font_id = font_registry.select_font_for_text(translated, target_lang)
+                        font_id = font_registry.select_font_for_text(
+                            translated, target_lang
+                        )
 
                         # PDFMathTranslate compliant: Get font size from extraction metadata
                         # TextBlock stores font size from pdfminer extraction (paragraph.size)
                         initial_font_size = None
-                        paragraph_brk = bool(paragraph is not None and getattr(paragraph, 'brk', False))
+                        paragraph_brk = bool(
+                            paragraph is not None and getattr(paragraph, "brk", False)
+                        )
 
                         # Method 1: Use stored font size from TextBlock (most accurate)
                         if stored_font_size is not None:
                             initial_font_size = stored_font_size
                             logger.debug(
                                 "Low-level API: Using stored font size %.1f for block %s",
-                                initial_font_size, block_id
+                                initial_font_size,
+                                block_id,
                             )
 
                         # Method 2: Estimate from box height and original text (fallback)
@@ -3083,11 +3302,16 @@ class PdfProcessor(FileProcessor):
                                 [pdf_x1, pdf_y0, pdf_x2, pdf_y1], original_text
                             )
 
-                        initial_font_size = max(MIN_FONT_SIZE, min(initial_font_size, MAX_FONT_SIZE))
+                        initial_font_size = max(
+                            MIN_FONT_SIZE, min(initial_font_size, MAX_FONT_SIZE)
+                        )
                         min_setting = MIN_FONT_SIZE
                         if settings is not None:
                             try:
-                                min_setting = float(getattr(settings, 'font_size_min', MIN_FONT_SIZE) or MIN_FONT_SIZE)
+                                min_setting = float(
+                                    getattr(settings, "font_size_min", MIN_FONT_SIZE)
+                                    or MIN_FONT_SIZE
+                                )
                             except (TypeError, ValueError):
                                 min_setting = MIN_FONT_SIZE
                         min_setting = max(MIN_FONT_SIZE, min_setting)
@@ -3097,7 +3321,12 @@ class PdfProcessor(FileProcessor):
                         # unless the user explicitly adjusts it.
                         if settings and direction == "jp_to_en":
                             try:
-                                size_adjust = float(getattr(settings, 'font_size_adjustment_jp_to_en', 0.0) or 0.0)
+                                size_adjust = float(
+                                    getattr(
+                                        settings, "font_size_adjustment_jp_to_en", 0.0
+                                    )
+                                    or 0.0
+                                )
                                 if size_adjust != 0.0:
                                     adjusted = initial_font_size + size_adjust
                                     initial_font_size = max(
@@ -3127,26 +3356,43 @@ class PdfProcessor(FileProcessor):
                                 if width_target > 0:
                                     raw_lines = translated.split("\n")
                                     raw_line_widths = [
-                                        _get_token_width(line, font_id, initial_font_size, font_registry)
+                                        _get_token_width(
+                                            line,
+                                            font_id,
+                                            initial_font_size,
+                                            font_registry,
+                                        )
                                         for line in raw_lines
                                         if line.strip()
                                     ]
-                                    max_line_width = max(raw_line_widths) if raw_line_widths else 0.0
+                                    max_line_width = (
+                                        max(raw_line_widths) if raw_line_widths else 0.0
+                                    )
                                     if max_line_width > width_target + 0.1:
                                         scale = width_target / max_line_width
-                                        candidate = max(min_setting, initial_font_size * scale)
+                                        candidate = max(
+                                            min_setting, initial_font_size * scale
+                                        )
                                         if candidate < initial_font_size - 0.01:
                                             initial_font_size = candidate
                                         # If it still overflows at the minimum size, clip instead of painting over neighbors.
                                         max_line_width = max(
                                             (
-                                                _get_token_width(line, font_id, initial_font_size, font_registry)
+                                                _get_token_width(
+                                                    line,
+                                                    font_id,
+                                                    initial_font_size,
+                                                    font_registry,
+                                                )
                                                 for line in raw_lines
                                                 if line.strip()
                                             ),
                                             default=0.0,
                                         )
-                                        if max_line_width > box_width + 0.1 and initial_font_size <= min_setting + 0.01:
+                                        if (
+                                            max_line_width > box_width + 0.1
+                                            and initial_font_size <= min_setting + 0.01
+                                        ):
                                             force_clip_width = True
                             except Exception:
                                 pass
@@ -3155,17 +3401,28 @@ class PdfProcessor(FileProcessor):
                         # - Table cells always wrap (fixed boundaries)
                         # - Non-table blocks wrap only if the original paragraph wrapped (brk=True)
                         #   or we know the original had multiple lines.
-                        allow_wrap = bool(is_table_cell or paragraph_brk or (original_line_count > 1))
+                        allow_wrap = bool(
+                            is_table_cell or paragraph_brk or (original_line_count > 1)
+                        )
                         forced_wrap_lines = None
                         wrap_required = False
-                        explicit_line_count = len(translated.split('\n')) if translated else 0
+                        explicit_line_count = (
+                            len(translated.split("\n")) if translated else 0
+                        )
                         candidate_lines = None
 
                         if translated:
                             candidate_lines = split_text_into_lines_with_font(
-                                translated, box_width, initial_font_size, font_id, font_registry
+                                translated,
+                                box_width,
+                                initial_font_size,
+                                font_id,
+                                font_registry,
                             )
-                            if not allow_wrap and len(candidate_lines) > explicit_line_count:
+                            if (
+                                not allow_wrap
+                                and len(candidate_lines) > explicit_line_count
+                            ):
                                 wrap_required = True
 
                         # If wrapping grows too much, widen the box within safe margins.
@@ -3181,9 +3438,12 @@ class PdfProcessor(FileProcessor):
                                 and line_ratio >= OVERWRAP_LINE_RATIO
                             ):
                                 relief_x0, relief_x1 = calculate_expanded_box_relief(
-                                    original_box_x0, original_box_x1,
-                                    expandable_left, expandable_right,
-                                    alignment, OVERWRAP_EXPANSION_RATIO
+                                    original_box_x0,
+                                    original_box_x1,
+                                    expandable_left,
+                                    expandable_right,
+                                    alignment,
+                                    OVERWRAP_EXPANSION_RATIO,
                                 )
                                 relief_width = relief_x1 - relief_x0
                                 if relief_width > box_width + 0.1:
@@ -3193,30 +3453,57 @@ class PdfProcessor(FileProcessor):
                                     box_width = relief_width
                                     box_pdf = [pdf_x1, pdf_y0, pdf_x2, pdf_y1]
                                     candidate_lines = split_text_into_lines_with_font(
-                                        translated, box_width, initial_font_size, font_id, font_registry
+                                        translated,
+                                        box_width,
+                                        initial_font_size,
+                                        font_id,
+                                        font_registry,
                                     )
                                     if logger.isEnabledFor(logging.DEBUG):
                                         logger.debug(
                                             "Block %s: wrap relief width %.1f -> %.1f (lines %d -> %d)",
-                                            block_id, previous_width, box_width,
-                                            line_count, len(candidate_lines)
+                                            block_id,
+                                            previous_width,
+                                            box_width,
+                                            line_count,
+                                            len(candidate_lines),
                                         )
 
-                        if wrap_required and candidate_lines and len(candidate_lines) > explicit_line_count:
+                        if (
+                            wrap_required
+                            and candidate_lines
+                            and len(candidate_lines) > explicit_line_count
+                        ):
                             allow_wrap = True
                             forced_wrap_lines = candidate_lines
 
                         if forced_wrap_lines and not is_table_cell:
-                            lang_key = target_lang.lower() if isinstance(target_lang, str) else ""
-                            default_line_height = LANG_LINEHEIGHT_MAP.get(lang_key, DEFAULT_LINE_HEIGHT)
-                            required_height = len(forced_wrap_lines) * initial_font_size * default_line_height
-                            if (
-                                required_height > box_height
-                                and (expandable_top > 0 or expandable_bottom > 0)
+                            lang_key = (
+                                target_lang.lower()
+                                if isinstance(target_lang, str)
+                                else ""
+                            )
+                            default_line_height = LANG_LINEHEIGHT_MAP.get(
+                                lang_key, DEFAULT_LINE_HEIGHT
+                            )
+                            required_height = (
+                                len(forced_wrap_lines)
+                                * initial_font_size
+                                * default_line_height
+                            )
+                            if required_height > box_height and (
+                                expandable_top > 0 or expandable_bottom > 0
                             ):
-                                max_extra = max(0.0, original_box_height * (MAX_EXPANSION_RATIO - 1.0))
-                                available_extra = min(expandable_top + expandable_bottom, max_extra)
-                                extra_needed = min(required_height - box_height, available_extra)
+                                max_extra = max(
+                                    0.0,
+                                    original_box_height * (MAX_EXPANSION_RATIO - 1.0),
+                                )
+                                available_extra = min(
+                                    expandable_top + expandable_bottom, max_extra
+                                )
+                                extra_needed = min(
+                                    required_height - box_height, available_extra
+                                )
                                 if extra_needed > 0:
                                     vertical_alignment = estimate_vertical_alignment(
                                         text_y0, text_y1, pdf_y0, pdf_y1
@@ -3227,24 +3514,35 @@ class PdfProcessor(FileProcessor):
                                         expand_top = min(extra_needed, expandable_top)
                                         remaining = extra_needed - expand_top
                                         if remaining > 0:
-                                            expand_bottom = min(remaining, expandable_bottom)
+                                            expand_bottom = min(
+                                                remaining, expandable_bottom
+                                            )
                                     elif vertical_alignment == VerticalAlignment.CENTER:
                                         half = extra_needed / 2
                                         expand_top = min(half, expandable_top)
                                         expand_bottom = min(half, expandable_bottom)
-                                        remaining = extra_needed - (expand_top + expand_bottom)
+                                        remaining = extra_needed - (
+                                            expand_top + expand_bottom
+                                        )
                                         if remaining > 0:
                                             extra_bottom = min(
-                                                remaining, max(0.0, expandable_bottom - expand_bottom)
+                                                remaining,
+                                                max(
+                                                    0.0,
+                                                    expandable_bottom - expand_bottom,
+                                                ),
                                             )
                                             expand_bottom += extra_bottom
                                             remaining -= extra_bottom
                                         if remaining > 0:
                                             expand_top += min(
-                                                remaining, max(0.0, expandable_top - expand_top)
+                                                remaining,
+                                                max(0.0, expandable_top - expand_top),
                                             )
                                     else:
-                                        expand_bottom = min(extra_needed, expandable_bottom)
+                                        expand_bottom = min(
+                                            extra_needed, expandable_bottom
+                                        )
                                         remaining = extra_needed - expand_bottom
                                         if remaining > 0:
                                             expand_top = min(remaining, expandable_top)
@@ -3278,8 +3576,8 @@ class PdfProcessor(FileProcessor):
                         toc_page_number = None
                         toc_leader = None
                         if text_blocks and text_block.metadata:
-                            toc_page_number = text_block.metadata.get('toc_page_number')
-                            toc_leader = text_block.metadata.get('toc_leader')
+                            toc_page_number = text_block.metadata.get("toc_page_number")
+                            toc_leader = text_block.metadata.get("toc_leader")
 
                         if (
                             not is_preserved_original
@@ -3290,20 +3588,30 @@ class PdfProcessor(FileProcessor):
                         ):
                             page_number_text = toc_page_number.strip()
                             page_number_width = _get_token_width(
-                                page_number_text, font_id, initial_font_size, font_registry
+                                page_number_text,
+                                font_id,
+                                initial_font_size,
+                                font_registry,
                             )
                             page_number_x = pdf_x2 - page_number_width
                             gap = 6.0
-                            label_left_x = getattr(paragraph, 'x', None) if paragraph is not None else None
+                            label_left_x = (
+                                getattr(paragraph, "x", None)
+                                if paragraph is not None
+                                else None
+                            )
                             if label_left_x is None:
                                 label_left_x = pdf_x1
-                            label_box_width = max(0.0, (page_number_x - gap) - label_left_x)
+                            label_box_width = max(
+                                0.0, (page_number_x - gap) - label_left_x
+                            )
 
                             if label_box_width > 1.0:
                                 toc_title_text = translated.strip()
                                 if toc_title_text and page_number_text:
                                     leader_chars_re = "".join(
-                                        re.escape(ch) for ch in sorted(_TOC_LEADER_CHARS)
+                                        re.escape(ch)
+                                        for ch in sorted(_TOC_LEADER_CHARS)
                                     )
                                     toc_title_text = re.sub(
                                         rf"[{leader_chars_re}\s\u3000]+{re.escape(page_number_text)}\s*$",
@@ -3324,7 +3632,11 @@ class PdfProcessor(FileProcessor):
                                     allow_wrap=True,
                                 )
                                 toc_lines = split_text_into_lines_with_font(
-                                    toc_title_text, label_box_width, initial_font_size, font_id, font_registry
+                                    toc_title_text,
+                                    label_box_width,
+                                    initial_font_size,
+                                    font_id,
+                                    font_registry,
                                 )
 
                                 # PDFMathTranslate compliant: Get initial position from Paragraph
@@ -3332,18 +3644,31 @@ class PdfProcessor(FileProcessor):
                                 initial_x = None
                                 left_margin_x = None
                                 if paragraph is not None:
-                                    initial_y = getattr(paragraph, 'y', None)
-                                    initial_x = getattr(paragraph, 'x', None)
-                                    left_margin_x = getattr(paragraph, 'x0', None)
+                                    initial_y = getattr(paragraph, "y", None)
+                                    initial_x = getattr(paragraph, "x", None)
+                                    left_margin_x = getattr(paragraph, "x0", None)
 
                                 # Baseline shift when TOC title wraps to multiple lines.
                                 # Prefer using available bottom space (expandable_bottom) to avoid
                                 # pushing content upward, and only shift up if still needed.
                                 if len(toc_lines) > 1:
-                                    baseline_y = initial_y if initial_y is not None else box_pdf[1]
-                                    min_bottom_y = box_pdf[1] - max(0.0, expandable_bottom)
-                                    bottom_line_y = baseline_y - ((len(toc_lines) - 1) * initial_font_size * toc_line_height)
-                                    if bottom_line_y < min_bottom_y and expandable_top > 0:
+                                    baseline_y = (
+                                        initial_y
+                                        if initial_y is not None
+                                        else box_pdf[1]
+                                    )
+                                    min_bottom_y = box_pdf[1] - max(
+                                        0.0, expandable_bottom
+                                    )
+                                    bottom_line_y = baseline_y - (
+                                        (len(toc_lines) - 1)
+                                        * initial_font_size
+                                        * toc_line_height
+                                    )
+                                    if (
+                                        bottom_line_y < min_bottom_y
+                                        and expandable_top > 0
+                                    ):
                                         deficit = min_bottom_y - bottom_line_y
                                         shift_up = min(deficit, expandable_top)
                                         if shift_up > 0:
@@ -3371,11 +3696,16 @@ class PdfProcessor(FileProcessor):
                                         first_line_text = line_text
 
                                     hex_text = op_gen.raw_string(font_id, line_text)
-                                    op = op_gen.gen_op_txt(font_id, initial_font_size, x, y, hex_text)
+                                    op = op_gen.gen_op_txt(
+                                        font_id, initial_font_size, x, y, hex_text
+                                    )
                                     replacer.add_text_operator(op, font_id)
 
                                 # Draw leader + right-aligned page number on the first line
-                                if first_line_x is not None and first_line_y is not None:
+                                if (
+                                    first_line_x is not None
+                                    and first_line_y is not None
+                                ):
                                     # Leader characters (optional)
                                     leader_char = "…"
                                     if isinstance(toc_leader, str) and toc_leader:
@@ -3385,30 +3715,50 @@ class PdfProcessor(FileProcessor):
                                         font_id, leader_char, initial_font_size
                                     )
                                     title_width = _get_token_width(
-                                        first_line_text, font_id, initial_font_size, font_registry
+                                        first_line_text,
+                                        font_id,
+                                        initial_font_size,
+                                        font_registry,
                                     )
                                     leader_start_x = first_line_x + title_width + gap
                                     leader_end_x = page_number_x - gap
                                     available = leader_end_x - leader_start_x
-                                    if leader_char_width > 0 and available > leader_char_width * 2:
-                                        leader_count = int(available // leader_char_width)
+                                    if (
+                                        leader_char_width > 0
+                                        and available > leader_char_width * 2
+                                    ):
+                                        leader_count = int(
+                                            available // leader_char_width
+                                        )
                                         leader_count = max(0, min(leader_count, 256))
                                         if leader_count > 0:
                                             leader_text = leader_char * leader_count
-                                            hex_leader = op_gen.raw_string(font_id, leader_text)
+                                            hex_leader = op_gen.raw_string(
+                                                font_id, leader_text
+                                            )
                                             op = op_gen.gen_op_txt(
-                                                font_id, initial_font_size, leader_start_x, first_line_y, hex_leader
+                                                font_id,
+                                                initial_font_size,
+                                                leader_start_x,
+                                                first_line_y,
+                                                hex_leader,
                                             )
                                             replacer.add_text_operator(op, font_id)
 
                                     # Page number (right aligned)
-                                    hex_page = op_gen.raw_string(font_id, page_number_text)
+                                    hex_page = op_gen.raw_string(
+                                        font_id, page_number_text
+                                    )
                                     op = op_gen.gen_op_txt(
-                                        font_id, initial_font_size, page_number_x, first_line_y, hex_page
+                                        font_id,
+                                        initial_font_size,
+                                        page_number_x,
+                                        first_line_y,
+                                        hex_page,
                                     )
                                     replacer.add_text_operator(op, font_id)
 
-                                result['success'] += 1
+                                result["success"] += 1
                                 continue
 
                         # Calculate line height with dynamic compression using font metrics
@@ -3456,9 +3806,13 @@ class PdfProcessor(FileProcessor):
                                         break
 
                                     scale = box_height / max(0.001, required_height)
-                                    candidate = max(min_table_font_size, new_font_size * scale)
+                                    candidate = max(
+                                        min_table_font_size, new_font_size * scale
+                                    )
                                     if candidate >= new_font_size - 0.01:
-                                        candidate = max(min_table_font_size, new_font_size - 0.5)
+                                        candidate = max(
+                                            min_table_font_size, new_font_size - 0.5
+                                        )
                                     new_font_size = candidate
 
                                     new_line_height = calculate_line_height_with_font(
@@ -3473,15 +3827,25 @@ class PdfProcessor(FileProcessor):
                                         allow_wrap=True,
                                     )
                                     new_lines = split_text_into_lines_with_font(
-                                        translated, box_width, new_font_size, font_id, font_registry
+                                        translated,
+                                        box_width,
+                                        new_font_size,
+                                        font_id,
+                                        font_registry,
                                     )
-                                    required_height = len(new_lines) * new_font_size * new_line_height
+                                    required_height = (
+                                        len(new_lines) * new_font_size * new_line_height
+                                    )
 
                                 if new_font_size < font_size - 0.01:
                                     logger.debug(
                                         "[Layout] Table cell %s: shrink font %.1f -> %.1f (lines=%d -> %d, height=%.1f)",
-                                        block_id, font_size, new_font_size,
-                                        len(lines), len(new_lines), box_height
+                                        block_id,
+                                        font_size,
+                                        new_font_size,
+                                        len(lines),
+                                        len(new_lines),
+                                        box_height,
                                     )
                                     font_size = new_font_size
                                     line_height = new_line_height
@@ -3513,7 +3877,9 @@ class PdfProcessor(FileProcessor):
                                     scale = box_height / max(0.001, required_height)
                                     candidate = max(min_setting, new_font_size * scale)
                                     if candidate >= new_font_size - 0.01:
-                                        candidate = max(min_setting, new_font_size - 0.5)
+                                        candidate = max(
+                                            min_setting, new_font_size - 0.5
+                                        )
                                     new_font_size = candidate
 
                                     new_line_height = calculate_line_height_with_font(
@@ -3528,15 +3894,25 @@ class PdfProcessor(FileProcessor):
                                         allow_wrap=True,
                                     )
                                     new_lines = split_text_into_lines_with_font(
-                                        translated, box_width, new_font_size, font_id, font_registry
+                                        translated,
+                                        box_width,
+                                        new_font_size,
+                                        font_id,
+                                        font_registry,
                                     )
-                                    required_height = len(new_lines) * new_font_size * new_line_height
+                                    required_height = (
+                                        len(new_lines) * new_font_size * new_line_height
+                                    )
 
                                 if new_font_size < font_size - 0.01:
                                     logger.debug(
                                         "[Layout] Block %s (jp_to_en): shrink font %.1f -> %.1f (lines=%d -> %d, height=%.1f)",
-                                        block_id, font_size, new_font_size,
-                                        len(lines), len(new_lines), box_height
+                                        block_id,
+                                        font_size,
+                                        new_font_size,
+                                        len(lines),
+                                        len(new_lines),
+                                        box_height,
                                     )
                                     font_size = new_font_size
                                     line_height = new_line_height
@@ -3554,7 +3930,12 @@ class PdfProcessor(FileProcessor):
                             required_height = len(lines) * font_size * line_height
                             if required_height > box_height + 0.1:
                                 try:
-                                    min_setting = float(getattr(settings, "font_size_min", MIN_FONT_SIZE) or MIN_FONT_SIZE)
+                                    min_setting = float(
+                                        getattr(
+                                            settings, "font_size_min", MIN_FONT_SIZE
+                                        )
+                                        or MIN_FONT_SIZE
+                                    )
                                 except (TypeError, ValueError):
                                     min_setting = MIN_FONT_SIZE
                                 min_setting = max(MIN_FONT_SIZE, min_setting)
@@ -3572,7 +3953,9 @@ class PdfProcessor(FileProcessor):
                                     scale = box_height / max(0.001, required_height)
                                     candidate = max(min_setting, new_font_size * scale)
                                     if candidate >= new_font_size - 0.01:
-                                        candidate = max(min_setting, new_font_size - 0.5)
+                                        candidate = max(
+                                            min_setting, new_font_size - 0.5
+                                        )
                                     new_font_size = candidate
 
                                     new_line_height = calculate_line_height_with_font(
@@ -3587,15 +3970,25 @@ class PdfProcessor(FileProcessor):
                                         allow_wrap=True,
                                     )
                                     new_lines = split_text_into_lines_with_font(
-                                        translated, box_width, new_font_size, font_id, font_registry
+                                        translated,
+                                        box_width,
+                                        new_font_size,
+                                        font_id,
+                                        font_registry,
                                     )
-                                    required_height = len(new_lines) * new_font_size * new_line_height
+                                    required_height = (
+                                        len(new_lines) * new_font_size * new_line_height
+                                    )
 
                                 if new_font_size < font_size - 0.01:
                                     logger.debug(
                                         "[Layout] Block %s (en_to_jp): shrink font %.1f -> %.1f (lines=%d -> %d, height=%.1f)",
-                                        block_id, font_size, new_font_size,
-                                        len(lines), len(new_lines), box_height
+                                        block_id,
+                                        font_size,
+                                        new_font_size,
+                                        len(lines),
+                                        len(new_lines),
+                                        box_height,
                                     )
                                     font_size = new_font_size
                                     line_height = new_line_height
@@ -3606,11 +3999,17 @@ class PdfProcessor(FileProcessor):
                         # This ensures consistent, readable text across the document.
                         # If text still overflows the box, it will extend beyond the original
                         # bounding box, which is the same behavior as PDFMathTranslate.
-                        if len(lines) > original_line_count * 2 and original_line_count >= 1:
+                        if (
+                            len(lines) > original_line_count * 2
+                            and original_line_count >= 1
+                        ):
                             logger.info(
                                 "[Layout] Block %s: text expanded from %d to %d lines. "
                                 "Font size preserved at %.1fpt (PDFMathTranslate compliant).",
-                                block_id, original_line_count, len(lines), font_size
+                                block_id,
+                                original_line_count,
+                                len(lines),
+                                font_size,
                             )
 
                         # DEBUG: Log block processing details with layout info
@@ -3622,19 +4021,31 @@ class PdfProcessor(FileProcessor):
                             "line_height=%.2f, original_lines=%d, output_lines=%d, "
                             "is_table=%s",
                             block_id,
-                            box_pdf[0], box_pdf[1], box_pdf[2], box_pdf[3],
-                            box_width, box_height,
-                            initial_font_size, font_size,
-                            line_height, original_line_count, len(lines),
-                            is_table_cell
+                            box_pdf[0],
+                            box_pdf[1],
+                            box_pdf[2],
+                            box_pdf[3],
+                            box_width,
+                            box_height,
+                            initial_font_size,
+                            font_size,
+                            line_height,
+                            original_line_count,
+                            len(lines),
+                            is_table_cell,
                         )
 
                         # Warn if output lines significantly exceed original
-                        if len(lines) > original_line_count * 2 and original_line_count > 1:
+                        if (
+                            len(lines) > original_line_count * 2
+                            and original_line_count > 1
+                        ):
                             logger.warning(
                                 "[Layout] Block %s: output_lines(%d) >> original_lines(%d), "
                                 "may cause layout issues. Consider increasing box_width or font_size.",
-                                block_id, len(lines), original_line_count
+                                block_id,
+                                len(lines),
+                                original_line_count,
                             )
 
                         # PDFMathTranslate compliant: Get initial position from Paragraph
@@ -3645,9 +4056,9 @@ class PdfProcessor(FileProcessor):
                         initial_x = None
                         left_margin_x = None
                         if paragraph is not None:
-                            initial_y = getattr(paragraph, 'y', None)
-                            initial_x = getattr(paragraph, 'x', None)
-                            left_margin_x = getattr(paragraph, 'x0', None)
+                            initial_y = getattr(paragraph, "y", None)
+                            initial_x = getattr(paragraph, "x", None)
+                            left_margin_x = getattr(paragraph, "x0", None)
                             if initial_y is not None or initial_x is not None:
                                 logger.debug(
                                     "[Layout] Using Paragraph position for block %s: "
@@ -3655,7 +4066,7 @@ class PdfProcessor(FileProcessor):
                                     block_id,
                                     initial_x if initial_x is not None else 0,
                                     initial_y if initial_y is not None else 0,
-                                    left_margin_x if left_margin_x is not None else 0
+                                    left_margin_x if left_margin_x is not None else 0,
                                 )
 
                         # If a single-line block expands to multiple lines, shift the baseline upward
@@ -3667,7 +4078,9 @@ class PdfProcessor(FileProcessor):
                             and len(lines) > 1
                             and expandable_top > 0
                         ):
-                            baseline_y = initial_y if initial_y is not None else box_pdf[1]
+                            baseline_y = (
+                                initial_y if initial_y is not None else box_pdf[1]
+                            )
                             text_height = len(lines) * font_size * line_height
                             extra_height = max(0.0, text_height - box_height)
                             if extra_height > 0:
@@ -3676,7 +4089,10 @@ class PdfProcessor(FileProcessor):
                                     initial_y = baseline_y + shift_up
                                     logger.debug(
                                         "[Layout] Baseline shift for block %s: +%.1f (lines=%d, extra=%.1f)",
-                                        block_id, shift_up, len(lines), extra_height
+                                        block_id,
+                                        shift_up,
+                                        len(lines),
+                                        extra_height,
                                     )
 
                         # PDFMathTranslate compliant: NO white background
@@ -3688,13 +4104,17 @@ class PdfProcessor(FileProcessor):
                         # Drawing white backgrounds would cover table cell colors
                         # and other visual elements, which is not desired.
 
-                        required_height = len(lines) * font_size * line_height if lines else 0.0
+                        required_height = (
+                            len(lines) * font_size * line_height if lines else 0.0
+                        )
                         max_line_width = 0.0
                         if box_width > 0 and translated and lines:
                             try:
                                 max_line_width = max(
                                     (
-                                        _get_token_width(line, font_id, font_size, font_registry)
+                                        _get_token_width(
+                                            line, font_id, font_size, font_registry
+                                        )
                                         for line in lines
                                         if line.strip()
                                     ),
@@ -3717,7 +4137,10 @@ class PdfProcessor(FileProcessor):
                                     and (
                                         force_clip_width
                                         or (required_height > box_height + 0.1)
-                                        or (box_width > 0 and max_line_width > box_width + 0.5)
+                                        or (
+                                            box_width > 0
+                                            and max_line_width > box_width + 0.5
+                                        )
                                     )
                                 )
                                 or (
@@ -3725,14 +4148,20 @@ class PdfProcessor(FileProcessor):
                                     and original_line_count <= 1
                                     and (
                                         (required_height > box_height + 0.1)
-                                        or (box_width > 0 and max_line_width > box_width + 0.5)
+                                        or (
+                                            box_width > 0
+                                            and max_line_width > box_width + 0.5
+                                        )
                                     )
                                 )
                             )
                         )
                         if clip_region:
                             replacer.begin_clipped_region(
-                                box_pdf[0], box_pdf[1], box_pdf[2], box_pdf[3],
+                                box_pdf[0],
+                                box_pdf[1],
+                                box_pdf[2],
+                                box_pdf[3],
                                 margin=0.5,
                             )
                             clip_opened = True
@@ -3744,8 +4173,13 @@ class PdfProcessor(FileProcessor):
 
                             # Calculate line position (PDFMathTranslate compliant)
                             x, y = calculate_text_position(
-                                box_pdf, line_idx, font_size, line_height,
-                                initial_y, initial_x, left_margin_x
+                                box_pdf,
+                                line_idx,
+                                font_size,
+                                line_height,
+                                initial_y,
+                                initial_x,
+                                left_margin_x,
                             )
 
                             # DEBUG: Log position calculation
@@ -3753,10 +4187,13 @@ class PdfProcessor(FileProcessor):
                                 logger.debug(
                                     "Line position: block=%s, line=%d, x=%.1f, y=%.1f, "
                                     "initial_x=%s, initial_y=%s, text_len=%d",
-                                    block_id, line_idx, x, y,
+                                    block_id,
+                                    line_idx,
+                                    x,
+                                    y,
                                     f"{initial_x:.1f}" if initial_x else "None",
                                     f"{initial_y:.1f}" if initial_y else "None",
-                                    len(line_text)
+                                    len(line_text),
                                 )
 
                             # Encode text to hex using Unicode code points (Identity-H encoding)
@@ -3772,7 +4209,7 @@ class PdfProcessor(FileProcessor):
 
                         # Track success count
                         # (preserved blocks are counted earlier and not in this loop)
-                        result['success'] += 1
+                        result["success"] += 1
 
                     except RuntimeError as e:
                         # PyMuPDF internal errors (e.g., corrupted page, invalid font)
@@ -3781,9 +4218,10 @@ class PdfProcessor(FileProcessor):
                             clip_opened = False
                         logger.warning(
                             "Block '%s' failed (RuntimeError - PyMuPDF internal): %s",
-                            block_id, e
+                            block_id,
+                            e,
                         )
-                        result['failed'].append(block_id)
+                        result["failed"].append(block_id)
                         continue
                     except ValueError as e:
                         # Invalid values (e.g., bad coordinates, invalid font size)
@@ -3792,9 +4230,10 @@ class PdfProcessor(FileProcessor):
                             clip_opened = False
                         logger.warning(
                             "Block '%s' failed (ValueError - invalid data): %s",
-                            block_id, e
+                            block_id,
+                            e,
                         )
-                        result['failed'].append(block_id)
+                        result["failed"].append(block_id)
                         continue
                     except TypeError as e:
                         # Type mismatches (e.g., None where string expected)
@@ -3803,9 +4242,10 @@ class PdfProcessor(FileProcessor):
                             clip_opened = False
                         logger.warning(
                             "Block '%s' failed (TypeError - type mismatch): %s",
-                            block_id, e
+                            block_id,
+                            e,
                         )
-                        result['failed'].append(block_id)
+                        result["failed"].append(block_id)
                         continue
                     except KeyError as e:
                         # Missing keys (e.g., font_id not in registry)
@@ -3814,9 +4254,10 @@ class PdfProcessor(FileProcessor):
                             clip_opened = False
                         logger.warning(
                             "Block '%s' failed (KeyError - missing key): %s",
-                            block_id, e
+                            block_id,
+                            e,
                         )
-                        result['failed'].append(block_id)
+                        result["failed"].append(block_id)
                         continue
                     except IndexError as e:
                         # Index out of bounds (e.g., invalid block reference)
@@ -3825,9 +4266,10 @@ class PdfProcessor(FileProcessor):
                             clip_opened = False
                         logger.warning(
                             "Block '%s' failed (IndexError - out of bounds): %s",
-                            block_id, e
+                            block_id,
+                            e,
                         )
-                        result['failed'].append(block_id)
+                        result["failed"].append(block_id)
                         continue
                     except AttributeError as e:
                         # Missing attributes (e.g., TextBlock missing expected field)
@@ -3836,9 +4278,10 @@ class PdfProcessor(FileProcessor):
                             clip_opened = False
                         logger.warning(
                             "Block '%s' failed (AttributeError - missing attribute): %s",
-                            block_id, e
+                            block_id,
+                            e,
                         )
-                        result['failed'].append(block_id)
+                        result["failed"].append(block_id)
                         continue
                     except OSError as e:
                         # File/font access errors
@@ -3847,9 +4290,10 @@ class PdfProcessor(FileProcessor):
                             clip_opened = False
                         logger.warning(
                             "Block '%s' failed (OSError - file/font access): %s",
-                            block_id, e
+                            block_id,
+                            e,
                         )
-                        result['failed'].append(block_id)
+                        result["failed"].append(block_id)
                         continue
 
                 # Apply content stream and font resources to page only when
@@ -3858,7 +4302,9 @@ class PdfProcessor(FileProcessor):
                 # because the filtered base stream strips text operators.
                 logger.info(
                     "Page %d: operators=%d, will apply: %s",
-                    page_num, len(replacer.operators), bool(replacer.operators)
+                    page_num,
+                    len(replacer.operators),
+                    bool(replacer.operators),
                 )
                 if replacer.operators:
                     try:
@@ -3868,7 +4314,7 @@ class PdfProcessor(FileProcessor):
                         logger.critical(
                             "CRITICAL: Out of memory while applying translations to page %d. "
                             "Aborting PDF translation.",
-                            page_num
+                            page_num,
                         )
                         self._record_failed_page(page_num, f"MemoryError: {e}")
                         try:
@@ -3880,7 +4326,9 @@ class PdfProcessor(FileProcessor):
                             f"Try reducing DPI or processing fewer pages."
                         ) from e
                     except (RuntimeError, ValueError, TypeError, KeyError) as e:
-                        logger.error("Failed to apply translations to page %d: %s", page_num, e)
+                        logger.error(
+                            "Failed to apply translations to page %d: %s", page_num, e
+                        )
                         self._record_failed_page(page_num, f"Apply error: {e}")
 
             # Font subsetting and save document (PDFMathTranslate compliant)
@@ -3890,21 +4338,25 @@ class PdfProcessor(FileProcessor):
             # Log summary
             logger.info(
                 "Low-level PDF translation completed: translated=%d, preserved=%d, failed=%d",
-                result['success'], result['preserved'], len(result['failed'])
+                result["success"],
+                result["preserved"],
+                len(result["failed"]),
             )
 
-            if result['failed']:
+            if result["failed"]:
                 logger.warning(
                     "Low-level PDF translation completed with %d/%d blocks failed",
-                    len(result['failed']), result['total']
+                    len(result["failed"]),
+                    result["total"],
                 )
 
             # Include page-level failures in result
-            result['failed_pages'] = self.failed_pages
-            if result['failed_pages']:
+            result["failed_pages"] = self.failed_pages
+            if result["failed_pages"]:
                 logger.warning(
                     "Low-level PDF translation had %d pages with errors: %s",
-                    len(result['failed_pages']), result['failed_pages']
+                    len(result["failed_pages"]),
+                    result["failed_pages"],
                 )
 
         finally:
@@ -4027,7 +4479,9 @@ class PdfProcessor(FileProcessor):
 
         pymupdf = _get_pymupdf()
         pages_processed = 0
-        pages_to_process = len(selected_pages) if selected_pages is not None else total_pages
+        pages_to_process = (
+            len(selected_pages) if selected_pages is not None else total_pages
+        )
         if pages_to_process == 0:
             return
 
@@ -4053,19 +4507,25 @@ class PdfProcessor(FileProcessor):
                         f"Extracting text page {page_num} "
                         f"({pages_processed}/{pages_to_process})..."
                     )
-                    on_progress(TranslationProgress(
-                        current=pages_processed,
-                        total=pages_to_process,
-                        status=status,
-                        phase=TranslationPhase.EXTRACTING,
-                        phase_detail=f"Page {page_num}",
-                    ))
+                    on_progress(
+                        TranslationProgress(
+                            current=pages_processed,
+                            total=pages_to_process,
+                            status=status,
+                            phase=TranslationPhase.EXTRACTING,
+                            phase_detail=f"Page {page_num}",
+                        )
+                    )
 
                 try:
                     text_dict = page.get_text("dict")
                     words = page.get_text("words")
                 except (RuntimeError, ValueError, OSError) as e:
-                    logger.error("PyMuPDF fallback extraction failed for page %d: %s", page_num, e)
+                    logger.error(
+                        "PyMuPDF fallback extraction failed for page %d: %s",
+                        page_num,
+                        e,
+                    )
                     self._record_failed_page(page_num, f"PyMuPDF extraction error: {e}")
                     yield [], None
                     continue
@@ -4078,7 +4538,9 @@ class PdfProcessor(FileProcessor):
                         continue
                     words_by_line[(int(block_no), int(line_no))].append(word)
 
-                segments: list[tuple[tuple[float, float, float, float], Paragraph, str, bool]] = []
+                segments: list[
+                    tuple[tuple[float, float, float, float], Paragraph, str, bool]
+                ] = []
                 table_cell_counter = 0
 
                 for (block_no, line_no), line_words in words_by_line.items():
@@ -4101,7 +4563,9 @@ class PdfProcessor(FileProcessor):
                     current_segment: list[tuple] = []
                     prev_x1 = None
 
-                    line_segments: list[tuple[tuple[float, float, float, float], Paragraph, str, bool]] = []
+                    line_segments: list[
+                        tuple[tuple[float, float, float, float], Paragraph, str, bool]
+                    ] = []
 
                     def _flush_segment(segment_words: list[tuple]) -> None:
                         if not segment_words:
@@ -4148,12 +4612,23 @@ class PdfProcessor(FileProcessor):
                         )
 
                         skip_translation = not self.should_translate(segment_text)
-                        line_segments.append(((pdf_x0, pdf_y0, pdf_x1, pdf_y1), para, segment_text, skip_translation))
+                        line_segments.append(
+                            (
+                                (pdf_x0, pdf_y0, pdf_x1, pdf_y1),
+                                para,
+                                segment_text,
+                                skip_translation,
+                            )
+                        )
 
                     for word in line_words_sorted:
                         x0 = float(word[0])
                         x1 = float(word[2])
-                        if prev_x1 is not None and (x0 - prev_x1) > gap_threshold and current_segment:
+                        if (
+                            prev_x1 is not None
+                            and (x0 - prev_x1) > gap_threshold
+                            and current_segment
+                        ):
                             _flush_segment(current_segment)
                             current_segment = []
                         current_segment.append(word)
@@ -4190,16 +4665,27 @@ class PdfProcessor(FileProcessor):
                                 if not (bbox_img and len(bbox_img) == 4):
                                     continue
                                 try:
-                                    pdf_x0, pdf_y0, pdf_x1, pdf_y1 = convert_to_pdf_coordinates(
-                                        [bbox_img[0], bbox_img[1], bbox_img[2], bbox_img[3]],
-                                        page_height,
+                                    pdf_x0, pdf_y0, pdf_x1, pdf_y1 = (
+                                        convert_to_pdf_coordinates(
+                                            [
+                                                bbox_img[0],
+                                                bbox_img[1],
+                                                bbox_img[2],
+                                                bbox_img[3],
+                                            ],
+                                            page_height,
+                                        )
                                     )
                                 except Exception:
                                     continue
                                 span_size = float(span.get("size") or DEFAULT_FONT_SIZE)
                                 baseline_y = pdf_y0
                                 origin = span.get("origin")
-                                if origin and isinstance(origin, (list, tuple)) and len(origin) >= 2:
+                                if (
+                                    origin
+                                    and isinstance(origin, (list, tuple))
+                                    and len(origin) >= 2
+                                ):
                                     try:
                                         baseline_y = page_height - float(origin[1])
                                     except (TypeError, ValueError):
@@ -4211,55 +4697,70 @@ class PdfProcessor(FileProcessor):
                                     x1=pdf_x1,
                                     y0=pdf_y0,
                                     y1=pdf_y1,
-                                    size=max(MIN_FONT_SIZE, min(span_size, MAX_FONT_SIZE)),
+                                    size=max(
+                                        MIN_FONT_SIZE, min(span_size, MAX_FONT_SIZE)
+                                    ),
                                     brk=False,
                                     layout_class=LAYOUT_BACKGROUND,
                                 )
                                 skip_translation = not self.should_translate(raw_text)
-                                segments.append(((pdf_x0, pdf_y0, pdf_x1, pdf_y1), para, raw_text, skip_translation))
+                                segments.append(
+                                    (
+                                        (pdf_x0, pdf_y0, pdf_x1, pdf_y1),
+                                        para,
+                                        raw_text,
+                                        skip_translation,
+                                    )
+                                )
                     except Exception as e:
-                        logger.error("PyMuPDF dict fallback failed for page %d: %s", page_num, e)
+                        logger.error(
+                            "PyMuPDF dict fallback failed for page %d: %s", page_num, e
+                        )
 
                 # Sort in reading order (top-to-bottom, then left-to-right)
                 segments.sort(key=lambda item: (-item[0][3], item[0][0]))
 
                 blocks: list[TextBlock] = []
                 formula_texts: list[str] = []
-                for block_idx, (bbox_pdf, para, text, skip_translation) in enumerate(segments):
+                for block_idx, (bbox_pdf, para, text, skip_translation) in enumerate(
+                    segments
+                ):
                     x0, y0, x1, y1 = bbox_pdf
                     block_is_vertical = is_vertical_text(x1 - x0, y1 - y0)
-                    blocks.append(TextBlock(
-                        id=f"page_{page_idx}_block_{block_idx}",
-                        text=text,
-                        location=f"Page {page_num}",
-                        metadata={
-                            "type": "text_block",
-                            "page_idx": page_idx,
-                            "block": block_idx,
-                            "bbox": bbox_pdf,
-                            "font_name": None,
-                            "font_size": para.size,
-                            "is_formula": False,
-                            "original_line_count": 1,
-                            "paragraph": para,
-                            "formula_vars": [],
-                            "formula_texts": formula_texts,
-                            "has_formulas": False,
-                            "layout_class": para.layout_class,
-                            "role": None,
-                            "skip_translation": skip_translation,
-                            "is_toc_entry": False,
-                            "toc_page_number": None,
-                            "toc_leader": None,
-                            "toc_original_text": None,
-                            "expandable_width": x1 - x0,
-                            "expandable_left": 0.0,
-                            "expandable_right": 0.0,
-                            "expandable_top": 0.0,
-                            "expandable_bottom": 0.0,
-                            "is_vertical": block_is_vertical,
-                        },
-                    ))
+                    blocks.append(
+                        TextBlock(
+                            id=f"page_{page_idx}_block_{block_idx}",
+                            text=text,
+                            location=f"Page {page_num}",
+                            metadata={
+                                "type": "text_block",
+                                "page_idx": page_idx,
+                                "block": block_idx,
+                                "bbox": bbox_pdf,
+                                "font_name": None,
+                                "font_size": para.size,
+                                "is_formula": False,
+                                "original_line_count": 1,
+                                "paragraph": para,
+                                "formula_vars": [],
+                                "formula_texts": formula_texts,
+                                "has_formulas": False,
+                                "layout_class": para.layout_class,
+                                "role": None,
+                                "skip_translation": skip_translation,
+                                "is_toc_entry": False,
+                                "toc_page_number": None,
+                                "toc_leader": None,
+                                "toc_original_text": None,
+                                "expandable_width": x1 - x0,
+                                "expandable_left": 0.0,
+                                "expandable_right": 0.0,
+                                "expandable_top": 0.0,
+                                "expandable_bottom": 0.0,
+                                "is_vertical": block_is_vertical,
+                            },
+                        )
+                    )
 
                 # Secondary table/form detection in fallback mode:
                 # Many financial PDFs use form-like rows where each field is its own block,
@@ -4274,7 +4775,9 @@ class PdfProcessor(FileProcessor):
                     # Stricter than the adjacent-block heuristic to avoid over-classification.
                     y_overlap_threshold = 0.6
 
-                    block_geoms: list[tuple[TextBlock, float, float, float, float, float, float]] = []
+                    block_geoms: list[
+                        tuple[TextBlock, float, float, float, float, float, float]
+                    ] = []
                     for tb in blocks:
                         meta = tb.metadata
                         if not meta:
@@ -4282,7 +4785,12 @@ class PdfProcessor(FileProcessor):
                         bbox = meta.get("bbox")
                         if not bbox or len(bbox) < 4:
                             continue
-                        x0, y0, x1, y1 = (float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3]))
+                        x0, y0, x1, y1 = (
+                            float(bbox[0]),
+                            float(bbox[1]),
+                            float(bbox[2]),
+                            float(bbox[3]),
+                        )
                         width = x1 - x0
                         height = y1 - y0
                         if width <= 0 or height <= 0:
@@ -4314,7 +4822,9 @@ class PdfProcessor(FileProcessor):
                             neighbors.append(overlap_ratio)
 
                         disjoint_neighbors = sum(1 for r in neighbors if r < 0.2)
-                        is_table_like = disjoint_neighbors >= 1 and width <= narrow_width_threshold
+                        is_table_like = (
+                            disjoint_neighbors >= 1 and width <= narrow_width_threshold
+                        )
                         if not is_table_like:
                             continue
 
@@ -4328,13 +4838,21 @@ class PdfProcessor(FileProcessor):
                             except Exception:
                                 pass
                 except Exception as e:
-                    logger.debug("Fallback table cell detection failed for page %d: %s", page_num, e)
+                    logger.debug(
+                        "Fallback table cell detection failed for page %d: %s",
+                        page_num,
+                        e,
+                    )
 
                 logger.info(
                     "PyMuPDF fallback extraction page %d: blocks=%d, skipped_non_translate=%d",
                     page_num,
                     len(blocks),
-                    sum(1 for b in blocks if b.metadata and b.metadata.get("skip_translation")),
+                    sum(
+                        1
+                        for b in blocks
+                        if b.metadata and b.metadata.get("skip_translation")
+                    ),
                 )
 
                 # Provide expandable margins even in fallback mode.
@@ -4345,7 +4863,9 @@ class PdfProcessor(FileProcessor):
                     from .pdf_layout import calculate_page_margins
 
                     page_width = page.rect.width
-                    page_margins = calculate_page_margins(blocks, page_width, page_height)
+                    page_margins = calculate_page_margins(
+                        blocks, page_width, page_height
+                    )
                     for tb in blocks:
                         meta = tb.metadata
                         if not meta:
@@ -4353,14 +4873,21 @@ class PdfProcessor(FileProcessor):
                         bbox = meta.get("bbox")
                         if not bbox or len(bbox) < 4:
                             continue
-                        x0, y0, x1, y1 = (float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3]))
-                        max_left, max_right, max_bottom, max_top = find_adjacent_textblock_boundaries(
-                            tb.id,
-                            (x0, y0, x1, y1),
-                            blocks,
-                            page_width,
-                            page_height,
-                            page_margins=page_margins,
+                        x0, y0, x1, y1 = (
+                            float(bbox[0]),
+                            float(bbox[1]),
+                            float(bbox[2]),
+                            float(bbox[3]),
+                        )
+                        max_left, max_right, max_bottom, max_top = (
+                            find_adjacent_textblock_boundaries(
+                                tb.id,
+                                (x0, y0, x1, y1),
+                                blocks,
+                                page_width,
+                                page_height,
+                                page_margins=page_margins,
+                            )
                         )
                         expandable_left = max(0.0, x0 - max_left)
                         expandable_right = max(0.0, max_right - x1)
@@ -4370,9 +4897,15 @@ class PdfProcessor(FileProcessor):
                         meta["expandable_right"] = expandable_right
                         meta["expandable_bottom"] = expandable_bottom
                         meta["expandable_top"] = expandable_top
-                        meta["expandable_width"] = (x1 - x0) + expandable_left + expandable_right
+                        meta["expandable_width"] = (
+                            (x1 - x0) + expandable_left + expandable_right
+                        )
                 except Exception as e:
-                    logger.debug("Failed to calculate fallback expandable margins for page %d: %s", page_num, e)
+                    logger.debug(
+                        "Failed to calculate fallback expandable margins for page %d: %s",
+                        page_num,
+                        e,
+                    )
 
                 yield blocks, None
 
@@ -4407,7 +4940,9 @@ class PdfProcessor(FileProcessor):
         start_time = time_module.time()
         self._failed_pages = []
         self._layout_fallback_used = False  # Reset for each extraction
-        pages_to_process = len(selected_pages) if selected_pages is not None else total_pages
+        pages_to_process = (
+            len(selected_pages) if selected_pages is not None else total_pages
+        )
         if pages_to_process == 0:
             return
         last_page_idx = total_pages - 1
@@ -4422,7 +4957,8 @@ class PdfProcessor(FileProcessor):
             logger.warning(
                 "High memory usage expected for %d pages at %d DPI. "
                 "Processing will continue but may be slow.",
-                pages_to_process, dpi
+                pages_to_process,
+                dpi,
             )
 
         # Check if PP-DocLayout-L is available
@@ -4443,17 +4979,23 @@ class PdfProcessor(FileProcessor):
         # Try to get available memory for dynamic adjustment
         try:
             import psutil
+
             available_mb = psutil.virtual_memory().available // (1024 * 1024)
             # Use at most 50% of available memory for safety
             max_batch_mb = available_mb // 2
 
-            if estimated_batch_mb > max_batch_mb and max_batch_mb > estimated_mb_per_page:
+            if (
+                estimated_batch_mb > max_batch_mb
+                and max_batch_mb > estimated_mb_per_page
+            ):
                 # Reduce batch size to fit in available memory
                 adjusted_batch_size = max(1, max_batch_mb // estimated_mb_per_page)
                 if adjusted_batch_size < batch_size:
                     logger.info(
                         "PDFMathTranslate: Adjusting batch_size %d -> %d based on available memory (%dMB)",
-                        batch_size, adjusted_batch_size, available_mb
+                        batch_size,
+                        adjusted_batch_size,
+                        available_mb,
                     )
                     batch_size = adjusted_batch_size
                     estimated_batch_mb = estimated_mb_per_page * batch_size
@@ -4468,23 +5010,26 @@ class PdfProcessor(FileProcessor):
             logger.info(
                 "Processing %d pages (DPI=%d, batch_size=%d). "
                 "Estimated memory per batch: ~%dMB",
-                pages_to_process, dpi, batch_size, estimated_batch_mb
+                pages_to_process,
+                dpi,
+                batch_size,
+                estimated_batch_mb,
             )
 
         # Get pdfminer classes
         pdfminer = _get_pdfminer()
-        PDFPage = pdfminer['PDFPage']
-        PDFParser = pdfminer['PDFParser']
-        PDFDocument = pdfminer['PDFDocument']
-        PDFResourceManager = pdfminer['PDFResourceManager']
-        PDFPageInterpreter = pdfminer['PDFPageInterpreter']
-        LTChar = pdfminer['LTChar']
-        LTFigure = pdfminer['LTFigure']
+        PDFPage = pdfminer["PDFPage"]
+        PDFParser = pdfminer["PDFParser"]
+        PDFDocument = pdfminer["PDFDocument"]
+        PDFResourceManager = pdfminer["PDFResourceManager"]
+        PDFPageInterpreter = pdfminer["PDFPageInterpreter"]
+        LTChar = pdfminer["LTChar"]
+        LTFigure = pdfminer["LTFigure"]
         PDFConverterEx = get_pdf_converter_ex_class()
 
         try:
             # Open PDF with pdfminer
-            with open(file_path, 'rb') as f:
+            with open(file_path, "rb") as f:
                 parser = PDFParser(f)
                 document = PDFDocument(parser)
                 rsrcmgr = PDFResourceManager()
@@ -4494,7 +5039,13 @@ class PdfProcessor(FileProcessor):
                 # Collect pages into batches for PP-DocLayout-L batch processing
                 batch_data: list[tuple[int, Any, Any, float, float]] = []
 
-                for page_idx, img, ltpage, page_height, page_width in self._iterate_pages_unified(
+                for (
+                    page_idx,
+                    img,
+                    ltpage,
+                    page_height,
+                    page_width,
+                ) in self._iterate_pages_unified(
                     file_path,
                     document,
                     PDFPage,
@@ -4505,8 +5056,11 @@ class PdfProcessor(FileProcessor):
                 ):
                     # Check for cancellation
                     if self._cancel_requested:
-                        logger.info("Hybrid extraction cancelled at page %d/%d",
-                                   page_idx + 1, total_pages)
+                        logger.info(
+                            "Hybrid extraction cancelled at page %d/%d",
+                            page_idx + 1,
+                            total_pages,
+                        )
                         return
 
                     batch_data.append((page_idx, img, ltpage, page_height, page_width))
@@ -4515,10 +5069,18 @@ class PdfProcessor(FileProcessor):
                     if len(batch_data) >= batch_size or page_idx == last_page_idx:
                         # Step 1: Batch analyze layout with PP-DocLayout-L
                         batch_images = [data[1] for data in batch_data]
-                        batch_layout_results = analyze_layout_batch(batch_images, actual_device)
+                        batch_layout_results = analyze_layout_batch(
+                            batch_images, actual_device
+                        )
 
                         # Process each page in the batch
-                        for batch_idx, (p_idx, img, ltpage, p_height, p_width) in enumerate(batch_data):
+                        for batch_idx, (
+                            p_idx,
+                            img,
+                            ltpage,
+                            p_height,
+                            p_width,
+                        ) in enumerate(batch_data):
                             page_num = p_idx + 1
                             pages_processed += 1
 
@@ -4527,7 +5089,9 @@ class PdfProcessor(FileProcessor):
                             if pages_processed > 1:
                                 actual_time_per_page = elapsed / (pages_processed - 1)
                                 remaining_pages = pages_to_process - pages_processed + 1
-                                estimated_remaining = int(actual_time_per_page * remaining_pages)
+                                estimated_remaining = int(
+                                    actual_time_per_page * remaining_pages
+                                )
                             else:
                                 estimated_remaining = int(10 * pages_to_process)
 
@@ -4545,14 +5109,18 @@ class PdfProcessor(FileProcessor):
                                 else:
                                     status = f"Analyzing layout page {page_num}/{total_pages}..."
                                     phase_detail = f"Page {page_num}/{total_pages}"
-                                on_progress(TranslationProgress(
-                                    current=pages_processed,
-                                    total=pages_to_process,
-                                    status=status,
-                                    phase=TranslationPhase.EXTRACTING,
-                                    phase_detail=phase_detail,
-                                    estimated_remaining=estimated_remaining if estimated_remaining > 0 else None,
-                                ))
+                                on_progress(
+                                    TranslationProgress(
+                                        current=pages_processed,
+                                        total=pages_to_process,
+                                        status=status,
+                                        phase=TranslationPhase.EXTRACTING,
+                                        phase_detail=phase_detail,
+                                        estimated_remaining=estimated_remaining
+                                        if estimated_remaining > 0
+                                        else None,
+                                    )
+                                )
 
                             try:
                                 # Get pre-computed layout results for this page
@@ -4578,7 +5146,8 @@ class PdfProcessor(FileProcessor):
                                         layout_array.table_cells = table_cells
                                         logger.debug(
                                             "Detected cells for %d tables on page %d",
-                                            len(table_cells), page_num
+                                            len(table_cells),
+                                            page_num,
                                         )
 
                                         # Step 2.5.1: Analyze table structure for rowspan/colspan
@@ -4590,21 +5159,26 @@ class PdfProcessor(FileProcessor):
                                             layout_array.table_cells = analyzed_cells
                                             # Log cells with spans > 1
                                             span_count = sum(
-                                                1 for cells in analyzed_cells.values()
+                                                1
+                                                for cells in analyzed_cells.values()
                                                 for c in cells
-                                                if c.get('row_span', 1) > 1 or c.get('col_span', 1) > 1
+                                                if c.get("row_span", 1) > 1
+                                                or c.get("col_span", 1) > 1
                                             )
                                             if span_count > 0:
                                                 logger.debug(
                                                     "Detected %d merged cells (rowspan/colspan) on page %d",
-                                                    span_count, page_num
+                                                    span_count,
+                                                    page_num,
                                                 )
 
                                 # Step 2.6: Mark header/footer by position (yomitoku-style fallback)
                                 mark_header_footer_in_layout(layout_array, img_height)
 
                                 # Step 2.7: Apply reading order with auto direction detection
-                                apply_reading_order_to_layout_auto(layout_array, p_height, p_width)
+                                apply_reading_order_to_layout_auto(
+                                    layout_array, p_height, p_width
+                                )
 
                                 # Step 3: Extract characters from pdfminer
                                 chars = []
@@ -4615,7 +5189,7 @@ class PdfProcessor(FileProcessor):
                                     elif isinstance(obj, LTFigure):
                                         for child in obj:
                                             collect_chars(child)
-                                    elif hasattr(obj, '__iter__'):
+                                    elif hasattr(obj, "__iter__"):
                                         for child in obj:
                                             collect_chars(child)
 
@@ -4637,10 +5211,12 @@ class PdfProcessor(FileProcessor):
                                 # No separate TranslationCell merge step needed
                                 if chars:
                                     blocks = self._group_chars_into_blocks(
-                                        chars, p_idx, LTChar,
+                                        chars,
+                                        p_idx,
+                                        LTChar,
                                         layout=layout_array,
                                         page_height=p_height,
-                                        page_width=p_width
+                                        page_width=p_width,
                                     )
                                 else:
                                     blocks = []
@@ -4652,8 +5228,23 @@ class PdfProcessor(FileProcessor):
                                 # TranslationCell is no longer needed (cells=None)
                                 yield blocks, None
 
-                            except (RuntimeError, ValueError, TypeError, IndexError, KeyError, OSError, MemoryError, AttributeError, UnicodeDecodeError) as e:
-                                logger.error("Hybrid extraction failed for page %d: %s (%s)", page_num, e, type(e).__name__)
+                            except (
+                                RuntimeError,
+                                ValueError,
+                                TypeError,
+                                IndexError,
+                                KeyError,
+                                OSError,
+                                MemoryError,
+                                AttributeError,
+                                UnicodeDecodeError,
+                            ) as e:
+                                logger.error(
+                                    "Hybrid extraction failed for page %d: %s (%s)",
+                                    page_num,
+                                    e,
+                                    type(e).__name__,
+                                )
                                 self._record_failed_page(page_num, str(e))
                                 yield [], None
 
@@ -4661,8 +5252,11 @@ class PdfProcessor(FileProcessor):
                         batch_data = []
 
             if self._failed_pages:
-                logger.warning("Hybrid extraction completed with %d failed pages: %s",
-                              len(self._failed_pages), self._failed_pages)
+                logger.warning(
+                    "Hybrid extraction completed with %d failed pages: %s",
+                    len(self._failed_pages),
+                    self._failed_pages,
+                )
         except MemoryError:
             # CRITICAL: Memory exhausted - clear cache and re-raise
             logger.critical(
@@ -4701,7 +5295,7 @@ class PdfProcessor(FileProcessor):
         batch = []
         for page_idx, page in enumerate(PDFPage.create_pages(document)):
             # Get page dimensions
-            x0, y0, x1, y1 = page.cropbox if hasattr(page, 'cropbox') else page.mediabox
+            x0, y0, x1, y1 = page.cropbox if hasattr(page, "cropbox") else page.mediabox
             page_height = abs(y1 - y0)
 
             # Process page with pdfminer
@@ -4772,14 +5366,15 @@ class PdfProcessor(FileProcessor):
                 if page_idx >= pdf_page_count:
                     logger.warning(
                         "Page index %d exceeds pypdfium2 page count %d, stopping iteration",
-                        page_idx, pdf_page_count
+                        page_idx,
+                        pdf_page_count,
                     )
                     break
 
                 # Get page dimensions from pdfminer
                 x0, y0, x1, y1 = (
                     pdfminer_page.cropbox
-                    if hasattr(pdfminer_page, 'cropbox')
+                    if hasattr(pdfminer_page, "cropbox")
                     else pdfminer_page.mediabox
                 )
                 page_height = abs(y1 - y0)
@@ -4789,7 +5384,9 @@ class PdfProcessor(FileProcessor):
                 if page_height <= 0 or page_width <= 0:
                     logger.warning(
                         "Page %d has invalid dimensions (height=%s, width=%s), skipping",
-                        page_idx, page_height, page_width
+                        page_idx,
+                        page_height,
+                        page_width,
                     )
                     continue
 
@@ -4861,17 +5458,21 @@ class PdfProcessor(FileProcessor):
         # Format: (x0, y0, x1, y1, text) where y0 < y1 in image coordinates
         converted_blocks: list[tuple[float, float, float, float, str]] = []
         for block in blocks:
-            if not block.metadata or 'bbox' not in block.metadata:
+            if not block.metadata or "bbox" not in block.metadata:
                 continue
-            bbox = block.metadata['bbox']
+            bbox = block.metadata["bbox"]
             # Convert PDF coordinates to image coordinates
             # PDF bbox: [x0, y0(bottom), x1, y1(top)]
             # Image coords: y0(top) < y1(bottom)
             block_x0 = bbox[0] * scale
             block_y0 = (page_height - bbox[3]) * scale  # PDF y1(top) -> image y0(top)
             block_x1 = bbox[2] * scale
-            block_y1 = (page_height - bbox[1]) * scale  # PDF y0(bottom) -> image y1(bottom)
-            converted_blocks.append((block_x0, block_y0, block_x1, block_y1, block.text))
+            block_y1 = (
+                page_height - bbox[1]
+            ) * scale  # PDF y0(bottom) -> image y1(bottom)
+            converted_blocks.append(
+                (block_x0, block_y0, block_x1, block_y1, block.text)
+            )
 
         if not converted_blocks:
             return
@@ -4885,14 +5486,11 @@ class PdfProcessor(FileProcessor):
         # This preserves original cell order while enabling efficient traversal
         cell_indices_by_y = sorted(
             range(len(cells)),
-            key=lambda i: cells[i].box[1] if cells[i].box else float('inf')
+            key=lambda i: cells[i].box[1] if cells[i].box else float("inf"),
         )
 
         # Track the maximum cell y1 seen so far for smarter early termination
-        max_cell_y1 = max(
-            (c.box[3] for c in cells if c.box),
-            default=0.0
-        )
+        max_cell_y1 = max((c.box[3] for c in cells if c.box), default=0.0)
 
         # For each cell (in y-sorted order for optimization), find overlapping blocks
         for cell_idx in cell_indices_by_y:
@@ -4921,10 +5519,12 @@ class PdfProcessor(FileProcessor):
                 # 2D overlap check with margin (all 4 conditions required):
                 # X-axis: block_x0 < cell_x1 + margin AND block_x1 > cell_x0 - margin
                 # Y-axis: block_y0 < cell_y1 + margin AND block_y1 > cell_y0 - margin
-                if (block_x0 < cell_x1 + overlap_margin and
-                    block_x1 > cell_x0 - overlap_margin and
-                    block_y0 < cell_y1 + overlap_margin and
-                    block_y1 > cell_y0 - overlap_margin):
+                if (
+                    block_x0 < cell_x1 + overlap_margin
+                    and block_x1 > cell_x0 - overlap_margin
+                    and block_y0 < cell_y1 + overlap_margin
+                    and block_y1 > cell_y0 - overlap_margin
+                ):
                     overlapping_blocks.append((block_y0, block_x0, block_text))
 
             # If we found overlapping pdfminer text, merge in reading order
@@ -4963,12 +5563,14 @@ class PdfProcessor(FileProcessor):
             for char in text:
                 code = ord(char)
                 # CJK ranges: Hiragana, Katakana, CJK Unified Ideographs, etc.
-                if (0x3040 <= code <= 0x309F or  # Hiragana
-                    0x30A0 <= code <= 0x30FF or  # Katakana
-                    0x4E00 <= code <= 0x9FFF or  # CJK Unified Ideographs
-                    0x3400 <= code <= 0x4DBF or  # CJK Extension A
-                    0xF900 <= code <= 0xFAFF or  # CJK Compatibility Ideographs
-                    0xFF00 <= code <= 0xFFEF):   # Halfwidth/Fullwidth Forms
+                if (
+                    0x3040 <= code <= 0x309F  # Hiragana
+                    or 0x30A0 <= code <= 0x30FF  # Katakana
+                    or 0x4E00 <= code <= 0x9FFF  # CJK Unified Ideographs
+                    or 0x3400 <= code <= 0x4DBF  # CJK Extension A
+                    or 0xF900 <= code <= 0xFAFF  # CJK Compatibility Ideographs
+                    or 0xFF00 <= code <= 0xFFEF
+                ):  # Halfwidth/Fullwidth Forms
                     cjk_count += 1
                 elif char.isalpha():
                     latin_count += 1
@@ -4993,17 +5595,17 @@ class PdfProcessor(FileProcessor):
         Yields one page at a time with progress updates.
         """
         pdfminer = _get_pdfminer()
-        PDFPage = pdfminer['PDFPage']
-        PDFParser = pdfminer['PDFParser']
-        PDFDocument = pdfminer['PDFDocument']
-        PDFResourceManager = pdfminer['PDFResourceManager']
-        PDFPageInterpreter = pdfminer['PDFPageInterpreter']
-        LTChar = pdfminer['LTChar']
-        LTFigure = pdfminer['LTFigure']
+        PDFPage = pdfminer["PDFPage"]
+        PDFParser = pdfminer["PDFParser"]
+        PDFDocument = pdfminer["PDFDocument"]
+        PDFResourceManager = pdfminer["PDFResourceManager"]
+        PDFPageInterpreter = pdfminer["PDFPageInterpreter"]
+        LTChar = pdfminer["LTChar"]
+        LTFigure = pdfminer["LTFigure"]
 
         PDFConverterEx = get_pdf_converter_ex_class()
 
-        with open(file_path, 'rb') as f:
+        with open(file_path, "rb") as f:
             parser = PDFParser(f)
             document = PDFDocument(parser)
             rsrcmgr = PDFResourceManager()
@@ -5015,13 +5617,15 @@ class PdfProcessor(FileProcessor):
 
                 # Report progress
                 if on_progress:
-                    on_progress(TranslationProgress(
-                        current=page_num,
-                        total=total_pages,
-                        status=f"Extracting text from page {page_num}/{total_pages}...",
-                        phase=TranslationPhase.EXTRACTING,
-                        phase_detail=f"Page {page_num}/{total_pages}",
-                    ))
+                    on_progress(
+                        TranslationProgress(
+                            current=page_num,
+                            total=total_pages,
+                            status=f"Extracting text from page {page_num}/{total_pages}...",
+                            phase=TranslationPhase.EXTRACTING,
+                            phase_detail=f"Page {page_num}/{total_pages}",
+                        )
+                    )
 
                 # Process page
                 interpreter.process_page(page)
@@ -5043,7 +5647,7 @@ class PdfProcessor(FileProcessor):
                     elif isinstance(obj, LTFigure):
                         for child in obj:
                             collect_chars(child)
-                    elif hasattr(obj, '__iter__'):
+                    elif hasattr(obj, "__iter__"):
                         for child in obj:
                             collect_chars(child)
 
@@ -5138,7 +5742,10 @@ class PdfProcessor(FileProcessor):
                 "Stack length mismatch on page %d: sstk=%d, pstk=%d. "
                 "Some text blocks may be missing position information. "
                 "Using shorter length (%d) to prevent IndexError.",
-                page_num, len(sstk), len(pstk), min(len(sstk), len(pstk))
+                page_num,
+                len(sstk),
+                len(pstk),
+                min(len(sstk), len(pstk)),
             )
 
         skipped_empty = 0
@@ -5170,7 +5777,9 @@ class PdfProcessor(FileProcessor):
             if is_toc_line_ending(text_without_placeholders):
                 toc_parts = _split_toc_title_and_page(text_without_placeholders)
                 if toc_parts:
-                    toc_title, toc_leader_candidate, toc_page_number_candidate = toc_parts
+                    toc_title, toc_leader_candidate, toc_page_number_candidate = (
+                        toc_parts
+                    )
                     toc_original_text = text
                     toc_leader = toc_leader_candidate
                     toc_page_number = toc_page_number_candidate
@@ -5180,9 +5789,9 @@ class PdfProcessor(FileProcessor):
             layout_role = None
             if layout is not None:
                 if para.layout_class in layout.paragraphs:
-                    layout_role = layout.paragraphs[para.layout_class].get('role')
+                    layout_role = layout.paragraphs[para.layout_class].get("role")
                 elif para.layout_class in layout.tables:
-                    layout_role = layout.tables[para.layout_class].get('role')
+                    layout_role = layout.tables[para.layout_class].get("role")
 
             # Check if this block should be translated or preserved as-is
             # Non-translatable blocks (numbers, dates, etc.) are included but marked
@@ -5198,10 +5807,12 @@ class PdfProcessor(FileProcessor):
             if skip_translation:
                 skipped_no_translate += 1
                 # DEBUG: Log non-translatable text for troubleshooting
-                preview = text_without_placeholders[:100].replace('\n', ' ')
+                preview = text_without_placeholders[:100].replace("\n", " ")
                 logger.info(
                     "Page %d: Non-translatable text (will preserve original): '%s...' (len=%d)",
-                    page_num, preview, len(text_without_placeholders)
+                    page_num,
+                    preview,
+                    len(text_without_placeholders),
                 )
                 # Continue to include this block (don't skip) - it will be preserved
 
@@ -5231,7 +5842,7 @@ class PdfProcessor(FileProcessor):
             else:
                 original_line_count = (
                     max(2, estimated_line_count_int)
-                    if getattr(para, 'brk', False)
+                    if getattr(para, "brk", False)
                     else 1
                 )
 
@@ -5248,18 +5859,26 @@ class PdfProcessor(FileProcessor):
             if layout is not None and page_width > 0 and page_height > 0:
                 # Horizontal expandable margins
                 expandable_left, expandable_right = calculate_expandable_margins(
-                    layout, bbox, page_width, page_height,
+                    layout,
+                    bbox,
+                    page_width,
+                    page_height,
                     is_table_cell=is_table_cell,
-                    table_id=table_id
+                    table_id=table_id,
                 )
                 # Also calculate expandable_width for backward compatibility
                 expandable_width = original_width + expandable_right
 
                 # Vertical expandable margins (for vertical text)
-                expandable_top, expandable_bottom = calculate_expandable_vertical_margins(
-                    layout, bbox, page_width, page_height,
-                    is_table_cell=is_table_cell,
-                    table_id=table_id
+                expandable_top, expandable_bottom = (
+                    calculate_expandable_vertical_margins(
+                        layout,
+                        bbox,
+                        page_width,
+                        page_height,
+                        is_table_cell=is_table_cell,
+                        table_id=table_id,
+                    )
                 )
             else:
                 # No layout info - no expansion
@@ -5276,46 +5895,59 @@ class PdfProcessor(FileProcessor):
                 "original_line_count=%d (estimated=%.2f), text_len=%d, "
                 "expandable_margins=(left=%.1f, right=%.1f, top=%.1f, bottom=%.1f), "
                 "is_table=%s, is_vertical=%s",
-                page_idx, block_idx,
-                para.x0, para.y0, para.x1, para.y1,
-                para_height, font_size,
-                original_line_count, estimated_line_count, len(text),
-                expandable_left, expandable_right, expandable_top, expandable_bottom,
-                is_table_cell, block_is_vertical
+                page_idx,
+                block_idx,
+                para.x0,
+                para.y0,
+                para.x1,
+                para.y1,
+                para_height,
+                font_size,
+                original_line_count,
+                estimated_line_count,
+                len(text),
+                expandable_left,
+                expandable_right,
+                expandable_top,
+                expandable_bottom,
+                is_table_cell,
+                block_is_vertical,
             )
 
-            blocks.append(TextBlock(
-                id=f"page_{page_idx}_block_{block_idx}",
-                text=text,
-                location=f"Page {page_num}",
-                metadata={
-                    'type': 'text_block',
-                    'page_idx': page_idx,
-                    'block': block_idx,
-                    'bbox': bbox,
-                    'font_name': None,  # Font name not available from Paragraph
-                    'font_size': para.size,
-                    'is_formula': False,
-                    'original_line_count': original_line_count,
-                    'paragraph': para,
-                    'formula_vars': block_vars,
-                    'formula_texts': formula_texts,
-                    'has_formulas': bool(block_vars),
-                    'layout_class': para.layout_class,  # For table detection
-                    'role': layout_role,
-                    'skip_translation': skip_translation,  # Preserve original text if True
-                    'is_toc_entry': bool(toc_page_number),
-                    'toc_page_number': toc_page_number,
-                    'toc_leader': toc_leader,
-                    'toc_original_text': toc_original_text,
-                    'expandable_width': expandable_width,  # Max width block can expand to (legacy)
-                    'expandable_left': expandable_left,  # How much can expand to the left
-                    'expandable_right': expandable_right,  # How much can expand to the right
-                    'expandable_top': expandable_top,  # How much can expand upward
-                    'expandable_bottom': expandable_bottom,  # How much can expand downward
-                    'is_vertical': block_is_vertical,  # True if vertical text
-                }
-            ))
+            blocks.append(
+                TextBlock(
+                    id=f"page_{page_idx}_block_{block_idx}",
+                    text=text,
+                    location=f"Page {page_num}",
+                    metadata={
+                        "type": "text_block",
+                        "page_idx": page_idx,
+                        "block": block_idx,
+                        "bbox": bbox,
+                        "font_name": None,  # Font name not available from Paragraph
+                        "font_size": para.size,
+                        "is_formula": False,
+                        "original_line_count": original_line_count,
+                        "paragraph": para,
+                        "formula_vars": block_vars,
+                        "formula_texts": formula_texts,
+                        "has_formulas": bool(block_vars),
+                        "layout_class": para.layout_class,  # For table detection
+                        "role": layout_role,
+                        "skip_translation": skip_translation,  # Preserve original text if True
+                        "is_toc_entry": bool(toc_page_number),
+                        "toc_page_number": toc_page_number,
+                        "toc_leader": toc_leader,
+                        "toc_original_text": toc_original_text,
+                        "expandable_width": expandable_width,  # Max width block can expand to (legacy)
+                        "expandable_left": expandable_left,  # How much can expand to the left
+                        "expandable_right": expandable_right,  # How much can expand to the right
+                        "expandable_top": expandable_top,  # How much can expand upward
+                        "expandable_bottom": expandable_bottom,  # How much can expand downward
+                        "is_vertical": block_is_vertical,  # True if vertical text
+                    },
+                )
+            )
 
         # Post-process: table row labels sometimes appear as a single wide "hidden text"
         # block that concatenates a value and a label (e.g., "631,803,979株 ①...").
@@ -5326,9 +5958,9 @@ class PdfProcessor(FileProcessor):
             wide_threshold = max(200.0, page_width * 0.6)
             for tb in blocks:
                 meta = tb.metadata or {}
-                if meta.get('role') != 'table_cell':
+                if meta.get("role") != "table_cell":
                     continue
-                bbox = meta.get('bbox')
+                bbox = meta.get("bbox")
                 if not bbox or len(bbox) < 4:
                     continue
                 x0, y0, x1, y1 = bbox[0], bbox[1], bbox[2], bbox[3]
@@ -5345,11 +5977,11 @@ class PdfProcessor(FileProcessor):
                     if other is tb:
                         continue
                     o_meta = other.metadata or {}
-                    if o_meta.get('role') != 'table_cell':
+                    if o_meta.get("role") != "table_cell":
                         continue
-                    if o_meta.get('layout_class') != meta.get('layout_class'):
+                    if o_meta.get("layout_class") != meta.get("layout_class"):
                         continue
-                    o_bbox = o_meta.get('bbox')
+                    o_bbox = o_meta.get("bbox")
                     if not o_bbox or len(o_bbox) < 4:
                         continue
                     ox0, oy0, ox1, oy1 = o_bbox[0], o_bbox[1], o_bbox[2], o_bbox[3]
@@ -5372,8 +6004,12 @@ class PdfProcessor(FileProcessor):
                     continue
 
                 cut_x = min(
-                    (o_meta.get('bbox')[0] for o_meta in (c.metadata for c in row_cells) if o_meta and o_meta.get('bbox')),
-                    default=None
+                    (
+                        o_meta.get("bbox")[0]
+                        for o_meta in (c.metadata for c in row_cells)
+                        if o_meta and o_meta.get("bbox")
+                    ),
+                    default=None,
                 )
                 if cut_x is None:
                     continue
@@ -5382,19 +6018,19 @@ class PdfProcessor(FileProcessor):
                 if new_x1 <= x0 + 20.0:
                     continue
 
-                trimmed = tb.text[prefix_match.end():].lstrip()
+                trimmed = tb.text[prefix_match.end() :].lstrip()
                 if not trimmed:
                     continue
 
                 # Update TextBlock text and bbox.
                 tb.text = trimmed
-                meta['bbox'] = (x0, y0, new_x1, y1)
-                meta['expandable_width'] = new_x1 - x0
-                meta['expandable_left'] = 0.0
-                meta['expandable_right'] = 0.0
-                meta['table_row_label_trimmed'] = True
+                meta["bbox"] = (x0, y0, new_x1, y1)
+                meta["expandable_width"] = new_x1 - x0
+                meta["expandable_left"] = 0.0
+                meta["expandable_right"] = 0.0
+                meta["table_row_label_trimmed"] = True
 
-                para = meta.get('paragraph')
+                para = meta.get("paragraph")
                 if para is not None:
                     try:
                         para.x0 = x0
@@ -5407,8 +6043,13 @@ class PdfProcessor(FileProcessor):
         logger.info(
             "Page %d: sstk=%d, pstk=%d, skipped_empty=%d, skipped_formula=%d, "
             "preserved_no_translate=%d, output_blocks=%d",
-            page_num, len(sstk), len(pstk),
-            skipped_empty, skipped_formula, skipped_no_translate, len(blocks)
+            page_num,
+            len(sstk),
+            len(pstk),
+            skipped_empty,
+            skipped_formula,
+            skipped_no_translate,
+            len(blocks),
         )
 
         return blocks
@@ -5437,7 +6078,7 @@ class PdfProcessor(FileProcessor):
             return None
 
         for cell_idx, cell in enumerate(cells):
-            box = cell.get('box', [])
+            box = cell.get("box", [])
             if len(box) >= 4:
                 x0, y0, x1, y1 = box[:4]
                 if x0 <= img_x < x1 and y0 <= img_y < y1:
@@ -5489,10 +6130,10 @@ class PdfProcessor(FileProcessor):
         chars = sorted(chars, key=lambda c: (-c.y0, c.x0))
 
         # PDFMathTranslate-style stack management
-        sstk: list[str] = []           # String stack (text paragraphs)
-        vstk: list = []                # Variable stack (current formula chars)
-        var: list[FormulaVar] = []     # Formula storage array
-        pstk: list[Paragraph] = []     # Paragraph metadata stack
+        sstk: list[str] = []  # String stack (text paragraphs)
+        vstk: list = []  # Variable stack (current formula chars)
+        var: list[FormulaVar] = []  # Formula storage array
+        pstk: list[Paragraph] = []  # Paragraph metadata stack
 
         # Previous character state
         prev_cls = None  # Previous character's layout class
@@ -5525,7 +6166,9 @@ class PdfProcessor(FileProcessor):
         # DEBUG: Track formula detection for non-ABANDON chars
         debug_formula_true_count = 0
         debug_formula_false_count = 0
-        debug_first_processed_chars: list[tuple[str, str, int, bool]] = []  # (font, text, cls, is_formula)
+        debug_first_processed_chars: list[
+            tuple[str, str, int, bool]
+        ] = []  # (font, text, cls, is_formula)
 
         for char in chars:
             # Cache char coordinates locally
@@ -5534,13 +6177,18 @@ class PdfProcessor(FileProcessor):
             char_y0 = char.y0
             char_y1 = char.y1
             char_text = char.get_text()
-            fontname = getattr(char, 'fontname', "")
-            char_size = char.size if hasattr(char, 'size') else DEFAULT_FONT_SIZE
+            fontname = getattr(char, "fontname", "")
+            char_size = char.size if hasattr(char, "size") else DEFAULT_FONT_SIZE
 
             # Get layout class for this character
             char_cls = self._get_char_layout_class(
-                char_x0, char_y1, page_height,
-                layout_array, coord_scale, layout_width, layout_height
+                char_x0,
+                char_y1,
+                page_height,
+                layout_array,
+                coord_scale,
+                layout_width,
+                layout_height,
             )
 
             # DEBUG: Count layout classes
@@ -5560,7 +6208,9 @@ class PdfProcessor(FileProcessor):
                 debug_formula_false_count += 1
             # Collect first 10 processed chars for debug
             if len(debug_first_processed_chars) < 10:
-                debug_first_processed_chars.append((fontname, char_text, char_cls, is_formula_char))
+                debug_first_processed_chars.append(
+                    (fontname, char_text, char_cls, is_formula_char)
+                )
 
             # Determine if this is a new paragraph or line break
             if not has_prev:
@@ -5572,10 +6222,17 @@ class PdfProcessor(FileProcessor):
             else:
                 # Use detect_paragraph_boundary from pdf_converter.py
                 # Pass prev_x1 for table cell boundary detection
-                new_paragraph, line_break, is_strong_boundary = detect_paragraph_boundary(
-                    char_x0, char_y0, prev_x0, prev_y0,
-                    char_cls, prev_cls, use_layout,
-                    prev_x1=prev_x1
+                new_paragraph, line_break, is_strong_boundary = (
+                    detect_paragraph_boundary(
+                        char_x0,
+                        char_y0,
+                        prev_x0,
+                        prev_y0,
+                        char_cls,
+                        prev_cls,
+                        use_layout,
+                        prev_x1=prev_x1,
+                    )
                 )
 
                 # Force new paragraph when entering/leaving page number region
@@ -5590,9 +6247,12 @@ class PdfProcessor(FileProcessor):
                 # "上場会社名 (単位：百万円)" should split at "("
                 # This catches cases where X gap is smaller than TABLE_CELL_X_THRESHOLD
                 # but clearly indicates a separate element (page numbers, section headers, etc.)
-                OPENING_BRACKETS_FOR_SPLIT = frozenset('(（「『【〔〈《')
-                if (char_text in OPENING_BRACKETS_FOR_SPLIT and
-                    prev_x1 is not None and char_x0 > prev_x1 + WORD_SPACE_X_THRESHOLD):
+                OPENING_BRACKETS_FOR_SPLIT = frozenset("(（「『【〔〈《")
+                if (
+                    char_text in OPENING_BRACKETS_FOR_SPLIT
+                    and prev_x1 is not None
+                    and char_x0 > prev_x1 + WORD_SPACE_X_THRESHOLD
+                ):
                     # Opening bracket with gap suggests new semantic unit
                     new_paragraph = True
                     is_strong_boundary = True
@@ -5600,9 +6260,12 @@ class PdfProcessor(FileProcessor):
                 # Check for text following closing brackets with X gap
                 # Examples: "(単位：百万円) 前中間連結会計期間" should split after ")"
                 # This ensures units/annotations are separated from following content
-                CLOSING_BRACKETS_FOR_SPLIT = frozenset(')）」』】〕〉》')
-                if (prev_char_text in CLOSING_BRACKETS_FOR_SPLIT and
-                    prev_x1 is not None and char_x0 > prev_x1 + WORD_SPACE_X_THRESHOLD):
+                CLOSING_BRACKETS_FOR_SPLIT = frozenset(")）」』】〕〉》")
+                if (
+                    prev_char_text in CLOSING_BRACKETS_FOR_SPLIT
+                    and prev_x1 is not None
+                    and char_x0 > prev_x1 + WORD_SPACE_X_THRESHOLD
+                ):
                     # Text after closing bracket with gap suggests new semantic unit
                     new_paragraph = True
                     is_strong_boundary = True
@@ -5611,11 +6274,14 @@ class PdfProcessor(FileProcessor):
                 # Examples: "92. 前中間連結会計期間" should split after "92."
                 # This handles page numbers and section markers followed by headers
                 # Use larger gap threshold (3pt) to avoid splitting "9.1概要"
-                PERIOD_CHARS = frozenset('.。')
+                PERIOD_CHARS = frozenset(".。")
                 PAGE_NUMBER_GAP_THRESHOLD = 3.0  # Larger gap for period-based split
-                if (prev_char_text in PERIOD_CHARS and
-                    prev_x1 is not None and char_x0 > prev_x1 + PAGE_NUMBER_GAP_THRESHOLD and
-                    _is_cjk_char(char_text)):
+                if (
+                    prev_char_text in PERIOD_CHARS
+                    and prev_x1 is not None
+                    and char_x0 > prev_x1 + PAGE_NUMBER_GAP_THRESHOLD
+                    and _is_cjk_char(char_text)
+                ):
                     # CJK text after period with significant gap suggests new semantic unit
                     new_paragraph = True
                     is_strong_boundary = True
@@ -5627,14 +6293,22 @@ class PdfProcessor(FileProcessor):
                 # Outside tables: only split CJK with a minimum gap to avoid in-word splits.
                 TABLE_LABEL_VALUE_GAP_THRESHOLD = 1.0
                 is_table_region_for_split = (
-                    use_layout and char_cls is not None and char_cls >= LAYOUT_TABLE_BASE
+                    use_layout
+                    and char_cls is not None
+                    and char_cls >= LAYOUT_TABLE_BASE
                 )
                 prev_is_cjk = bool(prev_char_text and _is_cjk_char(prev_char_text))
                 prev_is_latin_letter = bool(
-                    prev_char_text and _is_latin_char(prev_char_text) and not prev_char_text.isdigit()
+                    prev_char_text
+                    and _is_latin_char(prev_char_text)
+                    and not prev_char_text.isdigit()
                 )
-                if (prev_char_text and char_text.isdigit() and prev_x1 is not None and
-                    (prev_is_cjk or prev_is_latin_letter)):
+                if (
+                    prev_char_text
+                    and char_text.isdigit()
+                    and prev_x1 is not None
+                    and (prev_is_cjk or prev_is_latin_letter)
+                ):
                     if is_table_region_for_split:
                         if prev_is_cjk:
                             min_gap = 0.0
@@ -5646,7 +6320,10 @@ class PdfProcessor(FileProcessor):
                         if char_x0 >= prev_x1 + min_gap:
                             new_paragraph = True
                             is_strong_boundary = True
-                    elif prev_is_cjk and char_x0 > prev_x1 + TABLE_LABEL_VALUE_GAP_THRESHOLD:
+                    elif (
+                        prev_is_cjk
+                        and char_x0 > prev_x1 + TABLE_LABEL_VALUE_GAP_THRESHOLD
+                    ):
                         # Outside tables: require 1pt gap
                         new_paragraph = True
                         is_strong_boundary = True
@@ -5655,9 +6332,12 @@ class PdfProcessor(FileProcessor):
                 # Examples: "△43,633" in tables where this indicates a separate cell
                 # Common in Japanese financial documents (決算短信) where △ means negative
                 # In table regions: be more aggressive (no gap required)
-                NEGATIVE_SIGN_CHARS = frozenset('△▲▼')
-                if (prev_char_text and char_text in NEGATIVE_SIGN_CHARS and
-                    prev_x1 is not None):
+                NEGATIVE_SIGN_CHARS = frozenset("△▲▼")
+                if (
+                    prev_char_text
+                    and char_text in NEGATIVE_SIGN_CHARS
+                    and prev_x1 is not None
+                ):
                     if is_table_region_for_split:
                         # In table regions: split if X is not going backward
                         if char_x0 >= prev_x1:
@@ -5675,11 +6355,17 @@ class PdfProcessor(FileProcessor):
                 # Check table cell boundary using TableCellsDetection results
                 # This ensures text from different cells are in separate blocks,
                 # even if X/Y gap-based detection fails
-                if (use_layout and layout.table_cells and
-                    char_cls is not None and char_cls >= LAYOUT_TABLE_BASE):
+                if (
+                    use_layout
+                    and layout.table_cells
+                    and char_cls is not None
+                    and char_cls >= LAYOUT_TABLE_BASE
+                ):
                     # Convert PDF coordinates to image coordinates for cell lookup
                     img_x = char_x0 * coord_scale
-                    img_y = (page_height - char_y1) * coord_scale  # Use y1 (top of char)
+                    img_y = (
+                        page_height - char_y1
+                    ) * coord_scale  # Use y1 (top of char)
 
                     # Find which cell this character belongs to
                     current_cell_idx = self._find_cell_at_image_coord(
@@ -5695,8 +6381,11 @@ class PdfProcessor(FileProcessor):
                         )
 
                         # If cells are different, force new paragraph
-                        if (current_cell_idx is not None and prev_cell_idx is not None and
-                            current_cell_idx != prev_cell_idx):
+                        if (
+                            current_cell_idx is not None
+                            and prev_cell_idx is not None
+                            and current_cell_idx != prev_cell_idx
+                        ):
                             new_paragraph = True
                             is_strong_boundary = True
                             line_break = False
@@ -5736,7 +6425,9 @@ class PdfProcessor(FileProcessor):
                             # PDFMathTranslate compliant: paragraphs start with brk=False.
                             # brk is set to True only when we detect an actual line break
                             # within the paragraph.
-                            pstk.append(create_paragraph_from_char(char, False, char_cls))
+                            pstk.append(
+                                create_paragraph_from_char(char, False, char_cls)
+                            )
 
                     in_formula = False
                     vstk = []
@@ -5762,7 +6453,7 @@ class PdfProcessor(FileProcessor):
                     # Special case: text ending with opening brackets should NEVER be split
                     # Examples: "百万円(" should not be separated from "％)"
                     # Opening brackets clearly indicate the text continues.
-                    OPENING_BRACKETS = frozenset('(（「『【〔〈《｛［')
+                    OPENING_BRACKETS = frozenset("(（「『【〔〈《｛［")
                     if sstk and sstk[-1]:
                         prev_text_check = sstk[-1].rstrip()
                         if prev_text_check and prev_text_check[-1] in OPENING_BRACKETS:
@@ -5791,11 +6482,21 @@ class PdfProcessor(FileProcessor):
                                         SAME_LINE_Y_THRESHOLD,
                                     )
                                     same_visual_line = y_diff <= y_line_thresh
-                                    max_letter_spacing = max(40.0, (prev_char_size or DEFAULT_FONT_SIZE) * 4.0)
-                                    is_letter_spaced = same_visual_line and 0.0 <= x_gap <= max_letter_spacing
+                                    max_letter_spacing = max(
+                                        40.0,
+                                        (prev_char_size or DEFAULT_FONT_SIZE) * 4.0,
+                                    )
+                                    is_letter_spaced = (
+                                        same_visual_line
+                                        and 0.0 <= x_gap <= max_letter_spacing
+                                    )
                                     vertical_stack = (
                                         y_line_thresh < y_diff <= SAME_PARA_Y_THRESHOLD
-                                        and x_diff <= max(1.0, (prev_char_size or DEFAULT_FONT_SIZE) * 0.6)
+                                        and x_diff
+                                        <= max(
+                                            1.0,
+                                            (prev_char_size or DEFAULT_FONT_SIZE) * 0.6,
+                                        )
                                     )
                                     if is_letter_spaced:
                                         should_start_new = False
@@ -5809,6 +6510,7 @@ class PdfProcessor(FileProcessor):
                     # Only apply sentence-end check for weak boundaries (line wrapping)
                     if not is_strong_boundary and sstk and pstk:
                         prev_text = sstk[-1].rstrip() if sstk[-1] else ""
+
                         # Check layout class - only consider it a strong layout change if
                         # crossing region type boundaries (yomitoku reference).
                         # PP-DocLayout-L may assign different class IDs (e.g., 2, 3, 4) to
@@ -5831,8 +6533,8 @@ class PdfProcessor(FileProcessor):
                                 return True  # Background is flexible
                             # Both paragraph type (2-999)?
                             both_paragraph = (
-                                LAYOUT_PARAGRAPH_BASE <= cls1 < LAYOUT_TABLE_BASE and
-                                LAYOUT_PARAGRAPH_BASE <= cls2 < LAYOUT_TABLE_BASE
+                                LAYOUT_PARAGRAPH_BASE <= cls1 < LAYOUT_TABLE_BASE
+                                and LAYOUT_PARAGRAPH_BASE <= cls2 < LAYOUT_TABLE_BASE
                             )
                             # Both table type (>=1000)?
                             both_table = (
@@ -5841,7 +6543,9 @@ class PdfProcessor(FileProcessor):
                             return both_paragraph or both_table
 
                         layout_strongly_changed = (
-                            use_layout and char_cls != prev_cls and prev_cls is not None
+                            use_layout
+                            and char_cls != prev_cls
+                            and prev_cls is not None
                             and not is_same_region_type(char_cls, prev_cls)
                         )
 
@@ -5861,11 +6565,13 @@ class PdfProcessor(FileProcessor):
                             # This handles English text and edge cases
                             last_char = prev_text[-1] if prev_text else ""
                             is_sentence_end = (
-                                last_char in SENTENCE_END_CHARS_JA or
-                                last_char in SENTENCE_END_CHARS_EN or
+                                last_char in SENTENCE_END_CHARS_JA
+                                or last_char in SENTENCE_END_CHARS_EN
+                                or
                                 # Quantity units indicate end of a value phrase (e.g., △971億円)
                                 # These should NOT be joined with the next line in tables
-                                last_char in QUANTITY_UNITS_JA or
+                                last_char in QUANTITY_UNITS_JA
+                                or
                                 # TOC pattern: leader dots (…) followed by page number
                                 # e.g., "経営成績等の概況…………… 2"
                                 is_toc_line_ending(prev_text)
@@ -5875,7 +6581,8 @@ class PdfProcessor(FileProcessor):
                             # For CJK/mixed lines, only join when explicit continuation markers exist.
                             has_cjk = any(_is_cjk_char(c) for c in prev_text)
                             has_latin_alpha = any(
-                                ('A' <= c <= 'Z') or ('a' <= c <= 'z') for c in prev_text
+                                ("A" <= c <= "Z") or ("a" <= c <= "z")
+                                for c in prev_text
                             )
                             latin_dominant = has_latin_alpha and not has_cjk
 
@@ -5884,7 +6591,9 @@ class PdfProcessor(FileProcessor):
                             # This pattern is common in Japanese financial forms where a value
                             # line (URLs, dates, numbers) is followed by a new field label.
                             should_join = is_continuation or (
-                                latin_dominant and not is_sentence_end and not next_is_cjk
+                                latin_dominant
+                                and not is_sentence_end
+                                and not next_is_cjk
                             )
                             if should_join:
                                 # Previous paragraph doesn't end with sentence-ending punctuation
@@ -5912,8 +6621,12 @@ class PdfProcessor(FileProcessor):
                 # This prevents unnecessary spaces in Japanese text and handles hyphenation
                 # in English text properly.
                 if line_break and not new_paragraph:
-                    is_hyphenated = is_line_end_hyphenated(sstk[-1]) if sstk[-1] else False
-                    separator = get_line_join_separator(sstk[-1], char_text, is_hyphenated)
+                    is_hyphenated = (
+                        is_line_end_hyphenated(sstk[-1]) if sstk[-1] else False
+                    )
+                    separator = get_line_join_separator(
+                        sstk[-1], char_text, is_hyphenated
+                    )
 
                     # If hyphenated, remove the trailing hyphen before joining
                     # (the word continues on the next line)
@@ -5973,20 +6686,41 @@ class PdfProcessor(FileProcessor):
             logger.debug(
                 "_group_chars_into_blocks page %d: chars=%d, paragraphs=%d, use_layout=%s, "
                 "sstk_total_chars=%d, formula_true=%d, formula_false=%d",
-                page_idx + 1, len(chars), len(sstk), use_layout,
-                sum(len(s) for s in sstk), debug_formula_true_count, debug_formula_false_count
+                page_idx + 1,
+                len(chars),
+                len(sstk),
+                use_layout,
+                sum(len(s) for s in sstk),
+                debug_formula_true_count,
+                debug_formula_false_count,
             )
             # Sort by count descending for readability
             sorted_cls = sorted(debug_cls_counts.items(), key=lambda x: -x[1])
             for cls_id, count in sorted_cls[:5]:  # Top 5 classes
-                cls_name = "ABANDON" if cls_id == 0 else "BACKGROUND" if cls_id == 1 else f"PARA_{cls_id-2}" if cls_id < 1000 else f"TABLE_{cls_id-1000}"
+                cls_name = (
+                    "ABANDON"
+                    if cls_id == 0
+                    else "BACKGROUND"
+                    if cls_id == 1
+                    else f"PARA_{cls_id - 2}"
+                    if cls_id < 1000
+                    else f"TABLE_{cls_id - 1000}"
+                )
                 logger.debug("  class %s (%d): %d chars", cls_name, cls_id, count)
             # Log first 10 processed (non-ABANDON) chars
             if debug_first_processed_chars:
                 logger.debug("  First processed chars (non-ABANDON):")
-                for idx, (font, text, cls, is_form) in enumerate(debug_first_processed_chars):
-                    logger.debug("    [%d] font='%s', text='%s', cls=%d, is_formula=%s",
-                                 idx, font, repr(text), cls, is_form)
+                for idx, (font, text, cls, is_form) in enumerate(
+                    debug_first_processed_chars
+                ):
+                    logger.debug(
+                        "    [%d] font='%s', text='%s', cls=%d, is_formula=%s",
+                        idx,
+                        font,
+                        repr(text),
+                        cls,
+                        is_form,
+                    )
 
         # Warning for unusual case: all processed chars are formula
         if debug_formula_true_count > 0 and debug_formula_false_count == 0 and not sstk:
@@ -5994,8 +6728,12 @@ class PdfProcessor(FileProcessor):
                 "Page %d: All %d processed chars detected as formula. "
                 "This may indicate CID encoding issue or font detection problem. "
                 "First chars: %s",
-                page_idx + 1, debug_formula_true_count,
-                [(font, repr(text)) for font, text, cls, is_form in debug_first_processed_chars[:5]]
+                page_idx + 1,
+                debug_formula_true_count,
+                [
+                    (font, repr(text))
+                    for font, text, cls, is_form in debug_first_processed_chars[:5]
+                ],
             )
 
         # Handle remaining formula at end
@@ -6051,9 +6789,9 @@ class PdfProcessor(FileProcessor):
         pymupdf = _get_pymupdf()
 
         result = {
-            'total_pages': 0,
-            'original_pages': 0,
-            'translated_pages': 0,
+            "total_pages": 0,
+            "original_pages": 0,
+            "translated_pages": 0,
         }
 
         original_doc = None
@@ -6082,8 +6820,7 @@ class PdfProcessor(FileProcessor):
                 for i in range(translated_pages, original_pages):
                     output_doc.insert_pdf(original_doc, from_page=i, to_page=i)
                     logger.warning(
-                        "Page %d has no translation, original only included",
-                        i + 1
+                        "Page %d has no translation, original only included", i + 1
                     )
             elif translated_pages > original_pages:
                 for i in range(original_pages, translated_pages):
@@ -6093,13 +6830,15 @@ class PdfProcessor(FileProcessor):
             output_doc.subset_fonts(fallback=True)
             output_doc.save(str(output_path), garbage=3, deflate=True, use_objstms=1)
 
-            result['total_pages'] = len(output_doc)
-            result['original_pages'] = original_pages
-            result['translated_pages'] = translated_pages
+            result["total_pages"] = len(output_doc)
+            result["original_pages"] = original_pages
+            result["translated_pages"] = translated_pages
 
             logger.info(
                 "Created bilingual PDF: %d pages (%d original + %d translated interleaved)",
-                result['total_pages'], original_pages, translated_pages
+                result["total_pages"],
+                original_pages,
+                translated_pages,
             )
 
         finally:
@@ -6144,9 +6883,9 @@ class PdfProcessor(FileProcessor):
         import csv
 
         result = {
-            'total': len(translations),
-            'exported': 0,
-            'skipped': 0,
+            "total": len(translations),
+            "exported": 0,
+            "skipped": 0,
         }
 
         # Build cell lookup for original text
@@ -6155,14 +6894,14 @@ class PdfProcessor(FileProcessor):
             cell_map = {cell.address: cell for cell in cells}
 
         try:
-            with open(output_path, 'w', encoding='utf-8-sig', newline='') as f:
+            with open(output_path, "w", encoding="utf-8-sig", newline="") as f:
                 writer = csv.writer(f)
 
                 # Header with metadata columns if cells available
                 if cells:
-                    writer.writerow(['original', 'translated', 'page', 'address'])
+                    writer.writerow(["original", "translated", "page", "address"])
                 else:
-                    writer.writerow(['original', 'translated'])
+                    writer.writerow(["original", "translated"])
 
                 for address, translated in translations.items():
                     translated = translated.strip()
@@ -6178,7 +6917,7 @@ class PdfProcessor(FileProcessor):
 
                     # Skip empty pairs
                     if not original or not translated:
-                        result['skipped'] += 1
+                        result["skipped"] += 1
                         continue
 
                     if cells:
@@ -6186,11 +6925,10 @@ class PdfProcessor(FileProcessor):
                     else:
                         writer.writerow([original, translated])
 
-                    result['exported'] += 1
+                    result["exported"] += 1
 
             logger.info(
-                "Exported glossary CSV: %d pairs to %s",
-                result['exported'], output_path
+                "Exported glossary CSV: %d pairs to %s", result["exported"], output_path
             )
 
         except (OSError, IOError) as e:

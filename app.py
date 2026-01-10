@@ -20,7 +20,9 @@ def _ensure_no_proxy(env_key: str) -> None:
     if not current:
         os.environ[env_key] = _LOCALHOST_NO_PROXY
         return
-    parts = [part.strip() for part in current.replace(";", ",").split(",") if part.strip()]
+    parts = [
+        part.strip() for part in current.replace(";", ",").split(",") if part.strip()
+    ]
     missing = [host for host in ("localhost", "127.0.0.1") if host not in parts]
     if not missing:
         return
@@ -45,15 +47,21 @@ sys.path.insert(0, str(project_root))
 # under `%LOCALAPPDATA%\ms-playwright` and makes startup logs consistent.
 bundled_playwright_browsers_dir = project_root / ".playwright-browsers"
 if bundled_playwright_browsers_dir.exists():
-    os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(bundled_playwright_browsers_dir))
+    os.environ.setdefault(
+        "PLAYWRIGHT_BROWSERS_PATH", str(bundled_playwright_browsers_dir)
+    )
 
 _sys_pycache_prefix = getattr(sys, "pycache_prefix", None)
 _PYCACHE_PREFIX_DEFAULT = Path.home() / ".yakulingo" / "pycache"
-_PYCACHE_PREFIX = Path(os.environ.get(
-    "PYTHONPYCACHEPREFIX",
-    _sys_pycache_prefix or _PYCACHE_PREFIX_DEFAULT,
-))
-_PYCACHE_PREFIX_SET_BY_APP = "PYTHONPYCACHEPREFIX" not in os.environ and not _sys_pycache_prefix
+_PYCACHE_PREFIX = Path(
+    os.environ.get(
+        "PYTHONPYCACHEPREFIX",
+        _sys_pycache_prefix or _PYCACHE_PREFIX_DEFAULT,
+    )
+)
+_PYCACHE_PREFIX_SET_BY_APP = (
+    "PYTHONPYCACHEPREFIX" not in os.environ and not _sys_pycache_prefix
+)
 if _PYCACHE_PREFIX_SET_BY_APP:
     os.environ["PYTHONPYCACHEPREFIX"] = str(_PYCACHE_PREFIX)
     try:
@@ -81,7 +89,9 @@ def _cleanup_pycache_prefix() -> None:
     except FileNotFoundError:
         return
     except Exception as e:
-        logging.getLogger(__name__).debug("Failed to clear pycache prefix %s: %s", _PYCACHE_PREFIX, e)
+        logging.getLogger(__name__).debug(
+            "Failed to clear pycache prefix %s: %s", _PYCACHE_PREFIX, e
+        )
 
 
 def _hide_console_window_if_needed() -> None:
@@ -187,12 +197,17 @@ def setup_logging():
             console_stream = open(os.devnull, "w")
         except OSError:
             console_stream = None
-    console_handler = logging.StreamHandler(console_stream) if console_stream else logging.NullHandler()
+    console_handler = (
+        logging.StreamHandler(console_stream)
+        if console_stream
+        else logging.NullHandler()
+    )
     console_handler.setLevel(logging.INFO)
-    console_handler.setFormatter(logging.Formatter(
-        '%(asctime)s [%(levelname)s] %(name)s: %(message)s',
-        datefmt='%H:%M:%S'
-    ))
+    console_handler.setFormatter(
+        logging.Formatter(
+            "%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%H:%M:%S"
+        )
+    )
 
     def _safe_console_warning(message: str) -> None:
         if not console_stream:
@@ -208,7 +223,9 @@ def setup_logging():
         logs_dir.mkdir(parents=True, exist_ok=True)
     except OSError as e:
         # Fall back to console-only logging if log directory cannot be created
-        _safe_console_warning(f"[WARNING] Failed to create log directory {logs_dir}: {e}")
+        _safe_console_warning(
+            f"[WARNING] Failed to create log directory {logs_dir}: {e}"
+        )
         logs_dir = None
 
     # Try to create file handler
@@ -216,25 +233,27 @@ def setup_logging():
         try:
             # Clear log file only in main process (not in pywebview subprocess)
             # Use environment variable to track if we've already cleared
-            if not os.environ.get('YAKULINGO_LOG_INITIALIZED'):
-                os.environ['YAKULINGO_LOG_INITIALIZED'] = '1'
+            if not os.environ.get("YAKULINGO_LOG_INITIALIZED"):
+                os.environ["YAKULINGO_LOG_INITIALIZED"] = "1"
                 # Truncate file on startup and write UTF-8 BOM for editors.
-                with open(log_file_path, 'wb') as log_file:
-                    log_file.write(b'\xef\xbb\xbf')
+                with open(log_file_path, "wb") as log_file:
+                    log_file.write(b"\xef\xbb\xbf")
 
             # Use append mode for multiprocess compatibility
             file_handler = logging.FileHandler(
-                log_file_path,
-                mode='a',
-                encoding='utf-8'
+                log_file_path, mode="a", encoding="utf-8"
             )
             file_handler.setLevel(logging.DEBUG)
-            file_handler.setFormatter(logging.Formatter(
-                '%(asctime)s [%(levelname)s] %(name)s: %(message)s',
-                datefmt='%Y-%m-%d %H:%M:%S'
-            ))
+            file_handler.setFormatter(
+                logging.Formatter(
+                    "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+                    datefmt="%Y-%m-%d %H:%M:%S",
+                )
+            )
         except OSError as e:
-            _safe_console_warning(f"[WARNING] Failed to create log file {log_file_path}: {e}")
+            _safe_console_warning(
+                f"[WARNING] Failed to create log file {log_file_path}: {e}"
+            )
             file_handler = None
 
     # Configure root logger
@@ -248,10 +267,16 @@ def setup_logging():
         root_logger.addHandler(file_handler)
 
     # Also explicitly configure yakulingo loggers
-    for name in ['yakulingo', 'yakulingo.ui', 'yakulingo.ui.app',
-                 'yakulingo.ui.components', 'yakulingo.ui.components.text_panel',
-                 'yakulingo.services', 'yakulingo.services.copilot_handler',
-                 'yakulingo.services.translation_service']:
+    for name in [
+        "yakulingo",
+        "yakulingo.ui",
+        "yakulingo.ui.app",
+        "yakulingo.ui.components",
+        "yakulingo.ui.components.text_panel",
+        "yakulingo.services",
+        "yakulingo.services.copilot_handler",
+        "yakulingo.services.translation_service",
+    ]:
         child_logger = logging.getLogger(name)
         child_logger.setLevel(logging.DEBUG)
         child_logger.propagate = True  # Ensure logs propagate to root
@@ -260,10 +285,19 @@ def setup_logging():
     # python_multipart: Logs every chunk during file upload (very noisy)
     # uvicorn/starlette: Internal web server logs
     # asyncio: Event loop debug logs
-    for name in ['python_multipart', 'python_multipart.multipart', 'multipart',
-                 'uvicorn', 'uvicorn.error', 'uvicorn.access',
-                 'starlette', 'httpcore', 'httpx',
-                 'asyncio', 'concurrent']:
+    for name in [
+        "python_multipart",
+        "python_multipart.multipart",
+        "multipart",
+        "uvicorn",
+        "uvicorn.error",
+        "uvicorn.access",
+        "starlette",
+        "httpcore",
+        "httpx",
+        "asyncio",
+        "concurrent",
+    ]:
         logging.getLogger(name).setLevel(logging.WARNING)
 
     # Log startup message
@@ -277,7 +311,10 @@ def setup_logging():
     launch_source = os.environ.get("YAKULINGO_LAUNCH_SOURCE") or "unknown"
     no_auto_open = os.environ.get("YAKULINGO_NO_AUTO_OPEN")
     logger.info("Launch source: %s", launch_source)
-    logger.info("YAKULINGO_NO_AUTO_OPEN=%s", no_auto_open if no_auto_open is not None else "(unset)")
+    logger.info(
+        "YAKULINGO_NO_AUTO_OPEN=%s",
+        no_auto_open if no_auto_open is not None else "(unset)",
+    )
 
     # Log file location information
     if file_handler:
@@ -378,7 +415,9 @@ def _try_focus_existing_window() -> None:
             hwnd = user32.FindWindowW(None, "YakuLingo (UI)")
 
         if not hwnd:
-            EnumWindowsProc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+            EnumWindowsProc = ctypes.WINFUNCTYPE(
+                wintypes.BOOL, wintypes.HWND, wintypes.LPARAM
+            )
             found_hwnd: list[int] = []
 
             def enum_proc(hwnd_enum, _lparam):
@@ -479,11 +518,20 @@ def _try_focus_existing_window() -> None:
                     work_width = int(work.right - work.left)
                     work_height = int(work.bottom - work.top)
                     if work_width > 0 and work_height > 0:
-                        target_x = int(work.left + max(0, (work_width - rect_width) // 2))
-                        target_y = int(work.top + max(0, (work_height - rect_height) // 2))
+                        target_x = int(
+                            work.left + max(0, (work_width - rect_width) // 2)
+                        )
+                        target_y = int(
+                            work.top + max(0, (work_height - rect_height) // 2)
+                        )
             user32.SetWindowPos(
-                hwnd, None, target_x, target_y, 0, 0,
-                SWP_NOZORDER | SWP_NOSIZE | SWP_SHOWWINDOW
+                hwnd,
+                None,
+                target_x,
+                target_y,
+                0,
+                0,
+                SWP_NOZORDER | SWP_NOSIZE | SWP_SHOWWINDOW,
             )
 
         user32.SetForegroundWindow(hwnd)
@@ -502,7 +550,11 @@ def _ensure_single_instance() -> bool:
         from ctypes import wintypes
 
         kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-        kernel32.CreateMutexW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
+        kernel32.CreateMutexW.argtypes = [
+            wintypes.LPVOID,
+            wintypes.BOOL,
+            wintypes.LPCWSTR,
+        ]
         kernel32.CreateMutexW.restype = wintypes.HANDLE
 
         handle = kernel32.CreateMutexW(None, False, "Local\\YakuLingoSingleton")
@@ -546,10 +598,12 @@ def main():
     # pywebviewのWebエンジンをEdgeChromiumに明示指定
     # これにより、ランタイムインストール確認ダイアログを回避
     # See: https://pywebview.flowrl.com/guide/web_engine.html
-    os.environ.setdefault('PYWEBVIEW_GUI', 'edgechromium')
+    os.environ.setdefault("PYWEBVIEW_GUI", "edgechromium")
 
     global _global_log_handlers
-    _global_log_handlers = setup_logging()  # Keep reference to prevent garbage collection
+    _global_log_handlers = (
+        setup_logging()
+    )  # Keep reference to prevent garbage collection
     _setup_crash_handlers()
     if os.environ.get("YAKULINGO_CLEAR_PYCACHE") == "1":
         _cleanup_pycache_prefix()
@@ -566,7 +620,9 @@ def main():
 
             MB_OK = 0x0
             MB_ICONERROR = 0x10
-            ctypes.windll.user32.MessageBoxW(None, message, "YakuLingo - Error", MB_OK | MB_ICONERROR)
+            ctypes.windll.user32.MessageBoxW(
+                None, message, "YakuLingo - Error", MB_OK | MB_ICONERROR
+            )
         except Exception:
             pass
 
@@ -585,11 +641,13 @@ def main():
             "共有フォルダの setup.vbs または packaging\\install_deps.bat を実行してください。"
         )
         return
-    logger.info("[TIMING] yakulingo.ui.app import: %.2fs", time.perf_counter() - _t_import)
+    logger.info(
+        "[TIMING] yakulingo.ui.app import: %.2fs", time.perf_counter() - _t_import
+    )
 
     try:
         run_app(
-            host='127.0.0.1',
+            host="127.0.0.1",
             port=8765,
             native=True,
         )
@@ -616,5 +674,5 @@ def main():
         raise
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

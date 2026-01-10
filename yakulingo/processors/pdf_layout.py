@@ -81,6 +81,7 @@ def _get_numpy():
     global _np
     if _np is None:
         import numpy as np
+
         _np = np
     return _np
 
@@ -95,6 +96,7 @@ def _get_paddleocr():
         # First, check if paddlepaddle (the core framework) is available
         try:
             import paddle
+
             logger.debug("PaddlePaddle version: %s", paddle.__version__)
         except ImportError as e:
             logger.warning("paddlepaddle import failed: %s", e)
@@ -115,7 +117,8 @@ def _get_paddleocr():
         # Then try to import paddleocr
         try:
             from paddleocr import LayoutDetection
-            _paddleocr = {'LayoutDetection': LayoutDetection}
+
+            _paddleocr = {"LayoutDetection": LayoutDetection}
         except ImportError as e:
             logger.warning("paddleocr import failed: %s", e)
             raise ImportError(
@@ -141,13 +144,14 @@ def _get_table_cell_detector():
         _disable_network_checks()
         try:
             from paddleocr import TableCellsDetection
+
             _table_cell_detector = TableCellsDetection
             logger.debug("TableCellsDetection loaded successfully")
         except ImportError as e:
             logger.warning(
                 "TableCellsDetection not available: %s. "
                 "Table cell detection will be disabled.",
-                e
+                e,
             )
             _table_cell_detector = False  # Mark as unavailable
         except (RuntimeError, OSError, ValueError) as e:
@@ -162,6 +166,7 @@ def _get_torch():
     if _torch is None:
         try:
             import torch
+
             _torch = torch
         except ImportError:
             _torch = None
@@ -173,26 +178,42 @@ def _get_torch():
 # =============================================================================
 
 # Layout class values (PDFMathTranslate compatible)
-LAYOUT_ABANDON = 0        # Figures, headers, footers - skip translation
-LAYOUT_BACKGROUND = 1     # Background (default)
-LAYOUT_PARAGRAPH_BASE = 2 # Paragraphs start from 2
+LAYOUT_ABANDON = 0  # Figures, headers, footers - skip translation
+LAYOUT_BACKGROUND = 1  # Background (default)
+LAYOUT_PARAGRAPH_BASE = 2  # Paragraphs start from 2
 LAYOUT_TABLE_BASE = 1000  # Tables start from 1000
-LAYOUT_PAGE_NUMBER = -1   # Page numbers - preserve without translation
+LAYOUT_PAGE_NUMBER = -1  # Page numbers - preserve without translation
 
 # PP-DocLayout-L category mapping
 # Categories to translate (text content)
 LAYOUT_TRANSLATE_LABELS = {
-    "text", "paragraph_title", "document_title", "abstract", "content",
-    "reference", "footnote", "algorithm", "aside",
-    "table", "table_caption",
+    "text",
+    "paragraph_title",
+    "document_title",
+    "abstract",
+    "content",
+    "reference",
+    "footnote",
+    "algorithm",
+    "aside",
+    "table",
+    "table_caption",
     "section_header",
 }
 
 # Categories to skip (non-text or layout elements)
 LAYOUT_SKIP_LABELS = {
-    "figure", "figure_title", "chart", "chart_title", "seal",
-    "header", "footer", "header_image", "footer_image",
-    "formula", "formula_number",
+    "figure",
+    "figure_title",
+    "chart",
+    "chart_title",
+    "seal",
+    "header",
+    "footer",
+    "header_image",
+    "footer_image",
+    "formula",
+    "formula_number",
 }
 
 # Categories to preserve without translation (page numbers, etc.)
@@ -245,6 +266,7 @@ _analyzer_cache_lock = threading.Lock()
 # LayoutArray Data Structure
 # =============================================================================
 
+
 @dataclass
 class LayoutArray:
     """
@@ -267,12 +289,13 @@ class LayoutArray:
                      Each cell is {'box': [x0, y0, x1, y1], 'score': float}.
                      Coordinates are in image space (origin at top-left).
     """
+
     array: Any  # NumPy array (height, width)
     height: int
     width: int
     paragraphs: dict = field(default_factory=dict)  # index -> region info
-    tables: dict = field(default_factory=dict)      # index -> region info
-    figures: list = field(default_factory=list)     # list of figure boxes
+    tables: dict = field(default_factory=dict)  # index -> region info
+    figures: list = field(default_factory=list)  # list of figure boxes
     table_cells: dict = field(default_factory=dict)  # table_id -> list of cell boxes
     fallback_used: bool = False  # True if layout detection failed/returned no results
 
@@ -314,6 +337,7 @@ def is_layout_available(*, strict: bool = False) -> bool:
         _disable_network_checks()
         try:
             from paddleocr import LayoutDetection  # noqa: F401
+
             _layout_available_strict_cache = True
         except Exception:
             _layout_available_strict_cache = False
@@ -349,7 +373,11 @@ def get_device(config_device: str = "auto") -> str:
     # "auto" or "cuda"/"gpu": try to use GPU
     try:
         import paddle
-        if paddle.device.is_compiled_with_cuda() and paddle.device.cuda.device_count() > 0:
+
+        if (
+            paddle.device.is_compiled_with_cuda()
+            and paddle.device.cuda.device_count() > 0
+        ):
             return "gpu"
     except ImportError:
         pass
@@ -368,6 +396,7 @@ def get_device(config_device: str = "auto") -> str:
 # =============================================================================
 # Model Management
 # =============================================================================
+
 
 def get_layout_model(device: str = "cpu"):
     """
@@ -394,7 +423,7 @@ def get_layout_model(device: str = "cpu"):
             if cache_key not in _analyzer_cache:
                 paddleocr = _get_paddleocr()
                 logger.info("PP-DocLayout-L を初期化中 (device=%s)...", device)
-                _analyzer_cache[cache_key] = paddleocr['LayoutDetection'](
+                _analyzer_cache[cache_key] = paddleocr["LayoutDetection"](
                     model_name="PP-DocLayout-L",
                     device=device,
                 )
@@ -507,7 +536,10 @@ def prewarm_layout_model(device: str = "auto") -> bool:
                     logger.info("PP-DocLayout-L ウォームアップ完了")
                 except Exception as pred_err:
                     # predict() may fail in some PaddleOCR versions, but model is initialized
-                    logger.debug("PP-DocLayout-L predict() failed (model still initialized): %s", pred_err)
+                    logger.debug(
+                        "PP-DocLayout-L predict() failed (model still initialized): %s",
+                        pred_err,
+                    )
 
                 return True
             except (RuntimeError, OSError, ValueError, MemoryError, TypeError) as e:
@@ -546,6 +578,7 @@ def clear_analyzer_cache():
     # Try to free GPU memory if PaddlePaddle is available
     try:
         import paddle
+
         # Clear CUDA cache if using GPU
         if paddle.device.is_compiled_with_cuda():
             try:
@@ -558,6 +591,7 @@ def clear_analyzer_cache():
 
     # Also try to trigger Python garbage collection
     import gc
+
     gc.collect()
     logger.debug("Garbage collection triggered after cache clear")
 
@@ -565,6 +599,7 @@ def clear_analyzer_cache():
 # =============================================================================
 # Layout Analysis Functions
 # =============================================================================
+
 
 def analyze_layout(img, device: str = "cpu"):
     """
@@ -592,31 +627,29 @@ def analyze_layout(img, device: str = "cpu"):
                 e,
             )
             _layout_dependency_warning_logged = True
-        return {'boxes': []}
+        return {"boxes": []}
 
     try:
         results = model.predict(img)
     except MemoryError as e:
         logger.error(
-            "Out of memory during layout analysis: %s. "
-            "Try reducing image DPI.",
-            e
+            "Out of memory during layout analysis: %s. Try reducing image DPI.", e
         )
-        return {'boxes': []}
+        return {"boxes": []}
     except (RuntimeError, ValueError, TypeError) as e:
         logger.warning(
             "Layout analysis failed: %s. "
             "Falling back to Y-coordinate based paragraph detection.",
-            e
+            e,
         )
-        return {'boxes': []}
+        return {"boxes": []}
     except Exception as e:
         logger.warning(
             "Unexpected error during layout analysis: %s. "
             "Falling back to Y-coordinate based paragraph detection.",
-            e
+            e,
         )
-        return {'boxes': []}
+        return {"boxes": []}
 
     return results
 
@@ -728,17 +761,17 @@ def detect_table_cells(
         # PaddleX 3.x returns DetResult which behaves like a dict and stores boxes under the
         # 'boxes' key, but does not expose them as an attribute. Handle both formats.
         if isinstance(result, dict):
-            boxes = result.get('boxes') or []
-        elif hasattr(result, 'boxes'):
+            boxes = result.get("boxes") or []
+        elif hasattr(result, "boxes"):
             boxes = result.boxes or []
 
         for box in boxes:
             if isinstance(box, dict):
-                coord = box.get('coordinate', [])
-                score = box.get('score', 0)
+                coord = box.get("coordinate", [])
+                score = box.get("score", 0)
             else:
-                coord = getattr(box, 'coordinate', [])
-                score = getattr(box, 'score', 0)
+                coord = getattr(box, "coordinate", [])
+                score = getattr(box, "score", 0)
 
             if len(coord) >= 4:
                 # Convert from table-local to full-page coordinates
@@ -747,10 +780,12 @@ def detect_table_cells(
                 cell_x1 = coord[2] + x0
                 cell_y1 = coord[3] + y0
 
-                cells.append({
-                    'box': [cell_x0, cell_y0, cell_x1, cell_y1],
-                    'score': score,
-                })
+                cells.append(
+                    {
+                        "box": [cell_x0, cell_y0, cell_x1, cell_y1],
+                        "score": score,
+                    }
+                )
 
     logger.debug("Detected %d cells in table at %s", len(cells), table_box)
     return cells
@@ -775,7 +810,7 @@ def detect_table_cells_for_tables(
     table_cells = {}
 
     for table_id, table_info in tables_info.items():
-        table_box = table_info.get('box', [])
+        table_box = table_info.get("box", [])
         if len(table_box) >= 4:
             cells = detect_table_cells(img, table_box, device)
             if cells:
@@ -812,7 +847,7 @@ def analyze_layout_batch(images: list, device: str = "cpu") -> list:
                 e,
             )
             _layout_dependency_warning_logged = True
-        return [{'boxes': []} for _ in images]
+        return [{"boxes": []} for _ in images]
 
     try:
         results_list = model.predict(images)
@@ -821,9 +856,10 @@ def analyze_layout_batch(images: list, device: str = "cpu") -> list:
         logger.error(
             "Out of memory during layout analysis (batch size=%d): %s. "
             "Try reducing batch size or image DPI.",
-            len(images), e
+            len(images),
+            e,
         )
-        return [{'boxes': []} for _ in images]
+        return [{"boxes": []} for _ in images]
     except (RuntimeError, ValueError, TypeError) as e:
         # RuntimeError: Model internal errors
         # ValueError: Invalid image format
@@ -831,17 +867,19 @@ def analyze_layout_batch(images: list, device: str = "cpu") -> list:
         logger.warning(
             "Layout analysis failed for batch (size=%d): %s. "
             "Falling back to Y-coordinate based paragraph detection.",
-            len(images), e
+            len(images),
+            e,
         )
-        return [{'boxes': []} for _ in images]
+        return [{"boxes": []} for _ in images]
     except Exception as e:
         # Catch any other unexpected errors from PaddleOCR
         logger.warning(
             "Unexpected error during layout analysis (batch size=%d): %s. "
             "Falling back to Y-coordinate based paragraph detection.",
-            len(images), e
+            len(images),
+            e,
         )
-        return [{'boxes': []} for _ in images]
+        return [{"boxes": []} for _ in images]
 
     if not isinstance(results_list, list):
         results_list = [results_list]
@@ -849,20 +887,30 @@ def analyze_layout_batch(images: list, device: str = "cpu") -> list:
     # DEBUG: Log layout detection results
     for idx, result in enumerate(results_list):
         boxes = []
-        if hasattr(result, 'boxes'):
+        if hasattr(result, "boxes"):
             boxes = result.boxes
-        elif isinstance(result, dict) and 'boxes' in result:
-            boxes = result['boxes']
+        elif isinstance(result, dict) and "boxes" in result:
+            boxes = result["boxes"]
         logger.debug(
             "PP-DocLayout-L page %d: %d boxes detected, result type=%s",
-            idx + 1, len(boxes), type(result).__name__
+            idx + 1,
+            len(boxes),
+            type(result).__name__,
         )
         if boxes and logger.isEnabledFor(logging.DEBUG):
             for box in boxes[:3]:
                 if isinstance(box, dict):
-                    logger.debug("  box: label=%s, score=%.2f", box.get('label'), box.get('score', 0))
+                    logger.debug(
+                        "  box: label=%s, score=%.2f",
+                        box.get("label"),
+                        box.get("score", 0),
+                    )
                 else:
-                    logger.debug("  box: label=%s, score=%.2f", getattr(box, 'label', '?'), getattr(box, 'score', 0))
+                    logger.debug(
+                        "  box: label=%s, score=%.2f",
+                        getattr(box, "label", "?"),
+                        getattr(box, "score", 0),
+                    )
 
     return results_list
 
@@ -870,6 +918,7 @@ def analyze_layout_batch(images: list, device: str = "cpu") -> list:
 # =============================================================================
 # Layout Array Generation (PDFMathTranslate compliant)
 # =============================================================================
+
 
 def create_layout_array_from_pp_doclayout(
     results,
@@ -908,7 +957,8 @@ def create_layout_array_from_pp_doclayout(
 
     logger.debug(
         "create_layout_array: results type=%s, boxes count=%d",
-        type(results).__name__, len(boxes)
+        type(results).__name__,
+        len(boxes),
     )
 
     if not boxes:
@@ -920,7 +970,8 @@ def create_layout_array_from_pp_doclayout(
             "PP-DocLayout-L returned no layout boxes for page (%dx%d). "
             "Paragraph detection will use Y-coordinate fallback. "
             "This may cause issues with multi-column layouts.",
-            page_width, page_height
+            page_width,
+            page_height,
         )
         return LayoutArray(
             array=layout,
@@ -949,25 +1000,26 @@ def create_layout_array_from_pp_doclayout(
     for box_idx, box in enumerate(boxes):
         # Extract box data
         if isinstance(box, dict):
-            label = box.get('label', '')
-            coord = box.get('coordinate', [])
-            score = box.get('score', 0)
+            label = box.get("label", "")
+            coord = box.get("coordinate", [])
+            score = box.get("score", 0)
         else:
-            label = getattr(box, 'label', '')
-            coord = getattr(box, 'coordinate', [])
-            score = getattr(box, 'score', 0)
+            label = getattr(box, "label", "")
+            coord = getattr(box, "coordinate", [])
+            score = getattr(box, "score", 0)
 
         if not coord or len(coord) < 4:
             continue
 
         # yomitoku-style noise filtering: skip tiny elements in text regions
-        if (label not in table_labels and
-            label not in LAYOUT_PRESERVE_LABELS and
-            label not in LAYOUT_SKIP_LABELS):
+        if (
+            label not in table_labels
+            and label not in LAYOUT_PRESERVE_LABELS
+            and label not in LAYOUT_SKIP_LABELS
+        ):
             if is_noise_element(tuple(coord[:4]), NOISE_MIN_SIZE_PX):
                 logger.debug(
-                    "Skipping noise element (label=%s, box=%s)",
-                    label, coord[:4]
+                    "Skipping noise element (label=%s, box=%s)", label, coord[:4]
                 )
                 continue
 
@@ -985,7 +1037,11 @@ def create_layout_array_from_pp_doclayout(
             logger.debug(
                 "Skipping box with invalid clipped coordinates: "
                 "x0=%d, y0=%d, x1=%d, y1=%d (original: %s)",
-                x0, y0, x1, y1, coord[:4]
+                x0,
+                y0,
+                x1,
+                y1,
+                coord[:4],
             )
             continue
 
@@ -999,14 +1055,18 @@ def create_layout_array_from_pp_doclayout(
         # Handle preserve labels (page_number, etc.) - mark with LAYOUT_PAGE_NUMBER
         if label in LAYOUT_PRESERVE_LABELS:
             layout[y0:y1, x0:x1] = LAYOUT_PAGE_NUMBER
-            paragraphs_info[LAYOUT_PAGE_NUMBER] = paragraphs_info.get(LAYOUT_PAGE_NUMBER, [])
-            paragraphs_info[LAYOUT_PAGE_NUMBER].append({
-                'order': box_idx,
-                'box': coord[:4],
-                'label': label,
-                'score': score,
-                'role': role,
-            })
+            paragraphs_info[LAYOUT_PAGE_NUMBER] = paragraphs_info.get(
+                LAYOUT_PAGE_NUMBER, []
+            )
+            paragraphs_info[LAYOUT_PAGE_NUMBER].append(
+                {
+                    "order": box_idx,
+                    "box": coord[:4],
+                    "label": label,
+                    "score": score,
+                    "role": role,
+                }
+            )
             continue
 
         # Process text boxes
@@ -1014,22 +1074,22 @@ def create_layout_array_from_pp_doclayout(
             cell_id = LAYOUT_TABLE_BASE + table_idx
             layout[y0:y1, x0:x1] = cell_id
             tables_info[cell_id] = {
-                'order': box_idx,
-                'box': coord[:4],
-                'label': label,
-                'score': score,
-                'role': role,
+                "order": box_idx,
+                "box": coord[:4],
+                "label": label,
+                "score": score,
+                "role": role,
             }
             table_idx += 1
         elif label in LAYOUT_TRANSLATE_LABELS:
             para_id = LAYOUT_PARAGRAPH_BASE + para_idx
             layout[y0:y1, x0:x1] = para_id
             paragraphs_info[para_id] = {
-                'order': box_idx,
-                'box': coord[:4],
-                'label': label,
-                'score': score,
-                'role': role,
+                "order": box_idx,
+                "box": coord[:4],
+                "label": label,
+                "score": score,
+                "role": role,
             }
             para_idx += 1
         else:
@@ -1037,11 +1097,11 @@ def create_layout_array_from_pp_doclayout(
             para_id = LAYOUT_PARAGRAPH_BASE + para_idx
             layout[y0:y1, x0:x1] = para_id
             paragraphs_info[para_id] = {
-                'order': box_idx,
-                'box': coord[:4],
-                'label': label,
-                'score': score,
-                'role': role,
+                "order": box_idx,
+                "box": coord[:4],
+                "label": label,
+                "score": score,
+                "role": role,
             }
             para_idx += 1
 
@@ -1073,22 +1133,23 @@ def _extract_boxes_from_results(results) -> list:
     Returns:
         List of boxes
     """
-    if hasattr(results, 'boxes'):
+    if hasattr(results, "boxes"):
         return results.boxes
-    elif isinstance(results, dict) and 'boxes' in results:
-        return results['boxes']
+    elif isinstance(results, dict) and "boxes" in results:
+        return results["boxes"]
     elif isinstance(results, list) and len(results) > 0:
         first_result = results[0]
-        if hasattr(first_result, 'boxes'):
+        if hasattr(first_result, "boxes"):
             return first_result.boxes
-        elif isinstance(first_result, dict) and 'boxes' in first_result:
-            return first_result['boxes']
+        elif isinstance(first_result, dict) and "boxes" in first_result:
+            return first_result["boxes"]
     return []
 
 
 # =============================================================================
 # Layout Utility Functions
 # =============================================================================
+
 
 def get_layout_class_at_point(
     layout: LayoutArray,
@@ -1198,13 +1259,13 @@ def prepare_translation_cells(
 
     for order, box in enumerate(boxes):
         if isinstance(box, dict):
-            label = box.get('label', '')
-            coordinate = box.get('coordinate', [0, 0, 0, 0])
-            score = box.get('score', 1.0)
+            label = box.get("label", "")
+            coordinate = box.get("coordinate", [0, 0, 0, 0])
+            score = box.get("score", 1.0)
         else:
-            label = getattr(box, 'label', '')
-            coordinate = getattr(box, 'coordinate', [0, 0, 0, 0])
-            score = getattr(box, 'score', 1.0)
+            label = getattr(box, "label", "")
+            coordinate = getattr(box, "coordinate", [0, 0, 0, 0])
+            score = getattr(box, "score", 1.0)
 
         if score < det_score_threshold:
             continue
@@ -1225,16 +1286,18 @@ def prepare_translation_cells(
         else:
             continue
 
-        cells.append(TranslationCell(
-            address=f"P{page_num}_{order}",
-            text="",
-            box=box_coords,
-            direction="horizontal",
-            role=role,
-            page_num=page_num,
-            order=order,
-            det_score=score,
-        ))
+        cells.append(
+            TranslationCell(
+                address=f"P{page_num}_{order}",
+                text="",
+                box=box_coords,
+                direction="horizontal",
+                role=role,
+                page_num=page_num,
+                order=order,
+                det_score=score,
+            )
+        )
 
     return cells
 
@@ -1286,10 +1349,10 @@ def calculate_page_margins(
     """
     if not text_blocks:
         return {
-            'left': DEFAULT_PAGE_MARGIN,
-            'right': DEFAULT_PAGE_MARGIN,
-            'top': DEFAULT_PAGE_MARGIN,
-            'bottom': DEFAULT_PAGE_MARGIN,
+            "left": DEFAULT_PAGE_MARGIN,
+            "right": DEFAULT_PAGE_MARGIN,
+            "top": DEFAULT_PAGE_MARGIN,
+            "bottom": DEFAULT_PAGE_MARGIN,
         }
 
     # Collect all bboxes
@@ -1301,10 +1364,10 @@ def calculate_page_margins(
     valid_blocks = 0
     for block in text_blocks:
         # Support both TextBlock objects and dictionaries
-        if hasattr(block, 'metadata'):
-            bbox = block.metadata.get('bbox') if block.metadata else None
+        if hasattr(block, "metadata"):
+            bbox = block.metadata.get("bbox") if block.metadata else None
         elif isinstance(block, dict):
-            bbox = block.get('bbox')
+            bbox = block.get("bbox")
         else:
             continue
 
@@ -1325,10 +1388,10 @@ def calculate_page_margins(
 
     if valid_blocks == 0:
         return {
-            'left': DEFAULT_PAGE_MARGIN,
-            'right': DEFAULT_PAGE_MARGIN,
-            'top': DEFAULT_PAGE_MARGIN,
-            'bottom': DEFAULT_PAGE_MARGIN,
+            "left": DEFAULT_PAGE_MARGIN,
+            "right": DEFAULT_PAGE_MARGIN,
+            "top": DEFAULT_PAGE_MARGIN,
+            "bottom": DEFAULT_PAGE_MARGIN,
         }
 
     # Calculate margins (with minimum preservation)
@@ -1340,14 +1403,18 @@ def calculate_page_margins(
     logger.debug(
         "Page margins calculated: left=%.1f, right=%.1f, top=%.1f, bottom=%.1f "
         "(from %d blocks)",
-        left_margin, right_margin, top_margin, bottom_margin, valid_blocks
+        left_margin,
+        right_margin,
+        top_margin,
+        bottom_margin,
+        valid_blocks,
     )
 
     return {
-        'left': left_margin,
-        'right': right_margin,
-        'top': top_margin,
-        'bottom': bottom_margin,
+        "left": left_margin,
+        "right": right_margin,
+        "top": top_margin,
+        "bottom": bottom_margin,
     }
 
 
@@ -1416,7 +1483,9 @@ def calculate_expandable_width(
                 if expandable_width > original_width:
                     logger.debug(
                         "Table cell expansion: original=%.1f, expandable=%.1f (cell_right=%.1f)",
-                        original_width, expandable_width, cell_right
+                        original_width,
+                        expandable_width,
+                        cell_right,
                     )
                     return expandable_width
 
@@ -1488,16 +1557,17 @@ def _find_containing_cell_right_boundary(
     best_overlap = 0
 
     for cell in cells:
-        cell_box = cell.get('box', [])
+        cell_box = cell.get("box", [])
         if len(cell_box) < 4:
             continue
 
         cell_x0, cell_y0, cell_x1, cell_y1 = cell_box
 
         # Check if block center is inside this cell
-        if (cell_x0 <= block_center_img_x <= cell_x1 and
-            cell_y0 <= block_center_img_y <= cell_y1):
-
+        if (
+            cell_x0 <= block_center_img_x <= cell_x1
+            and cell_y0 <= block_center_img_y <= cell_y1
+        ):
             # Calculate overlap area for better matching
             overlap_x0 = max(x0 * scale, cell_x0)
             overlap_x1 = min(x1 * scale, cell_x1)
@@ -1514,7 +1584,7 @@ def _find_containing_cell_right_boundary(
         return None
 
     # Convert cell right boundary to PDF coordinates
-    cell_x1_img = best_cell['box'][2]
+    cell_x1_img = best_cell["box"][2]
     cell_x1_pdf = cell_x1_img / scale if scale > 0 else cell_x1_img
 
     return cell_x1_pdf
@@ -1557,7 +1627,7 @@ def _find_right_boundary(
 
     # Search through paragraphs for adjacent blocks
     for para_id, para_info in layout.paragraphs.items():
-        para_box = para_info.get('box', [])
+        para_box = para_info.get("box", [])
         if len(para_box) < 4:
             continue
 
@@ -1594,7 +1664,7 @@ def _find_right_boundary(
 
     # Also check tables
     for table_id, table_info in layout.tables.items():
-        table_box = table_info.get('box', [])
+        table_box = table_info.get("box", [])
         if len(table_box) < 4:
             continue
 
@@ -1666,7 +1736,7 @@ def _find_left_boundary(
 
     # Search through paragraphs for adjacent blocks
     for para_id, para_info in layout.paragraphs.items():
-        para_box = para_info.get('box', [])
+        para_box = para_info.get("box", [])
         if len(para_box) < 4:
             continue
 
@@ -1704,7 +1774,7 @@ def _find_left_boundary(
 
     # Also check tables
     for table_id, table_info in layout.tables.items():
-        table_box = table_info.get('box', [])
+        table_box = table_info.get("box", [])
         if len(table_box) < 4:
             continue
 
@@ -1788,7 +1858,10 @@ def calculate_expandable_margins(
                 expandable_right = max(0, cell_right - x1 - MIN_COLUMN_GAP)
                 logger.debug(
                     "Table cell margins: left=%.1f, right=%.1f (cell_left=%.1f, cell_right=%.1f)",
-                    expandable_left, expandable_right, cell_left, cell_right
+                    expandable_left,
+                    expandable_right,
+                    cell_left,
+                    cell_right,
                 )
                 return expandable_left, expandable_right
 
@@ -1797,7 +1870,7 @@ def calculate_expandable_margins(
         # adjacent columns and breaking table layout.
         logger.debug(
             "Table cell without cell boundary info, keeping fixed width for bbox=%s",
-            bbox
+            bbox,
         )
         return 0.0, 0.0
 
@@ -1809,8 +1882,12 @@ def calculate_expandable_margins(
         return expandable_left, expandable_right
 
     # Find boundaries using layout info
-    left_boundary = _find_left_boundary(layout, bbox, page_width, page_height, page_margin)
-    right_boundary = _find_right_boundary(layout, bbox, page_width, page_height, page_margin)
+    left_boundary = _find_left_boundary(
+        layout, bbox, page_width, page_height, page_margin
+    )
+    right_boundary = _find_right_boundary(
+        layout, bbox, page_width, page_height, page_margin
+    )
 
     expandable_left = max(0, x0 - left_boundary)
     expandable_right = max(0, right_boundary - x1)
@@ -1863,16 +1940,17 @@ def _find_containing_cell_boundaries(
     best_overlap = 0
 
     for cell in cells:
-        cell_box = cell.get('box', [])
+        cell_box = cell.get("box", [])
         if len(cell_box) < 4:
             continue
 
         cell_x0, cell_y0, cell_x1, cell_y1 = cell_box
 
         # Check if block center is inside this cell
-        if (cell_x0 <= block_center_img_x <= cell_x1 and
-            cell_y0 <= block_center_img_y <= cell_y1):
-
+        if (
+            cell_x0 <= block_center_img_x <= cell_x1
+            and cell_y0 <= block_center_img_y <= cell_y1
+        ):
             # Calculate overlap area for better matching
             overlap_x0 = max(x0 * scale, cell_x0)
             overlap_x1 = min(x1 * scale, cell_x1)
@@ -1889,8 +1967,8 @@ def _find_containing_cell_boundaries(
         return None
 
     # Convert cell boundaries to PDF coordinates
-    cell_x0_img = best_cell['box'][0]
-    cell_x1_img = best_cell['box'][2]
+    cell_x0_img = best_cell["box"][0]
+    cell_x1_img = best_cell["box"][2]
     cell_left_pdf = cell_x0_img / scale if scale > 0 else cell_x0_img
     cell_right_pdf = cell_x1_img / scale if scale > 0 else cell_x1_img
 
@@ -1934,7 +2012,7 @@ def _find_top_boundary(
 
     # Search through paragraphs for blocks above
     for para_id, para_info in layout.paragraphs.items():
-        para_box = para_info.get('box', [])
+        para_box = para_info.get("box", [])
         if len(para_box) < 4:
             continue
 
@@ -1970,7 +2048,7 @@ def _find_top_boundary(
 
     # Also check tables
     for table_id, table_info in layout.tables.items():
-        table_box = table_info.get('box', [])
+        table_box = table_info.get("box", [])
         if len(table_box) < 4:
             continue
 
@@ -2042,7 +2120,7 @@ def _find_bottom_boundary(
 
     # Search through paragraphs for blocks below
     for para_id, para_info in layout.paragraphs.items():
-        para_box = para_info.get('box', [])
+        para_box = para_info.get("box", [])
         if len(para_box) < 4:
             continue
 
@@ -2079,7 +2157,7 @@ def _find_bottom_boundary(
 
     # Also check tables
     for table_id, table_info in layout.tables.items():
-        table_box = table_info.get('box', [])
+        table_box = table_info.get("box", [])
         if len(table_box) < 4:
             continue
 
@@ -2160,16 +2238,17 @@ def _find_containing_cell_vertical_boundaries(
     best_overlap = 0
 
     for cell in cells:
-        cell_box = cell.get('box', [])
+        cell_box = cell.get("box", [])
         if len(cell_box) < 4:
             continue
 
         cell_x0, cell_y0, cell_x1, cell_y1 = cell_box
 
         # Check if block center is inside this cell
-        if (cell_x0 <= block_center_img_x <= cell_x1 and
-            cell_y0 <= block_center_img_y <= cell_y1):
-
+        if (
+            cell_x0 <= block_center_img_x <= cell_x1
+            and cell_y0 <= block_center_img_y <= cell_y1
+        ):
             # Calculate overlap area for better matching
             overlap_x0 = max(x0 * scale, cell_x0)
             overlap_x1 = min(x1 * scale, cell_x1)
@@ -2187,10 +2266,14 @@ def _find_containing_cell_vertical_boundaries(
 
     # Convert cell boundaries to PDF coordinates
     # Image y0 (top) -> PDF y1 (top), Image y1 (bottom) -> PDF y0 (bottom)
-    cell_y0_img = best_cell['box'][1]  # top in image
-    cell_y1_img = best_cell['box'][3]  # bottom in image
-    cell_top_pdf = page_height - (cell_y0_img / scale) if scale > 0 else page_height - cell_y0_img
-    cell_bottom_pdf = page_height - (cell_y1_img / scale) if scale > 0 else page_height - cell_y1_img
+    cell_y0_img = best_cell["box"][1]  # top in image
+    cell_y1_img = best_cell["box"][3]  # bottom in image
+    cell_top_pdf = (
+        page_height - (cell_y0_img / scale) if scale > 0 else page_height - cell_y0_img
+    )
+    cell_bottom_pdf = (
+        page_height - (cell_y1_img / scale) if scale > 0 else page_height - cell_y1_img
+    )
 
     return cell_bottom_pdf, cell_top_pdf
 
@@ -2245,7 +2328,10 @@ def calculate_expandable_vertical_margins(
                 logger.debug(
                     "Table cell vertical margins: top=%.1f, bottom=%.1f "
                     "(cell_bottom=%.1f, cell_top=%.1f)",
-                    expandable_top, expandable_bottom, cell_bottom, cell_top
+                    expandable_top,
+                    expandable_bottom,
+                    cell_bottom,
+                    cell_top,
                 )
                 return expandable_top, expandable_bottom
 
@@ -2260,8 +2346,12 @@ def calculate_expandable_vertical_margins(
         return expandable_top, expandable_bottom
 
     # Find boundaries using layout info
-    top_boundary = _find_top_boundary(layout, bbox, page_width, page_height, page_margin)
-    bottom_boundary = _find_bottom_boundary(layout, bbox, page_width, page_height, page_margin)
+    top_boundary = _find_top_boundary(
+        layout, bbox, page_width, page_height, page_margin
+    )
+    bottom_boundary = _find_bottom_boundary(
+        layout, bbox, page_width, page_height, page_margin
+    )
 
     expandable_top = max(0, top_boundary - y1)
     expandable_bottom = max(0, y0 - bottom_boundary)
@@ -2324,12 +2414,12 @@ def calculate_all_expandable_widths(
 # - Intermediate element detection for accurate edge creation
 
 
-
 class ReadingDirection(Enum):
     """Reading direction for document layout (yomitoku-style)."""
-    TOP_TO_BOTTOM = "top2bottom"    # Default: top→bottom, left→right (horizontal text)
-    RIGHT_TO_LEFT = "right2left"    # Japanese vertical: right→left, top→bottom
-    LEFT_TO_RIGHT = "left2right"    # Alternative: left→right, top→bottom
+
+    TOP_TO_BOTTOM = "top2bottom"  # Default: top→bottom, left→right (horizontal text)
+    RIGHT_TO_LEFT = "right2left"  # Japanese vertical: right→left, top→bottom
+    LEFT_TO_RIGHT = "left2right"  # Alternative: left→right, top→bottom
 
 
 # Reading order detection thresholds
@@ -2467,8 +2557,9 @@ def _exists_intermediate_element(
                 continue
 
             # Check horizontal overlap with both boxes
-            if _boxes_horizontally_overlap(box1, other_box) and \
-               _boxes_horizontally_overlap(box2, other_box):
+            if _boxes_horizontally_overlap(
+                box1, other_box
+            ) and _boxes_horizontally_overlap(box2, other_box):
                 return True
 
         else:  # horizontal
@@ -2485,8 +2576,9 @@ def _exists_intermediate_element(
                 continue
 
             # Check vertical overlap with both boxes
-            if _boxes_vertically_overlap(box1, other_box) and \
-               _boxes_vertically_overlap(box2, other_box):
+            if _boxes_vertically_overlap(box1, other_box) and _boxes_vertically_overlap(
+                box2, other_box
+            ):
                 return True
 
     return False
@@ -2669,8 +2761,11 @@ def _build_graph_right_to_left(
     for elem_id in graph:
         elem_lookup = {eid: bbox for eid, bbox in elements}
         graph[elem_id].sort(
-            key=lambda eid: -(elem_lookup.get(eid, (0, 0, 0, 0))[1] +
-                              elem_lookup.get(eid, (0, 0, 0, 0))[3]) / 2
+            key=lambda eid: -(
+                elem_lookup.get(eid, (0, 0, 0, 0))[1]
+                + elem_lookup.get(eid, (0, 0, 0, 0))[3]
+            )
+            / 2
         )
 
 
@@ -2724,8 +2819,11 @@ def _build_graph_left_to_right(
     for elem_id in graph:
         elem_lookup = {eid: bbox for eid, bbox in elements}
         graph[elem_id].sort(
-            key=lambda eid: -(elem_lookup.get(eid, (0, 0, 0, 0))[1] +
-                              elem_lookup.get(eid, (0, 0, 0, 0))[3]) / 2
+            key=lambda eid: -(
+                elem_lookup.get(eid, (0, 0, 0, 0))[1]
+                + elem_lookup.get(eid, (0, 0, 0, 0))[3]
+            )
+            / 2
         )
 
 
@@ -2772,7 +2870,7 @@ def _topological_sort_with_priority(
     # Initialize queue with nodes that have no predecessors
     # Sort by distance metric (lower distance = higher priority)
     ready = [elem_id for elem_id, deg in in_degree.items() if deg == 0]
-    ready.sort(key=lambda x: elem_distance.get(x, float('inf')))
+    ready.sort(key=lambda x: elem_distance.get(x, float("inf")))
 
     result = []
     while ready:
@@ -2788,16 +2886,16 @@ def _topological_sort_with_priority(
                     ready.append(succ)
 
         # Re-sort ready list by distance metric
-        ready.sort(key=lambda x: elem_distance.get(x, float('inf')))
+        ready.sort(key=lambda x: elem_distance.get(x, float("inf")))
 
     # Handle cycles: add remaining elements in distance order
     if len(result) < len(elements):
         remaining = [elem_id for elem_id, _ in elements if elem_id not in result]
-        remaining.sort(key=lambda x: elem_distance.get(x, float('inf')))
+        remaining.sort(key=lambda x: elem_distance.get(x, float("inf")))
         result.extend(remaining)
         logger.debug(
             "Reading order: %d elements in cycle, added in distance order",
-            len(remaining)
+            len(remaining),
         )
 
     return result
@@ -2843,7 +2941,7 @@ def estimate_reading_order(
 
     # Collect paragraphs
     for para_id, para_info in layout.paragraphs.items():
-        box = para_info.get('box', [])
+        box = para_info.get("box", [])
         if len(box) >= 4:
             # Convert from image coordinates to PDF coordinates if needed
             if page_height > 0 and layout.height > 0:
@@ -2862,7 +2960,7 @@ def estimate_reading_order(
 
     # Collect tables
     for table_id, table_info in layout.tables.items():
-        box = table_info.get('box', [])
+        box = table_info.get("box", [])
         if len(box) >= 4:
             if page_height > 0 and layout.height > 0:
                 scale = page_height / layout.height
@@ -2891,7 +2989,7 @@ def estimate_reading_order(
         "Reading order estimated for %d elements (direction=%s): %s",
         len(reading_order),
         direction.value,
-        sorted_ids[:10] if len(sorted_ids) > 10 else sorted_ids
+        sorted_ids[:10] if len(sorted_ids) > 10 else sorted_ids,
     )
 
     return reading_order
@@ -2924,12 +3022,12 @@ def apply_reading_order_to_layout(
     # Update paragraph orders
     for para_id in layout.paragraphs:
         if para_id in reading_order:
-            layout.paragraphs[para_id]['order'] = reading_order[para_id]
+            layout.paragraphs[para_id]["order"] = reading_order[para_id]
 
     # Update table orders
     for table_id in layout.tables:
         if table_id in reading_order:
-            layout.tables[table_id]['order'] = reading_order[table_id]
+            layout.tables[table_id]["order"] = reading_order[table_id]
 
     return layout
 
@@ -2940,6 +3038,7 @@ def apply_reading_order_to_layout(
 #
 # Automatic detection of document reading direction based on element shapes.
 # This is inspired by yomitoku's approach to handling Japanese vertical text.
+
 
 def detect_reading_direction(
     layout: LayoutArray,
@@ -2978,7 +3077,7 @@ def detect_reading_direction(
 
     # Analyze paragraph shapes
     for para_id, para_info in layout.paragraphs.items():
-        box = para_info.get('box', [])
+        box = para_info.get("box", [])
         if len(box) >= 4:
             width = abs(box[2] - box[0])
             height = abs(box[3] - box[1])
@@ -2992,7 +3091,7 @@ def detect_reading_direction(
 
     # Also check tables (though typically they're not vertical)
     for table_id, table_info in layout.tables.items():
-        box = table_info.get('box', [])
+        box = table_info.get("box", [])
         if len(box) >= 4:
             width = abs(box[2] - box[0])
             height = abs(box[3] - box[1])
@@ -3016,13 +3115,17 @@ def detect_reading_direction(
     if vertical_ratio >= VERTICAL_TEXT_COLUMN_THRESHOLD:
         logger.debug(
             "Vertical text detected: %d/%d elements (%.1f%%) are vertical",
-            vertical_count, total, vertical_ratio * 100
+            vertical_count,
+            total,
+            vertical_ratio * 100,
         )
         return ReadingDirection.RIGHT_TO_LEFT
 
     logger.debug(
         "Horizontal text detected: %d/%d elements (%.1f%%) are vertical",
-        vertical_count, total, vertical_ratio * 100
+        vertical_count,
+        total,
+        vertical_ratio * 100,
     )
     return ReadingDirection.TOP_TO_BOTTOM
 
@@ -3080,7 +3183,7 @@ def _priority_dfs(
     # Sort all nodes by distance (priority queue)
     sorted_nodes = sorted(
         [elem_id for elem_id, _ in elements],
-        key=lambda x: elem_distance.get(x, float('inf'))
+        key=lambda x: elem_distance.get(x, float("inf")),
     )
 
     def dfs_visit(node_id: int) -> None:
@@ -3099,8 +3202,7 @@ def _priority_dfs(
         # Visit children in priority order
         children = graph.get(node_id, [])
         children_sorted = sorted(
-            children,
-            key=lambda x: elem_distance.get(x, float('inf'))
+            children, key=lambda x: elem_distance.get(x, float("inf"))
         )
 
         for child in children_sorted:
@@ -3130,14 +3232,11 @@ def _priority_dfs(
             if remaining:
                 # Find node with most parents already visited
                 best_node = min(
-                    remaining,
-                    key=lambda n: len(parents.get(n, set()) - visited)
+                    remaining, key=lambda n: len(parents.get(n, set()) - visited)
                 )
                 visited.add(best_node)
                 result.append(best_node)
-                logger.debug(
-                    "Reading order: breaking cycle at node %d", best_node
-                )
+                logger.debug("Reading order: breaking cycle at node %d", best_node)
 
     return result
 
@@ -3210,7 +3309,9 @@ def apply_reading_order_to_layout_auto(
 CELL_COORD_CLUSTER_THRESHOLD = 5.0  # Points within 5pt are in same cluster
 
 
-def _cluster_coordinates(coords: list[float], threshold: float = CELL_COORD_CLUSTER_THRESHOLD) -> list[float]:
+def _cluster_coordinates(
+    coords: list[float], threshold: float = CELL_COORD_CLUSTER_THRESHOLD
+) -> list[float]:
     """
     Cluster coordinates to find grid lines.
 
@@ -3248,7 +3349,11 @@ def _cluster_coordinates(coords: list[float], threshold: float = CELL_COORD_CLUS
     return [sum(c) / len(c) for c in clusters]
 
 
-def _find_grid_index(value: float, grid_lines: list[float], tolerance: float = CELL_COORD_CLUSTER_THRESHOLD) -> int:
+def _find_grid_index(
+    value: float,
+    grid_lines: list[float],
+    tolerance: float = CELL_COORD_CLUSTER_THRESHOLD,
+) -> int:
     """
     Find the index of the grid line closest to the given value.
 
@@ -3264,7 +3369,7 @@ def _find_grid_index(value: float, grid_lines: list[float], tolerance: float = C
         return -1
 
     best_idx = -1
-    best_dist = float('inf')
+    best_dist = float("inf")
 
     for idx, line in enumerate(grid_lines):
         dist = abs(value - line)
@@ -3316,7 +3421,7 @@ def analyze_table_structure(
     # Collect all Y coordinates (for row detection)
     y_coords: list[float] = []
     for cell in cells:
-        box = cell.get('box', [])
+        box = cell.get("box", [])
         if len(box) >= 4:
             y_coords.append(box[1])  # y0 (top)
             y_coords.append(box[3])  # y1 (bottom)
@@ -3324,7 +3429,7 @@ def analyze_table_structure(
     # Collect all X coordinates (for column detection)
     x_coords: list[float] = []
     for cell in cells:
-        box = cell.get('box', [])
+        box = cell.get("box", [])
         if len(box) >= 4:
             x_coords.append(box[0])  # x0 (left)
             x_coords.append(box[2])  # x1 (right)
@@ -3335,13 +3440,15 @@ def analyze_table_structure(
 
     logger.debug(
         "Table structure: %d cells, %d row lines, %d col lines",
-        len(cells), len(row_lines), len(col_lines)
+        len(cells),
+        len(row_lines),
+        len(col_lines),
     )
 
     # Process each cell
     result = []
     for cell in cells:
-        box = cell.get('box', [])
+        box = cell.get("box", [])
         if len(box) < 4:
             result.append(cell)
             continue
@@ -3376,21 +3483,25 @@ def analyze_table_structure(
 
         # Create updated cell dict
         updated_cell = dict(cell)
-        updated_cell['row'] = row_idx
-        updated_cell['col'] = col_idx
-        updated_cell['row_span'] = row_span
-        updated_cell['col_span'] = col_span
+        updated_cell["row"] = row_idx
+        updated_cell["col"] = col_idx
+        updated_cell["row_span"] = row_span
+        updated_cell["col_span"] = col_span
 
         result.append(updated_cell)
 
     # Log structure info
     if result:
-        max_row = max(c.get('row', 0) + c.get('row_span', 1) for c in result)
-        max_col = max(c.get('col', 0) + c.get('col_span', 1) for c in result)
-        merged_count = sum(1 for c in result if c.get('row_span', 1) > 1 or c.get('col_span', 1) > 1)
+        max_row = max(c.get("row", 0) + c.get("row_span", 1) for c in result)
+        max_col = max(c.get("col", 0) + c.get("col_span", 1) for c in result)
+        merged_count = sum(
+            1 for c in result if c.get("row_span", 1) > 1 or c.get("col_span", 1) > 1
+        )
         logger.debug(
             "Table structure analyzed: %d rows x %d cols, %d merged cells",
-            max_row, max_col, merged_count
+            max_row,
+            max_col,
+            merged_count,
         )
 
     return result
@@ -3415,7 +3526,7 @@ def analyze_all_table_structures(
     for table_id, cells in table_cells.items():
         table_box = None
         if tables_info and table_id in tables_info:
-            table_box = tables_info[table_id].get('box')
+            table_box = tables_info[table_id].get("box")
 
         analyzed_cells = analyze_table_structure(cells, table_box)
         result[table_id] = analyzed_cells
@@ -3443,14 +3554,16 @@ def get_cell_at_position(
         Cell dict if found, None otherwise
     """
     for cell in table_cells:
-        cell_row = cell.get('row', 0)
-        cell_col = cell.get('col', 0)
-        row_span = cell.get('row_span', 1)
-        col_span = cell.get('col_span', 1)
+        cell_row = cell.get("row", 0)
+        cell_col = cell.get("col", 0)
+        row_span = cell.get("row_span", 1)
+        col_span = cell.get("col_span", 1)
 
         # Check if position is within this cell's range
-        if (cell_row <= row < cell_row + row_span and
-            cell_col <= col < cell_col + col_span):
+        if (
+            cell_row <= row < cell_row + row_span
+            and cell_col <= col < cell_col + col_span
+        ):
             return cell
 
     return None
@@ -3473,10 +3586,10 @@ def get_table_dimensions(table_cells: list[dict]) -> tuple[int, int]:
     max_col = 0
 
     for cell in table_cells:
-        row = cell.get('row', 0)
-        col = cell.get('col', 0)
-        row_span = cell.get('row_span', 1)
-        col_span = cell.get('col_span', 1)
+        row = cell.get("row", 0)
+        col = cell.get("col", 0)
+        row_span = cell.get("row_span", 1)
+        col_span = cell.get("col_span", 1)
 
         max_row = max(max_row, row + row_span)
         max_col = max(max_col, col + col_span)
@@ -3491,6 +3604,7 @@ def get_table_dimensions(table_cells: list[dict]) -> tuple[int, int]:
 # Functions for detecting and filtering noise elements (small artifacts)
 # based on yomitoku's approach.
 # https://github.com/kotaro-kinoshita/yomitoku
+
 
 def is_noise_element(
     box: tuple[float, float, float, float],
@@ -3527,7 +3641,7 @@ def is_noise_element(
 def filter_noise_elements(
     elements: list[dict],
     min_size: float = NOISE_MIN_SIZE_PX,
-    box_key: str = 'box',
+    box_key: str = "box",
 ) -> list[dict]:
     """
     Filter out noise elements from a list of detected elements.
@@ -3562,7 +3676,9 @@ def filter_noise_elements(
     if noise_count > 0:
         logger.debug(
             "Filtered %d noise elements (< %dpx), %d remaining",
-            noise_count, min_size, len(filtered)
+            noise_count,
+            min_size,
+            len(filtered),
         )
 
     return filtered
@@ -3576,12 +3692,13 @@ def filter_noise_elements(
 # PP-DocLayout-L doesn't detect them explicitly.
 # https://github.com/kotaro-kinoshita/yomitoku
 
+
 def detect_header_footer_by_position(
     elements: list[dict],
     page_height: float,
     header_ratio: float = HEADER_FOOTER_RATIO,
     footer_ratio: float = HEADER_FOOTER_RATIO,
-    box_key: str = 'box',
+    box_key: str = "box",
 ) -> tuple[list[dict], list[dict], list[dict]]:
     """
     Detect headers and footers based on vertical position on the page.
@@ -3638,7 +3755,9 @@ def detect_header_footer_by_position(
     if headers or footers:
         logger.debug(
             "Position-based header/footer detection: %d headers, %d body, %d footers",
-            len(headers), len(body), len(footers)
+            len(headers),
+            len(body),
+            len(footers),
         )
 
     return headers, body, footers
@@ -3674,24 +3793,24 @@ def mark_header_footer_in_layout(
 
     # Mark paragraphs
     for para_id, para_info in layout.paragraphs.items():
-        box = para_info.get('box', [])
+        box = para_info.get("box", [])
         if len(box) >= 4:
             center_y = (box[1] + box[3]) / 2
             if center_y < header_threshold:
-                para_info['role'] = 'header'
+                para_info["role"] = "header"
             elif center_y > footer_threshold:
-                para_info['role'] = 'footer'
+                para_info["role"] = "footer"
             # Don't override existing role if not header/footer
 
     # Mark tables (though tables are rarely headers/footers)
     for table_id, table_info in layout.tables.items():
-        box = table_info.get('box', [])
+        box = table_info.get("box", [])
         if len(box) >= 4:
             center_y = (box[1] + box[3]) / 2
             if center_y < header_threshold:
-                table_info['role'] = 'header'
+                table_info["role"] = "header"
             elif center_y > footer_threshold:
-                table_info['role'] = 'footer'
+                table_info["role"] = "footer"
 
     return layout
 
@@ -3703,6 +3822,7 @@ def mark_header_footer_in_layout(
 # Enhanced page direction detection using area-weighted voting instead
 # of simple element counting.
 # https://github.com/kotaro-kinoshita/yomitoku
+
 
 def detect_reading_direction_by_area(
     layout: LayoutArray,
@@ -3750,7 +3870,7 @@ def detect_reading_direction_by_area(
 
     # Analyze paragraph areas
     for para_id, para_info in layout.paragraphs.items():
-        box = para_info.get('box', [])
+        box = para_info.get("box", [])
         if len(box) >= 4:
             width = abs(box[2] - box[0])
             height = abs(box[3] - box[1])
@@ -3766,7 +3886,7 @@ def detect_reading_direction_by_area(
 
     # Also consider table areas (less weight since tables are typically horizontal)
     for table_id, table_info in layout.tables.items():
-        box = table_info.get('box', [])
+        box = table_info.get("box", [])
         if len(box) >= 4:
             width = abs(box[2] - box[0])
             height = abs(box[3] - box[1])
@@ -3791,13 +3911,15 @@ def detect_reading_direction_by_area(
     if vertical_ratio >= area_ratio_threshold:
         logger.debug(
             "Vertical text detected by area: %.1f%% vertical (threshold: %.1f%%)",
-            vertical_ratio * 100, area_ratio_threshold * 100
+            vertical_ratio * 100,
+            area_ratio_threshold * 100,
         )
         return ReadingDirection.RIGHT_TO_LEFT
 
     logger.debug(
         "Horizontal text detected by area: %.1f%% vertical (threshold: %.1f%%)",
-        vertical_ratio * 100, area_ratio_threshold * 100
+        vertical_ratio * 100,
+        area_ratio_threshold * 100,
     )
     return ReadingDirection.TOP_TO_BOTTOM
 
@@ -3828,6 +3950,7 @@ def estimate_reading_order_by_area(
 # =============================================================================
 # yomitoku-style Element Overlap Calculation
 # =============================================================================
+
 
 def calc_overlap_ratio(
     box1: tuple[float, float, float, float],

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 import sys
@@ -44,10 +44,14 @@ def _translate_once(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Local AI single-translation benchmark")
+    parser = argparse.ArgumentParser(
+        description="Local AI single-translation benchmark"
+    )
     parser.add_argument("--input", type=Path, default=None, help="Path to input text")
     parser.add_argument("--mode", choices=("warm", "cold"), default="warm")
-    parser.add_argument("--style", choices=("standard", "concise", "minimal"), default="concise")
+    parser.add_argument(
+        "--style", choices=("standard", "concise", "minimal"), default="concise"
+    )
     parser.add_argument("--with-glossary", action="store_true")
     parser.add_argument("--reference", action="append", type=Path, default=[])
     parser.add_argument("--warmup-runs", type=int, default=1)
@@ -64,6 +68,7 @@ def main() -> int:
     from yakulingo.services.local_ai_prompt_builder import LocalPromptBuilder
     from yakulingo.services.local_llama_server import get_local_llama_server_manager
     from yakulingo.services.prompt_builder import PromptBuilder
+
     input_path = args.input or (repo_root / "tools" / "bench_local_ai_input.txt")
     text = _load_text(input_path)
 

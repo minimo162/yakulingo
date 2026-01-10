@@ -32,7 +32,9 @@ class FakeCopilotHandler:
         include_item_ids: bool = False,
     ) -> list[str]:
         self.translate_sync_calls += 1
-        return [f"EN:{hashlib.md5(text.encode('utf-8')).hexdigest()[:8]}" for text in texts]
+        return [
+            f"EN:{hashlib.md5(text.encode('utf-8')).hexdigest()[:8]}" for text in texts
+        ]
 
     def translate_single(
         self,
@@ -84,13 +86,17 @@ def test_e2e_txt_selected_sections_translates_only_selected(tmp_path: Path) -> N
     input_text = "\n\n".join(paragraphs)
     input_path.write_text(input_text, encoding="utf-8")
 
-    result = service.translate_file(input_path, output_language="en", selected_sections=[1])
+    result = service.translate_file(
+        input_path, output_language="en", selected_sections=[1]
+    )
 
     assert result.status == TranslationStatus.COMPLETED
     assert result.output_path is not None
     output_text = result.output_path.read_text(encoding="utf-8")
 
-    translated_second = f"EN:{hashlib.md5(paragraphs[1].encode('utf-8')).hexdigest()[:8]}"
+    translated_second = (
+        f"EN:{hashlib.md5(paragraphs[1].encode('utf-8')).hexdigest()[:8]}"
+    )
     assert output_text == "\n\n".join([paragraphs[0], translated_second, paragraphs[2]])
 
 
@@ -136,4 +142,3 @@ def test_e2e_txt_bilingual_and_glossary_outputs(tmp_path: Path) -> None:
     csv_text = result.glossary_path.read_text(encoding="utf-8-sig")
     assert "original" in csv_text
     assert "translated" in csv_text
-

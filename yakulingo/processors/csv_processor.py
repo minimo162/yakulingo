@@ -40,7 +40,9 @@ def _decode_csv_bytes(raw: bytes) -> tuple[str, str]:
             return raw.decode(encoding), encoding
         except UnicodeDecodeError:
             continue
-    logger.warning("CSV decode fallback used; output may contain replacement characters")
+    logger.warning(
+        "CSV decode fallback used; output may contain replacement characters"
+    )
     return raw.decode("utf-8", errors="replace"), "utf-8"
 
 
@@ -52,7 +54,12 @@ def _sniff_dialect(text: str) -> csv.Dialect:
     try:
         return sniffer.sniff(sample, delimiters=_SNIFF_DELIMITERS)
     except csv.Error:
-        if "\t" in sample and "," not in sample and ";" not in sample and "|" not in sample:
+        if (
+            "\t" in sample
+            and "," not in sample
+            and ";" not in sample
+            and "|" not in sample
+        ):
             return csv.excel_tab
         return csv.excel
 
@@ -94,7 +101,9 @@ class CsvProcessor(FileProcessor):
         rows, _dialect, _encoding, _newline = self._load_csv(file_path)
         for row_idx, row in enumerate(rows):
             for col_idx, cell in enumerate(row):
-                if self._cell_translator.should_translate(cell, output_language=output_language):
+                if self._cell_translator.should_translate(
+                    cell, output_language=output_language
+                ):
                     yield TextBlock(
                         id=self._block_id(row_idx, col_idx),
                         text=cell,

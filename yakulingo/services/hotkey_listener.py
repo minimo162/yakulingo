@@ -24,6 +24,7 @@ _Callback = Callable[[str, int | None], None]
 
 
 if not _IS_WINDOWS:
+
     class HotkeyListener:
         """Placeholder that prevents Windows-only hotkey code from loading."""
 
@@ -74,10 +75,8 @@ else:
     _RESET_COPY_MODE_ESC_RETRY_INTERVAL_SEC = 0.03
     _EXCEL_TOP_LEVEL_WINDOW_CLASSES = ("XLMAIN",)
 
-
     class _Point(ctypes.Structure):
         _fields_ = [("x", wintypes.LONG), ("y", wintypes.LONG)]
-
 
     class _Msg(ctypes.Structure):
         _fields_ = [
@@ -106,10 +105,16 @@ else:
         if not target_hwnd:
             return None
         try:
-            _user32.GetClassNameW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+            _user32.GetClassNameW.argtypes = [
+                wintypes.HWND,
+                wintypes.LPWSTR,
+                ctypes.c_int,
+            ]
             _user32.GetClassNameW.restype = ctypes.c_int
             buf = ctypes.create_unicode_buffer(256)
-            length = int(_user32.GetClassNameW(wintypes.HWND(int(target_hwnd)), buf, len(buf)))
+            length = int(
+                _user32.GetClassNameW(wintypes.HWND(int(target_hwnd)), buf, len(buf))
+            )
             if length <= 0:
                 return None
             return str(buf.value)
@@ -133,11 +138,18 @@ else:
                 ctypes.POINTER(wintypes.DWORD),
             ]
             _user32.GetWindowThreadProcessId.restype = wintypes.DWORD
-            _user32.GetGUIThreadInfo.argtypes = [wintypes.DWORD, ctypes.POINTER(_GuiThreadInfo)]
+            _user32.GetGUIThreadInfo.argtypes = [
+                wintypes.DWORD,
+                ctypes.POINTER(_GuiThreadInfo),
+            ]
             _user32.GetGUIThreadInfo.restype = wintypes.BOOL
 
             pid = wintypes.DWORD()
-            tid = int(_user32.GetWindowThreadProcessId(wintypes.HWND(int(target_hwnd)), ctypes.byref(pid)))
+            tid = int(
+                _user32.GetWindowThreadProcessId(
+                    wintypes.HWND(int(target_hwnd)), ctypes.byref(pid)
+                )
+            )
             if not tid:
                 return None
 
@@ -172,7 +184,12 @@ else:
         return unique_targets
 
     def _send_escape() -> None:
-        _user32.keybd_event.argtypes = [wintypes.BYTE, wintypes.BYTE, wintypes.DWORD, _ULONG_PTR]
+        _user32.keybd_event.argtypes = [
+            wintypes.BYTE,
+            wintypes.BYTE,
+            wintypes.DWORD,
+            _ULONG_PTR,
+        ]
         _user32.keybd_event.restype = None
         try:
             _user32.keybd_event(_VK_ESCAPE, 0, 0, 0)
@@ -296,8 +313,12 @@ else:
             poll_sec = max(float(_RESET_COPY_MODE_POLL_INTERVAL_SEC), 0.001)
 
             def _modifiers_down() -> bool:
-                ctrl_down = bool(_user32.GetAsyncKeyState(_VK_CONTROL) & _KEYSTATE_DOWN_MASK)
-                alt_down = bool(_user32.GetAsyncKeyState(_VK_MENU) & _KEYSTATE_DOWN_MASK)
+                ctrl_down = bool(
+                    _user32.GetAsyncKeyState(_VK_CONTROL) & _KEYSTATE_DOWN_MASK
+                )
+                alt_down = bool(
+                    _user32.GetAsyncKeyState(_VK_MENU) & _KEYSTATE_DOWN_MASK
+                )
                 return ctrl_down or alt_down
 
             if _modifiers_down():
@@ -325,9 +346,13 @@ else:
         except Exception:
             return
 
-
     def _send_ctrl_c() -> None:
-        _user32.keybd_event.argtypes = [wintypes.BYTE, wintypes.BYTE, wintypes.DWORD, _ULONG_PTR]
+        _user32.keybd_event.argtypes = [
+            wintypes.BYTE,
+            wintypes.BYTE,
+            wintypes.DWORD,
+            _ULONG_PTR,
+        ]
         _user32.keybd_event.restype = None
         _user32.GetAsyncKeyState.argtypes = [ctypes.c_int]
         _user32.GetAsyncKeyState.restype = wintypes.SHORT
@@ -335,7 +360,9 @@ else:
             # Ctrl+Alt+J のホットキー押下中は Alt が押下状態のままコールバックが走ることがある。
             # そのまま Ctrl+C を送ると Ctrl+Alt+C になりコピーに失敗するため、必要に応じて Alt を解除する。
             alt_down = bool(_user32.GetAsyncKeyState(_VK_MENU) & _KEYSTATE_DOWN_MASK)
-            ctrl_down = bool(_user32.GetAsyncKeyState(_VK_CONTROL) & _KEYSTATE_DOWN_MASK)
+            ctrl_down = bool(
+                _user32.GetAsyncKeyState(_VK_CONTROL) & _KEYSTATE_DOWN_MASK
+            )
 
             if alt_down:
                 _user32.keybd_event(_VK_MENU, 0, _KEYEVENTF_KEYUP, 0)
@@ -351,7 +378,6 @@ else:
                 _user32.keybd_event(_VK_CONTROL, 0, _KEYEVENTF_KEYUP, 0)
         except Exception as e:
             logger.debug("Failed to send Ctrl+C: %s", e)
-
 
     class HotkeyListener:
         """Register Ctrl+Alt+J and invoke callback with clipboard payload."""
@@ -389,7 +415,11 @@ else:
 
         def start(self) -> None:
             with self._lock:
-                if self._running and self._thread is not None and self._thread.is_alive():
+                if (
+                    self._running
+                    and self._thread is not None
+                    and self._thread.is_alive()
+                ):
                     return
                 self._running = True
                 thread = threading.Thread(
@@ -456,7 +486,9 @@ else:
                 return ""
 
             try:
-                text, files = _clipboard.get_clipboard_payload_with_retry(log_fail=False)
+                text, files = _clipboard.get_clipboard_payload_with_retry(
+                    log_fail=False
+                )
             except Exception as e:
                 logger.debug("Failed to read clipboard payload after hotkey: %s", e)
                 text, files = None, []
@@ -478,11 +510,21 @@ else:
             hotkey_id = 1
             modifiers = _MOD_CONTROL | _MOD_ALT | _MOD_NOREPEAT
 
-            _user32.RegisterHotKey.argtypes = [wintypes.HWND, ctypes.c_int, wintypes.UINT, wintypes.UINT]
+            _user32.RegisterHotKey.argtypes = [
+                wintypes.HWND,
+                ctypes.c_int,
+                wintypes.UINT,
+                wintypes.UINT,
+            ]
             _user32.RegisterHotKey.restype = wintypes.BOOL
             _user32.UnregisterHotKey.argtypes = [wintypes.HWND, ctypes.c_int]
             _user32.UnregisterHotKey.restype = wintypes.BOOL
-            _user32.GetMessageW.argtypes = [ctypes.POINTER(_Msg), wintypes.HWND, wintypes.UINT, wintypes.UINT]
+            _user32.GetMessageW.argtypes = [
+                ctypes.POINTER(_Msg),
+                wintypes.HWND,
+                wintypes.UINT,
+                wintypes.UINT,
+            ]
             _user32.GetMessageW.restype = wintypes.BOOL
             _user32.GetForegroundWindow.argtypes = []
             _user32.GetForegroundWindow.restype = wintypes.HWND

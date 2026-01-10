@@ -26,20 +26,21 @@ from yakulingo.models.types import TranslationResult
 logger = logging.getLogger(__name__)
 
 # Pre-compiled regex patterns for performance
-_RE_BOLD = re.compile(r'\*\*([^*]+)\*\*')
+_RE_BOLD = re.compile(r"\*\*([^*]+)\*\*")
 _RE_QUOTE = re.compile(r'"([^"]+)"')
 
 # Translation result parsing patterns
 # Note: Colon is REQUIRED ([:：]) to avoid matching "訳文" in other contexts (e.g., "訳文の形式:")
 # Supports multiple explanation markers for robustness against Copilot format changes
-_EXPLANATION_MARKERS = r'(?:解説|説明|Explanation|Notes?)[:：]?'
+_EXPLANATION_MARKERS = r"(?:解説|説明|Explanation|Notes?)[:：]?"
 _RE_TRANSLATION_TEXT = re.compile(
-    r'[#>*\s-]*\**(?:訳文|Translation|Translated)\**[:：]\s*(.+?)(?=[\n\s]*[#>*\s-]*' + _EXPLANATION_MARKERS + r'|$)',
-    re.DOTALL | re.IGNORECASE
+    r"[#>*\s-]*\**(?:訳文|Translation|Translated)\**[:：]\s*(.+?)(?=[\n\s]*[#>*\s-]*"
+    + _EXPLANATION_MARKERS
+    + r"|$)",
+    re.DOTALL | re.IGNORECASE,
 )
 _RE_EXPLANATION = re.compile(
-    r'[#>*\s-]*' + _EXPLANATION_MARKERS + r'\s*(.+)',
-    re.DOTALL | re.IGNORECASE
+    r"[#>*\s-]*" + _EXPLANATION_MARKERS + r"\s*(.+)", re.DOTALL | re.IGNORECASE
 )
 
 # Filename forbidden characters (Windows: \ / : * ? " < > |, also control chars)
@@ -95,13 +96,15 @@ def summarize_reference_files(files: Optional[list[Path]]) -> dict:
         else:
             all_ok = False
 
-        entries.append({
-            "path": path,
-            "name": path.name,
-            "exists": exists,
-            "size_bytes": size_bytes,
-            "mtime": mtime,
-        })
+        entries.append(
+            {
+                "path": path,
+                "name": path.name,
+                "exists": exists,
+                "size_bytes": size_bytes,
+                "mtime": mtime,
+            }
+        )
 
     summary["count"] = len(entries)
     summary["total_bytes"] = total_bytes
@@ -143,9 +146,9 @@ class TempFileManager:
     Automatically cleans up files on application exit.
     """
 
-    _instance: Optional['TempFileManager'] = None
+    _instance: Optional["TempFileManager"] = None
 
-    def __new__(cls) -> 'TempFileManager':
+    def __new__(cls) -> "TempFileManager":
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._temp_files: Set[Path] = set()
@@ -157,7 +160,7 @@ class TempFileManager:
     def temp_dir(self) -> Path:
         """Get or create a dedicated temp directory for YakuLingo."""
         if self._temp_dir is None or not self._temp_dir.exists():
-            self._temp_dir = Path(tempfile.mkdtemp(prefix='yakulingo_'))
+            self._temp_dir = Path(tempfile.mkdtemp(prefix="yakulingo_"))
         return self._temp_dir
 
     def _unique_temp_path(self, base_path: Path) -> Path:
@@ -171,6 +174,7 @@ class TempFileManager:
             if not candidate.exists():
                 return candidate
         import time
+
         return base_path.with_name(f"{stem}_{int(time.monotonic() * 1000)}{suffix}")
 
     def create_temp_file(self, content: bytes, filename: str) -> Path:
@@ -186,7 +190,7 @@ class TempFileManager:
         if not safe_filename:
             safe_filename = "unnamed_file"
         # Replace forbidden characters with underscore
-        safe_filename = _RE_FILENAME_FORBIDDEN.sub('_', safe_filename)
+        safe_filename = _RE_FILENAME_FORBIDDEN.sub("_", safe_filename)
         temp_path = self._unique_temp_path(self.temp_dir / safe_filename)
         temp_path.write_bytes(content)
         self._temp_files.add(temp_path)
@@ -202,12 +206,14 @@ class TempFileManager:
         safe_filename = os.path.basename(filename)
         if not safe_filename:
             safe_filename = "unnamed_file"
-        safe_filename = _RE_FILENAME_FORBIDDEN.sub('_', safe_filename)
+        safe_filename = _RE_FILENAME_FORBIDDEN.sub("_", safe_filename)
         temp_path = self._unique_temp_path(self.temp_dir / safe_filename)
         self._temp_files.add(temp_path)
         return temp_path
 
-    def create_temp_file_from_path(self, source_path: Path, filename: Optional[str] = None) -> Path:
+    def create_temp_file_from_path(
+        self, source_path: Path, filename: Optional[str] = None
+    ) -> Path:
         """
         Copy an existing file into the managed temp directory.
 
@@ -220,7 +226,7 @@ class TempFileManager:
         safe_filename = os.path.basename(filename or source_path.name)
         if not safe_filename:
             safe_filename = "unnamed_file"
-        safe_filename = _RE_FILENAME_FORBIDDEN.sub('_', safe_filename)
+        safe_filename = _RE_FILENAME_FORBIDDEN.sub("_", safe_filename)
         temp_path = self.temp_dir / safe_filename
 
         try:
@@ -268,10 +274,12 @@ class TempFileManager:
             try:
                 shutil.rmtree(self._temp_dir)
             except OSError as e:
-                logger.debug("Failed to remove temp directory '%s': %s", self._temp_dir, e)
+                logger.debug(
+                    "Failed to remove temp directory '%s': %s", self._temp_dir, e
+                )
 
     @contextmanager
-    def temp_context(self, prefix: str = 'yakulingo_ctx_') -> Iterator[Path]:
+    def temp_context(self, prefix: str = "yakulingo_ctx_") -> Iterator[Path]:
         """
         Context manager for temporary directory with automatic cleanup.
 
@@ -289,6 +297,7 @@ class TempFileManager:
             Path to a temporary directory that will be cleaned up on exit
         """
         import shutil
+
         temp_dir = Path(tempfile.mkdtemp(prefix=prefix))
         try:
             yield temp_dir
@@ -296,7 +305,9 @@ class TempFileManager:
             try:
                 shutil.rmtree(temp_dir)
             except OSError as e:
-                logger.debug("Failed to cleanup temp context directory '%s': %s", temp_dir, e)
+                logger.debug(
+                    "Failed to cleanup temp context directory '%s': %s", temp_dir, e
+                )
 
 
 # Singleton instance
@@ -312,8 +323,8 @@ def _get_ui():
     """
 
     try:
-        module = importlib.import_module('nicegui')
-        return getattr(module, 'ui', ui)
+        module = importlib.import_module("nicegui")
+        return getattr(module, "ui", ui)
     except Exception as e:  # pragma: no cover - defensive fallback
         logger.debug("Falling back to default ui after import error: %s", e)
         return ui
@@ -323,8 +334,8 @@ def _get_nicegui_app():
     """Safely obtain the NiceGUI ``app`` module if available."""
 
     try:
-        module = importlib.import_module('nicegui')
-        return getattr(module, 'app', None)
+        module = importlib.import_module("nicegui")
+        return getattr(module, "app", None)
     except Exception as e:  # pragma: no cover - defensive fallback
         logger.debug("Falling back to default app after import error: %s", e)
         return None
@@ -347,7 +358,7 @@ def format_markdown_text(text: str) -> str:
     - "text" → <strong><i>"</i>text<i>"</i></strong>
     """
     # **text** → <strong>text</strong>
-    text = _RE_BOLD.sub(r'<strong>\1</strong>', text)
+    text = _RE_BOLD.sub(r"<strong>\1</strong>", text)
     # "text" → <strong><i>"</i>text<i>"</i></strong>
     text = _RE_QUOTE.sub(r'<strong><i>"</i>\1<i>"</i></strong>', text)
     return text
@@ -394,7 +405,7 @@ class DialogManager:
     def create_dialog(
         cls,
         title: str,
-        width: str = 'w-96',
+        width: str = "w-96",
         on_close: Optional[Callable[[], None]] = None,
     ):
         """
@@ -435,7 +446,7 @@ class DialogManager:
 
 def create_standard_dialog(
     title: str,
-    width: str = 'w-96',
+    width: str = "w-96",
     show_close_button: bool = True,
 ) -> tuple:
     """
@@ -453,12 +464,14 @@ def create_standard_dialog(
 
     with dialog:
         with ui.card().classes(width):
-            with ui.column().classes('w-full gap-4 p-4') as content:
+            with ui.column().classes("w-full gap-4 p-4") as content:
                 # Header
-                with ui.row().classes('w-full justify-between items-center'):
-                    ui.label(title).classes('text-base font-medium')
+                with ui.row().classes("w-full justify-between items-center"):
+                    ui.label(title).classes("text-base font-medium")
                     if show_close_button:
-                        ui.button(icon='close', on_click=dialog.close).props('flat round').classes('icon-btn')
+                        ui.button(icon="close", on_click=dialog.close).props(
+                            "flat round"
+                        ).classes("icon-btn")
 
     return dialog, content
 
@@ -483,7 +496,7 @@ def open_file(file_path: Path) -> bool:
 
         system = platform.system()
 
-        if system == 'Windows':
+        if system == "Windows":
             import ctypes
             from ctypes import wintypes
 
@@ -546,12 +559,12 @@ def open_file(file_path: Path) -> bool:
                 # Find and bring that window to foreground by matching filename in title
                 _bring_app_window_to_foreground_by_filename(file_path)
 
-        elif system == 'Darwin':
+        elif system == "Darwin":
             # macOS: use open command
-            subprocess.run(['open', str(file_path)], check=True)
+            subprocess.run(["open", str(file_path)], check=True)
         else:
             # Linux: use xdg-open
-            subprocess.run(['xdg-open', str(file_path)], check=True)
+            subprocess.run(["xdg-open", str(file_path)], check=True)
 
         return True
 
@@ -576,8 +589,8 @@ def _bring_opened_app_to_foreground(process_handle) -> None:
     import time
 
     try:
-        user32 = ctypes.WinDLL('user32', use_last_error=True)
-        kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 
         # Wait for the application to be ready for input (max 5 seconds)
         WAIT_TIMEOUT = 5000
@@ -648,8 +661,13 @@ def _bring_opened_app_to_foreground(process_handle) -> None:
 
         # Ensure window is visible
         user32.SetWindowPos(
-            target_hwnd, None, 0, 0, 0, 0,
-            SWP_SHOWWINDOW | SWP_NOZORDER | SWP_NOSIZE | SWP_NOMOVE
+            target_hwnd,
+            None,
+            0,
+            0,
+            0,
+            0,
+            SWP_SHOWWINDOW | SWP_NOZORDER | SWP_NOSIZE | SWP_NOMOVE,
         )
 
         # Bring to foreground
@@ -682,13 +700,13 @@ def _bring_app_window_to_foreground_by_filename(file_path: Path) -> None:
 
     # Map file extensions to window class names for additional filtering
     app_class_names = {
-        '.xlsx': 'XLMAIN',
-        '.xls': 'XLMAIN',
-        '.docx': 'OpusApp',
-        '.doc': 'OpusApp',
-        '.pptx': 'PPTFrameClass',
-        '.ppt': 'PPTFrameClass',
-        '.csv': 'XLMAIN',
+        ".xlsx": "XLMAIN",
+        ".xls": "XLMAIN",
+        ".docx": "OpusApp",
+        ".doc": "OpusApp",
+        ".pptx": "PPTFrameClass",
+        ".ppt": "PPTFrameClass",
+        ".csv": "XLMAIN",
     }
 
     expected_class = app_class_names.get(extension)
@@ -697,7 +715,7 @@ def _bring_app_window_to_foreground_by_filename(file_path: Path) -> None:
         return
 
     try:
-        user32 = ctypes.WinDLL('user32', use_last_error=True)
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
 
         # Small delay to let the window update with the new file
         time.sleep(0.3)
@@ -732,7 +750,9 @@ def _bring_app_window_to_foreground_by_filename(file_path: Path) -> None:
                     target_hwnd = hwnd
                     logger.debug(
                         "Found window matching filename '%s': hwnd=%s, title='%s'",
-                        filename_stem, hwnd, title
+                        filename_stem,
+                        hwnd,
+                        title,
                     )
                     return False  # Stop enumeration
             return True  # Continue enumeration
@@ -762,8 +782,13 @@ def _bring_app_window_to_foreground_by_filename(file_path: Path) -> None:
 
         # Ensure window is visible
         user32.SetWindowPos(
-            target_hwnd, None, 0, 0, 0, 0,
-            SWP_SHOWWINDOW | SWP_NOZORDER | SWP_NOSIZE | SWP_NOMOVE
+            target_hwnd,
+            None,
+            0,
+            0,
+            0,
+            0,
+            SWP_SHOWWINDOW | SWP_NOZORDER | SWP_NOSIZE | SWP_NOMOVE,
         )
 
         # Bring to foreground
@@ -798,15 +823,15 @@ def show_in_folder(file_path: Path) -> bool:
 
         system = platform.system()
 
-        if system == 'Windows':
+        if system == "Windows":
             # Windows: use explorer with /select flag
-            subprocess.run(['explorer', '/select,', str(file_path)], check=False)
-        elif system == 'Darwin':
+            subprocess.run(["explorer", "/select,", str(file_path)], check=False)
+        elif system == "Darwin":
             # macOS: use open -R to reveal in Finder
-            subprocess.run(['open', '-R', str(file_path)], check=True)
+            subprocess.run(["open", "-R", str(file_path)], check=True)
         else:
             # Linux: just open the parent folder
-            subprocess.run(['xdg-open', str(file_path.parent)], check=True)
+            subprocess.run(["xdg-open", str(file_path.parent)], check=True)
 
         return True
 
@@ -824,18 +849,18 @@ def get_downloads_folder() -> Path:
     """
     system = platform.system()
 
-    if system == 'Windows':
+    if system == "Windows":
         # Windows: use USERPROFILE\Downloads
-        return Path.home() / 'Downloads'
-    elif system == 'Darwin':
+        return Path.home() / "Downloads"
+    elif system == "Darwin":
         # macOS: use ~/Downloads
-        return Path.home() / 'Downloads'
+        return Path.home() / "Downloads"
     else:
         # Linux: use XDG_DOWNLOAD_DIR or ~/Downloads
-        xdg_dir = os.environ.get('XDG_DOWNLOAD_DIR')
+        xdg_dir = os.environ.get("XDG_DOWNLOAD_DIR")
         if xdg_dir:
             return Path(xdg_dir)
-        return Path.home() / 'Downloads'
+        return Path.home() / "Downloads"
 
 
 def download_to_folder_and_open(file_path: Path) -> tuple[bool, Optional[Path]]:
@@ -907,14 +932,16 @@ def trigger_file_download(file_path: Path) -> bool:
     ui_module = _get_ui()
 
     if not file_path.exists():
-        _safe_notify('ダウンロードするファイルが見つかりません', type='negative')
+        _safe_notify("ダウンロードするファイルが見つかりません", type="negative")
         return False
 
     native_window = None
     try:
         nicegui_app = _get_nicegui_app()
         if nicegui_app and not isinstance(nicegui_app, Mock):
-            native_window = getattr(getattr(nicegui_app, 'native', None), 'main_window', None)
+            native_window = getattr(
+                getattr(nicegui_app, "native", None), "main_window", None
+            )
     except Exception as e:  # pragma: no cover - defensive native detection
         logger.debug("Failed to detect native mode for download: %s", e)
 
@@ -922,10 +949,12 @@ def trigger_file_download(file_path: Path) -> bool:
         success, dest = download_to_folder_and_open(file_path)
         if success:
             dest_name = dest.name if dest else file_path.name
-            _safe_notify(f'ダウンロードフォルダに保存しました: {dest_name}', type='positive')
+            _safe_notify(
+                f"ダウンロードフォルダに保存しました: {dest_name}", type="positive"
+            )
             return True
 
-        _safe_notify('ダウンロードに失敗しました', type='negative')
+        _safe_notify("ダウンロードに失敗しました", type="negative")
         return False
 
     try:
@@ -940,7 +969,7 @@ def create_completion_dialog(
     result: TranslationResult,
     duration_seconds: float,
     on_close: Optional[Callable[[], None]] = None,
-) -> 'ui.dialog':
+) -> "ui.dialog":
     """
     Create a simple translation completion dialog.
 
@@ -958,35 +987,34 @@ def create_completion_dialog(
     dialog = ui.dialog()
 
     with dialog:
-        with ui.card().classes('w-80'):
-            with ui.column().classes('w-full gap-4 p-5 items-center'):
+        with ui.card().classes("w-80"):
+            with ui.column().classes("w-full gap-4 p-5 items-center"):
                 # Success icon with animation
-                with ui.element('div').classes('success-circle'):
-                    ui.icon('check').classes('success-check')
+                with ui.element("div").classes("success-circle"):
+                    ui.icon("check").classes("success-check")
 
                 # Completion message
-                ui.label('翻訳が完了しました').classes('text-base font-medium')
+                ui.label("翻訳が完了しました").classes("text-base font-medium")
 
                 # File name
                 if result.output_path:
                     ui.label(result.output_path.name).classes(
-                        'text-sm text-on-surface-variant truncate max-w-full'
+                        "text-sm text-on-surface-variant truncate max-w-full"
                     )
 
                 # Duration badge
-                ui.label(f'{duration_seconds:.1f}秒').classes('duration-badge')
+                ui.label(f"{duration_seconds:.1f}秒").classes("duration-badge")
 
                 # OK button
                 ui.button(
-                    'OK',
-                    on_click=lambda: _close_dialog(dialog, on_close)
-                ).classes('btn-primary w-full mt-2')
+                    "OK", on_click=lambda: _close_dialog(dialog, on_close)
+                ).classes("btn-primary w-full mt-2")
 
     dialog.open()
     return dialog
 
 
-def _close_dialog(dialog: 'ui.dialog', on_close: Optional[Callable[[], None]]) -> None:
+def _close_dialog(dialog: "ui.dialog", on_close: Optional[Callable[[], None]]) -> None:
     """Close dialog and call callback."""
     dialog.close()
     if on_close:

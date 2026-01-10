@@ -30,7 +30,7 @@ def save_ico_with_png(images: list, output_path: Path) -> None:
     png_data_list = []
     for img in images:
         buffer = BytesIO()
-        img.save(buffer, format='PNG', compress_level=9)
+        img.save(buffer, format="PNG", compress_level=9)
         png_data_list.append(buffer.getvalue())
 
     # ICO file structure:
@@ -39,14 +39,14 @@ def save_ico_with_png(images: list, output_path: Path) -> None:
     # - Image data (PNG format)
 
     # ICONDIR: Reserved(2) + Type(2, 1=ICO) + Count(2)
-    icondir = struct.pack('<HHH', 0, 1, num_images)
+    icondir = struct.pack("<HHH", 0, 1, num_images)
 
     # Calculate data offset (after header and all entries)
     header_size = 6 + 16 * num_images
     offset = header_size
 
     # Build ICONDIRENTRY array
-    entries = b''
+    entries = b""
     for i, img in enumerate(images):
         # Width/Height: 0 means 256
         width = img.width if img.width < 256 else 0
@@ -55,15 +55,22 @@ def save_ico_with_png(images: list, output_path: Path) -> None:
 
         # ICONDIRENTRY: Width(1) Height(1) ColorCount(1) Reserved(1)
         #               Planes(2) BitCount(2) BytesInRes(4) ImageOffset(4)
-        entry = struct.pack('<BBBBHHII',
-                            width, height, 0, 0,  # Width, Height, ColorCount, Reserved
-                            1, 32,                 # Planes, BitCount (32-bit RGBA)
-                            data_size, offset)     # BytesInRes, ImageOffset
+        entry = struct.pack(
+            "<BBBBHHII",
+            width,
+            height,
+            0,
+            0,  # Width, Height, ColorCount, Reserved
+            1,
+            32,  # Planes, BitCount (32-bit RGBA)
+            data_size,
+            offset,
+        )  # BytesInRes, ImageOffset
         entries += entry
         offset += data_size
 
     # Write ICO file
-    with open(output_path, 'wb') as f:
+    with open(output_path, "wb") as f:
         f.write(icondir)
         f.write(entries)
         for data in png_data_list:
@@ -80,21 +87,21 @@ def generate_ico(output_path: Path) -> None:
 
     ico_path = output_path
 
-    APPLE_RED = (229, 57, 53, 255)    # #E53935
+    APPLE_RED = (229, 57, 53, 255)  # #E53935
     APPLE_STEM = (141, 110, 99, 255)  # #8D6E63
-    APPLE_LEAF = (67, 160, 71, 255)   # #43A047
+    APPLE_LEAF = (67, 160, 71, 255)  # #43A047
 
     def _bezier_point(p0, p1, p2, p3, t: float) -> tuple[float, float]:
         one_minus = 1.0 - t
         return (
-            (one_minus ** 3) * p0[0]
-            + 3 * (one_minus ** 2) * t * p1[0]
-            + 3 * one_minus * (t ** 2) * p2[0]
-            + (t ** 3) * p3[0],
-            (one_minus ** 3) * p0[1]
-            + 3 * (one_minus ** 2) * t * p1[1]
-            + 3 * one_minus * (t ** 2) * p2[1]
-            + (t ** 3) * p3[1],
+            (one_minus**3) * p0[0]
+            + 3 * (one_minus**2) * t * p1[0]
+            + 3 * one_minus * (t**2) * p2[0]
+            + (t**3) * p3[0],
+            (one_minus**3) * p0[1]
+            + 3 * (one_minus**2) * t * p1[1]
+            + 3 * one_minus * (t**2) * p2[1]
+            + (t**3) * p3[1],
         )
 
     def _leaf_polygon(scale: float, steps: int = 24) -> list[tuple[float, float]]:

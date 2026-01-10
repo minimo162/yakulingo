@@ -20,13 +20,16 @@ logger = logging.getLogger(__name__)
 _IS_WINDOWS = hasattr(ctypes, "WinDLL") and sys.platform == "win32"
 
 if not _IS_WINDOWS:
+
     def get_clipboard_sequence_number_raw() -> Optional[int]:
         raise OSError("clipboard_utils is only available on Windows platforms.")
 
     def should_ignore_self_clipboard(now: float, sequence: Optional[int]) -> bool:
         raise OSError("clipboard_utils is only available on Windows platforms.")
 
-    def get_clipboard_payload_once(*, log_fail: bool = True) -> tuple[Optional[str], list[str]]:
+    def get_clipboard_payload_once(
+        *, log_fail: bool = True
+    ) -> tuple[Optional[str], list[str]]:
         raise OSError("clipboard_utils is only available on Windows platforms.")
 
     def get_clipboard_payload_with_retry(
@@ -89,7 +92,9 @@ else:
             return False
         return True
 
-    def get_clipboard_payload_once(*, log_fail: bool = True) -> tuple[Optional[str], list[str]]:
+    def get_clipboard_payload_once(
+        *, log_fail: bool = True
+    ) -> tuple[Optional[str], list[str]]:
         text = _get_clipboard_text(log_fail=log_fail)
         files = _get_clipboard_file_paths(log_fail=log_fail)
         return text, files
@@ -104,7 +109,9 @@ else:
             if attempt < CLIPBOARD_RETRY_COUNT - 1:
                 time.sleep(CLIPBOARD_RETRY_DELAY_SEC)
                 if log_fail:
-                    logger.debug("Clipboard retry %d/%d", attempt + 1, CLIPBOARD_RETRY_COUNT)
+                    logger.debug(
+                        "Clipboard retry %d/%d", attempt + 1, CLIPBOARD_RETRY_COUNT
+                    )
         if log_fail:
             formats = _get_clipboard_format_summary()
             owner = _describe_clipboard_owner()
@@ -148,11 +155,15 @@ else:
                     logger.debug("No unicode/ansi text in clipboard")
                 return None
 
-            handle = _user32.GetClipboardData(CF_UNICODETEXT if has_unicode else CF_TEXT)
+            handle = _user32.GetClipboardData(
+                CF_UNICODETEXT if has_unicode else CF_TEXT
+            )
             if not handle:
                 error_code = ctypes.get_last_error()
                 if log_fail:
-                    logger.debug("GetClipboardData returned null (error: %s)", error_code)
+                    logger.debug(
+                        "GetClipboardData returned null (error: %s)", error_code
+                    )
                 return None
 
             ptr = _kernel32.GlobalLock(handle)
@@ -222,7 +233,10 @@ else:
             if not h_drop:
                 error_code = ctypes.get_last_error()
                 if log_fail:
-                    logger.debug("GetClipboardData(CF_HDROP) returned null (error: %s)", error_code)
+                    logger.debug(
+                        "GetClipboardData(CF_HDROP) returned null (error: %s)",
+                        error_code,
+                    )
                 return []
 
             count = int(_shell32.DragQueryFileW(h_drop, 0xFFFFFFFF, None, 0))
@@ -288,12 +302,16 @@ else:
 
             process_path = None
             if pid:
-                handle = _kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+                handle = _kernel32.OpenProcess(
+                    PROCESS_QUERY_LIMITED_INFORMATION, False, pid
+                )
                 if handle:
                     try:
                         buf_len = ctypes.wintypes.DWORD(512)
                         buffer = ctypes.create_unicode_buffer(buf_len.value)
-                        if _kernel32.QueryFullProcessImageNameW(handle, 0, buffer, ctypes.byref(buf_len)):
+                        if _kernel32.QueryFullProcessImageNameW(
+                            handle, 0, buffer, ctypes.byref(buf_len)
+                        ):
                             if buffer.value:
                                 process_path = buffer.value
                     finally:
@@ -347,7 +365,10 @@ else:
         _user32.CloseClipboard.restype = ctypes.wintypes.BOOL
         _user32.EmptyClipboard.argtypes = []
         _user32.EmptyClipboard.restype = ctypes.wintypes.BOOL
-        _user32.SetClipboardData.argtypes = [ctypes.wintypes.UINT, ctypes.wintypes.HANDLE]
+        _user32.SetClipboardData.argtypes = [
+            ctypes.wintypes.UINT,
+            ctypes.wintypes.HANDLE,
+        ]
         _user32.SetClipboardData.restype = ctypes.wintypes.HANDLE
 
         _kernel32.GlobalAlloc.argtypes = [ctypes.wintypes.UINT, ctypes.c_size_t]
@@ -394,14 +415,18 @@ else:
                 if not _user32.EmptyClipboard():
                     error_code = ctypes.get_last_error()
                     if attempt >= CLIPBOARD_RETRY_COUNT - 1:
-                        logger.warning("Failed to empty clipboard (error: %s)", error_code)
+                        logger.warning(
+                            "Failed to empty clipboard (error: %s)", error_code
+                        )
                     continue
 
                 result = _user32.SetClipboardData(CF_UNICODETEXT, h_mem)
                 if not result:
                     error_code = ctypes.get_last_error()
                     if attempt >= CLIPBOARD_RETRY_COUNT - 1:
-                        logger.warning("Failed to set clipboard data (error: %s)", error_code)
+                        logger.warning(
+                            "Failed to set clipboard data (error: %s)", error_code
+                        )
                     continue
 
                 logger.debug("Successfully set clipboard text (len=%d)", len(text))
@@ -455,7 +480,10 @@ else:
         _user32.CloseClipboard.restype = ctypes.wintypes.BOOL
         _user32.EmptyClipboard.argtypes = []
         _user32.EmptyClipboard.restype = ctypes.wintypes.BOOL
-        _user32.SetClipboardData.argtypes = [ctypes.wintypes.UINT, ctypes.wintypes.HANDLE]
+        _user32.SetClipboardData.argtypes = [
+            ctypes.wintypes.UINT,
+            ctypes.wintypes.HANDLE,
+        ]
         _user32.SetClipboardData.restype = ctypes.wintypes.HANDLE
         _user32.RegisterClipboardFormatW.argtypes = [ctypes.wintypes.LPCWSTR]
         _user32.RegisterClipboardFormatW.restype = ctypes.wintypes.UINT
@@ -463,7 +491,9 @@ else:
         h_drop_mem = _kernel32.GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, total_size)
         if not h_drop_mem:
             error_code = ctypes.get_last_error()
-            logger.warning("Failed to allocate global memory for CF_HDROP (error: %s)", error_code)
+            logger.warning(
+                "Failed to allocate global memory for CF_HDROP (error: %s)", error_code
+            )
             return False
 
         ptr = _kernel32.GlobalLock(h_drop_mem)
@@ -485,7 +515,9 @@ else:
         if also_set_text:
             text = "\n".join(paths)
             encoded = (text + "\0").encode("utf-16-le")
-            h_text_mem = _kernel32.GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, len(encoded))
+            h_text_mem = _kernel32.GlobalAlloc(
+                GMEM_MOVEABLE | GMEM_ZEROINIT, len(encoded)
+            )
             if h_text_mem:
                 text_ptr = _kernel32.GlobalLock(h_text_mem)
                 if text_ptr:
@@ -508,7 +540,9 @@ else:
                 if effect_ptr:
                     try:
                         effect = ctypes.wintypes.DWORD(DROPEFFECT_COPY)
-                        ctypes.memmove(effect_ptr, ctypes.byref(effect), ctypes.sizeof(effect))
+                        ctypes.memmove(
+                            effect_ptr, ctypes.byref(effect), ctypes.sizeof(effect)
+                        )
                     finally:
                         _kernel32.GlobalUnlock(h_drop_effect_mem)
                 else:
@@ -551,7 +585,9 @@ else:
             if drop_effect_format and h_drop_effect_mem:
                 if not _user32.SetClipboardData(drop_effect_format, h_drop_effect_mem):
                     error_code = ctypes.get_last_error()
-                    logger.debug("Failed to set Preferred DropEffect (error: %s)", error_code)
+                    logger.debug(
+                        "Failed to set Preferred DropEffect (error: %s)", error_code
+                    )
                     _kernel32.GlobalFree(h_drop_effect_mem)
 
             if h_text_mem:

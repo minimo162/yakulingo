@@ -24,7 +24,9 @@ logger = logging.getLogger(__name__)
 
 _RE_CODE_FENCE = re.compile(r"^\s*```(?:json)?\s*$", re.IGNORECASE)
 _RE_TRAILING_COMMAS = re.compile(r",(\s*[}\]])")
-_RE_ID_MARKER_BLOCK = re.compile(r"\[\[ID:(\d+)\]\]\s*(.+?)(?=\[\[ID:\d+\]\]|$)", re.DOTALL)
+_RE_ID_MARKER_BLOCK = re.compile(
+    r"\[\[ID:(\d+)\]\]\s*(.+?)(?=\[\[ID:\d+\]\]|$)", re.DOTALL
+)
 _RE_NUMBERED_LINE = re.compile(r"^\s*(\d+)\.\s*(.+)\s*$")
 
 
@@ -85,7 +87,9 @@ def is_truncated_json(text: str) -> bool:
     if not cleaned:
         return False
 
-    start_candidates = [idx for idx in (cleaned.find("{"), cleaned.find("[")) if idx != -1]
+    start_candidates = [
+        idx for idx in (cleaned.find("{"), cleaned.find("[")) if idx != -1
+    ]
     if not start_candidates:
         return False
 
@@ -262,15 +266,24 @@ def parse_text_to_en_3style(raw_content: str) -> dict[str, tuple[str, str]]:
         style = opt.get("style")
         translation = opt.get("translation")
         explanation = opt.get("explanation")
-        if not isinstance(style, str) or style not in ("standard", "concise", "minimal"):
+        if not isinstance(style, str) or style not in (
+            "standard",
+            "concise",
+            "minimal",
+        ):
             continue
         if not isinstance(translation, str):
             continue
-        by_style[style] = (translation, explanation if isinstance(explanation, str) else "")
+        by_style[style] = (
+            translation,
+            explanation if isinstance(explanation, str) else "",
+        )
     return by_style
 
 
-def parse_text_single_translation(raw_content: str) -> tuple[Optional[str], Optional[str]]:
+def parse_text_single_translation(
+    raw_content: str,
+) -> tuple[Optional[str], Optional[str]]:
     obj = loads_json_loose(raw_content)
     if not isinstance(obj, dict):
         return None, None
@@ -334,7 +347,9 @@ class LocalAIClient:
         if on_chunk is None:
             result = self._chat_completions(runtime, prompt, timeout=timeout)
         else:
-            result = self._chat_completions_streaming(runtime, prompt, on_chunk, timeout=timeout)
+            result = self._chat_completions_streaming(
+                runtime, prompt, on_chunk, timeout=timeout
+            )
         t_req = time.perf_counter() - t1
         logger.debug(
             "[TIMING] LocalAI chat_completions%s: %.2fs (prompt_chars=%d)",
@@ -391,7 +406,9 @@ class LocalAIClient:
         if self._should_cancel():
             raise TranslationCancelledError("Translation cancelled by user")
 
-        timeout_s = float(timeout if timeout is not None else self._settings.request_timeout)
+        timeout_s = float(
+            timeout if timeout is not None else self._settings.request_timeout
+        )
         payload: dict[str, object] = {
             "model": runtime.model_id or runtime.model_path.name,
             "messages": [
@@ -425,7 +442,9 @@ class LocalAIClient:
         if self._should_cancel():
             raise TranslationCancelledError("Translation cancelled by user")
 
-        timeout_s = float(timeout if timeout is not None else self._settings.request_timeout)
+        timeout_s = float(
+            timeout if timeout is not None else self._settings.request_timeout
+        )
         payload: dict[str, object] = {
             "model": runtime.model_id or runtime.model_path.name,
             "messages": [
@@ -447,7 +466,9 @@ class LocalAIClient:
 
         start = time.monotonic()
         try:
-            status_code, response_headers, initial_body = self._read_http_headers(sock, timeout_s, start)
+            status_code, response_headers, initial_body = self._read_http_headers(
+                sock, timeout_s, start
+            )
             if status_code != 200:
                 body_bytes = self._read_full_body(
                     sock, response_headers, initial_body, timeout_s, start
@@ -455,14 +476,21 @@ class LocalAIClient:
                 body_text = body_bytes.decode("utf-8", errors="replace")
                 lowered = body_text.lower()
                 if status_code == 400 and any(
-                    token in lowered for token in ("context", "ctx", "token", "too long", "exceed")
+                    token in lowered
+                    for token in ("context", "ctx", "token", "too long", "exceed")
                 ):
                     raise RuntimeError(f"LOCAL_PROMPT_TOO_LONG: {body_text[:200]}")
-                raise RuntimeError(f"ローカルAIサーバエラー（HTTP {status_code}）: {body_text[:200]}")
+                raise RuntimeError(
+                    f"ローカルAIサーバエラー（HTTP {status_code}）: {body_text[:200]}"
+                )
 
-            chunks = self._iter_body_bytes(sock, response_headers, initial_body, timeout_s, start)
+            chunks = self._iter_body_bytes(
+                sock, response_headers, initial_body, timeout_s, start
+            )
             content, model_id = self._consume_sse_stream(chunks, on_chunk)
-            return LocalAIRequestResult(content=content, model_id=model_id or runtime.model_id)
+            return LocalAIRequestResult(
+                content=content, model_id=model_id or runtime.model_id
+            )
         finally:
             try:
                 sock.close()
@@ -593,14 +621,18 @@ class LocalAIClient:
             while True:
                 line_end = buffer.find(b"\r\n")
                 if line_end != -1:
-                    size_line = buffer[:line_end].decode("ascii", errors="replace").strip()
+                    size_line = (
+                        buffer[:line_end].decode("ascii", errors="replace").strip()
+                    )
                     del buffer[: line_end + 2]
                     if not size_line:
                         continue
                     try:
                         size = int(size_line.split(";", 1)[0], 16)
                     except ValueError as e:
-                        raise LocalAIError("チャンクサイズを解析できませんでした") from e
+                        raise LocalAIError(
+                            "チャンクサイズを解析できませんでした"
+                        ) from e
                     break
                 chunk = self._recv_socket_chunk(sock, timeout_s, start)
                 if chunk is None:
@@ -694,7 +726,9 @@ class LocalAIClient:
         timeout_s: float,
         start: float,
     ) -> bytes:
-        return b"".join(self._iter_body_bytes(sock, headers, initial_body, timeout_s, start))
+        return b"".join(
+            self._iter_body_bytes(sock, headers, initial_body, timeout_s, start)
+        )
 
     def _http_json_cancellable(
         self,
@@ -751,15 +785,20 @@ class LocalAIClient:
                 body_text = body_bytes.decode("utf-8", errors="replace")
                 lowered = body_text.lower()
                 if status_code == 400 and any(
-                    token in lowered for token in ("context", "ctx", "token", "too long", "exceed")
+                    token in lowered
+                    for token in ("context", "ctx", "token", "too long", "exceed")
                 ):
                     raise RuntimeError(f"LOCAL_PROMPT_TOO_LONG: {body_text[:200]}")
-                raise RuntimeError(f"ローカルAIサーバエラー（HTTP {status_code}）: {body_text[:200]}")
+                raise RuntimeError(
+                    f"ローカルAIサーバエラー（HTTP {status_code}）: {body_text[:200]}"
+                )
 
             try:
                 return json.loads(body_bytes.decode("utf-8"))
             except json.JSONDecodeError as e:
-                raise RuntimeError(f"ローカルAIサーバのJSON応答を解析できませんでした: {e}") from e
+                raise RuntimeError(
+                    f"ローカルAIサーバのJSON応答を解析できませんでした: {e}"
+                ) from e
         finally:
             try:
                 sock.close()
@@ -777,7 +816,9 @@ class LocalAIClient:
         try:
             status_code = int(status_line.split(" ")[1])
         except Exception as e:
-            raise LocalAIError(f"HTTPステータス行を解析できませんでした: {status_line}") from e
+            raise LocalAIError(
+                f"HTTPステータス行を解析できませんでした: {status_line}"
+            ) from e
 
         headers: dict[str, str] = {}
         for line in lines[1:]:

@@ -78,7 +78,9 @@ def test_local_backend_calls_are_serialized_by_lock() -> None:
     t2.start()
     start_event.set()
 
-    assert copilot.first_entered.wait(timeout=3.0), f"translate_sync not entered (errors={errors})"
+    assert copilot.first_entered.wait(timeout=3.0), (
+        f"translate_sync not entered (errors={errors})"
+    )
     # If the lock works, the second translate_sync must not run until we release the first.
     assert not copilot.second_entered.wait(timeout=0.2)
 

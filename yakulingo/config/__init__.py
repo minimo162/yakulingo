@@ -10,7 +10,7 @@ from .settings import (
 )
 
 __all__ = [
-    'AppSettings',
-    'get_default_settings_path',
-    'get_default_prompts_dir',
+    "AppSettings",
+    "get_default_settings_path",
+    "get_default_prompts_dir",
 ]

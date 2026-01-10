@@ -14,60 +14,61 @@ from .font_manager import FontManager, FontSizeAdjuster
 
 # Lazy-loaded processors via __getattr__
 _LAZY_IMPORTS = {
-    'ExcelProcessor': 'excel_processor',
-    'CsvProcessor': 'csv_processor',
-    'WordProcessor': 'word_processor',
-    'PptxProcessor': 'pptx_processor',
-    'PdfProcessor': 'pdf_processor',
-    'TxtProcessor': 'txt_processor',
-    'MsgProcessor': 'msg_processor',
-    'ScannedPdfError': 'pdf_processor',
-    'is_layout_available': 'pdf_layout',
+    "ExcelProcessor": "excel_processor",
+    "CsvProcessor": "csv_processor",
+    "WordProcessor": "word_processor",
+    "PptxProcessor": "pptx_processor",
+    "PdfProcessor": "pdf_processor",
+    "TxtProcessor": "txt_processor",
+    "MsgProcessor": "msg_processor",
+    "ScannedPdfError": "pdf_processor",
+    "is_layout_available": "pdf_layout",
 }
 
 # Submodules that can be accessed via __getattr__ (for patching support)
 _SUBMODULES = {
-    'excel_processor',
-    'csv_processor',
-    'word_processor',
-    'pptx_processor',
-    'pdf_processor',
-    'txt_processor',
-    'msg_processor',
-    'base',
-    'translators',
-    'font_manager',
-    'pdf_font_manager',
-    'pdf_operators',
+    "excel_processor",
+    "csv_processor",
+    "word_processor",
+    "pptx_processor",
+    "pdf_processor",
+    "txt_processor",
+    "msg_processor",
+    "base",
+    "translators",
+    "font_manager",
+    "pdf_font_manager",
+    "pdf_operators",
 }
 
 
 def __getattr__(name: str):
     """Lazy-load heavy processor modules on first access."""
     import importlib
+
     # Support accessing submodules directly (for unittest.mock.patch)
     if name in _SUBMODULES:
-        return importlib.import_module(f'.{name}', __package__)
+        return importlib.import_module(f".{name}", __package__)
     if name in _LAZY_IMPORTS:
         module_name = _LAZY_IMPORTS[name]
-        module = importlib.import_module(f'.{module_name}', __package__)
+        module = importlib.import_module(f".{module_name}", __package__)
         return getattr(module, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 __all__ = [
-    'FileProcessor',
-    'CellTranslator',
-    'ParagraphTranslator',
-    'FontManager',
-    'FontSizeAdjuster',
-    'ExcelProcessor',
-    'CsvProcessor',
-    'WordProcessor',
-    'PptxProcessor',
-    'PdfProcessor',
-    'TxtProcessor',
-    'MsgProcessor',
-    'ScannedPdfError',
-    'is_layout_available',
+    "FileProcessor",
+    "CellTranslator",
+    "ParagraphTranslator",
+    "FontManager",
+    "FontSizeAdjuster",
+    "ExcelProcessor",
+    "CsvProcessor",
+    "WordProcessor",
+    "PptxProcessor",
+    "PdfProcessor",
+    "TxtProcessor",
+    "MsgProcessor",
+    "ScannedPdfError",
+    "is_layout_available",
 ]

@@ -29,18 +29,21 @@ logger = logging.getLogger(__name__)
 
 class Tab(Enum):
     """UI tabs"""
+
     TEXT = "text"
     FILE = "file"
 
 
 class TranslationBackend(Enum):
     """Translation backend selection"""
+
     COPILOT = "copilot"
     LOCAL = "local"
 
 
 class LocalAIState(Enum):
     """Local AI (llama-server) readiness states for UI"""
+
     NOT_INSTALLED = "not_installed"  # exe/model not found
     STARTING = "starting"
     READY = "ready"
@@ -49,6 +52,7 @@ class LocalAIState(Enum):
 
 class FileState(Enum):
     """File tab states"""
+
     EMPTY = "empty"
     SELECTED = "selected"
     TRANSLATING = "translating"
@@ -58,14 +62,16 @@ class FileState(Enum):
 
 class TextViewState(Enum):
     """Text tab view states"""
-    INPUT = "input"      # Initial state - large input area
-    RESULT = "result"    # After translation - compact input + result panel
+
+    INPUT = "input"  # Initial state - large input area
+    RESULT = "result"  # After translation - compact input + result panel
 
 
 class ConnectionState(Enum):
     """Copilot connection states for clear user feedback"""
-    CONNECTING = "connecting"      # Initial state - attempting to connect
-    CONNECTED = "connected"        # Successfully connected and ready
+
+    CONNECTING = "connecting"  # Initial state - attempting to connect
+    CONNECTED = "connected"  # Successfully connected and ready
     LOGIN_REQUIRED = "login_required"  # Edge is running but login needed
     EDGE_NOT_RUNNING = "edge_not_running"  # Edge browser not found
     CONNECTION_FAILED = "connection_failed"  # Connection failed for other reasons
@@ -73,10 +79,11 @@ class ConnectionState(Enum):
 
 class LayoutInitializationState(Enum):
     """PP-DocLayout-L initialization states for on-demand PDF support"""
+
     NOT_INITIALIZED = "not_initialized"  # Initial state - not yet initialized
-    INITIALIZING = "initializing"        # Currently initializing (prevents double init)
-    INITIALIZED = "initialized"          # Successfully initialized
-    FAILED = "failed"                    # Initialization failed
+    INITIALIZING = "initializing"  # Currently initializing (prevents double init)
+    INITIALIZED = "initialized"  # Successfully initialized
+    FAILED = "failed"  # Initialization failed
 
 
 @dataclass
@@ -90,6 +97,7 @@ class AppState:
     - Japanese input → English output
     - Other languages → Japanese output
     """
+
     # Current tab
     current_tab: Tab = Tab.TEXT
     # Backend selection (persisted in settings)
@@ -102,10 +110,14 @@ class AppState:
     text_back_translating: bool = False
     text_detected_language: Optional[str] = None  # Copilot-detected source language
     text_detected_language_reason: Optional[str] = None  # Local detection reason for UI
-    text_output_language_override: Optional[str] = None  # "en" or "jp" when manually overridden
+    text_output_language_override: Optional[str] = (
+        None  # "en" or "jp" when manually overridden
+    )
     text_result: Optional[TextTranslationResult] = None
     text_translation_elapsed_time: Optional[float] = None  # Translation time in seconds
-    text_streaming_preview: Optional[str] = None  # Partial streamed output during translation
+    text_streaming_preview: Optional[str] = (
+        None  # Partial streamed output during translation
+    )
     text_compare_mode: str = "off"  # "off" | "style" | "source"
     text_compare_base_style: str = "standard"
 
@@ -113,20 +125,30 @@ class AppState:
     file_state: FileState = FileState.EMPTY
     selected_file: Optional[Path] = None
     file_info: Optional[FileInfo] = None
-    file_detected_language: Optional[str] = None  # Auto-detected source language (e.g., "日本語", "英語")
+    file_detected_language: Optional[str] = (
+        None  # Auto-detected source language (e.g., "日本語", "英語")
+    )
     file_detected_language_reason: Optional[str] = None  # Local detection reason for UI
-    file_output_language: str = "en"  # "en" or "jp" - output language for file translation
-    file_output_language_overridden: bool = False  # True when user manually selects output language
+    file_output_language: str = (
+        "en"  # "en" or "jp" - output language for file translation
+    )
+    file_output_language_overridden: bool = (
+        False  # True when user manually selects output language
+    )
     translation_progress: float = 0.0
     translation_status: str = ""
     translation_phase: Optional["TranslationPhase"] = None
     translation_phase_detail: Optional[str] = None
     translation_phase_current: Optional[int] = None
     translation_phase_total: Optional[int] = None
-    translation_phase_counts: dict["TranslationPhase", tuple[int, int]] = field(default_factory=dict)
+    translation_phase_counts: dict["TranslationPhase", tuple[int, int]] = field(
+        default_factory=dict
+    )
     translation_eta_seconds: Optional[float] = None
     output_file: Optional[Path] = None
-    translation_result: Optional[TranslationResult] = None  # Full result with all output files
+    translation_result: Optional[TranslationResult] = (
+        None  # Full result with all output files
+    )
     error_message: str = ""
     file_drop_error: Optional[str] = None
 
@@ -137,7 +159,9 @@ class AppState:
     # True when Copilot chat UI is ready (user can start translation without extra setup).
     copilot_ready: bool = False
     copilot_error: str = ""
-    connection_state: ConnectionState = ConnectionState.CONNECTING  # Current connection state for UI
+    connection_state: ConnectionState = (
+        ConnectionState.CONNECTING
+    )  # Current connection state for UI
 
     # Local AI connection / readiness (llama.cpp llama-server)
     local_ai_state: LocalAIState = LocalAIState.NOT_INSTALLED
@@ -186,10 +210,13 @@ class AppState:
         self._history_initialized = True
         try:
             from yakulingo.storage.history_db import HistoryDB, get_default_db_path
+
             self._history_db = HistoryDB(get_default_db_path())
             # Load recent history from database
             self.history = self._history_db.get_recent(self.max_history_entries)
-            logger.debug("History database initialized with %d entries", len(self.history))
+            logger.debug(
+                "History database initialized with %d entries", len(self.history)
+            )
         except (OSError, sqlite3.Error) as e:
             logger.warning("Failed to initialize history database: %s", e)
             self._history_db = None
@@ -279,7 +306,7 @@ class AppState:
         self.history.insert(0, entry)
         # Keep only max_history_entries in memory
         if len(self.history) > self.max_history_entries:
-            self.history = self.history[:self.max_history_entries]
+            self.history = self.history[: self.max_history_entries]
 
     def delete_history_entry(self, entry: HistoryEntry) -> None:
         """Delete a specific history entry"""

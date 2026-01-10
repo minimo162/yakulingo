@@ -33,12 +33,14 @@ logger = logging.getLogger(__name__)
 _pythoncom = None
 _pywintypes = None
 
+
 def _get_pythoncom():
     """Lazy import pythoncom (Windows COM library)."""
     global _pythoncom
-    if _pythoncom is None and sys.platform == 'win32':
+    if _pythoncom is None and sys.platform == "win32":
         try:
             import pythoncom
+
             _pythoncom = pythoncom
         except ImportError:
             logger.debug("pythoncom not available")
@@ -48,9 +50,10 @@ def _get_pythoncom():
 def _get_pywintypes():
     """Lazy import pywintypes (Windows COM error types)."""
     global _pywintypes
-    if _pywintypes is None and sys.platform == 'win32':
+    if _pywintypes is None and sys.platform == "win32":
         try:
             import pywintypes
+
             _pywintypes = pywintypes
         except ImportError:
             logger.debug("pywintypes not available")
@@ -84,13 +87,23 @@ def com_initialized():
                 # S_OK (0) = newly initialized, S_FALSE (1) = already initialized
                 # Some pywin32 versions may return None on success
                 # Only set initialized=True for S_OK (0) or None to ensure proper cleanup
-                initialized = (hr == 0 or hr is None)
-                logger.debug("COM initialized (STA) thread=%s hr=%s will_uninit=%s", thread_id, hr, initialized)
+                initialized = hr == 0 or hr is None
+                logger.debug(
+                    "COM initialized (STA) thread=%s hr=%s will_uninit=%s",
+                    thread_id,
+                    hr,
+                    initialized,
+                )
             except Exception:
                 # Fall back to simple CoInitialize if CoInitializeEx fails
                 hr = pythoncom.CoInitialize()
-                initialized = (hr == 0 or hr is None)
-                logger.debug("COM initialized (fallback) thread=%s hr=%s will_uninit=%s", thread_id, hr, initialized)
+                initialized = hr == 0 or hr is None
+                logger.debug(
+                    "COM initialized (fallback) thread=%s hr=%s will_uninit=%s",
+                    thread_id,
+                    hr,
+                    initialized,
+                )
         except Exception as e:
             logger.debug("COM initialization skipped: %s", e)
 
@@ -113,12 +126,14 @@ _xlwings = None
 HAS_XLWINGS = False
 _EXCEL_COM_REGISTERED: bool | None = None
 
+
 def _get_xlwings():
     """Lazy import xlwings."""
     global _xlwings, HAS_XLWINGS
     if _xlwings is None:
         try:
             import xlwings as xw
+
             _xlwings = xw
             HAS_XLWINGS = True
         except ImportError:
@@ -143,7 +158,9 @@ def _is_excel_com_registered() -> bool:
     try:
         import winreg
 
-        with winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, r"Excel.Application\\CLSID") as key:
+        with winreg.OpenKey(
+            winreg.HKEY_CLASSES_ROOT, r"Excel.Application\\CLSID"
+        ) as key:
             clsid, _ = winreg.QueryValueEx(key, None)
             _EXCEL_COM_REGISTERED = bool(clsid)
     except Exception:
@@ -242,7 +259,9 @@ def _is_recoverable_com_error(e: Exception) -> bool:
                 return False
 
     # Also check for common COM error messages (works on Japanese/English Windows)
-    return is_com_error or any(err_msg in error_str for err_msg in _RECOVERABLE_COM_ERROR_MESSAGES)
+    return is_com_error or any(
+        err_msg in error_str for err_msg in _RECOVERABLE_COM_ERROR_MESSAGES
+    )
 
 
 def _try_create_new_excel_instance(xw, max_attempts: int = 3):
@@ -303,7 +322,7 @@ def _try_create_new_excel_instance(xw, max_attempts: int = 3):
             for xw_app in xw.apps:
                 try:
                     # xlwings App has .hwnd property that matches Excel.Application.Hwnd
-                    if hasattr(xw_app, 'hwnd') and xw_app.hwnd == new_hwnd:
+                    if hasattr(xw_app, "hwnd") and xw_app.hwnd == new_hwnd:
                         target_app = xw_app
                         logger.debug("Found xlwings App matching Hwnd=%s", new_hwnd)
                         break
@@ -315,13 +334,14 @@ def _try_create_new_excel_instance(xw, max_attempts: int = 3):
                 if len(target_app.books) == 0:
                     logger.info(
                         "Created isolated Excel instance via DispatchEx (PID=%s, Hwnd=%s)",
-                        target_app.pid, new_hwnd
+                        target_app.pid,
+                        new_hwnd,
                     )
                     return target_app
                 else:
                     logger.warning(
                         "DispatchEx instance has books (count=%d), this is unexpected",
-                        len(target_app.books)
+                        len(target_app.books),
                     )
                     # Clean up this unexpected instance
                     try:
@@ -333,17 +353,21 @@ def _try_create_new_excel_instance(xw, max_attempts: int = 3):
 
             # Hwnd not found in xw.apps - wait for xlwings to register the instance
             # xlwings monitors ROT asynchronously, may need a short wait
-            logger.debug("Hwnd %s not found in xw.apps, waiting for registration...", new_hwnd)
+            logger.debug(
+                "Hwnd %s not found in xw.apps, waiting for registration...", new_hwnd
+            )
             for wait_attempt in range(5):
                 time.sleep(0.1)
                 for xw_app in xw.apps:
                     try:
-                        if hasattr(xw_app, 'hwnd') and xw_app.hwnd == new_hwnd:
+                        if hasattr(xw_app, "hwnd") and xw_app.hwnd == new_hwnd:
                             if len(xw_app.books) == 0:
                                 logger.info(
                                     "Created isolated Excel instance via DispatchEx after wait "
                                     "(PID=%s, Hwnd=%s, wait_attempts=%d)",
-                                    xw_app.pid, new_hwnd, wait_attempt + 1
+                                    xw_app.pid,
+                                    new_hwnd,
+                                    wait_attempt + 1,
                                 )
                                 return xw_app
                             break
@@ -353,7 +377,8 @@ def _try_create_new_excel_instance(xw, max_attempts: int = 3):
             # Still not found - clean up and retry
             logger.debug(
                 "Attempt %d: Could not find DispatchEx instance (Hwnd=%s) in xlwings",
-                attempt + 1, new_hwnd
+                attempt + 1,
+                new_hwnd,
             )
             try:
                 excel_com.Quit()
@@ -416,17 +441,24 @@ def _copy_sheet_with_retry(
             error_str = str(e)
 
             if _is_recoverable_com_error(e) and attempt < max_retries - 1:
-                delay = retry_delay * (2 ** attempt)
+                delay = retry_delay * (2**attempt)
                 logger.warning(
                     "Sheet copy RPC error (attempt %d/%d) for '%s': %s. Retrying in %.1fs...",
-                    attempt + 1, max_retries, new_name, error_str, delay
+                    attempt + 1,
+                    max_retries,
+                    new_name,
+                    error_str,
+                    delay,
                 )
                 _cleanup_com_before_retry()
                 time.sleep(delay)
             else:
                 logger.error(
                     "Sheet copy failed (attempt %d/%d) for '%s': %s",
-                    attempt + 1, max_retries, new_name, error_str
+                    attempt + 1,
+                    max_retries,
+                    new_name,
+                    error_str,
                 )
                 raise
 
@@ -434,7 +466,9 @@ def _copy_sheet_with_retry(
         raise last_error
 
 
-def _create_excel_app_with_retry(xw, max_retries: int = _EXCEL_RETRY_COUNT, retry_delay: float = _EXCEL_RETRY_DELAY):
+def _create_excel_app_with_retry(
+    xw, max_retries: int = _EXCEL_RETRY_COUNT, retry_delay: float = _EXCEL_RETRY_DELAY
+):
     """
     Create xlwings App with retry logic.
 
@@ -470,7 +504,8 @@ def _create_excel_app_with_retry(xw, max_retries: int = _EXCEL_RETRY_COUNT, retr
                 logger.warning(
                     "xlwings connected to existing Excel instance with %d books (PID=%s). "
                     "Releasing reference and creating new instance...",
-                    existing_books, existing_pid
+                    existing_books,
+                    existing_pid,
                 )
                 # Release the reference without closing the app
                 del app
@@ -485,7 +520,7 @@ def _create_excel_app_with_retry(xw, max_retries: int = _EXCEL_RETRY_COUNT, retr
                     # Still connected to existing instance - try multiple attempts
                     logger.warning(
                         "Still connected to existing Excel (PID=%s). Attempting isolation...",
-                        app.pid
+                        app.pid,
                     )
                     del app
                     gc.collect()
@@ -496,17 +531,24 @@ def _create_excel_app_with_retry(xw, max_retries: int = _EXCEL_RETRY_COUNT, retr
                             "既存のExcelインスタンスから分離できませんでした。\n"
                             "開いているExcelファイルをすべて閉じてから再試行してください。"
                         )
-            logger.debug("Created isolated Excel instance (PID=%s, books=%d)", app.pid, len(app.books))
+            logger.debug(
+                "Created isolated Excel instance (PID=%s, books=%d)",
+                app.pid,
+                len(app.books),
+            )
             return app
         except Exception as e:
             last_error = e
             error_str = str(e)
 
             if _is_recoverable_com_error(e) and attempt < max_retries - 1:
-                delay = retry_delay * (2 ** attempt)  # Exponential backoff
+                delay = retry_delay * (2**attempt)  # Exponential backoff
                 logger.warning(
                     "Excel COM error (attempt %d/%d): %s. Retrying in %.1fs...",
-                    attempt + 1, max_retries, error_str, delay
+                    attempt + 1,
+                    max_retries,
+                    error_str,
+                    delay,
                 )
 
                 # Clean up COM resources before retry
@@ -517,7 +559,9 @@ def _create_excel_app_with_retry(xw, max_retries: int = _EXCEL_RETRY_COUNT, retr
                 # Non-recoverable error or last attempt
                 logger.error(
                     "Excel COM error (final attempt %d/%d): %s",
-                    attempt + 1, max_retries, error_str
+                    attempt + 1,
+                    max_retries,
+                    error_str,
                 )
                 raise
 
@@ -548,7 +592,9 @@ def _verify_workbook_path(wb, expected_path: Path, operation: str = "open") -> N
             logger.error(
                 "SAFETY: Workbook path mismatch during %s! Expected: %s, Got: %s. "
                 "This may indicate xlwings connected to wrong Excel instance.",
-                operation, expected_resolved, opened_path
+                operation,
+                expected_resolved,
+                opened_path,
             )
             raise RuntimeError(
                 f"ワークブックパスの不一致を検出しました（{operation}）。"
@@ -558,16 +604,20 @@ def _verify_workbook_path(wb, expected_path: Path, operation: str = "open") -> N
         logger.debug("Verified workbook path (%s): %s", operation, opened_path)
     except AttributeError:
         # wb.fullname not available (shouldn't happen with xlwings)
-        logger.warning("Could not verify workbook path - fullname attribute not available")
+        logger.warning(
+            "Could not verify workbook path - fullname attribute not available"
+        )
 
 
 # Excel sheet name forbidden characters: \ / ? * [ ] :
 # Maximum length: 31 characters
-_EXCEL_SHEET_NAME_FORBIDDEN = re.compile(r'[\\/?*\[\]:]')
+_EXCEL_SHEET_NAME_FORBIDDEN = re.compile(r"[\\/?*\[\]:]")
 _EXCEL_SHEET_NAME_MAX_LENGTH = 31
 
 
-def sanitize_sheet_name(name: str, max_length: int = _EXCEL_SHEET_NAME_MAX_LENGTH) -> str:
+def sanitize_sheet_name(
+    name: str, max_length: int = _EXCEL_SHEET_NAME_MAX_LENGTH
+) -> str:
     """
     Sanitize a string to be used as an Excel sheet name.
 
@@ -582,11 +632,11 @@ def sanitize_sheet_name(name: str, max_length: int = _EXCEL_SHEET_NAME_MAX_LENGT
         Sanitized sheet name safe for Excel
     """
     # Replace forbidden characters with underscore
-    sanitized = _EXCEL_SHEET_NAME_FORBIDDEN.sub('_', name)
+    sanitized = _EXCEL_SHEET_NAME_FORBIDDEN.sub("_", name)
 
     # Truncate if too long
     if len(sanitized) > max_length:
-        sanitized = sanitized[:max_length - 3] + '...'
+        sanitized = sanitized[: max_length - 3] + "..."
 
     return sanitized
 
@@ -651,22 +701,22 @@ def _detect_formula_cells_via_zipfile(file_path: Path) -> set[tuple[str, int, in
     formula_cells: set[tuple[str, int, int]] = set()
 
     try:
-        with zipfile.ZipFile(file_path, 'r') as xlsx:
+        with zipfile.ZipFile(file_path, "r") as xlsx:
             # Parse workbook.xml to get sheet name -> relationship mapping
             sheet_names: dict[str, str] = {}  # rId -> sheet_name
             sheet_order: list[str] = []  # Ordered list of rIds
 
             try:
-                with xlsx.open('xl/workbook.xml') as workbook_xml:
+                with xlsx.open("xl/workbook.xml") as workbook_xml:
                     # Parse XML incrementally to reduce memory
-                    for event, elem in ET.iterparse(workbook_xml, events=['end']):
+                    for event, elem in ET.iterparse(workbook_xml, events=["end"]):
                         # Sheet elements: <sheet name="Sheet1" sheetId="1" r:id="rId1"/>
-                        if elem.tag.endswith('}sheet') or elem.tag == 'sheet':
-                            sheet_name = elem.get('name', '')
+                        if elem.tag.endswith("}sheet") or elem.tag == "sheet":
+                            sheet_name = elem.get("name", "")
                             # Get r:id attribute (namespace might vary)
                             rid = None
                             for attr_name, attr_value in elem.attrib.items():
-                                if attr_name.endswith('}id') or attr_name == 'id':
+                                if attr_name.endswith("}id") or attr_name == "id":
                                     rid = attr_value
                                     break
                             if rid and sheet_name:
@@ -680,18 +730,21 @@ def _detect_formula_cells_via_zipfile(file_path: Path) -> set[tuple[str, int, in
             # Parse relationships to map rId to sheet file paths
             rid_to_file: dict[str, str] = {}
             try:
-                with xlsx.open('xl/_rels/workbook.xml.rels') as rels_xml:
-                    for event, elem in ET.iterparse(rels_xml, events=['end']):
-                        if elem.tag.endswith('}Relationship') or elem.tag == 'Relationship':
-                            rid = elem.get('Id', '')
-                            target = elem.get('Target', '')
+                with xlsx.open("xl/_rels/workbook.xml.rels") as rels_xml:
+                    for event, elem in ET.iterparse(rels_xml, events=["end"]):
+                        if (
+                            elem.tag.endswith("}Relationship")
+                            or elem.tag == "Relationship"
+                        ):
+                            rid = elem.get("Id", "")
+                            target = elem.get("Target", "")
                             if rid and target:
                                 # Target can be:
                                 # - Relative: "worksheets/sheet1.xml"
                                 # - Absolute from xl/: "/xl/worksheets/sheet1.xml"
                                 # Normalize to full path within ZIP
-                                target = target.lstrip('/')
-                                if target.startswith('xl/'):
+                                target = target.lstrip("/")
+                                if target.startswith("xl/"):
                                     rid_to_file[rid] = target
                                 else:
                                     rid_to_file[rid] = f"xl/{target}"
@@ -703,38 +756,42 @@ def _detect_formula_cells_via_zipfile(file_path: Path) -> set[tuple[str, int, in
                     rid_to_file[rid] = f"xl/worksheets/sheet{i}.xml"
 
             # Parse each sheet XML to find formula cells
-            cell_ref_pattern = re.compile(r'^([A-Z]+)(\d+)$')
+            cell_ref_pattern = re.compile(r"^([A-Z]+)(\d+)$")
 
             for rid in sheet_order:
-                sheet_name = sheet_names.get(rid, '')
-                sheet_file = rid_to_file.get(rid, '')
+                sheet_name = sheet_names.get(rid, "")
+                sheet_file = rid_to_file.get(rid, "")
                 if not sheet_name or not sheet_file:
                     continue
 
                 try:
                     with xlsx.open(sheet_file) as sheet_xml:
-                        for event, elem in ET.iterparse(sheet_xml, events=['end']):
+                        for event, elem in ET.iterparse(sheet_xml, events=["end"]):
                             # Row element: <row r="1">
-                            if elem.tag.endswith('}row') or elem.tag == 'row':
+                            if elem.tag.endswith("}row") or elem.tag == "row":
                                 elem.clear()
                             # Cell element: <c r="A1"><f>SUM(B1:B10)</f><v>100</v></c>
-                            elif elem.tag.endswith('}c') or elem.tag == 'c':
+                            elif elem.tag.endswith("}c") or elem.tag == "c":
                                 # Check if cell has a formula child element
                                 has_formula = False
                                 for child in elem:
-                                    if child.tag.endswith('}f') or child.tag == 'f':
+                                    if child.tag.endswith("}f") or child.tag == "f":
                                         has_formula = True
                                         break
 
                                 if has_formula:
-                                    cell_ref = elem.get('r', '')
+                                    cell_ref = elem.get("r", "")
                                     match = cell_ref_pattern.match(cell_ref)
                                     if match:
                                         col_letter = match.group(1)
                                         row_num = int(match.group(2))
                                         try:
-                                            col_idx = column_index_from_string(col_letter)
-                                            formula_cells.add((sheet_name, row_num, col_idx))
+                                            col_idx = column_index_from_string(
+                                                col_letter
+                                            )
+                                            formula_cells.add(
+                                                (sheet_name, row_num, col_idx)
+                                            )
                                         except (ValueError, TypeError):
                                             pass
                                 elem.clear()
@@ -813,18 +870,18 @@ class ExcelProcessor(FileProcessor):
         sheet_to_file: dict[str, str] = {}
 
         try:
-            with zipfile.ZipFile(file_path, 'r') as xlsx:
+            with zipfile.ZipFile(file_path, "r") as xlsx:
                 sheet_names: dict[str, str] = {}  # rId -> sheet_name
                 sheet_order: list[str] = []  # ordered list of rIds
 
                 try:
-                    with xlsx.open('xl/workbook.xml') as workbook_xml:
-                        for _event, elem in ET.iterparse(workbook_xml, events=['end']):
-                            if elem.tag.endswith('}sheet') or elem.tag == 'sheet':
-                                sheet_name = elem.get('name', '')
+                    with xlsx.open("xl/workbook.xml") as workbook_xml:
+                        for _event, elem in ET.iterparse(workbook_xml, events=["end"]):
+                            if elem.tag.endswith("}sheet") or elem.tag == "sheet":
+                                sheet_name = elem.get("name", "")
                                 rid = None
                                 for attr_name, attr_value in elem.attrib.items():
-                                    if attr_name.endswith('}id') or attr_name == 'id':
+                                    if attr_name.endswith("}id") or attr_name == "id":
                                         rid = attr_value
                                         break
                                 if rid and sheet_name:
@@ -838,14 +895,17 @@ class ExcelProcessor(FileProcessor):
 
                 rid_to_file: dict[str, str] = {}
                 try:
-                    with xlsx.open('xl/_rels/workbook.xml.rels') as rels_xml:
-                        for _event, elem in ET.iterparse(rels_xml, events=['end']):
-                            if elem.tag.endswith('}Relationship') or elem.tag == 'Relationship':
-                                rid = elem.get('Id', '')
-                                target = elem.get('Target', '')
+                    with xlsx.open("xl/_rels/workbook.xml.rels") as rels_xml:
+                        for _event, elem in ET.iterparse(rels_xml, events=["end"]):
+                            if (
+                                elem.tag.endswith("}Relationship")
+                                or elem.tag == "Relationship"
+                            ):
+                                rid = elem.get("Id", "")
+                                target = elem.get("Target", "")
                                 if rid and target:
-                                    target = target.lstrip('/')
-                                    if target.startswith('xl/'):
+                                    target = target.lstrip("/")
+                                    if target.startswith("xl/"):
                                         rid_to_file[rid] = target
                                     else:
                                         rid_to_file[rid] = f"xl/{target}"
@@ -911,46 +971,68 @@ class ExcelProcessor(FileProcessor):
             # This is significantly faster than COM FindFormat scans on merge-heavy sheets.
             workbook_path = None
             try:
-                workbook_fullname = getattr(getattr(sheet, "book", None), "fullname", None)
+                workbook_fullname = getattr(
+                    getattr(sheet, "book", None), "fullname", None
+                )
                 if workbook_fullname:
                     workbook_path = Path(workbook_fullname)
             except Exception:
                 workbook_path = None
 
-            if workbook_path and workbook_path.suffix.lower() in (".xlsx", ".xlsm") and workbook_path.exists():
+            if (
+                workbook_path
+                and workbook_path.suffix.lower() in (".xlsx", ".xlsm")
+                and workbook_path.exists()
+            ):
                 sheet_xml_paths = self._get_xlsx_sheet_xml_paths(workbook_path)
                 sheet_xml_path = sheet_xml_paths.get(sheet_name)
                 if sheet_xml_path:
                     t0 = time.perf_counter()
                     try:
-                        with zipfile.ZipFile(workbook_path, 'r') as xlsx:
+                        with zipfile.ZipFile(workbook_path, "r") as xlsx:
                             with xlsx.open(sheet_xml_path) as sheet_xml:
-                                for _event, elem in ET.iterparse(sheet_xml, events=['end']):
-                                    if elem.tag.endswith('}mergeCell') or elem.tag == 'mergeCell':
-                                        ref = elem.get('ref')
+                                for _event, elem in ET.iterparse(
+                                    sheet_xml, events=["end"]
+                                ):
+                                    if (
+                                        elem.tag.endswith("}mergeCell")
+                                        or elem.tag == "mergeCell"
+                                    ):
+                                        ref = elem.get("ref")
                                         if ref:
                                             try:
-                                                min_col, min_row, max_col, max_row = range_boundaries(ref)
-                                                merged_cells[ref] = (min_row, min_col, max_row, max_col)
+                                                min_col, min_row, max_col, max_row = (
+                                                    range_boundaries(ref)
+                                                )
+                                                merged_cells[ref] = (
+                                                    min_row,
+                                                    min_col,
+                                                    max_row,
+                                                    max_col,
+                                                )
                                             except Exception:
                                                 pass
                                     elem.clear()
 
                         logger.debug(
                             "Built merged cells map for sheet '%s' via XLSX parse: %d merged areas (%.2fs)",
-                            sheet_name, len(merged_cells), time.perf_counter() - t0,
+                            sheet_name,
+                            len(merged_cells),
+                            time.perf_counter() - t0,
                         )
                         self._merged_cells_cache[sheet_name] = merged_cells
                         return merged_cells
                     except (zipfile.BadZipFile, KeyError, ET.ParseError) as e:
                         logger.debug(
                             "XLSX merged-cell parse failed for sheet '%s' (falling back to COM scan): %s",
-                            sheet_name, e,
+                            sheet_name,
+                            e,
                         )
                     except Exception as e:
                         logger.debug(
                             "XLSX merged-cell parse failed for sheet '%s' (falling back to COM scan): %s",
-                            sheet_name, e,
+                            sheet_name,
+                            e,
                         )
 
             app = sheet.book.app
@@ -961,11 +1043,7 @@ class ExcelProcessor(FileProcessor):
 
             # Find first merged cell
             # LookAt=2 is xlPart, SearchFormat=True enables format-based search
-            first_cell = used_range.api.Find(
-                What="",
-                LookAt=2,
-                SearchFormat=True
-            )
+            first_cell = used_range.api.Find(What="", LookAt=2, SearchFormat=True)
 
             if first_cell is None:
                 self._merged_cells_cache[sheet_name] = merged_cells
@@ -996,7 +1074,7 @@ class ExcelProcessor(FileProcessor):
                         merge_area.Row,
                         merge_area.Column,
                         merge_area.Row + merge_area.Rows.Count - 1,
-                        merge_area.Column + merge_area.Columns.Count - 1
+                        merge_area.Column + merge_area.Columns.Count - 1,
                     )
 
                 # Find next merged cell
@@ -1008,7 +1086,8 @@ class ExcelProcessor(FileProcessor):
 
             logger.debug(
                 "Built merged cells map for sheet '%s': %d merged areas",
-                sheet_name, len(merged_cells)
+                sheet_name,
+                len(merged_cells),
             )
 
         except Exception as e:
@@ -1018,10 +1097,7 @@ class ExcelProcessor(FileProcessor):
         return merged_cells
 
     def _is_cell_in_merged_area(
-        self,
-        row: int,
-        col: int,
-        merged_map: dict[str, tuple[int, int, int, int]]
+        self, row: int, col: int, merged_map: dict[str, tuple[int, int, int, int]]
     ) -> Optional[str]:
         """Check if a cell is within a merged area.
 
@@ -1049,7 +1125,7 @@ class ExcelProcessor(FileProcessor):
 
     @property
     def supported_extensions(self) -> list[str]:
-        return ['.xlsx', '.xls', '.xlsm']
+        return [".xlsx", ".xls", ".xlsm"]
 
     def get_file_info(self, file_path: Path) -> FileInfo:
         """Get Excel file info.
@@ -1114,7 +1190,9 @@ class ExcelProcessor(FileProcessor):
         # Fallback: use openpyxl (read_only) to obtain sheet names
         try:
             keep_vba = file_path.suffix.lower() == ".xlsm"
-            wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True, keep_vba=keep_vba)
+            wb = openpyxl.load_workbook(
+                file_path, read_only=True, data_only=True, keep_vba=keep_vba
+            )
             try:
                 sheet_count = len(wb.sheetnames)
                 section_details = [
@@ -1152,7 +1230,7 @@ class ExcelProcessor(FileProcessor):
         sheets = root.findall("ns:sheets/ns:sheet", namespaces=namespace)
 
         section_details = [
-            SectionDetail(index=idx, name=sheet.attrib.get("name", f"Sheet{idx+1}"))
+            SectionDetail(index=idx, name=sheet.attrib.get("name", f"Sheet{idx + 1}"))
             for idx, sheet in enumerate(sheets)
         ]
 
@@ -1183,29 +1261,29 @@ class ExcelProcessor(FileProcessor):
             texts = []
             total_chars = 0
 
-            with zipfile.ZipFile(file_path, 'r') as zf:
+            with zipfile.ZipFile(file_path, "r") as zf:
                 # sharedStrings.xml contains all unique text strings in the workbook
-                if 'xl/sharedStrings.xml' not in zf.namelist():
+                if "xl/sharedStrings.xml" not in zf.namelist():
                     logger.debug("No sharedStrings.xml found in xlsx")
                     return None
 
                 # Use iterparse for streaming XML parsing (avoids loading entire XML into memory)
                 # This is critical for large Excel files where sharedStrings.xml can be huge
-                with zf.open('xl/sharedStrings.xml') as xml_file:
+                with zf.open("xl/sharedStrings.xml") as xml_file:
                     # Excel namespace
-                    ns = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
-                    si_tag = f'{{{ns}}}si'
-                    t_tag = f'{{{ns}}}t'
+                    ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+                    si_tag = f"{{{ns}}}si"
+                    t_tag = f"{{{ns}}}t"
 
                     # Track current <si> element's text parts
                     current_parts = []
                     in_si = False
 
-                    for event, elem in ET.iterparse(xml_file, events=('start', 'end')):
-                        if event == 'start' and elem.tag == si_tag:
+                    for event, elem in ET.iterparse(xml_file, events=("start", "end")):
+                        if event == "start" and elem.tag == si_tag:
                             in_si = True
                             current_parts = []
-                        elif event == 'end':
+                        elif event == "end":
                             if elem.tag == t_tag and in_si:
                                 # Collect text from <t> elements
                                 if elem.text:
@@ -1214,7 +1292,7 @@ class ExcelProcessor(FileProcessor):
                                 # End of <si> element - process collected text
                                 in_si = False
                                 if current_parts:
-                                    text = ''.join(current_parts).strip()
+                                    text = "".join(current_parts).strip()
                                     if text and len(text) > 1:  # Skip single chars
                                         texts.append(text)
                                         total_chars += len(text)
@@ -1224,10 +1302,11 @@ class ExcelProcessor(FileProcessor):
                                 elem.clear()
 
             if texts:
-                result = ' '.join(texts)[:max_chars]
+                result = " ".join(texts)[:max_chars]
                 logger.debug(
                     "Excel fast sample extraction: %d chars from %d strings",
-                    len(result), len(texts)
+                    len(result),
+                    len(texts),
                 )
                 return result
 
@@ -1323,16 +1402,18 @@ class ExcelProcessor(FileProcessor):
                     except Exception:
                         addr = None
                 if addr:
-                    addr = addr.replace('$', '')
-                    if '!' in addr:
-                        addr = addr.split('!')[-1]
+                    addr = addr.replace("$", "")
+                    if "!" in addr:
+                        addr = addr.split("!")[-1]
                     try:
-                        if ':' in addr:
-                            start_addr, end_addr = addr.split(':', 1)
+                        if ":" in addr:
+                            start_addr, end_addr = addr.split(":", 1)
                         else:
                             start_addr = addr
                             end_addr = addr
-                        start_col_letters, start_row_str = coordinate_from_string(start_addr)
+                        start_col_letters, start_row_str = coordinate_from_string(
+                            start_addr
+                        )
                         end_col_letters, end_row_str = coordinate_from_string(end_addr)
                         row_count = int(end_row_str) - int(start_row_str) + 1
                         col_count = (
@@ -1401,6 +1482,7 @@ class ExcelProcessor(FileProcessor):
             3. Using openpyxl fallback which has better streaming support for reads
         """
         import time as _time
+
         blocks: list[TextBlock] = []
         selected_set = set(selected_sections) if selected_sections is not None else None
 
@@ -1430,7 +1512,6 @@ class ExcelProcessor(FileProcessor):
                                 # Get all values at once (much faster than cell-by-cell)
                                 all_values = self._read_used_range_values_2d(used_range)
                                 if all_values is not None:
-
                                     # Get start position of used_range
                                     start_row = used_range.row
                                     start_col = used_range.column
@@ -1442,10 +1523,14 @@ class ExcelProcessor(FileProcessor):
                                             continue
                                         for col_offset, value in enumerate(row_values):
                                             if value and isinstance(value, str):
-                                                if self.cell_translator.should_translate(str(value), output_language):
+                                                if self.cell_translator.should_translate(
+                                                    str(value), output_language
+                                                ):
                                                     row_idx = start_row + row_offset
                                                     col_idx = start_col + col_offset
-                                                    translatable_cells.append((row_idx, col_idx, str(value)))
+                                                    translatable_cells.append(
+                                                        (row_idx, col_idx, str(value))
+                                                    )
 
                                     # Skip if no translatable cells found
                                     if not translatable_cells:
@@ -1462,9 +1547,15 @@ class ExcelProcessor(FileProcessor):
                                     if merged_map:
                                         filtered_cells: list[tuple[int, int, str]] = []
                                         for r, c, txt in translatable_cells:
-                                            merge_address = self._is_cell_in_merged_area(r, c, merged_map)
+                                            merge_address = (
+                                                self._is_cell_in_merged_area(
+                                                    r, c, merged_map
+                                                )
+                                            )
                                             if merge_address:
-                                                r1, c1, _r2, _c2 = merged_map[merge_address]
+                                                r1, c1, _r2, _c2 = merged_map[
+                                                    merge_address
+                                                ]
                                                 if (r, c) != (r1, c1):
                                                     continue
                                             filtered_cells.append((r, c, txt))
@@ -1478,31 +1569,45 @@ class ExcelProcessor(FileProcessor):
                                     formula_cells: set[tuple[int, int]] = set()
                                     try:
                                         # xlCellTypeFormulas = -4123
-                                        formula_range = used_range.api.SpecialCells(-4123)
+                                        formula_range = used_range.api.SpecialCells(
+                                            -4123
+                                        )
                                         # Parse addresses to get formula cell coordinates
                                         # Address can be like "A1,B2:C3,D4" (comma-separated areas)
                                         for area in formula_range.Areas:
-                                            addr = area.Address.replace('$', '')
+                                            addr = area.Address.replace("$", "")
                                             # Handle range like "A1:B3" or single cell "A1"
-                                            if ':' in addr:
-                                                parts = addr.split(':')
+                                            if ":" in addr:
+                                                parts = addr.split(":")
                                                 start_cell = parts[0]
                                                 end_cell = parts[1]
                                                 # Parse start/end
-                                                start_match = re.match(r'([A-Z]+)(\d+)', start_cell)
-                                                end_match = re.match(r'([A-Z]+)(\d+)', end_cell)
+                                                start_match = re.match(
+                                                    r"([A-Z]+)(\d+)", start_cell
+                                                )
+                                                end_match = re.match(
+                                                    r"([A-Z]+)(\d+)", end_cell
+                                                )
                                                 if start_match and end_match:
-                                                    start_c = column_index_from_string(start_match.group(1))
+                                                    start_c = column_index_from_string(
+                                                        start_match.group(1)
+                                                    )
                                                     start_r = int(start_match.group(2))
-                                                    end_c = column_index_from_string(end_match.group(1))
+                                                    end_c = column_index_from_string(
+                                                        end_match.group(1)
+                                                    )
                                                     end_r = int(end_match.group(2))
                                                     for r in range(start_r, end_r + 1):
-                                                        for c in range(start_c, end_c + 1):
+                                                        for c in range(
+                                                            start_c, end_c + 1
+                                                        ):
                                                             formula_cells.add((r, c))
                                             else:
-                                                match = re.match(r'([A-Z]+)(\d+)', addr)
+                                                match = re.match(r"([A-Z]+)(\d+)", addr)
                                                 if match:
-                                                    c = column_index_from_string(match.group(1))
+                                                    c = column_index_from_string(
+                                                        match.group(1)
+                                                    )
                                                     r = int(match.group(2))
                                                     formula_cells.add((r, c))
                                     except Exception:
@@ -1515,7 +1620,9 @@ class ExcelProcessor(FileProcessor):
                                     default_font_size = 11.0
                                     try:
                                         # Try to get from first cell of used range
-                                        first_cell_size = used_range.api.Cells(1, 1).Font.Size
+                                        first_cell_size = used_range.api.Cells(
+                                            1, 1
+                                        ).Font.Size
                                         if first_cell_size:
                                             default_font_size = float(first_cell_size)
                                     except Exception:
@@ -1534,30 +1641,40 @@ class ExcelProcessor(FileProcessor):
 
                                         # Use default font size (font name not needed - determined by direction)
                                         # Cache font info for use in apply_translations
-                                        self._font_cache[block_id] = (None, default_font_size)
+                                        self._font_cache[block_id] = (
+                                            None,
+                                            default_font_size,
+                                        )
 
-                                        blocks.append(TextBlock(
-                                            id=block_id,
-                                            text=text,
-                                            location=f"{sheet_name}, {col_letter}{row_idx}",
-                                            metadata={
-                                                'sheet': sheet_name,
-                                                'sheet_idx': sheet_idx,
-                                                'row': row_idx,
-                                                'col': col_idx,
-                                                'type': 'cell',
-                                                'font_name': None,
-                                                'font_size': default_font_size,
-                                            }
-                                        ))
+                                        blocks.append(
+                                            TextBlock(
+                                                id=block_id,
+                                                text=text,
+                                                location=f"{sheet_name}, {col_letter}{row_idx}",
+                                                metadata={
+                                                    "sheet": sheet_name,
+                                                    "sheet_idx": sheet_idx,
+                                                    "row": row_idx,
+                                                    "col": col_idx,
+                                                    "type": "cell",
+                                                    "font_name": None,
+                                                    "font_size": default_font_size,
+                                                },
+                                            )
+                                        )
 
                                     if formula_skipped > 0:
                                         logger.info(
                                             "Skipped %d formula cells in sheet '%s' (formulas preserved)",
-                                            formula_skipped, sheet_name
+                                            formula_skipped,
+                                            sheet_name,
                                         )
                         except Exception as e:
-                            logger.warning("Error reading used_range in sheet '%s': %s", sheet_name, e)
+                            logger.warning(
+                                "Error reading used_range in sheet '%s': %s",
+                                sheet_name,
+                                e,
+                            )
 
                         # === Shapes (TextBox, etc.) ===
                         # Wrap shape iteration in try-except to handle COM errors
@@ -1593,15 +1710,22 @@ class ExcelProcessor(FileProcessor):
                                         # Try to get text from shape
                                         text = None
                                         try:
-                                            if hasattr(shape, 'text'):
-                                                raw_text = shape.text  # Access only once
+                                            if hasattr(shape, "text"):
+                                                raw_text = (
+                                                    shape.text
+                                                )  # Access only once
                                                 if raw_text:
                                                     text = raw_text.strip()
                                         except Exception:
                                             # COM error accessing text - shape doesn't support text
                                             continue
 
-                                        if text and self.cell_translator.should_translate(text, output_language):
+                                        if (
+                                            text
+                                            and self.cell_translator.should_translate(
+                                                text, output_language
+                                            )
+                                        ):
                                             # Get shape name safely
                                             shape_name = None
                                             try:
@@ -1609,23 +1733,34 @@ class ExcelProcessor(FileProcessor):
                                             except Exception:
                                                 shape_name = f"Shape_{shape_idx}"
 
-                                            blocks.append(TextBlock(
-                                                id=f"{sheet_name}_shape_{shape_idx}",
-                                                text=text,
-                                                location=f"{sheet_name}, Shape '{shape_name}'",
-                                                metadata={
-                                                    'sheet': sheet_name,
-                                                    'sheet_idx': sheet_idx,
-                                                    'shape': shape_idx,
-                                                    'shape_name': shape_name,
-                                                    'type': 'shape',
-                                                }
-                                            ))
+                                            blocks.append(
+                                                TextBlock(
+                                                    id=f"{sheet_name}_shape_{shape_idx}",
+                                                    text=text,
+                                                    location=f"{sheet_name}, Shape '{shape_name}'",
+                                                    metadata={
+                                                        "sheet": sheet_name,
+                                                        "sheet_idx": sheet_idx,
+                                                        "shape": shape_idx,
+                                                        "shape_name": shape_name,
+                                                        "type": "shape",
+                                                    },
+                                                )
+                                            )
                                     except Exception as e:
                                         # Log at debug level - many shapes legitimately don't have text
-                                        logger.debug("Skipping shape %d in sheet '%s': %s", shape_idx, sheet_name, e)
+                                        logger.debug(
+                                            "Skipping shape %d in sheet '%s': %s",
+                                            shape_idx,
+                                            sheet_name,
+                                            e,
+                                        )
                         except Exception as e:
-                            logger.warning("Error iterating shapes in sheet '%s': %s", sheet_name, e)
+                            logger.warning(
+                                "Error iterating shapes in sheet '%s': %s",
+                                sheet_name,
+                                e,
+                            )
 
                         # === Chart Titles and Labels ===
                         # Wrap chart iteration in try-except to handle COM errors
@@ -1635,57 +1770,96 @@ class ExcelProcessor(FileProcessor):
                             if chart_count > 0:
                                 for chart_idx, chart in enumerate(sheet.charts):
                                     try:
-                                        api_chart = chart.api[1]  # xlwings COM object (1-indexed)
+                                        api_chart = chart.api[
+                                            1
+                                        ]  # xlwings COM object (1-indexed)
 
                                         # Chart title
                                         if api_chart.HasTitle:
                                             title = api_chart.ChartTitle.Text
-                                            if title and self.cell_translator.should_translate(title, output_language):
-                                                blocks.append(TextBlock(
-                                                    id=f"{sheet_name}_chart_{chart_idx}_title",
-                                                    text=title,
-                                                    location=f"{sheet_name}, Chart {chart_idx + 1} Title",
-                                                    metadata={
-                                                        'sheet': sheet_name,
-                                                        'sheet_idx': sheet_idx,
-                                                        'chart': chart_idx,
-                                                        'type': 'chart_title',
-                                                    }
-                                                ))
+                                            if (
+                                                title
+                                                and self.cell_translator.should_translate(
+                                                    title, output_language
+                                                )
+                                            ):
+                                                blocks.append(
+                                                    TextBlock(
+                                                        id=f"{sheet_name}_chart_{chart_idx}_title",
+                                                        text=title,
+                                                        location=f"{sheet_name}, Chart {chart_idx + 1} Title",
+                                                        metadata={
+                                                            "sheet": sheet_name,
+                                                            "sheet_idx": sheet_idx,
+                                                            "chart": chart_idx,
+                                                            "type": "chart_title",
+                                                        },
+                                                    )
+                                                )
 
                                         # Axis titles
-                                        for axis_type, axis_name in [(1, 'category'), (2, 'value')]:
+                                        for axis_type, axis_name in [
+                                            (1, "category"),
+                                            (2, "value"),
+                                        ]:
                                             try:
                                                 axis = api_chart.Axes(axis_type)
                                                 if axis.HasTitle:
                                                     axis_title = axis.AxisTitle.Text
-                                                    if axis_title and self.cell_translator.should_translate(axis_title, output_language):
-                                                        blocks.append(TextBlock(
-                                                            id=f"{sheet_name}_chart_{chart_idx}_axis_{axis_name}",
-                                                            text=axis_title,
-                                                            location=f"{sheet_name}, Chart {chart_idx + 1} {axis_name.title()} Axis",
-                                                            metadata={
-                                                                'sheet': sheet_name,
-                                                                'sheet_idx': sheet_idx,
-                                                                'chart': chart_idx,
-                                                                'axis': axis_name,
-                                                                'type': 'chart_axis_title',
-                                                            }
-                                                        ))
+                                                    if (
+                                                        axis_title
+                                                        and self.cell_translator.should_translate(
+                                                            axis_title, output_language
+                                                        )
+                                                    ):
+                                                        blocks.append(
+                                                            TextBlock(
+                                                                id=f"{sheet_name}_chart_{chart_idx}_axis_{axis_name}",
+                                                                text=axis_title,
+                                                                location=f"{sheet_name}, Chart {chart_idx + 1} {axis_name.title()} Axis",
+                                                                metadata={
+                                                                    "sheet": sheet_name,
+                                                                    "sheet_idx": sheet_idx,
+                                                                    "chart": chart_idx,
+                                                                    "axis": axis_name,
+                                                                    "type": "chart_axis_title",
+                                                                },
+                                                            )
+                                                        )
                                             except Exception as e:
-                                                logger.debug("Error reading %s axis title for chart %d: %s", axis_name, chart_idx, e)
+                                                logger.debug(
+                                                    "Error reading %s axis title for chart %d: %s",
+                                                    axis_name,
+                                                    chart_idx,
+                                                    e,
+                                                )
 
                                     except Exception as e:
-                                        logger.debug("Error extracting chart %d in sheet '%s': %s", chart_idx, sheet_name, e)
+                                        logger.debug(
+                                            "Error extracting chart %d in sheet '%s': %s",
+                                            chart_idx,
+                                            sheet_name,
+                                            e,
+                                        )
                         except Exception as e:
-                            logger.warning("Error iterating charts in sheet '%s': %s", sheet_name, e)
+                            logger.warning(
+                                "Error iterating charts in sheet '%s': %s",
+                                sheet_name,
+                                e,
+                            )
                     _t_sheets_end = _time.perf_counter()
-                    logger.debug("[TIMING] All sheets processed: %.2fs (%d sheets, %d blocks)",
-                                _t_sheets_end - _t_sheets_start, len(wb.sheets), len(blocks))
+                    logger.debug(
+                        "[TIMING] All sheets processed: %.2fs (%d sheets, %d blocks)",
+                        _t_sheets_end - _t_sheets_start,
+                        len(wb.sheets),
+                        len(blocks),
+                    )
                 finally:
                     wb.close()
                     _t_close = _time.perf_counter()
-                    logger.debug("[TIMING] Workbook close: %.2fs", _t_close - _t_sheets_end)
+                    logger.debug(
+                        "[TIMING] Workbook close: %.2fs", _t_close - _t_sheets_end
+                    )
             finally:
                 _t_before_quit = _time.perf_counter()
                 app.quit()
@@ -1699,12 +1873,11 @@ class ExcelProcessor(FileProcessor):
             logger.warning(
                 "Large Excel file: %d translatable blocks collected. "
                 "This may consume significant memory during translation.",
-                block_count
+                block_count,
             )
         elif block_count > 5000:
             logger.info(
-                "Processing %d translatable blocks from Excel file.",
-                block_count
+                "Processing %d translatable blocks from Excel file.", block_count
             )
 
         # Yield blocks after COM operations complete
@@ -1742,7 +1915,9 @@ class ExcelProcessor(FileProcessor):
 
         # Extract text blocks with calculated values (data_only=True)
         keep_vba = file_path.suffix.lower() == ".xlsm"
-        wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True, keep_vba=keep_vba)
+        wb = openpyxl.load_workbook(
+            file_path, read_only=True, data_only=True, keep_vba=keep_vba
+        )
 
         # Cache column letters to avoid repeated conversions during large reads
         # Limited to _COLUMN_LETTER_CACHE_SIZE entries to prevent memory bloat on very wide sheets
@@ -1759,7 +1934,9 @@ class ExcelProcessor(FileProcessor):
                 # Limit iteration to the used range for the sheet to avoid scanning
                 # entire default grids (e.g., 1,048,576 rows).
                 try:
-                    min_col, min_row, max_col, max_row = range_boundaries(sheet.calculate_dimension())
+                    min_col, min_row, max_col, max_row = range_boundaries(
+                        sheet.calculate_dimension()
+                    )
                 except (ValueError, TypeError):
                     continue
 
@@ -1783,12 +1960,17 @@ class ExcelProcessor(FileProcessor):
 
                         if value and isinstance(value, str):
                             value_str = str(value)
-                            if self.cell_translator.should_translate(value_str, output_language):
+                            if self.cell_translator.should_translate(
+                                value_str, output_language
+                            ):
                                 col_letter = column_letter_cache.get(col_idx)
                                 if col_letter is None:
                                     col_letter = get_column_letter(col_idx)
                                     # Limit cache size to prevent memory bloat
-                                    if len(column_letter_cache) < _COLUMN_LETTER_CACHE_SIZE:
+                                    if (
+                                        len(column_letter_cache)
+                                        < _COLUMN_LETTER_CACHE_SIZE
+                                    ):
                                         column_letter_cache[col_idx] = col_letter
 
                                 # Font info not available in read_only mode
@@ -1798,14 +1980,14 @@ class ExcelProcessor(FileProcessor):
                                     text=value_str,
                                     location=f"{sheet_name}, {col_letter}{row_idx}",
                                     metadata={
-                                        'sheet': sheet_name,
-                                        'sheet_idx': sheet_idx,
-                                        'row': row_idx,
-                                        'col': col_idx,
-                                        'type': 'cell',
-                                        'font_name': None,
-                                        'font_size': 11.0,
-                                    }
+                                        "sheet": sheet_name,
+                                        "sheet_idx": sheet_idx,
+                                        "row": row_idx,
+                                        "col": col_idx,
+                                        "type": "cell",
+                                        "font_name": None,
+                                        "font_size": 11.0,
+                                    },
                                 )
         finally:
             wb.close()
@@ -1859,21 +2041,24 @@ class ExcelProcessor(FileProcessor):
         sorted_sheet_names = sorted(sheet_names, key=lambda x: (-len(x), x))
 
         # Pre-compile regex for valid cell reference pattern (A1, AA100, etc.)
-        cell_ref_pattern = re.compile(r'^[A-Z]+\d+$')
+        cell_ref_pattern = re.compile(r"^[A-Z]+\d+$")
 
         for block_id, translated_text in translations.items():
             # First, try to use metadata for precise positioning (most reliable)
             metadata = block_metadata.get(block_id, {})
-            if metadata and metadata.get('type') == 'cell':
-                sheet_name = metadata.get('sheet')
-                row = metadata.get('row')
-                col = metadata.get('col')
+            if metadata and metadata.get("type") == "cell":
+                sheet_name = metadata.get("sheet")
+                row = metadata.get("row")
+                col = metadata.get("col")
                 if sheet_name and row and col and sheet_name in sheet_names:
                     if sheet_name not in result:
-                        result[sheet_name] = {'cells': {}, 'shapes': {}, 'charts': {}}
+                        result[sheet_name] = {"cells": {}, "shapes": {}, "charts": {}}
                     # Store as (row, col) tuple for direct access
                     cell_ref = get_column_letter(col) + str(row)
-                    result[sheet_name]['cells'][(row, col)] = (translated_text, cell_ref)
+                    result[sheet_name]["cells"][(row, col)] = (
+                        translated_text,
+                        cell_ref,
+                    )
                     continue
 
             # Fallback: parse block_id (for backward compatibility or missing metadata)
@@ -1882,11 +2067,13 @@ class ExcelProcessor(FileProcessor):
             sheet_name = None
             for name in sorted_sheet_names:
                 if block_id.startswith(f"{name}_"):
-                    suffix = block_id[len(name) + 1:]
+                    suffix = block_id[len(name) + 1 :]
                     # Validate suffix is a valid block type
-                    if (cell_ref_pattern.match(suffix) or
-                        suffix.startswith("shape_") or
-                        suffix.startswith("chart_")):
+                    if (
+                        cell_ref_pattern.match(suffix)
+                        or suffix.startswith("shape_")
+                        or suffix.startswith("chart_")
+                    ):
                         sheet_name = name
                         break
 
@@ -1896,16 +2083,16 @@ class ExcelProcessor(FileProcessor):
 
             # Initialize sheet entry if needed
             if sheet_name not in result:
-                result[sheet_name] = {'cells': {}, 'shapes': {}, 'charts': {}}
+                result[sheet_name] = {"cells": {}, "shapes": {}, "charts": {}}
 
             # Parse the suffix after sheet name
-            suffix = block_id[len(sheet_name) + 1:]  # +1 for underscore
+            suffix = block_id[len(sheet_name) + 1 :]  # +1 for underscore
 
             if suffix.startswith("shape_"):
                 # Shape: "shape_0" -> shape_idx=0
                 try:
                     shape_idx = int(suffix[6:])  # len("shape_") = 6
-                    result[sheet_name]['shapes'][shape_idx] = translated_text
+                    result[sheet_name]["shapes"][shape_idx] = translated_text
                 except ValueError:
                     logger.debug("Invalid shape block_id: %s", block_id)
 
@@ -1915,14 +2102,18 @@ class ExcelProcessor(FileProcessor):
                 if len(parts) >= 3:
                     try:
                         chart_idx = int(parts[1])
-                        if chart_idx not in result[sheet_name]['charts']:
-                            result[sheet_name]['charts'][chart_idx] = {}
+                        if chart_idx not in result[sheet_name]["charts"]:
+                            result[sheet_name]["charts"][chart_idx] = {}
 
                         if parts[2] == "title":
-                            result[sheet_name]['charts'][chart_idx]['title'] = translated_text
+                            result[sheet_name]["charts"][chart_idx]["title"] = (
+                                translated_text
+                            )
                         elif parts[2] == "axis" and len(parts) >= 4:
                             axis_name = parts[3]  # "category" or "value"
-                            result[sheet_name]['charts'][chart_idx][axis_name] = translated_text
+                            result[sheet_name]["charts"][chart_idx][axis_name] = (
+                                translated_text
+                            )
                     except ValueError:
                         logger.debug("Invalid chart block_id: %s", block_id)
 
@@ -1933,9 +2124,11 @@ class ExcelProcessor(FileProcessor):
                     col_letters, row_str = coordinate_from_string(suffix)
                     row = int(row_str)
                     col = column_index_from_string(col_letters)
-                    result[sheet_name]['cells'][(row, col)] = (translated_text, suffix)
+                    result[sheet_name]["cells"][(row, col)] = (translated_text, suffix)
                 except (ValueError, TypeError) as e:
-                    logger.warning("Invalid cell reference in block_id %s: %s", block_id, e)
+                    logger.warning(
+                        "Invalid cell reference in block_id %s: %s", block_id, e
+                    )
 
         return result
 
@@ -1969,13 +2162,24 @@ class ExcelProcessor(FileProcessor):
 
         if _can_use_xlwings():
             self._apply_translations_xlwings(
-                input_path, output_path, translations, direction, xw, settings,
-                selected_sections, text_blocks
+                input_path,
+                output_path,
+                translations,
+                direction,
+                xw,
+                settings,
+                selected_sections,
+                text_blocks,
             )
         else:
             self._apply_translations_openpyxl(
-                input_path, output_path, translations, direction, settings,
-                selected_sections, text_blocks
+                input_path,
+                output_path,
+                translations,
+                direction,
+                settings,
+                selected_sections,
+                text_blocks,
             )
 
     def _ensure_xls_supported(self, file_path: Path) -> None:
@@ -1989,7 +2193,7 @@ class ExcelProcessor(FileProcessor):
         # Refresh xlwings availability in case environment changes at runtime
         _get_xlwings()
 
-        if file_path.suffix.lower() == '.xls' and not _can_use_xlwings():
+        if file_path.suffix.lower() == ".xls" and not _can_use_xlwings():
             raise ValueError(
                 "XLS files require Microsoft Excel via xlwings. "
                 "Install xlwings with Excel or convert the file to XLSX."
@@ -2061,7 +2265,10 @@ class ExcelProcessor(FileProcessor):
                     original_calculation = app.api.Calculation
                     app.api.Calculation = -4135  # xlCalculationManual
                 except Exception as e:
-                    logger.debug("Could not set manual calculation (performance optimization skipped): %s", e)
+                    logger.debug(
+                        "Could not set manual calculation (performance optimization skipped): %s",
+                        e,
+                    )
                     original_calculation = None
 
                 try:
@@ -2072,7 +2279,11 @@ class ExcelProcessor(FileProcessor):
                     )
 
                     # Convert selected_sections to a set for O(1) lookup
-                    selected_set = set(selected_sections) if selected_sections is not None else None
+                    selected_set = (
+                        set(selected_sections)
+                        if selected_sections is not None
+                        else None
+                    )
 
                     for sheet_idx, sheet in enumerate(wb.sheets):
                         # Skip sheets not in selected_sections (if specified)
@@ -2083,14 +2294,14 @@ class ExcelProcessor(FileProcessor):
                         sheet_translations = translations_by_sheet.get(sheet_name, {})
 
                         # === Apply to cells with batch optimization ===
-                        cell_translations = sheet_translations.get('cells', {})
+                        cell_translations = sheet_translations.get("cells", {})
                         if cell_translations:
                             self._apply_cell_translations_xlwings_batch(
                                 sheet, sheet_name, cell_translations, font_manager
                             )
 
                         # === Apply to shapes ===
-                        shape_translations = sheet_translations.get('shapes', {})
+                        shape_translations = sheet_translations.get("shapes", {})
                         if shape_translations:
                             try:
                                 for shape_idx, shape in enumerate(sheet.shapes):
@@ -2098,12 +2309,21 @@ class ExcelProcessor(FileProcessor):
                                         try:
                                             shape.text = shape_translations[shape_idx]
                                         except Exception as e:
-                                            logger.debug("Error applying translation to shape %d in '%s': %s", shape_idx, sheet_name, e)
+                                            logger.debug(
+                                                "Error applying translation to shape %d in '%s': %s",
+                                                shape_idx,
+                                                sheet_name,
+                                                e,
+                                            )
                             except Exception as e:
-                                logger.warning("Error iterating shapes in sheet '%s': %s", sheet_name, e)
+                                logger.warning(
+                                    "Error iterating shapes in sheet '%s': %s",
+                                    sheet_name,
+                                    e,
+                                )
 
                         # === Apply to chart titles and labels ===
-                        chart_translations = sheet_translations.get('charts', {})
+                        chart_translations = sheet_translations.get("charts", {})
                         if chart_translations:
                             try:
                                 for chart_idx, chart in enumerate(sheet.charts):
@@ -2114,23 +2334,44 @@ class ExcelProcessor(FileProcessor):
                                         chart_data = chart_translations[chart_idx]
 
                                         # Chart title
-                                        if 'title' in chart_data and api_chart.HasTitle:
-                                            api_chart.ChartTitle.Text = chart_data['title']
+                                        if "title" in chart_data and api_chart.HasTitle:
+                                            api_chart.ChartTitle.Text = chart_data[
+                                                "title"
+                                            ]
 
                                         # Axis titles
-                                        for axis_type, axis_name in [(1, 'category'), (2, 'value')]:
+                                        for axis_type, axis_name in [
+                                            (1, "category"),
+                                            (2, "value"),
+                                        ]:
                                             if axis_name in chart_data:
                                                 try:
                                                     axis = api_chart.Axes(axis_type)
                                                     if axis.HasTitle:
-                                                        axis.AxisTitle.Text = chart_data[axis_name]
+                                                        axis.AxisTitle.Text = (
+                                                            chart_data[axis_name]
+                                                        )
                                                 except Exception as e:
-                                                    logger.debug("Error applying translation to %s axis of chart %d: %s", axis_name, chart_idx, e)
+                                                    logger.debug(
+                                                        "Error applying translation to %s axis of chart %d: %s",
+                                                        axis_name,
+                                                        chart_idx,
+                                                        e,
+                                                    )
 
                                     except Exception as e:
-                                        logger.debug("Error applying translation to chart %d in sheet '%s': %s", chart_idx, sheet_name, e)
+                                        logger.debug(
+                                            "Error applying translation to chart %d in sheet '%s': %s",
+                                            chart_idx,
+                                            sheet_name,
+                                            e,
+                                        )
                             except Exception as e:
-                                logger.warning("Error iterating charts in sheet '%s': %s", sheet_name, e)
+                                logger.warning(
+                                    "Error iterating charts in sheet '%s': %s",
+                                    sheet_name,
+                                    e,
+                                )
 
                     # Clear read_only_recommended to prevent Excel dialog on open
                     try:
@@ -2152,7 +2393,10 @@ class ExcelProcessor(FileProcessor):
                             app.api.Calculation = original_calculation
                             original_calculation = None  # Mark as restored
                     except Exception as e:
-                        logger.debug("Could not restore calculation mode (will retry after close): %s", e)
+                        logger.debug(
+                            "Could not restore calculation mode (will retry after close): %s",
+                            e,
+                        )
                 finally:
                     wb.close()
 
@@ -2234,9 +2478,13 @@ class ExcelProcessor(FileProcessor):
         try:
             merged_map = self._get_merged_cells_map(sheet)
             if merged_map:
-                merged_top_lefts = {(r1, c1) for (r1, c1, _r2, _c2) in merged_map.values()}
+                merged_top_lefts = {
+                    (r1, c1) for (r1, c1, _r2, _c2) in merged_map.values()
+                }
         except Exception as e:
-            logger.debug("Could not build merged cells map for sheet '%s': %s", sheet_name, e)
+            logger.debug(
+                "Could not build merged cells map for sheet '%s': %s", sheet_name, e
+            )
             merged_map = {}
             merged_top_lefts = set()
 
@@ -2265,21 +2513,28 @@ class ExcelProcessor(FileProcessor):
                     continue
 
                 # Prefer the translation originating from the top-left cell if both exist.
-                if is_top_left_source and not normalized_is_top_left_source.get(key, False):
+                if is_top_left_source and not normalized_is_top_left_source.get(
+                    key, False
+                ):
                     normalized[key] = (translated_text, cell_ref)
                     normalized_is_top_left_source[key] = True
 
             if redirected:
                 logger.debug(
                     "Normalized %d merged-cell translations to top-left in sheet '%s'",
-                    redirected, sheet_name,
+                    redirected,
+                    sheet_name,
                 )
 
             cell_translations = normalized
 
         # Group translations by row/col for batch value writing.
-        rows_data: dict[int, list[tuple[int, str, str]]] = {}  # row -> [(col, text, cell_ref), ...]
-        cols_data: dict[int, list[tuple[int, str, str]]] = {}  # col -> [(row, text, cell_ref), ...]
+        rows_data: dict[
+            int, list[tuple[int, str, str]]
+        ] = {}  # row -> [(col, text, cell_ref), ...]
+        cols_data: dict[
+            int, list[tuple[int, str, str]]
+        ] = {}  # col -> [(row, text, cell_ref), ...]
         for (row, col), (translated_text, cell_ref) in cell_translations.items():
             rows_data.setdefault(row, []).append((col, translated_text, cell_ref))
             cols_data.setdefault(col, []).append((row, translated_text, cell_ref))
@@ -2294,7 +2549,12 @@ class ExcelProcessor(FileProcessor):
         # (Positive adjustments are clamped to the original size by FontSizeAdjuster.)
         needs_size_adjustment = (
             getattr(font_manager, "direction", None) == "jp_to_en"
-            and getattr(getattr(font_manager, "font_size_adjuster", None), "adjustment_jp_to_en", 0.0) < 0
+            and getattr(
+                getattr(font_manager, "font_size_adjuster", None),
+                "adjustment_jp_to_en",
+                0.0,
+            )
+            < 0
         )
 
         def _split_on_merged_cells(
@@ -2325,12 +2585,16 @@ class ExcelProcessor(FileProcessor):
         col_segments: list[tuple[int, list[tuple[int, str, str]]]] = []
 
         for row in sorted(rows_data):
-            for _start, _end, contiguous in self._find_contiguous_ranges(rows_data[row]):
+            for _start, _end, contiguous in self._find_contiguous_ranges(
+                rows_data[row]
+            ):
                 for seg in _split_on_merged_cells("row", row, contiguous):
                     row_segments.append((row, seg))
 
         for col in sorted(cols_data):
-            for _start, _end, contiguous in self._find_contiguous_ranges(cols_data[col]):
+            for _start, _end, contiguous in self._find_contiguous_ranges(
+                cols_data[col]
+            ):
                 for seg in _split_on_merged_cells("col", col, contiguous):
                     col_segments.append((col, seg))
 
@@ -2433,7 +2697,9 @@ class ExcelProcessor(FileProcessor):
                 if not address:
                     continue
                 additional = len(address) + (1 if chunk else 0)
-                if chunk and (len(chunk) >= max_items or current_chars + additional > max_chars):
+                if chunk and (
+                    len(chunk) >= max_items or current_chars + additional > max_chars
+                ):
                     yield chunk
                     chunk = []
                     current_chars = 0
@@ -2454,7 +2720,9 @@ class ExcelProcessor(FileProcessor):
             except Exception as e:
                 logger.debug(
                     "Batch font apply failed for %d areas in sheet '%s': %s (falling back)",
-                    len(chunk), sheet_name, e,
+                    len(chunk),
+                    sheet_name,
+                    e,
                 )
                 if debug_stats:
                     font_range_fallbacks += 1
@@ -2481,7 +2749,10 @@ class ExcelProcessor(FileProcessor):
                     except Exception as inner_e:
                         logger.debug(
                             "Cell font apply failed for row %d col %d in '%s': %s",
-                            row_pos, col_pos, sheet_name, inner_e,
+                            row_pos,
+                            col_pos,
+                            sheet_name,
+                            inner_e,
                         )
                     continue
 
@@ -2499,21 +2770,30 @@ class ExcelProcessor(FileProcessor):
                     except Exception as inner_e:
                         logger.debug(
                             "Range font apply failed for col %d rows %d-%d in '%s': %s (falling back to per-cell)",
-                            col, start_row, end_row, sheet_name, inner_e,
+                            col,
+                            start_row,
+                            end_row,
+                            sheet_name,
+                            inner_e,
                         )
                         if debug_stats:
                             font_range_fallbacks += 1
                         for row_pos, _text, _cell_ref in segment:
                             try:
                                 t0 = time.perf_counter() if debug_stats else None
-                                sheet.range(row_pos, col).api.Font.Name = output_font_name
+                                sheet.range(
+                                    row_pos, col
+                                ).api.Font.Name = output_font_name
                                 if debug_stats and t0 is not None:
                                     t_fonts += time.perf_counter() - t0
                                     font_cell_applies += 1
                             except Exception as cell_e:
                                 logger.debug(
                                     "Cell font apply failed for row %d col %d in '%s': %s",
-                                    row_pos, col, sheet_name, cell_e,
+                                    row_pos,
+                                    col,
+                                    sheet_name,
+                                    cell_e,
                                 )
                 else:
                     row = fixed
@@ -2529,21 +2809,30 @@ class ExcelProcessor(FileProcessor):
                     except Exception as inner_e:
                         logger.debug(
                             "Range font apply failed for row %d cols %d-%d in '%s': %s (falling back to per-cell)",
-                            row, start_col, end_col, sheet_name, inner_e,
+                            row,
+                            start_col,
+                            end_col,
+                            sheet_name,
+                            inner_e,
                         )
                         if debug_stats:
                             font_range_fallbacks += 1
                         for col_pos, _text, _cell_ref in segment:
                             try:
                                 t0 = time.perf_counter() if debug_stats else None
-                                sheet.range(row, col_pos).api.Font.Name = output_font_name
+                                sheet.range(
+                                    row, col_pos
+                                ).api.Font.Name = output_font_name
                                 if debug_stats and t0 is not None:
                                     t_fonts += time.perf_counter() - t0
                                     font_cell_applies += 1
                             except Exception as cell_e:
                                 logger.debug(
                                     "Cell font apply failed for row %d col %d in '%s': %s",
-                                    row, col_pos, sheet_name, cell_e,
+                                    row,
+                                    col_pos,
+                                    sheet_name,
+                                    cell_e,
                                 )
 
         # Phase 3 (optional): apply font-size adjustment per translated cell.
@@ -2572,7 +2861,9 @@ class ExcelProcessor(FileProcessor):
                 except Exception as e:
                     logger.debug(
                         "Font size adjustment failed for %s_%s: %s",
-                        sheet_name, cell_ref, e,
+                        sheet_name,
+                        cell_ref,
+                        e,
                     )
                 finally:
                     if debug_stats and t0 is not None:
@@ -2666,10 +2957,13 @@ class ExcelProcessor(FileProcessor):
                 col, text, cell_ref = cells[0]
                 final_text = text
                 if text and len(text) > EXCEL_CELL_CHAR_LIMIT:
-                    final_text = text[:EXCEL_CELL_CHAR_LIMIT - 3] + "..."
+                    final_text = text[: EXCEL_CELL_CHAR_LIMIT - 3] + "..."
                     logger.warning(
                         "Translation truncated for cell %s_%s: %d -> %d chars",
-                        sheet_name, cell_ref, len(text), len(final_text)
+                        sheet_name,
+                        cell_ref,
+                        len(text),
+                        len(final_text),
                     )
                 # Use Excel COM Value2 directly (faster than xlwings .value for many small writes)
                 sheet.api.Cells(row, col).Value2 = final_text
@@ -2680,27 +2974,36 @@ class ExcelProcessor(FileProcessor):
                 for col, text, cell_ref in cells:
                     final_text = text
                     if text and len(text) > EXCEL_CELL_CHAR_LIMIT:
-                        final_text = text[:EXCEL_CELL_CHAR_LIMIT - 3] + "..."
+                        final_text = text[: EXCEL_CELL_CHAR_LIMIT - 3] + "..."
                         logger.warning(
                             "Translation truncated for cell %s_%s: %d -> %d chars",
-                            sheet_name, cell_ref, len(text), len(final_text)
+                            sheet_name,
+                            cell_ref,
+                            len(text),
+                            len(final_text),
                         )
                     values.append(final_text)
                 # Use Excel COM Value2 directly (faster and avoids unnecessary conversions)
-                rng = sheet.api.Range(sheet.api.Cells(row, start_col), sheet.api.Cells(row, end_col))
+                rng = sheet.api.Range(
+                    sheet.api.Cells(row, start_col), sheet.api.Cells(row, end_col)
+                )
                 rng.Value2 = values
                 return True, None
         except Exception as e:
             logger.warning(
                 "Error writing values to row %d cols %d-%d in '%s': %s",
-                row, start_col, end_col, sheet_name, e
+                row,
+                start_col,
+                end_col,
+                sheet_name,
+                e,
             )
             # Fallback to individual writes
             for col, text, cell_ref in cells:
                 try:
                     final_text = text
                     if text and len(text) > EXCEL_CELL_CHAR_LIMIT:
-                        final_text = text[:EXCEL_CELL_CHAR_LIMIT - 3] + "..."
+                        final_text = text[: EXCEL_CELL_CHAR_LIMIT - 3] + "..."
                     try:
                         sheet.api.Cells(row, col).Value2 = final_text
                     except Exception as write_e:
@@ -2710,13 +3013,17 @@ class ExcelProcessor(FileProcessor):
                             cell = sheet.api.Cells(row, col)
                             if getattr(cell, "MergeCells", False):
                                 merge_area = cell.MergeArea
-                                sheet.api.Cells(merge_area.Row, merge_area.Column).Value2 = final_text
+                                sheet.api.Cells(
+                                    merge_area.Row, merge_area.Column
+                                ).Value2 = final_text
                             else:
                                 raise write_e
                         except Exception:
                             raise write_e
                 except Exception as inner_e:
-                    logger.debug("Error writing cell %s_%s: %s", sheet_name, cell_ref, inner_e)
+                    logger.debug(
+                        "Error writing cell %s_%s: %s", sheet_name, cell_ref, inner_e
+                    )
             return False, None
 
     def _write_cell_values_batch_column(
@@ -2749,10 +3056,13 @@ class ExcelProcessor(FileProcessor):
                 row, text, cell_ref = cells[0]
                 final_text = text
                 if text and len(text) > EXCEL_CELL_CHAR_LIMIT:
-                    final_text = text[:EXCEL_CELL_CHAR_LIMIT - 3] + "..."
+                    final_text = text[: EXCEL_CELL_CHAR_LIMIT - 3] + "..."
                     logger.warning(
                         "Translation truncated for cell %s_%s: %d -> %d chars",
-                        sheet_name, cell_ref, len(text), len(final_text)
+                        sheet_name,
+                        cell_ref,
+                        len(text),
+                        len(final_text),
                     )
                 # Use Excel COM Value2 directly (faster than xlwings .value for many small writes)
                 sheet.api.Cells(row, col).Value2 = final_text
@@ -2762,26 +3072,35 @@ class ExcelProcessor(FileProcessor):
             for row, text, cell_ref in cells:
                 final_text = text
                 if text and len(text) > EXCEL_CELL_CHAR_LIMIT:
-                    final_text = text[:EXCEL_CELL_CHAR_LIMIT - 3] + "..."
+                    final_text = text[: EXCEL_CELL_CHAR_LIMIT - 3] + "..."
                     logger.warning(
                         "Translation truncated for cell %s_%s: %d -> %d chars",
-                        sheet_name, cell_ref, len(text), len(final_text)
+                        sheet_name,
+                        cell_ref,
+                        len(text),
+                        len(final_text),
                     )
                 values.append([final_text])
 
-            rng = sheet.api.Range(sheet.api.Cells(start_row, col), sheet.api.Cells(end_row, col))
+            rng = sheet.api.Range(
+                sheet.api.Cells(start_row, col), sheet.api.Cells(end_row, col)
+            )
             rng.Value2 = values
             return True, None
         except Exception as e:
             logger.warning(
                 "Error writing values to col %d rows %d-%d in '%s': %s",
-                col, start_row, end_row, sheet_name, e,
+                col,
+                start_row,
+                end_row,
+                sheet_name,
+                e,
             )
             for row, text, cell_ref in cells:
                 try:
                     final_text = text
                     if text and len(text) > EXCEL_CELL_CHAR_LIMIT:
-                        final_text = text[:EXCEL_CELL_CHAR_LIMIT - 3] + "..."
+                        final_text = text[: EXCEL_CELL_CHAR_LIMIT - 3] + "..."
                     try:
                         sheet.api.Cells(row, col).Value2 = final_text
                     except Exception as write_e:
@@ -2789,13 +3108,17 @@ class ExcelProcessor(FileProcessor):
                             cell = sheet.api.Cells(row, col)
                             if getattr(cell, "MergeCells", False):
                                 merge_area = cell.MergeArea
-                                sheet.api.Cells(merge_area.Row, merge_area.Column).Value2 = final_text
+                                sheet.api.Cells(
+                                    merge_area.Row, merge_area.Column
+                                ).Value2 = final_text
                             else:
                                 raise write_e
                         except Exception:
                             raise write_e
                 except Exception as inner_e:
-                    logger.debug("Error writing cell %s_%s: %s", sheet_name, cell_ref, inner_e)
+                    logger.debug(
+                        "Error writing cell %s_%s: %s", sheet_name, cell_ref, inner_e
+                    )
             return False, None
 
     def _apply_single_cell_xlwings(
@@ -2833,10 +3156,12 @@ class ExcelProcessor(FileProcessor):
             # Truncate if needed
             final_text = translated_text
             if translated_text and len(translated_text) > EXCEL_CELL_CHAR_LIMIT:
-                final_text = translated_text[:EXCEL_CELL_CHAR_LIMIT - 3] + "..."
+                final_text = translated_text[: EXCEL_CELL_CHAR_LIMIT - 3] + "..."
                 logger.warning(
                     "Translation truncated for cell %s: %d -> %d chars",
-                    block_id, len(translated_text), len(final_text)
+                    block_id,
+                    len(translated_text),
+                    len(final_text),
                 )
 
             cell.value = final_text
@@ -2855,7 +3180,11 @@ class ExcelProcessor(FileProcessor):
                         merge_area.Font.Name = new_font_name
                         merge_area.Font.Size = new_font_size
                     except Exception as merge_e:
-                        logger.debug("Error applying font to merged cell %s: %s", block_id, merge_e)
+                        logger.debug(
+                            "Error applying font to merged cell %s: %s",
+                            block_id,
+                            merge_e,
+                        )
                 else:
                     cell.font.name = new_font_name
                     cell.font.size = new_font_size
@@ -2863,7 +3192,9 @@ class ExcelProcessor(FileProcessor):
                 logger.debug("Error applying font to cell %s: %s", block_id, e)
 
         except Exception as e:
-            logger.warning("Error applying translation to cell %s_%s: %s", sheet_name, cell_ref, e)
+            logger.warning(
+                "Error applying translation to cell %s_%s: %s", sheet_name, cell_ref, e
+            )
 
     def _apply_range_batch_xlwings(
         self,
@@ -2890,10 +3221,12 @@ class ExcelProcessor(FileProcessor):
                 # Truncate if needed
                 final_text = text
                 if text and len(text) > EXCEL_CELL_CHAR_LIMIT:
-                    final_text = text[:EXCEL_CELL_CHAR_LIMIT - 3] + "..."
+                    final_text = text[: EXCEL_CELL_CHAR_LIMIT - 3] + "..."
                     logger.warning(
                         "Translation truncated for cell %s: %d -> %d chars",
-                        block_id, len(text), len(final_text)
+                        block_id,
+                        len(text),
+                        len(final_text),
                     )
                 values.append(final_text)
 
@@ -2921,12 +3254,18 @@ class ExcelProcessor(FileProcessor):
                     cell.font.name = new_name
                     cell.font.size = new_size
                 except Exception as e:
-                    logger.debug("Error applying font to cell %s_%s: %s", sheet_name, cell_ref, e)
+                    logger.debug(
+                        "Error applying font to cell %s_%s: %s", sheet_name, cell_ref, e
+                    )
 
         except Exception as e:
             logger.warning(
                 "Error applying batch translation to row %d cols %d-%d in '%s': %s",
-                row, start_col, end_col, sheet_name, e
+                row,
+                start_col,
+                end_col,
+                sheet_name,
+                e,
             )
             # Fallback to individual cell writes
             for col, text, cell_ref in cells:
@@ -2975,7 +3314,7 @@ class ExcelProcessor(FileProcessor):
             color_key = None
             if color is not None:
                 # Extract color RGB value for cache key
-                color_key = getattr(color, 'rgb', None)
+                color_key = getattr(color, "rgb", None)
 
             cache_key = (name, size, bold, italic, underline, strike, color_key)
 
@@ -2999,7 +3338,9 @@ class ExcelProcessor(FileProcessor):
             )
 
             # Convert selected_sections to a set for O(1) lookup
-            selected_set = set(selected_sections) if selected_sections is not None else None
+            selected_set = (
+                set(selected_sections) if selected_sections is not None else None
+            )
 
             for sheet_idx, sheet_name in enumerate(wb.sheetnames):
                 # Skip sheets not in selected_sections (if specified)
@@ -3008,29 +3349,41 @@ class ExcelProcessor(FileProcessor):
 
                 sheet = wb[sheet_name]
                 sheet_translations = translations_by_sheet.get(sheet_name, {})
-                cell_translations = sheet_translations.get('cells', {})
+                cell_translations = sheet_translations.get("cells", {})
 
                 # Direct cell access using (row, col) tuples
-                for (row_idx, col_idx), (translated_text, cell_ref) in cell_translations.items():
+                for (row_idx, col_idx), (
+                    translated_text,
+                    cell_ref,
+                ) in cell_translations.items():
                     try:
                         cell = sheet.cell(row=row_idx, column=col_idx)
 
                         original_font_name = cell.font.name if cell.font else None
-                        original_font_size = cell.font.size if cell.font and cell.font.size else 11.0
+                        original_font_size = (
+                            cell.font.size if cell.font and cell.font.size else 11.0
+                        )
 
                         new_font_name, new_font_size = font_manager.select_font(
-                            original_font_name,
-                            original_font_size
+                            original_font_name, original_font_size
                         )
 
                         # Check and truncate if exceeds Excel cell limit
                         final_text = translated_text
-                        if translated_text and len(translated_text) > EXCEL_CELL_CHAR_LIMIT:
-                            final_text = translated_text[:EXCEL_CELL_CHAR_LIMIT - 3] + "..."
+                        if (
+                            translated_text
+                            and len(translated_text) > EXCEL_CELL_CHAR_LIMIT
+                        ):
+                            final_text = (
+                                translated_text[: EXCEL_CELL_CHAR_LIMIT - 3] + "..."
+                            )
                             logger.warning(
                                 "Translation truncated for cell %s_%s: %d -> %d chars (Excel limit: %d)",
-                                sheet_name, cell_ref, len(translated_text),
-                                len(final_text), EXCEL_CELL_CHAR_LIMIT
+                                sheet_name,
+                                cell_ref,
+                                len(translated_text),
+                                len(final_text),
+                                EXCEL_CELL_CHAR_LIMIT,
                             )
 
                         cell.value = final_text
@@ -3047,13 +3400,20 @@ class ExcelProcessor(FileProcessor):
                                 color=cell.font.color,
                             )
                         else:
-                            cell.font = get_cached_font(name=new_font_name, size=new_font_size)
+                            cell.font = get_cached_font(
+                                name=new_font_name, size=new_font_size
+                            )
 
                     except Exception as e:
-                        logger.warning("Error applying translation to cell %s_%s: %s", sheet_name, cell_ref, e)
+                        logger.warning(
+                            "Error applying translation to cell %s_%s: %s",
+                            sheet_name,
+                            cell_ref,
+                            e,
+                        )
 
             # Clear read_only_recommended to prevent Excel dialog on open
-            if hasattr(wb, 'properties') and wb.properties is not None:
+            if hasattr(wb, "properties") and wb.properties is not None:
                 wb.properties.read_only_recommended = False
 
             wb.save(output_path)
@@ -3121,12 +3481,18 @@ class ExcelProcessor(FileProcessor):
 
             try:
                 # Open source workbooks (track each for cleanup)
-                original_wb = app.books.open(str(original_path), ignore_read_only_recommended=True)
-                translated_wb = app.books.open(str(translated_path), ignore_read_only_recommended=True)
+                original_wb = app.books.open(
+                    str(original_path), ignore_read_only_recommended=True
+                )
+                translated_wb = app.books.open(
+                    str(translated_path), ignore_read_only_recommended=True
+                )
 
                 # SAFETY: Verify we opened the correct workbooks
                 _verify_workbook_path(original_wb, original_path, "bilingual_original")
-                _verify_workbook_path(translated_wb, translated_path, "bilingual_translated")
+                _verify_workbook_path(
+                    translated_wb, translated_path, "bilingual_translated"
+                )
 
                 # Create new workbook for bilingual output
                 bilingual_wb = app.books.add()
@@ -3134,7 +3500,10 @@ class ExcelProcessor(FileProcessor):
                 # Remove default sheets from new workbook (with retry limit to prevent infinite loop)
                 max_delete_attempts = 10
                 delete_attempts = 0
-                while len(bilingual_wb.sheets) > 1 and delete_attempts < max_delete_attempts:
+                while (
+                    len(bilingual_wb.sheets) > 1
+                    and delete_attempts < max_delete_attempts
+                ):
                     try:
                         bilingual_wb.sheets[-1].delete()
                     except Exception as e:
@@ -3152,7 +3521,9 @@ class ExcelProcessor(FileProcessor):
 
                     # Copy original sheet to bilingual workbook
                     safe_orig_name = sanitize_sheet_name(sheet_name)
-                    unique_orig_name = _ensure_unique_sheet_name(safe_orig_name, existing_names)
+                    unique_orig_name = _ensure_unique_sheet_name(
+                        safe_orig_name, existing_names
+                    )
 
                     # Use COM API to copy sheet (preserves all content) with retry for RPC errors
                     _copy_sheet_with_retry(
@@ -3167,7 +3538,9 @@ class ExcelProcessor(FileProcessor):
                     if i < len(translated_wb.sheets):
                         translated_sheet = translated_wb.sheets[i]
                         trans_title = sanitize_sheet_name(f"{sheet_name}_translated")
-                        unique_trans_title = _ensure_unique_sheet_name(trans_title, existing_names)
+                        unique_trans_title = _ensure_unique_sheet_name(
+                            trans_title, existing_names
+                        )
 
                         # Copy translated sheet after the original with retry for RPC errors
                         _copy_sheet_with_retry(
@@ -3182,8 +3555,12 @@ class ExcelProcessor(FileProcessor):
                 if translated_sheets > original_sheets:
                     for i in range(original_sheets, translated_sheets):
                         translated_sheet = translated_wb.sheets[i]
-                        trans_title = sanitize_sheet_name(f"{translated_sheet.name}_translated")
-                        unique_trans_title = _ensure_unique_sheet_name(trans_title, existing_names)
+                        trans_title = sanitize_sheet_name(
+                            f"{translated_sheet.name}_translated"
+                        )
+                        unique_trans_title = _ensure_unique_sheet_name(
+                            trans_title, existing_names
+                        )
 
                         _copy_sheet_with_retry(
                             source_sheet=translated_sheet,
@@ -3195,9 +3572,19 @@ class ExcelProcessor(FileProcessor):
 
                 # Remove the initial empty sheet if it still exists
                 # Check for default sheet names in multiple locales
-                default_sheet_prefixes = ("Sheet", "シート", "Feuil", "Hoja", "Blatt", "Foglio")
+                default_sheet_prefixes = (
+                    "Sheet",
+                    "シート",
+                    "Feuil",
+                    "Hoja",
+                    "Blatt",
+                    "Foglio",
+                )
                 for sheet in bilingual_wb.sheets:
-                    is_default_name = any(sheet.name.startswith(prefix) for prefix in default_sheet_prefixes)
+                    is_default_name = any(
+                        sheet.name.startswith(prefix)
+                        for prefix in default_sheet_prefixes
+                    )
                     if is_default_name:
                         try:
                             # Check if sheet is empty (no values and no shapes)
@@ -3206,12 +3593,18 @@ class ExcelProcessor(FileProcessor):
                                 sheet.delete()
                                 break
                         except Exception as e:
-                            logger.debug("Error checking/deleting default sheet '%s': %s", sheet.name, e)
+                            logger.debug(
+                                "Error checking/deleting default sheet '%s': %s",
+                                sheet.name,
+                                e,
+                            )
                             break
 
                 # Reorder sheets to interleave correctly
                 # Current order might be mixed, need to sort by original index
-                self._reorder_bilingual_sheets(bilingual_wb, original_wb.sheets, existing_names)
+                self._reorder_bilingual_sheets(
+                    bilingual_wb, original_wb.sheets, existing_names
+                )
 
                 # Clear read_only_recommended to prevent Excel dialog on open
                 try:
@@ -3223,9 +3616,9 @@ class ExcelProcessor(FileProcessor):
                 bilingual_wb.save(str(output_path))
 
                 return {
-                    'original_sheets': original_sheets,
-                    'translated_sheets': translated_sheets,
-                    'total_sheets': len(bilingual_wb.sheets),
+                    "original_sheets": original_sheets,
+                    "translated_sheets": translated_sheets,
+                    "total_sheets": len(bilingual_wb.sheets),
                 }
 
             finally:
@@ -3247,7 +3640,9 @@ class ExcelProcessor(FileProcessor):
                 except Exception as e:
                     logger.debug("Error quitting Excel app: %s", e)
 
-    def _reorder_bilingual_sheets(self, bilingual_wb, original_sheets, existing_names: set[str]) -> None:
+    def _reorder_bilingual_sheets(
+        self, bilingual_wb, original_sheets, existing_names: set[str]
+    ) -> None:
         """Reorder sheets in bilingual workbook to interleave original and translated."""
         # Build expected order: Sheet1, Sheet1_translated, Sheet2, Sheet2_translated, ...
         expected_order = []
@@ -3259,7 +3654,7 @@ class ExcelProcessor(FileProcessor):
             # Find actual names (may have suffix like _1 for uniqueness)
             # Original sheet: must NOT contain '_translated'
             for name in existing_names:
-                if '_translated' in name:
+                if "_translated" in name:
                     continue
                 # Match exact name or name with uniqueness suffix (_1, _2, etc.)
                 if name == safe_orig_name or name.startswith(f"{safe_orig_name}_"):
@@ -3269,12 +3664,16 @@ class ExcelProcessor(FileProcessor):
             # Translated sheet: must contain '_translated'
             # Handle truncated names: "VeryLong..._translated" may become "VeryLong..."
             # Use removesuffix for proper suffix removal (not rstrip which removes char set)
-            trans_base = trans_name[:-3] if trans_name.endswith('...') else trans_name
+            trans_base = trans_name[:-3] if trans_name.endswith("...") else trans_name
             for name in existing_names:
-                if '_translated' not in name:
+                if "_translated" not in name:
                     continue
                 # Match exact name or name with uniqueness suffix or truncated base
-                if name == trans_name or name.startswith(f"{trans_name}_") or name.startswith(trans_base):
+                if (
+                    name == trans_name
+                    or name.startswith(f"{trans_name}_")
+                    or name.startswith(trans_base)
+                ):
                     expected_order.append(name)
                     break
 
@@ -3290,7 +3689,9 @@ class ExcelProcessor(FileProcessor):
                             else:
                                 sheet.api.Move(After=bilingual_wb.sheets[i - 1].api)
                         except Exception as e:
-                            logger.debug("Error reordering sheet %s: %s", expected_name, e)
+                            logger.debug(
+                                "Error reordering sheet %s: %s", expected_name, e
+                            )
                     break
 
     def _create_bilingual_workbook_openpyxl(
@@ -3325,7 +3726,9 @@ class ExcelProcessor(FileProcessor):
                 # Copy original sheet (sanitize in case original has forbidden chars)
                 original_sheet = original_wb[sheet_name]
                 safe_orig_name = sanitize_sheet_name(sheet_name)
-                unique_orig_name = _ensure_unique_sheet_name(safe_orig_name, existing_names)
+                unique_orig_name = _ensure_unique_sheet_name(
+                    safe_orig_name, existing_names
+                )
                 orig_copy = bilingual_wb.create_sheet(title=unique_orig_name)
                 self._copy_sheet_content(original_sheet, orig_copy)
 
@@ -3335,7 +3738,9 @@ class ExcelProcessor(FileProcessor):
                     translated_sheet = translated_wb[trans_sheet_name]
                     # Create translated sheet with suffix (sanitize for forbidden chars)
                     trans_title = sanitize_sheet_name(f"{sheet_name}_translated")
-                    unique_trans_title = _ensure_unique_sheet_name(trans_title, existing_names)
+                    unique_trans_title = _ensure_unique_sheet_name(
+                        trans_title, existing_names
+                    )
                     trans_copy = bilingual_wb.create_sheet(title=unique_trans_title)
                     self._copy_sheet_content(translated_sheet, trans_copy)
 
@@ -3346,20 +3751,25 @@ class ExcelProcessor(FileProcessor):
                     translated_sheet = translated_wb[trans_sheet_name]
                     # Sanitize for forbidden chars and length
                     trans_title = sanitize_sheet_name(f"{trans_sheet_name}_translated")
-                    unique_trans_title = _ensure_unique_sheet_name(trans_title, existing_names)
+                    unique_trans_title = _ensure_unique_sheet_name(
+                        trans_title, existing_names
+                    )
                     trans_copy = bilingual_wb.create_sheet(title=unique_trans_title)
                     self._copy_sheet_content(translated_sheet, trans_copy)
 
             # Clear read_only_recommended to prevent Excel dialog on open
-            if hasattr(bilingual_wb, 'properties') and bilingual_wb.properties is not None:
+            if (
+                hasattr(bilingual_wb, "properties")
+                and bilingual_wb.properties is not None
+            ):
                 bilingual_wb.properties.read_only_recommended = False
 
             bilingual_wb.save(output_path)
 
             return {
-                'original_sheets': original_sheets,
-                'translated_sheets': translated_sheets,
-                'total_sheets': len(bilingual_wb.sheetnames),
+                "original_sheets": original_sheets,
+                "translated_sheets": translated_sheets,
+                "total_sheets": len(bilingual_wb.sheetnames),
             }
         finally:
             original_wb.close()
@@ -3430,7 +3840,10 @@ class ExcelProcessor(FileProcessor):
 
         # Copy conditional formatting rules
         try:
-            for cf_range, cf_rules in source_sheet.conditional_formatting._cf_rules.items():
+            for (
+                cf_range,
+                cf_rules,
+            ) in source_sheet.conditional_formatting._cf_rules.items():
                 for rule in cf_rules:
                     target_sheet.conditional_formatting.add(cf_range, rule)
         except (AttributeError, Exception) as e:
@@ -3450,9 +3863,12 @@ class ExcelProcessor(FileProcessor):
             for row in source_sheet.iter_rows():
                 for cell in row:
                     if cell.hyperlink:
-                        target_cell = target_sheet.cell(row=cell.row, column=cell.column)
+                        target_cell = target_sheet.cell(
+                            row=cell.row, column=cell.column
+                        )
                         # Copy hyperlink properties (target, tooltip, etc.)
                         from openpyxl.worksheet.hyperlink import Hyperlink
+
                         target_cell.hyperlink = Hyperlink(
                             ref=target_cell.coordinate,
                             target=cell.hyperlink.target,
@@ -3468,12 +3884,17 @@ class ExcelProcessor(FileProcessor):
         # cells that haven't been created yet in the target sheet
         try:
             from openpyxl.comments import Comment
+
             for row in source_sheet.iter_rows():
                 for cell in row:
                     if cell.comment:
-                        target_cell = target_sheet.cell(row=cell.row, column=cell.column)
+                        target_cell = target_sheet.cell(
+                            row=cell.row, column=cell.column
+                        )
                         # Create a new Comment object (comments are mutable and need copying)
-                        target_cell.comment = Comment(cell.comment.text, cell.comment.author)
+                        target_cell.comment = Comment(
+                            cell.comment.text, cell.comment.author
+                        )
         except (AttributeError, Exception) as e:
             logger.debug("Error copying comments: %s", e)
 
@@ -3510,47 +3931,50 @@ class ExcelProcessor(FileProcessor):
         # Build lookup from block_id to original text and metadata
         block_lookup: dict[str, tuple[str, str, str]] = {}
         for block in text_blocks:
-            sheet_name = block.metadata.get('sheet', '')
-            cell_ref = ''
-            if block.metadata.get('type') == 'cell':
-                row = block.metadata.get('row', 0)
-                col = block.metadata.get('col', 0)
+            sheet_name = block.metadata.get("sheet", "")
+            cell_ref = ""
+            if block.metadata.get("type") == "cell":
+                row = block.metadata.get("row", 0)
+                col = block.metadata.get("col", 0)
                 if row and col:
                     cell_ref = f"{get_column_letter(col)}{row}"
-            elif block.metadata.get('type') == 'shape':
-                shape_name = block.metadata.get('shape_name', '')
+            elif block.metadata.get("type") == "shape":
+                shape_name = block.metadata.get("shape_name", "")
                 cell_ref = f"Shape:{shape_name}"
-            elif block.metadata.get('type') in ('chart_title', 'chart_axis_title'):
-                chart_idx = block.metadata.get('chart', 0)
+            elif block.metadata.get("type") in ("chart_title", "chart_axis_title"):
+                chart_idx = block.metadata.get("chart", 0)
                 cell_ref = f"Chart:{chart_idx}"
             block_lookup[block.id] = (block.text, sheet_name, cell_ref)
 
-        stats = {'total': 0, 'exported': 0, 'skipped': 0}
+        stats = {"total": 0, "exported": 0, "skipped": 0}
 
-        with output_path.open('w', encoding='utf-8-sig', newline='') as f:
+        with output_path.open("w", encoding="utf-8-sig", newline="") as f:
             writer = csv.writer(f)
-            writer.writerow(['原文', '訳文', 'シート', 'セル'])
+            writer.writerow(["原文", "訳文", "シート", "セル"])
 
             for block_id, translated_text in translations.items():
-                stats['total'] += 1
+                stats["total"] += 1
 
                 if block_id not in block_lookup:
-                    stats['skipped'] += 1
+                    stats["skipped"] += 1
                     continue
 
                 original_text, sheet_name, cell_ref = block_lookup[block_id]
 
                 # Skip empty translations
                 if not translated_text or not translated_text.strip():
-                    stats['skipped'] += 1
+                    stats["skipped"] += 1
                     continue
 
                 writer.writerow([original_text, translated_text, sheet_name, cell_ref])
-                stats['exported'] += 1
+                stats["exported"] += 1
 
         logger.info(
             "Glossary CSV exported: %s (total=%d, exported=%d, skipped=%d)",
-            output_path, stats['total'], stats['exported'], stats['skipped']
+            output_path,
+            stats["total"],
+            stats["exported"],
+            stats["skipped"],
         )
 
         return stats

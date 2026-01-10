@@ -37,7 +37,8 @@ class FontSizeAdjuster:
             min_size: 最小フォントサイズ (pt)
         """
         self.adjustment_jp_to_en = (
-            adjustment_jp_to_en if adjustment_jp_to_en is not None
+            adjustment_jp_to_en
+            if adjustment_jp_to_en is not None
             else self.DEFAULT_JP_TO_EN_ADJUSTMENT
         )
         self.min_size = min_size if min_size is not None else self.DEFAULT_MIN_SIZE
@@ -101,8 +102,12 @@ class FontManager:
 
         # Get output font from settings or use defaults
         if settings:
-            self._font_jp_to_en = getattr(settings, 'font_jp_to_en', DEFAULT_FONT_JP_TO_EN)
-            self._font_en_to_jp = getattr(settings, 'font_en_to_jp', DEFAULT_FONT_EN_TO_JP)
+            self._font_jp_to_en = getattr(
+                settings, "font_jp_to_en", DEFAULT_FONT_JP_TO_EN
+            )
+            self._font_en_to_jp = getattr(
+                settings, "font_en_to_jp", DEFAULT_FONT_EN_TO_JP
+            )
         else:
             self._font_jp_to_en = DEFAULT_FONT_JP_TO_EN
             self._font_en_to_jp = DEFAULT_FONT_EN_TO_JP

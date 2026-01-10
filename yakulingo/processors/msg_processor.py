@@ -22,15 +22,15 @@ from yakulingo.processors.base import FileProcessor
 logger = logging.getLogger(__name__)
 
 # Pre-compiled regex for sentence splitting (AGENTS.md: Pre-compile regex patterns)
-_SENTENCE_SPLIT_PATTERN = re.compile(r'(?<=[\u3002\uFF01\uFF1F!?\n])')
+_SENTENCE_SPLIT_PATTERN = re.compile(r"(?<=[\u3002\uFF01\uFF1F!?\n])")
 # Basic email validation for recipient normalization (ASCII-only)
-_EMAIL_PATTERN = re.compile(r'[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}')
-_RECIPIENT_SPLIT_PATTERN = re.compile(r'[;\n]+')
+_EMAIL_PATTERN = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
+_RECIPIENT_SPLIT_PATTERN = re.compile(r"[;\n]+")
 _ANGLE_ADDR_FIND_PATTERN = re.compile(
-    r'(?P<name>[^<]*)<(?P<address>[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,})>'
+    r"(?P<name>[^<]*)<(?P<address>[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,})>"
 )
 _PAREN_ADDR_PATTERN = re.compile(
-    r'^(?P<address>[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,})\s*\((?P<name>[^)]*)\)$'
+    r"^(?P<address>[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,})\s*\((?P<name>[^)]*)\)$"
 )
 _QUOTE_NAME_PATTERN = re.compile(r'[",;<>]')
 
@@ -42,6 +42,7 @@ def _lazy_import_extract_msg():
     """Lazy import extract_msg to avoid startup overhead."""
     try:
         import extract_msg
+
         return extract_msg
     except ImportError:
         raise ImportError(
@@ -54,12 +55,13 @@ def _is_outlook_available() -> bool:
     """Check if Outlook COM is available (Windows with Outlook installed).
 
     Note:
-        Release COM objects explicitly to avoid leaving Outlook running.    """
-    if sys.platform != 'win32':
+        Release COM objects explicitly to avoid leaving Outlook running."""
+    if sys.platform != "win32":
         return False
     outlook = None
     try:
         import win32com.client
+
         # Try to create Outlook application object
         outlook = win32com.client.Dispatch("Outlook.Application")
         return outlook is not None
@@ -70,6 +72,7 @@ def _is_outlook_available() -> bool:
         if outlook is not None:
             del outlook
         gc.collect()
+
 
 class MsgProcessor(FileProcessor):
     """
@@ -83,6 +86,7 @@ class MsgProcessor(FileProcessor):
     Note:
         Cache access is thread-safe; uses a lock to avoid concurrent access.
     """
+
     def __init__(self):
         self._outlook_available: Optional[bool] = None
         self._cached_content: Optional[dict] = None
@@ -102,14 +106,14 @@ class MsgProcessor(FileProcessor):
                 try:
                     subject = msg.subject or ""
                     body = msg.body or ""
-                    body = body.replace('\r\n', '\n').replace('\r', '\n')
+                    body = body.replace("\r\n", "\n").replace("\r", "\n")
                     self._cached_content = {
-                        'subject': subject,
-                        'body': body,
-                        'sender': msg.sender or "",
-                        'to': msg.to or "",
-                        'cc': msg.cc or "",
-                        'date': str(msg.date) if msg.date else "",
+                        "subject": subject,
+                        "body": body,
+                        "sender": msg.sender or "",
+                        "to": msg.to or "",
+                        "cc": msg.cc or "",
+                        "date": str(msg.date) if msg.date else "",
                     }
                     self._cached_file_path = file_path_str
                 finally:
@@ -138,9 +142,11 @@ class MsgProcessor(FileProcessor):
 
     @property
     def supported_extensions(self) -> list[str]:
-        return ['.msg']
+        return [".msg"]
 
-    def extract_sample_text_fast(self, file_path: Path, max_chars: int = 500) -> Optional[str]:
+    def extract_sample_text_fast(
+        self, file_path: Path, max_chars: int = 500
+    ) -> Optional[str]:
         """Fast text extraction for language detection.
 
         Uses cached content to avoid multiple file reads.
@@ -154,8 +160,8 @@ class MsgProcessor(FileProcessor):
         """
         try:
             content = self._get_cached_content(file_path)
-            subject = content.get('subject', '')
-            body = content.get('body', '')
+            subject = content.get("subject", "")
+            body = content.get("body", "")
 
             # Combine subject and start of body
             sample_parts = []
@@ -163,9 +169,11 @@ class MsgProcessor(FileProcessor):
                 sample_parts.append(subject)
             if body:
                 # Take first few hundred chars from body
-                sample_parts.append(body[:max_chars - len(subject) if subject else max_chars])
+                sample_parts.append(
+                    body[: max_chars - len(subject) if subject else max_chars]
+                )
 
-            sample = ' '.join(sample_parts)
+            sample = " ".join(sample_parts)
             return sample[:max_chars] if sample else None
 
         except Exception as e:
@@ -177,7 +185,7 @@ class MsgProcessor(FileProcessor):
         content = self._get_cached_content(file_path)
 
         # Count body paragraphs for section details
-        body = content.get('body', '')
+        body = content.get("body", "")
         paragraphs = self._split_body_into_paragraphs(body)
         paragraph_count = len(paragraphs)
 
@@ -187,11 +195,13 @@ class MsgProcessor(FileProcessor):
         ]
         if paragraph_count > 0:
             for i in range(paragraph_count):
-                section_details.append(SectionDetail(
-                    index=i + 1,
-                    name=f"\u672c\u6587\u6bb5\u843d{i + 1}",
-                    selected=True,
-                ))
+                section_details.append(
+                    SectionDetail(
+                        index=i + 1,
+                        name=f"\u672c\u6587\u6bb5\u843d{i + 1}",
+                        selected=True,
+                    )
+                )
 
         return FileInfo(
             path=file_path,
@@ -215,16 +225,18 @@ class MsgProcessor(FileProcessor):
             return []
 
         # Split by double newlines (paragraph separator)
-        raw_paragraphs = body.split('\n\n')
+        raw_paragraphs = body.split("\n\n")
         paragraphs = []
 
         for p in raw_paragraphs:
             stripped = p.strip()
-            paragraphs.append({
-                'text': stripped,
-                'is_empty': len(stripped) == 0,
-                'original_text': p,
-            })
+            paragraphs.append(
+                {
+                    "text": stripped,
+                    "is_empty": len(stripped) == 0,
+                    "original_text": p,
+                }
+            )
 
         return paragraphs
 
@@ -241,24 +253,24 @@ class MsgProcessor(FileProcessor):
         content = self._get_cached_content(file_path)
 
         # Extract subject
-        subject = content.get('subject', '')
+        subject = content.get("subject", "")
         if subject and self.should_translate(subject):
             yield TextBlock(
                 id="msg_subject",
                 text=subject,
                 location="\u4ef6\u540d",
-                metadata={'field': 'subject', 'section_idx': 0}
+                metadata={"field": "subject", "section_idx": 0},
             )
 
         # Extract body paragraphs
-        body = content.get('body', '')
+        body = content.get("body", "")
         paragraphs = self._split_body_into_paragraphs(body)
 
         # Track index for non-empty paragraphs
         non_empty_index = 0
         for para_index, para_info in enumerate(paragraphs):
-            paragraph = para_info['text']
-            is_empty = para_info['is_empty']
+            paragraph = para_info["text"]
+            is_empty = para_info["is_empty"]
 
             # Skip empty paragraphs but record their position
             if is_empty:
@@ -274,14 +286,14 @@ class MsgProcessor(FileProcessor):
                             text=chunk,
                             location=f"\u672c\u6587\u6bb5\u843d{non_empty_index + 1} (\u5206\u5272{chunk_index + 1})",
                             metadata={
-                                'field': 'body',
+                                "field": "body",
                                 # Section index for partial translation UI:
                                 # 0 = subject, 1.. = body paragraphs (including empty paragraphs).
-                                'section_idx': para_index + 1,
-                                'paragraph_index': para_index,  # Original index including empty paragraphs
-                                'chunk_index': chunk_index,
-                                'is_chunked': True,
-                            }
+                                "section_idx": para_index + 1,
+                                "paragraph_index": para_index,  # Original index including empty paragraphs
+                                "chunk_index": chunk_index,
+                                "is_chunked": True,
+                            },
                         )
             else:
                 if self.should_translate(paragraph):
@@ -290,13 +302,13 @@ class MsgProcessor(FileProcessor):
                         text=paragraph,
                         location=f"\u672c\u6587\u6bb5\u843d{non_empty_index + 1}",
                         metadata={
-                            'field': 'body',
+                            "field": "body",
                             # Section index for partial translation UI:
                             # 0 = subject, 1.. = body paragraphs (including empty paragraphs).
-                            'section_idx': para_index + 1,
-                            'paragraph_index': para_index,  # Original index including empty paragraphs
-                            'is_chunked': False,
-                        }
+                            "section_idx": para_index + 1,
+                            "paragraph_index": para_index,  # Original index including empty paragraphs
+                            "is_chunked": False,
+                        },
                     )
 
             non_empty_index += 1
@@ -347,8 +359,8 @@ class MsgProcessor(FileProcessor):
         content = self._get_cached_content(input_path)
 
         # Get original content
-        original_subject = content.get('subject', '')
-        original_body = content.get('body', '')
+        original_subject = content.get("subject", "")
+        original_body = content.get("body", "")
 
         # Build translated subject
         translated_subject = translations.get("msg_subject", original_subject)
@@ -358,17 +370,18 @@ class MsgProcessor(FileProcessor):
         translated_paragraphs = []
 
         for para_index, para_info in enumerate(paragraphs):
-            paragraph = para_info['text']
-            is_empty = para_info['is_empty']
+            paragraph = para_info["text"]
+            is_empty = para_info["is_empty"]
 
             # Preserve empty paragraphs as-is
             if is_empty:
-                translated_paragraphs.append('')
+                translated_paragraphs.append("")
                 continue
 
             # Check if this paragraph was chunked
             chunked_ids = [
-                block_id for block_id in translations.keys()
+                block_id
+                for block_id in translations.keys()
                 if block_id.startswith(f"msg_body_{para_index}_chunk_")
             ]
 
@@ -381,7 +394,7 @@ class MsgProcessor(FileProcessor):
                     chunk_id = f"msg_body_{para_index}_chunk_{chunk_index}"
                     chunk_texts.append(translations.get(chunk_id, chunk))
 
-                translated_paragraphs.append(''.join(chunk_texts))
+                translated_paragraphs.append("".join(chunk_texts))
             else:
                 # Single block paragraph
                 block_id = f"msg_body_{para_index}"
@@ -390,7 +403,7 @@ class MsgProcessor(FileProcessor):
                 else:
                     translated_paragraphs.append(paragraph)
 
-        translated_body = '\n\n'.join(translated_paragraphs)
+        translated_body = "\n\n".join(translated_paragraphs)
         return translated_subject, translated_body
 
     def _create_msg_via_outlook(
@@ -412,14 +425,18 @@ class MsgProcessor(FileProcessor):
             return False
 
         # Prefer copying from the original to preserve "received mail" flags.
-        if self._create_msg_from_original_via_outlook(input_path, output_path, subject, body):
+        if self._create_msg_from_original_via_outlook(
+            input_path, output_path, subject, body
+        ):
             return True
 
         # Fallback: create a new mail item (may open as a draft depending on Outlook).
         content = self._get_cached_content(input_path)
-        to = content.get('to', '') if isinstance(content, dict) else ''
-        cc = content.get('cc', '') if isinstance(content, dict) else ''
-        return self._create_new_msg_via_outlook(output_path, subject, body, to=to, cc=cc)
+        to = content.get("to", "") if isinstance(content, dict) else ""
+        cc = content.get("cc", "") if isinstance(content, dict) else ""
+        return self._create_new_msg_via_outlook(
+            output_path, subject, body, to=to, cc=cc
+        )
 
     def _clear_unsent_flag_best_effort(self, mail: Any) -> bool:
         """Best-effort: clear MSGFLAG_UNSENT so saved .msg opens in read mode.
@@ -429,7 +446,7 @@ class MsgProcessor(FileProcessor):
         output in the compose UI with a "Send" button.
         """
         try:
-            accessor = getattr(mail, 'PropertyAccessor', None)
+            accessor = getattr(mail, "PropertyAccessor", None)
             if accessor is None:
                 return False
 
@@ -494,7 +511,9 @@ class MsgProcessor(FileProcessor):
             # 3 = olMSG format
             mail.SaveAs(str(output_path), 3)
 
-            logger.info("MSG file created via Outlook (preserve received form): %s", output_path)
+            logger.info(
+                "MSG file created via Outlook (preserve received form): %s", output_path
+            )
             return True
 
         except Exception as e:
@@ -581,7 +600,7 @@ class MsgProcessor(FileProcessor):
         if not raw:
             return ""
 
-        normalized = raw.replace('\r\n', '\n').replace('\r', '\n').strip()
+        normalized = raw.replace("\r\n", "\n").replace("\r", "\n").strip()
         if not normalized:
             return ""
 
@@ -596,11 +615,11 @@ class MsgProcessor(FileProcessor):
 
         # Remove duplicates while preserving order.
         unique = list(dict.fromkeys(cleaned))
-        return '; '.join(unique)
+        return "; ".join(unique)
 
     def _split_recipient_tokens(self, raw: str) -> list[str]:
         """Split recipient string into tokens using Outlook-style separators."""
-        if ';' in raw or '\n' in raw:
+        if ";" in raw or "\n" in raw:
             return [t.strip() for t in _RECIPIENT_SPLIT_PATTERN.split(raw) if t.strip()]
         return [raw.strip()]
 
@@ -614,20 +633,20 @@ class MsgProcessor(FileProcessor):
         if angle_matches:
             recipients: list[str] = []
             for match in angle_matches:
-                name = match.group('name').strip().strip('"').strip(' ,;')
-                address = match.group('address').strip()
+                name = match.group("name").strip().strip('"').strip(" ,;")
+                address = match.group("address").strip()
                 recipients.append(self._format_recipient(name, address))
             return [r for r in recipients if r]
 
         paren_match = _PAREN_ADDR_PATTERN.match(token)
         if paren_match:
-            name = paren_match.group('name').strip().strip('"')
-            address = paren_match.group('address').strip()
+            name = paren_match.group("name").strip().strip('"')
+            address = paren_match.group("address").strip()
             return [self._format_recipient(name, address)]
 
         addresses = _EMAIL_PATTERN.findall(token)
         if len(addresses) > 1:
-            parts = [p.strip() for p in token.split(',') if p.strip()]
+            parts = [p.strip() for p in token.split(",") if p.strip()]
             recipients: list[str] = []
             for part in parts:
                 recipients.extend(self._parse_recipient_token(part))
@@ -635,9 +654,9 @@ class MsgProcessor(FileProcessor):
 
         if addresses:
             address = addresses[0]
-            name = token.replace(address, '')
-            name = name.replace('<', '').replace('>', '').strip().strip('"')
-            name = name.strip(' ,;()')
+            name = token.replace(address, "")
+            name = name.replace("<", "").replace(">", "").strip().strip('"')
+            name = name.strip(" ,;()")
             return [self._format_recipient(name, address)]
 
         return [token]
@@ -656,7 +675,7 @@ class MsgProcessor(FileProcessor):
         if name:
             if _QUOTE_NAME_PATTERN.search(name):
                 name = f'"{name}"'
-            return f'{name} <{address}>'
+            return f"{name} <{address}>"
 
         return address
 
@@ -682,15 +701,15 @@ class MsgProcessor(FileProcessor):
 
         # Get original email metadata (to, cc, sender, date)
         content = self._get_cached_content(input_path)
-        to = content.get('to', '')
-        cc = content.get('cc', '')
-        sender = content.get('sender', '')
-        date = content.get('date', '')
+        to = content.get("to", "")
+        cc = content.get("cc", "")
+        sender = content.get("sender", "")
+        date = content.get("date", "")
 
         # Try to create .msg file via Outlook COM (Windows only)
         if self.outlook_available:
             # Ensure output has .msg extension
-            msg_output_path = output_path.with_suffix('.msg')
+            msg_output_path = output_path.with_suffix(".msg")
             if self._create_msg_via_outlook(
                 input_path, msg_output_path, translated_subject, translated_body
             ):
@@ -700,7 +719,7 @@ class MsgProcessor(FileProcessor):
             logger.info("Outlook not available, saving as .txt")
 
         # Fallback: save as .txt
-        txt_output_path = output_path.with_suffix('.txt')
+        txt_output_path = output_path.with_suffix(".txt")
 
         output_lines = []
         # Include email headers
@@ -716,8 +735,10 @@ class MsgProcessor(FileProcessor):
         output_lines.append("")
         output_lines.append(translated_body)
 
-        txt_output_path.write_text('\n'.join(output_lines), encoding='utf-8')
-        logger.info("MSG translation applied (as txt): %s -> %s", input_path, txt_output_path)
+        txt_output_path.write_text("\n".join(output_lines), encoding="utf-8")
+        logger.info(
+            "MSG translation applied (as txt): %s -> %s", input_path, txt_output_path
+        )
 
         return None
 
@@ -732,29 +753,31 @@ class MsgProcessor(FileProcessor):
         """
         # Read original MSG (use cached content)
         content = self._get_cached_content(original_path)
-        original_subject = content.get('subject') or "(\u4ef6\u540d\u306a\u3057)"
-        original_body = content.get('body', '')
-        sender = content.get('sender') or "(\u9001\u4fe1\u8005\u4e0d\u660e)"
-        to = content.get('to', '')
-        cc = content.get('cc', '')
-        date = content.get('date') or "(\u65e5\u4ed8\u4e0d\u660e)"
+        original_subject = content.get("subject") or "(\u4ef6\u540d\u306a\u3057)"
+        original_body = content.get("body", "")
+        sender = content.get("sender") or "(\u9001\u4fe1\u8005\u4e0d\u660e)"
+        to = content.get("to", "")
+        cc = content.get("cc", "")
+        date = content.get("date") or "(\u65e5\u4ed8\u4e0d\u660e)"
 
         extract_msg = _lazy_import_extract_msg()
 
         # Read translated content (could be .msg or .txt)
-        if translated_path.suffix.lower() == '.msg':
+        if translated_path.suffix.lower() == ".msg":
             # Read from .msg file
             msg = extract_msg.Message(str(translated_path))
             try:
                 translated_subject = msg.subject or ""
                 translated_body = msg.body or ""
-                translated_body = translated_body.replace('\r\n', '\n').replace('\r', '\n')
+                translated_body = translated_body.replace("\r\n", "\n").replace(
+                    "\r", "\n"
+                )
             finally:
                 msg.close()
         else:
             # Read from .txt file (may include headers)
-            translated_content = translated_path.read_text(encoding='utf-8')
-            translated_lines = translated_content.split('\n')
+            translated_content = translated_path.read_text(encoding="utf-8")
+            translated_lines = translated_content.split("\n")
 
             translated_subject = ""
             translated_body = ""
@@ -772,7 +795,7 @@ class MsgProcessor(FileProcessor):
                     break
 
             if body_start_idx < len(translated_lines):
-                translated_body = '\n'.join(translated_lines[body_start_idx:])
+                translated_body = "\n".join(translated_lines[body_start_idx:])
 
         # Build bilingual output
         separator = "\u2500" * 50
@@ -808,8 +831,8 @@ class MsgProcessor(FileProcessor):
         output_parts.append(translated_body)
 
         # Bilingual output is always .txt
-        txt_output_path = output_path.with_suffix('.txt')
-        txt_output_path.write_text('\n'.join(output_parts), encoding='utf-8')
+        txt_output_path = output_path.with_suffix(".txt")
+        txt_output_path.write_text("\n".join(output_parts), encoding="utf-8")
         logger.info("Bilingual MSG document created: %s", txt_output_path)
 
     def export_glossary_csv(
@@ -821,7 +844,7 @@ class MsgProcessor(FileProcessor):
         """Export source/translation pairs as CSV."""
         import csv
 
-        with output_path.open('w', encoding='utf-8-sig', newline='') as f:
+        with output_path.open("w", encoding="utf-8-sig", newline="") as f:
             writer = csv.writer(f)
             writer.writerow(["\u539f\u6587", "\u8a33\u6587"])
             for block_id, translated in translations.items():

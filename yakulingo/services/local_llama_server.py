@@ -145,9 +145,17 @@ def _http_get_json(host: str, port: int, path: str, timeout_s: float) -> Optiona
     return payload
 
 
-def _probe_openai_models(host: str, port: int, timeout_s: float = 0.8) -> tuple[Optional[dict], Optional[str]]:
-    models, status, error = _http_get_json_with_status(host, port, "/v1/models", timeout_s=timeout_s)
-    if isinstance(models, dict) and models.get("object") == "list" and isinstance(models.get("data"), list):
+def _probe_openai_models(
+    host: str, port: int, timeout_s: float = 0.8
+) -> tuple[Optional[dict], Optional[str]]:
+    models, status, error = _http_get_json_with_status(
+        host, port, "/v1/models", timeout_s=timeout_s
+    )
+    if (
+        isinstance(models, dict)
+        and models.get("object") == "list"
+        and isinstance(models.get("data"), list)
+    ):
         return models, None
     if status is not None:
         return None, f"HTTP {status}"
@@ -278,7 +286,9 @@ class LocalLlamaServerManager:
 
         server_exe_path, server_variant = self._resolve_server_exe(server_dir)
         if server_exe_path is None and server_dir != bundled_server_dir:
-            fallback_exe, fallback_variant = self._resolve_server_exe(bundled_server_dir)
+            fallback_exe, fallback_variant = self._resolve_server_exe(
+                bundled_server_dir
+            )
             if fallback_exe is not None:
                 server_dir = bundled_server_dir
                 server_exe_path, server_variant = fallback_exe, fallback_variant
@@ -438,7 +448,9 @@ class LocalLlamaServerManager:
                     },
                 )
             except Exception:
-                logger.debug("Failed to update local_ai_server.json on stop", exc_info=True)
+                logger.debug(
+                    "Failed to update local_ai_server.json on stop", exc_info=True
+                )
 
     def _stop_by_state_if_safe(self, saved_state: dict, *, timeout_s: float) -> None:
         pid = saved_state.get("pid")
@@ -463,14 +475,19 @@ class LocalLlamaServerManager:
         try:
             exe = proc.exe()
             cmdline = " ".join(proc.cmdline() or [])
-            create_time = proc.create_time() if expected_create_time is not None else None
+            create_time = (
+                proc.create_time() if expected_create_time is not None else None
+            )
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             return
         except Exception:
             return
 
         if expected_create_time is not None:
-            if create_time is None or abs(float(create_time) - expected_create_time) > 1.0:
+            if (
+                create_time is None
+                or abs(float(create_time) - expected_create_time) > 1.0
+            ):
                 return
 
         exe_norm = exe.replace("\\", "/").lower()
@@ -498,9 +515,14 @@ class LocalLlamaServerManager:
         if raw:
             candidates.append(_resolve_from_app_base(raw))
         candidates.append(
-            _app_base_dir() / "local_ai" / "models" / "shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf"
+            _app_base_dir()
+            / "local_ai"
+            / "models"
+            / "shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf"
         )
-        candidates.append(_app_base_dir() / "local_ai" / "models" / "GLM-4.6V-Flash-IQ4_XS.gguf")
+        candidates.append(
+            _app_base_dir() / "local_ai" / "models" / "GLM-4.6V-Flash-IQ4_XS.gguf"
+        )
         for candidate in candidates:
             if candidate.is_file():
                 return candidate
@@ -526,7 +548,9 @@ class LocalLlamaServerManager:
         candidates.append(("direct", server_dir))
 
         if preferred_variant:
-            candidates = sorted(candidates, key=lambda item: 0 if item[0] == preferred_variant else 1)
+            candidates = sorted(
+                candidates, key=lambda item: 0 if item[0] == preferred_variant else 1
+            )
 
         avx2_unsupported = False
         for variant, dir_path in candidates:
@@ -542,7 +566,9 @@ class LocalLlamaServerManager:
             return None, "avx2_unsupported"
         return None, "unknown"
 
-    def _find_free_port(self, host: str, port_base: int, port_max: int) -> Optional[int]:
+    def _find_free_port(
+        self, host: str, port_base: int, port_max: int
+    ) -> Optional[int]:
         for port in range(port_base, port_max + 1):
             if _is_port_free(host, port):
                 return port
@@ -600,14 +626,19 @@ class LocalLlamaServerManager:
                 return None
             exe = proc.exe()
             cmdline = " ".join(proc.cmdline() or [])
-            create_time = proc.create_time() if expected_create_time is not None else None
+            create_time = (
+                proc.create_time() if expected_create_time is not None else None
+            )
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             return None
         except Exception:
             return None
 
         if expected_create_time is not None:
-            if create_time is None or abs(float(create_time) - expected_create_time) > 1.0:
+            if (
+                create_time is None
+                or abs(float(create_time) - expected_create_time) > 1.0
+            ):
                 return None
 
         if exe and exe.strip():
@@ -631,7 +662,11 @@ class LocalLlamaServerManager:
                     last_error,
                 )
             return None
-        model_id = _extract_first_model_id(models_payload) if isinstance(models_payload, dict) else None
+        model_id = (
+            _extract_first_model_id(models_payload)
+            if isinstance(models_payload, dict)
+            else None
+        )
 
         return LocalAIServerRuntime(
             host=expected_host,
@@ -688,7 +723,9 @@ class LocalLlamaServerManager:
 
         self._process = proc
 
-        ready, last_error, models_payload = self._wait_ready(host, port, proc, timeout_s=120.0)
+        ready, last_error, models_payload = self._wait_ready(
+            host, port, proc, timeout_s=120.0
+        )
         if not ready:
             rc = proc.poll()
             if rc is not None:
@@ -701,7 +738,11 @@ class LocalLlamaServerManager:
             )
 
         models_payload = models_payload or {}
-        model_id = _extract_first_model_id(models_payload) if isinstance(models_payload, dict) else None
+        model_id = (
+            _extract_first_model_id(models_payload)
+            if isinstance(models_payload, dict)
+            else None
+        )
 
         return LocalAIServerRuntime(
             host=host,
@@ -790,11 +831,19 @@ class LocalLlamaServerManager:
         else:
             args += ["-m", str(model_path)]
 
-        if help_text and settings.local_ai_ctx_size and (has_long("--ctx-size") or has_short("-c")):
+        if (
+            help_text
+            and settings.local_ai_ctx_size
+            and (has_long("--ctx-size") or has_short("-c"))
+        ):
             flag = "--ctx-size" if has_long("--ctx-size") else "-c"
             args += [flag, str(int(settings.local_ai_ctx_size))]
 
-        threads = int(settings.local_ai_threads) if settings.local_ai_threads is not None else 0
+        threads = (
+            int(settings.local_ai_threads)
+            if settings.local_ai_threads is not None
+            else 0
+        )
         if help_text and threads and (has_long("--threads") or has_short("-t")):
             flag = "--threads" if has_long("--threads") else "-t"
             args += [flag, str(threads)]
@@ -831,7 +880,9 @@ class LocalLlamaServerManager:
         try:
             _atomic_write_json(path, state)
         except Exception:
-            logger.debug("Failed to write local_ai_server.json: %s", path, exc_info=True)
+            logger.debug(
+                "Failed to write local_ai_server.json: %s", path, exc_info=True
+            )
 
 
 _LOCAL_SERVER_MANAGER = LocalLlamaServerManager()

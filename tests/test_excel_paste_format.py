@@ -21,10 +21,9 @@ def test_format_tabular_text_for_excel_paste_normalizes_row_newlines_to_crlf() -
 def test_format_tabular_text_for_excel_paste_quotes_multiline_cells() -> None:
     text = "foo\nbar\tbaz\nx\ty"
     formatted = _format_tabular_text_for_excel_paste(text)
-    assert formatted == "\"foo\nbar\"\tbaz\r\nx\ty"
+    assert formatted == '"foo\nbar"\tbaz\r\nx\ty'
 
 
 def test_format_tabular_text_for_excel_paste_escapes_quotes_in_cells() -> None:
-    formatted = _format_tabular_text_for_excel_paste("a\tHe said \"Hi\"")
-    assert formatted == "a\t\"He said \"\"Hi\"\"\""
-
+    formatted = _format_tabular_text_for_excel_paste('a\tHe said "Hi"')
+    assert formatted == 'a\t"He said ""Hi"""'

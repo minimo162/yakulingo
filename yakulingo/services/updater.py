@@ -34,8 +34,10 @@ logger = logging.getLogger(__name__)
 # Windows固有のモジュール（条件付きインポート）
 if platform.system() == "Windows":
     import winreg
+
     try:
         import sspi
+
         HAS_PYWIN32 = True
     except ImportError:
         HAS_PYWIN32 = False
@@ -45,6 +47,7 @@ else:
 
 class UpdateStatus(Enum):
     """アップデート状態"""
+
     UP_TO_DATE = "up_to_date"
     UPDATE_AVAILABLE = "update_available"
     DOWNLOADING = "downloading"
@@ -55,6 +58,7 @@ class UpdateStatus(Enum):
 @dataclass
 class VersionInfo:
     """バージョン情報"""
+
     version: str
     release_date: str
     download_url: str
@@ -68,6 +72,7 @@ class VersionInfo:
 @dataclass
 class UpdateResult:
     """アップデート結果"""
+
     status: UpdateStatus
     current_version: str
     latest_version: Optional[str] = None
@@ -99,7 +104,9 @@ class ProxyConfig:
         try:
             # インターネット設定からプロキシを取得
             key_path = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings"
-            with winreg_module.OpenKey(winreg_module.HKEY_CURRENT_USER, key_path) as key:
+            with winreg_module.OpenKey(
+                winreg_module.HKEY_CURRENT_USER, key_path
+            ) as key:
                 # プロキシが有効かチェック
                 try:
                     proxy_enable, _ = winreg_module.QueryValueEx(key, "ProxyEnable")
@@ -213,10 +220,12 @@ class NTLMProxyHandler(urllib.request.BaseHandler):
         """407 Proxy Authentication Required の処理"""
         if not HAS_PYWIN32:
             raise urllib.error.HTTPError(
-                req.full_url, code,
+                req.full_url,
+                code,
                 "プロキシ認証が必要ですが、pywin32がインストールされていません。\n"
                 "pip install pywin32 を実行してください。",
-                headers, fp
+                headers,
+                fp,
             )
 
         # Proxy-Authenticate ヘッダーを確認
@@ -231,21 +240,25 @@ class NTLMProxyHandler(urllib.request.BaseHandler):
         """NTLM/Negotiate認証を処理"""
         try:
             # SSPIコンテキストを作成
-            scheme = "Negotiate" if "Negotiate" in headers.get("Proxy-Authenticate", "") else "NTLM"
+            scheme = (
+                "Negotiate"
+                if "Negotiate" in headers.get("Proxy-Authenticate", "")
+                else "NTLM"
+            )
 
             # クライアント認証コンテキストを初期化
             ctx = sspi.ClientAuth(scheme)
 
             # Type 1 メッセージ（NEGOTIATE）を生成
             _, out_buf = ctx.authorize(None)
-            auth_token = base64.b64encode(out_buf[0].Buffer).decode('ascii')
+            auth_token = base64.b64encode(out_buf[0].Buffer).decode("ascii")
 
             # 認証トークン付きでリクエストを再送
             new_req = urllib.request.Request(
                 req.full_url,
                 data=req.data,
                 headers=dict(req.headers),
-                method=req.get_method()
+                method=req.get_method(),
             )
             new_req.add_header("Proxy-Authorization", f"{scheme} {auth_token}")
 
@@ -272,16 +285,20 @@ class NTLMProxyHandler(urllib.request.BaseHandler):
                             # Type 3 メッセージ（AUTHENTICATE）を生成
                             challenge_bytes = base64.b64decode(challenge_token)
                             _, out_buf = ctx.authorize(challenge_bytes)
-                            auth_token = base64.b64encode(out_buf[0].Buffer).decode('ascii')
+                            auth_token = base64.b64encode(out_buf[0].Buffer).decode(
+                                "ascii"
+                            )
 
                             # 最終認証リクエスト
                             final_req = urllib.request.Request(
                                 req.full_url,
                                 data=req.data,
                                 headers=dict(req.headers),
-                                method=req.get_method()
+                                method=req.get_method(),
                             )
-                            final_req.add_header("Proxy-Authorization", f"{scheme} {auth_token}")
+                            final_req.add_header(
+                                "Proxy-Authorization", f"{scheme} {auth_token}"
+                            )
                             return opener.open(final_req)
                     # 407以外のHTTPエラーは再スロー
                     raise
@@ -328,6 +345,7 @@ class AutoUpdater:
         """現在のバージョンを取得"""
         try:
             from yakulingo import __version__
+
             return __version__
         except ImportError:
             return "0.0.0"
@@ -470,7 +488,9 @@ class AutoUpdater:
                 if e.code == 304 and cached_release and "body" in cached_release:
                     # キャッシュボディは通常文字列だが、型安全性のため確認
                     body = cached_release["body"]
-                    response_data = body.encode("utf-8") if isinstance(body, str) else body
+                    response_data = (
+                        body.encode("utf-8") if isinstance(body, str) else body
+                    )
                 else:
                     raise
 
@@ -560,6 +580,7 @@ class AutoUpdater:
 
     def _is_newer_version(self, latest: str, current: str) -> bool:
         """バージョン比較（セマンティックバージョニングまたは日付形式に対応）"""
+
         def split_parts(value: str) -> tuple[tuple[int, object], ...]:
             parts: list[tuple[int, object]] = []
             for part in value.split("."):
@@ -597,7 +618,9 @@ class AutoUpdater:
 
             max_len = max(len(latest_main), len(current_main))
             latest_main_padded = latest_main + ((0, 0),) * (max_len - len(latest_main))
-            current_main_padded = current_main + ((0, 0),) * (max_len - len(current_main))
+            current_main_padded = current_main + ((0, 0),) * (
+                max_len - len(current_main)
+            )
             if latest_main_padded != current_main_padded:
                 return latest_main_padded > current_main_padded
 
@@ -608,8 +631,12 @@ class AutoUpdater:
                 return False
 
             pre_len = max(len(latest_pre_parts), len(current_pre_parts))
-            latest_pre_padded = latest_pre_parts + ((0, 0),) * (pre_len - len(latest_pre_parts))
-            current_pre_padded = current_pre_parts + ((0, 0),) * (pre_len - len(current_pre_parts))
+            latest_pre_padded = latest_pre_parts + ((0, 0),) * (
+                pre_len - len(latest_pre_parts)
+            )
+            current_pre_padded = current_pre_parts + ((0, 0),) * (
+                pre_len - len(current_pre_parts)
+            )
             return latest_pre_padded > current_pre_padded
 
         try:
@@ -646,7 +673,10 @@ class AutoUpdater:
 
         # 既にダウンロード済みの場合はスキップ（サイズ一致時のみ）
         if download_path.exists():
-            if version_info.file_size and download_path.stat().st_size != version_info.file_size:
+            if (
+                version_info.file_size
+                and download_path.stat().st_size != version_info.file_size
+            ):
                 download_path.unlink(missing_ok=True)
             else:
                 # YakuLingo.exe もダウンロード（存在する場合）
@@ -661,7 +691,11 @@ class AutoUpdater:
 
         try:
             with self._open_request(req, timeout=300) as response:
-                total_size = int(response.headers.get("Content-Length", 0) or version_info.file_size or 0)
+                total_size = int(
+                    response.headers.get("Content-Length", 0)
+                    or version_info.file_size
+                    or 0
+                )
                 downloaded = 0
 
                 with open(temp_path, "wb") as f:
@@ -709,7 +743,10 @@ class AutoUpdater:
 
         # 既にダウンロード済みの場合はスキップ（サイズ一致時のみ）
         if exe_path.exists():
-            if version_info.exe_file_size and exe_path.stat().st_size != version_info.exe_file_size:
+            if (
+                version_info.exe_file_size
+                and exe_path.stat().st_size != version_info.exe_file_size
+            ):
                 exe_path.unlink(missing_ok=True)
             else:
                 return exe_path
@@ -724,7 +761,11 @@ class AutoUpdater:
 
         try:
             with self._open_request(req, timeout=300) as response:
-                total_size = int(response.headers.get("Content-Length", 0) or version_info.exe_file_size or 0)
+                total_size = int(
+                    response.headers.get("Content-Length", 0)
+                    or version_info.exe_file_size
+                    or 0
+                )
                 downloaded = 0
 
                 with open(temp_path, "wb") as f:
@@ -753,13 +794,13 @@ class AutoUpdater:
     # 配布ZIPに含まれるファイルと一致させる（make_distribution.bat 参照）
     SOURCE_DIRS = ["yakulingo", "prompts", "config"]
     SOURCE_FILES = [
-        "app.py",           # エントリーポイント
+        "app.py",  # エントリーポイント
         ".python-version",  # uv の Python バージョン固定（.uv-python に複数混在すると起動が不安定になるため）
-        "pyproject.toml",   # プロジェクト設定
-        "uv.lock",          # 依存関係ロックファイル
-        "uv.toml",          # UV設定
-        "YakuLingo.exe",    # 起動ランチャー
-        "README.md",        # ドキュメント
+        "pyproject.toml",  # プロジェクト設定
+        "uv.lock",  # 依存関係ロックファイル
+        "uv.toml",  # UV設定
+        "YakuLingo.exe",  # 起動ランチャー
+        "README.md",  # ドキュメント
         # Note: glossary.csv, glossary_old.csv は backup_and_update_glossary() で対応
         # Note: config/settings.template.json はアップデートで上書き（merge_settings()）
         # Note: config/user_settings.json はユーザー設定（ソースに含まれないため保持）
@@ -795,7 +836,7 @@ class AutoUpdater:
                 temp_path = Path(temp_dir)
 
                 # ZIPを展開
-                with zipfile.ZipFile(zip_path, 'r') as zf:
+                with zipfile.ZipFile(zip_path, "r") as zf:
                     zf.extractall(temp_path)
 
                 # 展開されたディレクトリを特定（GitHub zipball は1つのルートディレクトリを持つ）
@@ -856,9 +897,9 @@ class AutoUpdater:
         stem = zip_path.stem
         lower = stem.lower()
         if lower.startswith("yakulingo-"):
-            return stem[len("yakulingo-"):]
+            return stem[len("yakulingo-") :]
         if lower.startswith("yakulingo_"):
-            return stem[len("yakulingo_"):]
+            return stem[len("yakulingo_") :]
         return None
 
     def _get_exe_cache_path(self, version: str) -> Path:
@@ -1012,7 +1053,7 @@ WScript.Quit 0
 '''
 
         # PowerShellスクリプト（GUI付きアップデート処理）
-        ps1_content = f'''# ============================================================
+        ps1_content = f"""# ============================================================
 # YakuLingo Update Script (GUI Version)
 # ============================================================
 
@@ -1529,7 +1570,7 @@ try {{
     Show-Error -Message "Update failed.`n`n$errorMsg" -DebugInfo $debugStr
     exit 1
 }}
-'''
+"""
 
         # スクリプトを保存
         # VBSはANSIで保存（日本語Windows互換）
@@ -1567,7 +1608,7 @@ try {{
         dirs_to_update = " ".join(self.SOURCE_DIRS)
         files_to_update = " ".join(self.SOURCE_FILES)
 
-        script_content = f'''#!/bin/bash
+        script_content = f"""#!/bin/bash
 # Escaped paths for safety
 APP_DIR={app_dir_escaped}
 SOURCE_DIR={source_dir_escaped}
@@ -1805,7 +1846,7 @@ fi
 
 # 自身を削除
 rm "$0"
-'''
+"""
 
         with open(script_path, "w") as f:
             f.write(script_content)
@@ -2020,5 +2061,7 @@ if __name__ == "__main__":
         else:
             print("  用語集は変更されていません")
     else:
-        print("Usage: python -m yakulingo.services.updater glossary <app_dir> <source_dir>")
+        print(
+            "Usage: python -m yakulingo.services.updater glossary <app_dir> <source_dir>"
+        )
         sys.exit(1)

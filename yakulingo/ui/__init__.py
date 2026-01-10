@@ -10,21 +10,22 @@ Use explicit imports like:
 from .state import AppState, Tab, FileState, TranslationBackend, LocalAIState
 
 # Submodules that can be accessed via __getattr__ (for patching support)
-_SUBMODULES = {'app', 'styles', 'utils', 'state', 'components', 'tray'}
+_SUBMODULES = {"app", "styles", "utils", "state", "components", "tray"}
 
 
 def __getattr__(name: str):
     """Support accessing submodules for unittest.mock.patch."""
     import importlib
+
     if name in _SUBMODULES:
-        return importlib.import_module(f'.{name}', __package__)
+        return importlib.import_module(f".{name}", __package__)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 __all__ = [
-    'AppState',
-    'Tab',
-    'FileState',
-    'TranslationBackend',
-    'LocalAIState',
+    "AppState",
+    "Tab",
+    "FileState",
+    "TranslationBackend",
+    "LocalAIState",
 ]

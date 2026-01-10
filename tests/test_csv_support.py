@@ -16,10 +16,7 @@ def test_translation_service_supports_csv() -> None:
 
 
 def test_csv_processor_preserves_dialect(tmp_path: Path) -> None:
-    content = (
-        "col1;col2;col3\r\n"
-        "apple;\"http://example.com?a=b;c=d\";note\r\n"
-    )
+    content = 'col1;col2;col3\r\napple;"http://example.com?a=b;c=d";note\r\n'
     input_path = tmp_path / "sample.csv"
     input_path.write_bytes(content.encode("utf-8"))
 
@@ -36,7 +33,7 @@ def test_csv_processor_preserves_dialect(tmp_path: Path) -> None:
     output_text = output_bytes.decode("utf-8")
     dialect = csv.Sniffer().sniff(output_text, delimiters=[",", ";", "\t", "|"])
     assert dialect.delimiter == ";"
-    assert "\"http://example.com?a=b;c=d\"" in output_text
+    assert '"http://example.com?a=b;c=d"' in output_text
 
     rows = list(csv.reader(io.StringIO(output_text), dialect=dialect))
     assert rows[1][0].endswith("-x")

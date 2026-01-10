@@ -18,14 +18,15 @@ from yakulingo.models.types import (
 
 # Module logger
 import logging
+
 logger = logging.getLogger(__name__)
 
 
 def get_default_db_path() -> Path:
     """Get default database path in user's home directory"""
-    db_dir = Path.home() / '.yakulingo'
+    db_dir = Path.home() / ".yakulingo"
     db_dir.mkdir(parents=True, exist_ok=True)
-    return db_dir / 'history.db'
+    return db_dir / "history.db"
 
 
 class HistoryDB:
@@ -65,17 +66,15 @@ class HistoryDB:
         Get a database connection for the current thread.
         Reuses existing connection if available (connection pooling).
         """
-        conn = getattr(self._local, 'connection', None)
+        conn = getattr(self._local, "connection", None)
         if conn is None:
             conn = sqlite3.connect(
-                self.db_path,
-                timeout=self.DB_TIMEOUT,
-                check_same_thread=False
+                self.db_path, timeout=self.DB_TIMEOUT, check_same_thread=False
             )
             # Enable WAL mode for better concurrent read performance
-            conn.execute('PRAGMA journal_mode=WAL')
+            conn.execute("PRAGMA journal_mode=WAL")
             # Enable foreign keys
-            conn.execute('PRAGMA foreign_keys=ON')
+            conn.execute("PRAGMA foreign_keys=ON")
             self._local.connection = conn
 
             # Track connection for cleanup during shutdown
@@ -98,15 +97,17 @@ class HistoryDB:
                 try:
                     # Perform WAL checkpoint before closing
                     # TRUNCATE mode moves all WAL content to main database and resets WAL
-                    conn.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+                    conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
                     conn.close()
                     logger.debug("Closed DB connection for thread %d", thread_id)
                 except sqlite3.Error as e:
-                    logger.debug("Error closing DB connection for thread %d: %s", thread_id, e)
+                    logger.debug(
+                        "Error closing DB connection for thread %d: %s", thread_id, e
+                    )
             self._all_connections.clear()
 
         # Also clear thread-local storage for current thread
-        if hasattr(self._local, 'connection'):
+        if hasattr(self._local, "connection"):
             self._local.connection = None
 
     def _init_db(self):
@@ -120,12 +121,12 @@ class HistoryDB:
                 check_same_thread=False,
             )
             # Enable WAL mode for better concurrent read performance
-            conn.execute('PRAGMA journal_mode=WAL')
+            conn.execute("PRAGMA journal_mode=WAL")
             # Enable foreign keys
-            conn.execute('PRAGMA foreign_keys=ON')
+            conn.execute("PRAGMA foreign_keys=ON")
             # Create table with backward-compatible schema
             # (direction column kept for backward compatibility with existing DBs)
-            conn.execute('''
+            conn.execute("""
                 CREATE TABLE IF NOT EXISTS history (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     source_text TEXT NOT NULL,
@@ -134,19 +135,19 @@ class HistoryDB:
                     timestamp TEXT NOT NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
-            ''')
+            """)
             # Create index for faster timestamp-based queries
-            conn.execute('''
+            conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_history_timestamp
                 ON history(timestamp DESC)
-            ''')
+            """)
             # Create index for search queries
             # Note: LIKE '%query%' won't use index, but LIKE 'query%' will
             # This index helps with prefix searches and sorting during search
-            conn.execute('''
+            conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_history_source_text
                 ON history(source_text COLLATE NOCASE)
-            ''')
+            """)
             conn.commit()
             try:
                 conn.close()
@@ -164,16 +165,16 @@ class HistoryDB:
 
             with self._lock:
                 cursor = conn.execute(
-                    '''
+                    """
                     INSERT INTO history (source_text, direction, result_json, timestamp)
                     VALUES (?, ?, ?, ?)
-                    ''',
+                    """,
                     (
                         entry.source_text,
-                        'bidirectional',  # Always bidirectional now
+                        "bidirectional",  # Always bidirectional now
                         result_json,
                         entry.timestamp,
-                    )
+                    ),
                 )
                 conn.commit()
                 return cursor.lastrowid
@@ -187,13 +188,13 @@ class HistoryDB:
             conn = self._get_connection()
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
-                '''
+                """
                 SELECT id, source_text, direction, result_json, timestamp
                 FROM history
                 ORDER BY timestamp DESC, id DESC
                 LIMIT ?
-                ''',
-                (limit,)
+                """,
+                (limit,),
             ).fetchall()
 
             return [self._row_to_entry(row) for row in rows]
@@ -207,12 +208,12 @@ class HistoryDB:
             conn = self._get_connection()
             conn.row_factory = sqlite3.Row
             row = conn.execute(
-                '''
+                """
                 SELECT id, source_text, direction, result_json, timestamp
                 FROM history
                 WHERE id = ?
-                ''',
-                (entry_id,)
+                """,
+                (entry_id,),
             ).fetchone()
 
             return self._row_to_entry(row) if row else None
@@ -225,10 +226,7 @@ class HistoryDB:
         try:
             conn = self._get_connection()
             with self._lock:
-                cursor = conn.execute(
-                    'DELETE FROM history WHERE id = ?',
-                    (entry_id,)
-                )
+                cursor = conn.execute("DELETE FROM history WHERE id = ?", (entry_id,))
                 conn.commit()
                 return cursor.rowcount > 0
         except sqlite3.Error as e:
@@ -241,13 +239,14 @@ class HistoryDB:
             conn = self._get_connection()
             with self._lock:
                 cursor = conn.execute(
-                    'DELETE FROM history WHERE timestamp = ?',
-                    (timestamp,)
+                    "DELETE FROM history WHERE timestamp = ?", (timestamp,)
                 )
                 conn.commit()
                 return cursor.rowcount > 0
         except sqlite3.Error as e:
-            logger.warning("Failed to delete history entry by timestamp %s: %s", timestamp, e)
+            logger.warning(
+                "Failed to delete history entry by timestamp %s: %s", timestamp, e
+            )
             return False
 
     def clear_all(self) -> int:
@@ -255,7 +254,7 @@ class HistoryDB:
         try:
             conn = self._get_connection()
             with self._lock:
-                cursor = conn.execute('DELETE FROM history')
+                cursor = conn.execute("DELETE FROM history")
                 conn.commit()
                 return cursor.rowcount
         except sqlite3.Error as e:
@@ -268,14 +267,14 @@ class HistoryDB:
             conn = self._get_connection()
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
-                '''
+                """
                 SELECT id, source_text, direction, result_json, timestamp
                 FROM history
                 WHERE source_text LIKE ?
                 ORDER BY timestamp DESC
                 LIMIT ?
-                ''',
-                (f'%{query}%', limit)
+                """,
+                (f"%{query}%", limit),
             ).fetchall()
 
             return [self._row_to_entry(row) for row in rows]
@@ -287,7 +286,7 @@ class HistoryDB:
         """Get total number of history entries"""
         try:
             conn = self._get_connection()
-            result = conn.execute('SELECT COUNT(*) FROM history').fetchone()
+            result = conn.execute("SELECT COUNT(*) FROM history").fetchone()
             return result[0] if result else 0
         except sqlite3.Error as e:
             logger.warning("Failed to get history count: %s", e)
@@ -305,15 +304,15 @@ class HistoryDB:
             with self._lock:
                 # Single query: delete entries not in the most recent max_entries
                 cursor = conn.execute(
-                    '''
+                    """
                     DELETE FROM history
                     WHERE id NOT IN (
                         SELECT id FROM history
                         ORDER BY timestamp DESC
                         LIMIT ?
                     )
-                    ''',
-                    (max_entries,)
+                    """,
+                    (max_entries,),
                 )
                 conn.commit()
                 return cursor.rowcount
@@ -324,21 +323,21 @@ class HistoryDB:
     def _serialize_result(self, result: TextTranslationResult) -> str:
         """Serialize TextTranslationResult to JSON"""
         data = {
-            'source_text': result.source_text,
-            'source_char_count': result.source_char_count,
-            'output_language': result.output_language,
-            'detected_language': result.detected_language,
-            'metadata': result.metadata,
-            'options': [
+            "source_text": result.source_text,
+            "source_char_count": result.source_char_count,
+            "output_language": result.output_language,
+            "detected_language": result.detected_language,
+            "metadata": result.metadata,
+            "options": [
                 {
-                    'text': opt.text,
-                    'explanation': opt.explanation,
-                    'char_count': opt.char_count,
-                    'style': opt.style,
+                    "text": opt.text,
+                    "explanation": opt.explanation,
+                    "char_count": opt.char_count,
+                    "style": opt.style,
                 }
                 for opt in result.options
             ],
-            'error_message': result.error_message,
+            "error_message": result.error_message,
         }
         return json.dumps(data, ensure_ascii=False)
 
@@ -347,15 +346,15 @@ class HistoryDB:
         data = json.loads(json_str)
         options = [
             TranslationOption(
-                text=opt['text'],
-                explanation=opt['explanation'],
-                char_count=opt.get('char_count', 0),
-                style=opt.get('style'),  # None for legacy data (backward compatible)
+                text=opt["text"],
+                explanation=opt["explanation"],
+                char_count=opt.get("char_count", 0),
+                style=opt.get("style"),  # None for legacy data (backward compatible)
             )
-            for opt in data.get('options', [])
+            for opt in data.get("options", [])
         ]
-        detected_language = data.get('detected_language')
-        output_language = data.get('output_language')
+        detected_language = data.get("detected_language")
+        output_language = data.get("output_language")
         if not output_language:
             if detected_language == "日本語":
                 output_language = "en"
@@ -365,20 +364,20 @@ class HistoryDB:
                 output_language = "en"
 
         return TextTranslationResult(
-            source_text=data['source_text'],
-            source_char_count=data.get('source_char_count', 0),
+            source_text=data["source_text"],
+            source_char_count=data.get("source_char_count", 0),
             output_language=output_language,
             options=options,
             detected_language=detected_language,
-            metadata=data.get('metadata'),
-            error_message=data.get('error_message'),
+            metadata=data.get("metadata"),
+            error_message=data.get("error_message"),
         )
 
     def _row_to_entry(self, row: sqlite3.Row) -> HistoryEntry:
         """Convert database row to HistoryEntry"""
-        result = self._deserialize_result(row['result_json'])
+        result = self._deserialize_result(row["result_json"])
         return HistoryEntry(
-            source_text=row['source_text'],
+            source_text=row["source_text"],
             result=result,
-            timestamp=row['timestamp'],
+            timestamp=row["timestamp"],
         )

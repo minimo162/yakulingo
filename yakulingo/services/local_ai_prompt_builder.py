@@ -15,8 +15,18 @@ from yakulingo.services.prompt_builder import PromptBuilder
 logger = logging.getLogger(__name__)
 
 
-_SUPPORTED_REFERENCE_EXTENSIONS = {".csv", ".txt", ".md", ".json", ".pdf", ".docx", ".xlsx", ".pptx"}
+_SUPPORTED_REFERENCE_EXTENSIONS = {
+    ".csv",
+    ".txt",
+    ".md",
+    ".json",
+    ".pdf",
+    ".docx",
+    ".xlsx",
+    ".pptx",
+}
 _BUNDLED_GLOSSARY_FILENAMES = {"glossary.csv", "glossary_old.csv"}
+
 
 @dataclass(frozen=True)
 class EmbeddedReference:
@@ -71,12 +81,16 @@ class LocalPromptBuilder:
         try:
             stat = path.stat()
             mtime_ns = getattr(stat, "st_mtime_ns", None)
-            mtime_key = int(mtime_ns) if isinstance(mtime_ns, int) else int(stat.st_mtime)
+            mtime_key = (
+                int(mtime_ns) if isinstance(mtime_ns, int) else int(stat.st_mtime)
+            )
             return (str(path), mtime_key, int(stat.st_size))
         except OSError:
             return (str(path), 0, 0)
 
-    def _load_glossary_pairs(self, path: Path, file_key: tuple[str, int, int]) -> list[tuple[str, str]]:
+    def _load_glossary_pairs(
+        self, path: Path, file_key: tuple[str, int, int]
+    ) -> list[tuple[str, str]]:
         with self._glossary_lock:
             cached = self._glossary_cache.get(file_key)
             if cached is not None:
@@ -102,7 +116,9 @@ class LocalPromptBuilder:
         return pairs
 
     @staticmethod
-    def _filter_glossary_pairs(pairs: list[tuple[str, str]], input_text: str, *, max_lines: int) -> list[tuple[str, str]]:
+    def _filter_glossary_pairs(
+        pairs: list[tuple[str, str]], input_text: str, *, max_lines: int
+    ) -> list[tuple[str, str]]:
         text = input_text.strip()
         if not text:
             return []
@@ -130,7 +146,9 @@ class LocalPromptBuilder:
         return matched[:max_lines]
 
     @staticmethod
-    def _should_include_translation_rules_for_text(output_language: str, text: str) -> bool:
+    def _should_include_translation_rules_for_text(
+        output_language: str, text: str
+    ) -> bool:
         if not text:
             return False
         return True
@@ -141,7 +159,9 @@ class LocalPromptBuilder:
             if cached is not None:
                 return cached
             if not self.prompts_dir:
-                raise FileNotFoundError(f"prompts_dir is not set (missing template: {filename})")
+                raise FileNotFoundError(
+                    f"prompts_dir is not set (missing template: {filename})"
+                )
             path = self.prompts_dir / filename
             if not path.exists():
                 raise FileNotFoundError(f"Missing local AI prompt template: {path}")
@@ -195,7 +215,9 @@ class LocalPromptBuilder:
                     chunks: list[str] = []
                     total = 0
                     for page in doc:
-                        total, truncated = add_chunk(chunks, page.get_text("text"), total)
+                        total, truncated = add_chunk(
+                            chunks, page.get_text("text"), total
+                        )
                         if truncated:
                             break
                     return "".join(chunks).strip()
@@ -219,10 +241,16 @@ class LocalPromptBuilder:
                         for row in table.rows:
                             if total >= max_chars:
                                 break
-                            cells = [cell.text for cell in row.cells if cell.text and cell.text.strip()]
+                            cells = [
+                                cell.text
+                                for cell in row.cells
+                                if cell.text and cell.text.strip()
+                            ]
                             if not cells:
                                 continue
-                            total, truncated = add_chunk(chunks, "\t".join(cells), total)
+                            total, truncated = add_chunk(
+                                chunks, "\t".join(cells), total
+                            )
                             if truncated:
                                 break
                 return "".join(chunks).strip()
@@ -237,7 +265,9 @@ class LocalPromptBuilder:
                     for sheet in wb.worksheets:
                         if total >= max_chars:
                             break
-                        total, truncated = add_chunk(chunks, f"[Sheet] {sheet.title}", total)
+                        total, truncated = add_chunk(
+                            chunks, f"[Sheet] {sheet.title}", total
+                        )
                         if truncated:
                             break
                         for row in sheet.iter_rows(values_only=True):
@@ -250,7 +280,9 @@ class LocalPromptBuilder:
                             ]
                             if not row_values:
                                 continue
-                            total, truncated = add_chunk(chunks, "\t".join(row_values), total)
+                            total, truncated = add_chunk(
+                                chunks, "\t".join(row_values), total
+                            )
                             if truncated:
                                 break
                     return "".join(chunks).strip()
@@ -327,10 +359,15 @@ class LocalPromptBuilder:
             )
             if is_bundled_glossary:
                 pairs = self._load_glossary_pairs(path, file_key)
-                matched = self._filter_glossary_pairs(pairs, input_text or "", max_lines=glossary_max_lines)
+                matched = self._filter_glossary_pairs(
+                    pairs, input_text or "", max_lines=glossary_max_lines
+                )
                 if not matched:
                     continue
-                content = "\n".join(f"{source},{target}" if target else f"{source}," for source, target in matched)
+                content = "\n".join(
+                    f"{source},{target}" if target else f"{source},"
+                    for source, target in matched
+                )
             elif suffix in {".txt", ".md", ".json", ".csv"}:
                 try:
                     content = path.read_text(encoding="utf-8-sig", errors="replace")
@@ -355,26 +392,34 @@ class LocalPromptBuilder:
                 content = content[:max_file_chars]
                 truncated = True
                 if not is_bundled_glossary:
-                    warnings.append(f"参照ファイルを一部省略しました（上限 {max_file_chars} 文字）: {path.name}")
+                    warnings.append(
+                        f"参照ファイルを一部省略しました（上限 {max_file_chars} 文字）: {path.name}"
+                    )
 
             remaining = max_total_chars - total
             if remaining <= 0:
                 truncated = True
                 if not is_bundled_glossary:
-                    warnings.append(f"参照ファイルを一部省略しました（合計上限 {max_total_chars} 文字）")
+                    warnings.append(
+                        f"参照ファイルを一部省略しました（合計上限 {max_total_chars} 文字）"
+                    )
                 break
 
             if len(content) > remaining:
                 content = content[:remaining]
                 truncated = True
                 if not is_bundled_glossary:
-                    warnings.append(f"参照ファイルを一部省略しました（合計上限 {max_total_chars} 文字）")
+                    warnings.append(
+                        f"参照ファイルを一部省略しました（合計上限 {max_total_chars} 文字）"
+                    )
 
             total += len(content)
             parts.append(f"[REFERENCE:file={path.name}]\n{content}\n[/REFERENCE]")
 
         if not parts:
-            embedded = EmbeddedReference(text="", warnings=warnings, truncated=truncated)
+            embedded = EmbeddedReference(
+                text="", warnings=warnings, truncated=truncated
+            )
             with self._reference_lock:
                 self._reference_cache = (cache_key, text_key, embedded)
             return embedded
@@ -386,7 +431,9 @@ class LocalPromptBuilder:
             "- 参照は一部省略されている可能性があります。\n"
         )
         embedded_text = header + "\n\n".join(parts)
-        embedded = EmbeddedReference(text=embedded_text, warnings=warnings, truncated=truncated)
+        embedded = EmbeddedReference(
+            text=embedded_text, warnings=warnings, truncated=truncated
+        )
         with self._reference_lock:
             self._reference_cache = (cache_key, text_key, embedded)
         return embedded
@@ -429,7 +476,9 @@ class LocalPromptBuilder:
                 context_parts.append(item)
                 total_chars += len(item) + 1
             context_text = "\n".join(context_parts)
-            embedded_ref = self.build_reference_embed(reference_files, input_text=context_text)
+            embedded_ref = self.build_reference_embed(
+                reference_files, input_text=context_text
+            )
             reference_section = embedded_ref.text if embedded_ref.text else ""
 
         items = [{"id": i + 1, "text": text} for i, text in enumerate(texts)]
@@ -452,7 +501,11 @@ class LocalPromptBuilder:
     ) -> str:
         template = self._load_template("local_text_translate_to_en_3style_json.txt")
         embedded_ref = self.build_reference_embed(reference_files, input_text=text)
-        translation_rules = self._get_translation_rules("en") if self._should_include_translation_rules_for_text("en", text) else ""
+        translation_rules = (
+            self._get_translation_rules("en")
+            if self._should_include_translation_rules_for_text("en", text)
+            else ""
+        )
         reference_section = embedded_ref.text if embedded_ref.text else ""
         prompt_input_text = self._base.normalize_input_text(text, "en")
         prompt = template.replace("{translation_rules}", translation_rules)
@@ -471,7 +524,11 @@ class LocalPromptBuilder:
     ) -> str:
         template = self._load_template("local_text_translate_to_en_single_json.txt")
         embedded_ref = self.build_reference_embed(reference_files, input_text=text)
-        translation_rules = self._get_translation_rules("en") if self._should_include_translation_rules_for_text("en", text) else ""
+        translation_rules = (
+            self._get_translation_rules("en")
+            if self._should_include_translation_rules_for_text("en", text)
+            else ""
+        )
         reference_section = embedded_ref.text if embedded_ref.text else ""
         prompt_input_text = self._base.normalize_input_text(text, "en")
         prompt = template.replace("{translation_rules}", translation_rules)
@@ -490,7 +547,11 @@ class LocalPromptBuilder:
     ) -> str:
         template = self._load_template("local_text_translate_to_jp_json.txt")
         embedded_ref = self.build_reference_embed(reference_files, input_text=text)
-        translation_rules = self._get_translation_rules("jp") if self._should_include_translation_rules_for_text("jp", text) else ""
+        translation_rules = (
+            self._get_translation_rules("jp")
+            if self._should_include_translation_rules_for_text("jp", text)
+            else ""
+        )
         reference_section = embedded_ref.text if embedded_ref.text else ""
         prompt_input_text = self._base.normalize_input_text(text, "jp")
         prompt = template.replace("{translation_rules}", translation_rules)

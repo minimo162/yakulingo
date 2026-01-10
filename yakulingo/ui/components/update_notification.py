@@ -74,7 +74,7 @@ class UpdateNotification:
 
         except (OSError, ValueError, RuntimeError) as e:
             if not silent:
-                ui.notify(f'アップデートチェックに失敗: {e}', type='warning')
+                ui.notify(f"アップデートチェックに失敗: {e}", type="warning")
             return None
 
     def create_update_banner(self) -> Optional[ui.element]:
@@ -90,38 +90,38 @@ class UpdateNotification:
 
         # 再セットアップ必要時は警告色のバナー
         banner_classes = (
-            'update-banner fixed top-0 left-0 right-0 z-50 '
-            'px-4 py-2 flex items-center justify-center gap-4 '
+            "update-banner fixed top-0 left-0 right-0 z-50 "
+            "px-4 py-2 flex items-center justify-center gap-4 "
         )
         if requires_reinstall:
-            banner_classes += 'warning-banner'  # M3 warning colors
+            banner_classes += "warning-banner"  # M3 warning colors
         else:
-            banner_classes += 'primary-banner'  # M3 primary colors
+            banner_classes += "primary-banner"  # M3 primary colors
 
-        with ui.element('div').classes(banner_classes) as banner:
+        with ui.element("div").classes(banner_classes) as banner:
             self._notification_banner = banner
 
             if requires_reinstall:
-                ui.icon('warning').classes('text-lg')
+                ui.icon("warning").classes("text-lg")
                 ui.label(
-                    f'バージョン {self.update_result.latest_version} は再セットアップが必要です'
-                ).classes('text-sm')
+                    f"バージョン {self.update_result.latest_version} は再セットアップが必要です"
+                ).classes("text-sm")
             else:
-                ui.icon('system_update').classes('text-lg')
+                ui.icon("system_update").classes("text-lg")
                 ui.label(
-                    f'新しいバージョン {self.update_result.latest_version} が利用可能です'
-                ).classes('text-sm')
+                    f"新しいバージョン {self.update_result.latest_version} が利用可能です"
+                ).classes("text-sm")
 
-            with ui.row().classes('gap-2'):
+            with ui.row().classes("gap-2"):
                 ui.button(
-                    '詳細',
+                    "詳細",
                     on_click=lambda: self.show_update_dialog(),
-                ).props('flat dense color=white').classes('text-xs')
+                ).props("flat dense color=white").classes("text-xs")
 
                 ui.button(
-                    '後で',
+                    "後で",
                     on_click=lambda: self._dismiss_banner(),
-                ).props('flat dense color=white').classes('text-xs opacity-70')
+                ).props("flat dense color=white").classes("text-xs opacity-70")
 
         return banner
 
@@ -138,88 +138,89 @@ class UpdateNotification:
 
         info = self.update_result.version_info
 
-        with ui.dialog() as dialog, ui.card().classes('w-96 max-h-[80vh]'):
+        with ui.dialog() as dialog, ui.card().classes("w-96 max-h-[80vh]"):
             self._dialog = dialog
 
             # ヘッダー
-            with ui.row().classes('w-full items-center justify-between mb-4'):
-                with ui.row().classes('items-center gap-2'):
-                    ui.icon('system_update').classes('text-2xl text-primary')
-                    ui.label('アップデート').classes('text-lg font-semibold')
+            with ui.row().classes("w-full items-center justify-between mb-4"):
+                with ui.row().classes("items-center gap-2"):
+                    ui.icon("system_update").classes("text-2xl text-primary")
+                    ui.label("アップデート").classes("text-lg font-semibold")
                 ui.button(
-                    icon='close',
+                    icon="close",
                     on_click=dialog.close,
-                ).props('flat round').classes('icon-btn')
+                ).props("flat round").classes("icon-btn")
 
             # 再セットアップ必要警告
             if info.requires_reinstall:
-                with ui.element('div').classes('w-full warning-box mb-3'):
-                    with ui.row().classes('items-start gap-2'):
-                        ui.icon('warning').classes('text-warning text-lg')
-                        with ui.column().classes('gap-1'):
-                            ui.label('再セットアップが必要').classes(
-                                'text-sm font-semibold text-on-warning-container'
+                with ui.element("div").classes("w-full warning-box mb-3"):
+                    with ui.row().classes("items-start gap-2"):
+                        ui.icon("warning").classes("text-warning text-lg")
+                        with ui.column().classes("gap-1"):
+                            ui.label("再セットアップが必要").classes(
+                                "text-sm font-semibold text-on-warning-container"
                             )
                             ui.label(
-                                'このバージョンは依存関係が変更されています。'
-                                '共有フォルダの setup.vbs を実行してください。'
-                            ).classes('text-xs text-on-warning-container')
+                                "このバージョンは依存関係が変更されています。"
+                                "共有フォルダの setup.vbs を実行してください。"
+                            ).classes("text-xs text-on-warning-container")
 
             # バージョン情報
-            with ui.column().classes('w-full gap-3'):
-                with ui.row().classes('w-full justify-between items-center'):
-                    ui.label('現在のバージョン').classes('text-sm text-muted')
+            with ui.column().classes("w-full gap-3"):
+                with ui.row().classes("w-full justify-between items-center"):
+                    ui.label("現在のバージョン").classes("text-sm text-muted")
                     ui.label(self.update_result.current_version).classes(
-                        'text-sm font-medium'
+                        "text-sm font-medium"
                     )
 
-                with ui.row().classes('w-full justify-between items-center'):
-                    ui.label('新しいバージョン').classes('text-sm text-muted')
-                    ui.label(info.version).classes(
-                        'text-sm font-semibold text-primary'
-                    )
+                with ui.row().classes("w-full justify-between items-center"):
+                    ui.label("新しいバージョン").classes("text-sm text-muted")
+                    ui.label(info.version).classes("text-sm font-semibold text-primary")
 
                 if info.release_date:
-                    with ui.row().classes('w-full justify-between items-center'):
-                        ui.label('リリース日').classes('text-sm text-muted')
-                        ui.label(info.release_date).classes('text-sm')
+                    with ui.row().classes("w-full justify-between items-center"):
+                        ui.label("リリース日").classes("text-sm text-muted")
+                        ui.label(info.release_date).classes("text-sm")
 
             # リリースノート
             if info.release_notes:
-                ui.separator().classes('my-3')
-                ui.label('変更内容').classes('text-sm font-medium mb-2')
-                with ui.scroll_area().classes('w-full max-h-40 border rounded p-2'):
+                ui.separator().classes("my-3")
+                ui.label("変更内容").classes("text-sm font-medium mb-2")
+                with ui.scroll_area().classes("w-full max-h-40 border rounded p-2"):
                     # リリースノートから [REQUIRES_REINSTALL] マーカーを除去して表示
-                    display_notes = info.release_notes.replace('[REQUIRES_REINSTALL]', '').strip()
+                    display_notes = info.release_notes.replace(
+                        "[REQUIRES_REINSTALL]", ""
+                    ).strip()
                     # Markdownのソフト改行をハード改行に変換（行末に2スペース追加）
                     # これによりGitHubリリースノートの改行が正しく表示される
-                    display_notes = display_notes.replace('\n', '  \n')
-                    ui.markdown(display_notes).classes('release-notes-content')
+                    display_notes = display_notes.replace("\n", "  \n")
+                    ui.markdown(display_notes).classes("release-notes-content")
 
             # アクションボタン
-            ui.separator().classes('my-3')
+            ui.separator().classes("my-3")
 
             if info.requires_reinstall:
                 # 再セットアップ必要な場合は、setup.vbs実行を案内
-                with ui.column().classes('w-full gap-2'):
-                    ui.label(
-                        '共有フォルダの setup.vbs を実行してください。'
-                    ).classes('text-xs text-muted text-center')
-                    with ui.row().classes('w-full justify-end gap-2'):
+                with ui.column().classes("w-full gap-2"):
+                    ui.label("共有フォルダの setup.vbs を実行してください。").classes(
+                        "text-xs text-muted text-center"
+                    )
+                    with ui.row().classes("w-full justify-end gap-2"):
                         ui.button(
-                            '閉じる',
+                            "閉じる",
                             on_click=dialog.close,
-                        ).classes('btn-primary')
+                        ).classes("btn-primary")
             else:
                 # 通常のアップデート
-                with ui.row().classes('w-full justify-end gap-2'):
+                with ui.row().classes("w-full justify-end gap-2"):
+
                     async def on_download():
                         await self._start_download(info, dialog)
 
                     ui.button(
-                        'ダウンロード',
+                        "ダウンロード",
                         on_click=on_download,
-                    ).classes('btn-primary')
+                    ).classes("btn-primary")
 
         dialog.open()
 
@@ -228,7 +229,7 @@ class UpdateNotification:
         dialog.close()
 
         if not self.updater:
-            ui.notify('アップデーターが初期化されていません', type='warning')
+            ui.notify("アップデーターが初期化されていません", type="warning")
             return
 
         try:
@@ -241,30 +242,40 @@ class UpdateNotification:
             await self._confirm_install(zip_path)
 
         except (OSError, ValueError, RuntimeError) as e:
-            ui.notify(f'ダウンロードに失敗: {e}', type='negative')
+            ui.notify(f"ダウンロードに失敗: {e}", type="negative")
 
     async def _confirm_install(self, zip_path):
         """インストール確認ダイアログ"""
         # asyncio.to_thread後はclientコンテキストが必要
         if not self._client:
-            ui.notify('クライアント参照がありません', type='warning')
+            ui.notify("クライアント参照がありません", type="warning")
             return
 
         with self._client:
-            with ui.dialog() as dialog, ui.card().classes('w-80'):
-                with ui.column().classes('w-full gap-4 p-4'):
-                    ui.icon('check_circle').classes('text-4xl text-positive self-center')
-                    ui.label('ダウンロード完了').classes('text-lg font-semibold text-center')
+            with ui.dialog() as dialog, ui.card().classes("w-80"):
+                with ui.column().classes("w-full gap-4 p-4"):
+                    ui.icon("check_circle").classes(
+                        "text-4xl text-positive self-center"
+                    )
+                    ui.label("ダウンロード完了").classes(
+                        "text-lg font-semibold text-center"
+                    )
                     ui.label(
-                        'アプリケーションを終了してアップデートをインストールしますか？'
-                    ).classes('text-sm text-center text-muted')
+                        "アプリケーションを終了してアップデートをインストールしますか？"
+                    ).classes("text-sm text-center text-muted")
 
-                    with ui.row().classes('w-full justify-end gap-2 mt-2'):
-                        later_btn = ui.button('後で', on_click=dialog.close).props('flat').classes('text-muted')
-                        install_btn = ui.button('インストール').classes('btn-primary')
+                    with ui.row().classes("w-full justify-end gap-2 mt-2"):
+                        later_btn = (
+                            ui.button("後で", on_click=dialog.close)
+                            .props("flat")
+                            .classes("text-muted")
+                        )
+                        install_btn = ui.button("インストール").classes("btn-primary")
 
                         async def on_install_click():
-                            await self._do_install(zip_path, dialog, install_btn, later_btn)
+                            await self._do_install(
+                                zip_path, dialog, install_btn, later_btn
+                            )
 
                         install_btn.on_click(on_install_click)
 
@@ -277,7 +288,7 @@ class UpdateNotification:
 
         # ボタンを無効化してローディング表示
         install_btn.disable()
-        install_btn.text = 'インストール中...'
+        install_btn.text = "インストール中..."
         later_btn.disable()
 
         try:
@@ -288,26 +299,27 @@ class UpdateNotification:
             if success:
                 dialog.close()
                 ui.notify(
-                    'アップデートの準備ができました。アプリケーションを再起動します...',
-                    type='positive',
+                    "アップデートの準備ができました。アプリケーションを再起動します...",
+                    type="positive",
                     timeout=3000,
                 )
                 # 少し待ってからアプリを終了（通知を表示する時間）
                 await asyncio.sleep(1.0)
                 # アプリを終了（Windowsの場合はバッチファイルが処理を引き継ぐ）
                 from yakulingo.ui.utils import write_launcher_state
+
                 write_launcher_state("update_in_progress")
                 await self._shutdown_app(exit_code=20)
             else:
                 install_btn.enable()
-                install_btn.text = 'インストール'
+                install_btn.text = "インストール"
                 later_btn.enable()
-                ui.notify('インストールに失敗しました', type='negative')
+                ui.notify("インストールに失敗しました", type="negative")
         except (OSError, ValueError, RuntimeError) as e:
             install_btn.enable()
-            install_btn.text = 'インストール'
+            install_btn.text = "インストール"
             later_btn.enable()
-            ui.notify(f'インストールエラー: {e}', type='negative')
+            ui.notify(f"インストールエラー: {e}", type="negative")
 
     async def _shutdown_app(self, exit_code: int = 0):
         """アプリケーションを確実に終了する
@@ -331,8 +343,7 @@ class UpdateNotification:
 
 
 async def check_updates_on_startup(
-    settings: AppSettings,
-    client: Optional[Client] = None
+    settings: AppSettings, client: Optional[Client] = None
 ) -> Optional[UpdateNotification]:
     """
     起動時にアップデートをチェック

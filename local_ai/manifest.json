@@ -1,5 +1,5 @@
 ﻿{
-    "generated_at":  "2026-01-10T11:09:19.4336257+09:00",
+    "generated_at":  "2026-01-10T19:19:48.2941100+09:00",
     "llama_cpp":  {
                       "repo":  "ggerganov/llama.cpp",
                       "release_tag":  "b7689",
@@ -11,7 +11,7 @@
                   "repo":  "unsloth/GLM-4.6V-Flash-GGUF",
                   "file":  "GLM-4.6V-Flash-IQ4_XS.gguf",
                   "download_url":  "https://huggingface.co/unsloth/GLM-4.6V-Flash-GGUF/resolve/main/GLM-4.6V-Flash-IQ4_XS.gguf",
-                  "sha256":  "23ea7196ed6f595c44591266a1b4b90d56db5a66c5223d49a41a587b81ace35d",
+                  "sha256":  "23EA7196ED6F595C44591266A1B4B90D56DB5A66C5223D49A41A587B81ACE35D",
                   "skipped":  false
               }
 }

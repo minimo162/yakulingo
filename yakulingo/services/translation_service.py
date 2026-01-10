@@ -1505,6 +1505,7 @@ class TranslationService:
                     self._processors = {
                         '.xlsx': ExcelProcessor(),
                         '.xls': ExcelProcessor(),
+                        '.xlsm': ExcelProcessor(),
                         '.docx': WordProcessor(),
                         '.pptx': PptxProcessor(),
                         '.pdf': PdfProcessor(),

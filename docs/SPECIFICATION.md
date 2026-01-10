@@ -66,7 +66,7 @@ YakuLingoは、日本語と英語の双方向翻訳を提供するデスクト�
 
 | 形式 | 拡張子 | ライブラリ |
 |------|--------|----------|
-| Excel | `.xlsx` `.xls` | xlwings (Win/Mac, Excel必須。`.xls` は xlwings のみ) / openpyxl (fallback, `.xlsx` のみ) |
+| Excel | `.xlsx` `.xls` `.xlsm` | xlwings (Win/Mac, Excel必須。`.xls` は xlwings のみ) / openpyxl (fallback, `.xlsx`/`.xlsm`) |
 | Word | `.docx` | python-docx（*.doc* は未対応） |
 | PowerPoint | `.pptx` | python-pptx（*.ppt は未対応） |
 | PDF | `.pdf` | PyMuPDF, pdfminer.six, PP-DocLayout-L (PaddleOCR) |
@@ -575,7 +575,7 @@ Windows のグローバルホットキー（Ctrl+Alt+J）を登録し、押下�
   - 作業中ウィンドウを左、YakuLingoを右に並べる（フォーカスは作業ウィンドウ優先）
   - Edgeは状況に応じてオフスクリーン/背面同期を切り替える（翻訳中はUI背面に同期表示してフォーカスを奪わない）
 - ファイル翻訳（ホットキー）の制約
-  - 対応拡張子: `.xlsx` `.xls` `.docx` `.pptx` `.pdf` `.txt` `.msg`
+  - 対応拡張子: `.xlsx` `.xls` `.xlsm` `.docx` `.pptx` `.pdf` `.txt` `.msg`
   - 一度に処理するファイル数: 最大10
 - 補足（統合）
   - ローカルAPI `POST /api/hotkey`（localhostのみ）で同じ翻訳パイプラインを起動できる
@@ -957,6 +957,7 @@ class TranslationService:
     processors = {
         '.xlsx': ExcelProcessor(),
         '.xls': ExcelProcessor(),
+        '.xlsm': ExcelProcessor(),
         '.docx': WordProcessor(),
         '.pptx': PptxProcessor(),
         '.pdf': PdfProcessor(),

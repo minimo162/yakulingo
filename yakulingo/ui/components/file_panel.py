@@ -139,7 +139,7 @@ def _attach_copy_handler(button, text: str, message: str) -> None:
     button.on('click', lambda: None, js_handler=_build_copy_js_handler(text))
 
 
-SUPPORTED_FORMATS = ".xlsx,.xls,.docx,.pptx,.pdf,.txt,.msg"
+SUPPORTED_FORMATS = ".xlsx,.xls,.xlsm,.docx,.pptx,.pdf,.txt,.msg"
 SUPPORTED_EXTENSIONS = {ext.strip() for ext in SUPPORTED_FORMATS.split(',')}
 MAX_DROP_FILE_SIZE_MB = 20
 MAX_DROP_FILE_SIZE_BYTES = MAX_DROP_FILE_SIZE_MB * 1024 * 1024

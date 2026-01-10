@@ -1,6 +1,6 @@
 # yakulingo/processors/excel_processor.py
 """
-Processor for Excel files (.xlsx, .xls).
+Processor for Excel files (.xlsx, .xls, .xlsm).
 
 Uses xlwings for full Excel functionality (shapes, charts, textboxes).
 Falls back to openpyxl if xlwings/Excel is not available (Linux or no Excel installed).
@@ -633,19 +633,19 @@ from openpyxl.styles import Font
 
 def _detect_formula_cells_via_zipfile(file_path: Path) -> set[tuple[str, int, int]]:
     """
-    Detect formula cells by parsing the XLSX file directly via zipfile.
+    Detect formula cells by parsing the XLSX/XLSM file directly via zipfile.
 
     This is much more memory-efficient than loading the workbook with openpyxl,
     as it only reads and parses the necessary XML portions.
 
-    XLSX files are ZIP archives containing XML files:
+    XLSX/XLSM files are ZIP archives containing XML files:
     - xl/workbook.xml: Contains sheet definitions
     - xl/worksheets/sheet1.xml, sheet2.xml, etc.: Contains cell data
 
     Formula cells are identified by the presence of <f> elements within <c> (cell) elements.
 
     Args:
-        file_path: Path to the XLSX file
+        file_path: Path to the XLSX/XLSM file
 
     Returns:
         Set of (sheet_name, row, col) tuples for formula cells
@@ -756,7 +756,7 @@ def _detect_formula_cells_via_zipfile(file_path: Path) -> set[tuple[str, int, in
 
 class ExcelProcessor(FileProcessor):
     """
-    Processor for Excel files (.xlsx, .xls).
+    Processor for Excel files (.xlsx, .xls, .xlsm).
 
     Translation targets:
     - Cell values (text only)
@@ -921,7 +921,7 @@ class ExcelProcessor(FileProcessor):
             except Exception:
                 workbook_path = None
 
-            if workbook_path and workbook_path.suffix.lower() == ".xlsx" and workbook_path.exists():
+            if workbook_path and workbook_path.suffix.lower() in (".xlsx", ".xlsm") and workbook_path.exists():
                 sheet_xml_paths = self._get_xlsx_sheet_xml_paths(workbook_path)
                 sheet_xml_path = sheet_xml_paths.get(sheet_name)
                 if sheet_xml_path:
@@ -1053,12 +1053,12 @@ class ExcelProcessor(FileProcessor):
 
     @property
     def supported_extensions(self) -> list[str]:
-        return ['.xlsx', '.xls']
+        return ['.xlsx', '.xls', '.xlsm']
 
     def get_file_info(self, file_path: Path) -> FileInfo:
         """Get Excel file info.
 
-        Uses fast ZIP parsing (openpyxl) for `.xlsx` because it's much faster than
+        Uses fast ZIP parsing (openpyxl) for `.xlsx`/`.xlsm` because it's much faster than
         starting an Excel COM server via xlwings (often 3-15 seconds).
 
         For legacy `.xls`, openpyxl cannot read the format, so we require Microsoft
@@ -1117,7 +1117,8 @@ class ExcelProcessor(FileProcessor):
 
         # Fallback: use openpyxl (read_only) to obtain sheet names
         try:
-            wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
+            keep_vba = file_path.suffix.lower() == ".xlsm"
+            wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True, keep_vba=keep_vba)
             try:
                 sheet_count = len(wb.sheetnames)
                 section_details = [
@@ -1144,7 +1145,7 @@ class ExcelProcessor(FileProcessor):
         This avoids fully loading the workbook with openpyxl, which can be slow for
         large files or when many uploads are processed in succession.
         """
-        if file_path.suffix.lower() != ".xlsx":
+        if file_path.suffix.lower() not in (".xlsx", ".xlsm"):
             return None
 
         with zipfile.ZipFile(file_path) as zf:
@@ -1166,7 +1167,7 @@ class ExcelProcessor(FileProcessor):
     ) -> Optional[str]:
         """Extract a text sample for language detection without full workbook load.
 
-        This method uses iterparse to stream sharedStrings.xml directly from the xlsx
+        This method uses iterparse to stream sharedStrings.xml directly from the xlsx/xlsm
         archive, avoiding the overhead of loading the entire XML into memory.
         Large Excel files can have sharedStrings.xml of tens of MB, so streaming
         is essential for fast language detection.
@@ -1178,7 +1179,7 @@ class ExcelProcessor(FileProcessor):
         Returns:
             Sample text string or None if extraction fails
         """
-        if file_path.suffix.lower() != ".xlsx":
+        if file_path.suffix.lower() not in (".xlsx", ".xlsm"):
             # Fall back to None for .xls files (require full load)
             return None
 
@@ -1745,7 +1746,8 @@ class ExcelProcessor(FileProcessor):
             logger.info("Detected %d formula cells (will be preserved)", formula_count)
 
         # Extract text blocks with calculated values (data_only=True)
-        wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
+        keep_vba = file_path.suffix.lower() == ".xlsm"
+        wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True, keep_vba=keep_vba)
 
         # Cache column letters to avoid repeated conversions during large reads
         # Limited to _COLUMN_LETTER_CACHE_SIZE entries to prevent memory bloat on very wide sheets
@@ -2957,7 +2959,8 @@ class ExcelProcessor(FileProcessor):
         - Only processes selected sheets when selected_sections is specified
         """
         font_manager = FontManager(direction, settings)
-        wb = openpyxl.load_workbook(input_path)
+        keep_vba = input_path.suffix.lower() == ".xlsm"
+        wb = openpyxl.load_workbook(input_path, keep_vba=keep_vba)
 
         # Font object cache: (name, size, bold, italic, underline, strike, color_rgb) -> Font
         # openpyxl Font objects are immutable, so we can safely reuse them
@@ -3309,8 +3312,9 @@ class ExcelProcessor(FileProcessor):
         """
         from copy import copy
 
-        original_wb = openpyxl.load_workbook(original_path)
-        translated_wb = openpyxl.load_workbook(translated_path)
+        keep_vba = original_path.suffix.lower() == ".xlsm"
+        original_wb = openpyxl.load_workbook(original_path, keep_vba=keep_vba)
+        translated_wb = openpyxl.load_workbook(translated_path, keep_vba=keep_vba)
 
         try:
             # Create a new workbook and remove default sheet

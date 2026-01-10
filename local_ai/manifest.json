@@ -8,10 +8,10 @@
                       "server_exe_sha256":  "73256B168BE1E06FE4BF2BA791247E7E3CEACE67F912767774EB8F466327C27A"
                   },
     "model":  {
-                  "repo":  "bartowski/mistralai_Ministral-3-14B-Instruct-2512-GGUF",
-                  "file":  "mistralai_Ministral-3-14B-Instruct-2512-IQ3_XXS.gguf",
-                  "download_url":  "https://huggingface.co/bartowski/mistralai_Ministral-3-14B-Instruct-2512-GGUF/resolve/main/mistralai_Ministral-3-14B-Instruct-2512-IQ3_XXS.gguf",
-                  "sha256":  "c048183d069e475819612e8ae24d159aaf07e2ac620fd31ec325e39bc410a4c1",
+                  "repo":  "dahara1/shisa-v2.1-qwen3-8b-UD-japanese-imatrix",
+                  "file":  "shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf",
+                  "download_url":  "https://huggingface.co/dahara1/shisa-v2.1-qwen3-8b-UD-japanese-imatrix/resolve/main/shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf",
+                  "sha256":  null,
                   "skipped":  false
               }
 }

@@ -161,8 +161,8 @@ try {
         return $childFull
     }
 
-    $defaultModelRepo = 'bartowski/mistralai_Ministral-3-14B-Instruct-2512-GGUF'
-    $defaultModelFile = 'mistralai_Ministral-3-14B-Instruct-2512-IQ3_XXS.gguf'
+    $defaultModelRepo = 'dahara1/shisa-v2.1-qwen3-8b-UD-japanese-imatrix'
+    $defaultModelFile = 'shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf'
     $manifestModelRepo = $null
     $manifestModelFile = $null
     if ($existingManifest -and $existingManifest.model) {

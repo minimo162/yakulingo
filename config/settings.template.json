@@ -6,7 +6,7 @@
   "max_chars_per_batch": 1000,
   "request_timeout": 600,
   "max_retries": 3,
-  "local_ai_model_path": "local_ai/models/mistralai_Ministral-3-14B-Instruct-2512-IQ3_XXS.gguf",
+  "local_ai_model_path": "local_ai/models/shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf",
   "local_ai_server_dir": "local_ai/llama_cpp",
   "local_ai_host": "127.0.0.1",
   "local_ai_port_base": 4891,

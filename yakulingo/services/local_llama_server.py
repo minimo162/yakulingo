@@ -474,7 +474,7 @@ class LocalLlamaServerManager:
         if raw:
             candidates.append(_resolve_from_app_base(raw))
         candidates.append(
-            _app_base_dir() / "local_ai" / "models" / "mistralai_Ministral-3-14B-Instruct-2512-IQ3_XXS.gguf"
+            _app_base_dir() / "local_ai" / "models" / "shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf"
         )
         candidates.append(_app_base_dir() / "local_ai" / "models" / "GLM-4.6V-Flash-IQ4_XS.gguf")
         for candidate in candidates:

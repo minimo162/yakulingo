@@ -13943,7 +13943,19 @@ def run_app(
         try:
             state = yakulingo_app.state
         except Exception:
-            return "Copilot: Unknown"
+            return "Status: Unknown"
+        backend = getattr(state, "translation_backend", None)
+        if backend == TranslationBackend.LOCAL:
+            local_state = getattr(state, "local_ai_state", None)
+            if local_state == LocalAIState.READY:
+                return "Local AI: Ready"
+            if local_state == LocalAIState.STARTING:
+                return "Local AI: Starting"
+            if local_state == LocalAIState.NOT_INSTALLED:
+                return "Local AI: Not installed"
+            if local_state == LocalAIState.ERROR:
+                return "Local AI: Error"
+            return "Local AI: Connecting"
         connection_state = getattr(state, "connection_state", None)
         if connection_state == ConnectionState.CONNECTED:
             return "Copilot: Connected"

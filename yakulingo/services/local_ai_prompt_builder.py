@@ -16,7 +16,7 @@ from yakulingo.services.prompt_builder import PromptBuilder
 logger = logging.getLogger(__name__)
 
 
-_SUPPORTED_REFERENCE_EXTENSIONS = {".csv", ".txt", ".md", ".json"}
+_SUPPORTED_REFERENCE_EXTENSIONS = {".csv", ".txt", ".md", ".json", ".pdf", ".docx", ".xlsx", ".pptx"}
 _BUNDLED_GLOSSARY_FILENAMES = {"glossary.csv", "glossary_old.csv"}
 _LOCAL_TEXT_RULES_NEEDED_PATTERN = re.compile(
     r"[0-9０-９¥￥%<>≥≤≧≦~→↑↓▲]|兆|億|万|千|bn\b|billion|trillion|yoy\b|qoq\b|cagr\b",
@@ -157,6 +157,135 @@ class LocalPromptBuilder:
             self._template_cache[filename] = text
             return text
 
+    @staticmethod
+    def _append_limited_text(
+        chunks: list[str],
+        text: str,
+        *,
+        max_chars: int,
+        total: int,
+    ) -> tuple[int, bool]:
+        if not text:
+            return total, False
+        remaining = max_chars - total
+        if remaining <= 0:
+            return total, True
+        if len(text) > remaining:
+            chunks.append(text[:remaining])
+            return max_chars, True
+        chunks.append(text)
+        return total + len(text), False
+
+    @staticmethod
+    def _extract_binary_reference_text(
+        path: Path,
+        *,
+        suffix: str,
+        max_chars: int,
+    ) -> Optional[str]:
+        def add_chunk(chunks: list[str], raw: str, total: int) -> tuple[int, bool]:
+            text = (raw or "").strip()
+            if not text:
+                return total, False
+            return LocalPromptBuilder._append_limited_text(
+                chunks,
+                f"{text}\n",
+                max_chars=max_chars,
+                total=total,
+            )
+
+        try:
+            if suffix == ".pdf":
+                import fitz
+
+                doc = fitz.open(path)
+                try:
+                    chunks: list[str] = []
+                    total = 0
+                    for page in doc:
+                        total, truncated = add_chunk(chunks, page.get_text("text"), total)
+                        if truncated:
+                            break
+                    return "".join(chunks).strip()
+                finally:
+                    doc.close()
+
+            if suffix == ".docx":
+                from docx import Document
+
+                doc = Document(path)
+                chunks = []
+                total = 0
+                for para in doc.paragraphs:
+                    total, truncated = add_chunk(chunks, para.text, total)
+                    if truncated:
+                        break
+                if total < max_chars:
+                    for table in doc.tables:
+                        if total >= max_chars:
+                            break
+                        for row in table.rows:
+                            if total >= max_chars:
+                                break
+                            cells = [cell.text for cell in row.cells if cell.text and cell.text.strip()]
+                            if not cells:
+                                continue
+                            total, truncated = add_chunk(chunks, "\t".join(cells), total)
+                            if truncated:
+                                break
+                return "".join(chunks).strip()
+
+            if suffix == ".xlsx":
+                import openpyxl
+
+                wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+                try:
+                    chunks = []
+                    total = 0
+                    for sheet in wb.worksheets:
+                        if total >= max_chars:
+                            break
+                        total, truncated = add_chunk(chunks, f"[Sheet] {sheet.title}", total)
+                        if truncated:
+                            break
+                        for row in sheet.iter_rows(values_only=True):
+                            if total >= max_chars:
+                                break
+                            row_values = [
+                                str(value).strip()
+                                for value in row
+                                if value is not None and str(value).strip()
+                            ]
+                            if not row_values:
+                                continue
+                            total, truncated = add_chunk(chunks, "\t".join(row_values), total)
+                            if truncated:
+                                break
+                    return "".join(chunks).strip()
+                finally:
+                    wb.close()
+
+            if suffix == ".pptx":
+                from pptx import Presentation
+
+                pres = Presentation(path)
+                chunks = []
+                total = 0
+                for slide in pres.slides:
+                    if total >= max_chars:
+                        break
+                    for shape in slide.shapes:
+                        if total >= max_chars:
+                            break
+                        if getattr(shape, "has_text_frame", False):
+                            total, truncated = add_chunk(chunks, shape.text, total)
+                            if truncated:
+                                break
+                return "".join(chunks).strip()
+        except Exception:
+            return None
+        return None
+
     def build_reference_embed(
         self,
         reference_files: Optional[Sequence[Path]],
@@ -210,7 +339,7 @@ class LocalPromptBuilder:
                 if not matched:
                     continue
                 content = "\n".join(f"{source},{target}" if target else f"{source}," for source, target in matched)
-            else:
+            elif suffix in {".txt", ".md", ".json", ".csv"}:
                 try:
                     content = path.read_text(encoding="utf-8-sig", errors="replace")
                 except OSError:
@@ -219,6 +348,15 @@ class LocalPromptBuilder:
 
                 content = content.strip()
                 if not content:
+                    continue
+            else:
+                content = self._extract_binary_reference_text(
+                    path,
+                    suffix=suffix,
+                    max_chars=max_file_chars,
+                )
+                if not content:
+                    warnings.append(f"参照ファイルを読み込めませんでした: {path.name}")
                     continue
 
             if len(content) > max_file_chars:

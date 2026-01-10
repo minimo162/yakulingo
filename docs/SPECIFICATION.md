@@ -1384,7 +1384,7 @@ Reference Files
 
 **参照ファイル（M1）**
 - Copilot: 添付で渡す（対応形式はUIに従う）
-- ローカルAI: 本文に埋め込み（対応: `csv/txt/md/json`）
+- ローカルAI: 本文に埋め込み（対応: `csv/txt/md/json/pdf/docx/xlsx/pptx`、テキスト抽出）
   - 合計上限: 4,000文字 / 1ファイル上限: 2,000文字（超過は切り捨てて警告）
 
 ---

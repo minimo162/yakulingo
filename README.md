@@ -399,7 +399,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 2. **ファイル翻訳**: ファイル選択後、「参照ファイル」エリアにドラッグ＆ドロップ
 
 **対応形式（Copilot）**: CSV, TXT, PDF, Word, Excel, PowerPoint, Markdown, JSON<br>
-**対応形式（ローカルAI / M1）**: CSV, TXT, Markdown, JSON（本文埋め込み。上限: 合計4,000文字 / 1ファイル2,000文字。超過は切り捨て＋警告）
+**対応形式（ローカルAI / M1）**: CSV, TXT, PDF, Word, Excel, PowerPoint, Markdown, JSON（本文埋め込み・テキスト抽出。上限: 合計4,000文字 / 1ファイル2,000文字。超過は切り捨て＋警告）
 
 **デフォルト (glossary.csv)**:
 ```csv

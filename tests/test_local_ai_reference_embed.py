@@ -64,3 +64,47 @@ def test_local_reference_embed_supports_binary_formats(tmp_path: Path) -> None:
         embedded = builder.build_reference_embed([path], input_text="sample")
         assert expected in embedded.text
         assert not any("未対応の参照ファイル" in w for w in embedded.warnings)
+
+
+def test_local_prompt_includes_translation_rules_for_short_text() -> None:
+    builder = _make_builder()
+    prompt = builder.build_text_to_en_single(
+        "短文",
+        style="concise",
+        reference_files=None,
+        detected_language="日本語",
+    )
+    expected_rules = builder._get_translation_rules("en").strip()
+    assert expected_rules
+    assert expected_rules in prompt
+
+
+def test_local_reference_embed_filters_bundled_glossary(tmp_path: Path) -> None:
+    builder = _make_builder()
+    glossary_path = tmp_path / "glossary.csv"
+    glossary_path.write_text("営業利益,Operating Profit\n売上高,Revenue\n", encoding="utf-8")
+    embedded = builder.build_reference_embed([glossary_path], input_text="営業利益が増加")
+    assert "営業利益,Operating Profit" in embedded.text
+    assert "売上高,Revenue" not in embedded.text
+
+
+def test_local_reference_embed_truncates_large_file(tmp_path: Path) -> None:
+    builder = _make_builder()
+    ref_path = tmp_path / "ref.txt"
+    ref_path.write_text("A" * 2100, encoding="utf-8")
+    embedded = builder.build_reference_embed([ref_path], input_text="sample")
+    assert embedded.truncated is True
+    assert any("上限 2000 文字" in w for w in embedded.warnings)
+
+
+def test_local_reference_embed_truncates_total_limit(tmp_path: Path) -> None:
+    builder = _make_builder()
+    path_a = tmp_path / "a.txt"
+    path_b = tmp_path / "b.txt"
+    path_c = tmp_path / "c.txt"
+    path_a.write_text("A" * 2000, encoding="utf-8")
+    path_b.write_text("B" * 2000, encoding="utf-8")
+    path_c.write_text("C" * 10, encoding="utf-8")
+    embedded = builder.build_reference_embed([path_a, path_b, path_c], input_text="sample")
+    assert embedded.truncated is True
+    assert any("合計上限 4000 文字" in w for w in embedded.warnings)

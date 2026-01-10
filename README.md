@@ -282,11 +282,11 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
   "reference_files": [],
   "output_directory": null,
   "last_tab": "text",
-  "translation_backend": "copilot",
+  "translation_backend": "local",
   "max_chars_per_batch": 1000,
   "request_timeout": 600,
   "max_retries": 3,
-  "local_ai_model_path": "local_ai/models/Qwen3VL-4B-Instruct-Q4_K_M.gguf",
+  "local_ai_model_path": "local_ai/models/GLM-4.6V-Flash-IQ4_XS.gguf",
   "local_ai_server_dir": "local_ai/llama_cpp",
   "local_ai_host": "127.0.0.1",
   "local_ai_port_base": 4891,
@@ -324,7 +324,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 
 ```json
 {
-  "translation_backend": "copilot",
+  "translation_backend": "local",
   "translation_style": "concise",
   "font_jp_to_en": "Arial",
   "font_en_to_jp": "MS Pゴシック",
@@ -341,7 +341,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 
 | 設定 | 説明 | デフォルト |
 |------|------|----------|
-| `translation_backend` | 翻訳バックエンド（`copilot` / `local`） | "copilot" |
+| `translation_backend` | 翻訳バックエンド（`copilot` / `local`） | "local" |
 | `translation_style` | ファイル翻訳のスタイル | "concise" |
 | `bilingual_output` | 対訳ファイルを生成 | false |
 | `export_glossary` | 用語集CSVを生成 | false |
@@ -372,7 +372,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 | `ocr_batch_size` | PDF処理のバッチページ数 | 5 |
 | `ocr_dpi` | PDF処理の解像度 | 300 |
 | `max_chars_per_batch` | Copilot送信1回あたりの最大文字数 | 1000 |
-| `local_ai_model_path` | ローカルAIモデル（.gguf）のパス | `local_ai/models/Qwen3VL-4B-Instruct-Q4_K_M.gguf` |
+| `local_ai_model_path` | ローカルAIモデル（.gguf）のパス | `local_ai/models/GLM-4.6V-Flash-IQ4_XS.gguf` |
 | `local_ai_server_dir` | ローカルAIサーバ（llama-server）のディレクトリ | `local_ai/llama_cpp` |
 | `local_ai_port_base` | ローカルAIのポート探索開始 | 4891 |
 | `local_ai_port_max` | ローカルAIのポート探索上限 | 4900 |

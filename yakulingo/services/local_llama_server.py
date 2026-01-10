@@ -473,7 +473,7 @@ class LocalLlamaServerManager:
         candidates: list[Path] = []
         if raw:
             candidates.append(_resolve_from_app_base(raw))
-        candidates.append(_app_base_dir() / "local_ai" / "models" / "Qwen3VL-4B-Instruct-Q4_K_M.gguf")
+        candidates.append(_app_base_dir() / "local_ai" / "models" / "GLM-4.6V-Flash-IQ4_XS.gguf")
         for candidate in candidates:
             if candidate.is_file():
                 return candidate

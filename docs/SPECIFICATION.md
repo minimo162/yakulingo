@@ -1511,7 +1511,7 @@ class AppSettings:
     translation_backend: str = "copilot"  # "copilot" | "local"
 
     # Local AI (llama.cpp llama-server)
-    local_ai_model_path: str = "local_ai/models/Qwen3VL-4B-Instruct-Q4_K_M.gguf"
+    local_ai_model_path: str = "local_ai/models/GLM-4.6V-Flash-IQ4_XS.gguf"
     local_ai_server_dir: str = "local_ai/llama_cpp"
     local_ai_host: str = "127.0.0.1"  # security: forced to localhost
     local_ai_port_base: int = 4891

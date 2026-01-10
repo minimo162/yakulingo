@@ -1523,7 +1523,7 @@ class AppSettings:
     local_ai_ctx_size: int = 4096
     local_ai_threads: int = 0  # 0=auto
     local_ai_temperature: float = 0.2
-    local_ai_max_tokens: Optional[int] = None
+    local_ai_max_tokens: Optional[int] = 512
     local_ai_batch_size: Optional[int] = 512
     local_ai_ubatch_size: Optional[int] = 128
     local_ai_max_chars_per_batch: int = 1000

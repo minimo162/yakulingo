@@ -295,7 +295,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
   "local_ai_ctx_size": 4096,
   "local_ai_threads": 0,
   "local_ai_temperature": 0.2,
-  "local_ai_max_tokens": null,
+  "local_ai_max_tokens": 512,
   "local_ai_batch_size": 512,
   "local_ai_ubatch_size": 128,
   "local_ai_max_chars_per_batch": 1000,
@@ -365,6 +365,10 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 
 **用語集処理**: `use_bundled_glossary=true` の場合、同梱 `glossary.csv` をファイルとして自動添付します（デフォルト: true）。
 
+**ローカルAIの速度チューニング（推奨）**:
+- `local_ai_max_tokens` を小さくすると速度が向上しますが、長文やバッチ翻訳では出力が途中で途切れる可能性があります
+- 目安: 20秒目標の短文は `128`、速度優先は `256`、品質重視は `512`（または `null`）
+
 #### 詳細設定（通常は変更不要）
 
 | 設定 | 説明 | デフォルト |
@@ -384,7 +388,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 | `local_ai_max_chars_per_batch` | ローカルAI送信1回あたりの最大文字数 | 1000 |
 | `request_timeout` | 翻訳リクエストのタイムアウト（秒） | 600 |
 | `local_ai_temperature` | ローカルAIの温度（翻訳向けに低め） | 0.2 |
-| `local_ai_max_tokens` | ローカルAIの最大生成トークン（nullで無制限） | null |
+| `local_ai_max_tokens` | ローカルAIの最大生成トークン（nullで無制限） | 512 |
 | `local_ai_batch_size` | ローカルAIのバッチサイズ（対応フラグがある場合のみ使用、nullで無効） | 512 |
 | `local_ai_ubatch_size` | ローカルAIのマイクロバッチサイズ（対応フラグがある場合のみ使用、nullで無効） | 128 |
 | `login_overlay_guard` | ログイン表示のガード（通常は無効） | enabled=false |

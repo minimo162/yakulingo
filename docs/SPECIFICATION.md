@@ -1591,7 +1591,7 @@ YakuLingo.exe    # Rust製ネイティブランチャー
 7. NiceGUIサーバー起動（port=8765, reconnect_timeout=30.0）
 8. 設定 `translation_backend` に応じてバックエンド初期化
    - Copilot選択時: Copilot接続開始（バックグラウンド、PlaywrightThreadExecutorで専用スレッド実行）
-   - ローカルAI選択時: Copilot/Edgeの自動起動を抑制（ローカルAIは選択時/初回翻訳時に起動）
+   - ローカルAI選択時: Copilot/Edgeの自動起動を抑制し、起動時にローカルAI準備を開始（バックグラウンド）
 9. 常駐起動時はCopilot選択時のみ、GPTモードのウォームアップと起動状態監視を開始（/api/setup-status）
 10. 自動更新チェック（バックグラウンド）
 11. 選択バックエンドが準備完了後、翻訳機能が有効化

@@ -9438,6 +9438,19 @@ class YakuLingoApp:
                 name="ensure_connection",
             )
 
+    def _start_local_ai_startup(self, startup_backend: str) -> bool:
+        """Start local AI ensure task during startup if local backend is selected."""
+        if startup_backend != "local":
+            return False
+        existing = self._local_ai_ensure_task
+        if existing and not existing.done():
+            return False
+        self._local_ai_ensure_task = _create_logged_task(
+            self._ensure_local_ai_ready_async(),
+            name="local_ai_startup_ensure",
+        )
+        return True
+
     async def _ensure_local_ai_ready_async(self) -> bool:
         """Ensure local llama-server is ready (non-streaming, localhost only)."""
         existing = self._local_ai_ensure_task
@@ -14222,6 +14235,8 @@ def run_app(
             yakulingo_app._start_resident_taskbar_suppression_win32("startup")
         if tray_icon is not None:
             tray_icon.start()
+
+        yakulingo_app._start_local_ai_startup(startup_backend)
 
         # Start Copilot connection early only in native mode; browser mode should remain silent
         # and connect on demand (clipboard/UI).

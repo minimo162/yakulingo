@@ -36,7 +36,7 @@ YakuLingoは、日本語と英語の双方向翻訳を提供するデスクト�
 | 機能 | 説明 |
 |------|------|
 | **Text Translation** | テキストを入力して即座に翻訳（言語自動検出） |
-| **File Translation** | Excel/Word/PowerPoint/PDF/TXT の一括翻訳 |
+| **File Translation** | Excel/Word/PowerPoint/PDF/TXT/CSV の一括翻訳 |
 | **Layout Preservation** | 翻訳後もファイルの体裁を維持 |
 | **Bilingual Output** | 原文と訳文を並べた対訳ファイルを自動生成 |
 | **Glossary Export** | 翻訳ペアをCSVで出力（用語管理に活用） |
@@ -67,6 +67,7 @@ YakuLingoは、日本語と英語の双方向翻訳を提供するデスクト�
 | 形式 | 拡張子 | ライブラリ |
 |------|--------|----------|
 | Excel | `.xlsx` `.xls` `.xlsm` | xlwings (Win/Mac, Excel必須。`.xls` は xlwings のみ) / openpyxl (fallback, `.xlsx`/`.xlsm`) |
+| CSV | `.csv` | Built-in (csv module) |
 | Word | `.docx` | python-docx（*.doc* は未対応） |
 | PowerPoint | `.pptx` | python-pptx（*.ppt は未対応） |
 | PDF | `.pdf` | PyMuPDF, pdfminer.six, PP-DocLayout-L (PaddleOCR) |
@@ -80,7 +81,7 @@ YakuLingoは、日本語と英語の双方向翻訳を提供するデスクト�
 | UI | NiceGUI (browser mode, default) / pywebview (optional native; disabled in distribution) (Material Design 3 / Expressive) |
 | Backend | FastAPI (via NiceGUI) |
 | Translation | M365 Copilot (Playwright + Edge) / Local AI (llama.cpp llama-server, OpenAI-compatible HTTP) |
-| File Processing | openpyxl, python-docx, python-pptx, PyMuPDF |
+| File Processing | openpyxl, python-docx, python-pptx, PyMuPDF, csv |
 | Storage | SQLite (translation history) |
 | Auto Update | GitHub Releases API |
 
@@ -575,7 +576,7 @@ Windows のグローバルホットキー（Ctrl+Alt+J）を登録し、押下�
   - 作業中ウィンドウを左、YakuLingoを右に並べる（フォーカスは作業ウィンドウ優先）
   - Edgeは状況に応じてオフスクリーン/背面同期を切り替える（翻訳中はUI背面に同期表示してフォーカスを奪わない）
 - ファイル翻訳（ホットキー）の制約
-  - 対応拡張子: `.xlsx` `.xls` `.xlsm` `.docx` `.pptx` `.pdf` `.txt` `.msg`
+  - 対応拡張子: `.xlsx` `.xls` `.xlsm` `.csv` `.docx` `.pptx` `.pdf` `.txt` `.msg`
   - 一度に処理するファイル数: 最大10
 - 補足（統合）
   - ローカルAPI `POST /api/hotkey`（localhostのみ）で同じ翻訳パイプラインを起動できる
@@ -958,6 +959,7 @@ class TranslationService:
         '.xlsx': ExcelProcessor(),
         '.xls': ExcelProcessor(),
         '.xlsm': ExcelProcessor(),
+        '.csv': CsvProcessor(),
         '.docx': WordProcessor(),
         '.pptx': PptxProcessor(),
         '.pdf': PdfProcessor(),

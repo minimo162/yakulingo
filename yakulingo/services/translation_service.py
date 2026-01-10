@@ -1494,6 +1494,7 @@ class TranslationService:
                 # Double-check locking pattern for thread safety
                 if self._processors is None:
                     from yakulingo.processors.excel_processor import ExcelProcessor
+                    from yakulingo.processors.csv_processor import CsvProcessor
                     from yakulingo.processors.word_processor import WordProcessor
                     from yakulingo.processors.pptx_processor import PptxProcessor
                     from yakulingo.processors.pdf_processor import PdfProcessor
@@ -1506,6 +1507,7 @@ class TranslationService:
                         '.xlsx': ExcelProcessor(),
                         '.xls': ExcelProcessor(),
                         '.xlsm': ExcelProcessor(),
+                        '.csv': CsvProcessor(),
                         '.docx': WordProcessor(),
                         '.pptx': PptxProcessor(),
                         '.pdf': PdfProcessor(),

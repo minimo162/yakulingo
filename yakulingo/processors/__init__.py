@@ -15,6 +15,7 @@ from .font_manager import FontManager, FontSizeAdjuster
 # Lazy-loaded processors via __getattr__
 _LAZY_IMPORTS = {
     'ExcelProcessor': 'excel_processor',
+    'CsvProcessor': 'csv_processor',
     'WordProcessor': 'word_processor',
     'PptxProcessor': 'pptx_processor',
     'PdfProcessor': 'pdf_processor',
@@ -25,8 +26,20 @@ _LAZY_IMPORTS = {
 }
 
 # Submodules that can be accessed via __getattr__ (for patching support)
-_SUBMODULES = {'excel_processor', 'word_processor', 'pptx_processor', 'pdf_processor',
-               'txt_processor', 'msg_processor', 'base', 'translators', 'font_manager', 'pdf_font_manager', 'pdf_operators'}
+_SUBMODULES = {
+    'excel_processor',
+    'csv_processor',
+    'word_processor',
+    'pptx_processor',
+    'pdf_processor',
+    'txt_processor',
+    'msg_processor',
+    'base',
+    'translators',
+    'font_manager',
+    'pdf_font_manager',
+    'pdf_operators',
+}
 
 
 def __getattr__(name: str):
@@ -49,6 +62,7 @@ __all__ = [
     'FontManager',
     'FontSizeAdjuster',
     'ExcelProcessor',
+    'CsvProcessor',
     'WordProcessor',
     'PptxProcessor',
     'PdfProcessor',

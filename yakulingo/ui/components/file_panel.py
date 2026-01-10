@@ -139,7 +139,7 @@ def _attach_copy_handler(button, text: str, message: str) -> None:
     button.on('click', lambda: None, js_handler=_build_copy_js_handler(text))
 
 
-SUPPORTED_FORMATS = ".xlsx,.xls,.xlsm,.docx,.pptx,.pdf,.txt,.msg"
+SUPPORTED_FORMATS = ".xlsx,.xls,.xlsm,.csv,.docx,.pptx,.pdf,.txt,.msg"
 SUPPORTED_EXTENSIONS = {ext.strip() for ext in SUPPORTED_FORMATS.split(',')}
 MAX_DROP_FILE_SIZE_MB = 20
 MAX_DROP_FILE_SIZE_BYTES = MAX_DROP_FILE_SIZE_MB * 1024 * 1024
@@ -854,7 +854,7 @@ def _drop_zone(
             ui.icon('upload_file').classes('drop-zone-icon')
             ui.label('翻訳するファイルをドロップ').classes('drop-zone-text')
             ui.label('または クリックして選択').classes('drop-zone-subtext')
-            ui.label('Excel / Word / PowerPoint / PDF / TXT / MSG').classes('drop-zone-hint')
+            ui.label('Excel / CSV / Word / PowerPoint / PDF / TXT / MSG').classes('drop-zone-hint')
             ui.label(f'最大 {MAX_DROP_FILE_SIZE_MB}MB').classes('drop-zone-hint')
             error_label = ui.label(state.file_drop_error or '').classes('drop-zone-error')
             error_label.set_visibility(bool(state.file_drop_error))

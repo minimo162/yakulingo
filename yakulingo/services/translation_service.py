@@ -168,6 +168,64 @@ def _strip_trailing_attachment_links(text: str) -> str:
     return cleaned
 
 
+def _extract_json_string_partial(text: str, start_index: int) -> tuple[str, bool]:
+    """Best-effort extraction for a JSON string value from a partial buffer."""
+    out: list[str] = []
+    escaped = False
+    for ch in text[start_index:]:
+        if escaped:
+            out.append("\\" + ch)
+            escaped = False
+            continue
+        if ch == "\\":
+            escaped = True
+            continue
+        if ch == '"':
+            return "".join(out), True
+        out.append(ch)
+    if escaped:
+        out.append("\\")
+    return "".join(out), False
+
+
+def _extract_first_translation_from_json(buffer: str) -> Optional[str]:
+    key = '"translation"'
+    key_idx = buffer.find(key)
+    if key_idx == -1:
+        return None
+    colon_idx = buffer.find(":", key_idx + len(key))
+    if colon_idx == -1:
+        return None
+    quote_idx = buffer.find('"', colon_idx + 1)
+    if quote_idx == -1:
+        return None
+    value, _ = _extract_json_string_partial(buffer, quote_idx + 1)
+    return value or None
+
+
+def _wrap_local_streaming_on_chunk(
+    on_chunk: Optional[Callable[[str], None]],
+) -> Optional[Callable[[str], None]]:
+    if on_chunk is None:
+        return None
+    buffer: list[str] = []
+    last_emitted = [""]
+
+    def _handle(delta: str) -> None:
+        if not delta:
+            return
+        buffer.append(delta)
+        candidate = _extract_first_translation_from_json("".join(buffer))
+        if not candidate:
+            return
+        if candidate == last_emitted[0] or len(candidate) < len(last_emitted[0]):
+            return
+        last_emitted[0] = candidate
+        on_chunk(candidate)
+
+    return _handle
+
+
 # =============================================================================
 # Language Detection
 # =============================================================================
@@ -1733,6 +1791,7 @@ class TranslationService:
         style: str,
         detected_language: str,
         output_language: str,
+        on_chunk: "Callable[[str], None] | None" = None,
     ) -> TextTranslationResult:
         self._ensure_local_backend()
         from yakulingo.services.local_ai_client import parse_text_single_translation
@@ -1763,7 +1822,8 @@ class TranslationService:
                     reference_files=reference_files,
                     detected_language=detected_language,
                 )
-                raw = self._translate_single_with_cancel(text, prompt, None, None)
+                stream_handler = _wrap_local_streaming_on_chunk(on_chunk)
+                raw = self._translate_single_with_cancel(text, prompt, None, stream_handler)
                 translation, explanation = parse_text_single_translation(raw)
                 if not translation:
                     return TextTranslationResult(
@@ -1788,7 +1848,8 @@ class TranslationService:
                 reference_files=reference_files,
                 detected_language=detected_language,
             )
-            raw = self._translate_single_with_cancel(text, prompt, None, None)
+            stream_handler = _wrap_local_streaming_on_chunk(on_chunk)
+            raw = self._translate_single_with_cancel(text, prompt, None, stream_handler)
             translation, explanation = parse_text_single_translation(raw)
             if not translation:
                 return TextTranslationResult(
@@ -1826,7 +1887,6 @@ class TranslationService:
         detected_language: str,
         on_chunk: "Callable[[str], None] | None" = None,
     ) -> TextTranslationResult:
-        _ = on_chunk
         self._ensure_local_backend()
         from yakulingo.services.local_ai_client import parse_text_single_translation, parse_text_to_en_3style
         from yakulingo.services.local_llama_server import LocalAIError
@@ -1863,7 +1923,8 @@ class TranslationService:
                     reference_files=reference_files,
                     detected_language=detected_language,
                 )
-                raw = self._translate_single_with_cancel(text, prompt, None, None)
+                stream_handler = _wrap_local_streaming_on_chunk(on_chunk)
+                raw = self._translate_single_with_cancel(text, prompt, None, stream_handler)
                 by_style = parse_text_to_en_3style(raw)
 
             options: list[TranslationOption] = []
@@ -1888,7 +1949,8 @@ class TranslationService:
                     reference_files=reference_files,
                     detected_language=detected_language,
                 )
-                raw = self._translate_single_with_cancel(text, prompt, None, None)
+                stream_handler = _wrap_local_streaming_on_chunk(on_chunk)
+                raw = self._translate_single_with_cancel(text, prompt, None, stream_handler)
                 translation, explanation = parse_text_single_translation(raw)
                 if translation:
                     options.append(
@@ -1978,6 +2040,7 @@ class TranslationService:
                     style=style,
                     detected_language=detected_language,
                     output_language=output_language,
+                    on_chunk=on_chunk,
                 )
 
             if output_language == "en":

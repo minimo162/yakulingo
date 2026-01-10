@@ -35,7 +35,7 @@ YakuLingoが提供する主な機能一覧です。
 - **ホットキー起動**: `Ctrl + Alt + J` で選択中のテキスト/ファイルを翻訳開始（UIに結果を表示）
 - **フォント自動調整**: 翻訳方向に合わせて最適なフォントを選択
 - **翻訳履歴**: ローカル保存＆検索に対応
-- **バックエンド切替**: ヘッダーで Copilot / ローカルAI をトグル（翻訳中は切替不可）
+- **バックエンド切替**: サイドバー上部で Copilot / ローカルAI をトグル（翻訳中は切替不可）
 - **接続/準備状況表示**: バックエンド別に準備中/準備完了/未インストール/エラー等を表示
 - **自動更新**: GitHub Releases から最新バージョンを取得
 
@@ -187,7 +187,7 @@ uv run python app.py
 
 ## 初回セットアップ
 
-YakuLingoを初めて使う際は、利用する翻訳バックエンドに応じて準備します（UIヘッダーで `Copilot / ローカルAI` を切り替え）。
+YakuLingoを初めて使う際は、利用する翻訳バックエンドに応じて準備します（サイドバー上部で `Copilot / ローカルAI` を切り替え）。
 
 ### 1. Copilotを使う場合（ログイン確認）
 1. Microsoft Edgeを開く
@@ -197,7 +197,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 
 ### 2. ローカルAIを使う場合（インストール確認）
 1. `local_ai/` が存在することを確認（`packaging/install_deps.bat` を実行済み、または配布ZIPに同梱）
-2. UIヘッダーで **ローカルAI** を選択 → 「準備完了」になるまで待機
+2. サイドバー上部で **ローカルAI** を選択 → 「準備完了」になるまで待機
 3. エラー時はメッセージに従って対処（例: AVX2非対応のPCではローカルAIが利用できません。Copilotに切り替えるか、generic版の同梱が必要です）
 
 ### 3. YakuLingoの起動
@@ -404,7 +404,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 2. **ファイル翻訳**: ファイル選択後、「参照ファイル」エリアにドラッグ＆ドロップ
 
 **対応形式（Copilot）**: CSV, TXT, PDF, Word, Excel, PowerPoint, Markdown, JSON<br>
-**対応形式（ローカルAI / M1）**: CSV, TXT, PDF, Word, Excel, PowerPoint, Markdown, JSON（本文埋め込み・テキスト抽出。上限: 合計4,000文字 / 1ファイル2,000文字。超過は切り捨て＋警告）
+**対応形式（ローカルAI）**: CSV, TXT, PDF, Word, Excel, PowerPoint, Markdown, JSON（本文埋め込み・テキスト抽出。上限: 合計4,000文字 / 1ファイル2,000文字。超過は切り捨て＋警告）
 
 **デフォルト (glossary.csv)**:
 ```csv
@@ -448,7 +448,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 
 ### ローカルAIが使えない（未インストール/起動失敗）
 
-- UIヘッダーで **ローカルAI** を選択した時に「見つかりません」: `local_ai/`（`llama_cpp` と `models`）があるか確認し、無ければ `packaging/install_deps.bat` を実行
+- サイドバー上部で **ローカルAI** を選択した時に「見つかりません」: `local_ai/`（`llama_cpp` と `models`）があるか確認し、無ければ `packaging/install_deps.bat` を実行
 - 「AVX2非対応」: 現状の同梱がAVX2版の場合、Copilotに切り替えるか、generic版 `llama-server` の同梱が必要です
 - 「空きポートが見つかりませんでした（4891-4900）」: 他プロセスが使用中の可能性があるため、`local_ai_port_base` / `local_ai_port_max` を変更するか、競合プロセスを停止
 - 詳細: `~/.yakulingo/logs/local_ai_server.log` と `~/.yakulingo/local_ai_server.json` を確認

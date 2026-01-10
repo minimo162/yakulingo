@@ -4,7 +4,6 @@ from __future__ import annotations
 import csv
 import json
 import logging
-import re
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,11 +17,6 @@ logger = logging.getLogger(__name__)
 
 _SUPPORTED_REFERENCE_EXTENSIONS = {".csv", ".txt", ".md", ".json", ".pdf", ".docx", ".xlsx", ".pptx"}
 _BUNDLED_GLOSSARY_FILENAMES = {"glossary.csv", "glossary_old.csv"}
-_LOCAL_TEXT_RULES_NEEDED_PATTERN = re.compile(
-    r"[0-9０-９¥￥%<>≥≤≧≦~→↑↓▲]|兆|億|万|千|bn\b|billion|trillion|yoy\b|qoq\b|cagr\b",
-    re.IGNORECASE,
-)
-
 
 @dataclass(frozen=True)
 class EmbeddedReference:
@@ -139,9 +133,7 @@ class LocalPromptBuilder:
     def _should_include_translation_rules_for_text(output_language: str, text: str) -> bool:
         if not text:
             return False
-        if len(text) >= 120:
-            return True
-        return bool(_LOCAL_TEXT_RULES_NEEDED_PATTERN.search(text))
+        return True
 
     def _load_template(self, filename: str) -> str:
         with self._template_lock:

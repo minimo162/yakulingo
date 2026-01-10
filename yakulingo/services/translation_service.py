@@ -1745,7 +1745,7 @@ class TranslationService:
                 error_message="ローカルAIの初期化に失敗しました",
             )
 
-        embedded_ref = local_builder.build_reference_embed(reference_files)
+        embedded_ref = local_builder.build_reference_embed(reference_files, input_text=text)
         metadata: dict = {"backend": "local"}
         if embedded_ref.warnings:
             metadata["reference_warnings"] = embedded_ref.warnings
@@ -1838,7 +1838,7 @@ class TranslationService:
                 error_message="ローカルAIの初期化に失敗しました",
             )
 
-        embedded_ref = local_builder.build_reference_embed(reference_files)
+        embedded_ref = local_builder.build_reference_embed(reference_files, input_text=text)
         metadata: dict = {"backend": "local"}
         if embedded_ref.warnings:
             metadata["reference_warnings"] = embedded_ref.warnings

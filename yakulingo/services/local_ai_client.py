@@ -243,8 +243,25 @@ class LocalAIClient:
         _ = text
         _ = reference_files
         _ = on_chunk
+        t0 = time.perf_counter()
         runtime = self.ensure_ready()
+        t_ready = time.perf_counter() - t0
+        logger.debug(
+            "[TIMING] LocalAI ensure_ready: %.2fs (host=%s port=%d model=%s)",
+            t_ready,
+            runtime.host,
+            runtime.port,
+            runtime.model_id or runtime.model_path.name,
+        )
+
+        t1 = time.perf_counter()
         result = self._chat_completions(runtime, prompt, timeout=timeout)
+        t_req = time.perf_counter() - t1
+        logger.debug(
+            "[TIMING] LocalAI chat_completions: %.2fs (prompt_chars=%d)",
+            t_req,
+            len(prompt or ""),
+        )
         return result.content
 
     def translate_sync(
@@ -262,8 +279,26 @@ class LocalAIClient:
         _ = include_item_ids
         _ = max_retries
 
+        t0 = time.perf_counter()
         runtime = self.ensure_ready()
+        t_ready = time.perf_counter() - t0
+        logger.debug(
+            "[TIMING] LocalAI ensure_ready: %.2fs (host=%s port=%d model=%s)",
+            t_ready,
+            runtime.host,
+            runtime.port,
+            runtime.model_id or runtime.model_path.name,
+        )
+
+        t1 = time.perf_counter()
         result = self._chat_completions(runtime, prompt, timeout=timeout)
+        t_req = time.perf_counter() - t1
+        logger.debug(
+            "[TIMING] LocalAI chat_completions: %.2fs (prompt_chars=%d items=%d)",
+            t_req,
+            len(prompt or ""),
+            len(texts),
+        )
         return parse_batch_translations(result.content, expected_count=len(texts))
 
     def _chat_completions(

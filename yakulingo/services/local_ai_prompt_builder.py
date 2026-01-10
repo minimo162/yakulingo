@@ -1,8 +1,10 @@
 # yakulingo/services/local_ai_prompt_builder.py
 from __future__ import annotations
 
+import csv
 import json
 import logging
+import re
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,6 +17,11 @@ logger = logging.getLogger(__name__)
 
 
 _SUPPORTED_REFERENCE_EXTENSIONS = {".csv", ".txt", ".md", ".json"}
+_BUNDLED_GLOSSARY_FILENAMES = {"glossary.csv", "glossary_old.csv"}
+_LOCAL_TEXT_RULES_NEEDED_PATTERN = re.compile(
+    r"[0-9０-９¥￥%<>≥≤≧≦~→↑↓▲]|兆|億|万|千|bn\b|billion|trillion|yoy\b|qoq\b|cagr\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -38,13 +45,103 @@ class LocalPromptBuilder:
         self._template_cache: dict[str, str] = {}
         self._template_lock = threading.Lock()
         self._rules_lock = threading.Lock()
-        self._reference_cache: Optional[tuple[tuple[tuple[str, int, int], ...], EmbeddedReference]] = None
+        self._reference_cache: Optional[
+            tuple[
+                tuple[tuple[str, int, int], ...],
+                Optional[tuple[int, str, str]],
+                EmbeddedReference,
+            ]
+        ] = None
         self._reference_lock = threading.Lock()
+        self._glossary_cache: dict[tuple[str, int, int], list[tuple[str, str]]] = {}
+        self._glossary_lock = threading.Lock()
 
     def _get_translation_rules(self, output_language: str) -> str:
         with self._rules_lock:
             self._base.reload_translation_rules()
             return self._base.get_translation_rules(output_language)
+
+    @staticmethod
+    def _input_fingerprint(text: Optional[str]) -> Optional[tuple[int, str, str]]:
+        if not text:
+            return None
+        normalized = text.strip()
+        if not normalized:
+            return None
+        if len(normalized) <= 128:
+            return (len(normalized), normalized, normalized)
+        return (len(normalized), normalized[:64], normalized[-64:])
+
+    @staticmethod
+    def _file_cache_key(path: Path) -> tuple[str, int, int]:
+        try:
+            stat = path.stat()
+            mtime_ns = getattr(stat, "st_mtime_ns", None)
+            mtime_key = int(mtime_ns) if isinstance(mtime_ns, int) else int(stat.st_mtime)
+            return (str(path), mtime_key, int(stat.st_size))
+        except OSError:
+            return (str(path), 0, 0)
+
+    def _load_glossary_pairs(self, path: Path, file_key: tuple[str, int, int]) -> list[tuple[str, str]]:
+        with self._glossary_lock:
+            cached = self._glossary_cache.get(file_key)
+            if cached is not None:
+                return cached
+
+        try:
+            raw = path.read_text(encoding="utf-8-sig", errors="replace")
+        except OSError:
+            pairs: list[tuple[str, str]] = []
+        else:
+            pairs = []
+            for row in csv.reader(raw.splitlines()):
+                if not row:
+                    continue
+                first = (row[0] or "").strip()
+                if not first or first.startswith("#"):
+                    continue
+                second = (row[1] or "").strip() if len(row) > 1 else ""
+                pairs.append((first, second))
+
+        with self._glossary_lock:
+            self._glossary_cache[file_key] = pairs
+        return pairs
+
+    @staticmethod
+    def _filter_glossary_pairs(pairs: list[tuple[str, str]], input_text: str, *, max_lines: int) -> list[tuple[str, str]]:
+        text = input_text.strip()
+        if not text:
+            return []
+        text_folded = text.casefold()
+
+        matched: list[tuple[str, str]] = []
+        seen: set[str] = set()
+        for source, target in pairs:
+            source = (source or "").strip()
+            if not source or source in seen:
+                continue
+            if source.isascii():
+                if source.casefold() not in text_folded:
+                    continue
+            else:
+                if source not in text:
+                    continue
+            seen.add(source)
+            matched.append((source, target))
+
+        if not matched:
+            return []
+
+        matched.sort(key=lambda item: len(item[0]), reverse=True)
+        return matched[:max_lines]
+
+    @staticmethod
+    def _should_include_translation_rules_for_text(output_language: str, text: str) -> bool:
+        if not text:
+            return False
+        if len(text) >= 120:
+            return True
+        return bool(_LOCAL_TEXT_RULES_NEEDED_PATTERN.search(text))
 
     def _load_template(self, filename: str) -> str:
         with self._template_lock:
@@ -60,27 +157,35 @@ class LocalPromptBuilder:
             self._template_cache[filename] = text
             return text
 
-    def build_reference_embed(self, reference_files: Optional[Sequence[Path]]) -> EmbeddedReference:
+    def build_reference_embed(
+        self,
+        reference_files: Optional[Sequence[Path]],
+        *,
+        input_text: Optional[str] = None,
+    ) -> EmbeddedReference:
         if not reference_files:
             return EmbeddedReference(text="", warnings=[], truncated=False)
 
         key_items: list[tuple[str, int, int]] = []
+        file_keys: dict[Path, tuple[str, int, int]] = {}
         for path in reference_files:
-            try:
-                stat = path.stat()
-                mtime_ns = getattr(stat, "st_mtime_ns", None)
-                mtime_key = int(mtime_ns) if isinstance(mtime_ns, int) else int(stat.st_mtime)
-                key_items.append((str(path), mtime_key, int(stat.st_size)))
-            except OSError:
-                key_items.append((str(path), 0, 0))
+            file_key = self._file_cache_key(path)
+            file_keys[path] = file_key
+            key_items.append(file_key)
         cache_key = tuple(key_items)
+        text_key = self._input_fingerprint(input_text)
 
         with self._reference_lock:
-            if self._reference_cache and self._reference_cache[0] == cache_key:
-                return self._reference_cache[1]
+            if (
+                self._reference_cache
+                and self._reference_cache[0] == cache_key
+                and self._reference_cache[1] == text_key
+            ):
+                return self._reference_cache[2]
 
         max_total_chars = 4000
         max_file_chars = 2000
+        glossary_max_lines = 80
 
         warnings: list[str] = []
         truncated = False
@@ -88,35 +193,52 @@ class LocalPromptBuilder:
         parts: list[str] = []
 
         for path in reference_files:
+            file_key = file_keys.get(path) or self._file_cache_key(path)
             suffix = path.suffix.lower()
             if suffix not in _SUPPORTED_REFERENCE_EXTENSIONS:
                 warnings.append(f"未対応の参照ファイルをスキップしました: {path.name}")
                 continue
-            try:
-                content = path.read_text(encoding="utf-8-sig", errors="replace")
-            except OSError:
-                warnings.append(f"参照ファイルを読み込めませんでした: {path.name}")
-                continue
 
-            content = content.strip()
-            if not content:
-                continue
+            is_bundled_glossary = (
+                suffix == ".csv"
+                and path.name.casefold() in _BUNDLED_GLOSSARY_FILENAMES
+                and bool(input_text and input_text.strip())
+            )
+            if is_bundled_glossary:
+                pairs = self._load_glossary_pairs(path, file_key)
+                matched = self._filter_glossary_pairs(pairs, input_text or "", max_lines=glossary_max_lines)
+                if not matched:
+                    continue
+                content = "\n".join(f"{source},{target}" if target else f"{source}," for source, target in matched)
+            else:
+                try:
+                    content = path.read_text(encoding="utf-8-sig", errors="replace")
+                except OSError:
+                    warnings.append(f"参照ファイルを読み込めませんでした: {path.name}")
+                    continue
+
+                content = content.strip()
+                if not content:
+                    continue
 
             if len(content) > max_file_chars:
                 content = content[:max_file_chars]
                 truncated = True
-                warnings.append(f"参照ファイルを一部省略しました（上限 {max_file_chars} 文字）: {path.name}")
+                if not is_bundled_glossary:
+                    warnings.append(f"参照ファイルを一部省略しました（上限 {max_file_chars} 文字）: {path.name}")
 
             remaining = max_total_chars - total
             if remaining <= 0:
                 truncated = True
-                warnings.append(f"参照ファイルを一部省略しました（合計上限 {max_total_chars} 文字）")
+                if not is_bundled_glossary:
+                    warnings.append(f"参照ファイルを一部省略しました（合計上限 {max_total_chars} 文字）")
                 break
 
             if len(content) > remaining:
                 content = content[:remaining]
                 truncated = True
-                warnings.append(f"参照ファイルを一部省略しました（合計上限 {max_total_chars} 文字）")
+                if not is_bundled_glossary:
+                    warnings.append(f"参照ファイルを一部省略しました（合計上限 {max_total_chars} 文字）")
 
             total += len(content)
             parts.append(f"[REFERENCE:file={path.name}]\n{content}\n[/REFERENCE]")
@@ -124,7 +246,7 @@ class LocalPromptBuilder:
         if not parts:
             embedded = EmbeddedReference(text="", warnings=warnings, truncated=truncated)
             with self._reference_lock:
-                self._reference_cache = (cache_key, embedded)
+                self._reference_cache = (cache_key, text_key, embedded)
             return embedded
 
         header = (
@@ -136,7 +258,7 @@ class LocalPromptBuilder:
         embedded_text = header + "\n\n".join(parts)
         embedded = EmbeddedReference(text=embedded_text, warnings=warnings, truncated=truncated)
         with self._reference_lock:
-            self._reference_cache = (cache_key, embedded)
+            self._reference_cache = (cache_key, text_key, embedded)
         return embedded
 
     def build_batch(
@@ -159,8 +281,26 @@ class LocalPromptBuilder:
         template = self._load_template(filename)
         translation_rules = self._get_translation_rules(output_language)
 
-        embedded_ref = self.build_reference_embed(reference_files)
-        reference_section = embedded_ref.text if (has_reference_files and embedded_ref.text) else ""
+        reference_section = ""
+        if has_reference_files and reference_files:
+            max_context_chars = 5000
+            context_parts: list[str] = []
+            total_chars = 0
+            for item in texts:
+                if not item:
+                    continue
+                if total_chars >= max_context_chars:
+                    break
+                remaining = max_context_chars - total_chars
+                if len(item) > remaining:
+                    context_parts.append(item[:remaining])
+                    total_chars = max_context_chars
+                    break
+                context_parts.append(item)
+                total_chars += len(item) + 1
+            context_text = "\n".join(context_parts)
+            embedded_ref = self.build_reference_embed(reference_files, input_text=context_text)
+            reference_section = embedded_ref.text if embedded_ref.text else ""
 
         items = [{"id": i + 1, "text": text} for i, text in enumerate(texts)]
         items_json = json.dumps({"items": items}, ensure_ascii=False)
@@ -181,8 +321,8 @@ class LocalPromptBuilder:
         detected_language: str = "日本語",
     ) -> str:
         template = self._load_template("local_text_translate_to_en_3style_json.txt")
-        translation_rules = self._get_translation_rules("en")
-        embedded_ref = self.build_reference_embed(reference_files)
+        embedded_ref = self.build_reference_embed(reference_files, input_text=text)
+        translation_rules = self._get_translation_rules("en") if self._should_include_translation_rules_for_text("en", text) else ""
         reference_section = embedded_ref.text if embedded_ref.text else ""
         prompt_input_text = self._base.normalize_input_text(text, "en")
         prompt = template.replace("{translation_rules}", translation_rules)
@@ -200,8 +340,8 @@ class LocalPromptBuilder:
         detected_language: str = "日本語",
     ) -> str:
         template = self._load_template("local_text_translate_to_en_single_json.txt")
-        translation_rules = self._get_translation_rules("en")
-        embedded_ref = self.build_reference_embed(reference_files)
+        embedded_ref = self.build_reference_embed(reference_files, input_text=text)
+        translation_rules = self._get_translation_rules("en") if self._should_include_translation_rules_for_text("en", text) else ""
         reference_section = embedded_ref.text if embedded_ref.text else ""
         prompt_input_text = self._base.normalize_input_text(text, "en")
         prompt = template.replace("{translation_rules}", translation_rules)
@@ -219,8 +359,8 @@ class LocalPromptBuilder:
         detected_language: str = "英語",
     ) -> str:
         template = self._load_template("local_text_translate_to_jp_json.txt")
-        translation_rules = self._get_translation_rules("jp")
-        embedded_ref = self.build_reference_embed(reference_files)
+        embedded_ref = self.build_reference_embed(reference_files, input_text=text)
+        translation_rules = self._get_translation_rules("jp") if self._should_include_translation_rules_for_text("jp", text) else ""
         reference_section = embedded_ref.text if embedded_ref.text else ""
         prompt_input_text = self._base.normalize_input_text(text, "jp")
         prompt = template.replace("{translation_rules}", translation_rules)

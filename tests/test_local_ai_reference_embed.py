@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 from pathlib import Path
 
 from yakulingo.config.settings import AppSettings
@@ -108,3 +109,7 @@ def test_local_reference_embed_truncates_total_limit(tmp_path: Path) -> None:
     embedded = builder.build_reference_embed([path_a, path_b, path_c], input_text="sample")
     assert embedded.truncated is True
     assert any("合計上限 4000 文字" in w for w in embedded.warnings)
+
+
+def test_local_followup_reference_embed_pending() -> None:
+    pytest.xfail("TODO: local follow-up/back-translate should embed references")

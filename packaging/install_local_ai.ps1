@@ -161,10 +161,22 @@ try {
         return $childFull
     }
 
-    $modelRepo = $env:LOCAL_AI_MODEL_REPO
-    if (-not $modelRepo) { $modelRepo = 'Qwen/Qwen3-VL-4B-Instruct-GGUF' }
-    $modelFile = $env:LOCAL_AI_MODEL_FILE
-    if (-not $modelFile) { $modelFile = 'Qwen3VL-4B-Instruct-Q4_K_M.gguf' }
+    $defaultModelRepo = 'unsloth/GLM-4.6V-Flash-GGUF'
+    $defaultModelFile = 'GLM-4.6V-Flash-IQ4_XS.gguf'
+    $manifestModelRepo = $null
+    $manifestModelFile = $null
+    if ($existingManifest -and $existingManifest.model) {
+        $manifestModelRepo = $existingManifest.model.repo
+        $manifestModelFile = $existingManifest.model.file
+    }
+
+    $modelRepo = $defaultModelRepo
+    if (-not [string]::IsNullOrWhiteSpace($manifestModelRepo)) { $modelRepo = $manifestModelRepo }
+    $modelFile = $defaultModelFile
+    if (-not [string]::IsNullOrWhiteSpace($manifestModelFile)) { $modelFile = $manifestModelFile }
+
+    if ($env:LOCAL_AI_MODEL_REPO) { $modelRepo = $env:LOCAL_AI_MODEL_REPO }
+    if ($env:LOCAL_AI_MODEL_FILE) { $modelFile = $env:LOCAL_AI_MODEL_FILE }
     $modelUrl = "https://huggingface.co/$modelRepo/resolve/main/$modelFile"
     $modelPath = Get-ChildPathSafe $modelsDir $modelFile
     $modelTempPath = $modelPath + '.partial'

@@ -429,6 +429,11 @@ if "!LOCAL_AI_CHOICE!"=="3" (
 set "LOCAL_AI_SKIP_MODEL=0"
 if "!LOCAL_AI_CHOICE!"=="2" set "LOCAL_AI_SKIP_MODEL=1"
 
+if not exist "local_ai\\manifest.json" (
+    if not defined LOCAL_AI_MODEL_REPO set "LOCAL_AI_MODEL_REPO=unsloth/GLM-4.6V-Flash-GGUF"
+    if not defined LOCAL_AI_MODEL_FILE set "LOCAL_AI_MODEL_FILE=GLM-4.6V-Flash-IQ4_XS.gguf"
+)
+
 powershell -NoProfile -ExecutionPolicy Bypass -File "packaging\install_local_ai.ps1"
 if errorlevel 1 (
     echo [WARNING] Failed to install Local AI runtime ^(optional^).

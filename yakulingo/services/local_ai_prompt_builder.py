@@ -413,7 +413,7 @@ class LocalPromptBuilder:
 
         reference_section = ""
         if has_reference_files and reference_files:
-            max_context_chars = 5000
+            max_context_chars = 3000
             context_parts: list[str] = []
             total_chars = 0
             for item in texts:

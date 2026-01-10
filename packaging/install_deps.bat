@@ -405,21 +405,21 @@ if !OCR_ERROR! neq 0 (
 echo [DONE] Pre-compilation complete.
 
 :: ============================================================
-:: Step 7: Download Local AI runtime (llama.cpp + model)
+:: Step 7: Download Local AI runtime (llama.cpp + optional model)
 :: ============================================================
 echo.
-echo [7/7] Installing Local AI runtime (llama.cpp + model)...
-echo [INFO] This step downloads large files (model may be a few GB).
+echo [7/7] Installing Local AI runtime (llama.cpp + optional model)...
+echo [INFO] This step may download large files (model may be a few GB).
 
 echo.
 echo Do you want to install Local AI runtime now?
-echo   [1] Yes - Download llama.cpp + model (recommended for Local AI)
-echo   [2] Yes - Download llama.cpp only (skip model download)
+echo   [1] Yes - Download llama.cpp + model (Local AI ready; large download)
+echo   [2] Yes - Download llama.cpp only (default; add model later)
 echo   [3] No  - Skip this step
 echo.
-set /p LOCAL_AI_CHOICE="Enter choice (1, 2, or 3) [1]: "
-if not defined LOCAL_AI_CHOICE set "LOCAL_AI_CHOICE=1"
-if not "!LOCAL_AI_CHOICE!"=="1" if not "!LOCAL_AI_CHOICE!"=="2" if not "!LOCAL_AI_CHOICE!"=="3" set "LOCAL_AI_CHOICE=1"
+set /p LOCAL_AI_CHOICE="Enter choice (1, 2, or 3) [2]: "
+if not defined LOCAL_AI_CHOICE set "LOCAL_AI_CHOICE=2"
+if not "!LOCAL_AI_CHOICE!"=="1" if not "!LOCAL_AI_CHOICE!"=="2" if not "!LOCAL_AI_CHOICE!"=="3" set "LOCAL_AI_CHOICE=2"
 
 if "!LOCAL_AI_CHOICE!"=="3" (
     echo [7/7] SKIP - Local AI runtime installation skipped.
@@ -431,16 +431,10 @@ if "!LOCAL_AI_CHOICE!"=="2" set "LOCAL_AI_SKIP_MODEL=1"
 
 powershell -NoProfile -ExecutionPolicy Bypass -File "packaging\install_local_ai.ps1"
 if errorlevel 1 (
-    echo [ERROR] Failed to install Local AI runtime.
-    echo [INFO] Local AI is optional. Copilot translation will still work.
-    echo [INFO] You can retry this installer later, or manually place files under local_ai\ (llama_cpp + models).
-    echo.
-    choice /c YN /n /m "Continue setup without Local AI? (Y/N): "
-    if errorlevel 2 (
-        echo [INFO] Aborted by user.
-        pause
-        exit /b 1
-    )
+    echo [WARNING] Failed to install Local AI runtime ^(optional^).
+    echo [INFO] Copilot translation will still work.
+    echo [INFO] You can retry later: powershell -NoProfile -ExecutionPolicy Bypass -File packaging\install_local_ai.ps1
+    echo [INFO] Or manually place files under local_ai\ ^(llama_cpp + models^).
 )
 
 :local_ai_done

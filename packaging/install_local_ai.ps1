@@ -16,21 +16,23 @@ try {
         $cred = New-Object System.Management.Automation.PSCredential ($env:PROXY_USER, $secPwd)
     }
 
+    $userAgent = 'YakuLingo-Installer'
+    $httpHeaders = @{ 'User-Agent' = $userAgent }
+
     $skipModel = ($env:LOCAL_AI_SKIP_MODEL -eq '1')
 
     function Invoke-Json([string]$url) {
-        $headers = @{ 'User-Agent' = 'YakuLingo-Installer' }
         if ($useProxy) {
-            return Invoke-RestMethod -Uri $url -Headers $headers -Proxy $proxy -ProxyCredential $cred -TimeoutSec 120
+            return Invoke-RestMethod -Uri $url -Headers $httpHeaders -Proxy $proxy -ProxyCredential $cred -TimeoutSec 120
         }
-        return Invoke-RestMethod -Uri $url -Headers $headers -TimeoutSec 120
+        return Invoke-RestMethod -Uri $url -Headers $httpHeaders -TimeoutSec 120
     }
 
     function Get-RemoteContentLengthCurl([string]$url) {
         $curl = Get-Command curl.exe -ErrorAction SilentlyContinue
         if (-not $curl) { return $null }
         try {
-            $headers = & $curl.Source '--location' '--head' '--silent' '--show-error' '--fail' $url 2>$null
+            $headers = & $curl.Source '--location' '--head' '--silent' '--show-error' '--fail' '--user-agent' $userAgent $url 2>$null
             if ($LASTEXITCODE -ne 0) { return $null }
             $length = $null
             foreach ($line in $headers) {
@@ -64,6 +66,7 @@ try {
                 $args = @(
                     '--location',
                     '--fail',
+                    '--user-agent', $userAgent,
                     '--retry', '10',
                     '--retry-delay', '5',
                     '--connect-timeout', '30',
@@ -74,33 +77,61 @@ try {
                 }
                 $args += @('--output', $outFile, $url)
                 & $curl.Source @args
-                if ($LASTEXITCODE -ne 0) {
-                    if ((Test-Path $outFile) -and ($remoteLength -eq $null)) {
-                        $remoteLength = Get-RemoteContentLengthCurl $url
-                    }
-                    if ($remoteLength -and $remoteLength -gt 0 -and (Test-Path $outFile) -and ((Get-Item $outFile).Length -eq $remoteLength)) {
-                        return
-                    }
-                    throw "curl.exe failed (exit=$LASTEXITCODE): $url"
+                if ($LASTEXITCODE -eq 0) {
+                    return
                 }
-                return
+
+                if ((Test-Path $outFile) -and ($remoteLength -eq $null)) {
+                    $remoteLength = Get-RemoteContentLengthCurl $url
+                }
+                if ($remoteLength -and $remoteLength -gt 0 -and (Test-Path $outFile) -and ((Get-Item $outFile).Length -eq $remoteLength)) {
+                    return
+                }
+
+                Write-Host "[WARNING] curl.exe failed (exit=$LASTEXITCODE). Falling back to Invoke-WebRequest/BITS: $url"
             }
         }
 
         $attempts = 3
+        $lastError = $null
         for ($attempt = 1; $attempt -le $attempts; $attempt++) {
             try {
                 if ($useProxy) {
-                    Invoke-WebRequest -Uri $url -OutFile $outFile -UseBasicParsing -Proxy $proxy -ProxyCredential $cred -TimeoutSec $timeoutSec | Out-Null
+                    Invoke-WebRequest -Uri $url -OutFile $outFile -UseBasicParsing -Headers $httpHeaders -Proxy $proxy -ProxyCredential $cred -TimeoutSec $timeoutSec | Out-Null
                 } else {
-                    Invoke-WebRequest -Uri $url -OutFile $outFile -UseBasicParsing -TimeoutSec $timeoutSec | Out-Null
+                    Invoke-WebRequest -Uri $url -OutFile $outFile -UseBasicParsing -Headers $httpHeaders -TimeoutSec $timeoutSec | Out-Null
                 }
                 return
             } catch {
-                if ($attempt -ge $attempts) { throw }
+                $lastError = $_
+                if ($attempt -ge $attempts) { break }
                 Start-Sleep -Seconds ([Math]::Min(30, 2 * $attempt))
             }
         }
+
+        $bits = Get-Command Start-BitsTransfer -ErrorAction SilentlyContinue
+        if ($bits) {
+            try {
+                $bitsParams = @{
+                    Source = $url
+                    Destination = $outFile
+                    DisplayName = 'YakuLingo Installer Download'
+                    ErrorAction = 'Stop'
+                }
+                if ($useProxy) {
+                    $bitsParams.ProxyUsage = 'Override'
+                    $bitsParams.ProxyList = @([uri]$proxy)
+                    if ($cred) { $bitsParams.ProxyCredential = $cred }
+                }
+                Start-BitsTransfer @bitsParams | Out-Null
+                return
+            } catch {
+                $lastError = $_
+            }
+        }
+
+        if ($lastError) { throw $lastError }
+        throw "Download failed: $url"
     }
 
     $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
@@ -149,16 +180,47 @@ try {
     $llamaZipName = $null
     $downloadedLlama = $false
     if (-not (Test-Path $serverExePath)) {
-        $release = Invoke-Json "https://api.github.com/repos/$llamaRepo/releases/latest"
-        $tag = $release.tag_name
-        if (-not $tag) { throw 'Failed to read llama.cpp release tag.' }
-        $asset = $release.assets | Where-Object { $_.name -match 'bin-win-cpu-x64\.zip$' } | Select-Object -First 1
-        if (-not $asset) { throw 'llama.cpp Windows CPU(x64) binary not found in release assets.' }
+        $llamaZipPath = $null
+        $llamaLicenseUrl = $null
 
-        $llamaZipUrl = $asset.browser_download_url
-        $llamaZipName = [System.IO.Path]::GetFileName([string]$asset.name)
-        $llamaZipPath = Join-Path $llamaDir $llamaZipName
-        $llamaLicenseUrl = "https://raw.githubusercontent.com/$llamaRepo/$tag/LICENSE"
+        try {
+            $release = Invoke-Json "https://api.github.com/repos/$llamaRepo/releases/latest"
+            $tag = $release.tag_name
+            if (-not $tag) { throw 'Failed to read llama.cpp release tag.' }
+            $asset = $release.assets | Where-Object { $_.name -match 'bin-win-cpu-x64\.zip$' } | Select-Object -First 1
+            if (-not $asset) { throw 'llama.cpp Windows CPU(x64) binary not found in release assets.' }
+
+            $llamaZipUrl = $asset.browser_download_url
+            $llamaZipName = [System.IO.Path]::GetFileName([string]$asset.name)
+            $llamaZipPath = Join-Path $llamaDir $llamaZipName
+            $llamaLicenseUrl = "https://raw.githubusercontent.com/$llamaRepo/$tag/LICENSE"
+        } catch {
+            Write-Host "[WARNING] Failed to query GitHub API for llama.cpp release: $($_.Exception.Message)"
+            Write-Host '[INFO] Falling back to parsing GitHub releases page HTML...'
+
+            $latestUrl = "https://github.com/$llamaRepo/releases/latest"
+            if ($useProxy) {
+                $resp = Invoke-WebRequest -Uri $latestUrl -UseBasicParsing -Headers $httpHeaders -Proxy $proxy -ProxyCredential $cred -TimeoutSec 120
+            } else {
+                $resp = Invoke-WebRequest -Uri $latestUrl -UseBasicParsing -Headers $httpHeaders -TimeoutSec 120
+            }
+            $html = [string]$resp.Content
+
+            $repoPath = [regex]::Escape("/$llamaRepo")
+            $pattern = 'href="(?<href>' + $repoPath + '/releases/download/[^"/\s]+/[^"\s]*bin-win-cpu-x64\.zip)"'
+            $m = [regex]::Match($html, $pattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+            if (-not $m.Success) { throw 'llama.cpp Windows CPU(x64) binary link not found on releases page.' }
+
+            $href = $m.Groups['href'].Value
+            $llamaZipUrl = 'https://github.com' + $href
+            $llamaZipName = Split-Path -Leaf $href
+            $llamaZipPath = Join-Path $llamaDir $llamaZipName
+
+            $tagMatch = [regex]::Match($href, '/releases/download/(?<tag>[^/]+)/', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+            if ($tagMatch.Success) { $tag = $tagMatch.Groups['tag'].Value }
+            if (-not $tag) { $tag = 'master' }
+            $llamaLicenseUrl = "https://raw.githubusercontent.com/$llamaRepo/$tag/LICENSE"
+        }
 
         Write-Host "[INFO] Downloading llama.cpp ($tag): $llamaZipName"
         Invoke-Download $llamaZipUrl $llamaZipPath 1800

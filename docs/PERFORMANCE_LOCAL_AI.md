@@ -64,6 +64,7 @@ uv run python tools/bench_local_ai.py --mode warm --max-tokens 0 --json
 
 1. `uv run python app.py` でアプリを起動
 2. バックエンドを「ローカルAI」に切り替え
+   - 直後に軽いウォームアップが非同期で走る（`[TIMING] LocalAI warmup`）
 3. 固定の入力文（例: `tools/bench_local_ai_input.txt` の内容）を貼り付け
 4. 翻訳を実行し、完了までの経過時間を記録
 5. warm / cold の差分や、改善前後の比較を記録

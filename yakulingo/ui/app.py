@@ -1637,6 +1637,8 @@ class YakuLingoApp:
         self._status_auto_refresh_task: "asyncio.Task | None" = None
         # Local AI startup/ensure task (avoid duplicate ensure_ready calls)
         self._local_ai_ensure_task: "asyncio.Task | None" = None
+        self._local_ai_warmup_task: "asyncio.Task | None" = None
+        self._local_ai_warmup_key: Optional[str] = None
         # Copilot state cache to throttle frequent UI status polling.
         self._last_copilot_state: Optional[str] = None
         self._last_copilot_state_at: float | None = None
@@ -10360,6 +10362,38 @@ class YakuLingoApp:
         )
         return True
 
+    @staticmethod
+    def _build_local_ai_warmup_key(runtime: "LocalAIServerRuntime") -> str:
+        model_name = runtime.model_id or runtime.model_path.name
+        return f"{runtime.host}:{runtime.port}:{model_name}"
+
+    def _start_local_ai_warmup(self, runtime: "LocalAIServerRuntime") -> None:
+        key = self._build_local_ai_warmup_key(runtime)
+        existing = self._local_ai_warmup_task
+        if self._local_ai_warmup_key == key and existing is not None:
+            return
+        try:
+            task = _create_logged_task(
+                self._warmup_local_ai_async(runtime),
+                name="local_ai_warmup",
+            )
+        except RuntimeError:
+            return
+        self._local_ai_warmup_task = task
+        self._local_ai_warmup_key = key
+
+    async def _warmup_local_ai_async(self, runtime: "LocalAIServerRuntime") -> None:
+        try:
+            from yakulingo.services.local_ai_client import LocalAIClient
+        except Exception as e:
+            logger.debug("LocalAI warmup: client import failed: %s", e)
+            return
+        client = LocalAIClient(self.settings)
+        try:
+            await asyncio.to_thread(client.warmup, runtime=runtime)
+        except Exception as e:
+            logger.debug("LocalAI warmup failed: %s", e)
+
     async def _ensure_local_ai_ready_async(self) -> bool:
         """Ensure local llama-server is ready (non-streaming, localhost only)."""
         existing = self._local_ai_ensure_task
@@ -10426,6 +10460,7 @@ class YakuLingoApp:
             with client:
                 if self._header_status:
                     self._header_status.refresh()
+        self._start_local_ai_warmup(runtime)
         return True
 
     async def _ensure_connection_async(self) -> bool:

@@ -470,6 +470,41 @@ class LocalAIClient:
     def ensure_ready(self) -> LocalAIServerRuntime:
         return self._manager.ensure_ready(self._settings)
 
+    def warmup(
+        self,
+        runtime: Optional[LocalAIServerRuntime] = None,
+        *,
+        timeout: Optional[int] = None,
+        max_tokens: int = 1,
+    ) -> None:
+        prompt = "ping"
+        runtime = runtime or self.ensure_ready()
+        payload = self._build_chat_payload(
+            runtime, prompt, stream=False, enforce_json=False
+        )
+        payload["max_tokens"] = max(1, int(max_tokens))
+        payload["temperature"] = 0.0
+        timeout_s = float(
+            timeout if timeout is not None else self._settings.request_timeout
+        )
+        if timeout_s <= 0:
+            timeout_s = 10.0
+        timeout_s = min(timeout_s, 10.0)
+        t0 = time.perf_counter()
+        self._http_json_cancellable(
+            host=runtime.host,
+            port=runtime.port,
+            path="/v1/chat/completions",
+            payload=payload,
+            timeout_s=timeout_s,
+        )
+        t_req = time.perf_counter() - t0
+        logger.debug(
+            "[TIMING] LocalAI warmup: %.2fs (prompt_chars=%d)",
+            t_req,
+            len(prompt),
+        )
+
     def translate_single(
         self,
         text: str,

@@ -10028,7 +10028,10 @@ class YakuLingoApp:
         if style_section:
             show_style_selector = (
                 self.state.translation_backend == TranslationBackend.LOCAL
-                and self._resolve_text_output_language() == "en"
+                and (
+                    self._resolve_text_output_language() == "en"
+                    or not (self.state.source_text or "").strip()
+                )
             )
             if show_style_selector:
                 style_section.classes(remove="hidden")

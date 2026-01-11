@@ -506,7 +506,10 @@ def _create_large_input_panel(
                         resolved_output_language = _resolve_text_output_language(state)
                         show_style_selector = (
                             state.translation_backend == TranslationBackend.LOCAL
-                            and resolved_output_language == "en"
+                            and (
+                                resolved_output_language == "en"
+                                or not (state.source_text or "").strip()
+                            )
                             and on_style_change is not None
                         )
                         if translation_style not in TEXT_STYLE_ORDER:

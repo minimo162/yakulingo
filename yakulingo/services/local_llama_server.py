@@ -29,6 +29,9 @@ from yakulingo.config.settings import AppSettings
 
 logger = logging.getLogger(__name__)
 
+_HELP_TEXT_CACHE: dict[tuple[str, int, int], str] = {}
+_HELP_TEXT_CACHE_LOCK = threading.Lock()
+
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -96,6 +99,42 @@ def _find_llama_server_exe(dir_path: Path) -> Optional[Path]:
 def _file_fingerprint(path: Path) -> tuple[int, int]:
     stat = path.stat()
     return stat.st_size, int(stat.st_mtime)
+
+
+def _help_cache_key(path: Path) -> tuple[str, int, int]:
+    try:
+        size, mtime = _file_fingerprint(path)
+    except OSError:
+        size, mtime = 0, 0
+    return _normalize_path_text(path), size, mtime
+
+
+def _get_help_text_cached(server_exe_path: Path) -> str:
+    key = _help_cache_key(server_exe_path)
+    with _HELP_TEXT_CACHE_LOCK:
+        cached = _HELP_TEXT_CACHE.get(key)
+    if cached is not None:
+        return cached
+
+    help_text = ""
+    try:
+        completed = subprocess.run(
+            [str(server_exe_path), "--help"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=2.0,
+            check=False,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        help_text = completed.stdout or ""
+    except Exception:
+        help_text = ""
+
+    with _HELP_TEXT_CACHE_LOCK:
+        _HELP_TEXT_CACHE[key] = help_text
+    return help_text
 
 
 def _is_port_free(host: str, port: int) -> bool:
@@ -845,21 +884,7 @@ class LocalLlamaServerManager:
         port: int,
         settings: AppSettings,
     ) -> list[str]:
-        help_text = ""
-        try:
-            completed = subprocess.run(
-                [str(server_exe_path), "--help"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                timeout=2.0,
-                check=False,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-            )
-            help_text = completed.stdout or ""
-        except Exception:
-            help_text = ""
+        help_text = _get_help_text_cached(server_exe_path)
 
         import re
 

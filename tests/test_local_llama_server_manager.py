@@ -563,3 +563,50 @@ def test_build_server_args_skips_batch_flags_without_help(
     assert "-b" not in args
     assert "--ubatch-size" not in args
     assert "-ub" not in args
+
+
+def test_build_server_args_uses_cached_help(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager = lls.LocalLlamaServerManager()
+    server_exe_path = tmp_path / "llama-server.exe"
+    server_exe_path.write_bytes(b"exe")
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"model")
+
+    help_text = "\n".join(["-m, --model", "--threads"])
+
+    class DummyCompleted:
+        def __init__(self, stdout: str) -> None:
+            self.stdout = stdout
+
+    calls = {"count": 0}
+
+    def fake_run(*args, **kwargs):
+        calls["count"] += 1
+        return DummyCompleted(help_text)
+
+    monkeypatch.setattr(lls.subprocess, "run", fake_run)
+
+    with lls._HELP_TEXT_CACHE_LOCK:
+        lls._HELP_TEXT_CACHE.clear()
+
+    settings = AppSettings(local_ai_threads=1)
+    settings._validate()
+
+    manager._build_server_args(
+        server_exe_path=server_exe_path,
+        model_path=model_path,
+        host="127.0.0.1",
+        port=4891,
+        settings=settings,
+    )
+    manager._build_server_args(
+        server_exe_path=server_exe_path,
+        model_path=model_path,
+        host="127.0.0.1",
+        port=4891,
+        settings=settings,
+    )
+
+    assert calls["count"] == 1

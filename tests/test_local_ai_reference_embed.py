@@ -85,6 +85,19 @@ def test_local_prompt_includes_translation_rules_for_short_text() -> None:
     assert expected_rules in prompt
 
 
+def test_local_prompt_includes_numeric_hints_for_oku() -> None:
+    builder = _make_builder()
+    prompt = builder.build_text_to_en_single(
+        "売上高は2兆2,385億円(前年同期比1,554億円減)となりました。",
+        style="concise",
+        reference_files=None,
+        detected_language="日本語",
+    )
+    assert "数値変換ヒント" in prompt
+    assert "2兆2,385億円 -> 22,385 oku yen" in prompt
+    assert "1,554億円 -> 1,554 oku yen" in prompt
+
+
 def test_local_reference_embed_filters_bundled_glossary(tmp_path: Path) -> None:
     builder = _make_builder()
     glossary_path = tmp_path / "glossary.csv"

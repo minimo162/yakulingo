@@ -99,6 +99,9 @@ _RE_JP_KANA = re.compile(r"[\u3040-\u309F\u30A0-\u30FF\uFF65-\uFF9F]")
 _RE_CJK_IDEOGRAPH = re.compile(r"[\u3400-\u4DBF\u4E00-\u9FFF]")
 _RE_LATIN_ALPHA = re.compile(r"[A-Za-z]")
 _RE_HANGUL = re.compile(r"[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F]")
+_RE_EN_BILLION_TRILLION = re.compile(r"\b(?:billion|trillion|bn)\b", re.IGNORECASE)
+_RE_EN_OKU = re.compile(r"\boku\b", re.IGNORECASE)
+_RE_JP_LARGE_UNIT = re.compile(r"[兆億]")
 
 
 def _looks_untranslated_to_en(text: str) -> bool:
@@ -138,6 +141,16 @@ def _insert_extra_instruction(prompt: str, extra_instruction: str) -> str:
     if marker in prompt:
         return prompt.replace(marker, f"{extra_instruction}\n{marker}", 1)
     return f"{extra_instruction}\n{prompt}"
+
+
+def _needs_to_en_numeric_rule_retry(source_text: str, translated_text: str) -> bool:
+    if not translated_text:
+        return False
+    if _RE_EN_BILLION_TRILLION.search(translated_text):
+        return True
+    if _RE_JP_LARGE_UNIT.search(source_text) and not _RE_EN_OKU.search(translated_text):
+        return True
+    return False
 
 
 def _sanitize_output_stem(name: str) -> str:
@@ -2056,6 +2069,30 @@ class TranslationService:
                         error_message=error_message,
                         metadata=metadata,
                     )
+                if _needs_to_en_numeric_rule_retry(text, translation):
+                    retry_instruction = (
+                        "- CRITICAL: Follow numeric conversion rules strictly. "
+                        "Do not use 'billion', 'trillion', or 'bn'. Use 'oku' (and 'k') "
+                        "exactly as specified. If numeric hints are provided, use them verbatim."
+                    )
+                    retry_prompt = local_builder.build_text_to_en_single(
+                        text,
+                        style=style,
+                        reference_files=reference_files,
+                        detected_language=detected_language,
+                        extra_instruction=retry_instruction,
+                    )
+                    retry_raw = self._translate_single_with_cancel(
+                        text, retry_prompt, None, None
+                    )
+                    retry_translation, _ = parse_text_single_translation(retry_raw)
+                    if retry_translation:
+                        translation = retry_translation
+                        metadata["to_en_rule_retry"] = True
+                        if _needs_to_en_numeric_rule_retry(text, retry_translation):
+                            metadata["to_en_rule_retry_failed"] = True
+                    else:
+                        metadata["to_en_rule_retry_failed"] = True
                 explanation = ""
                 return TextTranslationResult(
                     source_text=text,

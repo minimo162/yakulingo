@@ -4,7 +4,9 @@ from __future__ import annotations
 import csv
 import json
 import logging
+import re
 import threading
+from decimal import Decimal, InvalidOperation
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Sequence
@@ -26,6 +28,9 @@ _SUPPORTED_REFERENCE_EXTENSIONS = {
     ".pptx",
 }
 _BUNDLED_GLOSSARY_FILENAMES = {"glossary.csv", "glossary_old.csv"}
+_RE_JP_YEN_AMOUNT = re.compile(
+    r"(?P<sign>[▲+-])?\s*(?:(?P<trillion>\d[\d,]*(?:\.\d+)?)兆(?:(?P<oku>\d[\d,]*(?:\.\d+)?)億)?|(?P<oku_only>\d[\d,]*(?:\.\d+)?)億)(?P<yen>円)?"
+)
 
 
 @dataclass(frozen=True)
@@ -152,6 +157,70 @@ class LocalPromptBuilder:
         if not text:
             return False
         return True
+
+    @staticmethod
+    def _format_oku_amount(value: Decimal) -> str:
+        sign = "-" if value < 0 else ""
+        value = abs(value)
+        if value == value.to_integral():
+            return f"{sign}{int(value):,}"
+        text = format(value.normalize(), "f")
+        int_part, _, frac_part = text.partition(".")
+        int_part_with_commas = f"{int(int_part):,}"
+        frac_part = frac_part.rstrip("0")
+        if frac_part:
+            return f"{sign}{int_part_with_commas}.{frac_part}"
+        return f"{sign}{int_part_with_commas}"
+
+    @staticmethod
+    def _parse_decimal(value: str) -> Optional[Decimal]:
+        if not value:
+            return None
+        try:
+            return Decimal(value.replace(",", ""))
+        except InvalidOperation:
+            return None
+
+    def _build_to_en_numeric_hints(self, text: str) -> str:
+        if not text:
+            return ""
+        conversions: list[tuple[str, str]] = []
+        max_lines = 12
+        seen: set[str] = set()
+        for match in _RE_JP_YEN_AMOUNT.finditer(text):
+            raw = (match.group(0) or "").strip()
+            if not raw or raw in seen:
+                continue
+            seen.add(raw)
+            sign_marker = match.group("sign") or ""
+            sign = -1 if sign_marker in {"▲", "-", "−"} else 1
+            trillion = self._parse_decimal(match.group("trillion") or "")
+            oku_part = self._parse_decimal(match.group("oku") or "")
+            oku_only = self._parse_decimal(match.group("oku_only") or "")
+            if trillion is not None:
+                oku_value = trillion * Decimal("10000")
+                if oku_part is not None:
+                    oku_value += oku_part
+            elif oku_only is not None:
+                oku_value = oku_only
+            else:
+                continue
+            oku_value *= sign
+            formatted = self._format_oku_amount(oku_value)
+            if sign < 0:
+                formatted = f"({formatted.lstrip('-')})"
+            unit = "oku yen" if match.group("yen") else "oku"
+            conversions.append((raw, f"{formatted} {unit}".strip()))
+            if len(conversions) >= max_lines:
+                break
+
+        if not conversions:
+            return ""
+
+        lines = ["### 数値変換ヒント（必ず使用）"]
+        for raw, converted in conversions:
+            lines.append(f"- {raw} -> {converted}")
+        return "\n".join(lines) + "\n"
 
     def _load_template(self, filename: str) -> str:
         with self._template_lock:
@@ -556,6 +625,7 @@ class LocalPromptBuilder:
         style: str,
         reference_files: Optional[Sequence[Path]] = None,
         detected_language: str = "日本語",
+        extra_instruction: str | None = None,
     ) -> str:
         template = self._load_template("local_text_translate_to_en_single_json.txt")
         embedded_ref = self.build_reference_embed(reference_files, input_text=text)
@@ -564,9 +634,15 @@ class LocalPromptBuilder:
             if self._should_include_translation_rules_for_text("en", text)
             else ""
         )
+        numeric_hints = self._build_to_en_numeric_hints(text)
         reference_section = embedded_ref.text if embedded_ref.text else ""
         prompt_input_text = self._base.normalize_input_text(text, "en")
+        extra_instruction = extra_instruction.strip() if extra_instruction else ""
+        if extra_instruction:
+            extra_instruction = f"{extra_instruction}\n"
         prompt = template.replace("{translation_rules}", translation_rules)
+        prompt = prompt.replace("{numeric_hints}", numeric_hints)
+        prompt = prompt.replace("{extra_instruction}", extra_instruction)
         prompt = prompt.replace("{reference_section}", reference_section)
         prompt = prompt.replace("{input_text}", prompt_input_text)
         prompt = prompt.replace("{style}", style)

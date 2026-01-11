@@ -25,6 +25,12 @@ _RE_TRANSLATION_COMPLETED = re.compile(
 _RE_TRANSLATION_ELAPSED = re.compile(
     r"Translation \[[^\]]+\] end_time: .*?elapsed_time: ([0-9.]+)s"
 )
+_RE_TRANSLATION_PREP = re.compile(
+    r"prep_time: ([0-9.]+)s since button click"
+)
+_RE_LOCAL_AI_WARMUP_FINISHED = re.compile(
+    r"LocalAI warmup finished: ([0-9.]+)s"
+)
 
 
 def _log(message: str) -> None:
@@ -129,7 +135,7 @@ def _default_log_path(repo_root: Path) -> Path:
 
 
 def _read_log_tail(
-    path: Optional[Path], max_bytes: int = 8192, max_lines: int = 40
+    path: Optional[Path], max_bytes: int = 8192, max_lines: int = 80
 ) -> str:
     if path is None:
         return ""
@@ -181,6 +187,32 @@ def _parse_translation_elapsed_from_log(path: Optional[Path]) -> Optional[float]
     return None
 
 
+def _parse_translation_prep_from_log(path: Optional[Path]) -> Optional[float]:
+    text = _read_log_tail(path)
+    if not text:
+        return None
+    matches = _RE_TRANSLATION_PREP.findall(text)
+    if matches:
+        try:
+            return float(matches[-1])
+        except ValueError:
+            return None
+    return None
+
+
+def _parse_local_ai_warmup_from_log(path: Optional[Path]) -> Optional[float]:
+    text = _read_log_tail(path)
+    if not text:
+        return None
+    matches = _RE_LOCAL_AI_WARMUP_FINISHED.findall(text)
+    if matches:
+        try:
+            return float(matches[-1])
+        except ValueError:
+            return None
+    return None
+
+
 def _run_e2e(
     *,
     url: str,
@@ -194,6 +226,7 @@ def _run_e2e(
         browser = p.chromium.launch(headless=headless)
         try:
             page = browser.new_page()
+            t_page_start = time.perf_counter()
             page.goto(
                 url,
                 wait_until="domcontentloaded",
@@ -202,6 +235,8 @@ def _run_e2e(
             page.wait_for_selector(
                 '[data-testid="text-input"]', timeout=startup_timeout_s * 1000
             )
+            t_page_ready = time.perf_counter()
+            page_ready_seconds = t_page_ready - t_page_start
 
             backend_toggle = page.locator('[data-testid="backend-toggle"]')
             local_status = page.locator('[data-testid="local-ai-status"]')
@@ -218,6 +253,8 @@ def _run_e2e(
                     '[data-testid="local-ai-status"][data-state="ready"]'
                 )
                 ready_status.wait_for(timeout=startup_timeout_s * 1000)
+                t_local_ready = time.perf_counter()
+                local_ai_ready_seconds = t_local_ready - t_page_ready
             except PlaywrightTimeoutError as exc:
                 status_state = (
                     local_status.get_attribute("data-state")
@@ -265,13 +302,22 @@ def _run_e2e(
         finally:
             browser.close()
 
+    translation_prep_logged = _parse_translation_prep_from_log(app_log_path)
+    local_ai_warmup_logged = _parse_local_ai_warmup_from_log(app_log_path)
     result: dict[str, Any] = {
+        "page_ready_seconds": page_ready_seconds,
+        "local_ai_ready_seconds": local_ai_ready_seconds,
+        "local_ai_ready_source": "ui",
         "translation_seconds": t_translate_done - t_translate_start,
         "elapsed_badge_seconds": elapsed_badge,
         "translation_seconds_source": translation_seconds_source,
     }
     if translation_elapsed_logged is not None:
         result["translation_elapsed_logged"] = translation_elapsed_logged
+    if translation_prep_logged is not None:
+        result["translation_prep_seconds_logged"] = translation_prep_logged
+    if local_ai_warmup_logged is not None:
+        result["local_ai_warmup_seconds_logged"] = local_ai_warmup_logged
     return result
 
 

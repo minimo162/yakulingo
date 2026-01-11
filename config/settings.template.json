@@ -18,7 +18,7 @@
   "local_ai_max_tokens": 1024,
   "local_ai_batch_size": 512,
   "local_ai_ubatch_size": 128,
-  "local_ai_max_chars_per_batch": 1000,
+  "local_ai_max_chars_per_batch": 800,
   "bilingual_output": false,
   "export_glossary": false,
   "translation_style": "concise",

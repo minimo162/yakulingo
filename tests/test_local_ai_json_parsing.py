@@ -110,6 +110,18 @@ def test_parse_text_single_translation_reads_json() -> None:
     assert explanation == "説明"
 
 
+def test_parse_text_single_translation_handles_newlines_and_quotes() -> None:
+    raw = """{"translation":"Line1\\nLine2 \\"quoted\\"","explanation":"ok"}"""
+    translation, explanation = parse_text_single_translation(raw)
+    assert translation == 'Line1\nLine2 "quoted"'
+    assert explanation == "ok"
+
+
+def test_parse_batch_translations_preserves_escaped_newlines() -> None:
+    raw = """{"items":[{"id":1,"translation":"A\\nB"},{"id":2,"translation":"C\\tD"}]}"""
+    assert parse_batch_translations(raw, expected_count=2) == ["A\nB", "C\tD"]
+
+
 def test_is_truncated_json_detects_missing_closure() -> None:
     raw = """{"translation":"A","explanation":"B"""
     assert is_truncated_json(raw) is True

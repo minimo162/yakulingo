@@ -300,7 +300,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
   "local_ai_max_tokens": 512,
   "local_ai_batch_size": 512,
   "local_ai_ubatch_size": 128,
-  "local_ai_max_chars_per_batch": 1000,
+  "local_ai_max_chars_per_batch": 800,
   "bilingual_output": false,
   "export_glossary": false,
   "translation_style": "concise",
@@ -389,7 +389,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 | `local_ai_port_max` | ローカルAIのポート探索上限 | 4900 |
 | `local_ai_ctx_size` | ローカルAIのcontext size | 4096 |
 | `local_ai_threads` | ローカルAIのスレッド数（0=auto） | 0 |
-| `local_ai_max_chars_per_batch` | ローカルAI送信1回あたりの最大文字数 | 1000 |
+| `local_ai_max_chars_per_batch` | ローカルAI送信1回あたりの最大文字数 | 800 |
 | `request_timeout` | 翻訳リクエストのタイムアウト（秒） | 600 |
 | `local_ai_temperature` | ローカルAIの温度（翻訳向けに低め） | 0.2 |
 | `local_ai_max_tokens` | ローカルAIの最大生成トークン（nullで無制限） | 512 |

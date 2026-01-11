@@ -5,6 +5,18 @@
 ### 出力（JSONのみ・厳守）
 {"output_language":"en","detected_language":"{detected_language}","options":[{"style":"standard","translation":"...","explanation":"..."},{"style":"concise","translation":"...","explanation":"..."},{"style":"minimal","translation":"...","explanation":"..."}]}
 
+### 出力フォーマット（YAML / JSON厳守）
+format:
+  output: json
+  strict_json:
+    only_json: true
+    one_line: true
+    double_quotes_only: true
+    no_code_fence: true
+    no_trailing_commas: true
+    escape_newlines_as: "\\n"
+    escape_tabs_as: "\\t"
+
 ### 制約（厳守）
 - 出力はJSONのみ（前後の説明文・コードフェンス・余計な文字を出力しない）
 - JSONは最小化（1行・余計な空白/改行なし）

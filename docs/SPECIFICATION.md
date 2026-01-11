@@ -1537,7 +1537,7 @@ class AppSettings:
     local_ai_max_tokens: Optional[int] = 1024
     local_ai_batch_size: Optional[int] = 512
     local_ai_ubatch_size: Optional[int] = 128
-    local_ai_max_chars_per_batch: int = 1000
+    local_ai_max_chars_per_batch: int = 800
 
     # Advanced
     max_chars_per_batch: int = 1000      # 文字数上限（Copilot入力の安全値）

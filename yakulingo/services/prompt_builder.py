@@ -360,6 +360,7 @@ class PromptBuilder:
         self._translation_rules_raw: str = ""
         self._translation_rules_sections: dict[str, str] = {}
         self._translation_rules_has_sections: bool = False
+        self._translation_rules_file_key: Optional[tuple[str, int, int]] = None
         self._load_templates()
 
     @staticmethod
@@ -373,15 +374,36 @@ class PromptBuilder:
             return input_text
         return _normalize_yen_billion_expressions_to_japanese(input_text)
 
-    def _load_translation_rules(self) -> str:
-        """Load translation rules from translation_rules.txt."""
+    @staticmethod
+    def _rules_file_key(path: Path) -> tuple[str, int, int]:
+        try:
+            stat = path.stat()
+            mtime_ns = getattr(stat, "st_mtime_ns", None)
+            mtime_key = int(mtime_ns) if isinstance(mtime_ns, int) else int(stat.st_mtime)
+            return (str(path), mtime_key, int(stat.st_size))
+        except OSError:
+            return (str(path), 0, 0)
+
+    def _load_translation_rules(self, *, force: bool = False) -> str:
+        """Load translation rules from translation_rules.txt (skip if unchanged)."""
+        if not force and self._translation_rules_raw:
+            if self.prompts_dir is None:
+                return self._translation_rules_raw
+            rules_file = self.prompts_dir / "translation_rules.txt"
+            file_key = self._rules_file_key(rules_file)
+            if file_key == self._translation_rules_file_key:
+                return self._translation_rules_raw
+
         rules_text = DEFAULT_TRANSLATION_RULES
+        file_key = None
         if self.prompts_dir:
             rules_file = self.prompts_dir / "translation_rules.txt"
+            file_key = self._rules_file_key(rules_file)
             if rules_file.exists():
                 rules_text = rules_file.read_text(encoding="utf-8")
 
         self._translation_rules_raw = rules_text
+        self._translation_rules_file_key = file_key
         sections, has_sections = self._parse_translation_rules_sections(rules_text)
         self._translation_rules_sections = sections
         self._translation_rules_has_sections = has_sections
@@ -491,8 +513,7 @@ class PromptBuilder:
         Returns:
             Translation rules content string
         """
-        if not self._translation_rules_raw:
-            self._load_translation_rules()
+        self._load_translation_rules(force=False)
 
         if not self._translation_rules_has_sections:
             return self._translation_rules_raw.strip()
@@ -529,7 +550,11 @@ class PromptBuilder:
 
         Call this after user edits the translation_rules.txt file.
         """
-        self._load_translation_rules()
+        self._load_translation_rules(force=True)
+
+    def reload_translation_rules_if_needed(self) -> None:
+        """Reload translation rules only when the file has changed."""
+        self._load_translation_rules(force=False)
 
     def _get_template(
         self, output_language: str = "en", translation_style: str = "concise"

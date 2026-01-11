@@ -69,7 +69,6 @@ class LocalPromptBuilder:
 
     def _get_translation_rules(self, output_language: str) -> str:
         with self._rules_lock:
-            self._base.reload_translation_rules()
             rules = self._base.get_translation_rules(output_language)
             return rules.strip()
 

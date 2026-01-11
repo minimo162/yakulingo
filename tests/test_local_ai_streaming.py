@@ -24,7 +24,7 @@ def test_local_ai_streaming_parses_sse_and_collects_chunks() -> None:
     content, model_id = client._consume_sse_stream(iter(chunks), on_chunk)
 
     assert content == "Hello"
-    assert received == ["Hel", "Hello"]
+    assert received == ["Hel", "lo"]
     assert model_id is None
 
 
@@ -47,7 +47,7 @@ def test_local_streaming_wrap_extracts_translation_incrementally() -> None:
     assert "Hello" in received[-1]
 
 
-def test_local_ai_streaming_on_chunk_is_cumulative() -> None:
+def test_local_ai_streaming_on_chunk_is_delta() -> None:
     client = LocalAIClient(settings=AppSettings())
     received: list[str] = []
 
@@ -62,7 +62,7 @@ def test_local_ai_streaming_on_chunk_is_cumulative() -> None:
 
     client._consume_sse_stream(iter(chunks), on_chunk)
 
-    assert received == ["Hel", "Hello"]
+    assert received == ["Hel", "lo"]
 
 
 def test_local_ai_streaming_cancelled_mid_stream() -> None:

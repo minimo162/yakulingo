@@ -287,18 +287,47 @@ def _wrap_local_streaming_on_chunk(
     if on_chunk is None:
         return None
     last_emitted = [""]
-    last_raw = [""]
     last_emit_time = [0.0]
+    raw_parts: list[str] = []
+    raw_len = [0]
+    raw_cached = [""]
+    raw_joined_index = [0]
+    last_parse_len = [0]
     throttle_seconds = 0.08
 
     def _handle(delta: str) -> None:
         if not delta:
             return
-        if delta.startswith(last_raw[0]):
-            raw = delta
+        if raw_cached[0] and delta.startswith(raw_cached[0]):
+            raw_cached[0] = delta
+            raw_parts.clear()
+            raw_len[0] = len(delta)
+            raw_joined_index[0] = 0
+            last_parse_len[0] = 0
         else:
-            raw = last_raw[0] + delta
-        last_raw[0] = raw
+            raw_parts.append(delta)
+            raw_len[0] += len(delta)
+
+        now = time.monotonic()
+        should_parse = False
+        if raw_len[0] < 64:
+            should_parse = True
+        if now - last_emit_time[0] >= throttle_seconds:
+            should_parse = True
+        if len(delta) >= 3:
+            should_parse = True
+        if raw_len[0] - last_parse_len[0] >= 16:
+            should_parse = True
+        if not should_parse and any(ch in delta for ch in ("}", "]")):
+            should_parse = True
+        if not should_parse:
+            return
+
+        if raw_parts:
+            raw_cached[0] += "".join(raw_parts[raw_joined_index[0] :])
+            raw_joined_index[0] = len(raw_parts)
+        raw = raw_cached[0]
+        last_parse_len[0] = raw_len[0]
 
         candidate = _extract_options_preview(raw)
         if candidate is None:
@@ -313,7 +342,6 @@ def _wrap_local_streaming_on_chunk(
 
         if candidate == last_emitted[0] or len(candidate) < len(last_emitted[0]):
             return
-        now = time.monotonic()
         is_complete_json = raw.lstrip().startswith(("{", "[")) and not is_truncated_json(
             raw
         )

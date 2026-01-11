@@ -13737,11 +13737,24 @@ def run_app(
     ).strip().lower() in ("1", "true", "yes")
 
     available_memory_gb = _get_available_memory_gb()
+    startup_backend_hint = "copilot"
+    copilot_enabled = True
+    try:
+        startup_settings = AppSettings.load(get_default_settings_path())
+        startup_backend_hint = (
+            getattr(startup_settings, "translation_backend", "copilot") or "copilot"
+        )
+        copilot_enabled = getattr(startup_settings, "copilot_enabled", True)
+    except Exception:
+        startup_backend_hint = "copilot"
+        copilot_enabled = True
+    if not copilot_enabled:
+        startup_backend_hint = "local"
     # Early connect spins up Edge (and later Playwright).
     # Enable it in both native and browser modes for faster first translation.
-    allow_early_connect = True
+    allow_early_connect = startup_backend_hint != "local"
     # Playwright pre-initialization does not open a window, so it's safe in browser mode.
-    allow_playwright_preinit = True
+    allow_playwright_preinit = allow_early_connect
     if (
         available_memory_gb is not None
         and available_memory_gb <= MIN_AVAILABLE_MEMORY_GB_FOR_EARLY_CONNECT

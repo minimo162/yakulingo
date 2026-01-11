@@ -81,8 +81,9 @@ uv run python tools/bench_local_ai.py --mode warm --max-tokens 0 --json
 uv run --extra test python tools/e2e_local_ai_speed.py
 ```
 - JSON出力: `app_start_seconds`, `page_ready_seconds`, `local_ai_ready_seconds`, `translation_seconds`, `total_seconds`, `elapsed_badge_seconds`
-  - 追加情報: `translation_seconds_source`, `translation_elapsed_logged`, `translation_prep_seconds_logged`, `local_ai_warmup_seconds_logged`, `app_log_path`
-- 主要オプション: `--url`, `--timeout`, `--startup-timeout`, `--translation-timeout`, `--text`, `--headed`, `--out`
+  - 追加情報: `translation_seconds_source`, `translation_elapsed_logged`, `translation_prep_seconds_logged`, `local_ai_warmup_seconds_logged`, `streaming_preview_disabled`, `app_log_path`
+- 主要オプション: `--url`, `--timeout`, `--startup-timeout`, `--translation-timeout`, `--text`, `--headed`, `--out`, `--disable-streaming-preview`
+- ストリーミング表示を無効化: `--disable-streaming-preview`（ローカルAIの途中表示更新を抑止）
 - ログ出力: `--app-log` でアプリのstdout/stderrを保存（未指定なら `.tmp/` に自動保存）
 - 事前条件: `local_ai/` が利用可能、PlaywrightのChromiumが導入済み
 - ケース運用では `--out` / `--app-log` を `/work/<case-id>/.tmp/` 配下に指定する

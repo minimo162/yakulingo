@@ -4187,6 +4187,8 @@ class YakuLingoApp:
 
             def on_chunk(partial_text: str) -> None:
                 nonlocal last_preview_update
+                if not self._is_local_streaming_preview_enabled():
+                    return
                 preview_text = self._normalize_streaming_preview_text(partial_text)
                 buffer.publish(
                     {
@@ -4323,6 +4325,8 @@ class YakuLingoApp:
 
             def on_chunk(partial_text: str) -> None:
                 nonlocal last_preview_update
+                if not self._is_local_streaming_preview_enabled():
+                    return
                 preview_text = self._normalize_streaming_preview_text(partial_text)
                 self.state.text_streaming_preview = preview_text
                 now = time.monotonic()
@@ -10003,6 +10007,14 @@ class YakuLingoApp:
             return "jp"
         return None
 
+    def _is_local_streaming_preview_enabled(self) -> bool:
+        if self.state.translation_backend != TranslationBackend.LOCAL:
+            return True
+        value = os.environ.get(
+            "YAKULINGO_DISABLE_LOCAL_STREAMING_PREVIEW", ""
+        ).strip().lower()
+        return value not in ("1", "true", "yes", "on")
+
     def _normalize_streaming_preview_text(self, text: Optional[str]) -> Optional[str]:
         if text is None:
             return None
@@ -11258,6 +11270,8 @@ class YakuLingoApp:
 
             def on_chunk(partial_text: str) -> None:
                 nonlocal last_preview_update, current_chunk_index
+                if not self._is_local_streaming_preview_enabled():
+                    return
                 if total_chunks > 1 and current_chunk_index > 0:
                     preview_text = (
                         f"[{current_chunk_index}/{total_chunks}] {partial_text}"
@@ -11520,6 +11534,8 @@ class YakuLingoApp:
 
             def on_chunk(partial_text: str) -> None:
                 nonlocal last_preview_update
+                if not self._is_local_streaming_preview_enabled():
+                    return
                 preview_text = self._normalize_streaming_preview_text(partial_text)
                 self.state.text_streaming_preview = preview_text
                 now = time.monotonic()
@@ -11751,7 +11767,10 @@ class YakuLingoApp:
         self.state.text_translating = True
         self.state.text_back_translating = True
         # Clear previous streaming output so back-translation streaming starts clean
-        self.state.text_streaming_preview = " "
+        if self._is_local_streaming_preview_enabled():
+            self.state.text_streaming_preview = " "
+        else:
+            self.state.text_streaming_preview = None
         self._streaming_preview_label = None
         with client:
             # Only refresh result panel and button (input panel is already in compact state)
@@ -11775,6 +11794,8 @@ class YakuLingoApp:
 
             def on_chunk(partial_text: str) -> None:
                 nonlocal last_preview_update
+                if not self._is_local_streaming_preview_enabled():
+                    return
                 preview_text = self._normalize_streaming_preview_text(partial_text)
                 self.state.text_streaming_preview = preview_text
                 now = time.monotonic()

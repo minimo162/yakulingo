@@ -369,6 +369,11 @@ def main() -> int:
         action="store_true",
         help="Do not terminate the app process after measurement",
     )
+    parser.add_argument(
+        "--disable-streaming-preview",
+        action="store_true",
+        help="Disable Local AI streaming preview updates in the UI.",
+    )
     args = parser.parse_args()
 
     repo_root = Path(__file__).resolve().parent.parent
@@ -376,6 +381,9 @@ def main() -> int:
     env.setdefault("YAKULINGO_NO_AUTO_OPEN", "1")
     env.setdefault("YAKULINGO_RESIDENT_UI_MODE", "browser")
     env.setdefault("YAKULINGO_LAUNCH_SOURCE", "e2e_local_ai_speed")
+    streaming_preview_disabled = bool(args.disable_streaming_preview)
+    if streaming_preview_disabled:
+        env["YAKULINGO_DISABLE_LOCAL_STREAMING_PREVIEW"] = "1"
 
     startup_timeout_s = args.startup_timeout or args.timeout
     translation_timeout_s = args.translation_timeout or args.timeout
@@ -386,7 +394,10 @@ def main() -> int:
     log_fp = None
     log_path = Path(args.app_log) if args.app_log else _default_log_path(repo_root)
     stage = "init"
-    result: dict[str, Any] = {"ok": False}
+    result: dict[str, Any] = {
+        "ok": False,
+        "streaming_preview_disabled": streaming_preview_disabled,
+    }
     return_code = 1
     try:
         stage = "precheck"
@@ -420,6 +431,7 @@ def main() -> int:
             "stage": stage,
             "url": args.url,
             "app_log_path": str(log_path),
+            "streaming_preview_disabled": streaming_preview_disabled,
             "startup_timeout_s": startup_timeout_s,
             "translation_timeout_s": translation_timeout_s,
             "app_start_seconds": t_ready - t0,
@@ -439,6 +451,7 @@ def main() -> int:
             "error": str(exc),
             "url": args.url,
             "app_log_path": str(log_path),
+            "streaming_preview_disabled": streaming_preview_disabled,
             "app_exit_code": app_exit_code,
             "startup_timeout_s": startup_timeout_s,
             "translation_timeout_s": translation_timeout_s,

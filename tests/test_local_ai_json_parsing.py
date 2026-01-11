@@ -7,6 +7,7 @@ from yakulingo.services.local_ai_client import (
     loads_json_loose,
     parse_batch_translations,
     parse_text_single_translation,
+    parse_text_to_en_style_subset,
     parse_text_to_en_3style,
 )
 
@@ -81,6 +82,24 @@ def test_parse_text_to_en_3style_assigns_missing_style_by_index() -> None:
     by_style = parse_text_to_en_3style(raw)
     assert by_style["standard"] == ("A", "e1")
     assert by_style["concise"] == ("B", "e2")
+    assert by_style["minimal"] == ("C", "e3")
+
+
+def test_parse_text_to_en_style_subset_assigns_in_requested_order() -> None:
+    raw = """{"options":[
+  {"translation":"B","explanation":"e2"},
+  {"translation":"C","explanation":"e3"}
+]}"""
+    by_style = parse_text_to_en_style_subset(raw, ["concise", "minimal"])
+    assert by_style["concise"] == ("B", "e2")
+    assert by_style["minimal"] == ("C", "e3")
+
+
+def test_parse_text_to_en_style_subset_normalizes_style_labels() -> None:
+    raw = """{"options":[
+  {"style":"MINIMAL","translation":"C","explanation":"e3"}
+]}"""
+    by_style = parse_text_to_en_style_subset(raw, ["minimal"])
     assert by_style["minimal"] == ("C", "e3")
 
 

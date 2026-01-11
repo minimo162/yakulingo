@@ -2126,6 +2126,7 @@ class TranslationService:
             is_truncated_json,
             parse_text_single_translation,
             parse_text_to_en_3style,
+            parse_text_to_en_style_subset,
         )
         from yakulingo.services.local_llama_server import LocalAIError
 
@@ -2189,10 +2190,10 @@ class TranslationService:
                 else:
                     missing.append(style)
 
-            for style in missing:
-                prompt = local_builder.build_text_to_en_single(
+            if wants_combined and missing:
+                prompt = local_builder.build_text_to_en_missing_styles(
                     text,
-                    style=style,
+                    styles=missing,
                     reference_files=reference_files,
                     detected_language=detected_language,
                 )
@@ -2200,17 +2201,52 @@ class TranslationService:
                 raw = self._translate_single_with_cancel(
                     text, prompt, None, stream_handler
                 )
-                translation, explanation = parse_text_single_translation(raw)
-                if translation:
-                    options.append(
-                        TranslationOption(
-                            text=translation,
-                            explanation=explanation or "",
-                            style=style,
-                        )
-                    )
+                missing_by_style = parse_text_to_en_style_subset(raw, missing)
+                if missing_by_style:
+                    for style, payload in missing_by_style.items():
+                        if style not in by_style:
+                            by_style[style] = payload
                 elif is_truncated_json(raw):
                     truncated_detected = True
+
+                options = []
+                missing = []
+                for style in style_list:
+                    if style in by_style:
+                        translation, explanation = by_style[style]
+                        options.append(
+                            TranslationOption(
+                                text=translation,
+                                explanation=explanation or "",
+                                style=style,
+                            )
+                        )
+                    else:
+                        missing.append(style)
+
+            if not wants_combined:
+                for style in missing:
+                    prompt = local_builder.build_text_to_en_single(
+                        text,
+                        style=style,
+                        reference_files=reference_files,
+                        detected_language=detected_language,
+                    )
+                    stream_handler = _wrap_local_streaming_on_chunk(on_chunk)
+                    raw = self._translate_single_with_cancel(
+                        text, prompt, None, stream_handler
+                    )
+                    translation, explanation = parse_text_single_translation(raw)
+                    if translation:
+                        options.append(
+                            TranslationOption(
+                                text=translation,
+                                explanation=explanation or "",
+                                style=style,
+                            )
+                        )
+                    elif is_truncated_json(raw):
+                        truncated_detected = True
 
             if options:
                 options.sort(

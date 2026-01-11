@@ -514,6 +514,41 @@ class LocalPromptBuilder:
         prompt = prompt.replace("{detected_language}", detected_language)
         return prompt
 
+    def build_text_to_en_missing_styles(
+        self,
+        text: str,
+        *,
+        styles: Sequence[str],
+        reference_files: Optional[Sequence[Path]] = None,
+        detected_language: str = "日本語",
+    ) -> str:
+        template = self._load_template(
+            "local_text_translate_to_en_missing_styles_json.txt"
+        )
+        embedded_ref = self.build_reference_embed(reference_files, input_text=text)
+        translation_rules = (
+            self._get_translation_rules("en")
+            if self._should_include_translation_rules_for_text("en", text)
+            else ""
+        )
+        reference_section = embedded_ref.text if embedded_ref.text else ""
+        prompt_input_text = self._base.normalize_input_text(text, "en")
+        style_list: list[str] = []
+        seen: set[str] = set()
+        for style in styles:
+            if not style or style in seen:
+                continue
+            seen.add(style)
+            style_list.append(style)
+        styles_json = json.dumps(style_list, ensure_ascii=False)
+        prompt = template.replace("{translation_rules}", translation_rules)
+        prompt = prompt.replace("{reference_section}", reference_section)
+        prompt = prompt.replace("{input_text}", prompt_input_text)
+        prompt = prompt.replace("{detected_language}", detected_language)
+        prompt = prompt.replace("{styles_json}", styles_json)
+        prompt = prompt.replace("{n_styles}", str(len(style_list)))
+        return prompt
+
     def build_text_to_en_single(
         self,
         text: str,

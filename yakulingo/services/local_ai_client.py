@@ -9,7 +9,7 @@ import socket
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterable, Optional
+from typing import Callable, Iterable, Optional, Sequence
 
 from yakulingo.config.settings import AppSettings
 from yakulingo.services.local_llama_server import (
@@ -277,13 +277,15 @@ def _normalize_text_style(style: Optional[str]) -> Optional[str]:
     return None
 
 
-def parse_text_to_en_3style(raw_content: str) -> dict[str, tuple[str, str]]:
+def _parse_text_style_options(
+    raw_content: str,
+) -> list[tuple[Optional[str], str, str]]:
     obj = loads_json_loose(raw_content)
     if not isinstance(obj, dict):
-        return {}
+        return []
     options = obj.get("options")
     if not isinstance(options, list):
-        return {}
+        return []
 
     items: list[tuple[Optional[str], str, str]] = []
     for opt in options:
@@ -296,6 +298,13 @@ def parse_text_to_en_3style(raw_content: str) -> dict[str, tuple[str, str]]:
         explanation_text = explanation if isinstance(explanation, str) else ""
         style = _normalize_text_style(opt.get("style"))
         items.append((style, translation, explanation_text))
+    return items
+
+
+def parse_text_to_en_3style(raw_content: str) -> dict[str, tuple[str, str]]:
+    items = _parse_text_style_options(raw_content)
+    if not items:
+        return {}
 
     by_style: dict[str, tuple[str, str]] = {}
     used_indexes: set[int] = set()
@@ -305,6 +314,39 @@ def parse_text_to_en_3style(raw_content: str) -> dict[str, tuple[str, str]]:
             used_indexes.add(idx)
 
     remaining_styles = [s for s in _TEXT_STYLE_ORDER if s not in by_style]
+    if remaining_styles:
+        for idx, (style, translation, explanation) in enumerate(items):
+            if idx in used_indexes:
+                continue
+            if not remaining_styles:
+                break
+            next_style = remaining_styles.pop(0)
+            by_style[next_style] = (translation, explanation)
+            used_indexes.add(idx)
+
+    return by_style
+
+
+def parse_text_to_en_style_subset(
+    raw_content: str,
+    styles: Sequence[str],
+) -> dict[str, tuple[str, str]]:
+    allowed = [s for s in styles if s in _TEXT_STYLE_ORDER]
+    if not allowed:
+        return {}
+
+    items = _parse_text_style_options(raw_content)
+    if not items:
+        return {}
+
+    by_style: dict[str, tuple[str, str]] = {}
+    used_indexes: set[int] = set()
+    for idx, (style, translation, explanation) in enumerate(items):
+        if style in allowed and style not in by_style:
+            by_style[style] = (translation, explanation)
+            used_indexes.add(idx)
+
+    remaining_styles = [s for s in allowed if s not in by_style]
     if remaining_styles:
         for idx, (style, translation, explanation) in enumerate(items):
             if idx in used_indexes:

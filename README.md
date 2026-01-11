@@ -371,8 +371,14 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 **翻訳ルール**: `prompts/translation_rules.txt` を翻訳時に自動反映します（Copilot/ローカルAI共通）。
 
 **ローカルAIの速度チューニング（推奨）**:
+- `local_ai_threads`: `0` は自動。CPUコアに合わせて増やすと高速化する場合があるが、過剰だと逆効果
+- `local_ai_ctx_size`: 大きいほど遅くなる傾向。プロンプト長に対して必要最小限で調整
+- `local_ai_batch_size` / `local_ai_ubatch_size`: 対応ビルドのみ有効。大きすぎるとメモリ圧迫や不安定化
+- `local_ai_max_chars_per_batch` / `local_ai_max_chars_per_batch_file`: 小さくすると1回あたりの待ち時間は短くなるが、回数が増える
 - `local_ai_max_tokens` を小さくすると速度が向上しますが、長文やバッチ翻訳では出力が途中で途切れる可能性があります
 - 目安: 20秒目標の短文は `128`、速度優先は `256`、品質重視は `512`（または `null`）
+- `request_timeout`: 長文時のタイムアウト回避用。小さくし過ぎると失敗しやすい
+- 変更は1項目ずつ行い、下記ベンチで再計測する
 
 #### 詳細設定（通常は変更不要）
 
@@ -424,11 +430,21 @@ uv run python tools/bench_local_ai.py --mode warm
 uv run python tools/bench_local_ai.py --mode cold --with-glossary
 ```
 - `--mode cold` はローカルAIサーバを停止してから実行するため、他の翻訳が動いていないときに行う
-- 出力の `prompt_chars` / `prompt_build_seconds` / `translation_seconds` / `total_seconds` を記録（`warm` を主指標）
+- 出力の `prompt_chars` / `prompt_build_seconds` / `translation_seconds` / `total_seconds` を記録（`warm` を主指標、`total_seconds=prompt_build_seconds+translation_seconds`）
+- 追加で `input_chars` / `output_chars` / `effective_local_ai_ctx_size` / `effective_local_ai_max_tokens` / `warmup_seconds` も控えると比較がしやすい
+
+**ボトルネック例**
+- `prompt_build_seconds` が大きい: 参照ファイル埋め込みが支配（glossary ON/OFF で比較）
+- `translation_seconds` が大きい: 推論が支配（threads/ctx/batch を調整）
+- cold が遅い: 初回のモデルロード/サーバ起動が支配（`--mode cold` で把握）
+- UIが重い: ベンチでは見えないため、体感が遅い場合は実UIで確認
 
 **結果記録テンプレ（例）**
 ```
 date:
+input_chars:
+effective_local_ai_ctx_size:
+effective_local_ai_max_tokens:
 command:
 model_path:
 server_dir:
@@ -444,14 +460,17 @@ results:
     with_glossary:
     prompt_chars:
     prompt_build_seconds:
+    warmup_seconds:
     translation_seconds:
     total_seconds:
+    output_chars:
   cold:
     with_glossary:
     prompt_chars:
     prompt_build_seconds:
     translation_seconds:
     total_seconds:
+    output_chars:
 notes:
 ```
 

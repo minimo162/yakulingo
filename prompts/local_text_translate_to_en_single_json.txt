@@ -13,7 +13,7 @@
 - explanation は出力しない（キー自体を含めない）
 - 英訳スタイルは {style}（standard/concise/minimal）
 - translation は冗長化せず、原文より短く・要点優先で簡潔にまとめる
-- 改行・タブ・箇条書き構造は可能な限り保持する（必要なら translation 内で \\n を使う）
+- 改行・タブ・箇条書き構造は可能な限り保持する（必要なら translation 内で \n を使う）
 
 {extra_instruction}
 

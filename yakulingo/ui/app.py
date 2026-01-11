@@ -4185,10 +4185,11 @@ class YakuLingoApp:
 
             def on_chunk(partial_text: str) -> None:
                 nonlocal last_preview_update
+                preview_text = self._normalize_streaming_preview_text(partial_text)
                 buffer.publish(
                     {
                         "state": {
-                            "text_streaming_preview": partial_text,
+                            "text_streaming_preview": preview_text,
                         }
                     }
                 )
@@ -4320,7 +4321,8 @@ class YakuLingoApp:
 
             def on_chunk(partial_text: str) -> None:
                 nonlocal last_preview_update
-                self.state.text_streaming_preview = partial_text
+                preview_text = self._normalize_streaming_preview_text(partial_text)
+                self.state.text_streaming_preview = preview_text
                 now = time.monotonic()
                 if now - last_preview_update < preview_update_interval_seconds:
                     return
@@ -4350,7 +4352,7 @@ class YakuLingoApp:
                                     client, force_follow=True
                                 )
                             if self._streaming_preview_label is not None:
-                                self._streaming_preview_label.set_text(partial_text)
+                                self._streaming_preview_label.set_text(preview_text)
                                 self._scroll_result_panel_to_bottom(client)
                     except Exception:
                         logger.debug(
@@ -10008,6 +10010,13 @@ class YakuLingoApp:
             return "jp"
         return None
 
+    def _normalize_streaming_preview_text(self, text: Optional[str]) -> Optional[str]:
+        if text is None:
+            return None
+        from yakulingo.ui.utils import normalize_literal_escapes
+
+        return normalize_literal_escapes(text)
+
     def _update_text_input_metrics(self) -> None:
         refs = self._text_input_metrics or {}
         if not refs:
@@ -11171,6 +11180,7 @@ class YakuLingoApp:
                     )
                 else:
                     preview_text = partial_text
+                preview_text = self._normalize_streaming_preview_text(preview_text)
                 self.state.text_streaming_preview = preview_text
                 now = time.monotonic()
                 if now - last_preview_update < preview_update_interval_seconds:
@@ -11424,7 +11434,8 @@ class YakuLingoApp:
 
             def on_chunk(partial_text: str) -> None:
                 nonlocal last_preview_update
-                self.state.text_streaming_preview = partial_text
+                preview_text = self._normalize_streaming_preview_text(partial_text)
+                self.state.text_streaming_preview = preview_text
                 now = time.monotonic()
                 if now - last_preview_update < preview_update_interval_seconds:
                     return
@@ -11447,7 +11458,7 @@ class YakuLingoApp:
                                     client, force_follow=True
                                 )
                             if self._streaming_preview_label is not None:
-                                self._streaming_preview_label.set_text(partial_text)
+                                self._streaming_preview_label.set_text(preview_text)
                                 self._scroll_result_panel_to_bottom(client)
                     except Exception:
                         logger.debug("Streaming preview refresh failed", exc_info=True)
@@ -11678,7 +11689,8 @@ class YakuLingoApp:
 
             def on_chunk(partial_text: str) -> None:
                 nonlocal last_preview_update
-                self.state.text_streaming_preview = partial_text
+                preview_text = self._normalize_streaming_preview_text(partial_text)
+                self.state.text_streaming_preview = preview_text
                 now = time.monotonic()
                 if now - last_preview_update < preview_update_interval_seconds:
                     return
@@ -11697,7 +11709,7 @@ class YakuLingoApp:
                             if self._streaming_preview_label is None:
                                 self._refresh_result_panel()
                             if self._streaming_preview_label is not None:
-                                self._streaming_preview_label.set_text(partial_text)
+                                self._streaming_preview_label.set_text(preview_text)
                     except Exception:
                         logger.debug(
                             "Back-translate streaming preview refresh failed",

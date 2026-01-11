@@ -45,6 +45,7 @@ _RE_EXPLANATION = re.compile(
 
 # Filename forbidden characters (Windows: \ / : * ? " < > |, also control chars)
 _RE_FILENAME_FORBIDDEN = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
+_RE_WINDOWS_PATH_SEGMENT = re.compile(r"(?i)(?:^|\s)(?P<path>(?:[a-z]:\\|\\\\)\S+)")
 
 
 def format_bytes(size_bytes: int) -> str:
@@ -376,6 +377,61 @@ def parse_translation_result(result: str) -> tuple[str, str]:
     explanation = explanation_match.group(1).strip() if explanation_match else ""
 
     return text, explanation
+
+
+def normalize_literal_escapes(text: str) -> str:
+    """
+    Normalize literal escape sequences (\\n/\\t/\\r\\n) for UI display/copy.
+    Skips conversion inside obvious Windows path segments to avoid breakage.
+    """
+    if not text:
+        return text
+    if "\\n" not in text and "\\t" not in text and "\\r" not in text:
+        return text
+
+    path_spans = [
+        (match.start("path"), match.end("path"))
+        for match in _RE_WINDOWS_PATH_SEGMENT.finditer(text)
+    ]
+    if not path_spans:
+        return text.replace("\\r\\n", "\n").replace("\\n", "\n").replace("\\t", "\t")
+
+    span_index = 0
+    result: list[str] = []
+    i = 0
+    text_len = len(text)
+
+    def in_path(idx: int) -> bool:
+        nonlocal span_index
+        while span_index < len(path_spans) and idx >= path_spans[span_index][1]:
+            span_index += 1
+        if span_index >= len(path_spans):
+            return False
+        start, end = path_spans[span_index]
+        return start <= idx < end
+
+    while i < text_len:
+        ch = text[i]
+        if ch == "\\" and not in_path(i):
+            if i + 3 < text_len and text[i + 1] == "r" and text[i + 2] == "\\":
+                if text[i + 3] == "n":
+                    result.append("\n")
+                    i += 4
+                    continue
+            if i + 1 < text_len:
+                nxt = text[i + 1]
+                if nxt == "n":
+                    result.append("\n")
+                    i += 2
+                    continue
+                if nxt == "t":
+                    result.append("\t")
+                    i += 2
+                    continue
+        result.append(ch)
+        i += 1
+
+    return "".join(result)
 
 
 class DialogManager:

@@ -24,6 +24,7 @@ from yakulingo.ui.utils import (
     format_markdown_text,
     format_bytes,
     summarize_reference_files,
+    normalize_literal_escapes,
 )
 from yakulingo.models.types import TranslationOption, TextTranslationResult
 
@@ -272,9 +273,10 @@ def _build_combined_translation_text(result: TextTranslationResult) -> str:
                 option.style, option.style or "translation"
             )
             header = f"[{style_label}]"
-            parts.append(f"{header}\n{option.text}".strip())
+            option_text = normalize_literal_escapes(option.text)
+            parts.append(f"{header}\n{option_text}".strip())
         return "\n\n".join(parts)
-    return result.options[0].text
+    return normalize_literal_escapes(result.options[0].text)
 
 
 def _iter_ordered_options(result: TextTranslationResult) -> list[TranslationOption]:
@@ -313,28 +315,38 @@ def _build_copy_payload(
         parts = []
         for option in options:
             lines = []
+            option_text = normalize_literal_escapes(option.text)
+            option_explanation = (
+                normalize_literal_escapes(option.explanation)
+                if option.explanation
+                else ""
+            )
             if include_headers:
                 style_label = TEXT_STYLE_LABELS.get(
                     option.style, option.style or "translation"
                 )
                 lines.append(f"[{style_label}]")
-            lines.append(option.text)
-            if include_explanation and option.explanation:
+            lines.append(option_text)
+            if include_explanation and option_explanation:
                 lines.append("")
                 lines.append("解説:")
-                lines.append(option.explanation)
+                lines.append(option_explanation)
             parts.append("\n".join(lines).strip())
         return "\n\n".join(parts)
 
     option = options[0]
+    option_text = normalize_literal_escapes(option.text)
+    option_explanation = (
+        normalize_literal_escapes(option.explanation) if option.explanation else ""
+    )
     lines = []
     if include_headers:
         lines.append("訳文:")
-    lines.append(option.text)
-    if include_explanation and option.explanation:
+    lines.append(option_text)
+    if include_explanation and option_explanation:
         lines.append("")
         lines.append("解説:")
-        lines.append(option.explanation)
+        lines.append(option_explanation)
     return "\n".join(lines).strip()
 
 
@@ -859,7 +871,8 @@ def create_text_result_panel(
         # Streaming preview (partial output while Copilot is generating)
         if state.text_translating and state.text_streaming_preview:
             with ui.element("div").classes("streaming-preview"):
-                label = ui.label(state.text_streaming_preview).classes("streaming-text")
+                preview_text = normalize_literal_escapes(state.text_streaming_preview)
+                label = ui.label(preview_text).classes("streaming-text")
                 if on_streaming_preview_label_created:
                     on_streaming_preview_label_created(label)
 
@@ -1035,6 +1048,7 @@ def _render_source_compare_panel(
             if option.style == base_style:
                 target_text = option.text
                 break
+    target_text = normalize_literal_escapes(target_text)
 
     diff_html = _build_diff_html(source_text, target_text)
     with ui.element("div").classes("source-compare-panel"):
@@ -1286,7 +1300,7 @@ def _render_results_to_jp(
                                 with ui.row().classes(
                                     "items-center option-card-actions"
                                 ):
-                                    copy_text = option.text
+                                    copy_text = normalize_literal_escapes(option.text)
                                     excel_copy = _format_tabular_text_for_excel_paste(
                                         copy_text,
                                         hint=table_hint,
@@ -1479,7 +1493,8 @@ def _render_result_action_footer(
 
 def _render_explanation(explanation: str):
     """Render explanation text as HTML with bullet points"""
-    lines = explanation.strip().split("\n")
+    normalized = normalize_literal_escapes(explanation)
+    lines = normalized.strip().split("\n")
     bullet_items = []
     non_bullet_lines = []
 
@@ -1737,13 +1752,20 @@ def _render_translation_text(
 ):
     """Render translation text (always as normal text)."""
 
-    if diff_base_text and diff_base_text.strip() and diff_base_text != text:
-        diff_html = _build_diff_html(diff_base_text, text)
+    display_text = normalize_literal_escapes(text)
+    diff_text = (
+        normalize_literal_escapes(diff_base_text)
+        if diff_base_text is not None
+        else None
+    )
+
+    if diff_text and diff_text.strip() and diff_text != display_text:
+        diff_html = _build_diff_html(diff_text, display_text)
         ui.html(diff_html, sanitize=False).classes("option-text w-full diff-text")
         return
 
-    label = ui.label(text).classes("option-text py-1 w-full")
-    if "\n" in text or "\t" in text:
+    label = ui.label(display_text).classes("option-text py-1 w-full")
+    if "\n" in display_text or "\t" in display_text:
         label.style("white-space: pre-wrap;")
 
 
@@ -1846,7 +1868,7 @@ def _render_option_en(
                         )
                         if style_label_for_copy:
                             copy_suffix = f"（{style_label_for_copy}）"
-                    copy_text = option.text
+                    copy_text = normalize_literal_escapes(option.text)
                     excel_copy = _format_tabular_text_for_excel_paste(
                         copy_text, hint=table_hint
                     )

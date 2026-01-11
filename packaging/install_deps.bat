@@ -430,8 +430,8 @@ set "LOCAL_AI_SKIP_MODEL=0"
 if "!LOCAL_AI_CHOICE!"=="2" set "LOCAL_AI_SKIP_MODEL=1"
 
 if not exist "local_ai\\manifest.json" (
-    if not defined LOCAL_AI_MODEL_REPO set "LOCAL_AI_MODEL_REPO=unsloth/LFM2.5-1.2B-Instruct-GGUF"
-    if not defined LOCAL_AI_MODEL_FILE set "LOCAL_AI_MODEL_FILE=LFM2.5-1.2B-Instruct-UD-Q4_K_XL.gguf"
+    if not defined LOCAL_AI_MODEL_REPO set "LOCAL_AI_MODEL_REPO=dahara1/shisa-v2.1-llama3.2-3b-UD-japanese-imatrix"
+    if not defined LOCAL_AI_MODEL_FILE set "LOCAL_AI_MODEL_FILE=Llama-3.2-3B-Instruct-UD-Q4_K_XL.gguf"
 )
 
 powershell -NoProfile -ExecutionPolicy Bypass -File "packaging\install_local_ai.ps1"

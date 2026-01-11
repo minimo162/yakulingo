@@ -1,5 +1,5 @@
 ﻿{
-    "generated_at":  "2026-01-11T16:16:55.4880151+09:00",
+    "generated_at":  "2026-01-11T17:25:50.2088669+09:00",
     "llama_cpp":  {
                       "repo":  "ggerganov/llama.cpp",
                       "release_tag":  "b7689",
@@ -8,10 +8,10 @@
                       "server_exe_sha256":  "73256B168BE1E06FE4BF2BA791247E7E3CEACE67F912767774EB8F466327C27A"
                   },
     "model":  {
-                  "repo":  "unsloth/LFM2.5-1.2B-Instruct-GGUF",
-                  "file":  "LFM2.5-1.2B-Instruct-UD-Q4_K_XL.gguf",
-                  "download_url":  "https://huggingface.co/unsloth/LFM2.5-1.2B-Instruct-GGUF/resolve/main/LFM2.5-1.2B-Instruct-UD-Q4_K_XL.gguf",
-                  "sha256":  "856AEEE6D85AC684B1DB8DEE48795B44FC06731ECDA03AEE36ECE682413A9B9A",
+                  "repo":  "dahara1/shisa-v2.1-llama3.2-3b-UD-japanese-imatrix",
+                  "file":  "Llama-3.2-3B-Instruct-UD-Q4_K_XL.gguf",
+                  "download_url":  "https://huggingface.co/dahara1/shisa-v2.1-llama3.2-3b-UD-japanese-imatrix/resolve/main/Llama-3.2-3B-Instruct-UD-Q4_K_XL.gguf",
+                  "sha256":  null,
                   "skipped":  false
               }
 }

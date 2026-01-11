@@ -1007,6 +1007,13 @@ class BatchTranslator:
             return True
         return language_detector.is_japanese(translated, threshold=0.6)
 
+    def _is_local_backend(self) -> bool:
+        try:
+            from yakulingo.services.local_ai_client import LocalAIClient
+        except Exception:
+            return False
+        return isinstance(self.copilot, LocalAIClient)
+
     def translate_blocks(
         self,
         blocks: list[TextBlock],
@@ -1095,6 +1102,7 @@ class BatchTranslator:
         translations = {}
         untranslated_block_ids = []
         mismatched_batch_count = 0
+        is_local_backend = self._is_local_backend()
 
         if _split_retry_depth == 0:
             self._cancel_event.clear()  # Reset at start of new translation
@@ -1305,6 +1313,48 @@ class BatchTranslator:
                     if retry_result.cancelled:
                         cancelled = True
                         break
+                    continue
+                if is_local_backend:
+                    if (
+                        _split_retry_depth < self._SPLIT_RETRY_LIMIT
+                        and batch_char_limit > self._MIN_SPLIT_BATCH_CHARS
+                    ):
+                        reduced_limit = max(
+                            self._MIN_SPLIT_BATCH_CHARS, batch_char_limit // 2
+                        )
+                        logger.warning(
+                            "Local AI error in batch %d; retrying with max_chars_per_batch=%d (%s)",
+                            i + 1,
+                            reduced_limit,
+                            message[:120],
+                        )
+                        retry_result = self.translate_blocks_with_result(
+                            batch,
+                            reference_files=reference_files,
+                            on_progress=None,
+                            output_language=output_language,
+                            translation_style=translation_style,
+                            include_item_ids=include_item_ids,
+                            _max_chars_per_batch=reduced_limit,
+                            _split_retry_depth=_split_retry_depth + 1,
+                        )
+                        translations.update(retry_result.translations)
+                        untranslated_block_ids.extend(
+                            retry_result.untranslated_block_ids
+                        )
+                        mismatched_batch_count += retry_result.mismatched_batch_count
+                        if retry_result.cancelled:
+                            cancelled = True
+                            break
+                        continue
+                    logger.warning(
+                        "Local AI error in batch %d; using original text (%s)",
+                        i + 1,
+                        message[:120],
+                    )
+                    for block in batch:
+                        translations[block.id] = block.text
+                        untranslated_block_ids.append(block.id)
                     continue
                 raise
 
@@ -1827,6 +1877,17 @@ class TranslationService:
             self._ensure_local_backend()
             return self._local_batch_translator
         return self.batch_translator
+
+    def _get_local_file_batch_limit(self) -> Optional[int]:
+        if not self._use_local_backend() or self.config is None:
+            return None
+        limit = getattr(self.config, "local_ai_max_chars_per_batch_file", None)
+        if isinstance(limit, int) and limit > 0:
+            return limit
+        fallback = getattr(self.config, "local_ai_max_chars_per_batch", None)
+        if isinstance(fallback, int) and fallback > 0:
+            return fallback
+        return None
 
     def clear_translation_cache(self) -> None:
         """
@@ -3700,6 +3761,7 @@ class TranslationService:
         # Excel cells often contain numbered lines; keep stable IDs to avoid list parsing drift.
         include_item_ids = processor.file_type == FileType.EXCEL
         batch_translator = self._get_active_batch_translator()
+        batch_limit = self._get_local_file_batch_limit()
         batch_result = batch_translator.translate_blocks_with_result(
             blocks,
             reference_files,
@@ -3707,6 +3769,7 @@ class TranslationService:
             output_language=output_language,
             translation_style=translation_style,
             include_item_ids=include_item_ids,
+            _max_chars_per_batch=batch_limit,
         )
 
         # Check for cancellation (thread-safe)
@@ -3981,6 +4044,7 @@ class TranslationService:
                 )
 
         batch_translator = self._get_active_batch_translator()
+        batch_limit = self._get_local_file_batch_limit()
         batch_result = batch_translator.translate_blocks_with_result(
             all_blocks,
             reference_files,
@@ -3988,6 +4052,7 @@ class TranslationService:
             output_language=output_language,
             translation_style=translation_style,
             include_item_ids=True,
+            _max_chars_per_batch=batch_limit,
         )
 
         if batch_result.cancelled or self._cancel_event.is_set():

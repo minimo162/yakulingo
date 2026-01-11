@@ -65,6 +65,7 @@ USER_SETTINGS_KEYS = {
     "local_ai_batch_size",
     "local_ai_ubatch_size",
     "local_ai_max_chars_per_batch",
+    "local_ai_max_chars_per_batch_file",
 }
 
 DEFAULT_MAX_CHARS_PER_BATCH = 4000
@@ -356,6 +357,7 @@ class AppSettings:
     local_ai_batch_size: Optional[int] = 512
     local_ai_ubatch_size: Optional[int] = 128
     local_ai_max_chars_per_batch: int = 800
+    local_ai_max_chars_per_batch_file: int = 600
 
     # File Translation Options (共通オプション)
     bilingual_output: bool = False  # 対訳出力（原文と翻訳を交互に配置）
@@ -666,6 +668,12 @@ class AppSettings:
                 self.local_ai_max_chars_per_batch,
             )
             self.local_ai_max_chars_per_batch = 800
+        if self.local_ai_max_chars_per_batch_file < 100:
+            logger.warning(
+                "local_ai_max_chars_per_batch_file too small (%d), resetting to 600",
+                self.local_ai_max_chars_per_batch_file,
+            )
+            self.local_ai_max_chars_per_batch_file = 600
 
         # Local AI sampling params constraints
         if self.local_ai_temperature < 0.0 or self.local_ai_temperature > 2.0:

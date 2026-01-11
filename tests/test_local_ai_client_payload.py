@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from yakulingo.config.settings import AppSettings
-from yakulingo.services.local_ai_client import LocalAIClient
+from yakulingo.services.local_ai_client import LocalAIClient, LocalAIRequestResult
 from yakulingo.services.local_llama_server import LocalAIServerRuntime
 
 
@@ -37,3 +37,59 @@ def test_build_chat_payload_skips_response_format_when_disabled() -> None:
     )
     assert "response_format" not in payload
     assert payload["stream"] is True
+
+
+def test_response_format_cache_skips_retry_after_unsupported() -> None:
+    client = LocalAIClient(AppSettings())
+    runtime = _make_runtime()
+    calls: list[dict[str, object]] = []
+    state = {"calls": 0}
+
+    def fake_http(*, payload: dict[str, object], **kwargs):
+        _ = kwargs
+        state["calls"] += 1
+        calls.append(payload)
+        if state["calls"] == 1:
+            raise RuntimeError("response_format unsupported")
+        return {"choices": [{"message": {"content": "ok"}}]}
+
+    client._http_json_cancellable = fake_http  # type: ignore[method-assign]
+
+    result1 = client._chat_completions(runtime, "prompt", timeout=1)
+    assert result1.content == "ok"
+
+    result2 = client._chat_completions(runtime, "prompt", timeout=1)
+    assert result2.content == "ok"
+
+    assert len(calls) == 3
+    assert "response_format" in calls[0]
+    assert "response_format" not in calls[1]
+    assert "response_format" not in calls[2]
+
+
+def test_response_format_cache_applies_to_streaming() -> None:
+    client = LocalAIClient(AppSettings())
+    runtime = _make_runtime()
+    calls: list[dict[str, object]] = []
+
+    def fake_streaming(runtime_arg, payload, on_chunk, timeout=None):
+        _ = runtime_arg, on_chunk, timeout
+        calls.append(payload)
+        if len(calls) == 1:
+            raise RuntimeError("response_format unsupported")
+        return LocalAIRequestResult(content="ok", model_id=None)
+
+    client._chat_completions_streaming_with_payload = (  # type: ignore[method-assign]
+        fake_streaming
+    )
+
+    result1 = client._chat_completions_streaming(runtime, "prompt", lambda _: None, timeout=1)
+    assert result1.content == "ok"
+
+    result2 = client._chat_completions_streaming(runtime, "prompt", lambda _: None, timeout=1)
+    assert result2.content == "ok"
+
+    assert len(calls) == 3
+    assert "response_format" in calls[0]
+    assert "response_format" not in calls[1]
+    assert "response_format" not in calls[2]

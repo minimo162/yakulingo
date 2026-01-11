@@ -6,6 +6,7 @@ import json
 import logging
 import re
 import socket
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -29,6 +30,7 @@ _RE_ID_MARKER_BLOCK = re.compile(
 )
 _RE_NUMBERED_LINE = re.compile(r"^\s*(\d+)\.\s*(.+)\s*$")
 _JSON_STOP_SEQUENCES = ["</s>", "<|end|>"]
+_RESPONSE_FORMAT_CACHE_TTL_S = 600.0
 
 
 def _strip_code_fences(text: str) -> str:
@@ -388,6 +390,8 @@ class LocalAIClient:
         self._settings = settings
         self._manager = get_local_llama_server_manager()
         self._cancel_check: Optional[Callable[[], bool]] = None
+        self._response_format_support: dict[str, tuple[bool, float]] = {}
+        self._response_format_lock = threading.Lock()
 
     def set_cancel_callback(self, callback: Optional[Callable[[], bool]]) -> None:
         self._cancel_check = callback
@@ -436,6 +440,32 @@ class LocalAIClient:
                 "unknown field",
             )
         )
+
+    @staticmethod
+    def _response_format_cache_key(runtime: LocalAIServerRuntime) -> str:
+        return f"{runtime.host}:{runtime.port}"
+
+    def _get_response_format_support(
+        self, runtime: LocalAIServerRuntime
+    ) -> Optional[bool]:
+        key = self._response_format_cache_key(runtime)
+        with self._response_format_lock:
+            cached = self._response_format_support.get(key)
+        if not cached:
+            return None
+        supported, checked_at = cached
+        if time.monotonic() - checked_at > _RESPONSE_FORMAT_CACHE_TTL_S:
+            with self._response_format_lock:
+                self._response_format_support.pop(key, None)
+            return None
+        return supported
+
+    def _set_response_format_support(
+        self, runtime: LocalAIServerRuntime, supported: bool
+    ) -> None:
+        key = self._response_format_cache_key(runtime)
+        with self._response_format_lock:
+            self._response_format_support[key] = (supported, time.monotonic())
 
     def ensure_ready(self) -> LocalAIServerRuntime:
         return self._manager.ensure_ready(self._settings)
@@ -527,8 +557,10 @@ class LocalAIClient:
         timeout_s = float(
             timeout if timeout is not None else self._settings.request_timeout
         )
+        cached_support = self._get_response_format_support(runtime)
+        use_response_format = cached_support is not False
         payload = self._build_chat_payload(
-            runtime, prompt, stream=False, enforce_json=True
+            runtime, prompt, stream=False, enforce_json=use_response_format
         )
         try:
             response = self._http_json_cancellable(
@@ -539,8 +571,11 @@ class LocalAIClient:
                 timeout_s=timeout_s,
             )
         except RuntimeError as exc:
-            if not self._should_retry_without_response_format(exc):
+            if not use_response_format or not self._should_retry_without_response_format(
+                exc
+            ):
                 raise
+            self._set_response_format_support(runtime, False)
             logger.debug(
                 "LocalAI response_format unsupported; retrying without it (%s)", exc
             )
@@ -554,6 +589,9 @@ class LocalAIClient:
                 payload=payload,
                 timeout_s=timeout_s,
             )
+        else:
+            if use_response_format:
+                self._set_response_format_support(runtime, True)
 
         content = _parse_openai_chat_content(response)
         return LocalAIRequestResult(content=content, model_id=runtime.model_id)
@@ -566,16 +604,21 @@ class LocalAIClient:
         *,
         timeout: Optional[int],
     ) -> LocalAIRequestResult:
+        cached_support = self._get_response_format_support(runtime)
+        use_response_format = cached_support is not False
         payload = self._build_chat_payload(
-            runtime, prompt, stream=True, enforce_json=True
+            runtime, prompt, stream=True, enforce_json=use_response_format
         )
         try:
-            return self._chat_completions_streaming_with_payload(
+            result = self._chat_completions_streaming_with_payload(
                 runtime, payload, on_chunk, timeout=timeout
             )
         except RuntimeError as exc:
-            if not self._should_retry_without_response_format(exc):
+            if not use_response_format or not self._should_retry_without_response_format(
+                exc
+            ):
                 raise
+            self._set_response_format_support(runtime, False)
             logger.debug(
                 "LocalAI response_format unsupported; retrying streaming without it (%s)",
                 exc,
@@ -583,9 +626,13 @@ class LocalAIClient:
             payload = self._build_chat_payload(
                 runtime, prompt, stream=True, enforce_json=False
             )
-            return self._chat_completions_streaming_with_payload(
+            result = self._chat_completions_streaming_with_payload(
                 runtime, payload, on_chunk, timeout=timeout
             )
+        else:
+            if use_response_format:
+                self._set_response_format_support(runtime, True)
+        return result
 
     def _chat_completions_streaming_with_payload(
         self,

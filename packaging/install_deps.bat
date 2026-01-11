@@ -349,9 +349,33 @@ echo [DONE] paddlepaddle/paddleocr verified.
 goto :verify_ocr_deps_exit
 
 :verify_ocr_deps_failed
+if not defined OCR_REQUIREMENTS_RETRY (
+    set "OCR_REQUIREMENTS_RETRY=1"
+    echo [WARNING] paddlepaddle/paddleocr is not available. Installing requirements_pdf.txt as a fallback...
+    if "!SKIP_SSL!"=="1" (
+        .venv\Scripts\python.exe -m pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org -r requirements_pdf.txt
+    ) else (
+        .venv\Scripts\python.exe -m pip install -r requirements_pdf.txt
+    )
+    if errorlevel 1 goto :verify_ocr_deps_failed_final
+
+    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+        "$script = 'import warnings; warnings.filterwarnings(''ignore''); import paddle; import paddleocr; print(''[OK] paddlepaddle version:'', paddle.__version__); print(''[OK] paddleocr version:'', getattr(paddleocr, ''__version__'', ''(unknown)''))';" ^
+        "& '.venv\Scripts\python.exe' -W ignore -c $script 2>$null;" ^
+        "exit $LASTEXITCODE"
+    set "OCR_DEPS_ERROR=%ERRORLEVEL%"
+    if "%OCR_DEPS_ERROR%"=="0" (
+        echo [DONE] paddlepaddle/paddleocr verified.
+        goto :verify_ocr_deps_exit
+    )
+)
+goto :verify_ocr_deps_failed_final
+
+:verify_ocr_deps_failed_final
 echo [ERROR] paddlepaddle/paddleocr is not available in the virtual environment.
 echo [INFO] PDF layout analysis (PP-DocLayout-L) requires paddlepaddle/paddleocr.
 echo [INFO] Retry this installer, or run: uv.exe sync --extra ocr
+echo [INFO] If uv fails, run: .venv\Scripts\python.exe -m pip install -r requirements_pdf.txt
 pause
 exit /b 1
 

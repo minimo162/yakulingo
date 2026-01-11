@@ -343,7 +343,7 @@ class AppSettings:
     # Local AI (llama.cpp llama-server) - M1 minimal settings
     # NOTE: Host is forced to 127.0.0.1 for security (no external exposure).
     local_ai_model_path: str = (
-        "local_ai/models/Llama-3.2-3B-Instruct-UD-Q4_K_XL.gguf"
+        "local_ai/models/shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf"
     )
     local_ai_server_dir: str = "local_ai/llama_cpp"
     local_ai_host: str = "127.0.0.1"

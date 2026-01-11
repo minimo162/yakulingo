@@ -29,7 +29,7 @@
 ### 1.1 システム目的
 
 YakuLingoは、日本語と英語の双方向翻訳を提供するデスクトップアプリケーション。
-翻訳エンジンは **M365 Copilot**（Playwright + Edge）または **ローカルAI**（llama.cpp `llama-server` 常駐・OpenAI互換HTTP）を使用し、UIで切り替え可能。ローカルAIは `127.0.0.1` 固定（外部公開しない）。
+翻訳エンジンは **M365 Copilot**（Playwright + Edge）または **ローカルAI**（llama.cpp `llama-server` 常駐・OpenAI互換HTTP）を使用し、サイドバー上部のCopilotボタンON/OFFで切り替える。ローカルAIは `127.0.0.1` 固定（外部公開しない）。
 
 ### 1.2 主要機能
 
@@ -41,7 +41,7 @@ YakuLingoは、日本語と英語の双方向翻訳を提供するデスクト�
 | **Bilingual Output** | 原文と訳文を並べた対訳ファイルを自動生成 |
 | **Glossary Export** | 翻訳ペアをCSVで出力（用語管理に活用） |
 | **Reference Files** | 用語集・スタイルガイド・参考資料による一貫した翻訳（同梱glossaryの使用ON/OFF切替可） |
-| **Backend Toggle** | Copilot / ローカルAI（llama.cpp）をUIで切替（ローカルAIはEdge不要） |
+| **Backend Toggle** | CopilotボタンON/OFFで切替（OFF=ローカルAI、ローカルAIはEdge不要） |
 | **Translation History** | 過去の翻訳をローカルに保存・検索 |
 | **Auto Update** | GitHub Releases経由で自動更新 |
 
@@ -1521,7 +1521,7 @@ class AppSettings:
     last_tab: str = "text"
     # NOTE: window_width/window_height は廃止（表示領域から動的に計算）
 
-    # Translation Backend (Copilot / Local AI)
+    # Translation Backend (Copilot ON/OFF; OFF = Local AI)
     translation_backend: str = "copilot"  # "copilot" | "local"
     copilot_enabled: bool = True          # Copilot UI/接続を無効化するスイッチ
 

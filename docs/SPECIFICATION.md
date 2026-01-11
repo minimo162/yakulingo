@@ -952,8 +952,9 @@ class CopilotHandler:
 - warm を主指標、cold は参考
 - 入力: `tools/bench_local_ai_input.txt`（400〜800字程度 / style=concise）
 - 参照: `glossary.csv` ON / OFF
-- ベンチ: `uv run python tools/bench_local_ai.py --mode warm`（既定 `--max-tokens 512`）
+- ベンチ: `uv run python tools/bench_local_ai.py --mode warm`（`local_ai_max_tokens` を使用、`--max-tokens` で上書き / `0` で無制限）
 - cold 参考: `uv run python tools/bench_local_ai.py --mode cold --with-glossary`
+- 3スタイル比較: `--compare` を付ける（`--input` 未指定時は `tools/bench_local_ai_input_short.txt`）
 
 ### 6.2 TranslationService
 

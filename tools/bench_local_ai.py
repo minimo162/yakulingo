@@ -77,7 +77,7 @@ def main() -> int:
     parser.add_argument("--with-glossary", action="store_true")
     parser.add_argument("--reference", action="append", type=Path, default=[])
     parser.add_argument("--warmup-runs", type=int, default=1)
-    parser.add_argument("--max-tokens", type=int, default=512)
+    parser.add_argument("--max-tokens", type=int, default=None)
 
     args = parser.parse_args()
 
@@ -89,11 +89,33 @@ def main() -> int:
     from yakulingo.services.local_llama_server import get_local_llama_server_manager
     from yakulingo.services.prompt_builder import PromptBuilder
 
-    input_path = args.input or (repo_root / "tools" / "bench_local_ai_input.txt")
+    default_input = repo_root / "tools" / "bench_local_ai_input.txt"
+    compare_input = repo_root / "tools" / "bench_local_ai_input_short.txt"
+    if args.input:
+        input_path = args.input
+    elif args.compare:
+        input_path = compare_input
+    else:
+        input_path = default_input
     text = _load_text(input_path)
 
-    if len(text) < 400 or len(text) > 800:
-        print("WARNING: input text length is outside 400-800 chars", file=sys.stderr)
+    if args.compare:
+        if len(text) > 800:
+            print(
+                f"WARNING: compare input is long ({len(text)} chars); JSON may truncate.",
+                file=sys.stderr,
+            )
+            print(
+                "HINT: use --input tools/bench_local_ai_input_short.txt or adjust "
+                "--max-tokens (e.g. --max-tokens 1024 / --max-tokens 0).",
+                file=sys.stderr,
+            )
+    else:
+        if len(text) < 400 or len(text) > 800:
+            print(
+                "WARNING: input text length is outside 400-800 chars",
+                file=sys.stderr,
+            )
 
     reference_files: list[Path] = []
     if args.with_glossary:
@@ -103,8 +125,11 @@ def main() -> int:
 
     settings = AppSettings()
     settings.translation_backend = "local"
-    if args.max_tokens and args.max_tokens > 0:
-        settings.local_ai_max_tokens = int(args.max_tokens)
+    if args.max_tokens is not None:
+        if args.max_tokens <= 0:
+            settings.local_ai_max_tokens = None
+        else:
+            settings.local_ai_max_tokens = int(args.max_tokens)
     prompts_dir = repo_root / "prompts"
     if args.compare:
         from yakulingo.services.copilot_handler import CopilotHandler
@@ -144,6 +169,8 @@ def main() -> int:
     print(f"compare: {bool(args.compare)}")
     print(f"with_glossary: {bool(args.with_glossary)}")
     print(f"reference_files: {len(reference_files)}")
+    print(f"effective_local_ai_ctx_size: {settings.local_ai_ctx_size}")
+    print(f"effective_local_ai_max_tokens: {settings.local_ai_max_tokens}")
 
     for i in range(warmup_runs):
         if args.compare:

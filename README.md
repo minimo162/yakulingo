@@ -408,7 +408,10 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 - 方向: JP→EN / style=concise
 - 参照: `glossary.csv` の ON / OFF を両方計測
 - 指標: warm（主指標）/ cold（参考）
-- 生成上限: `--max-tokens 512`（ベンチの既定値）
+- 生成上限: 設定の `local_ai_max_tokens` を使用（`--max-tokens` で上書き、`--max-tokens 0` で無制限）
+
+**3スタイル比較の計測**
+- `--compare` を付ける（`--input` 未指定時は `tools/bench_local_ai_input_short.txt` を使用）
 
 **実行例**
 ```bash

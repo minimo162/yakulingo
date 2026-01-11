@@ -59,8 +59,13 @@ uv run python tools/bench_local_ai.py --mode warm --max-tokens 0 --json
 - `local_ai_max_chars_per_batch_file`: 800
 - 値を上げるとバッチ数は減るが、プロンプトが長すぎる場合は自動分割（`LOCAL_PROMPT_TOO_LONG`）にフォールバックする
 
+## アプリ起動を含む計測（E2E / Playwright）
+```bash
+uv run --extra test python tools/e2e_local_ai_speed.py
+```
+- JSON出力: `app_start_seconds`, `translation_seconds`, `total_seconds`, `elapsed_badge_seconds`
+
 ## アプリ起動を含む計測（手動テンプレ）
-※ 自動化は Task-06 で Playwright スクリプトを追加予定。
 
 1. `uv run python app.py` でアプリを起動
 2. バックエンドを「ローカルAI」に切り替え

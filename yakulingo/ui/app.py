@@ -9016,6 +9016,7 @@ class YakuLingoApp:
             btn_props = (
                 "flat no-caps dense disable" if disabled else "flat no-caps dense"
             )
+            btn_props += ' data-testid="backend-toggle"'
             with ui.row().classes("w-full justify-center"):
                 with ui.element("div").classes("segmented-btn-container"):
                     selected_backend = self.state.translation_backend
@@ -9056,7 +9057,7 @@ class YakuLingoApp:
                         ui.element("div")
                         .classes("status-indicator ready")
                         .props(
-                            f'role="status" aria-live="polite" aria-label="{tooltip}"'
+                            f'role="status" aria-live="polite" aria-label="{tooltip}" data-testid="local-ai-status" data-state="ready"'
                         ) as status_indicator
                     ):
                         ui.element("div").classes("status-dot ready").props(
@@ -9074,7 +9075,7 @@ class YakuLingoApp:
                         ui.element("div")
                         .classes("status-indicator connecting")
                         .props(
-                            f'role="status" aria-live="polite" aria-label="{tooltip}"'
+                            f'role="status" aria-live="polite" aria-label="{tooltip}" data-testid="local-ai-status" data-state="starting"'
                         ) as status_indicator
                     ):
                         ui.element("div").classes("status-dot connecting").props(
@@ -9094,7 +9095,7 @@ class YakuLingoApp:
                         ui.element("div")
                         .classes("status-indicator error")
                         .props(
-                            f'role="status" aria-live="polite" aria-label="{tooltip}"'
+                            f'role="status" aria-live="polite" aria-label="{tooltip}" data-testid="local-ai-status" data-state="not_installed"'
                         ) as status_indicator
                     ):
                         ui.element("div").classes("status-dot error").props(
@@ -9128,7 +9129,7 @@ class YakuLingoApp:
                     ui.element("div")
                     .classes("status-indicator error")
                     .props(
-                        f'role="status" aria-live="polite" aria-label="{tooltip}"'
+                        f'role="status" aria-live="polite" aria-label="{tooltip}" data-testid="local-ai-status" data-state="error"'
                     ) as status_indicator
                 ):
                     ui.element("div").classes("status-dot error").props(

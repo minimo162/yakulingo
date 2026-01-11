@@ -182,7 +182,7 @@ def _create_textarea(
 
     # Note: Padding is controlled via CSS variables (--textarea-padding-block/inline)
     classes = f"w-full {extra_classes}".strip()
-    props = 'borderless aria-label="翻訳するテキスト"'
+    props = 'borderless aria-label="翻訳するテキスト" data-testid="text-input"'
     if autogrow:
         props += " autogrow"
 
@@ -723,7 +723,7 @@ def _create_large_input_panel(
                                         "translate-btn feedback-anchor cta-breathe"
                                     )
                                     .props(
-                                        'no-caps aria-label="翻訳を実行" data-feedback="翻訳を実行"'
+                                        'no-caps aria-label="翻訳を実行" data-feedback="翻訳を実行" data-testid="translate-button"'
                                     )
                                 )
                                 btn.tooltip("翻訳を実行")
@@ -944,7 +944,18 @@ def _render_translation_status(
     else:
         is_to_english = detected_language == "日本語"
 
-    with ui.element("div").classes("translation-status-section"):
+    if back_translating:
+        status_state = "back_translating"
+    elif translating:
+        status_state = "translating"
+    else:
+        status_state = "done"
+
+    with (
+        ui.element("div")
+        .classes("translation-status-section")
+        .props(f'data-testid="translation-status" data-state="{status_state}"')
+    ):
         with ui.element("div").classes("avatar-status-row"):
             with ui.column().classes("gap-0 status-text"):
                 with ui.row().classes("items-center gap-2"):

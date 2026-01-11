@@ -1,5 +1,5 @@
 ﻿{
-    "generated_at":  "2026-01-11T16:08:56.9260578+09:00",
+    "generated_at":  "2026-01-11T16:16:55.4880151+09:00",
     "llama_cpp":  {
                       "repo":  "ggerganov/llama.cpp",
                       "release_tag":  "b7689",
@@ -11,7 +11,7 @@
                   "repo":  "unsloth/LFM2.5-1.2B-Instruct-GGUF",
                   "file":  "LFM2.5-1.2B-Instruct-UD-Q4_K_XL.gguf",
                   "download_url":  "https://huggingface.co/unsloth/LFM2.5-1.2B-Instruct-GGUF/resolve/main/LFM2.5-1.2B-Instruct-UD-Q4_K_XL.gguf",
-                  "sha256":  null,
+                  "sha256":  "856AEEE6D85AC684B1DB8DEE48795B44FC06731ECDA03AEE36ECE682413A9B9A",
                   "skipped":  false
               }
 }

@@ -10010,10 +10010,11 @@ class YakuLingoApp:
     def _is_local_streaming_preview_enabled(self) -> bool:
         if self.state.translation_backend != TranslationBackend.LOCAL:
             return True
-        value = os.environ.get(
-            "YAKULINGO_DISABLE_LOCAL_STREAMING_PREVIEW", ""
-        ).strip().lower()
-        return value not in ("1", "true", "yes", "on")
+        value = os.environ.get("YAKULINGO_DISABLE_LOCAL_STREAMING_PREVIEW")
+        if value is None or value.strip() == "":
+            return False
+        value = value.strip().lower()
+        return value in ("0", "false", "no", "off")
 
     def _normalize_streaming_preview_text(self, text: Optional[str]) -> Optional[str]:
         if text is None:

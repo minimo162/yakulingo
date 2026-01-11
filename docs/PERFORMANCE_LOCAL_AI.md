@@ -84,6 +84,7 @@ uv run --extra test python tools/e2e_local_ai_speed.py
   - 追加情報: `translation_seconds_source`, `translation_elapsed_logged`, `translation_prep_seconds_logged`, `local_ai_warmup_seconds_logged`, `streaming_preview_disabled`, `app_log_path`
 - 主要オプション: `--url`, `--timeout`, `--startup-timeout`, `--translation-timeout`, `--text`, `--headed`, `--out`, `--disable-streaming-preview`
 - ストリーミング表示を無効化: `--disable-streaming-preview`（ローカルAIの途中表示更新を抑止）
+- ローカルAIの既定はストリーミング表示OFF（有効化する場合は `YAKULINGO_DISABLE_LOCAL_STREAMING_PREVIEW=0`）
 - ログ出力: `--app-log` でアプリのstdout/stderrを保存（未指定なら `.tmp/` に自動保存）
 - 事前条件: `local_ai/` が利用可能、PlaywrightのChromiumが導入済み
 - ケース運用では `--out` / `--app-log` を `/work/<case-id>/.tmp/` 配下に指定する

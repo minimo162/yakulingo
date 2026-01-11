@@ -9008,7 +9008,7 @@ class YakuLingoApp:
         # Status indicator (Copilot readiness: user can start translation safely)
         @ui.refreshable
         def header_status():
-            # Backend selector (Copilot / Local AI)
+            # Backend selector (Copilot ON/OFF)
             copilot_enabled = getattr(self.settings, "copilot_enabled", True)
             disabled = self.state.is_translating()
             btn_props = (
@@ -9016,15 +9016,12 @@ class YakuLingoApp:
             )
             with ui.row().classes("w-full justify-center"):
                 with ui.element("div").classes("segmented-btn-container"):
-                    local_classes = "segmented-btn"
                     selected_backend = self.state.translation_backend
                     if (
                         not copilot_enabled
                         and selected_backend == TranslationBackend.COPILOT
                     ):
                         selected_backend = TranslationBackend.LOCAL
-                    if selected_backend == TranslationBackend.LOCAL:
-                        local_classes += " segmented-btn-selected"
                     if copilot_enabled:
                         copilot_classes = "segmented-btn"
                         if selected_backend == TranslationBackend.COPILOT:
@@ -9032,20 +9029,13 @@ class YakuLingoApp:
                         ui.button(
                             "Copilot",
                             on_click=lambda: self._set_translation_backend(
-                                TranslationBackend.COPILOT
+                                TranslationBackend.LOCAL
+                                if selected_backend == TranslationBackend.COPILOT
+                                else TranslationBackend.COPILOT
                             ),
                         ).classes(copilot_classes).props(btn_props).tooltip(
                             "M365 Copilot（Edge）で翻訳"
                         )
-
-                    ui.button(
-                        "ローカルAI",
-                        on_click=lambda: self._set_translation_backend(
-                            TranslationBackend.LOCAL
-                        ),
-                    ).classes(local_classes).props(btn_props).tooltip(
-                        "llama-server（127.0.0.1）で翻訳"
-                    )
 
             # Local AI status
             if self.state.translation_backend == TranslationBackend.LOCAL:

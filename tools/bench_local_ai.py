@@ -1,14 +1,20 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 def _load_text(path: Path) -> str:
@@ -60,6 +66,67 @@ def _translate_compare(
     return result, elapsed
 
 
+def _apply_overrides(settings: Any, args: argparse.Namespace) -> dict[str, Any]:
+    overrides: dict[str, Any] = {}
+
+    def _set(name: str, value: Any) -> None:
+        if value is None:
+            return
+        setattr(settings, name, value)
+        overrides[name] = value
+
+    if args.max_tokens is not None:
+        if args.max_tokens <= 0:
+            _set("local_ai_max_tokens", None)
+        else:
+            _set("local_ai_max_tokens", int(args.max_tokens))
+
+    if args.ctx_size is not None:
+        _set("local_ai_ctx_size", int(args.ctx_size))
+    if args.threads is not None:
+        _set("local_ai_threads", int(args.threads))
+    if args.batch_size is not None:
+        _set(
+            "local_ai_batch_size",
+            None if args.batch_size <= 0 else int(args.batch_size),
+        )
+    if args.ubatch_size is not None:
+        _set(
+            "local_ai_ubatch_size",
+            None if args.ubatch_size <= 0 else int(args.ubatch_size),
+        )
+    if args.max_chars_per_batch is not None:
+        _set("local_ai_max_chars_per_batch", int(args.max_chars_per_batch))
+    if args.max_chars_per_batch_file is not None:
+        _set("local_ai_max_chars_per_batch_file", int(args.max_chars_per_batch_file))
+    if args.model_path is not None:
+        _set("local_ai_model_path", str(args.model_path))
+    if args.server_dir is not None:
+        _set("local_ai_server_dir", str(args.server_dir))
+    if args.host is not None:
+        _set("local_ai_host", str(args.host))
+    if args.port_base is not None:
+        _set("local_ai_port_base", int(args.port_base))
+    if args.port_max is not None:
+        _set("local_ai_port_max", int(args.port_max))
+    if args.temperature is not None:
+        _set("local_ai_temperature", float(args.temperature))
+
+    if hasattr(settings, "_validate"):
+        settings._validate()
+
+    return overrides
+
+
+def _emit_json(payload: dict[str, Any], *, to_stdout: bool, out_path: Path | None) -> None:
+    text = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    if out_path is not None:
+        out_path.write_text(text, encoding="utf-8")
+        print(f"json_out: {out_path}")
+    if to_stdout:
+        print(text)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Local AI benchmark (single or style-compare)"
@@ -78,6 +145,20 @@ def main() -> int:
     parser.add_argument("--reference", action="append", type=Path, default=[])
     parser.add_argument("--warmup-runs", type=int, default=1)
     parser.add_argument("--max-tokens", type=int, default=None)
+    parser.add_argument("--ctx-size", type=int, default=None)
+    parser.add_argument("--threads", type=int, default=None)
+    parser.add_argument("--batch-size", type=int, default=None)
+    parser.add_argument("--ubatch-size", type=int, default=None)
+    parser.add_argument("--max-chars-per-batch", type=int, default=None)
+    parser.add_argument("--max-chars-per-batch-file", type=int, default=None)
+    parser.add_argument("--model-path", type=Path, default=None)
+    parser.add_argument("--server-dir", type=Path, default=None)
+    parser.add_argument("--host", type=str, default=None)
+    parser.add_argument("--port-base", type=int, default=None)
+    parser.add_argument("--port-max", type=int, default=None)
+    parser.add_argument("--temperature", type=float, default=None)
+    parser.add_argument("--json", action="store_true", help="Output JSON to stdout")
+    parser.add_argument("--out", type=Path, default=None, help="Write JSON to file")
 
     args = parser.parse_args()
 
@@ -125,11 +206,7 @@ def main() -> int:
 
     settings = AppSettings()
     settings.translation_backend = "local"
-    if args.max_tokens is not None:
-        if args.max_tokens <= 0:
-            settings.local_ai_max_tokens = None
-        else:
-            settings.local_ai_max_tokens = int(args.max_tokens)
+    overrides = _apply_overrides(settings, args)
     prompts_dir = repo_root / "prompts"
     if args.compare:
         from yakulingo.services.copilot_handler import CopilotHandler
@@ -165,14 +242,26 @@ def main() -> int:
     else:
         warmup_runs = max(0, int(args.warmup_runs))
 
+    warmup_seconds: list[float] = []
+
+    started_at = _utc_now_iso()
     print("benchmark: local-ai")
     print(f"mode: {args.mode}")
+    print(f"started_at: {started_at}")
     print(f"input_chars: {len(text)}")
     print(f"style: {args.style}")
     print(f"compare: {bool(args.compare)}")
     print(f"with_glossary: {bool(args.with_glossary)}")
     print(f"reference_files: {len(reference_files)}")
     print(f"effective_local_ai_ctx_size: {settings.local_ai_ctx_size}")
+    print(f"effective_local_ai_threads: {settings.local_ai_threads}")
+    print(f"effective_local_ai_batch_size: {settings.local_ai_batch_size}")
+    print(f"effective_local_ai_ubatch_size: {settings.local_ai_ubatch_size}")
+    print(f"effective_local_ai_max_chars_per_batch: {settings.local_ai_max_chars_per_batch}")
+    print(
+        "effective_local_ai_max_chars_per_batch_file: "
+        f"{settings.local_ai_max_chars_per_batch_file}"
+    )
     print(f"effective_local_ai_max_tokens: {settings.local_ai_max_tokens}")
     if not args.compare:
         print(f"prompt_chars: {prompt_chars}")
@@ -183,6 +272,7 @@ def main() -> int:
             _, warmup_elapsed = _translate_compare(service, text, reference_files)
         else:
             _, warmup_elapsed = _translate_once(client, text, prompt)
+        warmup_seconds.append(warmup_elapsed)
         print(f"warmup_seconds[{i + 1}]: {warmup_elapsed:.2f}")
 
     if args.compare:
@@ -201,6 +291,38 @@ def main() -> int:
         print(f"translation_seconds: {elapsed:.2f}")
         print(f"options: {len(options)}")
         print(f"output_chars: {output_chars}")
+        payload = {
+            "benchmark": "local-ai",
+            "mode": args.mode,
+            "compare": True,
+            "style": args.style,
+            "started_at": started_at,
+            "input_path": str(input_path),
+            "input_chars": len(text),
+            "with_glossary": bool(args.with_glossary),
+            "reference_files": [str(p) for p in reference_files],
+            "overrides": overrides,
+            "settings": {
+                "local_ai_model_path": settings.local_ai_model_path,
+                "local_ai_server_dir": settings.local_ai_server_dir,
+                "local_ai_host": settings.local_ai_host,
+                "local_ai_port_base": settings.local_ai_port_base,
+                "local_ai_port_max": settings.local_ai_port_max,
+                "local_ai_ctx_size": settings.local_ai_ctx_size,
+                "local_ai_threads": settings.local_ai_threads,
+                "local_ai_temperature": settings.local_ai_temperature,
+                "local_ai_max_tokens": settings.local_ai_max_tokens,
+                "local_ai_batch_size": settings.local_ai_batch_size,
+                "local_ai_ubatch_size": settings.local_ai_ubatch_size,
+                "local_ai_max_chars_per_batch": settings.local_ai_max_chars_per_batch,
+                "local_ai_max_chars_per_batch_file": settings.local_ai_max_chars_per_batch_file,
+            },
+            "warmup_seconds": warmup_seconds,
+            "translation_seconds": elapsed,
+            "options": len(options),
+            "output_chars": output_chars,
+            "error": error,
+        }
     else:
         output, elapsed = _translate_once(client, text, prompt)
         if not output.strip():
@@ -210,6 +332,42 @@ def main() -> int:
         print(f"translation_seconds: {elapsed:.2f}")
         print(f"total_seconds: {total_seconds:.2f}")
         print(f"output_chars: {len(output)}")
+        payload = {
+            "benchmark": "local-ai",
+            "mode": args.mode,
+            "compare": False,
+            "style": args.style,
+            "started_at": started_at,
+            "input_path": str(input_path),
+            "input_chars": len(text),
+            "with_glossary": bool(args.with_glossary),
+            "reference_files": [str(p) for p in reference_files],
+            "overrides": overrides,
+            "settings": {
+                "local_ai_model_path": settings.local_ai_model_path,
+                "local_ai_server_dir": settings.local_ai_server_dir,
+                "local_ai_host": settings.local_ai_host,
+                "local_ai_port_base": settings.local_ai_port_base,
+                "local_ai_port_max": settings.local_ai_port_max,
+                "local_ai_ctx_size": settings.local_ai_ctx_size,
+                "local_ai_threads": settings.local_ai_threads,
+                "local_ai_temperature": settings.local_ai_temperature,
+                "local_ai_max_tokens": settings.local_ai_max_tokens,
+                "local_ai_batch_size": settings.local_ai_batch_size,
+                "local_ai_ubatch_size": settings.local_ai_ubatch_size,
+                "local_ai_max_chars_per_batch": settings.local_ai_max_chars_per_batch,
+                "local_ai_max_chars_per_batch_file": settings.local_ai_max_chars_per_batch_file,
+            },
+            "prompt_chars": prompt_chars,
+            "prompt_build_seconds": prompt_build_seconds,
+            "warmup_seconds": warmup_seconds,
+            "translation_seconds": elapsed,
+            "total_seconds": total_seconds,
+            "output_chars": len(output),
+        }
+
+    if args.json or args.out:
+        _emit_json(payload, to_stdout=bool(args.json), out_path=args.out)
     return 0
 
 

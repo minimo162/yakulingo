@@ -268,6 +268,40 @@ class LocalLlamaServerManager:
     def get_runtime(self) -> Optional[LocalAIServerRuntime]:
         return self._runtime
 
+    def _can_fast_path(
+        self, settings: AppSettings, model_path: Optional[Path]
+    ) -> bool:
+        runtime = self._runtime
+        proc = self._process
+        if runtime is None or proc is None:
+            return False
+        if proc.poll() is not None:
+            return False
+        if model_path is None:
+            return False
+        try:
+            if runtime.model_path.resolve() != model_path.resolve():
+                return False
+        except OSError:
+            return False
+
+        server_dir = self._resolve_server_dir(settings)
+        try:
+            exe_path = runtime.server_exe_path.resolve()
+            server_dir = server_dir.resolve()
+        except OSError:
+            return False
+        if not exe_path.is_relative_to(server_dir):
+            return False
+
+        port_base = int(settings.local_ai_port_base)
+        port_max = int(settings.local_ai_port_max)
+        if runtime.port < port_base or runtime.port > port_max:
+            return False
+        if runtime.host != "127.0.0.1":
+            return False
+        return True
+
     def ensure_ready(self, settings: AppSettings) -> LocalAIServerRuntime:
         with self._lock:
             runtime = self._ensure_ready_locked(settings)
@@ -276,6 +310,10 @@ class LocalLlamaServerManager:
 
     def _ensure_ready_locked(self, settings: AppSettings) -> LocalAIServerRuntime:
         model_path = self._resolve_model_path(settings)
+        if self._can_fast_path(settings, model_path):
+            runtime = self._runtime
+            assert runtime is not None
+            return runtime
         server_dir = self._resolve_server_dir(settings)
         bundled_server_dir = _app_base_dir() / "local_ai" / "llama_cpp"
 

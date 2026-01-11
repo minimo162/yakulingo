@@ -228,6 +228,155 @@ def test_ensure_ready_falls_back_to_bundled_server_dir_when_custom_invalid(
     assert seen_dirs == [tmp_path / "custom" / "invalid", bundled_dir]
 
 
+def test_ensure_ready_fast_path_uses_running_process(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"dummy")
+
+    server_dir = tmp_path / "llama_cpp"
+    server_dir.mkdir(parents=True)
+    exe_path = server_dir / "llama-server.exe"
+    exe_path.write_bytes(b"exe")
+
+    settings = AppSettings(
+        local_ai_model_path=str(model_path),
+        local_ai_server_dir=str(server_dir),
+        local_ai_port_base=4891,
+        local_ai_port_max=4893,
+    )
+
+    manager = lls.LocalLlamaServerManager()
+    manager._runtime = lls.LocalAIServerRuntime(
+        host="127.0.0.1",
+        port=4891,
+        base_url="http://127.0.0.1:4891",
+        model_id=None,
+        server_exe_path=exe_path,
+        server_variant="direct",
+        model_path=model_path,
+    )
+
+    class DummyProcess:
+        pid = 12345
+
+        def poll(self):
+            return None
+
+    manager._process = DummyProcess()
+
+    monkeypatch.setattr(
+        manager,
+        "_try_reuse",
+        lambda state, **kwargs: (_ for _ in ()).throw(
+            AssertionError("reuse should not run")
+        ),
+    )
+    monkeypatch.setattr(
+        manager,
+        "_find_free_port",
+        lambda host, port_base, port_max: (_ for _ in ()).throw(
+            AssertionError("port scan should not run")
+        ),
+    )
+    monkeypatch.setattr(
+        manager,
+        "_start_new_server",
+        lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("start should not run")
+        ),
+    )
+
+    runtime = manager.ensure_ready(settings)
+
+    assert runtime == manager._runtime
+
+
+def test_ensure_ready_fast_path_skips_when_model_changes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    model_path = tmp_path / "model_old.gguf"
+    model_path.write_bytes(b"old")
+    new_model_path = tmp_path / "model_new.gguf"
+    new_model_path.write_bytes(b"new")
+
+    server_dir = tmp_path / "llama_cpp"
+    server_dir.mkdir(parents=True)
+    exe_path = server_dir / "llama-server.exe"
+    exe_path.write_bytes(b"exe")
+
+    settings = AppSettings(
+        local_ai_model_path=str(new_model_path),
+        local_ai_server_dir=str(server_dir),
+        local_ai_port_base=4891,
+        local_ai_port_max=4893,
+    )
+
+    manager = lls.LocalLlamaServerManager()
+    manager._runtime = lls.LocalAIServerRuntime(
+        host="127.0.0.1",
+        port=4891,
+        base_url="http://127.0.0.1:4891",
+        model_id=None,
+        server_exe_path=exe_path,
+        server_variant="direct",
+        model_path=model_path,
+    )
+
+    class DummyProcess:
+        pid = 12345
+
+        def poll(self):
+            return None
+
+    manager._process = DummyProcess()
+
+    monkeypatch.setattr(
+        lls.LocalLlamaServerManager,
+        "get_state_path",
+        staticmethod(lambda: tmp_path / "state.json"),
+    )
+    monkeypatch.setattr(
+        lls.LocalLlamaServerManager,
+        "get_log_path",
+        staticmethod(lambda: tmp_path / "local_ai_server.log"),
+    )
+    monkeypatch.setattr(manager, "_resolve_server_exe", lambda _: (exe_path, "direct"))
+
+    calls: list[str] = []
+
+    def fake_try_reuse(state: dict, **kwargs):
+        calls.append("reuse")
+        return None
+
+    def fake_find_free_port(host: str, port_base: int, port_max: int):
+        calls.append("find_port")
+        return port_base
+
+    def fake_start_new_server(**kwargs):
+        calls.append("start")
+        host = kwargs["host"]
+        port = kwargs["port"]
+        return lls.LocalAIServerRuntime(
+            host=host,
+            port=port,
+            base_url=f"http://{host}:{port}",
+            model_id=None,
+            server_exe_path=kwargs["server_exe_path"],
+            server_variant=str(kwargs["server_variant"]),
+            model_path=kwargs["model_path"],
+        )
+
+    monkeypatch.setattr(manager, "_try_reuse", fake_try_reuse)
+    monkeypatch.setattr(manager, "_find_free_port", fake_find_free_port)
+    monkeypatch.setattr(manager, "_start_new_server", fake_start_new_server)
+
+    runtime = manager.ensure_ready(settings)
+
+    assert calls == ["reuse", "find_port", "start"]
+    assert runtime.model_path == new_model_path
+
+
 def test_build_server_args_adds_batch_flags_when_available(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -518,6 +518,13 @@ class LocalLlamaServerManager:
             _app_base_dir()
             / "local_ai"
             / "models"
+            / "Llama-3.2-3B-Instruct-UD-Q4_K_XL.gguf"
+        )
+        # Compatibility fallback for installs that still have the previous model.
+        candidates.append(
+            _app_base_dir()
+            / "local_ai"
+            / "models"
             / "LFM2.5-1.2B-Instruct-UD-Q4_K_XL.gguf"
         )
         candidates.append(

@@ -1382,6 +1382,7 @@ Reference Files
   - `prompts/local_text_translate_to_en_3style_json.txt`（JP→EN: standard/concise/minimal を1リクエストで返す）
   - `prompts/local_text_translate_to_en_single_json.txt`（JP→EN: 単発、style指定）
   - `prompts/local_text_translate_to_jp_json.txt`（EN→JP: translation + explanation）
+  - JP→EN は速度優先のため explanation を最小化（1文以内、差分が弱い場合は空文字）
 - バッチ
   - `prompts/local_batch_translate_to_en_json.txt`（JP→EN）
   - `prompts/local_batch_translate_to_jp_json.txt`（EN→JP）

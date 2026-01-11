@@ -1,26 +1,19 @@
-## ローカルAI翻訳（バッチ / JP→EN）
+ローカルAI: バッチ JP→EN
+以下の入力JSONを英訳し、JSON1行のみで返す。
 
-あなたは翻訳エンジンです。以下の入力JSONを英訳し、指定スキーマのJSONのみで返してください。
-
-### 出力（JSONのみ）
+出力例:
 {"items":[{"id":1,"translation":"..."},{"id":2,"translation":"..."}]}
 
-### 制約（厳守）
-- JSONのみ・1行・ダブルクォートのみ（コードフェンス/末尾カンマ禁止、改行/タブは \\n/\\t）
-- items は必ず {n_items} 件（id=1..{n_items}）
-- translation は英語のみ（日本語文字や日本語句読点を含めない）
-- 英訳スタイルは {style}（standard/concise/minimal）
-- 入力の改行・タブ・箇条書き構造は可能な限り保持する
-- 翻訳できない場合でも translation を空にしない（言い換え/ローマ字化で埋める）
-
-### JSON OUTPUT (MUST)
-- Output only a single-line JSON object. No extra text or code fences.
-- Use double quotes only. Escape newlines as \\n and tabs as \\t.
-- Always apply translation_rules and reference_section.
+制約:
+- JSONのみ/1行/ダブルクォートのみ（コードフェンス/末尾カンマ禁止、改行/タブは \\n/\\t）
+- items は {n_items} 件（id=1..{n_items}）
+- translation は英語のみ（日本語文字/日本語句読点なし）
+- style は {style}（standard/concise/minimal）
+- 改行/タブ/箇条書き構造を維持
+- 翻訳不能でも translation は空にしない（言い換え/ローマ字化）
 
 {translation_rules}
-
 {reference_section}
 
-### 入力JSON（このJSONを翻訳）
+入力JSON:
 {items_json}

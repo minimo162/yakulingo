@@ -1,30 +1,24 @@
-## ローカルAI翻訳（テキスト / JP→EN / 単発）
+ローカルAI: JP→EN（単発）
+以下を英訳し、JSON1行のみで返す。
 
-あなたは翻訳エンジンです。以下の日本語テキストを英訳し、指定スキーマのJSONのみで返してください。
-
-### 出力（JSONのみ）
+出力例:
 {"output_language":"en","detected_language":"{detected_language}","style":"{style}","translation":"..."}
 
-### 制約（厳守）
-- JSONのみ・1行・ダブルクォートのみ（コードフェンス/末尾カンマ禁止、改行/タブは \\n/\\t）
-- スキーマ中の "..." は例。必ず実際の訳文に置き換える
-- translation は英語のみ（日本語文字や日本語句読点を含めない）
+制約:
+- JSONのみ/1行/ダブルクォートのみ（コードフェンス/末尾カンマ禁止、改行/タブは \\n/\\t）
+- "..." は実データに置換
+- translation は英語のみ（日本語文字/日本語句読点なし）
 - explanation は出力しない（キー自体を含めない）
-- 英訳スタイルは {style}（standard/concise/minimal）
-- 翻訳は原文より短く要点優先。改行/タブ/箇条書き構造は可能な限り保持する
+- style は {style}（standard/concise/minimal）
+- 原文より短く要点優先。改行/タブ/箇条書きを維持
+
+JSON OUTPUT (MUST)
 
 {extra_instruction}
 
-### JSON OUTPUT (MUST)
-- Output only a single-line JSON object. No extra text or code fences.
-- Use double quotes only. Escape newlines as \\n and tabs as \\t.
-- Always apply translation_rules and reference_section.
-
 {translation_rules}
-
 {numeric_hints}
-
 {reference_section}
 
-### 入力テキスト（この本文のみ翻訳）
+入力:
 {input_text}

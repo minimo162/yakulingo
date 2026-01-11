@@ -424,7 +424,36 @@ uv run python tools/bench_local_ai.py --mode warm
 uv run python tools/bench_local_ai.py --mode cold --with-glossary
 ```
 - `--mode cold` はローカルAIサーバを停止してから実行するため、他の翻訳が動いていないときに行う
-- 出力の `translation_seconds` を記録（`warm` を主指標）
+- 出力の `prompt_chars` / `prompt_build_seconds` / `translation_seconds` / `total_seconds` を記録（`warm` を主指標）
+
+**結果記録テンプレ（例）**
+```
+date:
+command:
+model_path:
+server_dir:
+settings:
+  local_ai_threads:
+  local_ai_ctx_size:
+  local_ai_batch_size:
+  local_ai_ubatch_size:
+  local_ai_max_tokens:
+  local_ai_max_chars_per_batch:
+results:
+  warm:
+    with_glossary:
+    prompt_chars:
+    prompt_build_seconds:
+    translation_seconds:
+    total_seconds:
+  cold:
+    with_glossary:
+    prompt_chars:
+    prompt_build_seconds:
+    translation_seconds:
+    total_seconds:
+notes:
+```
 
 **ログで確認する場合**
 - `~/.yakulingo/logs/startup.log` の `[TIMING] LocalAI ...` でも確認可能

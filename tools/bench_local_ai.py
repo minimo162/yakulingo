@@ -153,7 +153,10 @@ def main() -> int:
             settings=settings,
         )
         client = LocalAIClient(settings)
+        prompt_start = time.perf_counter()
         prompt = _build_prompt(local_builder, text, reference_files, args.style)
+        prompt_build_seconds = time.perf_counter() - prompt_start
+        prompt_chars = len(prompt or "")
 
     if args.mode == "cold":
         # Stop existing local AI server (if safe) before measuring cold start.
@@ -171,6 +174,9 @@ def main() -> int:
     print(f"reference_files: {len(reference_files)}")
     print(f"effective_local_ai_ctx_size: {settings.local_ai_ctx_size}")
     print(f"effective_local_ai_max_tokens: {settings.local_ai_max_tokens}")
+    if not args.compare:
+        print(f"prompt_chars: {prompt_chars}")
+        print(f"prompt_build_seconds: {prompt_build_seconds:.2f}")
 
     for i in range(warmup_runs):
         if args.compare:
@@ -200,7 +206,9 @@ def main() -> int:
         if not output.strip():
             print("WARNING: empty translation result", file=sys.stderr)
 
+        total_seconds = prompt_build_seconds + elapsed
         print(f"translation_seconds: {elapsed:.2f}")
+        print(f"total_seconds: {total_seconds:.2f}")
         print(f"output_chars: {len(output)}")
     return 0
 

@@ -4172,6 +4172,13 @@ class YakuLingoApp:
             effective_detected_language = self._resolve_effective_detected_language(
                 detected_language
             )
+            selected_style = self.settings.translation_style
+            if selected_style not in ("standard", "concise", "minimal"):
+                selected_style = DEFAULT_TEXT_STYLE
+            use_single_style = (
+                self.state.translation_backend == TranslationBackend.LOCAL
+                and effective_detected_language == "日本語"
+            )
 
             last_preview_update = 0.0
             preview_update_interval_seconds = 0.12
@@ -4192,13 +4199,22 @@ class YakuLingoApp:
                 buffer.publish({"streaming": True})
                 schedule_apply()
 
-            result = translation_service.translate_text_with_style_comparison(
-                text,
-                reference_files,
-                None,
-                effective_detected_language,
-                on_chunk,
-            )
+            if use_single_style:
+                result = translation_service.translate_text_with_options(
+                    text,
+                    reference_files,
+                    selected_style,
+                    effective_detected_language,
+                    on_chunk,
+                )
+            else:
+                result = translation_service.translate_text_with_style_comparison(
+                    text,
+                    reference_files,
+                    None,
+                    effective_detected_language,
+                    on_chunk,
+                )
             if result:
                 result.detected_language = detected_language
             buffer.publish(
@@ -4290,6 +4306,13 @@ class YakuLingoApp:
             effective_detected_language = self._resolve_effective_detected_language(
                 detected_language
             )
+            selected_style = self.settings.translation_style
+            if selected_style not in ("standard", "concise", "minimal"):
+                selected_style = DEFAULT_TEXT_STYLE
+            use_single_style = (
+                self.state.translation_backend == TranslationBackend.LOCAL
+                and effective_detected_language == "日本語"
+            )
 
             loop = asyncio.get_running_loop()
             last_preview_update = 0.0
@@ -4338,14 +4361,24 @@ class YakuLingoApp:
 
                 loop.call_soon_threadsafe(update_streaming_preview)
 
-            result = await asyncio.to_thread(
-                self.translation_service.translate_text_with_style_comparison,
-                text,
-                reference_files,
-                None,
-                effective_detected_language,
-                on_chunk,
-            )
+            if use_single_style:
+                result = await asyncio.to_thread(
+                    self.translation_service.translate_text_with_options,
+                    text,
+                    reference_files,
+                    selected_style,
+                    effective_detected_language,
+                    on_chunk,
+                )
+            else:
+                result = await asyncio.to_thread(
+                    self.translation_service.translate_text_with_style_comparison,
+                    text,
+                    reference_files,
+                    None,
+                    effective_detected_language,
+                    on_chunk,
+                )
             if result:
                 result.detected_language = detected_language
         except Exception as e:
@@ -11089,6 +11122,13 @@ class YakuLingoApp:
             effective_detected_language = self._resolve_effective_detected_language(
                 detected_language
             )
+            selected_style = self.settings.translation_style
+            if selected_style not in ("standard", "concise", "minimal"):
+                selected_style = DEFAULT_TEXT_STYLE
+            use_single_style = (
+                self.state.translation_backend == TranslationBackend.LOCAL
+                and effective_detected_language == "日本語"
+            )
 
             with client:
                 self._refresh_result_panel()
@@ -11160,15 +11200,24 @@ class YakuLingoApp:
                     ):
                         raise TranslationCancelledError
                     current_chunk_index = idx
-                    chunk_result = (
-                        self.translation_service.translate_text_with_style_comparison(
+                    if use_single_style:
+                        chunk_result = (
+                            self.translation_service.translate_text_with_options(
+                                chunk,
+                                reference_files,
+                                selected_style,
+                                effective_detected_language,
+                                on_chunk,
+                            )
+                        )
+                    else:
+                        chunk_result = self.translation_service.translate_text_with_style_comparison(
                             chunk,
                             reference_files,
                             None,
                             effective_detected_language,
                             on_chunk,
                         )
-                    )
                     chunk_results.append(chunk_result)
                 return self._merge_chunk_results(
                     chunk_results,
@@ -11338,11 +11387,19 @@ class YakuLingoApp:
 
             # Step 2: Translate with pre-detected language (skip detection in translate_text_with_options)
             style_order = ["standard", "concise", "minimal"]
-            current_style = DEFAULT_TEXT_STYLE
-            if current_style in style_order:
-                style_order = [s for s in style_order if s != current_style] + [
-                    current_style
-                ]
+            selected_style = self.settings.translation_style
+            if selected_style not in style_order:
+                selected_style = DEFAULT_TEXT_STYLE
+            use_single_style = (
+                self.state.translation_backend == TranslationBackend.LOCAL
+                and effective_detected_language == "日本語"
+            )
+            if not use_single_style:
+                current_style = DEFAULT_TEXT_STYLE
+                if current_style in style_order:
+                    style_order = [s for s in style_order if s != current_style] + [
+                        current_style
+                    ]
 
             # Streaming preview (AI chat style): update result panel with partial output as it arrives.
             loop = asyncio.get_running_loop()
@@ -11381,14 +11438,24 @@ class YakuLingoApp:
 
                 loop.call_soon_threadsafe(update_streaming_preview)
 
-            result = await asyncio.to_thread(
-                self.translation_service.translate_text_with_style_comparison,
-                source_text,
-                reference_files,
-                style_order,
-                effective_detected_language,
-                on_chunk,
-            )
+            if use_single_style:
+                result = await asyncio.to_thread(
+                    self.translation_service.translate_text_with_options,
+                    source_text,
+                    reference_files,
+                    selected_style,
+                    effective_detected_language,
+                    on_chunk,
+                )
+            else:
+                result = await asyncio.to_thread(
+                    self.translation_service.translate_text_with_style_comparison,
+                    source_text,
+                    reference_files,
+                    style_order,
+                    effective_detected_language,
+                    on_chunk,
+                )
             if result:
                 result.detected_language = detected_language
 

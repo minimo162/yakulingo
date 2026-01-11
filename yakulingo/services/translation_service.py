@@ -2056,12 +2056,13 @@ class TranslationService:
                         error_message=error_message,
                         metadata=metadata,
                     )
+                explanation = ""
                 return TextTranslationResult(
                     source_text=text,
                     source_char_count=len(text),
                     options=[
                         TranslationOption(
-                            text=translation, explanation=explanation or "", style=style
+                            text=translation, explanation=explanation, style=style
                         )
                     ],
                     output_language=output_language,

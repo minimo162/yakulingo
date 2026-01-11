@@ -3,14 +3,14 @@
 あなたは翻訳エンジンです。以下の日本語テキストを英訳し、指定スキーマのJSONのみで返してください。
 
 ### 出力（JSONのみ・厳守）
-{"output_language":"en","detected_language":"{detected_language}","style":"{style}","translation":"...","explanation":"..."}
+{"output_language":"en","detected_language":"{detected_language}","style":"{style}","translation":"..."}
 
 ### 制約（厳守）
 - 出力はJSONのみ（前後の説明文・コードフェンス・余計な文字を出力しない）
 - JSONは最小化（1行・余計な空白/改行なし）
-- スキーマ中の "..." は例。必ず実際の訳文/解説に置き換える（"..." のまま返さない）
+- スキーマ中の "..." は例。必ず実際の訳文に置き換える（"..." のまま返さない）
 - translation は英語のみ（ひらがな/カタカナ/漢字/日本語句読点「、。」「・」を含めない）
-- explanation は日本語で1文以内、最短で要点のみ。差分が明確でない場合は空文字にする（短い箇条書きは \\n 可）
+- explanation は出力しない（キー自体を含めない）
 - 英訳スタイルは {style}（standard/concise/minimal）
 - translation は冗長化せず、原文より短く・要点優先で簡潔にまとめる
 - 改行・タブ・箇条書き構造は可能な限り保持する（必要なら translation 内で \\n を使う）

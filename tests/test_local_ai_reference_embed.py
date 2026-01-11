@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from yakulingo.services.translation_service import TranslationService
 from yakulingo.ui.app import YakuLingoApp
@@ -133,6 +133,24 @@ def test_local_reference_embed_truncates_total_limit(tmp_path: Path) -> None:
     )
     assert embedded.truncated is True
     assert any("合計上限 4000 文字" in w for w in embedded.warnings)
+
+
+def test_local_reference_embed_uses_file_cache_for_text(tmp_path: Path) -> None:
+    builder = _make_builder()
+    ref_path = tmp_path / "ref.txt"
+    ref_path.write_text("Reference content", encoding="utf-8")
+
+    original_read_text = Path.read_text
+    with patch.object(Path, "read_text", autospec=True) as mock_read:
+        mock_read.side_effect = lambda self, *args, **kwargs: original_read_text(
+            self, *args, **kwargs
+        )
+        first = builder.build_reference_embed([ref_path], input_text="alpha")
+        second = builder.build_reference_embed([ref_path], input_text="beta")
+
+    assert "Reference content" in first.text
+    assert "Reference content" in second.text
+    assert mock_read.call_count == 1
 
 
 def test_local_followup_reference_embed_includes_local_reference(

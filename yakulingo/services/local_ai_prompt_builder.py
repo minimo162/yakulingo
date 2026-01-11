@@ -62,6 +62,8 @@ class LocalPromptBuilder:
             ]
         ] = None
         self._reference_lock = threading.Lock()
+        self._reference_file_cache: dict[tuple[str, int, int], tuple[str, bool]] = {}
+        self._reference_file_lock = threading.Lock()
         self._glossary_cache: dict[tuple[str, int, int], list[tuple[str, str]]] = {}
         self._glossary_lock = threading.Lock()
 
@@ -222,6 +224,59 @@ class LocalPromptBuilder:
         for raw, converted in conversions:
             lines.append(f"- {raw} -> {converted}")
         return "\n".join(lines) + "\n"
+
+    def _get_cached_reference_text(
+        self,
+        path: Path,
+        *,
+        file_key: tuple[str, int, int],
+        max_chars: int,
+    ) -> tuple[Optional[str], bool]:
+        with self._reference_file_lock:
+            cached = self._reference_file_cache.get(file_key)
+        if cached is not None:
+            return cached
+
+        try:
+            content = path.read_text(encoding="utf-8-sig", errors="replace")
+        except OSError:
+            return None, False
+
+        content = content.strip()
+        truncated = False
+        if content and len(content) > max_chars:
+            content = content[:max_chars]
+            truncated = True
+
+        with self._reference_file_lock:
+            self._reference_file_cache[file_key] = (content, truncated)
+        return content, truncated
+
+    def _get_cached_binary_reference_text(
+        self,
+        path: Path,
+        *,
+        file_key: tuple[str, int, int],
+        suffix: str,
+        max_chars: int,
+    ) -> tuple[Optional[str], bool]:
+        with self._reference_file_lock:
+            cached = self._reference_file_cache.get(file_key)
+        if cached is not None:
+            return cached
+
+        content = self._extract_binary_reference_text(
+            path,
+            suffix=suffix,
+            max_chars=max_chars,
+        )
+        if content is None:
+            return None, False
+
+        truncated = False
+        with self._reference_file_lock:
+            self._reference_file_cache[file_key] = (content, truncated)
+        return content, truncated
 
     def _load_template(self, filename: str) -> str:
         with self._template_lock:
@@ -438,28 +493,32 @@ class LocalPromptBuilder:
                     f"{source},{target}" if target else f"{source},"
                     for source, target in matched
                 )
+                was_truncated = False
             elif suffix in {".txt", ".md", ".json", ".csv"}:
-                try:
-                    content = path.read_text(encoding="utf-8-sig", errors="replace")
-                except OSError:
+                content, was_truncated = self._get_cached_reference_text(
+                    path,
+                    file_key=file_key,
+                    max_chars=max_file_chars,
+                )
+                if content is None:
                     warnings.append(f"参照ファイルを読み込めませんでした: {path.name}")
                     continue
-
-                content = content.strip()
                 if not content:
                     continue
             else:
-                content = self._extract_binary_reference_text(
+                content, was_truncated = self._get_cached_binary_reference_text(
                     path,
                     suffix=suffix,
+                    file_key=file_key,
                     max_chars=max_file_chars,
                 )
                 if not content:
                     warnings.append(f"参照ファイルを読み込めませんでした: {path.name}")
                     continue
 
-            if len(content) > max_file_chars:
-                content = content[:max_file_chars]
+            if was_truncated or len(content) > max_file_chars:
+                if len(content) > max_file_chars:
+                    content = content[:max_file_chars]
                 truncated = True
                 if not is_bundled_glossary:
                     warnings.append(

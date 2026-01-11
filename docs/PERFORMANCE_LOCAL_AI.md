@@ -81,7 +81,9 @@ uv run python tools/bench_local_ai.py --mode warm --max-tokens 0 --json
 uv run --extra test python tools/e2e_local_ai_speed.py
 ```
 - JSON出力: `app_start_seconds`, `translation_seconds`, `total_seconds`, `elapsed_badge_seconds`
-- 主要オプション: `--url`, `--timeout`, `--text`, `--headed`, `--out`
+  - 追加情報: `translation_seconds_source`, `translation_elapsed_logged`, `app_log_path`
+- 主要オプション: `--url`, `--timeout`, `--startup-timeout`, `--translation-timeout`, `--text`, `--headed`, `--out`
+- ログ出力: `--app-log` でアプリのstdout/stderrを保存（未指定なら `.tmp/` に自動保存）
 - 事前条件: `local_ai/` が利用可能、PlaywrightのChromiumが導入済み
 
 ## アプリ起動を含む計測（手動テンプレ）

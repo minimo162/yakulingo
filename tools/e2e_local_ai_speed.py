@@ -3,29 +3,56 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect, sync_playwright
 
 DEFAULT_URL = "http://127.0.0.1:8765/"
 DEFAULT_TIMEOUT_S = 300
+DEFAULT_LOG_DIR_NAME = ".tmp"
 DEFAULT_INPUT_TEXT = "This is a local AI speed test."
+_RE_TRANSLATION_COMPLETED = re.compile(
+    r"Translation \[[^\]]+\] completed in ([0-9.]+)s"
+)
+_RE_TRANSLATION_ELAPSED = re.compile(
+    r"Translation \[[^\]]+\] end_time: .*?elapsed_time: ([0-9.]+)s"
+)
 
 
 def _log(message: str) -> None:
     print(message, file=sys.stderr, flush=True)
 
 
-def _wait_for_http(url: str, timeout_s: int) -> None:
+def _is_http_ready(url: str, timeout_s: float = 1.0) -> bool:
+    try:
+        with urllib.request.urlopen(url, timeout=timeout_s) as response:
+            return response.status < 500
+    except (urllib.error.URLError, urllib.error.HTTPError):
+        return False
+
+
+def _wait_for_http(
+    url: str,
+    timeout_s: int,
+    *,
+    proc: Optional[subprocess.Popen] = None,
+    log_path: Optional[Path] = None,
+) -> None:
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
+        if proc is not None and proc.poll() is not None:
+            tail = _read_log_tail(log_path) if log_path else ""
+            raise RuntimeError(
+                f"App exited before HTTP was ready (code={proc.returncode}).\n{tail}"
+            )
         try:
             with urllib.request.urlopen(url, timeout=2) as response:
                 if response.status < 500:
@@ -33,7 +60,10 @@ def _wait_for_http(url: str, timeout_s: int) -> None:
         except (urllib.error.URLError, urllib.error.HTTPError):
             pass
         time.sleep(0.5)
-    raise TimeoutError(f"Server did not respond within {timeout_s}s: {url}")
+    tail = _read_log_tail(log_path) if log_path else ""
+    raise TimeoutError(
+        f"Server did not respond within {timeout_s}s: {url}\n{tail}"
+    )
 
 
 def _load_default_text(repo_root: Path) -> str:
@@ -48,7 +78,13 @@ def _load_default_text(repo_root: Path) -> str:
     return DEFAULT_INPUT_TEXT
 
 
-def _start_app(repo_root: Path, env: dict[str, str]) -> subprocess.Popen:
+def _start_app(
+    repo_root: Path,
+    env: dict[str, str],
+    *,
+    stdout,
+    stderr,
+) -> subprocess.Popen:
     cmd = [sys.executable, "-u", "app.py"]
     creationflags = 0
     if os.name == "nt":
@@ -57,8 +93,8 @@ def _start_app(repo_root: Path, env: dict[str, str]) -> subprocess.Popen:
         cmd,
         cwd=str(repo_root),
         env=env,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=stdout,
+        stderr=stderr,
         creationflags=creationflags,
     )
 
@@ -76,27 +112,95 @@ def _stop_app(proc: subprocess.Popen, timeout_s: int = 15) -> None:
 def _extract_elapsed_seconds(text: str | None) -> float | None:
     if not text:
         return None
-    cleaned = text.strip().replace("秒", "").strip()
+    match = re.search(r"([0-9]+(?:\.[0-9]+)?)", text)
+    if not match:
+        return None
     try:
-        return float(cleaned)
+        return float(match.group(1))
     except ValueError:
         return None
+
+
+def _default_log_path(repo_root: Path) -> Path:
+    log_dir = repo_root / DEFAULT_LOG_DIR_NAME
+    log_dir.mkdir(parents=True, exist_ok=True)
+    stamp = time.strftime("%Y%m%d_%H%M%S")
+    return log_dir / f"e2e_local_ai_app_{stamp}.log"
+
+
+def _read_log_tail(
+    path: Optional[Path], max_bytes: int = 8192, max_lines: int = 40
+) -> str:
+    if path is None:
+        return ""
+    try:
+        data = path.read_bytes()
+    except FileNotFoundError:
+        return ""
+    if not data:
+        return ""
+    tail = data[-max_bytes:]
+    text = tail.decode("utf-8", errors="replace")
+    lines = text.splitlines()
+    if len(lines) > max_lines:
+        lines = lines[-max_lines:]
+    return _sanitize_text_for_console("\n".join(lines).strip())
+
+
+def _sanitize_text_for_console(text: str) -> str:
+    try:
+        text.encode("cp932")
+        return text
+    except UnicodeEncodeError:
+        return text.encode("cp932", errors="replace").decode("cp932")
+
+
+def _safe_print(text: str) -> None:
+    try:
+        print(text)
+    except UnicodeEncodeError:
+        sys.stdout.buffer.write(text.encode("utf-8", errors="replace") + b"\n")
+
+
+def _parse_translation_elapsed_from_log(path: Optional[Path]) -> Optional[float]:
+    text = _read_log_tail(path)
+    if not text:
+        return None
+    matches = _RE_TRANSLATION_COMPLETED.findall(text)
+    if matches:
+        try:
+            return float(matches[-1])
+        except ValueError:
+            return None
+    matches = _RE_TRANSLATION_ELAPSED.findall(text)
+    if matches:
+        try:
+            return float(matches[-1])
+        except ValueError:
+            return None
+    return None
 
 
 def _run_e2e(
     *,
     url: str,
     input_text: str,
-    timeout_s: int,
+    startup_timeout_s: int,
+    translation_timeout_s: int,
+    app_log_path: Optional[Path] = None,
     headless: bool,
 ) -> dict[str, Any]:
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=headless)
         try:
             page = browser.new_page()
-            page.goto(url, wait_until="domcontentloaded")
+            page.goto(
+                url,
+                wait_until="domcontentloaded",
+                timeout=startup_timeout_s * 1000,
+            )
             page.wait_for_selector(
-                '[data-testid="text-input"]', timeout=timeout_s * 1000
+                '[data-testid="text-input"]', timeout=startup_timeout_s * 1000
             )
 
             backend_toggle = page.locator('[data-testid="backend-toggle"]')
@@ -108,25 +212,48 @@ def _run_e2e(
                     )
                 backend_toggle.first.click()
 
-            local_status.wait_for(timeout=timeout_s * 1000)
+            local_status.wait_for(timeout=startup_timeout_s * 1000)
             try:
                 ready_status = page.locator(
                     '[data-testid="local-ai-status"][data-state="ready"]'
                 )
-                ready_status.wait_for(timeout=timeout_s * 1000)
+                ready_status.wait_for(timeout=startup_timeout_s * 1000)
             except PlaywrightTimeoutError as exc:
                 status_state = (
-                    local_status.get_attribute("data-state") if local_status.count() else ""
+                    local_status.get_attribute("data-state")
+                    if local_status.count()
+                    else ""
                 )
-                raise RuntimeError(f"Local AI not ready (state={status_state})") from exc
+                status_text = local_status.inner_text() if local_status.count() else ""
+                raise RuntimeError(
+                    f"Local AI not ready (state={status_state} text={status_text})"
+                ) from exc
 
             page.get_by_test_id("text-input").fill(input_text)
             t_translate_start = time.perf_counter()
             page.get_by_test_id("translate-button").click()
-            status = page.locator(
-                '[data-testid="translation-status"][data-state="done"]'
-            )
-            status.wait_for(timeout=timeout_s * 1000)
+            status = page.get_by_test_id("translation-status")
+            translation_seconds_source = "ui"
+            translation_elapsed_logged = None
+            status_state = ""
+            deadline = time.monotonic() + translation_timeout_s
+            while time.monotonic() < deadline:
+                if status.count():
+                    status_state = status.get_attribute("data-state") or ""
+                    if status_state == "done":
+                        break
+                translation_elapsed_logged = _parse_translation_elapsed_from_log(
+                    app_log_path
+                )
+                if translation_elapsed_logged is not None:
+                    translation_seconds_source = "log"
+                    break
+                time.sleep(0.5)
+            else:
+                status_text = status.inner_text() if status.count() else ""
+                raise RuntimeError(
+                    f"Translation did not complete (state={status_state} text={status_text})"
+                )
             t_translate_done = time.perf_counter()
 
             elapsed_badge = None
@@ -138,10 +265,14 @@ def _run_e2e(
         finally:
             browser.close()
 
-    return {
+    result: dict[str, Any] = {
         "translation_seconds": t_translate_done - t_translate_start,
         "elapsed_badge_seconds": elapsed_badge,
+        "translation_seconds_source": translation_seconds_source,
     }
+    if translation_elapsed_logged is not None:
+        result["translation_elapsed_logged"] = translation_elapsed_logged
+    return result
 
 
 def main() -> int:
@@ -154,6 +285,18 @@ def main() -> int:
         type=int,
         default=DEFAULT_TIMEOUT_S,
         help="Timeout seconds for startup and translation",
+    )
+    parser.add_argument(
+        "--startup-timeout",
+        type=int,
+        default=None,
+        help="Timeout seconds for app startup and Local AI readiness",
+    )
+    parser.add_argument(
+        "--translation-timeout",
+        type=int,
+        default=None,
+        help="Timeout seconds for translation completion",
     )
     parser.add_argument(
         "--text",
@@ -170,6 +313,16 @@ def main() -> int:
         default=None,
         help="Write JSON result to file",
     )
+    parser.add_argument(
+        "--app-log",
+        default=None,
+        help="Write app stdout/stderr to this log file",
+    )
+    parser.add_argument(
+        "--keep-app",
+        action="store_true",
+        help="Do not terminate the app process after measurement",
+    )
     args = parser.parse_args()
 
     repo_root = Path(__file__).resolve().parent.parent
@@ -178,45 +331,97 @@ def main() -> int:
     env.setdefault("YAKULINGO_RESIDENT_UI_MODE", "browser")
     env.setdefault("YAKULINGO_LAUNCH_SOURCE", "e2e_local_ai_speed")
 
+    startup_timeout_s = args.startup_timeout or args.timeout
+    translation_timeout_s = args.translation_timeout or args.timeout
     input_text = args.text if args.text is not None else _load_default_text(repo_root)
 
     t0 = time.perf_counter()
     proc: subprocess.Popen | None = None
+    log_fp = None
+    log_path = Path(args.app_log) if args.app_log else _default_log_path(repo_root)
+    stage = "init"
     result: dict[str, Any] = {"ok": False}
+    return_code = 1
     try:
+        stage = "precheck"
+        if _is_http_ready(args.url):
+            raise RuntimeError(f"App already running on {args.url}")
         _log("Starting app...")
-        proc = _start_app(repo_root, env)
-        _wait_for_http(args.url, args.timeout)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_fp = open(log_path, "wb")
+        stage = "start_app"
+        proc = _start_app(repo_root, env, stdout=log_fp, stderr=log_fp)
+        stage = "wait_http"
+        _wait_for_http(
+            args.url,
+            startup_timeout_s,
+            proc=proc,
+            log_path=log_path,
+        )
         t_ready = time.perf_counter()
+        stage = "run_e2e"
         metrics = _run_e2e(
             url=args.url,
             input_text=input_text,
-            timeout_s=args.timeout,
+            startup_timeout_s=startup_timeout_s,
+            translation_timeout_s=translation_timeout_s,
+            app_log_path=log_path,
             headless=not args.headed,
         )
         t_done = time.perf_counter()
         result = {
             "ok": True,
+            "stage": stage,
             "url": args.url,
+            "app_log_path": str(log_path),
+            "startup_timeout_s": startup_timeout_s,
+            "translation_timeout_s": translation_timeout_s,
             "app_start_seconds": t_ready - t0,
             "total_seconds": t_done - t0,
             **metrics,
         }
     except Exception as exc:
-        result = {"ok": False, "error": str(exc)}
-        _log(f"E2E failed: {exc}")
+        if log_fp:
+            try:
+                log_fp.flush()
+            except Exception:
+                pass
+        app_exit_code = proc.returncode if proc else None
+        result = {
+            "ok": False,
+            "stage": stage,
+            "error": str(exc),
+            "url": args.url,
+            "app_log_path": str(log_path),
+            "app_exit_code": app_exit_code,
+            "startup_timeout_s": startup_timeout_s,
+            "translation_timeout_s": translation_timeout_s,
+            "total_seconds": time.perf_counter() - t0,
+            "app_log_tail": _read_log_tail(log_path),
+        }
+        _log(f"E2E failed (stage={stage}): {exc}")
         return_code = 1
     else:
         return_code = 0
     finally:
-        if proc is not None:
+        if proc is not None and not args.keep_app:
             _stop_app(proc)
+        if log_fp is not None:
+            try:
+                log_fp.flush()
+            except Exception:
+                pass
+            try:
+                log_fp.close()
+            except Exception:
+                pass
 
     output = json.dumps(result, ensure_ascii=False)
     if args.out:
         out_path = Path(args.out)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(output, encoding="utf-8")
-    print(output)
+    _safe_print(output)
     return return_code
 
 

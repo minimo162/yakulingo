@@ -1,5 +1,5 @@
 ﻿{
-    "generated_at":  "2026-01-10T20:53:24.7862161+09:00",
+    "generated_at":  "2026-01-11T08:57:14.4026813+09:00",
     "llama_cpp":  {
                       "repo":  "ggerganov/llama.cpp",
                       "release_tag":  "b7689",
@@ -11,7 +11,7 @@
                   "repo":  "dahara1/shisa-v2.1-qwen3-8b-UD-japanese-imatrix",
                   "file":  "shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf",
                   "download_url":  "https://huggingface.co/dahara1/shisa-v2.1-qwen3-8b-UD-japanese-imatrix/resolve/main/shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf",
-                  "sha256":  null,
+                  "sha256":  "39A33CADA71C41234506C07E6E106760FE7E3F5310FEB1064F6916F515EB12F6",
                   "skipped":  false
               }
 }

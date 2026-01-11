@@ -839,14 +839,26 @@ class LocalLlamaServerManager:
             flag = "--ctx-size" if has_long("--ctx-size") else "-c"
             args += [flag, str(int(settings.local_ai_ctx_size))]
 
-        threads = (
-            int(settings.local_ai_threads)
-            if settings.local_ai_threads is not None
-            else 0
-        )
+        threads_setting = settings.local_ai_threads
+        threads = int(threads_setting) if threads_setting is not None else 0
+        auto_threads: Optional[int] = None
+        if threads <= 0:
+            auto_threads = os.cpu_count() or 1
+            threads = max(1, int(auto_threads))
         if help_text and threads and (has_long("--threads") or has_short("-t")):
             flag = "--threads" if has_long("--threads") else "-t"
             args += [flag, str(threads)]
+            if auto_threads is not None:
+                logger.info(
+                    "Local AI threads auto: %d (config=%s)", threads, threads_setting
+                )
+            else:
+                logger.info("Local AI threads configured: %d", threads)
+        elif auto_threads is not None:
+            logger.info(
+                "Local AI threads auto resolved to %d but flag not supported",
+                threads,
+            )
 
         if help_text and settings.local_ai_temperature is not None:
             if has_long("--temp"):

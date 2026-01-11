@@ -21,6 +21,8 @@ import unicodedata
 
 import re
 
+from yakulingo.services.local_ai_client import is_truncated_json
+
 # Module logger
 logger = logging.getLogger(__name__)
 
@@ -286,6 +288,8 @@ def _wrap_local_streaming_on_chunk(
         return None
     last_emitted = [""]
     last_raw = [""]
+    last_emit_time = [0.0]
+    throttle_seconds = 0.08
 
     def _handle(delta: str) -> None:
         if not delta:
@@ -309,7 +313,19 @@ def _wrap_local_streaming_on_chunk(
 
         if candidate == last_emitted[0] or len(candidate) < len(last_emitted[0]):
             return
+        now = time.monotonic()
+        is_complete_json = raw.lstrip().startswith(("{", "[")) and not is_truncated_json(
+            raw
+        )
+        delta_len = len(candidate) - len(last_emitted[0])
+        if (
+            not is_complete_json
+            and (now - last_emit_time[0]) < throttle_seconds
+            and delta_len < 3
+        ):
+            return
         last_emitted[0] = candidate
+        last_emit_time[0] = now
         on_chunk(candidate)
 
     return _handle

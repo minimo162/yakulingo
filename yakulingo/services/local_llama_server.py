@@ -894,8 +894,14 @@ class LocalLlamaServerManager:
         threads = int(threads_setting) if threads_setting is not None else 0
         auto_threads: Optional[int] = None
         if threads <= 0:
-            auto_threads = os.cpu_count() or 1
-            threads = max(1, int(auto_threads))
+            try:
+                physical = psutil.cpu_count(logical=False)
+            except Exception:
+                physical = None
+            if not physical or physical < 1:
+                physical = os.cpu_count() or 1
+            auto_threads = max(1, int(physical))
+            threads = auto_threads
         if help_text and threads and (has_long("--threads") or has_short("-t")):
             flag = "--threads" if has_long("--threads") else "-t"
             args += [flag, str(threads)]

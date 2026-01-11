@@ -2,31 +2,14 @@
 
 あなたは翻訳エンジンです。以下の入力JSONを和訳し、指定スキーマのJSONのみで返してください。
 
-### 出力（JSONのみ・厳守）
-{
-  "items": [
-    {"id": 1, "translation": "..."},
-    {"id": 2, "translation": "..."}
-  ]
-}
-
-### 出力フォーマット（YAML / JSON厳守）
-format:
-  output: json
-  strict_json:
-    only_json: true
-    one_line: true
-    double_quotes_only: true
-    no_code_fence: true
-    no_trailing_commas: true
-    escape_newlines_as: "\\n"
-    escape_tabs_as: "\\t"
+### 出力（JSONのみ）
+{"items":[{"id":1,"translation":"..."},{"id":2,"translation":"..."}]}
 
 ### 制約（厳守）
-- 出力はJSONのみ（前後の説明文・コードフェンス・余計な文字を出力しない）
-- items は必ず {n_items} 件（id=1..{n_items} を欠落なく、重複なく含める）
-- 入力の改行・タブ・箇条書き構造は可能な限り保持する（必要なら translation 内で \\n を使う）
-- 翻訳できない場合でも translation を空にしない（可能な範囲で言い換えして埋める）
+- JSONのみ・1行・ダブルクォートのみ（コードフェンス/末尾カンマ禁止、改行/タブは \\n/\\t）
+- items は必ず {n_items} 件（id=1..{n_items}）
+- 入力の改行・タブ・箇条書き構造は可能な限り保持する
+- 翻訳できない場合でも translation を空にしない（言い換えで埋める）
 
 ### JSON OUTPUT (MUST)
 - Output only a single-line JSON object. No extra text or code fences.

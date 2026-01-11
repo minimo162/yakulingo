@@ -43,14 +43,36 @@ def _translate_once(
     return result, elapsed
 
 
+def _translate_compare(
+    service: Any,
+    text: str,
+    reference_files: list[Path],
+) -> tuple[Any, float]:
+    start = time.perf_counter()
+    result = service.translate_text_with_style_comparison(
+        text,
+        reference_files=reference_files,
+        styles=None,
+        pre_detected_language=None,
+        on_chunk=None,
+    )
+    elapsed = time.perf_counter() - start
+    return result, elapsed
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Local AI single-translation benchmark"
+        description="Local AI benchmark (single or style-compare)"
     )
     parser.add_argument("--input", type=Path, default=None, help="Path to input text")
     parser.add_argument("--mode", choices=("warm", "cold"), default="warm")
     parser.add_argument(
         "--style", choices=("standard", "concise", "minimal"), default="concise"
+    )
+    parser.add_argument(
+        "--compare",
+        action="store_true",
+        help="Use TranslationService style comparison (combined + fallback).",
     )
     parser.add_argument("--with-glossary", action="store_true")
     parser.add_argument("--reference", action="append", type=Path, default=[])
@@ -64,8 +86,6 @@ def main() -> int:
         sys.path.insert(0, str(repo_root))
 
     from yakulingo.config.settings import AppSettings
-    from yakulingo.services.local_ai_client import LocalAIClient
-    from yakulingo.services.local_ai_prompt_builder import LocalPromptBuilder
     from yakulingo.services.local_llama_server import get_local_llama_server_manager
     from yakulingo.services.prompt_builder import PromptBuilder
 
@@ -86,13 +106,29 @@ def main() -> int:
     if args.max_tokens and args.max_tokens > 0:
         settings.local_ai_max_tokens = int(args.max_tokens)
     prompts_dir = repo_root / "prompts"
-    base_builder = PromptBuilder(prompts_dir)
-    local_builder = LocalPromptBuilder(
-        prompts_dir,
-        base_prompt_builder=base_builder,
-        settings=settings,
-    )
-    client = LocalAIClient(settings)
+    if args.compare:
+        from yakulingo.services.copilot_handler import CopilotHandler
+        from yakulingo.services.translation_service import TranslationService
+
+        service = TranslationService(
+            CopilotHandler(),
+            settings,
+            prompts_dir=prompts_dir,
+        )
+        client = None
+        prompt = None
+    else:
+        from yakulingo.services.local_ai_client import LocalAIClient
+        from yakulingo.services.local_ai_prompt_builder import LocalPromptBuilder
+
+        base_builder = PromptBuilder(prompts_dir)
+        local_builder = LocalPromptBuilder(
+            prompts_dir,
+            base_prompt_builder=base_builder,
+            settings=settings,
+        )
+        client = LocalAIClient(settings)
+        prompt = _build_prompt(local_builder, text, reference_files, args.style)
 
     if args.mode == "cold":
         # Stop existing local AI server (if safe) before measuring cold start.
@@ -101,25 +137,44 @@ def main() -> int:
     else:
         warmup_runs = max(0, int(args.warmup_runs))
 
-    prompt = _build_prompt(local_builder, text, reference_files, args.style)
-
     print("benchmark: local-ai")
     print(f"mode: {args.mode}")
     print(f"input_chars: {len(text)}")
     print(f"style: {args.style}")
+    print(f"compare: {bool(args.compare)}")
     print(f"with_glossary: {bool(args.with_glossary)}")
     print(f"reference_files: {len(reference_files)}")
 
     for i in range(warmup_runs):
-        _, warmup_elapsed = _translate_once(client, text, prompt)
+        if args.compare:
+            _, warmup_elapsed = _translate_compare(service, text, reference_files)
+        else:
+            _, warmup_elapsed = _translate_once(client, text, prompt)
         print(f"warmup_seconds[{i + 1}]: {warmup_elapsed:.2f}")
 
-    output, elapsed = _translate_once(client, text, prompt)
-    if not output.strip():
-        print("WARNING: empty translation result", file=sys.stderr)
+    if args.compare:
+        result, elapsed = _translate_compare(service, text, reference_files)
+        error = getattr(result, "error_message", None)
+        options = getattr(result, "options", None) or []
+        if error:
+            print(f"error: {error}", file=sys.stderr)
+        if not options:
+            print("WARNING: empty style options", file=sys.stderr)
+        output_chars = sum(
+            len(getattr(opt, "text", "") or "")
+            + len(getattr(opt, "explanation", "") or "")
+            for opt in options
+        )
+        print(f"translation_seconds: {elapsed:.2f}")
+        print(f"options: {len(options)}")
+        print(f"output_chars: {output_chars}")
+    else:
+        output, elapsed = _translate_once(client, text, prompt)
+        if not output.strip():
+            print("WARNING: empty translation result", file=sys.stderr)
 
-    print(f"translation_seconds: {elapsed:.2f}")
-    print(f"output_chars: {len(output)}")
+        print(f"translation_seconds: {elapsed:.2f}")
+        print(f"output_chars: {len(output)}")
     return 0
 
 

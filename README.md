@@ -3,7 +3,7 @@
 ## 回答言語
 本リポジトリでの回答は日本語で行ってください。
 
-日本語と英語の双方向翻訳アプリケーション。翻訳バックエンドは **M365 Copilot** と **ローカルAI（llama.cpp）** をUIで切り替えでき、テキストもファイルもワンクリック翻訳します（ローカルAIは `127.0.0.1` 固定・外部公開しません）。
+日本語と英語の双方向翻訳アプリケーション。翻訳バックエンドは **M365 Copilot** と **ローカルAI（llama.cpp）** をサイドバー上部のCopilotボタンON/OFFで切り替えできます（既定はOFF=ローカルAI）。テキストもファイルもワンクリック翻訳します（ローカルAIは `127.0.0.1` 固定・外部公開しません）。
 
 ## 目次
 - [特徴](#特徴)
@@ -35,7 +35,7 @@ YakuLingoが提供する主な機能一覧です。
 - **ホットキー起動**: `Ctrl + Alt + J` で選択中のテキスト/ファイルを翻訳開始（UIに結果を表示）
 - **フォント自動調整**: 翻訳方向に合わせて最適なフォントを選択
 - **翻訳履歴**: ローカル保存＆検索に対応
-- **バックエンド切替**: サイドバー上部で Copilot / ローカルAI をトグル（翻訳中は切替不可）
+- **バックエンド切替**: サイドバー上部のCopilotボタンでON/OFF（翻訳中は切替不可）
 - **接続/準備状況表示**: バックエンド別に準備中/準備完了/未インストール/エラー等を表示
 - **自動更新**: GitHub Releases から最新バージョンを取得
 
@@ -187,17 +187,18 @@ uv run python app.py
 
 ## 初回セットアップ
 
-YakuLingoを初めて使う際は、利用する翻訳バックエンドに応じて準備します（サイドバー上部で `Copilot / ローカルAI` を切り替え）。
+YakuLingoを初めて使う際は、利用する翻訳バックエンドに応じて準備します（サイドバー上部のCopilotボタンON/OFFで切り替え）。
 
 ### 1. Copilotを使う場合（ログイン確認）
 1. Microsoft Edgeを開く
 2. [m365.cloud.microsoft/chat](https://m365.cloud.microsoft/chat) にアクセス
 3. 会社アカウントまたはMicrosoftアカウントでログイン
 4. チャット画面が表示されることを確認
+5. サイドバー上部のCopilotボタンをONにする
 
 ### 2. ローカルAIを使う場合（インストール確認）
 1. `local_ai/` が存在することを確認（`packaging/install_deps.bat` を実行済み、または配布ZIPに同梱）
-2. サイドバー上部で **ローカルAI** を選択 → 「準備完了」になるまで待機
+2. サイドバー上部のCopilotボタンをOFFのままにする → 「準備完了」になるまで待機
 3. エラー時はメッセージに従って対処（例: AVX2非対応のPCではローカルAIが利用できません。Copilotに切り替えるか、generic版の同梱が必要です）
 
 ### 3. YakuLingoの起動
@@ -288,7 +289,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
   "max_chars_per_batch": 1000,
   "request_timeout": 600,
   "max_retries": 3,
-  "local_ai_model_path": "local_ai/models/shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf",
+  "local_ai_model_path": "local_ai/models/LFM2.5-1.2B-Instruct-UD-Q4_K_XL.gguf",
   "local_ai_server_dir": "local_ai/llama_cpp",
   "local_ai_host": "127.0.0.1",
   "local_ai_port_base": 4891,
@@ -382,7 +383,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 | `ocr_batch_size` | PDF処理のバッチページ数 | 5 |
 | `ocr_dpi` | PDF処理の解像度 | 300 |
 | `max_chars_per_batch` | Copilot送信1回あたりの最大文字数 | 1000 |
-| `local_ai_model_path` | ローカルAIモデル（.gguf）のパス | `local_ai/models/shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf` |
+| `local_ai_model_path` | ローカルAIモデル（.gguf）のパス | `local_ai/models/LFM2.5-1.2B-Instruct-UD-Q4_K_XL.gguf` |
 | `local_ai_server_dir` | ローカルAIサーバ（llama-server）のディレクトリ | `local_ai/llama_cpp` |
 | `local_ai_port_base` | ローカルAIのポート探索開始 | 4891 |
 | `local_ai_port_max` | ローカルAIのポート探索上限 | 4900 |

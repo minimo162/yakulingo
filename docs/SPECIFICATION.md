@@ -585,7 +585,7 @@ Windows のグローバルホットキー（Ctrl+Alt+J）を登録し、押下�
 
 ### 5.1.3 接続ステータスインジケータ
 
-サイドバー上部のステータス領域に **翻訳バックエンド（Copilot / ローカルAI）** のセグメントと、選択中バックエンドの準備状況を表示する。
+サイドバー上部のステータス領域に **Copilotボタン（ON/OFF）** と、選択中バックエンドの準備状況を表示する（OFF=ローカルAI）。
 
 - バックエンド切替は翻訳中はdisable（同時翻訳/混線防止）
 - Copilot状態: 準備中 / 準備完了 / ログインが必要 / Edgeが見つかりません / 接続に失敗
@@ -1526,7 +1526,7 @@ class AppSettings:
     copilot_enabled: bool = True          # Copilot UI/接続を無効化するスイッチ
 
     # Local AI (llama.cpp llama-server)
-    local_ai_model_path: str = "local_ai/models/shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf"
+    local_ai_model_path: str = "local_ai/models/LFM2.5-1.2B-Instruct-UD-Q4_K_XL.gguf"
     local_ai_server_dir: str = "local_ai/llama_cpp"
     local_ai_host: str = "127.0.0.1"  # security: forced to localhost
     local_ai_port_base: int = 4891

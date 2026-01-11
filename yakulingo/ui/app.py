@@ -10368,30 +10368,88 @@ class YakuLingoApp:
         model_name = runtime.model_id or runtime.model_path.name
         return f"{runtime.host}:{runtime.port}:{model_name}"
 
+    def _cancel_local_ai_warmup(self, reason: str) -> None:
+        task = self._local_ai_warmup_task
+        if task is None:
+            return
+        if task.done():
+            self._local_ai_warmup_task = None
+            return
+        task.cancel()
+        self._local_ai_warmup_task = None
+        self._local_ai_warmup_key = None
+        logger.info("[TIMING] LocalAI warmup cancelled: %s", reason)
+
     def _start_local_ai_warmup(self, runtime: "LocalAIServerRuntime") -> None:
         key = self._build_local_ai_warmup_key(runtime)
         existing = self._local_ai_warmup_task
         if self._local_ai_warmup_key == key and existing is not None:
             return
+        if existing is not None and not existing.done():
+            self._cancel_local_ai_warmup("runtime changed")
+        delay_s = 1.5
         try:
             task = _create_logged_task(
-                self._warmup_local_ai_async(runtime),
+                self._warmup_local_ai_async(runtime, delay_s=delay_s),
                 name="local_ai_warmup",
             )
         except RuntimeError:
             return
         self._local_ai_warmup_task = task
         self._local_ai_warmup_key = key
+        logger.info(
+            "[TIMING] LocalAI warmup scheduled: delay=%.1fs (key=%s)",
+            delay_s,
+            key,
+        )
 
-    async def _warmup_local_ai_async(self, runtime: "LocalAIServerRuntime") -> None:
+    async def _warmup_local_ai_async(
+        self,
+        runtime: "LocalAIServerRuntime",
+        *,
+        delay_s: float,
+    ) -> None:
+        import time
+
         try:
+            if delay_s > 0:
+                await asyncio.sleep(delay_s)
+            if self.state.translation_backend != TranslationBackend.LOCAL:
+                logger.info(
+                    "[TIMING] LocalAI warmup cancelled: backend switched"
+                )
+                return
+            if self.state.local_ai_state != LocalAIState.READY:
+                logger.info("[TIMING] LocalAI warmup cancelled: not ready")
+                return
+            if self.state.is_translating():
+                logger.info(
+                    "[TIMING] LocalAI warmup cancelled: translation in progress"
+                )
+                return
+            if self._local_ai_warmup_key != self._build_local_ai_warmup_key(
+                runtime
+            ):
+                logger.info(
+                    "[TIMING] LocalAI warmup cancelled: runtime changed"
+                )
+                return
             from yakulingo.services.local_ai_client import LocalAIClient
         except Exception as e:
             logger.debug("LocalAI warmup: client import failed: %s", e)
             return
         client = LocalAIClient(self.settings)
         try:
+            logger.info("[TIMING] LocalAI warmup started")
+            t0 = time.monotonic()
             await asyncio.to_thread(client.warmup, runtime=runtime)
+            logger.info(
+                "[TIMING] LocalAI warmup finished: %.2fs",
+                time.monotonic() - t0,
+            )
+        except asyncio.CancelledError:
+            logger.info("[TIMING] LocalAI warmup cancelled: task cancelled")
+            return
         except Exception as e:
             logger.debug("LocalAI warmup failed: %s", e)
 
@@ -11332,6 +11390,8 @@ class YakuLingoApp:
             return
         if self.translation_service:
             self.translation_service.reset_cancel()
+        if self.state.translation_backend == TranslationBackend.LOCAL:
+            self._cancel_local_ai_warmup("text translation started")
 
         source_text = self.state.source_text
 
@@ -12991,6 +13051,8 @@ class YakuLingoApp:
         # Use async version that will attempt auto-reconnection if needed
         if not await self._ensure_connection_async():
             return
+        if self.state.translation_backend == TranslationBackend.LOCAL:
+            self._cancel_local_ai_warmup("file translation started")
 
         # Use saved client reference (protected by _client_lock)
         with self._client_lock:

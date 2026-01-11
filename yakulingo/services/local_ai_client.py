@@ -28,6 +28,7 @@ _RE_ID_MARKER_BLOCK = re.compile(
     r"\[\[ID:(\d+)\]\]\s*(.+?)(?=\[\[ID:\d+\]\]|$)", re.DOTALL
 )
 _RE_NUMBERED_LINE = re.compile(r"^\s*(\d+)\.\s*(.+)\s*$")
+_JSON_STOP_SEQUENCES = ["</s>", "<|end|>"]
 
 
 def _strip_code_fences(text: str) -> str:
@@ -398,6 +399,44 @@ class LocalAIClient:
         except Exception:
             return False
 
+    def _build_chat_payload(
+        self,
+        runtime: LocalAIServerRuntime,
+        prompt: str,
+        *,
+        stream: bool,
+        enforce_json: bool,
+    ) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "model": runtime.model_id or runtime.model_path.name,
+            "messages": [
+                {"role": "user", "content": prompt},
+            ],
+            "stream": stream,
+            "temperature": float(self._settings.local_ai_temperature),
+        }
+        if self._settings.local_ai_max_tokens is not None:
+            payload["max_tokens"] = int(self._settings.local_ai_max_tokens)
+        if enforce_json:
+            payload["response_format"] = {"type": "json_object"}
+        if _JSON_STOP_SEQUENCES:
+            payload["stop"] = _JSON_STOP_SEQUENCES
+        return payload
+
+    @staticmethod
+    def _should_retry_without_response_format(error: Exception) -> bool:
+        message = str(error).lower()
+        return any(
+            token in message
+            for token in (
+                "response_format",
+                "json_schema",
+                "json schema",
+                "unsupported",
+                "unknown field",
+            )
+        )
+
     def ensure_ready(self) -> LocalAIServerRuntime:
         return self._manager.ensure_ready(self._settings)
 
@@ -488,24 +527,33 @@ class LocalAIClient:
         timeout_s = float(
             timeout if timeout is not None else self._settings.request_timeout
         )
-        payload: dict[str, object] = {
-            "model": runtime.model_id or runtime.model_path.name,
-            "messages": [
-                {"role": "user", "content": prompt},
-            ],
-            "stream": False,
-            "temperature": float(self._settings.local_ai_temperature),
-        }
-        if self._settings.local_ai_max_tokens is not None:
-            payload["max_tokens"] = int(self._settings.local_ai_max_tokens)
-
-        response = self._http_json_cancellable(
-            host=runtime.host,
-            port=runtime.port,
-            path="/v1/chat/completions",
-            payload=payload,
-            timeout_s=timeout_s,
+        payload = self._build_chat_payload(
+            runtime, prompt, stream=False, enforce_json=True
         )
+        try:
+            response = self._http_json_cancellable(
+                host=runtime.host,
+                port=runtime.port,
+                path="/v1/chat/completions",
+                payload=payload,
+                timeout_s=timeout_s,
+            )
+        except RuntimeError as exc:
+            if not self._should_retry_without_response_format(exc):
+                raise
+            logger.debug(
+                "LocalAI response_format unsupported; retrying without it (%s)", exc
+            )
+            payload = self._build_chat_payload(
+                runtime, prompt, stream=False, enforce_json=False
+            )
+            response = self._http_json_cancellable(
+                host=runtime.host,
+                port=runtime.port,
+                path="/v1/chat/completions",
+                payload=payload,
+                timeout_s=timeout_s,
+            )
 
         content = _parse_openai_chat_content(response)
         return LocalAIRequestResult(content=content, model_id=runtime.model_id)
@@ -518,23 +566,41 @@ class LocalAIClient:
         *,
         timeout: Optional[int],
     ) -> LocalAIRequestResult:
+        payload = self._build_chat_payload(
+            runtime, prompt, stream=True, enforce_json=True
+        )
+        try:
+            return self._chat_completions_streaming_with_payload(
+                runtime, payload, on_chunk, timeout=timeout
+            )
+        except RuntimeError as exc:
+            if not self._should_retry_without_response_format(exc):
+                raise
+            logger.debug(
+                "LocalAI response_format unsupported; retrying streaming without it (%s)",
+                exc,
+            )
+            payload = self._build_chat_payload(
+                runtime, prompt, stream=True, enforce_json=False
+            )
+            return self._chat_completions_streaming_with_payload(
+                runtime, payload, on_chunk, timeout=timeout
+            )
+
+    def _chat_completions_streaming_with_payload(
+        self,
+        runtime: LocalAIServerRuntime,
+        payload: dict[str, object],
+        on_chunk: Callable[[str], None],
+        *,
+        timeout: Optional[int],
+    ) -> LocalAIRequestResult:
         if self._should_cancel():
             raise TranslationCancelledError("Translation cancelled by user")
 
         timeout_s = float(
             timeout if timeout is not None else self._settings.request_timeout
         )
-        payload: dict[str, object] = {
-            "model": runtime.model_id or runtime.model_path.name,
-            "messages": [
-                {"role": "user", "content": prompt},
-            ],
-            "stream": True,
-            "temperature": float(self._settings.local_ai_temperature),
-        }
-        if self._settings.local_ai_max_tokens is not None:
-            payload["max_tokens"] = int(self._settings.local_ai_max_tokens)
-
         sock = self._open_http_stream(
             host=runtime.host,
             port=runtime.port,

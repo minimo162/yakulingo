@@ -160,3 +160,26 @@ def test_local_followup_reference_embed_includes_local_reference(
     assert prompt is not None
     assert "[REFERENCE:file=ref.txt]" in prompt
     assert "Reference content" in prompt
+
+def test_local_prompt_includes_json_guard_block() -> None:
+    builder = _make_builder()
+    prompt = builder.build_text_to_en_single(
+        "sample",
+        style="concise",
+        reference_files=None,
+        detected_language="Japanese",
+    )
+    assert "JSON OUTPUT (MUST)" in prompt
+
+def test_local_batch_embed_reference_even_when_flag_false(tmp_path: Path) -> None:
+    builder = _make_builder()
+    ref_path = tmp_path / "ref.txt"
+    ref_path.write_text("Reference content", encoding="utf-8")
+    prompt = builder.build_batch(
+        ["sample"],
+        has_reference_files=False,
+        output_language="en",
+        translation_style="concise",
+        reference_files=[ref_path],
+    )
+    assert "[REFERENCE:file=ref.txt]" in prompt

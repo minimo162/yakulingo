@@ -27,6 +27,11 @@ format:
 - translation は冗長化せず、原文より短く・要点優先で簡潔にまとめる
 - 改行・タブ・箇条書き構造は可能な限り保持する（必要なら translation 内で \n を使う）
 
+### JSON OUTPUT (MUST)
+- Output only a single-line JSON object. No extra text or code fences.
+- Use double quotes only. Escape newlines as \\n and tabs as \\t.
+- Always apply translation_rules and reference_section.
+
 {translation_rules}
 
 {reference_section}

@@ -30,6 +30,11 @@ format:
 - 英訳スタイルは {style}（standard/concise/minimal）
 - 翻訳できない場合でも translation を空にしない（可能な範囲で言い換え/ローマ字化して埋める）
 
+### JSON OUTPUT (MUST)
+- Output only a single-line JSON object. No extra text or code fences.
+- Use double quotes only. Escape newlines as \\n and tabs as \\t.
+- Always apply translation_rules and reference_section.
+
 {translation_rules}
 
 {reference_section}

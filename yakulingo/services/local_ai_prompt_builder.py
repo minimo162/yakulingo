@@ -68,7 +68,8 @@ class LocalPromptBuilder:
     def _get_translation_rules(self, output_language: str) -> str:
         with self._rules_lock:
             self._base.reload_translation_rules()
-            return self._base.get_translation_rules(output_language)
+            rules = self._base.get_translation_rules(output_language)
+            return rules.strip()
 
     @staticmethod
     def _input_fingerprint(text: Optional[str]) -> Optional[tuple[int, str, str]]:
@@ -528,7 +529,7 @@ class LocalPromptBuilder:
         translation_rules = self._get_translation_rules(output_language)
 
         reference_section = ""
-        if has_reference_files and reference_files:
+        if reference_files:
             max_context_chars = 3000
             context_parts: list[str] = []
             total_chars = 0

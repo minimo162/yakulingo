@@ -19,7 +19,7 @@ from typing import Callable, Optional
 
 from nicegui import ui
 
-from yakulingo.ui.state import AppState, TextViewState
+from yakulingo.ui.state import AppState, TextViewState, TranslationBackend
 from yakulingo.ui.utils import (
     format_markdown_text,
     format_bytes,
@@ -212,6 +212,54 @@ TEXT_STYLE_LABELS: dict[str, str] = {
 }
 
 TEXT_STYLE_ORDER: tuple[str, str, str] = ("standard", "concise", "minimal")
+TEXT_STYLE_TOOLTIPS: dict[str, str] = {
+    "standard": "標準的な表現",
+    "concise": "短く簡潔な表現",
+    "minimal": "最短で要点のみ",
+}
+
+
+def _resolve_text_output_language(state: AppState) -> Optional[str]:
+    override = state.text_output_language_override
+    if override in {"en", "jp"}:
+        return override
+    if state.text_detected_language == "日本語":
+        return "en"
+    if state.text_detected_language:
+        return "jp"
+    return None
+
+
+def _style_selector(current_style: str, on_change: Optional[Callable[[str], None]]):
+    """Translation style selector - segmented button style for English output."""
+    if current_style not in TEXT_STYLE_ORDER:
+        current_style = "concise"
+    with ui.row().classes("w-full justify-center"):
+        with ui.element("div").classes("style-selector"):
+            for i, style_key in enumerate(TEXT_STYLE_ORDER):
+                if i == 0:
+                    pos_class = "style-btn-left"
+                elif i == len(TEXT_STYLE_ORDER) - 1:
+                    pos_class = "style-btn-right"
+                else:
+                    pos_class = "style-btn-middle"
+
+                style_classes = f"style-btn {pos_class}"
+                if current_style == style_key:
+                    style_classes += " style-btn-active"
+
+                label = TEXT_STYLE_LABELS.get(style_key, style_key)
+                tooltip = TEXT_STYLE_TOOLTIPS.get(style_key, "")
+                btn = (
+                    ui.button(
+                        label,
+                        on_click=lambda k=style_key: on_change and on_change(k),
+                    )
+                    .classes(style_classes)
+                    .props("flat no-caps dense")
+                )
+                if tooltip:
+                    btn.tooltip(tooltip)
 
 
 def _build_combined_translation_text(result: TextTranslationResult) -> str:
@@ -314,6 +362,8 @@ def create_text_input_panel(
     text_char_limit: int = 5000,
     batch_char_limit: int = 4000,
     on_output_language_override: Optional[Callable[[Optional[str]], None]] = None,
+    translation_style: str = "concise",
+    on_style_change: Optional[Callable[[str], None]] = None,
     on_input_metrics_created: Optional[Callable[[dict[str, object]], None]] = None,
     on_glossary_toggle: Optional[Callable[[bool], None]] = None,
     on_edit_glossary: Optional[Callable[[], None]] = None,
@@ -339,6 +389,8 @@ def create_text_input_panel(
         text_char_limit,
         batch_char_limit,
         on_output_language_override,
+        translation_style,
+        on_style_change,
         on_input_metrics_created,
         on_glossary_toggle,
         on_edit_glossary,
@@ -362,6 +414,8 @@ def _create_large_input_panel(
     text_char_limit: int = 5000,
     batch_char_limit: int = 4000,
     on_output_language_override: Optional[Callable[[Optional[str]], None]] = None,
+    translation_style: str = "concise",
+    on_style_change: Optional[Callable[[str], None]] = None,
     on_input_metrics_created: Optional[Callable[[dict[str, object]], None]] = None,
     on_glossary_toggle: Optional[Callable[[bool], None]] = None,
     on_edit_glossary: Optional[Callable[[], None]] = None,
@@ -449,6 +503,14 @@ def _create_large_input_panel(
                             for idx, path in enumerate(state.reference_files or [])
                         }
                         settings_panel = ui.element("div").classes("advanced-panel")
+                        resolved_output_language = _resolve_text_output_language(state)
+                        show_style_selector = (
+                            state.translation_backend == TranslationBackend.LOCAL
+                            and resolved_output_language == "en"
+                            and on_style_change is not None
+                        )
+                        if translation_style not in TEXT_STYLE_ORDER:
+                            translation_style = "concise"
 
                         with settings_panel:
                             with ui.column().classes("gap-3"):
@@ -497,6 +559,17 @@ def _create_large_input_panel(
                                             metrics_refs["override_auto"] = auto_btn
                                             metrics_refs["override_en"] = en_btn
                                             metrics_refs["override_jp"] = jp_btn
+
+                                style_section = ui.column().classes("advanced-section")
+                                if not show_style_selector:
+                                    style_section.classes(add="hidden")
+                                with style_section:
+                                    ui.label("翻訳スタイル").classes("advanced-label")
+                                    _style_selector(
+                                        translation_style,
+                                        on_style_change,
+                                    )
+                                metrics_refs["style_selector_section"] = style_section
 
                                 with ui.column().classes("advanced-section"):
                                     ui.label("参照ファイル").classes("advanced-label")

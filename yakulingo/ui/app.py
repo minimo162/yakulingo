@@ -9927,6 +9927,8 @@ class YakuLingoApp:
                             else self.settings.max_chars_per_batch
                         ),
                         on_output_language_override=self._set_text_output_language_override,
+                        translation_style=self.settings.translation_style,
+                        on_style_change=self._on_style_change,
                         on_input_metrics_created=self._on_text_input_metrics_created,
                         on_glossary_toggle=self._on_glossary_toggle,
                         on_edit_glossary=self._edit_glossary,
@@ -10021,6 +10023,17 @@ class YakuLingoApp:
         batch_count = 0
         if batch_limit > 0:
             batch_count = max(1, math.ceil(char_count / batch_limit))
+
+        style_section = refs.get("style_selector_section")
+        if style_section:
+            show_style_selector = (
+                self.state.translation_backend == TranslationBackend.LOCAL
+                and self._resolve_text_output_language() == "en"
+            )
+            if show_style_selector:
+                style_section.classes(remove="hidden")
+            else:
+                style_section.classes(add="hidden")
 
         count_inline = refs.get("count_label_inline")
         if count_inline:

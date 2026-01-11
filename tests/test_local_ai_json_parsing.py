@@ -60,6 +60,30 @@ def test_parse_text_to_en_3style_reads_options_json() -> None:
     assert by_style["minimal"] == ("C", "e3")
 
 
+def test_parse_text_to_en_3style_normalizes_style_labels() -> None:
+    raw = """{"options":[
+  {"style":" Standard ","translation":"A","explanation":"e1"},
+  {"style":"簡潔","translation":"B","explanation":"e2"},
+  {"style":"MINIMAL","translation":"C","explanation":"e3"}
+]}"""
+    by_style = parse_text_to_en_3style(raw)
+    assert by_style["standard"] == ("A", "e1")
+    assert by_style["concise"] == ("B", "e2")
+    assert by_style["minimal"] == ("C", "e3")
+
+
+def test_parse_text_to_en_3style_assigns_missing_style_by_index() -> None:
+    raw = """{"options":[
+  {"style":"","translation":"A","explanation":"e1"},
+  {"style":"?","translation":"B","explanation":"e2"},
+  {"translation":"C","explanation":"e3"}
+]}"""
+    by_style = parse_text_to_en_3style(raw)
+    assert by_style["standard"] == ("A", "e1")
+    assert by_style["concise"] == ("B", "e2")
+    assert by_style["minimal"] == ("C", "e3")
+
+
 def test_parse_text_single_translation_reads_json() -> None:
     raw = """{"translation":"こんにちは","explanation":"説明"}"""
     translation, explanation = parse_text_single_translation(raw)

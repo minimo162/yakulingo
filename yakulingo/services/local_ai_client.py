@@ -251,6 +251,32 @@ def parse_batch_translations(raw_content: str, expected_count: int) -> list[str]
     raise RuntimeError("ローカルAIの応答(JSON)を解析できませんでした")
 
 
+_TEXT_STYLE_ORDER = ("standard", "concise", "minimal")
+
+
+def _normalize_text_style(style: Optional[str]) -> Optional[str]:
+    if not isinstance(style, str):
+        return None
+    cleaned = style.strip().casefold()
+    if not cleaned:
+        return None
+    if cleaned in _TEXT_STYLE_ORDER:
+        return cleaned
+    if any(token in cleaned for token in ("standard", "std", "normal", "default")):
+        return "standard"
+    if any(token in cleaned for token in ("concise", "brief", "short", "compact")):
+        return "concise"
+    if any(token in cleaned for token in ("minimal", "minimum", "min", "mini")):
+        return "minimal"
+    if "標準" in style or "通常" in style:
+        return "standard"
+    if "簡潔" in style or "短" in style:
+        return "concise"
+    if "最簡潔" in style or "最小" in style or "極小" in style:
+        return "minimal"
+    return None
+
+
 def parse_text_to_en_3style(raw_content: str) -> dict[str, tuple[str, str]]:
     obj = loads_json_loose(raw_content)
     if not isinstance(obj, dict):
@@ -259,25 +285,36 @@ def parse_text_to_en_3style(raw_content: str) -> dict[str, tuple[str, str]]:
     if not isinstance(options, list):
         return {}
 
-    by_style: dict[str, tuple[str, str]] = {}
+    items: list[tuple[Optional[str], str, str]] = []
     for opt in options:
         if not isinstance(opt, dict):
             continue
-        style = opt.get("style")
         translation = opt.get("translation")
-        explanation = opt.get("explanation")
-        if not isinstance(style, str) or style not in (
-            "standard",
-            "concise",
-            "minimal",
-        ):
-            continue
         if not isinstance(translation, str):
             continue
-        by_style[style] = (
-            translation,
-            explanation if isinstance(explanation, str) else "",
-        )
+        explanation = opt.get("explanation")
+        explanation_text = explanation if isinstance(explanation, str) else ""
+        style = _normalize_text_style(opt.get("style"))
+        items.append((style, translation, explanation_text))
+
+    by_style: dict[str, tuple[str, str]] = {}
+    used_indexes: set[int] = set()
+    for idx, (style, translation, explanation) in enumerate(items):
+        if style in _TEXT_STYLE_ORDER and style not in by_style:
+            by_style[style] = (translation, explanation)
+            used_indexes.add(idx)
+
+    remaining_styles = [s for s in _TEXT_STYLE_ORDER if s not in by_style]
+    if remaining_styles:
+        for idx, (style, translation, explanation) in enumerate(items):
+            if idx in used_indexes:
+                continue
+            if not remaining_styles:
+                break
+            next_style = remaining_styles.pop(0)
+            by_style[next_style] = (translation, explanation)
+            used_indexes.add(idx)
+
     return by_style
 
 

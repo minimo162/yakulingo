@@ -11,6 +11,8 @@ YakuLingoはネットワーク共有フォルダからのワンクリックセ�
 
 開発環境で `packaging/install_deps.bat` を実行し、以下のフォルダが存在することを確認します。
 
+> **Note**: Vulkan版を同梱する場合は、`LOCAL_AI_LLAMA_CPP_VARIANT=vulkan` を設定して `packaging/install_deps.bat` を実行します（既定はCPU x64）。
+
 - `.venv` (Python 仮想環境)
 - `.uv-python` (Python 本体)
 - `.playwright-browsers` (ブラウザ)

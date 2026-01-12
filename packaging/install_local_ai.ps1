@@ -139,14 +139,25 @@ try {
     $localAiDir = Join-Path $root 'local_ai'
     $llamaDir = Join-Path $localAiDir 'llama_cpp'
     $llamaAvx2Dir = Join-Path $llamaDir 'avx2'
+    $llamaVulkanDir = Join-Path $llamaDir 'vulkan'
     $modelsDir = Join-Path $localAiDir 'models'
-    New-Item -ItemType Directory -Force -Path $localAiDir, $llamaDir, $llamaAvx2Dir, $modelsDir | Out-Null
+    New-Item -ItemType Directory -Force -Path $localAiDir, $llamaDir, $llamaAvx2Dir, $llamaVulkanDir, $modelsDir | Out-Null
 
     $manifestPath = Join-Path $localAiDir 'manifest.json'
     $existingManifest = $null
     if (Test-Path $manifestPath) {
         try { $existingManifest = Get-Content -Raw -Path $manifestPath | ConvertFrom-Json } catch { $existingManifest = $null }
     }
+
+    $llamaVariant = 'cpu'
+    if ($existingManifest -and $existingManifest.llama_cpp -and $existingManifest.llama_cpp.variant) {
+        $llamaVariant = [string]$existingManifest.llama_cpp.variant
+    }
+    if ($env:LOCAL_AI_LLAMA_CPP_VARIANT) { $llamaVariant = [string]$env:LOCAL_AI_LLAMA_CPP_VARIANT }
+    $llamaVariant = $llamaVariant.ToLowerInvariant()
+    if ($llamaVariant -ne 'vulkan') { $llamaVariant = 'cpu' }
+    $llamaVariantDir = if ($llamaVariant -eq 'vulkan') { $llamaVulkanDir } else { $llamaAvx2Dir }
+    $llamaLabel = if ($llamaVariant -eq 'vulkan') { 'Vulkan(x64)' } else { 'CPU(x64)' }
 
     function Get-ChildPathSafe([string]$baseDir, [string]$relativePath) {
         if ([string]::IsNullOrWhiteSpace($relativePath)) { throw 'Path must not be empty.' }
@@ -184,7 +195,7 @@ try {
     $readmeUrl = "https://huggingface.co/$modelRepo/resolve/main/README.md"
 
     $llamaRepo = 'ggerganov/llama.cpp'
-    $serverExePath = Join-Path $llamaAvx2Dir 'llama-server.exe'
+    $serverExePath = Join-Path $llamaVariantDir 'llama-server.exe'
     $llamaLicenseOut = Join-Path $llamaDir 'LICENSE'
 
     $tag = $null
@@ -194,13 +205,14 @@ try {
     if (-not (Test-Path $serverExePath)) {
         $llamaZipPath = $null
         $llamaLicenseUrl = $null
+        $llamaAssetSuffix = if ($llamaVariant -eq 'vulkan') { 'bin-win-vulkan-x64\.zip' } else { 'bin-win-cpu-x64\.zip' }
 
         try {
             $release = Invoke-Json "https://api.github.com/repos/$llamaRepo/releases/latest"
             $tag = $release.tag_name
             if (-not $tag) { throw 'Failed to read llama.cpp release tag.' }
-            $asset = $release.assets | Where-Object { $_.name -match 'bin-win-cpu-x64\.zip$' } | Select-Object -First 1
-            if (-not $asset) { throw 'llama.cpp Windows CPU(x64) binary not found in release assets.' }
+            $asset = $release.assets | Where-Object { $_.name -match ($llamaAssetSuffix + '$') } | Select-Object -First 1
+            if (-not $asset) { throw "llama.cpp Windows $llamaLabel binary not found in release assets." }
 
             $llamaZipUrl = $asset.browser_download_url
             $llamaZipName = [System.IO.Path]::GetFileName([string]$asset.name)
@@ -219,9 +231,9 @@ try {
             $html = [string]$resp.Content
 
             $repoPath = [regex]::Escape("/$llamaRepo")
-            $pattern = 'href="(?<href>' + $repoPath + '/releases/download/[^"/\s]+/[^"\s]*bin-win-cpu-x64\.zip)"'
+            $pattern = 'href="(?<href>' + $repoPath + '/releases/download/[^"/\s]+/[^"\s]*' + $llamaAssetSuffix + ')"'
             $m = [regex]::Match($html, $pattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
-            if (-not $m.Success) { throw 'llama.cpp Windows CPU(x64) binary link not found on releases page.' }
+            if (-not $m.Success) { throw "llama.cpp Windows $llamaLabel binary link not found on releases page." }
 
             $href = $m.Groups['href'].Value
             $llamaZipUrl = 'https://github.com' + $href
@@ -234,7 +246,7 @@ try {
             $llamaLicenseUrl = "https://raw.githubusercontent.com/$llamaRepo/$tag/LICENSE"
         }
 
-        Write-Host "[INFO] Downloading llama.cpp ($tag): $llamaZipName"
+        Write-Host "[INFO] Downloading llama.cpp ($tag, $llamaLabel): $llamaZipName"
         Invoke-Download $llamaZipUrl $llamaZipPath 1800
 
         $tmp = Join-Path $llamaDir '_tmp_extract'
@@ -246,9 +258,9 @@ try {
         if (-not $found) { throw 'llama-server.exe not found in ZIP.' }
         $srcDir = $found.DirectoryName
 
-        if (Test-Path $llamaAvx2Dir) { Remove-Item $llamaAvx2Dir -Recurse -Force -ErrorAction SilentlyContinue }
-        New-Item -ItemType Directory -Force -Path $llamaAvx2Dir | Out-Null
-        Copy-Item -Path (Join-Path $srcDir '*') -Destination $llamaAvx2Dir -Recurse -Force
+        if (Test-Path $llamaVariantDir) { Remove-Item $llamaVariantDir -Recurse -Force -ErrorAction SilentlyContinue }
+        New-Item -ItemType Directory -Force -Path $llamaVariantDir | Out-Null
+        Copy-Item -Path (Join-Path $srcDir '*') -Destination $llamaVariantDir -Recurse -Force
 
         Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
         Remove-Item $llamaZipPath -Force -ErrorAction SilentlyContinue
@@ -257,9 +269,13 @@ try {
         try { Invoke-Download $llamaLicenseUrl $llamaLicenseOut 120 } catch { Write-Host "[WARNING] Failed to download llama.cpp LICENSE: $($_.Exception.Message)" }
     } else {
         if ($existingManifest -and $existingManifest.llama_cpp) {
-            $tag = $existingManifest.llama_cpp.release_tag
-            $llamaZipName = $existingManifest.llama_cpp.asset_name
-            $llamaZipUrl = $existingManifest.llama_cpp.download_url
+            $existingVariant = [string]$existingManifest.llama_cpp.variant
+            if ([string]::IsNullOrWhiteSpace($existingVariant)) { $existingVariant = 'cpu' }
+            if ($existingVariant.ToLowerInvariant() -eq $llamaVariant) {
+                $tag = $existingManifest.llama_cpp.release_tag
+                $llamaZipName = $existingManifest.llama_cpp.asset_name
+                $llamaZipUrl = $existingManifest.llama_cpp.download_url
+            }
         }
         if (-not (Test-Path $llamaLicenseOut)) {
             $fallbackTag = $tag
@@ -305,7 +321,11 @@ try {
 
     $serverHash = $null
     if ($existingManifest -and $existingManifest.llama_cpp -and $existingManifest.llama_cpp.server_exe_sha256 -and -not $downloadedLlama) {
-        $serverHash = $existingManifest.llama_cpp.server_exe_sha256
+        $existingVariant = [string]$existingManifest.llama_cpp.variant
+        if ([string]::IsNullOrWhiteSpace($existingVariant)) { $existingVariant = 'cpu' }
+        if ($existingVariant.ToLowerInvariant() -eq $llamaVariant) {
+            $serverHash = $existingManifest.llama_cpp.server_exe_sha256
+        }
     } elseif (Test-Path $serverExePath) {
         $serverHash = (Get-FileHash -Algorithm SHA256 -Path $serverExePath).Hash
     }
@@ -329,6 +349,7 @@ try {
             asset_name = $llamaZipName
             download_url = $llamaZipUrl
             server_exe_sha256 = $serverHash
+            variant = $llamaVariant
         }
         model = [ordered]@{
             repo = $modelRepo

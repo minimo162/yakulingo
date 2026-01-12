@@ -797,12 +797,20 @@ class LocalLlamaServerManager:
         self._process_log_fp = log_fp
         logger.info("Starting llama-server: %s", " ".join(args))
         try:
+            env = os.environ.copy()
+            if settings.local_ai_vk_force_max_allocation_size:
+                env["GGML_VK_FORCE_MAX_ALLOCATION_SIZE"] = str(
+                    settings.local_ai_vk_force_max_allocation_size
+                )
+            if settings.local_ai_vk_disable_f16:
+                env["GGML_VK_DISABLE_F16"] = "1"
             proc = subprocess.Popen(
                 args,
                 stdout=log_fp,
                 stderr=log_fp,
                 stdin=subprocess.DEVNULL,
                 creationflags=creationflags,
+                env=env,
             )
         except OSError as e:
             log_fp.close()
@@ -967,6 +975,35 @@ class LocalLlamaServerManager:
                 args += ["--ubatch-size", str(int(ubatch_size))]
             elif has_short("-ub"):
                 args += ["-ub", str(int(ubatch_size))]
+
+        device = settings.local_ai_device
+        if help_text and device and device != "none" and has_long("--device"):
+            args += ["--device", device]
+
+        n_gpu_layers = settings.local_ai_n_gpu_layers
+        if help_text and n_gpu_layers:
+            flag = None
+            if has_long("--n-gpu-layers"):
+                flag = "--n-gpu-layers"
+            elif has_short("-ngl"):
+                flag = "-ngl"
+            if flag:
+                args += [flag, str(n_gpu_layers)]
+
+        flash_attn = settings.local_ai_flash_attn
+        if help_text and flash_attn and str(flash_attn).lower() != "auto":
+            flag = None
+            if has_short("-fa"):
+                flag = "-fa"
+            elif has_long("--flash-attn"):
+                flag = "--flash-attn"
+            elif has_long("--flash-attention"):
+                flag = "--flash-attention"
+            if flag:
+                args += [flag, str(flash_attn)]
+
+        if help_text and settings.local_ai_no_warmup and has_long("--no-warmup"):
+            args += ["--no-warmup"]
 
         return args
 

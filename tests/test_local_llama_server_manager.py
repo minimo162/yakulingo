@@ -427,6 +427,63 @@ def test_build_server_args_adds_batch_flags_when_available(
     assert args[args.index("--ubatch-size") + 1] == "128"
 
 
+def test_build_server_args_adds_gpu_flags_when_available(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager = lls.LocalLlamaServerManager()
+    server_exe_path = tmp_path / "llama-server.exe"
+    server_exe_path.write_bytes(b"exe")
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"model")
+
+    help_text = "\n".join(
+        [
+            "-m, --model",
+            "--ctx-size",
+            "--threads",
+            "--temp",
+            "--n-predict",
+            "--device",
+            "-ngl, --n-gpu-layers",
+            "-fa, --flash-attn",
+            "--no-warmup",
+        ]
+    )
+
+    class DummyCompleted:
+        def __init__(self, stdout: str) -> None:
+            self.stdout = stdout
+
+    def fake_run(*args, **kwargs):
+        return DummyCompleted(help_text)
+
+    monkeypatch.setattr(lls.subprocess, "run", fake_run)
+
+    settings = AppSettings(
+        local_ai_device="Vulkan0",
+        local_ai_n_gpu_layers=99,
+        local_ai_flash_attn="1",
+        local_ai_no_warmup=True,
+    )
+    settings._validate()
+
+    args = manager._build_server_args(
+        server_exe_path=server_exe_path,
+        model_path=model_path,
+        host="127.0.0.1",
+        port=4891,
+        settings=settings,
+    )
+
+    assert "--device" in args
+    assert args[args.index("--device") + 1] == "Vulkan0"
+    assert "--n-gpu-layers" in args
+    assert args[args.index("--n-gpu-layers") + 1] == "99"
+    assert "-fa" in args
+    assert args[args.index("-fa") + 1] == "1"
+    assert "--no-warmup" in args
+
+
 def test_build_server_args_auto_threads_when_zero(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -563,6 +620,63 @@ def test_build_server_args_skips_batch_flags_without_help(
     assert "-b" not in args
     assert "--ubatch-size" not in args
     assert "-ub" not in args
+
+
+def test_start_new_server_injects_vk_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager = lls.LocalLlamaServerManager()
+    server_exe_path = tmp_path / "llama-server.exe"
+    server_exe_path.write_bytes(b"exe")
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"model")
+
+    monkeypatch.setattr(
+        lls.LocalLlamaServerManager,
+        "get_log_path",
+        staticmethod(lambda: tmp_path / "local_ai_server.log"),
+    )
+    monkeypatch.setattr(
+        manager,
+        "_build_server_args",
+        lambda **kwargs: [str(server_exe_path)],
+    )
+    monkeypatch.setattr(
+        manager,
+        "_wait_ready",
+        lambda *args, **kwargs: (True, None, {}),
+    )
+
+    captured = {}
+
+    class DummyProc:
+        def poll(self):
+            return None
+
+    def fake_popen(*args, **kwargs):
+        captured["env"] = kwargs.get("env")
+        return DummyProc()
+
+    monkeypatch.setattr(lls.subprocess, "Popen", fake_popen)
+
+    settings = AppSettings(
+        local_ai_vk_force_max_allocation_size=536870912,
+        local_ai_vk_disable_f16=True,
+    )
+    settings._validate()
+
+    runtime = manager._start_new_server(
+        server_exe_path=server_exe_path,
+        server_variant="direct",
+        model_path=model_path,
+        host="127.0.0.1",
+        port=4891,
+        settings=settings,
+    )
+
+    assert runtime.model_path == model_path
+    assert captured["env"]["GGML_VK_FORCE_MAX_ALLOCATION_SIZE"] == "536870912"
+    assert captured["env"]["GGML_VK_DISABLE_F16"] == "1"
 
 
 def test_build_server_args_uses_cached_help(

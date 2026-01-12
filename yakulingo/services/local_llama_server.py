@@ -945,6 +945,22 @@ class LocalLlamaServerManager:
                 return False
             return bool(re.search(rf"(?m)^\s*{re.escape(flag)}(?:,|\s)", help_text))
 
+        def normalize_device(value: Optional[str]) -> Optional[str]:
+            if value is None:
+                return None
+            token = str(value).strip()
+            return token or None
+
+        def normalize_n_gpu_layers(value: Optional[object]) -> Optional[str]:
+            if value is None:
+                return None
+            if isinstance(value, bool):
+                return None
+            if isinstance(value, (int, float)):
+                return str(int(value))
+            token = str(value).strip()
+            return token or None
+
         gpu_enabled = str(server_variant).lower() == "vulkan"
 
         args: list[str] = [str(server_exe_path)]
@@ -1019,21 +1035,42 @@ class LocalLlamaServerManager:
             elif has_short("-ub"):
                 args += ["-ub", str(int(ubatch_size))]
 
-        if gpu_enabled:
-            device = settings.local_ai_device
-            if help_text and device and device != "none" and has_long("--device"):
-                args += ["--device", device]
+        device_value = normalize_device(settings.local_ai_device)
+        n_gpu_layers_value = normalize_n_gpu_layers(settings.local_ai_n_gpu_layers)
+        cpu_only_requested = False
+        if device_value and device_value.lower() == "none":
+            cpu_only_requested = True
+        if n_gpu_layers_value == "0":
+            cpu_only_requested = True
 
-            n_gpu_layers = settings.local_ai_n_gpu_layers
-            if help_text and n_gpu_layers:
-                flag = None
-                if has_long("--n-gpu-layers"):
-                    flag = "--n-gpu-layers"
-                elif has_short("-ngl"):
-                    flag = "-ngl"
-                if flag:
-                    args += [flag, str(n_gpu_layers)]
+        device_supported = bool(help_text) and has_long("--device")
+        ngl_flag = None
+        if help_text:
+            if has_long("--n-gpu-layers"):
+                ngl_flag = "--n-gpu-layers"
+            elif has_short("-ngl"):
+                ngl_flag = "-ngl"
 
+        applied_device: Optional[str] = None
+        applied_n_gpu_layers: Optional[str] = None
+
+        if device_supported:
+            if cpu_only_requested:
+                args += ["--device", "none"]
+                applied_device = "none"
+            elif gpu_enabled and device_value and device_value.lower() != "none":
+                args += ["--device", device_value]
+                applied_device = device_value
+
+        if ngl_flag:
+            if cpu_only_requested:
+                args += [ngl_flag, "0"]
+                applied_n_gpu_layers = "0"
+            elif gpu_enabled and n_gpu_layers_value is not None:
+                args += [ngl_flag, n_gpu_layers_value]
+                applied_n_gpu_layers = n_gpu_layers_value
+
+        if gpu_enabled and not cpu_only_requested:
             flash_attn = settings.local_ai_flash_attn
             if help_text and flash_attn and str(flash_attn).lower() != "auto":
                 flag = None
@@ -1068,6 +1105,22 @@ class LocalLlamaServerManager:
 
             if help_text and settings.local_ai_no_warmup and has_long("--no-warmup"):
                 args += ["--no-warmup"]
+
+        device_log = applied_device
+        if not device_supported:
+            device_log = "unsupported"
+        elif device_log is None:
+            device_log = "not-set"
+
+        ngl_log = applied_n_gpu_layers
+        if ngl_flag is None:
+            ngl_log = "unsupported"
+        elif ngl_log is None:
+            ngl_log = "not-set"
+
+        logger.info(
+            "Local AI offload flags: --device %s / -ngl %s", device_log, ngl_log
+        )
 
         return args
 

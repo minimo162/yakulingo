@@ -12,7 +12,7 @@
 
 ## Vulkan(iGPU) 事前確認（Windows）
 - Vulkan 版 llama.cpp バイナリを用意（GitHub Releases の Windows x64 (Vulkan) など）
-  - 同梱する場合: `LOCAL_AI_LLAMA_CPP_VARIANT=vulkan` を設定して `packaging/install_deps.bat` を実行
+  - 同梱する場合: 新規インストールは Vulkan(x64) が既定。CPU版にしたい場合は `LOCAL_AI_LLAMA_CPP_VARIANT=cpu` を設定して `packaging/install_deps.bat` を実行（既存 `manifest.json` がある場合はその設定を優先し、切り替えは `LOCAL_AI_LLAMA_CPP_VARIANT` で上書き）
   - 展開先の例: `local_ai/llama_cpp/vulkan/`
 - 展開したフォルダでデバイスを確認
 ```powershell

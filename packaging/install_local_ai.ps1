@@ -149,7 +149,7 @@ try {
         try { $existingManifest = Get-Content -Raw -Path $manifestPath | ConvertFrom-Json } catch { $existingManifest = $null }
     }
 
-    $llamaVariant = 'cpu'
+    $llamaVariant = 'vulkan'
     if ($existingManifest -and $existingManifest.llama_cpp -and $existingManifest.llama_cpp.variant) {
         $llamaVariant = [string]$existingManifest.llama_cpp.variant
     }

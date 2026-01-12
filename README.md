@@ -113,6 +113,7 @@ PDF翻訳はPP-DocLayout-L（PaddleOCR）によるレイアウト解析を使用
 
 Windows環境で最も簡単にセットアップできる方法です。Python、依存関係、Playwrightブラウザを自動でインストールします。
 > **Note**: 新規インストール（`local_ai/manifest.json` が無い状態）では Vulkan(x64) が既定です。CPU版にしたい場合は `set LOCAL_AI_LLAMA_CPP_VARIANT=cpu` を設定してから実行します。
+> **Note**: `packaging/install_local_ai.ps1` は実行のたびに最新リリースを確認し、必要な場合のみ更新します。
 
 ```bash
 # リポジトリをクローン

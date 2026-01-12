@@ -172,6 +172,54 @@ try {
         return $childFull
     }
 
+    function Get-LlamaLatest([string]$repo, [string]$assetSuffix, [string]$label) {
+        $result = [ordered]@{
+            tag = $null
+            url = $null
+            name = $null
+            licenseUrl = $null
+        }
+        try {
+            $release = Invoke-Json "https://api.github.com/repos/$repo/releases/latest"
+            $tag = $release.tag_name
+            if (-not $tag) { throw 'Failed to read llama.cpp release tag.' }
+            $asset = $release.assets | Where-Object { $_.name -match ($assetSuffix + '$') } | Select-Object -First 1
+            if (-not $asset) { throw "llama.cpp Windows $label binary not found in release assets." }
+
+            $result.tag = $tag
+            $result.url = $asset.browser_download_url
+            $result.name = [System.IO.Path]::GetFileName([string]$asset.name)
+            $result.licenseUrl = "https://raw.githubusercontent.com/$repo/$tag/LICENSE"
+            return $result
+        } catch {
+            Write-Host "[WARNING] Failed to query GitHub API for llama.cpp release: $($_.Exception.Message)"
+            Write-Host '[INFO] Falling back to parsing GitHub releases page HTML...'
+
+            $latestUrl = "https://github.com/$repo/releases/latest"
+            if ($useProxy) {
+                $resp = Invoke-WebRequest -Uri $latestUrl -UseBasicParsing -Headers $httpHeaders -Proxy $proxy -ProxyCredential $cred -TimeoutSec 120
+            } else {
+                $resp = Invoke-WebRequest -Uri $latestUrl -UseBasicParsing -Headers $httpHeaders -TimeoutSec 120
+            }
+            $html = [string]$resp.Content
+
+            $repoPath = [regex]::Escape("/$repo")
+            $pattern = 'href="(?<href>' + $repoPath + '/releases/download/[^"/\s]+/[^"\s]*' + $assetSuffix + ')"'
+            $m = [regex]::Match($html, $pattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+            if (-not $m.Success) { throw "llama.cpp Windows $label binary link not found on releases page." }
+
+            $href = $m.Groups['href'].Value
+            $result.url = 'https://github.com' + $href
+            $result.name = Split-Path -Leaf $href
+
+            $tagMatch = [regex]::Match($href, '/releases/download/(?<tag>[^/]+)/', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+            if ($tagMatch.Success) { $result.tag = $tagMatch.Groups['tag'].Value }
+            if (-not $result.tag) { $result.tag = 'master' }
+            $result.licenseUrl = "https://raw.githubusercontent.com/$repo/$result.tag/LICENSE"
+            return $result
+        }
+    }
+
     $defaultModelRepo = 'dahara1/shisa-v2.1-qwen3-8b-UD-japanese-imatrix'
     $defaultModelFile = 'shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf'
     $manifestModelRepo = $null
@@ -198,54 +246,76 @@ try {
     $serverExePath = Join-Path $llamaVariantDir 'llama-server.exe'
     $llamaLicenseOut = Join-Path $llamaDir 'LICENSE'
 
+    $llamaAssetSuffix = if ($llamaVariant -eq 'vulkan') { 'bin-win-vulkan-x64\.zip' } else { 'bin-win-cpu-x64\.zip' }
     $tag = $null
     $llamaZipUrl = $null
     $llamaZipName = $null
+    $llamaLicenseUrl = $null
     $downloadedLlama = $false
-    if (-not (Test-Path $serverExePath)) {
-        $llamaZipPath = $null
-        $llamaLicenseUrl = $null
-        $llamaAssetSuffix = if ($llamaVariant -eq 'vulkan') { 'bin-win-vulkan-x64\.zip' } else { 'bin-win-cpu-x64\.zip' }
+    $serverExists = Test-Path $serverExePath
 
+    $existingVariant = $null
+    $existingTag = $null
+    $existingZipName = $null
+    $existingZipUrl = $null
+    $existingHash = $null
+    if ($existingManifest -and $existingManifest.llama_cpp) {
+        $existingVariant = [string]$existingManifest.llama_cpp.variant
+        if ([string]::IsNullOrWhiteSpace($existingVariant)) { $existingVariant = 'cpu' }
+        $existingTag = $existingManifest.llama_cpp.release_tag
+        $existingZipName = $existingManifest.llama_cpp.asset_name
+        $existingZipUrl = $existingManifest.llama_cpp.download_url
+        $existingHash = $existingManifest.llama_cpp.server_exe_sha256
+    }
+
+    $latestInfo = $null
+    $latestError = $null
+    try {
+        $latestInfo = Get-LlamaLatest $llamaRepo $llamaAssetSuffix $llamaLabel
+    } catch {
+        $latestError = $_.Exception.Message
+    }
+
+    if ($latestInfo) {
+        $tag = $latestInfo.tag
+        $llamaZipUrl = $latestInfo.url
+        $llamaZipName = $latestInfo.name
+        $llamaLicenseUrl = $latestInfo.licenseUrl
+    } elseif (-not $serverExists) {
+        throw "Failed to retrieve latest llama.cpp release: $latestError"
+    } else {
+        Write-Host "[WARNING] Failed to retrieve latest llama.cpp release: $latestError"
+        Write-Host '[INFO] Using existing llama.cpp without updating.'
+        $tag = $existingTag
+        $llamaZipName = $existingZipName
+        $llamaZipUrl = $existingZipUrl
+    }
+
+    $currentHash = $null
+    if ($serverExists) {
         try {
-            $release = Invoke-Json "https://api.github.com/repos/$llamaRepo/releases/latest"
-            $tag = $release.tag_name
-            if (-not $tag) { throw 'Failed to read llama.cpp release tag.' }
-            $asset = $release.assets | Where-Object { $_.name -match ($llamaAssetSuffix + '$') } | Select-Object -First 1
-            if (-not $asset) { throw "llama.cpp Windows $llamaLabel binary not found in release assets." }
-
-            $llamaZipUrl = $asset.browser_download_url
-            $llamaZipName = [System.IO.Path]::GetFileName([string]$asset.name)
-            $llamaZipPath = Join-Path $llamaDir $llamaZipName
-            $llamaLicenseUrl = "https://raw.githubusercontent.com/$llamaRepo/$tag/LICENSE"
+            $currentHash = (Get-FileHash -Algorithm SHA256 -Path $serverExePath).Hash
         } catch {
-            Write-Host "[WARNING] Failed to query GitHub API for llama.cpp release: $($_.Exception.Message)"
-            Write-Host '[INFO] Falling back to parsing GitHub releases page HTML...'
-
-            $latestUrl = "https://github.com/$llamaRepo/releases/latest"
-            if ($useProxy) {
-                $resp = Invoke-WebRequest -Uri $latestUrl -UseBasicParsing -Headers $httpHeaders -Proxy $proxy -ProxyCredential $cred -TimeoutSec 120
-            } else {
-                $resp = Invoke-WebRequest -Uri $latestUrl -UseBasicParsing -Headers $httpHeaders -TimeoutSec 120
-            }
-            $html = [string]$resp.Content
-
-            $repoPath = [regex]::Escape("/$llamaRepo")
-            $pattern = 'href="(?<href>' + $repoPath + '/releases/download/[^"/\s]+/[^"\s]*' + $llamaAssetSuffix + ')"'
-            $m = [regex]::Match($html, $pattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
-            if (-not $m.Success) { throw "llama.cpp Windows $llamaLabel binary link not found on releases page." }
-
-            $href = $m.Groups['href'].Value
-            $llamaZipUrl = 'https://github.com' + $href
-            $llamaZipName = Split-Path -Leaf $href
-            $llamaZipPath = Join-Path $llamaDir $llamaZipName
-
-            $tagMatch = [regex]::Match($href, '/releases/download/(?<tag>[^/]+)/', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
-            if ($tagMatch.Success) { $tag = $tagMatch.Groups['tag'].Value }
-            if (-not $tag) { $tag = 'master' }
-            $llamaLicenseUrl = "https://raw.githubusercontent.com/$llamaRepo/$tag/LICENSE"
+            Write-Host "[WARNING] Failed to hash existing llama-server.exe: $($_.Exception.Message)"
         }
+    }
 
+    $needsDownload = -not $serverExists
+    if (-not $needsDownload -and $latestInfo) {
+        $manifestMatches = $false
+        if ($existingVariant -and $existingVariant.ToLowerInvariant() -eq $llamaVariant `
+            -and $existingTag -and $existingTag -eq $tag `
+            -and $existingZipName -and $existingZipName -eq $llamaZipName `
+            -and $existingZipUrl -and $existingZipUrl -eq $llamaZipUrl `
+            -and $existingHash -and $currentHash -and $existingHash -eq $currentHash) {
+            $manifestMatches = $true
+        }
+        if (-not $manifestMatches) { $needsDownload = $true }
+    }
+
+    if ($needsDownload) {
+        if (-not $llamaZipUrl -or -not $llamaZipName) { throw "llama.cpp Windows $llamaLabel binary URL not resolved." }
+        $llamaZipPath = Join-Path $llamaDir $llamaZipName
         Write-Host "[INFO] Downloading llama.cpp ($tag, $llamaLabel): $llamaZipName"
         Invoke-Download $llamaZipUrl $llamaZipPath 1800
 
@@ -266,23 +336,19 @@ try {
         Remove-Item $llamaZipPath -Force -ErrorAction SilentlyContinue
 
         $downloadedLlama = $true
+        $serverExists = $true
+        $currentHash = (Get-FileHash -Algorithm SHA256 -Path $serverExePath).Hash
+    }
+
+    if (-not $llamaLicenseUrl -and $tag) {
+        $llamaLicenseUrl = "https://raw.githubusercontent.com/$llamaRepo/$tag/LICENSE"
+    }
+    if (-not $llamaLicenseUrl -and -not (Test-Path $llamaLicenseOut)) {
+        $fallbackTag = if ($tag) { $tag } else { 'master' }
+        $llamaLicenseUrl = "https://raw.githubusercontent.com/$llamaRepo/$fallbackTag/LICENSE"
+    }
+    if ($llamaLicenseUrl -and (-not (Test-Path $llamaLicenseOut) -or $downloadedLlama)) {
         try { Invoke-Download $llamaLicenseUrl $llamaLicenseOut 120 } catch { Write-Host "[WARNING] Failed to download llama.cpp LICENSE: $($_.Exception.Message)" }
-    } else {
-        if ($existingManifest -and $existingManifest.llama_cpp) {
-            $existingVariant = [string]$existingManifest.llama_cpp.variant
-            if ([string]::IsNullOrWhiteSpace($existingVariant)) { $existingVariant = 'cpu' }
-            if ($existingVariant.ToLowerInvariant() -eq $llamaVariant) {
-                $tag = $existingManifest.llama_cpp.release_tag
-                $llamaZipName = $existingManifest.llama_cpp.asset_name
-                $llamaZipUrl = $existingManifest.llama_cpp.download_url
-            }
-        }
-        if (-not (Test-Path $llamaLicenseOut)) {
-            $fallbackTag = $tag
-            if (-not $fallbackTag) { $fallbackTag = 'master' }
-            $fallbackLicenseUrl = "https://raw.githubusercontent.com/$llamaRepo/$fallbackTag/LICENSE"
-            try { Invoke-Download $fallbackLicenseUrl $llamaLicenseOut 120 } catch { Write-Host "[WARNING] Failed to download llama.cpp LICENSE: $($_.Exception.Message)" }
-        }
     }
 
     if ($skipModel) {
@@ -319,14 +385,13 @@ try {
     try { Invoke-Download $licenseUrl (Join-Path $modelsDir 'LICENSE') 120 } catch { Write-Host "[WARNING] Failed to download model LICENSE: $($_.Exception.Message)" }
     try { Invoke-Download $readmeUrl (Join-Path $modelsDir 'README.md') 120 } catch { Write-Host "[WARNING] Failed to download model README: $($_.Exception.Message)" }
 
-    $serverHash = $null
-    if ($existingManifest -and $existingManifest.llama_cpp -and $existingManifest.llama_cpp.server_exe_sha256 -and -not $downloadedLlama) {
-        $existingVariant = [string]$existingManifest.llama_cpp.variant
-        if ([string]::IsNullOrWhiteSpace($existingVariant)) { $existingVariant = 'cpu' }
-        if ($existingVariant.ToLowerInvariant() -eq $llamaVariant) {
-            $serverHash = $existingManifest.llama_cpp.server_exe_sha256
+    $serverHash = $currentHash
+    if (-not $serverHash -and $existingHash -and -not $downloadedLlama) {
+        if ($existingVariant -and $existingVariant.ToLowerInvariant() -eq $llamaVariant) {
+            $serverHash = $existingHash
         }
-    } elseif (Test-Path $serverExePath) {
+    }
+    if (-not $serverHash -and (Test-Path $serverExePath)) {
         $serverHash = (Get-FileHash -Algorithm SHA256 -Path $serverExePath).Hash
     }
 

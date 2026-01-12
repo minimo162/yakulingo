@@ -453,7 +453,7 @@ echo [INFO] This step may download large files (model may be a few GB).
 
 echo.
 echo Do you want to install Local AI runtime now?
-echo   [1] Yes - Download llama.cpp + model (Local AI ready; large download)
+echo   [1] Yes - Download llama.cpp + AgentCPM-Explore model (build 4bit; very large download)
 echo   [2] Yes - Download llama.cpp only (default; add model later)
 echo   [3] No  - Skip this step
 echo.
@@ -470,8 +470,22 @@ set "LOCAL_AI_SKIP_MODEL=0"
 if "!LOCAL_AI_CHOICE!"=="2" set "LOCAL_AI_SKIP_MODEL=1"
 
 if not exist "local_ai\\manifest.json" (
-    if not defined LOCAL_AI_MODEL_REPO set "LOCAL_AI_MODEL_REPO=dahara1/shisa-v2.1-qwen3-8b-UD-japanese-imatrix"
-    if not defined LOCAL_AI_MODEL_FILE set "LOCAL_AI_MODEL_FILE=shisa-v2.1-qwen3-8B-UD-IQ3_XXS.gguf"
+    if "!LOCAL_AI_SKIP_MODEL!"=="1" (
+        echo [INFO] Local AI model: SKIP (LOCAL_AI_SKIP_MODEL=1)
+    ) else (
+        if not defined LOCAL_AI_MODEL_KIND set "LOCAL_AI_MODEL_KIND=hf"
+        if not defined LOCAL_AI_MODEL_REPO set "LOCAL_AI_MODEL_REPO=openbmb/AgentCPM-Explore"
+        if not defined LOCAL_AI_MODEL_QUANT set "LOCAL_AI_MODEL_QUANT=Q4_K_M"
+        if not defined LOCAL_AI_MODEL_BASE_NAME set "LOCAL_AI_MODEL_BASE_NAME=AgentCPM-Explore"
+        echo [INFO] Local AI model: AgentCPM-Explore (LOCAL_AI_MODEL_KIND=!LOCAL_AI_MODEL_KIND!, quant=!LOCAL_AI_MODEL_QUANT!)
+        echo [INFO] NOTE: HF^>GGUF^>4bit may require extra Python deps and can take a long time.
+    )
+)
+
+if not exist "local_ai\\manifest.json" (
+    if "!LOCAL_AI_SKIP_MODEL!"=="1" (
+        echo [INFO] You can add a model later via LOCAL_AI_MODEL_KIND=gguf/hf and rerun: powershell -NoProfile -ExecutionPolicy Bypass -File packaging\install_local_ai.ps1
+    )
 )
 
 if not defined LOCAL_AI_LLAMA_CPP_VARIANT (
@@ -490,6 +504,7 @@ if errorlevel 1 (
     echo [WARNING] Failed to install Local AI runtime ^(optional^).
     echo [INFO] Copilot translation will still work.
     echo [INFO] You can retry later: powershell -NoProfile -ExecutionPolicy Bypass -File packaging\install_local_ai.ps1
+    echo [INFO] If HF build failed, you can switch to GGUF download: set LOCAL_AI_MODEL_KIND=gguf (and set LOCAL_AI_MODEL_REPO/FILE), or choose option [2] (llama.cpp only).
     echo [INFO] Or manually place files under local_ai\ ^(llama_cpp + models^).
 )
 

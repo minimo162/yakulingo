@@ -116,6 +116,7 @@ Windows環境で最も簡単にセットアップできる方法です。Python�
 > **Note**: `packaging/install_local_ai.ps1` は実行のたびに最新リリースを確認し、必要な場合のみ更新します。
 > **Note**: モデルは `set LOCAL_AI_MODEL_REPO=...` / `set LOCAL_AI_MODEL_FILE=...` / `set LOCAL_AI_MODEL_REVISION=...` で上書きできます。実行結果は `local_ai/manifest.json` に `model.source` / `model.output` として記録されます。
 > **Note**: `set LOCAL_AI_MODEL_KIND=hf` の場合は、task-02 のツール（`tools/hf_to_gguf_quantize.py`）を使って HF→GGUF→4bit 変換を試みます（Python/依存が揃っていない場合はエラーになります）。
+> **Note**: `packaging/install_deps.bat` の Step 7 で「[1] llama.cpp + model」を選ぶと、既定で `openbmb/AgentCPM-Explore` を `Q4_K_M` に量子化する（HF→GGUF→4bit）導線になります。
 > **Note**: 既定のローカルAIモデルは `local_ai/models/AgentCPM-Explore.Q4_K_M.gguf` です（ファイルが無い場合は `local_ai/models/` 配下を自動探索して起動します）。
 > **Note**: AgentCPM-Explore の GGUF が配布されていない/404 になる場合は、HF 変換モードで生成できます（PyTorch/Transformers 等の依存が必要で、環境によっては失敗します）。
 >

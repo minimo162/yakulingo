@@ -1526,7 +1526,7 @@ class AppSettings:
     copilot_enabled: bool = True          # Copilot UI/接続を無効化するスイッチ
 
     # Local AI (llama.cpp llama-server)
-    local_ai_model_path: str = "local_ai/models/shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf"
+    local_ai_model_path: str = "local_ai/models/shisa-v2.1-qwen3-8B-UD-IQ3_XXS.gguf"
     local_ai_server_dir: str = "local_ai/llama_cpp"
     local_ai_host: str = "127.0.0.1"  # security: forced to localhost
     local_ai_port_base: int = 4891

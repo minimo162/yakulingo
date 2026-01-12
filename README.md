@@ -292,7 +292,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
   "max_chars_per_batch": 1000,
   "request_timeout": 600,
   "max_retries": 3,
-  "local_ai_model_path": "local_ai/models/shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf",
+  "local_ai_model_path": "local_ai/models/shisa-v2.1-qwen3-8B-UD-IQ3_XXS.gguf",
   "local_ai_server_dir": "local_ai/llama_cpp",
   "local_ai_host": "127.0.0.1",
   "local_ai_port_base": 4891,
@@ -425,7 +425,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 | `ocr_batch_size` | PDF処理のバッチページ数 | 5 |
 | `ocr_dpi` | PDF処理の解像度 | 300 |
 | `max_chars_per_batch` | Copilot送信1回あたりの最大文字数 | 1000 |
-| `local_ai_model_path` | ローカルAIモデル（.gguf）のパス | `local_ai/models/shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf` |
+| `local_ai_model_path` | ローカルAIモデル（.gguf）のパス | `local_ai/models/shisa-v2.1-qwen3-8B-UD-IQ3_XXS.gguf` |
 | `local_ai_server_dir` | ローカルAIサーバ（llama-server）のディレクトリ | `local_ai/llama_cpp` |
 | `local_ai_port_base` | ローカルAIのポート探索開始 | 4891 |
 | `local_ai_port_max` | ローカルAIのポート探索上限 | 4900 |

@@ -221,7 +221,7 @@ try {
     }
 
     $defaultModelRepo = 'dahara1/shisa-v2.1-qwen3-8b-UD-japanese-imatrix'
-    $defaultModelFile = 'shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf'
+    $defaultModelFile = 'shisa-v2.1-qwen3-8B-UD-IQ3_XXS.gguf'
     $manifestModelRepo = $null
     $manifestModelFile = $null
     if ($existingManifest -and $existingManifest.model) {

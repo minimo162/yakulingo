@@ -471,7 +471,7 @@ if "!LOCAL_AI_CHOICE!"=="2" set "LOCAL_AI_SKIP_MODEL=1"
 
 if not exist "local_ai\\manifest.json" (
     if not defined LOCAL_AI_MODEL_REPO set "LOCAL_AI_MODEL_REPO=dahara1/shisa-v2.1-qwen3-8b-UD-japanese-imatrix"
-    if not defined LOCAL_AI_MODEL_FILE set "LOCAL_AI_MODEL_FILE=shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf"
+    if not defined LOCAL_AI_MODEL_FILE set "LOCAL_AI_MODEL_FILE=shisa-v2.1-qwen3-8B-UD-IQ3_XXS.gguf"
 )
 
 if not defined LOCAL_AI_LLAMA_CPP_VARIANT (

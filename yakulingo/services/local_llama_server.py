@@ -628,7 +628,7 @@ class LocalLlamaServerManager:
             _app_base_dir()
             / "local_ai"
             / "models"
-            / "shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf"
+            / "shisa-v2.1-qwen3-8B-UD-IQ3_XXS.gguf"
         )
         # Compatibility fallback for installs that still have older models.
         candidates.append(

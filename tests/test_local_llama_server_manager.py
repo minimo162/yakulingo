@@ -438,6 +438,7 @@ def test_build_server_args_adds_batch_flags_when_available(
 
     args = manager._build_server_args(
         server_exe_path=server_exe_path,
+        server_variant="generic",
         model_path=model_path,
         host="127.0.0.1",
         port=4891,
@@ -496,6 +497,7 @@ def test_build_server_args_adds_gpu_flags_when_available(
 
     args = manager._build_server_args(
         server_exe_path=server_exe_path,
+        server_variant="vulkan",
         model_path=model_path,
         host="127.0.0.1",
         port=4891,
@@ -513,6 +515,72 @@ def test_build_server_args_adds_gpu_flags_when_available(
     assert "--cache-type-v" in args
     assert args[args.index("--cache-type-v") + 1] == "q8_0"
     assert "--no-warmup" in args
+
+
+def test_build_server_args_skips_gpu_flags_for_non_vulkan_variant(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager = lls.LocalLlamaServerManager()
+    server_exe_path = tmp_path / "llama-server.exe"
+    server_exe_path.write_bytes(b"exe")
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"model")
+
+    help_text = "\n".join(
+        [
+            "-m, --model",
+            "--ctx-size",
+            "--threads",
+            "--temp",
+            "--n-predict",
+            "--device",
+            "-ngl, --n-gpu-layers",
+            "-fa, --flash-attn",
+            "-ctk, --cache-type-k",
+            "-ctv, --cache-type-v",
+            "--no-warmup",
+        ]
+    )
+
+    class DummyCompleted:
+        def __init__(self, stdout: str) -> None:
+            self.stdout = stdout
+
+    def fake_run(*args, **kwargs):
+        return DummyCompleted(help_text)
+
+    monkeypatch.setattr(lls.subprocess, "run", fake_run)
+
+    settings = AppSettings(
+        local_ai_device="Vulkan0",
+        local_ai_n_gpu_layers=99,
+        local_ai_flash_attn="1",
+        local_ai_no_warmup=True,
+        local_ai_cache_type_k="q8_0",
+        local_ai_cache_type_v="q8_0",
+    )
+    settings._validate()
+
+    args = manager._build_server_args(
+        server_exe_path=server_exe_path,
+        server_variant="generic",
+        model_path=model_path,
+        host="127.0.0.1",
+        port=4891,
+        settings=settings,
+    )
+
+    assert "--device" not in args
+    assert "--n-gpu-layers" not in args
+    assert "-ngl" not in args
+    assert "-fa" not in args
+    assert "--flash-attn" not in args
+    assert "--flash-attention" not in args
+    assert "--cache-type-k" not in args
+    assert "-ctk" not in args
+    assert "--cache-type-v" not in args
+    assert "-ctv" not in args
+    assert "--no-warmup" not in args
 
 
 def test_build_server_args_auto_threads_when_zero(
@@ -550,6 +618,7 @@ def test_build_server_args_auto_threads_when_zero(
 
     args = manager._build_server_args(
         server_exe_path=server_exe_path,
+        server_variant="generic",
         model_path=model_path,
         host="127.0.0.1",
         port=4891,
@@ -595,6 +664,7 @@ def test_build_server_args_auto_threads_fallbacks_when_physical_missing(
 
     args = manager._build_server_args(
         server_exe_path=server_exe_path,
+        server_variant="generic",
         model_path=model_path,
         host="127.0.0.1",
         port=4891,
@@ -641,6 +711,7 @@ def test_build_server_args_skips_batch_flags_without_help(
 
     args = manager._build_server_args(
         server_exe_path=server_exe_path,
+        server_variant="generic",
         model_path=model_path,
         host="127.0.0.1",
         port=4891,
@@ -698,7 +769,7 @@ def test_start_new_server_injects_vk_env(
 
     runtime = manager._start_new_server(
         server_exe_path=server_exe_path,
-        server_variant="direct",
+        server_variant="vulkan",
         model_path=model_path,
         host="127.0.0.1",
         port=4891,
@@ -708,6 +779,63 @@ def test_start_new_server_injects_vk_env(
     assert runtime.model_path == model_path
     assert captured["env"]["GGML_VK_FORCE_MAX_ALLOCATION_SIZE"] == "536870912"
     assert captured["env"]["GGML_VK_DISABLE_F16"] == "1"
+
+
+def test_start_new_server_skips_vk_env_for_non_vulkan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager = lls.LocalLlamaServerManager()
+    server_exe_path = tmp_path / "llama-server.exe"
+    server_exe_path.write_bytes(b"exe")
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"model")
+
+    monkeypatch.setattr(
+        lls.LocalLlamaServerManager,
+        "get_log_path",
+        staticmethod(lambda: tmp_path / "local_ai_server.log"),
+    )
+    monkeypatch.setattr(
+        manager,
+        "_build_server_args",
+        lambda **kwargs: [str(server_exe_path)],
+    )
+    monkeypatch.setattr(
+        manager,
+        "_wait_ready",
+        lambda *args, **kwargs: (True, None, {}),
+    )
+
+    captured = {}
+
+    class DummyProc:
+        def poll(self):
+            return None
+
+    def fake_popen(*args, **kwargs):
+        captured["env"] = kwargs.get("env")
+        return DummyProc()
+
+    monkeypatch.setattr(lls.subprocess, "Popen", fake_popen)
+
+    settings = AppSettings(
+        local_ai_vk_force_max_allocation_size=536870912,
+        local_ai_vk_disable_f16=True,
+    )
+    settings._validate()
+
+    runtime = manager._start_new_server(
+        server_exe_path=server_exe_path,
+        server_variant="generic",
+        model_path=model_path,
+        host="127.0.0.1",
+        port=4891,
+        settings=settings,
+    )
+
+    assert runtime.model_path == model_path
+    assert "GGML_VK_FORCE_MAX_ALLOCATION_SIZE" not in captured["env"]
+    assert "GGML_VK_DISABLE_F16" not in captured["env"]
 
 
 def test_build_server_args_uses_cached_help(
@@ -741,6 +869,7 @@ def test_build_server_args_uses_cached_help(
 
     manager._build_server_args(
         server_exe_path=server_exe_path,
+        server_variant="generic",
         model_path=model_path,
         host="127.0.0.1",
         port=4891,
@@ -748,6 +877,7 @@ def test_build_server_args_uses_cached_help(
     )
     manager._build_server_args(
         server_exe_path=server_exe_path,
+        server_variant="generic",
         model_path=model_path,
         host="127.0.0.1",
         port=4891,

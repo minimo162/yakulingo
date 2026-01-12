@@ -785,6 +785,7 @@ class LocalLlamaServerManager:
 
         args = self._build_server_args(
             server_exe_path=server_exe_path,
+            server_variant=server_variant,
             model_path=model_path,
             host=host,
             port=port,
@@ -800,12 +801,14 @@ class LocalLlamaServerManager:
         logger.info("Starting llama-server: %s", " ".join(args))
         try:
             env = os.environ.copy()
-            if settings.local_ai_vk_force_max_allocation_size:
-                env["GGML_VK_FORCE_MAX_ALLOCATION_SIZE"] = str(
-                    settings.local_ai_vk_force_max_allocation_size
-                )
-            if settings.local_ai_vk_disable_f16:
-                env["GGML_VK_DISABLE_F16"] = "1"
+            gpu_enabled = str(server_variant).lower() == "vulkan"
+            if gpu_enabled:
+                if settings.local_ai_vk_force_max_allocation_size:
+                    env["GGML_VK_FORCE_MAX_ALLOCATION_SIZE"] = str(
+                        settings.local_ai_vk_force_max_allocation_size
+                    )
+                if settings.local_ai_vk_disable_f16:
+                    env["GGML_VK_DISABLE_F16"] = "1"
             proc = subprocess.Popen(
                 args,
                 stdout=log_fp,
@@ -889,6 +892,7 @@ class LocalLlamaServerManager:
         self,
         *,
         server_exe_path: Path,
+        server_variant: str,
         model_path: Path,
         host: str,
         port: int,
@@ -905,6 +909,8 @@ class LocalLlamaServerManager:
             if not flag.startswith("-") or flag.startswith("--"):
                 return False
             return bool(re.search(rf"(?m)^\s*{re.escape(flag)}(?:,|\s)", help_text))
+
+        gpu_enabled = str(server_variant).lower() == "vulkan"
 
         args: list[str] = [str(server_exe_path)]
 
@@ -978,54 +984,55 @@ class LocalLlamaServerManager:
             elif has_short("-ub"):
                 args += ["-ub", str(int(ubatch_size))]
 
-        device = settings.local_ai_device
-        if help_text and device and device != "none" and has_long("--device"):
-            args += ["--device", device]
+        if gpu_enabled:
+            device = settings.local_ai_device
+            if help_text and device and device != "none" and has_long("--device"):
+                args += ["--device", device]
 
-        n_gpu_layers = settings.local_ai_n_gpu_layers
-        if help_text and n_gpu_layers:
-            flag = None
-            if has_long("--n-gpu-layers"):
-                flag = "--n-gpu-layers"
-            elif has_short("-ngl"):
-                flag = "-ngl"
-            if flag:
-                args += [flag, str(n_gpu_layers)]
+            n_gpu_layers = settings.local_ai_n_gpu_layers
+            if help_text and n_gpu_layers:
+                flag = None
+                if has_long("--n-gpu-layers"):
+                    flag = "--n-gpu-layers"
+                elif has_short("-ngl"):
+                    flag = "-ngl"
+                if flag:
+                    args += [flag, str(n_gpu_layers)]
 
-        flash_attn = settings.local_ai_flash_attn
-        if help_text and flash_attn and str(flash_attn).lower() != "auto":
-            flag = None
-            if has_short("-fa"):
-                flag = "-fa"
-            elif has_long("--flash-attn"):
-                flag = "--flash-attn"
-            elif has_long("--flash-attention"):
-                flag = "--flash-attention"
-            if flag:
-                args += [flag, str(flash_attn)]
+            flash_attn = settings.local_ai_flash_attn
+            if help_text and flash_attn and str(flash_attn).lower() != "auto":
+                flag = None
+                if has_short("-fa"):
+                    flag = "-fa"
+                elif has_long("--flash-attn"):
+                    flag = "--flash-attn"
+                elif has_long("--flash-attention"):
+                    flag = "--flash-attention"
+                if flag:
+                    args += [flag, str(flash_attn)]
 
-        cache_type_k = settings.local_ai_cache_type_k
-        if help_text and cache_type_k:
-            flag = None
-            if has_long("--cache-type-k"):
-                flag = "--cache-type-k"
-            elif has_short("-ctk"):
-                flag = "-ctk"
-            if flag:
-                args += [flag, str(cache_type_k)]
+            cache_type_k = settings.local_ai_cache_type_k
+            if help_text and cache_type_k:
+                flag = None
+                if has_long("--cache-type-k"):
+                    flag = "--cache-type-k"
+                elif has_short("-ctk"):
+                    flag = "-ctk"
+                if flag:
+                    args += [flag, str(cache_type_k)]
 
-        cache_type_v = settings.local_ai_cache_type_v
-        if help_text and cache_type_v:
-            flag = None
-            if has_long("--cache-type-v"):
-                flag = "--cache-type-v"
-            elif has_short("-ctv"):
-                flag = "-ctv"
-            if flag:
-                args += [flag, str(cache_type_v)]
+            cache_type_v = settings.local_ai_cache_type_v
+            if help_text and cache_type_v:
+                flag = None
+                if has_long("--cache-type-v"):
+                    flag = "--cache-type-v"
+                elif has_short("-ctv"):
+                    flag = "-ctv"
+                if flag:
+                    args += [flag, str(cache_type_v)]
 
-        if help_text and settings.local_ai_no_warmup and has_long("--no-warmup"):
-            args += ["--no-warmup"]
+            if help_text and settings.local_ai_no_warmup and has_long("--no-warmup"):
+                args += ["--no-warmup"]
 
         return args
 

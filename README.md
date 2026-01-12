@@ -277,6 +277,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 
 - `config/settings.template.json`: デフォルト値（開発者が管理、アップデートで上書き）
 - `config/user_settings.json`: ユーザーが変更した設定のみ（アップデートで保持）
+> **Note**: `local_ai_*` はテンプレ管理で `user_settings.json` には保存されません（ユーザー変更不可）。
 
 #### config/settings.template.json（例）
 
@@ -374,7 +375,9 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 
 **翻訳ルール**: `prompts/translation_rules.txt` を翻訳時に自動反映します（Copilot/ローカルAI共通）。
 
-**ローカルAIの速度チューニング（推奨）**:
+**ローカルAIの速度チューニング（開発者向け）**:
+- `local_ai_*` は `user_settings.json` に保存されないため、恒久的に変える場合は `config/settings.template.json` を編集します。
+- 計測のみの一時上書きは `tools/bench_local_ai.py` の CLI オプションを使用します。
 - `local_ai_threads`: `0` は自動。CPUコアに合わせて増やすと高速化する場合があるが、過剰だと逆効果
 - `local_ai_ctx_size`: 大きいほど遅くなる傾向。プロンプト長に対して必要最小限で調整
 - `local_ai_batch_size` / `local_ai_ubatch_size`: 対応ビルドのみ有効。大きすぎるとメモリ圧迫や不安定化

@@ -18,6 +18,7 @@
 比較時に揃える項目:
 - モデル/サーバ、`local_ai_*` の設定値、入力文
 - 実行環境（CPU/メモリ、電源設定、バックグラウンド負荷）
+> **Note**: `local_ai_*` は `user_settings.json` には保存されません。恒久的な変更は `config/settings.template.json` を更新し、ベンチの一時上書きは CLI で行います。
 
 ## CLIベンチ（tools/bench_local_ai.py）
 
@@ -50,6 +51,7 @@ uv run python tools/bench_local_ai.py --mode warm --out .tmp/bench_local_ai.json
 ```
 
 ### 設定上書き例（local_ai_*）
+以下はベンチ用の**一時上書き**です（永続化されません）。
 ```bash
 # threads / ctx / batch / ubatch の上書き
 uv run python tools/bench_local_ai.py --mode warm \

@@ -52,25 +52,10 @@ USER_SETTINGS_KEYS = {
     # 翻訳バックエンド（Copilot / Local AI）
     "translation_backend",
     "copilot_enabled",
-    # Local AI（高度設定）
-    "local_ai_model_path",
-    "local_ai_server_dir",
-    "local_ai_host",
-    "local_ai_port_base",
-    "local_ai_port_max",
-    "local_ai_ctx_size",
-    "local_ai_threads",
-    "local_ai_temperature",
-    "local_ai_top_p",
-    "local_ai_top_k",
-    "local_ai_min_p",
-    "local_ai_repeat_penalty",
-    "local_ai_max_tokens",
-    "local_ai_batch_size",
-    "local_ai_ubatch_size",
-    "local_ai_max_chars_per_batch",
-    "local_ai_max_chars_per_batch_file",
 }
+
+# Local AI設定はテンプレ管理（ユーザー変更不可）
+_LOCAL_AI_SETTINGS_PREFIX = "local_ai_"
 
 DEFAULT_MAX_CHARS_PER_BATCH = 4000
 
@@ -481,6 +466,19 @@ class AppSettings:
             try:
                 with open(user_settings_path, "r", encoding="utf-8-sig") as f:
                     user_data = json.load(f)
+                    removed_local_ai = False
+                    if isinstance(user_data, dict):
+                        local_ai_keys = [
+                            key
+                            for key in user_data.keys()
+                            if key.startswith(_LOCAL_AI_SETTINGS_PREFIX)
+                        ]
+                        if local_ai_keys:
+                            for key in local_ai_keys:
+                                user_data.pop(key, None)
+                            removed_local_ai = True
+                    else:
+                        user_data = {}
                     # Only apply known user settings keys
                     for key in USER_SETTINGS_KEYS:
                         if key in user_data:
@@ -489,6 +487,20 @@ class AppSettings:
                         data["login_overlay_guard"] = user_data["login_overlay_guard"]
                         guard_source = "user"
                     logger.debug("Loaded user settings from: %s", user_settings_path)
+                if removed_local_ai:
+                    try:
+                        with open(user_settings_path, "w", encoding="utf-8") as f:
+                            json.dump(user_data, f, indent=2, ensure_ascii=False)
+                        user_mtime = user_settings_path.stat().st_mtime
+                        logger.debug(
+                            "Removed local_ai settings from user_settings.json: %s",
+                            user_settings_path,
+                        )
+                    except OSError as e:
+                        logger.warning(
+                            "Failed to clean local_ai settings from user_settings.json: %s",
+                            e,
+                        )
             except (json.JSONDecodeError, UnicodeDecodeError) as e:
                 logger.warning("Failed to load user settings: %s", e)
 

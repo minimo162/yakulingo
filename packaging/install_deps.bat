@@ -352,12 +352,26 @@ goto :verify_ocr_deps_exit
 if not defined OCR_REQUIREMENTS_RETRY (
     set "OCR_REQUIREMENTS_RETRY=1"
     echo [WARNING] paddlepaddle/paddleocr is not available. Installing requirements_pdf.txt as a fallback...
+    echo [INFO] Trying: uv.exe pip install -r requirements_pdf.txt
     if "!SKIP_SSL!"=="1" (
-        .venv\Scripts\python.exe -m pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org -r requirements_pdf.txt
+        uv.exe pip install !UV_SYNC_PYTHON_ARG! --native-tls --allow-insecure-host pypi.org --allow-insecure-host files.pythonhosted.org -r requirements_pdf.txt
     ) else (
-        .venv\Scripts\python.exe -m pip install -r requirements_pdf.txt
+        uv.exe pip install !UV_SYNC_PYTHON_ARG! --native-tls -r requirements_pdf.txt
     )
-    if errorlevel 1 goto :verify_ocr_deps_failed_final
+    if errorlevel 1 (
+        echo [WARNING] uv pip install failed. Trying ensurepip + pip...
+        .venv\Scripts\python.exe -m ensurepip --upgrade
+        if errorlevel 1 (
+            echo [ERROR] Failed to install pip via ensurepip.
+            goto :verify_ocr_deps_failed_final
+        )
+        if "!SKIP_SSL!"=="1" (
+            .venv\Scripts\python.exe -m pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org -r requirements_pdf.txt
+        ) else (
+            .venv\Scripts\python.exe -m pip install -r requirements_pdf.txt
+        )
+        if errorlevel 1 goto :verify_ocr_deps_failed_final
+    )
 
     powershell -NoProfile -ExecutionPolicy Bypass -Command ^
         "$script = 'import warnings; warnings.filterwarnings(''ignore''); import paddle; import paddleocr; print(''[OK] paddlepaddle version:'', paddle.__version__); print(''[OK] paddleocr version:'', getattr(paddleocr, ''__version__'', ''(unknown)''))';" ^
@@ -375,7 +389,9 @@ goto :verify_ocr_deps_failed_final
 echo [ERROR] paddlepaddle/paddleocr is not available in the virtual environment.
 echo [INFO] PDF layout analysis (PP-DocLayout-L) requires paddlepaddle/paddleocr.
 echo [INFO] Retry this installer, or run: uv.exe sync --extra ocr
-echo [INFO] If uv fails, run: .venv\Scripts\python.exe -m pip install -r requirements_pdf.txt
+echo [INFO] If uv sync fails, run: uv.exe pip install -r requirements_pdf.txt
+echo [INFO] If pip is missing, run: .venv\Scripts\python.exe -m ensurepip --upgrade
+echo [INFO] Then run: .venv\Scripts\python.exe -m pip install -r requirements_pdf.txt
 pause
 exit /b 1
 

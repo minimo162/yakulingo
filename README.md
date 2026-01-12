@@ -413,6 +413,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
   ```
 - 探索: `--n-gpu-layers` を 0/8/16/…/99 で掃引（詳細は `docs/PERFORMANCE_LOCAL_AI.md`）
 - トラブルシュート: `local_ai_vk_force_max_allocation_size` / `local_ai_no_warmup` / `local_ai_vk_disable_f16`
+- 詳細手順: `docs/LOCAL_AI_VULKAN_IGPU_WINDOWS_AMD.md`
 
 #### 詳細設定（通常は変更不要）
 

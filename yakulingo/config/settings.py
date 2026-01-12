@@ -347,6 +347,12 @@ class AppSettings:
     local_ai_max_tokens: Optional[int] = 1024
     local_ai_batch_size: Optional[int] = 512
     local_ai_ubatch_size: Optional[int] = 128
+    local_ai_device: str = "none"
+    local_ai_n_gpu_layers: int | str = 0
+    local_ai_flash_attn: str = "auto"
+    local_ai_no_warmup: bool = False
+    local_ai_vk_force_max_allocation_size: Optional[int] = None
+    local_ai_vk_disable_f16: bool = False
     local_ai_max_chars_per_batch: int = 1000
     local_ai_max_chars_per_batch_file: int = 800
 
@@ -678,6 +684,144 @@ class AppSettings:
                     self.local_ai_ctx_size,
                 )
                 self.local_ai_ubatch_size = self.local_ai_ctx_size
+
+        # Local AI GPU offload settings
+        if not isinstance(self.local_ai_device, str):
+            logger.warning(
+                "local_ai_device invalid (%s), resetting to 'none'",
+                type(self.local_ai_device).__name__,
+            )
+            self.local_ai_device = "none"
+        else:
+            device = self.local_ai_device.strip()
+            if not device:
+                logger.warning("local_ai_device empty, resetting to 'none'")
+                self.local_ai_device = "none"
+            elif device.lower() == "none":
+                self.local_ai_device = "none"
+            else:
+                self.local_ai_device = device
+
+        n_gpu_layers = self.local_ai_n_gpu_layers
+        if n_gpu_layers is None:
+            self.local_ai_n_gpu_layers = 0
+        elif isinstance(n_gpu_layers, bool):
+            logger.warning(
+                "local_ai_n_gpu_layers invalid (bool), resetting to 0"
+            )
+            self.local_ai_n_gpu_layers = 0
+        elif isinstance(n_gpu_layers, int):
+            if n_gpu_layers < 0:
+                logger.warning(
+                    "local_ai_n_gpu_layers out of range (%d), resetting to 0",
+                    n_gpu_layers,
+                )
+                self.local_ai_n_gpu_layers = 0
+        elif isinstance(n_gpu_layers, str):
+            text = n_gpu_layers.strip().lower()
+            if not text:
+                logger.warning("local_ai_n_gpu_layers empty, resetting to 0")
+                self.local_ai_n_gpu_layers = 0
+            elif text in ("auto", "all"):
+                self.local_ai_n_gpu_layers = text
+            else:
+                try:
+                    value = int(text)
+                except ValueError:
+                    logger.warning(
+                        "local_ai_n_gpu_layers invalid (%s), resetting to 0",
+                        n_gpu_layers,
+                    )
+                    self.local_ai_n_gpu_layers = 0
+                else:
+                    if value < 0:
+                        logger.warning(
+                            "local_ai_n_gpu_layers out of range (%d), resetting to 0",
+                            value,
+                        )
+                        self.local_ai_n_gpu_layers = 0
+                    else:
+                        self.local_ai_n_gpu_layers = value
+        else:
+            logger.warning(
+                "local_ai_n_gpu_layers invalid (%s), resetting to 0",
+                type(n_gpu_layers).__name__,
+            )
+            self.local_ai_n_gpu_layers = 0
+
+        raw_flash_attn = self.local_ai_flash_attn
+        if raw_flash_attn is None:
+            self.local_ai_flash_attn = "auto"
+        elif isinstance(raw_flash_attn, bool):
+            self.local_ai_flash_attn = "1" if raw_flash_attn else "0"
+        elif isinstance(raw_flash_attn, int):
+            if raw_flash_attn in (0, 1):
+                self.local_ai_flash_attn = str(raw_flash_attn)
+            else:
+                logger.warning(
+                    "local_ai_flash_attn out of range (%d), resetting to 'auto'",
+                    raw_flash_attn,
+                )
+                self.local_ai_flash_attn = "auto"
+        elif isinstance(raw_flash_attn, str):
+            text = raw_flash_attn.strip().lower()
+            if text in ("auto", "0", "1"):
+                self.local_ai_flash_attn = text
+            elif text in ("true", "yes", "on"):
+                self.local_ai_flash_attn = "1"
+            elif text in ("false", "no", "off"):
+                self.local_ai_flash_attn = "0"
+            else:
+                logger.warning(
+                    "local_ai_flash_attn invalid (%s), resetting to 'auto'",
+                    raw_flash_attn,
+                )
+                self.local_ai_flash_attn = "auto"
+        else:
+            logger.warning(
+                "local_ai_flash_attn invalid (%s), resetting to 'auto'",
+                type(raw_flash_attn).__name__,
+            )
+            self.local_ai_flash_attn = "auto"
+
+        if not isinstance(self.local_ai_no_warmup, bool):
+            logger.warning(
+                "local_ai_no_warmup invalid (%s), resetting to False",
+                type(self.local_ai_no_warmup).__name__,
+            )
+            self.local_ai_no_warmup = False
+
+        if self.local_ai_vk_force_max_allocation_size is not None:
+            if isinstance(self.local_ai_vk_force_max_allocation_size, bool):
+                logger.warning(
+                    "local_ai_vk_force_max_allocation_size invalid (bool), resetting to None"
+                )
+                self.local_ai_vk_force_max_allocation_size = None
+            else:
+                try:
+                    value = int(self.local_ai_vk_force_max_allocation_size)
+                except (TypeError, ValueError):
+                    logger.warning(
+                        "local_ai_vk_force_max_allocation_size invalid (%s), resetting to None",
+                        self.local_ai_vk_force_max_allocation_size,
+                    )
+                    self.local_ai_vk_force_max_allocation_size = None
+                else:
+                    if value <= 0:
+                        logger.warning(
+                            "local_ai_vk_force_max_allocation_size out of range (%d), resetting to None",
+                            value,
+                        )
+                        self.local_ai_vk_force_max_allocation_size = None
+                    else:
+                        self.local_ai_vk_force_max_allocation_size = value
+
+        if not isinstance(self.local_ai_vk_disable_f16, bool):
+            logger.warning(
+                "local_ai_vk_disable_f16 invalid (%s), resetting to False",
+                type(self.local_ai_vk_disable_f16).__name__,
+            )
+            self.local_ai_vk_disable_f16 = False
 
         # Local AI batch size constraints
         if self.local_ai_max_chars_per_batch < 100:

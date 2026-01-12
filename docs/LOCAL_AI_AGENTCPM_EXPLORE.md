@@ -48,6 +48,11 @@
 - メンテナ向けに「HF→GGUF→4bit量子化」を再実行可能にするスクリプトを追加し、生成物の命名・配置・ハッシュ計算を標準化する。
 - `install_local_ai.ps1` の既定モデルを AgentCPM-Explore の配布GGUFへ切り替え、`manifest.json` に追跡情報を残す。
 
+### ツール（task-02で追加）
+- `tools/hf_to_gguf_quantize.py` を使用して、HFモデル（ローカルディレクトリ推奨）→ f16 GGUF → 4bit GGUF を生成する。
+  - 量子化は同梱 `local_ai/llama_cpp/*/llama-quantize(.exe)` を使用する。
+  - llama.cpp の変換スクリプトは、`local_ai/manifest.json` の `llama_cpp.release_tag` と揃える（無い場合は `master`）。
+
 ## インストール側の方針（エンドユーザー向け）
 
 - `packaging/install_local_ai.ps1` は引き続き「モデルGGUFのダウンロード」で完結させる。
@@ -59,4 +64,3 @@
 - 量子化方式（例: `Q4_K_M` vs `Q4_K_S` など）の最終選定
 - 既定 `local_ai_*` の具体値（ベンチ結果に基づき task-05 で確定）
 - 配布先（GitHub Releases / Hugging Face のどちらをSSOTにするか）
-

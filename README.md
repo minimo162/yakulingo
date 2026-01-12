@@ -112,6 +112,7 @@ PDF翻訳はPP-DocLayout-L（PaddleOCR）によるレイアウト解析を使用
 ### 方法1: install_deps.bat を使用（推奨）
 
 Windows環境で最も簡単にセットアップできる方法です。Python、依存関係、Playwrightブラウザを自動でインストールします。
+> **Note**: 新規インストール（`local_ai/manifest.json` が無い状態）では Vulkan(x64) が既定です。CPU版にしたい場合は `set LOCAL_AI_LLAMA_CPP_VARIANT=cpu` を設定してから実行します。
 
 ```bash
 # リポジトリをクローン
@@ -402,7 +403,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 - 変更は1項目ずつ行い、下記ベンチで再計測する
 
 **Vulkan(iGPU) クイックレシピ**:
-- 準備: `LOCAL_AI_LLAMA_CPP_VARIANT=vulkan` を設定して `packaging/install_deps.bat` を実行（`local_ai/llama_cpp/vulkan/` を配置）
+- 準備: 新規インストールなら `packaging/install_deps.bat` で Vulkan(x64) が既定。CPU版にしたい場合は `set LOCAL_AI_LLAMA_CPP_VARIANT=cpu` を設定して実行
 - 確認: `local_ai/llama_cpp/vulkan/llama-cli.exe --list-devices` で `Vulkan0` を確認
 - 実行例（ベンチ）:
   ```bash

@@ -84,6 +84,29 @@ uv run python tools/bench_local_ai.py --mode warm \
   --device Vulkan0 --n-gpu-layers 99 --flash-attn auto --no-warmup --json
 ```
 
+### CPU-only vs Vulkan(iGPU) 比較（同一入力）
+CPU-only と Vulkan を同条件で比較する場合は、`--server-dir` と `--device`/`--n-gpu-layers` を明示します。
+> **Note**: 上書き条件での比較は `--restart-server` を付けて反映させます。
+```bash
+# CPU-only warm/cold（avx2 バイナリ + device none）
+uv run python tools/bench_local_ai.py --mode warm --restart-server \
+  --server-dir local_ai/llama_cpp/avx2 --device none --n-gpu-layers 0 --flash-attn auto \
+  --json --out .tmp/bench_cpu_warm.json
+
+uv run python tools/bench_local_ai.py --mode cold --restart-server \
+  --server-dir local_ai/llama_cpp/avx2 --device none --n-gpu-layers 0 --flash-attn auto \
+  --json --out .tmp/bench_cpu_cold.json
+
+# Vulkan(iGPU) warm/cold（vulkan バイナリ + Vulkan0）
+uv run python tools/bench_local_ai.py --mode warm --restart-server \
+  --server-dir local_ai/llama_cpp/vulkan --device Vulkan0 --n-gpu-layers 99 --flash-attn auto \
+  --json --out .tmp/bench_vk_warm.json
+
+uv run python tools/bench_local_ai.py --mode cold --restart-server \
+  --server-dir local_ai/llama_cpp/vulkan --device Vulkan0 --n-gpu-layers 99 --flash-attn auto \
+  --json --out .tmp/bench_vk_cold.json
+```
+
 ```powershell
 # -ngl の探索（PowerShell例）
 $values = 0, 8, 16, 24, 32, 40, 99

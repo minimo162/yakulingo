@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 
 _HELP_TEXT_CACHE: dict[tuple[str, int, int], str] = {}
 _HELP_TEXT_CACHE_LOCK = threading.Lock()
+_NO_PROXY_LOCAL_HOSTS = ("127.0.0.1", "localhost")
 
 
 def _utc_now_iso() -> str:
@@ -45,6 +46,38 @@ def _user_data_dir() -> Path:
     path = Path.home() / ".yakulingo"
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def _merge_no_proxy_items() -> list[str]:
+    items: list[str] = []
+    seen: set[str] = set()
+    for name in ("NO_PROXY", "no_proxy"):
+        raw = os.environ.get(name, "")
+        for item in raw.split(","):
+            token = item.strip()
+            if not token:
+                continue
+            lowered = token.lower()
+            if lowered in seen:
+                continue
+            items.append(token)
+            seen.add(lowered)
+    for host in _NO_PROXY_LOCAL_HOSTS:
+        lowered = host.lower()
+        if lowered in seen:
+            continue
+        items.append(host)
+        seen.add(lowered)
+    return items
+
+
+def ensure_no_proxy_for_localhost() -> None:
+    items = _merge_no_proxy_items()
+    if not items:
+        return
+    value = ",".join(items)
+    os.environ["NO_PROXY"] = value
+    os.environ["no_proxy"] = value
 
 
 def _atomic_write_json(path: Path, data: dict) -> None:
@@ -161,6 +194,8 @@ def _http_get_json_with_status(
 ) -> tuple[Optional[dict], Optional[int], Optional[str]]:
     import urllib.error
     import urllib.request
+
+    ensure_no_proxy_for_localhost()
 
     url = f"http://{host}:{port}{path}"
     req = urllib.request.Request(url, method="GET")

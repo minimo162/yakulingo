@@ -885,3 +885,32 @@ def test_build_server_args_uses_cached_help(
     )
 
     assert calls["count"] == 1
+
+
+def test_ensure_no_proxy_for_localhost_adds_entries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("http_proxy", "http://proxy.example")
+    monkeypatch.delenv("NO_PROXY", raising=False)
+    monkeypatch.delenv("no_proxy", raising=False)
+
+    lls.ensure_no_proxy_for_localhost()
+
+    for name in ("NO_PROXY", "no_proxy"):
+        value = os.environ.get(name, "")
+        assert "127.0.0.1" in value
+        assert "localhost" in value
+
+
+def test_ensure_no_proxy_for_localhost_preserves_existing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("NO_PROXY", "example.com,127.0.0.1")
+
+    lls.ensure_no_proxy_for_localhost()
+
+    assert "example.com" in os.environ["NO_PROXY"]
+    assert "127.0.0.1" in os.environ["NO_PROXY"]
+    assert "localhost" in os.environ["NO_PROXY"]
+    assert "127.0.0.1" in os.environ["no_proxy"]
+    assert "localhost" in os.environ["no_proxy"]

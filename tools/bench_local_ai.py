@@ -214,8 +214,13 @@ def main() -> int:
         sys.path.insert(0, str(repo_root))
 
     from yakulingo.config.settings import AppSettings
-    from yakulingo.services.local_llama_server import get_local_llama_server_manager
+    from yakulingo.services.local_llama_server import (
+        ensure_no_proxy_for_localhost,
+        get_local_llama_server_manager,
+    )
     from yakulingo.services.prompt_builder import PromptBuilder
+
+    ensure_no_proxy_for_localhost()
 
     default_input = repo_root / "tools" / "bench_local_ai_input.txt"
     compare_input = repo_root / "tools" / "bench_local_ai_input_short.txt"

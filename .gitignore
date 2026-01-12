@@ -35,6 +35,9 @@ MANIFEST
 # Local AI runtime (downloaded binaries/models)
 local_ai/
 
+# Case artifacts
+work/
+
 # Installer logs
 pip-log.txt
 pip-delete-this-directory.txt

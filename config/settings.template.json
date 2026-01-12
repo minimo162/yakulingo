@@ -28,6 +28,8 @@
   "local_ai_no_warmup": false,
   "local_ai_vk_force_max_allocation_size": null,
   "local_ai_vk_disable_f16": false,
+  "local_ai_cache_type_k": null,
+  "local_ai_cache_type_v": null,
   "local_ai_max_chars_per_batch": 1000,
   "local_ai_max_chars_per_batch_file": 800,
   "bilingual_output": false,

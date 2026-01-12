@@ -353,6 +353,8 @@ class AppSettings:
     local_ai_no_warmup: bool = False
     local_ai_vk_force_max_allocation_size: Optional[int] = None
     local_ai_vk_disable_f16: bool = False
+    local_ai_cache_type_k: Optional[str] = None
+    local_ai_cache_type_v: Optional[str] = None
     local_ai_max_chars_per_batch: int = 1000
     local_ai_max_chars_per_batch_file: int = 800
 
@@ -822,6 +824,44 @@ class AppSettings:
                 type(self.local_ai_vk_disable_f16).__name__,
             )
             self.local_ai_vk_disable_f16 = False
+
+        if self.local_ai_cache_type_k is not None:
+            if isinstance(self.local_ai_cache_type_k, bool):
+                logger.warning(
+                    "local_ai_cache_type_k invalid (bool), resetting to None"
+                )
+                self.local_ai_cache_type_k = None
+            elif isinstance(self.local_ai_cache_type_k, str):
+                text = self.local_ai_cache_type_k.strip()
+                if not text or text.lower() in ("none", "null"):
+                    self.local_ai_cache_type_k = None
+                else:
+                    self.local_ai_cache_type_k = text
+            else:
+                logger.warning(
+                    "local_ai_cache_type_k invalid (%s), resetting to None",
+                    type(self.local_ai_cache_type_k).__name__,
+                )
+                self.local_ai_cache_type_k = None
+
+        if self.local_ai_cache_type_v is not None:
+            if isinstance(self.local_ai_cache_type_v, bool):
+                logger.warning(
+                    "local_ai_cache_type_v invalid (bool), resetting to None"
+                )
+                self.local_ai_cache_type_v = None
+            elif isinstance(self.local_ai_cache_type_v, str):
+                text = self.local_ai_cache_type_v.strip()
+                if not text or text.lower() in ("none", "null"):
+                    self.local_ai_cache_type_v = None
+                else:
+                    self.local_ai_cache_type_v = text
+            else:
+                logger.warning(
+                    "local_ai_cache_type_v invalid (%s), resetting to None",
+                    type(self.local_ai_cache_type_v).__name__,
+                )
+                self.local_ai_cache_type_v = None
 
         # Local AI batch size constraints
         if self.local_ai_max_chars_per_batch < 100:

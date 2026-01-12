@@ -1004,6 +1004,26 @@ class LocalLlamaServerManager:
             if flag:
                 args += [flag, str(flash_attn)]
 
+        cache_type_k = settings.local_ai_cache_type_k
+        if help_text and cache_type_k:
+            flag = None
+            if has_long("--cache-type-k"):
+                flag = "--cache-type-k"
+            elif has_short("-ctk"):
+                flag = "-ctk"
+            if flag:
+                args += [flag, str(cache_type_k)]
+
+        cache_type_v = settings.local_ai_cache_type_v
+        if help_text and cache_type_v:
+            flag = None
+            if has_long("--cache-type-v"):
+                flag = "--cache-type-v"
+            elif has_short("-ctv"):
+                flag = "-ctv"
+            if flag:
+                args += [flag, str(cache_type_v)]
+
         if help_text and settings.local_ai_no_warmup and has_long("--no-warmup"):
             args += ["--no-warmup"]
 

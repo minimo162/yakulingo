@@ -129,6 +129,10 @@ def _apply_overrides(settings: Any, args: argparse.Namespace) -> dict[str, Any]:
             )
     if args.vk_disable_f16:
         _set("local_ai_vk_disable_f16", True)
+    if args.cache_type_k is not None:
+        _set("local_ai_cache_type_k", str(args.cache_type_k))
+    if args.cache_type_v is not None:
+        _set("local_ai_cache_type_v", str(args.cache_type_v))
 
     if hasattr(settings, "_validate"):
         settings._validate()
@@ -193,6 +197,8 @@ def main() -> int:
     parser.add_argument("--no-warmup", action="store_true")
     parser.add_argument("--vk-force-max-allocation-size", type=int, default=None)
     parser.add_argument("--vk-disable-f16", action="store_true")
+    parser.add_argument("--cache-type-k", type=str, default=None)
+    parser.add_argument("--cache-type-v", type=str, default=None)
     parser.add_argument(
         "--restart-server",
         action="store_true",
@@ -328,6 +334,8 @@ def main() -> int:
         f"{settings.local_ai_vk_force_max_allocation_size}"
     )
     print(f"effective_local_ai_vk_disable_f16: {settings.local_ai_vk_disable_f16}")
+    print(f"effective_local_ai_cache_type_k: {settings.local_ai_cache_type_k}")
+    print(f"effective_local_ai_cache_type_v: {settings.local_ai_cache_type_v}")
     if not args.compare:
         print(f"prompt_chars: {prompt_chars}")
         print(f"prompt_build_seconds: {prompt_build_seconds:.2f}")
@@ -391,6 +399,8 @@ def main() -> int:
                     settings.local_ai_vk_force_max_allocation_size
                 ),
                 "local_ai_vk_disable_f16": settings.local_ai_vk_disable_f16,
+                "local_ai_cache_type_k": settings.local_ai_cache_type_k,
+                "local_ai_cache_type_v": settings.local_ai_cache_type_v,
             },
             "warmup_seconds": warmup_seconds,
             "translation_seconds": elapsed,
@@ -442,6 +452,8 @@ def main() -> int:
                     settings.local_ai_vk_force_max_allocation_size
                 ),
                 "local_ai_vk_disable_f16": settings.local_ai_vk_disable_f16,
+                "local_ai_cache_type_k": settings.local_ai_cache_type_k,
+                "local_ai_cache_type_v": settings.local_ai_cache_type_v,
             },
             "prompt_chars": prompt_chars,
             "prompt_build_seconds": prompt_build_seconds,

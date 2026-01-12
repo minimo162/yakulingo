@@ -469,6 +469,8 @@ def test_build_server_args_adds_gpu_flags_when_available(
             "--device",
             "-ngl, --n-gpu-layers",
             "-fa, --flash-attn",
+            "-ctk, --cache-type-k",
+            "-ctv, --cache-type-v",
             "--no-warmup",
         ]
     )
@@ -487,6 +489,8 @@ def test_build_server_args_adds_gpu_flags_when_available(
         local_ai_n_gpu_layers=99,
         local_ai_flash_attn="1",
         local_ai_no_warmup=True,
+        local_ai_cache_type_k="q8_0",
+        local_ai_cache_type_v="q8_0",
     )
     settings._validate()
 
@@ -504,6 +508,10 @@ def test_build_server_args_adds_gpu_flags_when_available(
     assert args[args.index("--n-gpu-layers") + 1] == "99"
     assert "-fa" in args
     assert args[args.index("-fa") + 1] == "1"
+    assert "--cache-type-k" in args
+    assert args[args.index("--cache-type-k") + 1] == "q8_0"
+    assert "--cache-type-v" in args
+    assert args[args.index("--cache-type-v") + 1] == "q8_0"
     assert "--no-warmup" in args
 
 

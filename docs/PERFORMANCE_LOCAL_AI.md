@@ -76,6 +76,11 @@ uv run python tools/bench_local_ai.py --mode warm --max-tokens 0 --json
 - `local_ai_max_chars_per_batch` / `local_ai_max_chars_per_batch_file`: 翻訳分割の文字数上限
 - `local_ai_max_tokens`: 応答上限（0以下でNone扱い、推論時間に影響）
 
+## Shisa / Qwen3 推奨パラメータ（README準拠）
+- Qwen3は温度0の決定論的生成で繰り返しが起きやすいため、サンプリング（Temperature > 0）が推奨されています。
+- 推奨値: `local_ai_temperature = 0.7`
+- `top_p` / `top_k` / `min_p` / `repeat_penalty` は README で推奨があるが、現状のアプリ設定では未対応（llama.cpp の既定値に従う）。
+
 ## アプリ起動を含む計測（E2E / Playwright）
 ```bash
 uv run --extra test python tools/e2e_local_ai_speed.py

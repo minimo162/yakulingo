@@ -397,6 +397,17 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 - `request_timeout`: 長文時のタイムアウト回避用。小さくし過ぎると失敗しやすい
 - 変更は1項目ずつ行い、下記ベンチで再計測する
 
+**Vulkan(iGPU) クイックレシピ**:
+- 準備: `LOCAL_AI_LLAMA_CPP_VARIANT=vulkan` を設定して `packaging/install_deps.bat` を実行（`local_ai/llama_cpp/vulkan/` を配置）
+- 確認: `local_ai/llama_cpp/vulkan/llama-cli.exe --list-devices` で `Vulkan0` を確認
+- 実行例（ベンチ）:
+  ```bash
+  uv run python tools/bench_local_ai.py --mode warm \
+    --device Vulkan0 --n-gpu-layers 99 --flash-attn auto --json
+  ```
+- 探索: `--n-gpu-layers` を 0/8/16/…/99 で掃引（詳細は `docs/PERFORMANCE_LOCAL_AI.md`）
+- トラブルシュート: `local_ai_vk_force_max_allocation_size` / `local_ai_no_warmup` / `local_ai_vk_disable_f16`
+
 #### 詳細設定（通常は変更不要）
 
 | 設定 | 説明 | デフォルト |

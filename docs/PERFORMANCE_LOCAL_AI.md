@@ -12,6 +12,8 @@
 
 ## Vulkan(iGPU) 事前確認（Windows）
 - Vulkan 版 llama.cpp バイナリを用意（GitHub Releases の Windows x64 (Vulkan) など）
+  - 同梱する場合: `LOCAL_AI_LLAMA_CPP_VARIANT=vulkan` を設定して `packaging/install_deps.bat` を実行
+  - 展開先の例: `local_ai/llama_cpp/vulkan/`
 - 展開したフォルダでデバイスを確認
 ```powershell
 .\llama-cli.exe --version
@@ -100,6 +102,15 @@ foreach ($v in $values) {
 - `local_ai_batch_size` / `local_ai_ubatch_size`: llama.cpp のバッチ設定
 - `local_ai_max_chars_per_batch` / `local_ai_max_chars_per_batch_file`: 翻訳分割の文字数上限
 - `local_ai_max_tokens`: 応答上限（0以下でNone扱い、推論時間に影響）
+
+## Vulkan(iGPU) トラブルシュート
+- `ErrorOutOfDeviceMemory` / `Requested buffer size exceeds ...`
+  - `local_ai_vk_force_max_allocation_size` を設定（例: `536870912`=512MiB）
+  - 併せて `local_ai_n_gpu_layers` / `local_ai_ctx_size` を下げる
+- 初期化や warmup で不具合が出る
+  - `local_ai_no_warmup = true` を試す（CLIなら `--no-warmup`）
+- 出力が文字化け/意味不明になる
+  - `local_ai_vk_disable_f16 = true` を試す（CLIなら `--vk-disable-f16`）
 
 ## Shisa / Qwen3 推奨パラメータ（README準拠）
 - Qwen3は温度0の決定論的生成で繰り返しが起きやすいため、サンプリング（Temperature > 0）が推奨されています。

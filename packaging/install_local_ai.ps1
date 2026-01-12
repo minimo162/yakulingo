@@ -223,9 +223,12 @@ try {
     $defaultModelRepo = 'dahara1/shisa-v2.1-qwen3-8b-UD-japanese-imatrix'
     $defaultModelFile = 'shisa-v2.1-qwen3-8B-UD-IQ3_XXS.gguf'
     $defaultModelRevision = 'main'
+    $defaultModelKind = 'gguf'  # gguf (default) | hf (HF -> GGUF -> quantize)
+    $defaultModelQuant = 'Q4_K_M'
     $manifestModelRepo = $null
     $manifestModelFile = $null
     $manifestModelRevision = $null
+    $manifestModelKind = $null
     if ($existingManifest -and $existingManifest.model) {
         $manifestModelRepo = $existingManifest.model.repo
         if (-not $manifestModelRepo -and $existingManifest.model.source -and $existingManifest.model.source.repo) {
@@ -240,6 +243,11 @@ try {
         } elseif ($existingManifest.model.revision) {
             $manifestModelRevision = $existingManifest.model.revision
         }
+        if ($existingManifest.model.source -and $existingManifest.model.source.kind) {
+            $manifestModelKind = $existingManifest.model.source.kind
+        } elseif ($existingManifest.model.kind) {
+            $manifestModelKind = $existingManifest.model.kind
+        }
     }
 
     $modelRepo = $defaultModelRepo
@@ -248,16 +256,73 @@ try {
     if (-not [string]::IsNullOrWhiteSpace($manifestModelFile)) { $modelFile = $manifestModelFile }
     $modelRevision = $defaultModelRevision
     if (-not [string]::IsNullOrWhiteSpace($manifestModelRevision)) { $modelRevision = $manifestModelRevision }
+    $modelKind = $defaultModelKind
+    if (-not [string]::IsNullOrWhiteSpace($manifestModelKind)) { $modelKind = [string]$manifestModelKind }
 
     if ($env:LOCAL_AI_MODEL_REPO) { $modelRepo = $env:LOCAL_AI_MODEL_REPO }
     if ($env:LOCAL_AI_MODEL_FILE) { $modelFile = $env:LOCAL_AI_MODEL_FILE }
     if ($env:LOCAL_AI_MODEL_REVISION) { $modelRevision = $env:LOCAL_AI_MODEL_REVISION }
+    if ($env:LOCAL_AI_MODEL_KIND) { $modelKind = $env:LOCAL_AI_MODEL_KIND }
+    $modelKind = ([string]$modelKind).Trim().ToLowerInvariant()
+    if ($modelKind -ne 'gguf' -and $modelKind -ne 'hf') { $modelKind = 'gguf' }
+
     $modelRevision = ([string]$modelRevision).Trim()
     if ([string]::IsNullOrWhiteSpace($modelRevision)) { $modelRevision = 'main' }
 
-    $modelUrl = "https://huggingface.co/$modelRepo/resolve/$modelRevision/$modelFile"
+    $modelQuant = $defaultModelQuant
+    $modelQuantWasExplicit = $false
+    if ($env:LOCAL_AI_MODEL_QUANT) { $modelQuant = [string]$env:LOCAL_AI_MODEL_QUANT; $modelQuantWasExplicit = $true }
+    $modelQuant = ([string]$modelQuant).Trim()
+    if ([string]::IsNullOrWhiteSpace($modelQuant)) { $modelQuant = $defaultModelQuant }
+
+    $modelBaseName = $null
+    if ($env:LOCAL_AI_MODEL_BASE_NAME) { $modelBaseName = [string]$env:LOCAL_AI_MODEL_BASE_NAME }
+    $modelBaseName = ([string]$modelBaseName).Trim()
+
+    if ($modelKind -eq 'hf') {
+        # If not explicitly set, infer from model file when possible.
+        if ([string]::IsNullOrWhiteSpace($modelBaseName) -and $env:LOCAL_AI_MODEL_FILE) {
+            $m = [regex]::Match([string]$env:LOCAL_AI_MODEL_FILE, '^(?<base>.+?)\\.(?<quant>Q[0-9A-Za-z_]+)\\.gguf$', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+            if ($m.Success) {
+                $modelBaseName = $m.Groups['base'].Value
+                if (-not $modelQuantWasExplicit) { $modelQuant = $m.Groups['quant'].Value }
+            } elseif ($env:LOCAL_AI_MODEL_FILE -match '\\.gguf$') {
+                $modelBaseName = [regex]::Replace([string]$env:LOCAL_AI_MODEL_FILE, '\\.gguf$', '', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+            }
+        }
+
+        if ([string]::IsNullOrWhiteSpace($modelBaseName)) {
+            if ([string]$modelRepo -match '/') {
+                $modelBaseName = ([string]$modelRepo -split '/')[-1]
+            } else {
+                $modelBaseName = [string]$modelRepo
+            }
+        }
+        $modelBaseName = [regex]::Replace([string]$modelBaseName, '[\\\\/:*?\"<>|]', '-')
+        $modelBaseName = ([string]$modelBaseName).Trim()
+        if ([string]::IsNullOrWhiteSpace($modelBaseName)) { $modelBaseName = 'model' }
+
+        # If user did not override the repo, default to AgentCPM-Explore when kind=hf.
+        if ((-not $env:LOCAL_AI_MODEL_REPO) -and (-not $manifestModelRepo) -and ($modelRepo -eq $defaultModelRepo)) {
+            $modelRepo = 'openbmb/AgentCPM-Explore'
+            $modelBaseName = 'AgentCPM-Explore'
+        }
+
+        if (-not $env:LOCAL_AI_MODEL_FILE) {
+            $modelFile = "$modelBaseName.$modelQuant.gguf"
+        }
+    }
+
+    $modelUrl = $null
+    if ($modelKind -eq 'gguf') {
+        $modelUrl = "https://huggingface.co/$modelRepo/resolve/$modelRevision/$modelFile"
+    }
+
     $modelPath = Get-ChildPathSafe $modelsDir $modelFile
-    $modelTempPath = $modelPath + '.partial'
+    $modelTempPath = $null
+    if ($modelKind -eq 'gguf') {
+        $modelTempPath = $modelPath + '.partial'
+    }
     $licenseUrl = "https://huggingface.co/$modelRepo/raw/$modelRevision/LICENSE"
     $readmeUrl = "https://huggingface.co/$modelRepo/resolve/$modelRevision/README.md"
 
@@ -370,35 +435,74 @@ try {
         try { Invoke-Download $llamaLicenseUrl $llamaLicenseOut 120 } catch { Write-Host "[WARNING] Failed to download llama.cpp LICENSE: $($_.Exception.Message)" }
     }
 
+    $downloadedModel = $false
     if ($skipModel) {
         Write-Host '[INFO] Skipping model download (LOCAL_AI_SKIP_MODEL=1).'
     } else {
-        $downloadedModel = $false
-        if (Test-Path $modelTempPath) {
-            Write-Host "[INFO] Resuming partial model download: $(Split-Path -Leaf $modelTempPath)"
-            Invoke-Download $modelUrl $modelTempPath 14400
-            Move-Item -Force -Path $modelTempPath -Destination $modelPath
-            $downloadedModel = $true
-        } else {
+        if ($modelKind -eq 'hf') {
+            $forceRebuild = ($env:LOCAL_AI_FORCE_MODEL_REBUILD -eq '1')
             $hasModel = (Test-Path $modelPath) -and ((Get-Item $modelPath).Length -gt 0)
-            if ($hasModel) {
+            if ($hasModel -and -not $forceRebuild) {
                 Write-Host "[INFO] Model already exists: $(Split-Path -Leaf $modelPath)"
-                $existingModelSha = $null
-                if ($existingManifest -and $existingManifest.model -and $existingManifest.model.sha256) {
-                    $existingModelSha = $existingManifest.model.sha256
-                } elseif ($existingManifest -and $existingManifest.model -and $existingManifest.model.output -and $existingManifest.model.output.sha256) {
-                    $existingModelSha = $existingManifest.model.output.sha256
-                }
-                if (-not $existingModelSha -and (-not $useProxy) -and (Get-Command curl.exe -ErrorAction SilentlyContinue)) {
-                    Write-Host '[INFO] Verifying/resuming model download (no existing SHA256 in manifest)...'
-                    Invoke-Download $modelUrl $modelPath 14400
-                    $downloadedModel = $true
-                }
             } else {
-                Write-Host "[INFO] Downloading model: $modelRepo/$modelFile"
+                $uvExe = Join-Path $root 'uv.exe'
+                if (-not (Test-Path $uvExe)) {
+                    $uvCmd = Get-Command uv.exe -ErrorAction SilentlyContinue
+                    if ($uvCmd) { $uvExe = $uvCmd.Source }
+                }
+                if (-not (Test-Path $uvExe)) { throw 'uv.exe not found. Run install_deps.bat first, or ensure uv is installed.' }
+
+                Write-Host "[INFO] Building GGUF from HF (kind=hf): $modelRepo@$modelRevision -> $(Split-Path -Leaf $modelPath)"
+                $toolArgs = @(
+                    'run', 'python', 'tools/hf_to_gguf_quantize.py',
+                    '--hf-repo', $modelRepo,
+                    '--revision', $modelRevision,
+                    '--base-name', $modelBaseName,
+                    '--quant', $modelQuant,
+                    '--out-dir', $modelsDir
+                )
+                if ($forceRebuild) { $toolArgs += '--force' }
+
+                & $uvExe @toolArgs
+                if ($LASTEXITCODE -ne 0) { throw "HF->GGUF->quantize failed (exit=$LASTEXITCODE). Check output above." }
+
+                $generatedPath = Join-Path $modelsDir "$modelBaseName.$modelQuant.gguf"
+                if ((Test-Path $generatedPath) -and ($generatedPath -ne $modelPath)) {
+                    Move-Item -Force -Path $generatedPath -Destination $modelPath
+                }
+
+                if (-not (Test-Path $modelPath) -or ((Get-Item $modelPath).Length -le 0)) {
+                    throw "Quantized GGUF not found or empty: $modelPath"
+                }
+                $downloadedModel = $true
+            }
+        } else {
+            if (Test-Path $modelTempPath) {
+                Write-Host "[INFO] Resuming partial model download: $(Split-Path -Leaf $modelTempPath)"
                 Invoke-Download $modelUrl $modelTempPath 14400
                 Move-Item -Force -Path $modelTempPath -Destination $modelPath
                 $downloadedModel = $true
+            } else {
+                $hasModel = (Test-Path $modelPath) -and ((Get-Item $modelPath).Length -gt 0)
+                if ($hasModel) {
+                    Write-Host "[INFO] Model already exists: $(Split-Path -Leaf $modelPath)"
+                    $existingModelSha = $null
+                    if ($existingManifest -and $existingManifest.model -and $existingManifest.model.sha256) {
+                        $existingModelSha = $existingManifest.model.sha256
+                    } elseif ($existingManifest -and $existingManifest.model -and $existingManifest.model.output -and $existingManifest.model.output.sha256) {
+                        $existingModelSha = $existingManifest.model.output.sha256
+                    }
+                    if (-not $existingModelSha -and (-not $useProxy) -and (Get-Command curl.exe -ErrorAction SilentlyContinue)) {
+                        Write-Host '[INFO] Verifying/resuming model download (no existing SHA256 in manifest)...'
+                        Invoke-Download $modelUrl $modelPath 14400
+                        $downloadedModel = $true
+                    }
+                } else {
+                    Write-Host "[INFO] Downloading model: $modelRepo/$modelFile"
+                    Invoke-Download $modelUrl $modelTempPath 14400
+                    Move-Item -Force -Path $modelTempPath -Destination $modelPath
+                    $downloadedModel = $true
+                }
             }
         }
     }
@@ -425,8 +529,12 @@ try {
     }
     if ($skipModel) {
         $modelHash = $existingModelHash
-    } elseif ($downloadedModel -and (Test-Path $modelPath) -and ((Get-Item $modelPath).Length -gt 0)) {
-        $modelHash = (Get-FileHash -Algorithm SHA256 -Path $modelPath).Hash
+    } elseif ((Test-Path $modelPath) -and ((Get-Item $modelPath).Length -gt 0)) {
+        if ($downloadedModel -or -not $existingModelHash) {
+            $modelHash = (Get-FileHash -Algorithm SHA256 -Path $modelPath).Hash
+        } else {
+            $modelHash = $existingModelHash
+        }
     } else {
         $modelHash = $existingModelHash
     }
@@ -451,7 +559,7 @@ try {
             sha256 = $modelHash
             skipped = $skipModel
             source = [ordered]@{
-                kind = 'gguf'
+                kind = $modelKind
                 repo = $modelRepo
                 revision = $modelRevision
                 file = $modelFile

@@ -115,6 +115,7 @@ Windows環境で最も簡単にセットアップできる方法です。Python�
 > **Note**: 新規インストール（`local_ai/manifest.json` が無い状態）では CPU(x64) が既定です。Vulkan版にしたい場合は `set LOCAL_AI_LLAMA_CPP_VARIANT=vulkan` を設定してから実行します。既存の `manifest.json` がある場合はその設定を優先し、切り替えたい場合は `set LOCAL_AI_LLAMA_CPP_VARIANT=vulkan|cpu` で上書きします。
 > **Note**: `packaging/install_local_ai.ps1` は実行のたびに最新リリースを確認し、必要な場合のみ更新します。
 > **Note**: モデルは `set LOCAL_AI_MODEL_REPO=...` / `set LOCAL_AI_MODEL_FILE=...` / `set LOCAL_AI_MODEL_REVISION=...` で上書きできます。実行結果は `local_ai/manifest.json` に `model.source` / `model.output` として記録されます。
+> **Note**: `set LOCAL_AI_MODEL_KIND=hf` の場合は、task-02 のツール（`tools/hf_to_gguf_quantize.py`）を使って HF→GGUF→4bit 変換を試みます（Python/依存が揃っていない場合はエラーになります）。
 
 ```bash
 # リポジトリをクローン

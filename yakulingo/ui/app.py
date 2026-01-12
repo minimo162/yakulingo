@@ -10429,9 +10429,7 @@ class YakuLingoApp:
             if delay_s > 0:
                 await asyncio.sleep(delay_s)
             if self.state.translation_backend != TranslationBackend.LOCAL:
-                logger.info(
-                    "[TIMING] LocalAI warmup cancelled: backend switched"
-                )
+                logger.info("[TIMING] LocalAI warmup cancelled: backend switched")
                 return
             if self.state.local_ai_state != LocalAIState.READY:
                 logger.info("[TIMING] LocalAI warmup cancelled: not ready")
@@ -10441,12 +10439,8 @@ class YakuLingoApp:
                     "[TIMING] LocalAI warmup cancelled: translation in progress"
                 )
                 return
-            if self._local_ai_warmup_key != self._build_local_ai_warmup_key(
-                runtime
-            ):
-                logger.info(
-                    "[TIMING] LocalAI warmup cancelled: runtime changed"
-                )
+            if self._local_ai_warmup_key != self._build_local_ai_warmup_key(runtime):
+                logger.info("[TIMING] LocalAI warmup cancelled: runtime changed")
                 return
             from yakulingo.services.local_ai_client import LocalAIClient
         except Exception as e:

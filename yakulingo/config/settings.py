@@ -708,9 +708,7 @@ class AppSettings:
         if n_gpu_layers is None:
             self.local_ai_n_gpu_layers = 0
         elif isinstance(n_gpu_layers, bool):
-            logger.warning(
-                "local_ai_n_gpu_layers invalid (bool), resetting to 0"
-            )
+            logger.warning("local_ai_n_gpu_layers invalid (bool), resetting to 0")
             self.local_ai_n_gpu_layers = 0
         elif isinstance(n_gpu_layers, int):
             if n_gpu_layers < 0:
@@ -924,7 +922,8 @@ class AppSettings:
                 min_p = float(self.local_ai_min_p)
             except (TypeError, ValueError):
                 logger.warning(
-                    "local_ai_min_p invalid (%s), resetting to 0.01", self.local_ai_min_p
+                    "local_ai_min_p invalid (%s), resetting to 0.01",
+                    self.local_ai_min_p,
                 )
                 self.local_ai_min_p = 0.01
             else:

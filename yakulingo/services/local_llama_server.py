@@ -342,9 +342,7 @@ class LocalLlamaServerManager:
     def get_runtime(self) -> Optional[LocalAIServerRuntime]:
         return self._runtime
 
-    def _can_fast_path(
-        self, settings: AppSettings, model_path: Optional[Path]
-    ) -> bool:
+    def _can_fast_path(self, settings: AppSettings, model_path: Optional[Path]) -> bool:
         runtime = self._runtime
         proc = self._process
         if runtime is None or proc is None:

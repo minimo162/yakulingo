@@ -342,9 +342,9 @@ def _wrap_local_streaming_on_chunk(
 
         if candidate == last_emitted[0] or len(candidate) < len(last_emitted[0]):
             return
-        is_complete_json = raw.lstrip().startswith(("{", "[")) and not is_truncated_json(
-            raw
-        )
+        is_complete_json = raw.lstrip().startswith(
+            ("{", "[")
+        ) and not is_truncated_json(raw)
         delta_len = len(candidate) - len(last_emitted[0])
         if (
             not is_complete_json

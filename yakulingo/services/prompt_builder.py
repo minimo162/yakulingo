@@ -379,7 +379,9 @@ class PromptBuilder:
         try:
             stat = path.stat()
             mtime_ns = getattr(stat, "st_mtime_ns", None)
-            mtime_key = int(mtime_ns) if isinstance(mtime_ns, int) else int(stat.st_mtime)
+            mtime_key = (
+                int(mtime_ns) if isinstance(mtime_ns, int) else int(stat.st_mtime)
+            )
             return (str(path), mtime_key, int(stat.st_size))
         except OSError:
             return (str(path), 0, 0)

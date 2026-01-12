@@ -428,7 +428,9 @@ class LocalAIClient:
             if self._settings.local_ai_min_p is not None:
                 payload["min_p"] = float(self._settings.local_ai_min_p)
             if self._settings.local_ai_repeat_penalty is not None:
-                payload["repeat_penalty"] = float(self._settings.local_ai_repeat_penalty)
+                payload["repeat_penalty"] = float(
+                    self._settings.local_ai_repeat_penalty
+                )
         if self._settings.local_ai_max_tokens is not None:
             payload["max_tokens"] = int(self._settings.local_ai_max_tokens)
         if enforce_json:
@@ -440,14 +442,20 @@ class LocalAIClient:
     @staticmethod
     def _should_retry_without_response_format(error: Exception) -> bool:
         message = str(error).lower()
-        return any(token in message for token in ("response_format", "json_schema", "json schema"))
+        return any(
+            token in message
+            for token in ("response_format", "json_schema", "json schema")
+        )
 
     @staticmethod
     def _should_retry_without_sampling_params(error: Exception) -> bool:
         message = str(error).lower()
         if "local_prompt_too_long" in message:
             return False
-        if any(token in message for token in ("response_format", "json_schema", "json schema")):
+        if any(
+            token in message
+            for token in ("response_format", "json_schema", "json schema")
+        ):
             return False
         return any(
             token in message
@@ -657,8 +665,9 @@ class LocalAIClient:
                         timeout_s=timeout_s,
                     )
                 except RuntimeError as exc2:
-                    if include_sampling_params and self._should_retry_without_sampling_params(
-                        exc2
+                    if (
+                        include_sampling_params
+                        and self._should_retry_without_sampling_params(exc2)
                     ):
                         include_sampling_params = False
                         logger.debug(
@@ -686,7 +695,8 @@ class LocalAIClient:
             ):
                 include_sampling_params = False
                 logger.debug(
-                    "LocalAI sampling params unsupported; retrying without them (%s)", exc
+                    "LocalAI sampling params unsupported; retrying without them (%s)",
+                    exc,
                 )
                 payload = self._build_chat_payload(
                     runtime,
@@ -704,7 +714,9 @@ class LocalAIClient:
                         timeout_s=timeout_s,
                     )
                 except RuntimeError as exc2:
-                    if enforce_json and self._should_retry_without_response_format(exc2):
+                    if enforce_json and self._should_retry_without_response_format(
+                        exc2
+                    ):
                         self._set_response_format_support(runtime, False)
                         enforce_json = False
                         logger.debug(
@@ -779,8 +791,9 @@ class LocalAIClient:
                         runtime, payload, on_chunk, timeout=timeout
                     )
                 except RuntimeError as exc2:
-                    if include_sampling_params and self._should_retry_without_sampling_params(
-                        exc2
+                    if (
+                        include_sampling_params
+                        and self._should_retry_without_sampling_params(exc2)
                     ):
                         include_sampling_params = False
                         logger.debug(
@@ -819,7 +832,9 @@ class LocalAIClient:
                         runtime, payload, on_chunk, timeout=timeout
                     )
                 except RuntimeError as exc2:
-                    if enforce_json and self._should_retry_without_response_format(exc2):
+                    if enforce_json and self._should_retry_without_response_format(
+                        exc2
+                    ):
                         self._set_response_format_support(runtime, False)
                         enforce_json = False
                         logger.debug(

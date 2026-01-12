@@ -595,6 +595,9 @@ notes:
 - 「AVX2非対応」: 現状の同梱がAVX2版の場合、Copilotに切り替えるか、generic版 `llama-server` の同梱が必要です
 - 「空きポートが見つかりませんでした（4891-4900）」: 他プロセスが使用中の可能性があるため、`local_ai_port_base` / `local_ai_port_max` を変更するか、競合プロセスを停止
 - モデルのダウンロードが失敗/404: `LOCAL_AI_MODEL_REPO` / `LOCAL_AI_MODEL_FILE` / `LOCAL_AI_MODEL_REVISION` を見直してください。GGUFが配布されていない場合は `LOCAL_AI_MODEL_KIND=hf`（HF→GGUF→4bit）を試してください（依存が重く、RAM/ディスク要件も上がります）。
+- ローカルAIランタイムの更新が失敗（DLLロック）: `...ggml-base.dll にアクセスできません` などが出る場合は、まず YakuLingo（タスクトレイ > `Exit`）を終了し、残っている `llama-server.exe` 等をタスクマネージャーで終了してから再実行してください。
+  - 再実行: `powershell -NoProfile -ExecutionPolicy Bypass -File packaging\\install_local_ai.ps1`
+  - それでも失敗する場合: PCを再起動してから再実行（または `packaging\\install_deps.bat` をやり直し）
 - 詳細: `~/.yakulingo/logs/local_ai_server.log` と `~/.yakulingo/local_ai_server.json` を確認
 
 ### 翻訳が止まる／エラーから復帰したい

@@ -108,6 +108,20 @@ uv run python tools/bench_local_ai.py --mode cold --restart-server \
   --json --out .tmp/bench_vk_cold.json
 ```
 
+### iGPU(UMA) 実測チューニングのポイント（Ryzen 5 PRO 6650U）
+UMA 環境では「全層オフロード（`-ngl 99`）」が最速とは限らず、メモリ帯域/共有メモリの影響で中間値の方が速いことがあります。
+今回の実測（`ctx=4096`/`flash_attn=auto`）では、`-ngl 16` が CPU-only を上回る最速でした。`flash_attn=0` は遅くなるため非推奨です。
+
+```bash
+# Vulkan(iGPU) warm のチューニング例（再現用）
+uv run python tools/bench_local_ai.py --mode warm --warmup-runs 1 --restart-server \
+  --server-dir local_ai/llama_cpp/vulkan --device Vulkan0 --n-gpu-layers 16 \
+  --ctx-size 4096 --flash-attn auto --json
+```
+
+永続的に固定したい場合は、`config/settings.template.json` の `local_ai_n_gpu_layers` と
+`local_ai_ctx_size` を調整して反映します。
+
 ```powershell
 # -ngl の探索（PowerShell例）
 $values = 0, 8, 16, 24, 32, 40, 99

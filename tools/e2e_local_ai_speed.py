@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
-from playwright.sync_api import expect, sync_playwright
+from playwright.sync_api import sync_playwright
 
 DEFAULT_URL = "http://127.0.0.1:8765/"
 DEFAULT_TIMEOUT_S = 300

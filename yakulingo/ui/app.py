@@ -1256,6 +1256,7 @@ if TYPE_CHECKING:
     from nicegui.elements.timer import Timer as UiTimer
     from nicegui.timer import Timer as NiceGUITimer
     from yakulingo.services.copilot_handler import CopilotHandler
+    from yakulingo.services.local_llama_server import LocalAIServerRuntime
     from yakulingo.services.translation_service import TranslationService
     from yakulingo.ui.components.update_notification import UpdateNotification
 

@@ -305,9 +305,7 @@ def test_ensure_ready_fast_path_uses_running_process(
     monkeypatch.setattr(
         manager,
         "_start_new_server",
-        lambda **kwargs: (_ for _ in ()).throw(
-            AssertionError("start should not run")
-        ),
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("start should not run")),
     )
 
     runtime = manager.ensure_ready(settings)

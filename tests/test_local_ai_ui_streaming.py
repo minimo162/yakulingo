@@ -111,7 +111,9 @@ def test_local_streaming_throttle_still_emits_final(monkeypatch) -> None:
     monkeypatch.setattr(
         service, "_translate_single_with_cancel", fake_translate_single_with_cancel
     )
-    monkeypatch.setattr("yakulingo.services.translation_service.time.monotonic", fake_monotonic)
+    monkeypatch.setattr(
+        "yakulingo.services.translation_service.time.monotonic", fake_monotonic
+    )
 
     result = service.translate_text_with_options(
         "dummy",

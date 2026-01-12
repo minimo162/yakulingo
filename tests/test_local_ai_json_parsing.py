@@ -118,7 +118,9 @@ def test_parse_text_single_translation_handles_newlines_and_quotes() -> None:
 
 
 def test_parse_batch_translations_preserves_escaped_newlines() -> None:
-    raw = """{"items":[{"id":1,"translation":"A\\nB"},{"id":2,"translation":"C\\tD"}]}"""
+    raw = (
+        """{"items":[{"id":1,"translation":"A\\nB"},{"id":2,"translation":"C\\tD"}]}"""
+    )
     assert parse_batch_translations(raw, expected_count=2) == ["A\nB", "C\tD"]
 
 

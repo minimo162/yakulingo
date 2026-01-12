@@ -179,6 +179,7 @@ def test_local_followup_reference_embed_includes_local_reference(
     assert "[REFERENCE:file=ref.txt]" in prompt
     assert "Reference content" in prompt
 
+
 def test_local_prompt_includes_json_guard_block() -> None:
     builder = _make_builder()
     prompt = builder.build_text_to_en_single(
@@ -188,6 +189,7 @@ def test_local_prompt_includes_json_guard_block() -> None:
         detected_language="Japanese",
     )
     assert "JSON OUTPUT (MUST)" in prompt
+
 
 def test_local_batch_embed_reference_even_when_flag_false(tmp_path: Path) -> None:
     builder = _make_builder()

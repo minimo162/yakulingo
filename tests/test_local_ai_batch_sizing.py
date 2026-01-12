@@ -8,10 +8,7 @@ from yakulingo.services.translation_service import BatchTranslator
 
 def _make_blocks(count: int, size: int) -> list[TextBlock]:
     text = "x" * size
-    return [
-        TextBlock(id=f"b{i}", text=text, location="Sheet1")
-        for i in range(count)
-    ]
+    return [TextBlock(id=f"b{i}", text=text, location="Sheet1") for i in range(count)]
 
 
 def test_batch_limit_reduction_reduces_batch_count() -> None:

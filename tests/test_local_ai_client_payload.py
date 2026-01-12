@@ -92,10 +92,14 @@ def test_response_format_cache_applies_to_streaming() -> None:
         fake_streaming
     )
 
-    result1 = client._chat_completions_streaming(runtime, "prompt", lambda _: None, timeout=1)
+    result1 = client._chat_completions_streaming(
+        runtime, "prompt", lambda _: None, timeout=1
+    )
     assert result1.content == "ok"
 
-    result2 = client._chat_completions_streaming(runtime, "prompt", lambda _: None, timeout=1)
+    result2 = client._chat_completions_streaming(
+        runtime, "prompt", lambda _: None, timeout=1
+    )
     assert result2.content == "ok"
 
     assert len(calls) == 3

@@ -25,12 +25,8 @@ _RE_TRANSLATION_COMPLETED = re.compile(
 _RE_TRANSLATION_ELAPSED = re.compile(
     r"Translation \[[^\]]+\] end_time: .*?elapsed_time: ([0-9.]+)s"
 )
-_RE_TRANSLATION_PREP = re.compile(
-    r"prep_time: ([0-9.]+)s since button click"
-)
-_RE_LOCAL_AI_WARMUP_FINISHED = re.compile(
-    r"LocalAI warmup finished: ([0-9.]+)s"
-)
+_RE_TRANSLATION_PREP = re.compile(r"prep_time: ([0-9.]+)s since button click")
+_RE_LOCAL_AI_WARMUP_FINISHED = re.compile(r"LocalAI warmup finished: ([0-9.]+)s")
 
 
 def _log(message: str) -> None:
@@ -67,9 +63,7 @@ def _wait_for_http(
             pass
         time.sleep(0.5)
     tail = _read_log_tail(log_path) if log_path else ""
-    raise TimeoutError(
-        f"Server did not respond within {timeout_s}s: {url}\n{tail}"
-    )
+    raise TimeoutError(f"Server did not respond within {timeout_s}s: {url}\n{tail}")
 
 
 def _load_default_text(repo_root: Path) -> str:

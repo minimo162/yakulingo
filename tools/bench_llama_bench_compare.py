@@ -80,9 +80,7 @@ def _run_bench(
 
 def _write_json(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _write_markdown(path: Path, payload: dict) -> None:
@@ -150,9 +148,7 @@ def main() -> int:
     parser.add_argument("--n-gpu-layers", type=str, default="all")
     parser.add_argument("--pg", type=str, default="2048,256")
     parser.add_argument("-r", "--repeat", type=int, default=3)
-    parser.add_argument(
-        "--format", choices=("json", "markdown"), default="json"
-    )
+    parser.add_argument("--format", choices=("json", "markdown"), default="json")
     parser.add_argument("--out", type=Path, default=None)
     parser.add_argument(
         "--extra-args",

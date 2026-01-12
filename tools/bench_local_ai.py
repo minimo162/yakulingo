@@ -259,7 +259,9 @@ def _apply_overrides(settings: Any, args: argparse.Namespace) -> dict[str, Any]:
     return overrides
 
 
-def _emit_json(payload: dict[str, Any], *, to_stdout: bool, out_path: Path | None) -> None:
+def _emit_json(
+    payload: dict[str, Any], *, to_stdout: bool, out_path: Path | None
+) -> None:
     text = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
     if out_path is not None:
         out_path.write_text(text, encoding="utf-8")
@@ -299,7 +301,10 @@ def main() -> int:
     parser.add_argument("--port-max", type=int, default=None)
     parser.add_argument("--temperature", type=float, default=None)
     parser.add_argument(
-        "--device", type=str, default=None, help="Override local_ai_device (e.g. Vulkan0)"
+        "--device",
+        type=str,
+        default=None,
+        help="Override local_ai_device (e.g. Vulkan0)",
     )
     parser.add_argument(
         "--n-gpu-layers",
@@ -444,7 +449,9 @@ def main() -> int:
     print(f"effective_local_ai_threads: {settings.local_ai_threads}")
     print(f"effective_local_ai_batch_size: {settings.local_ai_batch_size}")
     print(f"effective_local_ai_ubatch_size: {settings.local_ai_ubatch_size}")
-    print(f"effective_local_ai_max_chars_per_batch: {settings.local_ai_max_chars_per_batch}")
+    print(
+        f"effective_local_ai_max_chars_per_batch: {settings.local_ai_max_chars_per_batch}"
+    )
     print(
         "effective_local_ai_max_chars_per_batch_file: "
         f"{settings.local_ai_max_chars_per_batch_file}"

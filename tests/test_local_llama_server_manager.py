@@ -228,6 +228,29 @@ def test_ensure_ready_falls_back_to_bundled_server_dir_when_custom_invalid(
     assert seen_dirs == [tmp_path / "custom" / "invalid", bundled_dir]
 
 
+def test_resolve_server_exe_prefers_vulkan_variant(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server_dir = tmp_path / "llama_cpp"
+    for variant in ("vulkan", "avx2", "generic"):
+        variant_dir = server_dir / variant
+        variant_dir.mkdir(parents=True, exist_ok=True)
+        (variant_dir / "llama-server.exe").write_bytes(b"exe")
+
+    monkeypatch.setattr(lls, "_probe_executable_supported", lambda path: True)
+    monkeypatch.setattr(
+        lls.LocalLlamaServerManager,
+        "get_state_path",
+        staticmethod(lambda: tmp_path / "state.json"),
+    )
+
+    manager = lls.LocalLlamaServerManager()
+    exe_path, variant = manager._resolve_server_exe(server_dir)
+
+    assert variant == "vulkan"
+    assert exe_path == server_dir / "vulkan" / "llama-server.exe"
+
+
 def test_ensure_ready_fast_path_uses_running_process(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

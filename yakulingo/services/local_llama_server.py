@@ -630,6 +630,8 @@ class LocalLlamaServerManager:
         preferred_variant = preferred if isinstance(preferred, str) else None
 
         candidates: list[tuple[str, Path]] = []
+        if (server_dir / "vulkan").is_dir():
+            candidates.append(("vulkan", server_dir / "vulkan"))
         if (server_dir / "avx2").is_dir():
             candidates.append(("avx2", server_dir / "avx2"))
         if (server_dir / "generic").is_dir():

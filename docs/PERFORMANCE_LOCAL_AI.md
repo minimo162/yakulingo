@@ -64,6 +64,7 @@ uv run python tools/bench_local_ai.py --mode warm --out .tmp/bench_local_ai.json
 
 ### 設定上書き例（local_ai_*）
 以下はベンチ用の**一時上書き**です（永続化されません）。
+> **Note**: 上書き値を変えた場合は `--restart-server` を付けて再起動し、設定が確実に反映された状態で計測します。
 ```bash
 # threads / ctx / batch / ubatch の上書き
 uv run python tools/bench_local_ai.py --mode warm \

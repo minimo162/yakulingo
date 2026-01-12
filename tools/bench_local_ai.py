@@ -193,6 +193,11 @@ def main() -> int:
     parser.add_argument("--no-warmup", action="store_true")
     parser.add_argument("--vk-force-max-allocation-size", type=int, default=None)
     parser.add_argument("--vk-disable-f16", action="store_true")
+    parser.add_argument(
+        "--restart-server",
+        action="store_true",
+        help="Restart local AI server before benchmarking (ensures overrides apply).",
+    )
     parser.add_argument("--json", action="store_true", help="Output JSON to stdout")
     parser.add_argument("--out", type=Path, default=None, help="Write JSON to file")
 
@@ -273,9 +278,24 @@ def main() -> int:
 
     if args.mode == "cold":
         # Stop existing local AI server (if safe) before measuring cold start.
-        get_local_llama_server_manager().stop()
+        server_restarted = False
+        restart_reason = None
+        if args.restart_server:
+            get_local_llama_server_manager().stop()
+            server_restarted = True
+            restart_reason = "restart_server"
+        if not server_restarted:
+            get_local_llama_server_manager().stop()
+            server_restarted = True
+            restart_reason = "mode_cold"
         warmup_runs = 0
     else:
+        server_restarted = False
+        restart_reason = None
+        if args.restart_server:
+            get_local_llama_server_manager().stop()
+            server_restarted = True
+            restart_reason = "restart_server"
         warmup_runs = max(0, int(args.warmup_runs))
 
     warmup_seconds: list[float] = []
@@ -346,6 +366,8 @@ def main() -> int:
             "input_chars": len(text),
             "with_glossary": bool(args.with_glossary),
             "reference_files": [str(p) for p in reference_files],
+            "server_restarted": server_restarted,
+            "restart_reason": restart_reason,
             "overrides": overrides,
             "settings": {
                 "local_ai_model_path": settings.local_ai_model_path,
@@ -395,6 +417,8 @@ def main() -> int:
             "input_chars": len(text),
             "with_glossary": bool(args.with_glossary),
             "reference_files": [str(p) for p in reference_files],
+            "server_restarted": server_restarted,
+            "restart_reason": restart_reason,
             "overrides": overrides,
             "settings": {
                 "local_ai_model_path": settings.local_ai_model_path,

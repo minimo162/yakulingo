@@ -488,6 +488,12 @@ if not exist "local_ai\\manifest.json" (
     )
 )
 
+if /i "!LOCAL_AI_MODEL_KIND!"=="hf" (
+    if "!LOCAL_AI_SKIP_MODEL!"=="0" (
+        call :ensure_hf_deps
+    )
+)
+
 if not defined LOCAL_AI_LLAMA_CPP_VARIANT (
     if not exist "local_ai\\manifest.json" (
         set "LOCAL_AI_LLAMA_CPP_VARIANT=cpu"
@@ -518,6 +524,40 @@ echo ============================================================
 echo.
 pause
 endlocal
+exit /b 0
+
+:: ============================================================
+:: Function: Ensure HF deps are available (huggingface_hub)
+:: ============================================================
+:ensure_hf_deps
+echo [INFO] Ensuring HF dependencies (huggingface_hub)...
+if not exist ".venv\Scripts\python.exe" (
+    echo [WARNING] .venv\Scripts\python.exe not found. Cannot install HF deps.
+    exit /b 0
+)
+.venv\Scripts\python.exe -c "import huggingface_hub" >nul 2>&1
+if not errorlevel 1 (
+    echo [DONE] huggingface_hub already available.
+    exit /b 0
+)
+echo [INFO] Installing huggingface_hub (required for LOCAL_AI_MODEL_KIND=hf)...
+.venv\Scripts\python.exe -m pip --version >nul 2>&1
+if errorlevel 1 (
+    .venv\Scripts\python.exe -m ensurepip --upgrade
+)
+if "!SKIP_SSL!"=="1" (
+    .venv\Scripts\python.exe -m pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org -U huggingface_hub
+) else (
+    .venv\Scripts\python.exe -m pip install -U huggingface_hub
+)
+.venv\Scripts\python.exe -c "import huggingface_hub; print('ok')" >nul 2>&1
+if errorlevel 1 (
+    echo [WARNING] huggingface_hub is not available. HF^>GGUF^>4bit may fail.
+    echo [INFO] You can retry later: .venv\Scripts\python.exe -m pip install -U huggingface_hub
+    echo [INFO] Or switch to GGUF download: set LOCAL_AI_MODEL_KIND=gguf
+) else (
+    echo [DONE] huggingface_hub installed.
+)
 exit /b 0
 
 :: ============================================================

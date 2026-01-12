@@ -294,7 +294,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
   "max_chars_per_batch": 1000,
   "request_timeout": 600,
   "max_retries": 3,
-  "local_ai_model_path": "local_ai/models/shisa-v2.1-qwen3-8B-UD-IQ3_XXS.gguf",
+  "local_ai_model_path": "local_ai/models/AgentCPM-Explore.Q4_K_M.gguf",
   "local_ai_server_dir": "local_ai/llama_cpp",
   "local_ai_host": "127.0.0.1",
   "local_ai_port_base": 4891,
@@ -427,7 +427,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 | `ocr_batch_size` | PDF処理のバッチページ数 | 5 |
 | `ocr_dpi` | PDF処理の解像度 | 300 |
 | `max_chars_per_batch` | Copilot送信1回あたりの最大文字数 | 1000 |
-| `local_ai_model_path` | ローカルAIモデル（.gguf）のパス | `local_ai/models/shisa-v2.1-qwen3-8B-UD-IQ3_XXS.gguf` |
+| `local_ai_model_path` | ローカルAIモデル（.gguf）のパス | `local_ai/models/AgentCPM-Explore.Q4_K_M.gguf` |
 | `local_ai_server_dir` | ローカルAIサーバ（llama-server）のディレクトリ | `local_ai/llama_cpp` |
 | `local_ai_port_base` | ローカルAIのポート探索開始 | 4891 |
 | `local_ai_port_max` | ローカルAIのポート探索上限 | 4900 |
@@ -459,6 +459,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 > **Note**: `ocr_*` 設定はPDF処理（レイアウト解析）に使用されます。設定名は互換性のため維持しています。
 > **Note**: ローカルAI関連のパス（`local_ai_model_path`, `local_ai_server_dir`）は、相対パスの場合 **アプリ配置ディレクトリ基準** で解決します（CWD基準ではありません）。
 > **Note**: `local_ai_host` は安全のため `127.0.0.1` に強制されます。
+> **Note**: `local_ai_model_path` のファイルが存在しない場合は、互換性のため `local_ai/models/` 配下の既存モデルを自動探索して起動します（例: 旧既定の Shisa など）。
 
 ### ローカルAI速度計測（ベンチ）
 

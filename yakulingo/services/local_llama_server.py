@@ -625,6 +625,9 @@ class LocalLlamaServerManager:
         if raw:
             candidates.append(_resolve_from_app_base(raw))
         candidates.append(
+            _app_base_dir() / "local_ai" / "models" / "AgentCPM-Explore.Q4_K_M.gguf"
+        )
+        candidates.append(
             _app_base_dir()
             / "local_ai"
             / "models"

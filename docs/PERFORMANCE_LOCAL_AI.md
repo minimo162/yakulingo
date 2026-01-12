@@ -99,7 +99,7 @@ uv run python tools/bench_local_ai.py --mode warm \
 
 # モデル・サーバディレクトリの指定
 uv run python tools/bench_local_ai.py --mode warm \
-  --model-path local_ai/models/shisa-v2.1-qwen3-8B-UD-IQ3_XXS.gguf \
+  --model-path local_ai/models/AgentCPM-Explore.Q4_K_M.gguf \
   --server-dir local_ai/llama_cpp --json
 
 # max_tokens を無効化（0以下でNone扱い）
@@ -159,7 +159,7 @@ uv run python tools/bench_llama_bench_compare.py --format markdown \
 ```bash
 uv run python tools/bench_llama_bench_compare.py \
   --server-dir local_ai/llama_cpp \
-  --model-path local_ai/models/shisa-v2.1-qwen3-8B-UD-IQ3_XXS.gguf \
+  --model-path local_ai/models/AgentCPM-Explore.Q4_K_M.gguf \
   --pg 2048,256 -r 3 \
   --device Vulkan0 --n-gpu-layers all \
   --extra-args -b 2048 -ub 512 -fa 0

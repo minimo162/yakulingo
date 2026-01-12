@@ -116,6 +116,17 @@ Windows環境で最も簡単にセットアップできる方法です。Python�
 > **Note**: `packaging/install_local_ai.ps1` は実行のたびに最新リリースを確認し、必要な場合のみ更新します。
 > **Note**: モデルは `set LOCAL_AI_MODEL_REPO=...` / `set LOCAL_AI_MODEL_FILE=...` / `set LOCAL_AI_MODEL_REVISION=...` で上書きできます。実行結果は `local_ai/manifest.json` に `model.source` / `model.output` として記録されます。
 > **Note**: `set LOCAL_AI_MODEL_KIND=hf` の場合は、task-02 のツール（`tools/hf_to_gguf_quantize.py`）を使って HF→GGUF→4bit 変換を試みます（Python/依存が揃っていない場合はエラーになります）。
+> **Note**: 既定のローカルAIモデルは `local_ai/models/AgentCPM-Explore.Q4_K_M.gguf` です（ファイルが無い場合は `local_ai/models/` 配下を自動探索して起動します）。
+> **Note**: AgentCPM-Explore の GGUF が配布されていない/404 になる場合は、HF 変換モードで生成できます（PyTorch/Transformers 等の依存が必要で、環境によっては失敗します）。
+>
+> ```bat
+> set LOCAL_AI_MODEL_KIND=hf
+> set LOCAL_AI_MODEL_REPO=openbmb/AgentCPM-Explore
+> set LOCAL_AI_MODEL_QUANT=Q4_K_M
+> rem 既存ファイルを作り直す場合のみ
+> rem set LOCAL_AI_FORCE_MODEL_REBUILD=1
+> packaging\install_deps.bat
+> ```
 
 ```bash
 # リポジトリをクローン
@@ -299,7 +310,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
   "local_ai_host": "127.0.0.1",
   "local_ai_port_base": 4891,
   "local_ai_port_max": 4900,
-  "local_ai_ctx_size": 4096,
+  "local_ai_ctx_size": 2048,
   "local_ai_threads": 0,
   "local_ai_temperature": 0.7,
   "local_ai_top_p": 0.8,
@@ -390,7 +401,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 **ローカルAIの速度チューニング（開発者向け）**:
 - `local_ai_*` は `user_settings.json` に保存されないため、恒久的に変える場合は `config/settings.template.json` を編集します。
 - 計測のみの一時上書きは `tools/bench_local_ai.py` の CLI オプションを使用します。
-- 既定値は `local_ai_device=none` / `local_ai_n_gpu_layers=0` / `local_ai_ctx_size=4096`。Vulkan(iGPU) を使う場合は `Vulkan0` / `99`（または `auto` / `all`）を設定します。速度優先で `-ngl 16` にする場合は `local_ai_n_gpu_layers=16` を指定します。`ctx` を以前の既定値へ戻す場合は `local_ai_ctx_size=8192` を指定します。
+- 既定値は `local_ai_device=none` / `local_ai_n_gpu_layers=0` / `local_ai_ctx_size=2048`。長文や安定性を優先したい場合は `local_ai_ctx_size=4096`（さらに必要なら `8192`）を指定します。Vulkan(iGPU) を使う場合は `Vulkan0` / `99`（または `auto` / `all`）を設定します。速度優先で `-ngl 16` にする場合は `local_ai_n_gpu_layers=16` を指定します。
 - `local_ai_threads`: `0` は自動。CPUコアに合わせて増やすと高速化する場合があるが、過剰だと逆効果
 - `local_ai_ctx_size`: 大きいほど遅くなる傾向。プロンプト長に対して必要最小限で調整
 - `local_ai_batch_size` / `local_ai_ubatch_size`: 対応ビルドのみ有効。大きすぎるとメモリ圧迫や不安定化
@@ -431,7 +442,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 | `local_ai_server_dir` | ローカルAIサーバ（llama-server）のディレクトリ | `local_ai/llama_cpp` |
 | `local_ai_port_base` | ローカルAIのポート探索開始 | 4891 |
 | `local_ai_port_max` | ローカルAIのポート探索上限 | 4900 |
-| `local_ai_ctx_size` | ローカルAIのcontext size | 4096 |
+| `local_ai_ctx_size` | ローカルAIのcontext size | 2048 |
 | `local_ai_threads` | ローカルAIのスレッド数（0=auto） | 0 |
 | `local_ai_max_chars_per_batch` | ローカルAI送信1回あたりの最大文字数 | 1000 |
 | `local_ai_max_chars_per_batch_file` | ローカルAI（ファイル翻訳）送信1回あたりの最大文字数 | 800 |
@@ -583,6 +594,7 @@ notes:
 - サイドバー上部で **ローカルAI** を選択した時に「見つかりません」: `local_ai/`（`llama_cpp` と `models`）があるか確認し、無ければ `packaging/install_deps.bat` を実行
 - 「AVX2非対応」: 現状の同梱がAVX2版の場合、Copilotに切り替えるか、generic版 `llama-server` の同梱が必要です
 - 「空きポートが見つかりませんでした（4891-4900）」: 他プロセスが使用中の可能性があるため、`local_ai_port_base` / `local_ai_port_max` を変更するか、競合プロセスを停止
+- モデルのダウンロードが失敗/404: `LOCAL_AI_MODEL_REPO` / `LOCAL_AI_MODEL_FILE` / `LOCAL_AI_MODEL_REVISION` を見直してください。GGUFが配布されていない場合は `LOCAL_AI_MODEL_KIND=hf`（HF→GGUF→4bit）を試してください（依存が重く、RAM/ディスク要件も上がります）。
 - 詳細: `~/.yakulingo/logs/local_ai_server.log` と `~/.yakulingo/local_ai_server.json` を確認
 
 ### 翻訳が止まる／エラーから復帰したい

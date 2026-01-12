@@ -241,7 +241,7 @@ KVキャッシュの量子化は、速度よりもメモリ圧/安定性の調�
 - 出力が文字化け/意味不明になる
   - `local_ai_vk_disable_f16 = true` を試す（CLIなら `--vk-disable-f16`）
 
-## Shisa / Qwen3 推奨パラメータ（README準拠）
+## AgentCPM-Explore / Shisa（Qwen3）推奨パラメータ（README準拠）
 - Qwen3は温度0の決定論的生成で繰り返しが起きやすいため、サンプリング（Temperature > 0）が推奨されています。
 - 推奨値（既定値）:
   - `local_ai_temperature = 0.7`

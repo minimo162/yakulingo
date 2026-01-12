@@ -112,7 +112,7 @@ PDF翻訳はPP-DocLayout-L（PaddleOCR）によるレイアウト解析を使用
 ### 方法1: install_deps.bat を使用（推奨）
 
 Windows環境で最も簡単にセットアップできる方法です。Python、依存関係、Playwrightブラウザを自動でインストールします。
-> **Note**: 新規インストール（`local_ai/manifest.json` が無い状態）では Vulkan(x64) が既定です。CPU版にしたい場合は `set LOCAL_AI_LLAMA_CPP_VARIANT=cpu` を設定してから実行します。既存の `manifest.json` がある場合はその設定を優先し、切り替えたい場合は `set LOCAL_AI_LLAMA_CPP_VARIANT=vulkan|cpu` で上書きします。
+> **Note**: 新規インストール（`local_ai/manifest.json` が無い状態）では CPU(x64) が既定です。Vulkan版にしたい場合は `set LOCAL_AI_LLAMA_CPP_VARIANT=vulkan` を設定してから実行します。既存の `manifest.json` がある場合はその設定を優先し、切り替えたい場合は `set LOCAL_AI_LLAMA_CPP_VARIANT=vulkan|cpu` で上書きします。
 > **Note**: `packaging/install_local_ai.ps1` は実行のたびに最新リリースを確認し、必要な場合のみ更新します。
 
 ```bash
@@ -307,8 +307,8 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
   "local_ai_max_tokens": 1024,
   "local_ai_batch_size": 512,
   "local_ai_ubatch_size": 128,
-  "local_ai_device": "Vulkan0",
-  "local_ai_n_gpu_layers": 99,
+  "local_ai_device": "none",
+  "local_ai_n_gpu_layers": 0,
   "local_ai_flash_attn": "auto",
   "local_ai_no_warmup": false,
   "local_ai_vk_force_max_allocation_size": null,
@@ -388,7 +388,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 **ローカルAIの速度チューニング（開発者向け）**:
 - `local_ai_*` は `user_settings.json` に保存されないため、恒久的に変える場合は `config/settings.template.json` を編集します。
 - 計測のみの一時上書きは `tools/bench_local_ai.py` の CLI オプションを使用します。
-- 既定値は `local_ai_device=Vulkan0` / `local_ai_n_gpu_layers=99` / `local_ai_ctx_size=4096`。CPU-only に戻す場合は `none` / `0` を設定します。速度優先で `-ngl 16` に戻す場合は `local_ai_n_gpu_layers=16` を指定します。`ctx` を以前の既定値へ戻す場合は `local_ai_ctx_size=8192` を指定します。
+- 既定値は `local_ai_device=none` / `local_ai_n_gpu_layers=0` / `local_ai_ctx_size=4096`。Vulkan(iGPU) を使う場合は `Vulkan0` / `99`（または `auto` / `all`）を設定します。速度優先で `-ngl 16` にする場合は `local_ai_n_gpu_layers=16` を指定します。`ctx` を以前の既定値へ戻す場合は `local_ai_ctx_size=8192` を指定します。
 - `local_ai_threads`: `0` は自動。CPUコアに合わせて増やすと高速化する場合があるが、過剰だと逆効果
 - `local_ai_ctx_size`: 大きいほど遅くなる傾向。プロンプト長に対して必要最小限で調整
 - `local_ai_batch_size` / `local_ai_ubatch_size`: 対応ビルドのみ有効。大きすぎるとメモリ圧迫や不安定化
@@ -404,7 +404,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 - 変更は1項目ずつ行い、下記ベンチで再計測する
 
 **Vulkan(iGPU) クイックレシピ**:
-- 準備: 新規インストールなら `packaging/install_deps.bat` で Vulkan(x64) が既定。CPU版にしたい場合は `set LOCAL_AI_LLAMA_CPP_VARIANT=cpu` を設定して実行（既存 `manifest.json` が CPU の場合は `set LOCAL_AI_LLAMA_CPP_VARIANT=vulkan` で上書き可能）
+- 準備: 新規インストールなら `packaging/install_deps.bat` で CPU(x64) が既定。Vulkan版にしたい場合は `set LOCAL_AI_LLAMA_CPP_VARIANT=vulkan` を設定して実行（既存 `manifest.json` が Vulkan の場合は `set LOCAL_AI_LLAMA_CPP_VARIANT=cpu` で上書き可能）
 - 確認: `local_ai/llama_cpp/vulkan/llama-cli.exe --list-devices` で `Vulkan0` を確認
 - 実行例（ベンチ）:
   ```bash
@@ -442,8 +442,8 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 | `local_ai_max_tokens` | ローカルAIの最大生成トークン（nullで無制限） | 1024 |
 | `local_ai_batch_size` | ローカルAIのバッチサイズ（対応フラグがある場合のみ使用、nullで無効） | 512 |
 | `local_ai_ubatch_size` | ローカルAIのマイクロバッチサイズ（対応フラグがある場合のみ使用、nullで無効） | 128 |
-| `local_ai_device` | GPUオフロード先（`none` / `Vulkan0` など） | `Vulkan0` |
-| `local_ai_n_gpu_layers` | GPUに載せる層数（`0` / `16` / `99` / `auto` / `all`） | 99 |
+| `local_ai_device` | GPUオフロード先（`none` / `Vulkan0` など） | `none` |
+| `local_ai_n_gpu_layers` | GPUに載せる層数（`0` / `16` / `99` / `auto` / `all`） | 0 |
 | `local_ai_flash_attn` | Flash Attention（`auto` / `0` / `1`） | `auto` |
 | `local_ai_no_warmup` | warmup 無効化 | false |
 | `local_ai_vk_force_max_allocation_size` | Vulkanの最大割当サイズ（nullで無効） | null |

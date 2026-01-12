@@ -33,7 +33,8 @@ MANIFEST
 *.spec
 
 # Local AI runtime (downloaded binaries/models)
-local_ai/
+local_ai/*
+!local_ai/manifest.json
 
 # Case artifacts
 work/

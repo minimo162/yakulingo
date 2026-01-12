@@ -1,0 +1,18 @@
+{
+  "generated_at": "2026-01-13T02:48:50.9038812+09:00",
+  "llama_cpp": {
+    "repo": "ggml-org/llama.cpp",
+    "release_tag": "b7709",
+    "asset_name": "llama-b7709-bin-win-cpu-x64.zip",
+    "download_url": "https://github.com/ggml-org/llama.cpp/releases/download/b7709/llama-b7709-bin-win-cpu-x64.zip",
+    "server_exe_sha256": "C7E2A3180E5EDD0201A882F0D7523833BA8F6C903E9DD9B1FF04C58D3E1138BB",
+    "variant": "cpu"
+  },
+  "model": {
+    "repo": "dahara1/shisa-v2.1-qwen3-8b-UD-japanese-imatrix",
+    "file": "shisa-v2.1-qwen3-8B-UD-IQ3_XXS.gguf",
+    "download_url": "https://huggingface.co/dahara1/shisa-v2.1-qwen3-8b-UD-japanese-imatrix/resolve/main/shisa-v2.1-qwen3-8B-UD-IQ3_XXS.gguf",
+    "sha256": "8125CD86B749C7270ABF96E78FEA409F8C90A9C8A80A695A12D26E4AEB14FAFD",
+    "skipped": false
+  }
+}

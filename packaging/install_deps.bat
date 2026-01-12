@@ -476,7 +476,7 @@ if not exist "local_ai\\manifest.json" (
 
 if not defined LOCAL_AI_LLAMA_CPP_VARIANT (
     if not exist "local_ai\\manifest.json" (
-        set "LOCAL_AI_LLAMA_CPP_VARIANT=vulkan"
+        set "LOCAL_AI_LLAMA_CPP_VARIANT=cpu"
         echo [INFO] llama.cpp variant: !LOCAL_AI_LLAMA_CPP_VARIANT! ^(default for new install^)
     ) else (
         echo [INFO] llama.cpp variant: manifest.json ^(set LOCAL_AI_LLAMA_CPP_VARIANT to override^)

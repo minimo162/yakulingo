@@ -13,11 +13,14 @@ def test_local_ai_defaults_match_template() -> None:
 
     keys = [
         "local_ai_model_path",
+        "local_ai_ctx_size",
         "local_ai_temperature",
         "local_ai_top_p",
         "local_ai_top_k",
         "local_ai_min_p",
         "local_ai_repeat_penalty",
+        "local_ai_n_gpu_layers",
+        "local_ai_flash_attn",
     ]
 
     settings = AppSettings()

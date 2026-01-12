@@ -337,7 +337,7 @@ class AppSettings:
     local_ai_host: str = "127.0.0.1"
     local_ai_port_base: int = 4891
     local_ai_port_max: int = 4900
-    local_ai_ctx_size: int = 8192
+    local_ai_ctx_size: int = 4096
     local_ai_threads: int = 0  # 0=auto
     local_ai_temperature: float = 0.7
     local_ai_top_p: Optional[float] = 0.8
@@ -348,7 +348,7 @@ class AppSettings:
     local_ai_batch_size: Optional[int] = 512
     local_ai_ubatch_size: Optional[int] = 128
     local_ai_device: str = "Vulkan0"
-    local_ai_n_gpu_layers: int | str = 99
+    local_ai_n_gpu_layers: int | str = 16
     local_ai_flash_attn: str = "auto"
     local_ai_no_warmup: bool = False
     local_ai_vk_force_max_allocation_size: Optional[int] = None
@@ -641,10 +641,10 @@ class AppSettings:
         # Local AI ctx size constraints (conservative)
         if self.local_ai_ctx_size < 512:
             logger.warning(
-                "local_ai_ctx_size too small (%d), resetting to 8192",
+                "local_ai_ctx_size too small (%d), resetting to 4096",
                 self.local_ai_ctx_size,
             )
-            self.local_ai_ctx_size = 8192
+            self.local_ai_ctx_size = 4096
 
         # Local AI batch sizing (safety clamps)
         if self.local_ai_batch_size is not None:

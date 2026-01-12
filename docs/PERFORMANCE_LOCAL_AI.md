@@ -31,7 +31,7 @@
 - 実行環境（CPU/メモリ、電源設定、バックグラウンド負荷）
 > **Note**: CPU-only と Vulkan(iGPU) 比較では、`local_ai_threads` / `local_ai_ctx_size` / `local_ai_batch_size` / `local_ai_ubatch_size` と入力文を固定し、`device` / `-ngl` / `-fa` など GPU 関連だけを変える。
 > **Note**: `local_ai_*` は `user_settings.json` には保存されません。恒久的な変更は `config/settings.template.json` を更新し、ベンチの一時上書きは CLI で行います。
-> **Note**: 既定値は `local_ai_device=Vulkan0` / `local_ai_n_gpu_layers=99`。CPU-only に戻す場合は `none` / `0` を設定します。
+> **Note**: 既定値は `local_ai_device=Vulkan0` / `local_ai_n_gpu_layers=16` / `local_ai_ctx_size=4096`。CPU-only に戻す場合は `none` / `0` を設定します。以前の既定値に戻す場合は `local_ai_ctx_size=8192` / `local_ai_n_gpu_layers=99` を指定します。
 > **Note**: プロキシ環境では `NO_PROXY=127.0.0.1,localhost` を自動補完し、ローカル API がプロキシ経由にならないようにします。
 
 ## CLIベンチ（tools/bench_local_ai.py）

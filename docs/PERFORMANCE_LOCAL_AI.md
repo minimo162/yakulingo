@@ -10,6 +10,15 @@
   - `uv sync --extra test`
   - `playwright install chromium`（E2E計測を使う場合）
 
+## Vulkan(iGPU) 事前確認（Windows）
+- Vulkan 版 llama.cpp バイナリを用意（GitHub Releases の Windows x64 (Vulkan) など）
+- 展開したフォルダでデバイスを確認
+```powershell
+.\llama-cli.exe --version
+.\llama-cli.exe --list-devices
+```
+- `Vulkan0` が表示されれば iGPU が認識されている
+
 ## 計測の流れ（推奨）
 1. CLIベンチで warm / cold をそれぞれ実行し、JSONを保存
 2. E2E計測で「アプリ起動→翻訳完了」の時間を取得
@@ -18,6 +27,7 @@
 比較時に揃える項目:
 - モデル/サーバ、`local_ai_*` の設定値、入力文
 - 実行環境（CPU/メモリ、電源設定、バックグラウンド負荷）
+> **Note**: CPU-only と Vulkan(iGPU) 比較では、`local_ai_threads` / `local_ai_ctx_size` / `local_ai_batch_size` / `local_ai_ubatch_size` と入力文を固定し、`device` / `-ngl` / `-fa` など GPU 関連だけを変える。
 > **Note**: `local_ai_*` は `user_settings.json` には保存されません。恒久的な変更は `config/settings.template.json` を更新し、ベンチの一時上書きは CLI で行います。
 
 ## CLIベンチ（tools/bench_local_ai.py）

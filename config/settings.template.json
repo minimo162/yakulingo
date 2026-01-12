@@ -23,7 +23,7 @@
   "local_ai_batch_size": 512,
   "local_ai_ubatch_size": 128,
   "local_ai_device": "Vulkan0",
-  "local_ai_n_gpu_layers": 16,
+  "local_ai_n_gpu_layers": 99,
   "local_ai_flash_attn": "auto",
   "local_ai_no_warmup": false,
   "local_ai_vk_force_max_allocation_size": null,

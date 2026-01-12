@@ -308,7 +308,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
   "local_ai_batch_size": 512,
   "local_ai_ubatch_size": 128,
   "local_ai_device": "Vulkan0",
-  "local_ai_n_gpu_layers": 16,
+  "local_ai_n_gpu_layers": 99,
   "local_ai_flash_attn": "auto",
   "local_ai_no_warmup": false,
   "local_ai_vk_force_max_allocation_size": null,
@@ -388,7 +388,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 **ローカルAIの速度チューニング（開発者向け）**:
 - `local_ai_*` は `user_settings.json` に保存されないため、恒久的に変える場合は `config/settings.template.json` を編集します。
 - 計測のみの一時上書きは `tools/bench_local_ai.py` の CLI オプションを使用します。
-- 既定値は `local_ai_device=Vulkan0` / `local_ai_n_gpu_layers=16` / `local_ai_ctx_size=4096`。CPU-only に戻す場合は `none` / `0` を設定します。以前の既定値へ戻す場合は `local_ai_ctx_size=8192` / `local_ai_n_gpu_layers=99` を指定します。
+- 既定値は `local_ai_device=Vulkan0` / `local_ai_n_gpu_layers=99` / `local_ai_ctx_size=4096`。CPU-only に戻す場合は `none` / `0` を設定します。速度優先で `-ngl 16` に戻す場合は `local_ai_n_gpu_layers=16` を指定します。`ctx` を以前の既定値へ戻す場合は `local_ai_ctx_size=8192` を指定します。
 - `local_ai_threads`: `0` は自動。CPUコアに合わせて増やすと高速化する場合があるが、過剰だと逆効果
 - `local_ai_ctx_size`: 大きいほど遅くなる傾向。プロンプト長に対して必要最小限で調整
 - `local_ai_batch_size` / `local_ai_ubatch_size`: 対応ビルドのみ有効。大きすぎるとメモリ圧迫や不安定化
@@ -442,7 +442,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 | `local_ai_batch_size` | ローカルAIのバッチサイズ（対応フラグがある場合のみ使用、nullで無効） | 512 |
 | `local_ai_ubatch_size` | ローカルAIのマイクロバッチサイズ（対応フラグがある場合のみ使用、nullで無効） | 128 |
 | `local_ai_device` | GPUオフロード先（`none` / `Vulkan0` など） | `Vulkan0` |
-| `local_ai_n_gpu_layers` | GPUに載せる層数（`0` / `16` / `99` / `auto` / `all`） | 16 |
+| `local_ai_n_gpu_layers` | GPUに載せる層数（`0` / `16` / `99` / `auto` / `all`） | 99 |
 | `local_ai_flash_attn` | Flash Attention（`auto` / `0` / `1`） | `auto` |
 | `local_ai_no_warmup` | warmup 無効化 | false |
 | `local_ai_vk_force_max_allocation_size` | Vulkanの最大割当サイズ（nullで無効） | null |

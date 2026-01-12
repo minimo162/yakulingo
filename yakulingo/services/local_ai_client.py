@@ -412,9 +412,11 @@ class LocalAIClient:
         enforce_json: bool,
         include_sampling_params: bool = True,
     ) -> dict[str, object]:
+        prompt = prompt or ""
         payload: dict[str, object] = {
             "model": runtime.model_id or runtime.model_path.name,
             "messages": [
+                {"role": "user", "content": prompt},
                 {"role": "user", "content": prompt},
             ],
             "stream": stream,
@@ -533,7 +535,7 @@ class LocalAIClient:
         logger.debug(
             "[TIMING] LocalAI warmup: %.2fs (prompt_chars=%d)",
             t_req,
-            len(prompt),
+            len(prompt) * 2,
         )
 
     def translate_single(
@@ -569,7 +571,7 @@ class LocalAIClient:
             "[TIMING] LocalAI chat_completions%s: %.2fs (prompt_chars=%d)",
             "" if on_chunk is None else "_streaming",
             t_req,
-            len(prompt or ""),
+            len(prompt or "") * 2,
         )
         return result.content
 
@@ -605,7 +607,7 @@ class LocalAIClient:
         logger.debug(
             "[TIMING] LocalAI chat_completions: %.2fs (prompt_chars=%d items=%d)",
             t_req,
-            len(prompt or ""),
+            len(prompt or "") * 2,
             len(texts),
         )
         return parse_batch_translations(result.content, expected_count=len(texts))

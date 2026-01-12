@@ -25,6 +25,10 @@ def test_build_chat_payload_includes_json_response_format() -> None:
     payload = client._build_chat_payload(
         runtime, "prompt", stream=False, enforce_json=True
     )
+    assert payload["messages"] == [
+        {"role": "user", "content": "prompt"},
+        {"role": "user", "content": "prompt"},
+    ]
     assert payload["response_format"] == {"type": "json_object"}
     assert payload["stop"] == ["</s>", "<|end|>"]
     assert payload["temperature"] == 0.7
@@ -40,6 +44,10 @@ def test_build_chat_payload_skips_response_format_when_disabled() -> None:
     payload = client._build_chat_payload(
         runtime, "prompt", stream=True, enforce_json=False
     )
+    assert payload["messages"] == [
+        {"role": "user", "content": "prompt"},
+        {"role": "user", "content": "prompt"},
+    ]
     assert "response_format" not in payload
     assert payload["stream"] is True
     assert payload["top_p"] == 0.8

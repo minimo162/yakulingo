@@ -31,7 +31,7 @@
 - 実行環境（CPU/メモリ、電源設定、バックグラウンド負荷）
 > **Note**: CPU-only と Vulkan(iGPU) 比較では、`local_ai_threads` / `local_ai_ctx_size` / `local_ai_batch_size` / `local_ai_ubatch_size` と入力文を固定し、`device` / `-ngl` / `-fa` など GPU 関連だけを変える。
 > **Note**: `local_ai_*` は `user_settings.json` には保存されません。恒久的な変更は `config/settings.template.json` を更新し、ベンチの一時上書きは CLI で行います。
-> **Note**: 既定値は `local_ai_device=none` / `local_ai_n_gpu_layers=0` / `local_ai_ctx_size=4096`。Vulkan(iGPU) を使う場合は `Vulkan0` / `99`（または `auto` / `all`）を設定します。速度優先で `-ngl 16` にする場合は `local_ai_n_gpu_layers=16` を指定します。`ctx` を以前の既定値に戻す場合は `local_ai_ctx_size=8192` を指定します。
+> **Note**: 既定値は `local_ai_device=none` / `local_ai_n_gpu_layers=0` / `local_ai_ctx_size=2048`。長文や安定性を優先したい場合は `local_ai_ctx_size=4096`（さらに必要なら `8192`）を指定します。Vulkan(iGPU) を使う場合は `Vulkan0` / `99`（または `auto` / `all`）を設定します。速度優先で `-ngl 16` にする場合は `local_ai_n_gpu_layers=16` を指定します。
 > **Note**: プロキシ環境では `NO_PROXY=127.0.0.1,localhost` を自動補完し、ローカル API がプロキシ経由にならないようにします。
 
 ## CLIベンチ（tools/bench_local_ai.py）
@@ -132,6 +132,27 @@ uv run python tools/bench_local_ai.py --mode cold --restart-server \
   --server-dir local_ai/llama_cpp/vulkan --device Vulkan0 --n-gpu-layers 99 --flash-attn auto \
   --json --out .tmp/bench_vk_cold.json
 ```
+
+### CPU-only の速度チューニング（Qwen3 / AgentCPM-Explore 系）
+CPU-only では、`local_ai_ctx_size` が大きいほど KV キャッシュが増えて **遅くなりやすい**ため、まず `ctx` を下げて比較します。
+（入力文が長すぎて失敗/劣化する場合は `ctx` を戻します）
+
+```bash
+# ctx 比較（同一条件で JSON を保存）
+uv run python tools/bench_local_ai.py --mode warm --restart-server --warmup-runs 1 \
+  --server-dir local_ai/llama_cpp/avx2 --device none --n-gpu-layers 0 --flash-attn auto \
+  --batch-size 512 --ubatch-size 128 \
+  --ctx-size 2048 --json --out .tmp/bench_cpu_ctx_2048.json
+
+uv run python tools/bench_local_ai.py --mode warm --restart-server --warmup-runs 1 \
+  --server-dir local_ai/llama_cpp/avx2 --device none --n-gpu-layers 0 --flash-attn auto \
+  --batch-size 512 --ubatch-size 128 \
+  --ctx-size 4096 --json --out .tmp/bench_cpu_ctx_4096.json
+```
+
+傾向（同一入力・同一モデル・同一環境で比較）:
+- `ctx=2048` は `warmup_seconds` と `translation_seconds` が短くなりやすい
+- `batch/ubatch` は大きすぎると遅くなることがあるため、まずは既定の `512/128` を基準に比較する
 
 ### llama-bench 比較スクリプト（tools/bench_llama_bench_compare.py）
 CPU-only と Vulkan(iGPU) の `llama-bench` を**同一コマンドで2回実行**し、pp/tg の行と条件を JSON/Markdown で保存します。

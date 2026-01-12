@@ -27,7 +27,6 @@ def test_build_chat_payload_includes_json_response_format() -> None:
     )
     assert payload["messages"] == [
         {"role": "user", "content": "prompt"},
-        {"role": "user", "content": "prompt"},
     ]
     assert payload["response_format"] == {"type": "json_object"}
     assert payload["stop"] == ["</s>", "<|end|>"]
@@ -45,7 +44,6 @@ def test_build_chat_payload_skips_response_format_when_disabled() -> None:
         runtime, "prompt", stream=True, enforce_json=False
     )
     assert payload["messages"] == [
-        {"role": "user", "content": "prompt"},
         {"role": "user", "content": "prompt"},
     ]
     assert "response_format" not in payload

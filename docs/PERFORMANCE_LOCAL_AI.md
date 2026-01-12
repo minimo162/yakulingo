@@ -74,6 +74,19 @@ uv run python tools/bench_local_ai.py --mode warm \
 
 # max_tokens を無効化（0以下でNone扱い）
 uv run python tools/bench_local_ai.py --mode warm --max-tokens 0 --json
+
+# Vulkan(iGPU) 用の一時上書き
+uv run python tools/bench_local_ai.py --mode warm \
+  --device Vulkan0 --n-gpu-layers 99 --flash-attn auto --no-warmup --json
+```
+
+```powershell
+# -ngl の探索（PowerShell例）
+$values = 0, 8, 16, 24, 32, 40, 99
+foreach ($v in $values) {
+  uv run python tools/bench_local_ai.py --mode warm `
+    --device Vulkan0 --n-gpu-layers $v --flash-attn auto --json
+}
 ```
 
 ### バッチ分割のデフォルト

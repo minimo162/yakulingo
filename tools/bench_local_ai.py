@@ -111,6 +111,24 @@ def _apply_overrides(settings: Any, args: argparse.Namespace) -> dict[str, Any]:
         _set("local_ai_port_max", int(args.port_max))
     if args.temperature is not None:
         _set("local_ai_temperature", float(args.temperature))
+    if args.device is not None:
+        _set("local_ai_device", str(args.device))
+    if args.n_gpu_layers is not None:
+        _set("local_ai_n_gpu_layers", str(args.n_gpu_layers))
+    if args.flash_attn is not None:
+        _set("local_ai_flash_attn", str(args.flash_attn))
+    if args.no_warmup:
+        _set("local_ai_no_warmup", True)
+    if args.vk_force_max_allocation_size is not None:
+        if args.vk_force_max_allocation_size <= 0:
+            _set("local_ai_vk_force_max_allocation_size", None)
+        else:
+            _set(
+                "local_ai_vk_force_max_allocation_size",
+                int(args.vk_force_max_allocation_size),
+            )
+    if args.vk_disable_f16:
+        _set("local_ai_vk_disable_f16", True)
 
     if hasattr(settings, "_validate"):
         settings._validate()
@@ -157,6 +175,24 @@ def main() -> int:
     parser.add_argument("--port-base", type=int, default=None)
     parser.add_argument("--port-max", type=int, default=None)
     parser.add_argument("--temperature", type=float, default=None)
+    parser.add_argument(
+        "--device", type=str, default=None, help="Override local_ai_device (e.g. Vulkan0)"
+    )
+    parser.add_argument(
+        "--n-gpu-layers",
+        type=str,
+        default=None,
+        help="Override local_ai_n_gpu_layers (int/auto/all)",
+    )
+    parser.add_argument(
+        "--flash-attn",
+        type=str,
+        default=None,
+        help="Override local_ai_flash_attn (auto/0/1)",
+    )
+    parser.add_argument("--no-warmup", action="store_true")
+    parser.add_argument("--vk-force-max-allocation-size", type=int, default=None)
+    parser.add_argument("--vk-disable-f16", action="store_true")
     parser.add_argument("--json", action="store_true", help="Output JSON to stdout")
     parser.add_argument("--out", type=Path, default=None, help="Write JSON to file")
 
@@ -263,6 +299,15 @@ def main() -> int:
         f"{settings.local_ai_max_chars_per_batch_file}"
     )
     print(f"effective_local_ai_max_tokens: {settings.local_ai_max_tokens}")
+    print(f"effective_local_ai_device: {settings.local_ai_device}")
+    print(f"effective_local_ai_n_gpu_layers: {settings.local_ai_n_gpu_layers}")
+    print(f"effective_local_ai_flash_attn: {settings.local_ai_flash_attn}")
+    print(f"effective_local_ai_no_warmup: {settings.local_ai_no_warmup}")
+    print(
+        "effective_local_ai_vk_force_max_allocation_size: "
+        f"{settings.local_ai_vk_force_max_allocation_size}"
+    )
+    print(f"effective_local_ai_vk_disable_f16: {settings.local_ai_vk_disable_f16}")
     if not args.compare:
         print(f"prompt_chars: {prompt_chars}")
         print(f"prompt_build_seconds: {prompt_build_seconds:.2f}")
@@ -316,6 +361,14 @@ def main() -> int:
                 "local_ai_ubatch_size": settings.local_ai_ubatch_size,
                 "local_ai_max_chars_per_batch": settings.local_ai_max_chars_per_batch,
                 "local_ai_max_chars_per_batch_file": settings.local_ai_max_chars_per_batch_file,
+                "local_ai_device": settings.local_ai_device,
+                "local_ai_n_gpu_layers": settings.local_ai_n_gpu_layers,
+                "local_ai_flash_attn": settings.local_ai_flash_attn,
+                "local_ai_no_warmup": settings.local_ai_no_warmup,
+                "local_ai_vk_force_max_allocation_size": (
+                    settings.local_ai_vk_force_max_allocation_size
+                ),
+                "local_ai_vk_disable_f16": settings.local_ai_vk_disable_f16,
             },
             "warmup_seconds": warmup_seconds,
             "translation_seconds": elapsed,
@@ -357,6 +410,14 @@ def main() -> int:
                 "local_ai_ubatch_size": settings.local_ai_ubatch_size,
                 "local_ai_max_chars_per_batch": settings.local_ai_max_chars_per_batch,
                 "local_ai_max_chars_per_batch_file": settings.local_ai_max_chars_per_batch_file,
+                "local_ai_device": settings.local_ai_device,
+                "local_ai_n_gpu_layers": settings.local_ai_n_gpu_layers,
+                "local_ai_flash_attn": settings.local_ai_flash_attn,
+                "local_ai_no_warmup": settings.local_ai_no_warmup,
+                "local_ai_vk_force_max_allocation_size": (
+                    settings.local_ai_vk_force_max_allocation_size
+                ),
+                "local_ai_vk_disable_f16": settings.local_ai_vk_disable_f16,
             },
             "prompt_chars": prompt_chars,
             "prompt_build_seconds": prompt_build_seconds,

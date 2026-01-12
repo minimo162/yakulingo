@@ -64,6 +64,31 @@ uv run python tools/bench_local_ai.py --mode warm --json
 uv run python tools/bench_local_ai.py --mode warm --out .tmp/bench_local_ai.json
 ```
 
+### JSONの server メタデータ（オフロード確認）
+`--json` 出力には `server` セクションが含まれ、**実際にどのサーバ/バイナリで動いたか**を確認できます。
+CPU-only と Vulkan(iGPU) の切り替えが意図通り反映されているかの検証に使います。
+
+主なキー:
+- `server_dir_config`: `--server-dir` など設定に入った値（未指定なら既定）
+- `server_dir_resolved`: 実際に解決されたサーバディレクトリ
+- `model_path_config` / `model_path_resolved`: 設定値と解決済みモデルパス
+- `server_state`: 既存の状態ファイル内容（存在しない場合は `null`）
+- `runtime`: 実行中サーバの情報（`host`/`port`/`server_variant` など。起動していない場合は `null`）
+- `llama_cli_path` / `llama_cli_version`: `llama-cli` の検出結果（見つからない場合は `null`）
+
+> **Note**: `server_state` は環境依存です。状態ファイルが無い/読めない場合は `null` になります。
+
+### オフロード適用の確認（ログ）
+サーバ起動時のログに、**実際に適用された** `--device` / `-ngl` が出力されます。
+起動ログ（例: `~/.yakulingo/logs/startup.log`）またはコンソール出力で次の行を確認してください。
+
+```
+Local AI offload flags: --device <value> / -ngl <value>
+```
+
+- `unsupported`: 対象バイナリが該当フラグをサポートしていない
+- `not-set`: 設定上は値があるが、今回の起動では適用されなかった
+
 ### 設定上書き例（local_ai_*）
 以下はベンチ用の**一時上書き**です（永続化されません）。
 > **Note**: 上書き値を変えた場合は `--restart-server` を付けて再起動し、設定が確実に反映された状態で計測します。

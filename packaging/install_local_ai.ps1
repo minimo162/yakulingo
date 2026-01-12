@@ -161,8 +161,8 @@ try {
         return $childFull
     }
 
-    $defaultModelRepo = 'dahara1/shisa-v2.1-qwen3-8b-UD-japanese-imatrix'
-    $defaultModelFile = 'shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf'
+    $defaultModelRepo = 'unsloth/LFM2.5-1.2B-Instruct-GGUF'
+    $defaultModelFile = 'LFM2.5-1.2B-Instruct-UD-Q4_K_XL.gguf'
     $manifestModelRepo = $null
     $manifestModelFile = $null
     if ($existingManifest -and $existingManifest.model) {
@@ -180,7 +180,7 @@ try {
     $modelUrl = "https://huggingface.co/$modelRepo/resolve/main/$modelFile"
     $modelPath = Get-ChildPathSafe $modelsDir $modelFile
     $modelTempPath = $modelPath + '.partial'
-    $licenseUrl = 'https://www.apache.org/licenses/LICENSE-2.0.txt'
+    $licenseUrl = 'https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct/raw/main/LICENSE'
     $readmeUrl = "https://huggingface.co/$modelRepo/resolve/main/README.md"
 
     $llamaRepo = 'ggerganov/llama.cpp'

@@ -108,6 +108,40 @@ uv run python tools/bench_local_ai.py --mode cold --restart-server \
   --json --out .tmp/bench_vk_cold.json
 ```
 
+### llama-bench 比較スクリプト（tools/bench_llama_bench_compare.py）
+CPU-only と Vulkan(iGPU) の `llama-bench` を**同一コマンドで2回実行**し、pp/tg の行と条件を JSON/Markdown で保存します。
+CPU-only 側は `--device none -ngl 0` を固定で使い、Vulkan 側は `--device`/`--n-gpu-layers` の指定値を使います。
+
+```bash
+# JSON出力（既定: .tmp/llama_bench_compare.json）
+uv run python tools/bench_llama_bench_compare.py --format json
+
+# Markdown出力（共有用）
+uv run python tools/bench_llama_bench_compare.py --format markdown \
+  --out .tmp/llama_bench_compare.md
+```
+
+主要オプション:
+- `--server-dir`（既定: `local_ai/llama_cpp`。配下の `avx2`/`vulkan` を自動選択）
+- `--cpu-server-dir` / `--gpu-server-dir`（明示指定したい場合）
+- `--model-path`（モデルのパス）
+- `--pg`（`pp,tg` の指定。例: `2048,256`）
+- `-r` / `--repeat`（繰り返し回数）
+- `--device`（Vulkan 側のデバイス。例: `Vulkan0`）
+- `--n-gpu-layers`（Vulkan 側の -ngl 値。例: `all`/`99`/`16`）
+- `--extra-args`（`llama-bench` の追加引数。例: `-b 2048 -ub 512 -fa 0`）
+
+```bash
+uv run python tools/bench_llama_bench_compare.py \
+  --server-dir local_ai/llama_cpp \
+  --model-path local_ai/models/shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf \
+  --pg 2048,256 -r 3 \
+  --device Vulkan0 --n-gpu-layers all \
+  --extra-args -b 2048 -ub 512 -fa 0
+```
+
+> **Note**: 出力の `pp_lines` / `tg_lines` に速度行が入ります。`returncode` が非0の場合は `stderr` と `command` を確認してください。
+
 ### iGPU(UMA) 実測チューニングのポイント（Ryzen 5 PRO 6650U）
 UMA 環境では「全層オフロード（`-ngl 99`）」が最速とは限らず、メモリ帯域/共有メモリの影響で中間値の方が速いことがあります。
 今回の実測（`ctx=4096`/`flash_attn=auto`）では、`-ngl 16` が CPU-only を上回る最速でした。`flash_attn=0` は遅くなるため非推奨です。

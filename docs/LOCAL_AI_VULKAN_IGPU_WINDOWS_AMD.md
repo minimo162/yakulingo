@@ -1,4 +1,4 @@
-# Windows (x64) + Ryzen 5 PRO 6650U 向け Vulkan(iGPU) 最小手順
+﻿# Windows (x64) + Ryzen 5 PRO 6650U 向け Vulkan(iGPU) 最小手順
 
 この手順は、**Vulkan(iGPU) に実際にオフロードできていること**を確認し、**CPU-only との差が見える測り方**で比較するための最短ルートです。
 
@@ -58,6 +58,24 @@ cd local_ai/llama_cpp/vulkan
   -r 3
 ```
 
+### スクリプトで一括比較（任意）
+同じ条件で CPU-only と Vulkan(iGPU) を**1コマンドで実行**し、pp/tg 行と条件を保存できます。
+CPU-only は `--device none -ngl 0` が固定で使われます。
+
+```powershell
+# リポジトリルートで実行
+uv run python tools\bench_llama_bench_compare.py `
+  --server-dir local_ai\llama_cpp `
+  --model-path local_ai\models\shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf `
+  --pg 2048,256 -r 3 `
+  --device Vulkan0 --n-gpu-layers all `
+  --extra-args -b 2048 -ub 512 -fa 0 `
+  --format markdown `
+  --out .tmp\llama_bench_compare.md
+```
+
+詳細は `docs/PERFORMANCE_LOCAL_AI.md` を参照してください。
+
 ## 4) 6650U (UMA) の注意点
 - **メモリ帯域がボトルネック**になりやすく、tg が伸びにくいことがある。
 - **pp（prefill）** は伸びやすいので、比較は `-pg` を使って分離する。
@@ -65,3 +83,4 @@ cd local_ai/llama_cpp/vulkan
 
 ## 参考
 - ベンチ詳細: `docs/PERFORMANCE_LOCAL_AI.md`
+

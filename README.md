@@ -313,8 +313,8 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
   "local_ai_no_warmup": false,
   "local_ai_vk_force_max_allocation_size": null,
   "local_ai_vk_disable_f16": false,
-  "local_ai_cache_type_k": null,
-  "local_ai_cache_type_v": null,
+  "local_ai_cache_type_k": "q8_0",
+  "local_ai_cache_type_v": "q8_0",
   "local_ai_max_chars_per_batch": 1000,
   "local_ai_max_chars_per_batch_file": 800,
   "bilingual_output": false,
@@ -396,7 +396,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 - `local_ai_flash_attn`: Flash Attention（`auto` / `0` / `1`）
 - `local_ai_no_warmup`: 起動時のwarmup無効化（特定環境の回避用）
 - `local_ai_vk_force_max_allocation_size` / `local_ai_vk_disable_f16`: Vulkanトラブルシュート用
-- `local_ai_cache_type_k` / `local_ai_cache_type_v`: KVキャッシュ型（例: `q8_0`）
+- `local_ai_cache_type_k` / `local_ai_cache_type_v`: KVキャッシュ型（例: `q8_0`）。既定は `q8_0`、`null` で無効化（`f16` 相当）に戻す
 - `local_ai_max_chars_per_batch` / `local_ai_max_chars_per_batch_file`: 小さくすると1回あたりの待ち時間は短くなるが、回数が増える
 - `local_ai_max_tokens` を小さくすると速度が向上しますが、長文やバッチ翻訳では出力が途中で途切れる可能性があります
 - 目安: 20秒目標の短文は `128`、速度優先は `256`、品質重視は `512`（または `null`）
@@ -447,8 +447,8 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 | `local_ai_no_warmup` | warmup 無効化 | false |
 | `local_ai_vk_force_max_allocation_size` | Vulkanの最大割当サイズ（nullで無効） | null |
 | `local_ai_vk_disable_f16` | VulkanでF16を無効化 | false |
-| `local_ai_cache_type_k` | KVキャッシュ（K）の型（nullで無効） | null |
-| `local_ai_cache_type_v` | KVキャッシュ（V）の型（nullで無効） | null |
+| `local_ai_cache_type_k` | KVキャッシュ（K）の型（nullで無効） | `q8_0` |
+| `local_ai_cache_type_v` | KVキャッシュ（V）の型（nullで無効） | `q8_0` |
 | `login_overlay_guard` | ログイン表示のガード（通常は無効） | enabled=false |
 | `auto_update_enabled` | 起動時の自動更新チェック | true |
 | `auto_update_check_interval` | 自動更新チェック間隔（秒、0=起動毎） | 0 |

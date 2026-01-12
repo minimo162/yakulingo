@@ -353,8 +353,8 @@ class AppSettings:
     local_ai_no_warmup: bool = False
     local_ai_vk_force_max_allocation_size: Optional[int] = None
     local_ai_vk_disable_f16: bool = False
-    local_ai_cache_type_k: Optional[str] = None
-    local_ai_cache_type_v: Optional[str] = None
+    local_ai_cache_type_k: Optional[str] = "q8_0"
+    local_ai_cache_type_v: Optional[str] = "q8_0"
     local_ai_max_chars_per_batch: int = 1000
     local_ai_max_chars_per_batch_file: int = 800
 

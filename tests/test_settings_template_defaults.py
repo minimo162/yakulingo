@@ -21,6 +21,8 @@ def test_local_ai_defaults_match_template() -> None:
         "local_ai_repeat_penalty",
         "local_ai_n_gpu_layers",
         "local_ai_flash_attn",
+        "local_ai_cache_type_k",
+        "local_ai_cache_type_v",
     ]
 
     settings = AppSettings()

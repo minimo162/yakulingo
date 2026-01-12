@@ -134,6 +134,54 @@ try {
         throw "Download failed: $url"
     }
 
+    function Stop-LocalLlamaProcesses([string]$llamaBaseDir) {
+        $stopped = @()
+        $baseFull = $null
+        try {
+            $baseFull = [System.IO.Path]::GetFullPath($llamaBaseDir)
+        } catch {
+            return $stopped
+        }
+        if (-not $baseFull.EndsWith([System.IO.Path]::DirectorySeparatorChar)) {
+            $baseFull += [System.IO.Path]::DirectorySeparatorChar
+        }
+
+        $filter = "Name='llama-server.exe' OR Name='llama-cli.exe' OR Name='llama-bench.exe'"
+        $cim = $null
+        try {
+            $cim = Get-CimInstance Win32_Process -Filter $filter -ErrorAction Stop
+        } catch {
+            return $stopped
+        }
+
+        foreach ($p in $cim) {
+            $exe = [string]$p.ExecutablePath
+            if ([string]::IsNullOrWhiteSpace($exe)) { continue }
+            $exeFull = $null
+            try { $exeFull = [System.IO.Path]::GetFullPath($exe) } catch { continue }
+            if (-not $exeFull.StartsWith($baseFull, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
+
+            $pid = [int]$p.ProcessId
+            Write-Host "[INFO] Stopping local llama.cpp process (pid=$pid): $exeFull"
+            try {
+                Stop-Process -Id $pid -ErrorAction Stop
+            } catch {
+                try {
+                    Stop-Process -Id $pid -Force -ErrorAction Stop
+                } catch {
+                    Write-Host "[WARNING] Failed to stop process (pid=$pid): $($_.Exception.Message)"
+                    continue
+                }
+            }
+            $stopped += $pid
+        }
+
+        if ($stopped.Count -gt 0) {
+            Start-Sleep -Milliseconds 800
+        }
+        return $stopped
+    }
+
     $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
     Set-Location -Path $root
     $localAiDir = Join-Path $root 'local_ai'
@@ -405,23 +453,72 @@ try {
 
         $tmp = Join-Path $llamaDir '_tmp_extract'
         if (Test-Path $tmp) { Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue }
-        Expand-Archive -Path $llamaZipPath -DestinationPath $tmp -Force
+        $serverExistedBefore = $serverExists
+        try {
+            Expand-Archive -Path $llamaZipPath -DestinationPath $tmp -Force
 
-        $candidates = Get-ChildItem -Path $tmp -Recurse -Filter 'llama-server.exe'
-        $found = $candidates | Sort-Object { $_.FullName -notmatch '\\avx2\\' } | Select-Object -First 1
-        if (-not $found) { throw 'llama-server.exe not found in ZIP.' }
-        $srcDir = $found.DirectoryName
+            $candidates = Get-ChildItem -Path $tmp -Recurse -Filter 'llama-server.exe'
+            $found = $candidates | Sort-Object { $_.FullName -notmatch '\\avx2\\' } | Select-Object -First 1
+            if (-not $found) { throw 'llama-server.exe not found in ZIP.' }
+            $srcDir = $found.DirectoryName
 
-        if (Test-Path $llamaVariantDir) { Remove-Item $llamaVariantDir -Recurse -Force -ErrorAction SilentlyContinue }
-        New-Item -ItemType Directory -Force -Path $llamaVariantDir | Out-Null
-        Copy-Item -Path (Join-Path $srcDir '*') -Destination $llamaVariantDir -Recurse -Force
+            $stagingDir = $llamaVariantDir + '._staging'
+            $backupDir = $llamaVariantDir + '._old'
+            if (Test-Path $stagingDir) { Remove-Item $stagingDir -Recurse -Force -ErrorAction SilentlyContinue }
+            if (Test-Path $backupDir) { Remove-Item $backupDir -Recurse -Force -ErrorAction SilentlyContinue }
 
-        Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
-        Remove-Item $llamaZipPath -Force -ErrorAction SilentlyContinue
+            New-Item -ItemType Directory -Force -Path $stagingDir | Out-Null
+            Copy-Item -Path (Join-Path $srcDir '*') -Destination $stagingDir -Recurse -Force -ErrorAction Stop
 
-        $downloadedLlama = $true
-        $serverExists = $true
-        $currentHash = (Get-FileHash -Algorithm SHA256 -Path $serverExePath).Hash
+            $swapSucceeded = $false
+            $stoppedOnce = $false
+            for ($attempt = 1; $attempt -le 3; $attempt++) {
+                try {
+                    if (Test-Path $backupDir) { Remove-Item $backupDir -Recurse -Force -ErrorAction SilentlyContinue }
+                    if (Test-Path $llamaVariantDir) {
+                        Rename-Item -Path $llamaVariantDir -NewName (Split-Path -Leaf $backupDir) -ErrorAction Stop
+                    }
+                    Rename-Item -Path $stagingDir -NewName (Split-Path -Leaf $llamaVariantDir) -ErrorAction Stop
+                    if (Test-Path $backupDir) { Remove-Item $backupDir -Recurse -Force -ErrorAction SilentlyContinue }
+
+                    $swapSucceeded = $true
+                    break
+                } catch {
+                    if (-not $stoppedOnce) {
+                        $stoppedOnce = $true
+                        $null = Stop-LocalLlamaProcesses $llamaDir
+                    }
+                    Start-Sleep -Milliseconds (500 * $attempt)
+
+                    # Roll back if we renamed the original dir but failed to place the staging dir.
+                    if ((-not (Test-Path $llamaVariantDir)) -and (Test-Path $backupDir)) {
+                        try { Rename-Item -Path $backupDir -NewName (Split-Path -Leaf $llamaVariantDir) -ErrorAction Stop } catch { }
+                    }
+                }
+            }
+
+            if (-not $swapSucceeded) {
+                if (Test-Path $stagingDir) { Remove-Item $stagingDir -Recurse -Force -ErrorAction SilentlyContinue }
+
+                if (-not $serverExistedBefore) {
+                    throw "Failed to install llama.cpp binaries (files locked). Close YakuLingo/llama-server and retry: powershell -NoProfile -ExecutionPolicy Bypass -File packaging\\install_local_ai.ps1"
+                }
+
+                Write-Host "[WARNING] Failed to update llama.cpp binaries (files locked). Keeping existing runtime."
+                Write-Host "[INFO] Close YakuLingo/llama-server and retry: powershell -NoProfile -ExecutionPolicy Bypass -File packaging\\install_local_ai.ps1"
+
+                if ($existingTag) { $tag = $existingTag }
+                if ($existingZipName) { $llamaZipName = $existingZipName }
+                if ($existingZipUrl) { $llamaZipUrl = $existingZipUrl }
+            } else {
+                $downloadedLlama = $true
+                $serverExists = $true
+                $currentHash = (Get-FileHash -Algorithm SHA256 -Path $serverExePath).Hash
+            }
+        } finally {
+            Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
+            Remove-Item $llamaZipPath -Force -ErrorAction SilentlyContinue
+        }
     }
 
     if (-not $llamaLicenseUrl -and $tag) {

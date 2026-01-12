@@ -78,8 +78,12 @@ uv run python tools/bench_local_ai.py --mode warm --max-tokens 0 --json
 
 ## Shisa / Qwen3 推奨パラメータ（README準拠）
 - Qwen3は温度0の決定論的生成で繰り返しが起きやすいため、サンプリング（Temperature > 0）が推奨されています。
-- 推奨値: `local_ai_temperature = 0.7`
-- `top_p` / `top_k` / `min_p` / `repeat_penalty` は README で推奨があるが、現状のアプリ設定では未対応（llama.cpp の既定値に従う）。
+- 推奨値（既定値）:
+  - `local_ai_temperature = 0.7`
+  - `local_ai_top_p = 0.8`
+  - `local_ai_top_k = 20`
+  - `local_ai_min_p = 0.01`（0.0 で無効化したい場合は `0.0` を指定）
+  - `local_ai_repeat_penalty = 1.05`
 
 ## アプリ起動を含む計測（E2E / Playwright）
 ```bash

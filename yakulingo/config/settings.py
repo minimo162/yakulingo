@@ -61,6 +61,10 @@ USER_SETTINGS_KEYS = {
     "local_ai_ctx_size",
     "local_ai_threads",
     "local_ai_temperature",
+    "local_ai_top_p",
+    "local_ai_top_k",
+    "local_ai_min_p",
+    "local_ai_repeat_penalty",
     "local_ai_max_tokens",
     "local_ai_batch_size",
     "local_ai_ubatch_size",
@@ -351,6 +355,10 @@ class AppSettings:
     local_ai_ctx_size: int = 8192
     local_ai_threads: int = 0  # 0=auto
     local_ai_temperature: float = 0.7
+    local_ai_top_p: Optional[float] = 0.8
+    local_ai_top_k: Optional[int] = 20
+    local_ai_min_p: Optional[float] = 0.01
+    local_ai_repeat_penalty: Optional[float] = 1.05
     local_ai_max_tokens: Optional[int] = 1024
     local_ai_batch_size: Optional[int] = 512
     local_ai_ubatch_size: Optional[int] = 128
@@ -676,10 +684,80 @@ class AppSettings:
         # Local AI sampling params constraints
         if self.local_ai_temperature < 0.0 or self.local_ai_temperature > 2.0:
             logger.warning(
-                "local_ai_temperature out of range (%.3f), resetting to 0.2",
+                "local_ai_temperature out of range (%.3f), resetting to 0.7",
                 self.local_ai_temperature,
             )
-            self.local_ai_temperature = 0.2
+            self.local_ai_temperature = 0.7
+
+        if self.local_ai_top_p is not None:
+            try:
+                top_p = float(self.local_ai_top_p)
+            except (TypeError, ValueError):
+                logger.warning(
+                    "local_ai_top_p invalid (%s), resetting to 0.8", self.local_ai_top_p
+                )
+                self.local_ai_top_p = 0.8
+            else:
+                if top_p < 0.0 or top_p > 1.0:
+                    logger.warning(
+                        "local_ai_top_p out of range (%.3f), resetting to 0.8", top_p
+                    )
+                    self.local_ai_top_p = 0.8
+                else:
+                    self.local_ai_top_p = top_p
+
+        if self.local_ai_top_k is not None:
+            try:
+                top_k = int(self.local_ai_top_k)
+            except (TypeError, ValueError):
+                logger.warning(
+                    "local_ai_top_k invalid (%s), resetting to 20", self.local_ai_top_k
+                )
+                self.local_ai_top_k = 20
+            else:
+                if top_k < 0:
+                    logger.warning(
+                        "local_ai_top_k out of range (%d), resetting to 20", top_k
+                    )
+                    self.local_ai_top_k = 20
+                else:
+                    self.local_ai_top_k = top_k
+
+        if self.local_ai_min_p is not None:
+            try:
+                min_p = float(self.local_ai_min_p)
+            except (TypeError, ValueError):
+                logger.warning(
+                    "local_ai_min_p invalid (%s), resetting to 0.01", self.local_ai_min_p
+                )
+                self.local_ai_min_p = 0.01
+            else:
+                if min_p < 0.0 or min_p > 1.0:
+                    logger.warning(
+                        "local_ai_min_p out of range (%.3f), resetting to 0.01", min_p
+                    )
+                    self.local_ai_min_p = 0.01
+                else:
+                    self.local_ai_min_p = min_p
+
+        if self.local_ai_repeat_penalty is not None:
+            try:
+                repeat_penalty = float(self.local_ai_repeat_penalty)
+            except (TypeError, ValueError):
+                logger.warning(
+                    "local_ai_repeat_penalty invalid (%s), resetting to 1.05",
+                    self.local_ai_repeat_penalty,
+                )
+                self.local_ai_repeat_penalty = 1.05
+            else:
+                if repeat_penalty <= 0.0 or repeat_penalty > 2.0:
+                    logger.warning(
+                        "local_ai_repeat_penalty out of range (%.3f), resetting to 1.05",
+                        repeat_penalty,
+                    )
+                    self.local_ai_repeat_penalty = 1.05
+                else:
+                    self.local_ai_repeat_penalty = repeat_penalty
 
         # Timeout constraints
         if self.request_timeout < 10:

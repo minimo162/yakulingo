@@ -6,12 +6,21 @@ from pathlib import Path
 from yakulingo.config.settings import AppSettings
 
 
-def test_local_ai_model_path_default_matches_template() -> None:
+def test_local_ai_defaults_match_template() -> None:
     root = Path(__file__).resolve().parent.parent
     template_path = root / "config" / "settings.template.json"
     data = json.loads(template_path.read_text(encoding="utf-8"))
-    template_value = data.get("local_ai_model_path")
-    assert template_value, "settings.template.json missing local_ai_model_path"
 
-    default_value = AppSettings().local_ai_model_path
-    assert default_value == template_value
+    keys = [
+        "local_ai_model_path",
+        "local_ai_temperature",
+        "local_ai_top_p",
+        "local_ai_top_k",
+        "local_ai_min_p",
+        "local_ai_repeat_penalty",
+    ]
+
+    settings = AppSettings()
+    for key in keys:
+        assert key in data, f"settings.template.json missing {key}"
+        assert getattr(settings, key) == data[key]

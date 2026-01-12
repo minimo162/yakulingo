@@ -296,7 +296,11 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
   "local_ai_port_max": 4900,
   "local_ai_ctx_size": 8192,
   "local_ai_threads": 0,
-  "local_ai_temperature": 0.2,
+  "local_ai_temperature": 0.7,
+  "local_ai_top_p": 0.8,
+  "local_ai_top_k": 20,
+  "local_ai_min_p": 0.01,
+  "local_ai_repeat_penalty": 1.05,
   "local_ai_max_tokens": 1024,
   "local_ai_batch_size": 512,
   "local_ai_ubatch_size": 128,
@@ -399,7 +403,11 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 | `local_ai_max_chars_per_batch` | ローカルAI送信1回あたりの最大文字数 | 1000 |
 | `local_ai_max_chars_per_batch_file` | ローカルAI（ファイル翻訳）送信1回あたりの最大文字数 | 800 |
 | `request_timeout` | 翻訳リクエストのタイムアウト（秒） | 600 |
-| `local_ai_temperature` | ローカルAIの温度（翻訳向けに低め） | 0.2 |
+| `local_ai_temperature` | ローカルAIの温度（Qwen3推奨） | 0.7 |
+| `local_ai_top_p` | ローカルAIのTop-P | 0.8 |
+| `local_ai_top_k` | ローカルAIのTop-K | 20 |
+| `local_ai_min_p` | ローカルAIのMin-P | 0.01 |
+| `local_ai_repeat_penalty` | ローカルAIの繰り返しペナルティ | 1.05 |
 | `local_ai_max_tokens` | ローカルAIの最大生成トークン（nullで無制限） | 1024 |
 | `local_ai_batch_size` | ローカルAIのバッチサイズ（対応フラグがある場合のみ使用、nullで無効） | 512 |
 | `local_ai_ubatch_size` | ローカルAIのマイクロバッチサイズ（対応フラグがある場合のみ使用、nullで無効） | 128 |

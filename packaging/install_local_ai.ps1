@@ -222,25 +222,44 @@ try {
 
     $defaultModelRepo = 'dahara1/shisa-v2.1-qwen3-8b-UD-japanese-imatrix'
     $defaultModelFile = 'shisa-v2.1-qwen3-8B-UD-IQ3_XXS.gguf'
+    $defaultModelRevision = 'main'
     $manifestModelRepo = $null
     $manifestModelFile = $null
+    $manifestModelRevision = $null
     if ($existingManifest -and $existingManifest.model) {
         $manifestModelRepo = $existingManifest.model.repo
+        if (-not $manifestModelRepo -and $existingManifest.model.source -and $existingManifest.model.source.repo) {
+            $manifestModelRepo = $existingManifest.model.source.repo
+        }
         $manifestModelFile = $existingManifest.model.file
+        if (-not $manifestModelFile -and $existingManifest.model.source -and $existingManifest.model.source.file) {
+            $manifestModelFile = $existingManifest.model.source.file
+        }
+        if ($existingManifest.model.source -and $existingManifest.model.source.revision) {
+            $manifestModelRevision = $existingManifest.model.source.revision
+        } elseif ($existingManifest.model.revision) {
+            $manifestModelRevision = $existingManifest.model.revision
+        }
     }
 
     $modelRepo = $defaultModelRepo
     if (-not [string]::IsNullOrWhiteSpace($manifestModelRepo)) { $modelRepo = $manifestModelRepo }
     $modelFile = $defaultModelFile
     if (-not [string]::IsNullOrWhiteSpace($manifestModelFile)) { $modelFile = $manifestModelFile }
+    $modelRevision = $defaultModelRevision
+    if (-not [string]::IsNullOrWhiteSpace($manifestModelRevision)) { $modelRevision = $manifestModelRevision }
 
     if ($env:LOCAL_AI_MODEL_REPO) { $modelRepo = $env:LOCAL_AI_MODEL_REPO }
     if ($env:LOCAL_AI_MODEL_FILE) { $modelFile = $env:LOCAL_AI_MODEL_FILE }
-    $modelUrl = "https://huggingface.co/$modelRepo/resolve/main/$modelFile"
+    if ($env:LOCAL_AI_MODEL_REVISION) { $modelRevision = $env:LOCAL_AI_MODEL_REVISION }
+    $modelRevision = ([string]$modelRevision).Trim()
+    if ([string]::IsNullOrWhiteSpace($modelRevision)) { $modelRevision = 'main' }
+
+    $modelUrl = "https://huggingface.co/$modelRepo/resolve/$modelRevision/$modelFile"
     $modelPath = Get-ChildPathSafe $modelsDir $modelFile
     $modelTempPath = $modelPath + '.partial'
-    $licenseUrl = "https://huggingface.co/$modelRepo/raw/main/LICENSE"
-    $readmeUrl = "https://huggingface.co/$modelRepo/resolve/main/README.md"
+    $licenseUrl = "https://huggingface.co/$modelRepo/raw/$modelRevision/LICENSE"
+    $readmeUrl = "https://huggingface.co/$modelRepo/resolve/$modelRevision/README.md"
 
     $llamaRepo = 'ggerganov/llama.cpp'
     $serverExePath = Join-Path $llamaVariantDir 'llama-server.exe'
@@ -367,6 +386,8 @@ try {
                 $existingModelSha = $null
                 if ($existingManifest -and $existingManifest.model -and $existingManifest.model.sha256) {
                     $existingModelSha = $existingManifest.model.sha256
+                } elseif ($existingManifest -and $existingManifest.model -and $existingManifest.model.output -and $existingManifest.model.output.sha256) {
+                    $existingModelSha = $existingManifest.model.output.sha256
                 }
                 if (-not $existingModelSha -and (-not $useProxy) -and (Get-Command curl.exe -ErrorAction SilentlyContinue)) {
                     Write-Host '[INFO] Verifying/resuming model download (no existing SHA256 in manifest)...'
@@ -397,7 +418,11 @@ try {
 
     $modelHash = $null
     $existingModelHash = $null
-    if ($existingManifest -and $existingManifest.model -and $existingManifest.model.sha256) { $existingModelHash = $existingManifest.model.sha256 }
+    if ($existingManifest -and $existingManifest.model -and $existingManifest.model.sha256) {
+        $existingModelHash = $existingManifest.model.sha256
+    } elseif ($existingManifest -and $existingManifest.model -and $existingManifest.model.output -and $existingManifest.model.output.sha256) {
+        $existingModelHash = $existingManifest.model.output.sha256
+    }
     if ($skipModel) {
         $modelHash = $existingModelHash
     } elseif ($downloadedModel -and (Test-Path $modelPath) -and ((Get-Item $modelPath).Length -gt 0)) {
@@ -405,6 +430,8 @@ try {
     } else {
         $modelHash = $existingModelHash
     }
+
+    $modelRelPath = 'local_ai/models/' + ([string]$modelFile).Replace('\', '/')
 
     $manifest = [ordered]@{
         generated_at = (Get-Date).ToString('o')
@@ -418,10 +445,24 @@ try {
         }
         model = [ordered]@{
             repo = $modelRepo
+            revision = $modelRevision
             file = $modelFile
             download_url = $modelUrl
             sha256 = $modelHash
             skipped = $skipModel
+            source = [ordered]@{
+                kind = 'gguf'
+                repo = $modelRepo
+                revision = $modelRevision
+                file = $modelFile
+                download_url = $modelUrl
+            }
+            output = [ordered]@{
+                kind = 'gguf'
+                path = $modelRelPath
+                path_resolved = $modelPath
+                sha256 = $modelHash
+            }
         }
     }
     $manifest | ConvertTo-Json -Depth 6 | Set-Content -Path $manifestPath -Encoding UTF8

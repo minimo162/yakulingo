@@ -517,6 +517,57 @@ def test_build_server_args_adds_gpu_flags_when_available(
     assert "--no-warmup" in args
 
 
+def test_build_server_args_cpu_only_forces_device_and_ngl(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager = lls.LocalLlamaServerManager()
+    server_exe_path = tmp_path / "llama-server.exe"
+    server_exe_path.write_bytes(b"exe")
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"model")
+
+    help_text = "\n".join(
+        [
+            "-m, --model",
+            "--ctx-size",
+            "--threads",
+            "--temp",
+            "--n-predict",
+            "--device",
+            "--n-gpu-layers",
+        ]
+    )
+
+    class DummyCompleted:
+        def __init__(self, stdout: str) -> None:
+            self.stdout = stdout
+
+    def fake_run(*args, **kwargs):
+        return DummyCompleted(help_text)
+
+    monkeypatch.setattr(lls.subprocess, "run", fake_run)
+
+    settings = AppSettings(
+        local_ai_device="none",
+        local_ai_n_gpu_layers=0,
+    )
+    settings._validate()
+
+    args = manager._build_server_args(
+        server_exe_path=server_exe_path,
+        server_variant="vulkan",
+        model_path=model_path,
+        host="127.0.0.1",
+        port=4891,
+        settings=settings,
+    )
+
+    assert "--device" in args
+    assert args[args.index("--device") + 1] == "none"
+    assert "--n-gpu-layers" in args
+    assert args[args.index("--n-gpu-layers") + 1] == "0"
+
+
 def test_build_server_args_skips_gpu_flags_for_non_vulkan_variant(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

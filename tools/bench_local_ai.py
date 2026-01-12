@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 import time
 from datetime import datetime, timezone
@@ -15,6 +16,124 @@ def _repo_root() -> Path:
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _resolve_from_app_base(path_value: str, repo_root: Path) -> Path:
+    raw = (path_value or "").strip()
+    if not raw:
+        return repo_root
+    candidate = Path(raw)
+    if candidate.is_absolute():
+        return candidate
+    return repo_root / candidate
+
+
+def _read_json(path: Path) -> dict[str, Any] | None:
+    try:
+        if not path.exists():
+            return None
+        with path.open("r", encoding="utf-8-sig") as handle:
+            data = json.load(handle)
+        return data if isinstance(data, dict) else None
+    except Exception:
+        return None
+
+
+def _run_version_command(exe_path: Path) -> str | None:
+    if not exe_path.is_file():
+        return None
+    completed = subprocess.run(
+        [str(exe_path), "--version"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    if completed.returncode != 0:
+        return None
+    output = completed.stdout.strip()
+    return output or completed.stderr.strip() or None
+
+
+def _find_llama_cli_path(
+    resolved_server_dir: Path,
+    *,
+    runtime_exe_path: Path | None,
+    state_exe_path: Path | None,
+) -> Path | None:
+    candidates: list[Path] = []
+    if runtime_exe_path is not None:
+        candidates.append(runtime_exe_path.parent)
+    if state_exe_path is not None:
+        candidates.append(state_exe_path.parent)
+    candidates.append(resolved_server_dir)
+    candidates.append(resolved_server_dir / "vulkan")
+    candidates.append(resolved_server_dir / "avx2")
+    candidates.append(resolved_server_dir / "generic")
+
+    for base_dir in candidates:
+        if not base_dir.exists():
+            continue
+        for name in ("llama-cli.exe", "llama-cli"):
+            candidate = base_dir / name
+            if candidate.is_file():
+                return candidate
+    return None
+
+
+def _collect_server_metadata(
+    settings: Any,
+    repo_root: Path,
+    server_manager: Any,
+) -> dict[str, Any]:
+    resolved_server_dir = _resolve_from_app_base(
+        str(settings.local_ai_server_dir or ""), repo_root
+    )
+    resolved_model_path = _resolve_from_app_base(
+        str(settings.local_ai_model_path or ""), repo_root
+    )
+    state_path = server_manager.get_state_path()
+    state = _read_json(state_path)
+    runtime = server_manager.get_runtime()
+
+    runtime_payload = None
+    runtime_exe_path = None
+    if runtime is not None:
+        runtime_exe_path = runtime.server_exe_path
+        runtime_payload = {
+            "host": runtime.host,
+            "port": runtime.port,
+            "base_url": runtime.base_url,
+            "model_id": runtime.model_id,
+            "server_exe_path": str(runtime.server_exe_path),
+            "server_variant": runtime.server_variant,
+            "model_path": str(runtime.model_path),
+        }
+
+    state_exe_path = None
+    if state and isinstance(state.get("server_exe_path_resolved"), str):
+        state_exe_path = Path(state["server_exe_path_resolved"])
+
+    llama_cli_path = _find_llama_cli_path(
+        resolved_server_dir,
+        runtime_exe_path=runtime_exe_path,
+        state_exe_path=state_exe_path,
+    )
+    llama_cli_version = _run_version_command(llama_cli_path) if llama_cli_path else None
+
+    return {
+        "server_dir_config": settings.local_ai_server_dir,
+        "server_dir_resolved": str(resolved_server_dir),
+        "model_path_config": settings.local_ai_model_path,
+        "model_path_resolved": str(resolved_model_path),
+        "server_state_path": str(state_path),
+        "server_state": state,
+        "runtime": runtime_payload,
+        "llama_cli_path": str(llama_cli_path) if llama_cli_path else None,
+        "llama_cli_version": llama_cli_version,
+    }
 
 
 def _load_text(path: Path) -> str:
@@ -259,6 +378,7 @@ def main() -> int:
     settings = AppSettings()
     settings.translation_backend = "local"
     overrides = _apply_overrides(settings, args)
+    server_manager = get_local_llama_server_manager()
     prompts_dir = repo_root / "prompts"
     if args.compare:
         from yakulingo.services.copilot_handler import CopilotHandler
@@ -355,6 +475,7 @@ def main() -> int:
 
     if args.compare:
         result, elapsed = _translate_compare(service, text, reference_files)
+        server_metadata = _collect_server_metadata(settings, repo_root, server_manager)
         error = getattr(result, "error_message", None)
         options = getattr(result, "options", None) or []
         if error:
@@ -382,6 +503,7 @@ def main() -> int:
             "server_restarted": server_restarted,
             "restart_reason": restart_reason,
             "overrides": overrides,
+            "server": server_metadata,
             "settings": {
                 "local_ai_model_path": settings.local_ai_model_path,
                 "local_ai_server_dir": settings.local_ai_server_dir,
@@ -415,6 +537,7 @@ def main() -> int:
         }
     else:
         output, elapsed = _translate_once(client, text, prompt)
+        server_metadata = _collect_server_metadata(settings, repo_root, server_manager)
         if not output.strip():
             print("WARNING: empty translation result", file=sys.stderr)
 
@@ -435,6 +558,7 @@ def main() -> int:
             "server_restarted": server_restarted,
             "restart_reason": restart_reason,
             "overrides": overrides,
+            "server": server_metadata,
             "settings": {
                 "local_ai_model_path": settings.local_ai_model_path,
                 "local_ai_server_dir": settings.local_ai_server_dir,

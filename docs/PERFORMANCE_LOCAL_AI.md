@@ -61,6 +61,7 @@ uv run python tools/bench_local_ai.py --mode cold --json
 - `output_chars`: 出力文字数
 - `options`: 3スタイル比較時の件数
 - `settings.*`: 有効化された `local_ai_*` の値
+- `similarity` / `similarity_by_style`: `--gold` 指定時の簡易類似度（SequenceMatcher）
 
 ### JSON 出力
 ```bash
@@ -72,6 +73,19 @@ uv run python tools/bench_local_ai.py --mode warm --out .tmp/bench_local_ai.json
 
 # ケース運用（保存先を /work/<case-id>/.tmp/ に統一）
 uv run python tools/bench_local_ai.py --mode warm --out /work/<case-id>/.tmp/bench_local_ai.json
+```
+
+### 追加オプション（タグ/出力保存/簡易精度）
+- `--tag`: JSON出力に任意ラベルを追加する
+- `--save-output`: 翻訳出力を保存する（`--compare` 時は `[style]` 区切りのテキスト）
+- `--gold`: 参照訳テキストを指定し、簡易類似度をJSONに追加する
+
+```bash
+uv run python tools/bench_local_ai.py --mode warm \
+  --tag ctx2048 \
+  --gold /work/<case-id>/.tmp/gold.txt \
+  --save-output /work/<case-id>/.tmp/output.txt \
+  --json --out /work/<case-id>/.tmp/bench_local_ai.json
 ```
 
 ### JSONの server メタデータ（オフロード確認）

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import difflib
 import json
 import subprocess
 import sys
@@ -37,6 +38,31 @@ def _read_json(path: Path) -> dict[str, Any] | None:
         return data if isinstance(data, dict) else None
     except Exception:
         return None
+
+
+def _write_text(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+
+
+def _compute_similarity(gold_text: str, candidate_text: str) -> float:
+    return difflib.SequenceMatcher(None, gold_text, candidate_text).ratio()
+
+
+def _format_compare_output(options: list[Any]) -> str:
+    lines: list[str] = []
+    for index, option in enumerate(options, start=1):
+        style = getattr(option, "style", None) or f"option-{index}"
+        text = getattr(option, "text", "") or ""
+        explanation = getattr(option, "explanation", "") or ""
+        lines.append(f"[{style}]")
+        lines.append(text)
+        if explanation:
+            lines.append("")
+            lines.append("[explanation]")
+            lines.append(explanation)
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def _run_version_command(exe_path: Path) -> str | None:
@@ -286,6 +312,19 @@ def main() -> int:
     )
     parser.add_argument("--with-glossary", action="store_true")
     parser.add_argument("--reference", action="append", type=Path, default=[])
+    parser.add_argument("--tag", type=str, default=None, help="Label for this run")
+    parser.add_argument(
+        "--save-output",
+        type=Path,
+        default=None,
+        help="Write translation output to file",
+    )
+    parser.add_argument(
+        "--gold",
+        type=Path,
+        default=None,
+        help="Path to reference translation (plain text)",
+    )
     parser.add_argument("--warmup-runs", type=int, default=1)
     parser.add_argument("--max-tokens", type=int, default=None)
     parser.add_argument("--ctx-size", type=int, default=None)
@@ -355,6 +394,8 @@ def main() -> int:
     else:
         input_path = default_input
     text = _load_text(input_path)
+    gold_text = _load_text(args.gold) if args.gold else None
+    gold_chars = len(gold_text) if gold_text is not None else None
 
     if args.compare:
         if len(text) > 800:
@@ -494,6 +535,24 @@ def main() -> int:
             + len(getattr(opt, "explanation", "") or "")
             for opt in options
         )
+        if args.save_output is not None:
+            _write_text(args.save_output, _format_compare_output(options))
+        similarity_by_style = None
+        best_similarity = None
+        if gold_text is not None:
+            similarity_by_style = []
+            for index, option in enumerate(options, start=1):
+                style = getattr(option, "style", None) or f"option-{index}"
+                text_value = getattr(option, "text", "") or ""
+                similarity_by_style.append(
+                    {
+                        "style": style,
+                        "ratio": _compute_similarity(gold_text, text_value),
+                        "text_chars": len(text_value),
+                    }
+                )
+            if similarity_by_style:
+                best_similarity = max(item["ratio"] for item in similarity_by_style)
         print(f"translation_seconds: {elapsed:.2f}")
         print(f"options: {len(options)}")
         print(f"output_chars: {output_chars}")
@@ -503,10 +562,14 @@ def main() -> int:
             "compare": True,
             "style": args.style,
             "started_at": started_at,
+            "tag": args.tag,
             "input_path": str(input_path),
             "input_chars": len(text),
             "with_glossary": bool(args.with_glossary),
             "reference_files": [str(p) for p in reference_files],
+            "save_output_path": str(args.save_output) if args.save_output else None,
+            "gold_path": str(args.gold) if args.gold else None,
+            "gold_chars": gold_chars,
             "server_restarted": server_restarted,
             "restart_reason": restart_reason,
             "overrides": overrides,
@@ -540,6 +603,9 @@ def main() -> int:
             "translation_seconds": elapsed,
             "options": len(options),
             "output_chars": output_chars,
+            "similarity_method": "SequenceMatcher",
+            "similarity_by_style": similarity_by_style,
+            "best_similarity": best_similarity,
             "error": error,
         }
     else:
@@ -549,6 +615,11 @@ def main() -> int:
             print("WARNING: empty translation result", file=sys.stderr)
 
         total_seconds = prompt_build_seconds + elapsed
+        if args.save_output is not None:
+            _write_text(args.save_output, output)
+        similarity = (
+            _compute_similarity(gold_text, output) if gold_text is not None else None
+        )
         print(f"translation_seconds: {elapsed:.2f}")
         print(f"total_seconds: {total_seconds:.2f}")
         print(f"output_chars: {len(output)}")
@@ -558,10 +629,14 @@ def main() -> int:
             "compare": False,
             "style": args.style,
             "started_at": started_at,
+            "tag": args.tag,
             "input_path": str(input_path),
             "input_chars": len(text),
             "with_glossary": bool(args.with_glossary),
             "reference_files": [str(p) for p in reference_files],
+            "save_output_path": str(args.save_output) if args.save_output else None,
+            "gold_path": str(args.gold) if args.gold else None,
+            "gold_chars": gold_chars,
             "server_restarted": server_restarted,
             "restart_reason": restart_reason,
             "overrides": overrides,
@@ -597,6 +672,8 @@ def main() -> int:
             "translation_seconds": elapsed,
             "total_seconds": total_seconds,
             "output_chars": len(output),
+            "similarity_method": "SequenceMatcher",
+            "similarity": similarity,
         }
 
     if args.json or args.out:

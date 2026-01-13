@@ -72,3 +72,16 @@
   - `uv run --extra test pytest`（112 passed）
 - フォローアップ:
   - Step 7 の `[1]` 選択で「落ちる」現象がまだ残る場合は、task-09 で原因特定と「落ちない/理由表示」へ修正する
+
+### 2026-01-13 task-09（Step 7 入力で落ちる）
+- ブランチ: `case-nemotron-flash-3b-install-deps-4bit-20260113-113408-task-09-step7-choice1-fix`
+- コミット: `bb379d5ff08a82868326caabba1958dcb61f3357`
+- 原因: Step 7 分離時に `NO_PROXY` の行の閉じ括弧 `)` が欠落していたのと、`if (...)` ブロック内の `echo ... (...)` の括弧がエスケープされておらず、選択直後にバッチの構文エラーで終了していた
+- 変更点:
+  - `packaging/install_deps_step7_local_ai.bat` の括弧・分岐を修正し、失敗しても「落ちない」+ `install_local_ai.ps1` の exit code を表示
+  - `packaging/install_deps.bat` から呼び出す場合は `YAKULINGO_INSTALL_DEPS_STEP7` を立て、Step 7 単体起動時のみ終了前に `pause`（ウィンドウ即閉じ対策）
+- 検証:
+  - `uv sync`
+  - `uv sync --extra test`
+  - `uv run python -m compileall yakulingo`
+  - `uv run --extra test pytest`（112 passed）

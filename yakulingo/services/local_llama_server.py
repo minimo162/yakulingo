@@ -31,7 +31,11 @@ logger = logging.getLogger(__name__)
 
 _HELP_TEXT_CACHE: dict[tuple[str, int, int], str] = {}
 _HELP_TEXT_CACHE_LOCK = threading.Lock()
+_EXE_SUPPORTED_CACHE: dict[tuple[str, int, int], bool] = {}
+_EXE_SUPPORTED_CACHE_LOCK = threading.Lock()
 _NO_PROXY_LOCAL_HOSTS = ("127.0.0.1", "localhost")
+_REUSE_FAST_PATH_TTL_S = 120.0
+_REUSE_HEALTHCHECK_TIMEOUT_S = 0.25
 
 
 def _utc_now_iso() -> str:
@@ -285,6 +289,19 @@ def _probe_executable_supported(exe_path: Path, timeout_s: float = 2.0) -> bool:
         return True
 
 
+def _is_executable_supported_cached(exe_path: Path) -> bool:
+    key = _help_cache_key(exe_path)
+    with _EXE_SUPPORTED_CACHE_LOCK:
+        cached = _EXE_SUPPORTED_CACHE.get(key)
+    if cached is not None:
+        return cached
+
+    supported = _probe_executable_supported(exe_path)
+    with _EXE_SUPPORTED_CACHE_LOCK:
+        _EXE_SUPPORTED_CACHE[key] = supported
+    return supported
+
+
 def _get_app_version_text() -> Optional[str]:
     import importlib.metadata
 
@@ -328,6 +345,7 @@ class LocalLlamaServerManager:
         self._process: Optional[subprocess.Popen] = None
         self._process_log_fp = None
         self._runtime: Optional[LocalAIServerRuntime] = None
+        self._reuse_fast_path_until: float = 0.0
 
     @staticmethod
     def get_state_path() -> Path:
@@ -342,12 +360,20 @@ class LocalLlamaServerManager:
     def get_runtime(self) -> Optional[LocalAIServerRuntime]:
         return self._runtime
 
+    def note_server_ok(self, runtime: LocalAIServerRuntime) -> None:
+        now = time.monotonic()
+        with self._lock:
+            current = self._runtime
+            if current is None:
+                return
+            if current.host != runtime.host or current.port != runtime.port:
+                return
+            if self._process is None:
+                self._reuse_fast_path_until = now + _REUSE_FAST_PATH_TTL_S
+
     def _can_fast_path(self, settings: AppSettings, model_path: Optional[Path]) -> bool:
         runtime = self._runtime
-        proc = self._process
-        if runtime is None or proc is None:
-            return False
-        if proc.poll() is not None:
+        if runtime is None:
             return False
         if model_path is None:
             return False
@@ -372,6 +398,24 @@ class LocalLlamaServerManager:
             return False
         if runtime.host != "127.0.0.1":
             return False
+
+        proc = self._process
+        if proc is not None:
+            if proc.poll() is not None:
+                return False
+            return True
+
+        now = time.monotonic()
+        if now < self._reuse_fast_path_until:
+            return True
+
+        models_payload, _ = _probe_openai_models(
+            runtime.host, runtime.port, timeout_s=_REUSE_HEALTHCHECK_TIMEOUT_S
+        )
+        if models_payload is None:
+            return False
+
+        self._reuse_fast_path_until = now + _REUSE_FAST_PATH_TTL_S
         return True
 
     def ensure_ready(self, settings: AppSettings) -> LocalAIServerRuntime:
@@ -460,6 +504,8 @@ class LocalLlamaServerManager:
                     "app_version": _get_app_version_text(),
                 },
             )
+            self._process = None
+            self._reuse_fast_path_until = time.monotonic() + _REUSE_FAST_PATH_TTL_S
             return LocalAIServerRuntime(
                 host=reuse_candidate.host,
                 port=reuse_candidate.port,
@@ -476,6 +522,7 @@ class LocalLlamaServerManager:
                 f"ローカルAIの空きポートが見つかりませんでした（{port_base}-{port_max}）。"
             )
 
+        self._reuse_fast_path_until = 0.0
         runtime = self._start_new_server(
             server_exe_path=server_exe_path,
             server_variant=server_variant,
@@ -522,6 +569,7 @@ class LocalLlamaServerManager:
 
         proc = self._process
         self._process = None
+        self._reuse_fast_path_until = 0.0
 
         if proc is None:
             self._stop_by_state_if_safe(saved_state, timeout_s=timeout_s)
@@ -685,7 +733,7 @@ class LocalLlamaServerManager:
             exe = _find_llama_server_exe(dir_path)
             if exe is None:
                 continue
-            if not _probe_executable_supported(exe):
+            if not _is_executable_supported_cached(exe):
                 avx2_unsupported = True
                 continue
             return exe, variant

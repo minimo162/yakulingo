@@ -747,6 +747,7 @@ class LocalAIClient:
                 self._set_response_format_support(runtime, True)
 
         content = _parse_openai_chat_content(response)
+        self._manager.note_server_ok(runtime)
         return LocalAIRequestResult(content=content, model_id=runtime.model_id)
 
     def _chat_completions_streaming(
@@ -907,6 +908,7 @@ class LocalAIClient:
                 sock, response_headers, initial_body, timeout_s, start
             )
             content, model_id = self._consume_sse_stream(chunks, on_chunk)
+            self._manager.note_server_ok(runtime)
             return LocalAIRequestResult(
                 content=content, model_id=model_id or runtime.model_id
             )

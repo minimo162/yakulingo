@@ -1,0 +1,13 @@
+# タスク一覧
+
+ステータス: `TODO` | `DOING` | `DONE` | `BLOCKED` | `SKIP`
+
+| Task | Status | Summary | Branch | Commit |
+|------|--------|---------|--------|--------|
+| task-00 | DONE | 現状導線の再確認と差分設計を確定 | case-nemotron-flash-3b-install-deps-4bit-20260113-113408-task-00-design-notes | ef001c084c47f82a2382baddd34e7d17e76a380d |
+| task-01 | TODO | `install_deps.bat` Step 7 を Nemotron デフォルトに更新 | (TBD) | (TBD) |
+| task-02 | TODO | `install_local_ai.ps1` のデフォルトモデルを Nemotron に更新 | (TBD) | (TBD) |
+| task-03 | TODO | アプリ既定設定（`local_ai_model_path` 等）を Nemotron に更新 | (TBD) | (TBD) |
+| task-04 | TODO | ローカルAIの出力安定性（stop/JSON）を Nemotron 前提で調整 | (TBD) | (TBD) |
+| task-05 | TODO | 計測と最適化（`local_ai_*` 既定値・ドキュメント） | (TBD) | (TBD) |
+| task-06 | TODO | 配布・運用ドキュメント更新（導入/ロールバック/互換性） | (TBD) | (TBD) |

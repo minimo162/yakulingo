@@ -318,6 +318,9 @@ uv run --extra test python tools/e2e_local_ai_speed.py
 - `ctx=4096` は時間増・出力増の傾向。`max_tokens=256` は最短で、相対類似度は最も高い
 - `--max-tokens 0` は有効値に反映されず、実質 `1024` のまま（tok0 は無効扱い）
 
+既定値への反映:
+- 出力長の振れ幅が大きく、速度/精度の改善が明確とは言い切れないため既定値は据え置き
+
 E2E 指標（1回）:
 - `app_start_seconds`: 10.37
 - `translation_seconds`: 14.78（log: 14.17）

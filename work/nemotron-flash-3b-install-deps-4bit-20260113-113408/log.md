@@ -38,3 +38,15 @@
   - `uv run --extra test pytest`（112 passed）
 - フォローアップ:
   - `config/settings.template.json` / `yakulingo/config/settings.py` の `local_ai_model_path` は task-03 で Nemotron のGGUF名へ更新して整合させる
+
+### 2026-01-13 task-03（既定モデルパス）
+- ブランチ: `case-nemotron-flash-3b-install-deps-4bit-20260113-113408-task-03-app-default-model`
+- コミット: `e79b0489972f8909a048ad3b7d8b4390233adcc4`
+- 変更点: `local_ai_model_path` の既定を `Nemotron-Flash-3B-Instruct.Q4_K_M.gguf` に更新（テンプレ/コード/READMEの既定値参照）
+- 検証:
+  - `uv sync`
+  - `uv sync --extra test`
+  - `uv run python -m compileall yakulingo`
+  - `uv run --extra test pytest`（112 passed）
+- フォローアップ:
+  - `README.md` の Step 7 説明など、既定モデルに関する文章レベルの更新は task-06 でまとめて対応する

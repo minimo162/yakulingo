@@ -60,3 +60,15 @@
   - `uv sync --extra test`
   - `uv run python -m compileall yakulingo`
   - `uv run --extra test pytest`（112 passed）
+
+### 2026-01-13 task-08（Step 7 分離）
+- ブランチ: `case-nemotron-flash-3b-install-deps-4bit-20260113-113408-task-08-step7-split`
+- コミット: `7e7cfb2eb7b27a1ea5bef46b726435bb2b741a63`
+- 変更点: Step 7（ローカルAI導入）を `packaging/install_deps_step7_local_ai.bat` に切り出し、`packaging/install_deps.bat` は呼び出しのみの薄い実装に変更
+- 検証:
+  - `uv sync`
+  - `uv sync --extra test`
+  - `uv run python -m compileall yakulingo`
+  - `uv run --extra test pytest`（112 passed）
+- フォローアップ:
+  - Step 7 の `[1]` 選択で「落ちる」現象がまだ残る場合は、task-09 で原因特定と「落ちない/理由表示」へ修正する

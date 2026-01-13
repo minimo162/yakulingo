@@ -614,19 +614,58 @@ try {
                  if ($forceRebuild) { $toolArgs += '--force' }
 
                 & $uvExe @toolArgs
-                if ($LASTEXITCODE -ne 0) { throw "HF->GGUF->quantize failed (exit=$LASTEXITCODE). Check output above." }
+                $toolExit = $LASTEXITCODE
+                if ($toolExit -ne 0) {
+                    # tools/hf_to_gguf_quantize.py uses exit code 42 for "unsupported architecture" fast-fail.
+                    if ($toolExit -eq 42) {
+                        Write-Host "[WARNING] HF->GGUF conversion is not supported for this model with the current llama.cpp converter."
+                        Write-Host '[INFO] To use a prebuilt GGUF instead, set:'
+                        Write-Host '       set LOCAL_AI_MODEL_KIND=gguf'
+                        Write-Host '       set LOCAL_AI_MODEL_REPO=<repo>'
+                        Write-Host '       set LOCAL_AI_MODEL_FILE=<file.gguf>'
+                        Write-Host '       set LOCAL_AI_MODEL_REVISION=<revision>'
 
-                $generatedPath = Join-Path $modelsDir "$modelBaseName.$modelQuant.gguf"
-                if ((Test-Path $generatedPath) -and ($generatedPath -ne $modelPath)) {
-                    Move-FileWithRetry -src $generatedPath -dst $modelPath -label 'quantized model' -StopLlama
+                        $hfWasExplicit = ($env:LOCAL_AI_MODEL_KIND -or $env:LOCAL_AI_MODEL_REPO -or $env:LOCAL_AI_MODEL_FILE -or $manifestModelRepo -or $manifestModelFile)
+                        if ($hfWasExplicit) {
+                            throw "HF->GGUF->quantize failed (unsupported architecture) (exit=$toolExit). Check output above."
+                        }
+
+                        Write-Host "[INFO] Falling back to direct GGUF download: $fallbackGgufRepo/$fallbackGgufFile"
+                        $modelKind = 'gguf'
+                        $modelRepo = $fallbackGgufRepo
+                        $modelFile = $fallbackGgufFile
+                        $modelRevision = 'main'
+                        $modelUrl = "https://huggingface.co/$modelRepo/resolve/$modelRevision/$modelFile"
+                        $modelPath = Get-ChildPathSafe $modelsDir $modelFile
+                        $modelTempPath = $modelPath + '.partial'
+                        $licenseUrl = "https://huggingface.co/$modelRepo/raw/$modelRevision/LICENSE"
+                        $readmeUrl = "https://huggingface.co/$modelRepo/resolve/$modelRevision/README.md"
+                    } else {
+                        throw "HF->GGUF->quantize failed (exit=$toolExit). Check output above."
+                    }
                 }
 
-                if (-not (Test-Path $modelPath) -or ((Get-Item $modelPath).Length -le 0)) {
-                    throw "Quantized GGUF not found or empty: $modelPath"
+                if ($modelKind -eq 'hf') {
+                    $generatedPath = Join-Path $modelsDir "$modelBaseName.$modelQuant.gguf"
+                    if ((Test-Path $generatedPath) -and ($generatedPath -ne $modelPath)) {
+                        Move-FileWithRetry -src $generatedPath -dst $modelPath -label 'quantized model' -StopLlama
+                    }
+
+                    if (-not (Test-Path $modelPath) -or ((Get-Item $modelPath).Length -le 0)) {
+                        throw "Quantized GGUF not found or empty: $modelPath"
+                    }
+                    $downloadedModel = $true
                 }
-                $downloadedModel = $true
             }
-        } else {
+        }
+
+        if ($modelKind -ne 'hf') {
+            $modelUrl = "https://huggingface.co/$modelRepo/resolve/$modelRevision/$modelFile"
+            $modelPath = Get-ChildPathSafe $modelsDir $modelFile
+            $modelTempPath = $modelPath + '.partial'
+            $licenseUrl = "https://huggingface.co/$modelRepo/raw/$modelRevision/LICENSE"
+            $readmeUrl = "https://huggingface.co/$modelRepo/resolve/$modelRevision/README.md"
+
             if ((Test-Path $modelPath) -and ((Get-Item $modelPath).Length -gt 0) -and (Test-Path $modelTempPath)) {
                 Write-Host "[WARNING] Found stale partial file next to existing model; removing: $(Split-Path -Leaf $modelTempPath)"
                 Remove-Item -Force -Path $modelTempPath -ErrorAction SilentlyContinue

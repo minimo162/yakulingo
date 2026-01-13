@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -56,6 +57,85 @@ def _download_file(url: str, out_path: Path) -> None:
             raise RuntimeError(f"Download failed: HTTP {resp.status} {url}")
         data = resp.read()
     out_path.write_bytes(data)
+
+
+def _download_hf_raw_text(*, repo_id: str, revision: str, filename: str, token: str | None) -> str | None:
+    url = f"https://huggingface.co/{repo_id}/raw/{revision}/{filename}"
+    headers = {"User-Agent": "YakuLingo-Tools"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(url, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            if resp.status != 200:
+                return None
+            return resp.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError:
+        return None
+    except Exception:
+        return None
+
+
+def _extract_registered_architectures(convert_script: Path) -> set[str]:
+    try:
+        content = convert_script.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return set()
+
+    registered: set[str] = set()
+    for match in re.finditer(r"@ModelBase\.register\((?P<args>[^)]*)\)", content, flags=re.DOTALL):
+        args = match.group("args")
+        for name in re.findall(r"""["']([^"']+)["']""", args):
+            stripped = name.strip()
+            if stripped:
+                registered.add(stripped)
+    return registered
+
+
+def _read_model_architectures(model_dir: Path) -> list[str]:
+    cfg = _read_json(model_dir / "config.json") or {}
+    architectures = cfg.get("architectures")
+    if isinstance(architectures, str) and architectures.strip():
+        return [architectures.strip()]
+    if isinstance(architectures, list):
+        return [str(x).strip() for x in architectures if str(x).strip()]
+    return []
+
+
+def _format_unsupported_arch_message(
+    *,
+    model_arch: str,
+    hf_repo: str | None,
+    revision: str,
+    llama_tag: str,
+    convert_script: Path,
+    registered_count: int,
+) -> str:
+    repo_label = hf_repo or "<local-model-dir>"
+    return _norm_nl(
+        f"""
+        Unsupported HF->GGUF conversion target detected.
+
+        - hf_repo     : {repo_label}
+        - revision    : {revision}
+        - llama.cpp   : {llama_tag}
+        - architecture: {model_arch}
+        - convert     : {convert_script}
+        - registered  : {registered_count} architectures
+
+        This model architecture is not supported by the current llama.cpp conversion script.
+
+        Recovery (use direct GGUF download instead of HF build):
+          set LOCAL_AI_MODEL_KIND=gguf
+          set LOCAL_AI_MODEL_REPO=<repo>
+          set LOCAL_AI_MODEL_FILE=<file.gguf>
+          set LOCAL_AI_MODEL_REVISION=<revision>
+
+        Note: Some HF models require custom code (trust_remote_code). This tool runs conversion
+        without executing remote code for safety; even with trust_remote_code, an unregistered
+        architecture will still fail.
+        """
+    ).strip()
 
 
 def _extract_single_root_dir(zip_path: Path, out_dir: Path) -> Path:
@@ -299,6 +379,7 @@ def _resolve_model_dir(
 
 
 def main(argv: list[str] | None = None) -> int:
+    exit_unsupported_arch = 42
     parser = argparse.ArgumentParser(
         description="HFモデルをGGUFへ変換し、llama-quantizeで4bit量子化します（メンテナ向け）。",
         formatter_class=argparse.RawTextHelpFormatter,
@@ -360,13 +441,6 @@ def main(argv: list[str] | None = None) -> int:
         out_dir=args.out_dir,
     )
 
-    model_dir = _resolve_model_dir(
-        repo_root,
-        hf_repo=args.hf_repo,
-        revision=args.revision,
-        model_dir=args.model_dir,
-    )
-
     quant_exe = _resolve_llama_quantize_exe(repo_root)
 
     tag = (
@@ -376,14 +450,78 @@ def main(argv: list[str] | None = None) -> int:
     )
     llama_src = _resolve_llama_cpp_source(repo_root, tag=tag)
     convert_script = _find_convert_script(llama_src)
+    registered_arch = _extract_registered_architectures(convert_script)
 
     gguf_py = llama_src / "gguf-py"
     if not gguf_py.is_dir():
         raise FileNotFoundError(f"gguf-py not found in llama.cpp source: {gguf_py}")
 
+    # Early guard: avoid downloading full HF snapshots when conversion is known to be unsupported.
+    token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACEHUB_API_TOKEN")
+    precheck_architectures: list[str] = []
+    if args.model_dir is not None:
+        resolved_dir = args.model_dir if args.model_dir.is_absolute() else repo_root / args.model_dir
+        if resolved_dir.is_dir():
+            precheck_architectures = _read_model_architectures(resolved_dir)
+    elif args.hf_repo:
+        raw = _download_hf_raw_text(repo_id=args.hf_repo, revision=args.revision, filename="config.json", token=token)
+        if raw:
+            try:
+                payload = json.loads(raw)
+                if isinstance(payload, dict):
+                    architectures = payload.get("architectures")
+                    if isinstance(architectures, str) and architectures.strip():
+                        precheck_architectures = [architectures.strip()]
+                    elif isinstance(architectures, list):
+                        precheck_architectures = [str(x).strip() for x in architectures if str(x).strip()]
+            except Exception:
+                precheck_architectures = []
+
+    if registered_arch and precheck_architectures:
+        model_arch = precheck_architectures[0]
+        if model_arch not in registered_arch:
+            print(
+                _format_unsupported_arch_message(
+                    model_arch=model_arch,
+                    hf_repo=args.hf_repo,
+                    revision=args.revision,
+                    llama_tag=tag,
+                    convert_script=convert_script,
+                    registered_count=len(registered_arch),
+                ),
+                file=sys.stderr,
+            )
+            return exit_unsupported_arch
+
     if outputs.quant_gguf_path.exists() and outputs.quant_gguf_path.stat().st_size > 0 and not args.force:
         print(f"[SKIP] Quantized GGUF already exists: {outputs.quant_gguf_path}")
         return 0
+
+    model_dir = _resolve_model_dir(
+        repo_root,
+        hf_repo=args.hf_repo,
+        revision=args.revision,
+        model_dir=args.model_dir,
+    )
+
+    # Post-download guard: still check local config.json if available.
+    if registered_arch:
+        arches = _read_model_architectures(model_dir)
+        if arches:
+            model_arch = arches[0]
+            if model_arch not in registered_arch:
+                print(
+                    _format_unsupported_arch_message(
+                        model_arch=model_arch,
+                        hf_repo=args.hf_repo,
+                        revision=args.revision,
+                        llama_tag=tag,
+                        convert_script=convert_script,
+                        registered_count=len(registered_arch),
+                    ),
+                    file=sys.stderr,
+                )
+                return exit_unsupported_arch
 
     python = _resolve_python()
     env = os.environ.copy()

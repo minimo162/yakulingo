@@ -168,19 +168,19 @@ try {
             try { $exeFull = [System.IO.Path]::GetFullPath($exe) } catch { continue }
             if (-not $exeFull.StartsWith($baseFull, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
 
-            $pid = [int]$p.ProcessId
-            Write-Host "[INFO] Stopping local llama.cpp process (pid=$pid): $exeFull"
+            $procId = [int]$p.ProcessId
+            Write-Host "[INFO] Stopping local llama.cpp process (pid=$procId): $exeFull"
             try {
-                Stop-Process -Id $pid -ErrorAction Stop
+                Stop-Process -Id $procId -ErrorAction Stop
             } catch {
                 try {
-                    Stop-Process -Id $pid -Force -ErrorAction Stop
+                    Stop-Process -Id $procId -Force -ErrorAction Stop
                 } catch {
-                    Write-Host "[WARNING] Failed to stop process (pid=$pid): $($_.Exception.Message)"
+                    Write-Host "[WARNING] Failed to stop process (pid=$procId): $($_.Exception.Message)"
                     continue
                 }
             }
-            $stopped += $pid
+            $stopped += $procId
         }
 
         if ($stopped.Count -gt 0) {

@@ -450,7 +450,8 @@ echo [DONE] Pre-compilation complete.
 echo.
 echo [7/7] Installing Local AI runtime (llama.cpp + fixed HY-MT model)...
 set "YAKULINGO_INSTALL_DEPS_STEP7=1"
-call "packaging\install_deps_step7_local_ai.bat"
+:: Run Step 7 in a child cmd so a stray exit cannot terminate this installer.
+cmd /c call "packaging\install_deps_step7_local_ai.bat"
 set "LOCAL_AI_STEP7_EXIT=%ERRORLEVEL%"
 set "YAKULINGO_INSTALL_DEPS_STEP7="
 if not "%LOCAL_AI_STEP7_EXIT%"=="0" (

@@ -50,3 +50,13 @@
   - `uv run --extra test pytest`（112 passed）
 - フォローアップ:
   - `README.md` の Step 7 説明など、既定モデルに関する文章レベルの更新は task-06 でまとめて対応する
+
+### 2026-01-13 task-07（Step 7 [1] 落ちる）
+- ブランチ: `case-nemotron-flash-3b-install-deps-4bit-20260113-113408-task-07-step7-choice1-crash`
+- コミット: `7c4def27888e0dc75da2854306984e4e33bcd649`
+- 変更点: Step 7 の `[1]`（HF→GGUF→4bit）で不足しがちな依存（`torch`/`transformers`/`sentencepiece`/`safetensors` 等）を `install_deps.bat` 側で事前導入し、失敗時も復旧コマンドを表示する
+- 検証:
+  - `uv sync`
+  - `uv sync --extra test`
+  - `uv run python -m compileall yakulingo`
+  - `uv run --extra test pytest`（112 passed）

@@ -9,8 +9,18 @@ cd /d "%~dp0\.."
 
 if not defined USE_PROXY set "USE_PROXY=0"
 if not defined SKIP_SSL set "SKIP_SSL=0"
+if not defined PROXY_SERVER set "PROXY_SERVER=136.131.63.233:8082"
 set "STEP7_FROM_INSTALL_DEPS=0"
 if defined YAKULINGO_INSTALL_DEPS_STEP7 set "STEP7_FROM_INSTALL_DEPS=1"
+
+if "!STEP7_FROM_INSTALL_DEPS!"=="0" (
+    call :step7_proxy_config
+    if errorlevel 1 (
+        echo.
+        echo [WARNING] Proxy configuration was not completed. Skipping Step 7.
+        goto :local_ai_done
+    )
+)
 
 echo.
 echo [7/7] Installing Local AI runtime (llama.cpp + optional model)...
@@ -131,6 +141,118 @@ endlocal
 exit /b 0
 
 :: ============================================================
+:: Function: Proxy configuration (standalone Step 7)
+:: ============================================================
+:step7_proxy_config
+echo Do you need to use a proxy server?
+echo.
+echo   [1] Yes - Use proxy (corporate network)
+echo   [2] No  - Direct connection
+echo   [3] No  - Direct connection (skip SSL verification)
+echo.
+set /p PROXY_CHOICE="Enter choice (1, 2, or 3) [2]: "
+if defined PROXY_CHOICE set "PROXY_CHOICE=!PROXY_CHOICE:~0,1!"
+if not defined PROXY_CHOICE set "PROXY_CHOICE=2"
+
+if "!PROXY_CHOICE!"=="1" goto :step7_use_proxy
+if "!PROXY_CHOICE!"=="3" goto :step7_no_proxy_insecure
+goto :step7_no_proxy
+
+:step7_use_proxy
+echo.
+echo Enter proxy server address (press Enter for default):
+set /p PROXY_INPUT="Proxy server [!PROXY_SERVER!]: "
+if defined PROXY_INPUT set "PROXY_SERVER=!PROXY_INPUT!"
+echo.
+echo [INFO] Proxy server: !PROXY_SERVER!
+echo.
+
+call :prompt_proxy_credentials
+if not defined PROXY_USER (
+    echo [ERROR] Proxy credentials are required when using proxy.
+    exit /b 1
+)
+if not defined PROXY_PASS (
+    echo [ERROR] Proxy credentials are required when using proxy.
+    exit /b 1
+)
+set "USE_PROXY=1"
+set "SKIP_SSL=0"
+exit /b 0
+
+:step7_no_proxy_insecure
+set "USE_PROXY=0"
+set "SKIP_SSL=1"
+set PYTHONHTTPSVERIFY=0
+set REQUESTS_CA_BUNDLE=
+set CURL_CA_BUNDLE=
+set SSL_CERT_FILE=
+echo.
+echo [INFO] Using direct connection (SSL verification disabled).
+echo.
+exit /b 0
+
+:step7_no_proxy
+set "USE_PROXY=0"
+set "SKIP_SSL=0"
+echo.
+echo [INFO] Using direct connection (no proxy).
+echo.
+exit /b 0
+
+:: ============================================================
+:: Function: Prompt for proxy credentials
+:: ============================================================
+:prompt_proxy_credentials
+setlocal DisableDelayedExpansion
+echo ============================================================
+echo Proxy Authentication
+echo Server: %PROXY_SERVER%
+echo ============================================================
+set /p PROXY_USER="Username: "
+if not defined PROXY_USER (
+    endlocal
+    exit /b 0
+)
+
+echo Password (input will be hidden):
+for /f "usebackq delims=" %%p in (`powershell -NoProfile -Command "$p = Read-Host -AsSecureString; if ($p.Length -gt 0) { [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($p)) } else { 'EMPTY_PASSWORD' }"`) do set "PROXY_PASS=%%p"
+
+if not defined PROXY_PASS (
+    echo [ERROR] Password input failed.
+    endlocal
+    exit /b 0
+)
+if "%PROXY_PASS%"=="EMPTY_PASSWORD" (
+    echo [ERROR] Password is required.
+    set "PROXY_PASS="
+    endlocal
+    exit /b 0
+)
+
+set "HTTP_PROXY=http://%PROXY_USER%:%PROXY_PASS%@%PROXY_SERVER%"
+set "HTTPS_PROXY=http://%PROXY_USER%:%PROXY_PASS%@%PROXY_SERVER%"
+
+set "ESC_PROXY_USER=%PROXY_USER:^=^^%"
+set "ESC_PROXY_USER=%ESC_PROXY_USER:!=^!%"
+set "ESC_PROXY_PASS=%PROXY_PASS:^=^^%"
+set "ESC_PROXY_PASS=%ESC_PROXY_PASS:!=^!%"
+set "ESC_HTTP_PROXY=%HTTP_PROXY:^=^^%"
+set "ESC_HTTP_PROXY=%ESC_HTTP_PROXY:!=^!%"
+set "ESC_HTTPS_PROXY=%HTTPS_PROXY:^=^^%"
+set "ESC_HTTPS_PROXY=%ESC_HTTPS_PROXY:!=^!%"
+
+endlocal & (
+    set "PROXY_USER=%ESC_PROXY_USER%"
+    set "PROXY_PASS=%ESC_PROXY_PASS%"
+    set "HTTP_PROXY=%ESC_HTTP_PROXY%"
+    set "HTTPS_PROXY=%ESC_HTTPS_PROXY%"
+)
+echo.
+echo [OK] Credentials configured.
+exit /b 0
+
+:: ============================================================
 :: Function: Ensure HF deps are available (huggingface_hub)
 :: ============================================================
 :ensure_hf_deps
@@ -179,3 +301,4 @@ if errorlevel 1 (
     echo [DONE] HF build dependencies installed.
 )
 exit /b 0
+

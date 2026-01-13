@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import csv
+import heapq
+import io
 import json
 import logging
 import re
@@ -64,7 +66,9 @@ class LocalPromptBuilder:
         self._reference_lock = threading.Lock()
         self._reference_file_cache: dict[tuple[str, int, int], tuple[str, bool]] = {}
         self._reference_file_lock = threading.Lock()
-        self._glossary_cache: dict[tuple[str, int, int], list[tuple[str, str]]] = {}
+        self._glossary_cache: dict[
+            tuple[str, int, int], list[tuple[str, str, Optional[str]]]
+        ] = {}
         self._glossary_lock = threading.Lock()
 
     def _get_translation_rules(self, output_language: str) -> str:
@@ -97,7 +101,7 @@ class LocalPromptBuilder:
 
     def _load_glossary_pairs(
         self, path: Path, file_key: tuple[str, int, int]
-    ) -> list[tuple[str, str]]:
+    ) -> list[tuple[str, str, Optional[str]]]:
         with self._glossary_lock:
             cached = self._glossary_cache.get(file_key)
             if cached is not None:
@@ -106,17 +110,18 @@ class LocalPromptBuilder:
         try:
             raw = path.read_text(encoding="utf-8-sig", errors="replace")
         except OSError:
-            pairs: list[tuple[str, str]] = []
+            pairs: list[tuple[str, str, Optional[str]]] = []
         else:
             pairs = []
-            for row in csv.reader(raw.splitlines()):
+            for row in csv.reader(io.StringIO(raw)):
                 if not row:
                     continue
                 first = (row[0] or "").strip()
                 if not first or first.startswith("#"):
                     continue
                 second = (row[1] or "").strip() if len(row) > 1 else ""
-                pairs.append((first, second))
+                folded = first.casefold() if first.isascii() else None
+                pairs.append((first, second, folded))
 
         with self._glossary_lock:
             self._glossary_cache[file_key] = pairs
@@ -124,33 +129,41 @@ class LocalPromptBuilder:
 
     @staticmethod
     def _filter_glossary_pairs(
-        pairs: list[tuple[str, str]], input_text: str, *, max_lines: int
+        pairs: list[tuple[str, str, Optional[str]]], input_text: str, *, max_lines: int
     ) -> list[tuple[str, str]]:
         text = input_text.strip()
         if not text:
             return []
         text_folded = text.casefold()
 
-        matched: list[tuple[str, str]] = []
         seen: set[str] = set()
-        for source, target in pairs:
+        heap: list[tuple[int, int, str, str]] = []
+        for idx, (source, target, folded) in enumerate(pairs):
             source = (source or "").strip()
-            if not source or source in seen:
+            if not source:
                 continue
-            if source.isascii():
-                if source.casefold() not in text_folded:
+            if source in seen:
+                continue
+            if folded is not None:
+                if folded not in text_folded:
                     continue
             else:
                 if source not in text:
                     continue
             seen.add(source)
-            matched.append((source, target))
+            key = len(source)
+            item = (key, -idx, source, target)
+            if len(heap) < max_lines:
+                heapq.heappush(heap, item)
+            else:
+                if item > heap[0]:
+                    heapq.heapreplace(heap, item)
 
-        if not matched:
+        if not heap:
             return []
 
-        matched.sort(key=lambda item: len(item[0]), reverse=True)
-        return matched[:max_lines]
+        selected = sorted(heap, key=lambda x: (-x[0], -x[1]))
+        return [(source, target) for _, _, source, target in selected]
 
     @staticmethod
     def _should_include_translation_rules_for_text(
@@ -554,9 +567,7 @@ class LocalPromptBuilder:
 
         header = (
             "### 参照（埋め込み）\n"
-            "- 以下の参照を優先して翻訳してください（用語集・スタイルガイド等）。\n"
-            "- 参照に一致する用語がある場合は、その訳語を優先してください。\n"
-            "- 参照は一部省略されている可能性があります。\n"
+            "以下の参照を優先して翻訳してください（必要に応じて省略されています）。\n"
         )
         embedded_text = header + "\n\n".join(parts)
         embedded = EmbeddedReference(

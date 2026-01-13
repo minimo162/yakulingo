@@ -223,7 +223,7 @@ KVキャッシュの量子化は、速度よりもメモリ圧/安定性の調�
 
 ### バッチ分割のデフォルト
 - `local_ai_max_chars_per_batch`: 1000
-- `local_ai_max_chars_per_batch_file`: 800
+- `local_ai_max_chars_per_batch_file`: 1000
 - 値を上げるとバッチ数は減るが、プロンプトが長すぎる場合は自動分割（`LOCAL_PROMPT_TOO_LONG`）にフォールバックする
 
 ## 速度に効く主な設定

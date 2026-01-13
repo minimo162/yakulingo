@@ -356,7 +356,7 @@ class AppSettings:
     local_ai_cache_type_k: Optional[str] = "q8_0"
     local_ai_cache_type_v: Optional[str] = "q8_0"
     local_ai_max_chars_per_batch: int = 1000
-    local_ai_max_chars_per_batch_file: int = 800
+    local_ai_max_chars_per_batch_file: int = 1000
 
     # File Translation Options (共通オプション)
     bilingual_output: bool = False  # 対訳出力（原文と翻訳を交互に配置）
@@ -870,10 +870,10 @@ class AppSettings:
             self.local_ai_max_chars_per_batch = 1000
         if self.local_ai_max_chars_per_batch_file < 100:
             logger.warning(
-                "local_ai_max_chars_per_batch_file too small (%d), resetting to 800",
+                "local_ai_max_chars_per_batch_file too small (%d), resetting to 1000",
                 self.local_ai_max_chars_per_batch_file,
             )
-            self.local_ai_max_chars_per_batch_file = 800
+            self.local_ai_max_chars_per_batch_file = 1000
 
         # Local AI sampling params constraints
         if self.local_ai_temperature < 0.0 or self.local_ai_temperature > 2.0:

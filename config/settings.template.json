@@ -31,7 +31,7 @@
   "local_ai_cache_type_k": "q8_0",
   "local_ai_cache_type_v": "q8_0",
   "local_ai_max_chars_per_batch": 1000,
-  "local_ai_max_chars_per_batch_file": 800,
+  "local_ai_max_chars_per_batch_file": 1000,
   "bilingual_output": false,
   "export_glossary": false,
   "translation_style": "concise",

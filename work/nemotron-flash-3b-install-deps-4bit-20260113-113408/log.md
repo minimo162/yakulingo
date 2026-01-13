@@ -108,3 +108,13 @@
   - `uv run --extra test pytest`（112 passed）
 - フォローアップ:
   - `install_local_ai.ps1` から `hf_to_gguf_quantize.py --llama-tag <release tag>` を明示的に渡して、manifest が無い新規環境で `master` 既定に戻らないようにする（task-12）
+
+### 2026-01-13 task-12（HF→GGUF変換: llama.cpp release tag を明示）
+- ブランチ: `case-nemotron-flash-3b-install-deps-4bit-20260113-113408-task-12-pass-llama-tag`
+- コミット: `8a185883302727cd68133542f18700dfa91dab20`
+- 変更点: `packaging/install_local_ai.ps1` の HF→GGUF→4bit 経路で、llama.cpp の release tag（更新した場合は `$tag` / 既存利用時は `manifest.json` の `release_tag`）を `tools/hf_to_gguf_quantize.py --llama-tag` として渡すようにした
+- 検証:
+  - `uv sync`
+  - `uv sync --extra test`
+  - `uv run python -m compileall yakulingo`
+  - `uv run --extra test pytest`（112 passed）

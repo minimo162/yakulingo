@@ -13,6 +13,7 @@
 | task-09 | DONE | Step 7 の [1] で落ちる原因を特定して修正（落ちない/理由表示） | case-nemotron-flash-3b-install-deps-4bit-20260113-113408-task-09-step7-choice1-fix | bb379d5ff08a82868326caabba1958dcb61f3357 |
 | task-10 | DONE | Step 7 単体実行でもプロキシ選択を可能にする | case-nemotron-flash-3b-install-deps-4bit-20260113-113408-task-10-step7-proxy-choice | 57ba029357fa351629267bfd2a4912774f0b2b4f |
 | task-11 | DONE | HF→GGUF変換の llama.cpp ソース取得で 404 を回避 | case-nemotron-flash-3b-install-deps-4bit-20260113-113408-task-11-llama-ref-404 | 9a30661e27ad40b5095269b889d3b650058691aa |
+| task-12 | DONE | install_local_ai から llama.cpp tag を変換ツールへ渡す | case-nemotron-flash-3b-install-deps-4bit-20260113-113408-task-12-pass-llama-tag | 8a185883302727cd68133542f18700dfa91dab20 |
 | task-04 | TODO | ローカルAIの出力安定性（stop/JSON）を Nemotron 前提で調整 | (TBD) | (TBD) |
 | task-05 | TODO | 計測と最適化（`local_ai_*` 既定値・ドキュメント） | (TBD) | (TBD) |
 | task-06 | TODO | 配布・運用ドキュメント更新（導入/ロールバック/互換性） | (TBD) | (TBD) |

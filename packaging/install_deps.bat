@@ -458,8 +458,12 @@ echo   [2] Yes - Download llama.cpp only (default; add model later)
 echo   [3] No  - Skip this step
 echo.
 set /p LOCAL_AI_CHOICE="Enter choice (1, 2, or 3) [2]: "
+for /f "tokens=1" %%A in ("!LOCAL_AI_CHOICE!") do set "LOCAL_AI_CHOICE=%%A"
 if not defined LOCAL_AI_CHOICE set "LOCAL_AI_CHOICE=2"
-if not "!LOCAL_AI_CHOICE!"=="1" if not "!LOCAL_AI_CHOICE!"=="2" if not "!LOCAL_AI_CHOICE!"=="3" set "LOCAL_AI_CHOICE=2"
+if not "!LOCAL_AI_CHOICE!"=="1" if not "!LOCAL_AI_CHOICE!"=="2" if not "!LOCAL_AI_CHOICE!"=="3" (
+    echo [WARNING] Invalid choice "!LOCAL_AI_CHOICE!". Defaulting to [2] (llama.cpp only).
+    set "LOCAL_AI_CHOICE=2"
+)
 
 if "!LOCAL_AI_CHOICE!"=="3" (
     echo [7/7] SKIP - Local AI runtime installation skipped.
@@ -468,6 +472,27 @@ if "!LOCAL_AI_CHOICE!"=="3" (
 
 set "LOCAL_AI_SKIP_MODEL=0"
 if "!LOCAL_AI_CHOICE!"=="2" set "LOCAL_AI_SKIP_MODEL=1"
+
+echo [INFO] Step 7 selection: choice=!LOCAL_AI_CHOICE! (LOCAL_AI_SKIP_MODEL=!LOCAL_AI_SKIP_MODEL!)
+if exist "local_ai\\manifest.json" (
+    echo [INFO] Local AI manifest: exists (local_ai\manifest.json)
+) else (
+    echo [INFO] Local AI manifest: not found (new install defaults will be applied)
+)
+if "!USE_PROXY!"=="1" (
+    echo [INFO] Proxy: enabled (USE_PROXY=1)
+) else (
+    echo [INFO] Proxy: disabled (USE_PROXY=0)
+)
+if "!SKIP_SSL!"=="1" (
+    echo [WARNING] SSL verification is disabled (SKIP_SSL=1).
+)
+
+:: Ensure local endpoints are not proxied (keep existing entries)
+if not defined NO_PROXY set "NO_PROXY=127.0.0.1,localhost"
+echo(!NO_PROXY!| findstr /i /l /c:"127.0.0.1" >nul || set "NO_PROXY=!NO_PROXY!,127.0.0.1"
+echo(!NO_PROXY!| findstr /i /l /c:"localhost" >nul || set "NO_PROXY=!NO_PROXY!,localhost"
+set "no_proxy=!NO_PROXY!"
 
 if not exist "local_ai\\manifest.json" (
     if "!LOCAL_AI_SKIP_MODEL!"=="1" (
@@ -506,12 +531,15 @@ if not defined LOCAL_AI_LLAMA_CPP_VARIANT (
 )
 
 powershell -NoProfile -ExecutionPolicy Bypass -File "packaging\install_local_ai.ps1"
-if errorlevel 1 (
-    echo [WARNING] Failed to install Local AI runtime ^(optional^).
+set LOCAL_AI_INSTALL_EXIT=!errorlevel!
+if !LOCAL_AI_INSTALL_EXIT! neq 0 (
+    echo [WARNING] Failed to install Local AI runtime ^(optional^) (exit=!LOCAL_AI_INSTALL_EXIT!).
     echo [INFO] Copilot translation will still work.
     echo [INFO] You can retry later: powershell -NoProfile -ExecutionPolicy Bypass -File packaging\install_local_ai.ps1
     echo [INFO] If HF build failed, you can switch to GGUF download: set LOCAL_AI_MODEL_KIND=gguf (and set LOCAL_AI_MODEL_REPO/FILE), or choose option [2] (llama.cpp only).
     echo [INFO] Or manually place files under local_ai\ ^(llama_cpp + models^).
+) else (
+    echo [DONE] Local AI runtime installation finished successfully.
 )
 
 :local_ai_done

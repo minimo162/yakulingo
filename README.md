@@ -117,7 +117,7 @@ Windows環境で最も簡単にセットアップできる方法です。Python�
 > **Note**: モデルは `set LOCAL_AI_MODEL_REPO=...` / `set LOCAL_AI_MODEL_FILE=...` / `set LOCAL_AI_MODEL_REVISION=...` で上書きできます。実行結果は `local_ai/manifest.json` に `model.source` / `model.output` として記録されます。
 > **Note**: `set LOCAL_AI_MODEL_KIND=hf` の場合は、task-02 のツール（`tools/hf_to_gguf_quantize.py`）を使って HF→GGUF→4bit 変換を試みます（Python/依存が揃っていない場合はエラーになります）。
 > **Note**: `packaging/install_deps.bat` の Step 7 で「[1] llama.cpp + model」を選ぶと、既定で `openbmb/AgentCPM-Explore` を `Q4_K_M` に量子化する（HF→GGUF→4bit）導線になります。必要に応じて `huggingface_hub` を自動導入します。
-> **Note**: 既定のローカルAIモデルは `local_ai/models/AgentCPM-Explore.Q4_K_M.gguf` です（ファイルが無い場合は `local_ai/models/` 配下を自動探索して起動します）。
+> **Note**: 既定のローカルAIモデルは `local_ai/models/Nemotron-Flash-3B-Instruct.Q4_K_M.gguf` です（ファイルが無い場合は `local_ai/models/` 配下を自動探索して起動します）。
 > **Note**: AgentCPM-Explore の GGUF が配布されていない/404 になる場合は、HF 変換モードで生成できます（PyTorch/Transformers 等の依存が必要で、環境によっては失敗します）。
 >
 > ```bat
@@ -306,7 +306,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
   "max_chars_per_batch": 1000,
   "request_timeout": 600,
   "max_retries": 3,
-  "local_ai_model_path": "local_ai/models/AgentCPM-Explore.Q4_K_M.gguf",
+  "local_ai_model_path": "local_ai/models/Nemotron-Flash-3B-Instruct.Q4_K_M.gguf",
   "local_ai_server_dir": "local_ai/llama_cpp",
   "local_ai_host": "127.0.0.1",
   "local_ai_port_base": 4891,
@@ -439,7 +439,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 | `ocr_batch_size` | PDF処理のバッチページ数 | 5 |
 | `ocr_dpi` | PDF処理の解像度 | 300 |
 | `max_chars_per_batch` | Copilot送信1回あたりの最大文字数 | 1000 |
-| `local_ai_model_path` | ローカルAIモデル（.gguf）のパス | `local_ai/models/AgentCPM-Explore.Q4_K_M.gguf` |
+| `local_ai_model_path` | ローカルAIモデル（.gguf）のパス | `local_ai/models/Nemotron-Flash-3B-Instruct.Q4_K_M.gguf` |
 | `local_ai_server_dir` | ローカルAIサーバ（llama-server）のディレクトリ | `local_ai/llama_cpp` |
 | `local_ai_port_base` | ローカルAIのポート探索開始 | 4891 |
 | `local_ai_port_max` | ローカルAIのポート探索上限 | 4900 |

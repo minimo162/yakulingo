@@ -558,33 +558,49 @@ exit /b 0
 :: Function: Ensure HF deps are available (huggingface_hub)
 :: ============================================================
 :ensure_hf_deps
-echo [INFO] Ensuring HF dependencies (huggingface_hub)...
+echo [INFO] Ensuring HF dependencies (for HF^>GGUF^>4bit)...
 if not exist ".venv\Scripts\python.exe" (
     echo [WARNING] .venv\Scripts\python.exe not found. Cannot install HF deps.
     exit /b 0
 )
 .venv\Scripts\python.exe -c "import huggingface_hub" >nul 2>&1
-if not errorlevel 1 (
-    echo [DONE] huggingface_hub already available.
+if errorlevel 1 (
+    echo [INFO] huggingface_hub is missing.
+)
+
+set "HF_MISSING="
+for %%P in (huggingface_hub torch transformers sentencepiece safetensors) do (
+    .venv\Scripts\python.exe -c "import %%P" >nul 2>&1
+    if errorlevel 1 (
+        if not defined HF_MISSING (
+            set "HF_MISSING=%%P"
+        ) else (
+            set "HF_MISSING=!HF_MISSING! %%P"
+        )
+    )
+)
+if not defined HF_MISSING (
+    echo [DONE] HF build dependencies already available.
     exit /b 0
 )
-echo [INFO] Installing huggingface_hub (required for LOCAL_AI_MODEL_KIND=hf)...
+
+echo [INFO] Installing HF build dependencies: !HF_MISSING!
 .venv\Scripts\python.exe -m pip --version >nul 2>&1
 if errorlevel 1 (
     .venv\Scripts\python.exe -m ensurepip --upgrade
 )
 if "!SKIP_SSL!"=="1" (
-    .venv\Scripts\python.exe -m pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org -U huggingface_hub
+    .venv\Scripts\python.exe -m pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org -U !HF_MISSING!
 ) else (
-    .venv\Scripts\python.exe -m pip install -U huggingface_hub
+    .venv\Scripts\python.exe -m pip install -U !HF_MISSING!
 )
 .venv\Scripts\python.exe -c "import huggingface_hub; print('ok')" >nul 2>&1
 if errorlevel 1 (
-    echo [WARNING] huggingface_hub is not available. HF^>GGUF^>4bit may fail.
-    echo [INFO] You can retry later: .venv\Scripts\python.exe -m pip install -U huggingface_hub
+    echo [WARNING] Required HF deps are still missing. HF^>GGUF^>4bit may fail.
+    echo [INFO] You can retry later: .venv\Scripts\python.exe -m pip install -U !HF_MISSING!
     echo [INFO] Or switch to GGUF download: set LOCAL_AI_MODEL_KIND=gguf
 ) else (
-    echo [DONE] huggingface_hub installed.
+    echo [DONE] HF build dependencies installed.
 )
 exit /b 0
 

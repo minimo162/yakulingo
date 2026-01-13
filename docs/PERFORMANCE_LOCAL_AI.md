@@ -298,6 +298,32 @@ uv run --extra test python tools/e2e_local_ai_speed.py
 4. 翻訳を実行し、完了までの経過時間を記録
 5. warm / cold の差分や、改善前後の比較を記録
 
+## パラメータスイープ結果（case: yakulingo-benchmark-translation-speed-accuracy-20260114-073842）
+
+- 実行条件: warm / `--restart-server` / 入力 `tools/bench_local_ai_input.txt`（410 chars）/ style=concise / Vulkan
+- 出力保存先: `/work/yakulingo-benchmark-translation-speed-accuracy-20260114-073842/.tmp/bench_*.json`
+- 簡易類似度: baseline 出力（`output_base.txt`）を `--gold` として比較
+
+| tag | ctx | max_chars | max_tokens | translation_seconds | output_chars | similarity(→base) |
+| --- | --- | --- | --- | --- | --- | --- |
+| base | 2048 | 1000 | 1024 | 3.26 | 389 | - |
+| ctx4096 | 4096 | 1000 | 1024 | 10.40 | 1549 | 0.298 |
+| chars600 | 2048 | 600 | 1024 | 10.92 | 1588 | 0.357 |
+| tok512 | 2048 | 1000 | 512 | 10.08 | 1478 | 0.315 |
+| tok256 | 2048 | 1000 | 256 | 8.96 | 1344 | 0.398 |
+| tok0 | 2048 | 1000 | 1024 | 10.05 | 1558 | 0.387 |
+
+気づき:
+- 出力文字数の増減が大きく、`translation_seconds` との単純比較は難しい（base は短文出力）
+- `ctx=4096` は時間増・出力増の傾向。`max_tokens=256` は最短で、相対類似度は最も高い
+- `--max-tokens 0` は有効値に反映されず、実質 `1024` のまま（tok0 は無効扱い）
+
+E2E 指標（1回）:
+- `app_start_seconds`: 10.37
+- `translation_seconds`: 14.78（log: 14.17）
+- `total_seconds`: 36.90
+- JSON: `/work/yakulingo-benchmark-translation-speed-accuracy-20260114-073842/.tmp/e2e_local_ai_speed.json`
+
 ## よくある失敗と回避策
 - AVX2未対応CPU: 同梱のAVX2版 `llama-server` が起動しない場合は別ビルドが必要
 - モデルパス不備: `local_ai_model_path` の指定ミスで起動失敗

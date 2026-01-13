@@ -96,3 +96,15 @@
   - `uv sync --extra test`
   - `uv run python -m compileall yakulingo`
   - `uv run --extra test pytest`（112 passed）
+
+### 2026-01-13 task-11（HF→GGUF変換: llama.cpp ソース取得 404 回避）
+- ブランチ: `case-nemotron-flash-3b-install-deps-4bit-20260113-113408-task-11-llama-ref-404`
+- コミット: `9a30661e27ad40b5095269b889d3b650058691aa`
+- 変更点: `tools/hf_to_gguf_quantize.py` の llama.cpp ソース取得で、`master/main` は `refs/heads` を優先し、404 時は `tags/heads` を相互フォールバックして再試行するようにした（失敗時は試行URL一覧を出力）
+- 検証:
+  - `uv sync`
+  - `uv sync --extra test`
+  - `uv run python -m compileall yakulingo`
+  - `uv run --extra test pytest`（112 passed）
+- フォローアップ:
+  - `install_local_ai.ps1` から `hf_to_gguf_quantize.py --llama-tag <release tag>` を明示的に渡して、manifest が無い新規環境で `master` 既定に戻らないようにする（task-12）

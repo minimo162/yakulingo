@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 import textwrap
+import urllib.error
 import urllib.request
 import zipfile
 from dataclasses import dataclass
@@ -81,6 +82,16 @@ def _get_llama_cpp_tag_from_manifest(repo_root: Path) -> str | None:
     return tag if isinstance(tag, str) and tag.strip() else None
 
 
+def _llama_cpp_zip_urls(ref: str) -> list[str]:
+    normalized = ref.strip() or "master"
+    base = "https://github.com/ggerganov/llama.cpp/archive/refs"
+    heads_url = f"{base}/heads/{normalized}.zip"
+    tags_url = f"{base}/tags/{normalized}.zip"
+    if normalized in {"master", "main"}:
+        return [heads_url, tags_url]
+    return [tags_url, heads_url]
+
+
 def _resolve_llama_cpp_source(repo_root: Path, *, tag: str) -> Path:
     tag = tag.strip() or "master"
     cache_dir = repo_root / ".tmp" / "llama_cpp_src" / tag
@@ -94,9 +105,43 @@ def _resolve_llama_cpp_source(repo_root: Path, *, tag: str) -> Path:
         shutil.rmtree(cache_dir)
     _ensure_dir(cache_dir)
 
-    zip_url = f"https://github.com/ggerganov/llama.cpp/archive/refs/tags/{tag}.zip"
     zip_path = repo_root / ".tmp" / "downloads" / f"llama.cpp-{tag}.zip"
-    _download_file(zip_url, zip_path)
+    attempted_urls: list[str] = []
+    last_error: BaseException | None = None
+    for zip_url in _llama_cpp_zip_urls(tag):
+        attempted_urls.append(zip_url)
+        print(f"[INFO] Downloading llama.cpp source: {zip_url}", file=sys.stderr, flush=True)
+        try:
+            _download_file(zip_url, zip_path)
+            break
+        except urllib.error.HTTPError as exc:
+            last_error = exc
+            if exc.code == 404:
+                print(
+                    f"[WARN] llama.cpp source not found (HTTP 404): {zip_url}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                continue
+            raise RuntimeError(
+                "Failed to download llama.cpp source.\n"
+                + "Tried:\n"
+                + "\n".join(f"- {u}" for u in attempted_urls)
+            ) from exc
+        except Exception as exc:
+            last_error = exc
+            raise RuntimeError(
+                "Failed to download llama.cpp source.\n"
+                + "Tried:\n"
+                + "\n".join(f"- {u}" for u in attempted_urls)
+            ) from exc
+    else:
+        raise RuntimeError(
+            "Failed to download llama.cpp source (all candidates returned HTTP 404).\n"
+            + "Tried:\n"
+            + "\n".join(f"- {u}" for u in attempted_urls)
+        ) from last_error
+
     extracted_root = _extract_single_root_dir(zip_path, cache_dir)
     root_marker.write_text("ok\n", encoding="utf-8")
     return extracted_root
@@ -392,4 +437,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

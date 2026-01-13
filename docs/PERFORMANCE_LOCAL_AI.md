@@ -35,6 +35,12 @@
 > **Note**: 既定値は `local_ai_device=none` / `local_ai_n_gpu_layers=0` / `local_ai_ctx_size=2048`。長文や安定性を優先したい場合は `local_ai_ctx_size=4096`（さらに必要なら `8192`）を指定します。Vulkan(iGPU) を使う場合は `Vulkan0` / `99`（または `auto` / `all`）を設定します。速度優先で `-ngl 16` にする場合は `local_ai_n_gpu_layers=16` を指定します。
 > **Note**: プロキシ環境では `NO_PROXY=127.0.0.1,localhost` を自動補完し、ローカル API がプロキシ経由にならないようにします。
 
+## パラメータスイープ設計（短時間）
+- 変更対象は 1〜2 個に絞り、他の条件（モデル/入力文/参照ファイル/実行環境）を固定する
+- 4〜6 条件の小さなマトリクスで実行し、1条件あたりの計測は短時間で終わる範囲にする
+- 上書きを使う場合は `--restart-server` を付け、反映済みの状態で比較する
+- JSON 出力は `run-id` を付けて `/work/<case-id>/.tmp/` に保存する
+
 ## CLIベンチ（tools/bench_local_ai.py）
 
 ### Warm / Cold の実行
@@ -63,6 +69,9 @@ uv run python tools/bench_local_ai.py --mode warm --json
 
 # JSONをファイルに保存
 uv run python tools/bench_local_ai.py --mode warm --out .tmp/bench_local_ai.json
+
+# ケース運用（保存先を /work/<case-id>/.tmp/ に統一）
+uv run python tools/bench_local_ai.py --mode warm --out /work/<case-id>/.tmp/bench_local_ai.json
 ```
 
 ### JSONの server メタデータ（オフロード確認）
@@ -284,11 +293,16 @@ uv run --extra test python tools/e2e_local_ai_speed.py
 - ウイルス対策の干渉: 初回起動やPlaywright起動時に遅延する場合がある
 
 ## 記録テンプレ（例）
-- 実行日時: 
+- run-id:
+- 実行日時:
 - モード: warm | cold
-- コマンド: 
-- translation_seconds: 
-- total_seconds: 
-- prompt_chars: 
-- local_ai_threads / ctx / batch / ubatch: 
+- 入力: パス/文字数/参照ファイル有無
+- 条件: モデル/サーバ/`local_ai_*`/実行環境
+- コマンド:
+- translation_seconds:
+- total_seconds:
+- prompt_chars:
+- output_chars:
+- local_ai_threads / ctx / batch / ubatch:
+- 精度メモ: 簡易指標（後続タスクで追加）+ 人手確認の所見
 - 備考:

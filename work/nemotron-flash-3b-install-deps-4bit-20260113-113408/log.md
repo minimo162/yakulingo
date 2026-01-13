@@ -85,3 +85,14 @@
   - `uv sync --extra test`
   - `uv run python -m compileall yakulingo`
   - `uv run --extra test pytest`（112 passed）
+
+### 2026-01-13 task-10（Step 7 単体プロキシ選択）
+- ブランチ: `case-nemotron-flash-3b-install-deps-4bit-20260113-113408-task-10-step7-proxy-choice`
+- コミット: `57ba029357fa351629267bfd2a4912774f0b2b4f`
+- 変更点: `packaging/install_deps_step7_local_ai.bat` を単体実行した場合に限り、`install_deps.bat` と同等のプロキシ選択（proxy/direct/skip SSL）と認証情報入力を追加し、`install_local_ai.ps1` 実行時の `USE_PROXY` / `PROXY_*` を正しくセットできるようにした
+- 互換性: `YAKULINGO_INSTALL_DEPS_STEP7=1`（`install_deps.bat` 経由）では二重にプロキシ選択を出さず、親側の設定を尊重する
+- 検証:
+  - `uv sync`
+  - `uv sync --extra test`
+  - `uv run python -m compileall yakulingo`
+  - `uv run --extra test pytest`（112 passed）

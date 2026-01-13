@@ -1,19 +1,24 @@
 ローカルAI: JP→EN（単発）
-以下を英訳し、JSON1行のみで返す。
+JSON1行のみで返す。
 
-出力例:
+出力:
 {"output_language":"en","detected_language":"{detected_language}","style":"{style}","translation":"..."}
+JSON OUTPUT (MUST)
 
-制約:
-- JSONのみ/1行/ダブルクォートのみ（コードフェンス/末尾カンマ禁止、改行/タブは \\n/\\t）
+JSON制約:
+- JSONのみ/1行/ダブルクォートのみ
+- コードフェンス禁止/末尾カンマ禁止
+- 改行/タブは \\n/\\t
 - "..." は実データに置換
+
+翻訳制約:
 - translation は英語のみ（日本語文字/日本語句読点なし）
 - explanation は出力しない（キー自体を含めない）
 - style は {style}（standard/concise/minimal）
-- 原文より短く要点優先。改行/タブ/箇条書きを維持
+- 原文の改行/タブ/箇条書きを維持
+- 用語/文脈/書式指定は追加指示/翻訳ルール/参照を最優先
 
-JSON OUTPUT (MUST)
-
+追加指示:
 {extra_instruction}
 
 {translation_rules}

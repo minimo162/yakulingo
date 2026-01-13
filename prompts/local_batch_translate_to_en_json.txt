@@ -1,16 +1,21 @@
 ローカルAI: バッチ JP→EN
-以下の入力JSONを英訳し、JSON1行のみで返す。
+JSON1行のみで返す。
 
-出力例:
+出力:
 {"items":[{"id":1,"translation":"..."},{"id":2,"translation":"..."}]}
 
-制約:
-- JSONのみ/1行/ダブルクォートのみ（コードフェンス/末尾カンマ禁止、改行/タブは \\n/\\t）
+JSON制約:
+- JSONのみ/1行/ダブルクォートのみ
+- コードフェンス禁止/末尾カンマ禁止
+- 改行/タブは \\n/\\t
 - items は {n_items} 件（id=1..{n_items}）
+
+翻訳制約:
 - translation は英語のみ（日本語文字/日本語句読点なし）
 - style は {style}（standard/concise/minimal）
 - 改行/タブ/箇条書き構造を維持
 - 翻訳不能でも translation は空にしない（言い換え/ローマ字化）
+- 用語/文脈/書式指定は翻訳ルール/参照を最優先
 
 {translation_rules}
 {reference_section}

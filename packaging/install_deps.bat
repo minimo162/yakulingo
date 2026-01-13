@@ -453,7 +453,7 @@ echo [INFO] This step may download large files (model may be a few GB).
 
 echo.
 echo Do you want to install Local AI runtime now?
-echo   [1] Yes - Download llama.cpp + AgentCPM-Explore model (build 4bit; very large download)
+echo   [1] Yes - Download llama.cpp + Nemotron-Flash-3B-Instruct model (build 4bit; very large download)
 echo   [2] Yes - Download llama.cpp only (default; add model later)
 echo   [3] No  - Skip this step
 echo.
@@ -499,10 +499,10 @@ if not exist "local_ai\\manifest.json" (
         echo [INFO] Local AI model: SKIP (LOCAL_AI_SKIP_MODEL=1)
     ) else (
         if not defined LOCAL_AI_MODEL_KIND set "LOCAL_AI_MODEL_KIND=hf"
-        if not defined LOCAL_AI_MODEL_REPO set "LOCAL_AI_MODEL_REPO=openbmb/AgentCPM-Explore"
+        if not defined LOCAL_AI_MODEL_REPO set "LOCAL_AI_MODEL_REPO=nvidia/Nemotron-Flash-3B-Instruct"
         if not defined LOCAL_AI_MODEL_QUANT set "LOCAL_AI_MODEL_QUANT=Q4_K_M"
-        if not defined LOCAL_AI_MODEL_BASE_NAME set "LOCAL_AI_MODEL_BASE_NAME=AgentCPM-Explore"
-        echo [INFO] Local AI model: AgentCPM-Explore (LOCAL_AI_MODEL_KIND=!LOCAL_AI_MODEL_KIND!, quant=!LOCAL_AI_MODEL_QUANT!)
+        if not defined LOCAL_AI_MODEL_BASE_NAME set "LOCAL_AI_MODEL_BASE_NAME=Nemotron-Flash-3B-Instruct"
+        echo [INFO] Local AI model: Nemotron-Flash-3B-Instruct (LOCAL_AI_MODEL_KIND=!LOCAL_AI_MODEL_KIND!, quant=!LOCAL_AI_MODEL_QUANT!)
         echo [INFO] NOTE: HF^>GGUF^>4bit may require extra Python deps and can take a long time.
     )
 )

@@ -388,6 +388,44 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 
 **翻訳ルール**: `prompts/translation_rules.txt` を翻訳時に自動反映します（Copilot/ローカルAI共通）。
 
+### ローカルAI推論パラメータ（推奨）
+
+**HY-MT1.5 推奨値（ベースライン）**
+```json
+{
+  "top_k": 20,
+  "top_p": 0.6,
+  "repetition_penalty": 1.05,
+  "temperature": 0.7
+}
+```
+
+**YakuLingo 設定キー対応**
+- `--temp` → `local_ai_temperature`
+- `--top-p` → `local_ai_top_p`
+- `--top-k` → `local_ai_top_k`
+- `--repeat-penalty` → `local_ai_repeat_penalty`
+
+> **Note**: 既定値は `local_ai_top_p=0.8`（他は推奨値と一致）。推奨値に合わせる場合は `config/settings.template.json` を編集してください。
+
+#### llama.cpp（llama-cli）最短手順
+> **Note**: `local_ai/llama_cpp/vulkan` または `local_ai/llama_cpp/avx2` のどちらかを使います（同梱されている方）。
+```bash
+cd local_ai\llama_cpp\vulkan
+.\llama-cli.exe -m ..\..\models\HY-MT1.5-1.8B-Q4_K_M.gguf ^
+  -p "Translate the following segment into Chinese, without additional explanation.\n\nIt’s on the house." ^
+  -n 4096 --temp 0.7 --top-k 20 --top-p 0.6 --repeat-penalty 1.05 --no-warmup
+```
+
+#### ollama 最短手順
+> **Note**: 本モデルは system_prompt を持ちません。
+```bash
+echo 'FROM hf.co/tencent/HY-MT1.5-1.8B-GGUF:Q8_0
+TEMPLATE """<｜hy_begin▁of▁sentence｜>{{ if .System }}{{ .System }}<｜hy_place▁holder▁no▁3｜>{{ end }}{{ if .Prompt }}<｜hy_User｜>{{ .Prompt }}{{ end }}<｜hy_Assistant｜>"""' > Modelfile
+ollama create hy-mt1.5-1.8b -f Modelfile
+ollama run hy-mt1.5-1.8b
+```
+
 **ローカルAIの速度チューニング（開発者向け）**:
 - `local_ai_*` は `user_settings.json` に保存されないため、恒久的に変える場合は `config/settings.template.json` を編集します。
 - 計測のみの一時上書きは `tools/bench_local_ai.py` の CLI オプションを使用します。

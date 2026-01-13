@@ -4,7 +4,7 @@
 
 ## 前提
 - Vulkan 版の `llama.cpp` バイナリが配置されていること（例: `local_ai/llama_cpp/vulkan/`）。
-- モデルは同じものを使う（例: `local_ai/models/shisa-v2.1-qwen3-8B-UD-IQ3_XXS.gguf`）。
+- モデルは同じものを使う（例: `local_ai/models/HY-MT1.5-1.8B-Q4_K_M.gguf`）。
 
 ## 1) Vulkan デバイスの確認
 ```powershell
@@ -16,9 +16,9 @@ cd local_ai/llama_cpp/vulkan
 ## 2) Vulkan(iGPU) を強制して実行
 `--device` と `-ngl` を**明示**します（auto のままだと 0 層になる場合があります）。
 ```powershell
-cd local_ai/llama_cpp/vulkan
-.\llama-cli.exe `
-  -m "..\\..\\models\\shisa-v2.1-qwen3-8B-UD-IQ3_XXS.gguf" `
+  cd local_ai/llama_cpp/vulkan
+  .\llama-cli.exe `
+  -m "..\\..\\models\\HY-MT1.5-1.8B-Q4_K_M.gguf" `
   --device Vulkan0 `
   -ngl all `
   -t 6 `
@@ -34,9 +34,9 @@ cd local_ai/llama_cpp/vulkan
 
 ### CPU-only
 ```powershell
-cd local_ai/llama_cpp/vulkan
-.\llama-bench.exe `
-  -m "..\\..\\models\\shisa-v2.1-qwen3-8B-UD-IQ3_XXS.gguf" `
+  cd local_ai/llama_cpp/vulkan
+  .\llama-bench.exe `
+  -m "..\\..\\models\\HY-MT1.5-1.8B-Q4_K_M.gguf" `
   --device none `
   -ngl 0 `
   -pg 2048,256 `
@@ -47,9 +47,9 @@ cd local_ai/llama_cpp/vulkan
 
 ### Vulkan(iGPU)
 ```powershell
-cd local_ai/llama_cpp/vulkan
-.\llama-bench.exe `
-  -m "..\\..\\models\\shisa-v2.1-qwen3-8B-UD-IQ3_XXS.gguf" `
+  cd local_ai/llama_cpp/vulkan
+  .\llama-bench.exe `
+  -m "..\\..\\models\\HY-MT1.5-1.8B-Q4_K_M.gguf" `
   --device Vulkan0 `
   -ngl all `
   -pg 2048,256 `
@@ -64,12 +64,12 @@ CPU-only は `--device none -ngl 0` が固定で使われます。
 
 ```powershell
 # リポジトリルートで実行
-uv run python tools\bench_llama_bench_compare.py `
-  --server-dir local_ai\llama_cpp `
-  --model-path local_ai\models\shisa-v2.1-qwen3-8B-UD-IQ3_XXS.gguf `
-  --pg 2048,256 -r 3 `
-  --device Vulkan0 --n-gpu-layers all `
-  --extra-args -b 2048 -ub 512 -fa 0 `
+  uv run python tools\bench_llama_bench_compare.py `
+    --server-dir local_ai\llama_cpp `
+    --model-path local_ai\models\HY-MT1.5-1.8B-Q4_K_M.gguf `
+    --pg 2048,256 -r 3 `
+    --device Vulkan0 --n-gpu-layers all `
+    --extra-args -b 2048 -ub 512 -fa 0 `
   --format markdown `
   --out .tmp\llama_bench_compare.md
 ```

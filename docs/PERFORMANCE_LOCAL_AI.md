@@ -100,7 +100,7 @@ uv run python tools/bench_local_ai.py --mode warm \
 
 # モデル・サーバディレクトリの指定
 uv run python tools/bench_local_ai.py --mode warm \
-  --model-path local_ai/models/AgentCPM-Explore.Q4_K_M.gguf \
+  --model-path local_ai/models/HY-MT1.5-1.8B-Q4_K_M.gguf \
   --server-dir local_ai/llama_cpp --json
 
 # max_tokens を無効化（0以下でNone扱い）
@@ -134,7 +134,7 @@ uv run python tools/bench_local_ai.py --mode cold --restart-server \
   --json --out .tmp/bench_vk_cold.json
 ```
 
-### CPU-only の速度チューニング（Qwen3 / AgentCPM-Explore 系）
+### CPU-only の速度チューニング（一般）
 CPU-only では、`local_ai_ctx_size` が大きいほど KV キャッシュが増えて **遅くなりやすい**ため、まず `ctx` を下げて比較します。
 （入力文が長すぎて失敗/劣化する場合は `ctx` を戻します）
 
@@ -181,7 +181,7 @@ uv run python tools/bench_llama_bench_compare.py --format markdown \
 ```bash
 uv run python tools/bench_llama_bench_compare.py \
   --server-dir local_ai/llama_cpp \
-  --model-path local_ai/models/AgentCPM-Explore.Q4_K_M.gguf \
+  --model-path local_ai/models/HY-MT1.5-1.8B-Q4_K_M.gguf \
   --pg 2048,256 -r 3 \
   --device Vulkan0 --n-gpu-layers all \
   --extra-args -b 2048 -ub 512 -fa 0
@@ -242,8 +242,10 @@ KVキャッシュの量子化は、速度よりもメモリ圧/安定性の調�
 - 出力が文字化け/意味不明になる
   - `local_ai_vk_disable_f16 = true` を試す（CLIなら `--vk-disable-f16`）
 
-## AgentCPM-Explore / Shisa（Qwen3）推奨パラメータ（README準拠）
-- Qwen3は温度0の決定論的生成で繰り返しが起きやすいため、サンプリング（Temperature > 0）が推奨されています。
+## 参考（過去メモ）: AgentCPM-Explore / Shisa（Qwen3）推奨パラメータ
+> **Note**: 現行の固定モデル（HY-MT）に対する推奨値ではありません。Qwen3 系を検証していた頃のメモとして残しています。
+
+- Qwen3 は温度0の決定論的生成で繰り返しが起きやすいため、サンプリング（Temperature > 0）が推奨されていました。
 - 推奨値（既定値）:
   - `local_ai_temperature = 0.7`
   - `local_ai_top_p = 0.8`

@@ -1,6 +1,13 @@
-# AgentCPM-Explore（openbmb/AgentCPM-Explore）導入方針メモ
+# AgentCPM-Explore（openbmb/AgentCPM-Explore）導入方針メモ（過去メモ）
 
-本書は「ローカルAIモデルを openbmb/AgentCPM-Explore に切り替える」ための導入方針（SSOT）をまとめた設計メモです。
+本書は過去に「ローカルAIモデルを openbmb/AgentCPM-Explore に切り替える」ことを検討した設計メモです。
+
+## 現行仕様（重要）
+- ローカルAIの翻訳モデルは固定です: `tencent/HY-MT1.5-1.8B-GGUF/HY-MT1.5-1.8B-Q4_K_M.gguf`
+- 配置先は `local_ai/models/HY-MT1.5-1.8B-Q4_K_M.gguf` です。
+- `LOCAL_AI_MODEL_*` / `LOCAL_AI_MODEL_KIND` によるモデル切り替え（および `manifest.json` による選択）は行いません。
+
+以降の内容は「過去メモ」として残しています（運用手順/SSOTとしては使用しないでください）。
 
 ## 結論（採用する唯一の導入フロー）
 
@@ -17,7 +24,7 @@
 - `architectures`: `Qwen3ForCausalLM`
 - `model_type`: `qwen3`
 
-このリポジトリは既に「Shisa v2.1 Qwen3」をローカルAIで扱っており、`docs/PERFORMANCE_LOCAL_AI.md` でも Qwen3 前提の推奨パラメータが記載されているため、**モデル系統としては既存の運用方針（llama.cpp + GGUF + 量子化 + チューニング）と整合**する。
+当時このリポジトリは「Shisa v2.1 Qwen3」をローカルAIで扱っており、`docs/PERFORMANCE_LOCAL_AI.md` でも Qwen3 前提の推奨パラメータが記載されていたため、**モデル系統としては既存の運用方針（llama.cpp + GGUF + 量子化 + チューニング）と整合**すると判断した。
 
 ## 現状のローカルAI実装（リポジトリ内のSSOT）
 
@@ -56,7 +63,7 @@
 ## インストール側の方針（エンドユーザー向け）
 
 - `packaging/install_local_ai.ps1` は引き続き「モデルGGUFのダウンロード」で完結させる。
-- 既存の `LOCAL_AI_MODEL_REPO` / `LOCAL_AI_MODEL_FILE` を用いて、モデル配布先を切り替えられる状態を維持する。
+- （過去案）既存の `LOCAL_AI_MODEL_REPO` / `LOCAL_AI_MODEL_FILE` を用いて、モデル配布先を切り替えられる状態を維持する。
 - 切り替え初期は互換性/性能の揺れがあり得るため、旧モデルへのロールバック手段（環境変数指定・設定戻し）をドキュメント化する。
 
 ## 未決事項（このタスクでは決めない）

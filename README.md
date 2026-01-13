@@ -114,20 +114,9 @@ PDF翻訳はPP-DocLayout-L（PaddleOCR）によるレイアウト解析を使用
 Windows環境で最も簡単にセットアップできる方法です。Python、依存関係、Playwrightブラウザを自動でインストールします。
 > **Note**: 新規インストール（`local_ai/manifest.json` が無い状態）では CPU(x64) が既定です。Vulkan版にしたい場合は `set LOCAL_AI_LLAMA_CPP_VARIANT=vulkan` を設定してから実行します。既存の `manifest.json` がある場合はその設定を優先し、切り替えたい場合は `set LOCAL_AI_LLAMA_CPP_VARIANT=vulkan|cpu` で上書きします。
 > **Note**: `packaging/install_local_ai.ps1` は実行のたびに最新リリースを確認し、必要な場合のみ更新します。
-> **Note**: モデルは `set LOCAL_AI_MODEL_REPO=...` / `set LOCAL_AI_MODEL_FILE=...` / `set LOCAL_AI_MODEL_REVISION=...` で上書きできます。実行結果は `local_ai/manifest.json` に `model.source` / `model.output` として記録されます。
-> **Note**: `set LOCAL_AI_MODEL_KIND=hf` の場合は、task-02 のツール（`tools/hf_to_gguf_quantize.py`）を使って HF→GGUF→4bit 変換を試みます（Python/依存が揃っていない場合はエラーになります）。
-> **Note**: `packaging/install_deps.bat` の Step 7 で「[1] llama.cpp + model」を選ぶと、既定で `openbmb/AgentCPM-Explore` を `Q4_K_M` に量子化する（HF→GGUF→4bit）導線になります。必要に応じて `huggingface_hub` を自動導入します。
-> **Note**: 既定のローカルAIモデルは `local_ai/models/Nemotron-Flash-3B-Instruct.Q4_K_M.gguf` です（ファイルが無い場合は `local_ai/models/` 配下を自動探索して起動します）。
-> **Note**: AgentCPM-Explore の GGUF が配布されていない/404 になる場合は、HF 変換モードで生成できます（PyTorch/Transformers 等の依存が必要で、環境によっては失敗します）。
->
-> ```bat
-> set LOCAL_AI_MODEL_KIND=hf
-> set LOCAL_AI_MODEL_REPO=openbmb/AgentCPM-Explore
-> set LOCAL_AI_MODEL_QUANT=Q4_K_M
-> rem 既存ファイルを作り直す場合のみ
-> rem set LOCAL_AI_FORCE_MODEL_REBUILD=1
-> packaging\install_deps.bat
-> ```
+> **Note**: ローカルAIの翻訳モデルは固定です: `tencent/HY-MT1.5-1.8B-GGUF/HY-MT1.5-1.8B-Q4_K_M.gguf`
+> **Note**: ダウンロード先は `local_ai/models/HY-MT1.5-1.8B-Q4_K_M.gguf` です。
+> **Note**: `LOCAL_AI_MODEL_*` / `LOCAL_AI_MODEL_KIND` によるモデル切り替えはできません（`local_ai/manifest.json` は記録用で、選択には影響しません）。
 
 ```bash
 # リポジトリをクローン
@@ -162,7 +151,7 @@ Do you need to use a proxy server?
 4. Playwrightブラウザ（Chromium）のインストール
 5. PaddleOCR（PDF翻訳用）のインストールと検証
 6. 起動高速化のためのバイトコードプリコンパイル
-7. ローカルAIランタイム（llama.cpp + モデル）のダウンロード（大容量）
+7. ローカルAIランタイム（llama.cpp + 固定HY-MTモデル）のインストール（任意・大容量）
 
 セットアップ完了後、`YakuLingo.exe` をダブルクリックして起動します（常駐起動します。UIは必要に応じて http://127.0.0.1:8765/ を開きます）。
 
@@ -306,7 +295,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
   "max_chars_per_batch": 1000,
   "request_timeout": 600,
   "max_retries": 3,
-  "local_ai_model_path": "local_ai/models/Nemotron-Flash-3B-Instruct.Q4_K_M.gguf",
+  "local_ai_model_path": "local_ai/models/HY-MT1.5-1.8B-Q4_K_M.gguf",
   "local_ai_server_dir": "local_ai/llama_cpp",
   "local_ai_host": "127.0.0.1",
   "local_ai_port_base": 4891,
@@ -439,7 +428,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 | `ocr_batch_size` | PDF処理のバッチページ数 | 5 |
 | `ocr_dpi` | PDF処理の解像度 | 300 |
 | `max_chars_per_batch` | Copilot送信1回あたりの最大文字数 | 1000 |
-| `local_ai_model_path` | ローカルAIモデル（.gguf）のパス | `local_ai/models/Nemotron-Flash-3B-Instruct.Q4_K_M.gguf` |
+| `local_ai_model_path` | ローカルAIモデル（.gguf）のパス | `local_ai/models/HY-MT1.5-1.8B-Q4_K_M.gguf` |
 | `local_ai_server_dir` | ローカルAIサーバ（llama-server）のディレクトリ | `local_ai/llama_cpp` |
 | `local_ai_port_base` | ローカルAIのポート探索開始 | 4891 |
 | `local_ai_port_max` | ローカルAIのポート探索上限 | 4900 |
@@ -471,7 +460,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 > **Note**: `ocr_*` 設定はPDF処理（レイアウト解析）に使用されます。設定名は互換性のため維持しています。
 > **Note**: ローカルAI関連のパス（`local_ai_model_path`, `local_ai_server_dir`）は、相対パスの場合 **アプリ配置ディレクトリ基準** で解決します（CWD基準ではありません）。
 > **Note**: `local_ai_host` は安全のため `127.0.0.1` に強制されます。
-> **Note**: `local_ai_model_path` のファイルが存在しない場合は、互換性のため `local_ai/models/` 配下の既存モデルを自動探索して起動します（例: 旧既定の Shisa など）。
+> **Note**: 固定モデル（`local_ai/models/HY-MT1.5-1.8B-Q4_K_M.gguf`）が存在しない場合、ローカルAIは起動しません。`packaging/install_deps.bat`（Step 7）でローカルAIをインストールするか、同名ファイルを手動配置してください。
 
 ### ローカルAI速度計測（ベンチ）
 
@@ -595,7 +584,7 @@ notes:
 - サイドバー上部で **ローカルAI** を選択した時に「見つかりません」: `local_ai/`（`llama_cpp` と `models`）があるか確認し、無ければ `packaging/install_deps.bat` を実行
 - 「AVX2非対応」: 現状の同梱がAVX2版の場合、Copilotに切り替えるか、generic版 `llama-server` の同梱が必要です
 - 「空きポートが見つかりませんでした（4891-4900）」: 他プロセスが使用中の可能性があるため、`local_ai_port_base` / `local_ai_port_max` を変更するか、競合プロセスを停止
-- モデルのダウンロードが失敗/404: `LOCAL_AI_MODEL_REPO` / `LOCAL_AI_MODEL_FILE` / `LOCAL_AI_MODEL_REVISION` を見直してください。GGUFが配布されていない場合は `LOCAL_AI_MODEL_KIND=hf`（HF→GGUF→4bit）を試してください（依存が重く、RAM/ディスク要件も上がります）。
+- モデルのダウンロードが失敗/404: ローカルAIモデルは固定です。ネットワーク/プロキシ設定を確認し `packaging/install_deps.bat` を再実行してください。必要なら `tencent/HY-MT1.5-1.8B-GGUF` の `HY-MT1.5-1.8B-Q4_K_M.gguf` を手動で `local_ai/models/` に配置してください。
 - ローカルAIランタイムの更新が失敗（DLLロック）: `...ggml-base.dll にアクセスできません` などが出る場合は、まず YakuLingo（タスクトレイ > `Exit`）を終了し、残っている `llama-server.exe` 等をタスクマネージャーで終了してから再実行してください。
   - 再実行: `powershell -NoProfile -ExecutionPolicy Bypass -File packaging\\install_local_ai.ps1`
   - それでも失敗する場合: PCを再起動してから再実行（または `packaging\\install_deps.bat` をやり直し）

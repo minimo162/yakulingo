@@ -18,6 +18,7 @@
 
 ### 2026-01-13 task-01（install_deps Step 7）
 - ブランチ: `case-nemotron-flash-3b-install-deps-4bit-20260113-113408-task-01-installer-defaults`
+- コミット: `744021eea51c2cc1cb3b7c43785c84e28ca180fc`
 - 変更点: `packaging/install_deps.bat` の Step 7 を Nemotron 既定（repo/quant/base_name/表示文言）へ更新
 - 検証:
   - `uv sync`

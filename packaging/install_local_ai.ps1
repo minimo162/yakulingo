@@ -19,8 +19,6 @@ try {
     $userAgent = 'YakuLingo-Installer'
     $httpHeaders = @{ 'User-Agent' = $userAgent }
 
-    $skipModel = $false
-
     function Invoke-Json([string]$url) {
         if ($useProxy) {
             return Invoke-RestMethod -Uri $url -Headers $httpHeaders -Proxy $proxy -ProxyCredential $cred -TimeoutSec 120
@@ -218,8 +216,7 @@ try {
     $proxyLabel = if ($useProxy) { 'enabled' } else { 'disabled' }
     Write-Host "[INFO] Proxy: $proxyLabel"
     if ($useProxy) { Write-Host "[INFO] Proxy server: $proxy" }
-    $skipLabel = if ($skipModel) { 'yes' } else { 'no' }
-    Write-Host "[INFO] Skip model: $skipLabel"
+    Write-Host "[INFO] Skip model: no"
     Write-Host "[INFO] llama.cpp variant: $llamaVariant ($llamaLabel)"
 
     function Move-FileWithRetry([string]$src, [string]$dst, [string]$label, [switch]$StopLlama) {
@@ -314,104 +311,14 @@ try {
     $defaultModelRepo = 'tencent/HY-MT1.5-1.8B-GGUF'
     $defaultModelFile = 'HY-MT1.5-1.8B-Q4_K_M.gguf'
     $defaultModelRevision = 'main'
-    $defaultModelKind = 'gguf'  # fixed (env/manifest overrides are ignored)
-    $defaultModelQuant = 'Q4_K_M'
-    $fallbackGgufRepo = 'dahara1/shisa-v2.1-qwen3-8b-UD-japanese-imatrix'
-    $fallbackGgufFile = 'shisa-v2.1-qwen3-8B-UD-IQ3_XXS.gguf'
-    $manifestModelRepo = $null
-    $manifestModelFile = $null
-    $manifestModelRevision = $null
-    $manifestModelKind = $null
-    if ($existingManifest -and $existingManifest.model) {
-        $manifestModelRepo = $existingManifest.model.repo
-        if (-not $manifestModelRepo -and $existingManifest.model.source -and $existingManifest.model.source.repo) {
-            $manifestModelRepo = $existingManifest.model.source.repo
-        }
-        $manifestModelFile = $existingManifest.model.file
-        if (-not $manifestModelFile -and $existingManifest.model.source -and $existingManifest.model.source.file) {
-            $manifestModelFile = $existingManifest.model.source.file
-        }
-        if ($existingManifest.model.source -and $existingManifest.model.source.revision) {
-            $manifestModelRevision = $existingManifest.model.source.revision
-        } elseif ($existingManifest.model.revision) {
-            $manifestModelRevision = $existingManifest.model.revision
-        }
-        if ($existingManifest.model.source -and $existingManifest.model.source.kind) {
-            $manifestModelKind = $existingManifest.model.source.kind
-        } elseif ($existingManifest.model.kind) {
-            $manifestModelKind = $existingManifest.model.kind
-        }
-    }
 
-    $modelRepo = $defaultModelRepo
-    if (-not [string]::IsNullOrWhiteSpace($manifestModelRepo)) { $modelRepo = $manifestModelRepo }
-    $modelFile = $defaultModelFile
-    if (-not [string]::IsNullOrWhiteSpace($manifestModelFile)) { $modelFile = $manifestModelFile }
-    $modelRevision = $defaultModelRevision
-    if (-not [string]::IsNullOrWhiteSpace($manifestModelRevision)) { $modelRevision = $manifestModelRevision }
-    $modelKind = $defaultModelKind
-    if (-not [string]::IsNullOrWhiteSpace($manifestModelKind)) { $modelKind = [string]$manifestModelKind }
-
-    if ($env:LOCAL_AI_MODEL_REPO) { $modelRepo = $env:LOCAL_AI_MODEL_REPO }
-    if ($env:LOCAL_AI_MODEL_FILE) { $modelFile = $env:LOCAL_AI_MODEL_FILE }
-    if ($env:LOCAL_AI_MODEL_REVISION) { $modelRevision = $env:LOCAL_AI_MODEL_REVISION }
-    if ($env:LOCAL_AI_MODEL_KIND) { $modelKind = $env:LOCAL_AI_MODEL_KIND }
-    $modelKind = ([string]$modelKind).Trim().ToLowerInvariant()
-    if ($modelKind -ne 'gguf' -and $modelKind -ne 'hf') { $modelKind = $defaultModelKind }
-
-    # Force fixed model selection (ignore manifest/env overrides).
+    # Model selection is fixed (manifest/env overrides are ignored).
     $modelRepo = $defaultModelRepo
     $modelFile = $defaultModelFile
     $modelRevision = $defaultModelRevision
     $modelKind = 'gguf'
 
-    $modelRevision = ([string]$modelRevision).Trim()
-    if ([string]::IsNullOrWhiteSpace($modelRevision)) { $modelRevision = 'main' }
-
-    # modelRepo/modelFile are fixed; do not apply fallback repo/file selection.
-
-    $modelQuant = $defaultModelQuant
-    $modelQuantWasExplicit = $false
-    if ($env:LOCAL_AI_MODEL_QUANT) { $modelQuant = [string]$env:LOCAL_AI_MODEL_QUANT; $modelQuantWasExplicit = $true }
-    $modelQuant = ([string]$modelQuant).Trim()
-    if ([string]::IsNullOrWhiteSpace($modelQuant)) { $modelQuant = $defaultModelQuant }
-
-    $modelBaseName = $null
-    if ($env:LOCAL_AI_MODEL_BASE_NAME) { $modelBaseName = [string]$env:LOCAL_AI_MODEL_BASE_NAME }
-    $modelBaseName = ([string]$modelBaseName).Trim()
-
-    if ($modelKind -eq 'hf') {
-        # If not explicitly set, infer from model file when possible.
-        if ([string]::IsNullOrWhiteSpace($modelBaseName) -and $env:LOCAL_AI_MODEL_FILE) {
-            $m = [regex]::Match([string]$env:LOCAL_AI_MODEL_FILE, '^(?<base>.+?)\\.(?<quant>Q[0-9A-Za-z_]+)\\.gguf$', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
-            if ($m.Success) {
-                $modelBaseName = $m.Groups['base'].Value
-                if (-not $modelQuantWasExplicit) { $modelQuant = $m.Groups['quant'].Value }
-            } elseif ($env:LOCAL_AI_MODEL_FILE -match '\\.gguf$') {
-                $modelBaseName = [regex]::Replace([string]$env:LOCAL_AI_MODEL_FILE, '\\.gguf$', '', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
-            }
-        }
-
-        if ([string]::IsNullOrWhiteSpace($modelBaseName)) {
-            if ([string]$modelRepo -match '/') {
-                $modelBaseName = ([string]$modelRepo -split '/')[-1]
-            } else {
-                $modelBaseName = [string]$modelRepo
-            }
-        }
-        $modelBaseName = [regex]::Replace([string]$modelBaseName, '[\\\\/:*?\"<>|]', '-')
-        $modelBaseName = ([string]$modelBaseName).Trim()
-        if ([string]::IsNullOrWhiteSpace($modelBaseName)) { $modelBaseName = 'model' }
-
-        if (-not $env:LOCAL_AI_MODEL_FILE) {
-            $modelFile = "$modelBaseName.$modelQuant.gguf"
-        }
-    }
-
-    $modelUrl = $null
-    if ($modelKind -eq 'gguf') {
-        $modelUrl = "https://huggingface.co/$modelRepo/resolve/$modelRevision/$modelFile"
-    }
+    $modelUrl = "https://huggingface.co/$modelRepo/resolve/$modelRevision/$modelFile"
 
     $modelPath = Get-ChildPathSafe $modelsDir $modelFile
     $modelTempPath = $null
@@ -580,132 +487,43 @@ try {
     }
 
     $downloadedModel = $false
-    if ($skipModel) {
-        Write-Host '[INFO] Skipping model download (LOCAL_AI_SKIP_MODEL=1).'
-    } else {
-        if ($modelKind -eq 'hf') {
-            $forceRebuild = ($env:LOCAL_AI_FORCE_MODEL_REBUILD -eq '1')
-            $hasModel = (Test-Path $modelPath) -and ((Get-Item $modelPath).Length -gt 0)
-            if ($hasModel -and -not $forceRebuild) {
-                Write-Host "[INFO] Model already exists: $(Split-Path -Leaf $modelPath)"
-            } else {
-                $uvExe = Join-Path $root 'uv.exe'
-                if (-not (Test-Path $uvExe)) {
-                    $uvCmd = Get-Command uv.exe -ErrorAction SilentlyContinue
-                    if ($uvCmd) { $uvExe = $uvCmd.Source }
-                }
-                if (-not (Test-Path $uvExe)) { throw 'uv.exe not found. Run install_deps.bat first, or ensure uv is installed.' }
 
-                 Write-Host "[INFO] Building GGUF from HF (kind=hf): $modelRepo@$modelRevision -> $(Split-Path -Leaf $modelPath)"
-                $llamaTagForConvert = $tag
-                if (-not $llamaTagForConvert) { $llamaTagForConvert = $existingTag }
-                if ($llamaTagForConvert) {
-                    Write-Host "[INFO] Using llama.cpp release tag for conversion: $llamaTagForConvert"
-                } else {
-                    Write-Host "[WARNING] llama.cpp release tag not resolved; conversion tool will use its default (may be slower or incompatible)."
-                }
-                 $toolArgs = @(
-                     'run', 'python', 'tools/hf_to_gguf_quantize.py',
-                     '--hf-repo', $modelRepo,
-                     '--revision', $modelRevision,
-                     '--base-name', $modelBaseName,
-                     '--quant', $modelQuant,
-                     '--out-dir', $modelsDir
-                 )
-                if ($llamaTagForConvert) { $toolArgs += @('--llama-tag', $llamaTagForConvert) }
-                 if ($forceRebuild) { $toolArgs += '--force' }
+    if ((Test-Path $modelPath) -and ((Get-Item $modelPath).Length -gt 0) -and (Test-Path $modelTempPath)) {
+        Write-Host "[WARNING] Found stale partial file next to existing model; removing: $(Split-Path -Leaf $modelTempPath)"
+        Remove-Item -Force -Path $modelTempPath -ErrorAction SilentlyContinue
+    }
 
-                & $uvExe @toolArgs
-                $toolExit = $LASTEXITCODE
-                if ($toolExit -ne 0) {
-                    # tools/hf_to_gguf_quantize.py uses exit code 42 for "unsupported architecture" fast-fail.
-                    if ($toolExit -eq 42) {
-                        Write-Host "[WARNING] HF->GGUF conversion is not supported for this model with the current llama.cpp converter."
-                        Write-Host '[INFO] To use a prebuilt GGUF instead, set:'
-                        Write-Host '       set LOCAL_AI_MODEL_KIND=gguf'
-                        Write-Host '       set LOCAL_AI_MODEL_REPO=<repo>'
-                        Write-Host '       set LOCAL_AI_MODEL_FILE=<file.gguf>'
-                        Write-Host '       set LOCAL_AI_MODEL_REVISION=<revision>'
-
-                        $hfWasExplicit = ($env:LOCAL_AI_MODEL_KIND -or $env:LOCAL_AI_MODEL_REPO -or $env:LOCAL_AI_MODEL_FILE -or $manifestModelRepo -or $manifestModelFile)
-                        if ($hfWasExplicit) {
-                            throw "HF->GGUF->quantize failed (unsupported architecture) (exit=$toolExit). Check output above."
-                        }
-
-                        Write-Host "[INFO] Falling back to direct GGUF download: $fallbackGgufRepo/$fallbackGgufFile"
-                        $modelKind = 'gguf'
-                        $modelRepo = $fallbackGgufRepo
-                        $modelFile = $fallbackGgufFile
-                        $modelRevision = 'main'
-                        $modelUrl = "https://huggingface.co/$modelRepo/resolve/$modelRevision/$modelFile"
-                        $modelPath = Get-ChildPathSafe $modelsDir $modelFile
-                        $modelTempPath = $modelPath + '.partial'
-                        $licenseUrl = "https://huggingface.co/$modelRepo/raw/$modelRevision/LICENSE"
-                        $readmeUrl = "https://huggingface.co/$modelRepo/resolve/$modelRevision/README.md"
-                    } else {
-                        throw "HF->GGUF->quantize failed (exit=$toolExit). Check output above."
-                    }
-                }
-
-                if ($modelKind -eq 'hf') {
-                    $generatedPath = Join-Path $modelsDir "$modelBaseName.$modelQuant.gguf"
-                    if ((Test-Path $generatedPath) -and ($generatedPath -ne $modelPath)) {
-                        Move-FileWithRetry -src $generatedPath -dst $modelPath -label 'quantized model' -StopLlama
-                    }
-
-                    if (-not (Test-Path $modelPath) -or ((Get-Item $modelPath).Length -le 0)) {
-                        throw "Quantized GGUF not found or empty: $modelPath"
-                    }
-                    $downloadedModel = $true
-                }
-            }
+    if (Test-Path $modelTempPath) {
+        Write-Host "[INFO] Resuming partial model download: $(Split-Path -Leaf $modelTempPath)"
+        Invoke-Download $modelUrl $modelTempPath 14400
+        if (-not (Test-Path $modelTempPath) -or ((Get-Item $modelTempPath).Length -le 0)) {
+            throw "Model download did not produce a valid file: $modelTempPath"
         }
-
-        if ($modelKind -ne 'hf') {
-            $modelUrl = "https://huggingface.co/$modelRepo/resolve/$modelRevision/$modelFile"
-            $modelPath = Get-ChildPathSafe $modelsDir $modelFile
-            $modelTempPath = $modelPath + '.partial'
-            $licenseUrl = "https://huggingface.co/$modelRepo/raw/$modelRevision/LICENSE"
-            $readmeUrl = "https://huggingface.co/$modelRepo/resolve/$modelRevision/README.md"
-
-            if ((Test-Path $modelPath) -and ((Get-Item $modelPath).Length -gt 0) -and (Test-Path $modelTempPath)) {
-                Write-Host "[WARNING] Found stale partial file next to existing model; removing: $(Split-Path -Leaf $modelTempPath)"
-                Remove-Item -Force -Path $modelTempPath -ErrorAction SilentlyContinue
+        Move-FileWithRetry -src $modelTempPath -dst $modelPath -label 'model' -StopLlama
+        $downloadedModel = $true
+    } else {
+        $hasModel = (Test-Path $modelPath) -and ((Get-Item $modelPath).Length -gt 0)
+        if ($hasModel) {
+            Write-Host "[INFO] Model already exists: $(Split-Path -Leaf $modelPath)"
+            $existingModelSha = $null
+            if ($existingManifest -and $existingManifest.model -and $existingManifest.model.sha256) {
+                $existingModelSha = $existingManifest.model.sha256
+            } elseif ($existingManifest -and $existingManifest.model -and $existingManifest.model.output -and $existingManifest.model.output.sha256) {
+                $existingModelSha = $existingManifest.model.output.sha256
             }
-
-            if (Test-Path $modelTempPath) {
-                Write-Host "[INFO] Resuming partial model download: $(Split-Path -Leaf $modelTempPath)"
-                Invoke-Download $modelUrl $modelTempPath 14400
-                if (-not (Test-Path $modelTempPath) -or ((Get-Item $modelTempPath).Length -le 0)) {
-                    throw "Model download did not produce a valid file: $modelTempPath"
-                }
-                Move-FileWithRetry -src $modelTempPath -dst $modelPath -label 'model' -StopLlama
+            if (-not $existingModelSha -and (-not $useProxy) -and (Get-Command curl.exe -ErrorAction SilentlyContinue)) {
+                Write-Host '[INFO] Verifying/resuming model download (no existing SHA256 in manifest)...'
+                Invoke-Download $modelUrl $modelPath 14400
                 $downloadedModel = $true
-            } else {
-                $hasModel = (Test-Path $modelPath) -and ((Get-Item $modelPath).Length -gt 0)
-                if ($hasModel) {
-                    Write-Host "[INFO] Model already exists: $(Split-Path -Leaf $modelPath)"
-                    $existingModelSha = $null
-                    if ($existingManifest -and $existingManifest.model -and $existingManifest.model.sha256) {
-                        $existingModelSha = $existingManifest.model.sha256
-                    } elseif ($existingManifest -and $existingManifest.model -and $existingManifest.model.output -and $existingManifest.model.output.sha256) {
-                        $existingModelSha = $existingManifest.model.output.sha256
-                    }
-                    if (-not $existingModelSha -and (-not $useProxy) -and (Get-Command curl.exe -ErrorAction SilentlyContinue)) {
-                        Write-Host '[INFO] Verifying/resuming model download (no existing SHA256 in manifest)...'
-                        Invoke-Download $modelUrl $modelPath 14400
-                        $downloadedModel = $true
-                    }
-                } else {
-                    Write-Host "[INFO] Downloading model: $modelRepo/$modelFile"
-                    Invoke-Download $modelUrl $modelTempPath 14400
-                    if (-not (Test-Path $modelTempPath) -or ((Get-Item $modelTempPath).Length -le 0)) {
-                        throw "Model download did not produce a valid file: $modelTempPath"
-                    }
-                    Move-FileWithRetry -src $modelTempPath -dst $modelPath -label 'model' -StopLlama
-                    $downloadedModel = $true
-                }
             }
+        } else {
+            Write-Host "[INFO] Downloading model: $modelRepo/$modelFile"
+            Invoke-Download $modelUrl $modelTempPath 14400
+            if (-not (Test-Path $modelTempPath) -or ((Get-Item $modelTempPath).Length -le 0)) {
+                throw "Model download did not produce a valid file: $modelTempPath"
+            }
+            Move-FileWithRetry -src $modelTempPath -dst $modelPath -label 'model' -StopLlama
+            $downloadedModel = $true
         }
     }
 
@@ -729,9 +547,7 @@ try {
     } elseif ($existingManifest -and $existingManifest.model -and $existingManifest.model.output -and $existingManifest.model.output.sha256) {
         $existingModelHash = $existingManifest.model.output.sha256
     }
-    if ($skipModel) {
-        $modelHash = $existingModelHash
-    } elseif ((Test-Path $modelPath) -and ((Get-Item $modelPath).Length -gt 0)) {
+    if ((Test-Path $modelPath) -and ((Get-Item $modelPath).Length -gt 0)) {
         if ($downloadedModel -or -not $existingModelHash) {
             $modelHash = (Get-FileHash -Algorithm SHA256 -Path $modelPath).Hash
         } else {
@@ -759,7 +575,7 @@ try {
             file = $modelFile
             download_url = $modelUrl
             sha256 = $modelHash
-            skipped = $skipModel
+            skipped = $false
             source = [ordered]@{
                 kind = $modelKind
                 repo = $modelRepo

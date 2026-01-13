@@ -7,7 +7,6 @@ import re
 import shutil
 import subprocess
 import sys
-import textwrap
 import urllib.error
 import urllib.request
 import zipfile
@@ -125,11 +124,10 @@ def _format_unsupported_arch_message(
 
         This model architecture is not supported by the current llama.cpp conversion script.
 
-        Recovery (use direct GGUF download instead of HF build):
-          set LOCAL_AI_MODEL_KIND=gguf
-          set LOCAL_AI_MODEL_REPO=<repo>
-          set LOCAL_AI_MODEL_FILE=<file.gguf>
-          set LOCAL_AI_MODEL_REVISION=<revision>
+        Recovery:
+          - Use a prebuilt GGUF model (.gguf) instead of HF conversion.
+          - Download the .gguf from Hugging Face and place it under local_ai/models/.
+          - Note: YakuLingo runtime uses a fixed model file name; see README.
 
         Note: Some HF models require custom code (trust_remote_code). This tool runs conversion
         without executing remote code for safety; even with trust_remote_code, an unregistered
@@ -559,16 +557,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  f16 : {outputs.f16_gguf_path}")
     print(f"  q4  : {outputs.quant_gguf_path}")
     print("")
-    print("[HINT] Example install override:")
-    print(
-        textwrap.dedent(
-            f"""\
-            set LOCAL_AI_MODEL_REPO=<repo>
-            set LOCAL_AI_MODEL_FILE={outputs.quant_gguf_path.name}
-            set LOCAL_AI_MODEL_REVISION=<revision>
-            """
-        ).rstrip()
-    )
+    print("[HINT] Example usage (bench):")
+    print(f"  uv run python tools/bench_local_ai.py --mode warm --model-path {outputs.quant_gguf_path}")
 
     return 0
 

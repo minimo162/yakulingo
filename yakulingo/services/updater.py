@@ -9,7 +9,7 @@ import logging
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Optional, Callable
+from typing import Any, Optional, Callable, cast
 import json
 import os
 import platform
@@ -250,8 +250,17 @@ class NTLMProxyHandler(urllib.request.BaseHandler):
             ctx = sspi.ClientAuth(scheme)
 
             # Type 1 メッセージ（NEGOTIATE）を生成
+            def _b64encode_token(buffer: Any) -> str:
+                if isinstance(buffer, (bytes, bytearray)):
+                    raw = bytes(buffer)
+                elif isinstance(buffer, str):
+                    raw = buffer.encode("latin1")
+                else:
+                    raw = cast(bytes, buffer)
+                return base64.b64encode(raw).decode("ascii")
+
             _, out_buf = ctx.authorize(None)
-            auth_token = base64.b64encode(out_buf[0].Buffer).decode("ascii")
+            auth_token = _b64encode_token(out_buf[0].Buffer)
 
             # 認証トークン付きでリクエストを再送
             new_req = urllib.request.Request(
@@ -285,9 +294,7 @@ class NTLMProxyHandler(urllib.request.BaseHandler):
                             # Type 3 メッセージ（AUTHENTICATE）を生成
                             challenge_bytes = base64.b64decode(challenge_token)
                             _, out_buf = ctx.authorize(challenge_bytes)
-                            auth_token = base64.b64encode(out_buf[0].Buffer).decode(
-                                "ascii"
-                            )
+                            auth_token = _b64encode_token(out_buf[0].Buffer)
 
                             # 最終認証リクエスト
                             final_req = urllib.request.Request(

@@ -594,16 +594,24 @@ try {
                 }
                 if (-not (Test-Path $uvExe)) { throw 'uv.exe not found. Run install_deps.bat first, or ensure uv is installed.' }
 
-                Write-Host "[INFO] Building GGUF from HF (kind=hf): $modelRepo@$modelRevision -> $(Split-Path -Leaf $modelPath)"
-                $toolArgs = @(
-                    'run', 'python', 'tools/hf_to_gguf_quantize.py',
-                    '--hf-repo', $modelRepo,
-                    '--revision', $modelRevision,
-                    '--base-name', $modelBaseName,
-                    '--quant', $modelQuant,
-                    '--out-dir', $modelsDir
-                )
-                if ($forceRebuild) { $toolArgs += '--force' }
+                 Write-Host "[INFO] Building GGUF from HF (kind=hf): $modelRepo@$modelRevision -> $(Split-Path -Leaf $modelPath)"
+                $llamaTagForConvert = $tag
+                if (-not $llamaTagForConvert) { $llamaTagForConvert = $existingTag }
+                if ($llamaTagForConvert) {
+                    Write-Host "[INFO] Using llama.cpp release tag for conversion: $llamaTagForConvert"
+                } else {
+                    Write-Host "[WARNING] llama.cpp release tag not resolved; conversion tool will use its default (may be slower or incompatible)."
+                }
+                 $toolArgs = @(
+                     'run', 'python', 'tools/hf_to_gguf_quantize.py',
+                     '--hf-repo', $modelRepo,
+                     '--revision', $modelRevision,
+                     '--base-name', $modelBaseName,
+                     '--quant', $modelQuant,
+                     '--out-dir', $modelsDir
+                 )
+                if ($llamaTagForConvert) { $toolArgs += @('--llama-tag', $llamaTagForConvert) }
+                 if ($forceRebuild) { $toolArgs += '--force' }
 
                 & $uvExe @toolArgs
                 if ($LASTEXITCODE -ne 0) { throw "HF->GGUF->quantize failed (exit=$LASTEXITCODE). Check output above." }

@@ -21,6 +21,15 @@ def test_loads_json_loose_strips_code_fences_and_trailing_commas() -> None:
     assert obj["items"][0]["translation"] == "A"
 
 
+def test_loads_json_loose_extracts_json_with_prefix_suffix() -> None:
+    raw = """prefix text
+{"translation":"A"}
+suffix text"""
+    obj = loads_json_loose(raw)
+    assert isinstance(obj, dict)
+    assert obj["translation"] == "A"
+
+
 def test_parse_batch_translations_orders_by_id() -> None:
     raw = """{"items":[{"id":2,"translation":"B"},{"id":1,"translation":"A"}]}"""
     assert parse_batch_translations(raw, expected_count=2) == ["A", "B"]
@@ -129,8 +138,18 @@ def test_is_truncated_json_detects_missing_closure() -> None:
     assert is_truncated_json(raw) is True
 
 
+def test_is_truncated_json_detects_missing_array_closure() -> None:
+    raw = """[{"translation":"A"}"""
+    assert is_truncated_json(raw) is True
+
+
 def test_is_truncated_json_false_for_complete_json() -> None:
     raw = """{"translation":"A","explanation":"B"}"""
+    assert is_truncated_json(raw) is False
+
+
+def test_is_truncated_json_false_when_braces_in_string() -> None:
+    raw = """{"translation":"{not json}","explanation":"ok"}"""
     assert is_truncated_json(raw) is False
 
 

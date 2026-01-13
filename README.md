@@ -387,6 +387,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 **用語集処理**: `use_bundled_glossary=true` の場合、同梱 `glossary.csv` をファイルとして自動添付します（デフォルト: true）。
 
 **翻訳ルール**: `prompts/translation_rules.txt` を翻訳時に自動反映します（Copilot/ローカルAI共通）。
+**プロンプトSSOT**: `docs/PROMPT_TEMPLATES_SSOT.md` にテンプレの単一正をまとめています。
 
 ### ローカルAI推論パラメータ（推奨）
 

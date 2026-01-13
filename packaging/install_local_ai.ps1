@@ -19,7 +19,7 @@ try {
     $userAgent = 'YakuLingo-Installer'
     $httpHeaders = @{ 'User-Agent' = $userAgent }
 
-    $skipModel = ($env:LOCAL_AI_SKIP_MODEL -eq '1')
+    $skipModel = $false
 
     function Invoke-Json([string]$url) {
         if ($useProxy) {
@@ -309,13 +309,12 @@ try {
         }
     }
 
-    # Default model for new installs:
-    # - kind=hf: build quantized GGUF from HF (Nemotron)
-    # - kind=gguf: keep a known-working direct-download default (Shisa) when user explicitly selects gguf without repo/file.
-    $defaultModelRepo = 'nvidia/Nemotron-Flash-3B-Instruct'
-    $defaultModelFile = 'Nemotron-Flash-3B-Instruct.Q4_K_M.gguf'
+    # Default model (fixed):
+    # Always use a prebuilt GGUF downloaded from Hugging Face.
+    $defaultModelRepo = 'tencent/HY-MT1.5-1.8B-GGUF'
+    $defaultModelFile = 'HY-MT1.5-1.8B-Q4_K_M.gguf'
     $defaultModelRevision = 'main'
-    $defaultModelKind = 'hf'  # gguf (direct download) | hf (HF -> GGUF -> quantize)
+    $defaultModelKind = 'gguf'  # fixed (env/manifest overrides are ignored)
     $defaultModelQuant = 'Q4_K_M'
     $fallbackGgufRepo = 'dahara1/shisa-v2.1-qwen3-8b-UD-japanese-imatrix'
     $fallbackGgufFile = 'shisa-v2.1-qwen3-8B-UD-IQ3_XXS.gguf'
@@ -360,13 +359,16 @@ try {
     $modelKind = ([string]$modelKind).Trim().ToLowerInvariant()
     if ($modelKind -ne 'gguf' -and $modelKind -ne 'hf') { $modelKind = $defaultModelKind }
 
+    # Force fixed model selection (ignore manifest/env overrides).
+    $modelRepo = $defaultModelRepo
+    $modelFile = $defaultModelFile
+    $modelRevision = $defaultModelRevision
+    $modelKind = 'gguf'
+
     $modelRevision = ([string]$modelRevision).Trim()
     if ([string]::IsNullOrWhiteSpace($modelRevision)) { $modelRevision = 'main' }
 
-    if ($modelKind -eq 'gguf') {
-        if ((-not $env:LOCAL_AI_MODEL_REPO) -and (-not $manifestModelRepo)) { $modelRepo = $fallbackGgufRepo }
-        if ((-not $env:LOCAL_AI_MODEL_FILE) -and (-not $manifestModelFile)) { $modelFile = $fallbackGgufFile }
-    }
+    # modelRepo/modelFile are fixed; do not apply fallback repo/file selection.
 
     $modelQuant = $defaultModelQuant
     $modelQuantWasExplicit = $false
@@ -780,7 +782,7 @@ try {
 } catch {
     Write-Host "[ERROR] Local AI runtime installation failed: $($_.Exception.Message)"
     Write-Host "[INFO] Recovery hints:"
-    Write-Host "[INFO] - If the model download is too heavy, rerun with LOCAL_AI_SKIP_MODEL=1 (or choose option [2] in install_deps.bat)."
+    Write-Host "[INFO] - The model is fixed and cannot be skipped. Verify network/proxy settings and retry."
     Write-Host "[INFO] - If you see file lock errors, close YakuLingo/llama-server and retry: powershell -NoProfile -ExecutionPolicy Bypass -File packaging\\install_local_ai.ps1"
     Write-Host "[INFO] - If you are behind a corporate proxy, rerun packaging\\install_deps.bat and select proxy option [1]."
     if ($_.ScriptStackTrace) { Write-Host $_.ScriptStackTrace }

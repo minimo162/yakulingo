@@ -8,9 +8,9 @@ try {
     $proxy = $null
     $cred = $null
     if ($useProxy) {
-        if (-not $env:PROXY_SERVER) { throw 'USE_PROXY=1 but PROXY_SERVER is not set.' }
-        if (-not $env:PROXY_USER) { throw 'USE_PROXY=1 but PROXY_USER is not set.' }
-        if (-not $env:PROXY_PASS) { throw 'USE_PROXY=1 but PROXY_PASS is not set.' }
+        if (-not $env:PROXY_SERVER) { throw 'USE_PROXY=1 but PROXY_SERVER is not set. Rerun packaging\install_deps.bat and select proxy option [1].' }
+        if (-not $env:PROXY_USER) { throw 'USE_PROXY=1 but PROXY_USER is not set. Rerun packaging\install_deps.bat and select proxy option [1].' }
+        if (-not $env:PROXY_PASS) { throw 'USE_PROXY=1 but PROXY_PASS is not set. Rerun packaging\install_deps.bat and select proxy option [1].' }
         $proxy = 'http://' + $env:PROXY_SERVER
         $secPwd = ConvertTo-SecureString $env:PROXY_PASS -AsPlainText -Force
         $cred = New-Object System.Management.Automation.PSCredential ($env:PROXY_USER, $secPwd)
@@ -50,6 +50,11 @@ try {
         $outDir = Split-Path -Parent $outFile
         if ($outDir) { New-Item -ItemType Directory -Force -Path $outDir | Out-Null }
 
+        $leaf = Split-Path -Leaf $outFile
+        if ($timeoutSec -ge 600 -or $leaf -match '\.(gguf|zip)(\.partial)?$') {
+            Write-Host "[INFO] Download start: $leaf (timeout=${timeoutSec}s)"
+        }
+
         if (-not $useProxy) {
             $curl = Get-Command curl.exe -ErrorAction SilentlyContinue
             if ($curl) {
@@ -73,6 +78,7 @@ try {
                     '--max-time', "$timeoutSec"
                 )
                 if (Test-Path $outFile) {
+                    Write-Host "[INFO] Resuming download with curl: $leaf"
                     $args += @('--continue-at', '-')
                 }
                 $args += @('--output', $outFile, $url)
@@ -104,6 +110,7 @@ try {
                 return
             } catch {
                 $lastError = $_
+                Write-Host "[WARNING] Download failed (attempt $attempt/$attempts): $leaf ($($_.Exception.Message))"
                 if ($attempt -ge $attempts) { break }
                 Start-Sleep -Seconds ([Math]::Min(30, 2 * $attempt))
             }
@@ -206,6 +213,40 @@ try {
     if ($llamaVariant -ne 'vulkan') { $llamaVariant = 'cpu' }
     $llamaVariantDir = if ($llamaVariant -eq 'vulkan') { $llamaVulkanDir } else { $llamaAvx2Dir }
     $llamaLabel = if ($llamaVariant -eq 'vulkan') { 'Vulkan(x64)' } else { 'CPU(x64)' }
+
+    Write-Host "[INFO] Local AI install root: $root"
+    $proxyLabel = if ($useProxy) { 'enabled' } else { 'disabled' }
+    Write-Host "[INFO] Proxy: $proxyLabel"
+    if ($useProxy) { Write-Host "[INFO] Proxy server: $proxy" }
+    $skipLabel = if ($skipModel) { 'yes' } else { 'no' }
+    Write-Host "[INFO] Skip model: $skipLabel"
+    Write-Host "[INFO] llama.cpp variant: $llamaVariant ($llamaLabel)"
+
+    function Move-FileWithRetry([string]$src, [string]$dst, [string]$label, [switch]$StopLlama) {
+        if (-not (Test-Path $src)) { throw "Source file not found for ${label}: $src" }
+        $stoppedOnce = $false
+        for ($attempt = 1; $attempt -le 3; $attempt++) {
+            try {
+                Move-Item -Force -Path $src -Destination $dst -ErrorAction Stop
+                return
+            } catch {
+                if ($StopLlama -and -not $stoppedOnce) {
+                    $stoppedOnce = $true
+                    $null = Stop-LocalLlamaProcesses $llamaDir
+                }
+                Start-Sleep -Milliseconds (500 * $attempt)
+            }
+        }
+
+        try {
+            Copy-Item -Force -Path $src -Destination $dst -ErrorAction Stop
+            Remove-Item -Force -Path $src -ErrorAction SilentlyContinue
+            return
+        } catch {
+        }
+
+        throw "Failed to move $label to destination (file may be locked): $dst"
+    }
 
     function Get-ChildPathSafe([string]$baseDir, [string]$relativePath) {
         if ([string]::IsNullOrWhiteSpace($relativePath)) { throw 'Path must not be empty.' }
@@ -565,7 +606,7 @@ try {
 
                 $generatedPath = Join-Path $modelsDir "$modelBaseName.$modelQuant.gguf"
                 if ((Test-Path $generatedPath) -and ($generatedPath -ne $modelPath)) {
-                    Move-Item -Force -Path $generatedPath -Destination $modelPath
+                    Move-FileWithRetry -src $generatedPath -dst $modelPath -label 'quantized model' -StopLlama
                 }
 
                 if (-not (Test-Path $modelPath) -or ((Get-Item $modelPath).Length -le 0)) {
@@ -574,10 +615,18 @@ try {
                 $downloadedModel = $true
             }
         } else {
+            if ((Test-Path $modelPath) -and ((Get-Item $modelPath).Length -gt 0) -and (Test-Path $modelTempPath)) {
+                Write-Host "[WARNING] Found stale partial file next to existing model; removing: $(Split-Path -Leaf $modelTempPath)"
+                Remove-Item -Force -Path $modelTempPath -ErrorAction SilentlyContinue
+            }
+
             if (Test-Path $modelTempPath) {
                 Write-Host "[INFO] Resuming partial model download: $(Split-Path -Leaf $modelTempPath)"
                 Invoke-Download $modelUrl $modelTempPath 14400
-                Move-Item -Force -Path $modelTempPath -Destination $modelPath
+                if (-not (Test-Path $modelTempPath) -or ((Get-Item $modelTempPath).Length -le 0)) {
+                    throw "Model download did not produce a valid file: $modelTempPath"
+                }
+                Move-FileWithRetry -src $modelTempPath -dst $modelPath -label 'model' -StopLlama
                 $downloadedModel = $true
             } else {
                 $hasModel = (Test-Path $modelPath) -and ((Get-Item $modelPath).Length -gt 0)
@@ -597,7 +646,10 @@ try {
                 } else {
                     Write-Host "[INFO] Downloading model: $modelRepo/$modelFile"
                     Invoke-Download $modelUrl $modelTempPath 14400
-                    Move-Item -Force -Path $modelTempPath -Destination $modelPath
+                    if (-not (Test-Path $modelTempPath) -or ((Get-Item $modelTempPath).Length -le 0)) {
+                        throw "Model download did not produce a valid file: $modelTempPath"
+                    }
+                    Move-FileWithRetry -src $modelTempPath -dst $modelPath -label 'model' -StopLlama
                     $downloadedModel = $true
                 }
             }
@@ -676,6 +728,10 @@ try {
     exit 0
 } catch {
     Write-Host "[ERROR] Local AI runtime installation failed: $($_.Exception.Message)"
+    Write-Host "[INFO] Recovery hints:"
+    Write-Host "[INFO] - If the model download is too heavy, rerun with LOCAL_AI_SKIP_MODEL=1 (or choose option [2] in install_deps.bat)."
+    Write-Host "[INFO] - If you see file lock errors, close YakuLingo/llama-server and retry: powershell -NoProfile -ExecutionPolicy Bypass -File packaging\\install_local_ai.ps1"
+    Write-Host "[INFO] - If you are behind a corporate proxy, rerun packaging\\install_deps.bat and select proxy option [1]."
     if ($_.ScriptStackTrace) { Write-Host $_.ScriptStackTrace }
     exit 1
 }

@@ -9,6 +9,19 @@ from yakulingo.config.settings import AppSettings
 from yakulingo.services import local_llama_server as lls
 
 
+_FIXED_MODEL_FILENAME = "HY-MT1.5-1.8B-Q4_K_M.gguf"
+
+
+def _install_fixed_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Path:
+    monkeypatch.setattr(lls, "_app_base_dir", lambda: tmp_path)
+    path = tmp_path / "local_ai" / "models" / _FIXED_MODEL_FILENAME
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"dummy")
+    return path
+
+
 def test_resolve_from_app_base_is_not_cwd_dependent(tmp_path: Path) -> None:
     original_cwd = Path.cwd()
     try:
@@ -46,8 +59,9 @@ def test_find_free_port_returns_none_when_exhausted(
 def test_ensure_ready_calls_reuse_before_scanning_ports(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    model_path = tmp_path / "model.gguf"
-    model_path.write_bytes(b"dummy")
+    fixed_model_path = _install_fixed_model(tmp_path, monkeypatch)
+    settings_model_path = tmp_path / "settings_model.gguf"
+    settings_model_path.write_bytes(b"dummy")
 
     server_dir = tmp_path / "llama_cpp"
     generic_dir = server_dir / "generic"
@@ -55,7 +69,7 @@ def test_ensure_ready_calls_reuse_before_scanning_ports(
     (generic_dir / "llama-server.exe").write_bytes(b"exe")
 
     settings = AppSettings(
-        local_ai_model_path=str(model_path),
+        local_ai_model_path=str(settings_model_path),
         local_ai_server_dir=str(server_dir),
         local_ai_port_base=4891,
         local_ai_port_max=4893,
@@ -106,13 +120,15 @@ def test_ensure_ready_calls_reuse_before_scanning_ports(
     assert runtime.host == "127.0.0.1"
     assert runtime.port == 4891
     assert calls == ["reuse", "find_port", "start"]
+    assert runtime.model_path == fixed_model_path
 
 
 def test_ensure_ready_does_not_scan_ports_when_reuse_succeeds(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    model_path = tmp_path / "model.gguf"
-    model_path.write_bytes(b"dummy")
+    fixed_model_path = _install_fixed_model(tmp_path, monkeypatch)
+    settings_model_path = tmp_path / "settings_model.gguf"
+    settings_model_path.write_bytes(b"dummy")
 
     server_dir = tmp_path / "llama_cpp"
     generic_dir = server_dir / "generic"
@@ -120,7 +136,7 @@ def test_ensure_ready_does_not_scan_ports_when_reuse_succeeds(
     (generic_dir / "llama-server.exe").write_bytes(b"exe")
 
     settings = AppSettings(
-        local_ai_model_path=str(model_path),
+        local_ai_model_path=str(settings_model_path),
         local_ai_server_dir=str(server_dir),
         local_ai_port_base=4891,
         local_ai_port_max=4893,
@@ -140,7 +156,7 @@ def test_ensure_ready_does_not_scan_ports_when_reuse_succeeds(
         model_id=None,
         server_exe_path=generic_dir / "llama-server.exe",
         server_variant="generic",
-        model_path=model_path,
+        model_path=fixed_model_path,
     )
 
     monkeypatch.setattr(manager, "_try_reuse", lambda state, **kwargs: reuse_runtime)
@@ -163,10 +179,10 @@ def test_ensure_ready_does_not_scan_ports_when_reuse_succeeds(
 def test_ensure_ready_falls_back_to_bundled_server_dir_when_custom_invalid(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    model_path = tmp_path / "model.gguf"
-    model_path.write_bytes(b"dummy")
+    _install_fixed_model(tmp_path, monkeypatch)
+    settings_model_path = tmp_path / "settings_model.gguf"
+    settings_model_path.write_bytes(b"dummy")
 
-    monkeypatch.setattr(lls, "_app_base_dir", lambda: tmp_path)
     monkeypatch.setattr(
         lls.LocalLlamaServerManager,
         "get_state_path",
@@ -184,7 +200,7 @@ def test_ensure_ready_falls_back_to_bundled_server_dir_when_custom_invalid(
     exe_path.write_bytes(b"exe")
 
     settings = AppSettings(
-        local_ai_model_path=str(model_path),
+        local_ai_model_path=str(settings_model_path),
         local_ai_server_dir="custom/invalid",
         local_ai_port_base=4891,
         local_ai_port_max=4893,
@@ -254,8 +270,9 @@ def test_resolve_server_exe_prefers_vulkan_variant(
 def test_ensure_ready_fast_path_uses_running_process(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    model_path = tmp_path / "model.gguf"
-    model_path.write_bytes(b"dummy")
+    fixed_model_path = _install_fixed_model(tmp_path, monkeypatch)
+    settings_model_path = tmp_path / "settings_model.gguf"
+    settings_model_path.write_bytes(b"dummy")
 
     server_dir = tmp_path / "llama_cpp"
     server_dir.mkdir(parents=True)
@@ -263,7 +280,7 @@ def test_ensure_ready_fast_path_uses_running_process(
     exe_path.write_bytes(b"exe")
 
     settings = AppSettings(
-        local_ai_model_path=str(model_path),
+        local_ai_model_path=str(settings_model_path),
         local_ai_server_dir=str(server_dir),
         local_ai_port_base=4891,
         local_ai_port_max=4893,
@@ -277,7 +294,7 @@ def test_ensure_ready_fast_path_uses_running_process(
         model_id=None,
         server_exe_path=exe_path,
         server_variant="direct",
-        model_path=model_path,
+        model_path=fixed_model_path,
     )
 
     class DummyProcess:
@@ -316,10 +333,11 @@ def test_ensure_ready_fast_path_uses_running_process(
 def test_ensure_ready_fast_path_skips_when_model_changes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    model_path = tmp_path / "model_old.gguf"
-    model_path.write_bytes(b"old")
-    new_model_path = tmp_path / "model_new.gguf"
-    new_model_path.write_bytes(b"new")
+    fixed_model_path = _install_fixed_model(tmp_path, monkeypatch)
+    old_model_path = tmp_path / "model_old.gguf"
+    old_model_path.write_bytes(b"old")
+    settings_model_path = tmp_path / "settings_model.gguf"
+    settings_model_path.write_bytes(b"new")
 
     server_dir = tmp_path / "llama_cpp"
     server_dir.mkdir(parents=True)
@@ -327,7 +345,7 @@ def test_ensure_ready_fast_path_skips_when_model_changes(
     exe_path.write_bytes(b"exe")
 
     settings = AppSettings(
-        local_ai_model_path=str(new_model_path),
+        local_ai_model_path=str(settings_model_path),
         local_ai_server_dir=str(server_dir),
         local_ai_port_base=4891,
         local_ai_port_max=4893,
@@ -341,7 +359,7 @@ def test_ensure_ready_fast_path_skips_when_model_changes(
         model_id=None,
         server_exe_path=exe_path,
         server_variant="direct",
-        model_path=model_path,
+        model_path=old_model_path,
     )
 
     class DummyProcess:
@@ -395,7 +413,35 @@ def test_ensure_ready_fast_path_skips_when_model_changes(
     runtime = manager.ensure_ready(settings)
 
     assert calls == ["reuse", "find_port", "start"]
-    assert runtime.model_path == new_model_path
+    assert runtime.model_path == fixed_model_path
+
+
+def test_resolve_model_path_uses_fixed_model_even_when_settings_differs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager = lls.LocalLlamaServerManager()
+    fixed_model_path = _install_fixed_model(tmp_path, monkeypatch)
+    settings_model_path = tmp_path / "settings_model.gguf"
+    settings_model_path.write_bytes(b"dummy")
+
+    settings = AppSettings(local_ai_model_path=str(settings_model_path))
+    resolved = manager._resolve_model_path(settings)
+
+    assert resolved == fixed_model_path
+
+
+def test_resolve_model_path_returns_none_when_fixed_missing_even_if_settings_exists(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager = lls.LocalLlamaServerManager()
+    monkeypatch.setattr(lls, "_app_base_dir", lambda: tmp_path)
+    settings_model_path = tmp_path / "settings_model.gguf"
+    settings_model_path.write_bytes(b"dummy")
+
+    settings = AppSettings(local_ai_model_path=str(settings_model_path))
+    resolved = manager._resolve_model_path(settings)
+
+    assert resolved is None
 
 
 def test_build_server_args_adds_batch_flags_when_available(

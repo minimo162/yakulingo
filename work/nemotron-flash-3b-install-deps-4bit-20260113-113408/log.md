@@ -25,3 +25,16 @@
   - `uv sync --extra test`
   - `uv run python -m compileall yakulingo`
   - `uv run --extra test pytest`（112 passed）
+
+### 2026-01-13 task-02（install_local_ai 既定モデル）
+- ブランチ: `case-nemotron-flash-3b-install-deps-4bit-20260113-113408-task-02-install-local-ai-defaults`
+- コミット: `f8d941e69393c898e1d934b2c557d671d7dbf6c1`
+- 変更点: `packaging/install_local_ai.ps1` の既定モデルを Nemotron（HF→GGUF→4bit）へ更新し、`kind=hf` の生成GGUF名を `Nemotron-Flash-3B-Instruct.Q4_K_M.gguf` に統一
+- 互換性: `kind=gguf` を明示した場合で repo/file 未指定のときは、従来通り既知のGGUF（Shisa）へフォールバックして回帰を避ける
+- 検証:
+  - `uv sync`
+  - `uv sync --extra test`
+  - `uv run python -m compileall yakulingo`
+  - `uv run --extra test pytest`（112 passed）
+- フォローアップ:
+  - `config/settings.template.json` / `yakulingo/config/settings.py` の `local_ai_model_path` は task-03 で Nemotron のGGUF名へ更新して整合させる

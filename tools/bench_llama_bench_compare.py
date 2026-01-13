@@ -161,7 +161,7 @@ def main() -> int:
 
     repo_root = _repo_root()
     default_model = (
-        repo_root / "local_ai" / "models" / "shisa-v2.1-qwen3-8B-UD-IQ3_XXS.gguf"
+        repo_root / "local_ai" / "models" / "HY-MT1.5-1.8B-Q4_K_M.gguf"
     )
     model_path = args.model_path or default_model
 

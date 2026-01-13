@@ -332,7 +332,7 @@ class AppSettings:
 
     # Local AI (llama.cpp llama-server) - M1 minimal settings
     # NOTE: Host is forced to 127.0.0.1 for security (no external exposure).
-    local_ai_model_path: str = "local_ai/models/Nemotron-Flash-3B-Instruct.Q4_K_M.gguf"
+    local_ai_model_path: str = "local_ai/models/HY-MT1.5-1.8B-Q4_K_M.gguf"
     local_ai_server_dir: str = "local_ai/llama_cpp"
     local_ai_host: str = "127.0.0.1"
     local_ai_port_base: int = 4891

@@ -40,7 +40,7 @@ def test_read_model_architectures_reads_config_json(tmp_path: Path) -> None:
     assert module._read_model_architectures(tmp_path) == ["NemotronFlashForCausalLM"]
 
 
-def test_unsupported_arch_message_includes_gguf_env_hints(tmp_path: Path) -> None:
+def test_unsupported_arch_message_includes_gguf_recovery_hints(tmp_path: Path) -> None:
     module = _load_tool_module()
 
     msg = module._format_unsupported_arch_message(
@@ -52,6 +52,6 @@ def test_unsupported_arch_message_includes_gguf_env_hints(tmp_path: Path) -> Non
         registered_count=123,
     )
 
-    assert "LOCAL_AI_MODEL_KIND=gguf" in msg
-    assert "LOCAL_AI_MODEL_REPO" in msg
-    assert "LOCAL_AI_MODEL_FILE" in msg
+    assert "prebuilt GGUF" in msg
+    assert "local_ai/models/" in msg
+    assert ".gguf" in msg

@@ -668,39 +668,13 @@ class LocalLlamaServerManager:
                 pass
 
     def _resolve_model_path(self, settings: AppSettings) -> Optional[Path]:
-        raw = (settings.local_ai_model_path or "").strip()
-        candidates: list[Path] = []
-        if raw:
-            candidates.append(_resolve_from_app_base(raw))
-        candidates.append(
-            _app_base_dir() / "local_ai" / "models" / "AgentCPM-Explore.Q4_K_M.gguf"
-        )
-        candidates.append(
+        fixed = (
             _app_base_dir()
             / "local_ai"
             / "models"
-            / "shisa-v2.1-qwen3-8B-UD-IQ3_XXS.gguf"
+            / "HY-MT1.5-1.8B-Q4_K_M.gguf"
         )
-        # Compatibility fallback for installs that still have older models.
-        candidates.append(
-            _app_base_dir()
-            / "local_ai"
-            / "models"
-            / "Llama-3.2-3B-Instruct-UD-Q4_K_XL.gguf"
-        )
-        candidates.append(
-            _app_base_dir()
-            / "local_ai"
-            / "models"
-            / "LFM2.5-1.2B-Instruct-UD-Q4_K_XL.gguf"
-        )
-        candidates.append(
-            _app_base_dir() / "local_ai" / "models" / "GLM-4.6V-Flash-IQ4_XS.gguf"
-        )
-        for candidate in candidates:
-            if candidate.is_file():
-                return candidate
-        return None
+        return fixed if fixed.is_file() else None
 
     def _resolve_server_dir(self, settings: AppSettings) -> Path:
         raw = (settings.local_ai_server_dir or "").strip()

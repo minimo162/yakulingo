@@ -11,7 +11,7 @@ import threading
 from decimal import Decimal, InvalidOperation
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import Any, Optional, Sequence, cast
 
 from yakulingo.config.settings import AppSettings
 from yakulingo.services.prompt_builder import PromptBuilder
@@ -353,7 +353,7 @@ class LocalPromptBuilder:
                     total = 0
                     for page in doc:
                         total, truncated = add_chunk(
-                            chunks, page.get_text("text"), total
+                            chunks, cast(str, page.get_text("text")), total
                         )
                         if truncated:
                             break
@@ -364,7 +364,7 @@ class LocalPromptBuilder:
             if suffix == ".docx":
                 from docx import Document
 
-                doc = Document(path)
+                doc = Document(str(path))
                 chunks = []
                 total = 0
                 for para in doc.paragraphs:
@@ -429,7 +429,7 @@ class LocalPromptBuilder:
             if suffix == ".pptx":
                 from pptx import Presentation
 
-                pres = Presentation(path)
+                pres = Presentation(str(path))
                 chunks = []
                 total = 0
                 for slide in pres.slides:
@@ -439,7 +439,9 @@ class LocalPromptBuilder:
                         if total >= max_chars:
                             break
                         if getattr(shape, "has_text_frame", False):
-                            total, truncated = add_chunk(chunks, shape.text, total)
+                            total, truncated = add_chunk(
+                                chunks, cast(Any, shape).text, total
+                            )
                             if truncated:
                                 break
                 return "".join(chunks).strip()

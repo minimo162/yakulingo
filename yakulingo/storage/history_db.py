@@ -177,7 +177,8 @@ class HistoryDB:
                     ),
                 )
                 conn.commit()
-                return cursor.lastrowid
+                lastrowid = cursor.lastrowid
+                return int(lastrowid) if isinstance(lastrowid, int) else -1
         except sqlite3.Error as e:
             logger.warning("Failed to add history entry: %s", e)
             return -1

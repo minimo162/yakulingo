@@ -1,0 +1,35 @@
+{
+  "venvPath": ".",
+  "venv": ".venv",
+  "pythonVersion": "3.11",
+  "typeCheckingMode": "basic",
+  "include": [
+    "yakulingo/config",
+    "yakulingo/models",
+    "yakulingo/storage",
+    "yakulingo/services/local_ai_client.py",
+    "yakulingo/services/local_ai_prompt_builder.py",
+    "yakulingo/services/local_llama_server.py",
+    "yakulingo/services/updater.py"
+  ],
+  "exclude": [
+    "**/__pycache__",
+    ".git",
+    ".playwright-browsers",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".tmp",
+    ".uv-cache",
+    ".uv-python",
+    ".venv",
+    "local_ai",
+    "packaging",
+    "prompts",
+    "share_package",
+    "tests",
+    "tools",
+    "yakulingo/ui",
+    "app.py",
+    "debug_layout.py"
+  ]
+}

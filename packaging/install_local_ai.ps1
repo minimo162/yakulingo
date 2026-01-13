@@ -309,11 +309,16 @@ try {
         }
     }
 
-    $defaultModelRepo = 'dahara1/shisa-v2.1-qwen3-8b-UD-japanese-imatrix'
-    $defaultModelFile = 'shisa-v2.1-qwen3-8B-UD-IQ3_XXS.gguf'
+    # Default model for new installs:
+    # - kind=hf: build quantized GGUF from HF (Nemotron)
+    # - kind=gguf: keep a known-working direct-download default (Shisa) when user explicitly selects gguf without repo/file.
+    $defaultModelRepo = 'nvidia/Nemotron-Flash-3B-Instruct'
+    $defaultModelFile = 'Nemotron-Flash-3B-Instruct.Q4_K_M.gguf'
     $defaultModelRevision = 'main'
-    $defaultModelKind = 'gguf'  # gguf (default) | hf (HF -> GGUF -> quantize)
+    $defaultModelKind = 'hf'  # gguf (direct download) | hf (HF -> GGUF -> quantize)
     $defaultModelQuant = 'Q4_K_M'
+    $fallbackGgufRepo = 'dahara1/shisa-v2.1-qwen3-8b-UD-japanese-imatrix'
+    $fallbackGgufFile = 'shisa-v2.1-qwen3-8B-UD-IQ3_XXS.gguf'
     $manifestModelRepo = $null
     $manifestModelFile = $null
     $manifestModelRevision = $null
@@ -353,10 +358,15 @@ try {
     if ($env:LOCAL_AI_MODEL_REVISION) { $modelRevision = $env:LOCAL_AI_MODEL_REVISION }
     if ($env:LOCAL_AI_MODEL_KIND) { $modelKind = $env:LOCAL_AI_MODEL_KIND }
     $modelKind = ([string]$modelKind).Trim().ToLowerInvariant()
-    if ($modelKind -ne 'gguf' -and $modelKind -ne 'hf') { $modelKind = 'gguf' }
+    if ($modelKind -ne 'gguf' -and $modelKind -ne 'hf') { $modelKind = $defaultModelKind }
 
     $modelRevision = ([string]$modelRevision).Trim()
     if ([string]::IsNullOrWhiteSpace($modelRevision)) { $modelRevision = 'main' }
+
+    if ($modelKind -eq 'gguf') {
+        if ((-not $env:LOCAL_AI_MODEL_REPO) -and (-not $manifestModelRepo)) { $modelRepo = $fallbackGgufRepo }
+        if ((-not $env:LOCAL_AI_MODEL_FILE) -and (-not $manifestModelFile)) { $modelFile = $fallbackGgufFile }
+    }
 
     $modelQuant = $defaultModelQuant
     $modelQuantWasExplicit = $false
@@ -390,12 +400,6 @@ try {
         $modelBaseName = [regex]::Replace([string]$modelBaseName, '[\\\\/:*?\"<>|]', '-')
         $modelBaseName = ([string]$modelBaseName).Trim()
         if ([string]::IsNullOrWhiteSpace($modelBaseName)) { $modelBaseName = 'model' }
-
-        # If user did not override the repo, default to AgentCPM-Explore when kind=hf.
-        if ((-not $env:LOCAL_AI_MODEL_REPO) -and (-not $manifestModelRepo) -and ($modelRepo -eq $defaultModelRepo)) {
-            $modelRepo = 'openbmb/AgentCPM-Explore'
-            $modelBaseName = 'AgentCPM-Explore'
-        }
 
         if (-not $env:LOCAL_AI_MODEL_FILE) {
             $modelFile = "$modelBaseName.$modelQuant.gguf"

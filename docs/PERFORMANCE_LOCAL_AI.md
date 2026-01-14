@@ -150,7 +150,7 @@ uv run python tools/bench_local_ai.py --mode warm \
 
 # モデル・サーバディレクトリの指定
 uv run python tools/bench_local_ai.py --mode warm \
-  --model-path local_ai/models/HY-MT1.5-7B-Q4_K_M.gguf \
+  --model-path local_ai/models/HY-MT1.5-1.8B-Q4_K_M.gguf \
   --server-dir local_ai/llama_cpp --json
 
 # max_tokens を無効化（0以下でNone扱い）
@@ -236,7 +236,7 @@ uv run python tools/bench_llama_bench_compare.py --format markdown \
 ```bash
 uv run python tools/bench_llama_bench_compare.py \
   --server-dir local_ai/llama_cpp \
-  --model-path local_ai/models/HY-MT1.5-7B-Q4_K_M.gguf \
+  --model-path local_ai/models/HY-MT1.5-1.8B-Q4_K_M.gguf \
   --pg 2048,256 -r 3 \
   --device Vulkan0 --n-gpu-layers all \
   --extra-args -b 2048 -ub 512 -fa 0

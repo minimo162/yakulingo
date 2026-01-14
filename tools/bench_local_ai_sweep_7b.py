@@ -560,7 +560,7 @@ def main() -> int:
     out_dir = args.out_dir or (repo_root / ".tmp" / f"sweep-7b-{_timestamp_compact()}")
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    default_model = repo_root / "local_ai" / "models" / "HY-MT1.5-7B-Q4_K_M.gguf"
+    default_model = repo_root / "local_ai" / "models" / "HY-MT1.5-1.8B-Q4_K_M.gguf"
     model_path = args.model_path or default_model
 
     cpu_dir = args.cpu_server_dir or (repo_root / "local_ai" / "llama_cpp" / "avx2")

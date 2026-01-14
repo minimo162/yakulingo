@@ -426,8 +426,8 @@ cd local_ai\llama_cpp\vulkan
 ```bash
 echo 'FROM hf.co/tencent/HY-MT1.5-1.8B-GGUF:Q8_0
 TEMPLATE """<｜hy_begin▁of▁sentence｜>{{ if .System }}{{ .System }}<｜hy_place▁holder▁no▁3｜>{{ end }}{{ if .Prompt }}<｜hy_User｜>{{ .Prompt }}{{ end }}<｜hy_Assistant｜>"""' > Modelfile
-ollama create hy-mt1.5-7b -f Modelfile
-ollama run hy-mt1.5-7b
+ollama create hy-mt1.5-1.8b -f Modelfile
+ollama run hy-mt1.5-1.8b
 ```
 
 **ローカルAIの速度チューニング（開発者向け）**:

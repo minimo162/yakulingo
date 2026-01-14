@@ -3,8 +3,8 @@
 本書は過去に「ローカルAIモデルを openbmb/AgentCPM-Explore に切り替える」ことを検討した設計メモです。
 
 ## 現行仕様（重要）
-- ローカルAIの翻訳モデルは固定です: `tencent/HY-MT1.5-7B-GGUF/HY-MT1.5-7B-Q4_K_M.gguf`
-- 配置先は `local_ai/models/HY-MT1.5-7B-Q4_K_M.gguf` です。
+- ローカルAIの翻訳モデルは固定です: `tencent/HY-MT1.5-1.8B-GGUF/HY-MT1.5-1.8B-Q4_K_M.gguf`
+- 配置先は `local_ai/models/HY-MT1.5-1.8B-Q4_K_M.gguf` です。
 - `LOCAL_AI_MODEL_*` / `LOCAL_AI_MODEL_KIND` によるモデル切り替え（および `manifest.json` による選択）は行いません。
 
 以降の内容は「過去メモ」として残しています（運用手順/SSOTとしては使用しないでください）。

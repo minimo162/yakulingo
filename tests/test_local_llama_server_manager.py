@@ -593,6 +593,131 @@ def test_build_server_args_adds_gpu_flags_when_available(
     assert "--no-warmup" in args
 
 
+def test_build_server_args_supports_string_ngl_and_skips_flash_attn_auto(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager = lls.LocalLlamaServerManager()
+    server_exe_path = tmp_path / "llama-server.exe"
+    server_exe_path.write_bytes(b"exe")
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"model")
+
+    help_text = "\n".join(
+        [
+            "-m, --model",
+            "--ctx-size",
+            "--threads",
+            "--temp",
+            "--n-predict",
+            "--device",
+            "-ngl, --n-gpu-layers",
+            "-fa, --flash-attn",
+            "-ctk, --cache-type-k",
+            "-ctv, --cache-type-v",
+            "--no-warmup",
+        ]
+    )
+
+    class DummyCompleted:
+        def __init__(self, stdout: str) -> None:
+            self.stdout = stdout
+
+    def fake_run(*args, **kwargs):
+        return DummyCompleted(help_text)
+
+    monkeypatch.setattr(lls.subprocess, "run", fake_run)
+
+    settings = AppSettings(
+        local_ai_device="Vulkan0",
+        local_ai_n_gpu_layers="all",
+        local_ai_flash_attn="auto",
+        local_ai_cache_type_k=None,
+        local_ai_cache_type_v=None,
+    )
+    settings._validate()
+
+    args = manager._build_server_args(
+        server_exe_path=server_exe_path,
+        server_variant="vulkan",
+        model_path=model_path,
+        host="127.0.0.1",
+        port=4891,
+        settings=settings,
+    )
+
+    assert "--device" in args
+    assert args[args.index("--device") + 1] == "Vulkan0"
+    assert "--n-gpu-layers" in args
+    assert args[args.index("--n-gpu-layers") + 1] == "all"
+    assert "-fa" not in args
+    assert "--flash-attn" not in args
+    assert "--flash-attention" not in args
+    assert "--cache-type-k" not in args
+    assert "-ctk" not in args
+    assert "--cache-type-v" not in args
+    assert "-ctv" not in args
+
+
+def test_build_server_args_skips_gpu_flags_without_help(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager = lls.LocalLlamaServerManager()
+    server_exe_path = tmp_path / "llama-server.exe"
+    server_exe_path.write_bytes(b"exe")
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"model")
+
+    help_text = "\n".join(
+        [
+            "-m, --model",
+            "--ctx-size",
+            "--threads",
+            "--temp",
+            "--n-predict",
+        ]
+    )
+
+    class DummyCompleted:
+        def __init__(self, stdout: str) -> None:
+            self.stdout = stdout
+
+    def fake_run(*args, **kwargs):
+        return DummyCompleted(help_text)
+
+    monkeypatch.setattr(lls.subprocess, "run", fake_run)
+
+    settings = AppSettings(
+        local_ai_device="Vulkan0",
+        local_ai_n_gpu_layers=99,
+        local_ai_flash_attn="1",
+        local_ai_no_warmup=True,
+        local_ai_cache_type_k="q8_0",
+        local_ai_cache_type_v="q8_0",
+    )
+    settings._validate()
+
+    args = manager._build_server_args(
+        server_exe_path=server_exe_path,
+        server_variant="vulkan",
+        model_path=model_path,
+        host="127.0.0.1",
+        port=4891,
+        settings=settings,
+    )
+
+    assert "--device" not in args
+    assert "--n-gpu-layers" not in args
+    assert "-ngl" not in args
+    assert "-fa" not in args
+    assert "--flash-attn" not in args
+    assert "--flash-attention" not in args
+    assert "--cache-type-k" not in args
+    assert "-ctk" not in args
+    assert "--cache-type-v" not in args
+    assert "-ctv" not in args
+    assert "--no-warmup" not in args
+
+
 def test_build_server_args_cpu_only_forces_device_and_ngl(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

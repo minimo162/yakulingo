@@ -112,3 +112,41 @@ def test_response_format_cache_applies_to_streaming() -> None:
     assert "response_format" in calls[0]
     assert "response_format" not in calls[1]
     assert "response_format" not in calls[2]
+
+
+def test_build_chat_payload_can_skip_sampling_params() -> None:
+    client = LocalAIClient(AppSettings())
+    runtime = _make_runtime()
+    payload = client._build_chat_payload(
+        runtime,
+        "prompt",
+        stream=False,
+        enforce_json=False,
+        include_sampling_params=False,
+    )
+    assert payload["messages"] == [
+        {"role": "user", "content": "prompt"},
+    ]
+    assert payload["temperature"] == 0.7
+    assert "top_p" not in payload
+    assert "top_k" not in payload
+    assert "min_p" not in payload
+    assert "repeat_penalty" not in payload
+
+
+def test_build_chat_payload_omits_sampling_params_when_none() -> None:
+    settings = AppSettings(
+        local_ai_top_p=None,
+        local_ai_top_k=None,
+        local_ai_min_p=None,
+        local_ai_repeat_penalty=None,
+    )
+    settings._validate()
+    client = LocalAIClient(settings)
+    runtime = _make_runtime()
+    payload = client._build_chat_payload(
+        runtime, "prompt", stream=False, enforce_json=False
+    )
+    assert payload["temperature"] == 0.7
+    for key in ("top_p", "top_k", "min_p", "repeat_penalty"):
+        assert key not in payload

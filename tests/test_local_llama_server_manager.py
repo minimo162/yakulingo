@@ -267,6 +267,30 @@ def test_resolve_server_exe_prefers_vulkan_variant(
     assert exe_path == server_dir / "vulkan" / "llama-server.exe"
 
 
+def test_resolve_server_exe_direct_variant_uses_variant(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server_dir = tmp_path / "llama_cpp" / "vulkan"
+    server_dir.mkdir(parents=True, exist_ok=True)
+    (server_dir / "llama-server.exe").write_bytes(b"exe")
+
+    state_path = tmp_path / "state.json"
+    lls._atomic_write_json(state_path, {"server_variant": "avx2"})
+
+    monkeypatch.setattr(lls, "_probe_executable_supported", lambda path: True)
+    monkeypatch.setattr(
+        lls.LocalLlamaServerManager,
+        "get_state_path",
+        staticmethod(lambda: state_path),
+    )
+
+    manager = lls.LocalLlamaServerManager()
+    exe_path, variant = manager._resolve_server_exe(server_dir)
+
+    assert variant == "vulkan"
+    assert exe_path == server_dir / "llama-server.exe"
+
+
 def test_ensure_ready_fast_path_uses_running_process(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

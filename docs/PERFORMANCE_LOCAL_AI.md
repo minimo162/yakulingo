@@ -15,6 +15,7 @@
   - 同梱する場合: 新規インストールは Vulkan(x64) が既定。CPU版にしたい場合は `LOCAL_AI_LLAMA_CPP_VARIANT=cpu` を設定して `packaging/install_deps.bat` を実行（既存 `manifest.json` がある場合はその設定を優先し、切り替えは `LOCAL_AI_LLAMA_CPP_VARIANT` で上書き）
   - Vulkan が起動しない/ドライバ起因で失敗する場合も、同様に `LOCAL_AI_LLAMA_CPP_VARIANT=cpu` を指定して再インストールする（または `packaging/install_local_ai.ps1` を再実行する）
   - 展開先の例: `local_ai/llama_cpp/vulkan/`
+  - `local_ai_server_dir` に `.../vulkan` を直指定した場合も Vulkan として扱われる（`runtime.server_variant` で確認）
 - 展開したフォルダでデバイスを確認
 ```powershell
 .\llama-cli.exe --version

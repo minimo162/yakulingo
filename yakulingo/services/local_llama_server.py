@@ -688,16 +688,31 @@ class LocalLlamaServerManager:
         preferred_variant = preferred if isinstance(preferred, str) else None
 
         candidates: list[tuple[str, Path]] = []
-        if (server_dir / "vulkan").is_dir():
-            candidates.append(("vulkan", server_dir / "vulkan"))
-        if (server_dir / "avx2").is_dir():
-            candidates.append(("avx2", server_dir / "avx2"))
-        if (server_dir / "generic").is_dir():
-            candidates.append(("generic", server_dir / "generic"))
+        direct_variant = server_dir.name.lower()
+        base_dir = server_dir
+        direct_variant_applied = False
+        if direct_variant in ("vulkan", "avx2", "generic"):
+            candidates.append((direct_variant, server_dir))
+            base_dir = server_dir.parent
+            direct_variant_applied = True
 
-        candidates.append(("direct", server_dir))
+        if (base_dir / "vulkan").is_dir():
+            candidate = base_dir / "vulkan"
+            if candidate != server_dir:
+                candidates.append(("vulkan", candidate))
+        if (base_dir / "avx2").is_dir():
+            candidate = base_dir / "avx2"
+            if candidate != server_dir:
+                candidates.append(("avx2", candidate))
+        if (base_dir / "generic").is_dir():
+            candidate = base_dir / "generic"
+            if candidate != server_dir:
+                candidates.append(("generic", candidate))
 
-        if preferred_variant:
+        if not direct_variant_applied:
+            candidates.append(("direct", server_dir))
+
+        if preferred_variant and not direct_variant_applied:
             candidates = sorted(
                 candidates, key=lambda item: 0 if item[0] == preferred_variant else 1
             )

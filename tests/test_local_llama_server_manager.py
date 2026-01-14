@@ -9,7 +9,7 @@ from yakulingo.config.settings import AppSettings
 from yakulingo.services import local_llama_server as lls
 
 
-_FIXED_MODEL_FILENAME = "HY-MT1.5-1.8B-Q4_K_M.gguf"
+_FIXED_MODEL_FILENAME = "HY-MT1.5-7B-Q4_K_M.gguf"
 
 
 def _install_fixed_model(

@@ -332,7 +332,7 @@ class AppSettings:
 
     # Local AI (llama.cpp llama-server) - M1 minimal settings
     # NOTE: Host is forced to 127.0.0.1 for security (no external exposure).
-    local_ai_model_path: str = "local_ai/models/HY-MT1.5-1.8B-Q4_K_M.gguf"
+    local_ai_model_path: str = "local_ai/models/HY-MT1.5-7B-Q4_K_M.gguf"
     local_ai_server_dir: str = "local_ai/llama_cpp"
     local_ai_host: str = "127.0.0.1"
     local_ai_port_base: int = 4891
@@ -340,7 +340,7 @@ class AppSettings:
     local_ai_ctx_size: int = 2048
     local_ai_threads: int = 0  # 0=auto
     local_ai_temperature: float = 0.7
-    local_ai_top_p: Optional[float] = 0.8
+    local_ai_top_p: Optional[float] = 0.6
     local_ai_top_k: Optional[int] = 20
     local_ai_min_p: Optional[float] = 0.01
     local_ai_repeat_penalty: Optional[float] = 1.05
@@ -888,15 +888,15 @@ class AppSettings:
                 top_p = float(self.local_ai_top_p)
             except (TypeError, ValueError):
                 logger.warning(
-                    "local_ai_top_p invalid (%s), resetting to 0.8", self.local_ai_top_p
+                    "local_ai_top_p invalid (%s), resetting to 0.6", self.local_ai_top_p
                 )
-                self.local_ai_top_p = 0.8
+                self.local_ai_top_p = 0.6
             else:
                 if top_p < 0.0 or top_p > 1.0:
                     logger.warning(
-                        "local_ai_top_p out of range (%.3f), resetting to 0.8", top_p
+                        "local_ai_top_p out of range (%.3f), resetting to 0.6", top_p
                     )
-                    self.local_ai_top_p = 0.8
+                    self.local_ai_top_p = 0.6
                 else:
                     self.local_ai_top_p = top_p
 

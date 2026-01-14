@@ -35,6 +35,7 @@
 > **Note**: `local_ai_*` は `user_settings.json` には保存されません。恒久的な変更は `config/settings.template.json` を更新し、ベンチの一時上書きは CLI で行います。
 > **Note**: 既定値は `local_ai_device=none` / `local_ai_n_gpu_layers=0` / `local_ai_ctx_size=2048`。長文や安定性を優先したい場合は `local_ai_ctx_size=4096`（さらに必要なら `8192`）を指定します。Vulkan(iGPU) を使う場合は `Vulkan0` / `99`（または `auto` / `all`）を設定します。速度優先で `-ngl 16` にする場合は `local_ai_n_gpu_layers=16` を指定します。
 > **Note**: プロキシ環境では `NO_PROXY=127.0.0.1,localhost` を自動補完し、ローカル API がプロキシ経由にならないようにします。
+> **Note**: Vulkan 設定の反映確認は、ベンチ JSON の `runtime.server_variant` と `~/.yakulingo/logs/startup.log` の `Local AI offload flags` で確認できます。
 
 ## 7B向けチューニング優先順位（まず試す）
 この項は 7B / Q4_K_M を前提にした **短時間で効きやすい順**のガイドです。iGPU/UMA 環境では特に「実測が前提」になります。

@@ -24,7 +24,7 @@ if "!STEP7_FROM_INSTALL_DEPS!"=="0" (
 
 echo.
 echo [7/7] Installing Local AI runtime (llama.cpp + fixed HY-MT model)...
-echo [INFO] Model is fixed: tencent/HY-MT1.5-7B-GGUF/HY-MT1.5-7B-Q4_K_M.gguf
+echo [INFO] Model is fixed: tencent/HY-MT1.5-1.8B-GGUF/HY-MT1.5-1.8B-Q4_K_M.gguf
 echo [INFO] This step may download large files (llama.cpp + model; a few GB).
 
 echo.

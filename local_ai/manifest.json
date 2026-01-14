@@ -1,0 +1,32 @@
+﻿{
+    "generated_at":  "2026-01-14T21:40:38.4305567+09:00",
+    "llama_cpp":  {
+                      "repo":  "ggerganov/llama.cpp",
+                      "release_tag":  "b7731",
+                      "asset_name":  "llama-b7731-bin-win-vulkan-x64.zip",
+                      "download_url":  "https://github.com/ggml-org/llama.cpp/releases/download/b7731/llama-b7731-bin-win-vulkan-x64.zip",
+                      "server_exe_sha256":  "3148EEA9907DD5FEFB20D85B8376E11A3BA510E5FC03F5D171ACBB24388D8DF3",
+                      "variant":  "vulkan"
+                  },
+    "model":  {
+                  "repo":  "tencent/HY-MT1.5-1.8B-GGUF",
+                  "revision":  "main",
+                  "file":  "HY-MT1.5-1.8B-Q4_K_M.gguf",
+                  "download_url":  "https://huggingface.co/tencent/HY-MT1.5-1.8B-GGUF/resolve/main/HY-MT1.5-1.8B-Q4_K_M.gguf",
+                  "sha256":  "",
+                  "skipped":  false,
+                  "source":  {
+                                 "kind":  "gguf",
+                                 "repo":  "tencent/HY-MT1.5-1.8B-GGUF",
+                                 "revision":  "main",
+                                 "file":  "HY-MT1.5-1.8B-Q4_K_M.gguf",
+                                 "download_url":  "https://huggingface.co/tencent/HY-MT1.5-1.8B-GGUF/resolve/main/HY-MT1.5-1.8B-Q4_K_M.gguf"
+                             },
+                  "output":  {
+                                 "kind":  "gguf",
+                                 "path":  "local_ai/models/HY-MT1.5-1.8B-Q4_K_M.gguf",
+                                 "path_resolved":  "C:\\Users\\Administrator\\Desktop\\yakulingo\\local_ai\\models\\HY-MT1.5-1.8B-Q4_K_M.gguf",
+                                 "sha256":  ""
+                             }
+              }
+}

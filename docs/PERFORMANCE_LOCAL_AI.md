@@ -241,6 +241,24 @@ uv run python tools/bench_llama_bench_compare.py \
 
 > **Note**: 出力の `pp_lines` / `tg_lines` に速度行が入ります。`returncode` が非0の場合は `stderr` と `command` を確認してください。
 
+### 7B向け短時間スイープ（tools/bench_local_ai_sweep_7b.py）
+`tools/bench_local_ai.py` を **複数条件で連続実行**し、JSON とサマリ（Markdown）をまとめて出力します。
+結果は環境依存のため、**ケース運用では `/work/<case-id>/.tmp/` 配下へ保存し、リポジトリにはコミットしません**。
+
+```bash
+uv run python tools/bench_local_ai_sweep_7b.py \
+  --preset quick \
+  --out-dir /work/<case-id>/.tmp/sweep-7b-YYYYmmdd-HHMMSS
+```
+
+> **Note**: Vulkan(iGPU) で `ErrorOutOfDeviceMemory` が出る場合は、`--vk-force-max-allocation-size` を併用します（例: `268435456`=256MiB）。
+
+出力:
+- `summary.md`（比較用の表）
+- `summary.json`（メタ情報 + 行データ）
+- `*.json`（各 run の `tools/bench_local_ai.py` JSON）
+- `*.log.txt`（各 run の stdout/stderr）
+
 ### iGPU(UMA) 実測チューニングのポイント（Ryzen 5 PRO 6650U）
 UMA 環境では「全層オフロード（`-ngl 99`）」が最速とは限らず、メモリ帯域/共有メモリの影響で中間値の方が速いことがあります。
 今回の実測（`ctx=4096`/`flash_attn=auto`）では、`-ngl 16` が CPU-only を上回る最速でした。`flash_attn=0` は遅くなるため非推奨です。

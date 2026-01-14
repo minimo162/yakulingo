@@ -89,6 +89,9 @@ uv run python tools/bench_local_ai.py --mode cold --json
 - `options`: 3スタイル比較時の件数
 - `settings.*`: 有効化された `local_ai_*` の値
 - `similarity` / `similarity_by_style`: `--gold` 指定時の簡易類似度（SequenceMatcher）
+- `git.*`: リポジトリの commit / dirty（取得できる範囲）
+- `runtime.*`: OS / CPUコア数（physical/logical）
+- `versions.*`: `llama-server` / `llama-cli` の `--version`（取得できる範囲）
 
 ### JSON 出力
 ```bash

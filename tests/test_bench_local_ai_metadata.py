@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from yakulingo.config.settings import AppSettings
 from yakulingo.services.local_llama_server import LocalAIServerRuntime
 
@@ -66,5 +68,51 @@ def test_collect_server_metadata_resolves_paths_and_runtime(tmp_path: Path) -> N
         "server_variant": "vulkan",
         "model_path": str(tmp_path / "models" / "model.gguf"),
     }
+    assert metadata["llama_server_path"] == str(
+        tmp_path / "runtime" / "llama-server.exe"
+    )
+    assert metadata["llama_server_version"] is None
     assert metadata["llama_cli_path"] is None
     assert metadata["llama_cli_version"] is None
+
+
+def test_collect_git_metadata_includes_commit_and_dirty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+
+    class DummyCompleted:
+        def __init__(self, *, returncode: int, stdout: str) -> None:
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = ""
+
+    def fake_run(*args, **kwargs):
+        cmd = kwargs.get("args") or args[0]
+        if cmd == ["git", "rev-parse", "HEAD"]:
+            return DummyCompleted(
+                returncode=0, stdout="0123456789abcdef0123456789abcdef01234567\n"
+            )
+        if cmd == ["git", "rev-parse", "--short", "HEAD"]:
+            return DummyCompleted(returncode=0, stdout="0123456\n")
+        if cmd == ["git", "status", "--porcelain"]:
+            return DummyCompleted(returncode=0, stdout="")
+        raise AssertionError(f"unexpected git command: {cmd}")
+
+    monkeypatch.setattr(bench_local_ai.subprocess, "run", fake_run)
+
+    metadata = bench_local_ai._collect_git_metadata(repo_root)
+
+    assert metadata["commit"] == "0123456789abcdef0123456789abcdef01234567"
+    assert metadata["commit_short"] == "0123456"
+    assert metadata["dirty"] is False
+
+
+def test_collect_runtime_metadata_includes_cpu_counts() -> None:
+    metadata = bench_local_ai._collect_runtime_metadata()
+
+    assert "platform" in metadata
+    assert "python" in metadata
+    assert "cpu_physical_cores" in metadata
+    assert "cpu_logical_cores" in metadata

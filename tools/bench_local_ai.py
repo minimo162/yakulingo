@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 import difflib
 import json
+import os
+import platform
 import subprocess
 import sys
 import time
@@ -65,6 +67,72 @@ def _format_compare_output(options: list[Any]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def _collect_runtime_metadata() -> dict[str, Any]:
+    cpu_physical = None
+    cpu_logical = None
+    try:
+        import psutil  # type: ignore[import-not-found]
+
+        cpu_physical = psutil.cpu_count(logical=False)
+        cpu_logical = psutil.cpu_count(logical=True)
+    except Exception:
+        cpu_logical = os.cpu_count()
+
+    return {
+        "platform": platform.platform(aliased=True, terse=True),
+        "python": sys.version.split()[0],
+        "cpu_physical_cores": cpu_physical,
+        "cpu_logical_cores": cpu_logical,
+    }
+
+
+def _run_git_command(repo_root: Path, args: list[str]) -> str | None:
+    try:
+        completed = subprocess.run(
+            ["git", *args],
+            cwd=str(repo_root),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+        if completed.returncode != 0:
+            return None
+        output = (completed.stdout or "").strip()
+        return output or None
+    except Exception:
+        return None
+
+
+def _git_is_dirty(repo_root: Path) -> bool | None:
+    try:
+        completed = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=str(repo_root),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+        if completed.returncode != 0:
+            return None
+        return bool((completed.stdout or "").strip())
+    except Exception:
+        return None
+
+
+def _collect_git_metadata(repo_root: Path) -> dict[str, Any]:
+    return {
+        "commit": _run_git_command(repo_root, ["rev-parse", "HEAD"]),
+        "commit_short": _run_git_command(repo_root, ["rev-parse", "--short", "HEAD"]),
+        "dirty": _git_is_dirty(repo_root),
+    }
+
+
 def _run_version_command(exe_path: Path) -> str | None:
     if not exe_path.is_file():
         return None
@@ -81,6 +149,41 @@ def _run_version_command(exe_path: Path) -> str | None:
         return None
     output = completed.stdout.strip()
     return output or completed.stderr.strip() or None
+
+
+def _find_llama_server_path(
+    resolved_server_dir: Path,
+    *,
+    runtime_exe_path: Path | None,
+    state_exe_path: Path | None,
+) -> Path | None:
+    candidates: list[Path] = []
+    if runtime_exe_path is not None:
+        candidates.append(runtime_exe_path)
+    if state_exe_path is not None:
+        candidates.append(state_exe_path)
+
+    for base_dir in (
+        resolved_server_dir,
+        resolved_server_dir / "vulkan",
+        resolved_server_dir / "avx2",
+        resolved_server_dir / "generic",
+    ):
+        for name in ("llama-server.exe", "llama-server"):
+            candidates.append(base_dir / name)
+
+    for candidate in candidates:
+        try:
+            if candidate.is_file():
+                return candidate
+        except OSError:
+            continue
+
+    if runtime_exe_path is not None:
+        return runtime_exe_path
+    if state_exe_path is not None:
+        return state_exe_path
+    return None
 
 
 def _find_llama_cli_path(
@@ -142,6 +245,15 @@ def _collect_server_metadata(
     if state and isinstance(state.get("server_exe_path_resolved"), str):
         state_exe_path = Path(state["server_exe_path_resolved"])
 
+    llama_server_path = _find_llama_server_path(
+        resolved_server_dir,
+        runtime_exe_path=runtime_exe_path,
+        state_exe_path=state_exe_path,
+    )
+    llama_server_version = (
+        _run_version_command(llama_server_path) if llama_server_path else None
+    )
+
     llama_cli_path = _find_llama_cli_path(
         resolved_server_dir,
         runtime_exe_path=runtime_exe_path,
@@ -157,6 +269,8 @@ def _collect_server_metadata(
         "server_state_path": str(state_path),
         "server_state": state,
         "runtime": runtime_payload,
+        "llama_server_path": str(llama_server_path) if llama_server_path else None,
+        "llama_server_version": llama_server_version,
         "llama_cli_path": str(llama_cli_path) if llama_cli_path else None,
         "llama_cli_version": llama_cli_version,
     }
@@ -457,6 +571,8 @@ def main() -> int:
     args = parser.parse_args()
 
     repo_root = _repo_root()
+    git_metadata = _collect_git_metadata(repo_root)
+    runtime_metadata = _collect_runtime_metadata()
     if str(repo_root) not in sys.path:
         sys.path.insert(0, str(repo_root))
 
@@ -611,6 +727,10 @@ def main() -> int:
     if args.compare:
         result, elapsed = _translate_compare(service, text, reference_files)
         server_metadata = _collect_server_metadata(settings, repo_root, server_manager)
+        versions_metadata = {
+            "llama_server": server_metadata.get("llama_server_version"),
+            "llama_cli": server_metadata.get("llama_cli_version"),
+        }
         error = getattr(result, "error_message", None)
         options = getattr(result, "options", None) or []
         if error:
@@ -650,6 +770,9 @@ def main() -> int:
             "style": args.style,
             "started_at": started_at,
             "tag": args.tag,
+            "git": git_metadata,
+            "runtime": runtime_metadata,
+            "versions": versions_metadata,
             "input_path": str(input_path),
             "input_chars": len(text),
             "with_glossary": bool(args.with_glossary),
@@ -674,6 +797,10 @@ def main() -> int:
     else:
         output, elapsed = _translate_once(client, text, prompt)
         server_metadata = _collect_server_metadata(settings, repo_root, server_manager)
+        versions_metadata = {
+            "llama_server": server_metadata.get("llama_server_version"),
+            "llama_cli": server_metadata.get("llama_cli_version"),
+        }
         if not output.strip():
             print("WARNING: empty translation result", file=sys.stderr)
 
@@ -693,6 +820,9 @@ def main() -> int:
             "style": args.style,
             "started_at": started_at,
             "tag": args.tag,
+            "git": git_metadata,
+            "runtime": runtime_metadata,
+            "versions": versions_metadata,
             "input_path": str(input_path),
             "input_chars": len(text),
             "with_glossary": bool(args.with_glossary),

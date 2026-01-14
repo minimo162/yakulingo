@@ -211,6 +211,35 @@ def _translate_compare(
     return result, elapsed
 
 
+def _build_settings_payload(settings: Any) -> dict[str, Any]:
+    return {
+        "local_ai_model_path": settings.local_ai_model_path,
+        "local_ai_server_dir": settings.local_ai_server_dir,
+        "local_ai_host": settings.local_ai_host,
+        "local_ai_port_base": settings.local_ai_port_base,
+        "local_ai_port_max": settings.local_ai_port_max,
+        "local_ai_ctx_size": settings.local_ai_ctx_size,
+        "local_ai_threads": settings.local_ai_threads,
+        "local_ai_threads_batch": settings.local_ai_threads_batch,
+        "local_ai_temperature": settings.local_ai_temperature,
+        "local_ai_max_tokens": settings.local_ai_max_tokens,
+        "local_ai_batch_size": settings.local_ai_batch_size,
+        "local_ai_ubatch_size": settings.local_ai_ubatch_size,
+        "local_ai_max_chars_per_batch": settings.local_ai_max_chars_per_batch,
+        "local_ai_max_chars_per_batch_file": settings.local_ai_max_chars_per_batch_file,
+        "local_ai_device": settings.local_ai_device,
+        "local_ai_n_gpu_layers": settings.local_ai_n_gpu_layers,
+        "local_ai_flash_attn": settings.local_ai_flash_attn,
+        "local_ai_no_warmup": settings.local_ai_no_warmup,
+        "local_ai_mlock": settings.local_ai_mlock,
+        "local_ai_no_mmap": settings.local_ai_no_mmap,
+        "local_ai_vk_force_max_allocation_size": settings.local_ai_vk_force_max_allocation_size,
+        "local_ai_vk_disable_f16": settings.local_ai_vk_disable_f16,
+        "local_ai_cache_type_k": settings.local_ai_cache_type_k,
+        "local_ai_cache_type_v": settings.local_ai_cache_type_v,
+    }
+
+
 def _apply_overrides(settings: Any, args: argparse.Namespace) -> dict[str, Any]:
     overrides: dict[str, Any] = {}
 
@@ -230,6 +259,8 @@ def _apply_overrides(settings: Any, args: argparse.Namespace) -> dict[str, Any]:
         _set("local_ai_ctx_size", int(args.ctx_size))
     if args.threads is not None:
         _set("local_ai_threads", int(args.threads))
+    if getattr(args, "threads_batch", None) is not None:
+        _set("local_ai_threads_batch", int(args.threads_batch))
     if args.batch_size is not None:
         _set(
             "local_ai_batch_size",
@@ -264,6 +295,10 @@ def _apply_overrides(settings: Any, args: argparse.Namespace) -> dict[str, Any]:
         _set("local_ai_flash_attn", str(args.flash_attn))
     if args.no_warmup:
         _set("local_ai_no_warmup", True)
+    if getattr(args, "mlock", None) is not None:
+        _set("local_ai_mlock", bool(args.mlock))
+    if getattr(args, "no_mmap", None) is not None:
+        _set("local_ai_no_mmap", bool(args.no_mmap))
     if args.vk_force_max_allocation_size is not None:
         if args.vk_force_max_allocation_size <= 0:
             _set("local_ai_vk_force_max_allocation_size", None)
@@ -297,6 +332,15 @@ def _emit_json(
 
 
 def main() -> int:
+    def _non_negative_int(value: str) -> int:
+        try:
+            parsed = int(value)
+        except ValueError as exc:
+            raise argparse.ArgumentTypeError("must be an integer") from exc
+        if parsed < 0:
+            raise argparse.ArgumentTypeError("must be >= 0")
+        return parsed
+
     parser = argparse.ArgumentParser(
         description="Local AI benchmark (single or style-compare)"
     )
@@ -329,6 +373,12 @@ def main() -> int:
     parser.add_argument("--max-tokens", type=int, default=None)
     parser.add_argument("--ctx-size", type=int, default=None)
     parser.add_argument("--threads", type=int, default=None)
+    parser.add_argument(
+        "--threads-batch",
+        type=_non_negative_int,
+        default=None,
+        help="Override local_ai_threads_batch (0=auto)",
+    )
     parser.add_argument("--batch-size", type=int, default=None)
     parser.add_argument("--ubatch-size", type=int, default=None)
     parser.add_argument("--max-chars-per-batch", type=int, default=None)
@@ -358,6 +408,40 @@ def main() -> int:
         help="Override local_ai_flash_attn (auto/0/1)",
     )
     parser.add_argument("--no-warmup", action="store_true")
+    mlock_group = parser.add_mutually_exclusive_group()
+    mlock_group.add_argument(
+        "--mlock",
+        dest="mlock",
+        action="store_const",
+        const=True,
+        default=None,
+        help="Override local_ai_mlock (enable)",
+    )
+    mlock_group.add_argument(
+        "--no-mlock",
+        dest="mlock",
+        action="store_const",
+        const=False,
+        default=None,
+        help="Override local_ai_mlock (disable)",
+    )
+    mmap_group = parser.add_mutually_exclusive_group()
+    mmap_group.add_argument(
+        "--no-mmap",
+        dest="no_mmap",
+        action="store_const",
+        const=True,
+        default=None,
+        help="Override local_ai_no_mmap (enable)",
+    )
+    mmap_group.add_argument(
+        "--mmap",
+        dest="no_mmap",
+        action="store_const",
+        const=False,
+        default=None,
+        help="Override local_ai_no_mmap (disable)",
+    )
     parser.add_argument("--vk-force-max-allocation-size", type=int, default=None)
     parser.add_argument("--vk-disable-f16", action="store_true")
     parser.add_argument("--cache-type-k", type=str, default=None)
@@ -488,6 +572,7 @@ def main() -> int:
     print(f"reference_files: {len(reference_files)}")
     print(f"effective_local_ai_ctx_size: {settings.local_ai_ctx_size}")
     print(f"effective_local_ai_threads: {settings.local_ai_threads}")
+    print(f"effective_local_ai_threads_batch: {settings.local_ai_threads_batch}")
     print(f"effective_local_ai_batch_size: {settings.local_ai_batch_size}")
     print(f"effective_local_ai_ubatch_size: {settings.local_ai_ubatch_size}")
     print(
@@ -502,6 +587,8 @@ def main() -> int:
     print(f"effective_local_ai_n_gpu_layers: {settings.local_ai_n_gpu_layers}")
     print(f"effective_local_ai_flash_attn: {settings.local_ai_flash_attn}")
     print(f"effective_local_ai_no_warmup: {settings.local_ai_no_warmup}")
+    print(f"effective_local_ai_mlock: {settings.local_ai_mlock}")
+    print(f"effective_local_ai_no_mmap: {settings.local_ai_no_mmap}")
     print(
         "effective_local_ai_vk_force_max_allocation_size: "
         f"{settings.local_ai_vk_force_max_allocation_size}"
@@ -574,31 +661,7 @@ def main() -> int:
             "restart_reason": restart_reason,
             "overrides": overrides,
             "server": server_metadata,
-            "settings": {
-                "local_ai_model_path": settings.local_ai_model_path,
-                "local_ai_server_dir": settings.local_ai_server_dir,
-                "local_ai_host": settings.local_ai_host,
-                "local_ai_port_base": settings.local_ai_port_base,
-                "local_ai_port_max": settings.local_ai_port_max,
-                "local_ai_ctx_size": settings.local_ai_ctx_size,
-                "local_ai_threads": settings.local_ai_threads,
-                "local_ai_temperature": settings.local_ai_temperature,
-                "local_ai_max_tokens": settings.local_ai_max_tokens,
-                "local_ai_batch_size": settings.local_ai_batch_size,
-                "local_ai_ubatch_size": settings.local_ai_ubatch_size,
-                "local_ai_max_chars_per_batch": settings.local_ai_max_chars_per_batch,
-                "local_ai_max_chars_per_batch_file": settings.local_ai_max_chars_per_batch_file,
-                "local_ai_device": settings.local_ai_device,
-                "local_ai_n_gpu_layers": settings.local_ai_n_gpu_layers,
-                "local_ai_flash_attn": settings.local_ai_flash_attn,
-                "local_ai_no_warmup": settings.local_ai_no_warmup,
-                "local_ai_vk_force_max_allocation_size": (
-                    settings.local_ai_vk_force_max_allocation_size
-                ),
-                "local_ai_vk_disable_f16": settings.local_ai_vk_disable_f16,
-                "local_ai_cache_type_k": settings.local_ai_cache_type_k,
-                "local_ai_cache_type_v": settings.local_ai_cache_type_v,
-            },
+            "settings": _build_settings_payload(settings),
             "warmup_seconds": warmup_seconds,
             "translation_seconds": elapsed,
             "options": len(options),
@@ -641,31 +704,7 @@ def main() -> int:
             "restart_reason": restart_reason,
             "overrides": overrides,
             "server": server_metadata,
-            "settings": {
-                "local_ai_model_path": settings.local_ai_model_path,
-                "local_ai_server_dir": settings.local_ai_server_dir,
-                "local_ai_host": settings.local_ai_host,
-                "local_ai_port_base": settings.local_ai_port_base,
-                "local_ai_port_max": settings.local_ai_port_max,
-                "local_ai_ctx_size": settings.local_ai_ctx_size,
-                "local_ai_threads": settings.local_ai_threads,
-                "local_ai_temperature": settings.local_ai_temperature,
-                "local_ai_max_tokens": settings.local_ai_max_tokens,
-                "local_ai_batch_size": settings.local_ai_batch_size,
-                "local_ai_ubatch_size": settings.local_ai_ubatch_size,
-                "local_ai_max_chars_per_batch": settings.local_ai_max_chars_per_batch,
-                "local_ai_max_chars_per_batch_file": settings.local_ai_max_chars_per_batch_file,
-                "local_ai_device": settings.local_ai_device,
-                "local_ai_n_gpu_layers": settings.local_ai_n_gpu_layers,
-                "local_ai_flash_attn": settings.local_ai_flash_attn,
-                "local_ai_no_warmup": settings.local_ai_no_warmup,
-                "local_ai_vk_force_max_allocation_size": (
-                    settings.local_ai_vk_force_max_allocation_size
-                ),
-                "local_ai_vk_disable_f16": settings.local_ai_vk_disable_f16,
-                "local_ai_cache_type_k": settings.local_ai_cache_type_k,
-                "local_ai_cache_type_v": settings.local_ai_cache_type_v,
-            },
+            "settings": _build_settings_payload(settings),
             "prompt_chars": prompt_chars,
             "prompt_build_seconds": prompt_build_seconds,
             "warmup_seconds": warmup_seconds,

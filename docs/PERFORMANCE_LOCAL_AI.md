@@ -156,6 +156,11 @@ uv run python tools/bench_local_ai.py --mode warm --max-tokens 0 --json
 # Vulkan(iGPU) 用の一時上書き
 uv run python tools/bench_local_ai.py --mode warm \
   --device Vulkan0 --n-gpu-layers 99 --flash-attn auto --no-warmup --json
+
+# threads-batch / mlock / no-mmap の上書き（効果比較）
+uv run python tools/bench_local_ai.py --mode warm --restart-server \
+  --threads 6 --threads-batch 12 \
+  --mlock --no-mmap --json
 ```
 
 ### CPU-only vs Vulkan(iGPU) 比較（同一入力）
@@ -276,7 +281,7 @@ KVキャッシュの量子化は、速度よりもメモリ圧/安定性の調�
 ## 速度に効く主な設定
 - `local_ai_device` / `local_ai_n_gpu_layers`: Vulkan(iGPU) オフロード設定（`--device` / `-ngl`）
 - `local_ai_threads`: CPUスレッド数（`0` は自動）
-- `local_ai_threads_batch`: prefill スレッド数（`null` は未指定、`0`/負数は自動）
+- `local_ai_threads_batch`: prefill スレッド数（`null` は未指定、`0` は自動）
 - `local_ai_batch_size` / `local_ai_ubatch_size`: llama.cpp のバッチ設定
 - `local_ai_ctx_size`: コンテキスト長（長すぎると遅くなる）
 - `local_ai_cache_type_k` / `local_ai_cache_type_v`: KVキャッシュ型（`null` は既定の `f16` 相当）
@@ -293,7 +298,7 @@ KVキャッシュの量子化は、速度よりもメモリ圧/安定性の調�
 | `local_ai_device` | `--device` | `none` でCPU-only。Vulkanバイナリ時に適用 |
 | `local_ai_n_gpu_layers` | `-ngl` / `--n-gpu-layers` | `0` でCPU-only。Vulkanバイナリ時に適用 |
 | `local_ai_threads` | `-t` / `--threads` | `0` 以下は自動（物理コア数を優先） |
-| `local_ai_threads_batch` | `-tb` / `--threads-batch` | `null` は未指定、`0`/負数は自動（`threads` と同値） |
+| `local_ai_threads_batch` | `-tb` / `--threads-batch` | `null` は未指定、`0` は自動（`threads` と同値） |
 | `local_ai_batch_size` | `-b` / `--batch-size` | 正の値のみ付与 |
 | `local_ai_ubatch_size` | `-ub` / `--ubatch-size` | 正の値のみ付与 |
 | `local_ai_ctx_size` | `-c` / `--ctx-size` | 正の値のみ付与 |

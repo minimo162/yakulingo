@@ -1113,6 +1113,7 @@ class BatchTranslator:
         translation_style: str = "concise",
         include_item_ids: bool = False,
         _max_chars_per_batch: Optional[int] = None,
+        _max_chars_per_batch_source: Optional[str] = None,
         _split_retry_depth: int = 0,
     ) -> BatchTranslationResult:
         """
@@ -1153,6 +1154,13 @@ class BatchTranslator:
         cancelled = False
 
         batch_char_limit = _max_chars_per_batch or self.max_chars_per_batch
+        batch_limit_source = _max_chars_per_batch_source
+        if not batch_limit_source:
+            batch_limit_source = (
+                "BatchTranslator.max_chars_per_batch"
+                if _max_chars_per_batch is None
+                else "override"
+            )
 
         # Phase 0: Skip formula blocks and non-translatable blocks (preserve original text)
         formula_skipped = 0
@@ -1218,6 +1226,13 @@ class BatchTranslator:
 
         # Phase 2: Batch translate uncached blocks
         batches = self._create_batches(uncached_blocks, batch_char_limit)
+        if is_local_backend:
+            logger.debug(
+                "Local AI batching: max_chars_per_batch=%d (source=%s), batches=%d",
+                batch_char_limit,
+                batch_limit_source,
+                len(batches),
+            )
         # has_refs is used for reference file attachment indicator
         has_refs = bool(reference_files)
         files_to_attach = reference_files if has_refs else None
@@ -1336,9 +1351,11 @@ class BatchTranslator:
                         self._MIN_SPLIT_BATCH_CHARS, batch_char_limit // 2
                     )
                     logger.warning(
-                        "Local AI prompt too long for batch %d; retrying with max_chars_per_batch=%d (%s)",
+                        "Local AI prompt too long for batch %d; retrying with max_chars_per_batch=%d (was %d, source=%s) (%s)",
                         i + 1,
                         reduced_limit,
+                        batch_char_limit,
+                        batch_limit_source,
                         message[:120],
                     )
                     retry_result = self.translate_blocks_with_result(
@@ -1349,6 +1366,7 @@ class BatchTranslator:
                         translation_style=translation_style,
                         include_item_ids=include_item_ids,
                         _max_chars_per_batch=reduced_limit,
+                        _max_chars_per_batch_source=batch_limit_source,
                         _split_retry_depth=_split_retry_depth + 1,
                     )
                     translations.update(retry_result.translations)
@@ -1367,9 +1385,11 @@ class BatchTranslator:
                             self._MIN_SPLIT_BATCH_CHARS, batch_char_limit // 2
                         )
                         logger.warning(
-                            "Local AI error in batch %d; retrying with max_chars_per_batch=%d (%s)",
+                            "Local AI error in batch %d; retrying with max_chars_per_batch=%d (was %d, source=%s) (%s)",
                             i + 1,
                             reduced_limit,
+                            batch_char_limit,
+                            batch_limit_source,
                             message[:120],
                         )
                         retry_result = self.translate_blocks_with_result(
@@ -1380,6 +1400,7 @@ class BatchTranslator:
                             translation_style=translation_style,
                             include_item_ids=include_item_ids,
                             _max_chars_per_batch=reduced_limit,
+                            _max_chars_per_batch_source=batch_limit_source,
                             _split_retry_depth=_split_retry_depth + 1,
                         )
                         translations.update(retry_result.translations)
@@ -1392,8 +1413,10 @@ class BatchTranslator:
                             break
                         continue
                     logger.warning(
-                        "Local AI error in batch %d; using original text (%s)",
+                        "Local AI error in batch %d; using original text (max_chars_per_batch=%d, source=%s) (%s)",
                         i + 1,
+                        batch_char_limit,
+                        batch_limit_source,
                         message[:120],
                     )
                     for block in batch:
@@ -1411,9 +1434,10 @@ class BatchTranslator:
                         self._MIN_SPLIT_BATCH_CHARS, batch_char_limit // 2
                     )
                     logger.warning(
-                        "Copilot requested split for batch %d; retrying with max_chars_per_batch=%d",
+                        "Copilot requested split for batch %d; retrying with max_chars_per_batch=%d (was %d)",
                         i + 1,
                         reduced_limit,
+                        batch_char_limit,
                     )
                     retry_result = self.translate_blocks_with_result(
                         batch,
@@ -1423,6 +1447,7 @@ class BatchTranslator:
                         translation_style=translation_style,
                         include_item_ids=include_item_ids,
                         _max_chars_per_batch=reduced_limit,
+                        _max_chars_per_batch_source=batch_limit_source,
                         _split_retry_depth=_split_retry_depth + 1,
                     )
                     translations.update(retry_result.translations)
@@ -1661,9 +1686,10 @@ class BatchTranslator:
                     min(batch_char_limit, self._UNTRANSLATED_RETRY_MAX_CHARS),
                 )
                 logger.info(
-                    "Retrying %d untranslated blocks with max_chars_per_batch=%d",
+                    "Retrying %d untranslated blocks with max_chars_per_batch=%d (source=%s)",
                     len(retry_blocks),
                     retry_char_limit,
+                    batch_limit_source,
                 )
                 retry_result = self.translate_blocks_with_result(
                     retry_blocks,
@@ -1673,6 +1699,7 @@ class BatchTranslator:
                     translation_style=translation_style,
                     include_item_ids=include_item_ids,
                     _max_chars_per_batch=retry_char_limit,
+                    _max_chars_per_batch_source=batch_limit_source,
                     _split_retry_depth=_split_retry_depth + 1,
                 )
                 if retry_result.cancelled:
@@ -1895,10 +1922,9 @@ class TranslationService:
                     settings=self.config,
                 )
             if self._local_batch_translator is None:
-                max_chars = getattr(
-                    self.config,
-                    "local_ai_max_chars_per_batch",
-                    BatchTranslator.DEFAULT_MAX_CHARS_PER_BATCH,
+                max_chars = (
+                    self._get_local_text_batch_limit()
+                    or BatchTranslator.DEFAULT_MAX_CHARS_PER_BATCH
                 )
                 self._local_batch_translator = BatchTranslator(
                     self._local_client,
@@ -1922,16 +1948,28 @@ class TranslationService:
             return self._local_batch_translator
         return self.batch_translator
 
-    def _get_local_file_batch_limit(self) -> Optional[int]:
+    def _get_local_text_batch_limit(self) -> Optional[int]:
         if not self._use_local_backend() or self.config is None:
             return None
-        limit = getattr(self.config, "local_ai_max_chars_per_batch_file", None)
+        limit = getattr(self.config, "local_ai_max_chars_per_batch", None)
         if isinstance(limit, int) and limit > 0:
             return limit
+        return None
+
+    def _get_local_file_batch_limit_info(self) -> tuple[Optional[int], str | None]:
+        if not self._use_local_backend() or self.config is None:
+            return None, None
+        limit = getattr(self.config, "local_ai_max_chars_per_batch_file", None)
+        if isinstance(limit, int) and limit > 0:
+            return limit, "local_ai_max_chars_per_batch_file"
         fallback = getattr(self.config, "local_ai_max_chars_per_batch", None)
         if isinstance(fallback, int) and fallback > 0:
-            return fallback
-        return None
+            return fallback, "local_ai_max_chars_per_batch"
+        return None, None
+
+    def _get_local_file_batch_limit(self) -> Optional[int]:
+        limit, _ = self._get_local_file_batch_limit_info()
+        return limit
 
     def clear_translation_cache(self) -> None:
         """
@@ -3805,7 +3843,7 @@ class TranslationService:
         # Excel cells often contain numbered lines; keep stable IDs to avoid list parsing drift.
         include_item_ids = processor.file_type == FileType.EXCEL
         batch_translator = self._get_active_batch_translator()
-        batch_limit = self._get_local_file_batch_limit()
+        batch_limit, batch_limit_source = self._get_local_file_batch_limit_info()
         batch_result = batch_translator.translate_blocks_with_result(
             blocks,
             reference_files,
@@ -3814,6 +3852,7 @@ class TranslationService:
             translation_style=translation_style,
             include_item_ids=include_item_ids,
             _max_chars_per_batch=batch_limit,
+            _max_chars_per_batch_source=batch_limit_source,
         )
 
         # Check for cancellation (thread-safe)
@@ -4088,7 +4127,7 @@ class TranslationService:
                 )
 
         batch_translator = self._get_active_batch_translator()
-        batch_limit = self._get_local_file_batch_limit()
+        batch_limit, batch_limit_source = self._get_local_file_batch_limit_info()
         batch_result = batch_translator.translate_blocks_with_result(
             all_blocks,
             reference_files,
@@ -4097,6 +4136,7 @@ class TranslationService:
             translation_style=translation_style,
             include_item_ids=True,
             _max_chars_per_batch=batch_limit,
+            _max_chars_per_batch_source=batch_limit_source,
         )
 
         if batch_result.cancelled or self._cancel_event.is_set():

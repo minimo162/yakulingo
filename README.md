@@ -511,6 +511,8 @@ ollama run hy-mt1.5-1.8b
 
 ### ローカルAI速度計測（ベンチ）
 
+詳細手順（CLIベンチ/スイープ/E2E/記録テンプレ/指標の意味）: `docs/PERFORMANCE_LOCAL_AI.md`（SSOT）
+
 **計測条件（固定）**
 - 入力: `tools/bench_local_ai_input.txt`（410文字、用語集ヒット語を含む）
 - 方向: JP→EN / style=concise
@@ -537,41 +539,7 @@ uv run python tools/bench_local_ai.py --mode cold --with-glossary
 - cold が遅い: 初回のモデルロード/サーバ起動が支配（`--mode cold` で把握）
 - UIが重い: ベンチでは見えないため、体感が遅い場合は実UIで確認
 
-**結果記録テンプレ（例）**
-```
-date:
-input_chars:
-effective_local_ai_ctx_size:
-effective_local_ai_max_tokens:
-command:
-model_path:
-server_dir:
-settings:
-  local_ai_threads:
-  local_ai_threads_batch:
-  local_ai_ctx_size:
-  local_ai_batch_size:
-  local_ai_ubatch_size:
-  local_ai_max_tokens:
-  local_ai_max_chars_per_batch:
-results:
-  warm:
-    with_glossary:
-    prompt_chars:
-    prompt_build_seconds:
-    warmup_seconds:
-    translation_seconds:
-    total_seconds:
-    output_chars:
-  cold:
-    with_glossary:
-    prompt_chars:
-    prompt_build_seconds:
-    translation_seconds:
-    total_seconds:
-    output_chars:
-notes:
-```
+**記録テンプレ**: `docs/PERFORMANCE_LOCAL_AI.md` の「記録テンプレ（例）」を参照
 
 **ログで確認する場合**
 - `~/.yakulingo/logs/startup.log` の `[TIMING] LocalAI ...` でも確認可能

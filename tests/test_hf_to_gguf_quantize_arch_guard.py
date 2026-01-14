@@ -13,7 +13,9 @@ def _load_tool_module():
     return module
 
 
-def test_extract_registered_architectures_parses_modelbase_register(tmp_path: Path) -> None:
+def test_extract_registered_architectures_parses_modelbase_register(
+    tmp_path: Path,
+) -> None:
     module = _load_tool_module()
 
     convert_script = tmp_path / "convert_hf_to_gguf.py"

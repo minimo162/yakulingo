@@ -668,12 +668,7 @@ class LocalLlamaServerManager:
                 pass
 
     def _resolve_model_path(self, settings: AppSettings) -> Optional[Path]:
-        fixed = (
-            _app_base_dir()
-            / "local_ai"
-            / "models"
-            / "HY-MT1.5-1.8B-Q4_K_M.gguf"
-        )
+        fixed = _app_base_dir() / "local_ai" / "models" / "HY-MT1.5-1.8B-Q4_K_M.gguf"
         return fixed if fixed.is_file() else None
 
     def _resolve_server_dir(self, settings: AppSettings) -> Path:
@@ -1059,8 +1054,10 @@ class LocalLlamaServerManager:
                 if threads_batch <= 0:
                     auto_threads_batch = threads
                     threads_batch = auto_threads_batch
-        if help_text and threads_batch and (
-            has_long("--threads-batch") or has_short("-tb")
+        if (
+            help_text
+            and threads_batch
+            and (has_long("--threads-batch") or has_short("-tb"))
         ):
             flag = "--threads-batch" if has_long("--threads-batch") else "-tb"
             args += [flag, str(threads_batch)]

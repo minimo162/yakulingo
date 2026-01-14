@@ -58,7 +58,9 @@ def _download_file(url: str, out_path: Path) -> None:
     out_path.write_bytes(data)
 
 
-def _download_hf_raw_text(*, repo_id: str, revision: str, filename: str, token: str | None) -> str | None:
+def _download_hf_raw_text(
+    *, repo_id: str, revision: str, filename: str, token: str | None
+) -> str | None:
     url = f"https://huggingface.co/{repo_id}/raw/{revision}/{filename}"
     headers = {"User-Agent": "YakuLingo-Tools"}
     if token:
@@ -82,7 +84,9 @@ def _extract_registered_architectures(convert_script: Path) -> set[str]:
         return set()
 
     registered: set[str] = set()
-    for match in re.finditer(r"@ModelBase\.register\((?P<args>[^)]*)\)", content, flags=re.DOTALL):
+    for match in re.finditer(
+        r"@ModelBase\.register\((?P<args>[^)]*)\)", content, flags=re.DOTALL
+    ):
         args = match.group("args")
         for name in re.findall(r"""["']([^"']+)["']""", args):
             stripped = name.strip()
@@ -175,7 +179,9 @@ def _resolve_llama_cpp_source(repo_root: Path, *, tag: str) -> Path:
     cache_dir = repo_root / ".tmp" / "llama_cpp_src" / tag
     root_marker = cache_dir / ".extracted.ok"
     if root_marker.exists():
-        roots = [p for p in cache_dir.iterdir() if p.is_dir() and p.name != "__pycache__"]
+        roots = [
+            p for p in cache_dir.iterdir() if p.is_dir() and p.name != "__pycache__"
+        ]
         for p in roots:
             if (p / "LICENSE").exists():
                 return p
@@ -188,7 +194,11 @@ def _resolve_llama_cpp_source(repo_root: Path, *, tag: str) -> Path:
     last_error: BaseException | None = None
     for zip_url in _llama_cpp_zip_urls(tag):
         attempted_urls.append(zip_url)
-        print(f"[INFO] Downloading llama.cpp source: {zip_url}", file=sys.stderr, flush=True)
+        print(
+            f"[INFO] Downloading llama.cpp source: {zip_url}",
+            file=sys.stderr,
+            flush=True,
+        )
         try:
             _download_file(zip_url, zip_path)
             break
@@ -312,7 +322,11 @@ def _resolve_outputs(
     out_dir: Path | None,
 ) -> ResolvedOutputs:
     out_dir_resolved = out_dir or (repo_root / "local_ai" / "models")
-    out_dir_resolved = out_dir_resolved if out_dir_resolved.is_absolute() else repo_root / out_dir_resolved
+    out_dir_resolved = (
+        out_dir_resolved
+        if out_dir_resolved.is_absolute()
+        else repo_root / out_dir_resolved
+    )
     _ensure_dir(out_dir_resolved)
 
     base = base_name.strip() or "model"
@@ -358,7 +372,9 @@ def _resolve_model_dir(
             ).strip()
         ) from exc
 
-    cache_dir = repo_root / ".tmp" / "hf_models" / _safe_slug(hf_repo) / _safe_slug(revision)
+    cache_dir = (
+        repo_root / ".tmp" / "hf_models" / _safe_slug(hf_repo) / _safe_slug(revision)
+    )
     _ensure_dir(cache_dir)
 
     token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACEHUB_API_TOKEN")
@@ -458,11 +474,20 @@ def main(argv: list[str] | None = None) -> int:
     token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACEHUB_API_TOKEN")
     precheck_architectures: list[str] = []
     if args.model_dir is not None:
-        resolved_dir = args.model_dir if args.model_dir.is_absolute() else repo_root / args.model_dir
+        resolved_dir = (
+            args.model_dir
+            if args.model_dir.is_absolute()
+            else repo_root / args.model_dir
+        )
         if resolved_dir.is_dir():
             precheck_architectures = _read_model_architectures(resolved_dir)
     elif args.hf_repo:
-        raw = _download_hf_raw_text(repo_id=args.hf_repo, revision=args.revision, filename="config.json", token=token)
+        raw = _download_hf_raw_text(
+            repo_id=args.hf_repo,
+            revision=args.revision,
+            filename="config.json",
+            token=token,
+        )
         if raw:
             try:
                 payload = json.loads(raw)
@@ -471,7 +496,9 @@ def main(argv: list[str] | None = None) -> int:
                     if isinstance(architectures, str) and architectures.strip():
                         precheck_architectures = [architectures.strip()]
                     elif isinstance(architectures, list):
-                        precheck_architectures = [str(x).strip() for x in architectures if str(x).strip()]
+                        precheck_architectures = [
+                            str(x).strip() for x in architectures if str(x).strip()
+                        ]
             except Exception:
                 precheck_architectures = []
 
@@ -491,7 +518,11 @@ def main(argv: list[str] | None = None) -> int:
             )
             return exit_unsupported_arch
 
-    if outputs.quant_gguf_path.exists() and outputs.quant_gguf_path.stat().st_size > 0 and not args.force:
+    if (
+        outputs.quant_gguf_path.exists()
+        and outputs.quant_gguf_path.stat().st_size > 0
+        and not args.force
+    ):
         print(f"[SKIP] Quantized GGUF already exists: {outputs.quant_gguf_path}")
         return 0
 
@@ -523,16 +554,26 @@ def main(argv: list[str] | None = None) -> int:
 
     python = _resolve_python()
     env = os.environ.copy()
-    env["PYTHONPATH"] = str(gguf_py) + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+    env["PYTHONPATH"] = str(gguf_py) + (
+        os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else ""
+    )
 
-    if (not outputs.f16_gguf_path.exists() or outputs.f16_gguf_path.stat().st_size == 0) or args.force:
+    if (
+        not outputs.f16_gguf_path.exists() or outputs.f16_gguf_path.stat().st_size == 0
+    ) or args.force:
         help_text = _get_help_text(convert_script)
         if "--outfile" not in help_text:
             raise RuntimeError(
                 "Unsupported convert script (missing --outfile). "
                 "Please update llama.cpp tag or adjust the tool."
             )
-        convert_args = [python, str(convert_script), str(model_dir), "--outfile", str(outputs.f16_gguf_path)]
+        convert_args = [
+            python,
+            str(convert_script),
+            str(model_dir),
+            "--outfile",
+            str(outputs.f16_gguf_path),
+        ]
         if "--outtype" in help_text:
             convert_args += ["--outtype", "f16"]
 
@@ -543,22 +584,36 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[SKIP] F16 GGUF already exists: {outputs.f16_gguf_path}")
 
     if not outputs.f16_gguf_path.exists() or outputs.f16_gguf_path.stat().st_size == 0:
-        raise RuntimeError(f"F16 GGUF output is missing or empty: {outputs.f16_gguf_path}")
+        raise RuntimeError(
+            f"F16 GGUF output is missing or empty: {outputs.f16_gguf_path}"
+        )
 
     print("[INFO] Quantizing GGUF -> 4bit")
-    quant_args = [str(quant_exe), str(outputs.f16_gguf_path), str(outputs.quant_gguf_path), str(args.quant)]
+    quant_args = [
+        str(quant_exe),
+        str(outputs.f16_gguf_path),
+        str(outputs.quant_gguf_path),
+        str(args.quant),
+    ]
     print("       " + " ".join(quant_args))
     _run_checked(quant_args, env=None)
 
-    if not outputs.quant_gguf_path.exists() or outputs.quant_gguf_path.stat().st_size == 0:
-        raise RuntimeError(f"Quantized GGUF output is missing or empty: {outputs.quant_gguf_path}")
+    if (
+        not outputs.quant_gguf_path.exists()
+        or outputs.quant_gguf_path.stat().st_size == 0
+    ):
+        raise RuntimeError(
+            f"Quantized GGUF output is missing or empty: {outputs.quant_gguf_path}"
+        )
 
     print("[DONE] Outputs:")
     print(f"  f16 : {outputs.f16_gguf_path}")
     print(f"  q4  : {outputs.quant_gguf_path}")
     print("")
     print("[HINT] Example usage (bench):")
-    print(f"  uv run python tools/bench_local_ai.py --mode warm --model-path {outputs.quant_gguf_path}")
+    print(
+        f"  uv run python tools/bench_local_ai.py --mode warm --model-path {outputs.quant_gguf_path}"
+    )
 
     return 0
 

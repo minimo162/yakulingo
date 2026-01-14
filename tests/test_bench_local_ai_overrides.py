@@ -53,7 +53,9 @@ def test_apply_overrides_supports_threads_batch_mlock_no_mmap() -> None:
 
 
 def test_settings_payload_includes_threads_batch_mlock_no_mmap() -> None:
-    settings = AppSettings(local_ai_threads_batch=0, local_ai_mlock=False, local_ai_no_mmap=False)
+    settings = AppSettings(
+        local_ai_threads_batch=0, local_ai_mlock=False, local_ai_no_mmap=False
+    )
     settings._validate()
 
     payload = bench_local_ai._build_settings_payload(settings)
@@ -61,4 +63,3 @@ def test_settings_payload_includes_threads_batch_mlock_no_mmap() -> None:
     assert payload["local_ai_threads_batch"] == 0
     assert payload["local_ai_mlock"] is False
     assert payload["local_ai_no_mmap"] is False
-

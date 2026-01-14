@@ -363,8 +363,10 @@ def _run(
             timeout=timeout_s,
             check=False,
         )
-        combined = (completed.stdout or "") + ("\n" if completed.stdout else "") + (
-            completed.stderr or ""
+        combined = (
+            (completed.stdout or "")
+            + ("\n" if completed.stdout else "")
+            + (completed.stderr or "")
         )
         _write_text(log_path, combined)
     except subprocess.TimeoutExpired as exc:
@@ -420,7 +422,9 @@ def _build_summary_rows(results: Iterable[dict[str, Any]]) -> list[dict[str, Any
     for item in results:
         out_path = Path(item["out_path"])
         payload = _read_json(out_path) or {}
-        settings = payload.get("settings") if isinstance(payload.get("settings"), dict) else {}
+        settings = (
+            payload.get("settings") if isinstance(payload.get("settings"), dict) else {}
+        )
         rows.append(
             {
                 "tag": str(payload.get("tag") or item.get("tag") or ""),
@@ -450,7 +454,9 @@ def _build_summary_rows(results: Iterable[dict[str, Any]]) -> list[dict[str, Any
     return rows
 
 
-def _write_summary_markdown(path: Path, *, meta: dict[str, Any], rows: list[dict[str, Any]]) -> None:
+def _write_summary_markdown(
+    path: Path, *, meta: dict[str, Any], rows: list[dict[str, Any]]
+) -> None:
     lines: list[str] = []
     lines.append("# Local AI sweep (7B)")
     lines.append("")
@@ -476,18 +482,26 @@ def _write_summary_markdown(path: Path, *, meta: dict[str, Any], rows: list[dict
             "| {tag} | {rc} | {t} | {out_chars} | {device} | {ngl} | {threads} | {tb} | {b} | {ub} | {ctx} | {fa} | {ctk} | {ctv} | {mlock} | {no_mmap} | {json_path} | {log_path} |".format(
                 tag=row.get("tag") or "",
                 rc=row.get("returncode"),
-                t="" if row.get("translation_seconds") is None else f"{row['translation_seconds']:.2f}",
+                t=""
+                if row.get("translation_seconds") is None
+                else f"{row['translation_seconds']:.2f}",
                 out_chars=row.get("output_chars") or "",
                 device=row.get("device") or "",
                 ngl=row.get("n_gpu_layers") or "",
                 threads=row.get("threads") or "",
-                tb=row.get("threads_batch") if row.get("threads_batch") is not None else "",
+                tb=row.get("threads_batch")
+                if row.get("threads_batch") is not None
+                else "",
                 b=row.get("batch_size") or "",
                 ub=row.get("ubatch_size") or "",
                 ctx=row.get("ctx_size") or "",
                 fa=row.get("flash_attn") or "",
-                ctk=row.get("cache_type_k") if row.get("cache_type_k") is not None else "",
-                ctv=row.get("cache_type_v") if row.get("cache_type_v") is not None else "",
+                ctk=row.get("cache_type_k")
+                if row.get("cache_type_k") is not None
+                else "",
+                ctv=row.get("cache_type_v")
+                if row.get("cache_type_v") is not None
+                else "",
                 mlock=row.get("mlock"),
                 no_mmap=row.get("no_mmap"),
                 json_path=row.get("json_path") or "",
@@ -527,7 +541,9 @@ def _git_head_short(repo_root: Path) -> str | None:
         return None
 
 
-def _write_summaries(out_dir: Path, *, meta: dict[str, Any], results: list[dict[str, Any]]) -> None:
+def _write_summaries(
+    out_dir: Path, *, meta: dict[str, Any], results: list[dict[str, Any]]
+) -> None:
     rows = _build_summary_rows(results)
     _write_json(out_dir / "summary.json", {"meta": meta, "rows": rows})
     _write_summary_markdown(out_dir / "summary.md", meta=meta, rows=rows)

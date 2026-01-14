@@ -12,9 +12,7 @@ from yakulingo.services import local_llama_server as lls
 _FIXED_MODEL_FILENAME = "HY-MT1.5-1.8B-Q4_K_M.gguf"
 
 
-def _install_fixed_model(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> Path:
+def _install_fixed_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(lls, "_app_base_dir", lambda: tmp_path)
     path = tmp_path / "local_ai" / "models" / _FIXED_MODEL_FILENAME
     path.parent.mkdir(parents=True, exist_ok=True)

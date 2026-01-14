@@ -21,7 +21,7 @@
 .\llama-cli.exe --version
 .\llama-cli.exe --list-devices
 ```
-- `Vulkan0` が表示されれば iGPU が認識されている
+- `Vulkan0` などが表示されれば iGPU が認識されている（何も表示されない場合は Vulkan が利用できません）
 
 ## 計測の流れ（推奨）
 1. CLIベンチで warm / cold をそれぞれ実行し、JSONを保存
@@ -34,7 +34,7 @@
 - **EN→JP（和訳）は訳文のみ**に変更済み。改善前後を比較する際は同じプロンプトバージョンを使い、出力文字数の差が `translation_seconds` に影響しないか確認する。
 > **Note**: CPU-only と Vulkan(iGPU) 比較では、`local_ai_threads` / `local_ai_ctx_size` / `local_ai_batch_size` / `local_ai_ubatch_size` と入力文を固定し、`device` / `-ngl` / `-fa` など GPU 関連だけを変える。
 > **Note**: `local_ai_*` は `user_settings.json` には保存されません。恒久的な変更は `config/settings.template.json` を更新し、ベンチの一時上書きは CLI で行います。
-> **Note**: 既定値は `local_ai_device=none` / `local_ai_n_gpu_layers=0` / `local_ai_ctx_size=2048`。長文や安定性を優先したい場合は `local_ai_ctx_size=4096`（さらに必要なら `8192`）を指定します。Vulkan(iGPU) を使う場合は `Vulkan0` / `99`（または `auto` / `all`）を設定します。速度優先で `-ngl 16` にする場合は `local_ai_n_gpu_layers=16` を指定します。
+> **Note**: 既定値は `local_ai_device=none` / `local_ai_n_gpu_layers=0` / `local_ai_ctx_size=2048`。長文や安定性を優先したい場合は `local_ai_ctx_size=4096`（さらに必要なら `8192`）を指定します。Vulkan(iGPU) を使う場合は `llama-cli.exe --list-devices` で表示されるデバイス名（例: `Vulkan0`）と `local_ai_n_gpu_layers`（例: `99` / `16` / `auto` / `all`）を設定します。
 > **Note**: プロキシ環境では `NO_PROXY=127.0.0.1,localhost` を自動補完し、ローカル API がプロキシ経由にならないようにします。
 > **Note**: Vulkan 設定の反映確認は、ベンチ JSON の `runtime.server_variant` と `~/.yakulingo/logs/startup.log` の `Local AI offload flags` で確認できます。
 
@@ -54,7 +54,7 @@ UMA(iGPU) 注意点:
 - `-ngl 0`（CPU-only）と `-ngl` 中間値（例: 8/16/24/32/99）を同一条件で比較してください。
 
 ### まず試すレシピ（短時間）
-1. CPU-only と Vulkan(iGPU) を同一入力で比較（`--device none` vs `--device Vulkan0`）
+1. CPU-only と Vulkan(iGPU) を同一入力で比較（`--device none` vs `--device <VULKAN_DEVICE>`）
 2. Vulkan 側で `-ngl` を 0/8/16/24/32/99 などでスイープ
 3. `-t` / `-tb` を物理コア数と論理コア数で比較（翻訳は `-tb` が効きやすい）
 4. 入力が長い場合は `-b` / `-ub` を調整して prefill を短縮
@@ -161,7 +161,7 @@ uv run python tools/bench_local_ai.py --mode warm --max-tokens 0 --json
 
 # Vulkan(iGPU) 用の一時上書き
 uv run python tools/bench_local_ai.py --mode warm \
-  --device Vulkan0 --n-gpu-layers 99 --flash-attn auto --no-warmup --json
+  --device <VULKAN_DEVICE> --n-gpu-layers 99 --flash-attn auto --no-warmup --json
 
 # threads-batch / mlock / no-mmap の上書き（効果比較）
 uv run python tools/bench_local_ai.py --mode warm --restart-server \
@@ -182,13 +182,13 @@ uv run python tools/bench_local_ai.py --mode cold --restart-server \
   --server-dir local_ai/llama_cpp/avx2 --device none --n-gpu-layers 0 --flash-attn auto \
   --json --out .tmp/bench_cpu_cold.json
 
-# Vulkan(iGPU) warm/cold（vulkan バイナリ + Vulkan0）
+# Vulkan(iGPU) warm/cold（vulkan バイナリ + device 指定）
 uv run python tools/bench_local_ai.py --mode warm --restart-server \
-  --server-dir local_ai/llama_cpp/vulkan --device Vulkan0 --n-gpu-layers 99 --flash-attn auto \
+  --server-dir local_ai/llama_cpp/vulkan --device <VULKAN_DEVICE> --n-gpu-layers 99 --flash-attn auto \
   --json --out .tmp/bench_vk_warm.json
 
 uv run python tools/bench_local_ai.py --mode cold --restart-server \
-  --server-dir local_ai/llama_cpp/vulkan --device Vulkan0 --n-gpu-layers 99 --flash-attn auto \
+  --server-dir local_ai/llama_cpp/vulkan --device <VULKAN_DEVICE> --n-gpu-layers 99 --flash-attn auto \
   --json --out .tmp/bench_vk_cold.json
 ```
 
@@ -232,7 +232,7 @@ uv run python tools/bench_llama_bench_compare.py --format markdown \
 - `--model-path`（モデルのパス）
 - `--pg`（`pp,tg` の指定。例: `2048,256`）
 - `-r` / `--repeat`（繰り返し回数）
-- `--device`（Vulkan 側のデバイス。例: `Vulkan0`）
+- `--device`（Vulkan 側のデバイス。例: `Vulkan0`。`--list-devices` を参照）
 - `--n-gpu-layers`（Vulkan 側の -ngl 値。例: `all`/`99`/`16`）
 - `--extra-args`（`llama-bench` の追加引数。例: `-b 2048 -ub 512 -fa 0`）
 
@@ -241,7 +241,7 @@ uv run python tools/bench_llama_bench_compare.py \
   --server-dir local_ai/llama_cpp \
   --model-path local_ai/models/HY-MT1.5-1.8B-Q4_K_M.gguf \
   --pg 2048,256 -r 3 \
-  --device Vulkan0 --n-gpu-layers all \
+  --device <VULKAN_DEVICE> --n-gpu-layers all \
   --extra-args -b 2048 -ub 512 -fa 0
 ```
 
@@ -263,10 +263,13 @@ uv run python tools/bench_local_ai_sweep_7b.py \
 - `vulkan`: Vulkan(iGPU) の短時間探索（`device` / `-ngl` / `flash_attn` / `cache_type` / `vk_*`）。入力は短め（`tools/bench_local_ai_input_short.txt`）で warm 中心。
 - `full`: `quick` に加えて `batch/ubatch`・`ctx`・`cache-type`・`flash-attn`・`mlock/no-mmap` など探索系を含めた総当たりに近い比較。
 
+> **Note**: `cpu` プリセットの一例（HY-MT1.5-1.8B/Q4_K_M, warm, short input）では、`cpu_b256_ub64`（`-b 256 -ub 64`）が `cpu_base`（512/128）より僅差で速い結果でした（5.64s vs 5.75s）。差は小さいため、まずは `cpu_base` を基準に実測で判断してください。
+
 失敗時の確認ポイント（最小）:
 - 各 run の `*.json` の `runtime.server_variant` で CPU/Vulkan の実際の起動状態を確認する
 - `~/.yakulingo/logs/startup.log` の `Local AI offload flags` で `--device` / `-ngl` が反映されたか確認する
 - `*.log.txt` と `local_ai_server.log`（生成されていれば）でエラー詳細を確認する
+- `llama-cli.exe --list-devices` が空の場合、`--device Vulkan0` 等が無効になり、Vulkan の実行が失敗する（CPU-onlyで運用）
 
 > **Note**: Vulkan(iGPU) で `ErrorOutOfDeviceMemory` が出る場合は、`--vk-force-max-allocation-size` を併用します（例: `268435456`=256MiB）。
 > **Note**: 中断時に再実行する場合は `--resume`、各 run の上限時間は `--run-timeout-seconds` で指定できます。
@@ -284,7 +287,7 @@ UMA 環境では「全層オフロード（`-ngl 99`）」が最速とは限ら�
 ```bash
 # Vulkan(iGPU) warm のチューニング例（再現用）
 uv run python tools/bench_local_ai.py --mode warm --warmup-runs 1 --restart-server \
-  --server-dir local_ai/llama_cpp/vulkan --device Vulkan0 --n-gpu-layers 16 \
+  --server-dir local_ai/llama_cpp/vulkan --device <VULKAN_DEVICE> --n-gpu-layers 16 \
   --ctx-size 4096 --flash-attn auto --json
 ```
 
@@ -296,7 +299,7 @@ uv run python tools/bench_local_ai.py --mode warm --warmup-runs 1 --restart-serv
 $values = 0, 8, 16, 24, 32, 40, 99
 foreach ($v in $values) {
   uv run python tools/bench_local_ai.py --mode warm `
-    --device Vulkan0 --n-gpu-layers $v --flash-attn auto --json
+    --device <VULKAN_DEVICE> --n-gpu-layers $v --flash-attn auto --json
 }
 ```
 

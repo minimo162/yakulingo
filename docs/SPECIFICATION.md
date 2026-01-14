@@ -1533,14 +1533,14 @@ class AppSettings:
     local_ai_host: str = "127.0.0.1"  # security: forced to localhost
     local_ai_port_base: int = 4891
     local_ai_port_max: int = 4900
-    local_ai_ctx_size: int = 8192
+    local_ai_ctx_size: int = 2048
     local_ai_threads: int = 0  # 0=auto
-    local_ai_temperature: float = 0.2
+    local_ai_temperature: float = 0.7
     local_ai_max_tokens: Optional[int] = 1024
     local_ai_batch_size: Optional[int] = 512
     local_ai_ubatch_size: Optional[int] = 128
-    local_ai_max_chars_per_batch: int = 800
-    local_ai_max_chars_per_batch_file: int = 600
+    local_ai_max_chars_per_batch: int = 1000
+    local_ai_max_chars_per_batch_file: int = 1000
 
     # Advanced
     max_chars_per_batch: int = 1000      # 文字数上限（Copilot入力の安全値）

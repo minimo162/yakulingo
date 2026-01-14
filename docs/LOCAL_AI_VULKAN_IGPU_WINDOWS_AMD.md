@@ -11,7 +11,9 @@
 cd local_ai/llama_cpp/vulkan
 .\llama-cli.exe --list-devices
 ```
-`Vulkan0: ... AMD Radeon ...` の表示が出れば iGPU が認識されています。
+`Vulkan0: ... AMD Radeon ...` のようにデバイスが表示されれば iGPU が認識されています（何も表示されない場合は Vulkan が利用できません）。
+
+> **Note**: 以降の例では `Vulkan0` を使用します。`--list-devices` の出力に合わせて置き換えてください。
 
 ## 2) Vulkan(iGPU) を強制して実行
 `--device` と `-ngl` を**明示**します（auto のままだと 0 層になる場合があります）。

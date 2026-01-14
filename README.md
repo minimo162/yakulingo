@@ -322,7 +322,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
   "local_ai_cache_type_k": "q8_0",
   "local_ai_cache_type_v": "q8_0",
   "local_ai_max_chars_per_batch": 1000,
-  "local_ai_max_chars_per_batch_file": 800,
+  "local_ai_max_chars_per_batch_file": 1000,
   "bilingual_output": false,
   "export_glossary": false,
   "translation_style": "concise",
@@ -433,12 +433,12 @@ ollama run hy-mt1.5-1.8b
 **ローカルAIの速度チューニング（開発者向け）**:
 - `local_ai_*` は `user_settings.json` に保存されないため、恒久的に変える場合は `config/settings.template.json` を編集します。
 - 計測のみの一時上書きは `tools/bench_local_ai.py` の CLI オプションを使用します。
-- 既定値は `local_ai_device=none` / `local_ai_n_gpu_layers=0` / `local_ai_ctx_size=2048`。長文や安定性を優先したい場合は `local_ai_ctx_size=4096`（さらに必要なら `8192`）を指定します。Vulkan(iGPU) を使う場合は `Vulkan0` / `99`（または `auto` / `all`）を設定します。速度優先で `-ngl 16` にする場合は `local_ai_n_gpu_layers=16` を指定します。
+- 既定値は `local_ai_device=none` / `local_ai_n_gpu_layers=0` / `local_ai_ctx_size=2048`。長文や安定性を優先したい場合は `local_ai_ctx_size=4096`（さらに必要なら `8192`）を指定します。Vulkan(iGPU) を使う場合は `llama-cli.exe --list-devices` で表示されるデバイス名（例: `Vulkan0`）と `local_ai_n_gpu_layers`（例: `99` / `16` / `auto` / `all`）を設定します。
 - `local_ai_threads`: `0` は自動。CPUコアに合わせて増やすと高速化する場合があるが、過剰だと逆効果
 - `local_ai_threads_batch`: `null` は未指定、`0` は自動（`local_ai_threads` と同値）。prefillの速度調整に使う
 - `local_ai_ctx_size`: 大きいほど遅くなる傾向。プロンプト長に対して必要最小限で調整
 - `local_ai_batch_size` / `local_ai_ubatch_size`: 対応ビルドのみ有効。大きすぎるとメモリ圧迫や不安定化
-- `local_ai_device` / `local_ai_n_gpu_layers`: GPUオフロード先と層数（例: `none` / `Vulkan0`, `0` / `16` / `99` / `auto` / `all`）
+- `local_ai_device` / `local_ai_n_gpu_layers`: GPUオフロード先と層数（例: `none` / `Vulkan0`, `0` / `16` / `99` / `auto` / `all`）。`--list-devices` が空の場合は Vulkan が利用できません（CPU-onlyで運用）
 - `local_ai_flash_attn`: Flash Attention（`auto` / `0` / `1`）
 - `local_ai_no_warmup`: 起動時のwarmup無効化（特定環境の回避用）
 - `local_ai_mlock` / `local_ai_no_mmap`: メモリ固定/メモリマップ無効化。メモリ消費が増え、環境によっては起動に失敗するため、失敗時は `false` に戻して再実行
@@ -452,11 +452,11 @@ ollama run hy-mt1.5-1.8b
 
 **Vulkan(iGPU) クイックレシピ**:
 - 準備: 新規インストールなら `packaging/install_deps.bat` で CPU(x64) が既定。Vulkan版にしたい場合は `set LOCAL_AI_LLAMA_CPP_VARIANT=vulkan` を設定して実行（既存 `manifest.json` が Vulkan の場合は `set LOCAL_AI_LLAMA_CPP_VARIANT=cpu` で上書き可能）
-- 確認: `local_ai/llama_cpp/vulkan/llama-cli.exe --list-devices` で `Vulkan0` を確認
+- 確認: `local_ai/llama_cpp/vulkan/llama-cli.exe --list-devices` を実行し、`Vulkan0` などのデバイス名が表示されることを確認（何も表示されない場合は Vulkan が利用できません）
 - 実行例（ベンチ）:
   ```bash
   uv run python tools/bench_local_ai.py --mode warm \
-    --device Vulkan0 --n-gpu-layers 16 --flash-attn auto --json
+    --device <VULKAN_DEVICE> --n-gpu-layers 16 --flash-attn auto --json
   ```
 - 探索: `--n-gpu-layers` を 0/8/16/…/99 で掃引（詳細は `docs/PERFORMANCE_LOCAL_AI.md`）
 - トラブルシュート: `local_ai_vk_force_max_allocation_size` / `local_ai_no_warmup` / `local_ai_vk_disable_f16`
@@ -480,7 +480,7 @@ ollama run hy-mt1.5-1.8b
 | `local_ai_threads` | ローカルAIのスレッド数（0=auto） | 0 |
 | `local_ai_threads_batch` | ローカルAIのprefillスレッド数（nullで未指定、0=auto） | null |
 | `local_ai_max_chars_per_batch` | ローカルAI送信1回あたりの最大文字数 | 1000 |
-| `local_ai_max_chars_per_batch_file` | ローカルAI（ファイル翻訳）送信1回あたりの最大文字数 | 800 |
+| `local_ai_max_chars_per_batch_file` | ローカルAI（ファイル翻訳）送信1回あたりの最大文字数 | 1000 |
 | `request_timeout` | 翻訳リクエストのタイムアウト（秒） | 600 |
 | `local_ai_temperature` | ローカルAIの温度（Qwen3推奨） | 0.7 |
 | `local_ai_top_p` | ローカルAIのTop-P | 0.6 |

@@ -308,8 +308,8 @@ try {
 
     # Default model (fixed):
     # Always use a prebuilt GGUF downloaded from Hugging Face.
-    $defaultModelRepo = 'tencent/HY-MT1.5-1.8B-GGUF'
-    $defaultModelFile = 'HY-MT1.5-1.8B-Q4_K_M.gguf'
+    $defaultModelRepo = 'tencent/HY-MT1.5-7B-GGUF'
+    $defaultModelFile = 'HY-MT1.5-7B-Q4_K_M.gguf'
     $defaultModelRevision = 'main'
 
     # Model selection is fixed (manifest/env overrides are ignored).

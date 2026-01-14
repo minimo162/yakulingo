@@ -67,8 +67,8 @@ Text JP->EN (3 style):
 - Missing styles are filled by order if options list has entries.
 
 Text single (JP->EN single or EN->JP):
-- Expected JSON: {"translation":"...","explanation":"..."}
-- "explanation" is optional; non-string becomes "".
+- Expected JSON: {"translation":"..."}（EN→JPは `explanation` キーを出さない）
+- 過去互換として `explanation` が来た場合は空文字扱い。
 
 Note: "output_language" / "detected_language" are in templates but not required
 by the parser today.

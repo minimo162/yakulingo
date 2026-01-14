@@ -52,7 +52,9 @@ YakuLingoは、日本語と英語の双方向翻訳を提供するデスクト�
 | 入力言語 | 出力 |
 |---------|------|
 | 日本語 | 英語（Copilotは3スタイル比較 / ローカルAIは選択スタイル1件・解説なし） |
-| その他 | 日本語（解説付き、アクションボタン付き） |
+| その他 | 日本語（訳文のみ。Copilot利用時は解説付きのまま） |
+
+- ローカルAIの EN→JP テキスト翻訳（`prompts/local_text_translate_to_jp_json.txt`）は訳文のみを返し、`explanation` キーは出力しない。
 
 **検出メカニズム:**
 - `detect_language()`: ローカルのみで検出（Copilot呼び出しなし、高速）
@@ -689,7 +691,7 @@ NiceGUIの`await client.connected()`パターンを使用して、クライア�
 - ?? [再翻訳]: 吹き出し風ヒント行
 
 **その他入力時（和訳）:**
-- 結果カード: 訳文 + 解説
+- 結果カード: 訳文のみ（ローカルAI）。Copilotは訳文 + 解説（後続タスクで調整予定）
 - 💡 [再翻訳]: 吹き出し風ヒント行
 
 **テキストエリア仕様:**
@@ -1363,7 +1365,7 @@ Reference Files
 - 英訳/和訳とも「ビジネス文書向け」を明記
 - 既にターゲット言語の場合はそのまま出力
 - `{translation_rules}` は出力言語に応じて [COMMON] + [TO_EN]/[TO_JP] を注入
-- 出力は「訳文」「解説」のみ。解説は日本語で簡潔に、見出し・ラベルなし
+- 出力: 英訳は訳文+解説、和訳は訳文のみ（解説なし）
 - 禁止事項は英訳/和訳で共通（質問・提案・指示の繰り返し・訳文と解説以外）
 - 戻し訳は `prompts/text_back_translate.txt` を使用（編集した訳文にも対応）
 
@@ -1383,7 +1385,7 @@ Reference Files
 - テキスト
   - `prompts/local_text_translate_to_en_3style_json.txt`（JP→EN: standard/concise/minimal を1リクエストで返す）
   - `prompts/local_text_translate_to_en_single_json.txt`（JP→EN: 単発、style指定）
-  - `prompts/local_text_translate_to_jp_json.txt`（EN→JP: translation + explanation）
+  - `prompts/local_text_translate_to_jp_json.txt`（EN→JP: translation のみ、`explanation` キーなし）
   - JP→EN は速度優先のため explanation を最小化（1文以内、差分が弱い場合は空文字）
 - バッチ
   - `prompts/local_batch_translate_to_en_json.txt`（JP→EN）

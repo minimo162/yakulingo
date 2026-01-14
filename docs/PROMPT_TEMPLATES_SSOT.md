@@ -21,7 +21,7 @@ Notes for YakuLingo:
 - Use the output-language selection (Copilot/Local template choice) instead.
 - {source_text} maps to {input_text}.
 
-## Template: XX<=>XX Translation (excluding ZH<=>XX)
+## Template: XX<=>XX Translation, excluding ZH<=>XX.
 
 Purpose: translate non-Chinese input; output translation only.
 
@@ -37,7 +37,7 @@ Translate the following segment into {target_language}, without additional expla
 Notes for YakuLingo:
 - Same mapping as ZH<=>XX for {target_language} and {source_text}.
 
-## Template: Terminology Intervention
+## Template: terminology intervention.
 
 Purpose: enforce a specific term translation for consistency.
 
@@ -55,10 +55,10 @@ Template (verbatim):
 {source_text}
 
 Notes for YakuLingo:
-- Preferred path: glossary/reference files (reference_section) + translation_rules.
+- Preferred path: glossary/reference files ({reference_section}) + {translation_rules}.
 - Alternative: inject with extra_instruction (Local AI) or extra instruction in PromptBuilder.
 
-## Template: Contextual Translation
+## Template: contextual translation.
 
 Purpose: provide context without translating the context block.
 
@@ -73,10 +73,10 @@ Template (verbatim):
 {source_text}
 
 Notes for YakuLingo:
-- Use extra_instruction to prepend {context} when needed.
+- Local AI: prepend {context} via {extra_instruction} when needed.
 - Keep context separate from {input_text} to avoid re-translation.
 
-## Template: Formatted Translation
+## Template: formatted translation.
 
 Purpose: preserve tags and formatting markers in translation output.
 
@@ -89,22 +89,20 @@ Template (verbatim):
 <source>{src_text_with_format}</source>
 
 Notes for YakuLingo:
-- No direct template exists today; use adjust_custom.txt or introduce a dedicated template.
-- Keep <sn></sn> tags in the translated output in the same relative position.
+- Local AI JSON templates do not output <target> wrappers; they should still preserve <sn></sn> (and similar) tags inside the JSON "translation" field.
 
 ## llama.cpp Usage Example (verbatim)
 
 ```bash
-llama-cli -hf tencent/HY-MT1.5-7B-GGUF:Q8_0 -p "Translate the following segment into Chinese, without additional explanation.\n\nIt’s on the house." -n 4096 --temp 0.7 --top-k 20 --top-p 0.6 --repeat-penalty 1.05 --no-warmup
+llama-cli -hf tencent/HY-MT1.5-1.8B-GGUF:Q8_0 -p "Translate the following segment into Chinese, without additional explanation.\n\nIt’s on the house." -n 4096 --temp 0.7 --top-k 20 --top-p 0.6 --repeat-penalty 1.05 --no-warmup
 ```
 
 ## ollama Usage Example (verbatim)
 
 ```bash
-echo 'FROM hf.co/tencent/HY-MT1.5-7B-GGUF:Q8_0
-TEMPLATE """<｜hy_begin▁of▁sentence｜>{{ if .System }}{{ .System }}<｜hy_place▁holder▁no▁3｜>{{ end }}{{ if .Prompt }}<｜hy_User｜>{{ .Prompt }}{{ end }}<｜hy_Assistant｜>"""' > Modelfile
-ollama create hy-mt1.5-7b -f Modelfile
-ollama run hy-mt1.5-7b
+echo 'FROM hf.co/tencent/HY-MT1.5-1.8B-GGUF:Q8_0\nTEMPLATE """<｜hy_begin▁of▁sentence｜>{{ if .System }}{{ .System }}<｜hy_place▁holder▁no▁3｜>{{ end }}{{ if .Prompt }}<｜hy_User｜>{{ .Prompt }}{{ end }}<｜hy_Assistant｜>"""' > Modelfile
+ollama create hy-mt1.5-1.8b -f Modelfile
+ollama run hy-mt1.5-1.8b
 ```
 
 ## Recommended Inference Parameters (verbatim)
@@ -124,8 +122,8 @@ Note: the model does not have a default system_prompt.
 
 - {source_text} -> {input_text}
 - {target_language} -> template selection (en/jp) rather than a runtime variable
-- {context} -> extra_instruction (Local AI) or inserted instruction in PromptBuilder
-- terminology: reference_section + translation_rules (preferred), extra_instruction (optional)
+- {context} -> {extra_instruction} (Local AI) or inserted instruction in PromptBuilder
+- terminology -> {reference_section} + {translation_rules} (preferred), {extra_instruction} (optional)
 
 ## JSON Wrapper Guidance (Local AI)
 

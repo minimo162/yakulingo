@@ -16,14 +16,14 @@ JSON制約:
 - explanation は出力しない（キー自体を含めない）
 - style は {style}（standard/concise/minimal）
 - 原文の改行/タブ/箇条書きを維持
+- <sn></sn> 等のタグがあれば訳文中でも可能な限り保持
 - 用語/文脈/書式指定は追加指示/翻訳ルール/参照を最優先
-
-追加指示:
-{extra_instruction}
 
 {translation_rules}
 {numeric_hints}
+
+参考下面的翻译：
 {reference_section}
 
-入力:
+{extra_instruction}参考上面的信息，把下面的文本翻译成English，注意不需要翻译上文，也不要额外解释：
 {input_text}

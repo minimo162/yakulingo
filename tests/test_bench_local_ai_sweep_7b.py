@@ -10,6 +10,31 @@ import pytest
 from tools import bench_local_ai_sweep_7b as sweep
 
 
+def _build_specs(tmp_path: Path, *, preset: str) -> list[sweep.RunSpec]:
+    model = tmp_path / "model.gguf"
+    model.write_text("x", encoding="utf-8")
+    cpu_dir = tmp_path / "cpu"
+    cpu_dir.mkdir()
+    gpu_dir = tmp_path / "gpu"
+    gpu_dir.mkdir()
+
+    return sweep._build_run_specs(
+        preset=preset,
+        model_path=model,
+        cpu_server_dir=cpu_dir,
+        gpu_server_dir=gpu_dir,
+        gpu_device="Vulkan0",
+        ngl_main="16",
+        ngl_full="99",
+        vk_force_max_allocation_size=None,
+        vk_disable_f16=False,
+        warmup_runs=0,
+        compare=False,
+        physical_cores=4,
+        logical_cores=8,
+    )
+
+
 def test_run_timeout_creates_error_payload(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -94,3 +119,30 @@ def test_resume_skips_existing_json(
     rows = summary.get("rows", [])
     assert len(rows) == 2
     assert any(row.get("reused") for row in rows)
+
+
+def test_quick_preset_excludes_risky_tags(tmp_path: Path) -> None:
+    tags = [spec.tag for spec in _build_specs(tmp_path, preset="quick")]
+
+    assert "cpu_base" in tags
+    assert "vk_ngl_99" in tags
+    assert "vk_ngl_16" in tags
+    assert "vk_ngl_16_tb_logical" in tags
+
+    assert "vk_ngl_32" not in tags
+    assert not any(tag.endswith("_b1024_ub256") for tag in tags)
+    assert not any(tag.endswith("_ctx4096") for tag in tags)
+    assert not any(tag.endswith("_ct_q4_0") for tag in tags)
+    assert not any(tag.endswith("_fa_0") for tag in tags)
+    assert not any(tag.endswith("_mlock_no_mmap") for tag in tags)
+
+
+def test_full_preset_includes_risky_tags(tmp_path: Path) -> None:
+    tags = [spec.tag for spec in _build_specs(tmp_path, preset="full")]
+
+    assert "vk_ngl_32" in tags
+    assert any(tag.endswith("_b1024_ub256") for tag in tags)
+    assert any(tag.endswith("_ctx4096") for tag in tags)
+    assert any(tag.endswith("_ct_q4_0") for tag in tags)
+    assert any(tag.endswith("_fa_0") for tag in tags)
+    assert any(tag.endswith("_mlock_no_mmap") for tag in tags)

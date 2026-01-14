@@ -212,6 +212,28 @@ def _build_run_specs(
             )
         )
 
+    if preset != "full":
+        return specs
+
+    specs.insert(
+        2,
+        RunSpec(
+            tag="vk_ngl_32",
+            args=[
+                *common,
+                *vk_common,
+                "--server-dir",
+                str(gpu_server_dir),
+                "--device",
+                str(gpu_device),
+                "--n-gpu-layers",
+                "32",
+                "--flash-attn",
+                "auto",
+            ],
+        ),
+    )
+
     specs.append(
         RunSpec(
             tag=f"{tag_main}_b1024_ub256",
@@ -305,26 +327,6 @@ def _build_run_specs(
             ],
         )
     )
-
-    if preset == "full":
-        specs.insert(
-            3,
-            RunSpec(
-                tag="vk_ngl_32",
-                args=[
-                    *common,
-                    *vk_common,
-                    "--server-dir",
-                    str(gpu_server_dir),
-                    "--device",
-                    str(gpu_device),
-                    "--n-gpu-layers",
-                    "32",
-                    "--flash-attn",
-                    "auto",
-                ],
-            ),
-        )
 
     return specs
 

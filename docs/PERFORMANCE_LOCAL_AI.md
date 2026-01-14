@@ -253,6 +253,15 @@ uv run python tools/bench_local_ai_sweep_7b.py \
   --out-dir /work/<case-id>/.tmp/sweep-7b-YYYYmmdd-HHMMSS
 ```
 
+プリセットの使い分け:
+- `quick`: CPU-only と Vulkan(iGPU) の最小比較（`cpu_base` / `vk_ngl_full` / `vk_ngl_main` + 可能なら `*_tb_logical`）。まず動作確認と大枠の速度差を見る。
+- `full`: `quick` に加えて `batch/ubatch`・`ctx`・`cache-type`・`flash-attn`・`mlock/no-mmap` など探索系を含めた総当たりに近い比較。
+
+失敗時の確認ポイント（最小）:
+- 各 run の `*.json` の `runtime.server_variant` で CPU/Vulkan の実際の起動状態を確認する
+- `~/.yakulingo/logs/startup.log` の `Local AI offload flags` で `--device` / `-ngl` が反映されたか確認する
+- `*.log.txt` と `local_ai_server.log`（生成されていれば）でエラー詳細を確認する
+
 > **Note**: Vulkan(iGPU) で `ErrorOutOfDeviceMemory` が出る場合は、`--vk-force-max-allocation-size` を併用します（例: `268435456`=256MiB）。
 > **Note**: 中断時に再実行する場合は `--resume`、各 run の上限時間は `--run-timeout-seconds` で指定できます。
 

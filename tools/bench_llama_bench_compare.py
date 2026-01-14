@@ -160,9 +160,7 @@ def main() -> int:
     args = parser.parse_args()
 
     repo_root = _repo_root()
-    default_model = (
-        repo_root / "local_ai" / "models" / "HY-MT1.5-1.8B-Q4_K_M.gguf"
-    )
+    default_model = repo_root / "local_ai" / "models" / "HY-MT1.5-7B-Q4_K_M.gguf"
     model_path = args.model_path or default_model
 
     base_server_dir = args.server_dir or (repo_root / "local_ai" / "llama_cpp")

@@ -31,6 +31,7 @@
 比較時に揃える項目:
 - モデル/サーバ、`local_ai_*` の設定値、入力文
 - 実行環境（CPU/メモリ、電源設定、バックグラウンド負荷）
+- **EN→JP（和訳）は訳文のみ**に変更済み。改善前後を比較する際は同じプロンプトバージョンを使い、出力文字数の差が `translation_seconds` に影響しないか確認する。
 > **Note**: CPU-only と Vulkan(iGPU) 比較では、`local_ai_threads` / `local_ai_ctx_size` / `local_ai_batch_size` / `local_ai_ubatch_size` と入力文を固定し、`device` / `-ngl` / `-fa` など GPU 関連だけを変える。
 > **Note**: `local_ai_*` は `user_settings.json` には保存されません。恒久的な変更は `config/settings.template.json` を更新し、ベンチの一時上書きは CLI で行います。
 > **Note**: 既定値は `local_ai_device=none` / `local_ai_n_gpu_layers=0` / `local_ai_ctx_size=2048`。長文や安定性を優先したい場合は `local_ai_ctx_size=4096`（さらに必要なら `8192`）を指定します。Vulkan(iGPU) を使う場合は `Vulkan0` / `99`（または `auto` / `all`）を設定します。速度優先で `-ngl 16` にする場合は `local_ai_n_gpu_layers=16` を指定します。

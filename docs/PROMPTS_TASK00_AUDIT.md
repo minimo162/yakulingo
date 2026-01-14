@@ -54,6 +54,9 @@ text_translate_to_en_compare.txt: input_text, reference_section, translation_rul
 text_translate_to_jp.txt: input_text, reference_section, translation_rules
 translation_rules.txt: -
 
+Note (Copilot EN→JP):
+- `text_translate_to_jp.txt` は `Translation:` のみを出力し、Explanation ブロックは含まない。
+
 ## Local AI JSON shapes (parser expectations)
 
 Batch translation (yakulingo/services/local_ai_client.py):

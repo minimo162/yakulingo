@@ -330,7 +330,13 @@ def _build_run_specs(
 
 
 def _run(
-    python_exe: str, bench_script: Path, *, spec: RunSpec, out_path: Path, log_path: Path
+    python_exe: str,
+    bench_script: Path,
+    *,
+    spec: RunSpec,
+    out_path: Path,
+    log_path: Path,
+    timeout_s: float | None,
 ) -> dict[str, Any]:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -344,19 +350,48 @@ def _run(
         "--out",
         str(out_path),
     ]
-    completed = subprocess.run(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-    )
-    combined = (completed.stdout or "") + ("\n" if completed.stdout else "") + (
-        completed.stderr or ""
-    )
-    _write_text(log_path, combined)
+    try:
+        completed = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout_s,
+            check=False,
+        )
+        combined = (completed.stdout or "") + ("\n" if completed.stdout else "") + (
+            completed.stderr or ""
+        )
+        _write_text(log_path, combined)
+    except subprocess.TimeoutExpired as exc:
+        out_text = exc.stdout or ""
+        err_text = exc.stderr or ""
+        combined = (
+            (out_text or "")
+            + ("\n" if out_text else "")
+            + (err_text or "")
+            + ("\n" if err_text else "")
+            + f"[sweep] timeout after {timeout_s} seconds"
+        )
+        _write_text(log_path, combined.strip() + "\n")
+        payload = {
+            "benchmark": "local-ai",
+            "tag": spec.tag,
+            "error": "timeout",
+            "returncode": 124,
+            "command": " ".join(cmd),
+            "log_path": str(log_path),
+            "timeout_seconds": timeout_s,
+        }
+        _write_json(out_path, payload)
+        return {
+            "tag": spec.tag,
+            "out_path": str(out_path),
+            "log_path": str(log_path),
+            "returncode": 124,
+        }
 
     payload = _read_json(out_path)
     if payload is None:
@@ -407,6 +442,7 @@ def _build_summary_rows(results: Iterable[dict[str, Any]]) -> list[dict[str, Any
                 "json_path": str(out_path),
                 "log_path": str(item.get("log_path") or ""),
                 "error": payload.get("error"),
+                "reused": bool(item.get("reused")),
             }
         )
     return rows
@@ -420,6 +456,10 @@ def _write_summary_markdown(path: Path, *, meta: dict[str, Any], rows: list[dict
     lines.append(f"- preset: {meta.get('preset')}")
     lines.append(f"- out_dir: {meta.get('out_dir')}")
     lines.append(f"- repo_commit: {meta.get('repo_commit')}")
+    if meta.get("resume"):
+        lines.append("- resume: true")
+    if meta.get("run_timeout_seconds") is not None:
+        lines.append(f"- run_timeout_seconds: {meta.get('run_timeout_seconds')}")
     lines.append("")
     lines.append("## Results")
     lines.append("")
@@ -485,6 +525,12 @@ def _git_head_short(repo_root: Path) -> str | None:
         return None
 
 
+def _write_summaries(out_dir: Path, *, meta: dict[str, Any], results: list[dict[str, Any]]) -> None:
+    rows = _build_summary_rows(results)
+    _write_json(out_dir / "summary.json", {"meta": meta, "rows": rows})
+    _write_summary_markdown(out_dir / "summary.md", meta=meta, rows=rows)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Run a short sweep of tools/bench_local_ai.py for 7B/Q4_K_M."
@@ -499,6 +545,8 @@ def main() -> int:
     parser.add_argument("--model-path", type=Path, default=None)
     parser.add_argument("--cpu-server-dir", type=Path, default=None)
     parser.add_argument("--gpu-server-dir", type=Path, default=None)
+    parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--run-timeout-seconds", type=int, default=None)
     parser.add_argument("--vk-force-max-allocation-size", type=int, default=None)
     parser.add_argument("--vk-disable-f16", action="store_true")
 
@@ -537,14 +585,6 @@ def main() -> int:
     python_exe = sys.executable
 
     results: list[dict[str, Any]] = []
-    for spec in specs:
-        tag = _slugify_token(spec.tag)
-        out_path = out_dir / f"{tag}.json"
-        log_path = out_dir / f"{tag}.log.txt"
-        print(f"[sweep] {spec.tag} -> {out_path}")
-        results.append(
-            _run(python_exe, bench_script, spec=spec, out_path=out_path, log_path=log_path)
-        )
 
     meta = {
         "created_at": _utc_now_iso(),
@@ -562,15 +602,50 @@ def main() -> int:
         "device": str(args.device),
         "ngl_main": str(args.ngl_main),
         "ngl_full": str(args.ngl_full),
+        "resume": bool(args.resume),
+        "run_timeout_seconds": args.run_timeout_seconds,
         "vk_force_max_allocation_size": args.vk_force_max_allocation_size,
         "vk_disable_f16": bool(args.vk_disable_f16),
     }
-    rows = _build_summary_rows(results)
+    timeout_s = float(args.run_timeout_seconds) if args.run_timeout_seconds else None
 
-    _write_json(out_dir / "summary.json", {"meta": meta, "rows": rows})
-    _write_summary_markdown(out_dir / "summary.md", meta=meta, rows=rows)
+    for spec in specs:
+        tag = _slugify_token(spec.tag)
+        out_path = out_dir / f"{tag}.json"
+        log_path = out_dir / f"{tag}.log.txt"
+        if args.resume:
+            payload = _read_json(out_path)
+            if payload is not None:
+                returncode = payload.get("returncode")
+                if not isinstance(returncode, int):
+                    returncode = 0
+                results.append(
+                    {
+                        "tag": spec.tag,
+                        "out_path": str(out_path),
+                        "log_path": str(log_path) if log_path.is_file() else "",
+                        "returncode": returncode,
+                        "reused": True,
+                    }
+                )
+                _write_summaries(out_dir, meta=meta, results=results)
+                continue
+        print(f"[sweep] {spec.tag} -> {out_path}")
+        results.append(
+            _run(
+                python_exe,
+                bench_script,
+                spec=spec,
+                out_path=out_path,
+                log_path=log_path,
+                timeout_s=timeout_s,
+            )
+        )
+        _write_summaries(out_dir, meta=meta, results=results)
+
     print(f"[sweep] summary: {out_dir / 'summary.md'}")
 
+    rows = _build_summary_rows(results)
     failed = [row for row in rows if (row.get("returncode") or 0) != 0]
     return 1 if failed else 0
 

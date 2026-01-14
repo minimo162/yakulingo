@@ -254,6 +254,7 @@ uv run python tools/bench_local_ai_sweep_7b.py \
 ```
 
 > **Note**: Vulkan(iGPU) で `ErrorOutOfDeviceMemory` が出る場合は、`--vk-force-max-allocation-size` を併用します（例: `268435456`=256MiB）。
+> **Note**: 中断時に再実行する場合は `--resume`、各 run の上限時間は `--run-timeout-seconds` で指定できます。
 
 出力:
 - `summary.md`（比較用の表）

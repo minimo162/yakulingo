@@ -459,6 +459,8 @@ def test_build_server_args_adds_batch_flags_when_available(
             "--ctx-size",
             "--threads",
             "--threads-batch",
+            "--mlock",
+            "--no-mmap",
             "--temp",
             "--n-predict",
             "--batch-size",
@@ -479,6 +481,8 @@ def test_build_server_args_adds_batch_flags_when_available(
         local_ai_batch_size=512,
         local_ai_ubatch_size=128,
         local_ai_threads_batch=12,
+        local_ai_mlock=True,
+        local_ai_no_mmap=True,
     )
     settings._validate()
 
@@ -497,6 +501,8 @@ def test_build_server_args_adds_batch_flags_when_available(
     assert args[args.index("--ubatch-size") + 1] == "128"
     assert "--threads-batch" in args
     assert args[args.index("--threads-batch") + 1] == "12"
+    assert "--mlock" in args
+    assert "--no-mmap" in args
 
 
 def test_build_server_args_adds_gpu_flags_when_available(
@@ -855,6 +861,8 @@ def test_build_server_args_skips_batch_flags_without_help(
         local_ai_batch_size=512,
         local_ai_ubatch_size=128,
         local_ai_threads_batch=12,
+        local_ai_mlock=True,
+        local_ai_no_mmap=True,
     )
     settings._validate()
 
@@ -873,6 +881,8 @@ def test_build_server_args_skips_batch_flags_without_help(
     assert "-ub" not in args
     assert "--threads-batch" not in args
     assert "-tb" not in args
+    assert "--mlock" not in args
+    assert "--no-mmap" not in args
 
 
 def test_start_new_server_injects_vk_env(

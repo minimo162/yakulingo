@@ -352,6 +352,8 @@ class AppSettings:
     local_ai_n_gpu_layers: int | str = 0
     local_ai_flash_attn: str = "auto"
     local_ai_no_warmup: bool = False
+    local_ai_mlock: bool = False
+    local_ai_no_mmap: bool = False
     local_ai_vk_force_max_allocation_size: Optional[int] = None
     local_ai_vk_disable_f16: bool = False
     local_ai_cache_type_k: Optional[str] = "q8_0"
@@ -815,6 +817,18 @@ class AppSettings:
                 type(self.local_ai_no_warmup).__name__,
             )
             self.local_ai_no_warmup = False
+        if not isinstance(self.local_ai_mlock, bool):
+            logger.warning(
+                "local_ai_mlock invalid (%s), resetting to False",
+                type(self.local_ai_mlock).__name__,
+            )
+            self.local_ai_mlock = False
+        if not isinstance(self.local_ai_no_mmap, bool):
+            logger.warning(
+                "local_ai_no_mmap invalid (%s), resetting to False",
+                type(self.local_ai_no_mmap).__name__,
+            )
+            self.local_ai_no_mmap = False
 
         if self.local_ai_vk_force_max_allocation_size is not None:
             if isinstance(self.local_ai_vk_force_max_allocation_size, bool):

@@ -1094,6 +1094,12 @@ class LocalLlamaServerManager:
             elif has_short("-ub"):
                 args += ["-ub", str(int(ubatch_size))]
 
+        if help_text and settings.local_ai_mlock and has_long("--mlock"):
+            args += ["--mlock"]
+
+        if help_text and settings.local_ai_no_mmap and has_long("--no-mmap"):
+            args += ["--no-mmap"]
+
         device_value = normalize_device(settings.local_ai_device)
         n_gpu_layers_value = normalize_n_gpu_layers(settings.local_ai_n_gpu_layers)
         cpu_only_requested = False

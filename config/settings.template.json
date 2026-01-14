@@ -27,6 +27,8 @@
   "local_ai_n_gpu_layers": 0,
   "local_ai_flash_attn": "auto",
   "local_ai_no_warmup": false,
+  "local_ai_mlock": false,
+  "local_ai_no_mmap": false,
   "local_ai_vk_force_max_allocation_size": null,
   "local_ai_vk_disable_f16": false,
   "local_ai_cache_type_k": "q8_0",

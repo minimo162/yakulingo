@@ -126,6 +126,13 @@ def test_parse_text_single_translation_handles_newlines_and_quotes() -> None:
     assert explanation == "ok"
 
 
+def test_parse_text_single_translation_allows_missing_explanation() -> None:
+    raw = """{"translation":"Only translation"}"""
+    translation, explanation = parse_text_single_translation(raw)
+    assert translation == "Only translation"
+    assert explanation == ""
+
+
 def test_parse_batch_translations_preserves_escaped_newlines() -> None:
     raw = (
         """{"items":[{"id":1,"translation":"A\\nB"},{"id":2,"translation":"C\\tD"}]}"""

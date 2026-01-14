@@ -1,4 +1,4 @@
-## Text Translation Request (to Japanese)
+﻿## Text Translation Request (to Japanese)
 
 Translate the input text into natural, concise Japanese suitable for business writing.
 If the input is already Japanese, keep it as is.
@@ -11,15 +11,7 @@ If the input is already Japanese, keep it as is.
 
 ### Output format (exact)
 Translation:
-Explanation:
-
-- The explanation must be in Japanese and prioritize useful context beyond the translation itself.
-- Prefer bullet points starting with "- " (max ~5 items). Focus on high-value points only:
-  - If the source has grammar/usage/spelling issues, point them out and show (a) a grammatically correct form and (b) a more natural/native form in English (in quotes).
-  - If it matches a common mistake made by Japanese learners, mention that briefly.
-  - Explain key wording choices, nuance, and any inferred intent; when helpful, give 1–2 alternative Japanese renderings and what nuance changes.
-- Avoid low-value reporting like "I followed the glossary/rules" unless it materially changes the wording or resolves an ambiguity.
-- Output only the sections above (no extra headings, questions, or suggestions).
+- Output only the translation above (no explanations, headings, questions, or suggestions).
 
 {reference_section}
 

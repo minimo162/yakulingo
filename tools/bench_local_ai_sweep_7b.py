@@ -204,6 +204,82 @@ def _build_run_specs(
         )
         return specs
 
+    if preset == "vulkan":
+        short_input = _repo_root() / "tools" / "bench_local_ai_input_short.txt"
+        vk_base = [
+            "--input",
+            str(short_input),
+            *common,
+            "--server-dir",
+            str(gpu_server_dir),
+            "--device",
+            str(gpu_device),
+        ]
+
+        def _vk_args(
+            *, ngl: str, flash_attn: str, extra: list[str] | None = None
+        ) -> list[str]:
+            args = [
+                *vk_base,
+                "--n-gpu-layers",
+                str(ngl),
+                "--flash-attn",
+                str(flash_attn),
+            ]
+            if extra:
+                args.extend(extra)
+            args.extend(vk_common)
+            return args
+
+        specs: list[RunSpec] = []
+        specs.append(
+            RunSpec(
+                tag=f"vk_ngl_{ngl_full}",
+                args=_vk_args(ngl=ngl_full, flash_attn="auto"),
+            )
+        )
+        specs.append(
+            RunSpec(
+                tag=f"vk_ngl_{ngl_main}",
+                args=_vk_args(ngl=ngl_main, flash_attn="auto"),
+            )
+        )
+        specs.append(
+            RunSpec(
+                tag=f"vk_ngl_{ngl_main}_fa_0",
+                args=_vk_args(ngl=ngl_main, flash_attn="0"),
+            )
+        )
+        specs.append(
+            RunSpec(
+                tag=f"vk_ngl_{ngl_main}_ct_q4_0",
+                args=_vk_args(
+                    ngl=ngl_main,
+                    flash_attn="auto",
+                    extra=["--cache-type-k", "q4_0", "--cache-type-v", "q4_0"],
+                ),
+            )
+        )
+        specs.append(
+            RunSpec(
+                tag=f"vk_ngl_{ngl_main}_alloc256m",
+                args=_vk_args(
+                    ngl=ngl_main,
+                    flash_attn="auto",
+                    extra=["--vk-force-max-allocation-size", "268435456"],
+                ),
+            )
+        )
+        specs.append(
+            RunSpec(
+                tag=f"vk_ngl_{ngl_main}_no_f16",
+                args=_vk_args(
+                    ngl=ngl_main, flash_attn="auto", extra=["--vk-disable-f16"]
+                ),
+            )
+        )
+        return specs
+
     tag_full = f"vk_ngl_{ngl_full}"
     tag_main = f"vk_ngl_{ngl_main}"
 
@@ -513,6 +589,10 @@ def _build_summary_rows(results: Iterable[dict[str, Any]]) -> list[dict[str, Any
                 "cache_type_v": settings.get("local_ai_cache_type_v"),
                 "mlock": settings.get("local_ai_mlock"),
                 "no_mmap": settings.get("local_ai_no_mmap"),
+                "vk_force_max_allocation_size": settings.get(
+                    "local_ai_vk_force_max_allocation_size"
+                ),
+                "vk_disable_f16": settings.get("local_ai_vk_disable_f16"),
                 "json_path": str(out_path),
                 "log_path": str(item.get("log_path") or ""),
                 "error": payload.get("error"),
@@ -540,14 +620,14 @@ def _write_summary_markdown(
     lines.append("## Results")
     lines.append("")
     lines.append(
-        "| tag | rc | t(s) | out_chars | device | ngl | t | tb | b | ub | ctx | fa | ctk | ctv | mlock | no_mmap | json | log |"
+        "| tag | rc | t(s) | out_chars | device | vk_alloc | vk_no_f16 | ngl | t | tb | b | ub | ctx | fa | ctk | ctv | mlock | no_mmap | json | log |"
     )
     lines.append(
-        "| --- | --- | ---: | ---: | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"
+        "| --- | --- | ---: | ---: | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"
     )
     for row in rows:
         lines.append(
-            "| {tag} | {rc} | {t} | {out_chars} | {device} | {ngl} | {threads} | {tb} | {b} | {ub} | {ctx} | {fa} | {ctk} | {ctv} | {mlock} | {no_mmap} | {json_path} | {log_path} |".format(
+            "| {tag} | {rc} | {t} | {out_chars} | {device} | {vk_alloc} | {vk_no_f16} | {ngl} | {threads} | {tb} | {b} | {ub} | {ctx} | {fa} | {ctk} | {ctv} | {mlock} | {no_mmap} | {json_path} | {log_path} |".format(
                 tag=row.get("tag") or "",
                 rc=row.get("returncode"),
                 t=""
@@ -555,6 +635,8 @@ def _write_summary_markdown(
                 else f"{row['translation_seconds']:.2f}",
                 out_chars=row.get("output_chars") or "",
                 device=row.get("device") or "",
+                vk_alloc=row.get("vk_force_max_allocation_size") or "",
+                vk_no_f16=row.get("vk_disable_f16"),
                 ngl=row.get("n_gpu_layers") or "",
                 threads=row.get("threads") or "",
                 tb=row.get("threads_batch")
@@ -622,7 +704,9 @@ def main() -> int:
         description="Run a short sweep of tools/bench_local_ai.py for 7B/Q4_K_M."
     )
     parser.add_argument("--out-dir", type=Path, default=None)
-    parser.add_argument("--preset", choices=("quick", "full", "cpu"), default="quick")
+    parser.add_argument(
+        "--preset", choices=("quick", "full", "cpu", "vulkan"), default="quick"
+    )
     parser.add_argument("--device", type=str, default="Vulkan0")
     parser.add_argument("--ngl-main", type=str, default="16")
     parser.add_argument("--ngl-full", type=str, default="99")

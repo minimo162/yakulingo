@@ -166,3 +166,39 @@ def test_cpu_preset_is_cpu_only_and_uses_short_input(tmp_path: Path) -> None:
         assert spec.args[spec.args.index("--n-gpu-layers") + 1] == "0"
         input_path = Path(spec.args[spec.args.index("--input") + 1])
         assert input_path.name == "bench_local_ai_input_short.txt"
+
+
+def test_vulkan_preset_is_vulkan_only_and_includes_safe_grid(tmp_path: Path) -> None:
+    specs = _build_specs(tmp_path, preset="vulkan")
+    tags = [spec.tag for spec in specs]
+
+    assert "vk_ngl_99" in tags
+    assert "vk_ngl_16" in tags
+    assert "vk_ngl_16_fa_0" in tags
+    assert "vk_ngl_16_ct_q4_0" in tags
+    assert "vk_ngl_16_alloc256m" in tags
+    assert "vk_ngl_16_no_f16" in tags
+    assert not any(tag.startswith("cpu_") for tag in tags)
+
+    gpu_dir = str(tmp_path / "gpu")
+    for spec in specs:
+        assert spec.args[spec.args.index("--server-dir") + 1] == gpu_dir
+        assert spec.args[spec.args.index("--device") + 1] == "Vulkan0"
+        input_path = Path(spec.args[spec.args.index("--input") + 1])
+        assert input_path.name == "bench_local_ai_input_short.txt"
+
+    alloc_spec = next(spec for spec in specs if spec.tag.endswith("_alloc256m"))
+    assert (
+        alloc_spec.args[alloc_spec.args.index("--vk-force-max-allocation-size") + 1]
+        == "268435456"
+    )
+
+    no_f16_spec = next(spec for spec in specs if spec.tag.endswith("_no_f16"))
+    assert "--vk-disable-f16" in no_f16_spec.args
+
+    ct_spec = next(spec for spec in specs if spec.tag.endswith("_ct_q4_0"))
+    assert ct_spec.args[ct_spec.args.index("--cache-type-k") + 1] == "q4_0"
+    assert ct_spec.args[ct_spec.args.index("--cache-type-v") + 1] == "q4_0"
+
+    fa0_spec = next(spec for spec in specs if spec.tag.endswith("_fa_0"))
+    assert fa0_spec.args[fa0_spec.args.index("--flash-attn") + 1] == "0"

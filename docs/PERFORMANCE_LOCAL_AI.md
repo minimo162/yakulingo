@@ -260,6 +260,7 @@ uv run python tools/bench_local_ai_sweep_7b.py \
 プリセットの使い分け:
 - `quick`: CPU-only と Vulkan(iGPU) の最小比較（`cpu_base` / `vk_ngl_full` / `vk_ngl_main` + 可能なら `*_tb_logical`）。まず動作確認と大枠の速度差を見る。
 - `cpu`: CPU-only の短時間探索（`threads` / `threads_batch` / `ctx` / `batch` / `ubatch`）。入力は短め（`tools/bench_local_ai_input_short.txt`）で warm 中心。
+- `vulkan`: Vulkan(iGPU) の短時間探索（`device` / `-ngl` / `flash_attn` / `cache_type` / `vk_*`）。入力は短め（`tools/bench_local_ai_input_short.txt`）で warm 中心。
 - `full`: `quick` に加えて `batch/ubatch`・`ctx`・`cache-type`・`flash-attn`・`mlock/no-mmap` など探索系を含めた総当たりに近い比較。
 
 失敗時の確認ポイント（最小）:

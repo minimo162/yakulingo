@@ -1438,10 +1438,17 @@ def _render_result_action_footer(
                         include_headers=True,
                         include_explanation=False,
                     )
-                    explain_text = _build_copy_payload(
-                        result,
-                        include_headers=True,
-                        include_explanation=True,
+                    has_explanation = any(
+                        option.explanation for option in (result.options or [])
+                    )
+                    explain_text = (
+                        _build_copy_payload(
+                            result,
+                            include_headers=True,
+                            include_explanation=True,
+                        )
+                        if has_explanation
+                        else ""
                     )
                     if plain_text:
                         _create_copy_action_button(

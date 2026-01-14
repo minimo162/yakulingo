@@ -123,7 +123,7 @@ uv run python tools/bench_local_ai.py --mode warm \
 
 # モデル・サーバディレクトリの指定
 uv run python tools/bench_local_ai.py --mode warm \
-  --model-path local_ai/models/HY-MT1.5-1.8B-Q4_K_M.gguf \
+  --model-path local_ai/models/HY-MT1.5-7B-Q4_K_M.gguf \
   --server-dir local_ai/llama_cpp --json
 
 # max_tokens を無効化（0以下でNone扱い）
@@ -204,7 +204,7 @@ uv run python tools/bench_llama_bench_compare.py --format markdown \
 ```bash
 uv run python tools/bench_llama_bench_compare.py \
   --server-dir local_ai/llama_cpp \
-  --model-path local_ai/models/HY-MT1.5-1.8B-Q4_K_M.gguf \
+  --model-path local_ai/models/HY-MT1.5-7B-Q4_K_M.gguf \
   --pg 2048,256 -r 3 \
   --device Vulkan0 --n-gpu-layers all \
   --extra-args -b 2048 -ub 512 -fa 0
@@ -271,7 +271,7 @@ KVキャッシュの量子化は、速度よりもメモリ圧/安定性の調�
 - Qwen3 は温度0の決定論的生成で繰り返しが起きやすいため、サンプリング（Temperature > 0）が推奨されていました。
 - 推奨値（既定値）:
   - `local_ai_temperature = 0.7`
-  - `local_ai_top_p = 0.8`
+  - `local_ai_top_p = 0.6`
   - `local_ai_top_k = 20`
   - `local_ai_min_p = 0.01`（0.0 で無効化したい場合は `0.0` を指定）
   - `local_ai_repeat_penalty = 1.05`

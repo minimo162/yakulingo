@@ -76,6 +76,25 @@ class LocalPromptBuilder:
             rules = self._base.get_translation_rules(output_language)
             return rules.strip()
 
+    def _get_effective_reference_files(
+        self,
+        reference_files: Optional[Sequence[Path]],
+        *,
+        input_text: Optional[str],
+    ) -> list[Path]:
+        files: list[Path] = list(reference_files) if reference_files else []
+        if not self._settings.use_bundled_glossary:
+            return files
+        if not input_text or not input_text.strip():
+            return files
+        if not self.prompts_dir:
+            return files
+
+        glossary_path = self.prompts_dir.parent / "glossary.csv"
+        if glossary_path.exists() and glossary_path not in files:
+            files.insert(0, glossary_path)
+        return files
+
     @staticmethod
     def _input_fingerprint(text: Optional[str]) -> Optional[tuple[int, str, str]]:
         if not text:
@@ -455,6 +474,9 @@ class LocalPromptBuilder:
         *,
         input_text: Optional[str] = None,
     ) -> EmbeddedReference:
+        reference_files = self._get_effective_reference_files(
+            reference_files, input_text=input_text
+        )
         if not reference_files:
             return EmbeddedReference(text="", warnings=[], truncated=False)
 
@@ -492,21 +514,23 @@ class LocalPromptBuilder:
                 continue
 
             is_bundled_glossary = (
-                suffix == ".csv"
-                and path.name.casefold() in _BUNDLED_GLOSSARY_FILENAMES
-                and bool(input_text and input_text.strip())
+                suffix == ".csv" and path.name.casefold() in _BUNDLED_GLOSSARY_FILENAMES
             )
             if is_bundled_glossary:
+                if not input_text or not input_text.strip():
+                    continue
                 pairs = self._load_glossary_pairs(path, file_key)
                 matched = self._filter_glossary_pairs(
                     pairs, input_text or "", max_lines=glossary_max_lines
                 )
                 if not matched:
                     continue
-                content = "\n".join(
-                    f"{source},{target}" if target else f"{source},"
-                    for source, target in matched
-                )
+                lines = [
+                    f"{source} 翻译成 {target}" for source, target in matched if target
+                ]
+                if not lines:
+                    continue
+                content = "\n".join(lines)
                 was_truncated = False
             elif suffix in {".txt", ".md", ".json", ".csv"}:
                 content, was_truncated = self._get_cached_reference_text(
@@ -599,28 +623,26 @@ class LocalPromptBuilder:
         template = self._load_template(filename)
         translation_rules = self._get_translation_rules(output_language)
 
-        reference_section = ""
-        if reference_files:
-            max_context_chars = 3000
-            context_parts: list[str] = []
-            total_chars = 0
-            for item in texts:
-                if not item:
-                    continue
-                if total_chars >= max_context_chars:
-                    break
-                remaining = max_context_chars - total_chars
-                if len(item) > remaining:
-                    context_parts.append(item[:remaining])
-                    total_chars = max_context_chars
-                    break
-                context_parts.append(item)
-                total_chars += len(item) + 1
-            context_text = "\n".join(context_parts)
-            embedded_ref = self.build_reference_embed(
-                reference_files, input_text=context_text
-            )
-            reference_section = embedded_ref.text if embedded_ref.text else ""
+        max_context_chars = 3000
+        context_parts: list[str] = []
+        total_chars = 0
+        for item in texts:
+            if not item:
+                continue
+            if total_chars >= max_context_chars:
+                break
+            remaining = max_context_chars - total_chars
+            if len(item) > remaining:
+                context_parts.append(item[:remaining])
+                total_chars = max_context_chars
+                break
+            context_parts.append(item)
+            total_chars += len(item) + 1
+        context_text = "\n".join(context_parts)
+        embedded_ref = self.build_reference_embed(
+            reference_files, input_text=context_text
+        )
+        reference_section = embedded_ref.text if embedded_ref.text else ""
 
         items = [{"id": i + 1, "text": text} for i, text in enumerate(texts)]
         items_json = json.dumps({"items": items}, ensure_ascii=False)

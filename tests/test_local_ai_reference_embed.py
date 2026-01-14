@@ -107,8 +107,115 @@ def test_local_reference_embed_filters_bundled_glossary(tmp_path: Path) -> None:
     embedded = builder.build_reference_embed(
         [glossary_path], input_text="営業利益が増加"
     )
-    assert "営業利益,Operating Profit" in embedded.text
-    assert "売上高,Revenue" not in embedded.text
+    assert "営業利益 翻译成 Operating Profit" in embedded.text
+    assert "売上高 翻译成 Revenue" not in embedded.text
+
+
+def _make_temp_builder(
+    tmp_path: Path, *, use_bundled_glossary: bool = True
+) -> LocalPromptBuilder:
+    prompts_dir = tmp_path / "prompts"
+    prompts_dir.mkdir(parents=True, exist_ok=True)
+
+    (prompts_dir / "translation_rules.txt").write_text("RULES_MARKER", encoding="utf-8")
+    (prompts_dir / "local_text_translate_to_en_single_json.txt").write_text(
+        "{translation_rules}\n{reference_section}\n{input_text}\n", encoding="utf-8"
+    )
+    (prompts_dir / "local_batch_translate_to_en_json.txt").write_text(
+        "{translation_rules}\n{reference_section}\n{items_json}\n", encoding="utf-8"
+    )
+    (prompts_dir / "local_text_translate_to_en_missing_styles_json.txt").write_text(
+        "{translation_rules}\n{reference_section}\n{styles_json}\n{n_styles}\n{input_text}\n",
+        encoding="utf-8",
+    )
+
+    settings = AppSettings()
+    settings.use_bundled_glossary = use_bundled_glossary
+    return LocalPromptBuilder(
+        prompts_dir,
+        base_prompt_builder=PromptBuilder(prompts_dir),
+        settings=settings,
+    )
+
+
+def test_local_reference_embed_auto_includes_bundled_glossary_when_enabled(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "glossary.csv").write_text(
+        "営業利益,Operating Profit\n売上高,Revenue\n", encoding="utf-8"
+    )
+    builder = _make_temp_builder(tmp_path, use_bundled_glossary=True)
+
+    embedded = builder.build_reference_embed(None, input_text="営業利益が増加")
+    assert "[REFERENCE:file=glossary.csv]" in embedded.text
+    assert "営業利益 翻译成 Operating Profit" in embedded.text
+    assert "売上高" not in embedded.text
+
+
+def test_local_reference_embed_does_not_auto_include_bundled_glossary_when_disabled(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "glossary.csv").write_text(
+        "営業利益,Operating Profit\n売上高,Revenue\n", encoding="utf-8"
+    )
+    builder = _make_temp_builder(tmp_path, use_bundled_glossary=False)
+
+    embedded = builder.build_reference_embed(None, input_text="営業利益が増加")
+    assert embedded.text == ""
+
+
+def test_local_text_prompt_includes_rules_and_bundled_glossary_when_enabled(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "glossary.csv").write_text(
+        "営業利益,Operating Profit\n売上高,Revenue\n", encoding="utf-8"
+    )
+    builder = _make_temp_builder(tmp_path, use_bundled_glossary=True)
+
+    prompt = builder.build_text_to_en_single(
+        "営業利益が増加",
+        style="concise",
+        reference_files=None,
+        detected_language="日本語",
+    )
+    assert "RULES_MARKER" in prompt
+    assert "営業利益 翻译成 Operating Profit" in prompt
+
+
+def test_local_batch_prompt_includes_rules_and_bundled_glossary_when_enabled(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "glossary.csv").write_text(
+        "営業利益,Operating Profit\n売上高,Revenue\n", encoding="utf-8"
+    )
+    builder = _make_temp_builder(tmp_path, use_bundled_glossary=True)
+
+    prompt = builder.build_batch(
+        ["営業利益が増加"],
+        output_language="en",
+        translation_style="concise",
+        reference_files=None,
+    )
+    assert "RULES_MARKER" in prompt
+    assert "営業利益 翻译成 Operating Profit" in prompt
+
+
+def test_local_followup_prompt_includes_rules_and_bundled_glossary_when_enabled(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "glossary.csv").write_text(
+        "営業利益,Operating Profit\n売上高,Revenue\n", encoding="utf-8"
+    )
+    builder = _make_temp_builder(tmp_path, use_bundled_glossary=True)
+
+    prompt = builder.build_text_to_en_missing_styles(
+        "営業利益が増加",
+        styles=["standard"],
+        reference_files=None,
+        detected_language="日本語",
+    )
+    assert "RULES_MARKER" in prompt
+    assert "営業利益 翻译成 Operating Profit" in prompt
 
 
 def test_local_reference_embed_truncates_large_file(tmp_path: Path) -> None:
@@ -150,7 +257,7 @@ def test_local_reference_embed_uses_file_cache_for_text(tmp_path: Path) -> None:
 
     assert "Reference content" in first.text
     assert "Reference content" in second.text
-    assert mock_read.call_count == 1
+    assert mock_read.call_count == 2
 
 
 def test_local_followup_reference_embed_includes_local_reference(

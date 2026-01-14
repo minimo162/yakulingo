@@ -1032,6 +1032,42 @@ class LocalLlamaServerManager:
                 threads,
             )
 
+        threads_batch_setting = settings.local_ai_threads_batch
+        threads_batch: Optional[int] = None
+        auto_threads_batch: Optional[int] = None
+        if threads_batch_setting is not None:
+            try:
+                threads_batch = int(threads_batch_setting)
+            except (TypeError, ValueError):
+                threads_batch = None
+            else:
+                if threads_batch <= 0:
+                    auto_threads_batch = threads
+                    threads_batch = auto_threads_batch
+        if help_text and threads_batch and (
+            has_long("--threads-batch") or has_short("-tb")
+        ):
+            flag = "--threads-batch" if has_long("--threads-batch") else "-tb"
+            args += [flag, str(threads_batch)]
+            if auto_threads_batch is not None:
+                logger.info(
+                    "Local AI threads-batch auto: %d (config=%s)",
+                    threads_batch,
+                    threads_batch_setting,
+                )
+            else:
+                logger.info("Local AI threads-batch configured: %d", threads_batch)
+        elif threads_batch_setting is not None and auto_threads_batch is not None:
+            logger.info(
+                "Local AI threads-batch auto resolved to %d but flag not supported",
+                threads_batch,
+            )
+        elif threads_batch_setting is not None and threads_batch is not None:
+            logger.info(
+                "Local AI threads-batch configured (%s) but flag not supported",
+                threads_batch,
+            )
+
         if help_text and settings.local_ai_temperature is not None:
             if has_long("--temp"):
                 args += ["--temp", str(float(settings.local_ai_temperature))]

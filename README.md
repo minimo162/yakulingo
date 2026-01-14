@@ -302,6 +302,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
   "local_ai_port_max": 4900,
   "local_ai_ctx_size": 2048,
   "local_ai_threads": 0,
+  "local_ai_threads_batch": null,
   "local_ai_temperature": 0.7,
   "local_ai_top_p": 0.6,
   "local_ai_top_k": 20,
@@ -432,6 +433,7 @@ ollama run hy-mt1.5-7b
 - 計測のみの一時上書きは `tools/bench_local_ai.py` の CLI オプションを使用します。
 - 既定値は `local_ai_device=none` / `local_ai_n_gpu_layers=0` / `local_ai_ctx_size=2048`。長文や安定性を優先したい場合は `local_ai_ctx_size=4096`（さらに必要なら `8192`）を指定します。Vulkan(iGPU) を使う場合は `Vulkan0` / `99`（または `auto` / `all`）を設定します。速度優先で `-ngl 16` にする場合は `local_ai_n_gpu_layers=16` を指定します。
 - `local_ai_threads`: `0` は自動。CPUコアに合わせて増やすと高速化する場合があるが、過剰だと逆効果
+- `local_ai_threads_batch`: `null` は未指定、`0` は自動（`local_ai_threads` と同値）。prefillの速度調整に使う
 - `local_ai_ctx_size`: 大きいほど遅くなる傾向。プロンプト長に対して必要最小限で調整
 - `local_ai_batch_size` / `local_ai_ubatch_size`: 対応ビルドのみ有効。大きすぎるとメモリ圧迫や不安定化
 - `local_ai_device` / `local_ai_n_gpu_layers`: GPUオフロード先と層数（例: `none` / `Vulkan0`, `0` / `16` / `99` / `auto` / `all`）
@@ -473,6 +475,7 @@ ollama run hy-mt1.5-7b
 | `local_ai_port_max` | ローカルAIのポート探索上限 | 4900 |
 | `local_ai_ctx_size` | ローカルAIのcontext size | 2048 |
 | `local_ai_threads` | ローカルAIのスレッド数（0=auto） | 0 |
+| `local_ai_threads_batch` | ローカルAIのprefillスレッド数（nullで未指定、0=auto） | null |
 | `local_ai_max_chars_per_batch` | ローカルAI送信1回あたりの最大文字数 | 1000 |
 | `local_ai_max_chars_per_batch_file` | ローカルAI（ファイル翻訳）送信1回あたりの最大文字数 | 800 |
 | `request_timeout` | 翻訳リクエストのタイムアウト（秒） | 600 |
@@ -540,6 +543,7 @@ model_path:
 server_dir:
 settings:
   local_ai_threads:
+  local_ai_threads_batch:
   local_ai_ctx_size:
   local_ai_batch_size:
   local_ai_ubatch_size:

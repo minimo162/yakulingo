@@ -339,6 +339,7 @@ class AppSettings:
     local_ai_port_max: int = 4900
     local_ai_ctx_size: int = 2048
     local_ai_threads: int = 0  # 0=auto
+    local_ai_threads_batch: Optional[int] = None  # None=unset, 0=auto
     local_ai_temperature: float = 0.7
     local_ai_top_p: Optional[float] = 0.6
     local_ai_top_k: Optional[int] = 20
@@ -631,6 +632,30 @@ class AppSettings:
                 self.local_ai_threads,
             )
             self.local_ai_threads = 0
+        if self.local_ai_threads_batch is not None:
+            if isinstance(self.local_ai_threads_batch, bool):
+                logger.warning(
+                    "local_ai_threads_batch invalid (bool), resetting to None"
+                )
+                self.local_ai_threads_batch = None
+            else:
+                try:
+                    threads_batch = int(self.local_ai_threads_batch)
+                except (TypeError, ValueError):
+                    logger.warning(
+                        "local_ai_threads_batch invalid (%s), resetting to None",
+                        self.local_ai_threads_batch,
+                    )
+                    self.local_ai_threads_batch = None
+                else:
+                    if threads_batch < 0:
+                        logger.warning(
+                            "local_ai_threads_batch out of range (%d), resetting to None",
+                            threads_batch,
+                        )
+                        self.local_ai_threads_batch = None
+                    else:
+                        self.local_ai_threads_batch = threads_batch
         if self.local_ai_max_tokens is not None and self.local_ai_max_tokens < 1:
             logger.warning(
                 "local_ai_max_tokens must be positive (%d), resetting to None",

@@ -136,6 +136,74 @@ def _build_run_specs(
     if vk_disable_f16:
         vk_common.append("--vk-disable-f16")
 
+    if preset == "cpu":
+        short_input = _repo_root() / "tools" / "bench_local_ai_input_short.txt"
+        cpu_common = [
+            "--input",
+            str(short_input),
+            *common,
+            "--server-dir",
+            str(cpu_server_dir),
+            "--device",
+            "none",
+            "--n-gpu-layers",
+            "0",
+        ]
+
+        threads = (
+            int(physical_cores)
+            if physical_cores is not None and physical_cores > 0
+            else (
+                int(logical_cores)
+                if logical_cores is not None and logical_cores > 0
+                else None
+            )
+        )
+        threads_batch = (
+            int(logical_cores)
+            if logical_cores is not None and logical_cores > 0
+            else 0
+            if threads is not None
+            else None
+        )
+
+        specs: list[RunSpec] = [RunSpec(tag="cpu_base", args=cpu_common)]
+        if threads is not None and threads_batch is not None:
+            tb_tag = "auto" if threads_batch == 0 else str(threads_batch)
+            specs.append(
+                RunSpec(
+                    tag=f"cpu_t{threads}_tb{tb_tag}",
+                    args=[
+                        *cpu_common,
+                        "--threads",
+                        str(threads),
+                        "--threads-batch",
+                        str(threads_batch),
+                    ],
+                )
+            )
+
+        specs.append(
+            RunSpec(
+                tag="cpu_ctx4096",
+                args=[*cpu_common, "--ctx-size", "4096"],
+            )
+        )
+
+        specs.append(
+            RunSpec(
+                tag="cpu_b256_ub64",
+                args=[*cpu_common, "--batch-size", "256", "--ubatch-size", "64"],
+            )
+        )
+        specs.append(
+            RunSpec(
+                tag="cpu_b1024_ub256",
+                args=[*cpu_common, "--batch-size", "1024", "--ubatch-size", "256"],
+            )
+        )
+        return specs
+
     tag_full = f"vk_ngl_{ngl_full}"
     tag_main = f"vk_ngl_{ngl_main}"
 
@@ -554,7 +622,7 @@ def main() -> int:
         description="Run a short sweep of tools/bench_local_ai.py for 7B/Q4_K_M."
     )
     parser.add_argument("--out-dir", type=Path, default=None)
-    parser.add_argument("--preset", choices=("quick", "full"), default="quick")
+    parser.add_argument("--preset", choices=("quick", "full", "cpu"), default="quick")
     parser.add_argument("--device", type=str, default="Vulkan0")
     parser.add_argument("--ngl-main", type=str, default="16")
     parser.add_argument("--ngl-full", type=str, default="99")

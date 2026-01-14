@@ -146,3 +146,23 @@ def test_full_preset_includes_risky_tags(tmp_path: Path) -> None:
     assert any(tag.endswith("_ct_q4_0") for tag in tags)
     assert any(tag.endswith("_fa_0") for tag in tags)
     assert any(tag.endswith("_mlock_no_mmap") for tag in tags)
+
+
+def test_cpu_preset_is_cpu_only_and_uses_short_input(tmp_path: Path) -> None:
+    specs = _build_specs(tmp_path, preset="cpu")
+    tags = [spec.tag for spec in specs]
+
+    assert "cpu_base" in tags
+    assert "cpu_ctx4096" in tags
+    assert "cpu_b256_ub64" in tags
+    assert "cpu_b1024_ub256" in tags
+    assert any(tag.startswith("cpu_t") for tag in tags)
+    assert not any(tag.startswith("vk_ngl_") for tag in tags)
+
+    cpu_dir = str(tmp_path / "cpu")
+    for spec in specs:
+        assert spec.args[spec.args.index("--server-dir") + 1] == cpu_dir
+        assert spec.args[spec.args.index("--device") + 1] == "none"
+        assert spec.args[spec.args.index("--n-gpu-layers") + 1] == "0"
+        input_path = Path(spec.args[spec.args.index("--input") + 1])
+        assert input_path.name == "bench_local_ai_input_short.txt"

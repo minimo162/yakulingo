@@ -8,6 +8,7 @@ import subprocess
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any, Optional
@@ -33,11 +34,50 @@ def _log(message: str) -> None:
     print(message, file=sys.stderr, flush=True)
 
 
+_NO_PROXY_OPENER: Optional[urllib.request.OpenerDirector] = None
+
+
+def _is_local_url(url: str) -> bool:
+    parsed = urllib.parse.urlparse(url)
+    host = parsed.hostname
+    return host in ("127.0.0.1", "localhost", "::1")
+
+
+def _get_no_proxy_opener() -> urllib.request.OpenerDirector:
+    global _NO_PROXY_OPENER
+    opener = _NO_PROXY_OPENER
+    if opener is None:
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        _NO_PROXY_OPENER = opener
+    return opener
+
+
+def _proxy_env_summary() -> str:
+    def _is_set(*keys: str) -> bool:
+        return any(bool(os.environ.get(key)) for key in keys)
+
+    parts = [
+        f"http_proxy={'set' if _is_set('HTTP_PROXY', 'http_proxy') else 'unset'}",
+        f"https_proxy={'set' if _is_set('HTTPS_PROXY', 'https_proxy') else 'unset'}",
+        f"all_proxy={'set' if _is_set('ALL_PROXY', 'all_proxy') else 'unset'}",
+        f"no_proxy={'set' if _is_set('NO_PROXY', 'no_proxy') else 'unset'}",
+    ]
+    return "proxy_env(" + ", ".join(parts) + ")"
+
+
+def _open_url(url: str, *, timeout_s: float):
+    if _is_local_url(url):
+        return _get_no_proxy_opener().open(url, timeout=timeout_s)
+    return urllib.request.urlopen(url, timeout=timeout_s)
+
+
 def _is_http_ready(url: str, timeout_s: float = 1.0) -> bool:
     try:
-        with urllib.request.urlopen(url, timeout=timeout_s) as response:
+        with _open_url(url, timeout_s=timeout_s) as response:
             return response.status < 500
-    except (urllib.error.URLError, urllib.error.HTTPError):
+    except urllib.error.HTTPError as exc:
+        return int(getattr(exc, "code", 0) or 0) < 500
+    except urllib.error.URLError:
         return False
 
 
@@ -49,21 +89,37 @@ def _wait_for_http(
     log_path: Optional[Path] = None,
 ) -> None:
     deadline = time.monotonic() + timeout_s
+    last_error: Optional[str] = None
     while time.monotonic() < deadline:
         if proc is not None and proc.poll() is not None:
             tail = _read_log_tail(log_path) if log_path else ""
+            last = (
+                f"Last HTTP error: {last_error}"
+                if last_error
+                else "Last HTTP error: <none>"
+            )
             raise RuntimeError(
-                f"App exited before HTTP was ready (code={proc.returncode}).\n{tail}"
+                f"App exited before HTTP was ready (code={proc.returncode}).\n"
+                f"{_proxy_env_summary()}\n{last}\n{tail}"
             )
         try:
-            with urllib.request.urlopen(url, timeout=2) as response:
+            with _open_url(url, timeout_s=2.0) as response:
                 if response.status < 500:
                     return
-        except (urllib.error.URLError, urllib.error.HTTPError):
-            pass
+        except urllib.error.HTTPError as exc:
+            code = int(getattr(exc, "code", 0) or 0)
+            last_error = f"HTTPError(code={code}): {exc}"
+            if code < 500:
+                return
+        except urllib.error.URLError as exc:
+            last_error = f"URLError: {exc}"
         time.sleep(0.5)
     tail = _read_log_tail(log_path) if log_path else ""
-    raise TimeoutError(f"Server did not respond within {timeout_s}s: {url}\n{tail}")
+    last = f"Last HTTP error: {last_error}" if last_error else "Last HTTP error: <none>"
+    raise TimeoutError(
+        f"Server did not respond within {timeout_s}s: {url}\n"
+        f"{_proxy_env_summary()}\n{last}\n{tail}"
+    )
 
 
 def _load_default_text(repo_root: Path) -> str:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import logging
 from pathlib import Path
 
 import pytest
@@ -783,6 +784,120 @@ def test_build_server_args_cpu_only_forces_device_and_ngl(
     assert args[args.index("--n-gpu-layers") + 1] == "0"
 
 
+def test_build_server_args_auto_device_resolves_to_first_vulkan_device(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager = lls.LocalLlamaServerManager()
+    server_exe_path = tmp_path / "llama-server.exe"
+    server_exe_path.write_bytes(b"exe")
+    (tmp_path / "llama-cli.exe").write_bytes(b"exe")
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"model")
+
+    help_text = "\n".join(
+        [
+            "-m, --model",
+            "--ctx-size",
+            "--threads",
+            "--temp",
+            "--n-predict",
+            "--device",
+            "--n-gpu-layers",
+        ]
+    )
+    list_devices_text = "\n".join(
+        [
+            "Available devices:",
+            "  Vulkan0: AMD Radeon(TM) Graphics (8330 MiB, 7913 MiB free)",
+        ]
+    )
+
+    class DummyCompleted:
+        def __init__(self, stdout: str) -> None:
+            self.stdout = stdout
+
+    def fake_run(cmd, **kwargs):
+        if isinstance(cmd, list) and cmd and cmd[0] == str(server_exe_path):
+            assert "--help" in cmd
+            return DummyCompleted(help_text)
+        if isinstance(cmd, list) and cmd and cmd[0] == str(tmp_path / "llama-cli.exe"):
+            assert "--list-devices" in cmd
+            return DummyCompleted(list_devices_text)
+        raise AssertionError(f"unexpected subprocess.run: {cmd}")
+
+    monkeypatch.setattr(lls.subprocess, "run", fake_run)
+
+    settings = AppSettings(local_ai_device="auto", local_ai_n_gpu_layers=16)
+    settings._validate()
+
+    args = manager._build_server_args(
+        server_exe_path=server_exe_path,
+        server_variant="vulkan",
+        model_path=model_path,
+        host="127.0.0.1",
+        port=4891,
+        settings=settings,
+    )
+
+    assert "--device" in args
+    assert args[args.index("--device") + 1] == "Vulkan0"
+    assert "--n-gpu-layers" in args
+    assert args[args.index("--n-gpu-layers") + 1] == "16"
+
+
+def test_build_server_args_auto_device_falls_back_to_cpu_only_when_unresolved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    manager = lls.LocalLlamaServerManager()
+    server_exe_path = tmp_path / "llama-server.exe"
+    server_exe_path.write_bytes(b"exe")
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"model")
+
+    help_text = "\n".join(
+        [
+            "-m, --model",
+            "--ctx-size",
+            "--threads",
+            "--temp",
+            "--n-predict",
+            "--device",
+            "--n-gpu-layers",
+        ]
+    )
+
+    class DummyCompleted:
+        def __init__(self, stdout: str) -> None:
+            self.stdout = stdout
+
+    def fake_run(cmd, **kwargs):
+        if isinstance(cmd, list) and cmd and cmd[0] == str(server_exe_path):
+            assert "--help" in cmd
+            return DummyCompleted(help_text)
+        raise AssertionError(f"unexpected subprocess.run: {cmd}")
+
+    monkeypatch.setattr(lls.subprocess, "run", fake_run)
+
+    settings = AppSettings(local_ai_device="auto", local_ai_n_gpu_layers=16)
+    settings._validate()
+
+    caplog.set_level(logging.WARNING)
+    args = manager._build_server_args(
+        server_exe_path=server_exe_path,
+        server_variant="vulkan",
+        model_path=model_path,
+        host="127.0.0.1",
+        port=4891,
+        settings=settings,
+    )
+
+    assert "--device" in args
+    assert args[args.index("--device") + 1] == "none"
+    assert "--n-gpu-layers" in args
+    assert args[args.index("--n-gpu-layers") + 1] == "0"
+    assert "auto detection failed (llama-cli not found)" in caplog.text
+
+
 def test_build_server_args_skips_gpu_flags_for_non_vulkan_variant(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1286,7 +1401,9 @@ def test_resolve_local_ai_device_auto_returns_first_vulkan_device(
 
     monkeypatch.setattr(lls.subprocess, "run", fake_run)
 
-    assert lls._resolve_local_ai_device_auto("auto", server_exe_path) == "Vulkan0"
+    device, error = lls._resolve_local_ai_device_auto("auto", server_exe_path)
+    assert device == "Vulkan0"
+    assert error is None
 
 
 def test_resolve_local_ai_device_auto_returns_none_when_cli_missing(
@@ -1303,7 +1420,9 @@ def test_resolve_local_ai_device_auto_returns_none_when_cli_missing(
 
     monkeypatch.setattr(lls.subprocess, "run", fake_run)
 
-    assert lls._resolve_local_ai_device_auto("auto", server_exe_path) is None
+    device, error = lls._resolve_local_ai_device_auto("auto", server_exe_path)
+    assert device is None
+    assert error == "llama-cli not found"
     assert called["run"] is False
 
 
@@ -1319,4 +1438,6 @@ def test_resolve_local_ai_device_auto_returns_none_on_run_error(
 
     monkeypatch.setattr(lls.subprocess, "run", fake_run)
 
-    assert lls._resolve_local_ai_device_auto("auto", server_exe_path) is None
+    device, error = lls._resolve_local_ai_device_auto("auto", server_exe_path)
+    assert device is None
+    assert error == "llama-cli --list-devices failed"

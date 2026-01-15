@@ -200,15 +200,15 @@ def _parse_llama_cli_vulkan_devices(text: str) -> list[str]:
 
 def _resolve_local_ai_device_auto(
     device_value: Optional[str], server_exe_path: Path
-) -> Optional[str]:
+) -> tuple[Optional[str], Optional[str]]:
     if device_value is None:
-        return None
+        return None, None
     if str(device_value).strip().lower() != "auto":
-        return None
+        return None, None
 
     llama_cli_path = _find_llama_cli_exe(server_exe_path.parent)
     if llama_cli_path is None:
-        return None
+        return None, "llama-cli not found"
 
     try:
         completed = subprocess.run(
@@ -223,10 +223,12 @@ def _resolve_local_ai_device_auto(
         )
         output = completed.stdout or ""
     except Exception:
-        return None
+        return None, "llama-cli --list-devices failed"
 
     devices = _parse_llama_cli_vulkan_devices(output)
-    return devices[0] if devices else None
+    if not devices:
+        return None, "no Vulkan devices found"
+    return devices[0], None
 
 
 def _file_fingerprint(path: Path) -> tuple[int, int]:
@@ -1228,6 +1230,20 @@ class LocalLlamaServerManager:
 
         applied_device: Optional[str] = None
         applied_n_gpu_layers: Optional[str] = None
+
+        if gpu_enabled and not cpu_only_requested and device_supported:
+            auto_device, auto_device_error = _resolve_local_ai_device_auto(
+                device_value, server_exe_path
+            )
+            if auto_device:
+                logger.info("Local AI device auto resolved: %s", auto_device)
+                device_value = auto_device
+            elif device_value and device_value.lower() == "auto":
+                cpu_only_requested = True
+                logger.warning(
+                    "Local AI device auto detection failed (%s); forcing CPU-only",
+                    auto_device_error or "unknown error",
+                )
 
         if device_supported:
             if cpu_only_requested:

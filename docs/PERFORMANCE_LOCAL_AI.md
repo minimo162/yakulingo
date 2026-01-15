@@ -320,7 +320,7 @@ KVキャッシュの量子化は、速度よりもメモリ圧/安定性の調�
 ## 速度に効く主な設定
 - `local_ai_device` / `local_ai_n_gpu_layers`: Vulkan(iGPU) オフロード設定（`--device` / `-ngl`）
 - `local_ai_threads`: CPUスレッド数（`0` は自動）
-- `local_ai_threads_batch`: prefill スレッド数（`null` は未指定、`0` は自動）
+- `local_ai_threads_batch`: prefill スレッド数（既定: `0`=自動。`null` で未指定。CPU使用率が上がる可能性あり）
 - `local_ai_batch_size` / `local_ai_ubatch_size`: llama.cpp のバッチ設定
 - `local_ai_ctx_size`: コンテキスト長（長すぎると遅くなる）
 - `local_ai_cache_type_k` / `local_ai_cache_type_v`: KVキャッシュ型（`null` は既定の `f16` 相当）
@@ -337,7 +337,7 @@ KVキャッシュの量子化は、速度よりもメモリ圧/安定性の調�
 | `local_ai_device` | `--device` | `none` でCPU-only。Vulkanバイナリ時に適用 |
 | `local_ai_n_gpu_layers` | `-ngl` / `--n-gpu-layers` | `0` でCPU-only。Vulkanバイナリ時に適用 |
 | `local_ai_threads` | `-t` / `--threads` | `0` 以下は自動（物理コア数を優先） |
-| `local_ai_threads_batch` | `-tb` / `--threads-batch` | `null` は未指定、`0` は自動（`threads` と同値） |
+| `local_ai_threads_batch` | `-tb` / `--threads-batch` | 既定は `0`（自動=`threads` と同値）。`null` は未指定 |
 | `local_ai_batch_size` | `-b` / `--batch-size` | 正の値のみ付与 |
 | `local_ai_ubatch_size` | `-ub` / `--ubatch-size` | 正の値のみ付与 |
 | `local_ai_ctx_size` | `-c` / `--ctx-size` | 正の値のみ付与 |
@@ -351,6 +351,17 @@ KVキャッシュの量子化は、速度よりもメモリ圧/安定性の調�
 
 > **Note**: `--no-repack` は既定最適化を無効化するため、通常は使いません。
 > **Note**: 非対応フラグは `unsupported` としてログに出力されます。
+
+### task-08: `local_ai_threads_batch` 既定値（`0`=auto）を有効化
+`threads-batch` は prefill（入力処理）を狙う設定で、翻訳のように入力が長い場合に効きやすいことがあります。
+
+計測（warm / `--restart-server` / 入力 `tools/bench_local_ai_input.txt` 410 chars / style=concise）:
+- before（`local_ai_threads_batch=null`）: warmup=151.32s / translation=54.88s / output=1267 chars
+  - JSON: `/work/yakulingo-llama-speedup-20260115/.tmp/bench_task08_before_warm_retry.json`
+- after（`local_ai_threads_batch=0`）: warmup=171.75s / translation=59.78s / output=1316 chars
+  - JSON: `/work/yakulingo-llama-speedup-20260115/.tmp/bench_task08_after_warm.json`
+
+> **Note**: `output_chars=2` の計測は不正（推論失敗/早期終了の可能性）として比較から除外しました。
 
 ## Vulkan(iGPU) トラブルシュート
 - `ErrorOutOfDeviceMemory` / `Requested buffer size exceeds ...`

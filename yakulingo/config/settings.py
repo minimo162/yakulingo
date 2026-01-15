@@ -339,7 +339,7 @@ class AppSettings:
     local_ai_port_max: int = 4900
     local_ai_ctx_size: int = 2048
     local_ai_threads: int = 0  # 0=auto
-    local_ai_threads_batch: Optional[int] = None  # None=unset, 0=auto
+    local_ai_threads_batch: Optional[int] = 0  # None=unset, 0=auto
     local_ai_temperature: float = 0.7
     local_ai_top_p: Optional[float] = 0.6
     local_ai_top_k: Optional[int] = 20

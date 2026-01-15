@@ -15,7 +15,7 @@ def _repo_root() -> Path:
 
 
 def _select_lines(text: str, token: str) -> list[str]:
-    pattern = re.compile(rf"\\b{re.escape(token)}\\b", re.IGNORECASE)
+    pattern = re.compile(rf"\b{re.escape(token)}\d+\b", re.IGNORECASE)
     return [line.strip() for line in text.splitlines() if pattern.search(line)]
 
 
@@ -38,7 +38,7 @@ def _run_bench(
     bench_exe: Path,
     model_path: Path,
     device: str,
-    n_gpu_layers: str,
+    n_gpu_layers: str | None,
     pg: str,
     repeat: int,
     extra_args: Iterable[str],
@@ -49,14 +49,14 @@ def _run_bench(
         str(model_path),
         "--device",
         device,
-        "-ngl",
-        str(n_gpu_layers),
         "-pg",
         pg,
         "-r",
         str(repeat),
         *extra_args,
     ]
+    if n_gpu_layers is not None:
+        cmd.extend(["-ngl", str(n_gpu_layers)])
     completed = subprocess.run(
         cmd,
         stdout=subprocess.PIPE,
@@ -156,6 +156,18 @@ def main() -> int:
         default=[],
         help="Extra args passed to both CPU and GPU runs.",
     )
+    parser.add_argument(
+        "--cpu-extra-args",
+        nargs="*",
+        default=[],
+        help="Extra args passed only to CPU run (appended after --extra-args).",
+    )
+    parser.add_argument(
+        "--gpu-extra-args",
+        nargs="*",
+        default=[],
+        help="Extra args passed only to GPU run (appended after --extra-args).",
+    )
 
     args = parser.parse_args()
 
@@ -170,6 +182,16 @@ def main() -> int:
     cpu_bench = _find_bench_exe(cpu_dir)
     gpu_bench = _find_bench_exe(gpu_dir)
 
+    cpu_extra_args = [*args.extra_args, *args.cpu_extra_args]
+    gpu_extra_args = [*args.extra_args, *args.gpu_extra_args]
+
+    gpu_n_gpu_layers_value = str(args.n_gpu_layers)
+    gpu_n_gpu_layers_effective: str | None
+    if gpu_n_gpu_layers_value.lower() in {"auto", "all"}:
+        gpu_n_gpu_layers_effective = None
+    else:
+        gpu_n_gpu_layers_effective = gpu_n_gpu_layers_value
+
     cpu_result = _run_bench(
         bench_exe=cpu_bench,
         model_path=model_path,
@@ -177,7 +199,7 @@ def main() -> int:
         n_gpu_layers="0",
         pg=args.pg,
         repeat=args.repeat,
-        extra_args=args.extra_args,
+        extra_args=cpu_extra_args,
     )
     cpu_result.update({"server_dir": str(cpu_dir), "bench_exe": str(cpu_bench)})
 
@@ -185,10 +207,10 @@ def main() -> int:
         bench_exe=gpu_bench,
         model_path=model_path,
         device=args.device,
-        n_gpu_layers=str(args.n_gpu_layers),
+        n_gpu_layers=gpu_n_gpu_layers_effective,
         pg=args.pg,
         repeat=args.repeat,
-        extra_args=args.extra_args,
+        extra_args=gpu_extra_args,
     )
     gpu_result.update({"server_dir": str(gpu_dir), "bench_exe": str(gpu_bench)})
 
@@ -199,7 +221,11 @@ def main() -> int:
             "pg": args.pg,
             "repeat": args.repeat,
             "gpu_device": args.device,
-            "gpu_n_gpu_layers": str(args.n_gpu_layers),
+            "gpu_n_gpu_layers": gpu_n_gpu_layers_value,
+            "gpu_n_gpu_layers_effective": gpu_n_gpu_layers_effective,
+            "extra_args": args.extra_args,
+            "cpu_extra_args": args.cpu_extra_args,
+            "gpu_extra_args": args.gpu_extra_args,
         },
         "cpu": cpu_result,
         "gpu": gpu_result,

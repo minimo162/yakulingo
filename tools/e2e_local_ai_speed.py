@@ -10,7 +10,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
@@ -31,6 +31,69 @@ _RE_LOCAL_AI_WARMUP_FINISHED = re.compile(r"LocalAI warmup finished: ([0-9.]+)s"
 
 def _log(message: str) -> None:
     print(message, file=sys.stderr, flush=True)
+
+
+def _commit_text_input(text_input) -> None:
+    text_input.blur()
+    text_input.dispatch_event("change")
+
+
+def _wait_for_translate_button_enabled(
+    translate_button,
+    *,
+    timeout_s: float,
+    local_status=None,
+    text_input=None,
+    app_log_path: Optional[Path] = None,
+    monotonic: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+) -> None:
+    deadline = monotonic() + timeout_s
+    while monotonic() < deadline:
+        if translate_button.is_enabled():
+            return
+        sleep(0.1)
+
+    details: list[str] = []
+    try:
+        details.append(f"translate_enabled={translate_button.is_enabled()}")
+    except Exception as exc:
+        details.append(f"translate_enabled=<error:{exc}>")
+    try:
+        details.append(
+            f"translate_disabled_attr={translate_button.get_attribute('disabled')}"
+        )
+    except Exception as exc:
+        details.append(f"translate_disabled_attr=<error:{exc}>")
+
+    if text_input is not None:
+        try:
+            value = text_input.input_value()
+            details.append(f"text_input_len={len(value)}")
+        except Exception as exc:
+            details.append(f"text_input_len=<error:{exc}>")
+
+    if local_status is not None:
+        try:
+            details.append(f"local_ai_state={local_status.get_attribute('data-state')}")
+        except Exception as exc:
+            details.append(f"local_ai_state=<error:{exc}>")
+        try:
+            details.append(f"local_ai_text={local_status.inner_text()}")
+        except Exception:
+            pass
+
+    if app_log_path is not None:
+        tail = _read_log_tail(app_log_path)
+        if tail:
+            details.append("app_log_tail:")
+            details.append(tail)
+
+    message = (
+        f"Translate button did not become enabled within {timeout_s}s.\n"
+        + "\n".join(details)
+    ).strip()
+    raise TimeoutError(message)
 
 
 def _is_http_ready(url: str, timeout_s: float = 1.0) -> bool:
@@ -260,9 +323,19 @@ def _run_e2e(
                     f"Local AI not ready (state={status_state} text={status_text})"
                 ) from exc
 
-            page.get_by_test_id("text-input").fill(input_text)
+            text_input = page.get_by_test_id("text-input")
+            text_input.fill(input_text)
+            _commit_text_input(text_input)
+            translate_button = page.get_by_test_id("translate-button")
+            _wait_for_translate_button_enabled(
+                translate_button,
+                timeout_s=10,
+                local_status=local_status if local_status.count() else None,
+                text_input=text_input,
+                app_log_path=app_log_path,
+            )
             t_translate_start = time.perf_counter()
-            page.get_by_test_id("translate-button").click()
+            translate_button.click()
             status = page.get_by_test_id("translation-status")
             translation_seconds_source = "ui"
             translation_elapsed_logged = None

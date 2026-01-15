@@ -167,6 +167,7 @@ if errorlevel 1 (
 call :ShowProgress 1 "Copying folders..."
 
 echo        Copying .venv, .uv-python, .playwright-browsers, yakulingo, prompts, config, local_ai...
+set "FIXED_MODEL_GGUF=HY-MT1.5-7B-Q4_K_M.gguf"
 
 :: Copy folders using robocopy
 :: Exit codes: 0=no change, 1=copied, 2-7=warnings, 8+=errors
@@ -195,7 +196,7 @@ for %%f in (.venv .uv-python .playwright-browsers) do (
         )
     )
 )
-for %%f in (yakulingo prompts config local_ai) do (
+for %%f in (yakulingo prompts config) do (
     if exist "%%f" (
         echo        Copying %%f...
         echo ============================================================ >> "%ROBOCOPY_LOG%"
@@ -215,6 +216,55 @@ for %%f in (yakulingo prompts config local_ai) do (
             set "ROBOCOPY_WARNINGS=!ROBOCOPY_WARNINGS! %%f"
             echo        [WARNING] Some files skipped in %%f ^(exit code: !RC!^)
         )
+    )
+)
+if exist "local_ai" (
+    echo        Copying local_ai ^(excluding extra GGUF models^)...
+    echo ============================================================ >> "%ROBOCOPY_LOG%"
+    echo Copying: local_ai >> "%ROBOCOPY_LOG%"
+    echo ============================================================ >> "%ROBOCOPY_LOG%"
+    robocopy "local_ai" "%DIST_DIR%\local_ai" /E /MT:8 /NP /R:1 /W:1 /XF *.gguf* >> "%ROBOCOPY_LOG%" 2>&1
+    set "RC=!errorlevel!"
+    echo Exit code: !RC! >> "%ROBOCOPY_LOG%"
+    echo. >> "%ROBOCOPY_LOG%"
+    if !RC! GEQ 8 (
+        echo        [ERROR] Failed to copy local_ai ^(exit code: !RC!^)
+        echo        See log: %ROBOCOPY_LOG%
+        type "%ROBOCOPY_LOG%"
+        pause
+        exit /b 1
+    ) else if !RC! GEQ 2 (
+        set "ROBOCOPY_WARNINGS=!ROBOCOPY_WARNINGS! local_ai"
+        echo        [WARNING] Some files skipped in local_ai ^(exit code: !RC!^)
+    )
+
+    if exist "local_ai\models\%FIXED_MODEL_GGUF%" (
+        echo        Copying local_ai\models\%FIXED_MODEL_GGUF%...
+        echo ============================================================ >> "%ROBOCOPY_LOG%"
+        echo Copying: local_ai\models\%FIXED_MODEL_GGUF% >> "%ROBOCOPY_LOG%"
+        echo ============================================================ >> "%ROBOCOPY_LOG%"
+        robocopy "local_ai\models" "%DIST_DIR%\local_ai\models" "%FIXED_MODEL_GGUF%" /MT:8 /NP /R:1 /W:1 >> "%ROBOCOPY_LOG%" 2>&1
+        set "RC=!errorlevel!"
+        echo Exit code: !RC! >> "%ROBOCOPY_LOG%"
+        echo. >> "%ROBOCOPY_LOG%"
+        if !RC! GEQ 8 (
+            echo        [ERROR] Failed to copy fixed model ^(exit code: !RC!^)
+            echo        See log: %ROBOCOPY_LOG%
+            type "%ROBOCOPY_LOG%"
+            pause
+            exit /b 1
+        ) else if !RC! GEQ 2 (
+            set "ROBOCOPY_WARNINGS=!ROBOCOPY_WARNINGS! local_ai\models\%FIXED_MODEL_GGUF%"
+            echo        [WARNING] Some files skipped while copying fixed model ^(exit code: !RC!^)
+        )
+    ) else (
+        if exist "local_ai\models\*.gguf*" (
+            echo        [ERROR] Found GGUF models in local_ai\models, but fixed model is missing: %FIXED_MODEL_GGUF%
+            echo        Remove other models or place the fixed model before building the distribution.
+            pause
+            exit /b 1
+        )
+        echo        [WARNING] Fixed model not found: local_ai\models\%FIXED_MODEL_GGUF% ^(no GGUF models will be included^)
     )
 )
 if defined ROBOCOPY_WARNINGS (

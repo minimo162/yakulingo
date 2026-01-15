@@ -348,8 +348,8 @@ class AppSettings:
     local_ai_max_tokens: Optional[int] = 1024
     local_ai_batch_size: Optional[int] = 512
     local_ai_ubatch_size: Optional[int] = 128
-    local_ai_device: str = "none"
-    local_ai_n_gpu_layers: int | str = 0
+    local_ai_device: str = "auto"
+    local_ai_n_gpu_layers: int | str = "auto"
     local_ai_flash_attn: str = "auto"
     local_ai_no_warmup: bool = False
     local_ai_mlock: bool = False

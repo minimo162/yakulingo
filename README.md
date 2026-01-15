@@ -311,8 +311,8 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
   "local_ai_max_tokens": 1024,
   "local_ai_batch_size": 512,
   "local_ai_ubatch_size": 128,
-  "local_ai_device": "none",
-  "local_ai_n_gpu_layers": 0,
+  "local_ai_device": "auto",
+  "local_ai_n_gpu_layers": "auto",
   "local_ai_flash_attn": "auto",
   "local_ai_no_warmup": false,
   "local_ai_mlock": false,
@@ -433,7 +433,7 @@ ollama run hy-mt1.5-7b
 **ローカルAIの速度チューニング（開発者向け）**:
 - `local_ai_*` は `user_settings.json` に保存されないため、恒久的に変える場合は `config/settings.template.json` を編集します。
 - 計測のみの一時上書きは `tools/bench_local_ai.py` の CLI オプションを使用します。
-- 既定値は `local_ai_device=none` / `local_ai_n_gpu_layers=0` / `local_ai_ctx_size=2048`。長文や安定性を優先したい場合は `local_ai_ctx_size=4096`（さらに必要なら `8192`）を指定します。Vulkan(iGPU) を使う場合は `llama-cli.exe --list-devices` で表示されるデバイス名（例: `Vulkan0`）と `local_ai_n_gpu_layers`（例: `99` / `16` / `auto` / `all`）を設定します。
+- 既定値は `local_ai_device=auto` / `local_ai_n_gpu_layers=auto` / `local_ai_ctx_size=2048`。Vulkan 環境ではオフロードを試行し、失敗時は安全に CPU-only にフォールバックします（強制的に CPU-only に戻す場合は `local_ai_device=none` または `local_ai_n_gpu_layers=0` を指定）。
 - `local_ai_threads`: `0` は自動。CPUコアに合わせて増やすと高速化する場合があるが、過剰だと逆効果
 - `local_ai_threads_batch`: `null` は未指定、`0` は自動（`local_ai_threads` と同値）。prefillの速度調整に使う
 - `local_ai_ctx_size`: 大きいほど遅くなる傾向。プロンプト長に対して必要最小限で調整
@@ -490,8 +490,8 @@ ollama run hy-mt1.5-7b
 | `local_ai_max_tokens` | ローカルAIの最大生成トークン（nullで無制限） | 1024 |
 | `local_ai_batch_size` | ローカルAIのバッチサイズ（対応フラグがある場合のみ使用、nullで無効） | 512 |
 | `local_ai_ubatch_size` | ローカルAIのマイクロバッチサイズ（対応フラグがある場合のみ使用、nullで無効） | 128 |
-| `local_ai_device` | GPUオフロード先（`none` / `Vulkan0` など） | `none` |
-| `local_ai_n_gpu_layers` | GPUに載せる層数（`0` / `16` / `99` / `auto` / `all`） | 0 |
+| `local_ai_device` | GPUオフロード先（`auto` / `none` / `Vulkan0` など） | `auto` |
+| `local_ai_n_gpu_layers` | GPUに載せる層数（`auto` / `0` / `16` / `99` / `all`） | `auto` |
 | `local_ai_flash_attn` | Flash Attention（`auto` / `0` / `1`） | `auto` |
 | `local_ai_no_warmup` | warmup 無効化 | false |
 | `local_ai_mlock` | メモリ固定（環境により失敗する場合はfalse） | false |

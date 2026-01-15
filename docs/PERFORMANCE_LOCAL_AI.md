@@ -394,6 +394,7 @@ uv run --extra test python tools/e2e_local_ai_speed.py
 - ローカルAIの既定はストリーミング表示OFF（有効化する場合は `YAKULINGO_DISABLE_LOCAL_STREAMING_PREVIEW=0`）
 - ログ出力: `--app-log` でアプリのstdout/stderrを保存（未指定なら `.tmp/` に自動保存）
 - 事前条件: `local_ai/` が利用可能、PlaywrightのChromiumが導入済み
+- プロキシ環境: `tools/e2e_local_ai_speed.py` のHTTP ready判定は `127.0.0.1` / `localhost` をプロキシ無視でアクセスする（外部URL指定時は除く）
 - ケース運用では `--out` / `--app-log` を `/work/<case-id>/.tmp/` 配下に指定する
 
 ## アプリ起動を含む計測（手動テンプレ）

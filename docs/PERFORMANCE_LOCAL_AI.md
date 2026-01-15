@@ -363,6 +363,18 @@ KVキャッシュの量子化は、速度よりもメモリ圧/安定性の調�
 
 > **Note**: `output_chars=2` の計測は不正（推論失敗/早期終了の可能性）として比較から除外しました。
 
+### task-09: tg（生成）改善候補（flash-attn）を少数だけ実測
+task-06 の所見（pp は速いが tg が同等）を受け、tg に効く可能性がある `flash-attn` を `llama-bench` で比較しました。
+
+計測（`tools/bench_llama_bench_compare.py` / `pg=512,128` / `r=3`）:
+- baseline（`-fa` 未指定=既定）: GPU `tg128`=5.62 t/s / `pp512`=65.18 t/s
+  - JSON: `/work/yakulingo-llama-speedup-20260115/.tmp/llama_bench_compare_tg_baseline.json`
+- `flash-attn=1`: GPU `tg128`=5.85 t/s（+約4%）/ `pp512`=67.32 t/s
+  - JSON: `/work/yakulingo-llama-speedup-20260115/.tmp/llama_bench_compare_tg_fa1.json`
+
+> **Note**: `pg=2048,256` は Vulkan(iGPU) で `ErrorOutOfDeviceMemory` が出る場合があり、比較は `pg=512,128` に縮小しました。
+> **Note**: 効果は小さく、`pp512+tg128` では差が逆転する場合があるため、アプリ側の実測（CLI/E2E）で確認してください。
+
 ## Vulkan(iGPU) トラブルシュート
 - `ErrorOutOfDeviceMemory` / `Requested buffer size exceeds ...`
   - `local_ai_vk_force_max_allocation_size` を設定（例: `536870912`=512MiB）
@@ -477,6 +489,20 @@ E2E 指標（1回）:
 E2E:
 - `tools/e2e_local_ai_speed.py` は stage=wait_http / exit code=11 で失敗（ログが空のため要調査）。
 - JSON: `/work/yakulingo-llama-speedup-20260115/.tmp/e2e_before.json`
+
+## pp/tg 切り分け結果（case: yakulingo-llama-speedup-20260115）
+
+- 出力保存先: `/work/yakulingo-llama-speedup-20260115/.tmp/llama_bench_compare_after.json`
+- 実行条件: `llama-bench` / `-pg 2048,256` / `-r 3` / model `HY-MT1.5-7B-Q4_K_M.gguf`
+
+| backend | ngl | pp512 (t/s) | tg128 (t/s) | pp2048+tg256 (t/s) |
+| --- | ---: | ---: | ---: | ---: |
+| CPU | 0 | 20.47 ± 0.92 | 5.76 ± 0.33 | 15.70 ± 0.31 |
+| Vulkan(iGPU) | 99（default） | 62.67 ± 4.66 | 5.69 ± 0.21 | 27.97 ± 0.35 |
+
+所見:
+- pp は Vulkan が大幅に高速だが、tg はほぼ同等 → この環境では tg がボトルネックになりやすい
+- `--n-gpu-layers auto/all` は `llama-bench` 側が非対応のため、比較ツールでは `-ngl` 未指定（既定=99）として実行
 
 ## よくある失敗と回避策
 - AVX2未対応CPU: 同梱のAVX2版 `llama-server` が起動しない場合は別ビルドが必要

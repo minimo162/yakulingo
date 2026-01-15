@@ -15,8 +15,15 @@ def _repo_root() -> Path:
 
 
 def _select_lines(text: str, token: str) -> list[str]:
-    pattern = re.compile(rf"\b{re.escape(token)}\d+\b", re.IGNORECASE)
+    pattern = re.compile(rf"\b{re.escape(token)}\d*\b", re.IGNORECASE)
     return [line.strip() for line in text.splitlines() if pattern.search(line)]
+
+
+def _normalize_n_gpu_layers(value: str) -> str | None:
+    normalized = value.strip().lower()
+    if normalized in {"", "auto", "all"}:
+        return None
+    return value
 
 
 def _find_bench_exe(server_dir: Path) -> Path:
@@ -186,11 +193,7 @@ def main() -> int:
     gpu_extra_args = [*args.extra_args, *args.gpu_extra_args]
 
     gpu_n_gpu_layers_value = str(args.n_gpu_layers)
-    gpu_n_gpu_layers_effective: str | None
-    if gpu_n_gpu_layers_value.lower() in {"auto", "all"}:
-        gpu_n_gpu_layers_effective = None
-    else:
-        gpu_n_gpu_layers_effective = gpu_n_gpu_layers_value
+    gpu_n_gpu_layers_effective = _normalize_n_gpu_layers(gpu_n_gpu_layers_value)
 
     cpu_result = _run_bench(
         bench_exe=cpu_bench,

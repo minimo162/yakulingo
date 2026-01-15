@@ -9,7 +9,7 @@ from yakulingo.config.settings import AppSettings
 from yakulingo.services import local_llama_server as lls
 
 
-_FIXED_MODEL_FILENAME = "HY-MT1.5-1.8B-Q4_K_M.gguf"
+_FIXED_MODEL_FILENAME = "HY-MT1.5-7B-Q4_K_M.gguf"
 
 
 def _install_fixed_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
@@ -18,6 +18,20 @@ def _install_fixed_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Pat
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(b"dummy")
     return path
+
+
+def test_ensure_ready_raises_install_hint_when_fixed_model_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(lls, "_app_base_dir", lambda: tmp_path)
+
+    manager = lls.LocalLlamaServerManager()
+    with pytest.raises(lls.LocalAINotInstalledError) as excinfo:
+        manager.ensure_ready(AppSettings())
+
+    message = str(excinfo.value)
+    assert "local_ai/models/HY-MT1.5-7B-Q4_K_M.gguf" in message
+    assert "tencent/HY-MT1.5-7B-GGUF" in message
 
 
 def test_resolve_from_app_base_is_not_cwd_dependent(tmp_path: Path) -> None:

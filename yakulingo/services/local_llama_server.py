@@ -435,7 +435,9 @@ class LocalLlamaServerManager:
 
         if model_path is None:
             raise LocalAINotInstalledError(
-                "ローカルAIのモデルが見つかりません。install_deps.bat を実行するか、設定の local_ai_model_path を確認してください。"
+                "ローカルAIの固定モデルが見つかりません: local_ai/models/HY-MT1.5-7B-Q4_K_M.gguf。"
+                "Hugging Face（tencent/HY-MT1.5-7B-GGUF）から HY-MT1.5-7B-Q4_K_M.gguf をダウンロードし、"
+                "上記パスに配置してください。"
             )
 
         server_exe_path, server_variant = self._resolve_server_exe(server_dir)
@@ -668,7 +670,7 @@ class LocalLlamaServerManager:
                 pass
 
     def _resolve_model_path(self, settings: AppSettings) -> Optional[Path]:
-        fixed = _app_base_dir() / "local_ai" / "models" / "HY-MT1.5-1.8B-Q4_K_M.gguf"
+        fixed = _app_base_dir() / "local_ai" / "models" / "HY-MT1.5-7B-Q4_K_M.gguf"
         return fixed if fixed.is_file() else None
 
     def _resolve_server_dir(self, settings: AppSettings) -> Path:

@@ -1236,3 +1236,87 @@ def test_ensure_no_proxy_for_localhost_preserves_existing(
     assert "localhost" in os.environ["NO_PROXY"]
     assert "127.0.0.1" in os.environ["no_proxy"]
     assert "localhost" in os.environ["no_proxy"]
+
+
+def test_parse_llama_cli_vulkan_devices_parses_available_devices_section() -> None:
+    text = "\n".join(
+        [
+            "load_backend: loaded Vulkan backend from ...",
+            "Available devices:",
+            "  Vulkan0: AMD Radeon(TM) Graphics (8330 MiB, 7913 MiB free)",
+            "  Vulkan1 : Dummy GPU (1234 MiB, 1000 MiB free)",
+        ]
+    )
+
+    assert lls._parse_llama_cli_vulkan_devices(text) == ["Vulkan0", "Vulkan1"]
+
+
+def test_parse_llama_cli_vulkan_devices_falls_back_without_header() -> None:
+    text = "\n".join(
+        [
+            "ggml_vulkan: Found 1 Vulkan devices:",
+            "Vulkan0: AMD Radeon(TM) Graphics (8330 MiB, 7913 MiB free)",
+        ]
+    )
+
+    assert lls._parse_llama_cli_vulkan_devices(text) == ["Vulkan0"]
+
+
+def test_resolve_local_ai_device_auto_returns_first_vulkan_device(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server_exe_path = tmp_path / "llama-server.exe"
+    server_exe_path.write_bytes(b"exe")
+    (tmp_path / "llama-cli.exe").write_bytes(b"exe")
+
+    output = "\n".join(
+        [
+            "Available devices:",
+            "  Vulkan0: AMD Radeon(TM) Graphics (8330 MiB, 7913 MiB free)",
+            "  Vulkan1: Dummy GPU (1234 MiB, 1000 MiB free)",
+        ]
+    )
+
+    class DummyCompleted:
+        def __init__(self, stdout: str) -> None:
+            self.stdout = stdout
+
+    def fake_run(*args, **kwargs):
+        return DummyCompleted(output)
+
+    monkeypatch.setattr(lls.subprocess, "run", fake_run)
+
+    assert lls._resolve_local_ai_device_auto("auto", server_exe_path) == "Vulkan0"
+
+
+def test_resolve_local_ai_device_auto_returns_none_when_cli_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server_exe_path = tmp_path / "llama-server.exe"
+    server_exe_path.write_bytes(b"exe")
+
+    called = {"run": False}
+
+    def fake_run(*args, **kwargs):
+        called["run"] = True
+        raise AssertionError("subprocess.run should not be called when cli is missing")
+
+    monkeypatch.setattr(lls.subprocess, "run", fake_run)
+
+    assert lls._resolve_local_ai_device_auto("auto", server_exe_path) is None
+    assert called["run"] is False
+
+
+def test_resolve_local_ai_device_auto_returns_none_on_run_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server_exe_path = tmp_path / "llama-server.exe"
+    server_exe_path.write_bytes(b"exe")
+    (tmp_path / "llama-cli.exe").write_bytes(b"exe")
+
+    def fake_run(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(lls.subprocess, "run", fake_run)
+
+    assert lls._resolve_local_ai_device_auto("auto", server_exe_path) is None

@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import socket
 import subprocess
 import threading
@@ -131,6 +132,101 @@ def _find_llama_server_exe(dir_path: Path) -> Optional[Path]:
         if candidate.is_file():
             return candidate
     return None
+
+
+def _find_llama_cli_exe(dir_path: Path) -> Optional[Path]:
+    candidates = [
+        dir_path / "llama-cli.exe",
+        dir_path / "llama-cli",
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+_RE_LLAMA_CLI_AVAILABLE_DEVICES_HEADER = re.compile(
+    r"^\s*Available devices:\s*$", flags=re.IGNORECASE
+)
+_RE_LLAMA_CLI_VULKAN_DEVICE_LINE = re.compile(
+    r"^\s*(Vulkan\d+)\s*:", flags=re.IGNORECASE
+)
+
+
+def _parse_llama_cli_vulkan_devices(text: str) -> list[str]:
+    lines = (text or "").splitlines()
+    devices: list[str] = []
+    seen: set[str] = set()
+    in_section = False
+    section_found = False
+
+    for line in lines:
+        if not in_section:
+            if _RE_LLAMA_CLI_AVAILABLE_DEVICES_HEADER.match(line):
+                in_section = True
+                section_found = True
+            continue
+
+        match = _RE_LLAMA_CLI_VULKAN_DEVICE_LINE.match(line)
+        if not match:
+            continue
+        name = match.group(1).strip()
+        if not name:
+            continue
+        key = name.lower()
+        if key in seen:
+            continue
+        devices.append(name)
+        seen.add(key)
+
+    if section_found:
+        return devices
+
+    for line in lines:
+        match = _RE_LLAMA_CLI_VULKAN_DEVICE_LINE.match(line)
+        if not match:
+            continue
+        name = match.group(1).strip()
+        if not name:
+            continue
+        key = name.lower()
+        if key in seen:
+            continue
+        devices.append(name)
+        seen.add(key)
+
+    return devices
+
+
+def _resolve_local_ai_device_auto(
+    device_value: Optional[str], server_exe_path: Path
+) -> Optional[str]:
+    if device_value is None:
+        return None
+    if str(device_value).strip().lower() != "auto":
+        return None
+
+    llama_cli_path = _find_llama_cli_exe(server_exe_path.parent)
+    if llama_cli_path is None:
+        return None
+
+    try:
+        completed = subprocess.run(
+            [str(llama_cli_path), "--list-devices"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=2.0,
+            check=False,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        output = completed.stdout or ""
+    except Exception:
+        return None
+
+    devices = _parse_llama_cli_vulkan_devices(output)
+    return devices[0] if devices else None
 
 
 def _file_fingerprint(path: Path) -> tuple[int, int]:

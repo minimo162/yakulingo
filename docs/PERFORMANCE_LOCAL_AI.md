@@ -423,6 +423,20 @@ E2E 指標（1回）:
 - `total_seconds`: 36.90
 - JSON: `/work/yakulingo-benchmark-translation-speed-accuracy-20260114-073842/.tmp/e2e_local_ai_speed.json`
 
+## pp/tg 切り分け結果（case: yakulingo-llama-speedup-20260115）
+
+- 出力保存先: `/work/yakulingo-llama-speedup-20260115/.tmp/llama_bench_compare_after.json`
+- 実行条件: `llama-bench` / `-pg 2048,256` / `-r 3` / model `HY-MT1.5-7B-Q4_K_M.gguf`
+
+| backend | ngl | pp512 (t/s) | tg128 (t/s) | pp2048+tg256 (t/s) |
+| --- | ---: | ---: | ---: | ---: |
+| CPU | 0 | 20.47 ± 0.92 | 5.76 ± 0.33 | 15.70 ± 0.31 |
+| Vulkan(iGPU) | 99（default） | 62.67 ± 4.66 | 5.69 ± 0.21 | 27.97 ± 0.35 |
+
+所見:
+- pp は Vulkan が大幅に高速だが、tg はほぼ同等 → この環境では tg がボトルネックになりやすい
+- `--n-gpu-layers auto/all` は `llama-bench` 側が非対応のため、比較ツールでは `-ngl` 未指定（既定=99）として実行
+
 ## よくある失敗と回避策
 - AVX2未対応CPU: 同梱のAVX2版 `llama-server` が起動しない場合は別ビルドが必要
 - モデルパス不備: `local_ai_model_path` の指定ミスで起動失敗

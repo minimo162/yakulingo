@@ -15,8 +15,15 @@ def _repo_root() -> Path:
 
 
 def _select_lines(text: str, token: str) -> list[str]:
-    pattern = re.compile(rf"\\b{re.escape(token)}\\b", re.IGNORECASE)
+    pattern = re.compile(rf"\b{re.escape(token)}", re.IGNORECASE)
     return [line.strip() for line in text.splitlines() if pattern.search(line)]
+
+
+def _normalize_n_gpu_layers(value: str) -> str | None:
+    normalized = value.strip().lower()
+    if normalized in {"", "auto", "all"}:
+        return None
+    return value
 
 
 def _find_bench_exe(server_dir: Path) -> Path:
@@ -38,7 +45,7 @@ def _run_bench(
     bench_exe: Path,
     model_path: Path,
     device: str,
-    n_gpu_layers: str,
+    n_gpu_layers: str | None,
     pg: str,
     repeat: int,
     extra_args: Iterable[str],
@@ -49,14 +56,14 @@ def _run_bench(
         str(model_path),
         "--device",
         device,
-        "-ngl",
-        str(n_gpu_layers),
         "-pg",
         pg,
         "-r",
         str(repeat),
         *extra_args,
     ]
+    if n_gpu_layers is not None:
+        cmd.extend(["-ngl", str(n_gpu_layers)])
     completed = subprocess.run(
         cmd,
         stdout=subprocess.PIPE,
@@ -170,6 +177,8 @@ def main() -> int:
     cpu_bench = _find_bench_exe(cpu_dir)
     gpu_bench = _find_bench_exe(gpu_dir)
 
+    gpu_n_gpu_layers = _normalize_n_gpu_layers(str(args.n_gpu_layers))
+
     cpu_result = _run_bench(
         bench_exe=cpu_bench,
         model_path=model_path,
@@ -185,7 +194,7 @@ def main() -> int:
         bench_exe=gpu_bench,
         model_path=model_path,
         device=args.device,
-        n_gpu_layers=str(args.n_gpu_layers),
+        n_gpu_layers=gpu_n_gpu_layers,
         pg=args.pg,
         repeat=args.repeat,
         extra_args=args.extra_args,
@@ -200,6 +209,7 @@ def main() -> int:
             "repeat": args.repeat,
             "gpu_device": args.device,
             "gpu_n_gpu_layers": str(args.n_gpu_layers),
+            "gpu_n_gpu_layers_effective": gpu_n_gpu_layers,
         },
         "cpu": cpu_result,
         "gpu": gpu_result,

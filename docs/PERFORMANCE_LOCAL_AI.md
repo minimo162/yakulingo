@@ -153,7 +153,7 @@ uv run python tools/bench_local_ai.py --mode warm \
 
 # モデル・サーバディレクトリの指定
 uv run python tools/bench_local_ai.py --mode warm \
-  --model-path local_ai/models/HY-MT1.5-1.8B-Q4_K_M.gguf \
+  --model-path local_ai/models/HY-MT1.5-7B-Q4_K_M.gguf \
   --server-dir local_ai/llama_cpp --json
 
 # max_tokens を無効化（0以下でNone扱い）
@@ -239,7 +239,7 @@ uv run python tools/bench_llama_bench_compare.py --format markdown \
 ```bash
 uv run python tools/bench_llama_bench_compare.py \
   --server-dir local_ai/llama_cpp \
-  --model-path local_ai/models/HY-MT1.5-1.8B-Q4_K_M.gguf \
+  --model-path local_ai/models/HY-MT1.5-7B-Q4_K_M.gguf \
   --pg 2048,256 -r 3 \
   --device <VULKAN_DEVICE> --n-gpu-layers all \
   --extra-args -b 2048 -ub 512 -fa 0
@@ -263,7 +263,7 @@ uv run python tools/bench_local_ai_sweep_7b.py \
 - `vulkan`: Vulkan(iGPU) の短時間探索（`device` / `-ngl` / `flash_attn` / `cache_type` / `vk_*`）。入力は短め（`tools/bench_local_ai_input_short.txt`）で warm 中心。
 - `full`: `quick` に加えて `batch/ubatch`・`ctx`・`cache-type`・`flash-attn`・`mlock/no-mmap` など探索系を含めた総当たりに近い比較。
 
-> **Note**: `cpu` プリセットの一例（HY-MT1.5-1.8B/Q4_K_M, warm, short input）では、`cpu_b256_ub64`（`-b 256 -ub 64`）が `cpu_base`（512/128）より僅差で速い結果でした（5.64s vs 5.75s）。差は小さいため、まずは `cpu_base` を基準に実測で判断してください。
+> **Note**: `cpu` プリセットでは、`cpu_b256_ub64`（`-b 256 -ub 64`）が `cpu_base`（512/128）より僅差で速く出る場合があります。差は小さいため、まずは `cpu_base` を基準に実測で判断してください。
 
 失敗時の確認ポイント（最小）:
 - 各 run の `*.json` の `runtime.server_variant` で CPU/Vulkan の実際の起動状態を確認する

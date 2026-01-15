@@ -94,15 +94,15 @@ Notes for YakuLingo:
 ## llama.cpp Usage Example (verbatim)
 
 ```bash
-llama-cli -hf tencent/HY-MT1.5-1.8B-GGUF:Q8_0 -p "Translate the following segment into Chinese, without additional explanation.\n\nIt’s on the house." -n 4096 --temp 0.7 --top-k 20 --top-p 0.6 --repeat-penalty 1.05 --no-warmup
+llama-cli -hf tencent/HY-MT1.5-7B-GGUF:Q8_0 -p "Translate the following segment into Chinese, without additional explanation.\n\nIt’s on the house." -n 4096 --temp 0.7 --top-k 20 --top-p 0.6 --repeat-penalty 1.05 --no-warmup
 ```
 
 ## ollama Usage Example (verbatim)
 
 ```bash
-echo 'FROM hf.co/tencent/HY-MT1.5-1.8B-GGUF:Q8_0\nTEMPLATE """<｜hy_begin▁of▁sentence｜>{{ if .System }}{{ .System }}<｜hy_place▁holder▁no▁3｜>{{ end }}{{ if .Prompt }}<｜hy_User｜>{{ .Prompt }}{{ end }}<｜hy_Assistant｜>"""' > Modelfile
-ollama create hy-mt1.5-1.8b -f Modelfile
-ollama run hy-mt1.5-1.8b
+echo 'FROM hf.co/tencent/HY-MT1.5-7B-GGUF:Q8_0\nTEMPLATE """<｜hy_begin▁of▁sentence｜>{{ if .System }}{{ .System }}<｜hy_place▁holder▁no▁3｜>{{ end }}{{ if .Prompt }}<｜hy_User｜>{{ .Prompt }}{{ end }}<｜hy_Assistant｜>"""' > Modelfile
+ollama create hy-mt1.5-7b -f Modelfile
+ollama run hy-mt1.5-7b
 ```
 
 ## Recommended Inference Parameters (verbatim)

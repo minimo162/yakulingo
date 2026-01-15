@@ -112,10 +112,10 @@ PDF翻訳はPP-DocLayout-L（PaddleOCR）によるレイアウト解析を使用
 ### 方法1: install_deps.bat を使用（推奨）
 
 Windows環境で最も簡単にセットアップできる方法です。Python、依存関係、Playwrightブラウザを自動でインストールします。
-> **Note**: 新規インストール（`local_ai/manifest.json` が無い状態）では CPU(x64) が既定です。Vulkan版にしたい場合は `set LOCAL_AI_LLAMA_CPP_VARIANT=vulkan` を設定してから実行します。既存の `manifest.json` がある場合はその設定を優先し、切り替えたい場合は `set LOCAL_AI_LLAMA_CPP_VARIANT=vulkan|cpu` で上書きします。
+> **Note**: 新規インストール（`local_ai/manifest.json` が無い状態）では Vulkan が既定です。CPU(x64) にしたい場合は `set LOCAL_AI_LLAMA_CPP_VARIANT=cpu` を設定してから実行します。既存の `manifest.json` がある場合はその設定を優先し、切り替えたい場合は `set LOCAL_AI_LLAMA_CPP_VARIANT=vulkan|cpu` で上書きします。
 > **Note**: `packaging/install_local_ai.ps1` は実行のたびに最新リリースを確認し、必要な場合のみ更新します。
-> **Note**: ローカルAIの翻訳モデルは固定です: `tencent/HY-MT1.5-1.8B-GGUF/HY-MT1.5-1.8B-Q4_K_M.gguf`
-> **Note**: ダウンロード先は `local_ai/models/HY-MT1.5-1.8B-Q4_K_M.gguf` です。
+> **Note**: ローカルAIの翻訳モデルは固定です: `tencent/HY-MT1.5-7B-GGUF/HY-MT1.5-7B-Q4_K_M.gguf`
+> **Note**: ダウンロード先は `local_ai/models/HY-MT1.5-7B-Q4_K_M.gguf` です。
 > **Note**: `LOCAL_AI_MODEL_*` / `LOCAL_AI_MODEL_KIND` によるモデル切り替えはできません（`local_ai/manifest.json` は記録用で、選択には影響しません）。
 
 ```bash
@@ -295,7 +295,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
   "max_chars_per_batch": 1000,
   "request_timeout": 600,
   "max_retries": 3,
-  "local_ai_model_path": "local_ai/models/HY-MT1.5-1.8B-Q4_K_M.gguf",
+  "local_ai_model_path": "local_ai/models/HY-MT1.5-7B-Q4_K_M.gguf",
   "local_ai_server_dir": "local_ai/llama_cpp",
   "local_ai_host": "127.0.0.1",
   "local_ai_port_base": 4891,
@@ -416,7 +416,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 > **Note**: `local_ai/llama_cpp/vulkan` または `local_ai/llama_cpp/avx2` のどちらかを使います（同梱されている方）。
 ```bash
 cd local_ai\llama_cpp\vulkan
-.\llama-cli.exe -m ..\..\models\HY-MT1.5-1.8B-Q4_K_M.gguf ^
+.\llama-cli.exe -m ..\..\models\HY-MT1.5-7B-Q4_K_M.gguf ^
   -p "Translate the following segment into Chinese, without additional explanation.\n\nIt’s on the house." ^
   -n 4096 --temp 0.7 --top-k 20 --top-p 0.6 --repeat-penalty 1.05 --no-warmup
 ```
@@ -424,10 +424,10 @@ cd local_ai\llama_cpp\vulkan
 #### ollama 最短手順
 > **Note**: 本モデルは system_prompt を持ちません。
 ```bash
-echo 'FROM hf.co/tencent/HY-MT1.5-1.8B-GGUF:Q8_0
+echo 'FROM hf.co/tencent/HY-MT1.5-7B-GGUF:Q8_0
 TEMPLATE """<｜hy_begin▁of▁sentence｜>{{ if .System }}{{ .System }}<｜hy_place▁holder▁no▁3｜>{{ end }}{{ if .Prompt }}<｜hy_User｜>{{ .Prompt }}{{ end }}<｜hy_Assistant｜>"""' > Modelfile
-ollama create hy-mt1.5-1.8b -f Modelfile
-ollama run hy-mt1.5-1.8b
+ollama create hy-mt1.5-7b -f Modelfile
+ollama run hy-mt1.5-7b
 ```
 
 **ローカルAIの速度チューニング（開発者向け）**:
@@ -451,7 +451,7 @@ ollama run hy-mt1.5-1.8b
 - 変更は1項目ずつ行い、下記ベンチで再計測する
 
 **Vulkan(iGPU) クイックレシピ**:
-- 準備: 新規インストールなら `packaging/install_deps.bat` で CPU(x64) が既定。Vulkan版にしたい場合は `set LOCAL_AI_LLAMA_CPP_VARIANT=vulkan` を設定して実行（既存 `manifest.json` が Vulkan の場合は `set LOCAL_AI_LLAMA_CPP_VARIANT=cpu` で上書き可能）
+- 準備: 新規インストールなら `packaging/install_deps.bat` で Vulkan が既定。CPU(x64) にしたい場合は `set LOCAL_AI_LLAMA_CPP_VARIANT=cpu` を設定して実行（既存 `manifest.json` がある場合はその設定を優先し、切り替えたい場合は `set LOCAL_AI_LLAMA_CPP_VARIANT=vulkan|cpu` で上書き可能）
 - 確認: `local_ai/llama_cpp/vulkan/llama-cli.exe --list-devices` を実行し、`Vulkan0` などのデバイス名が表示されることを確認（何も表示されない場合は Vulkan が利用できません）
 - 実行例（ベンチ）:
   ```bash
@@ -472,7 +472,7 @@ ollama run hy-mt1.5-1.8b
 | `ocr_batch_size` | PDF処理のバッチページ数 | 5 |
 | `ocr_dpi` | PDF処理の解像度 | 300 |
 | `max_chars_per_batch` | Copilot送信1回あたりの最大文字数 | 1000 |
-| `local_ai_model_path` | ローカルAIモデル（.gguf）のパス | `local_ai/models/HY-MT1.5-1.8B-Q4_K_M.gguf` |
+| `local_ai_model_path` | ローカルAIモデル（.gguf）のパス | `local_ai/models/HY-MT1.5-7B-Q4_K_M.gguf` |
 | `local_ai_server_dir` | ローカルAIサーバ（llama-server）のディレクトリ | `local_ai/llama_cpp` |
 | `local_ai_port_base` | ローカルAIのポート探索開始 | 4891 |
 | `local_ai_port_max` | ローカルAIのポート探索上限 | 4900 |
@@ -507,7 +507,7 @@ ollama run hy-mt1.5-1.8b
 > **Note**: `ocr_*` 設定はPDF処理（レイアウト解析）に使用されます。設定名は互換性のため維持しています。
 > **Note**: ローカルAI関連のパス（`local_ai_model_path`, `local_ai_server_dir`）は、相対パスの場合 **アプリ配置ディレクトリ基準** で解決します（CWD基準ではありません）。
 > **Note**: `local_ai_host` は安全のため `127.0.0.1` に強制されます。
-> **Note**: 固定モデル（`local_ai/models/HY-MT1.5-1.8B-Q4_K_M.gguf`）が存在しない場合、ローカルAIは起動しません。`packaging/install_deps.bat`（Step 7）でローカルAIをインストールするか、同名ファイルを手動配置してください。
+> **Note**: 固定モデル（`local_ai/models/HY-MT1.5-7B-Q4_K_M.gguf`）が存在しない場合、ローカルAIは起動しません。`packaging/install_deps.bat`（Step 7）を実行するか、`powershell -NoProfile -ExecutionPolicy Bypass -File packaging\\install_local_ai.ps1` を再実行してください。必要なら同名ファイルを手動で `local_ai/models/` に配置してください。
 
 ### ローカルAI速度計測（ベンチ）
 
@@ -600,7 +600,7 @@ uv run python tools/bench_local_ai.py --mode cold --with-glossary
 - サイドバー上部で **ローカルAI** を選択した時に「見つかりません」: `local_ai/`（`llama_cpp` と `models`）があるか確認し、無ければ `packaging/install_deps.bat` を実行
 - 「AVX2非対応」: 現状の同梱がAVX2版の場合、Copilotに切り替えるか、generic版 `llama-server` の同梱が必要です
 - 「空きポートが見つかりませんでした（4891-4900）」: 他プロセスが使用中の可能性があるため、`local_ai_port_base` / `local_ai_port_max` を変更するか、競合プロセスを停止
-- モデルのダウンロードが失敗/404: ローカルAIモデルは固定です。ネットワーク/プロキシ設定を確認し `packaging/install_deps.bat` を再実行してください。必要なら `tencent/HY-MT1.5-1.8B-GGUF` の `HY-MT1.5-1.8B-Q4_K_M.gguf` を手動で `local_ai/models/` に配置してください。
+- モデルのダウンロードが失敗/404: ローカルAIモデルは固定です。ネットワーク/プロキシ設定を確認し `packaging/install_deps.bat`（Step 7）を再実行するか、`powershell -NoProfile -ExecutionPolicy Bypass -File packaging\\install_local_ai.ps1` を再実行してください。必要なら `tencent/HY-MT1.5-7B-GGUF` の `HY-MT1.5-7B-Q4_K_M.gguf` を `local_ai/models/HY-MT1.5-7B-Q4_K_M.gguf` に手動配置してください。
 - ローカルAIランタイムの更新が失敗（DLLロック）: `...ggml-base.dll にアクセスできません` などが出る場合は、まず YakuLingo（タスクトレイ > `Exit`）を終了し、残っている `llama-server.exe` 等をタスクマネージャーで終了してから再実行してください。
   - 再実行: `powershell -NoProfile -ExecutionPolicy Bypass -File packaging\\install_local_ai.ps1`
   - それでも失敗する場合: PCを再起動してから再実行（または `packaging\\install_deps.bat` をやり直し）

@@ -16,7 +16,7 @@ cd local_ai/llama_cpp/vulkan
 > **Note**: 以降の例では `Vulkan0` を使用します。`--list-devices` の出力に合わせて置き換えてください。
 
 ## 2) Vulkan(iGPU) を強制して実行
-`--device` と `-ngl` を**明示**します（auto のままだと 0 層になる場合があります）。
+`--device` と `-ngl` を**明示**します（`auto` でも動きますが、ベンチ比較の再現性のため固定します）。
 ```powershell
   cd local_ai/llama_cpp/vulkan
   .\llama-cli.exe `

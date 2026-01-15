@@ -423,6 +423,29 @@ E2E 指標（1回）:
 - `total_seconds`: 36.90
 - JSON: `/work/yakulingo-benchmark-translation-speed-accuracy-20260114-073842/.tmp/e2e_local_ai_speed.json`
 
+## パラメータスイープ結果（case: yakulingo-llama-speedup-20260115）
+
+- 実行条件: warm / `--restart-server` / 入力 `tools/bench_local_ai_input.txt`（410 chars）/ style=concise / llama.cpp Vulkan（b7738）
+- 出力保存先: `/work/yakulingo-llama-speedup-20260115/.tmp/bench_*.json`
+- デバイス: `Vulkan0`（AMD Radeon(TM) Graphics, UMA）
+
+| kind | device | -ngl | warmup_seconds | translation_seconds | output_chars | notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| cpu-only | none | 0 | 146.43 | 50.93 | 1305 | - |
+| vk | Vulkan0 | 8 | 42.29 | 107.07 | 1298 | - |
+| vk | Vulkan0 | 16 | 137.22 | 101.57 | 1334 | - |
+| vk | Vulkan0 | 24 | 41.56 | 95.08 | 1308 | - |
+| vk | Vulkan0 | 32 | 94.92 | 0.57 | 2 | 出力が極端に短く、計測として不正（要調査） |
+| vk | Vulkan0 | 99 | 85.93 | 0.50 | 2 | 出力が極端に短く、計測として不正（要調査） |
+
+気づき:
+- 今回の条件では、Vulkan(iGPU) オフロードは CPU-only より遅かった（`-ngl 0` が最速）。
+- `-ngl 32/99` は出力が 2 chars となり、推論失敗/早期終了の可能性がある。
+
+E2E:
+- `tools/e2e_local_ai_speed.py` は stage=wait_http / exit code=11 で失敗（ログが空のため要調査）。
+- JSON: `/work/yakulingo-llama-speedup-20260115/.tmp/e2e_before.json`
+
 ## よくある失敗と回避策
 - AVX2未対応CPU: 同梱のAVX2版 `llama-server` が起動しない場合は別ビルドが必要
 - モデルパス不備: `local_ai_model_path` の指定ミスで起動失敗

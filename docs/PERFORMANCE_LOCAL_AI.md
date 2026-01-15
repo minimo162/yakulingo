@@ -423,6 +423,26 @@ E2E 指標（1回）:
 - `total_seconds`: 36.90
 - JSON: `/work/yakulingo-benchmark-translation-speed-accuracy-20260114-073842/.tmp/e2e_local_ai_speed.json`
 
+## ケース記録（case: yakulingo-llama-speedup-20260115）
+
+- 環境: Windows / Ryzen 5 PRO 6650U（6C/12T）/ iGPU Radeon 660M（UMA）/ llama.cpp Vulkan 7738
+- 条件: warm / `--restart-server` / 入力 `tools/bench_local_ai_input.txt`（410 chars）/ style=concise / glossary=off
+
+### CLIベンチ（warm）
+- before（CPU-only）: translation_seconds 50.93 / warmup_seconds 146.43 / output_chars 1305
+  - JSON: `/work/yakulingo-llama-speedup-20260115/.tmp/bench_cpu_warm.json`
+  - 設定: device=none, n_gpu_layers=0, server_variant=vulkan
+- after（defaults auto/auto）: translation_seconds 56.36 / warmup_seconds 83.62 / output_chars 1333
+  - JSON: `/work/yakulingo-llama-speedup-20260115/.tmp/bench_after_warm.json`
+  - 設定: device=auto, n_gpu_layers=auto, server_variant=vulkan
+
+### E2E（Playwright）
+- before: stage=wait_http / exit_code=11 / total_seconds 0.60
+  - JSON: `/work/yakulingo-llama-speedup-20260115/.tmp/e2e_before.json`
+- after: stage=wait_http / exit_code=0 / total_seconds 123.32（`--disable-streaming-preview`）
+  - JSON: `/work/yakulingo-llama-speedup-20260115/.tmp/e2e_after.json`
+  - app log: `/work/yakulingo-llama-speedup-20260115/.tmp/e2e_after_app.log`
+
 ## よくある失敗と回避策
 - AVX2未対応CPU: 同梱のAVX2版 `llama-server` が起動しない場合は別ビルドが必要
 - モデルパス不備: `local_ai_model_path` の指定ミスで起動失敗

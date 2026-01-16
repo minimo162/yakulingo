@@ -150,6 +150,34 @@ def test_parse_text_single_translation_allows_missing_explanation() -> None:
     assert explanation == ""
 
 
+def test_parse_text_single_translation_fallback_japanese_labels() -> None:
+    raw = "訳文: Hello\n解説: 説明です\n"
+    translation, explanation = parse_text_single_translation(raw)
+    assert translation == "Hello"
+    assert explanation == "説明です"
+
+
+def test_parse_text_single_translation_fallback_english_labels() -> None:
+    raw = "translation: Hello\nexplanation: Because.\n"
+    translation, explanation = parse_text_single_translation(raw)
+    assert translation == "Hello"
+    assert explanation == "Because."
+
+
+def test_parse_text_single_translation_fallback_multiline_sections() -> None:
+    raw = "訳文:\nHello\nWorld\n解説:\nLine1\nLine2\n"
+    translation, explanation = parse_text_single_translation(raw)
+    assert translation == "Hello\nWorld"
+    assert explanation == "Line1\nLine2"
+
+
+def test_parse_text_single_translation_fallback_allows_missing_explanation() -> None:
+    raw = "訳文: Hello\n"
+    translation, explanation = parse_text_single_translation(raw)
+    assert translation == "Hello"
+    assert explanation == ""
+
+
 def test_parse_batch_translations_preserves_escaped_newlines() -> None:
     raw = (
         """{"items":[{"id":1,"translation":"A\\nB"},{"id":2,"translation":"C\\tD"}]}"""

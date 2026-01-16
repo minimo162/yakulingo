@@ -29,6 +29,14 @@ _RE_ID_MARKER_BLOCK = re.compile(
     r"\[\[ID:(\d+)\]\]\s*(.+?)(?=\[\[ID:\d+\]\]|$)", re.DOTALL
 )
 _RE_NUMBERED_LINE = re.compile(r"^\s*(\d+)\s*[\.\):]\s*(.+)\s*$")
+_RE_SINGLE_SECTION_COLON = re.compile(
+    r"^\s*(?:#+\s*)?(?P<label>訳文|解説|説明|translation|explanation)\s*[:：]\s*(?P<rest>.*)\s*$",
+    re.IGNORECASE,
+)
+_RE_SINGLE_SECTION_LINE = re.compile(
+    r"^\s*(?:#+\s*)?(?P<label>訳文|解説|説明|translation|explanation)\s*$",
+    re.IGNORECASE,
+)
 _JSON_STOP_SEQUENCES = ["</s>", "<|end|>"]
 _RESPONSE_FORMAT_CACHE_TTL_S = 600.0
 
@@ -368,12 +376,56 @@ def parse_text_single_translation(
 ) -> tuple[Optional[str], Optional[str]]:
     obj = loads_json_loose(raw_content)
     if not isinstance(obj, dict):
-        return None, None
+        return _parse_text_single_translation_fallback(raw_content)
     translation = obj.get("translation")
     explanation = obj.get("explanation")
     if not isinstance(translation, str):
-        return None, None
+        return _parse_text_single_translation_fallback(raw_content)
     return translation, explanation if isinstance(explanation, str) else ""
+
+
+def _parse_text_single_translation_fallback(
+    raw_content: str,
+) -> tuple[Optional[str], Optional[str]]:
+    cleaned = _strip_code_fences(raw_content).strip()
+    if not cleaned:
+        return None, None
+
+    translation_lines: list[str] = []
+    explanation_lines: list[str] = []
+    current: Optional[str] = None
+
+    for line in cleaned.splitlines():
+        match = _RE_SINGLE_SECTION_COLON.match(line)
+        rest: str = ""
+        if match is None:
+            match = _RE_SINGLE_SECTION_LINE.match(line)
+        else:
+            rest = (match.group("rest") or "").strip()
+
+        if match is not None:
+            label = (match.group("label") or "").strip().casefold()
+            if label in ("訳文", "translation"):
+                current = "translation"
+                if rest:
+                    translation_lines.append(rest)
+                continue
+            if label in ("解説", "説明", "explanation"):
+                current = "explanation"
+                if rest:
+                    explanation_lines.append(rest)
+                continue
+
+        if current == "translation":
+            translation_lines.append(line)
+        elif current == "explanation":
+            explanation_lines.append(line)
+
+    translation = "\n".join(translation_lines).strip()
+    if not translation:
+        return None, None
+    explanation = "\n".join(explanation_lines).strip()
+    return translation, explanation
 
 
 @dataclass(frozen=True)

@@ -37,6 +37,13 @@ _EXE_SUPPORTED_CACHE_LOCK = threading.Lock()
 _NO_PROXY_LOCAL_HOSTS = ("127.0.0.1", "localhost")
 _REUSE_FAST_PATH_TTL_S = 120.0
 _REUSE_HEALTHCHECK_TIMEOUT_S = 0.25
+_VULKAN_OOM_MARKERS = (
+    "erroroutofdevicememory",
+    "out of device memory",
+    "unable to allocate vulkan",
+    "device memory allocation",
+    "vk::device::allocatememory",
+)
 
 
 def _utc_now_iso() -> str:
@@ -143,6 +150,31 @@ def _find_llama_cli_exe(dir_path: Path) -> Optional[Path]:
         if candidate.is_file():
             return candidate
     return None
+
+
+def _read_log_recent_text(
+    path: Path, *, since_offset: int = 0, max_bytes: int = 65536
+) -> str:
+    """Read recent log output as UTF-8 text (best-effort)."""
+
+    try:
+        with open(path, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            end = f.tell()
+            start = max(int(since_offset), max(0, end - max_bytes))
+            f.seek(start)
+            data = f.read()
+        return data.decode("utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
+def _log_indicates_vulkan_oom(log_path: Path, *, since_offset: int = 0) -> bool:
+    text = _read_log_recent_text(log_path, since_offset=since_offset)
+    if not text:
+        return False
+    lowered = text.lower()
+    return any(marker in lowered for marker in _VULKAN_OOM_MARKERS)
 
 
 _RE_LLAMA_CLI_AVAILABLE_DEVICES_HEADER = re.compile(
@@ -622,15 +654,59 @@ class LocalLlamaServerManager:
                 f"ローカルAIの空きポートが見つかりませんでした（{port_base}-{port_max}）。"
             )
 
+        log_path = self.get_log_path()
+        try:
+            log_offset = log_path.stat().st_size if log_path.exists() else 0
+        except OSError:
+            log_offset = 0
+
         self._reuse_fast_path_until = 0.0
-        runtime = self._start_new_server(
-            server_exe_path=server_exe_path,
-            server_variant=server_variant,
-            model_path=model_path,
-            host=host,
-            port=free_port,
-            settings=settings,
-        )
+        try:
+            runtime = self._start_new_server(
+                server_exe_path=server_exe_path,
+                server_variant=server_variant,
+                model_path=model_path,
+                host=host,
+                port=free_port,
+                settings=settings,
+            )
+        except LocalAIServerStartError:
+            if str(server_variant).lower() == "vulkan" and _log_indicates_vulkan_oom(
+                log_path, since_offset=log_offset
+            ):
+                base_dir = server_dir
+                if base_dir.name.lower() in ("vulkan", "avx2", "generic"):
+                    base_dir = base_dir.parent
+                avx2_dir = base_dir / "avx2"
+                avx2_exe, avx2_variant = self._resolve_server_exe(avx2_dir)
+                if avx2_exe is not None and avx2_variant == "avx2":
+                    logger.warning(
+                        "Local AI Vulkan start failed due to GPU memory; retrying with AVX2 CPU build"
+                    )
+                    self._process = None
+                    try:
+                        if self._process_log_fp:
+                            try:
+                                self._process_log_fp.flush()
+                            except Exception:
+                                pass
+                            self._process_log_fp.close()
+                    finally:
+                        self._process_log_fp = None
+                    server_exe_path = avx2_exe
+                    server_variant = avx2_variant
+                    runtime = self._start_new_server(
+                        server_exe_path=server_exe_path,
+                        server_variant=server_variant,
+                        model_path=model_path,
+                        host=host,
+                        port=free_port,
+                        settings=settings,
+                    )
+                else:
+                    raise
+            else:
+                raise
 
         pid = self._process.pid if self._process else None
         pid_create_time: Optional[float] = None

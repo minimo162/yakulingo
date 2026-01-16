@@ -257,6 +257,81 @@ def test_ensure_ready_falls_back_to_bundled_server_dir_when_custom_invalid(
     assert seen_dirs == [tmp_path / "custom" / "invalid", bundled_dir]
 
 
+def test_ensure_ready_falls_back_to_avx2_when_vulkan_oom(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fixed_model_path = _install_fixed_model(tmp_path, monkeypatch)
+    settings_model_path = tmp_path / "settings_model.gguf"
+    settings_model_path.write_bytes(b"dummy")
+
+    server_dir = tmp_path / "llama_cpp"
+    for variant in ("vulkan", "avx2"):
+        variant_dir = server_dir / variant
+        variant_dir.mkdir(parents=True, exist_ok=True)
+        (variant_dir / "llama-server.exe").write_bytes(b"exe")
+
+    log_path = tmp_path / "local_ai_server.log"
+    state_path = tmp_path / "state.json"
+
+    monkeypatch.setattr(lls, "_probe_executable_supported", lambda path: True)
+    monkeypatch.setattr(
+        lls.LocalLlamaServerManager,
+        "get_state_path",
+        staticmethod(lambda: state_path),
+    )
+    monkeypatch.setattr(
+        lls.LocalLlamaServerManager,
+        "get_log_path",
+        staticmethod(lambda: log_path),
+    )
+
+    settings = AppSettings(
+        local_ai_model_path=str(settings_model_path),
+        local_ai_server_dir="llama_cpp",
+        local_ai_port_base=4891,
+        local_ai_port_max=4893,
+    )
+
+    manager = lls.LocalLlamaServerManager()
+    monkeypatch.setattr(manager, "_try_reuse", lambda state, **kwargs: None)
+    monkeypatch.setattr(
+        manager, "_find_free_port", lambda host, port_base, port_max: port_base
+    )
+
+    calls: list[str] = []
+
+    def fake_start_new_server(**kwargs):
+        calls.append(str(kwargs["server_variant"]))
+        if str(kwargs["server_variant"]) == "vulkan":
+            log_path.write_text(
+                "ggml_vulkan: vk::Device::allocateMemory: ErrorOutOfDeviceMemory\n",
+                encoding="utf-8",
+            )
+            raise lls.LocalAIServerStartError("start failed")
+
+        host = kwargs["host"]
+        port = kwargs["port"]
+        return lls.LocalAIServerRuntime(
+            host=host,
+            port=port,
+            base_url=f"http://{host}:{port}",
+            model_id=None,
+            server_exe_path=kwargs["server_exe_path"],
+            server_variant=str(kwargs["server_variant"]),
+            model_path=kwargs["model_path"],
+        )
+
+    monkeypatch.setattr(manager, "_start_new_server", fake_start_new_server)
+
+    runtime = manager.ensure_ready(settings)
+
+    assert runtime.server_variant == "avx2"
+    assert calls == ["vulkan", "avx2"]
+    saved_state = lls._safe_read_json(state_path) or {}
+    assert saved_state.get("server_variant") == "avx2"
+    assert runtime.model_path == fixed_model_path
+
+
 def test_resolve_server_exe_prefers_vulkan_variant(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

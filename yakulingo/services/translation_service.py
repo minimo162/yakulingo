@@ -721,6 +721,43 @@ class LanguageDetector:
 language_detector = LanguageDetector()
 
 
+def is_expected_output_language(text: str, output_language: str) -> bool:
+    """Return True if text appears to match the expected output language.
+
+    This is a lightweight guard for downstream retry/fallback logic.
+
+    - output_language="en": reject Japanese/Chinese/Korean scripts (kana/CJK/Hangul),
+      plus Japanese-specific punctuation.
+      Numeric-only strings are allowed.
+    - output_language="jp": rely on LanguageDetector; reject when detected language
+      is not Japanese (e.g., Chinese/English/Korean).
+      Numeric-only strings are allowed (LanguageDetector defaults to Japanese).
+    """
+    normalized = (text or "").strip()
+    if not normalized:
+        return True
+
+    lang = (output_language or "").strip().lower()
+    if lang == "en":
+        for char in normalized:
+            if char in LanguageDetector._JAPANESE_PUNCTUATION:
+                return False
+            code = ord(char)
+            if (
+                LanguageDetector.is_hiragana(code)
+                or LanguageDetector.is_katakana(code)
+                or LanguageDetector.is_cjk_ideograph(code)
+                or LanguageDetector.is_hangul(code)
+            ):
+                return False
+        return True
+
+    if lang == "jp":
+        return language_detector.detect_local(normalized) == "日本語"
+
+    return True
+
+
 # =============================================================================
 # Backward Compatibility Functions
 # =============================================================================

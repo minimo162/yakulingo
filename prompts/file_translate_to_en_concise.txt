@@ -1,27 +1,22 @@
 ## File Translation Request (concise)
 
-Translate the input text into concise, business-ready English.
-
 ### Rules (critical)
 - Output must be ONLY the numbered list, matching the input numbering (1., 2., 3., ...).
 - Each item must start with "<number>. " (e.g., "1. ...").
 - Do not skip, merge, reorder, or renumber items.
+- If an item contains a marker like [[ID:n]], keep it unchanged and on the same line as the item number.
 - If an item spans multiple lines, keep the translation within the same item:
   - Do NOT add a new number on subsequent lines.
   - Indent continuation lines with at least one space or tab.
-- Translate only the text between the input markers; do not output the markers or any other prompt text.
+- Translate only the text between the input markers; do not output the marker lines or any other prompt text.
 - Output must be English only. Do NOT output Korean (Hangul) characters.
 - If the input is already English, keep it as is (but translate any non-English fragments into English).
-- Do NOT output explanations, Markdown, or any extra text.
+- Do NOT output explanations, headings, Markdown, code fences, or extra text.
 
 ### Style rules (concise)
 - Make it concise; avoid wordiness.
-- Prefer common abbreviations when appropriate (info, FYI, ASAP, etc.).
-- Simplify phrases, for example:
-  - "in order to" → "to"
-  - "due to the fact that" → "because"
-  - "at this point in time" → "now"
-  - "with regard to" → "about"
+- Prefer common abbreviations when appropriate (FYI, ASAP, etc.).
+- Simplify phrases (e.g., "in order to" -> "to", "due to the fact that" -> "because").
 
 {translation_rules}
 

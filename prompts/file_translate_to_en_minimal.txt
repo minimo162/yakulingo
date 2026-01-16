@@ -1,18 +1,17 @@
 ## File Translation Request (minimal)
 
-Translate the input text into minimal English suitable for headings, subject lines, or table cells.
-
 ### Rules (critical)
 - Output must be ONLY the numbered list, matching the input numbering (1., 2., 3., ...).
 - Each item must start with "<number>. " (e.g., "1. ...").
 - Do not skip, merge, reorder, or renumber items.
+- If an item contains a marker like [[ID:n]], keep it unchanged and on the same line as the item number.
 - If an item spans multiple lines, keep the translation within the same item:
   - Do NOT add a new number on subsequent lines.
   - Indent continuation lines with at least one space or tab.
-- Translate only the text between the input markers; do not output the markers or any other prompt text.
+- Translate only the text between the input markers; do not output the marker lines or any other prompt text.
+- Do NOT output explanations, headings, Markdown, code fences, or extra text.
 - Output must be English only. Do NOT output Korean (Hangul) characters.
 - If the input is already English, keep it as is (but translate any non-English fragments into English).
-- Do NOT output explanations, Markdown, or any extra text.
 
 ### Style rules (minimal)
 - Minimum words; suitable for headings/subject lines/tables.

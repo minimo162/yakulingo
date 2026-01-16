@@ -286,16 +286,17 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 
 #### config/settings.template.json（例）
 
-```json
-{
-  "reference_files": [],
-  "output_directory": null,
-  "last_tab": "text",
-  "translation_backend": "local",
-  "max_chars_per_batch": 1000,
-  "request_timeout": 600,
-  "max_retries": 3,
-  "local_ai_model_path": "local_ai/models/HY-MT1.5-7B-Q4_K_M.gguf",
+ ```json
+ {
+   "reference_files": [],
+   "output_directory": null,
+   "last_tab": "text",
+   "translation_backend": "copilot",
+   "copilot_enabled": true,
+   "max_chars_per_batch": 1000,
+   "request_timeout": 600,
+   "max_retries": 3,
+   "local_ai_model_path": "local_ai/models/HY-MT1.5-7B-Q4_K_M.gguf",
   "local_ai_server_dir": "local_ai/llama_cpp",
   "local_ai_host": "127.0.0.1",
   "local_ai_port_base": 4891,
@@ -364,15 +365,15 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 }
 ```
 
-#### 基本設定（よく変更する項目）
-
-| 設定 | 説明 | デフォルト |
-|------|------|----------|
-| `translation_backend` | 翻訳バックエンド（`copilot` / `local`） | "local" |
-| `translation_style` | ファイル翻訳のスタイル | "concise" |
-| `bilingual_output` | 対訳ファイルを生成 | false |
-| `export_glossary` | 用語集CSVを生成 | false |
-| `use_bundled_glossary` | 同梱 `glossary.csv` を自動で参照 | true |
+ #### 基本設定（よく変更する項目）
+ 
+ | 設定 | 説明 | デフォルト |
+ |------|------|----------|
+ | `translation_backend` | 翻訳バックエンド（`copilot` / `local`） | "copilot" |
+ | `translation_style` | ファイル翻訳のスタイル | "concise" |
+ | `bilingual_output` | 対訳ファイルを生成 | false |
+ | `export_glossary` | 用語集CSVを生成 | false |
+ | `use_bundled_glossary` | 同梱 `glossary.csv` を自動で参照 | true |
 | `font_jp_to_en` | 英訳時の出力フォント | Arial |
 | `font_en_to_jp` | 和訳時の出力フォント | MS Pゴシック |
 | `browser_display_mode` | ブラウザ表示モード | "minimized" |
@@ -389,8 +390,9 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 
 **用語集処理**: `use_bundled_glossary=true` の場合、同梱 `glossary.csv` をファイルとして自動添付します（デフォルト: true）。
 
-**翻訳ルール**: `prompts/translation_rules.txt` を翻訳時に自動反映します（Copilot/ローカルAI共通）。
-**プロンプトSSOT**: `docs/PROMPT_TEMPLATES_SSOT.md` にテンプレの単一正をまとめています。
+ **翻訳ルール**: `prompts/translation_rules.txt` を翻訳時に自動反映します（Copilot/ローカルAI共通）。
+ **出力言語ガード**: 翻訳結果が期待言語（英訳=英語、和訳=日本語）でない場合は自動で再試行し、必要に応じてフォールバックします。
+ **プロンプトSSOT**: `docs/PROMPT_TEMPLATES_SSOT.md` にテンプレの単一正をまとめています。
 
 ### ローカルAI推論パラメータ（推奨）
 

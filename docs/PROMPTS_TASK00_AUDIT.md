@@ -55,7 +55,7 @@ text_translate_to_jp.txt: input_text, reference_section, translation_rules
 translation_rules.txt: -
 
 Note (Copilot EN→JP):
-- `text_translate_to_jp.txt` は `Translation:` のみを出力し、Explanation ブロックは含まない。
+- `text_translate_to_jp.txt` は `Translation:` のみを出力し、Explanation ブロックは含まない（translation-only 契約）。
 
 ## Local AI JSON shapes (parser expectations)
 
@@ -70,11 +70,82 @@ Text JP->EN (3 style):
 - Missing styles are filled by order if options list has entries.
 
 Text single (JP->EN single or EN->JP):
-- Expected JSON: {"translation":"..."}（EN→JPは `explanation` キーを出さない）
+- Expected JSON: {"translation":"..."}（EN→JPは `explanation` キーを必須としない）
 - 過去互換として `explanation` が来た場合は空文字扱い。
 
 Note: "output_language" / "detected_language" are in templates but not required
 by the parser today.
+
+## Contracts (inputs → prompt → expected output → parser)
+
+最優先: 既存のパーサが前提としている「出力形状」を壊さないこと。
+プロンプト側の改善は、まず出力形状のブレを減らす（安定性）→ その上で短文化（速度）を行う。
+
+### Copilot (non-JSON)
+
+- File translation (batch)
+  - Prompt: `prompts/file_translate_to_en_{style}.txt`, `prompts/file_translate_to_jp.txt`
+  - Input: numbered list (`1. ...`, `2. ...`, ...)
+    - `include_item_ids=True` の場合は `[[ID:n]]` が各項目に付与され、保持が強制される（`yakulingo/services/prompt_builder.py::ID_MARKER_INSTRUCTION`）
+  - Expected output: numbered listのみ（入力と同じ番号・順序、複数行は同一項目内で継続行インデント）
+  - Parser: `yakulingo/services/copilot_handler.py::_parse_batch_result`（IDありは `_parse_batch_result_by_id`）
+
+- Text JP→EN (3 styles)
+  - Prompt: `prompts/text_translate_to_en_compare.txt`
+  - Expected output: `[standard]` / `[concise]` / `[minimal]` セクション + 各セクションに `Translation:` と `Explanation:`
+  - Parser: `yakulingo/services/translation_service.py::_parse_style_comparison_result` → `_parse_single_translation_result`
+  - Contract test: `tests/test_text_translation_retry.py`（標準訳に日本語混入→再試行も含む）
+
+- Text EN→JP (single)
+  - Prompt: `prompts/text_translate_to_jp.txt`
+  - Expected output: `Translation:` のみ（解説なし）
+  - Parser: `yakulingo/services/translation_service.py::_parse_single_translation_result`
+
+### Local AI (JSON)
+
+- Batch translation
+  - Prompt: `prompts/local_batch_translate_to_{en|jp}_json.txt`
+  - Expected output JSON: `{"items":[{"id":1,"translation":"..."}]}`
+  - Parser: `yakulingo/services/local_ai_client.py::parse_batch_translations`
+  - Fallbacks: `[[ID:n]] ...` ブロック、または `1. ...` 行
+
+- Text JP→EN (3 styles)
+  - Prompt: `prompts/local_text_translate_to_en_3style_json.txt`
+  - Expected output JSON: `{"options":[{"style":"standard","translation":"...","explanation":"..."}]}`
+  - Parser: `yakulingo/services/local_ai_client.py::parse_text_to_en_3style`
+
+- Text single (JP→EN single / EN→JP)
+  - Prompt: `prompts/local_text_translate_to_en_single_json.txt`, `prompts/local_text_translate_to_jp_json.txt`
+  - Expected output JSON: `{"translation":"...","explanation":"..."}`（`explanation` は optional 互換あり）
+  - Parser: `yakulingo/services/local_ai_client.py::parse_text_single_translation`
+
+## Known failure patterns (things prompts must prevent)
+
+- Code fence (` ```json `) が混入する / JSON以外の前置き・後置きが付く（Local AI）
+  - Parser側は `loads_json_loose` で吸収するが、発生率を下げるのが本筋（JSON only を強める）
+- JSONの形状が崩れる（キー名変更、`options/items` 欠落、`id` 非数値、末尾カンマ等）
+- Copilotが余計な見出し/解説/注意書きを出す（「出力は〜のみ」を徹底）
+- Copilotの番号付きリストで欠番・重複・並べ替えが起きる（バッチ結果の対応ズレ）
+- Copilot内でネストした番号付きリストが出てパースが誤作動する（`_parse_batch_result` はインデントで抑止）
+- 3styleでスタイル欠落/順序崩れが起きる（パーサ側は欠落補完があるが、プロンプトで抑制）
+
+## Evaluation axes (stability / speed)
+
+- Parse failure rate: `LocalAI parse failure:` ログ（`yakulingo/services/local_ai_client.py`）と、Copilot側の欠番/空訳/混入（`yakulingo/services/copilot_handler.py`）
+- Prompt length: `{translation_rules}`/`{reference_section}`/入力を含めた「送信プロンプトの文字数」（短縮の主指標）
+- Output length: 返答の文字数（特に Explanation の膨張が速度/安定性を落とす）
+
+## Improvement priority (stability → speed)
+
+1. 既存パーサ契約（出力形状）を壊さない
+2. 出力形状の厳格化でパース失敗を減らす（余計な文・見出し・コードブロックの禁止）
+3. プロンプト短縮で速度を上げる（重複ルールを削り、`translation_rules` 側へ寄せる）
+4. 出力長の抑制（Explanationを短く、必要最小限にする）
+
+## Contract tests
+
+- Local AI JSON parsing: `tests/test_local_ai_json_parsing.py`
+- Copilot 3style parsing/retry: `tests/test_text_translation_retry.py`
 
 ## INTENT prompt mapping (current fit)
 

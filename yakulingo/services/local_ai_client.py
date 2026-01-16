@@ -41,6 +41,75 @@ _RE_SINGLE_SECTION_LINE = re.compile(
 )
 _JSON_STOP_SEQUENCES = ["</s>", "<|end|>"]
 _RESPONSE_FORMAT_CACHE_TTL_S = 600.0
+_RESPONSE_FORMAT_JSON_SCHEMA: dict[str, object] = {
+    "name": "yakulingo_translation_response",
+    "schema": {
+        "type": "object",
+        "oneOf": [
+            {
+                "required": ["translation"],
+                "properties": {
+                    "translation": {"type": "string", "minLength": 1},
+                    "explanation": {"type": "string"},
+                    "style": {"type": "string"},
+                    "output_language": {"type": "string"},
+                    "detected_language": {"type": "string"},
+                },
+                "additionalProperties": True,
+            },
+            {
+                "required": ["items"],
+                "properties": {
+                    "items": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {
+                            "type": "object",
+                            "required": ["id", "translation"],
+                            "properties": {
+                                "id": {
+                                    "oneOf": [
+                                        {"type": "integer", "minimum": 1},
+                                        {"type": "string"},
+                                    ]
+                                },
+                                "translation": {"type": "string"},
+                            },
+                            "additionalProperties": True,
+                        },
+                    }
+                },
+                "additionalProperties": True,
+            },
+            {
+                "required": ["options"],
+                "properties": {
+                    "options": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {
+                            "type": "object",
+                            "required": ["translation"],
+                            "properties": {
+                                "style": {"type": "string"},
+                                "translation": {"type": "string", "minLength": 1},
+                                "explanation": {"type": "string"},
+                            },
+                            "additionalProperties": True,
+                        },
+                    }
+                },
+                "additionalProperties": True,
+            },
+        ],
+        "additionalProperties": True,
+    },
+    "strict": True,
+}
+_RESPONSE_FORMAT_JSON_SCHEMA_PAYLOAD: dict[str, object] = {
+    "type": "json_schema",
+    "json_schema": _RESPONSE_FORMAT_JSON_SCHEMA,
+}
 
 
 def _strip_code_fences(text: str) -> str:
@@ -584,7 +653,7 @@ class LocalAIClient:
         if self._settings.local_ai_max_tokens is not None:
             payload["max_tokens"] = int(self._settings.local_ai_max_tokens)
         if enforce_json:
-            payload["response_format"] = {"type": "json_object"}
+            payload["response_format"] = _RESPONSE_FORMAT_JSON_SCHEMA_PAYLOAD
         if _JSON_STOP_SEQUENCES:
             payload["stop"] = _JSON_STOP_SEQUENCES
         return payload

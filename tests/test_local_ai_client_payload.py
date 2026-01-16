@@ -28,7 +28,14 @@ def test_build_chat_payload_includes_json_response_format() -> None:
     assert payload["messages"] == [
         {"role": "user", "content": "prompt"},
     ]
-    assert payload["response_format"] == {"type": "json_object"}
+    response_format = payload["response_format"]
+    assert isinstance(response_format, dict)
+    assert response_format["type"] == "json_schema"
+    json_schema = response_format["json_schema"]
+    assert isinstance(json_schema, dict)
+    schema = json_schema["schema"]
+    assert isinstance(schema, dict)
+    assert len(schema.get("oneOf") or []) == 3
     assert payload["stop"] == ["</s>", "<|end|>"]
     assert payload["temperature"] == 0.7
     assert payload["top_p"] == 0.6
@@ -65,7 +72,7 @@ def test_response_format_cache_skips_retry_after_unsupported() -> None:
         state["calls"] += 1
         calls.append(payload)
         if state["calls"] == 1:
-            raise RuntimeError("response_format unsupported")
+            raise RuntimeError("json_schema unsupported")
         return {"choices": [{"message": {"content": "ok"}}]}
 
     client._http_json_cancellable = fake_http  # type: ignore[method-assign]
@@ -91,7 +98,7 @@ def test_response_format_cache_applies_to_streaming() -> None:
         _ = runtime_arg, on_chunk, timeout
         calls.append(payload)
         if len(calls) == 1:
-            raise RuntimeError("response_format unsupported")
+            raise RuntimeError("json_schema unsupported")
         return LocalAIRequestResult(content="ok", model_id=None)
 
     client._chat_completions_streaming_with_payload = (  # type: ignore[method-assign]

@@ -1,22 +1,18 @@
 ローカルAI: JP→EN（不足スタイル補完）
-以下を英訳し、JSON1行のみで返す。
+出力はJSONのみ（1行）。コードフェンス/説明文/余計なキーは禁止。
 
-出力例:
-{"output_language":"en","detected_language":"{detected_language}","options":[{"style":"standard","translation":"...","explanation":""}]}
+必須出力（キー固定）:
+{"options":[{"style":"standard","translation":"...","explanation":"..."}]}
 
 制約:
-- JSONのみ/1行/ダブルクォートのみ（コードフェンス/末尾カンマ禁止、改行/タブは \\n/\\t）
-- options は {styles_json} のみ（順序固定）、件数は {n_styles} 件ちょうど
-- translation は英語のみ（日本語文字/日本語句読点なし）
-- explanation は日本語1文以内、差分不明なら空文字（短い箇条書きは \\n 可）
-- 原文より短く要点優先。改行/タブ/箇条書きを維持
-- <sn></sn> 等のタグがあれば訳文中でも可能な限り保持
-- 用語/文脈/書式指定は翻訳ルール/参照を最優先
+- options は {styles_json} のみ（順序固定）、件数は {n_styles} 件
+- translation: 英語のみ（日本語文字・日本語句読点なし）
+- explanation: 日本語1文（不明なら ""）
+- 原文の改行/タブ/箇条書き/タグ（<sn>等）を維持（\\n/\\t）
+- 末尾カンマ禁止、ダブルクォートのみ
 
 {translation_rules}
-
-参考下面的翻译：
 {reference_section}
 
-参考上面的信息，把下面的文本翻译成English，注意不需要翻译上文，也不要额外解释：
+原文:
 {input_text}

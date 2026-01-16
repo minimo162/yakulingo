@@ -295,7 +295,7 @@ def test_local_prompt_includes_json_guard_block() -> None:
         reference_files=None,
         detected_language="Japanese",
     )
-    assert "JSON OUTPUT (MUST)" in prompt
+    assert '{"translation":"..."}' in prompt
 
 
 def test_local_batch_embed_reference_even_when_flag_false(tmp_path: Path) -> None:

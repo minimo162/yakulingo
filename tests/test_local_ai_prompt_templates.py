@@ -129,3 +129,14 @@ def test_local_prompt_builder_replaces_placeholders() -> None:
             "output_language",
         ],
     )
+
+
+def test_local_json_templates_avoid_extra_output_keys() -> None:
+    builder = _make_builder()
+    for name in _LOCAL_TEMPLATES:
+        template = builder._load_template(name)
+        assert '"output_language"' not in template
+        assert '"detected_language"' not in template
+
+    template = builder._load_template("local_text_translate_to_en_single_json.txt")
+    assert '"style"' not in template

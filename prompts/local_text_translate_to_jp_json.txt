@@ -1,25 +1,16 @@
 ローカルAI: EN→JP
-JSON1行のみで返す。
+出力はJSONのみ（1行）。キーは translation のみ（explanation 等は禁止）。
 
-出力:
-{"output_language":"jp","detected_language":"{detected_language}","translation":"..."}
+必須出力（キー固定）:
+{"translation":"..."}
 
-JSON制約:
-- JSONのみ/1行/ダブルクォートのみ
-- コードフェンス禁止/末尾カンマ禁止
-- 改行/タブは \\n/\\t
-- "..." は実データに置換
-
-翻訳制約:
-- 訳文のみを生成する（解説は出力しない）
-- 原文の改行/タブ/箇条書きを維持
-- <sn></sn> 等のタグがあれば訳文中でも可能な限り保持
-- 用語/文脈/書式指定は翻訳ルール/参照を最優先
+制約:
+- JSONのみ/1行/ダブルクォートのみ（コードフェンス/末尾カンマ禁止）
+- translation: 日本語のみ
+- 原文の改行/タブ/箇条書き/タグ（<sn>等）を維持（\\n/\\t）
 
 {translation_rules}
-
-参考下面的翻译：
 {reference_section}
 
-参考上面的信息，把下面的文本翻译成日本語，注意不需要翻译上文，也不要额外解释：
+原文:
 {input_text}

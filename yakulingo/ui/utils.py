@@ -434,6 +434,19 @@ def normalize_literal_escapes(text: str) -> str:
     return "".join(result)
 
 
+def to_props_string_literal(value: str) -> str:
+    """Return a double-quoted string literal safe to embed in NiceGUI `.props(...)`.
+
+    NiceGUI parses quoted prop values via `ast.literal_eval`, so unescaped Windows paths
+    like `C:\\Users\\...` can raise `SyntaxError` due to `\\U...` unicode escapes.
+
+    The returned value includes surrounding double quotes and proper escaping, so it can
+    be embedded without adding extra quotes, e.g. `aria-label={to_props_string_literal(x)}`.
+    """
+
+    return json.dumps(value, ensure_ascii=False)
+
+
 class DialogManager:
     """
     Manages dialogs to ensure proper cleanup on errors.

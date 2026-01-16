@@ -1,32 +1,29 @@
-﻿## Text Translation Request (Style Comparison)
+## Text Translation Request (Style Comparison)
 Translate the Japanese text into English in three styles: standard, concise, minimal.
 
-### Rules
-- IMPORTANT: In each section, the "Translation:" content must be written in English only.
-  - Do NOT include Japanese scripts (hiragana/katakana/kanji) or Japanese punctuation (、。) in any Translation.
-  - If any Japanese appears in a Translation, rewrite it until it contains no Japanese characters.
-- IMPORTANT: The "Explanation:" content must be written in Japanese only.
-- Translate only the text between the input markers; do not output markers or any other prompt text.
+### Rules (critical)
+- Output must match the exact format below (no extra headings/notes/Markdown/code fences).
+- In each section, the "Translation:" content must be English only:
+  - Do NOT include Japanese scripts (hiragana/katakana/kanji) or Japanese punctuation (、。).
+  - If any Japanese appears, rewrite it until it contains no Japanese characters.
+- The "Explanation:" content must be Japanese only.
+- Translate only the text between the input markers; do not output the marker lines or any other prompt text.
+- Preserve line breaks and tabs as much as possible.
 - If the input is already English, keep it as is.
-- Preserve line breaks and tabs from the input as much as possible.
 - If the source contains Japanese-only tokens (e.g., names, company types, place names), translate or romanize them; do not leave them in Japanese script.
-- For Japanese-specific units/suffixes, render them in English-friendly notation without Japanese characters (e.g., 円→yen, 万円→k yen; follow {translation_rules} for 兆/億→oku, 万→k, 千→k, etc.).
+- Follow {translation_rules} for numbers/units/symbols; do not output Japanese unit characters in any Translation (e.g., 円/万/億/兆).
 
 ### Style rules
 [standard]
-- Natural, business-ready English.
-- Use articles (a/an/the) appropriately.
+- Natural, business-ready English; use articles.
 - Use common business abbreviations when suitable (YoY, QoQ, CAGR).
 
 [concise]
-- Make it concise; avoid wordiness.
-- Prefer common abbreviations (info, FYI, ASAP, etc.).
-- Simplify phrases (e.g., "in order to" -> "to", "due to the fact that" -> "because").
+- Make it concise; avoid wordiness; simplify phrases.
+- Prefer common abbreviations when suitable (info, FYI, ASAP).
 
 [minimal]
-- Minimum words; suitable for headings/subject lines/tables.
-- Articles can be omitted.
-- Maximize abbreviations.
+- Minimum words; suitable for headings/subject lines/tables; articles can be omitted.
 - Allowed symbols: & / vs. % # w/ w/o @ +
 
 ### Output format (exact)
@@ -42,15 +39,9 @@ Explanation:
 Translation:
 Explanation:
 
-- Explanations must be in Japanese and prioritize *useful context beyond the translation itself* so the user can tweak the English if needed.
-- Prefer bullet points starting with "- " (max ~3 items). Focus on the most high-value points only.
-  - Abbreviations / acronyms / proper nouns: if you interpret an item like "CAFÉ", briefly explain what it refers to and why you chose that reading (if ambiguous, mention an alternative).
-  - Business / accounting / technical terms: explain key term mappings (e.g., 引当取崩し→"reversal of provisions") and why that wording fits the context.
-  - Nuance & intent: explain where you inferred intent (e.g., 「罰則ゼロ成立」→ penalties were confirmed to be zero) or chose phrasing to reflect the tone.
-  - Alternatives: include at most 1 alternative only when ambiguity is high; otherwise omit.
-  - For [concise]/[minimal], explain only the most meaningful difference from [standard].
-- Avoid low-value reporting like "I followed the prompt rules/glossary" unless it materially affects the wording or resolves a non-obvious conflict.
-- Output only the sections above; no extra headings like "翻訳のポイント:".
+- Explanations must be Japanese bullet points only ("- "), max ~3 lines per section.
+- Focus on term mappings / ambiguity / intent; for [concise]/[minimal], note only the meaningful difference vs [standard].
+- Avoid meta commentary (e.g., "I followed the prompt rules/glossary").
 
 {translation_rules}
 

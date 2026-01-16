@@ -51,11 +51,21 @@ def test_parse_batch_translations_fallback_numbered_lines() -> None:
     assert parse_batch_translations(raw, expected_count=2) == ["Alpha", "Beta"]
 
 
-def test_parse_batch_translations_raises_for_numbered_parenthesis_format() -> None:
+def test_parse_batch_translations_fallback_numbered_parenthesis_lines() -> None:
     raw = "1) Alpha\n2) Beta\n"
-    with pytest.raises(RuntimeError) as excinfo:
-        parse_batch_translations(raw, expected_count=2)
-    assert "JSON" in str(excinfo.value)
+    assert parse_batch_translations(raw, expected_count=2) == ["Alpha", "Beta"]
+
+
+def test_parse_batch_translations_fallback_numbered_colon_lines() -> None:
+    raw = "1: Alpha\n2: Beta\n"
+    assert parse_batch_translations(raw, expected_count=2) == ["Alpha", "Beta"]
+
+
+def test_parse_batch_translations_fallback_numbered_lines_ignores_prefix_suffix() -> (
+    None
+):
+    raw = "prefix\n\n1) Alpha\n2) Beta\n\nsuffix\n"
+    assert parse_batch_translations(raw, expected_count=2) == ["Alpha", "Beta"]
 
 
 def test_parse_batch_translations_raises_when_unparseable() -> None:

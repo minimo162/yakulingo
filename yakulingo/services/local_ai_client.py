@@ -28,7 +28,7 @@ _RE_TRAILING_COMMAS = re.compile(r",(\s*[}\]])")
 _RE_ID_MARKER_BLOCK = re.compile(
     r"\[\[ID:(\d+)\]\]\s*(.+?)(?=\[\[ID:\d+\]\]|$)", re.DOTALL
 )
-_RE_NUMBERED_LINE = re.compile(r"^\s*(\d+)\.\s*(.+)\s*$")
+_RE_NUMBERED_LINE = re.compile(r"^\s*(\d+)\s*[\.\):]\s*(.+)\s*$")
 _JSON_STOP_SEQUENCES = ["</s>", "<|end|>"]
 _RESPONSE_FORMAT_CACHE_TTL_S = 600.0
 

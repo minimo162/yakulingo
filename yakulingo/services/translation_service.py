@@ -995,6 +995,18 @@ class BatchTranslator:
 - Do NOT output Korean (Hangul) characters.
 - If the input contains non-English fragments (e.g., Japanese/Korean), translate only those fragments into English.
 """
+    _EN_STRICT_OUTPUT_LANGUAGE_INSTRUCTION = """### Language constraint (critical)
+- Output must be English only.
+- Do NOT output Japanese/Chinese scripts (hiragana/katakana/kanji/hanzi) or Japanese punctuation (、・「」『』).
+- Do NOT output Korean (Hangul) characters.
+- If the source contains Japanese-only tokens (e.g., names, company types, place names), translate or romanize them; do not leave them in Japanese script.
+"""
+    _JP_STRICT_OUTPUT_LANGUAGE_INSTRUCTION = """### Language constraint (critical)
+- Output must be Japanese only.
+- Write natural Japanese with kana/okurigana; avoid Chinese-style wording.
+- Do NOT output Chinese (Simplified/Traditional) text.
+- Do NOT output English sentences.
+"""
 
     def __init__(
         self,
@@ -1087,6 +1099,26 @@ class BatchTranslator:
         if original == translated:
             return True
         return language_detector.is_japanese(translated, threshold=0.6)
+
+    def _is_output_language_mismatch(self, text: str, output_language: str) -> bool:
+        normalized = (text or "").strip()
+        if not normalized:
+            return False
+        if output_language == "en":
+            return not is_expected_output_language(normalized, "en")
+        if output_language != "jp":
+            return False
+
+        detected = language_detector.detect_local(normalized)
+        if detected in ("中国語", "韓国語"):
+            return True
+        if detected != "英語":
+            return False
+
+        # Allow short Latin-only tokens (e.g., OK/PDF/FY2025) in Japanese output.
+        if any(token in normalized for token in ("\n", "\t", " ")):
+            return True
+        return len(normalized) >= 12
 
     def _is_local_backend(self) -> bool:
         try:
@@ -1552,6 +1584,7 @@ class BatchTranslator:
 
             cleaned_unique_translations = []
             hangul_indices: list[int] = []
+            output_language_mismatch_indices: list[int] = []
             for idx, translated_text in enumerate(unique_translations):
                 cleaned_text = self._clean_batch_translation(translated_text)
                 if not cleaned_text or not cleaned_text.strip():
@@ -1559,6 +1592,10 @@ class BatchTranslator:
                     continue
                 if output_language == "en" and _RE_HANGUL.search(cleaned_text):
                     hangul_indices.append(idx)
+                    cleaned_unique_translations.append(cleaned_text)
+                    continue
+                if self._is_output_language_mismatch(cleaned_text, output_language):
+                    output_language_mismatch_indices.append(idx)
                     cleaned_unique_translations.append(cleaned_text)
                     continue
                 if self._should_retry_translation(
@@ -1651,6 +1688,126 @@ class BatchTranslator:
                         cleaned_unique_translations[original_idx] = ""
                     else:
                         cleaned_unique_translations[original_idx] = cleaned_repair
+
+            if (
+                output_language_mismatch_indices
+                and output_language in ("en", "jp")
+                and not self._cancel_event.is_set()
+            ):
+                # Extend with mismatches introduced by the Hangul repair path (if any).
+                existing = set(output_language_mismatch_indices)
+                for idx, translated_text in enumerate(cleaned_unique_translations):
+                    if idx in existing:
+                        continue
+                    if not translated_text or not translated_text.strip():
+                        continue
+                    if self._is_output_language_mismatch(translated_text, output_language):
+                        existing.add(idx)
+                        output_language_mismatch_indices.append(idx)
+
+                if output_language_mismatch_indices:
+                    repair_texts = [
+                        unique_texts[idx] for idx in output_language_mismatch_indices
+                    ]
+                    repair_prompt = self.prompt_builder.build_batch(
+                        repair_texts,
+                        has_reference_files=has_refs,
+                        output_language=output_language,
+                        translation_style=translation_style,
+                        include_item_ids=include_item_ids,
+                        reference_files=reference_files,
+                    )
+                    extra_instruction = (
+                        self._EN_STRICT_OUTPUT_LANGUAGE_INSTRUCTION
+                        if output_language == "en"
+                        else self._JP_STRICT_OUTPUT_LANGUAGE_INSTRUCTION
+                    )
+                    repair_prompt = _insert_extra_instruction(
+                        repair_prompt,
+                        extra_instruction,
+                    )
+                    logger.warning(
+                        "Batch %d: Output language mismatch detected in %d translations (target=%s); retrying with stricter prompt",
+                        i + 1,
+                        len(output_language_mismatch_indices),
+                        output_language,
+                    )
+                    try:
+                        lock = self._copilot_lock or nullcontext()
+                        with lock:
+                            self.copilot.set_cancel_callback(
+                                lambda: self._cancel_event.is_set()
+                            )
+                            try:
+                                with self._ui_window_sync_scope(
+                                    "translate_blocks_with_result_output_language_retry"
+                                ):
+                                    repair_translations = self.copilot.translate_sync(
+                                        repair_texts,
+                                        repair_prompt,
+                                        files_to_attach,
+                                        True,
+                                        timeout=self.request_timeout,
+                                        include_item_ids=include_item_ids,
+                                    )
+                            finally:
+                                self.copilot.set_cancel_callback(None)
+                    except TranslationCancelledError:
+                        logger.info(
+                            "Translation cancelled during batch %d/%d",
+                            i + 1,
+                            len(batches),
+                        )
+                        cancelled = True
+                        break
+
+                    if len(repair_translations) != len(repair_texts):
+                        logger.warning(
+                            "Batch %d: Output language retry count mismatch: expected %d, got %d; using fallbacks where needed",
+                            i + 1,
+                            len(repair_texts),
+                            len(repair_translations),
+                        )
+                        if len(repair_translations) < len(repair_texts):
+                            repair_translations = repair_translations + (
+                                [""] * (len(repair_texts) - len(repair_translations))
+                            )
+                        else:
+                            repair_translations = repair_translations[: len(repair_texts)]
+
+                    for repair_pos, repaired_text in enumerate(repair_translations):
+                        original_idx = output_language_mismatch_indices[repair_pos]
+                        cleaned_repair = self._clean_batch_translation(repaired_text)
+                        if self._is_output_language_mismatch(
+                            cleaned_repair, output_language
+                        ):
+                            preview = unique_texts[original_idx][:50].replace("\n", " ")
+                            logger.warning(
+                                "Batch %d: Output language retry failed for text '%s'; using fallback/retry flow",
+                                i + 1,
+                                preview,
+                            )
+                            cleaned_unique_translations[original_idx] = ""
+                        elif not cleaned_repair or not cleaned_repair.strip():
+                            cleaned_unique_translations[original_idx] = ""
+                        else:
+                            cleaned_unique_translations[original_idx] = cleaned_repair
+
+                # Safety: never accept mismatched outputs.
+                for idx in output_language_mismatch_indices:
+                    translated_text = (
+                        cleaned_unique_translations[idx]
+                        if idx < len(cleaned_unique_translations)
+                        else ""
+                    )
+                    if (
+                        translated_text
+                        and translated_text.strip()
+                        and self._is_output_language_mismatch(
+                            translated_text, output_language
+                        )
+                    ):
+                        cleaned_unique_translations[idx] = ""
 
             # Detect empty translations (Copilot may return empty strings for some items)
             empty_translation_indices = [

@@ -2198,7 +2198,7 @@ class TranslationService:
                 )
                 translation, explanation = parse_text_single_translation(raw)
                 if not translation:
-                    error_message = "ローカルAIの応答(JSON)を解析できませんでした"
+                    error_message = "ローカルAIの応答(JSON)を解析できませんでした（詳細はログを確認してください）"
                     if is_truncated_json(raw):
                         error_message = (
                             "ローカルAIの応答が途中で終了しました（JSONが閉じていません）。\n"
@@ -2259,7 +2259,7 @@ class TranslationService:
             raw = self._translate_single_with_cancel(text, prompt, None, stream_handler)
             translation, explanation = parse_text_single_translation(raw)
             if not translation:
-                error_message = "ローカルAIの応答(JSON)を解析できませんでした"
+                error_message = "ローカルAIの応答(JSON)を解析できませんでした（詳細はログを確認してください）"
                 if is_truncated_json(raw):
                     error_message = (
                         "ローカルAIの応答が途中で終了しました（JSONが閉じていません）。\n"
@@ -2444,7 +2444,7 @@ class TranslationService:
                     metadata=metadata,
                 )
 
-            error_message = "ローカルAIの応答(JSON)を解析できませんでした"
+            error_message = "ローカルAIの応答(JSON)を解析できませんでした（詳細はログを確認してください）"
             if truncated_detected:
                 error_message = (
                     "ローカルAIの応答が途中で終了しました（JSONが閉じていません）。\n"

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from yakulingo.services.local_ai_client import (
@@ -71,6 +73,15 @@ def test_parse_batch_translations_fallback_numbered_lines_ignores_prefix_suffix(
 def test_parse_batch_translations_raises_when_unparseable() -> None:
     with pytest.raises(RuntimeError):
         parse_batch_translations("not json", expected_count=1)
+
+
+def test_parse_batch_translations_logs_diagnostics_on_failure(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.WARNING, logger="yakulingo.services.local_ai_client")
+    with pytest.raises(RuntimeError):
+        parse_batch_translations("not json", expected_count=1)
+    assert "LocalAI parse failure: kind=batch" in caplog.text
 
 
 def test_parse_text_to_en_3style_reads_options_json() -> None:
@@ -176,6 +187,16 @@ def test_parse_text_single_translation_fallback_allows_missing_explanation() -> 
     translation, explanation = parse_text_single_translation(raw)
     assert translation == "Hello"
     assert explanation == ""
+
+
+def test_parse_text_single_translation_logs_diagnostics_on_failure(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.WARNING, logger="yakulingo.services.local_ai_client")
+    translation, explanation = parse_text_single_translation("not json")
+    assert translation is None
+    assert explanation is None
+    assert "LocalAI parse failure: kind=single" in caplog.text
 
 
 def test_parse_batch_translations_preserves_escaped_newlines() -> None:

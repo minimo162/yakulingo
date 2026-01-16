@@ -22,6 +22,8 @@ from yakulingo.services.copilot_handler import TranslationCancelledError
 
 logger = logging.getLogger(__name__)
 
+_DIAGNOSTIC_SNIPPET_CHARS = 200
+
 
 _RE_CODE_FENCE = re.compile(r"^\s*```(?:json)?\s*$", re.IGNORECASE)
 _RE_TRAILING_COMMAS = re.compile(r",(\s*[}\]])")
@@ -50,6 +52,47 @@ def _strip_code_fences(text: str) -> str:
             continue
         lines.append(line)
     return "\n".join(lines).strip()
+
+
+def _make_diagnostic_snippet(
+    raw_content: str, *, limit: int = _DIAGNOSTIC_SNIPPET_CHARS
+) -> str:
+    cleaned = _strip_code_fences(raw_content)
+    cleaned = cleaned.replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not cleaned:
+        return ""
+    cleaned = cleaned.replace("\0", "")
+    cleaned = cleaned.replace("\t", "\\t").replace("\n", "\\n")
+    cleaned = "".join(ch if ch.isprintable() else "?" for ch in cleaned)
+    if len(cleaned) > limit:
+        cleaned = cleaned[:limit] + "..."
+    return cleaned
+
+
+def _log_parse_failure(
+    *,
+    kind: str,
+    raw_content: str,
+    reason: str,
+    obj: object | None,
+    expected_count: Optional[int] = None,
+) -> None:
+    cleaned = _strip_code_fences(raw_content)
+    has_json_substring = _extract_json_substring(cleaned) is not None
+    has_code_fence = "```" in raw_content
+    obj_type = type(obj).__name__ if obj is not None else "none"
+    snippet = _make_diagnostic_snippet(raw_content)
+    logger.warning(
+        "LocalAI parse failure: kind=%s reason=%s obj=%s raw_chars=%d has_code_fence=%s has_json_substring=%s expected_count=%s snippet=%s",
+        kind,
+        reason,
+        obj_type,
+        len(raw_content),
+        has_code_fence,
+        has_json_substring,
+        expected_count,
+        snippet,
+    )
 
 
 def _extract_json_substring(text: str) -> Optional[str]:
@@ -243,6 +286,21 @@ def _parse_batch_items_fallback(text: str, expected_count: int) -> Optional[list
     return None
 
 
+def _classify_parse_failure(raw_content: str, obj: object | None) -> tuple[str, bool]:
+    cleaned = _strip_code_fences(raw_content).strip()
+    has_json_substring = _extract_json_substring(cleaned) is not None
+    truncated = is_truncated_json(raw_content)
+    if not cleaned:
+        return "empty", truncated
+    if truncated:
+        return "truncated_json", truncated
+    if obj is None:
+        return ("invalid_json" if has_json_substring else "no_json"), truncated
+    if isinstance(obj, dict):
+        return "json_schema_mismatch", truncated
+    return f"json_type_{type(obj).__name__}", truncated
+
+
 def parse_batch_translations(raw_content: str, expected_count: int) -> list[str]:
     obj = loads_json_loose(raw_content)
     parsed = _parse_batch_items_json(obj, expected_count) if obj is not None else None
@@ -253,13 +311,24 @@ def parse_batch_translations(raw_content: str, expected_count: int) -> list[str]
     if fallback is not None:
         return fallback
 
-    if is_truncated_json(raw_content):
+    reason, truncated = _classify_parse_failure(raw_content, obj)
+    _log_parse_failure(
+        kind="batch",
+        raw_content=raw_content,
+        reason=reason,
+        obj=obj,
+        expected_count=expected_count,
+    )
+
+    if truncated:
         raise RuntimeError(
             "ローカルAIの応答が途中で終了しました（JSONが閉じていません）。\n"
             "max_tokens / ctx_size を見直してください。"
         )
 
-    raise RuntimeError("ローカルAIの応答(JSON)を解析できませんでした")
+    raise RuntimeError(
+        "ローカルAIの応答(JSON)を解析できませんでした（詳細はログを確認してください）"
+    )
 
 
 _TEXT_STYLE_ORDER = ("standard", "concise", "minimal")
@@ -375,13 +444,23 @@ def parse_text_single_translation(
     raw_content: str,
 ) -> tuple[Optional[str], Optional[str]]:
     obj = loads_json_loose(raw_content)
-    if not isinstance(obj, dict):
-        return _parse_text_single_translation_fallback(raw_content)
-    translation = obj.get("translation")
-    explanation = obj.get("explanation")
-    if not isinstance(translation, str):
-        return _parse_text_single_translation_fallback(raw_content)
-    return translation, explanation if isinstance(explanation, str) else ""
+    if isinstance(obj, dict):
+        translation = obj.get("translation")
+        explanation = obj.get("explanation")
+        if isinstance(translation, str):
+            return translation, explanation if isinstance(explanation, str) else ""
+
+    translation, explanation = _parse_text_single_translation_fallback(raw_content)
+    if not translation:
+        reason, _ = _classify_parse_failure(raw_content, obj)
+        _log_parse_failure(
+            kind="single",
+            raw_content=raw_content,
+            reason=reason,
+            obj=obj,
+            expected_count=None,
+        )
+    return translation, explanation
 
 
 def _parse_text_single_translation_fallback(

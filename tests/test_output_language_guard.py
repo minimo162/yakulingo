@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from yakulingo.services.translation_service import (
+    _is_text_output_language_mismatch,
     is_expected_output_language,
     language_detector,
 )
@@ -14,7 +15,10 @@ from yakulingo.services.translation_service import (
         ("Hello world", True),
         ("123,456", True),
         ("\u3053\u3093\u306b\u3061\u306f", False),  # こんにちは
-        ("\u6c49\u8bed\u6d4b\u8bd5", False),  # 汉语测试 (simplified Chinese, unencodable in shift_jisx0213)
+        (
+            "\u6c49\u8bed\u6d4b\u8bd5",
+            False,
+        ),  # 汉语测试 (simplified Chinese, unencodable in shift_jisx0213)
         ("\ud55c\uad6d\uc5b4", False),  # 한국어
         ("A\u30fbB", False),  # A・B (Japanese middle dot)
         ("\u58f2\u4e0a\u9ad8", False),  # 売上高 (kanji only)
@@ -42,7 +46,10 @@ def test_is_expected_output_language_jp(text: str, expected: bool) -> None:
 def test_language_detector_contracts_for_chinese_unencodable_cjk() -> None:
     text = "\u6c49\u8bed\u6d4b\u8bd5"  # 汉语测试
     assert language_detector.detect_local(text) == "中国語"
-    assert language_detector.detect_local_with_reason(text) == ("中国語", "cjk_unencodable")
+    assert language_detector.detect_local_with_reason(text) == (
+        "中国語",
+        "cjk_unencodable",
+    )
 
 
 @pytest.mark.parametrize(
@@ -56,3 +63,16 @@ def test_language_detector_contracts_for_chinese_unencodable_cjk() -> None:
 def test_language_detector_contracts_common_cases(text: str, expected: str) -> None:
     assert language_detector.detect_local(text) == expected
 
+
+def test_text_output_language_mismatch_flags_kana_less_chinese_punct() -> None:
+    # 需要提高效率，降低成本。 (all CJK are encodable in shift_jisx0213 → cjk_fallback)
+    text = "\u9700\u8981\u63d0\u9ad8\u6548\u7387\uff0c\u964d\u4f4e\u6210\u672c\u3002"
+    assert language_detector.detect_local_with_reason(text) == (
+        "日本語",
+        "cjk_fallback",
+    )
+    assert _is_text_output_language_mismatch(text, "jp") is True
+
+
+def test_text_output_language_mismatch_allows_short_kanji_only_japanese() -> None:
+    assert _is_text_output_language_mismatch("売上高", "jp") is False

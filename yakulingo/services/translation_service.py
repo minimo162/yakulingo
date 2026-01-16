@@ -101,6 +101,7 @@ _RE_JP_KANA = re.compile(r"[\u3040-\u309F\u30A0-\u30FF\uFF65-\uFF9F]")
 _RE_CJK_IDEOGRAPH = re.compile(r"[\u3400-\u4DBF\u4E00-\u9FFF]")
 _RE_LATIN_ALPHA = re.compile(r"[A-Za-z]")
 _RE_HANGUL = re.compile(r"[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F]")
+_CHINESE_PUNCTUATION_HINTS = frozenset("，；：")
 _RE_EN_BILLION_TRILLION = re.compile(r"\b(?:billion|trillion|bn)\b", re.IGNORECASE)
 _RE_EN_OKU = re.compile(r"\boku\b", re.IGNORECASE)
 _RE_JP_LARGE_UNIT = re.compile(r"[兆億]")
@@ -130,6 +131,31 @@ def _looks_untranslated_to_en(text: str) -> bool:
     if jp_total >= 20 and jp_ratio >= 0.25:
         return True
     if jp_total >= 50 and jp_ratio >= 0.15:
+        return True
+    return False
+
+
+def _looks_like_chinese_in_kana_less_cjk(text: str) -> bool:
+    """Heuristic for kana-less CJK that is likely Chinese (vs Japanese headings).
+
+    This is intentionally conservative to avoid false positives for Japanese text.
+    """
+    if not text:
+        return False
+    if _RE_JP_KANA.search(text):
+        return False
+    if not _RE_CJK_IDEOGRAPH.search(text):
+        return False
+
+    if any(p in text for p in _CHINESE_PUNCTUATION_HINTS):
+        return True
+
+    cjk_count = len(_RE_CJK_IDEOGRAPH.findall(text))
+    if any(p in text for p in LanguageDetector._JAPANESE_PUNCTUATION):
+        return False
+    if text.endswith("。") and cjk_count >= 8:
+        return True
+    if cjk_count >= 25:
         return True
     return False
 
@@ -758,6 +784,23 @@ def is_expected_output_language(text: str, output_language: str) -> bool:
     return True
 
 
+def _is_jp_output_language_mismatch(text: str) -> bool:
+    detected, reason = language_detector.detect_local_with_reason(text)
+    if detected in ("中国語", "韓国語"):
+        return True
+    if detected == "英語":
+        # Allow short Latin-only tokens (e.g., OK/PDF/FY2025) in Japanese output.
+        if any(token in text for token in ("\n", "\t", " ")):
+            return True
+        return len(text) >= 12
+    if detected != "日本語":
+        return False
+
+    if reason == "cjk_fallback" and _looks_like_chinese_in_kana_less_cjk(text):
+        return True
+    return False
+
+
 def _is_text_output_language_mismatch(text: str, output_language: str) -> bool:
     normalized = (text or "").strip()
     if not normalized:
@@ -769,16 +812,7 @@ def _is_text_output_language_mismatch(text: str, output_language: str) -> bool:
     if lang != "jp":
         return False
 
-    detected = language_detector.detect_local(normalized)
-    if detected in ("中国語", "韓国語"):
-        return True
-    if detected != "英語":
-        return False
-
-    # Allow short Latin-only tokens (e.g., OK/PDF/FY2025) in Japanese output.
-    if any(token in normalized for token in ("\n", "\t", " ")):
-        return True
-    return len(normalized) >= 12
+    return _is_jp_output_language_mismatch(normalized)
 
 
 # =============================================================================
@@ -1131,17 +1165,7 @@ class BatchTranslator:
             return not is_expected_output_language(normalized, "en")
         if output_language != "jp":
             return False
-
-        detected = language_detector.detect_local(normalized)
-        if detected in ("中国語", "韓国語"):
-            return True
-        if detected != "英語":
-            return False
-
-        # Allow short Latin-only tokens (e.g., OK/PDF/FY2025) in Japanese output.
-        if any(token in normalized for token in ("\n", "\t", " ")):
-            return True
-        return len(normalized) >= 12
+        return _is_jp_output_language_mismatch(normalized)
 
     def _is_local_backend(self) -> bool:
         try:
@@ -1724,7 +1748,9 @@ class BatchTranslator:
                         continue
                     if not translated_text or not translated_text.strip():
                         continue
-                    if self._is_output_language_mismatch(translated_text, output_language):
+                    if self._is_output_language_mismatch(
+                        translated_text, output_language
+                    ):
                         existing.add(idx)
                         output_language_mismatch_indices.append(idx)
 
@@ -1796,7 +1822,9 @@ class BatchTranslator:
                                 [""] * (len(repair_texts) - len(repair_translations))
                             )
                         else:
-                            repair_translations = repair_translations[: len(repair_texts)]
+                            repair_translations = repair_translations[
+                                : len(repair_texts)
+                            ]
 
                     for repair_pos, repaired_text in enumerate(repair_translations):
                         original_idx = output_language_mismatch_indices[repair_pos]
@@ -2743,8 +2771,7 @@ class TranslationService:
                 mismatched_styles = [
                     opt.style
                     for opt in options
-                    if opt.style
-                    and _is_text_output_language_mismatch(opt.text, "en")
+                    if opt.style and _is_text_output_language_mismatch(opt.text, "en")
                 ]
                 if mismatched_styles:
                     seen_retry = set()
@@ -2862,7 +2889,9 @@ class TranslationService:
                 files_to_attach = None
 
             self.prompt_builder.reload_translation_rules()
-            translation_rules = self.prompt_builder.get_translation_rules(output_language)
+            translation_rules = self.prompt_builder.get_translation_rules(
+                output_language
+            )
 
             def build_compare_prompt(extra_instruction: Optional[str] = None) -> str:
                 prompt = template.replace("{translation_rules}", translation_rules)
@@ -2872,7 +2901,9 @@ class TranslationService:
                     prompt = _insert_extra_instruction(prompt, extra_instruction)
                 return prompt
 
-            def parse_compare_result(raw_result: str) -> Optional[TextTranslationResult]:
+            def parse_compare_result(
+                raw_result: str,
+            ) -> Optional[TextTranslationResult]:
                 parsed_options = self._parse_style_comparison_result(raw_result)
                 if parsed_options:
                     options_by_style: dict[str, TranslationOption] = {}
@@ -2994,7 +3025,9 @@ class TranslationService:
 
         prompt = template.replace("{translation_rules}", translation_rules)
         prompt = prompt.replace("{reference_section}", reference_section)
-        prompt_input_text = self.prompt_builder.normalize_input_text(text, output_language)
+        prompt_input_text = self.prompt_builder.normalize_input_text(
+            text, output_language
+        )
         prompt = prompt.replace("{input_text}", prompt_input_text)
         if output_language == "en":
             prompt = prompt.replace("{style}", style)
@@ -3132,9 +3165,9 @@ class TranslationService:
                     output_language=output_language,
                     on_chunk=on_chunk,
                 )
-                if (local_result.metadata or {}).get("output_language_mismatch") and bool(
-                    getattr(self.config, "copilot_enabled", True)
-                ):
+                if (local_result.metadata or {}).get(
+                    "output_language_mismatch"
+                ) and bool(getattr(self.config, "copilot_enabled", True)):
                     logger.warning(
                         "Local text translation output language mismatch; falling back to Copilot"
                     )
@@ -3487,7 +3520,9 @@ class TranslationService:
                         error_message=str(e),
                     )
                 except (RuntimeError, ValueError, ConnectionError, TimeoutError) as e:
-                    logger.exception("Error during text translation with options: %s", e)
+                    logger.exception(
+                        "Error during text translation with options: %s", e
+                    )
                     result = TextTranslationResult(
                         source_text=text,
                         source_char_count=len(text),

@@ -70,7 +70,9 @@ def test_batch_translator_retries_when_cjk_appears_in_en_output() -> None:
 
 
 def test_batch_translator_retries_when_chinese_appears_in_jp_output() -> None:
-    copilot = SequenceCopilot(responses=[["汉语测试"], ["日本語の翻訳です"]])
+    copilot = SequenceCopilot(
+        responses=[["\u6c49\u8bed\u6d4b\u8bd5"], ["日本語の翻訳です"]]
+    )
     translator = BatchTranslator(
         copilot=copilot,  # type: ignore[arg-type]
         prompt_builder=DummyPromptBuilder(),  # type: ignore[arg-type]
@@ -84,3 +86,26 @@ def test_batch_translator_retries_when_chinese_appears_in_jp_output() -> None:
     assert result.translations["b1"] == "日本語の翻訳です"
     assert "Output must be Japanese only." in str(copilot.calls[1]["prompt"])
 
+
+def test_batch_translator_retries_when_kana_less_cjk_suspicious_jp_output() -> None:
+    # 需要提高效率，降低成本。 (all CJK are encodable in shift_jisx0213 → cjk_fallback)
+    chinese_like = (
+        "\u9700\u8981\u63d0\u9ad8\u6548\u7387\uff0c\u964d\u4f4e\u6210\u672c\u3002"
+    )
+    copilot = SequenceCopilot(
+        responses=[[chinese_like], ["効率を高め、コストを下げる必要があります。"]]
+    )
+    translator = BatchTranslator(
+        copilot=copilot,  # type: ignore[arg-type]
+        prompt_builder=DummyPromptBuilder(),  # type: ignore[arg-type]
+        enable_cache=False,
+    )
+    blocks = [
+        TextBlock(id="b1", text="Improve efficiency, reduce costs.", location="Sheet1")
+    ]
+
+    result = translator.translate_blocks_with_result(blocks, output_language="jp")
+
+    assert len(copilot.calls) == 2
+    assert result.translations["b1"] == "効率を高め、コストを下げる必要があります。"
+    assert "Output must be Japanese only." in str(copilot.calls[1]["prompt"])

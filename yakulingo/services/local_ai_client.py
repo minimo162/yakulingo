@@ -136,6 +136,22 @@ def loads_json_loose(text: str) -> Optional[object]:
     return None
 
 
+def _is_empty_json_object_reply(content: str) -> bool:
+    cleaned = _strip_code_fences(content).strip()
+    if not cleaned:
+        return True
+    obj = loads_json_loose(cleaned)
+    if not isinstance(obj, dict):
+        return False
+    if not obj:
+        return True
+    if "translation" in obj:
+        translation = obj.get("translation")
+        if not isinstance(translation, str) or not translation.strip():
+            return True
+    return False
+
+
 def is_truncated_json(text: str) -> bool:
     cleaned = _strip_code_fences(text).strip()
     if not cleaned:
@@ -297,6 +313,8 @@ def _classify_parse_failure(raw_content: str, obj: object | None) -> tuple[str, 
     if obj is None:
         return ("invalid_json" if has_json_substring else "no_json"), truncated
     if isinstance(obj, dict):
+        if not obj:
+            return "empty_json_object", truncated
         return "json_schema_mismatch", truncated
     return f"json_type_{type(obj).__name__}", truncated
 
@@ -748,6 +766,7 @@ class LocalAIClient:
         prompt: str,
         *,
         timeout: Optional[int],
+        force_response_format: Optional[bool] = None,
     ) -> LocalAIRequestResult:
         if self._should_cancel():
             raise TranslationCancelledError("Translation cancelled by user")
@@ -756,7 +775,10 @@ class LocalAIClient:
             timeout if timeout is not None else self._settings.request_timeout
         )
         cached_support = self._get_response_format_support(runtime)
-        use_response_format = cached_support is not False
+        if force_response_format is None:
+            use_response_format = cached_support is not False
+        else:
+            use_response_format = bool(force_response_format)
         enforce_json = use_response_format
         include_sampling_params = True
         payload = self._build_chat_payload(
@@ -873,11 +895,30 @@ class LocalAIClient:
                         raise
             else:
                 raise
-        else:
-            if enforce_json:
-                self._set_response_format_support(runtime, True)
-
         content = _parse_openai_chat_content(response)
+        if enforce_json and _is_empty_json_object_reply(content):
+            logger.debug(
+                "LocalAI response_format returned empty JSON object; retrying without it"
+            )
+            try:
+                retry = self._chat_completions(
+                    runtime,
+                    prompt,
+                    timeout=timeout,
+                    force_response_format=False,
+                )
+            except Exception as exc:
+                logger.debug(
+                    "LocalAI retry without response_format failed after empty JSON object (%s)",
+                    exc,
+                )
+            else:
+                if not _is_empty_json_object_reply(retry.content):
+                    self._set_response_format_support(runtime, False)
+                    return retry
+
+        if enforce_json and not _is_empty_json_object_reply(content):
+            self._set_response_format_support(runtime, True)
         self._manager.note_server_ok(runtime)
         return LocalAIRequestResult(content=content, model_id=runtime.model_id)
 
@@ -988,9 +1029,29 @@ class LocalAIClient:
                         raise
             else:
                 raise
-        else:
-            if enforce_json:
-                self._set_response_format_support(runtime, True)
+        if enforce_json and _is_empty_json_object_reply(result.content):
+            logger.debug(
+                "LocalAI response_format returned empty JSON object (streaming); retrying without it"
+            )
+            try:
+                retry = self._chat_completions(
+                    runtime,
+                    prompt,
+                    timeout=timeout,
+                    force_response_format=False,
+                )
+            except Exception as exc:
+                logger.debug(
+                    "LocalAI retry without response_format failed after empty JSON object (streaming) (%s)",
+                    exc,
+                )
+            else:
+                if not _is_empty_json_object_reply(retry.content):
+                    self._set_response_format_support(runtime, False)
+                    return retry
+
+        if enforce_json and not _is_empty_json_object_reply(result.content):
+            self._set_response_format_support(runtime, True)
         return result
 
     def _chat_completions_streaming_with_payload(

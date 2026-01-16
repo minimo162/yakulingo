@@ -3,15 +3,16 @@
 Translate the input text into natural, concise Japanese suitable for business writing.
 If the input is already Japanese, keep it as is.
 
-### Rules
-- Translate only the text between the input markers; do not output the markers or any other prompt text.
+### Rules (critical)
+- Output must be translation-only: no explanations/notes/headings/questions/suggestions/Markdown/code fences.
+- Output must start with Translation: and then Japanese translation text only.
+- Translate only the text between the input markers; do not output the marker lines or any other prompt text.
 - Preserve line breaks and tabs from the input as much as possible.
 
 {translation_rules}
 
 ### Output format (exact)
 Translation:
-- Output only the translation above (no explanations, headings, questions, or suggestions).
 
 {reference_section}
 

@@ -10,6 +10,7 @@
   - Indent continuation lines with at least one space or tab.
 - Translate only the text between the input markers; do not output the marker lines or any other prompt text.
 - Do NOT output explanations, headings, Markdown, code fences, or extra text.
+- Output must be natural Japanese (use kana/okurigana appropriately) and avoid Chinese-style wording.
 - If the input is already Japanese, keep it as is.
 
 ### Style rules

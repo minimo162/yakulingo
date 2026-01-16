@@ -10,7 +10,10 @@
   - Indent continuation lines with at least one space or tab.
 - Translate only the text between the input markers; do not output the marker lines or any other prompt text.
 - Do NOT output explanations, headings, Markdown, code fences, or extra text.
-- Output must be English only. Do NOT output Korean (Hangul) characters.
+- Output must be English only.
+  - Do NOT output Japanese/Chinese scripts (hiragana/katakana/kanji/hanzi) or Japanese punctuation (、・「」『』).
+  - Do NOT output Korean (Hangul) characters.
+  - If the source contains Japanese-only tokens (names, company types, place names), translate or romanize them; do not leave them in Japanese script.
 - If the input is already English, keep it as is (but translate any non-English fragments into English).
 
 ### Style rules (standard)

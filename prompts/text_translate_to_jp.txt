@@ -6,6 +6,7 @@ If the input is already Japanese, keep it as is.
 ### Rules (critical)
 - Output must be translation-only: no explanations/notes/headings/questions/suggestions/Markdown/code fences.
 - Output must start with Translation: and then Japanese translation text only.
+- Output must be natural Japanese (use kana/okurigana appropriately) and avoid Chinese-style wording.
 - Translate only the text between the input markers; do not output the marker lines or any other prompt text.
 - Preserve line breaks and tabs from the input as much as possible.
 

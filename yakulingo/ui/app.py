@@ -9015,6 +9015,8 @@ class YakuLingoApp:
         # Status indicator (Copilot readiness: user can start translation safely)
         @ui.refreshable
         def header_status():
+            from yakulingo.ui.utils import to_props_string_literal
+
             # Backend selector (Copilot ON/OFF)
             copilot_enabled = getattr(self.settings, "copilot_enabled", True)
             disabled = self.state.is_translating()
@@ -9062,7 +9064,7 @@ class YakuLingoApp:
                         ui.element("div")
                         .classes("status-indicator ready")
                         .props(
-                            f'role="status" aria-live="polite" aria-label="{tooltip}" data-testid="local-ai-status" data-state="ready"'
+                            f'role="status" aria-live="polite" aria-label={to_props_string_literal(tooltip)} data-testid="local-ai-status" data-state="ready"'
                         ) as status_indicator
                     ):
                         ui.element("div").classes("status-dot ready").props(
@@ -9080,7 +9082,7 @@ class YakuLingoApp:
                         ui.element("div")
                         .classes("status-indicator connecting")
                         .props(
-                            f'role="status" aria-live="polite" aria-label="{tooltip}" data-testid="local-ai-status" data-state="starting"'
+                            f'role="status" aria-live="polite" aria-label={to_props_string_literal(tooltip)} data-testid="local-ai-status" data-state="starting"'
                         ) as status_indicator
                     ):
                         ui.element("div").classes("status-dot connecting").props(
@@ -9100,7 +9102,7 @@ class YakuLingoApp:
                         ui.element("div")
                         .classes("status-indicator error")
                         .props(
-                            f'role="status" aria-live="polite" aria-label="{tooltip}" data-testid="local-ai-status" data-state="not_installed"'
+                            f'role="status" aria-live="polite" aria-label={to_props_string_literal(tooltip)} data-testid="local-ai-status" data-state="not_installed"'
                         ) as status_indicator
                     ):
                         ui.element("div").classes("status-dot error").props(
@@ -9134,7 +9136,7 @@ class YakuLingoApp:
                     ui.element("div")
                     .classes("status-indicator error")
                     .props(
-                        f'role="status" aria-live="polite" aria-label="{tooltip}" data-testid="local-ai-status" data-state="error"'
+                        f'role="status" aria-live="polite" aria-label={to_props_string_literal(tooltip)} data-testid="local-ai-status" data-state="error"'
                     ) as status_indicator
                 ):
                     ui.element("div").classes("status-dot error").props(
@@ -9167,7 +9169,7 @@ class YakuLingoApp:
                     ui.element("div")
                     .classes("status-indicator connecting")
                     .props(
-                        f'role="status" aria-live="polite" aria-label="{tooltip}"'
+                        f'role="status" aria-live="polite" aria-label={to_props_string_literal(tooltip)}'
                     ) as status_indicator
                 ):
                     ui.element("div").classes("status-dot connecting").props(
@@ -9202,7 +9204,7 @@ class YakuLingoApp:
                     ui.element("div")
                     .classes("status-indicator connecting")
                     .props(
-                        f'role="status" aria-live="polite" aria-label="{tooltip}"'
+                        f'role="status" aria-live="polite" aria-label={to_props_string_literal(tooltip)}'
                     ) as status_indicator
                 ):
                     ui.element("div").classes("status-dot connecting").props(
@@ -9280,7 +9282,7 @@ class YakuLingoApp:
                     ui.element("div")
                     .classes("status-indicator connected")
                     .props(
-                        f'role="status" aria-live="polite" aria-label="{tooltip}"'
+                        f'role="status" aria-live="polite" aria-label={to_props_string_literal(tooltip)}'
                     ) as status_indicator
                 ):
                     ui.element("div").classes("status-dot connected").props(
@@ -9310,7 +9312,7 @@ class YakuLingoApp:
                     ui.element("div")
                     .classes("status-indicator login-required")
                     .props(
-                        f'role="status" aria-live="polite" aria-label="{tooltip}"'
+                        f'role="status" aria-live="polite" aria-label={to_props_string_literal(tooltip)}'
                     ) as status_indicator
                 ):
                     ui.element("div").classes("status-dot login-required").props(
@@ -9340,7 +9342,7 @@ class YakuLingoApp:
                     ui.element("div")
                     .classes("status-indicator connecting")
                     .props(
-                        f'role="status" aria-live="polite" aria-label="{tooltip}"'
+                        f'role="status" aria-live="polite" aria-label={to_props_string_literal(tooltip)}'
                     ) as status_indicator
                 ):
                     ui.element("div").classes("status-dot connecting").props(
@@ -9361,7 +9363,7 @@ class YakuLingoApp:
                     ui.element("div")
                     .classes("status-indicator error")
                     .props(
-                        f'role="status" aria-live="polite" aria-label="{tooltip}"'
+                        f'role="status" aria-live="polite" aria-label={to_props_string_literal(tooltip)}'
                     ) as status_indicator
                 ):
                     ui.element("div").classes("status-dot error").props(
@@ -9392,7 +9394,7 @@ class YakuLingoApp:
                     ui.element("div")
                     .classes("status-indicator error")
                     .props(
-                        f'role="status" aria-live="polite" aria-label="{tooltip}"'
+                        f'role="status" aria-live="polite" aria-label={to_props_string_literal(tooltip)}'
                     ) as status_indicator
                 ):
                     ui.element("div").classes("status-dot error").props(
@@ -9420,7 +9422,7 @@ class YakuLingoApp:
                 ui.element("div")
                 .classes("status-indicator connecting")
                 .props(
-                    f'role="status" aria-live="polite" aria-label="{tooltip}"'
+                    f'role="status" aria-live="polite" aria-label={to_props_string_literal(tooltip)}'
                 ) as status_indicator
             ):
                 ui.element("div").classes("status-dot connecting").props(

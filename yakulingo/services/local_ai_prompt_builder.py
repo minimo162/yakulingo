@@ -35,6 +35,15 @@ _RE_JP_YEN_AMOUNT = re.compile(
 )
 
 
+_RE_LOCAL_TEXT_HAS_TAB_OR_NEWLINE = re.compile(r"[\n\t]")
+_RE_LOCAL_TEXT_HAS_DIGIT = re.compile(r"[0-9０-９]")
+_RE_LOCAL_TEXT_HAS_CURRENCY = re.compile(r"[$¥￥€£]")
+_RE_LOCAL_TEXT_HAS_PERCENT = re.compile(r"[%％]")
+_RE_LOCAL_TEXT_HAS_SYMBOLS = re.compile(r"(?:>=|<=|[<>~〜→↑↓≥≧≤≦])")
+_RE_LOCAL_TEXT_HAS_KANJI_NUMERIC_UNIT = re.compile(
+    r"[〇零一二三四五六七八九十百千0-9０-９][〇零一二三四五六七八九十百千0-9０-９,，.]*[兆億万千円]"
+)
+
 @dataclass(frozen=True)
 class EmbeddedReference:
     text: str
@@ -188,9 +197,35 @@ class LocalPromptBuilder:
     def _should_include_translation_rules_for_text(
         output_language: str, text: str
     ) -> bool:
-        if not text:
+        normalized = (text or "").strip()
+        if not normalized:
             return False
-        return True
+
+        if _RE_LOCAL_TEXT_HAS_TAB_OR_NEWLINE.search(normalized):
+            return True
+        if _RE_LOCAL_TEXT_HAS_DIGIT.search(normalized):
+            return True
+        if _RE_LOCAL_TEXT_HAS_CURRENCY.search(normalized):
+            return True
+        if _RE_LOCAL_TEXT_HAS_PERCENT.search(normalized):
+            return True
+        if _RE_LOCAL_TEXT_HAS_SYMBOLS.search(normalized):
+            return True
+
+        if output_language == "en":
+            if "▲" in normalized or "+" in normalized:
+                return True
+            if _RE_LOCAL_TEXT_HAS_KANJI_NUMERIC_UNIT.search(normalized):
+                return True
+
+        return False
+
+    def _get_translation_rules_for_text(self, output_language: str, text: str) -> str:
+        if not text or not text.strip():
+            return ""
+        if self._should_include_translation_rules_for_text(output_language, text):
+            return self._get_translation_rules(output_language)
+        return self._get_translation_rules("common")
 
     @staticmethod
     def _format_oku_amount(value: Decimal) -> str:
@@ -664,11 +699,7 @@ class LocalPromptBuilder:
     ) -> str:
         template = self._load_template("local_text_translate_to_en_3style_json.txt")
         embedded_ref = self.build_reference_embed(reference_files, input_text=text)
-        translation_rules = (
-            self._get_translation_rules("en")
-            if self._should_include_translation_rules_for_text("en", text)
-            else ""
-        )
+        translation_rules = self._get_translation_rules_for_text("en", text)
         reference_section = embedded_ref.text if embedded_ref.text else ""
         prompt_input_text = self._base.normalize_input_text(text, "en")
         prompt = template.replace("{translation_rules}", translation_rules)
@@ -689,11 +720,7 @@ class LocalPromptBuilder:
             "local_text_translate_to_en_missing_styles_json.txt"
         )
         embedded_ref = self.build_reference_embed(reference_files, input_text=text)
-        translation_rules = (
-            self._get_translation_rules("en")
-            if self._should_include_translation_rules_for_text("en", text)
-            else ""
-        )
+        translation_rules = self._get_translation_rules_for_text("en", text)
         reference_section = embedded_ref.text if embedded_ref.text else ""
         prompt_input_text = self._base.normalize_input_text(text, "en")
         style_list: list[str] = []
@@ -723,11 +750,7 @@ class LocalPromptBuilder:
     ) -> str:
         template = self._load_template("local_text_translate_to_en_single_json.txt")
         embedded_ref = self.build_reference_embed(reference_files, input_text=text)
-        translation_rules = (
-            self._get_translation_rules("en")
-            if self._should_include_translation_rules_for_text("en", text)
-            else ""
-        )
+        translation_rules = self._get_translation_rules_for_text("en", text)
         numeric_hints = self._build_to_en_numeric_hints(text)
         reference_section = embedded_ref.text if embedded_ref.text else ""
         prompt_input_text = self._base.normalize_input_text(text, "en")
@@ -752,11 +775,7 @@ class LocalPromptBuilder:
     ) -> str:
         template = self._load_template("local_text_translate_to_jp_json.txt")
         embedded_ref = self.build_reference_embed(reference_files, input_text=text)
-        translation_rules = (
-            self._get_translation_rules("jp")
-            if self._should_include_translation_rules_for_text("jp", text)
-            else ""
-        )
+        translation_rules = self._get_translation_rules_for_text("jp", text)
         reference_section = embedded_ref.text if embedded_ref.text else ""
         prompt_input_text = self._base.normalize_input_text(text, "jp")
         prompt = template.replace("{translation_rules}", translation_rules)

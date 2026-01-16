@@ -72,7 +72,7 @@ def test_local_reference_embed_supports_binary_formats(tmp_path: Path) -> None:
         assert not any("未対応の参照ファイル" in w for w in embedded.warnings)
 
 
-def test_local_prompt_includes_translation_rules_for_short_text() -> None:
+def test_local_prompt_includes_common_rules_for_short_text() -> None:
     builder = _make_builder()
     prompt = builder.build_text_to_en_single(
         "短文",
@@ -80,9 +80,13 @@ def test_local_prompt_includes_translation_rules_for_short_text() -> None:
         reference_files=None,
         detected_language="日本語",
     )
-    expected_rules = builder._get_translation_rules("en").strip()
-    assert expected_rules
-    assert expected_rules in prompt
+    common_rules = builder._get_translation_rules("common").strip()
+    full_rules = builder._get_translation_rules("en").strip()
+    assert common_rules
+    assert common_rules in prompt
+    assert full_rules
+    if full_rules != common_rules:
+        assert full_rules not in prompt
 
 
 def test_local_prompt_includes_numeric_hints_for_oku() -> None:
@@ -93,9 +97,64 @@ def test_local_prompt_includes_numeric_hints_for_oku() -> None:
         reference_files=None,
         detected_language="日本語",
     )
+    expected_rules = builder._get_translation_rules("en").strip()
+    assert expected_rules
+    assert expected_rules in prompt
     assert "数値変換ヒント" in prompt
     assert "2兆2,385億円 -> 22,385 oku yen" in prompt
     assert "1,554億円 -> 1,554 oku yen" in prompt
+
+
+def test_local_prompt_omits_language_specific_rules_for_safe_text() -> None:
+    builder = _make_builder()
+    text = "短文"
+    prompt_common = builder.build_text_to_en_single(
+        text,
+        style="concise",
+        reference_files=None,
+        detected_language="日本語",
+    )
+    with patch.object(
+        LocalPromptBuilder,
+        "_should_include_translation_rules_for_text",
+        return_value=True,
+    ):
+        prompt_full = builder.build_text_to_en_single(
+            text,
+            style="concise",
+            reference_files=None,
+            detected_language="日本語",
+        )
+    assert len(prompt_common) < len(prompt_full)
+
+
+def test_local_prompt_includes_full_rules_for_en_to_jp_numeric_text() -> None:
+    builder = _make_builder()
+    text = "Revenue was 220k yen."
+    prompt = builder.build_text_to_jp(
+        text,
+        reference_files=None,
+        detected_language="英語",
+    )
+    expected_rules = builder._get_translation_rules("jp").strip()
+    assert expected_rules
+    assert expected_rules in prompt
+
+
+def test_local_prompt_uses_common_rules_for_plain_en_to_jp_text() -> None:
+    builder = _make_builder()
+    prompt = builder.build_text_to_jp(
+        "Hello world.",
+        reference_files=None,
+        detected_language="英語",
+    )
+    common_rules = builder._get_translation_rules("common").strip()
+    full_rules = builder._get_translation_rules("jp").strip()
+    assert common_rules
+    assert common_rules in prompt
+    assert full_rules
+    if full_rules != common_rules:
+        assert full_rules not in prompt
 
 
 def test_local_reference_embed_filters_bundled_glossary(tmp_path: Path) -> None:

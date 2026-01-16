@@ -25,6 +25,7 @@ from yakulingo.ui.utils import (
     format_bytes,
     summarize_reference_files,
     normalize_literal_escapes,
+    to_props_string_literal,
 )
 from yakulingo.models.types import TranslationOption, TextTranslationResult
 
@@ -954,7 +955,9 @@ def _render_translation_status(
     with (
         ui.element("div")
         .classes("translation-status-section")
-        .props(f'data-testid="translation-status" data-state="{status_state}"')
+        .props(
+            f'data-testid="translation-status" data-state={to_props_string_literal(status_state)}'
+        )
     ):
         with ui.element("div").classes("avatar-status-row"):
             with ui.column().classes("gap-0 status-text"):

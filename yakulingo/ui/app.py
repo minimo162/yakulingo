@@ -8465,6 +8465,8 @@ class YakuLingoApp:
             if not self._nav_buttons:
                 return
 
+            from yakulingo.ui.utils import to_props_string_literal
+
             for tab, btn in self._nav_buttons.items():
                 is_active = self.state.current_tab == tab
                 disabled = self.state.is_translating()
@@ -8475,7 +8477,9 @@ class YakuLingoApp:
                 if disabled:
                     btn.classes(add="disabled")
 
-                btn.props(f'aria-selected="{str(is_active).lower()}"')
+                btn.props(
+                    f"aria-selected={to_props_string_literal(str(is_active).lower())}"
+                )
                 if disabled:
                     btn.props('aria-disabled="true" disable')
                 else:
@@ -8690,6 +8694,8 @@ class YakuLingoApp:
         )
 
         if self._global_drop_upload is None:
+            from yakulingo.ui.utils import to_props_string_literal
+
             self._global_drop_upload = (
                 ui.upload(
                     on_upload=self._handle_global_upload,
@@ -8699,7 +8705,7 @@ class YakuLingoApp:
                     max_file_size=MAX_DROP_FILE_SIZE_BYTES,
                 )
                 .classes("global-drop-upload drop-zone-upload")
-                .props(f'accept="{SUPPORTED_FORMATS}"')
+                .props(f"accept={to_props_string_literal(SUPPORTED_FORMATS)}")
             )
 
         if self._global_drop_indicator is None:

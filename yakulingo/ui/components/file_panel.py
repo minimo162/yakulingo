@@ -16,6 +16,7 @@ from yakulingo.ui.utils import (
     open_file,
     show_in_folder,
     temp_file_manager,
+    to_props_string_literal,
 )
 from yakulingo.models.types import (
     FileInfo,
@@ -587,7 +588,9 @@ def _queue_panel(
                 )
                 with ui.element("div").classes(f"queue-item{active_class}") as row:
                     if can_reorder:
-                        row.props(f'draggable=true data-queue-id="{item.id}"')
+                        row.props(
+                            f"draggable=true data-queue-id={to_props_string_literal(str(item.id))}"
+                        )
                         row.on(
                             "dragstart",
                             js_handler="""(e) => {
@@ -999,7 +1002,7 @@ def _drop_zone(
                 auto_upload=True,
             )
             .classes("drop-zone-upload")
-            .props(f'accept="{SUPPORTED_FORMATS}"')
+            .props(f"accept={to_props_string_literal(SUPPORTED_FORMATS)}")
         )
 
         # Make container click trigger the upload file dialog

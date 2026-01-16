@@ -20,3 +20,12 @@ def test_to_props_string_literal_allows_windows_path_in_props_parse() -> None:
 
     parsed = Props.parse(f"aria-label={literal}")
     assert parsed["aria-label"] == value
+
+
+def test_to_props_string_literal_allows_quotes_newlines_and_backslashes() -> None:
+    path = r"C:\temp\new\file"
+    unc = r"\\server\share"
+    value = 'Quote: "hello"\n' + "Path: " + path + "\nUNC: " + unc
+
+    parsed = Props.parse(f"aria-label={to_props_string_literal(value)}")
+    assert parsed["aria-label"] == value

@@ -1,0 +1,37 @@
+## 翻訳ルール（Translation Rules）
+
+このファイルは翻訳時に適用されるルールです。
+方向別に注入されるため、必要なセクションだけがプロンプトに入ります。
+
+[COMMON]
+- 原文の改行・タブ・段落構造を維持する
+- 箇条書き・表形式を崩さない
+- 数字の桁/カンマは変更しない
+
+[TO_EN]
+- 記号禁止: > < >=/≥/≧ <=/≤/≦ ~ → ↑ ↓ は使わず言葉で表現する
+  - >: more than / exceeding / over
+  - <: less than / under / below
+  - >=: or more / at least
+  - <=: or less / at most
+  - ~: approximately / about
+  - →: leads to / results in / which enhances
+  - ↑: increased / up / higher
+  - ↓: decreased / down / lower
+- 数値/単位:
+  - 兆/億→oku (1兆=10,000億=10,000 oku; X兆Y億→(X*10,000+Y) oku)
+  - 万→k (1万=10k; 22万円→220k yen)
+  - 千→k
+  - ▲→() （負数は数値のみ括弧）
+  - YoY/QoQ/CAGR を使用
+  - billion/trillion には変換しない
+- 月名は略語: Jan., Feb., Mar., Apr., May, Jun., Jul., Aug., Sep., Oct., Nov., Dec.
+- 「+」は追加の意味のみ。比較は "higher than" などで表現する
+
+[TO_JP]
+- 数値/単位:
+  - oku→億 (22,385 oku→2兆2,385億)
+  - k→千または000
+  - ¥/￥ + 数値 + (billion/bn) は「数値 × 10億円」として、兆/億/万の和文表記に変換する
+    - 例: ¥2,238.5billion → 2兆2,385億円
+  - 負数（会計表記）: (50)→▲50、($1,234)→▲$1,234（括弧内が数値/金額のみの場合に限る。注記など通常の括弧()は変換しない）

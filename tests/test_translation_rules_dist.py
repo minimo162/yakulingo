@@ -9,4 +9,3 @@ def test_translation_rules_dist_matches_default() -> None:
     assert default_path.exists()
     assert dist_path.exists()
     assert default_path.read_bytes() == dist_path.read_bytes()
-

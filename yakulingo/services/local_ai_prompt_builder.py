@@ -44,6 +44,7 @@ _RE_LOCAL_TEXT_HAS_KANJI_NUMERIC_UNIT = re.compile(
     r"[〇零一二三四五六七八九十百千0-9０-９][〇零一二三四五六七八九十百千0-9０-９,，.]*[兆億万千円]"
 )
 
+
 @dataclass(frozen=True)
 class EmbeddedReference:
     text: str

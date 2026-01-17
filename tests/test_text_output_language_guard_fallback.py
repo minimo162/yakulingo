@@ -73,7 +73,9 @@ def test_local_to_en_falls_back_to_copilot_on_output_language_mismatch(
 ) -> None:
     copilot = SequencedCopilotHandler(["Hello"])
     settings = AppSettings(translation_backend="local", copilot_enabled=True)
-    service = TranslationService(copilot=copilot, config=settings, prompts_dir=Path("prompts"))
+    service = TranslationService(
+        copilot=copilot, config=settings, prompts_dir=Path("prompts")
+    )
 
     calls: list[str] = []
 
@@ -127,7 +129,9 @@ Explanation:
 """
     copilot = SequencedCopilotHandler([copilot_response])
     settings = AppSettings(translation_backend="local", copilot_enabled=True)
-    service = TranslationService(copilot=copilot, config=settings, prompts_dir=Path("prompts"))
+    service = TranslationService(
+        copilot=copilot, config=settings, prompts_dir=Path("prompts")
+    )
 
     local_calls = 0
 
@@ -164,5 +168,6 @@ Explanation:
         "concise",
         "minimal",
     ]
-    assert all(is_expected_output_language(option.text, "en") for option in result.options)
-
+    assert all(
+        is_expected_output_language(option.text, "en") for option in result.options
+    )

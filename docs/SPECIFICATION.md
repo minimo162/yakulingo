@@ -51,10 +51,10 @@ YakuLingoは、日本語と英語の双方向翻訳を提供するデスクト�
 
 | 入力言語 | 出力 |
 |---------|------|
-| 日本語 | 英語（Copilotは3スタイル比較 / ローカルAIは選択スタイル1件・解説なし） |
+| 日本語 | 英語（3スタイル: 標準/簡潔/最簡潔） |
 | その他 | 日本語（訳文のみ） |
 
-- EN→JP テキスト翻訳（Copilot/ローカルAIとも）では訳文のみを返し、`explanation` は出力しない。
+- テキスト翻訳/戻し訳/フォローアップは訳文のみを返し、`explanation` は出力しない（後方互換のためフィールドは保持するが常に空文字）。
 
 **検出メカニズム:**
 - `detect_language()`: ローカルのみで検出（Copilot呼び出しなし、高速）
@@ -572,7 +572,7 @@ Windows のグローバルホットキー（Ctrl+Alt+J）を登録し、押下�
   - トリガー時に前面ウィンドウのHWNDを取得（ウィンドウレイアウト用）
   - 必要に応じて `Ctrl+C` を送信し、選択内容をコピー → クリップボード内容を取得
   - クリップボード内容に応じてテキスト翻訳/ファイル翻訳を選択
-    - `CF_UNICODETEXT`（テキスト）: 通常のテキスト翻訳ルートで処理（Copilotは3スタイル、ローカルAIは選択スタイル1件・解説なし / ストリーミング）→ UIに表示
+    - `CF_UNICODETEXT`（テキスト）: 通常のテキスト翻訳ルートで処理（英訳は3スタイル、和訳は訳文のみ / 解説なし / ストリーミング）→ UIに表示
     - `CF_HDROP`（ファイル）: ファイル翻訳 → 出力ファイルはUIに表示（ダウンロード）
 - ホットキー実行時のウィンドウレイアウト（Windows）
   - 作業中ウィンドウを左、YakuLingoを右に並べる（フォーカスは作業ウィンドウ優先）
@@ -641,14 +641,14 @@ NiceGUIの`await client.connected()`パターンを使用して、クライア�
 │  ✓ 🇯🇵 日本語から🇺🇸 英語へ翻訳しました [3.2秒] ← 翻訳状態（完了）│
 │                                                                 │
 │  ┌─────────────────────────────────────────────────────────────┐│
-│  │ "Translation text / 日本語訳..."               [📋] [戻し訳]││
-│  │ Explanation / 解説...                                       ││
+│  │ "Translation text / 日本語訳..."               [📋] [逆翻訳]││
 │  └─────────────────────────────────────────────────────────────┘│
 │                                                                 │
 │  💡 [🔄 再翻訳]                         ← 吹き出し風ヒント      │
 │                                                                 │
-│  [オプション1]                          ← 単独オプションスタイル│
-│  [オプション2]                                                  │
+│  [標準]                                                        │
+│  [簡潔]                                                        │
+│  [最簡潔]                                                      │
 │                                                                 │
 │  ┌──────────────────────────────────────────────────────┐ [↑]  │
 │  │ 例: ...                     （縦幅いっぱいに拡張）     │      │
@@ -670,10 +670,8 @@ NiceGUIの`await client.connected()`パターンを使用して、クライア�
 - 連続チャンク更新はデバウンスしてスクロール頻度を抑制
 - ユーザーが手動スクロールで離脱した場合は追従しない（新規ストリーミング開始時に追従をリセット）
 
-**比較モード:**
-- 「比較」トグルで 通常 / スタイル比較 / 原文比較 を切り替え
-- スタイル比較時は基準スタイルを指定し、差分をハイライト表示
-- 原文比較は原文と訳文の差分を左右並列で表示
+**英訳表示（3スタイル）:**
+- 英訳は `standard/concise/minimal` を常に同時表示（切替UIなし）
 
 **分割翻訳（Split Translation）:**
 - 入力がバッチ上限を超える場合、分割パネルを表示
@@ -686,9 +684,8 @@ NiceGUIの`await client.connected()`パターンを使用して、クライア�
 - 結果は展開セクションに表示（編集版はタグで識別）
 
 **日本語入力時（英訳）:**
-- ローカルAIの英訳はスタイル切替ボタン（標準/簡潔/最簡潔）を表示し、既定は簡潔
-- 結果カード: Copilotは3スタイルの訳文（標準/簡潔/最簡潔）を縦並び表示、ローカルAIは選択スタイル1件（解説なし）
-- ?? [再翻訳]: 吹き出し風ヒント行
+- 結果カード: `standard/concise/minimal` の3スタイルを縦並び表示（Copilot/ローカルAI共通）
+- 💡 [再翻訳]: 吹き出し風ヒント行
 
 **その他入力時（和訳）:**
 - 結果カード: 訳文のみ（Copilot/ローカルAI）
@@ -708,7 +705,6 @@ NiceGUIの`await client.connected()`パターンを使用して、クライア�
 
 - 履歴はドロワー/ダイアログから参照
 - フィルタ: 出力言語 / スタイル / 参照ファイル有無
-- 比較: 現在の入力と履歴の差分を左右並列で表示
 
 ### 5.5 File Panel
 
@@ -1365,8 +1361,8 @@ Reference Files
 - 英訳/和訳とも「ビジネス文書向け」を明記
 - 既にターゲット言語の場合はそのまま出力
 - `{translation_rules}` は出力言語に応じて [COMMON] + [TO_EN]/[TO_JP] を注入
-- 出力: 英訳は訳文+解説、和訳は訳文のみ（解説なし）
-- 禁止事項は英訳/和訳で共通（質問・提案・指示の繰り返し・訳文と解説以外）
+- 出力: 英訳は3スタイル（`standard/concise/minimal`）の訳文のみ、和訳は訳文のみ（解説なし）
+- 禁止事項は英訳/和訳で共通（質問・提案・指示の繰り返し・訳文以外）
 - 戻し訳は `prompts/text_back_translate.txt` を使用（編集した訳文にも対応）
 
 ### 9.5 翻訳ルール（translation_rules.txt）
@@ -1386,7 +1382,7 @@ Reference Files
   - `prompts/local_text_translate_to_en_3style_json.txt`（JP→EN: standard/concise/minimal を1リクエストで返す）
   - `prompts/local_text_translate_to_en_single_json.txt`（JP→EN: 単発、style指定）
   - `prompts/local_text_translate_to_jp_json.txt`（EN→JP: translation のみ、`explanation` キーなし）
-  - JP→EN は速度優先のため explanation を最小化（1文以内、差分が弱い場合は空文字）
+  - JP→EN は `explanation` を出力しない（`{"style","translation"}` のみ）
 - バッチ
   - `prompts/local_batch_translate_to_en_json.txt`（JP→EN）
   - `prompts/local_batch_translate_to_jp_json.txt`（EN→JP）
@@ -1550,7 +1546,7 @@ class AppSettings:
     # File Translation Options
     bilingual_output: bool = False       # 対訳出力（原文と翻訳を交互に配置）
     export_glossary: bool = False        # 対訳CSV出力（glossaryとして再利用可能）
-    translation_style: str = "concise"   # ファイル翻訳の英訳スタイル
+    translation_style: str = "concise"   # ファイル英訳の主出力（既定表示）スタイル
 
     # Text Translation Options
     use_bundled_glossary: bool = True         # 同梱 glossary.csv を使用（デフォルトでオン）
@@ -1981,7 +1977,7 @@ python -c "import time; t=time.time(); from yakulingo.ui import run_app; print(f
 - 再翻訳後のフォローアップで原文が渡されない問題を修正
 
 ### 2.17 (2025-12)
-- 英文チェック機能の解説を日本語で出力するよう修正
+- 英文チェック機能の解説出力を廃止
 - ログインページの早期検出を実装（ユーザーにログインを促す）
 - 翻訳結果パース時のCopilot出力混入を修正
 - 送信可能状態の安定化待ちを追加（一定時間連続で有効化を確認）

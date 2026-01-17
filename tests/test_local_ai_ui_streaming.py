@@ -58,12 +58,12 @@ def test_local_text_style_comparison_streams_translation(monkeypatch) -> None:
             on_chunk(
                 '{"output_language":"en","options":[{"style":"standard","translation":"H'
             )
-            on_chunk('ello","explanation":""},')
+            on_chunk('ello"},')
         return (
             '{"output_language":"en","options":['
-            '{"style":"standard","translation":"Hello","explanation":""},'
-            '{"style":"concise","translation":"Hi","explanation":""},'
-            '{"style":"minimal","translation":"Yo","explanation":""}'
+            '{"style":"standard","translation":"Hello"},'
+            '{"style":"concise","translation":"Hi"},'
+            '{"style":"minimal","translation":"Yo"}'
             "]}"
         )
 

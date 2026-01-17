@@ -87,57 +87,63 @@ def test_parse_batch_translations_logs_diagnostics_on_failure(
 def test_parse_text_to_en_3style_reads_options_json() -> None:
     raw = """```json
 {"options":[
-  {"style":"standard","translation":"A","explanation":"e1"},
-  {"style":"concise","translation":"B","explanation":"e2"},
-  {"style":"minimal","translation":"C","explanation":"e3"}
+  {"style":"standard","translation":"A"},
+  {"style":"concise","translation":"B"},
+  {"style":"minimal","translation":"C"}
 ]}
 ```"""
     by_style = parse_text_to_en_3style(raw)
-    assert by_style["standard"] == ("A", "e1")
-    assert by_style["concise"] == ("B", "e2")
-    assert by_style["minimal"] == ("C", "e3")
+    assert by_style["standard"] == ("A", "")
+    assert by_style["concise"] == ("B", "")
+    assert by_style["minimal"] == ("C", "")
+
+
+def test_parse_text_to_en_3style_keeps_legacy_explanation_key_compatible() -> None:
+    raw = """{"options":[{"style":"standard","translation":"A","explanation":"e1"}]}"""
+    by_style = parse_text_to_en_3style(raw)
+    assert by_style["standard"] == ("A", "")
 
 
 def test_parse_text_to_en_3style_normalizes_style_labels() -> None:
     raw = """{"options":[
-  {"style":" Standard ","translation":"A","explanation":"e1"},
-  {"style":"簡潔","translation":"B","explanation":"e2"},
-  {"style":"MINIMAL","translation":"C","explanation":"e3"}
+  {"style":" Standard ","translation":"A"},
+  {"style":"簡潔","translation":"B"},
+  {"style":"MINIMAL","translation":"C"}
 ]}"""
     by_style = parse_text_to_en_3style(raw)
-    assert by_style["standard"] == ("A", "e1")
-    assert by_style["concise"] == ("B", "e2")
-    assert by_style["minimal"] == ("C", "e3")
+    assert by_style["standard"] == ("A", "")
+    assert by_style["concise"] == ("B", "")
+    assert by_style["minimal"] == ("C", "")
 
 
 def test_parse_text_to_en_3style_assigns_missing_style_by_index() -> None:
     raw = """{"options":[
-  {"style":"","translation":"A","explanation":"e1"},
-  {"style":"?","translation":"B","explanation":"e2"},
-  {"translation":"C","explanation":"e3"}
+  {"style":"","translation":"A"},
+  {"style":"?","translation":"B"},
+  {"translation":"C"}
 ]}"""
     by_style = parse_text_to_en_3style(raw)
-    assert by_style["standard"] == ("A", "e1")
-    assert by_style["concise"] == ("B", "e2")
-    assert by_style["minimal"] == ("C", "e3")
+    assert by_style["standard"] == ("A", "")
+    assert by_style["concise"] == ("B", "")
+    assert by_style["minimal"] == ("C", "")
 
 
 def test_parse_text_to_en_style_subset_assigns_in_requested_order() -> None:
     raw = """{"options":[
-  {"translation":"B","explanation":"e2"},
-  {"translation":"C","explanation":"e3"}
+  {"translation":"B"},
+  {"translation":"C"}
 ]}"""
     by_style = parse_text_to_en_style_subset(raw, ["concise", "minimal"])
-    assert by_style["concise"] == ("B", "e2")
-    assert by_style["minimal"] == ("C", "e3")
+    assert by_style["concise"] == ("B", "")
+    assert by_style["minimal"] == ("C", "")
 
 
 def test_parse_text_to_en_style_subset_normalizes_style_labels() -> None:
     raw = """{"options":[
-  {"style":"MINIMAL","translation":"C","explanation":"e3"}
+  {"style":"MINIMAL","translation":"C"}
 ]}"""
     by_style = parse_text_to_en_style_subset(raw, ["minimal"])
-    assert by_style["minimal"] == ("C", "e3")
+    assert by_style["minimal"] == ("C", "")
 
 
 def test_parse_text_single_translation_reads_json() -> None:

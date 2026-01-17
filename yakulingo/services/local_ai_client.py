@@ -461,10 +461,8 @@ def _parse_text_style_options(
         translation = opt.get("translation")
         if not isinstance(translation, str):
             continue
-        explanation = opt.get("explanation")
-        explanation_text = explanation if isinstance(explanation, str) else ""
         style = _normalize_text_style(opt.get("style"))
-        items.append((style, translation, explanation_text))
+        items.append((style, translation, ""))
     return items
 
 

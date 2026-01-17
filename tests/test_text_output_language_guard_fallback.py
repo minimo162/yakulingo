@@ -145,9 +145,9 @@ Explanation:
         local_calls += 1
         return (
             '{"output_language":"en","options":['
-            '{"style":"standard","translation":"汉语测试","explanation":""},'
-            '{"style":"concise","translation":"汉语测试","explanation":""},'
-            '{"style":"minimal","translation":"汉语测试","explanation":""}'
+            '{"style":"standard","translation":"汉语测试"},'
+            '{"style":"concise","translation":"汉语测试"},'
+            '{"style":"minimal","translation":"汉语测试"}'
             "]}"
         )
 

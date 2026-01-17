@@ -232,9 +232,9 @@ def test_local_text_to_en_style_comparison_preserves_multi_paragraph_input_and_o
     input_text = f"第一段落。{newline}{newline}第二段落。"
     local_raw = (
         '{"options":['
-        '{"style":"standard","translation":"First paragraph.\\n\\nSecond paragraph.","explanation":""},'
-        '{"style":"concise","translation":"First paragraph.\\n\\nSecond paragraph.","explanation":""},'
-        '{"style":"minimal","translation":"First paragraph.\\n\\nSecond paragraph.","explanation":""}'
+        '{"style":"standard","translation":"First paragraph.\\n\\nSecond paragraph."},'
+        '{"style":"concise","translation":"First paragraph.\\n\\nSecond paragraph."},'
+        '{"style":"minimal","translation":"First paragraph.\\n\\nSecond paragraph."}'
         "]}"
     )
     local = CapturingLocalClient([local_raw])

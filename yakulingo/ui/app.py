@@ -11971,9 +11971,8 @@ class YakuLingoApp:
 - ビジネス文書として適切か
 - 改善案があれば提案
 
-出力形式:
-訳文: （レビュー結果のサマリー）
-解説: （詳細な分析と改善提案）""",
+出力:
+- 修正後の英文のみ（ラベル/解説/見出しは出力しない）。修正が不要な場合は原文をそのまま出力する。""",
                 "replacements": {
                     "{input_text}": source_text,
                     "{translation}": translation,
@@ -11992,9 +11991,8 @@ class YakuLingoApp:
 質問:
 {content}
 
-出力形式:
-訳文: （質問への回答の要約）
-解説: （詳細な説明）""",
+出力:
+- 回答本文のみ（ラベル/解説/見出しは出力しない）。""",
                 "replacements": {
                     "{input_text}": source_text,
                     "{translation}": translation,
@@ -12023,9 +12021,8 @@ class YakuLingoApp:
 
 {reference_section}
 
-出力形式:
-訳文: （作成した返信文）
-解説: （この返信のポイントと使用場面の説明）""",
+出力:
+- そのまま送信できる返信メール本文のみ（ラベル/解説/見出しは出力しない）。""",
                 "replacements": {
                     "{input_text}": source_text,
                     "{translation}": translation,
@@ -12048,12 +12045,8 @@ class YakuLingoApp:
 - 重要度の高い順に並べる
 - ビジネスで重要なアクションアイテムがあれば明記
 
-出力形式:
-訳文: （要点のサマリータイトル）
-解説:
-- （要点1）
-- （要点2）
-- （要点3）""",
+出力:
+- 日本語で要点を3〜5個の箇条書きで出力する（ラベル/解説/見出しは出力しない）。""",
                 "replacements": {
                     "{input_text}": source_text,
                     "{translation}": translation,
@@ -12074,9 +12067,8 @@ class YakuLingoApp:
 - 問題がなければ「問題ありません」と回答
 - 問題があれば修正案を提示
 
-出力形式:
-訳文: （問題なければ「問題ありません。そのまま使えます。」、問題あれば修正版）
-解説: （簡潔なフィードバック）""",
+出力:
+- 修正後の英文のみ（ラベル/解説/見出しは出力しない）。修正が不要な場合は入力英文をそのまま出力する。""",
                 "replacements": {
                     "{reference_translation}": translation,
                     "{user_english}": content,

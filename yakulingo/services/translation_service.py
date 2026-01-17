@@ -3712,9 +3712,8 @@ class TranslationService:
 翻訳結果:
 {input_text}
 
-出力形式:
-訳文: （結果）
-解説: （説明）"""
+出力:
+- 調整結果（本文）のみ（ラベル/解説/見出しは出力しない）。"""
 
             # Build prompt with full context (original text + translation)
             # Reload translation rules to pick up any user edits
@@ -3805,9 +3804,8 @@ class TranslationService:
 元の日本語: {source_text}
 スタイル: {style}
 
-出力形式:
-訳文: （別の言い方）
-解説: （違いの説明）
+出力:
+- 別表現（本文）のみ（ラベル/解説/見出しは出力しない）。
 {reference_section}"""
 
             # Build prompt
@@ -4072,56 +4070,24 @@ class TranslationService:
     def _parse_single_option_result(
         self, raw_result: str
     ) -> Optional[TranslationOption]:
-        """Parse single option result from adjustment."""
-        text = ""
-        explanation = ""
-        raw_result = _strip_input_markers(raw_result)
+        """Parse single option result from adjustment (text-only)."""
+        raw_result = _strip_input_markers(raw_result).strip()
 
-        # Use pre-compiled patterns to extract 訳文 and 解説
         text_match = _RE_TRANSLATION_TEXT.search(raw_result)
         explanation_match = _RE_EXPLANATION.search(raw_result)
 
         if text_match:
             text = text_match.group(1).strip()
-
-        if explanation_match:
-            explanation = explanation_match.group(1).strip()
-
-        # Fallback: split by "解説" if regex didn't capture explanation
-        if text and not explanation:
-            for delimiter in [
-                "解説:",
-                "解説：",
-                "**解説:**",
-                "**解説**:",
-                "**解説**：",
-            ]:
-                if delimiter in raw_result:
-                    parts = raw_result.split(delimiter, 1)
-                    if len(parts) > 1:
-                        explanation = parts[1].strip()
-                        break
-
-        # Fallback: use the whole result as text if no pattern matched
-        if not text:
+        elif explanation_match:
+            text = raw_result[: explanation_match.start()].strip() or raw_result.strip()
+        else:
             text = raw_result.strip()
 
-        # Remove translation label prefixes (e.g., "英語翻訳", "日本語翻訳")
-        if text:
-            text = _RE_TRANSLATION_LABEL.sub("", text).strip()
-
+        text = _RE_TRANSLATION_LABEL.sub("", text).strip()
         text = _strip_input_markers(text)
-        explanation = _strip_input_markers(explanation)
-
-        # Remove trailing attached filename from explanation
-        if explanation:
-            explanation = _RE_TRAILING_FILENAME.sub("", explanation).strip()
-
-        if not explanation:
-            explanation = "調整後の翻訳です"
 
         if text:
-            return TranslationOption(text=text, explanation=explanation)
+            return TranslationOption(text=text, explanation="")
 
         return None
 

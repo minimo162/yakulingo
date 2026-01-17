@@ -414,6 +414,17 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 
 > **Note**: 既定値はモデルに合わせて調整します（現行: `local_ai_top_p=0.95`, `local_ai_top_k=64`）。
 
+### Bytes（Transformers由来）設定キーについて
+
+intent にある `Bytes { ... }` のうち、`top_k/top_p` は YakuLingo の `local_ai_top_k/local_ai_top_p` に対応します。  
+一方で `cache_implementation` / `do_sample` / `transformers_version` は、現行のローカルAI経路（llama.cpp）では参照されないため **設定しても反映されません**。
+
+- `do_sample`: llama.cpp は `temperature > 0` のサンプリング前提。決定論的にしたい場合は `local_ai_temperature=0` を検討してください
+- `cache_implementation`: Transformers の KV cache 実装選択であり、llama.cpp の設定とは別概念です（YakuLingo では `local_ai_cache_type_k/v` などが該当）
+- `transformers_version`: ローカルAI経路で Transformers を使用しないため、参照されません
+
+詳細: `docs/BYTES_SETTINGS_MAPPING.md`
+
 #### llama.cpp（llama-cli）最短手順
 > **Note**: `local_ai/llama_cpp/vulkan` または `local_ai/llama_cpp/avx2` のどちらかを使います（同梱されている方）。
 ```bash

@@ -118,8 +118,6 @@ class AppState:
     text_streaming_preview: Optional[str] = (
         None  # Partial streamed output during translation
     )
-    text_compare_mode: str = "off"  # "off" | "style" | "source"
-    text_compare_base_style: str = "standard"
 
     # File tab state
     file_state: FileState = FileState.EMPTY
@@ -234,8 +232,6 @@ class AppState:
         self.text_result = None
         self.text_translation_elapsed_time = None
         self.text_streaming_preview = None
-        self.text_compare_mode = "off"
-        self.text_compare_base_style = "standard"
 
     def reset_file_state(self) -> None:
         """Reset file tab state"""

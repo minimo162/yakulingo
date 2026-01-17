@@ -2,7 +2,7 @@
 """
 Text translation panel with language-specific UI.
 - Japanese → English: Multiple style options shown together
-- Other → Japanese: Single translation with detailed explanation
+- Other → Japanese: Single translation
 Designed for Japanese users.
 """
 
@@ -19,9 +19,8 @@ from typing import Callable, Optional
 
 from nicegui import ui
 
-from yakulingo.ui.state import AppState, TextViewState, TranslationBackend
+from yakulingo.ui.state import AppState, TextViewState
 from yakulingo.ui.utils import (
-    format_markdown_text,
     format_bytes,
     summarize_reference_files,
     normalize_literal_escapes,
@@ -143,24 +142,6 @@ def _create_copy_button(
         .props(
             f'flat dense round size=sm aria-label="{aria_label}" data-feedback="コピーしました"'
         )
-        .classes(f"{classes} feedback-anchor".strip())
-    )
-    button.tooltip(tooltip)
-    button.on("click", lambda: on_copy(text), js_handler=_build_copy_js_handler(text))
-
-
-def _create_copy_action_button(
-    label: str,
-    text: str,
-    on_copy: Callable[[str], None],
-    *,
-    classes: str,
-    tooltip: str,
-    icon: str = "content_copy",
-) -> None:
-    button = (
-        ui.button(label, icon=icon)
-        .props('flat no-caps size=sm data-feedback="コピーしました"')
         .classes(f"{classes} feedback-anchor".strip())
     )
     button.tooltip(tooltip)
@@ -326,13 +307,10 @@ def _build_copy_payload(
             parts.append("\n".join(lines).strip())
         return "\n\n".join(parts)
 
-    option = options[0]
-    option_text = normalize_literal_escapes(option.text)
-    lines = []
-    if include_headers:
-        lines.append("訳文:")
-    lines.append(option_text)
-    return "\n".join(lines).strip()
+    option_text = normalize_literal_escapes(options[0].text)
+    if not include_headers:
+        return option_text
+    return "\n".join(["訳文:", option_text]).strip()
 
 
 # Paperclip/Attachment SVG icon with aria-label for accessibility (Material Design style, centered)
@@ -500,15 +478,7 @@ def _create_large_input_panel(
                             for idx, path in enumerate(state.reference_files or [])
                         }
                         settings_panel = ui.element("div").classes("advanced-panel")
-                        resolved_output_language = _resolve_text_output_language(state)
-                        show_style_selector = (
-                            state.translation_backend == TranslationBackend.LOCAL
-                            and (
-                                resolved_output_language == "en"
-                                or not (state.source_text or "").strip()
-                            )
-                            and on_style_change is not None
-                        )
+                        show_style_selector = False
                         if translation_style not in TEXT_STYLE_ORDER:
                             translation_style = "concise"
 
@@ -769,9 +739,6 @@ def create_text_result_panel(
     ] = None,
     on_retry: Optional[Callable[[], None]] = None,
     on_edit: Optional[Callable[[], None]] = None,
-    compare_mode: bool = False,
-    on_compare_mode_change: Optional[Callable[[str], None]] = None,
-    on_compare_base_style_change: Optional[Callable[[str], None]] = None,
     on_streaming_preview_label_created: Optional[Callable[[ui.label], None]] = None,
 ):
     """
@@ -871,7 +838,7 @@ def create_text_result_panel(
         # Results section - language-specific UI
         if state.text_result and state.text_result.options:
             if state.text_result.is_to_japanese:
-                # →Japanese: Single result with detailed explanation
+                # →Japanese: Single result
                 _render_results_to_jp(
                     state.text_result,
                     on_copy,
@@ -890,8 +857,8 @@ def create_text_result_panel(
                         on_back_translate,
                         elapsed_time,
                         on_retry,
-                        state.text_compare_mode,
-                        state.text_compare_base_style,
+                        compare_mode="off",
+                        compare_base_style="standard",
                         actions_disabled=actions_disabled,
                     )
                 )
@@ -985,128 +952,6 @@ def _render_result_meta(state: AppState, result: TextTranslationResult) -> None:
     with ui.row().classes("result-meta-row items-center gap-2 flex-wrap"):
         for label, classes in chips:
             ui.label(label).classes(classes)
-
-
-def _render_compare_controls(
-    state: AppState,
-    result: TextTranslationResult,
-    on_compare_mode_change: Optional[Callable[[str], None]],
-    on_compare_base_style_change: Optional[Callable[[str], None]],
-) -> None:
-    if not result.options:
-        return
-
-    def render_mode_button(label: str, mode: str):
-        classes = "compare-btn"
-        if state.text_compare_mode == mode:
-            classes += " active"
-        btn = (
-            ui.button(
-                label,
-                on_click=lambda m=mode: on_compare_mode_change
-                and on_compare_mode_change(m),
-            )
-            .classes(classes)
-            .props("flat no-caps size=sm")
-        )
-        return btn
-
-    with ui.row().classes("compare-toggle-row items-center gap-2 flex-wrap"):
-        ui.label("比較").classes("compare-label")
-        render_mode_button("通常", "off")
-        if result.is_to_english:
-            render_mode_button("スタイル比較", "style")
-        render_mode_button("原文比較", "source")
-
-    if result.is_to_english and state.text_compare_mode == "style":
-        with ui.row().classes("compare-base-row items-center gap-2 flex-wrap"):
-            ui.label("基準").classes("compare-label")
-            for style_key in TEXT_STYLE_ORDER:
-                label = TEXT_STYLE_LABELS.get(style_key, style_key)
-                classes = "compare-base-btn"
-                if state.text_compare_base_style == style_key:
-                    classes += " active"
-                ui.button(
-                    label,
-                    on_click=lambda s=style_key: on_compare_base_style_change
-                    and on_compare_base_style_change(s),
-                ).classes(classes).props("flat no-caps size=sm")
-
-
-def _render_source_compare_panel(
-    result: TextTranslationResult, base_style: str
-) -> None:
-    if not result.options:
-        return
-
-    source_text = result.source_text or ""
-    target_text = result.options[0].text
-    if result.is_to_english:
-        for option in result.options:
-            if option.style == base_style:
-                target_text = option.text
-                break
-    target_text = normalize_literal_escapes(target_text)
-
-    diff_html = _build_diff_html(source_text, target_text)
-    with ui.element("div").classes("source-compare-panel"):
-        with ui.row().classes("source-compare-grid"):
-            with ui.column().classes("source-compare-col"):
-                ui.label("原文").classes("text-xs text-muted")
-                ui.label(source_text).classes("source-compare-text")
-            with ui.column().classes("source-compare-col"):
-                ui.label("訳文（差分）").classes("text-xs text-muted")
-                ui.html(diff_html, sanitize=False).classes(
-                    "source-compare-text diff-text"
-                )
-
-
-def _render_result_details(
-    state: AppState,
-    result: TextTranslationResult,
-    on_copy: Callable[[str], None],
-    on_back_translate: Optional[Callable[[TranslationOption, Optional[str]], None]],
-    on_edit: Optional[Callable[[], None]],
-    on_compare_mode_change: Optional[Callable[[str], None]],
-    on_compare_base_style_change: Optional[Callable[[str], None]],
-    primary_option: Optional[TranslationOption],
-    secondary_options: list[TranslationOption],
-    display_options: list[TranslationOption],
-    actions_disabled: bool = False,
-) -> None:
-    if not result.options:
-        return
-
-    details = ui.element("details").classes("advanced-panel result-advanced-panel")
-    if state.text_compare_mode != "off":
-        details.props("open")
-
-    with details:
-        with ui.element("summary").classes("advanced-summary items-center"):
-            ui.label("詳細").classes("advanced-title")
-            with ui.row().classes("advanced-summary-chips items-center gap-2"):
-                if result.is_to_english:
-                    ui.label("比較").classes("chip meta-chip")
-                ui.label("コピー/編集").classes("chip meta-chip")
-
-        with ui.column().classes("advanced-content gap-3"):
-            _render_compare_controls(
-                state,
-                result,
-                on_compare_mode_change,
-                on_compare_base_style_change,
-            )
-
-            if state.text_compare_mode == "source":
-                _render_source_compare_panel(result, state.text_compare_base_style)
-
-            _render_result_action_footer(
-                result,
-                on_copy,
-                on_back_translate,
-                on_edit,
-                actions_disabled=actions_disabled,
-            )
 
 
 def _render_empty_result_state():
@@ -1272,7 +1117,7 @@ def _render_results_to_jp(
     show_back_translate_button: bool = True,
     actions_disabled: bool = False,
 ):
-    """Render →Japanese results: translations with detailed explanations"""
+    """Render →Japanese results: translations."""
 
     if not result.options:
         return
@@ -1334,11 +1179,6 @@ def _render_results_to_jp(
                             # Translation text
                             _render_translation_text(option.text, table_hint=table_hint)
 
-                            # Detailed explanation section (same as English)
-                            if option.explanation:
-                                with ui.element("div").classes("nani-explanation"):
-                                    _render_explanation(option.explanation)
-
                             has_back_translate = bool(
                                 option.back_translation_text
                                 or option.back_translation_error
@@ -1346,186 +1186,6 @@ def _render_results_to_jp(
                             )
                             if has_back_translate:
                                 _render_back_translate_section(option)
-
-
-def _render_result_action_footer(
-    result: TextTranslationResult,
-    on_copy: Callable[[str], None],
-    on_back_translate: Optional[
-        Callable[[TranslationOption, Optional[str]], None]
-    ] = None,
-    on_edit: Optional[Callable[[], None]] = None,
-    actions_disabled: bool = False,
-) -> None:
-    if not result.options:
-        return
-
-    table_hint = _build_tabular_text_hint(result.source_text)
-
-    with ui.element("div").classes("result-action-footer"):
-        with ui.row().classes(
-            "items-center justify-between gap-2 result-action-footer-inner"
-        ):
-            with ui.row().classes("items-center gap-2 flex-wrap"):
-                if result.is_to_english:
-                    all_text = _build_copy_payload(
-                        result,
-                        include_headers=False,
-                        include_explanation=False,
-                    )
-                    header_text = _build_copy_payload(
-                        result,
-                        include_headers=True,
-                        include_explanation=False,
-                    )
-                    explain_text = _build_copy_payload(
-                        result,
-                        include_headers=True,
-                        include_explanation=True,
-                    )
-                    if all_text:
-                        _create_copy_action_button(
-                            "全スタイル",
-                            all_text,
-                            on_copy,
-                            classes="result-footer-btn",
-                            tooltip="全スタイルをまとめてコピー",
-                        )
-                    if header_text:
-                        _create_copy_action_button(
-                            "ヘッダ付き",
-                            header_text,
-                            on_copy,
-                            classes="result-footer-btn",
-                            tooltip="スタイル名付きでコピー",
-                        )
-                    if explain_text:
-                        _create_copy_action_button(
-                            "解説込み",
-                            explain_text,
-                            on_copy,
-                            classes="result-footer-btn",
-                            tooltip="解説を含めてコピー",
-                        )
-                else:
-                    plain_text = _build_copy_payload(
-                        result,
-                        include_headers=False,
-                        include_explanation=False,
-                    )
-                    if plain_text:
-                        excel_copy = _format_tabular_text_for_excel_paste(
-                            plain_text, hint=table_hint
-                        )
-                        if excel_copy:
-                            plain_text = excel_copy
-                    header_text = _build_copy_payload(
-                        result,
-                        include_headers=True,
-                        include_explanation=False,
-                    )
-                    has_explanation = any(
-                        option.explanation for option in (result.options or [])
-                    )
-                    explain_text = (
-                        _build_copy_payload(
-                            result,
-                            include_headers=True,
-                            include_explanation=True,
-                        )
-                        if has_explanation
-                        else ""
-                    )
-                    if plain_text:
-                        _create_copy_action_button(
-                            "訳文",
-                            plain_text,
-                            on_copy,
-                            classes="result-footer-btn",
-                            tooltip="訳文のみコピー",
-                        )
-                    if header_text:
-                        _create_copy_action_button(
-                            "ヘッダ付き",
-                            header_text,
-                            on_copy,
-                            classes="result-footer-btn",
-                            tooltip="訳文見出し付きでコピー",
-                        )
-                    if explain_text:
-                        _create_copy_action_button(
-                            "解説込み",
-                            explain_text,
-                            on_copy,
-                            classes="result-footer-btn",
-                            tooltip="解説を含めてコピー",
-                        )
-
-            with ui.row().classes("items-center gap-2 flex-wrap"):
-                if on_edit:
-                    edit_btn = (
-                        ui.button(
-                            "編集して再実行",
-                            icon="edit",
-                            on_click=on_edit,
-                        )
-                        .props("flat no-caps size=sm")
-                        .classes("result-footer-btn")
-                    )
-                    edit_btn.tooltip("原文を編集して再実行")
-                    if actions_disabled:
-                        edit_btn.props("disable")
-
-                if on_back_translate:
-
-                    def handle_back_translate_all():
-                        for option in result.options:
-                            on_back_translate(option, None)
-
-                    back_btn = (
-                        ui.button(
-                            "逆翻訳",
-                            icon="g_translate",
-                            on_click=handle_back_translate_all,
-                        )
-                        .props("flat no-caps size=sm")
-                        .classes("result-footer-btn")
-                    )
-                    if actions_disabled:
-                        back_btn.props("disable")
-
-
-def _render_explanation(explanation: str):
-    """Render explanation text as HTML with bullet points"""
-    normalized = normalize_literal_escapes(explanation)
-    lines = normalized.strip().split("\n")
-    bullet_items = []
-    non_bullet_lines = []
-
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
-
-        # Check if it's a bullet point
-        if line.startswith("- ") or line.startswith("・"):
-            text = line[2:].strip() if line.startswith("- ") else line[1:].strip()
-            # Convert markdown-style formatting to HTML using utility function
-            text = format_markdown_text(text)
-            bullet_items.append(text)
-        else:
-            non_bullet_lines.append(line)
-
-    # Render as HTML list if there are bullet items
-    if bullet_items:
-        html_content = (
-            "<ul>" + "".join(f"<li>{item}</li>" for item in bullet_items) + "</ul>"
-        )
-        ui.html(html_content, sanitize=False)
-
-    # Render non-bullet lines as regular text
-    for line in non_bullet_lines:
-        ui.label(line)
 
 
 def _tokenize_for_diff(text: str) -> list[str]:
@@ -1898,11 +1558,6 @@ def _render_option_en(
                 diff_base_text=diff_base_text,
                 table_hint=table_hint,
             )
-
-            # Detailed explanation section (same style as JP)
-            if option.explanation:
-                with ui.element("div").classes("nani-explanation"):
-                    _render_explanation(option.explanation)
 
             has_back_translate = bool(
                 option.back_translation_text

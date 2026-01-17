@@ -54,38 +54,26 @@ def test_translate_text_with_style_comparison_retries_when_standard_is_japanese(
     first = """[standard]
 Translation:
 一方、この人事部長の会社の初任給は22万円だ。業界平均と比べて決して低くない。
-Explanation:
-- テスト
 
 [concise]
 Translation:
 Meanwhile, this HR director's company offers a starting salary of 22 man yen.
-Explanation:
-- テスト
 
 [minimal]
 Translation:
 HR director's company: starting pay 22 man yen.
-Explanation:
-- テスト
 """
     second = """[standard]
 Translation:
 Meanwhile, this HR director's company offers a starting salary of 22 man yen. It's not low compared with the industry average.
-Explanation:
-- テスト
 
 [concise]
 Translation:
 Meanwhile, this HR director's company offers a starting salary of 22 man yen; it's not low vs. the industry avg.
-Explanation:
-- テスト
 
 [minimal]
 Translation:
 HR director's company: starting pay 22 man yen; not low vs. industry avg.
-Explanation:
-- テスト
 """
     copilot = SequencedCopilotHandler([first, second])
     service = TranslationService(copilot=copilot, config=AppSettings())
@@ -111,38 +99,26 @@ def test_translate_text_with_options_retries_when_selected_translation_is_japane
     first = """[standard]
 Translation:
 一方、この人事部長の会社の初任給は22万円だ。業界平均と比べて決して低くない。
-Explanation:
-- テスト
 
 [concise]
 Translation:
 Meanwhile, this HR director's company offers a starting salary of 22 man yen.
-Explanation:
-- テスト
 
 [minimal]
 Translation:
 HR director's company: starting pay 22 man yen.
-Explanation:
-- テスト
 """
     second = """[standard]
 Translation:
 Meanwhile, this HR director's company offers a starting salary of 22 man yen. It's not low compared with the industry average.
-Explanation:
-- テスト
 
 [concise]
 Translation:
 Meanwhile, this HR director's company offers a starting salary of 22 man yen; it's not low vs. the industry avg.
-Explanation:
-- テスト
 
 [minimal]
 Translation:
 HR director's company: starting pay 22 man yen; not low vs. industry avg.
-Explanation:
-- テスト
 """
     copilot = SequencedCopilotHandler([first, second])
     service = TranslationService(copilot=copilot, config=AppSettings())

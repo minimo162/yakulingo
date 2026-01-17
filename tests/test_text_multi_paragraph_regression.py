@@ -156,24 +156,18 @@ Translation:
 First paragraph.
 
 Second paragraph.
-Explanation:
-- テスト
 
 [concise]
 Translation:
 First paragraph.
 
 Second paragraph.
-Explanation:
-- テスト
 
 [minimal]
 Translation:
 First paragraph.
 
 Second paragraph.
-Explanation:
-- テスト
 """
     if newline == "\r\n":
         response = response.replace("\n", "\r\n")

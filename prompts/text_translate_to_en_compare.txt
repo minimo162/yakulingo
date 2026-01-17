@@ -6,7 +6,7 @@ Translate the Japanese text into English in three styles: standard, concise, min
 - In each section, the "Translation:" content must be English only:
   - Do NOT include Japanese scripts (hiragana/katakana/kanji) or Japanese punctuation (、。).
   - If any Japanese appears, rewrite it until it contains no Japanese characters.
-- The "Explanation:" content must be Japanese only.
+- Do NOT output any explanations/notes or any extra text.
 - Translate only the text between the input markers; do not output the marker lines or any other prompt text.
 - Preserve line breaks and tabs as much as possible.
 - If the input is already English, keep it as is.
@@ -29,19 +29,12 @@ Translate the Japanese text into English in three styles: standard, concise, min
 ### Output format (exact)
 [standard]
 Translation:
-Explanation:
 
 [concise]
 Translation:
-Explanation:
 
 [minimal]
 Translation:
-Explanation:
-
-- Explanations must be Japanese bullet points only ("- "), max ~3 lines per section.
-- Focus on term mappings / ambiguity / intent; for [concise]/[minimal], note only the meaningful difference vs [standard].
-- Avoid meta commentary (e.g., "I followed the prompt rules/glossary").
 
 {translation_rules}
 

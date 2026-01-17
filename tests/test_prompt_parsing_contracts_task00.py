@@ -21,22 +21,16 @@ def test_copilot_style_comparison_parses_minimal_sections() -> None:
     raw = """[standard]
 Translation:
 Hello.
-Explanation:
-- 説明
 
 [concise]
 Translation:
 Hi.
-Explanation:
-- 説明
 
 [minimal]
 Translation:
 Hi
-Explanation:
-- 説明
 """
     options = service._parse_style_comparison_result(raw)
     assert [opt.style for opt in options] == ["standard", "concise", "minimal"]
     assert [opt.text for opt in options] == ["Hello.", "Hi.", "Hi"]
-    assert [opt.explanation for opt in options] == ["- 説明", "- 説明", "- 説明"]
+    assert [opt.explanation for opt in options] == ["", "", ""]

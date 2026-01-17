@@ -2964,7 +2964,7 @@ class TranslationService:
             ):
                 retry_instruction = (
                     "CRITICAL: Rewrite all Translation sections in English only (no Japanese/Chinese/Korean scripts; no Japanese punctuation). "
-                    "Keep Explanation in Japanese and keep the exact output format."
+                    "Keep the exact output format (Translation sections only; no explanations/notes)."
                 )
                 retry_prompt = build_compare_prompt(retry_instruction)
                 retry_raw = translate_single(text, retry_prompt, files_to_attach, None)
@@ -3324,7 +3324,7 @@ class TranslationService:
                     ):
                         retry_prompt = build_compare_prompt(
                             "CRITICAL: Rewrite all Translation sections in English only (no Japanese/Chinese/Korean scripts; no Japanese punctuation). "
-                            "Keep Explanation in Japanese and keep the exact output format."
+                            "Keep the exact output format (Translation sections only; no explanations/notes)."
                         )
                         retry_raw_result = translate_single(
                             text, retry_prompt, files_to_attach, None
@@ -3354,7 +3354,7 @@ class TranslationService:
                             if _is_text_output_language_mismatch(option.text, "en"):
                                 retry_prompt = build_compare_prompt(
                                     "CRITICAL: Rewrite all Translation sections in English only (no Japanese/Chinese/Korean scripts; no Japanese punctuation). "
-                                    "Keep Explanation in Japanese and keep the exact output format."
+                                    "Keep the exact output format (Translation sections only; no explanations/notes)."
                                 )
                                 retry_raw_result = translate_single(
                                     text, retry_prompt, files_to_attach, None
@@ -3910,6 +3910,7 @@ class TranslationService:
 
             option = parsed[0]
             option.style = style
+            option.explanation = ""
             options.append(option)
 
         return options

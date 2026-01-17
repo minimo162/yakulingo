@@ -271,19 +271,14 @@ Translate the following Japanese text into English in three styles: standard, co
 ### Output format (exact)
 [standard]
 Translation:
-Explanation:
 
 [concise]
 Translation:
-Explanation:
 
 [minimal]
 Translation:
-Explanation:
 
 - Do not output anything else.
-- Explain in Japanese with the same level of detail as an individual translation. Do not be overly brief.
-- In each Explanation, describe how the source expressions were rendered and any key term mappings.
 - Do not include headings or labels such as "翻訳のポイント:" in the output.
 
 {translation_rules}

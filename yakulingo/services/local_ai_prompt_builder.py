@@ -760,14 +760,21 @@ class LocalPromptBuilder:
         *,
         reference_files: Optional[Sequence[Path]] = None,
         detected_language: str = "日本語",
+        extra_instruction: str | None = None,
     ) -> str:
         template = self._load_template("local_text_translate_to_en_3style_json.txt")
         embedded_ref = self.build_reference_embed(reference_files, input_text=text)
         translation_rules = self._get_translation_rules_for_text("en", text)
+        numeric_hints = self._build_to_en_numeric_hints(text)
         reference_section = embedded_ref.text if embedded_ref.text else ""
         prompt_input_text = self._base.normalize_input_text(text, "en")
+        extra_instruction = extra_instruction.strip() if extra_instruction else ""
+        if extra_instruction:
+            extra_instruction = f"{extra_instruction}\n"
         prompt = template.replace("{translation_rules}", translation_rules)
+        prompt = prompt.replace("{numeric_hints}", numeric_hints)
         prompt = prompt.replace("{reference_section}", reference_section)
+        prompt = prompt.replace("{extra_instruction}", extra_instruction)
         prompt = prompt.replace("{input_text}", prompt_input_text)
         prompt = prompt.replace("{detected_language}", detected_language)
         return prompt
@@ -779,14 +786,19 @@ class LocalPromptBuilder:
         styles: Sequence[str],
         reference_files: Optional[Sequence[Path]] = None,
         detected_language: str = "日本語",
+        extra_instruction: str | None = None,
     ) -> str:
         template = self._load_template(
             "local_text_translate_to_en_missing_styles_json.txt"
         )
         embedded_ref = self.build_reference_embed(reference_files, input_text=text)
         translation_rules = self._get_translation_rules_for_text("en", text)
+        numeric_hints = self._build_to_en_numeric_hints(text)
         reference_section = embedded_ref.text if embedded_ref.text else ""
         prompt_input_text = self._base.normalize_input_text(text, "en")
+        extra_instruction = extra_instruction.strip() if extra_instruction else ""
+        if extra_instruction:
+            extra_instruction = f"{extra_instruction}\n"
         style_list: list[str] = []
         seen: set[str] = set()
         for style in styles:
@@ -796,7 +808,9 @@ class LocalPromptBuilder:
             style_list.append(style)
         styles_json = json.dumps(style_list, ensure_ascii=False)
         prompt = template.replace("{translation_rules}", translation_rules)
+        prompt = prompt.replace("{numeric_hints}", numeric_hints)
         prompt = prompt.replace("{reference_section}", reference_section)
+        prompt = prompt.replace("{extra_instruction}", extra_instruction)
         prompt = prompt.replace("{input_text}", prompt_input_text)
         prompt = prompt.replace("{detected_language}", detected_language)
         prompt = prompt.replace("{styles_json}", styles_json)

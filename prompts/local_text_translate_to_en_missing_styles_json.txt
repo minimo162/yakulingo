@@ -19,7 +19,7 @@ Produce only the English translation, without any additional explanations or com
 - 末尾カンマ禁止、ダブルクォートのみ
 
 {translation_rules}
+{numeric_hints}
 {reference_section}
-
-原文:
+{extra_instruction}原文:
 {input_text}

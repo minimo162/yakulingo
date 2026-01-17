@@ -56,10 +56,18 @@ def test_local_prompt_builder_replaces_placeholders() -> None:
         "sample",
         reference_files=None,
         detected_language="日本語",
+        extra_instruction="context",
     )
     _assert_no_placeholders(
         prompt,
-        ["input_text", "translation_rules", "reference_section", "detected_language"],
+        [
+            "input_text",
+            "translation_rules",
+            "numeric_hints",
+            "reference_section",
+            "detected_language",
+            "extra_instruction",
+        ],
     )
 
     prompt = builder.build_text_to_en_single(
@@ -87,14 +95,17 @@ def test_local_prompt_builder_replaces_placeholders() -> None:
         styles=["standard", "minimal"],
         reference_files=None,
         detected_language="日本語",
+        extra_instruction="context",
     )
     _assert_no_placeholders(
         prompt,
         [
             "input_text",
             "translation_rules",
+            "numeric_hints",
             "reference_section",
             "detected_language",
+            "extra_instruction",
             "styles_json",
             "n_styles",
         ],

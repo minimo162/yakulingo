@@ -367,16 +367,12 @@ def format_markdown_text(text: str) -> str:
 
 def parse_translation_result(result: str) -> tuple[str, str]:
     """
-    Parse translation result into text and explanation.
-    Returns (text, explanation) tuple.
+    Parse translation result into text (translation-only).
+    Returns (text, "") tuple.
     """
     text_match = _RE_TRANSLATION_TEXT.search(result)
-    explanation_match = _RE_EXPLANATION.search(result)
-
     text = text_match.group(1).strip() if text_match else result.strip()
-    explanation = explanation_match.group(1).strip() if explanation_match else ""
-
-    return text, explanation
+    return text, ""
 
 
 def normalize_literal_escapes(text: str) -> str:

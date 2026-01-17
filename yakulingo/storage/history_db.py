@@ -332,7 +332,7 @@ class HistoryDB:
             "options": [
                 {
                     "text": opt.text,
-                    "explanation": opt.explanation,
+                    "explanation": "",
                     "char_count": opt.char_count,
                     "style": opt.style,
                 }
@@ -348,7 +348,7 @@ class HistoryDB:
         options = [
             TranslationOption(
                 text=opt["text"],
-                explanation=opt["explanation"],
+                explanation="",
                 char_count=opt.get("char_count", 0),
                 style=opt.get("style"),  # None for legacy data (backward compatible)
             )

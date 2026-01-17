@@ -317,37 +317,21 @@ def _build_copy_payload(
         for option in options:
             lines = []
             option_text = normalize_literal_escapes(option.text)
-            option_explanation = (
-                normalize_literal_escapes(option.explanation)
-                if option.explanation
-                else ""
-            )
             if include_headers:
                 style_label = TEXT_STYLE_LABELS.get(
                     option.style, option.style or "translation"
                 )
                 lines.append(f"[{style_label}]")
             lines.append(option_text)
-            if include_explanation and option_explanation:
-                lines.append("")
-                lines.append("解説:")
-                lines.append(option_explanation)
             parts.append("\n".join(lines).strip())
         return "\n\n".join(parts)
 
     option = options[0]
     option_text = normalize_literal_escapes(option.text)
-    option_explanation = (
-        normalize_literal_escapes(option.explanation) if option.explanation else ""
-    )
     lines = []
     if include_headers:
         lines.append("訳文:")
     lines.append(option_text)
-    if include_explanation and option_explanation:
-        lines.append("")
-        lines.append("解説:")
-        lines.append(option_explanation)
     return "\n".join(lines).strip()
 
 

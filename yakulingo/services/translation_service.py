@@ -2562,7 +2562,7 @@ class TranslationService:
             )
             stream_handler = _wrap_local_streaming_on_chunk(on_chunk)
             raw = self._translate_single_with_cancel(text, prompt, None, stream_handler)
-            translation, explanation = parse_text_single_translation(raw)
+            translation, _ = parse_text_single_translation(raw)
             if not translation:
                 error_message = "ローカルAIの応答(JSON)を解析できませんでした（詳細はログを確認してください）"
                 if is_truncated_json(raw):
@@ -2586,14 +2586,11 @@ class TranslationService:
                 retry_raw = self._translate_single_with_cancel(
                     text, retry_prompt, None, None
                 )
-                retry_translation, retry_explanation = parse_text_single_translation(
-                    retry_raw
-                )
+                retry_translation, _ = parse_text_single_translation(retry_raw)
                 if retry_translation and not _is_text_output_language_mismatch(
                     retry_translation, "jp"
                 ):
                     translation = retry_translation
-                    explanation = retry_explanation or ""
                     metadata["output_language_retry"] = True
                 else:
                     metadata["output_language_mismatch"] = True
@@ -2610,7 +2607,7 @@ class TranslationService:
                 source_text=text,
                 source_char_count=len(text),
                 options=[
-                    TranslationOption(text=translation, explanation=explanation or "")
+                    TranslationOption(text=translation, explanation="")
                 ],
                 output_language=output_language,
                 detected_language=detected_language,
@@ -2693,11 +2690,11 @@ class TranslationService:
             missing: list[str] = []
             for style in style_list:
                 if style in by_style:
-                    translation, explanation = by_style[style]
+                    translation, _ = by_style[style]
                     options.append(
                         TranslationOption(
                             text=translation,
-                            explanation=explanation or "",
+                            explanation="",
                             style=style,
                         )
                     )
@@ -2727,11 +2724,11 @@ class TranslationService:
                 missing = []
                 for style in style_list:
                     if style in by_style:
-                        translation, explanation = by_style[style]
+                        translation, _ = by_style[style]
                         options.append(
                             TranslationOption(
                                 text=translation,
-                                explanation=explanation or "",
+                                explanation="",
                                 style=style,
                             )
                         )
@@ -2750,12 +2747,12 @@ class TranslationService:
                     raw = self._translate_single_with_cancel(
                         text, prompt, None, stream_handler
                     )
-                    translation, explanation = parse_text_single_translation(raw)
+                    translation, _ = parse_text_single_translation(raw)
                     if translation:
                         options.append(
                             TranslationOption(
                                 text=translation,
-                                explanation=explanation or "",
+                                explanation="",
                                 style=style,
                             )
                         )
@@ -2802,12 +2799,12 @@ class TranslationService:
                             style = opt.style
                             if not style or style not in retry_by_style:
                                 continue
-                            translation, explanation = retry_by_style[style]
+                            translation, _ = retry_by_style[style]
                             if translation and not _is_text_output_language_mismatch(
                                 translation, "en"
                             ):
                                 opt.text = translation
-                                opt.explanation = explanation or ""
+                                opt.explanation = ""
                                 updated = True
                         if updated:
                             metadata["output_language_retry"] = True
@@ -2938,7 +2935,7 @@ class TranslationService:
                         options=[
                             TranslationOption(
                                 text=raw_result.strip(),
-                                explanation="翻訳結果です",
+                                explanation="",
                                 style=style,
                             )
                         ],
@@ -3093,7 +3090,7 @@ class TranslationService:
                 options=[
                     TranslationOption(
                         text=raw_result.strip(),
-                        explanation="翻訳結果です",
+                        explanation="",
                         style=style,
                     )
                 ],
@@ -3917,153 +3914,26 @@ class TranslationService:
         self, raw_result: str
     ) -> list[TranslationOption]:
         """Parse single translation result from Copilot (for →jp translation)."""
-        raw_result = _strip_input_markers(raw_result)
-        # Show full raw result for debugging (truncate at 1000 chars)
-        logger.debug(
-            "Parsing translation result (full, max 1000 chars): %s",
-            raw_result[:1000] if raw_result else "(empty)",
-        )
-        logger.debug(
-            "Raw result length: %d chars", len(raw_result) if raw_result else 0
-        )
+        raw_result = _strip_input_markers(raw_result).strip()
+        if not raw_result:
+            return []
 
-        text = ""
-        explanation = ""
-
-        # Try regex first
         text_match = _RE_TRANSLATION_TEXT.search(raw_result)
         explanation_match = _RE_EXPLANATION.search(raw_result)
 
-        logger.debug(
-            "text_match: %s, explanation_match: %s",
-            bool(text_match),
-            bool(explanation_match),
-        )
-
         if text_match:
             text = text_match.group(1).strip()
-            # Remove markdown separators (*** or ---) from text
-            text = _RE_MARKDOWN_SEPARATOR.sub("", text).strip()
-            # Remove translation label prefixes (e.g., "英語翻訳", "日本語翻訳")
-            # These appear when Copilot follows the prompt template format literally
-            text = _RE_TRANSLATION_LABEL.sub("", text).strip()
+        elif explanation_match:
+            text = raw_result[: explanation_match.start()].strip() or raw_result
+        else:
+            text = raw_result
 
-        if explanation_match:
-            explanation = explanation_match.group(1).strip()
-
-        # Fallback: split by explanation markers if regex didn't capture explanation
-        # Supports Japanese (解説, 説明) and English (Explanation, Notes)
-        if text and not explanation:
-            logger.debug("Trying fallback split for explanation...")
-            explanation_delimiters = [
-                "解説:",
-                "解説：",
-                "**解説:**",
-                "**解説**:",
-                "**解説**：",
-                "説明:",
-                "説明：",
-                "**説明:**",
-                "**説明**:",
-                "Explanation:",
-                "**Explanation:**",
-                "Notes:",
-                "**Notes:**",
-                "Note:",
-                "**Note:**",
-            ]
-            raw_lower = raw_result.lower()
-            for delimiter in explanation_delimiters:
-                # Case-insensitive check for English delimiters
-                if delimiter.lower() in raw_lower:
-                    # Find the actual position case-insensitively
-                    idx = raw_lower.find(delimiter.lower())
-                    if idx >= 0:
-                        explanation = raw_result[idx + len(delimiter) :].strip()
-                        logger.debug(
-                            "Fallback split by '%s' found explanation (length: %d)",
-                            delimiter,
-                            len(explanation),
-                        )
-                        break
-
-        # Another fallback: if no "訳文:" found, try simple split
-        if not text:
-            logger.debug("Text not found, trying alternative parsing...")
-            explanation_delimiters = [
-                "解説:",
-                "解説：",
-                "**解説:**",
-                "**解説**:",
-                "説明:",
-                "説明：",
-                "Explanation:",
-                "Notes:",
-            ]
-            translation_prefixes = [
-                "訳文:",
-                "訳文：",
-                "**訳文:**",
-                "**訳文**:",
-                "翻訳:",
-                "翻訳：",
-                "Translation:",
-                "**Translation:**",
-            ]
-            raw_lower = raw_result.lower()
-            for delimiter in explanation_delimiters:
-                if delimiter.lower() in raw_lower:
-                    idx = raw_lower.find(delimiter.lower())
-                    if idx >= 0:
-                        text_part = raw_result[:idx].strip()
-                        # Remove translation prefix if present
-                        text_part_lower = text_part.lower()
-                        for prefix in translation_prefixes:
-                            if text_part_lower.startswith(prefix.lower()):
-                                text_part = text_part[len(prefix) :].strip()
-                                break
-                        text = text_part
-                        explanation = raw_result[idx + len(delimiter) :].strip()
-                        logger.debug("Fallback split found text and explanation")
-                        break
-
-        # Final fallback: use first line as text, rest as explanation
-        if not text:
-            logger.debug("Using final fallback parsing")
-            lines = raw_result.strip().split("\n")
-            if lines:
-                text = lines[0].strip()
-                explanation = "\n".join(lines[1:]).strip() if len(lines) > 1 else ""
-
-        # Remove translation label prefixes for all paths (regex, fallback, final fallback)
-        if text:
-            text = _RE_TRANSLATION_LABEL.sub("", text).strip()
-
+        text = _RE_MARKDOWN_SEPARATOR.sub("", text).strip()
+        text = _RE_TRANSLATION_LABEL.sub("", text).strip()
         text = _strip_input_markers(text)
-        explanation = _strip_input_markers(explanation)
-
-        # Remove trailing attached filename from explanation
-        # Copilot sometimes appends the reference file name (e.g., "glossary") to the response
-        if explanation:
-            explanation = _RE_TRAILING_FILENAME.sub("", explanation).strip()
-
-        # Set default explanation if still empty
-        if not explanation:
-            explanation = "翻訳結果です"
-
-        logger.debug(
-            "Final parsed text (length: %d): %s",
-            len(text),
-            text[:200] if text else "(empty)",
-        )
-        logger.debug(
-            "Final parsed explanation (length: %d): %s",
-            len(explanation),
-            explanation[:200] if explanation else "(empty)",
-        )
 
         if text:
-            return [TranslationOption(text=text, explanation=explanation)]
+            return [TranslationOption(text=text, explanation="")]
 
         return []
 

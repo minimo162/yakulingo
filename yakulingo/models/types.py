@@ -243,6 +243,7 @@ class TranslationResult:
     issue_block_locations: list[str] = field(default_factory=list)
     issue_section_counts: dict[int, int] = field(default_factory=dict)
     mismatched_batch_count: int = 0
+    extra_output_files: list[tuple[Path, str]] = field(default_factory=list)
 
     @property
     def output_files(self) -> list[tuple[Path, str]]:
@@ -250,13 +251,28 @@ class TranslationResult:
         Get list of all output files with their descriptions.
         Returns list of (path, description) tuples.
         """
-        files = []
-        if self.output_path and self.output_path.exists():
-            files.append((self.output_path, "翻訳ファイル"))
-        if self.bilingual_path and self.bilingual_path.exists():
-            files.append((self.bilingual_path, "対訳ファイル"))
-        if self.glossary_path and self.glossary_path.exists():
-            files.append((self.glossary_path, "用語集CSV"))
+        files: list[tuple[Path, str]] = []
+        seen: set[str] = set()
+
+        def add(path: Optional[Path], description: str) -> None:
+            if not path:
+                return
+            try:
+                if not path.exists():
+                    return
+            except OSError:
+                return
+            key = str(path).casefold()
+            if key in seen:
+                return
+            seen.add(key)
+            files.append((path, description))
+
+        add(self.output_path, "翻訳ファイル")
+        for extra_path, extra_desc in self.extra_output_files:
+            add(extra_path, extra_desc or "追加出力")
+        add(self.bilingual_path, "対訳ファイル")
+        add(self.glossary_path, "用語集CSV")
         return files
 
 

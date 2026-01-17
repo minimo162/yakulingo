@@ -12230,11 +12230,17 @@ class YakuLingoApp:
             self.state.translation_phase_detail = item.phase_detail
             self.state.translation_phase_current = item.phase_current
             self.state.translation_phase_total = item.phase_total
-            self.state.translation_phase_counts = dict(item.phase_counts)
-            self.state.translation_eta_seconds = item.eta_seconds
+        self.state.translation_phase_counts = dict(item.phase_counts)
+        self.state.translation_eta_seconds = item.eta_seconds
         self.state.translation_result = item.result
-        if item.result and item.result.output_files:
-            self.state.output_file = item.result.output_files[0][0]
+        if item.result:
+            target_path = item.result.output_path
+            if target_path and target_path.exists():
+                self.state.output_file = target_path
+            elif item.result.output_files:
+                self.state.output_file = item.result.output_files[0][0]
+            else:
+                self.state.output_file = None
         else:
             self.state.output_file = None
         self.state.error_message = item.error_message

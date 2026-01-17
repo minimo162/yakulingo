@@ -2752,7 +2752,7 @@ class TranslationService:
                     else:
                         missing.append(style)
 
-            if not wants_combined:
+            if missing:
                 for style in missing:
                     prompt = local_builder.build_text_to_en_single(
                         text,

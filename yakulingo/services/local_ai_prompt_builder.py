@@ -35,16 +35,6 @@ _RE_JP_YEN_AMOUNT = re.compile(
 )
 
 
-_RE_LOCAL_TEXT_HAS_TAB_OR_NEWLINE = re.compile(r"[\n\t]")
-_RE_LOCAL_TEXT_HAS_DIGIT = re.compile(r"[0-9０-９]")
-_RE_LOCAL_TEXT_HAS_CURRENCY = re.compile(r"[$¥￥€£]")
-_RE_LOCAL_TEXT_HAS_PERCENT = re.compile(r"[%％]")
-_RE_LOCAL_TEXT_HAS_SYMBOLS = re.compile(r"(?:>=|<=|[<>~〜→↑↓≥≧≤≦])")
-_RE_LOCAL_TEXT_HAS_KANJI_NUMERIC_UNIT = re.compile(
-    r"[〇零一二三四五六七八九十百千0-9０-９][〇零一二三四五六七八九十百千0-9０-９,，.]*[兆億万千円]"
-)
-
-
 @dataclass(frozen=True)
 class EmbeddedReference:
     text: str
@@ -194,39 +184,10 @@ class LocalPromptBuilder:
         selected = sorted(heap, key=lambda x: (-x[0], -x[1]))
         return [(source, target) for _, _, source, target in selected]
 
-    @staticmethod
-    def _should_include_translation_rules_for_text(
-        output_language: str, text: str
-    ) -> bool:
-        normalized = (text or "").strip()
-        if not normalized:
-            return False
-
-        if _RE_LOCAL_TEXT_HAS_TAB_OR_NEWLINE.search(normalized):
-            return True
-        if _RE_LOCAL_TEXT_HAS_DIGIT.search(normalized):
-            return True
-        if _RE_LOCAL_TEXT_HAS_CURRENCY.search(normalized):
-            return True
-        if _RE_LOCAL_TEXT_HAS_PERCENT.search(normalized):
-            return True
-        if _RE_LOCAL_TEXT_HAS_SYMBOLS.search(normalized):
-            return True
-
-        if output_language == "en":
-            if "▲" in normalized or "+" in normalized:
-                return True
-            if _RE_LOCAL_TEXT_HAS_KANJI_NUMERIC_UNIT.search(normalized):
-                return True
-
-        return False
-
     def _get_translation_rules_for_text(self, output_language: str, text: str) -> str:
         if not text or not text.strip():
             return ""
-        if self._should_include_translation_rules_for_text(output_language, text):
-            return self._get_translation_rules(output_language)
-        return self._get_translation_rules("common")
+        return self._get_translation_rules(output_language)
 
     @staticmethod
     def _format_oku_amount(value: Decimal) -> str:

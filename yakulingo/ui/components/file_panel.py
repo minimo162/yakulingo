@@ -364,7 +364,7 @@ def create_file_panel(
                                     )
                             if state.file_output_language == "en":
                                 with ui.column().classes("advanced-section"):
-                                    ui.label("翻訳スタイル").classes("advanced-label")
+                                    ui.label("既定表示スタイル").classes("advanced-label")
                                     _style_selector(translation_style, on_style_change)
                             with ui.column().classes("advanced-section"):
                                 ui.label("参照ファイル").classes("advanced-label")
@@ -440,6 +440,8 @@ def create_file_panel(
                         _complete_card(
                             translation_result,
                             state.file_info,
+                            state.file_output_language,
+                            translation_style,
                         )
 
                 elif state.file_state == FileState.ERROR:
@@ -465,7 +467,7 @@ def _file_translate_meta_chips(
         ):
             ui.label(output_label).classes("chip meta-chip")
             if state.file_output_language == "en":
-                ui.label(style_label).classes("chip meta-chip")
+                ui.label(f"既定: {style_label}").classes("chip meta-chip")
             if state.file_output_language_overridden:
                 ui.label("手動指定").classes("chip meta-chip override-chip")
             if use_bundled_glossary:
@@ -1286,6 +1288,8 @@ def _render_phase_stepper(
 def _complete_card(
     result: Optional[TranslationResult],
     file_info: Optional[FileInfo],
+    output_language: str,
+    translation_style: str,
 ):
     """Success card with output file list and open actions"""
     with ui.card().classes("file-card success w-full max-w-md mx-auto"):
@@ -1301,8 +1305,21 @@ def _complete_card(
 
             # Output files list
             if result and result.output_files:
+                output_files = list(result.output_files)
+                if output_language == "en" and result.output_path:
+                    style_label = STYLE_OPTIONS.get(
+                        translation_style, (translation_style, "")
+                    )[0]
+                    primary_key = str(result.output_path).casefold()
+                    for idx, (file_path, description) in enumerate(output_files):
+                        if str(file_path).casefold() == primary_key:
+                            output_files[idx] = (
+                                file_path,
+                                f"翻訳ファイル（{style_label}）",
+                            )
+                            break
                 with ui.column().classes("w-full gap-2 mt-2"):
-                    for file_path, description in result.output_files:
+                    for file_path, description in output_files:
                         _output_file_row(file_path, description)
 
             if result:

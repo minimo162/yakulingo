@@ -1138,6 +1138,13 @@ class BatchTranslator:
             cleaned = _RE_TRAILING_FILENAME.sub("", cleaned).strip()
         return cleaned
 
+    @staticmethod
+    def _build_cache_key(
+        text: str, *, output_language: str, translation_style: str
+    ) -> str:
+        style_key = translation_style if output_language == "en" else ""
+        return f"{output_language}\0{style_key}\0{text}"
+
     def _should_retry_translation(
         self, original: str, translated: str, output_language: str
     ) -> bool:
@@ -1311,7 +1318,12 @@ class BatchTranslator:
 
         for block in translatable_blocks:
             if self._cache:
-                cached = self._cache.get(block.text)
+                cache_key = self._build_cache_key(
+                    block.text,
+                    output_language=output_language,
+                    translation_style=translation_style,
+                )
+                cached = self._cache.get(cache_key)
                 if cached is not None:
                     translations[block.id] = cached
                     cache_hits += 1
@@ -1902,7 +1914,12 @@ class BatchTranslator:
                         and translated_text
                         and translated_text.strip()
                     ):
-                        self._cache.set(block.text, translated_text)
+                        cache_key = self._build_cache_key(
+                            block.text,
+                            output_language=output_language,
+                            translation_style=translation_style,
+                        )
+                        self._cache.set(cache_key, translated_text)
                 else:
                     # Mark untranslated blocks with original text
                     untranslated_block_ids.append(block.id)
@@ -4195,109 +4212,184 @@ class TranslationService:
                 TranslationProgress(
                     current=10,
                     total=100,
-                    status=f"Translating {total_blocks} blocks...",
+                    status=(
+                        f"Translating {total_blocks} blocks (3 styles)..."
+                        if output_language == "en"
+                        else f"Translating {total_blocks} blocks..."
+                    ),
                     phase=TranslationPhase.TRANSLATING,
                 )
             )
 
-        # Translate blocks
-        def batch_progress(progress: TranslationProgress):
-            if on_progress:
-                # Scale batch progress to 10-90 range
-                on_progress(
-                    scale_progress(progress, 10, 90, TranslationPhase.TRANSLATING)
-                )
-
         # Excel cells often contain numbered lines; keep stable IDs to avoid list parsing drift.
         include_item_ids = processor.file_type == FileType.EXCEL
+
+        translation_styles = (
+            ["standard", "concise", "minimal"]
+            if output_language == "en"
+            else [translation_style]
+        )
+        primary_style = translation_style
+        if output_language == "en" and primary_style not in translation_styles:
+            primary_style = "concise"
+
+        style_labels = {
+            "standard": "標準",
+            "concise": "簡潔",
+            "minimal": "最簡潔",
+        }
+
         batch_translator = self._get_active_batch_translator()
         batch_limit, batch_limit_source = self._get_local_file_batch_limit_info()
-        batch_result = batch_translator.translate_blocks_with_result(
-            blocks,
-            reference_files,
-            batch_progress,
-            output_language=output_language,
-            translation_style=translation_style,
-            include_item_ids=include_item_ids,
-            _max_chars_per_batch=batch_limit,
-            _max_chars_per_batch_source=batch_limit_source,
-        )
 
-        # Check for cancellation (thread-safe)
-        if batch_result.cancelled or self._cancel_event.is_set():
-            return TranslationResult(
-                status=TranslationStatus.CANCELLED,
-                duration_seconds=time.monotonic() - start_time,
+        translations_by_style: dict[str, dict[str, str]] = {}
+        primary_batch_result = None
+
+        translate_start = 10
+        translate_end = 90
+        translate_span = translate_end - translate_start
+        style_total = max(1, len(translation_styles))
+
+        for style_idx, style_key in enumerate(translation_styles):
+            if self._cancel_event.is_set():
+                return TranslationResult(
+                    status=TranslationStatus.CANCELLED,
+                    duration_seconds=time.monotonic() - start_time,
+                )
+
+            seg_start = translate_start + int(translate_span * style_idx / style_total)
+            seg_end = translate_start + int(
+                translate_span * (style_idx + 1) / style_total
+            )
+            if seg_end <= seg_start:
+                seg_end = seg_start + 1
+
+            def batch_progress(
+                progress: TranslationProgress,
+                _seg_start: int = seg_start,
+                _seg_end: int = seg_end,
+                _style_label: str = style_labels.get(style_key, style_key),
+            ):
+                if on_progress:
+                    on_progress(
+                        scale_progress(
+                            progress,
+                            _seg_start,
+                            _seg_end,
+                            TranslationPhase.TRANSLATING,
+                            phase_detail=f"{_style_label} {progress.current}/{progress.total}",
+                        )
+                    )
+
+            batch_result = batch_translator.translate_blocks_with_result(
+                blocks,
+                reference_files,
+                batch_progress if on_progress else None,
+                output_language=output_language,
+                translation_style=style_key,
+                include_item_ids=include_item_ids,
+                _max_chars_per_batch=batch_limit,
+                _max_chars_per_batch_source=batch_limit_source,
             )
 
-        translations = batch_result.translations
+            if batch_result.cancelled or self._cancel_event.is_set():
+                return TranslationResult(
+                    status=TranslationStatus.CANCELLED,
+                    duration_seconds=time.monotonic() - start_time,
+                )
+
+            translations_by_style[style_key] = batch_result.translations
+            if style_key == primary_style:
+                primary_batch_result = batch_result
+
+        if primary_batch_result is None:
+            primary_style = translation_styles[0]
+            primary_batch_result = batch_result
+
+        primary_translations = translations_by_style.get(primary_style, {})
         issue_locations, issue_section_counts = self._summarize_batch_issues(
-            blocks, batch_result.untranslated_block_ids
+            blocks, primary_batch_result.untranslated_block_ids
         )
 
-        # Report progress
-        if on_progress:
-            on_progress(
-                TranslationProgress(
-                    current=90,
-                    total=100,
-                    status="Applying translations...",
-                    phase=TranslationPhase.APPLYING,
-                    phase_current=1,
-                    phase_total=(
-                        1
-                        + (1 if self.config and self.config.bilingual_output else 0)
-                        + (1 if self.config and self.config.export_glossary else 0)
-                    ),
-                )
-            )
-
-        # Generate output path (with _translated suffix)
         output_path = self._generate_output_path(input_path)
-
-        # Apply translations
-        # Convert output_language to direction for font mapping
-        direction = "jp_to_en" if output_language == "en" else "en_to_jp"
-        processor.apply_translations(
-            input_path,
-            output_path,
-            translations,
-            direction,
-            self.config,
-            selected_sections=selected_sections,
-            text_blocks=blocks,  # Pass extracted blocks for precise positioning
-        )
-
-        warnings = self._collect_processor_warnings(processor)
-        if self._use_local_backend() and reference_files:
-            self._ensure_local_backend()
-            if self._local_prompt_builder is not None:
-                embedded_ref = self._local_prompt_builder.build_reference_embed(
-                    reference_files
+        extra_output_files: list[tuple[Path, str]] = []
+        output_paths_by_style: dict[str, Path] = {primary_style: output_path}
+        if output_language == "en":
+            for style_key in translation_styles:
+                if style_key == primary_style:
+                    continue
+                style_path = self._generate_style_variant_output_path(
+                    output_path, style_key
                 )
-                warnings.extend(embedded_ref.warnings)
-        if batch_result.untranslated_block_ids:
-            warnings.append(
-                f"未翻訳ブロック: {len(batch_result.untranslated_block_ids)}"
-            )
-        if batch_result.mismatched_batch_count:
-            warnings.append(f"翻訳件数の不一致: {batch_result.mismatched_batch_count}")
+                output_paths_by_style[style_key] = style_path
+                extra_output_files.append(
+                    (
+                        style_path,
+                        f"翻訳ファイル（{style_labels.get(style_key, style_key)}）",
+                    )
+                )
 
-        apply_step = 1
+        direction = "jp_to_en" if output_language == "en" else "en_to_jp"
+
         apply_total = (
-            1
+            len(translation_styles)
             + (1 if self.config and self.config.bilingual_output else 0)
             + (1 if self.config and self.config.export_glossary else 0)
         )
-
-        # Create bilingual output if enabled
+        apply_step = 0
         bilingual_path = None
-        if self.config and self.config.bilingual_output:
+        glossary_path = None
+
+        style_apply_order = [primary_style] + [
+            s for s in translation_styles if s != primary_style
+        ]
+        for style_key in style_apply_order:
+            if self._cancel_event.is_set():
+                return TranslationResult(
+                    status=TranslationStatus.CANCELLED,
+                    duration_seconds=time.monotonic() - start_time,
+                )
+            apply_step += 1
             if on_progress:
-                apply_step += 1
+                progress_current = 90 + int(
+                    10 * (apply_step - 1) / max(apply_total, 1)
+                )
+                style_label = style_labels.get(style_key, style_key)
                 on_progress(
                     TranslationProgress(
-                        current=92,
+                        current=progress_current,
+                        total=100,
+                        status=f"Applying translations ({style_label})...",
+                        phase=TranslationPhase.APPLYING,
+                        phase_current=apply_step,
+                        phase_total=apply_total,
+                    )
+                )
+            processor.apply_translations(
+                input_path,
+                output_paths_by_style[style_key],
+                translations_by_style[style_key],
+                direction,
+                self.config,
+                selected_sections=selected_sections,
+                text_blocks=blocks,  # Pass extracted blocks for precise positioning
+            )
+
+        # Create bilingual output if enabled (primary style only)
+        if self.config and self.config.bilingual_output:
+            if self._cancel_event.is_set():
+                return TranslationResult(
+                    status=TranslationStatus.CANCELLED,
+                    duration_seconds=time.monotonic() - start_time,
+                )
+            apply_step += 1
+            if on_progress:
+                progress_current = 90 + int(
+                    10 * (apply_step - 1) / max(apply_total, 1)
+                )
+                on_progress(
+                    TranslationProgress(
+                        current=progress_current,
                         total=100,
                         status="Creating bilingual file...",
                         phase=TranslationPhase.APPLYING,
@@ -4311,14 +4403,21 @@ class TranslationService:
                 input_path, output_path, processor
             )
 
-        # Export glossary CSV if enabled
-        glossary_path = None
+        # Export glossary CSV if enabled (primary style only)
         if self.config and self.config.export_glossary:
+            if self._cancel_event.is_set():
+                return TranslationResult(
+                    status=TranslationStatus.CANCELLED,
+                    duration_seconds=time.monotonic() - start_time,
+                )
+            apply_step += 1
             if on_progress:
-                apply_step += 1
+                progress_current = 90 + int(
+                    10 * (apply_step - 1) / max(apply_total, 1)
+                )
                 on_progress(
                     TranslationProgress(
-                        current=97,
+                        current=progress_current,
                         total=100,
                         status="Exporting glossary CSV...",
                         phase=TranslationPhase.APPLYING,
@@ -4328,11 +4427,10 @@ class TranslationService:
                     )
                 )
 
-            # Generate glossary output path
             glossary_path = output_path.parent / (
                 output_path.stem.replace("_translated", "") + "_glossary.csv"
             )
-            self._export_glossary_csv(blocks, translations, glossary_path)
+            self._export_glossary_csv(blocks, primary_translations, glossary_path)
 
         # Report complete
         if on_progress:
@@ -4345,19 +4443,37 @@ class TranslationService:
                 )
             )
 
+        warnings = self._collect_processor_warnings(processor)
+        if self._use_local_backend() and reference_files:
+            self._ensure_local_backend()
+            if self._local_prompt_builder is not None:
+                embedded_ref = self._local_prompt_builder.build_reference_embed(
+                    reference_files
+                )
+                warnings.extend(embedded_ref.warnings)
+        if primary_batch_result.untranslated_block_ids:
+            warnings.append(
+                f"未翻訳ブロック: {len(primary_batch_result.untranslated_block_ids)}"
+            )
+        if primary_batch_result.mismatched_batch_count:
+            warnings.append(
+                f"翻訳件数の不一致: {primary_batch_result.mismatched_batch_count}"
+            )
+
         return TranslationResult(
             status=TranslationStatus.COMPLETED,
             output_path=output_path,
             bilingual_path=bilingual_path,
             glossary_path=glossary_path,
-            blocks_translated=len(translations),
+            blocks_translated=len(primary_translations),
             blocks_total=total_blocks,
             duration_seconds=time.monotonic() - start_time,
             warnings=warnings if warnings else [],
-            issue_block_ids=batch_result.untranslated_block_ids,
+            issue_block_ids=primary_batch_result.untranslated_block_ids,
             issue_block_locations=issue_locations,
             issue_section_counts=issue_section_counts,
-            mismatched_batch_count=batch_result.mismatched_batch_count,
+            mismatched_batch_count=primary_batch_result.mismatched_batch_count,
+            extra_output_files=extra_output_files,
         )
 
     def _translate_pdf_streaming(
@@ -4476,95 +4592,182 @@ class TranslationService:
                 TranslationProgress(
                     current=40,
                     total=100,
-                    status=f"Translating {total_blocks} blocks...",
+                    status=(
+                        f"Translating {total_blocks} blocks (3 styles)..."
+                        if output_language == "en"
+                        else f"Translating {total_blocks} blocks..."
+                    ),
                     phase=TranslationPhase.TRANSLATING,
                 )
             )
 
-        def batch_progress(progress: TranslationProgress):
-            if on_progress:
-                # Scale to 40-90% range
-                on_progress(
-                    scale_progress(
-                        progress,
-                        40,
-                        90,
-                        TranslationPhase.TRANSLATING,
-                        phase_detail=f"Batch {progress.current}/{progress.total}",
-                    )
-                )
+        translation_styles = (
+            ["standard", "concise", "minimal"]
+            if output_language == "en"
+            else [translation_style]
+        )
+        primary_style = translation_style
+        if output_language == "en" and primary_style not in translation_styles:
+            primary_style = "concise"
+
+        style_labels = {
+            "standard": "標準",
+            "concise": "簡潔",
+            "minimal": "最簡潔",
+        }
+
+        translations_by_style: dict[str, dict[str, str]] = {}
+        primary_batch_result = None
 
         batch_translator = self._get_active_batch_translator()
         batch_limit, batch_limit_source = self._get_local_file_batch_limit_info()
-        batch_result = batch_translator.translate_blocks_with_result(
-            all_blocks,
-            reference_files,
-            batch_progress,
-            output_language=output_language,
-            translation_style=translation_style,
-            include_item_ids=True,
-            _max_chars_per_batch=batch_limit,
-            _max_chars_per_batch_source=batch_limit_source,
-        )
 
-        if batch_result.cancelled or self._cancel_event.is_set():
-            return TranslationResult(
-                status=TranslationStatus.CANCELLED,
-                duration_seconds=time.monotonic() - start_time,
-            )
+        translate_start = 40
+        translate_end = 90
+        translate_span = translate_end - translate_start
+        style_total = max(1, len(translation_styles))
 
-        translations = batch_result.translations
-        issue_locations, issue_section_counts = self._summarize_batch_issues(
-            all_blocks, batch_result.untranslated_block_ids
-        )
-
-        # Phase 3: Apply translations (90-100%)
-        if on_progress:
-            on_progress(
-                TranslationProgress(
-                    current=90,
-                    total=100,
-                    status="Applying translations to PDF...",
-                    phase=TranslationPhase.APPLYING,
-                    phase_current=1,
-                    phase_total=(
-                        1
-                        + (1 if self.config and self.config.bilingual_output else 0)
-                        + (1 if self.config and self.config.export_glossary else 0)
-                    ),
+        for style_idx, style_key in enumerate(translation_styles):
+            if self._cancel_event.is_set():
+                return TranslationResult(
+                    status=TranslationStatus.CANCELLED,
+                    duration_seconds=time.monotonic() - start_time,
                 )
+
+            seg_start = translate_start + int(translate_span * style_idx / style_total)
+            seg_end = translate_start + int(
+                translate_span * (style_idx + 1) / style_total
             )
+            if seg_end <= seg_start:
+                seg_end = seg_start + 1
+
+            def batch_progress(
+                progress: TranslationProgress,
+                _seg_start: int = seg_start,
+                _seg_end: int = seg_end,
+                _style_label: str = style_labels.get(style_key, style_key),
+            ):
+                if on_progress:
+                    on_progress(
+                        scale_progress(
+                            progress,
+                            _seg_start,
+                            _seg_end,
+                            TranslationPhase.TRANSLATING,
+                            phase_detail=f"{_style_label} {progress.current}/{progress.total}",
+                        )
+                    )
+
+            batch_result = batch_translator.translate_blocks_with_result(
+                all_blocks,
+                reference_files,
+                batch_progress if on_progress else None,
+                output_language=output_language,
+                translation_style=style_key,
+                include_item_ids=True,
+                _max_chars_per_batch=batch_limit,
+                _max_chars_per_batch_source=batch_limit_source,
+            )
+
+            if batch_result.cancelled or self._cancel_event.is_set():
+                return TranslationResult(
+                    status=TranslationStatus.CANCELLED,
+                    duration_seconds=time.monotonic() - start_time,
+                )
+
+            translations_by_style[style_key] = batch_result.translations
+            if style_key == primary_style:
+                primary_batch_result = batch_result
+
+        if primary_batch_result is None:
+            primary_style = translation_styles[0]
+            primary_batch_result = batch_result
+
+        primary_translations = translations_by_style.get(primary_style, {})
+        issue_locations, issue_section_counts = self._summarize_batch_issues(
+            all_blocks, primary_batch_result.untranslated_block_ids
+        )
 
         output_path = self._generate_output_path(input_path)
+        extra_output_files: list[tuple[Path, str]] = []
+        output_paths_by_style: dict[str, Path] = {primary_style: output_path}
+        if output_language == "en":
+            for style_key in translation_styles:
+                if style_key == primary_style:
+                    continue
+                style_path = self._generate_style_variant_output_path(
+                    output_path, style_key
+                )
+                output_paths_by_style[style_key] = style_path
+                extra_output_files.append(
+                    (
+                        style_path,
+                        f"翻訳ファイル（{style_labels.get(style_key, style_key)}）",
+                    )
+                )
+
         direction = "jp_to_en" if output_language == "en" else "en_to_jp"
 
-        # PDFMathTranslate compliant: Pass text_blocks directly to apply_translations
-        # TextBlock contains PDF coordinates from pdfminer extraction - no DPI scaling needed
-        processor.apply_translations(
-            input_path,
-            output_path,
-            translations,
-            direction,
-            self.config,
-            pages=selected_pages,
-            text_blocks=all_blocks,  # Pass extracted blocks for precise positioning
-        )
-
-        apply_step = 1
         apply_total = (
-            1
+            len(translation_styles)
             + (1 if self.config and self.config.bilingual_output else 0)
             + (1 if self.config and self.config.export_glossary else 0)
         )
-
-        # Create bilingual PDF if enabled
+        apply_step = 0
         bilingual_path = None
-        if self.config and self.config.bilingual_output:
+        glossary_path = None
+
+        style_apply_order = [primary_style] + [
+            s for s in translation_styles if s != primary_style
+        ]
+        for style_key in style_apply_order:
+            if self._cancel_event.is_set():
+                return TranslationResult(
+                    status=TranslationStatus.CANCELLED,
+                    duration_seconds=time.monotonic() - start_time,
+                )
+            apply_step += 1
             if on_progress:
-                apply_step += 1
+                progress_current = 90 + int(
+                    10 * (apply_step - 1) / max(apply_total, 1)
+                )
+                style_label = style_labels.get(style_key, style_key)
                 on_progress(
                     TranslationProgress(
-                        current=95,
+                        current=progress_current,
+                        total=100,
+                        status=f"Applying translations to PDF ({style_label})...",
+                        phase=TranslationPhase.APPLYING,
+                        phase_current=apply_step,
+                        phase_total=apply_total,
+                    )
+                )
+
+            processor.apply_translations(
+                input_path,
+                output_paths_by_style[style_key],
+                translations_by_style[style_key],
+                direction,
+                self.config,
+                pages=selected_pages,
+                text_blocks=all_blocks,  # Pass extracted blocks for precise positioning
+            )
+
+        # Create bilingual PDF if enabled (primary style only)
+        if self.config and self.config.bilingual_output:
+            if self._cancel_event.is_set():
+                return TranslationResult(
+                    status=TranslationStatus.CANCELLED,
+                    duration_seconds=time.monotonic() - start_time,
+                )
+            apply_step += 1
+            if on_progress:
+                progress_current = 90 + int(
+                    10 * (apply_step - 1) / max(apply_total, 1)
+                )
+                on_progress(
+                    TranslationProgress(
+                        current=progress_current,
                         total=100,
                         status="Creating bilingual PDF...",
                         phase=TranslationPhase.APPLYING,
@@ -4574,20 +4777,26 @@ class TranslationService:
                     )
                 )
 
-            # Generate bilingual output path with _bilingual suffix
             bilingual_path = output_path.parent / (
                 output_path.stem.replace("_translated", "") + "_bilingual.pdf"
             )
             processor.create_bilingual_pdf(input_path, output_path, bilingual_path)
 
-        # Export glossary CSV if enabled
-        glossary_path = None
+        # Export glossary CSV if enabled (primary style only)
         if self.config and self.config.export_glossary:
+            if self._cancel_event.is_set():
+                return TranslationResult(
+                    status=TranslationStatus.CANCELLED,
+                    duration_seconds=time.monotonic() - start_time,
+                )
+            apply_step += 1
             if on_progress:
-                apply_step += 1
+                progress_current = 90 + int(
+                    10 * (apply_step - 1) / max(apply_total, 1)
+                )
                 on_progress(
                     TranslationProgress(
-                        current=97,
+                        current=progress_current,
                         total=100,
                         status="Exporting glossary CSV...",
                         phase=TranslationPhase.APPLYING,
@@ -4597,12 +4806,10 @@ class TranslationService:
                     )
                 )
 
-            # Generate glossary output path
             glossary_path = output_path.parent / (
                 output_path.stem.replace("_translated", "") + "_glossary.csv"
             )
-            # PDFMathTranslate compliant: Use TextBlocks for glossary export
-            self._export_glossary_csv(all_blocks, translations, glossary_path)
+            self._export_glossary_csv(all_blocks, primary_translations, glossary_path)
 
         if on_progress:
             on_progress(
@@ -4623,26 +4830,29 @@ class TranslationService:
                     reference_files
                 )
                 warnings.extend(embedded_ref.warnings)
-        if batch_result.untranslated_block_ids:
+        if primary_batch_result.untranslated_block_ids:
             warnings.append(
-                f"未翻訳ブロック: {len(batch_result.untranslated_block_ids)}"
+                f"未翻訳ブロック: {len(primary_batch_result.untranslated_block_ids)}"
             )
-        if batch_result.mismatched_batch_count:
-            warnings.append(f"翻訳件数の不一致: {batch_result.mismatched_batch_count}")
+        if primary_batch_result.mismatched_batch_count:
+            warnings.append(
+                f"翻訳件数の不一致: {primary_batch_result.mismatched_batch_count}"
+            )
 
         return TranslationResult(
             status=TranslationStatus.COMPLETED,
             output_path=output_path,
             bilingual_path=bilingual_path,
             glossary_path=glossary_path,
-            blocks_translated=len(translations),
+            blocks_translated=len(primary_translations),
             blocks_total=total_blocks,
             duration_seconds=time.monotonic() - start_time,
             warnings=warnings if warnings else [],
-            issue_block_ids=batch_result.untranslated_block_ids,
+            issue_block_ids=primary_batch_result.untranslated_block_ids,
             issue_block_locations=issue_locations,
             issue_section_counts=issue_section_counts,
-            mismatched_batch_count=batch_result.mismatched_batch_count,
+            mismatched_batch_count=primary_batch_result.mismatched_batch_count,
+            extra_output_files=extra_output_files,
         )
 
     def _make_extraction_progress_callback(
@@ -4918,6 +5128,36 @@ class TranslationService:
             output_path.name,
         )
         return output_path
+
+    def _generate_style_variant_output_path(self, output_path: Path, style: str) -> Path:
+        """Generate an additional output path with style suffix, ensuring uniqueness."""
+        suffix = f"_{style}"
+        candidate = output_path.with_name(
+            f"{output_path.stem}{suffix}{output_path.suffix}"
+        )
+        if not candidate.exists():
+            return candidate
+
+        counter = 2
+        max_attempts = 10000
+        while counter <= max_attempts:
+            candidate = output_path.with_name(
+                f"{output_path.stem}{suffix}_{counter}{output_path.suffix}"
+            )
+            if not candidate.exists():
+                return candidate
+            counter += 1
+
+        timestamp = int(time.monotonic())
+        candidate = output_path.with_name(
+            f"{output_path.stem}{suffix}_{timestamp}{output_path.suffix}"
+        )
+        logger.warning(
+            "Could not find available style filename after %d attempts, using timestamp: %s",
+            max_attempts,
+            candidate.name,
+        )
+        return candidate
 
     def is_supported_file(self, file_path: Path) -> bool:
         """Check if file type is supported"""

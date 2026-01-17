@@ -79,6 +79,18 @@ uv run python tools/bench_local_ai.py --mode warm --json
 uv run python tools/bench_local_ai.py --mode cold --json
 ```
 
+### スモーク（最小）
+```bash
+# まず動くか（JSON不要の最小スモーク）
+uv run python tools/bench_local_ai.py --mode warm
+
+# 3スタイル比較（ローカルAIのJSONパースも確認）
+uv run python tools/bench_local_ai.py --mode warm --compare
+
+# 同梱用語集を添付（reference embed の確認）
+uv run python tools/bench_local_ai.py --mode warm --with-glossary
+```
+
 ### 記録する指標
 - `translation_seconds`: 推論にかかった時間
 - `total_seconds`: プロンプト構築 + 推論（single のみ）

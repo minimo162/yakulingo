@@ -1357,7 +1357,6 @@ def _render_results_to_jp(
 
                             has_back_translate = bool(
                                 option.back_translation_text
-                                or option.back_translation_explanation
                                 or option.back_translation_error
                                 or option.back_translation_in_progress
                             )
@@ -1792,9 +1791,7 @@ def _render_translation_text(
 
 def _render_back_translate_section(option: TranslationOption) -> None:
     """Render inline back-translation results inside a translation card."""
-    has_result = bool(
-        option.back_translation_text or option.back_translation_explanation
-    )
+    has_result = bool(option.back_translation_text)
     has_error = bool(option.back_translation_error)
     is_loading = option.back_translation_in_progress
     if not (has_result or has_error or is_loading):
@@ -1839,11 +1836,6 @@ def _render_back_translate_section(option: TranslationOption) -> None:
 
             if option.back_translation_text:
                 _render_translation_text(option.back_translation_text)
-            if option.back_translation_explanation:
-                with ui.element("div").classes(
-                    "nani-explanation back-translate-explanation"
-                ):
-                    _render_explanation(option.back_translation_explanation)
 
 
 def _render_option_en(
@@ -1930,7 +1922,6 @@ def _render_option_en(
 
             has_back_translate = bool(
                 option.back_translation_text
-                or option.back_translation_explanation
                 or option.back_translation_error
                 or option.back_translation_in_progress
             )

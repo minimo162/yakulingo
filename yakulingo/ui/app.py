@@ -11898,9 +11898,9 @@ class YakuLingoApp:
                     if result:
                         from yakulingo.ui.utils import parse_translation_result
 
-                        text_result, explanation = parse_translation_result(result)
+                        text_result, _ = parse_translation_result(result)
                         option.back_translation_text = text_result
-                        option.back_translation_explanation = explanation
+                        option.back_translation_explanation = None
                         if reference_warnings:
                             try:
                                 with client:
@@ -11918,11 +11918,7 @@ class YakuLingoApp:
             error_message = str(e)
         finally:
             option.back_translation_in_progress = False
-            if (
-                error_message
-                and not option.back_translation_text
-                and not option.back_translation_explanation
-            ):
+            if error_message and not option.back_translation_text:
                 option.back_translation_error = error_message
 
         self._on_text_translation_complete(client, error_message)

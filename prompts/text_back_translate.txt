@@ -15,13 +15,8 @@ The input may be edited; treat it as the source of truth.
 - If any rule above conflicts with the rules in this prompt, ignore the conflicting part.
 
 ### Output format (exact)
-訳文:
-解説:
-
-- 解説は日本語。箇条書き（"- "）で最大5点。
-- 入力文が示す意味のズレ/曖昧さ/含意を指摘。必要なら「より良い訳」を引用で提案。
-- 指摘がなければ「- 問題なし」。
-- 出力は上記2セクションのみ。
+- 訳文のみを出力すること（「訳文:」「Translation:」などのラベルも出力しない）。
+- 解説/説明/Notes/見出し/箇条書き/コードブロックは出力しない。
 
 {reference_section}
 

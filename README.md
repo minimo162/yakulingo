@@ -387,12 +387,15 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 > **Note**: `side_panel` は廃止され、`minimized` と同等に扱われます。
 > **Note**: Windowsではウィンドウサイズはプライマリモニターの作業領域（タスクバー除外）を基準に自動計算されます。取得できない場合は最も大きいモニターを使用します。
 
-**用語集処理**: `use_bundled_glossary=true` の場合、同梱 `glossary.csv` をファイルとして自動添付します（デフォルト: true）。
+**用語集処理**: `use_bundled_glossary=true` の場合、同梱 `glossary.csv` を自動で参照します（デフォルト: true）。
+  - Copilot: 参照ファイルとして添付
+  - ローカルAI: 入力文にマッチした用語のみをプロンプトへ埋め込み（上限あり）
 
- **翻訳ルール**: `prompts/translation_rules.txt` を翻訳時に自動反映します（Copilot/ローカルAI共通）。
+ **翻訳ルール**: `prompts/translation_rules.txt` を翻訳時に自動反映します（Copilot/ローカルAI共通、ローカルAIでも常に注入）。
  **出力言語ガード**: 翻訳結果が期待言語（英訳=英語、和訳=日本語）でない場合は自動で再試行し、必要に応じてフォールバックします。
  **不完全翻訳ガード（ローカルAI英訳）**: 「Revenue」等の極端に短い英訳は自動で再試行し、改善しない場合はエラーになります（必要なら `local_ai_max_tokens` / `local_ai_ctx_size` を調整、またはCopilotに切替）。
  **プロンプトSSOT**: `docs/PROMPT_TEMPLATES_SSOT.md` にテンプレの単一正をまとめています。
+> **Note**: ローカルAIは参照/ルールをプロンプトへ埋め込むため、入力や参照が長いと一部省略や途中終了（JSON未完）になる場合があります。必要なら `local_ai_ctx_size` / `local_ai_max_tokens` / 参照ファイルを調整してください。
 
 ### ローカルAI推論パラメータ（推奨）
 

@@ -400,7 +400,7 @@ task-06 の所見（pp は速いが tg が同等）を受け、tg に効く可�
 > **Note**: 現行の既定モデル（TranslateGemma）に対する推奨値ではありません。Qwen3 系を検証していた頃のメモとして残しています。
 
 - Qwen3 は温度0の決定論的生成で繰り返しが起きやすいため、サンプリング（Temperature > 0）が推奨されていました。
-- 推奨値（既定値）:
+- 推奨値（参考: 検証当時）:
   - `local_ai_temperature = 0.7`
   - `local_ai_top_p = 0.6`
   - `local_ai_top_k = 20`

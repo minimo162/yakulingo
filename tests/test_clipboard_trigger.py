@@ -48,6 +48,17 @@ def test_clipboard_trigger_default_empty_recheck_window_is_extended():
     assert sig.parameters["empty_payload_recheck_window_sec"].default == 2.5
 
 
+@pytest.mark.skipif(not _IS_WINDOWS, reason="Windows-only ClipboardTrigger behavior")
+def test_clipboard_trigger_normalize_payload_preserves_paragraph_breaks() -> None:
+    from yakulingo.services.clipboard_trigger import ClipboardTrigger
+
+    payload = "First paragraph.\r\n\r\nSecond paragraph.\r\n"
+    assert (
+        ClipboardTrigger._normalize_payload(payload)
+        == "First paragraph.\n\nSecond paragraph."
+    )
+
+
 @pytest.mark.skipif(
     not _IS_WINDOWS, reason="Windows-only ClipboardTrigger min-gap behavior"
 )

@@ -2922,6 +2922,76 @@ class TranslationService:
                             error_message="翻訳結果が不完全でした（短すぎます）。",
                             metadata=metadata,
                         )
+
+                numeric_rule_violation_styles = [
+                    opt.style
+                    for opt in options
+                    if opt.style and _needs_to_en_numeric_rule_retry(text, opt.text)
+                ]
+                if numeric_rule_violation_styles:
+                    retry_instruction = (
+                        "- CRITICAL: Follow numeric conversion rules strictly. "
+                        "Do not use 'billion', 'trillion', or 'bn'. Use 'oku' (and 'k') "
+                        "exactly as specified. If numeric hints are provided, use them verbatim."
+                    )
+                    seen_retry = set()
+                    retry_styles = [
+                        s
+                        for s in numeric_rule_violation_styles
+                        if not (s in seen_retry or seen_retry.add(s))
+                    ]
+                    retry_prompt = local_builder.build_text_to_en_missing_styles(
+                        text,
+                        styles=retry_styles,
+                        reference_files=reference_files,
+                        detected_language=detected_language,
+                        extra_instruction=retry_instruction,
+                    )
+                    retry_raw = self._translate_single_with_cancel(
+                        text, retry_prompt, None, None
+                    )
+                    retry_by_style = parse_text_to_en_style_subset(
+                        retry_raw, retry_styles
+                    )
+                    metadata["to_en_numeric_rule_retry"] = True
+                    metadata["to_en_numeric_rule_retry_styles"] = retry_styles
+                    updated = False
+                    if retry_by_style:
+                        for opt in options:
+                            style = opt.style
+                            if not style or style not in retry_by_style:
+                                continue
+                            translation, _ = retry_by_style[style]
+                            if (
+                                translation
+                                and not _is_text_output_language_mismatch(
+                                    translation, "en"
+                                )
+                                and not _looks_incomplete_translation_to_en(
+                                    text, translation
+                                )
+                                and not _needs_to_en_numeric_rule_retry(
+                                    text, translation
+                                )
+                            ):
+                                opt.text = translation
+                                opt.explanation = ""
+                                updated = True
+                    if updated:
+                        metadata["to_en_numeric_rule_retry_updated"] = True
+
+                    failed_styles = [
+                        opt.style
+                        for opt in options
+                        if opt.style
+                        and opt.style in retry_styles
+                        and _needs_to_en_numeric_rule_retry(text, opt.text)
+                    ]
+                    if failed_styles or not retry_by_style:
+                        metadata["to_en_numeric_rule_retry_failed"] = True
+                        metadata["to_en_numeric_rule_retry_failed_styles"] = (
+                            failed_styles if failed_styles else retry_styles
+                        )
                 return TextTranslationResult(
                     source_text=text,
                     source_char_count=len(text),

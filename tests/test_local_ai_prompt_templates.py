@@ -137,6 +137,7 @@ def test_local_prompt_builder_replaces_placeholders() -> None:
             "reference_section",
             "style",
             "translation_rules",
+            "numeric_hints",
             "output_language",
         ],
     )

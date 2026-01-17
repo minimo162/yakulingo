@@ -742,11 +742,17 @@ class LocalPromptBuilder:
             reference_files, input_text=context_text
         )
         reference_section = embedded_ref.text if embedded_ref.text else ""
+        numeric_hints = (
+            self._build_to_en_numeric_hints(context_text)
+            if output_language == "en"
+            else ""
+        )
 
         items = [{"id": i + 1, "text": text} for i, text in enumerate(texts)]
         items_json = json.dumps({"items": items}, ensure_ascii=False)
 
         prompt = template.replace("{translation_rules}", translation_rules)
+        prompt = prompt.replace("{numeric_hints}", numeric_hints)
         prompt = prompt.replace("{reference_section}", reference_section)
         prompt = prompt.replace("{style}", translation_style)
         prompt = prompt.replace("{items_json}", items_json)

@@ -132,6 +132,25 @@ def test_local_prompt_includes_numeric_hints_for_oku_in_en_missing_styles() -> N
     assert "1,554億円 -> 1,554 oku yen" in prompt
 
 
+def test_local_batch_prompt_includes_numeric_hints_for_oku() -> None:
+    builder = _make_builder()
+    prompt = builder.build_batch(
+        [
+            "売上高は2兆2,385億円となりました。",
+            "前年同期比1,554億円減となりました。",
+        ],
+        output_language="en",
+        translation_style="concise",
+        reference_files=None,
+    )
+    expected_rules = builder._get_translation_rules("en").strip()
+    assert expected_rules
+    assert expected_rules in prompt
+    assert "数値変換ヒント" in prompt
+    assert "2兆2,385億円 -> 22,385 oku yen" in prompt
+    assert "1,554億円 -> 1,554 oku yen" in prompt
+
+
 def test_local_prompt_includes_full_rules_for_en_3style_short_text() -> None:
     builder = _make_builder()
     prompt = builder.build_text_to_en_3style(

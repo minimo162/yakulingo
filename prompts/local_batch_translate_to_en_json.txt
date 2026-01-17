@@ -14,6 +14,7 @@
 - 翻訳不能でも translation は空にしない（言い換え/ローマ字化）
 
 {translation_rules}
+{numeric_hints}
 {reference_section}
 
 入力（items[].text を翻訳し、idを維持）:

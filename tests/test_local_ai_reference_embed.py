@@ -151,6 +151,50 @@ def test_local_reference_embed_filters_bundled_glossary(tmp_path: Path) -> None:
     assert "売上高 翻译成 Revenue" not in embedded.text
 
 
+def test_local_reference_embed_matches_glossary_source_with_fullwidth_ascii(
+    tmp_path: Path,
+) -> None:
+    builder = _make_builder()
+    glossary_path = tmp_path / "glossary.csv"
+    glossary_path.write_text("B/E台数,B/E Vol.\n", encoding="utf-8")
+    embedded = builder.build_reference_embed([glossary_path], input_text="Ｂ／Ｅ台数が増加")
+    assert "B/E台数 翻译成 B/E Vol." in embedded.text
+
+
+def test_local_reference_embed_matches_glossary_target_with_hyphenated_phrase(
+    tmp_path: Path,
+) -> None:
+    builder = _make_builder()
+    glossary_path = tmp_path / "glossary.csv"
+    glossary_path.write_text(
+        "営業利益,Operating Profit\n売上高,Revenue\n", encoding="utf-8"
+    )
+    embedded = builder.build_reference_embed(
+        [glossary_path], input_text="Operating-Profit improved."
+    )
+    assert "営業利益 翻译成 Operating Profit" in embedded.text
+    assert "売上高 翻译成 Revenue" not in embedded.text
+
+
+def test_local_reference_embed_truncates_bundled_glossary_to_max_lines(
+    tmp_path: Path,
+) -> None:
+    builder = _make_builder()
+    glossary_path = tmp_path / "glossary.csv"
+    rows: list[str] = []
+    tokens: list[str] = []
+    for idx in range(100):
+        source = f"TERM{idx:03d}"
+        target = f"T{idx:03d}"
+        rows.append(f"{source},{target}")
+        tokens.append(source)
+    glossary_path.write_text("\n".join(rows) + "\n", encoding="utf-8")
+
+    embedded = builder.build_reference_embed([glossary_path], input_text=" ".join(tokens))
+    assert embedded.truncated is True
+    assert embedded.text.count(" 翻译成 ") == 80
+
+
 def _make_temp_builder(
     tmp_path: Path, *, use_bundled_glossary: bool = True
 ) -> LocalPromptBuilder:

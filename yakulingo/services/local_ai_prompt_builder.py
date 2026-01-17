@@ -8,6 +8,7 @@ import json
 import logging
 import re
 import threading
+import unicodedata
 from decimal import Decimal, InvalidOperation
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,6 +31,8 @@ _SUPPORTED_REFERENCE_EXTENSIONS = {
     ".pptx",
 }
 _BUNDLED_GLOSSARY_FILENAMES = {"glossary.csv", "glossary_old.csv"}
+_RE_GLOSSARY_MATCH_SEPARATORS = re.compile(r"[\s_/\\-]+")
+_RE_GLOSSARY_ASCII_WORD = re.compile(r"^[a-z0-9]+$")
 _RE_JP_YEN_AMOUNT = re.compile(
     r"(?P<sign>[▲+-])?\s*(?:(?P<trillion>\d[\d,]*(?:\.\d+)?)兆(?:(?P<oku>\d[\d,]*(?:\.\d+)?)億)?|(?P<oku_only>\d[\d,]*(?:\.\d+)?)億)(?P<yen>円)?"
 )
@@ -67,7 +70,7 @@ class LocalPromptBuilder:
         self._reference_file_cache: dict[tuple[str, int, int], tuple[str, bool]] = {}
         self._reference_file_lock = threading.Lock()
         self._glossary_cache: dict[
-            tuple[str, int, int], list[tuple[str, str, Optional[str]]]
+            tuple[str, int, int], list[tuple[str, str, str, str, str, str]]
         ] = {}
         self._glossary_lock = threading.Lock()
 
@@ -120,7 +123,7 @@ class LocalPromptBuilder:
 
     def _load_glossary_pairs(
         self, path: Path, file_key: tuple[str, int, int]
-    ) -> list[tuple[str, str, Optional[str]]]:
+    ) -> list[tuple[str, str, str, str, str, str]]:
         with self._glossary_lock:
             cached = self._glossary_cache.get(file_key)
             if cached is not None:
@@ -129,7 +132,7 @@ class LocalPromptBuilder:
         try:
             raw = path.read_text(encoding="utf-8-sig", errors="replace")
         except OSError:
-            pairs: list[tuple[str, str, Optional[str]]] = []
+            pairs: list[tuple[str, str, str, str, str, str]] = []
         else:
             pairs = []
             for row in csv.reader(io.StringIO(raw)):
@@ -139,38 +142,109 @@ class LocalPromptBuilder:
                 if not first or first.startswith("#"):
                     continue
                 second = (row[1] or "").strip() if len(row) > 1 else ""
-                folded = first.casefold() if first.isascii() else None
-                pairs.append((first, second, folded))
+                source_folded = self._normalize_for_glossary_match(first)
+                target_folded = self._normalize_for_glossary_match(second) if second else ""
+                source_compact = self._compact_for_glossary_match(source_folded)
+                target_compact = self._compact_for_glossary_match(target_folded)
+                pairs.append(
+                    (
+                        first,
+                        second,
+                        source_folded,
+                        target_folded,
+                        source_compact,
+                        target_compact,
+                    )
+                )
 
         with self._glossary_lock:
             self._glossary_cache[file_key] = pairs
         return pairs
 
     @staticmethod
-    def _filter_glossary_pairs(
-        pairs: list[tuple[str, str, Optional[str]]], input_text: str, *, max_lines: int
-    ) -> list[tuple[str, str]]:
-        text = input_text.strip()
+    def _normalize_for_glossary_match(text: str) -> str:
         if not text:
-            return []
-        text_folded = text.casefold()
+            return ""
+        normalized = unicodedata.normalize("NFKC", text)
+        normalized = normalized.replace("\u3000", " ")
+        return normalized.casefold()
+
+    @staticmethod
+    def _compact_for_glossary_match(text_folded: str) -> str:
+        if not text_folded:
+            return ""
+        return _RE_GLOSSARY_MATCH_SEPARATORS.sub("", text_folded)
+
+    @staticmethod
+    def _matches_glossary_term(
+        *,
+        text_folded: str,
+        text_compact: str,
+        term_folded: str,
+        term_compact: str,
+    ) -> bool:
+        term_folded = (term_folded or "").strip()
+        if not term_folded:
+            return False
+
+        if term_folded.isascii() and _RE_GLOSSARY_ASCII_WORD.match(term_folded):
+            pattern = rf"\b{re.escape(term_folded)}\b"
+            if re.search(pattern, text_folded):
+                return True
+        else:
+            if term_folded in text_folded:
+                return True
+
+        term_compact = (term_compact or "").strip()
+        if not term_compact:
+            return False
+        if len(term_compact) < 4:
+            return False
+        return term_compact in text_compact
+
+    @staticmethod
+    def _filter_glossary_pairs(
+        pairs: list[tuple[str, str, str, str, str, str]],
+        input_text: str,
+        *,
+        max_lines: int,
+    ) -> tuple[list[tuple[str, str]], bool]:
+        text = (input_text or "").strip()
+        if not text:
+            return [], False
+
+        text_folded = LocalPromptBuilder._normalize_for_glossary_match(text)
+        text_compact = LocalPromptBuilder._compact_for_glossary_match(text_folded)
 
         seen: set[str] = set()
         heap: list[tuple[int, int, str, str]] = []
-        for idx, (source, target, folded) in enumerate(pairs):
+        matched_count = 0
+        for idx, (source, target, source_folded, target_folded, source_compact, target_compact) in enumerate(pairs):
             source = (source or "").strip()
             if not source:
                 continue
             if source in seen:
                 continue
-            if folded is not None:
-                if folded not in text_folded:
-                    continue
-            else:
-                if source not in text:
-                    continue
+
+            matched = LocalPromptBuilder._matches_glossary_term(
+                text_folded=text_folded,
+                text_compact=text_compact,
+                term_folded=source_folded,
+                term_compact=source_compact,
+            )
+            if not matched and target:
+                matched = LocalPromptBuilder._matches_glossary_term(
+                    text_folded=text_folded,
+                    text_compact=text_compact,
+                    term_folded=target_folded,
+                    term_compact=target_compact,
+                )
+            if not matched:
+                continue
+
             seen.add(source)
-            key = len(source)
+            matched_count += 1
+            key = max(len(source_folded or source), len(target_folded or target))
             item = (key, -idx, source, target)
             if len(heap) < max_lines:
                 heapq.heappush(heap, item)
@@ -179,10 +253,32 @@ class LocalPromptBuilder:
                     heapq.heapreplace(heap, item)
 
         if not heap:
-            return []
+            return [], False
 
         selected = sorted(heap, key=lambda x: (-x[0], -x[1]))
-        return [(source, target) for _, _, source, target in selected]
+        return [(source, target) for _, _, source, target in selected], (
+            matched_count > max_lines
+        )
+
+    @staticmethod
+    def _join_lines_with_limit(
+        lines: Sequence[str], *, max_chars: int
+    ) -> tuple[str, bool]:
+        if max_chars <= 0:
+            return "", True
+        kept: list[str] = []
+        total = 0
+        for line in lines:
+            if not line:
+                continue
+            separator_len = 0 if not kept else 1  # newline
+            needed = separator_len + len(line)
+            if total + needed > max_chars:
+                return "\n".join(kept), True
+            kept.append(line)
+            total += needed
+        return "\n".join(kept), False
+
 
     def _get_translation_rules_for_text(self, output_language: str, text: str) -> str:
         if not text or not text.strip():
@@ -517,7 +613,7 @@ class LocalPromptBuilder:
                 if not input_text or not input_text.strip():
                     continue
                 pairs = self._load_glossary_pairs(path, file_key)
-                matched = self._filter_glossary_pairs(
+                matched, glossary_truncated = self._filter_glossary_pairs(
                     pairs, input_text or "", max_lines=glossary_max_lines
                 )
                 if not matched:
@@ -527,8 +623,14 @@ class LocalPromptBuilder:
                 ]
                 if not lines:
                     continue
-                content = "\n".join(lines)
-                was_truncated = False
+                remaining_total = max_total_chars - total
+                max_glossary_chars = min(max_file_chars, max(0, remaining_total))
+                content, was_truncated = self._join_lines_with_limit(
+                    lines, max_chars=max_glossary_chars
+                )
+                was_truncated = was_truncated or glossary_truncated
+                if not content:
+                    continue
             elif suffix in {".txt", ".md", ".json", ".csv"}:
                 content, was_truncated = self._get_cached_reference_text(
                     path,

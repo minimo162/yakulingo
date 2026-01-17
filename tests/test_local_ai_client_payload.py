@@ -38,8 +38,8 @@ def test_build_chat_payload_includes_json_response_format() -> None:
     assert len(schema.get("oneOf") or []) == 3
     assert payload["stop"] == ["</s>", "<|end|>"]
     assert payload["temperature"] == 0.7
-    assert payload["top_p"] == 0.6
-    assert payload["top_k"] == 20
+    assert payload["top_p"] == 0.95
+    assert payload["top_k"] == 64
     assert payload["min_p"] == 0.01
     assert payload["repeat_penalty"] == 1.05
 
@@ -55,8 +55,8 @@ def test_build_chat_payload_skips_response_format_when_disabled() -> None:
     ]
     assert "response_format" not in payload
     assert payload["stream"] is True
-    assert payload["top_p"] == 0.6
-    assert payload["top_k"] == 20
+    assert payload["top_p"] == 0.95
+    assert payload["top_k"] == 64
     assert payload["min_p"] == 0.01
     assert payload["repeat_penalty"] == 1.05
 

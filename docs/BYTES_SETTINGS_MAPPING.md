@@ -21,7 +21,6 @@ intent にある `Bytes { ... }` は、Hugging Face Transformers の `generation
 | `transformers_version` | `"4.57.3"` | **対応なし** | （なし） | 現行ローカルAI経路は Transformers を使わないため、固定・参照する箇所がない |
 
 ## 方針（このケースの後続タスクへの前提）
-1. `top_k/top_p` は **YakuLingo の `local_ai_top_k/local_ai_top_p`** にマップして反映する（既定値/README/テスト更新は別タスクで実施）。
+1. `top_k/top_p` は **YakuLingo の `local_ai_top_k/local_ai_top_p`** にマップして反映する（既定値/README/テスト更新は task-03 で実施）。
 2. `do_sample/cache_implementation/transformers_version` は **現状のローカルAI（llama.cpp）経路では適用不可**として扱い、必要なら docs 側で「非対応（無視される）」を明記する。
 3. 将来 Transformers ベースのローカル推論バックエンドを追加する場合に限り、上記キー群の再評価（適用先追加）を行う。
-

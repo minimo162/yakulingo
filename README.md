@@ -304,8 +304,8 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
   "local_ai_threads": 0,
   "local_ai_threads_batch": null,
   "local_ai_temperature": 0.7,
-  "local_ai_top_p": 0.6,
-  "local_ai_top_k": 20,
+  "local_ai_top_p": 0.95,
+  "local_ai_top_k": 64,
   "local_ai_min_p": 0.01,
   "local_ai_repeat_penalty": 1.05,
   "local_ai_max_tokens": 1024,
@@ -412,7 +412,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 - `--top-k` → `local_ai_top_k`
 - `--repeat-penalty` → `local_ai_repeat_penalty`
 
-> **Note**: 既定値は `local_ai_top_p=0.6`（他は推奨値と一致）。
+> **Note**: 既定値はモデルに合わせて調整します（現行: `local_ai_top_p=0.95`, `local_ai_top_k=64`）。
 
 #### llama.cpp（llama-cli）最短手順
 > **Note**: `local_ai/llama_cpp/vulkan` または `local_ai/llama_cpp/avx2` のどちらかを使います（同梱されている方）。
@@ -485,8 +485,8 @@ ollama run hy-mt1.5-7b
 | `local_ai_max_chars_per_batch_file` | ローカルAI（ファイル翻訳）送信1回あたりの最大文字数 | 1000 |
 | `request_timeout` | 翻訳リクエストのタイムアウト（秒） | 600 |
 | `local_ai_temperature` | ローカルAIの温度（Qwen3推奨） | 0.7 |
-| `local_ai_top_p` | ローカルAIのTop-P | 0.6 |
-| `local_ai_top_k` | ローカルAIのTop-K | 20 |
+| `local_ai_top_p` | ローカルAIのTop-P | 0.95 |
+| `local_ai_top_k` | ローカルAIのTop-K | 64 |
 | `local_ai_min_p` | ローカルAIのMin-P | 0.01 |
 | `local_ai_repeat_penalty` | ローカルAIの繰り返しペナルティ | 1.05 |
 | `local_ai_max_tokens` | ローカルAIの最大生成トークン（nullで無制限） | 1024 |

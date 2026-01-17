@@ -94,7 +94,7 @@ Notes for YakuLingo:
 ## llama.cpp Usage Example (verbatim)
 
 ```bash
-llama-cli -m local_ai/models/translategemma-4b-it.IQ4_XS.gguf -p "Translate the following segment into Chinese, without additional explanation.\n\nIt’s on the house." -n 4096 --temp 0.7 --top-k 20 --top-p 0.6 --repeat-penalty 1.05 --no-warmup
+llama-cli -m local_ai/models/translategemma-4b-it.IQ4_XS.gguf -p "Translate the following segment into Chinese, without additional explanation.\n\nIt’s on the house." -n 4096 --temp 0.7 --top-k 64 --top-p 0.95 --repeat-penalty 1.05 --no-warmup
 ```
 
 ## ollama Usage Example
@@ -107,8 +107,8 @@ Note: the model does not have a default system_prompt.
 
 ```json
 {
-  "top_k": 20,
-  "top_p": 0.6,
+  "top_k": 64,
+  "top_p": 0.95,
   "repetition_penalty": 1.05,
   "temperature": 0.7
 }

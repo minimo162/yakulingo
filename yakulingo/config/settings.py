@@ -341,8 +341,8 @@ class AppSettings:
     local_ai_threads: int = 0  # 0=auto
     local_ai_threads_batch: Optional[int] = 0  # None=unset, 0=auto
     local_ai_temperature: float = 0.7
-    local_ai_top_p: Optional[float] = 0.6
-    local_ai_top_k: Optional[int] = 20
+    local_ai_top_p: Optional[float] = 0.95
+    local_ai_top_k: Optional[int] = 64
     local_ai_min_p: Optional[float] = 0.01
     local_ai_repeat_penalty: Optional[float] = 1.05
     local_ai_max_tokens: Optional[int] = 1024
@@ -931,15 +931,17 @@ class AppSettings:
                 top_p = float(self.local_ai_top_p)
             except (TypeError, ValueError):
                 logger.warning(
-                    "local_ai_top_p invalid (%s), resetting to 0.6", self.local_ai_top_p
+                    "local_ai_top_p invalid (%s), resetting to 0.95",
+                    self.local_ai_top_p,
                 )
-                self.local_ai_top_p = 0.6
+                self.local_ai_top_p = 0.95
             else:
                 if top_p < 0.0 or top_p > 1.0:
                     logger.warning(
-                        "local_ai_top_p out of range (%.3f), resetting to 0.6", top_p
+                        "local_ai_top_p out of range (%.3f), resetting to 0.95",
+                        top_p,
                     )
-                    self.local_ai_top_p = 0.6
+                    self.local_ai_top_p = 0.95
                 else:
                     self.local_ai_top_p = top_p
 
@@ -948,15 +950,15 @@ class AppSettings:
                 top_k = int(self.local_ai_top_k)
             except (TypeError, ValueError):
                 logger.warning(
-                    "local_ai_top_k invalid (%s), resetting to 20", self.local_ai_top_k
+                    "local_ai_top_k invalid (%s), resetting to 64", self.local_ai_top_k
                 )
-                self.local_ai_top_k = 20
+                self.local_ai_top_k = 64
             else:
                 if top_k < 0:
                     logger.warning(
-                        "local_ai_top_k out of range (%d), resetting to 20", top_k
+                        "local_ai_top_k out of range (%d), resetting to 64", top_k
                     )
-                    self.local_ai_top_k = 20
+                    self.local_ai_top_k = 64
                 else:
                     self.local_ai_top_k = top_k
 

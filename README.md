@@ -391,6 +391,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 
  **翻訳ルール**: `prompts/translation_rules.txt` を翻訳時に自動反映します（Copilot/ローカルAI共通）。
  **出力言語ガード**: 翻訳結果が期待言語（英訳=英語、和訳=日本語）でない場合は自動で再試行し、必要に応じてフォールバックします。
+ **不完全翻訳ガード（ローカルAI英訳）**: 「Revenue」等の極端に短い英訳は自動で再試行し、改善しない場合はエラーになります（必要なら `local_ai_max_tokens` / `local_ai_ctx_size` を調整、またはCopilotに切替）。
  **プロンプトSSOT**: `docs/PROMPT_TEMPLATES_SSOT.md` にテンプレの単一正をまとめています。
 
 ### ローカルAI推論パラメータ（推奨）
@@ -446,7 +447,7 @@ ollama run hy-mt1.5-7b
 - `local_ai_vk_force_max_allocation_size` / `local_ai_vk_disable_f16`: Vulkanトラブルシュート用
 - `local_ai_cache_type_k` / `local_ai_cache_type_v`: KVキャッシュ型（例: `q8_0`）。既定は `q8_0`、`null` で無効化（`f16` 相当）に戻す
 - `local_ai_max_chars_per_batch` / `local_ai_max_chars_per_batch_file`: 小さくすると1回あたりの待ち時間は短くなるが、回数が増える
-- `local_ai_max_tokens` を小さくすると速度が向上しますが、長文やバッチ翻訳では出力が途中で途切れる可能性があります
+- `local_ai_max_tokens` を小さくすると速度が向上しますが、長文やバッチ翻訳では出力が途中で途切れる/短すぎる可能性があります（英訳が「Revenue」だけ等になった場合は増やす）
 - 目安: 20秒目標の短文は `128`、速度優先は `256`、品質重視は `512`（または `null`）
 - `request_timeout`: 長文時のタイムアウト回避用。小さくし過ぎると失敗しやすい
 - 変更は1項目ずつ行い、下記ベンチで再計測する
@@ -655,6 +656,17 @@ uv run --extra test pytest
 # カバレッジ付き
 uv run --extra test pytest --cov=yakulingo --cov-report=term-missing
 ```
+
+### ローカルAI英訳の手動QA（短すぎる出力）
+
+- サイドバー上部のCopilotボタンを **OFF**（ローカルAI）に切り替え
+- テキスト翻訳で次を入力して翻訳:
+  ```text
+  当中間連結会計期間における連結業績は、売上高は2兆2,385億円となりました。
+  営業損失は539億円となりました。
+  経常損失は213億円となりました。
+  ```
+- 期待: 標準/簡潔/最簡潔の3スタイルが表示され、いずれも「Revenue」だけ等の1語出力にならない
 
 ### 開発メモ
 

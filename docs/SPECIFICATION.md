@@ -1524,7 +1524,7 @@ class AppSettings:
     copilot_enabled: bool = True          # Copilot UI/接続を無効化するスイッチ
 
     # Local AI (llama.cpp llama-server)
-    local_ai_model_path: str = "local_ai/models/HY-MT1.5-7B-Q4_K_M.gguf"
+    local_ai_model_path: str = "local_ai/models/translategemma-4b-it.IQ4_XS.gguf"
     local_ai_server_dir: str = "local_ai/llama_cpp"
     local_ai_host: str = "127.0.0.1"  # security: forced to localhost
     local_ai_port_base: int = 4891
@@ -1584,7 +1584,7 @@ class AppSettings:
 
 **ローカルAIのパス解決:** `local_ai_model_path` / `local_ai_server_dir` が相対パスの場合、**アプリ配置ディレクトリ基準**で解決する（CWD依存排除）。
 
-> **Note**: ローカルAIの翻訳モデルは固定で `local_ai/models/HY-MT1.5-7B-Q4_K_M.gguf` を使用する（`local_ai_model_path` は互換性のため残すが、モデル選択には影響しない）。
+> **Note**: ローカルAIの既定翻訳モデルは `local_ai/models/translategemma-4b-it.IQ4_XS.gguf`。使用するモデルは `local_ai_model_path` で指定する。
 
 ### 12.2 起動方法
 

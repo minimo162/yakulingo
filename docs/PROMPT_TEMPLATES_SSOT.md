@@ -94,16 +94,12 @@ Notes for YakuLingo:
 ## llama.cpp Usage Example (verbatim)
 
 ```bash
-llama-cli -hf tencent/HY-MT1.5-7B-GGUF:Q8_0 -p "Translate the following segment into Chinese, without additional explanation.\n\nIt’s on the house." -n 4096 --temp 0.7 --top-k 20 --top-p 0.6 --repeat-penalty 1.05 --no-warmup
+llama-cli -m local_ai/models/translategemma-4b-it.IQ4_XS.gguf -p "Translate the following segment into Chinese, without additional explanation.\n\nIt’s on the house." -n 4096 --temp 0.7 --top-k 20 --top-p 0.6 --repeat-penalty 1.05 --no-warmup
 ```
 
-## ollama Usage Example (verbatim)
+## ollama Usage Example
 
-```bash
-echo 'FROM hf.co/tencent/HY-MT1.5-7B-GGUF:Q8_0\nTEMPLATE """<｜hy_begin▁of▁sentence｜>{{ if .System }}{{ .System }}<｜hy_place▁holder▁no▁3｜>{{ end }}{{ if .Prompt }}<｜hy_User｜>{{ .Prompt }}{{ end }}<｜hy_Assistant｜>"""' > Modelfile
-ollama create hy-mt1.5-7b -f Modelfile
-ollama run hy-mt1.5-7b
-```
+> **Note**: Ollama の `TEMPLATE` はモデルの chat template に強く依存します。YakuLingo のローカルAIバックエンドは llama.cpp を直接利用するため、本ドキュメントでは Ollama 用テンプレは提供しません。
 
 ## Recommended Inference Parameters (verbatim)
 

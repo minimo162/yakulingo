@@ -23,13 +23,13 @@ if "!STEP7_FROM_INSTALL_DEPS!"=="0" (
 )
 
 echo.
-echo [7/7] Installing Local AI runtime (llama.cpp + fixed HY-MT model)...
-echo [INFO] Model is fixed: tencent/HY-MT1.5-7B-GGUF/HY-MT1.5-7B-Q4_K_M.gguf
+echo [7/7] Installing Local AI runtime (llama.cpp + fixed TranslateGemma model)...
+echo [INFO] Model is fixed: mradermacher/translategemma-4b-it-GGUF/translategemma-4b-it.IQ4_XS.gguf
 echo [INFO] This step may download large files (llama.cpp + model; a few GB).
 
 echo.
 echo Do you want to install Local AI runtime now?
-echo   [1] Yes - Download llama.cpp + HY-MT model (recommended)
+echo   [1] Yes - Download llama.cpp + TranslateGemma model (recommended)
 echo   [2] No  - Skip this step (default)
 echo   [3] No  - Skip this step
 echo.

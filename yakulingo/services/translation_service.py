@@ -181,6 +181,22 @@ def _needs_to_en_numeric_rule_retry(source_text: str, translated_text: str) -> b
     return False
 
 
+def _looks_incomplete_translation_to_en(source_text: str, translated_text: str) -> bool:
+    source = (source_text or "").strip()
+    if len(source) < 40:
+        return False
+
+    translated = (translated_text or "").strip()
+    if not translated:
+        return True
+
+    tokens = [token for token in translated.split() if token]
+    if len(translated) <= 20 and len(tokens) <= 2:
+        return True
+
+    return False
+
+
 def _sanitize_output_stem(name: str) -> str:
     """Sanitize a filename stem for cross-platform safety.
 
@@ -2838,6 +2854,72 @@ class TranslationService:
                             output_language="en",
                             detected_language=detected_language,
                             error_message="翻訳結果が英語ではありませんでした（出力言語ガード）",
+                            metadata=metadata,
+                        )
+
+                too_short_styles = [
+                    opt.style
+                    for opt in options
+                    if opt.style
+                    and _looks_incomplete_translation_to_en(text, opt.text)
+                ]
+                if too_short_styles:
+                    retry_instruction = (
+                        "- CRITICAL: Translate the entire input text into English. "
+                        "Do not output only a single keyword (e.g., 'Revenue') or a short label."
+                    )
+                    seen_retry = set()
+                    retry_styles = [
+                        s
+                        for s in too_short_styles
+                        if not (s in seen_retry or seen_retry.add(s))
+                    ]
+                    updated = False
+                    for style in retry_styles:
+                        retry_prompt = local_builder.build_text_to_en_single(
+                            text,
+                            style=style,
+                            reference_files=reference_files,
+                            detected_language=detected_language,
+                            extra_instruction=retry_instruction,
+                        )
+                        retry_raw = self._translate_single_with_cancel(
+                            text, retry_prompt, None, None
+                        )
+                        retry_translation, _ = parse_text_single_translation(
+                            retry_raw
+                        )
+                        if (
+                            retry_translation
+                            and not _is_text_output_language_mismatch(
+                                retry_translation, "en"
+                            )
+                            and not _looks_incomplete_translation_to_en(
+                                text, retry_translation
+                            )
+                        ):
+                            for opt in options:
+                                if opt.style == style:
+                                    opt.text = retry_translation
+                                    opt.explanation = ""
+                                    updated = True
+                                    break
+                    if updated:
+                        metadata["incomplete_translation_retry"] = True
+
+                    if any(
+                        opt.style
+                        and _looks_incomplete_translation_to_en(text, opt.text)
+                        for opt in options
+                    ):
+                        metadata["incomplete_translation"] = True
+                        metadata["incomplete_translation_retry_failed"] = True
+                        return TextTranslationResult(
+                            source_text=text,
+                            source_char_count=len(text),
+                            output_language="en",
+                            detected_language=detected_language,
+                            error_message="翻訳結果が不完全でした（短すぎます）。",
                             metadata=metadata,
                         )
                 return TextTranslationResult(

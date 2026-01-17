@@ -9327,6 +9327,21 @@ class CopilotHandler:
         if not input_elem:
             return False
 
+        # When the input text contains blank lines (multi-paragraph), some Copilot UI
+        # versions can end up with a partially inserted prompt (e.g., stopping at the
+        # first blank line). For text-translation prompts, ensure the end marker is
+        # present before treating the prefill as successful.
+        required_token: str | None = None
+        start_marker = "===INPUT_TEXT==="
+        end_marker = "===END_INPUT_TEXT==="
+        start_idx = message.find(start_marker)
+        end_idx = message.find(end_marker)
+        if start_idx != -1 and end_idx != -1 and start_idx < end_idx:
+            input_block = message[start_idx + len(start_marker) : end_idx]
+            normalized_block = input_block.replace("\r\n", "\n").replace("\r", "\n")
+            if "\n\n" in normalized_block:
+                required_token = end_marker
+
         logger.debug("Input element found, setting text via JS...")
         # Cache readiness early so UI state checks can return READY even while the
         # Playwright thread is busy with translation (avoids stuck "準備中..." on first run).
@@ -9355,6 +9370,33 @@ class CopilotHandler:
             )
             fill_success = True
             fill_method = 1
+            if required_token:
+                try:
+                    status = input_elem.evaluate(
+                        "(el, token) => ({"
+                        "has: ((el && el.innerText) ? el.innerText.includes(token) : false),"
+                        "len: ((el && el.innerText) ? el.innerText.length : 0)"
+                        "})",
+                        required_token,
+                    )
+                    token_ok = (
+                        bool(status.get("has")) if isinstance(status, dict) else False
+                    )
+                    content_len = (
+                        status.get("len") if isinstance(status, dict) else None
+                    )
+                except Exception:
+                    token_ok = False
+                    content_len = None
+                if not token_ok:
+                    logger.warning(
+                        "Prefill verification failed (missing %s; filled_len=%s, message_len=%d); retrying with safer input method",
+                        required_token,
+                        content_len,
+                        len(message),
+                    )
+                    fill_success = False
+                    fill_method = None
         except Exception as e:
             method1_error = str(e)
             fill_success = False
@@ -9390,6 +9432,18 @@ class CopilotHandler:
                 if fill_success:
                     content = input_elem.inner_text()
                     fill_success = len(content.strip()) > 0
+                    if (
+                        fill_success
+                        and required_token
+                        and required_token not in content
+                    ):
+                        logger.warning(
+                            "Prefill verification failed after execCommand (missing %s; filled_len=%d, message_len=%d); retrying with safer input method",
+                            required_token,
+                            len(content),
+                            len(message),
+                        )
+                        fill_success = False
                     if fill_success:
                         fill_method = 2
             except Exception as e:
@@ -9414,6 +9468,14 @@ class CopilotHandler:
                         input_elem.press("Shift+Enter")
                 content = input_elem.inner_text()
                 fill_success = len(content.strip()) > 0
+                if fill_success and required_token and required_token not in content:
+                    logger.warning(
+                        "Prefill verification failed after typing (missing %s; filled_len=%d, message_len=%d)",
+                        required_token,
+                        len(content),
+                        len(message),
+                    )
+                    fill_success = False
                 if fill_success:
                     fill_method = 3
             except Exception as e:
@@ -9492,6 +9554,14 @@ class CopilotHandler:
                         current_text = ""
                     if not current_text:
                         logger.warning("Prefilled message missing; refilling input")
+                        prefilled = False
+                    elif (
+                        "===END_INPUT_TEXT===" in message
+                        and "===END_INPUT_TEXT===" not in current_text
+                    ):
+                        logger.warning(
+                            "Prefilled message appears incomplete (missing end marker); refilling input"
+                        )
                         prefilled = False
 
                 if not prefilled:

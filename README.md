@@ -325,7 +325,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
   "local_ai_max_chars_per_batch_file": 1000,
   "bilingual_output": false,
   "export_glossary": false,
-  "translation_style": "concise",
+  "translation_style": "minimal",
   "use_bundled_glossary": true,
   "font_size_adjustment_jp_to_en": 0.0,
   "font_size_min": 8.0,
@@ -352,7 +352,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 ```json
 {
   "translation_backend": "local",
-  "translation_style": "concise",
+  "translation_style": "minimal",
   "font_jp_to_en": "Arial",
   "font_en_to_jp": "MS Pゴシック",
   "font_size_adjustment_jp_to_en": 0.0,
@@ -369,7 +369,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
  | 設定 | 説明 | デフォルト |
  |------|------|----------|
  | `translation_backend` | 翻訳バックエンド（`copilot` / `local`） | "copilot" |
- | `translation_style` | ファイル翻訳のスタイル | "concise" |
+| `translation_style` | ファイル翻訳のスタイル | "minimal" |
  | `bilingual_output` | 対訳ファイルを生成 | false |
  | `export_glossary` | 用語集CSVを生成 | false |
  | `use_bundled_glossary` | 同梱 `glossary.csv` を自動で参照 | true |
@@ -377,8 +377,8 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 | `font_en_to_jp` | 和訳時の出力フォント | MS Pゴシック |
 | `browser_display_mode` | ブラウザ表示モード | "minimized" |
 
-**翻訳スタイル**: `"standard"`（標準）, `"concise"`（簡潔）
-> **Note**: `"minimal"`（最簡潔）は廃止され、後方互換のため `"concise"` と同等に扱われます。
+**翻訳スタイル**: `"minimal"`（最簡潔）
+> **Note**: 後方互換のため `"standard"` / `"concise"` は `"minimal"` として扱われます。
 
 **ブラウザ表示モード**:
 | 値 | 説明 |

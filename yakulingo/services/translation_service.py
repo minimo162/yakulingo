@@ -237,9 +237,7 @@ def _should_rewrite_compact_style(
         return False
 
     compact_word_ratio = len(compact_tokens) / len(base_tokens)
-    similarity_to_base = SequenceMatcher(
-        None, base_tokens, compact_tokens
-    ).ratio()
+    similarity_to_base = SequenceMatcher(None, base_tokens, compact_tokens).ratio()
     if compact_word_ratio >= 0.85 and similarity_to_base >= 0.92:
         return True
 
@@ -3905,13 +3903,13 @@ class TranslationService:
                         metadata["to_en_numeric_rule_retry_failed_styles"] = [style]
                     return attach_copilot_telemetry(
                         TextTranslationResult(
-                        source_text=text,
-                        source_char_count=len(text),
-                        output_language=output_language,
-                        detected_language=detected_language,
-                        error_message="翻訳結果が英語ではありませんでした（出力言語ガード）",
-                        metadata=metadata,
-                    )
+                            source_text=text,
+                            source_char_count=len(text),
+                            output_language=output_language,
+                            detected_language=detected_language,
+                            error_message="翻訳結果が英語ではありませんでした（出力言語ガード）",
+                            metadata=metadata,
+                        )
                     )
 
                 if needs_numeric_rule_retry and result and result.options:
@@ -4615,9 +4613,7 @@ class TranslationService:
                     ):
                         did_output_language_retry = True
                         telemetry_output_language_retry_calls += 1
-                        retry_parts = [
-                            _TEXT_TO_EN_OUTPUT_LANGUAGE_RETRY_INSTRUCTION
-                        ]
+                        retry_parts = [_TEXT_TO_EN_OUTPUT_LANGUAGE_RETRY_INSTRUCTION]
                         if needs_numeric_rule_retry:
                             telemetry_numeric_rule_retry_calls += 1
                             retry_parts.append(_TEXT_TO_EN_NUMERIC_RULE_INSTRUCTION)

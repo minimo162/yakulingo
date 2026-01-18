@@ -37,7 +37,7 @@ def test_user_settings_local_ai_ignored_and_removed(tmp_path) -> None:
     settings = AppSettings.load(config_dir / "settings.json", use_cache=False)
 
     assert settings.local_ai_temperature == 0.7
-    assert settings.translation_style == "standard"
+    assert settings.translation_style == "minimal"
 
     cleaned = json.loads(user_settings_path.read_text(encoding="utf-8"))
     assert "local_ai_temperature" not in cleaned
@@ -54,7 +54,7 @@ def test_user_settings_save_excludes_local_ai(tmp_path) -> None:
 
     saved = json.loads((config_dir / "user_settings.json").read_text(encoding="utf-8"))
     assert not any(key.startswith("local_ai_") for key in saved)
-    assert saved["translation_style"] == "concise"
+    assert saved["translation_style"] == "minimal"
 
 
 def test_user_settings_load_normalizes_minimal_translation_style(tmp_path) -> None:
@@ -69,4 +69,4 @@ def test_user_settings_load_normalizes_minimal_translation_style(tmp_path) -> No
     invalidate_settings_cache()
     settings = AppSettings.load(config_dir / "settings.json", use_cache=False)
 
-    assert settings.translation_style == "concise"
+    assert settings.translation_style == "minimal"

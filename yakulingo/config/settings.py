@@ -368,7 +368,7 @@ class AppSettings:
     # File Translation Options (共通オプション)
     bilingual_output: bool = False  # 対訳出力（原文と翻訳を交互に配置）
     export_glossary: bool = False  # 対訳CSV出力（glossaryとして再利用可能）
-    translation_style: str = "concise"  # ファイル翻訳の英訳スタイル: "standard", "concise"（"minimal"は後方互換のため読み込み時に"concise"へ正規化）
+    translation_style: str = "minimal"  # File translation style (SSOT: minimal; standard/concise/minimal are normalized to minimal)
 
     # Text Translation Options
     use_bundled_glossary: bool = (
@@ -597,23 +597,16 @@ class AppSettings:
             )
             self.translation_backend = "local"
 
-        # Translation style (file EN output)
-        # - Only "standard" or "concise" are supported.
-        # - Keep backward compatibility: "minimal" is normalized to "concise".
+        # Translation style (file translation)
+        # SSOT is "minimal"; accept legacy values ("standard"/"concise") and normalize.
         style = str(self.translation_style or "").strip().lower()
-        if style == "minimal":
-            logger.info(
-                "translation_style 'minimal' is deprecated; normalizing to 'concise'"
-            )
-            style = "concise"
-        if style not in {"standard", "concise"}:
+        if style not in {"standard", "concise", "minimal"}:
             if style:
                 logger.warning(
-                    "translation_style invalid (%s), resetting to 'concise'",
+                    "translation_style invalid (%s), resetting to 'minimal'",
                     self.translation_style,
                 )
-            style = "concise"
-        self.translation_style = style
+        self.translation_style = "minimal"
 
         # Local AI security: always bind to localhost
         if self.local_ai_host != "127.0.0.1":
@@ -1067,14 +1060,9 @@ class AppSettings:
             if hasattr(self, key):
                 data[key] = getattr(self, key)
 
-        # Normalize deprecated style values for persistence.
-        style = str(data.get("translation_style") or "").strip().lower()
-        if style == "minimal":
-            style = "concise"
-        if style not in {"standard", "concise"}:
-            style = "concise"
+        # Normalize legacy style values for persistence (SSOT: minimal).
         if "translation_style" in data:
-            data["translation_style"] = style
+            data["translation_style"] = "minimal"
 
         with open(user_settings_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)

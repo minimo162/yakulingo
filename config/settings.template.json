@@ -37,7 +37,7 @@
   "local_ai_max_chars_per_batch_file": 1000,
   "bilingual_output": false,
   "export_glossary": false,
-  "translation_style": "concise",
+  "translation_style": "minimal",
   "use_bundled_glossary": true,
   "font_size_adjustment_jp_to_en": 0.0,
   "font_size_min": 8.0,

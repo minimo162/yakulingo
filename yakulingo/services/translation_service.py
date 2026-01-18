@@ -3512,15 +3512,42 @@ class TranslationService:
         on_chunk: "Callable[[str], None] | None",
         translate_single: Callable[..., str],
     ) -> TextTranslationResult:
+        copilot_call_count = 0
+        copilot_call_phases: list[str] = []
+
+        def translate_single_tracked(
+            phase: str,
+            source_text: str,
+            prompt: str,
+            reference_files: Optional[list[Path]] = None,
+            on_chunk: "Callable[[str], None] | None" = None,
+        ) -> str:
+            nonlocal copilot_call_count
+            copilot_call_count += 1
+            copilot_call_phases.append(phase)
+            return translate_single(source_text, prompt, reference_files, on_chunk)
+
+        def attach_copilot_telemetry(
+            result: TextTranslationResult,
+        ) -> TextTranslationResult:
+            metadata = dict(result.metadata) if result.metadata else {}
+            metadata.setdefault("backend", "copilot")
+            metadata["copilot_call_count"] = copilot_call_count
+            metadata["copilot_call_phases"] = list(copilot_call_phases)
+            result.metadata = metadata
+            return result
+
         if output_language == "en":
             template = self.prompt_builder.get_text_compare_template()
             if not template:
-                return TextTranslationResult(
-                    source_text=text,
-                    source_char_count=len(text),
-                    output_language=output_language,
-                    detected_language=detected_language,
-                    error_message="Missing text comparison template",
+                return attach_copilot_telemetry(
+                    TextTranslationResult(
+                        source_text=text,
+                        source_char_count=len(text),
+                        output_language=output_language,
+                        detected_language=detected_language,
+                        error_message="Missing text comparison template",
+                    )
                 )
 
             if reference_files:
@@ -3605,7 +3632,9 @@ class TranslationService:
                 bool(on_chunk),
                 len(files_to_attach) if files_to_attach else 0,
             )
-            raw_result = translate_single(text, prompt, files_to_attach, on_chunk)
+            raw_result = translate_single_tracked(
+                "initial", text, prompt, files_to_attach, on_chunk
+            )
             result = parse_compare_result(raw_result)
 
             needs_output_language_retry = bool(
@@ -3621,6 +3650,15 @@ class TranslationService:
                 )
             )
             if needs_output_language_retry or needs_numeric_rule_retry:
+                retry_phase_parts: list[str] = []
+                if needs_output_language_retry:
+                    retry_phase_parts.append("output_language_retry")
+                if needs_numeric_rule_retry:
+                    retry_phase_parts.append("numeric_rule_retry")
+                retry_phase = (
+                    "+".join(retry_phase_parts) if retry_phase_parts else "retry"
+                )
+
                 retry_parts: list[str] = []
                 if needs_output_language_retry:
                     retry_parts.append(
@@ -3634,7 +3672,9 @@ class TranslationService:
                         "exactly as specified. If numeric conversion hints are provided, use them verbatim."
                     )
                 retry_prompt = build_compare_prompt("\n".join(retry_parts))
-                retry_raw = translate_single(text, retry_prompt, files_to_attach, None)
+                retry_raw = translate_single_tracked(
+                    retry_phase, text, retry_prompt, files_to_attach, None
+                )
                 retry_result = parse_compare_result(retry_raw)
 
                 if retry_result and retry_result.options:
@@ -3652,7 +3692,7 @@ class TranslationService:
                             metadata["to_en_numeric_rule_retry"] = True
                             metadata["to_en_numeric_rule_retry_styles"] = [style]
                             retry_result.metadata = metadata
-                        return retry_result
+                        return attach_copilot_telemetry(retry_result)
 
                 if needs_output_language_retry:
                     metadata = {
@@ -3665,13 +3705,15 @@ class TranslationService:
                         metadata["to_en_numeric_rule_retry_styles"] = [style]
                         metadata["to_en_numeric_rule_retry_failed"] = True
                         metadata["to_en_numeric_rule_retry_failed_styles"] = [style]
-                    return TextTranslationResult(
+                    return attach_copilot_telemetry(
+                        TextTranslationResult(
                         source_text=text,
                         source_char_count=len(text),
                         output_language=output_language,
                         detected_language=detected_language,
                         error_message="翻訳結果が英語ではありませんでした（出力言語ガード）",
                         metadata=metadata,
+                    )
                     )
 
                 if needs_numeric_rule_retry and result and result.options:
@@ -3699,18 +3741,20 @@ class TranslationService:
                         metadata["to_en_numeric_rule_retry_failed"] = True
                         metadata["to_en_numeric_rule_retry_failed_styles"] = [style]
                         retry_result.metadata = metadata
-                    return retry_result
+                    return attach_copilot_telemetry(retry_result)
 
             if result:
-                return result
+                return attach_copilot_telemetry(result)
 
             logger.warning("Empty response received from Copilot")
-            return TextTranslationResult(
-                source_text=text,
-                source_char_count=len(text),
-                output_language=output_language,
-                detected_language=detected_language,
-                error_message="Copilotから応答がありませんでした。Edgeブラウザを確認してください。",
+            return attach_copilot_telemetry(
+                TextTranslationResult(
+                    source_text=text,
+                    source_char_count=len(text),
+                    output_language=output_language,
+                    detected_language=detected_language,
+                    error_message="Copilotから応答がありませんでした。Edgeブラウザを確認してください。",
+                )
             )
 
         template = self.prompt_builder.get_text_template(output_language, style)
@@ -3746,7 +3790,9 @@ class TranslationService:
             bool(on_chunk),
             len(files_to_attach) if files_to_attach else 0,
         )
-        raw_result = translate_single(text, prompt, files_to_attach, on_chunk)
+        raw_result = translate_single_tracked(
+            "initial", text, prompt, files_to_attach, on_chunk
+        )
         options = self._parse_single_translation_result(raw_result)
         for opt in options:
             opt.style = style
@@ -3758,19 +3804,23 @@ class TranslationService:
                 + "\n- Keep the exact output format (Translation: ... only)."
             )
             retry_prompt = _insert_extra_instruction(prompt, retry_instruction)
-            retry_raw = translate_single(text, retry_prompt, files_to_attach, None)
+            retry_raw = translate_single_tracked(
+                "output_language_retry", text, retry_prompt, files_to_attach, None
+            )
             retry_options = self._parse_single_translation_result(retry_raw)
             for opt in retry_options:
                 opt.style = style
             if retry_options and not _is_text_output_language_mismatch(
                 retry_options[0].text, "jp"
             ):
-                return TextTranslationResult(
-                    source_text=text,
-                    source_char_count=len(text),
-                    options=retry_options,
-                    output_language=output_language,
-                    detected_language=detected_language,
+                return attach_copilot_telemetry(
+                    TextTranslationResult(
+                        source_text=text,
+                        source_char_count=len(text),
+                        options=retry_options,
+                        output_language=output_language,
+                        detected_language=detected_language,
+                    )
                 )
 
             metadata = {
@@ -3778,45 +3828,53 @@ class TranslationService:
                 "output_language_mismatch": True,
                 "output_language_retry_failed": True,
             }
-            return TextTranslationResult(
-                source_text=text,
-                source_char_count=len(text),
-                output_language=output_language,
-                detected_language=detected_language,
-                error_message="翻訳結果が日本語ではありませんでした（出力言語ガード）",
-                metadata=metadata,
+            return attach_copilot_telemetry(
+                TextTranslationResult(
+                    source_text=text,
+                    source_char_count=len(text),
+                    output_language=output_language,
+                    detected_language=detected_language,
+                    error_message="翻訳結果が日本語ではありませんでした（出力言語ガード）",
+                    metadata=metadata,
+                )
             )
 
         if options:
-            return TextTranslationResult(
-                source_text=text,
-                source_char_count=len(text),
-                options=options,
-                output_language=output_language,
-                detected_language=detected_language,
+            return attach_copilot_telemetry(
+                TextTranslationResult(
+                    source_text=text,
+                    source_char_count=len(text),
+                    options=options,
+                    output_language=output_language,
+                    detected_language=detected_language,
+                )
             )
         if raw_result.strip():
-            return TextTranslationResult(
-                source_text=text,
-                source_char_count=len(text),
-                options=[
-                    TranslationOption(
-                        text=raw_result.strip(),
-                        explanation="",
-                        style=style,
-                    )
-                ],
-                output_language=output_language,
-                detected_language=detected_language,
+            return attach_copilot_telemetry(
+                TextTranslationResult(
+                    source_text=text,
+                    source_char_count=len(text),
+                    options=[
+                        TranslationOption(
+                            text=raw_result.strip(),
+                            explanation="",
+                            style=style,
+                        )
+                    ],
+                    output_language=output_language,
+                    detected_language=detected_language,
+                )
             )
 
         logger.warning("Empty response received from Copilot")
-        return TextTranslationResult(
-            source_text=text,
-            source_char_count=len(text),
-            output_language=output_language,
-            detected_language=detected_language,
-            error_message="Copilotから応答がありませんでした。Edgeブラウザを確認してください。",
+        return attach_copilot_telemetry(
+            TextTranslationResult(
+                source_text=text,
+                source_char_count=len(text),
+                output_language=output_language,
+                detected_language=detected_language,
+                error_message="Copilotから応答がありませんでした。Edgeブラウザを確認してください。",
+            )
         )
 
     def translate_text_with_options(
@@ -4109,6 +4167,8 @@ class TranslationService:
         ) -> TextTranslationResult:
             metadata = dict(result.metadata) if result.metadata else {}
             metadata.setdefault("backend", "copilot")
+            metadata["copilot_call_count"] = telemetry_translate_single_calls
+            metadata["copilot_call_phases"] = list(telemetry_translate_single_phases)
             metadata["text_style_comparison_telemetry"] = {
                 "translate_single_calls": telemetry_translate_single_calls,
                 "translate_single_seconds_total": telemetry_translate_single_seconds_total,

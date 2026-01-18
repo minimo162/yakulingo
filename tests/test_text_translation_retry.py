@@ -92,13 +92,20 @@ Meanwhile, this HR director's company offers a starting salary of 22 man yen; it
     )
 
     assert copilot.translate_single_calls == 2
-    telemetry = (result.metadata or {}).get("text_style_comparison_telemetry") or {}
+    metadata = result.metadata or {}
+    telemetry = metadata.get("text_style_comparison_telemetry") or {}
     assert result.output_language == "en"
     assert [option.style for option in result.options] == [
         "standard",
         "concise",
     ]
     assert all(not _RE_JP_CHARS.search(option.text) for option in result.options)
+    assert metadata.get("backend") == "copilot"
+    assert metadata.get("copilot_call_count") == 2
+    assert metadata.get("copilot_call_phases") == [
+        "style_compare",
+        "style_compare_output_language_retry",
+    ]
     assert telemetry.get("translate_single_calls") == 2
     assert telemetry.get("translate_single_phases") == [
         "style_compare",
@@ -143,6 +150,13 @@ Meanwhile, this HR director's company offers a starting salary of 22 man yen; it
     assert result.output_language == "en"
     assert result.options[0].style == "standard"
     assert not _RE_JP_CHARS.search(result.options[0].text)
+    metadata = result.metadata or {}
+    assert metadata.get("backend") == "copilot"
+    assert metadata.get("copilot_call_count") == 2
+    assert metadata.get("copilot_call_phases") == [
+        "initial",
+        "output_language_retry",
+    ]
 
 
 def test_translate_text_with_style_comparison_does_not_retry_for_numeric_units() -> (
@@ -165,13 +179,17 @@ Net sales: 2兆2,385億円 (YoY -1,554億円、6.5％); operating loss: 539億�
     )
 
     assert copilot.translate_single_calls == 1
-    telemetry = (result.metadata or {}).get("text_style_comparison_telemetry") or {}
+    metadata = result.metadata or {}
+    telemetry = metadata.get("text_style_comparison_telemetry") or {}
     assert result.output_language == "en"
     assert [option.style for option in result.options] == [
         "standard",
         "concise",
     ]
     assert any(_RE_JP_CHARS.search(option.text) for option in result.options)
+    assert metadata.get("backend") == "copilot"
+    assert metadata.get("copilot_call_count") == 1
+    assert metadata.get("copilot_call_phases") == ["style_compare"]
     assert telemetry.get("translate_single_calls") == 1
     assert telemetry.get("translate_single_phases") == ["style_compare"]
     assert telemetry.get("output_language_retry_calls") == 0
@@ -209,13 +227,20 @@ Net sales: 22,385 oku yen.
     assert copilot.prompts
     assert "2兆2,385億円 -> 22,385 oku yen" in copilot.prompts[0]
 
-    telemetry = (result.metadata or {}).get("text_style_comparison_telemetry") or {}
+    metadata = result.metadata or {}
+    telemetry = metadata.get("text_style_comparison_telemetry") or {}
     assert result.output_language == "en"
     assert [option.style for option in result.options] == [
         "standard",
         "concise",
     ]
     assert all("oku" in option.text.lower() for option in result.options)
+    assert metadata.get("backend") == "copilot"
+    assert metadata.get("copilot_call_count") == 2
+    assert metadata.get("copilot_call_phases") == [
+        "style_compare",
+        "style_compare_numeric_rule_retry",
+    ]
     assert telemetry.get("translate_single_calls") == 2
     assert telemetry.get("translate_single_phases") == [
         "style_compare",
@@ -257,3 +282,11 @@ Net sales: 22,385 oku yen.
     assert result.options
     assert result.options[0].style == "standard"
     assert "oku" in result.options[0].text.lower()
+    metadata = result.metadata or {}
+    assert metadata.get("backend") == "copilot"
+    assert metadata.get("to_en_numeric_rule_retry") is True
+    assert metadata.get("copilot_call_count") == 2
+    assert metadata.get("copilot_call_phases") == [
+        "initial",
+        "numeric_rule_retry",
+    ]

@@ -4198,12 +4198,15 @@ class YakuLingoApp:
                 buffer.publish({"streaming": True})
                 schedule_apply()
 
+            stream_handler = (
+                on_chunk if self._is_local_streaming_preview_enabled() else None
+            )
             result = translation_service.translate_text_with_style_comparison(
                 text,
                 reference_files,
                 None,
                 effective_detected_language,
-                on_chunk,
+                stream_handler,
             )
             if result:
                 result.detected_language = detected_language
@@ -4347,13 +4350,16 @@ class YakuLingoApp:
 
                 loop.call_soon_threadsafe(update_streaming_preview)
 
+            stream_handler = (
+                on_chunk if self._is_local_streaming_preview_enabled() else None
+            )
             result = await asyncio.to_thread(
                 self.translation_service.translate_text_with_style_comparison,
                 text,
                 reference_files,
                 None,
                 effective_detected_language,
-                on_chunk,
+                stream_handler,
             )
             if result:
                 result.detected_language = detected_language
@@ -9985,7 +9991,7 @@ class YakuLingoApp:
             return True
         value = os.environ.get("YAKULINGO_DISABLE_LOCAL_STREAMING_PREVIEW")
         if value is None or value.strip() == "":
-            return False
+            return True
         value = value.strip().lower()
         return value in ("0", "false", "no", "off")
 
@@ -11261,6 +11267,10 @@ class YakuLingoApp:
 
                 loop.call_soon_threadsafe(update_streaming_preview)
 
+            stream_handler = (
+                on_chunk if self._is_local_streaming_preview_enabled() else None
+            )
+
             def translate_chunks() -> TextTranslationResult:
                 from yakulingo.services.copilot_handler import TranslationCancelledError
 
@@ -11279,7 +11289,7 @@ class YakuLingoApp:
                             reference_files,
                             None,
                             effective_detected_language,
-                            on_chunk,
+                            stream_handler,
                         )
                     )
                     chunk_results.append(chunk_result)
@@ -11492,13 +11502,16 @@ class YakuLingoApp:
 
                 loop.call_soon_threadsafe(update_streaming_preview)
 
+            stream_handler = (
+                on_chunk if self._is_local_streaming_preview_enabled() else None
+            )
             result = await asyncio.to_thread(
                 self.translation_service.translate_text_with_style_comparison,
                 source_text,
                 reference_files,
                 None,
                 effective_detected_language,
-                on_chunk,
+                stream_handler,
             )
             if result:
                 result.detected_language = detected_language
@@ -11740,6 +11753,10 @@ class YakuLingoApp:
 
                 loop.call_soon_threadsafe(update_streaming_preview)
 
+            stream_handler = (
+                on_chunk if self._is_local_streaming_preview_enabled() else None
+            )
+
             reference_files = self._get_effective_reference_files()
             reference_section = ""
             reference_warnings: list[str] = []
@@ -11796,12 +11813,12 @@ class YakuLingoApp:
                             text,
                             prompt,
                             reference_files if reference_files else None,
-                            on_chunk,
+                            stream_handler,
                         )
                     else:
                         result = await asyncio.to_thread(
                             lambda: self.copilot.translate_single(
-                                text, prompt, reference_files, on_chunk
+                                text, prompt, reference_files, stream_handler
                             )
                         )
 

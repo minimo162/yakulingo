@@ -806,7 +806,6 @@ def _get_section_label(file_info: Optional[FileInfo]) -> str:
 STYLE_OPTIONS = {
     "standard": ("標準", "本文・説明文向け"),
     "concise": ("簡潔", "箇条書き・表向け"),
-    "minimal": ("最簡潔", "見出し・件名向け"),
 }
 
 

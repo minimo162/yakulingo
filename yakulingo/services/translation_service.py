@@ -5094,7 +5094,7 @@ class TranslationService:
                     current=10,
                     total=100,
                     status=(
-                        f"Translating {total_blocks} blocks (3 styles)..."
+                        f"Translating {total_blocks} blocks (2 styles)..."
                         if output_language == "en"
                         else f"Translating {total_blocks} blocks..."
                     ),
@@ -5106,9 +5106,7 @@ class TranslationService:
         include_item_ids = processor.file_type == FileType.EXCEL
 
         translation_styles = (
-            ["standard", "concise", "minimal"]
-            if output_language == "en"
-            else [translation_style]
+            ["standard", "concise"] if output_language == "en" else [translation_style]
         )
         primary_style = translation_style
         if output_language == "en" and primary_style not in translation_styles:
@@ -5117,7 +5115,6 @@ class TranslationService:
         style_labels = {
             "standard": "標準",
             "concise": "簡潔",
-            "minimal": "最簡潔",
         }
 
         batch_translator = self._get_active_batch_translator()
@@ -5468,7 +5465,7 @@ class TranslationService:
                     current=40,
                     total=100,
                     status=(
-                        f"Translating {total_blocks} blocks (3 styles)..."
+                        f"Translating {total_blocks} blocks (2 styles)..."
                         if output_language == "en"
                         else f"Translating {total_blocks} blocks..."
                     ),
@@ -5477,9 +5474,7 @@ class TranslationService:
             )
 
         translation_styles = (
-            ["standard", "concise", "minimal"]
-            if output_language == "en"
-            else [translation_style]
+            ["standard", "concise"] if output_language == "en" else [translation_style]
         )
         primary_style = translation_style
         if output_language == "en" and primary_style not in translation_styles:
@@ -5488,7 +5483,6 @@ class TranslationService:
         style_labels = {
             "standard": "標準",
             "concise": "簡潔",
-            "minimal": "最簡潔",
         }
 
         translations_by_style: dict[str, dict[str, str]] = {}

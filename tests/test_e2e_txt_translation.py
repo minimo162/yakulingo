@@ -66,7 +66,7 @@ def test_e2e_txt_translate_file_creates_outputs(tmp_path: Path) -> None:
     assert result.output_path is not None
     assert result.output_path.exists()
     assert result.output_path.name.endswith("_translated.txt")
-    assert len(result.extra_output_files) == 2
+    assert len(result.extra_output_files) == 1
     for extra_path, extra_desc in result.extra_output_files:
         assert extra_path.exists()
         assert extra_desc.startswith("翻訳ファイル（")
@@ -97,7 +97,7 @@ def test_e2e_txt_selected_sections_translates_only_selected(tmp_path: Path) -> N
     assert result.status == TranslationStatus.COMPLETED
     assert result.output_path is not None
     output_text = result.output_path.read_text(encoding="utf-8")
-    assert len(result.extra_output_files) == 2
+    assert len(result.extra_output_files) == 1
     for extra_path, _ in result.extra_output_files:
         assert extra_path.exists()
 
@@ -118,11 +118,11 @@ def test_e2e_txt_translation_cache_skips_second_request(tmp_path: Path) -> None:
 
     result1 = service.translate_file(input_path, output_language="en")
     assert result1.status == TranslationStatus.COMPLETED
-    assert copilot.translate_sync_calls == 3
+    assert copilot.translate_sync_calls == 2
 
     result2 = service.translate_file(input_path, output_language="en")
     assert result2.status == TranslationStatus.COMPLETED
-    assert copilot.translate_sync_calls == 3
+    assert copilot.translate_sync_calls == 2
 
 
 @pytest.mark.e2e
@@ -142,7 +142,7 @@ def test_e2e_txt_bilingual_and_glossary_outputs(tmp_path: Path) -> None:
     assert result.output_path is not None and result.output_path.exists()
     assert result.bilingual_path is not None and result.bilingual_path.exists()
     assert result.glossary_path is not None and result.glossary_path.exists()
-    assert len(result.extra_output_files) == 2
+    assert len(result.extra_output_files) == 1
     for extra_path, _ in result.extra_output_files:
         assert extra_path.exists()
 

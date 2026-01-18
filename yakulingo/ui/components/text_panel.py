@@ -194,7 +194,7 @@ TEXT_STYLE_LABELS: dict[str, str] = {
     "minimal": "最簡潔",
 }
 
-TEXT_STYLE_ORDER: tuple[str, str, str] = ("standard", "concise", "minimal")
+TEXT_STYLE_ORDER: tuple[str, str] = ("standard", "concise")
 TEXT_STYLE_TOOLTIPS: dict[str, str] = {
     "standard": "標準的な表現",
     "concise": "短く簡潔な表現",

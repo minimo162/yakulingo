@@ -368,9 +368,7 @@ class AppSettings:
     # File Translation Options (共通オプション)
     bilingual_output: bool = False  # 対訳出力（原文と翻訳を交互に配置）
     export_glossary: bool = False  # 対訳CSV出力（glossaryとして再利用可能）
-    translation_style: str = (
-        "concise"  # ファイル翻訳の英訳スタイル: "standard", "concise", "minimal"
-    )
+    translation_style: str = "concise"  # ファイル翻訳の英訳スタイル: "standard", "concise"（"minimal"は後方互換のため読み込み時に"concise"へ正規化）
 
     # Text Translation Options
     use_bundled_glossary: bool = (
@@ -598,6 +596,24 @@ class AppSettings:
                 "copilot_enabled is false; forcing translation_backend to 'local'"
             )
             self.translation_backend = "local"
+
+        # Translation style (file EN output)
+        # - Only "standard" or "concise" are supported.
+        # - Keep backward compatibility: "minimal" is normalized to "concise".
+        style = str(self.translation_style or "").strip().lower()
+        if style == "minimal":
+            logger.info(
+                "translation_style 'minimal' is deprecated; normalizing to 'concise'"
+            )
+            style = "concise"
+        if style not in {"standard", "concise"}:
+            if style:
+                logger.warning(
+                    "translation_style invalid (%s), resetting to 'concise'",
+                    self.translation_style,
+                )
+            style = "concise"
+        self.translation_style = style
 
         # Local AI security: always bind to localhost
         if self.local_ai_host != "127.0.0.1":
@@ -1050,6 +1066,15 @@ class AppSettings:
         for key in USER_SETTINGS_KEYS:
             if hasattr(self, key):
                 data[key] = getattr(self, key)
+
+        # Normalize deprecated style values for persistence.
+        style = str(data.get("translation_style") or "").strip().lower()
+        if style == "minimal":
+            style = "concise"
+        if style not in {"standard", "concise"}:
+            style = "concise"
+        if "translation_style" in data:
+            data["translation_style"] = style
 
         with open(user_settings_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)

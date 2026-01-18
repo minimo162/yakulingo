@@ -4,7 +4,7 @@ Builds translation prompts for YakuLingo.
 
 Prompt file structure:
 - translation_rules.txt: Translation rules with optional [COMMON]/[TO_EN]/[TO_JP] sections
-- file_translate_to_en_{style}.txt: File translation → English (standard/concise/minimal)
+- file_translate_to_en_{style}.txt: File translation → English (standard/concise)
 - file_translate_to_jp.txt: File translation → Japanese
 - text_translate_to_en_compare.txt: Text translation → English (standard/concise/minimal in one response)
 - text_translate_to_jp.txt: Text translation → Japanese (translation-only; no explanation)
@@ -339,7 +339,7 @@ class PromptBuilder:
     Builds translation prompts for file translation.
     Reference files are attached to Copilot, not embedded in prompt.
 
-    Supports style-specific prompts for English output (standard/concise/minimal).
+    Supports style-specific prompts for English output (standard/concise).
     Translation rules are loaded from translation_rules.txt.
     """
 
@@ -441,7 +441,7 @@ class PromptBuilder:
 
     def _load_templates(self) -> None:
         """Load prompt templates from files or use defaults"""
-        styles = ["standard", "concise", "minimal"]
+        styles = ["standard", "concise"]
 
         # Load common translation rules
         self._load_translation_rules()
@@ -580,7 +580,7 @@ class PromptBuilder:
 
         Args:
             output_language: "en" or "jp"
-            translation_style: "standard", "concise", or "minimal"
+            translation_style: "standard" or "concise" (for backward compatibility, "minimal" is treated as "concise")
 
         Returns:
             Cached template string, or None if not found
@@ -664,7 +664,7 @@ class PromptBuilder:
             input_text: Text or batch to translate
             has_reference_files: Whether reference files are attached
             output_language: "en" or "jp" (default: "en")
-            translation_style: "standard", "concise", or "minimal" (default: "concise")
+            translation_style: "standard" or "concise" (default: "concise")
                               Only affects English output
             extra_instruction: Optional instruction inserted before input markers
 
@@ -707,7 +707,7 @@ class PromptBuilder:
             texts: List of texts to translate
             has_reference_files: Whether reference files are attached
             output_language: "en" or "jp" (default: "en")
-            translation_style: "standard", "concise", or "minimal" (default: "concise")
+            translation_style: "standard" or "concise" (default: "concise")
                               Only affects English output
             include_item_ids: Prepend [[ID:n]] marker for stable parsing
             reference_files: Optional reference files (Local AI embeds content; Copilot ignores)

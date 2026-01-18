@@ -159,15 +159,15 @@ Second paragraph.
 
 [concise]
 Translation:
-First paragraph.
+First para.
 
-Second paragraph.
+Second para.
 
 [minimal]
 Translation:
-First paragraph.
+First.
 
-Second paragraph.
+Second.
 """
     if newline == "\r\n":
         response = response.replace("\n", "\r\n")
@@ -189,10 +189,14 @@ Second paragraph.
 
     assert result.output_language == "en"
     assert result.options
+    expected_by_style = {
+        "standard": "First paragraph.\n\nSecond paragraph.",
+        "concise": "First para.\n\nSecond para.",
+        "minimal": "First.\n\nSecond.",
+    }
     for option in result.options:
-        assert (
-            _normalize_newlines(option.text) == "First paragraph.\n\nSecond paragraph."
-        )
+        assert option.style is not None
+        assert _normalize_newlines(option.text) == expected_by_style[option.style]
 
 
 @pytest.mark.parametrize("newline", ["\n", "\r\n"])

@@ -12,6 +12,7 @@ import logging
 import threading
 import time
 from contextlib import contextmanager, nullcontext
+from difflib import SequenceMatcher
 from functools import lru_cache
 from itertools import islice
 from pathlib import Path
@@ -126,6 +127,7 @@ _JP_PUNCTUATION_GUARD_TRANSLATION_TABLE = str.maketrans(
         "』": '"',
     }
 )
+_RE_STYLE_DIFF_TOKENS = re.compile(r"[a-z0-9]+", re.IGNORECASE)
 
 
 def _normalize_en_translation_for_output_language_guard(text: str) -> str:
@@ -192,6 +194,108 @@ def _normalize_en_translation_for_output_language_guard(text: str) -> str:
     normalized = _RE_JP_MAN_YEN_AMOUNT.sub(repl_man, normalized)
     normalized = _RE_JP_YEN_AMOUNT.sub(repl_yen, normalized)
     return normalized
+
+
+def _tokenize_style_diff(text: str) -> list[str]:
+    normalized = unicodedata.normalize("NFKC", text or "").lower()
+    if not normalized:
+        return []
+    return _RE_STYLE_DIFF_TOKENS.findall(normalized)
+
+
+def _should_rewrite_minimal_style(
+    *,
+    standard_text: str,
+    concise_text: str,
+    minimal_text: str,
+) -> bool:
+    standard = (standard_text or "").strip()
+    concise = (concise_text or "").strip()
+    minimal = (minimal_text or "").strip()
+
+    if not standard or not minimal:
+        return False
+
+    if minimal == standard:
+        return True
+
+    standard_tokens = _tokenize_style_diff(standard)
+    minimal_tokens = _tokenize_style_diff(minimal)
+    if len(standard_tokens) < 12 or len(minimal_tokens) < 6:
+        return False
+
+    minimal_word_ratio = len(minimal_tokens) / len(standard_tokens)
+    similarity_to_standard = SequenceMatcher(
+        None, standard_tokens, minimal_tokens
+    ).ratio()
+    if minimal_word_ratio >= 0.75 and similarity_to_standard >= 0.92:
+        return True
+
+    if concise:
+        concise_tokens = _tokenize_style_diff(concise)
+        if len(concise_tokens) >= 8:
+            similarity_to_concise = SequenceMatcher(
+                None, concise_tokens, minimal_tokens
+            ).ratio()
+            minimal_vs_concise_ratio = len(minimal_tokens) / len(concise_tokens)
+            if (
+                minimal_vs_concise_ratio >= 0.95
+                and similarity_to_concise >= 0.92
+                and minimal_word_ratio >= 0.65
+            ):
+                return True
+
+    return False
+
+
+def _build_style_diff_rewrite_prompt(base_text: str, styles: list[str]) -> str:
+    requested = [s for s in styles if s in TEXT_STYLE_ORDER and s != "standard"]
+    if not requested:
+        requested = ["minimal"]
+
+    labels = ", ".join(f"[{style}]" for style in requested)
+    lines = [
+        "Rewrite the provided English text into the requested style(s).",
+        "Do NOT translate from Japanese; the input is already English.",
+        "",
+        "Rules (critical):",
+        f"- Output ONLY the requested style sections: {labels}",
+        "- Output must match the exact format shown below (no extra headings/notes/code fences).",
+        "- English only (no Japanese/Chinese/Korean scripts; no Japanese punctuation).",
+        "- Do NOT output any explanations/notes.",
+        "- Keep numbers/units/proper nouns exactly as they appear in the input.",
+        "- Preserve line breaks and tabs as much as possible.",
+        "",
+        "Style rules:",
+    ]
+    if "concise" in requested:
+        lines += [
+            "[concise]",
+            "- Concise business English; remove wordiness; keep meaning.",
+            "- Target length: ~70–85% of the input (rough word count).",
+            "",
+        ]
+    if "minimal" in requested:
+        lines += [
+            "[minimal]",
+            "- Minimal words; telegraphic style; suitable for headings/tables.",
+            "- Target length: ~45–60% of the input (rough word count).",
+            "- Drop articles/pronouns/auxiliary verbs; remove redundancy.",
+            "- Allowed symbols: & / vs. % # w/ w/o @ +",
+            "",
+        ]
+
+    lines.append("### Output format (exact)")
+    for style in requested:
+        lines += [f"[{style}]", "Translation:", "", ""]
+
+    lines += [
+        "### INPUT",
+        "===INPUT_TEXT===",
+        base_text,
+        "===END_INPUT_TEXT===",
+    ]
+    return "\n".join(lines)
 
 
 def _looks_untranslated_to_en(text: str) -> bool:
@@ -3826,6 +3930,8 @@ class TranslationService:
         telemetry_output_language_retry_calls = 0
         telemetry_fill_missing_styles_calls = 0
         telemetry_fill_missing_styles_styles: list[str] = []
+        telemetry_style_diff_guard_calls = 0
+        telemetry_style_diff_guard_styles: list[str] = []
         telemetry_combined_attempted = False
         telemetry_combined_succeeded = False
         telemetry_per_style_used = False
@@ -3869,11 +3975,69 @@ class TranslationService:
                 "output_language_retry_calls": telemetry_output_language_retry_calls,
                 "fill_missing_styles_calls": telemetry_fill_missing_styles_calls,
                 "fill_missing_styles_styles": telemetry_fill_missing_styles_styles,
+                "style_diff_guard_calls": telemetry_style_diff_guard_calls,
+                "style_diff_guard_styles": telemetry_style_diff_guard_styles,
                 "combined_attempted": telemetry_combined_attempted,
                 "combined_succeeded": telemetry_combined_succeeded,
                 "per_style_used": telemetry_per_style_used,
             }
             result.metadata = metadata
+            return result
+
+        def apply_style_diff_guard(
+            result: TextTranslationResult,
+        ) -> TextTranslationResult:
+            nonlocal telemetry_style_diff_guard_calls
+
+            if result.output_language != "en":
+                return result
+            if not result.options:
+                return result
+
+            options_by_style: dict[str, TranslationOption] = {}
+            for option in result.options:
+                style = (option.style or "").strip().lower()
+                if style and style not in options_by_style:
+                    options_by_style[style] = option
+
+            standard_option = options_by_style.get("standard")
+            concise_option = options_by_style.get("concise")
+            minimal_option = options_by_style.get("minimal")
+            if minimal_option is None:
+                return result
+
+            base_option = standard_option or concise_option or result.options[0]
+            base_text = base_option.text
+            if not _should_rewrite_minimal_style(
+                standard_text=base_text,
+                concise_text=concise_option.text if concise_option else "",
+                minimal_text=minimal_option.text,
+            ):
+                return result
+
+            telemetry_style_diff_guard_calls += 1
+            if "minimal" not in telemetry_style_diff_guard_styles:
+                telemetry_style_diff_guard_styles.append("minimal")
+
+            rewrite_prompt = _build_style_diff_rewrite_prompt(base_text, ["minimal"])
+            rewrite_raw = translate_single_timed(
+                "style_diff_guard_rewrite",
+                base_text,
+                rewrite_prompt,
+                None,
+                None,
+            )
+            rewritten = self._parse_style_comparison_result(rewrite_raw)
+            for option in rewritten:
+                if option.style != "minimal":
+                    continue
+                if option.text and not _is_text_output_language_mismatch(
+                    option.text, "en"
+                ):
+                    minimal_option.text = option.text
+                    minimal_option.explanation = ""
+                break
+
             return result
 
         combined_error: Optional[str] = None
@@ -4092,9 +4256,9 @@ class TranslationService:
                                             detected_language=detected_language,
                                         )
                                         telemetry_combined_succeeded = True
-                                        return attach_style_comparison_telemetry(
-                                            ensure_style_options(result)
-                                        )
+                                        result = ensure_style_options(result)
+                                        result = apply_style_diff_guard(result)
+                                        return attach_style_comparison_telemetry(result)
                                     if ordered_options:
                                         combined_error = (
                                             combined_error
@@ -4121,9 +4285,9 @@ class TranslationService:
                                     detected_language=detected_language,
                                 )
                                 telemetry_combined_succeeded = True
-                                return attach_style_comparison_telemetry(
-                                    ensure_style_options(result)
-                                )
+                                result = ensure_style_options(result)
+                                result = apply_style_diff_guard(result)
+                                return attach_style_comparison_telemetry(result)
                         combined_error = (
                             combined_error or "Failed to parse style comparison result"
                         )
@@ -4166,9 +4330,9 @@ class TranslationService:
                                 detected_language=detected_language,
                             )
                             telemetry_combined_succeeded = True
-                            return attach_style_comparison_telemetry(
-                                ensure_style_options(result)
-                            )
+                            result = ensure_style_options(result)
+                            result = apply_style_diff_guard(result)
+                            return attach_style_comparison_telemetry(result)
                         if ordered_options:
                             combined_error = (
                                 combined_error
@@ -4272,7 +4436,9 @@ class TranslationService:
                 output_language=output_language,
                 detected_language=detected_language,
             )
-            return attach_style_comparison_telemetry(ensure_style_options(result))
+            result = ensure_style_options(result)
+            result = apply_style_diff_guard(result)
+            return attach_style_comparison_telemetry(result)
 
         return attach_style_comparison_telemetry(
             TextTranslationResult(

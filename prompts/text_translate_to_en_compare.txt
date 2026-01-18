@@ -7,23 +7,32 @@ Translate the Japanese text into English in three styles: standard, concise, min
   - Do NOT include Japanese scripts (hiragana/katakana/kanji) or Japanese punctuation (、。).
   - If any Japanese appears, rewrite it until it contains no Japanese characters.
 - Do NOT output any explanations/notes or any extra text.
+- The three styles must be meaningfully different:
+  - Do NOT copy/paste the same sentences across [standard]/[concise]/[minimal].
+  - Keep numbers and proper nouns consistent, but rewrite wording and structure per style.
 - Translate only the text between the input markers; do not output the marker lines or any other prompt text.
 - Preserve line breaks and tabs as much as possible.
 - If the input is already English, keep it as is.
 - If the source contains Japanese-only tokens (e.g., names, company types, place names), translate or romanize them; do not leave them in Japanese script.
-- Follow {translation_rules} for numbers/units/symbols; do not output Japanese unit characters in any Translation (e.g., 円/万/億/兆).
+- Follow the Translation Rules section for numbers/units/symbols; do not output Japanese unit characters in any Translation (e.g., 円/万/億/兆).
 
 ### Style rules
 [standard]
 - Natural, business-ready English; use articles.
+- Full sentences; keep nuance and context; normal connective words are OK.
 - Use common business abbreviations when suitable (YoY, QoQ, CAGR).
 
 [concise]
 - Make it concise; avoid wordiness; simplify phrases.
-- Prefer common abbreviations when suitable (info, FYI, ASAP).
+- Target length: ~70–85% of [standard] (rough word count).
+- Keep it business-formal; avoid casual abbreviations (e.g., FYI/ASAP).
+- Prefer compact structures; reduce subordinate clauses and repeated wording.
 
 [minimal]
 - Minimum words; suitable for headings/subject lines/tables; articles can be omitted.
+- Target length: ~45–60% of [standard] (rough word count).
+- Telegraphic style: drop articles/pronouns/auxiliary verbs; remove redundancy.
+- Prefer noun phrases and compact punctuation; minimize conjunctions.
 - Allowed symbols: & / vs. % # w/ w/o @ +
 
 ### Output format (exact)

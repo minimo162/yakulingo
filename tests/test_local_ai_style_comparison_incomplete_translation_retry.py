@@ -28,8 +28,6 @@ def test_local_style_comparison_retries_when_translation_is_too_short(
         calls += 1
         if calls == 1:
             return '{"translation":"Revenue","explanation":""}'
-        if calls == 2:
-            return '{"translation":"Revenue 22,385 oku yen (YoY -6.5%); operating loss 539 oku yen.","explanation":""}'
         raise AssertionError("called too many times")
 
     monkeypatch.setattr(
@@ -41,12 +39,11 @@ def test_local_style_comparison_retries_when_translation_is_too_short(
         pre_detected_language="日本語",
     )
 
-    assert calls == 2
-    assert [option.style for option in result.options] == ["minimal"]
-    assert [option.text for option in result.options] == [
-        "Revenue 22,385 oku yen (YoY -6.5%); operating loss 539 oku yen."
-    ]
-    assert (result.metadata or {}).get("incomplete_translation_retry") is True
+    assert calls == 1
+    assert result.error_message
+    assert "不完全" in result.error_message
+    assert not result.options
+    assert (result.metadata or {}).get("incomplete_translation") is True
 
 
 def test_local_style_comparison_returns_error_when_retry_still_too_short(
@@ -69,7 +66,7 @@ def test_local_style_comparison_returns_error_when_retry_still_too_short(
         nonlocal calls
         _ = source_text, prompt, reference_files, on_chunk
         calls += 1
-        if calls in (1, 2):
+        if calls == 1:
             return '{"translation":"Revenue","explanation":""}'
         raise AssertionError("called too many times")
 
@@ -82,12 +79,11 @@ def test_local_style_comparison_returns_error_when_retry_still_too_short(
         pre_detected_language="日本語",
     )
 
-    assert calls == 2
+    assert calls == 1
     assert result.error_message
     assert "不完全" in result.error_message
     assert not result.options
     assert (result.metadata or {}).get("incomplete_translation") is True
-    assert (result.metadata or {}).get("incomplete_translation_retry_failed") is True
 
 
 def test_local_style_comparison_retries_when_numeric_rules_violated(
@@ -108,8 +104,6 @@ def test_local_style_comparison_retries_when_numeric_rules_violated(
         calls += 1
         if calls == 1:
             return '{"translation":"Revenue was 2.2385 trillion yen, down by 1,554 billion yen year on year.","explanation":""}'
-        if calls == 2:
-            return '{"translation":"Revenue was 22,385 oku yen, down by 1,554 oku yen year on year.","explanation":""}'
         raise AssertionError("called too many times")
 
     monkeypatch.setattr(
@@ -121,9 +115,9 @@ def test_local_style_comparison_retries_when_numeric_rules_violated(
         pre_detected_language="日本語",
     )
 
-    assert calls == 2
+    assert calls == 1
     assert [option.style for option in result.options] == ["minimal"]
     assert [option.text for option in result.options] == [
         "Revenue was 22,385 oku yen, down by 1,554 oku yen year on year."
     ]
-    assert (result.metadata or {}).get("to_en_rule_retry") is True
+    assert (result.metadata or {}).get("to_en_numeric_unit_correction") is True

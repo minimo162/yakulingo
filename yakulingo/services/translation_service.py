@@ -3069,93 +3069,26 @@ class TranslationService:
                         error_message=error_message,
                         metadata=metadata,
                     )
-                if _looks_incomplete_translation_to_en(text, translation):
-                    retry_instruction = (
-                        "- CRITICAL: Translate the entire input text into English. "
-                        "Do not output only a single keyword (e.g., 'Revenue') or a short label."
-                    )
-                    retry_prompt = local_builder.build_text_to_en_single(
-                        text,
-                        style=style,
-                        reference_files=reference_files,
-                        detected_language=detected_language,
-                        extra_instruction=retry_instruction,
-                    )
-                    retry_raw = self._translate_single_with_cancel(
-                        text, retry_prompt, None, None
-                    )
-                    retry_translation, _ = parse_text_single_translation(retry_raw)
-                    if retry_translation and not _looks_incomplete_translation_to_en(
-                        text, retry_translation
-                    ):
-                        translation = retry_translation
-                        metadata["incomplete_translation_retry"] = True
-                    else:
-                        metadata["incomplete_translation"] = True
-                        metadata["incomplete_translation_retry_failed"] = True
-                        return TextTranslationResult(
-                            source_text=text,
-                            source_char_count=len(text),
-                            output_language=output_language,
-                            detected_language=detected_language,
-                            error_message="翻訳結果が不完全でした（短すぎます）。",
-                            metadata=metadata,
-                        )
-                if _needs_to_en_numeric_rule_retry(text, translation):
-                    retry_instruction = (
-                        "- CRITICAL: Follow numeric conversion rules strictly. "
-                        "Do not use 'billion', 'trillion', or 'bn'. Use 'oku' (and 'k') "
-                        "exactly as specified. If numeric hints are provided, use them verbatim."
-                    )
-                    retry_prompt = local_builder.build_text_to_en_single(
-                        text,
-                        style=style,
-                        reference_files=reference_files,
-                        detected_language=detected_language,
-                        extra_instruction=retry_instruction,
-                    )
-                    retry_raw = self._translate_single_with_cancel(
-                        text, retry_prompt, None, None
-                    )
-                    retry_translation, _ = parse_text_single_translation(retry_raw)
-                    if retry_translation:
-                        translation = retry_translation
-                        metadata["to_en_rule_retry"] = True
-                        if _needs_to_en_numeric_rule_retry(text, retry_translation):
-                            metadata["to_en_rule_retry_failed"] = True
-                    else:
-                        metadata["to_en_rule_retry_failed"] = True
                 if _is_text_output_language_mismatch(translation, "en"):
-                    retry_instruction = (
-                        BatchTranslator._EN_STRICT_OUTPUT_LANGUAGE_INSTRUCTION
-                    )
-                    retry_prompt = local_builder.build_text_to_en_single(
-                        text,
-                        style=style,
-                        reference_files=reference_files,
+                    metadata["output_language_mismatch"] = True
+                    return TextTranslationResult(
+                        source_text=text,
+                        source_char_count=len(text),
+                        output_language=output_language,
                         detected_language=detected_language,
-                        extra_instruction=retry_instruction,
+                        error_message="翻訳結果が英語ではありませんでした（出力言語ガード）",
+                        metadata=metadata,
                     )
-                    retry_raw = self._translate_single_with_cancel(
-                        text, retry_prompt, None, None
+                if _looks_incomplete_translation_to_en(text, translation):
+                    metadata["incomplete_translation"] = True
+                    return TextTranslationResult(
+                        source_text=text,
+                        source_char_count=len(text),
+                        output_language=output_language,
+                        detected_language=detected_language,
+                        error_message="翻訳結果が不完全でした（短すぎます）。",
+                        metadata=metadata,
                     )
-                    retry_translation, _ = parse_text_single_translation(retry_raw)
-                    if retry_translation and not _is_text_output_language_mismatch(
-                        retry_translation, "en"
-                    ):
-                        translation = retry_translation
-                        metadata["output_language_retry"] = True
-                    else:
-                        metadata["output_language_mismatch"] = True
-                        metadata["output_language_retry_failed"] = True
-                        return TextTranslationResult(
-                            source_text=text,
-                            source_char_count=len(text),
-                            output_language=output_language,
-                            detected_language=detected_language,
-                            error_message="翻訳結果が英語ではありませんでした（出力言語ガード）",
-                            metadata=metadata,
-                        )
                 explanation = ""
                 fixed_text, fixed = _fix_to_en_oku_numeric_unit_if_possible(
                     source_text=text,
@@ -3252,6 +3185,15 @@ class TranslationService:
         detected_language: str,
         on_chunk: "Callable[[str], None] | None" = None,
     ) -> TextTranslationResult:
+        _ = styles
+        return self._translate_text_with_options_local(
+            text=text,
+            reference_files=reference_files,
+            style="minimal",
+            detected_language=detected_language,
+            output_language="en",
+            on_chunk=on_chunk,
+        )
         self._ensure_local_backend()
         from yakulingo.services.local_ai_client import (
             is_truncated_json,

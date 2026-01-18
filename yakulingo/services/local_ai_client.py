@@ -469,7 +469,10 @@ def _parse_text_style_options(
 def parse_text_to_en_3style(raw_content: str) -> dict[str, tuple[str, str]]:
     items = _parse_text_style_options(raw_content)
     if not items:
-        return {}
+        translation, explanation = parse_text_single_translation(raw_content)
+        if not translation:
+            return {}
+        return {"minimal": (translation, explanation or "")}
 
     by_style: dict[str, tuple[str, str]] = {}
     used_indexes: set[int] = set()
@@ -502,7 +505,11 @@ def parse_text_to_en_style_subset(
 
     items = _parse_text_style_options(raw_content)
     if not items:
-        return {}
+        translation, explanation = parse_text_single_translation(raw_content)
+        if not translation:
+            return {}
+        target_style = "minimal" if "minimal" in allowed else allowed[0]
+        return {target_style: (translation, explanation or "")}
 
     by_style: dict[str, tuple[str, str]] = {}
     used_indexes: set[int] = set()

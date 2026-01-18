@@ -9,9 +9,7 @@ from yakulingo.services.prompt_builder import PromptBuilder
 
 
 _LOCAL_TEMPLATES = [
-    "local_text_translate_to_en_3style_json.txt",
     "local_text_translate_to_en_single_json.txt",
-    "local_text_translate_to_en_missing_styles_json.txt",
     "local_text_translate_to_jp_json.txt",
     "local_batch_translate_to_en_json.txt",
     "local_batch_translate_to_jp_json.txt",
@@ -52,27 +50,9 @@ def test_local_prompt_template_cache_avoids_reloading() -> None:
 def test_local_prompt_builder_replaces_placeholders() -> None:
     builder = _make_builder()
 
-    prompt = builder.build_text_to_en_3style(
-        "sample",
-        reference_files=None,
-        detected_language="日本語",
-        extra_instruction="context",
-    )
-    _assert_no_placeholders(
-        prompt,
-        [
-            "input_text",
-            "translation_rules",
-            "numeric_hints",
-            "reference_section",
-            "detected_language",
-            "extra_instruction",
-        ],
-    )
-
     prompt = builder.build_text_to_en_single(
         "売上高は1,000億円です。",
-        style="concise",
+        style="minimal",
         reference_files=None,
         detected_language="日本語",
         extra_instruction="context",
@@ -87,27 +67,6 @@ def test_local_prompt_builder_replaces_placeholders() -> None:
             "style",
             "numeric_hints",
             "extra_instruction",
-        ],
-    )
-
-    prompt = builder.build_text_to_en_missing_styles(
-        "sample",
-        styles=["standard", "minimal"],
-        reference_files=None,
-        detected_language="日本語",
-        extra_instruction="context",
-    )
-    _assert_no_placeholders(
-        prompt,
-        [
-            "input_text",
-            "translation_rules",
-            "numeric_hints",
-            "reference_section",
-            "detected_language",
-            "extra_instruction",
-            "styles_json",
-            "n_styles",
         ],
     )
 

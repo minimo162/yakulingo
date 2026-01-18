@@ -76,7 +76,7 @@ def test_local_prompt_includes_full_rules_for_short_text() -> None:
     builder = _make_builder()
     prompt = builder.build_text_to_en_single(
         "短文",
-        style="concise",
+        style="minimal",
         reference_files=None,
         detected_language="日本語",
     )
@@ -89,7 +89,7 @@ def test_local_prompt_includes_numeric_hints_for_oku() -> None:
     builder = _make_builder()
     prompt = builder.build_text_to_en_single(
         "売上高は2兆2,385億円(前年同期比1,554億円減)となりました。",
-        style="concise",
+        style="minimal",
         reference_files=None,
         detected_language="日本語",
     )
@@ -103,8 +103,9 @@ def test_local_prompt_includes_numeric_hints_for_oku() -> None:
 
 def test_local_prompt_includes_numeric_hints_for_oku_in_en_3style() -> None:
     builder = _make_builder()
-    prompt = builder.build_text_to_en_3style(
+    prompt = builder.build_text_to_en_single(
         "売上高は2兆2,385億円(前年同期比1,554億円減)となりました。",
+        style="minimal",
         reference_files=None,
         detected_language="日本語",
     )
@@ -118,9 +119,9 @@ def test_local_prompt_includes_numeric_hints_for_oku_in_en_3style() -> None:
 
 def test_local_prompt_includes_numeric_hints_for_oku_in_en_missing_styles() -> None:
     builder = _make_builder()
-    prompt = builder.build_text_to_en_missing_styles(
+    prompt = builder.build_text_to_en_single(
         "売上高は2兆2,385億円(前年同期比1,554億円減)となりました。",
-        styles=["standard"],
+        style="minimal",
         reference_files=None,
         detected_language="日本語",
     )
@@ -153,8 +154,9 @@ def test_local_batch_prompt_includes_numeric_hints_for_oku() -> None:
 
 def test_local_prompt_includes_full_rules_for_en_3style_short_text() -> None:
     builder = _make_builder()
-    prompt = builder.build_text_to_en_3style(
+    prompt = builder.build_text_to_en_single(
         "短文",
+        style="minimal",
         reference_files=None,
         detected_language="日本語",
     )
@@ -262,10 +264,6 @@ def _make_temp_builder(
     (prompts_dir / "local_batch_translate_to_en_json.txt").write_text(
         "{translation_rules}\n{reference_section}\n{items_json}\n", encoding="utf-8"
     )
-    (prompts_dir / "local_text_translate_to_en_missing_styles_json.txt").write_text(
-        "{translation_rules}\n{reference_section}\n{styles_json}\n{n_styles}\n{input_text}\n",
-        encoding="utf-8",
-    )
 
     settings = AppSettings()
     settings.use_bundled_glossary = use_bundled_glossary
@@ -346,9 +344,9 @@ def test_local_followup_prompt_includes_rules_and_bundled_glossary_when_enabled(
     )
     builder = _make_temp_builder(tmp_path, use_bundled_glossary=True)
 
-    prompt = builder.build_text_to_en_missing_styles(
+    prompt = builder.build_text_to_en_single(
         "営業利益が増加",
-        styles=["standard"],
+        style="minimal",
         reference_files=None,
         detected_language="日本語",
     )

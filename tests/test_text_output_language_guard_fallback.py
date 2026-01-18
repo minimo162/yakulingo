@@ -98,7 +98,7 @@ def test_local_to_en_falls_back_to_copilot_on_output_language_mismatch(
         pre_detected_language="日本語",
     )
 
-    assert len(calls) >= 2  # initial + retry
+    assert len(calls) == 1
     assert copilot.translate_single_calls == 1  # fallback
     assert result.output_language == "en"
     assert result.options
@@ -140,7 +140,7 @@ Hello
         pre_detected_language="日本語",
     )
 
-    assert local_calls >= 2  # initial + retry
+    assert local_calls == 1
     assert copilot.translate_single_calls == 1  # fallback
     assert result.output_language == "en"
     assert [option.style for option in result.options] == ["minimal"]

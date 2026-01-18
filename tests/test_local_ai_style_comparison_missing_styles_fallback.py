@@ -26,8 +26,6 @@ def test_local_style_comparison_stops_additional_calls_when_budget_exhausted(
 
         if call_count == 1:
             return '{"translation":"一方、この人事部長の会社の初任給は22万円だ。","explanation":""}'
-        if call_count == 2:
-            return "{}"
         raise AssertionError(
             f"_translate_single_with_cancel was called too many times: {prompt[:200]}"
         )
@@ -38,6 +36,6 @@ def test_local_style_comparison_stops_additional_calls_when_budget_exhausted(
 
     result = service.translate_text_with_style_comparison("あ")
 
-    assert call_count == 2
+    assert call_count == 1
     assert result.error_message
     assert not result.options

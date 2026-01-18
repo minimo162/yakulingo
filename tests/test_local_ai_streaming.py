@@ -88,3 +88,28 @@ def test_local_ai_streaming_cancelled_mid_stream() -> None:
         client._consume_sse_stream(iter(chunks), on_chunk)
 
     assert received == ["A"]
+
+
+def test_local_ai_streaming_coalesces_small_deltas(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = LocalAIClient(settings=AppSettings())
+    received: list[str] = []
+
+    def on_chunk(text: str) -> None:
+        received.append(text)
+
+    monkeypatch.setattr(
+        "yakulingo.services.local_ai_client.time.monotonic", lambda: 0.0
+    )
+
+    payload = b'data: {"choices":[{"delta":{"content":"a"}}]}\n\n'
+    chunks = [payload for _ in range(100)]
+    chunks.append(b"data: [DONE]\n\n")
+
+    content, model_id = client._consume_sse_stream(iter(chunks), on_chunk)
+
+    assert content == "a" * 100
+    assert "".join(received) == "a" * 100
+    assert any(len(part) > 1 for part in received)
+    assert model_id is None

@@ -23,6 +23,8 @@ from yakulingo.services.copilot_handler import TranslationCancelledError
 logger = logging.getLogger(__name__)
 
 _DIAGNOSTIC_SNIPPET_CHARS = 200
+_SSE_DELTA_COALESCE_MIN_CHARS = 64
+_SSE_DELTA_COALESCE_MAX_INTERVAL_SEC = 0.08
 
 
 _RE_CODE_FENCE = re.compile(r"^\s*```(?:json)?\s*$", re.IGNORECASE)
@@ -1356,6 +1358,28 @@ class LocalAIClient:
         buffer = bytearray()
         pieces: list[str] = []
         model_id: Optional[str] = None
+        delta_buffer: list[str] = []
+        delta_buffer_len = 0
+        last_flush_time = 0.0
+        first_delta_emitted = False
+
+        def _flush_delta_buffer(*, force: bool = False) -> None:
+            nonlocal delta_buffer_len, last_flush_time, first_delta_emitted
+            if not delta_buffer:
+                return
+            combined = "".join(delta_buffer)
+            if not combined:
+                delta_buffer.clear()
+                delta_buffer_len = 0
+                return
+            delta_buffer.clear()
+            delta_buffer_len = 0
+            pieces.append(combined)
+            on_chunk(combined)
+            first_delta_emitted = True
+            last_flush_time = time.monotonic()
+            if self._should_cancel():
+                raise TranslationCancelledError("Translation cancelled by user")
 
         def _process_line(line: bytes) -> Optional[bool]:
             nonlocal model_id
@@ -1376,9 +1400,19 @@ class LocalAIClient:
                     model_id = candidate
             delta = _parse_openai_stream_delta(obj)
             if delta:
-                pieces.append(delta)
-                on_chunk(delta)
+                nonlocal delta_buffer_len
+                delta_buffer.append(delta)
+                delta_buffer_len += len(delta)
+                now = time.monotonic()
+                if not first_delta_emitted:
+                    _flush_delta_buffer(force=True)
+                elif (
+                    delta_buffer_len >= _SSE_DELTA_COALESCE_MIN_CHARS
+                    or (now - last_flush_time) >= _SSE_DELTA_COALESCE_MAX_INTERVAL_SEC
+                ):
+                    _flush_delta_buffer()
                 if self._should_cancel():
+                    _flush_delta_buffer(force=True)
                     raise TranslationCancelledError("Translation cancelled by user")
             return None
 
@@ -1398,11 +1432,13 @@ class LocalAIClient:
                     continue
                 done = _process_line(line)
                 if done:
+                    _flush_delta_buffer(force=True)
                     return "".join(pieces), model_id
 
         tail = bytes(buffer).strip()
         if tail:
             _process_line(tail)
+        _flush_delta_buffer(force=True)
         return "".join(pieces), model_id
 
     def _read_full_body(

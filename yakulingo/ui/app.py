@@ -1277,6 +1277,7 @@ MIN_AVAILABLE_MEMORY_GB_FOR_EARLY_CONNECT = (
     0.5  # Skip early Copilot init only on very low memory
 )
 TEXT_TRANSLATION_CHAR_LIMIT = 5000  # Max chars for text translation (clipboard trigger)
+STREAMING_PREVIEW_UPDATE_INTERVAL_SEC = 0.12  # UI streaming preview throttling interval
 FILE_LANGUAGE_DETECTION_TIMEOUT_SEC = 8.0  # Avoid hanging file-language detection
 FILE_TRANSLATION_UI_VISIBILITY_HOLD_SEC = 600.0  # 翻訳完了直後のUI自動非表示を抑止
 DEFAULT_TEXT_STYLE = "concise"
@@ -2829,19 +2830,13 @@ class YakuLingoApp:
                             pass
                     if client is not None:
                         try:
-                            with client:
-                                # Render streaming block on first chunk (captures label reference)
-                                if self._streaming_preview_label is None:
-                                    self._refresh_result_panel()
-                                    self._refresh_tabs()
-                                    self._scroll_result_panel_to_bottom(
-                                        client, force_follow=True
-                                    )
-                                if self._streaming_preview_label is not None:
-                                    self._streaming_preview_label.set_text(
-                                        self.state.text_streaming_preview
-                                    )
-                                    self._scroll_result_panel_to_bottom(client)
+                            self._render_text_streaming_preview(
+                                client,
+                                self.state.text_streaming_preview,
+                                refresh_tabs_on_first_chunk=True,
+                                scroll_to_bottom=True,
+                                force_follow_on_first_chunk=True,
+                            )
                         except Exception:
                             logger.debug(
                                 "Hotkey translation [%s] streaming preview refresh failed",
@@ -4177,7 +4172,7 @@ class YakuLingoApp:
             )
 
             last_preview_update = 0.0
-            preview_update_interval_seconds = 0.12
+            preview_update_interval_seconds = STREAMING_PREVIEW_UPDATE_INTERVAL_SEC
 
             def on_chunk(partial_text: str) -> None:
                 nonlocal last_preview_update
@@ -4301,58 +4296,17 @@ class YakuLingoApp:
             )
 
             loop = asyncio.get_running_loop()
-            last_preview_update = 0.0
-            preview_update_interval_seconds = 0.12
-
-            def on_chunk(partial_text: str) -> None:
-                nonlocal last_preview_update
-                if not self._is_local_streaming_preview_enabled():
-                    return
-                preview_text = self._normalize_streaming_preview_text(partial_text)
-                self.state.text_streaming_preview = preview_text
-                now = time.monotonic()
-                if now - last_preview_update < preview_update_interval_seconds:
-                    return
-                last_preview_update = now
-
-                def update_streaming_preview() -> None:
-                    if not self.state.text_translating:
-                        return
-                    if self._shutdown_requested:
-                        return
-                    with self._client_lock:
-                        client = self._client
-                    if client is None:
-                        return
-                    try:
-                        if not getattr(client, "has_socket_connection", True):
-                            return
-                    except Exception:
-                        pass
-                    try:
-                        with client:
-                            # Render streaming block on first chunk (captures label reference)
-                            if self._streaming_preview_label is None:
-                                self._refresh_result_panel()
-                                self._refresh_tabs()
-                                self._scroll_result_panel_to_bottom(
-                                    client, force_follow=True
-                                )
-                            if self._streaming_preview_label is not None:
-                                self._streaming_preview_label.set_text(preview_text)
-                                self._scroll_result_panel_to_bottom(client)
-                    except Exception:
-                        logger.debug(
-                            "Hotkey translation [%s] streaming preview refresh failed",
-                            trace_id,
-                            exc_info=True,
-                        )
-
-                loop.call_soon_threadsafe(update_streaming_preview)
-
-            stream_handler = (
-                on_chunk if self._is_local_streaming_preview_enabled() else None
-            )
+            stream_handler = None
+            if self._is_local_streaming_preview_enabled():
+                stream_handler = self._create_text_streaming_preview_on_chunk(
+                    loop=loop,
+                    client_supplier=self._get_active_client,
+                    trace_id=trace_id,
+                    refresh_tabs_on_first_chunk=True,
+                    scroll_to_bottom=True,
+                    force_follow_on_first_chunk=True,
+                    log_context="Hotkey translation",
+                )
             result = await asyncio.to_thread(
                 self.translation_service.translate_text_with_style_comparison,
                 text,
@@ -10002,6 +9956,146 @@ class YakuLingoApp:
 
         return normalize_literal_escapes(text)
 
+    def _render_text_streaming_preview(
+        self,
+        client: NiceGUIClient,
+        preview_text: str,
+        *,
+        refresh_tabs_on_first_chunk: bool,
+        scroll_to_bottom: bool,
+        force_follow_on_first_chunk: bool,
+    ) -> None:
+        with client:
+            if self._streaming_preview_label is None:
+                self._refresh_result_panel()
+                if refresh_tabs_on_first_chunk:
+                    self._refresh_tabs()
+                if scroll_to_bottom:
+                    self._scroll_result_panel_to_bottom(
+                        client, force_follow=force_follow_on_first_chunk
+                    )
+
+            if self._streaming_preview_label is not None:
+                self._streaming_preview_label.set_text(preview_text)
+                if scroll_to_bottom:
+                    self._scroll_result_panel_to_bottom(client)
+
+    def _create_text_streaming_preview_on_chunk(
+        self,
+        *,
+        loop: asyncio.AbstractEventLoop,
+        client_supplier: Callable[[], NiceGUIClient | None],
+        trace_id: str,
+        build_preview_text: Callable[[str], str] | None = None,
+        update_interval_seconds: float = STREAMING_PREVIEW_UPDATE_INTERVAL_SEC,
+        refresh_tabs_on_first_chunk: bool = False,
+        scroll_to_bottom: bool = True,
+        force_follow_on_first_chunk: bool = True,
+        log_context: str = "Streaming preview",
+    ) -> Callable[[str], None]:
+        lock = threading.Lock()
+        latest_preview_text = ""
+        dirty = False
+        update_scheduled = False
+        last_ui_update = 0.0
+
+        def _apply_update() -> None:
+            nonlocal dirty, update_scheduled, last_ui_update, latest_preview_text
+            if not self.state.text_translating or self._shutdown_requested:
+                with lock:
+                    dirty = False
+                    update_scheduled = False
+                return
+
+            now = time.monotonic()
+            elapsed = now - last_ui_update
+            if elapsed < update_interval_seconds:
+                delay = update_interval_seconds - elapsed
+                try:
+                    loop.call_later(delay, _apply_update)
+                except Exception:
+                    with lock:
+                        dirty = False
+                        update_scheduled = False
+                return
+
+            with lock:
+                text_to_show = latest_preview_text
+                dirty = False
+
+            client: NiceGUIClient | None
+            try:
+                client = client_supplier()
+            except Exception:
+                client = None
+            if client is not None:
+                try:
+                    if not getattr(client, "has_socket_connection", True):
+                        client = None
+                except Exception:
+                    pass
+            if client is None:
+                try:
+                    loop.call_later(update_interval_seconds, _apply_update)
+                except Exception:
+                    with lock:
+                        dirty = False
+                        update_scheduled = False
+                return
+
+            last_ui_update = time.monotonic()
+            try:
+                self.state.text_streaming_preview = text_to_show
+                self._render_text_streaming_preview(
+                    client,
+                    text_to_show,
+                    refresh_tabs_on_first_chunk=refresh_tabs_on_first_chunk,
+                    scroll_to_bottom=scroll_to_bottom,
+                    force_follow_on_first_chunk=force_follow_on_first_chunk,
+                )
+            except Exception:
+                logger.debug(
+                    "%s [%s] streaming preview refresh failed",
+                    log_context,
+                    trace_id,
+                    exc_info=True,
+                )
+
+            with lock:
+                if dirty:
+                    try:
+                        loop.call_soon(_apply_update)
+                    except Exception:
+                        dirty = False
+                        update_scheduled = False
+                    return
+                update_scheduled = False
+
+        def on_chunk(partial_text: str) -> None:
+            nonlocal dirty, update_scheduled, latest_preview_text
+            if not self._is_local_streaming_preview_enabled():
+                return
+            preview_text = (
+                build_preview_text(partial_text)
+                if build_preview_text is not None
+                else partial_text
+            )
+            preview_text = self._normalize_streaming_preview_text(preview_text) or ""
+            with lock:
+                latest_preview_text = preview_text
+                dirty = True
+                if update_scheduled:
+                    return
+                update_scheduled = True
+            try:
+                loop.call_soon_threadsafe(_apply_update)
+            except Exception:
+                with lock:
+                    dirty = False
+                    update_scheduled = False
+
+        return on_chunk
+
     def _update_text_input_metrics(self) -> None:
         refs = self._text_input_metrics or {}
         if not refs:
@@ -11219,57 +11313,25 @@ class YakuLingoApp:
             chunks = self._split_text_for_translation(source_text, batch_limit)
             total_chunks = len(chunks)
             loop = asyncio.get_running_loop()
-            last_preview_update = 0.0
-            preview_update_interval_seconds = 0.12
             current_chunk_index = 0
 
-            def on_chunk(partial_text: str) -> None:
-                nonlocal last_preview_update, current_chunk_index
-                if not self._is_local_streaming_preview_enabled():
-                    return
+            def build_preview_text(partial_text: str) -> str:
                 if total_chunks > 1 and current_chunk_index > 0:
-                    preview_text = (
-                        f"[{current_chunk_index}/{total_chunks}] {partial_text}"
-                    )
-                else:
-                    preview_text = partial_text
-                preview_text = self._normalize_streaming_preview_text(preview_text)
-                self.state.text_streaming_preview = preview_text
-                now = time.monotonic()
-                if now - last_preview_update < preview_update_interval_seconds:
-                    return
-                last_preview_update = now
+                    return f"[{current_chunk_index}/{total_chunks}] {partial_text}"
+                return partial_text
 
-                def update_streaming_preview(text_to_show: str = preview_text) -> None:
-                    if not self.state.text_translating:
-                        return
-                    try:
-                        if not getattr(client, "has_socket_connection", True):
-                            return
-                    except Exception:
-                        pass
-                    try:
-                        with client:
-                            # Render streaming block on first chunk (captures label reference)
-                            if self._streaming_preview_label is None:
-                                self._refresh_result_panel()
-                                self._scroll_result_panel_to_bottom(
-                                    client, force_follow=True
-                                )
-                            if self._streaming_preview_label is not None:
-                                self._streaming_preview_label.set_text(text_to_show)
-                                self._scroll_result_panel_to_bottom(client)
-                    except Exception:
-                        logger.debug(
-                            "Split translation streaming preview refresh failed",
-                            exc_info=True,
-                        )
-
-                loop.call_soon_threadsafe(update_streaming_preview)
-
-            stream_handler = (
-                on_chunk if self._is_local_streaming_preview_enabled() else None
-            )
+            stream_handler = None
+            if self._is_local_streaming_preview_enabled():
+                stream_handler = self._create_text_streaming_preview_on_chunk(
+                    loop=loop,
+                    client_supplier=lambda: client,
+                    trace_id=trace_id,
+                    build_preview_text=build_preview_text,
+                    refresh_tabs_on_first_chunk=False,
+                    scroll_to_bottom=True,
+                    force_follow_on_first_chunk=True,
+                    log_context="Split translation",
+                )
 
             def translate_chunks() -> TextTranslationResult:
                 from yakulingo.services.copilot_handler import TranslationCancelledError
@@ -11464,47 +11526,17 @@ class YakuLingoApp:
             # Step 2: Translate with pre-detected language (skip detection in translate_text_with_options)
             # Streaming preview (AI chat style): update result panel with partial output as it arrives.
             loop = asyncio.get_running_loop()
-            last_preview_update = 0.0
-            preview_update_interval_seconds = 0.12
-
-            def on_chunk(partial_text: str) -> None:
-                nonlocal last_preview_update
-                if not self._is_local_streaming_preview_enabled():
-                    return
-                preview_text = self._normalize_streaming_preview_text(partial_text)
-                self.state.text_streaming_preview = preview_text
-                now = time.monotonic()
-                if now - last_preview_update < preview_update_interval_seconds:
-                    return
-                last_preview_update = now
-
-                def update_streaming_preview() -> None:
-                    if not self.state.text_translating:
-                        return
-                    try:
-                        if not getattr(client, "has_socket_connection", True):
-                            return
-                    except Exception:
-                        pass
-                    try:
-                        with client:
-                            # Render streaming block on first chunk (captures label reference)
-                            if self._streaming_preview_label is None:
-                                self._refresh_result_panel()
-                                self._scroll_result_panel_to_bottom(
-                                    client, force_follow=True
-                                )
-                            if self._streaming_preview_label is not None:
-                                self._streaming_preview_label.set_text(preview_text)
-                                self._scroll_result_panel_to_bottom(client)
-                    except Exception:
-                        logger.debug("Streaming preview refresh failed", exc_info=True)
-
-                loop.call_soon_threadsafe(update_streaming_preview)
-
-            stream_handler = (
-                on_chunk if self._is_local_streaming_preview_enabled() else None
-            )
+            stream_handler = None
+            if self._is_local_streaming_preview_enabled():
+                stream_handler = self._create_text_streaming_preview_on_chunk(
+                    loop=loop,
+                    client_supplier=lambda: client,
+                    trace_id=trace_id,
+                    refresh_tabs_on_first_chunk=False,
+                    scroll_to_bottom=True,
+                    force_follow_on_first_chunk=True,
+                    log_context="Translation",
+                )
             result = await asyncio.to_thread(
                 self.translation_service.translate_text_with_style_comparison,
                 source_text,
@@ -11710,52 +11742,22 @@ class YakuLingoApp:
         try:
             from yakulingo.services.copilot_handler import TranslationCancelledError
 
-            import time
-
             # Yield control to event loop before starting blocking operation
             await asyncio.sleep(0)
 
             # Streaming preview: update partial output as Copilot generates back-translation.
             loop = asyncio.get_running_loop()
-            last_preview_update = 0.0
-            preview_update_interval_seconds = 0.12
-
-            def on_chunk(partial_text: str) -> None:
-                nonlocal last_preview_update
-                if not self._is_local_streaming_preview_enabled():
-                    return
-                preview_text = self._normalize_streaming_preview_text(partial_text)
-                self.state.text_streaming_preview = preview_text
-                now = time.monotonic()
-                if now - last_preview_update < preview_update_interval_seconds:
-                    return
-                last_preview_update = now
-
-                def update_streaming_preview() -> None:
-                    if not self.state.text_translating:
-                        return
-                    try:
-                        if not getattr(client, "has_socket_connection", True):
-                            return
-                    except Exception:
-                        pass
-                    try:
-                        with client:
-                            if self._streaming_preview_label is None:
-                                self._refresh_result_panel()
-                            if self._streaming_preview_label is not None:
-                                self._streaming_preview_label.set_text(preview_text)
-                    except Exception:
-                        logger.debug(
-                            "Back-translate streaming preview refresh failed",
-                            exc_info=True,
-                        )
-
-                loop.call_soon_threadsafe(update_streaming_preview)
-
-            stream_handler = (
-                on_chunk if self._is_local_streaming_preview_enabled() else None
-            )
+            stream_handler = None
+            if self._is_local_streaming_preview_enabled():
+                stream_handler = self._create_text_streaming_preview_on_chunk(
+                    loop=loop,
+                    client_supplier=lambda: client,
+                    trace_id="back-translate",
+                    refresh_tabs_on_first_chunk=False,
+                    scroll_to_bottom=False,
+                    force_follow_on_first_chunk=False,
+                    log_context="Back-translate",
+                )
 
             reference_files = self._get_effective_reference_files()
             reference_section = ""

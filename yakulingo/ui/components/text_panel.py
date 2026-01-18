@@ -191,15 +191,22 @@ def _create_textarea(
 TEXT_STYLE_LABELS: dict[str, str] = {
     "standard": "標準",
     "concise": "簡潔",
-    "minimal": "最簡潔",
 }
 
 TEXT_STYLE_ORDER: tuple[str, str] = ("standard", "concise")
 TEXT_STYLE_TOOLTIPS: dict[str, str] = {
     "standard": "標準的な表現",
     "concise": "短く簡潔な表現",
-    "minimal": "最短で要点のみ",
 }
+
+
+def _normalize_text_style(style: Optional[str]) -> Optional[str]:
+    normalized = (style or "").strip().lower()
+    if not normalized:
+        return None
+    if normalized == "minimal":
+        return "concise"
+    return normalized
 
 
 def _resolve_text_output_language(state: AppState) -> Optional[str]:
@@ -215,6 +222,7 @@ def _resolve_text_output_language(state: AppState) -> Optional[str]:
 
 def _style_selector(current_style: str, on_change: Optional[Callable[[str], None]]):
     """Translation style selector - segmented button style for English output."""
+    current_style = _normalize_text_style(current_style) or "concise"
     if current_style not in TEXT_STYLE_ORDER:
         current_style = "concise"
     with ui.row().classes("w-full justify-center"):
@@ -251,8 +259,11 @@ def _build_combined_translation_text(result: TextTranslationResult) -> str:
     if result.is_to_english:
         parts = []
         for option in result.options:
-            style_label = TEXT_STYLE_LABELS.get(
-                option.style, option.style or "translation"
+            style_key = _normalize_text_style(option.style)
+            style_label = (
+                TEXT_STYLE_LABELS.get(style_key, option.style or "translation")
+                if style_key
+                else (option.style or "translation")
             )
             header = f"[{style_label}]"
             option_text = normalize_literal_escapes(option.text)
@@ -269,12 +280,16 @@ def _iter_ordered_options(result: TextTranslationResult) -> list[TranslationOpti
 
     options_by_style: dict[str, TranslationOption] = {}
     for option in result.options:
-        if option.style and option.style not in options_by_style:
-            options_by_style[option.style] = option
+        style = _normalize_text_style(option.style)
+        if style and style not in options_by_style:
+            options_by_style[style] = option
 
     ordered = [options_by_style[s] for s in TEXT_STYLE_ORDER if s in options_by_style]
     ordered_ids = {id(option) for option in ordered}
     for option in result.options:
+        style = _normalize_text_style(option.style)
+        if style in TEXT_STYLE_ORDER:
+            continue
         if id(option) not in ordered_ids:
             ordered.append(option)
     return ordered
@@ -289,7 +304,12 @@ def _build_copy_payload(
 ) -> str:
     options = _iter_ordered_options(result)
     if style:
-        options = [option for option in options if option.style == style]
+        normalized_style = _normalize_text_style(style)
+        options = [
+            option
+            for option in options
+            if _normalize_text_style(option.style) == normalized_style
+        ]
     if not options:
         return ""
 
@@ -299,8 +319,11 @@ def _build_copy_payload(
             lines = []
             option_text = normalize_literal_escapes(option.text)
             if include_headers:
-                style_label = TEXT_STYLE_LABELS.get(
-                    option.style, option.style or "translation"
+                style_key = _normalize_text_style(option.style)
+                style_label = (
+                    TEXT_STYLE_LABELS.get(style_key, option.style or "translation")
+                    if style_key
+                    else (option.style or "translation")
                 )
                 lines.append(f"[{style_label}]")
             lines.append(option_text)
@@ -1498,7 +1521,8 @@ def _render_option_en(
 ):
     """Render a single English translation option as a card"""
 
-    style_class = f" style-{option.style}" if option.style else ""
+    ui_style = _normalize_text_style(option.style)
+    style_class = f" style-{ui_style}" if ui_style else ""
     stagger_class = f" stagger-{min(index + 1, 4)}"
     with ui.card().classes(
         f"option-card w-full result-card{style_class}{stagger_class}"
@@ -1509,20 +1533,20 @@ def _render_option_en(
                 "w-full items-center justify-between gap-2 option-card-header"
             ):
                 with ui.row().classes("items-center gap-2 min-w-0"):
-                    if show_style_badge and option.style:
-                        style_base = TEXT_STYLE_LABELS.get(option.style, option.style)
+                    if show_style_badge and (ui_style or option.style):
+                        style_base = TEXT_STYLE_LABELS.get(
+                            ui_style, ui_style or option.style
+                        )
                         style_label = (
-                            f"{style_base} ({option.style})"
-                            if option.style in TEXT_STYLE_ORDER
+                            f"{style_base} ({ui_style})"
+                            if ui_style in TEXT_STYLE_ORDER
                             else style_base
                         )
                         ui.label(style_label).classes("chip style-chip")
                 with ui.row().classes("items-center option-card-actions"):
                     copy_suffix = ""
-                    if option.style:
-                        style_label_for_copy = TEXT_STYLE_LABELS.get(
-                            option.style, option.style
-                        )
+                    if ui_style:
+                        style_label_for_copy = TEXT_STYLE_LABELS.get(ui_style, ui_style)
                         if style_label_for_copy:
                             copy_suffix = f"（{style_label_for_copy}）"
                     copy_text = normalize_literal_escapes(option.text)

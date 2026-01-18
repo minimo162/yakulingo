@@ -10127,7 +10127,7 @@ class YakuLingoApp:
         summary_style_chip = refs.get("summary_style_chip")
         if summary_style_chip:
             if output_lang == "en":
-                summary_style_chip.set_text("標準 / 簡潔 / 最簡潔")
+                summary_style_chip.set_text("標準 / 簡潔")
             elif output_lang == "jp":
                 summary_style_chip.set_text("解説付き")
             else:
@@ -10896,13 +10896,15 @@ class YakuLingoApp:
                     )
                 for option in res.options:
                     style = option.style or DEFAULT_TEXT_STYLE
+                    if style == "minimal":
+                        style = "concise"
                     options_by_style.setdefault(style, []).append(option.text)
                     if option.explanation:
                         explanations_by_style.setdefault(style, []).append(
                             option.explanation
                         )
 
-            style_order = ["standard", "concise", "minimal"]
+            style_order = ["standard", "concise"]
             combined_options: list[TranslationOption] = []
             for style in style_order:
                 if style in options_by_style:
@@ -12027,7 +12029,9 @@ class YakuLingoApp:
         # No need to refresh content, checkbox state is handled by NiceGUI
 
     def _on_style_change(self, style: str):
-        """Handle translation style change (standard/concise/minimal)"""
+        """Handle translation style change (standard/concise)"""
+        if style == "minimal":
+            style = "concise"
         self.settings.translation_style = style
         self.settings.save(self.settings_path)
         for item in self.state.file_queue:

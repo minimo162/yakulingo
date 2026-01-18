@@ -30,6 +30,16 @@ logger = logging.getLogger(__name__)
 DEFAULT_TEXT_STYLE = "concise"
 TEXT_STYLE_ORDER: tuple[str, str] = ("concise", "minimal")
 
+_TEXT_TO_EN_OUTPUT_LANGUAGE_RETRY_INSTRUCTION = (
+    "CRITICAL: English only (no Japanese/Chinese/Korean scripts; no Japanese punctuation). "
+    "Keep the exact output format (Translation sections only; no explanations/notes)."
+)
+_TEXT_TO_EN_NUMERIC_RULE_INSTRUCTION = (
+    "CRITICAL: Follow numeric conversion rules. "
+    "Do not use 'billion', 'trillion', or 'bn'. Use 'oku' (and 'k') as specified. "
+    "If numeric conversion hints are provided, use them verbatim."
+)
+
 # Pre-compiled regex patterns for performance
 # Support both half-width (:) and full-width (：) colons, and markdown bold (**訳文:**)
 _RE_MULTI_OPTION = re.compile(
@@ -542,6 +552,24 @@ def _needs_to_en_numeric_rule_retry_copilot(
         return False
     if _RE_JP_LARGE_UNIT.search(translated_text):
         return False
+    return True
+
+
+def _needs_to_en_numeric_rule_retry_copilot_after_auto_fix(
+    source_text: str,
+    translated_text: str,
+) -> bool:
+    """Copilot再呼び出しが必要か（安全なローカル補正後もNGが残る場合のみTrue）。"""
+    if not _needs_to_en_numeric_rule_retry_copilot(source_text, translated_text):
+        return False
+
+    fixed_text, fixed = _fix_to_en_oku_numeric_unit_if_possible(
+        source_text=source_text,
+        translated_text=translated_text,
+    )
+    if fixed and not _needs_to_en_numeric_rule_retry_copilot(source_text, fixed_text):
+        return False
+
     return True
 
 
@@ -3806,7 +3834,7 @@ class TranslationService:
             needs_numeric_rule_retry = bool(
                 result
                 and result.options
-                and _needs_to_en_numeric_rule_retry_copilot(
+                and _needs_to_en_numeric_rule_retry_copilot_after_auto_fix(
                     text, result.options[0].text
                 )
             )
@@ -3822,16 +3850,9 @@ class TranslationService:
 
                 retry_parts: list[str] = []
                 if needs_output_language_retry:
-                    retry_parts.append(
-                        "CRITICAL: Rewrite all Translation sections in English only (no Japanese/Chinese/Korean scripts; no Japanese punctuation). "
-                        "Keep the exact output format (Translation sections only; no explanations/notes)."
-                    )
+                    retry_parts.append(_TEXT_TO_EN_OUTPUT_LANGUAGE_RETRY_INSTRUCTION)
                 if needs_numeric_rule_retry:
-                    retry_parts.append(
-                        "- CRITICAL: Follow numeric conversion rules strictly. "
-                        "Do not use 'billion', 'trillion', or 'bn'. Use 'oku' (and 'k') "
-                        "exactly as specified. If numeric conversion hints are provided, use them verbatim."
-                    )
+                    retry_parts.append(_TEXT_TO_EN_NUMERIC_RULE_INSTRUCTION)
                 retry_prompt = build_compare_prompt("\n".join(retry_parts))
                 retry_raw = translate_single_tracked(
                     retry_phase, text, retry_prompt, files_to_attach, None
@@ -4389,6 +4410,10 @@ class TranslationService:
                 return result
             if not result.options:
                 return result
+            # Speed: avoid extra Copilot rewrite when we already needed additional calls
+            # (fill missing styles / output language retry / numeric retry / per-style).
+            if telemetry_translate_single_calls > 1:
+                return result
 
             options_by_style: dict[str, TranslationOption] = {}
             for option in result.options:
@@ -4579,7 +4604,9 @@ class TranslationService:
                     parsed_options = self._parse_style_comparison_result(raw_result)
                     did_output_language_retry = False
                     needs_numeric_rule_retry = bool(parsed_options) and any(
-                        _needs_to_en_numeric_rule_retry_copilot(text, option.text)
+                        _needs_to_en_numeric_rule_retry_copilot_after_auto_fix(
+                            text, option.text
+                        )
                         for option in parsed_options
                     )
                     if parsed_options and any(
@@ -4589,16 +4616,11 @@ class TranslationService:
                         did_output_language_retry = True
                         telemetry_output_language_retry_calls += 1
                         retry_parts = [
-                            "CRITICAL: Rewrite all Translation sections in English only (no Japanese/Chinese/Korean scripts; no Japanese punctuation). "
-                            "Keep the exact output format (Translation sections only; no explanations/notes)."
+                            _TEXT_TO_EN_OUTPUT_LANGUAGE_RETRY_INSTRUCTION
                         ]
                         if needs_numeric_rule_retry:
                             telemetry_numeric_rule_retry_calls += 1
-                            retry_parts.append(
-                                "- CRITICAL: Follow numeric conversion rules strictly. "
-                                "Do not use 'billion', 'trillion', or 'bn'. Use 'oku' (and 'k') "
-                                "exactly as specified. If numeric conversion hints are provided, use them verbatim."
-                            )
+                            retry_parts.append(_TEXT_TO_EN_NUMERIC_RULE_INSTRUCTION)
                         retry_prompt = build_compare_prompt("\n".join(retry_parts))
                         retry_raw_result = translate_single_timed(
                             "style_compare_output_language_retry",
@@ -4617,7 +4639,7 @@ class TranslationService:
                             parsed_options = retry_parsed_options
                             raw_result = retry_raw_result
                             if needs_numeric_rule_retry and any(
-                                _needs_to_en_numeric_rule_retry_copilot(
+                                _needs_to_en_numeric_rule_retry_copilot_after_auto_fix(
                                     text, option.text
                                 )
                                 for option in retry_parsed_options
@@ -4632,16 +4654,11 @@ class TranslationService:
                     if (
                         parsed_options
                         and not did_output_language_retry
-                        and any(
-                            _needs_to_en_numeric_rule_retry_copilot(text, option.text)
-                            for option in parsed_options
-                        )
+                        and needs_numeric_rule_retry
                     ):
                         telemetry_numeric_rule_retry_calls += 1
                         retry_prompt = build_compare_prompt(
-                            "- CRITICAL: Follow numeric conversion rules strictly. "
-                            "Do not use 'billion', 'trillion', or 'bn'. Use 'oku' (and 'k') "
-                            "exactly as specified. If numeric conversion hints are provided, use them verbatim."
+                            _TEXT_TO_EN_NUMERIC_RULE_INSTRUCTION
                         )
                         retry_raw_result = translate_single_timed(
                             "style_compare_numeric_rule_retry",
@@ -4660,7 +4677,7 @@ class TranslationService:
                                 for option in retry_parsed_options
                             )
                             and not any(
-                                _needs_to_en_numeric_rule_retry_copilot(
+                                _needs_to_en_numeric_rule_retry_copilot_after_auto_fix(
                                     text, option.text
                                 )
                                 for option in retry_parsed_options
@@ -4680,8 +4697,7 @@ class TranslationService:
                             if _is_text_output_language_mismatch(option.text, "en"):
                                 telemetry_output_language_retry_calls += 1
                                 retry_prompt = build_compare_prompt(
-                                    "CRITICAL: Rewrite all Translation sections in English only (no Japanese/Chinese/Korean scripts; no Japanese punctuation). "
-                                    "Keep the exact output format (Translation sections only; no explanations/notes)."
+                                    _TEXT_TO_EN_OUTPUT_LANGUAGE_RETRY_INSTRUCTION
                                 )
                                 retry_raw_result = translate_single_timed(
                                     "style_compare_output_language_retry",

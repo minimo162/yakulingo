@@ -65,7 +65,6 @@ def test_style_comparison_financial_paragraph_parses_and_avoids_unneeded_retries
         "(prior +1,030億円); ordinary loss: 213億円 (prior +835億円); net loss: 453億円 "
         "(prior +353億円)."
     )
-    expected_minimal = "Sales 2兆2,385億円 (YoY -1,554、-6.5％); op loss 539; ord loss 213; net loss 453."
 
     response = f"""[standard]
 Translation:
@@ -74,10 +73,6 @@ Translation:
 [concise]
 Translation:
 {expected_concise}
-
-[minimal]
-Translation:
-{expected_minimal}
 """
     copilot = SequencedCopilotHandler([response])
     service = TranslationService(
@@ -96,12 +91,10 @@ Translation:
     assert [option.style for option in result.options] == [
         "standard",
         "concise",
-        "minimal",
     ]
     assert [option.text for option in result.options] == [
         expected_standard,
         expected_concise,
-        expected_minimal,
     ]
 
     telemetry = (result.metadata or {}).get("text_style_comparison_telemetry") or {}

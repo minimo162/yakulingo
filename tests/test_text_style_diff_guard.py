@@ -49,7 +49,7 @@ class SequencedCopilotHandler:
         return response
 
 
-def test_translate_text_with_style_comparison_rewrites_minimal_when_too_similar() -> (
+def test_translate_text_with_style_comparison_rewrites_concise_when_too_similar() -> (
     None
 ):
     standard_text = (
@@ -64,12 +64,8 @@ Translation:
 [concise]
 Translation:
 {standard_text}
-
-[minimal]
-Translation:
-{standard_text}
 """
-    second = """[minimal]
+    second = """[concise]
 Translation:
 Sales 2,238.5 oku yen (-155.4; -6.5% YoY); op loss 53.9; ord loss 21.3.
 """
@@ -95,12 +91,11 @@ Sales 2,238.5 oku yen (-155.4; -6.5% YoY); op loss 53.9; ord loss 21.3.
         "style_diff_guard_rewrite",
     ]
     assert telemetry.get("style_diff_guard_calls") == 1
-    assert telemetry.get("style_diff_guard_styles") == ["minimal"]
+    assert telemetry.get("style_diff_guard_styles") == ["concise"]
 
     options_by_style = {option.style: option.text for option in result.options}
     assert options_by_style["standard"] == standard_text
-    assert options_by_style["concise"] == standard_text
-    assert options_by_style["minimal"] != standard_text
+    assert options_by_style["concise"] != standard_text
 
 
 def test_translate_text_with_style_comparison_skips_rewrite_when_styles_differ() -> (
@@ -113,10 +108,6 @@ Net sales were 2,238.5 oku yen, down 155.4 oku yen (6.5% YoY). The company poste
 [concise]
 Translation:
 Net sales: 2,238.5 oku yen (-155.4; -6.5% YoY); operating loss: 53.9 oku yen.
-
-[minimal]
-Translation:
-Sales 2,238.5 oku yen (-155.4; -6.5% YoY); op loss 53.9.
 """
     copilot = SequencedCopilotHandler([first])
     service = TranslationService(

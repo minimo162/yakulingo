@@ -162,12 +162,6 @@ Translation:
 First para.
 
 Second para.
-
-[minimal]
-Translation:
-First.
-
-Second.
 """
     if newline == "\r\n":
         response = response.replace("\n", "\r\n")
@@ -192,7 +186,6 @@ Second.
     expected_by_style = {
         "standard": "First paragraph.\n\nSecond paragraph.",
         "concise": "First para.\n\nSecond para.",
-        "minimal": "First.\n\nSecond.",
     }
     for option in result.options:
         assert option.style is not None

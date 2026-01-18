@@ -120,12 +120,6 @@ Translation:
 Hi
 Explanation:
 - テスト
-
-[minimal]
-Translation:
-Yo
-Explanation:
-- テスト
 """
     copilot = SequencedCopilotHandler([copilot_response])
     settings = AppSettings(translation_backend="local", copilot_enabled=True)
@@ -166,7 +160,6 @@ Explanation:
     assert [option.style for option in result.options] == [
         "standard",
         "concise",
-        "minimal",
     ]
     assert all(
         is_expected_output_language(option.text, "en") for option in result.options

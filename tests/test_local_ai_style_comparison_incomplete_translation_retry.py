@@ -60,12 +60,10 @@ def test_local_style_comparison_retries_when_translation_is_too_short(
     assert [option.style for option in result.options] == [
         "standard",
         "concise",
-        "minimal",
     ]
     assert [option.text for option in result.options] == [
         "Revenue was 22,385 oku yen, down 6.5% year on year.",
         "Revenue: 22,385 oku yen (YoY -6.5%).",
-        "Revenue 22,385 oku yen (YoY -6.5%); operating loss 539 oku yen.",
     ]
     assert (result.metadata or {}).get("incomplete_translation_retry") is True
     assert any("ローカルAI: JP→EN（不足スタイル補完）" in prompt for prompt in prompts)
@@ -177,12 +175,10 @@ def test_local_style_comparison_retries_when_numeric_rules_violated(
     assert [option.style for option in result.options] == [
         "standard",
         "concise",
-        "minimal",
     ]
     assert [option.text for option in result.options] == [
         "Revenue was 22,385 oku yen, down by 1,554 oku yen year on year.",
         "Revenue: 22,385 oku yen (down 1,554 oku yen YoY).",
-        "Revenue 22,385 oku yen; YoY decrease 1,554 oku yen.",
     ]
     assert (result.metadata or {}).get("to_en_numeric_rule_retry") is True
     assert any("ローカルAI: JP→EN（不足スタイル補完）" in prompt for prompt in prompts)

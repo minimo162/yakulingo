@@ -16,7 +16,7 @@ suffix"""
     assert parse_batch_translations(raw, expected_count=1) == ["A"]
 
 
-def test_copilot_style_comparison_parses_minimal_sections() -> None:
+def test_copilot_style_comparison_parses_two_sections() -> None:
     service = TranslationService(copilot=Mock(), config=AppSettings())
     raw = """[standard]
 Translation:
@@ -25,30 +25,23 @@ Hello.
 [concise]
 Translation:
 Hi.
-
-[minimal]
-Translation:
-Hi
 """
     options = service._parse_style_comparison_result(raw)
-    assert [opt.style for opt in options] == ["standard", "concise", "minimal"]
-    assert [opt.text for opt in options] == ["Hello.", "Hi.", "Hi"]
-    assert [opt.explanation for opt in options] == ["", "", ""]
+    assert [opt.style for opt in options] == ["standard", "concise"]
+    assert [opt.text for opt in options] == ["Hello.", "Hi."]
+    assert [opt.explanation for opt in options] == ["", ""]
 
 
 def test_copilot_style_comparison_parses_section_header_variants() -> None:
     service = TranslationService(copilot=Mock(), config=AppSettings())
-    raw = """### [standard]
+    raw = """### ［standard］
 Translation:
 Hello.
 
 [concise] Translation:
 Hi.
-
-### ［minimal］ Translation:
-Yo
 """
     options = service._parse_style_comparison_result(raw)
-    assert [opt.style for opt in options] == ["standard", "concise", "minimal"]
-    assert [opt.text for opt in options] == ["Hello.", "Hi.", "Yo"]
-    assert [opt.explanation for opt in options] == ["", "", ""]
+    assert [opt.style for opt in options] == ["standard", "concise"]
+    assert [opt.text for opt in options] == ["Hello.", "Hi."]
+    assert [opt.explanation for opt in options] == ["", ""]

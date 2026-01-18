@@ -58,10 +58,6 @@ Translation:
 [concise]
 Translation:
 Meanwhile, this HR director's company offers a starting salary of 22 man yen.
-
-[minimal]
-Translation:
-HR director's company: starting pay 22 man yen.
 """
     second = """[standard]
 Translation:
@@ -70,10 +66,6 @@ Meanwhile, this HR director's company offers a starting salary of 22 man yen. It
 [concise]
 Translation:
 Meanwhile, this HR director's company offers a starting salary of 22 man yen; it's not low vs. the industry avg.
-
-[minimal]
-Translation:
-HR director's company: starting pay 22 man yen; not low vs. industry avg.
 """
     copilot = SequencedCopilotHandler([first, second])
     service = TranslationService(copilot=copilot, config=AppSettings())
@@ -89,7 +81,6 @@ HR director's company: starting pay 22 man yen; not low vs. industry avg.
     assert [option.style for option in result.options] == [
         "standard",
         "concise",
-        "minimal",
     ]
     assert all(not _RE_JP_CHARS.search(option.text) for option in result.options)
     assert telemetry.get("translate_single_calls") == 2
@@ -114,10 +105,6 @@ Translation:
 [concise]
 Translation:
 Meanwhile, this HR director's company offers a starting salary of 22 man yen.
-
-[minimal]
-Translation:
-HR director's company: starting pay 22 man yen.
 """
     second = """[standard]
 Translation:
@@ -126,10 +113,6 @@ Meanwhile, this HR director's company offers a starting salary of 22 man yen. It
 [concise]
 Translation:
 Meanwhile, this HR director's company offers a starting salary of 22 man yen; it's not low vs. the industry avg.
-
-[minimal]
-Translation:
-HR director's company: starting pay 22 man yen; not low vs. industry avg.
 """
     copilot = SequencedCopilotHandler([first, second])
     service = TranslationService(copilot=copilot, config=AppSettings())
@@ -156,10 +139,6 @@ Net sales were 2兆2,385億円 (down 1,554億円、6.5％), and the company reco
 [concise]
 Translation:
 Net sales: 2兆2,385億円 (YoY -1,554億円、6.5％); operating loss: 539億円.
-
-[minimal]
-Translation:
-Sales 2兆2,385億円; YoY -1,554億円 (6.5％); operating loss 539億円.
 """
     copilot = SequencedCopilotHandler([response])
     service = TranslationService(copilot=copilot, config=AppSettings())
@@ -175,7 +154,6 @@ Sales 2兆2,385億円; YoY -1,554億円 (6.5％); operating loss 539億円.
     assert [option.style for option in result.options] == [
         "standard",
         "concise",
-        "minimal",
     ]
     assert any(_RE_JP_CHARS.search(option.text) for option in result.options)
     assert telemetry.get("translate_single_calls") == 1

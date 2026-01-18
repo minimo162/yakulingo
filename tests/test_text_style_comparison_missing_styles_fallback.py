@@ -32,20 +32,16 @@ class SequencedCopilotHandler:
         return response
 
 
-def test_copilot_style_comparison_fills_missing_minimal_with_single_extra_call() -> (
+def test_copilot_style_comparison_fills_missing_concise_with_single_extra_call() -> (
     None
 ):
     first = """[standard]
 Translation:
 Standard translation.
-
-[concise]
+"""
+    second = """[concise]
 Translation:
 Concise translation.
-"""
-    second = """[minimal]
-Translation:
-Minimal translation.
 """
     copilot = SequencedCopilotHandler([first, second])
     service = TranslationService(
@@ -64,12 +60,10 @@ Minimal translation.
     assert [option.style for option in result.options] == [
         "standard",
         "concise",
-        "minimal",
     ]
     assert [option.text for option in result.options] == [
         "Standard translation.",
         "Concise translation.",
-        "Minimal translation.",
     ]
     assert telemetry.get("translate_single_calls") == 2
     assert telemetry.get("translate_single_phases") == [
@@ -77,7 +71,7 @@ Minimal translation.
         "fill_missing_styles",
     ]
     assert telemetry.get("fill_missing_styles_calls") == 1
-    assert telemetry.get("fill_missing_styles_styles") == ["minimal"]
+    assert telemetry.get("fill_missing_styles_styles") == ["concise"]
     assert telemetry.get("output_language_retry_calls") == 0
     assert telemetry.get("combined_attempted") is True
     assert telemetry.get("combined_succeeded") is True
@@ -91,13 +85,13 @@ def test_copilot_style_comparison_falls_back_when_missing_still_missing_after_fi
     first = """[standard]
 Translation:
 Standard translation.
-
-[concise]
+"""
+    second = "{}"
+    third = """[concise]
 Translation:
 Concise translation.
 """
-    second = "{}"
-    copilot = SequencedCopilotHandler([first, second])
+    copilot = SequencedCopilotHandler([first, second, third])
     service = TranslationService(
         copilot=copilot,
         config=AppSettings(translation_backend="copilot"),
@@ -109,29 +103,31 @@ Concise translation.
         pre_detected_language="日本語",
     )
 
-    assert copilot.translate_single_calls == 2
+    assert copilot.translate_single_calls == 3
     telemetry = (result.metadata or {}).get("text_style_comparison_telemetry") or {}
     assert [option.style for option in result.options] == [
         "standard",
         "concise",
-        "minimal",
     ]
-    assert result.options[2].text == result.options[1].text
-    assert telemetry.get("translate_single_calls") == 2
+    assert result.options[1].text != result.options[0].text
+    assert telemetry.get("translate_single_calls") == 3
     assert telemetry.get("translate_single_phases") == [
         "style_compare",
         "fill_missing_styles",
+        "style_diff_guard_rewrite",
     ]
     assert telemetry.get("fill_missing_styles_calls") == 1
-    assert telemetry.get("fill_missing_styles_styles") == ["minimal"]
+    assert telemetry.get("fill_missing_styles_styles") == ["concise"]
     assert telemetry.get("output_language_retry_calls") == 0
+    assert telemetry.get("style_diff_guard_calls") == 1
+    assert telemetry.get("style_diff_guard_styles") == ["concise"]
     assert telemetry.get("combined_attempted") is True
     assert telemetry.get("combined_succeeded") is True
     assert telemetry.get("per_style_used") is False
-    assert (result.metadata or {}).get("style_fallback") == {"minimal": "concise"}
+    assert (result.metadata or {}).get("style_fallback") == {"concise": "standard"}
 
 
-def test_local_style_comparison_fills_missing_minimal(monkeypatch) -> None:
+def test_local_style_comparison_fills_missing_concise(monkeypatch) -> None:
     settings = AppSettings(translation_backend="local")
     service = TranslationService(
         copilot=object(), config=settings, prompts_dir=Path("prompts")
@@ -161,11 +157,6 @@ def test_local_style_comparison_fills_missing_minimal(monkeypatch) -> None:
                     explanation="",
                     style="standard",
                 ),
-                TranslationOption(
-                    text="Concise translation.",
-                    explanation="",
-                    style="concise",
-                ),
             ],
             metadata={"backend": "local"},
         )
@@ -184,8 +175,7 @@ def test_local_style_comparison_fills_missing_minimal(monkeypatch) -> None:
     assert [option.style for option in result.options] == [
         "standard",
         "concise",
-        "minimal",
     ]
-    assert result.options[2].text == "Concise translation."
+    assert result.options[1].text == "Standard translation."
     assert (result.metadata or {}).get("backend") == "local"
-    assert (result.metadata or {}).get("style_fallback") == {"minimal": "concise"}
+    assert (result.metadata or {}).get("style_fallback") == {"concise": "standard"}

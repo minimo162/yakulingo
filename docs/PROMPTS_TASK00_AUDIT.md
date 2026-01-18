@@ -3,6 +3,8 @@
 Purpose: inventory current prompt templates and the parsing expectations,
 then map the INTENT prompt patterns to YakuLingo usage and list risks/next files.
 
+> Note (2026-01-18): 現行のJP→ENは minimal-only（単一出力）です。multi-style（CopilotのcompareセクションやLocal AIの3style/missing_styles）は後方互換のため残っていても、メイン経路では未使用です。
+
 ## Inventory (by backend)
 
 Copilot (non-JSON):
@@ -23,12 +25,12 @@ Copilot (non-JSON):
 - prompts/adjust_custom.txt
 
 Local AI (JSON):
-- prompts/local_text_translate_to_en_3style_json.txt
 - prompts/local_text_translate_to_en_single_json.txt
-- prompts/local_text_translate_to_en_missing_styles_json.txt
 - prompts/local_text_translate_to_jp_json.txt
 - prompts/local_batch_translate_to_en_json.txt
 - prompts/local_batch_translate_to_jp_json.txt
+- (legacy/unused) prompts/local_text_translate_to_en_3style_json.txt
+- (legacy/unused) prompts/local_text_translate_to_en_missing_styles_json.txt
 
 ## Placeholders by file (from prompts/*.txt)
 
@@ -64,13 +66,8 @@ Batch translation (yakulingo/services/local_ai_client.py):
 - "id" can be int or digit string; missing/invalid id is skipped.
 - Fallbacks: [[ID:n]] blocks or numbered lines ("1. ...").
 
-Text JP->EN (3 style):
-- Expected JSON: {"options":[{"style":"standard","translation":"..."}]}
-- "style" is normalized to standard/concise/minimal.
-- Missing styles are filled by order if options list has entries.
-
-Text single (JP->EN single or EN->JP):
-- Expected JSON: {"translation":"..."}（現行テンプレートは `explanation` キーを出さない）
+Text JP->EN (minimal-only) / EN->JP (single):
+- Expected JSON: {"translation":"..."}（`explanation` は optional 互換あり）
 - 過去互換として `explanation` が来た場合は空文字扱い。
 
 Note: `LocalPromptBuilder` が `detected_language` などを置換できる実装でも、
@@ -90,11 +87,12 @@ Note: `LocalPromptBuilder` が `detected_language` などを置換できる実�
   - Expected output: numbered listのみ（入力と同じ番号・順序、複数行は同一項目内で継続行インデント）
   - Parser: `yakulingo/services/copilot_handler.py::_parse_batch_result`（IDありは `_parse_batch_result_by_id`）
 
-- Text JP→EN (2 styles)
+- Text JP→EN (minimal-only)
   - Prompt: `prompts/text_translate_to_en_compare.txt`
-  - Expected output: `[concise]` / `[minimal]` セクション + 各セクションに `Translation:`（解説なし）
-  - Parser: `yakulingo/services/translation_service.py::_parse_style_comparison_result` → `_parse_single_translation_result`
-  - Contract test: `tests/test_text_compare_template_contract.py`, `tests/test_text_translation_retry.py`（英訳結果に日本語混入→再試行も含む）
+  - Expected output: `[minimal]` セクション + `Translation:`（解説なし）
+    - 互換: 応答に `[concise]` / `[standard]` が混在してもパースは受け付け、常に `minimal` 1件を返す
+  - Parser: `yakulingo/services/translation_service.py::_parse_style_comparison_result` → `_parse_single_translation_result`（常に `minimal` を選択）
+  - Contract test: `tests/test_text_compare_template_contract.py`, `tests/test_text_translation_retry.py`（出力言語ガード/リトライも含む）
 
 - Text EN→JP (single)
   - Prompt: `prompts/text_translate_to_jp.txt`
@@ -109,12 +107,7 @@ Note: `LocalPromptBuilder` が `detected_language` などを置換できる実�
   - Parser: `yakulingo/services/local_ai_client.py::parse_batch_translations`
   - Fallbacks: `[[ID:n]] ...` ブロック、または `1. ...` 行
 
-- Text JP→EN (3 styles)
-  - Prompt: `prompts/local_text_translate_to_en_3style_json.txt`
-  - Expected output JSON: `{"options":[{"style":"standard","translation":"..."}]}`
-  - Parser: `yakulingo/services/local_ai_client.py::parse_text_to_en_3style`
-
-- Text single (JP→EN single / EN→JP)
+- Text JP→EN (minimal-only) / EN→JP (single)
   - Prompt: `prompts/local_text_translate_to_en_single_json.txt`, `prompts/local_text_translate_to_jp_json.txt`
   - Expected output JSON: `{"translation":"..."}`（`explanation` は optional 互換あり）
   - Parser: `yakulingo/services/local_ai_client.py::parse_text_single_translation`
@@ -127,7 +120,7 @@ Note: `LocalPromptBuilder` が `detected_language` などを置換できる実�
 - Copilotが余計な見出し/解説/注意書きを出す（「出力は〜のみ」を徹底）
 - Copilotの番号付きリストで欠番・重複・並べ替えが起きる（バッチ結果の対応ズレ）
 - Copilot内でネストした番号付きリストが出てパースが誤作動する（`_parse_batch_result` はインデントで抑止）
-- 3styleでスタイル欠落/順序崩れが起きる（パーサ側は欠落補完があるが、プロンプトで抑制）
+- (legacy) 3styleでスタイル欠落/順序崩れが起きる（現行経路では未使用）
 
 ## Evaluation axes (stability / speed)
 

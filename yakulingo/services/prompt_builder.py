@@ -4,7 +4,7 @@ Builds translation prompts for YakuLingo.
 
 Prompt file structure:
 - translation_rules.txt: Translation rules with optional [COMMON]/[TO_EN]/[TO_JP] sections
-- file_translate_to_en_{style}.txt: File translation → English (standard/concise)
+- file_translate_to_en_{standard|concise|minimal}.txt: File translation → English (current: minimal only)
 - file_translate_to_jp.txt: File translation → Japanese
 - text_translate_to_en_compare.txt: Text translation → English (minimal only)
 - text_translate_to_jp.txt: Text translation → Japanese (translation-only; no explanation)

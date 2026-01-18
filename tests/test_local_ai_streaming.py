@@ -6,6 +6,7 @@ from yakulingo.config.settings import AppSettings
 from yakulingo.services.copilot_handler import TranslationCancelledError
 from yakulingo.services.local_ai_client import LocalAIClient
 from yakulingo.services.translation_service import _wrap_local_streaming_on_chunk
+from yakulingo.services.translation_service import TEXT_STYLE_ORDER
 
 
 def test_local_ai_streaming_parses_sse_and_collects_chunks() -> None:
@@ -45,6 +46,47 @@ def test_local_streaming_wrap_extracts_translation_incrementally() -> None:
     assert received[0] == "He"
     assert received[1] == "Hello"
     assert "Hello" in received[-1]
+
+
+def test_local_streaming_wrap_extracts_options_preview_incrementally() -> None:
+    received: list[str] = []
+    handler = _wrap_local_streaming_on_chunk(received.append)
+    assert handler is not None
+
+    style = TEXT_STYLE_ORDER[0]
+    deltas = [
+        f'{{"options":[{{"style":"{style}","translation":"He',
+        'llo","explanation":"exp',
+        'lanation"}]}\n',
+    ]
+    for delta in deltas:
+        handler(delta)
+
+    assert received
+    assert received[0].startswith(f"[{style}] He")
+    assert any("Hello" in item for item in received)
+    assert "- explanation" in received[-1]
+    assert all(len(a) <= len(b) for a, b in zip(received, received[1:]))
+
+
+def test_local_streaming_wrap_skips_irrelevant_updates_without_regression() -> None:
+    received: list[str] = []
+    handler = _wrap_local_streaming_on_chunk(received.append)
+    assert handler is not None
+
+    deltas = [
+        '{"translation":"Hello"',
+        ',"output_language":"en"',
+        ',"explanation":"exp',
+        'lanation"}',
+    ]
+    for delta in deltas:
+        handler(delta)
+
+    assert received[0] == "Hello"
+    assert "Hello\nexplanation" in received[-1]
+    assert not any("output_language" in item for item in received)
+    assert all(len(a) <= len(b) for a, b in zip(received, received[1:]))
 
 
 def test_local_ai_streaming_on_chunk_is_delta() -> None:

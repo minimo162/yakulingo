@@ -728,74 +728,85 @@ def _wrap_local_streaming_on_chunk(
 ) -> Optional[Callable[[str], None]]:
     if on_chunk is None:
         return None
-    last_emitted = [""]
-    last_emit_time = [0.0]
+    last_emitted = ""
+    last_emit_time = 0.0
+    last_parse_time = 0.0
+    raw_cached = ""
     raw_parts: list[str] = []
-    raw_len = [0]
-    raw_cached = [""]
-    raw_joined_index = [0]
-    last_parse_len = [0]
+    raw_len = 0
+    last_parse_len = 0
+    has_options = False
+    has_explanation = False
+    parse_min_delta_chars = 128
     throttle_seconds = 0.08
 
     def _handle(delta: str) -> None:
+        nonlocal last_emitted, last_emit_time, last_parse_time
+        nonlocal raw_cached, raw_parts, raw_len, last_parse_len
+        nonlocal has_options, has_explanation
+
         if not delta:
             return
-        if raw_cached[0] and delta.startswith(raw_cached[0]):
-            raw_cached[0] = delta
+        if raw_cached and delta.startswith(raw_cached):
+            raw_cached = delta
             raw_parts.clear()
-            raw_len[0] = len(delta)
-            raw_joined_index[0] = 0
-            last_parse_len[0] = 0
+            raw_len = len(delta)
+            last_parse_len = 0
         else:
             raw_parts.append(delta)
-            raw_len[0] += len(delta)
+            raw_len += len(delta)
+
+        if not has_options and '"options"' in delta:
+            has_options = True
+        if not has_explanation and '"explanation"' in delta:
+            has_explanation = True
 
         now = time.monotonic()
-        should_parse = False
-        if raw_len[0] < 64:
-            should_parse = True
-        if now - last_emit_time[0] >= throttle_seconds:
-            should_parse = True
-        if len(delta) >= 3:
-            should_parse = True
-        if raw_len[0] - last_parse_len[0] >= 16:
-            should_parse = True
-        if not should_parse and any(ch in delta for ch in ("}", "]")):
-            should_parse = True
-        if not should_parse:
+        if (
+            raw_len >= parse_min_delta_chars
+            and (now - last_parse_time) < throttle_seconds
+            and (raw_len - last_parse_len) < parse_min_delta_chars
+            and not any(ch in delta for ch in ("}", "]"))
+        ):
             return
 
         if raw_parts:
-            raw_cached[0] += "".join(raw_parts[raw_joined_index[0] :])
-            raw_joined_index[0] = len(raw_parts)
-        raw = raw_cached[0]
-        last_parse_len[0] = raw_len[0]
+            raw_cached += "".join(raw_parts)
+            raw_parts.clear()
+        raw = raw_cached
+        last_parse_len = raw_len
+        last_parse_time = now
 
-        candidate = _extract_options_preview(raw)
+        if raw_len < 1024:
+            if not has_options and '"options"' in raw:
+                has_options = True
+            if not has_explanation and '"explanation"' in raw:
+                has_explanation = True
+
+        candidate = _extract_options_preview(raw) if has_options else None
         if candidate is None:
             translation = _extract_first_translation_from_json(raw)
             if not translation:
                 return
-            explanation = _extract_json_value_for_key(raw, "explanation")
+            explanation = (
+                _extract_json_value_for_key(raw, "explanation")
+                if has_explanation
+                else None
+            )
             if explanation:
                 candidate = f"{translation}\n{explanation}"
             else:
                 candidate = translation
 
-        if candidate == last_emitted[0] or len(candidate) < len(last_emitted[0]):
+        if candidate == last_emitted or len(candidate) < len(last_emitted):
             return
-        is_complete_json = raw.lstrip().startswith(
-            ("{", "[")
-        ) and not is_truncated_json(raw)
-        delta_len = len(candidate) - len(last_emitted[0])
-        if (
-            not is_complete_json
-            and (now - last_emit_time[0]) < throttle_seconds
-            and delta_len < 3
-        ):
-            return
-        last_emitted[0] = candidate
-        last_emit_time[0] = now
+        delta_len = len(candidate) - len(last_emitted)
+        if (now - last_emit_time) < throttle_seconds and delta_len < 3:
+            stripped = raw.lstrip()
+            if stripped.startswith(("{", "[")) and is_truncated_json(raw):
+                return
+        last_emitted = candidate
+        last_emit_time = now
         on_chunk(candidate)
 
     return _handle

@@ -36,7 +36,8 @@ _RE_MULTI_OPTION = re.compile(
     re.DOTALL,
 )
 _RE_STYLE_SECTION = re.compile(
-    r"^\s*\[\s*(standard|concise|minimal)\s*\]\s*$", re.IGNORECASE | re.MULTILINE
+    r"^\s*(?:>\s*)?(?:#{1,6}\s*)?[\[［]\s*(standard|concise|minimal)\s*[\]］]",
+    re.IGNORECASE | re.MULTILINE,
 )
 
 # Translation text pattern - supports multiple formats:

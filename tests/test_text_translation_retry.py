@@ -144,3 +144,40 @@ HR director's company: starting pay 22 man yen; not low vs. industry avg.
     assert result.output_language == "en"
     assert result.options[0].style == "standard"
     assert not _RE_JP_CHARS.search(result.options[0].text)
+
+
+def test_translate_text_with_style_comparison_does_not_retry_for_numeric_units() -> (
+    None
+):
+    response = """[standard]
+Translation:
+Net sales were 2兆2,385億円 (down 1,554億円、6.5％), and the company recorded an operating loss of 539億円.
+
+[concise]
+Translation:
+Net sales: 2兆2,385億円 (YoY -1,554億円、6.5％); operating loss: 539億円.
+
+[minimal]
+Translation:
+Sales 2兆2,385億円; YoY -1,554億円 (6.5％); operating loss 539億円.
+"""
+    copilot = SequencedCopilotHandler([response])
+    service = TranslationService(copilot=copilot, config=AppSettings())
+
+    result = service.translate_text_with_style_comparison(
+        "これはテストです。",
+        pre_detected_language="日本語",
+    )
+
+    assert copilot.translate_single_calls == 1
+    telemetry = (result.metadata or {}).get("text_style_comparison_telemetry") or {}
+    assert result.output_language == "en"
+    assert [option.style for option in result.options] == [
+        "standard",
+        "concise",
+        "minimal",
+    ]
+    assert any(_RE_JP_CHARS.search(option.text) for option in result.options)
+    assert telemetry.get("translate_single_calls") == 1
+    assert telemetry.get("translate_single_phases") == ["style_compare"]
+    assert telemetry.get("output_language_retry_calls") == 0

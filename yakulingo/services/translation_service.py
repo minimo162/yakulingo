@@ -106,6 +106,92 @@ _CHINESE_PUNCTUATION_HINTS = frozenset("，；：")
 _RE_EN_BILLION_TRILLION = re.compile(r"\b(?:billion|trillion|bn)\b", re.IGNORECASE)
 _RE_EN_OKU = re.compile(r"\boku\b", re.IGNORECASE)
 _RE_JP_LARGE_UNIT = re.compile(r"[兆億]")
+_INT_WITH_OPTIONAL_COMMAS_PATTERN = r"(?:\d{1,3}(?:,\d{3})+|\d+)"
+_RE_JP_OKU_CHOU_YEN_AMOUNT = re.compile(
+    rf"(?P<sign>[▲+\-])?\s*(?:(?P<trillion>{_INT_WITH_OPTIONAL_COMMAS_PATTERN})兆(?:(?P<oku>{_INT_WITH_OPTIONAL_COMMAS_PATTERN})億)?|(?P<oku_only>{_INT_WITH_OPTIONAL_COMMAS_PATTERN})億)(?P<yen>円)?"
+)
+_RE_JP_MAN_YEN_AMOUNT = re.compile(
+    rf"(?P<sign>[▲+\-])?\s*(?P<man>{_INT_WITH_OPTIONAL_COMMAS_PATTERN})万円"
+)
+_RE_JP_YEN_AMOUNT = re.compile(
+    rf"(?P<sign>[▲+\-])?\s*(?P<yen>{_INT_WITH_OPTIONAL_COMMAS_PATTERN})円"
+)
+_JP_PUNCTUATION_GUARD_TRANSLATION_TABLE = str.maketrans(
+    {
+        "、": ",",
+        "・": "·",
+        "「": '"',
+        "」": '"',
+        "『": '"',
+        "』": '"',
+    }
+)
+
+
+def _normalize_en_translation_for_output_language_guard(text: str) -> str:
+    normalized = unicodedata.normalize("NFKC", text or "").strip()
+    if not normalized:
+        return ""
+
+    normalized = normalized.translate(_JP_PUNCTUATION_GUARD_TRANSLATION_TABLE)
+
+    def parse_int(value: str) -> Optional[int]:
+        try:
+            return int(value.replace(",", ""))
+        except ValueError:
+            return None
+
+    def format_int(value: int, sign: str) -> str:
+        if not sign:
+            return f"{value:,}"
+        if sign == "▲":
+            sign = "-"
+        return f"{sign}{value:,}"
+
+    def repl_oku_chou(match: re.Match[str]) -> str:
+        sign = (match.group("sign") or "").strip()
+        has_yen = bool(match.group("yen"))
+
+        trillion_str = match.group("trillion") or ""
+        oku_str = match.group("oku") or ""
+        oku_only_str = match.group("oku_only") or ""
+
+        if trillion_str:
+            trillion = parse_int(trillion_str)
+            if trillion is None:
+                return match.group(0)
+            oku_part = parse_int(oku_str) if oku_str else 0
+            if oku_part is None:
+                return match.group(0)
+            total_oku = trillion * 10_000 + oku_part
+        else:
+            oku_only = parse_int(oku_only_str)
+            if oku_only is None:
+                return match.group(0)
+            total_oku = oku_only
+
+        formatted = format_int(total_oku, sign)
+        return f"{formatted} oku yen" if has_yen else f"{formatted} oku"
+
+    def repl_man(match: re.Match[str]) -> str:
+        sign = (match.group("sign") or "").strip()
+        man = parse_int(match.group("man") or "")
+        if man is None:
+            return match.group(0)
+        k = man * 10
+        return f"{format_int(k, sign)}k yen"
+
+    def repl_yen(match: re.Match[str]) -> str:
+        sign = (match.group("sign") or "").strip()
+        yen = parse_int(match.group("yen") or "")
+        if yen is None:
+            return match.group(0)
+        return f"{format_int(yen, sign)} yen"
+
+    normalized = _RE_JP_OKU_CHOU_YEN_AMOUNT.sub(repl_oku_chou, normalized)
+    normalized = _RE_JP_MAN_YEN_AMOUNT.sub(repl_man, normalized)
+    normalized = _RE_JP_YEN_AMOUNT.sub(repl_yen, normalized)
+    return normalized
 
 
 def _looks_untranslated_to_en(text: str) -> bool:
@@ -825,6 +911,7 @@ def _is_text_output_language_mismatch(text: str, output_language: str) -> bool:
 
     lang = (output_language or "").strip().lower()
     if lang == "en":
+        normalized = _normalize_en_translation_for_output_language_guard(normalized)
         return not is_expected_output_language(normalized, "en")
     if lang != "jp":
         return False

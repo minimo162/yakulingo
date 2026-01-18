@@ -250,6 +250,50 @@ Net sales: 22,385 oku yen.
     assert telemetry.get("numeric_rule_retry_failed") is False
 
 
+def test_translate_text_with_style_comparison_fixes_oku_when_retry_still_violates() -> (
+    None
+):
+    input_text = "売上高は2兆2,385億円となりました。"
+    first = """[concise]
+Translation:
+Net sales were 22,385 billion yen.
+
+[minimal]
+Translation:
+Net sales: 22,385 billion yen.
+"""
+    second = """[concise]
+Translation:
+Net sales were 22,385 billion yen.
+
+[minimal]
+Translation:
+Net sales: 22,385 billion yen.
+"""
+    copilot = SequencedCopilotHandler([first, second])
+    service = TranslationService(copilot=copilot, config=AppSettings())
+
+    result = service.translate_text_with_style_comparison(
+        input_text,
+        pre_detected_language="日本語",
+    )
+
+    assert copilot.translate_single_calls == 2
+    assert result.output_language == "en"
+    assert [option.style for option in result.options] == [
+        "concise",
+        "minimal",
+    ]
+    assert all("oku" in option.text.lower() for option in result.options)
+    assert all("billion" not in option.text.lower() for option in result.options)
+
+    metadata = result.metadata or {}
+    telemetry = metadata.get("text_style_comparison_telemetry") or {}
+    assert telemetry.get("numeric_rule_retry_calls") == 1
+    assert telemetry.get("numeric_rule_retry_failed") is True
+    assert metadata.get("to_en_numeric_unit_correction") is True
+
+
 def test_translate_text_with_options_retries_for_oku_numeric_rule() -> None:
     input_text = "売上高は2兆2,385億円となりました。"
     first = """[concise]

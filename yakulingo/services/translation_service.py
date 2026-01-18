@@ -104,7 +104,11 @@ _RE_CJK_IDEOGRAPH = re.compile(r"[\u3400-\u4DBF\u4E00-\u9FFF]")
 _RE_LATIN_ALPHA = re.compile(r"[A-Za-z]")
 _RE_HANGUL = re.compile(r"[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F]")
 _CHINESE_PUNCTUATION_HINTS = frozenset("，；：")
-_RE_EN_BILLION_TRILLION = re.compile(r"\b(?:billion|trillion|bn)\b", re.IGNORECASE)
+# NOTE: Also match unit tokens directly attached to numbers (e.g., "1.2bn", "2238.5billion").
+_RE_EN_BILLION_TRILLION = re.compile(
+    r"(?:\b(?:billion|trillion|bn)\b|(?<=\d)(?:billion|trillion|bn)\b)",
+    re.IGNORECASE,
+)
 _RE_EN_OKU = re.compile(r"\boku\b", re.IGNORECASE)
 _RE_JP_LARGE_UNIT = re.compile(r"[兆億]")
 _INT_WITH_OPTIONAL_COMMAS_PATTERN = r"(?:\d{1,3}(?:,\d{3})+|\d+)"
@@ -402,6 +406,119 @@ def _build_to_en_numeric_hints(text: str) -> str:
     for raw, converted in conversions:
         lines.append(f"- {raw} -> {converted}")
     return "\n".join(lines) + "\n"
+
+
+_RE_EN_NUMBER_WITH_BILLION_UNIT = re.compile(
+    rf"(?P<prefix>[▲+\-]?\(?)"
+    rf"(?P<number>{_INT_WITH_OPTIONAL_COMMAS_PATTERN}(?:\.\d+)?)"
+    rf"(?P<suffix>\)?)"
+    r"(?P<sep>\s*)"
+    r"(?P<unit>billion|trillion|bn)\b",
+    re.IGNORECASE,
+)
+
+
+def _collect_expected_oku_values_from_source_text(text: str) -> set[int]:
+    """Extract expected `oku` values from JP source text containing 兆/億."""
+    if not text:
+        return set()
+    if not _RE_JP_LARGE_UNIT.search(text):
+        return set()
+
+    def parse_int(value: str) -> Optional[int]:
+        try:
+            return int((value or "").replace(",", ""))
+        except ValueError:
+            return None
+
+    expected: set[int] = set()
+    for match in _RE_JP_OKU_CHOU_YEN_AMOUNT.finditer(text):
+        trillion_str = match.group("trillion") or ""
+        oku_str = match.group("oku") or ""
+        oku_only_str = match.group("oku_only") or ""
+
+        if trillion_str:
+            trillion = parse_int(trillion_str)
+            if trillion is None:
+                continue
+            oku_part = parse_int(oku_str) if oku_str else 0
+            if oku_part is None:
+                continue
+            total_oku = trillion * 10_000 + oku_part
+        else:
+            oku_only = parse_int(oku_only_str)
+            if oku_only is None:
+                continue
+            total_oku = oku_only
+
+        expected.add(total_oku)
+
+    return expected
+
+
+def _fix_to_en_oku_numeric_unit_if_possible(
+    *,
+    source_text: str,
+    translated_text: str,
+) -> tuple[str, bool]:
+    """Try to fix `billion/trillion/bn` → `oku` for JP→EN when it is safe.
+
+    This targets common Copilot mistakes such as:
+    - `22,385 billion yen` → `22,385 oku yen` (unit label mismatch; number is already in oku)
+    - `2,238.5 billion yen` → `22,385 oku yen` (unit-based conversion to oku matches hints)
+    """
+    if not translated_text:
+        return translated_text, False
+
+    expected_oku_values = _collect_expected_oku_values_from_source_text(source_text)
+    if not expected_oku_values:
+        return translated_text, False
+
+    if not _RE_EN_NUMBER_WITH_BILLION_UNIT.search(translated_text):
+        return translated_text, False
+
+    def parse_float(value: str) -> Optional[float]:
+        try:
+            return float((value or "").replace(",", ""))
+        except ValueError:
+            return None
+
+    def as_int_if_close(value: float, tolerance: float = 1e-6) -> Optional[int]:
+        rounded = round(value)
+        if abs(value - rounded) <= tolerance:
+            return int(rounded)
+        return None
+
+    def repl(match: re.Match[str]) -> str:
+        prefix = match.group("prefix") or ""
+        number_str = match.group("number") or ""
+        suffix = match.group("suffix") or ""
+        sep = match.group("sep") or ""
+        unit = (match.group("unit") or "").lower()
+
+        number = parse_float(number_str)
+        if number is None:
+            return match.group(0)
+
+        safe_sep = sep if sep else " "
+
+        # Case A: the number already equals the expected oku value (unit label only).
+        number_int = as_int_if_close(number, tolerance=1e-9)
+        if number_int is not None and number_int in expected_oku_values:
+            return f"{prefix}{number_str}{suffix}{safe_sep}oku"
+
+        # Case B: convert billion/trillion/bn → oku and verify it matches expected values.
+        factor = 10.0 if unit in ("billion", "bn") else 10_000.0
+        converted = number * factor
+        converted_int = as_int_if_close(converted)
+        if converted_int is None or converted_int not in expected_oku_values:
+            return match.group(0)
+
+        formatted = f"{converted_int:,}"
+        return f"{prefix}{formatted}{suffix}{safe_sep}oku"
+
+    fixed, count = _RE_EN_NUMBER_WITH_BILLION_UNIT.subn(repl, translated_text)
+    return fixed, bool(count) and fixed != translated_text
 
 
 def _needs_to_en_numeric_rule_retry_copilot(
@@ -2982,6 +3099,13 @@ class TranslationService:
                             metadata=metadata,
                         )
                 explanation = ""
+                fixed_text, fixed = _fix_to_en_oku_numeric_unit_if_possible(
+                    source_text=text,
+                    translated_text=translation,
+                )
+                if fixed:
+                    translation = fixed_text
+                    metadata["to_en_numeric_unit_correction"] = True
                 return TextTranslationResult(
                     source_text=text,
                     source_char_count=len(text),
@@ -3476,6 +3600,22 @@ class TranslationService:
                         metadata["to_en_numeric_rule_retry_failed_styles"] = (
                             failed_styles if failed_styles else retry_styles
                         )
+
+                corrected_styles: list[str] = []
+                for opt in options:
+                    fixed_text, fixed = _fix_to_en_oku_numeric_unit_if_possible(
+                        source_text=text,
+                        translated_text=opt.text,
+                    )
+                    if not fixed:
+                        continue
+                    opt.text = fixed_text
+                    opt.explanation = ""
+                    if opt.style:
+                        corrected_styles.append(opt.style)
+                if corrected_styles:
+                    metadata["to_en_numeric_unit_correction"] = True
+                    metadata["to_en_numeric_unit_correction_styles"] = corrected_styles
                 return TextTranslationResult(
                     source_text=text,
                     source_char_count=len(text),
@@ -3700,6 +3840,22 @@ class TranslationService:
 
                 if retry_result and retry_result.options:
                     retry_text = retry_result.options[0].text
+                    fixed_retry_text, fixed_retry = (
+                        _fix_to_en_oku_numeric_unit_if_possible(
+                            source_text=text,
+                            translated_text=retry_text,
+                        )
+                    )
+                    if fixed_retry:
+                        retry_result.options[0].text = fixed_retry_text
+                        retry_result.options[0].explanation = ""
+                        metadata = (
+                            dict(retry_result.metadata) if retry_result.metadata else {}
+                        )
+                        metadata.setdefault("backend", "copilot")
+                        metadata["to_en_numeric_unit_correction"] = True
+                        retry_result.metadata = metadata
+                        retry_text = fixed_retry_text
                     if not _is_text_output_language_mismatch(
                         retry_text, "en"
                     ) and not _needs_to_en_numeric_rule_retry_copilot(text, retry_text):
@@ -3765,6 +3921,18 @@ class TranslationService:
                     return attach_copilot_telemetry(retry_result)
 
             if result:
+                if result.output_language == "en" and result.options:
+                    fixed_text, fixed = _fix_to_en_oku_numeric_unit_if_possible(
+                        source_text=text,
+                        translated_text=result.options[0].text,
+                    )
+                    if fixed:
+                        result.options[0].text = fixed_text
+                        result.options[0].explanation = ""
+                        metadata = dict(result.metadata) if result.metadata else {}
+                        metadata.setdefault("backend", "copilot")
+                        metadata["to_en_numeric_unit_correction"] = True
+                        result.metadata = metadata
                 return attach_copilot_telemetry(result)
 
             logger.warning("Empty response received from Copilot")
@@ -4265,6 +4433,36 @@ class TranslationService:
 
             return result
 
+        def apply_numeric_unit_correction(
+            result: TextTranslationResult,
+        ) -> TextTranslationResult:
+            if result.output_language != "en":
+                return result
+            if not result.options:
+                return result
+
+            corrected_styles: list[str] = []
+            for option in result.options:
+                fixed_text, fixed = _fix_to_en_oku_numeric_unit_if_possible(
+                    source_text=text,
+                    translated_text=option.text,
+                )
+                if not fixed:
+                    continue
+                option.text = fixed_text
+                option.explanation = ""
+                if option.style:
+                    corrected_styles.append(option.style)
+
+            if corrected_styles:
+                metadata = dict(result.metadata) if result.metadata else {}
+                metadata.setdefault("backend", "copilot")
+                metadata["to_en_numeric_unit_correction"] = True
+                metadata["to_en_numeric_unit_correction_styles"] = corrected_styles
+                result.metadata = metadata
+
+            return result
+
         combined_error: Optional[str] = None
         wants_combined = (
             set(style_list) == set(TEXT_STYLE_ORDER) and len(style_list) > 1
@@ -4551,6 +4749,7 @@ class TranslationService:
                                         telemetry_combined_succeeded = True
                                         result = ensure_style_options(result)
                                         result = apply_style_diff_guard(result)
+                                        result = apply_numeric_unit_correction(result)
                                         return attach_style_comparison_telemetry(result)
                                     if ordered_options:
                                         combined_error = (
@@ -4580,6 +4779,7 @@ class TranslationService:
                                 telemetry_combined_succeeded = True
                                 result = ensure_style_options(result)
                                 result = apply_style_diff_guard(result)
+                                result = apply_numeric_unit_correction(result)
                                 return attach_style_comparison_telemetry(result)
                         combined_error = (
                             combined_error or "Failed to parse style comparison result"
@@ -4625,6 +4825,7 @@ class TranslationService:
                             telemetry_combined_succeeded = True
                             result = ensure_style_options(result)
                             result = apply_style_diff_guard(result)
+                            result = apply_numeric_unit_correction(result)
                             return attach_style_comparison_telemetry(result)
                         if ordered_options:
                             combined_error = (
@@ -4731,6 +4932,7 @@ class TranslationService:
             )
             result = ensure_style_options(result)
             result = apply_style_diff_guard(result)
+            result = apply_numeric_unit_correction(result)
             return attach_style_comparison_telemetry(result)
 
         return attach_style_comparison_telemetry(

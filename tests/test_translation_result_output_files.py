@@ -61,4 +61,3 @@ def test_translation_result_output_files_skips_missing_and_deduplicates(
         (output_path, "翻訳ファイル"),
         (extra, "翻訳ファイル（簡潔）"),
     ]
-

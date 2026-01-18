@@ -207,7 +207,9 @@ def test_local_reference_embed_matches_glossary_source_with_fullwidth_ascii(
     builder = _make_builder()
     glossary_path = tmp_path / "glossary.csv"
     glossary_path.write_text("B/E台数,B/E Vol.\n", encoding="utf-8")
-    embedded = builder.build_reference_embed([glossary_path], input_text="Ｂ／Ｅ台数が増加")
+    embedded = builder.build_reference_embed(
+        [glossary_path], input_text="Ｂ／Ｅ台数が増加"
+    )
     assert "B/E台数 翻译成 B/E Vol." in embedded.text
 
 
@@ -240,7 +242,9 @@ def test_local_reference_embed_truncates_bundled_glossary_to_max_lines(
         tokens.append(source)
     glossary_path.write_text("\n".join(rows) + "\n", encoding="utf-8")
 
-    embedded = builder.build_reference_embed([glossary_path], input_text=" ".join(tokens))
+    embedded = builder.build_reference_embed(
+        [glossary_path], input_text=" ".join(tokens)
+    )
     assert embedded.truncated is True
     assert embedded.text.count(" 翻译成 ") == 80
 

@@ -32,7 +32,9 @@ class SequencedCopilotHandler:
         return response
 
 
-def test_copilot_style_comparison_fills_missing_minimal_with_single_extra_call() -> None:
+def test_copilot_style_comparison_fills_missing_minimal_with_single_extra_call() -> (
+    None
+):
     first = """[standard]
 Translation:
 Standard translation.
@@ -58,6 +60,7 @@ Minimal translation.
     )
 
     assert copilot.translate_single_calls == 2
+    telemetry = (result.metadata or {}).get("text_style_comparison_telemetry") or {}
     assert [option.style for option in result.options] == [
         "standard",
         "concise",
@@ -68,10 +71,23 @@ Minimal translation.
         "Concise translation.",
         "Minimal translation.",
     ]
+    assert telemetry.get("translate_single_calls") == 2
+    assert telemetry.get("translate_single_phases") == [
+        "style_compare",
+        "fill_missing_styles",
+    ]
+    assert telemetry.get("fill_missing_styles_calls") == 1
+    assert telemetry.get("fill_missing_styles_styles") == ["minimal"]
+    assert telemetry.get("output_language_retry_calls") == 0
+    assert telemetry.get("combined_attempted") is True
+    assert telemetry.get("combined_succeeded") is True
+    assert telemetry.get("per_style_used") is False
     assert (result.metadata or {}).get("style_fallback") is None
 
 
-def test_copilot_style_comparison_falls_back_when_missing_still_missing_after_fill() -> None:
+def test_copilot_style_comparison_falls_back_when_missing_still_missing_after_fill() -> (
+    None
+):
     first = """[standard]
 Translation:
 Standard translation.
@@ -94,12 +110,24 @@ Concise translation.
     )
 
     assert copilot.translate_single_calls == 2
+    telemetry = (result.metadata or {}).get("text_style_comparison_telemetry") or {}
     assert [option.style for option in result.options] == [
         "standard",
         "concise",
         "minimal",
     ]
     assert result.options[2].text == result.options[1].text
+    assert telemetry.get("translate_single_calls") == 2
+    assert telemetry.get("translate_single_phases") == [
+        "style_compare",
+        "fill_missing_styles",
+    ]
+    assert telemetry.get("fill_missing_styles_calls") == 1
+    assert telemetry.get("fill_missing_styles_styles") == ["minimal"]
+    assert telemetry.get("output_language_retry_calls") == 0
+    assert telemetry.get("combined_attempted") is True
+    assert telemetry.get("combined_succeeded") is True
+    assert telemetry.get("per_style_used") is False
     assert (result.metadata or {}).get("style_fallback") == {"minimal": "concise"}
 
 

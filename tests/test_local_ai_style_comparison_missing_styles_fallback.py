@@ -25,9 +25,7 @@ def test_local_style_comparison_stops_additional_calls_when_budget_exhausted(
         call_count += 1
 
         if call_count == 1:
-            return (
-                '{"options":[{"style":"standard","translation":"Standard translation."}]}'
-            )
+            return '{"options":[{"style":"standard","translation":"Standard translation."}]}'
         if call_count == 2:
             return "{}"
         raise AssertionError(

@@ -364,7 +364,9 @@ def create_file_panel(
                                     )
                             if state.file_output_language == "en":
                                 with ui.column().classes("advanced-section"):
-                                    ui.label("既定表示スタイル").classes("advanced-label")
+                                    ui.label("既定表示スタイル").classes(
+                                        "advanced-label"
+                                    )
                                     _style_selector(translation_style, on_style_change)
                             with ui.column().classes("advanced-section"):
                                 ui.label("参照ファイル").classes("advanced-label")

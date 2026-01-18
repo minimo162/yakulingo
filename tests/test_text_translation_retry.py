@@ -84,6 +84,7 @@ HR director's company: starting pay 22 man yen; not low vs. industry avg.
     )
 
     assert copilot.translate_single_calls == 2
+    telemetry = (result.metadata or {}).get("text_style_comparison_telemetry") or {}
     assert result.output_language == "en"
     assert [option.style for option in result.options] == [
         "standard",
@@ -91,6 +92,16 @@ HR director's company: starting pay 22 man yen; not low vs. industry avg.
         "minimal",
     ]
     assert all(not _RE_JP_CHARS.search(option.text) for option in result.options)
+    assert telemetry.get("translate_single_calls") == 2
+    assert telemetry.get("translate_single_phases") == [
+        "style_compare",
+        "style_compare_output_language_retry",
+    ]
+    assert telemetry.get("output_language_retry_calls") == 1
+    assert telemetry.get("fill_missing_styles_calls") == 0
+    assert telemetry.get("combined_attempted") is True
+    assert telemetry.get("combined_succeeded") is True
+    assert telemetry.get("per_style_used") is False
 
 
 def test_translate_text_with_options_retries_when_selected_translation_is_japanese() -> (

@@ -143,7 +143,9 @@ class LocalPromptBuilder:
                     continue
                 second = (row[1] or "").strip() if len(row) > 1 else ""
                 source_folded = self._normalize_for_glossary_match(first)
-                target_folded = self._normalize_for_glossary_match(second) if second else ""
+                target_folded = (
+                    self._normalize_for_glossary_match(second) if second else ""
+                )
                 source_compact = self._compact_for_glossary_match(source_folded)
                 target_compact = self._compact_for_glossary_match(target_folded)
                 pairs.append(
@@ -219,7 +221,14 @@ class LocalPromptBuilder:
         seen: set[str] = set()
         heap: list[tuple[int, int, str, str]] = []
         matched_count = 0
-        for idx, (source, target, source_folded, target_folded, source_compact, target_compact) in enumerate(pairs):
+        for idx, (
+            source,
+            target,
+            source_folded,
+            target_folded,
+            source_compact,
+            target_compact,
+        ) in enumerate(pairs):
             source = (source or "").strip()
             if not source:
                 continue
@@ -278,7 +287,6 @@ class LocalPromptBuilder:
             kept.append(line)
             total += needed
         return "\n".join(kept), False
-
 
     def _get_translation_rules_for_text(self, output_language: str, text: str) -> str:
         if not text or not text.strip():

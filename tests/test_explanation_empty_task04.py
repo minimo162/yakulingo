@@ -47,7 +47,9 @@ def test_copy_payload_never_includes_explanation_text() -> None:
         source_text="src",
         source_char_count=3,
         output_language="en",
-        options=[TranslationOption(text="Hello", explanation="Notes", style="standard")],
+        options=[
+            TranslationOption(text="Hello", explanation="Notes", style="standard")
+        ],
     )
     payload_en = _build_copy_payload(
         result_en,
@@ -95,4 +97,3 @@ def test_history_db_serialize_and_deserialize_ignores_explanation(tmp_path) -> N
         )
     )
     assert restored_missing.options[0].explanation == ""
-

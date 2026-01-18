@@ -1899,7 +1899,9 @@ class BatchTranslator:
                     for idx, translated_text in enumerate(cleaned_unique_translations)
                     if translated_text
                     and translated_text.strip()
-                    and _needs_to_en_numeric_rule_retry(unique_texts[idx], translated_text)
+                    and _needs_to_en_numeric_rule_retry(
+                        unique_texts[idx], translated_text
+                    )
                 ]
                 if numeric_rule_violation_indices:
                     retry_instruction = (
@@ -1918,7 +1920,10 @@ class BatchTranslator:
                         text_to_retry = unique_texts[idx]
                         if not text_to_retry:
                             continue
-                        if retry_texts and total_chars + len(text_to_retry) > max_retry_chars:
+                        if (
+                            retry_texts
+                            and total_chars + len(text_to_retry) > max_retry_chars
+                        ):
                             break
                         retry_indices.append(idx)
                         retry_texts.append(text_to_retry)
@@ -1954,13 +1959,15 @@ class BatchTranslator:
                                     with self._ui_window_sync_scope(
                                         "translate_blocks_with_result_numeric_rule_retry"
                                     ):
-                                        repair_translations = self.copilot.translate_sync(
-                                            retry_texts,
-                                            repair_prompt,
-                                            files_to_attach,
-                                            True,
-                                            timeout=self.request_timeout,
-                                            include_item_ids=include_item_ids,
+                                        repair_translations = (
+                                            self.copilot.translate_sync(
+                                                retry_texts,
+                                                repair_prompt,
+                                                files_to_attach,
+                                                True,
+                                                timeout=self.request_timeout,
+                                                include_item_ids=include_item_ids,
+                                            )
                                         )
                                 finally:
                                     self.copilot.set_cancel_callback(None)
@@ -1987,15 +1994,22 @@ class BatchTranslator:
                                 )
                                 if len(repair_translations) < len(retry_texts):
                                     repair_translations = repair_translations + (
-                                        [""] * (len(retry_texts) - len(repair_translations))
+                                        [""]
+                                        * (len(retry_texts) - len(repair_translations))
                                     )
                                 else:
-                                    repair_translations = repair_translations[: len(retry_texts)]
+                                    repair_translations = repair_translations[
+                                        : len(retry_texts)
+                                    ]
 
                             updated_count = 0
-                            for repair_pos, repaired_text in enumerate(repair_translations):
+                            for repair_pos, repaired_text in enumerate(
+                                repair_translations
+                            ):
                                 original_idx = retry_indices[repair_pos]
-                                cleaned_repair = self._clean_batch_translation(repaired_text)
+                                cleaned_repair = self._clean_batch_translation(
+                                    repaired_text
+                                )
                                 if not cleaned_repair or not cleaned_repair.strip():
                                     continue
                                 if _RE_HANGUL.search(cleaned_repair):
@@ -2012,7 +2026,9 @@ class BatchTranslator:
                                     unique_texts[original_idx], cleaned_repair
                                 ):
                                     continue
-                                cleaned_unique_translations[original_idx] = cleaned_repair
+                                cleaned_unique_translations[original_idx] = (
+                                    cleaned_repair
+                                )
                                 updated_count += 1
                             if updated_count:
                                 logger.debug(
@@ -2773,9 +2789,7 @@ class TranslationService:
             return TextTranslationResult(
                 source_text=text,
                 source_char_count=len(text),
-                options=[
-                    TranslationOption(text=translation, explanation="")
-                ],
+                options=[TranslationOption(text=translation, explanation="")],
                 output_language=output_language,
                 detected_language=detected_language,
                 metadata=metadata,
@@ -2931,9 +2945,7 @@ class TranslationService:
                         detected_language=detected_language,
                     )
                     stream_handler = _wrap_local_streaming_on_chunk(on_chunk)
-                    raw = call_local(
-                        prompt, stream_handler, f"missing_single_{style}"
-                    )
+                    raw = call_local(prompt, stream_handler, f"missing_single_{style}")
                     if raw is None:
                         break
                     translation, _ = parse_text_single_translation(raw)
@@ -2976,9 +2988,7 @@ class TranslationService:
                         retry_prompt,
                         BatchTranslator._EN_STRICT_OUTPUT_LANGUAGE_INSTRUCTION,
                     )
-                    retry_raw = call_local(
-                        retry_prompt, None, "output_language_retry"
-                    )
+                    retry_raw = call_local(retry_prompt, None, "output_language_retry")
                     retry_by_style = (
                         parse_text_to_en_style_subset(retry_raw, retry_styles)
                         if retry_raw is not None
@@ -3041,8 +3051,7 @@ class TranslationService:
                 too_short_styles = [
                     opt.style
                     for opt in options
-                    if opt.style
-                    and _looks_incomplete_translation_to_en(text, opt.text)
+                    if opt.style and _looks_incomplete_translation_to_en(text, opt.text)
                 ]
                 if too_short_styles:
                     retry_instruction = (
@@ -3072,7 +3081,9 @@ class TranslationService:
                         else None
                     )
                     if retry_raw is None:
-                        metadata["incomplete_translation_retry_skipped_due_to_budget"] = True
+                        metadata[
+                            "incomplete_translation_retry_skipped_due_to_budget"
+                        ] = True
                     if retry_by_style:
                         for opt in options:
                             style = opt.style
@@ -3151,7 +3162,9 @@ class TranslationService:
                         else None
                     )
                     if retry_raw is None:
-                        metadata["to_en_numeric_rule_retry_skipped_due_to_budget"] = True
+                        metadata["to_en_numeric_rule_retry_skipped_due_to_budget"] = (
+                            True
+                        )
                     else:
                         metadata["to_en_numeric_rule_retry"] = True
                         metadata["to_en_numeric_rule_retry_styles"] = retry_styles
@@ -3225,9 +3238,13 @@ class TranslationService:
                 metadata=metadata,
             )
         finally:
-            metadata["local_style_compare_call_budget"] = local_style_compare_call_budget
+            metadata["local_style_compare_call_budget"] = (
+                local_style_compare_call_budget
+            )
             metadata["local_style_compare_call_count"] = local_style_compare_call_count
-            metadata["local_style_compare_call_phases"] = local_style_compare_call_phases
+            metadata["local_style_compare_call_phases"] = (
+                local_style_compare_call_phases
+            )
             if local_style_compare_call_budget_exhausted_phases:
                 metadata["local_style_compare_call_budget_exhausted"] = True
                 metadata["local_style_compare_call_budget_exhausted_phases"] = (
@@ -3622,7 +3639,9 @@ class TranslationService:
         seen = set()
         style_list = [s for s in style_list if not (s in seen or seen.add(s))]
 
-        def ensure_style_options(result: TextTranslationResult) -> TextTranslationResult:
+        def ensure_style_options(
+            result: TextTranslationResult,
+        ) -> TextTranslationResult:
             if result.output_language != "en":
                 return result
             if not result.options:
@@ -3712,6 +3731,64 @@ class TranslationService:
             else:
                 return ensure_style_options(local_result)
 
+        telemetry_translate_single_calls = 0
+        telemetry_translate_single_seconds_total = 0.0
+        telemetry_translate_single_phases: list[str] = []
+        telemetry_translate_single_phase_counts: dict[str, int] = {}
+        telemetry_translate_single_phase_seconds: dict[str, float] = {}
+        telemetry_output_language_retry_calls = 0
+        telemetry_fill_missing_styles_calls = 0
+        telemetry_fill_missing_styles_styles: list[str] = []
+        telemetry_combined_attempted = False
+        telemetry_combined_succeeded = False
+        telemetry_per_style_used = False
+
+        def translate_single_timed(
+            phase: str,
+            source_text: str,
+            prompt: str,
+            reference_files: Optional[list[Path]] = None,
+            on_chunk: "Callable[[str], None] | None" = None,
+        ) -> str:
+            nonlocal telemetry_translate_single_calls
+            nonlocal telemetry_translate_single_seconds_total
+
+            start = time.monotonic()
+            raw = translate_single(source_text, prompt, reference_files, on_chunk)
+            elapsed = time.monotonic() - start
+
+            telemetry_translate_single_calls += 1
+            telemetry_translate_single_seconds_total += elapsed
+            telemetry_translate_single_phases.append(phase)
+            telemetry_translate_single_phase_counts[phase] = (
+                telemetry_translate_single_phase_counts.get(phase, 0) + 1
+            )
+            telemetry_translate_single_phase_seconds[phase] = (
+                telemetry_translate_single_phase_seconds.get(phase, 0.0) + elapsed
+            )
+            return raw
+
+        def attach_style_comparison_telemetry(
+            result: TextTranslationResult,
+        ) -> TextTranslationResult:
+            metadata = dict(result.metadata) if result.metadata else {}
+            metadata.setdefault("backend", "copilot")
+            metadata["text_style_comparison_telemetry"] = {
+                "translate_single_calls": telemetry_translate_single_calls,
+                "translate_single_seconds_total": telemetry_translate_single_seconds_total,
+                "translate_single_phases": telemetry_translate_single_phases,
+                "translate_single_phase_counts": telemetry_translate_single_phase_counts,
+                "translate_single_phase_seconds": telemetry_translate_single_phase_seconds,
+                "output_language_retry_calls": telemetry_output_language_retry_calls,
+                "fill_missing_styles_calls": telemetry_fill_missing_styles_calls,
+                "fill_missing_styles_styles": telemetry_fill_missing_styles_styles,
+                "combined_attempted": telemetry_combined_attempted,
+                "combined_succeeded": telemetry_combined_succeeded,
+                "per_style_used": telemetry_per_style_used,
+            }
+            result.metadata = metadata
+            return result
+
         combined_error: Optional[str] = None
         wants_combined = (
             set(style_list) == set(TEXT_STYLE_ORDER) and len(style_list) > 1
@@ -3722,6 +3799,7 @@ class TranslationService:
             if template:
                 try:
                     self._cancel_event.clear()
+                    telemetry_combined_attempted = True
 
                     if reference_files:
                         reference_section = REFERENCE_INSTRUCTION
@@ -3755,8 +3833,19 @@ class TranslationService:
                         base_options: dict[str, TranslationOption],
                         missing_styles: list[str],
                     ) -> None:
+                        nonlocal telemetry_fill_missing_styles_calls
                         if not missing_styles:
                             return
+
+                        telemetry_fill_missing_styles_calls += 1
+                        for missing_style in missing_styles:
+                            if (
+                                missing_style
+                                not in telemetry_fill_missing_styles_styles
+                            ):
+                                telemetry_fill_missing_styles_styles.append(
+                                    missing_style
+                                )
 
                         missing_labels = ", ".join(
                             f"[{style}]" for style in missing_styles
@@ -3769,8 +3858,12 @@ class TranslationService:
                             "Do not output any other style sections. Do not include explanations/notes."
                         )
                         fill_prompt = build_compare_prompt(fill_instruction)
-                        fill_raw_result = translate_single(
-                            text, fill_prompt, files_to_attach, None
+                        fill_raw_result = translate_single_timed(
+                            "fill_missing_styles",
+                            text,
+                            fill_prompt,
+                            files_to_attach,
+                            None,
                         )
                         fill_parsed_options = self._parse_style_comparison_result(
                             fill_raw_result
@@ -3796,20 +3889,29 @@ class TranslationService:
                         "Sending text to Copilot for style comparison (refs=%d)",
                         len(files_to_attach) if files_to_attach else 0,
                     )
-                    raw_result = translate_single(
-                        text, prompt, files_to_attach, copilot_on_chunk
+                    raw_result = translate_single_timed(
+                        "style_compare",
+                        text,
+                        prompt,
+                        files_to_attach,
+                        copilot_on_chunk,
                     )
                     parsed_options = self._parse_style_comparison_result(raw_result)
                     if parsed_options and any(
                         _is_text_output_language_mismatch(option.text, "en")
                         for option in parsed_options
                     ):
+                        telemetry_output_language_retry_calls += 1
                         retry_prompt = build_compare_prompt(
                             "CRITICAL: Rewrite all Translation sections in English only (no Japanese/Chinese/Korean scripts; no Japanese punctuation). "
                             "Keep the exact output format (Translation sections only; no explanations/notes)."
                         )
-                        retry_raw_result = translate_single(
-                            text, retry_prompt, files_to_attach, None
+                        retry_raw_result = translate_single_timed(
+                            "style_compare_output_language_retry",
+                            text,
+                            retry_prompt,
+                            files_to_attach,
+                            None,
                         )
                         retry_parsed_options = self._parse_style_comparison_result(
                             retry_raw_result
@@ -3834,12 +3936,17 @@ class TranslationService:
                         if parsed_single:
                             option = parsed_single[0]
                             if _is_text_output_language_mismatch(option.text, "en"):
+                                telemetry_output_language_retry_calls += 1
                                 retry_prompt = build_compare_prompt(
                                     "CRITICAL: Rewrite all Translation sections in English only (no Japanese/Chinese/Korean scripts; no Japanese punctuation). "
                                     "Keep the exact output format (Translation sections only; no explanations/notes)."
                                 )
-                                retry_raw_result = translate_single(
-                                    text, retry_prompt, files_to_attach, None
+                                retry_raw_result = translate_single_timed(
+                                    "style_compare_output_language_retry",
+                                    text,
+                                    retry_prompt,
+                                    files_to_attach,
+                                    None,
                                 )
                                 retry_parsed_options = (
                                     self._parse_style_comparison_result(
@@ -3897,7 +4004,10 @@ class TranslationService:
                                             output_language=output_language,
                                             detected_language=detected_language,
                                         )
-                                        return ensure_style_options(result)
+                                        telemetry_combined_succeeded = True
+                                        return attach_style_comparison_telemetry(
+                                            ensure_style_options(result)
+                                        )
                                     if ordered_options:
                                         combined_error = (
                                             combined_error
@@ -3923,7 +4033,10 @@ class TranslationService:
                                     output_language=output_language,
                                     detected_language=detected_language,
                                 )
-                                return ensure_style_options(result)
+                                telemetry_combined_succeeded = True
+                                return attach_style_comparison_telemetry(
+                                    ensure_style_options(result)
+                                )
                         combined_error = (
                             combined_error or "Failed to parse style comparison result"
                         )
@@ -3965,7 +4078,10 @@ class TranslationService:
                                 output_language=output_language,
                                 detected_language=detected_language,
                             )
-                            return ensure_style_options(result)
+                            telemetry_combined_succeeded = True
+                            return attach_style_comparison_telemetry(
+                                ensure_style_options(result)
+                            )
                         if ordered_options:
                             combined_error = (
                                 combined_error
@@ -3977,12 +4093,14 @@ class TranslationService:
                         )
                 except TranslationCancelledError:
                     logger.info("Style comparison translation cancelled")
-                    return TextTranslationResult(
-                        source_text=text,
-                        source_char_count=len(text),
-                        output_language=output_language,
-                        detected_language=detected_language,
-                        error_message="翻訳がキャンセルされました",
+                    return attach_style_comparison_telemetry(
+                        TextTranslationResult(
+                            source_text=text,
+                            source_char_count=len(text),
+                            output_language=output_language,
+                            detected_language=detected_language,
+                            error_message="翻訳がキャンセルされました",
+                        )
                     )
                 except OSError as e:
                     logger.warning("File I/O error during style comparison: %s", e)
@@ -3996,9 +4114,23 @@ class TranslationService:
         options: list[TranslationOption] = []
         last_error: Optional[str] = combined_error
 
+        telemetry_per_style_used = True
         with self._ui_window_sync_scope("translate_text_with_style_comparison"):
             for style in style_list:
                 try:
+                    style_phase = f"per_style:{style}"
+
+                    def translate_single_for_style(
+                        source_text: str,
+                        prompt: str,
+                        reference_files: Optional[list[Path]] = None,
+                        on_chunk: "Callable[[str], None] | None" = None,
+                        _phase: str = style_phase,
+                    ) -> str:
+                        return translate_single_timed(
+                            _phase, source_text, prompt, reference_files, on_chunk
+                        )
+
                     result = self._translate_text_with_options_on_copilot(
                         text=text,
                         reference_files=reference_files,
@@ -4006,7 +4138,7 @@ class TranslationService:
                         detected_language=detected_language,
                         output_language=output_language,
                         on_chunk=copilot_on_chunk,
-                        translate_single=translate_single,
+                        translate_single=translate_single_for_style,
                     )
                 except TranslationCancelledError:
                     logger.info("Text translation with options cancelled")
@@ -4053,14 +4185,16 @@ class TranslationService:
                 output_language=output_language,
                 detected_language=detected_language,
             )
-            return ensure_style_options(result)
+            return attach_style_comparison_telemetry(ensure_style_options(result))
 
-        return TextTranslationResult(
-            source_text=text,
-            source_char_count=len(text),
-            output_language=output_language,
-            detected_language=detected_language,
-            error_message=last_error or "Unknown error",
+        return attach_style_comparison_telemetry(
+            TextTranslationResult(
+                source_text=text,
+                source_char_count=len(text),
+                output_language=output_language,
+                detected_language=detected_language,
+                error_message=last_error or "Unknown error",
+            )
         )
 
     def extract_detection_sample(
@@ -4845,9 +4979,7 @@ class TranslationService:
                 )
             apply_step += 1
             if on_progress:
-                progress_current = 90 + int(
-                    10 * (apply_step - 1) / max(apply_total, 1)
-                )
+                progress_current = 90 + int(10 * (apply_step - 1) / max(apply_total, 1))
                 style_label = style_labels.get(style_key, style_key)
                 on_progress(
                     TranslationProgress(
@@ -4878,9 +5010,7 @@ class TranslationService:
                 )
             apply_step += 1
             if on_progress:
-                progress_current = 90 + int(
-                    10 * (apply_step - 1) / max(apply_total, 1)
-                )
+                progress_current = 90 + int(10 * (apply_step - 1) / max(apply_total, 1))
                 on_progress(
                     TranslationProgress(
                         current=progress_current,
@@ -4906,9 +5036,7 @@ class TranslationService:
                 )
             apply_step += 1
             if on_progress:
-                progress_current = 90 + int(
-                    10 * (apply_step - 1) / max(apply_total, 1)
-                )
+                progress_current = 90 + int(10 * (apply_step - 1) / max(apply_total, 1))
                 on_progress(
                     TranslationProgress(
                         current=progress_current,
@@ -5222,9 +5350,7 @@ class TranslationService:
                 )
             apply_step += 1
             if on_progress:
-                progress_current = 90 + int(
-                    10 * (apply_step - 1) / max(apply_total, 1)
-                )
+                progress_current = 90 + int(10 * (apply_step - 1) / max(apply_total, 1))
                 style_label = style_labels.get(style_key, style_key)
                 on_progress(
                     TranslationProgress(
@@ -5256,9 +5382,7 @@ class TranslationService:
                 )
             apply_step += 1
             if on_progress:
-                progress_current = 90 + int(
-                    10 * (apply_step - 1) / max(apply_total, 1)
-                )
+                progress_current = 90 + int(10 * (apply_step - 1) / max(apply_total, 1))
                 on_progress(
                     TranslationProgress(
                         current=progress_current,
@@ -5285,9 +5409,7 @@ class TranslationService:
                 )
             apply_step += 1
             if on_progress:
-                progress_current = 90 + int(
-                    10 * (apply_step - 1) / max(apply_total, 1)
-                )
+                progress_current = 90 + int(10 * (apply_step - 1) / max(apply_total, 1))
                 on_progress(
                     TranslationProgress(
                         current=progress_current,
@@ -5623,7 +5745,9 @@ class TranslationService:
         )
         return output_path
 
-    def _generate_style_variant_output_path(self, output_path: Path, style: str) -> Path:
+    def _generate_style_variant_output_path(
+        self, output_path: Path, style: str
+    ) -> Path:
         """Generate an additional output path with style suffix, ensuring uniqueness."""
         suffix = f"_{style}"
         candidate = output_path.with_name(

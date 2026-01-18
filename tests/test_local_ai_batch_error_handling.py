@@ -125,9 +125,13 @@ def test_local_batch_retries_when_numeric_rules_violated() -> None:
         enable_cache=False,
     )
     blocks = [
-        TextBlock(id="b1", text="売上高は2兆2,385億円となりました。", location="Sheet1"),
         TextBlock(
-            id="b2", text="営業利益は前年同期比1,554億円減となりました。", location="Sheet1"
+            id="b1", text="売上高は2兆2,385億円となりました。", location="Sheet1"
+        ),
+        TextBlock(
+            id="b2",
+            text="営業利益は前年同期比1,554億円減となりました。",
+            location="Sheet1",
         ),
     ]
 

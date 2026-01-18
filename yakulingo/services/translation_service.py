@@ -3007,54 +3007,64 @@ class TranslationService:
                         for s in too_short_styles
                         if not (s in seen_retry or seen_retry.add(s))
                     ]
-                    updated = False
-                    for style in retry_styles:
-                        retry_prompt = local_builder.build_text_to_en_single(
-                            text,
-                            style=style,
-                            reference_files=reference_files,
-                            detected_language=detected_language,
-                            extra_instruction=retry_instruction,
-                        )
-                        retry_raw = self._translate_single_with_cancel(
-                            text, retry_prompt, None, None
-                        )
-                        retry_translation, _ = parse_text_single_translation(
-                            retry_raw
-                        )
-                        if (
-                            retry_translation
-                            and not _is_text_output_language_mismatch(
-                                retry_translation, "en"
-                            )
-                            and not _looks_incomplete_translation_to_en(
-                                text, retry_translation
-                            )
-                        ):
-                            for opt in options:
-                                if opt.style == style:
-                                    opt.text = retry_translation
-                                    opt.explanation = ""
-                                    updated = True
-                                    break
-                    if updated:
-                        metadata["incomplete_translation_retry"] = True
+                    metadata["incomplete_translation_retry"] = True
+                    retry_prompt = local_builder.build_text_to_en_missing_styles(
+                        text,
+                        styles=retry_styles,
+                        reference_files=reference_files,
+                        detected_language=detected_language,
+                        extra_instruction=retry_instruction,
+                    )
+                    retry_raw = self._translate_single_with_cancel(
+                        text, retry_prompt, None, None
+                    )
+                    retry_by_style = parse_text_to_en_style_subset(
+                        retry_raw, retry_styles
+                    )
+                    if retry_by_style:
+                        for opt in options:
+                            style = opt.style
+                            if not style or style not in retry_by_style:
+                                continue
+                            retry_translation, _ = retry_by_style[style]
+                            if (
+                                retry_translation
+                                and not _is_text_output_language_mismatch(
+                                    retry_translation, "en"
+                                )
+                                and not _looks_incomplete_translation_to_en(
+                                    text, retry_translation
+                                )
+                            ):
+                                opt.text = retry_translation
+                                opt.explanation = ""
 
-                    if any(
+                    incomplete_styles = {
                         opt.style
-                        and _looks_incomplete_translation_to_en(text, opt.text)
                         for opt in options
-                    ):
-                        metadata["incomplete_translation"] = True
-                        metadata["incomplete_translation_retry_failed"] = True
-                        return TextTranslationResult(
-                            source_text=text,
-                            source_char_count=len(text),
-                            output_language="en",
-                            detected_language=detected_language,
-                            error_message="翻訳結果が不完全でした（短すぎます）。",
-                            metadata=metadata,
+                        if opt.style
+                        and _looks_incomplete_translation_to_en(text, opt.text)
+                    }
+                    if incomplete_styles:
+                        has_complete = any(
+                            opt.style
+                            and not _looks_incomplete_translation_to_en(text, opt.text)
+                            for opt in options
                         )
+                        if not has_complete:
+                            metadata["incomplete_translation"] = True
+                            metadata["incomplete_translation_retry_failed"] = True
+                            return TextTranslationResult(
+                                source_text=text,
+                                source_char_count=len(text),
+                                output_language="en",
+                                detected_language=detected_language,
+                                error_message="翻訳結果が不完全でした（短すぎます）。",
+                                metadata=metadata,
+                            )
+                        for opt in options:
+                            if opt.style and opt.style in incomplete_styles:
+                                opt.style = None
 
                 numeric_rule_violation_styles = [
                     opt.style

@@ -37,13 +37,14 @@ def test_local_style_comparison_retries_when_translation_is_too_short(
                 "]}"
             )
 
-        if "ローカルAI: JP→EN（単発）" in prompt:
-            if "スタイル: standard" in prompt:
-                return '{"translation":"Revenue was 22,385 oku yen, down 6.5% year on year."}'
-            if "スタイル: concise" in prompt:
-                return '{"translation":"Revenue: 22,385 oku yen (YoY -6.5%)."}'
-            if "スタイル: minimal" in prompt:
-                return '{"translation":"Revenue 22,385 oku yen (YoY -6.5%); operating loss 539 oku yen."}'
+        if "ローカルAI: JP→EN（不足スタイル補完）" in prompt:
+            return (
+                '{"options":['
+                '{"style":"standard","translation":"Revenue was 22,385 oku yen, down 6.5% year on year."},'
+                '{"style":"concise","translation":"Revenue: 22,385 oku yen (YoY -6.5%)."},'
+                '{"style":"minimal","translation":"Revenue 22,385 oku yen (YoY -6.5%); operating loss 539 oku yen."}'
+                "]}"
+            )
 
         raise AssertionError(f"Unexpected prompt: {prompt[:200]}")
 
@@ -67,7 +68,7 @@ def test_local_style_comparison_retries_when_translation_is_too_short(
         "Revenue 22,385 oku yen (YoY -6.5%); operating loss 539 oku yen.",
     ]
     assert (result.metadata or {}).get("incomplete_translation_retry") is True
-    assert any("ローカルAI: JP→EN（単発）" in prompt for prompt in prompts)
+    assert any("ローカルAI: JP→EN（不足スタイル補完）" in prompt for prompt in prompts)
 
 
 def test_local_style_comparison_returns_error_when_retry_still_too_short(
@@ -99,8 +100,14 @@ def test_local_style_comparison_returns_error_when_retry_still_too_short(
                 "]}"
             )
 
-        if "ローカルAI: JP→EN（単発）" in prompt:
-            return '{"translation":"Revenue"}'
+        if "ローカルAI: JP→EN（不足スタイル補完）" in prompt:
+            return (
+                '{"options":['
+                '{"style":"standard","translation":"Revenue"},'
+                '{"style":"concise","translation":"Revenue"},'
+                '{"style":"minimal","translation":"Revenue"}'
+                "]}"
+            )
 
         raise AssertionError(f"Unexpected prompt: {prompt[:200]}")
 

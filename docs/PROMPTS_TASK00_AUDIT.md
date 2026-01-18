@@ -65,12 +65,12 @@ Batch translation (yakulingo/services/local_ai_client.py):
 - Fallbacks: [[ID:n]] blocks or numbered lines ("1. ...").
 
 Text JP->EN (3 style):
-- Expected JSON: {"options":[{"style":"standard","translation":"...","explanation":"..."}]}
+- Expected JSON: {"options":[{"style":"standard","translation":"..."}]}
 - "style" is normalized to standard/concise/minimal.
 - Missing styles are filled by order if options list has entries.
 
 Text single (JP->EN single or EN->JP):
-- Expected JSON: {"translation":"..."}（EN→JPは `explanation` キーを必須としない）
+- Expected JSON: {"translation":"..."}（現行テンプレートは `explanation` キーを出さない）
 - 過去互換として `explanation` が来た場合は空文字扱い。
 
 Note: `LocalPromptBuilder` が `detected_language` などを置換できる実装でも、
@@ -90,11 +90,11 @@ Note: `LocalPromptBuilder` が `detected_language` などを置換できる実�
   - Expected output: numbered listのみ（入力と同じ番号・順序、複数行は同一項目内で継続行インデント）
   - Parser: `yakulingo/services/copilot_handler.py::_parse_batch_result`（IDありは `_parse_batch_result_by_id`）
 
-- Text JP→EN (3 styles)
+- Text JP→EN (2 styles)
   - Prompt: `prompts/text_translate_to_en_compare.txt`
-  - Expected output: `[standard]` / `[concise]` / `[minimal]` セクション + 各セクションに `Translation:` と `Explanation:`
+  - Expected output: `[concise]` / `[minimal]` セクション + 各セクションに `Translation:`（解説なし）
   - Parser: `yakulingo/services/translation_service.py::_parse_style_comparison_result` → `_parse_single_translation_result`
-  - Contract test: `tests/test_text_translation_retry.py`（標準訳に日本語混入→再試行も含む）
+  - Contract test: `tests/test_text_compare_template_contract.py`, `tests/test_text_translation_retry.py`（英訳結果に日本語混入→再試行も含む）
 
 - Text EN→JP (single)
   - Prompt: `prompts/text_translate_to_jp.txt`
@@ -111,12 +111,12 @@ Note: `LocalPromptBuilder` が `detected_language` などを置換できる実�
 
 - Text JP→EN (3 styles)
   - Prompt: `prompts/local_text_translate_to_en_3style_json.txt`
-  - Expected output JSON: `{"options":[{"style":"standard","translation":"...","explanation":"..."}]}`
+  - Expected output JSON: `{"options":[{"style":"standard","translation":"..."}]}`
   - Parser: `yakulingo/services/local_ai_client.py::parse_text_to_en_3style`
 
 - Text single (JP→EN single / EN→JP)
   - Prompt: `prompts/local_text_translate_to_en_single_json.txt`, `prompts/local_text_translate_to_jp_json.txt`
-  - Expected output JSON: `{"translation":"...","explanation":"..."}`（`explanation` は optional 互換あり）
+  - Expected output JSON: `{"translation":"..."}`（`explanation` は optional 互換あり）
   - Parser: `yakulingo/services/local_ai_client.py::parse_text_single_translation`
 
 ## Known failure patterns (things prompts must prevent)

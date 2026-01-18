@@ -51,7 +51,7 @@ YakuLingoは、日本語と英語の双方向翻訳を提供するデスクト�
 
 | 入力言語 | 出力 |
 |---------|------|
-| 日本語 | 英語（2スタイル: 標準/簡潔） |
+| 日本語 | 英語（2スタイル: 簡潔/最簡潔（concise/minimal）） |
 | その他 | 日本語（訳文のみ） |
 
 - テキスト翻訳/戻し訳/フォローアップは訳文のみを返し、`explanation` は出力しない（後方互換のためフィールドは保持するが常に空文字）。
@@ -207,7 +207,7 @@ YakuLingo/
 │   ├── local_text_translate_to_jp_json.txt          # ローカルAI（EN→JP / JSON）
 │   ├── local_batch_translate_to_en_json.txt         # ローカルAI（バッチ JP→EN / JSON）
 │   ├── local_batch_translate_to_jp_json.txt         # ローカルAI（バッチ EN→JP / JSON）
-│   ├── file_translate_to_en_{standard|concise}.txt  # ファイル翻訳（日→英）
+│   ├── file_translate_to_en_{standard|concise|minimal}.txt  # ファイル翻訳（日→英）
 │   ├── file_translate_to_jp.txt    # ファイル翻訳用（英→日）
 │   ├── text_translate_to_en_compare.txt  # テキスト翻訳（日→英、2スタイル比較）
 │   ├── text_translate_to_jp.txt    # テキスト翻訳用（英→日、訳文のみ/共通ルール挿入）
@@ -326,7 +326,7 @@ class TranslationOption:
     text: str                        # 翻訳テキスト
     explanation: str                 # 使用文脈・説明
     char_count: int = 0
-    style: Optional[str] = None      # "standard" | "concise"（後方互換で "minimal" も受理）
+    style: Optional[str] = None      # "standard" | "concise" | "minimal"（テキスト英訳では "standard" は後方互換で "concise" 扱い）
     back_translation_input_text: Optional[str] = None
     back_translation_source_text: Optional[str] = None
     back_translation_text: Optional[str] = None
@@ -472,8 +472,6 @@ class AppState:
     text_result: Optional[TextTranslationResult] = None
     text_translation_elapsed_time: Optional[float] = None
     text_streaming_preview: Optional[str] = None
-    text_compare_mode: str = "off"
-    text_compare_base_style: str = "standard"
 
     # ファイル翻訳
     file_state: FileState = FileState.EMPTY
@@ -646,7 +644,6 @@ NiceGUIの`await client.connected()`パターンを使用して、クライア�
 │                                                                 │
 │  💡 [🔄 再翻訳]                         ← 吹き出し風ヒント      │
 │                                                                 │
-│  [標準]                                                        │
 │  [簡潔]                                                        │
 │  [最簡潔]                                                      │
 │                                                                 │
@@ -671,7 +668,7 @@ NiceGUIの`await client.connected()`パターンを使用して、クライア�
 - ユーザーが手動スクロールで離脱した場合は追従しない（新規ストリーミング開始時に追従をリセット）
 
 **英訳表示（2スタイル）:**
-- 英訳は `standard/concise` を常に同時表示（切替UIなし）
+- 英訳は `concise/minimal` を常に同時表示（切替UIなし）
 
 **分割翻訳（Split Translation）:**
 - 入力がバッチ上限を超える場合、分割パネルを表示
@@ -684,7 +681,7 @@ NiceGUIの`await client.connected()`パターンを使用して、クライア�
 - 結果は展開セクションに表示（編集版はタグで識別）
 
 **日本語入力時（英訳）:**
-- 結果カード: `standard/concise` の2スタイルを縦並び表示（Copilot/ローカルAI共通）
+- 結果カード: `concise/minimal` の2スタイルを縦並び表示（Copilot/ローカルAI共通）
 - 💡 [再翻訳]: 吹き出し風ヒント行
 
 **その他入力時（和訳）:**
@@ -1361,37 +1358,39 @@ Reference Files
 - 英訳/和訳とも「ビジネス文書向け」を明記
 - 既にターゲット言語の場合はそのまま出力
 - `{translation_rules}` は出力言語に応じて [COMMON] + [TO_EN]/[TO_JP] を注入
-- 出力: 英訳は2スタイル（`standard/concise`）の訳文のみ、和訳は訳文のみ（解説なし）
+- 出力: 英訳は2スタイル（`concise/minimal`）の訳文のみ、和訳は訳文のみ（解説なし）
 - 禁止事項は英訳/和訳で共通（質問・提案・指示の繰り返し・訳文以外）
 - 戻し訳は `prompts/text_back_translate.txt` を使用（編集した訳文にも対応）
 
-#### 9.4.1 英訳2スタイル定義（standard / concise）
+#### 9.4.1 英訳2スタイル定義（concise / minimal）
 
-- `standard`（標準）:
-  - 自然で読みやすいビジネス英語（本文向け）
-  - 文として成立させ、文脈・ニュアンスを保つ
 - `concise`（簡潔）:
-  - 冗長さを落とし、簡潔に言い換える（箇条書き/要約向け）
-  - 目安: `standard` の **70–85%** 程度（語数の概算）
+  - 自然で読みやすいビジネス英語（本文向け）
+  - フルセンテンス可。明らかな冗長さを落としつつ、文脈・ニュアンスを保つ
+- `minimal`（最簡潔）:
+  - `concise` より大幅に短くし、要点のみを残す
+  - 目安: `concise` の **60–75%** 程度（語数の概算）
 
 共通ルール:
 - 2スタイルで同一文のコピペは避ける（数値・固有名詞は一致させつつ、表現と構造を変える）
-- 出力フォーマット（`[standard]` / `[concise]` + `Translation:`）を崩さない
+- 出力フォーマット（`[concise]` / `[minimal]` + `Translation:`）を崩さない
+- 解説（Explanation）は出力しない
 
 #### 9.4.2 スタイル差分ガード（差分不足の最小補正）
 
 目的:
-- 2スタイル（`standard/concise`）の差が小さい状態を検知し、必要時のみ最小限の補正で差分を担保する。
+- 2スタイル（`concise/minimal`）の差が小さい状態を検知し、必要時のみ最小限の補正で差分を担保する。
 
 方針（速度優先）:
 - まずローカルで差分スコアを計算し、差分が十分なら追加処理なしで返す。
-- 差分が不足する場合のみ、追加の Copilot 呼び出しを **最大1回** 実行し、`concise` だけをリライトする。
-  - 返すのは対象スタイル（`[concise]`）のセクションのみ
-  - 入力は既に得られた `standard`（英語）を材料にする（翻訳ではなく圧縮/言い換え）
+- 差分が不足する場合のみ、追加の Copilot 呼び出しを **最大1回** 実行し、`minimal` だけをリライトする。
+  - 返すのは対象スタイル（`[minimal]`）のセクションのみ
+  - 入力は既に得られた `concise`（英語）を材料にする（翻訳ではなく圧縮/言い換え）
+- 速度優先のため、既に追加呼び出しが発生している場合（出力言語リトライ/数値ルール再試行/欠けスタイル補完など）は、差分ガードの追加入力を省略する（best-effort）。
 
 判定（概要）:
-- `concise == standard` は差分不足
-- それ以外は、NFKC 正規化 + 英数字トークン抽出後の一致率/長さ比で判定し、`concise` が十分短くない/類似度が高い場合のみ補正する
+- `minimal == concise` は差分不足
+- それ以外は、NFKC 正規化 + 英数字トークン抽出後の一致率/長さ比で判定し、`minimal` が十分短くない/類似度が高い場合のみ補正する
 
 回帰テスト:
 - `tests/test_text_style_diff_guard.py`
@@ -1424,7 +1423,7 @@ Reference Files
 ローカルAIは Copilot用テンプレートと分離し、**JSONのみ**を返すテンプレートを使用する（バッチのズレ対策を最優先）。
 
 - テキスト
-  - `prompts/local_text_translate_to_en_3style_json.txt`（JP→EN: スタイル比較（アプリ表示は standard/concise の2スタイル。テンプレ名は後方互換で維持））
+  - `prompts/local_text_translate_to_en_3style_json.txt`（JP→EN: スタイル比較（アプリ表示は concise/minimal の2スタイル。`standard` は後方互換で `concise` 扱い。テンプレ名は後方互換で維持））
   - `prompts/local_text_translate_to_en_missing_styles_json.txt`（JP→EN: 欠けたスタイルのみ補完して返す）
   - `prompts/local_text_translate_to_en_single_json.txt`（JP→EN: 単発、style指定）
   - `prompts/local_text_translate_to_jp_json.txt`（EN→JP: translation のみ、`explanation` キーなし）

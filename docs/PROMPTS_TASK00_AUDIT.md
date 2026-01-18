@@ -37,12 +37,12 @@ file_translate_to_en_concise.txt: input_text, reference_section, translation_rul
 file_translate_to_en_minimal.txt: input_text, reference_section, translation_rules
 file_translate_to_en_standard.txt: input_text, reference_section, translation_rules
 file_translate_to_jp.txt: input_text, reference_section, translation_rules
-local_batch_translate_to_en_json.txt: items_json, n_items, reference_section, style, translation_rules
 local_batch_translate_to_jp_json.txt: items_json, n_items, reference_section, translation_rules
-local_text_translate_to_en_3style_json.txt: detected_language, input_text, reference_section, translation_rules
-local_text_translate_to_en_missing_styles_json.txt: detected_language, input_text, n_styles, reference_section, styles_json, translation_rules
-local_text_translate_to_en_single_json.txt: detected_language, extra_instruction, input_text, numeric_hints, reference_section, style, translation_rules
-local_text_translate_to_jp_json.txt: detected_language, input_text, reference_section, translation_rules
+local_batch_translate_to_en_json.txt: items_json, n_items, numeric_hints, reference_section, style, translation_rules
+local_text_translate_to_en_3style_json.txt: extra_instruction, input_text, numeric_hints, reference_section, translation_rules
+local_text_translate_to_en_missing_styles_json.txt: extra_instruction, input_text, n_styles, numeric_hints, reference_section, styles_json, translation_rules
+local_text_translate_to_en_single_json.txt: extra_instruction, input_text, numeric_hints, reference_section, style, translation_rules
+local_text_translate_to_jp_json.txt: input_text, reference_section, translation_rules
 text_alternatives.txt: current_translation, reference_section, source_text, style, translation_rules
 text_back_translate.txt: input_text, reference_section, translation_rules
 text_check_my_english.txt: reference_section, reference_translation, user_english
@@ -73,8 +73,8 @@ Text single (JP->EN single or EN->JP):
 - Expected JSON: {"translation":"..."}（EN→JPは `explanation` キーを必須としない）
 - 過去互換として `explanation` が来た場合は空文字扱い。
 
-Note: "output_language" / "detected_language" are in templates but not required
-by the parser today.
+Note: `LocalPromptBuilder` が `detected_language` などを置換できる実装でも、
+テンプレート側にプレースホルダが無い場合は単に無視される（互換維持）。
 
 ## Contracts (inputs → prompt → expected output → parser)
 

@@ -1380,6 +1380,7 @@ Reference Files
 
 - テキスト
   - `prompts/local_text_translate_to_en_3style_json.txt`（JP→EN: standard/concise/minimal を1リクエストで返す）
+  - `prompts/local_text_translate_to_en_missing_styles_json.txt`（JP→EN: 欠けたスタイルのみ補完して返す）
   - `prompts/local_text_translate_to_en_single_json.txt`（JP→EN: 単発、style指定）
   - `prompts/local_text_translate_to_jp_json.txt`（EN→JP: translation のみ、`explanation` キーなし）
   - JP→EN は `explanation` を出力しない（`{"style","translation"}` のみ）
@@ -1388,6 +1389,30 @@ Reference Files
   - `prompts/local_batch_translate_to_jp_json.txt`（EN→JP）
   - 入力: `{"items":[{"id":1,"text":"..."}, ...]}`
   - 出力: `{"items":[{"id":1,"translation":"..."}, ...]}`
+
+**数値変換ヒント（numeric_hints, JP→EN）**
+- 兆/億などの和文大数を `oku` 表記に強制するため、JP→EN系テンプレートには `{numeric_hints}` を注入する。
+  - 対象テンプレート: `prompts/local_text_translate_to_en_single_json.txt` / `prompts/local_text_translate_to_en_3style_json.txt` / `prompts/local_text_translate_to_en_missing_styles_json.txt` / `prompts/local_batch_translate_to_en_json.txt`
+- 例（プロンプトに挿入されるヒント）:
+  - `2兆2,385億円 -> 22,385 oku yen`
+  - `1,554億円 -> 1,554 oku yen`
+- 実装: `yakulingo/services/local_ai_prompt_builder.py` の `LocalPromptBuilder._build_to_en_numeric_hints()`
+
+**数値ルール違反の自動再試行（JP→EN, Local AI）**
+- 目的: `billion/trillion/bn` への誤変換や `oku` 欠落を検出し、最小限の再試行で `oku` 表記へ収束させる。
+- 違反判定（概要）:
+  - 訳文に `billion/trillion/bn` が含まれる
+  - もしくは原文に `兆/億` があるのに訳文に `oku` が無い
+  - 実装: `yakulingo/services/translation_service.py` の `_needs_to_en_numeric_rule_retry()`
+- テキスト（3スタイル）:
+  - `TranslationService._translate_text_with_style_comparison_local()` 内で、違反したスタイルのみ `build_text_to_en_missing_styles(..., extra_instruction=...)` で再試行し、成功分だけ差し替える。
+  - メタデータに retry 実施/失敗を記録する（例: `to_en_numeric_rule_retry` / `to_en_numeric_rule_retry_failed` / `to_en_numeric_rule_retry_styles`）。
+- バッチ（ファイル翻訳等）:
+  - `BatchTranslator.translate_blocks_with_result()` 内で、ローカルAIかつ英訳時に違反 item を抽出して再試行する。
+  - 性能ガード: 再試行は「違反 item のみ」を対象に、上限を設ける（過剰な再試行を避ける）
+    - 最大件数: 20 item / 1バッチ
+    - 文字数上限: `min(max_chars_per_batch, 2000)`（概算、超過分は次回以降に回さない）
+  - 再試行が失敗した場合は、当該 item の訳文は差し替えられず違反が残ることがある（best-effort）。
 
 **JSONパース（ローカルAI）**
 - コードフェンス除去、先頭/末尾ノイズ除去（最初の `{`/`[` から最後の `}`/`]` のみ切り出し）

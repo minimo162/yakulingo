@@ -340,6 +340,8 @@ def _build_to_en_numeric_hints(text: str) -> str:
     """Build per-input numeric conversion hints for JP→EN (兆/億 → oku)."""
     if not text:
         return ""
+    if not _RE_JP_LARGE_UNIT.search(text):
+        return ""
 
     def parse_int(value: str) -> Optional[int]:
         try:
@@ -3528,7 +3530,7 @@ class TranslationService:
                 reference_section = ""
                 files_to_attach = None
 
-            self.prompt_builder.reload_translation_rules()
+            self.prompt_builder.reload_translation_rules_if_needed()
             translation_rules = self.prompt_builder.get_translation_rules(
                 output_language
             )
@@ -3727,7 +3729,7 @@ class TranslationService:
             reference_section = ""
             files_to_attach = None
 
-        self.prompt_builder.reload_translation_rules()
+        self.prompt_builder.reload_translation_rules_if_needed()
         translation_rules = self.prompt_builder.get_translation_rules(output_language)
 
         prompt = template.replace("{translation_rules}", translation_rules)
@@ -4199,7 +4201,7 @@ class TranslationService:
                         reference_section = ""
                         files_to_attach = None
 
-                    self.prompt_builder.reload_translation_rules()
+                    self.prompt_builder.reload_translation_rules_if_needed()
                     translation_rules = self.prompt_builder.get_translation_rules(
                         output_language
                     )
@@ -4829,7 +4831,7 @@ class TranslationService:
                 output_language = (
                     "jp" if self.detect_language(text) == "日本語" else "en"
                 )
-            self.prompt_builder.reload_translation_rules()
+            self.prompt_builder.reload_translation_rules_if_needed()
             translation_rules = self.prompt_builder.get_translation_rules(
                 output_language
             )
@@ -4924,7 +4926,7 @@ class TranslationService:
                     if self.detect_language(current_translation) == "日本語"
                     else "en"
                 )
-            self.prompt_builder.reload_translation_rules()
+            self.prompt_builder.reload_translation_rules_if_needed()
             translation_rules = self.prompt_builder.get_translation_rules(
                 output_language
             )

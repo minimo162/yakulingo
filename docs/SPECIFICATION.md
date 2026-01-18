@@ -51,7 +51,7 @@ YakuLingoは、日本語と英語の双方向翻訳を提供するデスクト�
 
 | 入力言語 | 出力 |
 |---------|------|
-| 日本語 | 英語（3スタイル: 標準/簡潔/最簡潔） |
+| 日本語 | 英語（2スタイル: 標準/簡潔） |
 | その他 | 日本語（訳文のみ） |
 
 - テキスト翻訳/戻し訳/フォローアップは訳文のみを返し、`explanation` は出力しない（後方互換のためフィールドは保持するが常に空文字）。
@@ -207,9 +207,9 @@ YakuLingo/
 │   ├── local_text_translate_to_jp_json.txt          # ローカルAI（EN→JP / JSON）
 │   ├── local_batch_translate_to_en_json.txt         # ローカルAI（バッチ JP→EN / JSON）
 │   ├── local_batch_translate_to_jp_json.txt         # ローカルAI（バッチ EN→JP / JSON）
-│   ├── file_translate_to_en_{standard|concise|minimal}.txt  # ファイル翻訳（日→英）
+│   ├── file_translate_to_en_{standard|concise}.txt  # ファイル翻訳（日→英）
 │   ├── file_translate_to_jp.txt    # ファイル翻訳用（英→日）
-│   ├── text_translate_to_en_compare.txt  # テキスト翻訳（日→英、3スタイル比較）
+│   ├── text_translate_to_en_compare.txt  # テキスト翻訳（日→英、2スタイル比較）
 │   ├── text_translate_to_jp.txt    # テキスト翻訳用（英→日、訳文のみ/共通ルール挿入）
 │   ├── text_back_translate.txt     # 戻し訳用（編集可能）
 │   ├── adjust_custom.txt           # カスタムリクエスト
@@ -326,7 +326,7 @@ class TranslationOption:
     text: str                        # 翻訳テキスト
     explanation: str                 # 使用文脈・説明
     char_count: int = 0
-    style: Optional[str] = None      # "standard" | "concise" | "minimal"
+    style: Optional[str] = None      # "standard" | "concise"（後方互換で "minimal" も受理）
     back_translation_input_text: Optional[str] = None
     back_translation_source_text: Optional[str] = None
     back_translation_text: Optional[str] = None
@@ -572,7 +572,7 @@ Windows のグローバルホットキー（Ctrl+Alt+J）を登録し、押下�
   - トリガー時に前面ウィンドウのHWNDを取得（ウィンドウレイアウト用）
   - 必要に応じて `Ctrl+C` を送信し、選択内容をコピー → クリップボード内容を取得
   - クリップボード内容に応じてテキスト翻訳/ファイル翻訳を選択
-    - `CF_UNICODETEXT`（テキスト）: 通常のテキスト翻訳ルートで処理（英訳は3スタイル、和訳は訳文のみ / 解説なし / ストリーミング）→ UIに表示
+    - `CF_UNICODETEXT`（テキスト）: 通常のテキスト翻訳ルートで処理（英訳は2スタイル、和訳は訳文のみ / 解説なし / ストリーミング）→ UIに表示
     - `CF_HDROP`（ファイル）: ファイル翻訳 → 出力ファイルはUIに表示（ダウンロード）
 - ホットキー実行時のウィンドウレイアウト（Windows）
   - 作業中ウィンドウを左、YakuLingoを右に並べる（フォーカスは作業ウィンドウ優先）
@@ -670,8 +670,8 @@ NiceGUIの`await client.connected()`パターンを使用して、クライア�
 - 連続チャンク更新はデバウンスしてスクロール頻度を抑制
 - ユーザーが手動スクロールで離脱した場合は追従しない（新規ストリーミング開始時に追従をリセット）
 
-**英訳表示（3スタイル）:**
-- 英訳は `standard/concise/minimal` を常に同時表示（切替UIなし）
+**英訳表示（2スタイル）:**
+- 英訳は `standard/concise` を常に同時表示（切替UIなし）
 
 **分割翻訳（Split Translation）:**
 - 入力がバッチ上限を超える場合、分割パネルを表示
@@ -684,7 +684,7 @@ NiceGUIの`await client.connected()`パターンを使用して、クライア�
 - 結果は展開セクションに表示（編集版はタグで識別）
 
 **日本語入力時（英訳）:**
-- 結果カード: `standard/concise/minimal` の3スタイルを縦並び表示（Copilot/ローカルAI共通）
+- 結果カード: `standard/concise` の2スタイルを縦並び表示（Copilot/ローカルAI共通）
 - 💡 [再翻訳]: 吹き出し風ヒント行
 
 **その他入力時（和訳）:**
@@ -953,7 +953,7 @@ class CopilotHandler:
 - 参照: `glossary.csv` ON / OFF
 - ベンチ: `uv run python tools/bench_local_ai.py --mode warm`（`local_ai_max_tokens` を使用、`--max-tokens` で上書き / `0` で無制限）
 - cold 参考: `uv run python tools/bench_local_ai.py --mode cold --with-glossary`
-- 3スタイル比較: `--compare` を付ける（`--input` 未指定時は `tools/bench_local_ai_input_short.txt`）
+- 2スタイル比較: `--compare` を付ける（`--input` 未指定時は `tools/bench_local_ai_input_short.txt`）
 
 ### 6.2 TranslationService
 
@@ -1361,11 +1361,11 @@ Reference Files
 - 英訳/和訳とも「ビジネス文書向け」を明記
 - 既にターゲット言語の場合はそのまま出力
 - `{translation_rules}` は出力言語に応じて [COMMON] + [TO_EN]/[TO_JP] を注入
-- 出力: 英訳は3スタイル（`standard/concise/minimal`）の訳文のみ、和訳は訳文のみ（解説なし）
+- 出力: 英訳は2スタイル（`standard/concise`）の訳文のみ、和訳は訳文のみ（解説なし）
 - 禁止事項は英訳/和訳で共通（質問・提案・指示の繰り返し・訳文以外）
 - 戻し訳は `prompts/text_back_translate.txt` を使用（編集した訳文にも対応）
 
-#### 9.4.1 英訳3スタイル定義（standard / concise / minimal）
+#### 9.4.1 英訳2スタイル定義（standard / concise）
 
 - `standard`（標準）:
   - 自然で読みやすいビジネス英語（本文向け）
@@ -1373,28 +1373,25 @@ Reference Files
 - `concise`（簡潔）:
   - 冗長さを落とし、簡潔に言い換える（箇条書き/要約向け）
   - 目安: `standard` の **70–85%** 程度（語数の概算）
-- `minimal`（最簡潔）:
-  - 見出し/件名/表のセル向けの電報調（冠詞・代名詞・助動詞は省略可）
-  - 目安: `standard` の **45–60%** 程度（語数の概算）
 
 共通ルール:
-- 3スタイルで同一文のコピペは避ける（数値・固有名詞は一致させつつ、表現と構造を変える）
-- 出力フォーマット（`[standard]` / `[concise]` / `[minimal]` + `Translation:`）を崩さない
+- 2スタイルで同一文のコピペは避ける（数値・固有名詞は一致させつつ、表現と構造を変える）
+- 出力フォーマット（`[standard]` / `[concise]` + `Translation:`）を崩さない
 
 #### 9.4.2 スタイル差分ガード（差分不足の最小補正）
 
 目的:
-- 3スタイルの差が小さく、`minimal` が実質 `standard/concise` と同一になる状態を検知し、必要時のみ補正して差分を担保する。
+- 2スタイル（`standard/concise`）の差が小さい状態を検知し、必要時のみ最小限の補正で差分を担保する。
 
 方針（速度優先）:
 - まずローカルで差分スコアを計算し、差分が十分なら追加処理なしで返す。
-- 差分が不足する場合のみ、追加の Copilot 呼び出しを **最大1回** 実行し、`minimal` だけを再生成する。
-  - 返すのは不足スタイル（例: `minimal`）のセクションのみ
-  - 入力は既に得られた `standard`（英語）を材料にする（翻訳ではなく圧縮/リライト）
+- 差分が不足する場合のみ、追加の Copilot 呼び出しを **最大1回** 実行し、`concise` だけをリライトする。
+  - 返すのは対象スタイル（`[concise]`）のセクションのみ
+  - 入力は既に得られた `standard`（英語）を材料にする（翻訳ではなく圧縮/言い換え）
 
 判定（概要）:
-- `minimal == standard` は差分不足
-- それ以外は、NFKC 正規化 + 英数字トークン抽出後の一致率/長さ比で判定し、`minimal` が十分短くない/類似度が高い場合のみ補正する
+- `concise == standard` は差分不足
+- それ以外は、NFKC 正規化 + 英数字トークン抽出後の一致率/長さ比で判定し、`concise` が十分短くない/類似度が高い場合のみ補正する
 
 回帰テスト:
 - `tests/test_text_style_diff_guard.py`
@@ -1427,7 +1424,7 @@ Reference Files
 ローカルAIは Copilot用テンプレートと分離し、**JSONのみ**を返すテンプレートを使用する（バッチのズレ対策を最優先）。
 
 - テキスト
-  - `prompts/local_text_translate_to_en_3style_json.txt`（JP→EN: standard/concise/minimal を1リクエストで返す）
+  - `prompts/local_text_translate_to_en_3style_json.txt`（JP→EN: スタイル比較（アプリ表示は standard/concise の2スタイル。テンプレ名は後方互換で維持））
   - `prompts/local_text_translate_to_en_missing_styles_json.txt`（JP→EN: 欠けたスタイルのみ補完して返す）
   - `prompts/local_text_translate_to_en_single_json.txt`（JP→EN: 単発、style指定）
   - `prompts/local_text_translate_to_jp_json.txt`（EN→JP: translation のみ、`explanation` キーなし）
@@ -1452,7 +1449,7 @@ Reference Files
   - 訳文に `billion/trillion/bn` が含まれる
   - もしくは原文に `兆/億` があるのに訳文に `oku` が無い
   - 実装: `yakulingo/services/translation_service.py` の `_needs_to_en_numeric_rule_retry()`
-- テキスト（3スタイル）:
+- テキスト（2スタイル）:
   - `TranslationService._translate_text_with_style_comparison_local()` 内で、違反したスタイルのみ `build_text_to_en_missing_styles(..., extra_instruction=...)` で再試行し、成功分だけ差し替える。
   - メタデータに retry 実施/失敗を記録する（例: `to_en_numeric_rule_retry` / `to_en_numeric_rule_retry_failed` / `to_en_numeric_rule_retry_styles`）。
 - バッチ（ファイル翻訳等）:
@@ -2137,7 +2134,7 @@ python -c "import time; t=time.time(); from yakulingo.ui import run_app; print(f
 - 言語検出プロンプト追加（互換性のため保持、未使用）
 
 ### 2.6 (2025-12)
-- ローディング画面追加、テキスト翻訳UI簡素化（3スタイル比較表示）
+- ローディング画面追加、テキスト翻訳UI簡素化（2スタイル比較表示）
 - 翻訳スタイル設定追加、Rust製ネイティブランチャー対応
 
 ### 2.5 (2025-12)

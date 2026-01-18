@@ -84,7 +84,7 @@ uv run python tools/bench_local_ai.py --mode cold --json
 # まず動くか（JSON不要の最小スモーク）
 uv run python tools/bench_local_ai.py --mode warm
 
-# 3スタイル比較（ローカルAIのJSONパースも確認）
+# 2スタイル比較（ローカルAIのJSONパースも確認）
 uv run python tools/bench_local_ai.py --mode warm --compare
 
 # 同梱用語集を添付（reference embed の確認）
@@ -98,7 +98,7 @@ uv run python tools/bench_local_ai.py --mode warm --with-glossary
 - `prompt_build_seconds`: プロンプト構築時間（single のみ）
 - `warmup_seconds[]`: ウォームアップ実行時間
 - `output_chars`: 出力文字数
-- `options`: 3スタイル比較時の件数
+- `options`: スタイル比較時の件数（2件）
 - `settings.*`: 有効化された `local_ai_*` の値
 - `similarity` / `similarity_by_style`: `--gold` 指定時の簡易類似度（SequenceMatcher）
 - `git.*`: リポジトリの commit / dirty（取得できる範囲）

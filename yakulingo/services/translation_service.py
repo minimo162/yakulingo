@@ -3546,6 +3546,74 @@ class TranslationService:
         seen = set()
         style_list = [s for s in style_list if not (s in seen or seen.add(s))]
 
+        def ensure_style_options(result: TextTranslationResult) -> TextTranslationResult:
+            if result.output_language != "en":
+                return result
+            if not result.options:
+                return result
+
+            options_by_style: dict[str, TranslationOption] = {}
+            for option in result.options:
+                style = (option.style or "").strip().lower()
+                if style and style in style_list and style not in options_by_style:
+                    options_by_style[style] = option
+
+            if not options_by_style:
+                first = result.options[0]
+                fallback_style = (first.style or DEFAULT_TEXT_STYLE).strip().lower()
+                if fallback_style:
+                    options_by_style[fallback_style] = first
+
+            if not options_by_style:
+                return result
+
+            fallback_preferences: dict[str, tuple[str, ...]] = {
+                "minimal": ("concise", "standard"),
+                "concise": ("standard", "minimal"),
+                "standard": ("concise", "minimal"),
+            }
+
+            style_fallback: dict[str, str] = {}
+            ensured: list[TranslationOption] = []
+            for style in style_list:
+                if style in options_by_style:
+                    option = options_by_style[style]
+                    if option.style != style:
+                        option.style = style
+                    ensured.append(option)
+                    continue
+
+                source_style = None
+                for candidate in fallback_preferences.get(style, ()):
+                    if candidate in options_by_style:
+                        source_style = candidate
+                        break
+                if source_style is None:
+                    source_style = next(iter(options_by_style.keys()))
+                source_option = options_by_style[source_style]
+                ensured.append(
+                    TranslationOption(
+                        text=source_option.text,
+                        explanation=source_option.explanation,
+                        style=style,
+                    )
+                )
+                style_fallback[style] = source_style
+
+            if style_fallback:
+                metadata = dict(result.metadata) if result.metadata else {}
+                existing = metadata.get("style_fallback")
+                if isinstance(existing, dict):
+                    merged = dict(existing)
+                    merged.update(style_fallback)
+                    metadata["style_fallback"] = merged
+                else:
+                    metadata["style_fallback"] = style_fallback
+                result.metadata = metadata
+
+            result.options = ensured
+            return result
+
         translate_single = self._translate_single_with_cancel
         copilot_on_chunk = on_chunk
 
@@ -3566,7 +3634,7 @@ class TranslationService:
                 translate_single = self._translate_single_with_cancel_on_copilot
                 copilot_on_chunk = None
             else:
-                return local_result
+                return ensure_style_options(local_result)
 
         combined_error: Optional[str] = None
         wants_combined = (
@@ -3694,13 +3762,14 @@ class TranslationService:
                                         )
                                         for option in ordered_options
                                     ):
-                                        return TextTranslationResult(
+                                        result = TextTranslationResult(
                                             source_text=text,
                                             source_char_count=len(text),
                                             options=ordered_options,
                                             output_language=output_language,
                                             detected_language=detected_language,
                                         )
+                                        return ensure_style_options(result)
                                     if ordered_options:
                                         combined_error = (
                                             combined_error
@@ -3719,13 +3788,14 @@ class TranslationService:
                                     or "Style comparison output language mismatch"
                                 )
                             else:
-                                return TextTranslationResult(
+                                result = TextTranslationResult(
                                     source_text=text,
                                     source_char_count=len(text),
                                     options=[option],
                                     output_language=output_language,
                                     detected_language=detected_language,
                                 )
+                                return ensure_style_options(result)
                         combined_error = (
                             combined_error or "Failed to parse style comparison result"
                         )
@@ -3751,13 +3821,14 @@ class TranslationService:
                             _is_text_output_language_mismatch(option.text, "en")
                             for option in ordered_options
                         ):
-                            return TextTranslationResult(
+                            result = TextTranslationResult(
                                 source_text=text,
                                 source_char_count=len(text),
                                 options=ordered_options,
                                 output_language=output_language,
                                 detected_language=detected_language,
                             )
+                            return ensure_style_options(result)
                         if ordered_options:
                             combined_error = (
                                 combined_error
@@ -3838,13 +3909,14 @@ class TranslationService:
                     last_error = result.error_message or last_error
 
         if options:
-            return TextTranslationResult(
+            result = TextTranslationResult(
                 source_text=text,
                 source_char_count=len(text),
                 options=options,
                 output_language=output_language,
                 detected_language=detected_language,
             )
+            return ensure_style_options(result)
 
         return TextTranslationResult(
             source_text=text,

@@ -109,17 +109,9 @@ def test_local_to_en_falls_back_to_copilot_on_output_language_mismatch(
 def test_local_style_comparison_falls_back_to_copilot_on_output_language_mismatch(
     monkeypatch,
 ) -> None:
-    copilot_response = """[standard]
+    copilot_response = """[minimal]
 Translation:
 Hello
-Explanation:
-- テスト
-
-[concise]
-Translation:
-Hi
-Explanation:
-- テスト
 """
     copilot = SequencedCopilotHandler([copilot_response])
     settings = AppSettings(translation_backend="local", copilot_enabled=True)
@@ -137,13 +129,7 @@ Explanation:
     ) -> str:
         nonlocal local_calls
         local_calls += 1
-        return (
-            '{"output_language":"en","options":['
-            '{"style":"standard","translation":"汉语测试"},'
-            '{"style":"concise","translation":"汉语测试"},'
-            '{"style":"minimal","translation":"汉语测试"}'
-            "]}"
-        )
+        return '{"translation":"汉语测试","explanation":""}'
 
     monkeypatch.setattr(
         service, "_translate_single_with_cancel", fake_translate_single_with_cancel
@@ -157,10 +143,7 @@ Explanation:
     assert local_calls >= 2  # initial + retry
     assert copilot.translate_single_calls == 1  # fallback
     assert result.output_language == "en"
-    assert [option.style for option in result.options] == [
-        "concise",
-        "minimal",
-    ]
+    assert [option.style for option in result.options] == ["minimal"]
     assert all(
         is_expected_output_language(option.text, "en") for option in result.options
     )

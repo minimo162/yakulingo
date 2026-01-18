@@ -27,8 +27,8 @@ from yakulingo.services.local_ai_client import is_truncated_json
 # Module logger
 logger = logging.getLogger(__name__)
 
-DEFAULT_TEXT_STYLE = "concise"
-TEXT_STYLE_ORDER: tuple[str, str] = ("concise", "minimal")
+DEFAULT_TEXT_STYLE = "minimal"
+TEXT_STYLE_ORDER: tuple[str, ...] = ("minimal",)
 
 _TEXT_TO_EN_OUTPUT_LANGUAGE_RETRY_INSTRUCTION = (
     "CRITICAL: English only (no Japanese/Chinese/Korean scripts; no Japanese punctuation). "
@@ -3069,6 +3069,38 @@ class TranslationService:
                         error_message=error_message,
                         metadata=metadata,
                     )
+                if _looks_incomplete_translation_to_en(text, translation):
+                    retry_instruction = (
+                        "- CRITICAL: Translate the entire input text into English. "
+                        "Do not output only a single keyword (e.g., 'Revenue') or a short label."
+                    )
+                    retry_prompt = local_builder.build_text_to_en_single(
+                        text,
+                        style=style,
+                        reference_files=reference_files,
+                        detected_language=detected_language,
+                        extra_instruction=retry_instruction,
+                    )
+                    retry_raw = self._translate_single_with_cancel(
+                        text, retry_prompt, None, None
+                    )
+                    retry_translation, _ = parse_text_single_translation(retry_raw)
+                    if retry_translation and not _looks_incomplete_translation_to_en(
+                        text, retry_translation
+                    ):
+                        translation = retry_translation
+                        metadata["incomplete_translation_retry"] = True
+                    else:
+                        metadata["incomplete_translation"] = True
+                        metadata["incomplete_translation_retry_failed"] = True
+                        return TextTranslationResult(
+                            source_text=text,
+                            source_char_count=len(text),
+                            output_language=output_language,
+                            detected_language=detected_language,
+                            error_message="翻訳結果が不完全でした（短すぎます）。",
+                            metadata=metadata,
+                        )
                 if _needs_to_en_numeric_rule_retry(text, translation):
                     retry_instruction = (
                         "- CRITICAL: Follow numeric conversion rules strictly. "
@@ -4124,11 +4156,11 @@ class TranslationService:
             is_japanese = detected_language == "日本語"
             output_language = "en" if is_japanese else "jp"
 
-            # Determine style (default to DEFAULT_TEXT_STYLE)
-            if style is None:
+            # English output is minimal-only (ignore any requested style).
+            if output_language == "en":
+                style = "minimal"
+            elif style is None:
                 style = DEFAULT_TEXT_STYLE
-            elif output_language == "en" and style == "standard":
-                style = "concise"
 
             translate_single = self._translate_single_with_cancel
             copilot_on_chunk = on_chunk
@@ -4200,9 +4232,9 @@ class TranslationService:
         pre_detected_language: Optional[str] = None,
         on_chunk: "Callable[[str], None] | None" = None,
     ) -> TextTranslationResult:
-        """
-        Translate text with multiple English styles for comparison.
-        Falls back to single translation when output is Japanese.
+        """Translate text with minimal-only English output.
+
+        For non-Japanese input, falls back to single →jp translation.
         """
         detected_language = pre_detected_language
         if not detected_language:
@@ -4219,6 +4251,13 @@ class TranslationService:
                 detected_language,
                 on_chunk,
             )
+        return self.translate_text_with_options(
+            text,
+            reference_files,
+            "minimal",
+            detected_language,
+            on_chunk,
+        )
 
         def normalize_style(style_value: str) -> str:
             normalized = (style_value or "").strip().lower()
@@ -5286,16 +5325,16 @@ class TranslationService:
     def _parse_style_comparison_result(
         self, raw_result: str
     ) -> list[TranslationOption]:
-        """Parse style comparison result with [concise]/[minimal] sections.
+        """Parse a compare template result and return a single minimal option.
 
-        For backward compatibility, [standard] is accepted and mapped into the
-        new 2-style system when possible.
+        Compatibility: accepts [standard]/[concise] headers, but always returns
+        exactly one option with style="minimal".
         """
-        options: list[TranslationOption] = []
         matches = list(_RE_STYLE_SECTION.finditer(raw_result))
         if not matches:
-            return options
+            return []
 
+        parsed_by_style: dict[str, TranslationOption] = {}
         for index, match in enumerate(matches):
             style = match.group(1).lower()
             start = match.end()
@@ -5315,47 +5354,19 @@ class TranslationService:
             option = parsed[0]
             option.style = style
             option.explanation = ""
-            options.append(option)
+            parsed_by_style.setdefault(style, option)
 
-        has_standard = any(option.style == "standard" for option in options)
-        has_concise = any(option.style == "concise" for option in options)
-        has_minimal = any(option.style == "minimal" for option in options)
+        if not parsed_by_style:
+            return []
 
-        # Legacy 2-style output ([standard]/[concise]) → new 2-style output
-        # ([concise]/[minimal]) while preserving the length relationship.
-        if has_standard and has_concise and not has_minimal:
-            for option in options:
-                if option.style == "standard":
-                    option.style = "concise"
-                elif option.style == "concise":
-                    option.style = "minimal"
-        elif has_standard and not has_concise:
-            for option in options:
-                if option.style == "standard":
-                    option.style = "concise"
-        elif has_standard and has_minimal and not has_concise:
-            for option in options:
-                if option.style == "standard":
-                    option.style = "concise"
-
-        ordered: list[TranslationOption] = []
-        seen: set[str] = set()
-        for style in TEXT_STYLE_ORDER:
-            for option in options:
-                if option.style == style and style not in seen:
-                    ordered.append(option)
-                    seen.add(style)
-                    break
-
-        # Keep any extra styles (except legacy "standard") as-is.
-        for option in options:
-            style = option.style
-            if not style or style in seen or style == "standard":
-                continue
-            ordered.append(option)
-            seen.add(style)
-
-        return ordered
+        chosen = (
+            parsed_by_style.get("minimal")
+            or parsed_by_style.get("concise")
+            or parsed_by_style.get("standard")
+            or next(iter(parsed_by_style.values()))
+        )
+        chosen.style = "minimal"
+        return [chosen]
 
     def _parse_single_translation_result(
         self, raw_result: str

@@ -194,7 +194,7 @@ TEXT_STYLE_LABELS: dict[str, str] = {
     "standard": "簡潔",
 }
 
-TEXT_STYLE_ORDER: tuple[str, str] = ("concise", "minimal")
+TEXT_STYLE_ORDER: tuple[str, ...] = ("minimal",)
 TEXT_STYLE_TOOLTIPS: dict[str, str] = {
     "concise": "短く簡潔な表現",
     "minimal": "さらに短い最簡潔な表現",
@@ -207,7 +207,7 @@ def _normalize_text_style(style: Optional[str]) -> Optional[str]:
     if not normalized:
         return None
     if normalized == "standard":
-        return "concise"
+        return "minimal"
     return normalized
 
 
@@ -503,9 +503,6 @@ def _create_large_input_panel(
                             for idx, path in enumerate(state.reference_files or [])
                         }
                         settings_panel = ui.element("div").classes("advanced-panel")
-                        show_style_selector = False
-                        if translation_style not in TEXT_STYLE_ORDER:
-                            translation_style = "concise"
 
                         with settings_panel:
                             with ui.column().classes("gap-3"):
@@ -554,17 +551,6 @@ def _create_large_input_panel(
                                             metrics_refs["override_auto"] = auto_btn
                                             metrics_refs["override_en"] = en_btn
                                             metrics_refs["override_jp"] = jp_btn
-
-                                style_section = ui.column().classes("advanced-section")
-                                if not show_style_selector:
-                                    style_section.classes(add="hidden")
-                                with style_section:
-                                    ui.label("翻訳スタイル").classes("advanced-label")
-                                    _style_selector(
-                                        translation_style,
-                                        on_style_change,
-                                    )
-                                metrics_refs["style_selector_section"] = style_section
 
                                 with ui.column().classes("advanced-section"):
                                     ui.label("参照ファイル").classes("advanced-label")
@@ -874,7 +860,7 @@ def create_text_result_panel(
                     actions_disabled=actions_disabled,
                 )
             else:
-                # →English: Multiple style options
+                # →English: Single minimal result
                 primary_option, secondary_options, display_options = (
                     _render_results_to_en(
                         state.text_result,
@@ -1084,22 +1070,14 @@ def _render_results_to_en(
     compare_base_style: str = "concise",
     actions_disabled: bool = False,
 ):
-    """Render →English results: always show all styles."""
+    """Render →English results (minimal-only)."""
 
-    primary_option, secondary_options, display_options = _partition_style_options(
-        result
-    )
-    if not display_options:
-        return None, [], display_options
+    if not result.options:
+        return None, [], []
 
-    base_text = ""
-    if compare_mode == "style":
-        fallback_text = (
-            primary_option.text if primary_option else display_options[0].text
-        )
-        base_text = _resolve_compare_base_text(
-            display_options, compare_base_style, fallback_text
-        )
+    primary_option = result.options[0]
+    display_options = [primary_option]
+    secondary_options: list[TranslationOption] = []
 
     table_hint = _build_tabular_text_hint(result.source_text)
 
@@ -1108,21 +1086,14 @@ def _render_results_to_en(
         with ui.element("div").classes("result-section w-full"):
             with ui.column().classes("w-full gap-3"):
                 for index, option in enumerate(display_options):
-                    diff_base_text = None
-                    if (
-                        compare_mode == "style"
-                        and base_text
-                        and option.text != base_text
-                    ):
-                        diff_base_text = base_text
                     _render_option_en(
                         option,
                         on_copy,
                         on_back_translate,
                         is_last=index == len(display_options) - 1,
                         index=index,
-                        show_style_badge=True,
-                        diff_base_text=diff_base_text,
+                        show_style_badge=False,
+                        diff_base_text=None,
                         show_back_translate_button=True,
                         actions_disabled=actions_disabled,
                         table_hint=table_hint,

@@ -88,18 +88,10 @@ Translation:
 
     assert copilot.translate_single_calls == 1
     assert result.output_language == "en"
-    assert [option.style for option in result.options] == [
-        "concise",
-        "minimal",
-    ]
-    assert [option.text for option in result.options] == [
-        expected_concise,
-        expected_minimal,
-    ]
+    assert [option.style for option in result.options] == ["minimal"]
+    assert [option.text for option in result.options] == [expected_minimal]
 
-    telemetry = (result.metadata or {}).get("text_style_comparison_telemetry") or {}
-    assert telemetry.get("translate_single_calls") == 1
-    assert telemetry.get("translate_single_phases") == ["style_compare"]
-    assert telemetry.get("output_language_retry_calls") == 0
-    assert telemetry.get("fill_missing_styles_calls") == 0
-    assert telemetry.get("style_diff_guard_calls") == 0
+    metadata = result.metadata or {}
+    assert metadata.get("backend") == "copilot"
+    assert metadata.get("copilot_call_count") == 1
+    assert metadata.get("copilot_call_phases") == ["initial"]

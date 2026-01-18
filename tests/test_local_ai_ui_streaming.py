@@ -55,17 +55,9 @@ def test_local_text_style_comparison_streams_translation(monkeypatch) -> None:
         text, prompt, reference_files=None, on_chunk=None
     ):
         if on_chunk:
-            on_chunk(
-                '{"output_language":"en","options":[{"style":"standard","translation":"H'
-            )
-            on_chunk('ello"},')
-        return (
-            '{"output_language":"en","options":['
-            '{"style":"standard","translation":"Hello"},'
-            '{"style":"concise","translation":"Hi"},'
-            '{"style":"minimal","translation":"Yo"}'
-            "]}"
-        )
+            on_chunk('{"translation":"H')
+            on_chunk('ello","explanation":""}')
+        return '{"translation":"Hello","explanation":""}'
 
     monkeypatch.setattr(
         service, "_translate_single_with_cancel", fake_translate_single_with_cancel
@@ -78,7 +70,7 @@ def test_local_text_style_comparison_streams_translation(monkeypatch) -> None:
     )
 
     assert result.options
-    assert result.options[0].text == "Hi"
+    assert result.options[0].text == "Hello"
     assert len(received) >= 2
     assert "Hello" in received[-1]
 

@@ -9,7 +9,7 @@ from yakulingo.services.translation_service import TranslationService
 def test_local_style_comparison_stops_additional_calls_when_budget_exhausted(
     monkeypatch,
 ) -> None:
-    settings = AppSettings(translation_backend="local")
+    settings = AppSettings(translation_backend="local", copilot_enabled=False)
     service = TranslationService(
         copilot=object(), config=settings, prompts_dir=Path("prompts")
     )
@@ -25,7 +25,7 @@ def test_local_style_comparison_stops_additional_calls_when_budget_exhausted(
         call_count += 1
 
         if call_count == 1:
-            return '{"options":[{"style":"standard","translation":"Standard translation."}]}'
+            return '{"translation":"一方、この人事部長の会社の初任給は22万円だ。","explanation":""}'
         if call_count == 2:
             return "{}"
         raise AssertionError(
@@ -39,17 +39,5 @@ def test_local_style_comparison_stops_additional_calls_when_budget_exhausted(
     result = service.translate_text_with_style_comparison("あ")
 
     assert call_count == 2
-    assert [option.style for option in result.options] == [
-        "concise",
-        "minimal",
-    ]
-    assert [option.text for option in result.options] == [
-        "Standard translation.",
-        "Standard translation.",
-    ]
-
-    metadata = result.metadata or {}
-    assert metadata.get("local_style_compare_call_budget") == 2
-    assert metadata.get("local_style_compare_call_count") == 2
-    assert metadata.get("local_style_compare_call_budget_exhausted") is True
-    assert (metadata.get("style_fallback") or {}).get("minimal") == "concise"
+    assert result.error_message
+    assert not result.options

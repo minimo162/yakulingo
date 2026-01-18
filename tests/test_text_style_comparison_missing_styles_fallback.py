@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from yakulingo.config.settings import AppSettings
-from yakulingo.models.types import TextTranslationResult, TranslationOption
 from yakulingo.services.translation_service import TranslationService
 
 
@@ -55,43 +54,24 @@ Minimal translation.
         pre_detected_language="日本語",
     )
 
-    assert copilot.translate_single_calls == 2
-    telemetry = (result.metadata or {}).get("text_style_comparison_telemetry") or {}
-    assert [option.style for option in result.options] == [
-        "concise",
-        "minimal",
-    ]
-    assert [option.text for option in result.options] == [
-        "Concise translation.",
-        "Minimal translation.",
-    ]
-    assert telemetry.get("translate_single_calls") == 2
-    assert telemetry.get("translate_single_phases") == [
-        "style_compare",
-        "fill_missing_styles",
-    ]
-    assert telemetry.get("fill_missing_styles_calls") == 1
-    assert telemetry.get("fill_missing_styles_styles") == ["minimal"]
-    assert telemetry.get("output_language_retry_calls") == 0
-    assert telemetry.get("combined_attempted") is True
-    assert telemetry.get("combined_succeeded") is True
-    assert telemetry.get("per_style_used") is False
-    assert (result.metadata or {}).get("style_fallback") is None
+    assert copilot.translate_single_calls == 1
+    assert result.output_language == "en"
+    assert [option.style for option in result.options] == ["minimal"]
+    assert [option.text for option in result.options] == ["Concise translation."]
 
 
 def test_copilot_style_comparison_falls_back_when_missing_still_missing_after_fill() -> (
     None
 ):
-    first = """[concise]
+    response = """[concise]
 Translation:
 Concise translation.
-"""
-    second = "{}"
-    third = """[minimal]
+
+[minimal]
 Translation:
 Minimal translation.
 """
-    copilot = SequencedCopilotHandler([first, second, third])
+    copilot = SequencedCopilotHandler([response])
     service = TranslationService(
         copilot=copilot,
         config=AppSettings(translation_backend="copilot"),
@@ -103,66 +83,26 @@ Minimal translation.
         pre_detected_language="日本語",
     )
 
-    assert copilot.translate_single_calls == 2
-    telemetry = (result.metadata or {}).get("text_style_comparison_telemetry") or {}
-    assert [option.style for option in result.options] == [
-        "concise",
-        "minimal",
-    ]
-    assert result.options[1].text == result.options[0].text
-    assert telemetry.get("translate_single_calls") == 2
-    assert telemetry.get("translate_single_phases") == [
-        "style_compare",
-        "fill_missing_styles",
-    ]
-    assert telemetry.get("fill_missing_styles_calls") == 1
-    assert telemetry.get("fill_missing_styles_styles") == ["minimal"]
-    assert telemetry.get("output_language_retry_calls") == 0
-    assert telemetry.get("style_diff_guard_calls") == 0
-    assert telemetry.get("combined_attempted") is True
-    assert telemetry.get("combined_succeeded") is True
-    assert telemetry.get("per_style_used") is False
-    assert (result.metadata or {}).get("style_fallback") == {"minimal": "concise"}
+    assert copilot.translate_single_calls == 1
+    assert result.output_language == "en"
+    assert [option.style for option in result.options] == ["minimal"]
+    assert [option.text for option in result.options] == ["Minimal translation."]
 
 
-def test_local_style_comparison_fills_missing_concise(monkeypatch) -> None:
+def test_local_style_comparison_returns_single_minimal(monkeypatch) -> None:
     settings = AppSettings(translation_backend="local")
     service = TranslationService(
         copilot=object(), config=settings, prompts_dir=Path("prompts")
     )
 
-    def fake_local_style_comparison(
-        *,
-        text: str,
-        reference_files,
-        styles,
-        detected_language: str,
-        on_chunk=None,
-    ) -> TextTranslationResult:
-        _ = text
-        _ = reference_files
-        _ = styles
-        _ = detected_language
-        _ = on_chunk
-        return TextTranslationResult(
-            source_text="dummy",
-            source_char_count=0,
-            output_language="en",
-            detected_language="日本語",
-            options=[
-                TranslationOption(
-                    text="Standard translation.",
-                    explanation="",
-                    style="standard",
-                ),
-            ],
-            metadata={"backend": "local"},
-        )
+    def fake_translate_single_with_cancel(
+        text: str, prompt: str, reference_files=None, on_chunk=None
+    ) -> str:
+        _ = text, prompt, reference_files, on_chunk
+        return '{"translation":"Hello","explanation":""}'
 
     monkeypatch.setattr(
-        service,
-        "_translate_text_with_style_comparison_local",
-        fake_local_style_comparison,
+        service, "_translate_single_with_cancel", fake_translate_single_with_cancel
     )
 
     result = service.translate_text_with_style_comparison(
@@ -170,10 +110,6 @@ def test_local_style_comparison_fills_missing_concise(monkeypatch) -> None:
         pre_detected_language="日本語",
     )
 
-    assert [option.style for option in result.options] == [
-        "concise",
-        "minimal",
-    ]
-    assert result.options[1].text == "Standard translation."
-    assert (result.metadata or {}).get("backend") == "local"
-    assert (result.metadata or {}).get("style_fallback") == {"minimal": "concise"}
+    assert result.output_language == "en"
+    assert [option.style for option in result.options] == ["minimal"]
+    assert [option.text for option in result.options] == ["Hello"]

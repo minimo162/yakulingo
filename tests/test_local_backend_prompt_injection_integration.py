@@ -29,13 +29,7 @@ def test_local_backend_prompt_includes_rules_and_bundled_glossary() -> None:
     ) -> str:
         _ = self, text, reference_files, on_chunk
         captured["prompt"] = prompt
-        return (
-            '{"options":['
-            '{"style":"standard","translation":"First-half results."},'
-            '{"style":"concise","translation":"First-half results."},'
-            '{"style":"minimal","translation":"First-half results."}'
-            "]}"
-        )
+        return '{"translation":"First-half results.","explanation":""}'
 
     with patch(
         "yakulingo.services.local_ai_client.LocalAIClient.translate_single",

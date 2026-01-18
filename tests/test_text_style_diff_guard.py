@@ -65,11 +65,7 @@ Translation:
 Translation:
 {concise_text}
 """
-    second = """[minimal]
-Translation:
-Sales 2,238.5 oku yen (-155.4; -6.5% YoY); op loss 53.9; ord loss 21.3.
-"""
-    copilot = SequencedCopilotHandler([first, second])
+    copilot = SequencedCopilotHandler([first])
     service = TranslationService(
         copilot=copilot, config=AppSettings(translation_backend="copilot")
     )
@@ -79,23 +75,10 @@ Sales 2,238.5 oku yen (-155.4; -6.5% YoY); op loss 53.9; ord loss 21.3.
         pre_detected_language="日本語",
     )
 
-    assert copilot.translate_single_calls == 2
-    assert copilot.texts[1] == concise_text
-    assert "===INPUT_TEXT===" in copilot.prompts[1]
-    assert concise_text in copilot.prompts[1]
-
-    telemetry = (result.metadata or {}).get("text_style_comparison_telemetry") or {}
-    assert telemetry.get("translate_single_calls") == 2
-    assert telemetry.get("translate_single_phases") == [
-        "style_compare",
-        "style_diff_guard_rewrite",
-    ]
-    assert telemetry.get("style_diff_guard_calls") == 1
-    assert telemetry.get("style_diff_guard_styles") == ["minimal"]
-
-    options_by_style = {option.style: option.text for option in result.options}
-    assert options_by_style["concise"] == concise_text
-    assert options_by_style["minimal"] != concise_text
+    assert copilot.translate_single_calls == 1
+    assert result.output_language == "en"
+    assert [option.style for option in result.options] == ["minimal"]
+    assert [option.text for option in result.options] == [concise_text]
 
 
 def test_translate_text_with_style_comparison_skips_rewrite_when_styles_differ() -> (
@@ -120,7 +103,10 @@ Net sales: 2,238.5 oku yen (-155.4; -6.5% YoY); operating loss: 53.9 oku yen.
     )
 
     assert copilot.translate_single_calls == 1
-    telemetry = (result.metadata or {}).get("text_style_comparison_telemetry") or {}
-    assert telemetry.get("translate_single_calls") == 1
-    assert telemetry.get("translate_single_phases") == ["style_compare"]
-    assert telemetry.get("style_diff_guard_calls") == 0
+    assert result.output_language == "en"
+    assert result.options
+    assert result.options[0].style == "minimal"
+    assert (
+        result.options[0].text
+        == "Net sales: 2,238.5 oku yen (-155.4; -6.5% YoY); operating loss: 53.9 oku yen."
+    )

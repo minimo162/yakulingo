@@ -67,19 +67,11 @@ class RecordingSequencedCopilotHandler(SequencedCopilotHandler):
 def test_translate_text_with_style_comparison_retries_when_concise_is_japanese() -> (
     None
 ):
-    first = """[concise]
+    first = """[minimal]
 Translation:
 一方、この人事部長の会社の初任給は22万円だ。業界平均と比べて決して低くない。
-
-[minimal]
-Translation:
-Meanwhile, this HR director's company offers a starting salary of 22 man yen.
 """
-    second = """[concise]
-Translation:
-Meanwhile, this HR director's company offers a starting salary of 22 man yen. It's not low compared with the industry average.
-
-[minimal]
+    second = """[minimal]
 Translation:
 Meanwhile, this HR director's company offers a starting salary of 22 man yen; it's not low vs. the industry avg.
 """
@@ -93,47 +85,25 @@ Meanwhile, this HR director's company offers a starting salary of 22 man yen; it
 
     assert copilot.translate_single_calls == 2
     metadata = result.metadata or {}
-    telemetry = metadata.get("text_style_comparison_telemetry") or {}
     assert result.output_language == "en"
-    assert [option.style for option in result.options] == [
-        "concise",
-        "minimal",
-    ]
+    assert [option.style for option in result.options] == ["minimal"]
     assert all(not _RE_JP_CHARS.search(option.text) for option in result.options)
     assert metadata.get("backend") == "copilot"
     assert metadata.get("copilot_call_count") == 2
     assert metadata.get("copilot_call_phases") == [
-        "style_compare",
-        "style_compare_output_language_retry",
+        "initial",
+        "output_language_retry",
     ]
-    assert telemetry.get("translate_single_calls") == 2
-    assert telemetry.get("translate_single_phases") == [
-        "style_compare",
-        "style_compare_output_language_retry",
-    ]
-    assert telemetry.get("output_language_retry_calls") == 1
-    assert telemetry.get("fill_missing_styles_calls") == 0
-    assert telemetry.get("combined_attempted") is True
-    assert telemetry.get("combined_succeeded") is True
-    assert telemetry.get("per_style_used") is False
 
 
 def test_translate_text_with_options_retries_when_selected_translation_is_japanese() -> (
     None
 ):
-    first = """[concise]
+    first = """[minimal]
 Translation:
 一方、この人事部長の会社の初任給は22万円だ。業界平均と比べて決して低くない。
-
-[minimal]
-Translation:
-Meanwhile, this HR director's company offers a starting salary of 22 man yen.
 """
-    second = """[concise]
-Translation:
-Meanwhile, this HR director's company offers a starting salary of 22 man yen. It's not low compared with the industry average.
-
-[minimal]
+    second = """[minimal]
 Translation:
 Meanwhile, this HR director's company offers a starting salary of 22 man yen; it's not low vs. the industry avg.
 """
@@ -148,7 +118,7 @@ Meanwhile, this HR director's company offers a starting salary of 22 man yen; it
 
     assert copilot.translate_single_calls == 2
     assert result.output_language == "en"
-    assert result.options[0].style == "concise"
+    assert result.options[0].style == "minimal"
     assert not _RE_JP_CHARS.search(result.options[0].text)
     metadata = result.metadata or {}
     assert metadata.get("backend") == "copilot"
@@ -180,19 +150,12 @@ Net sales: 2兆2,385億円 (YoY -1,554億円、6.5％); operating loss: 539億�
 
     assert copilot.translate_single_calls == 1
     metadata = result.metadata or {}
-    telemetry = metadata.get("text_style_comparison_telemetry") or {}
     assert result.output_language == "en"
-    assert [option.style for option in result.options] == [
-        "concise",
-        "minimal",
-    ]
+    assert [option.style for option in result.options] == ["minimal"]
     assert any(_RE_JP_CHARS.search(option.text) for option in result.options)
     assert metadata.get("backend") == "copilot"
     assert metadata.get("copilot_call_count") == 1
-    assert metadata.get("copilot_call_phases") == ["style_compare"]
-    assert telemetry.get("translate_single_calls") == 1
-    assert telemetry.get("translate_single_phases") == ["style_compare"]
-    assert telemetry.get("output_language_retry_calls") == 0
+    assert metadata.get("copilot_call_phases") == ["initial"]
 
 
 def test_translate_text_with_style_comparison_retries_for_oku_numeric_rule() -> None:
@@ -228,26 +191,15 @@ Net sales: 22,385 oku yen.
     assert "2兆2,385億円 -> 22,385 oku yen" in copilot.prompts[0]
 
     metadata = result.metadata or {}
-    telemetry = metadata.get("text_style_comparison_telemetry") or {}
     assert result.output_language == "en"
-    assert [option.style for option in result.options] == [
-        "concise",
-        "minimal",
-    ]
+    assert [option.style for option in result.options] == ["minimal"]
     assert all("oku" in option.text.lower() for option in result.options)
     assert metadata.get("backend") == "copilot"
     assert metadata.get("copilot_call_count") == 2
     assert metadata.get("copilot_call_phases") == [
-        "style_compare",
-        "style_compare_numeric_rule_retry",
+        "initial",
+        "numeric_rule_retry",
     ]
-    assert telemetry.get("translate_single_calls") == 2
-    assert telemetry.get("translate_single_phases") == [
-        "style_compare",
-        "style_compare_numeric_rule_retry",
-    ]
-    assert telemetry.get("numeric_rule_retry_calls") == 1
-    assert telemetry.get("numeric_rule_retry_failed") is False
 
 
 def test_translate_text_with_style_comparison_skips_numeric_retry_when_auto_fixable() -> (
@@ -272,19 +224,11 @@ Net sales: 22,385 billion yen.
 
     assert copilot.translate_single_calls == 1
     assert result.output_language == "en"
-    assert [option.style for option in result.options] == [
-        "concise",
-        "minimal",
-    ]
+    assert [option.style for option in result.options] == ["minimal"]
     assert all("oku" in option.text.lower() for option in result.options)
     assert all("billion" not in option.text.lower() for option in result.options)
 
     metadata = result.metadata or {}
-    telemetry = metadata.get("text_style_comparison_telemetry") or {}
-    assert telemetry.get("translate_single_calls") == 1
-    assert telemetry.get("translate_single_phases") == ["style_compare"]
-    assert telemetry.get("numeric_rule_retry_calls") == 0
-    assert telemetry.get("numeric_rule_retry_failed") is False
     assert metadata.get("to_en_numeric_unit_correction") is True
 
 
@@ -318,7 +262,7 @@ Net sales: 22,385 oku yen.
     assert copilot.translate_single_calls == 2
     assert result.output_language == "en"
     assert result.options
-    assert result.options[0].style == "concise"
+    assert result.options[0].style == "minimal"
     assert "oku" in result.options[0].text.lower()
     metadata = result.metadata or {}
     assert metadata.get("backend") == "copilot"

@@ -183,13 +183,8 @@ Second para.
 
     assert result.output_language == "en"
     assert result.options
-    expected_by_style = {
-        "concise": "First paragraph.\n\nSecond paragraph.",
-        "minimal": "First para.\n\nSecond para.",
-    }
-    for option in result.options:
-        assert option.style is not None
-        assert _normalize_newlines(option.text) == expected_by_style[option.style]
+    assert [option.style for option in result.options] == ["minimal"]
+    assert _normalize_newlines(result.options[0].text) == "First para.\n\nSecond para."
 
 
 @pytest.mark.parametrize("newline", ["\n", "\r\n"])
@@ -228,11 +223,7 @@ def test_local_text_to_en_style_comparison_preserves_multi_paragraph_input_and_o
 ) -> None:
     input_text = f"第一段落。{newline}{newline}第二段落。"
     local_raw = (
-        '{"options":['
-        '{"style":"standard","translation":"First paragraph.\\n\\nSecond paragraph."},'
-        '{"style":"concise","translation":"First paragraph.\\n\\nSecond paragraph."},'
-        '{"style":"minimal","translation":"First paragraph.\\n\\nSecond paragraph."}'
-        "]}"
+        '{"translation":"First paragraph.\\n\\nSecond paragraph.","explanation":""}'
     )
     local = CapturingLocalClient([local_raw])
     service = TranslationService(
@@ -255,10 +246,11 @@ def test_local_text_to_en_style_comparison_preserves_multi_paragraph_input_and_o
 
     assert result.output_language == "en"
     assert result.options
-    for option in result.options:
-        assert (
-            _normalize_newlines(option.text) == "First paragraph.\n\nSecond paragraph."
-        )
+    assert [option.style for option in result.options] == ["minimal"]
+    assert (
+        _normalize_newlines(result.options[0].text)
+        == "First paragraph.\n\nSecond paragraph."
+    )
 
 
 @pytest.mark.parametrize("newline", ["\n", "\r\n"])

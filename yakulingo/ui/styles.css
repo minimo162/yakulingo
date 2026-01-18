@@ -2052,10 +2052,6 @@ html.yakulingo-drag-active .global-drop-indicator {
     z-index: 1;
 }
 
-.option-card.style-standard {
-    --yl-option-accent: var(--md-sys-color-primary);
-}
-
 .option-card.style-concise {
     --yl-option-accent: var(--md-sys-color-secondary);
 }

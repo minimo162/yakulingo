@@ -189,14 +189,16 @@ def _create_textarea(
 
 
 TEXT_STYLE_LABELS: dict[str, str] = {
-    "standard": "標準",
     "concise": "簡潔",
+    "minimal": "最簡潔",
+    "standard": "簡潔",
 }
 
-TEXT_STYLE_ORDER: tuple[str, str] = ("standard", "concise")
+TEXT_STYLE_ORDER: tuple[str, str] = ("concise", "minimal")
 TEXT_STYLE_TOOLTIPS: dict[str, str] = {
-    "standard": "標準的な表現",
     "concise": "短く簡潔な表現",
+    "minimal": "さらに短い最簡潔な表現",
+    "standard": "短く簡潔な表現",
 }
 
 
@@ -204,7 +206,7 @@ def _normalize_text_style(style: Optional[str]) -> Optional[str]:
     normalized = (style or "").strip().lower()
     if not normalized:
         return None
-    if normalized == "minimal":
+    if normalized == "standard":
         return "concise"
     return normalized
 
@@ -881,7 +883,7 @@ def create_text_result_panel(
                         elapsed_time,
                         on_retry,
                         compare_mode="off",
-                        compare_base_style="standard",
+                        compare_base_style="concise",
                         actions_disabled=actions_disabled,
                     )
                 )
@@ -1039,7 +1041,7 @@ def _select_primary_option(
     if not options:
         return None
     for option in options:
-        if option.style == "standard":
+        if option.style == "concise":
             return option
     return options[0]
 
@@ -1079,7 +1081,7 @@ def _render_results_to_en(
     elapsed_time: Optional[float] = None,
     on_retry: Optional[Callable[[], None]] = None,
     compare_mode: str = "off",
-    compare_base_style: str = "standard",
+    compare_base_style: str = "concise",
     actions_disabled: bool = False,
 ):
     """Render →English results: always show all styles."""

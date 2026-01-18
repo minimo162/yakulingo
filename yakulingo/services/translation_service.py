@@ -3751,6 +3751,45 @@ class TranslationService:
                             )
                         return prompt
 
+                    def fill_missing_styles(
+                        base_options: dict[str, TranslationOption],
+                        missing_styles: list[str],
+                    ) -> None:
+                        if not missing_styles:
+                            return
+
+                        missing_labels = ", ".join(
+                            f"[{style}]" for style in missing_styles
+                        )
+                        fill_instruction = (
+                            "CRITICAL: The previous response was missing some style sections.\n"
+                            f"Return ONLY the missing style sections: {missing_labels}\n"
+                            "Keep the exact output format for each section:\n"
+                            "[style]\nTranslation:\n<text>\n"
+                            "Do not output any other style sections. Do not include explanations/notes."
+                        )
+                        fill_prompt = build_compare_prompt(fill_instruction)
+                        fill_raw_result = translate_single(
+                            text, fill_prompt, files_to_attach, None
+                        )
+                        fill_parsed_options = self._parse_style_comparison_result(
+                            fill_raw_result
+                        )
+                        if not fill_parsed_options:
+                            return
+
+                        for option in fill_parsed_options:
+                            style = option.style
+                            if (
+                                style
+                                and style in missing_styles
+                                and style not in base_options
+                                and not _is_text_output_language_mismatch(
+                                    option.text, "en"
+                                )
+                            ):
+                                base_options[style] = option
+
                     prompt = build_compare_prompt()
 
                     logger.debug(
@@ -3826,6 +3865,19 @@ class TranslationService:
                                             "Style comparison missing styles: %s",
                                             ", ".join(missing_styles),
                                         )
+                                        fill_missing_styles(
+                                            base_options, missing_styles
+                                        )
+                                        missing_styles = [
+                                            s
+                                            for s in style_list
+                                            if s not in base_options
+                                        ]
+                                        if missing_styles:
+                                            logger.warning(
+                                                "Style comparison still missing styles after fill: %s",
+                                                ", ".join(missing_styles),
+                                            )
 
                                     ordered_options = [
                                         base_options[s]
@@ -3889,6 +3941,15 @@ class TranslationService:
                                 "Style comparison missing styles: %s",
                                 ", ".join(missing_styles),
                             )
+                            fill_missing_styles(base_options, missing_styles)
+                            missing_styles = [
+                                s for s in style_list if s not in base_options
+                            ]
+                            if missing_styles:
+                                logger.warning(
+                                    "Style comparison still missing styles after fill: %s",
+                                    ", ".join(missing_styles),
+                                )
 
                         ordered_options = [
                             base_options[s] for s in style_list if s in base_options

@@ -7,9 +7,9 @@ from yakulingo.models.types import TextTranslationResult, TranslationOption
 from yakulingo.services.translation_service import TranslationService
 
 
-class CapturingCopilotHandler:
-    def __init__(self, response: str) -> None:
-        self._response = response
+class SequencedCopilotHandler:
+    def __init__(self, responses: list[str]) -> None:
+        self._responses = responses
         self.translate_single_calls = 0
 
     def translate_single(
@@ -22,14 +22,18 @@ class CapturingCopilotHandler:
         _ = text
         _ = prompt
         _ = reference_files
-        if on_chunk is not None:
-            on_chunk(self._response)
+        index = self.translate_single_calls
         self.translate_single_calls += 1
-        return self._response
+        if index >= len(self._responses):
+            raise AssertionError("translate_single called too many times")
+        response = self._responses[index]
+        if on_chunk is not None:
+            on_chunk(response)
+        return response
 
 
-def test_copilot_style_comparison_fills_missing_minimal_without_extra_calls() -> None:
-    response = """[standard]
+def test_copilot_style_comparison_fills_missing_minimal_with_single_extra_call() -> None:
+    first = """[standard]
 Translation:
 Standard translation.
 
@@ -37,7 +41,11 @@ Standard translation.
 Translation:
 Concise translation.
 """
-    copilot = CapturingCopilotHandler(response)
+    second = """[minimal]
+Translation:
+Minimal translation.
+"""
+    copilot = SequencedCopilotHandler([first, second])
     service = TranslationService(
         copilot=copilot,
         config=AppSettings(translation_backend="copilot"),
@@ -49,7 +57,43 @@ Concise translation.
         pre_detected_language="日本語",
     )
 
-    assert copilot.translate_single_calls == 1
+    assert copilot.translate_single_calls == 2
+    assert [option.style for option in result.options] == [
+        "standard",
+        "concise",
+        "minimal",
+    ]
+    assert [option.text for option in result.options] == [
+        "Standard translation.",
+        "Concise translation.",
+        "Minimal translation.",
+    ]
+    assert (result.metadata or {}).get("style_fallback") is None
+
+
+def test_copilot_style_comparison_falls_back_when_missing_still_missing_after_fill() -> None:
+    first = """[standard]
+Translation:
+Standard translation.
+
+[concise]
+Translation:
+Concise translation.
+"""
+    second = "{}"
+    copilot = SequencedCopilotHandler([first, second])
+    service = TranslationService(
+        copilot=copilot,
+        config=AppSettings(translation_backend="copilot"),
+        prompts_dir=Path("prompts"),
+    )
+
+    result = service.translate_text_with_style_comparison(
+        "これはテストです。",
+        pre_detected_language="日本語",
+    )
+
+    assert copilot.translate_single_calls == 2
     assert [option.style for option in result.options] == [
         "standard",
         "concise",
@@ -117,4 +161,3 @@ def test_local_style_comparison_fills_missing_minimal(monkeypatch) -> None:
     assert result.options[2].text == "Concise translation."
     assert (result.metadata or {}).get("backend") == "local"
     assert (result.metadata or {}).get("style_fallback") == {"minimal": "concise"}
-

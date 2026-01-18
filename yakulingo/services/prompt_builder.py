@@ -6,7 +6,7 @@ Prompt file structure:
 - translation_rules.txt: Translation rules with optional [COMMON]/[TO_EN]/[TO_JP] sections
 - file_translate_to_en_{style}.txt: File translation → English (standard/concise)
 - file_translate_to_jp.txt: File translation → Japanese
-- text_translate_to_en_compare.txt: Text translation → English (standard/concise/minimal in one response)
+- text_translate_to_en_compare.txt: Text translation → English (standard/concise in one response)
 - text_translate_to_jp.txt: Text translation → Japanese (translation-only; no explanation)
 - adjust_*.txt: Adjustment prompts (shorter, longer, custom)
 
@@ -241,41 +241,40 @@ DEFAULT_TEXT_TO_EN_TEMPLATE = """## テキスト翻訳リクエスト
 """
 
 DEFAULT_TEXT_TO_EN_COMPARE_TEMPLATE = """## Text Translation Request (Style Comparison)
-Translate the following Japanese text into English in three styles: standard, concise, minimal.
+Translate the Japanese text into English in two styles: standard, concise.
 
-### Common rules
-- Preserve line breaks, tabs, and paragraph structure.
+### Rules (critical)
+- Output must match the exact format below (no extra headings/notes/Markdown/code fences).
+- In each section, the "Translation:" content must be English only:
+  - Do NOT include Japanese scripts (hiragana/katakana/kanji) or Japanese punctuation (、。).
+  - If any Japanese appears, rewrite it until it contains no Japanese characters.
+- Do NOT output any explanations/notes or any extra text.
+- The two styles must be meaningfully different:
+  - Do NOT copy/paste the same sentences across [standard]/[concise].
+  - Keep numbers and proper nouns consistent, but rewrite wording and structure per style.
+- Translate only the text between the input markers; do not output the marker lines or any other prompt text.
+- Preserve line breaks and tabs as much as possible.
 - If the input is already English, keep it as is.
-- Follow the translation rules below.
-- Translate ONLY the text between the input markers.
-- Do NOT translate or paraphrase any other part of this prompt.
-- Do NOT output the marker lines `===INPUT_TEXT===` or `===END_INPUT_TEXT===`.
+- If the source contains Japanese-only tokens (e.g., names, company types, place names), translate or romanize them; do not leave them in Japanese script.
+- Follow the Translation Rules section for numbers/units/symbols; do not output Japanese unit characters in any Translation (e.g., 円/万/億/兆).
 
 ### Style rules
 [standard]
-- Natural, business-ready English.
-- Use articles (a/an/the) appropriately.
+- Natural, business-ready English; use articles.
+- Full sentences; keep nuance and context; normal connective words are OK.
 - Use common business abbreviations when suitable (YoY, QoQ, CAGR).
 
 [concise]
-- Make it concise; avoid wordiness.
-- Prefer common abbreviations (info, FYI, ASAP, etc.).
-- Simplify phrases (e.g., "in order to" -> "to", "due to the fact that" -> "because").
-
-[minimal]
-- Minimum words; suitable for headings/subject lines/tables.
-- Articles can be omitted.
-- Maximize abbreviations.
-- Allowed symbols: & / vs. % # w/ w/o @ +
+- Make it concise; avoid wordiness; simplify phrases.
+- Target length: ~70–85% of [standard] (rough word count).
+- Keep it business-formal; avoid casual abbreviations (e.g., FYI/ASAP).
+- Prefer compact structures; reduce subordinate clauses and repeated wording.
 
 ### Output format (exact)
 [standard]
 Translation:
 
 [concise]
-Translation:
-
-[minimal]
 Translation:
 
 - Do not output anything else.

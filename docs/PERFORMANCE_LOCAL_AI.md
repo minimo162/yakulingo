@@ -84,8 +84,8 @@ uv run python tools/bench_local_ai.py --mode cold --json
 # まず動くか（JSON不要の最小スモーク）
 uv run python tools/bench_local_ai.py --mode warm
 
-# 2スタイル比較（ローカルAIのJSONパースも確認）
-uv run python tools/bench_local_ai.py --mode warm --compare
+# 互換: --compare（TranslationService 経由。現行は英訳 minimal-only / 追加呼び出しなし）
+uv run python tools/bench_local_ai.py --mode warm --compare --json
 
 # 同梱用語集を添付（reference embed の確認）
 uv run python tools/bench_local_ai.py --mode warm --with-glossary
@@ -97,8 +97,9 @@ uv run python tools/bench_local_ai.py --mode warm --with-glossary
 - `prompt_chars`: プロンプト文字数（single のみ）
 - `prompt_build_seconds`: プロンプト構築時間（single のみ）
 - `warmup_seconds[]`: ウォームアップ実行時間
+- `translate_single_calls_translation`: 本計測での推論呼び出し回数（`1` が理想）
 - `output_chars`: 出力文字数
-- `options`: スタイル比較時の件数（2件）
+- `options`: `--compare` 時の件数（現行は `1` / `minimal` のみ）
 - `settings.*`: 有効化された `local_ai_*` の値
 - `similarity` / `similarity_by_style`: `--gold` 指定時の簡易類似度（SequenceMatcher）
 - `git.*`: リポジトリの commit / dirty（取得できる範囲）
@@ -119,7 +120,7 @@ uv run python tools/bench_local_ai.py --mode warm --out /work/<case-id>/.tmp/ben
 
 ### 追加オプション（タグ/出力保存/簡易精度）
 - `--tag`: JSON出力に任意ラベルを追加する
-- `--save-output`: 翻訳出力を保存する（`--compare` 時は `[style]` 区切りのテキスト）
+- `--save-output`: 翻訳出力を保存する（`--compare` 時は `[minimal]` 見出し付きのテキスト）
 - `--gold`: 参照訳テキストを指定し、簡易類似度をJSONに追加する
 
 ```bash
@@ -367,6 +368,8 @@ KVキャッシュの量子化は、速度よりもメモリ圧/安定性の調�
 ### task-08: `local_ai_threads_batch` 既定値（`0`=auto）を有効化
 `threads-batch` は prefill（入力処理）を狙う設定で、翻訳のように入力が長い場合に効きやすいことがあります。
 
+> **Note**: ここは過去記録（当時: style=concise）。現行の英訳は minimal-only です。
+
 計測（warm / `--restart-server` / 入力 `tools/bench_local_ai_input.txt` 410 chars / style=concise）:
 - before（`local_ai_threads_batch=null`）: warmup=151.32s / translation=54.88s / output=1267 chars
   - JSON: `/work/yakulingo-llama-speedup-20260115/.tmp/bench_task08_before_warm_retry.json`
@@ -464,6 +467,8 @@ E2E 指標（1回）:
 - 環境: Windows / Ryzen 5 PRO 6650U（6C/12T）/ iGPU Radeon 660M（UMA）/ llama.cpp Vulkan 7738
 - 条件: warm / `--restart-server` / 入力 `tools/bench_local_ai_input.txt`（410 chars）/ style=concise / glossary=off
 
+> **Note**: ここは過去記録（当時: style=concise）。現行の英訳は minimal-only です。
+
 ### CLIベンチ（warm）
 - before（CPU-only）: translation_seconds 50.93 / warmup_seconds 146.43 / output_chars 1305
   - JSON: `/work/yakulingo-llama-speedup-20260115/.tmp/bench_cpu_warm.json`
@@ -484,6 +489,8 @@ E2E 指標（1回）:
 - 実行条件: warm / `--restart-server` / 入力 `tools/bench_local_ai_input.txt`（410 chars）/ style=concise / llama.cpp Vulkan（b7738）
 - 出力保存先: `/work/yakulingo-llama-speedup-20260115/.tmp/bench_*.json`
 - デバイス: `Vulkan0`（AMD Radeon(TM) Graphics, UMA）
+
+> **Note**: ここは過去記録（当時: style=concise）。現行の英訳は minimal-only です。
 
 | kind | device | -ngl | warmup_seconds | translation_seconds | output_chars | notes |
 | --- | --- | --- | --- | --- | --- | --- |

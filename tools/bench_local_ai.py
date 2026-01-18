@@ -456,17 +456,20 @@ def main() -> int:
         return parsed
 
     parser = argparse.ArgumentParser(
-        description="Local AI benchmark (single or style-compare)"
+        description="Local AI benchmark (minimal-only; optionally via TranslationService)"
     )
     parser.add_argument("--input", type=Path, default=None, help="Path to input text")
     parser.add_argument("--mode", choices=("warm", "cold"), default="warm")
     parser.add_argument(
-        "--style", choices=("standard", "concise", "minimal"), default="concise"
+        "--style", choices=("standard", "concise", "minimal"), default="minimal"
     )
     parser.add_argument(
         "--compare",
         action="store_true",
-        help="Use TranslationService style comparison (combined + fallback).",
+        help=(
+            "DEPRECATED: kept for compatibility. Runs the TranslationService text path "
+            "(JP→EN is minimal-only; no multi-style compare)."
+        ),
     )
     parser.add_argument("--with-glossary", action="store_true")
     parser.add_argument("--reference", action="append", type=Path, default=[])
@@ -586,34 +589,16 @@ def main() -> int:
     ensure_no_proxy_for_localhost()
 
     default_input = repo_root / "tools" / "bench_local_ai_input.txt"
-    compare_input = repo_root / "tools" / "bench_local_ai_input_short.txt"
     if args.input:
         input_path = args.input
-    elif args.compare:
-        input_path = compare_input
     else:
         input_path = default_input
     text = _load_text(input_path)
     gold_text = _load_text(args.gold) if args.gold else None
     gold_chars = len(gold_text) if gold_text is not None else None
 
-    if args.compare:
-        if len(text) > 800:
-            print(
-                f"WARNING: compare input is long ({len(text)} chars); JSON may truncate.",
-                file=sys.stderr,
-            )
-            print(
-                "HINT: use --input tools/bench_local_ai_input_short.txt or adjust "
-                "--max-tokens (e.g. --max-tokens 1024 / --max-tokens 0).",
-                file=sys.stderr,
-            )
-    else:
-        if len(text) < 400 or len(text) > 800:
-            print(
-                "WARNING: input text length is outside 400-800 chars",
-                file=sys.stderr,
-            )
+    if len(text) < 400 or len(text) > 800:
+        print("WARNING: input text length is outside 400-800 chars", file=sys.stderr)
 
     reference_files: list[Path] = []
     if args.with_glossary:
@@ -623,18 +608,48 @@ def main() -> int:
 
     settings = AppSettings()
     settings.translation_backend = "local"
+    settings.copilot_enabled = False
     overrides = _apply_overrides(settings, args)
     server_manager = get_local_llama_server_manager()
     prompts_dir = repo_root / "prompts"
+    local_translate_single_calls_warmup = 0
+    local_translate_single_calls_translation = 0
+
     if args.compare:
-        from yakulingo.services.copilot_handler import CopilotHandler
         from yakulingo.services.translation_service import TranslationService
 
+        class _NullCopilot:
+            def set_cancel_callback(self, _callback) -> None:
+                return None
+
+            def translate_sync(self, *args, **kwargs):  # noqa: ANN001, ANN002, ANN003
+                raise RuntimeError("copilot is disabled for local-ai benchmarks")
+
+            def translate_single(self, *args, **kwargs):  # noqa: ANN001, ANN002, ANN003
+                raise RuntimeError("copilot is disabled for local-ai benchmarks")
+
         service = TranslationService(
-            CopilotHandler(),
+            _NullCopilot(),
             settings,
             prompts_dir=prompts_dir,
         )
+
+        translate_single_calls = 0
+        original_translate_single = service._translate_single_with_cancel
+
+        def _counting_translate_single(
+            source_text: str,
+            prompt: str,
+            reference_files: list[Path] | None = None,
+            on_chunk=None,
+        ) -> str:
+            nonlocal translate_single_calls
+            translate_single_calls += 1
+            return original_translate_single(
+                source_text, prompt, reference_files, on_chunk
+            )
+
+        service._translate_single_with_cancel = _counting_translate_single
         client = None
         prompt = None
     else:
@@ -718,14 +733,20 @@ def main() -> int:
 
     for i in range(warmup_runs):
         if args.compare:
+            translate_single_calls = 0
+        if args.compare:
             _, warmup_elapsed = _translate_compare(service, text, reference_files)
         else:
             _, warmup_elapsed = _translate_once(client, text, prompt)
         warmup_seconds.append(warmup_elapsed)
         print(f"warmup_seconds[{i + 1}]: {warmup_elapsed:.2f}")
+        if args.compare:
+            local_translate_single_calls_warmup += translate_single_calls
 
     if args.compare:
+        translate_single_calls = 0
         result, elapsed = _translate_compare(service, text, reference_files)
+        local_translate_single_calls_translation = translate_single_calls
         server_metadata = _collect_server_metadata(settings, repo_root, server_manager)
         versions_metadata = {
             "llama_server": server_metadata.get("llama_server_version"),
@@ -761,6 +782,10 @@ def main() -> int:
             if similarity_by_style:
                 best_similarity = max(item["ratio"] for item in similarity_by_style)
         print(f"translation_seconds: {elapsed:.2f}")
+        print(
+            "translate_single_calls_translation: "
+            f"{local_translate_single_calls_translation}"
+        )
         print(f"options: {len(options)}")
         print(f"output_chars: {output_chars}")
         payload = {
@@ -786,6 +811,10 @@ def main() -> int:
             "server": server_metadata,
             "settings": _build_settings_payload(settings),
             "warmup_seconds": warmup_seconds,
+            "translate_single_calls_warmup": local_translate_single_calls_warmup,
+            "translate_single_calls_translation": local_translate_single_calls_translation,
+            "translate_single_calls_total": local_translate_single_calls_warmup
+            + local_translate_single_calls_translation,
             "translation_seconds": elapsed,
             "options": len(options),
             "output_chars": output_chars,
@@ -805,12 +834,18 @@ def main() -> int:
             print("WARNING: empty translation result", file=sys.stderr)
 
         total_seconds = prompt_build_seconds + elapsed
+        local_translate_single_calls_warmup = warmup_runs
+        local_translate_single_calls_translation = 1
         if args.save_output is not None:
             _write_text(args.save_output, output)
         similarity = (
             _compute_similarity(gold_text, output) if gold_text is not None else None
         )
         print(f"translation_seconds: {elapsed:.2f}")
+        print(
+            "translate_single_calls_translation: "
+            f"{local_translate_single_calls_translation}"
+        )
         print(f"total_seconds: {total_seconds:.2f}")
         print(f"output_chars: {len(output)}")
         payload = {
@@ -838,6 +873,10 @@ def main() -> int:
             "prompt_chars": prompt_chars,
             "prompt_build_seconds": prompt_build_seconds,
             "warmup_seconds": warmup_seconds,
+            "translate_single_calls_warmup": local_translate_single_calls_warmup,
+            "translate_single_calls_translation": local_translate_single_calls_translation,
+            "translate_single_calls_total": local_translate_single_calls_warmup
+            + local_translate_single_calls_translation,
             "translation_seconds": elapsed,
             "total_seconds": total_seconds,
             "output_chars": len(output),

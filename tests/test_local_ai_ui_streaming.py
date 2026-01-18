@@ -78,7 +78,7 @@ def test_local_text_style_comparison_streams_translation(monkeypatch) -> None:
     )
 
     assert result.options
-    assert result.options[0].text == "Hello"
+    assert result.options[0].text == "Hi"
     assert len(received) >= 2
     assert "Hello" in received[-1]
 

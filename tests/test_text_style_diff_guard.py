@@ -49,23 +49,23 @@ class SequencedCopilotHandler:
         return response
 
 
-def test_translate_text_with_style_comparison_rewrites_concise_when_too_similar() -> (
+def test_translate_text_with_style_comparison_rewrites_minimal_when_too_similar() -> (
     None
 ):
-    standard_text = (
+    concise_text = (
         "Consolidated results for the interim period: net sales were 2,238.5 oku yen, "
         "down 155.4 oku yen (6.5% YoY), with an operating loss of 53.9 oku yen and an "
         "ordinary loss of 21.3 oku yen."
     )
-    first = f"""[standard]
+    first = f"""[concise]
 Translation:
-{standard_text}
+{concise_text}
 
-[concise]
+[minimal]
 Translation:
-{standard_text}
+{concise_text}
 """
-    second = """[concise]
+    second = """[minimal]
 Translation:
 Sales 2,238.5 oku yen (-155.4; -6.5% YoY); op loss 53.9; ord loss 21.3.
 """
@@ -80,9 +80,9 @@ Sales 2,238.5 oku yen (-155.4; -6.5% YoY); op loss 53.9; ord loss 21.3.
     )
 
     assert copilot.translate_single_calls == 2
-    assert copilot.texts[1] == standard_text
+    assert copilot.texts[1] == concise_text
     assert "===INPUT_TEXT===" in copilot.prompts[1]
-    assert standard_text in copilot.prompts[1]
+    assert concise_text in copilot.prompts[1]
 
     telemetry = (result.metadata or {}).get("text_style_comparison_telemetry") or {}
     assert telemetry.get("translate_single_calls") == 2
@@ -91,21 +91,21 @@ Sales 2,238.5 oku yen (-155.4; -6.5% YoY); op loss 53.9; ord loss 21.3.
         "style_diff_guard_rewrite",
     ]
     assert telemetry.get("style_diff_guard_calls") == 1
-    assert telemetry.get("style_diff_guard_styles") == ["concise"]
+    assert telemetry.get("style_diff_guard_styles") == ["minimal"]
 
     options_by_style = {option.style: option.text for option in result.options}
-    assert options_by_style["standard"] == standard_text
-    assert options_by_style["concise"] != standard_text
+    assert options_by_style["concise"] == concise_text
+    assert options_by_style["minimal"] != concise_text
 
 
 def test_translate_text_with_style_comparison_skips_rewrite_when_styles_differ() -> (
     None
 ):
-    first = """[standard]
+    first = """[concise]
 Translation:
 Net sales were 2,238.5 oku yen, down 155.4 oku yen (6.5% YoY). The company posted an operating loss of 53.9 oku yen.
 
-[concise]
+[minimal]
 Translation:
 Net sales: 2,238.5 oku yen (-155.4; -6.5% YoY); operating loss: 53.9 oku yen.
 """

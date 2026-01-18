@@ -6,7 +6,7 @@ Prompt file structure:
 - translation_rules.txt: Translation rules with optional [COMMON]/[TO_EN]/[TO_JP] sections
 - file_translate_to_en_{style}.txt: File translation → English (standard/concise)
 - file_translate_to_jp.txt: File translation → Japanese
-- text_translate_to_en_compare.txt: Text translation → English (standard/concise in one response)
+- text_translate_to_en_compare.txt: Text translation → English (concise/minimal in one response)
 - text_translate_to_jp.txt: Text translation → Japanese (translation-only; no explanation)
 - adjust_*.txt: Adjustment prompts (shorter, longer, custom)
 
@@ -241,7 +241,7 @@ DEFAULT_TEXT_TO_EN_TEMPLATE = """## テキスト翻訳リクエスト
 """
 
 DEFAULT_TEXT_TO_EN_COMPARE_TEMPLATE = """## Text Translation Request (Style Comparison)
-Translate the Japanese text into English in two styles: standard, concise.
+Translate the Japanese text into English in two styles: concise, minimal.
 
 ### Rules (critical)
 - Output must match the exact format below (no extra headings/notes/Markdown/code fences).
@@ -250,7 +250,7 @@ Translate the Japanese text into English in two styles: standard, concise.
   - If any Japanese appears, rewrite it until it contains no Japanese characters.
 - Do NOT output any explanations/notes or any extra text.
 - The two styles must be meaningfully different:
-  - Do NOT copy/paste the same sentences across [standard]/[concise].
+  - Do NOT copy/paste the same sentences across [concise]/[minimal].
   - Keep numbers and proper nouns consistent, but rewrite wording and structure per style.
 - Translate only the text between the input markers; do not output the marker lines or any other prompt text.
 - Preserve line breaks and tabs as much as possible.
@@ -259,22 +259,22 @@ Translate the Japanese text into English in two styles: standard, concise.
 - Follow the Translation Rules section for numbers/units/symbols; do not output Japanese unit characters in any Translation (e.g., 円/万/億/兆).
 
 ### Style rules
-[standard]
-- Natural, business-ready English; use articles.
-- Full sentences; keep nuance and context; normal connective words are OK.
+[concise]
+- Concise, business-ready English; keep nuance and context; use articles when needed.
+- Full sentences are OK; remove obvious wordiness.
 - Use common business abbreviations when suitable (YoY, QoQ, CAGR).
 
-[concise]
-- Make it concise; avoid wordiness; simplify phrases.
-- Target length: ~70–85% of [standard] (rough word count).
+[minimal]
+- Make it significantly shorter than [concise].
+- Target length: ~60–75% of [concise] (rough word count).
 - Keep it business-formal; avoid casual abbreviations (e.g., FYI/ASAP).
-- Prefer compact structures; reduce subordinate clauses and repeated wording.
+- Prefer compact structures; reduce subordinate clauses and repeated wording; omit non-essential modifiers.
 
 ### Output format (exact)
-[standard]
+[concise]
 Translation:
 
-[concise]
+[minimal]
 Translation:
 
 - Do not output anything else.

@@ -27,7 +27,7 @@ Translation:
 Hi.
 """
     options = service._parse_style_comparison_result(raw)
-    assert [opt.style for opt in options] == ["standard", "concise"]
+    assert [opt.style for opt in options] == ["concise", "minimal"]
     assert [opt.text for opt in options] == ["Hello.", "Hi."]
     assert [opt.explanation for opt in options] == ["", ""]
 
@@ -42,6 +42,6 @@ Hello.
 Hi.
 """
     options = service._parse_style_comparison_result(raw)
-    assert [opt.style for opt in options] == ["standard", "concise"]
+    assert [opt.style for opt in options] == ["concise", "minimal"]
     assert [opt.text for opt in options] == ["Hello.", "Hi."]
     assert [opt.explanation for opt in options] == ["", ""]

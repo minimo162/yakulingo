@@ -151,13 +151,13 @@ def test_copilot_text_to_en_style_comparison_preserves_multi_paragraph_input_and
     newline: str,
 ) -> None:
     input_text = f"第一段落。{newline}{newline}第二段落。"
-    response = """[standard]
+    response = """[concise]
 Translation:
 First paragraph.
 
 Second paragraph.
 
-[concise]
+[minimal]
 Translation:
 First para.
 
@@ -184,8 +184,8 @@ Second para.
     assert result.output_language == "en"
     assert result.options
     expected_by_style = {
-        "standard": "First paragraph.\n\nSecond paragraph.",
-        "concise": "First para.\n\nSecond para.",
+        "concise": "First paragraph.\n\nSecond paragraph.",
+        "minimal": "First para.\n\nSecond para.",
     }
     for option in result.options:
         assert option.style is not None

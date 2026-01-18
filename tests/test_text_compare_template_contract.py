@@ -19,12 +19,13 @@ def test_text_compare_template_keeps_exact_output_format() -> None:
     assert "===INPUT_TEXT===" in template
     assert "===END_INPUT_TEXT===" in template
 
-    assert "[minimal]" not in template
+    assert "[standard]" not in template
+    assert "[minimal]" in template
 
     assert "### Output format (exact)" in template
     output_section = template.split("### Output format (exact)", 1)[1]
     required = re.compile(
-        r"(?m)^\[standard\]\s*\nTranslation:\s*\n\s*\n"
-        r"^\[concise\]\s*\nTranslation:\s*\n"
+        r"(?m)^\[concise\]\s*\nTranslation:\s*\n\s*\n"
+        r"^\[minimal\]\s*\nTranslation:\s*\n"
     )
     assert required.search(output_section)

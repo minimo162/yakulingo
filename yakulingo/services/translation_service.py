@@ -28,7 +28,7 @@ from yakulingo.services.local_ai_client import is_truncated_json
 logger = logging.getLogger(__name__)
 
 DEFAULT_TEXT_STYLE = "concise"
-TEXT_STYLE_ORDER: tuple[str, str] = ("standard", "concise")
+TEXT_STYLE_ORDER: tuple[str, str] = ("concise", "minimal")
 
 # Pre-compiled regex patterns for performance
 # Support both half-width (:) and full-width (：) colons, and markdown bold (**訳文:**)
@@ -203,39 +203,39 @@ def _tokenize_style_diff(text: str) -> list[str]:
     return _RE_STYLE_DIFF_TOKENS.findall(normalized)
 
 
-def _should_rewrite_concise_style(
+def _should_rewrite_compact_style(
     *,
-    standard_text: str,
-    concise_text: str,
+    base_text: str,
+    compact_text: str,
 ) -> bool:
-    standard = (standard_text or "").strip()
-    concise = (concise_text or "").strip()
+    base = (base_text or "").strip()
+    compact = (compact_text or "").strip()
 
-    if not standard or not concise:
+    if not base or not compact:
         return False
 
-    if concise == standard:
+    if compact == base:
         return True
 
-    standard_tokens = _tokenize_style_diff(standard)
-    concise_tokens = _tokenize_style_diff(concise)
-    if len(standard_tokens) < 12 or len(concise_tokens) < 8:
+    base_tokens = _tokenize_style_diff(base)
+    compact_tokens = _tokenize_style_diff(compact)
+    if len(base_tokens) < 12 or len(compact_tokens) < 8:
         return False
 
-    concise_word_ratio = len(concise_tokens) / len(standard_tokens)
-    similarity_to_standard = SequenceMatcher(
-        None, standard_tokens, concise_tokens
+    compact_word_ratio = len(compact_tokens) / len(base_tokens)
+    similarity_to_base = SequenceMatcher(
+        None, base_tokens, compact_tokens
     ).ratio()
-    if concise_word_ratio >= 0.85 and similarity_to_standard >= 0.92:
+    if compact_word_ratio >= 0.85 and similarity_to_base >= 0.92:
         return True
 
     return False
 
 
 def _build_style_diff_rewrite_prompt(base_text: str, styles: list[str]) -> str:
-    requested = [s for s in styles if s in TEXT_STYLE_ORDER and s != "standard"]
+    requested = [s for s in styles if s in TEXT_STYLE_ORDER]
     if not requested:
-        requested = ["concise"]
+        requested = ["minimal"]
 
     labels = ", ".join(f"[{style}]" for style in requested)
     lines = [
@@ -257,6 +257,13 @@ def _build_style_diff_rewrite_prompt(base_text: str, styles: list[str]) -> str:
             "[concise]",
             "- Concise business English; remove wordiness; keep meaning.",
             "- Target length: ~70–85% of the input (rough word count).",
+            "",
+        ]
+    if "minimal" in requested:
+        lines += [
+            "[minimal]",
+            "- Minimal business English; keep core meaning; omit non-essential words.",
+            "- Target length: ~60–75% of the input (rough word count).",
             "",
         ]
     lines.append("### Output format (exact)")
@@ -3141,8 +3148,15 @@ class TranslationService:
             options: list[TranslationOption] = []
             missing: list[str] = []
             for style in style_list:
-                if style in by_style:
-                    translation, _ = by_style[style]
+                resolved_style = (
+                    "standard"
+                    if style == "concise"
+                    and style not in by_style
+                    and "standard" in by_style
+                    else style
+                )
+                if resolved_style in by_style:
+                    translation, _ = by_style[resolved_style]
                     options.append(
                         TranslationOption(
                             text=translation,
@@ -3174,8 +3188,15 @@ class TranslationService:
                 options = []
                 missing = []
                 for style in style_list:
-                    if style in by_style:
-                        translation, _ = by_style[style]
+                    resolved_style = (
+                        "standard"
+                        if style == "concise"
+                        and style not in by_style
+                        and "standard" in by_style
+                        else style
+                    )
+                    if resolved_style in by_style:
+                        translation, _ = by_style[resolved_style]
                         options.append(
                             TranslationOption(
                                 text=translation,
@@ -3586,7 +3607,7 @@ class TranslationService:
                         if option.style and option.style not in options_by_style:
                             options_by_style[option.style] = option
                     selected_style = style
-                    if selected_style == "minimal":
+                    if selected_style == "standard":
                         selected_style = "concise"
                     selected = options_by_style.get(selected_style) or parsed_options[0]
                     return TextTranslationResult(
@@ -3919,6 +3940,8 @@ class TranslationService:
             # Determine style (default to DEFAULT_TEXT_STYLE)
             if style is None:
                 style = DEFAULT_TEXT_STYLE
+            elif output_language == "en" and style == "standard":
+                style = "concise"
 
             translate_single = self._translate_single_with_cancel
             copilot_on_chunk = on_chunk
@@ -4012,7 +4035,7 @@ class TranslationService:
 
         def normalize_style(style_value: str) -> str:
             normalized = (style_value or "").strip().lower()
-            if normalized == "minimal":
+            if normalized == "standard":
                 return "concise"
             return normalized
 
@@ -4054,8 +4077,8 @@ class TranslationService:
                 return result
 
             fallback_preferences: dict[str, tuple[str, ...]] = {
-                "concise": ("standard",),
-                "standard": ("concise",),
+                "concise": ("minimal",),
+                "minimal": ("concise",),
             }
 
             style_fallback: dict[str, str] = {}
@@ -4205,23 +4228,23 @@ class TranslationService:
                 if style and style not in options_by_style:
                     options_by_style[style] = option
 
-            standard_option = options_by_style.get("standard")
             concise_option = options_by_style.get("concise")
-            if standard_option is None or concise_option is None:
+            minimal_option = options_by_style.get("minimal")
+            if concise_option is None or minimal_option is None:
                 return result
 
-            base_text = standard_option.text
-            if not _should_rewrite_concise_style(
-                standard_text=base_text,
-                concise_text=concise_option.text,
+            base_text = concise_option.text
+            if not _should_rewrite_compact_style(
+                base_text=base_text,
+                compact_text=minimal_option.text,
             ):
                 return result
 
             telemetry_style_diff_guard_calls += 1
-            if "concise" not in telemetry_style_diff_guard_styles:
-                telemetry_style_diff_guard_styles.append("concise")
+            if "minimal" not in telemetry_style_diff_guard_styles:
+                telemetry_style_diff_guard_styles.append("minimal")
 
-            rewrite_prompt = _build_style_diff_rewrite_prompt(base_text, ["concise"])
+            rewrite_prompt = _build_style_diff_rewrite_prompt(base_text, ["minimal"])
             rewrite_raw = translate_single_timed(
                 "style_diff_guard_rewrite",
                 base_text,
@@ -4231,13 +4254,13 @@ class TranslationService:
             )
             rewritten = self._parse_style_comparison_result(rewrite_raw)
             for option in rewritten:
-                if option.style != "concise":
+                if option.style != "minimal":
                     continue
                 if option.text and not _is_text_output_language_mismatch(
                     option.text, "en"
                 ):
-                    concise_option.text = option.text
-                    concise_option.explanation = ""
+                    minimal_option.text = option.text
+                    minimal_option.explanation = ""
                 break
 
             return result
@@ -5049,9 +5072,10 @@ class TranslationService:
     def _parse_style_comparison_result(
         self, raw_result: str
     ) -> list[TranslationOption]:
-        """Parse style comparison result with [standard]/[concise] sections.
+        """Parse style comparison result with [concise]/[minimal] sections.
 
-        Note: For backward compatibility, [minimal] is also accepted when present.
+        For backward compatibility, [standard] is accepted and mapped into the
+        new 2-style system when possible.
         """
         options: list[TranslationOption] = []
         matches = list(_RE_STYLE_SECTION.finditer(raw_result))
@@ -5079,7 +5103,45 @@ class TranslationService:
             option.explanation = ""
             options.append(option)
 
-        return options
+        has_standard = any(option.style == "standard" for option in options)
+        has_concise = any(option.style == "concise" for option in options)
+        has_minimal = any(option.style == "minimal" for option in options)
+
+        # Legacy 2-style output ([standard]/[concise]) → new 2-style output
+        # ([concise]/[minimal]) while preserving the length relationship.
+        if has_standard and has_concise and not has_minimal:
+            for option in options:
+                if option.style == "standard":
+                    option.style = "concise"
+                elif option.style == "concise":
+                    option.style = "minimal"
+        elif has_standard and not has_concise:
+            for option in options:
+                if option.style == "standard":
+                    option.style = "concise"
+        elif has_standard and has_minimal and not has_concise:
+            for option in options:
+                if option.style == "standard":
+                    option.style = "concise"
+
+        ordered: list[TranslationOption] = []
+        seen: set[str] = set()
+        for style in TEXT_STYLE_ORDER:
+            for option in options:
+                if option.style == style and style not in seen:
+                    ordered.append(option)
+                    seen.add(style)
+                    break
+
+        # Keep any extra styles (except legacy "standard") as-is.
+        for option in options:
+            style = option.style
+            if not style or style in seen or style == "standard":
+                continue
+            ordered.append(option)
+            seen.add(style)
+
+        return ordered
 
     def _parse_single_translation_result(
         self, raw_result: str

@@ -40,8 +40,8 @@ def test_local_style_comparison_stops_additional_calls_when_budget_exhausted(
 
     assert call_count == 2
     assert [option.style for option in result.options] == [
-        "standard",
         "concise",
+        "minimal",
     ]
     assert [option.text for option in result.options] == [
         "Standard translation.",
@@ -52,4 +52,4 @@ def test_local_style_comparison_stops_additional_calls_when_budget_exhausted(
     assert metadata.get("local_style_compare_call_budget") == 2
     assert metadata.get("local_style_compare_call_count") == 2
     assert metadata.get("local_style_compare_call_budget_exhausted") is True
-    assert (metadata.get("style_fallback") or {}).get("concise") == "standard"
+    assert (metadata.get("style_fallback") or {}).get("minimal") == "concise"

@@ -52,7 +52,7 @@ def test_style_comparison_financial_paragraph_parses_and_avoids_unneeded_retries
         "営業損失は539億円、経常損失は213億円となりました。"
     )
 
-    expected_standard = (
+    expected_concise = (
         "During the interim consolidated period, net sales were 2兆2,385億円 "
         "(down 1,554億円、6.5％ YoY).\n"
         "Operating loss was 539億円 (vs. a profit of 1,030億円 a year earlier).\n"
@@ -60,19 +60,19 @@ def test_style_comparison_financial_paragraph_parses_and_avoids_unneeded_retries
         "Net loss attributable to owners of parent was 453億円 (vs. a profit of 353億円 "
         "a year earlier)."
     )
-    expected_concise = (
+    expected_minimal = (
         "Net sales: 2兆2,385億円 (YoY -1,554億円、-6.5％); operating loss: 539億円 "
         "(prior +1,030億円); ordinary loss: 213億円 (prior +835億円); net loss: 453億円 "
         "(prior +353億円)."
     )
 
-    response = f"""[standard]
-Translation:
-{expected_standard}
-
-[concise]
+    response = f"""[concise]
 Translation:
 {expected_concise}
+
+[minimal]
+Translation:
+{expected_minimal}
 """
     copilot = SequencedCopilotHandler([response])
     service = TranslationService(
@@ -89,12 +89,12 @@ Translation:
     assert copilot.translate_single_calls == 1
     assert result.output_language == "en"
     assert [option.style for option in result.options] == [
-        "standard",
         "concise",
+        "minimal",
     ]
     assert [option.text for option in result.options] == [
-        expected_standard,
         expected_concise,
+        expected_minimal,
     ]
 
     telemetry = (result.metadata or {}).get("text_style_comparison_telemetry") or {}

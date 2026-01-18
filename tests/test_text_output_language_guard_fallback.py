@@ -158,8 +158,8 @@ Explanation:
     assert copilot.translate_single_calls == 1  # fallback
     assert result.output_language == "en"
     assert [option.style for option in result.options] == [
-        "standard",
         "concise",
+        "minimal",
     ]
     assert all(
         is_expected_output_language(option.text, "en") for option in result.options

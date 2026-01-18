@@ -336,6 +336,89 @@ def _insert_extra_instruction(prompt: str, extra_instruction: str) -> str:
     return f"{extra_instruction}\n{prompt}"
 
 
+def _build_to_en_numeric_hints(text: str) -> str:
+    """Build per-input numeric conversion hints for JP→EN (兆/億 → oku)."""
+    if not text:
+        return ""
+
+    def parse_int(value: str) -> Optional[int]:
+        try:
+            return int((value or "").replace(",", ""))
+        except ValueError:
+            return None
+
+    conversions: list[tuple[str, str]] = []
+    max_lines = 12
+    seen: set[str] = set()
+    for match in _RE_JP_OKU_CHOU_YEN_AMOUNT.finditer(text):
+        raw = (match.group(0) or "").strip()
+        if not raw or raw in seen:
+            continue
+        seen.add(raw)
+
+        sign_marker = (match.group("sign") or "").strip()
+        is_negative = sign_marker == "▲" or sign_marker.startswith("-")
+
+        has_yen = bool(match.group("yen"))
+        trillion_str = match.group("trillion") or ""
+        oku_str = match.group("oku") or ""
+        oku_only_str = match.group("oku_only") or ""
+
+        if trillion_str:
+            trillion = parse_int(trillion_str)
+            if trillion is None:
+                continue
+            oku_part = parse_int(oku_str) if oku_str else 0
+            if oku_part is None:
+                continue
+            total_oku = trillion * 10_000 + oku_part
+        else:
+            oku_only = parse_int(oku_only_str)
+            if oku_only is None:
+                continue
+            total_oku = oku_only
+
+        formatted = f"{total_oku:,}"
+        if is_negative:
+            formatted = f"({formatted})"
+        unit = "oku yen" if has_yen else "oku"
+        conversions.append((raw, f"{formatted} {unit}".strip()))
+        if len(conversions) >= max_lines:
+            break
+
+    if not conversions:
+        return ""
+
+    lines = ["### Numeric conversion hints (use verbatim)"]
+    for raw, converted in conversions:
+        lines.append(f"- {raw} -> {converted}")
+    return "\n".join(lines) + "\n"
+
+
+def _needs_to_en_numeric_rule_retry_copilot(
+    source_text: str,
+    translated_text: str,
+) -> bool:
+    """Copilot向け: 明確に誤変換の可能性が高い場合のみ最小限でリトライする。
+
+    - `billion/trillion/bn` は確実にNG
+    - 兆/億を含む入力で `oku` が欠落していても、出力が兆/億を保持している場合は
+      「表記が変換されていないだけ」で意味は崩れにくいのでリトライしない（速度優先）。
+    """
+    if not translated_text:
+        return False
+    if _RE_EN_BILLION_TRILLION.search(translated_text):
+        return True
+
+    if not _RE_JP_LARGE_UNIT.search(source_text):
+        return False
+    if _RE_EN_OKU.search(translated_text):
+        return False
+    if _RE_JP_LARGE_UNIT.search(translated_text):
+        return False
+    return True
+
+
 def _needs_to_en_numeric_rule_retry(source_text: str, translated_text: str) -> bool:
     if not translated_text:
         return False
@@ -3449,13 +3532,19 @@ class TranslationService:
             translation_rules = self.prompt_builder.get_translation_rules(
                 output_language
             )
+            numeric_hints = _build_to_en_numeric_hints(text)
 
             def build_compare_prompt(extra_instruction: Optional[str] = None) -> str:
                 prompt = template.replace("{translation_rules}", translation_rules)
                 prompt = prompt.replace("{reference_section}", reference_section)
                 prompt = prompt.replace("{input_text}", text)
+                extra_parts: list[str] = []
                 if extra_instruction:
-                    prompt = _insert_extra_instruction(prompt, extra_instruction)
+                    extra_parts.append(extra_instruction.strip())
+                if numeric_hints:
+                    extra_parts.append(numeric_hints.strip())
+                if extra_parts:
+                    prompt = _insert_extra_instruction(prompt, "\n\n".join(extra_parts))
                 return prompt
 
             def parse_compare_result(
@@ -3517,18 +3606,80 @@ class TranslationService:
             raw_result = translate_single(text, prompt, files_to_attach, on_chunk)
             result = parse_compare_result(raw_result)
 
-            if (
+            needs_output_language_retry = bool(
                 result
                 and result.options
                 and _is_text_output_language_mismatch(result.options[0].text, "en")
-            ):
-                retry_instruction = (
-                    "CRITICAL: Rewrite all Translation sections in English only (no Japanese/Chinese/Korean scripts; no Japanese punctuation). "
-                    "Keep the exact output format (Translation sections only; no explanations/notes)."
+            )
+            needs_numeric_rule_retry = bool(
+                result
+                and result.options
+                and _needs_to_en_numeric_rule_retry_copilot(
+                    text, result.options[0].text
                 )
-                retry_prompt = build_compare_prompt(retry_instruction)
+            )
+            if needs_output_language_retry or needs_numeric_rule_retry:
+                retry_parts: list[str] = []
+                if needs_output_language_retry:
+                    retry_parts.append(
+                        "CRITICAL: Rewrite all Translation sections in English only (no Japanese/Chinese/Korean scripts; no Japanese punctuation). "
+                        "Keep the exact output format (Translation sections only; no explanations/notes)."
+                    )
+                if needs_numeric_rule_retry:
+                    retry_parts.append(
+                        "- CRITICAL: Follow numeric conversion rules strictly. "
+                        "Do not use 'billion', 'trillion', or 'bn'. Use 'oku' (and 'k') "
+                        "exactly as specified. If numeric conversion hints are provided, use them verbatim."
+                    )
+                retry_prompt = build_compare_prompt("\n".join(retry_parts))
                 retry_raw = translate_single(text, retry_prompt, files_to_attach, None)
                 retry_result = parse_compare_result(retry_raw)
+
+                if retry_result and retry_result.options:
+                    retry_text = retry_result.options[0].text
+                    if not _is_text_output_language_mismatch(
+                        retry_text, "en"
+                    ) and not _needs_to_en_numeric_rule_retry_copilot(text, retry_text):
+                        if needs_numeric_rule_retry:
+                            metadata = (
+                                dict(retry_result.metadata)
+                                if retry_result.metadata
+                                else {}
+                            )
+                            metadata.setdefault("backend", "copilot")
+                            metadata["to_en_numeric_rule_retry"] = True
+                            metadata["to_en_numeric_rule_retry_styles"] = [style]
+                            retry_result.metadata = metadata
+                        return retry_result
+
+                if needs_output_language_retry:
+                    metadata = {
+                        "backend": "copilot",
+                        "output_language_mismatch": True,
+                        "output_language_retry_failed": True,
+                    }
+                    if needs_numeric_rule_retry:
+                        metadata["to_en_numeric_rule_retry"] = True
+                        metadata["to_en_numeric_rule_retry_styles"] = [style]
+                        metadata["to_en_numeric_rule_retry_failed"] = True
+                        metadata["to_en_numeric_rule_retry_failed_styles"] = [style]
+                    return TextTranslationResult(
+                        source_text=text,
+                        source_char_count=len(text),
+                        output_language=output_language,
+                        detected_language=detected_language,
+                        error_message="翻訳結果が英語ではありませんでした（出力言語ガード）",
+                        metadata=metadata,
+                    )
+
+                if needs_numeric_rule_retry and result and result.options:
+                    metadata = dict(result.metadata) if result.metadata else {}
+                    metadata.setdefault("backend", "copilot")
+                    metadata["to_en_numeric_rule_retry"] = True
+                    metadata["to_en_numeric_rule_retry_styles"] = [style]
+                    metadata["to_en_numeric_rule_retry_failed"] = True
+                    metadata["to_en_numeric_rule_retry_failed_styles"] = [style]
+                    result.metadata = metadata
                 if (
                     retry_result
                     and retry_result.options
@@ -3536,21 +3687,17 @@ class TranslationService:
                         retry_result.options[0].text, "en"
                     )
                 ):
+                    if needs_numeric_rule_retry:
+                        metadata = (
+                            dict(retry_result.metadata) if retry_result.metadata else {}
+                        )
+                        metadata.setdefault("backend", "copilot")
+                        metadata["to_en_numeric_rule_retry"] = True
+                        metadata["to_en_numeric_rule_retry_styles"] = [style]
+                        metadata["to_en_numeric_rule_retry_failed"] = True
+                        metadata["to_en_numeric_rule_retry_failed_styles"] = [style]
+                        retry_result.metadata = metadata
                     return retry_result
-
-                metadata = {
-                    "backend": "copilot",
-                    "output_language_mismatch": True,
-                    "output_language_retry_failed": True,
-                }
-                return TextTranslationResult(
-                    source_text=text,
-                    source_char_count=len(text),
-                    output_language=output_language,
-                    detected_language=detected_language,
-                    error_message="翻訳結果が英語ではありませんでした（出力言語ガード）",
-                    metadata=metadata,
-                )
 
             if result:
                 return result
@@ -3920,6 +4067,8 @@ class TranslationService:
         telemetry_translate_single_phase_counts: dict[str, int] = {}
         telemetry_translate_single_phase_seconds: dict[str, float] = {}
         telemetry_output_language_retry_calls = 0
+        telemetry_numeric_rule_retry_calls = 0
+        telemetry_numeric_rule_retry_failed = False
         telemetry_fill_missing_styles_calls = 0
         telemetry_fill_missing_styles_styles: list[str] = []
         telemetry_style_diff_guard_calls = 0
@@ -3965,6 +4114,8 @@ class TranslationService:
                 "translate_single_phase_counts": telemetry_translate_single_phase_counts,
                 "translate_single_phase_seconds": telemetry_translate_single_phase_seconds,
                 "output_language_retry_calls": telemetry_output_language_retry_calls,
+                "numeric_rule_retry_calls": telemetry_numeric_rule_retry_calls,
+                "numeric_rule_retry_failed": telemetry_numeric_rule_retry_failed,
                 "fill_missing_styles_calls": telemetry_fill_missing_styles_calls,
                 "fill_missing_styles_styles": telemetry_fill_missing_styles_styles,
                 "style_diff_guard_calls": telemetry_style_diff_guard_calls,
@@ -4052,6 +4203,7 @@ class TranslationService:
                     translation_rules = self.prompt_builder.get_translation_rules(
                         output_language
                     )
+                    numeric_hints = _build_to_en_numeric_hints(text)
 
                     def build_compare_prompt(
                         extra_instruction: Optional[str] = None,
@@ -4063,9 +4215,14 @@ class TranslationService:
                             "{reference_section}", reference_section
                         )
                         prompt = prompt.replace("{input_text}", text)
+                        extra_parts: list[str] = []
                         if extra_instruction:
+                            extra_parts.append(extra_instruction.strip())
+                        if numeric_hints:
+                            extra_parts.append(numeric_hints.strip())
+                        if extra_parts:
                             prompt = _insert_extra_instruction(
-                                prompt, extra_instruction
+                                prompt, "\n\n".join(extra_parts)
                             )
                         return prompt
 
@@ -4137,15 +4294,29 @@ class TranslationService:
                         copilot_on_chunk,
                     )
                     parsed_options = self._parse_style_comparison_result(raw_result)
+                    did_output_language_retry = False
+                    needs_numeric_rule_retry = bool(parsed_options) and any(
+                        _needs_to_en_numeric_rule_retry_copilot(text, option.text)
+                        for option in parsed_options
+                    )
                     if parsed_options and any(
                         _is_text_output_language_mismatch(option.text, "en")
                         for option in parsed_options
                     ):
+                        did_output_language_retry = True
                         telemetry_output_language_retry_calls += 1
-                        retry_prompt = build_compare_prompt(
+                        retry_parts = [
                             "CRITICAL: Rewrite all Translation sections in English only (no Japanese/Chinese/Korean scripts; no Japanese punctuation). "
                             "Keep the exact output format (Translation sections only; no explanations/notes)."
-                        )
+                        ]
+                        if needs_numeric_rule_retry:
+                            telemetry_numeric_rule_retry_calls += 1
+                            retry_parts.append(
+                                "- CRITICAL: Follow numeric conversion rules strictly. "
+                                "Do not use 'billion', 'trillion', or 'bn'. Use 'oku' (and 'k') "
+                                "exactly as specified. If numeric conversion hints are provided, use them verbatim."
+                            )
+                        retry_prompt = build_compare_prompt("\n".join(retry_parts))
                         retry_raw_result = translate_single_timed(
                             "style_compare_output_language_retry",
                             text,
@@ -4162,12 +4333,60 @@ class TranslationService:
                         ):
                             parsed_options = retry_parsed_options
                             raw_result = retry_raw_result
+                            if needs_numeric_rule_retry and any(
+                                _needs_to_en_numeric_rule_retry_copilot(
+                                    text, option.text
+                                )
+                                for option in retry_parsed_options
+                            ):
+                                telemetry_numeric_rule_retry_failed = True
                         else:
                             parsed_options = []
                             combined_error = (
                                 combined_error
                                 or "Style comparison output language mismatch"
                             )
+                    if (
+                        parsed_options
+                        and not did_output_language_retry
+                        and any(
+                            _needs_to_en_numeric_rule_retry_copilot(text, option.text)
+                            for option in parsed_options
+                        )
+                    ):
+                        telemetry_numeric_rule_retry_calls += 1
+                        retry_prompt = build_compare_prompt(
+                            "- CRITICAL: Follow numeric conversion rules strictly. "
+                            "Do not use 'billion', 'trillion', or 'bn'. Use 'oku' (and 'k') "
+                            "exactly as specified. If numeric conversion hints are provided, use them verbatim."
+                        )
+                        retry_raw_result = translate_single_timed(
+                            "style_compare_numeric_rule_retry",
+                            text,
+                            retry_prompt,
+                            files_to_attach,
+                            None,
+                        )
+                        retry_parsed_options = self._parse_style_comparison_result(
+                            retry_raw_result
+                        )
+                        if (
+                            retry_parsed_options
+                            and not any(
+                                _is_text_output_language_mismatch(option.text, "en")
+                                for option in retry_parsed_options
+                            )
+                            and not any(
+                                _needs_to_en_numeric_rule_retry_copilot(
+                                    text, option.text
+                                )
+                                for option in retry_parsed_options
+                            )
+                        ):
+                            parsed_options = retry_parsed_options
+                            raw_result = retry_raw_result
+                        else:
+                            telemetry_numeric_rule_retry_failed = True
 
                     if not parsed_options:
                         parsed_single = self._parse_single_translation_result(

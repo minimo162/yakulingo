@@ -48,6 +48,22 @@ class SequencedCopilotHandler:
         return response
 
 
+class RecordingSequencedCopilotHandler(SequencedCopilotHandler):
+    def __init__(self, responses: list[str]) -> None:
+        super().__init__(responses)
+        self.prompts: list[str] = []
+
+    def translate_single(
+        self,
+        text: str,
+        prompt: str,
+        reference_files: list[Path] | None = None,
+        on_chunk: Callable[[str], None] | None = None,
+    ) -> str:
+        self.prompts.append(prompt)
+        return super().translate_single(text, prompt, reference_files, on_chunk)
+
+
 def test_translate_text_with_style_comparison_retries_when_standard_is_japanese() -> (
     None
 ):
@@ -159,3 +175,85 @@ Net sales: 2兆2,385億円 (YoY -1,554億円、6.5％); operating loss: 539億�
     assert telemetry.get("translate_single_calls") == 1
     assert telemetry.get("translate_single_phases") == ["style_compare"]
     assert telemetry.get("output_language_retry_calls") == 0
+
+
+def test_translate_text_with_style_comparison_retries_for_oku_numeric_rule() -> None:
+    input_text = (
+        "当中間連結会計期間における連結業績は、売上高は2兆2,385億円となりました。"
+    )
+    first = """[standard]
+Translation:
+Net sales were 22,385 billion yen.
+
+[concise]
+Translation:
+Net sales: 22,385 billion yen.
+"""
+    second = """[standard]
+Translation:
+Net sales were 22,385 oku yen.
+
+[concise]
+Translation:
+Net sales: 22,385 oku yen.
+"""
+    copilot = RecordingSequencedCopilotHandler([first, second])
+    service = TranslationService(copilot=copilot, config=AppSettings())
+
+    result = service.translate_text_with_style_comparison(
+        input_text,
+        pre_detected_language="日本語",
+    )
+
+    assert copilot.translate_single_calls == 2
+    assert copilot.prompts
+    assert "2兆2,385億円 -> 22,385 oku yen" in copilot.prompts[0]
+
+    telemetry = (result.metadata or {}).get("text_style_comparison_telemetry") or {}
+    assert result.output_language == "en"
+    assert [option.style for option in result.options] == [
+        "standard",
+        "concise",
+    ]
+    assert all("oku" in option.text.lower() for option in result.options)
+    assert telemetry.get("translate_single_calls") == 2
+    assert telemetry.get("translate_single_phases") == [
+        "style_compare",
+        "style_compare_numeric_rule_retry",
+    ]
+    assert telemetry.get("numeric_rule_retry_calls") == 1
+    assert telemetry.get("numeric_rule_retry_failed") is False
+
+
+def test_translate_text_with_options_retries_for_oku_numeric_rule() -> None:
+    input_text = "売上高は2兆2,385億円となりました。"
+    first = """[standard]
+Translation:
+Net sales were 22,385 billion yen.
+
+[concise]
+Translation:
+Net sales: 22,385 billion yen.
+"""
+    second = """[standard]
+Translation:
+Net sales were 22,385 oku yen.
+
+[concise]
+Translation:
+Net sales: 22,385 oku yen.
+"""
+    copilot = SequencedCopilotHandler([first, second])
+    service = TranslationService(copilot=copilot, config=AppSettings())
+
+    result = service.translate_text_with_options(
+        input_text,
+        style="standard",
+        pre_detected_language="日本語",
+    )
+
+    assert copilot.translate_single_calls == 2
+    assert result.output_language == "en"
+    assert result.options
+    assert result.options[0].style == "standard"
+    assert "oku" in result.options[0].text.lower()

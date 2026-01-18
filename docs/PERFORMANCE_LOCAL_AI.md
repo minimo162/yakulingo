@@ -523,6 +523,29 @@ E2E:
 - pp は Vulkan が大幅に高速だが、tg はほぼ同等 → この環境では tg がボトルネックになりやすい
 - `--n-gpu-layers auto/all` は `llama-bench` 側が非対応のため、比較ツールでは `-ngl` 未指定（既定=99）として実行
 
+## ケース記録（case: yakulingo-local-ai-streaming-speedup-20260119-063004）
+
+- 環境: Windows-10 / llama.cpp avx2 7718（db79dc06b）/ model=translategemma-4b-it.IQ4_XS.gguf
+- 条件: style=minimal / glossary=off / server_variant=avx2（CPU-only）
+
+### CLIベンチ（tools/bench_local_ai.py）
+- warm（short: 217 chars）: warmup_seconds 9.83 / translation_seconds 8.61 / output_chars 747
+  - JSON: `/work/yakulingo-local-ai-streaming-speedup-20260119-063004/.tmp/bench_warm_short.json`
+- warm（medium: 410 chars）: warmup_seconds 36.07 / translation_seconds 18.31 / output_chars 1341
+  - JSON: `/work/yakulingo-local-ai-streaming-speedup-20260119-063004/.tmp/bench_warm_medium.json`
+- cold（short: 217 chars）: translation_seconds 57.58 / total_seconds 57.66 / output_chars 785
+  - JSON: `/work/yakulingo-local-ai-streaming-speedup-20260119-063004/.tmp/bench_cold_short.json`
+
+### E2E（tools/e2e_local_ai_speed.py）
+- 失敗: stage=run_e2e（Translate button did not become enabled within 10s）
+  - JSON: `/work/yakulingo-local-ai-streaming-speedup-20260119-063004/.tmp/e2e_disabled.json`（`--disable-streaming-preview`）
+  - app log: `/work/yakulingo-local-ai-streaming-speedup-20260119-063004/.tmp/e2e_disabled_app.log`
+
+### 成功基準（このケースの最低ライン）
+- 体感（TTFT）: 「翻訳」クリック→プレビュー初回更新を **1回目/2回目**で記録し、改善を確認できること（自動計測は task-06 で追加）
+- 実時間（TTLC）: 上記 input（short/medium, warm）の `translation_seconds` を **悪化させない（+5%以内）**
+- 体感の既定: ローカルAI使用時にストリーミングプレビューが見えること（既定ON化は task-01）
+
 ## よくある失敗と回避策
 - AVX2未対応CPU: 同梱のAVX2版 `llama-server` が起動しない場合は別ビルドが必要
 - モデルパス不備: `local_ai_model_path` の指定ミスで起動失敗

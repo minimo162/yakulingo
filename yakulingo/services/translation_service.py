@@ -2826,6 +2826,28 @@ class TranslationService:
         if embedded_ref.truncated:
             metadata["reference_truncated"] = True
 
+        local_style_compare_call_budget = 2
+        local_style_compare_call_count = 0
+        local_style_compare_call_phases: list[str] = []
+        local_style_compare_call_budget_exhausted_phases: list[str] = []
+
+        def call_local(
+            prompt: str,
+            stream_handler: "Callable[[str], None] | None",
+            phase: str,
+        ) -> str | None:
+            nonlocal local_style_compare_call_count
+
+            if local_style_compare_call_count >= local_style_compare_call_budget:
+                local_style_compare_call_budget_exhausted_phases.append(phase)
+                return None
+
+            local_style_compare_call_count += 1
+            local_style_compare_call_phases.append(phase)
+            return self._translate_single_with_cancel(
+                text, prompt, None, stream_handler
+            )
+
         style_list = [s for s in styles if s in TEXT_STYLE_ORDER]
         seen = set()
         style_list = [s for s in style_list if not (s in seen or seen.add(s))]
@@ -2845,12 +2867,11 @@ class TranslationService:
                     detected_language=detected_language,
                 )
                 stream_handler = _wrap_local_streaming_on_chunk(on_chunk)
-                raw = self._translate_single_with_cancel(
-                    text, prompt, None, stream_handler
-                )
-                by_style = parse_text_to_en_3style(raw)
-                if not by_style and is_truncated_json(raw):
-                    truncated_detected = True
+                raw = call_local(prompt, stream_handler, "combined_3style")
+                if raw is not None:
+                    by_style = parse_text_to_en_3style(raw)
+                    if not by_style and is_truncated_json(raw):
+                        truncated_detected = True
 
             options: list[TranslationOption] = []
             missing: list[str] = []
@@ -2875,16 +2896,15 @@ class TranslationService:
                     detected_language=detected_language,
                 )
                 stream_handler = _wrap_local_streaming_on_chunk(on_chunk)
-                raw = self._translate_single_with_cancel(
-                    text, prompt, None, stream_handler
-                )
-                missing_by_style = parse_text_to_en_style_subset(raw, missing)
-                if missing_by_style:
-                    for style, payload in missing_by_style.items():
-                        if style not in by_style:
-                            by_style[style] = payload
-                elif is_truncated_json(raw):
-                    truncated_detected = True
+                raw = call_local(prompt, stream_handler, "missing_styles_subset")
+                if raw is not None:
+                    missing_by_style = parse_text_to_en_style_subset(raw, missing)
+                    if missing_by_style:
+                        for style, payload in missing_by_style.items():
+                            if style not in by_style:
+                                by_style[style] = payload
+                    elif is_truncated_json(raw):
+                        truncated_detected = True
 
                 options = []
                 missing = []
@@ -2910,9 +2930,11 @@ class TranslationService:
                         detected_language=detected_language,
                     )
                     stream_handler = _wrap_local_streaming_on_chunk(on_chunk)
-                    raw = self._translate_single_with_cancel(
-                        text, prompt, None, stream_handler
+                    raw = call_local(
+                        prompt, stream_handler, f"missing_single_{style}"
                     )
+                    if raw is None:
+                        break
                     translation, _ = parse_text_single_translation(raw)
                     if translation:
                         options.append(
@@ -2953,11 +2975,13 @@ class TranslationService:
                         retry_prompt,
                         BatchTranslator._EN_STRICT_OUTPUT_LANGUAGE_INSTRUCTION,
                     )
-                    retry_raw = self._translate_single_with_cancel(
-                        text, retry_prompt, None, None
+                    retry_raw = call_local(
+                        retry_prompt, None, "output_language_retry"
                     )
-                    retry_by_style = parse_text_to_en_style_subset(
-                        retry_raw, retry_styles
+                    retry_by_style = (
+                        parse_text_to_en_style_subset(retry_raw, retry_styles)
+                        if retry_raw is not None
+                        else None
                     )
                     if retry_by_style:
                         updated = False
@@ -2974,6 +2998,29 @@ class TranslationService:
                                 updated = True
                         if updated:
                             metadata["output_language_retry"] = True
+
+                    remaining_mismatched_styles = [
+                        opt.style
+                        for opt in options
+                        if opt.style
+                        and _is_text_output_language_mismatch(opt.text, "en")
+                    ]
+                    if remaining_mismatched_styles:
+                        has_correct = any(
+                            opt.style
+                            and not _is_text_output_language_mismatch(opt.text, "en")
+                            for opt in options
+                        )
+                        if has_correct:
+                            options = [
+                                opt
+                                for opt in options
+                                if not _is_text_output_language_mismatch(opt.text, "en")
+                            ]
+                            metadata["output_language_mismatch_partial"] = True
+                            metadata["output_language_mismatch_styles"] = sorted(
+                                set(remaining_mismatched_styles)
+                            )
 
                     if any(
                         _is_text_output_language_mismatch(opt.text, "en")
@@ -3015,12 +3062,16 @@ class TranslationService:
                         detected_language=detected_language,
                         extra_instruction=retry_instruction,
                     )
-                    retry_raw = self._translate_single_with_cancel(
-                        text, retry_prompt, None, None
+                    retry_raw = call_local(
+                        retry_prompt, None, "incomplete_translation_retry"
                     )
-                    retry_by_style = parse_text_to_en_style_subset(
-                        retry_raw, retry_styles
+                    retry_by_style = (
+                        parse_text_to_en_style_subset(retry_raw, retry_styles)
+                        if retry_raw is not None
+                        else None
                     )
+                    if retry_raw is None:
+                        metadata["incomplete_translation_retry_skipped_due_to_budget"] = True
                     if retry_by_style:
                         for opt in options:
                             style = opt.style
@@ -3090,14 +3141,19 @@ class TranslationService:
                         detected_language=detected_language,
                         extra_instruction=retry_instruction,
                     )
-                    retry_raw = self._translate_single_with_cancel(
-                        text, retry_prompt, None, None
+                    retry_raw = call_local(
+                        retry_prompt, None, "to_en_numeric_rule_retry"
                     )
-                    retry_by_style = parse_text_to_en_style_subset(
-                        retry_raw, retry_styles
+                    retry_by_style = (
+                        parse_text_to_en_style_subset(retry_raw, retry_styles)
+                        if retry_raw is not None
+                        else None
                     )
-                    metadata["to_en_numeric_rule_retry"] = True
-                    metadata["to_en_numeric_rule_retry_styles"] = retry_styles
+                    if retry_raw is None:
+                        metadata["to_en_numeric_rule_retry_skipped_due_to_budget"] = True
+                    else:
+                        metadata["to_en_numeric_rule_retry"] = True
+                        metadata["to_en_numeric_rule_retry_styles"] = retry_styles
                     updated = False
                     if retry_by_style:
                         for opt in options:
@@ -3167,6 +3223,15 @@ class TranslationService:
                 error_message=str(e),
                 metadata=metadata,
             )
+        finally:
+            metadata["local_style_compare_call_budget"] = local_style_compare_call_budget
+            metadata["local_style_compare_call_count"] = local_style_compare_call_count
+            metadata["local_style_compare_call_phases"] = local_style_compare_call_phases
+            if local_style_compare_call_budget_exhausted_phases:
+                metadata["local_style_compare_call_budget_exhausted"] = True
+                metadata["local_style_compare_call_budget_exhausted_phases"] = (
+                    local_style_compare_call_budget_exhausted_phases
+                )
 
     def _translate_text_with_options_on_copilot(
         self,

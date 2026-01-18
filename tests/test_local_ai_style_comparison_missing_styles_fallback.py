@@ -6,49 +6,41 @@ from yakulingo.config.settings import AppSettings
 from yakulingo.services.translation_service import TranslationService
 
 
-def test_local_style_comparison_fills_missing_styles_with_per_style_single(
+def test_local_style_comparison_stops_additional_calls_when_budget_exhausted(
     monkeypatch,
 ) -> None:
     settings = AppSettings(translation_backend="local")
     service = TranslationService(
         copilot=object(), config=settings, prompts_dir=Path("prompts")
     )
-    prompts: list[str] = []
+    call_count = 0
 
     def fake_translate_single_with_cancel(
         text, prompt, reference_files=None, on_chunk=None
     ):
+        nonlocal call_count
         _ = text
         _ = reference_files
         _ = on_chunk
-        prompts.append(prompt)
+        call_count += 1
 
-        if "ローカルAI: JP→EN（3スタイル）" in prompt:
+        if call_count == 1:
             return (
                 '{"options":[{"style":"standard","translation":"Standard translation."}]}'
             )
-
-        if "ローカルAI: JP→EN（不足スタイル補完）" in prompt:
+        if call_count == 2:
             return "{}"
-
-        if "ローカルAI: JP→EN（単発）" in prompt:
-            if "スタイル: concise" in prompt:
-                return '{"translation":"Concise translation."}'
-            if "スタイル: minimal" in prompt:
-                return '{"translation":"Minimal translation."}'
-            return '{"translation":"Unexpected style."}'
-
-        raise AssertionError(f"Unexpected prompt: {prompt[:200]}")
+        raise AssertionError(
+            f"_translate_single_with_cancel was called too many times: {prompt[:200]}"
+        )
 
     monkeypatch.setattr(
         service, "_translate_single_with_cancel", fake_translate_single_with_cancel
     )
 
-    result = service.translate_text_with_style_comparison(
-        "dummy",
-        pre_detected_language="日本語",
-    )
+    result = service.translate_text_with_style_comparison("あ")
 
+    assert call_count == 2
     assert [option.style for option in result.options] == [
         "standard",
         "concise",
@@ -56,8 +48,13 @@ def test_local_style_comparison_fills_missing_styles_with_per_style_single(
     ]
     assert [option.text for option in result.options] == [
         "Standard translation.",
-        "Concise translation.",
-        "Minimal translation.",
+        "Standard translation.",
+        "Standard translation.",
     ]
-    assert any("ローカルAI: JP→EN（単発）" in prompt for prompt in prompts)
 
+    metadata = result.metadata or {}
+    assert metadata.get("local_style_compare_call_budget") == 2
+    assert metadata.get("local_style_compare_call_count") == 2
+    assert metadata.get("local_style_compare_call_budget_exhausted") is True
+    assert (metadata.get("style_fallback") or {}).get("concise") == "standard"
+    assert (metadata.get("style_fallback") or {}).get("minimal") == "standard"

@@ -1888,6 +1888,139 @@ class BatchTranslator:
                     ):
                         cleaned_unique_translations[idx] = ""
 
+            if (
+                is_local_backend
+                and output_language == "en"
+                and not self._cancel_event.is_set()
+            ):
+                numeric_rule_violation_indices = [
+                    idx
+                    for idx, translated_text in enumerate(cleaned_unique_translations)
+                    if translated_text
+                    and translated_text.strip()
+                    and _needs_to_en_numeric_rule_retry(unique_texts[idx], translated_text)
+                ]
+                if numeric_rule_violation_indices:
+                    retry_instruction = (
+                        "- CRITICAL: Follow numeric conversion rules strictly. "
+                        "Do not use 'billion', 'trillion', or 'bn'. Use 'oku' (and 'k') "
+                        "exactly as specified. If numeric hints are provided, use them verbatim."
+                    )
+                    max_retry_items = 20
+                    max_retry_chars = min(batch_char_limit, 2000)
+                    retry_indices: list[int] = []
+                    retry_texts: list[str] = []
+                    total_chars = 0
+                    for idx in numeric_rule_violation_indices:
+                        if len(retry_texts) >= max_retry_items:
+                            break
+                        text_to_retry = unique_texts[idx]
+                        if not text_to_retry:
+                            continue
+                        if retry_texts and total_chars + len(text_to_retry) > max_retry_chars:
+                            break
+                        retry_indices.append(idx)
+                        retry_texts.append(text_to_retry)
+                        total_chars += len(text_to_retry)
+
+                    if retry_texts:
+                        repair_prompt = self.prompt_builder.build_batch(
+                            retry_texts,
+                            has_reference_files=has_refs,
+                            output_language=output_language,
+                            translation_style=translation_style,
+                            include_item_ids=include_item_ids,
+                            reference_files=reference_files,
+                        )
+                        repair_prompt = _insert_extra_instruction(
+                            repair_prompt,
+                            retry_instruction,
+                        )
+                        logger.warning(
+                            "Batch %d: Numeric rule violation detected in %d translations; retrying %d items",
+                            i + 1,
+                            len(numeric_rule_violation_indices),
+                            len(retry_texts),
+                        )
+                        repair_translations: list[str] = []
+                        try:
+                            lock = self._copilot_lock or nullcontext()
+                            with lock:
+                                self.copilot.set_cancel_callback(
+                                    lambda: self._cancel_event.is_set()
+                                )
+                                try:
+                                    with self._ui_window_sync_scope(
+                                        "translate_blocks_with_result_numeric_rule_retry"
+                                    ):
+                                        repair_translations = self.copilot.translate_sync(
+                                            retry_texts,
+                                            repair_prompt,
+                                            files_to_attach,
+                                            True,
+                                            timeout=self.request_timeout,
+                                            include_item_ids=include_item_ids,
+                                        )
+                                finally:
+                                    self.copilot.set_cancel_callback(None)
+                        except TranslationCancelledError:
+                            logger.info(
+                                "Translation cancelled during batch %d/%d",
+                                i + 1,
+                                len(batches),
+                            )
+                            cancelled = True
+                            break
+                        except RuntimeError as e:
+                            logger.warning(
+                                "Batch %d: Numeric rule retry failed: %s", i + 1, e
+                            )
+
+                        if repair_translations:
+                            if len(repair_translations) != len(retry_texts):
+                                logger.warning(
+                                    "Batch %d: Numeric rule retry count mismatch: expected %d, got %d; keeping original translations where needed",
+                                    i + 1,
+                                    len(retry_texts),
+                                    len(repair_translations),
+                                )
+                                if len(repair_translations) < len(retry_texts):
+                                    repair_translations = repair_translations + (
+                                        [""] * (len(retry_texts) - len(repair_translations))
+                                    )
+                                else:
+                                    repair_translations = repair_translations[: len(retry_texts)]
+
+                            updated_count = 0
+                            for repair_pos, repaired_text in enumerate(repair_translations):
+                                original_idx = retry_indices[repair_pos]
+                                cleaned_repair = self._clean_batch_translation(repaired_text)
+                                if not cleaned_repair or not cleaned_repair.strip():
+                                    continue
+                                if _RE_HANGUL.search(cleaned_repair):
+                                    continue
+                                if self._is_output_language_mismatch(
+                                    cleaned_repair, output_language
+                                ):
+                                    continue
+                                if _looks_incomplete_translation_to_en(
+                                    unique_texts[original_idx], cleaned_repair
+                                ):
+                                    continue
+                                if _needs_to_en_numeric_rule_retry(
+                                    unique_texts[original_idx], cleaned_repair
+                                ):
+                                    continue
+                                cleaned_unique_translations[original_idx] = cleaned_repair
+                                updated_count += 1
+                            if updated_count:
+                                logger.debug(
+                                    "Batch %d: Numeric rule retry updated %d/%d items",
+                                    i + 1,
+                                    updated_count,
+                                    len(retry_texts),
+                                )
+
             # Detect empty translations (Copilot may return empty strings for some items)
             empty_translation_indices = [
                 idx

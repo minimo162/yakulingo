@@ -214,7 +214,6 @@ class NTLMProxyHandler(urllib.request.BaseHandler):
 
     def __init__(self, proxy_config: ProxyConfig):
         self.proxy_config = proxy_config
-        self._auth_cache: dict[str, str] = {}
 
     def http_error_407(self, req, fp, code, msg, headers):
         """407 Proxy Authentication Required の処理"""
@@ -1952,12 +1951,6 @@ rm "$0"
             return False
 
         return True
-
-    def cleanup_cache(self) -> None:
-        """キャッシュディレクトリをクリーンアップ"""
-        if self.cache_dir.exists():
-            shutil.rmtree(self.cache_dir, ignore_errors=True)
-
 
 # 便利なユーティリティ関数
 def check_for_updates(

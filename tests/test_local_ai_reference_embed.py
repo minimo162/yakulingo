@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import heapq
 from pathlib import Path
 
 from unittest.mock import Mock, patch
@@ -21,6 +22,93 @@ def _make_builder() -> LocalPromptBuilder:
         base_prompt_builder=PromptBuilder(prompts_dir),
         settings=AppSettings(),
     )
+
+
+def _make_glossary_pairs(
+    rows: list[tuple[str, str]],
+) -> list[tuple[str, str, str, str, str, str]]:
+    pairs: list[tuple[str, str, str, str, str, str]] = []
+    for source, target in rows:
+        source_folded = LocalPromptBuilder._normalize_for_glossary_match(source)
+        target_folded = (
+            LocalPromptBuilder._normalize_for_glossary_match(target) if target else ""
+        )
+        source_compact = LocalPromptBuilder._compact_for_glossary_match(source_folded)
+        target_compact = LocalPromptBuilder._compact_for_glossary_match(target_folded)
+        pairs.append(
+            (
+                source,
+                target,
+                source_folded,
+                target_folded,
+                source_compact,
+                target_compact,
+            )
+        )
+    return pairs
+
+
+def _filter_glossary_pairs_linear(
+    pairs: list[tuple[str, str, str, str, str, str]],
+    input_text: str,
+    *,
+    max_lines: int,
+) -> tuple[list[tuple[str, str]], bool]:
+    text = (input_text or "").strip()
+    if not text:
+        return [], False
+
+    text_folded = LocalPromptBuilder._normalize_for_glossary_match(text)
+    text_compact = LocalPromptBuilder._compact_for_glossary_match(text_folded)
+
+    seen: set[str] = set()
+    heap: list[tuple[int, int, str, str]] = []
+    matched_count = 0
+    for idx, (
+        source,
+        target,
+        source_folded,
+        target_folded,
+        source_compact,
+        target_compact,
+    ) in enumerate(pairs):
+        source = (source or "").strip()
+        if not source:
+            continue
+        if source in seen:
+            continue
+
+        matched = LocalPromptBuilder._matches_glossary_term(
+            text_folded=text_folded,
+            text_compact=text_compact,
+            term_folded=source_folded,
+            term_compact=source_compact,
+        )
+        if not matched and target:
+            matched = LocalPromptBuilder._matches_glossary_term(
+                text_folded=text_folded,
+                text_compact=text_compact,
+                term_folded=target_folded,
+                term_compact=target_compact,
+            )
+        if not matched:
+            continue
+
+        seen.add(source)
+        matched_count += 1
+        key = max(len(source_folded or source), len(target_folded or target))
+        item = (key, -idx, source, target)
+        if len(heap) < max_lines:
+            heapq.heappush(heap, item)
+        else:
+            if item > heap[0]:
+                heapq.heapreplace(heap, item)
+
+    if not heap:
+        return [], False
+
+    selected = sorted(heap, key=lambda x: (-x[0], -x[1]))
+    return [(source, target) for _, _, source, target in selected], matched_count > max_lines
 
 
 def test_local_reference_embed_supports_binary_formats(tmp_path: Path) -> None:
@@ -249,6 +337,51 @@ def test_local_reference_embed_truncates_bundled_glossary_to_max_lines(
     )
     assert embedded.truncated is True
     assert embedded.text.count(" 翻译成 ") == 80
+
+
+def test_local_glossary_filter_indexed_matches_linear_for_same_input() -> None:
+    pairs = _make_glossary_pairs(
+        [
+            ("foobar", "X"),
+            ("bar", "BAR"),
+            ("foobarish", "Y"),
+            ("営業利益", "Operating Profit"),
+            ("profit", "利益"),
+            ("foobar", "X2"),
+            ("abcd1234", "A"),
+            ("abcd", "B"),
+        ]
+    )
+    glossary = LocalPromptBuilder._build_glossary_index(pairs)
+
+    cases: list[tuple[str, int]] = [
+        ("foo_bar", 10),
+        ("foobarish", 10),
+        ("営業利益が増加", 10),
+        ("profit improved", 10),
+        ("profit利益", 10),
+        ("abcd1234 abcd", 1),
+        ("abcd1234 abcd", 2),
+    ]
+    for input_text, max_lines in cases:
+        assert LocalPromptBuilder._filter_glossary_pairs(
+            glossary, input_text, max_lines=max_lines
+        ) == _filter_glossary_pairs_linear(pairs, input_text, max_lines=max_lines)
+
+
+def test_local_glossary_filter_indexed_matches_linear_when_no_candidates() -> None:
+    pairs = _make_glossary_pairs(
+        [
+            ("alpha", "A"),
+            ("beta", "B"),
+        ]
+    )
+    glossary = LocalPromptBuilder._build_glossary_index(pairs)
+
+    input_text = "gamma"
+    assert LocalPromptBuilder._filter_glossary_pairs(
+        glossary, input_text, max_lines=10
+    ) == _filter_glossary_pairs_linear(pairs, input_text, max_lines=10)
 
 
 def _make_temp_builder(

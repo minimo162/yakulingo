@@ -37,6 +37,7 @@ _SUPPORTED_REFERENCE_EXTENSIONS = {
 _BUNDLED_GLOSSARY_FILENAMES = {"glossary.csv", "glossary_old.csv"}
 _RE_GLOSSARY_MATCH_SEPARATORS = re.compile(r"[\s_/\\-]+")
 _RE_GLOSSARY_ASCII_WORD = re.compile(r"^[a-z0-9]+$")
+_RE_GLOSSARY_TEXT_ASCII_WORD = re.compile(r"\b[a-z0-9]+\b")
 _RE_JP_YEN_AMOUNT = re.compile(
     r"(?P<sign>[▲+-])?\s*(?:(?P<trillion>\d[\d,]*(?:\.\d+)?)兆(?:(?P<oku>\d[\d,]*(?:\.\d+)?)億)?|(?P<oku_only>\d[\d,]*(?:\.\d+)?)億)(?P<yen>円)?"
 )
@@ -47,6 +48,14 @@ class EmbeddedReference:
     text: str
     warnings: list[str]
     truncated: bool
+
+
+@dataclass(frozen=True)
+class GlossaryIndex:
+    pairs: list[tuple[str, str, str, str, str, str]]
+    ascii_word_to_indices: dict[str, tuple[int, ...]]
+    ascii_prefix4_to_indices: dict[str, tuple[int, ...]]
+    scan_indices: tuple[int, ...]
 
 
 class LocalPromptBuilder:
@@ -76,6 +85,7 @@ class LocalPromptBuilder:
         self._glossary_cache: dict[
             tuple[str, int, int], list[tuple[str, str, str, str, str, str]]
         ] = {}
+        self._glossary_index_cache: dict[tuple[str, int, int], GlossaryIndex] = {}
         self._glossary_lock = threading.Lock()
 
     def _get_translation_rules(self, output_language: str) -> str:
@@ -167,6 +177,21 @@ class LocalPromptBuilder:
             self._glossary_cache[file_key] = pairs
         return pairs
 
+    def _load_glossary_index(
+        self, path: Path, file_key: tuple[str, int, int]
+    ) -> GlossaryIndex:
+        with self._glossary_lock:
+            cached = self._glossary_index_cache.get(file_key)
+            if cached is not None:
+                return cached
+
+        pairs = self._load_glossary_pairs(path, file_key)
+        index = self._build_glossary_index(pairs)
+
+        with self._glossary_lock:
+            self._glossary_index_cache[file_key] = index
+        return index
+
     @staticmethod
     def _normalize_for_glossary_match(text: str) -> str:
         if not text:
@@ -210,7 +235,7 @@ class LocalPromptBuilder:
 
     @staticmethod
     def _filter_glossary_pairs(
-        pairs: list[tuple[str, str, str, str, str, str]],
+        glossary: GlossaryIndex,
         input_text: str,
         *,
         max_lines: int,
@@ -222,17 +247,35 @@ class LocalPromptBuilder:
         text_folded = LocalPromptBuilder._normalize_for_glossary_match(text)
         text_compact = LocalPromptBuilder._compact_for_glossary_match(text_folded)
 
+        indices_to_check: set[int] = set(glossary.scan_indices)
+
+        for word in _RE_GLOSSARY_TEXT_ASCII_WORD.findall(text_folded):
+            indices_to_check.update(glossary.ascii_word_to_indices.get(word, ()))
+
+        if len(text_compact) >= 4 and glossary.ascii_prefix4_to_indices:
+            prefixes: set[str] = set()
+            for idx in range(len(text_compact) - 3):
+                prefix = text_compact[idx : idx + 4]
+                if prefix.isascii():
+                    prefixes.add(prefix)
+            for prefix in prefixes:
+                indices_to_check.update(glossary.ascii_prefix4_to_indices.get(prefix, ()))
+
+        if not indices_to_check:
+            return [], False
+
         seen: set[str] = set()
         heap: list[tuple[int, int, str, str]] = []
         matched_count = 0
-        for idx, (
-            source,
-            target,
-            source_folded,
-            target_folded,
-            source_compact,
-            target_compact,
-        ) in enumerate(pairs):
+        for idx in sorted(indices_to_check):
+            (
+                source,
+                target,
+                source_folded,
+                target_folded,
+                source_compact,
+                target_compact,
+            ) = glossary.pairs[idx]
             source = (source or "").strip()
             if not source:
                 continue
@@ -271,6 +314,55 @@ class LocalPromptBuilder:
         selected = sorted(heap, key=lambda x: (-x[0], -x[1]))
         return [(source, target) for _, _, source, target in selected], (
             matched_count > max_lines
+        )
+
+    @staticmethod
+    def _build_glossary_index(
+        pairs: list[tuple[str, str, str, str, str, str]],
+    ) -> GlossaryIndex:
+        ascii_word_to_indices: dict[str, list[int]] = {}
+        ascii_prefix4_to_indices: dict[str, list[int]] = {}
+        scan_indices: list[int] = []
+
+        for idx, (
+            _source,
+            target,
+            source_folded,
+            target_folded,
+            _source_compact,
+            _target_compact,
+        ) in enumerate(pairs):
+            source_is_ascii_word = bool(
+                source_folded.isascii() and _RE_GLOSSARY_ASCII_WORD.match(source_folded)
+            )
+            target_is_ascii_word = bool(
+                target_folded.isascii() and _RE_GLOSSARY_ASCII_WORD.match(target_folded)
+            )
+
+            if source_is_ascii_word:
+                ascii_word_to_indices.setdefault(source_folded, []).append(idx)
+                if len(source_folded) >= 4:
+                    ascii_prefix4_to_indices.setdefault(source_folded[:4], []).append(idx)
+            if target_is_ascii_word:
+                ascii_word_to_indices.setdefault(target_folded, []).append(idx)
+                if len(target_folded) >= 4:
+                    ascii_prefix4_to_indices.setdefault(target_folded[:4], []).append(idx)
+
+            if not source_is_ascii_word:
+                scan_indices.append(idx)
+            elif target and not target_is_ascii_word:
+                scan_indices.append(idx)
+
+        return GlossaryIndex(
+            pairs=pairs,
+            ascii_word_to_indices={
+                key: tuple(indices) for key, indices in ascii_word_to_indices.items()
+            },
+            ascii_prefix4_to_indices={
+                key: tuple(indices)
+                for key, indices in ascii_prefix4_to_indices.items()
+            },
+            scan_indices=tuple(scan_indices),
         )
 
     @staticmethod
@@ -644,9 +736,9 @@ class LocalPromptBuilder:
             if is_bundled_glossary:
                 if not input_text or not input_text.strip():
                     continue
-                pairs = self._load_glossary_pairs(path, file_key)
+                glossary = self._load_glossary_index(path, file_key)
                 matched, glossary_truncated = self._filter_glossary_pairs(
-                    pairs, input_text or "", max_lines=glossary_max_lines
+                    glossary, input_text or "", max_lines=glossary_max_lines
                 )
                 if not matched:
                     continue

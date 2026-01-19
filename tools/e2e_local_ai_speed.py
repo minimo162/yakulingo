@@ -18,6 +18,7 @@ from playwright.sync_api import sync_playwright
 
 DEFAULT_URL = "http://127.0.0.1:8765/"
 DEFAULT_TIMEOUT_S = 300
+DEFAULT_TRANSLATE_BUTTON_READY_TIMEOUT_S = 30
 DEFAULT_LOG_DIR_NAME = ".tmp"
 DEFAULT_INPUT_TEXT = "This is a local AI speed test."
 _RE_TRANSLATION_COMPLETED = re.compile(
@@ -383,9 +384,14 @@ def _run_e2e(
             text_input.fill(input_text)
             _commit_text_input(text_input)
             translate_button = page.get_by_test_id("translate-button")
+            translate_ready_timeout_s = min(
+                float(translation_timeout_s),
+                float(startup_timeout_s),
+                float(DEFAULT_TRANSLATE_BUTTON_READY_TIMEOUT_S),
+            )
             _wait_for_translate_button_enabled(
                 translate_button,
-                timeout_s=10,
+                timeout_s=translate_ready_timeout_s,
                 local_status=local_status if local_status.count() else None,
                 text_input=text_input,
                 app_log_path=app_log_path,
@@ -393,22 +399,36 @@ def _run_e2e(
             t_translate_start = time.perf_counter()
             translate_button.click()
             status = page.get_by_test_id("translation-status")
+            preview_label = page.locator(".streaming-preview .streaming-text")
+            preview_first_at: float | None = None
+            preview_first_chars: int | None = None
             translation_seconds_source = "ui"
             translation_elapsed_logged = None
             status_state = ""
             deadline = time.monotonic() + translation_timeout_s
+            next_log_poll_at = time.monotonic()
             while time.monotonic() < deadline:
+                if preview_first_at is None and preview_label.count():
+                    try:
+                        preview_text = preview_label.first.inner_text().strip()
+                    except Exception:
+                        preview_text = ""
+                    if preview_text:
+                        preview_first_at = time.perf_counter()
+                        preview_first_chars = len(preview_text)
                 if status.count():
                     status_state = status.get_attribute("data-state") or ""
                     if status_state == "done":
                         break
-                translation_elapsed_logged = _parse_translation_elapsed_from_log(
-                    app_log_path
-                )
-                if translation_elapsed_logged is not None:
-                    translation_seconds_source = "log"
-                    break
-                time.sleep(0.5)
+                if time.monotonic() >= next_log_poll_at:
+                    translation_elapsed_logged = _parse_translation_elapsed_from_log(
+                        app_log_path
+                    )
+                    if translation_elapsed_logged is not None:
+                        translation_seconds_source = "log"
+                        break
+                    next_log_poll_at = time.monotonic() + 0.5
+                time.sleep(0.1)
             else:
                 status_text = status.inner_text() if status.count() else ""
                 raise RuntimeError(
@@ -427,14 +447,22 @@ def _run_e2e(
 
     translation_prep_logged = _parse_translation_prep_from_log(app_log_path)
     local_ai_warmup_logged = _parse_local_ai_warmup_from_log(app_log_path)
+    ttlc_seconds = t_translate_done - t_translate_start
+    ttft_seconds = (
+        preview_first_at - t_translate_start if preview_first_at is not None else None
+    )
     result: dict[str, Any] = {
         "page_ready_seconds": page_ready_seconds,
         "local_ai_ready_seconds": local_ai_ready_seconds,
         "local_ai_ready_source": "ui",
-        "translation_seconds": t_translate_done - t_translate_start,
+        "ttft_seconds": ttft_seconds,
+        "ttlc_seconds": ttlc_seconds,
+        "translation_seconds": ttlc_seconds,
         "elapsed_badge_seconds": elapsed_badge,
         "translation_seconds_source": translation_seconds_source,
     }
+    if preview_first_chars is not None:
+        result["ttft_preview_chars"] = preview_first_chars
     if translation_elapsed_logged is not None:
         result["translation_elapsed_logged"] = translation_elapsed_logged
     if translation_prep_logged is not None:

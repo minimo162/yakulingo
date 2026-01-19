@@ -437,7 +437,8 @@ task-06 の所見（pp は速いが tg が同等）を受け、tg に効く可�
 ```bash
 uv run --extra test python tools/e2e_local_ai_speed.py
 ```
-- JSON出力: `app_start_seconds`, `page_ready_seconds`, `local_ai_ready_seconds`, `translation_seconds`, `total_seconds`, `elapsed_badge_seconds`
+- JSON出力: `app_start_seconds`, `page_ready_seconds`, `local_ai_ready_seconds`, `ttft_seconds`, `ttlc_seconds`, `total_seconds`, `elapsed_badge_seconds`
+  - `translation_seconds` は後方互換のため `ttlc_seconds` と同値
   - 追加情報: `translation_seconds_source`, `translation_elapsed_logged`, `translation_prep_seconds_logged`, `local_ai_warmup_seconds_logged`, `streaming_preview_disabled`, `app_log_path`
 - 主要オプション: `--url`, `--timeout`, `--startup-timeout`, `--translation-timeout`, `--text`, `--headed`, `--out`, `--disable-streaming-preview`
 - ストリーミング表示を無効化: `--disable-streaming-preview`（ローカルAIの途中表示更新を抑止）
@@ -560,12 +561,18 @@ E2E:
   - JSON: `/work/yakulingo-local-ai-streaming-speedup-20260119-063004/.tmp/bench_cold_short.json`
 
 ### E2E（tools/e2e_local_ai_speed.py）
-- 失敗: stage=run_e2e（Translate button did not become enabled within 10s）
+- run1: `ttft_seconds=36.71` / `ttlc_seconds=56.66`
+  - JSON: `/work/yakulingo-local-ai-streaming-speedup-20260119-063004/.tmp/e2e_task06_ttft_enabled.json`
+  - app log: `/work/yakulingo-local-ai-streaming-speedup-20260119-063004/.tmp/e2e_task06_ttft_enabled_app.log`
+- run2: `ttft_seconds=1.03` / `ttlc_seconds=21.94`
+  - JSON: `/work/yakulingo-local-ai-streaming-speedup-20260119-063004/.tmp/e2e_task06_ttft_enabled_run2.json`
+  - app log: `/work/yakulingo-local-ai-streaming-speedup-20260119-063004/.tmp/e2e_task06_ttft_enabled_run2_app.log`
+- 参考（旧）: stage=run_e2e（Translate button did not become enabled within 10s）
   - JSON: `/work/yakulingo-local-ai-streaming-speedup-20260119-063004/.tmp/e2e_disabled.json`（`--disable-streaming-preview`）
   - app log: `/work/yakulingo-local-ai-streaming-speedup-20260119-063004/.tmp/e2e_disabled_app.log`
 
 ### 成功基準（このケースの最低ライン）
-- 体感（TTFT）: 「翻訳」クリック→プレビュー初回更新を **1回目/2回目**で記録し、改善を確認できること（自動計測は task-06 で追加）
+- 体感（TTFT）: 「翻訳」クリック→プレビュー初回更新を **1回目/2回目**で記録し、改善を確認できること（E2E出力: `ttft_seconds`）
 - 実時間（TTLC）: 上記 input（short/medium, warm）の `translation_seconds` を **悪化させない（+5%以内）**
 - 体感の既定: ローカルAI使用時にストリーミングプレビューが見えること（既定ON化は task-01）
 

@@ -46,6 +46,7 @@ _RE_SINGLE_SECTION_LINE = re.compile(
 )
 _JSON_STOP_SEQUENCES = ["</s>", "<|end|>"]
 _RESPONSE_FORMAT_CACHE_TTL_S = 600.0
+_SAMPLING_PARAMS_CACHE_TTL_S = 600.0
 _RESPONSE_FORMAT_JSON_SCHEMA: dict[str, object] = {
     "name": "yakulingo_translation_response",
     "schema": {
@@ -620,6 +621,8 @@ class LocalAIClient:
         self._cancel_check: Optional[Callable[[], bool]] = None
         self._response_format_support: dict[str, tuple[bool, float]] = {}
         self._response_format_lock = threading.Lock()
+        self._sampling_params_support: dict[str, tuple[bool, float]] = {}
+        self._sampling_params_lock = threading.Lock()
 
     def set_cancel_callback(self, callback: Optional[Callable[[], bool]]) -> None:
         self._cancel_check = callback
@@ -702,7 +705,26 @@ class LocalAIClient:
         )
 
     @staticmethod
+    def _should_cache_sampling_params_unsupported(error: Exception) -> bool:
+        message = str(error).lower()
+        return any(
+            token in message
+            for token in (
+                "top_p",
+                "top_k",
+                "min_p",
+                "repeat_penalty",
+                "repeat penalty",
+                "repeat-penalty",
+            )
+        )
+
+    @staticmethod
     def _response_format_cache_key(runtime: LocalAIServerRuntime) -> str:
+        return f"{runtime.host}:{runtime.port}"
+
+    @staticmethod
+    def _sampling_params_cache_key(runtime: LocalAIServerRuntime) -> str:
         return f"{runtime.host}:{runtime.port}"
 
     def _get_response_format_support(
@@ -726,6 +748,28 @@ class LocalAIClient:
         key = self._response_format_cache_key(runtime)
         with self._response_format_lock:
             self._response_format_support[key] = (supported, time.monotonic())
+
+    def _get_sampling_params_support(
+        self, runtime: LocalAIServerRuntime
+    ) -> Optional[bool]:
+        key = self._sampling_params_cache_key(runtime)
+        with self._sampling_params_lock:
+            cached = self._sampling_params_support.get(key)
+        if not cached:
+            return None
+        supported, checked_at = cached
+        if time.monotonic() - checked_at > _SAMPLING_PARAMS_CACHE_TTL_S:
+            with self._sampling_params_lock:
+                self._sampling_params_support.pop(key, None)
+            return None
+        return supported
+
+    def _set_sampling_params_support(
+        self, runtime: LocalAIServerRuntime, supported: bool
+    ) -> None:
+        key = self._sampling_params_cache_key(runtime)
+        with self._sampling_params_lock:
+            self._sampling_params_support[key] = (supported, time.monotonic())
 
     def ensure_ready(self) -> LocalAIServerRuntime:
         return self._manager.ensure_ready(self._settings)
@@ -859,7 +903,8 @@ class LocalAIClient:
         else:
             use_response_format = bool(force_response_format)
         enforce_json = use_response_format
-        include_sampling_params = True
+        cached_sampling_support = self._get_sampling_params_support(runtime)
+        include_sampling_params = cached_sampling_support is not False
         payload = self._build_chat_payload(
             runtime,
             prompt,
@@ -902,6 +947,8 @@ class LocalAIClient:
                         include_sampling_params
                         and self._should_retry_without_sampling_params(exc2)
                     ):
+                        if self._should_cache_sampling_params_unsupported(exc2):
+                            self._set_sampling_params_support(runtime, False)
                         include_sampling_params = False
                         logger.debug(
                             "LocalAI sampling params unsupported; retrying without them (%s)",
@@ -926,6 +973,8 @@ class LocalAIClient:
             elif include_sampling_params and self._should_retry_without_sampling_params(
                 exc
             ):
+                if self._should_cache_sampling_params_unsupported(exc):
+                    self._set_sampling_params_support(runtime, False)
                 include_sampling_params = False
                 logger.debug(
                     "LocalAI sampling params unsupported; retrying without them (%s)",
@@ -998,6 +1047,10 @@ class LocalAIClient:
 
         if enforce_json and not _is_empty_json_object_reply(content):
             self._set_response_format_support(runtime, True)
+        if include_sampling_params and any(
+            key in payload for key in ("top_p", "top_k", "min_p", "repeat_penalty")
+        ):
+            self._set_sampling_params_support(runtime, True)
         self._manager.note_server_ok(runtime)
         return LocalAIRequestResult(content=content, model_id=runtime.model_id)
 
@@ -1012,7 +1065,8 @@ class LocalAIClient:
         cached_support = self._get_response_format_support(runtime)
         use_response_format = cached_support is not False
         enforce_json = use_response_format
-        include_sampling_params = True
+        cached_sampling_support = self._get_sampling_params_support(runtime)
+        include_sampling_params = cached_sampling_support is not False
         payload = self._build_chat_payload(
             runtime,
             prompt,
@@ -1048,6 +1102,8 @@ class LocalAIClient:
                         include_sampling_params
                         and self._should_retry_without_sampling_params(exc2)
                     ):
+                        if self._should_cache_sampling_params_unsupported(exc2):
+                            self._set_sampling_params_support(runtime, False)
                         include_sampling_params = False
                         logger.debug(
                             "LocalAI sampling params unsupported; retrying streaming without them (%s)",
@@ -1068,6 +1124,8 @@ class LocalAIClient:
             elif include_sampling_params and self._should_retry_without_sampling_params(
                 exc
             ):
+                if self._should_cache_sampling_params_unsupported(exc):
+                    self._set_sampling_params_support(runtime, False)
                 include_sampling_params = False
                 logger.debug(
                     "LocalAI sampling params unsupported; retrying streaming without them (%s)",
@@ -1131,6 +1189,10 @@ class LocalAIClient:
 
         if enforce_json and not _is_empty_json_object_reply(result.content):
             self._set_response_format_support(runtime, True)
+        if include_sampling_params and any(
+            key in payload for key in ("top_p", "top_k", "min_p", "repeat_penalty")
+        ):
+            self._set_sampling_params_support(runtime, True)
         return result
 
     def _chat_completions_streaming_with_payload(

@@ -121,6 +121,90 @@ def test_response_format_cache_applies_to_streaming() -> None:
     assert "response_format" not in calls[2]
 
 
+def test_sampling_params_cache_skips_retry_after_unsupported() -> None:
+    client = LocalAIClient(AppSettings())
+    runtime = _make_runtime()
+    calls: list[dict[str, object]] = []
+    state = {"calls": 0}
+
+    def fake_http(*, payload: dict[str, object], **kwargs):
+        _ = kwargs
+        state["calls"] += 1
+        calls.append(payload)
+        if state["calls"] == 1:
+            raise RuntimeError("unknown field: top_p")
+        return {"choices": [{"message": {"content": "ok"}}]}
+
+    client._http_json_cancellable = fake_http  # type: ignore[method-assign]
+
+    result1 = client._chat_completions(runtime, "prompt", timeout=1)
+    assert result1.content == "ok"
+
+    result2 = client._chat_completions(runtime, "prompt", timeout=1)
+    assert result2.content == "ok"
+
+    assert len(calls) == 3
+    assert "top_p" in calls[0]
+    assert client._get_sampling_params_support(runtime) is False
+    for payload in calls[1:]:
+        for key in ("top_p", "top_k", "min_p", "repeat_penalty"):
+            assert key not in payload
+
+
+def test_sampling_params_cache_applies_to_streaming() -> None:
+    client = LocalAIClient(AppSettings())
+    runtime = _make_runtime()
+    calls: list[dict[str, object]] = []
+
+    def fake_streaming(runtime_arg, payload, on_chunk, timeout=None):
+        _ = runtime_arg, on_chunk, timeout
+        calls.append(payload)
+        if len(calls) == 1:
+            raise RuntimeError("unknown field: top_p")
+        return LocalAIRequestResult(content="ok", model_id=None)
+
+    client._chat_completions_streaming_with_payload = (  # type: ignore[method-assign]
+        fake_streaming
+    )
+
+    result1 = client._chat_completions_streaming(
+        runtime, "prompt", lambda _: None, timeout=1
+    )
+    assert result1.content == "ok"
+
+    result2 = client._chat_completions_streaming(
+        runtime, "prompt", lambda _: None, timeout=1
+    )
+    assert result2.content == "ok"
+
+    assert len(calls) == 3
+    assert "top_p" in calls[0]
+    assert client._get_sampling_params_support(runtime) is False
+    for payload in calls[1:]:
+        for key in ("top_p", "top_k", "min_p", "repeat_penalty"):
+            assert key not in payload
+
+
+def test_sampling_params_cache_is_set_on_success() -> None:
+    client = LocalAIClient(AppSettings())
+    runtime = _make_runtime()
+    calls: list[dict[str, object]] = []
+
+    def fake_http(*, payload: dict[str, object], **kwargs):
+        _ = kwargs
+        calls.append(payload)
+        return {"choices": [{"message": {"content": "ok"}}]}
+
+    client._http_json_cancellable = fake_http  # type: ignore[method-assign]
+
+    result = client._chat_completions(runtime, "prompt", timeout=1)
+    assert result.content == "ok"
+
+    assert len(calls) == 1
+    assert "top_p" in calls[0]
+    assert client._get_sampling_params_support(runtime) is True
+
+
 def test_build_chat_payload_can_skip_sampling_params() -> None:
     client = LocalAIClient(AppSettings())
     runtime = _make_runtime()

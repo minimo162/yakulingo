@@ -1025,7 +1025,7 @@ def test_build_server_args_skips_gpu_flags_for_non_vulkan_variant(
     assert "-ctk" not in args
     assert "--cache-type-v" not in args
     assert "-ctv" not in args
-    assert "--no-warmup" not in args
+    assert "--no-warmup" in args
 
 
 def test_build_server_args_auto_threads_when_zero(

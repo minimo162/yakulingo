@@ -351,7 +351,7 @@ class AppSettings:
     local_ai_device: str = "auto"
     local_ai_n_gpu_layers: int | str = "auto"
     local_ai_flash_attn: str = "auto"
-    local_ai_no_warmup: bool = False
+    local_ai_no_warmup: bool = True
     local_ai_mlock: bool = False
     local_ai_no_mmap: bool = False
     local_ai_vk_force_max_allocation_size: Optional[int] = None

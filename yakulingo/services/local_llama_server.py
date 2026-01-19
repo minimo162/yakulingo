@@ -1378,8 +1378,8 @@ class LocalLlamaServerManager:
                 if flag:
                     args += [flag, str(cache_type_v)]
 
-            if help_text and settings.local_ai_no_warmup and has_long("--no-warmup"):
-                args += ["--no-warmup"]
+        if help_text and settings.local_ai_no_warmup and has_long("--no-warmup"):
+            args += ["--no-warmup"]
 
         device_log = applied_device
         if not device_supported:

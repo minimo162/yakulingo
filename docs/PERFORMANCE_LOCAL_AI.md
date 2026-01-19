@@ -34,7 +34,7 @@
 - **EN→JP（和訳）は訳文のみ**に変更済み。改善前後を比較する際は同じプロンプトバージョンを使い、出力文字数の差が `translation_seconds` に影響しないか確認する。
 > **Note**: CPU-only と Vulkan(iGPU) 比較では、`local_ai_threads` / `local_ai_ctx_size` / `local_ai_batch_size` / `local_ai_ubatch_size` と入力文を固定し、`device` / `-ngl` / `-fa` など GPU 関連だけを変える。
 > **Note**: `local_ai_*` は `user_settings.json` には保存されません。恒久的な変更は `config/settings.template.json` を更新し、ベンチの一時上書きは CLI で行います。
-> **Note**: 既定値は `local_ai_device=auto` / `local_ai_n_gpu_layers=auto` / `local_ai_ctx_size=2048`。Vulkan 環境ではオフロードを試行し、失敗時は安全に CPU-only にフォールバックします（強制的に CPU-only に戻す場合は `local_ai_device=none` または `local_ai_n_gpu_layers=0` を指定）。
+> **Note**: 既定値は `local_ai_device=auto` / `local_ai_n_gpu_layers=auto` / `local_ai_ctx_size=2048` / `local_ai_no_warmup=true`。Vulkan 環境ではオフロードを試行し、失敗時は安全に CPU-only にフォールバックします（強制的に CPU-only に戻す場合は `local_ai_device=none` または `local_ai_n_gpu_layers=0` を指定）。
 > **Note**: プロキシ環境では `NO_PROXY=127.0.0.1,localhost` を自動補完し、ローカル API がプロキシ経由にならないようにします。
 > **Note**: Vulkan 設定の反映確認は、ベンチ JSON の `runtime.server_variant` と `~/.yakulingo/logs/startup.log` の `Local AI offload flags` で確認できます。
 
@@ -357,13 +357,36 @@ KVキャッシュの量子化は、速度よりもメモリ圧/安定性の調�
 | `local_ai_cache_type_k` | `-ctk` / `--cache-type-k` | Vulkan時のみ。`null` は未指定 |
 | `local_ai_cache_type_v` | `-ctv` / `--cache-type-v` | Vulkan時のみ。`null` は未指定 |
 | `local_ai_flash_attn` | `-fa` / `--flash-attn` | Vulkan時のみ。`auto` は未指定、`0/1` を付与 |
-| `local_ai_no_warmup` | `--no-warmup` | Vulkan時のみ |
+| `local_ai_no_warmup` | `--no-warmup` | 対応時のみ（CPU/Vulkan）。`true` のとき付与 |
 | `local_ai_mlock` | `--mlock` | 対応時のみ付与 |
 | `local_ai_no_mmap` | `--no-mmap` | 対応時のみ付与 |
 | `local_ai_max_tokens` | `--n-predict` / `-n` | 0以下は未指定 |
 
 > **Note**: `--no-repack` は既定最適化を無効化するため、通常は使いません。
 > **Note**: 非対応フラグは `unsupported` としてログに出力されます。
+
+### task-05: `local_ai_no_warmup` を既定で有効化
+YakuLingo は翻訳実行時に `llama-server` を起動するため、サーバの起動時 warmup がユーザー待ち時間に含まれます。
+`local_ai_no_warmup=true`（`--no-warmup`）で、初回の待ち時間を短縮できます。
+
+計測（CPU-only / `avx2` / 入力 `tools/bench_local_ai_input_short.txt` 217 chars / `temperature=0` / `ctx=2048` / `b=512` / `ub=128`）:
+- cold（warmup 有効）: `translation_seconds=53.37s`
+  - JSON: `/work/yakulingo-local-ai-streaming-speedup-20260119-063004/.tmp/bench_task05_cold_cpu_warmup_on.json`
+- cold（`--no-warmup`）: `translation_seconds=51.22s`（約 -4%）
+  - JSON: `/work/yakulingo-local-ai-streaming-speedup-20260119-063004/.tmp/bench_task05_cold_cpu_no_warmup.json`
+
+再現コマンド（cold）:
+```bash
+uv run python tools/bench_local_ai.py --mode cold --restart-server \
+  --server-dir local_ai/llama_cpp/avx2 --device none --n-gpu-layers 0 \
+  --ctx-size 2048 --batch-size 512 --ubatch-size 128 --temperature 0 \
+  --out /work/<case-id>/.tmp/cold_warmup_on.json
+
+uv run python tools/bench_local_ai.py --mode cold --restart-server \
+  --server-dir local_ai/llama_cpp/avx2 --device none --n-gpu-layers 0 \
+  --ctx-size 2048 --batch-size 512 --ubatch-size 128 --temperature 0 \
+  --no-warmup --out /work/<case-id>/.tmp/cold_no_warmup.json
+```
 
 ### task-08: `local_ai_threads_batch` 既定値（`0`=auto）を有効化
 `threads-batch` は prefill（入力処理）を狙う設定で、翻訳のように入力が長い場合に効きやすいことがあります。

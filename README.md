@@ -312,11 +312,11 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
   "local_ai_batch_size": 512,
   "local_ai_ubatch_size": 128,
   "local_ai_device": "auto",
-  "local_ai_n_gpu_layers": "auto",
-  "local_ai_flash_attn": "auto",
-  "local_ai_no_warmup": false,
-  "local_ai_mlock": false,
-  "local_ai_no_mmap": false,
+   "local_ai_n_gpu_layers": "auto",
+   "local_ai_flash_attn": "auto",
+   "local_ai_no_warmup": true,
+   "local_ai_mlock": false,
+   "local_ai_no_mmap": false,
   "local_ai_vk_force_max_allocation_size": null,
   "local_ai_vk_disable_f16": false,
   "local_ai_cache_type_k": "q8_0",
@@ -457,7 +457,7 @@ ollama run hy-mt1.5-7b
 - `local_ai_batch_size` / `local_ai_ubatch_size`: 対応ビルドのみ有効。大きすぎるとメモリ圧迫や不安定化
 - `local_ai_device` / `local_ai_n_gpu_layers`: GPUオフロード先と層数（例: `none` / `Vulkan0`, `0` / `16` / `99` / `auto` / `all`）。`--list-devices` が空の場合は Vulkan が利用できません（CPU-onlyで運用）
 - `local_ai_flash_attn`: Flash Attention（`auto` / `0` / `1`）
-- `local_ai_no_warmup`: 起動時のwarmup無効化（特定環境の回避用）
+- `local_ai_no_warmup`: 起動時の warmup 無効化（初回の待ち時間短縮）
 - `local_ai_mlock` / `local_ai_no_mmap`: メモリ固定/メモリマップ無効化。メモリ消費が増え、環境によっては起動に失敗するため、失敗時は `false` に戻して再実行
 - `local_ai_vk_force_max_allocation_size` / `local_ai_vk_disable_f16`: Vulkanトラブルシュート用
 - `local_ai_cache_type_k` / `local_ai_cache_type_v`: KVキャッシュ型（例: `q8_0`）。既定は `q8_0`、`null` で無効化（`f16` 相当）に戻す
@@ -510,7 +510,7 @@ ollama run hy-mt1.5-7b
 | `local_ai_device` | GPUオフロード先（`auto` / `none` / `Vulkan0` など） | `auto` |
 | `local_ai_n_gpu_layers` | GPUに載せる層数（`auto` / `0` / `16` / `99` / `all`） | `auto` |
 | `local_ai_flash_attn` | Flash Attention（`auto` / `0` / `1`） | `auto` |
-| `local_ai_no_warmup` | warmup 無効化 | false |
+| `local_ai_no_warmup` | warmup 無効化 | true |
 | `local_ai_mlock` | メモリ固定（環境により失敗する場合はfalse） | false |
 | `local_ai_no_mmap` | メモリマップ無効化（環境により失敗する場合はfalse） | false |
 | `local_ai_vk_force_max_allocation_size` | Vulkanの最大割当サイズ（nullで無効） | null |

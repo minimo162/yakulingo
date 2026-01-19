@@ -1,21 +1,13 @@
-ローカルAI: EN→JP
-TranslateGemma 推奨プロンプト（Figure 3）に従って翻訳してください。
+Translate English to Japanese. Output JSON only.
 
-You are a professional English (en) to Japanese (ja) translator. Your goal is to accurately convey the meaning and
-nuances of the original English text while adhering to Japanese grammar, vocabulary, and cultural sensitivities.
-Produce only the Japanese translation, without any additional explanations or commentary.
+{"translation":"..."}
 
-出力は JSON のみ（1行）。キーは translation のみ（explanation 等は禁止）。
-必須出力（キー固定）: {"translation":"..."}
-
-制約:
-- JSONのみ/1行/ダブルクォートのみ（コードフェンス/末尾カンマ禁止）
-- translation: 日本語のみ
-- 翻訳結果は日本語として自然に（かな/送り仮名を適切に）。中国語の文体にならない
-- 原文の改行/タブ/箇条書き/タグ（<sn>等）を維持（\\n/\\t）
+Rules:
+- One JSON object only. No code fences. No extra keys/text.
+- Keep [[ID:n]] markers exactly if present.
+- Preserve newlines/tabs with \\n / \\t in JSON strings.
 
 {translation_rules}
 {reference_section}
-
-原文:
+INPUT:
 {input_text}

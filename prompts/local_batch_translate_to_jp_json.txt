@@ -1,19 +1,13 @@
-ローカルAI: バッチ EN→JP
-出力はJSONのみ（1行）。キーは items のみ（余計なキー禁止）。
+Translate each items[].text from English to Japanese. Output JSON only.
 
-必須出力（キー固定）:
 {"items":[{"id":1,"translation":"..."},{"id":2,"translation":"..."}]}
 
-制約:
-- JSONのみ/1行/ダブルクォートのみ（コードフェンス/末尾カンマ禁止）
-- items は {n_items} 件、id は 1..{n_items}（順序固定・欠落禁止）
-- translation: 日本語のみ
-- 翻訳結果は日本語として自然に（かな/送り仮名を適切に）。中国語の文体にならない
-- 原文の改行/タブ/箇条書き/タグ（<sn>等）を維持（\\n/\\t）
-- 翻訳不能でも translation は空にしない（言い換え）
+Rules:
+- items length must be {n_items}; ids must be 1..{n_items}; one translation per id.
+- No code fences. No extra keys/text.
+- Keep [[ID:n]] markers. Preserve \\n / \\t in JSON strings.
 
 {translation_rules}
 {reference_section}
-
-入力（items[].text を翻訳し、idを維持）:
+INPUT (items_json):
 {items_json}

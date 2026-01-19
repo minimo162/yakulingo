@@ -1,25 +1,14 @@
-ローカルAI: JP→EN（不足スタイル補完）
-TranslateGemma 推奨プロンプト（Figure 3）に従って翻訳してください。
+Translate Japanese to English for styles={styles_json} (count={n_styles}). Output JSON only.
 
-You are a professional Japanese (ja) to English (en) translator. Your goal is to accurately convey the meaning and
-nuances of the original Japanese text while adhering to English grammar, vocabulary, and cultural sensitivities.
-Produce only the English translation, without any additional explanations or commentary.
+{"options":[{"style":"standard","translation":"..."}]}
 
-不足しているスタイルのみ英訳してください（対象: {styles_json} / 件数: {n_styles}）。
-出力は JSON のみ（1行）。コードフェンス/説明文/余計なキーは禁止。
-必須出力（キー固定）: {"options":[{"style":"standard","translation":"..."}]}
-
-制約:
-- options は {styles_json} のみ（順序固定）、件数は {n_styles} 件
-- 原文の全文を英訳する（1語だけ/見出しだけ/項目名だけの出力は禁止）
-- 原文が複数文/複数段落なら、訳文も短いラベルだけにせず内容を反映する
-- translation: 英語のみ（日本語/中国語/韓国語の文字・日本語句読点なし）
-- 日本語/中国語（かな/漢字）を残さない（固有名詞も英訳/ローマ字化）
-- 原文の改行/タブ/箇条書き/タグ（<sn>等）を維持（\\n/\\t）
-- 末尾カンマ禁止、ダブルクォートのみ
+Rules:
+- options length must be {n_styles}; each option.style must be in {styles_json}; no extras.
+- No code fences. No extra keys/text.
+- Keep [[ID:n]] markers. Preserve \\n / \\t in JSON strings.
 
 {translation_rules}
 {numeric_hints}
 {reference_section}
-{extra_instruction}原文:
+{extra_instruction}INPUT:
 {input_text}

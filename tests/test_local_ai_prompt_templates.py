@@ -10,6 +10,8 @@ from yakulingo.services.prompt_builder import PromptBuilder
 
 _LOCAL_TEMPLATES = [
     "local_text_translate_to_en_single_json.txt",
+    "local_text_translate_to_en_3style_json.txt",
+    "local_text_translate_to_en_missing_styles_json.txt",
     "local_text_translate_to_jp_json.txt",
     "local_batch_translate_to_en_json.txt",
     "local_batch_translate_to_jp_json.txt",
@@ -70,6 +72,45 @@ def test_local_prompt_builder_replaces_placeholders() -> None:
         ],
     )
 
+    prompt = builder.build_text_to_en_3style(
+        "売上高は1,000億円です。",
+        reference_files=None,
+        detected_language="日本語",
+        extra_instruction="context",
+    )
+    _assert_no_placeholders(
+        prompt,
+        [
+            "input_text",
+            "translation_rules",
+            "reference_section",
+            "detected_language",
+            "numeric_hints",
+            "extra_instruction",
+        ],
+    )
+
+    prompt = builder.build_text_to_en_missing_styles(
+        "売上高は1,000億円です。",
+        styles=["minimal"],
+        reference_files=None,
+        detected_language="日本語",
+        extra_instruction="context",
+    )
+    _assert_no_placeholders(
+        prompt,
+        [
+            "input_text",
+            "translation_rules",
+            "reference_section",
+            "detected_language",
+            "numeric_hints",
+            "extra_instruction",
+            "styles_json",
+            "n_styles",
+        ],
+    )
+
     prompt = builder.build_text_to_jp(
         "sample",
         reference_files=None,
@@ -111,3 +152,11 @@ def test_local_json_templates_avoid_extra_output_keys() -> None:
 
     template = builder._load_template("local_text_translate_to_en_single_json.txt")
     assert '"style"' not in template
+
+
+def test_local_prompt_templates_are_slim() -> None:
+    builder = _make_builder()
+    total = 0
+    for name in _LOCAL_TEMPLATES:
+        total += len(builder._load_template(name))
+    assert total <= 3200

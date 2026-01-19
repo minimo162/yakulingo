@@ -1431,7 +1431,7 @@ class LocalAIClient:
         last_flush_time = 0.0
         first_delta_emitted = False
 
-        def _flush_delta_buffer(*, force: bool = False) -> None:
+        def _flush_delta_buffer() -> None:
             nonlocal delta_buffer_len, last_flush_time, first_delta_emitted
             if not delta_buffer:
                 return
@@ -1482,14 +1482,14 @@ class LocalAIClient:
                 delta_buffer_len += len(delta)
                 now = time.monotonic()
                 if not first_delta_emitted:
-                    _flush_delta_buffer(force=True)
+                    _flush_delta_buffer()
                 elif (
                     delta_buffer_len >= _SSE_DELTA_COALESCE_MIN_CHARS
                     or (now - last_flush_time) >= _SSE_DELTA_COALESCE_MAX_INTERVAL_SEC
                 ):
                     _flush_delta_buffer()
                 if self._should_cancel():
-                    _flush_delta_buffer(force=True)
+                    _flush_delta_buffer()
                     raise TranslationCancelledError("Translation cancelled by user")
             return None
 
@@ -1509,13 +1509,13 @@ class LocalAIClient:
                     continue
                 done = _process_line(line)
                 if done:
-                    _flush_delta_buffer(force=True)
+                    _flush_delta_buffer()
                     return "".join(pieces), model_id
 
         tail = bytes(buffer).strip()
         if tail:
             _process_line(tail)
-        _flush_delta_buffer(force=True)
+        _flush_delta_buffer()
         return "".join(pieces), model_id
 
     def _read_full_body(

@@ -4173,24 +4173,28 @@ class YakuLingoApp:
 
             last_preview_update = 0.0
             preview_update_interval_seconds = STREAMING_PREVIEW_UPDATE_INTERVAL_SEC
+            latest_preview_text = ""
 
             def on_chunk(partial_text: str) -> None:
-                nonlocal last_preview_update
+                nonlocal last_preview_update, latest_preview_text
                 if not self._is_local_streaming_preview_enabled():
                     return
-                preview_text = self._normalize_streaming_preview_text(partial_text)
-                buffer.publish(
-                    {
-                        "state": {
-                            "text_streaming_preview": preview_text,
-                        }
-                    }
-                )
+                latest_preview_text = partial_text
                 now = time.monotonic()
                 if now - last_preview_update < preview_update_interval_seconds:
                     return
                 last_preview_update = now
-                buffer.publish({"streaming": True})
+                preview_text = (
+                    self._normalize_streaming_preview_text(latest_preview_text) or ""
+                )
+                buffer.publish(
+                    {
+                        "state": {
+                            "text_streaming_preview": preview_text,
+                        },
+                        "streaming": True,
+                    }
+                )
                 schedule_apply()
 
             stream_handler = (
@@ -10020,7 +10024,7 @@ class YakuLingoApp:
                 return
 
             with lock:
-                text_to_show = latest_preview_text
+                raw_text_to_show = latest_preview_text
                 dirty = False
 
             client: NiceGUIClient | None
@@ -10043,6 +10047,7 @@ class YakuLingoApp:
                         update_scheduled = False
                 return
 
+            text_to_show = self._normalize_streaming_preview_text(raw_text_to_show) or ""
             last_ui_update = time.monotonic()
             try:
                 self.state.text_streaming_preview = text_to_show
@@ -10080,7 +10085,6 @@ class YakuLingoApp:
                 if build_preview_text is not None
                 else partial_text
             )
-            preview_text = self._normalize_streaming_preview_text(preview_text) or ""
             with lock:
                 latest_preview_text = preview_text
                 dirty = True

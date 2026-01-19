@@ -60,6 +60,68 @@ class FailingLocalAIClient(LocalAIClient):
         return response  # type: ignore[return-value]
 
 
+class PromptTooLongLocalAIClient(LocalAIClient):
+    def __init__(self, *, max_prompt_chars: int) -> None:
+        super().__init__(AppSettings())
+        self._max_prompt_chars = max_prompt_chars
+        self.calls = 0
+        self.too_long_errors = 0
+
+    def translate_sync(
+        self,
+        texts: list[str],
+        prompt: str,
+        reference_files: list[Path] | None = None,
+        skip_clear_wait: bool = False,
+        timeout: int | None = None,
+        include_item_ids: bool = False,
+        max_retries: int = 0,
+    ) -> list[str]:
+        _ = (
+            reference_files,
+            skip_clear_wait,
+            timeout,
+            include_item_ids,
+            max_retries,
+        )
+        self.calls += 1
+        if len(prompt) > self._max_prompt_chars:
+            self.too_long_errors += 1
+            raise RuntimeError("LOCAL_PROMPT_TOO_LONG: simulated")
+        return ["OK"] * len(texts)
+
+
+class PromptTooLongCopilotHandler:
+    def __init__(self, *, max_prompt_chars: int) -> None:
+        self._max_prompt_chars = max_prompt_chars
+        self.calls = 0
+        self.too_long_errors = 0
+
+    def set_cancel_callback(self, _callback) -> None:  # type: ignore[no-untyped-def]
+        return
+
+    def translate_sync(
+        self,
+        texts: list[str],
+        prompt: str,
+        reference_files: list[Path] | None = None,
+        skip_clear_wait: bool = False,
+        timeout: int | None = None,
+        include_item_ids: bool = False,
+    ) -> list[str]:
+        _ = (
+            reference_files,
+            skip_clear_wait,
+            timeout,
+            include_item_ids,
+        )
+        self.calls += 1
+        if len(prompt) > self._max_prompt_chars:
+            self.too_long_errors += 1
+            raise RuntimeError("LOCAL_PROMPT_TOO_LONG: simulated")
+        return ["OK"] * len(texts)
+
+
 def test_local_batch_retries_on_runtime_error() -> None:
     copilot = FailingLocalAIClient(
         responses=[RuntimeError("Local AI JSON parse error"), ["A", "B"]]
@@ -81,6 +143,54 @@ def test_local_batch_retries_on_runtime_error() -> None:
     assert result.untranslated_block_ids == []
     assert result.translations["b1"] == "A"
     assert result.translations["b2"] == "B"
+
+
+def test_local_batch_persists_reduced_limit_after_prompt_too_long() -> None:
+    copilot = PromptTooLongLocalAIClient(max_prompt_chars=400)
+    translator = BatchTranslator(
+        copilot=copilot,
+        prompt_builder=DummyPromptBuilder(),  # type: ignore[arg-type]
+        max_chars_per_batch=600,
+        enable_cache=False,
+    )
+    blocks = [
+        TextBlock(id="b1", text=("x" * 259) + "1", location="Sheet1"),
+        TextBlock(id="b2", text=("x" * 259) + "2", location="Sheet1"),
+        TextBlock(id="b3", text=("x" * 259) + "3", location="Sheet1"),
+        TextBlock(id="b4", text=("x" * 259) + "4", location="Sheet1"),
+    ]
+
+    result = translator.translate_blocks_with_result(blocks, output_language="en")
+
+    assert copilot.too_long_errors == 1
+    assert copilot.calls == 5
+    assert result.untranslated_block_ids == []
+    assert result.translations["b1"] == "OK"
+    assert result.translations["b4"] == "OK"
+
+
+def test_copilot_batch_does_not_persist_reduced_limit_after_prompt_too_long() -> None:
+    copilot = PromptTooLongCopilotHandler(max_prompt_chars=400)
+    translator = BatchTranslator(
+        copilot=copilot,  # type: ignore[arg-type]
+        prompt_builder=DummyPromptBuilder(),  # type: ignore[arg-type]
+        max_chars_per_batch=600,
+        enable_cache=False,
+    )
+    blocks = [
+        TextBlock(id="b1", text=("x" * 259) + "1", location="Sheet1"),
+        TextBlock(id="b2", text=("x" * 259) + "2", location="Sheet1"),
+        TextBlock(id="b3", text=("x" * 259) + "3", location="Sheet1"),
+        TextBlock(id="b4", text=("x" * 259) + "4", location="Sheet1"),
+    ]
+
+    result = translator.translate_blocks_with_result(blocks, output_language="en")
+
+    assert copilot.too_long_errors == 2
+    assert copilot.calls == 6
+    assert result.untranslated_block_ids == []
+    assert result.translations["b1"] == "OK"
+    assert result.translations["b4"] == "OK"
 
 
 def test_local_batch_falls_back_when_split_unavailable() -> None:

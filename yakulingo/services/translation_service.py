@@ -1669,6 +1669,7 @@ class BatchTranslator:
         _max_chars_per_batch: Optional[int] = None,
         _max_chars_per_batch_source: Optional[str] = None,
         _split_retry_depth: int = 0,
+        _clear_cancel_event: Optional[bool] = None,
     ) -> BatchTranslationResult:
         """
         Translate blocks in batches with detailed result information.
@@ -1711,8 +1712,11 @@ class BatchTranslator:
         retry_local_error = 0
         retry_copilot_split = 0
         fallback_original_batches = 0
+        local_persisted_max_chars_per_batch: Optional[int] = None
 
-        if _split_retry_depth == 0:
+        if _clear_cancel_event is None:
+            _clear_cancel_event = _split_retry_depth == 0
+        if _clear_cancel_event:
             self._cancel_event.clear()  # Reset at start of new translation
         cancelled = False
 
@@ -1887,6 +1891,32 @@ class BatchTranslator:
                     )
                 )
 
+            if (
+                is_local_backend
+                and local_persisted_max_chars_per_batch is not None
+                and sum(len(block.text) for block in batch)
+                > local_persisted_max_chars_per_batch
+            ):
+                retry_result = self.translate_blocks_with_result(
+                    batch,
+                    reference_files=reference_files,
+                    on_progress=None,
+                    output_language=output_language,
+                    translation_style=translation_style,
+                    include_item_ids=include_item_ids,
+                    _max_chars_per_batch=local_persisted_max_chars_per_batch,
+                    _max_chars_per_batch_source="local_adaptive_max_chars_per_batch",
+                    _split_retry_depth=0,
+                    _clear_cancel_event=False,
+                )
+                translations.update(retry_result.translations)
+                untranslated_block_ids.extend(retry_result.untranslated_block_ids)
+                mismatched_batch_count += retry_result.mismatched_batch_count
+                if retry_result.cancelled:
+                    cancelled = True
+                    break
+                continue
+
             unique_texts, original_to_unique_idx = batch_unique_data[i]
             prompt = prompts[i]  # Use pre-built prompt
 
@@ -1927,6 +1957,12 @@ class BatchTranslator:
                     reduced_limit = max(
                         self._MIN_SPLIT_BATCH_CHARS, batch_char_limit // 2
                     )
+                    if is_local_backend:
+                        local_persisted_max_chars_per_batch = (
+                            reduced_limit
+                            if local_persisted_max_chars_per_batch is None
+                            else min(local_persisted_max_chars_per_batch, reduced_limit)
+                        )
                     retry_prompt_too_long += 1
                     logger.warning(
                         "Local AI prompt too long for batch %d; retrying with max_chars_per_batch=%d (was %d, source=%s) (%s)",
@@ -1962,6 +1998,14 @@ class BatchTranslator:
                         reduced_limit = max(
                             self._MIN_SPLIT_BATCH_CHARS, batch_char_limit // 2
                         )
+                        if is_local_backend:
+                            local_persisted_max_chars_per_batch = (
+                                reduced_limit
+                                if local_persisted_max_chars_per_batch is None
+                                else min(
+                                    local_persisted_max_chars_per_batch, reduced_limit
+                                )
+                            )
                         retry_local_error += 1
                         logger.warning(
                             "Local AI error in batch %d; retrying with max_chars_per_batch=%d (was %d, source=%s) (%s)",
@@ -2013,6 +2057,12 @@ class BatchTranslator:
                     reduced_limit = max(
                         self._MIN_SPLIT_BATCH_CHARS, batch_char_limit // 2
                     )
+                    if is_local_backend:
+                        local_persisted_max_chars_per_batch = (
+                            reduced_limit
+                            if local_persisted_max_chars_per_batch is None
+                            else min(local_persisted_max_chars_per_batch, reduced_limit)
+                        )
                     retry_copilot_split += 1
                     logger.warning(
                         "Copilot requested split for batch %d; retrying with max_chars_per_batch=%d (was %d)",

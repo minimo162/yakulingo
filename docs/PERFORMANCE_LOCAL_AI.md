@@ -10,6 +10,24 @@
   - `uv sync --extra test`
   - `playwright install chromium`（E2E計測を使う場合）
 
+## 計測ログの有効化（任意）
+追加の詳細計測（プロンプト生成・TTFT・リトライ集計）を出したい場合は、環境変数 `YAKULINGO_LOCAL_AI_TIMING=1` を設定して起動する。
+
+- 出力先: `~/.yakulingo/logs/startup.log`（DEBUG）
+- 追加されるログ例:
+  - `[TIMING] LocalPromptBuilder.build_reference_embed ...`
+  - `[TIMING] LocalPromptBuilder.build_batch ...`
+  - `[TIMING] BatchTranslator.prompt_build ...`
+  - `[TIMING] BatchTranslator.retries ...`
+  - `[TIMING] LocalAI ttft_streaming ...`
+
+## プロンプト生成ミニベンチ（サーバ不要）
+ローカルAIサーバを起動せず、プロンプト生成（特に glossary マッチング）のコストだけを測る。
+
+```powershell
+uv run python tools/bench_local_prompt_builder.py --glossary-rows 20000 --input-chars 800 --items 12 --runs 50
+```
+
 ## Vulkan(iGPU) 事前確認（Windows）
 - Vulkan 版 llama.cpp バイナリを用意（GitHub Releases の Windows x64 (Vulkan) など）
   - 同梱する場合: 新規インストールは Vulkan(x64) が既定。CPU版にしたい場合は `LOCAL_AI_LLAMA_CPP_VARIANT=cpu` を設定して `packaging/install_deps.bat` を実行（既存 `manifest.json` がある場合はその設定を優先し、切り替えは `LOCAL_AI_LLAMA_CPP_VARIANT` で上書き）

@@ -9,6 +9,7 @@ Bidirectional translation: Japanese → English, Other → Japanese (auto-detect
 
 import csv
 import logging
+import os
 import threading
 import time
 from contextlib import contextmanager, nullcontext
@@ -26,6 +27,8 @@ from yakulingo.services.local_ai_client import is_truncated_json
 
 # Module logger
 logger = logging.getLogger(__name__)
+
+_LOCAL_AI_TIMING_ENABLED = os.environ.get("YAKULINGO_LOCAL_AI_TIMING") == "1"
 
 DEFAULT_TEXT_STYLE = "minimal"
 TEXT_STYLE_ORDER: tuple[str, ...] = ("minimal",)
@@ -1699,6 +1702,15 @@ class BatchTranslator:
         untranslated_block_ids = []
         mismatched_batch_count = 0
         is_local_backend = self._is_local_backend()
+        timing_enabled = (
+            _LOCAL_AI_TIMING_ENABLED
+            and logger.isEnabledFor(logging.DEBUG)
+            and is_local_backend
+        )
+        retry_prompt_too_long = 0
+        retry_local_error = 0
+        retry_copilot_split = 0
+        fallback_original_batches = 0
 
         if _split_retry_depth == 0:
             self._cancel_event.clear()  # Reset at start of new translation
@@ -1837,6 +1849,7 @@ class BatchTranslator:
             )
 
         # Use parallel prompt construction for multiple batches
+        t_prompt_build = time.perf_counter() if timing_enabled else 0.0
         unique_texts_list = [d[0] for d in batch_unique_data]
         if len(batches) > 2:
             with ThreadPoolExecutor(max_workers=min(4, len(batches))) as executor:
@@ -1844,6 +1857,14 @@ class BatchTranslator:
         else:
             prompts = [build_prompt(texts) for texts in unique_texts_list]
 
+        if timing_enabled:
+            logger.debug(
+                "[TIMING] BatchTranslator.prompt_build: %.3fs (batches=%d max_chars_per_batch=%d source=%s)",
+                time.perf_counter() - t_prompt_build,
+                len(batches),
+                batch_char_limit,
+                batch_limit_source,
+            )
         logger.debug("Pre-built %d prompts for batch translation", len(prompts))
 
         for i, batch in enumerate(batches):
@@ -1906,6 +1927,7 @@ class BatchTranslator:
                     reduced_limit = max(
                         self._MIN_SPLIT_BATCH_CHARS, batch_char_limit // 2
                     )
+                    retry_prompt_too_long += 1
                     logger.warning(
                         "Local AI prompt too long for batch %d; retrying with max_chars_per_batch=%d (was %d, source=%s) (%s)",
                         i + 1,
@@ -1940,6 +1962,7 @@ class BatchTranslator:
                         reduced_limit = max(
                             self._MIN_SPLIT_BATCH_CHARS, batch_char_limit // 2
                         )
+                        retry_local_error += 1
                         logger.warning(
                             "Local AI error in batch %d; retrying with max_chars_per_batch=%d (was %d, source=%s) (%s)",
                             i + 1,
@@ -1975,6 +1998,7 @@ class BatchTranslator:
                         batch_limit_source,
                         message[:120],
                     )
+                    fallback_original_batches += 1
                     for block in batch:
                         translations[block.id] = block.text
                         untranslated_block_ids.append(block.id)
@@ -1989,6 +2013,7 @@ class BatchTranslator:
                     reduced_limit = max(
                         self._MIN_SPLIT_BATCH_CHARS, batch_char_limit // 2
                     )
+                    retry_copilot_split += 1
                     logger.warning(
                         "Copilot requested split for batch %d; retrying with max_chars_per_batch=%d (was %d)",
                         i + 1,
@@ -2562,6 +2587,17 @@ class BatchTranslator:
         if self._cache:
             stats = self._cache.stats
             logger.debug("Translation cache stats: %s", stats)
+
+        if timing_enabled and _split_retry_depth == 0:
+            logger.debug(
+                "[TIMING] BatchTranslator.retries: prompt_too_long=%d local_error=%d copilot_split=%d fallback_original_batches=%d mismatched_batches=%d untranslated_blocks=%d",
+                retry_prompt_too_long,
+                retry_local_error,
+                retry_copilot_split,
+                fallback_original_batches,
+                mismatched_batch_count,
+                len(untranslated_block_ids),
+            )
 
         result = BatchTranslationResult(
             translations=translations,

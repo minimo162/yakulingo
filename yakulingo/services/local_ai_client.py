@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import logging
 import re
 import socket
@@ -21,6 +22,8 @@ from yakulingo.services.local_llama_server import (
 from yakulingo.services.copilot_handler import TranslationCancelledError
 
 logger = logging.getLogger(__name__)
+
+_TIMING_ENABLED = os.environ.get("YAKULINGO_LOCAL_AI_TIMING") == "1"
 
 _DIAGNOSTIC_SNIPPET_CHARS = 200
 _SSE_DELTA_COALESCE_MIN_CHARS = 64
@@ -1175,7 +1178,7 @@ class LocalAIClient:
             chunks = self._iter_body_bytes(
                 sock, response_headers, initial_body, timeout_s, start
             )
-            content, model_id = self._consume_sse_stream(chunks, on_chunk)
+            content, model_id = self._consume_sse_stream(chunks, on_chunk, start=start)
             self._manager.note_server_ok(runtime)
             return LocalAIRequestResult(
                 content=content, model_id=model_id or runtime.model_id
@@ -1354,7 +1357,10 @@ class LocalAIClient:
         self,
         chunks: Iterable[bytes],
         on_chunk: Callable[[str], None],
+        *,
+        start: float | None = None,
     ) -> tuple[str, Optional[str]]:
+        start_time = start if start is not None else time.monotonic()
         buffer = bytearray()
         pieces: list[str] = []
         model_id: Optional[str] = None
@@ -1372,6 +1378,15 @@ class LocalAIClient:
                 delta_buffer.clear()
                 delta_buffer_len = 0
                 return
+            if (
+                not first_delta_emitted
+                and _TIMING_ENABLED
+                and logger.isEnabledFor(logging.DEBUG)
+            ):
+                logger.debug(
+                    "[TIMING] LocalAI ttft_streaming: %.3fs",
+                    time.monotonic() - start_time,
+                )
             delta_buffer.clear()
             delta_buffer_len = 0
             pieces.append(combined)

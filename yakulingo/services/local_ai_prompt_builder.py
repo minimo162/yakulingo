@@ -5,9 +5,11 @@ import csv
 import heapq
 import io
 import json
+import os
 import logging
 import re
 import threading
+import time
 import unicodedata
 from decimal import Decimal, InvalidOperation
 from dataclasses import dataclass
@@ -18,6 +20,8 @@ from yakulingo.config.settings import AppSettings
 from yakulingo.services.prompt_builder import PromptBuilder
 
 logger = logging.getLogger(__name__)
+
+_TIMING_ENABLED = os.environ.get("YAKULINGO_LOCAL_AI_TIMING") == "1"
 
 
 _SUPPORTED_REFERENCE_EXTENSIONS = {
@@ -575,10 +579,19 @@ class LocalPromptBuilder:
         *,
         input_text: Optional[str] = None,
     ) -> EmbeddedReference:
+        timing_enabled = _TIMING_ENABLED and logger.isEnabledFor(logging.DEBUG)
+        t0 = time.perf_counter() if timing_enabled else 0.0
+
         reference_files = self._get_effective_reference_files(
             reference_files, input_text=input_text
         )
         if not reference_files:
+            if timing_enabled:
+                logger.debug(
+                    "[TIMING] LocalPromptBuilder.build_reference_embed: %.4fs (files=0 cache=miss input_chars=%d embedded_chars=0 truncated=False warnings=0)",
+                    time.perf_counter() - t0,
+                    len((input_text or "").strip()),
+                )
             return EmbeddedReference(text="", warnings=[], truncated=False)
 
         key_items: list[tuple[str, int, int]] = []
@@ -596,6 +609,17 @@ class LocalPromptBuilder:
                 and self._reference_cache[0] == cache_key
                 and self._reference_cache[1] == text_key
             ):
+                if timing_enabled:
+                    embedded = self._reference_cache[2]
+                    logger.debug(
+                        "[TIMING] LocalPromptBuilder.build_reference_embed: %.4fs (files=%d cache=hit input_chars=%d embedded_chars=%d truncated=%s warnings=%d)",
+                        time.perf_counter() - t0,
+                        len(reference_files),
+                        len((input_text or "").strip()),
+                        len(embedded.text or ""),
+                        bool(embedded.truncated),
+                        len(embedded.warnings or []),
+                    )
                 return self._reference_cache[2]
 
         max_total_chars = 4000
@@ -696,6 +720,15 @@ class LocalPromptBuilder:
             )
             with self._reference_lock:
                 self._reference_cache = (cache_key, text_key, embedded)
+            if timing_enabled:
+                logger.debug(
+                    "[TIMING] LocalPromptBuilder.build_reference_embed: %.4fs (files=%d cache=miss input_chars=%d embedded_chars=0 truncated=%s warnings=%d)",
+                    time.perf_counter() - t0,
+                    len(reference_files),
+                    len((input_text or "").strip()),
+                    bool(truncated),
+                    len(warnings),
+                )
             return embedded
 
         header = (
@@ -708,6 +741,16 @@ class LocalPromptBuilder:
         )
         with self._reference_lock:
             self._reference_cache = (cache_key, text_key, embedded)
+        if timing_enabled:
+            logger.debug(
+                "[TIMING] LocalPromptBuilder.build_reference_embed: %.4fs (files=%d cache=miss input_chars=%d embedded_chars=%d truncated=%s warnings=%d)",
+                time.perf_counter() - t0,
+                len(reference_files),
+                len((input_text or "").strip()),
+                len(embedded.text or ""),
+                bool(embedded.truncated),
+                len(embedded.warnings or []),
+            )
         return embedded
 
     def build_batch(
@@ -719,6 +762,9 @@ class LocalPromptBuilder:
         include_item_ids: bool = False,
         reference_files: Optional[Sequence[Path]] = None,
     ) -> str:
+        timing_enabled = _TIMING_ENABLED and logger.isEnabledFor(logging.DEBUG)
+        t0 = time.perf_counter() if timing_enabled else 0.0
+
         if output_language not in ("en", "jp"):
             output_language = "en"
 
@@ -766,6 +812,16 @@ class LocalPromptBuilder:
         prompt = prompt.replace("{items_json}", items_json)
         prompt = prompt.replace("{output_language}", output_language)
         prompt = prompt.replace("{n_items}", str(len(items)))
+        if timing_enabled:
+            logger.debug(
+                "[TIMING] LocalPromptBuilder.build_batch: %.4fs (items=%d output=%s style=%s prompt_chars=%d ref_chars=%d)",
+                time.perf_counter() - t0,
+                len(items),
+                output_language,
+                translation_style,
+                len(prompt),
+                len(reference_section or ""),
+            )
         return prompt
 
     def build_text_to_en_3style(
@@ -776,7 +832,13 @@ class LocalPromptBuilder:
         detected_language: str = "日本語",
         extra_instruction: str | None = None,
     ) -> str:
+        timing_enabled = _TIMING_ENABLED and logger.isEnabledFor(logging.DEBUG)
+        t0 = time.perf_counter() if timing_enabled else 0.0
+
         template = self._load_template("local_text_translate_to_en_3style_json.txt")
+        timing_enabled = _TIMING_ENABLED and logger.isEnabledFor(logging.DEBUG)
+        t0 = time.perf_counter() if timing_enabled else 0.0
+
         embedded_ref = self.build_reference_embed(reference_files, input_text=text)
         translation_rules = self._get_translation_rules_for_text("en", text)
         numeric_hints = self._build_to_en_numeric_hints(text)
@@ -791,6 +853,14 @@ class LocalPromptBuilder:
         prompt = prompt.replace("{extra_instruction}", extra_instruction)
         prompt = prompt.replace("{input_text}", prompt_input_text)
         prompt = prompt.replace("{detected_language}", detected_language)
+        if timing_enabled:
+            logger.debug(
+                "[TIMING] LocalPromptBuilder.build_text_to_en_3style: %.4fs (input_chars=%d prompt_chars=%d ref_chars=%d)",
+                time.perf_counter() - t0,
+                len(text or ""),
+                len(prompt),
+                len(reference_section or ""),
+            )
         return prompt
 
     def build_text_to_en_missing_styles(
@@ -802,6 +872,9 @@ class LocalPromptBuilder:
         detected_language: str = "日本語",
         extra_instruction: str | None = None,
     ) -> str:
+        timing_enabled = _TIMING_ENABLED and logger.isEnabledFor(logging.DEBUG)
+        t0 = time.perf_counter() if timing_enabled else 0.0
+
         template = self._load_template(
             "local_text_translate_to_en_missing_styles_json.txt"
         )
@@ -829,6 +902,15 @@ class LocalPromptBuilder:
         prompt = prompt.replace("{detected_language}", detected_language)
         prompt = prompt.replace("{styles_json}", styles_json)
         prompt = prompt.replace("{n_styles}", str(len(style_list)))
+        if timing_enabled:
+            logger.debug(
+                "[TIMING] LocalPromptBuilder.build_text_to_en_missing_styles: %.4fs (input_chars=%d styles=%d prompt_chars=%d ref_chars=%d)",
+                time.perf_counter() - t0,
+                len(text or ""),
+                len(style_list),
+                len(prompt),
+                len(reference_section or ""),
+            )
         return prompt
 
     def build_text_to_en_single(
@@ -840,6 +922,9 @@ class LocalPromptBuilder:
         detected_language: str = "日本語",
         extra_instruction: str | None = None,
     ) -> str:
+        timing_enabled = _TIMING_ENABLED and logger.isEnabledFor(logging.DEBUG)
+        t0 = time.perf_counter() if timing_enabled else 0.0
+
         template = self._load_template("local_text_translate_to_en_single_json.txt")
         embedded_ref = self.build_reference_embed(reference_files, input_text=text)
         translation_rules = self._get_translation_rules_for_text("en", text)
@@ -856,6 +941,15 @@ class LocalPromptBuilder:
         prompt = prompt.replace("{input_text}", prompt_input_text)
         prompt = prompt.replace("{style}", style)
         prompt = prompt.replace("{detected_language}", detected_language)
+        if timing_enabled:
+            logger.debug(
+                "[TIMING] LocalPromptBuilder.build_text_to_en_single: %.4fs (input_chars=%d style=%s prompt_chars=%d ref_chars=%d)",
+                time.perf_counter() - t0,
+                len(text or ""),
+                style,
+                len(prompt),
+                len(reference_section or ""),
+            )
         return prompt
 
     def build_text_to_jp(
@@ -865,6 +959,9 @@ class LocalPromptBuilder:
         reference_files: Optional[Sequence[Path]] = None,
         detected_language: str = "英語",
     ) -> str:
+        timing_enabled = _TIMING_ENABLED and logger.isEnabledFor(logging.DEBUG)
+        t0 = time.perf_counter() if timing_enabled else 0.0
+
         template = self._load_template("local_text_translate_to_jp_json.txt")
         embedded_ref = self.build_reference_embed(reference_files, input_text=text)
         translation_rules = self._get_translation_rules_for_text("jp", text)
@@ -874,4 +971,12 @@ class LocalPromptBuilder:
         prompt = prompt.replace("{reference_section}", reference_section)
         prompt = prompt.replace("{input_text}", prompt_input_text)
         prompt = prompt.replace("{detected_language}", detected_language)
+        if timing_enabled:
+            logger.debug(
+                "[TIMING] LocalPromptBuilder.build_text_to_jp: %.4fs (input_chars=%d prompt_chars=%d ref_chars=%d)",
+                time.perf_counter() - t0,
+                len(text or ""),
+                len(prompt),
+                len(reference_section or ""),
+            )
         return prompt

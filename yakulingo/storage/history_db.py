@@ -203,37 +203,6 @@ class HistoryDB:
             logger.warning("Failed to get recent history: %s", e)
             return []
 
-    def get_by_id(self, entry_id: int) -> Optional[HistoryEntry]:
-        """Get a specific history entry by ID"""
-        try:
-            conn = self._get_connection()
-            conn.row_factory = sqlite3.Row
-            row = conn.execute(
-                """
-                SELECT id, source_text, direction, result_json, timestamp
-                FROM history
-                WHERE id = ?
-                """,
-                (entry_id,),
-            ).fetchone()
-
-            return self._row_to_entry(row) if row else None
-        except sqlite3.Error as e:
-            logger.warning("Failed to get history entry by id %d: %s", entry_id, e)
-            return None
-
-    def delete(self, entry_id: int) -> bool:
-        """Delete a history entry"""
-        try:
-            conn = self._get_connection()
-            with self._lock:
-                cursor = conn.execute("DELETE FROM history WHERE id = ?", (entry_id,))
-                conn.commit()
-                return cursor.rowcount > 0
-        except sqlite3.Error as e:
-            logger.warning("Failed to delete history entry %d: %s", entry_id, e)
-            return False
-
     def delete_by_timestamp(self, timestamp: str) -> bool:
         """Delete a history entry by timestamp"""
         try:
@@ -282,16 +251,6 @@ class HistoryDB:
         except sqlite3.Error as e:
             logger.warning("Failed to search history: %s", e)
             return []
-
-    def get_count(self) -> int:
-        """Get total number of history entries"""
-        try:
-            conn = self._get_connection()
-            result = conn.execute("SELECT COUNT(*) FROM history").fetchone()
-            return result[0] if result else 0
-        except sqlite3.Error as e:
-            logger.warning("Failed to get history count: %s", e)
-            return 0
 
     def cleanup_old_entries(self, max_entries: int = 500) -> int:
         """

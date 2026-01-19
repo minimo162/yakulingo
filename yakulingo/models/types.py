@@ -86,19 +86,6 @@ class FileInfo:
             return f"{self.size_bytes / (1024 * 1024):.1f} MB"
 
     @property
-    def icon(self) -> str:
-        """Get icon for file type"""
-        icons = {
-            FileType.EXCEL: "grid_on",
-            FileType.WORD: "description",
-            FileType.POWERPOINT: "slideshow",
-            FileType.PDF: "picture_as_pdf",
-            FileType.TEXT: "article",
-            FileType.EMAIL: "mail",
-        }
-        return icons.get(self.file_type, "description")
-
-    @property
     def selected_section_count(self) -> int:
         """Get count of selected sections"""
         if not self.section_details:
@@ -350,13 +337,6 @@ class BatchTranslationResult:
     def has_issues(self) -> bool:
         """True if there were any translation issues."""
         return len(self.untranslated_block_ids) > 0 or self.mismatched_batch_count > 0
-
-    @property
-    def success_rate(self) -> float:
-        """Percentage of blocks successfully translated (0.0 - 1.0)."""
-        if self.total_blocks == 0:
-            return 1.0
-        return self.translated_count / self.total_blocks
 
     def get_summary(self) -> str:
         """Get a human-readable summary of translation results."""

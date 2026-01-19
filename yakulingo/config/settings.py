@@ -1130,10 +1130,6 @@ class AppSettings:
         self._ref_paths_cache = (cache_key, paths)
         return paths
 
-    def invalidate_reference_cache(self):
-        """Invalidate the reference file paths cache."""
-        self._ref_paths_cache = None
-
     def get_output_directory(self, input_path: Path) -> Path:
         """
         Get output directory for translated file.

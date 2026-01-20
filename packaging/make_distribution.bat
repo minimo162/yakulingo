@@ -73,7 +73,7 @@ call :ShowProgress 0 "Preparing..."
 :: Check required files
 echo        Checking required files...
 set "MISSING="
-for %%f in (.venv .uv-python .playwright-browsers app.py yakulingo YakuLingo.exe prompts config local_ai) do (
+for %%f in (.venv .uv-python app.py yakulingo YakuLingo.exe prompts config local_ai) do (
     if not exist "%%f" set "MISSING=!MISSING! %%f"
 )
 if not exist ".venv\pyvenv.cfg" set "MISSING=!MISSING! .venv\pyvenv.cfg"
@@ -166,7 +166,7 @@ if errorlevel 1 (
 :: ============================================================
 call :ShowProgress 1 "Copying folders..."
 
-echo        Copying .venv, .uv-python, .playwright-browsers, yakulingo, prompts, config, local_ai...
+echo        Copying .venv, .uv-python, yakulingo, prompts, config, local_ai...
 set "FIXED_MODEL_GGUF=translategemma-4b-it.IQ4_XS.gguf"
 
 :: Copy folders using robocopy
@@ -174,7 +174,7 @@ set "FIXED_MODEL_GGUF=translategemma-4b-it.IQ4_XS.gguf"
 set "ROBOCOPY_WARNINGS="
 set "ROBOCOPY_LOG=%~dp0..\dist_temp\robocopy.log"
 echo. > "%ROBOCOPY_LOG%"
-for %%f in (.venv .uv-python .playwright-browsers) do (
+for %%f in (.venv .uv-python) do (
     if exist "%%f" (
         echo        Copying %%f...
         echo ============================================================ >> "%ROBOCOPY_LOG%"
@@ -331,7 +331,7 @@ rd /s /q "dist_temp" 2>nul
 :: Remove local __pycache__ created by compileall (exclude venv and output folders)
 echo        Cleaning local __pycache__...
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-    "$excludePattern = '\\\\.venv\\\\|\\\\dist_temp\\\\|\\\\share_package\\\\|\\\\\\.uv-cache\\\\|\\\\\\.uv-python\\\\|\\\\\\.playwright-browsers\\\\';" ^
+    "$excludePattern = '\\\\.venv\\\\|\\\\dist_temp\\\\|\\\\share_package\\\\|\\\\\\.uv-cache\\\\|\\\\\\.uv-python\\\\';" ^
     "Get-ChildItem -Path . -Directory -Filter '__pycache__' -Recurse -Force -ErrorAction SilentlyContinue |" ^
     "Where-Object { $_.FullName -notmatch $excludePattern } |" ^
     "Remove-Item -Recurse -Force -ErrorAction SilentlyContinue"

@@ -57,7 +57,6 @@ YakuLingo/
 │       └── python.exe
 ├── .uv-python/
 │   └── cpython-3.xx-windows-x86_64/
-└── .playwright-browsers/
 ```
 
 ## VBS との比較

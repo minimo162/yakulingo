@@ -704,12 +704,6 @@ fn setup_environment(base_dir: &PathBuf, venv_dir: &PathBuf, python_dir: &PathBu
     // VIRTUAL_ENV
     env::set_var("VIRTUAL_ENV", venv_dir);
 
-    // PLAYWRIGHT_BROWSERS_PATH
-    let playwright_path = base_dir.join(".playwright-browsers");
-    if env::var("PLAYWRIGHT_BROWSERS_PATH").is_err() && playwright_path.exists() {
-        env::set_var("PLAYWRIGHT_BROWSERS_PATH", &playwright_path);
-    }
-
     // pywebview web engine (avoid runtime installation dialog)
     env::set_var("PYWEBVIEW_GUI", "edgechromium");
 

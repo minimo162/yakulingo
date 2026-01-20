@@ -101,7 +101,7 @@ class AppState:
     # Current tab
     current_tab: Tab = Tab.TEXT
     # Backend selection (persisted in settings)
-    translation_backend: TranslationBackend = TranslationBackend.COPILOT
+    translation_backend: TranslationBackend = TranslationBackend.LOCAL
 
     # Text tab state
     text_view_state: TextViewState = TextViewState.INPUT  # Current view state

@@ -168,7 +168,7 @@ Second para.
     copilot = CapturingCopilotHandler(response)
     service = TranslationService(
         copilot=copilot,
-        config=AppSettings(),
+        config=AppSettings(translation_backend="copilot"),
         prompts_dir=Path("prompts"),
     )
 
@@ -196,7 +196,7 @@ def test_copilot_text_to_jp_preserves_multi_paragraph_input_and_output(
     copilot = CapturingCopilotHandler(response)
     service = TranslationService(
         copilot=copilot,
-        config=AppSettings(),
+        config=AppSettings(translation_backend="copilot"),
         prompts_dir=Path("prompts"),
     )
 

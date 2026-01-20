@@ -76,7 +76,9 @@ Translation:
 Meanwhile, this HR director's company offers a starting salary of 22 man yen; it's not low vs. the industry avg.
 """
     copilot = SequencedCopilotHandler([first, second])
-    service = TranslationService(copilot=copilot, config=AppSettings())
+    service = TranslationService(
+        copilot=copilot, config=AppSettings(translation_backend="copilot")
+    )
 
     result = service.translate_text_with_style_comparison(
         "これはテストです。",
@@ -108,7 +110,9 @@ Translation:
 Meanwhile, this HR director's company offers a starting salary of 22 man yen; it's not low vs. the industry avg.
 """
     copilot = SequencedCopilotHandler([first, second])
-    service = TranslationService(copilot=copilot, config=AppSettings())
+    service = TranslationService(
+        copilot=copilot, config=AppSettings(translation_backend="copilot")
+    )
 
     result = service.translate_text_with_options(
         "これはテストです。",
@@ -139,9 +143,11 @@ Net sales were 2兆2,385億円 (down 1,554億円、6.5％), and the company reco
 [minimal]
 Translation:
 Net sales: 2兆2,385億円 (YoY -1,554億円、6.5％); operating loss: 539億円.
-"""
+    """
     copilot = SequencedCopilotHandler([response])
-    service = TranslationService(copilot=copilot, config=AppSettings())
+    service = TranslationService(
+        copilot=copilot, config=AppSettings(translation_backend="copilot")
+    )
 
     result = service.translate_text_with_style_comparison(
         "これはテストです。",
@@ -179,7 +185,9 @@ Translation:
 Net sales: 22,385 oku yen.
 """
     copilot = RecordingSequencedCopilotHandler([first, second])
-    service = TranslationService(copilot=copilot, config=AppSettings())
+    service = TranslationService(
+        copilot=copilot, config=AppSettings(translation_backend="copilot")
+    )
 
     result = service.translate_text_with_style_comparison(
         input_text,
@@ -213,9 +221,11 @@ Net sales were 22,385 billion yen.
 [minimal]
 Translation:
 Net sales: 22,385 billion yen.
-"""
+    """
     copilot = SequencedCopilotHandler([first])
-    service = TranslationService(copilot=copilot, config=AppSettings())
+    service = TranslationService(
+        copilot=copilot, config=AppSettings(translation_backend="copilot")
+    )
 
     result = service.translate_text_with_style_comparison(
         input_text,
@@ -251,7 +261,9 @@ Translation:
 Net sales: 22,385 oku yen.
 """
     copilot = SequencedCopilotHandler([first, second])
-    service = TranslationService(copilot=copilot, config=AppSettings())
+    service = TranslationService(
+        copilot=copilot, config=AppSettings(translation_backend="copilot")
+    )
 
     result = service.translate_text_with_options(
         input_text,

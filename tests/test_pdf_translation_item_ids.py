@@ -173,7 +173,10 @@ def test_translate_pdf_streaming_enables_include_item_ids(tmp_path: Path) -> Non
     input_path = tmp_path / "input.pdf"
     input_path.write_bytes(b"")
 
-    service = TranslationService(copilot=object(), config=AppSettings())
+    service = TranslationService(
+        copilot=object(),
+        config=AppSettings(translation_backend="copilot"),
+    )
     spy = SpyBatchTranslator()
     service.batch_translator = spy  # type: ignore[assignment]
 

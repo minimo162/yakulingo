@@ -1764,7 +1764,7 @@ class YakuLingoApp:
             logger.info("[TIMING] AppSettings.load: %.2fs", time.perf_counter() - start)
             # Always start in text mode; file panel opens on drag & drop.
             self.state.current_tab = Tab.TEXT
-            backend_value = getattr(self._settings, "translation_backend", "copilot")
+            backend_value = getattr(self._settings, "translation_backend", "local")
             if not getattr(self._settings, "copilot_enabled", True):
                 backend_value = "local"
             self.state.translation_backend = (
@@ -11664,7 +11664,7 @@ class YakuLingoApp:
         use_local = False
         if translation_service and translation_service.config:
             use_local = (
-                getattr(translation_service.config, "translation_backend", "copilot")
+                getattr(translation_service.config, "translation_backend", "local")
                 == "local"
             )
         elif self.state.translation_backend == TranslationBackend.LOCAL:
@@ -13790,16 +13790,16 @@ def run_app(
     ).strip().lower() in ("1", "true", "yes")
 
     available_memory_gb = _get_available_memory_gb()
-    startup_backend_hint = "copilot"
+    startup_backend_hint = "local"
     copilot_enabled = True
     try:
         startup_settings = AppSettings.load(get_default_settings_path())
         startup_backend_hint = (
-            getattr(startup_settings, "translation_backend", "copilot") or "copilot"
+            getattr(startup_settings, "translation_backend", "local") or "local"
         )
         copilot_enabled = getattr(startup_settings, "copilot_enabled", True)
     except Exception:
-        startup_backend_hint = "copilot"
+        startup_backend_hint = "local"
         copilot_enabled = True
     if not copilot_enabled:
         startup_backend_hint = "local"
@@ -15765,14 +15765,13 @@ def run_app(
         """Called when NiceGUI server starts (before clients connect)."""
         # Load settings early so we can respect the persisted backend selection.
         # If Local AI is selected, avoid starting Edge/Copilot automatically.
-        startup_backend = "copilot"
+        startup_backend = "local"
         try:
             startup_backend = (
-                getattr(yakulingo_app.settings, "translation_backend", "copilot")
-                or "copilot"
+                getattr(yakulingo_app.settings, "translation_backend", "local") or "local"
             )
         except Exception:
-            startup_backend = "copilot"
+            startup_backend = "local"
 
         # Start hotkey listener immediately so hotkey translation works even without the UI.
         yakulingo_app.start_hotkey_listener()

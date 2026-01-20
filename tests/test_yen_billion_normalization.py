@@ -61,7 +61,9 @@ def test_prompt_builder_normalizes_yen_bn_expression_for_jp() -> None:
 def test_translate_text_with_options_includes_normalized_amount_in_prompt() -> None:
     copilot = RecordingCopilotHandler("Translation:\nテスト\nExplanation:\n- テスト")
     service = TranslationService(
-        copilot=copilot, config=AppSettings(), prompts_dir=Path("prompts")
+        copilot=copilot,
+        config=AppSettings(translation_backend="copilot"),
+        prompts_dir=Path("prompts"),
     )
 
     result = service.translate_text_with_options(

@@ -317,7 +317,7 @@ class AppSettings:
     # UI
     last_tab: str = "text"
     # Translation backend ("copilot" or "local")
-    translation_backend: str = "copilot"
+    translation_backend: str = "local"
     # Copilot availability (feature flag)
     copilot_enabled: bool = True
     # NOTE: window_width/window_height は廃止。ウィンドウサイズは
@@ -581,10 +581,10 @@ class AppSettings:
         # Translation backend
         if self.translation_backend not in ("copilot", "local"):
             logger.warning(
-                "translation_backend invalid (%s), resetting to 'copilot'",
+                "translation_backend invalid (%s), resetting to 'local'",
                 self.translation_backend,
             )
-            self.translation_backend = "copilot"
+            self.translation_backend = "local"
         if not isinstance(self.copilot_enabled, bool):
             logger.warning(
                 "copilot_enabled invalid (%s), resetting to True",

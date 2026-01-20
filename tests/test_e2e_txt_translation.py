@@ -53,7 +53,7 @@ class FakeCopilotHandler:
 @pytest.mark.e2e
 def test_e2e_txt_translate_file_creates_outputs(tmp_path: Path) -> None:
     copilot = FakeCopilotHandler()
-    settings = AppSettings()
+    settings = AppSettings(translation_backend="copilot")
     service = TranslationService(copilot=copilot, config=settings)
 
     input_path = tmp_path / "sample.txt"
@@ -79,7 +79,7 @@ def test_e2e_txt_translate_file_creates_outputs(tmp_path: Path) -> None:
 @pytest.mark.e2e
 def test_e2e_txt_selected_sections_translates_only_selected(tmp_path: Path) -> None:
     copilot = FakeCopilotHandler()
-    settings = AppSettings()
+    settings = AppSettings(translation_backend="copilot")
     service = TranslationService(copilot=copilot, config=settings)
 
     input_path = tmp_path / "sections.txt"
@@ -105,7 +105,7 @@ def test_e2e_txt_selected_sections_translates_only_selected(tmp_path: Path) -> N
 @pytest.mark.e2e
 def test_e2e_txt_translation_cache_skips_second_request(tmp_path: Path) -> None:
     copilot = FakeCopilotHandler()
-    settings = AppSettings()
+    settings = AppSettings(translation_backend="copilot")
     service = TranslationService(copilot=copilot, config=settings)
 
     input_path = tmp_path / "cache.txt"
@@ -123,7 +123,7 @@ def test_e2e_txt_translation_cache_skips_second_request(tmp_path: Path) -> None:
 @pytest.mark.e2e
 def test_e2e_txt_bilingual_and_glossary_outputs(tmp_path: Path) -> None:
     copilot = FakeCopilotHandler()
-    settings = AppSettings()
+    settings = AppSettings(translation_backend="copilot")
     settings.bilingual_output = True
     settings.export_glossary = True
     service = TranslationService(copilot=copilot, config=settings)

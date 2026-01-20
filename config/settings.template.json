@@ -2,7 +2,7 @@
   "reference_files": [],
   "output_directory": null,
   "last_tab": "text",
-  "translation_backend": "copilot",
+  "translation_backend": "local",
   "copilot_enabled": true,
   "max_chars_per_batch": 1000,
   "request_timeout": 600,

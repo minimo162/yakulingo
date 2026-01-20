@@ -8954,36 +8954,6 @@ class YakuLingoApp:
         def header_status():
             from yakulingo.ui.utils import to_props_string_literal
 
-            # Backend selector (Copilot ON/OFF)
-            copilot_enabled = getattr(self.settings, "copilot_enabled", True)
-            disabled = self.state.is_translating()
-            btn_props = (
-                "flat no-caps dense disable" if disabled else "flat no-caps dense"
-            )
-            btn_props += ' data-testid="backend-toggle"'
-            with ui.row().classes("w-full justify-center"):
-                with ui.element("div").classes("segmented-btn-container"):
-                    selected_backend = self.state.translation_backend
-                    if (
-                        not copilot_enabled
-                        and selected_backend == TranslationBackend.COPILOT
-                    ):
-                        selected_backend = TranslationBackend.LOCAL
-                    if copilot_enabled:
-                        copilot_classes = "segmented-btn"
-                        if selected_backend == TranslationBackend.COPILOT:
-                            copilot_classes += " segmented-btn-selected"
-                        ui.button(
-                            "Copilot",
-                            on_click=lambda: self._set_translation_backend(
-                                TranslationBackend.LOCAL
-                                if selected_backend == TranslationBackend.COPILOT
-                                else TranslationBackend.COPILOT
-                            ),
-                        ).classes(copilot_classes).props(btn_props).tooltip(
-                            "M365 Copilot（Edge）で翻訳"
-                        )
-
             # Local AI status
             if self.state.translation_backend == TranslationBackend.LOCAL:
                 local_state = self.state.local_ai_state

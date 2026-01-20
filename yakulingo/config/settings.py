@@ -520,6 +520,11 @@ class AppSettings:
         # NOTE: Legacy settings.json is NOT migrated to prevent bugs.
         # Users will start with fresh defaults from template.
 
+        # Local-only mode: disable Copilot backend regardless of persisted settings.
+        # This prevents any startup-time Copilot/Edge/Playwright initialization.
+        data["copilot_enabled"] = False
+        data["translation_backend"] = "local"
+
         # Clean up deprecated fields
         data.pop("last_direction", None)
         data.pop("window_width", None)

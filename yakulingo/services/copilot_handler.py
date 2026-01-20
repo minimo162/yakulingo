@@ -200,11 +200,6 @@ def _get_playwright_errors():
     return _playwright_manager.get_error_types()
 
 
-def _get_async_playwright():
-    """Get async_playwright function."""
-    return _playwright_manager.get_async_playwright()
-
-
 def _get_process_dpi_awareness() -> int | None:
     """Return process DPI awareness on Windows (0=unaware, 1=system, 2=per-monitor)."""
     if sys.platform != "win32":
@@ -1162,8 +1157,6 @@ class CopilotHandler:
     # =========================================================================
     # Page navigation timeouts (milliseconds) - for Playwright page.goto()
     PAGE_GOTO_TIMEOUT_MS = 30000  # 30 seconds for initial page load
-    PAGE_LOAD_STATE_TIMEOUT_MS = 10000  # 10 seconds for load state checks
-    PAGE_NETWORK_IDLE_TIMEOUT_MS = 5000  # 5 seconds for network idle checks
 
     # Selector wait timeouts (milliseconds) - for Playwright wait_for_selector()
     SELECTOR_CHAT_INPUT_FIRST_STEP_TIMEOUT_MS = (
@@ -1173,16 +1166,10 @@ class CopilotHandler:
         2000  # 2 seconds per subsequent step for early login detection
     )
     SELECTOR_CHAT_INPUT_MAX_STEPS = 7  # Max steps (1s + 2s*6 = 13s total)
-    SELECTOR_RESPONSE_TIMEOUT_MS = 10000  # 10 seconds for response element to appear
-    SELECTOR_LOGIN_CHECK_TIMEOUT_MS = 2000  # 2 seconds for login state checks
-    SELECTOR_QUICK_CHECK_TIMEOUT_MS = 500  # 0.5 seconds for instant checks
 
     # Login/connection timeouts (seconds)
-    LOGIN_WAIT_TIMEOUT_SECONDS = 300  # 5 minutes to wait for user login
-    AUTO_LOGIN_TIMEOUT_SECONDS = 15  # 15 seconds for auto-login to complete
 
     # Thread/IPC timeouts (seconds)
-    THREAD_JOIN_TIMEOUT_SECONDS = 5  # 5 seconds for thread cleanup
     EXECUTOR_TIMEOUT_BUFFER_SECONDS = 60  # Extra time for executor vs response timeout
 
     # =========================================================================
@@ -1248,7 +1235,6 @@ class CopilotHandler:
         '[data-testid="sendButton"]:not([disabled]), '
         "button.send-button:not([disabled])"
     )
-    SEND_BUTTON_ANY = '.fai-SendButton, button[type="submit"], button[aria-label*="送信"], button[aria-label*="Send"]'
 
     # Stop button selectors (for cancelling generation)
     # Indicates Copilot is processing - used to verify send was successful
@@ -1269,7 +1255,6 @@ class CopilotHandler:
 
     # File upload selectors
     PLUS_MENU_BUTTON_SELECTOR = '[data-testid="PlusMenuButton"]'
-    FILE_INPUT_SELECTOR = '[data-testid="uploadFileDialogInput"]'
 
     # Auth dialog selectors
     AUTH_DIALOG_TITLE_SELECTOR = '.fui-DialogTitle, [role="dialog"] h2'
@@ -1358,7 +1343,6 @@ class CopilotHandler:
         'button[aria-label*="モデル"]',
         'button[aria-label*="GPT"]',
     )
-    GPT_MODE_SWITCHER_SELECTOR = "#gptModeSwitcher"
     GPT_MODE_MENU_SELECTOR = '[role="menu"], [role="listbox"]'
     GPT_MODE_MENU_VISIBLE_SELECTOR = '[role="menu"]:visible, [role="listbox"]:visible'
     GPT_MODE_MENU_ITEM_SELECTOR = '[role="menuitem"], [role="option"]'
@@ -1392,7 +1376,6 @@ class CopilotHandler:
     GPT_MODE_TARGET = GPT_MODE_TARGETS[0]
     GPT_MODE_MORE_TEXTS = ("More", "その他", "さらに表示")
     # OPTIMIZED: Reduced menu wait to minimum (just enough for React to update)
-    GPT_MODE_MENU_WAIT = 0.05  # Wait for menu to open/close (50ms)
     GPT_MODE_MORE_HOVER_WAIT = 0.6  # Wait for submenu to render after hover
     GPT_MODE_REQUIRED_TIMEOUT_SECONDS = 12.0
     # GPT mode button wait timeout
@@ -1437,8 +1420,6 @@ class CopilotHandler:
     ERROR_LOGIN_REQUIRED = "login_required"
     ERROR_CONNECTION_FAILED = "connection_failed"
     ERROR_NETWORK = "network_error"
-    ERROR_RATE_LIMITED = "rate_limited"
-    ERROR_SESSION_EXPIRED = "session_expired"
 
     # Rate limiting / retry settings
     RETRY_BACKOFF_BASE = 2.0  # Base for exponential backoff (2^attempt seconds)

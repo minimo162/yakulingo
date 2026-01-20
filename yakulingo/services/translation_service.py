@@ -1133,7 +1133,6 @@ from yakulingo.models.types import (
     ProgressCallback,
 )
 from yakulingo.config.settings import AppSettings
-from yakulingo.services.copilot_handler import CopilotHandler
 from yakulingo.services.exceptions import TranslationCancelledError
 from yakulingo.services.prompt_builder import (
     PromptBuilder,
@@ -1338,7 +1337,7 @@ class BatchTranslator:
 
     def __init__(
         self,
-        copilot: CopilotHandler,
+        copilot: object,
         prompt_builder: PromptBuilder,
         max_chars_per_batch: Optional[int] = None,
         request_timeout: Optional[int] = None,
@@ -2515,7 +2514,7 @@ class TranslationService:
 
     def __init__(
         self,
-        copilot: CopilotHandler,
+        copilot: object,
         config: AppSettings,
         prompts_dir: Optional[Path] = None,
         copilot_lock: Optional[threading.Lock] = None,

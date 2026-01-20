@@ -41,16 +41,6 @@ from pathlib import Path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
-# Prefer bundled Playwright browsers when available (offline/corporate-friendly).
-# The Rust launcher and packaging scripts already set this, but dev runs via `python app.py`
-# may not. Setting a default here prevents Playwright from falling back to per-user installs
-# under `%LOCALAPPDATA%\ms-playwright` and makes startup logs consistent.
-bundled_playwright_browsers_dir = project_root / ".playwright-browsers"
-if bundled_playwright_browsers_dir.exists():
-    os.environ.setdefault(
-        "PLAYWRIGHT_BROWSERS_PATH", str(bundled_playwright_browsers_dir)
-    )
-
 _sys_pycache_prefix = getattr(sys, "pycache_prefix", None)
 _PYCACHE_PREFIX_DEFAULT = Path.home() / ".yakulingo" / "pycache"
 _PYCACHE_PREFIX = Path(
@@ -274,7 +264,6 @@ def setup_logging():
         "yakulingo.ui.components",
         "yakulingo.ui.components.text_panel",
         "yakulingo.services",
-        "yakulingo.services.copilot_handler",
         "yakulingo.services.translation_service",
     ]:
         child_logger = logging.getLogger(name)

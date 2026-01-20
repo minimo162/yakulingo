@@ -1253,7 +1253,6 @@ if TYPE_CHECKING:
     from nicegui.elements.textarea import Textarea as UiTextarea
     from nicegui.elements.timer import Timer as UiTimer
     from nicegui.timer import Timer as NiceGUITimer
-    from yakulingo.services.copilot_handler import CopilotHandler
     from yakulingo.services.local_llama_server import LocalAIServerRuntime
     from yakulingo.services.translation_service import TranslationService
     from yakulingo.ui.components.update_notification import UpdateNotification
@@ -1537,7 +1536,6 @@ class YakuLingoApp:
         self._app_start_time = time.monotonic()
 
         # Lazy-loaded heavy components for faster startup
-        self._copilot: Optional["CopilotHandler"] = None
         self.translation_service: Optional["TranslationService"] = None
 
         # Cache base directory and glossary path (avoid recalculation)
@@ -1708,17 +1706,6 @@ class YakuLingoApp:
         self._history_pins_path = Path.home() / ".yakulingo" / "history_pins.json"
         self._history_pins: set[str] = set()
         self._load_history_pins()
-
-    @property
-    def copilot(self) -> "CopilotHandler":
-        """Lazy-load CopilotHandler for faster startup."""
-        if self._copilot is None:
-            from yakulingo.services.copilot_handler import CopilotHandler
-
-            native_mode_enabled = bool(self._native_mode_enabled)
-            patch_marker = _NICEGUI_NATIVE_PATCH_APPLIED or not native_mode_enabled
-            self._copilot = CopilotHandler(native_patch_applied=patch_marker)
-        return self._copilot
 
     def _ensure_translation_service(self) -> bool:
         """Initialize TranslationService if it hasn't been created yet."""
@@ -1892,223 +1879,8 @@ class YakuLingoApp:
                 self._resident_heartbeat_task = None
 
     def _apply_resident_startup_layout_win32(self) -> bool:
-        """Tile YakuLingo (left) and Copilot (right) during resident startup."""
-        if sys.platform != "win32":
-            return False
-
-        copilot = self._copilot
-        if copilot is None:
-            return False
-
-        try:
-            import ctypes
-            from ctypes import wintypes
-
-            user32 = ctypes.WinDLL("user32", use_last_error=True)
-            dwmapi = None
-            try:
-                dwmapi = ctypes.WinDLL("dwmapi", use_last_error=True)
-            except Exception:
-                dwmapi = None
-
-            yakulingo_hwnd = self._find_ui_window_handle_win32(include_hidden=True)
-
-            edge_hwnd = None
-            try:
-                edge_hwnd = copilot._find_edge_window_handle()
-            except Exception:
-                edge_hwnd = None
-
-            if not yakulingo_hwnd or not edge_hwnd:
-                return False
-
-            class RECT(ctypes.Structure):
-                _fields_ = [
-                    ("left", ctypes.c_long),
-                    ("top", ctypes.c_long),
-                    ("right", ctypes.c_long),
-                    ("bottom", ctypes.c_long),
-                ]
-
-            class MONITORINFO(ctypes.Structure):
-                _fields_ = [
-                    ("cbSize", wintypes.DWORD),
-                    ("rcMonitor", RECT),
-                    ("rcWork", RECT),
-                    ("dwFlags", wintypes.DWORD),
-                ]
-
-            MONITOR_DEFAULTTONEAREST = 2
-            monitor = user32.MonitorFromWindow(
-                wintypes.HWND(yakulingo_hwnd), MONITOR_DEFAULTTONEAREST
-            )
-            if not monitor:
-                monitor = user32.MonitorFromWindow(
-                    wintypes.HWND(edge_hwnd), MONITOR_DEFAULTTONEAREST
-                )
-                if not monitor:
-                    return False
-
-            monitor_info = MONITORINFO()
-            monitor_info.cbSize = ctypes.sizeof(MONITORINFO)
-            if not user32.GetMonitorInfoW(monitor, ctypes.byref(monitor_info)):
-                return False
-
-            work_area = monitor_info.rcWork
-            work_width = int(work_area.right - work_area.left)
-            work_height = int(work_area.bottom - work_area.top)
-            if work_width <= 0 or work_height <= 0:
-                return False
-
-            gap = 10
-            min_ui_width = 1
-            min_edge_width = 1
-
-            dpi_scale = _get_windows_dpi_scale()
-            dpi_awareness = _get_process_dpi_awareness()
-            if dpi_awareness in (1, 2) and dpi_scale != 1.0:
-                gap = int(round(gap * dpi_scale))
-                min_ui_width = int(round(min_ui_width * dpi_scale))
-                min_edge_width = int(round(min_edge_width * dpi_scale))
-
-            available_width = work_width - gap
-            if available_width <= 0:
-                return False
-
-            ui_width = max(available_width // 2, min_ui_width)
-            edge_width = max(available_width - ui_width, min_edge_width)
-            if ui_width + edge_width + gap > work_width:
-                ui_width = max(work_width - gap - min_edge_width, min_ui_width)
-                edge_width = max(work_width - gap - ui_width, 1)
-
-            if ui_width <= 0 or edge_width <= 0:
-                ui_width = max(available_width // 2, 1)
-                edge_width = max(available_width - ui_width, 1)
-
-            if ui_width <= 0 or edge_width <= 0:
-                return False
-
-            SW_RESTORE = 9
-            SW_SHOW = 5
-            SWP_NOZORDER = 0x0004
-            SWP_NOACTIVATE = 0x0010
-            SWP_SHOWWINDOW = 0x0040
-
-            def _restore_window(hwnd_value: int) -> None:
-                try:
-                    if user32.IsIconic(wintypes.HWND(hwnd_value)) or user32.IsZoomed(
-                        wintypes.HWND(hwnd_value)
-                    ):
-                        user32.ShowWindow(wintypes.HWND(hwnd_value), SW_RESTORE)
-                    else:
-                        user32.ShowWindow(wintypes.HWND(hwnd_value), SW_SHOW)
-                except Exception:
-                    return
-
-            _restore_window(int(yakulingo_hwnd))
-            _restore_window(int(edge_hwnd))
-
-            def _get_frame_rect(hwnd_value):
-                if not dwmapi:
-                    return None
-                try:
-                    rect = RECT()
-                    DWMWA_EXTENDED_FRAME_BOUNDS = 9
-                    if (
-                        dwmapi.DwmGetWindowAttribute(
-                            wintypes.HWND(hwnd_value),
-                            DWMWA_EXTENDED_FRAME_BOUNDS,
-                            ctypes.byref(rect),
-                            ctypes.sizeof(rect),
-                        )
-                        == 0
-                    ):
-                        return rect
-                except Exception:
-                    return None
-                return None
-
-            def _get_window_rect(hwnd_value):
-                rect = RECT()
-                if not user32.GetWindowRect(
-                    wintypes.HWND(hwnd_value), ctypes.byref(rect)
-                ):
-                    return None
-                return rect
-
-            def _get_frame_margins(hwnd_value):
-                outer = _get_window_rect(hwnd_value)
-                if outer is None:
-                    return (0, 0, 0, 0)
-                frame = _get_frame_rect(hwnd_value)
-                if frame is None:
-                    return (0, 0, 0, 0)
-                left = max(0, frame.left - outer.left)
-                top = max(0, frame.top - outer.top)
-                right = max(0, outer.right - frame.right)
-                bottom = max(0, outer.bottom - frame.bottom)
-                return (left, top, right, bottom)
-
-            def _set_window_pos_with_frame_adjust(
-                hwnd_value: int,
-                x: int,
-                y: int,
-                width: int,
-                height: int,
-                insert_after,
-                flags: int,
-            ) -> bool:
-                left, top, right, bottom = _get_frame_margins(hwnd_value)
-                adj_x = x - left
-                adj_y = y - top
-                adj_width = width + left + right
-                adj_height = height + top + bottom
-                if adj_width <= 0 or adj_height <= 0:
-                    adj_x = x
-                    adj_y = y
-                    adj_width = width
-                    adj_height = height
-                return bool(
-                    user32.SetWindowPos(
-                        wintypes.HWND(hwnd_value),
-                        insert_after,
-                        adj_x,
-                        adj_y,
-                        adj_width,
-                        adj_height,
-                        flags,
-                    )
-                )
-
-            ui_x = int(work_area.left)
-            ui_y = int(work_area.top)
-            edge_x = int(work_area.left + ui_width + gap)
-            edge_y = ui_y
-
-            _set_window_pos_with_frame_adjust(
-                int(yakulingo_hwnd),
-                ui_x,
-                ui_y,
-                ui_width,
-                work_height,
-                None,
-                SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW,
-            )
-            _set_window_pos_with_frame_adjust(
-                int(edge_hwnd),
-                edge_x,
-                edge_y,
-                edge_width,
-                work_height,
-                None,
-                SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW,
-            )
-
-            return True
-
-        except Exception as e:
-            logger.debug("Resident startup layout failed: %s", e)
-            return False
+        """Resident startup layout is disabled (local AI only)."""
+        return False
 
     def _retry_resident_startup_layout_win32(
         self,
@@ -2130,25 +1902,9 @@ class YakuLingoApp:
     async def _wait_for_copilot_ready(
         self, timeout_sec: int = RESIDENT_STARTUP_READY_TIMEOUT_SEC
     ) -> bool:
-        """Wait for Copilot to become ready (login may require user interaction)."""
-        from yakulingo.services.copilot_handler import (
-            ConnectionState as CopilotConnectionState,
-        )
-
-        deadline = time.time() + timeout_sec
-        while time.time() < deadline and not self._shutdown_requested:
-            try:
-                state = await asyncio.to_thread(self.copilot.check_copilot_state, 5)
-            except Exception as e:
-                logger.debug("Resident startup: state check failed: %s", e)
-                state = None
-
-            if state == CopilotConnectionState.READY:
-                return True
-
-            await asyncio.sleep(RESIDENT_STARTUP_POLL_INTERVAL_SEC)
-
-        return False
+        """(互換用) 旧Copilot準備待ち。現在はローカルAIのみ。"""
+        _ = timeout_sec
+        return True
 
     async def _get_resident_startup_status(self) -> dict[str, object]:
         """Return resident startup status for setup scripts."""
@@ -2173,28 +1929,9 @@ class YakuLingoApp:
             status["error"] = self._resident_startup_error
             status["ready"] = False
 
-        copilot = getattr(self, "_copilot", None)
-        if copilot is None:
-            status["state"] = "not_initialized"
-            return status
-
-        from yakulingo.services.copilot_handler import (
-            ConnectionState as CopilotConnectionState,
-        )
-        from yakulingo.services.copilot_handler import CopilotHandler
-
-        try:
-            state = await asyncio.to_thread(copilot.check_copilot_state, 2)
-        except Exception as e:
-            logger.debug("Resident startup: status check failed: %s", e)
-            state = None
-
-        status["state"] = state or "unknown"
-        status["login_required"] = (
-            state == CopilotConnectionState.LOGIN_REQUIRED
-            or copilot.last_connection_error == CopilotHandler.ERROR_LOGIN_REQUIRED
-        )
-        status["gpt_mode_set"] = bool(getattr(copilot, "is_gpt_mode_set", False))
+        status["state"] = "disabled"
+        status["login_required"] = False
+        status["gpt_mode_set"] = False
         return status
 
     async def _ensure_resident_ui_visible(self, reason: str) -> bool:
@@ -2274,97 +2011,19 @@ class YakuLingoApp:
         attempts: int = 2,
         delay_sec: float = 0.6,
     ) -> bool:
-        copilot = getattr(self, "_copilot", None)
-        if copilot is None:
-            return False
-
-        confirmed = 0
-        for attempt in range(attempts):
-            if self._shutdown_requested:
-                return False
-            try:
-                is_required = await asyncio.to_thread(copilot.confirm_login_required, 6)
-            except Exception as e:
-                logger.debug("Login confirmation failed (%s): %s", reason, e)
-                is_required = False
-
-            if is_required:
-                confirmed += 1
-            else:
-                confirmed = 0
-
-            if confirmed >= 2:
-                return True
-            if attempt < attempts - 1:
-                await asyncio.sleep(delay_sec)
-
+        _ = (reason, attempts, delay_sec)
         return False
 
     async def _show_resident_login_prompt(
         self, reason: str, *, user_initiated: bool = False
     ) -> None:
-        if not self._resident_mode:
-            return
-
-        self._resident_login_required = True
-        if not user_initiated:
-            confirmed = (
-                True
-                if reason == "startup"
-                else await self._confirm_login_required_for_prompt(reason)
-            )
-            if not confirmed:
-                logger.info(
-                    "Resident login required not confirmed; UI auto-open suppressed (%s)",
-                    reason,
-                )
-                return
-
-        with self._client_lock:
-            has_client_before = self._client is not None
-
-        ui_visible_before = self._layout_mode == LayoutMode.FOREGROUND
-        auto_open_ui = (
-            (not user_initiated)
-            and (not ui_visible_before or not has_client_before)
-            and (self._open_ui_window_callback is not None or sys.platform == "win32")
-        )
-        self._login_auto_hide_pending = auto_open_ui
-        if user_initiated:
-            self._login_auto_hide_blocked = True
-        self._resident_show_requested = True
-
-        if auto_open_ui:
-            self._set_auto_open_cause(
-                AutoOpenCause.LOGIN,
-                reason=f"login_prompt:{reason}",
-                timeout_sec=COPILOT_LOGIN_TIMEOUT,
-            )
-
-        await self._ensure_resident_ui_visible(reason)
-
-        if self._copilot is not None:
-            try:
-                await asyncio.to_thread(
-                    self._copilot.bring_to_foreground,
-                    reason=f"resident login required: {reason}",
-                )
-            except Exception as e:
-                logger.debug(
-                    "Resident login Edge foreground failed (%s): %s", reason, e
-                )
-
-        if sys.platform == "win32":
-            try:
-                await asyncio.to_thread(self._retry_resident_startup_layout_win32)
-            except Exception as e:
-                logger.debug("Resident login layout failed (%s): %s", reason, e)
+        _ = (reason, user_initiated)
+        return
 
     async def _warmup_resident_gpt_mode(self) -> None:
-        """Warm up Copilot in resident mode without showing UI until needed."""
+        """Resident startup warmup (local AI only)."""
         if self._shutdown_requested:
             return
-
         if self._resident_startup_active:
             return
 
@@ -2378,99 +2037,13 @@ class YakuLingoApp:
             if not self._ensure_translation_service():
                 self._resident_startup_error = "translation_service_init_failed"
                 return
-
-            if (
-                self._early_connection_event is not None
-                and not self._early_connection_event.is_set()
-            ):
-                try:
-                    await asyncio.wait_for(
-                        asyncio.to_thread(self._early_connection_event.wait),
-                        timeout=20.0,
-                    )
-                except asyncio.TimeoutError:
-                    logger.debug("Resident warmup: early connection wait timed out")
-                except Exception as e:
-                    logger.debug("Resident warmup: early connection wait failed: %s", e)
-
-            if (
-                self._early_connection_result is None
-                and self._early_connection_result_ref is not None
-            ):
-                self._early_connection_result = self._early_connection_result_ref.value
-
-            copilot = self.copilot
-            if getattr(copilot, "_edge_layout_mode", None) != "offscreen":
-                try:
-                    copilot.set_edge_layout_mode("offscreen")
-                except Exception:
-                    pass
-            self._start_resident_taskbar_suppression_win32("warmup")
-
-            if not copilot.is_connected:
-                try:
-                    result = await asyncio.to_thread(
-                        copilot.connect,
-                        bring_to_foreground_on_login=not self._resident_mode,
-                        defer_window_positioning=True,
-                    )
-                    self._early_connection_result = result
-                except Exception as e:
-                    logger.debug("Resident warmup: Copilot connect failed: %s", e)
-                    self._resident_startup_error = str(e)
-                    return
-
-            from yakulingo.services.copilot_handler import CopilotHandler
-
-            login_required = (
-                not copilot.is_connected
-                and copilot.last_connection_error == CopilotHandler.ERROR_LOGIN_REQUIRED
-            )
-            if login_required:
-                await self._show_resident_login_prompt("startup")
-
-            if self._shutdown_requested:
-                return
-            if (
-                not copilot.is_connected
-                and copilot.last_connection_error != CopilotHandler.ERROR_LOGIN_REQUIRED
-            ):
-                return
-
-            ready = await self._wait_for_copilot_ready()
-            if not ready:
-                self._resident_startup_error = "timeout"
-                return
-
-            try:
-                await self._ensure_gpt_mode_setup()
-            except Exception as e:
-                logger.debug("Resident warmup: GPT mode setup failed: %s", e)
-
-            if sys.platform == "win32":
-                try:
-                    copilot.set_edge_layout_mode("offscreen")
-                    await asyncio.to_thread(copilot._position_edge_offscreen)
-                except Exception as e:
-                    logger.debug("Resident warmup: Edge offscreen move failed: %s", e)
-
-            prompt_ready = False
-            try:
-                prompt_ready = await asyncio.to_thread(
-                    copilot.wait_for_prompt_ready,
-                    RESIDENT_STARTUP_PROMPT_READY_TIMEOUT_SEC,
-                )
-            except Exception as e:
-                logger.debug("Resident warmup: prompt readiness check failed: %s", e)
-
-            if not prompt_ready:
-                self._resident_startup_error = "prompt_timeout"
+            ok = await self._ensure_local_ai_ready_async()
+            if not ok:
+                self._resident_startup_error = self.state.local_ai_error or "local_ai"
                 return
             self._resident_startup_prompt_ready = True
-
             self._resident_startup_ready = True
-            if self._resident_mode:
-                self._resident_login_required = False
+            self._resident_login_required = False
             self._refresh_status()
             self._refresh_translate_button_state()
         finally:
@@ -2981,21 +2554,10 @@ class YakuLingoApp:
                                 "Failed to request UI open for hotkey (early): %s", e
                             )
 
-            preserve_edge = open_ui and source_hwnd is None
             focus_source = not bring_ui_to_front
-            edge_layout_mode = "offscreen"
+            edge_layout_mode = "auto"
             layout_result: bool | None = None
             if sys.platform == "win32" and open_ui:
-                try:
-                    self.copilot.set_hotkey_layout_active(
-                        True, preserve_edge=preserve_edge
-                    )
-                except Exception as e:
-                    logger.debug("Failed to set hotkey layout active: %s", e)
-                try:
-                    self.copilot.set_edge_layout_mode("offscreen")
-                except Exception as e:
-                    logger.debug("Failed to set Edge layout mode: %s", e)
                 _maybe_start_background_translation()
                 try:
                     layout_result = await asyncio.to_thread(
@@ -3055,9 +2617,7 @@ class YakuLingoApp:
                     elif should_bring_to_front:
                         if bring_ui_to_front or not layout_result:
                             try:
-                                brought_to_front = await self._bring_window_to_front(
-                                    position_edge=not preserve_edge
-                                )
+                                brought_to_front = await self._bring_window_to_front()
                             except Exception as e:
                                 logger.debug(
                                     "Failed to bring window to front for hotkey: %s", e
@@ -3080,9 +2640,7 @@ class YakuLingoApp:
                                         )
                 else:
                     try:
-                        brought_to_front = await self._bring_window_to_front(
-                            position_edge=not preserve_edge
-                        )
+                        brought_to_front = await self._bring_window_to_front()
                     except Exception as e:
                         logger.debug(
                             "Failed to bring window to front for hotkey: %s", e
@@ -3299,11 +2857,6 @@ class YakuLingoApp:
             # Trigger translation
             await self._translate_text()
         finally:
-            if sys.platform == "win32" and open_ui and self._copilot is not None:
-                try:
-                    self._copilot.set_hotkey_layout_active(False)
-                except Exception as e:
-                    logger.debug("Failed to clear hotkey layout active: %s", e)
             self._hotkey_translation_active = False
             if self._active_translation_trace_id == trace_id:
                 self._active_translation_trace_id = None
@@ -6518,10 +6071,6 @@ class YakuLingoApp:
                 source_hwnd = self._last_hotkey_source_hwnd
                 if self._hotkey_translation_active:
                     hotkey_layout_active = True
-                elif self._copilot and getattr(
-                    self._copilot, "_hotkey_layout_active", False
-                ):
-                    hotkey_layout_active = True
             except Exception:
                 hotkey_layout_active = False
 
@@ -6680,178 +6229,26 @@ class YakuLingoApp:
         )
 
     async def _ensure_gpt_mode_setup(self) -> None:
-        """Ensure GPT mode setup has finished (set or attempts exhausted)."""
-        if self._shutdown_requested:
-            return
-
-        copilot = self._copilot
-        if copilot is None or not copilot.is_connected:
-            return
-
-        if self._gpt_mode_setup_task is None or self._gpt_mode_setup_task.done():
-            self._gpt_mode_setup_task = asyncio.create_task(self._run_gpt_mode_setup())
-            self._refresh_status()
-
-        try:
-            await self._gpt_mode_setup_task
-        except asyncio.CancelledError:
-            raise
-        except Exception as e:
-            logger.debug("GPT mode setup task failed: %s", e)
+        """(互換用) 旧CopilotのGPTモード準備。現在はローカルAIのみ。"""
+        return
 
     async def _run_gpt_mode_setup(self) -> None:
-        copilot = self._copilot
-        if copilot is None or not copilot.is_connected:
-            return
-        try:
-            await asyncio.to_thread(copilot.wait_for_gpt_mode_setup, 25.0)
-        except Exception as e:
-            logger.debug("GPT mode setup failed: %s", e)
-        finally:
-            if self._shutdown_requested:
-                return
-            # Refresh status/button after GPT mode attempt completes (prevents stale "準備中...").
-            self._refresh_status()
-            self._refresh_translate_button_state()
+        return
 
     async def start_edge_and_connect(self):
-        """Start Edge and connect to browser in background (non-blocking).
-        Login state is NOT checked here - only browser connection.
-        Note: This is kept for compatibility but wait_for_edge_connection is preferred."""
-        # Initialize TranslationService immediately (doesn't need connection)
+        """(互換用) 旧Copilot接続。現在はローカルAIのみ。"""
         if not self._ensure_translation_service():
             return
-
-        # Small delay to let UI render first
-        await asyncio.sleep(0.05)
-
-        # Reset connection state to indicate active connection attempt
-        from yakulingo.services.copilot_handler import CopilotHandler
-
-        self.copilot.last_connection_error = CopilotHandler.ERROR_NONE
-        self._refresh_status()
-
-        # Connect to browser (starts Edge if needed, doesn't check login state)
-        # connect() now runs in dedicated Playwright thread via PlaywrightThreadExecutor
-        try:
-            success = await asyncio.to_thread(
-                self.copilot.connect,
-                bring_to_foreground_on_login=not self._resident_mode,
-            )
-
-            if success:
-                self._refresh_status()
-                await self._ensure_gpt_mode_setup()
-                # Notify user without changing window z-order to avoid flicker
-                await self._on_browser_ready(bring_to_front=False)
-            else:
-                # Connection failed - refresh status to show error
-                self._refresh_status()
-                # ログイン必要な場合はポーリングを開始
-                await self._start_login_polling_if_needed()
-        except Exception as e:
-            # Connection failed - refresh status to show error
-            logger.debug("Background connection failed: %s", e)
-            self._refresh_status()
+        await self._ensure_local_ai_ready_async()
 
     async def _start_login_polling_if_needed(self):
-        """ログインが必要な場合にポーリングを開始する。"""
-        if self._shutdown_requested:
-            return
-        from yakulingo.services.copilot_handler import CopilotHandler
-
-        if self.copilot.last_connection_error == CopilotHandler.ERROR_LOGIN_REQUIRED:
-            await self._show_resident_login_prompt("polling")
-            if not self._login_polling_active:
-                self._login_polling_task = _create_logged_task(
-                    self._wait_for_login_completion(),
-                    name="login_polling",
-                )
+        return
 
     def _ensure_copilot_window_monitor(self) -> None:
-        """Start background monitor to detect Copilot window closure.
-
-        Note: The Copilot Edge window can close (crash/update/user action) while the UI is still
-        open. Shutting down the whole app makes long-running use fragile, so we treat it as a
-        recoverable disconnect and let the user reconnect when needed.
-        """
-        if self._copilot_window_monitor_task is not None:
-            if not self._copilot_window_monitor_task.done():
-                return
-        self._copilot_window_monitor_task = _create_logged_task(
-            self._monitor_copilot_window(),
-            name="copilot_window_monitor",
-        )
+        return
 
     async def _monitor_copilot_window(self) -> None:
-        """Watch for the Edge Copilot window closing and mark Copilot as disconnected."""
-        missing_checks = 0
-        while not self._shutdown_requested:
-            await asyncio.sleep(1.0)
-            if self._shutdown_requested:
-                return
-            if self._copilot is None:
-                continue
-            try:
-                window_open = self._copilot.is_edge_window_open()
-            except Exception as e:
-                logger.debug("Copilot window monitor failed to check window: %s", e)
-                continue
-            if window_open:
-                self._copilot_window_seen = True
-                missing_checks = 0
-                continue
-            if not self._copilot_window_seen:
-                continue
-            missing_checks += 1
-            if missing_checks < 3:
-                continue
-            copilot = self._copilot
-            if copilot is None:
-                return
-
-            missing_checks = 0
-            self._copilot_window_seen = False
-
-            logger.warning(
-                "Copilot Edge window closed; marking as disconnected (service stays alive)"
-            )
-
-            try:
-                from yakulingo.services.copilot_handler import CopilotHandler
-
-                copilot.last_connection_error = CopilotHandler.ERROR_EDGE_NOT_FOUND
-            except Exception:
-                pass
-
-            def _disconnect_safely() -> None:
-                try:
-                    with self._copilot_lock:
-                        copilot.disconnect(keep_browser=False)
-                except Exception as e:
-                    logger.debug("Copilot disconnect after window close failed: %s", e)
-
-            try:
-                await asyncio.to_thread(_disconnect_safely)
-            except Exception as e:
-                logger.debug("Copilot disconnect thread failed: %s", e)
-
-            with self._client_lock:
-                client = self._client
-            if client is not None:
-                try:
-                    if getattr(client, "has_socket_connection", True):
-                        with client:
-                            ui.notify(
-                                "Copilot のブラウザが閉じました。必要に応じて再接続してください。",
-                                type="warning",
-                                position="bottom-right",
-                                timeout=5000,
-                            )
-                            self._batch_refresh({"status"})
-                except Exception as e:
-                    logger.debug("Copilot window closed notification failed: %s", e)
-            continue
+        return
 
     async def _on_browser_ready(self, bring_to_front: bool = False):
         """Called when browser connection is ready. Optionally brings app to front."""
@@ -6901,254 +6298,18 @@ class YakuLingoApp:
         )
 
     async def _wait_for_login_completion(self):
-        """ログイン完了をバックグラウンドでポーリング待機。
-
-        ログインが必要な状態になった時に呼び出され、ユーザーがEdgeでログインするのを待つ。
-        ログイン完了を検出したら、自動でアプリを前面に戻して通知する。
-        """
-        if self._login_polling_active or self._shutdown_requested:
-            logger.debug(
-                "Login polling skipped: active=%s, shutdown=%s",
-                self._login_polling_active,
-                self._shutdown_requested,
-            )
-            return
-
-        self._login_polling_active = True
-        polling_interval = 2  # 秒（より迅速に状態変化を検出）
-        max_wait_time = COPILOT_LOGIN_TIMEOUT
-        elapsed = 0
-
-        logger.info(
-            "Starting login completion polling (interval %ds, max %ds)",
-            polling_interval,
-            max_wait_time,
-        )
-
-        try:
-            from yakulingo.services.copilot_handler import (
-                ConnectionState as CopilotConnectionState,
-            )
-
-            consecutive_errors = 0
-            max_consecutive_errors = 3  # 連続エラー3回でポーリング終了
-
-            while elapsed < max_wait_time and not self._shutdown_requested:
-                await asyncio.sleep(polling_interval)
-                elapsed += polling_interval
-
-                # Check for shutdown request after sleep
-                if self._shutdown_requested:
-                    logger.debug("Login polling cancelled by shutdown")
-                    return
-
-                # 状態確認（タイムアウト5秒でセレクタを検索）
-                state = await asyncio.to_thread(
-                    self.copilot.check_copilot_state,
-                    5,  # 5秒タイムアウト
-                )
-
-                # ブラウザ/ページがクローズされた場合は早期終了
-                if state == CopilotConnectionState.ERROR:
-                    consecutive_errors += 1
-                    if consecutive_errors >= max_consecutive_errors:
-                        logger.info(
-                            "Login polling stopped: browser/page closed "
-                            "(%d consecutive errors)",
-                            consecutive_errors,
-                        )
-                        return
-                else:
-                    consecutive_errors = 0  # エラー以外の状態でリセット
-
-                logger.info("Login polling: state=%s, elapsed=%.0fs", state, elapsed)
-
-                if state == CopilotConnectionState.READY:
-                    # ログインURL検出 → ページ読み込み完了を待機
-                    # URLが /chat になってもページ読み込みが完了していない可能性があるため
-                    logger.info("Login URL detected, waiting for page load...")
-
-                    # ページの読み込み完了を待機（3秒）
-                    await asyncio.to_thread(self.copilot.wait_for_page_load)
-
-                    # ページ読み込み待機完了 → 接続状態を更新
-                    logger.info("Login completed, updating connection state")
-                    self.copilot._connected = True
-                    from yakulingo.services.copilot_handler import CopilotHandler
-
-                    # Use explicit constant to reflect successful login
-                    self.copilot.last_connection_error = CopilotHandler.ERROR_NONE
-                    if self._resident_mode:
-                        self._resident_login_required = False
-
-                    auto_hide_candidates = (
-                        self._auto_open_cause
-                        in (AutoOpenCause.STARTUP, AutoOpenCause.LOGIN)
-                        or self._login_auto_hide_pending
-                    )
-                    manual_block = (
-                        self._manual_show_requested or self._login_auto_hide_blocked
-                    )
-                    native_mode_enabled = bool(self._native_mode_enabled)
-                    browser_auto_hide = (
-                        not native_mode_enabled
-                        and sys.platform == "win32"
-                        and (
-                            self._login_auto_hide_pending
-                            or self._auto_open_cause == AutoOpenCause.LOGIN
-                        )
-                    )
-                    should_auto_hide = (
-                        self._resident_mode
-                        and auto_hide_candidates
-                        and not manual_block
-                        and (native_mode_enabled or browser_auto_hide)
-                    )
-                    auto_hide_reasons: list[str] = []
-                    if self._auto_open_cause in (
-                        AutoOpenCause.STARTUP,
-                        AutoOpenCause.LOGIN,
-                    ):
-                        auto_hide_reasons.append(
-                            f"auto_open:{self._auto_open_cause.value}"
-                        )
-                    if self._login_auto_hide_pending:
-                        auto_hide_reasons.append("login_pending")
-                    if manual_block:
-                        auto_hide_reasons.append("manual_block")
-                    if not self._resident_mode:
-                        auto_hide_reasons.append("not_resident")
-                    if not native_mode_enabled and not browser_auto_hide:
-                        auto_hide_reasons.append("native_disabled")
-                    if browser_auto_hide:
-                        auto_hide_reasons.append("browser_auto_hide")
-                    logger.info(
-                        "Login auto-hide decision: hide=%s (reasons=%s, auto_open_cause=%s, "
-                        "auto_open_timeout=%s, manual_show=%s, hotkey=%s, login_pending=%s)",
-                        should_auto_hide,
-                        ",".join(auto_hide_reasons) or "none",
-                        self._auto_open_cause.value
-                        if self._auto_open_cause
-                        else "none",
-                        self._auto_open_timeout_task is not None,
-                        self._manual_show_requested,
-                        self._auto_open_cause == AutoOpenCause.HOTKEY
-                        or self._hotkey_translation_active,
-                        self._login_auto_hide_pending,
-                    )
-
-                    # Hide Edge window once login completes
-                    await asyncio.to_thread(self.copilot.send_to_background)
-                    if should_auto_hide:
-                        self._resident_show_requested = False
-                        if sys.platform == "win32":
-                            self._hide_resident_window_win32("login_complete")
-                    self._login_auto_hide_pending = False
-                    self._login_auto_hide_blocked = False
-
-                    if self._client and not self._shutdown_requested:
-                        with self._client:
-                            self._refresh_status()
-
-                    # Reset GPT mode flag on re-login (session was reset, mode setting is lost)
-                    # This ensures ensure_gpt_mode() will actually run
-                    self.copilot.reset_gpt_mode_state()
-                    await self._ensure_gpt_mode_setup()
-
-                    if not self._shutdown_requested:
-                        await self._on_browser_ready(
-                            bring_to_front=not should_auto_hide
-                        )
-                    return
-
-            # タイムアウト（翻訳ボタン押下時に再試行される）
-            if not self._shutdown_requested:
-                logger.info("Login polling timed out after %ds", max_wait_time)
-        except asyncio.CancelledError:
-            logger.debug("Login polling task cancelled")
-        except Exception as e:
-            logger.debug("Login polling error: %s", e)
-        finally:
-            self._login_polling_active = False
-            self._login_polling_task = None
-            self._clear_auto_open_cause("login_polling_end")
+        """(互換用) 旧Copilotログイン待ち。現在はローカルAIのみ。"""
+        self._login_polling_active = False
+        self._login_polling_task = None
+        return
 
     async def _show_login_browser(self, reason: str = "ui_login_banner") -> None:
-        """ログイン用にEdgeを前面表示する（UIボタン用）。"""
-        if self._shutdown_requested:
-            return
-
-        if self._resident_mode:
-            await self._show_resident_login_prompt(reason, user_initiated=True)
-        else:
-            copilot = self._copilot
-            if copilot is None:
-                if self._client:
-                    with self._client:
-                        ui.notify(
-                            "Copilotが起動していません。再接続してください。",
-                            type="warning",
-                            position="top",
-                            timeout=4000,
-                        )
-                return
-
-            try:
-                await asyncio.to_thread(
-                    copilot.bring_to_foreground,
-                    reason=f"login prompt: {reason}",
-                )
-            except Exception as e:
-                logger.debug("Failed to bring Edge to foreground: %s", e)
-                if self._client:
-                    with self._client:
-                        ui.notify(
-                            "Edgeを前面表示できませんでした。",
-                            type="warning",
-                            position="top",
-                            timeout=4000,
-                        )
+        _ = reason
+        return
 
     async def _show_copilot_browser(self, reason: str = "ui_manual_show") -> None:
-        """CopilotのEdge画面を前面表示する（手動表示用）。"""
-        if self._shutdown_requested:
-            return
-
-        copilot = self._copilot
-        if copilot is None:
-            if self._client:
-                with self._client:
-                    ui.notify(
-                        "Copilotが起動していません。再接続してください。",
-                        type="warning",
-                        position="top",
-                        timeout=4000,
-                    )
-            return
-
-        try:
-            shown = await asyncio.to_thread(
-                copilot.show_copilot_browser,
-                reason,
-            )
-            if not shown and self._client:
-                with self._client:
-                    ui.notify(
-                        "Edgeを前面表示できませんでした。",
-                        type="warning",
-                        position="top",
-                        timeout=4000,
-                    )
-        except Exception as e:
-            logger.debug("Failed to show Copilot browser: %s", e)
-            if self._client:
-                with self._client:
-                    ui.notify(
-                        "Edgeを前面表示できませんでした。",
-                        type="warning",
-                        position="top",
-                        timeout=4000,
-                    )
+        _ = reason
+        return
 
     async def _reconnect(self, max_retries: int = 3, show_progress: bool = True):
         """(互換用) 旧Copilot再接続。現在はローカルAIのみ。"""
@@ -10883,20 +10044,17 @@ class YakuLingoApp:
                 prompt = prompt.replace("{reference_section}", reference_section)
 
                 if not error_message:
-                    # Send to Copilot with reference files attached
-                    if self.translation_service:
+                    result = ""
+                    if self.translation_service is None and not self._ensure_translation_service():
+                        error_message = "翻訳サービスの初期化に失敗しました"
+                    service = self.translation_service
+                    if not error_message and service is not None:
                         result = await asyncio.to_thread(
-                            self.translation_service._translate_single_with_cancel,
+                            service._translate_single_with_cancel,
                             text,
                             prompt,
                             reference_files if reference_files else None,
                             stream_handler,
-                        )
-                    else:
-                        result = await asyncio.to_thread(
-                            lambda: self.copilot.translate_single(
-                                text, prompt, reference_files, stream_handler
-                            )
                         )
 
                     # Parse result and store on the option
@@ -11223,20 +10381,6 @@ class YakuLingoApp:
 
         # Perform initialization (dialog is shown by caller)
         try:
-            # Step 1: Disconnect Copilot to avoid conflicts with PaddlePaddle
-            # Use keep_browser=True to preserve the Edge session for reconnection
-            # This avoids requiring re-login after PP-DocLayout-L initialization
-            was_connected = self.copilot.is_connected
-            if was_connected:
-                logger.info(
-                    "Disconnecting Copilot before PP-DocLayout-L initialization..."
-                )
-                await asyncio.to_thread(
-                    lambda: self.copilot.disconnect(keep_browser=True)
-                )
-
-            # Step 2: Initialize PP-DocLayout-L and pre-initialize Playwright in parallel
-            # This saves ~1.5s by starting Playwright initialization during model loading
             logger.info("Initializing PP-DocLayout-L on-demand...")
 
             def _prewarm_layout_model_in_thread() -> bool:
@@ -11258,35 +10402,7 @@ class YakuLingoApp:
                     self._layout_init_state = LayoutInitializationState.FAILED
                     logger.warning("PP-DocLayout-L initialization failed: %s", e)
 
-            async def _prewarm_playwright():
-                """Pre-initialize Playwright in background during layout model init."""
-                if not was_connected:
-                    return
-                try:
-
-                    def _pre_initialize_playwright_in_thread() -> None:
-                        from yakulingo.services.copilot_handler import (
-                            pre_initialize_playwright,
-                        )
-
-                        pre_initialize_playwright()
-
-                    await asyncio.to_thread(_pre_initialize_playwright_in_thread)
-                    logger.debug("Playwright pre-initialized during layout init")
-                except Exception as e:
-                    logger.debug(
-                        "Playwright pre-init failed (will retry on reconnect): %s", e
-                    )
-
-            # Run layout init and Playwright pre-init in parallel
-            await asyncio.gather(_init_layout(), _prewarm_playwright())
-
-            # Step 3: Reconnect Copilot (uses pre-initialized Playwright if available)
-            if was_connected:
-                logger.info(
-                    "Reconnecting Copilot after PP-DocLayout-L initialization..."
-                )
-                await self._reconnect(max_retries=3, show_progress=False)
+            await _init_layout()
 
             return True
 
@@ -11710,7 +10826,7 @@ class YakuLingoApp:
         async def worker() -> None:
             try:
                 service = TranslationService(
-                    self.copilot,
+                    object(),
                     self.settings,
                     get_default_prompts_dir(),
                     copilot_lock=self._copilot_lock,
@@ -12855,116 +11971,10 @@ def run_app(
             )
             native = False
 
-    # ローカルAIのみ: Edge/Copilot の早期起動/Playwright事前初期化は行わない
-    allow_early_connect = False
-    allow_playwright_preinit = False
-
     shutdown_event = threading.Event()
     tray_icon = None
 
-    # Playwright pre-initialization (parallel)
-    # Early Edge startup: Start Edge browser BEFORE NiceGUI import
-    # This allows Copilot page to load during NiceGUI import (~2.6s) and display_settings (~1.2s)
-    # Result: GPT mode button should be ready when we need it (saving ~3-4s)
-    _early_copilot = None
-    _early_connect_thread = None
-    _early_edge_thread = None
-    _early_connection_event = None
-    _early_connection_result_ref = None
-    _early_connect_fn = None
-
-    if allow_early_connect:
-        try:
-            # NOTE:
-            # - Edge can be started before NiceGUI import (cheap).
-            # - Playwright (Node.js server) startup is I/O heavy on Windows and can
-            #   dramatically slow down NiceGUI import when run in parallel (AV scan).
-            #   We therefore start Playwright initialization AFTER NiceGUI import.
-            from yakulingo.services.copilot_handler import CopilotHandler
-
-            patch_marker = _NICEGUI_NATIVE_PATCH_APPLIED or not native
-            _early_copilot = CopilotHandler(native_patch_applied=patch_marker)
-            _early_connection_event = threading.Event()
-            _early_connection_result_ref = _EarlyConnectionResult()
-
-            # Start Edge early (no Playwright required).
-            # Edge startup uses subprocess.Popen, which doesn't require Playwright
-            # connect() will skip Edge startup if it's already running on the CDP port
-            def _start_edge_early():
-                try:
-                    if shutdown_event.is_set():
-                        return
-                    _t_edge = time.perf_counter()
-                    result = _early_copilot.start_edge()
-                    logger.info(
-                        "[TIMING] Early Edge startup (parallel): %.2fs, success=%s",
-                        time.perf_counter() - _t_edge,
-                        result,
-                    )
-                except Exception as e:
-                    logger.debug("Early Edge startup failed: %s", e)
-
-            _early_edge_thread = threading.Thread(
-                target=_start_edge_early, daemon=True, name="early_edge"
-            )
-            _early_edge_thread.start()
-            logger.info(
-                "[TIMING] Started early Edge startup (parallel with NiceGUI import)"
-            )
-
-            # Start Copilot connection in background thread
-            # NOTE: Actual thread start is deferred until after NiceGUI import to avoid
-            # I/O contention between Playwright and NiceGUI import on Windows.
-            def _early_connect():
-                """Connect to Copilot in background (after NiceGUI import)."""
-                try:
-                    if shutdown_event.is_set():
-                        return
-                    _t_early = time.perf_counter()
-
-                    # Wait for early Edge startup to complete before connecting
-                    # This ensures Edge is running when connect() checks _is_port_in_use()
-                    # Prevents race condition if Edge startup is slower than Playwright init
-                    if _early_edge_thread is not None and _early_edge_thread.is_alive():
-                        logger.debug("Waiting for early Edge startup to complete...")
-                        _early_edge_thread.join(timeout=20.0)  # Max Edge startup time
-                        logger.debug("Early Edge startup thread completed")
-
-                    if shutdown_event.is_set():
-                        return
-
-                    # Use defer_window_positioning=True to skip waiting for YakuLingo window
-                    # Window positioning will be done after YakuLingo window is created
-                    result = _early_copilot.connect(
-                        bring_to_foreground_on_login=False,
-                        defer_window_positioning=True,
-                    )
-                    if _early_connection_result_ref is not None:
-                        _early_connection_result_ref.value = result
-                    if result:
-                        try:
-                            _early_copilot.wait_for_gpt_mode_setup(25.0)
-                        except Exception as e:
-                            logger.debug("Early GPT mode setup failed: %s", e)
-                    logger.info(
-                        "[TIMING] Early Copilot connect (background): %.2fs, success=%s",
-                        time.perf_counter() - _t_early,
-                        result,
-                    )
-                except Exception as e:
-                    logger.debug("Early Copilot connection failed: %s", e)
-                    if _early_connection_result_ref is not None:
-                        _early_connection_result_ref.value = False
-                finally:
-                    if _early_connection_event is not None:
-                        _early_connection_event.set()
-
-            _early_connect_fn = _early_connect
-        except Exception as e:
-            logger.debug("Failed to start Playwright/Edge pre-initialization: %s", e)
-
     # Import NiceGUI (deferred from module level for ~6s faster startup)
-    # During this import, Edge is starting and Copilot page is loading in background
     global nicegui, ui, nicegui_app, nicegui_Client
     _t_nicegui_import = time.perf_counter()
     import nicegui as _nicegui
@@ -12988,33 +11998,6 @@ def run_app(
         "[TIMING] NiceGUI import total: %.2fs", time.perf_counter() - _t_nicegui_import
     )
 
-    # Start Playwright initialization + Copilot connection AFTER NiceGUI import to reduce
-    # Windows startup I/O contention (antivirus scanning).
-    if allow_playwright_preinit:
-        try:
-            from yakulingo.services.copilot_handler import pre_initialize_playwright
-        except Exception as e:
-            logger.debug("Playwright pre-initialization unavailable: %s", e)
-        else:
-            try:
-                pre_initialize_playwright()
-            except Exception as e:
-                logger.debug("Playwright pre-initialization failed: %s", e)
-
-    if (
-        allow_early_connect
-        and _early_copilot is not None
-        and _early_connect_fn is not None
-    ):
-        try:
-            _early_connect_thread = threading.Thread(
-                target=_early_connect_fn, daemon=True, name="early_connect"
-            )
-            _early_connect_thread.start()
-            logger.info("[TIMING] Started early Copilot connection (background thread)")
-        except Exception as e:
-            logger.debug("Failed to start early Copilot connection thread: %s", e)
-
     # Validate NiceGUI version after import
     _ensure_nicegui_version()
 
@@ -13023,8 +12006,6 @@ def run_app(
     if native:
         _patch_nicegui_native_mode()
         logger.info("Native mode patch applied: %s", _NICEGUI_NATIVE_PATCH_APPLIED)
-        if _early_copilot is not None:
-            _early_copilot.set_native_patch_applied(_NICEGUI_NATIVE_PATCH_APPLIED)
 
     # Set Windows AppUserModelID for correct taskbar icon
     # Without this, Windows uses the default Python icon instead of YakuLingo icon
@@ -13056,14 +12037,6 @@ def run_app(
             delay_sec=0.05,
         )
     logger.info("[TIMING] create_app: %.2fs", time.perf_counter() - _t1)
-
-    # Pass early-created CopilotHandler to avoid creating a new one
-    if _early_copilot is not None:
-        yakulingo_app._copilot = _early_copilot
-        yakulingo_app._early_connect_thread = _early_connect_thread
-        yakulingo_app._early_connection_event = _early_connection_event
-        yakulingo_app._early_connection_result_ref = _early_connection_result_ref
-        logger.debug("Using early-created CopilotHandler instance")
 
     # Detect optimal window size BEFORE ui.run() to avoid resize flicker
     # Fallback to browser mode when pywebview cannot create a native window (e.g., headless Linux)
@@ -13114,11 +12087,6 @@ def run_app(
     native_frameless = bool(native and sys.platform == "win32")
     yakulingo_app._native_mode_enabled = native
     yakulingo_app._native_frameless = native_frameless
-    patch_marker = _NICEGUI_NATIVE_PATCH_APPLIED or not native
-    if _early_copilot is not None:
-        _early_copilot.set_native_patch_applied(patch_marker)
-    if yakulingo_app._copilot is not None:
-        yakulingo_app._copilot.set_native_patch_applied(patch_marker)
     if native:
         # Pass pre-initialized webview module to avoid second initialization
         window_size, panel_sizes = _detect_display_settings(
@@ -13584,14 +12552,6 @@ def run_app(
         # Set shutdown flag FIRST to prevent new tasks from starting
         yakulingo_app._shutdown_requested = True
 
-        # Cancel login wait IMMEDIATELY (before other cancellations)
-        # This sets _login_cancelled flag to break out of wait loops faster
-        if yakulingo_app._copilot is not None:
-            try:
-                yakulingo_app._copilot.cancel_login_wait()
-            except Exception:
-                pass
-
         # Cancel all pending operations (non-blocking, just flag settings)
         step_start = time_module.time()
         if yakulingo_app._active_progress_timer is not None:
@@ -13764,18 +12724,6 @@ def run_app(
             "[TIMING] Hotkey/clipboard stop: %.2fs", time_module.time() - step_start
         )
 
-        # Force disconnect from Copilot (the main time-consuming step)
-        step_start = time_module.time()
-        if yakulingo_app._copilot is not None:
-            try:
-                yakulingo_app._copilot.force_disconnect()
-                logger.debug(
-                    "[TIMING] Copilot disconnected: %.2fs",
-                    time_module.time() - step_start,
-                )
-            except Exception as e:
-                logger.debug("Error disconnecting Copilot: %s", e)
-
         # Stop local llama-server if it is ours (safe check inside manager).
         step_start = time_module.time()
         try:
@@ -13809,7 +12757,6 @@ def run_app(
         logger.debug("[TIMING] PDF cache clear: %.2fs", time_module.time() - step_start)
 
         # Clear references (helps GC but don't force gc.collect - it's slow)
-        yakulingo_app._copilot = None
         yakulingo_app.translation_service = None
         yakulingo_app._login_polling_task = None
         yakulingo_app._status_auto_refresh_task = None
@@ -14378,16 +13325,6 @@ def run_app(
             else:
                 layout_value = "auto"
                 edge_layout_mode = None
-
-            if (
-                edge_layout_mode is not None
-                and sys.platform == "win32"
-                and yakulingo_app._copilot is not None
-            ):
-                try:
-                    yakulingo_app.copilot.set_edge_layout_mode(edge_layout_mode)
-                except Exception as err:
-                    logger.debug("Failed to set Edge layout mode: %s", err)
 
             try:
                 layout_result = await asyncio.to_thread(

@@ -207,39 +207,6 @@ DEFAULT_TO_JP_TEMPLATE = """## ファイル翻訳リクエスト（日本語へ�
 """
 
 # Fallback templates for text translation (used when text_translate_*.txt don't exist)
-DEFAULT_TEXT_TO_EN_TEMPLATE = """## テキスト翻訳リクエスト
-
-日本語をビジネス文書向けの英語に翻訳してください。
-
-### 翻訳ガイドライン
-- 自然で読みやすい英語
-- 既に英語の場合はそのまま出力
-- 原文の改行・タブ・段落構造をそのまま維持する
-
-{translation_rules}
-
-### 出力形式
-訳文: 英語翻訳
-
-解説:
-- 原文の表現がどう訳されたか、注意すべき語句の対応を具体的に説明（見出し・ラベルなし）
-
-解説は日本語で簡潔に書いてください。
-
-### 禁止事項（絶対に出力しないこと）
-- 「続けますか？」「他にありますか？」などの質問
-- 「〜も翻訳できます」「必要なら〜」などの提案
-- プロンプトの指示をそのまま繰り返すような補足（例：「数値はoku変換済み」「略語を使用」「簡潔化した」など）
-- 訳文と解説以外のテキスト
-
-{reference_section}
-
----
-
-以下のテキストを翻訳してください:
-{input_text}
-"""
-
 DEFAULT_TEXT_TO_EN_COMPARE_TEMPLATE = """## Text Translation Request (Minimal)
 Translate the Japanese text into minimal, business-ready English.
 
@@ -516,16 +483,6 @@ class PromptBuilder:
         ]
         return "\n\n".join([part for part in parts if part])
 
-    def get_translation_rules_path(self) -> Optional[Path]:
-        """Get the path to translation_rules.txt file.
-
-        Returns:
-            Path to translation_rules.txt if prompts_dir is set, None otherwise
-        """
-        if self.prompts_dir:
-            return self.prompts_dir / "translation_rules.txt"
-        return None
-
     def reload_translation_rules(self) -> None:
         """Reload translation rules from file.
 
@@ -731,37 +688,3 @@ class PromptBuilder:
         if reference_files:
             return REFERENCE_INSTRUCTION
         return ""
-
-    def parse_batch_result(self, result: str, expected_count: int) -> list[str]:
-        """
-        Parse batch translation result back to list.
-
-        Args:
-            result: Raw result string from Copilot
-            expected_count: Expected number of translations
-
-        Returns:
-            List of translated texts
-        """
-        lines = result.strip().split("\n")
-        translations = []
-
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-
-            # Remove numbering prefix (e.g., "1. ", "2. ")
-            match = re.match(r"^\d+\.\s*(.+)$", line)
-            if match:
-                text = match.group(1)
-            else:
-                text = line
-
-            translations.append(text)
-
-        # Pad with empty strings if needed
-        while len(translations) < expected_count:
-            translations.append("")
-
-        return translations[:expected_count]

@@ -1133,7 +1133,8 @@ from yakulingo.models.types import (
     ProgressCallback,
 )
 from yakulingo.config.settings import AppSettings
-from yakulingo.services.copilot_handler import CopilotHandler, TranslationCancelledError
+from yakulingo.services.copilot_handler import CopilotHandler
+from yakulingo.services.exceptions import TranslationCancelledError
 from yakulingo.services.prompt_builder import (
     PromptBuilder,
     REFERENCE_INSTRUCTION,

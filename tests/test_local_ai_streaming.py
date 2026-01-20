@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from yakulingo.config.settings import AppSettings
-from yakulingo.services.copilot_handler import TranslationCancelledError
+from yakulingo.services.exceptions import TranslationCancelledError
 from yakulingo.services.local_ai_client import LocalAIClient
 from yakulingo.services.translation_service import _wrap_local_streaming_on_chunk
 from yakulingo.services.translation_service import TEXT_STYLE_ORDER

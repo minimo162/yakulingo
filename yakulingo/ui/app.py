@@ -11338,7 +11338,7 @@ class YakuLingoApp:
                 )
 
             def translate_chunks() -> TextTranslationResult:
-                from yakulingo.services.copilot_handler import TranslationCancelledError
+                from yakulingo.services.exceptions import TranslationCancelledError
 
                 chunk_results: list[TextTranslationResult] = []
                 nonlocal current_chunk_index
@@ -11476,7 +11476,7 @@ class YakuLingoApp:
             self._scroll_result_panel_to_bottom(client, force_follow=True)
             self._refresh_tabs()  # Update tab disabled state
 
-        from yakulingo.services.copilot_handler import TranslationCancelledError
+        from yakulingo.services.exceptions import TranslationCancelledError
 
         error_message = None
         detected_language = None
@@ -11744,7 +11744,7 @@ class YakuLingoApp:
 
         error_message = None
         try:
-            from yakulingo.services.copilot_handler import TranslationCancelledError
+            from yakulingo.services.exceptions import TranslationCancelledError
 
             # Yield control to event loop before starting blocking operation
             await asyncio.sleep(0)

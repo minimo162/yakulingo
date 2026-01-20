@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from yakulingo.services.copilot_handler import _strip_reference_citations
+from yakulingo.services.reference_citations import _strip_reference_citations
 
 
 def test_strip_reference_citations_removes_suffix_and_standalone_lines() -> None:

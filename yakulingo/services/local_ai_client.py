@@ -19,7 +19,7 @@ from yakulingo.services.local_llama_server import (
     LocalAIServerRuntime,
     get_local_llama_server_manager,
 )
-from yakulingo.services.copilot_handler import TranslationCancelledError
+from yakulingo.services.exceptions import TranslationCancelledError
 
 logger = logging.getLogger(__name__)
 

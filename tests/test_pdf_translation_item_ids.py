@@ -30,7 +30,7 @@ class RecordingPromptBuilder:
 
 
 class RecordingCopilot:
-    def __init__(self, responses: list[list[str]]) -> None:
+    def __init__(self, responses: list[list[str] | Exception]) -> None:
         self._responses = responses
         self.include_item_ids_calls: list[bool] = []
         self._cancel_callback: Callable[[], bool] | None = None
@@ -50,16 +50,16 @@ class RecordingCopilot:
         self.include_item_ids_calls.append(include_item_ids)
         if not self._responses:
             return [""] * len(texts)
-        return self._responses.pop(0)
+        response = self._responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
 
 
-def test_batch_translator_propagates_include_item_ids_on_split_retry() -> None:
+def test_batch_translator_propagates_include_item_ids_on_prompt_too_long_retry() -> None:
     copilot = RecordingCopilot(
         responses=[
-            [
-                "入力テキスト量が非常に多いため…どちらですか",
-                "入力テキスト量が非常に多いため…どちらですか",
-            ],
+            RuntimeError("LOCAL_PROMPT_TOO_LONG: simulated"),
             ["訳1", "訳2"],
         ]
     )
@@ -175,10 +175,12 @@ def test_translate_pdf_streaming_enables_include_item_ids(tmp_path: Path) -> Non
 
     service = TranslationService(
         copilot=object(),
-        config=AppSettings(translation_backend="copilot"),
+        config=AppSettings(translation_backend="local"),
     )
     spy = SpyBatchTranslator()
-    service.batch_translator = spy  # type: ignore[assignment]
+    service._local_client = object()  # type: ignore[assignment]
+    service._local_prompt_builder = object()  # type: ignore[assignment]
+    service._local_batch_translator = spy  # type: ignore[assignment]
 
     result = service._translate_pdf_streaming(  # type: ignore[arg-type]
         input_path=input_path,

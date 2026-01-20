@@ -1,66 +1,53 @@
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Callable
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
 from yakulingo.config.settings import AppSettings
 from yakulingo.models.types import TranslationStatus
+from yakulingo.services.local_ai_client import LocalAIClient
 from yakulingo.services.translation_service import TranslationService
 
 
-class FakeCopilotHandler:
-    """E2Eテスト用の簡易Copilotモック（外部通信なしで決定的な翻訳結果を返す）"""
+def _hash_en(text: str) -> str:
+    return f"EN:{hashlib.md5(text.encode('utf-8')).hexdigest()[:8]}"
 
-    def __init__(self) -> None:
-        self._cancel_callback: Callable[[], bool] | None = None
-        self.translate_sync_calls = 0
-        self.translate_single_calls = 0
 
-    def set_cancel_callback(self, callback: Callable[[], bool] | None) -> None:
-        self._cancel_callback = callback
+@pytest.fixture
+def local_ai_translate_sync_mock() -> dict[str, int]:
+    calls = {"count": 0}
 
-    def translate_sync(
-        self,
+    def fake_translate_sync(
+        _self: LocalAIClient,
         texts: list[str],
-        prompt: str,
-        reference_files: list[Path] | None,
-        skip_clear_wait: bool,
-        timeout: int | None = None,
-        include_item_ids: bool = False,
+        _prompt: str,
+        _reference_files: list[Path] | None,
+        _skip_clear_wait: bool,
+        **_: object,
     ) -> list[str]:
-        self.translate_sync_calls += 1
-        return [
-            f"EN:{hashlib.md5(text.encode('utf-8')).hexdigest()[:8]}" for text in texts
-        ]
+        calls["count"] += 1
+        return [_hash_en(text) for text in texts]
 
-    def translate_single(
-        self,
-        text: str,
-        prompt: str,
-        reference_files: list[Path] | None = None,
-        on_chunk: Callable[[str], None] | None = None,
-    ) -> str:
-        self.translate_single_calls += 1
-        translated = f"EN:{hashlib.md5(text.encode('utf-8')).hexdigest()[:8]}"
-        if on_chunk is not None:
-            on_chunk(translated)
-        return translated
+    with patch.object(LocalAIClient, "translate_sync", new=fake_translate_sync):
+        yield calls
 
 
 @pytest.mark.e2e
-def test_e2e_txt_translate_file_creates_outputs(tmp_path: Path) -> None:
-    copilot = FakeCopilotHandler()
-    settings = AppSettings(translation_backend="copilot")
-    service = TranslationService(copilot=copilot, config=settings)
+def test_e2e_txt_translate_file_creates_outputs(
+    tmp_path: Path, local_ai_translate_sync_mock: dict[str, int]
+) -> None:
+    settings = AppSettings(translation_backend="local")
+    service = TranslationService(copilot=object(), config=settings)
 
     input_path = tmp_path / "sample.txt"
     input_text = "これはテストです。\n\n次の段落です。"
     input_path.write_text(input_text, encoding="utf-8")
 
     result = service.translate_file(input_path, output_language="en")
+    assert local_ai_translate_sync_mock["count"] >= 1
 
     assert result.status == TranslationStatus.COMPLETED
     assert result.output_path is not None
@@ -71,16 +58,17 @@ def test_e2e_txt_translate_file_creates_outputs(tmp_path: Path) -> None:
     output_text = result.output_path.read_text(encoding="utf-8")
     paragraphs = [p.strip() for p in input_text.split("\n\n") if p.strip()]
     expected = "\n\n".join(
-        f"EN:{hashlib.md5(p.encode('utf-8')).hexdigest()[:8]}" for p in paragraphs
+        _hash_en(p) for p in paragraphs
     )
     assert output_text == expected
 
 
 @pytest.mark.e2e
-def test_e2e_txt_selected_sections_translates_only_selected(tmp_path: Path) -> None:
-    copilot = FakeCopilotHandler()
-    settings = AppSettings(translation_backend="copilot")
-    service = TranslationService(copilot=copilot, config=settings)
+def test_e2e_txt_selected_sections_translates_only_selected(
+    tmp_path: Path, local_ai_translate_sync_mock: dict[str, int]
+) -> None:
+    settings = AppSettings(translation_backend="local")
+    service = TranslationService(copilot=object(), config=settings)
 
     input_path = tmp_path / "sections.txt"
     paragraphs = ["段落1です。", "段落2です。", "段落3です。"]
@@ -90,48 +78,50 @@ def test_e2e_txt_selected_sections_translates_only_selected(tmp_path: Path) -> N
     result = service.translate_file(
         input_path, output_language="en", selected_sections=[1]
     )
+    assert local_ai_translate_sync_mock["count"] >= 1
 
     assert result.status == TranslationStatus.COMPLETED
     assert result.output_path is not None
     output_text = result.output_path.read_text(encoding="utf-8")
     assert len(result.extra_output_files) == 0
 
-    translated_second = (
-        f"EN:{hashlib.md5(paragraphs[1].encode('utf-8')).hexdigest()[:8]}"
-    )
+    translated_second = _hash_en(paragraphs[1])
     assert output_text == "\n\n".join([paragraphs[0], translated_second, paragraphs[2]])
 
 
 @pytest.mark.e2e
-def test_e2e_txt_translation_cache_skips_second_request(tmp_path: Path) -> None:
-    copilot = FakeCopilotHandler()
-    settings = AppSettings(translation_backend="copilot")
-    service = TranslationService(copilot=copilot, config=settings)
+def test_e2e_txt_translation_cache_skips_second_request(
+    tmp_path: Path, local_ai_translate_sync_mock: dict[str, int]
+) -> None:
+    settings = AppSettings(translation_backend="local")
+    service = TranslationService(copilot=object(), config=settings)
 
     input_path = tmp_path / "cache.txt"
     input_path.write_text("同じ文章です。", encoding="utf-8")
 
     result1 = service.translate_file(input_path, output_language="en")
     assert result1.status == TranslationStatus.COMPLETED
-    assert copilot.translate_sync_calls == 1
+    assert local_ai_translate_sync_mock["count"] == 1
 
     result2 = service.translate_file(input_path, output_language="en")
     assert result2.status == TranslationStatus.COMPLETED
-    assert copilot.translate_sync_calls == 1
+    assert local_ai_translate_sync_mock["count"] == 1
 
 
 @pytest.mark.e2e
-def test_e2e_txt_bilingual_and_glossary_outputs(tmp_path: Path) -> None:
-    copilot = FakeCopilotHandler()
-    settings = AppSettings(translation_backend="copilot")
+def test_e2e_txt_bilingual_and_glossary_outputs(
+    tmp_path: Path, local_ai_translate_sync_mock: dict[str, int]
+) -> None:
+    settings = AppSettings(translation_backend="local")
     settings.bilingual_output = True
     settings.export_glossary = True
-    service = TranslationService(copilot=copilot, config=settings)
+    service = TranslationService(copilot=object(), config=settings)
 
     input_path = tmp_path / "outputs.txt"
     input_path.write_text("用語集テストです。", encoding="utf-8")
 
     result = service.translate_file(input_path, output_language="en")
+    assert local_ai_translate_sync_mock["count"] >= 1
 
     assert result.status == TranslationStatus.COMPLETED
     assert result.output_path is not None and result.output_path.exists()

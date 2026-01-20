@@ -1313,17 +1313,8 @@ class BatchTranslator:
     """
 
     # Default values (used when settings not provided)
-    DEFAULT_MAX_CHARS_PER_BATCH = 1000  # Characters per batch (Copilot input safety)
-    DEFAULT_REQUEST_TIMEOUT = 600  # Default timeout for Copilot response (10 minutes)
-    _SPLIT_REQUEST_MARKERS = (
-        "入力テキスト量が非常に多いため",
-        "メッセージ上限",
-        "複数回に分割",
-        "分割して送信",
-        "ご希望は",
-        "どちらですか",
-    )
-    _SPLIT_REQUEST_MIN_MATCHES = 2
+    DEFAULT_MAX_CHARS_PER_BATCH = 1000  # Characters per batch (prompt safety)
+    DEFAULT_REQUEST_TIMEOUT = 600  # Default timeout for translation response (10 minutes)
     _SPLIT_RETRY_LIMIT = 2
     _MIN_SPLIT_BATCH_CHARS = 300
     _UNTRANSLATED_RETRY_MAX_CHARS = 800
@@ -1368,28 +1359,6 @@ class BatchTranslator:
 
         # Translation cache for avoiding re-translation of identical text
         self._cache = TranslationCache() if enable_cache else None
-
-    @contextmanager
-    def _ui_window_sync_scope(self, reason: str):
-        """翻訳中だけEdgeをUIの背面に表示する（Windowsのみ・利用可能な場合）。"""
-        copilot = getattr(self, "copilot", None)
-        scope_factory = (
-            getattr(copilot, "ui_window_sync_scope", None)
-            if copilot is not None
-            else None
-        )
-        if scope_factory is None:
-            yield
-            return
-
-        try:
-            scope = scope_factory(reason=reason)
-        except Exception:
-            yield
-            return
-
-        with scope:
-            yield
 
     def cancel(self) -> None:
         """Request cancellation of batch translation (thread-safe)."""
@@ -1559,7 +1528,6 @@ class BatchTranslator:
         )
         retry_prompt_too_long = 0
         retry_local_error = 0
-        retry_copilot_split = 0
         fallback_original_batches = 0
         local_persisted_max_chars_per_batch: Optional[int] = None
 
@@ -1795,15 +1763,14 @@ class BatchTranslator:
                         lambda: self._cancel_event.is_set()
                     )
                     try:
-                        with self._ui_window_sync_scope("translate_blocks_with_result"):
-                            unique_translations = self.copilot.translate_sync(
-                                unique_texts,
-                                prompt,
-                                files_to_attach,
-                                skip_clear_wait,
-                                timeout=self.request_timeout,
-                                include_item_ids=include_item_ids,
-                            )
+                        unique_translations = self.copilot.translate_sync(
+                            unique_texts,
+                            prompt,
+                            files_to_attach,
+                            skip_clear_wait,
+                            timeout=self.request_timeout,
+                            include_item_ids=include_item_ids,
+                        )
                     finally:
                         self.copilot.set_cancel_callback(None)
             except TranslationCancelledError:
@@ -1914,52 +1881,6 @@ class BatchTranslator:
                     continue
                 raise
 
-            if self._looks_like_split_request(unique_translations):
-                if (
-                    _split_retry_depth < self._SPLIT_RETRY_LIMIT
-                    and batch_char_limit > self._MIN_SPLIT_BATCH_CHARS
-                ):
-                    reduced_limit = max(
-                        self._MIN_SPLIT_BATCH_CHARS, batch_char_limit // 2
-                    )
-                    if is_local_backend:
-                        local_persisted_max_chars_per_batch = (
-                            reduced_limit
-                            if local_persisted_max_chars_per_batch is None
-                            else min(local_persisted_max_chars_per_batch, reduced_limit)
-                        )
-                    retry_copilot_split += 1
-                    logger.warning(
-                        "Copilot requested split for batch %d; retrying with max_chars_per_batch=%d (was %d)",
-                        i + 1,
-                        reduced_limit,
-                        batch_char_limit,
-                    )
-                    retry_result = self.translate_blocks_with_result(
-                        batch,
-                        reference_files=reference_files,
-                        on_progress=None,
-                        output_language=output_language,
-                        translation_style=translation_style,
-                        include_item_ids=include_item_ids,
-                        _max_chars_per_batch=reduced_limit,
-                        _max_chars_per_batch_source=batch_limit_source,
-                        _split_retry_depth=_split_retry_depth + 1,
-                    )
-                    translations.update(retry_result.translations)
-                    untranslated_block_ids.extend(retry_result.untranslated_block_ids)
-                    mismatched_batch_count += retry_result.mismatched_batch_count
-                    if retry_result.cancelled:
-                        cancelled = True
-                        break
-                    continue
-
-                logger.warning(
-                    "Copilot split request persisted; using original text for batch %d",
-                    i + 1,
-                )
-                unique_translations = [""] * len(unique_texts)
-
             # Validate translation count matches unique text count
             if len(unique_translations) != len(unique_texts):
                 mismatched_batch_count += 1
@@ -2064,17 +1985,14 @@ class BatchTranslator:
                             lambda: self._cancel_event.is_set()
                         )
                         try:
-                            with self._ui_window_sync_scope(
-                                "translate_blocks_with_result_hangul_retry"
-                            ):
-                                repair_translations = self.copilot.translate_sync(
-                                    repair_texts,
-                                    repair_prompt,
-                                    files_to_attach,
-                                    True,
-                                    timeout=self.request_timeout,
-                                    include_item_ids=include_item_ids,
-                                )
+                            repair_translations = self.copilot.translate_sync(
+                                repair_texts,
+                                repair_prompt,
+                                files_to_attach,
+                                True,
+                                timeout=self.request_timeout,
+                                include_item_ids=include_item_ids,
+                            )
                         finally:
                             self.copilot.set_cancel_callback(None)
                 except TranslationCancelledError:
@@ -2168,17 +2086,14 @@ class BatchTranslator:
                                 lambda: self._cancel_event.is_set()
                             )
                             try:
-                                with self._ui_window_sync_scope(
-                                    "translate_blocks_with_result_output_language_retry"
-                                ):
-                                    repair_translations = self.copilot.translate_sync(
-                                        repair_texts,
-                                        repair_prompt,
-                                        files_to_attach,
-                                        True,
-                                        timeout=self.request_timeout,
-                                        include_item_ids=include_item_ids,
-                                    )
+                                repair_translations = self.copilot.translate_sync(
+                                    repair_texts,
+                                    repair_prompt,
+                                    files_to_attach,
+                                    True,
+                                    timeout=self.request_timeout,
+                                    include_item_ids=include_item_ids,
+                                )
                             finally:
                                 self.copilot.set_cancel_callback(None)
                     except TranslationCancelledError:
@@ -2307,19 +2222,14 @@ class BatchTranslator:
                                     lambda: self._cancel_event.is_set()
                                 )
                                 try:
-                                    with self._ui_window_sync_scope(
-                                        "translate_blocks_with_result_numeric_rule_retry"
-                                    ):
-                                        repair_translations = (
-                                            self.copilot.translate_sync(
-                                                retry_texts,
-                                                repair_prompt,
-                                                files_to_attach,
-                                                True,
-                                                timeout=self.request_timeout,
-                                                include_item_ids=include_item_ids,
-                                            )
-                                        )
+                                    repair_translations = self.copilot.translate_sync(
+                                        retry_texts,
+                                        repair_prompt,
+                                        files_to_attach,
+                                        True,
+                                        timeout=self.request_timeout,
+                                        include_item_ids=include_item_ids,
+                                    )
                                 finally:
                                     self.copilot.set_cancel_callback(None)
                         except TranslationCancelledError:
@@ -2389,7 +2299,7 @@ class BatchTranslator:
                                     len(retry_texts),
                                 )
 
-            # Detect empty translations (Copilot may return empty strings for some items)
+            # Detect empty translations (a backend may return empty strings for some items)
             empty_translation_indices = [
                 idx
                 for idx, trans in enumerate(cleaned_unique_translations)
@@ -2505,10 +2415,9 @@ class BatchTranslator:
 
         if timing_enabled and _split_retry_depth == 0:
             logger.debug(
-                "[TIMING] BatchTranslator.retries: prompt_too_long=%d local_error=%d copilot_split=%d fallback_original_batches=%d mismatched_batches=%d untranslated_blocks=%d",
+                "[TIMING] BatchTranslator.retries: prompt_too_long=%d local_error=%d fallback_original_batches=%d mismatched_batches=%d untranslated_blocks=%d",
                 retry_prompt_too_long,
                 retry_local_error,
-                retry_copilot_split,
                 fallback_original_batches,
                 mismatched_batch_count,
                 len(untranslated_block_ids),
@@ -2542,15 +2451,6 @@ class BatchTranslator:
                 )
 
         return result
-
-    def _looks_like_split_request(self, translations: list[str]) -> bool:
-        if not translations:
-            return False
-        sample = "\n".join(t for t in translations[:5] if t).strip()
-        if not sample:
-            return False
-        hits = sum(marker in sample for marker in self._SPLIT_REQUEST_MARKERS)
-        return hits >= self._SPLIT_REQUEST_MIN_MATCHES
 
     def _create_batches(
         self,
@@ -2706,8 +2606,14 @@ class TranslationService:
                     LocalPromptBuilder,
                 )
 
+                prompts_dir = self.prompt_builder.prompts_dir
+                if prompts_dir is None:
+                    candidate = Path(__file__).resolve().parents[2] / "prompts"
+                    if candidate.exists():
+                        prompts_dir = candidate
+
                 self._local_prompt_builder = LocalPromptBuilder(
-                    self.prompt_builder.prompts_dir,
+                    prompts_dir,
                     base_prompt_builder=self.prompt_builder,
                     settings=self.config,
                 )
@@ -2747,7 +2653,7 @@ class TranslationService:
         return None
 
     def _get_local_file_batch_limit_info(self) -> tuple[Optional[int], str | None]:
-        if not self._use_local_backend() or self.config is None:
+        if self.config is None:
             return None, None
         limit = getattr(self.config, "local_ai_max_chars_per_batch_file", None)
         if isinstance(limit, int) and limit > 0:
@@ -4279,21 +4185,7 @@ class TranslationService:
 
             # Use streaming processing for PDF files
             if input_path.suffix.lower() == ".pdf":
-                with self._ui_window_sync_scope(f"translate_file:{input_path.name}"):
-                    return self._translate_pdf_streaming(
-                        input_path,
-                        processor,
-                        reference_files,
-                        on_progress,
-                        output_language,
-                        start_time,
-                        translation_style,
-                        selected_sections,
-                    )
-
-            # Standard processing for other file types
-            with self._ui_window_sync_scope(f"translate_file:{input_path.name}"):
-                return self._translate_file_standard(
+                return self._translate_pdf_streaming(
                     input_path,
                     processor,
                     reference_files,
@@ -4303,6 +4195,18 @@ class TranslationService:
                     translation_style,
                     selected_sections,
                 )
+
+            # Standard processing for other file types
+            return self._translate_file_standard(
+                input_path,
+                processor,
+                reference_files,
+                on_progress,
+                output_language,
+                start_time,
+                translation_style,
+                selected_sections,
+            )
 
         except MemoryError:
             # CRITICAL: Memory exhausted - provide clear error message
@@ -4426,7 +4330,10 @@ class TranslationService:
             "minimal": "最簡潔",
         }
 
-        batch_translator = self._get_active_batch_translator()
+        self._ensure_local_backend()
+        batch_translator = self._local_batch_translator
+        if batch_translator is None:
+            raise RuntimeError("Local batch translator not initialized")
         batch_limit, batch_limit_source = self._get_local_file_batch_limit_info()
 
         translations_by_style: dict[str, dict[str, str]] = {}
@@ -4788,7 +4695,10 @@ class TranslationService:
         translations_by_style: dict[str, dict[str, str]] = {}
         primary_batch_result = None
 
-        batch_translator = self._get_active_batch_translator()
+        self._ensure_local_backend()
+        batch_translator = self._local_batch_translator
+        if batch_translator is None:
+            raise RuntimeError("Local batch translator not initialized")
         batch_limit, batch_limit_source = self._get_local_file_batch_limit_info()
 
         translate_start = 40

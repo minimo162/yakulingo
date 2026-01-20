@@ -553,8 +553,6 @@ class FontRegistry:
         self._glyph_id_cache: OrderedDict[tuple[str, str], int] = OrderedDict()
         # Character width cache: (font_id, char) -> normalized_width (multiply by font_size)
         self._char_width_cache: OrderedDict[tuple[str, str], float] = OrderedDict()
-        # Font selection cache: (first_special_char, target_lang) -> font_id
-        self._font_selection_cache: OrderedDict[tuple[str, str], str] = OrderedDict()
         # Existing CID font cache (None = not yet checked, "" = no CID font found)
         self._existing_cid_font_cache: Optional[str] = None
         # Warned missing fonts (to avoid duplicate warnings)
@@ -1131,22 +1129,6 @@ class FontRegistry:
 
         # Default: half-width
         return 0.5
-
-    def _estimate_char_width(self, char: str, font_size: float) -> float:
-        """
-        Estimate character width based on Unicode properties.
-
-        Used as fallback when font metrics are not available (e.g., existing PDF fonts).
-        Delegates to _estimate_char_width_normalized for the actual calculation.
-
-        Args:
-            char: Single character
-            font_size: Font size in points
-
-        Returns:
-            Estimated character width in points
-        """
-        return self._estimate_char_width_normalized(char) * font_size
 
     def embed_fonts(self, doc) -> list[str]:
         """

@@ -1618,19 +1618,6 @@ def estimate_font_size_from_box_height(
     return max(MIN_FONT_SIZE, min(font_size, MAX_FONT_SIZE))
 
 
-def _is_address_on_page(address: str, page_num: int) -> bool:
-    """Check if address belongs to specified page."""
-    if address.startswith("P"):
-        match = _RE_PARAGRAPH_ADDRESS.match(address)
-        if match:
-            return int(match.group(1)) == page_num
-    elif address.startswith("T"):
-        match = _RE_TABLE_ADDRESS.match(address)
-        if match:
-            return int(match.group(1)) == page_num
-    return False
-
-
 def _boxes_overlap(
     box1: list[float], box2: list[float], threshold: float = 0.3
 ) -> bool:
@@ -6138,7 +6125,6 @@ class PdfProcessor(FileProcessor):
         # Previous character state
         prev_cls = None  # Previous character's layout class
         in_formula = False  # Currently in formula mode
-        vbkt = 0  # Bracket count for formula continuation
 
         # Previous char coordinates and text
         prev_x0 = 0.0
@@ -6399,15 +6385,8 @@ class PdfProcessor(FileProcessor):
                     # Entering formula mode
                     in_formula = True
                     vstk = []
-                    vbkt = 0
 
                 vstk.append(char)
-
-                # Track brackets for formula continuation
-                if char_text == "(":
-                    vbkt += 1
-                elif char_text == ")":
-                    vbkt -= 1
 
             else:
                 # Regular text character
@@ -6431,7 +6410,6 @@ class PdfProcessor(FileProcessor):
 
                     in_formula = False
                     vstk = []
-                    vbkt = 0
 
                 # Handle text
                 if new_paragraph:

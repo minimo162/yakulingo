@@ -29,7 +29,7 @@
 ### 1.1 システム目的
 
 YakuLingoは、日本語と英語の双方向翻訳を提供するデスクトップアプリケーション。
-翻訳エンジンは **M365 Copilot**（Playwright + Edge）または **ローカルAI**（llama.cpp `llama-server` 常駐・OpenAI互換HTTP）を使用し、サイドバー上部のCopilotボタンON/OFFで切り替える。ローカルAIは `127.0.0.1` 固定（外部公開しない）。
+翻訳エンジンは **ローカルAI**（llama.cpp `llama-server` 常駐・OpenAI互換HTTP）を使用する。ローカルAIは `127.0.0.1` 固定（外部公開しない）。
 
 ### 1.2 主要機能
 
@@ -41,7 +41,6 @@ YakuLingoは、日本語と英語の双方向翻訳を提供するデスクト�
 | **Bilingual Output** | 原文と訳文を並べた対訳ファイルを自動生成 |
 | **Glossary Export** | 翻訳ペアをCSVで出力（用語管理に活用） |
 | **Reference Files** | 用語集・スタイルガイド・参考資料による一貫した翻訳（同梱glossaryの使用ON/OFF切替可） |
-| **Backend Toggle** | CopilotボタンON/OFFで切替（OFF=ローカルAI、ローカルAIはEdge不要） |
 | **Translation History** | 過去の翻訳をローカルに保存・検索 |
 | **Auto Update** | GitHub Releases経由で自動更新 |
 
@@ -57,7 +56,7 @@ YakuLingoは、日本語と英語の双方向翻訳を提供するデスクト�
 - テキスト翻訳/戻し訳/フォローアップは訳文のみを返し、`explanation` は出力しない（後方互換のためフィールドは保持するが常に空文字）。
 
 **検出メカニズム:**
-- `detect_language()`: ローカルのみで検出（Copilot呼び出しなし、高速）
+- `detect_language()`: ローカルのみで検出（高速）
   - ひらがな/カタカナ検出 → 日本語
   - ハングル検出 → 韓国語
   - ラテン文字優勢 → 英語
@@ -82,7 +81,7 @@ YakuLingoは、日本語と英語の双方向翻訳を提供するデスクト�
 |-------|------------|
 | UI | NiceGUI (browser mode, default) / pywebview (optional native; disabled in distribution) (Material Design 3 / Expressive) |
 | Backend | FastAPI (via NiceGUI) |
-| Translation | M365 Copilot (Playwright + Edge) / Local AI (llama.cpp llama-server, OpenAI-compatible HTTP) |
+| Translation | Local AI (llama.cpp llama-server, OpenAI-compatible HTTP) |
 | File Processing | openpyxl, python-docx, python-pptx, PyMuPDF, csv |
 | Storage | SQLite (translation history) |
 | Auto Update | GitHub Releases API |
@@ -119,8 +118,8 @@ YakuLingoは、日本語と英語の双方向翻訳を提供するデスクト�
 │          ▼                         ▼                         ▼          │
 │  ┌───────────────────────────────┐     ┌─────────────────────┐     ┌───────────────┐    │
 │  │ Translation Backends          │     │   File Processors   │     │   HistoryDB   │    │
-│  │ - CopilotHandler (Edge+PW)    │     │ Excel/Word/PPT/PDF │     │   (SQLite)    │    │
-│  │ - Local AI (llama-server HTTP)│     │ + TXT              │     │               │    │
+│  │ - Local AI (llama-server HTTP)│     │ Excel/Word/PPT/PDF │     │   (SQLite)    │    │
+│  │                               │     │ + TXT              │     │               │    │
 │  └───────────────────────────────┘     └─────────────────────┘     └───────────────┘    │
 │                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
@@ -132,7 +131,7 @@ YakuLingoは、日本語と英語の双方向翻訳を提供するデスクト�
 |-------|----------------|
 | **Presentation** | NiceGUI + pywebviewによるUI、状態表示 |
 | **Service** | 翻訳処理の制御、バッチ処理、自動更新 |
-| **Translation Backend** | CopilotHandler（Edge+Playwright）/ Local AI（llama.cpp llama-server, 127.0.0.1） |
+| **Translation Backend** | Local AI（llama.cpp llama-server, 127.0.0.1） |
 | **File Processors** | ファイル解析、テキスト抽出、翻訳適用 |
 | **Storage** | 翻訳履歴の永続化（SQLite） |
 | **Config** | 設定読み込み/保存、参照ファイル管理 |
@@ -168,7 +167,6 @@ YakuLingo/
 │   │
 │   ├── services/                   # Service Layer
 │   │   ├── translation_service.py  # TranslationService
-│   │   ├── copilot_handler.py      # CopilotHandler
 │   │   ├── local_llama_server.py   # ローカルAI（llama-server）常駐管理
 │   │   ├── local_ai_client.py      # ローカルAI HTTPクライアント（OpenAI互換）
 │   │   ├── local_ai_prompt_builder.py  # ローカルAI用PromptBuilder（JSON出力固定）
@@ -200,7 +198,7 @@ YakuLingo/
 │   ├── conftest.py
 │   └── test_*.py
 │
-├── prompts/                        # 翻訳プロンプト（Copilot/ローカルAI）
+├── prompts/                        # 翻訳プロンプト（ローカルAI）
 │   ├── translation_rules.txt       # 共通/方向別翻訳ルール
 │   ├── local_text_translate_to_en_3style_json.txt   # ローカルAI（JP→EN 3style / JSON, legacy/未使用）
 │   ├── local_text_translate_to_en_missing_styles_json.txt  # ローカルAI（JP→EN 欠けスタイル補完 / JSON, legacy/未使用）
@@ -427,10 +425,6 @@ class Tab(Enum):
     TEXT = "text"
     FILE = "file"
 
-class TranslationBackend(Enum):
-    COPILOT = "copilot"
-    LOCAL = "local"
-
 class LocalAIState(Enum):
     NOT_INSTALLED = "not_installed"  # exe/model not found
     STARTING = "starting"
@@ -448,19 +442,10 @@ class TextViewState(Enum):
     INPUT = "input"    # 大きな入力エリア（2カラム幅）
     RESULT = "result"  # コンパクト入力 + 結果パネル
 
-class ConnectionState(Enum):
-    CONNECTING = "connecting"
-    CONNECTED = "connected"
-    LOGIN_REQUIRED = "login_required"
-    EDGE_NOT_RUNNING = "edge_not_running"
-    CONNECTION_FAILED = "connection_failed"
-
 @dataclass
 class AppState:
     # Current tab
     current_tab: Tab = Tab.TEXT
-    # Backend selection (persisted in settings)
-    translation_backend: TranslationBackend = TranslationBackend.COPILOT
 
     # テキストタブ
     text_view_state: TextViewState = TextViewState.INPUT
@@ -496,11 +481,6 @@ class AppState:
 
     # 参照ファイル
     reference_files: List[Path] = field(default_factory=list)
-
-    # Copilot接続
-    copilot_ready: bool = False
-    copilot_error: str = ""
-    connection_state: ConnectionState = ConnectionState.CONNECTING
 
     # Local AI connection / readiness (llama.cpp llama-server)
     local_ai_state: LocalAIState = LocalAIState.NOT_INSTALLED
@@ -541,7 +521,7 @@ class AppState:
 
 | Property | Value |
 |----------|-------|
-| Mode | Browser mode (external browser / Edge app window) |
+| Mode | Browser mode (external browser) |
 | Host | 127.0.0.1 |
 | Port | 8765 |
 | Title | YakuLingo |
@@ -575,24 +555,11 @@ Windows のグローバルホットキー（Ctrl+Alt+J）を登録し、押下�
     - `CF_HDROP`（ファイル）: ファイル翻訳 → 出力ファイルはUIに表示（ダウンロード）
 - ホットキー実行時のウィンドウレイアウト（Windows）
   - 作業中ウィンドウを左、YakuLingoを右に並べる（フォーカスは作業ウィンドウ優先）
-  - Edgeは状況に応じてオフスクリーン/背面同期を切り替える（翻訳中はUI背面に同期表示してフォーカスを奪わない）
 - ファイル翻訳（ホットキー）の制約
   - 対応拡張子: `.xlsx` `.xls` `.xlsm` `.csv` `.docx` `.pptx` `.pdf` `.txt` `.msg`
   - 一度に処理するファイル数: 最大10
 - 補足（統合）
   - ローカルAPI `POST /api/hotkey`（localhostのみ）で同じ翻訳パイプラインを起動できる
-  - ローカルAPI `POST /api/window-layout`（localhostのみ）
-    - payload: `source_hwnd`（元ウィンドウのHWND）, `edge_layout`（auto/offscreen/triple）
-
-### 5.1.3 接続ステータスインジケータ
-
-サイドバー上部のステータス領域に **Copilotボタン（ON/OFF）** と、選択中バックエンドの準備状況を表示する（OFF=ローカルAI）。
-
-- バックエンド切替は翻訳中はdisable（同時翻訳/混線防止）
-- Copilot状態: 準備中 / 準備完了 / ログインが必要 / Edgeが見つかりません / 接続に失敗
-- ローカルAI状態: 未インストール（exe/model不足） / 起動中 / 準備完了 / エラー（AVX2非対応、ポート枯渇、起動失敗等）
-- 状態確認は短いタイムアウト＋キャッシュでUI固着を防ぐ
-- 起動時は設定の `translation_backend` を尊重し、ローカルAI選択時はCopilot/Edgeの自動起動を抑制（必要時のみ接続）
 
 ### 5.2 全体レイアウト
 
@@ -681,11 +648,11 @@ NiceGUIの`await client.connected()`パターンを使用して、クライア�
 - 結果は展開セクションに表示（編集版はタグで識別）
 
 **日本語入力時（英訳）:**
-- 結果カード: `minimal` のみを表示（Copilot/ローカルAI共通）
+- 結果カード: `minimal` のみを表示
 - 💡 [再翻訳]: 吹き出し風ヒント行
 
 **その他入力時（和訳）:**
-- 結果カード: 訳文のみ（Copilot/ローカルAI）
+- 結果カード: 訳文のみ
 - 💡 [再翻訳]: 吹き出し風ヒント行
 
 **テキストエリア仕様:**
@@ -850,84 +817,7 @@ font-family: 'BIZ UDPGothic', 'Yu Gothic UI', 'Hiragino Sans',
 
 ## 6. サービスレイヤー
 
-### 6.1 CopilotHandler
-
-M365 Copilot との通信を担当。
-
-```python
-# スレッドセーフな遅延インポート管理
-class PlaywrightManager:
-    """Playwrightモジュールの遅延読み込み（インストールされていない場合のエラー回避）"""
-    def get_playwright()       # playwright types と sync_playwright を返す
-    def get_async_playwright() # async_playwright を返す
-    def get_error_types()      # Playwright例外型を返す
-
-# スレッド実行管理（greenletコンテキスト対応）
-class PlaywrightThreadExecutor:
-    """Playwright操作を専用スレッドで実行（asyncio.to_threadからの呼び出し対応）"""
-    def start()               # ワーカースレッド開始
-    def stop()                # スレッド停止
-    def execute(func, *args, timeout=120)  # 関数を専用スレッドで実行
-
-class CopilotHandler:
-    COPILOT_URL = "https://m365.cloud.microsoft/chat/"
-    cdp_port = 9333  # Edge CDP専用ポート
-
-    def connect() -> bool:
-        """
-        1. Edgeが起動していなければ起動（専用プロファイル使用）
-        2. Playwrightで接続（PlaywrightThreadExecutor経由）
-        3. Copilotページを開く
-        4. ログインページ判定（ステップ式タイムアウト）
-        ※ セッション保持はEdgeProfileのCookiesが担当
-        """
-
-    def translate_sync(texts: list[str], prompt: str, reference_files: list[Path]) -> list[str]:
-        """
-        1. プロンプトをCopilotに送信（送信可能状態の安定化を待機）
-        2. 応答を待機（安定するまで）
-        3. 結果をパース
-        """
-
-    def translate_single(text: str, prompt: str, reference_files: list[Path]) -> str:
-        """単一テキスト翻訳（生のレスポンスを返す）"""
-
-    def disconnect() -> None:
-        """ブラウザ接続を終了"""
-
-    def ensure_gpt_mode() -> None:
-        """
-        GPT-5.2 Think Deeperモードを設定
-        - 接続完了後、UI表示後に非同期で呼び出し（UIブロック回避）
-        - ポーリング方式（100msごとにチェック、最大15秒）
-        - ボタンが見つからない場合は静かにスキップ
-        - 注意: "Think Deeper" は別モードのため選択しない（"GPT-5.2 Think Deeper"のみ許可）
-        """
-```
-
-**Edge起動設定:**
-- Profile: `%LOCALAPPDATA%/YakuLingo/EdgeProfile`
-- CDP Port: 9333
-- オプション: `--no-first-run --no-default-browser-check`
-
-**ブラウザ操作の信頼性:**
-- 固定sleep()の代わりにPlaywrightの`wait_for_selector`を使用
-- 送信ボタン: 有効化と入力可能状態が一定時間安定するまで待機（添付中は継続）
-- メニュー表示: `div[role="menu"]`の表示を確認
-- ファイル添付: 添付インジケータをポーリングで確認
-- GPTモード: UI表示後に`ensure_gpt_mode()`で非同期設定（wait_for_selector + JS一括実行）
-- GPT-5.2 Think Deeperのみを選択（"Think Deeper"へのフォールバックは禁止）
-
-**Copilot文字数制限:**
-- Free ライセンス: 8,000文字
-- Paid ライセンス: 128,000文字
-
-**バッチ分割とリトライ:**
-- `max_chars_per_batch`（デフォルト: 1,000文字、`config/settings.template.json`）でテキストブロックをバッチ分割
-- 単一ブロックが上限を超える場合は単独バッチとして処理（警告ログ）
-- Copilotの応答が「分割要求」と判定された場合、`max_chars_per_batch` を段階的に縮小してリトライ（上限回数あり）
-
-### 6.1.1 Local AI（llama.cpp llama-server）
+### 6.1 Local AI（llama.cpp llama-server）
 
 ローカルAIバックエンドは `llama.cpp` の `llama-server` を常駐させ、OpenAI互換HTTP API（`/v1/chat/completions`）経由で呼び出す（SSEストリーミング対応）。
 テキスト翻訳はストリーミングプレビューに対応し、JSONの **翻訳文部分** を best-effort で表示する。
@@ -955,8 +845,8 @@ class CopilotHandler:
 ### 6.2 TranslationService
 
 翻訳処理の中心クラス。
-Copilot/ローカルAIの差分は `AppSettings.translation_backend` で切り替え、内部ではクライアントとプロンプトビルダーを抽象化して扱う。
-ローカルAIはリクエストを直列化する（`copilot_lock` を概念上 backend_lock として再利用）。
+ローカルAIのみを使用し、クライアントとプロンプトビルダーを介して翻訳を実行する。
+ローカルAIはリクエストを直列化する（排他ロックを使用）。
 
 ```python
 class TranslationService:
@@ -974,7 +864,7 @@ class TranslationService:
 
     def detect_language(text: str) -> str:
         """
-        ローカルで言語を検出（Copilot呼び出しなし）
+        ローカルで言語を検出
         - ひらがな/カタカナ → "日本語"
         - ハングル → "韓国語"
         - ラテン文字優勢 → "英語"
@@ -984,8 +874,8 @@ class TranslationService:
     def translate_text(text, reference_files) -> TextTranslationResult:
         """
         テキスト翻訳（言語自動検出）
-        - 日本語入力 → 英語（複数オプション）
-- その他入力 → 日本語（訳文のみ）
+        - 日本語入力 → 英語（minimalのみ）
+        - その他入力 → 日本語（訳文のみ）
         """
 
     def translate_file(input_path, reference_files, on_progress) -> TranslationResult:
@@ -1006,7 +896,7 @@ class TranslationService:
 
 ```python
 class BatchTranslator:
-    DEFAULT_MAX_CHARS_PER_BATCH = 1000  # 文字数上限（Copilot入力の安全値）
+    DEFAULT_MAX_CHARS_PER_BATCH = 1000  # 文字数上限（安全値）
     DEFAULT_REQUEST_TIMEOUT = 600       # タイムアウト（秒）
 
     def translate_blocks(blocks, reference_files, on_progress) -> dict[str, str]:
@@ -1309,7 +1199,7 @@ class PromptBuilder:
         """
 ```
 
-> **Note**: ローカルAIでは Copilot用テンプレートとは分離し、`LocalPromptBuilder` が `prompts/local_*.txt` を読み込む（JSON出力固定・参照は本文埋め込み）。
+> **Note**: ローカルAIは `LocalPromptBuilder` が `prompts/local_*.txt` を読み込む（JSON出力固定・参照は本文埋め込み）。
 
 **並列プロンプト構築（3バッチ以上）:**
 ```python
@@ -1364,7 +1254,7 @@ Reference Files
 
 #### 9.4.1 英訳（minimal-only）
 
-- Copilot用テンプレート: `prompts/text_translate_to_en_compare.txt`（ファイル名は後方互換で維持）
+- テンプレート: `prompts/text_translate_to_en_compare.txt`（ファイル名は後方互換で維持）
 - 応答に `[minimal]` が含まれる場合はそれを採用し、欠けている場合は利用可能なセクションへフォールバックする（表示/保存は常に `minimal` のみ）
 - 解説（Explanation）は出力しない
 
@@ -1393,7 +1283,7 @@ Reference Files
 
 ### 9.6 ローカルAIプロンプト（JSON固定）
 
-ローカルAIは Copilot用テンプレートと分離し、**JSONのみ**を返すテンプレートを使用する（バッチのズレ対策を最優先）。
+ローカルAIは **JSONのみ**を返すテンプレートを使用する（バッチのズレ対策を最優先）。
 
 - テキスト
   - `prompts/local_text_translate_to_en_single_json.txt`（JP→EN: 単発、styleは `minimal` 固定）
@@ -1434,8 +1324,7 @@ Reference Files
   - バッチ: `[[ID:n]]` ブロック抽出 → 番号行抽出
 
 **参照ファイル（ローカルAI）**
-- Copilot: 添付で渡す（対応形式はUIに従う）
-- ローカルAI: 本文に埋め込み（対応: `csv/txt/md/json/pdf/docx/xlsx/pptx`、テキスト抽出）
+- 本文に埋め込み（対応: `csv/txt/md/json/pdf/docx/xlsx/pptx`、テキスト抽出）
   - 合計上限: 4,000文字 / 1ファイル上限: 2,000文字（超過は切り捨てて警告）
 
 ---
@@ -1558,10 +1447,6 @@ class AppSettings:
     last_tab: str = "text"
     # NOTE: window_width/window_height は廃止（表示領域から動的に計算）
 
-    # Translation Backend (Copilot ON/OFF; OFF = Local AI)
-    translation_backend: str = "copilot"  # "copilot" | "local"
-    copilot_enabled: bool = True          # Copilot UI/接続を無効化するスイッチ
-
     # Local AI (llama.cpp llama-server)
     local_ai_model_path: str = "local_ai/models/translategemma-4b-it.IQ4_XS.gguf"
     local_ai_server_dir: str = "local_ai/llama_cpp"
@@ -1578,14 +1463,14 @@ class AppSettings:
     local_ai_max_chars_per_batch_file: int = 1000
 
     # Advanced
-    max_chars_per_batch: int = 1000      # 文字数上限（Copilot入力の安全値）
+    max_chars_per_batch: int = 1000      # 文字数上限（安全値）
     request_timeout: int = 600           # 10分（大規模翻訳対応）
     max_retries: int = 3
 
     # File Translation Options
     bilingual_output: bool = False       # 対訳出力（原文と翻訳を交互に配置）
     export_glossary: bool = False        # 対訳CSV出力（glossaryとして再利用可能）
-    translation_style: str = "concise"   # ファイル英訳の主出力（既定表示）スタイル
+    translation_style: str = "minimal"   # ファイル英訳の主出力スタイル
 
     # Text Translation Options
     use_bundled_glossary: bool = True         # 同梱 glossary.csv を使用（デフォルトでオン）
@@ -1601,14 +1486,6 @@ class AppSettings:
     ocr_dpi: int = 300                   # レイアウト解析解像度
     ocr_device: str = "auto"             # "auto", "cpu", "cuda"
 
-    # Browser Display Mode
-    # NOTE: browser_display_mode applies to Copilot Edge (UIには影響しない)
-    # Windowsでは翻訳中のみ、安定性のためCopilot用EdgeをUI背面に同期表示する場合がある。
-    browser_display_mode: str = "minimized"   # "minimized", "foreground" (side_panel deprecated)
-
-    # Login overlay guard (通常は無効)
-    login_overlay_guard: dict[str, object] = {"enabled": False, "remove_after_version": None}
-
     # Auto Update
     auto_update_enabled: bool = True
     auto_update_check_interval: int = 0       # 0=起動毎
@@ -1616,8 +1493,6 @@ class AppSettings:
     github_repo_name: str = "yakulingo"
     last_update_check: Optional[str] = None
 ```
-
-- `copilot_enabled`: false の場合は Copilot UI を非表示にし、`translation_backend` は local に強制。
 
 **設定ファイル:** `config/settings.template.json`（デフォルト） / `config/user_settings.json`（ユーザー設定）
 
@@ -1642,23 +1517,18 @@ YakuLingo.exe    # Rust製ネイティブランチャー
 2. PYWEBVIEW_GUI=edgechromium環境変数を設定（ランタイムインストールダイアログ回避）
 3. ロギング設定（コンソール出力）
 4. NiceGUI importを遅延実行（ネイティブモードでの二重初期化を回避）
-5. browser mode: Edge --appでUI起動 / native mode: pywebviewでネイティブウィンドウを起動
+5. browser mode: 外部ブラウザでUI表示 / native mode: pywebviewでネイティブウィンドウを起動
 6. ローディングスクリーンを即座に表示（await client.connected()後にUI構築）
 7. NiceGUIサーバー起動（port=8765, reconnect_timeout=30.0）
-8. 設定 `translation_backend` に応じてバックエンド初期化
-   - Copilot選択時: Copilot接続開始（バックグラウンド、PlaywrightThreadExecutorで専用スレッド実行）
-   - ローカルAI選択時: Copilot/Edgeの自動起動を抑制し、起動時にローカルAI準備を開始（バックグラウンド）
-9. 常駐起動時はCopilot選択時のみ、GPTモードのウォームアップと起動状態監視を開始（/api/setup-status）
-10. 自動更新チェック（バックグラウンド）
-11. 選択バックエンドが準備完了後、翻訳機能が有効化
+8. ローカルAI準備を開始（バックグラウンド）
+9. 自動更新チェック（バックグラウンド）
+10. ローカルAIが準備完了後、翻訳機能が有効化
 ```
 
 **起動最適化ポイント:**
 - NiceGUI importを`main()`内に配置し、pywebviewのmultiprocessingによる二重初期化を回避
 - `show=False`でブラウザ自動起動を抑制（ネイティブモードはpywebviewウィンドウを使用）
 - ローディング画面を先行表示し、体感起動速度を向上
-- ブラウザモード時はEdgeを`--app=`で起動し、タスクバーで`YakuLingo (UI)`として識別しやすくする
-- Copilot状態確認は短いタイムアウト＋キャッシュでUI固着を防ぐ（起動直後のみタイムアウトを延長）
 
 ### 12.4 システム要件
 
@@ -1666,8 +1536,6 @@ YakuLingo.exe    # Rust製ネイティブランチャー
 |------|------|
 | OS | Windows 10/11 |
 | Python | 3.11+ |
-| Browser | Microsoft Edge（Copilot利用時） |
-| M365 | Copilot アクセス権（Copilot利用時） |
 | Local AI | `llama-server` + モデル（配布ZIPに同梱。AVX2版のみの場合はAVX2必須） |
 
 ### 12.5 依存パッケージ
@@ -1675,7 +1543,6 @@ YakuLingo.exe    # Rust製ネイティブランチャー
 ```
 nicegui>=3.3.1
 pywebview>=5.0.0
-playwright>=1.40.0
 openpyxl>=3.1.0
 python-docx>=1.1.0
 python-pptx>=0.6.23
@@ -1756,7 +1623,7 @@ def __getattr__(name: str):
 
 **適用パッケージ:**
 - `yakulingo.processors` - ファイルプロセッサ（Excel, Word, PowerPoint, PDF）
-- `yakulingo.services` - サービス（CopilotHandler, AutoUpdater等）
+- `yakulingo.services` - サービス（TranslationService, AutoUpdater等）
 - `yakulingo.ui` - UIコンポーネント（YakuLingoApp等）
 
 **`_SUBMODULES`パターン:**
@@ -1807,23 +1674,6 @@ async def _translate_text(self):
 - `_follow_up_action()` - フォローアップアクション
 - `_translate_file()` - ファイル翻訳
 
-#### Playwrightスレッドモデル
-
-Playwrightのsync APIはgreenletを使用し、初期化されたスレッドでのみ動作する。
-`PlaywrightThreadExecutor`シングルトンが専用スレッドで全Playwright操作を実行。
-
-```python
-# yakulingo/services/copilot_handler.py
-def translate_sync(self, texts, prompt, ...) -> list[str]:
-    # asyncio.to_thread()から呼ばれてもスレッド切り替えエラーを回避
-    return _playwright_executor.execute(
-        self._translate_sync_impl, texts, prompt, ...
-    )
-```
-
-これにより、UIの`asyncio.to_thread()`から呼び出されても、
-Playwright操作は常に正しいスレッドコンテキストで実行される。
-
 ### 13.2 ランタイム最適化
 
 #### 正規表現の事前コンパイル
@@ -1840,9 +1690,6 @@ _RE_EXPLANATION = re.compile(r'解説:\s*(.+)', re.DOTALL)
 # yakulingo/services/translation_service.py
 _RE_MULTI_OPTION = re.compile(r'\[(\d+)\]\s*訳文:\s*(.+?)\s*解説:\s*(.+?)(?=\[\d+\]|$)', re.DOTALL)
 _RE_MARKDOWN_SEPARATOR = re.compile(r'\n?\s*[\*\-]{3,}\s*')
-
-# yakulingo/services/copilot_handler.py
-_RE_NUMBERING_PREFIX = re.compile(r'^\d+\.\s*(.+)')
 ```
 
 **最適化効果:**
@@ -1928,9 +1775,6 @@ python -c "import time; t=time.time(); from yakulingo.ui import run_app; print(f
 ### 2.21 (2026-01)
 - 常駐/ホットキー
   - ダブルコピー（Ctrl+C x2）検出の安定性を改善（誤検知抑制、再読込、部分一致）
-- Copilot/Edge
-  - 翻訳中はCopilot用EdgeをUI背面に同期表示（フォーカスを奪わない）
-  - Copilotエラー時もキャンセル操作で復帰できるよう改善
 - UI/ログ
   - 翻訳時のUI前面化を安定化
   - 背景タスク例外のログ出力と終了処理を改善
@@ -1960,11 +1804,11 @@ python -c "import time; t=time.time(); from yakulingo.ui import run_app; print(f
   - 日本語日時パターンの正規表現を修正
   - テーブルセル境界検出を改善
 - 認証フロー改善
-  - Copilotページ上の認証ダイアログを検出
+  - 認証ダイアログを検出
   - 認証フロー中の強制ナビゲーションを防止
-- Copilot送信プロセス最適化
+- 送信プロセス最適化
   - Enterを最初の送信方法として使用（最小限のUI操作で送信）
-  - 送信優先度: 1. Enter key → 2. JS click() → 3. Playwright click（force=True）
+  - 送信優先度: 1. Enter key → 2. JS click()
   - 送信ボタンが画面外（y: -5）にある場合はDOM click()でフォールバック
 - UI改善
   - 「略語」表記を「用語集」に修正
@@ -1985,12 +1829,12 @@ python -c "import time; t=time.time(); from yakulingo.ui import run_app; print(f
   - apply_translations最適化
   - 保存時にread_only_recommendedをクリア
 - 言語検出高速化
-  - Copilot呼び出しを廃止してローカル検出のみに
+  - ローカル検出のみに変更
   - ファイル言語検出の高速化
 
 ### 2.18 (2025-12)
 - コードレビュー修正
-  - PlaywrightThreadExecutorシャットダウン競合を修正（`_thread_lock`でフラグ設定を保護）
+  - スレッド実行のシャットダウン競合を修正（`_thread_lock`でフラグ設定を保護）
   - translate_singleのタイムアウト不足を修正（`DEFAULT_RESPONSE_TIMEOUT + EXECUTOR_TIMEOUT_BUFFER`）
   - 自動ログイン検出の一時例外処理を改善（3回連続エラーまでリトライ）
   - ログイン待機のキャンセル機能を強化（`interruptible_sleep`関数）
@@ -2009,7 +1853,7 @@ python -c "import time; t=time.time(); from yakulingo.ui import run_app; print(f
   - 新しい翻訳は「テキスト翻訳」タブをクリックしてINPUT状態に戻す
 - ダブルコピー起動の動作は維持しつつ、UIのヒント行/キーキャップ表示を削除（ミニマル化）
 - ファイル翻訳完了画面から「新しいファイルを翻訳」ボタンを削除
-- Copilot送信の信頼性向上
+- 送信の信頼性向上
   - Enter送信前にフォーカスを再設定
   - 送信後に入力欄クリアを確認してリトライ
 - ファイル翻訳ボタンを言語検出完了まで非アクティブ化
@@ -2018,15 +1862,15 @@ python -c "import time; t=time.time(); from yakulingo.ui import run_app; print(f
 ### 2.17 (2025-12)
 - 英文チェック機能の解説出力を廃止
 - ログインページの早期検出を実装（ユーザーにログインを促す）
-- 翻訳結果パース時のCopilot出力混入を修正
+- 翻訳結果パース時の出力混入を修正
 - 送信可能状態の安定化待ちを追加（一定時間連続で有効化を確認）
 - 翻訳結果画面でテキスト選択を有効にする
 
 ### 2.16 (2025-12)
-- Copilot入力の信頼性向上（fill()メソッド、Enter優先+クリックフォールバック）
-- Edge起動タイムアウトを6秒→20秒に延長
+- 入力の信頼性向上（fill()メソッド、Enter優先+クリックフォールバック）
+- 起動タイムアウトを6秒→20秒に延長
 - 自動ログイン検出を改善し、不要なブラウザ前面表示を防止
-- PP-DocLayout-L起動時の事前初期化でPlaywright競合を回避
+- PP-DocLayout-L起動時の事前初期化で競合を回避
 - 翻訳結果カードUIを英訳・和訳で統一
 - バッチサイズ縮小（max_chars_per_batch）で信頼性向上
 - request_timeout延長（120秒→600秒）で大規模翻訳対応
@@ -2077,11 +1921,11 @@ python -c "import time; t=time.time(); from yakulingo.ui import run_app; print(f
 - 履歴プレビューの文字切り詰めをCSSに委任
 
 ### 2.10 (2025-12)
-- UIのちらつき・表示問題修正（翻訳結果表示、Edgeウィンドウ）
+- UIのちらつき・表示問題修正（翻訳結果表示、ウィンドウ）
 - 履歴削除機能改善（1クリック削除、ボタン動作修正）
 - 言語検出改善（英字+漢字混合テキストを日本語として正しく検出）
 - PDF翻訳準備ダイアログの即時表示
-- Copilotプロンプト送信の信頼性向上（送信可能状態の安定待ち、セレクタ変更検知）
+- プロンプト送信の信頼性向上（送信可能状態の安定待ち、セレクタ変更検知）
 - PP-DocLayout-Lオンデマンド初期化（起動時間約10秒短縮）
 - 読み順推定アルゴリズム追加（グラフベース、トポロジカルソート）
 - 縦書き文書の自動検出（yomitokuスタイル、アスペクト比ベース）
@@ -2099,7 +1943,7 @@ python -c "import time; t=time.time(); from yakulingo.ui import run_app; print(f
 - 入力欄を縦幅いっぱいに拡張
 
 ### 2.7 (2025-12)
-- ローカル言語検出機能追加（`detect_language()`、Copilot呼び出しなし）
+- ローカル言語検出機能追加（`detect_language()`）
 - 言語検出プロンプト追加（互換性のため保持、未使用）
 
 ### 2.6 (2025-12)
@@ -2115,7 +1959,6 @@ python -c "import time; t=time.time(); from yakulingo.ui import run_app; print(f
 - 翻訳完了ダイアログ改善（出力ファイル一覧・アクションボタン）
 
 ### 2.3 (2025-12)
-- Copilot Free対応（バッチ分割/リトライ）
 - コード品質向上（例外処理、リソース管理、定数化）
 
 ### 2.2 (2025-12)

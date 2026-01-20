@@ -2,7 +2,7 @@
 """
 YakuLingo - Text + File Translation Application
 
-A Japanese-English translation application using NiceGUI and M365 Copilot.
+A Japanese-English translation application using NiceGUI and a local AI (llama.cpp llama-server).
 """
 
 from pathlib import Path

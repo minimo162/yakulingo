@@ -3,7 +3,7 @@
 ## 回答言語
 本リポジトリでの回答は日本語で行ってください。
 
-日本語と英語の双方向翻訳アプリケーション。翻訳バックエンドは **M365 Copilot** と **ローカルAI（llama.cpp）** をサイドバー上部のCopilotボタンON/OFFで切り替えできます（既定はOFF=ローカルAI）。テキストもファイルもワンクリック翻訳します（ローカルAIは `127.0.0.1` 固定・外部公開しません）。
+日本語と英語の双方向翻訳アプリケーション。翻訳エンジンは **ローカルAI（llama.cpp `llama-server`）** のみを使用し、テキスト/ファイルをワンクリック翻訳します（サーバは `127.0.0.1` 固定・外部公開しません）。
 
 ## 目次
 - [特徴](#特徴)
@@ -35,8 +35,6 @@ YakuLingoが提供する主な機能一覧です。
 - **ホットキー起動**: `Ctrl + Alt + J` で選択中のテキスト/ファイルを翻訳開始（UIに結果を表示）
 - **フォント自動調整**: 翻訳方向に合わせて最適なフォントを選択
 - **翻訳履歴**: ローカル保存＆検索に対応
-- **バックエンド切替**: サイドバー上部のCopilotボタンでON/OFF（翻訳中は切替不可）
-- **接続/準備状況表示**: バックエンド別に準備中/準備完了/未インストール/エラー等を表示
 - **自動更新**: GitHub Releases から最新バージョンを取得
 
 ## 言語自動検出
@@ -89,13 +87,9 @@ PDF翻訳はPP-DocLayout-L（PaddleOCR）によるレイアウト解析を使用
 |------|------|
 | OS | Windows 10/11 |
 | Python | 3.11以上（[公式サイト](https://www.python.org/downloads/)からインストール、配布版 `setup.vbs` は同梱のため不要） |
-| ブラウザ | Microsoft Edge（Copilot利用時） |
-| M365 Copilot | 有料ライセンス または [無料版](https://m365.cloud.microsoft/chat) へのアクセス（Copilot利用時） |
 | ローカルAI | `local_ai/`（llama.cpp `llama-server` + モデル）※現在の同梱はAVX2版 |
 
-> **翻訳バックエンドについて**:
-> - **Copilot**: [m365.cloud.microsoft/chat](https://m365.cloud.microsoft/chat) にアクセスしてログインできることを事前に確認してください。
-> - **ローカルAI**: `packaging/install_deps.bat`（または配布ZIP）で `local_ai/` が配置されていれば、Edgeなしで翻訳できます（サーバは `127.0.0.1` 固定）。
+> **Note**: `packaging/install_deps.bat`（または配布ZIP）で `local_ai/` が配置されていれば、そのまま翻訳できます（サーバは `127.0.0.1` 固定）。
 
 ## インストールと起動
 
@@ -111,11 +105,11 @@ PDF翻訳はPP-DocLayout-L（PaddleOCR）によるレイアウト解析を使用
 
 ### 方法1: install_deps.bat を使用（推奨）
 
-Windows環境で最も簡単にセットアップできる方法です。Python、依存関係、Playwrightブラウザを自動でインストールします。
+Windows環境で最も簡単にセットアップできる方法です。Pythonと依存関係を自動でインストールします（必要に応じてローカルAIランタイムも配置します）。
 > **Note**: 新規インストール（`local_ai/manifest.json` が無い状態）では Vulkan が既定です。CPU(x64) にしたい場合は `set LOCAL_AI_LLAMA_CPP_VARIANT=cpu` を設定してから実行します。既存の `manifest.json` がある場合はその設定を優先し、切り替えたい場合は `set LOCAL_AI_LLAMA_CPP_VARIANT=vulkan|cpu` で上書きします。
 > **Note**: `packaging/install_local_ai.ps1` は実行のたびに最新リリースを確認し、必要な場合のみ更新します。
-> **Note**: ローカルAIの翻訳モデルは固定です: `tencent/HY-MT1.5-7B-GGUF/HY-MT1.5-7B-Q4_K_M.gguf`
-> **Note**: ダウンロード先は `local_ai/models/HY-MT1.5-7B-Q4_K_M.gguf` です。
+> **Note**: ローカルAIの既定翻訳モデルは `mradermacher/translategemma-4b-it-GGUF/translategemma-4b-it.IQ4_XS.gguf` です。
+> **Note**: ダウンロード先は `local_ai/models/translategemma-4b-it.IQ4_XS.gguf` です。
 > **Note**: `LOCAL_AI_MODEL_*` / `LOCAL_AI_MODEL_KIND` によるモデル切り替えはできません（`local_ai/manifest.json` は記録用で、選択には影響しません）。
 
 ```bash
@@ -148,10 +142,9 @@ Do you need to use a proxy server?
 1. uv（高速パッケージマネージャー）のダウンロード
 2. Python 3.11 のインストール
 3. 仮想環境の作成と依存関係のインストール
-4. Playwrightブラウザ（Chromium）のインストール
-5. PaddleOCR（PDF翻訳用）のインストールと検証
-6. 起動高速化のためのバイトコードプリコンパイル
-7. ローカルAIランタイム（llama.cpp + 固定HY-MTモデル）のインストール（任意・大容量）
+4. PaddleOCR（PDF翻訳用）のインストールと検証
+5. 起動高速化のためのバイトコードプリコンパイル
+6. ローカルAIランタイム（llama.cpp + 固定モデル）のインストール（任意・大容量）
 
 セットアップ完了後、`YakuLingo.exe` をダブルクリックして起動します（常駐起動します。UIは必要に応じて http://127.0.0.1:8765/ を開きます）。
 
@@ -170,9 +163,6 @@ uv sync
 # または pip を使用（uvがない場合）
 pip install -r requirements.txt
 
-# Playwrightブラウザのインストール
-playwright install chromium
-
 # PDFのレイアウト解析（PP-DocLayout-L）を使う場合（オプション）
 uv sync --extra ocr
 # または
@@ -187,36 +177,22 @@ uv run python app.py
 
 ### クイックスタート（最短手順）
 1. `packaging\install_deps.bat` を実行（推奨）、または `uv sync` / `pip install -r requirements.txt`
-2. `playwright install chromium`（install_deps.bat使用時は不要）
-3. `YakuLingo.exe` または `uv run python app.py` を実行
+2. `YakuLingo.exe` または `uv run python app.py` を実行
 
 ## 初回セットアップ
 
-YakuLingoを初めて使う際は、利用する翻訳バックエンドに応じて準備します（サイドバー上部のCopilotボタンON/OFFで切り替え）。
-
-### 1. Copilotを使う場合（ログイン確認）
-1. Microsoft Edgeを開く
-2. [m365.cloud.microsoft/chat](https://m365.cloud.microsoft/chat) にアクセス
-3. 会社アカウントまたはMicrosoftアカウントでログイン
-4. チャット画面が表示されることを確認
-5. サイドバー上部のCopilotボタンをONにする
-
-### 2. ローカルAIを使う場合（インストール確認）
+### 1. ローカルAI（インストール確認）
 1. `local_ai/` が存在することを確認（`packaging/install_deps.bat` を実行済み、または配布ZIPに同梱）
-2. サイドバー上部のCopilotボタンをOFFのままにする → 「準備完了」になるまで待機
-3. エラー時はメッセージに従って対処（例: AVX2非対応のPCではローカルAIが利用できません。Copilotに切り替えるか、generic版の同梱が必要です）
+2. エラー時はメッセージに従って対処（例: AVX2非対応のPCでは同梱バイナリが動かない場合があるため、generic版 `llama-server` の同梱が必要です）
 
-### 3. YakuLingoの起動
+### 2. YakuLingoの起動
 1. `uv run python app.py` を実行
 2. UIを開く（http://127.0.0.1:8765/）または `Ctrl + Alt + J` で翻訳を実行（テキスト/ファイルを自動判別）
-3. Copilot利用時にログイン画面が表示された場合は、Edgeウィンドウでログインを完了（翻訳時に接続します）
 
-> **Note**: Copilot利用時、初回起動やログインが必要な場合はCopilot用Edgeが前面に表示されることがあります（ログインのため）。
-> **Note**: Copilot利用時、翻訳中はCopilot用EdgeがUIの背面に表示されることがあります（フォーカスは奪いません）。
 > **Note**: YakuLingoは常駐型です。UIを閉じてもバックグラウンドで動作し続けます（終了は明示的に実行）。
 > **Note**: 常駐中はタスクバーに表示されない場合があります。UIはデスクトップの `YakuLingo`、`Ctrl + Alt + J`（またはタスクトレイのアイコンメニュー > `Open`）で開きます。
 > **Note**: ランチャー（`YakuLingo.exe`）はwatchdogで予期せぬ終了時に自動再起動します。完全に停止したい場合はタスクトレイのアイコンメニュー > `Exit` を実行してください。
-> **Note**: ブラウザモードではUIはブラウザ（Edgeのアプリウィンドウ等）として表示され、Copilotは通常のEdgeウィンドウとして表示されます。
+> **Note**: ブラウザモードではUIは既定のブラウザで表示されます。
 
 ## 使用方法
 
@@ -225,7 +201,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 1. テキストエリアに翻訳したいテキストを入力（起動直後はテキスト翻訳画面です）
 2. **翻訳する** ボタンをクリック
 3. 翻訳結果を確認
-   - **日本語入力 → 英訳**: 最簡潔（minimal）のみを表示（Copilot/ローカルAI共通）
+   - **日本語入力 → 英訳**: 最簡潔（minimal）のみを表示
    - **英語入力 → 和訳**: 日本語訳を表示（訳文のみ）
 4. 必要に応じて「再翻訳」や「戻し訳」「編集して戻し訳」で確認
 > **Note**: バッチ上限を超える場合は「分割して翻訳」が表示され、翻訳中は途中結果がストリーミング表示されます（ローカルAIはbest-effort・既定は途中表示ON、`YAKULINGO_DISABLE_LOCAL_STREAMING_PREVIEW=1` で無効化）。
@@ -286,72 +262,64 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 #### config/settings.template.json（例）
 
  ```json
-  {
-    "reference_files": [],
-    "output_directory": null,
-    "last_tab": "text",
-    "translation_backend": "local",
-    "copilot_enabled": true,
-    "max_chars_per_batch": 1000,
-    "request_timeout": 600,
-    "max_retries": 3,
-   "local_ai_model_path": "local_ai/models/HY-MT1.5-7B-Q4_K_M.gguf",
-  "local_ai_server_dir": "local_ai/llama_cpp",
-  "local_ai_host": "127.0.0.1",
-  "local_ai_port_base": 4891,
-  "local_ai_port_max": 4900,
-  "local_ai_ctx_size": 2048,
-  "local_ai_threads": 0,
-  "local_ai_threads_batch": null,
-  "local_ai_temperature": 0.7,
-  "local_ai_top_p": 0.95,
-  "local_ai_top_k": 64,
-  "local_ai_min_p": 0.01,
-  "local_ai_repeat_penalty": 1.05,
-  "local_ai_max_tokens": 1024,
-  "local_ai_batch_size": 512,
-  "local_ai_ubatch_size": 128,
-  "local_ai_device": "auto",
-   "local_ai_n_gpu_layers": "auto",
-   "local_ai_flash_attn": "auto",
-   "local_ai_no_warmup": true,
-   "local_ai_mlock": false,
-   "local_ai_no_mmap": false,
-  "local_ai_vk_force_max_allocation_size": null,
-  "local_ai_vk_disable_f16": false,
-  "local_ai_cache_type_k": "q8_0",
-  "local_ai_cache_type_v": "q8_0",
-  "local_ai_max_chars_per_batch": 1000,
-  "local_ai_max_chars_per_batch_file": 1000,
-  "bilingual_output": false,
-  "export_glossary": false,
-  "translation_style": "minimal",
-  "use_bundled_glossary": true,
-  "font_size_adjustment_jp_to_en": 0.0,
-  "font_size_min": 8.0,
-  "font_jp_to_en": "Arial",
-  "font_en_to_jp": "MS Pゴシック",
-  "ocr_batch_size": 5,
-  "ocr_dpi": 300,
-  "ocr_device": "auto",
-  "browser_display_mode": "minimized",
-  "login_overlay_guard": {
-    "enabled": false,
-    "remove_after_version": null
-  },
-  "auto_update_enabled": true,
-  "auto_update_check_interval": 0,
-  "github_repo_owner": "minimo162",
-  "github_repo_name": "yakulingo",
-  "last_update_check": null
-}
+   {
+     "reference_files": [],
+     "output_directory": null,
+     "last_tab": "text",
+     "max_chars_per_batch": 1000,
+     "request_timeout": 600,
+     "max_retries": 3,
+    "local_ai_model_path": "local_ai/models/translategemma-4b-it.IQ4_XS.gguf",
+   "local_ai_server_dir": "local_ai/llama_cpp",
+   "local_ai_host": "127.0.0.1",
+   "local_ai_port_base": 4891,
+   "local_ai_port_max": 4900,
+   "local_ai_ctx_size": 2048,
+   "local_ai_threads": 0,
+   "local_ai_threads_batch": 0,
+   "local_ai_temperature": 0.7,
+   "local_ai_top_p": 0.95,
+   "local_ai_top_k": 64,
+   "local_ai_min_p": 0.01,
+   "local_ai_repeat_penalty": 1.05,
+   "local_ai_max_tokens": 1024,
+   "local_ai_batch_size": 512,
+   "local_ai_ubatch_size": 128,
+   "local_ai_device": "auto",
+    "local_ai_n_gpu_layers": "auto",
+    "local_ai_flash_attn": "auto",
+    "local_ai_no_warmup": true,
+    "local_ai_mlock": false,
+    "local_ai_no_mmap": false,
+   "local_ai_vk_force_max_allocation_size": null,
+   "local_ai_vk_disable_f16": false,
+   "local_ai_cache_type_k": "q8_0",
+   "local_ai_cache_type_v": "q8_0",
+   "local_ai_max_chars_per_batch": 1000,
+   "local_ai_max_chars_per_batch_file": 1000,
+   "bilingual_output": false,
+   "export_glossary": false,
+   "translation_style": "minimal",
+   "use_bundled_glossary": true,
+   "font_size_adjustment_jp_to_en": 0.0,
+   "font_size_min": 8.0,
+   "font_jp_to_en": "Arial",
+   "font_en_to_jp": "MS Pゴシック",
+   "ocr_batch_size": 5,
+   "ocr_dpi": 300,
+   "ocr_device": "auto",
+   "auto_update_enabled": true,
+   "auto_update_check_interval": 0,
+   "github_repo_owner": "minimo162",
+   "github_repo_name": "yakulingo",
+   "last_update_check": null
+ }
 ```
 
 #### config/user_settings.json（例）
 
 ```json
 {
-  "translation_backend": "local",
   "translation_style": "minimal",
   "font_jp_to_en": "Arial",
   "font_en_to_jp": "MS Pゴシック",
@@ -359,7 +327,6 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
   "bilingual_output": false,
   "export_glossary": false,
   "use_bundled_glossary": true,
-  "browser_display_mode": "minimized",
   "last_tab": "text"
 }
 ```
@@ -367,44 +334,34 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
  #### 基本設定（よく変更する項目）
  
  | 設定 | 説明 | デフォルト |
- |------|------|----------|
- | `translation_backend` | 翻訳バックエンド（`copilot` / `local`） | "local" |
+  |------|------|----------|
 | `translation_style` | ファイル翻訳のスタイル | "minimal" |
- | `bilingual_output` | 対訳ファイルを生成 | false |
- | `export_glossary` | 用語集CSVを生成 | false |
- | `use_bundled_glossary` | 同梱 `glossary.csv` を自動で参照 | true |
+  | `bilingual_output` | 対訳ファイルを生成 | false |
+  | `export_glossary` | 用語集CSVを生成 | false |
+  | `use_bundled_glossary` | 同梱 `glossary.csv` を自動で参照 | true |
 | `font_jp_to_en` | 英訳時の出力フォント | Arial |
 | `font_en_to_jp` | 和訳時の出力フォント | MS Pゴシック |
-| `browser_display_mode` | ブラウザ表示モード | "minimized" |
 
 **翻訳スタイル**: `"minimal"`（最簡潔）
 > **Note**: 後方互換のため `"standard"` / `"concise"` は `"minimal"` として扱われます。
 
-**ブラウザ表示モード**:
-| 値 | 説明 |
-|-----|------|
-| `"minimized"` | 最小化して非表示（デフォルト） |
-| `"foreground"` | 前面に表示 |
-> **Note**: `side_panel` は廃止され、`minimized` と同等に扱われます。
 > **Note**: Windowsではウィンドウサイズはプライマリモニターの作業領域（タスクバー除外）を基準に自動計算されます。取得できない場合は最も大きいモニターを使用します。
 
-**用語集処理**: `use_bundled_glossary=true` の場合、同梱 `glossary.csv` を自動で参照します（デフォルト: true）。
-  - Copilot: 参照ファイルとして添付
-  - ローカルAI: 入力文にマッチした用語のみをプロンプトへ埋め込み（上限あり）
+**用語集処理**: `use_bundled_glossary=true` の場合、同梱 `glossary.csv` を自動で参照します（デフォルト: true）。入力文にマッチした用語のみをプロンプトへ埋め込みます（上限あり）。
 
- **翻訳ルール**: `prompts/translation_rules.txt` を翻訳時に自動反映します（Copilot/ローカルAI共通、ローカルAIでも常に注入）。
- **出力言語ガード**: 翻訳結果が期待言語（英訳=英語、和訳=日本語）でない場合は、自動再試行（可能な場合）またはエラーとして扱います。Copilotでやり直す場合は、サイドバー上部のCopilotボタンで切り替えて再実行してください。
- **不完全翻訳ガード（ローカルAI英訳）**: 「Revenue」等の極端に短い英訳は自動で再試行し、改善しない場合はエラーになります（必要なら `local_ai_max_tokens` / `local_ai_ctx_size` を調整、またはCopilotに切替）。
+ **翻訳ルール**: `prompts/translation_rules.txt` を翻訳時に自動反映します。
+ **出力言語ガード**: 翻訳結果が期待言語（英訳=英語、和訳=日本語）でない場合は、自動再試行（可能な場合）またはエラーとして扱います。
+ **不完全翻訳ガード（ローカルAI英訳）**: 「Revenue」等の極端に短い英訳は自動で再試行し、改善しない場合はエラーになります（必要なら `local_ai_max_tokens` / `local_ai_ctx_size` を調整）。
  **プロンプトSSOT**: `docs/PROMPT_TEMPLATES_SSOT.md` にテンプレの単一正をまとめています。
 > **Note**: ローカルAIは参照/ルールをプロンプトへ埋め込むため、入力や参照が長いと一部省略や途中終了（JSON未完）になる場合があります。必要なら `local_ai_ctx_size` / `local_ai_max_tokens` / 参照ファイルを調整してください。
 
 ### ローカルAI推論パラメータ（推奨）
 
-**HY-MT1.5 推奨値（ベースライン）**
+**既定モデル（TranslateGemma 4B）推奨値（ベースライン）**
 ```json
 {
-  "top_k": 20,
-  "top_p": 0.6,
+  "top_k": 64,
+  "top_p": 0.95,
   "repetition_penalty": 1.05,
   "temperature": 0.7
 }
@@ -433,18 +390,9 @@ intent にある `Bytes { ... }` のうち、`top_k/top_p` は YakuLingo の `lo
 > **Note**: `local_ai/llama_cpp/vulkan` または `local_ai/llama_cpp/avx2` のどちらかを使います（同梱されている方）。
 ```bash
 cd local_ai\llama_cpp\vulkan
-.\llama-cli.exe -m ..\..\models\HY-MT1.5-7B-Q4_K_M.gguf ^
+.\llama-cli.exe -m ..\..\models\translategemma-4b-it.IQ4_XS.gguf ^
   -p "Translate the following segment into Chinese, without additional explanation.\n\nIt’s on the house." ^
-  -n 4096 --temp 0.7 --top-k 20 --top-p 0.6 --repeat-penalty 1.05 --no-warmup
-```
-
-#### ollama 最短手順
-> **Note**: 本モデルは system_prompt を持ちません。
-```bash
-echo 'FROM hf.co/tencent/HY-MT1.5-7B-GGUF:Q8_0
-TEMPLATE """<｜hy_begin▁of▁sentence｜>{{ if .System }}{{ .System }}<｜hy_place▁holder▁no▁3｜>{{ end }}{{ if .Prompt }}<｜hy_User｜>{{ .Prompt }}{{ end }}<｜hy_Assistant｜>"""' > Modelfile
-ollama create hy-mt1.5-7b -f Modelfile
-ollama run hy-mt1.5-7b
+  -n 4096 --temp 0.7 --top-k 64 --top-p 0.95 --repeat-penalty 1.05 --no-warmup
 ```
 
 **ローカルAIの速度チューニング（開発者向け）**:
@@ -488,18 +436,18 @@ ollama run hy-mt1.5-7b
 | `font_size_min` | 最小フォントサイズ (pt) | 8.0 |
 | `ocr_batch_size` | PDF処理のバッチページ数 | 5 |
 | `ocr_dpi` | PDF処理の解像度 | 300 |
-| `max_chars_per_batch` | Copilot送信1回あたりの最大文字数 | 1000 |
-| `local_ai_model_path` | ローカルAIモデル（.gguf）のパス | `local_ai/models/HY-MT1.5-7B-Q4_K_M.gguf` |
+| `max_chars_per_batch` | 翻訳送信1回あたりの最大文字数（互換キー） | 1000 |
+| `local_ai_model_path` | ローカルAIモデル（.gguf）のパス | `local_ai/models/translategemma-4b-it.IQ4_XS.gguf` |
 | `local_ai_server_dir` | ローカルAIサーバ（llama-server）のディレクトリ | `local_ai/llama_cpp` |
 | `local_ai_port_base` | ローカルAIのポート探索開始 | 4891 |
 | `local_ai_port_max` | ローカルAIのポート探索上限 | 4900 |
 | `local_ai_ctx_size` | ローカルAIのcontext size | 2048 |
 | `local_ai_threads` | ローカルAIのスレッド数（0=auto） | 0 |
-| `local_ai_threads_batch` | ローカルAIのprefillスレッド数（nullで未指定、0=auto） | null |
+| `local_ai_threads_batch` | ローカルAIのprefillスレッド数（0=auto、nullで未指定） | 0 |
 | `local_ai_max_chars_per_batch` | ローカルAI送信1回あたりの最大文字数 | 1000 |
 | `local_ai_max_chars_per_batch_file` | ローカルAI（ファイル翻訳）送信1回あたりの最大文字数 | 1000 |
 | `request_timeout` | 翻訳リクエストのタイムアウト（秒） | 600 |
-| `local_ai_temperature` | ローカルAIの温度（Qwen3推奨） | 0.7 |
+| `local_ai_temperature` | ローカルAIの温度 | 0.7 |
 | `local_ai_top_p` | ローカルAIのTop-P | 0.95 |
 | `local_ai_top_k` | ローカルAIのTop-K | 64 |
 | `local_ai_min_p` | ローカルAIのMin-P | 0.01 |
@@ -517,14 +465,13 @@ ollama run hy-mt1.5-7b
 | `local_ai_vk_disable_f16` | VulkanでF16を無効化 | false |
 | `local_ai_cache_type_k` | KVキャッシュ（K）の型（nullで無効） | `q8_0` |
 | `local_ai_cache_type_v` | KVキャッシュ（V）の型（nullで無効） | `q8_0` |
-| `login_overlay_guard` | ログイン表示のガード（通常は無効） | enabled=false |
 | `auto_update_enabled` | 起動時の自動更新チェック | true |
 | `auto_update_check_interval` | 自動更新チェック間隔（秒、0=起動毎） | 0 |
 
 > **Note**: `ocr_*` 設定はPDF処理（レイアウト解析）に使用されます。設定名は互換性のため維持しています。
 > **Note**: ローカルAI関連のパス（`local_ai_model_path`, `local_ai_server_dir`）は、相対パスの場合 **アプリ配置ディレクトリ基準** で解決します（CWD基準ではありません）。
 > **Note**: `local_ai_host` は安全のため `127.0.0.1` に強制されます。
-> **Note**: 固定モデル（`local_ai/models/HY-MT1.5-7B-Q4_K_M.gguf`）が存在しない場合、ローカルAIは起動しません。`packaging/install_deps.bat`（Step 7）を実行するか、`powershell -NoProfile -ExecutionPolicy Bypass -File packaging\\install_local_ai.ps1` を再実行してください。必要なら同名ファイルを手動で `local_ai/models/` に配置してください。
+> **Note**: 既定モデル（`local_ai/models/translategemma-4b-it.IQ4_XS.gguf`）が存在しない場合、ローカルAIは起動しません。`packaging/install_deps.bat` を実行するか、`powershell -NoProfile -ExecutionPolicy Bypass -File packaging\\install_local_ai.ps1` を再実行してください。必要なら同名ファイルを手動で `local_ai/models/` に配置してください。
 
 ### ローカルAI速度計測（ベンチ）
 
@@ -569,8 +516,7 @@ uv run python tools/bench_local_ai.py --mode cold --with-glossary
 1. **テキスト翻訳**: 入力欄下部の 📎 ボタンをクリックしてファイルを選択
 2. **ファイル翻訳**: ファイル選択後、「参照ファイル」エリアにドラッグ＆ドロップ
 
-**対応形式（Copilot）**: CSV, TXT, PDF, Word, Excel, PowerPoint, Markdown, JSON<br>
-**対応形式（ローカルAI）**: CSV, TXT, PDF, Word, Excel, PowerPoint, Markdown, JSON（本文埋め込み・テキスト抽出。上限: 合計4,000文字 / 1ファイル2,000文字。超過は切り捨て＋警告）
+**対応形式**: CSV, TXT, PDF, Word, Excel, PowerPoint, Markdown, JSON（本文埋め込み・テキスト抽出。上限: 合計4,000文字 / 1ファイル2,000文字。超過は切り捨て＋警告）
 
 **デフォルト (glossary.csv)**:
 ```csv
@@ -599,25 +545,12 @@ uv run python tools/bench_local_ai.py --mode cold --with-glossary
 
 ## トラブルシューティング
 
-### Copilotに接続できない
-
-**確認事項**:
-1. Microsoft Edgeがインストールされているか確認
-2. [m365.cloud.microsoft/chat](https://m365.cloud.microsoft/chat) にブラウザでアクセスしてログインできるか確認
-3. YakuLingoを一度終了（配布版はタスクトレイのアイコンメニュー > `Exit`）してから、他のEdgeウィンドウをすべて閉じる（接続の競合を避けるため）
-
-**Edgeプロセスの完全終了方法**:
-1. `Ctrl + Shift + Esc` でタスクマネージャーを開く
-2. 「Microsoft Edge」を探して右クリック → 「タスクの終了」
-3. バックグラウンドで動作している場合は「詳細」タブから `msedge.exe` をすべて終了
-4. YakuLingoを再起動
-
 ### ローカルAIが使えない（未インストール/起動失敗）
 
-- サイドバー上部で **ローカルAI** を選択した時に「見つかりません」: `local_ai/`（`llama_cpp` と `models`）があるか確認し、無ければ `packaging/install_deps.bat` を実行
-- 「AVX2非対応」: 現状の同梱がAVX2版の場合、Copilotに切り替えるか、generic版 `llama-server` の同梱が必要です
+- `local_ai/`（`llama_cpp` と `models`）があるか確認し、無ければ `packaging/install_deps.bat` を実行
+- 「AVX2非対応」: 現状の同梱がAVX2版の場合、generic版 `llama-server` の同梱が必要です
 - 「空きポートが見つかりませんでした（4891-4900）」: 他プロセスが使用中の可能性があるため、`local_ai_port_base` / `local_ai_port_max` を変更するか、競合プロセスを停止
-- モデルのダウンロードが失敗/404: ローカルAIモデルは固定です。ネットワーク/プロキシ設定を確認し `packaging/install_deps.bat`（Step 7）を再実行するか、`powershell -NoProfile -ExecutionPolicy Bypass -File packaging\\install_local_ai.ps1` を再実行してください。必要なら `tencent/HY-MT1.5-7B-GGUF` の `HY-MT1.5-7B-Q4_K_M.gguf` を `local_ai/models/HY-MT1.5-7B-Q4_K_M.gguf` に手動配置してください。
+- モデルのダウンロードが失敗/404: ネットワーク/プロキシ設定を確認し `packaging/install_deps.bat` を再実行するか、`powershell -NoProfile -ExecutionPolicy Bypass -File packaging\\install_local_ai.ps1` を再実行してください。必要なら `mradermacher/translategemma-4b-it-GGUF` の `translategemma-4b-it.IQ4_XS.gguf` を `local_ai/models/translategemma-4b-it.IQ4_XS.gguf` に手動配置してください。
 - ローカルAIランタイムの更新が失敗（DLLロック）: `...ggml-base.dll にアクセスできません` などが出る場合は、まず YakuLingo（タスクトレイ > `Exit`）を終了し、残っている `llama-server.exe` 等をタスクマネージャーで終了してから再実行してください。
   - 再実行: `powershell -NoProfile -ExecutionPolicy Bypass -File packaging\\install_local_ai.ps1`
   - それでも失敗する場合: PCを再起動してから再実行（または `packaging\\install_deps.bat` をやり直し）
@@ -625,7 +558,7 @@ uv run python tools/bench_local_ai.py --mode cold --with-glossary
 
 ### 翻訳が止まる／エラーから復帰したい
 
-- 翻訳中は「キャンセル」ボタンで中断できます（Copilot側エラー時も復帰できます）
+- 翻訳中は「キャンセル」ボタンで中断できます
 - 復帰しない場合はタスクトレイのアイコンメニュー > `Exit` で一度停止してから再起動してください
 
 ### ファイル翻訳が失敗する
@@ -634,14 +567,6 @@ uv run python tools/bench_local_ai.py --mode cold --with-glossary
 - ファイルサイズが50MB以下か確認
 - 対応形式（.xlsx, .xlsm, .csv, .docx, .pptx, .pdf, .txt）か確認
 - Excel/Word/PowerPointファイルが他のアプリで開かれていないか確認
-
-### 参照ファイルのアップロード待ちで止まる（Copilotのみ）
-
-- 参照ファイル（glossary / 参考資料）を添付した場合、送信可能状態が一定時間安定するまで待機してから送信します
-- 「添付処理が完了しませんでした…」が出る場合は、Edge側でアップロード完了を確認して再試行
-- 通信が不安定な場合はファイルサイズを減らすか、参照ファイル数を減らしてください
-
-> **Note**: ローカルAIは参照ファイルを本文に埋め込む方式のため、アップロード待ちは発生しません（対応形式/上限は「設定 > 参照ファイル」を参照）。
 
 ### 翻訳結果が期待と異なる
 
@@ -674,7 +599,6 @@ uv run --extra test pytest --cov=yakulingo --cov-report=term-missing
 
 ### ローカルAI英訳の手動QA（短すぎる出力）
 
-- サイドバー上部のCopilotボタンを **OFF**（ローカルAI）に切り替え
 - テキスト翻訳で次を入力して翻訳:
   ```text
   当中間連結会計期間における連結業績は、売上高は2兆2,385億円となりました。
@@ -720,7 +644,7 @@ YakuLingo/
 | カテゴリ | 技術 |
 |---------|------|
 | UI | NiceGUI + pywebview (Material Design 3 / Expressive) |
-| 翻訳エンジン | M365 Copilot (Playwright) / ローカルAI（llama.cpp `llama-server`・OpenAI互換API） |
+| 翻訳エンジン | ローカルAI（llama.cpp `llama-server`・OpenAI互換API） |
 | Excel処理 | xlwings (Windows/macOS) / openpyxl (フォールバック) |
 | Word処理 | python-docx |
 | PowerPoint処理 | python-pptx |

@@ -255,25 +255,6 @@ def _style_selector(current_style: str, on_change: Optional[Callable[[str], None
                     btn.tooltip(tooltip)
 
 
-def _build_combined_translation_text(result: TextTranslationResult) -> str:
-    if not result.options:
-        return ""
-    if result.is_to_english:
-        parts = []
-        for option in result.options:
-            style_key = _normalize_text_style(option.style)
-            style_label = (
-                TEXT_STYLE_LABELS.get(style_key, option.style or "translation")
-                if style_key
-                else (option.style or "translation")
-            )
-            header = f"[{style_label}]"
-            option_text = normalize_literal_escapes(option.text)
-            parts.append(f"{header}\n{option_text}".strip())
-        return "\n\n".join(parts)
-    return normalize_literal_escapes(result.options[0].text)
-
-
 def _iter_ordered_options(result: TextTranslationResult) -> list[TranslationOption]:
     if not result.options:
         return []
@@ -974,31 +955,6 @@ def _render_empty_result_state():
         )
 
 
-def _render_loading(detected_language: Optional[str] = None):
-    """
-    Render loading state with language detection indicator.
-
-    Args:
-        detected_language: Copilot-detected source language (None = still detecting)
-    """
-    with ui.element("div").classes("loading-character animate-in"):
-        # Loading spinner and status
-        with ui.row().classes("items-center gap-3"):
-            ui.spinner("dots", size="lg").classes("text-primary")
-
-            # Translation direction message
-            with ui.row().classes("items-center gap-2"):
-                if detected_language is None:
-                    # Still detecting language
-                    ui.label("翻訳を実行中").classes("message")
-                elif detected_language == "日本語":
-                    # Japanese → English
-                    ui.label("英訳を実行中").classes("message")
-                else:
-                    # Other → Japanese
-                    ui.label("和訳を実行中").classes("message")
-
-
 def _build_display_options(
     options: list[TranslationOption],
     compare_mode: bool,
@@ -1030,32 +986,6 @@ def _select_primary_option(
         if option.style == "concise":
             return option
     return options[0]
-
-
-def _partition_style_options(
-    result: TextTranslationResult,
-) -> tuple[
-    Optional[TranslationOption], list[TranslationOption], list[TranslationOption]
-]:
-    display_options = _build_display_options(result.options, True)
-    primary_option = _select_primary_option(display_options)
-    if not primary_option:
-        return None, [], display_options
-    secondary_options = [
-        option for option in display_options if option is not primary_option
-    ]
-    return primary_option, secondary_options, display_options
-
-
-def _resolve_compare_base_text(
-    display_options: list[TranslationOption],
-    compare_base_style: str,
-    fallback_text: str,
-) -> str:
-    for option in display_options:
-        if option.style == compare_base_style:
-            return option.text
-    return fallback_text
 
 
 def _render_results_to_en(

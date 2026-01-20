@@ -286,15 +286,15 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
 #### config/settings.template.json（例）
 
  ```json
- {
-   "reference_files": [],
-   "output_directory": null,
-   "last_tab": "text",
-   "translation_backend": "copilot",
-   "copilot_enabled": true,
-   "max_chars_per_batch": 1000,
-   "request_timeout": 600,
-   "max_retries": 3,
+  {
+    "reference_files": [],
+    "output_directory": null,
+    "last_tab": "text",
+    "translation_backend": "local",
+    "copilot_enabled": true,
+    "max_chars_per_batch": 1000,
+    "request_timeout": 600,
+    "max_retries": 3,
    "local_ai_model_path": "local_ai/models/HY-MT1.5-7B-Q4_K_M.gguf",
   "local_ai_server_dir": "local_ai/llama_cpp",
   "local_ai_host": "127.0.0.1",
@@ -368,7 +368,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
  
  | 設定 | 説明 | デフォルト |
  |------|------|----------|
- | `translation_backend` | 翻訳バックエンド（`copilot` / `local`） | "copilot" |
+ | `translation_backend` | 翻訳バックエンド（`copilot` / `local`） | "local" |
 | `translation_style` | ファイル翻訳のスタイル | "minimal" |
  | `bilingual_output` | 対訳ファイルを生成 | false |
  | `export_glossary` | 用語集CSVを生成 | false |
@@ -393,7 +393,7 @@ YakuLingoを初めて使う際は、利用する翻訳バックエンドに応�
   - ローカルAI: 入力文にマッチした用語のみをプロンプトへ埋め込み（上限あり）
 
  **翻訳ルール**: `prompts/translation_rules.txt` を翻訳時に自動反映します（Copilot/ローカルAI共通、ローカルAIでも常に注入）。
- **出力言語ガード**: 翻訳結果が期待言語（英訳=英語、和訳=日本語）でない場合は自動で再試行し、必要に応じてフォールバックします。
+ **出力言語ガード**: 翻訳結果が期待言語（英訳=英語、和訳=日本語）でない場合は、自動再試行（可能な場合）またはエラーとして扱います。Copilotでやり直す場合は、サイドバー上部のCopilotボタンで切り替えて再実行してください。
  **不完全翻訳ガード（ローカルAI英訳）**: 「Revenue」等の極端に短い英訳は自動で再試行し、改善しない場合はエラーになります（必要なら `local_ai_max_tokens` / `local_ai_ctx_size` を調整、またはCopilotに切替）。
  **プロンプトSSOT**: `docs/PROMPT_TEMPLATES_SSOT.md` にテンプレの単一正をまとめています。
 > **Note**: ローカルAIは参照/ルールをプロンプトへ埋め込むため、入力や参照が長いと一部省略や途中終了（JSON未完）になる場合があります。必要なら `local_ai_ctx_size` / `local_ai_max_tokens` / 参照ファイルを調整してください。

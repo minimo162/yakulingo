@@ -3578,9 +3578,6 @@ class TranslationService:
             elif style is None:
                 style = DEFAULT_TEXT_STYLE
 
-            translate_single = self._translate_single_with_cancel
-            copilot_on_chunk = on_chunk
-
             if self._use_local_backend():
                 local_result = self._translate_text_with_options_local(
                     text=text,
@@ -3593,13 +3590,17 @@ class TranslationService:
                 if (local_result.metadata or {}).get(
                     "output_language_mismatch"
                 ) and bool(getattr(self.config, "copilot_enabled", True)):
-                    logger.warning(
-                        "Local text translation output language mismatch; falling back to Copilot"
-                    )
-                    translate_single = self._translate_single_with_cancel_on_copilot
-                    copilot_on_chunk = None
-                else:
-                    return local_result
+                    # Copilot is an explicit user choice (via UI toggle).
+                    # When local output is suspicious, guide the user to switch manually.
+                    advice = "Copilotボタンで切り替えて再実行してください。"
+                    if local_result.error_message:
+                        if advice not in local_result.error_message:
+                            local_result.error_message = (
+                                f"{local_result.error_message}\n{advice}"
+                            )
+                    else:
+                        local_result.error_message = advice
+                return local_result
 
             return self._translate_text_with_options_on_copilot(
                 text=text,
@@ -3607,8 +3608,8 @@ class TranslationService:
                 style=style,
                 detected_language=detected_language,
                 output_language=output_language,
-                on_chunk=copilot_on_chunk,
-                translate_single=translate_single,
+                on_chunk=on_chunk,
+                translate_single=self._translate_single_with_cancel,
             )
 
         except TranslationCancelledError:

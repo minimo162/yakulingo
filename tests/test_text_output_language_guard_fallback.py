@@ -6,7 +6,6 @@ from pathlib import Path
 from yakulingo.config.settings import AppSettings
 from yakulingo.services.translation_service import (
     TranslationService,
-    is_expected_output_language,
     language_detector,
 )
 
@@ -68,7 +67,7 @@ def test_copilot_to_jp_retries_when_output_is_chinese() -> None:
     assert language_detector.detect_local(result.options[0].text) == "日本語"
 
 
-def test_local_to_en_falls_back_to_copilot_on_output_language_mismatch(
+def test_local_to_en_does_not_fall_back_to_copilot_on_output_language_mismatch(
     monkeypatch,
 ) -> None:
     copilot = SequencedCopilotHandler(["Hello"])
@@ -99,14 +98,14 @@ def test_local_to_en_falls_back_to_copilot_on_output_language_mismatch(
     )
 
     assert len(calls) == 1
-    assert copilot.translate_single_calls == 1  # fallback
+    assert copilot.translate_single_calls == 0
     assert result.output_language == "en"
-    assert result.options
-    assert result.options[0].text == "Hello"
-    assert is_expected_output_language(result.options[0].text, "en")
+    assert not result.options
+    assert result.error_message
+    assert "Copilotボタン" in result.error_message
 
 
-def test_local_style_comparison_falls_back_to_copilot_on_output_language_mismatch(
+def test_local_style_comparison_does_not_fall_back_to_copilot_on_output_language_mismatch(
     monkeypatch,
 ) -> None:
     copilot_response = """[minimal]
@@ -141,9 +140,8 @@ Hello
     )
 
     assert local_calls == 1
-    assert copilot.translate_single_calls == 1  # fallback
+    assert copilot.translate_single_calls == 0
     assert result.output_language == "en"
-    assert [option.style for option in result.options] == ["minimal"]
-    assert all(
-        is_expected_output_language(option.text, "en") for option in result.options
-    )
+    assert not result.options
+    assert result.error_message
+    assert "Copilotボタン" in result.error_message

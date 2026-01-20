@@ -330,7 +330,7 @@
         <div class="hero-content">
           <div class="hero-tag">セットアップ完了 / クイックガイド</div>
           <h1>Ctrl+Alt+J で翻訳。</h1>
-          <p>Microsoft 365 Copilot / ローカルAI（llama.cpp）を切り替えて利用できる、常駐型の翻訳支援ツールです。</p>
+          <p>PC内のローカルAI（llama.cpp / 127.0.0.1）で翻訳する、常駐型の翻訳支援ツールです。</p>
           <div class="hero-grid">
             <div class="hero-card">
               <strong>テキストもファイルも Ctrl+Alt+J</strong>
@@ -341,12 +341,12 @@
               <p>日本語 → 英語（2スタイル）/ それ以外 → 日本語（解説つき）。</p>
             </div>
             <div class="hero-card">
-              <strong>翻訳エンジンを切り替え</strong>
-              <p>画面上部のトグルで Copilot / ローカルAI を選択できます（翻訳中は切替不可）。</p>
+              <strong>翻訳エンジンはローカルAI固定</strong>
+              <p>翻訳はローカルAI（llama.cpp）で実行します（エンジン切替はありません）。</p>
             </div>
             <div class="hero-card">
-              <strong>Copilotを使う場合：ログイン</strong>
-              <p>状態表示が「ログインが必要」の場合、画面上部の警告バーにある［Edgeを前面表示］をクリックして、Copilot にログインしてください。</p>
+              <strong>ローカルAIが未導入の場合</strong>
+              <p>翻訳が「見つかりません」/「エラー」の場合は、配布フォルダの install_deps.bat を実行してローカルAIをセットアップしてください。</p>
             </div>
           </div>
           <nav>
@@ -361,20 +361,20 @@
       </header>
 
       <section id="engine">
-        <h2><span>00</span>翻訳エンジン（Copilot / ローカルAI）</h2>
-        <p>画面上部のトグルで翻訳エンジンを選択できます（翻訳中は切り替えできません）。</p>
+        <h2><span>00</span>翻訳エンジン（ローカルAI）</h2>
+        <p>翻訳は PC 内のローカルAI（llama.cpp）で実行します（接続先: 127.0.0.1）。</p>
         <div class="grid">
           <div class="card">
-            <strong>Copilot</strong>
-            <p>Microsoft Edge + Microsoft 365 Copilot を使用します。初回はログインが必要です。</p>
+            <strong>ローカルAI</strong>
+            <p>翻訳は local_ai/ のローカルAIランタイムを利用します。</p>
           </div>
           <div class="card">
-            <strong>ローカルAI</strong>
-            <p>PC内のローカルAI（llama.cpp）で翻訳します。Edgeは不要です。</p>
+            <strong>セットアップ</strong>
+            <p>ローカルAIが未導入の場合は、配布フォルダの install_deps.bat を実行してセットアップしてください。</p>
           </div>
         </div>
         <div class="note">
-          ローカルAIが「見つかりません」/「エラー」の場合は Copilot に切り替えるか、管理者にお問い合わせください（PCによってはローカルAIが利用できない場合があります）。
+          ローカルAIが「見つかりません」/「エラー」の場合は、install_deps.bat を再実行するか、管理者にお問い合わせください。
         </div>
       </section>
 
@@ -424,12 +424,12 @@
           <li>アンインストール: スタートメニュー &gt; YakuLingo アンインストール。</li>
         </ul>
         <div class="note">
-          Copilot選択時は Edge（Copilot）が背後で起動/最小化されることがあります（初回はログインが必要）。ローカルAI選択時は Edge は不要です。
+          初回はローカルAIの起動/モデル読み込みで時間がかかることがあります。
         </div>
       </section>
 
       <footer>
-        YakuLingo - 常駐翻訳ツール（Microsoft 365 Copilot / ローカルAI）。
+        YakuLingo - 常駐翻訳ツール（ローカルAI）。
       </footer>
     </div>
   </body>

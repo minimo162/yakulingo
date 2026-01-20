@@ -23,10 +23,9 @@ set SKIP_SSL=0
 
 set UV_CACHE_DIR=.uv-cache
 set UV_PYTHON_INSTALL_DIR=.uv-python
-set PLAYWRIGHT_BROWSERS_PATH=.playwright-browsers
 :: Increase timeout for large packages like paddlepaddle (~500MB-1GB)
 set UV_HTTP_TIMEOUT=600
-:: Use a supported Python version (Playwright/greenlet are not compatible with Python 3.14+ yet)
+:: Use a supported Python version (recommended: 3.11)
 set VENV_PYTHON_SPEC=3.11
 set VENV_PYTHON_PATH=
 
@@ -91,12 +90,12 @@ echo [DEBUG] Proxy config done, USE_PROXY=[!USE_PROXY!], SKIP_SSL=[!SKIP_SSL!]
 :: Step 1: Download uv
 :: ============================================================
 if exist "uv.exe" (
-    echo [1/7] SKIP - uv.exe already exists.
+    echo [1/6] SKIP - uv.exe already exists.
     goto :uv_done
 )
 
 echo.
-echo [1/7] Downloading uv...
+echo [1/6] Downloading uv...
 
 if not "!USE_PROXY!"=="1" goto :uv_download_direct
 
@@ -144,7 +143,7 @@ echo [DONE] uv downloaded.
 :: Step 2: Install Python
 :: ============================================================
 echo.
-echo [2/7] Installing Python...
+echo [2/6] Installing Python...
 
 :: Check if Python is already installed via uv
 uv.exe python find !VENV_PYTHON_SPEC! >nul 2>&1
@@ -236,7 +235,7 @@ echo [DONE] Python installed.
 :: Step 3: Install dependencies
 :: ============================================================
 echo.
-echo [3/7] Installing dependencies...
+echo [3/6] Installing dependencies...
 call :ensure_yakulingo_closed
 if errorlevel 1 exit /b 1
 
@@ -282,25 +281,10 @@ if errorlevel 1 (
 echo [DONE] Dependencies installed.
 
 :: ============================================================
-:: Step 4: Install Playwright browser
+:: Step 4: Verify paddlepaddle/paddleocr installation
 :: ============================================================
 echo.
-echo [4/7] Installing Playwright browser...
-
-:: Use .venv Python directly to avoid uv run recreating the venv
-.venv\Scripts\python.exe -m playwright install chromium
-if errorlevel 1 (
-    echo [ERROR] Failed to install Playwright browser.
-    pause
-    exit /b 1
-)
-echo [DONE] Playwright browser installed.
-
-:: ============================================================
-:: Step 5: Verify paddlepaddle/paddleocr installation
-:: ============================================================
-echo.
-echo [5/7] Verifying paddlepaddle/paddleocr installation...
+echo [4/6] Verifying paddlepaddle/paddleocr installation...
 
 :: Check if venv python exists
 if not exist ".venv\Scripts\python.exe" (
@@ -398,10 +382,10 @@ exit /b 1
 :verify_ocr_deps_exit
 
 :: ============================================================
-:: Step 6: Pre-compile Python bytecode for faster first launch
+:: Step 5: Pre-compile Python bytecode for faster first launch
 :: ============================================================
 echo.
-echo [6/7] Pre-compiling Python bytecode...
+echo [5/6] Pre-compiling Python bytecode...
 echo [INFO] This may take 3-5 minutes...
 
 :: Compile all site-packages in parallel (-j 0 = use all CPUs)
@@ -445,17 +429,17 @@ if !OCR_ERROR! neq 0 (
 echo [DONE] Pre-compilation complete.
 
 :: ============================================================
-:: Step 7: Install Local AI runtime (llama.cpp + fixed HY-MT model)
+:: Step 6: Install Local AI runtime (llama.cpp + fixed HY-MT model)
 :: ============================================================
 echo.
-echo [7/7] Installing Local AI runtime (llama.cpp + fixed HY-MT model)...
+echo [6/6] Installing Local AI runtime (llama.cpp + fixed HY-MT model)...
 set "YAKULINGO_INSTALL_DEPS_STEP7=1"
-:: Run Step 7 in a child cmd so a stray exit cannot terminate this installer.
+:: Run the Local AI step in a child cmd so a stray exit cannot terminate this installer.
 cmd /c call "packaging\install_deps_step7_local_ai.bat"
 set "LOCAL_AI_STEP7_EXIT=%ERRORLEVEL%"
 set "YAKULINGO_INSTALL_DEPS_STEP7="
 if not "%LOCAL_AI_STEP7_EXIT%"=="0" (
-    echo [WARNING] Step 7 script failed unexpectedly (exit=%LOCAL_AI_STEP7_EXIT%).
+    echo [WARNING] Local AI step script failed unexpectedly (exit=%LOCAL_AI_STEP7_EXIT%).
     echo [INFO] You can run it directly: packaging\install_deps_step7_local_ai.bat
 )
 

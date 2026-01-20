@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
 
-:: Step 7 extracted from packaging/install_deps.bat
+:: Local AI step extracted from packaging/install_deps.bat
 :: - Must never terminate the parent installer window
 :: - Always return via exit /b
 
@@ -17,13 +17,13 @@ if "!STEP7_FROM_INSTALL_DEPS!"=="0" (
     call :step7_proxy_config
     if errorlevel 1 (
         echo.
-        echo [WARNING] Proxy configuration was not completed. Skipping Step 7.
+        echo [WARNING] Proxy configuration was not completed. Skipping Local AI step.
         goto :local_ai_done
     )
 )
 
 echo.
-echo [7/7] Installing Local AI runtime (llama.cpp + fixed TranslateGemma model)...
+echo [6/6] Installing Local AI runtime (llama.cpp + fixed TranslateGemma model)...
 echo [INFO] Model is fixed: mradermacher/translategemma-4b-it-GGUF/translategemma-4b-it.IQ4_XS.gguf
 echo [INFO] This step may download large files (llama.cpp + model; a few GB).
 
@@ -50,7 +50,7 @@ set "LOCAL_AI_CHOICE=2"
 if "!LOCAL_AI_CHOICE!"=="2" goto :local_ai_skip
 if "!LOCAL_AI_CHOICE!"=="3" goto :local_ai_skip
 
-echo [INFO] Step 7 selection: choice=!LOCAL_AI_CHOICE!
+echo [INFO] Local AI selection: choice=!LOCAL_AI_CHOICE!
 if exist "local_ai\\manifest.json" (
     echo [INFO] Local AI manifest: exists ^(local_ai\manifest.json^)
     echo [INFO] NOTE: model selection is fixed; manifest/env overrides are ignored.
@@ -89,7 +89,7 @@ set LOCAL_AI_INSTALL_EXIT=!errorlevel!
 echo [INFO] install_local_ai.ps1 exit=!LOCAL_AI_INSTALL_EXIT!
 if !LOCAL_AI_INSTALL_EXIT! neq 0 (
     echo [WARNING] Failed to install Local AI runtime ^(optional^) ^(exit=!LOCAL_AI_INSTALL_EXIT!^).
-    echo [INFO] Copilot translation will still work.
+    echo [WARNING] YakuLingo translation requires Local AI runtime. Please retry the install.
     echo [INFO] You can retry later: powershell -NoProfile -ExecutionPolicy Bypass -File packaging\install_local_ai.ps1
     echo [INFO] The model is fixed and cannot be changed or skipped. Verify network/proxy settings and retry.
     echo [INFO] Or manually place files under local_ai\ ^(llama_cpp + models^).
@@ -99,20 +99,21 @@ if !LOCAL_AI_INSTALL_EXIT! neq 0 (
 goto :local_ai_done
 
 :local_ai_skip
-echo [7/7] SKIP - Local AI runtime installation skipped.
-echo [INFO] Copilot translation will still work without Local AI.
+echo [6/6] SKIP - Local AI runtime installation skipped.
+echo [WARNING] YakuLingo translation will not work until Local AI runtime is installed.
+echo [INFO] You can install it later: powershell -NoProfile -ExecutionPolicy Bypass -File packaging\install_local_ai.ps1
 
 :local_ai_done
 if "!STEP7_FROM_INSTALL_DEPS!"=="0" (
     echo.
-    echo [INFO] Step 7 finished. Press any key to close this window.
+    echo [INFO] Local AI step finished. Press any key to close this window.
     pause >nul
 )
 endlocal
 exit /b 0
 
 :: ============================================================
-:: Function: Proxy configuration (standalone Step 7)
+:: Function: Proxy configuration (standalone Local AI step)
 :: ============================================================
 :step7_proxy_config
 echo Do you need to use a proxy server?

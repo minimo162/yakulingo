@@ -1656,6 +1656,22 @@ class BatchTranslator:
         # has_refs is used for reference file attachment indicator
         has_refs = bool(reference_files)
         files_to_attach = reference_files if has_refs else None
+        if has_refs:
+            ref_names: list[str] = []
+            for path in reference_files or []:
+                try:
+                    ref_names.append(path.name)
+                except Exception:
+                    ref_names.append(str(path))
+            shown = ", ".join(ref_names[:3])
+            if len(ref_names) > 3:
+                suffix = f"+{len(ref_names) - 3} more"
+                shown = f"{shown}, {suffix}" if shown else suffix
+            logger.debug(
+                "Reference files provided: %d (%s)",
+                len(ref_names),
+                shown,
+            )
 
         # Pre-build unique text data for each batch to avoid re-translating duplicates
         # within the same batch (e.g., repeated headers, footers, common phrases)

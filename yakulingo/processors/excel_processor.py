@@ -141,12 +141,6 @@ def _get_xlwings():
     return _xlwings
 
 
-def is_xlwings_available() -> bool:
-    """Check if xlwings is available."""
-    _get_xlwings()
-    return HAS_XLWINGS
-
-
 def _is_excel_com_registered() -> bool:
     """Return True if Excel's COM ProgID looks registered on Windows."""
     global _EXCEL_COM_REGISTERED
@@ -835,8 +829,6 @@ class ExcelProcessor(FileProcessor):
         self.cell_translator = CellTranslator()
         # Warning messages for user feedback
         self._warnings: list[str] = []
-        # Flag to indicate openpyxl fallback mode
-        self._using_openpyxl_fallback = False
         # Font info cache: block_id -> (font_name, font_size)
         # Populated during extract, used during apply to avoid double COM calls
         self._font_cache: dict[str, tuple[Optional[str], float]] = {}
@@ -850,7 +842,6 @@ class ExcelProcessor(FileProcessor):
     def clear_warnings(self) -> None:
         """Clear accumulated warnings."""
         self._warnings.clear()
-        self._using_openpyxl_fallback = False
 
     def clear_font_cache(self) -> None:
         """Clear font info cache."""
@@ -1339,13 +1330,11 @@ class ExcelProcessor(FileProcessor):
         self._ensure_xls_supported(file_path)
 
         if _can_use_xlwings():
-            self._using_openpyxl_fallback = False
             yield from self._extract_text_blocks_xlwings(
                 file_path, xw, output_language, selected_sections
             )
         else:
             # Add warning for openpyxl fallback mode
-            self._using_openpyxl_fallback = True
             self._warnings.append(
                 "xlwingsが利用できないため、シェイプ（テキストボックス等）と"
                 "グラフのタイトル/ラベルは翻訳対象外です。"
@@ -3195,83 +3184,6 @@ class ExcelProcessor(FileProcessor):
             logger.warning(
                 "Error applying translation to cell %s_%s: %s", sheet_name, cell_ref, e
             )
-
-    def _apply_range_batch_xlwings(
-        self,
-        sheet,
-        sheet_name: str,
-        row: int,
-        start_col: int,
-        end_col: int,
-        cells: list[tuple[int, str, str]],
-        font_manager: FontManager,
-    ) -> None:
-        """Apply translations to a contiguous range of cells in one batch.
-
-        This reduces COM calls by writing multiple values at once.
-        """
-        try:
-            # Build the value list for the range
-            values = []
-            font_info_list = []  # To track font changes needed
-
-            for col, text, cell_ref in cells:
-                block_id = f"{sheet_name}_{cell_ref}"
-
-                # Truncate if needed
-                final_text = text
-                if text and len(text) > EXCEL_CELL_CHAR_LIMIT:
-                    final_text = text[: EXCEL_CELL_CHAR_LIMIT - 3] + "..."
-                    logger.warning(
-                        "Translation truncated for cell %s: %d -> %d chars",
-                        block_id,
-                        len(text),
-                        len(final_text),
-                    )
-                values.append(final_text)
-
-                # Get font info
-                cached_font = self._font_cache.get(block_id)
-                if cached_font:
-                    original_font_name, original_font_size = cached_font
-                else:
-                    original_font_name = None
-                    original_font_size = 11.0
-                font_info_list.append((original_font_name, original_font_size))
-
-            # Write values in batch (single COM call for all values)
-            rng = sheet.range((row, start_col), (row, end_col))
-            rng.value = values
-
-            # Apply fonts (still need individual font settings, but value write is batched)
-            # Get the new font once (same for all cells in batch)
-            # Note: font may vary by original font, so we apply individually
-            for i, (col, _, cell_ref) in enumerate(cells):
-                try:
-                    cell = sheet.range(row, col)
-                    orig_name, orig_size = font_info_list[i]
-                    new_name, new_size = font_manager.select_font(orig_name, orig_size)
-                    cell.font.name = new_name
-                    cell.font.size = new_size
-                except Exception as e:
-                    logger.debug(
-                        "Error applying font to cell %s_%s: %s", sheet_name, cell_ref, e
-                    )
-
-        except Exception as e:
-            logger.warning(
-                "Error applying batch translation to row %d cols %d-%d in '%s': %s",
-                row,
-                start_col,
-                end_col,
-                sheet_name,
-                e,
-            )
-            # Fallback to individual cell writes
-            for col, text, cell_ref in cells:
-                self._apply_single_cell_xlwings(
-                    sheet, sheet_name, row, col, text, cell_ref, font_manager
-                )
 
     def _apply_translations_openpyxl(
         self,

@@ -7,7 +7,6 @@ from unittest.mock import Mock, patch
 
 from yakulingo.services.translation_service import TranslationService
 from yakulingo.ui.app import YakuLingoApp
-from yakulingo.ui.state import TranslationBackend
 
 from yakulingo.config.settings import AppSettings
 from yakulingo.services.local_ai_prompt_builder import LocalPromptBuilder
@@ -540,7 +539,6 @@ def test_local_followup_reference_embed_includes_local_reference(
         settings,
         prompts_dir=Path(__file__).resolve().parents[1] / "prompts",
     )
-    app.state.translation_backend = TranslationBackend.LOCAL
 
     ref_path = tmp_path / "ref.txt"
     ref_path.write_text("Reference content", encoding="utf-8")

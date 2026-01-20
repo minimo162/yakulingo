@@ -28,7 +28,7 @@ class TrayIcon:
         self._icon = None
         self._status_provider = status_provider
         self._status_interval = max(1.0, float(status_interval))
-        self._status_text = "Copilot: Unknown"
+        self._status_text = "Local AI: Unknown"
         self._status_tooltip = self._status_text
         self._status_stop = threading.Event()
         self._status_thread: threading.Thread | None = None
@@ -131,12 +131,12 @@ class TrayIcon:
     def _get_status_text(self) -> tuple[str, str]:
         provider = self._status_provider
         if provider is None:
-            return ("Copilot: Unknown", "Copilot: Unknown")
+            return ("Local AI: Unknown", "Local AI: Unknown")
         try:
             value = provider()
         except Exception as exc:
             logger.debug("Tray status provider failed: %s", exc)
-            return ("Copilot: Unknown", "Copilot: Unknown")
+            return ("Local AI: Unknown", "Local AI: Unknown")
 
         label = ""
         tooltip = ""
@@ -150,7 +150,7 @@ class TrayIcon:
         else:
             label = ""
 
-        label = label or "Copilot: Unknown"
+        label = label or "Local AI: Unknown"
         tooltip = tooltip or label
         return (label, tooltip)
 

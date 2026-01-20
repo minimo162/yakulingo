@@ -34,13 +34,6 @@ class Tab(Enum):
     FILE = "file"
 
 
-class TranslationBackend(Enum):
-    """Translation backend selection"""
-
-    COPILOT = "copilot"
-    LOCAL = "local"
-
-
 class LocalAIState(Enum):
     """Local AI (llama-server) readiness states for UI"""
 
@@ -67,16 +60,6 @@ class TextViewState(Enum):
     RESULT = "result"  # After translation - compact input + result panel
 
 
-class ConnectionState(Enum):
-    """Copilot connection states for clear user feedback"""
-
-    CONNECTING = "connecting"  # Initial state - attempting to connect
-    CONNECTED = "connected"  # Successfully connected and ready
-    LOGIN_REQUIRED = "login_required"  # Edge is running but login needed
-    EDGE_NOT_RUNNING = "edge_not_running"  # Edge browser not found
-    CONNECTION_FAILED = "connection_failed"  # Connection failed for other reasons
-
-
 class LayoutInitializationState(Enum):
     """PP-DocLayout-L initialization states for on-demand PDF support"""
 
@@ -100,15 +83,13 @@ class AppState:
 
     # Current tab
     current_tab: Tab = Tab.TEXT
-    # Backend selection (persisted in settings)
-    translation_backend: TranslationBackend = TranslationBackend.LOCAL
 
     # Text tab state
     text_view_state: TextViewState = TextViewState.INPUT  # Current view state
     source_text: str = ""
     text_translating: bool = False
     text_back_translating: bool = False
-    text_detected_language: Optional[str] = None  # Copilot-detected source language
+    text_detected_language: Optional[str] = None  # Auto-detected source language
     text_detected_language_reason: Optional[str] = None  # Local detection reason for UI
     text_output_language_override: Optional[str] = (
         None  # "en" or "jp" when manually overridden
@@ -152,14 +133,6 @@ class AppState:
 
     # Reference files
     reference_files: list[Path] = field(default_factory=list)
-
-    # Copilot connection / readiness
-    # True when Copilot chat UI is ready (user can start translation without extra setup).
-    copilot_ready: bool = False
-    copilot_error: str = ""
-    connection_state: ConnectionState = (
-        ConnectionState.CONNECTING
-    )  # Current connection state for UI
 
     # Local AI connection / readiness (llama.cpp llama-server)
     local_ai_state: LocalAIState = LocalAIState.NOT_INSTALLED
@@ -258,12 +231,8 @@ class AppState:
         self.file_queue_running = False
 
     def can_translate(self) -> bool:
-        """Check if translation is possible (requires selected backend ready)."""
-        backend_ready = (
-            self.copilot_ready
-            if self.translation_backend == TranslationBackend.COPILOT
-            else self.local_ai_state == LocalAIState.READY
-        )
+        """Check if translation is possible (requires local AI ready)."""
+        backend_ready = self.local_ai_state == LocalAIState.READY
         if self.current_tab == Tab.TEXT:
             return (
                 bool(self.source_text.strip())

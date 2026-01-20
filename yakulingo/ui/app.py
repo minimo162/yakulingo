@@ -1220,9 +1220,7 @@ from yakulingo.ui.state import (  # noqa: E402
     AppState,
     Tab,
     FileState,
-    ConnectionState,
     LayoutInitializationState,
-    TranslationBackend,
     LocalAIState,
 )
 from yakulingo.models.types import (  # noqa: E402
@@ -1732,7 +1730,7 @@ class YakuLingoApp:
             from yakulingo.services.translation_service import TranslationService
 
             self.translation_service = TranslationService(
-                self.copilot,
+                object(),
                 self.settings,
                 get_default_prompts_dir(),
                 copilot_lock=self._copilot_lock,
@@ -1764,14 +1762,6 @@ class YakuLingoApp:
             logger.info("[TIMING] AppSettings.load: %.2fs", time.perf_counter() - start)
             # Always start in text mode; file panel opens on drag & drop.
             self.state.current_tab = Tab.TEXT
-            backend_value = getattr(self._settings, "translation_backend", "local")
-            if not getattr(self._settings, "copilot_enabled", True):
-                backend_value = "local"
-            self.state.translation_backend = (
-                TranslationBackend.LOCAL
-                if backend_value == "local"
-                else TranslationBackend.COPILOT
-            )
         return self._settings
 
     @settings.setter
@@ -2479,8 +2469,6 @@ class YakuLingoApp:
             self._resident_startup_prompt_ready = True
 
             self._resident_startup_ready = True
-            self.state.copilot_ready = True
-            self.state.connection_state = ConnectionState.CONNECTED
             if self._resident_mode:
                 self._resident_login_required = False
             self._refresh_status()
@@ -6446,29 +6434,8 @@ class YakuLingoApp:
         ):
             self._schedule_auto_open_timeout(STARTUP_SPLASH_TIMEOUT_SEC, "startup")
         if self._resident_mode:
-            copilot = getattr(self, "_copilot", None)
-            last_error = (
-                getattr(copilot, "last_connection_error", None) if copilot else None
-            )
-            login_required_error = "login_required"
-            try:
-                from yakulingo.services.copilot_handler import CopilotHandler
-
-                login_required_error = CopilotHandler.ERROR_LOGIN_REQUIRED
-            except Exception:
-                pass
-
-            if self.state.connection_state == ConnectionState.CONNECTED:
-                self._resident_login_required = False
-            elif copilot is not None and last_error != login_required_error:
-                self._resident_login_required = False
-
-            login_required_guard = (
-                self._resident_login_required
-                or self._login_polling_active
-                or self.state.connection_state == ConnectionState.LOGIN_REQUIRED
-                or last_error == login_required_error
-            )
+            # ローカルAIのみ: ログインが必要な状態は存在しない
+            login_required_guard = False
 
         visibility_state = VisibilityDecisionState(
             auto_open_cause=self._auto_open_cause,
@@ -6694,210 +6661,17 @@ class YakuLingoApp:
             return False
 
     async def wait_for_edge_connection(self, edge_future):
-        """Wait for Edge connection result from parallel startup.
-
-        Args:
-            edge_future: concurrent.futures.Future from Edge startup thread
-        """
-        import concurrent.futures
-
-        # Initialize TranslationService immediately (doesn't need connection)
+        """(互換用) 旧Copilot接続待機。現在はローカルAIのみ。"""
+        _ = edge_future
         if not self._ensure_translation_service():
             return
-
-        # Small delay to let UI render first
-        await asyncio.sleep(0.05)
-
-        # Reset connection state to indicate active connection attempt
-        from yakulingo.services.copilot_handler import CopilotHandler
-
-        self.copilot.last_connection_error = CopilotHandler.ERROR_NONE
-        self.state.connection_state = ConnectionState.CONNECTING
-        self._refresh_status()
-
-        # Wait for Edge connection result from parallel startup
-        try:
-            loop = asyncio.get_running_loop()
-            success = await loop.run_in_executor(
-                None, edge_future.result, 60
-            )  # 60s timeout
-
-            if success:
-                # Keep "準備中..." until GPT mode switching is finished.
-                self.state.copilot_ready = False
-                self.state.connection_state = ConnectionState.CONNECTING
-                self._refresh_status()
-                await self._ensure_gpt_mode_setup()
-                logger.info("Edge connection ready (parallel startup)")
-                # Notify user without changing window z-order to avoid flicker
-                await self._on_browser_ready(bring_to_front=False)
-            else:
-                # Connection failed - refresh status to show error
-                self._refresh_status()
-                logger.warning("Edge connection failed during parallel startup")
-                # ログイン必要な場合はポーリングを開始
-                await self._start_login_polling_if_needed()
-        except concurrent.futures.TimeoutError:
-            logger.warning("Edge connection timeout during parallel startup")
-            self._refresh_status()
-        except Exception as e:
-            # Connection failed - refresh status to show error
-            logger.debug("Background connection failed: %s", e, exc_info=True)
-            if self._copilot:
-                logger.info(
-                    "Copilot connection error: %s", self.copilot.last_connection_error
-                )
-            self._refresh_status()
+        await self._ensure_local_ai_ready_async()
 
     async def _apply_early_connection_or_connect(self):
-        """Apply early connection result or start new connection.
-
-        This method checks if an early connection was started during app.on_startup().
-        If successful, it applies the result to UI. Otherwise, falls back to normal connection.
-        """
-        import time as _time_module
-
-        _t_start = _time_module.perf_counter()
-
-        # Initialize TranslationService immediately (doesn't need connection)
+        """Ensure translation service and local AI are ready (local-only)."""
         if not self._ensure_translation_service():
             return
-
-        # If Local AI is selected, do not start/continue Copilot connection automatically.
-        if self.state.translation_backend == TranslationBackend.LOCAL:
-            await self._ensure_local_ai_ready_async()
-            return
-
-        # Wait for early connection task if it exists
-        if self._early_connection_task is not None:
-            try:
-                # Wait for early connection with timeout
-                # Playwright initialization can take 15+ seconds, CDP connection 4+ seconds,
-                # and Copilot UI ready check 5+ seconds (total ~25-30 seconds on first run)
-                # Use asyncio.shield to prevent task cancellation on timeout
-                await asyncio.wait_for(
-                    asyncio.shield(self._early_connection_task), timeout=30.0
-                )
-            except asyncio.TimeoutError:
-                # Task is still running (shield prevented cancellation)
-                # Check if result was set by the task
-                if self._early_connection_result is not None:
-                    logger.debug(
-                        "Timeout but result already set: %s",
-                        self._early_connection_result,
-                    )
-                else:
-                    # Task still running - set up background completion handler
-                    logger.debug(
-                        "Early connection still in progress after timeout, "
-                        "setting up background handler"
-                    )
-                    self._early_connection_result = None
-
-                    # Add callback to update UI when task completes in background
-                    def _on_early_connection_complete(task: "asyncio.Task"):
-                        try:
-                            result = task.result()
-                            logger.info(
-                                "Early connection completed in background: %s", result
-                            )
-                            if result:
-
-                                async def _finalize_after_early_connect() -> None:
-                                    if self._shutdown_requested:
-                                        return
-                                    # Keep "準備中..." until GPT mode switching is finished.
-                                    self.state.copilot_ready = False
-                                    self.state.connection_state = (
-                                        ConnectionState.CONNECTING
-                                    )
-                                    self._refresh_status()
-
-                                    await self._ensure_gpt_mode_setup()
-                                    if self._shutdown_requested:
-                                        return
-                                    await self._on_browser_ready(bring_to_front=False)
-
-                                _create_logged_task(
-                                    _finalize_after_early_connect(),
-                                    name="finalize_after_early_connect",
-                                )
-                        except asyncio.CancelledError:
-                            logger.debug("Early connection task was cancelled")
-                        except Exception as e:
-                            logger.debug(
-                                "Early connection task failed in background: %s", e
-                            )
-
-                    self._early_connection_task.add_done_callback(
-                        _on_early_connection_complete
-                    )
-            except asyncio.CancelledError:
-                # Task itself was cancelled (not by wait_for timeout)
-                logger.debug("Early connection task cancelled")
-                self._early_connection_result = None
-            except Exception as e:
-                logger.debug("Early connection task failed: %s", e)
-                self._early_connection_result = None
-
-        # If early connection thread finished, capture its result; if still running, wait here.
-        if self._early_connection_result is None:
-            if (
-                self._early_connection_event is not None
-                and self._early_connection_event.is_set()
-            ):
-                if self._early_connection_result_ref is not None:
-                    self._early_connection_result = (
-                        self._early_connection_result_ref.value
-                    )
-            elif (
-                self._early_connect_thread is not None
-                and self._early_connect_thread.is_alive()
-                and self._early_connection_event is not None
-            ):
-                logger.info(
-                    "Early connection still in progress (thread alive), waiting for completion"
-                )
-                self.state.connection_state = ConnectionState.CONNECTING
-                self._refresh_status()
-                await asyncio.to_thread(self._early_connection_event.wait)
-                if self._early_connection_result_ref is not None:
-                    self._early_connection_result = (
-                        self._early_connection_result_ref.value
-                    )
-
-        # Check early connection result
-        if self._early_connection_result is True:
-            # Early connection succeeded - just update UI
-            logger.info(
-                "[TIMING] Using early connection result (saved %.2fs)",
-                _time_module.perf_counter() - _t_start,
-            )
-            # Keep "準備中..." until GPT mode switching is finished.
-            self.state.copilot_ready = False
-            self.state.connection_state = ConnectionState.CONNECTING
-            self._refresh_status()
-            await self._ensure_gpt_mode_setup()
-            await self._on_browser_ready(bring_to_front=False)
-        elif self._early_connection_result is False:
-            # Early connection failed - update UI and check if login needed
-            self._refresh_status()
-            await self._start_login_polling_if_needed()
-        elif (
-            self._early_connection_task is not None
-            and not self._early_connection_task.done()
-        ):
-            # Early connection still in progress - keep "connecting" state
-            # UI will be updated by the background callback when complete
-            logger.info(
-                "Early connection still in progress, waiting for background completion"
-            )
-            self.state.connection_state = ConnectionState.CONNECTING
-            self._refresh_status()
-        else:
-            # Early connection not started or result unknown - fall back to normal connection
-            logger.info("Early connection not available, starting normal connection")
-            await self.start_edge_and_connect()
+        await self._ensure_local_ai_ready_async()
 
     def _is_gpt_mode_setup_in_progress(self) -> bool:
         return (
@@ -6955,7 +6729,6 @@ class YakuLingoApp:
         from yakulingo.services.copilot_handler import CopilotHandler
 
         self.copilot.last_connection_error = CopilotHandler.ERROR_NONE
-        self.state.connection_state = ConnectionState.CONNECTING
         self._refresh_status()
 
         # Connect to browser (starts Edge if needed, doesn't check login state)
@@ -6967,9 +6740,6 @@ class YakuLingoApp:
             )
 
             if success:
-                # Keep "準備中..." until GPT mode switching is finished.
-                self.state.copilot_ready = False
-                self.state.connection_state = ConnectionState.CONNECTING
                 self._refresh_status()
                 await self._ensure_gpt_mode_setup()
                 # Notify user without changing window z-order to avoid flicker
@@ -7046,8 +6816,6 @@ class YakuLingoApp:
             logger.warning(
                 "Copilot Edge window closed; marking as disconnected (service stays alive)"
             )
-            self.state.copilot_ready = False
-            self.state.connection_state = ConnectionState.EDGE_NOT_RUNNING
 
             try:
                 from yakulingo.services.copilot_handler import CopilotHandler
@@ -7109,22 +6877,8 @@ class YakuLingoApp:
                 logger.debug("Failed to bring window to front: %s", e)
 
         if self._resident_mode:
-            copilot = getattr(self, "_copilot", None)
-            last_error = (
-                getattr(copilot, "last_connection_error", None) if copilot else None
-            )
-            login_required_error = "login_required"
-            try:
-                from yakulingo.services.copilot_handler import CopilotHandler
-
-                login_required_error = CopilotHandler.ERROR_LOGIN_REQUIRED
-            except Exception:
-                pass
-
-            if self.state.connection_state == ConnectionState.CONNECTED:
-                self._resident_login_required = False
-            elif copilot is not None and last_error != login_required_error:
-                self._resident_login_required = False
+            # ローカルAIのみ: ログイン状態は扱わない
+            self._resident_login_required = False
 
         # Ensure header status reflects the latest connection state.
         # Some background Playwright operations can temporarily block quick state checks,
@@ -7226,9 +6980,6 @@ class YakuLingoApp:
                     self.copilot.last_connection_error = CopilotHandler.ERROR_NONE
                     if self._resident_mode:
                         self._resident_login_required = False
-                    # Keep "準備中..." until GPT mode switching is finished.
-                    self.state.copilot_ready = False
-                    self.state.connection_state = ConnectionState.CONNECTING
 
                     auto_hide_candidates = (
                         self._auto_open_cause
@@ -7358,14 +7109,6 @@ class YakuLingoApp:
                             timeout=4000,
                         )
 
-        if self.state.connection_state == ConnectionState.LOGIN_REQUIRED:
-            await self._start_login_polling_if_needed()
-            if not self._login_polling_active and self._login_polling_task is None:
-                self._login_polling_task = _create_logged_task(
-                    self._wait_for_login_completion(),
-                    name="login_polling",
-                )
-
     async def _show_copilot_browser(self, reason: str = "ui_manual_show") -> None:
         """CopilotのEdge画面を前面表示する（手動表示用）。"""
         if self._shutdown_requested:
@@ -7408,166 +7151,9 @@ class YakuLingoApp:
                     )
 
     async def _reconnect(self, max_retries: int = 3, show_progress: bool = True):
-        """再接続を試みる（UIボタン用、リトライ付き）。
-
-        Args:
-            max_retries: 最大リトライ回数（デフォルト3回）
-            show_progress: 進捗通知を表示するか（デフォルトTrue）
-
-        Returns:
-            True if reconnection succeeded, False otherwise
-        """
-        from yakulingo.services.copilot_handler import CopilotHandler
-
-        # Reset connection indicators for the retry attempt
-        self.copilot.last_connection_error = CopilotHandler.ERROR_NONE
-        self.state.connection_state = ConnectionState.CONNECTING
-        if self._client:
-            with self._client:
-                self._refresh_status()
-
-        for attempt in range(max_retries):
-            # Show progress notification
-            if show_progress and self._client:
-                with self._client:
-                    ui.notify(
-                        f"再接続中... ({attempt + 1}/{max_retries})",
-                        type="info",
-                        position="bottom-right",
-                        timeout=2000,
-                    )
-
-            try:
-                connected = await asyncio.to_thread(
-                    self.copilot.connect,
-                    bring_to_foreground_on_login=not self._resident_mode,
-                )
-
-                if connected:
-                    logger.info(
-                        "Copilot reconnected successfully (attempt %d/%d)",
-                        attempt + 1,
-                        max_retries,
-                    )
-                    # Keep "準備中..." until GPT mode switching is finished.
-                    self.state.copilot_ready = False
-                    self.state.connection_state = ConnectionState.CONNECTING
-
-                    # Handle Edge window based on effective browser_display_mode
-                    if self._settings:
-                        self._edge_visibility_target = (
-                            self._get_effective_browser_display_mode()
-                        )
-                        if (
-                            self._should_respect_edge_visibility_target()
-                            and self._edge_visibility_target == "minimized"
-                        ):
-                            await asyncio.to_thread(
-                                self.copilot._minimize_edge_window, None
-                            )
-                            logger.debug("Edge minimized after reconnection")
-                    # In foreground mode, do nothing (leave Edge as is)
-
-                    if self._client:
-                        with self._client:
-                            self._refresh_status()
-
-                    await self._ensure_gpt_mode_setup()
-
-                    if self._client:
-                        with self._client:
-                            self._refresh_status()
-                            if show_progress:
-                                ui.notify(
-                                    "再接続しました",
-                                    type="positive",
-                                    position="bottom-right",
-                                    timeout=2000,
-                                )
-                    await self._on_browser_ready(bring_to_front=False)
-                    return True
-                else:
-                    # Check if login is required
-                    if (
-                        self.copilot.last_connection_error
-                        == CopilotHandler.ERROR_LOGIN_REQUIRED
-                    ):
-                        logger.info(
-                            "Reconnect: login required, starting login polling..."
-                        )
-                        self.state.connection_state = ConnectionState.LOGIN_REQUIRED
-                        self.state.copilot_ready = False
-
-                        if self._resident_mode:
-                            await self._show_resident_login_prompt("reconnect")
-                        else:
-                            # Bring browser to foreground so user can login
-                            # This is critical for PDF translation reconnection
-                            try:
-                                await asyncio.to_thread(
-                                    self.copilot._bring_to_foreground_impl,
-                                    self.copilot._page,
-                                    "reconnect: login required",
-                                )
-                                logger.info("Browser brought to foreground for login")
-                            except Exception as e:
-                                logger.warning(
-                                    "Failed to bring browser to foreground: %s", e
-                                )
-
-                        if self._client:
-                            with self._client:
-                                self._refresh_status()
-                                ui.notify(
-                                    "Copilotへのログインが必要です。ブラウザでログインしてください。",
-                                    type="warning",
-                                    position="top",
-                                    timeout=10000,
-                                )
-                        # Start login completion polling in background
-                        if (
-                            not self._login_polling_active
-                            and not self._shutdown_requested
-                        ):
-                            self._login_polling_task = _create_logged_task(
-                                self._wait_for_login_completion(),
-                                name="login_polling",
-                            )
-                        # Return False but don't retry - user needs to login
-                        return False
-
-                    logger.warning(
-                        "Reconnect returned False (attempt %d/%d)",
-                        attempt + 1,
-                        max_retries,
-                    )
-
-            except Exception as e:
-                logger.warning(
-                    "Reconnect attempt %d/%d failed: %s", attempt + 1, max_retries, e
-                )
-
-            # Exponential backoff before retry (except for last attempt)
-            if attempt < max_retries - 1:
-                wait_time = 2**attempt  # 1s, 2s, 4s
-                logger.debug("Waiting %ds before retry...", wait_time)
-                await asyncio.sleep(wait_time)
-
-        # All retries exhausted
-        logger.error("Reconnection failed after %d attempts", max_retries)
-        self.state.connection_state = ConnectionState.CONNECTION_FAILED
-        self.state.copilot_ready = False
-        if self._client:
-            with self._client:
-                self._refresh_status()
-                if show_progress:
-                    ui.notify(
-                        "再接続に失敗しました。しばらく待ってから再試行してください。",
-                        type="negative",
-                        position="bottom-right",
-                        timeout=5000,
-                    )
-        return False
+        """(互換用) 旧Copilot再接続。現在はローカルAIのみ。"""
+        _ = (max_retries, show_progress)
+        return await self._ensure_local_ai_ready_async()
 
     async def check_for_updates(self):
         """Check for updates in background."""
@@ -7680,20 +7266,12 @@ class YakuLingoApp:
                 logger.debug("%s with saved client failed: %s", label, e2)
 
     def _start_status_auto_refresh(self, reason: str = "") -> None:
-        """Retry status refresh briefly to avoid a stuck '準備中...' indicator.
-
-        The Copilot readiness check runs on a single Playwright executor thread.
-        When that thread is busy, quick UI checks can time out and leave the UI
-        showing "準備中..." even after Copilot is ready.
-        """
+        """Retry status refresh briefly while local AI is starting."""
         if self._shutdown_requested:
             return
         if self._header_status is None or self._get_active_client() is None:
             return
-        if (
-            self.state.copilot_ready
-            or self.state.connection_state != ConnectionState.CONNECTING
-        ):
+        if self.state.local_ai_state != LocalAIState.STARTING:
             return
 
         existing = self._status_auto_refresh_task
@@ -7712,7 +7290,7 @@ class YakuLingoApp:
         )
 
     async def _status_auto_refresh_loop(self) -> None:
-        """Auto-refresh status a few times until it stabilizes (ready/error)."""
+        """Auto-refresh status a few times until it stabilizes."""
         delays = (0.5, 0.5, 1.0, 1.0, 2.0, 3.0, 5.0, 5.0, 5.0)
         current_task = asyncio.current_task()
         try:
@@ -7723,9 +7301,7 @@ class YakuLingoApp:
                     return
                 self._refresh_status()
                 self._refresh_translate_button_state()
-                if self.state.copilot_ready:
-                    return
-                if self.state.connection_state != ConnectionState.CONNECTING:
+                if self.state.local_ai_state != LocalAIState.STARTING:
                     return
                 await asyncio.sleep(delay)
 
@@ -8917,15 +8493,14 @@ class YakuLingoApp:
             with self._main_area_element:
                 self._create_main_content()
 
-        # Auto start Local AI when selected (UX: backend toggle should become ready without a manual click)
-        if self.state.translation_backend == TranslationBackend.LOCAL:
-            try:
-                self._local_ai_ensure_task = _create_logged_task(
-                    self._ensure_local_ai_ready_async(),
-                    name="local_ai_auto_ensure",
-                )
-            except RuntimeError:
-                pass
+        # Auto start Local AI (UX: status should become ready without a manual click)
+        try:
+            self._local_ai_ensure_task = _create_logged_task(
+                self._ensure_local_ai_ready_async(),
+                name="local_ai_auto_ensure",
+            )
+        except RuntimeError:
+            pass
 
     def _create_sidebar(self):
         """Create left sidebar with logo, nav, and history"""
@@ -8949,111 +8524,73 @@ class YakuLingoApp:
             logo_icon.tooltip("YakuLingo")
             ui.label("YakuLingo").classes("app-logo app-logo-hidden")
 
-        # Status indicator (Copilot readiness: user can start translation safely)
+        # Status indicator (Local AI readiness: user can start translation safely)
         @ui.refreshable
         def header_status():
             from yakulingo.ui.utils import to_props_string_literal
 
-            # Local AI status
-            if self.state.translation_backend == TranslationBackend.LOCAL:
-                local_state = self.state.local_ai_state
-                if local_state == LocalAIState.READY:
-                    host = self.state.local_ai_host or "127.0.0.1"
-                    port = self.state.local_ai_port or 0
-                    model = self.state.local_ai_model or ""
-                    variant = self.state.local_ai_server_variant or ""
-                    addr = f"{host}:{port}"
-                    addr_with_variant = f"{addr} ({variant})" if variant else addr
-                    tooltip = (
-                        f"ローカルAI: 準備完了 ({addr_with_variant}) {model}".strip()
+            local_state = self.state.local_ai_state
+            if local_state == LocalAIState.READY:
+                host = self.state.local_ai_host or "127.0.0.1"
+                port = self.state.local_ai_port or 0
+                model = self.state.local_ai_model or ""
+                variant = self.state.local_ai_server_variant or ""
+                addr = f"{host}:{port}"
+                addr_with_variant = f"{addr} ({variant})" if variant else addr
+                tooltip = f"ローカルAI: 準備完了 ({addr_with_variant}) {model}".strip()
+                with (
+                    ui.element("div")
+                    .classes("status-indicator ready")
+                    .props(
+                        f'role="status" aria-live="polite" aria-label={to_props_string_literal(tooltip)} data-testid="local-ai-status" data-state="ready"'
+                    ) as status_indicator
+                ):
+                    ui.element("div").classes("status-dot ready").props(
+                        'aria-hidden="true"'
                     )
-                    with (
-                        ui.element("div")
-                        .classes("status-indicator ready")
-                        .props(
-                            f'role="status" aria-live="polite" aria-label={to_props_string_literal(tooltip)} data-testid="local-ai-status" data-state="ready"'
-                        ) as status_indicator
-                    ):
-                        ui.element("div").classes("status-dot ready").props(
-                            'aria-hidden="true"'
-                        )
-                        with ui.column().classes("gap-0"):
-                            ui.label("準備完了").classes("text-xs")
-                            ui.label(addr_with_variant).classes("text-2xs opacity-80")
-                    status_indicator.tooltip(tooltip)
-                    return
+                    with ui.column().classes("gap-0"):
+                        ui.label("準備完了").classes("text-xs")
+                        ui.label(addr_with_variant).classes("text-2xs opacity-80")
+                status_indicator.tooltip(tooltip)
+                return
 
-                if local_state == LocalAIState.STARTING:
-                    tooltip = "準備中: ローカルAIを起動しています"
-                    with (
-                        ui.element("div")
-                        .classes("status-indicator connecting")
-                        .props(
-                            f'role="status" aria-live="polite" aria-label={to_props_string_literal(tooltip)} data-testid="local-ai-status" data-state="starting"'
-                        ) as status_indicator
-                    ):
-                        ui.element("div").classes("status-dot connecting").props(
-                            'aria-hidden="true"'
+            if local_state == LocalAIState.STARTING:
+                tooltip = "準備中: ローカルAIを起動しています"
+                with (
+                    ui.element("div")
+                    .classes("status-indicator connecting")
+                    .props(
+                        f'role="status" aria-live="polite" aria-label={to_props_string_literal(tooltip)} data-testid="local-ai-status" data-state="starting"'
+                    ) as status_indicator
+                ):
+                    ui.element("div").classes("status-dot connecting").props(
+                        'aria-hidden="true"'
+                    )
+                    with ui.column().classes("gap-0"):
+                        ui.label("準備中...").classes("text-xs")
+                        ui.label("ローカルAIを起動しています").classes(
+                            "text-2xs opacity-80"
                         )
-                        with ui.column().classes("gap-0"):
-                            ui.label("準備中...").classes("text-xs")
-                            ui.label("ローカルAIを起動しています").classes(
-                                "text-2xs opacity-80"
-                            )
-                    status_indicator.tooltip(tooltip)
-                    return
+                status_indicator.tooltip(tooltip)
+                return
 
-                if local_state == LocalAIState.NOT_INSTALLED:
-                    tooltip = self.state.local_ai_error or "ローカルAIが見つかりません"
-                    with (
-                        ui.element("div")
-                        .classes("status-indicator error")
-                        .props(
-                            f'role="status" aria-live="polite" aria-label={to_props_string_literal(tooltip)} data-testid="local-ai-status" data-state="not_installed"'
-                        ) as status_indicator
-                    ):
-                        ui.element("div").classes("status-dot error").props(
-                            'aria-hidden="true"'
-                        )
-                        with ui.column().classes("gap-0"):
-                            ui.label("未インストール").classes("text-xs")
-                            ui.label("install_deps.bat を実行してください").classes(
-                                "text-2xs opacity-80"
-                            )
-                            with ui.row().classes(
-                                "status-actions items-center gap-2 mt-1"
-                            ):
-                                ui.button(
-                                    "再試行",
-                                    icon="refresh",
-                                    on_click=lambda: _create_logged_task(
-                                        self._ensure_local_ai_ready_async(),
-                                        name="local_ai_retry",
-                                    ),
-                                ).classes("status-action-btn").props(
-                                    "flat no-caps size=sm"
-                                )
-                    status_indicator.tooltip(tooltip)
-                    return
-
-                tooltip = (
-                    self.state.local_ai_error or "ローカルAIでエラーが発生しました"
-                )
+            if local_state == LocalAIState.NOT_INSTALLED:
+                tooltip = self.state.local_ai_error or "ローカルAIが見つかりません"
                 with (
                     ui.element("div")
                     .classes("status-indicator error")
                     .props(
-                        f'role="status" aria-live="polite" aria-label={to_props_string_literal(tooltip)} data-testid="local-ai-status" data-state="error"'
+                        f'role="status" aria-live="polite" aria-label={to_props_string_literal(tooltip)} data-testid="local-ai-status" data-state="not_installed"'
                     ) as status_indicator
                 ):
                     ui.element("div").classes("status-dot error").props(
                         'aria-hidden="true"'
                     )
                     with ui.column().classes("gap-0"):
-                        ui.label("エラー").classes("text-xs")
-                        ui.label(
-                            (tooltip[:40] + "…") if len(tooltip) > 40 else tooltip
-                        ).classes("text-2xs opacity-80")
+                        ui.label("未インストール").classes("text-xs")
+                        ui.label("install_deps.bat を実行してください").classes(
+                            "text-2xs opacity-80"
+                        )
                         with ui.row().classes("status-actions items-center gap-2 mt-1"):
                             ui.button(
                                 "再試行",
@@ -9066,270 +8603,40 @@ class YakuLingoApp:
                 status_indicator.tooltip(tooltip)
                 return
 
-            # Keep Copilot lazy-loaded for startup performance (don't create it just for UI).
-            copilot = self._copilot
-            if not copilot:
-                self.state.copilot_ready = False
-                self.state.connection_state = ConnectionState.CONNECTING
-                tooltip = "準備中: 翻訳の準備をしています"
-                with (
-                    ui.element("div")
-                    .classes("status-indicator connecting")
-                    .props(
-                        f'role="status" aria-live="polite" aria-label={to_props_string_literal(tooltip)}'
-                    ) as status_indicator
-                ):
-                    ui.element("div").classes("status-dot connecting").props(
-                        'aria-hidden="true"'
-                    )
-                    with ui.column().classes("gap-0"):
-                        ui.label("準備中...").classes("text-xs")
-                        ui.label("翻訳の準備をしています").classes(
-                            "text-2xs opacity-80"
-                        )
-                status_indicator.tooltip(tooltip)
-                return
-
-            # Check real page state (URL + chat input) to avoid showing "ready" while login/session expired.
-            from yakulingo.services.copilot_handler import CopilotHandler
-            from yakulingo.services.copilot_handler import (
-                ConnectionState as CopilotConnectionState,
-            )
-
-            error = copilot.last_connection_error or ""
-            is_connected = (
-                copilot.is_connected
-            )  # cached flag; validated by check_copilot_state below
-
-            # While GPT mode is switching, avoid calling check_copilot_state with a short timeout.
-            # The Playwright thread is busy and status checks can time out, leaving the UI stuck.
-            if self._is_gpt_mode_setup_in_progress():
-                self.state.copilot_ready = False
-                self.state.connection_state = ConnectionState.CONNECTING
-                tooltip = "準備中: GPTモードを切り替えています"
-                with (
-                    ui.element("div")
-                    .classes("status-indicator connecting")
-                    .props(
-                        f'role="status" aria-live="polite" aria-label={to_props_string_literal(tooltip)}'
-                    ) as status_indicator
-                ):
-                    ui.element("div").classes("status-dot connecting").props(
-                        'aria-hidden="true"'
-                    )
-                    with ui.column().classes("gap-0"):
-                        ui.label("準備中...").classes("text-xs")
-                        ui.label("GPTモードを切り替えています").classes(
-                            "text-2xs opacity-80"
-                        )
-                status_indicator.tooltip(tooltip)
-                return
-
-            copilot_state: str | None = None
-            state_check_failed = False
-            if copilot.is_connecting:
-                cached_ready = None
-                try:
-                    cached_ready = copilot._get_recent_ready_state()
-                except Exception:
-                    cached_ready = None
-                if cached_ready == CopilotConnectionState.READY:
-                    copilot_state = cached_ready
-                else:
-                    copilot_state = CopilotConnectionState.LOADING
-            else:
-                import time as _time_module
-
-                now = _time_module.monotonic()
-                cache_valid = (
-                    self._last_copilot_state_at is not None
-                    and (now - self._last_copilot_state_at) < 0.6
-                    and self._last_copilot_state_error == error
-                    and self._last_copilot_state_connected == is_connected
-                )
-                if cache_valid:
-                    copilot_state = self._last_copilot_state
-                else:
-                    try:
-                        timeout_seconds = 2
-                        if (
-                            self._app_start_time
-                            and (now - self._app_start_time)
-                            < STARTUP_COPILOT_STATE_WINDOW_SEC
-                        ):
-                            timeout_seconds = STARTUP_COPILOT_STATE_TIMEOUT_SEC
-                        copilot_state = copilot.check_copilot_state(
-                            timeout=timeout_seconds
-                        )
-                        self._last_copilot_state = copilot_state
-                        self._last_copilot_state_at = now
-                        self._last_copilot_state_error = error
-                        self._last_copilot_state_connected = is_connected
-                    except TimeoutError:
-                        state_check_failed = True
-                        copilot_state = None
-                    except Exception as e:
-                        state_check_failed = True
-                        logger.debug("Failed to check Copilot state for UI: %s", e)
-                        copilot_state = None
-                    finally:
-                        if state_check_failed:
-                            self._last_copilot_state = None
-                            self._last_copilot_state_at = now
-                            self._last_copilot_state_error = error
-                            self._last_copilot_state_connected = is_connected
-
-            if copilot_state == CopilotConnectionState.READY:
-                self.state.copilot_ready = True
-                self.state.connection_state = ConnectionState.CONNECTED
-                tooltip = "準備完了: 翻訳できます"
-                if not copilot.is_gpt_mode_set:
-                    tooltip = "準備完了: 翻訳できます（GPTモード未設定）"
-                with (
-                    ui.element("div")
-                    .classes("status-indicator connected")
-                    .props(
-                        f'role="status" aria-live="polite" aria-label={to_props_string_literal(tooltip)}'
-                    ) as status_indicator
-                ):
-                    ui.element("div").classes("status-dot connected").props(
-                        'aria-hidden="true"'
-                    )
-                    with ui.column().classes("gap-0"):
-                        ui.label("準備完了").classes("text-xs")
-                        if copilot.is_gpt_mode_set:
-                            ui.label("翻訳できます").classes("text-2xs opacity-80")
-                        else:
-                            ui.label("翻訳できます（GPTモード未設定）").classes(
-                                "text-2xs opacity-80"
-                            )
-                status_indicator.tooltip(tooltip)
-                return
-
-            # Not ready (yet) from here.
-            self.state.copilot_ready = False
-
-            if (
-                error == CopilotHandler.ERROR_LOGIN_REQUIRED
-                or copilot_state == CopilotConnectionState.LOGIN_REQUIRED
+            tooltip = self.state.local_ai_error or "ローカルAIでエラーが発生しました"
+            with (
+                ui.element("div")
+                .classes("status-indicator error")
+                .props(
+                    f'role="status" aria-live="polite" aria-label={to_props_string_literal(tooltip)} data-testid="local-ai-status" data-state="error"'
+                ) as status_indicator
             ):
-                self.state.connection_state = ConnectionState.LOGIN_REQUIRED
-                tooltip = "ログインが必要: ログイン後に翻訳できます"
-                with (
-                    ui.element("div")
-                    .classes("status-indicator login-required")
-                    .props(
-                        f'role="status" aria-live="polite" aria-label={to_props_string_literal(tooltip)}'
-                    ) as status_indicator
-                ):
-                    ui.element("div").classes("status-dot login-required").props(
-                        'aria-hidden="true"'
+                ui.element("div").classes("status-dot error").props(
+                    'aria-hidden="true"'
+                )
+                with ui.column().classes("gap-0"):
+                    ui.label("エラー").classes("text-xs")
+                    ui.label((tooltip[:40] + "…") if len(tooltip) > 40 else tooltip).classes(
+                        "text-2xs opacity-80"
                     )
-                    with ui.column().classes("gap-0"):
-                        ui.label("ログインが必要").classes("text-xs")
-                        ui.label("ログイン後に翻訳できます").classes(
-                            "text-2xs opacity-80"
-                        )
-                        with ui.row().classes("status-actions items-center gap-2 mt-1"):
-                            ui.button(
-                                "ログインを開く",
-                                icon="login",
-                                on_click=lambda: _create_logged_task(
-                                    self._show_login_browser(),
-                                    name="show_login_browser",
-                                ),
-                            ).classes("status-action-btn").props("flat no-caps size=sm")
-                status_indicator.tooltip(tooltip)
-                return
+                    with ui.row().classes("status-actions items-center gap-2 mt-1"):
+                        ui.button(
+                            "再試行",
+                            icon="refresh",
+                            on_click=lambda: _create_logged_task(
+                                self._ensure_local_ai_ready_async(),
+                                name="local_ai_retry",
+                            ),
+                        ).classes("status-action-btn").props("flat no-caps size=sm")
+            status_indicator.tooltip(tooltip)
+            return
 
-            if copilot_state == CopilotConnectionState.LOADING:
-                self.state.connection_state = ConnectionState.CONNECTING
-                tooltip = "準備中: Copilotを読み込み中"
-                with (
-                    ui.element("div")
-                    .classes("status-indicator connecting")
-                    .props(
-                        f'role="status" aria-live="polite" aria-label={to_props_string_literal(tooltip)}'
-                    ) as status_indicator
-                ):
-                    ui.element("div").classes("status-dot connecting").props(
-                        'aria-hidden="true"'
-                    )
-                    with ui.column().classes("gap-0"):
-                        ui.label("準備中...").classes("text-xs")
-                        ui.label("Copilotを読み込み中").classes("text-2xs opacity-80")
-                status_indicator.tooltip(tooltip)
-                self._start_status_auto_refresh("copilot_loading")
-                return
-
-            if error == CopilotHandler.ERROR_EDGE_NOT_FOUND:
-                self.state.connection_state = ConnectionState.EDGE_NOT_RUNNING
-                self._clear_auto_open_cause("edge_not_running")
-                tooltip = "Edgeが見つかりません: Edgeを起動してください"
-                with (
-                    ui.element("div")
-                    .classes("status-indicator error")
-                    .props(
-                        f'role="status" aria-live="polite" aria-label={to_props_string_literal(tooltip)}'
-                    ) as status_indicator
-                ):
-                    ui.element("div").classes("status-dot error").props(
-                        'aria-hidden="true"'
-                    )
-                    with ui.column().classes("gap-0"):
-                        ui.label("Edgeが見つかりません").classes("text-xs")
-                        with ui.row().classes("status-actions items-center gap-2 mt-1"):
-                            ui.button(
-                                "Edgeを起動",
-                                icon="open_in_new",
-                                on_click=lambda: _create_logged_task(
-                                    self._reconnect(),
-                                    name="reconnect",
-                                ),
-                            ).classes("status-action-btn").props("flat no-caps size=sm")
-                status_indicator.tooltip(tooltip)
-                return
-
-            if error in (
-                CopilotHandler.ERROR_CONNECTION_FAILED,
-                CopilotHandler.ERROR_NETWORK,
-            ) or (is_connected and copilot_state == CopilotConnectionState.ERROR):
-                self.state.connection_state = ConnectionState.CONNECTION_FAILED
-                self._clear_auto_open_cause("edge_connection_failed")
-                tooltip = "接続に失敗: 再試行中..."
-                with (
-                    ui.element("div")
-                    .classes("status-indicator error")
-                    .props(
-                        f'role="status" aria-live="polite" aria-label={to_props_string_literal(tooltip)}'
-                    ) as status_indicator
-                ):
-                    ui.element("div").classes("status-dot error").props(
-                        'aria-hidden="true"'
-                    )
-                    with ui.column().classes("gap-0"):
-                        ui.label("接続に失敗").classes("text-xs")
-                        ui.label("再試行中...").classes("text-2xs opacity-80")
-                        with ui.row().classes("status-actions items-center gap-2 mt-1"):
-                            ui.button(
-                                "再接続",
-                                icon="refresh",
-                                on_click=lambda: _create_logged_task(
-                                    self._reconnect(),
-                                    name="reconnect",
-                                ),
-                            ).classes("status-action-btn").props("flat no-caps size=sm")
-                status_indicator.tooltip(tooltip)
-                return
-
-            # Default: still preparing / connecting.
-            self.state.connection_state = ConnectionState.CONNECTING
-            tooltip = "準備中: 翻訳の準備をしています"
+            tooltip = "準備中: ローカルAIの状態を確認しています"
             with (
                 ui.element("div")
                 .classes("status-indicator connecting")
                 .props(
-                    f'role="status" aria-live="polite" aria-label={to_props_string_literal(tooltip)}'
+                    f'role="status" aria-live="polite" aria-label={to_props_string_literal(tooltip)} data-testid="local-ai-status" data-state="unknown"'
                 ) as status_indicator
             ):
                 ui.element("div").classes("status-dot connecting").props(
@@ -9337,10 +8644,11 @@ class YakuLingoApp:
                 )
                 with ui.column().classes("gap-0"):
                     ui.label("準備中...").classes("text-xs")
-                    ui.label("翻訳の準備をしています").classes("text-2xs opacity-80")
+                    ui.label("ローカルAIの状態を確認しています").classes(
+                        "text-2xs opacity-80"
+                    )
             status_indicator.tooltip(tooltip)
-            if state_check_failed:
-                self._start_status_auto_refresh("copilot_state_check_failed")
+            return
 
         self._header_status = header_status
         header_status()
@@ -9376,18 +8684,6 @@ class YakuLingoApp:
                 ).classes("icon-btn icon-btn-tonal history-rail-btn").props(
                     history_props
                 ).tooltip("履歴")
-                browser_props = 'flat round aria-label="ブラウザを表示"'
-                if self.state.is_translating():
-                    browser_props += " disable"
-                ui.button(
-                    icon="open_in_new",
-                    on_click=lambda: _create_logged_task(
-                        self._show_copilot_browser(),
-                        name="show_copilot_browser",
-                    ),
-                ).classes("icon-btn icon-btn-tonal browser-rail-btn").props(
-                    browser_props
-                ).tooltip("ブラウザを表示")
 
         self._tabs_container = actions_container
         actions_container()
@@ -9741,57 +9037,6 @@ class YakuLingoApp:
         )
         from yakulingo.ui.components.file_panel import create_file_panel
 
-        @ui.refreshable
-        def login_banner():
-            copilot = self._copilot
-            last_error = (
-                getattr(copilot, "last_connection_error", None) if copilot else None
-            )
-            login_required_error = "login_required"
-            try:
-                from yakulingo.services.copilot_handler import CopilotHandler
-
-                login_required_error = CopilotHandler.ERROR_LOGIN_REQUIRED
-            except Exception:
-                pass
-
-            if (
-                self.state.connection_state != ConnectionState.LOGIN_REQUIRED
-                and not self._resident_login_required
-                and not self._login_polling_active
-                and last_error != login_required_error
-            ):
-                return
-
-            with ui.element("div").classes("w-full warning-box mb-3"):
-                with ui.row().classes("items-start justify-between gap-3 w-full"):
-                    with ui.row().classes("items-start gap-2 flex-1"):
-                        ui.icon("warning").classes("text-warning text-lg mt-0.5")
-                        with ui.column().classes("gap-0.5"):
-                            ui.label("Copilotへのログインが必要です").classes(
-                                "text-sm font-semibold text-on-warning-container"
-                            )
-                            ui.label(
-                                "ブラウザでログインしてください。ログイン後に翻訳できます。"
-                            ).classes("text-xs text-on-warning-container opacity-80")
-                    with ui.row().classes("items-center gap-2 shrink-0"):
-                        ui.button(
-                            "Edgeを前面表示",
-                            on_click=lambda: _create_logged_task(
-                                self._show_login_browser(),
-                                name="show_login_browser",
-                            ),
-                        ).classes("btn-outline").props("no-caps")
-                        ui.button(
-                            "再接続",
-                            on_click=lambda: _create_logged_task(
-                                self._reconnect(),
-                                name="reconnect",
-                            ),
-                        ).classes("btn-text").props("no-caps")
-
-        self._login_banner = login_banner
-
         # Separate refreshable for result panel only (avoids input panel flicker)
         @ui.refreshable
         def result_panel_content():
@@ -9812,7 +9057,6 @@ class YakuLingoApp:
                 # 2-column layout for text translation
                 # Input panel (shown in INPUT state, hidden in RESULT state via CSS)
                 with ui.column().classes("input-panel"):
-                    login_banner()
                     create_text_input_panel(
                         state=self.state,
                         on_translate=self._translate_text,
@@ -9826,12 +9070,7 @@ class YakuLingoApp:
                         use_bundled_glossary=self.settings.use_bundled_glossary,
                         effective_reference_files=self._get_effective_reference_files(),
                         text_char_limit=TEXT_TRANSLATION_CHAR_LIMIT,
-                        batch_char_limit=(
-                            self.settings.local_ai_max_chars_per_batch
-                            if self.state.translation_backend
-                            == TranslationBackend.LOCAL
-                            else self.settings.max_chars_per_batch
-                        ),
+                        batch_char_limit=self.settings.local_ai_max_chars_per_batch,
                         on_output_language_override=self._set_text_output_language_override,
                         translation_style=self.settings.translation_style,
                         on_style_change=self._on_style_change,
@@ -9844,7 +9083,6 @@ class YakuLingoApp:
 
                 # Result panel (right column - shown when has results)
                 with ui.column().classes("result-panel"):
-                    login_banner()
                     result_panel_content()
             else:
                 # File panel: 2-column layout (sidebar + centered file panel)
@@ -9852,7 +9090,6 @@ class YakuLingoApp:
                 with ui.column().classes("input-panel file-panel-container"):
                     with ui.scroll_area().classes("file-panel-scroll"):
                         with ui.column().classes("w-full max-w-2xl mx-auto py-8"):
-                            login_banner()
                             create_file_panel(
                                 state=self.state,
                                 on_file_select=self._select_file,
@@ -9915,8 +9152,6 @@ class YakuLingoApp:
         return None
 
     def _is_local_streaming_preview_enabled(self) -> bool:
-        if self.state.translation_backend != TranslationBackend.LOCAL:
-            return True
         value = os.environ.get("YAKULINGO_DISABLE_LOCAL_STREAMING_PREVIEW")
         if value is None or value.strip() == "":
             return True
@@ -10077,24 +9312,16 @@ class YakuLingoApp:
 
         char_count = len(self.state.source_text)
         text_limit = TEXT_TRANSLATION_CHAR_LIMIT
-        batch_limit = (
-            self.settings.local_ai_max_chars_per_batch
-            if self.state.translation_backend == TranslationBackend.LOCAL
-            else self.settings.max_chars_per_batch
-        )
+        batch_limit = self.settings.local_ai_max_chars_per_batch
         batch_count = 0
         if batch_limit > 0:
             batch_count = max(1, math.ceil(char_count / batch_limit))
 
         style_section = refs.get("style_selector_section")
         if style_section:
-            show_style_selector = (
-                self.state.translation_backend == TranslationBackend.LOCAL
-                and (
-                    self._resolve_text_output_language() == "en"
-                    or not (self.state.source_text or "").strip()
-                )
-            )
+            show_style_selector = self._resolve_text_output_language() == "en" or not (
+                self.state.source_text or ""
+            ).strip()
             if show_style_selector:
                 style_section.classes(remove="hidden")
             else:
@@ -10353,49 +9580,6 @@ class YakuLingoApp:
             return False
         return True
 
-    def _set_translation_backend(self, backend: TranslationBackend) -> None:
-        """Switch translation backend (Copilot / Local AI) and persist to user settings."""
-        if backend == TranslationBackend.COPILOT and not getattr(
-            self.settings, "copilot_enabled", True
-        ):
-            logger.info("Copilot backend disabled by settings; ignoring switch")
-            return
-        if backend == self.state.translation_backend:
-            return
-        if self.state.is_translating():
-            client = self._get_active_client()
-            if client:
-                with client:
-                    ui.notify(
-                        "翻訳中はバックエンドを切り替えできません", type="warning"
-                    )
-            return
-
-        self.state.translation_backend = backend
-        try:
-            self.settings.translation_backend = backend.value
-            self.settings.save(self.settings_path)
-        except Exception as e:
-            logger.warning("Failed to save translation_backend: %s", e)
-
-        client = self._get_active_client()
-        if client:
-            with client:
-                self._batch_refresh({"status", "button", "tabs"})
-
-        if backend == TranslationBackend.LOCAL:
-            self.state.local_ai_state = LocalAIState.STARTING
-            self.state.local_ai_error = ""
-            self._local_ai_ensure_task = _create_logged_task(
-                self._ensure_local_ai_ready_async(),
-                name="local_ai_ensure",
-            )
-        else:
-            _create_logged_task(
-                self._ensure_connection_async(),
-                name="ensure_connection",
-            )
-
     def _start_local_ai_startup(self, startup_backend: str) -> bool:
         """Start local AI ensure task during startup if local backend is selected."""
         if startup_backend != "local":
@@ -10460,9 +9644,6 @@ class YakuLingoApp:
         try:
             if delay_s > 0:
                 await asyncio.sleep(delay_s)
-            if self.state.translation_backend != TranslationBackend.LOCAL:
-                logger.info("[TIMING] LocalAI warmup cancelled: backend switched")
-                return
             if self.state.local_ai_state != LocalAIState.READY:
                 logger.info("[TIMING] LocalAI warmup cancelled: not ready")
                 return
@@ -10563,77 +9744,11 @@ class YakuLingoApp:
         return True
 
     async def _ensure_connection_async(self) -> bool:
-        """Check connection and attempt reconnection if not connected.
-
-        This is the async version that will try to reconnect automatically
-        if the initial connection failed or was lost.
-
-        Returns:
-            True if connected (or reconnected successfully), False otherwise
-        """
+        """Ensure translation backend is ready (local AI only)."""
         # First ensure translation service is initialized
         if not self._ensure_translation_service():
             return False
-
-        if self.state.translation_backend == TranslationBackend.LOCAL:
-            return await self._ensure_local_ai_ready_async()
-
-        copilot = self.copilot
-        edge_window_open = True
-        if copilot.is_connected:
-            try:
-                edge_window_open = copilot.is_edge_window_open()
-            except Exception as e:
-                logger.debug("Failed to check Edge window state: %s", e)
-                edge_window_open = True
-            if not edge_window_open:
-                logger.info("Copilot Edge window was closed; forcing reconnect")
-                self.state.copilot_ready = False
-
-        # Check if already connected
-        if self.state.copilot_ready and copilot.is_connected and edge_window_open:
-            self._ensure_copilot_window_monitor()
-            return True
-
-        # If we are connected but "not ready", it is often because GPT mode is still
-        # switching (Playwright thread busy) and the status UI has not updated yet.
-        # Avoid triggering reconnect loops; wait for GPT mode setup to complete first.
-        if copilot.is_connected and edge_window_open:
-            if self._is_gpt_mode_setup_in_progress():
-                try:
-                    await asyncio.wait_for(self._gpt_mode_setup_task, timeout=30.0)  # type: ignore[arg-type]
-                except asyncio.TimeoutError:
-                    if self._client:
-                        with self._client:
-                            ui.notify(
-                                "準備中です（GPTモード切替中）...",
-                                type="info",
-                                position="bottom-right",
-                                timeout=2000,
-                            )
-                    return False
-            else:
-                await self._ensure_gpt_mode_setup()
-
-            if self.state.copilot_ready and self.copilot.is_connected:
-                self._ensure_copilot_window_monitor()
-                return True
-
-        # Check if login is in progress (don't interfere)
-        if self._login_polling_active:
-            if self._client:
-                with self._client:
-                    ui.notify(
-                        "ログイン完了を待っています...",
-                        type="info",
-                        position="bottom-right",
-                        timeout=2000,
-                    )
-            return False
-
-        # Not connected - try to reconnect automatically
-        logger.info("Connection not ready, attempting auto-reconnection...")
-        return await self._reconnect(max_retries=3, show_progress=True)
+        return await self._ensure_local_ai_ready_async()
 
     def _notify_error(self, message: str):
         """Show error notification with standard prefix.
@@ -11279,11 +10394,7 @@ class YakuLingoApp:
 
             await asyncio.sleep(0)
 
-            batch_limit = (
-                self.settings.local_ai_max_chars_per_batch
-                if self.state.translation_backend == TranslationBackend.LOCAL
-                else self.settings.max_chars_per_batch
-            )
+            batch_limit = self.settings.local_ai_max_chars_per_batch
             chunks = self._split_text_for_translation(source_text, batch_limit)
             total_chunks = len(chunks)
             loop = asyncio.get_running_loop()
@@ -11390,8 +10501,7 @@ class YakuLingoApp:
             return
         if self.translation_service:
             self.translation_service.reset_cancel()
-        if self.state.translation_backend == TranslationBackend.LOCAL:
-            self._cancel_local_ai_warmup("text translation started")
+        self._cancel_local_ai_warmup("text translation started")
 
         source_text = self.state.source_text
 
@@ -11626,21 +10736,12 @@ class YakuLingoApp:
         *,
         input_text: str = "",
     ) -> tuple[str, list[str], bool]:
-        """Build reference section for Copilot/Local backends with warnings."""
+        """Build reference section for local AI with warnings."""
         if not reference_files:
             return "", [], False
 
         translation_service = self.translation_service
-        use_local = False
-        if translation_service and translation_service.config:
-            use_local = (
-                getattr(translation_service.config, "translation_backend", "local")
-                == "local"
-            )
-        elif self.state.translation_backend == TranslationBackend.LOCAL:
-            use_local = True
-
-        if use_local and translation_service:
+        if translation_service:
             try:
                 translation_service._ensure_local_backend()
             except Exception:
@@ -12976,8 +12077,7 @@ class YakuLingoApp:
         # Use async version that will attempt auto-reconnection if needed
         if not await self._ensure_connection_async():
             return
-        if self.state.translation_backend == TranslationBackend.LOCAL:
-            self._cancel_local_ai_warmup("file translation started")
+        self._cancel_local_ai_warmup("file translation started")
 
         # Use saved client reference (protected by _client_lock)
         with self._client_lock:
@@ -13755,42 +12855,9 @@ def run_app(
             )
             native = False
 
-    quiet_startup = resident_mode and os.environ.get(
-        "YAKULINGO_QUIET_STARTUP", "1"
-    ).strip().lower() in ("1", "true", "yes")
-
-    available_memory_gb = _get_available_memory_gb()
-    startup_backend_hint = "local"
-    copilot_enabled = True
-    try:
-        startup_settings = AppSettings.load(get_default_settings_path())
-        startup_backend_hint = (
-            getattr(startup_settings, "translation_backend", "local") or "local"
-        )
-        copilot_enabled = getattr(startup_settings, "copilot_enabled", True)
-    except Exception:
-        startup_backend_hint = "local"
-        copilot_enabled = True
-    if not copilot_enabled:
-        startup_backend_hint = "local"
-    # Early connect spins up Edge (and later Playwright).
-    # Enable it in both native and browser modes for faster first translation.
-    allow_early_connect = startup_backend_hint != "local"
-    # Playwright pre-initialization does not open a window, so it's safe in browser mode.
-    allow_playwright_preinit = allow_early_connect
-    if (
-        available_memory_gb is not None
-        and available_memory_gb <= MIN_AVAILABLE_MEMORY_GB_FOR_EARLY_CONNECT
-    ):
-        allow_early_connect = False
-        allow_playwright_preinit = False
-        logger.info(
-            "Skipping early Playwright/Copilot pre-initialization due to low available memory: %.1fGB < %.1fGB",
-            available_memory_gb,
-            MIN_AVAILABLE_MEMORY_GB_FOR_EARLY_CONNECT,
-        )
-    if quiet_startup and allow_early_connect:
-        logger.info("Quiet startup: keeping early Edge warmup for faster hotkeys")
+    # ローカルAIのみ: Edge/Copilot の早期起動/Playwright事前初期化は行わない
+    allow_early_connect = False
+    allow_playwright_preinit = False
 
     shutdown_event = threading.Event()
     tray_icon = None
@@ -15358,28 +14425,16 @@ def run_app(
             state = yakulingo_app.state
         except Exception:
             return "Status: Unknown"
-        backend = getattr(state, "translation_backend", None)
-        if backend == TranslationBackend.LOCAL:
-            local_state = getattr(state, "local_ai_state", None)
-            if local_state == LocalAIState.READY:
-                return "Local AI: Ready"
-            if local_state == LocalAIState.STARTING:
-                return "Local AI: Starting"
-            if local_state == LocalAIState.NOT_INSTALLED:
-                return "Local AI: Not installed"
-            if local_state == LocalAIState.ERROR:
-                return "Local AI: Error"
-            return "Local AI: Connecting"
-        connection_state = getattr(state, "connection_state", None)
-        if connection_state == ConnectionState.CONNECTED:
-            return "Copilot: Connected"
-        if connection_state == ConnectionState.LOGIN_REQUIRED:
-            return "Copilot: Login required"
-        if connection_state == ConnectionState.EDGE_NOT_RUNNING:
-            return "Copilot: Edge not running"
-        if connection_state == ConnectionState.CONNECTION_FAILED:
-            return "Copilot: Connection failed"
-        return "Copilot: Connecting"
+        local_state = getattr(state, "local_ai_state", None)
+        if local_state == LocalAIState.READY:
+            return "Local AI: Ready"
+        if local_state == LocalAIState.STARTING:
+            return "Local AI: Starting"
+        if local_state == LocalAIState.NOT_INSTALLED:
+            return "Local AI: Not installed"
+        if local_state == LocalAIState.ERROR:
+            return "Local AI: Error"
+        return "Local AI: Unknown"
 
     if sys.platform == "win32" and (native or resident_mode):
         try:
@@ -15423,52 +14478,6 @@ def run_app(
         # Set pywebview window icon (may not affect taskbar, but helps title bar)
         if icon_path is not None and icon_path.exists():
             nicegui_app.native.window_args["icon"] = str(icon_path)
-
-    # Early Copilot connection: Wait for background thread or start new connection
-    # Edge+Copilot connection was started before NiceGUI import (see run_app above)
-    async def _early_connect_copilot():
-        """Wait for early connection or start new one if needed."""
-        try:
-            # Check if early connect thread was started before NiceGUI import
-            early_thread = getattr(yakulingo_app, "_early_connect_thread", None)
-            early_event = getattr(yakulingo_app, "_early_connection_event", None)
-            early_result_ref = getattr(
-                yakulingo_app, "_early_connection_result_ref", None
-            )
-            if early_event is not None and early_event.is_set():
-                yakulingo_app._early_connection_result = (
-                    early_result_ref.value if early_result_ref is not None else None
-                )
-                logger.info("[TIMING] Early Edge connection already completed (thread)")
-                if yakulingo_app._early_connection_result:
-                    yakulingo_app._ensure_copilot_window_monitor()
-                return
-            if early_thread is not None and early_thread.is_alive():
-                logger.info("[TIMING] Early Edge connection still in progress")
-                return
-
-            # Check if already connected (thread completed before we checked)
-            if yakulingo_app.copilot.is_connected:
-                yakulingo_app._early_connection_result = True
-                logger.info("[TIMING] Early Edge connection already completed")
-                yakulingo_app._ensure_copilot_window_monitor()
-                return
-
-            # Fallback: start connection now
-            # Use defer_window_positioning since window might not be ready yet
-            logger.info("[TIMING] Starting Copilot connection (fallback)")
-            result = await asyncio.to_thread(
-                yakulingo_app.copilot.connect,
-                bring_to_foreground_on_login=not resident_mode,
-                defer_window_positioning=True,
-            )
-            yakulingo_app._early_connection_result = result
-            logger.info("[TIMING] Copilot connection completed: %s", result)
-            if result:
-                yakulingo_app._ensure_copilot_window_monitor()
-        except Exception as e:
-            logger.debug("Copilot connection failed: %s", e)
-            yakulingo_app._early_connection_result = False
 
     # Early window positioning: Move app window IMMEDIATELY when pywebview creates it
     # This runs in parallel with Edge startup and positions the window before UI is rendered
@@ -15733,15 +14742,7 @@ def run_app(
     @nicegui_app.on_startup
     async def on_startup():
         """Called when NiceGUI server starts (before clients connect)."""
-        # Load settings early so we can respect the persisted backend selection.
-        # If Local AI is selected, avoid starting Edge/Copilot automatically.
         startup_backend = "local"
-        try:
-            startup_backend = (
-                getattr(yakulingo_app.settings, "translation_backend", "local") or "local"
-            )
-        except Exception:
-            startup_backend = "local"
 
         # Start hotkey listener immediately so hotkey translation works even without the UI.
         yakulingo_app.start_hotkey_listener()
@@ -15753,39 +14754,19 @@ def run_app(
 
         yakulingo_app._start_local_ai_startup(startup_backend)
 
-        # Start Copilot connection early only in native mode; browser mode should remain silent
-        # and connect on demand (clipboard/UI).
-        if native and startup_backend != "local":
-            yakulingo_app._early_connection_task = asyncio.create_task(
-                _early_connect_copilot()
-            )
-            if resident_mode:
-                # Resident setup uses native mode; warm up Copilot so setup.ps1 can detect readiness.
-                _create_logged_task(
-                    yakulingo_app._warmup_resident_gpt_mode(),
-                    name="warmup_resident_gpt_mode",
-                )
-
         # Start early window positioning - moves window before UI is rendered
         if native and sys.platform == "win32":
             _start_early_positioning_thread()
 
-        if not native:
-            if resident_mode:
-                if startup_backend != "local":
-                    _create_logged_task(
-                        yakulingo_app._warmup_resident_gpt_mode(),
-                        name="warmup_resident_gpt_mode",
-                    )
-            else:
-                try:
-                    _create_logged_task(
-                        asyncio.to_thread(_open_browser_window),
-                        name="open_browser_window",
-                    )
-                    logger.info("Auto-opening UI window (browser mode)")
-                except Exception as e:
-                    logger.debug("Failed to auto-open UI window: %s", e)
+        if not native and not resident_mode:
+            try:
+                _create_logged_task(
+                    asyncio.to_thread(_open_browser_window),
+                    name="open_browser_window",
+                )
+                logger.info("Auto-opening UI window (browser mode)")
+            except Exception as e:
+                logger.debug("Failed to auto-open UI window: %s", e)
 
     @ui.page("/")
     async def main_page(client: NiceGUIClient):

@@ -10,73 +10,13 @@ from yakulingo.services.translation_service import (
 )
 
 
-class SequencedCopilotHandler:
-    def __init__(self, responses: list[str]) -> None:
-        self._responses = responses
-        self._cancel_callback: Callable[[], bool] | None = None
-        self.translate_single_calls = 0
-        self.translate_sync_calls = 0
-
-    def set_cancel_callback(self, callback: Callable[[], bool] | None) -> None:
-        self._cancel_callback = callback
-
-    def translate_sync(
-        self,
-        texts: list[str],
-        prompt: str,
-        reference_files: list[Path] | None,
-        skip_clear_wait: bool,
-        timeout: int | None = None,
-        include_item_ids: bool = False,
-    ) -> list[str]:
-        self.translate_sync_calls += 1
-        return texts
-
-    def translate_single(
-        self,
-        text: str,
-        prompt: str,
-        reference_files: list[Path] | None = None,
-        on_chunk: Callable[[str], None] | None = None,
-    ) -> str:
-        self.translate_single_calls += 1
-        index = min(self.translate_single_calls - 1, len(self._responses) - 1)
-        response = self._responses[index]
-        if on_chunk is not None:
-            on_chunk(response)
-        return response
-
-
-def test_copilot_to_jp_retries_when_output_is_chinese() -> None:
-    first = "Translation:\n汉语测试"
-    second = "Translation:\nこれは日本語です。"
-    copilot = SequencedCopilotHandler([first, second])
+def test_local_to_jp_retries_when_output_is_chinese(monkeypatch) -> None:
+    settings = AppSettings(translation_backend="local", copilot_enabled=False)
     service = TranslationService(
-        copilot=copilot,
-        config=AppSettings(translation_backend="copilot"),
+        copilot=object(), config=settings, prompts_dir=Path("prompts")
     )
 
-    result = service.translate_text_with_options(
-        "dummy",
-        pre_detected_language="英語",
-    )
-
-    assert copilot.translate_single_calls == 2
-    assert result.output_language == "jp"
-    assert result.options
-    assert language_detector.detect_local(result.options[0].text) == "日本語"
-
-
-def test_local_to_en_does_not_fall_back_to_copilot_on_output_language_mismatch(
-    monkeypatch,
-) -> None:
-    copilot = SequencedCopilotHandler(["Hello"])
-    settings = AppSettings(translation_backend="local", copilot_enabled=True)
-    service = TranslationService(
-        copilot=copilot, config=settings, prompts_dir=Path("prompts")
-    )
-
-    calls: list[str] = []
+    calls = 0
 
     def fake_translate_single_with_cancel(
         text: str,
@@ -84,11 +24,56 @@ def test_local_to_en_does_not_fall_back_to_copilot_on_output_language_mismatch(
         reference_files: list[Path] | None = None,
         on_chunk: Callable[[str], None] | None = None,
     ) -> str:
-        calls.append(prompt)
+        nonlocal calls
+        _ = text, prompt, reference_files, on_chunk
+        calls += 1
+        if calls == 1:
+            return '{"translation":"汉语测试","explanation":""}'
+        return '{"translation":"これは日本語です。","explanation":""}'
+
+    monkeypatch.setattr(
+        service,
+        "_translate_single_with_cancel_on_local",
+        fake_translate_single_with_cancel,
+    )
+
+    result = service.translate_text_with_options(
+        "dummy",
+        pre_detected_language="英語",
+    )
+
+    assert calls == 2
+    assert result.output_language == "jp"
+    assert result.options
+    assert language_detector.detect_local(result.options[0].text) == "日本語"
+    assert (result.metadata or {}).get("output_language_retry") is True
+
+
+def test_local_to_en_returns_error_without_copilot_advice_when_retry_fails(
+    monkeypatch,
+) -> None:
+    settings = AppSettings(translation_backend="local", copilot_enabled=True)
+    service = TranslationService(
+        copilot=object(), config=settings, prompts_dir=Path("prompts")
+    )
+
+    calls = 0
+
+    def fake_translate_single_with_cancel(
+        text: str,
+        prompt: str,
+        reference_files: list[Path] | None = None,
+        on_chunk: Callable[[str], None] | None = None,
+    ) -> str:
+        nonlocal calls
+        _ = text, prompt, reference_files, on_chunk
+        calls += 1
         return '{"translation":"汉语测试","explanation":""}'
 
     monkeypatch.setattr(
-        service, "_translate_single_with_cancel", fake_translate_single_with_cancel
+        service,
+        "_translate_single_with_cancel_on_local",
+        fake_translate_single_with_cancel,
     )
 
     result = service.translate_text_with_options(
@@ -97,51 +82,12 @@ def test_local_to_en_does_not_fall_back_to_copilot_on_output_language_mismatch(
         pre_detected_language="日本語",
     )
 
-    assert len(calls) == 1
-    assert copilot.translate_single_calls == 0
+    assert calls == 2
     assert result.output_language == "en"
     assert not result.options
     assert result.error_message
-    assert "Copilotボタン" in result.error_message
-
-
-def test_local_style_comparison_does_not_fall_back_to_copilot_on_output_language_mismatch(
-    monkeypatch,
-) -> None:
-    copilot_response = """[minimal]
-Translation:
-Hello
-"""
-    copilot = SequencedCopilotHandler([copilot_response])
-    settings = AppSettings(translation_backend="local", copilot_enabled=True)
-    service = TranslationService(
-        copilot=copilot, config=settings, prompts_dir=Path("prompts")
-    )
-
-    local_calls = 0
-
-    def fake_translate_single_with_cancel(
-        text: str,
-        prompt: str,
-        reference_files: list[Path] | None = None,
-        on_chunk: Callable[[str], None] | None = None,
-    ) -> str:
-        nonlocal local_calls
-        local_calls += 1
-        return '{"translation":"汉语测试","explanation":""}'
-
-    monkeypatch.setattr(
-        service, "_translate_single_with_cancel", fake_translate_single_with_cancel
-    )
-
-    result = service.translate_text_with_style_comparison(
-        "dummy",
-        pre_detected_language="日本語",
-    )
-
-    assert local_calls == 1
-    assert copilot.translate_single_calls == 0
-    assert result.output_language == "en"
-    assert not result.options
-    assert result.error_message
-    assert "Copilotボタン" in result.error_message
+    assert "Copilotボタン" not in result.error_message
+    metadata = result.metadata or {}
+    assert metadata.get("output_language_retry") is True
+    assert metadata.get("output_language_retry_failed") is True
+    assert metadata.get("output_language_mismatch") is True

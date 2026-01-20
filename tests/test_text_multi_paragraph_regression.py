@@ -10,44 +10,6 @@ from yakulingo.config.settings import AppSettings
 from yakulingo.services.translation_service import TranslationService
 
 
-class CapturingCopilotHandler:
-    def __init__(self, response: str) -> None:
-        self._response = response
-        self._cancel_callback: Callable[[], bool] | None = None
-        self.translate_single_calls = 0
-        self.translate_sync_calls = 0
-        self.last_prompt: str | None = None
-
-    def set_cancel_callback(self, callback: Callable[[], bool] | None) -> None:
-        self._cancel_callback = callback
-
-    def translate_sync(
-        self,
-        texts: list[str],
-        prompt: str,
-        reference_files: list[Path] | None,
-        skip_clear_wait: bool,
-        timeout: int | None = None,
-        include_item_ids: bool = False,
-    ) -> list[str]:
-        self.translate_sync_calls += 1
-        self.last_prompt = prompt
-        return texts
-
-    def translate_single(
-        self,
-        text: str,
-        prompt: str,
-        reference_files: list[Path] | None = None,
-        on_chunk: Callable[[str], None] | None = None,
-    ) -> str:
-        self.translate_single_calls += 1
-        self.last_prompt = prompt
-        if on_chunk is not None:
-            on_chunk(self._response)
-        return self._response
-
-
 def _normalize_newlines(value: str) -> str:
     return value.replace("\r\n", "\n").replace("\r", "\n")
 
@@ -144,77 +106,6 @@ class DummyLocalPromptBuilder:
         _ = reference_files
         _ = detected_language
         return f"LOCAL_TO_JP\n{self._wrap_input(text)}"
-
-
-@pytest.mark.parametrize("newline", ["\n", "\r\n"])
-def test_copilot_text_to_en_style_comparison_preserves_multi_paragraph_input_and_output(
-    newline: str,
-) -> None:
-    input_text = f"第一段落。{newline}{newline}第二段落。"
-    response = """[concise]
-Translation:
-First paragraph.
-
-Second paragraph.
-
-[minimal]
-Translation:
-First para.
-
-Second para.
-"""
-    if newline == "\r\n":
-        response = response.replace("\n", "\r\n")
-    copilot = CapturingCopilotHandler(response)
-    service = TranslationService(
-        copilot=copilot,
-        config=AppSettings(translation_backend="copilot"),
-        prompts_dir=Path("prompts"),
-    )
-
-    result = service.translate_text_with_style_comparison(
-        input_text,
-        pre_detected_language="日本語",
-    )
-
-    assert copilot.translate_single_calls == 1
-    assert copilot.last_prompt is not None
-    assert _normalize_newlines(input_text) in _normalize_newlines(copilot.last_prompt)
-
-    assert result.output_language == "en"
-    assert result.options
-    assert [option.style for option in result.options] == ["minimal"]
-    assert _normalize_newlines(result.options[0].text) == "First para.\n\nSecond para."
-
-
-@pytest.mark.parametrize("newline", ["\n", "\r\n"])
-def test_copilot_text_to_jp_preserves_multi_paragraph_input_and_output(
-    newline: str,
-) -> None:
-    input_text = f"First paragraph.{newline}{newline}Second paragraph."
-    response = f"Translation:{newline}これは第一段落です。{newline}{newline}これは第二段落です。"
-    copilot = CapturingCopilotHandler(response)
-    service = TranslationService(
-        copilot=copilot,
-        config=AppSettings(translation_backend="copilot"),
-        prompts_dir=Path("prompts"),
-    )
-
-    result = service.translate_text_with_options(
-        input_text,
-        pre_detected_language="英語",
-    )
-
-    assert copilot.translate_single_calls == 1
-    assert copilot.last_prompt is not None
-    assert _normalize_newlines(input_text) in _normalize_newlines(copilot.last_prompt)
-
-    assert result.output_language == "jp"
-    assert result.options
-    assert (
-        _normalize_newlines(result.options[0].text)
-        == "これは第一段落です。\n\nこれは第二段落です。"
-    )
 
 
 @pytest.mark.parametrize("newline", ["\n", "\r\n"])

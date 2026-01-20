@@ -2868,6 +2868,38 @@ class TranslationService:
                     except Exception:
                         pass
 
+    def _translate_single_with_cancel_on_local(
+        self,
+        text: str,
+        prompt: str,
+        reference_files: Optional[list[Path]] = None,
+        on_chunk: "Callable[[str], None] | None" = None,
+    ) -> str:
+        """Force a LocalAI translate_single call regardless of translation_backend."""
+        self._ensure_local_backend()
+        client = self._local_client
+        if client is None:
+            raise RuntimeError("Local AI client not initialized")
+
+        set_cb = getattr(client, "set_cancel_callback", None)
+        lock = self._copilot_lock or nullcontext()
+
+        if callable(set_cb):
+            try:
+                set_cb(lambda: self._cancel_event.is_set())
+            except Exception:
+                set_cb = None
+
+        try:
+            with lock:
+                return client.translate_single(text, prompt, reference_files, on_chunk)
+        finally:
+            if callable(set_cb):
+                try:
+                    set_cb(None)
+                except Exception:
+                    pass
+
     def translate_text(
         self,
         text: str,
@@ -2898,7 +2930,7 @@ class TranslationService:
             prompt = self.prompt_builder.build(text, has_refs, output_language="en")
 
             # Translate
-            result = self._translate_single_with_cancel(
+            result = self._translate_single_with_cancel_on_local(
                 text, prompt, reference_files, on_chunk
             )
 
@@ -3008,10 +3040,10 @@ class TranslationService:
                     detected_language=detected_language,
                 )
                 stream_handler = _wrap_local_streaming_on_chunk(on_chunk)
-                raw = self._translate_single_with_cancel(
+                raw = self._translate_single_with_cancel_on_local(
                     text, prompt, None, stream_handler
                 )
-                translation, explanation = parse_text_single_translation(raw)
+                translation, _ = parse_text_single_translation(raw)
                 if not translation:
                     error_message = "ローカルAIの応答(JSON)を解析できませんでした（詳細はログを確認してください）"
                     if is_truncated_json(raw):
@@ -3027,8 +3059,77 @@ class TranslationService:
                         error_message=error_message,
                         metadata=metadata,
                     )
+
+                needs_output_language_retry = _is_text_output_language_mismatch(
+                    translation, "en"
+                )
+                if (
+                    not needs_output_language_retry
+                    and _looks_incomplete_translation_to_en(text, translation)
+                ):
+                    metadata["incomplete_translation"] = True
+                    return TextTranslationResult(
+                        source_text=text,
+                        source_char_count=len(text),
+                        output_language=output_language,
+                        detected_language=detected_language,
+                        error_message="翻訳結果が不完全でした（短すぎます）。",
+                        metadata=metadata,
+                    )
+
+                needs_numeric_rule_retry = False
+                if not needs_output_language_retry:
+                    needs_numeric_rule_retry = (
+                        _needs_to_en_numeric_rule_retry_copilot_after_auto_fix(
+                            text, translation
+                        )
+                    )
+                if needs_output_language_retry or needs_numeric_rule_retry:
+                    retry_parts: list[str] = []
+                    if needs_output_language_retry:
+                        retry_parts.append(
+                            BatchTranslator._EN_STRICT_OUTPUT_LANGUAGE_INSTRUCTION
+                        )
+                    if needs_numeric_rule_retry:
+                        retry_parts.append(_TEXT_TO_EN_NUMERIC_RULE_INSTRUCTION)
+
+                    retry_prompt = local_builder.build_text_to_en_single(
+                        text,
+                        style=style,
+                        reference_files=reference_files,
+                        detected_language=detected_language,
+                        extra_instruction="\n".join(retry_parts).strip(),
+                    )
+                    retry_raw = self._translate_single_with_cancel_on_local(
+                        text, retry_prompt, None, None
+                    )
+                    retry_translation, _ = parse_text_single_translation(retry_raw)
+                    if not retry_translation:
+                        error_message = "ローカルAIの応答(JSON)を解析できませんでした（詳細はログを確認してください）"
+                        if is_truncated_json(retry_raw):
+                            error_message = (
+                                "ローカルAIの応答が途中で終了しました（JSONが閉じていません）。\n"
+                                "max_tokens / ctx_size を見直してください。"
+                            )
+                        return TextTranslationResult(
+                            source_text=text,
+                            source_char_count=len(text),
+                            output_language=output_language,
+                            detected_language=detected_language,
+                            error_message=error_message,
+                            metadata=metadata,
+                        )
+                    translation = retry_translation
+                    if needs_output_language_retry:
+                        metadata["output_language_retry"] = True
+                    if needs_numeric_rule_retry:
+                        metadata["to_en_numeric_rule_retry"] = True
+                        metadata["to_en_numeric_rule_retry_styles"] = [style]
+
                 if _is_text_output_language_mismatch(translation, "en"):
                     metadata["output_language_mismatch"] = True
+                    if metadata.get("output_language_retry"):
+                        metadata["output_language_retry_failed"] = True
                     return TextTranslationResult(
                         source_text=text,
                         source_char_count=len(text),
@@ -3047,7 +3148,6 @@ class TranslationService:
                         error_message="翻訳結果が不完全でした（短すぎます）。",
                         metadata=metadata,
                     )
-                explanation = ""
                 fixed_text, fixed = _fix_to_en_oku_numeric_unit_if_possible(
                     source_text=text,
                     translated_text=translation,
@@ -3055,12 +3155,17 @@ class TranslationService:
                 if fixed:
                     translation = fixed_text
                     metadata["to_en_numeric_unit_correction"] = True
+                if needs_numeric_rule_retry and _needs_to_en_numeric_rule_retry_copilot(
+                    text, translation
+                ):
+                    metadata["to_en_numeric_rule_retry_failed"] = True
+                    metadata["to_en_numeric_rule_retry_failed_styles"] = [style]
                 return TextTranslationResult(
                     source_text=text,
                     source_char_count=len(text),
                     options=[
                         TranslationOption(
-                            text=translation, explanation=explanation, style=style
+                            text=translation, explanation="", style=style
                         )
                     ],
                     output_language=output_language,
@@ -3074,7 +3179,9 @@ class TranslationService:
                 detected_language=detected_language,
             )
             stream_handler = _wrap_local_streaming_on_chunk(on_chunk)
-            raw = self._translate_single_with_cancel(text, prompt, None, stream_handler)
+            raw = self._translate_single_with_cancel_on_local(
+                text, prompt, None, stream_handler
+            )
             translation, _ = parse_text_single_translation(raw)
             if not translation:
                 error_message = "ローカルAIの応答(JSON)を解析できませんでした（詳細はログを確認してください）"
@@ -3096,7 +3203,7 @@ class TranslationService:
                     BatchTranslator._JP_STRICT_OUTPUT_LANGUAGE_INSTRUCTION
                 )
                 retry_prompt = _insert_extra_instruction(prompt, retry_instruction)
-                retry_raw = self._translate_single_with_cancel(
+                retry_raw = self._translate_single_with_cancel_on_local(
                     text, retry_prompt, None, None
                 )
                 retry_translation, _ = parse_text_single_translation(retry_raw)
@@ -3595,38 +3702,13 @@ class TranslationService:
             elif style is None:
                 style = DEFAULT_TEXT_STYLE
 
-            if self._use_local_backend():
-                local_result = self._translate_text_with_options_local(
-                    text=text,
-                    reference_files=reference_files,
-                    style=style,
-                    detected_language=detected_language,
-                    output_language=output_language,
-                    on_chunk=on_chunk,
-                )
-                if (local_result.metadata or {}).get(
-                    "output_language_mismatch"
-                ) and bool(getattr(self.config, "copilot_enabled", True)):
-                    # Copilot is an explicit user choice (via UI toggle).
-                    # When local output is suspicious, guide the user to switch manually.
-                    advice = "Copilotボタンで切り替えて再実行してください。"
-                    if local_result.error_message:
-                        if advice not in local_result.error_message:
-                            local_result.error_message = (
-                                f"{local_result.error_message}\n{advice}"
-                            )
-                    else:
-                        local_result.error_message = advice
-                return local_result
-
-            return self._translate_text_with_options_on_copilot(
+            return self._translate_text_with_options_local(
                 text=text,
                 reference_files=reference_files,
                 style=style,
                 detected_language=detected_language,
                 output_language=output_language,
                 on_chunk=on_chunk,
-                translate_single=self._translate_single_with_cancel,
             )
 
         except TranslationCancelledError:
@@ -3881,7 +3963,7 @@ class TranslationService:
             prompt = prompt.replace("{input_text}", text)
 
             # Get adjusted translation
-            raw_result = self._translate_single_with_cancel(
+            raw_result = self._translate_single_with_cancel_on_local(
                 text, prompt, reference_files
             )
 
@@ -3976,7 +4058,7 @@ class TranslationService:
             prompt = prompt.replace("{style}", style)
 
             # Get alternative translation
-            raw_result = self._translate_single_with_cancel(
+            raw_result = self._translate_single_with_cancel_on_local(
                 source_text, prompt, reference_files
             )
 

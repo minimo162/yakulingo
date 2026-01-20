@@ -79,18 +79,21 @@ class _RecordingCopilot:
         return "OK"
 
 
-def test_translation_service_passes_reference_files_to_copilot_translate_single(
+def test_translation_service_passes_reference_files_to_local_translate_single(
     tmp_path: Path,
 ) -> None:
     repo_root = Path(__file__).resolve().parents[1]
     prompts_dir = repo_root / "prompts"
 
-    copilot = _RecordingCopilot()
+    local = _RecordingCopilot()
     service = TranslationService(
-        copilot=copilot,  # type: ignore[arg-type]
-        config=AppSettings(translation_backend="copilot"),
+        copilot=object(),  # unused in local-only text paths
+        config=AppSettings(translation_backend="local"),
         prompts_dir=prompts_dir,
     )
+    service._local_client = local  # type: ignore[assignment]
+    service._local_prompt_builder = object()  # type: ignore[assignment]
+    service._local_batch_translator = object()  # type: ignore[assignment]
     ref_path = tmp_path / "ref.txt"
     ref_path.write_text("ref", encoding="utf-8")
     reference_files = [ref_path]
@@ -98,9 +101,9 @@ def test_translation_service_passes_reference_files_to_copilot_translate_single(
     result = service.translate_text("hello", reference_files=reference_files)
 
     assert result.status == TranslationStatus.COMPLETED
-    assert copilot.calls
-    assert copilot.calls[0]["reference_files"] == reference_files
-    assert _REFERENCE_SENTINEL in str(copilot.calls[0]["prompt"])
+    assert local.calls
+    assert local.calls[0]["reference_files"] == reference_files
+    assert _REFERENCE_SENTINEL in str(local.calls[0]["prompt"])
 
 
 class _RecordingPromptBuilder:

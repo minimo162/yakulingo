@@ -26,7 +26,7 @@ def test_local_text_options_streams_translation(monkeypatch) -> None:
         return '{"translation":"Hello","explanation":""}'
 
     monkeypatch.setattr(
-        service, "_translate_single_with_cancel", fake_translate_single_with_cancel
+        service, "_translate_single_with_cancel_on_local", fake_translate_single_with_cancel
     )
 
     result = service.translate_text_with_options(
@@ -60,7 +60,7 @@ def test_local_text_style_comparison_streams_translation(monkeypatch) -> None:
         return '{"translation":"Hello","explanation":""}'
 
     monkeypatch.setattr(
-        service, "_translate_single_with_cancel", fake_translate_single_with_cancel
+        service, "_translate_single_with_cancel_on_local", fake_translate_single_with_cancel
     )
 
     result = service.translate_text_with_style_comparison(
@@ -101,7 +101,7 @@ def test_local_streaming_throttle_still_emits_final(monkeypatch) -> None:
         return '{"translation":"Hello","explanation":""}'
 
     monkeypatch.setattr(
-        service, "_translate_single_with_cancel", fake_translate_single_with_cancel
+        service, "_translate_single_with_cancel_on_local", fake_translate_single_with_cancel
     )
     monkeypatch.setattr(
         "yakulingo.services.translation_service.time.monotonic", fake_monotonic

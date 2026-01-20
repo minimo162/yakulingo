@@ -31,7 +31,7 @@ def test_local_style_comparison_retries_when_translation_is_too_short(
         raise AssertionError("called too many times")
 
     monkeypatch.setattr(
-        service, "_translate_single_with_cancel", fake_translate_single_with_cancel
+        service, "_translate_single_with_cancel_on_local", fake_translate_single_with_cancel
     )
 
     result = service.translate_text_with_style_comparison(
@@ -71,7 +71,7 @@ def test_local_style_comparison_returns_error_when_retry_still_too_short(
         raise AssertionError("called too many times")
 
     monkeypatch.setattr(
-        service, "_translate_single_with_cancel", fake_translate_single_with_cancel
+        service, "_translate_single_with_cancel_on_local", fake_translate_single_with_cancel
     )
 
     result = service.translate_text_with_style_comparison(
@@ -107,7 +107,7 @@ def test_local_style_comparison_retries_when_numeric_rules_violated(
         raise AssertionError("called too many times")
 
     monkeypatch.setattr(
-        service, "_translate_single_with_cancel", fake_translate_single_with_cancel
+        service, "_translate_single_with_cancel_on_local", fake_translate_single_with_cancel
     )
 
     result = service.translate_text_with_style_comparison(

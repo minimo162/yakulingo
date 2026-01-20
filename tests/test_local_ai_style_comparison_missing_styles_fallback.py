@@ -6,7 +6,7 @@ from yakulingo.config.settings import AppSettings
 from yakulingo.services.translation_service import TranslationService
 
 
-def test_local_style_comparison_stops_additional_calls_when_budget_exhausted(
+def test_local_style_comparison_retries_once_on_output_language_mismatch(
     monkeypatch,
 ) -> None:
     settings = AppSettings(translation_backend="local", copilot_enabled=False)
@@ -23,19 +23,21 @@ def test_local_style_comparison_stops_additional_calls_when_budget_exhausted(
         _ = reference_files
         _ = on_chunk
         call_count += 1
-
-        if call_count == 1:
-            return '{"translation":"一方、この人事部長の会社の初任給は22万円だ。","explanation":""}'
-        raise AssertionError(
-            f"_translate_single_with_cancel was called too many times: {prompt[:200]}"
-        )
+        if call_count >= 3:
+            raise AssertionError(
+                f"_translate_single_with_cancel_on_local was called too many times: {prompt[:200]}"
+            )
+        return '{"translation":"汉语测试","explanation":""}'
 
     monkeypatch.setattr(
-        service, "_translate_single_with_cancel", fake_translate_single_with_cancel
+        service, "_translate_single_with_cancel_on_local", fake_translate_single_with_cancel
     )
 
-    result = service.translate_text_with_style_comparison("あ")
+    result = service.translate_text_with_style_comparison(
+        "dummy",
+        pre_detected_language="日本語",
+    )
 
-    assert call_count == 1
+    assert call_count == 2
     assert result.error_message
     assert not result.options

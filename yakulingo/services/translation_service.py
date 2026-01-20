@@ -13,7 +13,6 @@ import os
 import threading
 import time
 from contextlib import contextmanager, nullcontext
-from difflib import SequenceMatcher
 from functools import lru_cache
 from itertools import islice
 from pathlib import Path
@@ -140,7 +139,6 @@ _JP_PUNCTUATION_GUARD_TRANSLATION_TABLE = str.maketrans(
         "』": '"',
     }
 )
-_RE_STYLE_DIFF_TOKENS = re.compile(r"[a-z0-9]+", re.IGNORECASE)
 
 
 def _normalize_en_translation_for_output_language_guard(text: str) -> str:
@@ -207,87 +205,6 @@ def _normalize_en_translation_for_output_language_guard(text: str) -> str:
     normalized = _RE_JP_MAN_YEN_AMOUNT.sub(repl_man, normalized)
     normalized = _RE_JP_YEN_AMOUNT.sub(repl_yen, normalized)
     return normalized
-
-
-def _tokenize_style_diff(text: str) -> list[str]:
-    normalized = unicodedata.normalize("NFKC", text or "").lower()
-    if not normalized:
-        return []
-    return _RE_STYLE_DIFF_TOKENS.findall(normalized)
-
-
-def _should_rewrite_compact_style(
-    *,
-    base_text: str,
-    compact_text: str,
-) -> bool:
-    base = (base_text or "").strip()
-    compact = (compact_text or "").strip()
-
-    if not base or not compact:
-        return False
-
-    if compact == base:
-        return True
-
-    base_tokens = _tokenize_style_diff(base)
-    compact_tokens = _tokenize_style_diff(compact)
-    if len(base_tokens) < 12 or len(compact_tokens) < 8:
-        return False
-
-    compact_word_ratio = len(compact_tokens) / len(base_tokens)
-    similarity_to_base = SequenceMatcher(None, base_tokens, compact_tokens).ratio()
-    if compact_word_ratio >= 0.85 and similarity_to_base >= 0.92:
-        return True
-
-    return False
-
-
-def _build_style_diff_rewrite_prompt(base_text: str, styles: list[str]) -> str:
-    requested = [s for s in styles if s in TEXT_STYLE_ORDER]
-    if not requested:
-        requested = ["minimal"]
-
-    labels = ", ".join(f"[{style}]" for style in requested)
-    lines = [
-        "Rewrite the provided English text into the requested style(s).",
-        "Do NOT translate from Japanese; the input is already English.",
-        "",
-        "Rules (critical):",
-        f"- Output ONLY the requested style sections: {labels}",
-        "- Output must match the exact format shown below (no extra headings/notes/code fences).",
-        "- English only (no Japanese/Chinese/Korean scripts; no Japanese punctuation).",
-        "- Do NOT output any explanations/notes.",
-        "- Keep numbers/units/proper nouns exactly as they appear in the input.",
-        "- Preserve line breaks and tabs as much as possible.",
-        "",
-        "Style rules:",
-    ]
-    if "concise" in requested:
-        lines += [
-            "[concise]",
-            "- Concise business English; remove wordiness; keep meaning.",
-            "- Target length: ~70–85% of the input (rough word count).",
-            "",
-        ]
-    if "minimal" in requested:
-        lines += [
-            "[minimal]",
-            "- Minimal business English; keep core meaning; omit non-essential words.",
-            "- Target length: ~60–75% of the input (rough word count).",
-            "",
-        ]
-    lines.append("### Output format (exact)")
-    for style in requested:
-        lines += [f"[{style}]", "Translation:", "", ""]
-
-    lines += [
-        "### INPUT",
-        "===INPUT_TEXT===",
-        base_text,
-        "===END_INPUT_TEXT===",
-    ]
-    return "\n".join(lines)
 
 
 def _looks_like_chinese_in_kana_less_cjk(text: str) -> bool:

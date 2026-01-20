@@ -955,39 +955,6 @@ def _render_empty_result_state():
         )
 
 
-def _build_display_options(
-    options: list[TranslationOption],
-    compare_mode: bool,
-) -> list[TranslationOption]:
-    if not compare_mode:
-        return options
-
-    base_options: dict[str, TranslationOption] = {}
-    for option in options:
-        if option.style in TEXT_STYLE_ORDER and option.style not in base_options:
-            base_options[option.style] = option
-
-    ordered = [base_options[s] for s in TEXT_STYLE_ORDER if s in base_options]
-    ordered_ids = {id(option) for option in ordered}
-
-    for option in options:
-        if id(option) not in ordered_ids:
-            ordered.append(option)
-
-    return ordered
-
-
-def _select_primary_option(
-    options: list[TranslationOption],
-) -> Optional[TranslationOption]:
-    if not options:
-        return None
-    for option in options:
-        if option.style == "concise":
-            return option
-    return options[0]
-
-
 def _render_results_to_en(
     result: TextTranslationResult,
     on_copy: Callable[[str], None],

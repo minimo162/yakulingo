@@ -15,7 +15,11 @@ each prompt template via the {translation_rules} placeholder. When sections
 are present, only the relevant rules for the output language are inserted.
 """
 
+import csv
+import heapq
+import io
 import re
+import unicodedata
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 from typing import Optional, Sequence
@@ -27,6 +31,14 @@ _RULE_SECTION_KEYS = {
     "TO_EN": "en",
     "TO_JP": "jp",
 }
+
+_GLOSSARY_FILENAMES = {"glossary.csv"}
+_RE_GLOSSARY_MATCH_SEPARATORS = re.compile(r"[\s_/\\-]+")
+_RE_GLOSSARY_ASCII_WORD = re.compile(r"^[a-z0-9]+$")
+_RE_GLOSSARY_TEXT_ASCII_WORD = re.compile(r"[a-z0-9]+")
+_ASCII_ALNUM = frozenset("abcdefghijklmnopqrstuvwxyz0123456789")
+_INLINE_GLOSSARY_MAX_LINES = 40
+_INLINE_GLOSSARY_MAX_CHARS = 2000
 
 _NUMBER_WITH_OPTIONAL_COMMAS_PATTERN = r"(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?"
 _RE_YEN_BILLION = re.compile(
@@ -101,6 +113,8 @@ REFERENCE_INSTRUCTION = """
 参考ファイル (Reference Files)
 添付の参考ファイル（用語集、参考資料等）を参照し、翻訳に活用してください。
 用語集がある場合は、記載されている用語は必ずその訳語を使用してください。
+用語集の用語は、単語単体だけでなく文章中に含まれる場合も必ず同じ訳語を適用してください（表記ゆれ・言い換え禁止）。
+複数の用語が一致する場合は、より長く具体的な用語（最長一致）を優先してください。
 """
 ID_MARKER_INSTRUCTION = """
 ### Item ID markers (critical)
@@ -307,6 +321,10 @@ class PromptBuilder:
         self._translation_rules_sections: dict[str, str] = {}
         self._translation_rules_has_sections: bool = False
         self._translation_rules_file_key: Optional[tuple[str, int, int]] = None
+        # Glossary cache: {(path, mtime, size): pairs}
+        self._glossary_pairs_cache: dict[
+            tuple[str, int, int], list[tuple[str, str, str, str, str, str]]
+        ] = {}
         self._load_templates()
 
     @staticmethod
@@ -331,6 +349,218 @@ class PromptBuilder:
             return (str(path), mtime_key, int(stat.st_size))
         except OSError:
             return (str(path), 0, 0)
+
+    @staticmethod
+    def _normalize_for_glossary_match(text: str) -> str:
+        if not text:
+            return ""
+        normalized = unicodedata.normalize("NFKC", text)
+        normalized = normalized.replace("\u3000", " ")
+        return normalized.casefold()
+
+    @staticmethod
+    def _compact_for_glossary_match(text_folded: str) -> str:
+        if not text_folded:
+            return ""
+        return _RE_GLOSSARY_MATCH_SEPARATORS.sub("", text_folded)
+
+    @staticmethod
+    def _matches_glossary_term(
+        *,
+        text_folded: str,
+        text_compact: str,
+        term_folded: str,
+        term_compact: str,
+    ) -> bool:
+        term_folded = (term_folded or "").strip()
+        if not term_folded:
+            return False
+
+        if term_folded.isascii() and _RE_GLOSSARY_ASCII_WORD.match(term_folded):
+            term_len = len(term_folded)
+            start = 0
+            while True:
+                idx = text_folded.find(term_folded, start)
+                if idx < 0:
+                    break
+                before_ok = idx == 0 or text_folded[idx - 1] not in _ASCII_ALNUM
+                after_pos = idx + term_len
+                after_ok = (
+                    after_pos >= len(text_folded)
+                    or text_folded[after_pos] not in _ASCII_ALNUM
+                )
+                if before_ok and after_ok:
+                    return True
+                start = idx + term_len
+        else:
+            if term_folded in text_folded:
+                return True
+
+        term_compact = (term_compact or "").strip()
+        if not term_compact:
+            return False
+        if len(term_compact) < 4:
+            return False
+        return term_compact in text_compact
+
+    def _load_glossary_pairs(
+        self, path: Path
+    ) -> list[tuple[str, str, str, str, str, str]]:
+        file_key = self._rules_file_key(path)
+        cached = self._glossary_pairs_cache.get(file_key)
+        if cached is not None:
+            return cached
+
+        try:
+            raw = path.read_text(encoding="utf-8-sig", errors="replace")
+        except OSError:
+            pairs: list[tuple[str, str, str, str, str, str]] = []
+        else:
+            pairs = []
+            for row in csv.reader(io.StringIO(raw)):
+                if not row:
+                    continue
+                first = (row[0] or "").strip()
+                if not first or first.startswith("#"):
+                    continue
+                second = (row[1] or "").strip() if len(row) > 1 else ""
+                source_folded = self._normalize_for_glossary_match(first)
+                target_folded = (
+                    self._normalize_for_glossary_match(second) if second else ""
+                )
+                source_compact = self._compact_for_glossary_match(source_folded)
+                target_compact = self._compact_for_glossary_match(target_folded)
+                pairs.append(
+                    (
+                        first,
+                        second,
+                        source_folded,
+                        target_folded,
+                        source_compact,
+                        target_compact,
+                    )
+                )
+
+        self._glossary_pairs_cache[file_key] = pairs
+        return pairs
+
+    @staticmethod
+    def _filter_glossary_pairs_for_inline(
+        pairs: list[tuple[str, str, str, str, str, str]],
+        input_text: str,
+        *,
+        max_lines: int,
+    ) -> tuple[list[tuple[str, str]], bool]:
+        text = (input_text or "").strip()
+        if not text:
+            return [], False
+
+        text_folded = PromptBuilder._normalize_for_glossary_match(text)
+        text_compact = PromptBuilder._compact_for_glossary_match(text_folded)
+
+        seen: set[str] = set()
+        heap: list[tuple[int, int, str, str]] = []
+        matched_count = 0
+
+        for idx, (
+            source,
+            target,
+            source_folded,
+            target_folded,
+            source_compact,
+            target_compact,
+        ) in enumerate(pairs):
+            source = (source or "").strip()
+            if not source:
+                continue
+            if source in seen:
+                continue
+
+            matched = PromptBuilder._matches_glossary_term(
+                text_folded=text_folded,
+                text_compact=text_compact,
+                term_folded=source_folded,
+                term_compact=source_compact,
+            )
+            if not matched and target:
+                matched = PromptBuilder._matches_glossary_term(
+                    text_folded=text_folded,
+                    text_compact=text_compact,
+                    term_folded=target_folded,
+                    term_compact=target_compact,
+                )
+            if not matched:
+                continue
+
+            seen.add(source)
+            matched_count += 1
+            key = max(len(source_folded or source), len(target_folded or target))
+            item = (key, -idx, source, target)
+            if len(heap) < max_lines:
+                heapq.heappush(heap, item)
+            else:
+                if item > heap[0]:
+                    heapq.heapreplace(heap, item)
+
+        if not heap:
+            return [], False
+
+        selected = sorted(heap, key=lambda x: (-x[0], -x[1]))
+        return [(source, target) for _, _, source, target in selected], (
+            matched_count > max_lines
+        )
+
+    def _build_inline_glossary_section(
+        self,
+        reference_files: Optional[Sequence[Path]],
+        *,
+        input_text: str,
+    ) -> str:
+        if not reference_files:
+            return ""
+        text = (input_text or "").strip()
+        if not text:
+            return ""
+
+        glossary_path: Optional[Path] = None
+        for path in reference_files:
+            if path.name.casefold() in _GLOSSARY_FILENAMES:
+                glossary_path = path
+                break
+        if glossary_path is None:
+            return ""
+
+        pairs = self._load_glossary_pairs(glossary_path)
+        if not pairs:
+            return ""
+
+        selected, truncated = self._filter_glossary_pairs_for_inline(
+            pairs, text, max_lines=_INLINE_GLOSSARY_MAX_LINES
+        )
+        if not selected:
+            return ""
+
+        header = "### Glossary (matched; apply verbatim)\n"
+        parts: list[str] = [header.rstrip("\n")]
+        total = len(header)
+
+        for source, target in selected:
+            if not target:
+                continue
+            line = f"- JP: {source} | EN: {target}"
+            needed = len(line) + 1
+            if total + needed > _INLINE_GLOSSARY_MAX_CHARS:
+                truncated = True
+                break
+            parts.append(line)
+            total += needed
+
+        if truncated:
+            note = "- (more glossary matches omitted)"
+            if total + len(note) + 1 <= _INLINE_GLOSSARY_MAX_CHARS:
+                parts.append(note)
+
+        return "\n".join(parts).strip()
 
     def _load_translation_rules(self, *, force: bool = False) -> str:
         """Load translation rules from translation_rules.txt (skip if unchanged)."""
@@ -597,6 +827,7 @@ class PromptBuilder:
         output_language: str = "en",
         translation_style: str = "concise",
         extra_instruction: Optional[str] = None,
+        reference_files: Optional[Sequence[Path]] = None,
     ) -> str:
         """
         Build complete prompt with input text.
@@ -617,6 +848,11 @@ class PromptBuilder:
         if has_reference_files:
             # Reference files attached to Copilot
             reference_section = REFERENCE_INSTRUCTION
+            inline_glossary = self._build_inline_glossary_section(
+                reference_files, input_text=input_text
+            )
+            if inline_glossary:
+                reference_section = f"{reference_section.rstrip()}\n\n{inline_glossary}\n"
 
         # Get appropriate template based on language and style
         template = self._get_template(output_language, translation_style)
@@ -656,7 +892,6 @@ class PromptBuilder:
         Returns:
             Complete prompt with numbered input
         """
-        _ = reference_files
         extra_instruction = None
         if include_item_ids:
             extra_instruction = ID_MARKER_INSTRUCTION
@@ -671,6 +906,7 @@ class PromptBuilder:
             output_language,
             translation_style,
             extra_instruction=extra_instruction,
+            reference_files=reference_files,
         )
 
     def build_reference_section(

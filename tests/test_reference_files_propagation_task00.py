@@ -58,6 +58,66 @@ def test_prompt_builder_build_batch_includes_reference_instruction_when_enabled(
     assert _REFERENCE_SENTINEL in prompt
 
 
+def test_reference_instruction_mentions_in_sentence_glossary_application() -> None:
+    assert "文章中に含まれる場合も" in REFERENCE_INSTRUCTION
+
+
+def test_prompt_builder_build_batch_inlines_matched_glossary_pairs(
+    tmp_path: Path,
+) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    prompts_dir = repo_root / "prompts"
+    builder = PromptBuilder(prompts_dir)
+
+    glossary_path = tmp_path / "glossary.csv"
+    glossary_path.write_text(
+        "営業利益,Operating Profit\n売上高,Revenue\nAI,Artificial Intelligence\n",
+        encoding="utf-8",
+    )
+
+    prompt = builder.build_batch(
+        ["AIを活用する", "売上高が増加"],
+        has_reference_files=True,
+        output_language="en",
+        translation_style="concise",
+        include_item_ids=False,
+        reference_files=[glossary_path],
+    )
+
+    assert "### Glossary (matched; apply verbatim)" in prompt
+    assert "- JP: AI | EN: Artificial Intelligence" in prompt
+    assert "- JP: 売上高 | EN: Revenue" in prompt
+    assert "営業利益 | EN: Operating Profit" not in prompt
+
+
+def test_prompt_builder_build_batch_inlined_glossary_respects_max_lines(
+    tmp_path: Path,
+) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    prompts_dir = repo_root / "prompts"
+    builder = PromptBuilder(prompts_dir)
+
+    glossary_path = tmp_path / "glossary.csv"
+    rows: list[str] = []
+    tokens: list[str] = []
+    for idx in range(100):
+        token = f"TERM{idx:03d}"
+        rows.append(f"{token},T{idx:03d}")
+        tokens.append(token)
+    glossary_path.write_text("\n".join(rows) + "\n", encoding="utf-8")
+
+    prompt = builder.build_batch(
+        [" ".join(tokens)],
+        has_reference_files=True,
+        output_language="en",
+        translation_style="concise",
+        include_item_ids=False,
+        reference_files=[glossary_path],
+    )
+
+    assert prompt.count("- JP: ") == 40
+
+
 class _RecordingCopilot:
     def __init__(self) -> None:
         self.calls: list[dict[str, object]] = []

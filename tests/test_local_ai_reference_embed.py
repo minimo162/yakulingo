@@ -161,28 +161,46 @@ def test_local_reference_embed_supports_binary_formats(tmp_path: Path) -> None:
 
 def test_local_prompt_includes_full_rules_for_short_text() -> None:
     builder = _make_builder()
+    text = "短文"
     prompt = builder.build_text_to_en_single(
-        "短文",
+        text,
         style="minimal",
         reference_files=None,
         detected_language="日本語",
     )
     full_rules = builder._get_translation_rules("en").strip()
+    filtered_rules = builder._get_translation_rules_for_text("en", text).strip()
     assert full_rules
-    assert full_rules in prompt
+    assert filtered_rules
+    assert filtered_rules in prompt
+    assert len(filtered_rules) < len(full_rules)
+    assert "数字の桁/カンマは変更しない" in filtered_rules
+    assert "禁止記号:" in filtered_rules
+    assert "「+」は追加のみ" in filtered_rules
+    assert "数値/単位:" not in filtered_rules
+    assert "月名略語" not in filtered_rules
+    assert "more than" not in filtered_rules
 
 
 def test_local_prompt_includes_numeric_hints_for_oku() -> None:
     builder = _make_builder()
+    text = "売上高は2兆2,385億円(前年同期比1,554億円減)となりました。"
     prompt = builder.build_text_to_en_single(
-        "売上高は2兆2,385億円(前年同期比1,554億円減)となりました。",
+        text,
         style="minimal",
         reference_files=None,
         detected_language="日本語",
     )
-    expected_rules = builder._get_translation_rules("en").strip()
+    expected_rules = builder._get_translation_rules_for_text("en", text).strip()
     assert expected_rules
     assert expected_rules in prompt
+    assert "数値/単位:" in expected_rules
+    assert "兆/億→oku" in expected_rules
+    assert "YoY/QoQ/CAGR" in expected_rules
+    assert "billion/trillion には変換しない" in expected_rules
+    assert "万→k" not in expected_rules
+    assert "千→k" not in expected_rules
+    assert "▲→()" not in expected_rules
     assert "数値変換ヒント" in prompt
     assert "2兆2,385億円 -> 22,385 oku yen" in prompt
     assert "1,554億円 -> 1,554 oku yen" in prompt
@@ -190,15 +208,18 @@ def test_local_prompt_includes_numeric_hints_for_oku() -> None:
 
 def test_local_prompt_includes_numeric_hints_for_oku_in_en_3style() -> None:
     builder = _make_builder()
+    text = "売上高は2兆2,385億円(前年同期比1,554億円減)となりました。"
     prompt = builder.build_text_to_en_single(
-        "売上高は2兆2,385億円(前年同期比1,554億円減)となりました。",
+        text,
         style="minimal",
         reference_files=None,
         detected_language="日本語",
     )
-    expected_rules = builder._get_translation_rules("en").strip()
+    expected_rules = builder._get_translation_rules_for_text("en", text).strip()
     assert expected_rules
     assert expected_rules in prompt
+    assert "数値/単位:" in expected_rules
+    assert "兆/億→oku" in expected_rules
     assert "数値変換ヒント" in prompt
     assert "2兆2,385億円 -> 22,385 oku yen" in prompt
     assert "1,554億円 -> 1,554 oku yen" in prompt
@@ -206,15 +227,18 @@ def test_local_prompt_includes_numeric_hints_for_oku_in_en_3style() -> None:
 
 def test_local_prompt_includes_numeric_hints_for_oku_in_en_missing_styles() -> None:
     builder = _make_builder()
+    text = "売上高は2兆2,385億円(前年同期比1,554億円減)となりました。"
     prompt = builder.build_text_to_en_single(
-        "売上高は2兆2,385億円(前年同期比1,554億円減)となりました。",
+        text,
         style="minimal",
         reference_files=None,
         detected_language="日本語",
     )
-    expected_rules = builder._get_translation_rules("en").strip()
+    expected_rules = builder._get_translation_rules_for_text("en", text).strip()
     assert expected_rules
     assert expected_rules in prompt
+    assert "数値/単位:" in expected_rules
+    assert "兆/億→oku" in expected_rules
     assert "数値変換ヒント" in prompt
     assert "2兆2,385億円 -> 22,385 oku yen" in prompt
     assert "1,554億円 -> 1,554 oku yen" in prompt
@@ -241,15 +265,20 @@ def test_local_batch_prompt_includes_numeric_hints_for_oku() -> None:
 
 def test_local_prompt_includes_full_rules_for_en_3style_short_text() -> None:
     builder = _make_builder()
+    text = "短文"
     prompt = builder.build_text_to_en_single(
-        "短文",
+        text,
         style="minimal",
         reference_files=None,
         detected_language="日本語",
     )
     full_rules = builder._get_translation_rules("en").strip()
+    filtered_rules = builder._get_translation_rules_for_text("en", text).strip()
     assert full_rules
-    assert full_rules in prompt
+    assert filtered_rules
+    assert filtered_rules in prompt
+    assert len(filtered_rules) < len(full_rules)
+    assert "数値/単位:" not in filtered_rules
 
 
 def test_local_prompt_includes_full_rules_for_en_to_jp_numeric_text() -> None:
@@ -260,21 +289,32 @@ def test_local_prompt_includes_full_rules_for_en_to_jp_numeric_text() -> None:
         reference_files=None,
         detected_language="英語",
     )
-    expected_rules = builder._get_translation_rules("jp").strip()
-    assert expected_rules
-    assert expected_rules in prompt
+    full_rules = builder._get_translation_rules("jp").strip()
+    filtered_rules = builder._get_translation_rules_for_text("jp", text).strip()
+    assert full_rules
+    assert filtered_rules
+    assert filtered_rules in prompt
+    assert len(filtered_rules) < len(full_rules)
+    assert "数値/単位:" in filtered_rules
+    assert "k→千または000" in filtered_rules
+    assert "oku→億" not in filtered_rules
 
 
 def test_local_prompt_includes_full_rules_for_plain_en_to_jp_text() -> None:
     builder = _make_builder()
+    text = "Hello world."
     prompt = builder.build_text_to_jp(
-        "Hello world.",
+        text,
         reference_files=None,
         detected_language="英語",
     )
     full_rules = builder._get_translation_rules("jp").strip()
+    filtered_rules = builder._get_translation_rules_for_text("jp", text).strip()
     assert full_rules
-    assert full_rules in prompt
+    assert filtered_rules
+    assert filtered_rules in prompt
+    assert len(filtered_rules) < len(full_rules)
+    assert "数値/単位:" not in filtered_rules
 
 
 def test_local_reference_embed_filters_bundled_glossary(tmp_path: Path) -> None:

@@ -41,6 +41,13 @@ _RE_GLOSSARY_TEXT_ASCII_WORD = re.compile(r"\b[a-z0-9]+\b")
 _RE_JP_YEN_AMOUNT = re.compile(
     r"(?P<sign>[▲+-])?\s*(?:(?P<trillion>\d[\d,]*(?:\.\d+)?)兆(?:(?P<oku>\d[\d,]*(?:\.\d+)?)億)?|(?P<oku_only>\d[\d,]*(?:\.\d+)?)億)(?P<yen>円)?"
 )
+_RE_TO_EN_FORBIDDEN_SYMBOLS = re.compile(r"(?:>=|<=|[><~→↑↓≥≧≤≦])")
+_RE_TO_EN_MONTH = re.compile(r"\d{1,2}月")
+_RE_TO_EN_YOY_TERMS = re.compile(r"(前年同期比|前期比|前年比|前年度比|YoY|QoQ|CAGR)", re.IGNORECASE)
+_RE_TO_JP_OKU_WORD = re.compile(r"\boku\b", re.IGNORECASE)
+_RE_TO_JP_NUMBER_K = re.compile(r"\b\d[\d,]*(?:\.\d+)?\s*k\b", re.IGNORECASE)
+_RE_TO_JP_YEN_BN = re.compile(r"(?:¥|￥)\s*[\d,]+(?:\.\d+)?\s*(?:billion|bn)\b", re.IGNORECASE)
+_RE_TO_JP_ACCOUNTING_PAREN = re.compile(r"\(\s*[$¥￥]?\s*\d[\d,]*(?:\.\d+)?\s*\)")
 
 
 @dataclass(frozen=True)
@@ -384,10 +391,179 @@ class LocalPromptBuilder:
             total += needed
         return "\n".join(kept), False
 
+    @staticmethod
+    def _split_top_level_rule_blocks(section: str) -> list[tuple[str, list[str]]]:
+        blocks: list[tuple[str, list[str]]] = []
+        head: Optional[str] = None
+        body: list[str] = []
+        for raw in (section or "").splitlines():
+            line = raw.rstrip()
+            stripped = line.lstrip()
+            indent = len(line) - len(stripped)
+            if stripped.startswith("- ") and indent == 0:
+                if head is not None:
+                    blocks.append((head, body))
+                head = line
+                body = []
+                continue
+            if head is None:
+                if line:
+                    blocks.append((line, []))
+                continue
+            body.append(line)
+        if head is not None:
+            blocks.append((head, body))
+        return blocks
+
+    @staticmethod
+    def _filter_translation_rules_to_en(section: str, text: str) -> str:
+        text = text or ""
+        has_symbol = bool(_RE_TO_EN_FORBIDDEN_SYMBOLS.search(text))
+        has_month = bool(_RE_TO_EN_MONTH.search(text))
+        has_chou_oku = ("兆" in text) or ("億" in text)
+        has_man = "万" in text
+        has_sen = "千" in text
+        has_triangle = "▲" in text
+        has_yoy = bool(_RE_TO_EN_YOY_TERMS.search(text))
+        lowered = text.casefold()
+        has_bn_word = any(token in lowered for token in ("bn", "billion", "trillion"))
+
+        lines: list[str] = []
+        for head, body in LocalPromptBuilder._split_top_level_rule_blocks(section):
+            if "禁止記号" in head:
+                lines.append(head)
+                if has_symbol:
+                    lines.extend(body)
+                continue
+
+            if "数値/単位" in head:
+                selected: list[str] = []
+                for sub in body:
+                    item = sub.strip()
+                    if not item:
+                        continue
+                    if "兆/億" in item:
+                        if has_chou_oku:
+                            selected.append(sub)
+                        continue
+                    if "万→k" in item:
+                        if has_man:
+                            selected.append(sub)
+                        continue
+                    if "千→k" in item:
+                        if has_sen:
+                            selected.append(sub)
+                        continue
+                    if "▲→" in item:
+                        if has_triangle:
+                            selected.append(sub)
+                        continue
+                    if any(token in item for token in ("YoY", "QoQ", "CAGR")):
+                        if has_yoy:
+                            selected.append(sub)
+                        continue
+                    if any(token in item.casefold() for token in ("billion", "trillion", "bn")):
+                        if has_chou_oku or has_bn_word:
+                            selected.append(sub)
+                        continue
+                if selected:
+                    lines.append(head)
+                    lines.extend(selected)
+                continue
+
+            if "月名" in head:
+                if has_month:
+                    lines.append(head)
+                continue
+
+            if "+" in head or "「+」" in head:
+                lines.append(head)
+                continue
+
+            lines.append(head)
+            lines.extend(body)
+
+        return "\n".join(lines).strip()
+
+    @staticmethod
+    def _filter_translation_rules_to_jp(section: str, text: str) -> str:
+        text = text or ""
+        has_oku = bool(_RE_TO_JP_OKU_WORD.search(text))
+        has_k = bool(_RE_TO_JP_NUMBER_K.search(text))
+        has_yen_bn = bool(_RE_TO_JP_YEN_BN.search(text))
+        has_accounting = bool(_RE_TO_JP_ACCOUNTING_PAREN.search(text))
+
+        lines: list[str] = []
+        for head, body in LocalPromptBuilder._split_top_level_rule_blocks(section):
+            if "数値/単位" in head:
+                selected: list[str] = []
+                for sub in body:
+                    item = sub.strip()
+                    if not item:
+                        continue
+                    if "例:" in item and any(
+                        token in item.casefold() for token in ("billion", "bn")
+                    ):
+                        if has_yen_bn:
+                            selected.append(sub)
+                        continue
+                    if "oku→億" in item:
+                        if has_oku:
+                            selected.append(sub)
+                        continue
+                    if "k→" in item:
+                        if has_k:
+                            selected.append(sub)
+                        continue
+                    if "¥/￥" in item or "billion/bn" in item:
+                        if has_yen_bn:
+                            selected.append(sub)
+                        continue
+                    if "(" in item and "▲" in item:
+                        if has_accounting:
+                            selected.append(sub)
+                        continue
+                if selected:
+                    lines.append(head)
+                    lines.extend(selected)
+                continue
+
+            lines.append(head)
+            lines.extend(body)
+
+        return "\n".join(lines).strip()
+
     def _get_translation_rules_for_text(self, output_language: str, text: str) -> str:
         if not text or not text.strip():
             return ""
-        return self._get_translation_rules(output_language)
+        if output_language not in ("en", "jp"):
+            return self._get_translation_rules(output_language)
+
+        with self._rules_lock:
+            base = self._base
+            base.get_translation_rules(output_language)
+            has_sections = getattr(base, "_translation_rules_has_sections", False)
+            if not has_sections:
+                return base.get_translation_rules(output_language).strip()
+
+            common = base.get_translation_rules("common").strip()
+            sections = getattr(base, "_translation_rules_sections", {})
+            specific = ""
+            if isinstance(sections, dict):
+                specific = str(sections.get(output_language, "") or "").strip()
+
+        if not specific:
+            return common
+
+        filtered = (
+            self._filter_translation_rules_to_en(specific, text)
+            if output_language == "en"
+            else self._filter_translation_rules_to_jp(specific, text)
+        ).strip()
+
+        if common and filtered:
+            return f"{common}\n\n{filtered}"
+        return common or filtered
 
     @staticmethod
     def _format_oku_amount(value: Decimal) -> str:

@@ -2451,6 +2451,240 @@ class BatchTranslator:
 
         return result
 
+    def translate_blocks_single_unit_with_result(
+        self,
+        blocks: list[TextBlock],
+        reference_files: Optional[list[Path]] = None,
+        on_progress: Optional[ProgressCallback] = None,
+        output_language: str = "en",
+        translation_style: str = "concise",
+        include_item_ids: bool = False,
+        _clear_cancel_event: bool = True,
+    ) -> BatchTranslationResult:
+        """Translate blocks one-by-one (single unit) with per-call caching."""
+        from yakulingo.models.types import BatchTranslationResult
+
+        if _clear_cancel_event:
+            self._cancel_event.clear()
+
+        translations: dict[str, str] = {}
+        untranslated_block_ids: list[str] = []
+        mismatched_batch_count = 0
+        cancelled = False
+
+        # Phase 0: Skip formula blocks and non-translatable blocks (preserve original text)
+        formula_skipped = 0
+        skip_translation_count = 0
+        translatable_blocks: list[TextBlock] = []
+
+        for block in blocks:
+            if block.metadata and block.metadata.get("is_formula"):
+                translations[block.id] = block.text
+                formula_skipped += 1
+            elif block.metadata and block.metadata.get("skip_translation"):
+                skip_translation_count += 1
+            else:
+                translatable_blocks.append(block)
+
+        if formula_skipped > 0:
+            logger.debug(
+                "Skipped %d formula blocks (preserved original text)", formula_skipped
+            )
+        if skip_translation_count > 0:
+            logger.debug(
+                "Skipped %d non-translatable blocks (will preserve original in apply_translations)",
+                skip_translation_count,
+            )
+
+        # Phase 1: Resolve cached translations and compute total unique calls
+        resolved_by_key: dict[str, str] = {}
+        cache_hits = 0
+        keys_to_translate: set[str] = set()
+
+        for block in translatable_blocks:
+            cache_key = self._build_cache_key(
+                block.text,
+                output_language=output_language,
+                translation_style=translation_style,
+            )
+            if self._cache:
+                cached = self._cache.get(cache_key)
+                if cached is not None:
+                    translations[block.id] = cached
+                    resolved_by_key[cache_key] = cached
+                    cache_hits += 1
+                    continue
+            keys_to_translate.add(cache_key)
+
+        if cache_hits > 0:
+            logger.debug(
+                "Cache hits (single-unit): %d/%d blocks (%.1f%%)",
+                cache_hits,
+                len(translatable_blocks),
+                cache_hits / len(translatable_blocks) * 100
+                if translatable_blocks
+                else 0,
+            )
+
+        has_refs = bool(reference_files)
+        files_to_attach = reference_files if has_refs else None
+
+        total_calls = len(keys_to_translate)
+        completed_calls = 0
+
+        def translate_single(text: str, *, skip_clear_wait: bool, extra_instruction: str = ""):
+            prompt = self.prompt_builder.build_batch(
+                [text],
+                has_reference_files=has_refs,
+                output_language=output_language,
+                translation_style=translation_style,
+                include_item_ids=include_item_ids,
+                reference_files=reference_files,
+            )
+            if extra_instruction:
+                prompt = _insert_extra_instruction(prompt, extra_instruction)
+            lock = self._copilot_lock or nullcontext()
+            with lock:
+                self.copilot.set_cancel_callback(lambda: self._cancel_event.is_set())
+                try:
+                    return self.copilot.translate_sync(
+                        [text],
+                        prompt,
+                        files_to_attach,
+                        skip_clear_wait,
+                        timeout=self.request_timeout,
+                        include_item_ids=include_item_ids,
+                    )
+                finally:
+                    self.copilot.set_cancel_callback(None)
+
+        # Phase 2: Translate missing texts one-by-one
+        for block in translatable_blocks:
+            if self._cancel_event.is_set():
+                cancelled = True
+                break
+
+            cache_key = self._build_cache_key(
+                block.text,
+                output_language=output_language,
+                translation_style=translation_style,
+            )
+
+            if cache_key in resolved_by_key:
+                translations[block.id] = resolved_by_key[cache_key]
+                continue
+
+            if self._cache:
+                cached = self._cache.get(cache_key)
+                if cached is not None:
+                    translations[block.id] = cached
+                    resolved_by_key[cache_key] = cached
+                    continue
+
+            if on_progress:
+                on_progress(
+                    TranslationProgress(
+                        current=completed_calls,
+                        total=total_calls,
+                        status=f"Item {completed_calls + 1} of {total_calls}",
+                        phase_current=completed_calls + 1,
+                        phase_total=total_calls,
+                    )
+                )
+
+            skip_clear_wait = completed_calls > 0
+            try:
+                raw_list = translate_single(
+                    block.text, skip_clear_wait=skip_clear_wait, extra_instruction=""
+                )
+            except TranslationCancelledError:
+                cancelled = True
+                break
+            except RuntimeError as e:
+                logger.warning("Single-unit translation failed: %s", e)
+                untranslated_block_ids.append(block.id)
+                translations[block.id] = block.text
+                completed_calls += 1
+                continue
+
+            if not isinstance(raw_list, list) or len(raw_list) != 1:
+                mismatched_batch_count += 1
+                untranslated_block_ids.append(block.id)
+                translations[block.id] = block.text
+                completed_calls += 1
+                continue
+
+            translated_text = self._clean_batch_translation(raw_list[0])
+
+            # Optional: retry once when the output language is clearly mismatched.
+            if (
+                translated_text
+                and translated_text.strip()
+                and output_language in ("en", "jp")
+                and self._is_output_language_mismatch(translated_text, output_language)
+                and not self._cancel_event.is_set()
+            ):
+                extra_instruction = (
+                    self._EN_STRICT_OUTPUT_LANGUAGE_INSTRUCTION
+                    if output_language == "en"
+                    else self._JP_STRICT_OUTPUT_LANGUAGE_INSTRUCTION
+                )
+                try:
+                    retry_list = translate_single(
+                        block.text,
+                        skip_clear_wait=True,
+                        extra_instruction=extra_instruction,
+                    )
+                except TranslationCancelledError:
+                    cancelled = True
+                    break
+                except RuntimeError as e:
+                    logger.warning("Single-unit retry failed: %s", e)
+                    retry_list = []
+
+                if isinstance(retry_list, list) and len(retry_list) == 1:
+                    retry_clean = self._clean_batch_translation(retry_list[0])
+                    if (
+                        retry_clean
+                        and retry_clean.strip()
+                        and not self._is_output_language_mismatch(
+                            retry_clean, output_language
+                        )
+                    ):
+                        translated_text = retry_clean
+
+            if not translated_text or not translated_text.strip():
+                untranslated_block_ids.append(block.id)
+                translations[block.id] = block.text
+                completed_calls += 1
+                continue
+
+            translations[block.id] = translated_text
+            resolved_by_key[cache_key] = translated_text
+            if self._cache:
+                self._cache.set(cache_key, translated_text)
+            completed_calls += 1
+
+        if on_progress:
+            on_progress(
+                TranslationProgress(
+                    current=min(completed_calls, total_calls),
+                    total=total_calls,
+                    status="Complete" if not cancelled else "Cancelled",
+                    phase_current=min(completed_calls, total_calls),
+                    phase_total=total_calls,
+                )
+            )
+
+        return BatchTranslationResult(
+            translations=translations,
+            untranslated_block_ids=untranslated_block_ids,
+            mismatched_batch_count=mismatched_batch_count,
+            total_blocks=len(blocks),
+            translated_count=len(translations),
+            cancelled=cancelled,
+        )
+
     def _create_batches(
         self,
         blocks: list[TextBlock],

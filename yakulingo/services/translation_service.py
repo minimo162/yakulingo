@@ -4996,7 +4996,6 @@ class TranslationService:
         batch_translator = self._local_batch_translator
         if batch_translator is None:
             raise RuntimeError("Local batch translator not initialized")
-        batch_limit, batch_limit_source = self._get_local_file_batch_limit_info()
 
         translate_start = 40
         translate_end = 90
@@ -5034,15 +5033,13 @@ class TranslationService:
                         )
                     )
 
-            batch_result = batch_translator.translate_blocks_with_result(
+            batch_result = batch_translator.translate_blocks_single_unit_with_result(
                 all_blocks,
                 reference_files,
                 batch_progress if on_progress else None,
                 output_language=output_language,
                 translation_style=style_key,
                 include_item_ids=True,
-                _max_chars_per_batch=batch_limit,
-                _max_chars_per_batch_source=batch_limit_source,
             )
 
             if batch_result.cancelled or self._cancel_event.is_set():

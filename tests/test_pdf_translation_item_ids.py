@@ -113,7 +113,7 @@ class SpyBatchTranslator:
     def __init__(self) -> None:
         self.include_item_ids_calls: list[bool] = []
 
-    def translate_blocks_with_result(
+    def translate_blocks_single_unit_with_result(
         self,
         blocks: list[TextBlock],
         reference_files: list[Path] | None = None,

@@ -2,17 +2,23 @@ from __future__ import annotations
 
 import argparse
 import statistics
+import sys
 import time
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from yakulingo.config.settings import AppSettings
-from yakulingo.services.local_ai_prompt_builder import LocalPromptBuilder
-from yakulingo.services.prompt_builder import PromptBuilder
-
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
+
+
+repo_root = _repo_root()
+if str(repo_root) not in sys.path:
+    sys.path.insert(0, str(repo_root))
+
+from yakulingo.config.settings import AppSettings  # noqa: E402
+from yakulingo.services.local_ai_prompt_builder import LocalPromptBuilder  # noqa: E402
+from yakulingo.services.prompt_builder import PromptBuilder  # noqa: E402
 
 
 def _write_glossary(path: Path, *, rows: int, match_terms: list[str]) -> None:
@@ -131,4 +137,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

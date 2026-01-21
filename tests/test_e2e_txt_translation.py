@@ -47,7 +47,6 @@ def test_e2e_txt_translate_file_creates_outputs(
     input_path.write_text(input_text, encoding="utf-8")
 
     result = service.translate_file(input_path, output_language="en")
-    assert local_ai_translate_sync_mock["count"] >= 1
 
     assert result.status == TranslationStatus.COMPLETED
     assert result.output_path is not None
@@ -57,6 +56,7 @@ def test_e2e_txt_translate_file_creates_outputs(
 
     output_text = result.output_path.read_text(encoding="utf-8")
     paragraphs = [p.strip() for p in input_text.split("\n\n") if p.strip()]
+    assert local_ai_translate_sync_mock["count"] == len(paragraphs)
     expected = "\n\n".join(
         _hash_en(p) for p in paragraphs
     )

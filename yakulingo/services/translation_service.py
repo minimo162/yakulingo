@@ -2496,10 +2496,11 @@ class BatchTranslator:
                 skip_translation_count,
             )
 
-        # Phase 1: Resolve cached translations and compute total unique calls
-        resolved_by_key: dict[str, str] = {}
+        # Phase 1: Resolve cached translations and track uncached blocks.
+        # Progress is block-based (uncached blocks), while backend calls are deduped by cache key.
+        resolved_by_key: dict[str, tuple[str, bool]] = {}
         cache_hits = 0
-        keys_to_translate: set[str] = set()
+        uncached_block_keys: dict[str, str] = {}
 
         for block in translatable_blocks:
             cache_key = self._build_cache_key(
@@ -2511,10 +2512,10 @@ class BatchTranslator:
                 cached = self._cache.get(cache_key)
                 if cached is not None:
                     translations[block.id] = cached
-                    resolved_by_key[cache_key] = cached
+                    resolved_by_key[cache_key] = (cached, False)
                     cache_hits += 1
                     continue
-            keys_to_translate.add(cache_key)
+            uncached_block_keys[block.id] = cache_key
 
         if cache_hits > 0:
             logger.debug(
@@ -2529,10 +2530,13 @@ class BatchTranslator:
         has_refs = bool(reference_files)
         files_to_attach = reference_files if has_refs else None
 
-        total_calls = len(keys_to_translate)
-        completed_calls = 0
+        total_blocks = len(uncached_block_keys)
+        processed_blocks = 0
+        backend_calls = 0
 
-        def translate_single(text: str, *, skip_clear_wait: bool, extra_instruction: str = ""):
+        def translate_single(
+            text: str, *, skip_clear_wait: bool, extra_instruction: str = ""
+        ):
             prompt = self.prompt_builder.build_batch(
                 [text],
                 has_reference_files=has_refs,
@@ -2564,35 +2568,47 @@ class BatchTranslator:
                 cancelled = True
                 break
 
-            cache_key = self._build_cache_key(
-                block.text,
-                output_language=output_language,
-                translation_style=translation_style,
-            )
+            cache_key = uncached_block_keys.get(block.id)
+            if not cache_key:
+                continue
 
             if cache_key in resolved_by_key:
-                translations[block.id] = resolved_by_key[cache_key]
+                resolved, is_fallback = resolved_by_key[cache_key]
+                translations[block.id] = resolved
+                if is_fallback:
+                    untranslated_block_ids.append(block.id)
+                processed_blocks += 1
+                if on_progress:
+                    on_progress(
+                        TranslationProgress(
+                            current=processed_blocks,
+                            total=total_blocks,
+                            status=f"Block {processed_blocks} of {total_blocks}",
+                            phase_current=processed_blocks,
+                            phase_total=total_blocks,
+                        )
+                    )
                 continue
 
             if self._cache:
                 cached = self._cache.get(cache_key)
                 if cached is not None:
                     translations[block.id] = cached
-                    resolved_by_key[cache_key] = cached
+                    resolved_by_key[cache_key] = (cached, False)
+                    processed_blocks += 1
+                    if on_progress:
+                        on_progress(
+                            TranslationProgress(
+                                current=processed_blocks,
+                                total=total_blocks,
+                                status=f"Block {processed_blocks} of {total_blocks}",
+                                phase_current=processed_blocks,
+                                phase_total=total_blocks,
+                            )
+                        )
                     continue
 
-            if on_progress:
-                on_progress(
-                    TranslationProgress(
-                        current=completed_calls,
-                        total=total_calls,
-                        status=f"Item {completed_calls + 1} of {total_calls}",
-                        phase_current=completed_calls + 1,
-                        phase_total=total_calls,
-                    )
-                )
-
-            skip_clear_wait = completed_calls > 0
+            skip_clear_wait = backend_calls > 0
             try:
                 raw_list = translate_single(
                     block.text, skip_clear_wait=skip_clear_wait, extra_instruction=""
@@ -2604,14 +2620,38 @@ class BatchTranslator:
                 logger.warning("Single-unit translation failed: %s", e)
                 untranslated_block_ids.append(block.id)
                 translations[block.id] = block.text
-                completed_calls += 1
+                resolved_by_key[cache_key] = (block.text, True)
+                processed_blocks += 1
+                if on_progress:
+                    on_progress(
+                        TranslationProgress(
+                            current=processed_blocks,
+                            total=total_blocks,
+                            status=f"Block {processed_blocks} of {total_blocks}",
+                            phase_current=processed_blocks,
+                            phase_total=total_blocks,
+                        )
+                    )
                 continue
+
+            backend_calls += 1
 
             if not isinstance(raw_list, list) or len(raw_list) != 1:
                 mismatched_batch_count += 1
                 untranslated_block_ids.append(block.id)
                 translations[block.id] = block.text
-                completed_calls += 1
+                resolved_by_key[cache_key] = (block.text, True)
+                processed_blocks += 1
+                if on_progress:
+                    on_progress(
+                        TranslationProgress(
+                            current=processed_blocks,
+                            total=total_blocks,
+                            status=f"Block {processed_blocks} of {total_blocks}",
+                            phase_current=processed_blocks,
+                            phase_total=total_blocks,
+                        )
+                    )
                 continue
 
             translated_text = self._clean_batch_translation(raw_list[0])
@@ -2656,23 +2696,44 @@ class BatchTranslator:
             if not translated_text or not translated_text.strip():
                 untranslated_block_ids.append(block.id)
                 translations[block.id] = block.text
-                completed_calls += 1
+                resolved_by_key[cache_key] = (block.text, True)
+                processed_blocks += 1
+                if on_progress:
+                    on_progress(
+                        TranslationProgress(
+                            current=processed_blocks,
+                            total=total_blocks,
+                            status=f"Block {processed_blocks} of {total_blocks}",
+                            phase_current=processed_blocks,
+                            phase_total=total_blocks,
+                        )
+                    )
                 continue
 
             translations[block.id] = translated_text
-            resolved_by_key[cache_key] = translated_text
+            resolved_by_key[cache_key] = (translated_text, False)
             if self._cache:
                 self._cache.set(cache_key, translated_text)
-            completed_calls += 1
+            processed_blocks += 1
+            if on_progress:
+                on_progress(
+                    TranslationProgress(
+                        current=processed_blocks,
+                        total=total_blocks,
+                        status=f"Block {processed_blocks} of {total_blocks}",
+                        phase_current=processed_blocks,
+                        phase_total=total_blocks,
+                    )
+                )
 
         if on_progress:
             on_progress(
                 TranslationProgress(
-                    current=min(completed_calls, total_calls),
-                    total=total_calls,
+                    current=min(processed_blocks, total_blocks),
+                    total=total_blocks,
                     status="Complete" if not cancelled else "Cancelled",
-                    phase_current=min(completed_calls, total_calls),
-                    phase_total=total_calls,
+                    phase_current=min(processed_blocks, total_blocks),
+                    phase_total=total_blocks,
                 )
             )
 
@@ -4573,7 +4634,6 @@ class TranslationService:
         batch_translator = self._local_batch_translator
         if batch_translator is None:
             raise RuntimeError("Local batch translator not initialized")
-        batch_limit, batch_limit_source = self._get_local_file_batch_limit_info()
 
         translations_by_style: dict[str, dict[str, str]] = {}
         primary_batch_result = None
@@ -4614,15 +4674,13 @@ class TranslationService:
                         )
                     )
 
-            batch_result = batch_translator.translate_blocks_with_result(
+            batch_result = batch_translator.translate_blocks_single_unit_with_result(
                 blocks,
                 reference_files,
                 batch_progress if on_progress else None,
                 output_language=output_language,
                 translation_style=style_key,
                 include_item_ids=include_item_ids,
-                _max_chars_per_batch=batch_limit,
-                _max_chars_per_batch_source=batch_limit_source,
             )
 
             if batch_result.cancelled or self._cancel_event.is_set():

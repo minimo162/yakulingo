@@ -116,6 +116,8 @@ Note: `LocalPromptBuilder` が `detected_language` などを置換できる実�
 
 - Code fence (` ```json `) が混入する / JSON以外の前置き・後置きが付く（Local AI）
   - Parser側は `loads_json_loose` で吸収するが、発生率を下げるのが本筋（JSON only を強める）
+- `response_format` が未対応/部分対応で失敗する（Local AI）
+  - client 側は `json_schema` → `json_object` →（最終）無し の順でフォールバックする
 - JSONの形状が崩れる（キー名変更、`options/items` 欠落、`id` 非数値、末尾カンマ等）
 - Copilotが余計な見出し/解説/注意書きを出す（「出力は〜のみ」を徹底）
 - Copilotの番号付きリストで欠番・重複・並べ替えが起きる（バッチ結果の対応ズレ）

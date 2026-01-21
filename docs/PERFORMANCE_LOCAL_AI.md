@@ -17,6 +17,8 @@
 - 追加されるログ例:
   - `[TIMING] LocalPromptBuilder.build_reference_embed ...`
   - `[TIMING] LocalPromptBuilder.build_batch ...`
+  - `[TIMING] LocalPromptBuilder.build_text_to_en_single ...`
+  - `[TIMING] LocalPromptBuilder.build_text_to_jp ...`
   - `[TIMING] BatchTranslator.prompt_build ...`
   - `[TIMING] BatchTranslator.retries ...`
   - `[TIMING] LocalAI ttft_streaming ...`
@@ -27,6 +29,25 @@
 ```powershell
 uv run python tools/bench_local_prompt_builder.py --glossary-rows 20000 --input-chars 800 --items 12 --runs 50
 ```
+
+## プロンプト長（prompt_chars）比較（サーバ不要）
+プロンプト短縮の効果（prompt_chars の減少）を、サーバ無しで再現可能に確認する。
+
+```powershell
+# 現在のブランチ/コミットで計測（サンプル入力で build_* の文字数を出力）
+uv run python tools/audit_local_prompt_lengths.py
+```
+
+このケース（`yakulingo-local-ai-prompt-rules-compress-20260121-160322`）の比較例:
+- baseline: `58f5e90b`（task-00）
+- after: `722e5115`（task-04）
+
+結果（Built prompts / no reference files）:
+- `build_text_to_en_single`: 1031 → 563
+- `build_text_to_jp`: 556 → 258
+- `build_batch (to_en)`: 1849 → 1602
+
+> **Note**: task-03 で「入力に応じた翻訳ルール注入」を導入しているため、短文では特に `translation_rules` が短くなります（数値/単位ルール等は必要時のみ）。
 
 ## Vulkan(iGPU) 事前確認（Windows）
 - Vulkan 版 llama.cpp バイナリを用意（GitHub Releases の Windows x64 (Vulkan) など）

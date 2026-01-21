@@ -90,7 +90,7 @@ def test_e2e_txt_selected_sections_translates_only_selected(
 
 
 @pytest.mark.e2e
-def test_e2e_txt_translation_cache_skips_second_request(
+def test_e2e_txt_translation_cache_is_cleared_per_file(
     tmp_path: Path, local_ai_translate_sync_mock: dict[str, int]
 ) -> None:
     settings = AppSettings(translation_backend="local")
@@ -105,7 +105,7 @@ def test_e2e_txt_translation_cache_skips_second_request(
 
     result2 = service.translate_file(input_path, output_language="en")
     assert result2.status == TranslationStatus.COMPLETED
-    assert local_ai_translate_sync_mock["count"] == 1
+    assert local_ai_translate_sync_mock["count"] == 2
 
 
 @pytest.mark.e2e

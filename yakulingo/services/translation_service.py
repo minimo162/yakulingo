@@ -4173,6 +4173,9 @@ class TranslationService:
         start_time = time.monotonic()
         self._cancel_event.clear()  # Reset cancellation at start
 
+        # File-scoped cache: clear at start and end to prevent cross-file contamination.
+        self.clear_translation_cache()
+
         # Reset PDF processor cancellation flag if applicable
         pdf_processor = self.processors.get(".pdf")
         if pdf_processor and hasattr(pdf_processor, "reset_cancel"):
@@ -4240,6 +4243,9 @@ class TranslationService:
                 error_message=str(e),
                 duration_seconds=time.monotonic() - start_time,
             )
+        finally:
+            # Ensure cache does not survive this file translation attempt (success/failure/cancel).
+            self.clear_translation_cache()
 
     def _translate_file_standard(
         self,

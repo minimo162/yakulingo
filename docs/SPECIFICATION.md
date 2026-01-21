@@ -1178,7 +1178,7 @@ class PdfProcessor(FileProcessor):
 class PromptBuilder:
     _template_cache: dict[str, str] = {}  # テンプレートキャッシュ
 
-    def build(input_text, has_reference_files) -> str:
+    def build(input_text, has_reference_files, output_language="en", translation_style="concise", reference_files=None) -> str:
         """
         1. 言語を自動検出
         2. 適切なテンプレート選択（prompts/file_translate_*.txt）
@@ -1186,7 +1186,7 @@ class PromptBuilder:
         4. 入力テキストを埋め込み
         """
 
-    def build_batch(texts, has_reference_files) -> str:
+    def build_batch(texts, has_reference_files, output_language="en", translation_style="concise", include_item_ids=False, reference_files=None) -> str:
         """番号付きリストとして入力"""
 
     def get_text_template(output_language: str, style: str) -> str:
@@ -1241,7 +1241,11 @@ Input
 Reference Files
 添付の参考ファイル（用語集、参考資料等）を参照し、翻訳に活用してください。
 用語集がある場合は、記載されている用語は必ずその訳語を使用してください。
+用語集の用語は、単語単体だけでなく文章中に含まれる場合も必ず同じ訳語を適用してください（表記ゆれ・言い換え禁止）。
+同一の用語が複数の候補にマッチする場合は、最長一致を優先してください。
 ```
+
+補足: Copilot向けのプロンプトでは、reference_files に `glossary.csv` が含まれる場合、入力文にマッチした用語ペアのみを `### Glossary (matched; apply verbatim)` として追加で差し込みます（上限あり）。
 
 ### 9.4 テキスト翻訳プロンプト（英訳/和訳）
 

@@ -37,7 +37,10 @@ _SUPPORTED_REFERENCE_EXTENSIONS = {
 _BUNDLED_GLOSSARY_FILENAMES = {"glossary.csv", "glossary_old.csv"}
 _RE_GLOSSARY_MATCH_SEPARATORS = re.compile(r"[\s_/\\-]+")
 _RE_GLOSSARY_ASCII_WORD = re.compile(r"^[a-z0-9]+$")
-_RE_GLOSSARY_TEXT_ASCII_WORD = re.compile(r"\b[a-z0-9]+\b")
+# NOTE: Do NOT use Unicode \b here; Japanese kana/kanji are treated as \w and break
+# matching for short ASCII terms (e.g. "AIを", "GPUを").
+_RE_GLOSSARY_TEXT_ASCII_WORD = re.compile(r"[a-z0-9]+")
+_ASCII_ALNUM = frozenset("abcdefghijklmnopqrstuvwxyz0123456789")
 _RE_JP_YEN_AMOUNT = re.compile(
     r"(?P<sign>[▲+-])?\s*(?:(?P<trillion>\d[\d,]*(?:\.\d+)?)兆(?:(?P<oku>\d[\d,]*(?:\.\d+)?)億)?|(?P<oku_only>\d[\d,]*(?:\.\d+)?)億)(?P<yen>円)?"
 )
@@ -226,9 +229,21 @@ class LocalPromptBuilder:
             return False
 
         if term_folded.isascii() and _RE_GLOSSARY_ASCII_WORD.match(term_folded):
-            pattern = rf"\b{re.escape(term_folded)}\b"
-            if re.search(pattern, text_folded):
-                return True
+            term_len = len(term_folded)
+            start = 0
+            while True:
+                idx = text_folded.find(term_folded, start)
+                if idx < 0:
+                    break
+                before_ok = idx == 0 or text_folded[idx - 1] not in _ASCII_ALNUM
+                after_pos = idx + term_len
+                after_ok = (
+                    after_pos >= len(text_folded)
+                    or text_folded[after_pos] not in _ASCII_ALNUM
+                )
+                if before_ok and after_ok:
+                    return True
+                start = idx + term_len
         else:
             if term_folded in text_folded:
                 return True

@@ -3,8 +3,6 @@ from __future__ import annotations
 import heapq
 from pathlib import Path
 
-import pytest
-
 from unittest.mock import Mock, patch
 
 from yakulingo.services.translation_service import TranslationService
@@ -365,11 +363,6 @@ def test_local_reference_embed_filters_bundled_glossary(tmp_path: Path) -> None:
     assert "売上高 翻译成 Revenue" not in embedded.text
 
 
-@pytest.mark.xfail(
-    reason=(
-        "短い英数字用語が日本語に隣接すると、現在の \\b 境界判定だとマッチしない（task-01で修正予定）"
-    )
-)
 def test_local_reference_embed_matches_short_ascii_term_adjacent_to_japanese(
     tmp_path: Path,
 ) -> None:
@@ -383,11 +376,6 @@ def test_local_reference_embed_matches_short_ascii_term_adjacent_to_japanese(
     assert "Artificial Intelligence" in embedded.text
 
 
-@pytest.mark.xfail(
-    reason=(
-        "短い英数字用語が日本語に隣接すると、現在の \\b 境界判定だとマッチしない（task-01で修正予定）"
-    )
-)
 def test_local_reference_embed_matches_multiple_short_ascii_terms_adjacent_to_japanese(
     tmp_path: Path,
 ) -> None:

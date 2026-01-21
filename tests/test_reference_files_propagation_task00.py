@@ -42,7 +42,9 @@ def test_prompt_builder_build_omits_reference_instruction_when_disabled() -> Non
     assert _REFERENCE_SENTINEL not in prompt
 
 
-def test_prompt_builder_build_batch_includes_reference_instruction_when_enabled() -> None:
+def test_prompt_builder_build_batch_includes_reference_instruction_when_enabled() -> (
+    None
+):
     repo_root = Path(__file__).resolve().parents[1]
     prompts_dir = repo_root / "prompts"
     builder = PromptBuilder(prompts_dir)
@@ -234,4 +236,6 @@ def test_batch_translator_passes_reference_files_to_backend_translate_sync(
 
     assert result.translations["b1"] == "EN:A"
     assert copilot.calls and copilot.calls[0]["reference_files"] == reference_files
-    assert prompt_builder.calls and prompt_builder.calls[0]["has_reference_files"] is True
+    assert (
+        prompt_builder.calls and prompt_builder.calls[0]["has_reference_files"] is True
+    )

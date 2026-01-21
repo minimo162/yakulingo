@@ -30,7 +30,9 @@ def test_local_style_comparison_retries_once_on_output_language_mismatch(
         return '{"translation":"汉语测试","explanation":""}'
 
     monkeypatch.setattr(
-        service, "_translate_single_with_cancel_on_local", fake_translate_single_with_cancel
+        service,
+        "_translate_single_with_cancel_on_local",
+        fake_translate_single_with_cancel,
     )
 
     result = service.translate_text_with_style_comparison(

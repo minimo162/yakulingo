@@ -4,7 +4,12 @@ from pathlib import Path
 from unittest.mock import patch
 
 from yakulingo.config.settings import AppSettings
-from yakulingo.models.types import BatchTranslationResult, FileType, TextBlock, TranslationStatus
+from yakulingo.models.types import (
+    BatchTranslationResult,
+    FileType,
+    TextBlock,
+    TranslationStatus,
+)
 from yakulingo.services.translation_service import TranslationService
 
 
@@ -98,7 +103,15 @@ class DummyPdfProcessor:
         pages: list[int] | None = None,
         text_blocks: list[TextBlock] | None = None,
     ) -> None:
-        _ = (input_path, output_path, translations, direction, config, pages, text_blocks)
+        _ = (
+            input_path,
+            output_path,
+            translations,
+            direction,
+            config,
+            pages,
+            text_blocks,
+        )
 
 
 def _make_service_with_spy_translator() -> TranslationService:
@@ -112,7 +125,9 @@ def _make_service_with_spy_translator() -> TranslationService:
     return service
 
 
-def test_nonpdf_file_translation_does_not_use_file_batch_limit_info(tmp_path: Path) -> None:
+def test_nonpdf_file_translation_does_not_use_file_batch_limit_info(
+    tmp_path: Path,
+) -> None:
     input_path = tmp_path / "input.txt"
     input_path.write_text("dummy", encoding="utf-8")
 
@@ -138,7 +153,9 @@ def test_nonpdf_file_translation_does_not_use_file_batch_limit_info(tmp_path: Pa
     assert result.status == TranslationStatus.COMPLETED
 
 
-def test_pdf_file_translation_does_not_use_file_batch_limit_info(tmp_path: Path) -> None:
+def test_pdf_file_translation_does_not_use_file_batch_limit_info(
+    tmp_path: Path,
+) -> None:
     input_path = tmp_path / "input.pdf"
     input_path.write_bytes(b"")
 
@@ -161,4 +178,3 @@ def test_pdf_file_translation_does_not_use_file_batch_limit_info(tmp_path: Path)
         )
 
     assert result.status == TranslationStatus.COMPLETED
-

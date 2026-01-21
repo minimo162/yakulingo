@@ -614,6 +614,8 @@ def main() -> int:
     prompts_dir = repo_root / "prompts"
     local_translate_single_calls_warmup = 0
     local_translate_single_calls_translation = 0
+    exit_code = 0
+    exception_info: dict[str, Any] | None = None
 
     if args.compare:
         from yakulingo.services.translation_service import TranslationService
@@ -734,10 +736,24 @@ def main() -> int:
     for i in range(warmup_runs):
         if args.compare:
             translate_single_calls = 0
-        if args.compare:
-            _, warmup_elapsed = _translate_compare(service, text, reference_files)
-        else:
-            _, warmup_elapsed = _translate_once(client, text, prompt)
+        try:
+            if args.compare:
+                _, warmup_elapsed = _translate_compare(service, text, reference_files)
+            else:
+                _, warmup_elapsed = _translate_once(client, text, prompt)
+        except Exception as exc:
+            exception_info = {
+                "stage": "warmup",
+                "type": type(exc).__name__,
+                "message": str(exc),
+            }
+            exit_code = 1
+            print(
+                f"exception: {exception_info['stage']}: "
+                f"{exception_info['type']}: {exception_info['message']}",
+                file=sys.stderr,
+            )
+            break
         warmup_seconds.append(warmup_elapsed)
         print(f"warmup_seconds[{i + 1}]: {warmup_elapsed:.2f}")
         if args.compare:
@@ -745,148 +761,261 @@ def main() -> int:
 
     if args.compare:
         translate_single_calls = 0
-        result, elapsed = _translate_compare(service, text, reference_files)
-        local_translate_single_calls_translation = translate_single_calls
-        server_metadata = _collect_server_metadata(settings, repo_root, server_manager)
-        versions_metadata = {
-            "llama_server": server_metadata.get("llama_server_version"),
-            "llama_cli": server_metadata.get("llama_cli_version"),
-        }
-        error = getattr(result, "error_message", None)
-        options = getattr(result, "options", None) or []
-        if error:
-            print(f"error: {error}", file=sys.stderr)
-        if not options:
-            print("WARNING: empty style options", file=sys.stderr)
-        output_chars = sum(
-            len(getattr(opt, "text", "") or "")
-            + len(getattr(opt, "explanation", "") or "")
-            for opt in options
-        )
-        if args.save_output is not None:
-            _write_text(args.save_output, _format_compare_output(options))
-        similarity_by_style = None
-        best_similarity = None
-        if gold_text is not None:
-            similarity_by_style = []
-            for index, option in enumerate(options, start=1):
-                style = getattr(option, "style", None) or f"option-{index}"
-                text_value = getattr(option, "text", "") or ""
-                similarity_by_style.append(
-                    {
-                        "style": style,
-                        "ratio": _compute_similarity(gold_text, text_value),
-                        "text_chars": len(text_value),
-                    }
+        result = None
+        elapsed = None
+        if exception_info is None:
+            try:
+                result, elapsed = _translate_compare(service, text, reference_files)
+            except Exception as exc:
+                exception_info = {
+                    "stage": "translation",
+                    "type": type(exc).__name__,
+                    "message": str(exc),
+                }
+                exit_code = 1
+                print(
+                    f"exception: {exception_info['stage']}: "
+                    f"{exception_info['type']}: {exception_info['message']}",
+                    file=sys.stderr,
                 )
-            if similarity_by_style:
-                best_similarity = max(item["ratio"] for item in similarity_by_style)
-        print(f"translation_seconds: {elapsed:.2f}")
-        print(
-            "translate_single_calls_translation: "
-            f"{local_translate_single_calls_translation}"
+        local_translate_single_calls_translation = (
+            translate_single_calls if exception_info is None else 0
         )
-        print(f"options: {len(options)}")
-        print(f"output_chars: {output_chars}")
-        payload = {
-            "benchmark": "local-ai",
-            "mode": args.mode,
-            "compare": True,
-            "style": args.style,
-            "started_at": started_at,
-            "tag": args.tag,
-            "git": git_metadata,
-            "runtime": runtime_metadata,
-            "versions": versions_metadata,
-            "input_path": str(input_path),
-            "input_chars": len(text),
-            "with_glossary": bool(args.with_glossary),
-            "reference_files": [str(p) for p in reference_files],
-            "save_output_path": str(args.save_output) if args.save_output else None,
-            "gold_path": str(args.gold) if args.gold else None,
-            "gold_chars": gold_chars,
-            "server_restarted": server_restarted,
-            "restart_reason": restart_reason,
-            "overrides": overrides,
-            "server": server_metadata,
-            "settings": _build_settings_payload(settings),
-            "warmup_seconds": warmup_seconds,
-            "translate_single_calls_warmup": local_translate_single_calls_warmup,
-            "translate_single_calls_translation": local_translate_single_calls_translation,
-            "translate_single_calls_total": local_translate_single_calls_warmup
-            + local_translate_single_calls_translation,
-            "translation_seconds": elapsed,
-            "options": len(options),
-            "output_chars": output_chars,
-            "similarity_method": "SequenceMatcher",
-            "similarity_by_style": similarity_by_style,
-            "best_similarity": best_similarity,
-            "error": error,
-        }
-    else:
-        output, elapsed = _translate_once(client, text, prompt)
         server_metadata = _collect_server_metadata(settings, repo_root, server_manager)
         versions_metadata = {
             "llama_server": server_metadata.get("llama_server_version"),
             "llama_cli": server_metadata.get("llama_cli_version"),
         }
-        if not output.strip():
-            print("WARNING: empty translation result", file=sys.stderr)
-
-        total_seconds = prompt_build_seconds + elapsed
-        local_translate_single_calls_warmup = warmup_runs
-        local_translate_single_calls_translation = 1
-        if args.save_output is not None:
-            _write_text(args.save_output, output)
-        similarity = (
-            _compute_similarity(gold_text, output) if gold_text is not None else None
-        )
-        print(f"translation_seconds: {elapsed:.2f}")
-        print(
-            "translate_single_calls_translation: "
-            f"{local_translate_single_calls_translation}"
-        )
-        print(f"total_seconds: {total_seconds:.2f}")
-        print(f"output_chars: {len(output)}")
-        payload = {
-            "benchmark": "local-ai",
-            "mode": args.mode,
-            "compare": False,
-            "style": args.style,
-            "started_at": started_at,
-            "tag": args.tag,
-            "git": git_metadata,
-            "runtime": runtime_metadata,
-            "versions": versions_metadata,
-            "input_path": str(input_path),
-            "input_chars": len(text),
-            "with_glossary": bool(args.with_glossary),
-            "reference_files": [str(p) for p in reference_files],
-            "save_output_path": str(args.save_output) if args.save_output else None,
-            "gold_path": str(args.gold) if args.gold else None,
-            "gold_chars": gold_chars,
-            "server_restarted": server_restarted,
-            "restart_reason": restart_reason,
-            "overrides": overrides,
-            "server": server_metadata,
-            "settings": _build_settings_payload(settings),
-            "prompt_chars": prompt_chars,
-            "prompt_build_seconds": prompt_build_seconds,
-            "warmup_seconds": warmup_seconds,
-            "translate_single_calls_warmup": local_translate_single_calls_warmup,
-            "translate_single_calls_translation": local_translate_single_calls_translation,
-            "translate_single_calls_total": local_translate_single_calls_warmup
-            + local_translate_single_calls_translation,
-            "translation_seconds": elapsed,
-            "total_seconds": total_seconds,
-            "output_chars": len(output),
-            "similarity_method": "SequenceMatcher",
-            "similarity": similarity,
+        if exception_info is None:
+            error = getattr(result, "error_message", None)
+            options = getattr(result, "options", None) or []
+            if error:
+                print(f"error: {error}", file=sys.stderr)
+            if not options:
+                print("WARNING: empty style options", file=sys.stderr)
+            output_chars = sum(
+                len(getattr(opt, "text", "") or "")
+                + len(getattr(opt, "explanation", "") or "")
+                for opt in options
+            )
+            if args.save_output is not None:
+                _write_text(args.save_output, _format_compare_output(options))
+            similarity_by_style = None
+            best_similarity = None
+            if gold_text is not None:
+                similarity_by_style = []
+                for index, option in enumerate(options, start=1):
+                    style = getattr(option, "style", None) or f"option-{index}"
+                    text_value = getattr(option, "text", "") or ""
+                    similarity_by_style.append(
+                        {
+                            "style": style,
+                            "ratio": _compute_similarity(gold_text, text_value),
+                            "text_chars": len(text_value),
+                        }
+                    )
+                if similarity_by_style:
+                    best_similarity = max(item["ratio"] for item in similarity_by_style)
+            if elapsed is not None:
+                print(f"translation_seconds: {elapsed:.2f}")
+            print(
+                "translate_single_calls_translation: "
+                f"{local_translate_single_calls_translation}"
+            )
+            print(f"options: {len(options)}")
+            print(f"output_chars: {output_chars}")
+            payload = {
+                "benchmark": "local-ai",
+                "mode": args.mode,
+                "compare": True,
+                "style": args.style,
+                "started_at": started_at,
+                "tag": args.tag,
+                "git": git_metadata,
+                "runtime": runtime_metadata,
+                "versions": versions_metadata,
+                "input_path": str(input_path),
+                "input_chars": len(text),
+                "with_glossary": bool(args.with_glossary),
+                "reference_files": [str(p) for p in reference_files],
+                "save_output_path": str(args.save_output) if args.save_output else None,
+                "gold_path": str(args.gold) if args.gold else None,
+                "gold_chars": gold_chars,
+                "server_restarted": server_restarted,
+                "restart_reason": restart_reason,
+                "overrides": overrides,
+                "server": server_metadata,
+                "settings": _build_settings_payload(settings),
+                "warmup_seconds": warmup_seconds,
+                "translate_single_calls_warmup": local_translate_single_calls_warmup,
+                "translate_single_calls_translation": local_translate_single_calls_translation,
+                "translate_single_calls_total": local_translate_single_calls_warmup
+                + local_translate_single_calls_translation,
+                "translation_seconds": elapsed,
+                "options": len(options),
+                "output_chars": output_chars,
+                "similarity_method": "SequenceMatcher",
+                "similarity_by_style": similarity_by_style,
+                "best_similarity": best_similarity,
+                "error": error,
+            }
+        else:
+            payload = {
+                "benchmark": "local-ai",
+                "mode": args.mode,
+                "compare": True,
+                "style": args.style,
+                "started_at": started_at,
+                "tag": args.tag,
+                "git": git_metadata,
+                "runtime": runtime_metadata,
+                "versions": versions_metadata,
+                "input_path": str(input_path),
+                "input_chars": len(text),
+                "with_glossary": bool(args.with_glossary),
+                "reference_files": [str(p) for p in reference_files],
+                "save_output_path": str(args.save_output) if args.save_output else None,
+                "gold_path": str(args.gold) if args.gold else None,
+                "gold_chars": gold_chars,
+                "server_restarted": server_restarted,
+                "restart_reason": restart_reason,
+                "overrides": overrides,
+                "server": server_metadata,
+                "settings": _build_settings_payload(settings),
+                "warmup_seconds": warmup_seconds,
+                "translate_single_calls_warmup": local_translate_single_calls_warmup,
+                "translate_single_calls_translation": local_translate_single_calls_translation,
+                "translate_single_calls_total": local_translate_single_calls_warmup
+                + local_translate_single_calls_translation,
+                "translation_seconds": elapsed,
+                "options": 0,
+                "output_chars": 0,
+                "similarity_method": "SequenceMatcher",
+                "error": None,
+                "exception": exception_info,
+            }
+    else:
+        output = ""
+        elapsed = None
+        if exception_info is None:
+            try:
+                output, elapsed = _translate_once(client, text, prompt)
+            except Exception as exc:
+                exception_info = {
+                    "stage": "translation",
+                    "type": type(exc).__name__,
+                    "message": str(exc),
+                }
+                exit_code = 1
+                print(
+                    f"exception: {exception_info['stage']}: "
+                    f"{exception_info['type']}: {exception_info['message']}",
+                    file=sys.stderr,
+                )
+        server_metadata = _collect_server_metadata(settings, repo_root, server_manager)
+        versions_metadata = {
+            "llama_server": server_metadata.get("llama_server_version"),
+            "llama_cli": server_metadata.get("llama_cli_version"),
         }
+        if exception_info is None:
+            if not output.strip():
+                print("WARNING: empty translation result", file=sys.stderr)
+
+            total_seconds = prompt_build_seconds + float(elapsed or 0.0)
+            local_translate_single_calls_warmup = warmup_runs
+            local_translate_single_calls_translation = 1
+            if args.save_output is not None:
+                _write_text(args.save_output, output)
+            similarity = (
+                _compute_similarity(gold_text, output)
+                if gold_text is not None
+                else None
+            )
+            if elapsed is not None:
+                print(f"translation_seconds: {elapsed:.2f}")
+            print(
+                "translate_single_calls_translation: "
+                f"{local_translate_single_calls_translation}"
+            )
+            print(f"total_seconds: {total_seconds:.2f}")
+            print(f"output_chars: {len(output)}")
+            payload = {
+                "benchmark": "local-ai",
+                "mode": args.mode,
+                "compare": False,
+                "style": args.style,
+                "started_at": started_at,
+                "tag": args.tag,
+                "git": git_metadata,
+                "runtime": runtime_metadata,
+                "versions": versions_metadata,
+                "input_path": str(input_path),
+                "input_chars": len(text),
+                "with_glossary": bool(args.with_glossary),
+                "reference_files": [str(p) for p in reference_files],
+                "save_output_path": str(args.save_output) if args.save_output else None,
+                "gold_path": str(args.gold) if args.gold else None,
+                "gold_chars": gold_chars,
+                "server_restarted": server_restarted,
+                "restart_reason": restart_reason,
+                "overrides": overrides,
+                "server": server_metadata,
+                "settings": _build_settings_payload(settings),
+                "prompt_chars": prompt_chars,
+                "prompt_build_seconds": prompt_build_seconds,
+                "warmup_seconds": warmup_seconds,
+                "translate_single_calls_warmup": local_translate_single_calls_warmup,
+                "translate_single_calls_translation": local_translate_single_calls_translation,
+                "translate_single_calls_total": local_translate_single_calls_warmup
+                + local_translate_single_calls_translation,
+                "translation_seconds": elapsed,
+                "total_seconds": total_seconds,
+                "output_chars": len(output),
+                "similarity_method": "SequenceMatcher",
+                "similarity": similarity,
+            }
+        else:
+            payload = {
+                "benchmark": "local-ai",
+                "mode": args.mode,
+                "compare": False,
+                "style": args.style,
+                "started_at": started_at,
+                "tag": args.tag,
+                "git": git_metadata,
+                "runtime": runtime_metadata,
+                "versions": versions_metadata,
+                "input_path": str(input_path),
+                "input_chars": len(text),
+                "with_glossary": bool(args.with_glossary),
+                "reference_files": [str(p) for p in reference_files],
+                "save_output_path": str(args.save_output) if args.save_output else None,
+                "gold_path": str(args.gold) if args.gold else None,
+                "gold_chars": gold_chars,
+                "server_restarted": server_restarted,
+                "restart_reason": restart_reason,
+                "overrides": overrides,
+                "server": server_metadata,
+                "settings": _build_settings_payload(settings),
+                "prompt_chars": prompt_chars if "prompt_chars" in locals() else None,
+                "prompt_build_seconds": prompt_build_seconds
+                if "prompt_build_seconds" in locals()
+                else None,
+                "warmup_seconds": warmup_seconds,
+                "translate_single_calls_warmup": local_translate_single_calls_warmup,
+                "translate_single_calls_translation": 0,
+                "translate_single_calls_total": local_translate_single_calls_warmup,
+                "translation_seconds": elapsed,
+                "total_seconds": None,
+                "output_chars": len(output),
+                "similarity_method": "SequenceMatcher",
+                "similarity": None,
+                "exception": exception_info,
+            }
 
     if args.json or args.out:
         _emit_json(payload, to_stdout=bool(args.json), out_path=args.out)
-    return 0
+    return exit_code
 
 
 if __name__ == "__main__":

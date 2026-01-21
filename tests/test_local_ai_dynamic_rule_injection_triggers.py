@@ -93,4 +93,3 @@ def test_dynamic_rules_to_jp_includes_oku_only_when_present() -> None:
     assert "k→千または000" not in rules
     assert "¥/￥ + 数値" not in rules
     assert "会計負数" not in rules
-

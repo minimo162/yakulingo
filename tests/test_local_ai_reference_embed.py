@@ -107,7 +107,9 @@ def _filter_glossary_pairs_linear(
         return [], False
 
     selected = sorted(heap, key=lambda x: (-x[0], -x[1]))
-    return [(source, target) for _, _, source, target in selected], matched_count > max_lines
+    return [
+        (source, target) for _, _, source, target in selected
+    ], matched_count > max_lines
 
 
 def test_local_reference_embed_supports_binary_formats(tmp_path: Path) -> None:

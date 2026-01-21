@@ -131,6 +131,7 @@ def _build_action_feedback_js_handler() -> str:
         emit(e);
     }"""
 
+
 SUPPORTED_FORMATS = ".xlsx,.xls,.xlsm,.csv,.docx,.pptx,.pdf,.txt,.msg"
 SUPPORTED_EXTENSIONS = {ext.strip() for ext in SUPPORTED_FORMATS.split(",")}
 MAX_DROP_FILE_SIZE_MB = 20

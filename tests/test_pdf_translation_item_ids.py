@@ -56,7 +56,9 @@ class RecordingCopilot:
         return response
 
 
-def test_batch_translator_propagates_include_item_ids_on_prompt_too_long_retry() -> None:
+def test_batch_translator_propagates_include_item_ids_on_prompt_too_long_retry() -> (
+    None
+):
     copilot = RecordingCopilot(
         responses=[
             RuntimeError("LOCAL_PROMPT_TOO_LONG: simulated"),

@@ -46,10 +46,14 @@ _RE_JP_YEN_AMOUNT = re.compile(
 )
 _RE_TO_EN_FORBIDDEN_SYMBOLS = re.compile(r"(?:>=|<=|[><~→↑↓≥≧≤≦])")
 _RE_TO_EN_MONTH = re.compile(r"\d{1,2}月")
-_RE_TO_EN_YOY_TERMS = re.compile(r"(前年同期比|前期比|前年比|前年度比|YoY|QoQ|CAGR)", re.IGNORECASE)
+_RE_TO_EN_YOY_TERMS = re.compile(
+    r"(前年同期比|前期比|前年比|前年度比|YoY|QoQ|CAGR)", re.IGNORECASE
+)
 _RE_TO_JP_OKU_WORD = re.compile(r"\boku\b", re.IGNORECASE)
 _RE_TO_JP_NUMBER_K = re.compile(r"\b\d[\d,]*(?:\.\d+)?\s*k\b", re.IGNORECASE)
-_RE_TO_JP_YEN_BN = re.compile(r"(?:¥|￥)\s*[\d,]+(?:\.\d+)?\s*(?:billion|bn)\b", re.IGNORECASE)
+_RE_TO_JP_YEN_BN = re.compile(
+    r"(?:¥|￥)\s*[\d,]+(?:\.\d+)?\s*(?:billion|bn)\b", re.IGNORECASE
+)
 _RE_TO_JP_ACCOUNTING_PAREN = re.compile(r"\(\s*[$¥￥]?\s*\d[\d,]*(?:\.\d+)?\s*\)")
 
 
@@ -281,7 +285,9 @@ class LocalPromptBuilder:
                 if prefix.isascii():
                     prefixes.add(prefix)
             for prefix in prefixes:
-                indices_to_check.update(glossary.ascii_prefix4_to_indices.get(prefix, ()))
+                indices_to_check.update(
+                    glossary.ascii_prefix4_to_indices.get(prefix, ())
+                )
 
         if not indices_to_check:
             return [], False
@@ -364,11 +370,15 @@ class LocalPromptBuilder:
             if source_is_ascii_word:
                 ascii_word_to_indices.setdefault(source_folded, []).append(idx)
                 if len(source_folded) >= 4:
-                    ascii_prefix4_to_indices.setdefault(source_folded[:4], []).append(idx)
+                    ascii_prefix4_to_indices.setdefault(source_folded[:4], []).append(
+                        idx
+                    )
             if target_is_ascii_word:
                 ascii_word_to_indices.setdefault(target_folded, []).append(idx)
                 if len(target_folded) >= 4:
-                    ascii_prefix4_to_indices.setdefault(target_folded[:4], []).append(idx)
+                    ascii_prefix4_to_indices.setdefault(target_folded[:4], []).append(
+                        idx
+                    )
 
             if not source_is_ascii_word:
                 scan_indices.append(idx)
@@ -381,8 +391,7 @@ class LocalPromptBuilder:
                 key: tuple(indices) for key, indices in ascii_word_to_indices.items()
             },
             ascii_prefix4_to_indices={
-                key: tuple(indices)
-                for key, indices in ascii_prefix4_to_indices.items()
+                key: tuple(indices) for key, indices in ascii_prefix4_to_indices.items()
             },
             scan_indices=tuple(scan_indices),
         )
@@ -477,7 +486,10 @@ class LocalPromptBuilder:
                         if has_yoy:
                             selected.append(sub)
                         continue
-                    if any(token in item.casefold() for token in ("billion", "trillion", "bn")):
+                    if any(
+                        token in item.casefold()
+                        for token in ("billion", "trillion", "bn")
+                    ):
                         if has_chou_oku or has_bn_word:
                             selected.append(sub)
                         continue

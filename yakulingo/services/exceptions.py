@@ -11,4 +11,3 @@ class TranslationCancelledError(Exception):
     """Raised when translation is cancelled by user."""
 
     pass
-

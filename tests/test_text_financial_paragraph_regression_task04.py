@@ -9,9 +9,7 @@ from yakulingo.services.translation_service import TranslationService
 def test_style_comparison_financial_paragraph_auto_corrects_numeric_units(
     monkeypatch,
 ) -> None:
-    input_text = (
-        "当中間連結会計期間における連結業績は、売上高は2兆2,385億円(前年同期比1,554億円減)となりました。"
-    )
+    input_text = "当中間連結会計期間における連結業績は、売上高は2兆2,385億円(前年同期比1,554億円減)となりました。"
     settings = AppSettings(translation_backend="local", copilot_enabled=False)
     service = TranslationService(
         copilot=object(), config=settings, prompts_dir=Path("prompts")

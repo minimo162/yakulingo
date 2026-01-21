@@ -944,8 +944,9 @@ class LocalAIClient:
                     timeout_s=timeout_s,
                 )
             except RuntimeError as exc:
-                if include_sampling_params and self._should_retry_without_sampling_params(
-                    exc
+                if (
+                    include_sampling_params
+                    and self._should_retry_without_sampling_params(exc)
                 ):
                     if self._should_cache_sampling_params_unsupported(exc):
                         self._set_sampling_params_support(runtime, False)
@@ -1029,8 +1030,9 @@ class LocalAIClient:
                     runtime, payload, on_chunk, timeout=timeout
                 )
             except RuntimeError as exc:
-                if include_sampling_params and self._should_retry_without_sampling_params(
-                    exc
+                if (
+                    include_sampling_params
+                    and self._should_retry_without_sampling_params(exc)
                 ):
                     if self._should_cache_sampling_params_unsupported(exc):
                         self._set_sampling_params_support(runtime, False)

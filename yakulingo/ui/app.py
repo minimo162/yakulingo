@@ -7777,9 +7777,9 @@ class YakuLingoApp:
                 )
                 with ui.column().classes("gap-0"):
                     ui.label("エラー").classes("text-xs")
-                    ui.label((tooltip[:40] + "…") if len(tooltip) > 40 else tooltip).classes(
-                        "text-2xs opacity-80"
-                    )
+                    ui.label(
+                        (tooltip[:40] + "…") if len(tooltip) > 40 else tooltip
+                    ).classes("text-2xs opacity-80")
                     with ui.row().classes("status-actions items-center gap-2 mt-1"):
                         ui.button(
                             "再試行",
@@ -8413,7 +8413,9 @@ class YakuLingoApp:
                         update_scheduled = False
                 return
 
-            text_to_show = self._normalize_streaming_preview_text(raw_text_to_show) or ""
+            text_to_show = (
+                self._normalize_streaming_preview_text(raw_text_to_show) or ""
+            )
             last_ui_update = time.monotonic()
             try:
                 self.state.text_streaming_preview = text_to_show
@@ -8480,9 +8482,10 @@ class YakuLingoApp:
 
         style_section = refs.get("style_selector_section")
         if style_section:
-            show_style_selector = self._resolve_text_output_language() == "en" or not (
-                self.state.source_text or ""
-            ).strip()
+            show_style_selector = (
+                self._resolve_text_output_language() == "en"
+                or not (self.state.source_text or "").strip()
+            )
             if show_style_selector:
                 style_section.classes(remove="hidden")
             else:
@@ -10045,7 +10048,10 @@ class YakuLingoApp:
 
                 if not error_message:
                     result = ""
-                    if self.translation_service is None and not self._ensure_translation_service():
+                    if (
+                        self.translation_service is None
+                        and not self._ensure_translation_service()
+                    ):
                         error_message = "翻訳サービスの初期化に失敗しました"
                     service = self.translation_service
                     if not error_message and service is not None:

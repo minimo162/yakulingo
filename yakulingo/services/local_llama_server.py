@@ -347,6 +347,7 @@ def _http_get_json_with_status(
     except Exception as e:
         return None, None, str(e)
 
+
 def _probe_openai_models(
     host: str, port: int, timeout_s: float = 0.8
 ) -> tuple[Optional[dict], Optional[str]]:
@@ -364,6 +365,7 @@ def _probe_openai_models(
     if error:
         return None, error
     return None, "invalid response"
+
 
 def _extract_first_model_id(models_payload: dict) -> Optional[str]:
     try:

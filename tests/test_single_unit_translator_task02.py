@@ -43,7 +43,9 @@ def test_single_unit_translator_uses_cache_for_duplicate_texts() -> None:
         TextBlock(id="2", text="hello", location="b"),
     ]
 
-    result = translator.translate_blocks_single_unit_with_result(blocks, output_language="en")
+    result = translator.translate_blocks_single_unit_with_result(
+        blocks, output_language="en"
+    )
 
     assert result.cancelled is False
     assert copilot.calls == [["hello"]]
@@ -75,10 +77,11 @@ def test_single_unit_translator_stops_when_cancelled() -> None:
         TextBlock(id="2", text="second", location="b"),
     ]
 
-    result = translator.translate_blocks_single_unit_with_result(blocks, output_language="en")
+    result = translator.translate_blocks_single_unit_with_result(
+        blocks, output_language="en"
+    )
 
     assert result.cancelled is True
     assert copilot.calls == [["first"]]
     assert result.translations["1"] == "X:first"
     assert "2" not in result.translations
-

@@ -852,7 +852,9 @@ class PromptBuilder:
                 reference_files, input_text=input_text
             )
             if inline_glossary:
-                reference_section = f"{reference_section.rstrip()}\n\n{inline_glossary}\n"
+                reference_section = (
+                    f"{reference_section.rstrip()}\n\n{inline_glossary}\n"
+                )
 
         # Get appropriate template based on language and style
         template = self._get_template(output_language, translation_style)

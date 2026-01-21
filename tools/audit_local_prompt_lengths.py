@@ -66,7 +66,9 @@ def main() -> int:
         "prompts/translation_rules.txt (raw)",
         rules_path.read_text(encoding="utf-8"),
     )
-    _print_len("translation_rules (common)", base.get_translation_rules("common").strip())
+    _print_len(
+        "translation_rules (common)", base.get_translation_rules("common").strip()
+    )
     _print_len("translation_rules (to_en)", base.get_translation_rules("en").strip())
     _print_len("translation_rules (to_jp)", base.get_translation_rules("jp").strip())
 

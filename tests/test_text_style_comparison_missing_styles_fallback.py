@@ -19,7 +19,9 @@ def test_local_style_comparison_returns_single_minimal(monkeypatch) -> None:
         return '{"translation":"Hello","explanation":""}'
 
     monkeypatch.setattr(
-        service, "_translate_single_with_cancel_on_local", fake_translate_single_with_cancel
+        service,
+        "_translate_single_with_cancel_on_local",
+        fake_translate_single_with_cancel,
     )
 
     result = service.translate_text_with_style_comparison(

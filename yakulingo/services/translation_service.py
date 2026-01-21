@@ -1313,7 +1313,9 @@ class BatchTranslator:
 
     # Default values (used when settings not provided)
     DEFAULT_MAX_CHARS_PER_BATCH = 1000  # Characters per batch (prompt safety)
-    DEFAULT_REQUEST_TIMEOUT = 600  # Default timeout for translation response (10 minutes)
+    DEFAULT_REQUEST_TIMEOUT = (
+        600  # Default timeout for translation response (10 minutes)
+    )
     _SPLIT_RETRY_LIMIT = 2
     _MIN_SPLIT_BATCH_CHARS = 300
     _UNTRANSLATED_RETRY_MAX_CHARS = 800
@@ -3369,9 +3371,7 @@ class TranslationService:
                     source_text=text,
                     source_char_count=len(text),
                     options=[
-                        TranslationOption(
-                            text=translation, explanation="", style=style
-                        )
+                        TranslationOption(text=translation, explanation="", style=style)
                     ],
                     output_language=output_language,
                     detected_language=detected_language,

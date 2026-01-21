@@ -1952,6 +1952,7 @@ rm "$0"
 
         return True
 
+
 # 便利なユーティリティ関数
 def check_for_updates(
     repo_owner: Optional[str] = None,

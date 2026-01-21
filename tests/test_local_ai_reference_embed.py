@@ -3,6 +3,8 @@ from __future__ import annotations
 import heapq
 from pathlib import Path
 
+import pytest
+
 from unittest.mock import Mock, patch
 
 from yakulingo.services.translation_service import TranslationService
@@ -361,6 +363,49 @@ def test_local_reference_embed_filters_bundled_glossary(tmp_path: Path) -> None:
     )
     assert "営業利益 翻译成 Operating Profit" in embedded.text
     assert "売上高 翻译成 Revenue" not in embedded.text
+
+
+@pytest.mark.xfail(
+    reason=(
+        "短い英数字用語が日本語に隣接すると、現在の \\b 境界判定だとマッチしない（task-01で修正予定）"
+    )
+)
+def test_local_reference_embed_matches_short_ascii_term_adjacent_to_japanese(
+    tmp_path: Path,
+) -> None:
+    builder = _make_builder()
+    glossary_path = tmp_path / "glossary.csv"
+    glossary_path.write_text("AI,Artificial Intelligence\n", encoding="utf-8")
+
+    embedded = builder.build_reference_embed([glossary_path], input_text="AIを活用する")
+    assert "[REFERENCE:file=glossary.csv]" in embedded.text
+    assert "AI" in embedded.text
+    assert "Artificial Intelligence" in embedded.text
+
+
+@pytest.mark.xfail(
+    reason=(
+        "短い英数字用語が日本語に隣接すると、現在の \\b 境界判定だとマッチしない（task-01で修正予定）"
+    )
+)
+def test_local_reference_embed_matches_multiple_short_ascii_terms_adjacent_to_japanese(
+    tmp_path: Path,
+) -> None:
+    builder = _make_builder()
+    glossary_path = tmp_path / "glossary.csv"
+    glossary_path.write_text(
+        "AI,Artificial Intelligence\nGPU,Graphics Processing Unit\n",
+        encoding="utf-8",
+    )
+
+    embedded = builder.build_reference_embed(
+        [glossary_path], input_text="AIとGPUを活用する"
+    )
+    assert "[REFERENCE:file=glossary.csv]" in embedded.text
+    assert "AI" in embedded.text
+    assert "Artificial Intelligence" in embedded.text
+    assert "GPU" in embedded.text
+    assert "Graphics Processing Unit" in embedded.text
 
 
 def test_local_reference_embed_matches_glossary_source_with_fullwidth_ascii(

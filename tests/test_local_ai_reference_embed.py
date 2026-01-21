@@ -553,6 +553,7 @@ def test_local_text_prompt_includes_rules_and_bundled_glossary_when_enabled(
         detected_language="日本語",
     )
     assert "RULES_MARKER" in prompt
+    assert "GLOSSARY (mandatory)" in prompt
     assert "営業利益 翻译成 Operating Profit" in prompt
 
 

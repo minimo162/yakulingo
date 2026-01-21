@@ -1018,6 +1018,12 @@ class LocalPromptBuilder:
             "### 参照（埋め込み）\n"
             "以下の参照を優先して翻訳してください（必要に応じて省略されています）。\n"
         )
+        header = (
+            "### Reference files (critical)\n"
+            "- GLOSSARY (mandatory): apply glossary terms everywhere they appear, including inside longer sentences.\n"
+            "- Use the glossary's preferred wording verbatim; do not paraphrase glossary terms.\n"
+            "\n"
+        )
         embedded_text = header + "\n\n".join(parts)
         embedded = EmbeddedReference(
             text=embedded_text, warnings=warnings, truncated=truncated

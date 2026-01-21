@@ -2827,6 +2827,7 @@ class TranslationService:
             copilot_lock=copilot_lock,
         )
         self._local_init_lock = threading.Lock()
+        self._local_call_lock = threading.Lock()
         self._local_client = None
         self._local_prompt_builder = None
         self._local_batch_translator = None
@@ -2925,7 +2926,7 @@ class TranslationService:
                     request_timeout=self.config.request_timeout
                     if self.config
                     else None,
-                    copilot_lock=self._copilot_lock,
+                    copilot_lock=self._local_call_lock,
                 )
 
     def _get_active_client(self):
@@ -3040,7 +3041,11 @@ class TranslationService:
         )
         with ui_scope:
             with self._cancel_callback_scope():
-                lock = self._copilot_lock or nullcontext()
+                lock = (
+                    self._local_call_lock
+                    if self._use_local_backend()
+                    else (self._copilot_lock or nullcontext())
+                )
                 with lock:
                     return client.translate_single(
                         text, prompt, reference_files, on_chunk
@@ -3089,7 +3094,7 @@ class TranslationService:
             raise RuntimeError("Local AI client not initialized")
 
         set_cb = getattr(client, "set_cancel_callback", None)
-        lock = self._copilot_lock or nullcontext()
+        lock = self._local_call_lock
 
         if callable(set_cb):
             try:
@@ -4623,8 +4628,12 @@ class TranslationService:
                 )
             )
 
-        # Excel cells often contain numbered lines; keep stable IDs to avoid list parsing drift.
-        include_item_ids = processor.file_type == FileType.EXCEL
+        # Local batch translation: keep stable IDs for parsing robustness.
+        include_item_ids = True
+
+        local_file_max_chars, local_file_max_chars_source = (
+            self._get_local_file_batch_limit_info()
+        )
 
         translation_styles = (
             ["minimal"] if output_language == "en" else [translation_style]
@@ -4679,13 +4688,15 @@ class TranslationService:
                         )
                     )
 
-            batch_result = batch_translator.translate_blocks_single_unit_with_result(
+            batch_result = batch_translator.translate_blocks_with_result(
                 blocks,
                 reference_files,
                 batch_progress if on_progress else None,
                 output_language=output_language,
                 translation_style=style_key,
                 include_item_ids=include_item_ids,
+                _max_chars_per_batch=local_file_max_chars,
+                _max_chars_per_batch_source=local_file_max_chars_source,
             )
 
             if batch_result.cancelled or self._cancel_event.is_set():
@@ -5002,6 +5013,10 @@ class TranslationService:
         if batch_translator is None:
             raise RuntimeError("Local batch translator not initialized")
 
+        local_file_max_chars, local_file_max_chars_source = (
+            self._get_local_file_batch_limit_info()
+        )
+
         translate_start = 40
         translate_end = 90
         translate_span = translate_end - translate_start
@@ -5038,13 +5053,15 @@ class TranslationService:
                         )
                     )
 
-            batch_result = batch_translator.translate_blocks_single_unit_with_result(
+            batch_result = batch_translator.translate_blocks_with_result(
                 all_blocks,
                 reference_files,
                 batch_progress if on_progress else None,
                 output_language=output_language,
                 translation_style=style_key,
                 include_item_ids=True,
+                _max_chars_per_batch=local_file_max_chars,
+                _max_chars_per_batch_source=local_file_max_chars_source,
             )
 
             if batch_result.cancelled or self._cancel_event.is_set():

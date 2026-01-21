@@ -47,6 +47,7 @@ class RecordingCopilot:
         timeout: int | None = None,
         include_item_ids: bool = False,
     ) -> list[str]:
+        _ = (prompt, reference_files, skip_clear_wait, timeout)
         self.include_item_ids_calls.append(include_item_ids)
         if not self._responses:
             return [""] * len(texts)
@@ -115,7 +116,7 @@ class SpyBatchTranslator:
     def __init__(self) -> None:
         self.include_item_ids_calls: list[bool] = []
 
-    def translate_blocks_single_unit_with_result(
+    def translate_blocks_with_result(
         self,
         blocks: list[TextBlock],
         reference_files: list[Path] | None = None,
@@ -123,8 +124,18 @@ class SpyBatchTranslator:
         output_language: str = "en",
         translation_style: str = "concise",
         include_item_ids: bool = False,
+        _max_chars_per_batch: int | None = None,
+        _max_chars_per_batch_source: str | None = None,
         **_: object,
     ) -> BatchTranslationResult:
+        _ = (
+            reference_files,
+            on_progress,
+            output_language,
+            translation_style,
+            _max_chars_per_batch,
+            _max_chars_per_batch_source,
+        )
         self.include_item_ids_calls.append(include_item_ids)
         return BatchTranslationResult(
             translations={block.id: f"訳:{block.text}" for block in blocks},
@@ -150,6 +161,7 @@ class DummyPdfProcessor:
         output_language: str = "en",
         pages: list[int] | None = None,
     ):
+        _ = (input_path, on_progress, device, batch_size, dpi, output_language, pages)
         yield (
             [
                 TextBlock(id="b1", text="Page 2", location="Page 2"),
@@ -168,7 +180,15 @@ class DummyPdfProcessor:
         pages: list[int] | None = None,
         text_blocks: list[TextBlock] | None = None,
     ) -> None:
-        return None
+        _ = (
+            input_path,
+            output_path,
+            translations,
+            direction,
+            config,
+            pages,
+            text_blocks,
+        )
 
 
 def test_translate_pdf_streaming_enables_include_item_ids(tmp_path: Path) -> None:

@@ -14,7 +14,11 @@ from yakulingo.services.translation_service import TranslationService
 
 
 class SpyBatchTranslator:
-    def translate_blocks_single_unit_with_result(  # noqa: D401
+    def __init__(self) -> None:
+        self.max_chars_calls: list[tuple[int | None, str | None]] = []
+        self.include_item_ids_calls: list[bool] = []
+
+    def translate_blocks_with_result(  # noqa: D401
         self,
         blocks: list[TextBlock],
         reference_files: list[Path] | None = None,
@@ -22,7 +26,8 @@ class SpyBatchTranslator:
         output_language: str = "en",
         translation_style: str = "concise",
         include_item_ids: bool = False,
-        _clear_cancel_event: bool = True,
+        _max_chars_per_batch: int | None = None,
+        _max_chars_per_batch_source: str | None = None,
         **_: object,
     ) -> BatchTranslationResult:
         _ = (
@@ -30,9 +35,9 @@ class SpyBatchTranslator:
             on_progress,
             output_language,
             translation_style,
-            include_item_ids,
-            _clear_cancel_event,
         )
+        self.max_chars_calls.append((_max_chars_per_batch, _max_chars_per_batch_source))
+        self.include_item_ids_calls.append(include_item_ids)
         return BatchTranslationResult(
             translations={block.id: f"訳:{block.text}" for block in blocks},
             untranslated_block_ids=[],
@@ -114,31 +119,32 @@ class DummyPdfProcessor:
         )
 
 
-def _make_service_with_spy_translator() -> TranslationService:
+def _make_service_with_spy_translator() -> tuple[
+    TranslationService, SpyBatchTranslator
+]:
     service = TranslationService(
         copilot=object(),
         config=AppSettings(translation_backend="local"),
     )
+    spy = SpyBatchTranslator()
     service._local_client = object()  # type: ignore[assignment]
     service._local_prompt_builder = object()  # type: ignore[assignment]
-    service._local_batch_translator = SpyBatchTranslator()  # type: ignore[assignment]
-    return service
+    service._local_batch_translator = spy  # type: ignore[assignment]
+    return service, spy
 
 
-def test_nonpdf_file_translation_does_not_use_file_batch_limit_info(
-    tmp_path: Path,
-) -> None:
+def test_nonpdf_file_translation_uses_file_batch_limit_info(tmp_path: Path) -> None:
     input_path = tmp_path / "input.txt"
     input_path.write_text("dummy", encoding="utf-8")
 
-    service = _make_service_with_spy_translator()
+    service, spy = _make_service_with_spy_translator()
     processor = DummyTextProcessor()
 
     with patch.object(
         service,
         "_get_local_file_batch_limit_info",
-        side_effect=AssertionError("file batch limit should not be consulted"),
-    ):
+        return_value=(123, "local_ai_max_chars_per_batch_file"),
+    ) as patched_get_limit:
         result = service._translate_file_standard(  # type: ignore[arg-type]
             input_path=input_path,
             processor=processor,
@@ -150,22 +156,23 @@ def test_nonpdf_file_translation_does_not_use_file_batch_limit_info(
             selected_sections=None,
         )
 
+    patched_get_limit.assert_called_once()
+    assert spy.max_chars_calls == [(123, "local_ai_max_chars_per_batch_file")]
+    assert spy.include_item_ids_calls == [True]
     assert result.status == TranslationStatus.COMPLETED
 
 
-def test_pdf_file_translation_does_not_use_file_batch_limit_info(
-    tmp_path: Path,
-) -> None:
+def test_pdf_file_translation_uses_file_batch_limit_info(tmp_path: Path) -> None:
     input_path = tmp_path / "input.pdf"
     input_path.write_bytes(b"")
 
-    service = _make_service_with_spy_translator()
+    service, spy = _make_service_with_spy_translator()
 
     with patch.object(
         service,
         "_get_local_file_batch_limit_info",
-        side_effect=AssertionError("file batch limit should not be consulted"),
-    ):
+        return_value=(456, "local_ai_max_chars_per_batch"),
+    ) as patched_get_limit:
         result = service._translate_pdf_streaming(  # type: ignore[arg-type]
             input_path=input_path,
             processor=DummyPdfProcessor(),
@@ -177,4 +184,7 @@ def test_pdf_file_translation_does_not_use_file_batch_limit_info(
             selected_sections=None,
         )
 
+    patched_get_limit.assert_called_once()
+    assert spy.max_chars_calls == [(456, "local_ai_max_chars_per_batch")]
+    assert spy.include_item_ids_calls == [True]
     assert result.status == TranslationStatus.COMPLETED

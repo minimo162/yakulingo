@@ -30,6 +30,10 @@ def main() -> int:
         "--sample-text",
         default="売上高は2兆2,385億円(前年同期比1,554億円減)となりました。",
     )
+    parser.add_argument(
+        "--sample-text-short",
+        default="上期の実績について説明します。",
+    )
     parser.add_argument("--batch-items", type=int, default=12)
     parser.add_argument(
         "--show-head",
@@ -73,6 +77,7 @@ def main() -> int:
     print("")
     print("== Built prompts (no reference files) ==")
     sample_text = str(args.sample_text)
+    sample_text_short = str(args.sample_text_short)
     prompt_en_single = builder.build_text_to_en_single(
         sample_text,
         style="minimal",
@@ -100,6 +105,23 @@ def main() -> int:
     )
     _print_len("LocalPromptBuilder.build_batch (to_en)", prompt_batch)
 
+    _print_len(
+        "translation_rules (to_en, filtered short)",
+        builder._get_translation_rules_for_text("en", sample_text_short).strip(),
+    )
+    batch_short_texts = [
+        f"{sample_text_short} [{idx + 1}]" for idx in range(batch_items)
+    ]
+    prompt_batch_short = builder.build_batch(
+        batch_short_texts,
+        has_reference_files=False,
+        output_language="en",
+        translation_style="minimal",
+        include_item_ids=True,
+        reference_files=None,
+    )
+    _print_len("LocalPromptBuilder.build_batch (to_en, short)", prompt_batch_short)
+
     if args.show_head:
         head = max(1, int(args.show_head))
         print("")
@@ -108,6 +130,7 @@ def main() -> int:
             ("en_single", prompt_en_single),
             ("jp_single", prompt_jp_single),
             ("batch_to_en", prompt_batch),
+            ("batch_to_en_short", prompt_batch_short),
         ):
             lines = prompt.replace("\r\n", "\n").replace("\r", "\n").splitlines()
             print(f"-- {label} (first {head} lines) --")

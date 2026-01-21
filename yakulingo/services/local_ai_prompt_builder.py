@@ -1042,7 +1042,6 @@ class LocalPromptBuilder:
             else "local_batch_translate_to_jp_json.txt"
         )
         template = self._load_template(filename)
-        translation_rules = self._get_translation_rules(output_language)
 
         max_context_chars = 3000
         context_parts: list[str] = []
@@ -1060,6 +1059,11 @@ class LocalPromptBuilder:
             context_parts.append(item)
             total_chars += len(item) + 1
         context_text = "\n".join(context_parts)
+        translation_rules = (
+            self._get_translation_rules_for_text(output_language, context_text)
+            if context_text.strip()
+            else self._get_translation_rules(output_language)
+        )
         embedded_ref = self.build_reference_embed(
             reference_files, input_text=context_text
         )

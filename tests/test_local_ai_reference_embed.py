@@ -246,21 +246,54 @@ def test_local_prompt_includes_numeric_hints_for_oku_in_en_missing_styles() -> N
 
 def test_local_batch_prompt_includes_numeric_hints_for_oku() -> None:
     builder = _make_builder()
+    texts = [
+        "売上高は2兆2,385億円となりました。",
+        "前年同期比1,554億円減となりました。",
+    ]
     prompt = builder.build_batch(
-        [
-            "売上高は2兆2,385億円となりました。",
-            "前年同期比1,554億円減となりました。",
-        ],
+        texts,
         output_language="en",
         translation_style="concise",
         reference_files=None,
     )
-    expected_rules = builder._get_translation_rules("en").strip()
+    context_text = "\n".join(texts)
+    expected_rules = builder._get_translation_rules_for_text("en", context_text).strip()
     assert expected_rules
     assert expected_rules in prompt
+    assert "数値/単位:" in expected_rules
+    assert "兆/億→oku" in expected_rules
+    assert "YoY/QoQ/CAGR" in expected_rules
+    assert "billion/trillion には変換しない" in expected_rules
+    assert "万→k" not in expected_rules
+    assert "千→k" not in expected_rules
+    assert "▲→()" not in expected_rules
     assert "数値変換ヒント" in prompt
     assert "2兆2,385億円 -> 22,385 oku yen" in prompt
     assert "1,554億円 -> 1,554 oku yen" in prompt
+
+
+def test_local_batch_prompt_omits_numeric_rules_for_short_text() -> None:
+    builder = _make_builder()
+    texts = ["短文", "もう一文"]
+    prompt = builder.build_batch(
+        texts,
+        output_language="en",
+        translation_style="concise",
+        reference_files=None,
+    )
+    context_text = "\n".join(texts)
+    full_rules = builder._get_translation_rules("en").strip()
+    filtered_rules = builder._get_translation_rules_for_text("en", context_text).strip()
+    assert full_rules
+    assert filtered_rules
+    assert filtered_rules in prompt
+    assert len(filtered_rules) < len(full_rules)
+    assert "数字の桁/カンマは変更しない" in filtered_rules
+    assert "禁止記号:" in filtered_rules
+    assert "「+」は追加のみ" in filtered_rules
+    assert "数値/単位:" not in filtered_rules
+    assert "月名略語" not in filtered_rules
+    assert "more than" not in filtered_rules
 
 
 def test_local_prompt_includes_full_rules_for_en_3style_short_text() -> None:

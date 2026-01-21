@@ -128,6 +128,14 @@ Note: `LocalPromptBuilder` が `detected_language` などを置換できる実�
 - Prompt length: `{translation_rules}`/`{reference_section}`/入力を含めた「送信プロンプトの文字数」（短縮の主指標）
 - Output length: 返答の文字数（特に Explanation の膨張が速度/安定性を落とす）
 
+## Baseline prompt length audit (Local AI)
+
+ローカルAI向けプロンプトの「素材（テンプレ/翻訳ルール）」と「組み立て後（build_*）」の文字数を、サーバ無しで確認する。
+
+```bash
+uv run python tools/audit_local_prompt_lengths.py
+```
+
 ## Improvement priority (stability → speed)
 
 1. 既存パーサ契約（出力形状）を壊さない

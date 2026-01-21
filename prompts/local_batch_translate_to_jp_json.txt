@@ -1,13 +1,9 @@
-Translate each items[].text from English to Japanese. Output JSON only.
+EN->JP items_json JSON only.
+Example: {"items":[{"id":1,"translation":"..."},{"id":2,"translation":"..."}]}
 
-{"items":[{"id":1,"translation":"..."},{"id":2,"translation":"..."}]}
-
-Rules:
-- items length must be {n_items}; ids must be 1..{n_items}; one translation per id.
-- No code fences. No extra keys/text.
-- Keep [[ID:n]] markers. Preserve \\n / \\t in JSON strings.
+Rules: ONE JSON object only; no code fences/prefix/suffix; no extra keys/text; items len={n_items}; ids 1..{n_items}; keep [[ID:n]]; keep \\n/\\t.
 
 {translation_rules}
 {reference_section}
-INPUT (items_json):
+items_json:
 {items_json}

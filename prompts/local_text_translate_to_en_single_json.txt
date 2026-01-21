@@ -1,11 +1,7 @@
-Translate Japanese to English ({style}). Output JSON only.
+JP->EN ({style}) JSON only.
+Example: {"translation":"..."}
 
-{"translation":"..."}
-
-Rules:
-- One JSON object only. No code fences. No extra keys/text.
-- Keep [[ID:n]] markers exactly if present.
-- Preserve newlines/tabs with \\n / \\t in JSON strings.
+Rules: ONE JSON object only; no code fences/prefix/suffix; no extra keys/text; EN only (no CJK/Hangul); keep [[ID:n]]; keep \\n/\\t.
 
 {translation_rules}
 {numeric_hints}

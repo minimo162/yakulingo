@@ -181,6 +181,52 @@ def test_ensure_ready_does_not_scan_ports_when_reuse_succeeds(
     assert manager.ensure_ready(settings) == reuse_runtime
 
 
+def test_try_reuse_skips_psutil_when_state_not_recent_and_port_not_ready(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server_exe_path = tmp_path / "llama-server.exe"
+    server_exe_path.write_bytes(b"exe")
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"model")
+
+    expected_model_size, expected_model_mtime = lls._file_fingerprint(model_path)
+    expected_exe_norm = lls._normalize_path_text(server_exe_path)
+    expected_model_norm = lls._normalize_path_text(model_path)
+
+    state = {
+        "host": "127.0.0.1",
+        "port": 4891,
+        "pid": 12345,
+        "server_exe_path_resolved": str(server_exe_path),
+        "model_path_resolved": str(model_path),
+        "model_size": expected_model_size,
+        "model_mtime": expected_model_mtime,
+        "started_at": "2000-01-01T00:00:00+00:00",
+        "last_ok_at": "2000-01-01T00:00:00+00:00",
+    }
+
+    monkeypatch.setattr(
+        lls, "_probe_openai_models", lambda *args, **kwargs: (None, "nope")
+    )
+    monkeypatch.setattr(
+        lls.psutil,
+        "Process",
+        lambda _pid: (_ for _ in ()).throw(AssertionError("psutil should not run")),
+    )
+
+    assert (
+        lls.LocalLlamaServerManager()._try_reuse(
+            state,
+            expected_host="127.0.0.1",
+            expected_exe_norm=expected_exe_norm,
+            expected_model_norm=expected_model_norm,
+            expected_model_size=expected_model_size,
+            expected_model_mtime=expected_model_mtime,
+        )
+        is None
+    )
+
+
 def test_ensure_ready_falls_back_to_bundled_server_dir_when_custom_invalid(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -322,6 +368,55 @@ def test_ensure_ready_falls_back_to_avx2_when_vulkan_oom(
     saved_state = lls._safe_read_json(state_path) or {}
     assert saved_state.get("server_variant") == "avx2"
     assert runtime.model_path == settings_model_path
+
+
+def test_wait_ready_aborts_early_when_vulkan_oom_detected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager = lls.LocalLlamaServerManager()
+    log_path = tmp_path / "local_ai_server.log"
+    log_path.write_text("oom", encoding="utf-8")
+
+    monkeypatch.setattr(lls, "_log_indicates_vulkan_oom", lambda *args, **kwargs: True)
+    monkeypatch.setattr(
+        lls,
+        "_probe_openai_models",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("probe should not run when aborting on vulkan oom")
+        ),
+    )
+
+    called = {"terminate": 0, "wait": 0, "kill": 0}
+
+    class DummyProc:
+        def poll(self):
+            return None
+
+        def terminate(self):
+            called["terminate"] += 1
+
+        def wait(self, timeout=None):
+            _ = timeout
+            called["wait"] += 1
+
+        def kill(self):
+            called["kill"] += 1
+
+    ready, last_error, models_payload = manager._wait_ready(
+        "127.0.0.1",
+        4891,
+        DummyProc(),
+        timeout_s=5.0,
+        log_path=log_path,
+        abort_on_vulkan_oom=True,
+    )
+
+    assert ready is False
+    assert last_error == "vulkan_oom"
+    assert models_payload is None
+    assert called["terminate"] == 1
+    assert called["wait"] == 1
+    assert called["kill"] == 0
 
 
 def test_resolve_server_exe_prefers_vulkan_variant(
@@ -1468,6 +1563,44 @@ def test_resolve_local_ai_device_auto_returns_first_vulkan_device(
     device, error = lls._resolve_local_ai_device_auto("auto", server_exe_path)
     assert device == "Vulkan0"
     assert error is None
+
+
+def test_resolve_local_ai_device_auto_caches_result(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lls._AUTO_DEVICE_CACHE.clear()
+
+    server_exe_path = tmp_path / "llama-server.exe"
+    server_exe_path.write_bytes(b"exe")
+    (tmp_path / "llama-cli.exe").write_bytes(b"exe")
+
+    output = "\n".join(
+        [
+            "Available devices:",
+            "  Vulkan0: AMD Radeon(TM) Graphics (8330 MiB, 7913 MiB free)",
+        ]
+    )
+
+    class DummyCompleted:
+        def __init__(self, stdout: str) -> None:
+            self.stdout = stdout
+
+    calls = {"count": 0}
+
+    def fake_run(*args, **kwargs):
+        calls["count"] += 1
+        return DummyCompleted(output)
+
+    monkeypatch.setattr(lls.subprocess, "run", fake_run)
+
+    device1, error1 = lls._resolve_local_ai_device_auto("auto", server_exe_path)
+    device2, error2 = lls._resolve_local_ai_device_auto("auto", server_exe_path)
+
+    assert device1 == "Vulkan0"
+    assert error1 is None
+    assert device2 == "Vulkan0"
+    assert error2 is None
+    assert calls["count"] == 1
 
 
 def test_resolve_local_ai_device_auto_returns_none_when_cli_missing(

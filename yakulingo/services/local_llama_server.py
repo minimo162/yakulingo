@@ -37,6 +37,7 @@ _EXE_SUPPORTED_CACHE_LOCK = threading.Lock()
 _NO_PROXY_LOCAL_HOSTS = ("127.0.0.1", "localhost")
 _REUSE_FAST_PATH_TTL_S = 120.0
 _REUSE_HEALTHCHECK_TIMEOUT_S = 0.25
+_REUSE_WARM_STATE_GRACE_S = 60.0
 _VULKAN_OOM_MARKERS = (
     "erroroutofdevicememory",
     "out of device memory",
@@ -44,10 +45,31 @@ _VULKAN_OOM_MARKERS = (
     "device memory allocation",
     "vk::device::allocatememory",
 )
+_AUTO_DEVICE_CACHE_TTL_S = 600.0
+_AUTO_DEVICE_CACHE: dict[
+    tuple[str, int, int], tuple[Optional[str], Optional[str], float]
+] = {}
+_AUTO_DEVICE_CACHE_LOCK = threading.Lock()
 
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _is_recent_utc_iso_timestamp(value: object, *, within_s: float) -> bool:
+    if not isinstance(value, str):
+        return False
+    raw = value.strip()
+    if not raw:
+        return False
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except Exception:
+        return False
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc)
+    return (now - parsed).total_seconds() <= within_s
 
 
 def _app_base_dir() -> Path:
@@ -243,6 +265,25 @@ def _resolve_local_ai_device_auto(
         return None, "llama-cli not found"
 
     try:
+        stat = llama_cli_path.stat()
+        cache_key = (
+            _normalize_path_text(llama_cli_path),
+            stat.st_size,
+            int(stat.st_mtime),
+        )
+    except OSError:
+        cache_key = (_normalize_path_text(llama_cli_path), 0, 0)
+
+    now = time.monotonic()
+    with _AUTO_DEVICE_CACHE_LOCK:
+        cached = _AUTO_DEVICE_CACHE.get(cache_key)
+        if cached is not None:
+            cached_device, cached_error, checked_at = cached
+            if now - checked_at <= _AUTO_DEVICE_CACHE_TTL_S:
+                return cached_device, cached_error
+            _AUTO_DEVICE_CACHE.pop(cache_key, None)
+
+    try:
         completed = subprocess.run(
             [str(llama_cli_path), "--list-devices"],
             stdout=subprocess.PIPE,
@@ -255,11 +296,21 @@ def _resolve_local_ai_device_auto(
         )
         output = completed.stdout or ""
     except Exception:
+        with _AUTO_DEVICE_CACHE_LOCK:
+            _AUTO_DEVICE_CACHE[cache_key] = (
+                None,
+                "llama-cli --list-devices failed",
+                now,
+            )
         return None, "llama-cli --list-devices failed"
 
     devices = _parse_llama_cli_vulkan_devices(output)
     if not devices:
+        with _AUTO_DEVICE_CACHE_LOCK:
+            _AUTO_DEVICE_CACHE[cache_key] = (None, "no Vulkan devices found", now)
         return None, "no Vulkan devices found"
+    with _AUTO_DEVICE_CACHE_LOCK:
+        _AUTO_DEVICE_CACHE[cache_key] = (devices[0], None, now)
     return devices[0], None
 
 
@@ -678,7 +729,17 @@ class LocalLlamaServerManager:
                     logger.warning(
                         "Local AI Vulkan start failed due to GPU memory; retrying with AVX2 CPU build"
                     )
+                    old_proc = self._process
                     self._process = None
+                    if old_proc is not None:
+                        try:
+                            old_proc.terminate()
+                            old_proc.wait(timeout=2.0)
+                        except Exception:
+                            try:
+                                old_proc.kill()
+                            except Exception:
+                                pass
                     try:
                         if self._process_log_fp:
                             try:
@@ -954,6 +1015,29 @@ class LocalLlamaServerManager:
         if isinstance(expected_ct, (int, float)):
             expected_create_time = float(expected_ct)
 
+        warm_state = _is_recent_utc_iso_timestamp(
+            state.get("started_at"), within_s=_REUSE_WARM_STATE_GRACE_S
+        ) or _is_recent_utc_iso_timestamp(
+            state.get("last_ok_at"), within_s=_REUSE_WARM_STATE_GRACE_S
+        )
+
+        fast_models_payload: Optional[dict] = None
+        if not warm_state:
+            fast_models_payload, error = _probe_openai_models(
+                expected_host,
+                port,
+                timeout_s=_REUSE_HEALTHCHECK_TIMEOUT_S,
+            )
+            if fast_models_payload is None:
+                if error:
+                    logger.debug(
+                        "Local AI reuse probe failed (host=%s port=%d): %s",
+                        expected_host,
+                        port,
+                        error,
+                    )
+                return None
+
         try:
             proc = psutil.Process(pid)
             if not proc.is_running():
@@ -980,22 +1064,26 @@ class LocalLlamaServerManager:
                 return None
         if expected_model_norm not in cmdline.replace("\\", "/").lower():
             return None
-        # Short grace period to reuse a warming server before starting a new one.
-        ready, last_error, models_payload = self._wait_ready(
-            expected_host,
-            port,
-            None,
-            timeout_s=4.0,
-        )
-        if not ready:
-            if last_error:
-                logger.debug(
-                    "Local AI reuse probe failed (host=%s port=%d): %s",
-                    expected_host,
-                    port,
-                    last_error,
-                )
-            return None
+
+        models_payload: Optional[dict] = fast_models_payload
+        if models_payload is None:
+            # Short grace period to reuse a warming server before starting a new one.
+            ready, last_error, models_payload = self._wait_ready(
+                expected_host,
+                port,
+                None,
+                timeout_s=4.0,
+                probe_timeout_s=_REUSE_HEALTHCHECK_TIMEOUT_S,
+            )
+            if not ready:
+                if last_error:
+                    logger.debug(
+                        "Local AI reuse probe failed (host=%s port=%d): %s",
+                        expected_host,
+                        port,
+                        last_error,
+                    )
+                return None
         model_id = (
             _extract_first_model_id(models_payload)
             if isinstance(models_payload, dict)
@@ -1024,6 +1112,10 @@ class LocalLlamaServerManager:
     ) -> LocalAIServerRuntime:
         log_path = self.get_log_path()
         log_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            log_offset = log_path.stat().st_size if log_path.exists() else 0
+        except OSError:
+            log_offset = 0
 
         args = self._build_server_args(
             server_exe_path=server_exe_path,
@@ -1041,9 +1133,9 @@ class LocalLlamaServerManager:
         log_fp = open(log_path, "a", encoding="utf-8", errors="replace")
         self._process_log_fp = log_fp
         logger.info("Starting llama-server: %s", " ".join(args))
+        gpu_enabled = str(server_variant).lower() == "vulkan"
         try:
             env = os.environ.copy()
-            gpu_enabled = str(server_variant).lower() == "vulkan"
             if gpu_enabled:
                 if settings.local_ai_vk_force_max_allocation_size:
                     env["GGML_VK_FORCE_MAX_ALLOCATION_SIZE"] = str(
@@ -1069,7 +1161,13 @@ class LocalLlamaServerManager:
         self._process = proc
 
         ready, last_error, models_payload = self._wait_ready(
-            host, port, proc, timeout_s=120.0
+            host,
+            port,
+            proc,
+            timeout_s=120.0,
+            log_path=log_path,
+            log_since_offset=log_offset,
+            abort_on_vulkan_oom=gpu_enabled,
         )
         if not ready:
             rc = proc.poll()
@@ -1106,15 +1204,39 @@ class LocalLlamaServerManager:
         proc: Optional[subprocess.Popen] = None,
         *,
         timeout_s: float,
+        probe_timeout_s: float = 0.8,
+        log_path: Path | None = None,
+        log_since_offset: int = 0,
+        abort_on_vulkan_oom: bool = False,
     ) -> tuple[bool, Optional[str], Optional[dict]]:
         deadline = time.monotonic() + timeout_s
         last_error: Optional[str] = None
+        next_log_check_time = 0.0
         while time.monotonic() < deadline:
             if proc is not None:
                 rc = proc.poll()
                 if rc is not None:
                     return False, f"process exited ({rc})", None
-            models_payload, error = _probe_openai_models(host, port, timeout_s=0.8)
+                if abort_on_vulkan_oom and log_path is not None:
+                    now = time.monotonic()
+                    if now >= next_log_check_time:
+                        if _log_indicates_vulkan_oom(
+                            log_path, since_offset=log_since_offset
+                        ):
+                            try:
+                                proc.terminate()
+                                proc.wait(timeout=2.0)
+                            except Exception:
+                                try:
+                                    proc.kill()
+                                except Exception:
+                                    pass
+                            return False, "vulkan_oom", None
+                        next_log_check_time = now + 0.5
+
+            models_payload, error = _probe_openai_models(
+                host, port, timeout_s=probe_timeout_s
+            )
             if models_payload is not None:
                 return True, None, models_payload
             last_error = error

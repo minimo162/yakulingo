@@ -71,7 +71,7 @@ def test_translate_single_retries_without_response_format_when_empty_json() -> N
     assert len(client.http_payloads) == 2
     assert "response_format" in client.http_payloads[0]
     assert "response_format" not in client.http_payloads[1]
-    assert client._get_response_format_support(client.runtime) is False
+    assert client._get_response_format_support(client.runtime) == "none"
 
 
 def test_translate_single_streaming_retries_without_response_format_when_empty_json() -> (
@@ -86,4 +86,4 @@ def test_translate_single_streaming_retries_without_response_format_when_empty_j
     assert "response_format" in client.streaming_payloads[0]
     assert len(client.http_payloads) == 1
     assert "response_format" not in client.http_payloads[0]
-    assert client._get_response_format_support(client.runtime) is False
+    assert client._get_response_format_support(client.runtime) == "none"

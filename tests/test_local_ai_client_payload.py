@@ -84,9 +84,10 @@ def test_response_format_cache_skips_retry_after_unsupported() -> None:
     assert result2.content == "ok"
 
     assert len(calls) == 3
-    assert "response_format" in calls[0]
-    assert "response_format" not in calls[1]
-    assert "response_format" not in calls[2]
+    assert calls[0].get("response_format", {}).get("type") == "json_schema"
+    assert calls[1].get("response_format", {}).get("type") == "json_object"
+    assert calls[2].get("response_format", {}).get("type") == "json_object"
+    assert client._get_response_format_support(runtime) == "json_object"
 
 
 def test_response_format_cache_applies_to_streaming() -> None:
@@ -116,9 +117,10 @@ def test_response_format_cache_applies_to_streaming() -> None:
     assert result2.content == "ok"
 
     assert len(calls) == 3
-    assert "response_format" in calls[0]
-    assert "response_format" not in calls[1]
-    assert "response_format" not in calls[2]
+    assert calls[0].get("response_format", {}).get("type") == "json_schema"
+    assert calls[1].get("response_format", {}).get("type") == "json_object"
+    assert calls[2].get("response_format", {}).get("type") == "json_object"
+    assert client._get_response_format_support(runtime) == "json_object"
 
 
 def test_sampling_params_cache_skips_retry_after_unsupported() -> None:

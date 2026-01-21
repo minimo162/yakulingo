@@ -11,7 +11,7 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterable, Optional, Sequence
+from typing import Callable, Iterable, Literal, Optional, Sequence
 
 from yakulingo.config.settings import AppSettings
 from yakulingo.services.local_llama_server import (
@@ -47,6 +47,7 @@ _RE_SINGLE_SECTION_LINE = re.compile(
 _JSON_STOP_SEQUENCES = ["</s>", "<|end|>"]
 _RESPONSE_FORMAT_CACHE_TTL_S = 600.0
 _SAMPLING_PARAMS_CACHE_TTL_S = 600.0
+_ResponseFormatMode = Literal["schema", "json_object", "none"]
 _RESPONSE_FORMAT_JSON_SCHEMA: dict[str, object] = {
     "name": "yakulingo_translation_response",
     "schema": {
@@ -116,6 +117,7 @@ _RESPONSE_FORMAT_JSON_SCHEMA_PAYLOAD: dict[str, object] = {
     "type": "json_schema",
     "json_schema": _RESPONSE_FORMAT_JSON_SCHEMA,
 }
+_RESPONSE_FORMAT_JSON_OBJECT_PAYLOAD: dict[str, object] = {"type": "json_object"}
 
 
 def _strip_code_fences(text: str) -> str:
@@ -619,7 +621,7 @@ class LocalAIClient:
         self._settings = settings
         self._manager = get_local_llama_server_manager()
         self._cancel_check: Optional[Callable[[], bool]] = None
-        self._response_format_support: dict[str, tuple[bool, float]] = {}
+        self._response_format_support: dict[str, tuple[_ResponseFormatMode, float]] = {}
         self._response_format_lock = threading.Lock()
         self._sampling_params_support: dict[str, tuple[bool, float]] = {}
         self._sampling_params_lock = threading.Lock()
@@ -641,6 +643,7 @@ class LocalAIClient:
         *,
         stream: bool,
         enforce_json: bool,
+        response_format: str | None = None,
         include_sampling_params: bool = True,
     ) -> dict[str, object]:
         prompt = prompt or ""
@@ -666,7 +669,11 @@ class LocalAIClient:
         if self._settings.local_ai_max_tokens is not None:
             payload["max_tokens"] = int(self._settings.local_ai_max_tokens)
         if enforce_json:
-            payload["response_format"] = _RESPONSE_FORMAT_JSON_SCHEMA_PAYLOAD
+            payload["response_format"] = (
+                _RESPONSE_FORMAT_JSON_OBJECT_PAYLOAD
+                if response_format == "json_object"
+                else _RESPONSE_FORMAT_JSON_SCHEMA_PAYLOAD
+            )
         if _JSON_STOP_SEQUENCES:
             payload["stop"] = _JSON_STOP_SEQUENCES
         return payload
@@ -678,6 +685,11 @@ class LocalAIClient:
             token in message
             for token in ("response_format", "json_schema", "json schema")
         )
+
+    @staticmethod
+    def _should_retry_with_json_object(error: Exception) -> bool:
+        message = str(error).lower()
+        return "json_schema" in message or "json schema" in message
 
     @staticmethod
     def _should_retry_without_sampling_params(error: Exception) -> bool:
@@ -729,7 +741,7 @@ class LocalAIClient:
 
     def _get_response_format_support(
         self, runtime: LocalAIServerRuntime
-    ) -> Optional[bool]:
+    ) -> Optional[_ResponseFormatMode]:
         key = self._response_format_cache_key(runtime)
         with self._response_format_lock:
             cached = self._response_format_support.get(key)
@@ -743,7 +755,7 @@ class LocalAIClient:
         return supported
 
     def _set_response_format_support(
-        self, runtime: LocalAIServerRuntime, supported: bool
+        self, runtime: LocalAIServerRuntime, supported: _ResponseFormatMode
     ) -> None:
         key = self._response_format_cache_key(runtime)
         with self._response_format_lock:
@@ -899,160 +911,87 @@ class LocalAIClient:
         )
         cached_support = self._get_response_format_support(runtime)
         if force_response_format is None:
-            use_response_format = cached_support is not False
+            response_format_mode: _ResponseFormatMode = cached_support or "schema"
         else:
-            use_response_format = bool(force_response_format)
-        enforce_json = use_response_format
+            response_format_mode = "schema" if force_response_format else "none"
         cached_sampling_support = self._get_sampling_params_support(runtime)
         include_sampling_params = cached_sampling_support is not False
-        payload = self._build_chat_payload(
-            runtime,
-            prompt,
-            stream=False,
-            enforce_json=enforce_json,
-            include_sampling_params=include_sampling_params,
-        )
-        try:
-            response = self._http_json_cancellable(
-                host=runtime.host,
-                port=runtime.port,
-                path="/v1/chat/completions",
-                payload=payload,
-                timeout_s=timeout_s,
+        tried: set[tuple[_ResponseFormatMode, bool]] = set()
+        while True:
+            key = (response_format_mode, include_sampling_params)
+            if key in tried:
+                raise RuntimeError("ローカルAIの応答形式の再試行に失敗しました")
+            tried.add(key)
+
+            enforce_json = response_format_mode != "none"
+            response_format = (
+                "json_object" if response_format_mode == "json_object" else None
             )
-        except RuntimeError as exc:
-            if enforce_json and self._should_retry_without_response_format(exc):
-                self._set_response_format_support(runtime, False)
-                enforce_json = False
-                logger.debug(
-                    "LocalAI response_format unsupported; retrying without it (%s)", exc
-                )
-                payload = self._build_chat_payload(
-                    runtime,
-                    prompt,
-                    stream=False,
-                    enforce_json=enforce_json,
-                    include_sampling_params=include_sampling_params,
-                )
-                try:
-                    response = self._http_json_cancellable(
-                        host=runtime.host,
-                        port=runtime.port,
-                        path="/v1/chat/completions",
-                        payload=payload,
-                        timeout_s=timeout_s,
-                    )
-                except RuntimeError as exc2:
-                    if (
-                        include_sampling_params
-                        and self._should_retry_without_sampling_params(exc2)
-                    ):
-                        if self._should_cache_sampling_params_unsupported(exc2):
-                            self._set_sampling_params_support(runtime, False)
-                        include_sampling_params = False
-                        logger.debug(
-                            "LocalAI sampling params unsupported; retrying without them (%s)",
-                            exc2,
-                        )
-                        payload = self._build_chat_payload(
-                            runtime,
-                            prompt,
-                            stream=False,
-                            enforce_json=enforce_json,
-                            include_sampling_params=include_sampling_params,
-                        )
-                        response = self._http_json_cancellable(
-                            host=runtime.host,
-                            port=runtime.port,
-                            path="/v1/chat/completions",
-                            payload=payload,
-                            timeout_s=timeout_s,
-                        )
-                    else:
-                        raise
-            elif include_sampling_params and self._should_retry_without_sampling_params(
-                exc
-            ):
-                if self._should_cache_sampling_params_unsupported(exc):
-                    self._set_sampling_params_support(runtime, False)
-                include_sampling_params = False
-                logger.debug(
-                    "LocalAI sampling params unsupported; retrying without them (%s)",
-                    exc,
-                )
-                payload = self._build_chat_payload(
-                    runtime,
-                    prompt,
-                    stream=False,
-                    enforce_json=enforce_json,
-                    include_sampling_params=include_sampling_params,
-                )
-                try:
-                    response = self._http_json_cancellable(
-                        host=runtime.host,
-                        port=runtime.port,
-                        path="/v1/chat/completions",
-                        payload=payload,
-                        timeout_s=timeout_s,
-                    )
-                except RuntimeError as exc2:
-                    if enforce_json and self._should_retry_without_response_format(
-                        exc2
-                    ):
-                        self._set_response_format_support(runtime, False)
-                        enforce_json = False
-                        logger.debug(
-                            "LocalAI response_format unsupported; retrying without it (%s)",
-                            exc2,
-                        )
-                        payload = self._build_chat_payload(
-                            runtime,
-                            prompt,
-                            stream=False,
-                            enforce_json=enforce_json,
-                            include_sampling_params=include_sampling_params,
-                        )
-                        response = self._http_json_cancellable(
-                            host=runtime.host,
-                            port=runtime.port,
-                            path="/v1/chat/completions",
-                            payload=payload,
-                            timeout_s=timeout_s,
-                        )
-                    else:
-                        raise
-            else:
-                raise
-        content = _parse_openai_chat_content(response)
-        if enforce_json and _is_empty_json_object_reply(content):
-            logger.debug(
-                "LocalAI response_format returned empty JSON object; retrying without it"
+            payload = self._build_chat_payload(
+                runtime,
+                prompt,
+                stream=False,
+                enforce_json=enforce_json,
+                response_format=response_format,
+                include_sampling_params=include_sampling_params,
             )
             try:
-                retry = self._chat_completions(
-                    runtime,
-                    prompt,
-                    timeout=timeout,
-                    force_response_format=False,
+                response = self._http_json_cancellable(
+                    host=runtime.host,
+                    port=runtime.port,
+                    path="/v1/chat/completions",
+                    payload=payload,
+                    timeout_s=timeout_s,
                 )
-            except Exception as exc:
-                logger.debug(
-                    "LocalAI retry without response_format failed after empty JSON object (%s)",
-                    exc,
-                )
-            else:
-                if not _is_empty_json_object_reply(retry.content):
-                    self._set_response_format_support(runtime, False)
-                    return retry
+            except RuntimeError as exc:
+                if include_sampling_params and self._should_retry_without_sampling_params(
+                    exc
+                ):
+                    if self._should_cache_sampling_params_unsupported(exc):
+                        self._set_sampling_params_support(runtime, False)
+                    include_sampling_params = False
+                    logger.debug(
+                        "LocalAI sampling params unsupported; retrying without them (%s)",
+                        exc,
+                    )
+                    continue
+                if enforce_json and self._should_retry_without_response_format(exc):
+                    if (
+                        response_format_mode == "schema"
+                        and self._should_retry_with_json_object(exc)
+                    ):
+                        response_format_mode = "json_object"
+                        logger.debug(
+                            "LocalAI json_schema unsupported; retrying with json_object response_format (%s)",
+                            exc,
+                        )
+                        continue
+                    self._set_response_format_support(runtime, "none")
+                    response_format_mode = "none"
+                    logger.debug(
+                        "LocalAI response_format unsupported; retrying without it (%s)",
+                        exc,
+                    )
+                    continue
+                raise
 
-        if enforce_json and not _is_empty_json_object_reply(content):
-            self._set_response_format_support(runtime, True)
-        if include_sampling_params and any(
-            key in payload for key in ("top_p", "top_k", "min_p", "repeat_penalty")
-        ):
-            self._set_sampling_params_support(runtime, True)
-        self._manager.note_server_ok(runtime)
-        return LocalAIRequestResult(content=content, model_id=runtime.model_id)
+            content = _parse_openai_chat_content(response)
+            if enforce_json and _is_empty_json_object_reply(content):
+                logger.debug(
+                    "LocalAI response_format returned empty JSON object; retrying without it"
+                )
+                self._set_response_format_support(runtime, "none")
+                response_format_mode = "none"
+                continue
+
+            if enforce_json and not _is_empty_json_object_reply(content):
+                self._set_response_format_support(runtime, response_format_mode)
+            if include_sampling_params and any(
+                key in payload for key in ("top_p", "top_k", "min_p", "repeat_penalty")
+            ):
+                self._set_sampling_params_support(runtime, True)
+            self._manager.note_server_ok(runtime)
+            return LocalAIRequestResult(content=content, model_id=runtime.model_id)
 
     def _chat_completions_streaming(
         self,
@@ -1063,109 +1002,70 @@ class LocalAIClient:
         timeout: Optional[int],
     ) -> LocalAIRequestResult:
         cached_support = self._get_response_format_support(runtime)
-        use_response_format = cached_support is not False
-        enforce_json = use_response_format
+        response_format_mode: _ResponseFormatMode = cached_support or "schema"
         cached_sampling_support = self._get_sampling_params_support(runtime)
         include_sampling_params = cached_sampling_support is not False
-        payload = self._build_chat_payload(
-            runtime,
-            prompt,
-            stream=True,
-            enforce_json=enforce_json,
-            include_sampling_params=include_sampling_params,
-        )
-        try:
-            result = self._chat_completions_streaming_with_payload(
-                runtime, payload, on_chunk, timeout=timeout
+        tried: set[tuple[_ResponseFormatMode, bool]] = set()
+        while True:
+            key = (response_format_mode, include_sampling_params)
+            if key in tried:
+                raise RuntimeError("ローカルAIの応答形式の再試行に失敗しました")
+            tried.add(key)
+
+            enforce_json = response_format_mode != "none"
+            response_format = (
+                "json_object" if response_format_mode == "json_object" else None
             )
-        except RuntimeError as exc:
-            if enforce_json and self._should_retry_without_response_format(exc):
-                self._set_response_format_support(runtime, False)
-                enforce_json = False
-                logger.debug(
-                    "LocalAI response_format unsupported; retrying streaming without it (%s)",
-                    exc,
+            payload = self._build_chat_payload(
+                runtime,
+                prompt,
+                stream=True,
+                enforce_json=enforce_json,
+                response_format=response_format,
+                include_sampling_params=include_sampling_params,
+            )
+            try:
+                result = self._chat_completions_streaming_with_payload(
+                    runtime, payload, on_chunk, timeout=timeout
                 )
-                payload = self._build_chat_payload(
-                    runtime,
-                    prompt,
-                    stream=True,
-                    enforce_json=enforce_json,
-                    include_sampling_params=include_sampling_params,
-                )
-                try:
-                    result = self._chat_completions_streaming_with_payload(
-                        runtime, payload, on_chunk, timeout=timeout
+            except RuntimeError as exc:
+                if include_sampling_params and self._should_retry_without_sampling_params(
+                    exc
+                ):
+                    if self._should_cache_sampling_params_unsupported(exc):
+                        self._set_sampling_params_support(runtime, False)
+                    include_sampling_params = False
+                    logger.debug(
+                        "LocalAI sampling params unsupported; retrying streaming without them (%s)",
+                        exc,
                     )
-                except RuntimeError as exc2:
+                    continue
+                if enforce_json and self._should_retry_without_response_format(exc):
                     if (
-                        include_sampling_params
-                        and self._should_retry_without_sampling_params(exc2)
+                        response_format_mode == "schema"
+                        and self._should_retry_with_json_object(exc)
                     ):
-                        if self._should_cache_sampling_params_unsupported(exc2):
-                            self._set_sampling_params_support(runtime, False)
-                        include_sampling_params = False
+                        response_format_mode = "json_object"
                         logger.debug(
-                            "LocalAI sampling params unsupported; retrying streaming without them (%s)",
-                            exc2,
+                            "LocalAI json_schema unsupported; retrying streaming with json_object response_format (%s)",
+                            exc,
                         )
-                        payload = self._build_chat_payload(
-                            runtime,
-                            prompt,
-                            stream=True,
-                            enforce_json=enforce_json,
-                            include_sampling_params=include_sampling_params,
-                        )
-                        result = self._chat_completions_streaming_with_payload(
-                            runtime, payload, on_chunk, timeout=timeout
-                        )
-                    else:
-                        raise
-            elif include_sampling_params and self._should_retry_without_sampling_params(
-                exc
-            ):
-                if self._should_cache_sampling_params_unsupported(exc):
-                    self._set_sampling_params_support(runtime, False)
-                include_sampling_params = False
-                logger.debug(
-                    "LocalAI sampling params unsupported; retrying streaming without them (%s)",
-                    exc,
-                )
-                payload = self._build_chat_payload(
-                    runtime,
-                    prompt,
-                    stream=True,
-                    enforce_json=enforce_json,
-                    include_sampling_params=include_sampling_params,
-                )
-                try:
-                    result = self._chat_completions_streaming_with_payload(
-                        runtime, payload, on_chunk, timeout=timeout
+                        continue
+                    self._set_response_format_support(runtime, "none")
+                    response_format_mode = "none"
+                    logger.debug(
+                        "LocalAI response_format unsupported; retrying streaming without it (%s)",
+                        exc,
                     )
-                except RuntimeError as exc2:
-                    if enforce_json and self._should_retry_without_response_format(
-                        exc2
-                    ):
-                        self._set_response_format_support(runtime, False)
-                        enforce_json = False
-                        logger.debug(
-                            "LocalAI response_format unsupported; retrying streaming without it (%s)",
-                            exc2,
-                        )
-                        payload = self._build_chat_payload(
-                            runtime,
-                            prompt,
-                            stream=True,
-                            enforce_json=enforce_json,
-                            include_sampling_params=include_sampling_params,
-                        )
-                        result = self._chat_completions_streaming_with_payload(
-                            runtime, payload, on_chunk, timeout=timeout
-                        )
-                    else:
-                        raise
-            else:
+                    continue
                 raise
+
+            if include_sampling_params and any(
+                key in payload for key in ("top_p", "top_k", "min_p", "repeat_penalty")
+            ):
+                self._set_sampling_params_support(runtime, True)
+            break
+
         if enforce_json and _is_empty_json_object_reply(result.content):
             logger.debug(
                 "LocalAI response_format returned empty JSON object (streaming); retrying without it"
@@ -1184,15 +1084,11 @@ class LocalAIClient:
                 )
             else:
                 if not _is_empty_json_object_reply(retry.content):
-                    self._set_response_format_support(runtime, False)
+                    self._set_response_format_support(runtime, "none")
                     return retry
 
         if enforce_json and not _is_empty_json_object_reply(result.content):
-            self._set_response_format_support(runtime, True)
-        if include_sampling_params and any(
-            key in payload for key in ("top_p", "top_k", "min_p", "repeat_penalty")
-        ):
-            self._set_sampling_params_support(runtime, True)
+            self._set_response_format_support(runtime, response_format_mode)
         return result
 
     def _chat_completions_streaming_with_payload(

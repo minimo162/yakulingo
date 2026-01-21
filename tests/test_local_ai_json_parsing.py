@@ -4,6 +4,8 @@ import logging
 
 import pytest
 
+import yakulingo.services.local_ai_client as local_ai_client
+
 from yakulingo.services.local_ai_client import (
     is_truncated_json,
     loads_json_loose,
@@ -35,6 +37,31 @@ suffix text"""
 def test_parse_batch_translations_orders_by_id() -> None:
     raw = """{"items":[{"id":2,"translation":"B"},{"id":1,"translation":"A"}]}"""
     assert parse_batch_translations(raw, expected_count=2) == ["A", "B"]
+
+
+def test_parse_batch_translations_uses_preparsed_json(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw = """{"items":[{"id":1,"translation":"A"}]}"""
+    obj = loads_json_loose(raw)
+    assert isinstance(obj, dict)
+
+    def boom(_text: str) -> object:
+        raise AssertionError("loads_json_loose should not be called")
+
+    monkeypatch.setattr(local_ai_client, "loads_json_loose", boom)
+    assert parse_batch_translations(raw, expected_count=1, parsed_json=obj) == ["A"]
+
+
+def test_parse_batch_translations_skips_parsing_when_parsed_json_is_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def boom(_text: str) -> object:
+        raise AssertionError("loads_json_loose should not be called")
+
+    monkeypatch.setattr(local_ai_client, "loads_json_loose", boom)
+    with pytest.raises(RuntimeError):
+        parse_batch_translations("not json", expected_count=1, parsed_json=None)
 
 
 def test_parse_batch_translations_fallback_id_markers() -> None:

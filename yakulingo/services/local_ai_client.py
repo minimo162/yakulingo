@@ -48,6 +48,7 @@ _JSON_STOP_SEQUENCES = ["</s>", "<|end|>"]
 _RESPONSE_FORMAT_CACHE_TTL_S = 600.0
 _SAMPLING_PARAMS_CACHE_TTL_S = 600.0
 _ResponseFormatMode = Literal["schema", "json_object", "none"]
+_PARSED_JSON_MISSING: object = object()
 _RESPONSE_FORMAT_JSON_SCHEMA: dict[str, object] = {
     "name": "yakulingo_translation_response",
     "schema": {
@@ -213,11 +214,18 @@ def loads_json_loose(text: str) -> Optional[object]:
     return None
 
 
-def _is_empty_json_object_reply(content: str) -> bool:
+def _is_empty_json_object_reply(
+    content: str,
+    parsed_json: object = _PARSED_JSON_MISSING,
+) -> bool:
     cleaned = _strip_code_fences(content).strip()
     if not cleaned:
         return True
-    obj = loads_json_loose(cleaned)
+    obj = (
+        loads_json_loose(cleaned)
+        if parsed_json is _PARSED_JSON_MISSING
+        else parsed_json
+    )
     if not isinstance(obj, dict):
         return False
     if not obj:
@@ -396,8 +404,17 @@ def _classify_parse_failure(raw_content: str, obj: object | None) -> tuple[str, 
     return f"json_type_{type(obj).__name__}", truncated
 
 
-def parse_batch_translations(raw_content: str, expected_count: int) -> list[str]:
-    obj = loads_json_loose(raw_content)
+def parse_batch_translations(
+    raw_content: str,
+    expected_count: int,
+    *,
+    parsed_json: object = _PARSED_JSON_MISSING,
+) -> list[str]:
+    obj = (
+        loads_json_loose(raw_content)
+        if parsed_json is _PARSED_JSON_MISSING
+        else parsed_json
+    )
     parsed = _parse_batch_items_json(obj, expected_count) if obj is not None else None
     if parsed is not None:
         return parsed
@@ -611,6 +628,7 @@ def _parse_text_single_translation_fallback(
 class LocalAIRequestResult:
     content: str
     model_id: Optional[str]
+    parsed_json: object = _PARSED_JSON_MISSING
 
 
 class LocalAIClient:
@@ -893,7 +911,11 @@ class LocalAIClient:
             len(prompt or ""),
             len(texts),
         )
-        return parse_batch_translations(result.content, expected_count=len(texts))
+        return parse_batch_translations(
+            result.content,
+            expected_count=len(texts),
+            parsed_json=result.parsed_json,
+        )
 
     def _chat_completions(
         self,
@@ -918,6 +940,8 @@ class LocalAIClient:
         include_sampling_params = cached_sampling_support is not False
         tried: set[tuple[_ResponseFormatMode, bool]] = set()
         while True:
+            if self._should_cancel():
+                raise TranslationCancelledError("Translation cancelled by user")
             key = (response_format_mode, include_sampling_params)
             if key in tried:
                 raise RuntimeError("ローカルAIの応答形式の再試行に失敗しました")
@@ -977,7 +1001,14 @@ class LocalAIClient:
                 raise
 
             content = _parse_openai_chat_content(response)
-            if enforce_json and _is_empty_json_object_reply(content):
+            parsed_json: object = _PARSED_JSON_MISSING
+            empty_json_object_reply = False
+            if enforce_json:
+                parsed_json = loads_json_loose(content)
+                empty_json_object_reply = _is_empty_json_object_reply(
+                    content, parsed_json
+                )
+            if enforce_json and empty_json_object_reply:
                 logger.debug(
                     "LocalAI response_format returned empty JSON object; retrying without it"
                 )
@@ -985,14 +1016,18 @@ class LocalAIClient:
                 response_format_mode = "none"
                 continue
 
-            if enforce_json and not _is_empty_json_object_reply(content):
+            if enforce_json and not empty_json_object_reply:
                 self._set_response_format_support(runtime, response_format_mode)
             if include_sampling_params and any(
                 key in payload for key in ("top_p", "top_k", "min_p", "repeat_penalty")
             ):
                 self._set_sampling_params_support(runtime, True)
             self._manager.note_server_ok(runtime)
-            return LocalAIRequestResult(content=content, model_id=runtime.model_id)
+            return LocalAIRequestResult(
+                content=content,
+                model_id=runtime.model_id,
+                parsed_json=parsed_json,
+            )
 
     def _chat_completions_streaming(
         self,
@@ -1008,6 +1043,8 @@ class LocalAIClient:
         include_sampling_params = cached_sampling_support is not False
         tried: set[tuple[_ResponseFormatMode, bool]] = set()
         while True:
+            if self._should_cancel():
+                raise TranslationCancelledError("Translation cancelled by user")
             key = (response_format_mode, include_sampling_params)
             if key in tried:
                 raise RuntimeError("ローカルAIの応答形式の再試行に失敗しました")
@@ -1068,7 +1105,10 @@ class LocalAIClient:
                 self._set_sampling_params_support(runtime, True)
             break
 
-        if enforce_json and _is_empty_json_object_reply(result.content):
+        empty_json_object_reply = enforce_json and _is_empty_json_object_reply(
+            result.content
+        )
+        if empty_json_object_reply:
             logger.debug(
                 "LocalAI response_format returned empty JSON object (streaming); retrying without it"
             )
@@ -1085,11 +1125,14 @@ class LocalAIClient:
                     exc,
                 )
             else:
-                if not _is_empty_json_object_reply(retry.content):
+                retry_empty_json_object_reply = _is_empty_json_object_reply(
+                    retry.content
+                )
+                if not retry_empty_json_object_reply:
                     self._set_response_format_support(runtime, "none")
                     return retry
 
-        if enforce_json and not _is_empty_json_object_reply(result.content):
+        if enforce_json and not empty_json_object_reply:
             self._set_response_format_support(runtime, response_format_mode)
         return result
 
@@ -1366,7 +1409,7 @@ class LocalAIClient:
             if payload == b"[DONE]":
                 return True
             try:
-                obj = json.loads(payload.decode("utf-8"))
+                obj = json.loads(payload)
             except json.JSONDecodeError:
                 return None
             if model_id is None:

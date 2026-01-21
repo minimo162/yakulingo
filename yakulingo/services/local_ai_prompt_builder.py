@@ -69,6 +69,9 @@ class GlossaryIndex:
     pairs: list[tuple[str, str, str, str, str, str]]
     ascii_word_to_indices: dict[str, tuple[int, ...]]
     ascii_prefix4_to_indices: dict[str, tuple[int, ...]]
+    compact_prefix3_to_indices: dict[str, tuple[int, ...]]
+    compact_prefix2_to_indices: dict[str, tuple[int, ...]]
+    compact_char1_to_indices: dict[str, tuple[int, ...]]
     scan_indices: tuple[int, ...]
 
 
@@ -273,7 +276,9 @@ class LocalPromptBuilder:
         text_folded = LocalPromptBuilder._normalize_for_glossary_match(text)
         text_compact = LocalPromptBuilder._compact_for_glossary_match(text_folded)
 
-        indices_to_check: set[int] = set(glossary.scan_indices)
+        indices_to_check: set[int] = (
+            set(glossary.scan_indices) if glossary.scan_indices else set()
+        )
 
         for word in _RE_GLOSSARY_TEXT_ASCII_WORD.findall(text_folded):
             indices_to_check.update(glossary.ascii_word_to_indices.get(word, ()))
@@ -288,6 +293,35 @@ class LocalPromptBuilder:
                 indices_to_check.update(
                     glossary.ascii_prefix4_to_indices.get(prefix, ())
                 )
+
+        if not text_folded.isascii():
+            if glossary.compact_prefix3_to_indices and len(text_compact) >= 3:
+                prefixes3: set[str] = set()
+                for idx in range(len(text_compact) - 2):
+                    prefixes3.add(text_compact[idx : idx + 3])
+                for prefix in prefixes3:
+                    indices_to_check.update(
+                        glossary.compact_prefix3_to_indices.get(prefix, ())
+                    )
+
+            if glossary.compact_prefix2_to_indices and len(text_compact) >= 2:
+                prefixes2: set[str] = set()
+                for idx in range(len(text_compact) - 1):
+                    prefixes2.add(text_compact[idx : idx + 2])
+                for prefix in prefixes2:
+                    indices_to_check.update(
+                        glossary.compact_prefix2_to_indices.get(prefix, ())
+                    )
+
+            if glossary.compact_char1_to_indices:
+                chars: set[str] = set()
+                for ch in text_compact:
+                    if ch in glossary.compact_char1_to_indices:
+                        chars.add(ch)
+                for ch in chars:
+                    indices_to_check.update(
+                        glossary.compact_char1_to_indices.get(ch, ())
+                    )
 
         if not indices_to_check:
             return [], False
@@ -350,6 +384,9 @@ class LocalPromptBuilder:
     ) -> GlossaryIndex:
         ascii_word_to_indices: dict[str, list[int]] = {}
         ascii_prefix4_to_indices: dict[str, list[int]] = {}
+        compact_prefix3_to_indices: dict[str, list[int]] = {}
+        compact_prefix2_to_indices: dict[str, list[int]] = {}
+        compact_char1_to_indices: dict[str, list[int]] = {}
         scan_indices: list[int] = []
 
         for idx, (
@@ -357,8 +394,8 @@ class LocalPromptBuilder:
             target,
             source_folded,
             target_folded,
-            _source_compact,
-            _target_compact,
+            source_compact,
+            target_compact,
         ) in enumerate(pairs):
             source_is_ascii_word = bool(
                 source_folded.isascii() and _RE_GLOSSARY_ASCII_WORD.match(source_folded)
@@ -369,20 +406,58 @@ class LocalPromptBuilder:
 
             if source_is_ascii_word:
                 ascii_word_to_indices.setdefault(source_folded, []).append(idx)
-                if len(source_folded) >= 4:
-                    ascii_prefix4_to_indices.setdefault(source_folded[:4], []).append(
-                        idx
-                    )
             if target_is_ascii_word:
                 ascii_word_to_indices.setdefault(target_folded, []).append(idx)
-                if len(target_folded) >= 4:
-                    ascii_prefix4_to_indices.setdefault(target_folded[:4], []).append(
-                        idx
-                    )
 
-            if not source_is_ascii_word:
-                scan_indices.append(idx)
-            elif target and not target_is_ascii_word:
+            source_compact_is_alnum = bool(
+                source_compact
+                and source_compact.isascii()
+                and _RE_GLOSSARY_ASCII_WORD.match(source_compact)
+            )
+            target_compact_is_alnum = bool(
+                target_compact
+                and target_compact.isascii()
+                and _RE_GLOSSARY_ASCII_WORD.match(target_compact)
+            )
+
+            if source_compact_is_alnum and len(source_compact) >= 4:
+                ascii_prefix4_to_indices.setdefault(source_compact[:4], []).append(idx)
+            if target_compact_is_alnum and len(target_compact) >= 4:
+                ascii_prefix4_to_indices.setdefault(target_compact[:4], []).append(idx)
+
+            if source_compact and not source_folded.isascii():
+                if len(source_compact) >= 3:
+                    compact_prefix3_to_indices.setdefault(
+                        source_compact[:3], []
+                    ).append(idx)
+                elif len(source_compact) >= 2:
+                    compact_prefix2_to_indices.setdefault(
+                        source_compact[:2], []
+                    ).append(idx)
+                else:
+                    compact_char1_to_indices.setdefault(source_compact, []).append(idx)
+
+            if target_compact and target and not target_folded.isascii():
+                if len(target_compact) >= 3:
+                    compact_prefix3_to_indices.setdefault(
+                        target_compact[:3], []
+                    ).append(idx)
+                elif len(target_compact) >= 2:
+                    compact_prefix2_to_indices.setdefault(
+                        target_compact[:2], []
+                    ).append(idx)
+                else:
+                    compact_char1_to_indices.setdefault(target_compact, []).append(idx)
+
+            is_indexed = bool(
+                source_is_ascii_word
+                or target_is_ascii_word
+                or (source_compact_is_alnum and len(source_compact) >= 4)
+                or (target_compact_is_alnum and len(target_compact) >= 4)
+                or (source_compact and not source_folded.isascii())
+                or (target_compact and target and not target_folded.isascii())
+            )
+            if not is_indexed:
                 scan_indices.append(idx)
 
         return GlossaryIndex(
@@ -392,6 +467,17 @@ class LocalPromptBuilder:
             },
             ascii_prefix4_to_indices={
                 key: tuple(indices) for key, indices in ascii_prefix4_to_indices.items()
+            },
+            compact_prefix3_to_indices={
+                key: tuple(indices)
+                for key, indices in compact_prefix3_to_indices.items()
+            },
+            compact_prefix2_to_indices={
+                key: tuple(indices)
+                for key, indices in compact_prefix2_to_indices.items()
+            },
+            compact_char1_to_indices={
+                key: tuple(indices) for key, indices in compact_char1_to_indices.items()
             },
             scan_indices=tuple(scan_indices),
         )

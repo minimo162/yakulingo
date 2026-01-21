@@ -111,15 +111,27 @@ from yakulingo.services.local_ai_prompt_builder import LocalPromptBuilder  # noq
 from yakulingo.services.prompt_builder import PromptBuilder  # noqa: E402
 
 
-def _write_glossary(path: Path, *, rows: int, match_terms: list[str]) -> None:
+def _write_glossary(
+    path: Path, *, rows: int, jp_rows: int, match_terms: list[str]
+) -> dict[str, int]:
+    rows = max(0, int(rows))
+    jp_rows = max(0, int(jp_rows))
+    jp_rows = min(jp_rows, max(0, rows - len(match_terms)))
+
     lines: list[str] = []
     for term in match_terms:
         lines.append(f"{term},{term.upper()}")
-    remaining = max(0, int(rows) - len(lines))
+    for idx in range(jp_rows):
+        source = f"用語{idx:06d}"
+        target = f"JPTERM{idx:06d}"
+        lines.append(f"{source},{target}")
+
+    remaining = max(0, rows - len(lines))
     for idx in range(remaining):
         term = f"term{idx:06d}"
         lines.append(f"{term},{term}")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return {"total_rows": rows, "jp_rows": jp_rows, "ascii_rows": remaining}
 
 
 def _stats_ms(durations: list[float]) -> dict[str, Any]:
@@ -165,9 +177,21 @@ def main() -> int:
         description="LocalPromptBuilder micro-bench (serverless)"
     )
     parser.add_argument("--glossary-rows", type=int, default=20000)
+    parser.add_argument(
+        "--glossary-jp-rows",
+        type=int,
+        default=0,
+        help="Number of Japanese terms inside the generated glossary (counts toward --glossary-rows).",
+    )
     parser.add_argument("--input-chars", type=int, default=800)
     parser.add_argument("--items", type=int, default=12)
     parser.add_argument("--runs", type=int, default=50)
+    parser.add_argument(
+        "--input-mode",
+        choices=("mixed", "en", "nomatch"),
+        default="mixed",
+        help="Input text mode: mixed (default), en (ASCII-only), nomatch (no glossary hits).",
+    )
     parser.add_argument("--tag", type=str, default=None, help="Label for this run")
     parser.add_argument("--json", action="store_true", help="Output JSON to stdout")
     parser.add_argument("--out", type=Path, default=None, help="Write JSON to file")
@@ -185,10 +209,20 @@ def main() -> int:
         prompts_dir, base_prompt_builder=base, settings=settings
     )
 
-    base_input = (
-        "売上高 revenue operating profit EBITDA growth YoY QoQ "
-        "guidance forecast outlook pipeline conversion rate "
-    )
+    if args.input_mode == "en":
+        base_input = (
+            "revenue operating profit EBITDA growth YoY QoQ "
+            "guidance forecast outlook pipeline conversion rate "
+        )
+    elif args.input_mode == "nomatch":
+        base_input = (
+            "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu "
+        )
+    else:
+        base_input = (
+            "売上高 revenue operating profit EBITDA growth YoY QoQ "
+            "guidance forecast outlook pipeline conversion rate "
+        )
     input_text = (base_input * ((args.input_chars // len(base_input)) + 1))[
         : args.input_chars
     ]
@@ -204,11 +238,18 @@ def main() -> int:
     with TemporaryDirectory(prefix="yakulingo_prompt_bench_") as tmp_dir:
         tmp_path = Path(tmp_dir)
         glossary_path = tmp_path / "glossary.csv"
-        _write_glossary(glossary_path, rows=args.glossary_rows, match_terms=match_terms)
+        glossary_meta = _write_glossary(
+            glossary_path,
+            rows=args.glossary_rows,
+            jp_rows=args.glossary_jp_rows,
+            match_terms=match_terms,
+        )
 
         print("== LocalPromptBuilder micro-bench (serverless) ==")
-        print(f"- glossary_rows={args.glossary_rows}")
+        print(f"- glossary_rows={glossary_meta['total_rows']}")
+        print(f"- glossary_jp_rows={glossary_meta['jp_rows']}")
         print(f"- input_chars={len(input_text)}")
+        print(f"- input_mode={args.input_mode}")
         print(f"- items={args.items}")
         print(f"- runs={args.runs}")
         print("")
@@ -270,7 +311,9 @@ def main() -> int:
             "runtime": _collect_runtime_metadata(),
             "settings": {
                 "glossary_rows": int(args.glossary_rows),
+                "glossary_jp_rows": int(args.glossary_jp_rows),
                 "input_chars": len(input_text),
+                "input_mode": str(args.input_mode),
                 "items": int(args.items),
                 "runs": int(args.runs),
             },

@@ -345,7 +345,7 @@ KVキャッシュの量子化は、速度よりもメモリ圧/安定性の調�
 
 ### バッチ分割のデフォルト
 - `local_ai_max_chars_per_batch`: 1000（既定の分割上限）
-- `local_ai_max_chars_per_batch_file`: 1000（ファイル翻訳の分割上限。`*_file` が優先される）
+- `local_ai_max_chars_per_batch_file`: 1000（互換キー。現行のファイル翻訳は一単位翻訳のため未使用）
 - 値を上げるとバッチ数は減るが、プロンプトが長すぎる場合は自動分割（`LOCAL_PROMPT_TOO_LONG`）にフォールバックする
 
 ## 速度に効く主な設定
@@ -357,7 +357,7 @@ KVキャッシュの量子化は、速度よりもメモリ圧/安定性の調�
 - `local_ai_cache_type_k` / `local_ai_cache_type_v`: KVキャッシュ型（`null` は既定の `f16` 相当）
 - `local_ai_flash_attn`: Flash Attention（`auto`/`0`/`1`）
 - `local_ai_mlock` / `local_ai_no_mmap`: メモリ安定化（環境により失敗する場合はオフ）
-- `local_ai_max_chars_per_batch` / `local_ai_max_chars_per_batch_file`: 翻訳分割の文字数上限
+- `local_ai_max_chars_per_batch` / `local_ai_max_chars_per_batch_file`: 翻訳分割の文字数上限（`*_file` は互換キー。現行のファイル翻訳は未使用）
 - `local_ai_max_tokens`: 応答上限（0以下でNone扱い、推論時間に影響）
 
 ## YakuLingo 設定キー ↔ llama.cpp フラグ対応

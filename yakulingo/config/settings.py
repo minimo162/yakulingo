@@ -360,8 +360,8 @@ class AppSettings:
     local_ai_cache_type_v: Optional[str] = "q8_0"
 
     # Local AI 送信分割（入力テキスト長での上限）
-    # - *_file: ファイル翻訳（ブロック翻訳）用（優先）
-    # - 無印: 既定（*_file が無効な場合のフォールバック）
+    # - local_ai_max_chars_per_batch: 複数テキストをまとめて送る経路（主にテキスト翻訳/バッチ翻訳）で使用
+    # - local_ai_max_chars_per_batch_file: 互換キー（旧: ファイル翻訳の分割上限）。現行のファイル翻訳は一単位翻訳のため未使用
     local_ai_max_chars_per_batch: int = 1000
     local_ai_max_chars_per_batch_file: int = 1000
 

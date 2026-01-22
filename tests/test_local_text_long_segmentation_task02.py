@@ -31,6 +31,22 @@ class _DummyLocalPromptBuilder:
         _ = input_text
         return _DummyEmbeddedRef()
 
+    def build_text_to_en_single(  # noqa: PLR0913
+        self,
+        text: str,
+        *,
+        style: str,
+        reference_files: list[Path] | None,
+        detected_language: str,
+        extra_instruction: str | None = None,
+    ) -> str:
+        _ = text
+        _ = style
+        _ = reference_files
+        _ = detected_language
+        _ = extra_instruction
+        return "PROMPT"
+
     def build_batch(  # noqa: PLR0913
         self,
         texts: list[str],
@@ -60,8 +76,9 @@ class _CapturingLocalClient:
 
     def translate_single(self, *args, **kwargs) -> str:  # noqa: ANN001, ANN002, ANN003
         self.translate_single_calls += 1
-        raise AssertionError(
-            "translate_single should not be called for segmented input"
+        raise RuntimeError(
+            "LOCAL_PROMPT_TOO_LONG: "
+            '{"error":{"code":400,"message":"request exceeds context size"}}'
         )
 
     def translate_sync(  # noqa: PLR0913
@@ -124,7 +141,7 @@ def test_local_text_long_segmentation_preserves_newlines_and_uses_batch_translat
         pre_detected_language="日本語",
     )
 
-    assert local.translate_single_calls == 0
+    assert local.translate_single_calls == 1
     assert local.translate_sync_calls > 0
     assert result.output_language == "en"
     assert result.options
@@ -141,6 +158,7 @@ def test_local_text_long_segmentation_preserves_newlines_and_uses_batch_translat
 
     assert result.metadata
     assert result.metadata.get("segmented_input") is True
+    assert result.metadata.get("segment_reason") == "LOCAL_PROMPT_TOO_LONG"
 
 
 def test_split_long_text_core_handles_no_punctuation_long_text() -> None:

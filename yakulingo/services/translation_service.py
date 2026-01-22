@@ -3339,12 +3339,18 @@ class TranslationService:
             max_segment_chars = getattr(
                 local_batch_translator, "max_chars_per_batch", None
             )
-            if (
-                local_batch_translator is not None
-                and isinstance(max_segment_chars, int)
-                and max_segment_chars > 0
-                and len((text or "").strip()) > max_segment_chars
-            ):
+
+            def _translate_segmented_fallback(
+                reason: str,
+            ) -> TextTranslationResult | None:
+                if not (
+                    local_batch_translator is not None
+                    and isinstance(max_segment_chars, int)
+                    and max_segment_chars > 0
+                    and len((text or "").strip()) > max_segment_chars
+                ):
+                    return None
+
                 tokens = _segment_long_text_for_local_text_translation(
                     text, max_segment_chars=max_segment_chars
                 )
@@ -3370,6 +3376,7 @@ class TranslationService:
                     join_spec.append((block_id, token))
 
                 metadata["segmented_input"] = True
+                metadata["segment_reason"] = reason
                 metadata["segment_max_chars"] = max_segment_chars
                 metadata["segment_count"] = block_idx
 
@@ -3468,9 +3475,18 @@ class TranslationService:
                     detected_language=detected_language,
                 )
                 stream_handler = _wrap_local_streaming_on_chunk(on_chunk)
-                raw = self._translate_single_with_cancel_on_local(
-                    text, prompt, None, stream_handler
-                )
+                try:
+                    raw = self._translate_single_with_cancel_on_local(
+                        text, prompt, None, stream_handler
+                    )
+                except RuntimeError as e:
+                    if str(e).startswith("LOCAL_PROMPT_TOO_LONG:"):
+                        fallback = _translate_segmented_fallback(
+                            "LOCAL_PROMPT_TOO_LONG"
+                        )
+                        if fallback is not None:
+                            return fallback
+                    raise
                 translation, _ = parse_text_single_translation(raw)
                 if not translation:
                     error_message = "ローカルAIの応答(JSON)を解析できませんでした（詳細はログを確認してください）"
@@ -3528,9 +3544,18 @@ class TranslationService:
                         detected_language=detected_language,
                         extra_instruction="\n".join(retry_parts).strip(),
                     )
-                    retry_raw = self._translate_single_with_cancel_on_local(
-                        text, retry_prompt, None, None
-                    )
+                    try:
+                        retry_raw = self._translate_single_with_cancel_on_local(
+                            text, retry_prompt, None, None
+                        )
+                    except RuntimeError as e:
+                        if str(e).startswith("LOCAL_PROMPT_TOO_LONG:"):
+                            fallback = _translate_segmented_fallback(
+                                "LOCAL_PROMPT_TOO_LONG"
+                            )
+                            if fallback is not None:
+                                return fallback
+                        raise
                     retry_translation, _ = parse_text_single_translation(retry_raw)
                     if not retry_translation:
                         error_message = "ローカルAIの応答(JSON)を解析できませんでした（詳細はログを確認してください）"
@@ -3605,9 +3630,16 @@ class TranslationService:
                 detected_language=detected_language,
             )
             stream_handler = _wrap_local_streaming_on_chunk(on_chunk)
-            raw = self._translate_single_with_cancel_on_local(
-                text, prompt, None, stream_handler
-            )
+            try:
+                raw = self._translate_single_with_cancel_on_local(
+                    text, prompt, None, stream_handler
+                )
+            except RuntimeError as e:
+                if str(e).startswith("LOCAL_PROMPT_TOO_LONG:"):
+                    fallback = _translate_segmented_fallback("LOCAL_PROMPT_TOO_LONG")
+                    if fallback is not None:
+                        return fallback
+                raise
             translation, _ = parse_text_single_translation(raw)
             if not translation:
                 error_message = "ローカルAIの応答(JSON)を解析できませんでした（詳細はログを確認してください）"
@@ -3629,9 +3661,18 @@ class TranslationService:
                     BatchTranslator._JP_STRICT_OUTPUT_LANGUAGE_INSTRUCTION
                 )
                 retry_prompt = _insert_extra_instruction(prompt, retry_instruction)
-                retry_raw = self._translate_single_with_cancel_on_local(
-                    text, retry_prompt, None, None
-                )
+                try:
+                    retry_raw = self._translate_single_with_cancel_on_local(
+                        text, retry_prompt, None, None
+                    )
+                except RuntimeError as e:
+                    if str(e).startswith("LOCAL_PROMPT_TOO_LONG:"):
+                        fallback = _translate_segmented_fallback(
+                            "LOCAL_PROMPT_TOO_LONG"
+                        )
+                        if fallback is not None:
+                            return fallback
+                    raise
                 retry_translation, _ = parse_text_single_translation(retry_raw)
                 if retry_translation and not _is_text_output_language_mismatch(
                     retry_translation, "jp"

@@ -1145,6 +1145,97 @@ if TYPE_CHECKING:
     from yakulingo.processors.pdf_processor import PdfProcessor
 
 
+_RE_LOCAL_TEXT_SEGMENT_NEWLINES = re.compile(r"(\r\n|\r|\n)")
+_LOCAL_TEXT_SEGMENT_SENTENCE_END = frozenset("。.!?！？")
+_LOCAL_TEXT_SEGMENT_CLAUSE_END = frozenset("、,;；:：")
+_LOCAL_TEXT_SEGMENT_EDGE_WS = " \t"
+
+
+def _split_long_text_core_for_local_translation(
+    text: str, *, max_chars: int
+) -> list[str]:
+    if max_chars <= 0:
+        return [text]
+    normalized = text or ""
+    if len(normalized) <= max_chars:
+        return [normalized]
+
+    parts: list[str] = []
+    idx = 0
+    n = len(normalized)
+    min_soft_boundary = max(64, max_chars // 2)
+
+    while idx < n:
+        remaining = n - idx
+        if remaining <= max_chars:
+            parts.append(normalized[idx:])
+            break
+
+        window_end = idx + max_chars
+        soft_start = min(n, idx + min_soft_boundary)
+        split_at = None
+
+        for ch_idx in range(window_end - 1, soft_start - 1, -1):
+            if normalized[ch_idx] in _LOCAL_TEXT_SEGMENT_SENTENCE_END:
+                split_at = ch_idx + 1
+                break
+        if split_at is None:
+            for ch_idx in range(window_end - 1, soft_start - 1, -1):
+                if normalized[ch_idx] in _LOCAL_TEXT_SEGMENT_CLAUSE_END:
+                    split_at = ch_idx + 1
+                    break
+        if split_at is None:
+            for ch_idx in range(window_end - 1, idx, -1):
+                if normalized[ch_idx] in _LOCAL_TEXT_SEGMENT_EDGE_WS:
+                    split_at = ch_idx + 1
+                    break
+        if split_at is None or split_at <= idx:
+            split_at = window_end
+
+        parts.append(normalized[idx:split_at])
+        idx = split_at
+
+    return [p for p in parts if p]
+
+
+def _segment_long_text_for_local_text_translation(
+    text: str, *, max_segment_chars: int
+) -> list[tuple[str, bool]]:
+    """Split text into (token, translate?) preserving newlines and edge whitespace."""
+    normalized = text or ""
+    if not normalized:
+        return []
+
+    tokens: list[tuple[str, bool]] = []
+    for part in _RE_LOCAL_TEXT_SEGMENT_NEWLINES.split(normalized):
+        if not part:
+            continue
+        if part in ("\n", "\r", "\r\n"):
+            tokens.append((part, False))
+            continue
+
+        for segment in _split_long_text_core_for_local_translation(
+            part, max_chars=max_segment_chars
+        ):
+            if not segment:
+                continue
+            lead_len = len(segment) - len(segment.lstrip(_LOCAL_TEXT_SEGMENT_EDGE_WS))
+            if lead_len:
+                tokens.append((segment[:lead_len], False))
+                segment = segment[lead_len:]
+            trail_len = len(segment) - len(segment.rstrip(_LOCAL_TEXT_SEGMENT_EDGE_WS))
+            trailing = ""
+            if trail_len:
+                trailing = segment[-trail_len:]
+                segment = segment[:-trail_len]
+            if segment:
+                tokens.append((segment, True))
+            if trailing:
+                tokens.append((trailing, False))
+
+    return tokens
+
+
 def scale_progress(
     progress: TranslationProgress,
     start: int,
@@ -3244,6 +3335,131 @@ class TranslationService:
             metadata["reference_truncated"] = True
 
         try:
+            local_batch_translator = self._local_batch_translator
+            max_segment_chars = getattr(
+                local_batch_translator, "max_chars_per_batch", None
+            )
+            if (
+                local_batch_translator is not None
+                and isinstance(max_segment_chars, int)
+                and max_segment_chars > 0
+                and len((text or "").strip()) > max_segment_chars
+            ):
+                tokens = _segment_long_text_for_local_text_translation(
+                    text, max_segment_chars=max_segment_chars
+                )
+                blocks: list[TextBlock] = []
+                join_spec: list[tuple[str, str]] = []
+                block_idx = 0
+                for token, should_translate in tokens:
+                    if not should_translate:
+                        join_spec.append(("raw", token))
+                        continue
+                    if not token or not token.strip():
+                        join_spec.append(("raw", token))
+                        continue
+                    block_idx += 1
+                    block_id = f"text_seg_{block_idx:04d}"
+                    blocks.append(
+                        TextBlock(
+                            id=block_id,
+                            text=token,
+                            location=f"local_text_segment:{block_idx}",
+                        )
+                    )
+                    join_spec.append((block_id, token))
+
+                metadata["segmented_input"] = True
+                metadata["segment_max_chars"] = max_segment_chars
+                metadata["segment_count"] = block_idx
+
+                if blocks:
+                    batch_result = local_batch_translator.translate_blocks_with_result(
+                        blocks,
+                        reference_files=reference_files,
+                        on_progress=None,
+                        output_language=output_language,
+                        translation_style=style,
+                        include_item_ids=False,
+                    )
+                    if batch_result.cancelled:
+                        raise TranslationCancelledError("Translation cancelled by user")
+                    metadata["segment_untranslated"] = len(
+                        batch_result.untranslated_block_ids
+                    )
+                    metadata["segment_mismatched_batches"] = int(
+                        batch_result.mismatched_batch_count
+                    )
+                    translated_map = batch_result.translations
+                else:
+                    translated_map = {}
+
+                merged_parts: list[str] = []
+                for key, original in join_spec:
+                    if key == "raw":
+                        merged_parts.append(original)
+                        continue
+                    merged_parts.append(translated_map.get(key, original))
+                merged = "".join(merged_parts)
+
+                if output_language == "en":
+                    if _is_text_output_language_mismatch(merged, "en"):
+                        metadata["output_language_mismatch"] = True
+                        return TextTranslationResult(
+                            source_text=text,
+                            source_char_count=len(text),
+                            output_language=output_language,
+                            detected_language=detected_language,
+                            error_message="翻訳結果が英語ではありませんでした（出力言語ガード）",
+                            metadata=metadata,
+                        )
+                    if _looks_incomplete_translation_to_en(text, merged):
+                        metadata["incomplete_translation"] = True
+                        return TextTranslationResult(
+                            source_text=text,
+                            source_char_count=len(text),
+                            output_language=output_language,
+                            detected_language=detected_language,
+                            error_message="翻訳結果が不完全でした（短すぎます）。",
+                            metadata=metadata,
+                        )
+                    fixed_text, fixed = _fix_to_en_oku_numeric_unit_if_possible(
+                        source_text=text,
+                        translated_text=merged,
+                    )
+                    if fixed:
+                        merged = fixed_text
+                        metadata["to_en_numeric_unit_correction"] = True
+                    return TextTranslationResult(
+                        source_text=text,
+                        source_char_count=len(text),
+                        options=[
+                            TranslationOption(text=merged, explanation="", style=style)
+                        ],
+                        output_language=output_language,
+                        detected_language=detected_language,
+                        metadata=metadata,
+                    )
+
+                if _is_text_output_language_mismatch(merged, "jp"):
+                    metadata["output_language_mismatch"] = True
+                    return TextTranslationResult(
+                        source_text=text,
+                        source_char_count=len(text),
+                        output_language=output_language,
+                        detected_language=detected_language,
+                        error_message="翻訳結果が日本語ではありませんでした（出力言語ガード）",
+                        metadata=metadata,
+                    )
+                return TextTranslationResult(
+                    source_text=text,
+                    source_char_count=len(text),
+                    options=[TranslationOption(text=merged, explanation="")],
+                    output_language=output_language,
+                    detected_language=detected_language,
+                    metadata=metadata,
+                )
+
             if output_language == "en":
                 prompt = local_builder.build_text_to_en_single(
                     text,

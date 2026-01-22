@@ -280,48 +280,65 @@ class LocalPromptBuilder:
             set(glossary.scan_indices) if glossary.scan_indices else set()
         )
 
-        for word in _RE_GLOSSARY_TEXT_ASCII_WORD.findall(text_folded):
+        for match in _RE_GLOSSARY_TEXT_ASCII_WORD.finditer(text_folded):
+            word = match.group(0)
+            if not word:
+                continue
             indices_to_check.update(glossary.ascii_word_to_indices.get(word, ()))
 
         if len(text_compact) >= 4 and glossary.ascii_prefix4_to_indices:
-            prefixes: set[str] = set()
+            ascii_prefix4 = glossary.ascii_prefix4_to_indices
+            seen_prefixes: set[str] = set()
             for idx in range(len(text_compact) - 3):
                 prefix = text_compact[idx : idx + 4]
-                if prefix.isascii():
-                    prefixes.add(prefix)
-            for prefix in prefixes:
-                indices_to_check.update(
-                    glossary.ascii_prefix4_to_indices.get(prefix, ())
-                )
+                if not prefix.isascii():
+                    continue
+                indices = ascii_prefix4.get(prefix)
+                if not indices:
+                    continue
+                if prefix in seen_prefixes:
+                    continue
+                seen_prefixes.add(prefix)
+                indices_to_check.update(indices)
 
         if not text_folded.isascii():
             if glossary.compact_prefix3_to_indices and len(text_compact) >= 3:
-                prefixes3: set[str] = set()
+                prefix3 = glossary.compact_prefix3_to_indices
+                seen_prefixes3: set[str] = set()
                 for idx in range(len(text_compact) - 2):
-                    prefixes3.add(text_compact[idx : idx + 3])
-                for prefix in prefixes3:
-                    indices_to_check.update(
-                        glossary.compact_prefix3_to_indices.get(prefix, ())
-                    )
+                    prefix = text_compact[idx : idx + 3]
+                    indices = prefix3.get(prefix)
+                    if not indices:
+                        continue
+                    if prefix in seen_prefixes3:
+                        continue
+                    seen_prefixes3.add(prefix)
+                    indices_to_check.update(indices)
 
             if glossary.compact_prefix2_to_indices and len(text_compact) >= 2:
-                prefixes2: set[str] = set()
+                prefix2 = glossary.compact_prefix2_to_indices
+                seen_prefixes2: set[str] = set()
                 for idx in range(len(text_compact) - 1):
-                    prefixes2.add(text_compact[idx : idx + 2])
-                for prefix in prefixes2:
-                    indices_to_check.update(
-                        glossary.compact_prefix2_to_indices.get(prefix, ())
-                    )
+                    prefix = text_compact[idx : idx + 2]
+                    indices = prefix2.get(prefix)
+                    if not indices:
+                        continue
+                    if prefix in seen_prefixes2:
+                        continue
+                    seen_prefixes2.add(prefix)
+                    indices_to_check.update(indices)
 
             if glossary.compact_char1_to_indices:
-                chars: set[str] = set()
+                char1 = glossary.compact_char1_to_indices
+                seen_chars: set[str] = set()
                 for ch in text_compact:
-                    if ch in glossary.compact_char1_to_indices:
-                        chars.add(ch)
-                for ch in chars:
-                    indices_to_check.update(
-                        glossary.compact_char1_to_indices.get(ch, ())
-                    )
+                    if ch in seen_chars:
+                        continue
+                    indices = char1.get(ch)
+                    if not indices:
+                        continue
+                    seen_chars.add(ch)
+                    indices_to_check.update(indices)
 
         if not indices_to_check:
             return [], False

@@ -3,8 +3,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
-import pytest
-
 from yakulingo.config.settings import AppSettings
 from yakulingo.services.local_ai_prompt_builder import LocalPromptBuilder
 from yakulingo.services.translation_service import TranslationService
@@ -53,10 +51,6 @@ def _make_service(local: SequencedLocalClient) -> TranslationService:
     return service
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Task 01+: ローカルAI英訳で「万→k」ルール違反の検出/再試行が未実装",
-)
 def test_text_style_comparison_retries_when_k_rule_violated() -> None:
     first = '{"translation":"The starting salary is 220,000 yen.","explanation":""}'
     second = '{"translation":"The starting salary is 220k yen.","explanation":""}'
@@ -74,10 +68,6 @@ def test_text_style_comparison_retries_when_k_rule_violated() -> None:
     assert "220k" in result.options[0].text
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Task 01+: ローカルAI英訳で「▲→()」ルール違反の検出/再試行が未実装",
-)
 def test_text_style_comparison_retries_when_negative_triangle_rule_violated() -> None:
     first = '{"translation":"YoY change was ▲50.","explanation":""}'
     second = '{"translation":"YoY change was (50).","explanation":""}'
@@ -96,10 +86,6 @@ def test_text_style_comparison_retries_when_negative_triangle_rule_violated() ->
     assert "(50)" in result.options[0].text
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Task 01+: ローカルAI英訳で「月名略語（Jan.）」ルール違反の検出/再試行が未実装",
-)
 def test_text_style_comparison_retries_when_month_abbreviation_rule_violated() -> None:
     first = '{"translation":"Sales in January.","explanation":""}'
     second = '{"translation":"Sales in Jan.","explanation":""}'
@@ -115,4 +101,3 @@ def test_text_style_comparison_retries_when_month_abbreviation_rule_violated() -
     assert result.output_language == "en"
     assert result.options
     assert "Jan." in result.options[0].text
-

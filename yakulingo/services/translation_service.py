@@ -469,6 +469,110 @@ def _needs_to_en_numeric_rule_retry(source_text: str, translated_text: str) -> b
     return False
 
 
+_NUMBER_WITH_OPTIONAL_COMMAS_AND_DECIMALS_PATTERN = (
+    rf"{_INT_WITH_OPTIONAL_COMMAS_PATTERN}(?:\.\d+)?"
+)
+_RE_JP_MAN_AMOUNT = re.compile(rf"{_NUMBER_WITH_OPTIONAL_COMMAS_AND_DECIMALS_PATTERN}\s*万")
+_RE_JP_SEN_AMOUNT = re.compile(rf"{_NUMBER_WITH_OPTIONAL_COMMAS_AND_DECIMALS_PATTERN}\s*千")
+_RE_JP_TRIANGLE_NEGATIVE_NUMBER = re.compile(r"▲\s*\d")
+_RE_JP_MONTH_NUMBER = re.compile(r"(\d{1,2})月")
+_RE_EN_NUMBER_WITH_K_UNIT = re.compile(r"\b\d[\d,]*(?:\.\d+)?\s*k\b", re.IGNORECASE)
+_RE_EN_PAREN_NUMBER_ONLY = re.compile(r"\(\s*\d[\d,]*(?:\.\d+)?\s*\)")
+_RE_EN_NEGATIVE_SIGN_NUMBER = re.compile(r"(?<!\w)[-−]\s*\d")
+_TO_EN_MONTH_ABBREV_PATTERNS: dict[int, re.Pattern[str]] = {
+    1: re.compile(r"(?i)(?<![a-z])jan\.(?![a-z])"),
+    2: re.compile(r"(?i)(?<![a-z])feb\.(?![a-z])"),
+    3: re.compile(r"(?i)(?<![a-z])mar\.(?![a-z])"),
+    4: re.compile(r"(?i)(?<![a-z])apr\.(?![a-z])"),
+    # May has no period per prompts/translation_rules.txt (capitalized to avoid "may" modal false positives).
+    5: re.compile(r"(?<![A-Za-z])May(?![A-Za-z])"),
+    6: re.compile(r"(?i)(?<![a-z])jun\.(?![a-z])"),
+    7: re.compile(r"(?i)(?<![a-z])jul\.(?![a-z])"),
+    8: re.compile(r"(?i)(?<![a-z])aug\.(?![a-z])"),
+    9: re.compile(r"(?i)(?<![a-z])sep\.(?![a-z])"),
+    10: re.compile(r"(?i)(?<![a-z])oct\.(?![a-z])"),
+    11: re.compile(r"(?i)(?<![a-z])nov\.(?![a-z])"),
+    12: re.compile(r"(?i)(?<![a-z])dec\.(?![a-z])"),
+}
+
+
+def _extract_jp_month_numbers(text: str) -> set[int]:
+    if not text:
+        return set()
+    months: set[int] = set()
+    for match in _RE_JP_MONTH_NUMBER.finditer(text):
+        try:
+            month = int(match.group(1))
+        except ValueError:
+            continue
+        if 1 <= month <= 12:
+            months.add(month)
+    return months
+
+
+def _needs_to_en_k_rule_retry(source_text: str, translated_text: str) -> bool:
+    if not source_text or not translated_text:
+        return False
+    if not (_RE_JP_MAN_AMOUNT.search(source_text) or _RE_JP_SEN_AMOUNT.search(source_text)):
+        return False
+    return _RE_EN_NUMBER_WITH_K_UNIT.search(translated_text) is None
+
+
+def _needs_to_en_negative_rule_retry(source_text: str, translated_text: str) -> bool:
+    if not source_text or not translated_text:
+        return False
+    if not _RE_JP_TRIANGLE_NEGATIVE_NUMBER.search(source_text):
+        return False
+    if "▲" in translated_text:
+        return True
+    if _RE_EN_NEGATIVE_SIGN_NUMBER.search(translated_text):
+        return True
+    return _RE_EN_PAREN_NUMBER_ONLY.search(translated_text) is None
+
+
+def _needs_to_en_month_abbrev_retry(source_text: str, translated_text: str) -> bool:
+    if not source_text or not translated_text:
+        return False
+    months = _extract_jp_month_numbers(source_text)
+    if not months:
+        return False
+    for month in months:
+        pattern = _TO_EN_MONTH_ABBREV_PATTERNS.get(month)
+        if pattern is None:
+            continue
+        if not pattern.search(translated_text):
+            return True
+    return False
+
+
+def _collect_to_en_rule_retry_reasons(source_text: str, translated_text: str) -> list[str]:
+    reasons: list[str] = []
+    if _needs_to_en_k_rule_retry(source_text, translated_text):
+        reasons.append("k")
+    if _needs_to_en_negative_rule_retry(source_text, translated_text):
+        reasons.append("negative")
+    if _needs_to_en_month_abbrev_retry(source_text, translated_text):
+        reasons.append("month")
+    return reasons
+
+
+def _build_to_en_rule_retry_instruction(reasons: list[str]) -> str:
+    if not reasons:
+        return ""
+    lines = ["CRITICAL: Fix the previous output to follow the Translation Rules."]
+    if "k" in reasons:
+        lines.append("- Use k notation for 万/千 (e.g., 22万円 -> 220k yen).")
+    if "negative" in reasons:
+        lines.append(
+            "- Convert ▲ negative numbers to parentheses with the number only (e.g., ▲50 -> (50)). Do not output ▲ or a leading minus."
+        )
+    if "month" in reasons:
+        lines.append(
+            "- Use month abbreviations: Jan., Feb., Mar., Apr., May, Jun., Jul., Aug., Sep., Oct., Nov., Dec. Do not use full month names."
+        )
+    return "\n".join(lines)
+
+
 def _looks_incomplete_translation_to_en(source_text: str, translated_text: str) -> bool:
     source = (source_text or "").strip()
     if len(source) < 40:
@@ -3528,7 +3632,12 @@ class TranslationService:
                             text, translation
                         )
                     )
-                if needs_output_language_retry or needs_numeric_rule_retry:
+
+                rule_retry_reasons: list[str] = []
+                rule_retry_reasons = _collect_to_en_rule_retry_reasons(text, translation)
+                needs_rule_retry = bool(rule_retry_reasons)
+
+                if needs_output_language_retry or needs_numeric_rule_retry or needs_rule_retry:
                     retry_parts: list[str] = []
                     if needs_output_language_retry:
                         retry_parts.append(
@@ -3536,6 +3645,10 @@ class TranslationService:
                         )
                     if needs_numeric_rule_retry:
                         retry_parts.append(_TEXT_TO_EN_NUMERIC_RULE_INSTRUCTION)
+                    if needs_rule_retry:
+                        retry_parts.append(
+                            _build_to_en_rule_retry_instruction(rule_retry_reasons)
+                        )
 
                     retry_prompt = local_builder.build_text_to_en_single(
                         text,
@@ -3578,6 +3691,9 @@ class TranslationService:
                     if needs_numeric_rule_retry:
                         metadata["to_en_numeric_rule_retry"] = True
                         metadata["to_en_numeric_rule_retry_styles"] = [style]
+                    if needs_rule_retry:
+                        metadata["to_en_rule_retry"] = True
+                        metadata["to_en_rule_retry_reasons"] = list(rule_retry_reasons)
 
                 if _is_text_output_language_mismatch(translation, "en"):
                     metadata["output_language_mismatch"] = True
@@ -3613,6 +3729,20 @@ class TranslationService:
                 ):
                     metadata["to_en_numeric_rule_retry_failed"] = True
                     metadata["to_en_numeric_rule_retry_failed_styles"] = [style]
+
+                if metadata.get("to_en_rule_retry"):
+                    remaining = _collect_to_en_rule_retry_reasons(text, translation)
+                    if remaining:
+                        metadata["to_en_rule_retry_failed"] = True
+                        metadata["to_en_rule_retry_failed_reasons"] = remaining
+                        return TextTranslationResult(
+                            source_text=text,
+                            source_char_count=len(text),
+                            output_language=output_language,
+                            detected_language=detected_language,
+                            error_message="翻訳結果が翻訳ルールに従っていませんでした（k/負数/月略称）",
+                            metadata=metadata,
+                        )
                 return TextTranslationResult(
                     source_text=text,
                     source_char_count=len(text),

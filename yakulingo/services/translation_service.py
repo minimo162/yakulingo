@@ -2627,6 +2627,209 @@ class BatchTranslator:
                                     len(retry_texts),
                                 )
 
+            if (
+                is_local_backend
+                and output_language == "en"
+                and not self._cancel_event.is_set()
+            ):
+                rule_violation_indices: list[int] = []
+                rule_reasons_by_index: dict[int, list[str]] = {}
+
+                for idx, translated_text in enumerate(cleaned_unique_translations):
+                    if not translated_text or not translated_text.strip():
+                        continue
+
+                    reasons = _collect_to_en_rule_retry_reasons(
+                        unique_texts[idx], translated_text
+                    )
+                    if not reasons:
+                        continue
+
+                    fixed_text = translated_text
+                    fixed_any = False
+                    if "negative" in reasons:
+                        fixed_text, fixed = _fix_to_en_negative_parens_if_possible(
+                            source_text=unique_texts[idx],
+                            translated_text=fixed_text,
+                        )
+                        fixed_any = fixed_any or fixed
+                    if "month" in reasons:
+                        fixed_text, fixed = _fix_to_en_month_abbrev_if_possible(
+                            source_text=unique_texts[idx],
+                            translated_text=fixed_text,
+                        )
+                        fixed_any = fixed_any or fixed
+
+                    if fixed_any:
+                        cleaned_unique_translations[idx] = fixed_text
+                        translated_text = fixed_text
+                        reasons = _collect_to_en_rule_retry_reasons(
+                            unique_texts[idx], translated_text
+                        )
+                        if not reasons:
+                            continue
+
+                    rule_violation_indices.append(idx)
+                    rule_reasons_by_index[idx] = reasons
+
+                if rule_violation_indices:
+                    max_retry_items = 20
+                    max_retry_chars = min(batch_char_limit, 2000)
+                    rule_retry_indices: list[int] = []
+                    rule_retry_texts: list[str] = []
+                    retry_reasons: set[str] = set()
+                    total_chars = 0
+
+                    for idx in rule_violation_indices:
+                        if len(rule_retry_texts) >= max_retry_items:
+                            break
+                        text_to_retry = unique_texts[idx]
+                        if not text_to_retry:
+                            continue
+                        if (
+                            rule_retry_texts
+                            and total_chars + len(text_to_retry) > max_retry_chars
+                        ):
+                            break
+                        rule_retry_indices.append(idx)
+                        rule_retry_texts.append(text_to_retry)
+                        total_chars += len(text_to_retry)
+                        retry_reasons.update(rule_reasons_by_index.get(idx, ()))
+
+                    if rule_retry_texts and retry_reasons:
+                        retry_instruction = _build_to_en_rule_retry_instruction(
+                            sorted(retry_reasons)
+                        )
+                        repair_prompt = self.prompt_builder.build_batch(
+                            rule_retry_texts,
+                            has_reference_files=has_refs,
+                            output_language=output_language,
+                            translation_style=translation_style,
+                            include_item_ids=include_item_ids,
+                            reference_files=reference_files,
+                        )
+                        repair_prompt = _insert_extra_instruction(
+                            repair_prompt,
+                            retry_instruction,
+                        )
+                        logger.warning(
+                            "Batch %d: Rule violation detected in %d translations; retrying %d items",
+                            i + 1,
+                            len(rule_violation_indices),
+                            len(rule_retry_texts),
+                        )
+                        repair_translations: list[str] = []
+                        try:
+                            lock = self._copilot_lock or nullcontext()
+                            with lock:
+                                self.copilot.set_cancel_callback(
+                                    lambda: self._cancel_event.is_set()
+                                )
+                                try:
+                                    repair_translations = self.copilot.translate_sync(
+                                        rule_retry_texts,
+                                        repair_prompt,
+                                        files_to_attach,
+                                        True,
+                                        timeout=self.request_timeout,
+                                        include_item_ids=include_item_ids,
+                                    )
+                                finally:
+                                    self.copilot.set_cancel_callback(None)
+                        except TranslationCancelledError:
+                            logger.info(
+                                "Translation cancelled during batch %d/%d",
+                                i + 1,
+                                len(batches),
+                            )
+                            cancelled = True
+                            break
+                        except RuntimeError as e:
+                            logger.warning("Batch %d: Rule retry failed: %s", i + 1, e)
+
+                        if repair_translations:
+                            if len(repair_translations) != len(rule_retry_texts):
+                                logger.warning(
+                                    "Batch %d: Rule retry count mismatch: expected %d, got %d; keeping original translations where needed",
+                                    i + 1,
+                                    len(rule_retry_texts),
+                                    len(repair_translations),
+                                )
+                                if len(repair_translations) < len(rule_retry_texts):
+                                    repair_translations = repair_translations + (
+                                        [""] * (len(rule_retry_texts) - len(repair_translations))
+                                    )
+                                else:
+                                    repair_translations = repair_translations[
+                                        : len(rule_retry_texts)
+                                    ]
+
+                            updated_count = 0
+                            for repair_pos, repaired_text in enumerate(
+                                repair_translations
+                            ):
+                                original_idx = rule_retry_indices[repair_pos]
+                                cleaned_repair = self._clean_batch_translation(
+                                    repaired_text
+                                )
+                                if not cleaned_repair or not cleaned_repair.strip():
+                                    continue
+                                if _RE_HANGUL.search(cleaned_repair):
+                                    continue
+                                if self._is_output_language_mismatch(
+                                    cleaned_repair, output_language
+                                ):
+                                    continue
+                                if _looks_incomplete_translation_to_en(
+                                    unique_texts[original_idx], cleaned_repair
+                                ):
+                                    continue
+
+                                fixed_text = cleaned_repair
+                                fixed_text, _ = _fix_to_en_negative_parens_if_possible(
+                                    source_text=unique_texts[original_idx],
+                                    translated_text=fixed_text,
+                                )
+                                fixed_text, _ = _fix_to_en_month_abbrev_if_possible(
+                                    source_text=unique_texts[original_idx],
+                                    translated_text=fixed_text,
+                                )
+                                cleaned_repair = fixed_text
+
+                                if _collect_to_en_rule_retry_reasons(
+                                    unique_texts[original_idx], cleaned_repair
+                                ):
+                                    continue
+
+                                cleaned_unique_translations[original_idx] = cleaned_repair
+                                updated_count += 1
+
+                            if updated_count:
+                                logger.debug(
+                                    "Batch %d: Rule retry updated %d/%d items",
+                                    i + 1,
+                                    updated_count,
+                                    len(rule_retry_texts),
+                                )
+
+                    remaining_count = 0
+                    for idx in rule_violation_indices:
+                        translated_text = cleaned_unique_translations[idx]
+                        if not translated_text or not translated_text.strip():
+                            continue
+                        if _collect_to_en_rule_retry_reasons(
+                            unique_texts[idx], translated_text
+                        ):
+                            cleaned_unique_translations[idx] = ""
+                            remaining_count += 1
+
+                    if remaining_count:
+                        logger.warning(
+                            "Batch %d: Rule violations remain in %d items; using fallback for those blocks",
+                            i + 1,
+                            remaining_count,
+                        )
+
             # Detect empty translations (a backend may return empty strings for some items)
             empty_translation_indices = [
                 idx

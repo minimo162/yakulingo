@@ -60,6 +60,33 @@ class FailingLocalAIClient(LocalAIClient):
         return response  # type: ignore[return-value]
 
 
+class RecordingLocalAIClient(FailingLocalAIClient):
+    def __init__(self, responses: list[object]) -> None:
+        super().__init__(responses)
+        self.texts_per_call: list[list[str]] = []
+
+    def translate_sync(
+        self,
+        texts: list[str],
+        prompt: str,
+        reference_files: list[Path] | None = None,
+        skip_clear_wait: bool = False,
+        timeout: int | None = None,
+        include_item_ids: bool = False,
+        max_retries: int = 0,
+    ) -> list[str]:
+        self.texts_per_call.append(list(texts))
+        return super().translate_sync(
+            texts,
+            prompt,
+            reference_files=reference_files,
+            skip_clear_wait=skip_clear_wait,
+            timeout=timeout,
+            include_item_ids=include_item_ids,
+            max_retries=max_retries,
+        )
+
+
 class PromptTooLongLocalAIClient(LocalAIClient):
     def __init__(self, *, max_prompt_chars: int) -> None:
         super().__init__(AppSettings())
@@ -254,3 +281,90 @@ def test_local_batch_retries_when_numeric_rules_violated() -> None:
     assert result.untranslated_block_ids == []
     assert result.translations["b1"] == "Revenue was 22,385 oku yen."
     assert result.translations["b2"] == "Operating profit decreased by 1,554 oku yen."
+
+
+def test_local_batch_retries_only_items_with_k_rule_violation() -> None:
+    copilot = RecordingLocalAIClient(
+        responses=[
+            ["The starting salary is 220,000 yen.", "OK"],
+            ["The starting salary is 220k yen."],
+        ]
+    )
+    translator = BatchTranslator(
+        copilot=copilot,
+        prompt_builder=DummyPromptBuilder(),  # type: ignore[arg-type]
+        max_chars_per_batch=600,
+        enable_cache=False,
+    )
+    blocks = [
+        TextBlock(id="b1", text="初任給は22万円です。", location="Sheet1"),
+        TextBlock(id="b2", text="alpha", location="Sheet1"),
+    ]
+
+    result = translator.translate_blocks_with_result(
+        blocks,
+        output_language="en",
+    )
+
+    assert copilot.calls == 2
+    assert copilot.texts_per_call[1] == ["初任給は22万円です。"]
+    assert result.untranslated_block_ids == []
+    assert result.translations["b1"] == "The starting salary is 220k yen."
+    assert result.translations["b2"] == "OK"
+
+
+def test_local_batch_auto_corrects_negative_triangle_without_retry() -> None:
+    copilot = RecordingLocalAIClient(
+        responses=[
+            ["YoY change was -50.", "OK"],
+        ]
+    )
+    translator = BatchTranslator(
+        copilot=copilot,
+        prompt_builder=DummyPromptBuilder(),  # type: ignore[arg-type]
+        max_chars_per_batch=600,
+        enable_cache=False,
+    )
+    blocks = [
+        TextBlock(id="b1", text="前年差は▲50です。", location="Sheet1"),
+        TextBlock(id="b2", text="alpha", location="Sheet1"),
+    ]
+
+    result = translator.translate_blocks_with_result(
+        blocks,
+        output_language="en",
+    )
+
+    assert copilot.calls == 1
+    assert result.untranslated_block_ids == []
+    assert "▲" not in result.translations["b1"]
+    assert "-50" not in result.translations["b1"]
+    assert "(50)" in result.translations["b1"]
+
+
+def test_local_batch_auto_corrects_month_abbrev_without_retry() -> None:
+    copilot = RecordingLocalAIClient(
+        responses=[
+            ["Sales in January.", "OK"],
+        ]
+    )
+    translator = BatchTranslator(
+        copilot=copilot,
+        prompt_builder=DummyPromptBuilder(),  # type: ignore[arg-type]
+        max_chars_per_batch=600,
+        enable_cache=False,
+    )
+    blocks = [
+        TextBlock(id="b1", text="1月の売上", location="Sheet1"),
+        TextBlock(id="b2", text="alpha", location="Sheet1"),
+    ]
+
+    result = translator.translate_blocks_with_result(
+        blocks,
+        output_language="en",
+    )
+
+    assert copilot.calls == 1
+    assert result.untranslated_block_ids == []
+    assert "Jan." in result.translations["b1"]
+    assert "January" not in result.translations["b1"]

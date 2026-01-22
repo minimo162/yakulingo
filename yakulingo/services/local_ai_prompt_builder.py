@@ -224,6 +224,26 @@ class LocalPromptBuilder:
         return _RE_GLOSSARY_MATCH_SEPARATORS.sub("", text_folded)
 
     @staticmethod
+    def _sample_text_for_glossary_match(text: str, *, max_chars: int) -> str:
+        text = (text or "").strip()
+        if not text:
+            return ""
+
+        max_chars = max(0, int(max_chars))
+        if len(text) <= max_chars:
+            return text
+
+        segments = 4
+        segment_len = max(1, max_chars // segments)
+        if segment_len >= len(text):
+            return text[:max_chars]
+
+        span = len(text) - segment_len
+        starts = [int(span * i / (segments - 1)) for i in range(segments)]
+        parts = [text[start : start + segment_len].strip() for start in starts]
+        return " | ".join([part for part in parts if part])
+
+    @staticmethod
     def _matches_glossary_term(
         *,
         text_folded: str,
@@ -272,6 +292,11 @@ class LocalPromptBuilder:
         text = (input_text or "").strip()
         if not text:
             return [], False
+
+        if len(text) > 12000:
+            text = LocalPromptBuilder._sample_text_for_glossary_match(
+                text, max_chars=12000
+            )
 
         text_folded = LocalPromptBuilder._normalize_for_glossary_match(text)
         text_compact = LocalPromptBuilder._compact_for_glossary_match(text_folded)

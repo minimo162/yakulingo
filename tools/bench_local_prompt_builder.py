@@ -271,11 +271,18 @@ def main() -> int:
             runs=args.runs,
         )
         # 3) build_reference_embed: cache-miss (vary input), glossary cache stays warm
+        cache_miss_counter = 0
+
+        def build_reference_embed_cache_miss() -> None:
+            nonlocal cache_miss_counter
+            cache_miss_counter += 1
+            builder.build_reference_embed(
+                [glossary_path], input_text=f"{input_text} #{cache_miss_counter}"
+            )
+
         _measure(
             "build_reference_embed (cache miss, glossary warm)",
-            lambda: builder.build_reference_embed(
-                [glossary_path], input_text=f"{input_text} #{time.time_ns()}"
-            ),
+            build_reference_embed_cache_miss,
             runs=args.runs,
         )
 

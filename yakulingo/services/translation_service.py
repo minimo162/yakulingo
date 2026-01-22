@@ -479,6 +479,18 @@ _RE_JP_MONTH_NUMBER = re.compile(r"(\d{1,2})月")
 _RE_EN_NUMBER_WITH_K_UNIT = re.compile(r"\b\d[\d,]*(?:\.\d+)?\s*k\b", re.IGNORECASE)
 _RE_EN_PAREN_NUMBER_ONLY = re.compile(r"\(\s*\d[\d,]*(?:\.\d+)?\s*\)")
 _RE_EN_NEGATIVE_SIGN_NUMBER = re.compile(r"(?<!\w)[-−]\s*\d")
+_RE_EN_NEGATIVE_SIGNED_NUMBER = re.compile(
+    rf"(?<![\w(])[-−]\s*(?P<number>{_NUMBER_WITH_OPTIONAL_COMMAS_AND_DECIMALS_PATTERN})"
+)
+_RE_EN_MINUS_PAREN_NUMBER = re.compile(
+    rf"(?<!\w)[-−]\s*\(\s*(?P<number>{_NUMBER_WITH_OPTIONAL_COMMAS_AND_DECIMALS_PATTERN})\s*\)"
+)
+_RE_EN_PAREN_NEGATIVE_SIGN_NUMBER = re.compile(
+    rf"\(\s*[-−]\s*(?P<number>{_NUMBER_WITH_OPTIONAL_COMMAS_AND_DECIMALS_PATTERN})\s*\)"
+)
+_RE_EN_TRIANGLE_SIGNED_NUMBER = re.compile(
+    rf"▲\s*(?P<number>{_NUMBER_WITH_OPTIONAL_COMMAS_AND_DECIMALS_PATTERN})"
+)
 _TO_EN_MONTH_ABBREV_PATTERNS: dict[int, re.Pattern[str]] = {
     1: re.compile(r"(?i)(?<![a-z])jan\.(?![a-z])"),
     2: re.compile(r"(?i)(?<![a-z])feb\.(?![a-z])"),
@@ -571,6 +583,45 @@ def _build_to_en_rule_retry_instruction(reasons: list[str]) -> str:
             "- Use month abbreviations: Jan., Feb., Mar., Apr., May, Jun., Jul., Aug., Sep., Oct., Nov., Dec. Do not use full month names."
         )
     return "\n".join(lines)
+
+
+def _fix_to_en_negative_parens_if_possible(
+    *,
+    source_text: str,
+    translated_text: str,
+) -> tuple[str, bool]:
+    """Convert negative sign markers to `(number)` for JP→EN when it is safe.
+
+    This is a last-resort safety net when a retry still violates the negative-number rule.
+    """
+    if not source_text or not translated_text:
+        return translated_text, False
+    if not _RE_JP_TRIANGLE_NEGATIVE_NUMBER.search(source_text):
+        return translated_text, False
+
+    fixed = translated_text
+    total = 0
+
+    fixed, count = _RE_EN_MINUS_PAREN_NUMBER.subn(
+        lambda m: f"({m.group('number')})", fixed
+    )
+    total += count
+    fixed, count = _RE_EN_PAREN_NEGATIVE_SIGN_NUMBER.subn(
+        lambda m: f"({m.group('number')})", fixed
+    )
+    total += count
+    fixed, count = _RE_EN_TRIANGLE_SIGNED_NUMBER.subn(
+        lambda m: f"({m.group('number')})", fixed
+    )
+    total += count
+    fixed, count = _RE_EN_NEGATIVE_SIGNED_NUMBER.subn(
+        lambda m: f"({m.group('number')})", fixed
+    )
+    total += count
+
+    if total == 0 or fixed == translated_text:
+        return translated_text, False
+    return fixed, True
 
 
 def _looks_incomplete_translation_to_en(source_text: str, translated_text: str) -> bool:
@@ -3732,6 +3783,15 @@ class TranslationService:
 
                 if metadata.get("to_en_rule_retry"):
                     remaining = _collect_to_en_rule_retry_reasons(text, translation)
+                    if "negative" in remaining:
+                        fixed_text, fixed = _fix_to_en_negative_parens_if_possible(
+                            source_text=text,
+                            translated_text=translation,
+                        )
+                        if fixed:
+                            translation = fixed_text
+                            metadata["to_en_negative_correction"] = True
+                            remaining = _collect_to_en_rule_retry_reasons(text, translation)
                     if remaining:
                         metadata["to_en_rule_retry_failed"] = True
                         metadata["to_en_rule_retry_failed_reasons"] = remaining

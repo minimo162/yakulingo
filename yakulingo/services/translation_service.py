@@ -506,6 +506,48 @@ _TO_EN_MONTH_ABBREV_PATTERNS: dict[int, re.Pattern[str]] = {
     11: re.compile(r"(?i)(?<![a-z])nov\.(?![a-z])"),
     12: re.compile(r"(?i)(?<![a-z])dec\.(?![a-z])"),
 }
+_TO_EN_MONTH_ABBREV_CANONICAL: dict[int, str] = {
+    1: "Jan.",
+    2: "Feb.",
+    3: "Mar.",
+    4: "Apr.",
+    5: "May",
+    6: "Jun.",
+    7: "Jul.",
+    8: "Aug.",
+    9: "Sep.",
+    10: "Oct.",
+    11: "Nov.",
+    12: "Dec.",
+}
+_TO_EN_MONTH_FULLNAME_PATTERNS: dict[int, re.Pattern[str]] = {
+    1: re.compile(r"(?i)(?<![a-z])january\.?(?![a-z])"),
+    2: re.compile(r"(?i)(?<![a-z])february\.?(?![a-z])"),
+    3: re.compile(r"(?<![A-Za-z])(?:March|MARCH)\.?(?![A-Za-z])"),
+    4: re.compile(r"(?i)(?<![a-z])april\.?(?![a-z])"),
+    5: re.compile(r"(?<![A-Za-z])(?:May|MAY)\.?(?![A-Za-z])"),
+    6: re.compile(r"(?i)(?<![a-z])june\.?(?![a-z])"),
+    7: re.compile(r"(?i)(?<![a-z])july\.?(?![a-z])"),
+    8: re.compile(r"(?i)(?<![a-z])august\.?(?![a-z])"),
+    9: re.compile(r"(?i)(?<![a-z])september\.?(?![a-z])"),
+    10: re.compile(r"(?i)(?<![a-z])october\.?(?![a-z])"),
+    11: re.compile(r"(?i)(?<![a-z])november\.?(?![a-z])"),
+    12: re.compile(r"(?i)(?<![a-z])december\.?(?![a-z])"),
+}
+_TO_EN_MONTH_ABBREV_RELAXED_PATTERNS: dict[int, re.Pattern[str]] = {
+    1: re.compile(r"(?i)(?<![a-z])jan\.?(?![a-z])"),
+    2: re.compile(r"(?i)(?<![a-z])feb\.?(?![a-z])"),
+    3: re.compile(r"(?<![A-Za-z])(?:Mar|MAR)\.?(?![A-Za-z])"),
+    4: re.compile(r"(?i)(?<![a-z])apr\.?(?![a-z])"),
+    5: re.compile(r"(?<![A-Za-z])(?:May|MAY)\.?(?![A-Za-z])"),
+    6: re.compile(r"(?i)(?<![a-z])jun\.?(?![a-z])"),
+    7: re.compile(r"(?i)(?<![a-z])jul\.?(?![a-z])"),
+    8: re.compile(r"(?i)(?<![a-z])aug\.?(?![a-z])"),
+    9: re.compile(r"(?i)(?<![a-z])sep(?:t)?\.?(?![a-z])"),
+    10: re.compile(r"(?i)(?<![a-z])oct\.?(?![a-z])"),
+    11: re.compile(r"(?i)(?<![a-z])nov\.?(?![a-z])"),
+    12: re.compile(r"(?i)(?<![a-z])dec\.?(?![a-z])"),
+}
 
 
 def _extract_jp_month_numbers(text: str) -> set[int]:
@@ -618,6 +660,45 @@ def _fix_to_en_negative_parens_if_possible(
         lambda m: f"({m.group('number')})", fixed
     )
     total += count
+
+    if total == 0 or fixed == translated_text:
+        return translated_text, False
+    return fixed, True
+
+
+def _fix_to_en_month_abbrev_if_possible(
+    *,
+    source_text: str,
+    translated_text: str,
+) -> tuple[str, bool]:
+    """Convert full month names / common variants to canonical abbreviations for JP→EN when safe."""
+    if not source_text or not translated_text:
+        return translated_text, False
+
+    months = _extract_jp_month_numbers(source_text)
+    if not months:
+        return translated_text, False
+
+    fixed = translated_text
+    total = 0
+    for month in sorted(months):
+        canonical_pattern = _TO_EN_MONTH_ABBREV_PATTERNS.get(month)
+        if canonical_pattern is not None and canonical_pattern.search(fixed):
+            continue
+
+        canonical = _TO_EN_MONTH_ABBREV_CANONICAL.get(month)
+        if not canonical:
+            continue
+
+        full_pattern = _TO_EN_MONTH_FULLNAME_PATTERNS.get(month)
+        if full_pattern is not None:
+            fixed, count = full_pattern.subn(canonical, fixed)
+            total += count
+
+        abbrev_pattern = _TO_EN_MONTH_ABBREV_RELAXED_PATTERNS.get(month)
+        if abbrev_pattern is not None:
+            fixed, count = abbrev_pattern.subn(canonical, fixed)
+            total += count
 
     if total == 0 or fixed == translated_text:
         return translated_text, False
@@ -3791,6 +3872,15 @@ class TranslationService:
                         if fixed:
                             translation = fixed_text
                             metadata["to_en_negative_correction"] = True
+                            remaining = _collect_to_en_rule_retry_reasons(text, translation)
+                    if "month" in remaining:
+                        fixed_text, fixed = _fix_to_en_month_abbrev_if_possible(
+                            source_text=text,
+                            translated_text=translation,
+                        )
+                        if fixed:
+                            translation = fixed_text
+                            metadata["to_en_month_abbrev_correction"] = True
                             remaining = _collect_to_en_rule_retry_reasons(text, translation)
                     if remaining:
                         metadata["to_en_rule_retry_failed"] = True

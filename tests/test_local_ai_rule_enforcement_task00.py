@@ -108,6 +108,27 @@ def test_text_style_comparison_auto_corrects_negative_sign_after_retry_still_vio
     assert result.metadata.get("to_en_negative_correction") is True
 
 
+def test_text_style_comparison_auto_corrects_month_abbrev_after_retry_still_violates() -> None:
+    first = '{"translation":"Sales in January.","explanation":""}'
+    second = '{"translation":"Sales in January.","explanation":""}'
+    local = SequencedLocalClient([first, second])
+    service = _make_service(local)
+
+    result = service.translate_text_with_style_comparison(
+        "1月の売上",
+        pre_detected_language="日本語",
+    )
+
+    assert local.translate_single_calls == 2
+    assert result.output_language == "en"
+    assert result.error_message is None
+    assert result.options
+    assert "Jan." in result.options[0].text
+    assert "January" not in result.options[0].text
+    assert result.metadata
+    assert result.metadata.get("to_en_month_abbrev_correction") is True
+
+
 def test_text_style_comparison_retries_when_month_abbreviation_rule_violated() -> None:
     first = '{"translation":"Sales in January.","explanation":""}'
     second = '{"translation":"Sales in Jan.","explanation":""}'

@@ -208,6 +208,46 @@ def test_local_prompt_includes_numeric_hints_for_oku() -> None:
     assert "1,554億円 -> 1,554 oku yen" in prompt
 
 
+def test_local_prompt_includes_numeric_hints_for_k_yen() -> None:
+    builder = _make_builder()
+    text = "初任給は22万円です。"
+    prompt = builder.build_text_to_en_single(
+        text,
+        style="minimal",
+        reference_files=None,
+        detected_language="日本語",
+    )
+    expected_rules = builder._get_translation_rules_for_text("en", text).strip()
+    assert expected_rules
+    assert expected_rules in prompt
+    assert "数値/単位:" in expected_rules
+    assert "万→k" in expected_rules
+    assert "千→k" not in expected_rules
+    assert "兆/億→oku" not in expected_rules
+    assert "数値変換ヒント" in prompt
+    assert "22万円 -> 220k yen" in prompt
+
+
+def test_local_prompt_includes_numeric_hints_for_k_units() -> None:
+    builder = _make_builder()
+    text = "販売台数は196千台でした。"
+    prompt = builder.build_text_to_en_single(
+        text,
+        style="minimal",
+        reference_files=None,
+        detected_language="日本語",
+    )
+    expected_rules = builder._get_translation_rules_for_text("en", text).strip()
+    assert expected_rules
+    assert expected_rules in prompt
+    assert "数値/単位:" in expected_rules
+    assert "千→k" in expected_rules
+    assert "万→k" not in expected_rules
+    assert "兆/億→oku" not in expected_rules
+    assert "数値変換ヒント" in prompt
+    assert "196千台 -> 196k units" in prompt
+
+
 def test_local_prompt_includes_numeric_hints_for_oku_in_en_3style() -> None:
     builder = _make_builder()
     text = "売上高は2兆2,385億円(前年同期比1,554億円減)となりました。"

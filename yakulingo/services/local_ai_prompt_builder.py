@@ -44,6 +44,12 @@ _ASCII_ALNUM = frozenset("abcdefghijklmnopqrstuvwxyz0123456789")
 _RE_JP_YEN_AMOUNT = re.compile(
     r"(?P<sign>[▲+-])?\s*(?:(?P<trillion>\d[\d,]*(?:\.\d+)?)兆(?:(?P<oku>\d[\d,]*(?:\.\d+)?)億)?|(?P<oku_only>\d[\d,]*(?:\.\d+)?)億)(?P<yen>円)?"
 )
+_RE_JP_MAN_SEN_AMOUNT = re.compile(
+    r"(?P<sign>[▲+\-−])?\s*(?P<man>\d[\d,]*(?:\.\d+)?)万(?:(?P<sen>\d[\d,]*(?:\.\d+)?)千)?(?P<unit>円|台)?"
+)
+_RE_JP_SEN_AMOUNT = re.compile(
+    r"(?P<sign>[▲+\-−])?\s*(?P<sen>\d[\d,]*(?:\.\d+)?)千(?P<unit>円|台)?"
+)
 _RE_TO_EN_FORBIDDEN_SYMBOLS = re.compile(r"(?:>=|<=|[><~→↑↓≥≧≤≦])")
 _RE_TO_EN_MONTH = re.compile(r"\d{1,2}月")
 _RE_TO_EN_YOY_TERMS = re.compile(
@@ -775,6 +781,62 @@ class LocalPromptBuilder:
             conversions.append((raw, f"{formatted} {unit}".strip()))
             if len(conversions) >= max_lines:
                 break
+
+        man_sen_spans: list[tuple[int, int]] = []
+
+        def unit_suffix(unit: str) -> str:
+            if unit == "円":
+                return " yen"
+            if unit == "台":
+                return " units"
+            return ""
+
+        for match in _RE_JP_MAN_SEN_AMOUNT.finditer(text):
+            if len(conversions) >= max_lines:
+                break
+            raw = (match.group(0) or "").strip()
+            if not raw or raw in seen:
+                continue
+            seen.add(raw)
+            man_sen_spans.append(match.span())
+
+            sign_marker = match.group("sign") or ""
+            sign = -1 if sign_marker in {"▲", "-", "−"} else 1
+            man = self._parse_decimal(match.group("man") or "")
+            if man is None:
+                continue
+            sen = self._parse_decimal(match.group("sen") or "") or Decimal(0)
+            k_value = (man * Decimal("10") + sen) * sign
+            formatted = self._format_oku_amount(k_value)
+            if sign < 0:
+                formatted = f"({formatted.lstrip('-')})"
+            suffix = unit_suffix((match.group("unit") or "").strip())
+            conversions.append((raw, f"{formatted}k{suffix}"))
+
+        def is_inside_man_sen(match_start: int) -> bool:
+            return any(start <= match_start < end for start, end in man_sen_spans)
+
+        for match in _RE_JP_SEN_AMOUNT.finditer(text):
+            if len(conversions) >= max_lines:
+                break
+            if is_inside_man_sen(match.start()):
+                continue
+            raw = (match.group(0) or "").strip()
+            if not raw or raw in seen:
+                continue
+            seen.add(raw)
+
+            sign_marker = match.group("sign") or ""
+            sign = -1 if sign_marker in {"▲", "-", "−"} else 1
+            sen = self._parse_decimal(match.group("sen") or "")
+            if sen is None:
+                continue
+            k_value = sen * sign
+            formatted = self._format_oku_amount(k_value)
+            if sign < 0:
+                formatted = f"({formatted.lstrip('-')})"
+            suffix = unit_suffix((match.group("unit") or "").strip())
+            conversions.append((raw, f"{formatted}k{suffix}"))
 
         if not conversions:
             return ""

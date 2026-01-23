@@ -6,3 +6,10 @@
 - 検証: `uv run pyright` / `uv run ruff check .` / `uv run --extra test pytest`（306 passed）
 - 統合: `main` に ff-only で取り込み → `origin/main` へ push 済み
 - クリーンアップ: remote/local ブランチ削除済み（`git ls-remote --heads` / `git branch --list` が空を確認）
+
+## task-01（既定ローカルAIモデルパス更新）
+- ブランチ: `case-yakulingo-local-ai-model-shisa-v2-1-qwen3-8b-iq4-xs-20260124-080716-task-01-default-model-path`
+- コミット: `84221179`（task-01: 既定ローカルAIモデルパスを更新）
+- 検証: `uv run pyright` / `uv run ruff check .` / `uv run --extra test pytest`（306 passed）
+- 統合: `main` に ff-only で取り込み → `origin/main` へ push 済み
+- クリーンアップ: remote/local ブランチ削除済み（`git ls-remote --heads` / `git branch --list` が空を確認）

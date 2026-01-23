@@ -472,8 +472,12 @@ def _needs_to_en_numeric_rule_retry(source_text: str, translated_text: str) -> b
 _NUMBER_WITH_OPTIONAL_COMMAS_AND_DECIMALS_PATTERN = (
     rf"{_INT_WITH_OPTIONAL_COMMAS_PATTERN}(?:\.\d+)?"
 )
-_RE_JP_MAN_AMOUNT = re.compile(rf"{_NUMBER_WITH_OPTIONAL_COMMAS_AND_DECIMALS_PATTERN}\s*万")
-_RE_JP_SEN_AMOUNT = re.compile(rf"{_NUMBER_WITH_OPTIONAL_COMMAS_AND_DECIMALS_PATTERN}\s*千")
+_RE_JP_MAN_AMOUNT = re.compile(
+    rf"{_NUMBER_WITH_OPTIONAL_COMMAS_AND_DECIMALS_PATTERN}\s*万"
+)
+_RE_JP_SEN_AMOUNT = re.compile(
+    rf"{_NUMBER_WITH_OPTIONAL_COMMAS_AND_DECIMALS_PATTERN}\s*千"
+)
 _RE_JP_TRIANGLE_NEGATIVE_NUMBER = re.compile(r"▲\s*\d")
 _RE_JP_MONTH_NUMBER = re.compile(r"(\d{1,2})月")
 _RE_EN_NUMBER_WITH_K_UNIT = re.compile(r"\b\d[\d,]*(?:\.\d+)?\s*k\b", re.IGNORECASE)
@@ -567,7 +571,9 @@ def _extract_jp_month_numbers(text: str) -> set[int]:
 def _needs_to_en_k_rule_retry(source_text: str, translated_text: str) -> bool:
     if not source_text or not translated_text:
         return False
-    if not (_RE_JP_MAN_AMOUNT.search(source_text) or _RE_JP_SEN_AMOUNT.search(source_text)):
+    if not (
+        _RE_JP_MAN_AMOUNT.search(source_text) or _RE_JP_SEN_AMOUNT.search(source_text)
+    ):
         return False
     return _RE_EN_NUMBER_WITH_K_UNIT.search(translated_text) is None
 
@@ -599,7 +605,9 @@ def _needs_to_en_month_abbrev_retry(source_text: str, translated_text: str) -> b
     return False
 
 
-def _collect_to_en_rule_retry_reasons(source_text: str, translated_text: str) -> list[str]:
+def _collect_to_en_rule_retry_reasons(
+    source_text: str, translated_text: str
+) -> list[str]:
     reasons: list[str] = []
     if _needs_to_en_k_rule_retry(source_text, translated_text):
         reasons.append("k")
@@ -2757,7 +2765,11 @@ class BatchTranslator:
                                 )
                                 if len(repair_translations) < len(rule_retry_texts):
                                     repair_translations = repair_translations + (
-                                        [""] * (len(rule_retry_texts) - len(repair_translations))
+                                        [""]
+                                        * (
+                                            len(rule_retry_texts)
+                                            - len(repair_translations)
+                                        )
                                     )
                                 else:
                                     repair_translations = repair_translations[
@@ -2801,7 +2813,9 @@ class BatchTranslator:
                                 ):
                                     continue
 
-                                cleaned_unique_translations[original_idx] = cleaned_repair
+                                cleaned_unique_translations[original_idx] = (
+                                    cleaned_repair
+                                )
                                 updated_count += 1
 
                             if updated_count:
@@ -3969,10 +3983,16 @@ class TranslationService:
                     )
 
                 rule_retry_reasons: list[str] = []
-                rule_retry_reasons = _collect_to_en_rule_retry_reasons(text, translation)
+                rule_retry_reasons = _collect_to_en_rule_retry_reasons(
+                    text, translation
+                )
                 needs_rule_retry = bool(rule_retry_reasons)
 
-                if needs_output_language_retry or needs_numeric_rule_retry or needs_rule_retry:
+                if (
+                    needs_output_language_retry
+                    or needs_numeric_rule_retry
+                    or needs_rule_retry
+                ):
                     retry_parts: list[str] = []
                     if needs_output_language_retry:
                         retry_parts.append(
@@ -4075,7 +4095,9 @@ class TranslationService:
                         if fixed:
                             translation = fixed_text
                             metadata["to_en_negative_correction"] = True
-                            remaining = _collect_to_en_rule_retry_reasons(text, translation)
+                            remaining = _collect_to_en_rule_retry_reasons(
+                                text, translation
+                            )
                     if "month" in remaining:
                         fixed_text, fixed = _fix_to_en_month_abbrev_if_possible(
                             source_text=text,
@@ -4084,7 +4106,9 @@ class TranslationService:
                         if fixed:
                             translation = fixed_text
                             metadata["to_en_month_abbrev_correction"] = True
-                            remaining = _collect_to_en_rule_retry_reasons(text, translation)
+                            remaining = _collect_to_en_rule_retry_reasons(
+                                text, translation
+                            )
                     if remaining:
                         metadata["to_en_rule_retry_failed"] = True
                         metadata["to_en_rule_retry_failed_reasons"] = remaining

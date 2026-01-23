@@ -203,7 +203,7 @@ def _select_json_schema(prompt: str) -> dict[str, object]:
         return _RESPONSE_FORMAT_ITEMS_SCHEMA
     if "options must contain exactly these 3 styles" in lowered:
         return _RESPONSE_FORMAT_OPTIONS_3STYLE_SCHEMA
-    if "\"options\"" in lowered or "options" in lowered:
+    if '"options"' in lowered or "options" in lowered:
         return _RESPONSE_FORMAT_OPTIONS_SCHEMA
     return _RESPONSE_FORMAT_SINGLE_SCHEMA
 

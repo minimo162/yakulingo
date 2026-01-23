@@ -640,6 +640,62 @@ def test_resolve_model_path_resolves_relative_from_app_base(
     assert resolved == model_path
 
 
+def test_resolve_model_path_prefers_configured_model_when_present(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager = lls.LocalLlamaServerManager()
+    _patch_app_base_dir(tmp_path, monkeypatch)
+
+    preferred = tmp_path / "local_ai" / "models" / "HY-MT1.5-7B.IQ4_XS.gguf"
+    preferred.parent.mkdir(parents=True, exist_ok=True)
+    preferred.write_bytes(b"preferred")
+
+    legacy = tmp_path / Path(lls._LEGACY_DEFAULT_MODEL_PATH)
+    legacy.parent.mkdir(parents=True, exist_ok=True)
+    legacy.write_bytes(b"legacy")
+
+    settings = AppSettings(
+        local_ai_model_path="local_ai/models/HY-MT1.5-7B.IQ4_XS.gguf"
+    )
+    resolved = manager._resolve_model_path(settings)
+
+    assert resolved == preferred
+
+
+def test_resolve_model_path_falls_back_to_legacy_default_when_configured_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    manager = lls.LocalLlamaServerManager()
+    _patch_app_base_dir(tmp_path, monkeypatch)
+
+    legacy = tmp_path / Path(lls._LEGACY_DEFAULT_MODEL_PATH)
+    legacy.parent.mkdir(parents=True, exist_ok=True)
+    legacy.write_bytes(b"legacy")
+
+    settings = AppSettings(
+        local_ai_model_path="local_ai/models/HY-MT1.5-7B.IQ4_XS.gguf"
+    )
+    caplog.set_level(logging.WARNING, logger="yakulingo.services.local_llama_server")
+    resolved = manager._resolve_model_path(settings)
+
+    assert resolved == legacy
+    assert "falling back to legacy default" in caplog.text
+
+
+def test_resolve_model_path_returns_none_when_preferred_and_legacy_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager = lls.LocalLlamaServerManager()
+    _patch_app_base_dir(tmp_path, monkeypatch)
+
+    settings = AppSettings(
+        local_ai_model_path="local_ai/models/HY-MT1.5-7B.IQ4_XS.gguf"
+    )
+    resolved = manager._resolve_model_path(settings)
+
+    assert resolved is None
+
+
 def test_build_server_args_adds_batch_flags_when_available(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

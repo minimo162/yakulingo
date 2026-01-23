@@ -86,7 +86,9 @@ def test_text_style_comparison_retries_when_negative_triangle_rule_violated() ->
     assert "(50)" in result.options[0].text
 
 
-def test_text_style_comparison_auto_corrects_negative_sign_after_retry_still_violates() -> None:
+def test_text_style_comparison_auto_corrects_negative_sign_after_retry_still_violates() -> (
+    None
+):
     first = '{"translation":"YoY change was -496 oku yen.","explanation":""}'
     second = '{"translation":"YoY change was -496 oku yen.","explanation":""}'
     local = SequencedLocalClient([first, second])
@@ -108,7 +110,9 @@ def test_text_style_comparison_auto_corrects_negative_sign_after_retry_still_vio
     assert result.metadata.get("to_en_negative_correction") is True
 
 
-def test_text_style_comparison_auto_corrects_month_abbrev_after_retry_still_violates() -> None:
+def test_text_style_comparison_auto_corrects_month_abbrev_after_retry_still_violates() -> (
+    None
+):
     first = '{"translation":"Sales in January.","explanation":""}'
     second = '{"translation":"Sales in January.","explanation":""}'
     local = SequencedLocalClient([first, second])

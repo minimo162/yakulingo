@@ -11,7 +11,9 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
-Mode = Literal["jp-to-en", "jp-to-en-3style", "en-to-jp", "batch-jp-to-en", "batch-en-to-jp"]
+Mode = Literal[
+    "jp-to-en", "jp-to-en-3style", "en-to-jp", "batch-jp-to-en", "batch-en-to-jp"
+]
 
 
 def _read_text(path: Path) -> str:
@@ -200,7 +202,9 @@ def main() -> int:
         return 0
 
     print(f"mode: {mode}")
-    print(f"model: {runtime.model_id or runtime.model_path.name} ({runtime.server_variant})")
+    print(
+        f"model: {runtime.model_id or runtime.model_path.name} ({runtime.server_variant})"
+    )
     print(f"prompt_chars: {len(prompt)}")
     print(f"raw_chars: {len(raw)}")
     print("--- parsed ---")
@@ -210,4 +214,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

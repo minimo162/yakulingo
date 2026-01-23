@@ -205,7 +205,7 @@ uv run python tools/bench_local_ai.py --mode warm \
 
 # モデル・サーバディレクトリの指定
 uv run python tools/bench_local_ai.py --mode warm \
-  --model-path local_ai/models/translategemma-4b-it.IQ4_XS.gguf \
+  --model-path local_ai/models/HY-MT1.5-1.8B.IQ4_XS.gguf \
   --server-dir local_ai/llama_cpp --json
 
 # max_tokens を無効化（0以下でNone扱い）
@@ -291,7 +291,7 @@ uv run python tools/bench_llama_bench_compare.py --format markdown \
 ```bash
 uv run python tools/bench_llama_bench_compare.py \
   --server-dir local_ai/llama_cpp \
-  --model-path local_ai/models/translategemma-4b-it.IQ4_XS.gguf \
+  --model-path local_ai/models/HY-MT1.5-1.8B.IQ4_XS.gguf \
   --pg 2048,256 -r 3 \
   --device <VULKAN_DEVICE> --n-gpu-layers all \
   --extra-args -b 2048 -ub 512 -fa 0
@@ -462,7 +462,7 @@ task-06 の所見（pp は速いが tg が同等）を受け、tg に効く可�
   - `local_ai_vk_disable_f16 = true` を試す（CLIなら `--vk-disable-f16`）
 
 ## 参考（過去メモ）: AgentCPM-Explore / Shisa（Qwen3）推奨パラメータ
-> **Note**: 現行の既定モデル（TranslateGemma）に対する推奨値ではありません。Qwen3 系を検証していた頃のメモとして残しています。
+> **Note**: 現行の既定モデル（HY-MT1.5-1.8B）に対する推奨値ではありません。Qwen3 系を検証していた頃のメモとして残しています。
 
 - Qwen3 は温度0の決定論的生成で繰り返しが起きやすいため、サンプリング（Temperature > 0）が推奨されていました。
 - 推奨値（参考: 検証当時）:
@@ -588,7 +588,7 @@ E2E:
 
 ## ケース記録（case: yakulingo-local-ai-streaming-speedup-20260119-063004）
 
-- 環境: Windows-10 / llama.cpp avx2 7718（db79dc06b）/ model=translategemma-4b-it.IQ4_XS.gguf
+- 環境: Windows-10 / llama.cpp avx2 7718（db79dc06b）/ model=translategemma-4b-it.IQ4_XS.gguf（当時。現行既定: HY-MT1.5-1.8B.IQ4_XS.gguf）
 - 条件: style=minimal / glossary=off / server_variant=avx2（CPU-only）
 
 ### CLIベンチ（tools/bench_local_ai.py）

@@ -55,6 +55,21 @@ def _select_system_prompt(prompt: str) -> str:
     )
 
 
+def _is_hy_mt_model(runtime: LocalAIServerRuntime) -> bool:
+    """Detect Tencent HY-MT models which are trained without a default system prompt."""
+
+    candidates = [runtime.model_id, runtime.model_path.name]
+    for candidate in candidates:
+        if not candidate:
+            continue
+        lowered = str(candidate).strip().lower()
+        if not lowered:
+            continue
+        if "hy-mt" in lowered or "hy_mt" in lowered:
+            return True
+    return False
+
+
 _RE_CODE_FENCE = re.compile(r"^\s*```(?:json)?\s*$", re.IGNORECASE)
 _RE_TRAILING_COMMAS = re.compile(r",(\s*[}\]])")
 _RE_ID_MARKER_BLOCK = re.compile(
@@ -739,12 +754,15 @@ class LocalAIClient:
         include_sampling_params: bool = True,
     ) -> dict[str, object]:
         prompt = prompt or ""
+        messages: list[dict[str, str]] = [{"role": "user", "content": prompt}]
+        if not _is_hy_mt_model(runtime):
+            messages.insert(
+                0,
+                {"role": "system", "content": _select_system_prompt(prompt)},
+            )
         payload: dict[str, object] = {
             "model": runtime.model_id or runtime.model_path.name,
-            "messages": [
-                {"role": "system", "content": _select_system_prompt(prompt)},
-                {"role": "user", "content": prompt},
-            ],
+            "messages": messages,
             "stream": stream,
             "temperature": float(self._settings.local_ai_temperature),
         }

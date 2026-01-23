@@ -19,6 +19,18 @@ def _make_runtime() -> LocalAIServerRuntime:
     )
 
 
+def _make_hy_mt_runtime() -> LocalAIServerRuntime:
+    return LocalAIServerRuntime(
+        host="127.0.0.1",
+        port=1,
+        base_url="http://127.0.0.1:1",
+        model_id="HY-MT1.5-1.8B.IQ4_XS.gguf",
+        server_exe_path=Path("server.exe"),
+        server_variant="direct",
+        model_path=Path("HY-MT1.5-1.8B.IQ4_XS.gguf"),
+    )
+
+
 def test_build_chat_payload_includes_json_response_format() -> None:
     client = LocalAIClient(AppSettings())
     runtime = _make_runtime()
@@ -53,6 +65,16 @@ def test_build_chat_payload_includes_json_response_format() -> None:
     assert payload["top_k"] == 64
     assert payload["min_p"] == 0.01
     assert payload["repeat_penalty"] == 1.05
+
+
+def test_build_chat_payload_omits_system_prompt_for_hy_mt() -> None:
+    client = LocalAIClient(AppSettings())
+    runtime = _make_hy_mt_runtime()
+    payload = client._build_chat_payload(
+        runtime, "prompt", stream=False, enforce_json=True
+    )
+    assert payload["messages"] == [{"role": "user", "content": "prompt"}]
+    assert payload["stop"] == ["</s>", "<|end|>"]
 
 
 def test_build_chat_payload_skips_response_format_when_disabled() -> None:

@@ -77,6 +77,30 @@ def test_build_chat_payload_omits_system_prompt_for_hy_mt() -> None:
     assert payload["stop"] == ["</s>", "<|end|>"]
 
 
+def test_build_chat_payload_applies_hy_mt_sampling_defaults() -> None:
+    client = LocalAIClient(AppSettings())
+    runtime = _make_hy_mt_runtime()
+    payload = client._build_chat_payload(
+        runtime, "prompt", stream=False, enforce_json=False
+    )
+    assert payload["temperature"] == 0.7
+    assert payload["top_p"] == 0.6
+    assert payload["top_k"] == 20
+    assert payload["repeat_penalty"] == 1.05
+
+
+def test_build_chat_payload_respects_custom_sampling_params_for_hy_mt() -> None:
+    settings = AppSettings(local_ai_top_p=0.5, local_ai_top_k=30)
+    settings._validate()
+    client = LocalAIClient(settings)
+    runtime = _make_hy_mt_runtime()
+    payload = client._build_chat_payload(
+        runtime, "prompt", stream=False, enforce_json=False
+    )
+    assert payload["top_p"] == 0.5
+    assert payload["top_k"] == 30
+
+
 def test_build_chat_payload_skips_response_format_when_disabled() -> None:
     client = LocalAIClient(AppSettings())
     runtime = _make_runtime()

@@ -94,6 +94,10 @@ _RESPONSE_FORMAT_CACHE_TTL_S = 600.0
 _SAMPLING_PARAMS_CACHE_TTL_S = 600.0
 _ResponseFormatMode = Literal["schema", "json_object", "none"]
 _PARSED_JSON_MISSING: object = object()
+_HY_MT_RECOMMENDED_TOP_P = 0.6
+_HY_MT_RECOMMENDED_TOP_K = 20
+_HY_MT_DEFAULT_TOP_P = 0.95
+_HY_MT_DEFAULT_TOP_K = 64
 _RESPONSE_FORMAT_SINGLE_SCHEMA: dict[str, object] = {
     "name": "yakulingo_single_translation_response",
     "schema": {
@@ -690,6 +694,21 @@ def _extract_target_tag(text: str) -> Optional[str]:
     return extracted or None
 
 
+def _select_sampling_param_hy_mt_default(
+    value: float | int | None,
+    *,
+    default: float | int,
+    recommended: float | int,
+) -> float | int | None:
+    if value is None:
+        return None
+    if isinstance(value, int) and isinstance(default, int) and value == default:
+        return recommended
+    if isinstance(value, float) and isinstance(default, float) and value == default:
+        return recommended
+    return value
+
+
 def _parse_text_single_translation_fallback(
     raw_content: str,
 ) -> tuple[Optional[str], Optional[str]]:
@@ -792,10 +811,23 @@ class LocalAIClient:
             "temperature": float(self._settings.local_ai_temperature),
         }
         if include_sampling_params:
-            if self._settings.local_ai_top_p is not None:
-                payload["top_p"] = float(self._settings.local_ai_top_p)
-            if self._settings.local_ai_top_k is not None:
-                payload["top_k"] = int(self._settings.local_ai_top_k)
+            top_p = self._settings.local_ai_top_p
+            top_k = self._settings.local_ai_top_k
+            if _is_hy_mt_model(runtime):
+                top_p = _select_sampling_param_hy_mt_default(
+                    top_p,
+                    default=_HY_MT_DEFAULT_TOP_P,
+                    recommended=_HY_MT_RECOMMENDED_TOP_P,
+                )
+                top_k = _select_sampling_param_hy_mt_default(
+                    top_k,
+                    default=_HY_MT_DEFAULT_TOP_K,
+                    recommended=_HY_MT_RECOMMENDED_TOP_K,
+                )
+            if top_p is not None:
+                payload["top_p"] = float(top_p)
+            if top_k is not None:
+                payload["top_k"] = int(top_k)
             if self._settings.local_ai_min_p is not None:
                 payload["min_p"] = float(self._settings.local_ai_min_p)
             if self._settings.local_ai_repeat_penalty is not None:

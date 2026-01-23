@@ -1,7 +1,5 @@
 Translate Japanese to English in 3 styles: standard, concise, minimal. Output JSON only.
 
-{"options":[{"style":"standard","translation":"..."},{"style":"concise","translation":"..."},{"style":"minimal","translation":"..."}]}
-
 Rules:
 - options must contain exactly these 3 styles in this order.
 - No code fences. No extra keys/text.
@@ -10,5 +8,7 @@ Rules:
 {translation_rules}
 {numeric_hints}
 {reference_section}
-{extra_instruction}INPUT:
+{extra_instruction}日本語:
 {input_text}
+
+英語:

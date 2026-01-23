@@ -1,7 +1,5 @@
 Translate Japanese to English for styles={styles_json} (count={n_styles}). Output JSON only.
 
-{"options":[{"style":"standard","translation":"..."}]}
-
 Rules:
 - options length must be {n_styles}; each option.style must be in {styles_json}; no extras.
 - No code fences. No extra keys/text.
@@ -10,5 +8,7 @@ Rules:
 {translation_rules}
 {numeric_hints}
 {reference_section}
-{extra_instruction}INPUT:
+{extra_instruction}日本語:
 {input_text}
+
+英語:

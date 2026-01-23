@@ -26,6 +26,17 @@ def test_build_chat_payload_includes_json_response_format() -> None:
         runtime, "prompt", stream=False, enforce_json=True
     )
     assert payload["messages"] == [
+        {
+            "role": "system",
+            "content": (
+                "You are a translation engine.\n"
+                "Reply in English only (no CJK/Hangul).\n"
+                "Follow the user's prompt exactly.\n"
+                "- Do not copy example placeholders.\n"
+                "- Do not repeat the input unless explicitly asked.\n"
+                "- Output only in the requested format (e.g., JSON only).\n"
+            ),
+        },
         {"role": "user", "content": "prompt"},
     ]
     response_format = payload["response_format"]
@@ -35,7 +46,7 @@ def test_build_chat_payload_includes_json_response_format() -> None:
     assert isinstance(json_schema, dict)
     schema = json_schema["schema"]
     assert isinstance(schema, dict)
-    assert len(schema.get("oneOf") or []) == 3
+    assert schema.get("required") == ["translation"]
     assert payload["stop"] == ["</s>", "<|end|>"]
     assert payload["temperature"] == 0.7
     assert payload["top_p"] == 0.95
@@ -51,6 +62,17 @@ def test_build_chat_payload_skips_response_format_when_disabled() -> None:
         runtime, "prompt", stream=True, enforce_json=False
     )
     assert payload["messages"] == [
+        {
+            "role": "system",
+            "content": (
+                "You are a translation engine.\n"
+                "Reply in English only (no CJK/Hangul).\n"
+                "Follow the user's prompt exactly.\n"
+                "- Do not copy example placeholders.\n"
+                "- Do not repeat the input unless explicitly asked.\n"
+                "- Output only in the requested format (e.g., JSON only).\n"
+            ),
+        },
         {"role": "user", "content": "prompt"},
     ]
     assert "response_format" not in payload
@@ -218,6 +240,17 @@ def test_build_chat_payload_can_skip_sampling_params() -> None:
         include_sampling_params=False,
     )
     assert payload["messages"] == [
+        {
+            "role": "system",
+            "content": (
+                "You are a translation engine.\n"
+                "Reply in English only (no CJK/Hangul).\n"
+                "Follow the user's prompt exactly.\n"
+                "- Do not copy example placeholders.\n"
+                "- Do not repeat the input unless explicitly asked.\n"
+                "- Output only in the requested format (e.g., JSON only).\n"
+            ),
+        },
         {"role": "user", "content": "prompt"},
     ]
     assert payload["temperature"] == 0.7

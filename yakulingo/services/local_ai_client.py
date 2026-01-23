@@ -29,6 +29,31 @@ _DIAGNOSTIC_SNIPPET_CHARS = 200
 _SSE_DELTA_COALESCE_MIN_CHARS = 128
 _SSE_DELTA_COALESCE_MAX_INTERVAL_SEC = 0.12
 
+_SYSTEM_TRANSLATION_PROMPT_EN = (
+    "You are a translation engine.\n"
+    "Reply in English only (no CJK/Hangul).\n"
+    "Follow the user's prompt exactly.\n"
+    "- Do not copy example placeholders.\n"
+    "- Do not repeat the input unless explicitly asked.\n"
+    "- Output only in the requested format (e.g., JSON only).\n"
+)
+_SYSTEM_TRANSLATION_PROMPT_JP = (
+    "You are a translation engine.\n"
+    "Reply in Japanese only.\n"
+    "Follow the user's prompt exactly.\n"
+    "- Do not copy example placeholders.\n"
+    "- Do not repeat the input unless explicitly asked.\n"
+    "- Output only in the requested format (e.g., JSON only).\n"
+)
+
+
+def _select_system_prompt(prompt: str) -> str:
+    return (
+        _SYSTEM_TRANSLATION_PROMPT_JP
+        if "EN->JP" in (prompt or "")
+        else _SYSTEM_TRANSLATION_PROMPT_EN
+    )
+
 
 _RE_CODE_FENCE = re.compile(r"^\s*```(?:json)?\s*$", re.IGNORECASE)
 _RE_TRAILING_COMMAS = re.compile(r",(\s*[}\]])")
@@ -49,76 +74,125 @@ _RESPONSE_FORMAT_CACHE_TTL_S = 600.0
 _SAMPLING_PARAMS_CACHE_TTL_S = 600.0
 _ResponseFormatMode = Literal["schema", "json_object", "none"]
 _PARSED_JSON_MISSING: object = object()
-_RESPONSE_FORMAT_JSON_SCHEMA: dict[str, object] = {
-    "name": "yakulingo_translation_response",
+_RESPONSE_FORMAT_SINGLE_SCHEMA: dict[str, object] = {
+    "name": "yakulingo_single_translation_response",
     "schema": {
         "type": "object",
-        "oneOf": [
-            {
-                "required": ["translation"],
-                "properties": {
-                    "translation": {"type": "string", "minLength": 1},
-                    "explanation": {"type": "string"},
-                    "style": {"type": "string"},
-                    "output_language": {"type": "string"},
-                    "detected_language": {"type": "string"},
-                },
-                "additionalProperties": True,
-            },
-            {
-                "required": ["items"],
-                "properties": {
-                    "items": {
-                        "type": "array",
-                        "minItems": 1,
-                        "items": {
-                            "type": "object",
-                            "required": ["id", "translation"],
-                            "properties": {
-                                "id": {
-                                    "oneOf": [
-                                        {"type": "integer", "minimum": 1},
-                                        {"type": "string"},
-                                    ]
-                                },
-                                "translation": {"type": "string"},
-                            },
-                            "additionalProperties": True,
-                        },
-                    }
-                },
-                "additionalProperties": True,
-            },
-            {
-                "required": ["options"],
-                "properties": {
-                    "options": {
-                        "type": "array",
-                        "minItems": 1,
-                        "items": {
-                            "type": "object",
-                            "required": ["translation"],
-                            "properties": {
-                                "style": {"type": "string"},
-                                "translation": {"type": "string", "minLength": 1},
-                                "explanation": {"type": "string"},
-                            },
-                            "additionalProperties": True,
-                        },
-                    }
-                },
-                "additionalProperties": True,
-            },
-        ],
+        "required": ["translation"],
+        "properties": {
+            "translation": {"type": "string", "minLength": 1},
+            "explanation": {"type": "string"},
+        },
         "additionalProperties": True,
     },
     "strict": True,
 }
-_RESPONSE_FORMAT_JSON_SCHEMA_PAYLOAD: dict[str, object] = {
-    "type": "json_schema",
-    "json_schema": _RESPONSE_FORMAT_JSON_SCHEMA,
+_RESPONSE_FORMAT_ITEMS_SCHEMA: dict[str, object] = {
+    "name": "yakulingo_batch_translation_response",
+    "schema": {
+        "type": "object",
+        "required": ["items"],
+        "properties": {
+            "items": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                    "type": "object",
+                    "required": ["id", "translation"],
+                    "properties": {
+                        "id": {
+                            "oneOf": [
+                                {"type": "integer", "minimum": 1},
+                                {"type": "string"},
+                            ]
+                        },
+                        "translation": {"type": "string", "minLength": 1},
+                    },
+                    "additionalProperties": True,
+                },
+            }
+        },
+        "additionalProperties": True,
+    },
+    "strict": True,
+}
+_RESPONSE_FORMAT_OPTIONS_SCHEMA: dict[str, object] = {
+    "name": "yakulingo_text_style_options_response",
+    "schema": {
+        "type": "object",
+        "required": ["options"],
+        "properties": {
+            "options": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                    "type": "object",
+                    "required": ["translation"],
+                    "properties": {
+                        "style": {"type": "string"},
+                        "translation": {"type": "string", "minLength": 1},
+                        "explanation": {"type": "string"},
+                    },
+                    "additionalProperties": True,
+                },
+            }
+        },
+        "additionalProperties": True,
+    },
+    "strict": True,
+}
+_RESPONSE_FORMAT_OPTIONS_3STYLE_SCHEMA: dict[str, object] = {
+    "name": "yakulingo_text_style_options_3style_response",
+    "schema": {
+        "type": "object",
+        "required": ["options"],
+        "properties": {
+            "options": {
+                "type": "array",
+                "minItems": 3,
+                "maxItems": 3,
+                "items": {
+                    "type": "object",
+                    "required": ["style", "translation"],
+                    "properties": {
+                        "style": {
+                            "type": "string",
+                            "enum": ["standard", "concise", "minimal"],
+                        },
+                        "translation": {"type": "string", "minLength": 1},
+                        "explanation": {"type": "string"},
+                    },
+                    "additionalProperties": True,
+                },
+            }
+        },
+        "additionalProperties": True,
+    },
+    "strict": True,
 }
 _RESPONSE_FORMAT_JSON_OBJECT_PAYLOAD: dict[str, object] = {"type": "json_object"}
+
+
+def _select_json_schema(prompt: str) -> dict[str, object]:
+    lowered = (prompt or "").lower()
+    if "items_json" in lowered:
+        return _RESPONSE_FORMAT_ITEMS_SCHEMA
+    if "options must contain exactly these 3 styles" in lowered:
+        return _RESPONSE_FORMAT_OPTIONS_3STYLE_SCHEMA
+    if "\"options\"" in lowered or "options" in lowered:
+        return _RESPONSE_FORMAT_OPTIONS_SCHEMA
+    return _RESPONSE_FORMAT_SINGLE_SCHEMA
+
+
+def _build_response_format_payload(
+    prompt: str, response_format: str | None
+) -> dict[str, object]:
+    if response_format == "json_object":
+        return _RESPONSE_FORMAT_JSON_OBJECT_PAYLOAD
+    return {
+        "type": "json_schema",
+        "json_schema": _select_json_schema(prompt),
+    }
 
 
 def _strip_code_fences(text: str) -> str:
@@ -668,6 +742,7 @@ class LocalAIClient:
         payload: dict[str, object] = {
             "model": runtime.model_id or runtime.model_path.name,
             "messages": [
+                {"role": "system", "content": _select_system_prompt(prompt)},
                 {"role": "user", "content": prompt},
             ],
             "stream": stream,
@@ -687,10 +762,8 @@ class LocalAIClient:
         if self._settings.local_ai_max_tokens is not None:
             payload["max_tokens"] = int(self._settings.local_ai_max_tokens)
         if enforce_json:
-            payload["response_format"] = (
-                _RESPONSE_FORMAT_JSON_OBJECT_PAYLOAD
-                if response_format == "json_object"
-                else _RESPONSE_FORMAT_JSON_SCHEMA_PAYLOAD
+            payload["response_format"] = _build_response_format_payload(
+                prompt, response_format
             )
         if _JSON_STOP_SEQUENCES:
             payload["stop"] = _JSON_STOP_SEQUENCES

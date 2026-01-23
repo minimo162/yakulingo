@@ -1,10 +1,12 @@
 JP->EN ({style}) JSON only.
-Example: {"translation":"..."}
+Output: JSON object with key "translation" only.
 
 Rules: ONE JSON object only; no code fences/prefix/suffix; no extra keys/text; EN only (no CJK/Hangul); keep [[ID:n]]; keep \\n/\\t.
 
 {translation_rules}
 {numeric_hints}
 {reference_section}
-{extra_instruction}INPUT:
+{extra_instruction}日本語:
 {input_text}
+
+英語:

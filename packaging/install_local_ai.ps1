@@ -308,8 +308,8 @@ try {
 
     # Default model (fixed):
     # Always use a prebuilt GGUF downloaded from Hugging Face.
-    $defaultModelRepo = 'mradermacher/HY-MT1.5-7B-GGUF'
-    $defaultModelFile = 'HY-MT1.5-7B.IQ4_XS.gguf'
+    $defaultModelRepo = 'mradermacher/DASD-4B-Thinking-GGUF'
+    $defaultModelFile = 'DASD-4B-Thinking.IQ4_XS.gguf'
     $defaultModelRevision = 'main'
 
     # Model selection is fixed (manifest/env overrides are ignored).

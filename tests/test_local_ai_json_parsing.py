@@ -222,6 +222,13 @@ def test_parse_text_single_translation_fallback_allows_missing_explanation() -> 
     assert explanation == ""
 
 
+def test_parse_text_single_translation_fallback_target_tag() -> None:
+    raw = "<source>Hello</source>\n<target>こんにちは</target>\n"
+    translation, explanation = parse_text_single_translation(raw)
+    assert translation == "こんにちは"
+    assert explanation == ""
+
+
 def test_parse_text_single_translation_logs_diagnostics_on_failure(
     caplog: pytest.LogCaptureFixture,
 ) -> None:

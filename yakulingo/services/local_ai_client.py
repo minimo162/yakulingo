@@ -76,6 +76,11 @@ _RE_ID_MARKER_BLOCK = re.compile(
     r"\[\[ID:(\d+)\]\]\s*(.+?)(?=\[\[ID:\d+\]\]|$)", re.DOTALL
 )
 _RE_NUMBERED_LINE = re.compile(r"^\s*(\d+)\s*[\.\):]\s*(.+)\s*$")
+_RE_TARGET_TAG = re.compile(
+    r"<target(?:\s+[^>]*)?>(?P<text>.*?)</target>",
+    re.IGNORECASE | re.DOTALL,
+)
+_RE_TARGET_TAG_OPEN = re.compile(r"<target(?:\s+[^>]*)?>", re.IGNORECASE)
 _RE_SINGLE_SECTION_COLON = re.compile(
     r"^\s*(?:#+\s*)?(?P<label>訳文|解説|説明|translation|explanation)\s*[:：]\s*(?P<rest>.*)\s*$",
     re.IGNORECASE,
@@ -669,12 +674,32 @@ def parse_text_single_translation(
     return translation, explanation
 
 
+def _extract_target_tag(text: str) -> Optional[str]:
+    if "<target" not in text.casefold():
+        return None
+
+    match = _RE_TARGET_TAG.search(text)
+    if match is not None:
+        extracted = (match.group("text") or "").strip()
+        return extracted or None
+
+    match_open = _RE_TARGET_TAG_OPEN.search(text)
+    if match_open is None:
+        return None
+    extracted = text[match_open.end() :].strip()
+    return extracted or None
+
+
 def _parse_text_single_translation_fallback(
     raw_content: str,
 ) -> tuple[Optional[str], Optional[str]]:
     cleaned = _strip_code_fences(raw_content).strip()
     if not cleaned:
         return None, None
+
+    target = _extract_target_tag(cleaned)
+    if target:
+        return target, ""
 
     translation_lines: list[str] = []
     explanation_lines: list[str] = []

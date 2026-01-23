@@ -3,8 +3,8 @@
 本書は過去に「ローカルAIモデルを openbmb/AgentCPM-Explore に切り替える」ことを検討した設計メモです。
 
 ## 現行仕様（重要）
-- ローカルAIの既定翻訳モデル: `mradermacher/HY-MT1.5-1.8B-GGUF/HY-MT1.5-1.8B.IQ4_XS.gguf`
-- 配置先（既定）: `local_ai/models/HY-MT1.5-1.8B.IQ4_XS.gguf`
+- ローカルAIの既定翻訳モデル: `mradermacher/DASD-4B-Thinking-GGUF/DASD-4B-Thinking.IQ4_XS.gguf`
+- 配置先（既定）: `local_ai/models/DASD-4B-Thinking.IQ4_XS.gguf`
 - 使用するモデルは `local_ai_model_path` で指定する（配布版は既定モデルのみ同梱）。
 
 以降の内容は「過去メモ」として残しています（運用手順/SSOTとしては使用しないでください）。

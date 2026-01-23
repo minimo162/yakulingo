@@ -1,5 +1,5 @@
 ﻿{
-    "generated_at":  "2026-01-24T00:02:38.3701374+09:00",
+    "generated_at":  "2026-01-24T07:41:36.0578932+09:00",
     "llama_cpp":  {
                       "repo":  "ggerganov/llama.cpp",
                       "release_tag":  "b7818",
@@ -9,24 +9,24 @@
                       "variant":  "vulkan"
                   },
     "model":  {
-                  "repo":  "mradermacher/DASD-4B-Thinking-GGUF",
+                  "repo":  "mradermacher/translategemma-12b-it-i1-GGUF",
                   "revision":  "main",
-                  "file":  "DASD-4B-Thinking.IQ4_XS.gguf",
-                  "download_url":  "https://huggingface.co/mradermacher/DASD-4B-Thinking-GGUF/resolve/main/DASD-4B-Thinking.IQ4_XS.gguf",
-                  "sha256":  "C71753A15D84240AC083FCA1855CEBA19F8C59EAC203F67822F9508287171735",
+                  "file":  "translategemma-12b-it.i1-IQ3_XXS.gguf",
+                  "download_url":  "https://huggingface.co/mradermacher/translategemma-12b-it-i1-GGUF/resolve/main/translategemma-12b-it.i1-IQ3_XXS.gguf",
+                  "sha256":  "292810F90A6F166C4C083D7103CF55020861A7ABC844CEBEF1EF1C2FA0381E1C",
                   "skipped":  false,
                   "source":  {
                                  "kind":  "gguf",
-                                 "repo":  "mradermacher/DASD-4B-Thinking-GGUF",
+                                 "repo":  "mradermacher/translategemma-12b-it-i1-GGUF",
                                  "revision":  "main",
-                                 "file":  "DASD-4B-Thinking.IQ4_XS.gguf",
-                                 "download_url":  "https://huggingface.co/mradermacher/DASD-4B-Thinking-GGUF/resolve/main/DASD-4B-Thinking.IQ4_XS.gguf"
+                                 "file":  "translategemma-12b-it.i1-IQ3_XXS.gguf",
+                                 "download_url":  "https://huggingface.co/mradermacher/translategemma-12b-it-i1-GGUF/resolve/main/translategemma-12b-it.i1-IQ3_XXS.gguf"
                              },
                   "output":  {
                                  "kind":  "gguf",
-                                 "path":  "local_ai/models/DASD-4B-Thinking.IQ4_XS.gguf",
-                                 "path_resolved":  "C:\\Users\\Administrator\\Desktop\\yakulingo\\local_ai\\models\\DASD-4B-Thinking.IQ4_XS.gguf",
-                                 "sha256":  "C71753A15D84240AC083FCA1855CEBA19F8C59EAC203F67822F9508287171735"
+                                 "path":  "local_ai/models/translategemma-12b-it.i1-IQ3_XXS.gguf",
+                                 "path_resolved":  "C:\\Users\\Administrator\\Desktop\\yakulingo\\local_ai\\models\\translategemma-12b-it.i1-IQ3_XXS.gguf",
+                                 "sha256":  "292810F90A6F166C4C083D7103CF55020861A7ABC844CEBEF1EF1C2FA0381E1C"
                              }
               }
 }

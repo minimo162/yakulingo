@@ -23,13 +23,13 @@ if "!STEP7_FROM_INSTALL_DEPS!"=="0" (
 )
 
 echo.
-echo [6/6] Installing Local AI runtime (llama.cpp + fixed DASD model)...
-echo [INFO] Model is fixed: mradermacher/DASD-4B-Thinking-GGUF/DASD-4B-Thinking.IQ4_XS.gguf
+echo [6/6] Installing Local AI runtime (llama.cpp + fixed TranslateGemma model)...
+echo [INFO] Model is fixed: mradermacher/translategemma-12b-it-i1-GGUF/translategemma-12b-it.i1-IQ3_XXS.gguf
 echo [INFO] This step may download large files (llama.cpp + model; a few GB).
 
 echo.
 echo Do you want to install Local AI runtime now?
-echo   [1] Yes - Download llama.cpp + DASD model (recommended)
+echo   [1] Yes - Download llama.cpp + TranslateGemma model (recommended)
 echo   [2] No  - Skip this step (default)
 echo   [3] No  - Skip this step
 echo.

@@ -308,8 +308,8 @@ try {
 
     # Default model (fixed):
     # Always use a prebuilt GGUF downloaded from Hugging Face.
-    $defaultModelRepo = 'mradermacher/DASD-4B-Thinking-GGUF'
-    $defaultModelFile = 'DASD-4B-Thinking.IQ4_XS.gguf'
+    $defaultModelRepo = 'mradermacher/translategemma-12b-it-i1-GGUF'
+    $defaultModelFile = 'translategemma-12b-it.i1-IQ3_XXS.gguf'
     $defaultModelRevision = 'main'
 
     # Model selection is fixed (manifest/env overrides are ignored).

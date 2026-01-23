@@ -1,14 +1,14 @@
-Translate Japanese to English in 3 styles: standard, concise, minimal. Output JSON only.
+Translate the following text from Japanese to English in 3 styles: standard, concise, minimal.
+Output JSON only: an object with key "options" (array of 3) in this exact order.
 
 Rules:
-- options must contain exactly these 3 styles in this order.
-- No code fences. No extra keys/text.
+- No code fences. No extra text outside the JSON object.
+- options must have 3 items; each item must include "style" and "translation".
 - Keep [[ID:n]] markers. Preserve \\n / \\t in JSON strings.
 
 {translation_rules}
 {numeric_hints}
 {reference_section}
-{extra_instruction}日本語:
+{extra_instruction}<source>
 {input_text}
-
-英語:
+</source>

@@ -69,7 +69,7 @@ def test_translate_text_with_options_includes_normalized_amount_in_prompt() -> N
     assert local.last_prompt is not None
     assert "2兆2,385億円" in local.last_prompt
 
-    prompt_input = local.last_prompt.split("英語:", 1)[-1]
-    prompt_input = prompt_input.split("日本語:", 1)[0]
+    prompt_input = local.last_prompt.split("<source>", 1)[-1]
+    prompt_input = prompt_input.split("</source>", 1)[0]
     assert "2兆2,385億円" in prompt_input
     assert "¥2,238.5billion" not in prompt_input

@@ -1,12 +1,14 @@
-JP->EN ({style}) JSON only.
-Output: JSON object with key "translation" only.
+Translate the following text from Japanese to English.
+Style: {style}
+Output JSON only: a single object with key "translation".
 
-Rules: ONE JSON object only; no code fences/prefix/suffix; no extra keys/text; EN only (no CJK/Hangul); keep [[ID:n]]; keep \\n/\\t.
+Rules:
+- No code fences. No extra text outside the JSON object.
+- Keep [[ID:n]] markers. Preserve \\n / \\t in JSON strings.
 
 {translation_rules}
 {numeric_hints}
 {reference_section}
-{extra_instruction}日本語:
+{extra_instruction}<source>
 {input_text}
-
-英語:
+</source>

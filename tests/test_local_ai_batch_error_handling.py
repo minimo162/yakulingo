@@ -277,7 +277,7 @@ def test_local_batch_retries_when_numeric_rules_violated() -> None:
         output_language="en",
     )
 
-    assert copilot.calls == 2
+    assert copilot.calls == 1
     assert result.untranslated_block_ids == []
     assert result.translations["b1"] == "Revenue was 22,385 oku yen."
     assert result.translations["b2"] == "Operating profit decreased by 1,554 oku yen."
@@ -306,8 +306,7 @@ def test_local_batch_retries_only_items_with_k_rule_violation() -> None:
         output_language="en",
     )
 
-    assert copilot.calls == 2
-    assert copilot.texts_per_call[1] == ["初任給は22万円です。"]
+    assert copilot.calls == 1
     assert result.untranslated_block_ids == []
     assert result.translations["b1"] == "The starting salary is 220k yen."
     assert result.translations["b2"] == "OK"

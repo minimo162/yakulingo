@@ -2588,6 +2588,25 @@ class BatchTranslator:
                 and output_language == "en"
                 and not self._cancel_event.is_set()
             ):
+                auto_fixed_numeric = 0
+                for idx, translated_text in enumerate(cleaned_unique_translations):
+                    if not translated_text or not translated_text.strip():
+                        continue
+                    fixed_text, fixed = _fix_to_en_oku_numeric_unit_if_possible(
+                        source_text=unique_texts[idx],
+                        translated_text=translated_text,
+                    )
+                    if fixed:
+                        cleaned_unique_translations[idx] = fixed_text
+                        auto_fixed_numeric += 1
+                if auto_fixed_numeric:
+                    logger.debug(
+                        "Batch %d: Auto-corrected numeric units for %d/%d items",
+                        i + 1,
+                        auto_fixed_numeric,
+                        len(cleaned_unique_translations),
+                    )
+
                 numeric_rule_violation_indices = [
                     idx
                     for idx, translated_text in enumerate(cleaned_unique_translations)
@@ -2701,6 +2720,12 @@ class BatchTranslator:
                                 )
                                 if not cleaned_repair or not cleaned_repair.strip():
                                     continue
+                                cleaned_repair, _ = (
+                                    _fix_to_en_oku_numeric_unit_if_possible(
+                                        source_text=unique_texts[original_idx],
+                                        translated_text=cleaned_repair,
+                                    )
+                                )
                                 if _RE_HANGUL.search(cleaned_repair):
                                     continue
                                 if self._is_output_language_mismatch(
@@ -2747,6 +2772,12 @@ class BatchTranslator:
 
                     fixed_text = translated_text
                     fixed_any = False
+                    if "k" in reasons:
+                        fixed_text, fixed = _fix_to_en_k_notation_if_possible(
+                            source_text=unique_texts[idx],
+                            translated_text=fixed_text,
+                        )
+                        fixed_any = fixed_any or fixed
                     if "negative" in reasons:
                         fixed_text, fixed = _fix_to_en_negative_parens_if_possible(
                             source_text=unique_texts[idx],
@@ -2890,6 +2921,10 @@ class BatchTranslator:
                                     continue
 
                                 fixed_text = cleaned_repair
+                                fixed_text, _ = _fix_to_en_k_notation_if_possible(
+                                    source_text=unique_texts[original_idx],
+                                    translated_text=fixed_text,
+                                )
                                 fixed_text, _ = _fix_to_en_negative_parens_if_possible(
                                     source_text=unique_texts[original_idx],
                                     translated_text=fixed_text,

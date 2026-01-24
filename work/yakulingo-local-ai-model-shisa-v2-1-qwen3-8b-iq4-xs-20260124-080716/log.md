@@ -28,3 +28,20 @@
 - 検証: `uv run pyright` / `uv run ruff check .` / `uv run --extra test pytest`（306 passed）
 - 統合: `main` に ff-only で取り込み → `origin/main` へ push 済み
 - クリーンアップ: remote/local ブランチ削除済み（`git ls-remote --heads` / `git branch --list` が空を確認）
+
+## task-05（DONE）
+
+- インストーラ実行: `powershell -NoProfile -ExecutionPolicy Bypass -File packaging\install_local_ai.ps1`
+  - モデル: `local_ai/models/shisa-v2.1-qwen3-8B-IQ4_XS.gguf` を取得
+  - `local_ai/manifest.json` の model.repo/file を Shisa に更新し、sha256 を記録
+  - NOTE: LICENSE 取得が 404 で警告（モデル本体DLは成功）
+- スモーク: `uv run python tools/repro_local_ai_translation.py --input <temp> --mode jp-to-en --style minimal --restart-server --timeout 300 --json`
+  - 出力例: `This is a smoke test for local AI translation.`
+- 品質ゲート（rules.md）
+  - `uv run pyright`: 0 errors
+  - `uv run ruff check .`: All checks passed
+  - `uv run --extra test pytest`: 306 passed
+- 統合: `main` に fast-forward で `0f2a9b71` を取り込み、`origin/main` へ push
+- ブランチ削除証明（task-05）
+  - remote: `git ls-remote --heads origin case-yakulingo-local-ai-model-shisa-v2-1-qwen3-8b-iq4-xs-20260124-080716-task-05-smoke-local-ai` => empty
+  - local: `git branch --list case-yakulingo-local-ai-model-shisa-v2-1-qwen3-8b-iq4-xs-20260124-080716-task-05-smoke-local-ai` => empty

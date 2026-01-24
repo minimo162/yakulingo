@@ -9,7 +9,7 @@
 | task-02 | DONE | インストーラの固定モデルを新モデルへ更新（install_local_ai.ps1 / step7） | case-yakulingo-local-ai-model-shisa-v2-1-qwen3-8b-iq4-xs-20260124-080716-task-02-installer-fixed-model | d3c06843 |
 | task-03 | DONE | 配布スクリプトの固定モデル名を新モデルへ更新（make_distribution.bat） | case-yakulingo-local-ai-model-shisa-v2-1-qwen3-8b-iq4-xs-20260124-080716-task-03-dist-fixed-model | 65e7cb21 |
 | task-04 | TODO | ドキュメントの既定モデル参照を新モデルへ更新（README/docs） |  |  |
-| task-05 | TODO | （任意）インストーラ実行で新モデル導入→ローカルAI翻訳スモーク |  |  |
+| task-05 | DONE | （任意）インストーラ実行で新モデル導入→ローカルAI翻訳スモーク | case-yakulingo-local-ai-model-shisa-v2-1-qwen3-8b-iq4-xs-20260124-080716-task-05-smoke-local-ai | 0f2a9b71 |
 
 ## 参照
 - intent（SSOT）: `../intent.md`

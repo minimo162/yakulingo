@@ -142,8 +142,8 @@ def test_nonpdf_file_translation_uses_file_batch_limit_info(tmp_path: Path) -> N
 
     with patch.object(
         service,
-        "_get_local_file_batch_limit_info",
-        return_value=(123, "local_ai_max_chars_per_batch_file"),
+        "_estimate_local_file_batch_char_limit",
+        return_value=(123, "estimated_ctx_limit"),
     ) as patched_get_limit:
         result = service._translate_file_standard(  # type: ignore[arg-type]
             input_path=input_path,
@@ -157,7 +157,7 @@ def test_nonpdf_file_translation_uses_file_batch_limit_info(tmp_path: Path) -> N
         )
 
     patched_get_limit.assert_called_once()
-    assert spy.max_chars_calls == [(123, "local_ai_max_chars_per_batch_file")]
+    assert spy.max_chars_calls == [(123, "estimated_ctx_limit")]
     assert spy.include_item_ids_calls == [True]
     assert result.status == TranslationStatus.COMPLETED
 
@@ -170,8 +170,8 @@ def test_pdf_file_translation_uses_file_batch_limit_info(tmp_path: Path) -> None
 
     with patch.object(
         service,
-        "_get_local_file_batch_limit_info",
-        return_value=(456, "local_ai_max_chars_per_batch"),
+        "_estimate_local_file_batch_char_limit",
+        return_value=(456, "estimated_ctx_limit"),
     ) as patched_get_limit:
         result = service._translate_pdf_streaming(  # type: ignore[arg-type]
             input_path=input_path,
@@ -185,6 +185,6 @@ def test_pdf_file_translation_uses_file_batch_limit_info(tmp_path: Path) -> None
         )
 
     patched_get_limit.assert_called_once()
-    assert spy.max_chars_calls == [(456, "local_ai_max_chars_per_batch")]
+    assert spy.max_chars_calls == [(456, "estimated_ctx_limit")]
     assert spy.include_item_ids_calls == [True]
     assert result.status == TranslationStatus.COMPLETED

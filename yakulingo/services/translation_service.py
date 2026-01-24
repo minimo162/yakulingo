@@ -3639,6 +3639,117 @@ class TranslationService:
             return fallback, "local_ai_max_chars_per_batch"
         return None, None
 
+    @staticmethod
+    def _estimate_local_prompt_tokens(prompt: str) -> int:
+        prompt = (prompt or "").strip()
+        if not prompt:
+            return 0
+        ascii_chars = sum(1 for ch in prompt if ord(ch) < 128)
+        non_ascii_chars = len(prompt) - ascii_chars
+        ascii_tokens = (ascii_chars + 2) // 3
+        return non_ascii_chars + ascii_tokens
+
+    def _estimate_local_file_batch_char_limit(
+        self,
+        *,
+        blocks: list["TextBlock"],
+        reference_files: Optional[list[Path]],
+        output_language: str,
+        translation_style: str,
+        include_item_ids: bool,
+    ) -> tuple[Optional[int], str | None]:
+        configured, configured_source = self._get_local_file_batch_limit_info()
+        if configured is None or configured <= 0:
+            return configured, configured_source
+        if self.config is None:
+            return configured, configured_source
+
+        ctx_size = getattr(self.config, "local_ai_ctx_size", None)
+        if not isinstance(ctx_size, int) or ctx_size <= 0:
+            return configured, configured_source
+
+        max_tokens_setting = getattr(self.config, "local_ai_max_tokens", None)
+        max_tokens = (
+            int(max_tokens_setting)
+            if isinstance(max_tokens_setting, int) and max_tokens_setting > 0
+            else min(1024, max(0, ctx_size // 2))
+        )
+
+        prompt_builder = self._local_prompt_builder
+        if prompt_builder is None:
+            return configured, configured_source
+
+        from yakulingo.services.local_ai_client import _select_system_prompt
+
+        min_limit = (
+            configured
+            if configured < BatchTranslator._MIN_SPLIT_BATCH_CHARS
+            else BatchTranslator._MIN_SPLIT_BATCH_CHARS
+        )
+        candidate = int(configured)
+        safety_total = 96
+
+        def build_sample_texts(max_chars: int) -> list[str]:
+            texts: list[str] = []
+            total = 0
+            for block in blocks:
+                text = (block.text or "").strip()
+                if not text:
+                    continue
+                text_len = len(text)
+                if texts and total + text_len > max_chars:
+                    break
+                texts.append(text)
+                total += text_len
+                if total >= max_chars:
+                    break
+                if len(texts) >= 50:
+                    break
+            return texts
+
+        for _ in range(6):
+            sample_texts = build_sample_texts(candidate)
+            if not sample_texts:
+                return configured, configured_source
+            try:
+                prompt = prompt_builder.build_batch(
+                    sample_texts,
+                    output_language=output_language,
+                    translation_style=translation_style,
+                    include_item_ids=include_item_ids,
+                    reference_files=reference_files,
+                )
+            except Exception:
+                return configured, configured_source
+
+            system_prompt = _select_system_prompt(prompt)
+            system_tokens = self._estimate_local_prompt_tokens(system_prompt)
+            prompt_tokens = self._estimate_local_prompt_tokens(prompt)
+            repeated_prompt_tokens = prompt_tokens * 2 + 2
+            total_tokens = system_tokens + repeated_prompt_tokens + max_tokens
+
+            if total_tokens + safety_total <= ctx_size:
+                if candidate == configured:
+                    return configured, configured_source
+                source = (
+                    f"{configured_source}+estimated_ctx_limit"
+                    if configured_source
+                    else "estimated_ctx_limit"
+                )
+                return candidate, source
+
+            next_candidate = max(min_limit, candidate // 2)
+            if next_candidate >= candidate:
+                break
+            candidate = next_candidate
+
+        source = (
+            f"{configured_source}+estimated_ctx_limit"
+            if configured_source
+            else "estimated_ctx_limit"
+        )
+        return candidate, source
+
     def clear_translation_cache(self) -> None:
         """
         Clear translation cache (PDFMathTranslate compliant).
@@ -5664,10 +5775,6 @@ class TranslationService:
         # Local batch translation: keep stable IDs for parsing robustness.
         include_item_ids = True
 
-        local_file_max_chars, local_file_max_chars_source = (
-            self._get_local_file_batch_limit_info()
-        )
-
         translation_styles = (
             ["minimal"] if output_language == "en" else [translation_style]
         )
@@ -5681,6 +5788,16 @@ class TranslationService:
         batch_translator = self._local_batch_translator
         if batch_translator is None:
             raise RuntimeError("Local batch translator not initialized")
+
+        local_file_max_chars, local_file_max_chars_source = (
+            self._estimate_local_file_batch_char_limit(
+                blocks=blocks,
+                reference_files=reference_files,
+                output_language=output_language,
+                translation_style=primary_style,
+                include_item_ids=include_item_ids,
+            )
+        )
 
         translations_by_style: dict[str, dict[str, str]] = {}
         primary_batch_result = None
@@ -6047,7 +6164,13 @@ class TranslationService:
             raise RuntimeError("Local batch translator not initialized")
 
         local_file_max_chars, local_file_max_chars_source = (
-            self._get_local_file_batch_limit_info()
+            self._estimate_local_file_batch_char_limit(
+                blocks=all_blocks,
+                reference_files=reference_files,
+                output_language=output_language,
+                translation_style=primary_style,
+                include_item_ids=True,
+            )
         )
 
         translate_start = 40

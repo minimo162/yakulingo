@@ -1,6 +1,17 @@
 from __future__ import annotations
 
+import asyncio
+import threading
+from pathlib import Path
+
+from yakulingo.config.settings import AppSettings
+from yakulingo.services.local_llama_server import (
+    LocalAIError,
+    LocalAINotInstalledError,
+    LocalAIServerRuntime,
+)
 from yakulingo.ui.app import YakuLingoApp
+from yakulingo.ui.state import LocalAIState
 
 
 class _DummyTask:
@@ -56,3 +67,116 @@ def test_start_local_ai_startup_skips_when_task_running(monkeypatch) -> None:
     started = app._start_local_ai_startup("local")
 
     assert started is False
+
+
+async def test_ensure_local_ai_ready_transitions_through_warming_up(
+    monkeypatch,
+) -> None:
+    app = YakuLingoApp()
+    app.settings = AppSettings()
+
+    async def fake_preload() -> None:
+        return
+
+    monkeypatch.setattr(app, "_preload_prompt_builders_startup_async", fake_preload)
+
+    runtime = LocalAIServerRuntime(
+        host="127.0.0.1",
+        port=4891,
+        base_url="http://127.0.0.1:4891",
+        model_id=None,
+        server_exe_path=Path("llama-server.exe"),
+        server_variant="cpu",
+        model_path=Path("model.gguf"),
+    )
+
+    class DummyManager:
+        def ensure_ready(self, _settings: AppSettings) -> LocalAIServerRuntime:
+            return runtime
+
+    monkeypatch.setattr(
+        "yakulingo.services.local_llama_server.get_local_llama_server_manager",
+        lambda: DummyManager(),
+    )
+
+    warmup_started = threading.Event()
+    warmup_release = threading.Event()
+
+    def fake_warmup(
+        self,
+        runtime: LocalAIServerRuntime | None = None,
+        *,
+        timeout: int | None = None,
+        max_tokens: int = 1,
+    ) -> None:
+        _ = (self, runtime, timeout, max_tokens)
+        warmup_started.set()
+        warmup_release.wait(2.0)
+
+    monkeypatch.setattr(
+        "yakulingo.services.local_ai_client.LocalAIClient.warmup",
+        fake_warmup,
+    )
+
+    task = asyncio.create_task(app._ensure_local_ai_ready_async())
+    assert await asyncio.to_thread(warmup_started.wait, 2.0)
+    assert app.state.local_ai_state == LocalAIState.WARMING_UP
+
+    warmup_release.set()
+    assert await task is True
+    assert app.state.local_ai_state == LocalAIState.READY
+    assert app.state.local_ai_host == "127.0.0.1"
+    assert app.state.local_ai_port == 4891
+    assert app.state.local_ai_model == "model.gguf"
+
+
+async def test_ensure_local_ai_ready_sets_not_installed_on_missing(
+    monkeypatch,
+) -> None:
+    app = YakuLingoApp()
+    app.settings = AppSettings()
+
+    async def fake_preload() -> None:
+        return
+
+    monkeypatch.setattr(app, "_preload_prompt_builders_startup_async", fake_preload)
+
+    class DummyManager:
+        def ensure_ready(self, _settings: AppSettings) -> LocalAIServerRuntime:
+            raise LocalAINotInstalledError("missing")
+
+    monkeypatch.setattr(
+        "yakulingo.services.local_llama_server.get_local_llama_server_manager",
+        lambda: DummyManager(),
+    )
+
+    ok = await app._ensure_local_ai_ready_async()
+
+    assert ok is False
+    assert app.state.local_ai_state == LocalAIState.NOT_INSTALLED
+    assert "missing" in (app.state.local_ai_error or "")
+
+
+async def test_ensure_local_ai_ready_sets_error_on_failure(monkeypatch) -> None:
+    app = YakuLingoApp()
+    app.settings = AppSettings()
+
+    async def fake_preload() -> None:
+        return
+
+    monkeypatch.setattr(app, "_preload_prompt_builders_startup_async", fake_preload)
+
+    class DummyManager:
+        def ensure_ready(self, _settings: AppSettings) -> LocalAIServerRuntime:
+            raise LocalAIError("boom")
+
+    monkeypatch.setattr(
+        "yakulingo.services.local_llama_server.get_local_llama_server_manager",
+        lambda: DummyManager(),
+    )
+
+    ok = await app._ensure_local_ai_ready_async()
+
+    assert ok is False
+    assert app.state.local_ai_state == LocalAIState.ERROR
+    assert "boom" in (app.state.local_ai_error or "")

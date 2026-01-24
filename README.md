@@ -190,6 +190,7 @@ uv run python app.py
 1. `uv run python app.py` を実行
 2. UIを開く（http://127.0.0.1:8765/）または `Ctrl + Alt + J` で翻訳を実行（テキスト/ファイルを自動判別）
 
+> **Note**: 起動直後はローカルAIの起動/ウォームアップ中のため、UI上部が「準備中」になります。ウォームアップ完了後に「準備完了」になります。
 > **Note**: YakuLingoは常駐型です。UIを閉じてもバックグラウンドで動作し続けます（終了は明示的に実行）。
 > **Note**: 常駐中はタスクバーに表示されない場合があります。UIはデスクトップの `YakuLingo`、`Ctrl + Alt + J`（またはタスクトレイのアイコンメニュー > `Open`）で開きます。
 > **Note**: ランチャー（`YakuLingo.exe`）はwatchdogで予期せぬ終了時に自動再起動します。完全に停止したい場合はタスクトレイのアイコンメニュー > `Exit` を実行してください。
@@ -406,7 +407,7 @@ cd local_ai\llama_cpp\vulkan
 - `local_ai_batch_size` / `local_ai_ubatch_size`: 対応ビルドのみ有効。大きすぎるとメモリ圧迫や不安定化
 - `local_ai_device` / `local_ai_n_gpu_layers`: GPUオフロード先と層数（例: `none` / `Vulkan0`, `0` / `16` / `99` / `auto` / `all`）。`--list-devices` が空の場合は Vulkan が利用できません（CPU-onlyで運用）
 - `local_ai_flash_attn`: Flash Attention（`auto` / `0` / `1`）
-- `local_ai_no_warmup`: 起動時の warmup 無効化（初回の待ち時間短縮）
+- `local_ai_no_warmup`: llama-server の内部 warmup を無効化（初回起動を短縮することがある）。※YakuLingoは準備完了前に軽量な ping を行います
 - `local_ai_mlock` / `local_ai_no_mmap`: メモリ固定/メモリマップ無効化。メモリ消費が増え、環境によっては起動に失敗するため、失敗時は `false` に戻して再実行
 - `local_ai_vk_force_max_allocation_size` / `local_ai_vk_disable_f16`: Vulkanトラブルシュート用
 - `local_ai_cache_type_k` / `local_ai_cache_type_v`: KVキャッシュ型（例: `q8_0`）。既定は `q8_0`、`null` で無効化（`f16` 相当）に戻す

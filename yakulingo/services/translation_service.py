@@ -4411,16 +4411,33 @@ class TranslationService:
                 output_language
             )
             numeric_hints = _build_to_en_numeric_hints(text)
+            first_pass_parts: list[str] = [
+                _TEXT_TO_EN_OUTPUT_LANGUAGE_RETRY_INSTRUCTION,
+            ]
+            if numeric_hints:
+                first_pass_parts.append(_TEXT_TO_EN_NUMERIC_RULE_INSTRUCTION)
 
             def build_compare_prompt(extra_instruction: Optional[str] = None) -> str:
                 prompt = template.replace("{translation_rules}", translation_rules)
                 prompt = prompt.replace("{reference_section}", reference_section)
                 prompt = prompt.replace("{input_text}", text)
                 extra_parts: list[str] = []
-                if extra_instruction:
-                    extra_parts.append(extra_instruction.strip())
-                if numeric_hints:
-                    extra_parts.append(numeric_hints.strip())
+                seen: set[str] = set()
+
+                def add_part(value: str | None) -> None:
+                    if not value:
+                        return
+                    normalized = value.strip()
+                    if not normalized or normalized in seen:
+                        return
+                    seen.add(normalized)
+                    extra_parts.append(normalized)
+
+                for part in first_pass_parts:
+                    add_part(part)
+                add_part(extra_instruction)
+                add_part(numeric_hints)
+
                 if extra_parts:
                     prompt = _insert_extra_instruction(prompt, "\n\n".join(extra_parts))
                 return prompt

@@ -130,6 +130,47 @@ async def test_ensure_local_ai_ready_transitions_through_warming_up(
     assert app.state.local_ai_model == "model.gguf"
 
 
+async def test_ensure_local_ai_ready_skips_warmup_when_already_ready(
+    monkeypatch,
+) -> None:
+    app = YakuLingoApp()
+    app.settings = AppSettings()
+    app.state.local_ai_state = LocalAIState.READY
+    app.state.local_ai_host = "127.0.0.1"
+    app.state.local_ai_port = 4891
+    app.state.local_ai_model = "model.gguf"
+
+    def fake_probe(self, *, host: str, port: int, timeout_s: float) -> bool:
+        _ = timeout_s
+        assert host == "127.0.0.1"
+        assert port == 4891
+        return True
+
+    monkeypatch.setattr(YakuLingoApp, "_probe_local_ai_models_ready", fake_probe)
+
+    class DummyManager:
+        def ensure_ready(self, _settings: AppSettings) -> LocalAIServerRuntime:
+            raise AssertionError("ensure_ready should not run when already READY")
+
+    monkeypatch.setattr(
+        "yakulingo.services.local_llama_server.get_local_llama_server_manager",
+        lambda: DummyManager(),
+    )
+
+    def fail_warmup(*_args, **_kwargs) -> None:  # pragma: no cover
+        raise AssertionError("warmup should not run when already READY")
+
+    monkeypatch.setattr(
+        "yakulingo.services.local_ai_client.LocalAIClient.warmup",
+        fail_warmup,
+    )
+
+    ok = await app._ensure_local_ai_ready_async()
+
+    assert ok is True
+    assert app.state.local_ai_state == LocalAIState.READY
+
+
 async def test_ensure_local_ai_ready_sets_not_installed_on_missing(
     monkeypatch,
 ) -> None:

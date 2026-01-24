@@ -1637,6 +1637,9 @@ class YakuLingoApp:
         self._local_ai_ensure_task: "asyncio.Task | None" = None
         self._local_ai_warmup_task: "asyncio.Task | None" = None
         self._local_ai_warmup_key: Optional[str] = None
+        # Local AI READY probe (avoid redundant warmup on every translation)
+        self._local_ai_ready_probe_key: str | None = None
+        self._local_ai_ready_probe_at: float | None = None
         # Copilot state cache to throttle frequent UI status polling.
         self._last_copilot_state: Optional[str] = None
         self._last_copilot_state_at: float | None = None
@@ -8907,6 +8910,33 @@ class YakuLingoApp:
         except Exception as e:
             logger.debug("LocalAI warmup failed: %s", e)
 
+    def _probe_local_ai_models_ready(
+        self,
+        *,
+        host: str,
+        port: int,
+        timeout_s: float,
+    ) -> bool:
+        """Lightweight liveness check for the local llama-server (/v1/models)."""
+        import urllib.error
+        import urllib.request
+        from urllib.parse import urlparse
+
+        url = f"http://{host}:{port}/v1/models"
+        parsed = urlparse(url)
+        hostname = (parsed.hostname or "").lower()
+        if hostname in {"localhost", "127.0.0.1", "::1"}:
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        else:
+            opener = urllib.request.build_opener()
+
+        request = urllib.request.Request(url, method="GET")
+        try:
+            with opener.open(request, timeout=float(timeout_s)) as response:
+                return bool(getattr(response, "status", 200) == 200)
+        except (urllib.error.URLError, TimeoutError, ValueError):
+            return False
+
     async def _ensure_local_ai_ready_async(self) -> bool:
         """Ensure local llama-server is ready (non-streaming, localhost only)."""
         existing = self._local_ai_ensure_task
@@ -8916,6 +8946,41 @@ class YakuLingoApp:
             except Exception:
                 pass
             return self.state.local_ai_state == LocalAIState.READY
+
+        if self.state.local_ai_state == LocalAIState.READY:
+            host = (self.state.local_ai_host or "").strip()
+            try:
+                port = int(self.state.local_ai_port or 0)
+            except Exception:
+                port = 0
+            model = (self.state.local_ai_model or "").strip()
+            if host and port > 0:
+                now = time.monotonic()
+                key = f"{host}:{port}:{model}"
+                last_key = self._local_ai_ready_probe_key
+                last_at = self._local_ai_ready_probe_at
+                ttl_s = 3.0
+                if (
+                    last_key == key
+                    and isinstance(last_at, (int, float))
+                    and (now - float(last_at)) <= ttl_s
+                ):
+                    return True
+
+                ok = False
+                try:
+                    ok = await asyncio.to_thread(
+                        self._probe_local_ai_models_ready,
+                        host=host,
+                        port=port,
+                        timeout_s=0.35,
+                    )
+                except Exception:
+                    ok = False
+                if ok:
+                    self._local_ai_ready_probe_key = key
+                    self._local_ai_ready_probe_at = now
+                    return True
 
         self.state.local_ai_state = LocalAIState.STARTING
         self.state.local_ai_error = ""
@@ -8991,8 +9056,6 @@ class YakuLingoApp:
                     self._header_status.refresh()
                 self._refresh_translate_button_state()
         try:
-            import time
-
             from yakulingo.services.local_ai_client import LocalAIClient
 
             logger.info("[TIMING] LocalAI warmup started")
@@ -9024,6 +9087,8 @@ class YakuLingoApp:
                 pass
 
         self.state.local_ai_state = LocalAIState.READY
+        self._local_ai_ready_probe_key = f"{runtime.host}:{runtime.port}:{runtime.model_id or runtime.model_path.name}"
+        self._local_ai_ready_probe_at = time.monotonic()
         client = self._get_active_client()
         if client:
             with client:

@@ -4110,6 +4110,26 @@ class TranslationService:
                     or needs_numeric_rule_retry
                     or needs_rule_retry
                 ):
+                    if _LOCAL_AI_TIMING_ENABLED:
+                        retry_reasons: list[str] = []
+                        if needs_output_language_retry:
+                            retry_reasons.append("output_language")
+                        if needs_numeric_rule_retry:
+                            retry_reasons.append("numeric_rule")
+                        if needs_rule_retry:
+                            if rule_retry_reasons:
+                                retry_reasons.append(
+                                    f"rule({','.join(rule_retry_reasons)})"
+                                )
+                            else:
+                                retry_reasons.append("rule")
+                        logger.info(
+                            "[DIAG] LocalText retry scheduled: %s (output=%s style=%s chars=%d)",
+                            "+".join(retry_reasons) if retry_reasons else "unknown",
+                            output_language,
+                            style,
+                            len(text or ""),
+                        )
                     retry_parts: list[str] = []
                     if needs_output_language_retry:
                         retry_parts.append(
@@ -4166,6 +4186,13 @@ class TranslationService:
                     if needs_rule_retry:
                         metadata["to_en_rule_retry"] = True
                         metadata["to_en_rule_retry_reasons"] = list(rule_retry_reasons)
+                    if _LOCAL_AI_TIMING_ENABLED:
+                        logger.info(
+                            "[DIAG] LocalText retry response received (output=%s style=%s chars=%d)",
+                            output_language,
+                            style,
+                            len(text or ""),
+                        )
 
                 if _is_text_output_language_mismatch(translation, "en"):
                     metadata["output_language_mismatch"] = True
@@ -4284,6 +4311,12 @@ class TranslationService:
                     metadata=metadata,
                 )
             if _is_text_output_language_mismatch(translation, "jp"):
+                if _LOCAL_AI_TIMING_ENABLED:
+                    logger.info(
+                        "[DIAG] LocalText retry scheduled: output_language (output=%s chars=%d)",
+                        output_language,
+                        len(text or ""),
+                    )
                 retry_instruction = (
                     BatchTranslator._JP_STRICT_OUTPUT_LANGUAGE_INSTRUCTION
                 )

@@ -23,13 +23,13 @@ if "!STEP7_FROM_INSTALL_DEPS!"=="0" (
 )
 
 echo.
-echo [6/6] Installing Local AI runtime (llama.cpp + fixed Shisa model)...
-echo [INFO] Model is fixed: dahara1/shisa-v2.1-qwen3-8b-UD-japanese-imatrix/shisa-v2.1-qwen3-8B-IQ4_XS.gguf
+echo [6/6] Installing Local AI runtime (llama.cpp + fixed TranslateGemma model)...
+echo [INFO] Model is fixed: mradermacher/translategemma-4b-it-i1-GGUF/translategemma-4b-it.i1-Q4_K_S.gguf
 echo [INFO] This step may download large files (llama.cpp + model; a few GB).
 
 echo.
 echo Do you want to install Local AI runtime now?
-echo   [1] Yes - Download llama.cpp + Shisa model (recommended)
+echo   [1] Yes - Download llama.cpp + TranslateGemma model (recommended)
 echo   [2] No  - Skip this step (default)
 echo   [3] No  - Skip this step
 echo.

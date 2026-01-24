@@ -949,6 +949,57 @@ class LocalPromptBuilder:
         header = "### ルール適用ヒント（必ず使用）"
         return "\n".join([header, *lines]) + "\n"
 
+    @staticmethod
+    def _extract_pairs_from_hint_block(hints: str) -> list[tuple[str, str]]:
+        pairs: list[tuple[str, str]] = []
+        for line in (hints or "").splitlines():
+            stripped = line.strip()
+            if not stripped.startswith("- "):
+                continue
+            payload = stripped[2:].strip()
+            if "->" not in payload:
+                continue
+            left, right = payload.split("->", 1)
+            source = left.strip()
+            target = right.strip()
+            if not source or not target:
+                continue
+            pairs.append((source, target))
+        return pairs
+
+    def _extract_to_en_dynamic_glossary_pairs(
+        self,
+        text: str,
+        *,
+        max_pairs: int = 20,
+    ) -> list[tuple[str, str]]:
+        """抽出: JP→EN ルール由来の動的用語集ペア（source/target）。"""
+        text = (text or "").strip()
+        if not text:
+            return []
+
+        max_pairs = max(0, int(max_pairs))
+        if max_pairs == 0:
+            return []
+
+        pairs: list[tuple[str, str]] = []
+        seen: set[str] = set()
+
+        hint_blocks = (
+            self._build_to_en_numeric_hints(text),
+            self._build_to_en_rule_hints(text),
+        )
+        for hint_block in hint_blocks:
+            for source, target in self._extract_pairs_from_hint_block(hint_block):
+                if source in seen:
+                    continue
+                seen.add(source)
+                pairs.append((source, target))
+                if len(pairs) >= max_pairs:
+                    return pairs
+
+        return pairs
+
     def _build_to_en_structure_hints(self, text: str, *, include_item_ids: bool) -> str:
         text = (text or "").strip()
         if not text and not include_item_ids:

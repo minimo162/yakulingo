@@ -25,6 +25,9 @@ import re
 
 from yakulingo.services.local_ai_client import is_truncated_json
 
+if TYPE_CHECKING:
+    from yakulingo.services.local_llama_server import LocalAIServerRuntime
+
 # Module logger
 logger = logging.getLogger(__name__)
 
@@ -3757,6 +3760,7 @@ class TranslationService:
         prompt: str,
         reference_files: Optional[list[Path]] = None,
         on_chunk: "Callable[[str], None] | None" = None,
+        runtime: "LocalAIServerRuntime | None" = None,
     ) -> str:
         """Force a LocalAI translate_single call regardless of translation_backend."""
         self._ensure_local_backend()
@@ -3775,7 +3779,22 @@ class TranslationService:
 
         try:
             with lock:
-                return client.translate_single(text, prompt, reference_files, on_chunk)
+                if runtime is None:
+                    return client.translate_single(
+                        text, prompt, reference_files, on_chunk
+                    )
+                try:
+                    return client.translate_single(
+                        text,
+                        prompt,
+                        reference_files,
+                        on_chunk,
+                        runtime=runtime,
+                    )
+                except TypeError:
+                    return client.translate_single(
+                        text, prompt, reference_files, on_chunk
+                    )
         finally:
             if callable(set_cb):
                 try:
@@ -3919,6 +3938,25 @@ class TranslationService:
             max_segment_chars = getattr(
                 local_batch_translator, "max_chars_per_batch", None
             )
+            runtime = None
+            translate_single_with_cancel = self._translate_single_with_cancel_on_local
+            supports_runtime = False
+            try:
+                import inspect
+
+                supports_runtime = (
+                    "runtime"
+                    in inspect.signature(translate_single_with_cancel).parameters
+                )
+            except Exception:
+                supports_runtime = False
+
+            if supports_runtime:
+                local_client = self._local_client
+                if local_client is None:
+                    raise RuntimeError("Local AI client not initialized")
+                ensure_ready = getattr(local_client, "ensure_ready", None)
+                runtime = ensure_ready() if callable(ensure_ready) else None
 
             def _translate_segmented_fallback(
                 reason: str,
@@ -4056,8 +4094,14 @@ class TranslationService:
                 )
                 stream_handler = _wrap_local_streaming_on_chunk(on_chunk)
                 try:
-                    raw = self._translate_single_with_cancel_on_local(
-                        text, prompt, None, stream_handler
+                    raw = (
+                        self._translate_single_with_cancel_on_local(
+                            text, prompt, None, stream_handler, runtime=runtime
+                        )
+                        if (supports_runtime and runtime is not None)
+                        else self._translate_single_with_cancel_on_local(
+                            text, prompt, None, stream_handler
+                        )
                     )
                 except RuntimeError as e:
                     if str(e).startswith("LOCAL_PROMPT_TOO_LONG:"):
@@ -4185,8 +4229,14 @@ class TranslationService:
                         extra_instruction="\n".join(retry_parts).strip(),
                     )
                     try:
-                        retry_raw = self._translate_single_with_cancel_on_local(
-                            text, retry_prompt, None, None
+                        retry_raw = (
+                            self._translate_single_with_cancel_on_local(
+                                text, retry_prompt, None, None, runtime=runtime
+                            )
+                            if (supports_runtime and runtime is not None)
+                            else self._translate_single_with_cancel_on_local(
+                                text, retry_prompt, None, None
+                            )
                         )
                     except RuntimeError as e:
                         if str(e).startswith("LOCAL_PROMPT_TOO_LONG:"):
@@ -4320,8 +4370,14 @@ class TranslationService:
             )
             stream_handler = _wrap_local_streaming_on_chunk(on_chunk)
             try:
-                raw = self._translate_single_with_cancel_on_local(
-                    text, prompt, None, stream_handler
+                raw = (
+                    self._translate_single_with_cancel_on_local(
+                        text, prompt, None, stream_handler, runtime=runtime
+                    )
+                    if (supports_runtime and runtime is not None)
+                    else self._translate_single_with_cancel_on_local(
+                        text, prompt, None, stream_handler
+                    )
                 )
             except RuntimeError as e:
                 if str(e).startswith("LOCAL_PROMPT_TOO_LONG:"):
@@ -4357,8 +4413,14 @@ class TranslationService:
                 )
                 retry_prompt = _insert_extra_instruction(prompt, retry_instruction)
                 try:
-                    retry_raw = self._translate_single_with_cancel_on_local(
-                        text, retry_prompt, None, None
+                    retry_raw = (
+                        self._translate_single_with_cancel_on_local(
+                            text, retry_prompt, None, None, runtime=runtime
+                        )
+                        if (supports_runtime and runtime is not None)
+                        else self._translate_single_with_cancel_on_local(
+                            text, retry_prompt, None, None
+                        )
                     )
                 except RuntimeError as e:
                     if str(e).startswith("LOCAL_PROMPT_TOO_LONG:"):

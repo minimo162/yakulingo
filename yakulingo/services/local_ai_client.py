@@ -1009,19 +1009,21 @@ class LocalAIClient:
         reference_files: Optional[list[Path]] = None,
         on_chunk: Optional[Callable[[str], None]] = None,
         timeout: Optional[int] = None,
+        runtime: Optional[LocalAIServerRuntime] = None,
     ) -> str:
         _ = text
         _ = reference_files
-        t0 = time.perf_counter()
-        runtime = self.ensure_ready()
-        t_ready = time.perf_counter() - t0
-        logger.debug(
-            "[TIMING] LocalAI ensure_ready: %.2fs (host=%s port=%d model=%s)",
-            t_ready,
-            runtime.host,
-            runtime.port,
-            runtime.model_id or runtime.model_path.name,
-        )
+        if runtime is None:
+            t0 = time.perf_counter()
+            runtime = self.ensure_ready()
+            t_ready = time.perf_counter() - t0
+            logger.debug(
+                "[TIMING] LocalAI ensure_ready: %.2fs (host=%s port=%d model=%s)",
+                t_ready,
+                runtime.host,
+                runtime.port,
+                runtime.model_id or runtime.model_path.name,
+            )
 
         t1 = time.perf_counter()
         if on_chunk is None:
@@ -1048,22 +1050,24 @@ class LocalAIClient:
         timeout: int = 300,
         include_item_ids: bool = False,
         max_retries: int = 0,
+        runtime: Optional[LocalAIServerRuntime] = None,
     ) -> list[str]:
         _ = reference_files
         _ = skip_clear_wait
         _ = include_item_ids
         _ = max_retries
 
-        t0 = time.perf_counter()
-        runtime = self.ensure_ready()
-        t_ready = time.perf_counter() - t0
-        logger.debug(
-            "[TIMING] LocalAI ensure_ready: %.2fs (host=%s port=%d model=%s)",
-            t_ready,
-            runtime.host,
-            runtime.port,
-            runtime.model_id or runtime.model_path.name,
-        )
+        if runtime is None:
+            t0 = time.perf_counter()
+            runtime = self.ensure_ready()
+            t_ready = time.perf_counter() - t0
+            logger.debug(
+                "[TIMING] LocalAI ensure_ready: %.2fs (host=%s port=%d model=%s)",
+                t_ready,
+                runtime.host,
+                runtime.port,
+                runtime.model_id or runtime.model_path.name,
+            )
 
         t1 = time.perf_counter()
         result = self._chat_completions(runtime, prompt, timeout=timeout)

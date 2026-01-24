@@ -11,6 +11,7 @@ import re
 import threading
 import time
 import unicodedata
+from collections.abc import Iterable
 from decimal import Decimal, InvalidOperation
 from dataclasses import dataclass
 from pathlib import Path
@@ -110,6 +111,7 @@ class LocalPromptBuilder:
             tuple[
                 tuple[tuple[str, int, int], ...],
                 Optional[tuple[int, str, str]],
+                tuple[str, ...],
                 EmbeddedReference,
             ]
         ] = None
@@ -305,10 +307,17 @@ class LocalPromptBuilder:
         input_text: str,
         *,
         max_lines: int,
+        exclude_sources_folded: Iterable[str] | None = None,
     ) -> tuple[list[tuple[str, str]], bool]:
         text = (input_text or "").strip()
         if not text:
             return [], False
+
+        exclude: set[str] = set()
+        for term in exclude_sources_folded or ():
+            normalized = LocalPromptBuilder._normalize_for_glossary_match(term)
+            if normalized:
+                exclude.add(normalized)
 
         if len(text) > 12000:
             text = LocalPromptBuilder._sample_text_for_glossary_match(
@@ -399,6 +408,8 @@ class LocalPromptBuilder:
             ) = glossary.pairs[idx]
             source = (source or "").strip()
             if not source:
+                continue
+            if exclude and source_folded and source_folded in exclude:
                 continue
             if source in seen:
                 continue
@@ -991,14 +1002,36 @@ class LocalPromptBuilder:
         )
         for hint_block in hint_blocks:
             for source, target in self._extract_pairs_from_hint_block(hint_block):
-                if source in seen:
+                normalized = self._normalize_for_glossary_match(source)
+                if not normalized:
                     continue
-                seen.add(source)
+                if normalized in seen:
+                    continue
+                seen.add(normalized)
                 pairs.append((source, target))
                 if len(pairs) >= max_pairs:
                     return pairs
 
         return pairs
+
+    def _build_to_en_generated_glossary_section_with_excludes(
+        self,
+        text: str,
+        *,
+        max_pairs: int = 20,
+    ) -> tuple[str, tuple[str, ...]]:
+        pairs = self._extract_to_en_dynamic_glossary_pairs(text, max_pairs=max_pairs)
+        if not pairs:
+            return "", ()
+
+        lines = ["### Glossary (generated; apply verbatim)"]
+        exclude: set[str] = set()
+        for source, target in pairs:
+            lines.append(f"- JP: {source} | EN: {target}")
+            normalized = self._normalize_for_glossary_match(source)
+            if normalized:
+                exclude.add(normalized)
+        return "\n".join(lines) + "\n", tuple(sorted(exclude))
 
     def _build_to_en_generated_glossary_section(
         self,
@@ -1006,14 +1039,10 @@ class LocalPromptBuilder:
         *,
         max_pairs: int = 20,
     ) -> str:
-        pairs = self._extract_to_en_dynamic_glossary_pairs(text, max_pairs=max_pairs)
-        if not pairs:
-            return ""
-
-        lines = ["### Glossary (generated; apply verbatim)"]
-        for source, target in pairs:
-            lines.append(f"- JP: {source} | EN: {target}")
-        return "\n".join(lines) + "\n"
+        section, _exclude = self._build_to_en_generated_glossary_section_with_excludes(
+            text, max_pairs=max_pairs
+        )
+        return section
 
     def _build_to_en_structure_hints(self, text: str, *, include_item_ids: bool) -> str:
         text = (text or "").strip()
@@ -1272,6 +1301,7 @@ class LocalPromptBuilder:
         reference_files: Optional[Sequence[Path]],
         *,
         input_text: Optional[str] = None,
+        exclude_glossary_sources: Iterable[str] | None = None,
     ) -> EmbeddedReference:
         timing_enabled = _TIMING_ENABLED and logger.isEnabledFor(logging.DEBUG)
         t0 = time.perf_counter() if timing_enabled else 0.0
@@ -1297,14 +1327,22 @@ class LocalPromptBuilder:
         cache_key = tuple(key_items)
         text_key = self._input_fingerprint(input_text)
 
+        exclude: set[str] = set()
+        for term in exclude_glossary_sources or ():
+            normalized = self._normalize_for_glossary_match(term)
+            if normalized:
+                exclude.add(normalized)
+        exclude_key = tuple(sorted(exclude))
+
         with self._reference_lock:
             if (
                 self._reference_cache
                 and self._reference_cache[0] == cache_key
                 and self._reference_cache[1] == text_key
+                and self._reference_cache[2] == exclude_key
             ):
                 if timing_enabled:
-                    embedded = self._reference_cache[2]
+                    embedded = self._reference_cache[3]
                     logger.debug(
                         "[TIMING] LocalPromptBuilder.build_reference_embed: %.4fs (files=%d cache=hit input_chars=%d embedded_chars=%d truncated=%s warnings=%d)",
                         time.perf_counter() - t0,
@@ -1314,7 +1352,7 @@ class LocalPromptBuilder:
                         bool(embedded.truncated),
                         len(embedded.warnings or []),
                     )
-                return self._reference_cache[2]
+                return self._reference_cache[3]
 
         max_total_chars = 4000
         max_file_chars = 2000
@@ -1340,7 +1378,10 @@ class LocalPromptBuilder:
                     continue
                 glossary = self._load_glossary_index(path, file_key)
                 matched, glossary_truncated = self._filter_glossary_pairs(
-                    glossary, input_text or "", max_lines=glossary_max_lines
+                    glossary,
+                    input_text or "",
+                    max_lines=glossary_max_lines,
+                    exclude_sources_folded=exclude_key,
                 )
                 if not matched:
                     continue
@@ -1413,7 +1454,7 @@ class LocalPromptBuilder:
                 text="", warnings=warnings, truncated=truncated
             )
             with self._reference_lock:
-                self._reference_cache = (cache_key, text_key, embedded)
+                self._reference_cache = (cache_key, text_key, exclude_key, embedded)
             if timing_enabled:
                 logger.debug(
                     "[TIMING] LocalPromptBuilder.build_reference_embed: %.4fs (files=%d cache=miss input_chars=%d embedded_chars=0 truncated=%s warnings=%d)",
@@ -1440,7 +1481,7 @@ class LocalPromptBuilder:
             text=embedded_text, warnings=warnings, truncated=truncated
         )
         with self._reference_lock:
-            self._reference_cache = (cache_key, text_key, embedded)
+            self._reference_cache = (cache_key, text_key, exclude_key, embedded)
         if timing_enabled:
             logger.debug(
                 "[TIMING] LocalPromptBuilder.build_reference_embed: %.4fs (files=%d cache=miss input_chars=%d embedded_chars=%d truncated=%s warnings=%d)",
@@ -1581,15 +1622,17 @@ class LocalPromptBuilder:
             if rule_context_text.strip()
             else self._get_translation_rules(output_language)
         )
+        generated_glossary, exclude_glossary_sources = (
+            self._build_to_en_generated_glossary_section_with_excludes(rule_context_text)
+            if output_language == "en"
+            else ("", ())
+        )
         embedded_ref = self.build_reference_embed(
-            reference_files, input_text=context_text
+            reference_files,
+            input_text=context_text,
+            exclude_glossary_sources=exclude_glossary_sources,
         )
         reference_section = embedded_ref.text if embedded_ref.text else ""
-        generated_glossary = (
-            self._build_to_en_generated_glossary_section(rule_context_text)
-            if output_language == "en"
-            else ""
-        )
         structure_hints = (
             self._build_to_en_structure_hints(
                 context_text, include_item_ids=include_item_ids
@@ -1650,9 +1693,15 @@ class LocalPromptBuilder:
         timing_enabled = _TIMING_ENABLED and logger.isEnabledFor(logging.DEBUG)
         t0 = time.perf_counter() if timing_enabled else 0.0
 
-        embedded_ref = self.build_reference_embed(reference_files, input_text=text)
+        numeric_hints, exclude_glossary_sources = (
+            self._build_to_en_generated_glossary_section_with_excludes(text)
+        )
+        embedded_ref = self.build_reference_embed(
+            reference_files,
+            input_text=text,
+            exclude_glossary_sources=exclude_glossary_sources,
+        )
         translation_rules = self._get_translation_rules_for_text("en", text)
-        numeric_hints = self._build_to_en_generated_glossary_section(text)
         reference_section = embedded_ref.text if embedded_ref.text else ""
         prompt_input_text = self._base.normalize_input_text(text, "en")
         extra_instruction = extra_instruction.strip() if extra_instruction else ""
@@ -1688,9 +1737,15 @@ class LocalPromptBuilder:
         template = self._load_template(
             "local_text_translate_to_en_missing_styles_json.txt"
         )
-        embedded_ref = self.build_reference_embed(reference_files, input_text=text)
+        numeric_hints, exclude_glossary_sources = (
+            self._build_to_en_generated_glossary_section_with_excludes(text)
+        )
+        embedded_ref = self.build_reference_embed(
+            reference_files,
+            input_text=text,
+            exclude_glossary_sources=exclude_glossary_sources,
+        )
         translation_rules = self._get_translation_rules_for_text("en", text)
-        numeric_hints = self._build_to_en_generated_glossary_section(text)
         reference_section = embedded_ref.text if embedded_ref.text else ""
         prompt_input_text = self._base.normalize_input_text(text, "en")
         extra_instruction = extra_instruction.strip() if extra_instruction else ""
@@ -1735,9 +1790,15 @@ class LocalPromptBuilder:
         t0 = time.perf_counter() if timing_enabled else 0.0
 
         template = self._load_template("local_text_translate_to_en_single_json.txt")
-        embedded_ref = self.build_reference_embed(reference_files, input_text=text)
+        numeric_hints, exclude_glossary_sources = (
+            self._build_to_en_generated_glossary_section_with_excludes(text)
+        )
+        embedded_ref = self.build_reference_embed(
+            reference_files,
+            input_text=text,
+            exclude_glossary_sources=exclude_glossary_sources,
+        )
         translation_rules = self._get_translation_rules_for_text("en", text)
-        numeric_hints = self._build_to_en_generated_glossary_section(text)
         reference_section = embedded_ref.text if embedded_ref.text else ""
         prompt_input_text = self._base.normalize_input_text(text, "en")
         extra_instruction = extra_instruction.strip() if extra_instruction else ""

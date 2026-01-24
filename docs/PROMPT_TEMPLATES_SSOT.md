@@ -94,7 +94,7 @@ Notes for YakuLingo:
 ## llama.cpp Usage Example (verbatim)
 
 ```bash
-llama-cli -m local_ai/models/shisa-v2.1-qwen3-8B-IQ4_XS.gguf -p "Translate the following segment into Chinese, without additional explanation.\n\nIt’s on the house." -n 4096 --temp 0.7 --top-k 64 --top-p 0.95 --repeat-penalty 1.05 --no-warmup
+llama-cli -m local_ai/models/translategemma-4b-it.i1-Q4_K_S.gguf -p "Translate the following segment into Chinese, without additional explanation.\n\nIt’s on the house." -n 4096 --temp 0.7 --top-k 64 --top-p 0.95 --repeat-penalty 1.05 --no-warmup
 ```
 
 ## ollama Usage Example

@@ -38,6 +38,8 @@ uv run python tools/bench_local_prompt_builder.py --glossary-rows 20000 --input-
 uv run python tools/audit_local_prompt_lengths.py
 ```
 
+> **Note**: ローカルAIは指示追従性向上のため、送信時にプロンプトを2回反復します（`prompt + "\n\n" + prompt`）。そのため本スクリプトの出力（生成されたプロンプト長）に対して、実際の送信プロンプトは概ね2倍になります。
+
 このケース（`yakulingo-local-ai-prompt-rules-compress-20260121-160322`）の比較例:
 - baseline: `58f5e90b`（task-00）
 - after: `722e5115`（task-04）
@@ -133,7 +135,7 @@ uv run python tools/bench_local_ai.py --mode warm --with-glossary
 ### 記録する指標
 - `translation_seconds`: 推論にかかった時間
 - `total_seconds`: プロンプト構築 + 推論（single のみ）
-- `prompt_chars`: プロンプト文字数（single のみ）
+- `prompt_chars`: 生成されたプロンプト文字数（single のみ。送信時にプロンプト反復が有効な場合、実効は概ね2倍）
 - `prompt_build_seconds`: プロンプト構築時間（single のみ）
 - `warmup_seconds[]`: ウォームアップ実行時間
 - `translate_single_calls_translation`: 本計測での推論呼び出し回数（`1` が理想）
@@ -205,7 +207,7 @@ uv run python tools/bench_local_ai.py --mode warm \
 
 # モデル・サーバディレクトリの指定
 uv run python tools/bench_local_ai.py --mode warm \
-  --model-path local_ai/models/shisa-v2.1-qwen3-8B-IQ4_XS.gguf \
+  --model-path local_ai/models/translategemma-4b-it.i1-Q4_K_S.gguf \
   --server-dir local_ai/llama_cpp --json
 
 # max_tokens を無効化（0以下でNone扱い）
@@ -291,7 +293,7 @@ uv run python tools/bench_llama_bench_compare.py --format markdown \
 ```bash
 uv run python tools/bench_llama_bench_compare.py \
   --server-dir local_ai/llama_cpp \
-  --model-path local_ai/models/shisa-v2.1-qwen3-8B-IQ4_XS.gguf \
+  --model-path local_ai/models/translategemma-4b-it.i1-Q4_K_S.gguf \
   --pg 2048,256 -r 3 \
   --device <VULKAN_DEVICE> --n-gpu-layers all \
   --extra-args -b 2048 -ub 512 -fa 0
@@ -462,7 +464,7 @@ task-06 の所見（pp は速いが tg が同等）を受け、tg に効く可�
   - `local_ai_vk_disable_f16 = true` を試す（CLIなら `--vk-disable-f16`）
 
 ## 参考（過去メモ）: AgentCPM-Explore / Shisa（Qwen3）推奨パラメータ
-> **Note**: 現行の既定モデル（shisa-v2.1-qwen3-8B-IQ4_XS）に対する推奨値ではありません。Qwen3 系を検証していた頃のメモとして残しています。
+> **Note**: 現行の既定モデル（translategemma-4b-it.i1-Q4_K_S）に対する推奨値ではありません。Qwen3 系を検証していた頃のメモとして残しています。
 
 - Qwen3 は温度0の決定論的生成で繰り返しが起きやすいため、サンプリング（Temperature > 0）が推奨されていました。
 - 推奨値（参考: 検証当時）:
@@ -588,7 +590,7 @@ E2E:
 
 ## ケース記録（case: yakulingo-local-ai-streaming-speedup-20260119-063004）
 
-- 環境: Windows-10 / llama.cpp avx2 7718（db79dc06b）/ model=translategemma-4b-it.IQ4_XS.gguf（当時。現行既定: shisa-v2.1-qwen3-8B-IQ4_XS.gguf）
+- 環境: Windows-10 / llama.cpp avx2 7718（db79dc06b）/ model=translategemma-4b-it.IQ4_XS.gguf（当時。現行既定: translategemma-4b-it.i1-Q4_K_S.gguf）
 - 条件: style=minimal / glossary=off / server_variant=avx2（CPU-only）
 
 ### CLIベンチ（tools/bench_local_ai.py）

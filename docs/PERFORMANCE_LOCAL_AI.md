@@ -10,6 +10,21 @@
   - `uv sync --extra test`
   - `playwright install chromium`（E2E計測を使う場合）
 
+## 出力保存先（ケース運用）
+改善前後を**再現可能**に比較するため、計測結果はケースごとに `work/<CASE_ID>/.tmp/` に保存する（`work/` はリポジトリ管理外）。
+
+```powershell
+$CASE_ID = "<CASE_ID>"
+$OUT_DIR = "work/$CASE_ID/.tmp"
+New-Item -ItemType Directory -Force $OUT_DIR | Out-Null
+```
+
+```bash
+CASE_ID="<CASE_ID>"
+OUT_DIR="work/${CASE_ID}/.tmp"
+mkdir -p "$OUT_DIR"
+```
+
 ## 計測ログの有効化（任意）
 追加の詳細計測（プロンプト生成・TTFT・リトライ集計）を出したい場合は、環境変数 `YAKULINGO_LOCAL_AI_TIMING=1` を設定して起動する。
 
@@ -34,20 +49,26 @@ uv run python tools/bench_local_prompt_builder.py --glossary-rows 20000 --input-
 プロンプト短縮の効果（prompt_chars の減少）を、サーバ無しで再現可能に確認する。
 
 ```powershell
-# 現在のブランチ/コミットで計測（サンプル入力で build_* の文字数を出力）
-uv run python tools/audit_local_prompt_lengths.py
+# 事前に $OUT_DIR を用意（上の「出力保存先（ケース運用）」参照）
+$TAG = (git rev-parse --short HEAD)
+uv run python tools/audit_local_prompt_lengths.py --out "$OUT_DIR/audit_local_prompt_lengths_$TAG.txt"
 ```
 
 > **Note**: ローカルAIは指示追従性向上のため、送信時にプロンプトを2回反復します（`prompt + "\n\n" + prompt`）。そのため本スクリプトの出力（生成されたプロンプト長）に対して、実際の送信プロンプトは概ね2倍になります。
 
-このケース（`yakulingo-local-ai-prompt-rules-compress-20260121-160322`）の比較例:
-- baseline: `58f5e90b`（task-00）
-- after: `722e5115`（task-04）
+比較（baseline/after）の例（保存先固定）:
 
-結果（Built prompts / no reference files）:
-- `build_text_to_en_single`: 1031 → 563
-- `build_text_to_jp`: 556 → 258
-- `build_batch (to_en)`: 1849 → 1602
+```powershell
+git switch --detach <BASELINE_SHA>
+$TAG = (git rev-parse --short HEAD)
+uv run python tools/audit_local_prompt_lengths.py --out "$OUT_DIR/audit_local_prompt_lengths_$TAG.txt"
+
+git switch --detach <AFTER_SHA>
+$TAG = (git rev-parse --short HEAD)
+uv run python tools/audit_local_prompt_lengths.py --out "$OUT_DIR/audit_local_prompt_lengths_$TAG.txt"
+
+# 保存した2ファイルを diff して比較する
+```
 
 > **Note**: task-03 で「入力に応じた翻訳ルール注入」を導入しているため、短文では特に `translation_rules` が短くなります（数値/単位ルール等は必要時のみ）。
 
@@ -107,7 +128,7 @@ UMA(iGPU) 注意点:
 - 変更対象は 1〜2 個に絞り、他の条件（モデル/入力文/参照ファイル/実行環境）を固定する
 - 4〜6 条件の小さなマトリクスで実行し、1条件あたりの計測は短時間で終わる範囲にする
 - 上書きを使う場合は `--restart-server` を付け、反映済みの状態で比較する
-- JSON 出力は `run-id` を付けて `/work/<case-id>/.tmp/` に保存する
+- JSON 出力は `run-id` を付けて `work/<CASE_ID>/.tmp/` に保存する
 
 ## CLIベンチ（tools/bench_local_ai.py）
 
@@ -152,11 +173,8 @@ uv run python tools/bench_local_ai.py --mode warm --with-glossary
 # stdout にJSON（既存出力は維持され、最後にJSONが出力される）
 uv run python tools/bench_local_ai.py --mode warm --json
 
-# JSONをファイルに保存
-uv run python tools/bench_local_ai.py --mode warm --out .tmp/bench_local_ai.json
-
-# ケース運用（保存先を /work/<case-id>/.tmp/ に統一）
-uv run python tools/bench_local_ai.py --mode warm --out /work/<case-id>/.tmp/bench_local_ai.json
+# JSONをファイルに保存（ケース運用: work/<CASE_ID>/.tmp/ に統一）
+uv run python tools/bench_local_ai.py --mode warm --out work/<CASE_ID>/.tmp/bench_local_ai.json
 ```
 
 ### 追加オプション（タグ/出力保存/簡易精度）
@@ -167,9 +185,9 @@ uv run python tools/bench_local_ai.py --mode warm --out /work/<case-id>/.tmp/ben
 ```bash
 uv run python tools/bench_local_ai.py --mode warm \
   --tag ctx2048 \
-  --gold /work/<case-id>/.tmp/gold.txt \
-  --save-output /work/<case-id>/.tmp/output.txt \
-  --json --out /work/<case-id>/.tmp/bench_local_ai.json
+  --gold work/<CASE_ID>/.tmp/gold.txt \
+  --save-output work/<CASE_ID>/.tmp/output.txt \
+  --json --out work/<CASE_ID>/.tmp/bench_local_ai.json
 ```
 
 ### JSONの server メタデータ（オフロード確認）
@@ -230,20 +248,20 @@ CPU-only と Vulkan を同条件で比較する場合は、`--server-dir` と `-
 # CPU-only warm/cold（avx2 バイナリ + device none）
 uv run python tools/bench_local_ai.py --mode warm --restart-server \
   --server-dir local_ai/llama_cpp/avx2 --device none --n-gpu-layers 0 --flash-attn auto \
-  --json --out .tmp/bench_cpu_warm.json
+  --json --out work/<CASE_ID>/.tmp/bench_cpu_warm.json
 
 uv run python tools/bench_local_ai.py --mode cold --restart-server \
   --server-dir local_ai/llama_cpp/avx2 --device none --n-gpu-layers 0 --flash-attn auto \
-  --json --out .tmp/bench_cpu_cold.json
+  --json --out work/<CASE_ID>/.tmp/bench_cpu_cold.json
 
 # Vulkan(iGPU) warm/cold（vulkan バイナリ + device 指定）
 uv run python tools/bench_local_ai.py --mode warm --restart-server \
   --server-dir local_ai/llama_cpp/vulkan --device <VULKAN_DEVICE> --n-gpu-layers 99 --flash-attn auto \
-  --json --out .tmp/bench_vk_warm.json
+  --json --out work/<CASE_ID>/.tmp/bench_vk_warm.json
 
 uv run python tools/bench_local_ai.py --mode cold --restart-server \
   --server-dir local_ai/llama_cpp/vulkan --device <VULKAN_DEVICE> --n-gpu-layers 99 --flash-attn auto \
-  --json --out .tmp/bench_vk_cold.json
+  --json --out work/<CASE_ID>/.tmp/bench_vk_cold.json
 ```
 
 ### CPU-only の速度チューニング（一般）
@@ -255,12 +273,12 @@ CPU-only では、`local_ai_ctx_size` が大きいほど KV キャッシュが�
 uv run python tools/bench_local_ai.py --mode warm --restart-server --warmup-runs 1 \
   --server-dir local_ai/llama_cpp/avx2 --device none --n-gpu-layers 0 --flash-attn auto \
   --batch-size 512 --ubatch-size 128 \
-  --ctx-size 2048 --json --out .tmp/bench_cpu_ctx_2048.json
+  --ctx-size 2048 --json --out work/<CASE_ID>/.tmp/bench_cpu_ctx_2048.json
 
 uv run python tools/bench_local_ai.py --mode warm --restart-server --warmup-runs 1 \
   --server-dir local_ai/llama_cpp/avx2 --device none --n-gpu-layers 0 --flash-attn auto \
   --batch-size 512 --ubatch-size 128 \
-  --ctx-size 4096 --json --out .tmp/bench_cpu_ctx_4096.json
+  --ctx-size 4096 --json --out work/<CASE_ID>/.tmp/bench_cpu_ctx_4096.json
 ```
 
 傾向（同一入力・同一モデル・同一環境で比較）:
@@ -303,12 +321,12 @@ uv run python tools/bench_llama_bench_compare.py \
 
 ### 7B向け短時間スイープ（tools/bench_local_ai_sweep_7b.py）
 `tools/bench_local_ai.py` を **複数条件で連続実行**し、JSON とサマリ（Markdown）をまとめて出力します。
-結果は環境依存のため、**ケース運用では `/work/<case-id>/.tmp/` 配下へ保存し、リポジトリにはコミットしません**。
+結果は環境依存のため、**ケース運用では `work/<CASE_ID>/.tmp/` 配下へ保存し、リポジトリにはコミットしません**。
 
 ```bash
 uv run python tools/bench_local_ai_sweep_7b.py \
   --preset quick \
-  --out-dir /work/<case-id>/.tmp/sweep-7b-YYYYmmdd-HHMMSS
+  --out-dir work/<CASE_ID>/.tmp/sweep-7b-YYYYmmdd-HHMMSS
 ```
 
 プリセットの使い分け:
@@ -421,12 +439,12 @@ YakuLingo は翻訳実行時に `llama-server` を起動するため、サーバ
 uv run python tools/bench_local_ai.py --mode cold --restart-server \
   --server-dir local_ai/llama_cpp/avx2 --device none --n-gpu-layers 0 \
   --ctx-size 2048 --batch-size 512 --ubatch-size 128 --temperature 0 \
-  --out /work/<case-id>/.tmp/cold_warmup_on.json
+  --out work/<CASE_ID>/.tmp/cold_warmup_on.json
 
 uv run python tools/bench_local_ai.py --mode cold --restart-server \
   --server-dir local_ai/llama_cpp/avx2 --device none --n-gpu-layers 0 \
   --ctx-size 2048 --batch-size 512 --ubatch-size 128 --temperature 0 \
-  --no-warmup --out /work/<case-id>/.tmp/cold_no_warmup.json
+  --no-warmup --out work/<CASE_ID>/.tmp/cold_no_warmup.json
 ```
 
 ### task-08: `local_ai_threads_batch` 既定値（`0`=auto）を有効化
@@ -487,7 +505,7 @@ uv run --extra test python tools/e2e_local_ai_speed.py
 - ログ出力: `--app-log` でアプリのstdout/stderrを保存（未指定なら `.tmp/` に自動保存）
 - 事前条件: `local_ai/` が利用可能、PlaywrightのChromiumが導入済み
 - プロキシ環境: `tools/e2e_local_ai_speed.py` のHTTP ready判定は `127.0.0.1` / `localhost` をプロキシ無視でアクセスする（外部URL指定時は除く）
-- ケース運用では `--out` / `--app-log` を `/work/<case-id>/.tmp/` 配下に指定する
+- ケース運用では `--out` / `--app-log` を `work/<CASE_ID>/.tmp/` 配下に指定する
 
 ## アプリ起動を含む計測（手動テンプレ）
 

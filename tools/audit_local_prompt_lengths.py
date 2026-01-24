@@ -19,9 +19,9 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
-def _print_len(label: str, text: str) -> None:
+def _format_len(label: str, text: str) -> str:
     normalized = (text or "").replace("\r\n", "\n").replace("\r", "\n")
-    print(f"- {label}: chars={len(normalized)}")
+    return f"- {label}: chars={len(normalized)}"
 
 
 def main() -> int:
@@ -36,6 +36,12 @@ def main() -> int:
     )
     parser.add_argument("--batch-items", type=int, default=12)
     parser.add_argument(
+        "--out",
+        type=Path,
+        default=None,
+        help="Write output to file (UTF-8).",
+    )
+    parser.add_argument(
         "--show-head",
         type=int,
         default=0,
@@ -45,6 +51,14 @@ def main() -> int:
 
     repo_root = _repo_root()
     prompts_dir = repo_root / "prompts"
+
+    out_path: Path | None = args.out
+    output_lines: list[str] = []
+
+    def emit(line: str = "") -> None:
+        print(line)
+        if out_path is not None:
+            output_lines.append(line)
 
     if str(repo_root) not in sys.path:
         sys.path.insert(0, str(repo_root))
@@ -60,24 +74,36 @@ def main() -> int:
         prompts_dir, base_prompt_builder=base, settings=settings
     )
 
-    print("== Files ==")
+    emit("== Files ==")
     rules_path = prompts_dir / "translation_rules.txt"
-    _print_len(
-        "prompts/translation_rules.txt (raw)",
-        rules_path.read_text(encoding="utf-8"),
+    emit(
+        _format_len(
+            "prompts/translation_rules.txt (raw)",
+            rules_path.read_text(encoding="utf-8"),
+        )
     )
-    _print_len(
-        "translation_rules (common)", base.get_translation_rules("common").strip()
+    emit(
+        _format_len(
+            "translation_rules (common)", base.get_translation_rules("common").strip()
+        )
     )
-    _print_len("translation_rules (to_en)", base.get_translation_rules("en").strip())
-    _print_len("translation_rules (to_jp)", base.get_translation_rules("jp").strip())
+    emit(
+        _format_len(
+            "translation_rules (to_en)", base.get_translation_rules("en").strip()
+        )
+    )
+    emit(
+        _format_len(
+            "translation_rules (to_jp)", base.get_translation_rules("jp").strip()
+        )
+    )
 
     for name in _LOCAL_TEMPLATES:
         path = prompts_dir / name
-        _print_len(f"prompts/{name}", path.read_text(encoding="utf-8"))
+        emit(_format_len(f"prompts/{name}", path.read_text(encoding="utf-8")))
 
-    print("")
-    print("== Built prompts (no reference files) ==")
+    emit("")
+    emit("== Built prompts (no reference files) ==")
     sample_text = str(args.sample_text)
     sample_text_short = str(args.sample_text_short)
     prompt_en_single = builder.build_text_to_en_single(
@@ -86,14 +112,14 @@ def main() -> int:
         reference_files=None,
         detected_language="日本語",
     )
-    _print_len("LocalPromptBuilder.build_text_to_en_single", prompt_en_single)
+    emit(_format_len("LocalPromptBuilder.build_text_to_en_single", prompt_en_single))
 
     prompt_jp_single = builder.build_text_to_jp(
         "Revenue was 220k yen.",
         reference_files=None,
         detected_language="英語",
     )
-    _print_len("LocalPromptBuilder.build_text_to_jp", prompt_jp_single)
+    emit(_format_len("LocalPromptBuilder.build_text_to_jp", prompt_jp_single))
 
     batch_items = max(1, int(args.batch_items))
     batch_texts = [f"{sample_text} [{idx + 1}]" for idx in range(batch_items)]
@@ -105,11 +131,13 @@ def main() -> int:
         include_item_ids=True,
         reference_files=None,
     )
-    _print_len("LocalPromptBuilder.build_batch (to_en)", prompt_batch)
+    emit(_format_len("LocalPromptBuilder.build_batch (to_en)", prompt_batch))
 
-    _print_len(
-        "translation_rules (to_en, filtered short)",
-        builder._get_translation_rules_for_text("en", sample_text_short).strip(),
+    emit(
+        _format_len(
+            "translation_rules (to_en, filtered short)",
+            builder._get_translation_rules_for_text("en", sample_text_short).strip(),
+        )
     )
     batch_short_texts = [
         f"{sample_text_short} [{idx + 1}]" for idx in range(batch_items)
@@ -122,12 +150,14 @@ def main() -> int:
         include_item_ids=True,
         reference_files=None,
     )
-    _print_len("LocalPromptBuilder.build_batch (to_en, short)", prompt_batch_short)
+    emit(
+        _format_len("LocalPromptBuilder.build_batch (to_en, short)", prompt_batch_short)
+    )
 
     if args.show_head:
         head = max(1, int(args.show_head))
-        print("")
-        print("== Prompt heads ==")
+        emit("")
+        emit("== Prompt heads ==")
         for label, prompt in (
             ("en_single", prompt_en_single),
             ("jp_single", prompt_jp_single),
@@ -135,10 +165,15 @@ def main() -> int:
             ("batch_to_en_short", prompt_batch_short),
         ):
             lines = prompt.replace("\r\n", "\n").replace("\r", "\n").splitlines()
-            print(f"-- {label} (first {head} lines) --")
+            emit(f"-- {label} (first {head} lines) --")
             for line in lines[:head]:
-                print(line)
-            print("")
+                emit(line)
+            emit("")
+
+    if out_path is not None:
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text("\n".join(output_lines) + "\n", encoding="utf-8")
+        print(f"out: {out_path}")
 
     return 0
 

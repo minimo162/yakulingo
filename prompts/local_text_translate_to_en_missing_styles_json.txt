@@ -1,10 +1,6 @@
-Translate the following text from Japanese to English for styles={styles_json} (count={n_styles}).
-Output JSON only: an object with key "options" (array of {n_styles}).
-
-Rules:
-- No code fences. No extra text outside the JSON object.
-- options length must be {n_styles}; each item must include "style" (in {styles_json}) and "translation".
-- Keep [[ID:n]] markers. Preserve \\n / \\t in JSON strings.
+Translate JP->EN for styles={styles_json} (count={n_styles}).
+Return JSON only: {"options":[...]}.
+Rules: options len={n_styles}; each item has "style" (in {styles_json}) and "translation"; keep [[ID:n]]; preserve \\n / \\t; no extra text/fences.
 
 {translation_rules}
 {numeric_hints}

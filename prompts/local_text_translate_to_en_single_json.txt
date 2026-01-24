@@ -1,10 +1,6 @@
-Translate the following text from Japanese to English.
-Style: {style}
-Output JSON only: a single object with key "translation".
-
-Rules:
-- No code fences. No extra text outside the JSON object.
-- Keep [[ID:n]] markers. Preserve \\n / \\t in JSON strings.
+Translate JP->EN. Style: {style}
+Return JSON only: {"translation": "..."} (no code fences / no extra text).
+Keep [[ID:n]] markers and preserve \\n / \\t escapes in strings.
 
 {translation_rules}
 {numeric_hints}

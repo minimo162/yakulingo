@@ -1446,7 +1446,9 @@ class LocalPromptBuilder:
             }
             for i, text in enumerate(texts)
         ]
-        items_json = json.dumps({"items": items}, ensure_ascii=False)
+        items_json = json.dumps(
+            {"items": items}, ensure_ascii=False, separators=(",", ":")
+        )
 
         prompt = template.replace("{translation_rules}", translation_rules)
         prompt = prompt.replace("{numeric_hints}", numeric_hints)
@@ -1540,7 +1542,7 @@ class LocalPromptBuilder:
                 continue
             seen.add(style)
             style_list.append(style)
-        styles_json = json.dumps(style_list, ensure_ascii=False)
+        styles_json = json.dumps(style_list, ensure_ascii=False, separators=(",", ":"))
         prompt = template.replace("{translation_rules}", translation_rules)
         prompt = prompt.replace("{numeric_hints}", numeric_hints)
         prompt = prompt.replace("{reference_section}", reference_section)

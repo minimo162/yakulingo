@@ -1,11 +1,6 @@
-Translate each item.text from Japanese to English.
-Style: {style}
-Output JSON only: an object with key "items" (array of {n_items}).
-
-Rules:
-- No code fences. No extra text outside the JSON object.
-- items length must be {n_items}; ids must be 1..{n_items}; each item must include "id" and "translation".
-- Keep [[ID:n]] markers. Preserve \\n / \\t in JSON strings.
+Translate items[].text JP->EN. Style: {style}
+Return JSON only: {"items":[...]} (len={n_items}, id=1..{n_items}).
+Rules: each item has "id" and "translation"; keep [[ID:n]]; preserve \\n / \\t; no extra text/fences.
 
 {translation_rules}
 {numeric_hints}

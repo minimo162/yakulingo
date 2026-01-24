@@ -9785,13 +9785,6 @@ class YakuLingoApp:
         # Log when button was clicked (before any processing)
         button_click_time = time.monotonic()
 
-        # Use async version that will attempt auto-reconnection if needed
-        if not await self._ensure_connection_async():
-            return
-        if self.translation_service:
-            self.translation_service.reset_cancel()
-        self._cancel_local_ai_warmup("text translation started")
-
         source_text = self.state.source_text
 
         trace_id = self._active_translation_trace_id or f"text-{uuid.uuid4().hex[:8]}"
@@ -9802,6 +9795,28 @@ class YakuLingoApp:
             button_click_time,
             len(source_text),
         )
+
+        # Use async version that will attempt auto-reconnection if needed
+        ensure_start = time.monotonic()
+        ensure_ok = await self._ensure_connection_async()
+        ensure_done = time.monotonic()
+        local_ai_state = getattr(
+            self.state.local_ai_state, "value", self.state.local_ai_state
+        )
+        logger.info(
+            "[TIMING] Translation [%s] ensure_connection_async: %.3fs (since_click: %.3fs ok=%s local_ai_state=%s)",
+            trace_id,
+            ensure_done - ensure_start,
+            ensure_done - button_click_time,
+            ensure_ok,
+            local_ai_state,
+        )
+        if not ensure_ok:
+            self._active_translation_trace_id = None
+            return
+        if self.translation_service:
+            self.translation_service.reset_cancel()
+        self._cancel_local_ai_warmup("text translation started")
 
         # Check text length limit - switch to file translation for long text
         if len(source_text) > TEXT_TRANSLATION_CHAR_LIMIT:

@@ -13,3 +13,11 @@
 - 検証: `uv run pyright` / `uv run ruff check .` / `uv run --extra test pytest`（306 passed）
 - 統合: `main` に ff-only で取り込み → `origin/main` へ push 済み
 - クリーンアップ: remote/local ブランチ削除済み（`git ls-remote --heads` / `git branch --list` が空を確認）
+
+## task-02（インストーラ固定モデル更新）
+- ブランチ: `case-yakulingo-local-ai-model-shisa-v2-1-qwen3-8b-iq4-xs-20260124-080716-task-02-installer-fixed-model`
+- コミット: `d3c06843`（task-02: インストーラの固定モデルを更新）
+- URL確認: `https://huggingface.co/dahara1/shisa-v2.1-qwen3-8b-UD-japanese-imatrix/resolve/main/shisa-v2.1-qwen3-8B-IQ4_XS.gguf` → HTTP 200
+- 検証: `uv run pyright` / `uv run ruff check .` / `uv run --extra test pytest`（306 passed）
+- 統合: `main` に ff-only で取り込み → `origin/main` へ push 済み
+- クリーンアップ: remote/local ブランチ削除済み（`git ls-remote --heads` / `git branch --list` が空を確認）

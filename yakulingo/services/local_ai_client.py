@@ -46,6 +46,14 @@ _SYSTEM_TRANSLATION_PROMPT_JP = (
     "- Output only in the requested format (e.g., JSON only).\n"
 )
 
+_PROMPT_REPEAT_SEPARATOR = "\n\n"
+
+
+def _repeat_prompt_twice(prompt: str) -> str:
+    if not prompt:
+        return ""
+    return f"{prompt}{_PROMPT_REPEAT_SEPARATOR}{prompt}"
+
 
 def _select_system_prompt(prompt: str) -> str:
     return (
@@ -797,7 +805,7 @@ class LocalAIClient:
         response_format: str | None = None,
         include_sampling_params: bool = True,
     ) -> dict[str, object]:
-        prompt = prompt or ""
+        prompt = _repeat_prompt_twice(prompt or "")
         messages: list[dict[str, str]] = [{"role": "user", "content": prompt}]
         if not _is_hy_mt_model(runtime):
             messages.insert(
@@ -984,7 +992,7 @@ class LocalAIClient:
         logger.debug(
             "[TIMING] LocalAI warmup: %.2fs (prompt_chars=%d)",
             t_req,
-            len(prompt),
+            len(_repeat_prompt_twice(prompt)),
         )
 
     def translate_single(
@@ -1020,7 +1028,7 @@ class LocalAIClient:
             "[TIMING] LocalAI chat_completions%s: %.2fs (prompt_chars=%d)",
             "" if on_chunk is None else "_streaming",
             t_req,
-            len(prompt or ""),
+            len(_repeat_prompt_twice(prompt or "")),
         )
         return result.content
 
@@ -1056,7 +1064,7 @@ class LocalAIClient:
         logger.debug(
             "[TIMING] LocalAI chat_completions: %.2fs (prompt_chars=%d items=%d)",
             t_req,
-            len(prompt or ""),
+            len(_repeat_prompt_twice(prompt or "")),
             len(texts),
         )
         return parse_batch_translations(

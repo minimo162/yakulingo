@@ -55,6 +55,13 @@ def _repeat_prompt_twice(prompt: str) -> str:
     return f"{prompt}{_PROMPT_REPEAT_SEPARATOR}{prompt}"
 
 
+def _repeat_prompt_twice_len(prompt: str | None) -> int:
+    """Return the character length of `_repeat_prompt_twice(prompt)` without allocating it."""
+    if not prompt:
+        return 0
+    return len(prompt) * 2 + len(_PROMPT_REPEAT_SEPARATOR)
+
+
 def _select_system_prompt(prompt: str) -> str:
     return (
         _SYSTEM_TRANSLATION_PROMPT_JP
@@ -992,7 +999,7 @@ class LocalAIClient:
         logger.debug(
             "[TIMING] LocalAI warmup: %.2fs (prompt_chars=%d)",
             t_req,
-            len(_repeat_prompt_twice(prompt)),
+            _repeat_prompt_twice_len(prompt),
         )
 
     def translate_single(
@@ -1028,7 +1035,7 @@ class LocalAIClient:
             "[TIMING] LocalAI chat_completions%s: %.2fs (prompt_chars=%d)",
             "" if on_chunk is None else "_streaming",
             t_req,
-            len(_repeat_prompt_twice(prompt or "")),
+            _repeat_prompt_twice_len(prompt),
         )
         return result.content
 
@@ -1064,7 +1071,7 @@ class LocalAIClient:
         logger.debug(
             "[TIMING] LocalAI chat_completions: %.2fs (prompt_chars=%d items=%d)",
             t_req,
-            len(_repeat_prompt_twice(prompt or "")),
+            _repeat_prompt_twice_len(prompt),
             len(texts),
         )
         return parse_batch_translations(

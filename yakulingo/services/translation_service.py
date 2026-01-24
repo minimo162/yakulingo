@@ -42,6 +42,10 @@ _TEXT_TO_EN_NUMERIC_RULE_INSTRUCTION = (
     "Do not use 'billion', 'trillion', or 'bn'. Use 'oku' (and 'k') as specified. "
     "If numeric conversion hints are provided, use them verbatim."
 )
+_TEXT_TO_EN_NEGATIVE_RULE_INSTRUCTION = (
+    "CRITICAL: Convert ▲ negative numbers to parentheses with the number only (e.g., ▲50 -> (50)). "
+    "Do not output ▲ or a leading minus."
+)
 
 # Pre-compiled regex patterns for performance
 # Support both half-width (:) and full-width (：) colons, and markdown bold (**訳文:**)
@@ -122,13 +126,13 @@ _RE_EN_OKU = re.compile(r"\boku\b", re.IGNORECASE)
 _RE_JP_LARGE_UNIT = re.compile(r"[兆億]")
 _INT_WITH_OPTIONAL_COMMAS_PATTERN = r"(?:\d{1,3}(?:,\d{3})+|\d+)"
 _RE_JP_OKU_CHOU_YEN_AMOUNT = re.compile(
-    rf"(?P<sign>[▲+\-])?\s*(?:(?P<trillion>{_INT_WITH_OPTIONAL_COMMAS_PATTERN})兆(?:(?P<oku>{_INT_WITH_OPTIONAL_COMMAS_PATTERN})億)?|(?P<oku_only>{_INT_WITH_OPTIONAL_COMMAS_PATTERN})億)(?P<yen>円)?"
+    rf"(?P<sign>[▲+\-−])?\s*(?:(?P<trillion>{_INT_WITH_OPTIONAL_COMMAS_PATTERN})兆(?:(?P<oku>{_INT_WITH_OPTIONAL_COMMAS_PATTERN})億)?|(?P<oku_only>{_INT_WITH_OPTIONAL_COMMAS_PATTERN})億)(?P<yen>円)?"
 )
 _RE_JP_MAN_YEN_AMOUNT = re.compile(
-    rf"(?P<sign>[▲+\-])?\s*(?P<man>{_INT_WITH_OPTIONAL_COMMAS_PATTERN})万円"
+    rf"(?P<sign>[▲+\-−])?\s*(?P<man>{_INT_WITH_OPTIONAL_COMMAS_PATTERN})万円"
 )
 _RE_JP_YEN_AMOUNT = re.compile(
-    rf"(?P<sign>[▲+\-])?\s*(?P<yen>{_INT_WITH_OPTIONAL_COMMAS_PATTERN})円"
+    rf"(?P<sign>[▲+\-−])?\s*(?P<yen>{_INT_WITH_OPTIONAL_COMMAS_PATTERN})円"
 )
 _JP_PUNCTUATION_GUARD_TRANSLATION_TABLE = str.maketrans(
     {
@@ -267,7 +271,7 @@ def _build_to_en_numeric_hints(text: str) -> str:
         seen.add(raw)
 
         sign_marker = (match.group("sign") or "").strip()
-        is_negative = sign_marker == "▲" or sign_marker.startswith("-")
+        is_negative = sign_marker in {"▲", "-", "−"}
 
         has_yen = bool(match.group("yen"))
         trillion_str = match.group("trillion") or ""
@@ -4414,6 +4418,8 @@ class TranslationService:
             first_pass_parts: list[str] = [
                 _TEXT_TO_EN_OUTPUT_LANGUAGE_RETRY_INSTRUCTION,
             ]
+            if _RE_JP_TRIANGLE_NEGATIVE_NUMBER.search(text):
+                first_pass_parts.append(_TEXT_TO_EN_NEGATIVE_RULE_INSTRUCTION)
             if numeric_hints:
                 first_pass_parts.append(_TEXT_TO_EN_NUMERIC_RULE_INSTRUCTION)
 

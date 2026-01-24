@@ -42,7 +42,7 @@ _RE_GLOSSARY_ASCII_WORD = re.compile(r"^[a-z0-9]+$")
 _RE_GLOSSARY_TEXT_ASCII_WORD = re.compile(r"[a-z0-9]+")
 _ASCII_ALNUM = frozenset("abcdefghijklmnopqrstuvwxyz0123456789")
 _RE_JP_YEN_AMOUNT = re.compile(
-    r"(?P<sign>[▲+-])?\s*(?:(?P<trillion>\d[\d,]*(?:\.\d+)?)兆(?:(?P<oku>\d[\d,]*(?:\.\d+)?)億)?|(?P<oku_only>\d[\d,]*(?:\.\d+)?)億)(?P<yen>円)?"
+    r"(?P<sign>[▲+\-−])?\s*(?:(?P<trillion>\d[\d,]*(?:\.\d+)?)兆(?:(?P<oku>\d[\d,]*(?:\.\d+)?)億)?|(?P<oku_only>\d[\d,]*(?:\.\d+)?)億)(?P<yen>円)?"
 )
 _RE_JP_MAN_SEN_AMOUNT = re.compile(
     r"(?P<sign>[▲+\-−])?\s*(?P<man>\d[\d,]*(?:\.\d+)?)万(?:(?P<sen>\d[\d,]*(?:\.\d+)?)千)?(?P<unit>円|台)?"
@@ -1382,6 +1382,88 @@ class LocalPromptBuilder:
         if output_language not in ("en", "jp"):
             output_language = "en"
 
+        def build_rule_context_text(*, max_chars: int) -> str:
+            if output_language != "en":
+                return ""
+            if not texts:
+                return ""
+
+            def slice_around(value: str, *, pos: int, budget: int) -> str:
+                if budget <= 0 or not value:
+                    return ""
+                if len(value) <= budget:
+                    return value
+                half = budget // 2
+                start = max(0, pos - half)
+                end = start + budget
+                if end > len(value):
+                    end = len(value)
+                    start = max(0, end - budget)
+                return value[start:end]
+
+            def first_char_pos(value: str, chars: tuple[str, ...]) -> int | None:
+                positions = [value.find(ch) for ch in chars]
+                positions = [p for p in positions if p != -1]
+                return min(positions) if positions else None
+
+            parts: list[str] = []
+            total = 0
+            seen: set[str] = set()
+            per_snippet_max = min(800, max_chars)
+
+            def add_snippet(item: str, *, pos: int) -> None:
+                nonlocal total
+                separator_len = 0 if not parts else 1
+                remaining = max_chars - total - separator_len
+                if remaining <= 0:
+                    return
+                budget = min(per_snippet_max, remaining)
+                snippet = slice_around(item, pos=pos, budget=budget).strip()
+                if not snippet or snippet in seen:
+                    return
+                if separator_len:
+                    total += 1
+                parts.append(snippet)
+                seen.add(snippet)
+                total += len(snippet)
+
+            for item in texts:
+                if not item:
+                    continue
+                pos = first_char_pos(item, ("兆", "億"))
+                if pos is not None:
+                    add_snippet(item, pos=pos)
+                    break
+
+            for item in texts:
+                if not item:
+                    continue
+                pos = item.find("▲")
+                if pos != -1:
+                    add_snippet(item, pos=pos)
+                    break
+
+            for item in texts:
+                if not item:
+                    continue
+                if total >= max_chars:
+                    break
+                pos = first_char_pos(item, ("万", "千"))
+                if pos is not None:
+                    add_snippet(item, pos=pos)
+                    continue
+                for pattern in (
+                    _RE_TO_EN_FORBIDDEN_SYMBOLS,
+                    _RE_TO_EN_MONTH,
+                    _RE_TO_EN_YOY_TERMS,
+                ):
+                    match = pattern.search(item)
+                    if match:
+                        add_snippet(item, pos=match.start())
+                        break
+
+            return "\n".join(parts).strip()
+
         filename = (
             "local_batch_translate_to_en_json.txt"
             if output_language == "en"
@@ -1405,9 +1487,12 @@ class LocalPromptBuilder:
             context_parts.append(item)
             total_chars += len(item) + 1
         context_text = "\n".join(context_parts)
+        rule_context_text = build_rule_context_text(max_chars=max_context_chars)
+        if not rule_context_text:
+            rule_context_text = context_text
         translation_rules = (
-            self._get_translation_rules_for_text(output_language, context_text)
-            if context_text.strip()
+            self._get_translation_rules_for_text(output_language, rule_context_text)
+            if rule_context_text.strip()
             else self._get_translation_rules(output_language)
         )
         embedded_ref = self.build_reference_embed(
@@ -1415,12 +1500,12 @@ class LocalPromptBuilder:
         )
         reference_section = embedded_ref.text if embedded_ref.text else ""
         numeric_hints = (
-            self._build_to_en_numeric_hints(context_text)
+            self._build_to_en_numeric_hints(rule_context_text)
             if output_language == "en"
             else ""
         )
         rule_hints = (
-            self._build_to_en_rule_hints(context_text)
+            self._build_to_en_rule_hints(rule_context_text)
             if output_language == "en"
             else ""
         )

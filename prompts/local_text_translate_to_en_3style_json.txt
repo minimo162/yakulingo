@@ -1,7 +1,9 @@
 Translate JP->EN in 3 styles (order: standard, concise, minimal).
 Return JSON only: {"options":[...]}.
 Rules: options len=3; each item has "style" and "translation"; keep [[ID:n]]; preserve \\n / \\t; no extra text/fences.
+Self-check before output: follow Translation Rules; fix any violation, then output JSON only.
 
+### Translation Rules (critical; follow verbatim)
 {translation_rules}
 {numeric_hints}
 {reference_section}

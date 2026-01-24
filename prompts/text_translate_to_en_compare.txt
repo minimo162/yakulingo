@@ -1,6 +1,11 @@
 ## Text Translation Request (Minimal)
 Translate the Japanese text into minimal, business-ready English.
 
+### Translation Rules (critical; follow verbatim)
+{translation_rules}
+
+{reference_section}
+
 ### Rules (critical)
 - Output must match the exact format below (no extra headings/notes/Markdown/code fences).
 - In the "Translation:" content must be English only:
@@ -22,10 +27,6 @@ Translate the Japanese text into minimal, business-ready English.
 ### Output format (exact)
 [minimal]
 Translation:
-
-{translation_rules}
-
-{reference_section}
 
 ---
 

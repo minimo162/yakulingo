@@ -1038,6 +1038,26 @@ class LocalPromptBuilder:
             self._template_cache[filename] = text
             return text
 
+    def preload_startup_templates(self) -> None:
+        """Preload templates needed for the first local translation (best-effort)."""
+        filenames = (
+            "local_text_translate_to_en_single_json.txt",
+            "local_text_translate_to_en_3style_json.txt",
+            "local_text_translate_to_en_missing_styles_json.txt",
+            "local_text_translate_to_jp_json.txt",
+            "local_batch_translate_to_en_json.txt",
+            "local_batch_translate_to_jp_json.txt",
+        )
+        for filename in filenames:
+            try:
+                self._load_template(filename)
+            except Exception as e:
+                logger.debug(
+                    "Local prompt template preload skipped (%s): %s",
+                    filename,
+                    e,
+                )
+
     @staticmethod
     def _append_limited_text(
         chunks: list[str],

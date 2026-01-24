@@ -8781,6 +8781,51 @@ class YakuLingoApp:
         )
         return True
 
+    def _preload_prompt_builders_startup_sync(self) -> None:
+        """Preload translation rules and local prompt templates (best-effort)."""
+        if not self._ensure_translation_service():
+            return
+        translation_service = self.translation_service
+        if translation_service is None:
+            return
+
+        try:
+            prompt_builder = translation_service.prompt_builder
+            prompt_builder.reload_translation_rules_if_needed()
+            prompt_builder.get_translation_rules("common")
+            prompt_builder.get_translation_rules("en")
+            prompt_builder.get_translation_rules("jp")
+            prompt_builder.build(
+                "warmup",
+                has_reference_files=False,
+                output_language="en",
+                translation_style="concise",
+                reference_files=None,
+            )
+            prompt_builder.build(
+                "warmup",
+                has_reference_files=False,
+                output_language="jp",
+                translation_style="concise",
+                reference_files=None,
+            )
+        except Exception as e:
+            logger.debug("PromptBuilder preload skipped: %s", e)
+
+        try:
+            translation_service._ensure_local_backend()
+            local_prompt_builder = translation_service._local_prompt_builder
+            if local_prompt_builder is not None:
+                local_prompt_builder.preload_startup_templates()
+        except Exception as e:
+            logger.debug("LocalPromptBuilder preload skipped: %s", e)
+
+    async def _preload_prompt_builders_startup_async(self) -> None:
+        try:
+            await asyncio.to_thread(self._preload_prompt_builders_startup_sync)
+        except Exception as e:
+            logger.debug("Startup prompt preload failed: %s", e)
+
     @staticmethod
     def _build_local_ai_warmup_key(runtime: "LocalAIServerRuntime") -> str:
         model_name = runtime.model_id or runtime.model_path.name
@@ -8881,6 +8926,15 @@ class YakuLingoApp:
                     self._header_status.refresh()
                 self._refresh_translate_button_state()
 
+        preload_task: asyncio.Task | None = None
+        try:
+            preload_task = _create_logged_task(
+                self._preload_prompt_builders_startup_async(),
+                name="startup_prompt_preload",
+            )
+        except RuntimeError:
+            preload_task = None
+
         try:
             from yakulingo.services.local_llama_server import (
                 LocalAIError,
@@ -8891,6 +8945,8 @@ class YakuLingoApp:
             manager = get_local_llama_server_manager()
             runtime = await asyncio.to_thread(manager.ensure_ready, self.settings)
         except LocalAINotInstalledError as e:
+            if preload_task is not None:
+                preload_task.cancel()
             self.state.local_ai_state = LocalAIState.NOT_INSTALLED
             self.state.local_ai_error = str(e)
             client = self._get_active_client()
@@ -8900,6 +8956,8 @@ class YakuLingoApp:
                         self._header_status.refresh()
             return False
         except LocalAIError as e:
+            if preload_task is not None:
+                preload_task.cancel()
             self.state.local_ai_state = LocalAIState.ERROR
             self.state.local_ai_error = str(e)
             client = self._get_active_client()
@@ -8909,6 +8967,8 @@ class YakuLingoApp:
                         self._header_status.refresh()
             return False
         except Exception as e:
+            if preload_task is not None:
+                preload_task.cancel()
             self.state.local_ai_state = LocalAIState.ERROR
             self.state.local_ai_error = str(e)
             client = self._get_active_client()
@@ -8946,6 +9006,8 @@ class YakuLingoApp:
                 time.monotonic() - t0,
             )
         except Exception as e:
+            if preload_task is not None:
+                preload_task.cancel()
             self.state.local_ai_state = LocalAIState.ERROR
             self.state.local_ai_error = f"Local AI warmup failed: {e}"
             client = self._get_active_client()
@@ -8954,6 +9016,12 @@ class YakuLingoApp:
                     if self._header_status:
                         self._header_status.refresh()
             return False
+
+        if preload_task is not None:
+            try:
+                await preload_task
+            except Exception:
+                pass
 
         self.state.local_ai_state = LocalAIState.READY
         client = self._get_active_client()

@@ -160,3 +160,28 @@ def test_local_prompt_templates_are_slim() -> None:
     for name in _LOCAL_TEMPLATES:
         total += len(builder._load_template(name))
     assert total <= 3200
+
+
+def test_local_prompt_builder_preload_startup_templates_warms_cache() -> None:
+    builder = _make_builder()
+    builder.preload_startup_templates()
+    with patch.object(Path, "read_text", side_effect=AssertionError("read_text")):
+        for name in _LOCAL_TEMPLATES:
+            assert builder._load_template(name).strip()
+
+
+def test_local_prompt_builder_preload_startup_templates_is_best_effort(
+    tmp_path: Path,
+) -> None:
+    prompts_dir = tmp_path / "prompts"
+    prompts_dir.mkdir()
+    (prompts_dir / "local_text_translate_to_en_single_json.txt").write_text(
+        "x",
+        encoding="utf-8",
+    )
+    builder = LocalPromptBuilder(
+        prompts_dir,
+        base_prompt_builder=PromptBuilder(prompts_dir),
+        settings=AppSettings(),
+    )
+    builder.preload_startup_templates()

@@ -13,6 +13,7 @@ import os
 import threading
 import time
 from contextlib import contextmanager, nullcontext
+from decimal import Decimal, InvalidOperation
 from functools import lru_cache
 from itertools import islice
 from pathlib import Path
@@ -417,6 +418,84 @@ def _fix_to_en_oku_numeric_unit_if_possible(
     return fixed, bool(count) and fixed != translated_text
 
 
+def _format_k_amount(value: Decimal) -> str:
+    sign = "-" if value < 0 else ""
+    value = abs(value)
+    if value == value.to_integral():
+        return f"{sign}{int(value):,}"
+    text = format(value.normalize(), "f")
+    int_part, _, frac_part = text.partition(".")
+    int_part_with_commas = f"{int(int_part):,}"
+    frac_part = frac_part.rstrip("0")
+    if frac_part:
+        return f"{sign}{int_part_with_commas}.{frac_part}"
+    return f"{sign}{int_part_with_commas}"
+
+
+def _parse_decimal(value: str) -> Optional[Decimal]:
+    if not value:
+        return None
+    try:
+        return Decimal(value.replace(",", ""))
+    except InvalidOperation:
+        return None
+
+
+def _fix_to_en_k_notation_if_possible(
+    *,
+    source_text: str,
+    translated_text: str,
+) -> tuple[str, bool]:
+    """Try to fix `万/千` conversions to `k` for JP→EN when it is safe."""
+    if not source_text or not translated_text:
+        return translated_text, False
+    if not (
+        _RE_JP_MAN_AMOUNT.search(source_text) or _RE_JP_SEN_AMOUNT.search(source_text)
+    ):
+        return translated_text, False
+
+    expected: dict[int, str] = {}
+
+    def add_expected(*, k_value: Decimal) -> None:
+        full_value = k_value * Decimal("1000")
+        if full_value != full_value.to_integral():
+            return
+        full_int = int(full_value)
+        if full_int in expected:
+            return
+        formatted_k = _format_k_amount(k_value).lstrip("-")
+        expected[full_int] = f"{formatted_k}k"
+
+    for match in _RE_JP_MAN_AMOUNT_WITH_UNIT.finditer(source_text):
+        man_value = _parse_decimal(match.group("number") or "")
+        if man_value is None:
+            continue
+        add_expected(k_value=man_value * Decimal("10"))
+
+    for match in _RE_JP_SEN_AMOUNT_WITH_UNIT.finditer(source_text):
+        sen_value = _parse_decimal(match.group("number") or "")
+        if sen_value is None:
+            continue
+        add_expected(k_value=sen_value)
+
+    if not expected:
+        return translated_text, False
+
+    def repl(match: re.Match[str]) -> str:
+        raw_number = match.group("number") or ""
+        try:
+            value = int(raw_number.replace(",", ""))
+        except ValueError:
+            return match.group(0)
+        replacement = expected.get(value)
+        return replacement if replacement else match.group(0)
+
+    fixed, count = _RE_EN_INT_TOKEN.subn(repl, translated_text)
+    if count == 0 or fixed == translated_text:
+        return translated_text, False
+    return fixed, True
+
+
 def _needs_to_en_numeric_rule_retry_copilot(
     source_text: str,
     translated_text: str,
@@ -478,6 +557,12 @@ _RE_JP_MAN_AMOUNT = re.compile(
 _RE_JP_SEN_AMOUNT = re.compile(
     rf"{_NUMBER_WITH_OPTIONAL_COMMAS_AND_DECIMALS_PATTERN}\s*千"
 )
+_RE_JP_MAN_AMOUNT_WITH_UNIT = re.compile(
+    rf"(?P<number>{_NUMBER_WITH_OPTIONAL_COMMAS_AND_DECIMALS_PATTERN})\s*万(?P<unit>円|台)?"
+)
+_RE_JP_SEN_AMOUNT_WITH_UNIT = re.compile(
+    rf"(?P<number>{_NUMBER_WITH_OPTIONAL_COMMAS_AND_DECIMALS_PATTERN})\s*千(?P<unit>円|台)?"
+)
 _RE_JP_TRIANGLE_NEGATIVE_NUMBER = re.compile(r"▲\s*\d")
 _RE_JP_MONTH_NUMBER = re.compile(r"(\d{1,2})月")
 _RE_EN_NUMBER_WITH_K_UNIT = re.compile(r"\b\d[\d,]*(?:\.\d+)?\s*k\b", re.IGNORECASE)
@@ -494,6 +579,9 @@ _RE_EN_PAREN_NEGATIVE_SIGN_NUMBER = re.compile(
 )
 _RE_EN_TRIANGLE_SIGNED_NUMBER = re.compile(
     rf"▲\s*(?P<number>{_NUMBER_WITH_OPTIONAL_COMMAS_AND_DECIMALS_PATTERN})"
+)
+_RE_EN_INT_TOKEN = re.compile(
+    rf"(?<![\w.])(?P<number>{_INT_WITH_OPTIONAL_COMMAS_PATTERN})(?![\w.])"
 )
 _TO_EN_MONTH_ABBREV_PATTERNS: dict[int, re.Pattern[str]] = {
     1: re.compile(r"(?i)(?<![a-z])jan\.(?![a-z])"),
@@ -3982,6 +4070,31 @@ class TranslationService:
                         )
                     )
 
+                if not needs_output_language_retry:
+                    fixed_text, fixed = _fix_to_en_negative_parens_if_possible(
+                        source_text=text,
+                        translated_text=translation,
+                    )
+                    if fixed:
+                        translation = fixed_text
+                        metadata["to_en_negative_correction"] = True
+
+                    fixed_text, fixed = _fix_to_en_k_notation_if_possible(
+                        source_text=text,
+                        translated_text=translation,
+                    )
+                    if fixed:
+                        translation = fixed_text
+                        metadata["to_en_k_correction"] = True
+
+                    fixed_text, fixed = _fix_to_en_month_abbrev_if_possible(
+                        source_text=text,
+                        translated_text=translation,
+                    )
+                    if fixed:
+                        translation = fixed_text
+                        metadata["to_en_month_abbrev_correction"] = True
+
                 rule_retry_reasons: list[str] = []
                 rule_retry_reasons = _collect_to_en_rule_retry_reasons(
                     text, translation
@@ -4079,6 +4192,31 @@ class TranslationService:
                 if fixed:
                     translation = fixed_text
                     metadata["to_en_numeric_unit_correction"] = True
+
+                fixed_text, fixed = _fix_to_en_negative_parens_if_possible(
+                    source_text=text,
+                    translated_text=translation,
+                )
+                if fixed:
+                    translation = fixed_text
+                    metadata["to_en_negative_correction"] = True
+
+                fixed_text, fixed = _fix_to_en_k_notation_if_possible(
+                    source_text=text,
+                    translated_text=translation,
+                )
+                if fixed:
+                    translation = fixed_text
+                    metadata["to_en_k_correction"] = True
+
+                fixed_text, fixed = _fix_to_en_month_abbrev_if_possible(
+                    source_text=text,
+                    translated_text=translation,
+                )
+                if fixed:
+                    translation = fixed_text
+                    metadata["to_en_month_abbrev_correction"] = True
+
                 if needs_numeric_rule_retry and _needs_to_en_numeric_rule_retry_copilot(
                     text, translation
                 ):
@@ -4087,28 +4225,6 @@ class TranslationService:
 
                 if metadata.get("to_en_rule_retry"):
                     remaining = _collect_to_en_rule_retry_reasons(text, translation)
-                    if "negative" in remaining:
-                        fixed_text, fixed = _fix_to_en_negative_parens_if_possible(
-                            source_text=text,
-                            translated_text=translation,
-                        )
-                        if fixed:
-                            translation = fixed_text
-                            metadata["to_en_negative_correction"] = True
-                            remaining = _collect_to_en_rule_retry_reasons(
-                                text, translation
-                            )
-                    if "month" in remaining:
-                        fixed_text, fixed = _fix_to_en_month_abbrev_if_possible(
-                            source_text=text,
-                            translated_text=translation,
-                        )
-                        if fixed:
-                            translation = fixed_text
-                            metadata["to_en_month_abbrev_correction"] = True
-                            remaining = _collect_to_en_rule_retry_reasons(
-                                text, translation
-                            )
                     if remaining:
                         metadata["to_en_rule_retry_failed"] = True
                         metadata["to_en_rule_retry_failed_reasons"] = remaining

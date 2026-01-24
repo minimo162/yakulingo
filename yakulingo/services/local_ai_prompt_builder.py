@@ -52,6 +52,13 @@ _RE_JP_SEN_AMOUNT = re.compile(
 )
 _RE_TO_EN_FORBIDDEN_SYMBOLS = re.compile(r"(?:>=|<=|[><~→↑↓≥≧≤≦])")
 _RE_TO_EN_MONTH = re.compile(r"\d{1,2}月")
+_RE_TO_EN_MONTH_NUMBER = re.compile(r"(?P<month>\d{1,2})月")
+_RE_TO_EN_TRIANGLE_NUMBER_PLAIN = re.compile(
+    r"▲\s*(?P<number>\d[\d,]*(?:\.\d+)?)(?!\s*(?:兆|億|万|千))"
+)
+_RE_TO_EN_COMPARISON_EXAMPLE = re.compile(
+    r"(?P<left>[A-Za-z0-9_.%]+)\s*(?P<op>>=|<=|≥|≧|≤|≦|>|<)\s*(?P<right>[A-Za-z0-9_.%]+)"
+)
 _RE_TO_EN_YOY_TERMS = re.compile(
     r"(前年同期比|前期比|前年比|前年度比|YoY|QoQ|CAGR)", re.IGNORECASE
 )
@@ -846,6 +853,98 @@ class LocalPromptBuilder:
             lines.append(f"- {raw} -> {converted}")
         return "\n".join(lines) + "\n"
 
+    def _build_to_en_rule_hints(self, text: str) -> str:
+        text = (text or "").strip()
+        if not text:
+            return ""
+
+        lines: list[str] = []
+
+        seen: set[str] = set()
+        for match in _RE_TO_EN_TRIANGLE_NUMBER_PLAIN.finditer(text):
+            raw = (match.group(0) or "").strip()
+            number = (match.group("number") or "").strip()
+            if not raw or not number:
+                continue
+            if raw in seen:
+                continue
+            seen.add(raw)
+            normalized_number = number.replace(" ", "")
+            lines.append(f"- ▲{normalized_number} -> ({normalized_number})")
+
+        months: set[int] = set()
+        for match in _RE_TO_EN_MONTH_NUMBER.finditer(text):
+            try:
+                month = int(match.group("month") or "")
+            except ValueError:
+                continue
+            if 1 <= month <= 12:
+                months.add(month)
+        if months:
+            month_map = {
+                1: "Jan.",
+                2: "Feb.",
+                3: "Mar.",
+                4: "Apr.",
+                5: "May",
+                6: "Jun.",
+                7: "Jul.",
+                8: "Aug.",
+                9: "Sep.",
+                10: "Oct.",
+                11: "Nov.",
+                12: "Dec.",
+            }
+            for month in sorted(months):
+                abbrev = month_map.get(month)
+                if abbrev:
+                    lines.append(f"- {month}月 -> {abbrev}")
+
+        if _RE_TO_EN_FORBIDDEN_SYMBOLS.search(text):
+            op_map = {
+                ">": "more than",
+                "<": "less than",
+                ">=": "at least",
+                "≤": "at most",
+                "<=": "at most",
+                "≥": "at least",
+                "≧": "at least",
+                "≦": "at most",
+            }
+            for match in _RE_TO_EN_COMPARISON_EXAMPLE.finditer(text):
+                raw = (match.group(0) or "").strip()
+                left = (match.group("left") or "").strip()
+                right = (match.group("right") or "").strip()
+                op = (match.group("op") or "").strip()
+                phrase = op_map.get(op)
+                if not raw or not left or not right or not phrase:
+                    continue
+                key = f"cmp:{raw}"
+                if key in seen:
+                    continue
+                seen.add(key)
+                lines.append(f"- {raw} -> {left} {phrase} {right}")
+
+            symbol_map = [
+                ("~", "about"),
+                ("→", "leads to"),
+                ("↑", "up"),
+                ("↓", "down"),
+            ]
+            for symbol, phrase in symbol_map:
+                if symbol in text:
+                    key = f"sym:{symbol}"
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    lines.append(f"- {symbol} -> {phrase}")
+
+        if not lines:
+            return ""
+
+        header = "### ルール適用ヒント（必ず使用）"
+        return "\n".join([header, *lines]) + "\n"
+
     def _get_cached_reference_text(
         self,
         path: Path,
@@ -1337,11 +1436,13 @@ class LocalPromptBuilder:
         embedded_ref = self.build_reference_embed(reference_files, input_text=text)
         translation_rules = self._get_translation_rules_for_text("en", text)
         numeric_hints = self._build_to_en_numeric_hints(text)
+        rule_hints = self._build_to_en_rule_hints(text)
         reference_section = embedded_ref.text if embedded_ref.text else ""
         prompt_input_text = self._base.normalize_input_text(text, "en")
         extra_instruction = extra_instruction.strip() if extra_instruction else ""
-        if extra_instruction:
-            extra_instruction = f"{extra_instruction}\n"
+        extra_parts = [part for part in (rule_hints.strip(), extra_instruction) if part]
+        merged_extra = "\n\n".join(extra_parts).strip()
+        extra_instruction = f"{merged_extra}\n" if merged_extra else ""
         prompt = template.replace("{translation_rules}", translation_rules)
         prompt = prompt.replace("{numeric_hints}", numeric_hints)
         prompt = prompt.replace("{reference_section}", reference_section)
@@ -1376,11 +1477,13 @@ class LocalPromptBuilder:
         embedded_ref = self.build_reference_embed(reference_files, input_text=text)
         translation_rules = self._get_translation_rules_for_text("en", text)
         numeric_hints = self._build_to_en_numeric_hints(text)
+        rule_hints = self._build_to_en_rule_hints(text)
         reference_section = embedded_ref.text if embedded_ref.text else ""
         prompt_input_text = self._base.normalize_input_text(text, "en")
         extra_instruction = extra_instruction.strip() if extra_instruction else ""
-        if extra_instruction:
-            extra_instruction = f"{extra_instruction}\n"
+        extra_parts = [part for part in (rule_hints.strip(), extra_instruction) if part]
+        merged_extra = "\n\n".join(extra_parts).strip()
+        extra_instruction = f"{merged_extra}\n" if merged_extra else ""
         style_list: list[str] = []
         seen: set[str] = set()
         for style in styles:
@@ -1424,11 +1527,13 @@ class LocalPromptBuilder:
         embedded_ref = self.build_reference_embed(reference_files, input_text=text)
         translation_rules = self._get_translation_rules_for_text("en", text)
         numeric_hints = self._build_to_en_numeric_hints(text)
+        rule_hints = self._build_to_en_rule_hints(text)
         reference_section = embedded_ref.text if embedded_ref.text else ""
         prompt_input_text = self._base.normalize_input_text(text, "en")
         extra_instruction = extra_instruction.strip() if extra_instruction else ""
-        if extra_instruction:
-            extra_instruction = f"{extra_instruction}\n"
+        extra_parts = [part for part in (rule_hints.strip(), extra_instruction) if part]
+        merged_extra = "\n\n".join(extra_parts).strip()
+        extra_instruction = f"{merged_extra}\n" if merged_extra else ""
         prompt = template.replace("{translation_rules}", translation_rules)
         prompt = prompt.replace("{numeric_hints}", numeric_hints)
         prompt = prompt.replace("{extra_instruction}", extra_instruction)

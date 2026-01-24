@@ -53,8 +53,7 @@ def _make_service(local: SequencedLocalClient) -> TranslationService:
 
 def test_text_style_comparison_retries_when_k_rule_violated() -> None:
     first = '{"translation":"The starting salary is 220,000 yen.","explanation":""}'
-    second = '{"translation":"The starting salary is 220k yen.","explanation":""}'
-    local = SequencedLocalClient([first, second])
+    local = SequencedLocalClient([first])
     service = _make_service(local)
 
     result = service.translate_text_with_style_comparison(
@@ -62,16 +61,17 @@ def test_text_style_comparison_retries_when_k_rule_violated() -> None:
         pre_detected_language="日本語",
     )
 
-    assert local.translate_single_calls == 2
+    assert local.translate_single_calls == 1
     assert result.output_language == "en"
     assert result.options
     assert "220k" in result.options[0].text
+    assert result.metadata
+    assert result.metadata.get("to_en_k_correction") is True
 
 
 def test_text_style_comparison_retries_when_negative_triangle_rule_violated() -> None:
     first = '{"translation":"YoY change was ▲50.","explanation":""}'
-    second = '{"translation":"YoY change was (50).","explanation":""}'
-    local = SequencedLocalClient([first, second])
+    local = SequencedLocalClient([first])
     service = _make_service(local)
 
     result = service.translate_text_with_style_comparison(
@@ -79,19 +79,20 @@ def test_text_style_comparison_retries_when_negative_triangle_rule_violated() ->
         pre_detected_language="日本語",
     )
 
-    assert local.translate_single_calls == 2
+    assert local.translate_single_calls == 1
     assert result.output_language == "en"
     assert result.options
     assert "▲" not in result.options[0].text
     assert "(50)" in result.options[0].text
+    assert result.metadata
+    assert result.metadata.get("to_en_negative_correction") is True
 
 
 def test_text_style_comparison_auto_corrects_negative_sign_after_retry_still_violates() -> (
     None
 ):
     first = '{"translation":"YoY change was -496 oku yen.","explanation":""}'
-    second = '{"translation":"YoY change was -496 oku yen.","explanation":""}'
-    local = SequencedLocalClient([first, second])
+    local = SequencedLocalClient([first])
     service = _make_service(local)
 
     result = service.translate_text_with_style_comparison(
@@ -99,7 +100,7 @@ def test_text_style_comparison_auto_corrects_negative_sign_after_retry_still_vio
         pre_detected_language="日本語",
     )
 
-    assert local.translate_single_calls == 2
+    assert local.translate_single_calls == 1
     assert result.output_language == "en"
     assert result.error_message is None
     assert result.options
@@ -114,8 +115,7 @@ def test_text_style_comparison_auto_corrects_month_abbrev_after_retry_still_viol
     None
 ):
     first = '{"translation":"Sales in January.","explanation":""}'
-    second = '{"translation":"Sales in January.","explanation":""}'
-    local = SequencedLocalClient([first, second])
+    local = SequencedLocalClient([first])
     service = _make_service(local)
 
     result = service.translate_text_with_style_comparison(
@@ -123,7 +123,7 @@ def test_text_style_comparison_auto_corrects_month_abbrev_after_retry_still_viol
         pre_detected_language="日本語",
     )
 
-    assert local.translate_single_calls == 2
+    assert local.translate_single_calls == 1
     assert result.output_language == "en"
     assert result.error_message is None
     assert result.options
@@ -135,8 +135,7 @@ def test_text_style_comparison_auto_corrects_month_abbrev_after_retry_still_viol
 
 def test_text_style_comparison_retries_when_month_abbreviation_rule_violated() -> None:
     first = '{"translation":"Sales in January.","explanation":""}'
-    second = '{"translation":"Sales in Jan.","explanation":""}'
-    local = SequencedLocalClient([first, second])
+    local = SequencedLocalClient([first])
     service = _make_service(local)
 
     result = service.translate_text_with_style_comparison(
@@ -144,7 +143,24 @@ def test_text_style_comparison_retries_when_month_abbreviation_rule_violated() -
         pre_detected_language="日本語",
     )
 
-    assert local.translate_single_calls == 2
+    assert local.translate_single_calls == 1
     assert result.output_language == "en"
     assert result.options
     assert "Jan." in result.options[0].text
+
+
+def test_text_style_comparison_still_retries_when_k_rule_unfixable() -> None:
+    first = '{"translation":"The starting salary is 22 man yen.","explanation":""}'
+    second = '{"translation":"The starting salary is 220k yen.","explanation":""}'
+    local = SequencedLocalClient([first, second])
+    service = _make_service(local)
+
+    result = service.translate_text_with_style_comparison(
+        "初任給は22万円です。",
+        pre_detected_language="日本語",
+    )
+
+    assert local.translate_single_calls == 2
+    assert result.output_language == "en"
+    assert result.options
+    assert "220k" in result.options[0].text

@@ -9851,6 +9851,8 @@ class YakuLingoApp:
         button_click_time = time.monotonic()
 
         source_text = self.state.source_text
+        cached_detected_language = self.state.text_detected_language
+        cached_detected_reason = self.state.text_detected_language_reason
 
         trace_id = self._active_translation_trace_id or f"text-{uuid.uuid4().hex[:8]}"
         self._active_translation_trace_id = trace_id
@@ -9911,9 +9913,36 @@ class YakuLingoApp:
                 self._active_translation_trace_id = None
                 return
 
-        # Update UI to show loading state (before language detection)
+        detected_language = cached_detected_language
+        detected_reason = cached_detected_reason
+        detection_source = "state"
+        detection_elapsed = 0.0
+        if not (detected_language and detected_reason):
+            detection_source = "sync"
+            try:
+                from yakulingo.services.translation_service import language_detector
+
+                t0 = time.monotonic()
+                detected_language, detected_reason = (
+                    language_detector.detect_local_with_reason(source_text)
+                )
+                detection_elapsed = time.monotonic() - t0
+            except Exception as e:
+                logger.debug(
+                    "Translation [%s] local language detection failed: %s",
+                    trace_id,
+                    e,
+                )
+                detected_language, detected_reason = "日本語", "default"
+
+        effective_detected_language = self._resolve_effective_detected_language(
+            detected_language
+        )
+
+        # Update UI to show loading state
         self.state.text_translating = True
-        self.state.text_detected_language = None
+        self.state.text_detected_language = detected_language
+        self.state.text_detected_language_reason = detected_reason
         self.state.text_result = None
         self.state.text_translation_elapsed_time = None
         self.state.text_streaming_preview = None
@@ -9928,7 +9957,6 @@ class YakuLingoApp:
         from yakulingo.services.exceptions import TranslationCancelledError
 
         error_message = None
-        detected_language = None
         try:
             # Yield control to event loop before starting blocking operation
             # This ensures the loading UI is sent to the client before we start measuring
@@ -9945,31 +9973,14 @@ class YakuLingoApp:
                 prep_time,
             )
 
-            # Step 1: Detect language using Copilot
-            detected_language, detected_reason = await asyncio.to_thread(
-                self.translation_service.detect_language_with_reason,
-                source_text,
-            )
-
-            lang_detect_elapsed = time.monotonic() - start_time
             logger.info(
-                "[TIMING] Translation [%s] language detected in %.3fs: %s",
+                "[TIMING] Translation [%s] language detected (%s) in %.3fs: %s",
                 trace_id,
-                lang_detect_elapsed,
+                detection_source,
+                detection_elapsed,
                 detected_language,
             )
 
-            # Update UI with detected language
-            self.state.text_detected_language = detected_language
-            self.state.text_detected_language_reason = detected_reason
-            effective_detected_language = self._resolve_effective_detected_language(
-                detected_language
-            )
-            with client:
-                self._refresh_result_panel()  # Only refresh result panel
-
-            # Yield control again before translation
-            await asyncio.sleep(0)
             if (
                 self.translation_service
                 and self.translation_service._cancel_event.is_set()

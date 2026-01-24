@@ -33,7 +33,6 @@ def test_local_batch_prompt_includes_oku_and_negative_hints_even_when_beyond_con
         reference_files=None,
     )
 
-    assert "数値変換ヒント" in prompt
-    assert "2兆2,385億円 -> 22,385 oku yen" in prompt
-    assert "ルール適用ヒント" in prompt
-    assert "▲50 -> (50)" in prompt
+    assert "Glossary (generated; apply verbatim)" in prompt
+    assert "- JP: 2兆2,385億円 | EN: 22,385 oku yen" in prompt
+    assert "- JP: ▲50 | EN: (50)" in prompt

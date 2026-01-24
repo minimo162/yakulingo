@@ -25,8 +25,8 @@ def test_local_prompt_includes_rule_hints_for_triangle_negative() -> None:
         reference_files=None,
         detected_language="日本語",
     )
-    assert "ルール適用ヒント" in prompt
-    assert "▲50 -> (50)" in prompt
+    assert "Glossary (generated; apply verbatim)" in prompt
+    assert "- JP: ▲50 | EN: (50)" in prompt
 
 
 def test_local_prompt_includes_rule_hints_for_month_abbrev() -> None:
@@ -37,8 +37,8 @@ def test_local_prompt_includes_rule_hints_for_month_abbrev() -> None:
         reference_files=None,
         detected_language="日本語",
     )
-    assert "ルール適用ヒント" in prompt
-    assert "1月 -> Jan." in prompt
+    assert "Glossary (generated; apply verbatim)" in prompt
+    assert "- JP: 1月 | EN: Jan." in prompt
 
 
 def test_local_prompt_includes_rule_hints_for_forbidden_symbol() -> None:
@@ -49,5 +49,5 @@ def test_local_prompt_includes_rule_hints_for_forbidden_symbol() -> None:
         reference_files=None,
         detected_language="英語",
     )
-    assert "ルール適用ヒント" in prompt
-    assert "A > B -> A more than B" in prompt
+    assert "Glossary (generated; apply verbatim)" in prompt
+    assert "- JP: A > B | EN: A more than B" in prompt

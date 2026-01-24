@@ -39,12 +39,11 @@ def test_local_batch_prompt_includes_hints_and_preserves_id_markers() -> None:
         reference_files=None,
     )
 
-    assert "数値変換ヒント" in prompt
-    assert "1,200万円 ->" in prompt
-    assert "ルール適用ヒント" in prompt
-    assert "▲50 -> (50)" in prompt
-    assert "1月 -> Jan." in prompt
-    assert "ROI > 10% -> ROI more than 10%" in prompt
+    assert "Glossary (generated; apply verbatim)" in prompt
+    assert "- JP: 1,200万円 | EN: 12,000k yen" in prompt
+    assert "- JP: ▲50 | EN: (50)" in prompt
+    assert "- JP: 1月 | EN: Jan." in prompt
+    assert "- JP: ROI > 10% | EN: ROI more than 10%" in prompt
 
     source_json = _extract_source_json(prompt)
     assert "\\n" in source_json

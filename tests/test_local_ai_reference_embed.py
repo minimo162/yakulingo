@@ -203,9 +203,9 @@ def test_local_prompt_includes_numeric_hints_for_oku() -> None:
     assert "万→k" not in expected_rules
     assert "千→k" not in expected_rules
     assert "▲→()" not in expected_rules
-    assert "数値変換ヒント" in prompt
-    assert "2兆2,385億円 -> 22,385 oku yen" in prompt
-    assert "1,554億円 -> 1,554 oku yen" in prompt
+    assert "Glossary (generated; apply verbatim)" in prompt
+    assert "- JP: 2兆2,385億円 | EN: 22,385 oku yen" in prompt
+    assert "- JP: 1,554億円 | EN: 1,554 oku yen" in prompt
 
 
 def test_local_prompt_includes_numeric_hints_for_k_yen() -> None:
@@ -224,8 +224,8 @@ def test_local_prompt_includes_numeric_hints_for_k_yen() -> None:
     assert "万→k" in expected_rules
     assert "千→k" not in expected_rules
     assert "兆/億→oku" not in expected_rules
-    assert "数値変換ヒント" in prompt
-    assert "22万円 -> 220k yen" in prompt
+    assert "Glossary (generated; apply verbatim)" in prompt
+    assert "- JP: 22万円 | EN: 220k yen" in prompt
 
 
 def test_local_prompt_includes_numeric_hints_for_k_units() -> None:
@@ -244,8 +244,8 @@ def test_local_prompt_includes_numeric_hints_for_k_units() -> None:
     assert "千→k" in expected_rules
     assert "万→k" not in expected_rules
     assert "兆/億→oku" not in expected_rules
-    assert "数値変換ヒント" in prompt
-    assert "196千台 -> 196k units" in prompt
+    assert "Glossary (generated; apply verbatim)" in prompt
+    assert "- JP: 196千台 | EN: 196k units" in prompt
 
 
 def test_local_prompt_includes_numeric_hints_for_oku_in_en_3style() -> None:
@@ -262,9 +262,9 @@ def test_local_prompt_includes_numeric_hints_for_oku_in_en_3style() -> None:
     assert expected_rules in prompt
     assert "数値/単位:" in expected_rules
     assert "兆/億→oku" in expected_rules
-    assert "数値変換ヒント" in prompt
-    assert "2兆2,385億円 -> 22,385 oku yen" in prompt
-    assert "1,554億円 -> 1,554 oku yen" in prompt
+    assert "Glossary (generated; apply verbatim)" in prompt
+    assert "- JP: 2兆2,385億円 | EN: 22,385 oku yen" in prompt
+    assert "- JP: 1,554億円 | EN: 1,554 oku yen" in prompt
 
 
 def test_local_prompt_includes_numeric_hints_for_oku_in_en_missing_styles() -> None:
@@ -281,9 +281,9 @@ def test_local_prompt_includes_numeric_hints_for_oku_in_en_missing_styles() -> N
     assert expected_rules in prompt
     assert "数値/単位:" in expected_rules
     assert "兆/億→oku" in expected_rules
-    assert "数値変換ヒント" in prompt
-    assert "2兆2,385億円 -> 22,385 oku yen" in prompt
-    assert "1,554億円 -> 1,554 oku yen" in prompt
+    assert "Glossary (generated; apply verbatim)" in prompt
+    assert "- JP: 2兆2,385億円 | EN: 22,385 oku yen" in prompt
+    assert "- JP: 1,554億円 | EN: 1,554 oku yen" in prompt
 
 
 def test_local_batch_prompt_includes_numeric_hints_for_oku() -> None:
@@ -309,9 +309,9 @@ def test_local_batch_prompt_includes_numeric_hints_for_oku() -> None:
     assert "万→k" not in expected_rules
     assert "千→k" not in expected_rules
     assert "▲→()" not in expected_rules
-    assert "数値変換ヒント" in prompt
-    assert "2兆2,385億円 -> 22,385 oku yen" in prompt
-    assert "1,554億円 -> 1,554 oku yen" in prompt
+    assert "Glossary (generated; apply verbatim)" in prompt
+    assert "- JP: 2兆2,385億円 | EN: 22,385 oku yen" in prompt
+    assert "- JP: 1,554億円 | EN: 1,554 oku yen" in prompt
 
 
 def test_local_batch_prompt_omits_numeric_rules_for_short_text() -> None:

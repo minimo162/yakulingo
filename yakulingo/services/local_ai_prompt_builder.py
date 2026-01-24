@@ -1000,6 +1000,21 @@ class LocalPromptBuilder:
 
         return pairs
 
+    def _build_to_en_generated_glossary_section(
+        self,
+        text: str,
+        *,
+        max_pairs: int = 20,
+    ) -> str:
+        pairs = self._extract_to_en_dynamic_glossary_pairs(text, max_pairs=max_pairs)
+        if not pairs:
+            return ""
+
+        lines = ["### Glossary (generated; apply verbatim)"]
+        for source, target in pairs:
+            lines.append(f"- JP: {source} | EN: {target}")
+        return "\n".join(lines) + "\n"
+
     def _build_to_en_structure_hints(self, text: str, *, include_item_ids: bool) -> str:
         text = (text or "").strip()
         if not text and not include_item_ids:
@@ -1570,13 +1585,8 @@ class LocalPromptBuilder:
             reference_files, input_text=context_text
         )
         reference_section = embedded_ref.text if embedded_ref.text else ""
-        numeric_hints = (
-            self._build_to_en_numeric_hints(rule_context_text)
-            if output_language == "en"
-            else ""
-        )
-        rule_hints = (
-            self._build_to_en_rule_hints(rule_context_text)
+        generated_glossary = (
+            self._build_to_en_generated_glossary_section(rule_context_text)
             if output_language == "en"
             else ""
         )
@@ -1589,7 +1599,7 @@ class LocalPromptBuilder:
         )
         hint_parts = [
             part.strip()
-            for part in (numeric_hints, rule_hints, structure_hints)
+            for part in (generated_glossary, structure_hints)
             if part and part.strip()
         ]
         merged_hints = "\n\n".join(hint_parts).strip()
@@ -1642,14 +1652,11 @@ class LocalPromptBuilder:
 
         embedded_ref = self.build_reference_embed(reference_files, input_text=text)
         translation_rules = self._get_translation_rules_for_text("en", text)
-        numeric_hints = self._build_to_en_numeric_hints(text)
-        rule_hints = self._build_to_en_rule_hints(text)
+        numeric_hints = self._build_to_en_generated_glossary_section(text)
         reference_section = embedded_ref.text if embedded_ref.text else ""
         prompt_input_text = self._base.normalize_input_text(text, "en")
         extra_instruction = extra_instruction.strip() if extra_instruction else ""
-        extra_parts = [part for part in (rule_hints.strip(), extra_instruction) if part]
-        merged_extra = "\n\n".join(extra_parts).strip()
-        extra_instruction = f"{merged_extra}\n" if merged_extra else ""
+        extra_instruction = f"{extra_instruction}\n" if extra_instruction else ""
         prompt = template.replace("{translation_rules}", translation_rules)
         prompt = prompt.replace("{numeric_hints}", numeric_hints)
         prompt = prompt.replace("{reference_section}", reference_section)
@@ -1683,14 +1690,11 @@ class LocalPromptBuilder:
         )
         embedded_ref = self.build_reference_embed(reference_files, input_text=text)
         translation_rules = self._get_translation_rules_for_text("en", text)
-        numeric_hints = self._build_to_en_numeric_hints(text)
-        rule_hints = self._build_to_en_rule_hints(text)
+        numeric_hints = self._build_to_en_generated_glossary_section(text)
         reference_section = embedded_ref.text if embedded_ref.text else ""
         prompt_input_text = self._base.normalize_input_text(text, "en")
         extra_instruction = extra_instruction.strip() if extra_instruction else ""
-        extra_parts = [part for part in (rule_hints.strip(), extra_instruction) if part]
-        merged_extra = "\n\n".join(extra_parts).strip()
-        extra_instruction = f"{merged_extra}\n" if merged_extra else ""
+        extra_instruction = f"{extra_instruction}\n" if extra_instruction else ""
         style_list: list[str] = []
         seen: set[str] = set()
         for style in styles:
@@ -1733,14 +1737,11 @@ class LocalPromptBuilder:
         template = self._load_template("local_text_translate_to_en_single_json.txt")
         embedded_ref = self.build_reference_embed(reference_files, input_text=text)
         translation_rules = self._get_translation_rules_for_text("en", text)
-        numeric_hints = self._build_to_en_numeric_hints(text)
-        rule_hints = self._build_to_en_rule_hints(text)
+        numeric_hints = self._build_to_en_generated_glossary_section(text)
         reference_section = embedded_ref.text if embedded_ref.text else ""
         prompt_input_text = self._base.normalize_input_text(text, "en")
         extra_instruction = extra_instruction.strip() if extra_instruction else ""
-        extra_parts = [part for part in (rule_hints.strip(), extra_instruction) if part]
-        merged_extra = "\n\n".join(extra_parts).strip()
-        extra_instruction = f"{merged_extra}\n" if merged_extra else ""
+        extra_instruction = f"{extra_instruction}\n" if extra_instruction else ""
         prompt = template.replace("{translation_rules}", translation_rules)
         prompt = prompt.replace("{numeric_hints}", numeric_hints)
         prompt = prompt.replace("{extra_instruction}", extra_instruction)

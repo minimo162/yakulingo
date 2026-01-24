@@ -113,7 +113,7 @@ def test_text_style_comparison_retries_for_oku_numeric_rule_when_auto_fix_not_po
 
     assert local.translate_single_calls == 2
     assert local.prompts
-    assert "2兆2,385億円 -> 22,385 oku yen" in local.prompts[0]
+    assert "- JP: 2兆2,385億円 | EN: 22,385 oku yen" in local.prompts[0]
 
     metadata = result.metadata or {}
     assert result.output_language == "en"

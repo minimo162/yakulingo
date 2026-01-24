@@ -39,6 +39,7 @@ class LocalAIState(Enum):
 
     NOT_INSTALLED = "not_installed"  # exe/model not found
     STARTING = "starting"
+    WARMING_UP = "warming_up"
     READY = "ready"
     ERROR = "error"
 

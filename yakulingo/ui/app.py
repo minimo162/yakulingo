@@ -6427,12 +6427,15 @@ class YakuLingoApp:
                 logger.debug("%s with saved client failed: %s", label, e2)
 
     def _start_status_auto_refresh(self, reason: str = "") -> None:
-        """Retry status refresh briefly while local AI is starting."""
+        """Retry status refresh briefly while local AI is preparing."""
         if self._shutdown_requested:
             return
         if self._header_status is None or self._get_active_client() is None:
             return
-        if self.state.local_ai_state != LocalAIState.STARTING:
+        if self.state.local_ai_state not in (
+            LocalAIState.STARTING,
+            LocalAIState.WARMING_UP,
+        ):
             return
 
         existing = self._status_auto_refresh_task
@@ -6462,7 +6465,10 @@ class YakuLingoApp:
                     return
                 self._refresh_status()
                 self._refresh_translate_button_state()
-                if self.state.local_ai_state != LocalAIState.STARTING:
+                if self.state.local_ai_state not in (
+                    LocalAIState.STARTING,
+                    LocalAIState.WARMING_UP,
+                ):
                     return
                 await asyncio.sleep(delay)
 
@@ -7715,6 +7721,24 @@ class YakuLingoApp:
                 status_indicator.tooltip(tooltip)
                 return
 
+            if local_state == LocalAIState.WARMING_UP:
+                tooltip = "準備中: ローカルAIをウォームアップ中..."
+                with (
+                    ui.element("div")
+                    .classes("status-indicator connecting")
+                    .props(
+                        f'role="status" aria-live="polite" aria-label={to_props_string_literal(tooltip)} data-testid="local-ai-status" data-state="warming_up"'
+                    ) as status_indicator
+                ):
+                    ui.element("div").classes("status-dot connecting").props(
+                        'aria-hidden="true"'
+                    )
+                    with ui.column().classes("gap-0"):
+                        ui.label("準備中...").classes("text-xs")
+                        ui.label("ウォームアップ中").classes("text-2xs opacity-80")
+                status_indicator.tooltip(tooltip)
+                return
+
             if local_state == LocalAIState.STARTING:
                 tooltip = "準備中: ローカルAIを起動しています"
                 with (
@@ -8855,6 +8879,7 @@ class YakuLingoApp:
             with client:
                 if self._header_status:
                     self._header_status.refresh()
+                self._refresh_translate_button_state()
 
         try:
             from yakulingo.services.local_llama_server import (
@@ -8893,18 +8918,50 @@ class YakuLingoApp:
                         self._header_status.refresh()
             return False
 
-        self.state.local_ai_state = LocalAIState.READY
         self.state.local_ai_host = runtime.host
         self.state.local_ai_port = runtime.port
         self.state.local_ai_model = runtime.model_id or runtime.model_path.name
         self.state.local_ai_server_variant = runtime.server_variant
         self.state.local_ai_error = ""
+        self.state.local_ai_state = LocalAIState.WARMING_UP
         client = self._get_active_client()
         if client:
             with client:
                 if self._header_status:
                     self._header_status.refresh()
-        self._start_local_ai_warmup(runtime)
+                self._refresh_translate_button_state()
+        try:
+            import time
+
+            from yakulingo.services.local_ai_client import LocalAIClient
+
+            logger.info("[TIMING] LocalAI warmup started")
+            t0 = time.monotonic()
+            await asyncio.to_thread(
+                LocalAIClient(self.settings).warmup,
+                runtime=runtime,
+            )
+            logger.info(
+                "[TIMING] LocalAI warmup finished: %.2fs",
+                time.monotonic() - t0,
+            )
+        except Exception as e:
+            self.state.local_ai_state = LocalAIState.ERROR
+            self.state.local_ai_error = f"Local AI warmup failed: {e}"
+            client = self._get_active_client()
+            if client:
+                with client:
+                    if self._header_status:
+                        self._header_status.refresh()
+            return False
+
+        self.state.local_ai_state = LocalAIState.READY
+        client = self._get_active_client()
+        if client:
+            with client:
+                if self._header_status:
+                    self._header_status.refresh()
+                self._refresh_translate_button_state()
         return True
 
     async def _ensure_connection_async(self) -> bool:
@@ -13371,6 +13428,8 @@ def run_app(
         local_state = getattr(state, "local_ai_state", None)
         if local_state == LocalAIState.READY:
             return "Local AI: Ready"
+        if local_state == LocalAIState.WARMING_UP:
+            return "Local AI: Warming up"
         if local_state == LocalAIState.STARTING:
             return "Local AI: Starting"
         if local_state == LocalAIState.NOT_INSTALLED:

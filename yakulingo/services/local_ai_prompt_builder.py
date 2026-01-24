@@ -59,6 +59,10 @@ _RE_TO_EN_TRIANGLE_NUMBER_PLAIN = re.compile(
 _RE_TO_EN_COMPARISON_EXAMPLE = re.compile(
     r"(?P<left>[A-Za-z0-9_.%]+)\s*(?P<op>>=|<=|≥|≧|≤|≦|>|<)\s*(?P<right>[A-Za-z0-9_.%]+)"
 )
+_RE_TO_EN_NUMBERED_LIST_PREFIX = re.compile(
+    r"(?m)^[ \t]*(?:\d{1,3}|[０-９]{1,3})[.)．）]"
+)
+_RE_TO_EN_BULLET_LIST_PREFIX = re.compile(r"(?m)^[ \t]*(?:[-*•]|・)")
 _RE_TO_EN_YOY_TERMS = re.compile(
     r"(前年同期比|前期比|前年比|前年度比|YoY|QoQ|CAGR)", re.IGNORECASE
 )
@@ -945,6 +949,26 @@ class LocalPromptBuilder:
         header = "### ルール適用ヒント（必ず使用）"
         return "\n".join([header, *lines]) + "\n"
 
+    def _build_to_en_structure_hints(self, text: str, *, include_item_ids: bool) -> str:
+        text = (text or "").strip()
+        if not text and not include_item_ids:
+            return ""
+
+        lines: list[str] = []
+        if include_item_ids:
+            lines.append("- 各訳文の先頭に [[ID:n]] をそのまま残す（削除/改変しない）")
+        if "\n" in text or "\r" in text:
+            lines.append("- 入力の改行/インデントを維持し、行結合/行分割しない")
+        if _RE_TO_EN_NUMBERED_LIST_PREFIX.search(text):
+            lines.append("- 番号付きリストの番号・記号・順序を保持し、再番号付けしない")
+        if _RE_TO_EN_BULLET_LIST_PREFIX.search(text):
+            lines.append("- 箇条書きの先頭記号（・/-/* 等）を保持する")
+
+        if not lines:
+            return ""
+        header = "### 形式維持ヒント（必ず使用）"
+        return "\n".join([header, *lines]) + "\n"
+
     def _get_cached_reference_text(
         self,
         path: Path,
@@ -1395,8 +1419,33 @@ class LocalPromptBuilder:
             if output_language == "en"
             else ""
         )
+        rule_hints = (
+            self._build_to_en_rule_hints(context_text)
+            if output_language == "en"
+            else ""
+        )
+        structure_hints = (
+            self._build_to_en_structure_hints(
+                context_text, include_item_ids=include_item_ids
+            )
+            if output_language == "en"
+            else ""
+        )
+        hint_parts = [
+            part.strip()
+            for part in (numeric_hints, rule_hints, structure_hints)
+            if part and part.strip()
+        ]
+        merged_hints = "\n\n".join(hint_parts).strip()
+        numeric_hints = f"{merged_hints}\n" if merged_hints else ""
 
-        items = [{"id": i + 1, "text": text} for i, text in enumerate(texts)]
+        items = [
+            {
+                "id": i + 1,
+                "text": f"[[ID:{i + 1}]] {text}" if include_item_ids else text,
+            }
+            for i, text in enumerate(texts)
+        ]
         items_json = json.dumps({"items": items}, ensure_ascii=False)
 
         prompt = template.replace("{translation_rules}", translation_rules)

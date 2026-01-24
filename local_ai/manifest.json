@@ -1,32 +1,32 @@
 ﻿{
-    "generated_at":  "2026-01-24T07:41:36.0578932+09:00",
+    "generated_at":  "2026-01-24T09:48:27.2168710+09:00",
     "llama_cpp":  {
                       "repo":  "ggerganov/llama.cpp",
-                      "release_tag":  "b7818",
-                      "asset_name":  "llama-b7818-bin-win-vulkan-x64.zip",
-                      "download_url":  "https://github.com/ggml-org/llama.cpp/releases/download/b7818/llama-b7818-bin-win-vulkan-x64.zip",
-                      "server_exe_sha256":  "1114B033B9FBD8B52070A291E6B858ED6582936A6854D15F7DAE6F5043145F54",
+                      "release_tag":  "b7819",
+                      "asset_name":  "llama-b7819-bin-win-vulkan-x64.zip",
+                      "download_url":  "https://github.com/ggml-org/llama.cpp/releases/download/b7819/llama-b7819-bin-win-vulkan-x64.zip",
+                      "server_exe_sha256":  "8728F8F9DE2B775666492D6682C86C44957423AE668B360242E303BE4237EF73",
                       "variant":  "vulkan"
                   },
     "model":  {
-                  "repo":  "mradermacher/translategemma-12b-it-i1-GGUF",
+                  "repo":  "dahara1/shisa-v2.1-qwen3-8b-UD-japanese-imatrix",
                   "revision":  "main",
-                  "file":  "translategemma-12b-it.i1-IQ3_XXS.gguf",
-                  "download_url":  "https://huggingface.co/mradermacher/translategemma-12b-it-i1-GGUF/resolve/main/translategemma-12b-it.i1-IQ3_XXS.gguf",
-                  "sha256":  "292810F90A6F166C4C083D7103CF55020861A7ABC844CEBEF1EF1C2FA0381E1C",
+                  "file":  "shisa-v2.1-qwen3-8B-IQ4_XS.gguf",
+                  "download_url":  "https://huggingface.co/dahara1/shisa-v2.1-qwen3-8b-UD-japanese-imatrix/resolve/main/shisa-v2.1-qwen3-8B-IQ4_XS.gguf",
+                  "sha256":  "FB201A31A41512FCDCF2686B13EF78D7A0EA157C6C7F73F2CAF5C0BCFB41E4B0",
                   "skipped":  false,
                   "source":  {
                                  "kind":  "gguf",
-                                 "repo":  "mradermacher/translategemma-12b-it-i1-GGUF",
+                                 "repo":  "dahara1/shisa-v2.1-qwen3-8b-UD-japanese-imatrix",
                                  "revision":  "main",
-                                 "file":  "translategemma-12b-it.i1-IQ3_XXS.gguf",
-                                 "download_url":  "https://huggingface.co/mradermacher/translategemma-12b-it-i1-GGUF/resolve/main/translategemma-12b-it.i1-IQ3_XXS.gguf"
+                                 "file":  "shisa-v2.1-qwen3-8B-IQ4_XS.gguf",
+                                 "download_url":  "https://huggingface.co/dahara1/shisa-v2.1-qwen3-8b-UD-japanese-imatrix/resolve/main/shisa-v2.1-qwen3-8B-IQ4_XS.gguf"
                              },
                   "output":  {
                                  "kind":  "gguf",
-                                 "path":  "local_ai/models/translategemma-12b-it.i1-IQ3_XXS.gguf",
-                                 "path_resolved":  "C:\\Users\\Administrator\\Desktop\\yakulingo\\local_ai\\models\\translategemma-12b-it.i1-IQ3_XXS.gguf",
-                                 "sha256":  "292810F90A6F166C4C083D7103CF55020861A7ABC844CEBEF1EF1C2FA0381E1C"
+                                 "path":  "local_ai/models/shisa-v2.1-qwen3-8B-IQ4_XS.gguf",
+                                 "path_resolved":  "C:\\Users\\Administrator\\Desktop\\yakulingo\\local_ai\\models\\shisa-v2.1-qwen3-8B-IQ4_XS.gguf",
+                                 "sha256":  "FB201A31A41512FCDCF2686B13EF78D7A0EA157C6C7F73F2CAF5C0BCFB41E4B0"
                              }
               }
 }

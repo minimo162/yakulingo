@@ -28,3 +28,11 @@
 - 検証: `uv run pyright` / `uv run ruff check .` / `uv run --extra test pytest`（306 passed）
 - 統合: `main` に ff-only で取り込み → `origin/main` へ push 済み
 - クリーンアップ: remote/local ブランチ削除済み（`git ls-remote --heads` / `git branch --list` が空を確認）
+
+## task-04（ドキュメント既定モデル参照更新）
+- ブランチ: `case-yakulingo-local-ai-model-shisa-v2-1-qwen3-8b-iq4-xs-20260124-080716-task-04-docs-default-model`
+- コミット: `e073a382`（task-04: 既定モデル参照を更新）
+- 検証: `uv run pyright` / `uv run ruff check .` / `uv run --extra test pytest`（306 passed）
+- 統合: `main` に ff-only で取り込み → `origin/main` へ push 済み
+- クリーンアップ: remote/local ブランチ削除済み（`git ls-remote --heads` / `git branch --list` が空を確認）
+- フォローアップ: `packaging/install_deps.bat` の表示文言に `TranslateGemma` が残っている（task外のため未対応）

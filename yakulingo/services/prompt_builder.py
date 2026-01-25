@@ -302,6 +302,19 @@ class PromptBuilder:
         return _RE_GLOSSARY_MATCH_SEPARATORS.sub("", text_folded)
 
     @staticmethod
+    def _is_numeric_unit_glossary_term(*, source_folded: str, target_folded: str) -> bool:
+        folded = f"{(source_folded or '').strip()} {(target_folded or '').strip()}".strip()
+        if not folded:
+            return False
+        if "億" in folded or "兆" in folded:
+            return True
+        if "円" in folded and any(unit in folded for unit in ("千", "万", "億", "兆")):
+            return True
+        if "oku" in folded:
+            return True
+        return "k yen" in folded
+
+    @staticmethod
     def _matches_glossary_term(
         *,
         text_folded: str,
@@ -396,7 +409,7 @@ class PromptBuilder:
         text_compact = PromptBuilder._compact_for_glossary_match(text_folded)
 
         seen: set[str] = set()
-        heap: list[tuple[int, int, str, str]] = []
+        heap: list[tuple[int, int, int, str, str]] = []
         matched_count = 0
 
         for idx, (
@@ -431,8 +444,15 @@ class PromptBuilder:
 
             seen.add(source)
             matched_count += 1
+            priority = (
+                1
+                if PromptBuilder._is_numeric_unit_glossary_term(
+                    source_folded=source_folded, target_folded=target_folded
+                )
+                else 0
+            )
             key = max(len(source_folded or source), len(target_folded or target))
-            item = (key, -idx, source, target)
+            item = (priority, key, -idx, source, target)
             if len(heap) < max_lines:
                 heapq.heappush(heap, item)
             else:
@@ -442,8 +462,8 @@ class PromptBuilder:
         if not heap:
             return [], False
 
-        selected = sorted(heap, key=lambda x: (-x[0], -x[1]))
-        return [(source, target) for _, _, source, target in selected], (
+        selected = sorted(heap, key=lambda x: (-x[0], -x[1], -x[2]))
+        return [(source, target) for _, _, _, source, target in selected], (
             matched_count > max_lines
         )
 

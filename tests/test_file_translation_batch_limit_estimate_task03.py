@@ -16,9 +16,7 @@ class ProbePromptBuilder:
 
 def _make_blocks(count: int, size: int) -> list[TextBlock]:
     text = "x" * size
-    return [
-        TextBlock(id=f"b{i}", text=text, location="dummy") for i in range(count)
-    ]
+    return [TextBlock(id=f"b{i}", text=text, location="dummy") for i in range(count)]
 
 
 def test_estimate_local_file_batch_char_limit_reduces_when_ctx_small() -> None:
@@ -65,4 +63,3 @@ def test_estimate_local_file_batch_char_limit_keeps_config_when_ctx_large() -> N
     )
     assert limit == 1000
     assert source == "local_ai_max_chars_per_batch_file"
-

@@ -1198,7 +1198,9 @@ class LocalPromptBuilder:
             )
             if not matched:
                 continue
-            lines = [f"{source} 翻译成 {target}" for source, target in matched if target]
+            lines = [
+                f"{source} 翻译成 {target}" for source, target in matched if target
+            ]
             if not lines:
                 continue
             remaining_total = max_total_chars - total
@@ -1256,10 +1258,7 @@ class LocalPromptBuilder:
                 )
             return embedded
 
-        header = (
-            "### Glossary (CSV)\n"
-            "Apply glossary terms verbatim.\n\n"
-        )
+        header = "### Glossary (CSV)\nApply glossary terms verbatim.\n\n"
         embedded_text = header + "\n\n".join(parts)
         embedded = EmbeddedReference(
             text=embedded_text, warnings=warnings, truncated=truncated
@@ -1402,7 +1401,9 @@ class LocalPromptBuilder:
         if not rule_context_text:
             rule_context_text = context_text
         generated_glossary, exclude_glossary_sources = (
-            self._build_to_en_generated_glossary_section_with_excludes(rule_context_text)
+            self._build_to_en_generated_glossary_section_with_excludes(
+                rule_context_text
+            )
             if output_language == "en"
             else ("", ())
         )

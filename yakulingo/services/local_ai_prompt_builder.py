@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import csv
 import heapq
-import io
 import json
 import os
 import logging
@@ -170,34 +169,41 @@ class LocalPromptBuilder:
                 return cached
 
         try:
-            raw = path.read_text(encoding="utf-8-sig", errors="replace")
-        except OSError:
-            pairs: list[tuple[str, str, str, str, str, str]] = []
-        else:
-            pairs = []
-            for row in csv.reader(io.StringIO(raw)):
-                if not row:
-                    continue
-                first = (row[0] or "").strip()
-                if not first or first.startswith("#"):
-                    continue
-                second = (row[1] or "").strip() if len(row) > 1 else ""
-                source_folded = self._normalize_for_glossary_match(first)
-                target_folded = (
-                    self._normalize_for_glossary_match(second) if second else ""
-                )
-                source_compact = self._compact_for_glossary_match(source_folded)
-                target_compact = self._compact_for_glossary_match(target_folded)
-                pairs.append(
-                    (
-                        first,
-                        second,
-                        source_folded,
-                        target_folded,
-                        source_compact,
-                        target_compact,
+            with path.open(
+                "r",
+                encoding="utf-8-sig",
+                errors="replace",
+                newline="",
+            ) as handle:
+                reader = csv.reader(handle)
+                pairs: list[tuple[str, str, str, str, str, str]] = []
+                normalize = self._normalize_for_glossary_match
+                compact = self._compact_for_glossary_match
+                append = pairs.append
+
+                for row in reader:
+                    if not row:
+                        continue
+                    first = (row[0] or "").strip()
+                    if not first or first.startswith("#"):
+                        continue
+                    second = (row[1] or "").strip() if len(row) > 1 else ""
+                    source_folded = normalize(first)
+                    target_folded = normalize(second) if second else ""
+                    source_compact = compact(source_folded)
+                    target_compact = compact(target_folded) if target_folded else ""
+                    append(
+                        (
+                            first,
+                            second,
+                            source_folded,
+                            target_folded,
+                            source_compact,
+                            target_compact,
+                        )
                     )
-                )
+        except OSError:
+            pairs = []
 
         with self._glossary_lock:
             self._glossary_cache[file_key] = pairs
@@ -303,11 +309,7 @@ class LocalPromptBuilder:
         if not text:
             return [], False
 
-        exclude: set[str] = set()
-        for term in exclude_sources_folded or ():
-            normalized = LocalPromptBuilder._normalize_for_glossary_match(term)
-            if normalized:
-                exclude.add(normalized)
+        exclude = {term for term in (exclude_sources_folded or ()) if term}
 
         if len(text) > 12000:
             text = LocalPromptBuilder._sample_text_for_glossary_match(
@@ -321,11 +323,12 @@ class LocalPromptBuilder:
             set(glossary.scan_indices) if glossary.scan_indices else set()
         )
 
-        for match in _RE_GLOSSARY_TEXT_ASCII_WORD.finditer(text_folded):
-            word = match.group(0)
-            if not word:
-                continue
-            indices_to_check.update(glossary.ascii_word_to_indices.get(word, ()))
+        if glossary.ascii_word_to_indices:
+            for match in _RE_GLOSSARY_TEXT_ASCII_WORD.finditer(text_folded):
+                word = match.group(0)
+                if not word:
+                    continue
+                indices_to_check.update(glossary.ascii_word_to_indices.get(word, ()))
 
         if len(text_compact) >= 4 and glossary.ascii_prefix4_to_indices:
             ascii_prefix4 = glossary.ascii_prefix4_to_indices

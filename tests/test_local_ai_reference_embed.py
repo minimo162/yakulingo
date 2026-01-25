@@ -323,6 +323,22 @@ def test_local_reference_embed_matches_multiple_short_ascii_terms_adjacent_to_ja
     assert "Graphics Processing Unit" in embedded.text
 
 
+def test_local_reference_embed_reads_utf8_sig_with_crlf(tmp_path: Path) -> None:
+    builder = _make_builder()
+    builder._settings.use_bundled_glossary = False
+    glossary_path = tmp_path / "glossary.csv"
+    glossary_path.write_text(
+        "AI,Artificial Intelligence\r\n"
+        "#comment,ignored\r\n"
+        "GPU,Graphics Processing Unit\r\n",
+        encoding="utf-8-sig",
+    )
+
+    embedded = builder.build_reference_embed([glossary_path], input_text="AIを活用する")
+    assert "AI 翻译成 Artificial Intelligence" in embedded.text
+    assert "comment" not in embedded.text
+
+
 def test_local_reference_embed_matches_glossary_source_with_fullwidth_ascii(
     tmp_path: Path,
 ) -> None:
@@ -556,9 +572,9 @@ def test_local_reference_embed_uses_file_cache_for_text(tmp_path: Path) -> None:
     ref_path = tmp_path / "ref.csv"
     ref_path.write_text("AI,Artificial Intelligence\n", encoding="utf-8")
 
-    original_read_text = Path.read_text
-    with patch.object(Path, "read_text", autospec=True) as mock_read:
-        mock_read.side_effect = lambda self, *args, **kwargs: original_read_text(
+    original_open = Path.open
+    with patch.object(Path, "open", autospec=True) as mock_open:
+        mock_open.side_effect = lambda self, *args, **kwargs: original_open(
             self, *args, **kwargs
         )
         first = builder.build_reference_embed([ref_path], input_text="AI alpha")
@@ -568,7 +584,7 @@ def test_local_reference_embed_uses_file_cache_for_text(tmp_path: Path) -> None:
     assert "Artificial Intelligence" in first.text
     assert "AI" in second.text
     assert "Artificial Intelligence" in second.text
-    assert mock_read.call_count == 1
+    assert mock_open.call_count == 1
 
 
 def test_local_followup_reference_embed_includes_local_reference(

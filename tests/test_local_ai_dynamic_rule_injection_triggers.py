@@ -17,51 +17,54 @@ def _make_builder() -> LocalPromptBuilder:
     )
 
 
-def test_dynamic_rules_to_en_includes_forbidden_symbol_examples() -> None:
+def _assert_no_translation_rules(prompt: str) -> None:
+    assert "### Translation Rules" not in prompt
+    assert "{translation_rules}" not in prompt
+    assert "禁止記号:" not in prompt
+    assert "数値/単位:" not in prompt
+    assert "月名略語" not in prompt
+    assert "会計負数:" not in prompt
+
+
+def test_local_prompt_to_en_does_not_inject_translation_rules_for_symbols() -> None:
     builder = _make_builder()
-    rules = builder._get_translation_rules_for_text("en", "A > B").strip()
-    assert rules == ""
+    prompt = builder.build_text_to_en_single("A > B", style="minimal")
+    _assert_no_translation_rules(prompt)
 
 
-def test_dynamic_rules_to_en_includes_month_abbreviations() -> None:
+def test_local_prompt_to_en_does_not_inject_translation_rules_for_month() -> None:
     builder = _make_builder()
-    rules = builder._get_translation_rules_for_text("en", "1月の売上").strip()
-    assert rules == ""
+    prompt = builder.build_text_to_en_single("1月の売上", style="minimal")
+    _assert_no_translation_rules(prompt)
 
 
-def test_dynamic_rules_to_en_selects_man_k_only() -> None:
+def test_local_prompt_to_en_does_not_inject_translation_rules_for_man_amount() -> None:
     builder = _make_builder()
-    rules = builder._get_translation_rules_for_text("en", "22万円").strip()
-    assert rules == ""
+    prompt = builder.build_text_to_en_single("22万円", style="minimal")
+    _assert_no_translation_rules(prompt)
 
 
-def test_dynamic_rules_to_en_includes_yoy_terms_only_when_present() -> None:
+def test_local_prompt_to_en_does_not_inject_translation_rules_for_yoy_terms() -> None:
     builder = _make_builder()
-    rules = builder._get_translation_rules_for_text("en", "前年同期比で増加").strip()
-    assert rules == ""
+    prompt = builder.build_text_to_en_single("前年同期比で増加", style="minimal")
+    _assert_no_translation_rules(prompt)
 
 
-def test_dynamic_rules_to_en_includes_bn_guard_when_bn_word_present() -> None:
+def test_local_prompt_to_jp_does_not_inject_translation_rules_for_yen_bn() -> None:
     builder = _make_builder()
-    rules = builder._get_translation_rules_for_text(
-        "en", "Revenue was 3 billion yen."
-    ).strip()
-    assert rules == ""
+    prompt = builder.build_text_to_jp("Cost was ¥2,238.5billion.")
+    _assert_no_translation_rules(prompt)
 
 
-def test_dynamic_rules_to_jp_includes_yen_bn_example() -> None:
+def test_local_prompt_to_jp_does_not_inject_translation_rules_for_accounting_negative() -> (
+    None
+):
     builder = _make_builder()
-    rules = builder._get_translation_rules_for_text("jp", "Cost was ¥2,238.5billion.")
-    assert rules.strip() == ""
+    prompt = builder.build_text_to_jp("Operating loss was (50).")
+    _assert_no_translation_rules(prompt)
 
 
-def test_dynamic_rules_to_jp_includes_accounting_negative_only_when_present() -> None:
+def test_local_prompt_to_jp_does_not_inject_translation_rules_for_oku() -> None:
     builder = _make_builder()
-    rules = builder._get_translation_rules_for_text("jp", "Operating loss was (50).")
-    assert rules.strip() == ""
-
-
-def test_dynamic_rules_to_jp_includes_oku_only_when_present() -> None:
-    builder = _make_builder()
-    rules = builder._get_translation_rules_for_text("jp", "22,385 oku yen")
-    assert rules.strip() == ""
+    prompt = builder.build_text_to_jp("22,385 oku yen")
+    _assert_no_translation_rules(prompt)

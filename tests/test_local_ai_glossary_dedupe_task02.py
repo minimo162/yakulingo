@@ -15,7 +15,7 @@ def _make_temp_builder(
 
     (prompts_dir / "translation_rules.txt").write_text("RULES_MARKER", encoding="utf-8")
     (prompts_dir / "local_text_translate_to_en_single_json.txt").write_text(
-        "{translation_rules}\n{numeric_hints}\n{reference_section}\n{input_text}\n",
+        "{numeric_hints}\n{reference_section}\n{input_text}\n",
         encoding="utf-8",
     )
 
@@ -92,4 +92,3 @@ def test_text_prompt_dedupes_generated_glossary_against_bundled_glossary(
     assert "- JP: 1月 | EN: Jan." in prompt
     assert "1月 翻译成 Jan." not in prompt
     assert "営業利益 翻译成 Operating Profit" in prompt
-

@@ -99,7 +99,6 @@ class LocalPromptBuilder:
         self._settings = settings
         self._template_cache: dict[str, str] = {}
         self._template_lock = threading.Lock()
-        self._rules_lock = threading.Lock()
         self._reference_cache: Optional[
             tuple[
                 tuple[tuple[str, int, int], ...],
@@ -116,11 +115,6 @@ class LocalPromptBuilder:
         ] = {}
         self._glossary_index_cache: dict[tuple[str, int, int], GlossaryIndex] = {}
         self._glossary_lock = threading.Lock()
-
-    def _get_translation_rules(self, output_language: str) -> str:
-        with self._rules_lock:
-            rules = self._base.get_translation_rules(output_language)
-            return rules.strip()
 
     def _get_effective_reference_files(
         self,
@@ -566,183 +560,6 @@ class LocalPromptBuilder:
             kept.append(line)
             total += needed
         return "\n".join(kept), False
-
-    @staticmethod
-    def _split_top_level_rule_blocks(section: str) -> list[tuple[str, list[str]]]:
-        blocks: list[tuple[str, list[str]]] = []
-        head: Optional[str] = None
-        body: list[str] = []
-        for raw in (section or "").splitlines():
-            line = raw.rstrip()
-            stripped = line.lstrip()
-            indent = len(line) - len(stripped)
-            if stripped.startswith("- ") and indent == 0:
-                if head is not None:
-                    blocks.append((head, body))
-                head = line
-                body = []
-                continue
-            if head is None:
-                if line:
-                    blocks.append((line, []))
-                continue
-            body.append(line)
-        if head is not None:
-            blocks.append((head, body))
-        return blocks
-
-    @staticmethod
-    def _filter_translation_rules_to_en(section: str, text: str) -> str:
-        text = text or ""
-        has_symbol = bool(_RE_TO_EN_FORBIDDEN_SYMBOLS.search(text))
-        has_month = bool(_RE_TO_EN_MONTH.search(text))
-        has_chou_oku = ("兆" in text) or ("億" in text)
-        has_man = "万" in text
-        has_sen = "千" in text
-        has_triangle = "▲" in text
-        has_yoy = bool(_RE_TO_EN_YOY_TERMS.search(text))
-        lowered = text.casefold()
-        has_bn_word = any(token in lowered for token in ("bn", "billion", "trillion"))
-
-        lines: list[str] = []
-        for head, body in LocalPromptBuilder._split_top_level_rule_blocks(section):
-            if "禁止記号" in head:
-                lines.append(head)
-                if has_symbol:
-                    lines.extend(body)
-                continue
-
-            if "数値/単位" in head:
-                selected: list[str] = []
-                for sub in body:
-                    item = sub.strip()
-                    if not item:
-                        continue
-                    if "兆/億" in item:
-                        if has_chou_oku:
-                            selected.append(sub)
-                        continue
-                    if "万→k" in item:
-                        if has_man:
-                            selected.append(sub)
-                        continue
-                    if "千→k" in item:
-                        if has_sen:
-                            selected.append(sub)
-                        continue
-                    if "▲→" in item:
-                        if has_triangle:
-                            selected.append(sub)
-                        continue
-                    if any(token in item for token in ("YoY", "QoQ", "CAGR")):
-                        if has_yoy:
-                            selected.append(sub)
-                        continue
-                    if any(
-                        token in item.casefold()
-                        for token in ("billion", "trillion", "bn")
-                    ):
-                        if has_chou_oku or has_bn_word:
-                            selected.append(sub)
-                        continue
-                if selected:
-                    lines.append(head)
-                    lines.extend(selected)
-                continue
-
-            if "月名" in head:
-                if has_month:
-                    lines.append(head)
-                continue
-
-            if "+" in head or "「+」" in head:
-                lines.append(head)
-                continue
-
-            lines.append(head)
-            lines.extend(body)
-
-        return "\n".join(lines).strip()
-
-    @staticmethod
-    def _filter_translation_rules_to_jp(section: str, text: str) -> str:
-        text = text or ""
-        has_oku = bool(_RE_TO_JP_OKU_WORD.search(text))
-        has_k = bool(_RE_TO_JP_NUMBER_K.search(text))
-        has_yen_bn = bool(_RE_TO_JP_YEN_BN.search(text))
-        has_accounting = bool(_RE_TO_JP_ACCOUNTING_PAREN.search(text))
-
-        lines: list[str] = []
-        for head, body in LocalPromptBuilder._split_top_level_rule_blocks(section):
-            if "数値/単位" in head:
-                selected: list[str] = []
-                for sub in body:
-                    item = sub.strip()
-                    if not item:
-                        continue
-                    if "例:" in item and any(
-                        token in item.casefold() for token in ("billion", "bn")
-                    ):
-                        if has_yen_bn:
-                            selected.append(sub)
-                        continue
-                    if "oku→億" in item:
-                        if has_oku:
-                            selected.append(sub)
-                        continue
-                    if "k→" in item:
-                        if has_k:
-                            selected.append(sub)
-                        continue
-                    if "¥/￥" in item or "billion/bn" in item:
-                        if has_yen_bn:
-                            selected.append(sub)
-                        continue
-                    if "(" in item and "▲" in item:
-                        if has_accounting:
-                            selected.append(sub)
-                        continue
-                if selected:
-                    lines.append(head)
-                    lines.extend(selected)
-                continue
-
-            lines.append(head)
-            lines.extend(body)
-
-        return "\n".join(lines).strip()
-
-    def _get_translation_rules_for_text(self, output_language: str, text: str) -> str:
-        if not text or not text.strip():
-            return ""
-        if output_language not in ("en", "jp"):
-            return self._get_translation_rules(output_language)
-
-        with self._rules_lock:
-            base = self._base
-            base.get_translation_rules(output_language)
-            has_sections = getattr(base, "_translation_rules_has_sections", False)
-            if not has_sections:
-                return base.get_translation_rules(output_language).strip()
-
-            common = base.get_translation_rules("common").strip()
-            sections = getattr(base, "_translation_rules_sections", {})
-            specific = ""
-            if isinstance(sections, dict):
-                specific = str(sections.get(output_language, "") or "").strip()
-
-        if not specific:
-            return common
-
-        filtered = (
-            self._filter_translation_rules_to_en(specific, text)
-            if output_language == "en"
-            else self._filter_translation_rules_to_jp(specific, text)
-        ).strip()
-
-        if common and filtered:
-            return f"{common}\n\n{filtered}"
-        return common or filtered
 
     @staticmethod
     def _format_oku_amount(value: Decimal) -> str:
@@ -1440,14 +1257,8 @@ class LocalPromptBuilder:
             return embedded
 
         header = (
-            "### 参照（埋め込み）\n"
-            "以下の参照を優先して翻訳してください（必要に応じて省略されています）。\n"
-        )
-        header = (
-            "### Reference files (critical)\n"
-            "- GLOSSARY (mandatory): apply glossary terms everywhere they appear, including inside longer sentences.\n"
-            "- Use the glossary's preferred wording verbatim; do not paraphrase glossary terms.\n"
-            "\n"
+            "### Glossary (CSV)\n"
+            "Apply glossary terms verbatim.\n\n"
         )
         embedded_text = header + "\n\n".join(parts)
         embedded = EmbeddedReference(
@@ -1590,11 +1401,6 @@ class LocalPromptBuilder:
         rule_context_text = build_rule_context_text(max_chars=max_context_chars)
         if not rule_context_text:
             rule_context_text = context_text
-        translation_rules = (
-            self._get_translation_rules_for_text(output_language, rule_context_text)
-            if rule_context_text.strip()
-            else self._get_translation_rules(output_language)
-        )
         generated_glossary, exclude_glossary_sources = (
             self._build_to_en_generated_glossary_section_with_excludes(rule_context_text)
             if output_language == "en"
@@ -1632,8 +1438,7 @@ class LocalPromptBuilder:
             {"items": items}, ensure_ascii=False, separators=(",", ":")
         )
 
-        prompt = template.replace("{translation_rules}", translation_rules)
-        prompt = prompt.replace("{numeric_hints}", numeric_hints)
+        prompt = template.replace("{numeric_hints}", numeric_hints)
         prompt = prompt.replace("{reference_section}", reference_section)
         prompt = prompt.replace("{style}", translation_style)
         prompt = prompt.replace("{items_json}", items_json)
@@ -1663,8 +1468,6 @@ class LocalPromptBuilder:
         t0 = time.perf_counter() if timing_enabled else 0.0
 
         template = self._load_template("local_text_translate_to_en_3style_json.txt")
-        timing_enabled = _TIMING_ENABLED and logger.isEnabledFor(logging.DEBUG)
-        t0 = time.perf_counter() if timing_enabled else 0.0
 
         numeric_hints, exclude_glossary_sources = (
             self._build_to_en_generated_glossary_section_with_excludes(text)
@@ -1674,13 +1477,11 @@ class LocalPromptBuilder:
             input_text=text,
             exclude_glossary_sources=exclude_glossary_sources,
         )
-        translation_rules = self._get_translation_rules_for_text("en", text)
         reference_section = embedded_ref.text if embedded_ref.text else ""
         prompt_input_text = self._base.normalize_input_text(text, "en")
         extra_instruction = extra_instruction.strip() if extra_instruction else ""
         extra_instruction = f"{extra_instruction}\n" if extra_instruction else ""
-        prompt = template.replace("{translation_rules}", translation_rules)
-        prompt = prompt.replace("{numeric_hints}", numeric_hints)
+        prompt = template.replace("{numeric_hints}", numeric_hints)
         prompt = prompt.replace("{reference_section}", reference_section)
         prompt = prompt.replace("{extra_instruction}", extra_instruction)
         prompt = prompt.replace("{input_text}", prompt_input_text)
@@ -1718,7 +1519,6 @@ class LocalPromptBuilder:
             input_text=text,
             exclude_glossary_sources=exclude_glossary_sources,
         )
-        translation_rules = self._get_translation_rules_for_text("en", text)
         reference_section = embedded_ref.text if embedded_ref.text else ""
         prompt_input_text = self._base.normalize_input_text(text, "en")
         extra_instruction = extra_instruction.strip() if extra_instruction else ""
@@ -1731,8 +1531,7 @@ class LocalPromptBuilder:
             seen.add(style)
             style_list.append(style)
         styles_json = json.dumps(style_list, ensure_ascii=False, separators=(",", ":"))
-        prompt = template.replace("{translation_rules}", translation_rules)
-        prompt = prompt.replace("{numeric_hints}", numeric_hints)
+        prompt = template.replace("{numeric_hints}", numeric_hints)
         prompt = prompt.replace("{reference_section}", reference_section)
         prompt = prompt.replace("{extra_instruction}", extra_instruction)
         prompt = prompt.replace("{input_text}", prompt_input_text)
@@ -1771,13 +1570,11 @@ class LocalPromptBuilder:
             input_text=text,
             exclude_glossary_sources=exclude_glossary_sources,
         )
-        translation_rules = self._get_translation_rules_for_text("en", text)
         reference_section = embedded_ref.text if embedded_ref.text else ""
         prompt_input_text = self._base.normalize_input_text(text, "en")
         extra_instruction = extra_instruction.strip() if extra_instruction else ""
         extra_instruction = f"{extra_instruction}\n" if extra_instruction else ""
-        prompt = template.replace("{translation_rules}", translation_rules)
-        prompt = prompt.replace("{numeric_hints}", numeric_hints)
+        prompt = template.replace("{numeric_hints}", numeric_hints)
         prompt = prompt.replace("{extra_instruction}", extra_instruction)
         prompt = prompt.replace("{reference_section}", reference_section)
         prompt = prompt.replace("{input_text}", prompt_input_text)
@@ -1806,11 +1603,9 @@ class LocalPromptBuilder:
 
         template = self._load_template("local_text_translate_to_jp_json.txt")
         embedded_ref = self.build_reference_embed(reference_files, input_text=text)
-        translation_rules = self._get_translation_rules_for_text("jp", text)
         reference_section = embedded_ref.text if embedded_ref.text else ""
         prompt_input_text = self._base.normalize_input_text(text, "jp")
-        prompt = template.replace("{translation_rules}", translation_rules)
-        prompt = prompt.replace("{reference_section}", reference_section)
+        prompt = template.replace("{reference_section}", reference_section)
         prompt = prompt.replace("{input_text}", prompt_input_text)
         prompt = prompt.replace("{detected_language}", detected_language)
         if timing_enabled:

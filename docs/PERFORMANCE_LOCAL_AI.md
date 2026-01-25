@@ -385,8 +385,9 @@ KVキャッシュの量子化は、速度よりもメモリ圧/安定性の調�
 > **Note**: メモリ不足が疑われる場合は、速度低下があっても `q8_0` を優先し、安定性を確認します。
 
 ### バッチ分割のデフォルト
-- `local_ai_max_chars_per_batch`: 1000（既定の分割上限）
-- `local_ai_max_chars_per_batch_file`: 1000（互換キー。現行のファイル翻訳は一単位翻訳のため未使用）
+- `local_ai_max_chars_per_batch`: 1000（既定の分割上限。主にテキスト翻訳/バッチ翻訳）
+- `local_ai_max_chars_per_batch_file`: 1000（ファイル翻訳（ローカルAIバッチ翻訳）送信1回あたりの最大文字数）
+- `local_ai_ctx_size` / `local_ai_max_tokens` / プロンプト2回反復の影響で、ファイル翻訳は送信前に上限が自動で縮退する場合がある
 - 値を上げるとバッチ数は減るが、プロンプトが長すぎる場合は自動分割（`LOCAL_PROMPT_TOO_LONG`）にフォールバックする
 
 ## 速度に効く主な設定
@@ -398,7 +399,8 @@ KVキャッシュの量子化は、速度よりもメモリ圧/安定性の調�
 - `local_ai_cache_type_k` / `local_ai_cache_type_v`: KVキャッシュ型（`null` は既定の `f16` 相当）
 - `local_ai_flash_attn`: Flash Attention（`auto`/`0`/`1`）
 - `local_ai_mlock` / `local_ai_no_mmap`: メモリ安定化（環境により失敗する場合はオフ）
-- `local_ai_max_chars_per_batch` / `local_ai_max_chars_per_batch_file`: 翻訳分割の文字数上限（`*_file` は互換キー。現行のファイル翻訳は未使用）
+- `local_ai_max_chars_per_batch`: 翻訳分割の文字数上限（主にテキスト翻訳/バッチ翻訳）
+- `local_ai_max_chars_per_batch_file`: 翻訳分割の文字数上限（ファイル翻訳。必要に応じて自動で縮退）
 - `local_ai_max_tokens`: 応答上限（0以下でNone扱い、推論時間に影響）
 
 ## YakuLingo 設定キー ↔ llama.cpp フラグ対応

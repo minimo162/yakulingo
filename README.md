@@ -110,7 +110,7 @@ Windows環境で最も簡単にセットアップできる方法です。Python�
 > **Note**: `packaging/install_local_ai.ps1` は実行のたびに最新リリースを確認し、必要な場合のみ更新します。
 > **Note**: ローカルAIの既定翻訳モデルは `mradermacher/translategemma-4b-it-i1-GGUF/translategemma-4b-it.i1-Q4_K_S.gguf` です。
 > **Note**: ダウンロード先は `local_ai/models/translategemma-4b-it.i1-Q4_K_S.gguf` です。
-> **Note**: 指示追従性向上のため、ローカルAIへ送るプロンプトは内部で2回繰り返して送信します（https://arxiv.org/abs/2512.14982）。プロンプト長は実質2倍になるため、長文では `local_ai_ctx_size` / `local_ai_max_chars_per_batch` の調整が必要になる場合があります。
+> **Note**: 指示追従性向上のため、ローカルAIへ送るプロンプトは内部で2回繰り返して送信します（https://arxiv.org/abs/2512.14982）。プロンプト長は実質2倍になるため、長文では `local_ai_ctx_size` / `local_ai_max_tokens` / `local_ai_max_chars_per_batch` / `local_ai_max_chars_per_batch_file` の調整が必要になる場合があります。
 > **Note**: `LOCAL_AI_MODEL_*` / `LOCAL_AI_MODEL_KIND` によるモデル切り替えはできません（`local_ai/manifest.json` は記録用で、選択には影響しません）。
 
 ```bash
@@ -412,7 +412,7 @@ cd local_ai\llama_cpp\vulkan
 - `local_ai_vk_force_max_allocation_size` / `local_ai_vk_disable_f16`: Vulkanトラブルシュート用
 - `local_ai_cache_type_k` / `local_ai_cache_type_v`: KVキャッシュ型（例: `q8_0`）。既定は `q8_0`、`null` で無効化（`f16` 相当）に戻す
 - `local_ai_max_chars_per_batch`: 小さくすると1回あたりの待ち時間は短くなるが、回数が増える（複数テキストをまとめて送る経路）
-- `local_ai_max_chars_per_batch_file`: 互換キー（現行のファイル翻訳は一単位翻訳のため未使用）
+- `local_ai_max_chars_per_batch_file`: ファイル翻訳（ローカルAIバッチ翻訳）送信1回あたりの最大文字数（必要に応じて自動で縮退）
 - `local_ai_max_tokens` を小さくすると速度が向上しますが、長文やバッチ翻訳では出力が途中で途切れる/短すぎる可能性があります（英訳が「Revenue」だけ等になった場合は増やす）
 - 目安: 20秒目標の短文は `128`、速度優先は `256`、品質重視は `512`（または `null`）
 - `request_timeout`: 長文時のタイムアウト回避用。小さくし過ぎると失敗しやすい
@@ -448,7 +448,7 @@ cd local_ai\llama_cpp\vulkan
 | `local_ai_threads` | ローカルAIのスレッド数（0=auto） | 0 |
 | `local_ai_threads_batch` | ローカルAIのprefillスレッド数（0=auto、nullで未指定） | 0 |
 | `local_ai_max_chars_per_batch` | ローカルAI（テキスト翻訳/バッチ翻訳）送信1回あたりの最大文字数 | 1000 |
-| `local_ai_max_chars_per_batch_file` | 互換キー（旧: ファイル翻訳の分割上限。現行のファイル翻訳は未使用） | 1000 |
+| `local_ai_max_chars_per_batch_file` | ローカルAI（ファイル翻訳）送信1回あたりの最大文字数（必要に応じて自動で縮退） | 1000 |
 | `request_timeout` | 翻訳リクエストのタイムアウト（秒） | 600 |
 | `local_ai_temperature` | ローカルAIの温度 | 0.7 |
 | `local_ai_top_p` | ローカルAIのTop-P | 0.95 |

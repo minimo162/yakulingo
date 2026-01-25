@@ -361,9 +361,6 @@ class AppSettings:
 
     # Local AI 送信分割（入力テキスト長での上限）
     # - local_ai_max_chars_per_batch: 複数テキストをまとめて送る経路（主にテキスト翻訳/バッチ翻訳）で使用
-    # - local_ai_max_chars_per_batch_file: 互換キー（旧: ファイル翻訳の分割上限）。現行のファイル翻訳は一単位翻訳のため未使用
-    # Local AI バッチ分割の上限:
-    # - local_ai_max_chars_per_batch: テキスト翻訳/バッチ翻訳で使用
     # - local_ai_max_chars_per_batch_file: ファイル翻訳（ローカルAIバッチ翻訳）の分割上限（未設定時は local_ai_max_chars_per_batch を使用）
     local_ai_max_chars_per_batch: int = 1000
     local_ai_max_chars_per_batch_file: int = 1000

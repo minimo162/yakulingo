@@ -3624,10 +3624,10 @@ class TranslationService:
         return None
 
     def _get_local_file_batch_limit_info(self) -> tuple[Optional[int], str | None]:
-        """互換用: 旧ファイル翻訳のバッチ分割上限を解決する。
+        """ファイル翻訳（ローカルAIバッチ翻訳）の分割上限（初期値）を解決する。
 
-        現行のファイル翻訳は一単位翻訳のため、この設定値はファイル翻訳では使用されない。
-        （ベンチ/互換のために設定値自体は維持する）
+        互換性のため `local_ai_max_chars_per_batch_file` を優先し、未設定なら
+        `local_ai_max_chars_per_batch` をフォールバックとして使う。
         """
         if self.config is None:
             return None, None

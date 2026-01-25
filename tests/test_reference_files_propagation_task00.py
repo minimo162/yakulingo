@@ -156,8 +156,8 @@ def test_translation_service_passes_reference_files_to_local_translate_single(
     service._local_client = local  # type: ignore[assignment]
     service._local_prompt_builder = object()  # type: ignore[assignment]
     service._local_batch_translator = object()  # type: ignore[assignment]
-    ref_path = tmp_path / "ref.txt"
-    ref_path.write_text("ref", encoding="utf-8")
+    ref_path = tmp_path / "glossary.csv"
+    ref_path.write_text("AI,Artificial Intelligence\n", encoding="utf-8")
     reference_files = [ref_path]
 
     result = service.translate_text("hello", reference_files=reference_files)

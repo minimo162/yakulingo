@@ -7643,7 +7643,7 @@ class YakuLingoApp:
                 auto_upload=True,
                 max_files=1,
             )
-            .props('accept=".csv,.txt,.pdf,.docx,.xlsx,.pptx,.md,.json"')
+            .props('accept=".csv"')
             .classes("hidden")
         )
 
@@ -9508,6 +9508,14 @@ class YakuLingoApp:
                 # NiceGUI 3.x: SmallFileUpload has _data, LargeFileUpload has _path
                 file_obj = e.file
                 name = file_obj.name
+                if Path(name).suffix.lower() != ".csv":
+                    if client:
+                        with client:
+                            ui.notify(
+                                f"参照ファイルは用語集CSV（.csv）のみ対応です: {name}",
+                                type="warning",
+                            )
+                    return
                 if hasattr(file_obj, "_path"):
                     # LargeFileUpload: file is saved to temp directory
                     uploaded_path = temp_file_manager.create_temp_file_from_path(
@@ -9528,8 +9536,16 @@ class YakuLingoApp:
                 # Older NiceGUI: direct content and name attributes
                 if not e.content:
                     return
-                content = e.content.read()
                 name = e.name
+                if Path(name).suffix.lower() != ".csv":
+                    if client:
+                        with client:
+                            ui.notify(
+                                f"参照ファイルは用語集CSV（.csv）のみ対応です: {name}",
+                                type="warning",
+                            )
+                    return
+                content = e.content.read()
             # Use temp file manager for automatic cleanup
             if uploaded_path is None:
                 uploaded_path = temp_file_manager.create_temp_file(content, name)

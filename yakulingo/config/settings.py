@@ -1115,6 +1115,8 @@ class AppSettings:
             if not path.is_absolute():
                 path = base_dir_abs / path
             path = path.absolute()
+            if path.suffix.lower() != ".csv":
+                continue
 
             # Resolve to absolute path and check for path traversal
             resolved_path = path.resolve()

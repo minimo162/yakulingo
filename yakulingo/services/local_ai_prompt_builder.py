@@ -27,13 +27,6 @@ _TIMING_ENABLED = os.environ.get("YAKULINGO_LOCAL_AI_TIMING") == "1"
 
 _SUPPORTED_REFERENCE_EXTENSIONS = {
     ".csv",
-    ".txt",
-    ".md",
-    ".json",
-    ".pdf",
-    ".docx",
-    ".xlsx",
-    ".pptx",
 }
 _BUNDLED_GLOSSARY_FILENAMES = {"glossary.csv", "glossary_old.csv"}
 _RE_GLOSSARY_MATCH_SEPARATORS = re.compile(r"[\s_/\\-]+")
@@ -135,17 +128,20 @@ class LocalPromptBuilder:
         *,
         input_text: Optional[str],
     ) -> list[Path]:
-        files: list[Path] = list(reference_files) if reference_files else []
-        if not self._settings.use_bundled_glossary:
-            return files
-        if not input_text or not input_text.strip():
-            return files
-        if not self.prompts_dir:
-            return files
-
-        glossary_path = self.prompts_dir.parent / "glossary.csv"
-        if glossary_path.exists() and glossary_path not in files:
-            files.insert(0, glossary_path)
+        files: list[Path] = (
+            [path for path in reference_files if path.suffix.lower() == ".csv"]
+            if reference_files
+            else []
+        )
+        if (
+            self._settings.use_bundled_glossary
+            and input_text
+            and input_text.strip()
+            and self.prompts_dir
+        ):
+            glossary_path = self.prompts_dir.parent / "glossary.csv"
+            if glossary_path.exists() and glossary_path not in files:
+                files.insert(0, glossary_path)
         return files
 
     @staticmethod
@@ -1370,61 +1366,38 @@ class LocalPromptBuilder:
                 warnings.append(f"未対応の参照ファイルをスキップしました: {path.name}")
                 continue
 
-            is_bundled_glossary = (
-                suffix == ".csv" and path.name.casefold() in _BUNDLED_GLOSSARY_FILENAMES
+            is_glossary = suffix == ".csv"
+            if not is_glossary:
+                warnings.append(f"未対応の参照ファイルをスキップしました: {path.name}")
+                continue
+            if not input_text or not input_text.strip():
+                continue
+            glossary = self._load_glossary_index(path, file_key)
+            matched, glossary_truncated = self._filter_glossary_pairs(
+                glossary,
+                input_text or "",
+                max_lines=glossary_max_lines,
+                exclude_sources_folded=exclude_key,
             )
-            if is_bundled_glossary:
-                if not input_text or not input_text.strip():
-                    continue
-                glossary = self._load_glossary_index(path, file_key)
-                matched, glossary_truncated = self._filter_glossary_pairs(
-                    glossary,
-                    input_text or "",
-                    max_lines=glossary_max_lines,
-                    exclude_sources_folded=exclude_key,
-                )
-                if not matched:
-                    continue
-                lines = [
-                    f"{source} 翻译成 {target}" for source, target in matched if target
-                ]
-                if not lines:
-                    continue
-                remaining_total = max_total_chars - total
-                max_glossary_chars = min(max_file_chars, max(0, remaining_total))
-                content, was_truncated = self._join_lines_with_limit(
-                    lines, max_chars=max_glossary_chars
-                )
-                was_truncated = was_truncated or glossary_truncated
-                if not content:
-                    continue
-            elif suffix in {".txt", ".md", ".json", ".csv"}:
-                content, was_truncated = self._get_cached_reference_text(
-                    path,
-                    file_key=file_key,
-                    max_chars=max_file_chars,
-                )
-                if content is None:
-                    warnings.append(f"参照ファイルを読み込めませんでした: {path.name}")
-                    continue
-                if not content:
-                    continue
-            else:
-                content, was_truncated = self._get_cached_binary_reference_text(
-                    path,
-                    suffix=suffix,
-                    file_key=file_key,
-                    max_chars=max_file_chars,
-                )
-                if not content:
-                    warnings.append(f"参照ファイルを読み込めませんでした: {path.name}")
-                    continue
+            if not matched:
+                continue
+            lines = [f"{source} 翻译成 {target}" for source, target in matched if target]
+            if not lines:
+                continue
+            remaining_total = max_total_chars - total
+            max_glossary_chars = min(max_file_chars, max(0, remaining_total))
+            content, was_truncated = self._join_lines_with_limit(
+                lines, max_chars=max_glossary_chars
+            )
+            was_truncated = was_truncated or glossary_truncated
+            if not content:
+                continue
 
             if was_truncated or len(content) > max_file_chars:
                 if len(content) > max_file_chars:
                     content = content[:max_file_chars]
                 truncated = True
-                if not is_bundled_glossary:
+                if not is_glossary:
                     warnings.append(
                         f"参照ファイルを一部省略しました（上限 {max_file_chars} 文字）: {path.name}"
                     )
@@ -1432,7 +1405,7 @@ class LocalPromptBuilder:
             remaining = max_total_chars - total
             if remaining <= 0:
                 truncated = True
-                if not is_bundled_glossary:
+                if not is_glossary:
                     warnings.append(
                         f"参照ファイルを一部省略しました（合計上限 {max_total_chars} 文字）"
                     )
@@ -1441,7 +1414,7 @@ class LocalPromptBuilder:
             if len(content) > remaining:
                 content = content[:remaining]
                 truncated = True
-                if not is_bundled_glossary:
+                if not is_glossary:
                     warnings.append(
                         f"参照ファイルを一部省略しました（合計上限 {max_total_chars} 文字）"
                     )

@@ -112,53 +112,24 @@ def _filter_glossary_pairs_linear(
     ], matched_count > max_lines
 
 
-def test_local_reference_embed_supports_binary_formats(tmp_path: Path) -> None:
+def test_local_reference_embed_ignores_non_csv_files(tmp_path: Path) -> None:
     builder = _make_builder()
-    cases: list[tuple[Path, str]] = []
+    builder._settings.use_bundled_glossary = False
 
-    from docx import Document
+    paths = [
+        tmp_path / "ref.docx",
+        tmp_path / "ref.xlsx",
+        tmp_path / "ref.pptx",
+        tmp_path / "ref.pdf",
+        tmp_path / "ref.txt",
+    ]
 
-    docx_path = tmp_path / "ref.docx"
-    doc = Document()
-    doc.add_paragraph("Docx content")
-    doc.save(docx_path)
-    cases.append((docx_path, "Docx content"))
-
-    import openpyxl
-
-    xlsx_path = tmp_path / "ref.xlsx"
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws["A1"] = "Xlsx content"
-    wb.save(xlsx_path)
-    wb.close()
-    cases.append((xlsx_path, "Xlsx content"))
-
-    from pptx import Presentation
-    from pptx.util import Inches
-
-    pptx_path = tmp_path / "ref.pptx"
-    pres = Presentation()
-    slide = pres.slides.add_slide(pres.slide_layouts[6])
-    textbox = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(5), Inches(1))
-    textbox.text_frame.text = "Pptx content"
-    pres.save(pptx_path)
-    cases.append((pptx_path, "Pptx content"))
-
-    import fitz
-
-    pdf_path = tmp_path / "ref.pdf"
-    pdf = fitz.open()
-    page = pdf.new_page()
-    page.insert_text((72, 72), "Pdf content")
-    pdf.save(pdf_path)
-    pdf.close()
-    cases.append((pdf_path, "Pdf content"))
-
-    for path, expected in cases:
+    for path in paths:
+        path.write_text("dummy", encoding="utf-8")
         embedded = builder.build_reference_embed([path], input_text="sample")
-        assert expected in embedded.text
-        assert not any("未対応の参照ファイル" in w for w in embedded.warnings)
+        assert embedded.text == ""
+        assert embedded.warnings == []
+        assert embedded.truncated is False
 
 
 def test_local_prompt_includes_full_rules_for_short_text() -> None:
@@ -635,46 +606,59 @@ def test_local_followup_prompt_includes_rules_and_bundled_glossary_when_enabled(
     assert "営業利益 翻译成 Operating Profit" in prompt
 
 
-def test_local_reference_embed_truncates_large_file(tmp_path: Path) -> None:
+def test_local_reference_embed_treats_custom_csv_as_glossary(tmp_path: Path) -> None:
     builder = _make_builder()
-    ref_path = tmp_path / "ref.txt"
-    ref_path.write_text("A" * 2100, encoding="utf-8")
-    embedded = builder.build_reference_embed([ref_path], input_text="sample")
-    assert embedded.truncated is True
-    assert any("上限 2000 文字" in w for w in embedded.warnings)
+    builder._settings.use_bundled_glossary = False
+
+    ref_path = tmp_path / "custom.csv"
+    ref_path.write_text("AI,Artificial Intelligence\n", encoding="utf-8")
+
+    embedded = builder.build_reference_embed([ref_path], input_text="AIを活用する")
+    assert "[REFERENCE:file=custom.csv]" in embedded.text
+    assert "AI" in embedded.text
+    assert "Artificial Intelligence" in embedded.text
+    assert embedded.truncated is False
 
 
-def test_local_reference_embed_truncates_total_limit(tmp_path: Path) -> None:
+def test_local_reference_embed_combines_multiple_glossary_csvs(tmp_path: Path) -> None:
     builder = _make_builder()
-    path_a = tmp_path / "a.txt"
-    path_b = tmp_path / "b.txt"
-    path_c = tmp_path / "c.txt"
-    path_a.write_text("A" * 2000, encoding="utf-8")
-    path_b.write_text("B" * 2000, encoding="utf-8")
-    path_c.write_text("C" * 10, encoding="utf-8")
+    builder._settings.use_bundled_glossary = False
+
+    path_a = tmp_path / "a.csv"
+    path_b = tmp_path / "b.csv"
+    path_a.write_text("AI,Artificial Intelligence\n", encoding="utf-8")
+    path_b.write_text("GPU,Graphics Processing Unit\n", encoding="utf-8")
+
     embedded = builder.build_reference_embed(
-        [path_a, path_b, path_c], input_text="sample"
+        [path_a, path_b], input_text="AIとGPUを活用する"
     )
-    assert embedded.truncated is True
-    assert any("合計上限 4000 文字" in w for w in embedded.warnings)
+    assert "[REFERENCE:file=a.csv]" in embedded.text
+    assert "AI" in embedded.text
+    assert "Artificial Intelligence" in embedded.text
+    assert "[REFERENCE:file=b.csv]" in embedded.text
+    assert "GPU" in embedded.text
+    assert "Graphics Processing Unit" in embedded.text
 
 
 def test_local_reference_embed_uses_file_cache_for_text(tmp_path: Path) -> None:
     builder = _make_builder()
-    ref_path = tmp_path / "ref.txt"
-    ref_path.write_text("Reference content", encoding="utf-8")
+    builder._settings.use_bundled_glossary = False
+    ref_path = tmp_path / "ref.csv"
+    ref_path.write_text("AI,Artificial Intelligence\n", encoding="utf-8")
 
     original_read_text = Path.read_text
     with patch.object(Path, "read_text", autospec=True) as mock_read:
         mock_read.side_effect = lambda self, *args, **kwargs: original_read_text(
             self, *args, **kwargs
         )
-        first = builder.build_reference_embed([ref_path], input_text="alpha")
-        second = builder.build_reference_embed([ref_path], input_text="beta")
+        first = builder.build_reference_embed([ref_path], input_text="AI alpha")
+        second = builder.build_reference_embed([ref_path], input_text="AI beta")
 
-    assert "Reference content" in first.text
-    assert "Reference content" in second.text
-    assert mock_read.call_count == 2
+    assert "AI" in first.text
+    assert "Artificial Intelligence" in first.text
+    assert "AI" in second.text
+    assert "Artificial Intelligence" in second.text
+    assert mock_read.call_count == 1
 
 
 def test_local_followup_reference_embed_includes_local_reference(
@@ -682,6 +666,7 @@ def test_local_followup_reference_embed_includes_local_reference(
 ) -> None:
     settings = AppSettings()
     settings.translation_backend = "local"
+    settings.use_bundled_glossary = False
     app = YakuLingoApp()
     app.translation_service = TranslationService(
         Mock(),
@@ -689,8 +674,8 @@ def test_local_followup_reference_embed_includes_local_reference(
         prompts_dir=Path(__file__).resolve().parents[1] / "prompts",
     )
 
-    ref_path = tmp_path / "ref.txt"
-    ref_path.write_text("Reference content", encoding="utf-8")
+    ref_path = tmp_path / "ref.csv"
+    ref_path.write_text("source,ORIGINAL\n", encoding="utf-8")
 
     prompt = app._build_follow_up_prompt(
         "review",
@@ -699,8 +684,9 @@ def test_local_followup_reference_embed_includes_local_reference(
         reference_files=[ref_path],
     )
     assert prompt is not None
-    assert "[REFERENCE:file=ref.txt]" in prompt
-    assert "Reference content" in prompt
+    assert "[REFERENCE:file=ref.csv]" in prompt
+    assert "source" in prompt
+    assert "ORIGINAL" in prompt
 
 
 def test_local_prompt_includes_json_guard_block() -> None:
@@ -716,8 +702,9 @@ def test_local_prompt_includes_json_guard_block() -> None:
 
 def test_local_batch_embed_reference_even_when_flag_false(tmp_path: Path) -> None:
     builder = _make_builder()
-    ref_path = tmp_path / "ref.txt"
-    ref_path.write_text("Reference content", encoding="utf-8")
+    builder._settings.use_bundled_glossary = False
+    ref_path = tmp_path / "ref.csv"
+    ref_path.write_text("sample,SAMPLE\n", encoding="utf-8")
     prompt = builder.build_batch(
         ["sample"],
         has_reference_files=False,
@@ -725,4 +712,4 @@ def test_local_batch_embed_reference_even_when_flag_false(tmp_path: Path) -> Non
         translation_style="concise",
         reference_files=[ref_path],
     )
-    assert "[REFERENCE:file=ref.txt]" in prompt
+    assert "[REFERENCE:file=ref.csv]" in prompt

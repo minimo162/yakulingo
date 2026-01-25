@@ -3,16 +3,14 @@
 Builds translation prompts for YakuLingo.
 
 Prompt file structure:
-- translation_rules.txt: Translation rules with optional [COMMON]/[TO_EN]/[TO_JP] sections
-- file_translate_to_en_{standard|concise|minimal}.txt: File translation → English (current: minimal only)
+- file_translate_to_en_minimal.txt: File translation → English (minimal only; SSOT)
 - file_translate_to_jp.txt: File translation → Japanese
 - text_translate_to_en_compare.txt: Text translation → English (minimal only)
-- text_translate_to_jp.txt: Text translation → Japanese (translation-only; no explanation)
+- text_translate_to_jp.txt: Text translation → Japanese (translation-only)
 - adjust_*.txt: Adjustment prompts (shorter, longer, custom)
 
-Translation rules are loaded from translation_rules.txt and injected into
-each prompt template via the {translation_rules} placeholder. When sections
-are present, only the relevant rules for the output language are inserted.
+Translation rules are no longer injected into Copilot prompts. Consistency
+interventions should be handled via glossary (reference files) instead.
 """
 
 import csv
@@ -25,14 +23,6 @@ from pathlib import Path
 from typing import Optional, Sequence
 
 
-_RULE_SECTION_PATTERN = re.compile(r"^\s*\[(COMMON|TO_EN|TO_JP)\]\s*$", re.IGNORECASE)
-_RULE_SECTION_KEYS = {
-    "COMMON": "common",
-    "TO_EN": "en",
-    "TO_JP": "jp",
-}
-
-_GLOSSARY_FILENAMES = {"glossary.csv"}
 _RE_GLOSSARY_MATCH_SEPARATORS = re.compile(r"[\s_/\\-]+")
 _RE_GLOSSARY_ASCII_WORD = re.compile(r"^[a-z0-9]+$")
 _RE_GLOSSARY_TEXT_ASCII_WORD = re.compile(r"[a-z0-9]+")
@@ -109,13 +99,8 @@ def _normalize_yen_billion_expressions_to_japanese(text: str) -> str:
 
 
 # 参考ファイル参照の指示文（ファイル添付時のみ挿入）
-REFERENCE_INSTRUCTION = """
-参考ファイル (Reference Files)
-添付の参考ファイル（用語集、参考資料等）を参照し、翻訳に活用してください。
-用語集がある場合は、記載されている用語は必ずその訳語を使用してください。
-用語集の用語は、単語単体だけでなく文章中に含まれる場合も必ず同じ訳語を適用してください（表記ゆれ・言い換え禁止）。
-複数の用語が一致する場合は、より長く具体的な用語（最長一致）を優先してください。
-"""
+REFERENCE_INSTRUCTION = """### Glossary (CSV)
+Use the attached glossary CSV. If a term matches, apply the glossary translation verbatim."""
 ID_MARKER_INSTRUCTION = """
 ### Item ID markers (critical)
 - Each output item must start with "<number>. [[ID:n]]" (example: "1. [[ID:1]] ...").
@@ -123,43 +108,6 @@ ID_MARKER_INSTRUCTION = """
 - Do not remove, change, or relocate the marker; keep it on the same line as the item number.
 - If you cannot translate an item, copy the original text after the marker (do not leave it empty).
 - Do not output other prompt markers (e.g., "===INPUT_TEXT===" / "===END_INPUT_TEXT===").
-"""
-
-# 用語集埋め込み時の指示文（プロンプト内に用語集を含める場合）
-# 共通翻訳ルール（translation_rules.txt が存在しない場合のデフォルト）
-DEFAULT_TRANSLATION_RULES = """## 翻訳ルール（Translation Rules）
-
-[COMMON]
-- 原文の改行・タブ・段落構造を維持する
-- 箇条書き・表形式を崩さない
-- 数字の桁/カンマは変更しない
-
-[TO_EN]
-- 記号禁止: > < >=/≥/≧ <=/≤/≦ ~ → ↑ ↓ は使わず言葉で表現する
-  - >: more than / exceeding / over
-  - <: less than / under / below
-  - >=: or more / at least
-  - <=: or less / at most
-  - ~: approximately / about
-  - →: leads to / results in / which enhances
-  - ↑: increased / up / higher
-  - ↓: decreased / down / lower
-- 数値/単位:
-  - 兆/億→oku (1兆=10,000億=10,000 oku; X兆Y億→(X*10,000+Y) oku)
-  - 千→k
-  - ▲→() （負数は数値のみ括弧）
-  - YoY/QoQ/CAGR を使用
-  - billion/trillion には変換しない
-- 月名は略語: Jan., Feb., Mar., Apr., May, Jun., Jul., Aug., Sep., Oct., Nov., Dec.
-- 「+」は追加の意味のみ。比較は "higher than" などで表現する
-
-[TO_JP]
-- 数値/単位:
-  - oku→億 (22,385 oku→2兆2,385億)
-  - k→千または000
-  - ¥/￥ + 数値 + (billion/bn) は「数値 × 10億円」として、兆/億/万の和文表記に変換する
-    - 例: ¥2,238.5billion → 2兆2,385億円
-  - ()→▲
 """
 
 # Fallback template for → English (used when translate_to_en.txt doesn't exist)
@@ -179,8 +127,6 @@ DEFAULT_TO_EN_TEMPLATE = """## ファイル翻訳リクエスト
 ### 翻訳スタイル
 - ビジネス文書向けで自然で読みやすい英語
 - 既に英語の場合はそのまま出力
-
-{translation_rules}
 
 {reference_section}
 
@@ -246,8 +192,6 @@ Translate the Japanese text into minimal, business-ready English.
 [minimal]
 Translation:
 
-{translation_rules}
-
 {reference_section}
 
 ---
@@ -273,8 +217,6 @@ DEFAULT_TEXT_TO_JP_TEMPLATE = """## テキスト翻訳リクエスト（日本�
 - oku → 億（例: 4,500 oku → 4,500億）
 - k → 千または000（例: 12k → 12,000）
 - () → ▲（例: (50) → ▲50）
-
-{translation_rules}
 
 ### 出力形式
 訳文: 日本語翻訳
@@ -305,7 +247,7 @@ class PromptBuilder:
     Reference files are attached to Copilot, not embedded in prompt.
 
     Supports style-specific prompts for English output (standard/concise).
-    Translation rules are loaded from translation_rules.txt.
+    Translation rules are no longer injected (glossary-centered prompts).
     """
 
     def __init__(self, prompts_dir: Optional[Path] = None):
@@ -316,11 +258,6 @@ class PromptBuilder:
         self._text_templates: dict[tuple[str, str], str] = {}
         # Text translation comparison template
         self._text_compare_template: Optional[str] = None
-        # Translation rules cache (raw + parsed sections)
-        self._translation_rules_raw: str = ""
-        self._translation_rules_sections: dict[str, str] = {}
-        self._translation_rules_has_sections: bool = False
-        self._translation_rules_file_key: Optional[tuple[str, int, int]] = None
         # Glossary cache: {(path, mtime, size): pairs}
         self._glossary_pairs_cache: dict[
             tuple[str, int, int], list[tuple[str, str, str, str, str, str]]
@@ -522,15 +459,15 @@ class PromptBuilder:
         if not text:
             return ""
 
-        glossary_path: Optional[Path] = None
-        for path in reference_files:
-            if path.name.casefold() in _GLOSSARY_FILENAMES:
-                glossary_path = path
-                break
-        if glossary_path is None:
+        glossary_paths = [
+            path for path in reference_files if path.suffix.casefold() == ".csv"
+        ]
+        if not glossary_paths:
             return ""
 
-        pairs = self._load_glossary_pairs(glossary_path)
+        pairs: list[tuple[str, str, str, str, str, str]] = []
+        for path in glossary_paths:
+            pairs.extend(self._load_glossary_pairs(path))
         if not pairs:
             return ""
 
@@ -562,90 +499,25 @@ class PromptBuilder:
 
         return "\n".join(parts).strip()
 
-    def _load_translation_rules(self, *, force: bool = False) -> str:
-        """Load translation rules from translation_rules.txt (skip if unchanged)."""
-        if not force and self._translation_rules_raw:
-            if self.prompts_dir is None:
-                return self._translation_rules_raw
-            rules_file = self.prompts_dir / "translation_rules.txt"
-            file_key = self._rules_file_key(rules_file)
-            if file_key == self._translation_rules_file_key:
-                return self._translation_rules_raw
-
-        rules_text = DEFAULT_TRANSLATION_RULES
-        file_key = None
-        if self.prompts_dir:
-            rules_file = self.prompts_dir / "translation_rules.txt"
-            file_key = self._rules_file_key(rules_file)
-            if rules_file.exists():
-                rules_text = rules_file.read_text(encoding="utf-8")
-
-        self._translation_rules_raw = rules_text
-        self._translation_rules_file_key = file_key
-        sections, has_sections = self._parse_translation_rules_sections(rules_text)
-        self._translation_rules_sections = sections
-        self._translation_rules_has_sections = has_sections
-        return rules_text
-
-    def _parse_translation_rules_sections(
-        self, rules_text: str
-    ) -> tuple[dict[str, str], bool]:
-        """Parse optional [COMMON]/[TO_EN]/[TO_JP] sections from rules text."""
-        sections = {"common": "", "en": "", "jp": ""}
-        seen_tag = False
-        current_key: Optional[str] = None
-        unsectioned_lines: list[str] = []
-
-        for line in rules_text.splitlines():
-            match = _RULE_SECTION_PATTERN.match(line)
-            if match:
-                seen_tag = True
-                current_key = _RULE_SECTION_KEYS.get(match.group(1).upper())
-                continue
-
-            if seen_tag:
-                if current_key:
-                    sections[current_key] += line + "\n"
-            else:
-                unsectioned_lines.append(line)
-
-        if not seen_tag:
-            return {
-                "common": "\n".join(unsectioned_lines).strip(),
-                "en": "",
-                "jp": "",
-            }, False
-
-        for key in sections:
-            sections[key] = sections[key].strip()
-        return sections, True
-
     def _load_templates(self) -> None:
         """Load prompt templates from files or use defaults"""
-        styles = ["standard", "concise"]
-
-        # Load common translation rules
-        self._load_translation_rules()
+        styles = ["standard", "concise", "minimal"]
         self._text_compare_template = DEFAULT_TEXT_TO_EN_COMPARE_TEMPLATE
 
         if self.prompts_dir:
-            # Load style-specific English templates
-            for style in styles:
-                # File translation to English
-                to_en_prompt = self.prompts_dir / f"file_translate_to_en_{style}.txt"
-                if to_en_prompt.exists():
-                    self._templates[("en", style)] = to_en_prompt.read_text(
-                        encoding="utf-8"
-                    )
+            # English file translation template: minimal is SSOT (style variants are ignored).
+            to_en_prompt = self.prompts_dir / "file_translate_to_en_minimal.txt"
+            if to_en_prompt.exists():
+                en_template = to_en_prompt.read_text(encoding="utf-8")
+            else:
+                old_prompt = self.prompts_dir / "file_translate_to_en.txt"
+                if old_prompt.exists():
+                    en_template = old_prompt.read_text(encoding="utf-8")
                 else:
-                    # Fallback to old single file if exists
-                    old_prompt = self.prompts_dir / "file_translate_to_en.txt"
-                    if old_prompt.exists():
-                        self._templates[("en", style)] = old_prompt.read_text(
-                            encoding="utf-8"
-                        )
-                    else:
-                        self._templates[("en", style)] = DEFAULT_TO_EN_TEMPLATE
+                    en_template = DEFAULT_TO_EN_TEMPLATE
+
+            for style in styles:
+                self._templates[("en", style)] = en_template
 
             # Japanese template (no style variations)
             to_jp_prompt = self.prompts_dir / "file_translate_to_jp.txt"
@@ -682,47 +554,14 @@ class PromptBuilder:
             self._text_compare_template = DEFAULT_TEXT_TO_EN_COMPARE_TEMPLATE
 
     def get_translation_rules(self, output_language: Optional[str] = None) -> str:
-        """Get translation rules for the given output language.
-
-        Args:
-            output_language: "en", "jp", or "common". None returns all sections
-                             for backward compatibility.
-
-        Returns:
-            Translation rules content string
-        """
-        self._load_translation_rules(force=False)
-
-        if not self._translation_rules_has_sections:
-            return self._translation_rules_raw.strip()
-
-        if output_language == "common":
-            return self._translation_rules_sections.get("common", "")
-
-        if output_language in {"en", "jp"}:
-            parts = [
-                self._translation_rules_sections.get("common", ""),
-                self._translation_rules_sections.get(output_language, ""),
-            ]
-            return "\n\n".join([part for part in parts if part])
-
-        parts = [
-            self._translation_rules_sections.get("common", ""),
-            self._translation_rules_sections.get("en", ""),
-            self._translation_rules_sections.get("jp", ""),
-        ]
-        return "\n\n".join([part for part in parts if part])
+        """Deprecated (kept for backward compatibility): translation rules are no longer used."""
+        return ""
 
     def reload_translation_rules(self) -> None:
-        """Reload translation rules from file.
-
-        Call this after user edits the translation_rules.txt file.
-        """
-        self._load_translation_rules(force=True)
+        """Deprecated (no-op): translation rules are no longer used."""
 
     def reload_translation_rules_if_needed(self) -> None:
-        """Reload translation rules only when the file has changed."""
-        self._load_translation_rules(force=False)
+        """Deprecated (no-op): translation rules are no longer used."""
 
     def _get_template(
         self, output_language: str = "en", translation_style: str = "concise"
@@ -795,13 +634,10 @@ class PromptBuilder:
         Returns:
             Template with all placeholders replaced
         """
-        # Always reload translation rules from file to pick up user edits
-        self._load_translation_rules()
-        translation_rules = self.get_translation_rules(output_language)
         input_text = self.normalize_input_text(input_text, output_language)
 
         # Replace placeholders
-        prompt = template.replace("{translation_rules}", translation_rules)
+        prompt = template.replace("{translation_rules}", "")
         prompt = prompt.replace("{reference_section}", reference_section)
         prompt = prompt.replace("{input_text}", input_text)
         # Remove old style placeholder if present (for backwards compatibility)

@@ -2,7 +2,6 @@ Translate JP->EN for styles={styles_json} (count={n_styles}).
 Return JSON only: {"options":[...]}.
 Rules: options len={n_styles}; each item has "style" (in {styles_json}) and "translation"; keep [[ID:n]]; preserve \\n / \\t; no extra text/fences.
 
-{translation_rules}
 {numeric_hints}
 {reference_section}
 {extra_instruction}<source>

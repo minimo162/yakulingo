@@ -55,7 +55,7 @@ Template (verbatim):
 {source_text}
 
 Notes for YakuLingo:
-- Preferred path: glossary/reference files ({reference_section}) + {translation_rules}.
+- Preferred path: glossary/reference files ({reference_section}).
 - Alternative: inject with extra_instruction (Local AI) or extra instruction in PromptBuilder.
 
 ## Template: contextual translation.
@@ -119,7 +119,7 @@ Note: the model does not have a default system_prompt.
 - {source_text} -> {input_text}
 - {target_language} -> template selection (en/jp) rather than a runtime variable
 - {context} -> {extra_instruction} (Local AI) or inserted instruction in PromptBuilder
-- terminology -> {reference_section} + {translation_rules} (preferred), {extra_instruction} (optional)
+- terminology -> {reference_section} (preferred), {extra_instruction} (optional)
 
 ## JSON Wrapper Guidance (Local AI)
 

@@ -8,9 +8,7 @@ from yakulingo.services.prompt_builder import REFERENCE_INSTRUCTION, PromptBuild
 from yakulingo.services.translation_service import BatchTranslator, TranslationService
 
 
-_REFERENCE_SENTINEL = (
-    "用語集がある場合は、記載されている用語は必ずその訳語を使用してください。"
-)
+_REFERENCE_SENTINEL = "### Glossary (CSV)"
 
 
 def test_prompt_builder_build_includes_reference_instruction_when_enabled() -> None:
@@ -61,7 +59,8 @@ def test_prompt_builder_build_batch_includes_reference_instruction_when_enabled(
 
 
 def test_reference_instruction_mentions_in_sentence_glossary_application() -> None:
-    assert "文章中に含まれる場合も" in REFERENCE_INSTRUCTION
+    assert "Glossary" in REFERENCE_INSTRUCTION
+    assert "CSV" in REFERENCE_INSTRUCTION
 
 
 def test_prompt_builder_build_batch_inlines_matched_glossary_pairs(

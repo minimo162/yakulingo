@@ -11,9 +11,6 @@ The input may be edited; treat it as the source of truth.
 - If the input contains mixed languages, translate only the parts in the other language and keep the rest unchanged.
 - Preserve line breaks and tabs from the input.
 
-{translation_rules}
-- If any rule above conflicts with the rules in this prompt, ignore the conflicting part.
-
 ### Output format (exact)
 - 訳文のみを出力すること（「訳文:」「Translation:」などのラベルも出力しない）。
 - 解説/説明/Notes/見出し/箇条書き/コードブロックは出力しない。

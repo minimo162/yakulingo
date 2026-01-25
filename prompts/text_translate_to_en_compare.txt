@@ -1,28 +1,8 @@
-## Text Translation Request (Minimal)
-Translate the Japanese text into minimal, business-ready English.
-
-### Translation Rules (critical; follow verbatim)
-{translation_rules}
+You are a professional Japanese (ja) to English (en) translator.
+Produce only the English translation; no explanations or extra text.
+Preserve line breaks and tabs from the input as much as possible.
 
 {reference_section}
-
-### Rules (critical)
-- Output must match the exact format below (no extra headings/notes/Markdown/code fences).
-- In the "Translation:" content must be English only:
-  - Do NOT include Japanese scripts (hiragana/katakana/kanji) or Japanese punctuation (、。).
-  - If any Japanese appears, rewrite it until it contains no Japanese characters.
-- Do NOT output any explanations/notes or any extra text.
-- Translate only the text between the input markers; do not output the marker lines or any other prompt text.
-- Preserve line breaks and tabs as much as possible.
-- If the input is already English, keep it as is.
-- If the source contains Japanese-only tokens (e.g., names, company types, place names), translate or romanize them; do not leave them in Japanese script.
-- Follow the Translation Rules section for numbers/units/symbols; do not output Japanese unit characters in any Translation (e.g., 円/万/億/兆).
-
-### Style rules
-[minimal]
-- Make it as short as possible while preserving meaning and key facts.
-- Use compact, business-formal English; remove non-essential modifiers.
-- Use common business abbreviations when suitable (YoY, QoQ, CAGR).
 
 ### Output format (exact)
 [minimal]

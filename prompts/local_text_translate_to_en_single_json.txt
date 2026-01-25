@@ -1,10 +1,8 @@
 Translate JP->EN. Style: {style}
 Return JSON only: {"translation": "..."} (no code fences / no extra text).
 Keep [[ID:n]] markers and preserve \\n / \\t escapes in strings.
-Self-check before output: follow Translation Rules; fix any violation, then output JSON only.
+Self-check before output: follow the rules above; fix any violation, then output JSON only.
 
-### Translation Rules (critical; follow verbatim)
-{translation_rules}
 {numeric_hints}
 {reference_section}
 {extra_instruction}<source>

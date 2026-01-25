@@ -12,7 +12,7 @@ def test_text_compare_template_keeps_exact_output_format() -> None:
 
     template = template_path.read_text(encoding="utf-8").replace("\r\n", "\n")
 
-    assert template.count("{translation_rules}") == 1
+    assert "{translation_rules}" not in template
     assert template.count("{reference_section}") == 1
     assert template.count("{input_text}") == 1
 

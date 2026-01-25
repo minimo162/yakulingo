@@ -19,8 +19,8 @@ def test_translation_rules_does_not_reload_when_unchanged(tmp_path: Path) -> Non
         first = builder.get_translation_rules("en")
         second = builder.get_translation_rules("en")
 
-    assert "RULES A" in first
-    assert "RULES A" in second
+    assert first == ""
+    assert second == ""
     assert mock_read.call_count == 0
 
 
@@ -38,5 +38,5 @@ def test_translation_rules_reload_after_change(tmp_path: Path) -> None:
         )
         updated = builder.get_translation_rules("en")
 
-    assert "RULES UPDATED" in updated
-    assert mock_read.call_count == 1
+    assert updated == ""
+    assert mock_read.call_count == 0

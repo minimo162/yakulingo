@@ -2,7 +2,6 @@ Translate EN->JP.
 Return JSON only: {"translation": "..."} (no code fences / no extra text).
 Keep [[ID:n]] markers and preserve \\n / \\t escapes in strings.
 
-{translation_rules}
 {reference_section}
 <source>
 {input_text}

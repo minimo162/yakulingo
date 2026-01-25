@@ -141,18 +141,9 @@ def test_local_prompt_includes_full_rules_for_short_text() -> None:
         reference_files=None,
         detected_language="日本語",
     )
-    full_rules = builder._get_translation_rules("en").strip()
-    filtered_rules = builder._get_translation_rules_for_text("en", text).strip()
-    assert full_rules
-    assert filtered_rules
-    assert filtered_rules in prompt
-    assert len(filtered_rules) < len(full_rules)
-    assert "数字の桁/カンマは変更しない" in filtered_rules
-    assert "禁止記号:" in filtered_rules
-    assert "「+」は追加のみ" in filtered_rules
-    assert "数値/単位:" not in filtered_rules
-    assert "月名略語" not in filtered_rules
-    assert "more than" not in filtered_rules
+    assert builder._get_translation_rules("en").strip() == ""
+    assert builder._get_translation_rules_for_text("en", text).strip() == ""
+    assert "禁止記号:" not in prompt
 
 
 def test_local_prompt_includes_numeric_hints_for_oku() -> None:
@@ -164,16 +155,7 @@ def test_local_prompt_includes_numeric_hints_for_oku() -> None:
         reference_files=None,
         detected_language="日本語",
     )
-    expected_rules = builder._get_translation_rules_for_text("en", text).strip()
-    assert expected_rules
-    assert expected_rules in prompt
-    assert "数値/単位:" in expected_rules
-    assert "兆/億→oku" in expected_rules
-    assert "YoY/QoQ/CAGR" in expected_rules
-    assert "billion/trillion には変換しない" in expected_rules
-    assert "万→k" not in expected_rules
-    assert "千→k" not in expected_rules
-    assert "▲→()" not in expected_rules
+    assert builder._get_translation_rules_for_text("en", text).strip() == ""
     assert "Glossary (generated; apply verbatim)" in prompt
     assert "- JP: 2兆2,385億円 | EN: 22,385 oku yen" in prompt
     assert "- JP: 1,554億円 | EN: 1,554 oku yen" in prompt
@@ -188,13 +170,7 @@ def test_local_prompt_includes_numeric_hints_for_k_yen() -> None:
         reference_files=None,
         detected_language="日本語",
     )
-    expected_rules = builder._get_translation_rules_for_text("en", text).strip()
-    assert expected_rules
-    assert expected_rules in prompt
-    assert "数値/単位:" in expected_rules
-    assert "万→k" in expected_rules
-    assert "千→k" not in expected_rules
-    assert "兆/億→oku" not in expected_rules
+    assert builder._get_translation_rules_for_text("en", text).strip() == ""
     assert "Glossary (generated; apply verbatim)" in prompt
     assert "- JP: 22万円 | EN: 220k yen" in prompt
 
@@ -208,13 +184,7 @@ def test_local_prompt_includes_numeric_hints_for_k_units() -> None:
         reference_files=None,
         detected_language="日本語",
     )
-    expected_rules = builder._get_translation_rules_for_text("en", text).strip()
-    assert expected_rules
-    assert expected_rules in prompt
-    assert "数値/単位:" in expected_rules
-    assert "千→k" in expected_rules
-    assert "万→k" not in expected_rules
-    assert "兆/億→oku" not in expected_rules
+    assert builder._get_translation_rules_for_text("en", text).strip() == ""
     assert "Glossary (generated; apply verbatim)" in prompt
     assert "- JP: 196千台 | EN: 196k units" in prompt
 
@@ -228,11 +198,7 @@ def test_local_prompt_includes_numeric_hints_for_oku_in_en_3style() -> None:
         reference_files=None,
         detected_language="日本語",
     )
-    expected_rules = builder._get_translation_rules_for_text("en", text).strip()
-    assert expected_rules
-    assert expected_rules in prompt
-    assert "数値/単位:" in expected_rules
-    assert "兆/億→oku" in expected_rules
+    assert builder._get_translation_rules_for_text("en", text).strip() == ""
     assert "Glossary (generated; apply verbatim)" in prompt
     assert "- JP: 2兆2,385億円 | EN: 22,385 oku yen" in prompt
     assert "- JP: 1,554億円 | EN: 1,554 oku yen" in prompt
@@ -247,11 +213,7 @@ def test_local_prompt_includes_numeric_hints_for_oku_in_en_missing_styles() -> N
         reference_files=None,
         detected_language="日本語",
     )
-    expected_rules = builder._get_translation_rules_for_text("en", text).strip()
-    assert expected_rules
-    assert expected_rules in prompt
-    assert "数値/単位:" in expected_rules
-    assert "兆/億→oku" in expected_rules
+    assert builder._get_translation_rules_for_text("en", text).strip() == ""
     assert "Glossary (generated; apply verbatim)" in prompt
     assert "- JP: 2兆2,385億円 | EN: 22,385 oku yen" in prompt
     assert "- JP: 1,554億円 | EN: 1,554 oku yen" in prompt
@@ -270,16 +232,7 @@ def test_local_batch_prompt_includes_numeric_hints_for_oku() -> None:
         reference_files=None,
     )
     context_text = "\n".join(texts)
-    expected_rules = builder._get_translation_rules_for_text("en", context_text).strip()
-    assert expected_rules
-    assert expected_rules in prompt
-    assert "数値/単位:" in expected_rules
-    assert "兆/億→oku" in expected_rules
-    assert "YoY/QoQ/CAGR" in expected_rules
-    assert "billion/trillion には変換しない" in expected_rules
-    assert "万→k" not in expected_rules
-    assert "千→k" not in expected_rules
-    assert "▲→()" not in expected_rules
+    assert builder._get_translation_rules_for_text("en", context_text).strip() == ""
     assert "Glossary (generated; apply verbatim)" in prompt
     assert "- JP: 2兆2,385億円 | EN: 22,385 oku yen" in prompt
     assert "- JP: 1,554億円 | EN: 1,554 oku yen" in prompt
@@ -295,18 +248,9 @@ def test_local_batch_prompt_omits_numeric_rules_for_short_text() -> None:
         reference_files=None,
     )
     context_text = "\n".join(texts)
-    full_rules = builder._get_translation_rules("en").strip()
-    filtered_rules = builder._get_translation_rules_for_text("en", context_text).strip()
-    assert full_rules
-    assert filtered_rules
-    assert filtered_rules in prompt
-    assert len(filtered_rules) < len(full_rules)
-    assert "数字の桁/カンマは変更しない" in filtered_rules
-    assert "禁止記号:" in filtered_rules
-    assert "「+」は追加のみ" in filtered_rules
-    assert "数値/単位:" not in filtered_rules
-    assert "月名略語" not in filtered_rules
-    assert "more than" not in filtered_rules
+    assert builder._get_translation_rules("en").strip() == ""
+    assert builder._get_translation_rules_for_text("en", context_text).strip() == ""
+    assert "禁止記号:" not in prompt
 
 
 def test_local_prompt_includes_full_rules_for_en_3style_short_text() -> None:
@@ -318,13 +262,9 @@ def test_local_prompt_includes_full_rules_for_en_3style_short_text() -> None:
         reference_files=None,
         detected_language="日本語",
     )
-    full_rules = builder._get_translation_rules("en").strip()
-    filtered_rules = builder._get_translation_rules_for_text("en", text).strip()
-    assert full_rules
-    assert filtered_rules
-    assert filtered_rules in prompt
-    assert len(filtered_rules) < len(full_rules)
-    assert "数値/単位:" not in filtered_rules
+    assert builder._get_translation_rules("en").strip() == ""
+    assert builder._get_translation_rules_for_text("en", text).strip() == ""
+    assert "数値/単位:" not in prompt
 
 
 def test_local_prompt_includes_full_rules_for_en_to_jp_numeric_text() -> None:
@@ -335,15 +275,10 @@ def test_local_prompt_includes_full_rules_for_en_to_jp_numeric_text() -> None:
         reference_files=None,
         detected_language="英語",
     )
-    full_rules = builder._get_translation_rules("jp").strip()
-    filtered_rules = builder._get_translation_rules_for_text("jp", text).strip()
-    assert full_rules
-    assert filtered_rules
-    assert filtered_rules in prompt
-    assert len(filtered_rules) < len(full_rules)
-    assert "数値/単位:" in filtered_rules
-    assert "k→千または000" in filtered_rules
-    assert "oku→億" not in filtered_rules
+    assert builder._get_translation_rules("jp").strip() == ""
+    assert builder._get_translation_rules_for_text("jp", text).strip() == ""
+    assert "### Translation Rules" not in prompt
+    assert "{translation_rules}" not in prompt
 
 
 def test_local_prompt_includes_full_rules_for_plain_en_to_jp_text() -> None:
@@ -354,13 +289,10 @@ def test_local_prompt_includes_full_rules_for_plain_en_to_jp_text() -> None:
         reference_files=None,
         detected_language="英語",
     )
-    full_rules = builder._get_translation_rules("jp").strip()
-    filtered_rules = builder._get_translation_rules_for_text("jp", text).strip()
-    assert full_rules
-    assert filtered_rules
-    assert filtered_rules in prompt
-    assert len(filtered_rules) < len(full_rules)
-    assert "数値/単位:" not in filtered_rules
+    assert builder._get_translation_rules("jp").strip() == ""
+    assert builder._get_translation_rules_for_text("jp", text).strip() == ""
+    assert "### Translation Rules" not in prompt
+    assert "{translation_rules}" not in prompt
 
 
 def test_local_reference_embed_filters_bundled_glossary(tmp_path: Path) -> None:
@@ -565,7 +497,7 @@ def test_local_text_prompt_includes_rules_and_bundled_glossary_when_enabled(
         reference_files=None,
         detected_language="日本語",
     )
-    assert "RULES_MARKER" in prompt
+    assert "RULES_MARKER" not in prompt
     assert "GLOSSARY (mandatory)" in prompt
     assert "営業利益 翻译成 Operating Profit" in prompt
 
@@ -584,7 +516,7 @@ def test_local_batch_prompt_includes_rules_and_bundled_glossary_when_enabled(
         translation_style="concise",
         reference_files=None,
     )
-    assert "RULES_MARKER" in prompt
+    assert "RULES_MARKER" not in prompt
     assert "営業利益 翻译成 Operating Profit" in prompt
 
 
@@ -602,7 +534,7 @@ def test_local_followup_prompt_includes_rules_and_bundled_glossary_when_enabled(
         reference_files=None,
         detected_language="日本語",
     )
-    assert "RULES_MARKER" in prompt
+    assert "RULES_MARKER" not in prompt
     assert "営業利益 翻译成 Operating Profit" in prompt
 
 

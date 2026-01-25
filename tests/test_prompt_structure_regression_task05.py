@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 
@@ -17,22 +16,19 @@ def test_text_compare_template_places_rules_outside_output_format() -> None:
     template_path = repo_root / "prompts" / "text_translate_to_en_compare.txt"
     template = template_path.read_text(encoding="utf-8").replace("\r\n", "\n")
 
-    assert "### Translation Rules (critical; follow verbatim)" in template
-    assert template.count("{translation_rules}") == 1
+    assert "### Translation Rules" not in template
+    assert "{translation_rules}" not in template
     assert template.count("{reference_section}") == 1
 
-    rules_idx = template.index("### Translation Rules (critical; follow verbatim)")
+    rules_idx = template.index("{reference_section}")
     output_idx = template.index("### Output format (exact)")
     assert rules_idx < output_idx
 
     output_section = template.split("### Output format (exact)", 1)[1]
-    assert "{translation_rules}" not in output_section
     assert "{reference_section}" not in output_section
 
-    assert re.search(
-        r"### Translation Rules \(critical; follow verbatim\)\n\{translation_rules\}\n",
-        template,
-    )
+    assert "===INPUT_TEXT===" in template
+    assert "===END_INPUT_TEXT===" in template
 
 
 def test_local_json_templates_include_rules_label_and_self_check() -> None:
@@ -45,11 +41,5 @@ def test_local_json_templates_include_rules_label_and_self_check() -> None:
         )
         assert "Return JSON only" in template
         assert "Self-check before output:" in template
-        assert "### Translation Rules (critical; follow verbatim)" in template
-        assert template.count("{translation_rules}") == 1
-
-        rules_label_idx = template.index(
-            "### Translation Rules (critical; follow verbatim)"
-        )
-        placeholder_idx = template.index("{translation_rules}")
-        assert rules_label_idx < placeholder_idx
+        assert "### Translation Rules" not in template
+        assert "{translation_rules}" not in template

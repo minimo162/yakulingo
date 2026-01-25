@@ -20,8 +20,6 @@
 - Natural, business-ready English; use articles.
 - Use common business abbreviations when suitable (YoY, QoQ, CAGR).
 
-{translation_rules}
-
 {reference_section}
 
 ---

@@ -1,10 +1,8 @@
 Translate items[].text EN->JP.
 Return JSON only: {"items":[...]} (len={n_items}, id=1..{n_items}).
 Rules: each item has "id" and "translation"; keep [[ID:n]]; preserve \\n / \\t; no extra text/fences.
-Self-check before output: follow Translation Rules; fix any violation, then output JSON only.
+Self-check before output: follow the rules above; fix any violation, then output JSON only.
 
-### Translation Rules (critical; follow verbatim)
-{translation_rules}
 {reference_section}
 <source>
 {items_json}

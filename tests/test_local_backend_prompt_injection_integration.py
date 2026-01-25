@@ -43,5 +43,5 @@ def test_local_backend_prompt_includes_rules_and_bundled_glossary() -> None:
     assert result.output_language == "en"
     assert captured.get("prompt")
     prompt = captured["prompt"]
-    assert "数字の桁/カンマは変更しない" in prompt
+    assert "数字の桁/カンマは変更しない" not in prompt
     assert "[REFERENCE:file=glossary.csv]" in prompt

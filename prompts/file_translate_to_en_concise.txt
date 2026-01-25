@@ -21,8 +21,6 @@
 - Prefer common abbreviations when appropriate (FYI, ASAP, etc.).
 - Simplify phrases (e.g., "in order to" -> "to", "due to the fact that" -> "because").
 
-{translation_rules}
-
 {reference_section}
 
 ---

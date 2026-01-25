@@ -348,7 +348,6 @@ def create_text_input_panel(
     on_input_metrics_created: Optional[Callable[[dict[str, object]], None]] = None,
     on_glossary_toggle: Optional[Callable[[bool], None]] = None,
     on_edit_glossary: Optional[Callable[[], None]] = None,
-    on_edit_translation_rules: Optional[Callable[[], None]] = None,
     on_textarea_created: Optional[Callable[[ui.textarea], None]] = None,
 ):
     """
@@ -375,7 +374,6 @@ def create_text_input_panel(
         on_input_metrics_created,
         on_glossary_toggle,
         on_edit_glossary,
-        on_edit_translation_rules,
         on_textarea_created,
     )
 
@@ -400,7 +398,6 @@ def _create_large_input_panel(
     on_input_metrics_created: Optional[Callable[[dict[str, object]], None]] = None,
     on_glossary_toggle: Optional[Callable[[bool], None]] = None,
     on_edit_glossary: Optional[Callable[[], None]] = None,
-    on_edit_translation_rules: Optional[Callable[[], None]] = None,
     on_textarea_created: Optional[Callable[[ui.textarea], None]] = None,
 ):
     """Large input panel that becomes compact when results are visible."""

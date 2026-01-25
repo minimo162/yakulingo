@@ -422,7 +422,6 @@ def _make_temp_builder(
     prompts_dir = tmp_path / "prompts"
     prompts_dir.mkdir(parents=True, exist_ok=True)
 
-    (prompts_dir / "translation_rules.txt").write_text("RULES_MARKER", encoding="utf-8")
     (prompts_dir / "local_text_translate_to_en_single_json.txt").write_text(
         "{reference_section}\n{input_text}\n", encoding="utf-8"
     )
@@ -465,7 +464,7 @@ def test_local_reference_embed_does_not_auto_include_bundled_glossary_when_disab
     assert embedded.text == ""
 
 
-def test_local_text_prompt_includes_rules_and_bundled_glossary_when_enabled(
+def test_local_text_prompt_includes_bundled_glossary_when_enabled(
     tmp_path: Path,
 ) -> None:
     (tmp_path / "glossary.csv").write_text(
@@ -479,12 +478,11 @@ def test_local_text_prompt_includes_rules_and_bundled_glossary_when_enabled(
         reference_files=None,
         detected_language="日本語",
     )
-    assert "RULES_MARKER" not in prompt
     assert "Glossary (CSV)" in prompt
     assert "営業利益 翻译成 Operating Profit" in prompt
 
 
-def test_local_batch_prompt_includes_rules_and_bundled_glossary_when_enabled(
+def test_local_batch_prompt_includes_bundled_glossary_when_enabled(
     tmp_path: Path,
 ) -> None:
     (tmp_path / "glossary.csv").write_text(
@@ -498,11 +496,10 @@ def test_local_batch_prompt_includes_rules_and_bundled_glossary_when_enabled(
         translation_style="concise",
         reference_files=None,
     )
-    assert "RULES_MARKER" not in prompt
     assert "営業利益 翻译成 Operating Profit" in prompt
 
 
-def test_local_followup_prompt_includes_rules_and_bundled_glossary_when_enabled(
+def test_local_followup_prompt_includes_bundled_glossary_when_enabled(
     tmp_path: Path,
 ) -> None:
     (tmp_path / "glossary.csv").write_text(
@@ -516,7 +513,6 @@ def test_local_followup_prompt_includes_rules_and_bundled_glossary_when_enabled(
         reference_files=None,
         detected_language="日本語",
     )
-    assert "RULES_MARKER" not in prompt
     assert "営業利益 翻译成 Operating Profit" in prompt
 
 

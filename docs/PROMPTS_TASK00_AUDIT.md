@@ -8,7 +8,6 @@ then map the INTENT prompt patterns to YakuLingo usage and list risks/next files
 ## Inventory (by backend)
 
 Copilot (non-JSON):
-- prompts/translation_rules.txt
 - prompts/file_translate_to_en_standard.txt
 - prompts/file_translate_to_en_concise.txt
 - prompts/file_translate_to_en_minimal.txt
@@ -34,27 +33,26 @@ Local AI (JSON):
 
 ## Placeholders by file (from prompts/*.txt)
 
-adjust_custom.txt: input_text, source_text, translation_rules, user_instruction
-file_translate_to_en_concise.txt: input_text, reference_section, translation_rules
-file_translate_to_en_minimal.txt: input_text, reference_section, translation_rules
-file_translate_to_en_standard.txt: input_text, reference_section, translation_rules
-file_translate_to_jp.txt: input_text, reference_section, translation_rules
-local_batch_translate_to_jp_json.txt: items_json, n_items, reference_section, translation_rules
-local_batch_translate_to_en_json.txt: items_json, n_items, numeric_hints, reference_section, style, translation_rules
-local_text_translate_to_en_3style_json.txt: extra_instruction, input_text, numeric_hints, reference_section, translation_rules
-local_text_translate_to_en_missing_styles_json.txt: extra_instruction, input_text, n_styles, numeric_hints, reference_section, styles_json, translation_rules
-local_text_translate_to_en_single_json.txt: extra_instruction, input_text, numeric_hints, reference_section, style, translation_rules
-local_text_translate_to_jp_json.txt: input_text, reference_section, translation_rules
-text_alternatives.txt: current_translation, reference_section, source_text, style, translation_rules
-text_back_translate.txt: input_text, reference_section, translation_rules
+adjust_custom.txt: user_instruction, source_text, input_text
+file_translate_to_en_concise.txt: input_text, reference_section
+file_translate_to_en_minimal.txt: input_text, reference_section
+file_translate_to_en_standard.txt: input_text, reference_section
+file_translate_to_jp.txt: input_text, reference_section
+local_batch_translate_to_jp_json.txt: items_json, n_items, reference_section
+local_batch_translate_to_en_json.txt: items_json, n_items, numeric_hints, reference_section, style
+local_text_translate_to_en_3style_json.txt: extra_instruction, input_text, numeric_hints, reference_section
+local_text_translate_to_en_missing_styles_json.txt: extra_instruction, input_text, n_styles, numeric_hints, reference_section, styles_json
+local_text_translate_to_en_single_json.txt: extra_instruction, input_text, numeric_hints, reference_section, style
+local_text_translate_to_jp_json.txt: input_text, reference_section
+text_alternatives.txt: current_translation, reference_section, source_text, style
+text_back_translate.txt: input_text, reference_section
 text_check_my_english.txt: reference_section, reference_translation, user_english
 text_question.txt: input_text, question, reference_section, translation
 text_reply_email.txt: input_text, reference_section, reply_intent, translation
 text_review_en.txt: input_text, reference_section, translation
 text_summarize.txt: input_text, reference_section, translation
-text_translate_to_en_compare.txt: input_text, reference_section, translation_rules
-text_translate_to_jp.txt: input_text, reference_section, translation_rules
-translation_rules.txt: -
+text_translate_to_en_compare.txt: input_text, reference_section
+text_translate_to_jp.txt: input_text, reference_section
 
 Note (Copilot EN→JP):
 - `text_translate_to_jp.txt` は `Translation:` のみを出力し、Explanation ブロックは含まない（translation-only 契約）。
@@ -127,12 +125,12 @@ Note: `LocalPromptBuilder` が `detected_language` などを置換できる実�
 ## Evaluation axes (stability / speed)
 
 - Parse failure rate: `LocalAI parse failure:` ログ（`yakulingo/services/local_ai_client.py`）と、Copilot側の欠番/空訳/混入（`yakulingo/services/copilot_handler.py`）
-- Prompt length: `{translation_rules}`/`{reference_section}`/入力を含めた「送信プロンプトの文字数」（短縮の主指標）
+- Prompt length: `{reference_section}`/`{numeric_hints}`/入力を含めた「送信プロンプトの文字数」（短縮の主指標）
 - Output length: 返答の文字数（特に Explanation の膨張が速度/安定性を落とす）
 
 ## Baseline prompt length audit (Local AI)
 
-ローカルAI向けプロンプトの「素材（テンプレ/翻訳ルール）」と「組み立て後（build_*）」の文字数を、サーバ無しで確認する。
+ローカルAI向けプロンプトの「素材（テンプレ/用語集マッチ等）」と「組み立て後（build_*）」の文字数を、サーバ無しで確認する。
 
 ```bash
 uv run python tools/audit_local_prompt_lengths.py
@@ -142,7 +140,7 @@ uv run python tools/audit_local_prompt_lengths.py
 
 1. 既存パーサ契約（出力形状）を壊さない
 2. 出力形状の厳格化でパース失敗を減らす（余計な文・見出し・コードブロックの禁止）
-3. プロンプト短縮で速度を上げる（重複ルールを削り、`translation_rules` 側へ寄せる）
+3. プロンプト短縮で速度を上げる（重複指示を削り、用語集（glossary）へ寄せる）
 4. 出力長の抑制（Explanationを短く、必要最小限にする）
 
 ## Contract tests
@@ -159,13 +157,13 @@ INTENT template -> YakuLingo surface:
 - XX<=>XX translation (non-ZH):
   - Matches existing text/file translate templates (Copilot) and Local AI JSON.
 - Terminology intervention:
-  - Best fit: reference_section (glossary) + translation_rules.
+  - Best fit: reference_section (glossary).
   - Optional: extra_instruction in Local AI or PromptBuilder extra insertion.
 - Contextual translation:
   - Best fit: extra_instruction (prepend context) or reference_section.
   - There is no dedicated {context} placeholder in current templates.
 - Formatted translation (<source>/<sn>/<target>):
-  - No direct template today; closest is "preserve structure" in translation_rules.
+  - No direct template today; closest is "preserve structure" in the templates.
   - If needed, use adjust_custom.txt or add a dedicated template later.
 
 ## Next task candidate files (expected changes)

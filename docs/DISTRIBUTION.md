@@ -107,9 +107,8 @@ share_package/            # 共有フォルダ用パッケージ
 | `config/user_settings.json` | バックアップして復元（ユーザー設定を保持） |
 | `config/settings.template.json` | 新バージョンで上書き（デフォルト設定） |
 | `glossary.csv` | 既存を保持し、新しい既定版は `glossary.dist.csv` として保存 |
-| `prompts/translation_rules.txt` | 既存を保持し、新しい既定版は `translation_rules.dist.txt` として保存 |
 
-> **Note**: setup.vbs は既存の用語集・翻訳ルールを上書きしません。
+> **Note**: setup.vbs は既存の用語集を上書きしません。
 
 ## 環境フォルダの扱い
 

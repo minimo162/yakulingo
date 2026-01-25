@@ -101,7 +101,7 @@ _RE_TRANSLATION_LABEL = re.compile(
 # Copilot sometimes appends the attached file name (e.g., "glossary", "glossary.csv") to the response
 # This pattern matches common reference file names at the end of the explanation
 _RE_TRAILING_FILENAME = re.compile(
-    r"[\s。．.、,]*(glossary(?:_old)?|translation_rules|abbreviations|用語集|略語集)(?:\.[a-z]{2,4})?\s*$",
+    r"[\s。．.、,]*(glossary(?:_old)?|abbreviations|用語集|略語集)(?:\.[a-z]{2,4})?\s*$",
     re.IGNORECASE,
 )
 
@@ -595,7 +595,7 @@ _TO_EN_MONTH_ABBREV_PATTERNS: dict[int, re.Pattern[str]] = {
     2: re.compile(r"(?i)(?<![a-z])feb\.(?![a-z])"),
     3: re.compile(r"(?i)(?<![a-z])mar\.(?![a-z])"),
     4: re.compile(r"(?i)(?<![a-z])apr\.(?![a-z])"),
-    # May has no period per prompts/translation_rules.txt (capitalized to avoid "may" modal false positives).
+    # May has no period (capitalized to avoid "may" modal false positives).
     5: re.compile(r"(?<![A-Za-z])May(?![A-Za-z])"),
     6: re.compile(r"(?i)(?<![a-z])jun\.(?![a-z])"),
     7: re.compile(r"(?i)(?<![a-z])jul\.(?![a-z])"),
@@ -4651,10 +4651,6 @@ class TranslationService:
                 reference_section = ""
                 files_to_attach = None
 
-            self.prompt_builder.reload_translation_rules_if_needed()
-            translation_rules = self.prompt_builder.get_translation_rules(
-                output_language
-            )
             numeric_hints = _build_to_en_numeric_hints(text)
             first_pass_parts: list[str] = [
                 _TEXT_TO_EN_OUTPUT_LANGUAGE_RETRY_INSTRUCTION,
@@ -4665,8 +4661,7 @@ class TranslationService:
                 first_pass_parts.append(_TEXT_TO_EN_NUMERIC_RULE_INSTRUCTION)
 
             def build_compare_prompt(extra_instruction: Optional[str] = None) -> str:
-                prompt = template.replace("{translation_rules}", translation_rules)
-                prompt = prompt.replace("{reference_section}", reference_section)
+                prompt = template.replace("{reference_section}", reference_section)
                 prompt = prompt.replace("{input_text}", text)
                 extra_parts: list[str] = []
                 seen: set[str] = set()
@@ -4907,11 +4902,7 @@ class TranslationService:
             reference_section = ""
             files_to_attach = None
 
-        self.prompt_builder.reload_translation_rules_if_needed()
-        translation_rules = self.prompt_builder.get_translation_rules(output_language)
-
-        prompt = template.replace("{translation_rules}", translation_rules)
-        prompt = prompt.replace("{reference_section}", reference_section)
+        prompt = template.replace("{reference_section}", reference_section)
         prompt_input_text = self.prompt_builder.normalize_input_text(
             text, output_language
         )
@@ -5290,28 +5281,13 @@ class TranslationService:
 - 調整結果（本文）のみ（ラベル/解説/見出しは出力しない）。"""
 
             # Build prompt with full context (original text + translation)
-            # Reload translation rules to pick up any user edits
-            output_language = "en"
-            if source_text:
-                output_language = (
-                    "en" if self.detect_language(source_text) == "日本語" else "jp"
-                )
-            elif text:
-                output_language = (
-                    "jp" if self.detect_language(text) == "日本語" else "en"
-                )
-            self.prompt_builder.reload_translation_rules_if_needed()
-            translation_rules = self.prompt_builder.get_translation_rules(
-                output_language
-            )
             reference_section = (
                 self.prompt_builder.build_reference_section(reference_files)
                 if reference_files
                 else ""
             )
 
-            prompt = template.replace("{translation_rules}", translation_rules)
-            prompt = prompt.replace("{reference_section}", reference_section)
+            prompt = template.replace("{reference_section}", reference_section)
             prompt = prompt.replace("{user_instruction}", adjust_type)
             prompt = prompt.replace("{source_text}", source_text if source_text else "")
             prompt = prompt.replace("{input_text}", text)
@@ -5383,30 +5359,13 @@ class TranslationService:
 {reference_section}"""
 
             # Build prompt
-            # Reload translation rules to pick up any user edits
-            output_language = "en"
-            if source_text:
-                output_language = (
-                    "en" if self.detect_language(source_text) == "日本語" else "jp"
-                )
-            elif current_translation:
-                output_language = (
-                    "jp"
-                    if self.detect_language(current_translation) == "日本語"
-                    else "en"
-                )
-            self.prompt_builder.reload_translation_rules_if_needed()
-            translation_rules = self.prompt_builder.get_translation_rules(
-                output_language
-            )
             reference_section = (
                 self.prompt_builder.build_reference_section(reference_files)
                 if reference_files
                 else ""
             )
 
-            prompt = template.replace("{translation_rules}", translation_rules)
-            prompt = prompt.replace("{reference_section}", reference_section)
+            prompt = template.replace("{reference_section}", reference_section)
             prompt = prompt.replace("{current_translation}", current_translation)
             prompt = prompt.replace("{source_text}", source_text)
             prompt = prompt.replace("{style}", style)

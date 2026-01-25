@@ -70,7 +70,7 @@ uv run python tools/audit_local_prompt_lengths.py --out "$OUT_DIR/audit_local_pr
 # 保存した2ファイルを diff して比較する
 ```
 
-> **Note**: task-03 で「入力に応じた翻訳ルール注入」を導入しているため、短文では特に `translation_rules` が短くなります（数値/単位ルール等は必要時のみ）。
+> **Note**: 入力に応じて「マッチした用語集（glossary）」や数値ヒント等を最小限だけ注入するため、短文ではそれらのセクションが短くなります。
 
 ## Vulkan(iGPU) 事前確認（Windows）
 - Vulkan 版 llama.cpp バイナリを用意（GitHub Releases の Windows x64 (Vulkan) など）

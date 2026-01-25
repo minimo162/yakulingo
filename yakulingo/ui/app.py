@@ -8760,7 +8760,7 @@ class YakuLingoApp:
         return True
 
     def _preload_prompt_builders_startup_sync(self) -> None:
-        """Preload translation rules and local prompt templates (best-effort)."""
+        """Preload prompt templates (best-effort)."""
         if not self._ensure_translation_service():
             return
         translation_service = self.translation_service
@@ -8769,10 +8769,6 @@ class YakuLingoApp:
 
         try:
             prompt_builder = translation_service.prompt_builder
-            prompt_builder.reload_translation_rules_if_needed()
-            prompt_builder.get_translation_rules("common")
-            prompt_builder.get_translation_rules("en")
-            prompt_builder.get_translation_rules("jp")
             prompt_builder.build(
                 "warmup",
                 has_reference_files=False,
@@ -10209,26 +10205,6 @@ class YakuLingoApp:
             reference_section = ""
             reference_warnings: list[str] = []
 
-            translation_rules = ""
-            try:
-                if self.translation_service:
-                    self.translation_service.prompt_builder.reload_translation_rules()
-                    translation_rules = (
-                        self.translation_service.prompt_builder.get_translation_rules(
-                            "common"
-                        )
-                    )
-                else:
-                    from yakulingo.services.prompt_builder import PromptBuilder
-
-                    prompt_builder = PromptBuilder(
-                        prompts_dir=get_default_prompts_dir()
-                    )
-                    prompt_builder.reload_translation_rules()
-                    translation_rules = prompt_builder.get_translation_rules("common")
-            except Exception:
-                translation_rules = ""
-
             # Build back-translation prompt from prompts/text_back_translate.txt
             prompt_path = get_default_prompts_dir() / "text_back_translate.txt"
             if not prompt_path.exists():
@@ -10246,7 +10222,6 @@ class YakuLingoApp:
                         )
                     )
                 prompt = prompt_path.read_text(encoding="utf-8")
-                prompt = prompt.replace("{translation_rules}", translation_rules)
                 prompt = prompt.replace("{input_text}", text)
                 prompt = prompt.replace(
                     "{text}", text

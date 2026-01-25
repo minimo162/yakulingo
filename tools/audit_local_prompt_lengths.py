@@ -74,29 +74,7 @@ def main() -> int:
         prompts_dir, base_prompt_builder=base, settings=settings
     )
 
-    emit("== Files ==")
-    rules_path = prompts_dir / "translation_rules.txt"
-    emit(
-        _format_len(
-            "prompts/translation_rules.txt (raw)",
-            rules_path.read_text(encoding="utf-8"),
-        )
-    )
-    emit(
-        _format_len(
-            "translation_rules (common)", base.get_translation_rules("common").strip()
-        )
-    )
-    emit(
-        _format_len(
-            "translation_rules (to_en)", base.get_translation_rules("en").strip()
-        )
-    )
-    emit(
-        _format_len(
-            "translation_rules (to_jp)", base.get_translation_rules("jp").strip()
-        )
-    )
+    emit("== Templates ==")
 
     for name in _LOCAL_TEMPLATES:
         path = prompts_dir / name
@@ -132,13 +110,6 @@ def main() -> int:
         reference_files=None,
     )
     emit(_format_len("LocalPromptBuilder.build_batch (to_en)", prompt_batch))
-
-    emit(
-        _format_len(
-            "translation_rules (to_en, filtered short)",
-            builder._get_translation_rules_for_text("en", sample_text_short).strip(),
-        )
-    )
     batch_short_texts = [
         f"{sample_text_short} [{idx + 1}]" for idx in range(batch_items)
     ]

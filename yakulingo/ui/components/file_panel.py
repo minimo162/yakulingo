@@ -312,7 +312,6 @@ def create_file_panel(
     use_bundled_glossary: bool = True,
     on_glossary_toggle: Optional[Callable[[bool], None]] = None,
     on_edit_glossary: Optional[Callable[[], None]] = None,
-    on_edit_translation_rules: Optional[Callable[[], None]] = None,
     on_progress_elements_created: Optional[
         Callable[[Optional[dict[str, object]]], None]
     ] = None,

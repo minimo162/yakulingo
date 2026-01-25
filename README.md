@@ -351,7 +351,7 @@ uv run python app.py
 
 **用語集処理**: `use_bundled_glossary=true` の場合、同梱 `glossary.csv` を自動で参照します（デフォルト: true）。入力文にマッチした用語のみをプロンプトへ埋め込みます（上限あり）。
 
- **翻訳ルール**: `prompts/translation_rules.txt` を翻訳時に自動反映します。
+ **翻訳ルール**: 廃止（補足情報は用語集CSVに集約）。
  **出力言語ガード**: 翻訳結果が期待言語（英訳=英語、和訳=日本語）でない場合は、自動再試行（可能な場合）またはエラーとして扱います。
  **不完全翻訳ガード（ローカルAI英訳）**: 「Revenue」等の極端に短い英訳は自動で再試行し、改善しない場合はエラーになります（必要なら `local_ai_max_tokens` / `local_ai_ctx_size` を調整）。
  **プロンプトSSOT**: `docs/PROMPT_TEMPLATES_SSOT.md` にテンプレの単一正をまとめています。

@@ -199,7 +199,6 @@ YakuLingo/
 │   └── test_*.py
 │
 ├── prompts/                        # 翻訳プロンプト（ローカルAI）
-│   ├── translation_rules.txt       # 共通/方向別翻訳ルール
 │   ├── local_text_translate_to_en_3style_json.txt   # ローカルAI（JP→EN 3style / JSON, legacy/未使用）
 │   ├── local_text_translate_to_en_missing_styles_json.txt  # ローカルAI（JP→EN 欠けスタイル補完 / JSON, legacy/未使用）
 │   ├── local_text_translate_to_en_single_json.txt   # ローカルAI（JP→EN 単発 / JSON）
@@ -1251,7 +1250,6 @@ Reference Files
 
 - 英訳/和訳とも「ビジネス文書向け」を明記
 - 既にターゲット言語の場合はそのまま出力
-- `{translation_rules}` は出力言語に応じて [COMMON] + [TO_EN]/[TO_JP] を注入
 - 出力: 英訳は最簡潔（`minimal`）のみ、和訳は訳文のみ（解説なし）
 - 禁止事項は英訳/和訳で共通（質問・提案・指示の繰り返し・訳文以外）
 - 戻し訳は `prompts/text_back_translate.txt` を使用（編集した訳文にも対応）
@@ -1276,14 +1274,12 @@ Reference Files
 回帰テスト:
 - `tests/test_text_financial_paragraph_regression_task04.py`
 
-### 9.5 翻訳ルール（translation_rules.txt）
+### 9.5 用語集（glossary.csv）
 
-- セクション構成: `[COMMON]` / `[TO_EN]` / `[TO_JP]`
-- 出力言語に応じて必要なセクションのみを注入
-  - 英訳: COMMON + TO_EN
-  - 和訳: COMMON + TO_JP
-- セクションが存在しない場合は全文を共通ルールとして扱う
-- 編集後は `PromptBuilder.reload_translation_rules()` で再読込
+- 翻訳の補足情報は **用語集CSV（glossary）** を SSOT とする（翻訳ルールは廃止）。
+- 参照ファイルは `glossary.csv` のみを受け付ける。
+  - Copilot: `glossary.csv` を添付し、入力文にマッチした用語ペアのみをプロンプトへ追記（上限あり）。
+  - Local AI: 添付できないため、入力文にマッチした用語ペアのみをプロンプトへ埋め込む（上限あり）。
 
 ### 9.6 ローカルAIプロンプト（JSON固定）
 
@@ -1792,9 +1788,6 @@ python -c "import time; t=time.time(); from yakulingo.ui import run_app; print(f
 - 戻し訳
   - 「編集して戻し訳」フロー追加（編集内容は訳文に反映しない）
   - 戻し訳結果をカード内で展開表示
-- 翻訳ルール
-  - `translation_rules.txt` を [COMMON] / [TO_EN] / [TO_JP] に分割
-  - 出力言語に応じて必要なセクションのみ注入
 - UI改善
   - ストリーミングの自動スクロール追従を調整
   - ファイルキュー（順次/並列、並べ替え）と履歴フィルタ/比較を強化

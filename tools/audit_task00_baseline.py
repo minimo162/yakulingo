@@ -174,7 +174,6 @@ def main() -> int:
         "当中間連結会計期間における連結業績は、売上高は2兆2,385億円となりました。",
     ]
     for text in samples:
-        rules = builder._get_translation_rules_for_text("en", text).strip()
         prompt = builder.build_text_to_en_single(
             text,
             style="minimal",
@@ -185,7 +184,6 @@ def main() -> int:
 
         print("")
         print(f"-- input: {text}")
-        _print_len("translation_rules (to_en, filtered)", rules)
         _print_len("prompt (build_text_to_en_single)", prompt)
         _print_len("prompt (sent approx; repeated twice)", repeated)
 

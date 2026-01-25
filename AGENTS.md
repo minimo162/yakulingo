@@ -119,12 +119,11 @@ YakuLingo/
 ├── tests/                         # Test suite (33 test files)
 │   ├── conftest.py                # Shared fixtures and mocks
 │   └── test_*.py                  # Unit tests for each module
-├── prompts/                       # Translation prompt templates (15 files, all in Japanese)
-│   ├── translation_rules.txt      # 共通翻訳ルール（数値表記・記号変換ルール）- UI編集可、翻訳時自動再読込
+├── prompts/                       # Translation prompt templates
 │   ├── file_translate_to_en_{standard|concise|minimal}.txt  # File translation (JP→EN)
 │   ├── file_translate_to_jp.txt   # File translation (EN→JP)
-│   ├── text_translate_to_en_compare.txt  # Text translation (JP→EN, 3-style comparison)
-│   ├── text_translate_to_jp.txt   # Text translation (EN→JP, with explanation)
+│   ├── text_translate_to_en_compare.txt  # Text translation (JP→EN, minimal-only)
+│   ├── text_translate_to_jp.txt   # Text translation (EN→JP, translation-only)
 │   ├── text_back_translate.txt    # Back-translation (round-trip verification)
 │   ├── adjust_custom.txt          # (Reserved) Custom request template
 │   ├── text_alternatives.txt      # Follow-up: alternative expressions
@@ -713,17 +712,17 @@ def _open_window_patched(..., window_args, settings_dict, start_args):
 
 **プロンプト文字数の目安（Copilot無料版 8,000文字制限）**:
 
-- 参照ファイル（`glossary.csv` 等）は添付する方式で、プロンプト本文には埋め込みません（PromptBuilderの設計）。
-- プロンプト本文 ≒ テンプレート + 翻訳ルール + 入力テキスト（バッチ） + 付随ラベル（概算）。
+- 参照ファイル（`glossary.csv`）は添付する方式で、プロンプト本文には全文を埋め込みません（PromptBuilderの設計）。
+- プロンプト本文 ≒ テンプレート + 用語集（マッチした項目） + 入力テキスト（バッチ） + 付随ラベル（概算）。
 
 | 項目 | 文字数（目安） | 説明 |
 |------|----------------|------|
 | プロンプトテンプレート | ~1,161 | file_translate_to_en_concise.txt |
-| 翻訳ルール | ~805 | translation_rules.txt |
+| 用語集（マッチ分） | 可変（上限あり） | glossary.csv（入力にマッチした用語のみ） |
 | バッチ翻訳テキスト | 最大1,000 | max_chars_per_batch（デフォルト） |
-| **合計（概算）** | **~2,966** | 8,000文字制限に対し余裕あり |
+| **合計（概算）** | **~2,161 + 可変** | 8,000文字制限に対し余裕あり |
 
-> Note: テンプレート/ルールを編集すると文字数は変動します。
+> Note: テンプレート/用語集の内容により文字数は変動します。
 
 **フォント設定**:
 - `font_jp_to_en`: 英訳時の出力フォント（全ファイル形式共通）
@@ -731,8 +730,8 @@ def _open_window_patched(..., window_args, settings_dict, start_args):
 
 ### Reference Files
 Reference files provide context for consistent translations:
-- **Supported formats**: CSV, TXT, PDF, Word, Excel, PowerPoint, Markdown, JSON
-- **Use cases**: Glossaries, style guides, past translations, specifications
+- **Supported formats**: CSV（glossary のみ）
+- **Use cases**: 用語集（表記ゆれ防止、訳語の統一）
 - **Security**: Path traversal protection via `get_reference_file_paths()`
 
 ### Translation History
@@ -1304,17 +1303,16 @@ PYTHON_PIDS=$(pgrep -f "{app_dir}/.venv" 2>/dev/null)
 
 ### Prompt Template Architecture
 
-プロンプトテンプレートは全て日本語で記述されています（ユーザーが日本語話者のため）。
+プロンプトは「本文を最小限 + 用語集（glossary.csv）で補足」を基本方針とします（テンプレは日英混在）。
 
 **ファイル構成:**
 
 | ファイル | 用途 |
 |----------|------|
-| `translation_rules.txt` | 共通翻訳ルール（全プロンプトに注入される） |
 | `file_translate_to_en_{style}.txt` | ファイル翻訳（JP→EN、style: standard/concise/minimal） |
-| `file_translate_to_jp.txt` | ファイル翻訳（EN→JP） |
-| `text_translate_to_en_compare.txt` | テキスト翻訳（JP→EN、3スタイル比較） |
-| `text_translate_to_jp.txt` | テキスト翻訳（EN→JP、解説付き） |
+| `file_translate_to_jp.txt` | ファイル翻訳（EN→JP、translation-only） |
+| `text_translate_to_en_compare.txt` | テキスト翻訳（JP→EN、minimal-only） |
+| `text_translate_to_jp.txt` | テキスト翻訳（EN→JP、translation-only） |
 | `text_back_translate.txt` | 戻し訳（逆翻訳） |
 | `text_*.txt` | フォローアップ翻訳（alternatives, review, summarize等） |
 
@@ -1322,87 +1320,25 @@ PYTHON_PIDS=$(pgrep -f "{app_dir}/.venv" 2>/dev/null)
 
 | プレースホルダー | 説明 |
 |------------------|------|
-| `{translation_rules}` | `translation_rules.txt`の内容が注入される |
 | `{input_text}` | 翻訳対象テキスト |
-| `{reference_section}` | 用語集・参照ファイルの内容 |
+| `{reference_section}` | 用語集（glossary.csv。入力にマッチした項目のみ） |
 | `{translation_style}` / `{style}` | 翻訳スタイル（standard/concise/minimal） |
 
 **PromptBuilderの使用:**
 
 ```python
+from pathlib import Path
 from yakulingo.services.prompt_builder import PromptBuilder
 
 builder = PromptBuilder(prompts_dir=Path("prompts"))
 
-# ファイル翻訳プロンプト
 prompt = builder.build(
     input_text="翻訳対象テキスト",
+    has_reference_files=True,
     output_language="en",
-    reference_text="用語集内容",
-    translation_style="concise"
+    translation_style="minimal",
+    reference_files=[Path("glossary.csv")],
 )
-
-# テキスト翻訳プロンプト
-prompt = builder.build_text_translation_prompt(
-    input_text="翻訳対象テキスト",
-    output_language="en",
-    reference_text="用語集内容",
-    translation_style="concise"
-)
-
-# 共通ルールの取得（翻訳時は自動で再読み込みされる）
-rules = builder.get_translation_rules()
-```
-
-**translation_rules.txt の構造:**
-
-UIの??アイコン（用語集編集ボタンの隣）からデフォルトエディタで編集可能。
-編集後は保存するだけで、次の翻訳時に自動で反映される。
-
-```
-## 翻訳ルール（Translation Rules）
-
-このファイルは、翻訳時に適用される共通ルールです。
-
----
-
-### 数値表記ルール（日本語 → 英語）
-
-重要: 数字は絶対に変換しない。単位のみを置き換える。
-
-| 日本語 | 英語 | 変換例 |
-|--------|------|--------|
-| 億 | oku | 4,500億円 → 4,500 oku yen |
-| 千 | k | 12,000 → 12k |
-| ▲（マイナス）| () | ▲50 → (50) |
-
-注意:
-- 「4,500億円」は必ず「4,500 oku yen」に翻訳する
-- 「450 billion」や「4.5 trillion」には絶対に変換しない
-- 数字の桁は絶対に変えない（4,500は4,500のまま）
-
-### 月の略語ルール（日本語 → 英語）
-
-月名は略語を使用する。
-- ? OK: Jan., Feb., Mar., Apr., May, Jun., Jul., Aug., Sep., Oct., Nov., Dec.
-- ? NG: January, February, March, April, June, July, August, September, October, November, December
-
-### 記号変換ルール（英訳時）
-
-以下の記号は英語圏でビジネス文書に不適切です。
-必ず英語で表現してください。
-
-禁止記号と置き換え:
-- ↑ → increased, up, higher（使用禁止）
-- ↓ → decreased, down, lower（使用禁止）
-- ~ → approximately, about（使用禁止）
-- → → leads to, results in（使用禁止）
-- ＞＜ → greater than, less than（使用禁止）
-- ≧≦ → or more, or less（使用禁止）
-
-例:
-- 「3か月以上」→ "3 months or more"（× > 3 months）
-- 「売上↑」→ "Sales increased"（× Sales ↑）
 ```
 
 ### Adding UI Components

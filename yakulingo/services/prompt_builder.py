@@ -553,16 +553,6 @@ class PromptBuilder:
                 self._text_templates[("jp", style)] = DEFAULT_TEXT_TO_JP_TEMPLATE
             self._text_compare_template = DEFAULT_TEXT_TO_EN_COMPARE_TEMPLATE
 
-    def get_translation_rules(self, output_language: Optional[str] = None) -> str:
-        """Deprecated (kept for backward compatibility): translation rules are no longer used."""
-        return ""
-
-    def reload_translation_rules(self) -> None:
-        """Deprecated (no-op): translation rules are no longer used."""
-
-    def reload_translation_rules_if_needed(self) -> None:
-        """Deprecated (no-op): translation rules are no longer used."""
-
     def _get_template(
         self, output_language: str = "en", translation_style: str = "concise"
     ) -> str:
@@ -637,8 +627,7 @@ class PromptBuilder:
         input_text = self.normalize_input_text(input_text, output_language)
 
         # Replace placeholders
-        prompt = template.replace("{translation_rules}", "")
-        prompt = prompt.replace("{reference_section}", reference_section)
+        prompt = template.replace("{reference_section}", reference_section)
         prompt = prompt.replace("{input_text}", input_text)
         # Remove old style placeholder if present (for backwards compatibility)
         prompt = prompt.replace("{translation_style}", translation_style)

@@ -63,7 +63,6 @@ def test_local_prompt_builder_replaces_placeholders() -> None:
         prompt,
         [
             "input_text",
-            "translation_rules",
             "reference_section",
             "detected_language",
             "style",
@@ -82,7 +81,6 @@ def test_local_prompt_builder_replaces_placeholders() -> None:
         prompt,
         [
             "input_text",
-            "translation_rules",
             "reference_section",
             "detected_language",
             "numeric_hints",
@@ -101,7 +99,6 @@ def test_local_prompt_builder_replaces_placeholders() -> None:
         prompt,
         [
             "input_text",
-            "translation_rules",
             "reference_section",
             "detected_language",
             "numeric_hints",
@@ -118,7 +115,7 @@ def test_local_prompt_builder_replaces_placeholders() -> None:
     )
     _assert_no_placeholders(
         prompt,
-        ["input_text", "translation_rules", "reference_section", "detected_language"],
+        ["input_text", "reference_section", "detected_language"],
     )
 
     prompt = builder.build_batch(
@@ -136,7 +133,6 @@ def test_local_prompt_builder_replaces_placeholders() -> None:
             "n_items",
             "reference_section",
             "style",
-            "translation_rules",
             "numeric_hints",
             "output_language",
         ],

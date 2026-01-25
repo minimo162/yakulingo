@@ -1343,47 +1343,6 @@ function Invoke-Update {{
         Write-DebugLog "User settings backed up to: $settingsBackup"
     }}
 
-    # Backup user-editable prompts (translation_rules.txt)
-    $translationRulesBackup = Join-Path $env:TEMP "yakulingo_translation_rules_backup.txt"
-    if (Test-Path "prompts\\translation_rules.txt") {{
-        Copy-Item -Path "prompts\\translation_rules.txt" -Destination $translationRulesBackup -Force
-        Write-DebugLog "Translation rules backed up to: $translationRulesBackup"
-    }}
-
-    function Restore-TranslationRules {{
-        param([string]$BackupPath)
-
-        if (-not $BackupPath -or -not (Test-Path $BackupPath)) {{
-            return
-        }}
-
-        if (-not (Test-Path "prompts")) {{ New-Item -ItemType Directory -Path "prompts" -Force | Out-Null }}
-        $rulesPath = "prompts\\translation_rules.txt"
-        $distPath = "prompts\\translation_rules.dist.txt"
-
-        if (Test-Path $rulesPath) {{
-            try {{
-                $userHash = (Get-FileHash -Path $BackupPath -Algorithm MD5).Hash
-                $newHash = (Get-FileHash -Path $rulesPath -Algorithm MD5).Hash
-                if ($userHash -ne $newHash) {{
-                    if (-not (Test-Path $distPath)) {{
-                        Copy-Item -Path $rulesPath -Destination $distPath -Force
-                    }}
-                    Copy-Item -Path $BackupPath -Destination $rulesPath -Force
-                    Write-DebugLog "Translation rules preserved; new default is available at: $distPath"
-                }} else {{
-                    Write-DebugLog "Translation rules unchanged; keeping updated version"
-                }}
-            }} catch {{
-                Write-DebugLog "[WARNING] Failed to compare translation rules: $($_.Exception.Message)"
-                Copy-Item -Path $BackupPath -Destination $rulesPath -Force -ErrorAction SilentlyContinue
-            }}
-        }} else {{
-            Copy-Item -Path $BackupPath -Destination $rulesPath -Force
-            Write-DebugLog "Translation rules restored to: $rulesPath"
-        }}
-    }}
-
     # Step 3: Delete and copy source code directories
     Show-Progress -Title "YakuLingo Update" -Status "Updating source code..." -Step "Step 3/5: Updating" -Percent 25
     Write-DebugLog "Updating source code..."
@@ -1451,8 +1410,6 @@ function Invoke-Update {{
             if (-not (Test-Path "config")) {{ New-Item -ItemType Directory -Path "config" -Force | Out-Null }}
             Copy-Item -Path $settingsBackup -Destination "config\\user_settings.json" -Force
         }}
-        Restore-TranslationRules -BackupPath $translationRulesBackup
-        Remove-Item -Path $translationRulesBackup -Force -ErrorAction SilentlyContinue
         throw "No source directories were copied!`n`nPlease check if the update package is valid."
     }}
 
@@ -1465,8 +1422,6 @@ function Invoke-Update {{
             if (-not (Test-Path "config")) {{ New-Item -ItemType Directory -Path "config" -Force | Out-Null }}
             Copy-Item -Path $settingsBackup -Destination "config\\user_settings.json" -Force
         }}
-        Restore-TranslationRules -BackupPath $translationRulesBackup
-        Remove-Item -Path $translationRulesBackup -Force -ErrorAction SilentlyContinue
         throw "Critical directories missing after copy: $missingList"
     }}
 
@@ -1513,9 +1468,6 @@ function Invoke-Update {{
         Copy-Item -Path $settingsBackup -Destination "config\\user_settings.json" -Force
         Remove-Item -Path $settingsBackup -Force -ErrorAction SilentlyContinue
     }}
-
-    Restore-TranslationRules -BackupPath $translationRulesBackup
-    Remove-Item -Path $translationRulesBackup -Force -ErrorAction SilentlyContinue
 
     if ($criticalFailureMessage) {{
         throw $criticalFailureMessage
@@ -1722,35 +1674,6 @@ if [ -f "config/user_settings.json" ]; then
     cp "config/user_settings.json" "$SETTINGS_BACKUP"
 fi
 
-# 翻訳ルールをバックアップ（ユーザー編集保持）
-RULES_BACKUP="/tmp/yakulingo_translation_rules_backup.txt"
-if [ -f "prompts/translation_rules.txt" ]; then
-    echo "翻訳ルールをバックアップしています..."
-    cp "prompts/translation_rules.txt" "$RULES_BACKUP"
-fi
-
-restore_translation_rules() {{
-    if [ ! -f "$RULES_BACKUP" ]; then
-        return 0
-    fi
-
-    mkdir -p "prompts"
-    if [ -f "prompts/translation_rules.txt" ]; then
-        if ! cmp -s "$RULES_BACKUP" "prompts/translation_rules.txt"; then
-            if [ ! -f "prompts/translation_rules.dist.txt" ]; then
-                cp "prompts/translation_rules.txt" "prompts/translation_rules.dist.txt"
-            fi
-            cp "$RULES_BACKUP" "prompts/translation_rules.txt"
-            echo "翻訳ルールを保持しました（新しい既定は prompts/translation_rules.dist.txt）。"
-        fi
-    else
-        cp "$RULES_BACKUP" "prompts/translation_rules.txt"
-        echo "翻訳ルールを復元しました。"
-    fi
-
-    rm -f "$RULES_BACKUP"
-}}
-
 # ソースコードディレクトリを削除（環境ファイルは残す）
 echo "ソースコードを更新しています..."
 for dir in {dirs_to_update}; do
@@ -1805,7 +1728,6 @@ if [ "$COPY_SUCCESS" -eq 0 ]; then
         mkdir -p "config"
         cp "$SETTINGS_BACKUP" "config/user_settings.json"
     fi
-    restore_translation_rules
     read -p "Press Enter to exit..."
     exit 1
 fi
@@ -1825,7 +1747,6 @@ if [ -n "$MISSING_CRITICAL" ]; then
         mkdir -p "config"
         cp "$SETTINGS_BACKUP" "config/user_settings.json"
     fi
-    restore_translation_rules
     read -p "Press Enter to exit..."
     exit 1
 fi
@@ -1867,7 +1788,6 @@ if [ -n "$CRITICAL_FILE_FAILURES" ]; then
         mkdir -p "config"
         cp "$SETTINGS_BACKUP" "config/user_settings.json"
     fi
-    restore_translation_rules
     read -p "Press Enter to exit..."
     exit 1
 fi
@@ -1879,8 +1799,6 @@ if [ -f "$SETTINGS_BACKUP" ]; then
     cp "$SETTINGS_BACKUP" "config/user_settings.json"
     rm -f "$SETTINGS_BACKUP"
 fi
-
-restore_translation_rules
 
 # 設定ファイルのマージ（新規項目のみ追加）
 # yakulingoモジュールが存在する場合のみ実行（ディレクトリだけでなく実際のモジュールファイル）

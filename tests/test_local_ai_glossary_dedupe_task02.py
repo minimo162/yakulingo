@@ -13,7 +13,6 @@ def _make_temp_builder(
     prompts_dir = tmp_path / "prompts"
     prompts_dir.mkdir(parents=True, exist_ok=True)
 
-    (prompts_dir / "translation_rules.txt").write_text("RULES_MARKER", encoding="utf-8")
     (prompts_dir / "local_text_translate_to_en_single_json.txt").write_text(
         "{numeric_hints}\n{reference_section}\n{input_text}\n",
         encoding="utf-8",

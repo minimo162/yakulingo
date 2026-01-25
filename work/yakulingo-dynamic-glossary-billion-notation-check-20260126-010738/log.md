@@ -5,6 +5,7 @@
 | 2026-01-26 | task-00 | Copilotバッチ翻訳（ファイル翻訳側）でJP→EN数値ルールが未適用の可能性 | 次タスクでBatchTranslatorに`_fix_to_en_oku_numeric_unit_if_possible`等を適用してbillion残りを防止 |
 | 2026-01-26 | task-01 | 回帰テストでCopilotバッチ翻訳の`billion`残りを再現し、`oku`化を固定 | `BatchTranslator`で安全な自動補正（`billion`→`oku`）を全バックエンドに適用して解消 |
 | 2026-01-26 | task-02 | 自動補正できない`billion`残りを最小回数で再試行し、Copilotバッチ翻訳でも`oku`に収束 | 数値ルール再試行をCopilot経路にも有効化し、数値ヒントも付与して成功率を上げる |
+| 2026-01-26 | task-03 | インライン用語集の選定で短い数値系（例: `億円`）が上限で落ちるリスクを低減 | 数値単位系の用語を優先し、max_lines=40の範囲でも取りこぼしを防止 |
 
 ## task-00 調査結果
 
@@ -66,3 +67,17 @@
 - `pyright`: `0 errors, 0 warnings`
 - `ruff check .`: `All checks passed!`
 - `uv run --extra test pytest`: `355 passed`
+
+## task-03 実施結果
+
+### 実装
+- インライン用語集の選定（`PromptBuilder._filter_glossary_pairs_for_inline`）で、数値単位系（`億/兆/千円/oku/k yen` 等）を優先するスコアを導入
+
+### 追加した回帰テスト
+- `tests/test_inline_glossary_numeric_priority_task03.py`
+  - `max_lines=40` の競争下でも `億円,oku` がインライン用語集に含まれることを固定
+
+### 検証（task-03）
+- `pyright`: `0 errors, 0 warnings`
+- `ruff check .`: `All checks passed!`
+- `uv run --extra test pytest`: `356 passed`

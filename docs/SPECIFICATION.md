@@ -209,7 +209,7 @@ YakuLingo/
 │   ├── file_translate_to_jp.txt    # ファイル翻訳用（英→日）
 │   ├── text_translate_to_en_compare.txt  # テキスト翻訳（日→英、minimal-only。ファイル名は後方互換で維持）
 │   ├── text_translate_to_jp.txt    # テキスト翻訳用（英→日、訳文のみ/共通ルール挿入）
-│   ├── text_back_translate.txt     # 戻し訳用（編集可能）
+│   ├── text_back_translate.txt     # （legacy/未使用）戻し訳テンプレート
 │   ├── adjust_custom.txt           # カスタムリクエスト
 │   ├── text_alternatives.txt       # フォローアップ: 他の言い方
 │   ├── text_review_en.txt          # フォローアップ: 英文をチェック
@@ -1252,7 +1252,7 @@ Reference Files
 - 既にターゲット言語の場合はそのまま出力
 - 出力: 英訳は最簡潔（`minimal`）のみ、和訳は訳文のみ（解説なし）
 - 禁止事項は英訳/和訳で共通（質問・提案・指示の繰り返し・訳文以外）
-- 戻し訳は `prompts/text_back_translate.txt` を使用（編集した訳文にも対応）
+- 戻し訳は通常のテキスト翻訳テンプレートを使用（入力言語をローカル判定し、日→英は `prompts/text_translate_to_en_compare.txt`、それ以外は `prompts/text_translate_to_jp.txt`）。`prompts/text_back_translate.txt` は互換のため残存（未使用）
 
 #### 9.4.1 英訳（minimal-only）
 

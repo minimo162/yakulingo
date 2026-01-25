@@ -14,7 +14,7 @@ Copilot (non-JSON):
 - prompts/file_translate_to_jp.txt
 - prompts/text_translate_to_en_compare.txt
 - prompts/text_translate_to_jp.txt
-- prompts/text_back_translate.txt
+- (legacy/unused) prompts/text_back_translate.txt
 - prompts/text_alternatives.txt
 - prompts/text_review_en.txt
 - prompts/text_check_my_english.txt
@@ -45,7 +45,7 @@ local_text_translate_to_en_missing_styles_json.txt: extra_instruction, input_tex
 local_text_translate_to_en_single_json.txt: extra_instruction, input_text, numeric_hints, reference_section, style
 local_text_translate_to_jp_json.txt: input_text, reference_section
 text_alternatives.txt: current_translation, reference_section, source_text, style
-text_back_translate.txt: input_text, reference_section
+(legacy/unused) text_back_translate.txt: input_text, reference_section
 text_check_my_english.txt: reference_section, reference_translation, user_english
 text_question.txt: input_text, question, reference_section, translation
 text_reply_email.txt: input_text, reference_section, reply_intent, translation

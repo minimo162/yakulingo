@@ -10269,63 +10269,81 @@ class YakuLingoApp:
             reference_section = ""
             reference_warnings: list[str] = []
 
-            # Build back-translation prompt from prompts/text_back_translate.txt
-            prompt_path = get_default_prompts_dir() / "text_back_translate.txt"
-            if not prompt_path.exists():
-                error_message = f"Missing prompt template: {prompt_path}"
+            prompt = ""
+            text = text_override if text_override is not None else option.text
+            if not text.strip():
+                error_message = "戻し訳用のテキストを入力してください"
             else:
-                text = text_override if text_override is not None else option.text
-                if not text.strip():
-                    error_message = "戻し訳用のテキストを入力してください"
-                else:
-                    option.back_translation_source_text = text
-                    reference_section, reference_warnings, _ = (
-                        self._build_reference_section_for_backend(
-                            reference_files,
-                            input_text=text,
-                        )
+                option.back_translation_source_text = text
+                reference_section, reference_warnings, _ = (
+                    self._build_reference_section_for_backend(
+                        reference_files,
+                        input_text=text,
                     )
-                prompt = prompt_path.read_text(encoding="utf-8")
-                prompt = prompt.replace("{input_text}", text)
-                prompt = prompt.replace(
-                    "{text}", text
-                )  # Backward-compatible placeholder
-                prompt = prompt.replace("{reference_section}", reference_section)
+                )
 
-                if not error_message:
-                    result = ""
-                    if (
-                        self.translation_service is None
-                        and not self._ensure_translation_service()
-                    ):
-                        error_message = "翻訳サービスの初期化に失敗しました"
-                    service = self.translation_service
-                    if not error_message and service is not None:
-                        result = await asyncio.to_thread(
-                            service._translate_single_with_cancel,
-                            text,
-                            prompt,
-                            reference_files if reference_files else None,
-                            stream_handler,
-                        )
+            if not error_message and (
+                self.translation_service is None and not self._ensure_translation_service()
+            ):
+                error_message = "翻訳サービスの初期化に失敗しました"
 
-                    # Parse result and store on the option
-                    if result:
-                        from yakulingo.ui.utils import parse_translation_result
+            service = self.translation_service
+            prompt_builder = getattr(service, "prompt_builder", None) if service else None
 
-                        text_result, _ = parse_translation_result(result)
-                        option.back_translation_text = text_result
-                        option.back_translation_explanation = None
-                        if reference_warnings:
-                            try:
-                                with client:
-                                    self._notify_warning_summary(reference_warnings)
-                            except Exception:
-                                logger.debug(
-                                    "Failed to notify reference warnings", exc_info=True
-                                )
-                    else:
-                        error_message = "戻し訳に失敗しました"
+            if not error_message and not prompt_builder:
+                error_message = "テキスト翻訳テンプレートの初期化に失敗しました"
+
+            if not error_message:
+                # Use the same templates as regular text translation.
+                detected_language = service.detect_language(text) if service else "日本語"
+                output_language = "en" if detected_language == "日本語" else "jp"
+
+                template: str | None
+                if output_language == "en":
+                    template = prompt_builder.get_text_compare_template()
+                else:
+                    template = prompt_builder.get_text_template(
+                        output_language="jp",
+                        translation_style="concise",
+                    )
+
+                if not template:
+                    error_message = "テキスト翻訳テンプレートが見つかりません"
+                else:
+                    prompt = template.replace("{input_text}", text)
+                    prompt = prompt.replace(
+                        "{text}", text
+                    )  # Backward-compatible placeholder
+                    prompt = prompt.replace("{reference_section}", reference_section)
+
+            if not error_message:
+                result = ""
+                if service is not None:
+                    result = await asyncio.to_thread(
+                        service._translate_single_with_cancel,
+                        text,
+                        prompt,
+                        reference_files if reference_files else None,
+                        stream_handler,
+                    )
+
+                # Parse result and store on the option
+                if result:
+                    from yakulingo.ui.utils import parse_translation_result
+
+                    text_result, _ = parse_translation_result(result)
+                    option.back_translation_text = text_result
+                    option.back_translation_explanation = None
+                    if reference_warnings:
+                        try:
+                            with client:
+                                self._notify_warning_summary(reference_warnings)
+                        except Exception:
+                            logger.debug(
+                                "Failed to notify reference warnings", exc_info=True
+                            )
+                else:
+                    error_message = "戻し訳に失敗しました"
 
         except TranslationCancelledError:
             error_message = "翻訳がキャンセルされました"

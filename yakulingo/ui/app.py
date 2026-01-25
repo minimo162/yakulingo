@@ -1275,6 +1275,7 @@ MIN_AVAILABLE_MEMORY_GB_FOR_EARLY_CONNECT = (
 )
 TEXT_TRANSLATION_CHAR_LIMIT = 5000  # Max chars for text translation (clipboard trigger)
 STREAMING_PREVIEW_UPDATE_INTERVAL_SEC = 0.12  # UI streaming preview throttling interval
+STREAMING_PREVIEW_SCROLL_INTERVAL_SEC = 0.35  # Throttle scroll JS during streaming
 FILE_LANGUAGE_DETECTION_TIMEOUT_SEC = 8.0  # Avoid hanging file-language detection
 FILE_TRANSLATION_UI_VISIBILITY_HOLD_SEC = 600.0  # 翻訳完了直後のUI自動非表示を抑止
 DEFAULT_TEXT_STYLE = "concise"
@@ -8382,6 +8383,7 @@ class YakuLingoApp:
         trace_id: str,
         build_preview_text: Callable[[str], str] | None = None,
         update_interval_seconds: float = STREAMING_PREVIEW_UPDATE_INTERVAL_SEC,
+        scroll_interval_seconds: float = STREAMING_PREVIEW_SCROLL_INTERVAL_SEC,
         refresh_tabs_on_first_chunk: bool = False,
         scroll_to_bottom: bool = True,
         force_follow_on_first_chunk: bool = True,
@@ -8392,9 +8394,21 @@ class YakuLingoApp:
         dirty = False
         update_scheduled = False
         last_ui_update = 0.0
+        last_rendered_len = 0
+        last_scroll_time = 0.0
 
-        def _apply_update() -> None:
+        def _min_preview_delta_chars(current_len: int) -> int:
+            if current_len < 256:
+                return 1
+            if current_len < 1024:
+                return 16
+            if current_len < 4096:
+                return 48
+            return 96
+
+        def _apply_update(*, force: bool = False) -> None:
             nonlocal dirty, update_scheduled, last_ui_update, latest_preview_text
+            nonlocal last_rendered_len, last_scroll_time
             if not self.state.text_translating or self._shutdown_requested:
                 with lock:
                     dirty = False
@@ -8403,7 +8417,7 @@ class YakuLingoApp:
 
             now = time.monotonic()
             elapsed = now - last_ui_update
-            if elapsed < update_interval_seconds:
+            if not force and elapsed < update_interval_seconds:
                 delay = update_interval_seconds - elapsed
                 try:
                     loop.call_later(delay, _apply_update)
@@ -8414,6 +8428,32 @@ class YakuLingoApp:
                 return
 
             with lock:
+                raw_len = len(latest_preview_text)
+                pending = dirty
+
+            max_stale_seconds = max(update_interval_seconds * 3, 0.35)
+            min_delta = _min_preview_delta_chars(raw_len)
+            delta_len = raw_len - last_rendered_len
+            if (
+                not force
+                and last_rendered_len > 0
+                and pending
+                and delta_len < min_delta
+                and elapsed < max_stale_seconds
+            ):
+                delay = max(0.01, max_stale_seconds - elapsed)
+                try:
+                    loop.call_later(delay, _apply_update)
+                except Exception:
+                    with lock:
+                        dirty = False
+                        update_scheduled = False
+                return
+
+            with lock:
+                if not dirty:
+                    update_scheduled = False
+                    return
                 raw_text_to_show = latest_preview_text
                 dirty = False
 
@@ -8441,13 +8481,22 @@ class YakuLingoApp:
                 self._normalize_streaming_preview_text(raw_text_to_show) or ""
             )
             last_ui_update = time.monotonic()
+            last_rendered_len = len(raw_text_to_show)
+            should_scroll = False
+            if scroll_to_bottom:
+                should_scroll = (
+                    last_scroll_time <= 0.0
+                    or (time.monotonic() - last_scroll_time) >= scroll_interval_seconds
+                )
+                if should_scroll:
+                    last_scroll_time = time.monotonic()
             try:
                 self.state.text_streaming_preview = text_to_show
                 self._render_text_streaming_preview(
                     client,
                     text_to_show,
                     refresh_tabs_on_first_chunk=refresh_tabs_on_first_chunk,
-                    scroll_to_bottom=scroll_to_bottom,
+                    scroll_to_bottom=should_scroll,
                     force_follow_on_first_chunk=force_follow_on_first_chunk,
                 )
             except Exception:
@@ -8490,6 +8539,24 @@ class YakuLingoApp:
                     dirty = False
                     update_scheduled = False
 
+        def flush() -> None:
+            nonlocal dirty, update_scheduled
+            if not self._is_local_streaming_preview_enabled():
+                return
+            with lock:
+                if not latest_preview_text:
+                    return
+                dirty = True
+                if not update_scheduled:
+                    update_scheduled = True
+            try:
+                loop.call_soon_threadsafe(lambda: _apply_update(force=True))
+            except Exception:
+                with lock:
+                    dirty = False
+                    update_scheduled = False
+
+        setattr(on_chunk, "flush", flush)
         return on_chunk
 
     def _update_text_input_metrics(self) -> None:
@@ -9716,6 +9783,7 @@ class YakuLingoApp:
 
         error_message = None
         result = None
+        stream_handler: Callable[[str], None] | None = None
         try:
             await asyncio.sleep(0)
             start_time = time.monotonic()
@@ -9746,7 +9814,6 @@ class YakuLingoApp:
                     return f"[{current_chunk_index}/{total_chunks}] {partial_text}"
                 return partial_text
 
-            stream_handler = None
             if self._is_local_streaming_preview_enabled():
                 stream_handler = self._create_text_streaming_preview_on_chunk(
                     loop=loop,
@@ -9810,6 +9877,18 @@ class YakuLingoApp:
         except Exception as e:
             logger.exception("Split translation error [%s]: %s", trace_id, e)
             error_message = str(e)
+
+        flush = getattr(stream_handler, "flush", None) if stream_handler else None
+        if callable(flush):
+            try:
+                flush()
+                await asyncio.sleep(0)
+            except Exception:
+                logger.debug(
+                    "Split translation [%s] streaming preview flush failed",
+                    trace_id,
+                    exc_info=True,
+                )
 
         self.state.text_translating = False
         self.state.text_detected_language = None
@@ -9944,6 +10023,7 @@ class YakuLingoApp:
         from yakulingo.services.exceptions import TranslationCancelledError
 
         error_message = None
+        stream_handler: Callable[[str], None] | None = None
         try:
             # Yield control to event loop before starting blocking operation
             # This ensures the loading UI is sent to the client before we start measuring
@@ -9977,7 +10057,6 @@ class YakuLingoApp:
             # Step 2: Translate with pre-detected language (skip detection in translate_text_with_options)
             # Streaming preview (AI chat style): update result panel with partial output as it arrives.
             loop = asyncio.get_running_loop()
-            stream_handler = None
             if self._is_local_streaming_preview_enabled():
                 stream_handler = self._create_text_streaming_preview_on_chunk(
                     loop=loop,
@@ -10044,6 +10123,18 @@ class YakuLingoApp:
         except Exception as e:
             logger.exception("Translation error [%s]: %s", trace_id, e)
             error_message = str(e)
+
+        flush = getattr(stream_handler, "flush", None) if stream_handler else None
+        if callable(flush):
+            try:
+                flush()
+                await asyncio.sleep(0)
+            except Exception:
+                logger.debug(
+                    "Translation [%s] streaming preview flush failed",
+                    trace_id,
+                    exc_info=True,
+                )
 
         self.state.text_translating = False
         self.state.text_detected_language = None

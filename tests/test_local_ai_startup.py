@@ -4,6 +4,7 @@ import asyncio
 import threading
 from pathlib import Path
 
+import yakulingo.ui.app as app_module
 from yakulingo.config.settings import AppSettings
 from yakulingo.services.local_llama_server import (
     LocalAIError,
@@ -69,9 +70,7 @@ def test_start_local_ai_startup_skips_when_task_running(monkeypatch) -> None:
     assert started is False
 
 
-async def test_ensure_local_ai_ready_transitions_through_warming_up(
-    monkeypatch,
-) -> None:
+async def test_ensure_local_ai_ready_schedules_background_warmup(monkeypatch) -> None:
     app = YakuLingoApp()
     app.settings = AppSettings()
 
@@ -118,16 +117,20 @@ async def test_ensure_local_ai_ready_transitions_through_warming_up(
         fake_warmup,
     )
 
-    task = asyncio.create_task(app._ensure_local_ai_ready_async())
-    assert await asyncio.to_thread(warmup_started.wait, 2.0)
-    assert app.state.local_ai_state == LocalAIState.WARMING_UP
+    monkeypatch.setattr(app_module, "LOCAL_AI_WARMUP_DELAY_SEC", 0.0)
 
-    warmup_release.set()
+    task = asyncio.create_task(app._ensure_local_ai_ready_async())
     assert await task is True
     assert app.state.local_ai_state == LocalAIState.READY
     assert app.state.local_ai_host == "127.0.0.1"
     assert app.state.local_ai_port == 4891
     assert app.state.local_ai_model == "model.gguf"
+
+    assert await asyncio.to_thread(warmup_started.wait, 2.0)
+    warmup_release.set()
+    warmup_task = app._local_ai_warmup_task
+    assert warmup_task is not None
+    await warmup_task
 
 
 async def test_ensure_local_ai_ready_skips_warmup_when_already_ready(

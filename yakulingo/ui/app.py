@@ -1289,6 +1289,11 @@ RESIDENT_STARTUP_LAYOUT_RETRY_ATTEMPTS = 40
 RESIDENT_STARTUP_LAYOUT_RETRY_DELAY_SEC = 0.25
 ALWAYS_CLOSE_TO_RESIDENT = True  # Keep service alive when native UI window is closed
 
+LOCAL_AI_WARMUP_DELAY_SEC = (
+    1.5  # Delay warmup to avoid contending with immediate actions
+)
+LOCAL_AI_WARMUP_TIMEOUT_SEC = 2  # Keep warmup lightweight (best-effort)
+
 
 def _is_watchdog_enabled() -> bool:
     return os.environ.get("YAKULINGO_WATCHDOG", "").strip().lower() in (
@@ -8891,7 +8896,7 @@ class YakuLingoApp:
             return
         if existing is not None and not existing.done():
             self._cancel_local_ai_warmup("runtime changed")
-        delay_s = 1.5
+        delay_s = float(LOCAL_AI_WARMUP_DELAY_SEC)
         try:
             task = _create_logged_task(
                 self._warmup_local_ai_async(runtime, delay_s=delay_s),
@@ -8937,7 +8942,12 @@ class YakuLingoApp:
         try:
             logger.info("[TIMING] LocalAI warmup started")
             t0 = time.monotonic()
-            await asyncio.to_thread(client.warmup, runtime=runtime)
+            await asyncio.to_thread(
+                client.warmup,
+                runtime=runtime,
+                timeout=int(LOCAL_AI_WARMUP_TIMEOUT_SEC),
+                max_tokens=1,
+            )
             logger.info(
                 "[TIMING] LocalAI warmup finished: %.2fs",
                 time.monotonic() - t0,
@@ -9086,44 +9096,6 @@ class YakuLingoApp:
         self.state.local_ai_model = runtime.model_id or runtime.model_path.name
         self.state.local_ai_server_variant = runtime.server_variant
         self.state.local_ai_error = ""
-        self.state.local_ai_state = LocalAIState.WARMING_UP
-        client = self._get_active_client()
-        if client:
-            with client:
-                if self._header_status:
-                    self._header_status.refresh()
-                self._refresh_translate_button_state()
-        try:
-            from yakulingo.services.local_ai_client import LocalAIClient
-
-            logger.info("[TIMING] LocalAI warmup started")
-            t0 = time.monotonic()
-            await asyncio.to_thread(
-                LocalAIClient(self.settings).warmup,
-                runtime=runtime,
-            )
-            logger.info(
-                "[TIMING] LocalAI warmup finished: %.2fs",
-                time.monotonic() - t0,
-            )
-        except Exception as e:
-            if preload_task is not None:
-                preload_task.cancel()
-            self.state.local_ai_state = LocalAIState.ERROR
-            self.state.local_ai_error = f"Local AI warmup failed: {e}"
-            client = self._get_active_client()
-            if client:
-                with client:
-                    if self._header_status:
-                        self._header_status.refresh()
-            return False
-
-        if preload_task is not None:
-            try:
-                await preload_task
-            except Exception:
-                pass
-
         self.state.local_ai_state = LocalAIState.READY
         self._local_ai_ready_probe_key = f"{runtime.host}:{runtime.port}:{runtime.model_id or runtime.model_path.name}"
         self._local_ai_ready_probe_at = time.monotonic()
@@ -9133,6 +9105,7 @@ class YakuLingoApp:
                 if self._header_status:
                     self._header_status.refresh()
                 self._refresh_translate_button_state()
+        self._start_local_ai_warmup(runtime)
         return True
 
     async def _ensure_connection_async(self) -> bool:

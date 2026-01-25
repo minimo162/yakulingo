@@ -27,3 +27,9 @@
 ### 次アクション（task-01/02の方針）
 - task-01: `BatchTranslator`（Copilot backend）で上記の`billion`残りを再現する回帰テストを追加する。
 - task-02: Copilot backend のバッチ翻訳でも、JP→ENの安全な自動補正（`_fix_to_en_oku_numeric_unit_if_possible`）を適用し、必要なら数値ルール再試行を追加する。
+
+### 検証（task-00）
+- `uv sync --extra test`: OK
+- `pyright`: `0 errors, 0 warnings`
+- `ruff check .`: `All checks passed!`
+- `uv run --extra test pytest`: `353 passed`

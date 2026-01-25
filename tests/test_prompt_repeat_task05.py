@@ -7,7 +7,7 @@ from yakulingo.services.local_ai_client import LocalAIClient
 from yakulingo.services.local_llama_server import LocalAIServerRuntime
 
 
-def test_local_ai_client_repeats_prompt_twice_in_payload() -> None:
+def test_local_ai_client_prompt_repeat_can_be_enabled() -> None:
     client = LocalAIClient(AppSettings())
     runtime = LocalAIServerRuntime(
         host="127.0.0.1",
@@ -33,4 +33,22 @@ def test_local_ai_client_repeats_prompt_twice_in_payload() -> None:
         msg for msg in messages if isinstance(msg, dict) and msg.get("role") == "user"
     ]
     assert len(user_messages) == 1
-    assert user_messages[0].get("content") == "ping\n\nping"
+    assert user_messages[0].get("content") == "ping"
+
+    payload_repeated = client._build_chat_payload(
+        runtime,
+        prompt,
+        stream=False,
+        enforce_json=False,
+        repeat_prompt=True,
+    )
+    messages_repeated = payload_repeated.get("messages")
+    assert isinstance(messages_repeated, list)
+
+    user_messages_repeated = [
+        msg
+        for msg in messages_repeated
+        if isinstance(msg, dict) and msg.get("role") == "user"
+    ]
+    assert len(user_messages_repeated) == 1
+    assert user_messages_repeated[0].get("content") == "ping\n\nping"

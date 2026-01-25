@@ -62,6 +62,15 @@ def _repeat_prompt_twice_len(prompt: str | None) -> int:
     return len(prompt) * 2 + len(_PROMPT_REPEAT_SEPARATOR)
 
 
+def _sent_prompt(prompt: str | None, *, repeat: bool) -> str:
+    base = prompt or ""
+    return _repeat_prompt_twice(base) if repeat else base
+
+
+def _sent_prompt_len(prompt: str | None, *, repeat: bool) -> int:
+    return _repeat_prompt_twice_len(prompt) if repeat else len(prompt or "")
+
+
 def _select_system_prompt(prompt: str) -> str:
     return (
         _SYSTEM_TRANSLATION_PROMPT_JP
@@ -234,6 +243,22 @@ def _build_response_format_payload(
     }
 
 
+def _expected_json_root_key(prompt: str) -> str | None:
+    lowered = (prompt or "").casefold()
+    if '{"items"' in lowered or "items_json" in lowered:
+        return "items"
+    if (
+        '{"options"' in lowered
+        or "options must contain exactly these 3 styles" in lowered
+    ):
+        return "options"
+    if '{"translation"' in lowered:
+        return "translation"
+    if "return json only" in lowered:
+        return "translation"
+    return None
+
+
 def _strip_code_fences(text: str) -> str:
     if "```" not in text:
         return text
@@ -325,6 +350,47 @@ def loads_json_loose(text: str) -> Optional[object]:
     except Exception:
         return None
     return None
+
+
+def _should_retry_with_repeated_prompt(
+    prompt: str,
+    content: str,
+    *,
+    parsed_json: object = _PARSED_JSON_MISSING,
+    require_json: bool = False,
+) -> bool:
+    expected_key = _expected_json_root_key(prompt)
+    if expected_key is None:
+        return False
+
+    cleaned = _strip_code_fences(content).strip()
+    if not cleaned:
+        return True
+    if is_truncated_json(content):
+        return True
+
+    has_json_substring = _extract_json_substring(cleaned) is not None
+    if not has_json_substring:
+        return require_json
+
+    obj = (
+        loads_json_loose(cleaned)
+        if parsed_json is _PARSED_JSON_MISSING
+        else parsed_json
+    )
+    if not isinstance(obj, dict):
+        return True
+
+    if expected_key == "translation":
+        translation = obj.get("translation")
+        return not isinstance(translation, str) or not translation.strip()
+    if expected_key == "items":
+        items = obj.get("items")
+        return not isinstance(items, list) or not items
+    if expected_key == "options":
+        options = obj.get("options")
+        return not isinstance(options, list) or not options
+    return True
 
 
 def _is_empty_json_object_reply(
@@ -811,13 +877,15 @@ class LocalAIClient:
         enforce_json: bool,
         response_format: str | None = None,
         include_sampling_params: bool = True,
+        repeat_prompt: bool = False,
     ) -> dict[str, object]:
-        prompt = _repeat_prompt_twice(prompt or "")
-        messages: list[dict[str, str]] = [{"role": "user", "content": prompt}]
+        original_prompt = prompt or ""
+        user_prompt = _sent_prompt(original_prompt, repeat=repeat_prompt)
+        messages: list[dict[str, str]] = [{"role": "user", "content": user_prompt}]
         if not _is_hy_mt_model(runtime):
             messages.insert(
                 0,
-                {"role": "system", "content": _select_system_prompt(prompt)},
+                {"role": "system", "content": _select_system_prompt(original_prompt)},
             )
         payload: dict[str, object] = {
             "model": runtime.model_id or runtime.model_path.name,
@@ -853,7 +921,7 @@ class LocalAIClient:
             payload["max_tokens"] = int(self._settings.local_ai_max_tokens)
         if enforce_json:
             payload["response_format"] = _build_response_format_payload(
-                prompt, response_format
+                original_prompt, response_format
             )
         if _JSON_STOP_SEQUENCES:
             payload["stop"] = _JSON_STOP_SEQUENCES
@@ -999,7 +1067,7 @@ class LocalAIClient:
         logger.debug(
             "[TIMING] LocalAI warmup: %.2fs (prompt_chars=%d)",
             t_req,
-            _repeat_prompt_twice_len(prompt),
+            _sent_prompt_len(prompt, repeat=False),
         )
 
     def translate_single(
@@ -1026,18 +1094,35 @@ class LocalAIClient:
             )
 
         t1 = time.perf_counter()
+        repeat_used = False
         if on_chunk is None:
-            result = self._chat_completions(runtime, prompt, timeout=timeout)
+            result = self._chat_completions(
+                runtime, prompt, timeout=timeout, repeat_prompt=False
+            )
         else:
             result = self._chat_completions_streaming(
-                runtime, prompt, on_chunk, timeout=timeout
+                runtime, prompt, on_chunk, timeout=timeout, repeat_prompt=False
             )
+
+        if _should_retry_with_repeated_prompt(
+            prompt,
+            result.content,
+            parsed_json=result.parsed_json,
+            require_json=True,
+        ):
+            repeat_used = True
+            logger.debug("LocalAI retrying with repeated prompt (single)")
+            result = self._chat_completions(
+                runtime, prompt, timeout=timeout, repeat_prompt=True
+            )
+
         t_req = time.perf_counter() - t1
         logger.debug(
-            "[TIMING] LocalAI chat_completions%s: %.2fs (prompt_chars=%d)",
+            "[TIMING] LocalAI chat_completions%s: %.2fs (prompt_chars=%d repeated=%s)",
             "" if on_chunk is None else "_streaming",
             t_req,
-            _repeat_prompt_twice_len(prompt),
+            _sent_prompt_len(prompt, repeat=repeat_used),
+            repeat_used,
         )
         return result.content
 
@@ -1070,19 +1155,45 @@ class LocalAIClient:
             )
 
         t1 = time.perf_counter()
-        result = self._chat_completions(runtime, prompt, timeout=timeout)
+        repeat_used = False
+        result = self._chat_completions(
+            runtime, prompt, timeout=timeout, repeat_prompt=False
+        )
+        try:
+            parsed = parse_batch_translations(
+                result.content,
+                expected_count=len(texts),
+                parsed_json=result.parsed_json,
+            )
+        except RuntimeError:
+            if _should_retry_with_repeated_prompt(
+                prompt,
+                result.content,
+                parsed_json=result.parsed_json,
+                require_json=True,
+            ):
+                repeat_used = True
+                logger.debug("LocalAI retrying with repeated prompt (batch)")
+                result = self._chat_completions(
+                    runtime, prompt, timeout=timeout, repeat_prompt=True
+                )
+                parsed = parse_batch_translations(
+                    result.content,
+                    expected_count=len(texts),
+                    parsed_json=result.parsed_json,
+                )
+            else:
+                raise
+
         t_req = time.perf_counter() - t1
         logger.debug(
-            "[TIMING] LocalAI chat_completions: %.2fs (prompt_chars=%d items=%d)",
+            "[TIMING] LocalAI chat_completions: %.2fs (prompt_chars=%d repeated=%s items=%d)",
             t_req,
-            _repeat_prompt_twice_len(prompt),
+            _sent_prompt_len(prompt, repeat=repeat_used),
+            repeat_used,
             len(texts),
         )
-        return parse_batch_translations(
-            result.content,
-            expected_count=len(texts),
-            parsed_json=result.parsed_json,
-        )
+        return parsed
 
     def _chat_completions(
         self,
@@ -1091,6 +1202,7 @@ class LocalAIClient:
         *,
         timeout: Optional[int],
         force_response_format: Optional[bool] = None,
+        repeat_prompt: bool = False,
     ) -> LocalAIRequestResult:
         if self._should_cancel():
             raise TranslationCancelledError("Translation cancelled by user")
@@ -1125,6 +1237,7 @@ class LocalAIClient:
                 enforce_json=enforce_json,
                 response_format=response_format,
                 include_sampling_params=include_sampling_params,
+                repeat_prompt=repeat_prompt,
             )
             try:
                 response = self._http_json_cancellable(
@@ -1203,6 +1316,7 @@ class LocalAIClient:
         on_chunk: Callable[[str], None],
         *,
         timeout: Optional[int],
+        repeat_prompt: bool = False,
     ) -> LocalAIRequestResult:
         cached_support = self._get_response_format_support(runtime)
         response_format_mode: _ResponseFormatMode = cached_support or "schema"
@@ -1228,6 +1342,7 @@ class LocalAIClient:
                 enforce_json=enforce_json,
                 response_format=response_format,
                 include_sampling_params=include_sampling_params,
+                repeat_prompt=repeat_prompt,
             )
             try:
                 result = self._chat_completions_streaming_with_payload(
@@ -1285,6 +1400,7 @@ class LocalAIClient:
                     prompt,
                     timeout=timeout,
                     force_response_format=False,
+                    repeat_prompt=repeat_prompt,
                 )
             except Exception as exc:
                 logger.debug(

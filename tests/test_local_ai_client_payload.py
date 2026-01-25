@@ -49,7 +49,7 @@ def test_build_chat_payload_includes_json_response_format() -> None:
                 "- Output only in the requested format (e.g., JSON only).\n"
             ),
         },
-        {"role": "user", "content": "prompt\n\nprompt"},
+        {"role": "user", "content": "prompt"},
     ]
     response_format = payload["response_format"]
     assert isinstance(response_format, dict)
@@ -73,7 +73,7 @@ def test_build_chat_payload_omits_system_prompt_for_hy_mt() -> None:
     payload = client._build_chat_payload(
         runtime, "prompt", stream=False, enforce_json=True
     )
-    assert payload["messages"] == [{"role": "user", "content": "prompt\n\nprompt"}]
+    assert payload["messages"] == [{"role": "user", "content": "prompt"}]
     assert payload["stop"] == ["</s>", "<|end|>"]
 
 
@@ -119,7 +119,7 @@ def test_build_chat_payload_skips_response_format_when_disabled() -> None:
                 "- Output only in the requested format (e.g., JSON only).\n"
             ),
         },
-        {"role": "user", "content": "prompt\n\nprompt"},
+        {"role": "user", "content": "prompt"},
     ]
     assert "response_format" not in payload
     assert payload["stream"] is True
@@ -297,7 +297,7 @@ def test_build_chat_payload_can_skip_sampling_params() -> None:
                 "- Output only in the requested format (e.g., JSON only).\n"
             ),
         },
-        {"role": "user", "content": "prompt\n\nprompt"},
+        {"role": "user", "content": "prompt"},
     ]
     assert payload["temperature"] == 0.7
     assert "top_p" not in payload

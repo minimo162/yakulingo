@@ -370,26 +370,31 @@ def _should_retry_with_repeated_prompt(
         return True
 
     has_json_substring = _extract_json_substring(cleaned) is not None
-    if not has_json_substring:
-        return require_json
-
     obj = (
         loads_json_loose(cleaned)
-        if parsed_json is _PARSED_JSON_MISSING
+        if parsed_json is _PARSED_JSON_MISSING and has_json_substring
         else parsed_json
     )
-    if not isinstance(obj, dict):
+
+    if isinstance(obj, dict):
+        if expected_key == "translation":
+            translation = obj.get("translation")
+            return not isinstance(translation, str) or not translation.strip()
+        if expected_key == "items":
+            items = obj.get("items")
+            return not isinstance(items, list) or not items
+        if expected_key == "options":
+            options = obj.get("options")
+            return not isinstance(options, list) or not options
         return True
 
     if expected_key == "translation":
-        translation = obj.get("translation")
-        return not isinstance(translation, str) or not translation.strip()
-    if expected_key == "items":
-        items = obj.get("items")
-        return not isinstance(items, list) or not items
-    if expected_key == "options":
-        options = obj.get("options")
-        return not isinstance(options, list) or not options
+        translation, _ = _parse_text_single_translation_fallback(cleaned)
+        if isinstance(translation, str) and translation.strip():
+            return False
+
+    if not has_json_substring:
+        return require_json
     return True
 
 

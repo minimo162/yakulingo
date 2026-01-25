@@ -4,6 +4,7 @@
 | --- | --- | --- | --- |
 | 2026-01-26 | task-00 | Copilotバッチ翻訳（ファイル翻訳側）でJP→EN数値ルールが未適用の可能性 | 次タスクでBatchTranslatorに`_fix_to_en_oku_numeric_unit_if_possible`等を適用してbillion残りを防止 |
 | 2026-01-26 | task-01 | 回帰テストでCopilotバッチ翻訳の`billion`残りを再現し、`oku`化を固定 | `BatchTranslator`で安全な自動補正（`billion`→`oku`）を全バックエンドに適用して解消 |
+| 2026-01-26 | task-02 | 自動補正できない`billion`残りを最小回数で再試行し、Copilotバッチ翻訳でも`oku`に収束 | 数値ルール再試行をCopilot経路にも有効化し、数値ヒントも付与して成功率を上げる |
 
 ## task-00 調査結果
 
@@ -50,3 +51,18 @@
 - `pyright`: `0 errors, 0 warnings`
 - `ruff check .`: `All checks passed!`
 - `uv run --extra test pytest`: `354 passed`
+
+## task-02 実施結果
+
+### 実装
+- `BatchTranslator` の「数値ルール再試行」を Copilot 経路でも有効化（`billion/bn/trillion` が残る場合のみ）
+- 再試行プロンプトに `_build_to_en_numeric_hints()` のヒントを付与（上限付き・必要時のみ）
+
+### 追加した回帰テスト
+- `tests/test_batch_translation_numeric_oku_retry_copilot_task02.py`
+  - 1回目: `22,384 billion`（自動補正不可）→ 2回目で`22,385 oku`に収束することを固定
+
+### 検証（task-02）
+- `pyright`: `0 errors, 0 warnings`
+- `ruff check .`: `All checks passed!`
+- `uv run --extra test pytest`: `355 passed`

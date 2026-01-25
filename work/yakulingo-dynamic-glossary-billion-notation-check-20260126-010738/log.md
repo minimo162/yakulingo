@@ -3,6 +3,7 @@
 | 日時 | Task | メモ | 結果 |
 | --- | --- | --- | --- |
 | 2026-01-26 | task-00 | Copilotバッチ翻訳（ファイル翻訳側）でJP→EN数値ルールが未適用の可能性 | 次タスクでBatchTranslatorに`_fix_to_en_oku_numeric_unit_if_possible`等を適用してbillion残りを防止 |
+| 2026-01-26 | task-01 | 回帰テストでCopilotバッチ翻訳の`billion`残りを再現し、`oku`化を固定 | `BatchTranslator`で安全な自動補正（`billion`→`oku`）を全バックエンドに適用して解消 |
 
 ## task-00 調査結果
 
@@ -33,3 +34,19 @@
 - `pyright`: `0 errors, 0 warnings`
 - `ruff check .`: `All checks passed!`
 - `uv run --extra test pytest`: `353 passed`
+
+## task-01 実施結果
+
+### 追加した回帰テスト
+- `tests/test_batch_translation_numeric_oku_copilot_task01.py`
+  - 入力: `売上高は22,385億円。`
+  - Copilot出力（初回）: `Net sales were 22,385 billion yen.`
+  - 期待: `billion`が残らず`oku`になる（自動補正で直る）
+
+### 実装（最小修正）
+- `yakulingo/services/translation_service.py` の `BatchTranslator` で `_fix_to_en_oku_numeric_unit_if_possible()` を **Copilot経路でも**適用するように変更
+
+### 検証（task-01）
+- `pyright`: `0 errors, 0 warnings`
+- `ruff check .`: `All checks passed!`
+- `uv run --extra test pytest`: `354 passed`

@@ -488,7 +488,7 @@ def _fix_to_en_k_notation_if_possible(
     if not expected:
         return translated_text, False
 
-    def repl(match: re.Match[str]) -> str:
+    def repl_int_token(match: re.Match[str]) -> str:
         raw_number = match.group("number") or ""
         try:
             value = int(raw_number.replace(",", ""))
@@ -497,8 +497,35 @@ def _fix_to_en_k_notation_if_possible(
         replacement = expected.get(value)
         return replacement if replacement else match.group(0)
 
-    fixed, count = _RE_EN_INT_TOKEN.subn(repl, translated_text)
-    if count == 0 or fixed == translated_text:
+    def repl_man_sen_unit(match: re.Match[str]) -> str:
+        number_value = _parse_decimal(match.group("number") or "")
+        if number_value is None:
+            return match.group(0)
+
+        unit = (match.group("unit") or "").strip().lower()
+        if unit == "man":
+            k_value = number_value * Decimal("10")
+        elif unit == "sen":
+            k_value = number_value
+        else:
+            return match.group(0)
+
+        full_value = k_value * Decimal("1000")
+        if full_value != full_value.to_integral():
+            return match.group(0)
+
+        full_int = int(full_value)
+        replacement = expected.get(full_int)
+        return replacement if replacement else match.group(0)
+
+    fixed = translated_text
+    total = 0
+    fixed, count = _RE_EN_NUMBER_WITH_MAN_SEN_UNIT.subn(repl_man_sen_unit, fixed)
+    total += count
+    fixed, count = _RE_EN_INT_TOKEN.subn(repl_int_token, fixed)
+    total += count
+
+    if total == 0 or fixed == translated_text:
         return translated_text, False
     return fixed, True
 
@@ -573,6 +600,10 @@ _RE_JP_SEN_AMOUNT_WITH_UNIT = re.compile(
 _RE_JP_TRIANGLE_NEGATIVE_NUMBER = re.compile(r"▲\s*\d")
 _RE_JP_MONTH_NUMBER = re.compile(r"(\d{1,2})月")
 _RE_EN_NUMBER_WITH_K_UNIT = re.compile(r"\b\d[\d,]*(?:\.\d+)?\s*k\b", re.IGNORECASE)
+_RE_EN_NUMBER_WITH_MAN_SEN_UNIT = re.compile(
+    rf"(?<![\w.])(?P<number>{_NUMBER_WITH_OPTIONAL_COMMAS_AND_DECIMALS_PATTERN})\s*(?P<unit>man|sen)(?!-)\b",
+    re.IGNORECASE,
+)
 _RE_EN_PAREN_NUMBER_ONLY = re.compile(r"\(\s*\d[\d,]*(?:\.\d+)?\s*\)")
 _RE_EN_NEGATIVE_SIGN_NUMBER = re.compile(r"(?<!\w)[-−]\s*\d")
 _RE_EN_NEGATIVE_SIGNED_NUMBER = re.compile(

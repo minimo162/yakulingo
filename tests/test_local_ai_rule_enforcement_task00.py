@@ -149,8 +149,29 @@ def test_text_style_comparison_retries_when_month_abbreviation_rule_violated() -
     assert "Jan." in result.options[0].text
 
 
-def test_text_style_comparison_still_retries_when_k_rule_unfixable() -> None:
+def test_text_style_comparison_auto_corrects_man_unit_without_retry() -> None:
     first = '{"translation":"The starting salary is 22 man yen.","explanation":""}'
+    local = SequencedLocalClient([first])
+    service = _make_service(local)
+
+    result = service.translate_text_with_style_comparison(
+        "初任給は22万円です。",
+        pre_detected_language="日本語",
+    )
+
+    assert local.translate_single_calls == 1
+    assert result.output_language == "en"
+    assert result.options
+    assert "220k" in result.options[0].text
+    assert " man " not in result.options[0].text.lower()
+    assert result.metadata
+    assert result.metadata.get("to_en_k_correction") is True
+
+
+def test_text_style_comparison_still_retries_when_k_rule_unfixable() -> None:
+    first = (
+        '{"translation":"The starting salary is 220 thousand yen.","explanation":""}'
+    )
     second = '{"translation":"The starting salary is 220k yen.","explanation":""}'
     local = SequencedLocalClient([first, second])
     service = _make_service(local)

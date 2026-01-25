@@ -3505,6 +3505,7 @@ class TranslationService:
         self._local_client = None
         self._local_prompt_builder = None
         self._local_batch_translator = None
+        self._local_translate_single_supports_runtime: bool | None = None
         self._copilot_lock = copilot_lock
         # Thread-safe cancellation using Event instead of bool flag
         self._cancel_event = threading.Event()
@@ -3602,6 +3603,24 @@ class TranslationService:
                     else None,
                     copilot_lock=self._local_call_lock,
                 )
+
+    def _local_translate_single_supports_runtime_param(self) -> bool:
+        cached = self._local_translate_single_supports_runtime
+        if cached is not None:
+            return cached
+        try:
+            import inspect
+
+            cached = (
+                "runtime"
+                in inspect.signature(
+                    self._translate_single_with_cancel_on_local
+                ).parameters
+            )
+        except Exception:
+            cached = False
+        self._local_translate_single_supports_runtime = cached
+        return cached
 
     def _get_active_client(self):
         if self._use_local_backend():
@@ -4035,13 +4054,44 @@ class TranslationService:
                 error_message="ローカルAIの初期化に失敗しました",
             )
 
-        embedded_ref = local_builder.build_reference_embed(
-            reference_files, input_text=text
-        )
         metadata: dict = {"backend": "local"}
-        if embedded_ref.warnings:
-            metadata["reference_warnings"] = embedded_ref.warnings
-        if embedded_ref.truncated:
+        prebuilt_prompt: str | None = None
+        embedded_ref = None
+
+        if output_language == "en":
+            build_with_embed = getattr(
+                local_builder, "build_text_to_en_single_with_embed", None
+            )
+            if callable(build_with_embed):
+                prebuilt_prompt, embedded_ref = build_with_embed(
+                    text,
+                    style=style,
+                    reference_files=reference_files,
+                    detected_language=detected_language,
+                )
+            else:
+                embedded_ref = local_builder.build_reference_embed(
+                    reference_files, input_text=text
+                )
+        else:
+            build_with_embed = getattr(
+                local_builder, "build_text_to_jp_with_embed", None
+            )
+            if callable(build_with_embed):
+                prebuilt_prompt, embedded_ref = build_with_embed(
+                    text,
+                    reference_files=reference_files,
+                    detected_language=detected_language,
+                )
+            else:
+                embedded_ref = local_builder.build_reference_embed(
+                    reference_files, input_text=text
+                )
+
+        warnings = getattr(embedded_ref, "warnings", None) if embedded_ref else None
+        if warnings:
+            metadata["reference_warnings"] = warnings
+        if bool(getattr(embedded_ref, "truncated", False)):
             metadata["reference_truncated"] = True
 
         try:
@@ -4050,17 +4100,7 @@ class TranslationService:
                 local_batch_translator, "max_chars_per_batch", None
             )
             runtime = None
-            translate_single_with_cancel = self._translate_single_with_cancel_on_local
-            supports_runtime = False
-            try:
-                import inspect
-
-                supports_runtime = (
-                    "runtime"
-                    in inspect.signature(translate_single_with_cancel).parameters
-                )
-            except Exception:
-                supports_runtime = False
+            supports_runtime = self._local_translate_single_supports_runtime_param()
 
             if supports_runtime:
                 local_client = self._local_client
@@ -4197,7 +4237,7 @@ class TranslationService:
                 )
 
             if output_language == "en":
-                prompt = local_builder.build_text_to_en_single(
+                prompt = prebuilt_prompt or local_builder.build_text_to_en_single(
                     text,
                     style=style,
                     reference_files=reference_files,
@@ -4474,7 +4514,7 @@ class TranslationService:
                     metadata=metadata,
                 )
 
-            prompt = local_builder.build_text_to_jp(
+            prompt = prebuilt_prompt or local_builder.build_text_to_jp(
                 text,
                 reference_files=reference_files,
                 detected_language=detected_language,

@@ -1565,6 +1565,34 @@ class LocalPromptBuilder:
         timing_enabled = _TIMING_ENABLED and logger.isEnabledFor(logging.DEBUG)
         t0 = time.perf_counter() if timing_enabled else 0.0
 
+        prompt, embedded_ref = self.build_text_to_en_single_with_embed(
+            text,
+            style=style,
+            reference_files=reference_files,
+            detected_language=detected_language,
+            extra_instruction=extra_instruction,
+        )
+        reference_section = embedded_ref.text if embedded_ref.text else ""
+        if timing_enabled:
+            logger.debug(
+                "[TIMING] LocalPromptBuilder.build_text_to_en_single: %.4fs (input_chars=%d style=%s prompt_chars=%d ref_chars=%d)",
+                time.perf_counter() - t0,
+                len(text or ""),
+                style,
+                len(prompt),
+                len(reference_section or ""),
+            )
+        return prompt
+
+    def build_text_to_en_single_with_embed(
+        self,
+        text: str,
+        *,
+        style: str,
+        reference_files: Optional[Sequence[Path]] = None,
+        detected_language: str = "日本語",
+        extra_instruction: str | None = None,
+    ) -> tuple[str, EmbeddedReference]:
         template = self._load_template("local_text_translate_to_en_single_json.txt")
         numeric_hints, exclude_glossary_sources = (
             self._build_to_en_generated_glossary_section_with_excludes(text)
@@ -1584,16 +1612,7 @@ class LocalPromptBuilder:
         prompt = prompt.replace("{input_text}", prompt_input_text)
         prompt = prompt.replace("{style}", style)
         prompt = prompt.replace("{detected_language}", detected_language)
-        if timing_enabled:
-            logger.debug(
-                "[TIMING] LocalPromptBuilder.build_text_to_en_single: %.4fs (input_chars=%d style=%s prompt_chars=%d ref_chars=%d)",
-                time.perf_counter() - t0,
-                len(text or ""),
-                style,
-                len(prompt),
-                len(reference_section or ""),
-            )
-        return prompt
+        return prompt, embedded_ref
 
     def build_text_to_jp(
         self,
@@ -1605,13 +1624,10 @@ class LocalPromptBuilder:
         timing_enabled = _TIMING_ENABLED and logger.isEnabledFor(logging.DEBUG)
         t0 = time.perf_counter() if timing_enabled else 0.0
 
-        template = self._load_template("local_text_translate_to_jp_json.txt")
-        embedded_ref = self.build_reference_embed(reference_files, input_text=text)
+        prompt, embedded_ref = self.build_text_to_jp_with_embed(
+            text, reference_files=reference_files, detected_language=detected_language
+        )
         reference_section = embedded_ref.text if embedded_ref.text else ""
-        prompt_input_text = self._base.normalize_input_text(text, "jp")
-        prompt = template.replace("{reference_section}", reference_section)
-        prompt = prompt.replace("{input_text}", prompt_input_text)
-        prompt = prompt.replace("{detected_language}", detected_language)
         if timing_enabled:
             logger.debug(
                 "[TIMING] LocalPromptBuilder.build_text_to_jp: %.4fs (input_chars=%d prompt_chars=%d ref_chars=%d)",
@@ -1621,3 +1637,19 @@ class LocalPromptBuilder:
                 len(reference_section or ""),
             )
         return prompt
+
+    def build_text_to_jp_with_embed(
+        self,
+        text: str,
+        *,
+        reference_files: Optional[Sequence[Path]] = None,
+        detected_language: str = "英語",
+    ) -> tuple[str, EmbeddedReference]:
+        template = self._load_template("local_text_translate_to_jp_json.txt")
+        embedded_ref = self.build_reference_embed(reference_files, input_text=text)
+        reference_section = embedded_ref.text if embedded_ref.text else ""
+        prompt_input_text = self._base.normalize_input_text(text, "jp")
+        prompt = template.replace("{reference_section}", reference_section)
+        prompt = prompt.replace("{input_text}", prompt_input_text)
+        prompt = prompt.replace("{detected_language}", detected_language)
+        return prompt, embedded_ref

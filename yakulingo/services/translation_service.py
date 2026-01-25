@@ -2617,11 +2617,7 @@ class BatchTranslator:
                     ):
                         cleaned_unique_translations[idx] = ""
 
-            if (
-                is_local_backend
-                and output_language == "en"
-                and not self._cancel_event.is_set()
-            ):
+            if output_language == "en" and not self._cancel_event.is_set():
                 auto_fixed_numeric = 0
                 for idx, translated_text in enumerate(cleaned_unique_translations):
                     if not translated_text or not translated_text.strip():
@@ -2640,6 +2636,12 @@ class BatchTranslator:
                         auto_fixed_numeric,
                         len(cleaned_unique_translations),
                     )
+
+            if (
+                is_local_backend
+                and output_language == "en"
+                and not self._cancel_event.is_set()
+            ):
 
                 numeric_rule_violation_indices = [
                     idx

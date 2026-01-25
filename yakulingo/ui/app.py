@@ -10288,24 +10288,11 @@ class YakuLingoApp:
                 error_message = "翻訳サービスの初期化に失敗しました"
 
             service = self.translation_service
-            prompt_builder = getattr(service, "prompt_builder", None) if service else None
-
-            if not error_message and not prompt_builder:
-                error_message = "テキスト翻訳テンプレートの初期化に失敗しました"
-
             if not error_message:
-                # Use the same templates as regular text translation.
-                detected_language = service.detect_language(text) if service else "日本語"
-                output_language = "en" if detected_language == "日本語" else "jp"
-
-                template: str | None
-                if output_language == "en":
-                    template = prompt_builder.get_text_compare_template()
+                if service is None:
+                    error_message = "翻訳サービスの初期化に失敗しました"
                 else:
-                    template = prompt_builder.get_text_template(
-                        output_language="jp",
-                        translation_style="concise",
-                    )
+                    _, template = service.get_back_translation_text_template(text)
 
                 if not template:
                     error_message = "テキスト翻訳テンプレートが見つかりません"

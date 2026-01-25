@@ -4058,6 +4058,27 @@ class TranslationService:
         logger.debug("Language detected locally: %s (%s)", detected, reason)
         return detected, reason
 
+    def get_back_translation_text_template(self, text: str) -> tuple[str, str | None]:
+        """Select the prompt template used for back-translation.
+
+        Back-translation uses the same templates as regular text translation:
+        - Japanese input -> English output compare template
+        - Non-Japanese input -> Japanese output template
+
+        Returns (output_language, template).
+        """
+
+        detected_language = self.detect_language(text)
+        output_language = "en" if detected_language == "日本語" else "jp"
+        if output_language == "en":
+            template = self.prompt_builder.get_text_compare_template()
+        else:
+            template = self.prompt_builder.get_text_template(
+                output_language="jp",
+                translation_style="concise",
+            )
+        return output_language, template
+
     def _translate_text_with_options_local(
         self,
         *,

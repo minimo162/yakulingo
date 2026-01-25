@@ -575,20 +575,6 @@ def _create_large_input_panel(
                                                 )
                                                 edit_btn.tooltip("用語集を編集")
 
-                                        # Edit translation rules button
-                                        if on_edit_translation_rules:
-                                            rules_btn = (
-                                                ui.button(
-                                                    icon="rule",
-                                                    on_click=on_edit_translation_rules,
-                                                )
-                                                .props(
-                                                    'flat dense round size=sm aria-label="翻訳ルールを編集"'
-                                                )
-                                                .classes("settings-btn")
-                                            )
-                                            rules_btn.tooltip("翻訳ルールを編集")
-
                                         # Reference file attachment button
                                         if on_attach_reference_file:
                                             has_files = bool(state.reference_files)

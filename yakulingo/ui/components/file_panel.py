@@ -355,19 +355,12 @@ def create_file_panel(
                                     _language_selector(
                                         state, on_language_change, compact=True
                                     )
-                            if state.file_output_language == "en":
-                                with ui.column().classes("advanced-section"):
-                                    ui.label("既定表示スタイル").classes(
-                                        "advanced-label"
-                                    )
-                                    _style_selector(translation_style, on_style_change)
                             with ui.column().classes("advanced-section"):
                                 ui.label("参照ファイル").classes("advanced-label")
                                 _glossary_selector(
                                     use_bundled_glossary,
                                     on_glossary_toggle,
                                     on_edit_glossary,
-                                    on_edit_translation_rules,
                                     reference_files,
                                     on_attach_reference_file,
                                     on_remove_reference_file,
@@ -455,14 +448,11 @@ def _file_translate_meta_chips(
     output_label = (
         "日本語→英語" if state.file_output_language == "en" else "英語→日本語"
     )
-    style_label = STYLE_OPTIONS.get(translation_style, (translation_style, ""))[0]
     with ui.column().classes("file-meta-summary items-center gap-1"):
         with ui.row().classes(
             "file-meta-chips items-center gap-2 flex-wrap justify-center"
         ):
             ui.label(output_label).classes("chip meta-chip")
-            if state.file_output_language == "en":
-                ui.label(f"既定: {style_label}").classes("chip meta-chip")
             if state.file_output_language_overridden:
                 ui.label("手動指定").classes("chip meta-chip override-chip")
             if use_bundled_glossary:
@@ -558,48 +548,10 @@ def _get_section_label(file_info: Optional[FileInfo]) -> str:
     return label_map.get(file_info.file_type, "セクション")
 
 
-# Translation style options with labels and tooltips
-STYLE_OPTIONS = {
-    "standard": ("標準", "本文・説明文向け"),
-    "concise": ("簡潔", "箇条書き・表向け"),
-}
-
-
-def _style_selector(current_style: str, on_change: Optional[Callable[[str], None]]):
-    """Translation style selector - segmented button style for English output"""
-    with ui.row().classes("w-full justify-center"):
-        with ui.element("div").classes("style-selector"):
-            for i, (style_key, (label, tooltip)) in enumerate(STYLE_OPTIONS.items()):
-                # Determine button position class
-                if i == 0:
-                    pos_class = "style-btn-left"
-                elif i == len(STYLE_OPTIONS) - 1:
-                    pos_class = "style-btn-right"
-                else:
-                    pos_class = "style-btn-middle"
-
-                style_classes = f"style-btn {pos_class}"
-                if current_style == style_key:
-                    style_classes += " style-btn-active"
-
-                display_label = label
-                display_tooltip = tooltip
-                btn = (
-                    ui.button(
-                        display_label,
-                        on_click=lambda k=style_key: on_change and on_change(k),
-                    )
-                    .classes(style_classes)
-                    .props("flat no-caps dense")
-                )
-                btn.tooltip(display_tooltip)
-
-
 def _glossary_selector(
     use_bundled_glossary: bool,
     on_toggle: Optional[Callable[[bool], None]],
     on_edit: Optional[Callable[[], None]],
-    on_edit_translation_rules: Optional[Callable[[], None]] = None,
     reference_files: Optional[List[Path]] = None,
     on_attach: Optional[Callable[[], None]] = None,
     on_remove: Optional[Callable[[int], None]] = None,
@@ -633,15 +585,6 @@ def _glossary_selector(
                     .classes("settings-btn")
                 )
                 edit_btn.tooltip("用語集を編集")
-
-        # Edit translation rules button
-        if on_edit_translation_rules:
-            rules_btn = (
-                ui.button(icon="rule", on_click=on_edit_translation_rules)
-                .props('flat dense round size=sm aria-label="翻訳ルールを編集"')
-                .classes("settings-btn")
-            )
-            rules_btn.tooltip("翻訳ルールを編集")
 
         # Reference file attachment button
         if on_attach:
@@ -1063,18 +1006,6 @@ def _complete_card(
             # Output files list
             if result and result.output_files:
                 output_files = list(result.output_files)
-                if output_language == "en" and result.output_path:
-                    style_label = STYLE_OPTIONS.get(
-                        translation_style, (translation_style, "")
-                    )[0]
-                    primary_key = str(result.output_path).casefold()
-                    for idx, (file_path, description) in enumerate(output_files):
-                        if str(file_path).casefold() == primary_key:
-                            output_files[idx] = (
-                                file_path,
-                                f"翻訳ファイル（{style_label}）",
-                            )
-                            break
                 with ui.column().classes("w-full gap-2 mt-2"):
                     for file_path, description in output_files:
                         _output_file_row(file_path, description)

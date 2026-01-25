@@ -1274,7 +1274,7 @@ MIN_AVAILABLE_MEMORY_GB_FOR_EARLY_CONNECT = (
     0.5  # Skip early Copilot init only on very low memory
 )
 TEXT_TRANSLATION_CHAR_LIMIT = 5000  # Max chars for text translation (clipboard trigger)
-STREAMING_PREVIEW_UPDATE_INTERVAL_SEC = 0.12  # UI streaming preview throttling interval
+STREAMING_PREVIEW_UPDATE_INTERVAL_SEC = 0.18  # UI streaming preview throttling interval
 STREAMING_PREVIEW_SCROLL_INTERVAL_SEC = 0.35  # Throttle scroll JS during streaming
 FILE_LANGUAGE_DETECTION_TIMEOUT_SEC = 8.0  # Avoid hanging file-language detection
 FILE_TRANSLATION_UI_VISIBILITY_HOLD_SEC = 600.0  # 翻訳完了直後のUI自動非表示を抑止
@@ -8401,10 +8401,10 @@ class YakuLingoApp:
             if current_len < 256:
                 return 1
             if current_len < 1024:
-                return 16
+                return 24
             if current_len < 4096:
-                return 48
-            return 96
+                return 64
+            return 128
 
         def _apply_update(*, force: bool = False) -> None:
             nonlocal dirty, update_scheduled, last_ui_update, latest_preview_text

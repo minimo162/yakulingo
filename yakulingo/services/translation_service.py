@@ -2637,11 +2637,7 @@ class BatchTranslator:
                         len(cleaned_unique_translations),
                     )
 
-            if (
-                is_local_backend
-                and output_language == "en"
-                and not self._cancel_event.is_set()
-            ):
+            if output_language == "en" and not self._cancel_event.is_set():
 
                 numeric_rule_violation_indices = [
                     idx
@@ -2687,9 +2683,13 @@ class BatchTranslator:
                             include_item_ids=include_item_ids,
                             reference_files=reference_files,
                         )
+                        numeric_hints = _build_to_en_numeric_hints("\n".join(retry_texts))
+                        extra_instruction_parts = [retry_instruction]
+                        if numeric_hints:
+                            extra_instruction_parts.append(numeric_hints.strip())
                         repair_prompt = _insert_extra_instruction(
                             repair_prompt,
-                            retry_instruction,
+                            "\n\n".join(extra_instruction_parts),
                         )
                         logger.warning(
                             "Batch %d: Numeric rule violation detected in %d translations; retrying %d items",

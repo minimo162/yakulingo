@@ -72,6 +72,7 @@ def test_text_style_comparison_retries_when_output_language_mismatched() -> None
     assert all(not _RE_JP_CHARS.search(option.text) for option in result.options)
     metadata = result.metadata or {}
     assert metadata.get("backend") == "local"
+    assert metadata.get("local_translate_single_calls") == 2
     assert metadata.get("output_language_retry") is True
 
 
@@ -142,6 +143,7 @@ def test_text_style_comparison_skips_numeric_retry_when_auto_fixable() -> None:
 
     metadata = result.metadata or {}
     assert metadata.get("to_en_numeric_unit_correction") is True
+    assert metadata.get("local_translate_single_calls") == 1
 
 
 def test_text_style_comparison_does_not_retry_when_output_keeps_jp_numeric_units() -> (

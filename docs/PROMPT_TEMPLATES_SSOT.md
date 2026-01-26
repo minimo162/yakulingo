@@ -18,7 +18,7 @@ Template (verbatim):
 
 Notes for YakuLingo:
 - {target_language} is not a direct runtime variable in YakuLingo.
-- Use the output-language selection (Copilot/Local template choice) instead.
+- Use the output-language selection (en/jp template choice) instead.
 - {source_text} maps to {input_text}.
 
 ## Template: XX<=>XX Translation, excluding ZH<=>XX.

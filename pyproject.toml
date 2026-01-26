@@ -1,7 +1,7 @@
 [project]
 name = "yakulingo"
 version = "0.0.1"
-description = "YakuLingo - Bidirectional Japanese/English Translation Tool (using M365 Copilot)"
+description = "YakuLingo - Bidirectional Japanese/English Translation Tool (local AI)"
 requires-python = ">=3.11,<3.14"
 dependencies = [
     # Core dependencies

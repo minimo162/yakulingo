@@ -184,4 +184,4 @@ powershell -ExecutionPolicy Bypass -File ".scripts\setup.ps1"
 | PowerShell | 5.1 以上 |
 | ネットワーク | 共有フォルダへのアクセス |
 | 自動更新 | GitHub へのアクセス（任意） |
-| ローカルAI | `local_ai/` 同梱（現状はAVX2版。AVX2非対応PCではCopilot利用、またはgeneric版同梱が必要） |
+| ローカルAI | `local_ai/` 同梱（現状はAVX2版。AVX2非対応PCではCPU版/非AVX2版（generic等）の同梱が必要） |

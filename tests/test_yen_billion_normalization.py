@@ -48,7 +48,6 @@ def test_translate_text_with_options_includes_normalized_amount_in_prompt() -> N
     local = RecordingLocalClient('{"translation":"テスト","explanation":""}')
     settings = AppSettings(translation_backend="local")
     service = TranslationService(
-        copilot=object(),
         config=settings,
         prompts_dir=prompts_dir,
     )

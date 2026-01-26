@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from unittest.mock import Mock
-
 from yakulingo.config.settings import AppSettings
 from yakulingo.services.local_ai_client import parse_batch_translations
 from yakulingo.services.translation_service import TranslationService
@@ -17,7 +15,7 @@ suffix"""
 
 
 def test_copilot_style_comparison_parses_two_sections() -> None:
-    service = TranslationService(copilot=Mock(), config=AppSettings())
+    service = TranslationService(config=AppSettings())
     raw = """[standard]
 Translation:
 Hello.
@@ -33,7 +31,7 @@ Hi.
 
 
 def test_copilot_style_comparison_parses_section_header_variants() -> None:
-    service = TranslationService(copilot=Mock(), config=AppSettings())
+    service = TranslationService(config=AppSettings())
     raw = """### ［standard］
 Translation:
 Hello.

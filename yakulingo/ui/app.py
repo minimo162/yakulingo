@@ -1726,10 +1726,9 @@ class YakuLingoApp:
             from yakulingo.services.translation_service import TranslationService
 
             self.translation_service = TranslationService(
-                object(),
-                self.settings,
-                get_default_prompts_dir(),
-                copilot_lock=self._copilot_lock,
+                config=self.settings,
+                prompts_dir=get_default_prompts_dir(),
+                client_lock=self._copilot_lock,
             )
             return True
         except (
@@ -11083,10 +11082,9 @@ class YakuLingoApp:
         async def worker() -> None:
             try:
                 service = TranslationService(
-                    object(),
-                    self.settings,
-                    get_default_prompts_dir(),
-                    copilot_lock=self._copilot_lock,
+                    config=self.settings,
+                    prompts_dir=get_default_prompts_dir(),
+                    client_lock=self._copilot_lock,
                 )
             except Exception as e:
                 # If worker setup fails, drain the queue to avoid deadlocking queue.join().

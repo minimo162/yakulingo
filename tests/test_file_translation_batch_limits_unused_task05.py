@@ -123,7 +123,6 @@ def _make_service_with_spy_translator() -> tuple[
     TranslationService, SpyBatchTranslator
 ]:
     service = TranslationService(
-        copilot=object(),
         config=AppSettings(translation_backend="local"),
     )
     spy = SpyBatchTranslator()

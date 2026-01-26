@@ -10,7 +10,7 @@ def test_local_batch_limits_select_text_vs_file() -> None:
         local_ai_max_chars_per_batch=111,
         local_ai_max_chars_per_batch_file=222,
     )
-    service = TranslationService(copilot=object(), config=settings)
+    service = TranslationService(config=settings)
 
     assert service._get_local_text_batch_limit() == 111
     limit, source = service._get_local_file_batch_limit_info()
@@ -24,7 +24,7 @@ def test_local_file_batch_limit_falls_back_when_file_limit_invalid() -> None:
         local_ai_max_chars_per_batch=111,
         local_ai_max_chars_per_batch_file=0,
     )
-    service = TranslationService(copilot=object(), config=settings)
+    service = TranslationService(config=settings)
 
     limit, source = service._get_local_file_batch_limit_info()
     assert limit == 111
@@ -38,7 +38,7 @@ def test_local_file_batch_limit_falls_back_when_file_limit_missing() -> None:
         request_timeout = 600
         local_ai_max_chars_per_batch = 111
 
-    service = TranslationService(copilot=object(), config=DummyConfig())  # type: ignore[arg-type]
+    service = TranslationService(config=DummyConfig())  # type: ignore[arg-type]
 
     limit, source = service._get_local_file_batch_limit_info()
     assert limit == 111

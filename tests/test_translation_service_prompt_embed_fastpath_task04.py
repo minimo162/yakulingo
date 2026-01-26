@@ -32,9 +32,7 @@ class PromptBuilderWithEmbed:
 
 
 def test_translate_text_with_options_local_uses_prompt_builder_embed_fastpath() -> None:
-    service = TranslationService(
-        copilot=object(), config=AppSettings(), prompts_dir=None
-    )
+    service = TranslationService(config=AppSettings(), prompts_dir=None)
     builder = PromptBuilderWithEmbed()
     service._local_prompt_builder = builder
     service._local_batch_translator = None

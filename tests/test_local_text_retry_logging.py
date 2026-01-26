@@ -50,7 +50,7 @@ def test_local_text_retry_logs_numeric_rule_violation(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     service = TranslationService(
-        copilot=object(), config=AppSettings(), prompts_dir=None
+        config=AppSettings(), prompts_dir=None
     )
     service._local_prompt_builder = FakeLocalPromptBuilder()
     service._local_batch_translator = None

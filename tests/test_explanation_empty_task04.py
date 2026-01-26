@@ -10,7 +10,7 @@ from yakulingo.ui.components.text_panel import _build_copy_payload
 
 
 def test_parse_single_translation_result_keeps_explanation_empty() -> None:
-    service = TranslationService(copilot=object(), config=AppSettings())
+    service = TranslationService(config=AppSettings())
 
     options = service._parse_single_translation_result("Translation: Hello")
     assert options
@@ -19,7 +19,7 @@ def test_parse_single_translation_result_keeps_explanation_empty() -> None:
 
 
 def test_parse_single_translation_result_preserves_multiline_translation_only() -> None:
-    service = TranslationService(copilot=object(), config=AppSettings())
+    service = TranslationService(config=AppSettings())
 
     raw = "Line1\nLine2"
     options = service._parse_single_translation_result(raw)

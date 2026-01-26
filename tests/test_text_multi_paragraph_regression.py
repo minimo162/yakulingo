@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from unittest.mock import Mock
 
 import pytest
 
@@ -118,7 +117,6 @@ def test_local_text_to_en_style_comparison_preserves_multi_paragraph_input_and_o
     )
     local = CapturingLocalClient([local_raw])
     service = TranslationService(
-        copilot=Mock(),
         config=AppSettings(translation_backend="local"),
         prompts_dir=Path("prompts"),
     )
@@ -152,7 +150,6 @@ def test_local_text_to_jp_preserves_multi_paragraph_input_and_output(
     local_raw = '{"translation":"これは第一段落です。\\n\\nこれは第二段落です。","explanation":""}'
     local = CapturingLocalClient([local_raw])
     service = TranslationService(
-        copilot=Mock(),
         config=AppSettings(translation_backend="local"),
         prompts_dir=Path("prompts"),
     )

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from unittest.mock import Mock
 
 import pytest
 
@@ -121,7 +120,6 @@ def test_local_text_long_segmentation_preserves_newlines_and_uses_batch_translat
     local = _CapturingLocalClient()
     prompt_builder = _DummyLocalPromptBuilder()
     service = TranslationService(
-        copilot=Mock(),
         config=AppSettings(translation_backend="local"),
         prompts_dir=Path("prompts"),
     )
@@ -133,7 +131,7 @@ def test_local_text_long_segmentation_preserves_newlines_and_uses_batch_translat
         max_chars_per_batch=200,
         request_timeout=30,
         enable_cache=False,
-        copilot_lock=None,
+        client_lock=None,
     )
 
     result = service.translate_text_with_options(

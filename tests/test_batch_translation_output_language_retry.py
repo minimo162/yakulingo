@@ -56,7 +56,7 @@ class SequenceCopilot:
 def test_batch_translator_retries_when_cjk_appears_in_en_output() -> None:
     copilot = SequenceCopilot(responses=[["売上高"], ["Net sales"]])
     translator = BatchTranslator(
-        copilot=copilot,  # type: ignore[arg-type]
+        client=copilot,  # type: ignore[arg-type]
         prompt_builder=DummyPromptBuilder(),  # type: ignore[arg-type]
         enable_cache=False,
     )
@@ -74,7 +74,7 @@ def test_batch_translator_retries_when_chinese_appears_in_jp_output() -> None:
         responses=[["\u6c49\u8bed\u6d4b\u8bd5"], ["日本語の翻訳です"]]
     )
     translator = BatchTranslator(
-        copilot=copilot,  # type: ignore[arg-type]
+        client=copilot,  # type: ignore[arg-type]
         prompt_builder=DummyPromptBuilder(),  # type: ignore[arg-type]
         enable_cache=False,
     )
@@ -96,7 +96,7 @@ def test_batch_translator_retries_when_kana_less_cjk_suspicious_jp_output() -> N
         responses=[[chinese_like], ["効率を高め、コストを下げる必要があります。"]]
     )
     translator = BatchTranslator(
-        copilot=copilot,  # type: ignore[arg-type]
+        client=copilot,  # type: ignore[arg-type]
         prompt_builder=DummyPromptBuilder(),  # type: ignore[arg-type]
         enable_cache=False,
     )

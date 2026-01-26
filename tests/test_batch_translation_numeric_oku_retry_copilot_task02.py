@@ -63,7 +63,7 @@ def test_batch_translator_copilot_retries_numeric_rule_when_auto_fix_not_possibl
         ]
     )
     translator = BatchTranslator(
-        copilot=copilot,  # type: ignore[arg-type]
+        client=copilot,  # type: ignore[arg-type]
         prompt_builder=DummyPromptBuilder(),  # type: ignore[arg-type]
         enable_cache=False,
     )

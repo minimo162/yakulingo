@@ -154,7 +154,7 @@ def test_local_batch_retries_on_runtime_error() -> None:
         responses=[RuntimeError("Local AI JSON parse error"), ["A", "B"]]
     )
     translator = BatchTranslator(
-        copilot=copilot,
+        client=copilot,
         prompt_builder=DummyPromptBuilder(),  # type: ignore[arg-type]
         max_chars_per_batch=600,
         enable_cache=False,
@@ -175,7 +175,7 @@ def test_local_batch_retries_on_runtime_error() -> None:
 def test_local_batch_persists_reduced_limit_after_prompt_too_long() -> None:
     copilot = PromptTooLongLocalAIClient(max_prompt_chars=400)
     translator = BatchTranslator(
-        copilot=copilot,
+        client=copilot,
         prompt_builder=DummyPromptBuilder(),  # type: ignore[arg-type]
         max_chars_per_batch=600,
         enable_cache=False,
@@ -199,7 +199,7 @@ def test_local_batch_persists_reduced_limit_after_prompt_too_long() -> None:
 def test_copilot_batch_does_not_persist_reduced_limit_after_prompt_too_long() -> None:
     copilot = PromptTooLongCopilotHandler(max_prompt_chars=400)
     translator = BatchTranslator(
-        copilot=copilot,  # type: ignore[arg-type]
+        client=copilot,  # type: ignore[arg-type]
         prompt_builder=DummyPromptBuilder(),  # type: ignore[arg-type]
         max_chars_per_batch=600,
         enable_cache=False,
@@ -225,7 +225,7 @@ def test_local_batch_falls_back_when_split_unavailable() -> None:
         responses=[RuntimeError("Local AI timeout"), RuntimeError("Local AI timeout")]
     )
     translator = BatchTranslator(
-        copilot=copilot,
+        client=copilot,
         prompt_builder=DummyPromptBuilder(),  # type: ignore[arg-type]
         max_chars_per_batch=300,
         enable_cache=False,
@@ -256,7 +256,7 @@ def test_local_batch_retries_when_numeric_rules_violated() -> None:
         ]
     )
     translator = BatchTranslator(
-        copilot=copilot,
+        client=copilot,
         prompt_builder=DummyPromptBuilder(),  # type: ignore[arg-type]
         max_chars_per_batch=600,
         enable_cache=False,
@@ -291,7 +291,7 @@ def test_local_batch_retries_only_items_with_k_rule_violation() -> None:
         ]
     )
     translator = BatchTranslator(
-        copilot=copilot,
+        client=copilot,
         prompt_builder=DummyPromptBuilder(),  # type: ignore[arg-type]
         max_chars_per_batch=600,
         enable_cache=False,
@@ -319,7 +319,7 @@ def test_local_batch_auto_corrects_negative_triangle_without_retry() -> None:
         ]
     )
     translator = BatchTranslator(
-        copilot=copilot,
+        client=copilot,
         prompt_builder=DummyPromptBuilder(),  # type: ignore[arg-type]
         max_chars_per_batch=600,
         enable_cache=False,
@@ -348,7 +348,7 @@ def test_local_batch_auto_corrects_month_abbrev_without_retry() -> None:
         ]
     )
     translator = BatchTranslator(
-        copilot=copilot,
+        client=copilot,
         prompt_builder=DummyPromptBuilder(),  # type: ignore[arg-type]
         max_chars_per_batch=600,
         enable_cache=False,

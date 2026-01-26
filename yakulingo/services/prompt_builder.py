@@ -9,7 +9,7 @@ Prompt file structure:
 - text_translate_to_jp.txt: Text translation → Japanese (translation-only)
 - adjust_*.txt: Adjustment prompts (shorter, longer, custom)
 
-Translation rules are no longer injected into Copilot prompts. Consistency
+Translation rules are no longer injected into prompts. Consistency
 interventions should be handled via glossary (reference files) instead.
 """
 
@@ -244,7 +244,7 @@ DEFAULT_TEXT_TO_JP_TEMPLATE = """## テキスト翻訳リクエスト（日本�
 class PromptBuilder:
     """
     Builds translation prompts for file translation.
-    Reference files are attached to Copilot, not embedded in prompt.
+    Reference files are handled out-of-band (attached/embedded depending on backend).
 
     Supports style-specific prompts for English output (standard/concise).
     Translation rules are no longer injected (glossary-centered prompts).
@@ -691,7 +691,7 @@ class PromptBuilder:
         # Build reference section
         reference_section = ""
         if has_reference_files:
-            # Reference files attached to Copilot
+            # Reference files are handled separately from the prompt body
             reference_section = REFERENCE_INSTRUCTION
             inline_glossary = self._build_inline_glossary_section(
                 reference_files, input_text=input_text
@@ -734,7 +734,7 @@ class PromptBuilder:
             translation_style: "standard" or "concise" (default: "concise")
                               Only affects English output
             include_item_ids: Prepend [[ID:n]] marker for stable parsing
-            reference_files: Optional reference files (Local AI embeds content; Copilot ignores)
+            reference_files: Optional reference files (attached/embedded depending on backend)
 
         Returns:
             Complete prompt with numbered input

@@ -11,7 +11,7 @@ def test_local_style_comparison_retries_once_on_output_language_mismatch(
 ) -> None:
     settings = AppSettings(translation_backend="local", copilot_enabled=False)
     service = TranslationService(
-        copilot=object(), config=settings, prompts_dir=Path("prompts")
+        config=settings, prompts_dir=Path("prompts")
     )
     call_count = 0
 

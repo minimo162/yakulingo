@@ -56,7 +56,7 @@ class BillionCopilot:
 def test_batch_translator_copilot_auto_corrects_billion_to_oku_when_safe() -> None:
     copilot = BillionCopilot(response="Net sales were 22,385 billion yen.")
     translator = BatchTranslator(
-        copilot=copilot,  # type: ignore[arg-type]
+        client=copilot,  # type: ignore[arg-type]
         prompt_builder=DummyPromptBuilder(),  # type: ignore[arg-type]
         enable_cache=False,
     )

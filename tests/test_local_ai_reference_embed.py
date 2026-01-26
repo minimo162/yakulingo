@@ -3,7 +3,7 @@ from __future__ import annotations
 import heapq
 from pathlib import Path
 
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 from yakulingo.services.translation_service import TranslationService
 from yakulingo.ui.app import YakuLingoApp
@@ -595,8 +595,7 @@ def test_local_followup_reference_embed_includes_local_reference(
     settings.use_bundled_glossary = False
     app = YakuLingoApp()
     app.translation_service = TranslationService(
-        Mock(),
-        settings,
+        config=settings,
         prompts_dir=Path(__file__).resolve().parents[1] / "prompts",
     )
 

@@ -40,7 +40,7 @@ def test_e2e_txt_translate_file_creates_outputs(
     tmp_path: Path, local_ai_translate_sync_mock: dict[str, int]
 ) -> None:
     settings = AppSettings(translation_backend="local")
-    service = TranslationService(copilot=object(), config=settings)
+    service = TranslationService(config=settings)
 
     input_path = tmp_path / "sample.txt"
     input_text = "これはテストです。\n\n次の段落です。"
@@ -67,7 +67,7 @@ def test_e2e_txt_selected_sections_translates_only_selected(
     tmp_path: Path, local_ai_translate_sync_mock: dict[str, int]
 ) -> None:
     settings = AppSettings(translation_backend="local")
-    service = TranslationService(copilot=object(), config=settings)
+    service = TranslationService(config=settings)
 
     input_path = tmp_path / "sections.txt"
     paragraphs = ["段落1です。", "段落2です。", "段落3です。"]
@@ -93,7 +93,7 @@ def test_e2e_txt_translation_cache_is_cleared_per_file(
     tmp_path: Path, local_ai_translate_sync_mock: dict[str, int]
 ) -> None:
     settings = AppSettings(translation_backend="local")
-    service = TranslationService(copilot=object(), config=settings)
+    service = TranslationService(config=settings)
 
     input_path = tmp_path / "cache.txt"
     input_path.write_text("同じ文章です。", encoding="utf-8")
@@ -114,7 +114,7 @@ def test_e2e_txt_bilingual_and_glossary_outputs(
     settings = AppSettings(translation_backend="local")
     settings.bilingual_output = True
     settings.export_glossary = True
-    service = TranslationService(copilot=object(), config=settings)
+    service = TranslationService(config=settings)
 
     input_path = tmp_path / "outputs.txt"
     input_path.write_text("用語集テストです。", encoding="utf-8")

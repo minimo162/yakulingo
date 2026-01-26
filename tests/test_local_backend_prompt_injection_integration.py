@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 from yakulingo.config.settings import AppSettings
 from yakulingo.services.translation_service import TranslationService
@@ -13,7 +13,6 @@ def test_local_backend_prompt_includes_rules_and_bundled_glossary() -> None:
 
     settings = AppSettings(translation_backend="local", use_bundled_glossary=True)
     service = TranslationService(
-        copilot=Mock(),
         config=settings,
         prompts_dir=prompts_dir,
     )

@@ -18,7 +18,7 @@ def _set_stub_processors(service: TranslationService) -> None:
 @pytest.mark.unit
 def test_translate_file_clears_cache_at_start_and_end_non_pdf(tmp_path: Path) -> None:
     settings = AppSettings(translation_backend="local")
-    service = TranslationService(copilot=object(), config=settings)
+    service = TranslationService(config=settings)
     _set_stub_processors(service)
 
     events: list[str] = []
@@ -47,7 +47,7 @@ def test_translate_file_clears_cache_at_start_and_end_non_pdf(tmp_path: Path) ->
 @pytest.mark.unit
 def test_translate_file_clears_cache_at_start_and_end_pdf(tmp_path: Path) -> None:
     settings = AppSettings(translation_backend="local")
-    service = TranslationService(copilot=object(), config=settings)
+    service = TranslationService(config=settings)
     _set_stub_processors(service)
 
     events: list[str] = []
@@ -76,7 +76,7 @@ def test_translate_file_clears_cache_even_when_translation_raises(
     tmp_path: Path,
 ) -> None:
     settings = AppSettings(translation_backend="local")
-    service = TranslationService(copilot=object(), config=settings)
+    service = TranslationService(config=settings)
     _set_stub_processors(service)
 
     events: list[str] = []

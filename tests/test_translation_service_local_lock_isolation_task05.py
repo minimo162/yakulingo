@@ -31,9 +31,8 @@ def test_translation_service_local_translate_does_not_block_on_copilot_lock() ->
     assert copilot_lock.acquire(timeout=1.0)
     try:
         service = TranslationService(
-            copilot=object(),
             config=AppSettings(translation_backend="local"),
-            copilot_lock=copilot_lock,
+            client_lock=copilot_lock,
         )
 
         dummy_client = DummyLocalClient()

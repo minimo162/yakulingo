@@ -9,11 +9,7 @@ from yakulingo.services.translation_service import TranslationService
 def _make_service() -> TranslationService:
     repo_root = Path(__file__).resolve().parents[1]
     prompts_dir = repo_root / "prompts"
-    return TranslationService(
-        copilot=object(),
-        config=AppSettings(),
-        prompts_dir=prompts_dir,
-    )
+    return TranslationService(config=AppSettings(), prompts_dir=prompts_dir)
 
 
 def test_back_translation_template_uses_text_compare_for_japanese_input() -> None:
@@ -43,4 +39,3 @@ def test_back_translation_template_uses_text_to_jp_for_english_input() -> None:
     assert expected
     assert template == expected
     assert "Back Translation Request" not in template
-

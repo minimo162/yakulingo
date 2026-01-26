@@ -9,7 +9,7 @@ from yakulingo.services.translation_service import TranslationService
 def test_local_text_options_streams_translation(monkeypatch) -> None:
     settings = AppSettings(translation_backend="local")
     service = TranslationService(
-        copilot=object(), config=settings, prompts_dir=Path("prompts")
+        config=settings, prompts_dir=Path("prompts")
     )
     received: list[str] = []
 
@@ -46,7 +46,7 @@ def test_local_text_options_streams_translation(monkeypatch) -> None:
 def test_local_text_style_comparison_streams_translation(monkeypatch) -> None:
     settings = AppSettings(translation_backend="local")
     service = TranslationService(
-        copilot=object(), config=settings, prompts_dir=Path("prompts")
+        config=settings, prompts_dir=Path("prompts")
     )
     received: list[str] = []
 
@@ -82,7 +82,7 @@ def test_local_text_style_comparison_streams_translation(monkeypatch) -> None:
 def test_local_streaming_throttle_still_emits_final(monkeypatch) -> None:
     settings = AppSettings(translation_backend="local")
     service = TranslationService(
-        copilot=object(), config=settings, prompts_dir=Path("prompts")
+        config=settings, prompts_dir=Path("prompts")
     )
     received: list[str] = []
 

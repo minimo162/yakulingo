@@ -62,7 +62,7 @@ class HangulThenEnglishCopilot:
 def test_batch_translator_retries_when_hangul_appears_in_en_output() -> None:
     copilot = HangulThenEnglishCopilot()
     translator = BatchTranslator(
-        copilot=copilot,  # type: ignore[arg-type]
+        client=copilot,  # type: ignore[arg-type]
         prompt_builder=DummyPromptBuilder(),  # type: ignore[arg-type]
         enable_cache=False,
     )

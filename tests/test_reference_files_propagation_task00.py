@@ -148,7 +148,6 @@ def test_translation_service_passes_reference_files_to_local_translate_single(
 
     local = _RecordingCopilot()
     service = TranslationService(
-        copilot=object(),  # unused in local-only text paths
         config=AppSettings(translation_backend="local"),
         prompts_dir=prompts_dir,
     )
@@ -217,7 +216,7 @@ def test_batch_translator_passes_reference_files_to_backend_translate_sync(
     prompt_builder = _RecordingPromptBuilder()
     copilot = _RecordingCopilotSync()
     translator = BatchTranslator(
-        copilot=copilot,  # type: ignore[arg-type]
+        client=copilot,  # type: ignore[arg-type]
         prompt_builder=prompt_builder,  # type: ignore[arg-type]
         enable_cache=False,
     )

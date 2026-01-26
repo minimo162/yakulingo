@@ -1,7 +1,7 @@
 # yakulingo/services/translation_service.py
 """
 Main translation service.
-Coordinates between UI, Copilot, and file processors.
+Coordinates between UI, translation backend, and file processors.
 Bidirectional translation: Japanese → English, Other → Japanese (auto-detected).
 """
 
@@ -17,7 +17,7 @@ from decimal import Decimal, InvalidOperation
 from functools import lru_cache
 from itertools import islice
 from pathlib import Path
-from typing import Callable, Optional, TYPE_CHECKING
+from typing import Callable, Optional, Protocol, TYPE_CHECKING
 from zipfile import BadZipFile
 import unicodedata
 
@@ -27,6 +27,35 @@ from yakulingo.services.local_ai_client import is_truncated_json
 
 if TYPE_CHECKING:
     from yakulingo.services.local_llama_server import LocalAIServerRuntime
+
+
+class BatchTranslationClient(Protocol):
+    def set_cancel_callback(self, callback: Optional[Callable[[], bool]]) -> None: ...
+
+    def translate_sync(
+        self,
+        texts: list[str],
+        prompt: str,
+        reference_files: Optional[list[Path]] = None,
+        skip_clear_wait: bool = False,
+        timeout: int = 300,
+        include_item_ids: bool = False,
+    ) -> list[str]: ...
+
+
+class SingleTranslationClient(Protocol):
+    def set_cancel_callback(self, callback: Optional[Callable[[], bool]]) -> None: ...
+
+    def translate_single(
+        self,
+        text: str,
+        prompt: str,
+        reference_files: Optional[list[Path]] = None,
+        on_chunk: "Callable[[str], None] | None" = None,
+    ) -> str: ...
+
+
+class BackendClient(BatchTranslationClient, SingleTranslationClient, Protocol): ...
 
 # Module logger
 logger = logging.getLogger(__name__)
@@ -91,14 +120,14 @@ _RE_INPUT_MARKER_LINE = re.compile(
 
 # Pattern to remove translation label prefixes from parsed result
 # These labels come from prompt template output format examples (e.g., "訳文: 英語翻訳")
-# When Copilot follows the format literally, these labels appear at the start of the translation
+# When the backend follows the format literally, these labels appear at the start of the translation
 _RE_TRANSLATION_LABEL = re.compile(
     r"^(?:英語翻訳|日本語翻訳|English\s*Translation|Japanese\s*Translation)\s*",
     re.IGNORECASE,
 )
 
 # Pattern to remove trailing attached filename from explanation
-# Copilot sometimes appends the attached file name (e.g., "glossary", "glossary.csv") to the response
+# Chat UI/backends sometimes append the attached file name (e.g., "glossary", "glossary.csv") to the response
 # This pattern matches common reference file names at the end of the explanation
 _RE_TRAILING_FILENAME = re.compile(
     r"[\s。．.、,]*(glossary(?:_old)?|abbreviations|用語集|略語集)(?:\.[a-z]{2,4})?\s*$",
@@ -367,7 +396,7 @@ def _fix_to_en_oku_numeric_unit_if_possible(
 ) -> tuple[str, bool]:
     """Try to fix `billion/trillion/bn` → `oku` for JP→EN when it is safe.
 
-    This targets common Copilot mistakes such as:
+    This targets common model mistakes such as:
     - `22,385 billion yen` → `22,385 oku yen` (unit label mismatch; number is already in oku)
     - `2,238.5 billion yen` → `22,385 oku yen` (unit-based conversion to oku matches hints)
     """
@@ -530,15 +559,15 @@ def _fix_to_en_k_notation_if_possible(
     return fixed, True
 
 
-def _needs_to_en_numeric_rule_retry_copilot(
+def _needs_to_en_numeric_rule_retry_conservative(
     source_text: str,
     translated_text: str,
 ) -> bool:
-    """Copilot向け: 明確に誤変換の可能性が高い場合のみ最小限でリトライする。
+    """英訳の数値ルール違反を最小限でリトライする（保守的）。
 
     - `billion/trillion/bn` は確実にNG
     - 兆/億を含む入力で `oku` が欠落していても、出力が兆/億を保持している場合は
-      「表記が変換されていないだけ」で意味は崩れにくいのでリトライしない（速度優先）。
+       「表記が変換されていないだけ」で意味は崩れにくいのでリトライしない（速度優先）。
     """
     if not translated_text:
         return False
@@ -554,19 +583,21 @@ def _needs_to_en_numeric_rule_retry_copilot(
     return True
 
 
-def _needs_to_en_numeric_rule_retry_copilot_after_auto_fix(
+def _needs_to_en_numeric_rule_retry_conservative_after_safe_fix(
     source_text: str,
     translated_text: str,
 ) -> bool:
-    """Copilot再呼び出しが必要か（安全なローカル補正後もNGが残る場合のみTrue）。"""
-    if not _needs_to_en_numeric_rule_retry_copilot(source_text, translated_text):
+    """安全なローカル補正後もNGが残る場合のみTrue（保守的リトライ判定）。"""
+    if not _needs_to_en_numeric_rule_retry_conservative(source_text, translated_text):
         return False
 
     fixed_text, fixed = _fix_to_en_oku_numeric_unit_if_possible(
         source_text=source_text,
         translated_text=translated_text,
     )
-    if fixed and not _needs_to_en_numeric_rule_retry_copilot(source_text, fixed_text):
+    if fixed and not _needs_to_en_numeric_rule_retry_conservative(
+        source_text, fixed_text
+    ):
         return False
 
     return True
@@ -869,7 +900,7 @@ def _sanitize_output_stem(name: str) -> str:
 
 
 def _strip_input_markers(text: str) -> str:
-    """Remove input marker lines accidentally echoed by Copilot."""
+    """Remove input marker lines accidentally echoed by the backend."""
     if not text:
         return text
     lines = [
@@ -879,7 +910,7 @@ def _strip_input_markers(text: str) -> str:
 
 
 def _strip_trailing_attachment_links(text: str) -> str:
-    """Remove trailing Copilot attachment links like [file | Excel](...)."""
+    """Remove trailing attachment links like [file | Excel](...)."""
     if not text:
         return text
     cleaned = text.strip()
@@ -1077,7 +1108,7 @@ def _wrap_local_streaming_on_chunk(
 
 class LanguageDetector:
     """
-    Language detection with hybrid local/Copilot approach.
+    Language detection with local-only approach.
 
     Provides character-level detection helpers and text-level language detection.
     Use the singleton instance `language_detector` or create your own instance.
@@ -1265,7 +1296,7 @@ class LanguageDetector:
 
     def detect_local(self, text: str) -> str:
         """
-        Detect language locally without Copilot.
+        Detect language locally.
 
         Detection priority:
         1. Hiragana/Katakana present → "日本語" (definite Japanese)
@@ -1275,9 +1306,8 @@ class LanguageDetector:
         5. CJK only (no kana) → "日本語" (assume Japanese for target users)
         6. Other/mixed → "日本語" (default fallback)
 
-        Note: This method always returns a language name (never None) to avoid
-        slow Copilot calls for language detection. Target users are Japanese,
-        so Japanese is used as the default fallback.
+        Note: This method always returns a language name (never None). Target
+        users are Japanese, so Japanese is used as the default fallback.
 
         Args:
             text: Text to analyze
@@ -1800,16 +1830,16 @@ class BatchTranslator:
 
     def __init__(
         self,
-        copilot: object,
+        client: BatchTranslationClient | None,
         prompt_builder: PromptBuilder,
         max_chars_per_batch: Optional[int] = None,
         request_timeout: Optional[int] = None,
         enable_cache: bool = True,
-        copilot_lock: Optional[threading.Lock] = None,
+        client_lock: Optional[threading.Lock] = None,
     ):
-        self.copilot = copilot
+        self.client = client
         self.prompt_builder = prompt_builder
-        self._copilot_lock = copilot_lock
+        self._client_lock = client_lock
         # Thread-safe cancellation using Event instead of bool flag
         self._cancel_event = threading.Event()
 
@@ -1890,7 +1920,13 @@ class BatchTranslator:
             from yakulingo.services.local_ai_client import LocalAIClient
         except Exception:
             return False
-        return isinstance(self.copilot, LocalAIClient)
+        return isinstance(self.client, LocalAIClient)
+
+    def _require_client(self) -> BatchTranslationClient:
+        client = self.client
+        if client is None:
+            raise RuntimeError("Translation client not configured")
+        return client
 
     def translate_blocks(
         self,
@@ -2219,13 +2255,12 @@ class BatchTranslator:
             # Skip clear wait for 2nd+ batches (we just finished getting a response)
             skip_clear_wait = i > 0
             try:
-                lock = self._copilot_lock or nullcontext()
+                client = self._require_client()
+                lock = self._client_lock or nullcontext()
                 with lock:
-                    self.copilot.set_cancel_callback(
-                        lambda: self._cancel_event.is_set()
-                    )
+                    client.set_cancel_callback(lambda: self._cancel_event.is_set())
                     try:
-                        unique_translations = self.copilot.translate_sync(
+                        unique_translations = client.translate_sync(
                             unique_texts,
                             prompt,
                             files_to_attach,
@@ -2234,7 +2269,7 @@ class BatchTranslator:
                             include_item_ids=include_item_ids,
                         )
                     finally:
-                        self.copilot.set_cancel_callback(None)
+                        client.set_cancel_callback(None)
             except TranslationCancelledError:
                 logger.info(
                     "Translation cancelled during batch %d/%d", i + 1, len(batches)
@@ -2441,13 +2476,12 @@ class BatchTranslator:
                     len(hangul_indices),
                 )
                 try:
-                    lock = self._copilot_lock or nullcontext()
+                    client = self._require_client()
+                    lock = self._client_lock or nullcontext()
                     with lock:
-                        self.copilot.set_cancel_callback(
-                            lambda: self._cancel_event.is_set()
-                        )
+                        client.set_cancel_callback(lambda: self._cancel_event.is_set())
                         try:
-                            repair_translations = self.copilot.translate_sync(
+                            repair_translations = client.translate_sync(
                                 repair_texts,
                                 repair_prompt,
                                 files_to_attach,
@@ -2456,7 +2490,7 @@ class BatchTranslator:
                                 include_item_ids=include_item_ids,
                             )
                         finally:
-                            self.copilot.set_cancel_callback(None)
+                            client.set_cancel_callback(None)
                 except TranslationCancelledError:
                     logger.info(
                         "Translation cancelled during batch %d/%d", i + 1, len(batches)
@@ -2542,13 +2576,14 @@ class BatchTranslator:
                         output_language,
                     )
                     try:
-                        lock = self._copilot_lock or nullcontext()
+                        client = self._require_client()
+                        lock = self._client_lock or nullcontext()
                         with lock:
-                            self.copilot.set_cancel_callback(
+                            client.set_cancel_callback(
                                 lambda: self._cancel_event.is_set()
                             )
                             try:
-                                repair_translations = self.copilot.translate_sync(
+                                repair_translations = client.translate_sync(
                                     repair_texts,
                                     repair_prompt,
                                     files_to_attach,
@@ -2557,7 +2592,7 @@ class BatchTranslator:
                                     include_item_ids=include_item_ids,
                                 )
                             finally:
-                                self.copilot.set_cancel_callback(None)
+                                client.set_cancel_callback(None)
                     except TranslationCancelledError:
                         logger.info(
                             "Translation cancelled during batch %d/%d",
@@ -2699,13 +2734,14 @@ class BatchTranslator:
                         )
                         repair_translations: list[str] = []
                         try:
-                            lock = self._copilot_lock or nullcontext()
+                            client = self._require_client()
+                            lock = self._client_lock or nullcontext()
                             with lock:
-                                self.copilot.set_cancel_callback(
+                                client.set_cancel_callback(
                                     lambda: self._cancel_event.is_set()
                                 )
                                 try:
-                                    repair_translations = self.copilot.translate_sync(
+                                    repair_translations = client.translate_sync(
                                         retry_texts,
                                         repair_prompt,
                                         files_to_attach,
@@ -2714,7 +2750,7 @@ class BatchTranslator:
                                         include_item_ids=include_item_ids,
                                     )
                                 finally:
-                                    self.copilot.set_cancel_callback(None)
+                                    client.set_cancel_callback(None)
                         except TranslationCancelledError:
                             logger.info(
                                 "Translation cancelled during batch %d/%d",
@@ -2887,13 +2923,14 @@ class BatchTranslator:
                         )
                         repair_translations: list[str] = []
                         try:
-                            lock = self._copilot_lock or nullcontext()
+                            client = self._require_client()
+                            lock = self._client_lock or nullcontext()
                             with lock:
-                                self.copilot.set_cancel_callback(
+                                client.set_cancel_callback(
                                     lambda: self._cancel_event.is_set()
                                 )
                                 try:
-                                    repair_translations = self.copilot.translate_sync(
+                                    repair_translations = client.translate_sync(
                                         rule_retry_texts,
                                         repair_prompt,
                                         files_to_attach,
@@ -2902,7 +2939,7 @@ class BatchTranslator:
                                         include_item_ids=include_item_ids,
                                     )
                                 finally:
-                                    self.copilot.set_cancel_callback(None)
+                                    client.set_cancel_callback(None)
                         except TranslationCancelledError:
                             logger.info(
                                 "Translation cancelled during batch %d/%d",
@@ -3256,11 +3293,12 @@ class BatchTranslator:
             )
             if extra_instruction:
                 prompt = _insert_extra_instruction(prompt, extra_instruction)
-            lock = self._copilot_lock or nullcontext()
+            client = self._require_client()
+            lock = self._client_lock or nullcontext()
             with lock:
-                self.copilot.set_cancel_callback(lambda: self._cancel_event.is_set())
+                client.set_cancel_callback(lambda: self._cancel_event.is_set())
                 try:
-                    return self.copilot.translate_sync(
+                    return client.translate_sync(
                         [text],
                         prompt,
                         files_to_attach,
@@ -3269,7 +3307,7 @@ class BatchTranslator:
                         include_item_ids=include_item_ids,
                     )
                 finally:
-                    self.copilot.set_cancel_callback(None)
+                    client.set_cancel_callback(None)
 
         # Phase 2: Translate missing texts one-by-one
         for block in translatable_blocks:
@@ -3513,25 +3551,27 @@ class BatchTranslator:
 class TranslationService:
     """
     Main translation service.
-    Coordinates between UI, Copilot, and file processors.
+    Coordinates between UI, translation backend, and file processors.
     """
 
     def __init__(
         self,
-        copilot: object,
         config: AppSettings,
         prompts_dir: Optional[Path] = None,
-        copilot_lock: Optional[threading.Lock] = None,
+        *,
+        client: BackendClient | None = None,
+        client_lock: Optional[threading.Lock] = None,
     ):
-        self.copilot = copilot
         self.config = config
+        self._client = client
+        self._client_lock = client_lock
         self.prompt_builder = PromptBuilder(prompts_dir)
         self.batch_translator = BatchTranslator(
-            copilot,
+            client,
             self.prompt_builder,
             max_chars_per_batch=config.max_chars_per_batch if config else None,
             request_timeout=config.request_timeout if config else None,
-            copilot_lock=copilot_lock,
+            client_lock=client_lock,
         )
         self._local_init_lock = threading.Lock()
         self._local_call_lock = threading.Lock()
@@ -3539,7 +3579,6 @@ class TranslationService:
         self._local_prompt_builder = None
         self._local_batch_translator = None
         self._local_translate_single_supports_runtime: bool | None = None
-        self._copilot_lock = copilot_lock
         # Thread-safe cancellation using Event instead of bool flag
         self._cancel_event = threading.Event()
         self._cancel_callback_depth = 0
@@ -3589,7 +3628,7 @@ class TranslationService:
         try:
             return bool(
                 self.config
-                and getattr(self.config, "translation_backend", "copilot") == "local"
+                and getattr(self.config, "translation_backend", "local") == "local"
             )
         except Exception:
             return False
@@ -3634,7 +3673,7 @@ class TranslationService:
                     request_timeout=self.config.request_timeout
                     if self.config
                     else None,
-                    copilot_lock=self._local_call_lock,
+                    client_lock=self._local_call_lock,
                 )
 
     def _local_translate_single_supports_runtime_param(self) -> bool:
@@ -3655,16 +3694,25 @@ class TranslationService:
         self._local_translate_single_supports_runtime = cached
         return cached
 
-    def _get_active_client(self):
+    def _get_active_client(self) -> SingleTranslationClient:
         if self._use_local_backend():
             self._ensure_local_backend()
-            return self._local_client
-        return self.copilot
+            client = self._local_client
+            if client is None:
+                raise RuntimeError("Local AI client not initialized")
+            return client
+        client = self._client
+        if client is None:
+            raise RuntimeError("Translation client not configured")
+        return client
 
     def _get_active_batch_translator(self) -> BatchTranslator:
         if self._use_local_backend():
             self._ensure_local_backend()
-            return self._local_batch_translator
+            translator = self._local_batch_translator
+            if translator is None:
+                raise RuntimeError("Local batch translator not initialized")
+            return translator
         return self.batch_translator
 
     def _get_local_text_batch_limit(self) -> Optional[int]:
@@ -3843,13 +3891,9 @@ class TranslationService:
 
     @contextmanager
     def _ui_window_sync_scope(self, reason: str):
-        """翻訳中のみ、EdgeウィンドウをUIの背面に同期表示する（対応環境のみ）。"""
-        copilot = getattr(self, "copilot", None)
-        scope_factory = (
-            getattr(copilot, "ui_window_sync_scope", None)
-            if copilot is not None
-            else None
-        )
+        """翻訳中のみ、バックエンドのウィンドウをUIの背面に同期表示する（対応環境のみ）。"""
+        client = self._client
+        scope_factory = getattr(client, "ui_window_sync_scope", None) if client else None
         if scope_factory is None:
             yield
             return
@@ -3881,41 +3925,12 @@ class TranslationService:
                 lock = (
                     self._local_call_lock
                     if self._use_local_backend()
-                    else (self._copilot_lock or nullcontext())
+                    else (self._client_lock or nullcontext())
                 )
                 with lock:
                     return client.translate_single(
                         text, prompt, reference_files, on_chunk
                     )
-
-    def _translate_single_with_cancel_on_copilot(
-        self,
-        text: str,
-        prompt: str,
-        reference_files: Optional[list[Path]] = None,
-        on_chunk: "Callable[[str], None] | None" = None,
-    ) -> str:
-        """Force a Copilot translate_single call regardless of translation_backend."""
-        client = self.copilot
-        set_cb = getattr(client, "set_cancel_callback", None)
-        lock = self._copilot_lock or nullcontext()
-        with self._ui_window_sync_scope("translate_single"):
-            if callable(set_cb):
-                try:
-                    set_cb(lambda: self._cancel_event.is_set())
-                except Exception:
-                    set_cb = None
-            try:
-                with lock:
-                    return client.translate_single(
-                        text, prompt, reference_files, on_chunk
-                    )
-            finally:
-                if callable(set_cb):
-                    try:
-                        set_cb(None)
-                    except Exception:
-                        pass
 
     def _translate_single_with_cancel_on_local(
         self,
@@ -4022,7 +4037,7 @@ class TranslationService:
                 duration_seconds=time.monotonic() - start_time,
             )
         except (RuntimeError, ValueError, ConnectionError, TimeoutError) as e:
-            # Catch specific exceptions from Copilot API calls
+            # Catch specific exceptions from backend calls
             logger.exception("Error during text translation: %s", e)
             return TranslationResult(
                 status=TranslationStatus.FAILED,
@@ -4032,7 +4047,7 @@ class TranslationService:
 
     def detect_language(self, text: str) -> str:
         """
-        入力テキストの言語をローカル判定します（Copilotは使用しません）。
+        入力テキストの言語をローカル判定します。
 
         Priority:
         1. Hiragana/Katakana present → "日本語"
@@ -4040,9 +4055,8 @@ class TranslationService:
         3. Latin alphabet dominant → "英語"
         4. CJK only or other → "日本語" (default for Japanese users)
 
-        Note: Copilot is no longer used for language detection to ensure
-        fast response times. Japanese is used as the default fallback
-        since target users are Japanese.
+        Note: Language detection is local-only for fast response times.
+        Japanese is used as the default fallback since target users are Japanese.
 
         Args:
             text: Text to analyze
@@ -4370,7 +4384,7 @@ class TranslationService:
                 needs_numeric_rule_retry = False
                 if not needs_output_language_retry:
                     needs_numeric_rule_retry = (
-                        _needs_to_en_numeric_rule_retry_copilot_after_auto_fix(
+                        _needs_to_en_numeric_rule_retry_conservative_after_safe_fix(
                             text, translation
                         )
                     )
@@ -4551,7 +4565,7 @@ class TranslationService:
                     translation = fixed_text
                     metadata["to_en_month_abbrev_correction"] = True
 
-                if needs_numeric_rule_retry and _needs_to_en_numeric_rule_retry_copilot(
+                if needs_numeric_rule_retry and _needs_to_en_numeric_rule_retry_conservative(
                     text, translation
                 ):
                     metadata["to_en_numeric_rule_retry_failed"] = True
@@ -4694,7 +4708,7 @@ class TranslationService:
             on_chunk=on_chunk,
         )
 
-    def _translate_text_with_options_on_copilot(
+    def _translate_text_with_options_via_prompt_builder(
         self,
         *,
         text: str,
@@ -4705,8 +4719,8 @@ class TranslationService:
         on_chunk: "Callable[[str], None] | None",
         translate_single: Callable[..., str],
     ) -> TextTranslationResult:
-        copilot_call_count = 0
-        copilot_call_phases: list[str] = []
+        backend_call_count = 0
+        backend_call_phases: list[str] = []
 
         def translate_single_tracked(
             phase: str,
@@ -4715,25 +4729,25 @@ class TranslationService:
             reference_files: Optional[list[Path]] = None,
             on_chunk: "Callable[[str], None] | None" = None,
         ) -> str:
-            nonlocal copilot_call_count
-            copilot_call_count += 1
-            copilot_call_phases.append(phase)
+            nonlocal backend_call_count
+            backend_call_count += 1
+            backend_call_phases.append(phase)
             return translate_single(source_text, prompt, reference_files, on_chunk)
 
-        def attach_copilot_telemetry(
+        def attach_backend_telemetry(
             result: TextTranslationResult,
         ) -> TextTranslationResult:
             metadata = dict(result.metadata) if result.metadata else {}
-            metadata.setdefault("backend", "copilot")
-            metadata["copilot_call_count"] = copilot_call_count
-            metadata["copilot_call_phases"] = list(copilot_call_phases)
+            metadata.setdefault("backend", "local")
+            metadata["backend_call_count"] = backend_call_count
+            metadata["backend_call_phases"] = list(backend_call_phases)
             result.metadata = metadata
             return result
 
         if output_language == "en":
             template = self.prompt_builder.get_text_compare_template()
             if not template:
-                return attach_copilot_telemetry(
+                return attach_backend_telemetry(
                     TextTranslationResult(
                         source_text=text,
                         source_char_count=len(text),
@@ -4835,7 +4849,7 @@ class TranslationService:
 
             prompt = build_compare_prompt()
             logger.debug(
-                "Sending text to Copilot (compare fallback, streaming=%s, refs=%d)",
+                "Sending text to backend (compare fallback, streaming=%s, refs=%d)",
                 bool(on_chunk),
                 len(files_to_attach) if files_to_attach else 0,
             )
@@ -4852,7 +4866,7 @@ class TranslationService:
             needs_numeric_rule_retry = bool(
                 result
                 and result.options
-                and _needs_to_en_numeric_rule_retry_copilot_after_auto_fix(
+                and _needs_to_en_numeric_rule_retry_conservative_after_safe_fix(
                     text, result.options[0].text
                 )
             )
@@ -4891,28 +4905,30 @@ class TranslationService:
                         metadata = (
                             dict(retry_result.metadata) if retry_result.metadata else {}
                         )
-                        metadata.setdefault("backend", "copilot")
+                        metadata.setdefault("backend", "local")
                         metadata["to_en_numeric_unit_correction"] = True
                         retry_result.metadata = metadata
                         retry_text = fixed_retry_text
                     if not _is_text_output_language_mismatch(
                         retry_text, "en"
-                    ) and not _needs_to_en_numeric_rule_retry_copilot(text, retry_text):
+                    ) and not _needs_to_en_numeric_rule_retry_conservative(
+                        text, retry_text
+                    ):
                         if needs_numeric_rule_retry:
                             metadata = (
                                 dict(retry_result.metadata)
                                 if retry_result.metadata
                                 else {}
                             )
-                            metadata.setdefault("backend", "copilot")
+                            metadata.setdefault("backend", "local")
                             metadata["to_en_numeric_rule_retry"] = True
                             metadata["to_en_numeric_rule_retry_styles"] = [style]
                             retry_result.metadata = metadata
-                        return attach_copilot_telemetry(retry_result)
+                        return attach_backend_telemetry(retry_result)
 
                 if needs_output_language_retry:
                     metadata = {
-                        "backend": "copilot",
+                        "backend": "local",
                         "output_language_mismatch": True,
                         "output_language_retry_failed": True,
                     }
@@ -4921,7 +4937,7 @@ class TranslationService:
                         metadata["to_en_numeric_rule_retry_styles"] = [style]
                         metadata["to_en_numeric_rule_retry_failed"] = True
                         metadata["to_en_numeric_rule_retry_failed_styles"] = [style]
-                    return attach_copilot_telemetry(
+                    return attach_backend_telemetry(
                         TextTranslationResult(
                             source_text=text,
                             source_char_count=len(text),
@@ -4934,7 +4950,7 @@ class TranslationService:
 
                 if needs_numeric_rule_retry and result and result.options:
                     metadata = dict(result.metadata) if result.metadata else {}
-                    metadata.setdefault("backend", "copilot")
+                    metadata.setdefault("backend", "local")
                     metadata["to_en_numeric_rule_retry"] = True
                     metadata["to_en_numeric_rule_retry_styles"] = [style]
                     metadata["to_en_numeric_rule_retry_failed"] = True
@@ -4951,13 +4967,13 @@ class TranslationService:
                         metadata = (
                             dict(retry_result.metadata) if retry_result.metadata else {}
                         )
-                        metadata.setdefault("backend", "copilot")
+                        metadata.setdefault("backend", "local")
                         metadata["to_en_numeric_rule_retry"] = True
                         metadata["to_en_numeric_rule_retry_styles"] = [style]
                         metadata["to_en_numeric_rule_retry_failed"] = True
                         metadata["to_en_numeric_rule_retry_failed_styles"] = [style]
                         retry_result.metadata = metadata
-                    return attach_copilot_telemetry(retry_result)
+                    return attach_backend_telemetry(retry_result)
 
             if result:
                 if result.output_language == "en" and result.options:
@@ -4969,19 +4985,19 @@ class TranslationService:
                         result.options[0].text = fixed_text
                         result.options[0].explanation = ""
                         metadata = dict(result.metadata) if result.metadata else {}
-                        metadata.setdefault("backend", "copilot")
+                        metadata.setdefault("backend", "local")
                         metadata["to_en_numeric_unit_correction"] = True
                         result.metadata = metadata
-                return attach_copilot_telemetry(result)
+                return attach_backend_telemetry(result)
 
-            logger.warning("Empty response received from Copilot")
-            return attach_copilot_telemetry(
+            logger.warning("Empty response received from backend")
+            return attach_backend_telemetry(
                 TextTranslationResult(
                     source_text=text,
                     source_char_count=len(text),
                     output_language=output_language,
                     detected_language=detected_language,
-                    error_message="Copilotから応答がありませんでした。Edgeブラウザを確認してください。",
+                    error_message="翻訳エンジンから応答がありませんでした。ローカルAIの状態を確認してください。",
                 )
             )
 
@@ -5010,7 +5026,7 @@ class TranslationService:
             prompt = prompt.replace("{style}", style)
 
         logger.debug(
-            "Sending text to Copilot (streaming=%s, refs=%d)",
+            "Sending text to backend (streaming=%s, refs=%d)",
             bool(on_chunk),
             len(files_to_attach) if files_to_attach else 0,
         )
@@ -5037,7 +5053,7 @@ class TranslationService:
             if retry_options and not _is_text_output_language_mismatch(
                 retry_options[0].text, "jp"
             ):
-                return attach_copilot_telemetry(
+                return attach_backend_telemetry(
                     TextTranslationResult(
                         source_text=text,
                         source_char_count=len(text),
@@ -5048,11 +5064,11 @@ class TranslationService:
                 )
 
             metadata = {
-                "backend": "copilot",
+                "backend": "local",
                 "output_language_mismatch": True,
                 "output_language_retry_failed": True,
             }
-            return attach_copilot_telemetry(
+            return attach_backend_telemetry(
                 TextTranslationResult(
                     source_text=text,
                     source_char_count=len(text),
@@ -5064,7 +5080,7 @@ class TranslationService:
             )
 
         if options:
-            return attach_copilot_telemetry(
+            return attach_backend_telemetry(
                 TextTranslationResult(
                     source_text=text,
                     source_char_count=len(text),
@@ -5074,7 +5090,7 @@ class TranslationService:
                 )
             )
         if raw_result.strip():
-            return attach_copilot_telemetry(
+            return attach_backend_telemetry(
                 TextTranslationResult(
                     source_text=text,
                     source_char_count=len(text),
@@ -5090,14 +5106,14 @@ class TranslationService:
                 )
             )
 
-        logger.warning("Empty response received from Copilot")
-        return attach_copilot_telemetry(
+        logger.warning("Empty response received from backend")
+        return attach_backend_telemetry(
             TextTranslationResult(
                 source_text=text,
                 source_char_count=len(text),
                 output_language=output_language,
                 detected_language=detected_language,
-                error_message="Copilotから応答がありませんでした。Edgeブラウザを確認してください。",
+                error_message="翻訳エンジンから応答がありませんでした。ローカルAIの状態を確認してください。",
             )
         )
 
@@ -5128,7 +5144,7 @@ class TranslationService:
         detected_language: Optional[str] = None
         self._cancel_event.clear()
         try:
-            # 事前判定があればそれを使用、なければローカル判定する（Copilotは使用しない）
+            # 事前判定があればそれを使用、なければローカル判定する
             if pre_detected_language:
                 detected_language = pre_detected_language
                 logger.info("Using pre-detected language: %s", detected_language)
@@ -5174,7 +5190,7 @@ class TranslationService:
                 error_message=str(e),
             )
         except (RuntimeError, ValueError, ConnectionError, TimeoutError) as e:
-            # Catch specific exceptions from Copilot API calls
+            # Catch specific exceptions from backend calls
             logger.exception("Error during text translation with options: %s", e)
             return TextTranslationResult(
                 source_text=text,
@@ -5408,7 +5424,7 @@ class TranslationService:
             logger.warning("File I/O error during translation adjustment: %s", e)
             return None
         except (RuntimeError, ValueError, ConnectionError, TimeoutError) as e:
-            # Catch specific exceptions from Copilot API calls
+            # Catch specific exceptions from backend calls
             logger.exception("Error during translation adjustment: %s", e)
             return None
 
@@ -5539,7 +5555,7 @@ class TranslationService:
     def _parse_single_translation_result(
         self, raw_result: str
     ) -> list[TranslationOption]:
-        """Parse single translation result from Copilot (for →jp translation)."""
+        """Parse single translation result (for →jp translation)."""
         raw_result = _strip_input_markers(raw_result).strip()
         if not raw_result:
             return []

@@ -51,12 +51,12 @@ def test_local_backend_calls_are_serialized_by_lock() -> None:
     backend_lock = threading.Lock()
     copilot = BlockingCopilot()
     translator = BatchTranslator(
-        copilot=copilot,  # duck-typed
+        client=copilot,  # duck-typed
         prompt_builder=DummyPromptBuilder(),  # duck-typed
         max_chars_per_batch=1000,
         request_timeout=60,
         enable_cache=False,
-        copilot_lock=backend_lock,
+        client_lock=backend_lock,
     )
 
     blocks = [TextBlock(id="1", text="hello", location="loc")]

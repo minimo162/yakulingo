@@ -27,7 +27,7 @@ def test_estimate_local_file_batch_char_limit_reduces_when_ctx_small() -> None:
         local_ai_max_chars_per_batch=1000,
         local_ai_max_chars_per_batch_file=1000,
     )
-    service = TranslationService(copilot=object(), config=settings)
+    service = TranslationService(config=settings)
     service._local_prompt_builder = ProbePromptBuilder(overhead_chars=100)  # type: ignore[assignment]
 
     blocks = _make_blocks(count=20, size=100)
@@ -50,7 +50,7 @@ def test_estimate_local_file_batch_char_limit_keeps_config_when_ctx_large() -> N
         local_ai_max_chars_per_batch=1000,
         local_ai_max_chars_per_batch_file=1000,
     )
-    service = TranslationService(copilot=object(), config=settings)
+    service = TranslationService(config=settings)
     service._local_prompt_builder = ProbePromptBuilder(overhead_chars=100)  # type: ignore[assignment]
 
     blocks = _make_blocks(count=20, size=100)

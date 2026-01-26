@@ -631,9 +631,9 @@ def main() -> int:
                 raise RuntimeError("copilot is disabled for local-ai benchmarks")
 
         service = TranslationService(
-            _NullCopilot(),
-            settings,
+            config=settings,
             prompts_dir=prompts_dir,
+            client=_NullCopilot(),
         )
 
         translate_single_calls = 0

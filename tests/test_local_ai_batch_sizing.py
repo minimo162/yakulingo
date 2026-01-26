@@ -13,7 +13,7 @@ def _make_blocks(count: int, size: int) -> list[TextBlock]:
 
 def test_batch_limit_reduction_reduces_batch_count() -> None:
     blocks = _make_blocks(count=3, size=350)
-    translator = BatchTranslator(copilot=Mock(), prompt_builder=Mock())
+    translator = BatchTranslator(client=Mock(), prompt_builder=Mock())
 
     batches_small = translator._create_batches(blocks, max_chars_per_batch=600)
     batches_large = translator._create_batches(blocks, max_chars_per_batch=800)

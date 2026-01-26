@@ -10,7 +10,6 @@ def test_parse_style_comparison_prefers_minimal_when_present() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     prompts_dir = repo_root / "prompts"
     service = TranslationService(
-        copilot=object(),
         config=AppSettings(translation_backend="local", copilot_enabled=False),
         prompts_dir=prompts_dir,
     )
@@ -33,7 +32,6 @@ def test_parse_style_comparison_falls_back_to_concise_when_minimal_missing() -> 
     repo_root = Path(__file__).resolve().parents[1]
     prompts_dir = repo_root / "prompts"
     service = TranslationService(
-        copilot=object(),
         config=AppSettings(translation_backend="local", copilot_enabled=False),
         prompts_dir=prompts_dir,
     )

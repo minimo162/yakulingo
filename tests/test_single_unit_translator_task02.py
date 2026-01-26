@@ -32,7 +32,7 @@ class CountingCopilot:
 def test_single_unit_translator_uses_cache_for_duplicate_texts() -> None:
     copilot = CountingCopilot()
     translator = BatchTranslator(
-        copilot=copilot,  # duck-typed
+        client=copilot,  # duck-typed
         prompt_builder=DummyPromptBuilder(),  # duck-typed
         max_chars_per_batch=1000,
         request_timeout=60,
@@ -56,7 +56,7 @@ def test_single_unit_translator_uses_cache_for_duplicate_texts() -> None:
 def test_single_unit_translator_stops_when_cancelled() -> None:
     copilot = CountingCopilot()
     translator = BatchTranslator(
-        copilot=copilot,  # duck-typed
+        client=copilot,  # duck-typed
         prompt_builder=DummyPromptBuilder(),  # duck-typed
         max_chars_per_batch=1000,
         request_timeout=60,

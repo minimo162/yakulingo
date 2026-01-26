@@ -8,7 +8,7 @@ _CITATION_TRAILING_PUNCTUATION = ".,;:!?。！？、)]}）】』」\"'”’"
 
 
 def _reference_file_citation_labels(reference_files: Optional[list[Path]]) -> list[str]:
-    """Return candidate citation labels shown by Copilot for attached files."""
+    """Return candidate citation labels shown by chat UIs for attached files."""
     if not reference_files:
         return []
     labels: set[str] = set()
@@ -30,11 +30,11 @@ def _reference_file_citation_labels(reference_files: Optional[list[Path]]) -> li
 def _strip_reference_citations(text: str, reference_files: Optional[list[Path]]) -> str:
     """Strip citation labels (attached filenames) from extracted message text.
 
-    Copilot may render citations for attachments as inline UI elements (e.g., "glossary").
-    When we extract message text via innerHTML/textContent, those labels can be captured
-    and end up mixed into translation results/explanations. This removes such labels
-    conservatively (mainly line-end suffixes / standalone lines) based on the attached
-    reference file names.
+    Some chat UIs may render citations for attachments as inline UI elements
+    (e.g., "glossary"). When we extract message text via innerHTML/textContent, those
+    labels can be captured and end up mixed into translation results/explanations.
+    This removes such labels conservatively (mainly line-end suffixes / standalone
+    lines) based on the attached reference file names.
     """
     if not text or not reference_files:
         return text or ""

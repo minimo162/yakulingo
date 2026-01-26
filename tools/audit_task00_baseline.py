@@ -93,7 +93,6 @@ def _make_service(local: SequencedLocalClient):
 
     settings = AppSettings(translation_backend="local", copilot_enabled=False)
     service = TranslationService(
-        copilot=object(),  # unused in local-only text paths
         config=settings,
         prompts_dir=prompts_dir,
     )

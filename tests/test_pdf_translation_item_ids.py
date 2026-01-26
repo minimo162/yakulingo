@@ -67,7 +67,7 @@ def test_batch_translator_propagates_include_item_ids_on_prompt_too_long_retry()
         ]
     )
     translator = BatchTranslator(
-        copilot=copilot,  # type: ignore[arg-type]
+        client=copilot,  # type: ignore[arg-type]
         prompt_builder=RecordingPromptBuilder(),  # type: ignore[arg-type]
         enable_cache=False,
     )
@@ -91,7 +91,7 @@ def test_batch_translator_propagates_include_item_ids_on_prompt_too_long_retry()
 def test_batch_translator_propagates_include_item_ids_on_untranslated_retry() -> None:
     copilot = RecordingCopilot(responses=[["", ""], ["訳1", "訳2"]])
     translator = BatchTranslator(
-        copilot=copilot,  # type: ignore[arg-type]
+        client=copilot,  # type: ignore[arg-type]
         prompt_builder=RecordingPromptBuilder(),  # type: ignore[arg-type]
         enable_cache=False,
     )
@@ -196,7 +196,6 @@ def test_translate_pdf_streaming_enables_include_item_ids(tmp_path: Path) -> Non
     input_path.write_bytes(b"")
 
     service = TranslationService(
-        copilot=object(),
         config=AppSettings(translation_backend="local"),
     )
     spy = SpyBatchTranslator()

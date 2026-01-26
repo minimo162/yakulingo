@@ -59,7 +59,6 @@ class _DummyLocalPromptBuilder:
 def test_local_text_translation_reuses_runtime_for_retry() -> None:
     settings = AppSettings(translation_backend="local")
     service = TranslationService(
-        copilot=object(),
         config=settings,
         prompts_dir=Path("prompts"),
     )

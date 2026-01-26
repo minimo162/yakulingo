@@ -3,7 +3,7 @@
 Shared exception types across translation backends.
 
 This module is intentionally backend-agnostic so local AI code can depend on it
-without importing Copilot/Playwright modules.
+without importing browser-automation modules.
 """
 
 

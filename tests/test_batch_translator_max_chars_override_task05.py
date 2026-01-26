@@ -39,7 +39,7 @@ def test_batch_translator_honors_override_max_chars_per_batch_for_splitting() ->
 
     backend = RecordingBackend()
     translator = BatchTranslator(
-        copilot=backend,  # duck-typed
+        client=backend,  # duck-typed
         prompt_builder=DummyPromptBuilder(),  # duck-typed
         max_chars_per_batch=1000,
         enable_cache=False,
@@ -54,7 +54,7 @@ def test_batch_translator_honors_override_max_chars_per_batch_for_splitting() ->
 
     backend_override = RecordingBackend()
     translator_override = BatchTranslator(
-        copilot=backend_override,  # duck-typed
+        client=backend_override,  # duck-typed
         prompt_builder=DummyPromptBuilder(),  # duck-typed
         max_chars_per_batch=1000,
         enable_cache=False,

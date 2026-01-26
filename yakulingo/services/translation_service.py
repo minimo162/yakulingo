@@ -162,7 +162,7 @@ _RE_EN_OKU_YEN_AMOUNT = re.compile(
     rf"(?P<suffix>\)?)"
     r"\s*"
     r"(?P<oku>oku)\b"
-    r"(?:\s*(?P<yen>yen)\b)?",
+    r"(?:\s*(?P<yen>yen)(?![A-Za-z0-9]))?",
     re.IGNORECASE,
 )
 _RE_JP_LARGE_UNIT = re.compile(r"[兆億]")
@@ -482,6 +482,17 @@ def _fix_to_jp_oku_numeric_unit_if_possible(
 
     fixed, count = _RE_EN_OKU_YEN_AMOUNT.subn(repl, translated_text)
     return fixed, bool(count) and fixed != translated_text
+
+
+def _normalize_back_translation_text(
+    translated_text: str, output_language: str | None
+) -> str:
+    if not translated_text:
+        return translated_text
+    if (output_language or "").strip().lower() != "jp":
+        return translated_text
+    fixed_text, fixed = _fix_to_jp_oku_numeric_unit_if_possible(translated_text)
+    return fixed_text if fixed else translated_text
 
 
 def _format_k_amount(value: Decimal) -> str:

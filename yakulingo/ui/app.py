@@ -10070,6 +10070,7 @@ class YakuLingoApp:
             reference_warnings: list[str] = []
 
             prompt = ""
+            output_language: str | None = None
             text = text_override if text_override is not None else option.text
             if not text.strip():
                 error_message = "戻し訳用のテキストを入力してください"
@@ -10092,7 +10093,9 @@ class YakuLingoApp:
                 if service is None:
                     error_message = "翻訳サービスの初期化に失敗しました"
                 else:
-                    _, template = service.get_back_translation_text_template(text)
+                    output_language, template = service.get_back_translation_text_template(
+                        text
+                    )
 
                 if not template:
                     error_message = "テキスト翻訳テンプレートが見つかりません"
@@ -10119,6 +10122,14 @@ class YakuLingoApp:
                     from yakulingo.ui.utils import parse_translation_result
 
                     text_result, _ = parse_translation_result(result)
+                    if output_language:
+                        from yakulingo.services.translation_service import (
+                            _normalize_back_translation_text,
+                        )
+
+                        text_result = _normalize_back_translation_text(
+                            text_result, output_language
+                        )
                     option.back_translation_text = text_result
                     option.back_translation_explanation = None
                     if reference_warnings:

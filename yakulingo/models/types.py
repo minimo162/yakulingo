@@ -103,7 +103,7 @@ class TranslationPhase(Enum):
 
     EXTRACTING = "extracting"  # Extracting text from file
     OCR = "ocr"  # OCR processing (PDF with yomitoku)
-    TRANSLATING = "translating"  # Sending to Copilot for translation
+    TRANSLATING = "translating"  # Sending to translation backend
     APPLYING = "applying"  # Applying translations to output file
     COMPLETE = "complete"
 
@@ -115,7 +115,7 @@ class TranslationProgress:
 
     For PDF translation with yomitoku, the process has multiple phases:
     1. OCR: yomitoku analyzes each page (can be slow)
-    2. TRANSLATING: Copilot translates text blocks
+    2. TRANSLATING: Translation backend translates text blocks
     3. APPLYING: Translations are applied to output PDF
 
     The `phase` and `phase_detail` fields provide granular progress info.
@@ -178,7 +178,7 @@ class TranslationOption:
 class TextTranslationResult:
     """
     Result of text translation with multiple options.
-    Output language is auto-detected by Copilot:
+    Output language is auto-detected locally:
     - Japanese input → English output
     - Other input → Japanese output
     """
@@ -188,7 +188,7 @@ class TextTranslationResult:
     options: list[TranslationOption] = field(default_factory=list)
     output_language: str = "en"  # "en" or "jp" - target language
     detected_language: Optional[str] = (
-        None  # Copilot-detected source language (e.g., "日本語", "英語", "中国語")
+        None  # Locally detected source language (e.g., "日本語", "英語", "中国語")
     )
     error_message: Optional[str] = None
     metadata: Optional[dict] = (
@@ -323,7 +323,7 @@ class BatchTranslationResult:
     Result of batch translation with detailed success/failure information.
 
     Provides visibility into which blocks were successfully translated
-    and which had issues (e.g., count mismatch from Copilot response).
+    and which had issues (e.g., count mismatch from backend response).
     """
 
     translations: dict = field(default_factory=dict)  # block_id -> translated_text

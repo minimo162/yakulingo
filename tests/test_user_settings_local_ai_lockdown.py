@@ -30,6 +30,8 @@ def test_user_settings_local_ai_ignored_and_removed(tmp_path) -> None:
         {
             "local_ai_temperature": 0.2,
             "translation_style": "standard",
+            "translation_backend": "copilot",
+            "copilot_enabled": True,
         },
     )
 
@@ -38,9 +40,13 @@ def test_user_settings_local_ai_ignored_and_removed(tmp_path) -> None:
 
     assert settings.local_ai_temperature == 0.7
     assert settings.translation_style == "minimal"
+    assert settings.translation_backend == "local"
+    assert settings.copilot_enabled is False
 
     cleaned = json.loads(user_settings_path.read_text(encoding="utf-8"))
     assert "local_ai_temperature" not in cleaned
+    assert "translation_backend" not in cleaned
+    assert "copilot_enabled" not in cleaned
     assert cleaned["translation_style"] == "standard"
 
 
@@ -54,6 +60,8 @@ def test_user_settings_save_excludes_local_ai(tmp_path) -> None:
 
     saved = json.loads((config_dir / "user_settings.json").read_text(encoding="utf-8"))
     assert not any(key.startswith("local_ai_") for key in saved)
+    assert "translation_backend" not in saved
+    assert "copilot_enabled" not in saved
     assert saved["translation_style"] == "minimal"
 
 

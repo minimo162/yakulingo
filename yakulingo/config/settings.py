@@ -49,7 +49,10 @@ USER_SETTINGS_KEYS = {
     "browser_display_mode",
     # UI状態（自動保存）
     "last_tab",
-    # 翻訳バックエンド（Copilot / Local AI）
+}
+
+# 互換性のために読み飛ばす（user_settings.json から除去する）旧キー。
+_DEPRECATED_USER_SETTINGS_KEYS = {
     "translation_backend",
     "copilot_enabled",
 }
@@ -316,16 +319,18 @@ class AppSettings:
 
     # UI
     last_tab: str = "text"
-    # Translation backend ("copilot" or "local")
+    # Translation backend (deprecated; kept for backward compatibility).
+    # NOTE: YakuLingo runs local-only; this value is always forced to "local".
     translation_backend: str = "local"
-    # Copilot availability (feature flag)
-    copilot_enabled: bool = True
+    # Copilot availability (deprecated; kept for backward compatibility).
+    # NOTE: Copilot is removed; this value is always forced to False.
+    copilot_enabled: bool = False
     # NOTE: window_width/window_height は廃止。ウィンドウサイズは
     # _detect_display_settings() で論理解像度から動的に計算される。
 
     # Advanced
     max_chars_per_batch: int = (
-        DEFAULT_MAX_CHARS_PER_BATCH  # Max characters per batch (Copilot input safety)
+        DEFAULT_MAX_CHARS_PER_BATCH  # Max characters per batch (prompt safety)
     )
     request_timeout: int = 600  # Seconds (10 minutes - allows for large translations)
     max_retries: int = 3
@@ -480,6 +485,7 @@ class AppSettings:
                 with open(user_settings_path, "r", encoding="utf-8-sig") as f:
                     user_data = json.load(f)
                     removed_local_ai = False
+                    removed_deprecated = False
                     if isinstance(user_data, dict):
                         local_ai_keys = [
                             key
@@ -490,6 +496,15 @@ class AppSettings:
                             for key in local_ai_keys:
                                 user_data.pop(key, None)
                             removed_local_ai = True
+                        deprecated_keys = [
+                            key
+                            for key in _DEPRECATED_USER_SETTINGS_KEYS
+                            if key in user_data
+                        ]
+                        if deprecated_keys:
+                            for key in deprecated_keys:
+                                user_data.pop(key, None)
+                            removed_deprecated = True
                     else:
                         user_data = {}
                     # Only apply known user settings keys
@@ -500,18 +515,18 @@ class AppSettings:
                         data["login_overlay_guard"] = user_data["login_overlay_guard"]
                         guard_source = "user"
                     logger.debug("Loaded user settings from: %s", user_settings_path)
-                if removed_local_ai:
+                if removed_local_ai or removed_deprecated:
                     try:
                         with open(user_settings_path, "w", encoding="utf-8") as f:
                             json.dump(user_data, f, indent=2, ensure_ascii=False)
                         user_mtime = user_settings_path.stat().st_mtime
                         logger.debug(
-                            "Removed local_ai settings from user_settings.json: %s",
+                            "Cleaned disallowed keys from user_settings.json: %s",
                             user_settings_path,
                         )
                     except OSError as e:
                         logger.warning(
-                            "Failed to clean local_ai settings from user_settings.json: %s",
+                            "Failed to clean disallowed keys from user_settings.json: %s",
                             e,
                         )
             except (json.JSONDecodeError, UnicodeDecodeError) as e:
@@ -520,8 +535,7 @@ class AppSettings:
         # NOTE: Legacy settings.json is NOT migrated to prevent bugs.
         # Users will start with fresh defaults from template.
 
-        # Local-only mode: disable Copilot backend regardless of persisted settings.
-        # This prevents any startup-time Copilot/Edge/Playwright initialization.
+        # Local-only mode: enforce deprecated backend keys regardless of persisted settings.
         data["copilot_enabled"] = False
         data["translation_backend"] = "local"
 
@@ -583,24 +597,23 @@ class AppSettings:
             )
             self.max_chars_per_batch = DEFAULT_MAX_CHARS_PER_BATCH
 
-        # Translation backend
-        if self.translation_backend not in ("copilot", "local"):
-            logger.warning(
-                "translation_backend invalid (%s), resetting to 'local'",
-                self.translation_backend,
-            )
-            self.translation_backend = "local"
-        if not isinstance(self.copilot_enabled, bool):
-            logger.warning(
-                "copilot_enabled invalid (%s), resetting to True",
-                type(self.copilot_enabled).__name__,
-            )
-            self.copilot_enabled = True
-        if not self.copilot_enabled and self.translation_backend == "copilot":
+        # Translation backend (deprecated): YakuLingo is local-only.
+        backend_raw = self.translation_backend
+        backend = str(backend_raw or "").strip().lower()
+        if backend and backend != "local":
             logger.info(
-                "copilot_enabled is false; forcing translation_backend to 'local'"
+                "translation_backend is deprecated (got %s); forcing 'local'",
+                backend_raw,
             )
-            self.translation_backend = "local"
+        self.translation_backend = "local"
+
+        copilot_enabled_raw = self.copilot_enabled
+        if copilot_enabled_raw is not False:
+            logger.info(
+                "copilot_enabled is deprecated (got %s); forcing False",
+                copilot_enabled_raw,
+            )
+        self.copilot_enabled = False
 
         # Translation style (file translation)
         # SSOT is "minimal"; accept legacy values ("standard"/"concise") and normalize.

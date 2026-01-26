@@ -145,6 +145,35 @@ def test_text_style_comparison_skips_numeric_retry_when_auto_fixable() -> None:
     assert metadata.get("local_translate_single_calls") == 1
 
 
+def test_text_style_comparison_skips_numeric_retry_when_auto_fixable_by_conversion() -> (
+    None
+):
+    input_text = "売上高は2兆2,385億円となりました。"
+    first = '{"translation":"Net sales were 2,238.5 billion yen.","explanation":""}'
+    local = SequencedLocalClient([first])
+    service = _make_service(local)
+
+    result = service.translate_text_with_style_comparison(
+        input_text,
+        pre_detected_language="日本語",
+    )
+
+    assert local.translate_single_calls == 1
+    assert local.prompts
+    assert "- JP: 2兆2,385億円 | EN: 22,385 oku yen" in local.prompts[0]
+
+    assert result.output_language == "en"
+    assert [option.style for option in result.options] == ["minimal"]
+    assert all("oku" in option.text.lower() for option in result.options)
+    assert all("billion" not in option.text.lower() for option in result.options)
+
+    metadata = result.metadata or {}
+    assert metadata.get("backend") == "local"
+    assert metadata.get("to_en_numeric_unit_correction") is True
+    assert metadata.get("to_en_numeric_rule_retry") is not True
+    assert metadata.get("local_translate_single_calls") == 1
+
+
 def test_text_style_comparison_does_not_retry_when_output_keeps_jp_numeric_units() -> (
     None
 ):

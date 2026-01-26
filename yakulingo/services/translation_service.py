@@ -887,10 +887,16 @@ def _looks_incomplete_translation_to_en(source_text: str, translated_text: str) 
 
 
 _RE_ELLIPSIS_ONLY = re.compile(r"^[.\u2026\u22ef]+$")
+_RE_PLACEHOLDER_TOKEN = re.compile(r"^<\s*([^<>]+)\s*>$")
+_RE_PLACEHOLDER_INNER = re.compile(r"^(?:translation|style|\.{3}|…)$", re.IGNORECASE)
 
 _LOCAL_AI_ELLIPSIS_RETRY_INSTRUCTION = (
     "- Do not output ellipsis placeholders (e.g., \"...\", \"…\").\n"
     "- Output an actual translation; never output only dots.\n"
+)
+_LOCAL_AI_PLACEHOLDER_RETRY_INSTRUCTION = (
+    "- Do not output placeholder tokens like <TRANSLATION> or <STYLE>.\n"
+    "- Output actual translations, not placeholder markers.\n"
 )
 
 
@@ -901,11 +907,33 @@ def _is_ellipsis_only_text(text: str | None) -> bool:
     return _RE_ELLIPSIS_ONLY.fullmatch(cleaned) is not None
 
 
+def _is_placeholder_only_text(text: str | None) -> bool:
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return False
+    tokens = cleaned.split()
+    if not tokens:
+        return False
+    for token in tokens:
+        match = _RE_PLACEHOLDER_TOKEN.fullmatch(token)
+        if not match:
+            return False
+        inner = match.group(1).strip()
+        if not _RE_PLACEHOLDER_INNER.fullmatch(inner):
+            return False
+    return True
+
+
 def _is_ellipsis_only_translation(source_text: str, translated_text: str) -> bool:
     if not _is_ellipsis_only_text(translated_text):
         return False
     return not _is_ellipsis_only_text(source_text)
 
+
+def _is_placeholder_only_translation(source_text: str, translated_text: str) -> bool:
+    if not _is_placeholder_only_text(translated_text):
+        return False
+    return not _is_placeholder_only_text(source_text)
 
 def _sanitize_output_stem(name: str) -> str:
     """Sanitize a filename stem for cross-platform safety.
@@ -3082,6 +3110,22 @@ class BatchTranslator:
                 for idx in ellipsis_only_indices:
                     cleaned_unique_translations[idx] = ""
 
+            placeholder_only_indices = [
+                idx
+                for idx, trans in enumerate(cleaned_unique_translations)
+                if trans
+                and trans.strip()
+                and _is_placeholder_only_translation(unique_texts[idx], trans)
+            ]
+            if placeholder_only_indices:
+                logger.warning(
+                    "Batch %d: %d placeholder-only translations detected; using fallback for those blocks",
+                    i + 1,
+                    len(placeholder_only_indices),
+                )
+                for idx in placeholder_only_indices:
+                    cleaned_unique_translations[idx] = ""
+
             # Detect empty translations (a backend may return empty strings for some items)
             empty_translation_indices = [
                 idx
@@ -4406,9 +4450,13 @@ class TranslationService:
                     translation, "en"
                 )
                 needs_ellipsis_retry = _is_ellipsis_only_translation(text, translation)
+                needs_placeholder_retry = _is_placeholder_only_translation(
+                    text, translation
+                )
                 if (
                     not needs_output_language_retry
                     and not needs_ellipsis_retry
+                    and not needs_placeholder_retry
                     and _looks_incomplete_translation_to_en(text, translation)
                 ):
                     metadata["incomplete_translation"] = True
@@ -4465,6 +4513,7 @@ class TranslationService:
                     or needs_numeric_rule_retry
                     or needs_rule_retry
                     or needs_ellipsis_retry
+                    or needs_placeholder_retry
                 ):
                     if _LOCAL_AI_TIMING_ENABLED:
                         retry_reasons: list[str] = []
@@ -4472,6 +4521,8 @@ class TranslationService:
                             retry_reasons.append("output_language")
                         if needs_ellipsis_retry:
                             retry_reasons.append("ellipsis")
+                        if needs_placeholder_retry:
+                            retry_reasons.append("placeholder")
                         if needs_numeric_rule_retry:
                             retry_reasons.append("numeric_rule")
                         if needs_rule_retry:
@@ -4495,6 +4546,8 @@ class TranslationService:
                         )
                     if needs_ellipsis_retry:
                         retry_parts.append(_LOCAL_AI_ELLIPSIS_RETRY_INSTRUCTION)
+                    if needs_placeholder_retry:
+                        retry_parts.append(_LOCAL_AI_PLACEHOLDER_RETRY_INSTRUCTION)
                     if needs_numeric_rule_retry:
                         retry_parts.append(_TEXT_TO_EN_NUMERIC_RULE_INSTRUCTION)
                     if needs_rule_retry:
@@ -4530,13 +4583,27 @@ class TranslationService:
                             error_message = (
                                 "ローカルAIの応答が途中で終了しました（JSONが閉じていません）。\n"
                                 "max_tokens / ctx_size を見直してください。"
-                            )
+                        )
                         return TextTranslationResult(
                             source_text=text,
                             source_char_count=len(text),
                             output_language=output_language,
                             detected_language=detected_language,
                             error_message=error_message,
+                            metadata=metadata,
+                        )
+                    if _is_placeholder_only_translation(text, retry_translation):
+                        if needs_placeholder_retry:
+                            metadata["placeholder_retry"] = True
+                        metadata["placeholder_retry_failed"] = True
+                        return TextTranslationResult(
+                            source_text=text,
+                            source_char_count=len(text),
+                            output_language=output_language,
+                            detected_language=detected_language,
+                            error_message=(
+                                "ローカルAIの出力がプレースホルダーのみでした。モデル/設定を確認してください。"
+                            ),
                             metadata=metadata,
                         )
                     if _is_ellipsis_only_translation(text, retry_translation):
@@ -4558,6 +4625,8 @@ class TranslationService:
                         metadata["output_language_retry"] = True
                     if needs_ellipsis_retry:
                         metadata["ellipsis_retry"] = True
+                    if needs_placeholder_retry:
+                        metadata["placeholder_retry"] = True
                     if needs_numeric_rule_retry:
                         metadata["to_en_numeric_rule_retry"] = True
                         metadata["to_en_numeric_rule_retry_styles"] = [style]
@@ -4691,16 +4760,25 @@ class TranslationService:
                     metadata=metadata,
                 )
             needs_ellipsis_retry = _is_ellipsis_only_translation(text, translation)
+            needs_placeholder_retry = _is_placeholder_only_translation(
+                text, translation
+            )
             needs_output_language_retry = _is_text_output_language_mismatch(
                 translation, "jp"
             )
-            if needs_output_language_retry or needs_ellipsis_retry:
+            if (
+                needs_output_language_retry
+                or needs_ellipsis_retry
+                or needs_placeholder_retry
+            ):
                 if _LOCAL_AI_TIMING_ENABLED:
                     reasons: list[str] = []
                     if needs_output_language_retry:
                         reasons.append("output_language")
                     if needs_ellipsis_retry:
                         reasons.append("ellipsis")
+                    if needs_placeholder_retry:
+                        reasons.append("placeholder")
                     logger.info(
                         "[DIAG] LocalText retry scheduled: %s (output=%s chars=%d)",
                         "+".join(reasons) if reasons else "unknown",
@@ -4714,6 +4792,8 @@ class TranslationService:
                     )
                 if needs_ellipsis_retry:
                     retry_parts.append(_LOCAL_AI_ELLIPSIS_RETRY_INSTRUCTION)
+                if needs_placeholder_retry:
+                    retry_parts.append(_LOCAL_AI_PLACEHOLDER_RETRY_INSTRUCTION)
                 retry_prompt = _insert_extra_instruction(
                     prompt, "\n".join(retry_parts).strip()
                 )
@@ -4736,13 +4816,32 @@ class TranslationService:
                     retry_translation
                     and not _is_text_output_language_mismatch(retry_translation, "jp")
                     and not _is_ellipsis_only_translation(text, retry_translation)
+                    and not _is_placeholder_only_translation(text, retry_translation)
                 ):
                     translation = retry_translation
                     if needs_output_language_retry:
                         metadata["output_language_retry"] = True
                     if needs_ellipsis_retry:
                         metadata["ellipsis_retry"] = True
+                    if needs_placeholder_retry:
+                        metadata["placeholder_retry"] = True
                 else:
+                    if retry_translation and _is_placeholder_only_translation(
+                        text, retry_translation
+                    ):
+                        if needs_placeholder_retry:
+                            metadata["placeholder_retry"] = True
+                        metadata["placeholder_retry_failed"] = True
+                        return TextTranslationResult(
+                            source_text=text,
+                            source_char_count=len(text),
+                            output_language=output_language,
+                            detected_language=detected_language,
+                            error_message=(
+                                "ローカルAIの出力がプレースホルダーのみでした。モデル/設定を確認してください。"
+                            ),
+                            metadata=metadata,
+                        )
                     if retry_translation and _is_ellipsis_only_translation(
                         text, retry_translation
                     ):

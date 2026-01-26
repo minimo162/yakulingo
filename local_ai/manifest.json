@@ -1,5 +1,5 @@
 ﻿{
-    "generated_at":  "2026-01-24T09:48:27.2168710+09:00",
+    "generated_at":  "2026-01-27T02:45:53.4721035+09:00",
     "llama_cpp":  {
                       "repo":  "ggerganov/llama.cpp",
                       "release_tag":  "b7819",
@@ -9,24 +9,24 @@
                       "variant":  "vulkan"
                   },
     "model":  {
-                  "repo":  "dahara1/shisa-v2.1-qwen3-8b-UD-japanese-imatrix",
+                  "repo":  "mradermacher/translategemma-4b-it-i1-GGUF",
                   "revision":  "main",
-                  "file":  "shisa-v2.1-qwen3-8B-IQ4_XS.gguf",
-                  "download_url":  "https://huggingface.co/dahara1/shisa-v2.1-qwen3-8b-UD-japanese-imatrix/resolve/main/shisa-v2.1-qwen3-8B-IQ4_XS.gguf",
-                  "sha256":  "FB201A31A41512FCDCF2686B13EF78D7A0EA157C6C7F73F2CAF5C0BCFB41E4B0",
+                  "file":  "translategemma-4b-it.i1-Q6_K.gguf",
+                  "download_url":  "https://huggingface.co/mradermacher/translategemma-4b-it-i1-GGUF/resolve/main/translategemma-4b-it.i1-Q6_K.gguf",
+                  "sha256":  null,
                   "skipped":  false,
                   "source":  {
                                  "kind":  "gguf",
-                                 "repo":  "dahara1/shisa-v2.1-qwen3-8b-UD-japanese-imatrix",
+                                 "repo":  "mradermacher/translategemma-4b-it-i1-GGUF",
                                  "revision":  "main",
-                                 "file":  "shisa-v2.1-qwen3-8B-IQ4_XS.gguf",
-                                 "download_url":  "https://huggingface.co/dahara1/shisa-v2.1-qwen3-8b-UD-japanese-imatrix/resolve/main/shisa-v2.1-qwen3-8B-IQ4_XS.gguf"
+                                 "file":  "translategemma-4b-it.i1-Q6_K.gguf",
+                                 "download_url":  "https://huggingface.co/mradermacher/translategemma-4b-it-i1-GGUF/resolve/main/translategemma-4b-it.i1-Q6_K.gguf"
                              },
                   "output":  {
                                  "kind":  "gguf",
-                                 "path":  "local_ai/models/shisa-v2.1-qwen3-8B-IQ4_XS.gguf",
-                                 "path_resolved":  "C:\\Users\\Administrator\\Desktop\\yakulingo\\local_ai\\models\\shisa-v2.1-qwen3-8B-IQ4_XS.gguf",
-                                 "sha256":  "FB201A31A41512FCDCF2686B13EF78D7A0EA157C6C7F73F2CAF5C0BCFB41E4B0"
+                                 "path":  "local_ai/models/translategemma-4b-it.i1-Q6_K.gguf",
+                                 "path_resolved":  "C:\\Users\\Administrator\\Desktop\\yakulingo\\local_ai\\models\\translategemma-4b-it.i1-Q6_K.gguf",
+                                 "sha256":  null
                              }
               }
 }

@@ -886,6 +886,27 @@ def _looks_incomplete_translation_to_en(source_text: str, translated_text: str) 
     return False
 
 
+_RE_ELLIPSIS_ONLY = re.compile(r"^[.\u2026\u22ef]+$")
+
+_LOCAL_AI_ELLIPSIS_RETRY_INSTRUCTION = (
+    "- Do not output ellipsis placeholders (e.g., \"...\", \"…\").\n"
+    "- Output an actual translation; never output only dots.\n"
+)
+
+
+def _is_ellipsis_only_text(text: str | None) -> bool:
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return False
+    return _RE_ELLIPSIS_ONLY.fullmatch(cleaned) is not None
+
+
+def _is_ellipsis_only_translation(source_text: str, translated_text: str) -> bool:
+    if not _is_ellipsis_only_text(translated_text):
+        return False
+    return not _is_ellipsis_only_text(source_text)
+
+
 def _sanitize_output_stem(name: str) -> str:
     """Sanitize a filename stem for cross-platform safety.
 
@@ -4367,8 +4388,10 @@ class TranslationService:
                 needs_output_language_retry = _is_text_output_language_mismatch(
                     translation, "en"
                 )
+                needs_ellipsis_retry = _is_ellipsis_only_translation(text, translation)
                 if (
                     not needs_output_language_retry
+                    and not needs_ellipsis_retry
                     and _looks_incomplete_translation_to_en(text, translation)
                 ):
                     metadata["incomplete_translation"] = True
@@ -4424,11 +4447,14 @@ class TranslationService:
                     needs_output_language_retry
                     or needs_numeric_rule_retry
                     or needs_rule_retry
+                    or needs_ellipsis_retry
                 ):
                     if _LOCAL_AI_TIMING_ENABLED:
                         retry_reasons: list[str] = []
                         if needs_output_language_retry:
                             retry_reasons.append("output_language")
+                        if needs_ellipsis_retry:
+                            retry_reasons.append("ellipsis")
                         if needs_numeric_rule_retry:
                             retry_reasons.append("numeric_rule")
                         if needs_rule_retry:
@@ -4450,6 +4476,8 @@ class TranslationService:
                         retry_parts.append(
                             BatchTranslator._EN_STRICT_OUTPUT_LANGUAGE_INSTRUCTION
                         )
+                    if needs_ellipsis_retry:
+                        retry_parts.append(_LOCAL_AI_ELLIPSIS_RETRY_INSTRUCTION)
                     if needs_numeric_rule_retry:
                         retry_parts.append(_TEXT_TO_EN_NUMERIC_RULE_INSTRUCTION)
                     if needs_rule_retry:
@@ -4494,9 +4522,25 @@ class TranslationService:
                             error_message=error_message,
                             metadata=metadata,
                         )
+                    if _is_ellipsis_only_translation(text, retry_translation):
+                        if needs_ellipsis_retry:
+                            metadata["ellipsis_retry"] = True
+                        metadata["ellipsis_retry_failed"] = True
+                        return TextTranslationResult(
+                            source_text=text,
+                            source_char_count=len(text),
+                            output_language=output_language,
+                            detected_language=detected_language,
+                            error_message=(
+                                "ローカルAIの出力が「...」のみでした。モデル/設定を確認してください。"
+                            ),
+                            metadata=metadata,
+                        )
                     translation = retry_translation
                     if needs_output_language_retry:
                         metadata["output_language_retry"] = True
+                    if needs_ellipsis_retry:
+                        metadata["ellipsis_retry"] = True
                     if needs_numeric_rule_retry:
                         metadata["to_en_numeric_rule_retry"] = True
                         metadata["to_en_numeric_rule_retry_styles"] = [style]
@@ -4629,17 +4673,33 @@ class TranslationService:
                     error_message=error_message,
                     metadata=metadata,
                 )
-            if _is_text_output_language_mismatch(translation, "jp"):
+            needs_ellipsis_retry = _is_ellipsis_only_translation(text, translation)
+            needs_output_language_retry = _is_text_output_language_mismatch(
+                translation, "jp"
+            )
+            if needs_output_language_retry or needs_ellipsis_retry:
                 if _LOCAL_AI_TIMING_ENABLED:
+                    reasons: list[str] = []
+                    if needs_output_language_retry:
+                        reasons.append("output_language")
+                    if needs_ellipsis_retry:
+                        reasons.append("ellipsis")
                     logger.info(
-                        "[DIAG] LocalText retry scheduled: output_language (output=%s chars=%d)",
+                        "[DIAG] LocalText retry scheduled: %s (output=%s chars=%d)",
+                        "+".join(reasons) if reasons else "unknown",
                         output_language,
                         len(text or ""),
                     )
-                retry_instruction = (
-                    BatchTranslator._JP_STRICT_OUTPUT_LANGUAGE_INSTRUCTION
+                retry_parts: list[str] = []
+                if needs_output_language_retry:
+                    retry_parts.append(
+                        BatchTranslator._JP_STRICT_OUTPUT_LANGUAGE_INSTRUCTION
+                    )
+                if needs_ellipsis_retry:
+                    retry_parts.append(_LOCAL_AI_ELLIPSIS_RETRY_INSTRUCTION)
+                retry_prompt = _insert_extra_instruction(
+                    prompt, "\n".join(retry_parts).strip()
                 )
-                retry_prompt = _insert_extra_instruction(prompt, retry_instruction)
                 try:
                     retry_raw = translate_single_local(
                         prompt=retry_prompt,
@@ -4655,14 +4715,36 @@ class TranslationService:
                             return fallback
                     raise
                 retry_translation, _ = parse_text_single_translation(retry_raw)
-                if retry_translation and not _is_text_output_language_mismatch(
-                    retry_translation, "jp"
+                if (
+                    retry_translation
+                    and not _is_text_output_language_mismatch(retry_translation, "jp")
+                    and not _is_ellipsis_only_translation(text, retry_translation)
                 ):
                     translation = retry_translation
-                    metadata["output_language_retry"] = True
+                    if needs_output_language_retry:
+                        metadata["output_language_retry"] = True
+                    if needs_ellipsis_retry:
+                        metadata["ellipsis_retry"] = True
                 else:
+                    if retry_translation and _is_ellipsis_only_translation(
+                        text, retry_translation
+                    ):
+                        if needs_ellipsis_retry:
+                            metadata["ellipsis_retry"] = True
+                        metadata["ellipsis_retry_failed"] = True
+                        return TextTranslationResult(
+                            source_text=text,
+                            source_char_count=len(text),
+                            output_language=output_language,
+                            detected_language=detected_language,
+                            error_message=(
+                                "ローカルAIの出力が「...」のみでした。モデル/設定を確認してください。"
+                            ),
+                            metadata=metadata,
+                        )
                     metadata["output_language_mismatch"] = True
-                    metadata["output_language_retry_failed"] = True
+                    if needs_output_language_retry:
+                        metadata["output_language_retry_failed"] = True
                     return TextTranslationResult(
                         source_text=text,
                         source_char_count=len(text),

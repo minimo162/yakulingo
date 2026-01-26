@@ -95,6 +95,48 @@ def test_text_options_ignores_requested_style_and_retries_on_output_language_mis
     assert not _RE_JP_CHARS.search(result.options[0].text)
 
 
+def test_text_style_comparison_retries_when_translation_is_ellipsis_only() -> None:
+    first = '{"translation":"...","explanation":""}'
+    second = '{"translation":"This is a test.","explanation":""}'
+    local = SequencedLocalClient([first, second])
+    service = _make_service(local)
+
+    result = service.translate_text_with_style_comparison(
+        "これはテストです。",
+        pre_detected_language="日本語",
+    )
+
+    assert local.translate_single_calls == 2
+    assert result.output_language == "en"
+    assert [option.style for option in result.options] == ["minimal"]
+    assert result.options[0].text == "This is a test."
+    metadata = result.metadata or {}
+    assert metadata.get("backend") == "local"
+    assert metadata.get("local_translate_single_calls") == 2
+    assert metadata.get("ellipsis_retry") is True
+
+
+def test_text_style_comparison_errors_when_translation_stays_ellipsis_only() -> None:
+    first = '{"translation":"...","explanation":""}'
+    second = '{"translation":"...","explanation":""}'
+    local = SequencedLocalClient([first, second])
+    service = _make_service(local)
+
+    result = service.translate_text_with_style_comparison(
+        "これはテストです。",
+        pre_detected_language="日本語",
+    )
+
+    assert local.translate_single_calls == 2
+    assert not result.options
+    assert result.error_message
+    metadata = result.metadata or {}
+    assert metadata.get("backend") == "local"
+    assert metadata.get("local_translate_single_calls") == 2
+    assert metadata.get("ellipsis_retry") is True
+    assert metadata.get("ellipsis_retry_failed") is True
+
+
 def test_text_style_comparison_retries_for_oku_numeric_rule_when_auto_fix_not_possible() -> (
     None
 ):

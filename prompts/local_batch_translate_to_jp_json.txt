@@ -1,6 +1,7 @@
 Translate items[].text EN->JP.
-Return JSON only: {"items":[...]} (len={n_items}, id=1..{n_items}).
+Return JSON only: {"items":[{"id":1,"translation":"<TRANSLATION>"}]} (len={n_items}, id=1..{n_items}).
 Rules: each item has "id" and "translation"; keep [[ID:n]]; preserve \\n / \\t; no extra text/fences.
+Do not output placeholder tokens like <TRANSLATION> or <STYLE>. プレースホルダー（<TRANSLATION> 等）は出力しないこと。
 Self-check before output: follow the rules above; fix any violation, then output JSON only.
 
 {reference_section}

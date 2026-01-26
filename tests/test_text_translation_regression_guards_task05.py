@@ -40,7 +40,7 @@ def test_translate_single_streaming_retries_with_repeated_prompt_on_missing_json
 ):
     client = LocalAIClient(AppSettings())
     runtime = _make_runtime()
-    prompt = 'Return JSON only: {"translation": "..."}'
+    prompt = 'Return JSON only: {"translation": "<TRANSLATION>"}'
     chunks: list[str] = []
     calls: list[tuple[str, bool]] = []
 

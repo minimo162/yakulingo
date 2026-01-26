@@ -1,6 +1,7 @@
 Translate JP->EN for styles={styles_json} (count={n_styles}).
-Return JSON only: {"options":[...]}.
+Return JSON only: {"options":[{"style":"<STYLE>","translation":"<TRANSLATION>"}]}.
 Rules: options len={n_styles}; each item has "style" (in {styles_json}) and "translation"; keep [[ID:n]]; preserve \\n / \\t; no extra text/fences.
+Do not output placeholder tokens like <TRANSLATION> or <STYLE>. プレースホルダー（<TRANSLATION> 等）は出力しないこと。
 
 {numeric_hints}
 {reference_section}

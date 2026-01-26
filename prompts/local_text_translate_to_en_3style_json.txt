@@ -1,6 +1,7 @@
 Translate JP->EN in 3 styles (order: standard, concise, minimal).
-Return JSON only: {"options":[...]}.
+Return JSON only: {"options":[{"style":"standard","translation":"<TRANSLATION>"},{"style":"concise","translation":"<TRANSLATION>"},{"style":"minimal","translation":"<TRANSLATION>"}]}.
 Rules: options len=3; each item has "style" and "translation"; keep [[ID:n]]; preserve \\n / \\t; no extra text/fences.
+Do not output placeholder tokens like <TRANSLATION> or <STYLE>. プレースホルダー（<TRANSLATION> 等）は出力しないこと。
 Self-check before output: follow the rules above; fix any violation, then output JSON only.
 
 {numeric_hints}

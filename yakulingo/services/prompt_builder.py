@@ -185,6 +185,7 @@ Translate the Japanese text into minimal, business-ready English.
 ### Style rules
 [minimal]
 - Make it as short as possible while preserving meaning and key facts.
+- Intended for headings/tables; use abbreviations aggressively.
 - Use compact, business-formal English; remove non-essential modifiers.
 - Use common business abbreviations when suitable (YoY, QoQ, CAGR).
 

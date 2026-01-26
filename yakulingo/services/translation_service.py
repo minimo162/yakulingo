@@ -1093,6 +1093,8 @@ def _extract_options_preview(buffer: str) -> Optional[str]:
 
 def _wrap_local_streaming_on_chunk(
     on_chunk: Optional[Callable[[str], None]],
+    *,
+    expected_output_language: str | None = None,
 ) -> Optional[Callable[[str], None]]:
     if on_chunk is None:
         return None
@@ -1166,6 +1168,11 @@ def _wrap_local_streaming_on_chunk(
             else:
                 candidate = translation
 
+        if (
+            expected_output_language == "en"
+            and _is_text_output_language_mismatch(candidate, "en")
+        ):
+            return
         if candidate == last_emitted or len(candidate) < len(last_emitted):
             return
         delta_len = len(candidate) - len(last_emitted)
@@ -4448,7 +4455,9 @@ class TranslationService:
                     reference_files=reference_files,
                     detected_language=detected_language,
                 )
-                stream_handler = _wrap_local_streaming_on_chunk(on_chunk)
+                stream_handler = _wrap_local_streaming_on_chunk(
+                    on_chunk, expected_output_language=output_language
+                )
                 try:
                     raw = translate_single_local(
                         prompt=prompt,
@@ -4764,7 +4773,9 @@ class TranslationService:
                 reference_files=reference_files,
                 detected_language=detected_language,
             )
-            stream_handler = _wrap_local_streaming_on_chunk(on_chunk)
+            stream_handler = _wrap_local_streaming_on_chunk(
+                on_chunk, expected_output_language=output_language
+            )
             try:
                 raw = translate_single_local(
                     prompt=prompt,

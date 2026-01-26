@@ -89,6 +89,30 @@ def test_local_streaming_wrap_skips_irrelevant_updates_without_regression() -> N
     assert all(len(a) <= len(b) for a, b in zip(received, received[1:]))
 
 
+def test_local_streaming_wrap_blocks_non_en_preview_for_en_output() -> None:
+    received: list[str] = []
+    handler = _wrap_local_streaming_on_chunk(
+        received.append, expected_output_language="en"
+    )
+    assert handler is not None
+
+    handler('{"translation":"こんにちは"}')
+
+    assert received == []
+
+
+def test_local_streaming_wrap_allows_en_preview_for_en_output() -> None:
+    received: list[str] = []
+    handler = _wrap_local_streaming_on_chunk(
+        received.append, expected_output_language="en"
+    )
+    assert handler is not None
+
+    handler('{"translation":"Hello"}')
+
+    assert received == ["Hello"]
+
+
 def test_local_ai_streaming_on_chunk_is_delta() -> None:
     client = LocalAIClient(settings=AppSettings())
     received: list[str] = []

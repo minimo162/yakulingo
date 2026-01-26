@@ -1,4 +1,5 @@
 Translate JP->EN. Style: {style}
+If style is minimal: intended for headings/tables; use abbreviations aggressively.
 Return JSON only: {"translation": ""} (no code fences / no extra text).
 Keep [[ID:n]] markers and preserve \\n / \\t escapes in strings.
 Do not output placeholder tokens like <TRANSLATION> or <STYLE>. プレースホルダー（<TRANSLATION> 等）は出力しないこと。

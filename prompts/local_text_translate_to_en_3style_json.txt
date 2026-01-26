@@ -1,4 +1,5 @@
 Translate JP->EN in 3 styles (order: standard, concise, minimal).
+For minimal style: intended for headings/tables; use abbreviations aggressively.
 Return JSON only: {"options":[{"style":"standard","translation":""},{"style":"concise","translation":""},{"style":"minimal","translation":""}]}.
 Rules: options len=3; each item has "style" and "translation"; keep [[ID:n]]; preserve \\n / \\t; no extra text/fences.
 Do not output placeholder tokens like <TRANSLATION> or <STYLE>. プレースホルダー（<TRANSLATION> 等）は出力しないこと。

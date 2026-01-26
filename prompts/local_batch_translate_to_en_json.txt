@@ -1,4 +1,5 @@
 Translate items[].text JP->EN. Style: {style}
+If style is minimal: intended for headings/tables; use abbreviations aggressively.
 Return JSON only: {"items":[{"id":1,"translation":""}]} (len={n_items}, id=1..{n_items}).
 Rules: each item has "id" and "translation"; keep [[ID:n]]; preserve \\n / \\t; no extra text/fences.
 Do not output placeholder tokens like <TRANSLATION> or <STYLE>. プレースホルダー（<TRANSLATION> 等）は出力しないこと。

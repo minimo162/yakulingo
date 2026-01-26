@@ -34,7 +34,7 @@ def _extract_user_prompt(payload: dict[str, object]) -> str:
 def test_translate_single_retries_with_repeated_prompt_on_schema_mismatch() -> None:
     client = LocalAIClient(AppSettings())
     runtime = _make_runtime()
-    prompt = 'Return JSON only: {"translation": "<TRANSLATION>"}'
+    prompt = 'Return JSON only: {"translation": ""}'
     calls: list[dict[str, object]] = []
     state = {"calls": 0}
 
@@ -67,7 +67,7 @@ def test_translate_single_retries_with_repeated_prompt_on_schema_mismatch() -> N
 def test_translate_single_retries_with_repeated_prompt_on_missing_json() -> None:
     client = LocalAIClient(AppSettings())
     runtime = _make_runtime()
-    prompt = 'Return JSON only: {"translation": "<TRANSLATION>"}'
+    prompt = 'Return JSON only: {"translation": ""}'
     calls: list[dict[str, object]] = []
     state = {"calls": 0}
 
@@ -125,7 +125,7 @@ def test_translate_single_does_not_retry_when_prompt_is_not_json() -> None:
 def test_translate_sync_retries_with_repeated_prompt_on_parse_failure() -> None:
     client = LocalAIClient(AppSettings())
     runtime = _make_runtime()
-    prompt = 'Return JSON only: {"items":[{"id":1,"translation":"<TRANSLATION>"}]} (items_json)'
+    prompt = 'Return JSON only: {"items":[{"id":1,"translation":""}]} (items_json)'
     calls: list[dict[str, object]] = []
     state = {"calls": 0}
 

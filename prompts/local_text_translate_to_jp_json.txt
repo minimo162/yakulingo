@@ -1,5 +1,5 @@
 Translate EN->JP.
-Return JSON only: {"translation": "<TRANSLATION>"} (no code fences / no extra text).
+Return JSON only: {"translation": ""} (no code fences / no extra text).
 Keep [[ID:n]] markers and preserve \\n / \\t escapes in strings.
 Do not output placeholder tokens like <TRANSLATION> or <STYLE>. プレースホルダー（<TRANSLATION> 等）は出力しないこと。
 

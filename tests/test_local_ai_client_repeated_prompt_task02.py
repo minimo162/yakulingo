@@ -25,7 +25,7 @@ def test_translate_single_skips_repeated_prompt_when_non_json_translation_is_par
 ):
     client = LocalAIClient(AppSettings())
     runtime = _make_runtime()
-    prompt = 'Return JSON only: {"translation": "<TRANSLATION>"}'
+    prompt = 'Return JSON only: {"translation": ""}'
     calls: list[bool] = []
 
     def fake_chat(
@@ -61,7 +61,7 @@ def test_translate_single_streaming_skips_repeated_prompt_when_non_json_translat
 ):
     client = LocalAIClient(AppSettings())
     runtime = _make_runtime()
-    prompt = 'Return JSON only: {"translation": "<TRANSLATION>"}'
+    prompt = 'Return JSON only: {"translation": ""}'
     chunks: list[str] = []
     calls: list[tuple[str, bool]] = []
 

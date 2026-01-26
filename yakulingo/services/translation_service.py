@@ -154,9 +154,18 @@ _RE_EN_BILLION_TRILLION = re.compile(
     r"(?:\b(?:billion|trillion|bn)\b|(?<=\d)(?:billion|trillion|bn)\b)",
     re.IGNORECASE,
 )
-_RE_EN_OKU = re.compile(r"\boku\b", re.IGNORECASE)
-_RE_JP_LARGE_UNIT = re.compile(r"[兆億]")
 _INT_WITH_OPTIONAL_COMMAS_PATTERN = r"(?:\d{1,3}(?:,\d{3})+|\d+)"
+_RE_EN_OKU = re.compile(r"\boku\b", re.IGNORECASE)
+_RE_EN_OKU_YEN_AMOUNT = re.compile(
+    rf"(?P<prefix>\(?[▲+\-−]?)"
+    rf"(?P<number>{_INT_WITH_OPTIONAL_COMMAS_PATTERN}(?:\.\d+)?)"
+    rf"(?P<suffix>\)?)"
+    r"\s*"
+    r"(?P<oku>oku)\b"
+    r"(?:\s*(?P<yen>yen)\b)?",
+    re.IGNORECASE,
+)
+_RE_JP_LARGE_UNIT = re.compile(r"[兆億]")
 _RE_JP_OKU_CHOU_YEN_AMOUNT = re.compile(
     rf"(?P<sign>[▲+\-−])?\s*(?:(?P<trillion>{_INT_WITH_OPTIONAL_COMMAS_PATTERN})兆(?:(?P<oku>{_INT_WITH_OPTIONAL_COMMAS_PATTERN})億)?|(?P<oku_only>{_INT_WITH_OPTIONAL_COMMAS_PATTERN})億)(?P<yen>円)?"
 )
@@ -451,6 +460,27 @@ def _fix_to_en_oku_numeric_unit_if_possible(
         return f"{prefix}{formatted}{suffix}{safe_sep}oku"
 
     fixed, count = _RE_EN_NUMBER_WITH_BILLION_UNIT.subn(repl, translated_text)
+    return fixed, bool(count) and fixed != translated_text
+
+
+def _fix_to_jp_oku_numeric_unit_if_possible(
+    translated_text: str,
+) -> tuple[str, bool]:
+    """Convert numeric `oku` units to Japanese `億`/`億円` safely."""
+    if not translated_text:
+        return translated_text, False
+    if "oku" not in translated_text.lower():
+        return translated_text, False
+
+    def repl(match: re.Match[str]) -> str:
+        prefix = match.group("prefix") or ""
+        number = match.group("number") or ""
+        suffix = match.group("suffix") or ""
+        has_yen = bool(match.group("yen"))
+        unit = "億円" if has_yen else "億"
+        return f"{prefix}{number}{suffix}{unit}"
+
+    fixed, count = _RE_EN_OKU_YEN_AMOUNT.subn(repl, translated_text)
     return fixed, bool(count) and fixed != translated_text
 
 
@@ -4398,6 +4428,10 @@ class TranslationService:
                         error_message="翻訳結果が日本語ではありませんでした（出力言語ガード）",
                         metadata=metadata,
                     )
+                fixed_text, fixed = _fix_to_jp_oku_numeric_unit_if_possible(merged)
+                if fixed:
+                    merged = fixed_text
+                    metadata["to_jp_oku_correction"] = True
                 return TextTranslationResult(
                     source_text=text,
                     source_char_count=len(text),
@@ -4869,6 +4903,10 @@ class TranslationService:
                         error_message="翻訳結果が日本語ではありませんでした（出力言語ガード）",
                         metadata=metadata,
                     )
+            fixed_text, fixed = _fix_to_jp_oku_numeric_unit_if_possible(translation)
+            if fixed:
+                translation = fixed_text
+                metadata["to_jp_oku_correction"] = True
             return TextTranslationResult(
                 source_text=text,
                 source_char_count=len(text),

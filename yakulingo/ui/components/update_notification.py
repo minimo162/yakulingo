@@ -324,7 +324,7 @@ class UpdateNotification:
     async def _shutdown_app(self, exit_code: int = 0):
         """アプリケーションを確実に終了する
 
-        NiceGUIのon_shutdownで登録されたcleanup処理（Copilot切断、DB閉鎖など）を
+        NiceGUIのon_shutdownで登録されたcleanup処理（翻訳停止、DB閉鎖など）を
         呼び出した後、プロセスを終了する。通常の×ボタン終了と同じ処理が行われる。
         """
         import os
@@ -332,7 +332,7 @@ class UpdateNotification:
         from nicegui import app as nicegui_app
 
         # NiceGUI のシャットダウンを実行（on_shutdown で登録された cleanup が呼ばれる）
-        # これにより Copilot切断、翻訳キャンセル、DB閉鎖などが行われる
+        # これにより翻訳キャンセル、ローカルAI停止、DB閉鎖などが行われる
         nicegui_app.shutdown()
 
         # cleanup処理が完了するまで待機

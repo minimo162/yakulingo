@@ -31,7 +31,7 @@ _RE_QUOTE = re.compile(r'"([^"]+)"')
 
 # Translation result parsing patterns
 # Note: Colon is REQUIRED ([:：]) to avoid matching "訳文" in other contexts (e.g., "訳文の形式:")
-# Supports multiple explanation markers for robustness against Copilot format changes
+# Supports multiple explanation markers for robustness against backend format changes
 _EXPLANATION_MARKERS = r"(?:解説|説明|Explanation|Notes?)[:：]?"
 _RE_TRANSLATION_TEXT = re.compile(
     r"[#>*\s-]*\**(?:訳文|Translation|Translated)\**[:：]\s*(.+?)(?=[\n\s]*[#>*\s-]*"

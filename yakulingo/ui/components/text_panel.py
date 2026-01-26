@@ -795,7 +795,7 @@ def create_text_result_panel(
                 if state.text_result and state.text_result.options:
                     _render_result_meta(state, state.text_result)
 
-        # Streaming preview (partial output while Copilot is generating)
+        # Streaming preview (partial output while backend is generating)
         if state.text_translating and state.text_streaming_preview:
             with ui.element("div").classes("streaming-preview"):
                 preview_text = normalize_literal_escapes(state.text_streaming_preview)

@@ -1259,20 +1259,14 @@ if TYPE_CHECKING:
 
 
 # App constants
-COPILOT_LOGIN_TIMEOUT = 3600  # 60 minutes for login
 CLIENT_CONNECTED_TIMEOUT_SEC = 12  # Soft timeout for client.connected() before fallback
 STARTUP_SPLASH_TIMEOUT_SEC = 25  # Close external splash if startup stalls
 STARTUP_LOADING_DELAY_MS = 0  # Show startup overlay immediately to avoid white flash
 STARTUP_UI_READY_TIMEOUT_MS = 2000  # Startup UI readiness timeout
 STARTUP_UI_READY_FALLBACK_GRACE_MS = 300  # Grace period before rendering fallback
 STARTUP_UI_READY_SELECTOR = '[data-yakulingo-root="true"]'
-STARTUP_COPILOT_STATE_TIMEOUT_SEC = 6  # Longer timeout shortly after launch
-STARTUP_COPILOT_STATE_WINDOW_SEC = 60  # Apply longer timeout for first 60s
 MAX_HISTORY_DISPLAY = 20  # Maximum history items to display in sidebar
 MAX_HISTORY_DRAWER_DISPLAY = 100  # Maximum history items to show in history drawer
-MIN_AVAILABLE_MEMORY_GB_FOR_EARLY_CONNECT = (
-    0.5  # Skip early Copilot init only on very low memory
-)
 TEXT_TRANSLATION_CHAR_LIMIT = 5000  # Max chars for text translation (clipboard trigger)
 STREAMING_PREVIEW_UPDATE_INTERVAL_SEC = 0.18  # UI streaming preview throttling interval
 STREAMING_PREVIEW_SCROLL_INTERVAL_SEC = 0.35  # Throttle scroll JS during streaming
@@ -1280,10 +1274,7 @@ FILE_LANGUAGE_DETECTION_TIMEOUT_SEC = 8.0  # Avoid hanging file-language detecti
 FILE_TRANSLATION_UI_VISIBILITY_HOLD_SEC = 600.0  # 翻訳完了直後のUI自動非表示を抑止
 DEFAULT_TEXT_STYLE = "concise"
 RESIDENT_HEARTBEAT_INTERVAL_SEC = 300  # Update startup.log even when UI is closed
-RESIDENT_STARTUP_READY_TIMEOUT_SEC = 3600  # Allow manual login during resident startup
-RESIDENT_STARTUP_PROMPT_READY_TIMEOUT_SEC = (
-    300  # Wait for Copilot input/send readiness after connect
-)
+RESIDENT_STARTUP_READY_TIMEOUT_SEC = 3600  # 常駐起動の準備猶予（セットアップ用）
 RESIDENT_STARTUP_POLL_INTERVAL_SEC = 2
 RESIDENT_STARTUP_LAYOUT_RETRY_ATTEMPTS = 40
 RESIDENT_STARTUP_LAYOUT_RETRY_DELAY_SEC = 0.25
@@ -1521,8 +1512,8 @@ class YakuLingoApp:
     """Main application - Nani-inspired sidebar layout.
 
     This class is organized into the following sections:
-    1. Initialization & Properties - __init__, copilot property
-    2. Connection & Startup - Edge/Copilot connection, browser ready handler
+    1. Initialization & Properties - __init__, settings
+    2. Connection & Startup - startup handlers
     3. UI Refresh Methods - Methods that update UI state
     4. UI Creation Methods - Methods that build UI components
     5. Error Handling Helpers - Unified error handling methods
@@ -1600,8 +1591,8 @@ class YakuLingoApp:
         self._active_progress_timer: Optional[UiTimer] = None
         self._file_panel_refresh_timer: Optional[UiTimer | NiceGUITimer] = None
 
-        # Copilot access lock (used for queue parallelism safety)
-        self._copilot_lock = threading.Lock()
+        # 翻訳バックエンド呼び出しロック（キュー並列安全用）
+        self._translation_client_lock = threading.Lock()
 
         # Throttle noisy taskbar visibility logs when window handle is missing
         self._last_taskbar_visibility_not_found_time: Optional[float] = None
@@ -1635,8 +1626,6 @@ class YakuLingoApp:
         # Login polling state (prevents duplicate polling)
         self._login_polling_active = False
         self._login_polling_task: "asyncio.Task | None" = None
-        # GPT mode preparation task (wait until mode switch is done)
-        self._gpt_mode_setup_task: "asyncio.Task | None" = None
         # Connection status auto-refresh (avoids stale "準備中..." UI after transient timeouts)
         self._status_auto_refresh_task: "asyncio.Task | None" = None
         # Local AI startup/ensure task (avoid duplicate ensure_ready calls)
@@ -1646,17 +1635,10 @@ class YakuLingoApp:
         # Local AI READY probe (avoid redundant warmup on every translation)
         self._local_ai_ready_probe_key: str | None = None
         self._local_ai_ready_probe_at: float | None = None
-        # Copilot state cache to throttle frequent UI status polling.
-        self._last_copilot_state: Optional[str] = None
-        self._last_copilot_state_at: float | None = None
-        self._last_copilot_state_error: Optional[str] = None
-        self._last_copilot_state_connected: Optional[bool] = None
         # Result panel auto-scroll debounce (avoid scheduling a task for every stream chunk)
         self._result_panel_scroll_task: "asyncio.Task | None" = None
         self._result_panel_scroll_handle: "asyncio.Handle | None" = None
         self._shutdown_requested = False
-        self._copilot_window_monitor_task: "asyncio.Task | None" = None
-        self._copilot_window_seen = False
         self._resident_heartbeat_task: "asyncio.Task | None" = None
         self._resident_startup_active = False
         self._resident_startup_ready = False
@@ -1674,7 +1656,6 @@ class YakuLingoApp:
         self._auto_open_cause_set_at: float | None = None
         self._auto_open_timeout_task: "asyncio.Task | None" = None
         self._layout_mode = LayoutMode.HIDDEN
-        self._edge_visibility_target: str | None = None
         self._startup_fallback_rendered = False
         self._startup_fallback_element = None
         self._ui_ready_event = asyncio.Event()
@@ -1693,15 +1674,6 @@ class YakuLingoApp:
         # PP-DocLayout-L initialization state (on-demand for PDF)
         self._layout_init_state = LayoutInitializationState.NOT_INITIALIZED
         self._layout_init_lock = threading.Lock()  # Prevents double initialization
-
-        # Early Copilot connection (started before UI, result applied after)
-        self._early_connection_task: "asyncio.Task | None" = None
-        self._early_connection_result: Optional[bool] = None
-        self._early_connect_thread: "threading.Thread | None" = (
-            None  # Background Edge startup
-        )
-        self._early_connection_event: "threading.Event | None" = None
-        self._early_connection_result_ref: "_EarlyConnectionResult | None" = None
 
         # Text input textarea reference for auto-focus
         self._text_input_textarea: Optional[UiTextarea] = None
@@ -1728,7 +1700,7 @@ class YakuLingoApp:
             self.translation_service = TranslationService(
                 config=self.settings,
                 prompts_dir=get_default_prompts_dir(),
-                client_lock=self._copilot_lock,
+                client_lock=self._translation_client_lock,
             )
             return True
         except (
@@ -1764,13 +1736,6 @@ class YakuLingoApp:
         """Allow tests or callers to inject an AppSettings instance."""
 
         self._settings = value
-
-    def _get_effective_browser_display_mode(self) -> str:
-        """Resolve browser display mode for current screen size."""
-        screen_width = self._screen_size[0] if self._screen_size else None
-        return resolve_browser_display_mode(
-            self.settings.browser_display_mode, screen_width
-        )
 
     def _get_window_size_for_native_ops(self) -> tuple[int, int]:
         """Return window size in the coordinate space used by Win32 APIs."""
@@ -1906,13 +1871,6 @@ class YakuLingoApp:
             if self._apply_resident_startup_layout_win32():
                 return
             time_module.sleep(delay_sec)
-
-    async def _wait_for_copilot_ready(
-        self, timeout_sec: int = RESIDENT_STARTUP_READY_TIMEOUT_SEC
-    ) -> bool:
-        """(互換用) 旧Copilot準備待ち。現在はローカルAIのみ。"""
-        _ = timeout_sec
-        return True
 
     async def _get_resident_startup_status(self) -> dict[str, object]:
         """Return resident startup status for setup scripts."""
@@ -2491,16 +2449,6 @@ class YakuLingoApp:
                         except Exception:
                             pass
 
-                        copilot = getattr(self, "_copilot", None)
-                        if copilot is not None and not copilot.is_gpt_mode_set:
-                            try:
-                                logger.info(
-                                    "Hotkey translation waiting for GPT mode setup"
-                                )
-                                copilot.wait_for_gpt_mode_setup(25.0)
-                            except Exception as e:
-                                logger.debug("Hotkey GPT mode wait failed: %s", e)
-
                         if is_path_selection:
                             self._translate_files_hotkey_background_sync(
                                 file_paths,
@@ -2770,15 +2718,6 @@ class YakuLingoApp:
                         self.state.text_view_state = TextViewState.RESULT
                     self._refresh_ui_after_hotkey_translation(trace_id)
                 return
-
-            # If GPT mode setup is still running, wait briefly before starting translation.
-            copilot = getattr(self, "_copilot", None)
-            if copilot is not None and not copilot.is_gpt_mode_set:
-                try:
-                    logger.info("Hotkey translation waiting for GPT mode setup")
-                    await asyncio.to_thread(copilot.wait_for_gpt_mode_setup, 25.0)
-                except Exception as e:
-                    logger.debug("Hotkey GPT mode wait failed: %s", e)
 
             if is_path_selection:
                 if not file_paths:
@@ -4395,8 +4334,6 @@ class YakuLingoApp:
             if not yakulingo_hwnd:
                 return False
 
-            copilot = getattr(self, "_copilot", None)
-
             SW_RESTORE = 9
             SW_SHOW = 5
             if user32.IsIconic(wintypes.HWND(yakulingo_hwnd)):
@@ -4462,21 +4399,6 @@ class YakuLingoApp:
             edge_layout_mode = (edge_layout or "auto").strip().lower()
             if edge_layout_mode not in ("auto", "offscreen", "triple"):
                 edge_layout_mode = "auto"
-            if (
-                edge_layout_mode == "auto"
-                and getattr(copilot, "_edge_layout_mode", None) == "offscreen"
-            ):
-                edge_layout_mode = "offscreen"
-            if copilot is not None and (
-                edge_layout_mode in ("offscreen", "triple")
-                or original_source_hwnd is None
-            ):
-                try:
-                    edge_hwnd = copilot._find_edge_window_handle()
-                except Exception:
-                    edge_hwnd = None
-                if edge_hwnd and not _is_valid_window(edge_hwnd):
-                    edge_hwnd = None
             if edge_layout_mode == "triple":
                 if edge_hwnd is not None:
                     use_triple_layout = True
@@ -5397,18 +5319,6 @@ class YakuLingoApp:
             _hide_native_window_offscreen_win32("YakuLingo")
         except Exception as e:
             logger.debug("Failed to hide resident window offscreen (%s): %s", reason, e)
-        copilot = getattr(self, "_copilot", None)
-        if copilot is not None:
-            try:
-                threading.Thread(
-                    target=copilot.hide_edge_window,
-                    daemon=True,
-                    name="hide_copilot_edge_resident",
-                ).start()
-            except Exception as e:
-                logger.debug(
-                    "Failed to hide Copilot Edge in resident mode (%s): %s", reason, e
-                )
 
     def _enter_resident_mode(self, reason: str) -> None:
         self._resident_mode = True
@@ -5442,12 +5352,6 @@ class YakuLingoApp:
                     _hide_native_window_offscreen_win32("YakuLingo")
                 except Exception:
                     pass
-                copilot = getattr(self, "_copilot", None)
-                if copilot is not None:
-                    try:
-                        copilot.hide_edge_window()
-                    except Exception:
-                        pass
                 time.sleep(delay_sec)
 
         try:
@@ -5822,27 +5726,6 @@ class YakuLingoApp:
         self._history_filters = None
         self._history_dialog_filters = None
 
-        copilot = getattr(self, "_copilot", None)
-        if copilot is not None and sys.platform == "win32":
-
-            def _minimize_copilot_edge_window() -> None:
-                try:
-                    if keep_resident_on_close:
-                        copilot.hide_edge_window()
-                    else:
-                        copilot.minimize_edge_window()
-                except Exception:
-                    pass
-
-            try:
-                threading.Thread(
-                    target=_minimize_copilot_edge_window,
-                    daemon=True,
-                    name="minimize_copilot_edge_on_ui_close",
-                ).start()
-            except Exception:
-                pass
-
     def _schedule_ui_ready_retry(self, reason: str) -> None:
         task = self._ui_ready_retry_task
         if task is not None and not task.done():
@@ -5932,29 +5815,6 @@ class YakuLingoApp:
         self._layout_mode = mode
         logger.debug("Layout mode set to %s (%s)", mode.value, reason)
 
-    def _should_respect_edge_visibility_target(self) -> bool:
-        return self._layout_mode == LayoutMode.FOREGROUND
-
-    def _apply_edge_visibility_target(self, reason: str) -> None:
-        if not self._should_respect_edge_visibility_target():
-            return
-        target = self._edge_visibility_target
-        if not target:
-            return
-        copilot = getattr(self, "_copilot", None)
-        if copilot is None:
-            return
-        try:
-            if target == "minimized":
-                copilot.minimize_edge_window()
-            elif target == "foreground":
-                copilot.bring_to_foreground(
-                    reason=f"edge_visibility:{reason}",
-                    force_full_window=True,
-                )
-        except Exception as e:
-            logger.debug("Edge visibility target apply failed (%s): %s", reason, e)
-
     async def _ensure_ui_ready_after_restore(
         self,
         reason: str,
@@ -5985,8 +5845,7 @@ class YakuLingoApp:
     async def _ensure_app_window_visible(self):
         """Ensure the app window is visible and in front after UI is ready.
 
-        This is called after create_ui() to restore focus to the app window,
-        as Edge startup may steal focus.
+        This is called after create_ui() to restore focus to the app window.
         """
         login_required_guard = False
         if (
@@ -6143,9 +6002,6 @@ class YakuLingoApp:
             self._set_ui_taskbar_visibility_win32(True, "ensure_app_window_visible")
 
         self._set_layout_mode(LayoutMode.FOREGROUND, "ensure_app_window_visible")
-        if self._settings:
-            self._edge_visibility_target = self._get_effective_browser_display_mode()
-            self._apply_edge_visibility_target("ensure_app_window_visible")
 
     def _restore_app_window_win32(self) -> bool:
         """Restore and bring app window to front using Windows API.
@@ -6217,50 +6073,15 @@ class YakuLingoApp:
             logger.debug("Failed to restore app window: %s", e)
             return False
 
-    async def wait_for_edge_connection(self, edge_future):
-        """(互換用) 旧Copilot接続待機。現在はローカルAIのみ。"""
-        _ = edge_future
-        if not self._ensure_translation_service():
-            return
-        await self._ensure_local_ai_ready_async()
-
     async def _apply_early_connection_or_connect(self):
         """Ensure translation service and local AI are ready (local-only)."""
         if not self._ensure_translation_service():
             return
         await self._ensure_local_ai_ready_async()
 
-    def _is_gpt_mode_setup_in_progress(self) -> bool:
-        return (
-            self._gpt_mode_setup_task is not None
-            and not self._gpt_mode_setup_task.done()
-        )
-
-    async def _ensure_gpt_mode_setup(self) -> None:
-        """(互換用) 旧CopilotのGPTモード準備。現在はローカルAIのみ。"""
-        return
-
-    async def _run_gpt_mode_setup(self) -> None:
-        return
-
-    async def start_edge_and_connect(self):
-        """(互換用) 旧Copilot接続。現在はローカルAIのみ。"""
-        if not self._ensure_translation_service():
-            return
-        await self._ensure_local_ai_ready_async()
-
-    async def _start_login_polling_if_needed(self):
-        return
-
-    def _ensure_copilot_window_monitor(self) -> None:
-        return
-
-    async def _monitor_copilot_window(self) -> None:
-        return
-
     async def _on_browser_ready(self, bring_to_front: bool = False):
         """Called when browser connection is ready. Optionally brings app to front."""
-        # Small delay to ensure Edge window operations are complete
+        # Small delay to ensure native window operations are complete
         await asyncio.sleep(0.3)
 
         if bring_to_front:
@@ -6304,25 +6125,6 @@ class YakuLingoApp:
             _refresh_status_later(),
             name="refresh_status_later",
         )
-
-    async def _wait_for_login_completion(self):
-        """(互換用) 旧Copilotログイン待ち。現在はローカルAIのみ。"""
-        self._login_polling_active = False
-        self._login_polling_task = None
-        return
-
-    async def _show_login_browser(self, reason: str = "ui_login_banner") -> None:
-        _ = reason
-        return
-
-    async def _show_copilot_browser(self, reason: str = "ui_manual_show") -> None:
-        _ = reason
-        return
-
-    async def _reconnect(self, max_retries: int = 3, show_progress: bool = True):
-        """(互換用) 旧Copilot再接続。現在はローカルAIのみ。"""
-        _ = (max_retries, show_progress)
-        return await self._ensure_local_ai_ready_async()
 
     async def check_for_updates(self):
         """Check for updates in background."""
@@ -9202,7 +9004,6 @@ class YakuLingoApp:
             "cjk_fallback": "CJKのみ",
             "empty": "未入力",
             "default": "自動判定",
-            "copilot": "Copilot判定",
         }
         return mapping.get(reason or "", "自動判定")
 
@@ -10250,7 +10051,7 @@ class YakuLingoApp:
             # Yield control to event loop before starting blocking operation
             await asyncio.sleep(0)
 
-            # Streaming preview: update partial output as Copilot generates back-translation.
+            # Streaming preview: update partial output while the backend generates output.
             loop = asyncio.get_running_loop()
             stream_handler = None
             if self._is_local_streaming_preview_enabled():
@@ -10584,9 +10385,7 @@ class YakuLingoApp:
 
         On-demand initialization pattern:
         1. Check if already initialized
-        2. If not, disconnect Copilot (to avoid conflicts)
-        3. Initialize PP-DocLayout-L
-        4. Reconnect Copilot
+        2. If not, initialize PP-DocLayout-L on-demand
 
         This avoids the 10+ second startup delay for users who don't use PDF translation.
 
@@ -11084,7 +10883,7 @@ class YakuLingoApp:
                 service = TranslationService(
                     config=self.settings,
                     prompts_dir=get_default_prompts_dir(),
-                    client_lock=self._copilot_lock,
+                    client_lock=self._translation_client_lock,
                 )
             except Exception as e:
                 # If worker setup fails, drain the queue to avoid deadlocking queue.join().
@@ -11489,7 +11288,7 @@ class YakuLingoApp:
                         except Exception:
                             pass
 
-                # PP-DocLayout-L initialization temporarily disconnects Copilot; re-check connection.
+                # Layout model initialization can be heavy; re-check backend readiness.
                 if not await self._ensure_connection_async():
                     return
 
@@ -12874,17 +12673,6 @@ def run_app(
                 "[TIMING] Cancel: login_polling_task: %.3fs", time_module.time() - t0
             )
 
-        if yakulingo_app._copilot_window_monitor_task is not None:
-            t0 = time_module.time()
-            try:
-                yakulingo_app._copilot_window_monitor_task.cancel()
-            except Exception:
-                pass
-            logger.debug(
-                "[TIMING] Cancel: copilot_window_monitor_task: %.3fs",
-                time_module.time() - t0,
-            )
-
         if yakulingo_app._auto_open_timeout_task is not None:
             t0 = time_module.time()
             try:
@@ -12894,26 +12682,6 @@ def run_app(
             logger.debug(
                 "[TIMING] Cancel: auto_open_timeout_task: %.3fs",
                 time_module.time() - t0,
-            )
-
-        if yakulingo_app._gpt_mode_setup_task is not None:
-            t0 = time_module.time()
-            try:
-                yakulingo_app._gpt_mode_setup_task.cancel()
-            except Exception:
-                pass
-            logger.debug(
-                "[TIMING] Cancel: gpt_mode_setup_task: %.3fs", time_module.time() - t0
-            )
-
-        if yakulingo_app._early_connection_task is not None:
-            t0 = time_module.time()
-            try:
-                yakulingo_app._early_connection_task.cancel()
-            except Exception:
-                pass
-            logger.debug(
-                "[TIMING] Cancel: early_connection_task: %.3fs", time_module.time() - t0
             )
 
         if yakulingo_app._status_auto_refresh_task is not None:
@@ -13018,10 +12786,7 @@ def run_app(
         yakulingo_app._local_ai_ensure_task = None
         yakulingo_app._resident_heartbeat_task = None
         yakulingo_app._ui_ready_retry_task = None
-        yakulingo_app._copilot_window_monitor_task = None
         yakulingo_app._auto_open_timeout_task = None
-        yakulingo_app._gpt_mode_setup_task = None
-        yakulingo_app._early_connection_task = None
         yakulingo_app._result_panel_scroll_task = None
         yakulingo_app._result_panel_scroll_handle = None
 

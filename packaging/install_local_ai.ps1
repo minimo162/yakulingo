@@ -309,7 +309,7 @@ try {
     # Default model (fixed):
     # Always use a prebuilt GGUF downloaded from Hugging Face.
     $defaultModelRepo = 'mradermacher/translategemma-4b-it-i1-GGUF'
-    $defaultModelFile = 'translategemma-4b-it.i1-Q4_K_S.gguf'
+    $defaultModelFile = 'translategemma-4b-it.i1-Q6_K.gguf'
     $defaultModelRevision = 'main'
 
     # Model selection is fixed (manifest/env overrides are ignored).

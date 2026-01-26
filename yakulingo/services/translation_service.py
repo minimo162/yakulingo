@@ -4300,13 +4300,29 @@ class TranslationService:
             runtime = None
             supports_runtime = self._local_translate_single_supports_runtime_param()
             local_translate_single_calls = 0
+            skip_runtime_prefetch = False
 
             if supports_runtime:
                 local_client = self._local_client
                 if local_client is None:
                     raise RuntimeError("Local AI client not initialized")
-                ensure_ready = getattr(local_client, "ensure_ready", None)
-                runtime = ensure_ready() if callable(ensure_ready) else None
+                try:
+                    from yakulingo.services.local_ai_client import LocalAIClient
+                except Exception:
+                    LocalAIClient = None
+                is_local_ai_client = (
+                    isinstance(local_client, LocalAIClient)
+                    if LocalAIClient is not None
+                    else False
+                )
+                translate_single_fn = getattr(local_client, "translate_single", None)
+                if is_local_ai_client and callable(translate_single_fn):
+                    module_name = getattr(translate_single_fn, "__module__", "")
+                    if module_name and module_name != "yakulingo.services.local_ai_client":
+                        skip_runtime_prefetch = True
+                if not skip_runtime_prefetch:
+                    ensure_ready = getattr(local_client, "ensure_ready", None)
+                    runtime = ensure_ready() if callable(ensure_ready) else None
 
             def translate_single_local(
                 *,

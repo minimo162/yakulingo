@@ -3065,6 +3065,23 @@ class BatchTranslator:
                             remaining_count,
                         )
 
+            # Treat ellipsis-only outputs ("..." / "…") as invalid translations and fall back.
+            ellipsis_only_indices = [
+                idx
+                for idx, trans in enumerate(cleaned_unique_translations)
+                if trans
+                and trans.strip()
+                and _is_ellipsis_only_translation(unique_texts[idx], trans)
+            ]
+            if ellipsis_only_indices:
+                logger.warning(
+                    "Batch %d: %d ellipsis-only translations detected; using fallback for those blocks",
+                    i + 1,
+                    len(ellipsis_only_indices),
+                )
+                for idx in ellipsis_only_indices:
+                    cleaned_unique_translations[idx] = ""
+
             # Detect empty translations (a backend may return empty strings for some items)
             empty_translation_indices = [
                 idx

@@ -367,3 +367,57 @@ def test_local_batch_auto_corrects_month_abbrev_without_retry() -> None:
     assert result.untranslated_block_ids == []
     assert "Jan." in result.translations["b1"]
     assert "January" not in result.translations["b1"]
+
+
+def test_local_batch_retries_when_translation_is_ellipsis_only() -> None:
+    copilot = RecordingLocalAIClient(
+        responses=[
+            ["..."],
+            ["OK"],
+        ]
+    )
+    translator = BatchTranslator(
+        client=copilot,
+        prompt_builder=DummyPromptBuilder(),  # type: ignore[arg-type]
+        max_chars_per_batch=600,
+        enable_cache=False,
+    )
+    blocks = [
+        TextBlock(id="b1", text="これはテストです。", location="Sheet1"),
+    ]
+
+    result = translator.translate_blocks_with_result(
+        blocks,
+        output_language="en",
+    )
+
+    assert copilot.calls == 2
+    assert result.untranslated_block_ids == []
+    assert result.translations["b1"] == "OK"
+
+
+def test_local_batch_falls_back_when_translation_stays_ellipsis_only() -> None:
+    copilot = RecordingLocalAIClient(
+        responses=[
+            ["..."],
+            ["..."],
+        ]
+    )
+    translator = BatchTranslator(
+        client=copilot,
+        prompt_builder=DummyPromptBuilder(),  # type: ignore[arg-type]
+        max_chars_per_batch=600,
+        enable_cache=False,
+    )
+    blocks = [
+        TextBlock(id="b1", text="これはテストです。", location="Sheet1"),
+    ]
+
+    result = translator.translate_blocks_with_result(
+        blocks,
+        output_language="en",
+    )
+
+    assert copilot.calls == 2
+    assert result.untranslated_block_ids == ["b1"]
+    assert result.translations["b1"] == "これはテストです。"

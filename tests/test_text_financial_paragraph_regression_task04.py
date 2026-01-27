@@ -22,7 +22,13 @@ def test_style_comparison_financial_paragraph_auto_corrects_numeric_units(
         nonlocal calls
         _ = text, prompt, reference_files, on_chunk
         calls += 1
-        return '{"translation":"Revenue was 2.2385 trillion yen, down by 1,554 billion yen year on year.","explanation":""}'
+        return (
+            '{"options":['
+            '{"style":"standard","translation":"Revenue was 2.2385 trillion yen, down by 1,554 billion yen year on year.","explanation":"standard rationale"},'
+            '{"style":"concise","translation":"Revenue was 2.2385 trillion yen, down by 1,554 billion yen year on year.","explanation":"concise rationale"},'
+            '{"style":"minimal","translation":"Revenue was 2.2385 trillion yen, down by 1,554 billion yen year on year.","explanation":"minimal rationale"}'
+            "]}"
+        )
 
     monkeypatch.setattr(
         service,
@@ -37,8 +43,15 @@ def test_style_comparison_financial_paragraph_auto_corrects_numeric_units(
 
     assert calls == 1
     assert result.output_language == "en"
-    assert [option.style for option in result.options] == ["minimal"]
+    assert [option.style for option in result.options] == [
+        "standard",
+        "concise",
+        "minimal",
+    ]
+    expected = "Revenue was 22,385 oku yen, down by 1,554 oku yen year on year."
     assert [option.text for option in result.options] == [
-        "Revenue was 22,385 oku yen, down by 1,554 oku yen year on year."
+        expected,
+        expected,
+        expected,
     ]
     assert (result.metadata or {}).get("to_en_numeric_unit_correction") is True

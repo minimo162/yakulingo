@@ -305,15 +305,6 @@ def resolve_browser_display_action(
 class AppSettings:
     """Application settings"""
 
-    # Reference Files (用語集、参考資料など)
-    # Default is empty; bundled glossary can be enabled via use_bundled_glossary
-    reference_files: list[str] = field(default_factory=list)
-
-    # Cache for resolved reference file paths (not persisted)
-    _ref_paths_cache: Optional[tuple[str, list[Path]]] = field(
-        default=None, repr=False, compare=False
-    )
-
     # Output (常に別ファイルとして _translated 付きで保存)
     output_directory: Optional[str] = None  # None = same as input
 
@@ -1097,58 +1088,6 @@ class AppSettings:
         )
         with _settings_cache_lock:
             _settings_cache[cache_key] = (template_mtime, user_mtime, self)
-
-    def get_reference_file_paths(self, base_dir: Path) -> list[Path]:
-        """
-        Get resolved reference file paths.
-        Returns only existing files within the base directory.
-
-        Security: Validates paths to prevent path traversal attacks.
-
-        Performance: Caches results to avoid repeated path resolution.
-        Cache is invalidated when base_dir or reference_files change.
-        """
-        # Create cache key from base_dir and reference_files
-        base_dir_str = str(base_dir.resolve())
-        cache_key = f"{base_dir_str}:{','.join(self.reference_files)}"
-
-        # Check cache
-        if self._ref_paths_cache is not None:
-            cached_key, cached_paths = self._ref_paths_cache
-            if cached_key == cache_key:
-                return cached_paths
-
-        # Resolve paths
-        paths = []
-        base_dir_resolved = base_dir.resolve()
-        base_dir_abs = base_dir.absolute()
-
-        for ref_file in self.reference_files:
-            path = Path(ref_file)
-            if not path.is_absolute():
-                path = base_dir_abs / path
-            path = path.absolute()
-            if path.suffix.lower() != ".csv":
-                continue
-
-            # Resolve to absolute path and check for path traversal
-            resolved_path = path.resolve()
-
-            # Ensure the resolved path is within the base directory
-            try:
-                resolved_path.relative_to(base_dir_resolved)
-            except ValueError:
-                # Path is outside base directory - skip for security
-                continue
-
-            if path.exists():
-                # Keep the original (absolute) path representation to avoid
-                # Windows 8.3 short/long path mismatches in callers/tests.
-                paths.append(path)
-
-        # Update cache
-        self._ref_paths_cache = (cache_key, paths)
-        return paths
 
     def get_output_directory(self, input_path: Path) -> Path:
         """

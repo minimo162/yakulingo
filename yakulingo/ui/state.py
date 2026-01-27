@@ -132,9 +132,6 @@ class AppState:
     error_message: str = ""
     file_drop_error: Optional[str] = None
 
-    # Reference files
-    reference_files: list[Path] = field(default_factory=list)
-
     # Local AI connection / readiness (llama.cpp llama-server)
     local_ai_state: LocalAIState = LocalAIState.NOT_INSTALLED
     local_ai_error: str = ""
@@ -150,7 +147,6 @@ class AppState:
     history_query: str = ""
     history_filter_output_language: Optional[str] = None  # "en" or "jp"
     history_filter_styles: set[str] = field(default_factory=set)
-    history_filter_has_reference: Optional[bool] = None
 
     # File translation queue
     file_queue: list[FileQueueItem] = field(default_factory=list)

@@ -61,59 +61,6 @@ def format_bytes(size_bytes: int) -> str:
     return f"{size_bytes / (1024 * 1024 * 1024):.1f} GB"
 
 
-def summarize_reference_files(files: Optional[list[Path]]) -> dict:
-    """Summarize reference files for UI display."""
-    summary = {
-        "count": 0,
-        "total_bytes": 0,
-        "latest_mtime": None,
-        "entries": [],
-        "all_ok": True,
-    }
-    if not files:
-        return summary
-
-    latest_mtime = None
-    total_bytes = 0
-    entries = []
-    all_ok = True
-
-    for path in files:
-        exists = False
-        size_bytes = 0
-        mtime = None
-        try:
-            stat = path.stat()
-            exists = True
-            size_bytes = stat.st_size
-            mtime = stat.st_mtime
-        except OSError:
-            all_ok = False
-
-        if exists:
-            total_bytes += size_bytes
-            if latest_mtime is None or (mtime is not None and mtime > latest_mtime):
-                latest_mtime = mtime
-        else:
-            all_ok = False
-
-        entries.append(
-            {
-                "path": path,
-                "name": path.name,
-                "exists": exists,
-                "size_bytes": size_bytes,
-                "mtime": mtime,
-            }
-        )
-
-    summary["count"] = len(entries)
-    summary["total_bytes"] = total_bytes
-    summary["latest_mtime"] = latest_mtime
-    summary["entries"] = entries
-    summary["all_ok"] = all_ok
-    return summary
-
 
 def get_launcher_state_path() -> Path:
     return Path.home() / ".yakulingo" / "launcher_state.json"

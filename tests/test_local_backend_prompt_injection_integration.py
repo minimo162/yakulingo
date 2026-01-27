@@ -7,7 +7,7 @@ from yakulingo.config.settings import AppSettings
 from yakulingo.services.translation_service import TranslationService
 
 
-def test_local_backend_prompt_includes_rules_and_bundled_glossary() -> None:
+def test_local_backend_prompt_excludes_bundled_glossary() -> None:
     root = Path(__file__).resolve().parent.parent
     prompts_dir = root / "prompts"
 
@@ -43,4 +43,4 @@ def test_local_backend_prompt_includes_rules_and_bundled_glossary() -> None:
     assert captured.get("prompt")
     prompt = captured["prompt"]
     assert "数字の桁/カンマは変更しない" not in prompt
-    assert "[REFERENCE:file=glossary.csv]" in prompt
+    assert "[REFERENCE:file=glossary.csv]" not in prompt

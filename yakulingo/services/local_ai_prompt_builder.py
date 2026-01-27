@@ -1109,6 +1109,7 @@ class LocalPromptBuilder:
         input_text: Optional[str] = None,
         exclude_glossary_sources: Iterable[str] | None = None,
     ) -> EmbeddedReference:
+        return EmbeddedReference(text="", warnings=[], truncated=False)
         timing_enabled = _TIMING_ENABLED and logger.isEnabledFor(logging.DEBUG)
         t0 = time.perf_counter() if timing_enabled else 0.0
 

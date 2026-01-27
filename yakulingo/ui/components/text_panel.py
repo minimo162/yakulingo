@@ -14,15 +14,12 @@ import html
 import json
 import logging
 import re
-from pathlib import Path
 from typing import Callable, Optional
 
 from nicegui import ui
 
 from yakulingo.ui.state import AppState, TextViewState
 from yakulingo.ui.utils import (
-    format_bytes,
-    summarize_reference_files,
     normalize_literal_escapes,
     to_props_string_literal,
 )
@@ -329,15 +326,6 @@ def _build_copy_payload(
     return "\n".join(["訳文:", option_text]).strip()
 
 
-# Paperclip/Attachment SVG icon with aria-label for accessibility (Material Design style, centered)
-ATTACH_SVG: str = """
-<svg viewBox="0 0 24 24" fill="currentColor" role="img" aria-label="用語集を添付">
-    <title>添付</title>
-    <path d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5c0-1.38 1.12-2.5 2.5-2.5s2.5 1.12 2.5 2.5v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5c0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z"/>
-</svg>
-"""
-
-
 def create_text_input_panel(
     state: AppState,
     on_translate: Callable[[], None],
@@ -345,11 +333,8 @@ def create_text_input_panel(
     on_clear: Callable[[], None],
     on_split_translate: Optional[Callable[[], None]] = None,
     on_open_file_picker: Optional[Callable[[], None]] = None,
-    on_attach_reference_file: Optional[Callable[[], None]] = None,
-    on_remove_reference_file: Optional[Callable[[int], None]] = None,
     on_translate_button_created: Optional[Callable[[ui.button], None]] = None,
     use_bundled_glossary: bool = False,
-    effective_reference_files: Optional[list[Path]] = None,
     text_char_limit: int = 5000,
     batch_char_limit: int = 4000,
     on_output_language_override: Optional[Callable[[Optional[str]], None]] = None,
@@ -371,11 +356,8 @@ def create_text_input_panel(
         on_source_change,
         on_clear,
         on_open_file_picker,
-        on_attach_reference_file,
-        on_remove_reference_file,
         on_translate_button_created,
         use_bundled_glossary,
-        effective_reference_files,
         text_char_limit,
         batch_char_limit,
         on_output_language_override,
@@ -395,11 +377,8 @@ def _create_large_input_panel(
     on_source_change: Callable[[str], None],
     on_clear: Callable[[], None],
     on_open_file_picker: Optional[Callable[[], None]] = None,
-    on_attach_reference_file: Optional[Callable[[], None]] = None,
-    on_remove_reference_file: Optional[Callable[[int], None]] = None,
     on_translate_button_created: Optional[Callable[[ui.button], None]] = None,
     use_bundled_glossary: bool = False,
-    effective_reference_files: Optional[list[Path]] = None,
     text_char_limit: int = 5000,
     batch_char_limit: int = 4000,
     on_output_language_override: Optional[Callable[[Optional[str]], None]] = None,
@@ -479,10 +458,8 @@ def _create_large_input_panel(
                 with ui.row().classes(
                     "input-toolbar justify-between items-start flex-wrap gap-y-3"
                 ):
-                    # Left side: direction + reference files
+                    # Left side: direction + glossary toggle
                     with ui.column().classes("input-toolbar-left gap-2 flex-1 min-w-0"):
-                        reference_files: list[Path] = []
-                        manual_index_by_key: dict[str, int] = {}
                         settings_panel = ui.element("div").classes("advanced-panel")
 
                         with settings_panel:
@@ -534,7 +511,7 @@ def _create_large_input_panel(
                                             metrics_refs["override_jp"] = jp_btn
 
                                 with ui.column().classes("advanced-section"):
-                                    ui.label("参照ファイル").classes("advanced-label")
+                                    ui.label("用語集").classes("advanced-label")
                                     with ui.row().classes(
                                         "items-center gap-2 flex-wrap"
                                     ):
@@ -574,64 +551,6 @@ def _create_large_input_panel(
                                                     .classes("settings-btn")
                                                 )
                                                 edit_btn.tooltip("用語集を編集")
-
-                                        # Reference file attachment button
-                                        if on_attach_reference_file:
-                                            has_files = bool(state.reference_files)
-                                            attach_btn = (
-                                                ui.button()
-                                                .classes(
-                                                    f"attach-btn {'has-file' if has_files else ''} feedback-anchor"
-                                                )
-                                                .props(
-                                                    'flat aria-label="参照ファイルを追加" data-feedback="参照ファイルを追加"'
-                                                )
-                                            )
-                                            with attach_btn:
-                                                ui.html(ATTACH_SVG, sanitize=False)
-                                            attach_btn.on(
-                                                "click",
-                                                on_attach_reference_file,
-                                                js_handler=_build_action_feedback_js_handler(),
-                                            )
-                                            attach_btn.tooltip("参照ファイルを追加")
-
-                                    summary = summarize_reference_files(reference_files)
-                                    if summary["entries"]:
-                                        with ui.row().classes(
-                                            "ref-file-row items-center flex-wrap gap-2"
-                                        ):
-                                            for entry in summary["entries"]:
-                                                status_class = (
-                                                    "ref-file-chip"
-                                                    if entry["exists"]
-                                                    else "ref-file-chip missing"
-                                                )
-                                                with ui.element("div").classes(
-                                                    status_class
-                                                ):
-                                                    ui.label(entry["name"]).classes(
-                                                        "file-name"
-                                                    )
-                                                    manual_idx = (
-                                                        manual_index_by_key.get(
-                                                            str(
-                                                                entry["path"]
-                                                            ).casefold()
-                                                        )
-                                                    )
-                                                    if (
-                                                        manual_idx is not None
-                                                        and on_remove_reference_file
-                                                    ):
-                                                        ui.button(
-                                                            icon="close",
-                                                            on_click=lambda idx=manual_idx: on_remove_reference_file(
-                                                                idx
-                                                            ),
-                                                        ).props(
-                                                            'flat round aria-label="参照ファイルを削除"'
-                                                        ).classes("remove-btn")
 
                     with ui.column().classes("input-toolbar-right items-center gap-2"):
                         with ui.column().classes("translate-actions items-end gap-2"):
@@ -747,33 +666,6 @@ def create_text_result_panel(
 
         if source_text_to_display:
             _render_source_text_section(source_text_to_display, on_copy)
-
-        # Attached reference files indicator (collapsed by default)
-        if False and state.reference_files:
-            summary = summarize_reference_files(state.reference_files)
-            with ui.element("details").classes("ref-summary-details"):
-                with ui.element("summary").classes(
-                    "ref-summary-row items-center flex-wrap gap-2"
-                ):
-                    ui.label(f"参照ファイル {summary['count']}").classes("ref-chip")
-                    ui.label(format_bytes(summary["total_bytes"])).classes("ref-chip")
-                    ui.icon("expand_more").classes("ref-summary-caret")
-                with ui.column().classes("ref-detail-list"):
-                    for entry in summary["entries"]:
-                        status_class = (
-                            "ref-detail-row"
-                            if entry["exists"]
-                            else "ref-detail-row missing"
-                        )
-                        with ui.element("div").classes(status_class):
-                            ui.label(entry["name"]).classes("file-name")
-                            if entry["size_bytes"]:
-                                ui.label(format_bytes(entry["size_bytes"])).classes(
-                                    "ref-meta"
-                                )
-                            ui.label("OK" if entry["exists"] else "NG").classes(
-                                "ref-file-status"
-                            )
 
         # Translation status + meta hero
         has_status = (
@@ -925,8 +817,6 @@ def _render_result_meta(state: AppState, result: TextTranslationResult) -> None:
     chips: list[tuple[str, str]] = []
     if state.text_output_language_override in {"en", "jp"}:
         chips.append(("手動指定", "chip meta-chip override-chip"))
-    if state.reference_files:
-        chips.append((f"参照ファイル {len(state.reference_files)}", "chip meta-chip"))
     if not chips:
         return
     with ui.row().classes("result-meta-row items-center gap-2 flex-wrap"):

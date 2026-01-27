@@ -87,7 +87,7 @@ def test_translate_single_streaming_retries_with_repeated_prompt_on_missing_json
     assert calls == [("streaming", False), ("chat", True)]
 
 
-def test_local_reference_embed_cache_hit_skips_glossary_filter(tmp_path: Path) -> None:
+def test_local_reference_embed_disabled_skips_glossary_filter(tmp_path: Path) -> None:
     builder = _make_builder()
     builder._settings.use_bundled_glossary = False
     ref_path = tmp_path / "ref.csv"
@@ -102,11 +102,10 @@ def test_local_reference_embed_cache_hit_skips_glossary_filter(tmp_path: Path) -
 
     builder._filter_glossary_pairs = wrapped_filter  # type: ignore[method-assign]
 
-    first = builder.build_reference_embed([ref_path], input_text="AI alpha")
-    second = builder.build_reference_embed([ref_path], input_text="AI alpha")
+    embedded = builder.build_reference_embed([ref_path], input_text="AI alpha")
 
-    assert first is second
-    assert len(filter_calls) == 1
+    assert embedded.text == ""
+    assert filter_calls == []
 
 
 def test_streaming_preview_flush_forces_final_update(monkeypatch) -> None:

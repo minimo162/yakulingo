@@ -25,20 +25,18 @@ def _make_temp_builder(tmp_path: Path) -> LocalPromptBuilder:
     )
 
 
-def test_text_prompt_dedupes_generated_numeric_glossary_against_csv(tmp_path: Path) -> (
-    None
-):
+def test_text_prompt_ignores_reference_files(tmp_path: Path) -> None:
     builder = _make_temp_builder(tmp_path)
     glossary_path = tmp_path / "glossary.csv"
     glossary_path.write_text(
-        '"2兆2,385億円","22,385 billion yen"\n',
+        '"2億,385億","22,385 billion yen"\n',
         encoding="utf-8",
     )
 
-    input_text = "売上高は2兆2,385億円となりました。"
+    input_text = "売上は2億,385億となりました。"
 
     embedded = builder.build_reference_embed([glossary_path], input_text=input_text)
-    assert "2兆2,385億円 翻译成 22,385 billion yen" in embedded.text
+    assert embedded.text == ""
 
     prompt = builder.build_text_to_en_single(
         input_text,
@@ -46,5 +44,4 @@ def test_text_prompt_dedupes_generated_numeric_glossary_against_csv(tmp_path: Pa
         reference_files=[glossary_path],
         detected_language="日本語",
     )
-    assert "Glossary (generated; apply verbatim)" not in prompt
-    assert "2兆2,385億円 翻译成 22,385 billion yen" in prompt
+    assert "Glossary" not in prompt

@@ -9,8 +9,7 @@ Prompt file structure:
 - text_translate_to_jp.txt: Text translation → Japanese (translation-only)
 - adjust_*.txt: Adjustment prompts (shorter, longer, custom)
 
-Translation rules are no longer injected into prompts. Consistency
-interventions should be handled via glossary (reference files) instead.
+Translation rules are no longer injected into prompts.
 """
 
 import csv
@@ -752,18 +751,7 @@ class PromptBuilder:
         Returns:
             Complete prompt string
         """
-        # Build reference section
         reference_section = ""
-        if has_reference_files:
-            # Reference files are handled separately from the prompt body
-            reference_section = REFERENCE_INSTRUCTION
-            inline_glossary = self._build_inline_glossary_section(
-                reference_files, input_text=input_text
-            )
-            if inline_glossary:
-                reference_section = (
-                    f"{reference_section.rstrip()}\n\n{inline_glossary}\n"
-                )
 
         # Get appropriate template based on language and style
         template = self._get_template(output_language, translation_style)
@@ -829,7 +817,7 @@ class PromptBuilder:
         self,
         reference_files: Optional[Sequence[Path]],
     ) -> str:
-        """Return reference section text when reference files are provided.
+        """Return reference section text (deprecated).
 
         Args:
             reference_files: Optional reference files being attached
@@ -837,6 +825,4 @@ class PromptBuilder:
         Returns:
             Reference section text for prompt
         """
-        if reference_files:
-            return REFERENCE_INSTRUCTION
         return ""

@@ -1678,8 +1678,6 @@ class YakuLingoApp:
         # Text input textarea reference for auto-focus
         self._text_input_textarea: Optional[UiTextarea] = None
 
-        # Hidden file upload element for direct file selection (no dialog)
-        self._reference_upload = None
         self._global_drop_upload = None
         self._global_drop_indicator = None
 
@@ -1723,9 +1721,6 @@ class YakuLingoApp:
 
             start = time.perf_counter()
             self._settings = AppSettings.load(self.settings_path)
-            self.state.reference_files = self._settings.get_reference_file_paths(
-                self._base_dir
-            )
             logger.info("[TIMING] AppSettings.load: %.2fs", time.perf_counter() - start)
             # Always start in text mode; file panel opens on drag & drop.
             self.state.current_tab = Tab.TEXT
@@ -2908,7 +2903,6 @@ class YakuLingoApp:
             schedule_apply()
             return
 
-        reference_files = self._get_effective_reference_files()
         translation_style = self.settings.translation_style
 
         from yakulingo.models.types import FileInfo, FileType, TranslationStatus
@@ -3060,7 +3054,7 @@ class YakuLingoApp:
                     pass
                 result = translation_service.translate_file(
                     input_path,
-                    reference_files,
+                    None,
                     on_progress,
                     output_language,
                     translation_style,
@@ -3153,7 +3147,6 @@ class YakuLingoApp:
         if self.translation_service:
             self.translation_service.reset_cancel()
 
-        reference_files = self._get_effective_reference_files()
         translation_style = self.settings.translation_style
 
         from yakulingo.models.types import FileInfo, FileType
@@ -3417,7 +3410,7 @@ class YakuLingoApp:
                 result = await asyncio.to_thread(
                     self.translation_service.translate_file,
                     input_path,
-                    reference_files,
+                    None,
                     on_progress,
                     output_language,
                     translation_style,
@@ -3634,7 +3627,6 @@ class YakuLingoApp:
         )
         schedule_apply()
 
-        reference_files = self._get_effective_reference_files()
         start_time = time.monotonic()
         try:
             detected_language, detected_reason = (
@@ -3685,7 +3677,7 @@ class YakuLingoApp:
             )
             result = translation_service.translate_text_with_options(
                 text,
-                reference_files,
+                None,
                 None,
                 effective_detected_language,
                 stream_handler,
@@ -3768,8 +3760,6 @@ class YakuLingoApp:
         self.state.text_translation_elapsed_time = None
         self._refresh_ui_after_hotkey_translation(trace_id)
 
-        reference_files = self._get_effective_reference_files()
-
         start_time = time.monotonic()
         try:
             detected_language, detected_reason = await asyncio.to_thread(
@@ -3797,7 +3787,7 @@ class YakuLingoApp:
             result = await asyncio.to_thread(
                 self.translation_service.translate_text_with_style_comparison,
                 text,
-                reference_files,
+                None,
                 None,
                 effective_detected_language,
                 stream_handler,
@@ -7437,18 +7427,6 @@ class YakuLingoApp:
                 'aria-hidden="true"'
             )
 
-        # Hidden file upload for direct file selection (no dialog needed)
-        # Uses Quasar's pickFiles() method to open file picker directly
-        self._reference_upload = (
-            ui.upload(
-                on_upload=self._handle_reference_upload,
-                auto_upload=True,
-                max_files=1,
-            )
-            .props('accept=".csv"')
-            .classes("hidden")
-        )
-
         self._setup_global_file_drop()
         self._create_resident_close_button()
 
@@ -8055,11 +8033,8 @@ class YakuLingoApp:
                         on_source_change=self._on_source_change,
                         on_clear=self._clear,
                         on_open_file_picker=self._open_translation_file_picker,
-                        on_attach_reference_file=self._attach_reference_file,
-                        on_remove_reference_file=self._remove_reference_file,
                         on_translate_button_created=self._on_translate_button_created,
                         use_bundled_glossary=self.settings.use_bundled_glossary,
-                        effective_reference_files=self._get_effective_reference_files(),
                         text_char_limit=TEXT_TRANSLATION_CHAR_LIMIT,
                         batch_char_limit=self.settings.local_ai_max_chars_per_batch,
                         on_output_language_override=self._set_text_output_language_override,
@@ -8092,9 +8067,6 @@ class YakuLingoApp:
                                 on_section_toggle=self._on_section_toggle,
                                 on_section_select_all=self._on_section_select_all,
                                 on_section_clear=self._on_section_clear,
-                                on_attach_reference_file=self._attach_reference_file,
-                                on_remove_reference_file=self._remove_reference_file,
-                                reference_files=self.state.reference_files,
                                 translation_style=self.settings.translation_style,
                                 translation_result=self.state.translation_result,
                                 use_bundled_glossary=self.settings.use_bundled_glossary,
@@ -8574,20 +8546,6 @@ class YakuLingoApp:
         # (button won't appear again until next refresh after 3s)
         await asyncio.sleep(3)
 
-    def _get_effective_reference_files(self) -> list[Path] | None:
-        """Get reference files including bundled glossary if enabled.
-
-        Uses cached glossary path to avoid repeated path calculations.
-        """
-        files = list(self.state.reference_files) if self.state.reference_files else []
-
-        # Add bundled glossary if enabled (uses cached path)
-        if self.settings.use_bundled_glossary:
-            if self._glossary_path.exists() and self._glossary_path not in files:
-                files.insert(0, self._glossary_path)
-
-        return files if files else None
-
     def _copy_text(self, text: str):
         """テキストをOSのクリップボードへコピー（ベストエフォート）。
 
@@ -8992,8 +8950,6 @@ class YakuLingoApp:
                 ui.notify("キャンセルしました", type="info")
             elif error_message:
                 self._notify_error(error_message)
-            elif self.state.text_result:
-                self._notify_reference_warnings(self.state.text_result)
             # Batch refresh: result panel, button state, status, and tabs in one operation
             self._batch_refresh({"result", "button", "status", "tabs"})
 
@@ -9209,38 +9165,15 @@ class YakuLingoApp:
             )
 
         merged_metadata: dict | None = None
-        merged_reference_warnings: list[str] = []
-        seen_warnings: set[str] = set()
-        reference_truncated = False
         for res in chunk_results:
             meta = res.metadata
             if not isinstance(meta, dict):
                 continue
             if merged_metadata is None:
                 merged_metadata = {}
-
-            raw_warnings = meta.get("reference_warnings")
-            if isinstance(raw_warnings, list):
-                for item in raw_warnings:
-                    if isinstance(item, str) and item and item not in seen_warnings:
-                        seen_warnings.add(item)
-                        merged_reference_warnings.append(item)
-
-            if meta.get("reference_truncated") is True:
-                reference_truncated = True
-
-            # Keep the first value for other keys (stable/low-noise).
             for key, value in meta.items():
-                if key in ("reference_warnings", "reference_truncated"):
-                    continue
                 if key not in merged_metadata:
                     merged_metadata[key] = value
-
-        if merged_metadata is not None:
-            if merged_reference_warnings:
-                merged_metadata["reference_warnings"] = merged_reference_warnings
-            if reference_truncated:
-                merged_metadata["reference_truncated"] = True
 
         if output_language == "en":
             options_by_style: dict[str, list[str]] = {}
@@ -9328,100 +9261,12 @@ class YakuLingoApp:
             metadata=merged_metadata,
         )
 
-    async def _attach_reference_file(self):
-        """Open file picker directly to attach a reference file (glossary, style guide, etc.)"""
-        # Use Quasar's pickFiles() method to open file picker directly (no dialog)
-        if self._reference_upload:
-            self._reference_upload.run_method("pickFiles")
-
     def _open_translation_file_picker(self) -> None:
         """Open file picker for file translation (same handler as drag & drop)."""
         if self.state.is_translating():
             return
         if self._global_drop_upload:
             self._global_drop_upload.run_method("pickFiles")
-
-    async def _handle_reference_upload(self, e):
-        """Handle file upload from the hidden upload component."""
-        from yakulingo.ui.utils import temp_file_manager
-
-        with self._client_lock:
-            client = self._client
-
-        try:
-            uploaded_path = None
-            # NiceGUI 3.3+ uses e.file with FileUpload object
-            if hasattr(e, "file"):
-                # NiceGUI 3.x: SmallFileUpload has _data, LargeFileUpload has _path
-                file_obj = e.file
-                name = file_obj.name
-                if Path(name).suffix.lower() != ".csv":
-                    if client:
-                        with client:
-                            ui.notify(
-                                f"参照ファイルは用語集CSV（.csv）のみ対応です: {name}",
-                                type="warning",
-                            )
-                    return
-                if hasattr(file_obj, "_path"):
-                    # LargeFileUpload: file is saved to temp directory
-                    uploaded_path = temp_file_manager.create_temp_file_from_path(
-                        Path(file_obj._path),
-                        name,
-                    )
-                elif hasattr(file_obj, "_data"):
-                    # SmallFileUpload: data is in memory
-                    content = file_obj._data
-                    uploaded_path = temp_file_manager.create_temp_file(content, name)
-                elif hasattr(file_obj, "read"):
-                    # Fallback: use async read() method
-                    content = await file_obj.read()
-                    uploaded_path = temp_file_manager.create_temp_file(content, name)
-                else:
-                    raise AttributeError(f"Unknown file upload type: {type(file_obj)}")
-            else:
-                # Older NiceGUI: direct content and name attributes
-                if not e.content:
-                    return
-                name = e.name
-                if Path(name).suffix.lower() != ".csv":
-                    if client:
-                        with client:
-                            ui.notify(
-                                f"参照ファイルは用語集CSV（.csv）のみ対応です: {name}",
-                                type="warning",
-                            )
-                    return
-                content = e.content.read()
-            # Use temp file manager for automatic cleanup
-            if uploaded_path is None:
-                uploaded_path = temp_file_manager.create_temp_file(content, name)
-            # Add to reference files
-            self.state.reference_files.append(uploaded_path)
-            logger.info(
-                "Reference file added: %s, total: %d",
-                name,
-                len(self.state.reference_files),
-            )
-            if client:
-                with client:
-                    ui.notify(f"参照ファイルを追加しました: {name}", type="positive")
-                    # Refresh UI to show attached file indicator
-                    self._refresh_content()
-                    self._focus_text_input()
-        except (OSError, AttributeError) as err:
-            if client:
-                with client:
-                    ui.notify(
-                        f"ファイルの読み込みに失敗しました: {err}", type="negative"
-                    )
-
-    def _remove_reference_file(self, index: int):
-        """Remove a reference file by index"""
-        if 0 <= index < len(self.state.reference_files):
-            removed = self.state.reference_files.pop(index)
-            ui.notify(f"削除しました: {removed.name}", type="info")
-            self._refresh_content()
 
     async def _retry_translation(self):
         """Retry the current translation (re-translate with same source text)"""
@@ -9541,8 +9386,6 @@ class YakuLingoApp:
         )
         self._active_translation_trace_id = trace_id
 
-        reference_files = self._get_effective_reference_files()
-
         with self._client_lock:
             client = self._client
             if not client:
@@ -9625,7 +9468,7 @@ class YakuLingoApp:
                     chunk_result = (
                         self.translation_service.translate_text_with_options(
                             chunk,
-                            reference_files,
+                            None,
                             None,
                             effective_detected_language,
                             stream_handler,
@@ -9683,8 +9526,6 @@ class YakuLingoApp:
         with client:
             if error_message:
                 self._notify_error(error_message)
-            elif self.state.text_result:
-                self._notify_reference_warnings(self.state.text_result)
             self._refresh_result_panel()
             self._scroll_result_panel_to_top(client)
             self._update_translate_button_state()
@@ -9748,9 +9589,6 @@ class YakuLingoApp:
             finally:
                 self._active_translation_trace_id = None
             return
-
-        # Get reference files (always attach glossary if enabled)
-        reference_files = self._get_effective_reference_files()
 
         # Use saved client reference (context.client not available in async tasks)
         # Protected by _client_lock for thread-safe access
@@ -9854,7 +9692,7 @@ class YakuLingoApp:
             result = await asyncio.to_thread(
                 self.translation_service.translate_text_with_style_comparison,
                 source_text,
-                reference_files,
+                None,
                 None,
                 effective_detected_language,
                 stream_handler,
@@ -9979,40 +9817,7 @@ class YakuLingoApp:
         input_text: str = "",
     ) -> tuple[str, list[str], bool]:
         """Build reference section for local AI with warnings."""
-        if not reference_files:
-            return "", [], False
-
-        translation_service = self.translation_service
-        if translation_service:
-            try:
-                translation_service._ensure_local_backend()
-            except Exception:
-                logger.debug(
-                    "Local prompt builder init failed for reference embed",
-                    exc_info=True,
-                )
-            local_builder = getattr(translation_service, "_local_prompt_builder", None)
-            if local_builder is not None:
-                embedded_ref = local_builder.build_reference_embed(
-                    reference_files, input_text=input_text
-                )
-                warnings = list(embedded_ref.warnings)
-                if embedded_ref.truncated and not warnings:
-                    warnings = ["参照ファイルを一部省略しました"]
-                return embedded_ref.text or "", warnings, embedded_ref.truncated
-
-        if translation_service:
-            return (
-                translation_service.prompt_builder.build_reference_section(
-                    reference_files
-                ),
-                [],
-                False,
-            )
-
-        from yakulingo.services.prompt_builder import REFERENCE_INSTRUCTION
-
-        return REFERENCE_INSTRUCTION, [], False
+        return "", [], False
 
     async def _back_translate(
         self, option: TranslationOption, text_override: Optional[str] = None
@@ -10076,23 +9881,14 @@ class YakuLingoApp:
                     log_context="Back-translate",
                 )
 
-            reference_files = self._get_effective_reference_files()
-            reference_section = ""
-            reference_warnings: list[str] = []
-
             prompt = ""
+            reference_warnings: list[str] = []
             output_language: str | None = None
             text = text_override if text_override is not None else option.text
             if not text.strip():
                 error_message = "戻し訳用のテキストを入力してください"
             else:
                 option.back_translation_source_text = text
-                reference_section, reference_warnings, _ = (
-                    self._build_reference_section_for_backend(
-                        reference_files,
-                        input_text=text,
-                    )
-                )
 
             if not error_message and (
                 self.translation_service is None and not self._ensure_translation_service()
@@ -10115,7 +9911,7 @@ class YakuLingoApp:
                     prompt = prompt.replace(
                         "{text}", text
                     )  # Backward-compatible placeholder
-                    prompt = prompt.replace("{reference_section}", reference_section)
+                    prompt = prompt.replace("{reference_section}", "")
 
             if not error_message:
                 result = ""
@@ -10124,7 +9920,7 @@ class YakuLingoApp:
                         service._translate_single_with_cancel,
                         text,
                         prompt,
-                        reference_files if reference_files else None,
+                        None,
                         stream_handler,
                     )
 
@@ -10171,7 +9967,6 @@ class YakuLingoApp:
         source_text: str,
         translation: str,
         content: str = "",
-        reference_files: Optional[list[Path]] = None,
     ) -> Optional[str]:
         """
         Build prompt for follow-up actions.
@@ -10181,19 +9976,11 @@ class YakuLingoApp:
             source_text: Original source text
             translation: Current translation
             content: Additional content (question text, reply intent, etc.)
-            reference_files: Attached reference files for prompt context
         Returns:
             Built prompt string, or None if action_type is unknown
         """
         prompts_dir = get_default_prompts_dir()
-
-        context_text = "\n".join(
-            part for part in (source_text, translation, content) if part
-        )
-        reference_section, _, _ = self._build_reference_section_for_backend(
-            reference_files,
-            input_text=context_text,
-        )
+        reference_section = ""
 
         # Prompt file mapping and fallback templates
         prompt_configs = {
@@ -11021,7 +10808,6 @@ class YakuLingoApp:
             if len(selected_sections) == len(item.file_info.section_details):
                 selected_sections = None
 
-        reference_files = self._get_effective_reference_files()
         output_language = item.output_language
         translation_style = item.translation_style
 
@@ -11057,7 +10843,7 @@ class YakuLingoApp:
             result = await asyncio.to_thread(
                 lambda: service.translate_file(
                     item.path,
-                    reference_files,
+                    None,
                     on_progress,
                     output_language=output_language,
                     translation_style=translation_style,
@@ -11394,12 +11180,10 @@ class YakuLingoApp:
                 if len(selected_sections) == len(self.state.file_info.section_details):
                     selected_sections = None
 
-            reference_files = self._get_effective_reference_files()
-
             result = await asyncio.to_thread(
                 lambda: self.translation_service.translate_file(
                     self.state.selected_file,
-                    reference_files,
+                    None,
                     on_progress,
                     output_language=self.state.file_output_language,
                     translation_style=self.settings.translation_style,
@@ -11596,13 +11380,6 @@ class YakuLingoApp:
             self.state.history_filter_styles.discard(style)
         else:
             self.state.history_filter_styles.add(style)
-        self._refresh_history()
-
-    def _set_history_filter_reference(self, value: Optional[bool]) -> None:
-        if self.state.history_filter_has_reference == value:
-            self.state.history_filter_has_reference = None
-        else:
-            self.state.history_filter_has_reference = value
         self._refresh_history()
 
     def _get_history_entries(self, limit: int) -> list[HistoryEntry]:

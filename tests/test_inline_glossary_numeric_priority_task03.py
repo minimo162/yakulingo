@@ -31,7 +31,5 @@ def test_prompt_builder_inline_glossary_prioritizes_numeric_unit_terms(
         reference_files=[glossary_path],
     )
 
-    assert prompt.count("- JP: ") == 40
-    assert "- JP: 億円 | EN: oku" in prompt
-    assert "- JP: TERM_LONG_39_EXTRA | EN: T39" not in prompt
-
+    assert "- JP: " not in prompt
+    assert "Glossary" not in prompt

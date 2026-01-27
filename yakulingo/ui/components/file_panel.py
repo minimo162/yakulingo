@@ -5,7 +5,7 @@ Simple, focused, warm.
 """
 
 from nicegui import ui, events
-from typing import Any, Awaitable, Callable, List, Optional, Union
+from typing import Any, Awaitable, Callable, Optional, Union
 from pathlib import Path
 import asyncio
 import json
@@ -24,15 +24,6 @@ from yakulingo.models.types import (
     TranslationPhase,
     TranslationResult,
 )
-
-# Paperclip/Attachment SVG icon (Material Design style)
-ATTACH_SVG: str = """
-<svg viewBox="0 0 24 24" fill="currentColor" role="img" aria-label="参照ファイルを添付">
-    <title>添付</title>
-    <path d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5c0-1.38 1.12-2.5 2.5-2.5s2.5 1.12 2.5 2.5v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5c0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z"/>
-</svg>
-"""
-
 
 def _build_copy_js_handler(text: str) -> str:
     payload = json.dumps(text)
@@ -356,9 +347,6 @@ def create_file_panel(
     on_section_toggle: Optional[Callable[[int, bool], None]] = None,
     on_section_select_all: Optional[Callable[[], None]] = None,
     on_section_clear: Optional[Callable[[], None]] = None,
-    on_attach_reference_file: Optional[Callable[[], None]] = None,
-    on_remove_reference_file: Optional[Callable[[int], None]] = None,
-    reference_files: Optional[List[Path]] = None,
     translation_style: str = "concise",
     translation_result: Optional[TranslationResult] = None,
     use_bundled_glossary: bool = True,
@@ -413,14 +401,11 @@ def create_file_panel(
                                         translation_style, on_style_change
                                     )
                             with ui.column().classes("advanced-section"):
-                                ui.label("参照ファイル").classes("advanced-label")
+                                ui.label("用語集").classes("advanced-label")
                                 _glossary_selector(
                                     use_bundled_glossary,
                                     on_glossary_toggle,
                                     on_edit_glossary,
-                                    reference_files,
-                                    on_attach_reference_file,
-                                    on_remove_reference_file,
                                 )
                             if has_sections and state.file_info:
                                 _section_selector(
@@ -519,10 +504,6 @@ def _file_translate_meta_chips(
                 ui.label("手動指定").classes("chip meta-chip override-chip")
             if use_bundled_glossary:
                 ui.label("用語集").classes("chip meta-chip")
-            if state.reference_files:
-                ui.label(f"参照ファイル {len(state.reference_files)}").classes(
-                    "chip meta-chip"
-                )
 
 
 def _language_selector(
@@ -614,11 +595,8 @@ def _glossary_selector(
     use_bundled_glossary: bool,
     on_toggle: Optional[Callable[[bool], None]],
     on_edit: Optional[Callable[[], None]],
-    reference_files: Optional[List[Path]] = None,
-    on_attach: Optional[Callable[[], None]] = None,
-    on_remove: Optional[Callable[[int], None]] = None,
 ):
-    """Glossary toggle + reference file attachment row (simplified)."""
+    """Glossary toggle row (simplified)."""
     with ui.row().classes("w-full justify-center items-center gap-2 flex-wrap"):
         # Glossary toggle button
         if on_toggle:
@@ -647,40 +625,6 @@ def _glossary_selector(
                     .classes("settings-btn")
                 )
                 edit_btn.tooltip("用語集を編集")
-
-        # Reference file attachment button
-        if on_attach:
-            has_files = bool(reference_files)
-            attach_btn = (
-                ui.button()
-                .classes(
-                    f"attach-btn {'has-file' if has_files else ''} feedback-anchor"
-                )
-                .props(
-                    'flat aria-label="参照ファイルを追加" data-feedback="参照ファイルを追加"'
-                )
-            )
-            with attach_btn:
-                ui.html(ATTACH_SVG, sanitize=False)
-            attach_btn.on(
-                "click", on_attach, js_handler=_build_action_feedback_js_handler()
-            )
-            attach_btn.tooltip("参照ファイルを追加")
-
-    # Display attached files
-    if reference_files:
-        with ui.row().classes(
-            "w-full justify-center mt-2 items-center gap-2 flex-wrap"
-        ):
-            for i, ref_file in enumerate(reference_files):
-                with ui.element("div").classes("attach-file-indicator"):
-                    ui.label(ref_file.name).classes("file-name")
-                    if on_remove:
-                        ui.button(
-                            icon="close", on_click=lambda idx=i: on_remove(idx)
-                        ).props('flat round aria-label="参照ファイルを削除"').classes(
-                            "remove-btn"
-                        )
 
 
 def _drop_zone(

@@ -2161,6 +2161,7 @@ class BatchTranslator:
             For detailed results including error information, use
             translate_blocks_with_result() instead.
         """
+        reference_files = None
         result = self.translate_blocks_with_result(
             blocks,
             reference_files,
@@ -2214,6 +2215,7 @@ class BatchTranslator:
             - Pre-builds all prompts before translation loop to minimize per-batch overhead
             - Uses concurrent.futures for parallel prompt construction when >2 batches
         """
+        reference_files = None
         from concurrent.futures import ThreadPoolExecutor
         from yakulingo.models.types import BatchTranslationResult
 
@@ -3447,6 +3449,7 @@ class BatchTranslator:
 
         if _clear_cancel_event:
             self._cancel_event.clear()
+        reference_files = None
 
         translations: dict[str, str] = {}
         untranslated_block_ids: list[str] = []
@@ -3993,6 +3996,7 @@ class TranslationService:
         translation_style: str,
         include_item_ids: bool,
     ) -> tuple[Optional[int], str | None]:
+        reference_files = None
         configured, configured_source = self._get_local_file_batch_limit_info()
         if configured is None or configured <= 0:
             return configured, configured_source
@@ -4149,6 +4153,7 @@ class TranslationService:
         reference_files: Optional[list[Path]] = None,
         on_chunk: "Callable[[str], None] | None" = None,
     ) -> str:
+        reference_files = None
         client = self._get_active_client()
         ui_scope = (
             nullcontext()
@@ -4176,6 +4181,7 @@ class TranslationService:
         runtime: "LocalAIServerRuntime | None" = None,
     ) -> str:
         """Force a LocalAI translate_single call regardless of translation_backend."""
+        reference_files = None
         self._ensure_local_backend()
         client = self._local_client
         if client is None:
@@ -4238,6 +4244,7 @@ class TranslationService:
         """
         start_time = time.monotonic()
         self._cancel_event.clear()
+        reference_files = None
 
         try:
             # Build prompt (English-only legacy path)
@@ -4341,6 +4348,7 @@ class TranslationService:
         on_chunk: "Callable[[str], None] | None" = None,
         force_simple_prompt: bool = False,
     ) -> TextTranslationResult:
+        reference_files = None
         self._ensure_local_backend()
         from yakulingo.services.local_llama_server import LocalAIError
 
@@ -5354,6 +5362,7 @@ class TranslationService:
         detected_language: str,
         on_chunk: "Callable[[str], None] | None" = None,
     ) -> TextTranslationResult:
+        reference_files = None
         self._ensure_local_backend()
         from yakulingo.services.local_ai_client import (
             is_truncated_json,
@@ -5930,6 +5939,7 @@ class TranslationService:
         on_chunk: "Callable[[str], None] | None",
         translate_single: Callable[..., str],
     ) -> TextTranslationResult:
+        reference_files = None
         backend_call_count = 0
         backend_call_phases: list[str] = []
 
@@ -6350,6 +6360,7 @@ class TranslationService:
         """
         detected_language: Optional[str] = None
         self._cancel_event.clear()
+        reference_files = None
         try:
             # 事前判定があればそれを使用、なければローカル判定する
             if pre_detected_language:
@@ -6412,6 +6423,7 @@ class TranslationService:
         on_chunk: "Callable[[str], None] | None" = None,
     ) -> TextTranslationResult:
         """Translate text with style comparison for JP→EN."""
+        reference_files = None
         detected_language = pre_detected_language
         if not detected_language:
             detected_language = self.detect_language(text)
@@ -6528,6 +6540,7 @@ class TranslationService:
         # Style order: minimal < concise < standard
         STYLE_ORDER = ["minimal", "concise", "standard"]
         self._cancel_event.clear()
+        reference_files = None
 
         try:
             # Determine current style (fallback to DEFAULT_TEXT_STYLE)
@@ -6654,6 +6667,7 @@ class TranslationService:
         Returns:
             TranslationOption with alternative translation, or None on failure
         """
+        reference_files = None
         try:
             # Use provided style or fallback to DEFAULT_TEXT_STYLE
             style = current_style if current_style else (DEFAULT_TEXT_STYLE)
@@ -6902,6 +6916,7 @@ class TranslationService:
         """
         start_time = time.monotonic()
         self._cancel_event.clear()  # Reset cancellation at start
+        reference_files = None
 
         # File-scoped cache: clear at start and end to prevent cross-file contamination.
         self.clear_translation_cache()

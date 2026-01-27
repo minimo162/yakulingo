@@ -8093,6 +8093,7 @@ class YakuLingoApp:
                                 on_download=self._download,
                                 on_reset=self._reset,
                                 on_language_change=self._on_language_change,
+                                on_style_change=self._on_style_change,
                                 on_section_toggle=self._on_section_toggle,
                                 on_section_select_all=self._on_section_select_all,
                                 on_section_clear=self._on_section_clear,
@@ -9260,15 +9261,13 @@ class YakuLingoApp:
                     )
                 for option in res.options:
                     style = option.style or DEFAULT_TEXT_STYLE
-                    if style == "minimal":
-                        style = "concise"
                     options_by_style.setdefault(style, []).append(option.text)
                     if option.explanation:
                         explanations_by_style.setdefault(style, []).append(
                             option.explanation
                         )
 
-            style_order = ["standard", "concise"]
+            style_order = ["standard", "concise", "minimal"]
             combined_options: list[TranslationOption] = []
             for style in style_order:
                 if style in options_by_style:
@@ -10359,7 +10358,7 @@ class YakuLingoApp:
         # No need to refresh content, checkbox state is handled by NiceGUI
 
     def _on_style_change(self, style: str):
-        """Handle translation style change (standard/concise)"""
+        """Handle translation style change (standard/concise/minimal)"""
         self.settings.translation_style = style
         self.settings.save(self.settings_path)
         for item in self.state.file_queue:

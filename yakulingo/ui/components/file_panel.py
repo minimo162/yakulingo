@@ -137,6 +137,19 @@ SUPPORTED_EXTENSIONS = {ext.strip() for ext in SUPPORTED_FORMATS.split(",")}
 MAX_DROP_FILE_SIZE_MB = 20
 MAX_DROP_FILE_SIZE_BYTES = MAX_DROP_FILE_SIZE_MB * 1024 * 1024
 
+FILE_STYLE_LABELS: dict[str, str] = {
+    "standard": "標準",
+    "concise": "簡潔",
+    "minimal": "最簡潔",
+}
+
+FILE_STYLE_ORDER: tuple[str, ...] = ("standard", "concise", "minimal")
+FILE_STYLE_TOOLTIPS: dict[str, str] = {
+    "standard": "自然で標準的な表現",
+    "concise": "標準を簡潔にまとめた表現",
+    "minimal": "見出し/表向けの最簡潔な表現",
+}
+
 # File type icons (Material Icons)
 FILE_TYPE_ICONS = {
     FileType.EXCEL: "grid_on",
@@ -292,6 +305,45 @@ def _extract_drop_payload(
     return None
 
 
+def _normalize_file_style(style: Optional[str]) -> str:
+    normalized = (style or "").strip().lower()
+    if normalized in FILE_STYLE_ORDER:
+        return normalized
+    return "concise"
+
+
+def _file_style_selector(
+    current_style: str, on_change: Optional[Callable[[str], None]]
+) -> None:
+    current_style = _normalize_file_style(current_style)
+    with ui.row().classes("w-full justify-center"):
+        with ui.element("div").classes("style-selector"):
+            for i, style_key in enumerate(FILE_STYLE_ORDER):
+                if i == 0:
+                    pos_class = "style-btn-left"
+                elif i == len(FILE_STYLE_ORDER) - 1:
+                    pos_class = "style-btn-right"
+                else:
+                    pos_class = "style-btn-middle"
+
+                style_classes = f"style-btn {pos_class}"
+                if current_style == style_key:
+                    style_classes += " style-btn-active"
+
+                label = FILE_STYLE_LABELS.get(style_key, style_key)
+                tooltip = FILE_STYLE_TOOLTIPS.get(style_key, "")
+                btn = (
+                    ui.button(
+                        label,
+                        on_click=lambda k=style_key: on_change and on_change(k),
+                    )
+                    .classes(style_classes)
+                    .props("flat no-caps dense")
+                )
+                if tooltip:
+                    btn.tooltip(tooltip)
+
+
 def create_file_panel(
     state: AppState,
     on_file_select: Callable[[list[Path]], Union[None, Awaitable[None]]],
@@ -353,6 +405,12 @@ def create_file_panel(
                                     ui.label("翻訳方向").classes("advanced-label")
                                     _language_selector(
                                         state, on_language_change, compact=True
+                                    )
+                            if on_style_change and state.file_output_language == "en":
+                                with ui.column().classes("advanced-section"):
+                                    ui.label("翻訳スタイル").classes("advanced-label")
+                                    _file_style_selector(
+                                        translation_style, on_style_change
                                     )
                             with ui.column().classes("advanced-section"):
                                 ui.label("参照ファイル").classes("advanced-label")
@@ -452,6 +510,11 @@ def _file_translate_meta_chips(
             "file-meta-chips items-center gap-2 flex-wrap justify-center"
         ):
             ui.label(output_label).classes("chip meta-chip")
+            if state.file_output_language == "en":
+                style_label = FILE_STYLE_LABELS.get(
+                    _normalize_file_style(translation_style), "簡潔"
+                )
+                ui.label(style_label).classes("chip meta-chip")
             if state.file_output_language_overridden:
                 ui.label("手動指定").classes("chip meta-chip override-chip")
             if use_bundled_glossary:

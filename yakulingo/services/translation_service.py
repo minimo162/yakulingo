@@ -4339,6 +4339,7 @@ class TranslationService:
         detected_language: str,
         output_language: str,
         on_chunk: "Callable[[str], None] | None" = None,
+        force_simple_prompt: bool = False,
     ) -> TextTranslationResult:
         self._ensure_local_backend()
         from yakulingo.services.local_llama_server import LocalAIError
@@ -4359,42 +4360,49 @@ class TranslationService:
         metadata: dict = {"backend": "local"}
         prebuilt_prompt: str | None = None
         embedded_ref = None
+        simple_prompt_mode = bool(force_simple_prompt)
 
-        if output_language == "en":
-            build_with_embed = getattr(
-                local_builder, "build_text_to_en_single_with_embed", None
+        if simple_prompt_mode:
+            prebuilt_prompt = self.prompt_builder.build_simple_prompt(
+                text,
+                output_language=output_language,
             )
-            if callable(build_with_embed):
-                prebuilt_prompt, embedded_ref = build_with_embed(
-                    text,
-                    style=style,
-                    reference_files=reference_files,
-                    detected_language=detected_language,
-                )
-            else:
-                embedded_ref = local_builder.build_reference_embed(
-                    reference_files, input_text=text
-                )
         else:
-            build_with_embed = getattr(
-                local_builder, "build_text_to_jp_with_embed", None
-            )
-            if callable(build_with_embed):
-                prebuilt_prompt, embedded_ref = build_with_embed(
-                    text,
-                    reference_files=reference_files,
-                    detected_language=detected_language,
+            if output_language == "en":
+                build_with_embed = getattr(
+                    local_builder, "build_text_to_en_single_with_embed", None
                 )
+                if callable(build_with_embed):
+                    prebuilt_prompt, embedded_ref = build_with_embed(
+                        text,
+                        style=style,
+                        reference_files=reference_files,
+                        detected_language=detected_language,
+                    )
+                else:
+                    embedded_ref = local_builder.build_reference_embed(
+                        reference_files, input_text=text
+                    )
             else:
-                embedded_ref = local_builder.build_reference_embed(
-                    reference_files, input_text=text
+                build_with_embed = getattr(
+                    local_builder, "build_text_to_jp_with_embed", None
                 )
+                if callable(build_with_embed):
+                    prebuilt_prompt, embedded_ref = build_with_embed(
+                        text,
+                        reference_files=reference_files,
+                        detected_language=detected_language,
+                    )
+                else:
+                    embedded_ref = local_builder.build_reference_embed(
+                        reference_files, input_text=text
+                    )
 
-        warnings = getattr(embedded_ref, "warnings", None) if embedded_ref else None
-        if warnings:
-            metadata["reference_warnings"] = warnings
-        if bool(getattr(embedded_ref, "truncated", False)):
-            metadata["reference_truncated"] = True
+            warnings = getattr(embedded_ref, "warnings", None) if embedded_ref else None
+            if warnings:
+                metadata["reference_warnings"] = warnings
+            if bool(getattr(embedded_ref, "truncated", False)):
+                metadata["reference_truncated"] = True
 
         try:
             local_batch_translator = self._local_batch_translator
@@ -4489,23 +4497,72 @@ class TranslationService:
                 metadata["segment_count"] = block_idx
 
                 if blocks:
-                    batch_result = local_batch_translator.translate_blocks_with_result(
-                        blocks,
-                        reference_files=reference_files,
-                        on_progress=None,
-                        output_language=output_language,
-                        translation_style=style,
-                        include_item_ids=False,
-                    )
-                    if batch_result.cancelled:
-                        raise TranslationCancelledError("Translation cancelled by user")
-                    metadata["segment_untranslated"] = len(
-                        batch_result.untranslated_block_ids
-                    )
-                    metadata["segment_mismatched_batches"] = int(
-                        batch_result.mismatched_batch_count
-                    )
-                    translated_map = batch_result.translations
+                    if simple_prompt_mode:
+                        translated_map: dict[str, str] = {}
+                        segment_untranslated = 0
+                        for block in blocks:
+                            if self._cancel_event.is_set():
+                                raise TranslationCancelledError(
+                                    "Translation cancelled by user"
+                                )
+                            segment_prompt = self.prompt_builder.build_simple_prompt(
+                                block.text,
+                                output_language=output_language,
+                            )
+                            try:
+                                if supports_runtime and runtime is not None:
+                                    raw_segment = self._translate_single_with_cancel_on_local(
+                                        block.text,
+                                        segment_prompt,
+                                        None,
+                                        None,
+                                        runtime=runtime,
+                                    )
+                                else:
+                                    raw_segment = self._translate_single_with_cancel_on_local(
+                                        block.text,
+                                        segment_prompt,
+                                        None,
+                                        None,
+                                    )
+                            except TranslationCancelledError:
+                                raise
+                            except RuntimeError:
+                                translated_map[block.id] = block.text
+                                segment_untranslated += 1
+                                continue
+
+                            translated_piece = _normalize_local_plain_text_output(
+                                raw_segment
+                            )
+                            if not translated_piece or not translated_piece.strip():
+                                translated_map[block.id] = block.text
+                                segment_untranslated += 1
+                                continue
+                            translated_map[block.id] = translated_piece
+
+                        metadata["segment_untranslated"] = segment_untranslated
+                        metadata["segment_mismatched_batches"] = 0
+                    else:
+                        batch_result = local_batch_translator.translate_blocks_with_result(
+                            blocks,
+                            reference_files=reference_files,
+                            on_progress=None,
+                            output_language=output_language,
+                            translation_style=style,
+                            include_item_ids=False,
+                        )
+                        if batch_result.cancelled:
+                            raise TranslationCancelledError(
+                                "Translation cancelled by user"
+                            )
+                        metadata["segment_untranslated"] = len(
+                            batch_result.untranslated_block_ids
+                        )
+                        metadata["segment_mismatched_batches"] = int(
+                            batch_result.mismatched_batch_count
+                        )
+                        translated_map = batch_result.translations
                 else:
                     translated_map = {}
 
@@ -4623,6 +4680,91 @@ class TranslationService:
                 needs_placeholder_retry = _is_placeholder_only_translation(
                     text, translation
                 )
+                if simple_prompt_mode:
+                    if needs_output_language_retry:
+                        metadata["output_language_mismatch"] = True
+                        return TextTranslationResult(
+                            source_text=text,
+                            source_char_count=len(text),
+                            output_language=output_language,
+                            detected_language=detected_language,
+                            error_message="翻訳結果が英語ではありませんでした（出力言語ガード）",
+                            metadata=metadata,
+                        )
+                    if needs_ellipsis_retry:
+                        return TextTranslationResult(
+                            source_text=text,
+                            source_char_count=len(text),
+                            output_language=output_language,
+                            detected_language=detected_language,
+                            error_message=(
+                                "ローカルAIの出力が「...」のみでした。モデル/設定を確認してください。"
+                            ),
+                            metadata=metadata,
+                        )
+                    if needs_placeholder_retry:
+                        return TextTranslationResult(
+                            source_text=text,
+                            source_char_count=len(text),
+                            output_language=output_language,
+                            detected_language=detected_language,
+                            error_message=(
+                                "ローカルAIの出力がプレースホルダーのみでした。モデル/設定を確認してください。"
+                            ),
+                            metadata=metadata,
+                        )
+                    if _looks_incomplete_translation_to_en(text, translation):
+                        metadata["incomplete_translation"] = True
+                        return TextTranslationResult(
+                            source_text=text,
+                            source_char_count=len(text),
+                            output_language=output_language,
+                            detected_language=detected_language,
+                            error_message="翻訳結果が不完全でした（短すぎます）。",
+                            metadata=metadata,
+                        )
+                    fixed_text, fixed = _fix_to_en_oku_numeric_unit_if_possible(
+                        source_text=text,
+                        translated_text=translation,
+                    )
+                    if fixed:
+                        translation = fixed_text
+                        metadata["to_en_numeric_unit_correction"] = True
+                    fixed_text, fixed = _fix_to_en_negative_parens_if_possible(
+                        source_text=text,
+                        translated_text=translation,
+                    )
+                    if fixed:
+                        translation = fixed_text
+                        metadata["to_en_negative_correction"] = True
+                    fixed_text, fixed = _fix_to_en_k_notation_if_possible(
+                        source_text=text,
+                        translated_text=translation,
+                    )
+                    if fixed:
+                        translation = fixed_text
+                        metadata["to_en_k_correction"] = True
+                    fixed_text, fixed = _fix_to_en_month_abbrev_if_possible(
+                        source_text=text,
+                        translated_text=translation,
+                    )
+                    if fixed:
+                        translation = fixed_text
+                        metadata["to_en_month_abbrev_correction"] = True
+                    return TextTranslationResult(
+                        source_text=text,
+                        source_char_count=len(text),
+                        options=[
+                            TranslationOption(
+                                text=translation,
+                                explanation="",
+                                style=style,
+                            )
+                        ],
+                        output_language=output_language,
+                        detected_language=detected_language,
+                        metadata=metadata,
+                    )
                 if (
                     not needs_output_language_retry
                     and not needs_ellipsis_retry
@@ -5031,6 +5173,53 @@ class TranslationService:
             needs_output_language_retry = _is_text_output_language_mismatch(
                 translation, "jp"
             )
+            if simple_prompt_mode:
+                if needs_output_language_retry:
+                    metadata["output_language_mismatch"] = True
+                    return TextTranslationResult(
+                        source_text=text,
+                        source_char_count=len(text),
+                        output_language=output_language,
+                        detected_language=detected_language,
+                        error_message="翻訳結果が日本語ではありませんでした（出力言語ガード）",
+                        metadata=metadata,
+                    )
+                if needs_ellipsis_retry:
+                    return TextTranslationResult(
+                        source_text=text,
+                        source_char_count=len(text),
+                        output_language=output_language,
+                        detected_language=detected_language,
+                        error_message=(
+                            "ローカルAIの出力が「...」のみでした。モデル/設定を確認してください。"
+                        ),
+                        metadata=metadata,
+                    )
+                if needs_placeholder_retry:
+                    return TextTranslationResult(
+                        source_text=text,
+                        source_char_count=len(text),
+                        output_language=output_language,
+                        detected_language=detected_language,
+                        error_message=(
+                            "ローカルAIの出力がプレースホルダーのみでした。モデル/設定を確認してください。"
+                        ),
+                        metadata=metadata,
+                    )
+                fixed_text, fixed = _fix_to_jp_oku_numeric_unit_if_possible(
+                    translation
+                )
+                if fixed:
+                    translation = fixed_text
+                    metadata["to_jp_oku_correction"] = True
+                return TextTranslationResult(
+                    source_text=text,
+                    source_char_count=len(text),
+                    options=[TranslationOption(text=translation, explanation="")],
+                    output_language=output_language,
+                    detected_language=detected_language,
+                    metadata=metadata,
+                )
             if (
                 needs_output_language_retry
                 or needs_ellipsis_retry
@@ -6899,6 +7088,7 @@ class TranslationService:
         untranslated_block_ids: list[str] = []
         primary_translations: dict[str, str] = {}
 
+        effective_reference_files = None
         self._ensure_local_backend()
 
         try:
@@ -6926,11 +7116,12 @@ class TranslationService:
                     )
                     result = self._translate_text_with_options_local(
                         text=block.text,
-                        reference_files=reference_files,
+                        reference_files=effective_reference_files,
                         style=style_for_translate,
                         detected_language=detected_language,
                         output_language=output_language,
                         on_chunk=None,
+                        force_simple_prompt=True,
                     )
                     translated_text = ""
                     if result.options:
@@ -7080,11 +7271,11 @@ class TranslationService:
             )
 
         warnings = self._collect_processor_warnings(processor)
-        if self._use_local_backend() and reference_files:
+        if self._use_local_backend() and effective_reference_files:
             self._ensure_local_backend()
             if self._local_prompt_builder is not None:
                 embedded_ref = self._local_prompt_builder.build_reference_embed(
-                    reference_files
+                    effective_reference_files
                 )
                 warnings.extend(embedded_ref.warnings)
         if untranslated_block_ids:
@@ -7262,6 +7453,7 @@ class TranslationService:
         untranslated_block_ids: list[str] = []
         primary_translations: dict[str, str] = {}
 
+        effective_reference_files = None
         self._ensure_local_backend()
 
         try:
@@ -7292,11 +7484,12 @@ class TranslationService:
                     )
                     result = self._translate_text_with_options_local(
                         text=block.text,
-                        reference_files=reference_files,
+                        reference_files=effective_reference_files,
                         style=style_for_translate,
                         detected_language=detected_language,
                         output_language=output_language,
                         on_chunk=None,
+                        force_simple_prompt=True,
                     )
                     translated_text = ""
                     if result.options:
@@ -7451,11 +7644,11 @@ class TranslationService:
 
         # Collect warnings including OCR failures
         warnings = self._collect_processor_warnings(processor)
-        if self._use_local_backend() and reference_files:
+        if self._use_local_backend() and effective_reference_files:
             self._ensure_local_backend()
             if self._local_prompt_builder is not None:
                 embedded_ref = self._local_prompt_builder.build_reference_embed(
-                    reference_files
+                    effective_reference_files
                 )
                 warnings.extend(embedded_ref.warnings)
         if untranslated_block_ids:

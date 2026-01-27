@@ -276,6 +276,18 @@ def _iter_ordered_options(result: TextTranslationResult) -> list[TranslationOpti
     return ordered
 
 
+def _filter_options_by_style(
+    options: list[TranslationOption], selected_style: Optional[str]
+) -> list[TranslationOption]:
+    normalized = _normalize_text_style(selected_style)
+    if not normalized:
+        return options
+    for option in options:
+        if _normalize_text_style(option.style) == normalized:
+            return [option]
+    return options
+
+
 def _build_copy_payload(
     result: TextTranslationResult,
     *,
@@ -528,6 +540,15 @@ def _create_large_input_panel(
                                             metrics_refs["override_en"] = en_btn
                                             metrics_refs["override_jp"] = jp_btn
 
+                                if on_style_change:
+                                    style_section = ui.element("div").classes(
+                                        "advanced-section"
+                                    )
+                                    metrics_refs["style_selector_section"] = style_section
+                                    with style_section:
+                                        ui.label("翻訳スタイル").classes("advanced-label")
+                                        _style_selector(translation_style, on_style_change)
+
                                 with ui.column().classes("advanced-section"):
                                     ui.label("参照ファイル").classes("advanced-label")
                                     with ui.row().classes(
@@ -713,6 +734,7 @@ def create_text_result_panel(
     on_retry: Optional[Callable[[], None]] = None,
     on_edit: Optional[Callable[[], None]] = None,
     on_streaming_preview_label_created: Optional[Callable[[ui.label], None]] = None,
+    translation_style: str = "concise",
 ):
     """
     Text result panel for 2-column layout.
@@ -831,7 +853,8 @@ def create_text_result_panel(
                         elapsed_time,
                         on_retry,
                         compare_mode="off",
-                        compare_base_style="concise",
+                        compare_base_style=translation_style,
+                        selected_style=translation_style,
                         actions_disabled=actions_disabled,
                     )
                 )
@@ -946,6 +969,7 @@ def _render_results_to_en(
     on_retry: Optional[Callable[[], None]] = None,
     compare_mode: str = "off",
     compare_base_style: str = "concise",
+    selected_style: Optional[str] = None,
     actions_disabled: bool = False,
 ):
     """Render →English results (standard/concise/minimal)."""
@@ -954,6 +978,8 @@ def _render_results_to_en(
         return None, [], []
 
     display_options = _iter_ordered_options(result)
+    if result.is_to_english:
+        display_options = _filter_options_by_style(display_options, selected_style)
     if not display_options:
         return None, [], []
     primary_option = display_options[0]

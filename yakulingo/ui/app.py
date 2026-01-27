@@ -8042,6 +8042,7 @@ class YakuLingoApp:
                 on_retry=self._retry_translation,
                 on_edit=self._edit_translation,
                 on_streaming_preview_label_created=self._on_streaming_preview_label_created,
+                translation_style=self.settings.translation_style,
             )
 
         self._result_panel = result_panel_content
@@ -8489,7 +8490,16 @@ class YakuLingoApp:
         summary_style_chip = refs.get("summary_style_chip")
         if summary_style_chip:
             if output_lang == "en":
-                summary_style_chip.set_text("標準 / 簡潔")
+                style_label_map = {
+                    "standard": "標準",
+                    "concise": "簡潔",
+                    "minimal": "最簡潔",
+                }
+                style_label = style_label_map.get(
+                    (self.settings.translation_style or "").strip().lower(),
+                    "スタイル自動",
+                )
+                summary_style_chip.set_text(style_label)
             elif output_lang == "jp":
                 summary_style_chip.set_text("解説付き")
             else:
@@ -10350,8 +10360,6 @@ class YakuLingoApp:
 
     def _on_style_change(self, style: str):
         """Handle translation style change (standard/concise)"""
-        if style == "minimal":
-            style = "concise"
         self.settings.translation_style = style
         self.settings.save(self.settings_path)
         for item in self.state.file_queue:

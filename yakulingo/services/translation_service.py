@@ -63,7 +63,7 @@ logger = logging.getLogger(__name__)
 _LOCAL_AI_TIMING_ENABLED = os.environ.get("YAKULINGO_LOCAL_AI_TIMING") == "1"
 
 DEFAULT_TEXT_STYLE = "minimal"
-TEXT_STYLE_ORDER: tuple[str, ...] = ("minimal",)
+TEXT_STYLE_ORDER: tuple[str, ...] = ("standard", "concise", "minimal")
 
 _TEXT_TO_EN_OUTPUT_LANGUAGE_RETRY_INSTRUCTION = (
     "CRITICAL: English only (no Japanese/Chinese/Korean scripts; no Japanese punctuation). "
@@ -4972,15 +4972,570 @@ class TranslationService:
         detected_language: str,
         on_chunk: "Callable[[str], None] | None" = None,
     ) -> TextTranslationResult:
-        _ = styles
-        return self._translate_text_with_options_local(
-            text=text,
-            reference_files=reference_files,
-            style="minimal",
-            detected_language=detected_language,
-            output_language="en",
-            on_chunk=on_chunk,
+        self._ensure_local_backend()
+        from yakulingo.services.local_ai_client import (
+            is_truncated_json,
+            parse_text_single_translation,
+            parse_text_to_en_3style,
+            parse_text_to_en_style_subset,
         )
+        from yakulingo.services.local_llama_server import LocalAIError
+
+        local_builder = self._local_prompt_builder
+        if local_builder is None:
+            return TextTranslationResult(
+                source_text=text,
+                source_char_count=len(text),
+                output_language="en",
+                detected_language=detected_language,
+                error_message="ローカルAIの初期化に失敗しました",
+            )
+
+        desired_styles = [s for s in TEXT_STYLE_ORDER if s in styles] if styles else []
+        if not desired_styles:
+            desired_styles = list(TEXT_STYLE_ORDER)
+
+        metadata: dict = {"backend": "local"}
+        runtime = None
+        supports_runtime = self._local_translate_single_supports_runtime_param()
+        local_translate_single_calls = 0
+        skip_runtime_prefetch = False
+
+        if supports_runtime:
+            local_client = self._local_client
+            if local_client is None:
+                raise RuntimeError("Local AI client not initialized")
+            try:
+                from yakulingo.services.local_ai_client import LocalAIClient
+            except Exception:
+                LocalAIClient = None
+            is_local_ai_client = (
+                isinstance(local_client, LocalAIClient)
+                if LocalAIClient is not None
+                else False
+            )
+            translate_single_fn = getattr(local_client, "translate_single", None)
+            if is_local_ai_client and callable(translate_single_fn):
+                module_name = getattr(translate_single_fn, "__module__", "")
+                if module_name and module_name != "yakulingo.services.local_ai_client":
+                    skip_runtime_prefetch = True
+            if not skip_runtime_prefetch:
+                ensure_ready = getattr(local_client, "ensure_ready", None)
+                runtime = ensure_ready() if callable(ensure_ready) else None
+
+        def _mark_style_list(key: str, style: str) -> None:
+            style_list = metadata.setdefault(key, [])
+            if style not in style_list:
+                style_list.append(style)
+
+        def translate_single_local(
+            *,
+            prompt: str,
+            on_chunk_local: "Callable[[str], None] | None",
+            phase: str,
+        ) -> str:
+            nonlocal local_translate_single_calls
+            local_translate_single_calls += 1
+            metadata["local_translate_single_calls"] = local_translate_single_calls
+            metadata["local_translate_single_phases"] = metadata.get(
+                "local_translate_single_phases", []
+            ) + [phase]
+            if supports_runtime and runtime is not None:
+                return self._translate_single_with_cancel_on_local(
+                    text, prompt, None, on_chunk_local, runtime=runtime
+                )
+            return self._translate_single_with_cancel_on_local(
+                text, prompt, None, on_chunk_local
+            )
+
+        def _parse_styles(
+            raw_result: str,
+            requested_styles: list[str],
+        ) -> dict[str, tuple[str, str]]:
+            parsed = parse_text_to_en_3style(raw_result)
+            has_style_sections = bool(_RE_STYLE_SECTION.search(raw_result))
+            if (not parsed or len(parsed) < 2) and has_style_sections:
+                parsed_options = self._parse_style_comparison_result(raw_result)
+                parsed = {
+                    opt.style: (opt.text, opt.explanation or "")
+                    for opt in parsed_options
+                    if opt.style
+                }
+            if not parsed:
+                translation, explanation = parse_text_single_translation(raw_result)
+                if translation:
+                    fallback_style = requested_styles[0] if requested_styles else "minimal"
+                    parsed = {fallback_style: (translation, explanation or "")}
+            return parsed
+
+        def _apply_safe_fixes(style: str, translation: str) -> str:
+            if _is_text_output_language_mismatch(translation, "en"):
+                return translation
+
+            fixed_text, fixed = _fix_to_en_negative_parens_if_possible(
+                source_text=text,
+                translated_text=translation,
+            )
+            if fixed:
+                translation = fixed_text
+                metadata["to_en_negative_correction"] = True
+                _mark_style_list("to_en_negative_correction_styles", style)
+
+            fixed_text, fixed = _fix_to_en_k_notation_if_possible(
+                source_text=text,
+                translated_text=translation,
+            )
+            if fixed:
+                translation = fixed_text
+                metadata["to_en_k_correction"] = True
+                _mark_style_list("to_en_k_correction_styles", style)
+
+            fixed_text, fixed = _fix_to_en_month_abbrev_if_possible(
+                source_text=text,
+                translated_text=translation,
+            )
+            if fixed:
+                translation = fixed_text
+                metadata["to_en_month_abbrev_correction"] = True
+                _mark_style_list("to_en_month_abbrev_correction_styles", style)
+
+            return translation
+
+        def _finalize_styles(
+            translations: dict[str, str],
+            explanations: dict[str, str],
+            *,
+            numeric_retry_styles: set[str],
+        ) -> TextTranslationResult:
+            for style, current in list(translations.items()):
+                fixed_text, fixed = _fix_to_en_oku_numeric_unit_if_possible(
+                    source_text=text,
+                    translated_text=current,
+                )
+                if fixed:
+                    translations[style] = fixed_text
+                    metadata["to_en_numeric_unit_correction"] = True
+                    _mark_style_list("to_en_numeric_unit_correction_styles", style)
+
+            for style, current in list(translations.items()):
+                translations[style] = _apply_safe_fixes(style, current)
+
+            mismatch_styles = {
+                style
+                for style, current in translations.items()
+                if _is_text_output_language_mismatch(current, "en")
+            }
+            if mismatch_styles:
+                metadata["output_language_mismatch"] = True
+                metadata["output_language_mismatch_styles"] = sorted(mismatch_styles)
+                if metadata.get("output_language_retry"):
+                    metadata["output_language_retry_failed"] = True
+                return TextTranslationResult(
+                    source_text=text,
+                    source_char_count=len(text),
+                    output_language="en",
+                    detected_language=detected_language,
+                    error_message="翻訳結果が英語ではありませんでした（出力言語ガード）",
+                    metadata=metadata,
+                )
+
+            incomplete_styles = {
+                style
+                for style, current in translations.items()
+                if _looks_incomplete_translation_to_en(text, current)
+            }
+            if incomplete_styles:
+                metadata["incomplete_translation"] = True
+                metadata["incomplete_translation_styles"] = sorted(incomplete_styles)
+                return TextTranslationResult(
+                    source_text=text,
+                    source_char_count=len(text),
+                    output_language="en",
+                    detected_language=detected_language,
+                    error_message="翻訳結果が不完全でした（短すぎます）。",
+                    metadata=metadata,
+                )
+
+            if numeric_retry_styles:
+                remaining_numeric = {
+                    style
+                    for style in numeric_retry_styles
+                    if style in translations
+                    and _needs_to_en_numeric_rule_retry_conservative(
+                        text, translations[style]
+                    )
+                }
+                if remaining_numeric:
+                    metadata["to_en_numeric_rule_retry_failed"] = True
+                    metadata["to_en_numeric_rule_retry_failed_styles"] = sorted(
+                        remaining_numeric
+                    )
+
+            if metadata.get("to_en_rule_retry"):
+                remaining_reasons: set[str] = set()
+                for current in translations.values():
+                    remaining_reasons.update(
+                        _collect_to_en_rule_retry_reasons(text, current)
+                    )
+                if remaining_reasons:
+                    metadata["to_en_rule_retry_failed"] = True
+                    metadata["to_en_rule_retry_failed_reasons"] = sorted(remaining_reasons)
+                    return TextTranslationResult(
+                        source_text=text,
+                        source_char_count=len(text),
+                        output_language="en",
+                        detected_language=detected_language,
+                        error_message="翻訳結果が翻訳ルールに従っていませんでした（k/負数/月略称）",
+                        metadata=metadata,
+                    )
+
+            options: list[TranslationOption] = []
+            for style in desired_styles:
+                current = translations.get(style)
+                if not current:
+                    continue
+                options.append(
+                    TranslationOption(
+                        text=current,
+                        explanation=explanations.get(style, ""),
+                        style=style,
+                    )
+                )
+
+            if not options:
+                return TextTranslationResult(
+                    source_text=text,
+                    source_char_count=len(text),
+                    output_language="en",
+                    detected_language=detected_language,
+                    error_message="ローカルAIの応答(JSON)を解析できませんでした（詳細はログを確認してください）",
+                    metadata=metadata,
+                )
+
+            return TextTranslationResult(
+                source_text=text,
+                source_char_count=len(text),
+                options=options,
+                output_language="en",
+                detected_language=detected_language,
+                metadata=metadata,
+            )
+
+        try:
+            stream_handler = _wrap_local_streaming_on_chunk(
+                on_chunk, expected_output_language="en"
+            )
+            prompt = local_builder.build_text_to_en_3style(
+                text,
+                reference_files=reference_files,
+                detected_language=detected_language,
+            )
+            try:
+                raw_result = translate_single_local(
+                    prompt=prompt,
+                    on_chunk_local=stream_handler,
+                    phase="en_initial",
+                )
+            except RuntimeError as e:
+                if str(e).startswith("LOCAL_PROMPT_TOO_LONG:"):
+                    return self._translate_text_with_options_local(
+                        text=text,
+                        reference_files=reference_files,
+                        style="minimal",
+                        detected_language=detected_language,
+                        output_language="en",
+                        on_chunk=on_chunk,
+                    )
+                raise
+
+            parsed = _parse_styles(raw_result, desired_styles)
+            if not parsed:
+                error_message = "ローカルAIの応答(JSON)を解析できませんでした（詳細はログを確認してください）"
+                if is_truncated_json(raw_result):
+                    error_message = (
+                        "ローカルAIの応答が途中で終了しました（JSONが閉じていません）。\n"
+                        "max_tokens / ctx_size を見直してください。"
+                    )
+                return TextTranslationResult(
+                    source_text=text,
+                    source_char_count=len(text),
+                    output_language="en",
+                    detected_language=detected_language,
+                    error_message=error_message,
+                    metadata=metadata,
+                )
+
+            translations = {style: value[0] for style, value in parsed.items() if value[0]}
+            explanations = {style: (value[1] or "") for style, value in parsed.items()}
+
+            options_hint = '"options"' in raw_result
+
+            mismatch_styles = {
+                style
+                for style, current in translations.items()
+                if _is_text_output_language_mismatch(current, "en")
+            }
+            ellipsis_styles = {
+                style
+                for style, current in translations.items()
+                if _is_ellipsis_only_translation(text, current)
+            }
+            placeholder_styles = {
+                style
+                for style, current in translations.items()
+                if _is_placeholder_only_translation(text, current)
+            }
+
+            numeric_rule_retry_styles: set[str] = set()
+            rule_retry_reasons: set[str] = set()
+            for style, current in list(translations.items()):
+                if style in mismatch_styles:
+                    continue
+                translations[style] = _apply_safe_fixes(style, current)
+
+            incomplete_styles = {
+                style
+                for style, current in translations.items()
+                if _looks_incomplete_translation_to_en(text, current)
+            }
+            if (
+                incomplete_styles
+                and incomplete_styles == set(translations.keys())
+                and not mismatch_styles
+                and not ellipsis_styles
+                and not placeholder_styles
+            ):
+                metadata["incomplete_translation"] = True
+                metadata["incomplete_translation_styles"] = sorted(incomplete_styles)
+                return TextTranslationResult(
+                    source_text=text,
+                    source_char_count=len(text),
+                    output_language="en",
+                    detected_language=detected_language,
+                    error_message="翻訳結果が不完全でした（短すぎます）。",
+                    metadata=metadata,
+                )
+
+            for style, current in translations.items():
+                if style in mismatch_styles:
+                    continue
+                if _needs_to_en_numeric_rule_retry_conservative_after_safe_fix(
+                    text, current
+                ):
+                    numeric_rule_retry_styles.add(style)
+                for reason in _collect_to_en_rule_retry_reasons(text, current):
+                    rule_retry_reasons.add(reason)
+                    _mark_style_list("to_en_rule_retry_styles", style)
+
+            needs_retry = bool(
+                mismatch_styles
+                or ellipsis_styles
+                or placeholder_styles
+                or numeric_rule_retry_styles
+                or rule_retry_reasons
+            )
+
+            if not needs_retry:
+                incomplete_styles = {
+                    style
+                    for style, current in translations.items()
+                    if _looks_incomplete_translation_to_en(text, current)
+                }
+                if incomplete_styles:
+                    metadata["incomplete_translation"] = True
+                    metadata["incomplete_translation_styles"] = sorted(incomplete_styles)
+                    return TextTranslationResult(
+                        source_text=text,
+                        source_char_count=len(text),
+                        output_language="en",
+                        detected_language=detected_language,
+                        error_message="翻訳結果が不完全でした（短すぎます）。",
+                        metadata=metadata,
+                    )
+
+            if needs_retry:
+                retry_parts: list[str] = []
+                if mismatch_styles:
+                    retry_parts.append(BatchTranslator._EN_STRICT_OUTPUT_LANGUAGE_INSTRUCTION)
+                    metadata["output_language_retry"] = True
+                    metadata["output_language_retry_styles"] = sorted(mismatch_styles)
+                if ellipsis_styles:
+                    retry_parts.append(_LOCAL_AI_ELLIPSIS_RETRY_INSTRUCTION)
+                    metadata["ellipsis_retry"] = True
+                    metadata["ellipsis_retry_styles"] = sorted(ellipsis_styles)
+                if placeholder_styles:
+                    retry_parts.append(_LOCAL_AI_PLACEHOLDER_RETRY_INSTRUCTION)
+                    metadata["placeholder_retry"] = True
+                    metadata["placeholder_retry_styles"] = sorted(placeholder_styles)
+                if numeric_rule_retry_styles:
+                    retry_parts.append(_TEXT_TO_EN_NUMERIC_RULE_INSTRUCTION)
+                    metadata["to_en_numeric_rule_retry"] = True
+                    metadata["to_en_numeric_rule_retry_styles"] = sorted(
+                        numeric_rule_retry_styles
+                    )
+                if rule_retry_reasons:
+                    retry_parts.append(
+                        _build_to_en_rule_retry_instruction(sorted(rule_retry_reasons))
+                    )
+                    metadata["to_en_rule_retry"] = True
+                    metadata["to_en_rule_retry_reasons"] = sorted(rule_retry_reasons)
+
+                retry_prompt = local_builder.build_text_to_en_3style(
+                    text,
+                    reference_files=reference_files,
+                    detected_language=detected_language,
+                    extra_instruction="\n".join(retry_parts).strip(),
+                )
+                try:
+                    retry_raw = translate_single_local(
+                        prompt=retry_prompt,
+                        on_chunk_local=None,
+                        phase="en_retry",
+                    )
+                except RuntimeError as e:
+                    if str(e).startswith("LOCAL_PROMPT_TOO_LONG:"):
+                        return self._translate_text_with_options_local(
+                            text=text,
+                            reference_files=reference_files,
+                            style="minimal",
+                            detected_language=detected_language,
+                            output_language="en",
+                            on_chunk=on_chunk,
+                        )
+                    raise
+                raw_result = retry_raw
+                options_hint = options_hint or '"options"' in raw_result
+                parsed_retry = _parse_styles(retry_raw, desired_styles)
+                if not parsed_retry:
+                    error_message = "ローカルAIの応答(JSON)を解析できませんでした（詳細はログを確認してください）"
+                    if is_truncated_json(retry_raw):
+                        error_message = (
+                            "ローカルAIの応答が途中で終了しました（JSONが閉じていません）。\n"
+                            "max_tokens / ctx_size を見直してください。"
+                        )
+                    return TextTranslationResult(
+                        source_text=text,
+                        source_char_count=len(text),
+                        output_language="en",
+                        detected_language=detected_language,
+                        error_message=error_message,
+                        metadata=metadata,
+                    )
+
+                translations = {
+                    style: value[0]
+                    for style, value in parsed_retry.items()
+                    if value[0]
+                }
+                explanations = {
+                    style: (value[1] or "") for style, value in parsed_retry.items()
+                }
+
+                mismatch_styles = {
+                    style
+                    for style, current in translations.items()
+                    if _is_text_output_language_mismatch(current, "en")
+                }
+                placeholder_styles = {
+                    style
+                    for style, current in translations.items()
+                    if _is_placeholder_only_translation(text, current)
+                }
+                if placeholder_styles:
+                    metadata["placeholder_retry_failed"] = True
+                    metadata["placeholder_retry_failed_styles"] = sorted(placeholder_styles)
+                    return TextTranslationResult(
+                        source_text=text,
+                        source_char_count=len(text),
+                        output_language="en",
+                        detected_language=detected_language,
+                        error_message="ローカルAIの出力がプレースホルダーのみでした。モデル/設定を確認してください。",
+                        metadata=metadata,
+                    )
+                ellipsis_styles = {
+                    style
+                    for style, current in translations.items()
+                    if _is_ellipsis_only_translation(text, current)
+                }
+                if ellipsis_styles:
+                    metadata["ellipsis_retry_failed"] = True
+                    metadata["ellipsis_retry_failed_styles"] = sorted(ellipsis_styles)
+                    return TextTranslationResult(
+                        source_text=text,
+                        source_char_count=len(text),
+                        output_language="en",
+                        detected_language=detected_language,
+                        error_message="ローカルAIの出力が「...」のみでした。モデル/設定を確認してください。",
+                        metadata=metadata,
+                    )
+                if mismatch_styles:
+                    metadata["output_language_mismatch"] = True
+                    metadata["output_language_mismatch_styles"] = sorted(mismatch_styles)
+                    if metadata.get("output_language_retry"):
+                        metadata["output_language_retry_failed"] = True
+                    return TextTranslationResult(
+                        source_text=text,
+                        source_char_count=len(text),
+                        output_language="en",
+                        detected_language=detected_language,
+                        error_message="翻訳結果が英語ではありませんでした（出力言語ガード）",
+                        metadata=metadata,
+                    )
+
+                for style, current in list(translations.items()):
+                    translations[style] = _apply_safe_fixes(style, current)
+
+            missing_styles = [s for s in desired_styles if s not in translations]
+            if options_hint and missing_styles:
+                missing_prompt = local_builder.build_text_to_en_missing_styles(
+                    text,
+                    styles=missing_styles,
+                    reference_files=reference_files,
+                    detected_language=detected_language,
+                )
+                try:
+                    missing_raw = translate_single_local(
+                        prompt=missing_prompt,
+                        on_chunk_local=None,
+                        phase="en_missing_styles",
+                    )
+                except RuntimeError as e:
+                    if not str(e).startswith("LOCAL_PROMPT_TOO_LONG:"):
+                        raise
+                    missing_raw = ""
+                if missing_raw:
+                    parsed_missing = _parse_styles(missing_raw, missing_styles)
+                    subset = parse_text_to_en_style_subset(missing_raw, missing_styles)
+                    if subset:
+                        parsed_missing.update(subset)
+                    for style, value in parsed_missing.items():
+                        translation_value = value[0]
+                        if not translation_value:
+                            continue
+                        translation_value = _apply_safe_fixes(style, translation_value)
+                        if _is_text_output_language_mismatch(translation_value, "en"):
+                            continue
+                        if _is_placeholder_only_translation(text, translation_value):
+                            continue
+                        if _is_ellipsis_only_translation(text, translation_value):
+                            continue
+                        translations[style] = translation_value
+                        explanations[style] = value[1] or ""
+
+            return _finalize_styles(
+                translations,
+                explanations,
+                numeric_retry_styles=numeric_rule_retry_styles,
+            )
+        except LocalAIError as e:
+            return TextTranslationResult(
+                source_text=text,
+                source_char_count=len(text),
+                output_language="en",
+                detected_language=detected_language,
+                error_message=str(e),
+                metadata=metadata,
+            )
 
     def _translate_text_with_options_via_prompt_builder(
         self,
@@ -5482,10 +6037,7 @@ class TranslationService:
         pre_detected_language: Optional[str] = None,
         on_chunk: "Callable[[str], None] | None" = None,
     ) -> TextTranslationResult:
-        """Translate text with minimal-only English output.
-
-        For non-Japanese input, falls back to single →jp translation.
-        """
+        """Translate text with style comparison for JP→EN."""
         detected_language = pre_detected_language
         if not detected_language:
             detected_language = self.detect_language(text)
@@ -5501,12 +6053,13 @@ class TranslationService:
                 detected_language,
                 on_chunk,
             )
-        return self.translate_text_with_options(
-            text,
-            reference_files,
-            "minimal",
-            detected_language,
-            on_chunk,
+        styles_list = styles or list(TEXT_STYLE_ORDER)
+        return self._translate_text_with_style_comparison_local(
+            text=text,
+            reference_files=reference_files,
+            styles=styles_list,
+            detected_language=detected_language,
+            on_chunk=on_chunk,
         )
 
     def extract_detection_sample(
@@ -5783,11 +6336,7 @@ class TranslationService:
     def _parse_style_comparison_result(
         self, raw_result: str
     ) -> list[TranslationOption]:
-        """Parse a compare template result and return a single minimal option.
-
-        Compatibility: accepts [standard]/[concise] headers, but always returns
-        exactly one option with style="minimal".
-        """
+        """Parse compare-style output into ordered style options."""
         matches = list(_RE_STYLE_SECTION.finditer(raw_result))
         if not matches:
             return []
@@ -5817,14 +6366,18 @@ class TranslationService:
         if not parsed_by_style:
             return []
 
-        chosen = (
-            parsed_by_style.get("minimal")
-            or parsed_by_style.get("concise")
-            or parsed_by_style.get("standard")
-            or next(iter(parsed_by_style.values()))
-        )
-        chosen.style = "minimal"
-        return [chosen]
+        ordered: list[TranslationOption] = []
+        for style in TEXT_STYLE_ORDER:
+            option = parsed_by_style.get(style)
+            if option is not None:
+                ordered.append(option)
+
+        ordered_ids = {id(option) for option in ordered}
+        for option in parsed_by_style.values():
+            if id(option) not in ordered_ids:
+                ordered.append(option)
+
+        return ordered
 
     def _parse_single_translation_result(
         self, raw_result: str

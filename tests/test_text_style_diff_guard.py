@@ -24,8 +24,11 @@ Minimal translation.
 
     options = service._parse_style_comparison_result(raw)
 
-    assert [opt.style for opt in options] == ["minimal"]
-    assert [opt.text for opt in options] == ["Minimal translation."]
+    assert [opt.style for opt in options] == ["concise", "minimal"]
+    assert [opt.text for opt in options] == [
+        "Concise translation.",
+        "Minimal translation.",
+    ]
 
 
 def test_parse_style_comparison_falls_back_to_concise_when_minimal_missing() -> None:
@@ -42,5 +45,5 @@ Concise translation.
 
     options = service._parse_style_comparison_result(raw)
 
-    assert [opt.style for opt in options] == ["minimal"]
+    assert [opt.style for opt in options] == ["concise"]
     assert [opt.text for opt in options] == ["Concise translation."]

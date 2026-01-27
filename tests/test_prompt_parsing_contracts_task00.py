@@ -25,9 +25,9 @@ Translation:
 Hi.
 """
     options = service._parse_style_comparison_result(raw)
-    assert [opt.style for opt in options] == ["minimal"]
-    assert [opt.text for opt in options] == ["Hi."]
-    assert [opt.explanation for opt in options] == [""]
+    assert [opt.style for opt in options] == ["standard", "concise"]
+    assert [opt.text for opt in options] == ["Hello.", "Hi."]
+    assert [opt.explanation for opt in options] == ["", ""]
 
 
 def test_copilot_style_comparison_parses_section_header_variants() -> None:
@@ -40,6 +40,6 @@ Hello.
 Hi.
 """
     options = service._parse_style_comparison_result(raw)
-    assert [opt.style for opt in options] == ["minimal"]
-    assert [opt.text for opt in options] == ["Hi."]
-    assert [opt.explanation for opt in options] == [""]
+    assert [opt.style for opt in options] == ["standard", "concise"]
+    assert [opt.text for opt in options] == ["Hello.", "Hi."]
+    assert [opt.explanation for opt in options] == ["", ""]

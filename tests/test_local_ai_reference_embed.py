@@ -614,7 +614,7 @@ def test_local_followup_reference_embed_includes_local_reference(
     assert "ORIGINAL" in prompt
 
 
-def test_local_prompt_includes_json_guard_block() -> None:
+def test_local_prompt_includes_plain_text_guard_block() -> None:
     builder = _make_builder()
     prompt = builder.build_text_to_en_single(
         "sample",
@@ -622,7 +622,7 @@ def test_local_prompt_includes_json_guard_block() -> None:
         reference_files=None,
         detected_language="Japanese",
     )
-    assert 'Return JSON only: {"translation": ""}' in prompt
+    assert "Output only the English translation (plain text)." in prompt
 
 
 def test_local_batch_embed_reference_even_when_flag_false(tmp_path: Path) -> None:

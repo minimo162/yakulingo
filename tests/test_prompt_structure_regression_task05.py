@@ -5,7 +5,6 @@ from pathlib import Path
 
 _LOCAL_JSON_TEMPLATES = [
     "local_text_translate_to_en_3style_json.txt",
-    "local_text_translate_to_en_single_json.txt",
     "local_batch_translate_to_en_json.txt",
     "local_batch_translate_to_jp_json.txt",
 ]

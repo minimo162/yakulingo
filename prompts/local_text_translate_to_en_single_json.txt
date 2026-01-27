@@ -1,10 +1,10 @@
 Translate JP->EN. Style: {style}
-If style is minimal: intended for headings/tables; use abbreviations aggressively.
-Return JSON only: {"translation": ""} (no code fences / no extra text).
-Keep [[ID:n]] markers and preserve \\n / \\t escapes in strings.
-Do not output placeholder tokens like <TRANSLATION> or <STYLE>. プレースホルダー（<TRANSLATION> 等）は出力しないこと。
-Self-check before output: follow the rules above; fix any violation, then output JSON only.
-
+Styles (limit x JP chars):
+- standard: Natural business English <=3.0x.
+- concise: Concise, no wordiness <=2.5x.
+- minimal: Minimum words for headings/subject lines/tables <=2.0x.
+Output only the English translation (plain text). No JSON/labels/explanations.
+Keep [[ID:n]] and preserve \\n / \\t.
 {numeric_hints}
 {reference_section}
 {extra_instruction}<source>

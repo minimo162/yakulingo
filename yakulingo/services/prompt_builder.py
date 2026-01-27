@@ -110,6 +110,12 @@ ID_MARKER_INSTRUCTION = """
 - Do not output other prompt markers (e.g., "===INPUT_TEXT===" / "===END_INPUT_TEXT===").
 """
 
+SIMPLE_PROMPT_TEMPLATE = """You are a professional {SOURCE_LANG} ({SOURCE_CODE}) to {TARGET_LANG} ({TARGET_CODE}) translator. Your goal is to accurately convey the meaning and nuances of the original {SOURCE_LANG} text while adhering to {TARGET_LANG} grammar, vocabulary, and cultural sensitivities.
+Produce only the {TARGET_LANG} translation, without any additional explanations or commentary. Please translate the following {SOURCE_LANG} text into {TARGET_LANG}:
+
+
+{TEXT}"""
+
 # Fallback template for → English (used when translate_to_en.txt doesn't exist)
 DEFAULT_TO_EN_TEMPLATE = """## ファイル翻訳リクエスト
 
@@ -594,6 +600,36 @@ class PromptBuilder:
             else DEFAULT_TO_JP_TEMPLATE
         )
 
+    def _resolve_langs(self, output_language: str) -> tuple[str, str, str, str]:
+        if output_language == "jp":
+            return "English", "en", "Japanese", "ja"
+        return "Japanese", "ja", "English", "en"
+
+    def build_simple_prompt(
+        self,
+        input_text: str,
+        *,
+        output_language: str = "en",
+    ) -> str:
+        normalized_text = self.normalize_input_text(input_text, output_language)
+        source_lang, source_code, target_lang, target_code = self._resolve_langs(
+            output_language
+        )
+        prompt = SIMPLE_PROMPT_TEMPLATE.replace("{SOURCE_LANG}", source_lang)
+        prompt = prompt.replace("{SOURCE_CODE}", source_code)
+        prompt = prompt.replace("{TARGET_LANG}", target_lang)
+        prompt = prompt.replace("{TARGET_CODE}", target_code)
+        prompt = prompt.replace("{TEXT}", normalized_text)
+        return prompt
+
+    def _append_simple_prompt(self, prompt: str, simple_prompt: str) -> str:
+        existing = (prompt or "").strip()
+        if not existing:
+            return simple_prompt
+        if simple_prompt in existing:
+            return existing
+        return f"{existing}\n\n{simple_prompt}"
+
     def get_text_template(
         self, output_language: str = "en", translation_style: str = "concise"
     ) -> Optional[str]:
@@ -647,13 +683,9 @@ class PromptBuilder:
         """
         input_text = self.normalize_input_text(input_text, output_language)
 
-        # Language placeholders (new-style template support)
-        if output_language == "jp":
-            source_lang, source_code = "English", "en"
-            target_lang, target_code = "Japanese", "ja"
-        else:
-            source_lang, source_code = "Japanese", "ja"
-            target_lang, target_code = "English", "en"
+        source_lang, source_code, target_lang, target_code = self._resolve_langs(
+            output_language
+        )
 
         # Replace placeholders
         prompt = template.replace("{reference_section}", reference_section)
@@ -725,6 +757,11 @@ class PromptBuilder:
             output_language,
             translation_style,
         )
+        simple_prompt = self.build_simple_prompt(
+            input_text,
+            output_language=output_language,
+        )
+        prompt = self._append_simple_prompt(prompt, simple_prompt)
         if extra_instruction:
             prompt = self._insert_extra_instruction(prompt, extra_instruction)
         return prompt

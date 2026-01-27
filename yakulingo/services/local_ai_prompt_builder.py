@@ -1270,6 +1270,24 @@ class LocalPromptBuilder:
             )
         return embedded
 
+    def _append_simple_prompt(
+        self,
+        prompt: str,
+        *,
+        input_text: str,
+        output_language: str,
+    ) -> str:
+        simple_prompt = self._base.build_simple_prompt(
+            input_text,
+            output_language=output_language,
+        )
+        existing = (prompt or "").strip()
+        if not existing:
+            return simple_prompt
+        if simple_prompt in existing:
+            return existing
+        return f"{existing}\n\n{simple_prompt}"
+
     def build_batch(
         self,
         texts: list[str],
@@ -1416,6 +1434,11 @@ class LocalPromptBuilder:
         prompt = prompt.replace("{items_json}", items_json)
         prompt = prompt.replace("{output_language}", output_language)
         prompt = prompt.replace("{n_items}", str(len(items)))
+        prompt = self._append_simple_prompt(
+            prompt,
+            input_text="\n".join(texts),
+            output_language=output_language,
+        )
         if timing_enabled:
             logger.debug(
                 "[TIMING] LocalPromptBuilder.build_batch: %.4fs (items=%d output=%s style=%s prompt_chars=%d ref_chars=%d)",
@@ -1457,6 +1480,11 @@ class LocalPromptBuilder:
         prompt = prompt.replace("{extra_instruction}", extra_instruction)
         prompt = prompt.replace("{input_text}", prompt_input_text)
         prompt = prompt.replace("{detected_language}", detected_language)
+        prompt = self._append_simple_prompt(
+            prompt,
+            input_text=text,
+            output_language="en",
+        )
         if timing_enabled:
             logger.debug(
                 "[TIMING] LocalPromptBuilder.build_text_to_en_3style: %.4fs (input_chars=%d prompt_chars=%d ref_chars=%d)",
@@ -1508,6 +1536,11 @@ class LocalPromptBuilder:
         prompt = prompt.replace("{detected_language}", detected_language)
         prompt = prompt.replace("{styles_json}", styles_json)
         prompt = prompt.replace("{n_styles}", str(len(style_list)))
+        prompt = self._append_simple_prompt(
+            prompt,
+            input_text=text,
+            output_language="en",
+        )
         if timing_enabled:
             logger.debug(
                 "[TIMING] LocalPromptBuilder.build_text_to_en_missing_styles: %.4fs (input_chars=%d styles=%d prompt_chars=%d ref_chars=%d)",
@@ -1577,6 +1610,11 @@ class LocalPromptBuilder:
         prompt = prompt.replace("{input_text}", prompt_input_text)
         prompt = prompt.replace("{style}", style)
         prompt = prompt.replace("{detected_language}", detected_language)
+        prompt = self._append_simple_prompt(
+            prompt,
+            input_text=text,
+            output_language="en",
+        )
         return prompt, embedded_ref
 
     def build_text_to_jp(
@@ -1617,4 +1655,9 @@ class LocalPromptBuilder:
         prompt = template.replace("{reference_section}", reference_section)
         prompt = prompt.replace("{input_text}", prompt_input_text)
         prompt = prompt.replace("{detected_language}", detected_language)
+        prompt = self._append_simple_prompt(
+            prompt,
+            input_text=text,
+            output_language="jp",
+        )
         return prompt, embedded_ref

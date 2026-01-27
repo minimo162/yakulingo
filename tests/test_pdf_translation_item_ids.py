@@ -2,9 +2,16 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
+from unittest.mock import patch
 
 from yakulingo.config.settings import AppSettings
-from yakulingo.models.types import BatchTranslationResult, TextBlock, TranslationStatus
+from yakulingo.models.types import (
+    BatchTranslationResult,
+    TextBlock,
+    TextTranslationResult,
+    TranslationOption,
+    TranslationStatus,
+)
 from yakulingo.services.translation_service import BatchTranslator, TranslationService
 
 
@@ -191,7 +198,7 @@ class DummyPdfProcessor:
         )
 
 
-def test_translate_pdf_streaming_enables_include_item_ids(tmp_path: Path) -> None:
+def test_translate_pdf_streaming_does_not_use_batch_translator(tmp_path: Path) -> None:
     input_path = tmp_path / "input.pdf"
     input_path.write_bytes(b"")
 
@@ -203,16 +210,41 @@ def test_translate_pdf_streaming_enables_include_item_ids(tmp_path: Path) -> Non
     service._local_prompt_builder = object()  # type: ignore[assignment]
     service._local_batch_translator = spy  # type: ignore[assignment]
 
-    result = service._translate_pdf_streaming(  # type: ignore[arg-type]
-        input_path=input_path,
-        processor=DummyPdfProcessor(),
-        reference_files=None,
-        on_progress=None,
-        output_language="jp",
-        start_time=0.0,
-        translation_style="concise",
-        selected_sections=None,
-    )
+    def fake_translate_text_with_options_local(**kwargs: object) -> TextTranslationResult:
+        text = str(kwargs.get("text", ""))
+        output_language = str(kwargs.get("output_language", "en"))
+        style = str(kwargs.get("style", "concise"))
+        detected_language = "日本語" if output_language == "en" else "英語"
+        return TextTranslationResult(
+            source_text=text,
+            source_char_count=len(text),
+            options=[
+                TranslationOption(
+                    text=f"訳:{text}",
+                    explanation="",
+                    style=style if output_language == "en" else None,
+                )
+            ],
+            output_language=output_language,
+            detected_language=detected_language,
+        )
 
-    assert spy.include_item_ids_calls == [True]
+    with patch.object(service, "_ensure_local_backend", return_value=None):
+        with patch.object(
+            service,
+            "_translate_text_with_options_local",
+            side_effect=fake_translate_text_with_options_local,
+        ):
+            result = service._translate_pdf_streaming(  # type: ignore[arg-type]
+                input_path=input_path,
+                processor=DummyPdfProcessor(),
+                reference_files=None,
+                on_progress=None,
+                output_language="jp",
+                start_time=0.0,
+                translation_style="concise",
+                selected_sections=None,
+            )
+
+    assert spy.include_item_ids_calls == []
     assert result.status == TranslationStatus.COMPLETED

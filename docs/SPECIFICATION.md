@@ -1253,6 +1253,7 @@ Reference Files
 - 出力: 英訳は最簡潔（`minimal`）のみ、和訳は訳文のみ（解説なし）
 - 禁止事項は英訳/和訳で共通（質問・提案・指示の繰り返し・訳文以外）
 - 戻し訳は通常のテキスト翻訳テンプレートを使用（入力言語をローカル判定し、日→英は `prompts/text_translate_to_en_compare.txt`、それ以外は `prompts/text_translate_to_jp.txt`）。`prompts/text_back_translate.txt` は互換のため残存（未使用）
+- 文字数超過や用語集違反を検知しても、リトライやエラー扱いにはしない（必要に応じて `metadata` に警告フラグのみ付与）
 
 #### 9.4.1 英訳（minimal-only）
 
@@ -1295,12 +1296,8 @@ Reference Files
   - 出力: `{"items":[{"id":1,"translation":"..."}, ...]}`
 
 **数値変換ヒント（numeric_hints, JP→EN）**
-- 兆/億などの和文大数を `oku` 表記に強制するため、JP→EN系テンプレートには `{numeric_hints}` を注入する。
-  - 対象テンプレート: `prompts/local_text_translate_to_en_single_json.txt` / `prompts/local_batch_translate_to_en_json.txt`
-- 例（プロンプトに挿入されるヒント）:
-  - `2兆2,385億円 -> 22,385 oku yen`
-  - `1,554億円 -> 1,554 oku yen`
-- 実装: `yakulingo/services/local_ai_prompt_builder.py` の `LocalPromptBuilder._build_to_en_numeric_hints()`
+- 既定経路では数値変換ヒントを注入しない（用語集のみの最小構成を優先）
+- 実装上は `{numeric_hints}` を空文字で埋める
 
 **数値ルール違反の自動再試行（JP→EN, Local AI）**
 - 目的: `billion/trillion/bn` への誤変換や `oku` 欠落を検出し、最小限の再試行で `oku` 表記へ収束させる。

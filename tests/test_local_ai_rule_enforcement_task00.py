@@ -51,7 +51,7 @@ def _make_service(local: SequencedLocalClient) -> TranslationService:
 
 
 def test_text_style_comparison_retries_when_k_rule_violated() -> None:
-    first = '{"translation":"The starting salary is 220,000 yen.","explanation":""}'
+    first = "Pay: 220,000 yen."
     local = SequencedLocalClient([first])
     service = _make_service(local)
 
@@ -69,7 +69,7 @@ def test_text_style_comparison_retries_when_k_rule_violated() -> None:
 
 
 def test_text_style_comparison_retries_when_negative_triangle_rule_violated() -> None:
-    first = '{"translation":"YoY change was ▲50.","explanation":""}'
+    first = "YoY: ▲50."
     local = SequencedLocalClient([first])
     service = _make_service(local)
 
@@ -90,7 +90,7 @@ def test_text_style_comparison_retries_when_negative_triangle_rule_violated() ->
 def test_text_style_comparison_auto_corrects_negative_sign_after_retry_still_violates() -> (
     None
 ):
-    first = '{"translation":"YoY change was -496 oku yen.","explanation":""}'
+    first = "YoY: -496 oku yen."
     local = SequencedLocalClient([first])
     service = _make_service(local)
 
@@ -113,7 +113,7 @@ def test_text_style_comparison_auto_corrects_negative_sign_after_retry_still_vio
 def test_text_style_comparison_auto_corrects_month_abbrev_after_retry_still_violates() -> (
     None
 ):
-    first = '{"translation":"Sales in January.","explanation":""}'
+    first = "January"
     local = SequencedLocalClient([first])
     service = _make_service(local)
 
@@ -133,7 +133,7 @@ def test_text_style_comparison_auto_corrects_month_abbrev_after_retry_still_viol
 
 
 def test_text_style_comparison_retries_when_month_abbreviation_rule_violated() -> None:
-    first = '{"translation":"Sales in January.","explanation":""}'
+    first = "January"
     local = SequencedLocalClient([first])
     service = _make_service(local)
 
@@ -149,7 +149,7 @@ def test_text_style_comparison_retries_when_month_abbreviation_rule_violated() -
 
 
 def test_text_style_comparison_auto_corrects_man_unit_without_retry() -> None:
-    first = '{"translation":"The starting salary is 22 man yen.","explanation":""}'
+    first = "Pay: 22 man yen."
     local = SequencedLocalClient([first])
     service = _make_service(local)
 
@@ -168,10 +168,8 @@ def test_text_style_comparison_auto_corrects_man_unit_without_retry() -> None:
 
 
 def test_text_style_comparison_still_retries_when_k_rule_unfixable() -> None:
-    first = (
-        '{"translation":"The starting salary is 220 thousand yen.","explanation":""}'
-    )
-    second = '{"translation":"The starting salary is 220k yen.","explanation":""}'
+    first = "Pay: 220 thousand yen."
+    second = "Pay: 220k yen."
     local = SequencedLocalClient([first, second])
     service = _make_service(local)
 

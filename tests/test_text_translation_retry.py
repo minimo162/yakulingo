@@ -55,8 +55,8 @@ def _make_service(local: SequencedLocalClient) -> TranslationService:
 
 
 def test_text_style_comparison_retries_when_output_language_mismatched() -> None:
-    first = '{"translation":"一方、この人事部長の会社の初任給は22万円だ。","explanation":""}'
-    second = '{"translation":"Meanwhile, the starting salary is 220,000 yen.","explanation":""}'
+    first = "これは日本語です。"
+    second = "This is a test."
     local = SequencedLocalClient([first, second])
     service = _make_service(local)
 
@@ -78,8 +78,8 @@ def test_text_style_comparison_retries_when_output_language_mismatched() -> None
 def test_text_options_ignores_requested_style_and_retries_on_output_language_mismatch() -> (
     None
 ):
-    first = "一方、この人事部長の会社の初任給は22万円だ。"
-    second = "Meanwhile, the starting salary is 220,000 yen."
+    first = "これは日本語です。"
+    second = "This is a test."
     local = SequencedLocalClient([first, second])
     service = _make_service(local)
 
@@ -91,13 +91,13 @@ def test_text_options_ignores_requested_style_and_retries_on_output_language_mis
 
     assert local.translate_single_calls == 2
     assert result.output_language == "en"
-    assert result.options[0].style == "minimal"
+    assert result.options[0].style == "standard"
     assert not _RE_JP_CHARS.search(result.options[0].text)
 
 
 def test_text_style_comparison_retries_when_translation_is_ellipsis_only() -> None:
-    first = '{"translation":"...","explanation":""}'
-    second = '{"translation":"This is a test.","explanation":""}'
+    first = "..."
+    second = "This is a test."
     local = SequencedLocalClient([first, second])
     service = _make_service(local)
 
@@ -117,8 +117,8 @@ def test_text_style_comparison_retries_when_translation_is_ellipsis_only() -> No
 
 
 def test_text_style_comparison_errors_when_translation_stays_ellipsis_only() -> None:
-    first = '{"translation":"...","explanation":""}'
-    second = '{"translation":"...","explanation":""}'
+    first = "..."
+    second = "..."
     local = SequencedLocalClient([first, second])
     service = _make_service(local)
 
@@ -138,8 +138,8 @@ def test_text_style_comparison_errors_when_translation_stays_ellipsis_only() -> 
 
 
 def test_text_style_comparison_retries_when_translation_is_placeholder_only() -> None:
-    first = '{"translation":"<TRANSLATION>","explanation":""}'
-    second = '{"translation":"This is a test.","explanation":""}'
+    first = "<TRANSLATION>"
+    second = "This is a test."
     local = SequencedLocalClient([first, second])
     service = _make_service(local)
 
@@ -161,8 +161,8 @@ def test_text_style_comparison_retries_when_translation_is_placeholder_only() ->
 def test_text_style_comparison_errors_when_translation_stays_placeholder_only() -> (
     None
 ):
-    first = '{"translation":"<TRANSLATION>","explanation":""}'
-    second = '{"translation":"<TRANSLATION>","explanation":""}'
+    first = "<TRANSLATION>"
+    second = "<TRANSLATION>"
     local = SequencedLocalClient([first, second])
     service = _make_service(local)
 
@@ -206,8 +206,8 @@ def test_text_style_comparison_retries_for_oku_numeric_rule_when_auto_fix_not_po
     input_text = (
         "当中間連結会計期間における連結業績は、売上高は2兆2,385億円となりました。"
     )
-    first = '{"translation":"Net sales were 22,384 billion yen.","explanation":""}'
-    second = '{"translation":"Net sales were 22,385 oku yen.","explanation":""}'
+    first = "Net sales were in the billions of yen."
+    second = "Net sales were 22,385 oku yen."
     local = SequencedLocalClient([first, second])
     service = _make_service(local)
 
@@ -230,18 +230,19 @@ def test_text_style_comparison_retries_for_oku_numeric_rule_when_auto_fix_not_po
 
 def test_text_style_comparison_skips_numeric_retry_when_auto_fixable() -> None:
     input_text = "売上高は2兆2,385億円となりました。"
-    first = '{"translation":"Net sales were 22,385 billion yen.","explanation":""}'
+    first = "Net sales were 22,385 billion yen."
     local = SequencedLocalClient([first])
     service = _make_service(local)
 
     result = service.translate_text_with_style_comparison(
         input_text,
         pre_detected_language="日本語",
+        styles=["standard"],
     )
 
     assert local.translate_single_calls == 1
     assert result.output_language == "en"
-    assert [option.style for option in result.options] == ["minimal"]
+    assert [option.style for option in result.options] == ["standard"]
     assert all("oku" in option.text.lower() for option in result.options)
     assert all("billion" not in option.text.lower() for option in result.options)
 
@@ -254,13 +255,14 @@ def test_text_style_comparison_skips_numeric_retry_when_auto_fixable_by_conversi
     None
 ):
     input_text = "売上高は2兆2,385億円となりました。"
-    first = '{"translation":"Net sales were 2,238.5 billion yen.","explanation":""}'
+    first = "Net sales were 2,238.5 billion yen."
     local = SequencedLocalClient([first])
     service = _make_service(local)
 
     result = service.translate_text_with_style_comparison(
         input_text,
         pre_detected_language="日本語",
+        styles=["standard"],
     )
 
     assert local.translate_single_calls == 1
@@ -268,7 +270,7 @@ def test_text_style_comparison_skips_numeric_retry_when_auto_fixable_by_conversi
     assert "- JP: 2兆2,385億円 | EN: 22,385 oku yen" in local.prompts[0]
 
     assert result.output_language == "en"
-    assert [option.style for option in result.options] == ["minimal"]
+    assert [option.style for option in result.options] == ["standard"]
     assert all("oku" in option.text.lower() for option in result.options)
     assert all("billion" not in option.text.lower() for option in result.options)
 
@@ -283,16 +285,19 @@ def test_text_style_comparison_does_not_retry_when_output_keeps_jp_numeric_units
     None
 ):
     input_text = "売上高は2兆2,385億円となりました。"
-    first = '{"translation":"Net sales: 2兆2,385億円.","explanation":""}'
+    first = "Net sales: 2兆2,385億円."
     local = SequencedLocalClient([first])
     service = _make_service(local)
 
     result = service.translate_text_with_style_comparison(
         input_text,
         pre_detected_language="日本語",
+        styles=["standard"],
     )
 
     assert local.translate_single_calls == 1
     assert result.output_language == "en"
-    assert [option.style for option in result.options] == ["minimal"]
+    assert [option.style for option in result.options] == ["standard"]
     assert any(_RE_JP_CHARS.search(option.text) for option in result.options)
+    metadata = result.metadata or {}
+    assert metadata.get("output_language_retry") is not True

@@ -27,7 +27,7 @@ def test_local_style_comparison_retries_when_translation_is_too_short(
         _ = source_text, prompt, reference_files, on_chunk
         calls += 1
         if calls == 1:
-            return '{"translation":"Revenue","explanation":""}'
+            return "Revenue"
         raise AssertionError("called too many times")
 
     monkeypatch.setattr(
@@ -69,7 +69,7 @@ def test_local_style_comparison_returns_error_when_retry_still_too_short(
         _ = source_text, prompt, reference_files, on_chunk
         calls += 1
         if calls == 1:
-            return '{"translation":"Revenue","explanation":""}'
+            return "Revenue"
         raise AssertionError("called too many times")
 
     monkeypatch.setattr(
@@ -107,7 +107,7 @@ def test_local_style_comparison_retries_when_numeric_rules_violated(
         _ = source_text, prompt, reference_files, on_chunk
         calls += 1
         if calls == 1:
-            return '{"translation":"Revenue was 2.2385 trillion yen, down by 1,554 billion yen year on year.","explanation":""}'
+            return "Revenue was 2.2385 trillion yen, down by 1,554 billion yen year on year."
         raise AssertionError("called too many times")
 
     monkeypatch.setattr(
@@ -119,10 +119,11 @@ def test_local_style_comparison_retries_when_numeric_rules_violated(
     result = service.translate_text_with_style_comparison(
         text,
         pre_detected_language="日本語",
+        styles=["standard"],
     )
 
     assert calls == 1
-    assert [option.style for option in result.options] == ["minimal"]
+    assert [option.style for option in result.options] == ["standard"]
     assert [option.text for option in result.options] == [
         "Revenue was 22,385 oku yen, down by 1,554 oku yen year on year."
     ]

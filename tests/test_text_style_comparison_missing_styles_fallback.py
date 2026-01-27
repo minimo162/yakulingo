@@ -16,7 +16,7 @@ def test_local_style_comparison_returns_single_minimal(monkeypatch) -> None:
         text: str, prompt: str, reference_files=None, on_chunk=None
     ) -> str:
         _ = text, prompt, reference_files, on_chunk
-        return '{"translation":"Hello","explanation":""}'
+        return "Hello"
 
     monkeypatch.setattr(
         service,
@@ -44,7 +44,7 @@ def test_style_comparison_falls_back_to_single_jp_translation(monkeypatch) -> No
         text: str, prompt: str, reference_files=None, on_chunk=None
     ) -> str:
         _ = text, prompt, reference_files, on_chunk
-        return '{"translation":"これは日本語です。","explanation":""}'
+        return "これは日本語です。"
 
     monkeypatch.setattr(
         service,

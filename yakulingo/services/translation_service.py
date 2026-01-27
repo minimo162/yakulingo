@@ -64,6 +64,21 @@ _LOCAL_AI_TIMING_ENABLED = os.environ.get("YAKULINGO_LOCAL_AI_TIMING") == "1"
 
 DEFAULT_TEXT_STYLE = "minimal"
 TEXT_STYLE_ORDER: tuple[str, ...] = ("standard", "concise", "minimal")
+_TEXT_TO_EN_LENGTH_RATIO_BY_STYLE: dict[str, float] = {
+    "standard": 3.0,
+    "concise": 2.5,
+    "minimal": 2.0,
+}
+_TEXT_TO_EN_LENGTH_RETRY_TEMPLATE = (
+    "CRITICAL: Enforce output length. "
+    "The translation MUST be <= {max_chars} characters ({ratio}x of the Japanese source). "
+    "Shorten aggressively to fit the limit. Output translation only."
+)
+
+
+def _normalize_text_style(style: str | None) -> str:
+    style_key = (style or "").strip().lower()
+    return style_key if style_key in TEXT_STYLE_ORDER else DEFAULT_TEXT_STYLE
 
 _TEXT_TO_EN_OUTPUT_LANGUAGE_RETRY_INSTRUCTION = (
     "CRITICAL: English only (no Japanese/Chinese/Korean scripts; no Japanese punctuation). "
@@ -849,6 +864,36 @@ def _build_to_en_rule_retry_instruction(reasons: list[str]) -> str:
             "- Use month abbreviations: Jan., Feb., Mar., Apr., May, Jun., Jul., Aug., Sep., Oct., Nov., Dec. Do not use full month names."
         )
     return "\n".join(lines)
+
+
+def _get_to_en_length_limit(
+    source_text: str, style: str
+) -> tuple[int, float, int] | None:
+    ratio = _TEXT_TO_EN_LENGTH_RATIO_BY_STYLE.get(style)
+    if ratio is None:
+        return None
+    source_count = len((source_text or "").strip())
+    if source_count <= 0:
+        return None
+    limit = max(1, int(source_count * ratio))
+    return limit, ratio, source_count
+
+
+def _needs_to_en_length_retry(
+    source_text: str, translated_text: str, style: str
+) -> tuple[bool, int, float, int, int]:
+    limit_info = _get_to_en_length_limit(source_text, style)
+    translation_count = len((translated_text or "").strip())
+    if limit_info is None:
+        return False, 0, 0.0, 0, translation_count
+    limit, ratio, source_count = limit_info
+    return translation_count > limit, limit, ratio, source_count, translation_count
+
+
+def _build_to_en_length_retry_instruction(max_chars: int, ratio: float) -> str:
+    return _TEXT_TO_EN_LENGTH_RETRY_TEMPLATE.format(
+        max_chars=max_chars, ratio=f"{ratio:g}"
+    )
 
 
 def _fix_to_en_negative_parens_if_possible(
@@ -4308,6 +4353,9 @@ class TranslationService:
                 error_message="ローカルAIの初期化に失敗しました",
             )
 
+        if output_language == "en":
+            style = _normalize_text_style(style)
+
         metadata: dict = {"backend": "local"}
         prebuilt_prompt: str | None = None
         embedded_ref = None
@@ -4624,6 +4672,27 @@ class TranslationService:
                         translation = fixed_text
                         metadata["to_en_month_abbrev_correction"] = True
 
+                needs_length_retry = False
+                length_limit = 0
+                length_ratio = 0.0
+                length_source_count = len((text or "").strip())
+                length_translation_count = len((translation or "").strip())
+                if not needs_output_language_retry and detected_language == "日本語":
+                    (
+                        needs_length_retry,
+                        length_limit,
+                        length_ratio,
+                        length_source_count,
+                        length_translation_count,
+                    ) = _needs_to_en_length_retry(text, translation, style)
+                    if length_limit > 0:
+                        metadata["to_en_length_limit"] = length_limit
+                        metadata["to_en_length_ratio"] = length_ratio
+                        metadata["to_en_length_source_chars"] = length_source_count
+                        metadata["to_en_length_translation_chars"] = (
+                            length_translation_count
+                        )
+
                 rule_retry_reasons: list[str] = []
                 rule_retry_reasons = _collect_to_en_rule_retry_reasons(
                     text, translation
@@ -4634,6 +4703,7 @@ class TranslationService:
                     needs_output_language_retry
                     or needs_numeric_rule_retry
                     or needs_rule_retry
+                    or needs_length_retry
                     or needs_ellipsis_retry
                     or needs_placeholder_retry
                 ):
@@ -4647,6 +4717,8 @@ class TranslationService:
                             retry_reasons.append("placeholder")
                         if needs_numeric_rule_retry:
                             retry_reasons.append("numeric_rule")
+                        if needs_length_retry:
+                            retry_reasons.append("length")
                         if needs_rule_retry:
                             if rule_retry_reasons:
                                 retry_reasons.append(
@@ -4672,6 +4744,12 @@ class TranslationService:
                         retry_parts.append(_LOCAL_AI_PLACEHOLDER_RETRY_INSTRUCTION)
                     if needs_numeric_rule_retry:
                         retry_parts.append(_TEXT_TO_EN_NUMERIC_RULE_INSTRUCTION)
+                    if needs_length_retry and length_limit > 0:
+                        retry_parts.append(
+                            _build_to_en_length_retry_instruction(
+                                length_limit, length_ratio
+                            )
+                        )
                     if needs_rule_retry:
                         retry_parts.append(
                             _build_to_en_rule_retry_instruction(rule_retry_reasons)
@@ -4746,9 +4824,45 @@ class TranslationService:
                     if needs_numeric_rule_retry:
                         metadata["to_en_numeric_rule_retry"] = True
                         metadata["to_en_numeric_rule_retry_styles"] = [style]
+                    if needs_length_retry:
+                        metadata["to_en_length_retry"] = True
                     if needs_rule_retry:
                         metadata["to_en_rule_retry"] = True
                         metadata["to_en_rule_retry_reasons"] = list(rule_retry_reasons)
+                    if detected_language == "日本語":
+                        (
+                            needs_length_retry_after,
+                            length_limit_after,
+                            length_ratio_after,
+                            length_source_count_after,
+                            length_translation_count_after,
+                        ) = _needs_to_en_length_retry(text, translation, style)
+                        if length_limit_after > 0:
+                            metadata["to_en_length_limit"] = length_limit_after
+                            metadata["to_en_length_ratio"] = length_ratio_after
+                            metadata["to_en_length_source_chars"] = (
+                                length_source_count_after
+                            )
+                            metadata["to_en_length_translation_chars"] = (
+                                length_translation_count_after
+                            )
+                        if needs_length_retry_after:
+                            metadata["to_en_length_violation"] = True
+                            if needs_length_retry:
+                                metadata["to_en_length_retry_failed"] = True
+                            length_error = (
+                                f"英訳が長さ制約を満たせませんでした（{length_translation_count_after}/{length_limit_after}文字）"
+                                if length_limit_after > 0
+                                else "英訳が長さ制約を満たせませんでした"
+                            )
+                            return TextTranslationResult(
+                                source_text=text,
+                                source_char_count=len(text),
+                                output_language=output_language,
+                                detected_language=detected_language,
+                                error_message=length_error,
+                                metadata=metadata,
+                            )
                     if _LOCAL_AI_TIMING_ENABLED:
                         logger.info(
                             "[DIAG] LocalText retry response received (output=%s style=%s chars=%d)",
@@ -4828,6 +4942,38 @@ class TranslationService:
                             output_language=output_language,
                             detected_language=detected_language,
                             error_message="翻訳結果が翻訳ルールに従っていませんでした（k/負数/月略称）",
+                            metadata=metadata,
+                        )
+                if detected_language == "日本語":
+                    (
+                        needs_length_retry_final,
+                        length_limit_final,
+                        length_ratio_final,
+                        length_source_count_final,
+                        length_translation_count_final,
+                    ) = _needs_to_en_length_retry(text, translation, style)
+                    if length_limit_final > 0:
+                        metadata["to_en_length_limit"] = length_limit_final
+                        metadata["to_en_length_ratio"] = length_ratio_final
+                        metadata["to_en_length_source_chars"] = length_source_count_final
+                        metadata["to_en_length_translation_chars"] = (
+                            length_translation_count_final
+                        )
+                    if needs_length_retry_final:
+                        metadata["to_en_length_violation"] = True
+                        if metadata.get("to_en_length_retry"):
+                            metadata["to_en_length_retry_failed"] = True
+                        length_error = (
+                            f"英訳が長さ制約を満たせませんでした（{length_translation_count_final}/{length_limit_final}文字）"
+                            if length_limit_final > 0
+                            else "英訳が長さ制約を満たせませんでした"
+                        )
+                        return TextTranslationResult(
+                            source_text=text,
+                            source_char_count=len(text),
+                            output_language=output_language,
+                            detected_language=detected_language,
+                            error_message=length_error,
                             metadata=metadata,
                         )
                 return TextTranslationResult(
@@ -6027,11 +6173,7 @@ class TranslationService:
             is_japanese = detected_language == "日本語"
             output_language = "en" if is_japanese else "jp"
 
-            # English output is minimal-only (ignore any requested style).
-            if output_language == "en":
-                style = "minimal"
-            elif style is None:
-                style = DEFAULT_TEXT_STYLE
+            style = _normalize_text_style(style)
 
             return self._translate_text_with_options_local(
                 text=text,
@@ -6095,12 +6237,18 @@ class TranslationService:
                 detected_language,
                 on_chunk,
             )
-        styles_list = styles or list(TEXT_STYLE_ORDER)
-        return self._translate_text_with_style_comparison_local(
+        selected_style: str | None = None
+        if styles:
+            for style_name in styles:
+                style_key = (style_name or "").strip().lower()
+                if style_key in TEXT_STYLE_ORDER:
+                    selected_style = style_key
+                    break
+        return self.translate_text_with_options(
             text=text,
             reference_files=reference_files,
-            styles=styles_list,
-            detected_language=detected_language,
+            style=_normalize_text_style(selected_style),
+            pre_detected_language=detected_language,
             on_chunk=on_chunk,
         )
 

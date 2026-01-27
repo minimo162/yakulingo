@@ -7,7 +7,6 @@ Bidirectional translation: Japanese → English, Other → Japanese (auto-detect
 
 # ruff: noqa: E402
 
-import csv
 import logging
 import os
 import threading
@@ -7184,14 +7183,9 @@ class TranslationService:
 
         direction = "jp_to_en" if output_language == "en" else "en_to_jp"
 
-        apply_total = (
-            1
-            + (1 if self.config and self.config.bilingual_output else 0)
-            + (1 if self.config and self.config.export_glossary else 0)
-        )
+        apply_total = 1 + (1 if self.config and self.config.bilingual_output else 0)
         apply_step = 0
         bilingual_path = None
-        glossary_path = None
 
         if self._cancel_event.is_set():
             return TranslationResult(
@@ -7247,33 +7241,6 @@ class TranslationService:
                 input_path, output_path, processor
             )
 
-        # Export glossary CSV if enabled (primary style only)
-        if self.config and self.config.export_glossary:
-            if self._cancel_event.is_set():
-                return TranslationResult(
-                    status=TranslationStatus.CANCELLED,
-                    duration_seconds=time.monotonic() - start_time,
-                )
-            apply_step += 1
-            if on_progress:
-                progress_current = 90 + int(10 * (apply_step - 1) / max(apply_total, 1))
-                on_progress(
-                    TranslationProgress(
-                        current=progress_current,
-                        total=100,
-                        status="Exporting glossary CSV...",
-                        phase=TranslationPhase.APPLYING,
-                        phase_detail="Creating translation pairs",
-                        phase_current=apply_step,
-                        phase_total=apply_total,
-                    )
-                )
-
-            glossary_path = output_path.parent / (
-                output_path.stem.replace("_translated", "") + "_glossary.csv"
-            )
-            self._export_glossary_csv(blocks, primary_translations, glossary_path)
-
         # Report complete
         if on_progress:
             on_progress(
@@ -7302,7 +7269,6 @@ class TranslationService:
             status=TranslationStatus.COMPLETED,
             output_path=output_path,
             bilingual_path=bilingual_path,
-            glossary_path=glossary_path,
             blocks_translated=translated_count,
             blocks_total=total_blocks,
             duration_seconds=time.monotonic() - start_time,
@@ -7555,14 +7521,9 @@ class TranslationService:
 
         direction = "jp_to_en" if output_language == "en" else "en_to_jp"
 
-        apply_total = (
-            1
-            + (1 if self.config and self.config.bilingual_output else 0)
-            + (1 if self.config and self.config.export_glossary else 0)
-        )
+        apply_total = 1 + (1 if self.config and self.config.bilingual_output else 0)
         apply_step = 0
         bilingual_path = None
-        glossary_path = None
 
         if self._cancel_event.is_set():
             return TranslationResult(
@@ -7620,33 +7581,6 @@ class TranslationService:
             )
             processor.create_bilingual_pdf(input_path, output_path, bilingual_path)
 
-        # Export glossary CSV if enabled (primary style only)
-        if self.config and self.config.export_glossary:
-            if self._cancel_event.is_set():
-                return TranslationResult(
-                    status=TranslationStatus.CANCELLED,
-                    duration_seconds=time.monotonic() - start_time,
-                )
-            apply_step += 1
-            if on_progress:
-                progress_current = 90 + int(10 * (apply_step - 1) / max(apply_total, 1))
-                on_progress(
-                    TranslationProgress(
-                        current=progress_current,
-                        total=100,
-                        status="Exporting glossary CSV...",
-                        phase=TranslationPhase.APPLYING,
-                        phase_detail="Creating translation pairs",
-                        phase_current=apply_step,
-                        phase_total=apply_total,
-                    )
-                )
-
-            glossary_path = output_path.parent / (
-                output_path.stem.replace("_translated", "") + "_glossary.csv"
-            )
-            self._export_glossary_csv(all_blocks, primary_translations, glossary_path)
-
         if on_progress:
             on_progress(
                 TranslationProgress(
@@ -7675,7 +7609,6 @@ class TranslationService:
             status=TranslationStatus.COMPLETED,
             output_path=output_path,
             bilingual_path=bilingual_path,
-            glossary_path=glossary_path,
             blocks_translated=translated_count,
             blocks_total=total_blocks,
             duration_seconds=time.monotonic() - start_time,
@@ -7754,55 +7687,6 @@ class TranslationService:
                     )
 
         return warnings
-
-    def _export_glossary_csv(
-        self,
-        blocks: list[TextBlock],
-        translations: dict[str, str],
-        output_path: Path,
-    ) -> bool:
-        """
-        Export translation pairs as glossary CSV.
-
-        Format:
-            original,translated
-            原文テキスト,Translation text
-            ...
-
-        Args:
-            blocks: Original text blocks
-            translations: Translation results (block_id -> translated_text)
-            output_path: Output CSV file path
-
-        Returns:
-            True if export was successful, False otherwise
-        """
-        try:
-            pair_count = 0
-            with open(output_path, "w", encoding="utf-8-sig", newline="") as f:
-                writer = csv.writer(f)
-                writer.writerow(["original", "translated"])
-
-                for block in blocks:
-                    if block.id in translations:
-                        original = block.text.strip()
-                        translated = translations[block.id].strip()
-                        # Skip empty pairs
-                        if original and translated:
-                            writer.writerow([original, translated])
-                            pair_count += 1
-
-            logger.info("Exported glossary CSV: %s (%d pairs)", output_path, pair_count)
-            return True
-        except (OSError, IOError) as e:
-            logger.error("Failed to export glossary CSV to %s: %s", output_path, e)
-            # Clean up incomplete file
-            try:
-                if output_path.exists():
-                    output_path.unlink()
-            except OSError:
-                pass
-            return False
 
     def _create_bilingual_output(
         self,

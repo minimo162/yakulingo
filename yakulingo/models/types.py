@@ -237,7 +237,6 @@ class TranslationResult:
     status: TranslationStatus
     output_path: Optional[Path] = None  # Main translated file
     bilingual_path: Optional[Path] = None  # Bilingual output file (if enabled)
-    glossary_path: Optional[Path] = None  # Glossary CSV file (if enabled)
     output_text: Optional[str] = None  # For text translation (legacy)
     blocks_translated: int = 0
     blocks_total: int = 0
@@ -277,7 +276,6 @@ class TranslationResult:
         for extra_path, extra_desc in self.extra_output_files:
             add(extra_path, extra_desc or "追加出力")
         add(self.bilingual_path, "対訳ファイル")
-        add(self.glossary_path, "用語集CSV")
         return files
 
 

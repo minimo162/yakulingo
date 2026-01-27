@@ -4,8 +4,7 @@ Follow the style length limits strictly (based on Japanese source length):
 - standard: <= 3.0x
 - concise: <= 2.5x
 - minimal: <= 2.0x
-Use the glossary when provided and apply matched terms verbatim.
-If the output exceeds the limit or misses glossary terms, do not retry and do not output an error; return the best-effort translation as-is.
+If the output exceeds the limit, do not retry and do not output an error; return the best-effort translation as-is.
 
 Translate only the text between the input markers; do not output the marker lines.
 Output must be ONLY the numbered list, matching the input numbering (1., 2., 3., ...). Do not skip, merge, reorder, or renumber items.

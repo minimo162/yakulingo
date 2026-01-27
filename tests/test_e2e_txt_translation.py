@@ -123,12 +123,11 @@ def test_e2e_txt_translation_cache_is_cleared_per_file(
 
 
 @pytest.mark.e2e
-def test_e2e_txt_bilingual_and_glossary_outputs(
+def test_e2e_txt_bilingual_outputs(
     tmp_path: Path, local_ai_translate_sync_mock: dict[str, int]
 ) -> None:
     settings = AppSettings(translation_backend="local")
     settings.bilingual_output = True
-    settings.export_glossary = True
     service = TranslationService(config=settings)
 
     input_path = tmp_path / "outputs.txt"
@@ -140,12 +139,6 @@ def test_e2e_txt_bilingual_and_glossary_outputs(
     assert result.status == TranslationStatus.COMPLETED
     assert result.output_path is not None and result.output_path.exists()
     assert result.bilingual_path is not None and result.bilingual_path.exists()
-    assert result.glossary_path is not None and result.glossary_path.exists()
     assert len(result.extra_output_files) == 0
 
     assert result.bilingual_path.name.endswith("_bilingual.txt")
-    assert result.glossary_path.name.endswith("_glossary.csv")
-
-    csv_text = result.glossary_path.read_text(encoding="utf-8-sig")
-    assert "original" in csv_text
-    assert "translated" in csv_text

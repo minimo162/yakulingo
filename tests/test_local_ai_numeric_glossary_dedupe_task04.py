@@ -17,7 +17,6 @@ def _make_temp_builder(tmp_path: Path) -> LocalPromptBuilder:
     )
 
     settings = AppSettings()
-    settings.use_bundled_glossary = False
     return LocalPromptBuilder(
         prompts_dir,
         base_prompt_builder=PromptBuilder(prompts_dir),

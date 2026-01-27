@@ -334,15 +334,12 @@ def create_text_input_panel(
     on_split_translate: Optional[Callable[[], None]] = None,
     on_open_file_picker: Optional[Callable[[], None]] = None,
     on_translate_button_created: Optional[Callable[[ui.button], None]] = None,
-    use_bundled_glossary: bool = False,
     text_char_limit: int = 5000,
     batch_char_limit: int = 4000,
     on_output_language_override: Optional[Callable[[Optional[str]], None]] = None,
     translation_style: str = "concise",
     on_style_change: Optional[Callable[[str], None]] = None,
     on_input_metrics_created: Optional[Callable[[dict[str, object]], None]] = None,
-    on_glossary_toggle: Optional[Callable[[bool], None]] = None,
-    on_edit_glossary: Optional[Callable[[], None]] = None,
     on_textarea_created: Optional[Callable[[ui.textarea], None]] = None,
 ):
     """
@@ -357,15 +354,12 @@ def create_text_input_panel(
         on_clear,
         on_open_file_picker,
         on_translate_button_created,
-        use_bundled_glossary,
         text_char_limit,
         batch_char_limit,
         on_output_language_override,
         translation_style,
         on_style_change,
         on_input_metrics_created,
-        on_glossary_toggle,
-        on_edit_glossary,
         on_textarea_created,
     )
 
@@ -378,15 +372,12 @@ def _create_large_input_panel(
     on_clear: Callable[[], None],
     on_open_file_picker: Optional[Callable[[], None]] = None,
     on_translate_button_created: Optional[Callable[[ui.button], None]] = None,
-    use_bundled_glossary: bool = False,
     text_char_limit: int = 5000,
     batch_char_limit: int = 4000,
     on_output_language_override: Optional[Callable[[Optional[str]], None]] = None,
     translation_style: str = "concise",
     on_style_change: Optional[Callable[[str], None]] = None,
     on_input_metrics_created: Optional[Callable[[dict[str, object]], None]] = None,
-    on_glossary_toggle: Optional[Callable[[bool], None]] = None,
-    on_edit_glossary: Optional[Callable[[], None]] = None,
     on_textarea_created: Optional[Callable[[ui.textarea], None]] = None,
 ):
     """Large input panel that becomes compact when results are visible."""
@@ -458,7 +449,6 @@ def _create_large_input_panel(
                 with ui.row().classes(
                     "input-toolbar justify-between items-start flex-wrap gap-y-3"
                 ):
-                    # Left side: direction + glossary toggle
                     with ui.column().classes("input-toolbar-left gap-2 flex-1 min-w-0"):
                         settings_panel = ui.element("div").classes("advanced-panel")
 
@@ -509,48 +499,6 @@ def _create_large_input_panel(
                                             metrics_refs["override_auto"] = auto_btn
                                             metrics_refs["override_en"] = en_btn
                                             metrics_refs["override_jp"] = jp_btn
-
-                                with ui.column().classes("advanced-section"):
-                                    ui.label("用語集").classes("advanced-label")
-                                    with ui.row().classes(
-                                        "items-center gap-2 flex-wrap"
-                                    ):
-                                        if on_glossary_toggle:
-                                            glossary_btn = (
-                                                ui.button(
-                                                    "用語集",
-                                                    icon="short_text",
-                                                    on_click=lambda: on_glossary_toggle(
-                                                        not use_bundled_glossary
-                                                    ),
-                                                )
-                                                .props("flat no-caps size=sm")
-                                                .classes(
-                                                    f"glossary-toggle-btn {'active' if use_bundled_glossary else ''}"
-                                                )
-                                            )
-                                            glossary_btn.tooltip(
-                                                "同梱の glossary.csv を使用"
-                                                if not use_bundled_glossary
-                                                else "用語集を使用中"
-                                            )
-
-                                            # Edit glossary button (only shown when enabled)
-                                            if (
-                                                use_bundled_glossary
-                                                and on_edit_glossary
-                                            ):
-                                                edit_btn = (
-                                                    ui.button(
-                                                        icon="edit",
-                                                        on_click=on_edit_glossary,
-                                                    )
-                                                    .props(
-                                                        'flat dense round size=sm aria-label="用語集を編集"'
-                                                    )
-                                                    .classes("settings-btn")
-                                                )
-                                                edit_btn.tooltip("用語集を編集")
 
                     with ui.column().classes("input-toolbar-right items-center gap-2"):
                         with ui.column().classes("translate-actions items-end gap-2"):

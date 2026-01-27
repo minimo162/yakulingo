@@ -1535,10 +1535,6 @@ class YakuLingoApp:
         # Lazy-loaded heavy components for faster startup
         self.translation_service: Optional["TranslationService"] = None
 
-        # Cache base directory and glossary path (avoid recalculation)
-        self._base_dir = Path(__file__).parent.parent.parent
-        self._glossary_path = self._base_dir / "glossary.csv"
-
         # Window sizing state (logical vs native/DPI-scaled)
         self._native_window_size: tuple[int, int] | None = None
         self._dpi_scale: float = 1.0
@@ -8034,15 +8030,12 @@ class YakuLingoApp:
                         on_clear=self._clear,
                         on_open_file_picker=self._open_translation_file_picker,
                         on_translate_button_created=self._on_translate_button_created,
-                        use_bundled_glossary=self.settings.use_bundled_glossary,
                         text_char_limit=TEXT_TRANSLATION_CHAR_LIMIT,
                         batch_char_limit=self.settings.local_ai_max_chars_per_batch,
                         on_output_language_override=self._set_text_output_language_override,
                         translation_style=self.settings.translation_style,
                         on_style_change=self._on_style_change,
                         on_input_metrics_created=self._on_text_input_metrics_created,
-                        on_glossary_toggle=self._on_glossary_toggle,
-                        on_edit_glossary=self._edit_glossary,
                         on_textarea_created=self._on_textarea_created,
                     )
 
@@ -8069,9 +8062,6 @@ class YakuLingoApp:
                                 on_section_clear=self._on_section_clear,
                                 translation_style=self.settings.translation_style,
                                 translation_result=self.state.translation_result,
-                                use_bundled_glossary=self.settings.use_bundled_glossary,
-                                on_glossary_toggle=self._on_glossary_toggle,
-                                on_edit_glossary=self._edit_glossary,
                                 on_progress_elements_created=self._on_file_progress_elements_created,
                             )
 
@@ -8518,33 +8508,6 @@ class YakuLingoApp:
         self.state.text_detected_language = None
         self.state.text_detected_language_reason = None
         self._refresh_content()
-
-    def _on_glossary_toggle(self, enabled: bool):
-        """Toggle bundled glossary usage"""
-        self.settings.use_bundled_glossary = enabled
-        self.settings.save(self.settings_path)
-        self._refresh_content()
-
-    async def _edit_glossary(self):
-        """Open glossary.csv in Excel/default editor with cooldown to prevent double-open"""
-        from yakulingo.ui.utils import open_file
-
-        # Check if glossary file exists
-        if not self._glossary_path.exists():
-            ui.notify("用語集が見つかりません", type="warning")
-            return
-
-        # Open the file
-        open_file(self._glossary_path)
-        ui.notify(
-            "用語集を開きました。編集後は保存してから翻訳してください",
-            type="info",
-            timeout=5000,
-        )
-
-        # Cooldown: prevent rapid re-clicking by refreshing UI
-        # (button won't appear again until next refresh after 3s)
-        await asyncio.sleep(3)
 
     def _copy_text(self, text: str):
         """テキストをOSのクリップボードへコピー（ベストエフォート）。
@@ -10137,12 +10100,6 @@ class YakuLingoApp:
     def _on_bilingual_change(self, enabled: bool):
         """Handle bilingual output toggle"""
         self.settings.bilingual_output = enabled
-        self.settings.save(self.settings_path)
-        # No need to refresh content, checkbox state is handled by NiceGUI
-
-    def _on_export_glossary_change(self, enabled: bool):
-        """Handle glossary CSV export toggle"""
-        self.settings.export_glossary = enabled
         self.settings.save(self.settings_path)
         # No need to refresh content, checkbox state is handled by NiceGUI
 

@@ -5,23 +5,21 @@ from pathlib import Path
 from yakulingo.models.types import TranslationResult, TranslationStatus
 
 
-def test_translation_result_output_files_orders_primary_extra_bilingual_glossary(
+def test_translation_result_output_files_orders_primary_extra_bilingual(
     tmp_path: Path,
 ) -> None:
     output_path = tmp_path / "out.xlsx"
     extra_a = tmp_path / "out_standard.xlsx"
     extra_b = tmp_path / "out_minimal.xlsx"
     bilingual_path = tmp_path / "out_bilingual.xlsx"
-    glossary_path = tmp_path / "out_glossary.csv"
 
-    for path in (output_path, extra_a, extra_b, bilingual_path, glossary_path):
+    for path in (output_path, extra_a, extra_b, bilingual_path):
         path.write_text("x", encoding="utf-8")
 
     result = TranslationResult(
         status=TranslationStatus.COMPLETED,
         output_path=output_path,
         bilingual_path=bilingual_path,
-        glossary_path=glossary_path,
         extra_output_files=[
             (extra_a, "翻訳ファイル（標準）"),
             (extra_b, "翻訳ファイル（最簡潔）"),
@@ -33,7 +31,6 @@ def test_translation_result_output_files_orders_primary_extra_bilingual_glossary
         (extra_a, "翻訳ファイル（標準）"),
         (extra_b, "翻訳ファイル（最簡潔）"),
         (bilingual_path, "対訳ファイル"),
-        (glossary_path, "用語集CSV"),
     ]
 
 

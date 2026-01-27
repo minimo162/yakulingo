@@ -349,9 +349,6 @@ def create_file_panel(
     on_section_clear: Optional[Callable[[], None]] = None,
     translation_style: str = "concise",
     translation_result: Optional[TranslationResult] = None,
-    use_bundled_glossary: bool = True,
-    on_glossary_toggle: Optional[Callable[[bool], None]] = None,
-    on_edit_glossary: Optional[Callable[[], None]] = None,
     on_progress_elements_created: Optional[
         Callable[[Optional[dict[str, object]]], None]
     ] = None,
@@ -400,13 +397,6 @@ def create_file_panel(
                                     _file_style_selector(
                                         translation_style, on_style_change
                                     )
-                            with ui.column().classes("advanced-section"):
-                                ui.label("用語集").classes("advanced-label")
-                                _glossary_selector(
-                                    use_bundled_glossary,
-                                    on_glossary_toggle,
-                                    on_edit_glossary,
-                                )
                             if has_sections and state.file_info:
                                 _section_selector(
                                     state.file_info,
@@ -415,9 +405,7 @@ def create_file_panel(
                                     on_section_clear,
                                 )
                     with ui.column().classes("items-center gap-2 mt-4"):
-                        _file_translate_meta_chips(
-                            state, translation_style, use_bundled_glossary
-                        )
+                        _file_translate_meta_chips(state, translation_style)
                         with ui.row().classes("justify-center"):
                             # Disable button while file info is loading
                             btn_disabled = state.file_info is None
@@ -441,9 +429,7 @@ def create_file_panel(
 
                 elif state.file_state == FileState.TRANSLATING:
                     with ui.column().classes("items-center gap-2"):
-                        _file_translate_meta_chips(
-                            state, translation_style, use_bundled_glossary
-                        )
+                        _file_translate_meta_chips(state, translation_style)
                         _progress_card(
                             state.file_info,
                             state.translation_progress,
@@ -464,9 +450,7 @@ def create_file_panel(
 
                 elif state.file_state == FileState.COMPLETE:
                     with ui.column().classes("items-center gap-2"):
-                        _file_translate_meta_chips(
-                            state, translation_style, use_bundled_glossary
-                        )
+                        _file_translate_meta_chips(state, translation_style)
                         _complete_card(
                             translation_result,
                             state.file_info,
@@ -485,7 +469,6 @@ def create_file_panel(
 def _file_translate_meta_chips(
     state: AppState,
     translation_style: str,
-    use_bundled_glossary: bool = False,
 ) -> None:
     output_label = (
         "日本語→英語" if state.file_output_language == "en" else "英語→日本語"
@@ -502,8 +485,6 @@ def _file_translate_meta_chips(
                 ui.label(style_label).classes("chip meta-chip")
             if state.file_output_language_overridden:
                 ui.label("手動指定").classes("chip meta-chip override-chip")
-            if use_bundled_glossary:
-                ui.label("用語集").classes("chip meta-chip")
 
 
 def _language_selector(
@@ -589,44 +570,6 @@ def _get_section_label(file_info: Optional[FileInfo]) -> str:
         FileType.TEXT: "セクション",
     }
     return label_map.get(file_info.file_type, "セクション")
-
-
-def _glossary_selector(
-    use_bundled_glossary: bool,
-    on_toggle: Optional[Callable[[bool], None]],
-    on_edit: Optional[Callable[[], None]],
-):
-    """Glossary toggle row (simplified)."""
-    with ui.row().classes("w-full justify-center items-center gap-2 flex-wrap"):
-        # Glossary toggle button
-        if on_toggle:
-            glossary_btn = (
-                ui.button(
-                    "用語集",
-                    icon="short_text",
-                    on_click=lambda: on_toggle(not use_bundled_glossary),
-                )
-                .props("flat no-caps size=sm")
-                .classes(
-                    f"glossary-toggle-btn {'active' if use_bundled_glossary else ''}"
-                )
-            )
-            glossary_btn.tooltip(
-                "同梱の glossary.csv を使用"
-                if not use_bundled_glossary
-                else "用語集を使用中"
-            )
-
-            # Edit glossary button (only shown when enabled)
-            if use_bundled_glossary and on_edit:
-                edit_btn = (
-                    ui.button(icon="edit", on_click=on_edit)
-                    .props('flat dense round size=sm aria-label="用語集を編集"')
-                    .classes("settings-btn")
-                )
-                edit_btn.tooltip("用語集を編集")
-
-
 def _drop_zone(
     state: AppState,
     on_file_select: Callable[[list[Path]], Union[None, Awaitable[None]]],

@@ -43,8 +43,6 @@ USER_SETTINGS_KEYS = {
     "font_size_adjustment_jp_to_en",
     # 出力オプション（ファイル翻訳パネルで変更）
     "bilingual_output",
-    "export_glossary",
-    "use_bundled_glossary",
     # ブラウザ表示モード
     "browser_display_mode",
     # UI状態（自動保存）
@@ -363,13 +361,7 @@ class AppSettings:
 
     # File Translation Options (共通オプション)
     bilingual_output: bool = False  # 対訳出力（原文と翻訳を交互に配置）
-    export_glossary: bool = False  # 対訳CSV出力（glossaryとして再利用可能）
     translation_style: str = "minimal"  # File translation style (SSOT: minimal; standard/concise/minimal are normalized to minimal)
-
-    # Text Translation Options
-    use_bundled_glossary: bool = (
-        True  # 同梱の glossary.csv を使用するか（デフォルトでオン）
-    )
 
     # Font Settings (ファイル翻訳用 - 全形式共通)
     # フォントサイズ調整（JP→EN時）: 0で調整なし、負値で縮小

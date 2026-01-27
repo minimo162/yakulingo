@@ -11,7 +11,7 @@ def test_local_backend_prompt_excludes_bundled_glossary() -> None:
     root = Path(__file__).resolve().parent.parent
     prompts_dir = root / "prompts"
 
-    settings = AppSettings(translation_backend="local", use_bundled_glossary=True)
+    settings = AppSettings(translation_backend="local")
     service = TranslationService(
         config=settings,
         prompts_dir=prompts_dir,

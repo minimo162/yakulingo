@@ -126,15 +126,6 @@ class LocalPromptBuilder:
             if reference_files
             else []
         )
-        if (
-            self._settings.use_bundled_glossary
-            and input_text
-            and input_text.strip()
-            and self.prompts_dir
-        ):
-            glossary_path = self.prompts_dir.parent / "glossary.csv"
-            if glossary_path.exists() and glossary_path not in files:
-                files.insert(0, glossary_path)
         return files
 
     @staticmethod

@@ -89,7 +89,6 @@ def test_translate_single_streaming_retries_with_repeated_prompt_on_missing_json
 
 def test_local_reference_embed_disabled_skips_glossary_filter(tmp_path: Path) -> None:
     builder = _make_builder()
-    builder._settings.use_bundled_glossary = False
     ref_path = tmp_path / "ref.csv"
     ref_path.write_text("AI,Artificial Intelligence\n", encoding="utf-8")
 

@@ -114,21 +114,21 @@ def test_parse_batch_translations_logs_diagnostics_on_failure(
 def test_parse_text_to_en_3style_reads_options_json() -> None:
     raw = """```json
 {"options":[
-  {"style":"standard","translation":"A"},
-  {"style":"concise","translation":"B"},
-  {"style":"minimal","translation":"C"}
+  {"style":"standard","translation":"A","explanation":"standard rationale"},
+  {"style":"concise","translation":"B","explanation":"concise rationale"},
+  {"style":"minimal","translation":"C","explanation":"minimal rationale"}
 ]}
 ```"""
     by_style = parse_text_to_en_3style(raw)
-    assert by_style["standard"] == ("A", "")
-    assert by_style["concise"] == ("B", "")
-    assert by_style["minimal"] == ("C", "")
+    assert by_style["standard"] == ("A", "standard rationale")
+    assert by_style["concise"] == ("B", "concise rationale")
+    assert by_style["minimal"] == ("C", "minimal rationale")
 
 
 def test_parse_text_to_en_3style_keeps_legacy_explanation_key_compatible() -> None:
     raw = """{"options":[{"style":"standard","translation":"A","explanation":"e1"}]}"""
     by_style = parse_text_to_en_3style(raw)
-    assert by_style["standard"] == ("A", "")
+    assert by_style["standard"] == ("A", "e1")
 
 
 def test_parse_text_to_en_3style_normalizes_style_labels() -> None:

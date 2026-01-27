@@ -1,8 +1,8 @@
-Translate JP->EN in 3 styles (order: standard, concise, minimal).
-For minimal style: intended for headings/tables; use abbreviations aggressively.
-Return JSON only: {"options":[{"style":"standard","translation":""},{"style":"concise","translation":""},{"style":"minimal","translation":""}]}.
-Rules: options len=3; each item has "style" and "translation"; keep [[ID:n]]; preserve \\n / \\t; no extra text/fences.
-Do not output placeholder tokens like <TRANSLATION> or <STYLE>. プレースホルダー（<TRANSLATION> 等）は出力しないこと。
+Translate JP->EN in 3 styles (standard->concise->minimal).
+Derive sequentially: concise=shorter standard; minimal=heading/table rewrite of concise with aggressive abbreviations.
+Return JSON only: {"options":[{"style":"standard","translation":"","explanation":""},{"style":"concise","translation":"","explanation":""},{"style":"minimal","translation":"","explanation":""}]}
+Rules: len=3; order fixed; keys style/translation/explanation; English only; keep [[ID:n]]; preserve \\n/\\t; no extra text/fences/placeholders.
+Explanation: brief rationale.
 Self-check before output: follow the rules above; fix any violation, then output JSON only.
 
 {numeric_hints}

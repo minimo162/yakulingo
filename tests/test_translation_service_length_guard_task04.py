@@ -49,8 +49,7 @@ def _make_service(local: SequencedLocalClient) -> TranslationService:
 def test_to_en_length_guard_retries_and_succeeds() -> None:
     source_text = "短いテキストです"
     long_translation = "This translation is intentionally far too long."
-    short_translation = "Short text."
-    local = SequencedLocalClient([long_translation, short_translation])
+    local = SequencedLocalClient([long_translation])
     service = _make_service(local)
 
     result = service.translate_text_with_options(
@@ -62,14 +61,15 @@ def test_to_en_length_guard_retries_and_succeeds() -> None:
     expected_limit = len(source_text.strip()) * 2
     metadata = result.metadata or {}
 
-    assert local.translate_single_calls == 2
+    assert local.translate_single_calls == 1
     assert result.options
     assert result.options[0].style == "minimal"
-    assert result.options[0].text == short_translation
-    assert metadata.get("to_en_length_retry") is True
+    assert result.options[0].text == long_translation
     assert metadata.get("to_en_length_limit") == expected_limit
-    assert metadata.get("to_en_length_translation_chars") <= expected_limit
-    assert any("Enforce output length" in prompt for prompt in local.prompts[1:])
+    assert metadata.get("to_en_length_translation_chars") > expected_limit
+    assert metadata.get("to_en_length_violation") is True
+    assert "to_en_length_retry" not in metadata
+    assert all("Enforce output length" not in prompt for prompt in local.prompts)
 
 
 def test_to_en_length_guard_returns_error_when_retry_still_too_long() -> None:
@@ -86,9 +86,10 @@ def test_to_en_length_guard_returns_error_when_retry_still_too_long() -> None:
 
     metadata = result.metadata or {}
 
-    assert local.translate_single_calls == 2
-    assert not result.options
-    assert result.error_message
-    assert metadata.get("to_en_length_retry") is True
-    assert metadata.get("to_en_length_retry_failed") is True
+    assert local.translate_single_calls == 1
+    assert result.options
+    assert result.options[0].text == long_translation
+    assert not result.error_message
     assert metadata.get("to_en_length_violation") is True
+    assert "to_en_length_retry" not in metadata
+    assert "to_en_length_retry_failed" not in metadata

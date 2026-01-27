@@ -4692,6 +4692,8 @@ class TranslationService:
                         metadata["to_en_length_translation_chars"] = (
                             length_translation_count
                         )
+                    if needs_length_retry:
+                        metadata["to_en_length_violation"] = True
 
                 rule_retry_reasons: list[str] = []
                 rule_retry_reasons = _collect_to_en_rule_retry_reasons(
@@ -4703,7 +4705,6 @@ class TranslationService:
                     needs_output_language_retry
                     or needs_numeric_rule_retry
                     or needs_rule_retry
-                    or needs_length_retry
                     or needs_ellipsis_retry
                     or needs_placeholder_retry
                 ):
@@ -4717,8 +4718,6 @@ class TranslationService:
                             retry_reasons.append("placeholder")
                         if needs_numeric_rule_retry:
                             retry_reasons.append("numeric_rule")
-                        if needs_length_retry:
-                            retry_reasons.append("length")
                         if needs_rule_retry:
                             if rule_retry_reasons:
                                 retry_reasons.append(
@@ -4744,12 +4743,6 @@ class TranslationService:
                         retry_parts.append(_LOCAL_AI_PLACEHOLDER_RETRY_INSTRUCTION)
                     if needs_numeric_rule_retry:
                         retry_parts.append(_TEXT_TO_EN_NUMERIC_RULE_INSTRUCTION)
-                    if needs_length_retry and length_limit > 0:
-                        retry_parts.append(
-                            _build_to_en_length_retry_instruction(
-                                length_limit, length_ratio
-                            )
-                        )
                     if needs_rule_retry:
                         retry_parts.append(
                             _build_to_en_rule_retry_instruction(rule_retry_reasons)
@@ -4824,8 +4817,6 @@ class TranslationService:
                     if needs_numeric_rule_retry:
                         metadata["to_en_numeric_rule_retry"] = True
                         metadata["to_en_numeric_rule_retry_styles"] = [style]
-                    if needs_length_retry:
-                        metadata["to_en_length_retry"] = True
                     if needs_rule_retry:
                         metadata["to_en_rule_retry"] = True
                         metadata["to_en_rule_retry_reasons"] = list(rule_retry_reasons)
@@ -4846,6 +4837,13 @@ class TranslationService:
                             metadata["to_en_length_translation_chars"] = (
                                 length_translation_count_after
                             )
+                        length_violation_after = (
+                            length_limit_after > 0
+                            and length_translation_count_after > length_limit_after
+                        )
+                        if length_violation_after:
+                            metadata["to_en_length_violation"] = True
+                        needs_length_retry_after = False
                         if needs_length_retry_after:
                             metadata["to_en_length_violation"] = True
                             if needs_length_retry:
@@ -4959,6 +4957,13 @@ class TranslationService:
                         metadata["to_en_length_translation_chars"] = (
                             length_translation_count_final
                         )
+                    length_violation_final = (
+                        length_limit_final > 0
+                        and length_translation_count_final > length_limit_final
+                    )
+                    if length_violation_final:
+                        metadata["to_en_length_violation"] = True
+                    needs_length_retry_final = False
                     if needs_length_retry_final:
                         metadata["to_en_length_violation"] = True
                         if metadata.get("to_en_length_retry"):

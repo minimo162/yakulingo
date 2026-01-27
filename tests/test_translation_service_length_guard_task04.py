@@ -46,7 +46,7 @@ def _make_service(local: SequencedLocalClient) -> TranslationService:
     return service
 
 
-def test_to_en_length_guard_retries_and_succeeds() -> None:
+def test_to_en_length_guard_records_violation_without_retry() -> None:
     source_text = "短いテキストです"
     long_translation = "This translation is intentionally far too long."
     local = SequencedLocalClient([long_translation])
@@ -72,10 +72,10 @@ def test_to_en_length_guard_retries_and_succeeds() -> None:
     assert all("Enforce output length" not in prompt for prompt in local.prompts)
 
 
-def test_to_en_length_guard_returns_error_when_retry_still_too_long() -> None:
+def test_to_en_length_guard_does_not_error_on_violation() -> None:
     source_text = "短いテキストです"
     long_translation = "This translation is still far too long."
-    local = SequencedLocalClient([long_translation, long_translation])
+    local = SequencedLocalClient([long_translation])
     service = _make_service(local)
 
     result = service.translate_text_with_options(

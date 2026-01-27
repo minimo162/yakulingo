@@ -31,8 +31,23 @@ def local_ai_translate_sync_mock() -> dict[str, int]:
         calls["count"] += 1
         return [_hash_en(text) for text in texts]
 
+    def fake_translate_single(
+        _self: LocalAIClient,
+        text: str,
+        _prompt: str,
+        _reference_files: list[Path] | None = None,
+        on_chunk: object | None = None,
+        **_: object,
+    ) -> str:
+        calls["count"] += 1
+        hashed = _hash_en(text)
+        if callable(on_chunk):
+            on_chunk(hashed)
+        return hashed
+
     with patch.object(LocalAIClient, "translate_sync", new=fake_translate_sync):
-        yield calls
+        with patch.object(LocalAIClient, "translate_single", new=fake_translate_single):
+            yield calls
 
 
 @pytest.mark.e2e
@@ -56,8 +71,8 @@ def test_e2e_txt_translate_file_creates_outputs(
 
     output_text = result.output_path.read_text(encoding="utf-8")
     paragraphs = [p.strip() for p in input_text.split("\n\n") if p.strip()]
-    # File translation uses batch translation; short inputs should fit in a single request.
-    assert local_ai_translate_sync_mock["count"] == 1
+    expected_calls = len({p for p in paragraphs})
+    assert local_ai_translate_sync_mock["count"] == expected_calls
     expected = "\n\n".join(_hash_en(p) for p in paragraphs)
     assert output_text == expected
 

@@ -8,6 +8,8 @@ from yakulingo.models.types import (
     BatchTranslationResult,
     FileType,
     TextBlock,
+    TextTranslationResult,
+    TranslationOption,
     TranslationStatus,
 )
 from yakulingo.services.translation_service import TranslationService
@@ -132,32 +134,57 @@ def _make_service_with_spy_translator() -> tuple[
     return service, spy
 
 
-def test_nonpdf_file_translation_uses_file_batch_limit_info(tmp_path: Path) -> None:
+def test_nonpdf_file_translation_does_not_use_batch_translator(tmp_path: Path) -> None:
     input_path = tmp_path / "input.txt"
     input_path.write_text("dummy", encoding="utf-8")
 
     service, spy = _make_service_with_spy_translator()
     processor = DummyTextProcessor()
 
+    def fake_translate_text_with_options_local(**kwargs: object) -> TextTranslationResult:
+        text = str(kwargs.get("text", ""))
+        output_language = str(kwargs.get("output_language", "en"))
+        style = str(kwargs.get("style", "concise"))
+        detected_language = "日本語" if output_language == "en" else "英語"
+        return TextTranslationResult(
+            source_text=text,
+            source_char_count=len(text),
+            options=[
+                TranslationOption(
+                    text=f"訳:{text}",
+                    explanation="",
+                    style=style if output_language == "en" else None,
+                )
+            ],
+            output_language=output_language,
+            detected_language=detected_language,
+        )
+
     with patch.object(
         service,
         "_estimate_local_file_batch_char_limit",
-        return_value=(123, "estimated_ctx_limit"),
+        side_effect=AssertionError("_estimate_local_file_batch_char_limit should not be called"),
     ) as patched_get_limit:
-        result = service._translate_file_standard(  # type: ignore[arg-type]
-            input_path=input_path,
-            processor=processor,
-            reference_files=None,
-            on_progress=None,
-            output_language="jp",
-            start_time=0.0,
-            translation_style="concise",
-            selected_sections=None,
-        )
+        with patch.object(service, "_ensure_local_backend", return_value=None):
+            with patch.object(
+                service,
+                "_translate_text_with_options_local",
+                side_effect=fake_translate_text_with_options_local,
+            ):
+                result = service._translate_file_standard(  # type: ignore[arg-type]
+                    input_path=input_path,
+                    processor=processor,
+                    reference_files=None,
+                    on_progress=None,
+                    output_language="jp",
+                    start_time=0.0,
+                    translation_style="concise",
+                    selected_sections=None,
+                )
 
-    patched_get_limit.assert_called_once()
-    assert spy.max_chars_calls == [(123, "estimated_ctx_limit")]
-    assert spy.include_item_ids_calls == [True]
+    patched_get_limit.assert_not_called()
+    assert spy.max_chars_calls == []
+    assert spy.include_item_ids_calls == []
     assert result.status == TranslationStatus.COMPLETED
 
 

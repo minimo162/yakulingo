@@ -481,15 +481,8 @@ def _create_large_input_panel(
                 ):
                     # Left side: direction + reference files
                     with ui.column().classes("input-toolbar-left gap-2 flex-1 min-w-0"):
-                        reference_files = (
-                            effective_reference_files
-                            if effective_reference_files is not None
-                            else state.reference_files
-                        )
-                        manual_index_by_key = {
-                            str(path).casefold(): idx
-                            for idx, path in enumerate(state.reference_files or [])
-                        }
+                        reference_files: list[Path] = []
+                        manual_index_by_key: dict[str, int] = {}
                         settings_panel = ui.element("div").classes("advanced-panel")
 
                         with settings_panel:
@@ -539,15 +532,6 @@ def _create_large_input_panel(
                                             metrics_refs["override_auto"] = auto_btn
                                             metrics_refs["override_en"] = en_btn
                                             metrics_refs["override_jp"] = jp_btn
-
-                                if on_style_change:
-                                    style_section = ui.element("div").classes(
-                                        "advanced-section"
-                                    )
-                                    metrics_refs["style_selector_section"] = style_section
-                                    with style_section:
-                                        ui.label("翻訳スタイル").classes("advanced-label")
-                                        _style_selector(translation_style, on_style_change)
 
                                 with ui.column().classes("advanced-section"):
                                     ui.label("参照ファイル").classes("advanced-label")
@@ -765,7 +749,7 @@ def create_text_result_panel(
             _render_source_text_section(source_text_to_display, on_copy)
 
         # Attached reference files indicator (collapsed by default)
-        if state.reference_files:
+        if False and state.reference_files:
             summary = summarize_reference_files(state.reference_files)
             with ui.element("details").classes("ref-summary-details"):
                 with ui.element("summary").classes(

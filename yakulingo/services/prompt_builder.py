@@ -209,6 +209,22 @@ Translation:
 ===END_INPUT_TEXT===
 """
 
+DEFAULT_TEXT_TO_EN_TEMPLATE = """You are a professional {SOURCE_LANG} ({SOURCE_CODE}) to {TARGET_LANG} ({TARGET_CODE}) translator. Your goal is to accurately convey the meaning and nuances of the original {SOURCE_LANG} text while adhering to {TARGET_LANG} grammar, vocabulary, and cultural sensitivities.
+Produce only the {TARGET_LANG} translation, without any additional explanations or commentary.
+
+{reference_section}
+
+### Output format (exact)
+Translation:
+
+---
+
+### INPUT (translate only this block)
+===INPUT_TEXT===
+{input_text}
+===END_INPUT_TEXT===
+"""
+
 
 DEFAULT_TEXT_TO_JP_TEMPLATE = """## テキスト翻訳リクエスト（日本語への翻訳）
 
@@ -529,7 +545,7 @@ class PromptBuilder:
     def _load_templates(self) -> None:
         """Load prompt templates from files or use defaults"""
         styles = ["standard", "concise", "minimal"]
-        self._text_compare_template = DEFAULT_TEXT_TO_EN_COMPARE_TEMPLATE
+        self._text_compare_template = DEFAULT_TEXT_TO_EN_TEMPLATE
 
         if self.prompts_dir:
             # English file translation template: minimal is SSOT (style variants are ignored).
@@ -570,7 +586,12 @@ class PromptBuilder:
 
             text_compare = self.prompts_dir / "text_translate_to_en_compare.txt"
             if text_compare.exists():
-                self._text_compare_template = text_compare.read_text(encoding="utf-8")
+                en_text_template = text_compare.read_text(encoding="utf-8")
+            else:
+                en_text_template = DEFAULT_TEXT_TO_EN_TEMPLATE
+            for style in styles:
+                self._text_templates.setdefault(("en", style), en_text_template)
+            self._text_compare_template = en_text_template
 
         else:
             # Use defaults
@@ -578,7 +599,8 @@ class PromptBuilder:
                 self._templates[("en", style)] = DEFAULT_TO_EN_TEMPLATE
                 self._templates[("jp", style)] = DEFAULT_TO_JP_TEMPLATE
                 self._text_templates[("jp", style)] = DEFAULT_TEXT_TO_JP_TEMPLATE
-            self._text_compare_template = DEFAULT_TEXT_TO_EN_COMPARE_TEMPLATE
+                self._text_templates[("en", style)] = DEFAULT_TEXT_TO_EN_TEMPLATE
+            self._text_compare_template = DEFAULT_TEXT_TO_EN_TEMPLATE
 
     def _get_template(
         self, output_language: str = "en", translation_style: str = "concise"
@@ -642,10 +664,6 @@ class PromptBuilder:
         Returns:
             Cached template string, or None if not found
         """
-        if output_language == "en":
-            # English text translation uses the compare template instead.
-            return None
-
         key = (output_language, translation_style)
         if key in self._text_templates:
             return self._text_templates[key]

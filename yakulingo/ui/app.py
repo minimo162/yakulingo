@@ -3526,11 +3526,6 @@ class YakuLingoApp:
                 return
 
             chosen = result.options[0]
-            if result.output_language == "en":
-                for option in result.options:
-                    if option.style == DEFAULT_TEXT_STYLE:
-                        chosen = option
-                        break
 
             from yakulingo.services.clipboard_utils import set_clipboard_text
 
@@ -3688,7 +3683,7 @@ class YakuLingoApp:
             stream_handler = (
                 on_chunk if self._is_local_streaming_preview_enabled() else None
             )
-            result = translation_service.translate_text_with_style_comparison(
+            result = translation_service.translate_text_with_options(
                 text,
                 reference_files,
                 None,
@@ -9281,6 +9276,10 @@ class YakuLingoApp:
                         )
                     )
 
+            for option in combined_options:
+                option.explanation = ""
+                option.style = None
+
             if not combined_options:
                 return TextTranslationResult(
                     source_text=source_text,
@@ -9296,6 +9295,7 @@ class YakuLingoApp:
                 output_language=output_language,
                 detected_language=detected_language,
                 options=combined_options,
+                translation_text=combined_options[0].text,
                 metadata=merged_metadata,
             )
 
@@ -9311,6 +9311,7 @@ class YakuLingoApp:
 
         combined_text = "\n\n".join(texts)
         combined_explanation = "\n\n".join(explanations)
+        combined_explanation = ""
 
         return TextTranslationResult(
             source_text=source_text,
@@ -9323,6 +9324,7 @@ class YakuLingoApp:
                     explanation=combined_explanation,
                 )
             ],
+            translation_text=combined_text,
             metadata=merged_metadata,
         )
 
@@ -9621,7 +9623,7 @@ class YakuLingoApp:
                         raise TranslationCancelledError
                     current_chunk_index = idx
                     chunk_result = (
-                        self.translation_service.translate_text_with_style_comparison(
+                        self.translation_service.translate_text_with_options(
                             chunk,
                             reference_files,
                             None,

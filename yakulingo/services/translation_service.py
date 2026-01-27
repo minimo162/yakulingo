@@ -5767,7 +5767,10 @@ class TranslationService:
             return result
 
         if output_language == "en":
-            template = self.prompt_builder.get_text_compare_template()
+            template = self.prompt_builder.get_text_template(
+                output_language="en",
+                translation_style=style,
+            )
             if not template:
                 return attach_backend_telemetry(
                     TextTranslationResult(
@@ -5775,7 +5778,7 @@ class TranslationService:
                         source_char_count=len(text),
                         output_language=output_language,
                         detected_language=detected_language,
-                        error_message="Missing text comparison template",
+                        error_message="Missing text template",
                     )
                 )
 
@@ -5796,8 +5799,13 @@ class TranslationService:
                 first_pass_parts.append(_TEXT_TO_EN_NUMERIC_RULE_INSTRUCTION)
 
             def build_compare_prompt(extra_instruction: Optional[str] = None) -> str:
-                prompt = template.replace("{reference_section}", reference_section)
-                prompt = prompt.replace("{input_text}", text)
+                prompt = self.prompt_builder._apply_placeholders(
+                    template=template,
+                    reference_section=reference_section,
+                    input_text=text,
+                    output_language="en",
+                    translation_style=style,
+                )
                 extra_parts: list[str] = []
                 seen: set[str] = set()
 
@@ -5822,47 +5830,31 @@ class TranslationService:
             def parse_compare_result(
                 raw_result: str,
             ) -> Optional[TextTranslationResult]:
-                parsed_options = self._parse_style_comparison_result(raw_result)
-                if parsed_options:
-                    options_by_style: dict[str, TranslationOption] = {}
-                    for option in parsed_options:
-                        if option.style and option.style not in options_by_style:
-                            options_by_style[option.style] = option
-                    selected_style = style
-                    if selected_style == "standard":
-                        selected_style = "concise"
-                    selected = options_by_style.get(selected_style) or parsed_options[0]
-                    return TextTranslationResult(
-                        source_text=text,
-                        source_char_count=len(text),
-                        options=[selected],
-                        output_language=output_language,
-                        detected_language=detected_language,
-                    )
-
                 parsed_single = self._parse_single_translation_result(raw_result)
                 if parsed_single:
                     option = parsed_single[0]
-                    option.style = style
+                    option.explanation = ""
+                    option.style = None
                     return TextTranslationResult(
                         source_text=text,
                         source_char_count=len(text),
                         options=[option],
+                        translation_text=option.text,
                         output_language=output_language,
                         detected_language=detected_language,
                     )
 
                 if raw_result.strip():
+                    stripped = raw_result.strip()
+                    option = TranslationOption(
+                        text=stripped,
+                        explanation="",
+                    )
                     return TextTranslationResult(
                         source_text=text,
                         source_char_count=len(text),
-                        options=[
-                            TranslationOption(
-                                text=raw_result.strip(),
-                                explanation="",
-                                style=style,
-                            )
-                        ],
+                        options=[option],
+                        translation_text=option.text,
                         output_language=output_language,
                         detected_language=detected_language,
                     )
@@ -6057,7 +6049,8 @@ class TranslationService:
         )
         options = self._parse_single_translation_result(raw_result)
         for opt in options:
-            opt.style = style
+            opt.explanation = ""
+            opt.style = None
 
         candidate = options[0].text if options else raw_result.strip()
         if _is_text_output_language_mismatch(candidate, "jp"):
@@ -6071,7 +6064,8 @@ class TranslationService:
             )
             retry_options = self._parse_single_translation_result(retry_raw)
             for opt in retry_options:
-                opt.style = style
+                opt.explanation = ""
+                opt.style = None
             if retry_options and not _is_text_output_language_mismatch(
                 retry_options[0].text, "jp"
             ):
@@ -6080,6 +6074,7 @@ class TranslationService:
                         source_text=text,
                         source_char_count=len(text),
                         options=retry_options,
+                        translation_text=retry_options[0].text,
                         output_language=output_language,
                         detected_language=detected_language,
                     )
@@ -6107,22 +6102,23 @@ class TranslationService:
                     source_text=text,
                     source_char_count=len(text),
                     options=options,
+                    translation_text=options[0].text,
                     output_language=output_language,
                     detected_language=detected_language,
                 )
             )
         if raw_result.strip():
+            stripped = raw_result.strip()
+            option = TranslationOption(
+                text=stripped,
+                explanation="",
+            )
             return attach_backend_telemetry(
                 TextTranslationResult(
                     source_text=text,
                     source_char_count=len(text),
-                    options=[
-                        TranslationOption(
-                            text=raw_result.strip(),
-                            explanation="",
-                            style=style,
-                        )
-                    ],
+                    options=[option],
+                    translation_text=option.text,
                     output_language=output_language,
                     detected_language=detected_language,
                 )

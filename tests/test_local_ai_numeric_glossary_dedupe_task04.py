@@ -46,6 +46,5 @@ def test_text_prompt_dedupes_generated_numeric_glossary_against_csv(tmp_path: Pa
         reference_files=[glossary_path],
         detected_language="日本語",
     )
-    assert "Glossary (generated; apply verbatim)" in prompt
-    assert "- JP: 2兆2,385億円 | EN: 22,385 oku yen" in prompt
-    assert "2兆2,385億円 翻译成 22,385 billion yen" not in prompt
+    assert "Glossary (generated; apply verbatim)" not in prompt
+    assert "2兆2,385億円 翻译成 22,385 billion yen" in prompt

@@ -87,7 +87,6 @@ def test_text_prompt_dedupes_generated_glossary_against_bundled_glossary(
         reference_files=[glossary_path],
         detected_language="日本語",
     )
-    assert "Glossary (generated; apply verbatim)" in prompt
-    assert "- JP: 1月 | EN: Jan." in prompt
-    assert "1月 翻译成 Jan." not in prompt
+    assert "Glossary (generated; apply verbatim)" not in prompt
+    assert "1月 翻译成 Jan." in prompt
     assert "営業利益 翻译成 Operating Profit" in prompt

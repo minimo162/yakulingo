@@ -39,11 +39,7 @@ def test_local_batch_prompt_includes_hints_and_preserves_id_markers() -> None:
         reference_files=None,
     )
 
-    assert "Glossary (generated; apply verbatim)" in prompt
-    assert "- JP: 1,200万円 | EN: 12,000k yen" in prompt
-    assert "- JP: ▲50 | EN: (50)" in prompt
-    assert "- JP: 1月 | EN: Jan." in prompt
-    assert "- JP: ROI > 10% | EN: ROI more than 10%" in prompt
+    assert "Glossary (generated; apply verbatim)" not in prompt
 
     source_json = _extract_source_json(prompt)
     assert "\\n" in source_json

@@ -218,7 +218,7 @@ def test_text_style_comparison_retries_for_oku_numeric_rule_when_auto_fix_not_po
 
     assert local.translate_single_calls == 2
     assert local.prompts
-    assert "- JP: 2兆2,385億円 | EN: 22,385 oku yen" in local.prompts[0]
+    assert "- JP: 2兆2,385億円 | EN: 22,385 oku yen" not in local.prompts[0]
 
     metadata = result.metadata or {}
     assert result.output_language == "en"
@@ -267,7 +267,7 @@ def test_text_style_comparison_skips_numeric_retry_when_auto_fixable_by_conversi
 
     assert local.translate_single_calls == 1
     assert local.prompts
-    assert "- JP: 2兆2,385億円 | EN: 22,385 oku yen" in local.prompts[0]
+    assert "- JP: 2兆2,385億円 | EN: 22,385 oku yen" not in local.prompts[0]
 
     assert result.output_language == "en"
     assert [option.style for option in result.options] == ["standard"]

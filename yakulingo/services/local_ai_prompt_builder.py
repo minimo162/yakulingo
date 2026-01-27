@@ -836,18 +836,8 @@ class LocalPromptBuilder:
         *,
         max_pairs: int = 20,
     ) -> tuple[str, tuple[str, ...]]:
-        pairs = self._extract_to_en_dynamic_glossary_pairs(text, max_pairs=max_pairs)
-        if not pairs:
-            return "", ()
-
-        lines = ["### Glossary (generated; apply verbatim)"]
-        exclude: set[str] = set()
-        for source, target in pairs:
-            lines.append(f"- JP: {source} | EN: {target}")
-            normalized = self._normalize_for_glossary_match(source)
-            if normalized:
-                exclude.add(normalized)
-        return "\n".join(lines) + "\n", tuple(sorted(exclude))
+        _ = text, max_pairs
+        return "", ()
 
     def _build_to_en_generated_glossary_section(
         self,
@@ -1400,36 +1390,14 @@ class LocalPromptBuilder:
             context_parts.append(item)
             total_chars += len(item) + 1
         context_text = "\n".join(context_parts)
-        rule_context_text = build_rule_context_text(max_chars=max_context_chars)
-        if not rule_context_text:
-            rule_context_text = context_text
-        generated_glossary, exclude_glossary_sources = (
-            self._build_to_en_generated_glossary_section_with_excludes(
-                rule_context_text
-            )
-            if output_language == "en"
-            else ("", ())
-        )
+        exclude_glossary_sources: tuple[str, ...] = ()
         embedded_ref = self.build_reference_embed(
             reference_files,
             input_text=context_text,
             exclude_glossary_sources=exclude_glossary_sources,
         )
         reference_section = embedded_ref.text if embedded_ref.text else ""
-        structure_hints = (
-            self._build_to_en_structure_hints(
-                context_text, include_item_ids=include_item_ids
-            )
-            if output_language == "en"
-            else ""
-        )
-        hint_parts = [
-            part.strip()
-            for part in (generated_glossary, structure_hints)
-            if part and part.strip()
-        ]
-        merged_hints = "\n\n".join(hint_parts).strip()
-        numeric_hints = f"{merged_hints}\n" if merged_hints else ""
+        numeric_hints = ""
 
         items = [
             {
@@ -1473,9 +1441,8 @@ class LocalPromptBuilder:
 
         template = self._load_template("local_text_translate_to_en_3style_json.txt")
 
-        numeric_hints, exclude_glossary_sources = (
-            self._build_to_en_generated_glossary_section_with_excludes(text)
-        )
+        numeric_hints = ""
+        exclude_glossary_sources: tuple[str, ...] = ()
         embedded_ref = self.build_reference_embed(
             reference_files,
             input_text=text,
@@ -1515,9 +1482,8 @@ class LocalPromptBuilder:
         template = self._load_template(
             "local_text_translate_to_en_missing_styles_json.txt"
         )
-        numeric_hints, exclude_glossary_sources = (
-            self._build_to_en_generated_glossary_section_with_excludes(text)
-        )
+        numeric_hints = ""
+        exclude_glossary_sources: tuple[str, ...] = ()
         embedded_ref = self.build_reference_embed(
             reference_files,
             input_text=text,
@@ -1594,9 +1560,8 @@ class LocalPromptBuilder:
         extra_instruction: str | None = None,
     ) -> tuple[str, EmbeddedReference]:
         template = self._load_template("local_text_translate_to_en_single_json.txt")
-        numeric_hints, exclude_glossary_sources = (
-            self._build_to_en_generated_glossary_section_with_excludes(text)
-        )
+        numeric_hints = ""
+        exclude_glossary_sources: tuple[str, ...] = ()
         embedded_ref = self.build_reference_embed(
             reference_files,
             input_text=text,

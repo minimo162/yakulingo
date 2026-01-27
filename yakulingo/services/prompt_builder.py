@@ -647,9 +647,22 @@ class PromptBuilder:
         """
         input_text = self.normalize_input_text(input_text, output_language)
 
+        # Language placeholders (new-style template support)
+        if output_language == "jp":
+            source_lang, source_code = "English", "en"
+            target_lang, target_code = "Japanese", "ja"
+        else:
+            source_lang, source_code = "Japanese", "ja"
+            target_lang, target_code = "English", "en"
+
         # Replace placeholders
         prompt = template.replace("{reference_section}", reference_section)
         prompt = prompt.replace("{input_text}", input_text)
+        prompt = prompt.replace("{TEXT}", input_text)
+        prompt = prompt.replace("{SOURCE_LANG}", source_lang)
+        prompt = prompt.replace("{SOURCE_CODE}", source_code)
+        prompt = prompt.replace("{TARGET_LANG}", target_lang)
+        prompt = prompt.replace("{TARGET_CODE}", target_code)
         # Remove old style placeholder if present (for backwards compatibility)
         prompt = prompt.replace("{translation_style}", translation_style)
         prompt = prompt.replace("{style}", translation_style)

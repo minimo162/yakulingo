@@ -153,9 +153,8 @@ def test_local_prompt_includes_numeric_hints_for_oku() -> None:
         reference_files=None,
         detected_language="日本語",
     )
-    assert "Glossary (generated; apply verbatim)" in prompt
-    assert "- JP: 2兆2,385億円 | EN: 22,385 oku yen" in prompt
-    assert "- JP: 1,554億円 | EN: 1,554 oku yen" in prompt
+    assert "Glossary (generated; apply verbatim)" not in prompt
+    assert text in prompt
 
 
 def test_local_prompt_includes_numeric_hints_for_k_yen() -> None:
@@ -167,8 +166,8 @@ def test_local_prompt_includes_numeric_hints_for_k_yen() -> None:
         reference_files=None,
         detected_language="日本語",
     )
-    assert "Glossary (generated; apply verbatim)" in prompt
-    assert "- JP: 22万円 | EN: 220k yen" in prompt
+    assert "Glossary (generated; apply verbatim)" not in prompt
+    assert text in prompt
 
 
 def test_local_prompt_includes_numeric_hints_for_k_units() -> None:
@@ -180,8 +179,8 @@ def test_local_prompt_includes_numeric_hints_for_k_units() -> None:
         reference_files=None,
         detected_language="日本語",
     )
-    assert "Glossary (generated; apply verbatim)" in prompt
-    assert "- JP: 196千台 | EN: 196k units" in prompt
+    assert "Glossary (generated; apply verbatim)" not in prompt
+    assert text in prompt
 
 
 def test_local_prompt_includes_numeric_hints_for_oku_in_en_3style() -> None:
@@ -193,9 +192,8 @@ def test_local_prompt_includes_numeric_hints_for_oku_in_en_3style() -> None:
         reference_files=None,
         detected_language="日本語",
     )
-    assert "Glossary (generated; apply verbatim)" in prompt
-    assert "- JP: 2兆2,385億円 | EN: 22,385 oku yen" in prompt
-    assert "- JP: 1,554億円 | EN: 1,554 oku yen" in prompt
+    assert "Glossary (generated; apply verbatim)" not in prompt
+    assert text in prompt
 
 
 def test_local_prompt_includes_numeric_hints_for_oku_in_en_missing_styles() -> None:
@@ -207,9 +205,8 @@ def test_local_prompt_includes_numeric_hints_for_oku_in_en_missing_styles() -> N
         reference_files=None,
         detected_language="日本語",
     )
-    assert "Glossary (generated; apply verbatim)" in prompt
-    assert "- JP: 2兆2,385億円 | EN: 22,385 oku yen" in prompt
-    assert "- JP: 1,554億円 | EN: 1,554 oku yen" in prompt
+    assert "Glossary (generated; apply verbatim)" not in prompt
+    assert text in prompt
 
 
 def test_local_batch_prompt_includes_numeric_hints_for_oku() -> None:
@@ -224,9 +221,9 @@ def test_local_batch_prompt_includes_numeric_hints_for_oku() -> None:
         translation_style="concise",
         reference_files=None,
     )
-    assert "Glossary (generated; apply verbatim)" in prompt
-    assert "- JP: 2兆2,385億円 | EN: 22,385 oku yen" in prompt
-    assert "- JP: 1,554億円 | EN: 1,554 oku yen" in prompt
+    assert "Glossary (generated; apply verbatim)" not in prompt
+    assert "2兆2,385億円" in prompt
+    assert "1,554億円" in prompt
 
 
 def test_local_batch_prompt_omits_numeric_rules_for_short_text() -> None:

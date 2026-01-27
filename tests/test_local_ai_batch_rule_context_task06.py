@@ -33,6 +33,6 @@ def test_local_batch_prompt_includes_oku_and_negative_hints_even_when_beyond_con
         reference_files=None,
     )
 
-    assert "Glossary (generated; apply verbatim)" in prompt
-    assert "- JP: 2兆2,385億円 | EN: 22,385 oku yen" in prompt
-    assert "- JP: ▲50 | EN: (50)" in prompt
+    assert "Glossary (generated; apply verbatim)" not in prompt
+    assert "- JP: 2兆2,385億円 | EN: 22,385 oku yen" not in prompt
+    assert "- JP: ▲50 | EN: (50)" not in prompt

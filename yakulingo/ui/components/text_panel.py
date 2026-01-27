@@ -189,16 +189,16 @@ def _create_textarea(
 
 
 TEXT_STYLE_LABELS: dict[str, str] = {
+    "standard": "標準",
     "concise": "簡潔",
     "minimal": "最簡潔",
-    "standard": "簡潔",
 }
 
-TEXT_STYLE_ORDER: tuple[str, ...] = ("minimal",)
+TEXT_STYLE_ORDER: tuple[str, ...] = ("standard", "concise", "minimal")
 TEXT_STYLE_TOOLTIPS: dict[str, str] = {
-    "concise": "短く簡潔な表現",
-    "minimal": "さらに短い最簡潔な表現",
-    "standard": "短く簡潔な表現",
+    "standard": "自然で標準的な表現",
+    "concise": "標準を簡潔にまとめた表現",
+    "minimal": "見出し/表向けの最簡潔な表現",
 }
 
 
@@ -206,8 +206,6 @@ def _normalize_text_style(style: Optional[str]) -> Optional[str]:
     normalized = (style or "").strip().lower()
     if not normalized:
         return None
-    if normalized == "standard":
-        return "minimal"
     return normalized
 
 
@@ -950,30 +948,55 @@ def _render_results_to_en(
     compare_base_style: str = "concise",
     actions_disabled: bool = False,
 ):
-    """Render →English results (minimal-only)."""
+    """Render →English results (standard/concise/minimal)."""
 
     if not result.options:
         return None, [], []
 
-    primary_option = result.options[0]
-    display_options = [primary_option]
-    secondary_options: list[TranslationOption] = []
+    display_options = _iter_ordered_options(result)
+    if not display_options:
+        return None, [], []
+    primary_option = display_options[0]
+    secondary_options: list[TranslationOption] = display_options[1:]
 
     table_hint = _build_tabular_text_hint(result.source_text)
+    base_style = _normalize_text_style(compare_base_style)
+    base_option = (
+        next(
+            (
+                option
+                for option in display_options
+                if _normalize_text_style(option.style) == base_style
+            ),
+            None,
+        )
+        if base_style
+        else None
+    )
+    base_text = base_option.text if base_option else None
 
     # Translation results container
     with ui.element("div").classes("result-container"):
         with ui.element("div").classes("result-section w-full"):
             with ui.column().classes("w-full gap-3"):
                 for index, option in enumerate(display_options):
+                    option_style = _normalize_text_style(option.style)
+                    diff_base_text = None
+                    if (
+                        compare_mode != "off"
+                        and base_text
+                        and option_style
+                        and option_style != base_style
+                    ):
+                        diff_base_text = base_text
                     _render_option_en(
                         option,
                         on_copy,
                         on_back_translate,
                         is_last=index == len(display_options) - 1,
                         index=index,
-                        show_style_badge=False,
-                        diff_base_text=None,
+                        show_style_badge=True,
+                        diff_base_text=diff_base_text,
                         show_back_translate_button=True,
                         actions_disabled=actions_disabled,
                         table_hint=table_hint,
@@ -1443,3 +1466,9 @@ def _render_option_en(
             )
             if has_back_translate:
                 _render_back_translate_section(option)
+
+            explanation_text = normalize_literal_escapes(option.explanation or "").strip()
+            if explanation_text:
+                with ui.element("div").classes("explanation-card"):
+                    ui.label("解説").classes("explanation-title")
+                    ui.label(explanation_text).classes("nani-explanation")

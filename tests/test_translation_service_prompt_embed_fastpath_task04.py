@@ -41,7 +41,7 @@ def test_translate_text_with_options_local_uses_prompt_builder_embed_fastpath() 
         patch.object(service, "_ensure_local_backend", return_value=None),
         patch.object(service, "_translate_single_with_cancel_on_local") as mock_call,
     ):
-        mock_call.return_value = '{"translation":"This is a test."}'
+        mock_call.return_value = "This is a test."
         result = service._translate_text_with_options_local(
             text="これはテストです。",
             reference_files=None,

@@ -259,6 +259,10 @@ def _expected_json_root_key(prompt: str) -> str | None:
     return None
 
 
+def _should_enforce_json_response(prompt: str) -> bool:
+    return _expected_json_root_key(prompt) is not None
+
+
 def _strip_code_fences(text: str) -> str:
     if "```" not in text:
         return text
@@ -1114,7 +1118,7 @@ class LocalAIClient:
             prompt,
             result.content,
             parsed_json=result.parsed_json,
-            require_json=True,
+            require_json=_should_enforce_json_response(prompt),
         ):
             repeat_used = True
             logger.debug("LocalAI retrying with repeated prompt (single)")
@@ -1216,9 +1220,14 @@ class LocalAIClient:
         timeout_s = float(
             timeout if timeout is not None else self._settings.request_timeout
         )
-        cached_support = self._get_response_format_support(runtime)
+        should_enforce_json = _should_enforce_json_response(prompt)
+        cached_support = (
+            self._get_response_format_support(runtime) if should_enforce_json else None
+        )
         if force_response_format is None:
-            response_format_mode: _ResponseFormatMode = cached_support or "schema"
+            response_format_mode: _ResponseFormatMode = (
+                cached_support or ("schema" if should_enforce_json else "none")
+            )
         else:
             response_format_mode = "schema" if force_response_format else "none"
         cached_sampling_support = self._get_sampling_params_support(runtime)
@@ -1324,8 +1333,13 @@ class LocalAIClient:
         timeout: Optional[int],
         repeat_prompt: bool = False,
     ) -> LocalAIRequestResult:
-        cached_support = self._get_response_format_support(runtime)
-        response_format_mode: _ResponseFormatMode = cached_support or "schema"
+        should_enforce_json = _should_enforce_json_response(prompt)
+        cached_support = (
+            self._get_response_format_support(runtime) if should_enforce_json else None
+        )
+        response_format_mode: _ResponseFormatMode = (
+            cached_support or ("schema" if should_enforce_json else "none")
+        )
         cached_sampling_support = self._get_sampling_params_support(runtime)
         include_sampling_params = cached_sampling_support is not False
         tried: set[tuple[_ResponseFormatMode, bool]] = set()

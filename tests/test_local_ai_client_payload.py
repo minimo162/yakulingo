@@ -132,6 +132,7 @@ def test_build_chat_payload_skips_response_format_when_disabled() -> None:
 def test_response_format_cache_skips_retry_after_unsupported() -> None:
     client = LocalAIClient(AppSettings())
     runtime = _make_runtime()
+    prompt = 'Return JSON only: {"translation": ""}'
     calls: list[dict[str, object]] = []
     state = {"calls": 0}
 
@@ -145,10 +146,10 @@ def test_response_format_cache_skips_retry_after_unsupported() -> None:
 
     client._http_json_cancellable = fake_http  # type: ignore[method-assign]
 
-    result1 = client._chat_completions(runtime, "prompt", timeout=1)
+    result1 = client._chat_completions(runtime, prompt, timeout=1)
     assert result1.content == "ok"
 
-    result2 = client._chat_completions(runtime, "prompt", timeout=1)
+    result2 = client._chat_completions(runtime, prompt, timeout=1)
     assert result2.content == "ok"
 
     assert len(calls) == 3
@@ -161,6 +162,7 @@ def test_response_format_cache_skips_retry_after_unsupported() -> None:
 def test_response_format_cache_applies_to_streaming() -> None:
     client = LocalAIClient(AppSettings())
     runtime = _make_runtime()
+    prompt = 'Return JSON only: {"translation": ""}'
     calls: list[dict[str, object]] = []
 
     def fake_streaming(runtime_arg, payload, on_chunk, timeout=None):
@@ -175,12 +177,12 @@ def test_response_format_cache_applies_to_streaming() -> None:
     )
 
     result1 = client._chat_completions_streaming(
-        runtime, "prompt", lambda _: None, timeout=1
+        runtime, prompt, lambda _: None, timeout=1
     )
     assert result1.content == "ok"
 
     result2 = client._chat_completions_streaming(
-        runtime, "prompt", lambda _: None, timeout=1
+        runtime, prompt, lambda _: None, timeout=1
     )
     assert result2.content == "ok"
 

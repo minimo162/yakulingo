@@ -20,10 +20,10 @@ def test_local_text_options_streams_translation(monkeypatch) -> None:
         text, prompt, reference_files=None, on_chunk=None
     ):
         if on_chunk:
-            on_chunk('{"translation":"H')
+            on_chunk("H")
             on_chunk("el")
-            on_chunk('lo","explanation":""}')
-        return '{"translation":"Hello","explanation":""}'
+            on_chunk("lo")
+        return "Hello"
 
     monkeypatch.setattr(
         service,
@@ -98,11 +98,11 @@ def test_local_streaming_throttle_still_emits_final(monkeypatch) -> None:
         text, prompt, reference_files=None, on_chunk=None
     ):
         if on_chunk:
-            on_chunk('{"translation":"H')
+            on_chunk("H")
             on_chunk("el")
-            on_chunk('lo","explanation":""}')
-            on_chunk('{"translation":"Hello","explanation":""}')
-        return '{"translation":"Hello","explanation":""}'
+            on_chunk("lo")
+            on_chunk("Hello")
+        return "Hello"
 
     monkeypatch.setattr(
         service,

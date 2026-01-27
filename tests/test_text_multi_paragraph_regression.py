@@ -158,7 +158,7 @@ def test_local_text_to_jp_preserves_multi_paragraph_input_and_output(
     newline: str,
 ) -> None:
     input_text = f"First paragraph.{newline}{newline}Second paragraph."
-    local_raw = '{"translation":"これは第一段落です。\\n\\nこれは第二段落です。","explanation":""}'
+    local_raw = "これは第一段落です。\n\nこれは第二段落です。"
     local = CapturingLocalClient([local_raw])
     service = TranslationService(
         config=AppSettings(translation_backend="local"),

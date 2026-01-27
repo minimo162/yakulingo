@@ -78,8 +78,8 @@ def test_text_style_comparison_retries_when_output_language_mismatched() -> None
 def test_text_options_ignores_requested_style_and_retries_on_output_language_mismatch() -> (
     None
 ):
-    first = '{"translation":"一方、この人事部長の会社の初任給は22万円だ。","explanation":""}'
-    second = '{"translation":"Meanwhile, the starting salary is 220,000 yen.","explanation":""}'
+    first = "一方、この人事部長の会社の初任給は22万円だ。"
+    second = "Meanwhile, the starting salary is 220,000 yen."
     local = SequencedLocalClient([first, second])
     service = _make_service(local)
 
@@ -182,8 +182,8 @@ def test_text_style_comparison_errors_when_translation_stays_placeholder_only() 
 
 
 def test_text_options_retries_when_translation_is_placeholder_only_for_jp() -> None:
-    first = '{"translation":"<TRANSLATION>","explanation":""}'
-    second = '{"translation":"これはテストです。","explanation":""}'
+    first = "<TRANSLATION>"
+    second = "これはテストです。"
     local = SequencedLocalClient([first, second])
     service = _make_service(local)
 

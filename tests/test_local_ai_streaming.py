@@ -31,7 +31,7 @@ def test_local_ai_streaming_parses_sse_and_collects_chunks() -> None:
 
 def test_local_streaming_wrap_extracts_translation_incrementally() -> None:
     received: list[str] = []
-    handler = _wrap_local_streaming_on_chunk(received.append)
+    handler = _wrap_local_streaming_on_chunk(received.append, parse_json=True)
     assert handler is not None
 
     deltas = [
@@ -50,7 +50,7 @@ def test_local_streaming_wrap_extracts_translation_incrementally() -> None:
 
 def test_local_streaming_wrap_extracts_options_preview_incrementally() -> None:
     received: list[str] = []
-    handler = _wrap_local_streaming_on_chunk(received.append)
+    handler = _wrap_local_streaming_on_chunk(received.append, parse_json=True)
     assert handler is not None
 
     style = TEXT_STYLE_ORDER[0]
@@ -71,7 +71,7 @@ def test_local_streaming_wrap_extracts_options_preview_incrementally() -> None:
 
 def test_local_streaming_wrap_skips_irrelevant_updates_without_regression() -> None:
     received: list[str] = []
-    handler = _wrap_local_streaming_on_chunk(received.append)
+    handler = _wrap_local_streaming_on_chunk(received.append, parse_json=True)
     assert handler is not None
 
     deltas = [
@@ -92,7 +92,7 @@ def test_local_streaming_wrap_skips_irrelevant_updates_without_regression() -> N
 def test_local_streaming_wrap_blocks_non_en_preview_for_en_output() -> None:
     received: list[str] = []
     handler = _wrap_local_streaming_on_chunk(
-        received.append, expected_output_language="en"
+        received.append, expected_output_language="en", parse_json=True
     )
     assert handler is not None
 
@@ -104,7 +104,7 @@ def test_local_streaming_wrap_blocks_non_en_preview_for_en_output() -> None:
 def test_local_streaming_wrap_allows_en_preview_for_en_output() -> None:
     received: list[str] = []
     handler = _wrap_local_streaming_on_chunk(
-        received.append, expected_output_language="en"
+        received.append, expected_output_language="en", parse_json=True
     )
     assert handler is not None
 

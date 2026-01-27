@@ -63,8 +63,8 @@ def test_local_text_retry_logs_numeric_rule_violation(
         patch.object(service, "_translate_single_with_cancel_on_local") as mock_call,
     ):
         mock_call.side_effect = [
-            '{"translation":"45 billion yen"}',
-            '{"translation":"4,500 oku yen"}',
+            "45 billion yen",
+            "4,500 oku yen",
         ]
 
         result = service._translate_text_with_options_local(

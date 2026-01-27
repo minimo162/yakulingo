@@ -34,8 +34,8 @@ class _DummyLocalClient:
         self.translate_calls += 1
         self.runtimes.append(runtime)
         if self.translate_calls == 1:
-            return '{"translation":"こんにちは","explanation":""}'
-        return '{"translation":"Hello","explanation":""}'
+            return "こんにちは"
+        return "Hello"
 
 
 class _DummyLocalPromptBuilder:

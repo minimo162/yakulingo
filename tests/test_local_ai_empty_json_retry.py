@@ -65,7 +65,7 @@ class EmptyJsonOnceLocalAIClient(LocalAIClient):
 def test_translate_single_retries_without_response_format_when_empty_json() -> None:
     client = EmptyJsonOnceLocalAIClient()
 
-    raw = client.translate_single("ignored", "prompt")
+    raw = client.translate_single("ignored", 'Return JSON only: {"translation": ""}')
 
     assert raw == '{"translation":"Hello","explanation":""}'
     assert len(client.http_payloads) == 2
@@ -79,7 +79,11 @@ def test_translate_single_streaming_retries_without_response_format_when_empty_j
 ):
     client = EmptyJsonOnceLocalAIClient()
 
-    raw = client.translate_single("ignored", "prompt", on_chunk=lambda _: None)
+    raw = client.translate_single(
+        "ignored",
+        'Return JSON only: {"translation": ""}',
+        on_chunk=lambda _: None,
+    )
 
     assert raw == '{"translation":"Hello","explanation":""}'
     assert len(client.streaming_payloads) == 1

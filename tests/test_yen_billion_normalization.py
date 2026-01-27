@@ -45,7 +45,7 @@ def test_prompt_builder_normalizes_yen_bn_expression_for_jp() -> None:
 def test_translate_text_with_options_includes_normalized_amount_in_prompt() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     prompts_dir = repo_root / "prompts"
-    local = RecordingLocalClient('{"translation":"テスト","explanation":""}')
+    local = RecordingLocalClient("テスト")
     settings = AppSettings(translation_backend="local")
     service = TranslationService(
         config=settings,

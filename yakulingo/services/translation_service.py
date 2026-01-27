@@ -117,6 +117,7 @@ _RE_INPUT_MARKER_LINE = re.compile(
     r"^\s*(?:###\s*INPUT\b.*|<<<INPUT_TEXT>>>|<<<END_INPUT_TEXT>>>|===INPUT_TEXT===|===END_INPUT_TEXT===)\s*$",
     re.IGNORECASE,
 )
+_RE_CODE_FENCE_LINE = re.compile(r"^\s*```(?:\w+)?\s*$", re.IGNORECASE)
 
 # Pattern to remove translation label prefixes from parsed result
 # These labels come from prompt template output format examples (e.g., "訳文: 英語翻訳")
@@ -493,6 +494,23 @@ def _normalize_back_translation_text(
         return translated_text
     fixed_text, fixed = _fix_to_jp_oku_numeric_unit_if_possible(translated_text)
     return fixed_text if fixed else translated_text
+
+
+def _strip_code_fences(text: str) -> str:
+    if "```" not in text:
+        return text
+    lines = [line for line in text.splitlines() if not _RE_CODE_FENCE_LINE.match(line)]
+    return "\n".join(lines).strip()
+
+
+def _normalize_local_plain_text_output(text: str) -> str:
+    cleaned = _strip_code_fences(text or "").strip()
+    if not cleaned:
+        return ""
+    lines = [
+        line for line in cleaned.splitlines() if not _RE_INPUT_MARKER_LINE.match(line)
+    ]
+    return "\n".join(lines).strip()
 
 
 def _format_k_amount(value: Decimal) -> str:
@@ -1106,20 +1124,61 @@ def _wrap_local_streaming_on_chunk(
     on_chunk: Optional[Callable[[str], None]],
     *,
     expected_output_language: str | None = None,
+    parse_json: bool = False,
 ) -> Optional[Callable[[str], None]]:
     if on_chunk is None:
         return None
     last_emitted = ""
     last_emit_time = 0.0
-    last_parse_time = 0.0
     raw_cached = ""
     raw_parts: list[str] = []
     raw_len = 0
+    throttle_seconds = 0.08
+
+    if not parse_json:
+        def _handle(delta: str) -> None:
+            nonlocal last_emitted, last_emit_time
+            nonlocal raw_cached, raw_parts, raw_len
+
+            if not delta:
+                return
+            if raw_cached and delta.startswith(raw_cached):
+                raw_cached = delta
+                raw_parts.clear()
+                raw_len = len(delta)
+            else:
+                raw_parts.append(delta)
+                raw_len += len(delta)
+
+            if raw_parts:
+                raw_cached += "".join(raw_parts)
+                raw_parts.clear()
+                raw_len = len(raw_cached)
+
+            candidate = raw_cached
+            if (
+                expected_output_language == "en"
+                and _is_text_output_language_mismatch(candidate, "en")
+            ):
+                return
+            if candidate == last_emitted or len(candidate) < len(last_emitted):
+                return
+            now = time.monotonic()
+            if (now - last_emit_time) < throttle_seconds and (
+                len(candidate) - len(last_emitted)
+            ) < 3:
+                return
+            last_emitted = candidate
+            last_emit_time = now
+            on_chunk(candidate)
+
+        return _handle
+
+    last_parse_time = 0.0
     last_parse_len = 0
     has_options = False
     has_explanation = False
     parse_min_delta_chars = 128
-    throttle_seconds = 0.08
 
     def _handle(delta: str) -> None:
         nonlocal last_emitted, last_emit_time, last_parse_time
@@ -1154,6 +1213,7 @@ def _wrap_local_streaming_on_chunk(
         if raw_parts:
             raw_cached += "".join(raw_parts)
             raw_parts.clear()
+            raw_len = len(raw_cached)
         raw = raw_cached
         last_parse_len = raw_len
         last_parse_time = now
@@ -4236,10 +4296,6 @@ class TranslationService:
         on_chunk: "Callable[[str], None] | None" = None,
     ) -> TextTranslationResult:
         self._ensure_local_backend()
-        from yakulingo.services.local_ai_client import (
-            is_truncated_json,
-            parse_text_single_translation,
-        )
         from yakulingo.services.local_llama_server import LocalAIError
 
         local_builder = self._local_prompt_builder
@@ -4483,7 +4539,9 @@ class TranslationService:
                     detected_language=detected_language,
                 )
                 stream_handler = _wrap_local_streaming_on_chunk(
-                    on_chunk, expected_output_language=output_language
+                    on_chunk,
+                    expected_output_language=output_language,
+                    parse_json=False,
                 )
                 try:
                     raw = translate_single_local(
@@ -4499,20 +4557,14 @@ class TranslationService:
                         if fallback is not None:
                             return fallback
                     raise
-                translation, _ = parse_text_single_translation(raw)
+                translation = _normalize_local_plain_text_output(raw)
                 if not translation:
-                    error_message = "ローカルAIの応答(JSON)を解析できませんでした（詳細はログを確認してください）"
-                    if is_truncated_json(raw):
-                        error_message = (
-                            "ローカルAIの応答が途中で終了しました（JSONが閉じていません）。\n"
-                            "max_tokens / ctx_size を見直してください。"
-                        )
                     return TextTranslationResult(
                         source_text=text,
                         source_char_count=len(text),
                         output_language=output_language,
                         detected_language=detected_language,
-                        error_message=error_message,
+                        error_message="ローカルAIの応答が空でした（プレーンテキスト）",
                         metadata=metadata,
                     )
 
@@ -4646,20 +4698,14 @@ class TranslationService:
                             if fallback is not None:
                                 return fallback
                         raise
-                    retry_translation, _ = parse_text_single_translation(retry_raw)
+                    retry_translation = _normalize_local_plain_text_output(retry_raw)
                     if not retry_translation:
-                        error_message = "ローカルAIの応答(JSON)を解析できませんでした（詳細はログを確認してください）"
-                        if is_truncated_json(retry_raw):
-                            error_message = (
-                                "ローカルAIの応答が途中で終了しました（JSONが閉じていません）。\n"
-                                "max_tokens / ctx_size を見直してください。"
-                        )
                         return TextTranslationResult(
                             source_text=text,
                             source_char_count=len(text),
                             output_language=output_language,
                             detected_language=detected_language,
-                            error_message=error_message,
+                            error_message="ローカルAIの応答が空でした（プレーンテキスト）",
                             metadata=metadata,
                         )
                     if _is_placeholder_only_translation(text, retry_translation):
@@ -4801,7 +4847,9 @@ class TranslationService:
                 detected_language=detected_language,
             )
             stream_handler = _wrap_local_streaming_on_chunk(
-                on_chunk, expected_output_language=output_language
+                on_chunk,
+                expected_output_language=output_language,
+                parse_json=False,
             )
             try:
                 raw = translate_single_local(
@@ -4815,20 +4863,14 @@ class TranslationService:
                     if fallback is not None:
                         return fallback
                 raise
-            translation, _ = parse_text_single_translation(raw)
+            translation = _normalize_local_plain_text_output(raw)
             if not translation:
-                error_message = "ローカルAIの応答(JSON)を解析できませんでした（詳細はログを確認してください）"
-                if is_truncated_json(raw):
-                    error_message = (
-                        "ローカルAIの応答が途中で終了しました（JSONが閉じていません）。\n"
-                        "max_tokens / ctx_size を見直してください。"
-                    )
                 return TextTranslationResult(
                     source_text=text,
                     source_char_count=len(text),
                     output_language=output_language,
                     detected_language=detected_language,
-                    error_message=error_message,
+                    error_message="ローカルAIの応答が空でした（プレーンテキスト）",
                     metadata=metadata,
                 )
             needs_ellipsis_retry = _is_ellipsis_only_translation(text, translation)
@@ -4883,7 +4925,7 @@ class TranslationService:
                         if fallback is not None:
                             return fallback
                     raise
-                retry_translation, _ = parse_text_single_translation(retry_raw)
+                retry_translation = _normalize_local_plain_text_output(retry_raw)
                 if (
                     retry_translation
                     and not _is_text_output_language_mismatch(retry_translation, "jp")
@@ -5223,7 +5265,7 @@ class TranslationService:
 
         try:
             stream_handler = _wrap_local_streaming_on_chunk(
-                on_chunk, expected_output_language="en"
+                on_chunk, expected_output_language="en", parse_json=True
             )
             prompt = local_builder.build_text_to_en_3style(
                 text,

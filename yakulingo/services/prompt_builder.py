@@ -109,6 +109,12 @@ ID_MARKER_INSTRUCTION = """
 - Do not output other prompt markers (e.g., "===INPUT_TEXT===" / "===END_INPUT_TEXT===").
 """
 
+_LEGACY_SIMPLE_PROMPT_TEMPLATE = """You are a professional {SOURCE_LANG} ({SOURCE_CODE}) to {TARGET_LANG} ({TARGET_CODE}) translator. Your goal is to accurately convey the meaning and nuances of the original {SOURCE_LANG} text while adhering to {TARGET_LANG} grammar, vocabulary, and cultural sensitivities.
+Produce only the {TARGET_LANG} translation, without any additional explanations or commentary. Please translate the following {SOURCE_LANG} text into {TARGET_LANG}:
+
+
+{TEXT}"""
+
 # Fallback template for → English (used when translate_to_en.txt doesn't exist)
 DEFAULT_TO_EN_TEMPLATE = """## ファイル翻訳リクエスト
 
@@ -651,6 +657,23 @@ Important Terminology:
         )
         return raw_prompt
 
+    def _build_legacy_simple_prompt(
+        self,
+        input_text: str,
+        *,
+        output_language: str = "en",
+    ) -> str:
+        normalized_text = self.normalize_input_text(input_text, output_language)
+        source_lang, source_code, target_lang, target_code = self._resolve_langs(
+            output_language
+        )
+        prompt = _LEGACY_SIMPLE_PROMPT_TEMPLATE.replace("{SOURCE_LANG}", source_lang)
+        prompt = prompt.replace("{SOURCE_CODE}", source_code)
+        prompt = prompt.replace("{TARGET_LANG}", target_lang)
+        prompt = prompt.replace("{TARGET_CODE}", target_code)
+        prompt = prompt.replace("{TEXT}", normalized_text)
+        return prompt
+
     def _append_simple_prompt(self, prompt: str, simple_prompt: str) -> str:
         existing = (prompt or "").strip()
         if not existing:
@@ -771,7 +794,7 @@ Important Terminology:
             output_language,
             translation_style,
         )
-        simple_prompt = self.build_simple_prompt(
+        simple_prompt = self._build_legacy_simple_prompt(
             input_text,
             output_language=output_language,
         )

@@ -20,10 +20,17 @@ Important Terminology:
 """
 
 
-def _extract_simple_prompt(prompt: str) -> str:
+def _extract_raw_prompt(prompt: str) -> str:
     marker = "<bos><start_of_turn>user\n"
     idx = prompt.rfind(marker)
-    assert idx >= 0, "simple prompt marker not found"
+    assert idx >= 0, "raw prompt marker not found"
+    return prompt[idx:]
+
+
+def _extract_legacy_simple_prompt(prompt: str) -> str:
+    marker = "You are a professional "
+    idx = prompt.rfind(marker)
+    assert idx >= 0, "legacy simple prompt marker not found"
     return prompt[idx:]
 
 
@@ -45,6 +52,23 @@ def _expected_simple_prompt(
     )
 
 
+def _expected_legacy_simple_prompt(
+    builder: PromptBuilder,
+    text: str,
+    output_language: str,
+) -> str:
+    normalized = builder.normalize_input_text(text, output_language)
+    source_lang, source_code, target_lang, target_code = builder._resolve_langs(
+        output_language
+    )
+    return (
+        f"You are a professional {source_lang} ({source_code}) to {target_lang} ({target_code}) translator. "
+        f"Your goal is to accurately convey the meaning and nuances of the original {source_lang} text while adhering to {target_lang} grammar, vocabulary, and cultural sensitivities.\n"
+        f"Produce only the {target_lang} translation, without any additional explanations or commentary. Please translate the following {source_lang} text into {target_lang}:\n\n\n"
+        f"{normalized}"
+    )
+
+
 def test_prompt_builder_appends_simple_prompt_en() -> None:
     prompts_dir = _prompts_dir()
     builder = PromptBuilder(prompts_dir)
@@ -56,9 +80,9 @@ def test_prompt_builder_appends_simple_prompt_en() -> None:
         output_language="en",
         translation_style="concise",
     )
-    simple = _extract_simple_prompt(prompt)
+    simple = _extract_legacy_simple_prompt(prompt)
 
-    assert simple == _expected_simple_prompt(builder, text, "en")
+    assert simple == _expected_legacy_simple_prompt(builder, text, "en")
 
 
 def test_build_simple_prompt_matches_intent_en() -> None:
@@ -82,9 +106,9 @@ def test_prompt_builder_appends_simple_prompt_jp() -> None:
         output_language="jp",
         translation_style="concise",
     )
-    simple = _extract_simple_prompt(prompt)
+    simple = _extract_legacy_simple_prompt(prompt)
 
-    assert simple == _expected_simple_prompt(builder, text, "jp")
+    assert simple == _expected_legacy_simple_prompt(builder, text, "jp")
 
 
 def test_build_simple_prompt_matches_intent_jp() -> None:

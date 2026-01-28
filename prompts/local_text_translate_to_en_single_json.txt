@@ -1,3 +1,0 @@
-{numeric_hints}
-{reference_section}
-{extra_instruction}

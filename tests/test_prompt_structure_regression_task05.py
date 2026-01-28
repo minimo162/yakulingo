@@ -30,15 +30,9 @@ def test_text_compare_template_places_rules_outside_output_format() -> None:
     assert "===END_INPUT_TEXT===" in template
 
 
-def test_local_json_templates_include_rules_label_and_self_check() -> None:
+def test_local_json_templates_removed() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     prompts_dir = repo_root / "prompts"
 
     for name in _LOCAL_JSON_TEMPLATES:
-        template = (
-            (prompts_dir / name).read_text(encoding="utf-8").replace("\r\n", "\n")
-        )
-        assert "Return JSON only" in template
-        assert "Self-check before output:" in template
-        assert "### Translation Rules" not in template
-        assert "{translation_rules}" not in template
+        assert not (prompts_dir / name).exists()

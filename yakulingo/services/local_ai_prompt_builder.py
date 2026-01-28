@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import csv
 import heapq
-import json
 import os
 import logging
 import re
@@ -22,6 +21,19 @@ from yakulingo.services.prompt_builder import PromptBuilder
 logger = logging.getLogger(__name__)
 
 _TIMING_ENABLED = os.environ.get("YAKULINGO_LOCAL_AI_TIMING") == "1"
+_LOCAL_JSON_TEMPLATES = frozenset(
+    {
+        "local_text_translate_to_en_single_json.txt",
+        "local_text_translate_to_en_3style_json.txt",
+        "local_text_translate_to_en_missing_styles_json.txt",
+        "local_text_translate_to_jp_json.txt",
+        "local_batch_translate_to_en_json.txt",
+        "local_batch_translate_to_jp_json.txt",
+    }
+)
+_LOCAL_JSON_DISABLED_MESSAGE = (
+    "Local AI JSON prompt templates are disabled by user-prompt-only policy."
+)
 
 
 _SUPPORTED_REFERENCE_EXTENSIONS = {
@@ -915,6 +927,8 @@ class LocalPromptBuilder:
         return content, truncated
 
     def _load_template(self, filename: str) -> str:
+        if filename in _LOCAL_JSON_TEMPLATES:
+            raise RuntimeError(_LOCAL_JSON_DISABLED_MESSAGE)
         with self._template_lock:
             cached = self._template_cache.get(filename)
             if cached is not None:
@@ -932,23 +946,9 @@ class LocalPromptBuilder:
 
     def preload_startup_templates(self) -> None:
         """Preload templates needed for the first local translation (best-effort)."""
-        filenames = (
-            "local_text_translate_to_en_single_json.txt",
-            "local_text_translate_to_en_3style_json.txt",
-            "local_text_translate_to_en_missing_styles_json.txt",
-            "local_text_translate_to_jp_json.txt",
-            "local_batch_translate_to_en_json.txt",
-            "local_batch_translate_to_jp_json.txt",
+        logger.debug(
+            "Local prompt template preload skipped: %s", _LOCAL_JSON_DISABLED_MESSAGE
         )
-        for filename in filenames:
-            try:
-                self._load_template(filename)
-            except Exception as e:
-                logger.debug(
-                    "Local prompt template preload skipped (%s): %s",
-                    filename,
-                    e,
-                )
 
     @staticmethod
     def _append_limited_text(
@@ -1289,159 +1289,7 @@ class LocalPromptBuilder:
         include_item_ids: bool = False,
         reference_files: Optional[Sequence[Path]] = None,
     ) -> str:
-        timing_enabled = _TIMING_ENABLED and logger.isEnabledFor(logging.DEBUG)
-        t0 = time.perf_counter() if timing_enabled else 0.0
-
-        if output_language not in ("en", "jp"):
-            output_language = "en"
-
-        def build_rule_context_text(*, max_chars: int) -> str:
-            if output_language != "en":
-                return ""
-            if not texts:
-                return ""
-
-            def slice_around(value: str, *, pos: int, budget: int) -> str:
-                if budget <= 0 or not value:
-                    return ""
-                if len(value) <= budget:
-                    return value
-                half = budget // 2
-                start = max(0, pos - half)
-                end = start + budget
-                if end > len(value):
-                    end = len(value)
-                    start = max(0, end - budget)
-                return value[start:end]
-
-            def first_char_pos(value: str, chars: tuple[str, ...]) -> int | None:
-                positions = [value.find(ch) for ch in chars]
-                positions = [p for p in positions if p != -1]
-                return min(positions) if positions else None
-
-            parts: list[str] = []
-            total = 0
-            seen: set[str] = set()
-            per_snippet_max = min(800, max_chars)
-
-            def add_snippet(item: str, *, pos: int) -> None:
-                nonlocal total
-                separator_len = 0 if not parts else 1
-                remaining = max_chars - total - separator_len
-                if remaining <= 0:
-                    return
-                budget = min(per_snippet_max, remaining)
-                snippet = slice_around(item, pos=pos, budget=budget).strip()
-                if not snippet or snippet in seen:
-                    return
-                if separator_len:
-                    total += 1
-                parts.append(snippet)
-                seen.add(snippet)
-                total += len(snippet)
-
-            for item in texts:
-                if not item:
-                    continue
-                pos = first_char_pos(item, ("兆", "億"))
-                if pos is not None:
-                    add_snippet(item, pos=pos)
-                    break
-
-            for item in texts:
-                if not item:
-                    continue
-                pos = item.find("▲")
-                if pos != -1:
-                    add_snippet(item, pos=pos)
-                    break
-
-            for item in texts:
-                if not item:
-                    continue
-                if total >= max_chars:
-                    break
-                pos = first_char_pos(item, ("万", "千"))
-                if pos is not None:
-                    add_snippet(item, pos=pos)
-                    continue
-                for pattern in (
-                    _RE_TO_EN_FORBIDDEN_SYMBOLS,
-                    _RE_TO_EN_MONTH,
-                    _RE_TO_EN_YOY_TERMS,
-                ):
-                    match = pattern.search(item)
-                    if match:
-                        add_snippet(item, pos=match.start())
-                        break
-
-            return "\n".join(parts).strip()
-
-        filename = (
-            "local_batch_translate_to_en_json.txt"
-            if output_language == "en"
-            else "local_batch_translate_to_jp_json.txt"
-        )
-        template = self._load_template(filename)
-
-        max_context_chars = 3000
-        context_parts: list[str] = []
-        total_chars = 0
-        for item in texts:
-            if not item:
-                continue
-            if total_chars >= max_context_chars:
-                break
-            remaining = max_context_chars - total_chars
-            if len(item) > remaining:
-                context_parts.append(item[:remaining])
-                total_chars = max_context_chars
-                break
-            context_parts.append(item)
-            total_chars += len(item) + 1
-        context_text = "\n".join(context_parts)
-        exclude_glossary_sources: tuple[str, ...] = ()
-        embedded_ref = self.build_reference_embed(
-            reference_files,
-            input_text=context_text,
-            exclude_glossary_sources=exclude_glossary_sources,
-        )
-        reference_section = embedded_ref.text if embedded_ref.text else ""
-        numeric_hints = ""
-
-        items = [
-            {
-                "id": i + 1,
-                "text": f"[[ID:{i + 1}]] {text}" if include_item_ids else text,
-            }
-            for i, text in enumerate(texts)
-        ]
-        items_json = json.dumps(
-            {"items": items}, ensure_ascii=False, separators=(",", ":")
-        )
-
-        prompt = template.replace("{numeric_hints}", numeric_hints)
-        prompt = prompt.replace("{reference_section}", reference_section)
-        prompt = prompt.replace("{style}", translation_style)
-        prompt = prompt.replace("{items_json}", items_json)
-        prompt = prompt.replace("{output_language}", output_language)
-        prompt = prompt.replace("{n_items}", str(len(items)))
-        prompt = self._append_simple_prompt(
-            prompt,
-            input_text="\n".join(texts),
-            output_language=output_language,
-        )
-        if timing_enabled:
-            logger.debug(
-                "[TIMING] LocalPromptBuilder.build_batch: %.4fs (items=%d output=%s style=%s prompt_chars=%d ref_chars=%d)",
-                time.perf_counter() - t0,
-                len(items),
-                output_language,
-                translation_style,
-                len(prompt),
-                len(reference_section or ""),
-            )
-        return prompt
+        raise RuntimeError(_LOCAL_JSON_DISABLED_MESSAGE)
 
     def build_text_to_en_3style(
         self,
@@ -1451,41 +1299,7 @@ class LocalPromptBuilder:
         detected_language: str = "日本語",
         extra_instruction: str | None = None,
     ) -> str:
-        timing_enabled = _TIMING_ENABLED and logger.isEnabledFor(logging.DEBUG)
-        t0 = time.perf_counter() if timing_enabled else 0.0
-
-        template = self._load_template("local_text_translate_to_en_3style_json.txt")
-
-        numeric_hints = ""
-        exclude_glossary_sources: tuple[str, ...] = ()
-        embedded_ref = self.build_reference_embed(
-            reference_files,
-            input_text=text,
-            exclude_glossary_sources=exclude_glossary_sources,
-        )
-        reference_section = embedded_ref.text if embedded_ref.text else ""
-        prompt_input_text = self._base.normalize_input_text(text, "en")
-        extra_instruction = extra_instruction.strip() if extra_instruction else ""
-        extra_instruction = f"{extra_instruction}\n" if extra_instruction else ""
-        prompt = template.replace("{numeric_hints}", numeric_hints)
-        prompt = prompt.replace("{reference_section}", reference_section)
-        prompt = prompt.replace("{extra_instruction}", extra_instruction)
-        prompt = prompt.replace("{input_text}", prompt_input_text)
-        prompt = prompt.replace("{detected_language}", detected_language)
-        prompt = self._append_simple_prompt(
-            prompt,
-            input_text=text,
-            output_language="en",
-        )
-        if timing_enabled:
-            logger.debug(
-                "[TIMING] LocalPromptBuilder.build_text_to_en_3style: %.4fs (input_chars=%d prompt_chars=%d ref_chars=%d)",
-                time.perf_counter() - t0,
-                len(text or ""),
-                len(prompt),
-                len(reference_section or ""),
-            )
-        return prompt
+        raise RuntimeError(_LOCAL_JSON_DISABLED_MESSAGE)
 
     def build_text_to_en_missing_styles(
         self,
@@ -1496,53 +1310,7 @@ class LocalPromptBuilder:
         detected_language: str = "日本語",
         extra_instruction: str | None = None,
     ) -> str:
-        timing_enabled = _TIMING_ENABLED and logger.isEnabledFor(logging.DEBUG)
-        t0 = time.perf_counter() if timing_enabled else 0.0
-
-        template = self._load_template(
-            "local_text_translate_to_en_missing_styles_json.txt"
-        )
-        numeric_hints = ""
-        exclude_glossary_sources: tuple[str, ...] = ()
-        embedded_ref = self.build_reference_embed(
-            reference_files,
-            input_text=text,
-            exclude_glossary_sources=exclude_glossary_sources,
-        )
-        reference_section = embedded_ref.text if embedded_ref.text else ""
-        prompt_input_text = self._base.normalize_input_text(text, "en")
-        extra_instruction = extra_instruction.strip() if extra_instruction else ""
-        extra_instruction = f"{extra_instruction}\n" if extra_instruction else ""
-        style_list: list[str] = []
-        seen: set[str] = set()
-        for style in styles:
-            if not style or style in seen:
-                continue
-            seen.add(style)
-            style_list.append(style)
-        styles_json = json.dumps(style_list, ensure_ascii=False, separators=(",", ":"))
-        prompt = template.replace("{numeric_hints}", numeric_hints)
-        prompt = prompt.replace("{reference_section}", reference_section)
-        prompt = prompt.replace("{extra_instruction}", extra_instruction)
-        prompt = prompt.replace("{input_text}", prompt_input_text)
-        prompt = prompt.replace("{detected_language}", detected_language)
-        prompt = prompt.replace("{styles_json}", styles_json)
-        prompt = prompt.replace("{n_styles}", str(len(style_list)))
-        prompt = self._append_simple_prompt(
-            prompt,
-            input_text=text,
-            output_language="en",
-        )
-        if timing_enabled:
-            logger.debug(
-                "[TIMING] LocalPromptBuilder.build_text_to_en_missing_styles: %.4fs (input_chars=%d styles=%d prompt_chars=%d ref_chars=%d)",
-                time.perf_counter() - t0,
-                len(text or ""),
-                len(style_list),
-                len(prompt),
-                len(reference_section or ""),
-            )
-        return prompt
+        raise RuntimeError(_LOCAL_JSON_DISABLED_MESSAGE)
 
     def build_text_to_en_single(
         self,
@@ -1553,27 +1321,7 @@ class LocalPromptBuilder:
         detected_language: str = "日本語",
         extra_instruction: str | None = None,
     ) -> str:
-        timing_enabled = _TIMING_ENABLED and logger.isEnabledFor(logging.DEBUG)
-        t0 = time.perf_counter() if timing_enabled else 0.0
-
-        prompt, embedded_ref = self.build_text_to_en_single_with_embed(
-            text,
-            style=style,
-            reference_files=reference_files,
-            detected_language=detected_language,
-            extra_instruction=extra_instruction,
-        )
-        reference_section = embedded_ref.text if embedded_ref.text else ""
-        if timing_enabled:
-            logger.debug(
-                "[TIMING] LocalPromptBuilder.build_text_to_en_single: %.4fs (input_chars=%d style=%s prompt_chars=%d ref_chars=%d)",
-                time.perf_counter() - t0,
-                len(text or ""),
-                style,
-                len(prompt),
-                len(reference_section or ""),
-            )
-        return prompt
+        raise RuntimeError(_LOCAL_JSON_DISABLED_MESSAGE)
 
     def build_text_to_en_single_with_embed(
         self,
@@ -1584,30 +1332,7 @@ class LocalPromptBuilder:
         detected_language: str = "日本語",
         extra_instruction: str | None = None,
     ) -> tuple[str, EmbeddedReference]:
-        template = self._load_template("local_text_translate_to_en_single_json.txt")
-        numeric_hints = ""
-        exclude_glossary_sources: tuple[str, ...] = ()
-        embedded_ref = self.build_reference_embed(
-            reference_files,
-            input_text=text,
-            exclude_glossary_sources=exclude_glossary_sources,
-        )
-        reference_section = embedded_ref.text if embedded_ref.text else ""
-        prompt_input_text = self._base.normalize_input_text(text, "en")
-        extra_instruction = extra_instruction.strip() if extra_instruction else ""
-        extra_instruction = f"{extra_instruction}\n" if extra_instruction else ""
-        prompt = template.replace("{numeric_hints}", numeric_hints)
-        prompt = prompt.replace("{extra_instruction}", extra_instruction)
-        prompt = prompt.replace("{reference_section}", reference_section)
-        prompt = prompt.replace("{input_text}", prompt_input_text)
-        prompt = prompt.replace("{style}", style)
-        prompt = prompt.replace("{detected_language}", detected_language)
-        prompt = self._append_simple_prompt(
-            prompt,
-            input_text=text,
-            output_language="en",
-        )
-        return prompt, embedded_ref
+        raise RuntimeError(_LOCAL_JSON_DISABLED_MESSAGE)
 
     def build_text_to_jp(
         self,
@@ -1616,22 +1341,7 @@ class LocalPromptBuilder:
         reference_files: Optional[Sequence[Path]] = None,
         detected_language: str = "英語",
     ) -> str:
-        timing_enabled = _TIMING_ENABLED and logger.isEnabledFor(logging.DEBUG)
-        t0 = time.perf_counter() if timing_enabled else 0.0
-
-        prompt, embedded_ref = self.build_text_to_jp_with_embed(
-            text, reference_files=reference_files, detected_language=detected_language
-        )
-        reference_section = embedded_ref.text if embedded_ref.text else ""
-        if timing_enabled:
-            logger.debug(
-                "[TIMING] LocalPromptBuilder.build_text_to_jp: %.4fs (input_chars=%d prompt_chars=%d ref_chars=%d)",
-                time.perf_counter() - t0,
-                len(text or ""),
-                len(prompt),
-                len(reference_section or ""),
-            )
-        return prompt
+        raise RuntimeError(_LOCAL_JSON_DISABLED_MESSAGE)
 
     def build_text_to_jp_with_embed(
         self,
@@ -1640,16 +1350,4 @@ class LocalPromptBuilder:
         reference_files: Optional[Sequence[Path]] = None,
         detected_language: str = "英語",
     ) -> tuple[str, EmbeddedReference]:
-        template = self._load_template("local_text_translate_to_jp_json.txt")
-        embedded_ref = self.build_reference_embed(reference_files, input_text=text)
-        reference_section = embedded_ref.text if embedded_ref.text else ""
-        prompt_input_text = self._base.normalize_input_text(text, "jp")
-        prompt = template.replace("{reference_section}", reference_section)
-        prompt = prompt.replace("{input_text}", prompt_input_text)
-        prompt = prompt.replace("{detected_language}", detected_language)
-        prompt = self._append_simple_prompt(
-            prompt,
-            input_text=text,
-            output_language="jp",
-        )
-        return prompt, embedded_ref
+        raise RuntimeError(_LOCAL_JSON_DISABLED_MESSAGE)

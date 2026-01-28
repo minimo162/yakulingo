@@ -1,8 +1,0 @@
-Translate Japanese to English in 3 styles: standard, concise, minimal.
-Return JSON only: {"options":[{"style":"standard","translation":"","explanation":""},{"style":"concise","translation":"","explanation":""},{"style":"minimal","translation":"","explanation":""}]}
-Rules: len=3; order fixed; keys style/translation/explanation; English only.
-Self-check before output: follow the rules above; fix any violation, then output JSON only.
-
-{numeric_hints}
-{reference_section}
-{extra_instruction}

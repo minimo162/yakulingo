@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
+
+import pytest
 
 from yakulingo.config.settings import AppSettings
 from yakulingo.services.local_ai_prompt_builder import LocalPromptBuilder
@@ -18,35 +19,13 @@ def _make_builder() -> LocalPromptBuilder:
     )
 
 
-def _extract_source_json(prompt: str) -> str:
-    before, sep, after = prompt.partition("<source>")
-    assert sep, "missing <source> marker"
-    json_text, sep2, _ = after.partition("</source>")
-    assert sep2, "missing </source> marker"
-    return json_text.strip()
-
-
-def test_local_batch_prompt_includes_hints_and_preserves_id_markers() -> None:
+def test_local_batch_prompt_is_disabled() -> None:
     builder = _make_builder()
-    prompt = builder.build_batch(
-        [
-            "売上は1,200万円です。\n1. 増加\n2. 減少",
-            "ROI > 10% 1月 ▲50",
-        ],
-        output_language="en",
-        translation_style="concise",
-        include_item_ids=True,
-        reference_files=None,
-    )
-
-    assert "Glossary (generated; apply verbatim)" not in prompt
-
-    source_json = _extract_source_json(prompt)
-    assert "\\n" in source_json
-
-    payload = json.loads(source_json)
-    assert payload["items"][0]["id"] == 1
-    assert payload["items"][0]["text"].startswith("[[ID:1]] ")
-    assert "\n" in payload["items"][0]["text"]
-    assert payload["items"][1]["id"] == 2
-    assert payload["items"][1]["text"].startswith("[[ID:2]] ")
+    with pytest.raises(RuntimeError, match="disabled"):
+        builder.build_batch(
+            ["売上は1,200万円です。", "ROI > 10% 1月 ▲50"],
+            output_language="en",
+            translation_style="concise",
+            include_item_ids=True,
+            reference_files=None,
+        )

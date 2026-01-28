@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import patch
+
+import pytest
 
 from yakulingo.config.settings import AppSettings
 from yakulingo.services.local_ai_prompt_builder import LocalPromptBuilder
@@ -28,156 +29,53 @@ def _make_builder() -> LocalPromptBuilder:
     )
 
 
-def _assert_no_placeholders(prompt: str, names: list[str]) -> None:
-    for name in names:
-        assert f"{{{name}}}" not in prompt
+def test_local_json_templates_removed() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    prompts_dir = repo_root / "prompts"
+    for name in _LOCAL_TEMPLATES:
+        assert not (prompts_dir / name).exists()
 
 
-def test_local_prompt_templates_load() -> None:
+def test_local_prompt_template_load_raises() -> None:
     builder = _make_builder()
     for name in _LOCAL_TEMPLATES:
-        template = builder._load_template(name)
-        assert isinstance(template, str)
-        assert template.strip()
+        with pytest.raises(RuntimeError, match="disabled"):
+            builder._load_template(name)
 
 
-def test_local_prompt_template_cache_avoids_reloading() -> None:
+def test_local_prompt_builder_prompt_methods_raise() -> None:
     builder = _make_builder()
-    first = builder._load_template("local_text_translate_to_en_single_json.txt")
-    with patch.object(Path, "read_text", side_effect=AssertionError("read_text")):
-        second = builder._load_template("local_text_translate_to_en_single_json.txt")
-    assert second == first
+    with pytest.raises(RuntimeError, match="disabled"):
+        builder.build_text_to_en_single(
+            "sample",
+            style="minimal",
+            reference_files=None,
+            detected_language="日本語",
+        )
+    with pytest.raises(RuntimeError, match="disabled"):
+        builder.build_text_to_jp(
+            "sample", reference_files=None, detected_language="英語"
+        )
+    with pytest.raises(RuntimeError, match="disabled"):
+        builder.build_text_to_en_3style("sample", reference_files=None)
+    with pytest.raises(RuntimeError, match="disabled"):
+        builder.build_text_to_en_missing_styles(
+            "sample",
+            styles=["minimal"],
+            reference_files=None,
+        )
+    with pytest.raises(RuntimeError, match="disabled"):
+        builder.build_batch(
+            ["alpha", "beta"],
+            has_reference_files=False,
+            output_language="en",
+            translation_style="concise",
+            include_item_ids=False,
+            reference_files=None,
+        )
 
 
-def test_local_prompt_builder_replaces_placeholders() -> None:
-    builder = _make_builder()
-
-    prompt = builder.build_text_to_en_single(
-        "売上高は1,000億円です。",
-        style="minimal",
-        reference_files=None,
-        detected_language="日本語",
-        extra_instruction="context",
-    )
-    _assert_no_placeholders(
-        prompt,
-        [
-            "input_text",
-            "reference_section",
-            "detected_language",
-            "style",
-            "numeric_hints",
-            "extra_instruction",
-        ],
-    )
-
-    prompt = builder.build_text_to_en_3style(
-        "売上高は1,000億円です。",
-        reference_files=None,
-        detected_language="日本語",
-        extra_instruction="context",
-    )
-    _assert_no_placeholders(
-        prompt,
-        [
-            "input_text",
-            "reference_section",
-            "detected_language",
-            "numeric_hints",
-            "extra_instruction",
-        ],
-    )
-
-    prompt = builder.build_text_to_en_missing_styles(
-        "売上高は1,000億円です。",
-        styles=["minimal"],
-        reference_files=None,
-        detected_language="日本語",
-        extra_instruction="context",
-    )
-    _assert_no_placeholders(
-        prompt,
-        [
-            "input_text",
-            "reference_section",
-            "detected_language",
-            "numeric_hints",
-            "extra_instruction",
-            "styles_json",
-            "n_styles",
-        ],
-    )
-
-    prompt = builder.build_text_to_jp(
-        "sample",
-        reference_files=None,
-        detected_language="英語",
-    )
-    _assert_no_placeholders(
-        prompt,
-        ["input_text", "reference_section", "detected_language"],
-    )
-
-    prompt = builder.build_batch(
-        ["alpha", "beta"],
-        has_reference_files=False,
-        output_language="en",
-        translation_style="concise",
-        include_item_ids=False,
-        reference_files=None,
-    )
-    _assert_no_placeholders(
-        prompt,
-        [
-            "items_json",
-            "n_items",
-            "reference_section",
-            "style",
-            "numeric_hints",
-            "output_language",
-        ],
-    )
-
-
-def test_local_json_templates_avoid_extra_output_keys() -> None:
-    builder = _make_builder()
-    for name in _LOCAL_TEMPLATES:
-        template = builder._load_template(name)
-        assert '"output_language"' not in template
-        assert '"detected_language"' not in template
-
-    template = builder._load_template("local_text_translate_to_en_single_json.txt")
-    assert '"style"' not in template
-
-
-def test_local_prompt_templates_are_slim() -> None:
-    builder = _make_builder()
-    total = 0
-    for name in _LOCAL_TEMPLATES:
-        total += len(builder._load_template(name))
-    assert total <= 3200
-
-
-def test_local_prompt_builder_preload_startup_templates_warms_cache() -> None:
+def test_local_prompt_builder_preload_startup_templates_is_noop() -> None:
     builder = _make_builder()
     builder.preload_startup_templates()
-    with patch.object(Path, "read_text", side_effect=AssertionError("read_text")):
-        for name in _LOCAL_TEMPLATES:
-            assert builder._load_template(name).strip()
-
-
-def test_local_prompt_builder_preload_startup_templates_is_best_effort(
-    tmp_path: Path,
-) -> None:
-    prompts_dir = tmp_path / "prompts"
-    prompts_dir.mkdir()
-    (prompts_dir / "local_text_translate_to_en_single_json.txt").write_text(
-        "x",
-        encoding="utf-8",
-    )
-    builder = LocalPromptBuilder(
-        prompts_dir,
-        base_prompt_builder=PromptBuilder(prompts_dir),
-        settings=AppSettings(),
-    )
-    builder.preload_startup_templates()
+    assert builder._template_cache == {}

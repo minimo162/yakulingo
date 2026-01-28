@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from yakulingo.config.settings import AppSettings
 from yakulingo.services.local_ai_prompt_builder import LocalPromptBuilder
 from yakulingo.services.prompt_builder import PromptBuilder
@@ -10,12 +12,6 @@ from yakulingo.services.prompt_builder import PromptBuilder
 def _make_temp_builder(tmp_path: Path) -> LocalPromptBuilder:
     prompts_dir = tmp_path / "prompts"
     prompts_dir.mkdir(parents=True, exist_ok=True)
-
-    (prompts_dir / "local_text_translate_to_en_single_json.txt").write_text(
-        "{numeric_hints}\n{reference_section}\n{input_text}\n",
-        encoding="utf-8",
-    )
-
     settings = AppSettings()
     return LocalPromptBuilder(
         prompts_dir,
@@ -37,10 +33,10 @@ def test_text_prompt_ignores_reference_files(tmp_path: Path) -> None:
     embedded = builder.build_reference_embed([glossary_path], input_text=input_text)
     assert embedded.text == ""
 
-    prompt = builder.build_text_to_en_single(
-        input_text,
-        style="minimal",
-        reference_files=[glossary_path],
-        detected_language="日本語",
-    )
-    assert "Glossary" not in prompt
+    with pytest.raises(RuntimeError, match="disabled"):
+        builder.build_text_to_en_single(
+            input_text,
+            style="minimal",
+            reference_files=[glossary_path],
+            detected_language="日本語",
+        )

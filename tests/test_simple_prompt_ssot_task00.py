@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from yakulingo.config.settings import AppSettings
+import pytest
+
 from yakulingo.services.local_ai_prompt_builder import LocalPromptBuilder
 from yakulingo.services.prompt_builder import PromptBuilder
 
@@ -108,7 +110,7 @@ def test_build_simple_prompt_matches_intent_jp() -> None:
     assert builder.build_simple_prompt(text, output_language="jp") == expected
 
 
-def test_local_prompt_builder_includes_simple_prompt_core() -> None:
+def test_local_prompt_builder_text_prompt_is_disabled() -> None:
     prompts_dir = _prompts_dir()
     base = PromptBuilder(prompts_dir)
     builder = LocalPromptBuilder(
@@ -116,24 +118,10 @@ def test_local_prompt_builder_includes_simple_prompt_core() -> None:
         base_prompt_builder=base,
         settings=AppSettings(),
     )
-    text = "こんにちは"
-    normalized = base.normalize_input_text(text, "en")
-
-    prompt = builder.build_text_to_en_single(
-        text,
-        style="minimal",
-        reference_files=None,
-        detected_language="日本語",
-    )
-    simple = _extract_simple_prompt(prompt)
-
-    assert simple.startswith(
-        "You are a professional Japanese (ja) to English (en) translator."
-    )
-    assert (
-        "Produce only the English translation, without any additional explanations or commentary."
-        in simple
-    )
-    assert (
-        f"Please translate the following Japanese text into English:\n\n\n{normalized}"
-    ) in simple
+    with pytest.raises(RuntimeError, match="disabled"):
+        builder.build_text_to_en_single(
+            "こんにちは",
+            style="minimal",
+            reference_files=None,
+            detected_language="日本語",
+        )

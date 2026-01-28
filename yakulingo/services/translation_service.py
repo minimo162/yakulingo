@@ -4225,6 +4225,7 @@ class TranslationService:
     ) -> TextTranslationResult:
         reference_files = None
         self._ensure_local_backend()
+        from yakulingo.services.local_ai_client import strip_prompt_echo
         from yakulingo.services.local_llama_server import LocalAIError
 
         local_builder = self._local_prompt_builder
@@ -4448,6 +4449,7 @@ class TranslationService:
                                 translated_map[block.id] = raw_segment
                                 continue
 
+                            raw_segment = strip_prompt_echo(raw_segment, segment_prompt)
                             translated_piece = _normalize_local_plain_text_output(
                                 raw_segment
                             )
@@ -4596,6 +4598,7 @@ class TranslationService:
                         if fallback is not None:
                             return fallback
                     raise
+                raw = strip_prompt_echo(raw, prompt)
                 if raw_output:
                     return TextTranslationResult(
                         source_text=text,
@@ -4860,6 +4863,7 @@ class TranslationService:
                             if fallback is not None:
                                 return fallback
                         raise
+                    retry_raw = strip_prompt_echo(retry_raw, retry_prompt)
                     retry_translation = _normalize_local_plain_text_output(retry_raw)
                     if not retry_translation:
                         return TextTranslationResult(
@@ -5108,6 +5112,7 @@ class TranslationService:
                     if fallback is not None:
                         return fallback
                 raise
+            raw = strip_prompt_echo(raw, prompt)
             if raw_output:
                 return TextTranslationResult(
                     source_text=text,
@@ -5224,6 +5229,7 @@ class TranslationService:
                         if fallback is not None:
                             return fallback
                     raise
+                retry_raw = strip_prompt_echo(retry_raw, retry_prompt)
                 retry_translation = _normalize_local_plain_text_output(retry_raw)
                 if (
                     retry_translation
@@ -5320,6 +5326,7 @@ class TranslationService:
             parse_text_single_translation,
             parse_text_to_en_3style,
             parse_text_to_en_style_subset,
+            strip_prompt_echo,
         )
         from yakulingo.services.local_llama_server import LocalAIError
 
@@ -5594,6 +5601,7 @@ class TranslationService:
                     )
                 raise
 
+            raw_result = strip_prompt_echo(raw_result, prompt)
             parsed = _parse_styles(raw_result, desired_styles)
             if not parsed:
                 error_message = "ローカルAIの応答(JSON)を解析できませんでした（詳細はログを確認してください）"
@@ -5755,6 +5763,7 @@ class TranslationService:
                             on_chunk=on_chunk,
                         )
                     raise
+                retry_raw = strip_prompt_echo(retry_raw, retry_prompt)
                 raw_result = retry_raw
                 options_hint = options_hint or '"options"' in raw_result
                 parsed_retry = _parse_styles(retry_raw, desired_styles)
@@ -5857,6 +5866,8 @@ class TranslationService:
                     if not str(e).startswith("LOCAL_PROMPT_TOO_LONG:"):
                         raise
                     missing_raw = ""
+                if missing_raw:
+                    missing_raw = strip_prompt_echo(missing_raw, missing_prompt)
                 if missing_raw:
                     parsed_missing = _parse_styles(missing_raw, missing_styles)
                     subset = parse_text_to_en_style_subset(missing_raw, missing_styles)

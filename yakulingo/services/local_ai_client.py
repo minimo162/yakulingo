@@ -30,6 +30,8 @@ _SSE_DELTA_COALESCE_MIN_CHARS = 256
 _SSE_DELTA_COALESCE_MAX_INTERVAL_SEC = 0.18
 
 _PROMPT_REPEAT_SEPARATOR = "\n\n"
+_PROMPT_ECHO_PREFIX_MIN = 120
+_PROMPT_ECHO_PREFIX_SCAN_LIMIT = 4000
 
 
 def _repeat_prompt_twice(prompt: str) -> str:
@@ -247,6 +249,34 @@ def _strip_code_fences(text: str) -> str:
             continue
         lines.append(line)
     return "\n".join(lines).strip()
+
+
+def strip_prompt_echo(raw_content: str, prompt: str | None) -> str:
+    cleaned = _strip_code_fences(raw_content or "")
+    cleaned = cleaned.replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not cleaned:
+        return ""
+    if not prompt:
+        return cleaned
+    prompt_clean = _strip_code_fences(prompt)
+    prompt_clean = prompt_clean.replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not prompt_clean:
+        return cleaned
+
+    idx = cleaned.find(prompt_clean)
+    if idx != -1:
+        stripped = (cleaned[:idx] + cleaned[idx + len(prompt_clean) :]).strip()
+        return stripped
+
+    limit = min(len(cleaned), len(prompt_clean), _PROMPT_ECHO_PREFIX_SCAN_LIMIT)
+    prefix_len = 0
+    for i in range(limit):
+        if cleaned[i] != prompt_clean[i]:
+            break
+        prefix_len += 1
+    if prefix_len >= _PROMPT_ECHO_PREFIX_MIN:
+        return cleaned[prefix_len:].lstrip()
+    return cleaned
 
 
 def _make_diagnostic_snippet(
@@ -572,9 +602,11 @@ def parse_batch_translations(
     expected_count: int,
     *,
     parsed_json: object = _PARSED_JSON_MISSING,
+    prompt: str | None = None,
 ) -> list[str]:
+    cleaned_content = strip_prompt_echo(raw_content, prompt)
     obj = (
-        loads_json_loose(raw_content)
+        loads_json_loose(cleaned_content)
         if parsed_json is _PARSED_JSON_MISSING
         else parsed_json
     )
@@ -582,14 +614,14 @@ def parse_batch_translations(
     if parsed is not None:
         return parsed
 
-    fallback = _parse_batch_items_fallback(raw_content, expected_count)
+    fallback = _parse_batch_items_fallback(cleaned_content, expected_count)
     if fallback is not None:
         return fallback
 
-    reason, truncated = _classify_parse_failure(raw_content, obj)
+    reason, truncated = _classify_parse_failure(cleaned_content, obj)
     _log_parse_failure(
         kind="batch",
-        raw_content=raw_content,
+        raw_content=cleaned_content,
         reason=reason,
         obj=obj,
         expected_count=expected_count,
@@ -1146,6 +1178,7 @@ class LocalAIClient:
                 result.content,
                 expected_count=len(texts),
                 parsed_json=result.parsed_json,
+                prompt=prompt,
             )
         except RuntimeError:
             if _should_retry_with_repeated_prompt(
@@ -1163,6 +1196,7 @@ class LocalAIClient:
                     result.content,
                     expected_count=len(texts),
                     parsed_json=result.parsed_json,
+                    prompt=prompt,
                 )
             else:
                 raise

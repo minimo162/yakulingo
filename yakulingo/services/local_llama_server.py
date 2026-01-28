@@ -50,6 +50,8 @@ _AUTO_DEVICE_CACHE: dict[
     tuple[str, int, int], tuple[Optional[str], Optional[str], float]
 ] = {}
 _AUTO_DEVICE_CACHE_LOCK = threading.Lock()
+_DEFAULT_MODEL_PATH = "local_ai/models/HY-MT1.5-7B.i1-Q6_K.gguf"
+_PREVIOUS_DEFAULT_MODEL_PATH = "local_ai/models/HY-MT1.5-7B.i1-IQ4_XS.gguf"
 _LEGACY_DEFAULT_MODEL_PATH = "local_ai/models/HY-MT1.5-1.8B.IQ4_XS.gguf"
 
 
@@ -907,6 +909,17 @@ class LocalLlamaServerManager:
         candidate = _resolve_from_app_base(raw)
         if candidate.is_file():
             return candidate
+
+        default_model = _resolve_from_app_base(_DEFAULT_MODEL_PATH)
+        if _normalize_path_text(candidate) == _normalize_path_text(default_model):
+            previous = _resolve_from_app_base(_PREVIOUS_DEFAULT_MODEL_PATH)
+            if previous.is_file():
+                logger.warning(
+                    "Configured model file not found; falling back to previous default: %s -> %s",
+                    candidate,
+                    previous,
+                )
+                return previous
 
         legacy = _resolve_from_app_base(_LEGACY_DEFAULT_MODEL_PATH)
         if legacy.is_file():

@@ -662,6 +662,28 @@ def test_resolve_model_path_prefers_configured_model_when_present(
     assert resolved == preferred
 
 
+def test_resolve_model_path_falls_back_to_previous_default_when_default_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    manager = lls.LocalLlamaServerManager()
+    _patch_app_base_dir(tmp_path, monkeypatch)
+
+    previous = tmp_path / "local_ai" / "models" / "HY-MT1.5-7B.i1-IQ4_XS.gguf"
+    previous.parent.mkdir(parents=True, exist_ok=True)
+    previous.write_bytes(b"previous")
+
+    legacy = tmp_path / Path(lls._LEGACY_DEFAULT_MODEL_PATH)
+    legacy.parent.mkdir(parents=True, exist_ok=True)
+    legacy.write_bytes(b"legacy")
+
+    settings = AppSettings(local_ai_model_path="local_ai/models/HY-MT1.5-7B.i1-Q6_K.gguf")
+    caplog.set_level(logging.WARNING, logger="yakulingo.services.local_llama_server")
+    resolved = manager._resolve_model_path(settings)
+
+    assert resolved == previous
+    assert "falling back to previous default" in caplog.text
+
+
 def test_resolve_model_path_falls_back_to_legacy_default_when_configured_missing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:

@@ -53,7 +53,7 @@ YakuLingoは、日本語と英語の双方向翻訳を提供するデスクト�
 | 日本語 | 英語（最簡潔: minimal のみ） |
 | その他 | 日本語（訳文のみ） |
 
-- テキスト翻訳/戻し訳/フォローアップは訳文のみを返し、`explanation` は出力しない（後方互換のためフィールドは保持するが常に空文字）。
+- テキスト翻訳/フォローアップは訳文のみを返し、`explanation` は出力しない（後方互換のためフィールドは保持するが常に空文字）。
 
 **検出メカニズム:**
 - `detect_language()`: ローカルのみで検出（高速）
@@ -209,7 +209,6 @@ YakuLingo/
 │   ├── file_translate_to_jp.txt    # ファイル翻訳用（英→日）
 │   ├── text_translate_to_en_compare.txt  # テキスト翻訳（日→英、minimal-only。ファイル名は後方互換で維持）
 │   ├── text_translate_to_jp.txt    # テキスト翻訳用（英→日、訳文のみ/共通ルール挿入）
-│   ├── text_back_translate.txt     # （legacy/未使用）戻し訳テンプレート
 │   ├── adjust_custom.txt           # カスタムリクエスト
 │   ├── text_alternatives.txt       # フォローアップ: 他の言い方
 │   ├── text_review_en.txt          # フォローアップ: 英文をチェック
@@ -606,7 +605,7 @@ NiceGUIの`await client.connected()`パターンを使用して、クライア�
 │  ✓ 🇯🇵 日本語から🇺🇸 英語へ翻訳しました [3.2秒] ← 翻訳状態（完了）│
 │                                                                 │
 │  ┌─────────────────────────────────────────────────────────────┐│
-│  │ "Translation text / 日本語訳..."               [📋] [逆翻訳]││
+│  │ "Translation text / 日本語訳..."               [📋]││
 │  └─────────────────────────────────────────────────────────────┘│
 │                                                                 │
 │  💡 [🔄 再翻訳]                         ← 吹き出し風ヒント      │
@@ -641,9 +640,6 @@ NiceGUIの`await client.connected()`パターンを使用して、クライア�
 - 「分割して翻訳」で複数バッチに分割し、結果を統合
 - ストリーミングプレビューに `[現在/合計]` を付与して進行を可視化
 
-**戻し訳（Back-translation）:**
-- 各訳文に「戻し訳」「編集して戻し訳」を表示
-- 編集内容は訳文自体を変更せず、戻し訳のみで使用
 - 結果は展開セクションに表示（編集版はタグで識別）
 
 **日本語入力時（英訳）:**
@@ -1252,7 +1248,6 @@ Reference Files
 - 既にターゲット言語の場合はそのまま出力
 - 出力: 英訳は最簡潔（`minimal`）のみ、和訳は訳文のみ（解説なし）
 - 禁止事項は英訳/和訳で共通（質問・提案・指示の繰り返し・訳文以外）
-- 戻し訳は通常のテキスト翻訳テンプレートを使用（入力言語をローカル判定し、日→英は `prompts/text_translate_to_en_compare.txt`、それ以外は `prompts/text_translate_to_jp.txt`）。`prompts/text_back_translate.txt` は互換のため残存（未使用）
 - 文字数超過や用語集違反を検知しても、リトライやエラー扱いにはしない（必要に応じて `metadata` に警告フラグのみ付与）
 
 #### 9.4.1 英訳（minimal-only）
@@ -1284,9 +1279,11 @@ Reference Files
 ### 9.6 ローカルAIプロンプト（JSON固定）
 
 ローカルAIは **JSONのみ**を返すテンプレートを使用する（バッチのズレ対策を最優先）。
+不要な指示文（Style/Limits/No retries/Keep[[ID]]等）は削除して最小構成にしている。
+出力にプロンプトが混入した場合はサニタイズして除去する。
 
 - テキスト
-  - `prompts/local_text_translate_to_en_single_json.txt`（JP→EN: 単発、styleは `minimal` 固定）
+- `prompts/local_text_translate_to_en_single_json.txt`（JP→EN: 単発）
   - `prompts/local_text_translate_to_jp_json.txt`（EN→JP: translation のみ、`explanation` キーなし）
   - 互換: `explanation` が来た場合は空文字扱い
 - バッチ
@@ -1667,7 +1664,6 @@ async def _translate_text(self):
 
 **対象メソッド:**
 - `_translate_text()` - テキスト翻訳
-- `_back_translate()` - 戻し訳
 - `_follow_up_action()` - フォローアップアクション
 - `_translate_file()` - ファイル翻訳
 
@@ -1781,9 +1777,6 @@ python -c "import time; t=time.time(); from yakulingo.ui import run_app; print(f
 - テキスト翻訳
   - 分割翻訳のストリーミングプレビュー（バッチ進行を表示）
   - 比較モード追加（スタイル比較 / 原文比較）
-- 戻し訳
-  - 「編集して戻し訳」フロー追加（編集内容は訳文に反映しない）
-  - 戻し訳結果をカード内で展開表示
 - UI改善
   - ストリーミングの自動スクロール追従を調整
   - ファイルキュー（順次/並列、並べ替え）と履歴フィルタ/比較を強化

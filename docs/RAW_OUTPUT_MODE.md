@@ -10,7 +10,6 @@
 - **文字列保持**: 先頭/末尾空白、改行、`Translation:` 等のプレフィックスを保持。
 - **エスケープ**: `\n` / `\t` のリテラルは変換せず、そのまま表示/コピー。
 - **コピー**: 生テキストをそのままコピー（Excel貼り付け向け整形は行わない）。
-- **戻し訳**: raw 結果を表示（正規化なし）。
 
 ## プロンプト（SSOT）
 SIMPLE_PROMPT_TEMPLATE（コード側の固定テンプレート）:
@@ -33,5 +32,3 @@ Produce only the {TARGET_LANG} translation, without any additional explanations 
 - [ ] Markdownがレンダリングされず、文字列として表示される
 - [ ] `Translation:` 等の接頭辞が除去されない
 - [ ] コピー結果が生出力と一致する（Excel向け整形なし）
-- [ ] 戻し訳の表示がrawである
-

@@ -24,10 +24,10 @@ def _make_hy_mt_runtime() -> LocalAIServerRuntime:
         host="127.0.0.1",
         port=1,
         base_url="http://127.0.0.1:1",
-        model_id="HY-MT1.5-7B.IQ4_XS.gguf",
+        model_id="HY-MT1.5-7B.i1-IQ4_XS.gguf",
         server_exe_path=Path("server.exe"),
         server_variant="direct",
-        model_path=Path("HY-MT1.5-7B.IQ4_XS.gguf"),
+        model_path=Path("HY-MT1.5-7B.i1-IQ4_XS.gguf"),
     )
 
 

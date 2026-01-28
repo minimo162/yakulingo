@@ -44,6 +44,25 @@ def test_prompt_builder_appends_simple_prompt_en() -> None:
     ) in simple
 
 
+def test_build_simple_prompt_matches_intent_en() -> None:
+    prompts_dir = _prompts_dir()
+    builder = PromptBuilder(prompts_dir)
+    text = "縺薙ｓ縺ｫ縺｡縺ｯ\n縺ｾ縺帙ｓ"
+    normalized = builder.normalize_input_text(text, "en")
+
+    expected = (
+        "You are a professional Japanese (ja) to English (en) translator. "
+        "Your goal is to accurately convey the meaning and nuances of the "
+        "original Japanese text while adhering to English grammar, vocabulary, "
+        "and cultural sensitivities.\n"
+        "Produce only the English translation, without any additional explanations "
+        "or commentary. Please translate the following Japanese text into English:\n\n\n"
+        f"{normalized}"
+    )
+
+    assert builder.build_simple_prompt(text, output_language="en") == expected
+
+
 def test_prompt_builder_appends_simple_prompt_jp() -> None:
     prompts_dir = _prompts_dir()
     builder = PromptBuilder(prompts_dir)
@@ -68,6 +87,25 @@ def test_prompt_builder_appends_simple_prompt_jp() -> None:
     assert (
         f"Please translate the following English text into Japanese:\n\n\n{normalized}"
     ) in simple
+
+
+def test_build_simple_prompt_matches_intent_jp() -> None:
+    prompts_dir = _prompts_dir()
+    builder = PromptBuilder(prompts_dir)
+    text = "Hello,\r\nworld!"
+    normalized = builder.normalize_input_text(text, "jp")
+
+    expected = (
+        "You are a professional English (en) to Japanese (ja) translator. "
+        "Your goal is to accurately convey the meaning and nuances of the "
+        "original English text while adhering to Japanese grammar, vocabulary, "
+        "and cultural sensitivities.\n"
+        "Produce only the Japanese translation, without any additional explanations "
+        "or commentary. Please translate the following English text into Japanese:\n\n\n"
+        f"{normalized}"
+    )
+
+    assert builder.build_simple_prompt(text, output_language="jp") == expected
 
 
 def test_local_prompt_builder_includes_simple_prompt_core() -> None:

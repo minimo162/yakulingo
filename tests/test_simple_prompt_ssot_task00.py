@@ -13,18 +13,42 @@ def _prompts_dir() -> Path:
     return Path(__file__).resolve().parents[1] / "prompts"
 
 
+_SIMPLE_PROMPT_GLOSSARY = """
+Important Terminology:
+- 1,000億円: 1,000 oku yen
+- ▲1,000億円: (1,000) oku yen 
+"""
+
+
 def _extract_simple_prompt(prompt: str) -> str:
-    marker = "You are a professional "
+    marker = "<bos><start_of_turn>user\n"
     idx = prompt.rfind(marker)
     assert idx >= 0, "simple prompt marker not found"
     return prompt[idx:]
+
+
+def _expected_simple_prompt(
+    builder: PromptBuilder,
+    text: str,
+    output_language: str,
+) -> str:
+    user_input = builder.normalize_input_text(text, output_language)
+    source_lang, _, target_lang, _ = builder._resolve_langs(output_language)
+    return (
+        f"<bos><start_of_turn>user\n"
+        f"Instruction: Please translate this into natural English suitable for financial statements. No other responses are necessary.\n"
+        f"{_SIMPLE_PROMPT_GLOSSARY}\n"
+        f"Source: {source_lang}\n"
+        f"Target: {target_lang}\n"
+        f"Text: {user_input}<end_of_turn>\n"
+        f"<start_of_turn>model\n"
+    )
 
 
 def test_prompt_builder_appends_simple_prompt_en() -> None:
     prompts_dir = _prompts_dir()
     builder = PromptBuilder(prompts_dir)
     text = "こんにちは、世界！"
-    normalized = builder.normalize_input_text(text, "en")
 
     prompt = builder.build(
         text,
@@ -34,42 +58,23 @@ def test_prompt_builder_appends_simple_prompt_en() -> None:
     )
     simple = _extract_simple_prompt(prompt)
 
-    assert simple.startswith(
-        "You are a professional Japanese (ja) to English (en) translator."
-    )
-    assert (
-        "Produce only the English translation, without any additional explanations or commentary."
-        in simple
-    )
-    assert (
-        f"Please translate the following Japanese text into English:\n\n\n{normalized}"
-    ) in simple
+    assert simple == _expected_simple_prompt(builder, text, "en")
 
 
 def test_build_simple_prompt_matches_intent_en() -> None:
     prompts_dir = _prompts_dir()
     builder = PromptBuilder(prompts_dir)
     text = "縺薙ｓ縺ｫ縺｡縺ｯ\n縺ｾ縺帙ｓ"
-    normalized = builder.normalize_input_text(text, "en")
 
-    expected = (
-        "You are a professional Japanese (ja) to English (en) translator. "
-        "Your goal is to accurately convey the meaning and nuances of the "
-        "original Japanese text while adhering to English grammar, vocabulary, "
-        "and cultural sensitivities.\n"
-        "Produce only the English translation, without any additional explanations "
-        "or commentary. Please translate the following Japanese text into English:\n\n\n"
-        f"{normalized}"
+    assert builder.build_simple_prompt(text, output_language="en") == _expected_simple_prompt(
+        builder, text, "en"
     )
-
-    assert builder.build_simple_prompt(text, output_language="en") == expected
 
 
 def test_prompt_builder_appends_simple_prompt_jp() -> None:
     prompts_dir = _prompts_dir()
     builder = PromptBuilder(prompts_dir)
     text = "Hello, how are you?"
-    normalized = builder.normalize_input_text(text, "jp")
 
     prompt = builder.build(
         text,
@@ -79,35 +84,17 @@ def test_prompt_builder_appends_simple_prompt_jp() -> None:
     )
     simple = _extract_simple_prompt(prompt)
 
-    assert simple.startswith(
-        "You are a professional English (en) to Japanese (ja) translator."
-    )
-    assert (
-        "Produce only the Japanese translation, without any additional explanations or commentary."
-        in simple
-    )
-    assert (
-        f"Please translate the following English text into Japanese:\n\n\n{normalized}"
-    ) in simple
+    assert simple == _expected_simple_prompt(builder, text, "jp")
 
 
 def test_build_simple_prompt_matches_intent_jp() -> None:
     prompts_dir = _prompts_dir()
     builder = PromptBuilder(prompts_dir)
     text = "Hello,\r\nworld!"
-    normalized = builder.normalize_input_text(text, "jp")
 
-    expected = (
-        "You are a professional English (en) to Japanese (ja) translator. "
-        "Your goal is to accurately convey the meaning and nuances of the "
-        "original English text while adhering to Japanese grammar, vocabulary, "
-        "and cultural sensitivities.\n"
-        "Produce only the Japanese translation, without any additional explanations "
-        "or commentary. Please translate the following English text into Japanese:\n\n\n"
-        f"{normalized}"
+    assert builder.build_simple_prompt(text, output_language="jp") == _expected_simple_prompt(
+        builder, text, "jp"
     )
-
-    assert builder.build_simple_prompt(text, output_language="jp") == expected
 
 
 def test_local_prompt_builder_text_prompt_is_disabled() -> None:

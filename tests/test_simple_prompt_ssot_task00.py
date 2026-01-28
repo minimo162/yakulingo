@@ -87,9 +87,9 @@ def test_build_simple_prompt_matches_intent_en() -> None:
     builder = PromptBuilder(prompts_dir)
     text = "縺薙ｓ縺ｫ縺｡縺ｯ\n縺ｾ縺帙ｓ"
 
-    assert builder.build_simple_prompt(text, output_language="en") == _expected_simple_prompt(
-        builder, text, "en"
-    )
+    assert builder.build_simple_prompt(
+        text, output_language="en"
+    ) == _expected_simple_prompt(builder, text, "en")
 
 
 def test_prompt_builder_appends_simple_prompt_jp() -> None:
@@ -113,9 +113,9 @@ def test_build_simple_prompt_matches_intent_jp() -> None:
     builder = PromptBuilder(prompts_dir)
     text = "Hello,\r\nworld!"
 
-    assert builder.build_simple_prompt(text, output_language="jp") == _expected_simple_prompt(
-        builder, text, "jp"
-    )
+    assert builder.build_simple_prompt(
+        text, output_language="jp"
+    ) == _expected_simple_prompt(builder, text, "jp")
 
 
 def test_local_prompt_builder_text_prompt_is_disabled() -> None:

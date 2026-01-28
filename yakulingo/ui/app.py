@@ -1517,7 +1517,7 @@ class YakuLingoApp:
     3. UI Refresh Methods - Methods that update UI state
     4. UI Creation Methods - Methods that build UI components
     5. Error Handling Helpers - Unified error handling methods
-    6. Text Translation - Text input, translation, back-translate
+    6. Text Translation - Text input, translation
     7. File Translation - File selection, translation, progress methods
     8. Settings & History - Settings dialog, history management
     """
@@ -2132,7 +2132,6 @@ class YakuLingoApp:
         if show_text_tab:
             if not (
                 self.state.text_translating
-                or self.state.text_back_translating
                 or getattr(self, "_hotkey_translation_active", False)
             ):
                 self.state.reset_text_state()
@@ -7128,10 +7127,7 @@ class YakuLingoApp:
         if self._translate_button is None:
             return
 
-        if self.state.text_back_translating:
-            # Back-translate: disable without showing the main translate spinner
-            self._translate_button.props(":loading=false disable")
-        elif self.state.is_translating():
+        if self.state.is_translating():
             # Show loading spinner and disable
             self._translate_button.props("loading disable")
         elif not self.state.can_translate():
@@ -8007,7 +8003,6 @@ class YakuLingoApp:
             create_text_result_panel(
                 state=self.state,
                 on_copy=self._copy_text,
-                on_back_translate=self._back_translate,
                 on_retry=self._retry_translation,
                 on_edit=self._edit_translation,
                 on_streaming_preview_label_created=self._on_streaming_preview_label_created,
@@ -8907,7 +8902,6 @@ class YakuLingoApp:
             error_message: Error message if translation failed, None otherwise
         """
         self.state.text_translating = False
-        self.state.text_back_translating = False
         with client:
             if error_message == "翻訳がキャンセルされました":
                 ui.notify("キャンセルしました", type="info")
@@ -9779,138 +9773,6 @@ class YakuLingoApp:
     ) -> tuple[str, list[str], bool]:
         """Build reference section for local AI with warnings."""
         return "", [], False
-
-    async def _back_translate(
-        self, option: TranslationOption, text_override: Optional[str] = None
-    ):
-        """Back-translate text to verify translation quality"""
-        if option.back_translation_in_progress:
-            return
-        # Use async version that will attempt auto-reconnection if needed
-        if not await self._ensure_connection_async():
-            return
-        if self.translation_service:
-            self.translation_service.reset_cancel()
-
-        # Use saved client reference (protected by _client_lock)
-        with self._client_lock:
-            client = self._client
-            if not client:
-                logger.warning("Back translate aborted: no client connected")
-                return
-
-        option.back_translation_in_progress = True
-        option.back_translation_source_text = None
-        option.back_translation_text = None
-        option.back_translation_explanation = None
-        option.back_translation_error = None
-        if text_override is not None:
-            option.back_translation_input_text = text_override
-
-        self.state.text_translating = True
-        self.state.text_back_translating = True
-        # Clear previous streaming output so back-translation streaming starts clean
-        if self._is_local_streaming_preview_enabled():
-            self.state.text_streaming_preview = " "
-        else:
-            self.state.text_streaming_preview = None
-        self._streaming_preview_label = None
-        with client:
-            # Only refresh result panel and button (input panel is already in compact state)
-            self._refresh_result_panel()
-            self._update_translate_button_state()
-            self._refresh_tabs()  # Disable tabs during translation
-
-        error_message = None
-        try:
-            from yakulingo.services.exceptions import TranslationCancelledError
-
-            # Yield control to event loop before starting blocking operation
-            await asyncio.sleep(0)
-
-            # Streaming preview: update partial output while the backend generates output.
-            loop = asyncio.get_running_loop()
-            stream_handler = None
-            if self._is_local_streaming_preview_enabled():
-                stream_handler = self._create_text_streaming_preview_on_chunk(
-                    loop=loop,
-                    client_supplier=lambda: client,
-                    trace_id="back-translate",
-                    refresh_tabs_on_first_chunk=False,
-                    scroll_to_bottom=False,
-                    force_follow_on_first_chunk=False,
-                    log_context="Back-translate",
-                )
-
-            prompt = ""
-            reference_warnings: list[str] = []
-            output_language: str | None = None
-            text = text_override if text_override is not None else option.text
-            if not text.strip():
-                error_message = "戻し訳用のテキストを入力してください"
-            else:
-                option.back_translation_source_text = text
-
-            if not error_message and (
-                self.translation_service is None
-                and not self._ensure_translation_service()
-            ):
-                error_message = "翻訳サービスの初期化に失敗しました"
-
-            service = self.translation_service
-            if not error_message:
-                if service is None:
-                    error_message = "翻訳サービスの初期化に失敗しました"
-                else:
-                    output_language, template = (
-                        service.get_back_translation_text_template(text)
-                    )
-
-                if not template:
-                    error_message = "テキスト翻訳テンプレートが見つかりません"
-                else:
-                    prompt = template.replace("{input_text}", text)
-                    prompt = prompt.replace(
-                        "{text}", text
-                    )  # Backward-compatible placeholder
-                    prompt = prompt.replace("{reference_section}", "")
-
-            if not error_message:
-                result = ""
-                if service is not None:
-                    result = await asyncio.to_thread(
-                        service._translate_single_with_cancel,
-                        text,
-                        prompt,
-                        None,
-                        stream_handler,
-                    )
-
-                # Store raw result on the option (no parsing/normalization)
-                if result:
-                    option.back_translation_text = result
-                    option.back_translation_explanation = None
-                    if reference_warnings:
-                        try:
-                            with client:
-                                self._notify_warning_summary(reference_warnings)
-                        except Exception:
-                            logger.debug(
-                                "Failed to notify reference warnings", exc_info=True
-                            )
-                else:
-                    error_message = "戻し訳に失敗しました"
-
-        except TranslationCancelledError:
-            error_message = "翻訳がキャンセルされました"
-        except Exception as e:
-            error_message = str(e)
-        finally:
-            option.back_translation_in_progress = False
-            if error_message and not option.back_translation_text:
-                option.back_translation_error = error_message
-
-        self._on_text_translation_complete(client, error_message)
 
     def _build_follow_up_prompt(
         self,

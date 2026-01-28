@@ -3841,67 +3841,6 @@ html.yakulingo-drag-active .global-drop-indicator {
     color: color-mix(in srgb, var(--md-sys-color-on-surface) 38%, transparent) !important;
 }
 
-/* === Back-translate Button (M3 Text Button) === */
-.back-translate-btn {
-    height: var(--md-comp-button-height) !important;
-    font-size: var(--md-sys-typescale-size-xs) !important;
-    font-weight: 500 !important;
-    letter-spacing: 0.01em !important;
-    padding: 0 0.75rem !important;
-    color: var(--md-sys-color-primary) !important;
-    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard) !important;
-}
-
-.back-translate-btn:hover {
-    /* M3: State layer with primary color at hover opacity */
-    background: color-mix(in srgb, var(--md-sys-color-primary) calc(var(--md-sys-state-hover-opacity) * 100%), transparent) !important;
-}
-
-.back-translate-btn:active {
-    /* M3: State layer with primary color at pressed opacity */
-    background: color-mix(in srgb, var(--md-sys-color-primary) calc(var(--md-sys-state-pressed-opacity) * 100%), transparent) !important;
-}
-
-.back-translate-btn .q-icon {
-    margin-right: 0.25rem;
-}
-
-/* === Back-translate Inline Results === */
-.back-translate-expansion {
-    margin-top: 0.75rem;
-    border: 1px solid var(--md-sys-color-outline-variant);
-    border-radius: var(--md-sys-shape-corner-medium);
-    background: var(--md-sys-color-surface-container);
-}
-
-.back-translate-expansion .q-item {
-    padding: 0.5rem 0.75rem;
-    min-height: auto;
-}
-
-.back-translate-expansion .q-expansion-item__content {
-    padding: 0.75rem;
-}
-
-.back-translate-chip {
-    background: var(--md-sys-color-primary-container);
-    color: var(--md-sys-color-on-primary-container);
-}
-
-.back-translate-chip.edited {
-    background: var(--md-sys-color-warning-container);
-    color: var(--md-sys-color-on-warning-container);
-}
-
-.back-translate-content .option-text,
-.back-translate-content .translation-table table {
-    font-size: var(--md-sys-typescale-size-sm);
-}
-
-.back-translate-explanation {
-    margin-top: 0.5rem;
-}
-
 /* === Elapsed Time Badge === */
 .elapsed-time-badge {
     font-size: var(--md-sys-typescale-size-xs);

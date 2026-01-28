@@ -499,17 +499,6 @@ def _fix_to_jp_oku_numeric_unit_if_possible(
     return fixed, bool(count) and fixed != translated_text
 
 
-def _normalize_back_translation_text(
-    translated_text: str, output_language: str | None
-) -> str:
-    if not translated_text:
-        return translated_text
-    if (output_language or "").strip().lower() != "jp":
-        return translated_text
-    fixed_text, fixed = _fix_to_jp_oku_numeric_unit_if_possible(translated_text)
-    return fixed_text if fixed else translated_text
-
-
 def _strip_code_fences(text: str) -> str:
     if "```" not in text:
         return text
@@ -4225,27 +4214,6 @@ class TranslationService:
         detected, reason = language_detector.detect_local_with_reason(text)
         logger.debug("Language detected locally: %s (%s)", detected, reason)
         return detected, reason
-
-    def get_back_translation_text_template(self, text: str) -> tuple[str, str | None]:
-        """Select the prompt template used for back-translation.
-
-        Back-translation uses the same templates as regular text translation:
-        - Japanese input -> English output compare template
-        - Non-Japanese input -> Japanese output template
-
-        Returns (output_language, template).
-        """
-
-        detected_language = self.detect_language(text)
-        output_language = "en" if detected_language == "日本語" else "jp"
-        if output_language == "en":
-            template = self.prompt_builder.get_text_compare_template()
-        else:
-            template = self.prompt_builder.get_text_template(
-                output_language="jp",
-                translation_style="concise",
-            )
-        return output_language, template
 
     def _translate_text_with_options_local(
         self,

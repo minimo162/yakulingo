@@ -528,10 +528,7 @@ def _create_large_input_panel(
                                     handle_translate_click,
                                     js_handler=_build_action_feedback_js_handler(),
                                 )
-                                if (
-                                    state.text_translating
-                                    and not state.text_back_translating
-                                ):
+                                if state.text_translating:
                                     btn.props("loading disable")
                                 elif not state.can_translate():
                                     btn.props("disable")
@@ -575,9 +572,6 @@ def _create_large_input_panel(
 def create_text_result_panel(
     state: AppState,
     on_copy: Callable[[str], None],
-    on_back_translate: Optional[
-        Callable[[TranslationOption, Optional[str]], None]
-    ] = None,
     on_retry: Optional[Callable[[], None]] = None,
     on_edit: Optional[Callable[[], None]] = None,
     on_streaming_preview_label_created: Optional[Callable[[ui.label], None]] = None,
@@ -612,18 +606,15 @@ def create_text_result_panel(
             _render_source_text_section(source_text_to_display, on_copy)
 
         # Translation status + meta hero
-        has_status = (
-            state.text_translating
-            or state.text_back_translating
-            or (state.text_result and state.text_result.options)
+        has_status = state.text_translating or (
+            state.text_result and state.text_result.options
         )
         if has_status:
             with ui.element("div").classes("result-hero"):
-                if state.text_translating or state.text_back_translating:
+                if state.text_translating:
                     _render_translation_status(
                         state.text_detected_language,
                         translating=True,
-                        back_translating=state.text_back_translating,
                     )
                 elif state.text_result and state.text_result.options:
                     _render_translation_status(
@@ -647,7 +638,7 @@ def create_text_result_panel(
         primary_option = None
         secondary_options: list[TranslationOption] = []
         display_options: list[TranslationOption] = []
-        actions_disabled = state.text_translating or state.text_back_translating
+        actions_disabled = state.text_translating
 
         # Result meta is rendered in the hero block above.
 
@@ -658,10 +649,8 @@ def create_text_result_panel(
                 _render_results_to_jp(
                     state.text_result,
                     on_copy,
-                    on_back_translate,
                     elapsed_time,
                     on_retry,
-                    show_back_translate_button=False,
                     actions_disabled=actions_disabled,
                 )
             else:
@@ -670,7 +659,6 @@ def create_text_result_panel(
                     _render_results_to_en(
                         state.text_result,
                         on_copy,
-                        on_back_translate,
                         elapsed_time,
                         on_retry,
                         compare_mode="off",
@@ -698,13 +686,12 @@ def _render_translation_status(
     translating: bool = False,
     elapsed_time: Optional[float] = None,
     output_language: Optional[str] = None,
-    back_translating: bool = False,
 ):
     """
     Render translation status section.
 
     Shows:
-    - During translation: "英訳を実行中" / "和訳を実行中" / "逆翻訳を実行中"
+    - During translation: "英訳を実行中" / "和訳を実行中"
     - After translation: "英訳が完了しました" or "和訳が完了しました" with elapsed time
     """
     # Determine translation direction
@@ -713,12 +700,7 @@ def _render_translation_status(
     else:
         is_to_english = detected_language == "日本語"
 
-    if back_translating:
-        status_state = "back_translating"
-    elif translating:
-        status_state = "translating"
-    else:
-        status_state = "done"
+    status_state = "translating" if translating else "done"
 
     with (
         ui.element("div")
@@ -732,9 +714,7 @@ def _render_translation_status(
                 with ui.row().classes("items-center gap-2"):
                     if translating:
                         ui.spinner("dots", size="sm").classes("text-primary")
-                        if back_translating:
-                            ui.label("逆翻訳を実行中").classes("status-text")
-                        elif detected_language:
+                        if detected_language:
                             ui.label(
                                 "英訳を実行中" if is_to_english else "和訳を実行中"
                             ).classes("status-text")
@@ -752,8 +732,6 @@ def _render_translation_status(
                             ui.label(f"{elapsed_time:.1f}秒").classes(
                                 "elapsed-time-badge"
                             )
-                if back_translating:
-                    ui.label("逆翻訳: 逆方向で確認").classes("status-subtext")
 
 
 def _render_result_meta(state: AppState, result: TextTranslationResult) -> None:
@@ -781,9 +759,6 @@ def _render_empty_result_state():
 def _render_results_to_en(
     result: TextTranslationResult,
     on_copy: Callable[[str], None],
-    on_back_translate: Optional[
-        Callable[[TranslationOption, Optional[str]], None]
-    ] = None,
     elapsed_time: Optional[float] = None,
     on_retry: Optional[Callable[[], None]] = None,
     compare_mode: str = "off",
@@ -814,12 +789,10 @@ def _render_results_to_en(
                     _render_option_en(
                         option,
                         on_copy,
-                        on_back_translate,
                         is_last=index == len(display_options) - 1,
                         index=index,
                         show_style_badge=False,
                         diff_base_text=None,
-                        show_back_translate_button=True,
                         actions_disabled=actions_disabled,
                         table_hint=table_hint,
                     )
@@ -830,12 +803,8 @@ def _render_results_to_en(
 def _render_results_to_jp(
     result: TextTranslationResult,
     on_copy: Callable[[str], None],
-    on_back_translate: Optional[
-        Callable[[TranslationOption, Optional[str]], None]
-    ] = None,
     elapsed_time: Optional[float] = None,
     on_retry: Optional[Callable[[], None]] = None,
-    show_back_translate_button: bool = True,
     actions_disabled: bool = False,
 ):
     """Render →Japanese results: translations."""
@@ -871,35 +840,9 @@ def _render_results_to_jp(
                                     aria_label="訳文をコピー",
                                     tooltip="訳文をコピー",
                                 )
-                                if on_back_translate and show_back_translate_button:
-                                    back_btn = (
-                                        ui.button(
-                                            "逆翻訳",
-                                            icon="g_translate",
-                                            on_click=lambda o=option: on_back_translate(
-                                                o, None
-                                            ),
-                                        )
-                                        .props("flat no-caps size=sm")
-                                        .classes("back-translate-btn")
-                                        .tooltip("精度確認")
-                                    )
-                                    if (
-                                        actions_disabled
-                                        or option.back_translation_in_progress
-                                    ):
-                                        back_btn.props("disable")
 
                         # Translation text
                         _render_translation_text(option.text, table_hint=table_hint)
-
-                        has_back_translate = bool(
-                            option.back_translation_text
-                            or option.back_translation_error
-                            or option.back_translation_in_progress
-                        )
-                        if has_back_translate:
-                            _render_back_translate_section(option)
 
 
 def _tokenize_for_diff(text: str) -> list[str]:
@@ -1142,66 +1085,13 @@ def _render_translation_text(
     label.style("white-space: pre-wrap;")
 
 
-def _render_back_translate_section(option: TranslationOption) -> None:
-    """Render inline back-translation results inside a translation card."""
-    has_result = bool(option.back_translation_text)
-    has_error = bool(option.back_translation_error)
-    is_loading = option.back_translation_in_progress
-    if not (has_result or has_error or is_loading):
-        return
-    should_open = is_loading or has_result or has_error
-    source_text = option.back_translation_source_text
-    is_custom = bool(
-        source_text
-        and source_text.strip()
-        and source_text.strip() != option.text.strip()
-    )
-
-    with (
-        ui.expansion(
-            "逆翻訳結果",
-            icon="g_translate",
-            value=should_open,
-        )
-        .classes("back-translate-expansion")
-        .props("dense")
-    ):
-        with ui.column().classes("w-full gap-2 back-translate-content"):
-            with ui.row().classes("items-center gap-2 back-translate-header"):
-                ui.label("逆翻訳").classes("chip back-translate-chip")
-                if is_custom:
-                    ui.label("編集版").classes("chip back-translate-chip edited")
-                if is_loading:
-                    ui.spinner("dots", size="sm").classes("text-primary")
-                    ui.label("逆翻訳を実行中").classes("text-xs text-muted")
-                elif has_error:
-                    ui.icon("error").classes("text-error text-sm")
-                    ui.label(option.back_translation_error).classes(
-                        "text-xs text-error"
-                    )
-                elif has_result:
-                    ui.label("検証結果").classes("text-xs text-muted")
-
-            if is_loading:
-                return
-            if has_error and not has_result:
-                return
-
-            if option.back_translation_text:
-                _render_translation_text(option.back_translation_text)
-
-
 def _render_option_en(
     option: TranslationOption,
     on_copy: Callable[[str], None],
-    on_back_translate: Optional[
-        Callable[[TranslationOption, Optional[str]], None]
-    ] = None,
     is_last: bool = False,
     index: int = 0,
     show_style_badge: bool = False,
     diff_base_text: Optional[str] = None,
-    show_back_translate_button: bool = True,
     actions_disabled: bool = False,
     table_hint: Optional[_TabularTextHint] = None,
 ):
@@ -1243,19 +1133,6 @@ def _render_option_en(
                         aria_label=f"訳文をコピー{copy_suffix}",
                         tooltip=f"訳文をコピー{copy_suffix}",
                     )
-                    if on_back_translate and show_back_translate_button:
-                        back_btn = (
-                            ui.button(
-                                "逆翻訳",
-                                icon="g_translate",
-                                on_click=lambda o=option: on_back_translate(o, None),
-                            )
-                            .props("flat no-caps size=sm")
-                            .classes("back-translate-btn")
-                            .tooltip("精度確認")
-                        )
-                        if actions_disabled or option.back_translation_in_progress:
-                            back_btn.props("disable")
 
             # Translation text
             _render_translation_text(
@@ -1263,11 +1140,3 @@ def _render_option_en(
                 diff_base_text=diff_base_text,
                 table_hint=table_hint,
             )
-
-            has_back_translate = bool(
-                option.back_translation_text
-                or option.back_translation_error
-                or option.back_translation_in_progress
-            )
-            if has_back_translate:
-                _render_back_translate_section(option)

@@ -89,7 +89,6 @@ class AppState:
     text_view_state: TextViewState = TextViewState.INPUT  # Current view state
     source_text: str = ""
     text_translating: bool = False
-    text_back_translating: bool = False
     text_detected_language: Optional[str] = None  # Auto-detected source language
     text_detected_language_reason: Optional[str] = None  # Local detection reason for UI
     text_output_language_override: Optional[str] = (
@@ -195,7 +194,6 @@ class AppState:
         self.text_view_state = TextViewState.INPUT
         self.source_text = ""
         self.text_translating = False
-        self.text_back_translating = False
         self.text_detected_language = None
         self.text_detected_language_reason = None
         self.text_output_language_override = None
@@ -234,7 +232,6 @@ class AppState:
             return (
                 bool(self.source_text.strip())
                 and not self.text_translating
-                and not self.text_back_translating
                 and backend_ready
             )
         elif self.current_tab == Tab.FILE:
@@ -244,7 +241,7 @@ class AppState:
     def is_translating(self) -> bool:
         """Check if translation is in progress"""
         if self.current_tab == Tab.TEXT:
-            return self.text_translating or self.text_back_translating
+            return self.text_translating
         elif self.current_tab == Tab.FILE:
             return self.file_state == FileState.TRANSLATING
         return False

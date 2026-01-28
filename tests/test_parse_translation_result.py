@@ -7,3 +7,10 @@ def test_parse_translation_result_returns_raw() -> None:
     text, explanation = parse_translation_result("Translation: Hello")
     assert text == "Translation: Hello"
     assert explanation == ""
+
+
+def test_parse_translation_result_preserves_whitespace() -> None:
+    raw = "  Translation:\n\nHello\n"
+    text, explanation = parse_translation_result(raw)
+    assert text == raw
+    assert explanation == ""

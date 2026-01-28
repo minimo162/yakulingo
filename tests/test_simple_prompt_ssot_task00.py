@@ -36,6 +36,10 @@ def test_prompt_builder_appends_simple_prompt_en() -> None:
         "You are a professional Japanese (ja) to English (en) translator."
     )
     assert (
+        "Produce only the English translation, without any additional explanations or commentary."
+        in simple
+    )
+    assert (
         f"Please translate the following Japanese text into English:\n\n\n{normalized}"
     ) in simple
 
@@ -56,6 +60,10 @@ def test_prompt_builder_appends_simple_prompt_jp() -> None:
 
     assert simple.startswith(
         "You are a professional English (en) to Japanese (ja) translator."
+    )
+    assert (
+        "Produce only the Japanese translation, without any additional explanations or commentary."
+        in simple
     )
     assert (
         f"Please translate the following English text into Japanese:\n\n\n{normalized}"
@@ -83,6 +91,10 @@ def test_local_prompt_builder_includes_simple_prompt_core() -> None:
 
     assert simple.startswith(
         "You are a professional Japanese (ja) to English (en) translator."
+    )
+    assert (
+        "Produce only the English translation, without any additional explanations or commentary."
+        in simple
     )
     assert (
         f"Please translate the following Japanese text into English:\n\n\n{normalized}"

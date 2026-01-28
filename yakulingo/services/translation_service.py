@@ -3915,8 +3915,6 @@ class TranslationService:
         if prompt_builder is None:
             return configured, configured_source
 
-        from yakulingo.services.local_ai_client import _select_system_prompt
-
         min_limit = (
             configured
             if configured < BatchTranslator._MIN_SPLIT_BATCH_CHARS
@@ -3958,11 +3956,9 @@ class TranslationService:
             except Exception:
                 return configured, configured_source
 
-            system_prompt = _select_system_prompt(prompt)
-            system_tokens = self._estimate_local_prompt_tokens(system_prompt)
             prompt_tokens = self._estimate_local_prompt_tokens(prompt)
             repeated_prompt_tokens = prompt_tokens * 2 + 2
-            total_tokens = system_tokens + repeated_prompt_tokens + max_tokens
+            total_tokens = repeated_prompt_tokens + max_tokens
 
             if total_tokens + safety_total <= ctx_size:
                 if candidate == configured:

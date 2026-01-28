@@ -29,23 +29,6 @@ _DIAGNOSTIC_SNIPPET_CHARS = 200
 _SSE_DELTA_COALESCE_MIN_CHARS = 256
 _SSE_DELTA_COALESCE_MAX_INTERVAL_SEC = 0.18
 
-_SYSTEM_TRANSLATION_PROMPT_EN = (
-    "You are a translation engine.\n"
-    "Reply in English only (no CJK/Hangul).\n"
-    "Follow the user's prompt exactly.\n"
-    "- Do not copy example placeholders.\n"
-    "- Do not repeat the input unless explicitly asked.\n"
-    "- Output only in the requested format (e.g., JSON only).\n"
-)
-_SYSTEM_TRANSLATION_PROMPT_JP = (
-    "You are a translation engine.\n"
-    "Reply in Japanese only.\n"
-    "Follow the user's prompt exactly.\n"
-    "- Do not copy example placeholders.\n"
-    "- Do not repeat the input unless explicitly asked.\n"
-    "- Output only in the requested format (e.g., JSON only).\n"
-)
-
 _PROMPT_REPEAT_SEPARATOR = "\n\n"
 
 
@@ -69,14 +52,6 @@ def _sent_prompt(prompt: str | None, *, repeat: bool) -> str:
 
 def _sent_prompt_len(prompt: str | None, *, repeat: bool) -> int:
     return _repeat_prompt_twice_len(prompt) if repeat else len(prompt or "")
-
-
-def _select_system_prompt(prompt: str) -> str:
-    return (
-        _SYSTEM_TRANSLATION_PROMPT_JP
-        if "EN->JP" in (prompt or "")
-        else _SYSTEM_TRANSLATION_PROMPT_EN
-    )
 
 
 def _is_hy_mt_model(runtime: LocalAIServerRuntime) -> bool:
@@ -894,11 +869,6 @@ class LocalAIClient:
         original_prompt = prompt or ""
         user_prompt = _sent_prompt(original_prompt, repeat=repeat_prompt)
         messages: list[dict[str, str]] = [{"role": "user", "content": user_prompt}]
-        if not _is_hy_mt_model(runtime):
-            messages.insert(
-                0,
-                {"role": "system", "content": _select_system_prompt(original_prompt)},
-            )
         payload: dict[str, object] = {
             "model": runtime.model_id or runtime.model_path.name,
             "messages": messages,

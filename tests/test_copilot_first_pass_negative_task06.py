@@ -20,8 +20,6 @@ class NegativePromptAwareCopilot:
     ) -> str:
         _ = (text, reference_files, on_chunk)
         self.calls.append({"prompt": prompt})
-        if "CRITICAL: Convert ▲ negative numbers to parentheses" in prompt:
-            return "Translation:\nOperating profit was (50)."
         return "Translation:\nOperating profit was -50."
 
 
@@ -31,12 +29,12 @@ def _make_service() -> TranslationService:
     return TranslationService(config=AppSettings(), prompts_dir=prompts_dir)
 
 
-def test_copilot_to_en_includes_negative_rule_guard_on_first_pass_when_needed() -> None:
+def test_copilot_to_en_applies_negative_fix_without_prompt_injection() -> None:
     service = _make_service()
     copilot = NegativePromptAwareCopilot()
 
     result = service._translate_text_with_options_via_prompt_builder(
-        text="前年差は▲50です。",
+        text="営業利益は▲50でした。",
         reference_files=None,
         style="minimal",
         detected_language="日本語",
@@ -47,6 +45,8 @@ def test_copilot_to_en_includes_negative_rule_guard_on_first_pass_when_needed() 
 
     assert result.output_language == "en"
     assert result.options and "(50)" in result.options[0].text
+    assert copilot.calls
+    assert "CRITICAL" not in copilot.calls[0]["prompt"]
     metadata = result.metadata or {}
     assert metadata.get("backend") == "local"
     assert metadata.get("backend_call_count") == 1

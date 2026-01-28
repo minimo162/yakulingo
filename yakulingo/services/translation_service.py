@@ -2537,11 +2537,11 @@ class BatchTranslator:
                     continue
                 if output_language == "en" and _RE_HANGUL.search(cleaned_text):
                     hangul_indices.append(idx)
-                    cleaned_unique_translations.append(cleaned_text)
+                    cleaned_unique_translations.append("")
                     continue
                 if self._is_output_language_mismatch(cleaned_text, output_language):
                     output_language_mismatch_indices.append(idx)
-                    cleaned_unique_translations.append(cleaned_text)
+                    cleaned_unique_translations.append("")
                     continue
                 if self._should_retry_translation(
                     unique_texts[idx], cleaned_text, output_language
@@ -2552,205 +2552,20 @@ class BatchTranslator:
                     continue
                 cleaned_unique_translations.append(cleaned_text)
 
-            if (
-                hangul_indices
-                and output_language == "en"
-                and not self._cancel_event.is_set()
-            ):
-                repair_texts = [unique_texts[idx] for idx in hangul_indices]
-                repair_prompt = self.prompt_builder.build_batch(
-                    repair_texts,
-                    has_reference_files=has_refs,
-                    output_language=output_language,
-                    translation_style=translation_style,
-                    include_item_ids=include_item_ids,
-                    reference_files=reference_files,
-                )
-                repair_prompt = _insert_extra_instruction(
-                    repair_prompt,
-                    self._EN_NO_HANGUL_INSTRUCTION,
-                )
+            if hangul_indices and output_language == "en":
                 logger.warning(
-                    "Batch %d: Hangul detected in %d English translations; retrying with stricter prompt",
+                    "Batch %d: Hangul detected in %d English translations; using fallback",
                     i + 1,
                     len(hangul_indices),
                 )
-                try:
-                    client = self._require_client()
-                    lock = self._client_lock or nullcontext()
-                    with lock:
-                        client.set_cancel_callback(lambda: self._cancel_event.is_set())
-                        try:
-                            repair_translations = client.translate_sync(
-                                repair_texts,
-                                repair_prompt,
-                                files_to_attach,
-                                True,
-                                timeout=self.request_timeout,
-                                include_item_ids=include_item_ids,
-                            )
-                        finally:
-                            client.set_cancel_callback(None)
-                except TranslationCancelledError:
-                    logger.info(
-                        "Translation cancelled during batch %d/%d", i + 1, len(batches)
-                    )
-                    cancelled = True
-                    break
 
-                if len(repair_translations) != len(repair_texts):
-                    logger.warning(
-                        "Batch %d: Hangul retry count mismatch: expected %d, got %d; using fallbacks where needed",
-                        i + 1,
-                        len(repair_texts),
-                        len(repair_translations),
-                    )
-                    if len(repair_translations) < len(repair_texts):
-                        repair_translations = repair_translations + (
-                            [""] * (len(repair_texts) - len(repair_translations))
-                        )
-                    else:
-                        repair_translations = repair_translations[: len(repair_texts)]
-
-                for repair_pos, repaired_text in enumerate(repair_translations):
-                    original_idx = hangul_indices[repair_pos]
-                    cleaned_repair = self._clean_batch_translation(repaired_text)
-                    if (
-                        not cleaned_repair
-                        or not cleaned_repair.strip()
-                        or _RE_HANGUL.search(cleaned_repair)
-                    ):
-                        preview = unique_texts[original_idx][:50].replace("\n", " ")
-                        logger.warning(
-                            "Batch %d: Hangul retry failed for text '%s'; using fallback/retry flow",
-                            i + 1,
-                            preview,
-                        )
-                        cleaned_unique_translations[original_idx] = ""
-                    else:
-                        cleaned_unique_translations[original_idx] = cleaned_repair
-
-            if (
-                output_language_mismatch_indices
-                and output_language in ("en", "jp")
-                and not self._cancel_event.is_set()
-            ):
-                # Extend with mismatches introduced by the Hangul repair path (if any).
-                existing = set(output_language_mismatch_indices)
-                for idx, translated_text in enumerate(cleaned_unique_translations):
-                    if idx in existing:
-                        continue
-                    if not translated_text or not translated_text.strip():
-                        continue
-                    if self._is_output_language_mismatch(
-                        translated_text, output_language
-                    ):
-                        existing.add(idx)
-                        output_language_mismatch_indices.append(idx)
-
-                if output_language_mismatch_indices:
-                    repair_texts = [
-                        unique_texts[idx] for idx in output_language_mismatch_indices
-                    ]
-                    repair_prompt = self.prompt_builder.build_batch(
-                        repair_texts,
-                        has_reference_files=has_refs,
-                        output_language=output_language,
-                        translation_style=translation_style,
-                        include_item_ids=include_item_ids,
-                        reference_files=reference_files,
-                    )
-                    extra_instruction = (
-                        self._EN_STRICT_OUTPUT_LANGUAGE_INSTRUCTION
-                        if output_language == "en"
-                        else self._JP_STRICT_OUTPUT_LANGUAGE_INSTRUCTION
-                    )
-                    repair_prompt = _insert_extra_instruction(
-                        repair_prompt,
-                        extra_instruction,
-                    )
-                    logger.warning(
-                        "Batch %d: Output language mismatch detected in %d translations (target=%s); retrying with stricter prompt",
-                        i + 1,
-                        len(output_language_mismatch_indices),
-                        output_language,
-                    )
-                    try:
-                        client = self._require_client()
-                        lock = self._client_lock or nullcontext()
-                        with lock:
-                            client.set_cancel_callback(
-                                lambda: self._cancel_event.is_set()
-                            )
-                            try:
-                                repair_translations = client.translate_sync(
-                                    repair_texts,
-                                    repair_prompt,
-                                    files_to_attach,
-                                    True,
-                                    timeout=self.request_timeout,
-                                    include_item_ids=include_item_ids,
-                                )
-                            finally:
-                                client.set_cancel_callback(None)
-                    except TranslationCancelledError:
-                        logger.info(
-                            "Translation cancelled during batch %d/%d",
-                            i + 1,
-                            len(batches),
-                        )
-                        cancelled = True
-                        break
-
-                    if len(repair_translations) != len(repair_texts):
-                        logger.warning(
-                            "Batch %d: Output language retry count mismatch: expected %d, got %d; using fallbacks where needed",
-                            i + 1,
-                            len(repair_texts),
-                            len(repair_translations),
-                        )
-                        if len(repair_translations) < len(repair_texts):
-                            repair_translations = repair_translations + (
-                                [""] * (len(repair_texts) - len(repair_translations))
-                            )
-                        else:
-                            repair_translations = repair_translations[
-                                : len(repair_texts)
-                            ]
-
-                    for repair_pos, repaired_text in enumerate(repair_translations):
-                        original_idx = output_language_mismatch_indices[repair_pos]
-                        cleaned_repair = self._clean_batch_translation(repaired_text)
-                        if self._is_output_language_mismatch(
-                            cleaned_repair, output_language
-                        ):
-                            preview = unique_texts[original_idx][:50].replace("\n", " ")
-                            logger.warning(
-                                "Batch %d: Output language retry failed for text '%s'; using fallback/retry flow",
-                                i + 1,
-                                preview,
-                            )
-                            cleaned_unique_translations[original_idx] = ""
-                        elif not cleaned_repair or not cleaned_repair.strip():
-                            cleaned_unique_translations[original_idx] = ""
-                        else:
-                            cleaned_unique_translations[original_idx] = cleaned_repair
-
-                # Safety: never accept mismatched outputs.
-                for idx in output_language_mismatch_indices:
-                    translated_text = (
-                        cleaned_unique_translations[idx]
-                        if idx < len(cleaned_unique_translations)
-                        else ""
-                    )
-                    if (
-                        translated_text
-                        and translated_text.strip()
-                        and self._is_output_language_mismatch(
-                            translated_text, output_language
-                        )
-                    ):
-                        cleaned_unique_translations[idx] = ""
+            if output_language_mismatch_indices and output_language in ("en", "jp"):
+                logger.warning(
+                    "Batch %d: Output language mismatch detected in %d translations (target=%s); using fallback",
+                    i + 1,
+                    len(output_language_mismatch_indices),
+                    output_language,
+                )
 
             if output_language == "en" and not self._cancel_event.is_set():
                 auto_fixed_numeric = 0
@@ -2783,147 +2598,13 @@ class BatchTranslator:
                     )
                 ]
                 if numeric_rule_violation_indices:
-                    retry_instruction = (
-                        "- CRITICAL: Follow numeric conversion rules strictly. "
-                        "Do not use 'billion', 'trillion', or 'bn'. Use 'oku' (and 'k') "
-                        "exactly as specified. If numeric hints are provided, use them verbatim."
+                    logger.warning(
+                        "Batch %d: Numeric rule violations remain in %d items; using fallback",
+                        i + 1,
+                        len(numeric_rule_violation_indices),
                     )
-                    max_retry_items = 20
-                    max_retry_chars = min(batch_char_limit, 2000)
-                    retry_indices: list[int] = []
-                    retry_texts: list[str] = []
-                    total_chars = 0
                     for idx in numeric_rule_violation_indices:
-                        if len(retry_texts) >= max_retry_items:
-                            break
-                        text_to_retry = unique_texts[idx]
-                        if not text_to_retry:
-                            continue
-                        if (
-                            retry_texts
-                            and total_chars + len(text_to_retry) > max_retry_chars
-                        ):
-                            break
-                        retry_indices.append(idx)
-                        retry_texts.append(text_to_retry)
-                        total_chars += len(text_to_retry)
-
-                    if retry_texts:
-                        repair_prompt = self.prompt_builder.build_batch(
-                            retry_texts,
-                            has_reference_files=has_refs,
-                            output_language=output_language,
-                            translation_style=translation_style,
-                            include_item_ids=include_item_ids,
-                            reference_files=reference_files,
-                        )
-                        numeric_hints = _build_to_en_numeric_hints(
-                            "\n".join(retry_texts)
-                        )
-                        extra_instruction_parts = [retry_instruction]
-                        if numeric_hints:
-                            extra_instruction_parts.append(numeric_hints.strip())
-                        repair_prompt = _insert_extra_instruction(
-                            repair_prompt,
-                            "\n\n".join(extra_instruction_parts),
-                        )
-                        logger.warning(
-                            "Batch %d: Numeric rule violation detected in %d translations; retrying %d items",
-                            i + 1,
-                            len(numeric_rule_violation_indices),
-                            len(retry_texts),
-                        )
-                        repair_translations: list[str] = []
-                        try:
-                            client = self._require_client()
-                            lock = self._client_lock or nullcontext()
-                            with lock:
-                                client.set_cancel_callback(
-                                    lambda: self._cancel_event.is_set()
-                                )
-                                try:
-                                    repair_translations = client.translate_sync(
-                                        retry_texts,
-                                        repair_prompt,
-                                        files_to_attach,
-                                        True,
-                                        timeout=self.request_timeout,
-                                        include_item_ids=include_item_ids,
-                                    )
-                                finally:
-                                    client.set_cancel_callback(None)
-                        except TranslationCancelledError:
-                            logger.info(
-                                "Translation cancelled during batch %d/%d",
-                                i + 1,
-                                len(batches),
-                            )
-                            cancelled = True
-                            break
-                        except RuntimeError as e:
-                            logger.warning(
-                                "Batch %d: Numeric rule retry failed: %s", i + 1, e
-                            )
-
-                        if repair_translations:
-                            if len(repair_translations) != len(retry_texts):
-                                logger.warning(
-                                    "Batch %d: Numeric rule retry count mismatch: expected %d, got %d; keeping original translations where needed",
-                                    i + 1,
-                                    len(retry_texts),
-                                    len(repair_translations),
-                                )
-                                if len(repair_translations) < len(retry_texts):
-                                    repair_translations = repair_translations + (
-                                        [""]
-                                        * (len(retry_texts) - len(repair_translations))
-                                    )
-                                else:
-                                    repair_translations = repair_translations[
-                                        : len(retry_texts)
-                                    ]
-
-                            updated_count = 0
-                            for repair_pos, repaired_text in enumerate(
-                                repair_translations
-                            ):
-                                original_idx = retry_indices[repair_pos]
-                                cleaned_repair = self._clean_batch_translation(
-                                    repaired_text
-                                )
-                                if not cleaned_repair or not cleaned_repair.strip():
-                                    continue
-                                cleaned_repair, _ = (
-                                    _fix_to_en_oku_numeric_unit_if_possible(
-                                        source_text=unique_texts[original_idx],
-                                        translated_text=cleaned_repair,
-                                    )
-                                )
-                                if _RE_HANGUL.search(cleaned_repair):
-                                    continue
-                                if self._is_output_language_mismatch(
-                                    cleaned_repair, output_language
-                                ):
-                                    continue
-                                if _looks_incomplete_translation_to_en(
-                                    unique_texts[original_idx], cleaned_repair
-                                ):
-                                    continue
-                                if _needs_to_en_numeric_rule_retry(
-                                    unique_texts[original_idx], cleaned_repair
-                                ):
-                                    continue
-                                cleaned_unique_translations[original_idx] = (
-                                    cleaned_repair
-                                )
-                                updated_count += 1
-                            if updated_count:
-                                logger.debug(
-                                    "Batch %d: Numeric rule retry updated %d/%d items",
-                                    i + 1,
-                                    updated_count,
-                                    len(retry_texts),
-                                )
+                        cleaned_unique_translations[idx] = ""
 
             if (
                 is_local_backend
@@ -2931,7 +2612,6 @@ class BatchTranslator:
                 and not self._cancel_event.is_set()
             ):
                 rule_violation_indices: list[int] = []
-                rule_reasons_by_index: dict[int, list[str]] = {}
 
                 for idx, translated_text in enumerate(cleaned_unique_translations):
                     if not translated_text or not translated_text.strip():
@@ -2974,159 +2654,8 @@ class BatchTranslator:
                             continue
 
                     rule_violation_indices.append(idx)
-                    rule_reasons_by_index[idx] = reasons
 
                 if rule_violation_indices:
-                    max_retry_items = 20
-                    max_retry_chars = min(batch_char_limit, 2000)
-                    rule_retry_indices: list[int] = []
-                    rule_retry_texts: list[str] = []
-                    retry_reasons: set[str] = set()
-                    total_chars = 0
-
-                    for idx in rule_violation_indices:
-                        if len(rule_retry_texts) >= max_retry_items:
-                            break
-                        text_to_retry = unique_texts[idx]
-                        if not text_to_retry:
-                            continue
-                        if (
-                            rule_retry_texts
-                            and total_chars + len(text_to_retry) > max_retry_chars
-                        ):
-                            break
-                        rule_retry_indices.append(idx)
-                        rule_retry_texts.append(text_to_retry)
-                        total_chars += len(text_to_retry)
-                        retry_reasons.update(rule_reasons_by_index.get(idx, ()))
-
-                    if rule_retry_texts and retry_reasons:
-                        retry_instruction = _build_to_en_rule_retry_instruction(
-                            sorted(retry_reasons)
-                        )
-                        repair_prompt = self.prompt_builder.build_batch(
-                            rule_retry_texts,
-                            has_reference_files=has_refs,
-                            output_language=output_language,
-                            translation_style=translation_style,
-                            include_item_ids=include_item_ids,
-                            reference_files=reference_files,
-                        )
-                        repair_prompt = _insert_extra_instruction(
-                            repair_prompt,
-                            retry_instruction,
-                        )
-                        logger.warning(
-                            "Batch %d: Rule violation detected in %d translations; retrying %d items",
-                            i + 1,
-                            len(rule_violation_indices),
-                            len(rule_retry_texts),
-                        )
-                        repair_translations: list[str] = []
-                        try:
-                            client = self._require_client()
-                            lock = self._client_lock or nullcontext()
-                            with lock:
-                                client.set_cancel_callback(
-                                    lambda: self._cancel_event.is_set()
-                                )
-                                try:
-                                    repair_translations = client.translate_sync(
-                                        rule_retry_texts,
-                                        repair_prompt,
-                                        files_to_attach,
-                                        True,
-                                        timeout=self.request_timeout,
-                                        include_item_ids=include_item_ids,
-                                    )
-                                finally:
-                                    client.set_cancel_callback(None)
-                        except TranslationCancelledError:
-                            logger.info(
-                                "Translation cancelled during batch %d/%d",
-                                i + 1,
-                                len(batches),
-                            )
-                            cancelled = True
-                            break
-                        except RuntimeError as e:
-                            logger.warning("Batch %d: Rule retry failed: %s", i + 1, e)
-
-                        if repair_translations:
-                            if len(repair_translations) != len(rule_retry_texts):
-                                logger.warning(
-                                    "Batch %d: Rule retry count mismatch: expected %d, got %d; keeping original translations where needed",
-                                    i + 1,
-                                    len(rule_retry_texts),
-                                    len(repair_translations),
-                                )
-                                if len(repair_translations) < len(rule_retry_texts):
-                                    repair_translations = repair_translations + (
-                                        [""]
-                                        * (
-                                            len(rule_retry_texts)
-                                            - len(repair_translations)
-                                        )
-                                    )
-                                else:
-                                    repair_translations = repair_translations[
-                                        : len(rule_retry_texts)
-                                    ]
-
-                            updated_count = 0
-                            for repair_pos, repaired_text in enumerate(
-                                repair_translations
-                            ):
-                                original_idx = rule_retry_indices[repair_pos]
-                                cleaned_repair = self._clean_batch_translation(
-                                    repaired_text
-                                )
-                                if not cleaned_repair or not cleaned_repair.strip():
-                                    continue
-                                if _RE_HANGUL.search(cleaned_repair):
-                                    continue
-                                if self._is_output_language_mismatch(
-                                    cleaned_repair, output_language
-                                ):
-                                    continue
-                                if _looks_incomplete_translation_to_en(
-                                    unique_texts[original_idx], cleaned_repair
-                                ):
-                                    continue
-
-                                fixed_text = cleaned_repair
-                                fixed_text, _ = _fix_to_en_k_notation_if_possible(
-                                    source_text=unique_texts[original_idx],
-                                    translated_text=fixed_text,
-                                )
-                                fixed_text, _ = _fix_to_en_negative_parens_if_possible(
-                                    source_text=unique_texts[original_idx],
-                                    translated_text=fixed_text,
-                                )
-                                fixed_text, _ = _fix_to_en_month_abbrev_if_possible(
-                                    source_text=unique_texts[original_idx],
-                                    translated_text=fixed_text,
-                                )
-                                cleaned_repair = fixed_text
-
-                                if _collect_to_en_rule_retry_reasons(
-                                    unique_texts[original_idx], cleaned_repair
-                                ):
-                                    continue
-
-                                cleaned_unique_translations[original_idx] = (
-                                    cleaned_repair
-                                )
-                                updated_count += 1
-
-                            if updated_count:
-                                logger.debug(
-                                    "Batch %d: Rule retry updated %d/%d items",
-                                    i + 1,
-                                    updated_count,
-                                    len(rule_retry_texts),
-                                )
-
                     remaining_count = 0
                     for idx in rule_violation_indices:
                         translated_text = cleaned_unique_translations[idx]
@@ -3415,9 +2944,7 @@ class BatchTranslator:
         processed_blocks = 0
         backend_calls = 0
 
-        def translate_single(
-            text: str, *, skip_clear_wait: bool, extra_instruction: str = ""
-        ):
+        def translate_single(text: str, *, skip_clear_wait: bool):
             prompt = self.prompt_builder.build_batch(
                 [text],
                 has_reference_files=has_refs,
@@ -3426,8 +2953,6 @@ class BatchTranslator:
                 include_item_ids=include_item_ids,
                 reference_files=reference_files,
             )
-            if extra_instruction:
-                prompt = _insert_extra_instruction(prompt, extra_instruction)
             client = self._require_client()
             lock = self._client_lock or nullcontext()
             with lock:
@@ -3492,9 +3017,7 @@ class BatchTranslator:
 
             skip_clear_wait = backend_calls > 0
             try:
-                raw_list = translate_single(
-                    block.text, skip_clear_wait=skip_clear_wait, extra_instruction=""
-                )
+                raw_list = translate_single(block.text, skip_clear_wait=skip_clear_wait)
             except TranslationCancelledError:
                 cancelled = True
                 break
@@ -3537,43 +3060,6 @@ class BatchTranslator:
                 continue
 
             translated_text = self._clean_batch_translation(raw_list[0])
-
-            # Optional: retry once when the output language is clearly mismatched.
-            if (
-                translated_text
-                and translated_text.strip()
-                and output_language in ("en", "jp")
-                and self._is_output_language_mismatch(translated_text, output_language)
-                and not self._cancel_event.is_set()
-            ):
-                extra_instruction = (
-                    self._EN_STRICT_OUTPUT_LANGUAGE_INSTRUCTION
-                    if output_language == "en"
-                    else self._JP_STRICT_OUTPUT_LANGUAGE_INSTRUCTION
-                )
-                try:
-                    retry_list = translate_single(
-                        block.text,
-                        skip_clear_wait=True,
-                        extra_instruction=extra_instruction,
-                    )
-                except TranslationCancelledError:
-                    cancelled = True
-                    break
-                except RuntimeError as e:
-                    logger.warning("Single-unit retry failed: %s", e)
-                    retry_list = []
-
-                if isinstance(retry_list, list) and len(retry_list) == 1:
-                    retry_clean = self._clean_batch_translation(retry_list[0])
-                    if (
-                        retry_clean
-                        and retry_clean.strip()
-                        and not self._is_output_language_mismatch(
-                            retry_clean, output_language
-                        )
-                    ):
-                        translated_text = retry_clean
 
             if not translated_text or not translated_text.strip():
                 untranslated_block_ids.append(block.id)
@@ -4733,14 +4219,6 @@ class TranslationService:
                         metadata=metadata,
                     )
 
-                needs_numeric_rule_retry = False
-                if not needs_output_language_retry:
-                    needs_numeric_rule_retry = (
-                        _needs_to_en_numeric_rule_retry_conservative_after_safe_fix(
-                            text, translation
-                        )
-                    )
-
                 if not needs_output_language_retry:
                     fixed_text, fixed = _fix_to_en_negative_parens_if_possible(
                         source_text=text,
@@ -4789,19 +4267,11 @@ class TranslationService:
                     if needs_length_retry:
                         metadata["to_en_length_violation"] = True
 
+                needs_numeric_rule_retry = False
+                needs_rule_retry = False
                 rule_retry_reasons: list[str] = []
-                rule_retry_reasons = _collect_to_en_rule_retry_reasons(
-                    text, translation
-                )
-                needs_rule_retry = bool(rule_retry_reasons)
 
-                if (
-                    needs_output_language_retry
-                    or needs_numeric_rule_retry
-                    or needs_rule_retry
-                    or needs_ellipsis_retry
-                    or needs_placeholder_retry
-                ):
+                if False:
                     if _LOCAL_AI_TIMING_ENABLED:
                         retry_reasons: list[str] = []
                         if needs_output_language_retry:
@@ -5018,13 +4488,6 @@ class TranslationService:
                     translation = fixed_text
                     metadata["to_en_month_abbrev_correction"] = True
 
-                if (
-                    needs_numeric_rule_retry
-                    and _needs_to_en_numeric_rule_retry_conservative(text, translation)
-                ):
-                    metadata["to_en_numeric_rule_retry_failed"] = True
-                    metadata["to_en_numeric_rule_retry_failed_styles"] = [style]
-
                 if metadata.get("to_en_rule_retry"):
                     remaining = _collect_to_en_rule_retry_reasons(text, translation)
                     if remaining:
@@ -5184,11 +4647,7 @@ class TranslationService:
                     detected_language=detected_language,
                     metadata=metadata,
                 )
-            if (
-                needs_output_language_retry
-                or needs_ellipsis_retry
-                or needs_placeholder_retry
-            ):
+            if False:
                 if _LOCAL_AI_TIMING_ENABLED:
                     reasons: list[str] = []
                     if needs_output_language_retry:
@@ -5711,7 +5170,7 @@ class TranslationService:
                         metadata=metadata,
                     )
 
-            if needs_retry:
+            if False:
                 retry_parts: list[str] = []
                 if mismatch_styles:
                     retry_parts.append(
@@ -5962,43 +5421,14 @@ class TranslationService:
                 reference_section = ""
                 files_to_attach = None
 
-            numeric_hints = _build_to_en_numeric_hints(text)
-            first_pass_parts: list[str] = [
-                _TEXT_TO_EN_OUTPUT_LANGUAGE_RETRY_INSTRUCTION,
-            ]
-            if _RE_JP_TRIANGLE_NEGATIVE_NUMBER.search(text):
-                first_pass_parts.append(_TEXT_TO_EN_NEGATIVE_RULE_INSTRUCTION)
-            if numeric_hints:
-                first_pass_parts.append(_TEXT_TO_EN_NUMERIC_RULE_INSTRUCTION)
-
-            def build_compare_prompt(extra_instruction: Optional[str] = None) -> str:
-                prompt = self.prompt_builder._apply_placeholders(
+            def build_compare_prompt() -> str:
+                return self.prompt_builder._apply_placeholders(
                     template=template,
                     reference_section=reference_section,
                     input_text=text,
                     output_language="en",
                     translation_style=style,
                 )
-                extra_parts: list[str] = []
-                seen: set[str] = set()
-
-                def add_part(value: str | None) -> None:
-                    if not value:
-                        return
-                    normalized = value.strip()
-                    if not normalized or normalized in seen:
-                        return
-                    seen.add(normalized)
-                    extra_parts.append(normalized)
-
-                for part in first_pass_parts:
-                    add_part(part)
-                add_part(extra_instruction)
-                add_part(numeric_hints)
-
-                if extra_parts:
-                    prompt = _insert_extra_instruction(prompt, "\n\n".join(extra_parts))
-                return prompt
 
             def parse_compare_result(
                 raw_result: str,
@@ -6057,7 +5487,7 @@ class TranslationService:
                     text, result.options[0].text
                 )
             )
-            if needs_output_language_retry or needs_numeric_rule_retry:
+            if False:
                 retry_phase_parts: list[str] = []
                 if needs_output_language_retry:
                     retry_phase_parts.append("output_language_retry")
@@ -6072,7 +5502,7 @@ class TranslationService:
                     retry_parts.append(_TEXT_TO_EN_OUTPUT_LANGUAGE_RETRY_INSTRUCTION)
                 if needs_numeric_rule_retry:
                     retry_parts.append(_TEXT_TO_EN_NUMERIC_RULE_INSTRUCTION)
-                retry_prompt = build_compare_prompt("\n".join(retry_parts))
+                retry_prompt = build_compare_prompt()
                 retry_raw = translate_single_tracked(
                     retry_phase, text, retry_prompt, files_to_attach, None
                 )
@@ -6164,17 +5594,54 @@ class TranslationService:
 
             if result:
                 if result.output_language == "en" and result.options:
+                    translation = result.options[0].text
                     fixed_text, fixed = _fix_to_en_oku_numeric_unit_if_possible(
                         source_text=text,
-                        translated_text=result.options[0].text,
+                        translated_text=translation,
                     )
                     if fixed:
-                        result.options[0].text = fixed_text
-                        result.options[0].explanation = ""
                         metadata = dict(result.metadata) if result.metadata else {}
                         metadata.setdefault("backend", "local")
                         metadata["to_en_numeric_unit_correction"] = True
                         result.metadata = metadata
+                        translation = fixed_text
+
+                    fixed_text, fixed = _fix_to_en_negative_parens_if_possible(
+                        source_text=text,
+                        translated_text=translation,
+                    )
+                    if fixed:
+                        metadata = dict(result.metadata) if result.metadata else {}
+                        metadata.setdefault("backend", "local")
+                        metadata["to_en_negative_correction"] = True
+                        result.metadata = metadata
+                        translation = fixed_text
+
+                    fixed_text, fixed = _fix_to_en_k_notation_if_possible(
+                        source_text=text,
+                        translated_text=translation,
+                    )
+                    if fixed:
+                        metadata = dict(result.metadata) if result.metadata else {}
+                        metadata.setdefault("backend", "local")
+                        metadata["to_en_k_correction"] = True
+                        result.metadata = metadata
+                        translation = fixed_text
+
+                    fixed_text, fixed = _fix_to_en_month_abbrev_if_possible(
+                        source_text=text,
+                        translated_text=translation,
+                    )
+                    if fixed:
+                        metadata = dict(result.metadata) if result.metadata else {}
+                        metadata.setdefault("backend", "local")
+                        metadata["to_en_month_abbrev_correction"] = True
+                        result.metadata = metadata
+                        translation = fixed_text
+
+                    if translation != result.options[0].text:
+                        result.options[0].text = translation
+                        result.options[0].explanation = ""
                 return attach_backend_telemetry(result)
 
             logger.warning("Empty response received from backend")
@@ -6225,8 +5692,7 @@ class TranslationService:
             opt.explanation = ""
             opt.style = None
 
-        candidate = options[0].text if options else raw_result.strip()
-        if _is_text_output_language_mismatch(candidate, "jp"):
+        if False:
             retry_instruction = (
                 BatchTranslator._JP_STRICT_OUTPUT_LANGUAGE_INSTRUCTION
                 + "\n- Keep the exact output format (Translation: ... only)."

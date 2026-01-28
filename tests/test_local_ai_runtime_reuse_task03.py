@@ -56,7 +56,7 @@ class _DummyLocalPromptBuilder:
         return "prompt"
 
 
-def test_local_text_translation_reuses_runtime_for_retry() -> None:
+def test_local_text_translation_uses_runtime_once_without_retry() -> None:
     settings = AppSettings(translation_backend="local")
     service = TranslationService(
         config=settings,
@@ -78,7 +78,7 @@ def test_local_text_translation_reuses_runtime_for_retry() -> None:
         on_chunk=None,
     )
 
-    assert result.options
-    assert result.options[0].text == "Hello"
+    assert result.options == []
+    assert result.error_message is not None
     assert dummy_client.ensure_ready_calls == 1
-    assert dummy_client.runtimes == [dummy_client.runtime, dummy_client.runtime]
+    assert dummy_client.runtimes == [dummy_client.runtime]

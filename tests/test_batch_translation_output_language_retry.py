@@ -53,26 +53,33 @@ class SequenceCopilot:
         return self._responses.pop(0)
 
 
-def test_batch_translator_retries_when_cjk_appears_in_en_output() -> None:
-    copilot = SequenceCopilot(responses=[["売上高"], ["Net sales"]])
+def test_batch_translator_falls_back_when_cjk_appears_in_en_output() -> None:
+    jp_text = "\u65e5\u672c\u8a9e\u306e\u51fa\u529b\u3067\u3059\u3002"
+    copilot = SequenceCopilot(responses=[[jp_text], [jp_text]])
     translator = BatchTranslator(
         client=copilot,  # type: ignore[arg-type]
         prompt_builder=DummyPromptBuilder(),  # type: ignore[arg-type]
         enable_cache=False,
     )
-    blocks = [TextBlock(id="b1", text="売上高", location="Sheet1")]
+    blocks = [
+        TextBlock(
+            id="b1",
+            text="\u65e5\u672c\u8a9e\u306e\u5165\u529b\u3067\u3059\u3002",
+            location="Sheet1",
+        )
+    ]
 
     result = translator.translate_blocks_with_result(blocks, output_language="en")
 
     assert len(copilot.calls) == 2
-    assert result.translations["b1"] == "Net sales"
-    assert "Do NOT output Japanese/Chinese scripts" in str(copilot.calls[1]["prompt"])
+    assert result.translations["b1"] == blocks[0].text
+    for call in copilot.calls:
+        assert "Do NOT output Japanese/Chinese scripts" not in str(call["prompt"])
 
 
-def test_batch_translator_retries_when_chinese_appears_in_jp_output() -> None:
-    copilot = SequenceCopilot(
-        responses=[["\u6c49\u8bed\u6d4b\u8bd5"], ["日本語の翻訳です"]]
-    )
+def test_batch_translator_falls_back_when_chinese_appears_in_jp_output() -> None:
+    chinese_output = "\u8fd9\u662f\u4e2d\u6587\uff0c\u5185\u5bb9\u6d4b\u8bd5\u3002"
+    copilot = SequenceCopilot(responses=[[chinese_output], [chinese_output]])
     translator = BatchTranslator(
         client=copilot,  # type: ignore[arg-type]
         prompt_builder=DummyPromptBuilder(),  # type: ignore[arg-type]
@@ -83,18 +90,17 @@ def test_batch_translator_retries_when_chinese_appears_in_jp_output() -> None:
     result = translator.translate_blocks_with_result(blocks, output_language="jp")
 
     assert len(copilot.calls) == 2
-    assert result.translations["b1"] == "日本語の翻訳です"
-    assert "Output must be Japanese only." in str(copilot.calls[1]["prompt"])
+    assert result.translations["b1"] == blocks[0].text
+    for call in copilot.calls:
+        assert "Output must be Japanese only." not in str(call["prompt"])
 
 
-def test_batch_translator_retries_when_kana_less_cjk_suspicious_jp_output() -> None:
-    # 需要提高效率，降低成本。 (all CJK are encodable in shift_jisx0213 → cjk_fallback)
+def test_batch_translator_falls_back_when_kana_less_cjk_suspicious_jp_output() -> None:
     chinese_like = (
-        "\u9700\u8981\u63d0\u9ad8\u6548\u7387\uff0c\u964d\u4f4e\u6210\u672c\u3002"
+        "\u4e2d\u6587\u5185\u5bb9\u6d4b\u8bd5\uff0c"
+        "\u5305\u542b\u8db3\u591f\u591a\u7684\u6c49\u5b57\u3002"
     )
-    copilot = SequenceCopilot(
-        responses=[[chinese_like], ["効率を高め、コストを下げる必要があります。"]]
-    )
+    copilot = SequenceCopilot(responses=[[chinese_like], [chinese_like]])
     translator = BatchTranslator(
         client=copilot,  # type: ignore[arg-type]
         prompt_builder=DummyPromptBuilder(),  # type: ignore[arg-type]
@@ -107,5 +113,6 @@ def test_batch_translator_retries_when_kana_less_cjk_suspicious_jp_output() -> N
     result = translator.translate_blocks_with_result(blocks, output_language="jp")
 
     assert len(copilot.calls) == 2
-    assert result.translations["b1"] == "効率を高め、コストを下げる必要があります。"
-    assert "Output must be Japanese only." in str(copilot.calls[1]["prompt"])
+    assert result.translations["b1"] == blocks[0].text
+    for call in copilot.calls:
+        assert "Output must be Japanese only." not in str(call["prompt"])

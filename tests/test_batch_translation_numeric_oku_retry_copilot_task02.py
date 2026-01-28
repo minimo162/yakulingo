@@ -53,13 +53,11 @@ class SequencedCopilot:
         return self._responses.pop(0)
 
 
-def test_batch_translator_copilot_retries_numeric_rule_when_auto_fix_not_possible() -> (
-    None
-):
+def test_batch_translator_copilot_falls_back_when_numeric_fix_not_possible() -> None:
     copilot = SequencedCopilot(
         responses=[
             ["Net sales were 22,384 billion yen."],
-            ["Net sales were 22,385 oku yen."],
+            ["Net sales were 22,384 billion yen."],
         ]
     )
     translator = BatchTranslator(
@@ -72,7 +70,6 @@ def test_batch_translator_copilot_retries_numeric_rule_when_auto_fix_not_possibl
     result = translator.translate_blocks_with_result(blocks, output_language="en")
 
     assert len(copilot.calls) == 2
-    assert "Follow numeric conversion rules strictly" in str(copilot.calls[1]["prompt"])
-    assert "Numeric conversion hints (use verbatim)" in str(copilot.calls[1]["prompt"])
-    assert "billion" not in result.translations["b1"].lower()
-    assert "oku" in result.translations["b1"].lower()
+    for call in copilot.calls:
+        assert "Follow numeric conversion rules strictly" not in str(call["prompt"])
+    assert result.translations["b1"] == blocks[0].text

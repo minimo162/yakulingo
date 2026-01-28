@@ -20,9 +20,7 @@ class PromptAwareCopilot:
     ) -> str:
         _ = (text, reference_files, on_chunk)
         self.calls.append({"prompt": prompt})
-        if "CRITICAL: English only" in prompt:
-            return "Translation:\nNet sales were 22,385 oku yen."
-        return "Translation:\n売上高は2兆2,385億円となりました。"
+        return "Translation:\nNet sales were 22,385 oku yen."
 
 
 class NumericPromptAwareCopilot:
@@ -38,9 +36,7 @@ class NumericPromptAwareCopilot:
     ) -> str:
         _ = (text, reference_files, on_chunk)
         self.calls.append({"prompt": prompt})
-        if "CRITICAL: Follow numeric conversion rules." in prompt:
-            return "Translation:\nNet sales were 22,385 oku yen."
-        return "Translation:\nNet sales were 22,384 billion yen."
+        return "Translation:\nNet sales were 22,385 billion yen."
 
 
 def _make_service() -> TranslationService:
@@ -49,12 +45,12 @@ def _make_service() -> TranslationService:
     return TranslationService(config=AppSettings(), prompts_dir=prompts_dir)
 
 
-def test_copilot_to_en_includes_output_language_guard_on_first_pass() -> None:
+def test_copilot_to_en_does_not_inject_output_language_guard() -> None:
     service = _make_service()
     copilot = PromptAwareCopilot()
 
     result = service._translate_text_with_options_via_prompt_builder(
-        text="売上高は2兆2,385億円となりました。",
+        text="営業利益は2兆2,385億円となりました。",
         reference_files=None,
         style="minimal",
         detected_language="日本語",
@@ -65,18 +61,20 @@ def test_copilot_to_en_includes_output_language_guard_on_first_pass() -> None:
 
     assert result.output_language == "en"
     assert result.options and "oku" in result.options[0].text.lower()
+    assert copilot.calls
+    assert "CRITICAL" not in copilot.calls[0]["prompt"]
     metadata = result.metadata or {}
     assert metadata.get("backend") == "local"
     assert metadata.get("backend_call_count") == 1
     assert metadata.get("backend_call_phases") == ["initial"]
 
 
-def test_copilot_to_en_includes_numeric_rule_guard_on_first_pass_when_needed() -> None:
+def test_copilot_to_en_applies_numeric_fix_without_prompt_injection() -> None:
     service = _make_service()
     copilot = NumericPromptAwareCopilot()
 
     result = service._translate_text_with_options_via_prompt_builder(
-        text="売上高は2兆2,385億円となりました。",
+        text="営業利益は2兆2,385億円となりました。",
         reference_files=None,
         style="minimal",
         detected_language="日本語",
@@ -87,6 +85,8 @@ def test_copilot_to_en_includes_numeric_rule_guard_on_first_pass_when_needed() -
 
     assert result.output_language == "en"
     assert result.options and "oku" in result.options[0].text.lower()
+    assert copilot.calls
+    assert "CRITICAL" not in copilot.calls[0]["prompt"]
     metadata = result.metadata or {}
     assert metadata.get("backend") == "local"
     assert metadata.get("backend_call_count") == 1

@@ -46,7 +46,7 @@ class FakeLocalPromptBuilder:
         return "PROMPT_JP"
 
 
-def test_local_text_retry_logs_numeric_rule_violation(
+def test_local_text_does_not_retry_for_numeric_rule(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     service = TranslationService(config=AppSettings(), prompts_dir=None)
@@ -60,10 +60,7 @@ def test_local_text_retry_logs_numeric_rule_violation(
         patch("yakulingo.services.translation_service._LOCAL_AI_TIMING_ENABLED", True),
         patch.object(service, "_translate_single_with_cancel_on_local") as mock_call,
     ):
-        mock_call.side_effect = [
-            "45 billion yen",
-            "4,500 oku yen",
-        ]
+        mock_call.return_value = "4,500 billion yen"
 
         result = service._translate_text_with_options_local(
             text="4,500億円",
@@ -76,8 +73,8 @@ def test_local_text_retry_logs_numeric_rule_violation(
 
     assert result.options is not None
     assert result.options[0].text == "4,500 oku yen"
+    assert mock_call.call_count == 1
 
     messages = "\n".join(record.getMessage() for record in caplog.records)
-    assert "[DIAG] LocalText retry scheduled" in messages
-    assert "numeric_rule" in messages
-    assert "[DIAG] LocalText retry response received" in messages
+    assert "[DIAG] LocalText retry scheduled" not in messages
+    assert "[DIAG] LocalText retry response received" not in messages

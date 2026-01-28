@@ -11,22 +11,22 @@
     "model":  {
                   "repo":  "mradermacher/HY-MT1.5-7B-i1-GGUF",
                   "revision":  "main",
-                  "file":  "HY-MT1.5-7B.i1-IQ4_XS.gguf",
-                  "download_url":  "https://huggingface.co/mradermacher/HY-MT1.5-7B-i1-GGUF/resolve/main/HY-MT1.5-7B.i1-IQ4_XS.gguf",
-                  "sha256":  "6EEA5EE72C78FABB7718569314634DF1A366FBC916FE7ED7F1F46338A64DDD90",
+                  "file":  "HY-MT1.5-7B.i1-Q6_K.gguf",
+                  "download_url":  "https://huggingface.co/mradermacher/HY-MT1.5-7B-i1-GGUF/resolve/main/HY-MT1.5-7B.i1-Q6_K.gguf",
+                  "sha256":  "DA1174DD757CCCED8E39E62E97264DADEA795A4CB0B8D88EC3A3B2F1E7F232DD",
                   "skipped":  false,
                   "source":  {
                                  "kind":  "gguf",
                                  "repo":  "mradermacher/HY-MT1.5-7B-i1-GGUF",
                                  "revision":  "main",
-                                 "file":  "HY-MT1.5-7B.i1-IQ4_XS.gguf",
-                                 "download_url":  "https://huggingface.co/mradermacher/HY-MT1.5-7B-i1-GGUF/resolve/main/HY-MT1.5-7B.i1-IQ4_XS.gguf"
+                                 "file":  "HY-MT1.5-7B.i1-Q6_K.gguf",
+                                 "download_url":  "https://huggingface.co/mradermacher/HY-MT1.5-7B-i1-GGUF/resolve/main/HY-MT1.5-7B.i1-Q6_K.gguf"
                              },
                   "output":  {
                                  "kind":  "gguf",
-                                 "path":  "local_ai/models/HY-MT1.5-7B.i1-IQ4_XS.gguf",
-                                 "path_resolved":  "C:\\Users\\Administrator\\Desktop\\yakulingo\\local_ai\\models\\HY-MT1.5-7B.i1-IQ4_XS.gguf",
-                                 "sha256":  "6EEA5EE72C78FABB7718569314634DF1A366FBC916FE7ED7F1F46338A64DDD90"
+                                 "path":  "local_ai/models/HY-MT1.5-7B.i1-Q6_K.gguf",
+                                 "path_resolved":  "C:\\Users\\Administrator\\Desktop\\yakulingo\\local_ai\\models\\HY-MT1.5-7B.i1-Q6_K.gguf",
+                                 "sha256":  "DA1174DD757CCCED8E39E62E97264DADEA795A4CB0B8D88EC3A3B2F1E7F232DD"
                              }
               }
 }

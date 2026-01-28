@@ -309,7 +309,7 @@ try {
     # Default model (fixed):
     # Always use a prebuilt GGUF downloaded from Hugging Face.
     $defaultModelRepo = 'mradermacher/HY-MT1.5-7B-i1-GGUF'
-    $defaultModelFile = 'HY-MT1.5-7B.i1-IQ4_XS.gguf'
+    $defaultModelFile = 'HY-MT1.5-7B.i1-Q6_K.gguf'
     $defaultModelRevision = 'main'
 
     # Model selection is fixed (manifest/env overrides are ignored).

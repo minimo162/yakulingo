@@ -640,16 +640,15 @@ class PromptBuilder:
         source_lang, _source_code, target_lang, _target_code = self._resolve_langs(
             output_language
         )
-        glossary = """
-Important Terminology:
-- 1,000億円: 1,000 oku yen
-- ▲1,000億円: (1,000) oku yen 
-"""
+        instruction = (
+            "Please translate this into natural Japanese suitable for financial statements. No other responses are necessary."
+            if output_language == "jp"
+            else "Please translate this into natural English suitable for financial statements. No other responses are necessary."
+        )
 
         raw_prompt = (
             f"<bos><start_of_turn>user\n"
-            f"Instruction: Please translate this into natural English suitable for financial statements. No other responses are necessary.\n"
-            f"{glossary}\n"
+            f"Instruction: {instruction}\n"
             f"Source: {source_lang}\n"
             f"Target: {target_lang}\n"
             f"Text: {user_input}<end_of_turn>\n"

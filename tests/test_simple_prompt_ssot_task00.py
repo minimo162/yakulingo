@@ -13,13 +13,6 @@ def _prompts_dir() -> Path:
     return Path(__file__).resolve().parents[1] / "prompts"
 
 
-_SIMPLE_PROMPT_GLOSSARY = """
-Important Terminology:
-- 1,000億円: 1,000 oku yen
-- ▲1,000億円: (1,000) oku yen 
-"""
-
-
 def _extract_raw_prompt(prompt: str) -> str:
     marker = "<bos><start_of_turn>user\n"
     idx = prompt.rfind(marker)
@@ -41,10 +34,14 @@ def _expected_simple_prompt(
 ) -> str:
     user_input = builder.normalize_input_text(text, output_language)
     source_lang, _, target_lang, _ = builder._resolve_langs(output_language)
+    instruction = (
+        "Please translate this into natural Japanese suitable for financial statements. No other responses are necessary."
+        if output_language == "jp"
+        else "Please translate this into natural English suitable for financial statements. No other responses are necessary."
+    )
     return (
         f"<bos><start_of_turn>user\n"
-        f"Instruction: Please translate this into natural English suitable for financial statements. No other responses are necessary.\n"
-        f"{_SIMPLE_PROMPT_GLOSSARY}\n"
+        f"Instruction: {instruction}\n"
         f"Source: {source_lang}\n"
         f"Target: {target_lang}\n"
         f"Text: {user_input}<end_of_turn>\n"

@@ -24,7 +24,7 @@ if "!STEP7_FROM_INSTALL_DEPS!"=="0" (
 
 echo.
 echo [6/6] Installing Local AI runtime (llama.cpp + fixed HY-MT model)...
-echo [INFO] Model is fixed: mradermacher/HY-MT1.5-7B-i1-GGUF/HY-MT1.5-7B.i1-IQ4_XS.gguf
+echo [INFO] Model is fixed: mradermacher/HY-MT1.5-7B-i1-GGUF/HY-MT1.5-7B.i1-Q6_K.gguf
 echo [INFO] This step may download large files (llama.cpp + model; a few GB).
 
 echo.

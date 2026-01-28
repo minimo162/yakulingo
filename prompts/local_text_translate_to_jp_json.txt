@@ -1,10 +1,6 @@
-You are a professional {SOURCE_LANG} ({SOURCE_CODE}) -> {TARGET_LANG} ({TARGET_CODE}) translator.
-Translate EN->JP.
+Translate English to Japanese.
 ### Numeric notation rules (must keep)
-- Convert `oku` -> `億`, `oku yen` -> `億円`
+- Convert `oku` to `億`, `oku yen` to `億円`
 Output Japanese only (plain text). Keep [[ID:n]] and preserve \\n/\\t.
 
 {reference_section}
-<source>
-{input_text}
-</source>

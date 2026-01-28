@@ -1,10 +1,6 @@
-You are a professional {SOURCE_LANG} ({SOURCE_CODE}) -> {TARGET_LANG} ({TARGET_CODE}) translator.
 Style: {style} (limits: standard<=3.0x, concise<=2.5x, minimal<=2.0x).
 No retries/errors on violations.
-Output only the English translation (plain text).
 Keep [[ID:n]]; preserve \\n/\\t.
 {numeric_hints}
 {reference_section}
-{extra_instruction}<source>
-{input_text}
-</source>
+{extra_instruction}

@@ -108,8 +108,8 @@ PDF翻訳はPP-DocLayout-L（PaddleOCR）によるレイアウト解析を使用
 Windows環境で最も簡単にセットアップできる方法です。Pythonと依存関係を自動でインストールします（必要に応じてローカルAIランタイムも配置します）。
 > **Note**: 新規インストール（`local_ai/manifest.json` が無い状態）では Vulkan が既定です。CPU(x64) にしたい場合は `set LOCAL_AI_LLAMA_CPP_VARIANT=cpu` を設定してから実行します。既存の `manifest.json` がある場合はその設定を優先し、切り替えたい場合は `set LOCAL_AI_LLAMA_CPP_VARIANT=vulkan|cpu` で上書きします。
 > **Note**: `packaging/install_local_ai.ps1` は実行のたびに最新リリースを確認し、必要な場合のみ更新します。
-> **Note**: ローカルAIの既定翻訳モデルは `mradermacher/translategemma-4b-it-i1-GGUF/translategemma-4b-it.i1-Q6_K.gguf` です。
-> **Note**: ダウンロード先は `local_ai/models/translategemma-4b-it.i1-Q6_K.gguf` です。
+> **Note**: ローカルAIの既定翻訳モデルは `mradermacher/translategemma-12b-it-i1-GGUF/translategemma-12b-it.i1-IQ4_XS.gguf` です。
+> **Note**: ダウンロード先は `local_ai/models/translategemma-12b-it.i1-IQ4_XS.gguf` です。
 > **Note**: 指示追従性向上のため、ローカルAIへ送るプロンプトは内部で2回繰り返して送信します（https://arxiv.org/abs/2512.14982）。プロンプト長は実質2倍になるため、長文では `local_ai_ctx_size` / `local_ai_max_tokens` / `local_ai_max_chars_per_batch` / `local_ai_max_chars_per_batch_file` の調整が必要になる場合があります。
 > **Note**: `LOCAL_AI_MODEL_*` / `LOCAL_AI_MODEL_KIND` によるモデル切り替えはできません（`local_ai/manifest.json` は記録用で、選択には影響しません）。
 
@@ -271,7 +271,7 @@ uv run python app.py
      "max_chars_per_batch": 1000,
      "request_timeout": 600,
      "max_retries": 3,
-    "local_ai_model_path": "local_ai/models/translategemma-4b-it.i1-Q6_K.gguf",
+    "local_ai_model_path": "local_ai/models/translategemma-12b-it.i1-IQ4_XS.gguf",
    "local_ai_server_dir": "local_ai/llama_cpp",
    "local_ai_host": "127.0.0.1",
    "local_ai_port_base": 4891,
@@ -392,7 +392,7 @@ intent にある `Bytes { ... }` のうち、`top_k/top_p` は YakuLingo の `lo
 > **Note**: `local_ai/llama_cpp/vulkan` または `local_ai/llama_cpp/avx2` のどちらかを使います（同梱されている方）。
 ```bash
 cd local_ai\llama_cpp\vulkan
-.\llama-cli.exe -m ..\..\models\translategemma-4b-it.i1-Q6_K.gguf ^
+.\llama-cli.exe -m ..\..\models\translategemma-12b-it.i1-IQ4_XS.gguf ^
   -p "Translate the following segment into Chinese, without additional explanation.\n\nIt’s on the house." ^
   -n 4096 --temp 0.7 --top-k 64 --top-p 0.95 --repeat-penalty 1.05 --no-warmup
 ```
@@ -440,7 +440,7 @@ cd local_ai\llama_cpp\vulkan
 | `ocr_batch_size` | PDF処理のバッチページ数 | 5 |
 | `ocr_dpi` | PDF処理の解像度 | 300 |
 | `max_chars_per_batch` | 翻訳送信1回あたりの最大文字数（互換キー） | 1000 |
-| `local_ai_model_path` | ローカルAIモデル（.gguf）のパス | `local_ai/models/translategemma-4b-it.i1-Q6_K.gguf` |
+| `local_ai_model_path` | ローカルAIモデル（.gguf）のパス | `local_ai/models/translategemma-12b-it.i1-IQ4_XS.gguf` |
 | `local_ai_server_dir` | ローカルAIサーバ（llama-server）のディレクトリ | `local_ai/llama_cpp` |
 | `local_ai_port_base` | ローカルAIのポート探索開始 | 4891 |
 | `local_ai_port_max` | ローカルAIのポート探索上限 | 4900 |
@@ -474,7 +474,7 @@ cd local_ai\llama_cpp\vulkan
 > **Note**: `ocr_*` 設定はPDF処理（レイアウト解析）に使用されます。設定名は互換性のため維持しています。
 > **Note**: ローカルAI関連のパス（`local_ai_model_path`, `local_ai_server_dir`）は、相対パスの場合 **アプリ配置ディレクトリ基準** で解決します（CWD基準ではありません）。
 > **Note**: `local_ai_host` は安全のため `127.0.0.1` に強制されます。
-> **Note**: 既定モデル（`local_ai/models/translategemma-4b-it.i1-Q6_K.gguf`）が存在しない場合、ローカルAIは起動しません。`packaging/install_deps.bat` を実行するか、`powershell -NoProfile -ExecutionPolicy Bypass -File packaging\\install_local_ai.ps1` を再実行してください。必要なら同名ファイルを手動で `local_ai/models/` に配置してください。
+> **Note**: 既定モデル（`local_ai/models/translategemma-12b-it.i1-IQ4_XS.gguf`）が存在しない場合、ローカルAIは起動しません。`packaging/install_deps.bat` を実行するか、`powershell -NoProfile -ExecutionPolicy Bypass -File packaging\\install_local_ai.ps1` を再実行してください。必要なら同名ファイルを手動で `local_ai/models/` に配置してください。
 
 ### ローカルAI速度計測（ベンチ）
 
@@ -553,7 +553,7 @@ uv run python tools/bench_local_ai.py --mode cold --with-glossary
 - `local_ai/`（`llama_cpp` と `models`）があるか確認し、無ければ `packaging/install_deps.bat` を実行
 - 「AVX2非対応」: 現状の同梱がAVX2版の場合、generic版 `llama-server` の同梱が必要です
 - 「空きポートが見つかりませんでした（4891-4900）」: 他プロセスが使用中の可能性があるため、`local_ai_port_base` / `local_ai_port_max` を変更するか、競合プロセスを停止
-- モデルのダウンロードが失敗/404: ネットワーク/プロキシ設定を確認し `packaging/install_deps.bat` を再実行するか、`powershell -NoProfile -ExecutionPolicy Bypass -File packaging\\install_local_ai.ps1` を再実行してください。必要なら `mradermacher/translategemma-4b-it-i1-GGUF` の `translategemma-4b-it.i1-Q6_K.gguf` を `local_ai/models/translategemma-4b-it.i1-Q6_K.gguf` に手動配置してください。
+- モデルのダウンロードが失敗/404: ネットワーク/プロキシ設定を確認し `packaging/install_deps.bat` を再実行するか、`powershell -NoProfile -ExecutionPolicy Bypass -File packaging\\install_local_ai.ps1` を再実行してください。必要なら `mradermacher/translategemma-12b-it-i1-GGUF` の `translategemma-12b-it.i1-IQ4_XS.gguf` を `local_ai/models/translategemma-12b-it.i1-IQ4_XS.gguf` に手動配置してください。
 - ローカルAIランタイムの更新が失敗（DLLロック）: `...ggml-base.dll にアクセスできません` などが出る場合は、まず YakuLingo（タスクトレイ > `Exit`）を終了し、残っている `llama-server.exe` 等をタスクマネージャーで終了してから再実行してください。
   - 再実行: `powershell -NoProfile -ExecutionPolicy Bypass -File packaging\\install_local_ai.ps1`
   - それでも失敗する場合: PCを再起動してから再実行（または `packaging\\install_deps.bat` をやり直し）

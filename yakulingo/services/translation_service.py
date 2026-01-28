@@ -56,6 +56,7 @@ class SingleTranslationClient(Protocol):
 
 class BackendClient(BatchTranslationClient, SingleTranslationClient, Protocol): ...
 
+
 # Module logger
 logger = logging.getLogger(__name__)
 
@@ -78,6 +79,7 @@ _TEXT_TO_EN_LENGTH_RETRY_TEMPLATE = (
 def _normalize_text_style(style: str | None) -> str:
     style_key = (style or "").strip().lower()
     return style_key if style_key in TEXT_STYLE_ORDER else DEFAULT_TEXT_STYLE
+
 
 _TEXT_TO_EN_OUTPUT_LANGUAGE_RETRY_INSTRUCTION = (
     "CRITICAL: English only (no Japanese/Chinese/Korean scripts; no Japanese punctuation). "
@@ -994,7 +996,7 @@ _RE_PLACEHOLDER_TOKEN = re.compile(r"^<\s*([^<>]+)\s*>$")
 _RE_PLACEHOLDER_INNER = re.compile(r"^(?:translation|style|\.{3}|…)$", re.IGNORECASE)
 
 _LOCAL_AI_ELLIPSIS_RETRY_INSTRUCTION = (
-    "- Do not output ellipsis placeholders (e.g., \"...\", \"…\").\n"
+    '- Do not output ellipsis placeholders (e.g., "...", "…").\n'
     "- Output an actual translation; never output only dots.\n"
 )
 _LOCAL_AI_PLACEHOLDER_RETRY_INSTRUCTION = (
@@ -1037,6 +1039,7 @@ def _is_placeholder_only_translation(source_text: str, translated_text: str) -> 
     if not _is_placeholder_only_text(translated_text):
         return False
     return not _is_placeholder_only_text(source_text)
+
 
 def _sanitize_output_stem(name: str) -> str:
     """Sanitize a filename stem for cross-platform safety.
@@ -1180,6 +1183,7 @@ def _wrap_local_streaming_on_chunk(
     throttle_seconds = 0.08
 
     if not parse_json:
+
         def _handle(delta: str) -> None:
             nonlocal last_emitted, last_emit_time
             nonlocal raw_cached, raw_parts, raw_len
@@ -1200,9 +1204,8 @@ def _wrap_local_streaming_on_chunk(
                 raw_len = len(raw_cached)
 
             candidate = raw_cached
-            if (
-                expected_output_language == "en"
-                and _is_text_output_language_mismatch(candidate, "en")
+            if expected_output_language == "en" and _is_text_output_language_mismatch(
+                candidate, "en"
             ):
                 return
             if candidate == last_emitted or len(candidate) < len(last_emitted):
@@ -1283,9 +1286,8 @@ def _wrap_local_streaming_on_chunk(
             else:
                 candidate = translation
 
-        if (
-            expected_output_language == "en"
-            and _is_text_output_language_mismatch(candidate, "en")
+        if expected_output_language == "en" and _is_text_output_language_mismatch(
+            candidate, "en"
         ):
             return
         if candidate == last_emitted or len(candidate) < len(last_emitted):
@@ -2876,7 +2878,6 @@ class BatchTranslator:
                     )
 
             if output_language == "en" and not self._cancel_event.is_set():
-
                 numeric_rule_violation_indices = [
                     idx
                     for idx, translated_text in enumerate(cleaned_unique_translations)
@@ -2921,7 +2922,9 @@ class BatchTranslator:
                             include_item_ids=include_item_ids,
                             reference_files=reference_files,
                         )
-                        numeric_hints = _build_to_en_numeric_hints("\n".join(retry_texts))
+                        numeric_hints = _build_to_en_numeric_hints(
+                            "\n".join(retry_texts)
+                        )
                         extra_instruction_parts = [retry_instruction]
                         if numeric_hints:
                             extra_instruction_parts.append(numeric_hints.strip())
@@ -4131,7 +4134,9 @@ class TranslationService:
     def _ui_window_sync_scope(self, reason: str):
         """翻訳中のみ、バックエンドのウィンドウをUIの背面に同期表示する（対応環境のみ）。"""
         client = self._client
-        scope_factory = getattr(client, "ui_window_sync_scope", None) if client else None
+        scope_factory = (
+            getattr(client, "ui_window_sync_scope", None) if client else None
+        )
         if scope_factory is None:
             yield
             return
@@ -4437,7 +4442,10 @@ class TranslationService:
                 translate_single_fn = getattr(local_client, "translate_single", None)
                 if is_local_ai_client and callable(translate_single_fn):
                     module_name = getattr(translate_single_fn, "__module__", "")
-                    if module_name and module_name != "yakulingo.services.local_ai_client":
+                    if (
+                        module_name
+                        and module_name != "yakulingo.services.local_ai_client"
+                    ):
                         skip_runtime_prefetch = True
                 if not skip_runtime_prefetch:
                     ensure_ready = getattr(local_client, "ensure_ready", None)
@@ -4518,19 +4526,23 @@ class TranslationService:
                             )
                             try:
                                 if supports_runtime and runtime is not None:
-                                    raw_segment = self._translate_single_with_cancel_on_local(
-                                        block.text,
-                                        segment_prompt,
-                                        None,
-                                        None,
-                                        runtime=runtime,
+                                    raw_segment = (
+                                        self._translate_single_with_cancel_on_local(
+                                            block.text,
+                                            segment_prompt,
+                                            None,
+                                            None,
+                                            runtime=runtime,
+                                        )
                                     )
                                 else:
-                                    raw_segment = self._translate_single_with_cancel_on_local(
-                                        block.text,
-                                        segment_prompt,
-                                        None,
-                                        None,
+                                    raw_segment = (
+                                        self._translate_single_with_cancel_on_local(
+                                            block.text,
+                                            segment_prompt,
+                                            None,
+                                            None,
+                                        )
                                     )
                             except TranslationCancelledError:
                                 raise
@@ -4551,13 +4563,15 @@ class TranslationService:
                         metadata["segment_untranslated"] = segment_untranslated
                         metadata["segment_mismatched_batches"] = 0
                     else:
-                        batch_result = local_batch_translator.translate_blocks_with_result(
-                            blocks,
-                            reference_files=reference_files,
-                            on_progress=None,
-                            output_language=output_language,
-                            translation_style=style,
-                            include_item_ids=False,
+                        batch_result = (
+                            local_batch_translator.translate_blocks_with_result(
+                                blocks,
+                                reference_files=reference_files,
+                                on_progress=None,
+                                output_language=output_language,
+                                translation_style=style,
+                                include_item_ids=False,
+                            )
                         )
                         if batch_result.cancelled:
                             raise TranslationCancelledError(
@@ -5072,8 +5086,9 @@ class TranslationService:
                     translation = fixed_text
                     metadata["to_en_month_abbrev_correction"] = True
 
-                if needs_numeric_rule_retry and _needs_to_en_numeric_rule_retry_conservative(
-                    text, translation
+                if (
+                    needs_numeric_rule_retry
+                    and _needs_to_en_numeric_rule_retry_conservative(text, translation)
                 ):
                     metadata["to_en_numeric_rule_retry_failed"] = True
                     metadata["to_en_numeric_rule_retry_failed_styles"] = [style]
@@ -5102,7 +5117,9 @@ class TranslationService:
                     if length_limit_final > 0:
                         metadata["to_en_length_limit"] = length_limit_final
                         metadata["to_en_length_ratio"] = length_ratio_final
-                        metadata["to_en_length_source_chars"] = length_source_count_final
+                        metadata["to_en_length_source_chars"] = (
+                            length_source_count_final
+                        )
                         metadata["to_en_length_translation_chars"] = (
                             length_translation_count_final
                         )
@@ -5213,9 +5230,7 @@ class TranslationService:
                         ),
                         metadata=metadata,
                     )
-                fixed_text, fixed = _fix_to_jp_oku_numeric_unit_if_possible(
-                    translation
-                )
+                fixed_text, fixed = _fix_to_jp_oku_numeric_unit_if_possible(translation)
                 if fixed:
                     translation = fixed_text
                     metadata["to_jp_oku_correction"] = True
@@ -5454,7 +5469,9 @@ class TranslationService:
             if not parsed:
                 translation, explanation = parse_text_single_translation(raw_result)
                 if translation:
-                    fallback_style = requested_styles[0] if requested_styles else "minimal"
+                    fallback_style = (
+                        requested_styles[0] if requested_styles else "minimal"
+                    )
                     parsed = {fallback_style: (translation, explanation or "")}
             return parsed
 
@@ -5569,7 +5586,9 @@ class TranslationService:
                     )
                 if remaining_reasons:
                     metadata["to_en_rule_retry_failed"] = True
-                    metadata["to_en_rule_retry_failed_reasons"] = sorted(remaining_reasons)
+                    metadata["to_en_rule_retry_failed_reasons"] = sorted(
+                        remaining_reasons
+                    )
                     return TextTranslationResult(
                         source_text=text,
                         source_char_count=len(text),
@@ -5655,7 +5674,9 @@ class TranslationService:
                     metadata=metadata,
                 )
 
-            translations = {style: value[0] for style, value in parsed.items() if value[0]}
+            translations = {
+                style: value[0] for style, value in parsed.items() if value[0]
+            }
             explanations = {style: (value[1] or "") for style, value in parsed.items()}
 
             options_hint = '"options"' in raw_result
@@ -5733,7 +5754,9 @@ class TranslationService:
                 }
                 if incomplete_styles:
                     metadata["incomplete_translation"] = True
-                    metadata["incomplete_translation_styles"] = sorted(incomplete_styles)
+                    metadata["incomplete_translation_styles"] = sorted(
+                        incomplete_styles
+                    )
                     return TextTranslationResult(
                         source_text=text,
                         source_char_count=len(text),
@@ -5746,7 +5769,9 @@ class TranslationService:
             if needs_retry:
                 retry_parts: list[str] = []
                 if mismatch_styles:
-                    retry_parts.append(BatchTranslator._EN_STRICT_OUTPUT_LANGUAGE_INSTRUCTION)
+                    retry_parts.append(
+                        BatchTranslator._EN_STRICT_OUTPUT_LANGUAGE_INSTRUCTION
+                    )
                     metadata["output_language_retry"] = True
                     metadata["output_language_retry_styles"] = sorted(mismatch_styles)
                 if ellipsis_styles:
@@ -5813,9 +5838,7 @@ class TranslationService:
                     )
 
                 translations = {
-                    style: value[0]
-                    for style, value in parsed_retry.items()
-                    if value[0]
+                    style: value[0] for style, value in parsed_retry.items() if value[0]
                 }
                 explanations = {
                     style: (value[1] or "") for style, value in parsed_retry.items()
@@ -5833,7 +5856,9 @@ class TranslationService:
                 }
                 if placeholder_styles:
                     metadata["placeholder_retry_failed"] = True
-                    metadata["placeholder_retry_failed_styles"] = sorted(placeholder_styles)
+                    metadata["placeholder_retry_failed_styles"] = sorted(
+                        placeholder_styles
+                    )
                     return TextTranslationResult(
                         source_text=text,
                         source_char_count=len(text),
@@ -5860,7 +5885,9 @@ class TranslationService:
                     )
                 if mismatch_styles:
                     metadata["output_language_mismatch"] = True
-                    metadata["output_language_mismatch_styles"] = sorted(mismatch_styles)
+                    metadata["output_language_mismatch_styles"] = sorted(
+                        mismatch_styles
+                    )
                     if metadata.get("output_language_retry"):
                         metadata["output_language_retry_failed"] = True
                     return TextTranslationResult(

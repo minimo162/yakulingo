@@ -1315,7 +1315,9 @@ def _render_option_en(
             if has_back_translate:
                 _render_back_translate_section(option)
 
-            explanation_text = normalize_literal_escapes(option.explanation or "").strip()
+            explanation_text = normalize_literal_escapes(
+                option.explanation or ""
+            ).strip()
             if explanation_text:
                 with ui.element("div").classes("explanation-card"):
                     ui.label("解説").classes("explanation-title")

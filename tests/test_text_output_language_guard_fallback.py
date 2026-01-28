@@ -12,9 +12,7 @@ from yakulingo.services.translation_service import (
 
 def test_local_to_jp_retries_when_output_is_chinese(monkeypatch) -> None:
     settings = AppSettings(translation_backend="local", copilot_enabled=False)
-    service = TranslationService(
-        config=settings, prompts_dir=Path("prompts")
-    )
+    service = TranslationService(config=settings, prompts_dir=Path("prompts"))
 
     calls = 0
 
@@ -53,9 +51,7 @@ def test_local_to_en_returns_error_without_copilot_advice_when_retry_fails(
     monkeypatch,
 ) -> None:
     settings = AppSettings(translation_backend="local", copilot_enabled=True)
-    service = TranslationService(
-        config=settings, prompts_dir=Path("prompts")
-    )
+    service = TranslationService(config=settings, prompts_dir=Path("prompts"))
 
     calls = 0
 

@@ -9428,14 +9428,12 @@ class YakuLingoApp:
                     ):
                         raise TranslationCancelledError
                     current_chunk_index = idx
-                    chunk_result = (
-                        self.translation_service.translate_text_with_options(
-                            chunk,
-                            None,
-                            None,
-                            effective_detected_language,
-                            stream_handler,
-                        )
+                    chunk_result = self.translation_service.translate_text_with_options(
+                        chunk,
+                        None,
+                        None,
+                        effective_detected_language,
+                        stream_handler,
                     )
                     chunk_results.append(chunk_result)
                 return self._merge_chunk_results(
@@ -9854,7 +9852,8 @@ class YakuLingoApp:
                 option.back_translation_source_text = text
 
             if not error_message and (
-                self.translation_service is None and not self._ensure_translation_service()
+                self.translation_service is None
+                and not self._ensure_translation_service()
             ):
                 error_message = "翻訳サービスの初期化に失敗しました"
 
@@ -9863,8 +9862,8 @@ class YakuLingoApp:
                 if service is None:
                     error_message = "翻訳サービスの初期化に失敗しました"
                 else:
-                    output_language, template = service.get_back_translation_text_template(
-                        text
+                    output_language, template = (
+                        service.get_back_translation_text_template(text)
                     )
 
                 if not template:

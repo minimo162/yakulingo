@@ -324,8 +324,12 @@ class PromptBuilder:
         return _RE_GLOSSARY_MATCH_SEPARATORS.sub("", text_folded)
 
     @staticmethod
-    def _is_numeric_unit_glossary_term(*, source_folded: str, target_folded: str) -> bool:
-        folded = f"{(source_folded or '').strip()} {(target_folded or '').strip()}".strip()
+    def _is_numeric_unit_glossary_term(
+        *, source_folded: str, target_folded: str
+    ) -> bool:
+        folded = (
+            f"{(source_folded or '').strip()} {(target_folded or '').strip()}".strip()
+        )
         if not folded:
             return False
         if "億" in folded or "兆" in folded:

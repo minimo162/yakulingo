@@ -10,7 +10,9 @@ def test_text_to_jp_template_includes_oku_rules() -> None:
     prompts_dir = repo_root / "prompts"
     builder = PromptBuilder(prompts_dir)
 
-    template = builder.get_text_template(output_language="jp", translation_style="concise")
+    template = builder.get_text_template(
+        output_language="jp", translation_style="concise"
+    )
     assert template is not None
 
     normalized = template.replace("\r\n", "\n")

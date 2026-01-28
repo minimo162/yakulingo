@@ -10,9 +10,7 @@ def test_local_style_comparison_retries_once_on_output_language_mismatch(
     monkeypatch,
 ) -> None:
     settings = AppSettings(translation_backend="local", copilot_enabled=False)
-    service = TranslationService(
-        config=settings, prompts_dir=Path("prompts")
-    )
+    service = TranslationService(config=settings, prompts_dir=Path("prompts"))
     call_count = 0
 
     def fake_translate_single_with_cancel(

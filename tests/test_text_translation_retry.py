@@ -158,9 +158,7 @@ def test_text_style_comparison_retries_when_translation_is_placeholder_only() ->
     assert metadata.get("placeholder_retry") is True
 
 
-def test_text_style_comparison_errors_when_translation_stays_placeholder_only() -> (
-    None
-):
+def test_text_style_comparison_errors_when_translation_stays_placeholder_only() -> None:
     first = "<TRANSLATION>"
     second = "<TRANSLATION>"
     local = SequencedLocalClient([first, second])

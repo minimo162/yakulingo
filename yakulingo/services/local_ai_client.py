@@ -676,7 +676,9 @@ def _parse_text_style_options(
             continue
         style = _normalize_text_style(opt.get("style"))
         explanation = opt.get("explanation")
-        items.append((style, translation, explanation if isinstance(explanation, str) else ""))
+        items.append(
+            (style, translation, explanation if isinstance(explanation, str) else "")
+        )
     return items
 
 
@@ -1225,8 +1227,8 @@ class LocalAIClient:
             self._get_response_format_support(runtime) if should_enforce_json else None
         )
         if force_response_format is None:
-            response_format_mode: _ResponseFormatMode = (
-                cached_support or ("schema" if should_enforce_json else "none")
+            response_format_mode: _ResponseFormatMode = cached_support or (
+                "schema" if should_enforce_json else "none"
             )
         else:
             response_format_mode = "schema" if force_response_format else "none"
@@ -1337,8 +1339,8 @@ class LocalAIClient:
         cached_support = (
             self._get_response_format_support(runtime) if should_enforce_json else None
         )
-        response_format_mode: _ResponseFormatMode = (
-            cached_support or ("schema" if should_enforce_json else "none")
+        response_format_mode: _ResponseFormatMode = cached_support or (
+            "schema" if should_enforce_json else "none"
         )
         cached_sampling_support = self._get_sampling_params_support(runtime)
         include_sampling_params = cached_sampling_support is not False

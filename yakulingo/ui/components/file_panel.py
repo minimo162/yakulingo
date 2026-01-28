@@ -25,6 +25,7 @@ from yakulingo.models.types import (
     TranslationResult,
 )
 
+
 def _build_copy_js_handler(text: str) -> str:
     payload = json.dumps(text)
     return f"""async (e) => {{
@@ -570,6 +571,8 @@ def _get_section_label(file_info: Optional[FileInfo]) -> str:
         FileType.TEXT: "セクション",
     }
     return label_map.get(file_info.file_type, "セクション")
+
+
 def _drop_zone(
     state: AppState,
     on_file_select: Callable[[list[Path]], Union[None, Awaitable[None]]],

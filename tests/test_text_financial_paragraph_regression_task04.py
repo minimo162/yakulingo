@@ -11,9 +11,7 @@ def test_style_comparison_financial_paragraph_auto_corrects_numeric_units(
 ) -> None:
     input_text = "当中間連結会計期間における連結業績は、売上高は2兆2,385億円(前年同期比1,554億円減)となりました。"
     settings = AppSettings(translation_backend="local", copilot_enabled=False)
-    service = TranslationService(
-        config=settings, prompts_dir=Path("prompts")
-    )
+    service = TranslationService(config=settings, prompts_dir=Path("prompts"))
     calls = 0
 
     def fake_translate_single_with_cancel(
@@ -22,7 +20,9 @@ def test_style_comparison_financial_paragraph_auto_corrects_numeric_units(
         nonlocal calls
         _ = text, prompt, reference_files, on_chunk
         calls += 1
-        return "Revenue was 2.2385 trillion yen, down by 1,554 billion yen year on year."
+        return (
+            "Revenue was 2.2385 trillion yen, down by 1,554 billion yen year on year."
+        )
 
     monkeypatch.setattr(
         service,

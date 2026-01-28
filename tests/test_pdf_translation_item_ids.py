@@ -210,7 +210,9 @@ def test_translate_pdf_streaming_does_not_use_batch_translator(tmp_path: Path) -
     service._local_prompt_builder = object()  # type: ignore[assignment]
     service._local_batch_translator = spy  # type: ignore[assignment]
 
-    def fake_translate_text_with_options_local(**kwargs: object) -> TextTranslationResult:
+    def fake_translate_text_with_options_local(
+        **kwargs: object,
+    ) -> TextTranslationResult:
         text = str(kwargs.get("text", ""))
         output_language = str(kwargs.get("output_language", "en"))
         style = str(kwargs.get("style", "concise"))

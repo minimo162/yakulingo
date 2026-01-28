@@ -61,7 +61,6 @@ def format_bytes(size_bytes: int) -> str:
     return f"{size_bytes / (1024 * 1024 * 1024):.1f} GB"
 
 
-
 def get_launcher_state_path() -> Path:
     return Path.home() / ".yakulingo" / "launcher_state.json"
 

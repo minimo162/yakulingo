@@ -172,5 +172,7 @@ def test_batch_translator_drops_reference_files_to_backend_translate_sync(
 
     assert result.translations["b1"] == "EN:A"
     assert copilot.calls and copilot.calls[0]["reference_files"] is None
-    assert prompt_builder.calls and prompt_builder.calls[0]["has_reference_files"] is False
+    assert (
+        prompt_builder.calls and prompt_builder.calls[0]["has_reference_files"] is False
+    )
     assert prompt_builder.calls[0]["reference_files"] is None

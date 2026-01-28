@@ -8,9 +8,7 @@ from yakulingo.services.translation_service import TranslationService
 
 def test_local_style_comparison_returns_single_minimal(monkeypatch) -> None:
     settings = AppSettings(translation_backend="local")
-    service = TranslationService(
-        config=settings, prompts_dir=Path("prompts")
-    )
+    service = TranslationService(config=settings, prompts_dir=Path("prompts"))
 
     def fake_translate_single_with_cancel(
         text: str, prompt: str, reference_files=None, on_chunk=None
@@ -36,9 +34,7 @@ def test_local_style_comparison_returns_single_minimal(monkeypatch) -> None:
 
 def test_style_comparison_falls_back_to_single_jp_translation(monkeypatch) -> None:
     settings = AppSettings(translation_backend="local")
-    service = TranslationService(
-        config=settings, prompts_dir=Path("prompts")
-    )
+    service = TranslationService(config=settings, prompts_dir=Path("prompts"))
 
     def fake_translate_single_with_cancel(
         text: str, prompt: str, reference_files=None, on_chunk=None

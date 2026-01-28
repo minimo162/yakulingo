@@ -141,7 +141,9 @@ def test_nonpdf_file_translation_does_not_use_batch_translator(tmp_path: Path) -
     service, spy = _make_service_with_spy_translator()
     processor = DummyTextProcessor()
 
-    def fake_translate_text_with_options_local(**kwargs: object) -> TextTranslationResult:
+    def fake_translate_text_with_options_local(
+        **kwargs: object,
+    ) -> TextTranslationResult:
         text = str(kwargs.get("text", ""))
         output_language = str(kwargs.get("output_language", "en"))
         style = str(kwargs.get("style", "concise"))
@@ -163,7 +165,9 @@ def test_nonpdf_file_translation_does_not_use_batch_translator(tmp_path: Path) -
     with patch.object(
         service,
         "_estimate_local_file_batch_char_limit",
-        side_effect=AssertionError("_estimate_local_file_batch_char_limit should not be called"),
+        side_effect=AssertionError(
+            "_estimate_local_file_batch_char_limit should not be called"
+        ),
     ) as patched_get_limit:
         with patch.object(service, "_ensure_local_backend", return_value=None):
             with patch.object(
@@ -194,7 +198,9 @@ def test_pdf_file_translation_does_not_use_batch_translator(tmp_path: Path) -> N
 
     service, spy = _make_service_with_spy_translator()
 
-    def fake_translate_text_with_options_local(**kwargs: object) -> TextTranslationResult:
+    def fake_translate_text_with_options_local(
+        **kwargs: object,
+    ) -> TextTranslationResult:
         text = str(kwargs.get("text", ""))
         output_language = str(kwargs.get("output_language", "en"))
         style = str(kwargs.get("style", "concise"))
@@ -216,7 +222,9 @@ def test_pdf_file_translation_does_not_use_batch_translator(tmp_path: Path) -> N
     with patch.object(
         service,
         "_estimate_local_file_batch_char_limit",
-        side_effect=AssertionError("_estimate_local_file_batch_char_limit should not be called"),
+        side_effect=AssertionError(
+            "_estimate_local_file_batch_char_limit should not be called"
+        ),
     ) as patched_get_limit:
         with patch.object(service, "_ensure_local_backend", return_value=None):
             with patch.object(

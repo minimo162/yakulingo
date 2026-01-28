@@ -10,9 +10,7 @@ def test_local_style_comparison_retries_when_translation_is_too_short(
     monkeypatch,
 ) -> None:
     settings = AppSettings(translation_backend="local", copilot_enabled=False)
-    service = TranslationService(
-        config=settings, prompts_dir=Path("prompts")
-    )
+    service = TranslationService(config=settings, prompts_dir=Path("prompts"))
     text = (
         "当中間連結会計期間における連結業績は、売上高は2兆2,385億円となりました。\n"
         "営業損失は539億円となりました。\n"
@@ -52,9 +50,7 @@ def test_local_style_comparison_returns_error_when_retry_still_too_short(
     monkeypatch,
 ) -> None:
     settings = AppSettings(translation_backend="local", copilot_enabled=False)
-    service = TranslationService(
-        config=settings, prompts_dir=Path("prompts")
-    )
+    service = TranslationService(config=settings, prompts_dir=Path("prompts"))
     text = (
         "当中間連結会計期間における連結業績は、売上高は2兆2,385億円となりました。\n"
         "営業損失は539億円となりました。\n"
@@ -94,9 +90,7 @@ def test_local_style_comparison_retries_when_numeric_rules_violated(
     monkeypatch,
 ) -> None:
     settings = AppSettings(translation_backend="local", copilot_enabled=False)
-    service = TranslationService(
-        config=settings, prompts_dir=Path("prompts")
-    )
+    service = TranslationService(config=settings, prompts_dir=Path("prompts"))
     text = "売上高は2兆2,385億円(前年同期比1,554億円減)となりました。"
     calls = 0
 

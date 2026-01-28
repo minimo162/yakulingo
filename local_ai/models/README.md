@@ -4,15 +4,15 @@ language:
 - ja
 - en
 base_model:
-- mradermacher/translategemma-4b-it-i1-GGUF
+- mradermacher/HY-MT1.5-7B-i1-GGUF
 ---
 
-このフォルダには `mradermacher/translategemma-4b-it-i1-GGUF` の GGUF モデル
-`translategemma-4b-it.i1-Q6_K.gguf` を同梱しています。
+このフォルダには `mradermacher/HY-MT1.5-7B-i1-GGUF` の GGUF モデル
+`HY-MT1.5-7B.i1-IQ4_XS.gguf` を同梱しています。
 詳細・利用方法・ライセンスは上流リポジトリを参照してください。
 
-This folder bundles the GGUF model `translategemma-4b-it.i1-Q6_K.gguf`
-from `mradermacher/translategemma-4b-it-i1-GGUF`.
+This folder bundles the GGUF model `HY-MT1.5-7B.i1-IQ4_XS.gguf`
+from `mradermacher/HY-MT1.5-7B-i1-GGUF`.
 For details, usage, and license terms, refer to the upstream repository.
 
-Upstream: https://huggingface.co/mradermacher/translategemma-4b-it-i1-GGUF
+Upstream: https://huggingface.co/mradermacher/HY-MT1.5-7B-i1-GGUF

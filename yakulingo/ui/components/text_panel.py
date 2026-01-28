@@ -825,24 +825,20 @@ def _render_results_to_jp(
                     f"option-card w-full result-card{stagger_class}"
                 ):
                     with ui.column().classes("w-full gap-2"):
-                        # Header: actions (right)
-                        with ui.row().classes(
-                            "w-full items-center justify-between gap-2 option-card-header"
-                        ):
-                            with ui.row().classes("items-center gap-2 min-w-0"):
-                                pass
-                            with ui.row().classes("items-center option-card-actions"):
-                                copy_text = option.text
-                                _create_copy_button(
-                                    copy_text,
-                                    on_copy,
-                                    classes="result-action-btn",
-                                    aria_label="訳文をコピー",
-                                    tooltip="訳文をコピー",
-                                )
-
                         # Translation text
                         _render_translation_text(option.text, table_hint=table_hint)
+
+                        with ui.row().classes(
+                            "w-full items-center justify-end gap-2 option-card-actions-bottom"
+                        ):
+                            copy_text = option.text
+                            _create_copy_button(
+                                copy_text,
+                                on_copy,
+                                classes="result-action-btn",
+                                aria_label="訳文をコピー",
+                                tooltip="訳文をコピー",
+                            )
 
 
 def _tokenize_for_diff(text: str) -> list[str]:
@@ -1104,10 +1100,8 @@ def _render_option_en(
         f"option-card w-full result-card{style_class}{stagger_class}"
     ):
         with ui.column().classes("w-full gap-2"):
-            # Header: style badge (left) + actions (right)
-            with ui.row().classes(
-                "w-full items-center justify-between gap-2 option-card-header"
-            ):
+            # Header: style badge (left)
+            with ui.row().classes("w-full items-center gap-2 option-card-header"):
                 with ui.row().classes("items-center gap-2 min-w-0"):
                     if show_style_badge and (ui_style or option.style):
                         style_base = TEXT_STYLE_LABELS.get(
@@ -1119,20 +1113,6 @@ def _render_option_en(
                             else style_base
                         )
                         ui.label(style_label).classes("chip style-chip")
-                with ui.row().classes("items-center option-card-actions"):
-                    copy_suffix = ""
-                    if show_style_badge and ui_style:
-                        style_label_for_copy = TEXT_STYLE_LABELS.get(ui_style, ui_style)
-                        if style_label_for_copy:
-                            copy_suffix = f"（{style_label_for_copy}）"
-                    copy_text = option.text
-                    _create_copy_button(
-                        copy_text,
-                        on_copy,
-                        classes="result-action-btn",
-                        aria_label=f"訳文をコピー{copy_suffix}",
-                        tooltip=f"訳文をコピー{copy_suffix}",
-                    )
 
             # Translation text
             _render_translation_text(
@@ -1140,3 +1120,20 @@ def _render_option_en(
                 diff_base_text=diff_base_text,
                 table_hint=table_hint,
             )
+
+            with ui.row().classes(
+                "w-full items-center justify-end gap-2 option-card-actions-bottom"
+            ):
+                copy_suffix = ""
+                if show_style_badge and ui_style:
+                    style_label_for_copy = TEXT_STYLE_LABELS.get(ui_style, ui_style)
+                    if style_label_for_copy:
+                        copy_suffix = f"（{style_label_for_copy}）"
+                copy_text = option.text
+                _create_copy_button(
+                    copy_text,
+                    on_copy,
+                    classes="result-action-btn",
+                    aria_label=f"訳文をコピー{copy_suffix}",
+                    tooltip=f"訳文をコピー{copy_suffix}",
+                )

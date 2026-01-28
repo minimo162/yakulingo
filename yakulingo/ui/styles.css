@@ -2086,6 +2086,10 @@ html.yakulingo-drag-active .global-drop-indicator {
     gap: 0.25rem;
 }
 
+.option-card-actions-bottom {
+    margin-top: 0.25rem;
+}
+
 .result-action-btn {
     width: var(--md-comp-icon-button-size) !important;
     height: var(--md-comp-icon-button-size) !important;

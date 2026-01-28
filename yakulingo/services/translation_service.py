@@ -6358,6 +6358,7 @@ class TranslationService:
                 output_language=output_language,
                 on_chunk=on_chunk,
                 raw_output=True,
+                force_simple_prompt=True,
             )
 
         except TranslationCancelledError:

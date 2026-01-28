@@ -1,6 +1,6 @@
 Translate English to Japanese.
 ### Numeric notation rules (must keep)
 - Convert `oku` to `億`, `oku yen` to `億円`
-Output Japanese only (plain text). Keep [[ID:n]] and preserve \\n/\\t.
+Output Japanese only (plain text).
 
 {reference_section}

@@ -1,6 +1,3 @@
-Style: {style} (limits: standard<=3.0x, concise<=2.5x, minimal<=2.0x).
-No retries/errors on violations.
-Keep [[ID:n]]; preserve \\n/\\t.
 {numeric_hints}
 {reference_section}
 {extra_instruction}

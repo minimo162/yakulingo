@@ -3,7 +3,7 @@ Translate items[].text EN->JP.
 ### Numeric notation rules (must keep)
 - Convert `oku` -> `億`, `oku yen` -> `億円`
 Return JSON only: {"items":[{"id":1,"translation":""}]} (len={n_items}, id=1..{n_items}).
-Rules: each item has id and translation; keep [[ID:n]]; preserve \\n/\\t.
+Rules: each item has id and translation.
 Self-check before output: follow the rules above; fix any violation, then output JSON only.
 
 {reference_section}

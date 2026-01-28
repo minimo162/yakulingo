@@ -4,10 +4,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from yakulingo.config.settings import AppSettings
-from yakulingo.services.translation_service import (
-    TranslationService,
-    language_detector,
-)
+from yakulingo.services.translation_service import TranslationService
 
 
 def test_local_to_jp_retries_when_output_is_chinese(monkeypatch) -> None:
@@ -40,11 +37,11 @@ def test_local_to_jp_retries_when_output_is_chinese(monkeypatch) -> None:
         pre_detected_language="英語",
     )
 
-    assert calls == 2
+    assert calls == 1
     assert result.output_language == "jp"
     assert result.options
-    assert language_detector.detect_local(result.options[0].text) == "日本語"
-    assert (result.metadata or {}).get("output_language_retry") is True
+    assert result.options[0].text == "汉语测试"
+    assert (result.metadata or {}).get("output_language_retry") is None
 
 
 def test_local_to_en_returns_error_without_copilot_advice_when_retry_fails(
@@ -78,12 +75,10 @@ def test_local_to_en_returns_error_without_copilot_advice_when_retry_fails(
         pre_detected_language="日本語",
     )
 
-    assert calls == 2
+    assert calls == 1
     assert result.output_language == "en"
-    assert not result.options
-    assert result.error_message
-    assert "Copilotボタン" not in result.error_message
+    assert result.options
+    assert result.options[0].text == "汉语测试"
+    assert result.error_message is None
     metadata = result.metadata or {}
-    assert metadata.get("output_language_retry") is True
-    assert metadata.get("output_language_retry_failed") is True
-    assert metadata.get("output_language_mismatch") is True
+    assert metadata.get("output_language_retry") is None

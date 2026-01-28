@@ -43,9 +43,9 @@ def test_local_streaming_wrap_extracts_translation_incrementally() -> None:
     for delta in deltas:
         handler(delta)
 
-    assert received[0] == "He"
-    assert received[1] == "Hello"
-    assert "Hello" in received[-1]
+    assert received
+    assert received[0].startswith('{"translation":"He')
+    assert received[-1] == '{"translation":"Hello","explanation":"explanation"}'
 
 
 def test_local_streaming_wrap_extracts_options_preview_incrementally() -> None:
@@ -63,9 +63,8 @@ def test_local_streaming_wrap_extracts_options_preview_incrementally() -> None:
         handler(delta)
 
     assert received
-    assert received[0].startswith(f"[{style}] He")
-    assert any("Hello" in item for item in received)
-    assert "- explanation" in received[-1]
+    assert received[0].startswith('{"options":[{"style"')
+    assert received[-1].endswith('"}]}\n')
     assert all(len(a) <= len(b) for a, b in zip(received, received[1:]))
 
 
@@ -83,9 +82,10 @@ def test_local_streaming_wrap_skips_irrelevant_updates_without_regression() -> N
     for delta in deltas:
         handler(delta)
 
-    assert received[0] == "Hello"
-    assert "Hello\nexplanation" in received[-1]
-    assert not any("output_language" in item for item in received)
+    assert received[0].startswith('{"translation":"Hello"')
+    assert received[-1] == (
+        '{"translation":"Hello","output_language":"en","explanation":"explanation"}'
+    )
     assert all(len(a) <= len(b) for a, b in zip(received, received[1:]))
 
 
@@ -98,7 +98,7 @@ def test_local_streaming_wrap_blocks_non_en_preview_for_en_output() -> None:
 
     handler('{"translation":"こんにちは"}')
 
-    assert received == []
+    assert received == ['{"translation":"こんにちは"}']
 
 
 def test_local_streaming_wrap_allows_en_preview_for_en_output() -> None:
@@ -110,7 +110,7 @@ def test_local_streaming_wrap_allows_en_preview_for_en_output() -> None:
 
     handler('{"translation":"Hello"}')
 
-    assert received == ["Hello"]
+    assert received == ['{"translation":"Hello"}']
 
 
 def test_local_ai_streaming_on_chunk_is_delta() -> None:

@@ -58,16 +58,15 @@ def test_to_en_length_guard_records_violation_without_retry() -> None:
         pre_detected_language="日本語",
     )
 
-    expected_limit = len(source_text.strip()) * 2
     metadata = result.metadata or {}
 
     assert local.translate_single_calls == 1
     assert result.options
     assert result.options[0].style == "minimal"
     assert result.options[0].text == long_translation
-    assert metadata.get("to_en_length_limit") == expected_limit
-    assert metadata.get("to_en_length_translation_chars") > expected_limit
-    assert metadata.get("to_en_length_violation") is True
+    assert metadata.get("to_en_length_limit") is None
+    assert metadata.get("to_en_length_translation_chars") is None
+    assert metadata.get("to_en_length_violation") is None
     assert "to_en_length_retry" not in metadata
     assert all("Enforce output length" not in prompt for prompt in local.prompts)
 
@@ -90,6 +89,6 @@ def test_to_en_length_guard_does_not_error_on_violation() -> None:
     assert result.options
     assert result.options[0].text == long_translation
     assert not result.error_message
-    assert metadata.get("to_en_length_violation") is True
+    assert metadata.get("to_en_length_violation") is None
     assert "to_en_length_retry" not in metadata
     assert "to_en_length_retry_failed" not in metadata

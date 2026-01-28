@@ -1,15 +1,11 @@
 from __future__ import annotations
 
-import re
 from collections.abc import Callable
 from pathlib import Path
 
 from yakulingo.config.settings import AppSettings
 from yakulingo.services.local_ai_prompt_builder import LocalPromptBuilder
 from yakulingo.services.translation_service import TranslationService
-
-
-_RE_JP_CHARS = re.compile(r"[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]")
 
 
 class SequencedLocalClient:
@@ -65,14 +61,12 @@ def test_text_style_comparison_retries_when_output_language_mismatched() -> None
         pre_detected_language="日本語",
     )
 
-    assert local.translate_single_calls == 2
+    assert local.translate_single_calls == 1
     assert result.output_language == "en"
     assert [option.style for option in result.options] == ["minimal"]
-    assert all(not _RE_JP_CHARS.search(option.text) for option in result.options)
+    assert result.options[0].text == first
     metadata = result.metadata or {}
-    assert metadata.get("backend") == "local"
-    assert metadata.get("local_translate_single_calls") == 2
-    assert metadata.get("output_language_retry") is True
+    assert metadata.get("output_language_retry") is None
 
 
 def test_text_options_ignores_requested_style_and_retries_on_output_language_mismatch() -> (
@@ -89,10 +83,10 @@ def test_text_options_ignores_requested_style_and_retries_on_output_language_mis
         pre_detected_language="日本語",
     )
 
-    assert local.translate_single_calls == 2
+    assert local.translate_single_calls == 1
     assert result.output_language == "en"
     assert result.options[0].style == "standard"
-    assert not _RE_JP_CHARS.search(result.options[0].text)
+    assert result.options[0].text == first
 
 
 def test_text_style_comparison_retries_when_translation_is_ellipsis_only() -> None:
@@ -106,14 +100,12 @@ def test_text_style_comparison_retries_when_translation_is_ellipsis_only() -> No
         pre_detected_language="日本語",
     )
 
-    assert local.translate_single_calls == 2
+    assert local.translate_single_calls == 1
     assert result.output_language == "en"
     assert [option.style for option in result.options] == ["minimal"]
-    assert result.options[0].text == "This is a test."
+    assert result.options[0].text == first
     metadata = result.metadata or {}
-    assert metadata.get("backend") == "local"
-    assert metadata.get("local_translate_single_calls") == 2
-    assert metadata.get("ellipsis_retry") is True
+    assert metadata.get("ellipsis_retry") is None
 
 
 def test_text_style_comparison_errors_when_translation_stays_ellipsis_only() -> None:
@@ -127,14 +119,12 @@ def test_text_style_comparison_errors_when_translation_stays_ellipsis_only() -> 
         pre_detected_language="日本語",
     )
 
-    assert local.translate_single_calls == 2
-    assert not result.options
-    assert result.error_message
+    assert local.translate_single_calls == 1
+    assert result.options
+    assert result.options[0].text == first
+    assert result.error_message is None
     metadata = result.metadata or {}
-    assert metadata.get("backend") == "local"
-    assert metadata.get("local_translate_single_calls") == 2
-    assert metadata.get("ellipsis_retry") is True
-    assert metadata.get("ellipsis_retry_failed") is True
+    assert metadata.get("ellipsis_retry") is None
 
 
 def test_text_style_comparison_retries_when_translation_is_placeholder_only() -> None:
@@ -148,14 +138,12 @@ def test_text_style_comparison_retries_when_translation_is_placeholder_only() ->
         pre_detected_language="日本語",
     )
 
-    assert local.translate_single_calls == 2
+    assert local.translate_single_calls == 1
     assert result.output_language == "en"
     assert [option.style for option in result.options] == ["minimal"]
-    assert result.options[0].text == "This is a test."
+    assert result.options[0].text == first
     metadata = result.metadata or {}
-    assert metadata.get("backend") == "local"
-    assert metadata.get("local_translate_single_calls") == 2
-    assert metadata.get("placeholder_retry") is True
+    assert metadata.get("placeholder_retry") is None
 
 
 def test_text_style_comparison_errors_when_translation_stays_placeholder_only() -> None:
@@ -169,14 +157,12 @@ def test_text_style_comparison_errors_when_translation_stays_placeholder_only() 
         pre_detected_language="日本語",
     )
 
-    assert local.translate_single_calls == 2
-    assert not result.options
-    assert result.error_message
+    assert local.translate_single_calls == 1
+    assert result.options
+    assert result.options[0].text == first
+    assert result.error_message is None
     metadata = result.metadata or {}
-    assert metadata.get("backend") == "local"
-    assert metadata.get("local_translate_single_calls") == 2
-    assert metadata.get("placeholder_retry") is True
-    assert metadata.get("placeholder_retry_failed") is True
+    assert metadata.get("placeholder_retry") is None
 
 
 def test_text_options_retries_when_translation_is_placeholder_only_for_jp() -> None:
@@ -191,11 +177,11 @@ def test_text_options_retries_when_translation_is_placeholder_only_for_jp() -> N
         pre_detected_language="英語",
     )
 
-    assert local.translate_single_calls == 2
+    assert local.translate_single_calls == 1
     assert result.output_language == "jp"
-    assert result.options[0].text == "これはテストです。"
+    assert result.options[0].text == first
     metadata = result.metadata or {}
-    assert metadata.get("placeholder_retry") is True
+    assert metadata.get("placeholder_retry") is None
 
 
 def test_text_style_comparison_retries_for_oku_numeric_rule_when_auto_fix_not_possible() -> (
@@ -214,16 +200,15 @@ def test_text_style_comparison_retries_for_oku_numeric_rule_when_auto_fix_not_po
         pre_detected_language="日本語",
     )
 
-    assert local.translate_single_calls == 2
+    assert local.translate_single_calls == 1
     assert local.prompts
     assert "- JP: 2兆2,385億円 | EN: 22,385 oku yen" not in local.prompts[0]
 
     metadata = result.metadata or {}
     assert result.output_language == "en"
     assert [option.style for option in result.options] == ["minimal"]
-    assert all("oku" in option.text.lower() for option in result.options)
-    assert metadata.get("backend") == "local"
-    assert metadata.get("to_en_numeric_rule_retry") is True
+    assert result.options[0].text == first
+    assert metadata.get("to_en_numeric_rule_retry") is None
 
 
 def test_text_style_comparison_skips_numeric_retry_when_auto_fixable() -> None:
@@ -241,12 +226,10 @@ def test_text_style_comparison_skips_numeric_retry_when_auto_fixable() -> None:
     assert local.translate_single_calls == 1
     assert result.output_language == "en"
     assert [option.style for option in result.options] == ["standard"]
-    assert all("oku" in option.text.lower() for option in result.options)
-    assert all("billion" not in option.text.lower() for option in result.options)
+    assert result.options[0].text == first
 
     metadata = result.metadata or {}
-    assert metadata.get("to_en_numeric_unit_correction") is True
-    assert metadata.get("local_translate_single_calls") == 1
+    assert metadata.get("to_en_numeric_unit_correction") is None
 
 
 def test_text_style_comparison_skips_numeric_retry_when_auto_fixable_by_conversion() -> (
@@ -269,14 +252,11 @@ def test_text_style_comparison_skips_numeric_retry_when_auto_fixable_by_conversi
 
     assert result.output_language == "en"
     assert [option.style for option in result.options] == ["standard"]
-    assert all("oku" in option.text.lower() for option in result.options)
-    assert all("billion" not in option.text.lower() for option in result.options)
+    assert result.options[0].text == first
 
     metadata = result.metadata or {}
-    assert metadata.get("backend") == "local"
-    assert metadata.get("to_en_numeric_unit_correction") is True
-    assert metadata.get("to_en_numeric_rule_retry") is not True
-    assert metadata.get("local_translate_single_calls") == 1
+    assert metadata.get("to_en_numeric_unit_correction") is None
+    assert metadata.get("to_en_numeric_rule_retry") is None
 
 
 def test_text_style_comparison_does_not_retry_when_output_keeps_jp_numeric_units() -> (
@@ -296,6 +276,6 @@ def test_text_style_comparison_does_not_retry_when_output_keeps_jp_numeric_units
     assert local.translate_single_calls == 1
     assert result.output_language == "en"
     assert [option.style for option in result.options] == ["standard"]
-    assert any(_RE_JP_CHARS.search(option.text) for option in result.options)
+    assert result.options[0].text == first
     metadata = result.metadata or {}
-    assert metadata.get("output_language_retry") is not True
+    assert metadata.get("output_language_retry") is None

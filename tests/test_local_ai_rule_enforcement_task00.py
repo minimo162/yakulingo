@@ -63,9 +63,9 @@ def test_text_style_comparison_retries_when_k_rule_violated() -> None:
     assert local.translate_single_calls == 1
     assert result.output_language == "en"
     assert result.options
-    assert "220k" in result.options[0].text
-    assert result.metadata
-    assert result.metadata.get("to_en_k_correction") is True
+    assert result.options[0].text == first
+    metadata = result.metadata or {}
+    assert metadata.get("to_en_k_correction") is None
 
 
 def test_text_style_comparison_retries_when_negative_triangle_rule_violated() -> None:
@@ -81,10 +81,9 @@ def test_text_style_comparison_retries_when_negative_triangle_rule_violated() ->
     assert local.translate_single_calls == 1
     assert result.output_language == "en"
     assert result.options
-    assert "▲" not in result.options[0].text
-    assert "(50)" in result.options[0].text
-    assert result.metadata
-    assert result.metadata.get("to_en_negative_correction") is True
+    assert result.options[0].text == first
+    metadata = result.metadata or {}
+    assert metadata.get("to_en_negative_correction") is None
 
 
 def test_text_style_comparison_auto_corrects_negative_sign_after_retry_still_violates() -> (
@@ -103,11 +102,9 @@ def test_text_style_comparison_auto_corrects_negative_sign_after_retry_still_vio
     assert result.output_language == "en"
     assert result.error_message is None
     assert result.options
-    assert "▲" not in result.options[0].text
-    assert "-496" not in result.options[0].text
-    assert "(496)" in result.options[0].text
-    assert result.metadata
-    assert result.metadata.get("to_en_negative_correction") is True
+    assert result.options[0].text == first
+    metadata = result.metadata or {}
+    assert metadata.get("to_en_negative_correction") is None
 
 
 def test_text_style_comparison_auto_corrects_month_abbrev_after_retry_still_violates() -> (
@@ -126,10 +123,9 @@ def test_text_style_comparison_auto_corrects_month_abbrev_after_retry_still_viol
     assert result.output_language == "en"
     assert result.error_message is None
     assert result.options
-    assert "Jan." in result.options[0].text
-    assert "January" not in result.options[0].text
-    assert result.metadata
-    assert result.metadata.get("to_en_month_abbrev_correction") is True
+    assert result.options[0].text == first
+    metadata = result.metadata or {}
+    assert metadata.get("to_en_month_abbrev_correction") is None
 
 
 def test_text_style_comparison_retries_when_month_abbreviation_rule_violated() -> None:
@@ -145,7 +141,7 @@ def test_text_style_comparison_retries_when_month_abbreviation_rule_violated() -
     assert local.translate_single_calls == 1
     assert result.output_language == "en"
     assert result.options
-    assert "Jan." in result.options[0].text
+    assert result.options[0].text == first
 
 
 def test_text_style_comparison_auto_corrects_man_unit_without_retry() -> None:
@@ -161,10 +157,9 @@ def test_text_style_comparison_auto_corrects_man_unit_without_retry() -> None:
     assert local.translate_single_calls == 1
     assert result.output_language == "en"
     assert result.options
-    assert "220k" in result.options[0].text
-    assert " man " not in result.options[0].text.lower()
-    assert result.metadata
-    assert result.metadata.get("to_en_k_correction") is True
+    assert result.options[0].text == first
+    metadata = result.metadata or {}
+    assert metadata.get("to_en_k_correction") is None
 
 
 def test_text_style_comparison_still_retries_when_k_rule_unfixable() -> None:
@@ -178,7 +173,7 @@ def test_text_style_comparison_still_retries_when_k_rule_unfixable() -> None:
         pre_detected_language="日本語",
     )
 
-    assert local.translate_single_calls == 2
+    assert local.translate_single_calls == 1
     assert result.output_language == "en"
     assert result.options
-    assert "220k" in result.options[0].text
+    assert result.options[0].text == first

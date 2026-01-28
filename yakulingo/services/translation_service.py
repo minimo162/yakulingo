@@ -22,8 +22,6 @@ import unicodedata
 
 import re
 
-from yakulingo.services.local_ai_client import is_truncated_json
-
 if TYPE_CHECKING:
     from yakulingo.services.local_llama_server import LocalAIServerRuntime
 
@@ -1175,128 +1173,36 @@ def _wrap_local_streaming_on_chunk(
 ) -> Optional[Callable[[str], None]]:
     if on_chunk is None:
         return None
+    _ = expected_output_language, parse_json
     last_emitted = ""
     last_emit_time = 0.0
     raw_cached = ""
     raw_parts: list[str] = []
-    raw_len = 0
     throttle_seconds = 0.08
 
-    if not parse_json:
-
-        def _handle(delta: str) -> None:
-            nonlocal last_emitted, last_emit_time
-            nonlocal raw_cached, raw_parts, raw_len
-
-            if not delta:
-                return
-            if raw_cached and delta.startswith(raw_cached):
-                raw_cached = delta
-                raw_parts.clear()
-                raw_len = len(delta)
-            else:
-                raw_parts.append(delta)
-                raw_len += len(delta)
-
-            if raw_parts:
-                raw_cached += "".join(raw_parts)
-                raw_parts.clear()
-                raw_len = len(raw_cached)
-
-            candidate = raw_cached
-            if expected_output_language == "en" and _is_text_output_language_mismatch(
-                candidate, "en"
-            ):
-                return
-            if candidate == last_emitted or len(candidate) < len(last_emitted):
-                return
-            now = time.monotonic()
-            if (now - last_emit_time) < throttle_seconds and (
-                len(candidate) - len(last_emitted)
-            ) < 3:
-                return
-            last_emitted = candidate
-            last_emit_time = now
-            on_chunk(candidate)
-
-        return _handle
-
-    last_parse_time = 0.0
-    last_parse_len = 0
-    has_options = False
-    has_explanation = False
-    parse_min_delta_chars = 128
-
     def _handle(delta: str) -> None:
-        nonlocal last_emitted, last_emit_time, last_parse_time
-        nonlocal raw_cached, raw_parts, raw_len, last_parse_len
-        nonlocal has_options, has_explanation
+        nonlocal last_emitted, last_emit_time, raw_cached, raw_parts
 
         if not delta:
             return
         if raw_cached and delta.startswith(raw_cached):
             raw_cached = delta
             raw_parts.clear()
-            raw_len = len(delta)
-            last_parse_len = 0
         else:
             raw_parts.append(delta)
-            raw_len += len(delta)
-
-        if not has_options and '"options"' in delta:
-            has_options = True
-        if not has_explanation and '"explanation"' in delta:
-            has_explanation = True
-
-        now = time.monotonic()
-        if (
-            raw_len >= parse_min_delta_chars
-            and (now - last_parse_time) < throttle_seconds
-            and (raw_len - last_parse_len) < parse_min_delta_chars
-            and not any(ch in delta for ch in ("}", "]"))
-        ):
-            return
 
         if raw_parts:
             raw_cached += "".join(raw_parts)
             raw_parts.clear()
-            raw_len = len(raw_cached)
-        raw = raw_cached
-        last_parse_len = raw_len
-        last_parse_time = now
 
-        if raw_len < 1024:
-            if not has_options and '"options"' in raw:
-                has_options = True
-            if not has_explanation and '"explanation"' in raw:
-                has_explanation = True
-
-        candidate = _extract_options_preview(raw) if has_options else None
-        if candidate is None:
-            translation = _extract_first_translation_from_json(raw)
-            if not translation:
-                return
-            explanation = (
-                _extract_json_value_for_key(raw, "explanation")
-                if has_explanation
-                else None
-            )
-            if explanation:
-                candidate = f"{translation}\n{explanation}"
-            else:
-                candidate = translation
-
-        if expected_output_language == "en" and _is_text_output_language_mismatch(
-            candidate, "en"
-        ):
-            return
+        candidate = raw_cached
         if candidate == last_emitted or len(candidate) < len(last_emitted):
             return
-        delta_len = len(candidate) - len(last_emitted)
-        if (now - last_emit_time) < throttle_seconds and delta_len < 3:
-            stripped = raw.lstrip()
-            if stripped.startswith(("{", "[")) and is_truncated_json(raw):
-                return
+        now = time.monotonic()
+        if (now - last_emit_time) < throttle_seconds and (
+            len(candidate) - len(last_emitted)
+        ) < 3:
+            return
         last_emitted = candidate
         last_emit_time = now
         on_chunk(candidate)
@@ -4351,6 +4257,7 @@ class TranslationService:
         output_language: str,
         on_chunk: "Callable[[str], None] | None" = None,
         force_simple_prompt: bool = False,
+        raw_output: bool = False,
     ) -> TextTranslationResult:
         reference_files = None
         self._ensure_local_backend()
@@ -4512,7 +4419,8 @@ class TranslationService:
                 metadata["segment_count"] = block_idx
 
                 if blocks:
-                    if simple_prompt_mode:
+                    use_single_segment_prompt = simple_prompt_mode or raw_output
+                    if use_single_segment_prompt:
                         translated_map: dict[str, str] = {}
                         segment_untranslated = 0
                         for block in blocks:
@@ -4520,10 +4428,29 @@ class TranslationService:
                                 raise TranslationCancelledError(
                                     "Translation cancelled by user"
                                 )
-                            segment_prompt = self.prompt_builder.build_simple_prompt(
-                                block.text,
-                                output_language=output_language,
-                            )
+                            if simple_prompt_mode:
+                                segment_prompt = (
+                                    self.prompt_builder.build_simple_prompt(
+                                        block.text,
+                                        output_language=output_language,
+                                    )
+                                )
+                            else:
+                                if output_language == "en":
+                                    segment_prompt = (
+                                        local_builder.build_text_to_en_single(
+                                            block.text,
+                                            style=style,
+                                            reference_files=reference_files,
+                                            detected_language=detected_language,
+                                        )
+                                    )
+                                else:
+                                    segment_prompt = local_builder.build_text_to_jp(
+                                        block.text,
+                                        reference_files=reference_files,
+                                        detected_language=detected_language,
+                                    )
                             try:
                                 if supports_runtime and runtime is not None:
                                     raw_segment = (
@@ -4547,8 +4474,14 @@ class TranslationService:
                             except TranslationCancelledError:
                                 raise
                             except RuntimeError:
-                                translated_map[block.id] = block.text
+                                translated_map[block.id] = (
+                                    "" if raw_output else block.text
+                                )
                                 segment_untranslated += 1
+                                continue
+
+                            if raw_output:
+                                translated_map[block.id] = raw_segment
                                 continue
 
                             translated_piece = _normalize_local_plain_text_output(
@@ -4594,6 +4527,22 @@ class TranslationService:
                         continue
                     merged_parts.append(translated_map.get(key, original))
                 merged = "".join(merged_parts)
+
+                if raw_output:
+                    return TextTranslationResult(
+                        source_text=text,
+                        source_char_count=len(text),
+                        options=[
+                            TranslationOption(
+                                text=merged,
+                                explanation="",
+                                style=style if output_language == "en" else None,
+                            )
+                        ],
+                        output_language=output_language,
+                        detected_language=detected_language,
+                        metadata=metadata,
+                    )
 
                 if output_language == "en":
                     if _is_text_output_language_mismatch(merged, "en"):
@@ -4683,6 +4632,21 @@ class TranslationService:
                         if fallback is not None:
                             return fallback
                     raise
+                if raw_output:
+                    return TextTranslationResult(
+                        source_text=text,
+                        source_char_count=len(text),
+                        options=[
+                            TranslationOption(
+                                text=raw or "",
+                                explanation="",
+                                style=style,
+                            )
+                        ],
+                        output_language=output_language,
+                        detected_language=detected_language,
+                        metadata=metadata,
+                    )
                 translation = _normalize_local_plain_text_output(raw)
                 if not translation:
                     return TextTranslationResult(
@@ -5180,6 +5144,15 @@ class TranslationService:
                     if fallback is not None:
                         return fallback
                 raise
+            if raw_output:
+                return TextTranslationResult(
+                    source_text=text,
+                    source_char_count=len(text),
+                    options=[TranslationOption(text=raw or "", explanation="")],
+                    output_language=output_language,
+                    detected_language=detected_language,
+                    metadata=metadata,
+                )
             translation = _normalize_local_plain_text_output(raw)
             if not translation:
                 return TextTranslationResult(
@@ -6409,6 +6382,7 @@ class TranslationService:
                 detected_language=detected_language,
                 output_language=output_language,
                 on_chunk=on_chunk,
+                raw_output=True,
             )
 
         except TranslationCancelledError:

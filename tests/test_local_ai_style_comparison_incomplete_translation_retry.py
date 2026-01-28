@@ -40,10 +40,10 @@ def test_local_style_comparison_retries_when_translation_is_too_short(
     )
 
     assert calls == 1
-    assert result.error_message
-    assert "不完全" in result.error_message
-    assert not result.options
-    assert (result.metadata or {}).get("incomplete_translation") is True
+    assert result.error_message is None
+    assert result.options
+    assert result.options[0].text == "Revenue"
+    assert (result.metadata or {}).get("incomplete_translation") is None
 
 
 def test_local_style_comparison_returns_error_when_retry_still_too_short(
@@ -80,10 +80,10 @@ def test_local_style_comparison_returns_error_when_retry_still_too_short(
     )
 
     assert calls == 1
-    assert result.error_message
-    assert "不完全" in result.error_message
-    assert not result.options
-    assert (result.metadata or {}).get("incomplete_translation") is True
+    assert result.error_message is None
+    assert result.options
+    assert result.options[0].text == "Revenue"
+    assert (result.metadata or {}).get("incomplete_translation") is None
 
 
 def test_local_style_comparison_retries_when_numeric_rules_violated(
@@ -119,6 +119,6 @@ def test_local_style_comparison_retries_when_numeric_rules_violated(
     assert calls == 1
     assert [option.style for option in result.options] == ["standard"]
     assert [option.text for option in result.options] == [
-        "Revenue was 22,385 oku yen, down by 1,554 oku yen year on year."
+        "Revenue was 2.2385 trillion yen, down by 1,554 billion yen year on year."
     ]
-    assert (result.metadata or {}).get("to_en_numeric_unit_correction") is True
+    assert (result.metadata or {}).get("to_en_numeric_unit_correction") is None

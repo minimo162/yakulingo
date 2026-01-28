@@ -73,12 +73,25 @@ class _CapturingLocalClient:
     def set_cancel_callback(self, callback) -> None:  # noqa: ANN001
         self.cancel_callback = callback
 
-    def translate_single(self, *args, **kwargs) -> str:  # noqa: ANN001, ANN002, ANN003
+    def translate_single(  # noqa: PLR0913
+        self,
+        text: str,
+        prompt: str,
+        reference_files: list[Path] | None = None,
+        on_chunk=None,  # noqa: ANN001
+    ) -> str:
+        _ = prompt
+        _ = reference_files
+        _ = on_chunk
         self.translate_single_calls += 1
-        raise RuntimeError(
-            "LOCAL_PROMPT_TOO_LONG: "
-            '{"error":{"code":400,"message":"request exceeds context size"}}'
-        )
+        if self.translate_single_calls == 1:
+            raise RuntimeError(
+                "LOCAL_PROMPT_TOO_LONG: "
+                '{"error":{"code":400,"message":"request exceeds context size"}}'
+            )
+        match = re.search(r"SEG\\d{4}", text)
+        marker = match.group(0) if match else "SEGXXXX"
+        return f"{marker}-EN"
 
     def translate_sync(  # noqa: PLR0913
         self,
@@ -139,8 +152,8 @@ def test_local_text_long_segmentation_preserves_newlines_and_uses_batch_translat
         pre_detected_language="日本語",
     )
 
-    assert local.translate_single_calls == 1
-    assert local.translate_sync_calls > 0
+    assert local.translate_single_calls > 1
+    assert local.translate_sync_calls == 0
     assert result.output_language == "en"
     assert result.options
     assert result.options[0].style == "minimal"

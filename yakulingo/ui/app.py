@@ -9886,20 +9886,9 @@ class YakuLingoApp:
                         stream_handler,
                     )
 
-                # Parse result and store on the option
+                # Store raw result on the option (no parsing/normalization)
                 if result:
-                    from yakulingo.ui.utils import parse_translation_result
-
-                    text_result, _ = parse_translation_result(result)
-                    if output_language:
-                        from yakulingo.services.translation_service import (
-                            _normalize_back_translation_text,
-                        )
-
-                        text_result = _normalize_back_translation_text(
-                            text_result, output_language
-                        )
-                    option.back_translation_text = text_result
+                    option.back_translation_text = result
                     option.back_translation_explanation = None
                     if reference_warnings:
                         try:

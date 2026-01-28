@@ -1,8 +1,7 @@
 # yakulingo/ui/components/text_panel.py
 """
-Text translation panel with language-specific UI.
-- Japanese → English: Multiple style options shown together
-- Other → Japanese: Single translation
+Text translation panel UI.
+Displays AI output as raw text.
 Designed for Japanese users.
 """
 
@@ -19,10 +18,7 @@ from typing import Callable, Optional
 from nicegui import ui
 
 from yakulingo.ui.state import AppState, TextViewState
-from yakulingo.ui.utils import (
-    normalize_literal_escapes,
-    to_props_string_literal,
-)
+from yakulingo.ui.utils import to_props_string_literal
 from yakulingo.models.types import TranslationOption, TextTranslationResult
 
 logger = logging.getLogger(__name__)
@@ -307,7 +303,7 @@ def _build_copy_payload(
         parts = []
         for option in options:
             lines = []
-            option_text = normalize_literal_escapes(option.text)
+            option_text = option.text
             if include_headers:
                 style_key = _normalize_text_style(option.style)
                 style_label = (
@@ -320,7 +316,7 @@ def _build_copy_payload(
             parts.append("\n".join(lines).strip())
         return "\n\n".join(parts)
 
-    option_text = normalize_literal_escapes(options[0].text)
+    option_text = options[0].text
     if not include_headers:
         return option_text
     return "\n".join(["訳文:", option_text]).strip()
@@ -642,8 +638,9 @@ def create_text_result_panel(
         # Streaming preview (partial output while backend is generating)
         if state.text_translating and state.text_streaming_preview:
             with ui.element("div").classes("streaming-preview"):
-                preview_text = normalize_literal_escapes(state.text_streaming_preview)
+                preview_text = state.text_streaming_preview
                 label = ui.label(preview_text).classes("streaming-text")
+                label.style("white-space: pre-wrap;")
                 if on_streaming_preview_label_created:
                     on_streaming_preview_label_created(label)
 
@@ -799,52 +796,29 @@ def _render_results_to_en(
     if not result.options:
         return None, [], []
 
-    display_options = _iter_ordered_options(result)
-    if result.is_to_english:
-        display_options = _filter_options_by_style(display_options, selected_style)
+    display_options = result.options
     if not display_options:
         return None, [], []
+    display_options = display_options[:1]
     primary_option = display_options[0]
-    secondary_options: list[TranslationOption] = display_options[1:]
+    secondary_options: list[TranslationOption] = []
 
     table_hint = _build_tabular_text_hint(result.source_text)
-    base_style = _normalize_text_style(compare_base_style)
-    base_option = (
-        next(
-            (
-                option
-                for option in display_options
-                if _normalize_text_style(option.style) == base_style
-            ),
-            None,
-        )
-        if base_style
-        else None
-    )
-    base_text = base_option.text if base_option else None
+    _ = (compare_mode, compare_base_style, selected_style)
 
     # Translation results container
     with ui.element("div").classes("result-container"):
         with ui.element("div").classes("result-section w-full"):
             with ui.column().classes("w-full gap-3"):
                 for index, option in enumerate(display_options):
-                    option_style = _normalize_text_style(option.style)
-                    diff_base_text = None
-                    if (
-                        compare_mode != "off"
-                        and base_text
-                        and option_style
-                        and option_style != base_style
-                    ):
-                        diff_base_text = base_text
                     _render_option_en(
                         option,
                         on_copy,
                         on_back_translate,
                         is_last=index == len(display_options) - 1,
                         index=index,
-                        show_style_badge=True,
-                        diff_base_text=diff_base_text,
+                        show_style_badge=False,
+                        diff_base_text=None,
                         show_back_translate_button=True,
                         actions_disabled=actions_disabled,
                         table_hint=table_hint,
@@ -871,68 +845,61 @@ def _render_results_to_jp(
 
     table_hint = _build_tabular_text_hint(result.source_text)
 
+    option = result.options[0]
+
     # Translation results container (same structure as English)
     with ui.element("div").classes("result-container"):
         with ui.element("div").classes("result-section w-full"):
             with ui.column().classes("w-full gap-3"):
-                for index, option in enumerate(result.options):
-                    stagger_class = f" stagger-{min(index + 1, 4)}"
-                    with ui.card().classes(
-                        f"option-card w-full result-card{stagger_class}"
-                    ):
-                        with ui.column().classes("w-full gap-2"):
-                            # Header: actions (right)
-                            with ui.row().classes(
-                                "w-full items-center justify-between gap-2 option-card-header"
-                            ):
-                                with ui.row().classes("items-center gap-2 min-w-0"):
-                                    pass
-                                with ui.row().classes(
-                                    "items-center option-card-actions"
-                                ):
-                                    copy_text = normalize_literal_escapes(option.text)
-                                    excel_copy = _format_tabular_text_for_excel_paste(
-                                        copy_text,
-                                        hint=table_hint,
-                                    )
-                                    if excel_copy:
-                                        copy_text = excel_copy
-                                    _create_copy_button(
-                                        copy_text,
-                                        on_copy,
-                                        classes="result-action-btn",
-                                        aria_label="訳文をコピー",
-                                        tooltip="訳文をコピー",
-                                    )
-                                    if on_back_translate and show_back_translate_button:
-                                        back_btn = (
-                                            ui.button(
-                                                "逆翻訳",
-                                                icon="g_translate",
-                                                on_click=lambda o=option: on_back_translate(
-                                                    o, None
-                                                ),
-                                            )
-                                            .props("flat no-caps size=sm")
-                                            .classes("back-translate-btn")
-                                            .tooltip("精度確認")
+                stagger_class = " stagger-1"
+                with ui.card().classes(
+                    f"option-card w-full result-card{stagger_class}"
+                ):
+                    with ui.column().classes("w-full gap-2"):
+                        # Header: actions (right)
+                        with ui.row().classes(
+                            "w-full items-center justify-between gap-2 option-card-header"
+                        ):
+                            with ui.row().classes("items-center gap-2 min-w-0"):
+                                pass
+                            with ui.row().classes("items-center option-card-actions"):
+                                copy_text = option.text
+                                _create_copy_button(
+                                    copy_text,
+                                    on_copy,
+                                    classes="result-action-btn",
+                                    aria_label="訳文をコピー",
+                                    tooltip="訳文をコピー",
+                                )
+                                if on_back_translate and show_back_translate_button:
+                                    back_btn = (
+                                        ui.button(
+                                            "逆翻訳",
+                                            icon="g_translate",
+                                            on_click=lambda o=option: on_back_translate(
+                                                o, None
+                                            ),
                                         )
-                                        if (
-                                            actions_disabled
-                                            or option.back_translation_in_progress
-                                        ):
-                                            back_btn.props("disable")
+                                        .props("flat no-caps size=sm")
+                                        .classes("back-translate-btn")
+                                        .tooltip("精度確認")
+                                    )
+                                    if (
+                                        actions_disabled
+                                        or option.back_translation_in_progress
+                                    ):
+                                        back_btn.props("disable")
 
-                            # Translation text
-                            _render_translation_text(option.text, table_hint=table_hint)
+                        # Translation text
+                        _render_translation_text(option.text, table_hint=table_hint)
 
-                            has_back_translate = bool(
-                                option.back_translation_text
-                                or option.back_translation_error
-                                or option.back_translation_in_progress
-                            )
-                            if has_back_translate:
-                                _render_back_translate_section(option)
+                        has_back_translate = bool(
+                            option.back_translation_text
+                            or option.back_translation_error
+                            or option.back_translation_in_progress
+                        )
+                        if has_back_translate:
+                            _render_back_translate_section(option)
 
 
 def _tokenize_for_diff(text: str) -> list[str]:
@@ -1163,12 +1130,8 @@ def _render_translation_text(
 ):
     """Render translation text (always as normal text)."""
 
-    display_text = normalize_literal_escapes(text)
-    diff_text = (
-        normalize_literal_escapes(diff_base_text)
-        if diff_base_text is not None
-        else None
-    )
+    display_text = text
+    diff_text = diff_base_text if diff_base_text is not None else None
 
     if diff_text and diff_text.strip() and diff_text != display_text:
         diff_html = _build_diff_html(diff_text, display_text)
@@ -1176,8 +1139,7 @@ def _render_translation_text(
         return
 
     label = ui.label(display_text).classes("option-text py-1 w-full")
-    if "\n" in display_text or "\t" in display_text:
-        label.style("white-space: pre-wrap;")
+    label.style("white-space: pre-wrap;")
 
 
 def _render_back_translate_section(option: TranslationOption) -> None:
@@ -1269,16 +1231,11 @@ def _render_option_en(
                         ui.label(style_label).classes("chip style-chip")
                 with ui.row().classes("items-center option-card-actions"):
                     copy_suffix = ""
-                    if ui_style:
+                    if show_style_badge and ui_style:
                         style_label_for_copy = TEXT_STYLE_LABELS.get(ui_style, ui_style)
                         if style_label_for_copy:
                             copy_suffix = f"（{style_label_for_copy}）"
-                    copy_text = normalize_literal_escapes(option.text)
-                    excel_copy = _format_tabular_text_for_excel_paste(
-                        copy_text, hint=table_hint
-                    )
-                    if excel_copy:
-                        copy_text = excel_copy
+                    copy_text = option.text
                     _create_copy_button(
                         copy_text,
                         on_copy,
@@ -1314,11 +1271,3 @@ def _render_option_en(
             )
             if has_back_translate:
                 _render_back_translate_section(option)
-
-            explanation_text = normalize_literal_escapes(
-                option.explanation or ""
-            ).strip()
-            if explanation_text:
-                with ui.element("div").classes("explanation-card"):
-                    ui.label("解説").classes("explanation-title")
-                    ui.label(explanation_text).classes("nani-explanation")

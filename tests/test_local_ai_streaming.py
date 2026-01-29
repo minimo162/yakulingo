@@ -179,3 +179,18 @@ def test_local_ai_streaming_coalesces_small_deltas(
     assert "".join(received) == "a" * 100
     assert any(len(part) > 1 for part in received)
     assert model_id is None
+
+
+def test_local_streaming_wrap_strips_prompt_echo_for_plain_text_preview() -> None:
+    received: list[str] = []
+    prompt = (
+        "Translate the following segment into English, without additional explanation.\n\n"
+        "こんにちは"
+    )
+    handler = _wrap_local_streaming_on_chunk(received.append, prompt=prompt)
+    assert handler is not None
+
+    handler(prompt)
+    handler(f"{prompt}\n\nHello")
+
+    assert received == ["Hello"]

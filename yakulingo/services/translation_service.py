@@ -1159,6 +1159,7 @@ def _wrap_local_streaming_on_chunk(
     *,
     expected_output_language: str | None = None,
     parse_json: bool = False,
+    prompt: str | None = None,
 ) -> Optional[Callable[[str], None]]:
     if on_chunk is None:
         return None
@@ -1168,6 +1169,9 @@ def _wrap_local_streaming_on_chunk(
     raw_cached = ""
     raw_parts: list[str] = []
     throttle_seconds = 0.08
+    strip_echo = None
+    if prompt:
+        from yakulingo.services.local_ai_client import strip_prompt_echo as strip_echo
 
     def _handle(delta: str) -> None:
         nonlocal last_emitted, last_emit_time, raw_cached, raw_parts
@@ -1185,10 +1189,12 @@ def _wrap_local_streaming_on_chunk(
             raw_parts.clear()
 
         candidate = raw_cached
-        if candidate == last_emitted or len(candidate) < len(last_emitted):
+        if strip_echo is not None:
+            candidate = strip_echo(candidate, prompt)
+        if candidate == last_emitted:
             return
         now = time.monotonic()
-        if (now - last_emit_time) < throttle_seconds and (
+        if (now - last_emit_time) < throttle_seconds and abs(
             len(candidate) - len(last_emitted)
         ) < 3:
             return
@@ -4069,6 +4075,7 @@ class TranslationService:
                     on_chunk,
                     expected_output_language=output_language,
                     parse_json=False,
+                    prompt=prompt,
                 )
                 try:
                     raw = translate_single_local(
@@ -4562,6 +4569,7 @@ class TranslationService:
                 on_chunk,
                 expected_output_language=output_language,
                 parse_json=False,
+                prompt=prompt,
             )
             try:
                 raw = translate_single_local(
@@ -5034,13 +5042,16 @@ class TranslationService:
             )
 
         try:
-            stream_handler = _wrap_local_streaming_on_chunk(
-                on_chunk, expected_output_language="en", parse_json=True
-            )
             prompt = local_builder.build_text_to_en_3style(
                 text,
                 reference_files=reference_files,
                 detected_language=detected_language,
+            )
+            stream_handler = _wrap_local_streaming_on_chunk(
+                on_chunk,
+                expected_output_language="en",
+                parse_json=True,
+                prompt=prompt,
             )
             try:
                 raw_result = translate_single_local(

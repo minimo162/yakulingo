@@ -110,7 +110,7 @@ Windows環境で最も簡単にセットアップできる方法です。Python�
 > **Note**: `packaging/install_local_ai.ps1` は実行のたびに最新リリースを確認し、必要な場合のみ更新します。
 > **Note**: ローカルAIの既定翻訳モデルは `mradermacher/HY-MT1.5-7B-i1-GGUF/HY-MT1.5-7B.i1-Q6_K.gguf` です。
 > **Note**: ダウンロード先は `local_ai/models/HY-MT1.5-7B.i1-Q6_K.gguf` です。
-> **Note**: 指示追従性向上のため、ローカルAIへ送るプロンプトは内部で2回繰り返して送信します（https://arxiv.org/abs/2512.14982）。プロンプト長は実質2倍になるため、長文では `local_ai_ctx_size` / `local_ai_max_tokens` / `local_ai_max_chars_per_batch` / `local_ai_max_chars_per_batch_file` の調整が必要になる場合があります。
+> **Note**: 長文では `local_ai_ctx_size` / `local_ai_max_tokens` / `local_ai_max_chars_per_batch` / `local_ai_max_chars_per_batch_file` の調整が必要になる場合があります。
 > **Note**: `LOCAL_AI_MODEL_*` / `LOCAL_AI_MODEL_KIND` によるモデル切り替えはできません（`local_ai/manifest.json` は記録用で、選択には影響しません）。
 
 ```bash
@@ -352,10 +352,10 @@ uv run python app.py
 **用語集処理**: `use_bundled_glossary=true` の場合、同梱 `glossary.csv` を自動で参照します（デフォルト: true）。入力文にマッチした用語のみをプロンプトへ埋め込みます（上限あり）。
 
  **翻訳ルール**: 廃止（補足情報は用語集CSVに集約）。
- **出力言語ガード**: 翻訳結果が期待言語（英訳=英語、和訳=日本語）でない場合は、自動再試行（可能な場合）またはエラーとして扱います。
- **不完全翻訳ガード（ローカルAI英訳）**: 「Revenue」等の極端に短い英訳は自動で再試行し、改善しない場合はエラーになります（必要なら `local_ai_max_tokens` / `local_ai_ctx_size` を調整）。
+ **出力言語ガード**: 廃止（事後チェック/自動再試行は行いません）。
+ **不完全翻訳ガード（ローカルAI英訳）**: 廃止（短い/不完全な出力もそのまま扱います）。
  **プロンプトSSOT**: `docs/PROMPT_TEMPLATES_SSOT.md` にテンプレの単一正をまとめています。
-> **Note**: ローカルAIは参照/ルールをプロンプトへ埋め込むため、入力や参照が長いと一部省略や途中終了（JSON未完）になる場合があります。必要なら `local_ai_ctx_size` / `local_ai_max_tokens` / 参照ファイルを調整してください。
+> **Note**: ローカルAIは参照（用語集など）をプロンプトへ埋め込むため、入力や参照が長いと一部省略や途中終了（JSON未完）になる場合があります。必要なら `local_ai_ctx_size` / `local_ai_max_tokens` / 参照ファイルを調整してください。
 
 ### ローカルAI推論パラメータ（推奨）
 

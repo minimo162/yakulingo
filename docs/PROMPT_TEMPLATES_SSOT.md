@@ -17,9 +17,9 @@ Template (verbatim):
 {source_text}
 
 Notes for YakuLingo:
-- {target_language} is not a direct runtime variable in YakuLingo.
-- Use the output-language selection (en/jp template choice) instead.
+- {target_language} is substituted at runtime (e.g., "English", "Japanese") based on the translation direction.
 - {source_text} maps to {input_text}.
+- YakuLingo does not post-check or rewrite the model output (translation only).
 
 ## Template: XX<=>XX Translation, excluding ZH<=>XX.
 
@@ -117,7 +117,7 @@ Note: the model does not have a default system_prompt.
 ## YakuLingo Placeholder Mapping (summary)
 
 - {source_text} -> {input_text}
-- {target_language} -> template selection (en/jp) rather than a runtime variable
+- {target_language} -> resolved language name (e.g., "English", "Japanese") derived from output_language
 - {context} -> {extra_instruction} (Local AI) or inserted instruction in PromptBuilder
 - terminology -> {reference_section} (preferred), {extra_instruction} (optional)
 

@@ -1,11 +1,11 @@
 ﻿{
-    "generated_at":  "2026-01-29T06:54:58.7522831+09:00",
+    "generated_at":  "2026-01-29T13:19:43.3005191+09:00",
     "llama_cpp":  {
                       "repo":  "ggerganov/llama.cpp",
-                      "release_tag":  "b7865",
-                      "asset_name":  "llama-b7865-bin-win-vulkan-x64.zip",
-                      "download_url":  "https://github.com/ggml-org/llama.cpp/releases/download/b7865/llama-b7865-bin-win-vulkan-x64.zip",
-                      "server_exe_sha256":  "D3EE18EE64A72DD22872D308DE789EBAFC90112846454D60973FE96280B4B0E2",
+                      "release_tag":  "b7867",
+                      "asset_name":  "llama-b7867-bin-win-vulkan-x64.zip",
+                      "download_url":  "https://github.com/ggml-org/llama.cpp/releases/download/b7867/llama-b7867-bin-win-vulkan-x64.zip",
+                      "server_exe_sha256":  "10938E830A5D70DF83862BAABEEFC484C35207DD5472A56BD7BFFE2BBA970719",
                       "variant":  "vulkan"
                   },
     "model":  {
@@ -13,7 +13,7 @@
                   "revision":  "main",
                   "file":  "shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf",
                   "download_url":  "https://huggingface.co/dahara1/shisa-v2.1-qwen3-8b-UD-japanese-imatrix/resolve/main/shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf",
-                  "sha256":  null,
+                  "sha256":  "39A33CADA71C41234506C07E6E106760FE7E3F5310FEB1064F6916F515EB12F6",
                   "skipped":  false,
                   "source":  {
                                  "kind":  "gguf",
@@ -25,8 +25,8 @@
                   "output":  {
                                  "kind":  "gguf",
                                  "path":  "local_ai/models/shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf",
-                                 "path_resolved":  "C:\\Users\\Administrator\\Desktop\\yakulingo\\local_ai\\models\\shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf",
-                                 "sha256":  null
+                                 "path_resolved":  "C:\\Users\\m242054\\yakulingo\\local_ai\\models\\shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf",
+                                 "sha256":  "39A33CADA71C41234506C07E6E106760FE7E3F5310FEB1064F6916F515EB12F6"
                              }
               }
 }

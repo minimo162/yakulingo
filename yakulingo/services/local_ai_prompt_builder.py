@@ -615,10 +615,11 @@ class LocalPromptBuilder:
             else:
                 continue
             oku_value *= sign
-            formatted = self._format_oku_amount(oku_value)
+            billion_value = oku_value / Decimal("10")
+            formatted = self._format_oku_amount(billion_value)
             if sign < 0:
                 formatted = f"({formatted.lstrip('-')})"
-            unit = "oku yen" if match.group("yen") else "oku"
+            unit = "billion yen" if match.group("yen") else "billion"
             conversions.append((raw, f"{formatted} {unit}".strip()))
             if len(conversions) >= max_lines:
                 break

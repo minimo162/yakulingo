@@ -72,7 +72,7 @@ def test_local_text_does_not_retry_for_numeric_rule(
         )
 
     assert result.options is not None
-    assert result.options[0].text == "4,500 oku yen"
+    assert result.options[0].text == "450 billion yen"
     assert mock_call.call_count == 1
 
     messages = "\n".join(record.getMessage() for record in caplog.records)

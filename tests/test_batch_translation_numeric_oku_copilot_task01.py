@@ -65,5 +65,5 @@ def test_batch_translator_copilot_auto_corrects_billion_to_oku_when_safe() -> No
     result = translator.translate_blocks_with_result(blocks, output_language="en")
 
     assert result.translations["b1"]
-    assert "billion" not in result.translations["b1"].lower()
-    assert "oku" in result.translations["b1"].lower()
+    assert "oku" not in result.translations["b1"].lower()
+    assert "2,238.5 billion" in result.translations["b1"]

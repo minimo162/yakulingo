@@ -22,7 +22,7 @@ def test_extract_to_en_dynamic_glossary_pairs_includes_numeric_and_month() -> No
     pairs = builder._extract_to_en_dynamic_glossary_pairs(
         "売上高は▲10億円。22万円。3月。"
     )
-    assert ("▲10億円", "(10) oku yen") in pairs
+    assert ("▲10億円", "(1) billion yen") in pairs
     assert ("22万円", "220k yen") in pairs
     assert ("3月", "Mar.") in pairs
 

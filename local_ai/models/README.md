@@ -4,15 +4,15 @@ language:
 - ja
 - en
 base_model:
-- mradermacher/HY-MT1.5-7B-i1-GGUF
+- dahara1/shisa-v2.1-qwen3-8b-UD-japanese-imatrix
 ---
 
-このフォルダには `mradermacher/HY-MT1.5-7B-i1-GGUF` の GGUF モデル
-`HY-MT1.5-7B.i1-Q6_K.gguf` を同梱しています。
+このフォルダには `dahara1/shisa-v2.1-qwen3-8b-UD-japanese-imatrix` の GGUF モデル
+`shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf` を同梱しています。
 詳細・利用方法・ライセンスは上流リポジトリを参照してください。
 
-This folder bundles the GGUF model `HY-MT1.5-7B.i1-Q6_K.gguf`
-from `mradermacher/HY-MT1.5-7B-i1-GGUF`.
+This folder bundles the GGUF model `shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf`
+from `dahara1/shisa-v2.1-qwen3-8b-UD-japanese-imatrix`.
 For details, usage, and license terms, refer to the upstream repository.
 
-Upstream: https://huggingface.co/mradermacher/HY-MT1.5-7B-i1-GGUF
+Upstream: https://huggingface.co/dahara1/shisa-v2.1-qwen3-8b-UD-japanese-imatrix

@@ -3,8 +3,8 @@
 本書は過去に「ローカルAIモデルを openbmb/AgentCPM-Explore に切り替える」ことを検討した設計メモです。
 
 ## 現行仕様（重要）
-- ローカルAIの既定翻訳モデル: `dahara1/shisa-v2.1-qwen3-8b-UD-japanese-imatrix/shisa-v2.1-qwen3-8B-IQ4_XS.gguf`
-- 配置先（既定）: `local_ai/models/shisa-v2.1-qwen3-8B-IQ4_XS.gguf`
+- ローカルAIの既定翻訳モデル: `dahara1/shisa-v2.1-qwen3-8b-UD-japanese-imatrix/shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf`
+- 配置先（既定）: `local_ai/models/shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf`
 - 使用するモデルは `local_ai_model_path` で指定する（配布版は既定モデルのみ同梱）。
 
 以降の内容は「過去メモ」として残しています（運用手順/SSOTとしては使用しないでください）。

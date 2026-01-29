@@ -16,7 +16,7 @@ YakuLingoはネットワーク共有フォルダからのワンクリックセ�
 - `.venv` (Python 仮想環境)
 - `.uv-python` (Python 本体)
 - `.playwright-browsers` (ブラウザ)
-- `local_ai` (ローカルAI: llama.cpp `llama-server` + 同梱モデル `local_ai/models/HY-MT1.5-7B.i1-Q6_K.gguf` + LICENSE/manifest)
+- `local_ai` (ローカルAI: llama.cpp `llama-server` + 同梱モデル `local_ai/models/shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf` + LICENSE/manifest)
   - `packaging/make_distribution.bat` は `local_ai` 配下の追加 `.gguf*` を除外してコピーし、同梱モデルのみを含めます。
 
 ### 実行

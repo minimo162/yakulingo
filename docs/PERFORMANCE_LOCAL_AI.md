@@ -225,7 +225,7 @@ uv run python tools/bench_local_ai.py --mode warm \
 
 # モデル・サーバディレクトリの指定
 uv run python tools/bench_local_ai.py --mode warm \
-  --model-path local_ai/models/HY-MT1.5-7B.i1-Q6_K.gguf \
+  --model-path local_ai/models/shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf \
   --server-dir local_ai/llama_cpp --json
 
 # max_tokens を無効化（0以下でNone扱い）
@@ -311,7 +311,7 @@ uv run python tools/bench_llama_bench_compare.py --format markdown \
 ```bash
 uv run python tools/bench_llama_bench_compare.py \
   --server-dir local_ai/llama_cpp \
-  --model-path local_ai/models/HY-MT1.5-7B.i1-Q6_K.gguf \
+  --model-path local_ai/models/shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf \
   --pg 2048,256 -r 3 \
   --device <VULKAN_DEVICE> --n-gpu-layers all \
   --extra-args -b 2048 -ub 512 -fa 0
@@ -610,7 +610,7 @@ E2E:
 
 ## ケース記録（case: yakulingo-local-ai-streaming-speedup-20260119-063004）
 
-- 環境: Windows-10 / llama.cpp avx2 7718（db79dc06b）/ model=translategemma-4b-it.IQ4_XS.gguf（当時。現行既定: HY-MT1.5-7B.i1-Q6_K.gguf）
+- 環境: Windows-10 / llama.cpp avx2 7718（db79dc06b）/ model=translategemma-4b-it.IQ4_XS.gguf（当時。現行既定: shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf）
 - 条件: style=minimal / glossary=off / server_variant=avx2（CPU-only）
 
 ### CLIベンチ（tools/bench_local_ai.py）

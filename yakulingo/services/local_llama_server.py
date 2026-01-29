@@ -50,8 +50,8 @@ _AUTO_DEVICE_CACHE: dict[
     tuple[str, int, int], tuple[Optional[str], Optional[str], float]
 ] = {}
 _AUTO_DEVICE_CACHE_LOCK = threading.Lock()
-_DEFAULT_MODEL_PATH = "local_ai/models/HY-MT1.5-7B.i1-Q6_K.gguf"
-_PREVIOUS_DEFAULT_MODEL_PATH = "local_ai/models/HY-MT1.5-7B.i1-IQ4_XS.gguf"
+_DEFAULT_MODEL_PATH = "local_ai/models/shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf"
+_PREVIOUS_DEFAULT_MODEL_PATH = "local_ai/models/HY-MT1.5-7B.i1-Q6_K.gguf"
 _LEGACY_DEFAULT_MODEL_PATH = "local_ai/models/HY-MT1.5-1.8B.IQ4_XS.gguf"
 
 

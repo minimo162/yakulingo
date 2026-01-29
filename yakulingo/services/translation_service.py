@@ -1173,6 +1173,12 @@ def _wrap_local_streaming_on_chunk(
     if prompt:
         from yakulingo.services.local_ai_client import strip_prompt_echo as strip_echo
 
+    def _current_candidate() -> str:
+        candidate = raw_cached
+        if strip_echo is not None:
+            candidate = strip_echo(candidate, prompt)
+        return candidate
+
     def _handle(delta: str) -> None:
         nonlocal last_emitted, last_emit_time, raw_cached, raw_parts
 
@@ -1188,9 +1194,7 @@ def _wrap_local_streaming_on_chunk(
             raw_cached += "".join(raw_parts)
             raw_parts.clear()
 
-        candidate = raw_cached
-        if strip_echo is not None:
-            candidate = strip_echo(candidate, prompt)
+        candidate = _current_candidate()
         if candidate == last_emitted:
             return
         now = time.monotonic()
@@ -1202,6 +1206,23 @@ def _wrap_local_streaming_on_chunk(
         last_emit_time = now
         on_chunk(candidate)
 
+    def flush() -> None:
+        nonlocal last_emitted, last_emit_time
+        candidate = _current_candidate()
+        if not candidate:
+            return
+        if candidate != last_emitted:
+            last_emitted = candidate
+            last_emit_time = time.monotonic()
+            on_chunk(candidate)
+        downstream_flush = getattr(on_chunk, "flush", None)
+        if callable(downstream_flush):
+            try:
+                downstream_flush()
+            except Exception:
+                pass
+
+    setattr(_handle, "flush", flush)
     return _handle
 
 

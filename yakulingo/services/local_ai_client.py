@@ -1117,6 +1117,12 @@ class LocalAIClient:
             result = self._chat_completions_streaming(
                 runtime, prompt, on_chunk, timeout=timeout, repeat_prompt=False
             )
+            flush = getattr(on_chunk, "flush", None)
+            if callable(flush):
+                try:
+                    flush()
+                except Exception:
+                    pass
 
         t_req = time.perf_counter() - t1
         logger.debug(

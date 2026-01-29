@@ -308,8 +308,8 @@ try {
 
     # Default model (fixed):
     # Always use a prebuilt GGUF downloaded from Hugging Face.
-    $defaultModelRepo = 'dahara1/shisa-v2.1-qwen3-8b-UD-japanese-imatrix'
-    $defaultModelFile = 'shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf'
+    $defaultModelRepo = 'mradermacher/translategemma-4b-it-i1-GGUF'
+    $defaultModelFile = 'translategemma-4b-it.i1-IQ4_XS.gguf'
     $defaultModelRevision = 'main'
 
     # Model selection is fixed (manifest/env overrides are ignored).

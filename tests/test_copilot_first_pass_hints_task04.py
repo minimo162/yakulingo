@@ -62,7 +62,7 @@ def test_copilot_to_en_does_not_inject_output_language_guard() -> None:
     assert result.output_language == "en"
     assert result.options and "billion" in result.options[0].text.lower()
     assert "oku" not in result.options[0].text.lower()
-    assert "2,238.5" in result.options[0].text
+    assert "¥2,238.5" in result.options[0].text
     assert copilot.calls
     assert "CRITICAL" not in copilot.calls[0]["prompt"]
     metadata = result.metadata or {}
@@ -88,7 +88,7 @@ def test_copilot_to_en_applies_numeric_fix_without_prompt_injection() -> None:
     assert result.output_language == "en"
     assert result.options and "billion" in result.options[0].text.lower()
     assert "oku" not in result.options[0].text.lower()
-    assert "2,238.5" in result.options[0].text
+    assert "¥2,238.5" in result.options[0].text
     assert copilot.calls
     assert "CRITICAL" not in copilot.calls[0]["prompt"]
     metadata = result.metadata or {}

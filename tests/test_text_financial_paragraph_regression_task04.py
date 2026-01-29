@@ -40,7 +40,7 @@ def test_style_comparison_financial_paragraph_auto_corrects_numeric_units(
     assert result.output_language == "en"
     assert [option.style for option in result.options] == ["standard"]
     expected = (
-        "Revenue was 2.2385 trillion yen, down by 1,554 billion yen year on year."
+        "Revenue was ¥2,238.5 billion, down by ¥155.4 billion year on year."
     )
     assert [option.text for option in result.options] == [expected]
-    assert (result.metadata or {}).get("to_en_numeric_unit_correction") is None
+    assert (result.metadata or {}).get("to_en_numeric_unit_correction") is True

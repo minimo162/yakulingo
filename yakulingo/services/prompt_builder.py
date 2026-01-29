@@ -640,13 +640,13 @@ class PromptBuilder:
         if output_language == "jp":
             return (
                 f"<bos><start_of_turn>user\n"
-                f"Translate the text into Japanese suitable for financial statements. Treat 1 billion as 10 oku (10億). Convert billion → oku (億) by ×10 (add one zero).. The response should include only the translated text.\n"
+                f"Translate the text into Japanese suitable for financial statements. Treat 1 billion as 10 oku (10億). Convert billion → oku (億) by ×10 (add one zero). Do not omit or summarize any content; translate every sentence/clause, including bracketed headings and parentheses. Preserve line breaks and all numeric facts. The response should include only the translated text.\n"
                 f"Text: {user_input}<end_of_turn>\n"
                 f"<start_of_turn>model\n"
             )
         return (
             f"<bos><start_of_turn>user\n"
-            f"Translate the Japanese text into English suitable for financial statements. Treat 1 billion as 10 oku (10億). Convert oku → billion by ÷10 (drop one zero). The response should include only the translated text.\n"
+            f"Translate the Japanese text into English suitable for financial statements. Treat 1 billion as 10 oku (10億). Convert oku → billion by ÷10 (drop one zero). Do not omit or summarize any content; translate every sentence/clause, including bracketed headings and parentheses. Preserve line breaks and all numeric facts. The response should include only the translated text.\n"
             f"Text: {user_input}<end_of_turn>\n"
             f"<start_of_turn>model\n"
         )

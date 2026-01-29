@@ -47,13 +47,13 @@ _RE_GLOSSARY_ASCII_WORD = re.compile(r"^[a-z0-9]+$")
 _RE_GLOSSARY_TEXT_ASCII_WORD = re.compile(r"[a-z0-9]+")
 _ASCII_ALNUM = frozenset("abcdefghijklmnopqrstuvwxyz0123456789")
 _RE_JP_YEN_AMOUNT = re.compile(
-    r"(?P<sign>[▲+\-−])?\s*(?:(?P<trillion>\d[\d,]*(?:\.\d+)?)兆(?:(?P<oku>\d[\d,]*(?:\.\d+)?)億)?|(?P<oku_only>\d[\d,]*(?:\.\d+)?)億)(?P<yen>円)?"
+    r"(?P<sign>[▲△+\-−])?\s*(?:(?P<trillion>\d[\d,]*(?:\.\d+)?)兆(?:(?P<oku>\d[\d,]*(?:\.\d+)?)億)?|(?P<oku_only>\d[\d,]*(?:\.\d+)?)億)(?P<yen>円)?"
 )
 _RE_JP_MAN_SEN_AMOUNT = re.compile(
-    r"(?P<sign>[▲+\-−])?\s*(?P<man>\d[\d,]*(?:\.\d+)?)万(?:(?P<sen>\d[\d,]*(?:\.\d+)?)千)?(?P<unit>円|台)?"
+    r"(?P<sign>[▲△+\-−])?\s*(?P<man>\d[\d,]*(?:\.\d+)?)万(?:(?P<sen>\d[\d,]*(?:\.\d+)?)千)?(?P<unit>円|台)?"
 )
 _RE_JP_SEN_AMOUNT = re.compile(
-    r"(?P<sign>[▲+\-−])?\s*(?P<sen>\d[\d,]*(?:\.\d+)?)千(?P<unit>円|台)?"
+    r"(?P<sign>[▲△+\-−])?\s*(?P<sen>\d[\d,]*(?:\.\d+)?)千(?P<unit>円|台)?"
 )
 _RE_TO_EN_FORBIDDEN_SYMBOLS = re.compile(r"(?:>=|<=|[><~→↑↓≥≧≤≦])")
 _RE_TO_EN_MONTH = re.compile(r"\d{1,2}月")
@@ -602,25 +602,28 @@ class LocalPromptBuilder:
                 continue
             seen.add(raw)
             sign_marker = match.group("sign") or ""
-            sign = -1 if sign_marker in {"▲", "-", "−"} else 1
+            sign = -1 if sign_marker in {"▲", "△", "-", "−"} else 1
             trillion = self._parse_decimal(match.group("trillion") or "")
             oku_part = self._parse_decimal(match.group("oku") or "")
             oku_only = self._parse_decimal(match.group("oku_only") or "")
-            if trillion is not None:
-                oku_value = trillion * Decimal("10000")
+            unit_is_trillion = trillion is not None
+            if unit_is_trillion:
+                trillion_value = trillion or Decimal(0)
                 if oku_part is not None:
-                    oku_value += oku_part
+                    trillion_value += oku_part / Decimal("10000")
+                trillion_value *= sign
+                formatted = self._format_oku_amount(trillion_value)
+                if sign < 0:
+                    formatted = f"({formatted.lstrip('-')})"
+                unit = "trillion yen" if match.group("yen") else "trillion"
+                conversions.append((raw, f"{formatted} {unit}".strip()))
             elif oku_only is not None:
-                oku_value = oku_only
-            else:
-                continue
-            oku_value *= sign
-            billion_value = oku_value / Decimal("10")
-            formatted = self._format_oku_amount(billion_value)
-            if sign < 0:
-                formatted = f"({formatted.lstrip('-')})"
-            unit = "billion yen" if match.group("yen") else "billion"
-            conversions.append((raw, f"{formatted} {unit}".strip()))
+                billion_value = (oku_only * sign) / Decimal("10")
+                formatted = self._format_oku_amount(billion_value)
+                if sign < 0:
+                    formatted = f"({formatted.lstrip('-')})"
+                unit = "billion yen" if match.group("yen") else "billion"
+                conversions.append((raw, f"{formatted} {unit}".strip()))
             if len(conversions) >= max_lines:
                 break
 
@@ -643,7 +646,7 @@ class LocalPromptBuilder:
             man_sen_spans.append(match.span())
 
             sign_marker = match.group("sign") or ""
-            sign = -1 if sign_marker in {"▲", "-", "−"} else 1
+            sign = -1 if sign_marker in {"▲", "△", "-", "−"} else 1
             man = self._parse_decimal(match.group("man") or "")
             if man is None:
                 continue
@@ -669,7 +672,7 @@ class LocalPromptBuilder:
             seen.add(raw)
 
             sign_marker = match.group("sign") or ""
-            sign = -1 if sign_marker in {"▲", "-", "−"} else 1
+            sign = -1 if sign_marker in {"▲", "△", "-", "−"} else 1
             sen = self._parse_decimal(match.group("sen") or "")
             if sen is None:
                 continue

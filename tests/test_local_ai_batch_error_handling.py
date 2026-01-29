@@ -279,10 +279,10 @@ def test_local_batch_retries_when_numeric_rules_violated() -> None:
 
     assert copilot.calls == 1
     assert result.untranslated_block_ids == []
-    assert result.translations["b1"] == "Revenue was 2.2385 trillion yen."
+    assert result.translations["b1"] == "Revenue was ¥2,238.5 billion."
     assert (
         result.translations["b2"]
-        == "Operating profit decreased by 1,554 billion yen."
+        == "Operating profit decreased by ¥155.4 billion."
     )
 
 

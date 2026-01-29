@@ -85,7 +85,7 @@ _TEXT_TO_EN_OUTPUT_LANGUAGE_RETRY_INSTRUCTION = (
 )
 _TEXT_TO_EN_NUMERIC_RULE_INSTRUCTION = (
     "CRITICAL: Follow numeric conversion rules. "
-    "Do not use 'oku', 'trillion', or 'bn'. Use 'billion' (and 'k') as specified. "
+    "Do not use 'oku' or 'bn'. Use 'billion'/'trillion' (and 'k') as specified. "
     "If numeric conversion hints are provided, use them verbatim."
 )
 _TEXT_TO_EN_NEGATIVE_RULE_INSTRUCTION = (
@@ -169,14 +169,11 @@ _RE_EN_BILLION_TRILLION = re.compile(
     r"(?:\b(?:billion|trillion|bn)\b|(?<=\d)(?:billion|trillion|bn)\b)",
     re.IGNORECASE,
 )
-_RE_EN_TRILLION_OR_BN = re.compile(
-    r"(?:\b(?:trillion|bn)\b|(?<=\d)(?:trillion|bn)\b)",
-    re.IGNORECASE,
-)
+_RE_EN_BN = re.compile(r"(?:\bbn\b|(?<=\d)bn\b)", re.IGNORECASE)
 _INT_WITH_OPTIONAL_COMMAS_PATTERN = r"(?:\d{1,3}(?:,\d{3})+|\d+)"
 _RE_EN_OKU = re.compile(r"\boku\b", re.IGNORECASE)
 _RE_EN_OKU_YEN_AMOUNT = re.compile(
-    rf"(?P<prefix>\(?[▲+\-−]?)"
+    rf"(?P<prefix>\(?[▲+\-−]?[¥￥]?)"
     rf"(?P<number>{_INT_WITH_OPTIONAL_COMMAS_PATTERN}(?:\.\d+)?)"
     rf"(?P<suffix>\)?)"
     r"\s*"
@@ -185,7 +182,7 @@ _RE_EN_OKU_YEN_AMOUNT = re.compile(
     re.IGNORECASE,
 )
 _RE_EN_BILLION_TRILLION_YEN_AMOUNT = re.compile(
-    rf"(?P<prefix>\(?[▲+\-−]?)"
+    rf"(?P<prefix>\(?[▲+\-−]?[¥￥]?)"
     rf"(?P<number>{_INT_WITH_OPTIONAL_COMMAS_PATTERN}(?:\.\d+)?)"
     rf"(?P<suffix>\)?)"
     r"\s*"
@@ -195,13 +192,13 @@ _RE_EN_BILLION_TRILLION_YEN_AMOUNT = re.compile(
 )
 _RE_JP_LARGE_UNIT = re.compile(r"[兆億]")
 _RE_JP_OKU_CHOU_YEN_AMOUNT = re.compile(
-    rf"(?P<sign>[▲+\-−])?\s*(?:(?P<trillion>{_INT_WITH_OPTIONAL_COMMAS_PATTERN})兆(?:(?P<oku>{_INT_WITH_OPTIONAL_COMMAS_PATTERN})億)?|(?P<oku_only>{_INT_WITH_OPTIONAL_COMMAS_PATTERN})億)(?P<yen>円)?"
+    rf"(?P<sign>[▲△+\-−])?\s*(?:(?P<trillion>{_INT_WITH_OPTIONAL_COMMAS_PATTERN})兆(?:(?P<oku>{_INT_WITH_OPTIONAL_COMMAS_PATTERN})億)?|(?P<oku_only>{_INT_WITH_OPTIONAL_COMMAS_PATTERN})億)(?P<yen>円)?"
 )
 _RE_JP_MAN_YEN_AMOUNT = re.compile(
-    rf"(?P<sign>[▲+\-−])?\s*(?P<man>{_INT_WITH_OPTIONAL_COMMAS_PATTERN})万円"
+    rf"(?P<sign>[▲△+\-−])?\s*(?P<man>{_INT_WITH_OPTIONAL_COMMAS_PATTERN})万円"
 )
 _RE_JP_YEN_AMOUNT = re.compile(
-    rf"(?P<sign>[▲+\-−])?\s*(?P<yen>{_INT_WITH_OPTIONAL_COMMAS_PATTERN})円"
+    rf"(?P<sign>[▲△+\-−])?\s*(?P<yen>{_INT_WITH_OPTIONAL_COMMAS_PATTERN})円"
 )
 _JP_PUNCTUATION_GUARD_TRANSLATION_TABLE = str.maketrans(
     {
@@ -318,7 +315,7 @@ def _insert_extra_instruction(prompt: str, extra_instruction: str) -> str:
 
 
 def _build_to_en_numeric_hints(text: str) -> str:
-    """Build per-input numeric conversion hints for JP→EN (兆/億 → billion)."""
+    """Build per-input numeric conversion hints for JP→EN (兆 → trillion, 億 → billion)."""
     if not text:
         return ""
     if not _RE_JP_LARGE_UNIT.search(text):
@@ -340,7 +337,7 @@ def _build_to_en_numeric_hints(text: str) -> str:
         seen.add(raw)
 
         sign_marker = (match.group("sign") or "").strip()
-        is_negative = sign_marker in {"▲", "-", "−"}
+        is_negative = sign_marker in {"▲", "△", "-", "−"}
 
         has_yen = bool(match.group("yen"))
         trillion_str = match.group("trillion") or ""
@@ -361,10 +358,14 @@ def _build_to_en_numeric_hints(text: str) -> str:
                 continue
             total_oku = oku_only
 
-        formatted = _format_k_amount(Decimal(total_oku) / Decimal("10"))
+        if trillion_str:
+            formatted = _format_k_amount(Decimal(total_oku) / Decimal("10000"))
+            unit = "trillion yen" if has_yen else "trillion"
+        else:
+            formatted = _format_k_amount(Decimal(total_oku) / Decimal("10"))
+            unit = "billion yen" if has_yen else "billion"
         if is_negative:
             formatted = f"({formatted})"
-        unit = "billion yen" if has_yen else "billion"
         conversions.append((raw, f"{formatted} {unit}".strip()))
         if len(conversions) >= max_lines:
             break
@@ -379,13 +380,66 @@ def _build_to_en_numeric_hints(text: str) -> str:
 
 
 _RE_EN_NUMBER_WITH_BILLION_UNIT = re.compile(
-    rf"(?P<prefix>[▲+\-]?\(?)"
+    rf"(?P<prefix>[▲+\-]?\(?[¥￥]?)"
     rf"(?P<number>{_INT_WITH_OPTIONAL_COMMAS_PATTERN}(?:\.\d+)?)"
     rf"(?P<suffix>\)?)"
     r"(?P<sep>\s*)"
     r"(?P<unit>billion|trillion|bn)\b",
     re.IGNORECASE,
 )
+
+
+def _collect_expected_oku_units_from_source_text(text: str) -> dict[int, tuple[str, bool]]:
+    """Extract expected `oku` values from JP source text containing 兆/億.
+
+    Returns a mapping: {total_oku: (preferred_unit, has_yen)}, where preferred_unit is:
+    - "trillion" when the source used 兆 (e.g., 2兆2,385億)
+    - "billion" when the source used 億 only (e.g., 539億)
+    """
+    if not text:
+        return {}
+    if not _RE_JP_LARGE_UNIT.search(text):
+        return {}
+
+    def parse_int(value: str) -> Optional[int]:
+        try:
+            return int((value or "").replace(",", ""))
+        except ValueError:
+            return None
+
+    expected: dict[int, tuple[str, bool]] = {}
+    for match in _RE_JP_OKU_CHOU_YEN_AMOUNT.finditer(text):
+        trillion_str = match.group("trillion") or ""
+        oku_str = match.group("oku") or ""
+        oku_only_str = match.group("oku_only") or ""
+        has_yen = bool(match.group("yen"))
+
+        preferred_unit = "trillion" if trillion_str else "billion"
+
+        if trillion_str:
+            trillion = parse_int(trillion_str)
+            if trillion is None:
+                continue
+            oku_part = parse_int(oku_str) if oku_str else 0
+            if oku_part is None:
+                continue
+            total_oku = trillion * 10_000 + oku_part
+        else:
+            oku_only = parse_int(oku_only_str)
+            if oku_only is None:
+                continue
+            total_oku = oku_only
+
+        existing = expected.get(total_oku)
+        if existing is None:
+            expected[total_oku] = (preferred_unit, has_yen)
+        else:
+            existing_unit, existing_has_yen = existing
+            if existing_unit == "billion" and preferred_unit == "trillion":
+                existing_unit = preferred_unit
+            expected[total_oku] = (existing_unit, existing_has_yen or has_yen)
+
+    return expected
 
 
 def _collect_expected_oku_values_from_source_text(text: str) -> set[int]:
@@ -426,27 +480,48 @@ def _collect_expected_oku_values_from_source_text(text: str) -> set[int]:
     return expected
 
 
+def _fix_to_en_financial_units_if_possible(
+    *,
+    source_text: str,
+    translated_text: str,
+) -> tuple[str, bool]:
+    return _fix_to_en_oku_numeric_unit_if_possible(
+        source_text=source_text,
+        translated_text=translated_text,
+    )
+
+
+def _fix_to_jp_financial_units_if_possible(
+    *,
+    source_text: str,
+    translated_text: str,
+) -> tuple[str, bool]:
+    return _fix_to_jp_oku_numeric_unit_if_possible(translated_text)
+
+
 def _fix_to_en_oku_numeric_unit_if_possible(
     *,
     source_text: str,
     translated_text: str,
 ) -> tuple[str, bool]:
-    """Try to fix JP→EN numeric units to `billion` when it is safe.
+    """Try to fix JP→EN numeric units to `¥... billion` when it is safe.
 
     This targets common model mistakes such as:
-    - `22,385 billion yen` → `2,238.5 billion yen` (number is in oku; should be ÷10)
-    - `22,385 oku yen` → `2,238.5 billion yen` (convert oku → billion by ÷10)
-    - `2.2385 trillion yen` → `2,238.5 billion yen` (normalize to billion)
+    - `539 billion yen` → `53.9 billion yen` (億→billion: ÷10)
+    - `22,385 oku yen` → `¥2,238.5 billion`
+    - `2.2385 trillion yen` → `¥2,238.5 billion` (normalize to billions of yen)
     """
     if not translated_text:
         return translated_text, False
 
-    expected_oku_values = _collect_expected_oku_values_from_source_text(source_text)
-    if not expected_oku_values:
+    expected_units = _collect_expected_oku_units_from_source_text(source_text)
+    if not expected_units:
         return translated_text, False
+    expected_oku_values = set(expected_units.keys())
 
     if not (
         _RE_EN_OKU_YEN_AMOUNT.search(translated_text)
+        or _RE_EN_BILLION_TRILLION_YEN_AMOUNT.search(translated_text)
         or _RE_EN_NUMBER_WITH_BILLION_UNIT.search(translated_text)
     ):
         return translated_text, False
@@ -462,11 +537,53 @@ def _fix_to_en_oku_numeric_unit_if_possible(
             return int(value)
         return None
 
+    def has_yen_for_oku(oku_value: int) -> bool:
+        entry = expected_units.get(oku_value)
+        if entry is None:
+            return False
+        _, has_yen = entry
+        return bool(has_yen)
+
+    def format_billion_1dp(oku_value: int) -> str:
+        billion_value = (Decimal(oku_value) / Decimal("10")).quantize(Decimal("0.1"))
+        text = format(billion_value, "f")
+        int_part, _, frac_part = text.partition(".")
+        int_part_with_commas = f"{int(int_part):,}"
+        return f"{int_part_with_commas}.{frac_part or '0'}"
+
+    def format_billion_token(
+        *,
+        oku_value: int,
+        prefix: str,
+        suffix: str,
+        sep: str,
+    ) -> str:
+        safe_sep = sep if sep else " "
+        currency = "¥" if has_yen_for_oku(oku_value) else ""
+        if currency and ("¥" in prefix or "￥" in prefix):
+            currency = ""
+        return f"{prefix}{currency}{format_billion_1dp(oku_value)}{suffix}{safe_sep}billion"
+
+    misread_billion_to_oku: dict[int, int] = {}
+    misread_billion_ambiguous: set[int] = set()
+    for oku_value, (preferred_unit, _has_yen) in expected_units.items():
+        if preferred_unit != "trillion":
+            continue
+        cho = oku_value // 10_000
+        oku = oku_value % 10_000
+        misread_billion = cho * 1000 + oku
+        if misread_billion in misread_billion_ambiguous:
+            continue
+        if misread_billion in misread_billion_to_oku:
+            misread_billion_ambiguous.add(misread_billion)
+            misread_billion_to_oku.pop(misread_billion, None)
+            continue
+        misread_billion_to_oku[misread_billion] = oku_value
+
     def repl_oku(match: re.Match[str]) -> str:
         prefix = match.group("prefix") or ""
         number_str = match.group("number") or ""
         suffix = match.group("suffix") or ""
-        has_yen = bool(match.group("yen"))
 
         number = parse_decimal(number_str)
         if number is None:
@@ -475,17 +592,60 @@ def _fix_to_en_oku_numeric_unit_if_possible(
         if number_int is None or number_int not in expected_oku_values:
             return match.group(0)
 
-        billion_value = Decimal(number_int) / Decimal("10")
-        formatted = _format_k_amount(billion_value)
-        unit = "billion yen" if has_yen else "billion"
-        return f"{prefix}{formatted}{suffix} {unit}".strip()
+        return format_billion_token(
+            oku_value=number_int,
+            prefix=prefix,
+            suffix=suffix,
+            sep=" ",
+        )
 
-    def repl_billion(match: re.Match[str]) -> str:
+    def find_candidate_oku_from_number(*, number: Decimal, unit: str) -> Optional[int]:
+        unit_key = (unit or "").strip().lower()
+        if unit_key == "bn":
+            unit_key = "billion"
+
+        number_int = as_int_if_integral(number)
+        if number_int is not None and number_int in expected_oku_values:
+            return number_int
+
+        multipliers: list[Decimal]
+        if unit_key == "billion":
+            multipliers = [Decimal("10"), Decimal("10000")]
+        elif unit_key == "trillion":
+            multipliers = [Decimal("10000"), Decimal("10")]
+        else:
+            return None
+
+        for multiplier in multipliers:
+            oku_value = number * multiplier
+            oku_int = as_int_if_integral(oku_value)
+            if oku_int is not None and oku_int in expected_oku_values:
+                return oku_int
+
+        # Some models misread `X兆Y億` as if `1兆 = 1,000億`, producing values like:
+        # - `4兆279億` -> `4.279 trillion` / `4,279 billion` (should be `¥4,027.9 billion`)
+        billion_number: Optional[Decimal] = None
+        if unit_key == "billion":
+            billion_number = number
+        elif unit_key == "trillion":
+            billion_number = number * Decimal("1000")
+        if billion_number is not None:
+            billion_int = as_int_if_integral(billion_number)
+            if billion_int is None and unit_key == "billion":
+                scaled = billion_number * Decimal("1000")
+                billion_int = as_int_if_integral(scaled)
+            if billion_int is not None:
+                candidate = misread_billion_to_oku.get(billion_int)
+                if candidate is not None:
+                    return candidate
+        return None
+
+    def repl_unit(match: re.Match[str]) -> str:
         prefix = match.group("prefix") or ""
         number_str = match.group("number") or ""
         suffix = match.group("suffix") or ""
-        sep = match.group("sep") or ""
         unit = (match.group("unit") or "").lower()
+        sep = match.groupdict().get("sep") or ""
 
         number = parse_decimal(number_str)
         if number is None:
@@ -493,30 +653,23 @@ def _fix_to_en_oku_numeric_unit_if_possible(
 
         safe_sep = sep if sep else " "
 
-        if unit in ("billion", "bn"):
-            number_int = as_int_if_integral(number)
-            if number_int is not None and number_int in expected_oku_values:
-                billion_value = Decimal(number_int) / Decimal("10")
-                formatted = _format_k_amount(billion_value)
-                return f"{prefix}{formatted}{suffix}{safe_sep}billion"
+        candidate_oku = find_candidate_oku_from_number(number=number, unit=unit)
+        if candidate_oku is None:
             if unit == "bn":
                 return f"{prefix}{number_str}{suffix}{safe_sep}billion"
             return match.group(0)
 
-        if unit == "trillion":
-            oku_value = number * Decimal("10000")
-            oku_int = as_int_if_integral(oku_value)
-            if oku_int is None or oku_int not in expected_oku_values:
-                return match.group(0)
-            billion_value = number * Decimal("1000")
-            formatted = _format_k_amount(billion_value)
-            return f"{prefix}{formatted}{suffix}{safe_sep}billion"
-
-        return match.group(0)
+        return format_billion_token(
+            oku_value=candidate_oku,
+            prefix=prefix,
+            suffix=suffix,
+            sep=safe_sep,
+        )
 
     fixed = translated_text
     fixed, _ = _RE_EN_OKU_YEN_AMOUNT.subn(repl_oku, fixed)
-    fixed, _ = _RE_EN_NUMBER_WITH_BILLION_UNIT.subn(repl_billion, fixed)
+    fixed, _ = _RE_EN_BILLION_TRILLION_YEN_AMOUNT.subn(repl_unit, fixed)
+    fixed, _ = _RE_EN_NUMBER_WITH_BILLION_UNIT.subn(repl_unit, fixed)
     return fixed, fixed != translated_text
 
 
@@ -626,6 +779,41 @@ def _parse_decimal(value: str) -> Optional[Decimal]:
         return None
 
 
+def _apply_safe_raw_text_fixes(
+    *,
+    source_text: str,
+    translated_text: str,
+    output_language: str,
+    metadata: dict,
+) -> str:
+    """Apply safe numeric/unit fixes even when returning raw model output."""
+    text = translated_text or ""
+    if not text:
+        return text
+
+    if output_language == "en":
+        fixed_text, fixed = _fix_to_en_financial_units_if_possible(
+            source_text=source_text,
+            translated_text=text,
+        )
+        if fixed:
+            text = fixed_text
+            metadata["to_en_numeric_unit_correction"] = True
+        return text
+
+    if output_language == "jp":
+        fixed_text, fixed = _fix_to_jp_financial_units_if_possible(
+            source_text=source_text,
+            translated_text=text,
+        )
+        if fixed:
+            text = fixed_text
+            metadata["to_jp_oku_correction"] = True
+        return text
+
+    return text
+
+
 def _fix_to_en_k_notation_if_possible(
     *,
     source_text: str,
@@ -714,15 +902,15 @@ def _needs_to_en_numeric_rule_retry_conservative(
 ) -> bool:
     """英訳の数値ルール違反を最小限でリトライする（保守的）。
 
-    - `oku` は確実にNG（SSOTは `billion`）
-    - `trillion/bn` は確実にNG（表記ゆれ防止）
-    - 兆/億を含む入力で `billion` が欠落、または出力が兆/億を保持している場合はNG
+    - `oku` は確実にNG
+    - `bn` は確実にNG（表記ゆれ防止）
+    - 兆/億を含む入力で `billion`/`trillion` が欠落、または出力が兆/億を保持している場合はNG
     """
     if not translated_text:
         return False
     if _RE_EN_OKU.search(translated_text):
         return True
-    if _RE_EN_TRILLION_OR_BN.search(translated_text):
+    if _RE_EN_BN.search(translated_text):
         return True
 
     if not _RE_JP_LARGE_UNIT.search(source_text):
@@ -742,7 +930,7 @@ def _needs_to_en_numeric_rule_retry_conservative_after_safe_fix(
     if not _needs_to_en_numeric_rule_retry_conservative(source_text, translated_text):
         return False
 
-    fixed_text, fixed = _fix_to_en_oku_numeric_unit_if_possible(
+    fixed_text, fixed = _fix_to_en_financial_units_if_possible(
         source_text=source_text,
         translated_text=translated_text,
     )
@@ -759,7 +947,7 @@ def _needs_to_en_numeric_rule_retry(source_text: str, translated_text: str) -> b
         return False
     if _RE_EN_OKU.search(translated_text):
         return True
-    if _RE_EN_TRILLION_OR_BN.search(translated_text):
+    if _RE_EN_BN.search(translated_text):
         return True
     if _RE_JP_LARGE_UNIT.search(translated_text):
         return True
@@ -768,22 +956,33 @@ def _needs_to_en_numeric_rule_retry(source_text: str, translated_text: str) -> b
     if not expected_oku_values:
         return False
 
-    translated_billion_values: set[Decimal] = set()
+    found_oku_values: set[int] = set()
     for match in _RE_EN_NUMBER_WITH_BILLION_UNIT.finditer(translated_text):
         unit = (match.group("unit") or "").lower()
-        if unit != "billion":
+        if unit == "bn":
+            unit = "billion"
+        multiplier = (
+            Decimal("10")
+            if unit == "billion"
+            else Decimal("10000")
+            if unit == "trillion"
+            else None
+        )
+        if multiplier is None:
             continue
         value = _parse_decimal(match.group("number") or "")
         if value is None:
             continue
-        translated_billion_values.add(value)
+        oku_value = value * multiplier
+        if oku_value != oku_value.to_integral():
+            continue
+        found_oku_values.add(int(oku_value))
 
-    if not translated_billion_values:
+    if not found_oku_values:
         return True
 
     for expected_oku in expected_oku_values:
-        expected_billion = Decimal(expected_oku) / Decimal("10")
-        if expected_billion not in translated_billion_values:
+        if expected_oku not in found_oku_values:
             return True
     return False
 
@@ -803,7 +1002,7 @@ _RE_JP_MAN_AMOUNT_WITH_UNIT = re.compile(
 _RE_JP_SEN_AMOUNT_WITH_UNIT = re.compile(
     rf"(?P<number>{_NUMBER_WITH_OPTIONAL_COMMAS_AND_DECIMALS_PATTERN})\s*千(?P<unit>円|台)?"
 )
-_RE_JP_TRIANGLE_NEGATIVE_NUMBER = re.compile(r"▲\s*\d")
+_RE_JP_TRIANGLE_NEGATIVE_NUMBER = re.compile(r"[▲△]\s*\d")
 _RE_JP_MONTH_NUMBER = re.compile(r"(\d{1,2})月")
 _RE_EN_NUMBER_WITH_K_UNIT = re.compile(r"\b\d[\d,]*(?:\.\d+)?\s*k\b", re.IGNORECASE)
 _RE_EN_NUMBER_WITH_MAN_SEN_UNIT = re.compile(
@@ -822,7 +1021,7 @@ _RE_EN_PAREN_NEGATIVE_SIGN_NUMBER = re.compile(
     rf"\(\s*[-−]\s*(?P<number>{_NUMBER_WITH_OPTIONAL_COMMAS_AND_DECIMALS_PATTERN})\s*\)"
 )
 _RE_EN_TRIANGLE_SIGNED_NUMBER = re.compile(
-    rf"▲\s*(?P<number>{_NUMBER_WITH_OPTIONAL_COMMAS_AND_DECIMALS_PATTERN})"
+    rf"[▲△]\s*(?P<number>{_NUMBER_WITH_OPTIONAL_COMMAS_AND_DECIMALS_PATTERN})"
 )
 _RE_EN_INT_TOKEN = re.compile(
     rf"(?<![\w.])(?P<number>{_INT_WITH_OPTIONAL_COMMAS_PATTERN})(?![\w.])"
@@ -958,7 +1157,7 @@ def _build_to_en_rule_retry_instruction(reasons: list[str]) -> str:
         lines.append("- Use k notation for 万/千 (e.g., 22万円 -> 220k yen).")
     if "negative" in reasons:
         lines.append(
-            "- Convert ▲ negative numbers to parentheses with the number only (e.g., ▲50 -> (50)). Do not output ▲ or a leading minus."
+            "- Convert ▲/△ negative numbers to parentheses with the number only (e.g., ▲50 -> (50)). Do not output ▲/△ or a leading minus."
         )
     if "month" in reasons:
         lines.append(
@@ -2714,16 +2913,12 @@ class BatchTranslator:
                     output_language,
                 )
 
-            if (
-                (not is_local_backend)
-                and output_language == "en"
-                and not self._cancel_event.is_set()
-            ):
+            if output_language == "en" and not self._cancel_event.is_set():
                 auto_fixed_numeric = 0
                 for idx, translated_text in enumerate(cleaned_unique_translations):
                     if not translated_text or not translated_text.strip():
                         continue
-                    fixed_text, fixed = _fix_to_en_oku_numeric_unit_if_possible(
+                    fixed_text, fixed = _fix_to_en_financial_units_if_possible(
                         source_text=unique_texts[idx],
                         translated_text=translated_text,
                     )
@@ -4073,6 +4268,12 @@ class TranslationService:
                 merged = "".join(merged_parts)
 
                 if raw_output:
+                    merged = _apply_safe_raw_text_fixes(
+                        source_text=text,
+                        translated_text=merged,
+                        output_language=output_language,
+                        metadata=metadata,
+                    )
                     return TextTranslationResult(
                         source_text=text,
                         source_char_count=len(text),
@@ -4109,7 +4310,7 @@ class TranslationService:
                             error_message="翻訳結果が不完全でした（短すぎます）。",
                             metadata=metadata,
                         )
-                    fixed_text, fixed = _fix_to_en_oku_numeric_unit_if_possible(
+                    fixed_text, fixed = _fix_to_en_financial_units_if_possible(
                         source_text=text,
                         translated_text=merged,
                     )
@@ -4137,7 +4338,10 @@ class TranslationService:
                         error_message="翻訳結果が日本語ではありませんでした（出力言語ガード）",
                         metadata=metadata,
                     )
-                fixed_text, fixed = _fix_to_jp_oku_numeric_unit_if_possible(merged)
+                fixed_text, fixed = _fix_to_jp_financial_units_if_possible(
+                    source_text=text,
+                    translated_text=merged,
+                )
                 if fixed:
                     merged = fixed_text
                     metadata["to_jp_oku_correction"] = True
@@ -4179,12 +4383,18 @@ class TranslationService:
                     raise
                 raw = strip_prompt_echo(raw, prompt)
                 if raw_output:
+                    raw_text = _apply_safe_raw_text_fixes(
+                        source_text=text,
+                        translated_text=raw or "",
+                        output_language=output_language,
+                        metadata=metadata,
+                    )
                     return TextTranslationResult(
                         source_text=text,
                         source_char_count=len(text),
                         options=[
                             TranslationOption(
-                                text=raw or "",
+                                text=raw_text,
                                 explanation="",
                                 style=style,
                             )
@@ -4254,7 +4464,7 @@ class TranslationService:
                             error_message="翻訳結果が不完全でした（短すぎます）。",
                             metadata=metadata,
                         )
-                    fixed_text, fixed = _fix_to_en_oku_numeric_unit_if_possible(
+                    fixed_text, fixed = _fix_to_en_financial_units_if_possible(
                         source_text=text,
                         translated_text=translation,
                     )
@@ -4549,7 +4759,7 @@ class TranslationService:
                         error_message="翻訳結果が不完全でした（短すぎます）。",
                         metadata=metadata,
                     )
-                fixed_text, fixed = _fix_to_en_oku_numeric_unit_if_possible(
+                fixed_text, fixed = _fix_to_en_financial_units_if_possible(
                     source_text=text,
                     translated_text=translation,
                 )
@@ -4671,10 +4881,16 @@ class TranslationService:
                 raise
             raw = strip_prompt_echo(raw, prompt)
             if raw_output:
+                raw_text = _apply_safe_raw_text_fixes(
+                    source_text=text,
+                    translated_text=raw or "",
+                    output_language=output_language,
+                    metadata=metadata,
+                )
                 return TextTranslationResult(
                     source_text=text,
                     source_char_count=len(text),
-                    options=[TranslationOption(text=raw or "", explanation="")],
+                    options=[TranslationOption(text=raw_text, explanation="")],
                     output_language=output_language,
                     detected_language=detected_language,
                     metadata=metadata,
@@ -4729,7 +4945,10 @@ class TranslationService:
                         ),
                         metadata=metadata,
                     )
-                fixed_text, fixed = _fix_to_jp_oku_numeric_unit_if_possible(translation)
+                fixed_text, fixed = _fix_to_jp_financial_units_if_possible(
+                    source_text=text,
+                    translated_text=translation,
+                )
                 if fixed:
                     translation = fixed_text
                     metadata["to_jp_oku_correction"] = True
@@ -4841,7 +5060,10 @@ class TranslationService:
                         error_message="翻訳結果が日本語ではありませんでした（出力言語ガード）",
                         metadata=metadata,
                     )
-            fixed_text, fixed = _fix_to_jp_oku_numeric_unit_if_possible(translation)
+            fixed_text, fixed = _fix_to_jp_financial_units_if_possible(
+                source_text=text,
+                translated_text=translation,
+            )
             if fixed:
                 translation = fixed_text
                 metadata["to_jp_oku_correction"] = True
@@ -5012,7 +5234,7 @@ class TranslationService:
             numeric_retry_styles: set[str],
         ) -> TextTranslationResult:
             for style, current in list(translations.items()):
-                fixed_text, fixed = _fix_to_en_oku_numeric_unit_if_possible(
+                fixed_text, fixed = _fix_to_en_financial_units_if_possible(
                     source_text=text,
                     translated_text=current,
                 )
@@ -5607,11 +5829,9 @@ class TranslationService:
 
                 if retry_result and retry_result.options:
                     retry_text = retry_result.options[0].text
-                    fixed_retry_text, fixed_retry = (
-                        _fix_to_en_oku_numeric_unit_if_possible(
-                            source_text=text,
-                            translated_text=retry_text,
-                        )
+                    fixed_retry_text, fixed_retry = _fix_to_en_financial_units_if_possible(
+                        source_text=text,
+                        translated_text=retry_text,
                     )
                     if fixed_retry:
                         retry_result.options[0].text = fixed_retry_text
@@ -5692,7 +5912,7 @@ class TranslationService:
             if result:
                 if result.output_language == "en" and result.options:
                     translation = result.options[0].text
-                    fixed_text, fixed = _fix_to_en_oku_numeric_unit_if_possible(
+                    fixed_text, fixed = _fix_to_en_financial_units_if_possible(
                         source_text=text,
                         translated_text=translation,
                     )

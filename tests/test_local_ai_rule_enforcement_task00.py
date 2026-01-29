@@ -89,8 +89,9 @@ def test_text_style_comparison_retries_when_negative_triangle_rule_violated() ->
 def test_text_style_comparison_auto_corrects_negative_sign_after_retry_still_violates() -> (
     None
 ):
-    first = "YoY: -496 oku yen."
-    local = SequencedLocalClient([first])
+    raw = "YoY: -496 oku yen."
+    expected = "YoY: -¥49.6 billion."
+    local = SequencedLocalClient([raw])
     service = _make_service(local)
 
     result = service.translate_text_with_style_comparison(
@@ -102,9 +103,9 @@ def test_text_style_comparison_auto_corrects_negative_sign_after_retry_still_vio
     assert result.output_language == "en"
     assert result.error_message is None
     assert result.options
-    assert result.options[0].text == first
+    assert result.options[0].text == expected
     metadata = result.metadata or {}
-    assert metadata.get("to_en_negative_correction") is None
+    assert metadata.get("to_en_numeric_unit_correction") is True
 
 
 def test_text_style_comparison_auto_corrects_month_abbrev_after_retry_still_violates() -> (

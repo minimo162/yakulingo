@@ -119,6 +119,6 @@ def test_local_style_comparison_retries_when_numeric_rules_violated(
     assert calls == 1
     assert [option.style for option in result.options] == ["standard"]
     assert [option.text for option in result.options] == [
-        "Revenue was 2.2385 trillion yen, down by 1,554 billion yen year on year."
+        "Revenue was ¥2,238.5 billion, down by ¥155.4 billion year on year."
     ]
-    assert (result.metadata or {}).get("to_en_numeric_unit_correction") is None
+    assert (result.metadata or {}).get("to_en_numeric_unit_correction") is True

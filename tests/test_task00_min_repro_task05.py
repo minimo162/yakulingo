@@ -29,7 +29,7 @@ from yakulingo.services.translation_service import (
             "Revenue was 22,385 billion yen.",
             _fix_to_en_oku_numeric_unit_if_possible,
             _needs_to_en_numeric_rule_retry,
-            "2,238.5 billion yen",
+            "¥2,238.5 billion",
             "oku",
         ),
         (

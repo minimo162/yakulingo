@@ -213,8 +213,9 @@ def test_text_style_comparison_retries_for_oku_numeric_rule_when_auto_fix_not_po
 
 def test_text_style_comparison_skips_numeric_retry_when_auto_fixable() -> None:
     input_text = "売上高は2兆2,385億円となりました。"
-    first = "Net sales were 22,385 billion yen."
-    local = SequencedLocalClient([first])
+    raw = "Net sales were 22,385 billion yen."
+    expected = "Net sales were ¥2,238.5 billion."
+    local = SequencedLocalClient([raw])
     service = _make_service(local)
 
     result = service.translate_text_with_style_comparison(
@@ -226,18 +227,19 @@ def test_text_style_comparison_skips_numeric_retry_when_auto_fixable() -> None:
     assert local.translate_single_calls == 1
     assert result.output_language == "en"
     assert [option.style for option in result.options] == ["standard"]
-    assert result.options[0].text == first
+    assert result.options[0].text == expected
 
     metadata = result.metadata or {}
-    assert metadata.get("to_en_numeric_unit_correction") is None
+    assert metadata.get("to_en_numeric_unit_correction") is True
 
 
 def test_text_style_comparison_skips_numeric_retry_when_auto_fixable_by_conversion() -> (
     None
 ):
     input_text = "売上高は2兆2,385億円となりました。"
-    first = "Net sales were 2,238.5 billion yen."
-    local = SequencedLocalClient([first])
+    raw = "Net sales were 2,238.5 billion yen."
+    expected = "Net sales were ¥2,238.5 billion."
+    local = SequencedLocalClient([raw])
     service = _make_service(local)
 
     result = service.translate_text_with_style_comparison(
@@ -252,10 +254,10 @@ def test_text_style_comparison_skips_numeric_retry_when_auto_fixable_by_conversi
 
     assert result.output_language == "en"
     assert [option.style for option in result.options] == ["standard"]
-    assert result.options[0].text == first
+    assert result.options[0].text == expected
 
     metadata = result.metadata or {}
-    assert metadata.get("to_en_numeric_unit_correction") is None
+    assert metadata.get("to_en_numeric_unit_correction") is True
     assert metadata.get("to_en_numeric_rule_retry") is None
 
 

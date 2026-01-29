@@ -2533,6 +2533,7 @@ class BatchTranslator:
                     else:
                         unique_translations = unique_translations[: len(unique_texts)]
 
+            post_check_enabled = not is_local_backend
             cleaned_unique_translations = []
             hangul_indices: list[int] = []
             output_language_mismatch_indices: list[int] = []
@@ -2541,15 +2542,21 @@ class BatchTranslator:
                 if not cleaned_text or not cleaned_text.strip():
                     cleaned_unique_translations.append("")
                     continue
-                if output_language == "en" and _RE_HANGUL.search(cleaned_text):
+                if (
+                    post_check_enabled
+                    and output_language == "en"
+                    and _RE_HANGUL.search(cleaned_text)
+                ):
                     hangul_indices.append(idx)
                     cleaned_unique_translations.append("")
                     continue
-                if self._is_output_language_mismatch(cleaned_text, output_language):
+                if post_check_enabled and self._is_output_language_mismatch(
+                    cleaned_text, output_language
+                ):
                     output_language_mismatch_indices.append(idx)
                     cleaned_unique_translations.append("")
                     continue
-                if self._should_retry_translation(
+                if post_check_enabled and self._should_retry_translation(
                     unique_texts[idx], cleaned_text, output_language
                 ):
                     preview = unique_texts[idx][:50].replace("\n", " ")
@@ -2573,7 +2580,11 @@ class BatchTranslator:
                     output_language,
                 )
 
-            if output_language == "en" and not self._cancel_event.is_set():
+            if (
+                (not is_local_backend)
+                and output_language == "en"
+                and not self._cancel_event.is_set()
+            ):
                 auto_fixed_numeric = 0
                 for idx, translated_text in enumerate(cleaned_unique_translations):
                     if not translated_text or not translated_text.strip():
@@ -2593,7 +2604,11 @@ class BatchTranslator:
                         len(cleaned_unique_translations),
                     )
 
-            if output_language == "en" and not self._cancel_event.is_set():
+            if (
+                (not is_local_backend)
+                and output_language == "en"
+                and not self._cancel_event.is_set()
+            ):
                 numeric_rule_violation_indices = [
                     idx
                     for idx, translated_text in enumerate(cleaned_unique_translations)
@@ -2612,106 +2627,39 @@ class BatchTranslator:
                     for idx in numeric_rule_violation_indices:
                         cleaned_unique_translations[idx] = ""
 
-            if (
-                is_local_backend
-                and output_language == "en"
-                and not self._cancel_event.is_set()
-            ):
-                rule_violation_indices: list[int] = []
-
-                for idx, translated_text in enumerate(cleaned_unique_translations):
-                    if not translated_text or not translated_text.strip():
-                        continue
-
-                    reasons = _collect_to_en_rule_retry_reasons(
-                        unique_texts[idx], translated_text
+            if not is_local_backend:
+                # Treat ellipsis-only outputs ("..." / "…") as invalid translations and fall back.
+                ellipsis_only_indices = [
+                    idx
+                    for idx, trans in enumerate(cleaned_unique_translations)
+                    if trans
+                    and trans.strip()
+                    and _is_ellipsis_only_translation(unique_texts[idx], trans)
+                ]
+                if ellipsis_only_indices:
+                    logger.warning(
+                        "Batch %d: %d ellipsis-only translations detected; using fallback for those blocks",
+                        i + 1,
+                        len(ellipsis_only_indices),
                     )
-                    if not reasons:
-                        continue
+                    for idx in ellipsis_only_indices:
+                        cleaned_unique_translations[idx] = ""
 
-                    fixed_text = translated_text
-                    fixed_any = False
-                    if "k" in reasons:
-                        fixed_text, fixed = _fix_to_en_k_notation_if_possible(
-                            source_text=unique_texts[idx],
-                            translated_text=fixed_text,
-                        )
-                        fixed_any = fixed_any or fixed
-                    if "negative" in reasons:
-                        fixed_text, fixed = _fix_to_en_negative_parens_if_possible(
-                            source_text=unique_texts[idx],
-                            translated_text=fixed_text,
-                        )
-                        fixed_any = fixed_any or fixed
-                    if "month" in reasons:
-                        fixed_text, fixed = _fix_to_en_month_abbrev_if_possible(
-                            source_text=unique_texts[idx],
-                            translated_text=fixed_text,
-                        )
-                        fixed_any = fixed_any or fixed
-
-                    if fixed_any:
-                        cleaned_unique_translations[idx] = fixed_text
-                        translated_text = fixed_text
-                        reasons = _collect_to_en_rule_retry_reasons(
-                            unique_texts[idx], translated_text
-                        )
-                        if not reasons:
-                            continue
-
-                    rule_violation_indices.append(idx)
-
-                if rule_violation_indices:
-                    remaining_count = 0
-                    for idx in rule_violation_indices:
-                        translated_text = cleaned_unique_translations[idx]
-                        if not translated_text or not translated_text.strip():
-                            continue
-                        if _collect_to_en_rule_retry_reasons(
-                            unique_texts[idx], translated_text
-                        ):
-                            cleaned_unique_translations[idx] = ""
-                            remaining_count += 1
-
-                    if remaining_count:
-                        logger.warning(
-                            "Batch %d: Rule violations remain in %d items; using fallback for those blocks",
-                            i + 1,
-                            remaining_count,
-                        )
-
-            # Treat ellipsis-only outputs ("..." / "…") as invalid translations and fall back.
-            ellipsis_only_indices = [
-                idx
-                for idx, trans in enumerate(cleaned_unique_translations)
-                if trans
-                and trans.strip()
-                and _is_ellipsis_only_translation(unique_texts[idx], trans)
-            ]
-            if ellipsis_only_indices:
-                logger.warning(
-                    "Batch %d: %d ellipsis-only translations detected; using fallback for those blocks",
-                    i + 1,
-                    len(ellipsis_only_indices),
-                )
-                for idx in ellipsis_only_indices:
-                    cleaned_unique_translations[idx] = ""
-
-            placeholder_only_indices = [
-                idx
-                for idx, trans in enumerate(cleaned_unique_translations)
-                if trans
-                and trans.strip()
-                and _is_placeholder_only_translation(unique_texts[idx], trans)
-            ]
-            if placeholder_only_indices:
-                logger.warning(
-                    "Batch %d: %d placeholder-only translations detected; using fallback for those blocks",
-                    i + 1,
-                    len(placeholder_only_indices),
-                )
-                for idx in placeholder_only_indices:
-                    cleaned_unique_translations[idx] = ""
+                placeholder_only_indices = [
+                    idx
+                    for idx, trans in enumerate(cleaned_unique_translations)
+                    if trans
+                    and trans.strip()
+                    and _is_placeholder_only_translation(unique_texts[idx], trans)
+                ]
+                if placeholder_only_indices:
+                    logger.warning(
+                        "Batch %d: %d placeholder-only translations detected; using fallback for those blocks",
+                        i + 1,
+                        len(placeholder_only_indices),
+                    )
+                    for idx in placeholder_only_indices:
+                        cleaned_unique_translations[idx] = ""
 
             # Detect empty translations (a backend may return empty strings for some items)
             empty_translation_indices = [
@@ -2719,7 +2667,7 @@ class BatchTranslator:
                 for idx, trans in enumerate(cleaned_unique_translations)
                 if not trans or not trans.strip()
             ]
-            if empty_translation_indices:
+            if (not is_local_backend) and empty_translation_indices:
                 logger.warning(
                     "Batch %d: %d empty translations detected at indices %s",
                     i + 1,
@@ -2737,7 +2685,10 @@ class BatchTranslator:
                     is_fallback = False
 
                     # Check for empty translation and log warning
-                    if not translated_text or not translated_text.strip():
+                    if (
+                        (not is_local_backend)
+                        and (not translated_text or not translated_text.strip())
+                    ):
                         logger.warning(
                             "Block '%s' received empty translation, using original text as fallback",
                             block.id,
@@ -2776,7 +2727,8 @@ class BatchTranslator:
         # Skip when we already observed count mismatches: the response mapping is unreliable,
         # and retrying risks overwriting the "use original text" fallbacks.
         if (
-            untranslated_block_ids
+            (not is_local_backend)
+            and untranslated_block_ids
             and not cancelled
             and _split_retry_depth == 0
             and mismatched_batch_count == 0

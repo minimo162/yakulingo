@@ -57,22 +57,11 @@ def test_translate_single_streaming_retries_with_repeated_prompt_on_missing_json
         on_chunk("partial")
         return LocalAIRequestResult(content="plain text output", model_id=None)
 
-    def fake_chat(
-        runtime_arg: LocalAIServerRuntime,
-        prompt_arg: str,
-        *,
-        timeout: int | None,
-        force_response_format: bool | None = None,
-        repeat_prompt: bool = False,
-    ) -> LocalAIRequestResult:
-        _ = runtime_arg, timeout, force_response_format
-        calls.append(("chat", repeat_prompt))
-        assert prompt_arg == prompt
-        assert repeat_prompt is True
-        return LocalAIRequestResult(content='{"translation":"ok"}', model_id=None)
+    def fail_chat(*_args, **_kwargs) -> LocalAIRequestResult:
+        raise AssertionError("_chat_completions should not be called")
 
     client._chat_completions_streaming = fake_streaming  # type: ignore[method-assign]
-    client._chat_completions = fake_chat  # type: ignore[method-assign]
+    client._chat_completions = fail_chat  # type: ignore[method-assign]
 
     result = client.translate_single(
         "ignored",
@@ -82,9 +71,9 @@ def test_translate_single_streaming_retries_with_repeated_prompt_on_missing_json
         timeout=1,
         runtime=runtime,
     )
-    assert result == '{"translation":"ok"}'
+    assert result == "plain text output"
     assert chunks == ["partial"]
-    assert calls == [("streaming", False), ("chat", True)]
+    assert calls == [("streaming", False)]
 
 
 def test_local_reference_embed_disabled_skips_glossary_filter(tmp_path: Path) -> None:

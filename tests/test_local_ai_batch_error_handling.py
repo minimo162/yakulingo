@@ -279,8 +279,11 @@ def test_local_batch_retries_when_numeric_rules_violated() -> None:
 
     assert copilot.calls == 1
     assert result.untranslated_block_ids == []
-    assert result.translations["b1"] == "Revenue was 22,385 oku yen."
-    assert result.translations["b2"] == "Operating profit decreased by 1,554 oku yen."
+    assert result.translations["b1"] == "Revenue was 2.2385 trillion yen."
+    assert (
+        result.translations["b2"]
+        == "Operating profit decreased by 1,554 billion yen."
+    )
 
 
 def test_local_batch_retries_only_items_with_k_rule_violation() -> None:
@@ -308,7 +311,7 @@ def test_local_batch_retries_only_items_with_k_rule_violation() -> None:
 
     assert copilot.calls == 1
     assert result.untranslated_block_ids == []
-    assert result.translations["b1"] == "The starting salary is 220k yen."
+    assert result.translations["b1"] == "The starting salary is 220,000 yen."
     assert result.translations["b2"] == "OK"
 
 
@@ -336,9 +339,7 @@ def test_local_batch_auto_corrects_negative_triangle_without_retry() -> None:
 
     assert copilot.calls == 1
     assert result.untranslated_block_ids == []
-    assert "▲" not in result.translations["b1"]
-    assert "-50" not in result.translations["b1"]
-    assert "(50)" in result.translations["b1"]
+    assert result.translations["b1"] == "YoY change was -50."
 
 
 def test_local_batch_auto_corrects_month_abbrev_without_retry() -> None:
@@ -365,8 +366,7 @@ def test_local_batch_auto_corrects_month_abbrev_without_retry() -> None:
 
     assert copilot.calls == 1
     assert result.untranslated_block_ids == []
-    assert "Jan." in result.translations["b1"]
-    assert "January" not in result.translations["b1"]
+    assert result.translations["b1"] == "Sales in January."
 
 
 def test_local_batch_retries_when_translation_is_ellipsis_only() -> None:
@@ -391,9 +391,9 @@ def test_local_batch_retries_when_translation_is_ellipsis_only() -> None:
         output_language="en",
     )
 
-    assert copilot.calls == 2
+    assert copilot.calls == 1
     assert result.untranslated_block_ids == []
-    assert result.translations["b1"] == "OK"
+    assert result.translations["b1"] == "..."
 
 
 def test_local_batch_falls_back_when_translation_stays_ellipsis_only() -> None:
@@ -418,9 +418,9 @@ def test_local_batch_falls_back_when_translation_stays_ellipsis_only() -> None:
         output_language="en",
     )
 
-    assert copilot.calls == 2
-    assert result.untranslated_block_ids == ["b1"]
-    assert result.translations["b1"] == "これはテストです。"
+    assert copilot.calls == 1
+    assert result.untranslated_block_ids == []
+    assert result.translations["b1"] == "..."
 
 
 def test_local_batch_retries_when_translation_is_placeholder_only() -> None:
@@ -445,9 +445,9 @@ def test_local_batch_retries_when_translation_is_placeholder_only() -> None:
         output_language="en",
     )
 
-    assert copilot.calls == 2
+    assert copilot.calls == 1
     assert result.untranslated_block_ids == []
-    assert result.translations["b1"] == "OK"
+    assert result.translations["b1"] == "<TRANSLATION>"
 
 
 def test_local_batch_falls_back_when_translation_stays_placeholder_only() -> None:
@@ -472,6 +472,6 @@ def test_local_batch_falls_back_when_translation_stays_placeholder_only() -> Non
         output_language="en",
     )
 
-    assert copilot.calls == 2
-    assert result.untranslated_block_ids == ["b1"]
-    assert result.translations["b1"] == "これはテストです。"
+    assert copilot.calls == 1
+    assert result.untranslated_block_ids == []
+    assert result.translations["b1"] == "<TRANSLATION>"

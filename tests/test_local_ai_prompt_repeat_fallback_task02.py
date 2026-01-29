@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from yakulingo.config.settings import AppSettings
 from yakulingo.services.local_ai_client import LocalAIClient
 from yakulingo.services.local_llama_server import LocalAIServerRuntime
@@ -31,7 +33,9 @@ def _extract_user_prompt(payload: dict[str, object]) -> str:
     return content
 
 
-def test_translate_single_retries_with_repeated_prompt_on_schema_mismatch() -> None:
+def test_translate_single_does_not_retry_with_repeated_prompt_on_schema_mismatch() -> (
+    None
+):
     client = LocalAIClient(AppSettings())
     runtime = _make_runtime()
     prompt = 'Return JSON only: {"translation": ""}'
@@ -58,13 +62,12 @@ def test_translate_single_retries_with_repeated_prompt_on_schema_mismatch() -> N
         timeout=1,
         runtime=runtime,
     )
-    assert result == '{"translation":"ok"}'
-    assert len(calls) == 2
+    assert result == '{"translatio":"missing-key"}'
+    assert len(calls) == 1
     assert _extract_user_prompt(calls[0]) == prompt
-    assert _extract_user_prompt(calls[1]) == f"{prompt}\n\n{prompt}"
 
 
-def test_translate_single_retries_with_repeated_prompt_on_missing_json() -> None:
+def test_translate_single_does_not_retry_with_repeated_prompt_on_missing_json() -> None:
     client = LocalAIClient(AppSettings())
     runtime = _make_runtime()
     prompt = 'Return JSON only: {"translation": ""}'
@@ -91,10 +94,9 @@ def test_translate_single_retries_with_repeated_prompt_on_missing_json() -> None
         timeout=1,
         runtime=runtime,
     )
-    assert result == '{"translation":"ok"}'
-    assert len(calls) == 2
+    assert result == "plain text output"
+    assert len(calls) == 1
     assert _extract_user_prompt(calls[0]) == prompt
-    assert _extract_user_prompt(calls[1]) == f"{prompt}\n\n{prompt}"
 
 
 def test_translate_single_does_not_retry_when_prompt_is_not_json() -> None:
@@ -122,7 +124,7 @@ def test_translate_single_does_not_retry_when_prompt_is_not_json() -> None:
     assert len(calls) == 1
 
 
-def test_translate_sync_retries_with_repeated_prompt_on_parse_failure() -> None:
+def test_translate_sync_does_not_retry_with_repeated_prompt_on_parse_failure() -> None:
     client = LocalAIClient(AppSettings())
     runtime = _make_runtime()
     prompt = 'Return JSON only: {"items":[{"id":1,"translation":""}]} (items_json)'
@@ -143,17 +145,16 @@ def test_translate_sync_retries_with_repeated_prompt_on_parse_failure() -> None:
 
     client._http_json_cancellable = fake_http  # type: ignore[method-assign]
 
-    result = client.translate_sync(
-        ["a", "b"],
-        prompt,
-        reference_files=None,
-        skip_clear_wait=False,
-        timeout=1,
-        include_item_ids=False,
-        max_retries=0,
-        runtime=runtime,
-    )
-    assert result == ["A", "B"]
-    assert len(calls) == 2
+    with pytest.raises(RuntimeError):
+        client.translate_sync(
+            ["a", "b"],
+            prompt,
+            reference_files=None,
+            skip_clear_wait=False,
+            timeout=1,
+            include_item_ids=False,
+            max_retries=0,
+            runtime=runtime,
+        )
+    assert len(calls) == 1
     assert _extract_user_prompt(calls[0]) == prompt
-    assert _extract_user_prompt(calls[1]) == f"{prompt}\n\n{prompt}"

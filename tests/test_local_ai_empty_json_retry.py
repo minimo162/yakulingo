@@ -62,19 +62,20 @@ class EmptyJsonOnceLocalAIClient(LocalAIClient):
         }
 
 
-def test_translate_single_retries_without_response_format_when_empty_json() -> None:
+def test_translate_single_does_not_retry_without_response_format_when_empty_json() -> (
+    None
+):
     client = EmptyJsonOnceLocalAIClient()
 
     raw = client.translate_single("ignored", 'Return JSON only: {"translation": ""}')
 
-    assert raw == '{"translation":"Hello","explanation":""}'
-    assert len(client.http_payloads) == 2
+    assert raw == "{}"
+    assert len(client.http_payloads) == 1
     assert "response_format" in client.http_payloads[0]
-    assert "response_format" not in client.http_payloads[1]
-    assert client._get_response_format_support(client.runtime) == "none"
+    assert client._get_response_format_support(client.runtime) is None
 
 
-def test_translate_single_streaming_retries_without_response_format_when_empty_json() -> (
+def test_translate_single_streaming_does_not_retry_without_response_format_when_empty_json() -> (
     None
 ):
     client = EmptyJsonOnceLocalAIClient()
@@ -85,9 +86,8 @@ def test_translate_single_streaming_retries_without_response_format_when_empty_j
         on_chunk=lambda _: None,
     )
 
-    assert raw == '{"translation":"Hello","explanation":""}'
+    assert raw == "{}"
     assert len(client.streaming_payloads) == 1
     assert "response_format" in client.streaming_payloads[0]
-    assert len(client.http_payloads) == 1
-    assert "response_format" not in client.http_payloads[0]
-    assert client._get_response_format_support(client.runtime) == "none"
+    assert len(client.http_payloads) == 0
+    assert client._get_response_format_support(client.runtime) is None

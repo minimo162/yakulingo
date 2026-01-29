@@ -1118,18 +1118,6 @@ class LocalAIClient:
                 runtime, prompt, on_chunk, timeout=timeout, repeat_prompt=False
             )
 
-        if _should_retry_with_repeated_prompt(
-            prompt,
-            result.content,
-            parsed_json=result.parsed_json,
-            require_json=_should_enforce_json_response(prompt),
-        ):
-            repeat_used = True
-            logger.debug("LocalAI retrying with repeated prompt (single)")
-            result = self._chat_completions(
-                runtime, prompt, timeout=timeout, repeat_prompt=True
-            )
-
         t_req = time.perf_counter() - t1
         logger.debug(
             "[TIMING] LocalAI chat_completions%s: %.2fs (prompt_chars=%d repeated=%s)",
@@ -1173,33 +1161,12 @@ class LocalAIClient:
         result = self._chat_completions(
             runtime, prompt, timeout=timeout, repeat_prompt=False
         )
-        try:
-            parsed = parse_batch_translations(
-                result.content,
-                expected_count=len(texts),
-                parsed_json=result.parsed_json,
-                prompt=prompt,
-            )
-        except RuntimeError:
-            if _should_retry_with_repeated_prompt(
-                prompt,
-                result.content,
-                parsed_json=result.parsed_json,
-                require_json=True,
-            ):
-                repeat_used = True
-                logger.debug("LocalAI retrying with repeated prompt (batch)")
-                result = self._chat_completions(
-                    runtime, prompt, timeout=timeout, repeat_prompt=True
-                )
-                parsed = parse_batch_translations(
-                    result.content,
-                    expected_count=len(texts),
-                    parsed_json=result.parsed_json,
-                    prompt=prompt,
-                )
-            else:
-                raise
+        parsed = parse_batch_translations(
+            result.content,
+            expected_count=len(texts),
+            parsed_json=result.parsed_json,
+            prompt=prompt,
+        )
 
         t_req = time.perf_counter() - t1
         logger.debug(
@@ -1309,13 +1276,6 @@ class LocalAIClient:
                 empty_json_object_reply = _is_empty_json_object_reply(
                     content, parsed_json
                 )
-            if enforce_json and empty_json_object_reply:
-                logger.debug(
-                    "LocalAI response_format returned empty JSON object; retrying without it"
-                )
-                self._set_response_format_support(runtime, "none")
-                response_format_mode = "none"
-                continue
 
             if enforce_json and not empty_json_object_reply:
                 self._set_response_format_support(runtime, response_format_mode)
@@ -1416,30 +1376,6 @@ class LocalAIClient:
         empty_json_object_reply = enforce_json and _is_empty_json_object_reply(
             result.content
         )
-        if empty_json_object_reply:
-            logger.debug(
-                "LocalAI response_format returned empty JSON object (streaming); retrying without it"
-            )
-            try:
-                retry = self._chat_completions(
-                    runtime,
-                    prompt,
-                    timeout=timeout,
-                    force_response_format=False,
-                    repeat_prompt=repeat_prompt,
-                )
-            except Exception as exc:
-                logger.debug(
-                    "LocalAI retry without response_format failed after empty JSON object (streaming) (%s)",
-                    exc,
-                )
-            else:
-                retry_empty_json_object_reply = _is_empty_json_object_reply(
-                    retry.content
-                )
-                if not retry_empty_json_object_reply:
-                    self._set_response_format_support(runtime, "none")
-                    return retry
 
         if enforce_json and not empty_json_object_reply:
             self._set_response_format_support(runtime, response_format_mode)

@@ -91,6 +91,8 @@ _RE_SINGLE_SECTION_LINE = re.compile(
     re.IGNORECASE,
 )
 _JSON_STOP_SEQUENCES = ["</s>", "<|end|>"]
+_RAW_PROMPT_MARKER = "<bos><start_of_turn>user\n"
+_RAW_PROMPT_STOP_SEQUENCES = ["<end_of_turn>"]
 _RESPONSE_FORMAT_CACHE_TTL_S = 600.0
 _SAMPLING_PARAMS_CACHE_TTL_S = 600.0
 _ResponseFormatMode = Literal["schema", "json_object", "none"]
@@ -887,6 +889,10 @@ class LocalAIClient:
         except Exception:
             return False
 
+    @staticmethod
+    def _is_raw_prompt(prompt: str) -> bool:
+        return (prompt or "").startswith(_RAW_PROMPT_MARKER)
+
     def _build_chat_payload(
         self,
         runtime: LocalAIServerRuntime,
@@ -939,6 +945,51 @@ class LocalAIClient:
             )
         if _JSON_STOP_SEQUENCES:
             payload["stop"] = _JSON_STOP_SEQUENCES
+        return payload
+
+    def _build_completions_payload(
+        self,
+        runtime: LocalAIServerRuntime,
+        prompt: str,
+        *,
+        stream: bool,
+        include_sampling_params: bool = True,
+        repeat_prompt: bool = False,
+    ) -> dict[str, object]:
+        original_prompt = prompt or ""
+        sent_prompt = _sent_prompt(original_prompt, repeat=repeat_prompt)
+        payload: dict[str, object] = {
+            "model": runtime.model_id or runtime.model_path.name,
+            "prompt": sent_prompt,
+            "stream": stream,
+            "temperature": float(self._settings.local_ai_temperature),
+        }
+        if include_sampling_params:
+            top_p = self._settings.local_ai_top_p
+            top_k = self._settings.local_ai_top_k
+            if _is_hy_mt_model(runtime):
+                top_p = _select_sampling_param_hy_mt_default(
+                    top_p,
+                    default=_HY_MT_DEFAULT_TOP_P,
+                    recommended=_HY_MT_RECOMMENDED_TOP_P,
+                )
+                top_k = _select_sampling_param_hy_mt_default(
+                    top_k,
+                    default=_HY_MT_DEFAULT_TOP_K,
+                    recommended=_HY_MT_RECOMMENDED_TOP_K,
+                )
+            if top_p is not None:
+                payload["top_p"] = float(top_p)
+            if top_k is not None:
+                payload["top_k"] = int(top_k)
+            if self._settings.local_ai_min_p is not None:
+                payload["min_p"] = float(self._settings.local_ai_min_p)
+            if self._settings.local_ai_repeat_penalty is not None:
+                payload["repeat_penalty"] = float(self._settings.local_ai_repeat_penalty)
+        if self._settings.local_ai_max_tokens is not None:
+            payload["max_tokens"] = int(self._settings.local_ai_max_tokens)
+        if _RAW_PROMPT_STOP_SEQUENCES:
+            payload["stop"] = _RAW_PROMPT_STOP_SEQUENCES
         return payload
 
     @staticmethod
@@ -1109,13 +1160,24 @@ class LocalAIClient:
 
         t1 = time.perf_counter()
         repeat_used = False
+        use_completions = self._is_raw_prompt(prompt)
         if on_chunk is None:
-            result = self._chat_completions(
-                runtime, prompt, timeout=timeout, repeat_prompt=False
+            result = (
+                self._completions(runtime, prompt, timeout=timeout, repeat_prompt=False)
+                if use_completions
+                else self._chat_completions(
+                    runtime, prompt, timeout=timeout, repeat_prompt=False
+                )
             )
         else:
-            result = self._chat_completions_streaming(
-                runtime, prompt, on_chunk, timeout=timeout, repeat_prompt=False
+            result = (
+                self._completions_streaming(
+                    runtime, prompt, on_chunk, timeout=timeout, repeat_prompt=False
+                )
+                if use_completions
+                else self._chat_completions_streaming(
+                    runtime, prompt, on_chunk, timeout=timeout, repeat_prompt=False
+                )
             )
             flush = getattr(on_chunk, "flush", None)
             if callable(flush):
@@ -1126,7 +1188,8 @@ class LocalAIClient:
 
         t_req = time.perf_counter() - t1
         logger.debug(
-            "[TIMING] LocalAI chat_completions%s: %.2fs (prompt_chars=%d repeated=%s)",
+            "[TIMING] LocalAI %s%s: %.2fs (prompt_chars=%d repeated=%s)",
+            "completions" if use_completions else "chat_completions",
             "" if on_chunk is None else "_streaming",
             t_req,
             _sent_prompt_len(prompt, repeat=repeat_used),
@@ -1164,8 +1227,10 @@ class LocalAIClient:
 
         t1 = time.perf_counter()
         repeat_used = False
-        result = self._chat_completions(
-            runtime, prompt, timeout=timeout, repeat_prompt=False
+        result = (
+            self._completions(runtime, prompt, timeout=timeout, repeat_prompt=False)
+            if self._is_raw_prompt(prompt)
+            else self._chat_completions(runtime, prompt, timeout=timeout, repeat_prompt=False)
         )
         parsed = parse_batch_translations(
             result.content,
@@ -1176,13 +1241,126 @@ class LocalAIClient:
 
         t_req = time.perf_counter() - t1
         logger.debug(
-            "[TIMING] LocalAI chat_completions: %.2fs (prompt_chars=%d repeated=%s items=%d)",
+            "[TIMING] LocalAI %s: %.2fs (prompt_chars=%d repeated=%s items=%d)",
+            "completions" if self._is_raw_prompt(prompt) else "chat_completions",
             t_req,
             _sent_prompt_len(prompt, repeat=repeat_used),
             repeat_used,
             len(texts),
         )
         return parsed
+
+    def _completions(
+        self,
+        runtime: LocalAIServerRuntime,
+        prompt: str,
+        *,
+        timeout: Optional[int],
+        repeat_prompt: bool = False,
+    ) -> LocalAIRequestResult:
+        if self._should_cancel():
+            raise TranslationCancelledError("Translation cancelled by user")
+
+        timeout_s = float(
+            timeout if timeout is not None else self._settings.request_timeout
+        )
+        cached_sampling_support = self._get_sampling_params_support(runtime)
+        include_sampling_params = cached_sampling_support is not False
+        tried: set[bool] = set()
+        while True:
+            if self._should_cancel():
+                raise TranslationCancelledError("Translation cancelled by user")
+            if include_sampling_params in tried:
+                raise RuntimeError("ローカルAIの応答形式の再試行に失敗しました")
+            tried.add(include_sampling_params)
+
+            payload = self._build_completions_payload(
+                runtime,
+                prompt,
+                stream=False,
+                include_sampling_params=include_sampling_params,
+                repeat_prompt=repeat_prompt,
+            )
+            try:
+                response = self._http_json_cancellable(
+                    host=runtime.host,
+                    port=runtime.port,
+                    path="/v1/completions",
+                    payload=payload,
+                    timeout_s=timeout_s,
+                )
+            except RuntimeError as exc:
+                if include_sampling_params and self._should_retry_without_sampling_params(
+                    exc
+                ):
+                    if self._should_cache_sampling_params_unsupported(exc):
+                        self._set_sampling_params_support(runtime, False)
+                    include_sampling_params = False
+                    logger.debug(
+                        "LocalAI sampling params unsupported; retrying completions without them (%s)",
+                        exc,
+                    )
+                    continue
+                raise
+
+            content = _parse_openai_chat_content(response)
+            if include_sampling_params and any(
+                key in payload for key in ("top_p", "top_k", "min_p", "repeat_penalty")
+            ):
+                self._set_sampling_params_support(runtime, True)
+            self._manager.note_server_ok(runtime)
+            return LocalAIRequestResult(content=content, model_id=runtime.model_id)
+
+    def _completions_streaming(
+        self,
+        runtime: LocalAIServerRuntime,
+        prompt: str,
+        on_chunk: Callable[[str], None],
+        *,
+        timeout: Optional[int],
+        repeat_prompt: bool = False,
+    ) -> LocalAIRequestResult:
+        cached_sampling_support = self._get_sampling_params_support(runtime)
+        include_sampling_params = cached_sampling_support is not False
+        tried: set[bool] = set()
+        while True:
+            if self._should_cancel():
+                raise TranslationCancelledError("Translation cancelled by user")
+            if include_sampling_params in tried:
+                raise RuntimeError("ローカルAIの応答形式の再試行に失敗しました")
+            tried.add(include_sampling_params)
+
+            payload = self._build_completions_payload(
+                runtime,
+                prompt,
+                stream=True,
+                include_sampling_params=include_sampling_params,
+                repeat_prompt=repeat_prompt,
+            )
+            try:
+                result = self._completions_streaming_with_payload(
+                    runtime, payload, on_chunk, timeout=timeout
+                )
+            except RuntimeError as exc:
+                if include_sampling_params and self._should_retry_without_sampling_params(
+                    exc
+                ):
+                    if self._should_cache_sampling_params_unsupported(exc):
+                        self._set_sampling_params_support(runtime, False)
+                    include_sampling_params = False
+                    logger.debug(
+                        "LocalAI sampling params unsupported; retrying streaming completions without them (%s)",
+                        exc,
+                    )
+                    continue
+                raise
+
+            if include_sampling_params and any(
+                key in payload for key in ("top_p", "top_k", "min_p", "repeat_penalty")
+            ):
+                self._set_sampling_params_support(runtime, True)
+            break
+        return result
 
     def _chat_completions(
         self,
@@ -1405,6 +1583,62 @@ class LocalAIClient:
             host=runtime.host,
             port=runtime.port,
             path="/v1/chat/completions",
+            payload=payload,
+            timeout_s=timeout_s,
+        )
+
+        start = time.monotonic()
+        try:
+            status_code, response_headers, initial_body = self._read_http_headers(
+                sock, timeout_s, start
+            )
+            if status_code != 200:
+                body_bytes = self._read_full_body(
+                    sock, response_headers, initial_body, timeout_s, start
+                )
+                body_text = body_bytes.decode("utf-8", errors="replace")
+                lowered = body_text.lower()
+                if status_code == 400 and any(
+                    token in lowered
+                    for token in ("context", "ctx", "token", "too long", "exceed")
+                ):
+                    raise RuntimeError(f"LOCAL_PROMPT_TOO_LONG: {body_text[:200]}")
+                raise RuntimeError(
+                    f"ローカルAIサーバエラー（HTTP {status_code}）: {body_text[:200]}"
+                )
+
+            chunks = self._iter_body_bytes(
+                sock, response_headers, initial_body, timeout_s, start
+            )
+            content, model_id = self._consume_sse_stream(chunks, on_chunk, start=start)
+            self._manager.note_server_ok(runtime)
+            return LocalAIRequestResult(
+                content=content, model_id=model_id or runtime.model_id
+            )
+        finally:
+            try:
+                sock.close()
+            except Exception:
+                pass
+
+    def _completions_streaming_with_payload(
+        self,
+        runtime: LocalAIServerRuntime,
+        payload: dict[str, object],
+        on_chunk: Callable[[str], None],
+        *,
+        timeout: Optional[int],
+    ) -> LocalAIRequestResult:
+        if self._should_cancel():
+            raise TranslationCancelledError("Translation cancelled by user")
+
+        timeout_s = float(
+            timeout if timeout is not None else self._settings.request_timeout
+        )
+        sock = self._open_http_stream(
+            host=runtime.host,
+            port=runtime.port,
+            path="/v1/completions",
             payload=payload,
             timeout_s=timeout_s,
         )

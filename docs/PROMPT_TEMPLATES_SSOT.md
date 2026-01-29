@@ -21,21 +21,31 @@ Notes for YakuLingo:
 - {source_text} maps to {input_text}.
 - YakuLingo does not post-check or rewrite the model output (translation only).
 
-## Template: XX<=>XX Translation, excluding ZH<=>XX.
+## Template: JP<=>EN Translation (financial statements, Local AI raw prompt)
 
-Purpose: translate non-Chinese input; output translation only.
+Purpose: translate Japanese <=> English suitable for financial statements; output translation only.
 
 Variables:
-- {target_language}
-- {source_text}
+- {text}
 
-Template (verbatim):
-Translate the following segment into {target_language}, without additional explanation.
+Template (verbatim, to EN):
+```text
+<bos><start_of_turn>user
+Translate the Japanese text into English suitable for financial statements. Treat 1 billion as 10 oku (10億). Convert oku → billion by ÷10 (drop one zero). The response should include only the translated text.
+Text: {text}<end_of_turn>
+<start_of_turn>model
+```
 
-{source_text}
+Template (verbatim, to JP):
+```text
+<bos><start_of_turn>user
+Translate the text into Japanese suitable for financial statements. Treat 1 billion as 10 oku (10億). Convert billion → oku (億) by ×10 (add one zero).. The response should include only the translated text.
+Text: {text}<end_of_turn>
+<start_of_turn>model
+```
 
 Notes for YakuLingo:
-- Same mapping as ZH<=>XX for {target_language} and {source_text}.
+- These templates are sent via `/v1/completions` (raw prompt) to avoid double-applying chat templates.
 
 ## Template: terminology intervention.
 
@@ -94,7 +104,7 @@ Notes for YakuLingo:
 ## llama.cpp Usage Example (verbatim)
 
 ```bash
-llama-cli -m local_ai/models/translategemma-4b-it.i1-IQ4_XS.gguf -p "Translate the following segment into Chinese, without additional explanation.\n\nIt’s on the house." -n 4096 --temp 0.7 --top-k 64 --top-p 0.95 --repeat-penalty 1.05 --no-warmup
+llama-cli -m local_ai/models/translategemma-4b-it.i1-IQ4_XS.gguf -p "<bos><start_of_turn>user\nTranslate the Japanese text into English suitable for financial statements. Treat 1 billion as 10 oku (10億). Convert oku → billion by ÷10 (drop one zero). The response should include only the translated text.\nText: こんにちは<end_of_turn>\n<start_of_turn>model\n" -n 4096 --temp 0.7 --top-k 64 --top-p 0.95 --repeat-penalty 1.05 --no-warmup
 ```
 
 ## ollama Usage Example

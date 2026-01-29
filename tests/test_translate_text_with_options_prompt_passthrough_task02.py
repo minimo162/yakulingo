@@ -56,9 +56,10 @@ def test_translate_text_with_options_passes_raw_prompt_en() -> None:
     expected = service.prompt_builder.build_simple_prompt(text, output_language="en")
     assert local.last_prompt == expected
     assert (
-        "Translate the following segment into English, without additional explanation."
+        "Translate the Japanese text into English suitable for financial statements."
         in expected
     )
+    assert expected.startswith("<bos><start_of_turn>user\n")
     assert "Instruction:" not in expected
     assert "Important Terminology:" not in expected
 
@@ -77,8 +78,9 @@ def test_translate_text_with_options_passes_raw_prompt_jp() -> None:
     expected = service.prompt_builder.build_simple_prompt(text, output_language="jp")
     assert local.last_prompt == expected
     assert (
-        "Translate the following segment into Japanese, without additional explanation."
+        "Translate the text into Japanese suitable for financial statements."
         in expected
     )
+    assert expected.startswith("<bos><start_of_turn>user\n")
     assert "Instruction:" not in expected
     assert "Important Terminology:" not in expected

@@ -33,10 +33,18 @@ def _expected_simple_prompt(
     output_language: str,
 ) -> str:
     user_input = builder.normalize_input_text(text, output_language)
-    _source_lang, _, target_lang, _ = builder._resolve_langs(output_language)
+    if output_language == "jp":
+        return (
+            f"<bos><start_of_turn>user\n"
+            f"Translate the text into Japanese suitable for financial statements. Treat 1 billion as 10 oku (10億). Convert billion → oku (億) by ×10 (add one zero).. The response should include only the translated text.\n"
+            f"Text: {user_input}<end_of_turn>\n"
+            f"<start_of_turn>model\n"
+        )
     return (
-        f"Translate the following segment into {target_lang}, without additional explanation.\n\n"
-        f"{user_input}"
+        f"<bos><start_of_turn>user\n"
+        f"Translate the Japanese text into English suitable for financial statements. Treat 1 billion as 10 oku (10億). Convert oku → billion by ÷10 (drop one zero). The response should include only the translated text.\n"
+        f"Text: {user_input}<end_of_turn>\n"
+        f"<start_of_turn>model\n"
     )
 
 

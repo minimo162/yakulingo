@@ -637,24 +637,13 @@ class PromptBuilder:
         output_language: str = "en",
     ) -> str:
         user_input = self.normalize_input_text(input_text, output_language)
-        source_lang, _source_code, target_lang, _target_code = self._resolve_langs(
+        _source_lang, _source_code, target_lang, _target_code = self._resolve_langs(
             output_language
         )
-        instruction = (
-            "Please translate this into natural Japanese suitable for financial statements. No other responses are necessary."
-            if output_language == "jp"
-            else "Please translate this into natural English suitable for financial statements. No other responses are necessary."
+        return (
+            f"Translate the following segment into {target_lang}, without additional explanation.\n\n"
+            f"{user_input}"
         )
-
-        raw_prompt = (
-            f"<bos><start_of_turn>user\n"
-            f"Instruction: {instruction}\n"
-            f"Source: {source_lang}\n"
-            f"Target: {target_lang}\n"
-            f"Text: {user_input}<end_of_turn>\n"
-            f"<start_of_turn>model\n"
-        )
-        return raw_prompt
 
     def _build_legacy_simple_prompt(
         self,

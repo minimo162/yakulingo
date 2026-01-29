@@ -429,10 +429,10 @@ if !OCR_ERROR! neq 0 (
 echo [DONE] Pre-compilation complete.
 
 :: ============================================================
-:: Step 6: Install Local AI runtime (llama.cpp + fixed HY-MT model)
+:: Step 6: Install Local AI runtime (llama.cpp + fixed Shisa model)
 :: ============================================================
 echo.
-echo [6/6] Installing Local AI runtime (llama.cpp + fixed HY-MT model)...
+echo [6/6] Installing Local AI runtime (llama.cpp + fixed Shisa model)...
 set "YAKULINGO_INSTALL_DEPS_STEP7=1"
 :: Run the Local AI step in a child cmd so a stray exit cannot terminate this installer.
 cmd /c call "packaging\install_deps_step7_local_ai.bat"

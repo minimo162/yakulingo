@@ -9,24 +9,24 @@
                       "variant":  "vulkan"
                   },
     "model":  {
-                  "repo":  "mradermacher/HY-MT1.5-7B-i1-GGUF",
+                  "repo":  "dahara1/shisa-v2.1-qwen3-8b-UD-japanese-imatrix",
                   "revision":  "main",
-                  "file":  "HY-MT1.5-7B.i1-Q6_K.gguf",
-                  "download_url":  "https://huggingface.co/mradermacher/HY-MT1.5-7B-i1-GGUF/resolve/main/HY-MT1.5-7B.i1-Q6_K.gguf",
-                  "sha256":  "DA1174DD757CCCED8E39E62E97264DADEA795A4CB0B8D88EC3A3B2F1E7F232DD",
+                  "file":  "shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf",
+                  "download_url":  "https://huggingface.co/dahara1/shisa-v2.1-qwen3-8b-UD-japanese-imatrix/resolve/main/shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf",
+                  "sha256":  null,
                   "skipped":  false,
                   "source":  {
                                  "kind":  "gguf",
-                                 "repo":  "mradermacher/HY-MT1.5-7B-i1-GGUF",
+                                 "repo":  "dahara1/shisa-v2.1-qwen3-8b-UD-japanese-imatrix",
                                  "revision":  "main",
-                                 "file":  "HY-MT1.5-7B.i1-Q6_K.gguf",
-                                 "download_url":  "https://huggingface.co/mradermacher/HY-MT1.5-7B-i1-GGUF/resolve/main/HY-MT1.5-7B.i1-Q6_K.gguf"
+                                 "file":  "shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf",
+                                 "download_url":  "https://huggingface.co/dahara1/shisa-v2.1-qwen3-8b-UD-japanese-imatrix/resolve/main/shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf"
                              },
                   "output":  {
                                  "kind":  "gguf",
-                                 "path":  "local_ai/models/HY-MT1.5-7B.i1-Q6_K.gguf",
-                                 "path_resolved":  "C:\\Users\\Administrator\\Desktop\\yakulingo\\local_ai\\models\\HY-MT1.5-7B.i1-Q6_K.gguf",
-                                 "sha256":  "DA1174DD757CCCED8E39E62E97264DADEA795A4CB0B8D88EC3A3B2F1E7F232DD"
+                                 "path":  "local_ai/models/shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf",
+                                 "path_resolved":  "C:\\Users\\Administrator\\Desktop\\yakulingo\\local_ai\\models\\shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf",
+                                 "sha256":  null
                              }
               }
 }

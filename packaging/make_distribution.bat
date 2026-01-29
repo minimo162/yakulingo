@@ -167,7 +167,7 @@ if errorlevel 1 (
 call :ShowProgress 1 "Copying folders..."
 
 echo        Copying .venv, .uv-python, yakulingo, prompts, config, local_ai...
-set "FIXED_MODEL_GGUF=HY-MT1.5-7B.i1-Q6_K.gguf"
+set "FIXED_MODEL_GGUF=shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf"
 
 :: Copy folders using robocopy
 :: Exit codes: 0=no change, 1=copied, 2-7=warnings, 8+=errors

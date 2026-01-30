@@ -330,6 +330,8 @@ def create_text_input_panel(
     on_open_file_picker: Optional[Callable[[], None]] = None,
     on_translate_button_created: Optional[Callable[[ui.button], None]] = None,
     on_output_language_override: Optional[Callable[[Optional[str]], None]] = None,
+    text_translation_mode: str = "standard",
+    on_text_mode_change: Optional[Callable[[str], None]] = None,
     translation_style: str = "concise",
     on_style_change: Optional[Callable[[str], None]] = None,
     on_input_metrics_created: Optional[Callable[[dict[str, object]], None]] = None,
@@ -347,6 +349,8 @@ def create_text_input_panel(
         on_open_file_picker,
         on_translate_button_created,
         on_output_language_override,
+        text_translation_mode,
+        on_text_mode_change,
         translation_style,
         on_style_change,
         on_input_metrics_created,
@@ -362,6 +366,8 @@ def _create_large_input_panel(
     on_open_file_picker: Optional[Callable[[], None]] = None,
     on_translate_button_created: Optional[Callable[[ui.button], None]] = None,
     on_output_language_override: Optional[Callable[[Optional[str]], None]] = None,
+    text_translation_mode: str = "standard",
+    on_text_mode_change: Optional[Callable[[str], None]] = None,
     translation_style: str = "concise",
     on_style_change: Optional[Callable[[str], None]] = None,
     on_input_metrics_created: Optional[Callable[[dict[str, object]], None]] = None,
@@ -378,6 +384,10 @@ def _create_large_input_panel(
         if len(snippet) > max_len:
             return f"{snippet[:max_len]}..."
         return snippet
+
+    mode = (text_translation_mode or "").strip().lower()
+    if mode not in {"standard", "concise"}:
+        mode = "standard"
 
     with ui.column().classes("flex-1 w-full gap-4"):
         if is_compact:
@@ -486,6 +496,29 @@ def _create_large_input_panel(
                                             metrics_refs["override_auto"] = auto_btn
                                             metrics_refs["override_en"] = en_btn
                                             metrics_refs["override_jp"] = jp_btn
+
+                                if on_text_mode_change:
+                                    with ui.column().classes("advanced-section"):
+                                        ui.label("翻訳モード").classes("advanced-label")
+                                        with ui.element("div").classes(
+                                            "direction-toggle"
+                                        ):
+                                            ui.button(
+                                                "標準",
+                                                on_click=lambda: on_text_mode_change(
+                                                    "standard"
+                                                ),
+                                            ).props("flat no-caps size=sm").classes(
+                                                f"direction-btn {'active' if mode == 'standard' else ''}"
+                                            )
+                                            ui.button(
+                                                "簡潔",
+                                                on_click=lambda: on_text_mode_change(
+                                                    "concise"
+                                                ),
+                                            ).props("flat no-caps size=sm").classes(
+                                                f"direction-btn {'active' if mode == 'concise' else ''}"
+                                            )
 
                     with ui.column().classes("input-toolbar-right items-center gap-2"):
                         with ui.column().classes("translate-actions items-end gap-2"):

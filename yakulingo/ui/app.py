@@ -8000,6 +8000,8 @@ class YakuLingoApp:
                         on_open_file_picker=self._open_translation_file_picker,
                         on_translate_button_created=self._on_translate_button_created,
                         on_output_language_override=self._set_text_output_language_override,
+                        text_translation_mode=self.settings.text_translation_mode,
+                        on_text_mode_change=self._on_text_mode_change,
                         translation_style=self.settings.translation_style,
                         on_style_change=self._on_style_change,
                         on_input_metrics_created=self._on_text_input_metrics_created,
@@ -8371,21 +8373,12 @@ class YakuLingoApp:
 
         summary_style_chip = refs.get("summary_style_chip")
         if summary_style_chip:
-            if output_lang == "en":
-                style_label_map = {
-                    "standard": "標準",
-                    "concise": "簡潔",
-                    "minimal": "最簡潔",
-                }
-                style_label = style_label_map.get(
-                    (self.settings.translation_style or "").strip().lower(),
-                    "スタイル自動",
-                )
-                summary_style_chip.set_text(style_label)
-            elif output_lang == "jp":
-                summary_style_chip.set_text("解説付き")
-            else:
-                summary_style_chip.set_text("スタイル自動")
+            mode_label_map = {"standard": "標準", "concise": "簡潔"}
+            mode_label = mode_label_map.get(
+                (self.settings.text_translation_mode or "").strip().lower(),
+                "標準",
+            )
+            summary_style_chip.set_text(mode_label)
 
         summary_override_chip = refs.get("summary_override_chip")
         if summary_override_chip:
@@ -9443,6 +9436,15 @@ class YakuLingoApp:
         for item in self.state.file_queue:
             if item.status == TranslationStatus.PENDING:
                 item.translation_style = style
+        self._refresh_content()  # Refresh to update button states
+
+    def _on_text_mode_change(self, mode: str) -> None:
+        """Handle text translation mode change (standard/concise)."""
+        normalized = str(mode or "").strip().lower()
+        if normalized not in {"standard", "concise"}:
+            normalized = "standard"
+        self.settings.text_translation_mode = normalized
+        self.settings.save(self.settings_path)
         self._refresh_content()  # Refresh to update button states
 
     def _on_font_size_change(self, size: float):

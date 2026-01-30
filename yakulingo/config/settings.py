@@ -37,6 +37,8 @@ _settings_cache_lock = threading.Lock()
 USER_SETTINGS_KEYS = {
     # 翻訳スタイル設定（設定ダイアログで変更）
     "translation_style",
+    # テキスト翻訳モード（標準/簡潔）
+    "text_translation_mode",
     # フォント設定（設定ダイアログで変更）
     "font_jp_to_en",
     "font_en_to_jp",
@@ -308,6 +310,7 @@ class AppSettings:
 
     # UI
     last_tab: str = "text"
+    text_translation_mode: str = "standard"  # "standard" | "concise"
     # Translation backend (deprecated; kept for backward compatibility).
     # NOTE: YakuLingo runs local-only; this value is always forced to "local".
     translation_backend: str = "local"
@@ -608,6 +611,19 @@ class AppSettings:
                     self.translation_style,
                 )
         self.translation_style = "minimal"
+
+        # Text translation mode
+        mode_raw = self.text_translation_mode
+        mode = str(mode_raw or "").strip().lower()
+        if mode not in {"standard", "concise"}:
+            if mode:
+                logger.warning(
+                    "text_translation_mode invalid (%s), resetting to 'standard'",
+                    mode_raw,
+                )
+            self.text_translation_mode = "standard"
+        else:
+            self.text_translation_mode = mode
 
         # Local AI security: always bind to localhost
         if self.local_ai_host != "127.0.0.1":

@@ -4,7 +4,7 @@
 
 | Task | Status | Summary | Branch | Commit |
 |---|---|---|---|---|
-| task-00 | TODO | 現状把握と設計の確定（データ/表示/ストリーミング方針） | `TBD` | `TBD` |
+| task-00 | DONE | 現状把握と設計の確定（データ/表示/ストリーミング方針） | `case-yakulingo-concise-mode-toggle-3pass-20260130-221337-task-00-design-ssot` | `a54ccf85` |
 | task-01 | TODO | テキストUIに「標準/簡潔」トグルを実装（デフォルト標準、設定SSOT追加） | `TBD` | `TBD` |
 | task-02 | TODO | 3段パイプライン実装（翻訳→簡潔化×2）＋キャンセル/エラー設計 | `TBD` | `TBD` |
 | task-03 | TODO | ストリーミング表示を3回分に連結し、3回目を最終出力として扱う | `TBD` | `TBD` |

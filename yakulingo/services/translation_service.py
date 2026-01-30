@@ -6248,6 +6248,97 @@ class TranslationService:
         ]
         separator = "\n\n---\n\n"
 
+        def is_rewrite_output_language_mismatch(rewritten: str) -> bool:
+            if not rewritten:
+                return False
+            if output_language != "jp":
+                return _is_text_output_language_mismatch(rewritten, output_language)
+
+            detected, _reason = language_detector.detect_local_with_reason(rewritten)
+            if detected in ("中国語", "韓国語"):
+                return True
+            if detected != "英語":
+                return False
+
+            # Allow mixed JP output with abbreviations (Latin-heavy) as long as it
+            # contains at least one CJK ideograph (e.g., "FY25 売上 YoY +10%").
+            for char in rewritten:
+                if language_detector.is_cjk_ideograph(ord(char)):
+                    return False
+            return True
+
+        def _rewrite_segmented(
+            *,
+            pass_index: int,
+            input_text: str,
+        ) -> tuple[Optional[str], Optional[str]]:
+            local_batch_translator = self._local_batch_translator
+            max_segment_chars = getattr(local_batch_translator, "max_chars_per_batch", None)
+            if not (
+                isinstance(max_segment_chars, int)
+                and max_segment_chars > 0
+                and len((input_text or "").strip()) > max_segment_chars
+            ):
+                return None, "segmentation_unavailable"
+
+            try:
+                from yakulingo.services.local_ai_client import strip_prompt_echo
+            except Exception:
+                strip_prompt_echo = None
+
+            tokens = _segment_long_text_for_local_text_translation(
+                input_text, max_segment_chars=max_segment_chars
+            )
+            if not tokens:
+                return None, "segmentation_empty"
+
+            parts: list[str] = []
+            failed_segments = 0
+            for segment, should_translate in tokens:
+                if not should_translate or not (segment or "").strip():
+                    parts.append(segment)
+                    continue
+                if self._cancel_event.is_set():
+                    raise TranslationCancelledError("Translation cancelled by user")
+
+                prompt = self.prompt_builder.build_concise_rewrite_prompt(
+                    segment,
+                    output_language=output_language,
+                    pass_index=pass_index,
+                )
+                try:
+                    raw = self._translate_single_with_cancel_on_local(
+                        segment,
+                        prompt,
+                        None,
+                        None,
+                    )
+                except TranslationCancelledError:
+                    raise
+                except Exception:
+                    failed_segments += 1
+                    parts.append(segment)
+                    continue
+
+                if callable(strip_prompt_echo):
+                    raw = strip_prompt_echo(raw, prompt)
+
+                rewritten = _normalize_local_plain_text_output(raw)
+                if not rewritten:
+                    failed_segments += 1
+                    parts.append(segment)
+                    continue
+                if is_rewrite_output_language_mismatch(rewritten):
+                    failed_segments += 1
+                    parts.append(segment)
+                    continue
+                parts.append(rewritten)
+
+            combined = "".join(parts)
+            if failed_segments:
+                metadata["concise_mode_segmented_rewrite_failed_segments"] = failed_segments
+            return combined, None
+
         def rewrite_pass(
             *,
             pass_index: int,
@@ -6286,6 +6377,19 @@ class TranslationService:
                 )
             except TranslationCancelledError:
                 raise
+            except RuntimeError as e:
+                message = str(e)
+                if message.startswith("LOCAL_PROMPT_TOO_LONG:"):
+                    segmented, seg_error = _rewrite_segmented(
+                        pass_index=pass_index,
+                        input_text=input_text,
+                    )
+                    if seg_error:
+                        return None, seg_error
+                    if segmented:
+                        return segmented, None
+                logger.exception("Concise rewrite pass-%d failed: %s", pass_index, e)
+                return None, message
             except Exception as e:
                 logger.exception("Concise rewrite pass-%d failed: %s", pass_index, e)
                 return None, str(e)
@@ -6301,7 +6405,12 @@ class TranslationService:
             rewritten = _normalize_local_plain_text_output(raw)
             if not rewritten:
                 return None, "empty_output"
-            if _is_text_output_language_mismatch(rewritten, output_language):
+            if (
+                len((input_text or "").strip()) >= 80
+                and rewritten.strip() == (input_text or "").strip()
+            ):
+                return None, "unchanged_output"
+            if is_rewrite_output_language_mismatch(rewritten):
                 return None, "output_language_mismatch"
             return rewritten, None
 
@@ -6310,6 +6419,47 @@ class TranslationService:
                 pass_index=2,
                 input_text=pass1_text,
             )
+            if pass2_error in {"empty_output", "output_language_mismatch", "unchanged_output"}:
+                # Retry once with a stricter instruction when the model produces an
+                # empty/unchanged/mismatched rewrite. Streaming is disabled to avoid
+                # showing partial output for a rewrite that will be discarded.
+                retry_extra = (
+                    "必ず本文を出力してください。空出力は禁止です。"
+                    if output_language == "jp"
+                    else "Output must contain the rewritten text (non-empty)."
+                )
+                base_prompt = self.prompt_builder.build_concise_rewrite_prompt(
+                    pass1_text,
+                    output_language=output_language,
+                    pass_index=2,
+                )
+                retry_prompt = base_prompt.replace(
+                    "Text:\n",
+                    f"{retry_extra}\nText:\n",
+                    1,
+                )
+                try:
+                    raw_retry = self._translate_single_with_cancel_on_local(
+                        pass1_text,
+                        retry_prompt,
+                        None,
+                        None,
+                    )
+                    try:
+                        from yakulingo.services.local_ai_client import strip_prompt_echo
+                    except Exception:
+                        strip_prompt_echo = None
+                    if callable(strip_prompt_echo):
+                        raw_retry = strip_prompt_echo(raw_retry, retry_prompt)
+                    rewritten_retry = _normalize_local_plain_text_output(raw_retry)
+                    if rewritten_retry and not is_rewrite_output_language_mismatch(rewritten_retry):
+                        pass2_text, pass2_error = rewritten_retry, None
+                except TranslationCancelledError:
+                    raise
+                except Exception as e:
+                    metadata["concise_mode_retry_failed"] = True
+                    metadata["concise_mode_retry_reason"] = str(e)
+
             if pass2_error or not pass2_text:
                 metadata["concise_mode_degraded"] = True
                 metadata["concise_mode_failed_pass"] = 2

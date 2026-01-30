@@ -1107,10 +1107,17 @@ class LocalAIClient:
         timeout: Optional[int] = None,
         max_tokens: int = 1,
     ) -> None:
-        prompt = "ping"
+        # Prefer the /v1/completions path used by raw prompts (the main translation path),
+        # so the first real translation after startup benefits from the warmup.
+        prompt = (
+            f"{_RAW_PROMPT_MARKER}"
+            "ping\n"
+            "<end_of_turn>\n"
+            "<start_of_turn>model\n"
+        )
         runtime = runtime or self.ensure_ready()
-        payload = self._build_chat_payload(
-            runtime, prompt, stream=False, enforce_json=False
+        payload = self._build_completions_payload(
+            runtime, prompt, stream=False, include_sampling_params=True
         )
         payload["max_tokens"] = max(1, int(max_tokens))
         payload["temperature"] = 0.0
@@ -1124,7 +1131,7 @@ class LocalAIClient:
         self._http_json_cancellable(
             host=runtime.host,
             port=runtime.port,
-            path="/v1/chat/completions",
+            path="/v1/completions",
             payload=payload,
             timeout_s=timeout_s,
         )

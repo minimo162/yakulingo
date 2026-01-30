@@ -1278,10 +1278,10 @@ RESIDENT_STARTUP_LAYOUT_RETRY_ATTEMPTS = 40
 RESIDENT_STARTUP_LAYOUT_RETRY_DELAY_SEC = 0.25
 ALWAYS_CLOSE_TO_RESIDENT = True  # Keep service alive when native UI window is closed
 
-LOCAL_AI_WARMUP_DELAY_SEC = (
-    1.5  # Delay warmup to avoid contending with immediate actions
-)
-LOCAL_AI_WARMUP_TIMEOUT_SEC = 2  # Keep warmup lightweight (best-effort)
+# Run warmup as early as possible so the first user translation is fast.
+# Warmup runs best-effort in the background and is cancelled when a translation starts.
+LOCAL_AI_WARMUP_DELAY_SEC = 0.0
+LOCAL_AI_WARMUP_TIMEOUT_SEC = 6  # Still lightweight; improves cold-start reliability
 
 
 def _is_watchdog_enabled() -> bool:
@@ -8614,6 +8614,12 @@ class YakuLingoApp:
             logger.debug("LocalAI warmup: client import failed: %s", e)
             return
         client = LocalAIClient(self.settings)
+        set_cancel = getattr(client, "set_cancel_callback", None)
+        if callable(set_cancel):
+            try:
+                set_cancel(lambda: self.state.is_translating() or self._shutdown_requested)
+            except Exception:
+                set_cancel = None
         try:
             logger.info("[TIMING] LocalAI warmup started")
             t0 = time.monotonic()
@@ -8632,6 +8638,12 @@ class YakuLingoApp:
             return
         except Exception as e:
             logger.debug("LocalAI warmup failed: %s", e)
+        finally:
+            if callable(set_cancel):
+                try:
+                    set_cancel(None)
+                except Exception:
+                    pass
 
     def _probe_local_ai_models_ready(
         self,

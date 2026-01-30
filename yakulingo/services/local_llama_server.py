@@ -50,8 +50,11 @@ _AUTO_DEVICE_CACHE: dict[
     tuple[str, int, int], tuple[Optional[str], Optional[str], float]
 ] = {}
 _AUTO_DEVICE_CACHE_LOCK = threading.Lock()
-_DEFAULT_MODEL_PATH = "local_ai/models/translategemma-4b-it.i1-IQ4_XS.gguf"
-_PREVIOUS_DEFAULT_MODEL_PATH = "local_ai/models/shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf"
+_DEFAULT_MODEL_PATH = "local_ai/models/translategemma-12b-it.i1-IQ4_XS.gguf"
+_PREVIOUS_DEFAULT_MODEL_PATH = "local_ai/models/translategemma-4b-it.i1-IQ4_XS.gguf"
+_OLDER_PREVIOUS_DEFAULT_MODEL_PATH = (
+    "local_ai/models/shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf"
+)
 _LEGACY_DEFAULT_MODEL_PATH = "local_ai/models/HY-MT1.5-7B.i1-Q6_K.gguf"
 _OLDER_LEGACY_DEFAULT_MODEL_PATH = "local_ai/models/HY-MT1.5-1.8B.IQ4_XS.gguf"
 
@@ -921,6 +924,14 @@ class LocalLlamaServerManager:
                     previous,
                 )
                 return previous
+            older_previous = _resolve_from_app_base(_OLDER_PREVIOUS_DEFAULT_MODEL_PATH)
+            if older_previous.is_file():
+                logger.warning(
+                    "Configured model file not found; falling back to older previous default: %s -> %s",
+                    candidate,
+                    older_previous,
+                )
+                return older_previous
 
         legacy = _resolve_from_app_base(_LEGACY_DEFAULT_MODEL_PATH)
         if legacy.is_file():

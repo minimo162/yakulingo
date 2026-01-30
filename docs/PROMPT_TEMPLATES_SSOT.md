@@ -104,7 +104,7 @@ Notes for YakuLingo:
 ## llama.cpp Usage Example (verbatim)
 
 ```bash
-llama-cli -m local_ai/models/translategemma-4b-it.i1-IQ4_XS.gguf -p "<bos><start_of_turn>user\nTranslate the Japanese text into English suitable for financial statements. Treat 1 billion as 10 oku (10億). Convert oku → billion by ÷10 (drop one zero). The response should include only the translated text.\nText: こんにちは<end_of_turn>\n<start_of_turn>model\n" -n 4096 --temp 0.7 --top-k 64 --top-p 0.95 --repeat-penalty 1.05 --no-warmup
+llama-cli -m local_ai/models/translategemma-12b-it.i1-IQ4_XS.gguf -p "<bos><start_of_turn>user\nTranslate the Japanese text into English suitable for financial statements. Treat 1 billion as 10 oku (10億). Convert oku → billion by ÷10 (drop one zero). The response should include only the translated text.\nText: こんにちは<end_of_turn>\n<start_of_turn>model\n" -n 4096 --temp 0.7 --top-k 64 --top-p 0.95 --repeat-penalty 1.05 --no-warmup
 ```
 
 ## ollama Usage Example

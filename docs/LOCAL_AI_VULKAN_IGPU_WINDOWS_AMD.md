@@ -4,7 +4,7 @@
 
 ## 前提
 - Vulkan 版の `llama.cpp` バイナリが配置されていること（例: `local_ai/llama_cpp/vulkan/`）。
-- モデルは同じものを使う（例: `local_ai/models/translategemma-4b-it.i1-IQ4_XS.gguf`）。
+- モデルは同じものを使う（例: `local_ai/models/translategemma-12b-it.i1-IQ4_XS.gguf`）。
 
 ## 1) Vulkan デバイスの確認
 ```powershell
@@ -20,7 +20,7 @@ cd local_ai/llama_cpp/vulkan
 ```powershell
   cd local_ai/llama_cpp/vulkan
   .\llama-cli.exe `
-  -m "..\\..\\models\\translategemma-4b-it.i1-IQ4_XS.gguf" `
+  -m "..\\..\\models\\translategemma-12b-it.i1-IQ4_XS.gguf" `
   --device Vulkan0 `
   -ngl all `
   -t 6 `
@@ -38,7 +38,7 @@ cd local_ai/llama_cpp/vulkan
 ```powershell
   cd local_ai/llama_cpp/vulkan
   .\llama-bench.exe `
-  -m "..\\..\\models\\translategemma-4b-it.i1-IQ4_XS.gguf" `
+  -m "..\\..\\models\\translategemma-12b-it.i1-IQ4_XS.gguf" `
   --device none `
   -ngl 0 `
   -pg 2048,256 `
@@ -51,7 +51,7 @@ cd local_ai/llama_cpp/vulkan
 ```powershell
   cd local_ai/llama_cpp/vulkan
   .\llama-bench.exe `
-  -m "..\\..\\models\\translategemma-4b-it.i1-IQ4_XS.gguf" `
+  -m "..\\..\\models\\translategemma-12b-it.i1-IQ4_XS.gguf" `
   --device Vulkan0 `
   -ngl all `
   -pg 2048,256 `
@@ -68,7 +68,7 @@ CPU-only は `--device none -ngl 0` が固定で使われます。
 # リポジトリルートで実行
   uv run python tools\bench_llama_bench_compare.py `
     --server-dir local_ai\llama_cpp `
-    --model-path local_ai\models\translategemma-4b-it.i1-IQ4_XS.gguf `
+    --model-path local_ai\models\translategemma-12b-it.i1-IQ4_XS.gguf `
     --pg 2048,256 -r 3 `
     --device Vulkan0 --n-gpu-layers all `
     --extra-args -b 2048 -ub 512 -fa 0 `

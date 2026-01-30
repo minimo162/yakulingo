@@ -3655,12 +3655,13 @@ class YakuLingoApp:
             stream_handler = (
                 on_chunk if self._is_local_streaming_preview_enabled() else None
             )
-            result = translation_service.translate_text_with_options(
+            result = translation_service.translate_text_with_style_comparison(
                 text,
                 None,
                 None,
                 effective_detected_language,
                 stream_handler,
+                self.settings.text_translation_mode,
             )
             if result:
                 result.detected_language = detected_language

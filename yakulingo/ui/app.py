@@ -3745,17 +3745,10 @@ class YakuLingoApp:
             loop = asyncio.get_running_loop()
             stream_handler = None
             if self._is_local_streaming_preview_enabled():
-                build_preview_text = None
-                if (
-                    (self.settings.text_translation_mode or "").strip().lower()
-                    == "concise"
-                ):
-                    build_preview_text = self._create_concise_mode_preview_text_builder()
                 stream_handler = self._create_text_streaming_preview_on_chunk(
                     loop=loop,
                     client_supplier=self._get_active_client,
                     trace_id=trace_id,
-                    build_preview_text=build_preview_text,
                     refresh_tabs_on_first_chunk=True,
                     scroll_to_bottom=True,
                     force_follow_on_first_chunk=True,
@@ -9179,17 +9172,10 @@ class YakuLingoApp:
             # Streaming preview (AI chat style): update result panel with partial output as it arrives.
             loop = asyncio.get_running_loop()
             if self._is_local_streaming_preview_enabled():
-                build_preview_text = None
-                if (
-                    (self.settings.text_translation_mode or "").strip().lower()
-                    == "concise"
-                ):
-                    build_preview_text = self._create_concise_mode_preview_text_builder()
                 stream_handler = self._create_text_streaming_preview_on_chunk(
                     loop=loop,
                     client_supplier=lambda: client,
                     trace_id=trace_id,
-                    build_preview_text=build_preview_text,
                     refresh_tabs_on_first_chunk=False,
                     scroll_to_bottom=True,
                     force_follow_on_first_chunk=True,

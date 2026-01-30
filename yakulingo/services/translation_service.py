@@ -6171,8 +6171,8 @@ class TranslationService:
     ) -> TextTranslationResult:
         """Translate text with style comparison for JP→EN.
 
-        If text_translation_mode is "concise", runs a 3-pass pipeline:
-        translation (pass1) -> same-language concise rewrite (pass2) -> rewrite (pass3).
+        If text_translation_mode is "concise", runs a 2-pass pipeline:
+        translation (pass1) -> same-language concise rewrite (pass2).
         """
         reference_files = None
         detected_language = pre_detected_language
@@ -6222,7 +6222,7 @@ class TranslationService:
         pre_detected_language: Optional[str] = None,
         on_chunk: "Callable[[str], None] | None" = None,
     ) -> TextTranslationResult:
-        """Translate text with a 3-pass concise-mode pipeline."""
+        """Translate text with a 2-pass concise-mode pipeline."""
         reference_files = None
         detected_language = pre_detected_language or self.detect_language(text)
         output_language = "en" if detected_language == "日本語" else "jp"
@@ -6246,6 +6246,7 @@ class TranslationService:
         passes: list[TextTranslationPass] = [
             TextTranslationPass(index=1, mode="translation", text=pass1_text)
         ]
+        separator = "\n\n---\n\n"
 
         def rewrite_pass(
             *,
@@ -6261,11 +6262,27 @@ class TranslationService:
                 pass_index=pass_index,
             )
             try:
+                stream_on_chunk: Callable[[str], None] | None = None
+                if on_chunk is not None:
+                    # The local streaming callback receives deltas; wrap it so UI gets
+                    # cumulative text for this pass, and concatenate pass1 + pass2.
+                    def _concat_pass2(candidate: str) -> None:
+                        on_chunk(
+                            f"{pass1_text}{separator}{candidate}"
+                            if pass1_text
+                            else candidate
+                        )
+
+                    stream_on_chunk = _wrap_local_streaming_on_chunk(
+                        _concat_pass2,
+                        expected_output_language=output_language,
+                        prompt=prompt,
+                    )
                 raw = self._translate_single_with_cancel_on_local(
                     input_text,
                     prompt,
                     None,
-                    on_chunk,
+                    stream_on_chunk,
                 )
             except TranslationCancelledError:
                 raise
@@ -6316,43 +6333,17 @@ class TranslationService:
                 )
 
             passes.append(TextTranslationPass(index=2, mode="rewrite", text=pass2_text))
-
-            pass3_text, pass3_error = rewrite_pass(
-                pass_index=3,
-                input_text=pass2_text,
-            )
-            if pass3_error or not pass3_text:
-                metadata["concise_mode_degraded"] = True
-                metadata["concise_mode_failed_pass"] = 3
-                metadata["concise_mode_failed_reason"] = pass3_error or "unknown"
-                return TextTranslationResult(
-                    source_text=text,
-                    source_char_count=len(text),
-                    output_language=output_language,
-                    detected_language=detected_language,
-                    options=[
-                        TranslationOption(
-                            text=pass2_text,
-                            explanation="",
-                            style="concise" if output_language == "en" else None,
-                        )
-                    ],
-                    translation_text=pass2_text,
-                    final_text=pass2_text,
-                    passes=passes,
-                    metadata=metadata,
-                )
-
-            passes.append(TextTranslationPass(index=3, mode="rewrite", text=pass3_text))
             final_style = "concise" if output_language == "en" else None
             return TextTranslationResult(
                 source_text=text,
                 source_char_count=len(text),
                 output_language=output_language,
                 detected_language=detected_language,
-                options=[TranslationOption(text=pass3_text, explanation="", style=final_style)],
-                translation_text=pass3_text,
-                final_text=pass3_text,
+                options=[
+                    TranslationOption(text=pass2_text, explanation="", style=final_style)
+                ],
+                translation_text=pass2_text,
+                final_text=pass2_text,
                 passes=passes,
                 metadata=metadata,
             )

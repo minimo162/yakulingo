@@ -62,6 +62,7 @@ _LOCAL_AI_TIMING_ENABLED = os.environ.get("YAKULINGO_LOCAL_AI_TIMING") == "1"
 
 DEFAULT_TEXT_STYLE = "minimal"
 TEXT_STYLE_ORDER: tuple[str, ...] = ("standard", "concise", "minimal")
+TEXT_TRANSLATION_MAX_INPUT_CONTEXT_TOKENS = 2000
 _TEXT_TO_EN_LENGTH_RATIO_BY_STYLE: dict[str, float] = {
     "standard": 3.0,
     "concise": 2.5,
@@ -4398,6 +4399,25 @@ class TranslationService:
                     reference_files=reference_files,
                     detected_language=detected_language,
                 )
+                prompt_tokens = self._estimate_local_prompt_tokens(prompt)
+                if prompt_tokens > TEXT_TRANSLATION_MAX_INPUT_CONTEXT_TOKENS:
+                    metadata["input_context_tokens_estimate"] = prompt_tokens
+                    metadata["input_context_tokens_limit"] = (
+                        TEXT_TRANSLATION_MAX_INPUT_CONTEXT_TOKENS
+                    )
+                    return TextTranslationResult(
+                        source_text=text,
+                        source_char_count=len(text),
+                        output_language=output_language,
+                        detected_language=detected_language,
+                        error_message=(
+                            "入力が長すぎます（推定 total input context: "
+                            f"{prompt_tokens:,} tokens > "
+                            f"{TEXT_TRANSLATION_MAX_INPUT_CONTEXT_TOKENS:,} tokens）。"
+                            "テキストを短くするか、ファイル翻訳をご利用ください。"
+                        ),
+                        metadata=metadata,
+                    )
                 stream_handler = _wrap_local_streaming_on_chunk(
                     on_chunk,
                     expected_output_language=output_language,
@@ -4895,6 +4915,25 @@ class TranslationService:
                 reference_files=reference_files,
                 detected_language=detected_language,
             )
+            prompt_tokens = self._estimate_local_prompt_tokens(prompt)
+            if prompt_tokens > TEXT_TRANSLATION_MAX_INPUT_CONTEXT_TOKENS:
+                metadata["input_context_tokens_estimate"] = prompt_tokens
+                metadata["input_context_tokens_limit"] = (
+                    TEXT_TRANSLATION_MAX_INPUT_CONTEXT_TOKENS
+                )
+                return TextTranslationResult(
+                    source_text=text,
+                    source_char_count=len(text),
+                    output_language=output_language,
+                    detected_language=detected_language,
+                    error_message=(
+                        "入力が長すぎます（推定 total input context: "
+                        f"{prompt_tokens:,} tokens > "
+                        f"{TEXT_TRANSLATION_MAX_INPUT_CONTEXT_TOKENS:,} tokens）。"
+                        "テキストを短くするか、ファイル翻訳をご利用ください。"
+                    ),
+                    metadata=metadata,
+                )
             stream_handler = _wrap_local_streaming_on_chunk(
                 on_chunk,
                 expected_output_language=output_language,

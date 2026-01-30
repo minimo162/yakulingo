@@ -11,6 +11,10 @@
   - 検証: `uv run --extra test pyright` OK / `uv run --extra test ruff check .` OK / `uv run --extra test pytest` OK（369 passed）
   - 統合: `main`へff-onlyで統合し、`origin/main`へpush済み（`a7c3d99c..cdc4235b`）
 
+- 2026-01-30: task-03 ストリーミング3段連結＋簡潔モード配線（`feb6e1c1`）
+  - 検証: `uv run --extra test pyright` OK / `uv run --extra test ruff check .` OK / `uv run --extra test pytest` OK（369 passed）
+  - 統合: `main`へff-onlyで統合し、`origin/main`へpush済み（`6a726b5e..feb6e1c1`）
+
 
 ## 2026-01-30 23:13:44 task-02 ??
 - ????: case-yakulingo-concise-mode-toggle-3pass-20260130-221337-task-02-3pass-pipeline

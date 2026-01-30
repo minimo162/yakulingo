@@ -25,6 +25,11 @@
   - 統合: `main`へff-onlyで統合し、`origin/main`へpush済み（`2c3ae5b7..285fb128`）
   - クリーンアップ: `case/yakulingo-concise-mode-toggle-3pass-20260130-221337/task-05-tests-concise-rewrite` をremote/local削除し、`git ls-remote --heads` と `git branch --list` で空を確認
 
+- 2026-01-30: task-06 仕上げ：ホットキー翻訳でも「簡潔」を適用（`091b5906`）
+  - 検証: `uv run --extra test pyright` OK / `uv run --extra test ruff check .` OK / `uv run --extra test pytest` OK（375 passed）
+  - 統合: `main`へff-onlyで統合し、`origin/main`へpush済み（`371a52cb..091b5906`）
+  - クリーンアップ: `case/yakulingo-concise-mode-toggle-3pass-20260130-221337/task-06-hotkey-mode` をremote/local削除し、`git ls-remote --heads` と `git branch --list` で空を確認
+
 
 ## 2026-01-30 23:13:44 task-02 ??
 - ????: case-yakulingo-concise-mode-toggle-3pass-20260130-221337-task-02-3pass-pipeline

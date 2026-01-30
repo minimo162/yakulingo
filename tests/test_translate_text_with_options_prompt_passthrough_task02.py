@@ -59,7 +59,12 @@ def test_translate_text_with_options_passes_raw_prompt_en() -> None:
         "Translate the Japanese text into English suitable for financial statements."
         in expected
     )
+    assert "Translate every sentence/clause; do not omit or summarize." in expected
+    assert "Do not echo or repeat the input text." in expected
+    assert "Output must be English only." in expected
     assert expected.startswith("<bos><start_of_turn>user\n")
+    assert "===INPUT_TEXT===" in expected
+    assert "===END_INPUT_TEXT===" in expected
     assert "Instruction:" not in expected
     assert "Important Terminology:" not in expected
 
@@ -81,6 +86,11 @@ def test_translate_text_with_options_passes_raw_prompt_jp() -> None:
         "Translate the text into Japanese suitable for financial statements."
         in expected
     )
+    assert "Translate every sentence/clause; do not omit or summarize." in expected
+    assert "Do not echo or repeat the input text." in expected
+    assert "Output must be Japanese only." in expected
     assert expected.startswith("<bos><start_of_turn>user\n")
+    assert "===INPUT_TEXT===" in expected
+    assert "===END_INPUT_TEXT===" in expected
     assert "Instruction:" not in expected
     assert "Important Terminology:" not in expected

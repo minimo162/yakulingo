@@ -2035,6 +2035,7 @@ function Invoke-Setup {
     $utf8NoBom = New-Object System.Text.UTF8Encoding $false
     $utf8WithBom = New-Object System.Text.UTF8Encoding $true
     $asciiEncoding = [System.Text.Encoding]::ASCII
+    $unicodeEncoding = [System.Text.Encoding]::Unicode
 
     $openUiScript = @"
 `$ErrorActionPreference = 'Stop'
@@ -2443,10 +2444,16 @@ objShell.Run command, 0, False
 
     $uninstallVbs = @'
 Option Explicit
-Dim objShell, objFSO, scriptDir, psScript, command, safeCwd
+Dim objShell, objFSO, scriptDir, psScript, command, safeCwd, confirm, exitCode
 Set objShell = CreateObject("WScript.Shell")
 Set objFSO = CreateObject("Scripting.FileSystemObject")
 scriptDir = objFSO.GetParentFolderName(WScript.ScriptFullName)
+
+confirm = MsgBox("YakuLingo をアンインストールしますか？", vbYesNo + vbQuestion + vbDefaultButton2, "YakuLingo")
+If confirm <> vbYes Then
+    WScript.Quit 0
+End If
+
 safeCwd = objShell.ExpandEnvironmentStrings("%TEMP%")
 If safeCwd <> "" Then
     objShell.CurrentDirectory = safeCwd
@@ -2454,8 +2461,18 @@ Else
     objShell.CurrentDirectory = scriptDir
 End If
 psScript = scriptDir & "\YakuLingo_Uninstall.ps1"
+If Not objFSO.FileExists(psScript) Then
+    MsgBox "アンインストールスクリプトが見つかりません。" & vbCrLf & psScript, vbOKOnly + vbCritical, "YakuLingo"
+    WScript.Quit 1
+End If
 command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File """ & psScript & """"
-objShell.Run command, 0, False
+exitCode = objShell.Run(command, 0, True)
+If exitCode = 0 Then
+    MsgBox "アンインストールが完了しました。", vbOKOnly + vbInformation, "YakuLingo"
+Else
+    MsgBox "アンインストールに失敗しました。（終了コード: " & exitCode & "）", vbOKOnly + vbCritical, "YakuLingo"
+End If
+WScript.Quit exitCode
 '@
 
     [System.IO.File]::WriteAllText($OpenUiScriptPath, $openUiScript, $utf8WithBom)
@@ -2465,7 +2482,7 @@ objShell.Run command, 0, False
     [System.IO.File]::WriteAllText($OpenUiVbsPath, $openUiVbs, $asciiEncoding)
     [System.IO.File]::WriteAllText($ResidentVbsPath, $residentVbs, $asciiEncoding)
     [System.IO.File]::WriteAllText($ExitVbsPath, $exitVbs, $asciiEncoding)
-    [System.IO.File]::WriteAllText($UninstallVbsPath, $uninstallVbs, $asciiEncoding)
+    [System.IO.File]::WriteAllText($UninstallVbsPath, $uninstallVbs, $unicodeEncoding)
 
     # Common icon path
     $IconPath = Join-Path $SetupPath "yakulingo\ui\yakulingo.ico"

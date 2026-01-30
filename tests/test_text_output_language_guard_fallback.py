@@ -37,11 +37,13 @@ def test_local_to_jp_retries_when_output_is_chinese(monkeypatch) -> None:
         pre_detected_language="英語",
     )
 
-    assert calls == 1
+    assert calls == 2
     assert result.output_language == "jp"
     assert result.options
-    assert result.options[0].text == "汉语测试"
-    assert (result.metadata or {}).get("output_language_retry") is None
+    assert result.options[0].text == "これは日本語です。"
+    metadata = result.metadata or {}
+    assert metadata.get("output_language_retry") is True
+    assert "output_language" in (metadata.get("output_language_retry_reasons") or [])
 
 
 def test_local_to_en_returns_error_without_copilot_advice_when_retry_fails(
@@ -75,10 +77,10 @@ def test_local_to_en_returns_error_without_copilot_advice_when_retry_fails(
         pre_detected_language="日本語",
     )
 
-    assert calls == 1
+    assert calls == 2
     assert result.output_language == "en"
-    assert result.options
-    assert result.options[0].text == "汉语测试"
-    assert result.error_message is None
+    assert not result.options
+    assert result.error_message == "翻訳結果が英語ではありませんでした（出力言語ガード）"
     metadata = result.metadata or {}
-    assert metadata.get("output_language_retry") is None
+    assert metadata.get("output_language_retry") is True
+    assert metadata.get("output_language_retry_failed") is True

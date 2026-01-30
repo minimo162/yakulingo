@@ -93,6 +93,23 @@ _TEXT_TO_EN_NEGATIVE_RULE_INSTRUCTION = (
     "Do not output ▲ or a leading minus."
 )
 
+# Simple prompt strict retry instructions (used for text translation retry in task-01)
+_SIMPLE_PROMPT_RETRY_INSTRUCTION_EN = """CRITICAL:
+- Output must be English only.
+- Do NOT output Japanese/Chinese scripts (hiragana/katakana/kanji/hanzi) or Japanese punctuation (、・「」『』).
+- Do NOT output Korean (Hangul) characters.
+- Do NOT echo or repeat the input text.
+- Output the translation only (no labels, no explanations).
+"""
+_SIMPLE_PROMPT_RETRY_INSTRUCTION_JP = """CRITICAL:
+- Output must be Japanese only.
+- Write natural Japanese with kana/okurigana; avoid Chinese-style wording.
+- Do NOT output Chinese (Simplified/Traditional) text.
+- Do NOT output English sentences.
+- Do NOT echo or repeat the input text.
+- Output the translation only (no labels, no explanations).
+"""
+
 # Pre-compiled regex patterns for performance
 # Support both half-width (:) and full-width (：) colons, and markdown bold (**訳文:**)
 _RE_STYLE_SECTION = re.compile(
@@ -312,6 +329,42 @@ def _insert_extra_instruction(prompt: str, extra_instruction: str) -> str:
     if marker in prompt:
         return prompt.replace(marker, f"{extra_instruction}\n{marker}", 1)
     return f"{extra_instruction}\n{prompt}"
+
+
+def _insert_extra_instruction_into_simple_prompt(prompt: str, extra_instruction: str) -> str:
+    """Insert extra instruction into a `<bos><start_of_turn>user`-style prompt safely."""
+    extra_instruction = (extra_instruction or "").strip()
+    if not extra_instruction:
+        return prompt
+    marker = "\nText:"
+    idx = (prompt or "").find(marker)
+    if idx != -1:
+        return f"{prompt[:idx]}\n{extra_instruction}{prompt[idx:]}"
+    end_marker = "<end_of_turn>"
+    idx = (prompt or "").rfind(end_marker)
+    if idx != -1:
+        return f"{prompt[:idx]}\n{extra_instruction}\n{prompt[idx:]}"
+    # Avoid prepending before <bos> (can break chat formatting).
+    return prompt
+
+
+_RE_UNTRANSLATED_WS = re.compile(r"\s+")
+
+
+def _normalize_for_untranslated_check(text: str) -> str:
+    normalized = unicodedata.normalize("NFKC", text or "").strip()
+    if not normalized:
+        return ""
+    normalized = _RE_UNTRANSLATED_WS.sub("", normalized)
+    return normalized.casefold()
+
+
+def _looks_untranslated(source_text: str, translated_text: str) -> bool:
+    left = _normalize_for_untranslated_check(source_text)
+    right = _normalize_for_untranslated_check(translated_text)
+    if not left or not right:
+        return False
+    return left == right
 
 
 def _build_to_en_numeric_hints(text: str) -> str:
@@ -3995,6 +4048,7 @@ class TranslationService:
         on_chunk: "Callable[[str], None] | None" = None,
         force_simple_prompt: bool = False,
         raw_output: bool = False,
+        override_prompt: str | None = None,
     ) -> TextTranslationResult:
         reference_files = None
         self._ensure_local_backend()
@@ -4020,7 +4074,7 @@ class TranslationService:
         simple_prompt_mode = bool(force_simple_prompt)
 
         if simple_prompt_mode:
-            prebuilt_prompt = self.prompt_builder.build_simple_prompt(
+            prebuilt_prompt = override_prompt or self.prompt_builder.build_simple_prompt(
                 text,
                 output_language=output_language,
             )
@@ -6133,7 +6187,7 @@ class TranslationService:
 
             style = _normalize_text_style(style)
 
-            return self._translate_text_with_options_local(
+            first = self._translate_text_with_options_local(
                 text=text,
                 reference_files=reference_files,
                 style=style,
@@ -6143,6 +6197,58 @@ class TranslationService:
                 raw_output=True,
                 force_simple_prompt=True,
             )
+            retry_reasons: list[str] = []
+            if first.error_message:
+                if "出力言語ガード" in first.error_message:
+                    retry_reasons.append("output_language")
+                if "「...」のみ" in first.error_message:
+                    retry_reasons.append("ellipsis")
+                if "プレースホルダーのみ" in first.error_message:
+                    retry_reasons.append("placeholder")
+
+            if first.options:
+                translated = first.options[0].text
+                if _looks_untranslated(text, translated):
+                    retry_reasons.append("untranslated")
+                if _is_text_output_language_mismatch(translated, output_language):
+                    retry_reasons.append("output_language")
+                if _is_ellipsis_only_translation(text, translated):
+                    retry_reasons.append("ellipsis")
+                if _is_placeholder_only_translation(text, translated):
+                    retry_reasons.append("placeholder")
+
+            if not retry_reasons:
+                return first
+
+            base_prompt = self.prompt_builder.build_simple_prompt(
+                text,
+                output_language=output_language,
+            )
+            strict = (
+                _SIMPLE_PROMPT_RETRY_INSTRUCTION_EN
+                if output_language == "en"
+                else _SIMPLE_PROMPT_RETRY_INSTRUCTION_JP
+            )
+            retry_prompt = _insert_extra_instruction_into_simple_prompt(base_prompt, strict)
+
+            retry = self._translate_text_with_options_local(
+                text=text,
+                reference_files=reference_files,
+                style=style,
+                detected_language=detected_language,
+                output_language=output_language,
+                on_chunk=None,
+                raw_output=False,
+                force_simple_prompt=True,
+                override_prompt=retry_prompt,
+            )
+            metadata = dict(retry.metadata) if retry.metadata else {}
+            metadata["output_language_retry"] = True
+            metadata["output_language_retry_reasons"] = sorted(set(retry_reasons))
+            if retry.error_message:
+                metadata["output_language_retry_failed"] = True
+            retry.metadata = metadata
+            return retry
 
         except TranslationCancelledError:
             logger.info("Text translation with options cancelled")

@@ -61,12 +61,13 @@ def test_text_style_comparison_retries_when_output_language_mismatched() -> None
         pre_detected_language="日本語",
     )
 
-    assert local.translate_single_calls == 1
+    assert local.translate_single_calls == 2
     assert result.output_language == "en"
     assert [option.style for option in result.options] == ["minimal"]
-    assert result.options[0].text == first
+    assert result.options[0].text == second
     metadata = result.metadata or {}
-    assert metadata.get("output_language_retry") is None
+    assert metadata.get("output_language_retry") is True
+    assert "output_language" in (metadata.get("output_language_retry_reasons") or [])
 
 
 def test_text_options_ignores_requested_style_and_retries_on_output_language_mismatch() -> (
@@ -83,10 +84,12 @@ def test_text_options_ignores_requested_style_and_retries_on_output_language_mis
         pre_detected_language="日本語",
     )
 
-    assert local.translate_single_calls == 1
+    assert local.translate_single_calls == 2
     assert result.output_language == "en"
     assert result.options[0].style == "standard"
-    assert result.options[0].text == first
+    assert result.options[0].text == second
+    metadata = result.metadata or {}
+    assert metadata.get("output_language_retry") is True
 
 
 def test_text_style_comparison_retries_when_translation_is_ellipsis_only() -> None:
@@ -100,12 +103,13 @@ def test_text_style_comparison_retries_when_translation_is_ellipsis_only() -> No
         pre_detected_language="日本語",
     )
 
-    assert local.translate_single_calls == 1
+    assert local.translate_single_calls == 2
     assert result.output_language == "en"
     assert [option.style for option in result.options] == ["minimal"]
-    assert result.options[0].text == first
+    assert result.options[0].text == second
     metadata = result.metadata or {}
-    assert metadata.get("ellipsis_retry") is None
+    assert metadata.get("output_language_retry") is True
+    assert "ellipsis" in (metadata.get("output_language_retry_reasons") or [])
 
 
 def test_text_style_comparison_errors_when_translation_stays_ellipsis_only() -> None:
@@ -119,12 +123,15 @@ def test_text_style_comparison_errors_when_translation_stays_ellipsis_only() -> 
         pre_detected_language="日本語",
     )
 
-    assert local.translate_single_calls == 1
-    assert result.options
-    assert result.options[0].text == first
-    assert result.error_message is None
+    assert local.translate_single_calls == 2
+    assert not result.options
+    assert (
+        result.error_message
+        == "ローカルAIの出力が「...」のみでした。モデル/設定を確認してください。"
+    )
     metadata = result.metadata or {}
-    assert metadata.get("ellipsis_retry") is None
+    assert metadata.get("output_language_retry") is True
+    assert metadata.get("output_language_retry_failed") is True
 
 
 def test_text_style_comparison_retries_when_translation_is_placeholder_only() -> None:
@@ -138,12 +145,13 @@ def test_text_style_comparison_retries_when_translation_is_placeholder_only() ->
         pre_detected_language="日本語",
     )
 
-    assert local.translate_single_calls == 1
+    assert local.translate_single_calls == 2
     assert result.output_language == "en"
     assert [option.style for option in result.options] == ["minimal"]
-    assert result.options[0].text == first
+    assert result.options[0].text == second
     metadata = result.metadata or {}
-    assert metadata.get("placeholder_retry") is None
+    assert metadata.get("output_language_retry") is True
+    assert "placeholder" in (metadata.get("output_language_retry_reasons") or [])
 
 
 def test_text_style_comparison_errors_when_translation_stays_placeholder_only() -> None:
@@ -157,12 +165,15 @@ def test_text_style_comparison_errors_when_translation_stays_placeholder_only() 
         pre_detected_language="日本語",
     )
 
-    assert local.translate_single_calls == 1
-    assert result.options
-    assert result.options[0].text == first
-    assert result.error_message is None
+    assert local.translate_single_calls == 2
+    assert not result.options
+    assert (
+        result.error_message
+        == "ローカルAIの出力がプレースホルダーのみでした。モデル/設定を確認してください。"
+    )
     metadata = result.metadata or {}
-    assert metadata.get("placeholder_retry") is None
+    assert metadata.get("output_language_retry") is True
+    assert metadata.get("output_language_retry_failed") is True
 
 
 def test_text_options_retries_when_translation_is_placeholder_only_for_jp() -> None:
@@ -177,11 +188,31 @@ def test_text_options_retries_when_translation_is_placeholder_only_for_jp() -> N
         pre_detected_language="英語",
     )
 
-    assert local.translate_single_calls == 1
+    assert local.translate_single_calls == 2
     assert result.output_language == "jp"
-    assert result.options[0].text == first
+    assert result.options[0].text == second
     metadata = result.metadata or {}
-    assert metadata.get("placeholder_retry") is None
+    assert metadata.get("output_language_retry") is True
+
+
+def test_text_options_retries_when_translation_equals_input_for_jp() -> None:
+    first = "Hello"
+    second = "こんにちは"
+    local = SequencedLocalClient([first, second])
+    service = _make_service(local)
+
+    result = service.translate_text_with_options(
+        first,
+        pre_detected_language="英語",
+    )
+
+    assert local.translate_single_calls == 2
+    assert result.output_language == "jp"
+    assert result.options
+    assert result.options[0].text == second
+    metadata = result.metadata or {}
+    assert metadata.get("output_language_retry") is True
+    assert "untranslated" in (metadata.get("output_language_retry_reasons") or [])
 
 
 def test_text_style_comparison_retries_for_oku_numeric_rule_when_auto_fix_not_possible() -> (

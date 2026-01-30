@@ -1004,8 +1004,8 @@ def _nicegui_open_window_patched(
                     "Content-Type": "application/json",
                     "X-YakuLingo-Exit": "1",
                 }
-                if _is_watchdog_enabled():
-                    headers["X-YakuLingo-Restart"] = "1"
+                # Avoid unintended restart loops when the window is closed.
+                # "window_close" should be treated as a user exit, not a restart request.
                 req = _urllib_request.Request(
                     url,
                     data=payload,
@@ -1815,10 +1815,34 @@ class YakuLingoApp:
     async def _resident_heartbeat_loop(self, interval_sec: float) -> None:
         try:
             while not self._shutdown_requested:
+                client = None
                 with self._client_lock:
-                    has_client = self._client is not None
-                if not has_client:
+                    client = self._client
+                if client is None:
                     logger.debug("Resident heartbeat: running (no UI client)")
+                else:
+                    # Best-effort liveness check: when the websocket is gone, treat the
+                    # client as stale so resident recovery can spawn/restore a UI window.
+                    try:
+                        has_socket = getattr(client, "has_socket_connection", True)
+                    except Exception:
+                        has_socket = True
+                    if not has_socket:
+                        logger.warning(
+                            "Resident heartbeat: detected stale UI client socket; clearing client"
+                        )
+                        with self._client_lock:
+                            if self._client is client:
+                                self._client = None
+                        if self._resident_mode:
+                            try:
+                                await self._ensure_resident_ui_visible(
+                                    "resident_heartbeat_stale_client"
+                                )
+                            except Exception as e:
+                                logger.debug(
+                                    "Resident heartbeat UI recovery failed: %s", e
+                                )
                 if sys.platform == "win32":
                     try:
                         manager = self._hotkey_listener
@@ -12665,7 +12689,17 @@ def run_app(
                 raise HTTPException(status_code=403, detail="forbidden")
 
             os.environ["YAKULINGO_SHUTDOWN_REQUESTED"] = "1"
+
             allow_restart = request.headers.get("X-YakuLingo-Restart") == "1"
+            # Safety: never allow restart for "window_close" shutdowns.
+            # If we restart on window close, the launcher watchdog can create the
+            # appearance of "the app restarted by itself" after idle/close.
+            try:
+                payload = await request.json()
+            except Exception:
+                payload = None
+            if isinstance(payload, dict) and payload.get("reason") == "window_close":
+                allow_restart = False
             if not allow_restart:
                 from yakulingo.ui.utils import write_launcher_state
 

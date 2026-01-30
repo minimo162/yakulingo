@@ -2066,7 +2066,6 @@ html.yakulingo-drag-active .global-drop-indicator {
 
 .option-card:hover {
     box-shadow: var(--md-sys-elevation-2);
-    transform: translateY(-1px);
 }
 
 .option-card-header {
@@ -2946,21 +2945,20 @@ html.yakulingo-drag-active .global-drop-indicator {
 @keyframes resultCardIn {
     0% {
         opacity: 0;
-        transform: translateY(16px) scale(0.98);
+        transform: translateY(16px);
     }
     60% {
         opacity: 1;
-        transform: translateY(-4px) scale(1.01);
+        transform: translateY(-4px);
     }
     100% {
         opacity: 1;
-        transform: translateY(0) scale(1);
+        transform: none;
     }
 }
 
 .result-card {
     animation: resultCardIn var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-fluid) backwards;
-    will-change: transform, opacity;
 }
 
 .result-card.stagger-1 { animation-delay: 40ms; }

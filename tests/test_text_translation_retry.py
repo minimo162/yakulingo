@@ -312,3 +312,41 @@ def test_text_style_comparison_does_not_retry_when_output_keeps_jp_numeric_units
     assert result.options[0].text == first
     metadata = result.metadata or {}
     assert metadata.get("output_language_retry") is None
+
+
+def test_user_report_financial_text_retries_when_first_output_echoes_input() -> None:
+    input_text = """１．2026年３月期第２四半期（中間期）の連結業績（2025年４月１日～2025年９月30日）
+（１）連結経営成績(累計) (％表示は、対前年中間期増減率)
+売上高 営業利益 経常利益 親会社株主に帰属
+する中間純利益
+百万円 ％ 百万円 ％ 百万円 ％ 百万円 ％
+2026年３月期中間期 2,238,463 △6.5 △53,879 － △21,294 － △45,284 －
+2025年３月期中間期 2,393,919 3.3 103,048 △20.5 83,513 △53.4 35,334 △67.3
+(注) 包括利益 2026年３月期中間期 △32,510百万円( －％) 2025年３月期中間期 △2,123百万円( －％)"""
+    translated = "Consolidated financial results for Q2 FY2026 (interim) are as follows."
+    local = SequencedLocalClient([input_text, translated])
+    service = _make_service(local)
+
+    result = service.translate_text_with_style_comparison(input_text)
+
+    assert local.translate_single_calls == 2
+    assert result.output_language == "en"
+    assert result.options
+    assert result.options[0].text == translated
+
+    metadata = result.metadata or {}
+    assert metadata.get("output_language_retry") is True
+    reasons = set(metadata.get("output_language_retry_reasons") or [])
+    assert {"untranslated", "output_language"} <= reasons
+
+
+def test_user_report_non_japanese_input_detects_and_outputs_jp() -> None:
+    local = SequencedLocalClient(["これはテストです。"])
+    service = _make_service(local)
+
+    result = service.translate_text_with_options("This is a test.")
+
+    assert local.translate_single_calls == 1
+    assert result.output_language == "jp"
+    assert result.options
+    assert result.options[0].text == "これはテストです。"

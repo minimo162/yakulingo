@@ -2041,6 +2041,7 @@ from yakulingo.models.types import (
     TranslationPhase,
     TranslationResult,
     TextTranslationResult,
+    TextTranslationPass,
     TranslationOption,
     FileInfo,
     FileType,
@@ -6166,8 +6167,13 @@ class TranslationService:
         styles: Optional[list[str]] = None,
         pre_detected_language: Optional[str] = None,
         on_chunk: "Callable[[str], None] | None" = None,
+        text_translation_mode: str | None = None,
     ) -> TextTranslationResult:
-        """Translate text with style comparison for JP→EN."""
+        """Translate text with style comparison for JP→EN.
+
+        If text_translation_mode is "concise", runs a 3-pass pipeline:
+        translation (pass1) -> same-language concise rewrite (pass2) -> rewrite (pass3).
+        """
         reference_files = None
         detected_language = pre_detected_language
         if not detected_language:
@@ -6175,6 +6181,15 @@ class TranslationService:
 
         is_japanese = detected_language == "日本語"
         output_language = "en" if is_japanese else "jp"
+
+        mode = (text_translation_mode or "").strip().lower()
+        if mode == "concise":
+            return self.translate_text_with_concise_mode(
+                text=text,
+                reference_files=reference_files,
+                pre_detected_language=detected_language,
+                on_chunk=on_chunk,
+            )
 
         if output_language != "en":
             return self.translate_text_with_options(
@@ -6198,6 +6213,160 @@ class TranslationService:
             pre_detected_language=detected_language,
             on_chunk=on_chunk,
         )
+
+    def translate_text_with_concise_mode(
+        self,
+        *,
+        text: str,
+        reference_files: Optional[list[Path]] = None,
+        pre_detected_language: Optional[str] = None,
+        on_chunk: "Callable[[str], None] | None" = None,
+    ) -> TextTranslationResult:
+        """Translate text with a 3-pass concise-mode pipeline."""
+        reference_files = None
+        detected_language = pre_detected_language or self.detect_language(text)
+        output_language = "en" if detected_language == "日本語" else "jp"
+
+        metadata: dict = {"text_translation_mode": "concise"}
+
+        first = self.translate_text_with_options(
+            text=text,
+            reference_files=reference_files,
+            style="standard" if output_language == "en" else None,
+            pre_detected_language=detected_language,
+            on_chunk=on_chunk,
+        )
+        if first.metadata:
+            metadata.update(first.metadata)
+        if first.error_message or not first.options:
+            first.metadata = metadata
+            return first
+
+        pass1_text = first.options[0].text
+        passes: list[TextTranslationPass] = [
+            TextTranslationPass(index=1, mode="translation", text=pass1_text)
+        ]
+
+        def rewrite_pass(
+            *,
+            pass_index: int,
+            input_text: str,
+        ) -> tuple[Optional[str], Optional[str]]:
+            if self._cancel_event.is_set():
+                raise TranslationCancelledError("Translation cancelled by user")
+
+            prompt = self.prompt_builder.build_concise_rewrite_prompt(
+                input_text,
+                output_language=output_language,
+                pass_index=pass_index,
+            )
+            try:
+                raw = self._translate_single_with_cancel_on_local(
+                    input_text,
+                    prompt,
+                    None,
+                    on_chunk,
+                )
+            except TranslationCancelledError:
+                raise
+            except Exception as e:
+                logger.exception("Concise rewrite pass-%d failed: %s", pass_index, e)
+                return None, str(e)
+
+            try:
+                from yakulingo.services.local_ai_client import strip_prompt_echo
+            except Exception:
+                strip_prompt_echo = None
+
+            if callable(strip_prompt_echo):
+                raw = strip_prompt_echo(raw, prompt)
+
+            rewritten = _normalize_local_plain_text_output(raw)
+            if not rewritten:
+                return None, "empty_output"
+            if _is_text_output_language_mismatch(rewritten, output_language):
+                return None, "output_language_mismatch"
+            return rewritten, None
+
+        try:
+            pass2_text, pass2_error = rewrite_pass(
+                pass_index=2,
+                input_text=pass1_text,
+            )
+            if pass2_error or not pass2_text:
+                metadata["concise_mode_degraded"] = True
+                metadata["concise_mode_failed_pass"] = 2
+                metadata["concise_mode_failed_reason"] = pass2_error or "unknown"
+                return TextTranslationResult(
+                    source_text=text,
+                    source_char_count=len(text),
+                    output_language=output_language,
+                    detected_language=detected_language,
+                    options=[
+                        TranslationOption(
+                            text=pass1_text,
+                            explanation="",
+                            style="standard" if output_language == "en" else None,
+                        )
+                    ],
+                    translation_text=pass1_text,
+                    final_text=pass1_text,
+                    passes=passes,
+                    metadata=metadata,
+                )
+
+            passes.append(TextTranslationPass(index=2, mode="rewrite", text=pass2_text))
+
+            pass3_text, pass3_error = rewrite_pass(
+                pass_index=3,
+                input_text=pass2_text,
+            )
+            if pass3_error or not pass3_text:
+                metadata["concise_mode_degraded"] = True
+                metadata["concise_mode_failed_pass"] = 3
+                metadata["concise_mode_failed_reason"] = pass3_error or "unknown"
+                return TextTranslationResult(
+                    source_text=text,
+                    source_char_count=len(text),
+                    output_language=output_language,
+                    detected_language=detected_language,
+                    options=[
+                        TranslationOption(
+                            text=pass2_text,
+                            explanation="",
+                            style="concise" if output_language == "en" else None,
+                        )
+                    ],
+                    translation_text=pass2_text,
+                    final_text=pass2_text,
+                    passes=passes,
+                    metadata=metadata,
+                )
+
+            passes.append(TextTranslationPass(index=3, mode="rewrite", text=pass3_text))
+            final_style = "concise" if output_language == "en" else None
+            return TextTranslationResult(
+                source_text=text,
+                source_char_count=len(text),
+                output_language=output_language,
+                detected_language=detected_language,
+                options=[TranslationOption(text=pass3_text, explanation="", style=final_style)],
+                translation_text=pass3_text,
+                final_text=pass3_text,
+                passes=passes,
+                metadata=metadata,
+            )
+
+        except TranslationCancelledError:
+            logger.info("Concise mode cancelled")
+            return TextTranslationResult(
+                source_text=text,
+                source_char_count=len(text),
+                output_language=output_language,
+                detected_language=detected_language,
+                error_message="翻訳がキャンセルされました",
+                metadata=metadata,
+            )
 
     def extract_detection_sample(
         self, file_path: Path, max_blocks: int = 5

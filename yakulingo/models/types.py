@@ -168,6 +168,15 @@ class TranslationOption:
 
 
 @dataclass
+class TextTranslationPass:
+    """One pass in a multi-pass text translation pipeline."""
+
+    index: int  # 1-based pass index
+    mode: str  # "translation" or "rewrite"
+    text: str  # Output text for this pass
+
+
+@dataclass
 class TextTranslationResult:
     """
     Result of text translation.
@@ -180,6 +189,8 @@ class TextTranslationResult:
     source_char_count: int  # Original character count
     options: list[TranslationOption] = field(default_factory=list)
     translation_text: str = ""  # Single translation (SSOT)
+    passes: list[TextTranslationPass] = field(default_factory=list)
+    final_text: str = ""  # Final output (SSOT; equals translation_text)
     output_language: str = "en"  # "en" or "jp" - target language
     detected_language: Optional[str] = (
         None  # Locally detected source language (e.g., "日本語", "英語", "中国語")
@@ -192,15 +203,20 @@ class TextTranslationResult:
     def __post_init__(self):
         if self.source_char_count == 0:
             self.source_char_count = len(self.source_text)
-        if not self.translation_text and self.options:
+
+        if self.final_text:
+            self.translation_text = self.final_text
+        elif self.translation_text:
+            self.final_text = self.translation_text
+        elif self.options:
             self.translation_text = self.options[0].text
-        elif self.translation_text and not self.options:
-            self.options = [
-                TranslationOption(
-                    text=self.translation_text,
-                    explanation="",
-                )
-            ]
+            self.final_text = self.translation_text
+        elif self.passes:
+            self.final_text = self.passes[-1].text
+            self.translation_text = self.final_text
+
+        if self.translation_text and not self.options:
+            self.options = [TranslationOption(text=self.translation_text, explanation="")]
 
     @property
     def translation(self) -> str:

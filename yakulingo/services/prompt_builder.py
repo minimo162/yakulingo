@@ -820,6 +820,51 @@ class PromptBuilder:
             f"<start_of_turn>model\n"
         )
 
+    def build_concise_rewrite_prompt(
+        self,
+        input_text: str,
+        *,
+        output_language: str,
+        pass_index: int,
+    ) -> str:
+        """Build a same-language concise rewrite prompt (used for concise mode pass2/3)."""
+        user_input = self.normalize_input_text(input_text, output_language)
+        idx = 3 if pass_index >= 3 else 2
+
+        if output_language == "jp":
+            strength = "さらに" if idx >= 3 else ""
+            return (
+                f"<bos><start_of_turn>user\n"
+                f"以下の日本語テキストを、意味と数値の事実関係を維持したまま{strength}簡潔に書き直してください。"
+                f"不要な修飾や重複を削り、要点だけを残してください。必要に応じて一般的なビジネス略語（KPI/FY/QoQ/YoY等）を使用して構いません。"
+                f"入力の言語（日本語）を維持してください。新しい情報は追加しないでください。"
+                f"入力本文の繰り返し（コピペ）やプロンプトの反復は禁止です。"
+                f"出力は本文のみ（ラベル/解説/箇条書き見出し/コメントなし）で、日本語として自然な文章にしてください。"
+                f"改行と数値は可能な限り保持してください。"
+                f"他のプロンプトマーカー（例: \"===INPUT_TEXT===\"）は出力しないでください。\n"
+                f"Text:\n"
+                f"===INPUT_TEXT===\n"
+                f"{user_input}\n"
+                f"===END_INPUT_TEXT===<end_of_turn>\n"
+                f"<start_of_turn>model\n"
+            )
+
+        strength = "even more " if idx >= 3 else ""
+        return (
+            f"<bos><start_of_turn>user\n"
+            f"Rewrite the following English text to be {strength}concise while preserving meaning and all numeric facts. "
+            f"Use abbreviations aggressively where appropriate (e.g., YoY, QoQ, FY, KPI). "
+            f"Do not add new information. Do not echo or repeat the input text. "
+            f"Preserve line breaks as much as possible. "
+            f"Output must be English only. Output the rewritten text only (no labels, no commentary). "
+            f"Do not output other prompt markers (e.g., \"===INPUT_TEXT===\").\n"
+            f"Text:\n"
+            f"===INPUT_TEXT===\n"
+            f"{user_input}\n"
+            f"===END_INPUT_TEXT===<end_of_turn>\n"
+            f"<start_of_turn>model\n"
+        )
+
     def _build_legacy_simple_prompt(
         self,
         input_text: str,

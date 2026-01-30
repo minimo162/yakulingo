@@ -149,3 +149,84 @@ def test_maybe_reset_source_copy_mode_excel_does_not_require_foreground(monkeypa
     hotkey_listener._maybe_reset_source_copy_mode(123)
 
     assert called == [123]
+
+
+def test_capture_clipboard_payload_retries_when_transient_message_seen(monkeypatch):
+    transient = (
+        "データを入手中です。数秒間待ってから、切り取りまたはコピーをもう一度お試しください。"
+    )
+    seq = {"value": 100}
+    payload_calls = {"count": 0}
+
+    def get_seq():  # noqa: ANN001
+        return seq["value"]
+
+    def get_payload_with_retry(*, log_fail: bool = False):  # noqa: ANN001
+        _ = log_fail
+        payload_calls["count"] += 1
+        if payload_calls["count"] == 1:
+            return transient, []
+        return "選択テキスト", []
+
+    def send_ctrl_c() -> None:
+        seq["value"] += 1
+
+    dummy_clipboard = SimpleNamespace(
+        get_clipboard_sequence_number_raw=get_seq,
+        get_clipboard_payload_with_retry=get_payload_with_retry,
+    )
+    monkeypatch.setattr(hotkey_listener, "_clipboard", dummy_clipboard)
+    monkeypatch.setattr(hotkey_listener, "_send_ctrl_c", send_ctrl_c)
+    monkeypatch.setattr(hotkey_listener.time, "sleep", lambda *_: None)
+
+    listener = hotkey_listener.HotkeyListener(
+        lambda *_: None,
+        copy_delay_sec=0.0,
+        reset_copy_mode=False,
+    )
+
+    result = listener._capture_clipboard_payload(None)
+
+    assert result == "選択テキスト"
+    assert payload_calls["count"] == 2
+
+
+def test_capture_clipboard_payload_suppresses_transient_message_when_persists(monkeypatch):
+    transient = (
+        "データを入手中です。数秒間待ってから、切り取りまたはコピーをもう一度お試しください。"
+    )
+    seq = {"value": 200}
+    payload_calls = {"count": 0}
+
+    def get_seq():  # noqa: ANN001
+        return seq["value"]
+
+    def get_payload_with_retry(*, log_fail: bool = False):  # noqa: ANN001
+        _ = log_fail
+        payload_calls["count"] += 1
+        return transient, []
+
+    def send_ctrl_c() -> None:
+        seq["value"] += 1
+
+    dummy_clipboard = SimpleNamespace(
+        get_clipboard_sequence_number_raw=get_seq,
+        get_clipboard_payload_with_retry=get_payload_with_retry,
+    )
+    monkeypatch.setattr(hotkey_listener, "_clipboard", dummy_clipboard)
+    monkeypatch.setattr(hotkey_listener, "_send_ctrl_c", send_ctrl_c)
+    monkeypatch.setattr(hotkey_listener.time, "sleep", lambda *_: None)
+
+    listener = hotkey_listener.HotkeyListener(
+        lambda *_: None,
+        copy_delay_sec=0.0,
+        reset_copy_mode=False,
+    )
+
+    result = listener._capture_clipboard_payload(None)
+
+    assert result == ""
+    assert (
+        payload_calls["count"]
+        == hotkey_listener._HOTKEY_CLIPBOARD_TRANSIENT_ERROR_RETRY_COUNT + 1
+    )

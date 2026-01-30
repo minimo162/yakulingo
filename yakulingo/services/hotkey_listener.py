@@ -74,6 +74,13 @@ else:
     _RESET_COPY_MODE_ESC_RETRY_COUNT = 3
     _RESET_COPY_MODE_ESC_RETRY_INTERVAL_SEC = 0.03
     _EXCEL_TOP_LEVEL_WINDOW_CLASSES = ("XLMAIN",)
+    _HOTKEY_CLIPBOARD_TRANSIENT_ERROR_RETRY_COUNT = 3
+    _HOTKEY_CLIPBOARD_TRANSIENT_ERROR_RETRY_DELAY_SEC = 0.12
+
+    _CLIPBOARD_TRANSIENT_ERROR_MESSAGE_PREFIXES = ("データを入手中です。",)
+    _CLIPBOARD_TRANSIENT_ERROR_MESSAGE_RETRY_HINT = (
+        "切り取りまたはコピーをもう一度お試しください"
+    )
 
     class _Point(ctypes.Structure):
         _fields_ = [("x", wintypes.LONG), ("y", wintypes.LONG)]
@@ -100,6 +107,14 @@ else:
             ("hwndCaret", wintypes.HWND),
             ("rcCaret", wintypes.RECT),
         ]
+
+    def _is_transient_clipboard_copy_error(payload: str) -> bool:
+        normalized = (payload or "").strip()
+        if not normalized:
+            return False
+        if not normalized.startswith(_CLIPBOARD_TRANSIENT_ERROR_MESSAGE_PREFIXES):
+            return False
+        return _CLIPBOARD_TRANSIENT_ERROR_MESSAGE_RETRY_HINT in normalized
 
     def _get_window_class_name(target_hwnd: int) -> str | None:
         if not target_hwnd:
@@ -457,48 +472,80 @@ else:
                 self._thread_id = None
 
         def _capture_clipboard_payload(self, source_hwnd: int | None) -> str:
-            try:
-                seq_before = _clipboard.get_clipboard_sequence_number_raw()
-            except Exception:
-                seq_before = None
-
             if self._copy_delay_sec:
                 time.sleep(self._copy_delay_sec)
 
-            _send_ctrl_c()
-
-            seq_now = None
-            deadline = time.monotonic() + self._copy_wait_sec
-            while time.monotonic() < deadline:
+            payload = ""
+            recovered_from_transient_error = False
+            for attempt in range(_HOTKEY_CLIPBOARD_TRANSIENT_ERROR_RETRY_COUNT + 1):
                 try:
-                    seq_now = _clipboard.get_clipboard_sequence_number_raw()
+                    seq_before = _clipboard.get_clipboard_sequence_number_raw()
                 except Exception:
-                    seq_now = None
-                if seq_before is None or seq_now is None or seq_now != seq_before:
-                    break
-                time.sleep(self._copy_poll_interval_sec)
+                    seq_before = None
 
-            # If the clipboard did not change after sending Ctrl+C, treat it as "no selection".
-            # This avoids translating stale clipboard content when nothing is selected.
-            if seq_before is not None and seq_now is not None and seq_now == seq_before:
-                if self._reset_copy_mode:
-                    _maybe_reset_source_copy_mode(source_hwnd)
-                return ""
+                _send_ctrl_c()
 
-            try:
-                text, files = _clipboard.get_clipboard_payload_with_retry(
-                    log_fail=False
-                )
-            except Exception as e:
-                logger.debug("Failed to read clipboard payload after hotkey: %s", e)
-                text, files = None, []
+                seq_now = None
+                deadline = time.monotonic() + self._copy_wait_sec
+                while time.monotonic() < deadline:
+                    try:
+                        seq_now = _clipboard.get_clipboard_sequence_number_raw()
+                    except Exception:
+                        seq_now = None
+                    if seq_before is None or seq_now is None or seq_now != seq_before:
+                        break
+                    time.sleep(self._copy_poll_interval_sec)
+
+                # If the clipboard did not change after sending Ctrl+C, treat it as "no selection".
+                # This avoids translating stale clipboard content when nothing is selected.
+                if (
+                    seq_before is not None
+                    and seq_now is not None
+                    and seq_now == seq_before
+                ):
+                    payload = ""
+                else:
+                    try:
+                        text, files = _clipboard.get_clipboard_payload_with_retry(
+                            log_fail=False
+                        )
+                    except Exception as e:
+                        logger.debug(
+                            "Failed to read clipboard payload after hotkey: %s", e
+                        )
+                        text, files = None, []
+
+                    if files:
+                        payload = "\n".join(files)
+                    else:
+                        payload = text or ""
+
+                # Some apps (e.g., Office) can temporarily place an error message on the clipboard
+                # while the real selection data is still being prepared. Retry a few times so we
+                # translate the user's selection instead of the transient message.
+                if _is_transient_clipboard_copy_error(payload):
+                    recovered_from_transient_error = True
+                    payload = ""
+                    if attempt < _HOTKEY_CLIPBOARD_TRANSIENT_ERROR_RETRY_COUNT:
+                        time.sleep(_HOTKEY_CLIPBOARD_TRANSIENT_ERROR_RETRY_DELAY_SEC)
+                        continue
+
+                # When we already saw a transient error, allow additional retries even if we
+                # captured nothing (clipboard sequence may stop changing while the source app is busy).
+                if (
+                    not payload
+                    and recovered_from_transient_error
+                    and attempt < _HOTKEY_CLIPBOARD_TRANSIENT_ERROR_RETRY_COUNT
+                ):
+                    time.sleep(_HOTKEY_CLIPBOARD_TRANSIENT_ERROR_RETRY_DELAY_SEC)
+                    continue
+
+                break
 
             if self._reset_copy_mode:
                 _maybe_reset_source_copy_mode(source_hwnd)
 
-            if files:
-                return "\n".join(files)
-            return text or ""
+            return payload
 
         def _run(self) -> None:
             _kernel32.GetCurrentThreadId.argtypes = []

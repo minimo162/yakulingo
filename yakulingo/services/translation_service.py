@@ -1519,6 +1519,12 @@ def _extract_options_preview(buffer: str) -> Optional[str]:
     return preview or None
 
 
+class _LocalStreamingOutputLanguageMismatch(Exception):
+    def __init__(self, output_language: str) -> None:
+        super().__init__(output_language)
+        self.output_language = output_language
+
+
 def _wrap_local_streaming_on_chunk(
     on_chunk: Optional[Callable[[str], None]],
     *,
@@ -1528,7 +1534,10 @@ def _wrap_local_streaming_on_chunk(
 ) -> Optional[Callable[[str], None]]:
     if on_chunk is None:
         return None
-    _ = expected_output_language, parse_json
+    expected = (expected_output_language or "").strip().lower()
+    if expected not in ("en", "jp"):
+        expected = ""
+    _ = parse_json
     last_emitted = ""
     last_emit_time = 0.0
     raw_cached = ""
@@ -1538,6 +1547,9 @@ def _wrap_local_streaming_on_chunk(
     if prompt:
         from yakulingo.services.local_ai_client import strip_prompt_echo as strip_echo
 
+    guard_prefix_limit = 256
+    guard_done = (not bool(expected)) or bool(parse_json)
+
     def _current_candidate() -> str:
         candidate = raw_cached
         if strip_echo is not None:
@@ -1545,7 +1557,7 @@ def _wrap_local_streaming_on_chunk(
         return candidate
 
     def _handle(delta: str) -> None:
-        nonlocal last_emitted, last_emit_time, raw_cached, raw_parts
+        nonlocal last_emitted, last_emit_time, raw_cached, raw_parts, guard_done
 
         if not delta:
             return
@@ -1562,6 +1574,14 @@ def _wrap_local_streaming_on_chunk(
         candidate = _current_candidate()
         if candidate == last_emitted:
             return
+
+        if not guard_done:
+            prefix = candidate.lstrip()[:guard_prefix_limit]
+            if prefix and _is_text_output_language_mismatch(prefix, expected):
+                raise _LocalStreamingOutputLanguageMismatch(expected)
+            if len(prefix) >= guard_prefix_limit:
+                guard_done = True
+
         now = time.monotonic()
         if (now - last_emit_time) < throttle_seconds and abs(
             len(candidate) - len(last_emitted)
@@ -4427,6 +4447,17 @@ class TranslationService:
                         on_chunk=stream_handler,
                         phase="en_initial",
                     )
+                except _LocalStreamingOutputLanguageMismatch:
+                    metadata["output_language_mismatch"] = True
+                    metadata["output_language_mismatch_streaming"] = True
+                    return TextTranslationResult(
+                        source_text=text,
+                        source_char_count=len(text),
+                        output_language=output_language,
+                        detected_language=detected_language,
+                        error_message="翻訳結果が英語ではありませんでした（出力言語ガード）",
+                        metadata=metadata,
+                    )
                 except RuntimeError as e:
                     if str(e).startswith("LOCAL_PROMPT_TOO_LONG:"):
                         fallback = _translate_segmented_fallback(
@@ -4927,6 +4958,17 @@ class TranslationService:
                     on_chunk=stream_handler,
                     phase="jp_initial",
                 )
+            except _LocalStreamingOutputLanguageMismatch:
+                metadata["output_language_mismatch"] = True
+                metadata["output_language_mismatch_streaming"] = True
+                return TextTranslationResult(
+                    source_text=text,
+                    source_char_count=len(text),
+                    output_language=output_language,
+                    detected_language=detected_language,
+                    error_message="翻訳結果が日本語ではありませんでした（出力言語ガード）",
+                    metadata=metadata,
+                )
             except RuntimeError as e:
                 if str(e).startswith("LOCAL_PROMPT_TOO_LONG:"):
                     fallback = _translate_segmented_fallback("LOCAL_PROMPT_TOO_LONG")
@@ -5420,6 +5462,17 @@ class TranslationService:
                     prompt=prompt,
                     on_chunk_local=stream_handler,
                     phase="en_initial",
+                )
+            except _LocalStreamingOutputLanguageMismatch:
+                metadata["output_language_mismatch"] = True
+                metadata["output_language_mismatch_streaming"] = True
+                return TextTranslationResult(
+                    source_text=text,
+                    source_char_count=len(text),
+                    output_language="en",
+                    detected_language=detected_language,
+                    error_message="翻訳結果が英語ではありませんでした（出力言語ガード）",
+                    metadata=metadata,
                 )
             except RuntimeError as e:
                 if str(e).startswith("LOCAL_PROMPT_TOO_LONG:"):

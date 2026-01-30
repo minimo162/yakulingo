@@ -118,3 +118,48 @@ def test_local_streaming_throttle_still_emits_final(monkeypatch) -> None:
     assert result.options[0].text == "Hello"
     assert received
     assert "Hello" in received[-1]
+
+
+def test_local_streaming_aborts_early_on_output_language_mismatch_and_retries(
+    monkeypatch,
+) -> None:
+    settings = AppSettings(translation_backend="local")
+    service = TranslationService(config=settings, prompts_dir=Path("prompts"))
+    received: list[str] = []
+
+    def on_chunk(text: str) -> None:
+        received.append(text)
+
+    calls = 0
+
+    def fake_translate_single_with_cancel(
+        text, prompt, reference_files=None, on_chunk=None
+    ):
+        nonlocal calls
+        _ = text, prompt, reference_files
+        calls += 1
+        if calls == 1:
+            if on_chunk:
+                on_chunk("漢")
+            raise AssertionError("streaming guard did not abort on output mismatch")
+        if on_chunk:
+            on_chunk("H")
+            on_chunk("ello")
+        return "Hello"
+
+    monkeypatch.setattr(
+        service,
+        "_translate_single_with_cancel_on_local",
+        fake_translate_single_with_cancel,
+    )
+
+    result = service.translate_text_with_options(
+        "dummy",
+        pre_detected_language="日本語",
+        on_chunk=on_chunk,
+    )
+
+    assert calls == 2
+    assert result.options
+    assert result.options[0].text == "Hello"
+    assert not any("漢" in chunk for chunk in received)

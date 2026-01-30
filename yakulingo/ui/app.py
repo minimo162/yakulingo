@@ -1228,7 +1228,6 @@ from yakulingo.models.types import (  # noqa: E402
     TranslationResult,
     TranslationStatus,
     TextTranslationResult,
-    TranslationOption,
     HistoryEntry,
     TranslationPhase,
     FileQueueItem,
@@ -1267,7 +1266,6 @@ STARTUP_UI_READY_FALLBACK_GRACE_MS = 300  # Grace period before rendering fallba
 STARTUP_UI_READY_SELECTOR = '[data-yakulingo-root="true"]'
 MAX_HISTORY_DISPLAY = 20  # Maximum history items to display in sidebar
 MAX_HISTORY_DRAWER_DISPLAY = 100  # Maximum history items to show in history drawer
-TEXT_TRANSLATION_CHAR_LIMIT = 5000  # Max chars for text translation (clipboard trigger)
 STREAMING_PREVIEW_UPDATE_INTERVAL_SEC = 0.18  # UI streaming preview throttling interval
 STREAMING_PREVIEW_SCROLL_INTERVAL_SEC = 0.35  # Throttle scroll JS during streaming
 FILE_LANGUAGE_DETECTION_TIMEOUT_SEC = 8.0  # Avoid hanging file-language detection
@@ -2281,34 +2279,6 @@ class YakuLingoApp:
             self._log_hotkey_debug_info(trace_id, summary)
 
             is_path_selection, file_paths = self._extract_hotkey_file_paths(text)
-            if not is_path_selection and len(text) > TEXT_TRANSLATION_CHAR_LIMIT:
-                import tempfile
-
-                try:
-                    with tempfile.NamedTemporaryFile(
-                        mode="w",
-                        suffix=".txt",
-                        delete=False,
-                        encoding="utf-8",
-                        prefix="yakulingo_clipboard_",
-                    ) as temp_file:
-                        temp_file.write(text)
-                        temp_path = Path(temp_file.name)
-                    temp_input_paths.append(temp_path)
-                    is_path_selection = True
-                    file_paths = [temp_path]
-                    logger.info(
-                        "Hotkey translation [%s] long clipboard text (%d chars); translating as file: %s",
-                        trace_id,
-                        len(text),
-                        temp_path,
-                    )
-                except Exception as e:
-                    logger.debug(
-                        "Hotkey translation [%s] failed to create temp file for long text: %s",
-                        trace_id,
-                        e,
-                    )
             should_background_translate = (
                 self._get_active_client() is None or not self._ui_ready_event.is_set()
             )
@@ -3623,15 +3593,6 @@ class YakuLingoApp:
         )
         schedule_apply()
 
-        if len(text) > TEXT_TRANSLATION_CHAR_LIMIT:
-            logger.info(
-                "Hotkey translation [%s] skipped (len=%d > limit=%d)",
-                trace_id,
-                len(text),
-                TEXT_TRANSLATION_CHAR_LIMIT,
-            )
-            return
-
         buffer.publish(
             {
                 "state": {
@@ -3760,16 +3721,6 @@ class YakuLingoApp:
         self._streaming_preview_label = None
 
         if not self._ensure_translation_service():
-            return
-
-        # Enforce the same safety limit as the UI.
-        if len(text) > TEXT_TRANSLATION_CHAR_LIMIT:
-            logger.info(
-                "Hotkey translation [%s] skipped (len=%d > limit=%d)",
-                trace_id,
-                len(text),
-                TEXT_TRANSLATION_CHAR_LIMIT,
-            )
             return
 
         self.state.text_translating = True
@@ -8044,13 +7995,10 @@ class YakuLingoApp:
                     create_text_input_panel(
                         state=self.state,
                         on_translate=self._translate_text,
-                        on_split_translate=self._translate_text_in_chunks,
                         on_source_change=self._on_source_change,
                         on_clear=self._clear,
                         on_open_file_picker=self._open_translation_file_picker,
                         on_translate_button_created=self._on_translate_button_created,
-                        text_char_limit=TEXT_TRANSLATION_CHAR_LIMIT,
-                        batch_char_limit=self.settings.local_ai_max_chars_per_batch,
                         on_output_language_override=self._set_text_output_language_override,
                         translation_style=self.settings.translation_style,
                         on_style_change=self._on_style_change,
@@ -8349,11 +8297,6 @@ class YakuLingoApp:
             return
 
         char_count = len(self.state.source_text)
-        text_limit = TEXT_TRANSLATION_CHAR_LIMIT
-        batch_limit = self.settings.local_ai_max_chars_per_batch
-        batch_count = 0
-        if batch_limit > 0:
-            batch_count = max(1, math.ceil(char_count / batch_limit))
 
         style_section = refs.get("style_selector_section")
         if style_section:
@@ -8368,12 +8311,7 @@ class YakuLingoApp:
 
         count_inline = refs.get("count_label_inline")
         if count_inline:
-            count_inline.set_text(f"{char_count:,} / {text_limit:,}")
-            count_inline.classes(remove="warn error")
-            if char_count > text_limit:
-                count_inline.classes(add="error")
-            elif char_count > batch_limit:
-                count_inline.classes(add="warn")
+            count_inline.set_text(f"{char_count:,} 文字")
 
         summary_count_label = refs.get("summary_count_label")
         if summary_count_label:
@@ -8387,39 +8325,6 @@ class YakuLingoApp:
             elif len(snippet) > 60:
                 snippet = f"{snippet[:60]}..."
             summary_preview_label.set_text(snippet)
-
-        count_label = refs.get("count_label")
-        if count_label:
-            count_label.set_text(f"{char_count:,} / {text_limit:,} 字")
-
-        count_hint = refs.get("count_hint")
-        if count_hint:
-            count_hint.set_text(f"推奨 {batch_limit:,} 字")
-
-        count_bar = refs.get("count_bar")
-        if count_bar:
-            ratio = 0.0 if text_limit <= 0 else min(char_count / text_limit, 1.0)
-            if char_count > text_limit:
-                bar_color = "var(--md-sys-color-error)"
-            elif char_count > batch_limit:
-                bar_color = "var(--md-sys-color-warning)"
-            else:
-                bar_color = "var(--md-sys-color-primary)"
-            count_bar.style(f"width: {ratio * 100:.1f}%; background: {bar_color};")
-
-        split_hint = refs.get("split_hint")
-        if split_hint:
-            split_hint.classes(remove="warn error")
-            if char_count <= 0:
-                split_hint.set_text("")
-            elif char_count > text_limit:
-                split_hint.set_text("上限超過: ファイル翻訳に切り替え")
-                split_hint.classes(add="error")
-            elif char_count > batch_limit:
-                split_hint.set_text(f"{batch_count} バッチ / 分割推奨")
-                split_hint.classes(add="warn")
-            else:
-                split_hint.set_text(f"{batch_count} バッチ")
 
         detection_output_label = refs.get("detection_output_label")
 
@@ -8487,38 +8392,6 @@ class YakuLingoApp:
             summary_override_chip.set_visibility(
                 self.state.text_output_language_override in {"en", "jp"}
             )
-
-        split_panel = refs.get("split_panel")
-        split_preview = refs.get("split_preview")
-        split_count = refs.get("split_count")
-        split_action = refs.get("split_action")
-
-        if not split_panel:
-            return
-
-        if char_count > batch_limit:
-            split_panel.set_visibility(True)
-            chunks = self._split_text_for_translation(
-                self.state.source_text, batch_limit
-            )
-            if split_count:
-                split_count.set_text(f"{len(chunks)} 分割 / {batch_limit:,} 字上限")
-            if split_preview:
-                preview_lines = []
-                for idx, chunk in enumerate(chunks[:3]):
-                    snippet = chunk.replace("\n", " ").strip()
-                    if len(snippet) > 60:
-                        snippet = snippet[:60] + "…"
-                    preview_lines.append(f"[{idx + 1}] {snippet}")
-                if len(chunks) > 3:
-                    preview_lines.append(f"…他 {len(chunks) - 3} 件")
-                split_preview.set_text("\n".join(preview_lines))
-            if split_action:
-                split_action.set_visibility(True)
-        else:
-            split_panel.set_visibility(False)
-            if split_action:
-                split_action.set_visibility(False)
 
     def _clear(self):
         """Clear text fields"""
@@ -9087,161 +8960,6 @@ class YakuLingoApp:
             return "英語"
         return detected_language
 
-    def _split_text_for_translation(self, text: str, limit: int) -> list[str]:
-        if not text:
-            return []
-        if limit <= 0 or len(text) <= limit:
-            return [text]
-
-        normalized = text.replace("\r\n", "\n")
-        parts = [p for p in normalized.split("\n\n") if p.strip()]
-        chunks: list[str] = []
-        current: list[str] = []
-        current_len = 0
-
-        for part in parts:
-            part_len = len(part)
-            if part_len > limit:
-                if current:
-                    chunks.append("\n\n".join(current))
-                    current = []
-                    current_len = 0
-                for idx in range(0, part_len, limit):
-                    chunks.append(part[idx : idx + limit])
-                continue
-
-            add_len = part_len + (2 if current else 0)
-            if current_len + add_len <= limit:
-                current.append(part)
-                current_len += add_len
-            else:
-                if current:
-                    chunks.append("\n\n".join(current))
-                current = [part]
-                current_len = part_len
-
-        if current:
-            chunks.append("\n\n".join(current))
-
-        return chunks or [normalized]
-
-    def _merge_chunk_results(
-        self,
-        chunk_results: list[TextTranslationResult],
-        source_text: str,
-        detected_language: str,
-        effective_detected_language: str,
-    ) -> TextTranslationResult:
-        output_language = "en" if effective_detected_language == "日本語" else "jp"
-        error_messages = [
-            res.error_message for res in chunk_results if res.error_message
-        ]
-        if error_messages:
-            return TextTranslationResult(
-                source_text=source_text,
-                source_char_count=len(source_text),
-                output_language=output_language,
-                detected_language=detected_language,
-                error_message=error_messages[0],
-            )
-
-        merged_metadata: dict | None = None
-        for res in chunk_results:
-            meta = res.metadata
-            if not isinstance(meta, dict):
-                continue
-            if merged_metadata is None:
-                merged_metadata = {}
-            for key, value in meta.items():
-                if key not in merged_metadata:
-                    merged_metadata[key] = value
-
-        if output_language == "en":
-            options_by_style: dict[str, list[str]] = {}
-            explanations_by_style: dict[str, list[str]] = {}
-            for res in chunk_results:
-                if not res.options:
-                    return TextTranslationResult(
-                        source_text=source_text,
-                        source_char_count=len(source_text),
-                        output_language=output_language,
-                        detected_language=detected_language,
-                        error_message="翻訳結果が取得できませんでした",
-                    )
-                for option in res.options:
-                    style = option.style or DEFAULT_TEXT_STYLE
-                    options_by_style.setdefault(style, []).append(option.text)
-                    if option.explanation:
-                        explanations_by_style.setdefault(style, []).append(
-                            option.explanation
-                        )
-
-            style_order = ["standard", "concise", "minimal"]
-            combined_options: list[TranslationOption] = []
-            for style in style_order:
-                if style in options_by_style:
-                    combined_options.append(
-                        TranslationOption(
-                            text="\n\n".join(options_by_style[style]),
-                            explanation="\n\n".join(
-                                explanations_by_style.get(style, [])
-                            ),
-                            style=style,
-                        )
-                    )
-
-            for option in combined_options:
-                option.explanation = ""
-                option.style = None
-
-            if not combined_options:
-                return TextTranslationResult(
-                    source_text=source_text,
-                    source_char_count=len(source_text),
-                    output_language=output_language,
-                    detected_language=detected_language,
-                    error_message="翻訳結果が取得できませんでした",
-                )
-
-            return TextTranslationResult(
-                source_text=source_text,
-                source_char_count=len(source_text),
-                output_language=output_language,
-                detected_language=detected_language,
-                options=combined_options,
-                translation_text=combined_options[0].text,
-                metadata=merged_metadata,
-            )
-
-        texts: list[str] = []
-        explanations: list[str] = []
-        for res in chunk_results:
-            if not res.options:
-                continue
-            option = res.options[0]
-            texts.append(option.text)
-            if option.explanation:
-                explanations.append(option.explanation)
-
-        combined_text = "\n\n".join(texts)
-        combined_explanation = "\n\n".join(explanations)
-        combined_explanation = ""
-
-        return TextTranslationResult(
-            source_text=source_text,
-            source_char_count=len(source_text),
-            output_language=output_language,
-            detected_language=detected_language,
-            options=[
-                TranslationOption(
-                    text=combined_text,
-                    explanation=combined_explanation,
-                )
-            ],
-            translation_text=combined_text,
-            metadata=merged_metadata,
-        )
-
     def _open_translation_file_picker(self) -> None:
         """Open file picker for file translation (same handler as drag & drop)."""
         if self.state.is_translating():
@@ -9267,251 +8985,6 @@ class YakuLingoApp:
         self.state.text_view_state = TextViewState.INPUT
         self._refresh_content()
         self._focus_text_input()
-
-    async def _translate_long_text_as_file(self, text: str):
-        """Translate long text using file translation mode.
-
-        When text exceeds TEXT_TRANSLATION_CHAR_LIMIT, save it as a temporary
-        .txt file and process using file translation (batch processing).
-
-        Args:
-            text: Long text to translate
-        """
-        import tempfile
-
-        # Use saved client reference (protected by _client_lock)
-        with self._client_lock:
-            client = self._client
-            if not client:
-                logger.warning("Long text translation aborted: no client connected")
-                return
-
-        # Notify user (inside client context for proper UI update)
-        with client:
-            ui.notify(
-                f"テキストが長いため（{len(text):,}文字）、ファイル翻訳で処理します",
-                type="info",
-                position="top",
-                timeout=3000,
-            )
-
-        # Detect language to determine output direction
-        detected_language, detected_reason = await asyncio.to_thread(
-            self.translation_service.detect_language_with_reason,
-            text[:1000],  # Use first 1000 chars for detection
-        )
-        is_japanese = detected_language == "日本語"
-        output_language = "en" if is_japanese else "jp"
-
-        # Create temporary file
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            suffix=".txt",
-            delete=False,
-            encoding="utf-8",
-            prefix="yakulingo_",
-        ) as f:
-            f.write(text)
-            temp_path = Path(f.name)
-
-        try:
-            # Set up file translation state
-            self.state.selected_file = temp_path
-            self.state.file_detected_language = detected_language
-            self.state.file_detected_language_reason = detected_reason
-            self.state.file_output_language = output_language
-            # Get file info asynchronously to avoid blocking UI
-            self.state.file_info = await asyncio.to_thread(
-                self.translation_service.processors[".txt"].get_file_info, temp_path
-            )
-            self.state.source_text = ""  # Clear text input
-
-            # Switch to file tab
-            self.state.current_tab = Tab.FILE
-            self.state.file_state = FileState.SELECTED
-
-            # Refresh UI
-            with client:
-                self._refresh_content()
-
-            # Small delay for UI update
-            await asyncio.sleep(0.1)
-
-            # Start file translation
-            await self._translate_file()
-
-        except Exception as e:
-            logger.exception("Long text translation error: %s", e)
-            with client:
-                ui.notify(f"エラー: {e}", type="negative")
-
-        finally:
-            # Clean up temp file (after translation or on error)
-            temp_path.unlink(missing_ok=True)
-
-    async def _translate_text_in_chunks(self):
-        """Translate text by splitting into multiple batches for large inputs."""
-        import time
-
-        if not await self._ensure_connection_async():
-            return
-        if self.translation_service:
-            self.translation_service.reset_cancel()
-
-        source_text = self.state.source_text
-        if not source_text.strip():
-            return
-
-        trace_id = (
-            self._active_translation_trace_id or f"text-split-{uuid.uuid4().hex[:8]}"
-        )
-        self._active_translation_trace_id = trace_id
-
-        with self._client_lock:
-            client = self._client
-            if not client:
-                logger.warning(
-                    "Translation [%s] aborted: no client connected", trace_id
-                )
-                self._active_translation_trace_id = None
-                return
-
-        self.state.text_translating = True
-        self.state.text_detected_language = None
-        self.state.text_detected_language_reason = None
-        self.state.text_result = None
-        self.state.text_translation_elapsed_time = None
-        self.state.text_streaming_preview = None
-        self._streaming_preview_label = None
-
-        with client:
-            self._refresh_result_panel()
-            self._scroll_result_panel_to_bottom(client, force_follow=True)
-            self._refresh_tabs()
-
-        error_message = None
-        result = None
-        stream_handler: Callable[[str], None] | None = None
-        try:
-            await asyncio.sleep(0)
-            start_time = time.monotonic()
-
-            detected_language, reason = await asyncio.to_thread(
-                self.translation_service.detect_language_with_reason,
-                source_text,
-            )
-            self.state.text_detected_language = detected_language
-            self.state.text_detected_language_reason = reason
-            effective_detected_language = self._resolve_effective_detected_language(
-                detected_language
-            )
-
-            with client:
-                self._refresh_result_panel()
-
-            await asyncio.sleep(0)
-
-            batch_limit = self.settings.local_ai_max_chars_per_batch
-            chunks = self._split_text_for_translation(source_text, batch_limit)
-            total_chunks = len(chunks)
-            loop = asyncio.get_running_loop()
-            current_chunk_index = 0
-
-            def build_preview_text(partial_text: str) -> str:
-                if total_chunks > 1 and current_chunk_index > 0:
-                    return f"[{current_chunk_index}/{total_chunks}] {partial_text}"
-                return partial_text
-
-            if self._is_local_streaming_preview_enabled():
-                stream_handler = self._create_text_streaming_preview_on_chunk(
-                    loop=loop,
-                    client_supplier=lambda: client,
-                    trace_id=trace_id,
-                    build_preview_text=build_preview_text,
-                    refresh_tabs_on_first_chunk=False,
-                    scroll_to_bottom=True,
-                    force_follow_on_first_chunk=True,
-                    log_context="Split translation",
-                )
-
-            def translate_chunks() -> TextTranslationResult:
-                from yakulingo.services.exceptions import TranslationCancelledError
-
-                chunk_results: list[TextTranslationResult] = []
-                nonlocal current_chunk_index
-                for idx, chunk in enumerate(chunks, start=1):
-                    if (
-                        self.translation_service
-                        and self.translation_service._cancel_event.is_set()
-                    ):
-                        raise TranslationCancelledError
-                    current_chunk_index = idx
-                    chunk_result = self.translation_service.translate_text_with_options(
-                        chunk,
-                        None,
-                        None,
-                        effective_detected_language,
-                        stream_handler,
-                    )
-                    chunk_results.append(chunk_result)
-                return self._merge_chunk_results(
-                    chunk_results,
-                    source_text,
-                    detected_language,
-                    effective_detected_language,
-                )
-
-            result = await asyncio.to_thread(translate_chunks)
-            if result:
-                result.detected_language = detected_language
-
-            elapsed_time = time.monotonic() - start_time
-            self.state.text_translation_elapsed_time = elapsed_time
-
-            if result and result.options:
-                from yakulingo.ui.state import TextViewState
-
-                result.metadata = result.metadata or {}
-                result.metadata["split_translation"] = True
-                self.state.text_result = result
-                self.state.text_view_state = TextViewState.RESULT
-                self._add_to_history(result, source_text)
-                self.state.source_text = ""
-            else:
-                error_message = result.error_message if result else "Unknown error"
-
-        except Exception as e:
-            logger.exception("Split translation error [%s]: %s", trace_id, e)
-            error_message = str(e)
-
-        flush = getattr(stream_handler, "flush", None) if stream_handler else None
-        if callable(flush):
-            try:
-                flush()
-                await asyncio.sleep(0)
-            except Exception:
-                logger.debug(
-                    "Split translation [%s] streaming preview flush failed",
-                    trace_id,
-                    exc_info=True,
-                )
-
-        self.state.text_translating = False
-        self.state.text_detected_language = None
-        self.state.text_detected_language_reason = None
-        self.state.text_streaming_preview = None
-        self._streaming_preview_label = None
-
-        with client:
-            if error_message:
-                self._notify_error(error_message)
-            self._refresh_result_panel()
-            self._scroll_result_panel_to_top(client)
-            self._update_translate_button_state()
-            self._refresh_status()
-            self._refresh_tabs()
-
-        self._active_translation_trace_id = None
 
     async def _translate_text(self):
         """Translate text with 2-step process: language detection then translation."""
@@ -9554,20 +9027,6 @@ class YakuLingoApp:
         if self.translation_service:
             self.translation_service.reset_cancel()
         self._cancel_local_ai_warmup("text translation started")
-
-        # Check text length limit - switch to file translation for long text
-        if len(source_text) > TEXT_TRANSLATION_CHAR_LIMIT:
-            logger.info(
-                "Translation [%s] switching to file mode (len=%d > limit=%d)",
-                trace_id,
-                len(source_text),
-                TEXT_TRANSLATION_CHAR_LIMIT,
-            )
-            try:
-                await self._translate_long_text_as_file(source_text)
-            finally:
-                self._active_translation_trace_id = None
-            return
 
         # Use saved client reference (context.client not available in async tasks)
         # Protected by _client_lock for thread-safe access

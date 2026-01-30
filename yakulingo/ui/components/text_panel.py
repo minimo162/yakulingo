@@ -327,11 +327,8 @@ def create_text_input_panel(
     on_translate: Callable[[], None],
     on_source_change: Callable[[str], None],
     on_clear: Callable[[], None],
-    on_split_translate: Optional[Callable[[], None]] = None,
     on_open_file_picker: Optional[Callable[[], None]] = None,
     on_translate_button_created: Optional[Callable[[ui.button], None]] = None,
-    text_char_limit: int = 5000,
-    batch_char_limit: int = 4000,
     on_output_language_override: Optional[Callable[[Optional[str]], None]] = None,
     translation_style: str = "concise",
     on_style_change: Optional[Callable[[str], None]] = None,
@@ -345,13 +342,10 @@ def create_text_input_panel(
     _create_large_input_panel(
         state,
         on_translate,
-        on_split_translate,
         on_source_change,
         on_clear,
         on_open_file_picker,
         on_translate_button_created,
-        text_char_limit,
-        batch_char_limit,
         on_output_language_override,
         translation_style,
         on_style_change,
@@ -363,13 +357,10 @@ def create_text_input_panel(
 def _create_large_input_panel(
     state: AppState,
     on_translate: Callable[[], None],
-    on_split_translate: Optional[Callable[[], None]],
     on_source_change: Callable[[str], None],
     on_clear: Callable[[], None],
     on_open_file_picker: Optional[Callable[[], None]] = None,
     on_translate_button_created: Optional[Callable[[ui.button], None]] = None,
-    text_char_limit: int = 5000,
-    batch_char_limit: int = 4000,
     on_output_language_override: Optional[Callable[[Optional[str]], None]] = None,
     translation_style: str = "concise",
     on_style_change: Optional[Callable[[str], None]] = None,
@@ -431,7 +422,7 @@ def _create_large_input_panel(
                             )
 
                             count_inline = ui.label(
-                                f"{len(state.source_text):,} / {text_char_limit:,}"
+                                f"{len(state.source_text):,} 文字"
                             ).classes("char-count-inline")
                             metrics_refs["count_label_inline"] = count_inline
                 # Large textarea - no autogrow, fills available space via CSS flex
@@ -536,34 +527,6 @@ def _create_large_input_panel(
                                 # Provide button reference for dynamic state updates
                                 if on_translate_button_created:
                                     on_translate_button_created(btn)
-
-                split_panel = ui.element("div").classes("split-suggestion")
-                split_panel.set_visibility(False)
-                with split_panel:
-                    with ui.row().classes("items-center justify-between gap-2"):
-                        split_count = ui.label("").classes("split-count")
-                        if on_split_translate:
-
-                            def handle_split_translate():
-                                asyncio.create_task(on_split_translate())
-
-                            split_action = (
-                                ui.button(
-                                    "分割して翻訳",
-                                    icon="call_split",
-                                    on_click=handle_split_translate,
-                                )
-                                .props("flat no-caps size=sm")
-                                .classes("split-action-btn")
-                            )
-                        else:
-                            split_action = None
-                    split_preview = ui.label("").classes("split-preview")
-
-                metrics_refs["split_panel"] = split_panel
-                metrics_refs["split_count"] = split_count
-                metrics_refs["split_preview"] = split_preview
-                metrics_refs["split_action"] = split_action
 
                 if on_input_metrics_created:
                     on_input_metrics_created(metrics_refs)

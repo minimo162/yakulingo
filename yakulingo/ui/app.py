@@ -3745,10 +3745,17 @@ class YakuLingoApp:
             loop = asyncio.get_running_loop()
             stream_handler = None
             if self._is_local_streaming_preview_enabled():
+                build_preview_text = None
+                if (
+                    (self.settings.text_translation_mode or "").strip().lower()
+                    == "concise"
+                ):
+                    build_preview_text = self._create_concise_mode_preview_text_builder()
                 stream_handler = self._create_text_streaming_preview_on_chunk(
                     loop=loop,
                     client_supplier=self._get_active_client,
                     trace_id=trace_id,
+                    build_preview_text=build_preview_text,
                     refresh_tabs_on_first_chunk=True,
                     scroll_to_bottom=True,
                     force_follow_on_first_chunk=True,
@@ -3761,6 +3768,7 @@ class YakuLingoApp:
                 None,
                 effective_detected_language,
                 stream_handler,
+                self.settings.text_translation_mode,
             )
             if result:
                 result.detected_language = detected_language
@@ -8109,6 +8117,66 @@ class YakuLingoApp:
                 if scroll_to_bottom:
                     self._scroll_result_panel_to_bottom(client)
 
+    def _create_concise_mode_preview_text_builder(self) -> Callable[[str], str]:
+        """Build a preview text function that concatenates 3 streaming passes.
+
+        Pass boundaries are detected heuristically by observing that a new pass
+        typically restarts its streaming output from an empty buffer.
+        """
+        separator = "\n\n---\n\n"
+        current_pass = 1
+        pass1_text = ""
+        pass2_text = ""
+        last_partial = ""
+
+        def _is_pass_boundary(prev: str, curr: str) -> bool:
+            if not prev or not curr:
+                return False
+            if curr.startswith(prev):
+                return False
+            prev_len = len(prev)
+            curr_len = len(curr)
+            if curr_len >= prev_len:
+                return False
+            shrink = prev_len - curr_len
+            if shrink >= 16:
+                return True
+            if prev_len >= 12 and curr_len <= max(6, int(prev_len * 0.75)):
+                return True
+            return False
+
+        def build(partial_text: str) -> str:
+            nonlocal current_pass, pass1_text, pass2_text, last_partial
+            partial = partial_text or ""
+
+            if current_pass < 3 and last_partial and partial and _is_pass_boundary(
+                last_partial, partial
+            ):
+                if current_pass == 1:
+                    pass1_text = last_partial
+                elif current_pass == 2:
+                    pass2_text = last_partial
+                current_pass += 1
+
+            last_partial = partial
+
+            if current_pass <= 1:
+                return partial
+            if current_pass == 2:
+                return (
+                    f"{pass1_text}{separator}{partial}" if pass1_text else partial
+                )
+
+            parts: list[str] = []
+            if pass1_text:
+                parts.append(pass1_text)
+            if pass2_text:
+                parts.append(pass2_text)
+            parts.append(partial)
+            return separator.join(parts)
+
+        return build
+
     def _create_text_streaming_preview_on_chunk(
         self,
         *,
@@ -9111,10 +9179,17 @@ class YakuLingoApp:
             # Streaming preview (AI chat style): update result panel with partial output as it arrives.
             loop = asyncio.get_running_loop()
             if self._is_local_streaming_preview_enabled():
+                build_preview_text = None
+                if (
+                    (self.settings.text_translation_mode or "").strip().lower()
+                    == "concise"
+                ):
+                    build_preview_text = self._create_concise_mode_preview_text_builder()
                 stream_handler = self._create_text_streaming_preview_on_chunk(
                     loop=loop,
                     client_supplier=lambda: client,
                     trace_id=trace_id,
+                    build_preview_text=build_preview_text,
                     refresh_tabs_on_first_chunk=False,
                     scroll_to_bottom=True,
                     force_follow_on_first_chunk=True,
@@ -9127,6 +9202,7 @@ class YakuLingoApp:
                 None,
                 effective_detected_language,
                 stream_handler,
+                self.settings.text_translation_mode,
             )
             if result:
                 result.detected_language = detected_language

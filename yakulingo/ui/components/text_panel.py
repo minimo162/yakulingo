@@ -19,7 +19,11 @@ from nicegui import ui
 
 from yakulingo.ui.state import AppState, TextViewState
 from yakulingo.ui.utils import to_props_string_literal
-from yakulingo.models.types import TranslationOption, TextTranslationResult
+from yakulingo.models.types import (
+    TextTranslationPass,
+    TextTranslationResult,
+    TranslationOption,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -663,6 +667,10 @@ def create_text_result_panel(
                         actions_disabled=actions_disabled,
                     )
                 )
+            _render_pass_context_cards(
+                state.text_result,
+                on_copy,
+            )
         elif not state.text_translating:
             # Empty state - show placeholder (spinner already shown in translation status section)
             _render_empty_result_state()
@@ -826,15 +834,68 @@ def _render_results_to_jp(
 
                         with ui.row().classes(
                             "w-full items-center justify-end gap-2 option-card-actions-bottom"
-                        ):
-                            copy_text = option.text
-                            _create_copy_button(
-                                copy_text,
-                                on_copy,
-                                classes="result-action-btn",
-                                aria_label="訳文をコピー",
-                                tooltip="訳文をコピー",
+                            ):
+                                copy_text = option.text
+                                _create_copy_button(
+                                    copy_text,
+                                    on_copy,
+                                    classes="result-action-btn",
+                                    aria_label="訳文をコピー",
+                                    tooltip="訳文をコピー",
+                                )
+
+
+def _render_pass_context_cards(
+    result: TextTranslationResult,
+    on_copy: Callable[[str], None],
+) -> None:
+    """Render previous passes (e.g., pass1/pass2) for concise-mode results.
+
+    The final pass is already shown as the main result card, so this section
+    renders the earlier passes only.
+    """
+    passes = list(result.passes or [])
+    if len(passes) < 2:
+        return
+    passes.sort(key=lambda p: p.index)
+    context_passes: list[TextTranslationPass] = passes[:-1]
+    if not context_passes:
+        return
+
+    table_hint = _build_tabular_text_hint(result.source_text)
+
+    with ui.element("div").classes("result-container"):
+        with ui.element("div").classes("result-section w-full"):
+            with ui.column().classes("w-full gap-3"):
+                ui.label("前段出力").classes("text-xs text-muted")
+                for index, p in enumerate(context_passes):
+                    stagger_class = f" stagger-{min(index + 1, 4)}"
+                    with ui.card().classes(
+                        f"option-card w-full result-card{stagger_class}"
+                    ):
+                        with ui.column().classes("w-full gap-2"):
+                            label = (
+                                f"{p.index}回目（翻訳）"
+                                if p.index == 1
+                                else f"{p.index}回目（簡潔化）"
                             )
+                            with ui.row().classes(
+                                "w-full items-center gap-2 option-card-header"
+                            ):
+                                ui.label(label).classes("chip style-chip")
+
+                            _render_translation_text(p.text, table_hint=table_hint)
+
+                            with ui.row().classes(
+                                "w-full items-center justify-end gap-2 option-card-actions-bottom"
+                            ):
+                                _create_copy_button(
+                                    p.text,
+                                    on_copy,
+                                    classes="result-action-btn",
+                                    aria_label=f"{label}をコピー",
+                                    tooltip=f"{label}をコピー",
+                                )
 
 
 def _tokenize_for_diff(text: str) -> list[str]:

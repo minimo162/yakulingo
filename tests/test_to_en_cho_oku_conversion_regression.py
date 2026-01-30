@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from yakulingo.services.translation_service import _fix_to_en_oku_numeric_unit_if_possible
+from yakulingo.services.prompt_builder import PromptBuilder
 
 
 def test_to_en_converts_cho_oku_to_trillion_billion_correctly() -> None:
@@ -11,21 +11,9 @@ def test_to_en_converts_cho_oku_to_trillion_billion_correctly() -> None:
         "帰属する中間純損失は、特別退職費用やクレジット資産評価損の計上等により、453億円(前年同期は353億円の利益)\n"
         "となりました。"
     )
-    translated_text = (
-        "Consolidated results for the interim period: Net sales were 2.2385 trillion yen "
-        "(down by 1,554 billion yen, down 6.5% YoY), operating loss was 539 billion yen "
-        "(profit of 1,030 billion yen in the same period last year), ordinary loss was 213 billion yen "
-        "(profit of 835 billion yen in the same period last year). Net loss attributable to owners of parent "
-        "was 453 billion yen (profit of 353 billion yen in the same period last year)."
-    )
 
-    fixed_text, changed = _fix_to_en_oku_numeric_unit_if_possible(
-        source_text=source_text,
-        translated_text=translated_text,
-    )
-
-    assert changed is True
-    assert "¥2,238.5 billion" in fixed_text
+    normalized = PromptBuilder.normalize_input_text(source_text, output_language="en")
+    assert "¥2,238.5 billion" in normalized
     for expected in (
         "¥155.4 billion",
         "¥53.9 billion",
@@ -35,17 +23,7 @@ def test_to_en_converts_cho_oku_to_trillion_billion_correctly() -> None:
         "¥45.3 billion",
         "¥35.3 billion",
     ):
-        assert expected in fixed_text
-    for forbidden in (
-        "1,554 billion",
-        "539 billion",
-        "1,030 billion",
-        "213 billion",
-        "835 billion",
-        "453 billion",
-        "353 billion",
-    ):
-        assert forbidden not in fixed_text
+        assert expected in normalized
 
 
 def test_to_en_fixes_cho_oku_when_model_treats_cho_as_1000_oku() -> None:
@@ -57,21 +35,9 @@ def test_to_en_fixes_cho_oku_when_model_treats_cho_as_1000_oku() -> None:
         "となりました。自己資本比率は、前連結会計年度末より0.6ポイント減少の43.2％(劣後特約付ローンの資本性考慮後\n"
         "44.1％)となりました。"
     )
-    translated_text = (
-        "[Assets, liabilities and net assets]\n"
-        "Total assets were 4,279 billion yen (down 622 billion yen), and total liabilities were "
-        "2.2693 trillion yen (down 108 billion yen). Net assets were 1.7586 trillion yen "
-        "(down 514 billion yen) due in part to a net loss of 453 billion yen attributable to owners of parent. "
-        "The equity ratio was 43.2% (44.1% after considering the equity nature of subordinated loans)."
-    )
 
-    fixed_text, changed = _fix_to_en_oku_numeric_unit_if_possible(
-        source_text=source_text,
-        translated_text=translated_text,
-    )
-
-    assert changed is True
-    assert "¥4,027.9 billion" in fixed_text
+    normalized = PromptBuilder.normalize_input_text(source_text, output_language="en")
+    assert "¥4,027.9 billion" in normalized
     for expected in (
         "¥62.2 billion",
         "¥10.8 billion",
@@ -80,15 +46,7 @@ def test_to_en_fixes_cho_oku_when_model_treats_cho_as_1000_oku() -> None:
         "¥51.4 billion",
         "¥45.3 billion",
     ):
-        assert expected in fixed_text
-    for forbidden in (
-        "4,279 billion",
-        "622 billion",
-        "108 billion",
-        "514 billion",
-        "453 billion",
-    ):
-        assert forbidden not in fixed_text
+        assert expected in normalized
 
 
 def test_to_en_fixes_cho_oku_when_model_outputs_concatenated_decimal_billion() -> None:
@@ -102,23 +60,9 @@ def test_to_en_fixes_cho_oku_when_model_outputs_concatenated_decimal_billion() -
         "営業活動によるキャッシュ・フローは、税金等調整前中間純損失436億円に加え、棚卸資産の増加等により、\n"
         "1,979億円の減少(前年同期は507億円の増加)となりました。"
     )
-    translated_text = (
-        "[Cash Flow]\n"
-        "Cash and cash equivalents decreased by 523 billion yen, reaching 1.533 billion yen. "
-        "Interest-bearing liabilities increased by 969 billion yen to 8,021 billion yen. "
-        "As a result, the net cash position was 2,512 billion yen. "
-        "Cash flow from operating activities decreased by 1,979 billion yen "
-        "(an increase of 507 billion yen in the same period last year), "
-        "primarily due to a net loss before taxes, etc. of 436 billion yen."
-    )
 
-    fixed_text, changed = _fix_to_en_oku_numeric_unit_if_possible(
-        source_text=source_text,
-        translated_text=translated_text,
-    )
-
-    assert changed is True
-    assert "¥1,053.3 billion" in fixed_text
+    normalized = PromptBuilder.normalize_input_text(source_text, output_language="en")
+    assert "¥1,053.3 billion" in normalized
     for expected in (
         "¥52.3 billion",
         "¥96.9 billion",
@@ -128,15 +72,4 @@ def test_to_en_fixes_cho_oku_when_model_outputs_concatenated_decimal_billion() -
         "¥197.9 billion",
         "¥50.7 billion",
     ):
-        assert expected in fixed_text
-    for forbidden in (
-        "523 billion",
-        "1.533 billion",
-        "969 billion",
-        "8,021 billion",
-        "2,512 billion",
-        "436 billion",
-        "1,979 billion",
-        "507 billion",
-    ):
-        assert forbidden not in fixed_text
+        assert expected in normalized

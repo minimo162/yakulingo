@@ -108,6 +108,10 @@ class _RecordingPromptBuilder:
     def __init__(self) -> None:
         self.calls: list[dict[str, object]] = []
 
+    def normalize_input_text(self, text: str, output_language: str) -> str:
+        _ = output_language
+        return text
+
     def build_batch(
         self,
         texts: list[str],

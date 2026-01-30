@@ -4,10 +4,14 @@ from collections.abc import Callable
 from pathlib import Path
 
 from yakulingo.models.types import TextBlock
+from yakulingo.services.prompt_builder import PromptBuilder
 from yakulingo.services.translation_service import BatchTranslator
 
 
 class DummyPromptBuilder:
+    def normalize_input_text(self, text: str, output_language: str) -> str:
+        return PromptBuilder.normalize_input_text(text, output_language)
+
     def build_batch(
         self,
         texts: list[str],
@@ -56,8 +60,7 @@ class SequencedCopilot:
 def test_batch_translator_copilot_falls_back_when_numeric_fix_not_possible() -> None:
     copilot = SequencedCopilot(
         responses=[
-            ["Net sales were 22,384 billion yen."],
-            ["Net sales were 22,384 billion yen."],
+            ["Net sales were ¥2,238.5 billion."],
         ]
     )
     translator = BatchTranslator(
@@ -69,7 +72,9 @@ def test_batch_translator_copilot_falls_back_when_numeric_fix_not_possible() -> 
 
     result = translator.translate_blocks_with_result(blocks, output_language="en")
 
-    assert len(copilot.calls) == 2
+    assert len(copilot.calls) == 1
     for call in copilot.calls:
         assert "Follow numeric conversion rules strictly" not in str(call["prompt"])
-    assert result.translations["b1"] == blocks[0].text
+    assert "¥2,238.5 billion" in str(copilot.calls[0]["prompt"])
+    assert "22,385億円" not in str(copilot.calls[0]["prompt"])
+    assert result.translations["b1"] == "Net sales were ¥2,238.5 billion."

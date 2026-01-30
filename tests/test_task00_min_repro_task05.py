@@ -2,16 +2,21 @@ from __future__ import annotations
 
 import pytest
 
+from yakulingo.services.prompt_builder import PromptBuilder
 from yakulingo.services.translation_service import (
     _fix_to_en_k_notation_if_possible,
     _fix_to_en_month_abbrev_if_possible,
     _fix_to_en_negative_parens_if_possible,
-    _fix_to_en_oku_numeric_unit_if_possible,
     _needs_to_en_k_rule_retry,
     _needs_to_en_month_abbrev_retry,
     _needs_to_en_negative_rule_retry,
-    _needs_to_en_numeric_rule_retry,
 )
+
+
+def test_prompt_builder_pre_normalizes_jp_cho_oku_to_en_billion() -> None:
+    source_text = "売上高は2兆2,385億円となりました。"
+    normalized = PromptBuilder.normalize_input_text(source_text, output_language="en")
+    assert "¥2,238.5 billion" in normalized
 
 
 @pytest.mark.parametrize(
@@ -24,14 +29,6 @@ from yakulingo.services.translation_service import (
         "forbidden",
     ),
     [
-        (
-            "売上高は2兆2,385億円となりました。",
-            "Revenue was 22,385 billion yen.",
-            _fix_to_en_oku_numeric_unit_if_possible,
-            _needs_to_en_numeric_rule_retry,
-            "¥2,238.5 billion",
-            "oku",
-        ),
         (
             "初任給は22万円です。",
             "The starting salary is 220,000 yen.",

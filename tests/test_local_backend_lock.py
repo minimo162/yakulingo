@@ -3,10 +3,14 @@ from __future__ import annotations
 import threading
 
 from yakulingo.models.types import TextBlock
+from yakulingo.services.prompt_builder import PromptBuilder
 from yakulingo.services.translation_service import BatchTranslator
 
 
 class DummyPromptBuilder:
+    def normalize_input_text(self, text: str, output_language: str) -> str:
+        return PromptBuilder.normalize_input_text(text, output_language)
+
     def build_batch(self, texts: list[str], **kwargs) -> str:  # noqa: ARG002
         return "prompt"
 

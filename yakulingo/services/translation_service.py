@@ -839,32 +839,36 @@ def _apply_safe_raw_text_fixes(
     output_language: str,
     metadata: dict,
 ) -> str:
-    """Apply safe numeric/unit fixes even when returning raw model output."""
-    text = translated_text or ""
-    if not text:
-        return text
+    """Apply safe fixes even when returning raw model output."""
+    fixed_text = translated_text or ""
+    if not fixed_text:
+        return ""
 
-    if output_language == "en":
-        fixed_text, fixed = _fix_to_en_financial_units_if_possible(
-            source_text=source_text,
-            translated_text=text,
-        )
-        if fixed:
-            text = fixed_text
-            metadata["to_en_numeric_unit_correction"] = True
-        return text
+    if output_language != "en":
+        return fixed_text
 
-    if output_language == "jp":
-        fixed_text, fixed = _fix_to_jp_financial_units_if_possible(
-            source_text=source_text,
-            translated_text=text,
-        )
-        if fixed:
-            text = fixed_text
-            metadata["to_jp_oku_correction"] = True
-        return text
+    fixed_text, fixed = _fix_to_en_negative_parens_if_possible(
+        source_text=source_text,
+        translated_text=fixed_text,
+    )
+    if fixed:
+        metadata["to_en_negative_correction"] = True
 
-    return text
+    fixed_text, fixed = _fix_to_en_k_notation_if_possible(
+        source_text=source_text,
+        translated_text=fixed_text,
+    )
+    if fixed:
+        metadata["to_en_k_notation_correction"] = True
+
+    fixed_text, fixed = _fix_to_en_month_abbrev_if_possible(
+        source_text=source_text,
+        translated_text=fixed_text,
+    )
+    if fixed:
+        metadata["to_en_month_abbrev_correction"] = True
+
+    return fixed_text
 
 
 def _fix_to_en_k_notation_if_possible(
@@ -2659,7 +2663,10 @@ class BatchTranslator:
         total_unique = 0
 
         for batch in batches:
-            texts = [b.text for b in batch]
+            texts = [
+                self.prompt_builder.normalize_input_text(b.text, output_language)
+                for b in batch
+            ]
             unique_texts: list[str] = []
             text_to_unique_idx: dict[str, int] = {}
             original_to_unique_idx: list[int] = []
@@ -2985,49 +2992,6 @@ class BatchTranslator:
                     len(output_language_mismatch_indices),
                     output_language,
                 )
-
-            if output_language == "en" and not self._cancel_event.is_set():
-                auto_fixed_numeric = 0
-                for idx, translated_text in enumerate(cleaned_unique_translations):
-                    if not translated_text or not translated_text.strip():
-                        continue
-                    fixed_text, fixed = _fix_to_en_financial_units_if_possible(
-                        source_text=unique_texts[idx],
-                        translated_text=translated_text,
-                    )
-                    if fixed:
-                        cleaned_unique_translations[idx] = fixed_text
-                        auto_fixed_numeric += 1
-                if auto_fixed_numeric:
-                    logger.debug(
-                        "Batch %d: Auto-corrected numeric units for %d/%d items",
-                        i + 1,
-                        auto_fixed_numeric,
-                        len(cleaned_unique_translations),
-                    )
-
-            if (
-                (not is_local_backend)
-                and output_language == "en"
-                and not self._cancel_event.is_set()
-            ):
-                numeric_rule_violation_indices = [
-                    idx
-                    for idx, translated_text in enumerate(cleaned_unique_translations)
-                    if translated_text
-                    and translated_text.strip()
-                    and _needs_to_en_numeric_rule_retry(
-                        unique_texts[idx], translated_text
-                    )
-                ]
-                if numeric_rule_violation_indices:
-                    logger.warning(
-                        "Batch %d: Numeric rule violations remain in %d items; using fallback",
-                        i + 1,
-                        len(numeric_rule_violation_indices),
-                    )
-                    for idx in numeric_rule_violation_indices:
-                        cleaned_unique_translations[idx] = ""
 
             if not is_local_backend:
                 # Treat ellipsis-only outputs ("..." / "…") as invalid translations and fall back.
@@ -4170,6 +4134,12 @@ class TranslationService:
                     ensure_ready = getattr(local_client, "ensure_ready", None)
                     runtime = ensure_ready() if callable(ensure_ready) else None
 
+            backend_source_text = text
+            if simple_prompt_mode:
+                backend_source_text = self.prompt_builder.normalize_input_text(
+                    text, output_language
+                )
+
             def translate_single_local(
                 *,
                 prompt: str,
@@ -4184,10 +4154,10 @@ class TranslationService:
                 ) + [phase]
                 if supports_runtime and runtime is not None:
                     return self._translate_single_with_cancel_on_local(
-                        text, prompt, None, on_chunk, runtime=runtime
+                        backend_source_text, prompt, None, on_chunk, runtime=runtime
                     )
                 return self._translate_single_with_cancel_on_local(
-                    text, prompt, None, on_chunk
+                    backend_source_text, prompt, None, on_chunk
                 )
 
             def _translate_segmented_fallback(
@@ -4263,11 +4233,18 @@ class TranslationService:
                                         reference_files=reference_files,
                                         detected_language=detected_language,
                                     )
+                            segment_source_text = block.text
+                            if simple_prompt_mode:
+                                segment_source_text = (
+                                    self.prompt_builder.normalize_input_text(
+                                        block.text, output_language
+                                    )
+                                )
                             try:
                                 if supports_runtime and runtime is not None:
                                     raw_segment = (
                                         self._translate_single_with_cancel_on_local(
-                                            block.text,
+                                            segment_source_text,
                                             segment_prompt,
                                             None,
                                             None,
@@ -4277,7 +4254,7 @@ class TranslationService:
                                 else:
                                     raw_segment = (
                                         self._translate_single_with_cancel_on_local(
-                                            block.text,
+                                            segment_source_text,
                                             segment_prompt,
                                             None,
                                             None,
@@ -4384,13 +4361,6 @@ class TranslationService:
                             error_message="翻訳結果が不完全でした（短すぎます）。",
                             metadata=metadata,
                         )
-                    fixed_text, fixed = _fix_to_en_financial_units_if_possible(
-                        source_text=text,
-                        translated_text=merged,
-                    )
-                    if fixed:
-                        merged = fixed_text
-                        metadata["to_en_numeric_unit_correction"] = True
                     return TextTranslationResult(
                         source_text=text,
                         source_char_count=len(text),
@@ -4412,13 +4382,6 @@ class TranslationService:
                         error_message="翻訳結果が日本語ではありませんでした（出力言語ガード）",
                         metadata=metadata,
                     )
-                fixed_text, fixed = _fix_to_jp_financial_units_if_possible(
-                    source_text=text,
-                    translated_text=merged,
-                )
-                if fixed:
-                    merged = fixed_text
-                    metadata["to_jp_oku_correction"] = True
                 return TextTranslationResult(
                     source_text=text,
                     source_char_count=len(text),
@@ -4549,13 +4512,6 @@ class TranslationService:
                             error_message="翻訳結果が不完全でした（短すぎます）。",
                             metadata=metadata,
                         )
-                    fixed_text, fixed = _fix_to_en_financial_units_if_possible(
-                        source_text=text,
-                        translated_text=translation,
-                    )
-                    if fixed:
-                        translation = fixed_text
-                        metadata["to_en_numeric_unit_correction"] = True
                     fixed_text, fixed = _fix_to_en_negative_parens_if_possible(
                         source_text=text,
                         translated_text=translation,
@@ -4844,13 +4800,6 @@ class TranslationService:
                         error_message="翻訳結果が不完全でした（短すぎます）。",
                         metadata=metadata,
                     )
-                fixed_text, fixed = _fix_to_en_financial_units_if_possible(
-                    source_text=text,
-                    translated_text=translation,
-                )
-                if fixed:
-                    translation = fixed_text
-                    metadata["to_en_numeric_unit_correction"] = True
 
                 fixed_text, fixed = _fix_to_en_negative_parens_if_possible(
                     source_text=text,
@@ -5041,13 +4990,6 @@ class TranslationService:
                         ),
                         metadata=metadata,
                     )
-                fixed_text, fixed = _fix_to_jp_financial_units_if_possible(
-                    source_text=text,
-                    translated_text=translation,
-                )
-                if fixed:
-                    translation = fixed_text
-                    metadata["to_jp_oku_correction"] = True
                 return TextTranslationResult(
                     source_text=text,
                     source_char_count=len(text),
@@ -5156,13 +5098,6 @@ class TranslationService:
                         error_message="翻訳結果が日本語ではありませんでした（出力言語ガード）",
                         metadata=metadata,
                     )
-            fixed_text, fixed = _fix_to_jp_financial_units_if_possible(
-                source_text=text,
-                translated_text=translation,
-            )
-            if fixed:
-                translation = fixed_text
-                metadata["to_jp_oku_correction"] = True
             return TextTranslationResult(
                 source_text=text,
                 source_char_count=len(text),
@@ -5329,16 +5264,6 @@ class TranslationService:
             *,
             numeric_retry_styles: set[str],
         ) -> TextTranslationResult:
-            for style, current in list(translations.items()):
-                fixed_text, fixed = _fix_to_en_financial_units_if_possible(
-                    source_text=text,
-                    translated_text=current,
-                )
-                if fixed:
-                    translations[style] = fixed_text
-                    metadata["to_en_numeric_unit_correction"] = True
-                    _mark_style_list("to_en_numeric_unit_correction_styles", style)
-
             for style, current in list(translations.items()):
                 translations[style] = _apply_safe_fixes(style, current)
 
@@ -5527,7 +5452,6 @@ class TranslationService:
                 if _is_placeholder_only_translation(text, current)
             }
 
-            numeric_rule_retry_styles: set[str] = set()
             rule_retry_reasons: set[str] = set()
             for style, current in list(translations.items()):
                 if style in mismatch_styles:
@@ -5560,10 +5484,6 @@ class TranslationService:
             for style, current in translations.items():
                 if style in mismatch_styles:
                     continue
-                if _needs_to_en_numeric_rule_retry_conservative_after_safe_fix(
-                    text, current
-                ):
-                    numeric_rule_retry_styles.add(style)
                 for reason in _collect_to_en_rule_retry_reasons(text, current):
                     rule_retry_reasons.add(reason)
                     _mark_style_list("to_en_rule_retry_styles", style)
@@ -5572,7 +5492,6 @@ class TranslationService:
                 mismatch_styles
                 or ellipsis_styles
                 or placeholder_styles
-                or numeric_rule_retry_styles
                 or rule_retry_reasons
             )
 
@@ -5612,12 +5531,6 @@ class TranslationService:
                     retry_parts.append(_LOCAL_AI_PLACEHOLDER_RETRY_INSTRUCTION)
                     metadata["placeholder_retry"] = True
                     metadata["placeholder_retry_styles"] = sorted(placeholder_styles)
-                if numeric_rule_retry_styles:
-                    retry_parts.append(_TEXT_TO_EN_NUMERIC_RULE_INSTRUCTION)
-                    metadata["to_en_numeric_rule_retry"] = True
-                    metadata["to_en_numeric_rule_retry_styles"] = sorted(
-                        numeric_rule_retry_styles
-                    )
                 if rule_retry_reasons:
                     retry_parts.append(
                         _build_to_en_rule_retry_instruction(sorted(rule_retry_reasons))
@@ -5775,7 +5688,7 @@ class TranslationService:
             return _finalize_styles(
                 translations,
                 explanations,
-                numeric_retry_styles=numeric_rule_retry_styles,
+                numeric_retry_styles=set(),
             )
         except LocalAIError as e:
             return TextTranslationResult(
@@ -5901,134 +5814,9 @@ class TranslationService:
             )
             result = parse_compare_result(raw_result)
 
-            needs_output_language_retry = bool(
-                result
-                and result.options
-                and _is_text_output_language_mismatch(result.options[0].text, "en")
-            )
-            needs_numeric_rule_retry = bool(
-                result
-                and result.options
-                and _needs_to_en_numeric_rule_retry_conservative_after_safe_fix(
-                    text, result.options[0].text
-                )
-            )
-            if False:
-                retry_phase_parts: list[str] = []
-                if needs_output_language_retry:
-                    retry_phase_parts.append("output_language_retry")
-                if needs_numeric_rule_retry:
-                    retry_phase_parts.append("numeric_rule_retry")
-                retry_phase = (
-                    "+".join(retry_phase_parts) if retry_phase_parts else "retry"
-                )
-
-                retry_parts: list[str] = []
-                if needs_output_language_retry:
-                    retry_parts.append(_TEXT_TO_EN_OUTPUT_LANGUAGE_RETRY_INSTRUCTION)
-                if needs_numeric_rule_retry:
-                    retry_parts.append(_TEXT_TO_EN_NUMERIC_RULE_INSTRUCTION)
-                retry_prompt = build_compare_prompt()
-                retry_raw = translate_single_tracked(
-                    retry_phase, text, retry_prompt, files_to_attach, None
-                )
-                retry_result = parse_compare_result(retry_raw)
-
-                if retry_result and retry_result.options:
-                    retry_text = retry_result.options[0].text
-                    fixed_retry_text, fixed_retry = _fix_to_en_financial_units_if_possible(
-                        source_text=text,
-                        translated_text=retry_text,
-                    )
-                    if fixed_retry:
-                        retry_result.options[0].text = fixed_retry_text
-                        retry_result.options[0].explanation = ""
-                        metadata = (
-                            dict(retry_result.metadata) if retry_result.metadata else {}
-                        )
-                        metadata.setdefault("backend", "local")
-                        metadata["to_en_numeric_unit_correction"] = True
-                        retry_result.metadata = metadata
-                        retry_text = fixed_retry_text
-                    if not _is_text_output_language_mismatch(
-                        retry_text, "en"
-                    ) and not _needs_to_en_numeric_rule_retry_conservative(
-                        text, retry_text
-                    ):
-                        if needs_numeric_rule_retry:
-                            metadata = (
-                                dict(retry_result.metadata)
-                                if retry_result.metadata
-                                else {}
-                            )
-                            metadata.setdefault("backend", "local")
-                            metadata["to_en_numeric_rule_retry"] = True
-                            metadata["to_en_numeric_rule_retry_styles"] = [style]
-                            retry_result.metadata = metadata
-                        return attach_backend_telemetry(retry_result)
-
-                if needs_output_language_retry:
-                    metadata = {
-                        "backend": "local",
-                        "output_language_mismatch": True,
-                        "output_language_retry_failed": True,
-                    }
-                    if needs_numeric_rule_retry:
-                        metadata["to_en_numeric_rule_retry"] = True
-                        metadata["to_en_numeric_rule_retry_styles"] = [style]
-                        metadata["to_en_numeric_rule_retry_failed"] = True
-                        metadata["to_en_numeric_rule_retry_failed_styles"] = [style]
-                    return attach_backend_telemetry(
-                        TextTranslationResult(
-                            source_text=text,
-                            source_char_count=len(text),
-                            output_language=output_language,
-                            detected_language=detected_language,
-                            error_message="翻訳結果が英語ではありませんでした（出力言語ガード）",
-                            metadata=metadata,
-                        )
-                    )
-
-                if needs_numeric_rule_retry and result and result.options:
-                    metadata = dict(result.metadata) if result.metadata else {}
-                    metadata.setdefault("backend", "local")
-                    metadata["to_en_numeric_rule_retry"] = True
-                    metadata["to_en_numeric_rule_retry_styles"] = [style]
-                    metadata["to_en_numeric_rule_retry_failed"] = True
-                    metadata["to_en_numeric_rule_retry_failed_styles"] = [style]
-                    result.metadata = metadata
-                if (
-                    retry_result
-                    and retry_result.options
-                    and not _is_text_output_language_mismatch(
-                        retry_result.options[0].text, "en"
-                    )
-                ):
-                    if needs_numeric_rule_retry:
-                        metadata = (
-                            dict(retry_result.metadata) if retry_result.metadata else {}
-                        )
-                        metadata.setdefault("backend", "local")
-                        metadata["to_en_numeric_rule_retry"] = True
-                        metadata["to_en_numeric_rule_retry_styles"] = [style]
-                        metadata["to_en_numeric_rule_retry_failed"] = True
-                        metadata["to_en_numeric_rule_retry_failed_styles"] = [style]
-                        retry_result.metadata = metadata
-                    return attach_backend_telemetry(retry_result)
-
             if result:
                 if result.output_language == "en" and result.options:
                     translation = result.options[0].text
-                    fixed_text, fixed = _fix_to_en_financial_units_if_possible(
-                        source_text=text,
-                        translated_text=translation,
-                    )
-                    if fixed:
-                        metadata = dict(result.metadata) if result.metadata else {}
-                        metadata.setdefault("backend", "local")
-                        metadata["to_en_numeric_unit_correction"] = True
-                        result.metadata = metadata
-                        translation = fixed_text
 
                     fixed_text, fixed = _fix_to_en_negative_parens_if_possible(
                         source_text=text,

@@ -37,6 +37,28 @@ _YEN_AMOUNT_MULTIPLIER_BILLION = Decimal("1000000000")
 _YEN_UNIT_CHOU = 1_000_000_000_000
 _YEN_UNIT_OKU = 100_000_000
 _YEN_UNIT_MAN = 10_000
+_EN_NUMBER_WITH_OPTIONAL_COMMAS_PATTERN = r"(?:\d{1,3}(?:,\d{3})+|\d+)"
+_RE_EN_NUMBER_WITH_LARGE_UNIT = re.compile(
+    rf"(?P<prefix>\(?[▲+\-−]?[¥￥]?)"
+    rf"(?P<number>{_EN_NUMBER_WITH_OPTIONAL_COMMAS_PATTERN}(?:\.\d+)?)"
+    rf"(?P<suffix>\)?)"
+    r"\s*"
+    r"(?P<unit>billion|trillion|bn)\b"
+    r"(?:\s*(?P<yen>yen)(?![A-Za-z0-9]))?",
+    re.IGNORECASE,
+)
+_RE_EN_NUMBER_WITH_OKU_UNIT = re.compile(
+    rf"(?P<prefix>\(?[▲+\-−]?[¥￥]?)"
+    rf"(?P<number>{_EN_NUMBER_WITH_OPTIONAL_COMMAS_PATTERN}(?:\.\d+)?)"
+    rf"(?P<suffix>\)?)"
+    r"\s*"
+    r"(?P<unit>oku)\b"
+    r"(?:\s*(?P<yen>yen)(?![A-Za-z0-9]))?",
+    re.IGNORECASE,
+)
+_RE_JP_OKU_CHOU_YEN_AMOUNT = re.compile(
+    rf"(?P<sign>[▲△+\-−])?\s*(?:(?P<trillion>{_EN_NUMBER_WITH_OPTIONAL_COMMAS_PATTERN})兆(?:(?P<oku>{_EN_NUMBER_WITH_OPTIONAL_COMMAS_PATTERN})億)?|(?P<oku_only>{_EN_NUMBER_WITH_OPTIONAL_COMMAS_PATTERN})億)(?P<yen>円)?"
+)
 
 
 def _format_japanese_yen_amount(yen_amount: Decimal) -> str:
@@ -95,6 +117,141 @@ def _normalize_yen_billion_expressions_to_japanese(text: str) -> str:
         return _format_japanese_yen_amount(yen_amount)
 
     return _RE_YEN_BILLION.sub(repl, text)
+
+
+def _format_oku_to_japanese_cho_oku(oku_amount: Decimal, *, include_yen: bool) -> str:
+    sign_prefix = "-" if oku_amount < 0 else ""
+    oku_amount = abs(oku_amount)
+
+    if include_yen:
+        yen_amount = oku_amount * Decimal(_YEN_UNIT_OKU)
+        if sign_prefix:
+            yen_amount = -yen_amount
+        return _format_japanese_yen_amount(yen_amount)
+
+    try:
+        if oku_amount == oku_amount.to_integral():
+            oku_int = int(oku_amount)
+            cho = oku_int // 10_000
+            oku = oku_int % 10_000
+            if cho and oku:
+                return f"{sign_prefix}{cho}兆{oku:,}億"
+            if cho:
+                return f"{sign_prefix}{cho}兆"
+            return f"{sign_prefix}{oku_int:,}億"
+    except (InvalidOperation, ValueError):
+        pass
+
+    text = format(oku_amount.normalize(), "f")
+    int_part, _, frac_part = text.partition(".")
+    int_part_with_commas = f"{int(int_part):,}"
+    frac_part = frac_part.rstrip("0")
+    if frac_part:
+        return f"{sign_prefix}{int_part_with_commas}.{frac_part}億"
+    return f"{sign_prefix}{int_part_with_commas}億"
+
+
+def _normalize_en_financial_expressions_to_japanese(text: str) -> str:
+    if not text:
+        return text
+
+    def parse_decimal(value: str) -> Decimal | None:
+        if not value:
+            return None
+        try:
+            return Decimal(value.replace(",", ""))
+        except InvalidOperation:
+            return None
+
+    def repl_unit(match: re.Match[str]) -> str:
+        prefix = match.group("prefix") or ""
+        number_str = match.group("number") or ""
+        suffix = match.group("suffix") or ""
+        unit = (match.group("unit") or "").lower()
+        yen_word = match.group("yen") or ""
+
+        number = parse_decimal(number_str)
+        if number is None:
+            return match.group(0)
+
+        has_yen = bool(yen_word) or ("¥" in prefix or "￥" in prefix)
+        prefix = prefix.replace("¥", "").replace("￥", "")
+
+        unit_key = "billion" if unit == "bn" else unit
+        multiplier = Decimal("10") if unit_key == "billion" else Decimal("10000")
+        oku_amount = number * multiplier
+        jp_amount = _format_oku_to_japanese_cho_oku(oku_amount, include_yen=has_yen)
+        return f"{prefix}{jp_amount}{suffix}"
+
+    def repl_oku(match: re.Match[str]) -> str:
+        prefix = match.group("prefix") or ""
+        number_str = match.group("number") or ""
+        suffix = match.group("suffix") or ""
+        yen_word = match.group("yen") or ""
+
+        number = parse_decimal(number_str)
+        if number is None:
+            return match.group(0)
+
+        has_yen = bool(yen_word) or ("¥" in prefix or "￥" in prefix)
+        prefix = prefix.replace("¥", "").replace("￥", "")
+
+        jp_amount = _format_oku_to_japanese_cho_oku(number, include_yen=has_yen)
+        return f"{prefix}{jp_amount}{suffix}"
+
+    fixed = text
+    fixed = _RE_EN_NUMBER_WITH_LARGE_UNIT.sub(repl_unit, fixed)
+    fixed = _RE_EN_NUMBER_WITH_OKU_UNIT.sub(repl_oku, fixed)
+    return fixed
+
+
+def _normalize_jp_financial_expressions_to_english(text: str) -> str:
+    if not text:
+        return text
+    if "兆" not in text and "億" not in text:
+        return text
+
+    def parse_int(value: str) -> int | None:
+        try:
+            return int((value or "").replace(",", ""))
+        except ValueError:
+            return None
+
+    def format_billion_1dp(oku_value: int) -> str:
+        billion_value = (Decimal(oku_value) / Decimal("10")).quantize(Decimal("0.1"))
+        text = format(billion_value, "f")
+        int_part, _, frac_part = text.partition(".")
+        int_part_with_commas = f"{int(int_part):,}"
+        return f"{int_part_with_commas}.{frac_part or '0'}"
+
+    def repl(match: re.Match[str]) -> str:
+        sign_marker = (match.group("sign") or "").strip()
+        is_negative = sign_marker in {"▲", "△", "-", "−"}
+        sign = "-" if is_negative else ""
+        has_yen = bool(match.group("yen"))
+
+        trillion_str = match.group("trillion") or ""
+        oku_str = match.group("oku") or ""
+        oku_only_str = match.group("oku_only") or ""
+
+        if trillion_str:
+            trillion = parse_int(trillion_str)
+            if trillion is None:
+                return match.group(0)
+            oku_part = parse_int(oku_str) if oku_str else 0
+            if oku_part is None:
+                return match.group(0)
+            total_oku = trillion * 10_000 + oku_part
+        else:
+            oku_only = parse_int(oku_only_str)
+            if oku_only is None:
+                return match.group(0)
+            total_oku = oku_only
+
+        currency = "¥" if has_yen else ""
+        return f"{sign}{currency}{format_billion_1dp(total_oku)} billion"
+
+    return _RE_JP_OKU_CHOU_YEN_AMOUNT.sub(repl, text)
 
 
 # 参考ファイル参照の指示文（ファイル添付時のみ挿入）
@@ -160,7 +317,6 @@ DEFAULT_TO_JP_TEMPLATE = """## ファイル翻訳リクエスト（日本語へ�
 - 既に日本語の場合はそのまま出力
 
 ### 数値表記ルール
-- oku → 億（例: 4,500 oku → 4,500億）
 - k → 千または000（例: 12k → 12,000）
 - () → ▲（例: (50) → ▲50）
 
@@ -236,7 +392,6 @@ DEFAULT_TEXT_TO_JP_TEMPLATE = """## テキスト翻訳リクエスト（日本�
 - 原文の改行・タブをそのまま維持
 
 ### 数値表記ルール
-- oku → 億（例: 4,500 oku → 4,500億）
 - k → 千または000（例: 12k → 12,000）
 - () → ▲（例: (50) → ▲50）
 
@@ -288,14 +443,22 @@ class PromptBuilder:
 
     @staticmethod
     def normalize_input_text(input_text: str, output_language: str) -> str:
-        if output_language != "jp" or not input_text:
+        if not input_text:
             return input_text
-        lowered = input_text.lower()
-        if ("billion" not in lowered and "bn" not in lowered) or (
-            "¥" not in input_text and "￥" not in input_text
-        ):
+        if output_language == "jp":
+            lowered = input_text.lower()
+            if (
+                ("billion" in lowered or "trillion" in lowered or "bn" in lowered)
+                or ("oku" in lowered)
+                or ("¥" in input_text or "￥" in input_text)
+            ):
+                return _normalize_en_financial_expressions_to_japanese(input_text)
             return input_text
-        return _normalize_yen_billion_expressions_to_japanese(input_text)
+        if output_language == "en":
+            if "兆" in input_text or "億" in input_text:
+                return _normalize_jp_financial_expressions_to_english(input_text)
+            return input_text
+        return input_text
 
     @staticmethod
     def _rules_file_key(path: Path) -> tuple[str, int, int]:
@@ -640,7 +803,7 @@ class PromptBuilder:
         if output_language == "jp":
             return (
                 f"<bos><start_of_turn>user\n"
-                f"Translate the text into Japanese suitable for financial statements. Treat 1 billion as 10 oku (10億). Convert billion → oku (億) by ×10 (add one zero). Translate every sentence/clause; do not omit or summarize. Do not echo or repeat the input text. Preserve line breaks and all numeric facts. Output must be Japanese only. Output the translation only (no labels, no commentary). Do not output other prompt markers (e.g., \"===INPUT_TEXT===\" / \"===END_INPUT_TEXT===\").\n"
+                f"Translate the text into Japanese suitable for financial statements. Translate every sentence/clause; do not omit or summarize. Do not echo or repeat the input text. Preserve line breaks and all numeric facts. Output must be Japanese only. Output the translation only (no labels, no commentary). Do not output other prompt markers (e.g., \"===INPUT_TEXT===\" / \"===END_INPUT_TEXT===\").\n"
                 f"Text:\n"
                 f"===INPUT_TEXT===\n"
                 f"{user_input}\n"
@@ -649,7 +812,7 @@ class PromptBuilder:
             )
         return (
             f"<bos><start_of_turn>user\n"
-            f"Translate the Japanese text into English suitable for financial statements. Treat 1 billion as 10 oku (10億). Convert oku → billion by ÷10 (drop one zero). Translate every sentence/clause; do not omit or summarize. Do not echo or repeat the input text. Preserve line breaks and all numeric facts. Output must be English only. Output the translation only (no labels, no commentary). Do not output other prompt markers (e.g., \"===INPUT_TEXT===\" / \"===END_INPUT_TEXT===\").\n"
+            f"Translate the Japanese text into English suitable for financial statements. Translate every sentence/clause; do not omit or summarize. Do not echo or repeat the input text. Preserve line breaks and all numeric facts. Output must be English only. Output the translation only (no labels, no commentary). Do not output other prompt markers (e.g., \"===INPUT_TEXT===\" / \"===END_INPUT_TEXT===\").\n"
             f"Text:\n"
             f"===INPUT_TEXT===\n"
             f"{user_input}\n"

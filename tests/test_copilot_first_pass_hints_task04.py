@@ -20,7 +20,7 @@ class PromptAwareCopilot:
     ) -> str:
         _ = (text, reference_files, on_chunk)
         self.calls.append({"prompt": prompt})
-        return "Translation:\nNet sales were 22,385 oku yen."
+        return "Translation:\nNet sales were ¥2,238.5 billion."
 
 
 class NumericPromptAwareCopilot:
@@ -36,7 +36,7 @@ class NumericPromptAwareCopilot:
     ) -> str:
         _ = (text, reference_files, on_chunk)
         self.calls.append({"prompt": prompt})
-        return "Translation:\nNet sales were 22,385 billion yen."
+        return "Translation:\nNet sales were ¥2,238.5 billion."
 
 
 def _make_service() -> TranslationService:
@@ -64,6 +64,8 @@ def test_copilot_to_en_does_not_inject_output_language_guard() -> None:
     assert "oku" not in result.options[0].text.lower()
     assert "¥2,238.5" in result.options[0].text
     assert copilot.calls
+    assert "¥2,238.5 billion" in str(copilot.calls[0]["prompt"])
+    assert "2兆2,385億円" not in str(copilot.calls[0]["prompt"])
     assert "CRITICAL" not in copilot.calls[0]["prompt"]
     metadata = result.metadata or {}
     assert metadata.get("backend") == "local"
@@ -90,6 +92,8 @@ def test_copilot_to_en_applies_numeric_fix_without_prompt_injection() -> None:
     assert "oku" not in result.options[0].text.lower()
     assert "¥2,238.5" in result.options[0].text
     assert copilot.calls
+    assert "¥2,238.5 billion" in str(copilot.calls[0]["prompt"])
+    assert "2兆2,385億円" not in str(copilot.calls[0]["prompt"])
     assert "CRITICAL" not in copilot.calls[0]["prompt"]
     metadata = result.metadata or {}
     assert metadata.get("backend") == "local"

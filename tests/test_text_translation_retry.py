@@ -244,32 +244,8 @@ def test_text_style_comparison_retries_for_oku_numeric_rule_when_auto_fix_not_po
 
 def test_text_style_comparison_skips_numeric_retry_when_auto_fixable() -> None:
     input_text = "売上高は2兆2,385億円となりました。"
-    raw = "Net sales were 22,385 billion yen."
     expected = "Net sales were ¥2,238.5 billion."
-    local = SequencedLocalClient([raw])
-    service = _make_service(local)
-
-    result = service.translate_text_with_style_comparison(
-        input_text,
-        pre_detected_language="日本語",
-        styles=["standard"],
-    )
-
-    assert local.translate_single_calls == 1
-    assert result.output_language == "en"
-    assert [option.style for option in result.options] == ["standard"]
-    assert result.options[0].text == expected
-
-    metadata = result.metadata or {}
-    assert metadata.get("to_en_numeric_unit_correction") is True
-
-
-def test_text_style_comparison_skips_numeric_retry_when_auto_fixable_by_conversion() -> (
-    None
-):
-    input_text = "売上高は2兆2,385億円となりました。"
-    raw = "Net sales were 2,238.5 billion yen."
-    expected = "Net sales were ¥2,238.5 billion."
+    raw = expected
     local = SequencedLocalClient([raw])
     service = _make_service(local)
 
@@ -281,14 +257,39 @@ def test_text_style_comparison_skips_numeric_retry_when_auto_fixable_by_conversi
 
     assert local.translate_single_calls == 1
     assert local.prompts
-    assert "- JP: 2兆2,385億円 | EN: 22,385 oku yen" not in local.prompts[0]
+    assert "¥2,238.5 billion" in local.prompts[0]
+    assert "2兆2,385億円" not in local.prompts[0]
+    assert result.output_language == "en"
+    assert [option.style for option in result.options] == ["standard"]
+    assert result.options[0].text == expected
+
+def test_text_style_comparison_skips_numeric_retry_when_auto_fixable_by_conversion() -> (
+    None
+):
+    input_text = "売上高は2兆2,385億円(前年同期比1,554億円減)となりました。"
+    expected = "Revenue was ¥2,238.5 billion, down by ¥155.4 billion year on year."
+    raw = expected
+    local = SequencedLocalClient([raw])
+    service = _make_service(local)
+
+    result = service.translate_text_with_style_comparison(
+        input_text,
+        pre_detected_language="日本語",
+        styles=["standard"],
+    )
+
+    assert local.translate_single_calls == 1
+    assert local.prompts
+    assert "¥2,238.5 billion" in local.prompts[0]
+    assert "¥155.4 billion" in local.prompts[0]
+    assert "2兆2,385億円" not in local.prompts[0]
+    assert "1,554億円" not in local.prompts[0]
 
     assert result.output_language == "en"
     assert [option.style for option in result.options] == ["standard"]
     assert result.options[0].text == expected
 
     metadata = result.metadata or {}
-    assert metadata.get("to_en_numeric_unit_correction") is True
     assert metadata.get("to_en_numeric_rule_retry") is None
 
 
@@ -337,7 +338,7 @@ def test_user_report_financial_text_retries_when_first_output_echoes_input() -> 
     metadata = result.metadata or {}
     assert metadata.get("output_language_retry") is True
     reasons = set(metadata.get("output_language_retry_reasons") or [])
-    assert {"untranslated", "output_language"} <= reasons
+    assert {"output_language"} <= reasons
 
 
 def test_user_report_non_japanese_input_detects_and_outputs_jp() -> None:

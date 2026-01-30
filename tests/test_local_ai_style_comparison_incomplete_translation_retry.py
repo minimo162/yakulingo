@@ -98,10 +98,14 @@ def test_local_style_comparison_retries_when_numeric_rules_violated(
         source_text, prompt, reference_files=None, on_chunk=None
     ):
         nonlocal calls
-        _ = source_text, prompt, reference_files, on_chunk
+        _ = source_text, reference_files, on_chunk
         calls += 1
         if calls == 1:
-            return "Revenue was 2.2385 trillion yen, down by 1,554 billion yen year on year."
+            assert "¥2,238.5 billion" in prompt
+            assert "¥155.4 billion" in prompt
+            assert "2兆2,385億円" not in prompt
+            assert "1,554億円" not in prompt
+            return "Revenue was ¥2,238.5 billion, down by ¥155.4 billion year on year."
         raise AssertionError("called too many times")
 
     monkeypatch.setattr(
@@ -121,4 +125,4 @@ def test_local_style_comparison_retries_when_numeric_rules_violated(
     assert [option.text for option in result.options] == [
         "Revenue was ¥2,238.5 billion, down by ¥155.4 billion year on year."
     ]
-    assert (result.metadata or {}).get("to_en_numeric_unit_correction") is True
+    assert (result.metadata or {}).get("to_en_numeric_rule_retry") is None

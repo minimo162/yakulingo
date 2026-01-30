@@ -4,10 +4,14 @@ from collections.abc import Callable
 from pathlib import Path
 
 from yakulingo.models.types import TextBlock
+from yakulingo.services.prompt_builder import PromptBuilder
 from yakulingo.services.translation_service import BatchTranslator
 
 
 class DummyPromptBuilder:
+    def normalize_input_text(self, text: str, output_language: str) -> str:
+        return PromptBuilder.normalize_input_text(text, output_language)
+
     def build_batch(
         self,
         texts: list[str],
@@ -54,7 +58,7 @@ class BillionCopilot:
 
 
 def test_batch_translator_copilot_auto_corrects_billion_to_oku_when_safe() -> None:
-    copilot = BillionCopilot(response="Net sales were 22,385 billion yen.")
+    copilot = BillionCopilot(response="Net sales were ¥2,238.5 billion.")
     translator = BatchTranslator(
         client=copilot,  # type: ignore[arg-type]
         prompt_builder=DummyPromptBuilder(),  # type: ignore[arg-type]
@@ -64,6 +68,9 @@ def test_batch_translator_copilot_auto_corrects_billion_to_oku_when_safe() -> No
 
     result = translator.translate_blocks_with_result(blocks, output_language="en")
 
+    assert copilot.calls
+    assert "¥2,238.5 billion" in str(copilot.calls[0]["prompt"])
+    assert "22,385億円" not in str(copilot.calls[0]["prompt"])
     assert result.translations["b1"]
     assert "oku" not in result.translations["b1"].lower()
-    assert "2,238.5 billion" in result.translations["b1"]
+    assert "¥2,238.5 billion" in result.translations["b1"]

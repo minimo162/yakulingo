@@ -16,6 +16,10 @@ from yakulingo.services.translation_service import BatchTranslator, TranslationS
 
 
 class RecordingPromptBuilder:
+    def normalize_input_text(self, text: str, output_language: str) -> str:
+        _ = output_language
+        return text
+
     def build_batch(
         self,
         texts: list[str],

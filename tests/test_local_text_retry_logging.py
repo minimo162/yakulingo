@@ -60,7 +60,7 @@ def test_local_text_does_not_retry_for_numeric_rule(
         patch("yakulingo.services.translation_service._LOCAL_AI_TIMING_ENABLED", True),
         patch.object(service, "_translate_single_with_cancel_on_local") as mock_call,
     ):
-        mock_call.return_value = "4,500 billion yen"
+        mock_call.return_value = "\xa5450.0 billion"
 
         result = service._translate_text_with_options_local(
             text="4,500億円",

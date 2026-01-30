@@ -5,10 +5,14 @@ from pathlib import Path
 from yakulingo.config.settings import AppSettings
 from yakulingo.models.types import TextBlock
 from yakulingo.services.local_ai_client import LocalAIClient
+from yakulingo.services.prompt_builder import PromptBuilder
 from yakulingo.services.translation_service import BatchTranslator
 
 
 class DummyPromptBuilder:
+    def normalize_input_text(self, text: str, output_language: str) -> str:
+        return PromptBuilder.normalize_input_text(text, output_language)
+
     def build_batch(
         self,
         texts: list[str],
@@ -243,15 +247,11 @@ def test_local_batch_falls_back_when_split_unavailable() -> None:
 
 
 def test_local_batch_retries_when_numeric_rules_violated() -> None:
-    copilot = FailingLocalAIClient(
+    copilot = RecordingLocalAIClient(
         responses=[
             [
-                "Revenue was 2.2385 trillion yen.",
-                "Operating profit decreased by 1,554 billion yen.",
-            ],
-            [
-                "Revenue was 22,385 oku yen.",
-                "Operating profit decreased by 1,554 oku yen.",
+                "Revenue was ¥2,238.5 billion.",
+                "Operating profit decreased by ¥155.4 billion.",
             ],
         ]
     )
@@ -278,6 +278,11 @@ def test_local_batch_retries_when_numeric_rules_violated() -> None:
     )
 
     assert copilot.calls == 1
+    assert copilot.texts_per_call
+    assert "¥2,238.5 billion" in copilot.texts_per_call[0][0]
+    assert "2兆2,385億円" not in copilot.texts_per_call[0][0]
+    assert "¥155.4 billion" in copilot.texts_per_call[0][1]
+    assert "1,554億円" not in copilot.texts_per_call[0][1]
     assert result.untranslated_block_ids == []
     assert result.translations["b1"] == "Revenue was ¥2,238.5 billion."
     assert (

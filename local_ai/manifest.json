@@ -1,11 +1,11 @@
 ﻿{
-    "generated_at":  "2026-01-31T08:39:14.1233850+09:00",
+    "generated_at":  "2026-01-31T15:20:36.2059221+09:00",
     "llama_cpp":  {
                       "repo":  "ggerganov/llama.cpp",
                       "release_tag":  "b7895",
                       "asset_name":  "llama-b7895-bin-win-vulkan-x64.zip",
                       "download_url":  "https://github.com/ggml-org/llama.cpp/releases/download/b7895/llama-b7895-bin-win-vulkan-x64.zip",
-                      "server_exe_sha256":  "C706AA2E5D6DB52513050B9230071BC6A002207FD0A7A28A576E63B5C439B941",
+                      "server_exe_sha256":  "3B0ADA0E76B1CC5668C7E2BBAC7784A6E978DE9535AA2AD1F749893F79456E58",
                       "variant":  "vulkan"
                   },
     "model":  {
@@ -13,7 +13,7 @@
                   "revision":  "main",
                   "file":  "translategemma-4b-it.Q6_K.gguf",
                   "download_url":  "https://huggingface.co/mradermacher/translategemma-4b-it-GGUF/resolve/main/translategemma-4b-it.Q6_K.gguf",
-                  "sha256":  null,
+                  "sha256":  "9848D1C4C61020511D278E1A82D460F198D3214E19D74344EF09446CDC3CB544",
                   "skipped":  false,
                   "source":  {
                                  "kind":  "gguf",
@@ -26,7 +26,7 @@
                                  "kind":  "gguf",
                                  "path":  "local_ai/models/translategemma-4b-it.Q6_K.gguf",
                                  "path_resolved":  "C:\\Users\\Administrator\\Desktop\\yakulingo\\local_ai\\models\\translategemma-4b-it.Q6_K.gguf",
-                                 "sha256":  null
+                                 "sha256":  "9848D1C4C61020511D278E1A82D460F198D3214E19D74344EF09446CDC3CB544"
                              }
               }
 }

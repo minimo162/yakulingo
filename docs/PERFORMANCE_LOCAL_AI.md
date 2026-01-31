@@ -417,7 +417,7 @@ KVキャッシュの量子化は、速度よりもメモリ圧/安定性の調�
 | `local_ai_ctx_size` | `-c` / `--ctx-size` | 正の値のみ付与 |
 | `local_ai_cache_type_k` | `-ctk` / `--cache-type-k` | Vulkan時のみ。`null` は未指定 |
 | `local_ai_cache_type_v` | `-ctv` / `--cache-type-v` | Vulkan時のみ。`null` は未指定 |
-| `local_ai_flash_attn` | `-fa` / `--flash-attn` | Vulkan時のみ。`auto` は未指定、`0/1` を付与 |
+| `local_ai_flash_attn` | `-fa` / `--flash-attn` | 対応時のみ付与。`auto` は未指定、`0/1` を付与 |
 | `local_ai_no_warmup` | `--no-warmup` | 対応時のみ（CPU/Vulkan）。`true` のとき付与 |
 | `local_ai_mlock` | `--mlock` | 対応時のみ付与 |
 | `local_ai_no_mmap` | `--no-mmap` | 対応時のみ付与 |

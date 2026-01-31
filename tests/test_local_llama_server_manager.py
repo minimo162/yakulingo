@@ -1193,13 +1193,12 @@ def test_build_server_args_skips_gpu_flags_for_non_vulkan_variant(
     assert "--device" not in args
     assert "--n-gpu-layers" not in args
     assert "-ngl" not in args
-    assert "-fa" not in args
-    assert "--flash-attn" not in args
-    assert "--flash-attention" not in args
-    assert "--cache-type-k" not in args
-    assert "-ctk" not in args
-    assert "--cache-type-v" not in args
-    assert "-ctv" not in args
+    assert "-fa" in args
+    assert args[args.index("-fa") + 1] == "1"
+    assert "--cache-type-k" in args
+    assert args[args.index("--cache-type-k") + 1] == "q8_0"
+    assert "--cache-type-v" in args
+    assert args[args.index("--cache-type-v") + 1] == "q8_0"
     assert "--no-warmup" in args
 
 

@@ -1402,6 +1402,20 @@ class LocalLlamaServerManager:
             flag = "--parallel" if has_long("--parallel") else "-np"
             args += [flag, str(parallel_value)]
 
+        flash_attn = getattr(settings, "local_ai_flash_attn", None)
+        if help_text and flash_attn is not None:
+            value = str(flash_attn).strip()
+            if value and value.lower() != "auto":
+                flag = None
+                if has_short("-fa"):
+                    flag = "-fa"
+                elif has_long("--flash-attn"):
+                    flag = "--flash-attn"
+                elif has_long("--flash-attention"):
+                    flag = "--flash-attention"
+                if flag:
+                    args += [flag, value]
+
         threads_setting = settings.local_ai_threads
         threads = int(threads_setting) if threads_setting is not None else 0
         auto_threads: Optional[int] = None
@@ -1548,38 +1562,25 @@ class LocalLlamaServerManager:
                 args += [ngl_flag, n_gpu_layers_value]
                 applied_n_gpu_layers = n_gpu_layers_value
 
-        if gpu_enabled and not cpu_only_requested:
-            flash_attn = settings.local_ai_flash_attn
-            if help_text and flash_attn and str(flash_attn).lower() != "auto":
-                flag = None
-                if has_short("-fa"):
-                    flag = "-fa"
-                elif has_long("--flash-attn"):
-                    flag = "--flash-attn"
-                elif has_long("--flash-attention"):
-                    flag = "--flash-attention"
-                if flag:
-                    args += [flag, str(flash_attn)]
+        cache_type_k = getattr(settings, "local_ai_cache_type_k", None)
+        if help_text and cache_type_k:
+            flag = None
+            if has_long("--cache-type-k"):
+                flag = "--cache-type-k"
+            elif has_short("-ctk"):
+                flag = "-ctk"
+            if flag:
+                args += [flag, str(cache_type_k)]
 
-            cache_type_k = settings.local_ai_cache_type_k
-            if help_text and cache_type_k:
-                flag = None
-                if has_long("--cache-type-k"):
-                    flag = "--cache-type-k"
-                elif has_short("-ctk"):
-                    flag = "-ctk"
-                if flag:
-                    args += [flag, str(cache_type_k)]
-
-            cache_type_v = settings.local_ai_cache_type_v
-            if help_text and cache_type_v:
-                flag = None
-                if has_long("--cache-type-v"):
-                    flag = "--cache-type-v"
-                elif has_short("-ctv"):
-                    flag = "-ctv"
-                if flag:
-                    args += [flag, str(cache_type_v)]
+        cache_type_v = getattr(settings, "local_ai_cache_type_v", None)
+        if help_text and cache_type_v:
+            flag = None
+            if has_long("--cache-type-v"):
+                flag = "--cache-type-v"
+            elif has_short("-ctv"):
+                flag = "-ctv"
+            if flag:
+                args += [flag, str(cache_type_v)]
 
         if help_text and settings.local_ai_no_warmup and has_long("--no-warmup"):
             args += ["--no-warmup"]

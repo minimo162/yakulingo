@@ -6193,7 +6193,7 @@ class TranslationService:
         output_language = "en" if is_japanese else "jp"
 
         mode = (text_translation_mode or "").strip().lower()
-        if mode in {"3pass", "backtranslation", "review"}:
+        if mode in {"standard", "3pass", "backtranslation", "review"}:
             selected_style: str | None = None
             if styles:
                 for style_name in styles:

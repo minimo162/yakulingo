@@ -471,12 +471,15 @@ cd local_ai\llama_cpp\vulkan
 | `local_ai_vk_disable_f16` | VulkanでF16を無効化 | false |
 | `local_ai_cache_type_k` | KVキャッシュ（K）の型（nullで無効） | `q8_0` |
 | `local_ai_cache_type_v` | KVキャッシュ（V）の型（nullで無効） | `q8_0` |
+| `local_ai_keepalive_enabled` | ローカルAIのkeepalive（軽量生存監視 + 自動復旧）を有効化 | true |
+| `local_ai_keepalive_interval_sec` | ローカルAI keepalive の通常チェック間隔（秒） | 120.0 |
 | `auto_update_enabled` | 起動時の自動更新チェック | true |
 | `auto_update_check_interval` | 自動更新チェック間隔（秒、0=起動毎） | 0 |
 
 > **Note**: `ocr_*` 設定はPDF処理（レイアウト解析）に使用されます。設定名は互換性のため維持しています。
 > **Note**: ローカルAI関連のパス（`local_ai_model_path`, `local_ai_server_dir`）は、相対パスの場合 **アプリ配置ディレクトリ基準** で解決します（CWD基準ではありません）。
 > **Note**: `local_ai_host` は安全のため `127.0.0.1` に強制されます。
+> **Note**: keepalive は `GET /v1/models` の軽量プローブでREADY状態を維持し、失敗時はバックオフ（5s/15s/60s）付きで自動復旧（`ensure_ready`）を試みます。
 > **Note**: 既定モデル（`local_ai/models/translategemma-4b-it.Q6_K.gguf`）が存在しない場合でも、旧既定（`local_ai/models/translategemma-12b-it.i1-IQ3_XXS.gguf`）→ さらに旧既定（`local_ai/models/translategemma-12b-it.i1-IQ4_XS.gguf`）→ さらに旧既定（`local_ai/models/translategemma-4b-it.i1-IQ4_XS.gguf`）→ さらに旧既定（`local_ai/models/shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf`）→ 旧レガシー（`local_ai/models/HY-MT1.5-7B.i1-Q6_K.gguf`）→ さらに古いレガシー（`local_ai/models/HY-MT1.5-1.8B.IQ4_XS.gguf`）の順にフォールバックして起動します。いずれも無い場合は起動しません。`packaging/install_deps.bat` を実行するか、`powershell -NoProfile -ExecutionPolicy Bypass -File packaging\\install_local_ai.ps1` を再実行してください。必要なら該当ファイルを手動で `local_ai/models/` に配置してください。
 
 ### ローカルAI速度計測（ベンチ）

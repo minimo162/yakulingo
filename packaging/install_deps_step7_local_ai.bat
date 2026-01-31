@@ -10,8 +10,12 @@ setlocal EnableExtensions EnableDelayedExpansion
 if /i "%~1"=="" (
     if not defined YAKULINGO_STEP7_WRAPPED (
         set "YAKULINGO_STEP7_WRAPPED=1"
-        start "" cmd /k "\"%~f0\" --standalone"
-        exit /b 0
+        start "" cmd /k call "%~f0" --standalone
+        if errorlevel 1 (
+            echo [WARNING] Failed to open a persistent console window. Continuing in current window...
+        ) else (
+            exit /b 0
+        )
     )
 )
 

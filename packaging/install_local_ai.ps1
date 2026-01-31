@@ -4,6 +4,21 @@ $ProgressPreference = 'SilentlyContinue'
 try {
     try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch { }
 
+    $skipSsl = ($env:SKIP_SSL -eq '1')
+    if ($skipSsl) {
+        Write-Host '[WARNING] SSL verification is disabled (SKIP_SSL=1).'
+        try {
+            $acceptAllCerts = [System.Net.Security.RemoteCertificateValidationCallback]{
+                param($sender, $certificate, $chain, $sslPolicyErrors)
+                return $true
+            }
+            [Net.ServicePointManager]::ServerCertificateValidationCallback = $acceptAllCerts
+            [Net.ServicePointManager]::CheckCertificateRevocationList = $false
+        } catch {
+            # best-effort
+        }
+    }
+
     $useProxy = ($env:USE_PROXY -eq '1')
     $proxy = $null
     $cred = $null
@@ -30,7 +45,17 @@ try {
         $curl = Get-Command curl.exe -ErrorAction SilentlyContinue
         if (-not $curl) { return $null }
         try {
-            $headers = & $curl.Source '--location' '--head' '--silent' '--show-error' '--fail' '--user-agent' $userAgent $url 2>$null
+            $args = @(
+                '--location',
+                '--head',
+                '--silent',
+                '--show-error',
+                '--fail',
+                '--user-agent', $userAgent
+            )
+            if ($skipSsl) { $args += '--insecure' }
+            $args += $url
+            $headers = & $curl.Source @args 2>$null
             if ($LASTEXITCODE -ne 0) { return $null }
             $length = $null
             foreach ($line in $headers) {
@@ -75,6 +100,7 @@ try {
                     '--connect-timeout', '30',
                     '--max-time', "$timeoutSec"
                 )
+                if ($skipSsl) { $args += '--insecure' }
                 if (Test-Path $outFile) {
                     Write-Host "[INFO] Resuming download with curl: $leaf"
                     $args += @('--continue-at', '-')
@@ -630,6 +656,7 @@ try {
     Write-Host "[ERROR] Local AI runtime installation failed: $($_.Exception.Message)"
     Write-Host "[INFO] Recovery hints:"
     Write-Host "[INFO] - The model is fixed and cannot be skipped. Verify network/proxy settings and retry."
+    Write-Host "[INFO] - If you see TLS/certificate errors, set SKIP_SSL=1 and rerun packaging\\install_deps_step7_local_ai.bat (proxy choice [3])."
     Write-Host "[INFO] - If you see file lock errors, close YakuLingo/llama-server and retry: powershell -NoProfile -ExecutionPolicy Bypass -File packaging\\install_local_ai.ps1"
     Write-Host "[INFO] - If you are behind a corporate proxy, rerun packaging\\install_deps.bat and select proxy option [1]."
     if ($_.ScriptStackTrace) { Write-Host $_.ScriptStackTrace }

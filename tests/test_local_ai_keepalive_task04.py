@@ -6,7 +6,9 @@ from yakulingo.ui.state import AppState, LocalAIState
 
 
 @pytest.mark.asyncio
-async def test_local_ai_keepalive_updates_ready_probe_on_success(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_local_ai_keepalive_updates_ready_probe_on_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     app = YakuLingoApp.__new__(YakuLingoApp)
     app.settings = AppSettings()
     app.state = AppState()
@@ -47,7 +49,9 @@ async def test_local_ai_keepalive_updates_ready_probe_on_success(monkeypatch: py
 
 
 @pytest.mark.asyncio
-async def test_local_ai_keepalive_auto_recovers_after_probe_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_local_ai_keepalive_auto_recovers_after_probe_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     app = YakuLingoApp.__new__(YakuLingoApp)
     app.settings = AppSettings()
     app.state = AppState()
@@ -104,7 +108,9 @@ async def test_local_ai_keepalive_auto_recovers_after_probe_failure(monkeypatch:
     assert app._local_ai_keepalive_next_recover_at is None
 
 
-def test_start_local_ai_keepalive_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_start_local_ai_keepalive_is_idempotent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     app = YakuLingoApp.__new__(YakuLingoApp)
     app.settings = AppSettings()
     app.state = AppState()

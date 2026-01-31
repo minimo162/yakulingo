@@ -985,7 +985,9 @@ class LocalAIClient:
             if self._settings.local_ai_min_p is not None:
                 payload["min_p"] = float(self._settings.local_ai_min_p)
             if self._settings.local_ai_repeat_penalty is not None:
-                payload["repeat_penalty"] = float(self._settings.local_ai_repeat_penalty)
+                payload["repeat_penalty"] = float(
+                    self._settings.local_ai_repeat_penalty
+                )
         if self._settings.local_ai_max_tokens is not None:
             payload["max_tokens"] = int(self._settings.local_ai_max_tokens)
         if _RAW_PROMPT_STOP_SEQUENCES:
@@ -1113,10 +1115,7 @@ class LocalAIClient:
         warmup_prompt = prompt
         if warmup_prompt is None:
             warmup_prompt = (
-                f"{_RAW_PROMPT_MARKER}"
-                "ping\n"
-                "<end_of_turn>\n"
-                "<start_of_turn>model\n"
+                f"{_RAW_PROMPT_MARKER}ping\n<end_of_turn>\n<start_of_turn>model\n"
             )
         runtime = runtime or self.ensure_ready()
         payload = self._build_completions_payload(
@@ -1240,7 +1239,9 @@ class LocalAIClient:
         result = (
             self._completions(runtime, prompt, timeout=timeout, repeat_prompt=False)
             if self._is_raw_prompt(prompt)
-            else self._chat_completions(runtime, prompt, timeout=timeout, repeat_prompt=False)
+            else self._chat_completions(
+                runtime, prompt, timeout=timeout, repeat_prompt=False
+            )
         )
         parsed = parse_batch_translations(
             result.content,
@@ -1300,8 +1301,9 @@ class LocalAIClient:
                     timeout_s=timeout_s,
                 )
             except RuntimeError as exc:
-                if include_sampling_params and self._should_retry_without_sampling_params(
-                    exc
+                if (
+                    include_sampling_params
+                    and self._should_retry_without_sampling_params(exc)
                 ):
                     if self._should_cache_sampling_params_unsupported(exc):
                         self._set_sampling_params_support(runtime, False)
@@ -1352,8 +1354,9 @@ class LocalAIClient:
                     runtime, payload, on_chunk, timeout=timeout
                 )
             except RuntimeError as exc:
-                if include_sampling_params and self._should_retry_without_sampling_params(
-                    exc
+                if (
+                    include_sampling_params
+                    and self._should_retry_without_sampling_params(exc)
                 ):
                     if self._should_cache_sampling_params_unsupported(exc):
                         self._set_sampling_params_support(runtime, False)

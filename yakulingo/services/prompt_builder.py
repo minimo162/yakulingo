@@ -886,7 +886,7 @@ class PromptBuilder:
         if output_language == "jp":
             return (
                 f"<bos><start_of_turn>user\n"
-                f"Translate the text into Japanese suitable for financial statements. Translate every sentence/clause; do not omit or summarize. Do not echo or repeat the input text. Preserve line breaks and all numeric facts. Output must be Japanese only. Output the translation only (no labels, no commentary). Do not output other prompt markers (e.g., \"===INPUT_TEXT===\" / \"===END_INPUT_TEXT===\").\n"
+                f'Translate the text into Japanese suitable for financial statements. Translate every sentence/clause; do not omit or summarize. Do not echo or repeat the input text. Preserve line breaks and all numeric facts. Output must be Japanese only. Output the translation only (no labels, no commentary). Do not output other prompt markers (e.g., "===INPUT_TEXT===" / "===END_INPUT_TEXT===").\n'
                 f"Text:\n"
                 f"===INPUT_TEXT===\n"
                 f"{user_input}\n"
@@ -895,7 +895,7 @@ class PromptBuilder:
             )
         return (
             f"<bos><start_of_turn>user\n"
-            f"Translate the Japanese text into English suitable for financial statements. Translate every sentence/clause; do not omit or summarize. Do not echo or repeat the input text. Preserve line breaks and all numeric facts. Output must be English only. Output the translation only (no labels, no commentary). Do not output other prompt markers (e.g., \"===INPUT_TEXT===\" / \"===END_INPUT_TEXT===\").\n"
+            f'Translate the Japanese text into English suitable for financial statements. Translate every sentence/clause; do not omit or summarize. Do not echo or repeat the input text. Preserve line breaks and all numeric facts. Output must be English only. Output the translation only (no labels, no commentary). Do not output other prompt markers (e.g., "===INPUT_TEXT===" / "===END_INPUT_TEXT===").\n'
             f"Text:\n"
             f"===INPUT_TEXT===\n"
             f"{user_input}\n"
@@ -926,7 +926,7 @@ class PromptBuilder:
                 f"入力本文の繰り返し（コピペ）やプロンプトの反復は禁止です。"
                 f"出力は本文のみ（ラベル/解説/箇条書き見出し/コメントなし）で、日本語として自然な文章にしてください。"
                 f"改行と数値は可能な限り保持してください。"
-                f"他のプロンプトマーカー（例: \"===INPUT_TEXT===\"）は出力しないでください。\n"
+                f'他のプロンプトマーカー（例: "===INPUT_TEXT==="）は出力しないでください。\n'
                 f"Text:\n"
                 f"===INPUT_TEXT===\n"
                 f"{user_input}\n"
@@ -943,7 +943,7 @@ class PromptBuilder:
             f"Do not add new information. Do not echo or repeat the input text. "
             f"Preserve line breaks as much as possible. "
             f"Output must be English only. Output the rewritten text only (no labels, no commentary). "
-            f"Do not output other prompt markers (e.g., \"===INPUT_TEXT===\").\n"
+            f'Do not output other prompt markers (e.g., "===INPUT_TEXT===").\n'
             f"Text:\n"
             f"===INPUT_TEXT===\n"
             f"{user_input}\n"

@@ -9,10 +9,14 @@ from yakulingo.services.translation_service import TranslationService
 
 
 def _make_service() -> TranslationService:
-    return TranslationService(config=AppSettings(translation_backend="local"), prompts_dir=Path("prompts"))
+    return TranslationService(
+        config=AppSettings(translation_backend="local"), prompts_dir=Path("prompts")
+    )
 
 
-def test_backtranslation_review_pipeline_jp_to_en_runs_three_passes_and_uses_revision_output() -> None:
+def test_backtranslation_review_pipeline_jp_to_en_runs_three_passes_and_uses_revision_output() -> (
+    None
+):
     service = _make_service()
 
     call_order: list[str] = []
@@ -74,7 +78,9 @@ def test_backtranslation_review_pipeline_jp_to_en_runs_three_passes_and_uses_rev
     assert "JP2" in override_prompts[1]
 
 
-def test_backtranslation_review_pipeline_en_to_jp_runs_three_passes_and_uses_revision_output() -> None:
+def test_backtranslation_review_pipeline_en_to_jp_runs_three_passes_and_uses_revision_output() -> (
+    None
+):
     service = _make_service()
 
     override_prompts: list[str] = []

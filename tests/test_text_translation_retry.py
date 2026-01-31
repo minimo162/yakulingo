@@ -263,6 +263,7 @@ def test_text_style_comparison_skips_numeric_retry_when_auto_fixable() -> None:
     assert [option.style for option in result.options] == ["standard"]
     assert result.options[0].text == expected
 
+
 def test_text_style_comparison_skips_numeric_retry_when_auto_fixable_by_conversion() -> (
     None
 ):
@@ -324,7 +325,9 @@ def test_user_report_financial_text_retries_when_first_output_echoes_input() -> 
 2026年３月期中間期 2,238,463 △6.5 △53,879 － △21,294 － △45,284 －
 2025年３月期中間期 2,393,919 3.3 103,048 △20.5 83,513 △53.4 35,334 △67.3
 (注) 包括利益 2026年３月期中間期 △32,510百万円( －％) 2025年３月期中間期 △2,123百万円( －％)"""
-    translated = "Consolidated financial results for Q2 FY2026 (interim) are as follows."
+    translated = (
+        "Consolidated financial results for Q2 FY2026 (interim) are as follows."
+    )
     local = SequencedLocalClient([input_text, translated])
     service = _make_service(local)
 

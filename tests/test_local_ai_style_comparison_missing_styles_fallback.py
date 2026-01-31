@@ -39,7 +39,9 @@ def test_local_style_comparison_retries_once_on_output_language_mismatch(
     )
 
     assert call_count == 2
-    assert result.error_message == "翻訳結果が英語ではありませんでした（出力言語ガード）"
+    assert (
+        result.error_message == "翻訳結果が英語ではありませんでした（出力言語ガード）"
+    )
     assert not result.options
     metadata = result.metadata or {}
     assert metadata.get("output_language_retry") is True

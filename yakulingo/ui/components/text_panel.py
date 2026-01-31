@@ -835,15 +835,15 @@ def _render_results_to_jp(
 
                         with ui.row().classes(
                             "w-full items-center justify-end gap-2 option-card-actions-bottom"
-                            ):
-                                copy_text = option.text
-                                _create_copy_button(
-                                    copy_text,
-                                    on_copy,
-                                    classes="result-action-btn",
-                                    aria_label="訳文をコピー",
-                                    tooltip="訳文をコピー",
-                                )
+                        ):
+                            copy_text = option.text
+                            _create_copy_button(
+                                copy_text,
+                                on_copy,
+                                classes="result-action-btn",
+                                aria_label="訳文をコピー",
+                                tooltip="訳文をコピー",
+                            )
 
 
 def _render_pass_context_cards(

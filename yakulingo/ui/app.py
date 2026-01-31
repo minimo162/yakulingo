@@ -1987,7 +1987,10 @@ class YakuLingoApp:
                 # - After failures: wake up earlier to run recovery at the backoff deadline.
                 sleep_s = float(interval_sec)
                 next_recover_at = self._local_ai_keepalive_next_recover_at
-                if next_recover_at is not None and self._local_ai_keepalive_failures > 0:
+                if (
+                    next_recover_at is not None
+                    and self._local_ai_keepalive_failures > 0
+                ):
                     now = time.monotonic()
                     until = float(next_recover_at) - now
                     if until > 0:
@@ -8284,8 +8287,11 @@ class YakuLingoApp:
             nonlocal current_pass, pass1_text, pass2_text, last_partial
             partial = partial_text or ""
 
-            if current_pass < 3 and last_partial and partial and _is_pass_boundary(
-                last_partial, partial
+            if (
+                current_pass < 3
+                and last_partial
+                and partial
+                and _is_pass_boundary(last_partial, partial)
             ):
                 if current_pass == 1:
                     pass1_text = last_partial
@@ -8298,9 +8304,7 @@ class YakuLingoApp:
             if current_pass <= 1:
                 return partial
             if current_pass == 2:
-                return (
-                    f"{pass1_text}{separator}{partial}" if pass1_text else partial
-                )
+                return f"{pass1_text}{separator}{partial}" if pass1_text else partial
 
             parts: list[str] = []
             if pass1_text:
@@ -8758,7 +8762,9 @@ class YakuLingoApp:
         set_cancel = getattr(client, "set_cancel_callback", None)
         if callable(set_cancel):
             try:
-                set_cancel(lambda: self.state.is_translating() or self._shutdown_requested)
+                set_cancel(
+                    lambda: self.state.is_translating() or self._shutdown_requested
+                )
             except Exception:
                 set_cancel = None
         try:
@@ -8770,8 +8776,12 @@ class YakuLingoApp:
                 if translation_service is not None:
                     prompt_builder = translation_service.prompt_builder
                     warmup_prompts = [
-                        prompt_builder.build_simple_prompt("warmup", output_language="en"),
-                        prompt_builder.build_simple_prompt("warmup", output_language="jp"),
+                        prompt_builder.build_simple_prompt(
+                            "warmup", output_language="en"
+                        ),
+                        prompt_builder.build_simple_prompt(
+                            "warmup", output_language="jp"
+                        ),
                     ]
             except Exception:
                 warmup_prompts = []

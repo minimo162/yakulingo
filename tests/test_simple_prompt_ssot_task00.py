@@ -36,7 +36,7 @@ def _expected_simple_prompt(
     if output_language == "jp":
         return (
             f"<bos><start_of_turn>user\n"
-            f"Translate the text into Japanese suitable for financial statements. Translate every sentence/clause; do not omit or summarize. Do not echo or repeat the input text. Preserve line breaks and all numeric facts. Output must be Japanese only. Output the translation only (no labels, no commentary). Do not output other prompt markers (e.g., \"===INPUT_TEXT===\" / \"===END_INPUT_TEXT===\").\n"
+            f'Translate the text into Japanese suitable for financial statements. Translate every sentence/clause; do not omit or summarize. Do not echo or repeat the input text. Preserve line breaks and all numeric facts. Output must be Japanese only. Output the translation only (no labels, no commentary). Do not output other prompt markers (e.g., "===INPUT_TEXT===" / "===END_INPUT_TEXT===").\n'
             f"Text:\n"
             f"===INPUT_TEXT===\n"
             f"{user_input}\n"
@@ -45,7 +45,7 @@ def _expected_simple_prompt(
         )
     return (
         f"<bos><start_of_turn>user\n"
-        f"Translate the Japanese text into English suitable for financial statements. Translate every sentence/clause; do not omit or summarize. Do not echo or repeat the input text. Preserve line breaks and all numeric facts. Output must be English only. Output the translation only (no labels, no commentary). Do not output other prompt markers (e.g., \"===INPUT_TEXT===\" / \"===END_INPUT_TEXT===\").\n"
+        f'Translate the Japanese text into English suitable for financial statements. Translate every sentence/clause; do not omit or summarize. Do not echo or repeat the input text. Preserve line breaks and all numeric facts. Output must be English only. Output the translation only (no labels, no commentary). Do not output other prompt markers (e.g., "===INPUT_TEXT===" / "===END_INPUT_TEXT===").\n'
         f"Text:\n"
         f"===INPUT_TEXT===\n"
         f"{user_input}\n"

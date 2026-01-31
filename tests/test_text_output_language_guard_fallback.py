@@ -80,7 +80,9 @@ def test_local_to_en_returns_error_without_copilot_advice_when_retry_fails(
     assert calls == 2
     assert result.output_language == "en"
     assert not result.options
-    assert result.error_message == "翻訳結果が英語ではありませんでした（出力言語ガード）"
+    assert (
+        result.error_message == "翻訳結果が英語ではありませんでした（出力言語ガード）"
+    )
     metadata = result.metadata or {}
     assert metadata.get("output_language_retry") is True
     assert metadata.get("output_language_retry_failed") is True

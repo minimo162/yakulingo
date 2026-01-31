@@ -18,7 +18,9 @@ def _make_service() -> TranslationService:
     )
 
 
-def test_backtranslation_review_streams_pass1_pass2_pass3_combined_preview_and_events() -> None:
+def test_backtranslation_review_streams_pass1_pass2_pass3_combined_preview_and_events() -> (
+    None
+):
     service = _make_service()
 
     previews: list[str] = []

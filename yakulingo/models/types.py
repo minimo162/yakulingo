@@ -227,7 +227,9 @@ class TextTranslationResult:
             self.translation_text = self.final_text
 
         if self.translation_text and not self.options:
-            self.options = [TranslationOption(text=self.translation_text, explanation="")]
+            self.options = [
+                TranslationOption(text=self.translation_text, explanation="")
+            ]
 
     @property
     def translation(self) -> str:

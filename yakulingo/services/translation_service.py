@@ -332,7 +332,9 @@ def _insert_extra_instruction(prompt: str, extra_instruction: str) -> str:
     return f"{extra_instruction}\n{prompt}"
 
 
-def _insert_extra_instruction_into_simple_prompt(prompt: str, extra_instruction: str) -> str:
+def _insert_extra_instruction_into_simple_prompt(
+    prompt: str, extra_instruction: str
+) -> str:
     """Insert extra instruction into a `<bos><start_of_turn>user`-style prompt safely."""
     extra_instruction = (extra_instruction or "").strip()
     if not extra_instruction:
@@ -443,7 +445,9 @@ _RE_EN_NUMBER_WITH_BILLION_UNIT = re.compile(
 )
 
 
-def _collect_expected_oku_units_from_source_text(text: str) -> dict[int, tuple[str, bool]]:
+def _collect_expected_oku_units_from_source_text(
+    text: str,
+) -> dict[int, tuple[str, bool]]:
     """Extract expected `oku` values from JP source text containing 兆/億.
 
     Returns a mapping: {total_oku: (preferred_unit, has_yen)}, where preferred_unit is:
@@ -3054,9 +3058,8 @@ class BatchTranslator:
                     is_fallback = False
 
                     # Check for empty translation and log warning
-                    if (
-                        (not is_local_backend)
-                        and (not translated_text or not translated_text.strip())
+                    if (not is_local_backend) and (
+                        not translated_text or not translated_text.strip()
                     ):
                         logger.warning(
                             "Block '%s' received empty translation, using original text as fallback",
@@ -4061,9 +4064,12 @@ class TranslationService:
         simple_prompt_mode = bool(force_simple_prompt)
 
         if simple_prompt_mode:
-            prebuilt_prompt = override_prompt or self.prompt_builder.build_simple_prompt(
-                text,
-                output_language=output_language,
+            prebuilt_prompt = (
+                override_prompt
+                or self.prompt_builder.build_simple_prompt(
+                    text,
+                    output_language=output_language,
+                )
             )
         else:
             if output_language == "en":
@@ -6111,7 +6117,9 @@ class TranslationService:
                 if output_language == "en"
                 else _SIMPLE_PROMPT_RETRY_INSTRUCTION_JP
             )
-            retry_prompt = _insert_extra_instruction_into_simple_prompt(base_prompt, strict)
+            retry_prompt = _insert_extra_instruction_into_simple_prompt(
+                base_prompt, strict
+            )
 
             retry = self._translate_text_with_options_local(
                 text=text,
@@ -6265,7 +6273,9 @@ class TranslationService:
         separator = "\n\n---\n\n"
         pass_buffers: dict[int, str] = {1: "", 2: "", 3: ""}
 
-        def emit_event(*, pass_index: int, role: str, kind: str, chunk: str = "") -> None:
+        def emit_event(
+            *, pass_index: int, role: str, kind: str, chunk: str = ""
+        ) -> None:
             if on_event is None:
                 return
             try:
@@ -6296,7 +6306,9 @@ class TranslationService:
             except Exception:
                 logger.debug("Streaming on_chunk handler raised", exc_info=True)
 
-        def make_pass_on_chunk(*, pass_index: int, role: str) -> "Callable[[str], None]":
+        def make_pass_on_chunk(
+            *, pass_index: int, role: str
+        ) -> "Callable[[str], None]":
             emit_event(pass_index=pass_index, role=role, kind="pass_start")
 
             def _handler(partial_text: str) -> None:
@@ -6364,9 +6376,15 @@ class TranslationService:
             override_prompt=back_prompt,
         )
         emit_event(pass_index=2, role="back_translation", kind="pass_end")
-        if second.error_message or not second.options or not (second.options[0].text or "").strip():
+        if (
+            second.error_message
+            or not second.options
+            or not (second.options[0].text or "").strip()
+        ):
             metadata["pipeline_failed_at_pass"] = 2
-            metadata["pipeline_warning"] = "戻し訳に失敗したため、翻訳文（pass1）を最終結果として表示しました。"
+            metadata["pipeline_warning"] = (
+                "戻し訳に失敗したため、翻訳文（pass1）を最終結果として表示しました。"
+            )
             first.passes = passes
             first.metadata = metadata
             return first
@@ -6407,9 +6425,15 @@ class TranslationService:
             override_prompt=revise_prompt,
         )
         emit_event(pass_index=3, role="revision", kind="pass_end")
-        if third.error_message or not third.options or not (third.options[0].text or "").strip():
+        if (
+            third.error_message
+            or not third.options
+            or not (third.options[0].text or "").strip()
+        ):
             metadata["pipeline_failed_at_pass"] = 3
-            metadata["pipeline_warning"] = "修正翻訳に失敗したため、翻訳文（pass1）を最終結果として表示しました。"
+            metadata["pipeline_warning"] = (
+                "修正翻訳に失敗したため、翻訳文（pass1）を最終結果として表示しました。"
+            )
             first.passes = passes
             first.metadata = metadata
             return first
@@ -6451,7 +6475,9 @@ class TranslationService:
         separator = "\n\n---\n\n"
         pass_buffers: dict[int, str] = {1: "", 2: "", 3: "", 4: ""}
 
-        def emit_event(*, pass_index: int, role: str, kind: str, chunk: str = "") -> None:
+        def emit_event(
+            *, pass_index: int, role: str, kind: str, chunk: str = ""
+        ) -> None:
             if on_event is None:
                 return
             try:
@@ -6484,7 +6510,9 @@ class TranslationService:
             except Exception:
                 logger.debug("Streaming on_chunk handler raised", exc_info=True)
 
-        def make_pass_on_chunk(*, pass_index: int, role: str) -> "Callable[[str], None]":
+        def make_pass_on_chunk(
+            *, pass_index: int, role: str
+        ) -> "Callable[[str], None]":
             emit_event(pass_index=pass_index, role=role, kind="pass_start")
 
             def _handler(partial_text: str) -> None:
@@ -6559,7 +6587,9 @@ class TranslationService:
                 return first
 
             pass2_text = second.options[0].text
-            passes.append(TextTranslationPass(index=2, mode="translation", text=pass2_text))
+            passes.append(
+                TextTranslationPass(index=2, mode="translation", text=pass2_text)
+            )
             pass_buffers[2] = pass2_text or pass_buffers[2]
             emit_combined_preview()
 
@@ -6600,7 +6630,9 @@ class TranslationService:
                 return first
 
             pass3_text = third.options[0].text
-            passes.append(TextTranslationPass(index=3, mode="translation", text=pass3_text))
+            passes.append(
+                TextTranslationPass(index=3, mode="translation", text=pass3_text)
+            )
             pass_buffers[3] = pass3_text or pass_buffers[3]
             emit_combined_preview()
 
@@ -6724,7 +6756,9 @@ class TranslationService:
             input_text: str,
         ) -> tuple[Optional[str], Optional[str]]:
             local_batch_translator = self._local_batch_translator
-            max_segment_chars = getattr(local_batch_translator, "max_chars_per_batch", None)
+            max_segment_chars = getattr(
+                local_batch_translator, "max_chars_per_batch", None
+            )
             if not (
                 isinstance(max_segment_chars, int)
                 and max_segment_chars > 0
@@ -6787,7 +6821,9 @@ class TranslationService:
 
             combined = "".join(parts)
             if failed_segments:
-                metadata["concise_mode_segmented_rewrite_failed_segments"] = failed_segments
+                metadata["concise_mode_segmented_rewrite_failed_segments"] = (
+                    failed_segments
+                )
             return combined, None
 
         def rewrite_pass(
@@ -6870,7 +6906,11 @@ class TranslationService:
                 pass_index=2,
                 input_text=pass1_text,
             )
-            if pass2_error in {"empty_output", "output_language_mismatch", "unchanged_output"}:
+            if pass2_error in {
+                "empty_output",
+                "output_language_mismatch",
+                "unchanged_output",
+            }:
                 # Retry once with a stricter instruction when the model produces an
                 # empty/unchanged/mismatched rewrite. Streaming is disabled to avoid
                 # showing partial output for a rewrite that will be discarded.
@@ -6903,7 +6943,9 @@ class TranslationService:
                     if callable(strip_prompt_echo):
                         raw_retry = strip_prompt_echo(raw_retry, retry_prompt)
                     rewritten_retry = _normalize_local_plain_text_output(raw_retry)
-                    if rewritten_retry and not is_rewrite_output_language_mismatch(rewritten_retry):
+                    if rewritten_retry and not is_rewrite_output_language_mismatch(
+                        rewritten_retry
+                    ):
                         pass2_text, pass2_error = rewritten_retry, None
                 except TranslationCancelledError:
                     raise
@@ -6941,7 +6983,9 @@ class TranslationService:
                 output_language=output_language,
                 detected_language=detected_language,
                 options=[
-                    TranslationOption(text=pass2_text, explanation="", style=final_style)
+                    TranslationOption(
+                        text=pass2_text, explanation="", style=final_style
+                    )
                 ],
                 translation_text=pass2_text,
                 final_text=pass2_text,

@@ -51,8 +51,12 @@ _AUTO_DEVICE_CACHE: dict[
 ] = {}
 _AUTO_DEVICE_CACHE_LOCK = threading.Lock()
 _PREVIOUS_DEFAULT_MODEL_PATH = "local_ai/models/translategemma-12b-it.i1-IQ3_XXS.gguf"
-_OLDER_PREVIOUS_DEFAULT_MODEL_PATH = "local_ai/models/translategemma-12b-it.i1-IQ4_XS.gguf"
-_OLDEST_PREVIOUS_DEFAULT_MODEL_PATH = "local_ai/models/translategemma-4b-it.i1-IQ4_XS.gguf"
+_OLDER_PREVIOUS_DEFAULT_MODEL_PATH = (
+    "local_ai/models/translategemma-12b-it.i1-IQ4_XS.gguf"
+)
+_OLDEST_PREVIOUS_DEFAULT_MODEL_PATH = (
+    "local_ai/models/translategemma-4b-it.i1-IQ4_XS.gguf"
+)
 _ANCIENT_PREVIOUS_DEFAULT_MODEL_PATH = (
     "local_ai/models/shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf"
 )
@@ -953,9 +957,9 @@ class LocalLlamaServerManager:
 
         legacy = _resolve_from_app_base(_LEGACY_DEFAULT_MODEL_PATH)
         if legacy.is_file():
-            if candidate is not None and _normalize_path_text(legacy) != _normalize_path_text(
-                candidate
-            ):
+            if candidate is not None and _normalize_path_text(
+                legacy
+            ) != _normalize_path_text(candidate):
                 logger.warning(
                     "Configured model file not found; falling back to legacy default: %s -> %s",
                     candidate,
@@ -965,10 +969,9 @@ class LocalLlamaServerManager:
 
         older_legacy = _resolve_from_app_base(_OLDER_LEGACY_DEFAULT_MODEL_PATH)
         if older_legacy.is_file():
-            if (
-                candidate is not None
-                and _normalize_path_text(older_legacy) != _normalize_path_text(candidate)
-            ):
+            if candidate is not None and _normalize_path_text(
+                older_legacy
+            ) != _normalize_path_text(candidate):
                 logger.warning(
                     "Configured model file not found; falling back to older legacy default: %s -> %s",
                     candidate,
@@ -1406,7 +1409,11 @@ class LocalLlamaServerManager:
             args += [flag, str(int(settings.local_ai_ctx_size))]
 
         parallel = getattr(settings, "local_ai_parallel", None)
-        if help_text and parallel is not None and (has_long("--parallel") or has_short("-np")):
+        if (
+            help_text
+            and parallel is not None
+            and (has_long("--parallel") or has_short("-np"))
+        ):
             try:
                 parallel_value = int(parallel)
             except (TypeError, ValueError):

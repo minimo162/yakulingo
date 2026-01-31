@@ -285,10 +285,7 @@ def test_local_batch_retries_when_numeric_rules_violated() -> None:
     assert "1,554億円" not in copilot.texts_per_call[0][1]
     assert result.untranslated_block_ids == []
     assert result.translations["b1"] == "Revenue was ¥2,238.5 billion."
-    assert (
-        result.translations["b2"]
-        == "Operating profit decreased by ¥155.4 billion."
-    )
+    assert result.translations["b2"] == "Operating profit decreased by ¥155.4 billion."
 
 
 def test_local_batch_retries_only_items_with_k_rule_violation() -> None:

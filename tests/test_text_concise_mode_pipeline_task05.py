@@ -6,6 +6,7 @@ from yakulingo.config.settings import AppSettings
 from yakulingo.models.types import TextTranslationResult, TranslationOption
 from yakulingo.services.translation_service import TranslationService
 
+
 def test_concise_mode_runs_pass4_and_sets_final_text(monkeypatch) -> None:
     settings = AppSettings(translation_backend="local")
     service = TranslationService(config=settings, prompts_dir=Path("prompts"))
@@ -84,7 +85,9 @@ def test_concise_mode_streaming_combines_pass1_to_pass4(monkeypatch) -> None:
 
     local_calls = 0
 
-    def fake_local(*, output_language: str, on_chunk=None, **_kwargs) -> TextTranslationResult:
+    def fake_local(
+        *, output_language: str, on_chunk=None, **_kwargs
+    ) -> TextTranslationResult:
         nonlocal local_calls
         local_calls += 1
         assert callable(on_chunk)

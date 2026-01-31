@@ -152,9 +152,7 @@ def test_maybe_reset_source_copy_mode_excel_does_not_require_foreground(monkeypa
 
 
 def test_capture_clipboard_payload_retries_when_transient_message_seen(monkeypatch):
-    transient = (
-        "データを入手中です。数秒間待ってから、切り取りまたはコピーをもう一度お試しください。"
-    )
+    transient = "データを入手中です。数秒間待ってから、切り取りまたはコピーをもう一度お試しください。"
     seq = {"value": 100}
     payload_calls = {"count": 0}
 
@@ -191,10 +189,10 @@ def test_capture_clipboard_payload_retries_when_transient_message_seen(monkeypat
     assert payload_calls["count"] == 2
 
 
-def test_capture_clipboard_payload_suppresses_transient_message_when_persists(monkeypatch):
-    transient = (
-        "データを入手中です。数秒間待ってから、切り取りまたはコピーをもう一度お試しください。"
-    )
+def test_capture_clipboard_payload_suppresses_transient_message_when_persists(
+    monkeypatch,
+):
+    transient = "データを入手中です。数秒間待ってから、切り取りまたはコピーをもう一度お試しください。"
     seq = {"value": 200}
     payload_calls = {"count": 0}
 

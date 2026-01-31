@@ -10,7 +10,9 @@ def _make_builder() -> PromptBuilder:
     return PromptBuilder(repo_root / "prompts")
 
 
-def test_build_back_translation_prompt_to_en_includes_markers_and_output_guard() -> None:
+def test_build_back_translation_prompt_to_en_includes_markers_and_output_guard() -> (
+    None
+):
     builder = _make_builder()
     prompt = builder.build_back_translation_prompt(
         "テストです", output_language="en", reference_files=None
@@ -22,7 +24,9 @@ def test_build_back_translation_prompt_to_en_includes_markers_and_output_guard()
     assert "テストです" in prompt
 
 
-def test_build_back_translation_prompt_to_jp_includes_markers_and_output_guard() -> None:
+def test_build_back_translation_prompt_to_jp_includes_markers_and_output_guard() -> (
+    None
+):
     builder = _make_builder()
     prompt = builder.build_back_translation_prompt(
         "This is a test.", output_language="jp", reference_files=None
@@ -34,7 +38,9 @@ def test_build_back_translation_prompt_to_jp_includes_markers_and_output_guard()
     assert "This is a test." in prompt
 
 
-def test_build_translation_revision_prompt_includes_three_parts_and_output_guard_en() -> None:
+def test_build_translation_revision_prompt_includes_three_parts_and_output_guard_en() -> (
+    None
+):
     builder = _make_builder()
     prompt = builder.build_translation_revision_prompt(
         source_text="原文",
@@ -52,7 +58,9 @@ def test_build_translation_revision_prompt_includes_three_parts_and_output_guard
     assert "Output must be English only" in prompt
 
 
-def test_build_translation_revision_prompt_includes_three_parts_and_output_guard_jp() -> None:
+def test_build_translation_revision_prompt_includes_three_parts_and_output_guard_jp() -> (
+    None
+):
     builder = _make_builder()
     prompt = builder.build_translation_revision_prompt(
         source_text="Source",

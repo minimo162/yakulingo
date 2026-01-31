@@ -1,6 +1,20 @@
 ﻿$ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
+$transcriptPath = $env:LOCAL_AI_INSTALL_LOG
+$transcriptStarted = $false
+if (-not [string]::IsNullOrWhiteSpace($transcriptPath)) {
+    try {
+        $transcriptDir = Split-Path -Parent $transcriptPath
+        if ($transcriptDir) { New-Item -ItemType Directory -Force -Path $transcriptDir | Out-Null }
+        Start-Transcript -Path $transcriptPath -Force | Out-Null
+        $transcriptStarted = $true
+        Write-Host "[INFO] Installer log: $transcriptPath"
+    } catch {
+        # best-effort
+    }
+}
+
 try {
     try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch { }
 
@@ -53,7 +67,7 @@ try {
                 '--fail',
                 '--user-agent', $userAgent
             )
-            if ($skipSsl) { $args += '--insecure' }
+            if ($skipSsl) { $args += @('--insecure', '--ssl-no-revoke') }
             $args += $url
             $headers = & $curl.Source @args 2>$null
             if ($LASTEXITCODE -ne 0) { return $null }
@@ -100,7 +114,7 @@ try {
                     '--connect-timeout', '30',
                     '--max-time', "$timeoutSec"
                 )
-                if ($skipSsl) { $args += '--insecure' }
+                if ($skipSsl) { $args += @('--insecure', '--ssl-no-revoke') }
                 if (Test-Path $outFile) {
                     Write-Host "[INFO] Resuming download with curl: $leaf"
                     $args += @('--continue-at', '-')
@@ -651,6 +665,9 @@ try {
     $manifest | ConvertTo-Json -Depth 6 | Set-Content -Path $manifestPath -Encoding UTF8
 
     Write-Host '[DONE] Local AI runtime is ready.'
+    if ($transcriptStarted) {
+        try { Stop-Transcript | Out-Null } catch { }
+    }
     exit 0
 } catch {
     Write-Host "[ERROR] Local AI runtime installation failed: $($_.Exception.Message)"
@@ -660,6 +677,9 @@ try {
     Write-Host "[INFO] - If you see file lock errors, close YakuLingo/llama-server and retry: powershell -NoProfile -ExecutionPolicy Bypass -File packaging\\install_local_ai.ps1"
     Write-Host "[INFO] - If you are behind a corporate proxy, rerun packaging\\install_deps.bat and select proxy option [1]."
     if ($_.ScriptStackTrace) { Write-Host $_.ScriptStackTrace }
+    if ($transcriptStarted) {
+        try { Stop-Transcript | Out-Null } catch { }
+    }
     exit 1
 }
 

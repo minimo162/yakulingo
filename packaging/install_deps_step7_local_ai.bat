@@ -84,6 +84,10 @@ if not defined LOCAL_AI_LLAMA_CPP_VARIANT (
     echo [INFO] llama.cpp variant: !LOCAL_AI_LLAMA_CPP_VARIANT! ^(env override^)
 )
 
+if not defined LOCAL_AI_INSTALL_LOG set "LOCAL_AI_INSTALL_LOG=%TEMP%\YakuLingo_local_ai_install.log"
+if exist "!LOCAL_AI_INSTALL_LOG!" del /f /q "!LOCAL_AI_INSTALL_LOG!" >nul 2>&1
+echo [INFO] Install log: !LOCAL_AI_INSTALL_LOG!
+
 echo [INFO] Running: powershell -NoProfile -ExecutionPolicy Bypass -File packaging\install_local_ai.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File "packaging\install_local_ai.ps1"
 set LOCAL_AI_INSTALL_EXIT=!errorlevel!
@@ -92,6 +96,13 @@ if !LOCAL_AI_INSTALL_EXIT! neq 0 (
     echo [WARNING] Failed to install Local AI runtime ^(optional^) ^(exit=!LOCAL_AI_INSTALL_EXIT!^).
     echo [WARNING] YakuLingo translation requires Local AI runtime. Please retry the install.
     echo [INFO] You can retry later: powershell -NoProfile -ExecutionPolicy Bypass -File packaging\install_local_ai.ps1
+    echo [INFO] Install log: !LOCAL_AI_INSTALL_LOG!
+    if "!STEP7_FROM_INSTALL_DEPS!"=="0" (
+        if exist "!LOCAL_AI_INSTALL_LOG!" (
+            echo [INFO] Opening install log in Notepad...
+            start "" notepad "!LOCAL_AI_INSTALL_LOG!"
+        )
+    )
     echo [INFO] Verify network/proxy settings and retry. You can override the model via LOCAL_AI_MODEL_* if needed.
     echo [INFO] Or manually place files under local_ai\ ^(llama_cpp + models^).
 ) else (

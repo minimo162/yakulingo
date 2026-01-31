@@ -190,6 +190,97 @@ def test_concise_mode_falls_back_to_pass3_when_pass4_fails(monkeypatch) -> None:
     assert result.metadata.get("pipeline_failed_at_pass") == 4
 
 
+def test_concise_mode_falls_back_to_pass1_when_pass2_fails(monkeypatch) -> None:
+    settings = AppSettings(translation_backend="local")
+    service = TranslationService(config=settings, prompts_dir=Path("prompts"))
+
+    def fake_pass1(*, text: str, **_kwargs) -> TextTranslationResult:
+        return TextTranslationResult(
+            source_text=text,
+            source_char_count=len(text),
+            output_language="en",
+            detected_language="日本語",
+            options=[TranslationOption(text="PASS1", explanation="", style="standard")],
+        )
+
+    def fake_local(*, output_language: str, **_kwargs) -> TextTranslationResult:
+        assert output_language == "jp"
+        return TextTranslationResult(
+            source_text="PASS1",
+            source_char_count=5,
+            output_language="jp",
+            detected_language="英語",
+            error_message="boom",
+            options=[],
+        )
+
+    monkeypatch.setattr(service, "translate_text_with_options", fake_pass1)
+    monkeypatch.setattr(service, "_translate_text_with_options_local", fake_local)
+
+    result = service.translate_text_with_concise_mode(
+        text="入力",
+        pre_detected_language="日本語",
+    )
+
+    assert result.final_text == "PASS1"
+    assert [p.index for p in result.passes] == [1]
+    assert result.metadata is not None
+    assert result.metadata.get("pipeline_failed_at_pass") == 2
+
+
+def test_concise_mode_falls_back_to_pass1_when_pass3_fails(monkeypatch) -> None:
+    settings = AppSettings(translation_backend="local")
+    service = TranslationService(config=settings, prompts_dir=Path("prompts"))
+
+    def fake_pass1(*, text: str, **_kwargs) -> TextTranslationResult:
+        return TextTranslationResult(
+            source_text=text,
+            source_char_count=len(text),
+            output_language="en",
+            detected_language="日本語",
+            options=[TranslationOption(text="PASS1", explanation="", style="standard")],
+        )
+
+    local_calls = 0
+
+    def fake_local(*, output_language: str, **_kwargs) -> TextTranslationResult:
+        nonlocal local_calls
+        local_calls += 1
+        if local_calls == 1:
+            assert output_language == "jp"
+            return TextTranslationResult(
+                source_text="PASS1",
+                source_char_count=5,
+                output_language="jp",
+                detected_language="英語",
+                options=[TranslationOption(text="PASS2", explanation="")],
+            )
+
+        assert local_calls == 2
+        assert output_language == "en"
+        return TextTranslationResult(
+            source_text="入力",
+            source_char_count=2,
+            output_language="en",
+            detected_language="日本語",
+            error_message="boom",
+            options=[],
+        )
+
+    monkeypatch.setattr(service, "translate_text_with_options", fake_pass1)
+    monkeypatch.setattr(service, "_translate_text_with_options_local", fake_local)
+
+    result = service.translate_text_with_concise_mode(
+        text="入力",
+        pre_detected_language="日本語",
+    )
+
+    assert result.final_text == "PASS1"
+    assert [p.index for p in result.passes] == [1, 2]
+    assert result.metadata is not None
+    assert result.metadata.get("pipeline_failed_at_pass") == 3
+
+
 def test_concise_mode_en_to_jp_runs_pass4(monkeypatch) -> None:
     settings = AppSettings(translation_backend="local")
     service = TranslationService(config=settings, prompts_dir=Path("prompts"))

@@ -160,3 +160,72 @@ def test_backtranslation_review_pipeline_falls_back_to_pass1_when_pass2_fails() 
     assert [p.index for p in result.passes] == [1]
     assert result.metadata is not None
     assert result.metadata.get("pipeline_failed_at_pass") == 2
+
+
+def test_backtranslation_review_pipeline_falls_back_to_pass1_when_pass3_fails() -> None:
+    service = _make_service()
+
+    service.translate_text_with_options = Mock(  # type: ignore[method-assign]
+        return_value=TextTranslationResult(
+            source_text="原文",
+            source_char_count=2,
+            output_language="en",
+            detected_language="日本語",
+            options=[TranslationOption(text="PASS1", explanation="")],
+        )
+    )
+
+    service._translate_text_with_options_local = Mock(  # type: ignore[method-assign]
+        side_effect=[
+            TextTranslationResult(
+                source_text="PASS1",
+                source_char_count=5,
+                output_language="jp",
+                detected_language="英語",
+                options=[TranslationOption(text="PASS2", explanation="")],
+            ),
+            TextTranslationResult(
+                source_text="原文",
+                source_char_count=2,
+                output_language="en",
+                detected_language="日本語",
+                error_message="boom",
+                options=[],
+            ),
+        ]
+    )
+
+    result = service.translate_text_with_backtranslation_review(
+        text="原文",
+        pre_detected_language="日本語",
+    )
+
+    assert result.options[0].text == "PASS1"
+    assert [p.index for p in result.passes] == [1, 2]
+    assert result.metadata is not None
+    assert result.metadata.get("pipeline_failed_at_pass") == 3
+
+
+def test_backtranslation_review_pipeline_cancel_returns_error() -> None:
+    service = _make_service()
+
+    def fake_pass1(*, text: str, **_kwargs) -> TextTranslationResult:
+        service._cancel_event.set()
+        return TextTranslationResult(
+            source_text=text,
+            source_char_count=len(text),
+            output_language="en",
+            detected_language="日本語",
+            options=[TranslationOption(text="PASS1", explanation="")],
+        )
+
+    service.translate_text_with_options = fake_pass1  # type: ignore[method-assign]
+
+    result = service.translate_text_with_backtranslation_review(
+        text="原文",
+        pre_detected_language="日本語",
+    )
+
+    assert result.error_message == "翻訳がキャンセルされました"
+    assert result.metadata is not None
+    assert result.metadata.get("text_translation_mode") == "backtranslation_review"

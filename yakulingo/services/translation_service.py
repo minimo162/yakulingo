@@ -6333,6 +6333,17 @@ class TranslationService:
         pass_buffers[1] = pass1_text or pass_buffers[1]
         emit_combined_preview()
 
+        if self._cancel_event.is_set():
+            logger.info("Backtranslation review cancelled")
+            return TextTranslationResult(
+                source_text=text,
+                source_char_count=len(text),
+                output_language=output_language,
+                detected_language=detected_language,
+                error_message="翻訳がキャンセルされました",
+                metadata=metadata,
+            )
+
         back_output_language = "jp" if output_language == "en" else "en"
         back_detected_language = "英語" if output_language == "en" else "日本語"
         back_prompt = self.prompt_builder.build_back_translation_prompt(
@@ -6364,6 +6375,17 @@ class TranslationService:
         passes.append(TextTranslationPass(index=2, mode="translation", text=pass2_text))
         pass_buffers[2] = pass2_text or pass_buffers[2]
         emit_combined_preview()
+
+        if self._cancel_event.is_set():
+            logger.info("Backtranslation review cancelled")
+            return TextTranslationResult(
+                source_text=text,
+                source_char_count=len(text),
+                output_language=output_language,
+                detected_language=detected_language,
+                error_message="翻訳がキャンセルされました",
+                metadata=metadata,
+            )
 
         revise_prompt = self.prompt_builder.build_translation_revision_prompt(
             source_text=text,

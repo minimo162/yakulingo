@@ -80,6 +80,15 @@ def _normalize_text_style(style: str | None) -> str:
     return style_key if style_key in TEXT_STYLE_ORDER else DEFAULT_TEXT_STYLE
 
 
+_CONCISE_TRANSLATION_EXTRA_INSTRUCTION_EN = """Additionally:
+- Make the translation concise while preserving as much of the original information as possible (meaning, facts, numbers, proper nouns, conditions). Do not omit details; only shorten phrasing and remove redundancy.
+- Use abbreviations aggressively where appropriate (e.g., YoY, QoQ, FY, KPI, OP (operating profit), consol. (consolidated), incl., excl., w/, w/o).
+"""
+_CONCISE_TRANSLATION_EXTRA_INSTRUCTION_JP = """Additionally:
+- Make the translation concise while preserving as much of the original information as possible (meaning, facts, numbers, proper nouns, conditions). Do not omit details; only shorten phrasing and remove redundancy.
+- Use common financial abbreviations in Japanese where appropriate (e.g., 粗利(売上総利益), 営利(営業利益)).
+"""
+
 _TEXT_TO_EN_OUTPUT_LANGUAGE_RETRY_INSTRUCTION = (
     "CRITICAL: English only (no Japanese/Chinese/Korean scripts; no Japanese punctuation). "
     "Keep the exact output format (Translation sections only; no explanations/notes)."
@@ -6033,6 +6042,7 @@ class TranslationService:
         style: Optional[str] = None,
         pre_detected_language: Optional[str] = None,
         on_chunk: "Callable[[str], None] | None" = None,
+        override_prompt: str | None = None,
     ) -> TextTranslationResult:
         """
         Translate text with language-specific handling:
@@ -6077,6 +6087,7 @@ class TranslationService:
                 on_chunk=on_chunk,
                 raw_output=True,
                 force_simple_prompt=True,
+                override_prompt=override_prompt,
             )
             retry_reasons: list[str] = []
             if first.error_message:
@@ -6101,7 +6112,7 @@ class TranslationService:
             if not retry_reasons:
                 return first
 
-            base_prompt = self.prompt_builder.build_simple_prompt(
+            base_prompt = override_prompt or self.prompt_builder.build_simple_prompt(
                 text,
                 output_language=output_language,
             )
@@ -6171,8 +6182,8 @@ class TranslationService:
     ) -> TextTranslationResult:
         """Translate text with style comparison for JP→EN.
 
-        If text_translation_mode is "concise", runs a 2-pass pipeline:
-        translation (pass1) -> same-language concise rewrite (pass2).
+        If text_translation_mode is "concise", runs a 1-pass pipeline:
+        concise translation only (no separate rewrite step).
         """
         reference_files = None
         detected_language = pre_detected_language
@@ -6222,12 +6233,36 @@ class TranslationService:
         pre_detected_language: Optional[str] = None,
         on_chunk: "Callable[[str], None] | None" = None,
     ) -> TextTranslationResult:
-        """Translate text with a 2-pass concise-mode pipeline."""
+        """Translate text with a 1-pass concise translation prompt."""
         reference_files = None
         detected_language = pre_detected_language or self.detect_language(text)
         output_language = "en" if detected_language == "日本語" else "jp"
 
         metadata: dict = {"text_translation_mode": "concise"}
+
+        base_prompt = self.prompt_builder.build_simple_prompt(
+            text,
+            output_language=output_language,
+        )
+        extra = (
+            _CONCISE_TRANSLATION_EXTRA_INSTRUCTION_EN
+            if output_language == "en"
+            else _CONCISE_TRANSLATION_EXTRA_INSTRUCTION_JP
+        )
+        concise_prompt = _insert_extra_instruction_into_simple_prompt(base_prompt, extra)
+
+        result = self.translate_text_with_options(
+            text=text,
+            reference_files=reference_files,
+            style="concise" if output_language == "en" else None,
+            pre_detected_language=detected_language,
+            on_chunk=on_chunk,
+            override_prompt=concise_prompt,
+        )
+        combined_metadata = dict(result.metadata) if result.metadata else {}
+        combined_metadata.update(metadata)
+        result.metadata = combined_metadata
+        return result
 
         first = self.translate_text_with_options(
             text=text,

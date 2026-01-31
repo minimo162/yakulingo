@@ -1629,6 +1629,7 @@ class YakuLingoApp:
         # Local AI READY probe (avoid redundant warmup on every translation)
         self._local_ai_ready_probe_key: str | None = None
         self._local_ai_ready_probe_at: float | None = None
+        self._local_ai_keepalive_task: "asyncio.Task | None" = None
         # Result panel auto-scroll debounce (avoid scheduling a task for every stream chunk)
         self._result_panel_scroll_task: "asyncio.Task | None" = None
         self._result_panel_scroll_handle: "asyncio.Handle | None" = None
@@ -1863,6 +1864,78 @@ class YakuLingoApp:
                 and self._resident_heartbeat_task is current_task
             ):
                 self._resident_heartbeat_task = None
+
+    def _start_local_ai_keepalive(self) -> None:
+        enabled = bool(getattr(self.settings, "local_ai_keepalive_enabled", True))
+        if not enabled:
+            return
+        try:
+            interval_sec = float(
+                getattr(self.settings, "local_ai_keepalive_interval_sec", 120.0)
+            )
+        except (TypeError, ValueError):
+            interval_sec = 120.0
+        existing = self._local_ai_keepalive_task
+        if existing is not None and not existing.done():
+            return
+        self._local_ai_keepalive_task = _create_logged_task(
+            self._local_ai_keepalive_loop(interval_sec=interval_sec),
+            name="local_ai_keepalive",
+        )
+
+    async def _local_ai_keepalive_loop(self, *, interval_sec: float) -> None:
+        try:
+            while not self._shutdown_requested:
+                if (
+                    self.state.local_ai_state == LocalAIState.READY
+                    and not self.state.is_translating()
+                ):
+                    host = (self.state.local_ai_host or "").strip()
+                    try:
+                        port = int(self.state.local_ai_port or 0)
+                    except Exception:
+                        port = 0
+                    model = (self.state.local_ai_model or "").strip()
+                    if host and port > 0:
+                        now = time.monotonic()
+                        key = f"{host}:{port}:{model}"
+                        last_key = self._local_ai_ready_probe_key
+                        last_at = self._local_ai_ready_probe_at
+                        if (
+                            last_key != key
+                            or not isinstance(last_at, (int, float))
+                            or (now - float(last_at)) > 3.0
+                        ):
+                            ok = False
+                            try:
+                                ok = await asyncio.to_thread(
+                                    self._probe_local_ai_models_ready,
+                                    host=host,
+                                    port=port,
+                                    timeout_s=0.35,
+                                )
+                            except Exception:
+                                ok = False
+                            if ok:
+                                self._local_ai_ready_probe_key = key
+                                self._local_ai_ready_probe_at = now
+                                logger.debug("LocalAI keepalive: ok (key=%s)", key)
+                            else:
+                                logger.warning(
+                                    "LocalAI keepalive probe failed (host=%s port=%d)",
+                                    host,
+                                    port,
+                                )
+                await asyncio.sleep(float(interval_sec))
+        except asyncio.CancelledError:
+            pass
+        finally:
+            current_task = asyncio.current_task()
+            if (
+                current_task is not None
+                and self._local_ai_keepalive_task is current_task
+            ):
+                self._local_ai_keepalive_task = None
 
     def _apply_resident_startup_layout_win32(self) -> bool:
         """Resident startup layout is disabled (local AI only)."""
@@ -11922,6 +11995,17 @@ def run_app(
                 time_module.time() - t0,
             )
 
+        if yakulingo_app._local_ai_keepalive_task is not None:
+            t0 = time_module.time()
+            try:
+                yakulingo_app._local_ai_keepalive_task.cancel()
+            except Exception:
+                pass
+            logger.debug(
+                "[TIMING] Cancel: local_ai_keepalive_task: %.3fs",
+                time_module.time() - t0,
+            )
+
         if yakulingo_app.translation_service is not None:
             t0 = time_module.time()
             try:
@@ -12000,6 +12084,7 @@ def run_app(
         yakulingo_app._login_polling_task = None
         yakulingo_app._status_auto_refresh_task = None
         yakulingo_app._local_ai_ensure_task = None
+        yakulingo_app._local_ai_keepalive_task = None
         yakulingo_app._resident_heartbeat_task = None
         yakulingo_app._ui_ready_retry_task = None
         yakulingo_app._auto_open_timeout_task = None
@@ -12938,6 +13023,7 @@ def run_app(
             tray_icon.start()
 
         yakulingo_app._start_local_ai_startup(startup_backend)
+        yakulingo_app._start_local_ai_keepalive()
 
         # Start early window positioning - moves window before UI is rendered
         if native and sys.platform == "win32":

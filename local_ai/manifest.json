@@ -9,23 +9,23 @@
                       "variant":  "vulkan"
                   },
     "model":  {
-                  "repo":  "mradermacher/translategemma-12b-it-i1-GGUF",
+                  "repo":  "mradermacher/translategemma-4b-it-GGUF",
                   "revision":  "main",
-                  "file":  "translategemma-12b-it.i1-IQ3_XXS.gguf",
-                  "download_url":  "https://huggingface.co/mradermacher/translategemma-12b-it-i1-GGUF/resolve/main/translategemma-12b-it.i1-IQ3_XXS.gguf",
+                  "file":  "translategemma-4b-it.Q6_K.gguf",
+                  "download_url":  "https://huggingface.co/mradermacher/translategemma-4b-it-GGUF/resolve/main/translategemma-4b-it.Q6_K.gguf",
                   "sha256":  null,
                   "skipped":  false,
                   "source":  {
                                  "kind":  "gguf",
-                                 "repo":  "mradermacher/translategemma-12b-it-i1-GGUF",
+                                 "repo":  "mradermacher/translategemma-4b-it-GGUF",
                                  "revision":  "main",
-                                 "file":  "translategemma-12b-it.i1-IQ3_XXS.gguf",
-                                 "download_url":  "https://huggingface.co/mradermacher/translategemma-12b-it-i1-GGUF/resolve/main/translategemma-12b-it.i1-IQ3_XXS.gguf"
+                                 "file":  "translategemma-4b-it.Q6_K.gguf",
+                                 "download_url":  "https://huggingface.co/mradermacher/translategemma-4b-it-GGUF/resolve/main/translategemma-4b-it.Q6_K.gguf"
                              },
                   "output":  {
                                  "kind":  "gguf",
-                                 "path":  "local_ai/models/translategemma-12b-it.i1-IQ3_XXS.gguf",
-                                 "path_resolved":  "C:\\Users\\Administrator\\Desktop\\yakulingo\\local_ai\\models\\translategemma-12b-it.i1-IQ3_XXS.gguf",
+                                 "path":  "local_ai/models/translategemma-4b-it.Q6_K.gguf",
+                                 "path_resolved":  "C:\\Users\\Administrator\\Desktop\\yakulingo\\local_ai\\models\\translategemma-4b-it.Q6_K.gguf",
                                  "sha256":  null
                              }
               }

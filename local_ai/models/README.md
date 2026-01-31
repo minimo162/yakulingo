@@ -4,8 +4,8 @@ YakuLingo のローカルAI（llama.cpp）で使用するモデル関連ファ�
 
 ## 既定モデル（デフォルト）
 
-- Upstream: `mradermacher/translategemma-12b-it-i1-GGUF`
-- File: `translategemma-12b-it.i1-IQ3_XXS.gguf`
+- Upstream: `mradermacher/translategemma-4b-it-GGUF`
+- File: `translategemma-4b-it.Q6_K.gguf`
 
 ## 補足
 

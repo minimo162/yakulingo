@@ -50,9 +50,12 @@ _AUTO_DEVICE_CACHE: dict[
     tuple[str, int, int], tuple[Optional[str], Optional[str], float]
 ] = {}
 _AUTO_DEVICE_CACHE_LOCK = threading.Lock()
-_PREVIOUS_DEFAULT_MODEL_PATH = "local_ai/models/translategemma-12b-it.i1-IQ4_XS.gguf"
-_OLDER_PREVIOUS_DEFAULT_MODEL_PATH = "local_ai/models/translategemma-4b-it.i1-IQ4_XS.gguf"
-_OLDEST_PREVIOUS_DEFAULT_MODEL_PATH = "local_ai/models/shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf"
+_PREVIOUS_DEFAULT_MODEL_PATH = "local_ai/models/translategemma-12b-it.i1-IQ3_XXS.gguf"
+_OLDER_PREVIOUS_DEFAULT_MODEL_PATH = "local_ai/models/translategemma-12b-it.i1-IQ4_XS.gguf"
+_OLDEST_PREVIOUS_DEFAULT_MODEL_PATH = "local_ai/models/translategemma-4b-it.i1-IQ4_XS.gguf"
+_ANCIENT_PREVIOUS_DEFAULT_MODEL_PATH = (
+    "local_ai/models/shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf"
+)
 _LEGACY_DEFAULT_MODEL_PATH = "local_ai/models/HY-MT1.5-7B.i1-Q6_K.gguf"
 _OLDER_LEGACY_DEFAULT_MODEL_PATH = "local_ai/models/HY-MT1.5-1.8B.IQ4_XS.gguf"
 
@@ -938,6 +941,15 @@ class LocalLlamaServerManager:
                 oldest_previous,
             )
             return oldest_previous
+
+        ancient_previous = _resolve_from_app_base(_ANCIENT_PREVIOUS_DEFAULT_MODEL_PATH)
+        if ancient_previous.is_file():
+            logger.warning(
+                "Configured model file not found; falling back to ancient previous default: %s -> %s",
+                candidate or "(譛ｪ險ｭ螳・",
+                ancient_previous,
+            )
+            return ancient_previous
 
         legacy = _resolve_from_app_base(_LEGACY_DEFAULT_MODEL_PATH)
         if legacy.is_file():

@@ -11,7 +11,7 @@ if not defined USE_PROXY set "USE_PROXY=0"
 if not defined SKIP_SSL set "SKIP_SSL=0"
 if not defined PROXY_SERVER set "PROXY_SERVER=136.131.63.233:8082"
 set "STEP7_FROM_INSTALL_DEPS=0"
-if defined YAKULINGO_INSTALL_DEPS_STEP7 set "STEP7_FROM_INSTALL_DEPS=1"
+if /i "%~1"=="--from-install-deps" set "STEP7_FROM_INSTALL_DEPS=1"
 
 if "!STEP7_FROM_INSTALL_DEPS!"=="0" (
     call :step7_proxy_config

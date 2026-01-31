@@ -26,15 +26,6 @@ def test_style_comparison_standard_does_not_route_to_backtranslation_review() ->
         options=[TranslationOption(text="OK", explanation="")],
     )
 
-    service.translate_text_with_backtranslation_review = Mock(  # type: ignore[method-assign]
-        return_value=TextTranslationResult(
-            source_text="Hello",
-            source_char_count=0,
-            output_language="en",
-            detected_language="英語",
-            options=[TranslationOption(text="NG", explanation="")],
-        )
-    )
     service.translate_text_with_options = Mock(  # type: ignore[method-assign]
         return_value=sentinel
     )
@@ -46,5 +37,4 @@ def test_style_comparison_standard_does_not_route_to_backtranslation_review() ->
     )
 
     assert result is sentinel
-    service.translate_text_with_backtranslation_review.assert_not_called()
     service.translate_text_with_options.assert_called_once()

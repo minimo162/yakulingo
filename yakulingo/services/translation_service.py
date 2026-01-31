@@ -6247,6 +6247,7 @@ class TranslationService:
         If pass1 succeeds but pass2/3 fails, falls back to pass1 as the final output and
         records a warning in metadata for UI display.
         """
+        raise NotImplementedError("戻し訳（backtranslation）機能は廃止されました")
         reference_files = None
         detected_language = pre_detected_language or self.detect_language(text)
         is_japanese = detected_language == "日本語"
@@ -6452,6 +6453,7 @@ class TranslationService:
         pass3: source + pass1 + pass2 -> target (revision)
         pass4: pass3 -> target (extra concise rewrite)
         """
+        raise NotImplementedError("戻し訳（backtranslation）機能は廃止されました")
         reference_files = None
         detected_language = pre_detected_language or self.detect_language(text)
         output_language = "en" if detected_language == "日本語" else "jp"
@@ -6688,26 +6690,74 @@ class TranslationService:
         on_chunk: "Callable[[str], None] | None" = None,
         on_event: "Callable[[TextTranslationStreamEvent], None] | None" = None,
     ) -> TextTranslationResult:
-        return self._translate_text_with_concise_mode_pass4(
-            text=text,
-            reference_files=reference_files,
-            pre_detected_language=pre_detected_language,
-            on_chunk=on_chunk,
-            on_event=on_event,
-        )
         reference_files = None
         detected_language = pre_detected_language or self.detect_language(text)
         output_language = "en" if detected_language == "日本語" else "jp"
 
-        metadata: dict = {"text_translation_mode": "concise"}
+        metadata: dict = {"text_translation_mode": "concise", "pipeline": "2pass"}
+        separator = "\n\n---\n\n"
+        pass_buffers: dict[int, str] = {1: "", 2: ""}
 
+        def emit_event(
+            *, pass_index: int, role: str, kind: str, chunk: str = ""
+        ) -> None:
+            if on_event is None:
+                return
+            try:
+                on_event(
+                    TextTranslationStreamEvent(
+                        pass_index=pass_index,
+                        role=role,
+                        kind=kind,  # type: ignore[arg-type]
+                        chunk=chunk,
+                        text_so_far=pass_buffers.get(pass_index, ""),
+                    )
+                )
+            except Exception:
+                logger.debug("Streaming on_event handler raised", exc_info=True)
+
+        def emit_combined_preview() -> None:
+            if on_chunk is None:
+                return
+            parts: list[str] = []
+            if pass_buffers[1]:
+                parts.append(f"【翻訳（pass1）】\n{pass_buffers[1]}")
+            if pass_buffers[2]:
+                parts.append(f"【書き換え（pass2）】\n{pass_buffers[2]}")
+            try:
+                on_chunk(separator.join(parts).strip())
+            except Exception:
+                logger.debug("Streaming on_chunk handler raised", exc_info=True)
+
+        def make_pass_on_chunk(
+            *, pass_index: int, role: str
+        ) -> "Callable[[str], None]":
+            def _handler(partial_text: str) -> None:
+                pass_buffers[pass_index] = partial_text or ""
+                emit_event(
+                    pass_index=pass_index,
+                    role=role,
+                    kind="chunk",
+                    chunk=partial_text or "",
+                )
+                emit_combined_preview()
+
+            return _handler
+
+        emit_event(pass_index=1, role="translation", kind="pass_start")
+        pass1_on_chunk = (
+            make_pass_on_chunk(pass_index=1, role="translation")
+            if (on_chunk is not None or on_event is not None)
+            else None
+        )
         first = self.translate_text_with_options(
             text=text,
             reference_files=reference_files,
             style="standard" if output_language == "en" else None,
             pre_detected_language=detected_language,
-            on_chunk=on_chunk,
+            on_chunk=pass1_on_chunk,
         )
+        emit_event(pass_index=1, role="translation", kind="pass_end")
         if first.metadata:
             metadata.update(first.metadata)
         if first.error_message or not first.options:
@@ -6718,7 +6768,8 @@ class TranslationService:
         passes: list[TextTranslationPass] = [
             TextTranslationPass(index=1, mode="translation", text=pass1_text)
         ]
-        separator = "\n\n---\n\n"
+        pass_buffers[1] = pass1_text or pass_buffers[1]
+        emit_combined_preview()
 
         def is_rewrite_output_language_mismatch(rewritten: str) -> bool:
             if not rewritten:
@@ -6830,18 +6881,10 @@ class TranslationService:
             )
             try:
                 stream_on_chunk: Callable[[str], None] | None = None
-                if on_chunk is not None:
-                    # The local streaming callback receives deltas; wrap it so UI gets
-                    # cumulative text for this pass, and concatenate pass1 + pass2.
-                    def _concat_pass2(candidate: str) -> None:
-                        on_chunk(
-                            f"{pass1_text}{separator}{candidate}"
-                            if pass1_text
-                            else candidate
-                        )
-
+                if on_chunk is not None or on_event is not None:
+                    pass2_on_chunk = make_pass_on_chunk(pass_index=2, role="rewrite")
                     stream_on_chunk = _wrap_local_streaming_on_chunk(
-                        _concat_pass2,
+                        pass2_on_chunk,
                         expected_output_language=output_language,
                         prompt=prompt,
                     )
@@ -6891,10 +6934,12 @@ class TranslationService:
             return rewritten, None
 
         try:
+            emit_event(pass_index=2, role="rewrite", kind="pass_start")
             pass2_text, pass2_error = rewrite_pass(
                 pass_index=2,
                 input_text=pass1_text,
             )
+            emit_event(pass_index=2, role="rewrite", kind="pass_end")
             if pass2_error in {
                 "empty_output",
                 "output_language_mismatch",
@@ -6964,6 +7009,8 @@ class TranslationService:
                     metadata=metadata,
                 )
 
+            pass_buffers[2] = pass2_text or pass_buffers[2]
+            emit_combined_preview()
             passes.append(TextTranslationPass(index=2, mode="rewrite", text=pass2_text))
             final_style = "concise" if output_language == "en" else None
             return TextTranslationResult(

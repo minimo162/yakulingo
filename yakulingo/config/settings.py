@@ -311,7 +311,7 @@ class AppSettings:
     # UI
     last_tab: str = "text"
     text_translation_mode: str = (
-        "standard"  # "standard"(戻し訳チェック/3pass) | "concise"(3pass+簡潔化)
+        "standard"  # "standard"(通常翻訳) | "concise"(翻訳+簡潔化)
     )
     # Translation backend (deprecated; kept for backward compatibility).
     # NOTE: YakuLingo runs local-only; this value is always forced to "local".
@@ -628,7 +628,10 @@ class AppSettings:
         # Text translation mode
         mode_raw = self.text_translation_mode
         mode = str(mode_raw or "").strip().lower()
-        if mode not in {"standard", "concise"}:
+        legacy_modes = {"3pass", "backtranslation", "review"}
+        if mode in legacy_modes:
+            self.text_translation_mode = "standard"
+        elif mode not in {"standard", "concise"}:
             if mode:
                 logger.warning(
                     "text_translation_mode invalid (%s), resetting to 'standard'",

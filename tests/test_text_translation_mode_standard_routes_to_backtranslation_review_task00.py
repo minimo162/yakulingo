@@ -15,7 +15,7 @@ def _make_service() -> TranslationService:
     )
 
 
-def test_style_comparison_standard_routes_to_backtranslation_review() -> None:
+def test_style_comparison_standard_does_not_route_to_backtranslation_review() -> None:
     service = _make_service()
 
     sentinel = TextTranslationResult(
@@ -24,13 +24,9 @@ def test_style_comparison_standard_routes_to_backtranslation_review() -> None:
         output_language="en",
         detected_language="英語",
         options=[TranslationOption(text="OK", explanation="")],
-        metadata={"text_translation_mode": "backtranslation_review"},
     )
 
     service.translate_text_with_backtranslation_review = Mock(  # type: ignore[method-assign]
-        return_value=sentinel
-    )
-    service.translate_text_with_options = Mock(  # type: ignore[method-assign]
         return_value=TextTranslationResult(
             source_text="Hello",
             source_char_count=0,
@@ -39,12 +35,16 @@ def test_style_comparison_standard_routes_to_backtranslation_review() -> None:
             options=[TranslationOption(text="NG", explanation="")],
         )
     )
+    service.translate_text_with_options = Mock(  # type: ignore[method-assign]
+        return_value=sentinel
+    )
 
     result = service.translate_text_with_style_comparison(
         "Hello",
+        pre_detected_language="日本語",
         text_translation_mode="standard",
     )
 
     assert result is sentinel
-    service.translate_text_with_backtranslation_review.assert_called_once()
-    service.translate_text_with_options.assert_not_called()
+    service.translate_text_with_backtranslation_review.assert_not_called()
+    service.translate_text_with_options.assert_called_once()

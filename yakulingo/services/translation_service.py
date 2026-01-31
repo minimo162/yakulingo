@@ -6194,21 +6194,8 @@ class TranslationService:
 
         mode = (text_translation_mode or "").strip().lower()
         if mode in {"standard", "3pass", "backtranslation", "review"}:
-            selected_style: str | None = None
-            if styles:
-                for style_name in styles:
-                    style_key = (style_name or "").strip().lower()
-                    if style_key in TEXT_STYLE_ORDER:
-                        selected_style = style_key
-                        break
-            return self.translate_text_with_backtranslation_review(
-                text=text,
-                reference_files=reference_files,
-                style=_normalize_text_style(selected_style),
-                pre_detected_language=detected_language,
-                on_chunk=on_chunk,
-                on_event=on_event,
-            )
+            mode = "standard"
+
         if mode == "concise":
             return self.translate_text_with_concise_mode(
                 text=text,

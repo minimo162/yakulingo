@@ -629,6 +629,7 @@ def create_text_result_panel(
         # Streaming preview (partial output while backend is generating)
         if state.text_translating and state.text_streaming_preview:
             with ui.element("div").classes("streaming-preview"):
+                ui.label("生成中（ストリーミング）").classes("section-title")
                 preview_text = state.text_streaming_preview
                 label = ui.label(preview_text).classes("streaming-text")
                 label.style("white-space: pre-wrap;")

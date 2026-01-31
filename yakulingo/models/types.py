@@ -6,7 +6,7 @@ Core data types for YakuLingo translation application.
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Optional, Callable
+from typing import Callable, Literal, Optional
 
 
 class FileType(Enum):
@@ -174,6 +174,17 @@ class TextTranslationPass:
     index: int  # 1-based pass index
     mode: str  # "translation" or "rewrite"
     text: str  # Output text for this pass
+
+
+@dataclass
+class TextTranslationStreamEvent:
+    """Streaming event emitted during multi-pass text translation."""
+
+    pass_index: int  # 1-based pass index
+    role: str  # "translation" | "back_translation" | "revision" | "extra_concise"
+    kind: Literal["pass_start", "chunk", "pass_end"]
+    chunk: str = ""
+    text_so_far: str = ""
 
 
 @dataclass

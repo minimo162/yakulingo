@@ -2042,6 +2042,7 @@ from yakulingo.models.types import (
     TranslationResult,
     TextTranslationResult,
     TextTranslationPass,
+    TextTranslationStreamEvent,
     TranslationOption,
     FileInfo,
     FileType,
@@ -6168,6 +6169,7 @@ class TranslationService:
         pre_detected_language: Optional[str] = None,
         on_chunk: "Callable[[str], None] | None" = None,
         text_translation_mode: str | None = None,
+        on_event: "Callable[[TextTranslationStreamEvent], None] | None" = None,
     ) -> TextTranslationResult:
         """Translate text with style comparison for JP→EN.
 
@@ -6197,6 +6199,7 @@ class TranslationService:
                 style=_normalize_text_style(selected_style),
                 pre_detected_language=detected_language,
                 on_chunk=on_chunk,
+                on_event=on_event,
             )
         if mode == "concise":
             return self.translate_text_with_concise_mode(
@@ -6237,8 +6240,9 @@ class TranslationService:
         style: Optional[str] = None,
         pre_detected_language: Optional[str] = None,
         on_chunk: "Callable[[str], None] | None" = None,
+        on_event: "Callable[[TextTranslationStreamEvent], None] | None" = None,
     ) -> TextTranslationResult:
-        """Translate text using a 3-pass back-translation review pipeline (non-streaming for pass2/3).
+        """Translate text using a 3-pass back-translation review pipeline.
 
         pass1: source -> target
         pass2: target -> source (back translation)
@@ -6257,13 +6261,64 @@ class TranslationService:
             "pipeline": "3pass",
         }
 
+        separator = "\n\n---\n\n"
+        pass_buffers: dict[int, str] = {1: "", 2: "", 3: ""}
+
+        def emit_event(*, pass_index: int, role: str, kind: str, chunk: str = "") -> None:
+            if on_event is None:
+                return
+            try:
+                on_event(
+                    TextTranslationStreamEvent(
+                        pass_index=pass_index,
+                        role=role,
+                        kind=kind,  # type: ignore[arg-type]
+                        chunk=chunk,
+                        text_so_far=pass_buffers.get(pass_index, ""),
+                    )
+                )
+            except Exception:
+                logger.debug("Streaming on_event handler raised", exc_info=True)
+
+        def emit_combined_preview() -> None:
+            if on_chunk is None:
+                return
+            parts: list[str] = []
+            if pass_buffers[1]:
+                parts.append(f"【翻訳（pass1）】\n{pass_buffers[1]}")
+            if pass_buffers[2]:
+                parts.append(f"【戻し訳（pass2）】\n{pass_buffers[2]}")
+            if pass_buffers[3]:
+                parts.append(f"【修正翻訳（pass3）】\n{pass_buffers[3]}")
+            try:
+                on_chunk(separator.join(parts).strip())
+            except Exception:
+                logger.debug("Streaming on_chunk handler raised", exc_info=True)
+
+        def make_pass_on_chunk(*, pass_index: int, role: str) -> "Callable[[str], None]":
+            emit_event(pass_index=pass_index, role=role, kind="pass_start")
+
+            def _handler(partial_text: str) -> None:
+                pass_buffers[pass_index] = partial_text or ""
+                emit_event(
+                    pass_index=pass_index,
+                    role=role,
+                    kind="chunk",
+                    chunk=partial_text or "",
+                )
+                emit_combined_preview()
+
+            return _handler
+
+        pass1_on_chunk = make_pass_on_chunk(pass_index=1, role="translation")
         first = self.translate_text_with_options(
             text=text,
             reference_files=reference_files,
             style=_normalize_text_style(style) if output_language == "en" else None,
             pre_detected_language=detected_language,
-            on_chunk=on_chunk,
+            on_chunk=pass1_on_chunk,
         )
+        emit_event(pass_index=1, role="translation", kind="pass_end")
         if first.metadata:
             metadata.update(first.metadata)
         if first.error_message or not first.options:
@@ -6274,6 +6329,8 @@ class TranslationService:
         passes: list[TextTranslationPass] = [
             TextTranslationPass(index=1, mode="translation", text=pass1_text)
         ]
+        pass_buffers[1] = pass1_text or pass_buffers[1]
+        emit_combined_preview()
 
         back_output_language = "jp" if output_language == "en" else "en"
         back_detected_language = "英語" if output_language == "en" else "日本語"
@@ -6282,17 +6339,19 @@ class TranslationService:
             output_language=back_output_language,
             reference_files=reference_files,
         )
+        pass2_on_chunk = make_pass_on_chunk(pass_index=2, role="back_translation")
         second = self._translate_text_with_options_local(
             text=pass1_text,
             reference_files=reference_files,
             style=_normalize_text_style(None),
             detected_language=back_detected_language,
             output_language=back_output_language,
-            on_chunk=None,
+            on_chunk=pass2_on_chunk,
             raw_output=True,
             force_simple_prompt=True,
             override_prompt=back_prompt,
         )
+        emit_event(pass_index=2, role="back_translation", kind="pass_end")
         if second.error_message or not second.options or not (second.options[0].text or "").strip():
             metadata["pipeline_failed_at_pass"] = 2
             metadata["pipeline_warning"] = "戻し訳に失敗したため、翻訳文（pass1）を最終結果として表示しました。"
@@ -6302,6 +6361,8 @@ class TranslationService:
 
         pass2_text = second.options[0].text
         passes.append(TextTranslationPass(index=2, mode="translation", text=pass2_text))
+        pass_buffers[2] = pass2_text or pass_buffers[2]
+        emit_combined_preview()
 
         revise_prompt = self.prompt_builder.build_translation_revision_prompt(
             source_text=text,
@@ -6310,17 +6371,19 @@ class TranslationService:
             output_language=output_language,
             reference_files=reference_files,
         )
+        pass3_on_chunk = make_pass_on_chunk(pass_index=3, role="revision")
         third = self._translate_text_with_options_local(
             text=text,
             reference_files=reference_files,
             style=_normalize_text_style(None),
             detected_language=detected_language,
             output_language=output_language,
-            on_chunk=None,
+            on_chunk=pass3_on_chunk,
             raw_output=True,
             force_simple_prompt=True,
             override_prompt=revise_prompt,
         )
+        emit_event(pass_index=3, role="revision", kind="pass_end")
         if third.error_message or not third.options or not (third.options[0].text or "").strip():
             metadata["pipeline_failed_at_pass"] = 3
             metadata["pipeline_warning"] = "修正翻訳に失敗したため、翻訳文（pass1）を最終結果として表示しました。"
@@ -6330,6 +6393,8 @@ class TranslationService:
 
         pass3_text = third.options[0].text
         passes.append(TextTranslationPass(index=3, mode="translation", text=pass3_text))
+        pass_buffers[3] = pass3_text or pass_buffers[3]
+        emit_combined_preview()
 
         third.passes = passes
         third.metadata = {**(third.metadata or {}), **metadata}

@@ -865,6 +865,18 @@ def _render_pass_context_cards(
 
     table_hint = _build_tabular_text_hint(result.source_text)
 
+    def _label_for_pass(p: TextTranslationPass) -> str:
+        mode = (p.mode or "").strip().lower()
+        if mode == "translation":
+            return f"{p.index}回目（翻訳）"
+        if mode == "back_translation":
+            return f"{p.index}回目（戻し訳）"
+        if mode == "revision":
+            return f"{p.index}回目（修正翻訳）"
+        if mode == "rewrite":
+            return f"{p.index}回目（書き換え）"
+        return f"{p.index}回目"
+
     with ui.element("div").classes("result-container"):
         with ui.element("div").classes("result-section w-full"):
             with ui.column().classes("w-full gap-3"):
@@ -875,11 +887,7 @@ def _render_pass_context_cards(
                         f"option-card w-full result-card{stagger_class}"
                     ):
                         with ui.column().classes("w-full gap-2"):
-                            label = (
-                                f"{p.index}回目（翻訳）"
-                                if p.index == 1
-                                else f"{p.index}回目（簡潔化）"
-                            )
+                            label = _label_for_pass(p)
                             with ui.row().classes(
                                 "w-full items-center gap-2 option-card-header"
                             ):

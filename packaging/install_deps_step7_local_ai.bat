@@ -76,7 +76,7 @@ if "!LOCAL_AI_CHOICE!"=="3" goto :local_ai_skip
 echo [INFO] Local AI selection: choice=!LOCAL_AI_CHOICE!
 if exist "local_ai\\manifest.json" (
     echo [INFO] Local AI manifest: exists ^(local_ai\manifest.json^)
-    echo [INFO] NOTE: model selection is controlled by config/settings.template.json (or LOCAL_AI_MODEL_* env overrides).
+    echo [INFO] NOTE: model selection is controlled by config/settings.template.json ^(or LOCAL_AI_MODEL_* env overrides^).
 ) else (
     echo [INFO] Local AI manifest: not found ^(defaults from settings.template.json will be applied^)
 )
@@ -90,9 +90,10 @@ if "!SKIP_SSL!"=="1" (
 )
 
 :: Ensure local endpoints are not proxied (keep existing entries)
+:: NOTE: Avoid pipes/findstr here because it can cause cmd parser errors in some environments.
 if not defined NO_PROXY set "NO_PROXY=127.0.0.1,localhost"
-echo(!NO_PROXY!| findstr /i /l /c:"127.0.0.1" >nul || set "NO_PROXY=!NO_PROXY!,127.0.0.1")
-echo(!NO_PROXY!| findstr /i /l /c:"localhost" >nul || set "NO_PROXY=!NO_PROXY!,localhost")
+if "!NO_PROXY:127.0.0.1=!"=="!NO_PROXY!" set "NO_PROXY=!NO_PROXY!,127.0.0.1"
+if "!NO_PROXY:localhost=!"=="!NO_PROXY!" set "NO_PROXY=!NO_PROXY!,localhost"
 set "no_proxy=!NO_PROXY!"
 
 if not defined LOCAL_AI_LLAMA_CPP_VARIANT (

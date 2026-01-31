@@ -39,7 +39,7 @@ def test_translate_single_skips_repeated_prompt_when_non_json_translation_is_par
         _ = runtime_arg, timeout, force_response_format
         calls.append(repeat_prompt)
         assert prompt_arg == prompt
-        assert repeat_prompt is False
+        assert repeat_prompt is True
         return LocalAIRequestResult(content="Translation: ok", model_id=None)
 
     client._chat_completions = fake_chat  # type: ignore[method-assign]
@@ -53,7 +53,7 @@ def test_translate_single_skips_repeated_prompt_when_non_json_translation_is_par
         runtime=runtime,
     )
     assert result == "Translation: ok"
-    assert calls == [False]
+    assert calls == [True]
 
 
 def test_translate_single_streaming_skips_repeated_prompt_when_non_json_translation_is_parseable() -> (
@@ -95,4 +95,4 @@ def test_translate_single_streaming_skips_repeated_prompt_when_non_json_translat
     )
     assert result == "Translation: ok"
     assert chunks == ["partial"]
-    assert calls == [("streaming", False)]
+    assert calls == [("streaming", True)]

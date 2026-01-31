@@ -73,7 +73,7 @@ def test_translate_single_streaming_retries_with_repeated_prompt_on_missing_json
     )
     assert result == "plain text output"
     assert chunks == ["partial"]
-    assert calls == [("streaming", False)]
+    assert calls == [("streaming", True)]
 
 
 def test_local_reference_embed_disabled_skips_glossary_filter(tmp_path: Path) -> None:

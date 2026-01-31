@@ -52,3 +52,14 @@ def test_local_ai_client_prompt_repeat_can_be_enabled() -> None:
     ]
     assert len(user_messages_repeated) == 1
     assert user_messages_repeated[0].get("content") == "ping\n\nping"
+
+
+def test_strip_prompt_echo_handles_repeated_prompt_prefix() -> None:
+    client = LocalAIClient(AppSettings())
+    _ = client
+
+    from yakulingo.services.local_ai_client import strip_prompt_echo
+
+    prompt = "Translate:\n\nHello"
+    raw = f"{prompt}\n\n{prompt}\n\nWorld"
+    assert strip_prompt_echo(raw, prompt) == "World"

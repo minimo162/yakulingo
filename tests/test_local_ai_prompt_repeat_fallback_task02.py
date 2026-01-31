@@ -64,7 +64,7 @@ def test_translate_single_does_not_retry_with_repeated_prompt_on_schema_mismatch
     )
     assert result == '{"translatio":"missing-key"}'
     assert len(calls) == 1
-    assert _extract_user_prompt(calls[0]) == prompt
+    assert _extract_user_prompt(calls[0]) == f"{prompt}\n\n{prompt}"
 
 
 def test_translate_single_does_not_retry_with_repeated_prompt_on_missing_json() -> None:
@@ -96,7 +96,7 @@ def test_translate_single_does_not_retry_with_repeated_prompt_on_missing_json() 
     )
     assert result == "plain text output"
     assert len(calls) == 1
-    assert _extract_user_prompt(calls[0]) == prompt
+    assert _extract_user_prompt(calls[0]) == f"{prompt}\n\n{prompt}"
 
 
 def test_translate_single_does_not_retry_when_prompt_is_not_json() -> None:
@@ -157,4 +157,4 @@ def test_translate_sync_does_not_retry_with_repeated_prompt_on_parse_failure() -
             runtime=runtime,
         )
     assert len(calls) == 1
-    assert _extract_user_prompt(calls[0]) == prompt
+    assert _extract_user_prompt(calls[0]) == f"{prompt}\n\n{prompt}"

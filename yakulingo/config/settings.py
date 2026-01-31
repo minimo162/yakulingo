@@ -39,6 +39,8 @@ USER_SETTINGS_KEYS = {
     "translation_style",
     # テキスト翻訳モード（標準/簡潔）
     "text_translation_mode",
+    # プロンプト二重送信（翻訳精度向上用）
+    "repeat_prompt_twice",
     # フォント設定（設定ダイアログで変更）
     "font_jp_to_en",
     "font_en_to_jp",
@@ -313,6 +315,7 @@ class AppSettings:
     text_translation_mode: str = (
         "standard"  # "standard"(通常翻訳) | "concise"(翻訳+簡潔化)
     )
+    repeat_prompt_twice: bool = True
     # Translation backend (deprecated; kept for backward compatibility).
     # NOTE: YakuLingo runs local-only; this value is always forced to "local".
     translation_backend: str = "local"
@@ -640,6 +643,16 @@ class AppSettings:
             self.text_translation_mode = "standard"
         else:
             self.text_translation_mode = mode
+
+        raw_repeat_prompt = getattr(self, "repeat_prompt_twice", True)
+        if not isinstance(raw_repeat_prompt, bool):
+            logger.warning(
+                "repeat_prompt_twice invalid (%s), resetting to True",
+                type(raw_repeat_prompt).__name__,
+            )
+            self.repeat_prompt_twice = True
+        else:
+            self.repeat_prompt_twice = raw_repeat_prompt
 
         # Local AI model path: derive from model file when provided.
         model_file = str(getattr(self, "local_ai_model_file", "") or "").strip()

@@ -2,6 +2,7 @@
   "output_directory": null,
   "last_tab": "text",
   "text_translation_mode": "standard",
+  "repeat_prompt_twice": true,
   "max_chars_per_batch": 1000,
   "request_timeout": 600,
   "max_retries": 3,

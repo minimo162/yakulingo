@@ -264,20 +264,25 @@ def strip_prompt_echo(raw_content: str, prompt: str | None) -> str:
     prompt_clean = prompt_clean.replace("\r\n", "\n").replace("\r", "\n").strip()
     if not prompt_clean:
         return cleaned
+    prompt_repeated = _repeat_prompt_twice(prompt_clean)
 
-    idx = cleaned.find(prompt_clean)
-    if idx != -1:
-        stripped = (cleaned[:idx] + cleaned[idx + len(prompt_clean) :]).strip()
-        return stripped
+    for candidate in (prompt_repeated, prompt_clean):
+        if not candidate:
+            continue
+        idx = cleaned.find(candidate)
+        if idx != -1:
+            stripped = (cleaned[:idx] + cleaned[idx + len(candidate) :]).strip()
+            return stripped
 
-    limit = min(len(cleaned), len(prompt_clean), _PROMPT_ECHO_PREFIX_SCAN_LIMIT)
-    prefix_len = 0
-    for i in range(limit):
-        if cleaned[i] != prompt_clean[i]:
-            break
-        prefix_len += 1
-    if prefix_len >= _PROMPT_ECHO_PREFIX_MIN:
-        return cleaned[prefix_len:].lstrip()
+    for candidate in (prompt_repeated, prompt_clean):
+        limit = min(len(cleaned), len(candidate), _PROMPT_ECHO_PREFIX_SCAN_LIMIT)
+        prefix_len = 0
+        for i in range(limit):
+            if cleaned[i] != candidate[i]:
+                break
+            prefix_len += 1
+        if prefix_len >= _PROMPT_ECHO_PREFIX_MIN:
+            return cleaned[prefix_len:].lstrip()
     return cleaned
 
 
@@ -1168,24 +1173,26 @@ class LocalAIClient:
             )
 
         t1 = time.perf_counter()
-        repeat_used = False
+        repeat_used = bool(getattr(self._settings, "repeat_prompt_twice", True))
         use_completions = self._is_raw_prompt(prompt)
         if on_chunk is None:
             result = (
-                self._completions(runtime, prompt, timeout=timeout, repeat_prompt=False)
+                self._completions(
+                    runtime, prompt, timeout=timeout, repeat_prompt=repeat_used
+                )
                 if use_completions
                 else self._chat_completions(
-                    runtime, prompt, timeout=timeout, repeat_prompt=False
+                    runtime, prompt, timeout=timeout, repeat_prompt=repeat_used
                 )
             )
         else:
             result = (
                 self._completions_streaming(
-                    runtime, prompt, on_chunk, timeout=timeout, repeat_prompt=False
+                    runtime, prompt, on_chunk, timeout=timeout, repeat_prompt=repeat_used
                 )
                 if use_completions
                 else self._chat_completions_streaming(
-                    runtime, prompt, on_chunk, timeout=timeout, repeat_prompt=False
+                    runtime, prompt, on_chunk, timeout=timeout, repeat_prompt=repeat_used
                 )
             )
             flush = getattr(on_chunk, "flush", None)
@@ -1235,12 +1242,12 @@ class LocalAIClient:
             )
 
         t1 = time.perf_counter()
-        repeat_used = False
+        repeat_used = bool(getattr(self._settings, "repeat_prompt_twice", True))
         result = (
-            self._completions(runtime, prompt, timeout=timeout, repeat_prompt=False)
+            self._completions(runtime, prompt, timeout=timeout, repeat_prompt=repeat_used)
             if self._is_raw_prompt(prompt)
             else self._chat_completions(
-                runtime, prompt, timeout=timeout, repeat_prompt=False
+                runtime, prompt, timeout=timeout, repeat_prompt=repeat_used
             )
         )
         parsed = parse_batch_translations(

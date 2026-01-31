@@ -4,7 +4,7 @@
 
 | ID | Status | 概要（1行） | ブランチ名 | コミットSHA |
 |---:|:---:|---|---|---|
-| 00 | TODO | 現状調査と仕様確定（戻し訳廃止 + プロンプト二重送信の適用範囲） | `case/yakulingo-disable-backtranslation-double-prompt-20260201-075708/task-00` | `<SHA>` |
+| 00 | DONE | 現状調査と仕様確定（戻し訳廃止 + プロンプト二重送信の適用範囲） | `case-yakulingo-disable-backtranslation-double-prompt-20260201-075708-00-spec` | `aea1df27` |
 | 01 | TODO | 設定/モード/ルーティングから戻し訳モードを廃止（互換考慮） | `case/yakulingo-disable-backtranslation-double-prompt-20260201-075708/task-01` | `<SHA>` |
 | 02 | TODO | 翻訳サービスから3pass戻し訳パイプラインを削除し、呼び出し元を更新 | `case/yakulingo-disable-backtranslation-double-prompt-20260201-075708/task-02` | `<SHA>` |
 | 03 | TODO | プロンプト二重送信を送信直前に適用（LocalAIClient中心） | `case/yakulingo-disable-backtranslation-double-prompt-20260201-075708/task-03` | `<SHA>` |

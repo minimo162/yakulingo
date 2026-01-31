@@ -6207,6 +6207,7 @@ class TranslationService:
                 reference_files=reference_files,
                 pre_detected_language=detected_language,
                 on_chunk=on_chunk,
+                on_event=on_event,
             )
 
         if output_language != "en":
@@ -6400,6 +6401,241 @@ class TranslationService:
         third.metadata = {**(third.metadata or {}), **metadata}
         return third
 
+    def _translate_text_with_concise_mode_pass4(
+        self,
+        *,
+        text: str,
+        reference_files: Optional[list[Path]] = None,
+        pre_detected_language: Optional[str] = None,
+        on_chunk: "Callable[[str], None] | None" = None,
+        on_event: "Callable[[TextTranslationStreamEvent], None] | None" = None,
+    ) -> TextTranslationResult:
+        """Translate text with a 4-pass concise-mode pipeline.
+
+        pass1: source -> target
+        pass2: target -> source (back translation)
+        pass3: source + pass1 + pass2 -> target (revision)
+        pass4: pass3 -> target (extra concise rewrite)
+        """
+        reference_files = None
+        detected_language = pre_detected_language or self.detect_language(text)
+        output_language = "en" if detected_language == "日本語" else "jp"
+
+        metadata: dict = {
+            "text_translation_mode": "concise",
+            "pipeline": "3pass+concise",
+        }
+
+        separator = "\n\n---\n\n"
+        pass_buffers: dict[int, str] = {1: "", 2: "", 3: "", 4: ""}
+
+        def emit_event(*, pass_index: int, role: str, kind: str, chunk: str = "") -> None:
+            if on_event is None:
+                return
+            try:
+                on_event(
+                    TextTranslationStreamEvent(
+                        pass_index=pass_index,
+                        role=role,
+                        kind=kind,  # type: ignore[arg-type]
+                        chunk=chunk,
+                        text_so_far=pass_buffers.get(pass_index, ""),
+                    )
+                )
+            except Exception:
+                logger.debug("Streaming on_event handler raised", exc_info=True)
+
+        def emit_combined_preview() -> None:
+            if on_chunk is None:
+                return
+            parts: list[str] = []
+            if pass_buffers[1]:
+                parts.append(f"【翻訳（pass1）】\n{pass_buffers[1]}")
+            if pass_buffers[2]:
+                parts.append(f"【戻し訳（pass2）】\n{pass_buffers[2]}")
+            if pass_buffers[3]:
+                parts.append(f"【修正翻訳（pass3）】\n{pass_buffers[3]}")
+            if pass_buffers[4]:
+                parts.append(f"【追加簡略化（pass4）】\n{pass_buffers[4]}")
+            try:
+                on_chunk(separator.join(parts).strip())
+            except Exception:
+                logger.debug("Streaming on_chunk handler raised", exc_info=True)
+
+        def make_pass_on_chunk(*, pass_index: int, role: str) -> "Callable[[str], None]":
+            emit_event(pass_index=pass_index, role=role, kind="pass_start")
+
+            def _handler(partial_text: str) -> None:
+                pass_buffers[pass_index] = partial_text or ""
+                emit_event(
+                    pass_index=pass_index,
+                    role=role,
+                    kind="chunk",
+                    chunk=partial_text or "",
+                )
+                emit_combined_preview()
+
+            return _handler
+
+        try:
+            pass1_on_chunk = make_pass_on_chunk(pass_index=1, role="translation")
+            first = self.translate_text_with_options(
+                text=text,
+                reference_files=reference_files,
+                style="standard" if output_language == "en" else None,
+                pre_detected_language=detected_language,
+                on_chunk=pass1_on_chunk,
+            )
+            emit_event(pass_index=1, role="translation", kind="pass_end")
+            if first.metadata:
+                metadata.update(first.metadata)
+            if first.error_message or not first.options:
+                first.metadata = metadata
+                return first
+
+            pass1_text = first.options[0].text
+            passes: list[TextTranslationPass] = [
+                TextTranslationPass(index=1, mode="translation", text=pass1_text)
+            ]
+            pass_buffers[1] = pass1_text or pass_buffers[1]
+            emit_combined_preview()
+
+            if self._cancel_event.is_set():
+                raise TranslationCancelledError("Translation cancelled by user")
+
+            back_output_language = "jp" if output_language == "en" else "en"
+            back_detected_language = "英語" if output_language == "en" else "日本語"
+            back_prompt = self.prompt_builder.build_back_translation_prompt(
+                pass1_text,
+                output_language=back_output_language,
+                reference_files=reference_files,
+            )
+            pass2_on_chunk = make_pass_on_chunk(pass_index=2, role="back_translation")
+            second = self._translate_text_with_options_local(
+                text=pass1_text,
+                reference_files=reference_files,
+                style=_normalize_text_style(None),
+                detected_language=back_detected_language,
+                output_language=back_output_language,
+                on_chunk=pass2_on_chunk,
+                raw_output=True,
+                force_simple_prompt=True,
+                override_prompt=back_prompt,
+            )
+            emit_event(pass_index=2, role="back_translation", kind="pass_end")
+            if (
+                second.error_message
+                or not second.options
+                or not (second.options[0].text or "").strip()
+            ):
+                metadata["pipeline_failed_at_pass"] = 2
+                metadata["pipeline_warning"] = (
+                    "戻し訳に失敗したため、翻訳文（pass1）を最終結果として表示しました。"
+                )
+                first.passes = passes
+                first.metadata = metadata
+                return first
+
+            pass2_text = second.options[0].text
+            passes.append(TextTranslationPass(index=2, mode="translation", text=pass2_text))
+            pass_buffers[2] = pass2_text or pass_buffers[2]
+            emit_combined_preview()
+
+            if self._cancel_event.is_set():
+                raise TranslationCancelledError("Translation cancelled by user")
+
+            revise_prompt = self.prompt_builder.build_translation_revision_prompt(
+                source_text=text,
+                translation_text=pass1_text,
+                back_translation_text=pass2_text,
+                output_language=output_language,
+                reference_files=reference_files,
+            )
+            pass3_on_chunk = make_pass_on_chunk(pass_index=3, role="revision")
+            third = self._translate_text_with_options_local(
+                text=text,
+                reference_files=reference_files,
+                style=_normalize_text_style(None),
+                detected_language=detected_language,
+                output_language=output_language,
+                on_chunk=pass3_on_chunk,
+                raw_output=True,
+                force_simple_prompt=True,
+                override_prompt=revise_prompt,
+            )
+            emit_event(pass_index=3, role="revision", kind="pass_end")
+            if (
+                third.error_message
+                or not third.options
+                or not (third.options[0].text or "").strip()
+            ):
+                metadata["pipeline_failed_at_pass"] = 3
+                metadata["pipeline_warning"] = (
+                    "修正翻訳に失敗したため、翻訳文（pass1）を最終結果として表示しました。"
+                )
+                first.passes = passes
+                first.metadata = metadata
+                return first
+
+            pass3_text = third.options[0].text
+            passes.append(TextTranslationPass(index=3, mode="translation", text=pass3_text))
+            pass_buffers[3] = pass3_text or pass_buffers[3]
+            emit_combined_preview()
+
+            if self._cancel_event.is_set():
+                raise TranslationCancelledError("Translation cancelled by user")
+
+            pass4_detected_language = "英語" if output_language == "en" else "日本語"
+            pass4_prompt = self.prompt_builder.build_extra_concise_prompt(
+                pass3_text,
+                output_language=output_language,
+            )
+            pass4_on_chunk = make_pass_on_chunk(pass_index=4, role="extra_concise")
+            fourth = self._translate_text_with_options_local(
+                text=pass3_text,
+                reference_files=reference_files,
+                style=_normalize_text_style(None),
+                detected_language=pass4_detected_language,
+                output_language=output_language,
+                on_chunk=pass4_on_chunk,
+                raw_output=True,
+                force_simple_prompt=True,
+                override_prompt=pass4_prompt,
+            )
+            emit_event(pass_index=4, role="extra_concise", kind="pass_end")
+            if (
+                fourth.error_message
+                or not fourth.options
+                or not (fourth.options[0].text or "").strip()
+            ):
+                metadata["pipeline_failed_at_pass"] = 4
+                metadata["pipeline_warning"] = (
+                    "追加簡略化に失敗したため、修正翻訳（pass3）を最終結果として表示しました。"
+                )
+                third.passes = passes
+                third.metadata = {**(third.metadata or {}), **metadata}
+                return third
+
+            pass4_text = fourth.options[0].text
+            passes.append(TextTranslationPass(index=4, mode="rewrite", text=pass4_text))
+            pass_buffers[4] = pass4_text or pass_buffers[4]
+            emit_combined_preview()
+
+            fourth.passes = passes
+            fourth.metadata = {**(fourth.metadata or {}), **metadata}
+            return fourth
+
+        except TranslationCancelledError:
+            logger.info("Concise mode cancelled")
+            return TextTranslationResult(
+                source_text=text,
+                source_char_count=len(text),
+                output_language=output_language,
+                detected_language=detected_language,
+                error_message="翻訳がキャンセルされました",
+                metadata=metadata,
+            )
+
     def translate_text_with_concise_mode(
         self,
         *,
@@ -6407,8 +6643,15 @@ class TranslationService:
         reference_files: Optional[list[Path]] = None,
         pre_detected_language: Optional[str] = None,
         on_chunk: "Callable[[str], None] | None" = None,
+        on_event: "Callable[[TextTranslationStreamEvent], None] | None" = None,
     ) -> TextTranslationResult:
-        """Translate text with a 2-pass concise-mode pipeline."""
+        return self._translate_text_with_concise_mode_pass4(
+            text=text,
+            reference_files=reference_files,
+            pre_detected_language=pre_detected_language,
+            on_chunk=on_chunk,
+            on_event=on_event,
+        )
         reference_files = None
         detected_language = pre_detected_language or self.detect_language(text)
         output_language = "en" if detected_language == "日本語" else "jp"

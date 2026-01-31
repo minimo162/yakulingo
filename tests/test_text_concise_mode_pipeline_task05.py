@@ -5,58 +5,12 @@ from pathlib import Path
 from yakulingo.config.settings import AppSettings
 from yakulingo.models.types import TextTranslationResult, TranslationOption
 from yakulingo.services.translation_service import TranslationService
-import yakulingo.services.translation_service as translation_service_module
 
-
-def test_concise_mode_runs_rewrite_and_sets_final_text(monkeypatch) -> None:
+def test_concise_mode_runs_pass4_and_sets_final_text(monkeypatch) -> None:
     settings = AppSettings(translation_backend="local")
     service = TranslationService(config=settings, prompts_dir=Path("prompts"))
 
-    def fake_translate_text_with_options(*, text: str, **_kwargs) -> TextTranslationResult:
-        return TextTranslationResult(
-            source_text=text,
-            source_char_count=len(text),
-            output_language="en",
-            detected_language="日本語",
-            options=[TranslationOption(text="PASS1", explanation="", style="standard")],
-        )
-
-    calls: list[tuple[str, str]] = []
-
-    def fake_translate_single_with_cancel_on_local(
-        text: str, prompt: str, reference_files=None, on_chunk=None
-    ) -> str:
-        calls.append((text, prompt))
-        return "PASS2"
-
-    monkeypatch.setattr(service, "translate_text_with_options", fake_translate_text_with_options)
-    monkeypatch.setattr(
-        service, "_translate_single_with_cancel_on_local", fake_translate_single_with_cancel_on_local
-    )
-
-    result = service.translate_text_with_concise_mode(
-        text="入力",
-        pre_detected_language="日本語",
-    )
-
-    assert calls, "rewrite pass was not executed"
-    assert result.passes
-    assert [p.index for p in result.passes] == [1, 2]
-    assert result.passes[0].text == "PASS1"
-    assert result.final_text == "PASS2"
-
-
-def test_concise_mode_streaming_concatenates_pass1_and_pass2(monkeypatch) -> None:
-    settings = AppSettings(translation_backend="local")
-    service = TranslationService(config=settings, prompts_dir=Path("prompts"))
-    received: list[str] = []
-
-    def on_chunk(text: str) -> None:
-        received.append(text)
-
-    def fake_translate_text_with_options(
-        *, text: str, on_chunk=None, **_kwargs
-    ) -> TextTranslationResult:
+    def fake_pass1(*, text: str, on_chunk=None, **_kwargs) -> TextTranslationResult:
         if on_chunk:
             on_chunk("PASS1")
         return TextTranslationResult(
@@ -67,19 +21,102 @@ def test_concise_mode_streaming_concatenates_pass1_and_pass2(monkeypatch) -> Non
             options=[TranslationOption(text="PASS1", explanation="", style="standard")],
         )
 
-    def fake_translate_single_with_cancel_on_local(
-        text: str, prompt: str, reference_files=None, on_chunk=None
-    ) -> str:
-        assert on_chunk is not None
-        on_chunk("P")
-        on_chunk("AS")
-        on_chunk("S2")
-        return "PASS2"
+    calls: list[str] = []
 
-    monkeypatch.setattr(service, "translate_text_with_options", fake_translate_text_with_options)
-    monkeypatch.setattr(
-        service, "_translate_single_with_cancel_on_local", fake_translate_single_with_cancel_on_local
+    def fake_local(*, output_language: str, **_kwargs) -> TextTranslationResult:
+        calls.append(output_language)
+        if output_language == "jp":
+            return TextTranslationResult(
+                source_text="PASS1",
+                source_char_count=5,
+                output_language="jp",
+                detected_language="英語",
+                options=[TranslationOption(text="PASS2", explanation="")],
+            )
+        if len(calls) == 2:
+            return TextTranslationResult(
+                source_text="入力",
+                source_char_count=2,
+                output_language="en",
+                detected_language="日本語",
+                options=[TranslationOption(text="PASS3", explanation="")],
+            )
+        return TextTranslationResult(
+            source_text="PASS3",
+            source_char_count=5,
+            output_language="en",
+            detected_language="英語",
+            options=[TranslationOption(text="PASS4", explanation="")],
+        )
+
+    monkeypatch.setattr(service, "translate_text_with_options", fake_pass1)
+    monkeypatch.setattr(service, "_translate_text_with_options_local", fake_local)
+
+    result = service.translate_text_with_concise_mode(
+        text="入力",
+        pre_detected_language="日本語",
     )
+
+    assert result.final_text == "PASS4"
+    assert [p.index for p in result.passes] == [1, 2, 3, 4]
+    assert result.passes[-1].text == "PASS4"
+
+
+def test_concise_mode_streaming_combines_pass1_to_pass4(monkeypatch) -> None:
+    settings = AppSettings(translation_backend="local")
+    service = TranslationService(config=settings, prompts_dir=Path("prompts"))
+    received: list[str] = []
+
+    def on_chunk(text: str) -> None:
+        received.append(text)
+
+    def fake_pass1(*, text: str, on_chunk=None, **_kwargs) -> TextTranslationResult:
+        assert callable(on_chunk)
+        on_chunk("P1")
+        on_chunk("PASS1")
+        return TextTranslationResult(
+            source_text=text,
+            source_char_count=len(text),
+            output_language="en",
+            detected_language="日本語",
+            options=[TranslationOption(text="PASS1", explanation="", style="standard")],
+        )
+
+    local_calls = 0
+
+    def fake_local(*, output_language: str, on_chunk=None, **_kwargs) -> TextTranslationResult:
+        nonlocal local_calls
+        local_calls += 1
+        assert callable(on_chunk)
+        if local_calls == 1:
+            on_chunk("P2")
+            return TextTranslationResult(
+                source_text="PASS1",
+                source_char_count=5,
+                output_language="jp",
+                detected_language="英語",
+                options=[TranslationOption(text="PASS2", explanation="")],
+            )
+        if local_calls == 2:
+            on_chunk("P3")
+            return TextTranslationResult(
+                source_text="入力",
+                source_char_count=2,
+                output_language="en",
+                detected_language="日本語",
+                options=[TranslationOption(text="PASS3", explanation="")],
+            )
+        on_chunk("P4")
+        return TextTranslationResult(
+            source_text="PASS3",
+            source_char_count=5,
+            output_language="en",
+            detected_language="英語",
+            options=[TranslationOption(text="PASS4", explanation="")],
+        )
+
+    monkeypatch.setattr(service, "translate_text_with_options", fake_pass1)
+    monkeypatch.setattr(service, "_translate_text_with_options_local", fake_local)
 
     result = service.translate_text_with_concise_mode(
         text="入力",
@@ -87,58 +124,131 @@ def test_concise_mode_streaming_concatenates_pass1_and_pass2(monkeypatch) -> Non
         on_chunk=on_chunk,
     )
 
-    assert result.final_text == "PASS2"
+    assert result.final_text == "PASS4"
     assert received
-    assert any(chunk == "PASS1" for chunk in received)
-    assert any("\n\n---\n\n" in chunk for chunk in received)
-    assert received[-1].startswith("PASS1\n\n---\n\n")
-    assert "PASS2" in received[-1]
+    joined = "\n".join(received)
+    assert "【翻訳（pass1）】" in joined
+    assert "【戻し訳（pass2）】" in joined
+    assert "【修正翻訳（pass3）】" in joined
+    assert "【追加簡略化（pass4）】" in joined
 
 
-def test_concise_mode_jp_allows_abbreviation_mixed_output(monkeypatch) -> None:
+def test_concise_mode_falls_back_to_pass3_when_pass4_fails(monkeypatch) -> None:
     settings = AppSettings(translation_backend="local")
     service = TranslationService(config=settings, prompts_dir=Path("prompts"))
 
-    monkeypatch.setattr(
-        translation_service_module.language_detector,
-        "detect_local_with_reason",
-        lambda _text: ("英語", "forced"),
+    def fake_pass1(*, text: str, **_kwargs) -> TextTranslationResult:
+        return TextTranslationResult(
+            source_text=text,
+            source_char_count=len(text),
+            output_language="en",
+            detected_language="日本語",
+            options=[TranslationOption(text="PASS1", explanation="", style="standard")],
+        )
+
+    local_calls = 0
+
+    def fake_local(*, output_language: str, **_kwargs) -> TextTranslationResult:
+        nonlocal local_calls
+        local_calls += 1
+        if local_calls == 1:
+            return TextTranslationResult(
+                source_text="PASS1",
+                source_char_count=5,
+                output_language="jp",
+                detected_language="英語",
+                options=[TranslationOption(text="PASS2", explanation="")],
+            )
+        if local_calls == 2:
+            return TextTranslationResult(
+                source_text="入力",
+                source_char_count=2,
+                output_language="en",
+                detected_language="日本語",
+                options=[TranslationOption(text="PASS3", explanation="")],
+            )
+        return TextTranslationResult(
+            source_text="PASS3",
+            source_char_count=5,
+            output_language="en",
+            detected_language="英語",
+            error_message="boom",
+            options=[],
+        )
+
+    monkeypatch.setattr(service, "translate_text_with_options", fake_pass1)
+    monkeypatch.setattr(service, "_translate_text_with_options_local", fake_local)
+
+    result = service.translate_text_with_concise_mode(
+        text="入力",
+        pre_detected_language="日本語",
     )
 
-    def fake_translate_text_with_options(*, text: str, **_kwargs) -> TextTranslationResult:
+    assert result.final_text == "PASS3"
+    assert [p.index for p in result.passes] == [1, 2, 3]
+    assert result.metadata is not None
+    assert result.metadata.get("pipeline_failed_at_pass") == 4
+
+
+def test_concise_mode_en_to_jp_runs_pass4(monkeypatch) -> None:
+    settings = AppSettings(translation_backend="local")
+    service = TranslationService(config=settings, prompts_dir=Path("prompts"))
+
+    def fake_pass1(*, text: str, **_kwargs) -> TextTranslationResult:
         return TextTranslationResult(
             source_text=text,
             source_char_count=len(text),
             output_language="jp",
             detected_language="英語",
-            options=[TranslationOption(text="売上は増加した", explanation="")],
+            options=[TranslationOption(text="JP1", explanation="")],
         )
 
-    def fake_translate_single_with_cancel_on_local(
-        text: str, prompt: str, reference_files=None, on_chunk=None
-    ) -> str:
-        return "FY25 売上 YoY +10%"
+    local_calls = 0
 
-    monkeypatch.setattr(service, "translate_text_with_options", fake_translate_text_with_options)
-    monkeypatch.setattr(
-        service, "_translate_single_with_cancel_on_local", fake_translate_single_with_cancel_on_local
-    )
+    def fake_local(*, output_language: str, **_kwargs) -> TextTranslationResult:
+        nonlocal local_calls
+        local_calls += 1
+        if local_calls == 1:
+            return TextTranslationResult(
+                source_text="JP1",
+                source_char_count=3,
+                output_language="en",
+                detected_language="日本語",
+                options=[TranslationOption(text="EN2", explanation="")],
+            )
+        if local_calls == 2:
+            return TextTranslationResult(
+                source_text="Source",
+                source_char_count=6,
+                output_language="jp",
+                detected_language="英語",
+                options=[TranslationOption(text="JP3", explanation="")],
+            )
+        return TextTranslationResult(
+            source_text="JP3",
+            source_char_count=3,
+            output_language="jp",
+            detected_language="日本語",
+            options=[TranslationOption(text="JP4", explanation="")],
+        )
+
+    monkeypatch.setattr(service, "translate_text_with_options", fake_pass1)
+    monkeypatch.setattr(service, "_translate_text_with_options_local", fake_local)
 
     result = service.translate_text_with_concise_mode(
-        text="input",
+        text="Source",
         pre_detected_language="英語",
     )
 
-    assert result.final_text == "FY25 売上 YoY +10%"
-    assert result.passes
-    assert result.passes[-1].text == "FY25 売上 YoY +10%"
+    assert result.final_text == "JP4"
+    assert [p.index for p in result.passes] == [1, 2, 3, 4]
 
 
 def test_concise_mode_cancel_returns_error(monkeypatch) -> None:
     settings = AppSettings(translation_backend="local")
     service = TranslationService(config=settings, prompts_dir=Path("prompts"))
 
-    def fake_translate_text_with_options(*, text: str, **_kwargs) -> TextTranslationResult:
+    def fake_pass1(*, text: str, **_kwargs) -> TextTranslationResult:
         service._cancel_event.set()
         return TextTranslationResult(
             source_text=text,
@@ -148,111 +258,13 @@ def test_concise_mode_cancel_returns_error(monkeypatch) -> None:
             options=[TranslationOption(text="PASS1", explanation="", style="standard")],
         )
 
-    called_rewrite = False
-
-    def fake_translate_single_with_cancel_on_local(
-        text: str, prompt: str, reference_files=None, on_chunk=None
-    ) -> str:
-        nonlocal called_rewrite
-        called_rewrite = True
-        return "PASS2"
-
-    monkeypatch.setattr(service, "translate_text_with_options", fake_translate_text_with_options)
-    monkeypatch.setattr(
-        service, "_translate_single_with_cancel_on_local", fake_translate_single_with_cancel_on_local
-    )
+    monkeypatch.setattr(service, "translate_text_with_options", fake_pass1)
 
     result = service.translate_text_with_concise_mode(
         text="入力",
         pre_detected_language="日本語",
     )
 
-    assert not called_rewrite
     assert result.error_message == "翻訳がキャンセルされました"
     assert result.metadata
     assert result.metadata.get("text_translation_mode") == "concise"
-
-
-def test_concise_mode_rewrite_retries_once_on_unchanged_output(monkeypatch) -> None:
-    settings = AppSettings(translation_backend="local")
-    service = TranslationService(config=settings, prompts_dir=Path("prompts"))
-    pass1_text = "A" * 81
-
-    def fake_translate_text_with_options(*, text: str, **_kwargs) -> TextTranslationResult:
-        return TextTranslationResult(
-            source_text=text,
-            source_char_count=len(text),
-            output_language="en",
-            detected_language="日本語",
-            options=[TranslationOption(text=pass1_text, explanation="", style="standard")],
-        )
-
-    calls = 0
-
-    def fake_translate_single_with_cancel_on_local(
-        text: str, prompt: str, reference_files=None, on_chunk=None
-    ) -> str:
-        nonlocal calls
-        calls += 1
-        return pass1_text if calls == 1 else "B" * 81
-
-    monkeypatch.setattr(service, "translate_text_with_options", fake_translate_text_with_options)
-    monkeypatch.setattr(
-        service, "_translate_single_with_cancel_on_local", fake_translate_single_with_cancel_on_local
-    )
-
-    result = service.translate_text_with_concise_mode(
-        text="入力",
-        pre_detected_language="日本語",
-    )
-
-    assert calls == 2
-    assert result.final_text == "B" * 81
-
-
-def test_concise_mode_rewrite_segments_on_local_prompt_too_long(monkeypatch) -> None:
-    settings = AppSettings(translation_backend="local")
-    service = TranslationService(config=settings, prompts_dir=Path("prompts"))
-    pass1_text = "0123456789"
-
-    def fake_translate_text_with_options(*, text: str, **_kwargs) -> TextTranslationResult:
-        return TextTranslationResult(
-            source_text=text,
-            source_char_count=len(text),
-            output_language="en",
-            detected_language="日本語",
-            options=[TranslationOption(text=pass1_text, explanation="", style="standard")],
-        )
-
-    monkeypatch.setattr(service, "translate_text_with_options", fake_translate_text_with_options)
-    class DummyBatchTranslator:
-        max_chars_per_batch = 5
-
-    monkeypatch.setattr(service, "_local_batch_translator", DummyBatchTranslator())
-    monkeypatch.setattr(
-        translation_service_module,
-        "_segment_long_text_for_local_text_translation",
-        lambda _text, max_segment_chars: [("AAA", True), ("BBB", True)],
-    )
-
-    calls: list[str] = []
-
-    def fake_translate_single_with_cancel_on_local(
-        text: str, prompt: str, reference_files=None, on_chunk=None
-    ) -> str:
-        calls.append(text)
-        if text == pass1_text:
-            raise RuntimeError("LOCAL_PROMPT_TOO_LONG: 9999 > 8000")
-        return text.lower()
-
-    monkeypatch.setattr(
-        service, "_translate_single_with_cancel_on_local", fake_translate_single_with_cancel_on_local
-    )
-
-    result = service.translate_text_with_concise_mode(
-        text="入力",
-        pre_detected_language="日本語",
-    )
-
-    assert calls == [pass1_text, "AAA", "BBB"]
-    assert result.final_text == "aaabbb"

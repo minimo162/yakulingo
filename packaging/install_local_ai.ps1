@@ -5,11 +5,17 @@ $transcriptPath = $env:LOCAL_AI_INSTALL_LOG
 $transcriptStarted = $false
 if (-not [string]::IsNullOrWhiteSpace($transcriptPath)) {
     try {
-        $transcriptDir = Split-Path -Parent $transcriptPath
-        if ($transcriptDir) { New-Item -ItemType Directory -Force -Path $transcriptDir | Out-Null }
-        Start-Transcript -Path $transcriptPath -Force | Out-Null
-        $transcriptStarted = $true
-        Write-Host "[INFO] Installer log: $transcriptPath"
+        $isRedirected = $false
+        try { $isRedirected = [Console]::IsOutputRedirected -or [Console]::IsErrorRedirected } catch { $isRedirected = $false }
+        if ($isRedirected) {
+            Write-Host "[INFO] Output is redirected; skipping Start-Transcript. Log path: $transcriptPath"
+        } else {
+            $transcriptDir = Split-Path -Parent $transcriptPath
+            if ($transcriptDir) { New-Item -ItemType Directory -Force -Path $transcriptDir | Out-Null }
+            Start-Transcript -Path $transcriptPath -Force | Out-Null
+            $transcriptStarted = $true
+            Write-Host "[INFO] Installer log: $transcriptPath"
+        }
     } catch {
         # best-effort
     }

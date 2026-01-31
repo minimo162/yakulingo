@@ -10,6 +10,14 @@ cd /d "%~dp0\.."
 if not defined USE_PROXY set "USE_PROXY=0"
 if not defined SKIP_SSL set "SKIP_SSL=0"
 if not defined PROXY_SERVER set "PROXY_SERVER=136.131.63.233:8082"
+if not defined LOCAL_AI_INSTALL_LOG set "LOCAL_AI_INSTALL_LOG=%TEMP%\YakuLingo_local_ai_install.log"
+
+> "%LOCAL_AI_INSTALL_LOG%" (
+    echo ============================================================
+    echo YakuLingo Local AI install log
+    echo Started: %DATE% %TIME%
+    echo ============================================================
+)
 set "STEP7_FROM_INSTALL_DEPS=0"
 if /i "%~1"=="--from-install-deps" set "STEP7_FROM_INSTALL_DEPS=1"
 
@@ -84,23 +92,23 @@ if not defined LOCAL_AI_LLAMA_CPP_VARIANT (
     echo [INFO] llama.cpp variant: !LOCAL_AI_LLAMA_CPP_VARIANT! ^(env override^)
 )
 
-if not defined LOCAL_AI_INSTALL_LOG set "LOCAL_AI_INSTALL_LOG=%TEMP%\YakuLingo_local_ai_install.log"
-if exist "!LOCAL_AI_INSTALL_LOG!" del /f /q "!LOCAL_AI_INSTALL_LOG!" >nul 2>&1
-echo [INFO] Install log: !LOCAL_AI_INSTALL_LOG!
+echo [INFO] Install log: %LOCAL_AI_INSTALL_LOG%
+>> "%LOCAL_AI_INSTALL_LOG%" echo [INFO] Proxy: USE_PROXY=!USE_PROXY! SKIP_SSL=!SKIP_SSL!
+>> "%LOCAL_AI_INSTALL_LOG%" echo [INFO] Local AI selection: choice=!LOCAL_AI_CHOICE!
 
 echo [INFO] Running: powershell -NoProfile -ExecutionPolicy Bypass -File packaging\install_local_ai.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File "packaging\install_local_ai.ps1"
+powershell -NoProfile -ExecutionPolicy Bypass -File "packaging\install_local_ai.ps1" >> "%LOCAL_AI_INSTALL_LOG%" 2>&1
 set LOCAL_AI_INSTALL_EXIT=!errorlevel!
 echo [INFO] install_local_ai.ps1 exit=!LOCAL_AI_INSTALL_EXIT!
 if !LOCAL_AI_INSTALL_EXIT! neq 0 (
     echo [WARNING] Failed to install Local AI runtime ^(optional^) ^(exit=!LOCAL_AI_INSTALL_EXIT!^).
     echo [WARNING] YakuLingo translation requires Local AI runtime. Please retry the install.
     echo [INFO] You can retry later: powershell -NoProfile -ExecutionPolicy Bypass -File packaging\install_local_ai.ps1
-    echo [INFO] Install log: !LOCAL_AI_INSTALL_LOG!
+    echo [INFO] Install log: %LOCAL_AI_INSTALL_LOG%
     if "!STEP7_FROM_INSTALL_DEPS!"=="0" (
-        if exist "!LOCAL_AI_INSTALL_LOG!" (
+        if exist "%LOCAL_AI_INSTALL_LOG%" (
             echo [INFO] Opening install log in Notepad...
-            start "" notepad "!LOCAL_AI_INSTALL_LOG!"
+            start "" notepad "%LOCAL_AI_INSTALL_LOG%"
         )
     )
     echo [INFO] Verify network/proxy settings and retry. You can override the model via LOCAL_AI_MODEL_* if needed.

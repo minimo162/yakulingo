@@ -6183,6 +6183,21 @@ class TranslationService:
         output_language = "en" if is_japanese else "jp"
 
         mode = (text_translation_mode or "").strip().lower()
+        if mode in {"3pass", "backtranslation", "review"}:
+            selected_style: str | None = None
+            if styles:
+                for style_name in styles:
+                    style_key = (style_name or "").strip().lower()
+                    if style_key in TEXT_STYLE_ORDER:
+                        selected_style = style_key
+                        break
+            return self.translate_text_with_backtranslation_review(
+                text=text,
+                reference_files=reference_files,
+                style=_normalize_text_style(selected_style),
+                pre_detected_language=detected_language,
+                on_chunk=on_chunk,
+            )
         if mode == "concise":
             return self.translate_text_with_concise_mode(
                 text=text,
@@ -6213,6 +6228,112 @@ class TranslationService:
             pre_detected_language=detected_language,
             on_chunk=on_chunk,
         )
+
+    def translate_text_with_backtranslation_review(
+        self,
+        *,
+        text: str,
+        reference_files: Optional[list[Path]] = None,
+        style: Optional[str] = None,
+        pre_detected_language: Optional[str] = None,
+        on_chunk: "Callable[[str], None] | None" = None,
+    ) -> TextTranslationResult:
+        """Translate text using a 3-pass back-translation review pipeline (non-streaming for pass2/3).
+
+        pass1: source -> target
+        pass2: target -> source (back translation)
+        pass3: source + pass1 + pass2 -> target (revision)
+
+        If pass1 succeeds but pass2/3 fails, falls back to pass1 as the final output and
+        records a warning in metadata for UI display.
+        """
+        reference_files = None
+        detected_language = pre_detected_language or self.detect_language(text)
+        is_japanese = detected_language == "日本語"
+        output_language = "en" if is_japanese else "jp"
+
+        metadata: dict = {
+            "text_translation_mode": "backtranslation_review",
+            "pipeline": "3pass",
+        }
+
+        first = self.translate_text_with_options(
+            text=text,
+            reference_files=reference_files,
+            style=_normalize_text_style(style) if output_language == "en" else None,
+            pre_detected_language=detected_language,
+            on_chunk=on_chunk,
+        )
+        if first.metadata:
+            metadata.update(first.metadata)
+        if first.error_message or not first.options:
+            first.metadata = metadata
+            return first
+
+        pass1_text = first.options[0].text
+        passes: list[TextTranslationPass] = [
+            TextTranslationPass(index=1, mode="translation", text=pass1_text)
+        ]
+
+        back_output_language = "jp" if output_language == "en" else "en"
+        back_detected_language = "英語" if output_language == "en" else "日本語"
+        back_prompt = self.prompt_builder.build_back_translation_prompt(
+            pass1_text,
+            output_language=back_output_language,
+            reference_files=reference_files,
+        )
+        second = self._translate_text_with_options_local(
+            text=pass1_text,
+            reference_files=reference_files,
+            style=_normalize_text_style(None),
+            detected_language=back_detected_language,
+            output_language=back_output_language,
+            on_chunk=None,
+            raw_output=True,
+            force_simple_prompt=True,
+            override_prompt=back_prompt,
+        )
+        if second.error_message or not second.options or not (second.options[0].text or "").strip():
+            metadata["pipeline_failed_at_pass"] = 2
+            metadata["pipeline_warning"] = "戻し訳に失敗したため、翻訳文（pass1）を最終結果として表示しました。"
+            first.passes = passes
+            first.metadata = metadata
+            return first
+
+        pass2_text = second.options[0].text
+        passes.append(TextTranslationPass(index=2, mode="translation", text=pass2_text))
+
+        revise_prompt = self.prompt_builder.build_translation_revision_prompt(
+            source_text=text,
+            translation_text=pass1_text,
+            back_translation_text=pass2_text,
+            output_language=output_language,
+            reference_files=reference_files,
+        )
+        third = self._translate_text_with_options_local(
+            text=text,
+            reference_files=reference_files,
+            style=_normalize_text_style(None),
+            detected_language=detected_language,
+            output_language=output_language,
+            on_chunk=None,
+            raw_output=True,
+            force_simple_prompt=True,
+            override_prompt=revise_prompt,
+        )
+        if third.error_message or not third.options or not (third.options[0].text or "").strip():
+            metadata["pipeline_failed_at_pass"] = 3
+            metadata["pipeline_warning"] = "修正翻訳に失敗したため、翻訳文（pass1）を最終結果として表示しました。"
+            first.passes = passes
+            first.metadata = metadata
+            return first
+
+        pass3_text = third.options[0].text
+        passes.append(TextTranslationPass(index=3, mode="translation", text=pass3_text))
+
+        third.passes = passes
+        third.metadata = {**(third.metadata or {}), **metadata}
+        return third
 
     def translate_text_with_concise_mode(
         self,
